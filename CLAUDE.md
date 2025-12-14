@@ -1655,6 +1655,434 @@ pkill -9 node
 
 **Real-world example**: See PR #396 (Component tests failed with "Unregistered component" after switching from another worktree - fixed by killing dev server)
 
+## 📊 Lessons from Production Issues (Dec 2025)
+
+> This section contains distilled learnings from 50+ completed GitHub Issues. These patterns reduce debugging time and prevent common errors.
+
+### Memory Leak Prevention Pattern
+
+**When implementing long-running components (renderers, event listeners):**
+
+From Issue #791 (Replace polling with event listeners, 204 steps):
+
+```typescript
+// ❌ BAD: setInterval without cleanup
+useEffect(() => {
+  const interval = setInterval(() => {
+    refreshData();
+  }, 1000);
+  // Missing cleanup → memory leak!
+}, []);
+
+// ✅ GOOD: Event-driven with cleanup
+useEffect(() => {
+  const handleMetadataChange = () => {
+    refreshData();
+  };
+
+  metadataCache.on('changed', handleMetadataChange);
+
+  return () => {
+    metadataCache.off('changed', handleMetadataChange);
+  };
+}, []);
+```
+
+**Key insights:**
+- Replace polling with Obsidian's event system (`metadataCache.on('changed')`)
+- Always return cleanup function from useEffect
+- Track subscription references for proper cleanup
+- Use WeakMap for caches that should be garbage collected
+
+**Related files:**
+- `UniversalLayoutRenderer.ts` - Main event-driven renderer
+- `BacklinksCache.ts` - WeakMap-based cache implementation
+
+### Type Safety Pattern (Replacing `any`)
+
+From Issue #777 (Replace 'any' with proper types, 338 steps):
+
+```typescript
+// ❌ BAD: any hides type errors
+function processData(data: any): any {
+  return data.items.map((item: any) => item.value);
+}
+
+// ✅ GOOD: Proper interfaces
+interface DataItem {
+  value: string;
+  id: number;
+}
+
+interface ProcessedData {
+  items: DataItem[];
+}
+
+function processData(data: ProcessedData): string[] {
+  return data.items.map((item) => item.value);
+}
+```
+
+**When `any` is unavoidable:**
+- Obsidian API internals (use type assertion with comment)
+- Third-party libraries without types (create local `.d.ts`)
+- Dynamic JSON parsing (use `unknown` + type guards)
+
+**Search for remaining `any` usage:**
+```bash
+grep -r ": any" packages/*/src/ --include="*.ts" | wc -l
+```
+
+### Batch Processing Pattern
+
+From Issue #879 (Batch processing for repair-folder, 104 steps):
+
+```typescript
+// ❌ BAD: Sequential processing of large datasets
+for (const file of files) {
+  await processFile(file);  // 1000 files = 1000 sequential awaits
+}
+
+// ✅ GOOD: Batched processing with concurrency limit
+const BATCH_SIZE = 10;
+for (let i = 0; i < files.length; i += BATCH_SIZE) {
+  const batch = files.slice(i, i + BATCH_SIZE);
+  await Promise.all(batch.map(file => processFile(file)));
+
+  // Progress feedback
+  console.log(`Processed ${Math.min(i + BATCH_SIZE, files.length)}/${files.length}`);
+}
+```
+
+**When to use:**
+- Processing >50 files
+- Operations involving disk I/O
+- CLI commands that modify vault
+
+**Related CLI commands:** `repair-folder`, `batch-rename`, `migrate-properties`
+
+### Modal UI Pattern
+
+From Issue #868 (Trash reason modal, 122 steps):
+
+```typescript
+// Standard modal implementation pattern
+export class ConfirmationModal extends Modal {
+  private result: ModalResult | null = null;
+  private onSubmit: (result: ModalResult) => void;
+
+  constructor(app: App, onSubmit: (result: ModalResult) => void) {
+    super(app);
+    this.onSubmit = onSubmit;
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.createEl("h2", { text: "Confirm Action" });
+
+    // Input field
+    const inputEl = contentEl.createEl("textarea");
+
+    // Buttons container
+    const buttonContainer = contentEl.createDiv({ cls: "modal-button-container" });
+
+    // Cancel button (left)
+    buttonContainer.createEl("button", { text: "Cancel" }).addEventListener("click", () => {
+      this.close();
+    });
+
+    // Confirm button (right, primary)
+    const confirmBtn = buttonContainer.createEl("button", {
+      text: "Confirm",
+      cls: "mod-cta"  // Primary button styling
+    });
+    confirmBtn.addEventListener("click", () => {
+      this.result = { reason: inputEl.value };
+      this.close();
+    });
+  }
+
+  onClose() {
+    if (this.result) {
+      this.onSubmit(this.result);
+    }
+    this.contentEl.empty();
+  }
+}
+```
+
+**Patterns to follow:**
+- `onSubmit` callback in constructor
+- Set `result` before `close()`
+- Check `result` in `onClose()` to handle cancel vs confirm
+- Use `mod-cta` class for primary button
+- Always `contentEl.empty()` in onClose
+
+### Negative Test Coverage Pattern
+
+From Issue #788 (Add negative tests for error handling, 128 steps):
+
+```typescript
+// For every happy path, add corresponding error tests
+
+// ✅ Test: Function succeeds
+it("should process valid input", async () => {
+  const result = await processInput({ valid: true });
+  expect(result.success).toBe(true);
+});
+
+// ✅ Test: Function handles invalid input
+it("should throw on invalid input", async () => {
+  await expect(processInput({ valid: false }))
+    .rejects.toThrow("Invalid input");
+});
+
+// ✅ Test: Function handles null/undefined
+it("should throw on null input", async () => {
+  await expect(processInput(null as any))
+    .rejects.toThrow("Input required");
+});
+
+// ✅ Test: Function handles network errors
+it("should propagate network errors", async () => {
+  mockFetch.mockRejectedValue(new Error("Network error"));
+  await expect(processInput({ valid: true }))
+    .rejects.toThrow("Network error");
+});
+
+// ✅ Test: Function handles partial data
+it("should handle missing optional fields", async () => {
+  const result = await processInput({ valid: true, optional: undefined });
+  expect(result.optional).toBeUndefined();
+});
+```
+
+**Coverage checklist for each function:**
+- [ ] Happy path (valid input → expected output)
+- [ ] Invalid input types (null, undefined, wrong type)
+- [ ] Edge cases (empty array, empty string, zero)
+- [ ] Error propagation (upstream errors bubble correctly)
+- [ ] Partial data (optional fields missing)
+
+### Layout Debugging Pattern
+
+From Issue #869 (Layout not displayed with embedded assets, 105 steps):
+
+**When layout doesn't render:**
+
+1. **Check console for errors:**
+   ```bash
+   # In Obsidian Developer Console (Cmd+Option+I)
+   # Look for: "Error rendering layout", "Asset not found", etc.
+   ```
+
+2. **Verify frontmatter structure:**
+   ```yaml
+   ---
+   exo__Instance_class: exo__Layout
+   exo__Asset_label: My Layout
+   ems__Layout_columns:
+     - column:
+         - section: Section Name
+           content:
+             - "[[Embedded Asset]]"
+   ---
+   ```
+
+3. **Check embedded asset exists:**
+   ```bash
+   # Asset must have valid frontmatter
+   grep -l "exo__Instance_class" vault-path/**/*.md
+   ```
+
+4. **Verify section anchors:**
+   ```markdown
+   ## Section Name
+   <!-- Section content renders here -->
+   ```
+
+**Common issues:**
+- Missing `exo__Instance_class` on embedded assets
+- Section name doesn't match anchor heading
+- Wiki-link syntax without .md extension
+- Asset moved/renamed but reference not updated
+
+### Column Visibility Toggle Pattern
+
+From Issue #883 (Hide columns in DailyNote table, 80 steps) and Issue #893:
+
+```typescript
+// Settings interface
+interface TableSettings {
+  showTimeColumn: boolean;
+  showStatusColumn: boolean;
+  showVotesColumn: boolean;
+}
+
+// Table component with column visibility
+const MyTable: React.FC<TableProps> = ({ items, settings }) => {
+  const visibleColumns = useMemo(() => {
+    const cols: Column[] = [
+      { key: 'name', label: 'Name', visible: true },  // Always visible
+      { key: 'time', label: 'Time', visible: settings.showTimeColumn },
+      { key: 'status', label: 'Status', visible: settings.showStatusColumn },
+      { key: 'votes', label: 'Votes', visible: settings.showVotesColumn },
+    ];
+    return cols.filter(col => col.visible);
+  }, [settings]);
+
+  return (
+    <table>
+      <thead>
+        <tr>
+          {visibleColumns.map(col => (
+            <th key={col.key}>{col.label}</th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {items.map(item => (
+          <tr key={item.id}>
+            {visibleColumns.map(col => (
+              <td key={col.key}>{item[col.key]}</td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+};
+```
+
+**Integration with settings:**
+```typescript
+// In renderer
+const toggleColumn = async (columnKey: string) => {
+  this.settings[`show${columnKey}Column`] = !this.settings[`show${columnKey}Column`];
+  await this.plugin.saveSettings();
+  await this.refresh();
+};
+```
+
+### CI Environment Differences Pattern
+
+From Issue #884 (Component tests fail in CI, 63 steps):
+
+**When tests pass locally but fail in CI:**
+
+1. **Check environment differences:**
+   ```bash
+   # Local Node version
+   node --version
+
+   # CI Node version (check .github/workflows/ci.yml)
+   grep "node-version" .github/workflows/ci.yml
+   ```
+
+2. **Check for timing issues:**
+   ```typescript
+   // ❌ BAD: Hardcoded timeout
+   await new Promise(resolve => setTimeout(resolve, 100));
+
+   // ✅ GOOD: Wait for condition
+   await expect.poll(() => element.isVisible()).toBe(true);
+   ```
+
+3. **Check for OS-specific behavior:**
+   ```typescript
+   // ❌ BAD: Windows-style paths
+   const path = 'src\\components\\MyComponent.tsx';
+
+   // ✅ GOOD: Platform-independent paths
+   const path = path.join('src', 'components', 'MyComponent.tsx');
+   ```
+
+4. **Document as known issue if unrelated to changes:**
+   ```markdown
+   ## PR Description
+
+   ### Known CI Issue
+   Component tests fail in CI but pass locally (168/168).
+   This is a known timing issue unrelated to these changes.
+   All other CI checks pass (7/8).
+   ```
+
+### Security Scanning Workflow Pattern
+
+From Issue #802 (Add security scanning workflow, 69 steps):
+
+**CI security workflow structure:**
+```yaml
+# .github/workflows/security.yml
+name: Security Scan
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '0 0 * * 1'  # Weekly on Monday
+
+jobs:
+  npm-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm ci
+      - run: npm audit --audit-level=high
+        continue-on-error: true  # Don't fail PR for moderate issues
+
+  codeql:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: typescript
+      - uses: github/codeql-action/analyze@v3
+```
+
+**Key patterns:**
+- Run on PRs and scheduled (catch both introduced and newly discovered vulnerabilities)
+- Use `continue-on-error: true` for advisory-only checks
+- Require `security-events: write` permission for CodeQL
+- Audit at `high` level to avoid noise from moderate issues
+
+### SPARQL FILTER(CONTAINS()) Optimization
+
+From Issue #732 (157 steps):
+
+```sparql
+# ❌ SLOW: FILTER with CONTAINS on large datasets
+SELECT ?s ?label
+WHERE {
+  ?s exo:Asset_label ?label .
+  FILTER(CONTAINS(LCASE(?label), "search term"))
+}
+# Scans ALL triples → O(n)
+
+# ✅ FAST: Use indexed properties when possible
+SELECT ?s ?label
+WHERE {
+  ?s exo:Instance_class "ems__Task" .  # Indexed lookup first
+  ?s exo:Asset_label ?label .
+  FILTER(CONTAINS(LCASE(?label), "search term"))
+}
+# Filters from smaller subset → O(n/k) where k = class selectivity
+```
+
+**Optimization rules:**
+1. Put indexed BGP patterns (Instance_class, Asset_prototype) BEFORE FILTER
+2. Use exact matches over CONTAINS when possible
+3. Limit results early with LIMIT clause
+4. Use UUID-to-Path index for single-asset lookups (Issue #731)
+
 ### Common Approval Workflow Questions
 
 **Q: User said "not now" - should I delete my post-mortem report?**
