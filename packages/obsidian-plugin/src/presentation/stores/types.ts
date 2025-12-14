@@ -10,6 +10,8 @@ export interface UISettings {
   showFullDateInEffortTimes: boolean;
   focusMode: boolean;
   showEmptySlots: boolean;
+  showTime: boolean;
+  showStatus: boolean;
 }
 
 export interface UIStore extends UISettings {
@@ -19,6 +21,8 @@ export interface UIStore extends UISettings {
   toggleFullDate: () => void;
   toggleFocusMode: () => void;
   toggleEmptySlots: () => void;
+  toggleTime: () => void;
+  toggleStatus: () => void;
   resetToDefaults: () => void;
 }
 

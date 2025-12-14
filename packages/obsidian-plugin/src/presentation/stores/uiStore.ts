@@ -9,6 +9,8 @@ const DEFAULT_UI_SETTINGS: UISettings = {
   showFullDateInEffortTimes: false,
   focusMode: false,
   showEmptySlots: true,
+  showTime: true,
+  showStatus: true,
 };
 
 export const useUIStore = create<UIStore>()(
@@ -61,6 +63,20 @@ export const useUIStore = create<UIStore>()(
             "toggleEmptySlots",
           ),
 
+        toggleTime: () =>
+          set(
+            (state) => ({ showTime: !state.showTime }),
+            false,
+            "toggleTime",
+          ),
+
+        toggleStatus: () =>
+          set(
+            (state) => ({ showStatus: !state.showStatus }),
+            false,
+            "toggleStatus",
+          ),
+
         resetToDefaults: () =>
           set(DEFAULT_UI_SETTINGS, false, "resetToDefaults"),
       }),
@@ -73,6 +89,8 @@ export const useUIStore = create<UIStore>()(
           showFullDateInEffortTimes: state.showFullDateInEffortTimes,
           focusMode: state.focusMode,
           showEmptySlots: state.showEmptySlots,
+          showTime: state.showTime,
+          showStatus: state.showStatus,
         }),
       },
     ),

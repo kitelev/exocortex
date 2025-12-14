@@ -36,6 +36,8 @@ export interface DailyTasksTableProps {
   showFullDateInEffortTimes?: boolean;
   focusMode?: boolean;
   showEmptySlots?: boolean;
+  showTime?: boolean;
+  showStatus?: boolean;
 }
 
 export const DailyTasksTable: React.FC<DailyTasksTableProps> = ({
@@ -49,6 +51,8 @@ export const DailyTasksTable: React.FC<DailyTasksTableProps> = ({
   showFullDateInEffortTimes: propShowFullDate,
   focusMode: propFocusMode,
   showEmptySlots: propShowEmptySlots,
+  showTime: propShowTime,
+  showStatus: propShowStatus,
 }) => {
   const sortState = useTableSortStore((state) => state.dailyTasks);
   const toggleSort = useTableSortStore((state) => state.toggleSort);
@@ -61,6 +65,8 @@ export const DailyTasksTable: React.FC<DailyTasksTableProps> = ({
   );
   const storeFocusMode = useUIStore((state) => state.focusMode);
   const storeShowEmptySlots = useUIStore((state) => state.showEmptySlots);
+  const storeShowTime = useUIStore((state) => state.showTime);
+  const storeShowStatus = useUIStore((state) => state.showStatus);
 
   const showArchived = propShowArchived ?? storeShowArchived;
   const showEffortArea = propShowEffortArea ?? storeShowEffortArea;
@@ -68,6 +74,8 @@ export const DailyTasksTable: React.FC<DailyTasksTableProps> = ({
   const showFullDateInEffortTimes = propShowFullDate ?? storeShowFullDate;
   const focusMode = propFocusMode ?? storeFocusMode;
   const showEmptySlots = propShowEmptySlots ?? storeShowEmptySlots;
+  const showTime = propShowTime ?? storeShowTime;
+  const showStatus = propShowStatus ?? storeShowStatus;
 
   const handleSort = (column: string) => {
     toggleSort("dailyTasks", column);
@@ -388,13 +396,17 @@ export const DailyTasksTable: React.FC<DailyTasksTableProps> = ({
           }}
         >
           <td className="task-name empty-slot-cell">-</td>
-          <td className="task-start empty-slot-cell">
-            {formatTimeDisplay(task.startTimestamp, task.startTime)}
-          </td>
-          <td className="task-end empty-slot-cell">
-            {formatTimeDisplay(task.endTimestamp, task.endTime)}
-          </td>
-          <td className="task-status empty-slot-cell">-</td>
+          {showTime && (
+            <>
+              <td className="task-start empty-slot-cell">
+                {formatTimeDisplay(task.startTimestamp, task.startTime)}
+              </td>
+              <td className="task-end empty-slot-cell">
+                {formatTimeDisplay(task.endTimestamp, task.endTime)}
+              </td>
+            </>
+          )}
+          {showStatus && <td className="task-status empty-slot-cell">-</td>}
           {showEffortArea && <td className="task-effort-area empty-slot-cell">-</td>}
           {showEffortVotes && <td className="task-effort-votes empty-slot-cell">-</td>}
         </tr>
@@ -445,40 +457,46 @@ export const DailyTasksTable: React.FC<DailyTasksTableProps> = ({
             {getDisplayName(task)}
           </a>
         </td>
-        <td className="task-start">
-          {formatTimeDisplay(task.startTimestamp, task.startTime)}
-        </td>
-        <td className="task-end">
-          {formatTimeDisplay(task.endTimestamp, task.endTime)}
-        </td>
-        <td className="task-status">
-          {task.status
-            ? (() => {
-                const isWikiLink =
-                  typeof task.status === "string" &&
-                  /\[\[.*?\]\]/.test(task.status);
-                const parsed = isWikiLink
-                  ? parseWikiLink(task.status)
-                  : { target: task.status };
-                const displayText = parsed.alias || parsed.target;
+        {showTime && (
+          <>
+            <td className="task-start">
+              {formatTimeDisplay(task.startTimestamp, task.startTime)}
+            </td>
+            <td className="task-end">
+              {formatTimeDisplay(task.endTimestamp, task.endTime)}
+            </td>
+          </>
+        )}
+        {showStatus && (
+          <td className="task-status">
+            {task.status
+              ? (() => {
+                  const isWikiLink =
+                    typeof task.status === "string" &&
+                    /\[\[.*?\]\]/.test(task.status);
+                  const parsed = isWikiLink
+                    ? parseWikiLink(task.status)
+                    : { target: task.status };
+                  const displayText = parsed.alias || parsed.target;
 
-                return (
-                  <a
-                    data-href={parsed.target}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      onTaskClick?.(parsed.target, e);
-                    }}
-                    className="internal-link"
-                    style={{ cursor: "pointer" }}
-                  >
-                    {displayText}
-                  </a>
-                );
-              })()
-            : "-"}
-        </td>
+                  return (
+                    <a
+                      data-href={parsed.target}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        onTaskClick?.(parsed.target, e);
+                      }}
+                      className="internal-link"
+                      style={{ cursor: "pointer" }}
+                    >
+                      {displayText}
+                    </a>
+                  );
+                })()
+              : "-"}
+          </td>
+        )}
         {showEffortArea && (
           <td className="task-effort-area">
             {effortAreaParsed ? (
@@ -518,9 +536,13 @@ export const DailyTasksTable: React.FC<DailyTasksTableProps> = ({
   const renderColGroup = () => (
     <colgroup>
       <col className="col-name" />
-      <col className="col-start" style={{ width: "90px" }} />
-      <col className="col-end" style={{ width: "90px" }} />
-      <col className="col-status" style={{ width: "100px" }} />
+      {showTime && (
+        <>
+          <col className="col-start" style={{ width: "90px" }} />
+          <col className="col-end" style={{ width: "90px" }} />
+        </>
+      )}
+      {showStatus && <col className="col-status" style={{ width: "100px" }} />}
       {showEffortArea && <col className="col-effort-area" style={{ width: "120px" }} />}
       {showEffortVotes && <col className="col-votes" style={{ width: "70px" }} />}
     </colgroup>
@@ -538,33 +560,39 @@ export const DailyTasksTable: React.FC<DailyTasksTableProps> = ({
           {sortState.column === "name" &&
             (sortState.order === "asc" ? "↑" : "↓")}
         </th>
-        <th
-          onClick={() => handleSort("start")}
-          className="sortable task-start-header"
-          style={{ cursor: "pointer" }}
-        >
-          Start{" "}
-          {sortState.column === "start" &&
-            (sortState.order === "asc" ? "↑" : "↓")}
-        </th>
-        <th
-          onClick={() => handleSort("end")}
-          className="sortable task-end-header"
-          style={{ cursor: "pointer" }}
-        >
-          End{" "}
-          {sortState.column === "end" &&
-            (sortState.order === "asc" ? "↑" : "↓")}
-        </th>
-        <th
-          onClick={() => handleSort("status")}
-          className="sortable task-status-header"
-          style={{ cursor: "pointer" }}
-        >
-          Status{" "}
-          {sortState.column === "status" &&
-            (sortState.order === "asc" ? "↑" : "↓")}
-        </th>
+        {showTime && (
+          <>
+            <th
+              onClick={() => handleSort("start")}
+              className="sortable task-start-header"
+              style={{ cursor: "pointer" }}
+            >
+              Start{" "}
+              {sortState.column === "start" &&
+                (sortState.order === "asc" ? "↑" : "↓")}
+            </th>
+            <th
+              onClick={() => handleSort("end")}
+              className="sortable task-end-header"
+              style={{ cursor: "pointer" }}
+            >
+              End{" "}
+              {sortState.column === "end" &&
+                (sortState.order === "asc" ? "↑" : "↓")}
+            </th>
+          </>
+        )}
+        {showStatus && (
+          <th
+            onClick={() => handleSort("status")}
+            className="sortable task-status-header"
+            style={{ cursor: "pointer" }}
+          >
+            Status{" "}
+            {sortState.column === "status" &&
+              (sortState.order === "asc" ? "↑" : "↓")}
+          </th>
+        )}
         {showEffortArea && (
           <th
             onClick={() => handleSort("effortArea")}
@@ -681,6 +709,8 @@ export interface DailyTasksTableWithToggleProps
     | "showFullDateInEffortTimes"
     | "focusMode"
     | "showEmptySlots"
+    | "showTime"
+    | "showStatus"
   > {
   showEffortArea?: boolean;
   onToggleEffortArea?: () => void;
@@ -694,6 +724,10 @@ export interface DailyTasksTableWithToggleProps
   onToggleFocusMode?: () => void;
   showEmptySlots?: boolean;
   onToggleEmptySlots?: () => void;
+  showTime?: boolean;
+  onToggleTime?: () => void;
+  showStatus?: boolean;
+  onToggleStatus?: () => void;
 }
 
 export const DailyTasksTableWithToggle: React.FC<
@@ -711,6 +745,10 @@ export const DailyTasksTableWithToggle: React.FC<
   onToggleFocusMode,
   showEmptySlots: propShowEmptySlots,
   onToggleEmptySlots,
+  showTime: propShowTime,
+  onToggleTime,
+  showStatus: propShowStatus,
+  onToggleStatus,
   ...props
 }) => {
   const storeShowEffortArea = useUIStore((state) => state.showEffortArea);
@@ -721,6 +759,8 @@ export const DailyTasksTableWithToggle: React.FC<
   );
   const storeFocusMode = useUIStore((state) => state.focusMode);
   const storeShowEmptySlots = useUIStore((state) => state.showEmptySlots);
+  const storeShowTime = useUIStore((state) => state.showTime);
+  const storeShowStatus = useUIStore((state) => state.showStatus);
 
   const storeToggleEffortArea = useUIStore((state) => state.toggleEffortArea);
   const storeToggleEffortVotes = useUIStore((state) => state.toggleEffortVotes);
@@ -728,6 +768,8 @@ export const DailyTasksTableWithToggle: React.FC<
   const storeToggleFullDate = useUIStore((state) => state.toggleFullDate);
   const storeToggleFocusMode = useUIStore((state) => state.toggleFocusMode);
   const storeToggleEmptySlots = useUIStore((state) => state.toggleEmptySlots);
+  const storeToggleTime = useUIStore((state) => state.toggleTime);
+  const storeToggleStatus = useUIStore((state) => state.toggleStatus);
 
   const showEffortArea = propShowEffortArea ?? storeShowEffortArea;
   const showEffortVotes = propShowEffortVotes ?? storeShowEffortVotes;
@@ -735,6 +777,8 @@ export const DailyTasksTableWithToggle: React.FC<
   const showFullDateInEffortTimes = propShowFullDate ?? storeShowFullDate;
   const focusMode = propFocusMode ?? storeFocusMode;
   const showEmptySlots = propShowEmptySlots ?? storeShowEmptySlots;
+  const showTime = propShowTime ?? storeShowTime;
+  const showStatus = propShowStatus ?? storeShowStatus;
 
   const handleToggleEffortArea = () => {
     if (onToggleEffortArea) {
@@ -781,6 +825,22 @@ export const DailyTasksTableWithToggle: React.FC<
       onToggleEmptySlots();
     } else {
       storeToggleEmptySlots();
+    }
+  };
+
+  const handleToggleTime = () => {
+    if (onToggleTime) {
+      onToggleTime();
+    } else {
+      storeToggleTime();
+    }
+  };
+
+  const handleToggleStatus = () => {
+    if (onToggleStatus) {
+      onToggleStatus();
+    } else {
+      storeToggleStatus();
     }
   };
 
@@ -857,12 +917,38 @@ export const DailyTasksTableWithToggle: React.FC<
           onClick={handleToggleEmptySlots}
           style={{
             marginBottom: "8px",
+            marginRight: "8px",
             padding: "4px 8px",
             cursor: "pointer",
             fontSize: "12px",
           }}
         >
           {showEmptySlots ? "Hide" : "Show"} Empty Slots
+        </button>
+        <button
+          className="exocortex-toggle-time"
+          onClick={handleToggleTime}
+          style={{
+            marginBottom: "8px",
+            marginRight: "8px",
+            padding: "4px 8px",
+            cursor: "pointer",
+            fontSize: "12px",
+          }}
+        >
+          {showTime ? "Hide" : "Show"} Time
+        </button>
+        <button
+          className="exocortex-toggle-status"
+          onClick={handleToggleStatus}
+          style={{
+            marginBottom: "8px",
+            padding: "4px 8px",
+            cursor: "pointer",
+            fontSize: "12px",
+          }}
+        >
+          {showStatus ? "Hide" : "Show"} Status
         </button>
       </div>
       <DailyTasksTable
@@ -873,6 +959,8 @@ export const DailyTasksTableWithToggle: React.FC<
         showFullDateInEffortTimes={showFullDateInEffortTimes}
         focusMode={focusMode}
         showEmptySlots={showEmptySlots}
+        showTime={showTime}
+        showStatus={showStatus}
       />
     </div>
   );
