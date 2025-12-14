@@ -1179,6 +1179,76 @@ describe("ExocortexPlugin", () => {
       expect(mockLayoutRenderer.render).not.toHaveBeenCalled();
     });
 
+    it("should re-render layout when both are removed and metadata is re-added (section anchor embed ![[file#Section]])", async () => {
+      // Arrange
+      plugin.settings.layoutVisible = true;
+
+      // Initial render
+      (plugin as any).autoRenderLayout();
+      await flushPromises();
+
+      // Verify initial layout exists
+      let layoutContainers = mockView.containerEl.querySelectorAll(".exocortex-auto-layout");
+      expect(layoutContainers.length).toBe(1);
+
+      // Reset mock to track re-render
+      mockLayoutRenderer.render.mockClear();
+
+      // Act - Simulate section anchor embed processing where BOTH layout and metadata are removed
+      // This happens with embeds like ![[file#Section]] which trigger full preview re-render
+      mockView.containerEl.innerHTML = "";
+
+      // Wait for MutationObserver to detect removal
+      await new Promise(resolve => setTimeout(resolve, 20));
+
+      // Now simulate Obsidian re-adding the metadata container (but not our layout)
+      const newMetadataContainer = document.createElement("div");
+      newMetadataContainer.className = "metadata-container";
+      mockView.containerEl.appendChild(newMetadataContainer);
+
+      // Wait for MutationObserver callback and debounce
+      await new Promise(resolve => setTimeout(resolve, 100));
+      await flushPromises();
+
+      // Assert - Layout should be re-inserted after metadata container came back
+      layoutContainers = mockView.containerEl.querySelectorAll(".exocortex-auto-layout");
+      expect(layoutContainers.length).toBe(1);
+      expect(mockLayoutRenderer.render).toHaveBeenCalled();
+    });
+
+    it("should handle multiple full re-renders with metadata removal and re-addition", async () => {
+      // Arrange
+      plugin.settings.layoutVisible = true;
+
+      // Initial render
+      (plugin as any).autoRenderLayout();
+      await flushPromises();
+
+      // Reset mock
+      mockLayoutRenderer.render.mockClear();
+
+      // Act - Simulate multiple full re-renders (multiple section anchor embeds)
+      for (let i = 0; i < 3; i++) {
+        // Remove everything
+        mockView.containerEl.innerHTML = "";
+        await new Promise(resolve => setTimeout(resolve, 20));
+
+        // Re-add metadata container
+        const newMetadataContainer = document.createElement("div");
+        newMetadataContainer.className = "metadata-container";
+        mockView.containerEl.appendChild(newMetadataContainer);
+
+        // Wait for re-render
+        await new Promise(resolve => setTimeout(resolve, 150));
+        await flushPromises();
+      }
+
+      // Assert - Should have re-rendered after each metadata re-addition
+      const layoutContainers = mockView.containerEl.querySelectorAll(".exocortex-auto-layout");
+      expect(layoutContainers.length).toBe(1);
+      expect(mockLayoutRenderer.render.mock.calls.length).toBeGreaterThanOrEqual(1);
+    });
+
     it("should debounce multiple rapid re-renders", async () => {
       // Arrange
       plugin.settings.layoutVisible = true;

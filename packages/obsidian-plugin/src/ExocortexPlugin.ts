@@ -327,17 +327,28 @@ export default class ExocortexPlugin extends Plugin {
         return;
       }
 
-      // Check if our layout was removed
+      // Check current state of layout and metadata
       const layoutExists = viewContainer.querySelector(".exocortex-auto-layout");
+      const currentMetadataContainer = viewContainer.querySelector(".metadata-container");
+
+      // If layout exists, nothing to do
       if (layoutExists) {
         return;
       }
 
-      // Check if metadata container still exists (view might be switching)
-      const currentMetadataContainer = viewContainer.querySelector(".metadata-container");
+      // If metadata doesn't exist, don't try to render yet
+      // The view might be switching or doing a full re-render
+      // When metadata comes back, this callback will fire again and we'll re-render then
       if (!currentMetadataContainer) {
         return;
       }
+
+      // At this point: layout is missing, metadata exists
+      // Two scenarios trigger re-render:
+      // 1. Layout was removed while metadata stayed (simple embed case)
+      // 2. Both were removed, metadata came back, layout didn't (section anchor embed case)
+      // The MutationObserver will fire when metadata is re-added, at which point
+      // we detect: layout missing + metadata exists = need to re-render
 
       // Clear existing debounce
       if (debounceTimeout) {
