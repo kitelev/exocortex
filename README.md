@@ -4,9 +4,9 @@
 
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
-[![CI](https://github.com/kitelev/exocortex-obsidian-plugin/actions/workflows/ci.yml/badge.svg)](https://github.com/kitelev/exocortex-obsidian-plugin/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-5700%2B-success)](https://github.com/kitelev/exocortex-obsidian-plugin/actions)
-[![Coverage](https://img.shields.io/badge/coverage-80%25-brightgreen)](https://github.com/kitelev/exocortex-obsidian-plugin/actions/workflows/ci.yml)
+[![CI](https://github.com/kitelev/exocortex/actions/workflows/ci.yml/badge.svg)](https://github.com/kitelev/exocortex/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/tests-5700%2B-success)](https://github.com/kitelev/exocortex/actions)
+[![Coverage](https://img.shields.io/badge/coverage-80%25-brightgreen)](https://github.com/kitelev/exocortex/actions/workflows/ci.yml)
 [![Test Pyramid](https://img.shields.io/badge/pyramid-healthy-brightgreen)](./TESTING.md#test-pyramid-policy)
 
 ## 🎯 What is Exocortex?
@@ -37,9 +37,10 @@ This project is organized as a monorepo with multiple packages:
 
 ```
 packages/
-├── core/                    # exocortex - Shared business logic (storage-agnostic)
+├── exocortex/               # @exocortex/core - Shared business logic (storage-agnostic)
 ├── obsidian-plugin/         # @exocortex/obsidian-plugin - Obsidian UI integration
-└── cli/                     # @exocortex/cli - Command-line automation tool
+├── cli/                     # @kitelev/exocortex-cli - Command-line automation tool
+└── test-utils/              # Shared testing utilities
 ```
 
 ### Package Comparison
@@ -47,7 +48,7 @@ packages/
 | Feature | Obsidian Plugin | CLI |
 |---------|----------------|-----|
 | **Primary Use** | Interactive UI in Obsidian | Terminal automation & scripting |
-| **Installation** | Obsidian plugin manager | `npm install -g @exocortex/cli` |
+| **Installation** | Obsidian plugin manager | `npm install -g @kitelev/exocortex-cli` |
 | **Task Management** | ✅ Visual buttons & commands | ✅ All status transitions |
 | **SPARQL Queries** | ✅ Live results in notes | ✅ Table/JSON/CSV output |
 | **Asset Creation** | ✅ Modal dialogs | ✅ Command-line flags |
@@ -57,7 +58,7 @@ packages/
 
 ### CLI Package Overview
 
-The CLI (`@exocortex/cli`) enables managing your Exocortex vault from the terminal without opening Obsidian. It's ideal for:
+The CLI (`@kitelev/exocortex-cli`) enables managing your Exocortex vault from the terminal without opening Obsidian. It's ideal for:
 
 - **Automation scripts** - Schedule tasks, update statuses, create assets programmatically
 - **CI/CD pipelines** - Integrate vault operations into GitHub Actions, GitLab CI
@@ -68,10 +69,10 @@ The CLI (`@exocortex/cli`) enables managing your Exocortex vault from the termin
 
 ```bash
 # Global installation
-npm install -g @exocortex/cli
+npm install -g @kitelev/exocortex-cli
 
 # Or use directly with npx
-npx @exocortex/cli --help
+npx @kitelev/exocortex-cli --help
 ```
 
 **CLI Command Categories:**
@@ -89,16 +90,16 @@ npx @exocortex/cli --help
 
 ```bash
 # Execute SPARQL query
-exocortex sparql query "SELECT ?task ?label WHERE { ?task exo:Instance_class ems:Task . ?task exo:Asset_label ?label }" --vault ~/vault
+exocortex-cli sparql query "SELECT ?task ?label WHERE { ?task exo:Instance_class ems:Task . ?task exo:Asset_label ?label }" --vault ~/vault
 
 # Complete a task
-exocortex command complete "tasks/my-task.md" --vault ~/vault
+exocortex-cli command complete "tasks/my-task.md" --vault ~/vault
 
 # Create a new task
-exocortex command create-task "tasks/new-task.md" --label "Implement feature" --vault ~/vault
+exocortex-cli command create-task "tasks/new-task.md" --label "Implement feature" --vault ~/vault
 
 # Batch operations (atomic)
-exocortex batch --input '[{"command":"start","filepath":"task1.md"},{"command":"complete","filepath":"task2.md"}]' --vault ~/vault --atomic
+exocortex-cli batch --input '[{"command":"start","filepath":"task1.md"},{"command":"complete","filepath":"task2.md"}]' --vault ~/vault --atomic
 ```
 
 For complete CLI documentation, see:
@@ -118,7 +119,7 @@ The monorepo structure enables:
 **Manual Installation**:
 ```bash
 cd /your/vault/.obsidian/plugins
-git clone https://github.com/kitelev/exocortex-obsidian-plugin
+git clone https://github.com/kitelev/exocortex
 cd exocortex-obsidian-plugin
 npm install && npm run build
 ```
@@ -774,7 +775,7 @@ All pull requests must pass automated quality gates:
 
 ```bash
 # Clone repository
-git clone https://github.com/kitelev/exocortex-obsidian-plugin
+git clone https://github.com/kitelev/exocortex
 cd exocortex-obsidian-plugin
 
 # Install dependencies (monorepo root installs all packages)
@@ -920,8 +921,8 @@ MIT License - see [LICENSE](./LICENSE) for details.
 
 ## 🤝 Support
 
-- **Issues**: [GitHub Issues](https://github.com/kitelev/exocortex-obsidian-plugin/issues)
-- **Releases**: [GitHub Releases](https://github.com/kitelev/exocortex-obsidian-plugin/releases)
+- **Issues**: [GitHub Issues](https://github.com/kitelev/exocortex/issues)
+- **Releases**: [GitHub Releases](https://github.com/kitelev/exocortex/releases)
 - **Documentation**: This README and linked documentation files
 
 ---

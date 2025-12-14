@@ -35,7 +35,7 @@ Exocortex is a **knowledge management system** that gives users convenient contr
 
 **⚠️ THIS IS THE MOST IMPORTANT RULE - VIOLATION IS UNACCEPTABLE ⚠️**
 
-**The `exocortex-obsidian-plugin/` directory is STRICTLY READ-ONLY.**
+**The `exocortex/` directory is STRICTLY READ-ONLY.**
 
 ALL code changes MUST happen through git worktrees in the `worktrees/` subdirectory.
 
@@ -50,7 +50,7 @@ ALL code changes MUST happen through git worktrees in the `worktrees/` subdirect
 
 **❌ ABSOLUTELY FORBIDDEN:**
 ```bash
-cd /Users/kitelev/Documents/exocortex-development/exocortex-obsidian-plugin
+cd /Users/kitelev/Developer/exocortex-development/exocortex
 vim src/some-file.ts              # ❌ NEVER DO THIS!
 git commit -am "changes"          # ❌ BLOCKED!
 ```
@@ -58,7 +58,7 @@ git commit -am "changes"          # ❌ BLOCKED!
 **✅ ONLY CORRECT WAY:**
 ```bash
 # 1. Create worktree
-cd /Users/kitelev/Documents/exocortex-development/exocortex-obsidian-plugin
+cd /Users/kitelev/Developer/exocortex-development/exocortex
 git worktree add ../worktrees/exocortex-[agent]-[type]-[task] -b feature/[task]
 
 # 2. Work in worktree
@@ -300,8 +300,8 @@ When working on visualization components:
 ## 📁 Directory Structure
 
 ```
-/Users/kitelev/Documents/exocortex-development/
-├── exocortex-obsidian-plugin/   # Main repository (READ-ONLY for AI agents)
+/Users/kitelev/Developer/exocortex-development/
+├── exocortex/   # Main repository (READ-ONLY for AI agents)
 │   ├── CLAUDE.md                # Complete development guidelines
 │   ├── AGENTS.md                # AI agent instructions (links here)
 │   └── .github/
@@ -428,14 +428,14 @@ worktrees/exocortex-aider1-perf-query-cache
 
 ### Initial Setup (First Time)
 ```bash
-cd /Users/kitelev/Documents/exocortex-development/exocortex-obsidian-plugin
+cd /Users/kitelev/Developer/exocortex-development/exocortex
 npm install
 ```
 
 ### Create Worktree
 ```bash
 # Sync main first
-cd /Users/kitelev/Documents/exocortex-development/exocortex-obsidian-plugin
+cd /Users/kitelev/Developer/exocortex-development/exocortex
 git fetch origin main
 git pull origin main --rebase
 
@@ -476,7 +476,7 @@ npm run test:e2e
 
 ### Before Starting Work
 ```bash
-cd /Users/kitelev/Documents/exocortex-development/exocortex-obsidian-plugin
+cd /Users/kitelev/Developer/exocortex-development/exocortex
 git fetch origin main
 git pull origin main --rebase
 # Now create worktree
@@ -1332,7 +1332,7 @@ If SPARQL query executes without errors but returns 0 results:
 
 1. **Check active worktrees**:
    ```bash
-   cd exocortex-obsidian-plugin
+   cd exocortex
    git worktree list
    ```
 
@@ -1364,7 +1364,7 @@ If SPARQL query executes without errors but returns 0 results:
 
 ### 1. Create Worktree
 ```bash
-cd /Users/kitelev/Documents/exocortex-development/exocortex-obsidian-plugin
+cd /Users/kitelev/Developer/exocortex-development/exocortex
 git fetch origin main && git pull origin main --rebase
 git worktree add ../worktrees/exocortex-[agent]-[type]-[task] -b feature/[task]
 cd ../worktrees/exocortex-[agent]-[type]-[task]
@@ -1374,7 +1374,7 @@ npm install
 ### 2. Develop
 ```bash
 # Work in worktree
-cd /Users/kitelev/Documents/exocortex-development/worktrees/exocortex-[agent]-[type]-[task]
+cd /Users/kitelev/Developer/exocortex-development/worktrees/exocortex-[agent]-[type]-[task]
 
 # Follow all rules
 # Run tests frequently: npm test
@@ -1391,7 +1391,7 @@ gh pr checks --watch  # Wait for GREEN
 
 ### 4. Cleanup After Merge
 ```bash
-cd /Users/kitelev/Documents/exocortex-development/exocortex-obsidian-plugin
+cd /Users/kitelev/Developer/exocortex-development/exocortex
 git worktree remove ../worktrees/exocortex-[agent]-[type]-[task]
 git branch -d feature/[task]
 ```
@@ -1407,7 +1407,7 @@ Check with `pwd` - should contain `worktrees/` in path.
 
 Fix:
 ```bash
-cd /Users/kitelev/Documents/exocortex-development/exocortex-obsidian-plugin
+cd /Users/kitelev/Developer/exocortex-development/exocortex
 git worktree remove ../<wrong-name>
 # Create in correct location: ../worktrees/...
 ```
@@ -1515,10 +1515,10 @@ constructor(
 ## 📚 Additional Documentation
 
 For complete development rules and patterns, see:
-- `exocortex-obsidian-plugin/CLAUDE.md` - Comprehensive guidelines
-- `exocortex-obsidian-plugin/README.md` - Project features and setup
-- `exocortex-obsidian-plugin/ARCHITECTURE.md` - Architecture patterns
-- `exocortex-obsidian-plugin/docs/PROPERTY_SCHEMA.md` - Frontmatter vocabulary
+- `exocortex/CLAUDE.md` - Comprehensive guidelines
+- `exocortex/README.md` - Project features and setup
+- `exocortex/ARCHITECTURE.md` - Architecture patterns
+- `exocortex/docs/PROPERTY_SCHEMA.md` - Frontmatter vocabulary
 
 ---
 
@@ -1528,7 +1528,7 @@ For complete development rules and patterns, see:
 # 1. Read this file (done!)
 
 # 2. Create your worktree
-cd /Users/kitelev/Documents/exocortex-development/exocortex-obsidian-plugin
+cd /Users/kitelev/Developer/exocortex-development/exocortex
 git fetch origin main && git pull origin main --rebase
 git worktree add ../worktrees/exocortex-[your-agent]-feat-[task] -b feature/[task]
 cd ../worktrees/exocortex-[your-agent]-feat-[task]
@@ -1544,7 +1544,7 @@ git push origin feature/[task]
 gh pr create
 
 # 5. After merge, cleanup
-cd /Users/kitelev/Documents/exocortex-development/exocortex-obsidian-plugin
+cd /Users/kitelev/Developer/exocortex-development/exocortex
 git worktree remove ../worktrees/exocortex-[your-agent]-feat-[task]
 git branch -d feature/[task]
 ```
