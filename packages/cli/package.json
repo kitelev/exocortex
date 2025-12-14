@@ -1,5 +1,5 @@
 {
-  "name": "@exocortex/cli",
+  "name": "@kitelev/exocortex-cli",
   "version": "0.1.0",
   "description": "CLI tool for Exocortex knowledge management system - SPARQL queries, task management, and more",
   "main": "dist/index.js",

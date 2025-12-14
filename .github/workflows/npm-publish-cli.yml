@@ -71,7 +71,7 @@ jobs:
         working-directory: packages/cli
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          if npm view @exocortex/cli@$VERSION version 2>/dev/null; then
+          if npm view @kitelev/exocortex-cli@$VERSION version 2>/dev/null; then
             echo "Version $VERSION already exists on npm"
             echo "exists=true" >> $GITHUB_OUTPUT
           else
@@ -97,7 +97,7 @@ jobs:
           if [ "${{ steps.check_version.outputs.exists }}" == "true" ]; then
             echo "⚠️ Version $VERSION already published, skipped"
           else
-            echo "✅ @exocortex/cli@$VERSION published to npm"
-            echo "📦 Install: npm install -g @exocortex/cli"
-            echo "🔗 https://www.npmjs.com/package/@exocortex/cli"
+            echo "✅ @kitelev/exocortex-cli@$VERSION published to npm"
+            echo "📦 Install: npm install -g @kitelev/exocortex-cli"
+            echo "🔗 https://www.npmjs.com/package/@kitelev/exocortex-cli"
           fi
