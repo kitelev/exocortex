@@ -49,6 +49,15 @@ jest.mock("../../../../src/presentation/modals/TrashReasonModal", () => ({
   }),
 }));
 
+// Mock ClassSelectionModal
+jest.mock("../../../../src/presentation/modals/ClassSelectionModal", () => ({
+  ClassSelectionModal: jest.fn().mockImplementation((app, classes, onSubmit) => {
+    return {
+      open: jest.fn(),
+    };
+  }),
+}));
+
 export interface CommandManagerTestContext {
   mockApp: any;
   mockPlugin: any;

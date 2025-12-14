@@ -18,6 +18,7 @@ jest.mock("exocortex", () => ({
   LabelToAliasService: jest.fn(),
   AssetConversionService: jest.fn(),
   FleetingNoteCreationService: jest.fn(),
+  GenericAssetCreationService: jest.fn(),
   DI_TOKENS: {
     IVaultAdapter: Symbol("IVaultAdapter"),
     ILogger: Symbol("ILogger"),
@@ -79,6 +80,7 @@ jest.mock("../../../src/application/commands/ConvertProjectToTaskCommand");
 jest.mock("../../../src/application/commands/SetFocusAreaCommand");
 jest.mock("../../../src/application/commands/OpenQueryBuilderCommand");
 jest.mock("../../../src/application/commands/EditPropertiesCommand");
+jest.mock("../../../src/application/commands/CreateAssetCommand");
 
 // Mock SPARQLQueryService and OntologySchemaService
 jest.mock("../../../src/application/services/SPARQLQueryService", () => ({
@@ -96,6 +98,14 @@ jest.mock("../../../src/application/services/OntologySchemaService", () => ({
     getClassHierarchy: jest.fn(),
     isDeprecatedProperty: jest.fn(),
     getDefaultProperties: jest.fn(),
+  })),
+}));
+
+jest.mock("../../../src/application/services/ClassDiscoveryService", () => ({
+  ClassDiscoveryService: jest.fn().mockImplementation(() => ({
+    discoverClasses: jest.fn().mockResolvedValue([]),
+    getCreatableClasses: jest.fn().mockResolvedValue([]),
+    getDefaultClasses: jest.fn().mockReturnValue([]),
   })),
 }));
 
@@ -185,8 +195,8 @@ describe("CommandRegistry", () => {
       const registry = new CommandRegistry(mockApp, mockPlugin);
       const commands = registry.getAllCommands();
 
-      // 33 commands are registered based on source
-      expect(commands.length).toBe(33);
+      // 34 commands are registered based on source (including CreateAssetCommand)
+      expect(commands.length).toBe(34);
     });
 
     it("should return same array on multiple calls", () => {

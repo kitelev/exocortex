@@ -27,6 +27,7 @@ import { SupervisionCreationService } from "../services/SupervisionCreationServi
 import { NoteToRDFConverter } from "../services/NoteToRDFConverter";
 import { AreaHierarchyBuilder } from "../services/AreaHierarchyBuilder";
 import { URIConstructionService } from "../services/URIConstructionService";
+import { GenericAssetCreationService } from "../services/GenericAssetCreationService";
 
 /**
  * Register all core services with the DI container.
@@ -97,6 +98,10 @@ export function registerCoreServices(
   targetContainer.registerSingleton(
     DI_TOKENS.SupervisionCreationService,
     SupervisionCreationService,
+  );
+  targetContainer.registerSingleton(
+    DI_TOKENS.GenericAssetCreationService,
+    GenericAssetCreationService,
   );
 
   // Utility services (depend on IVaultAdapter)

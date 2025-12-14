@@ -54,6 +54,11 @@ export { PlanningService } from "./services/PlanningService";
 export { AssetConversionService } from "./services/AssetConversionService";
 export { SessionEventService } from "./services/SessionEventService";
 export { URIConstructionService } from "./services/URIConstructionService";
+export {
+  GenericAssetCreationService,
+  type GenericAssetCreationConfig,
+  type AssetPropertyDefinition,
+} from "./services/GenericAssetCreationService";
 export type {
   URIConstructionOptions,
   AssetMetadata,

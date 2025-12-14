@@ -16,12 +16,14 @@ import {
   LabelToAliasService,
   AssetConversionService,
   FleetingNoteCreationService,
+  GenericAssetCreationService,
   DI_TOKENS,
   registerCoreServices,
 } from "exocortex";
 import { LoggerFactory } from '@plugin/adapters/logging/LoggerFactory';
 import { SPARQLQueryService } from '@plugin/application/services/SPARQLQueryService';
 import { OntologySchemaService } from '@plugin/application/services/OntologySchemaService';
+import { ClassDiscoveryService } from '@plugin/application/services/ClassDiscoveryService';
 
 import { CreateTaskCommand } from "./CreateTaskCommand";
 import { CreateProjectCommand } from "./CreateProjectCommand";
@@ -56,6 +58,7 @@ import { ConvertProjectToTaskCommand } from "./ConvertProjectToTaskCommand";
 import { SetFocusAreaCommand } from "./SetFocusAreaCommand";
 import { OpenQueryBuilderCommand } from "./OpenQueryBuilderCommand";
 import { EditPropertiesCommand } from "./EditPropertiesCommand";
+import { CreateAssetCommand } from "./CreateAssetCommand";
 
 export class CommandRegistry {
   private commands: ICommand[] = [];
@@ -91,10 +94,12 @@ export class CommandRegistry {
     const labelToAliasService = container.resolve(LabelToAliasService);
     const assetConversionService = container.resolve(AssetConversionService);
     const fleetingNoteCreationService = container.resolve(FleetingNoteCreationService);
+    const genericAssetCreationService = container.resolve(GenericAssetCreationService);
 
     // Create ontology schema service for dynamic forms
     const sparqlQueryService = new SPARQLQueryService(app, logger);
     const ontologySchemaService = new OntologySchemaService(sparqlQueryService);
+    const classDiscoveryService = new ClassDiscoveryService(sparqlQueryService);
 
     this.commands = [
       new CreateTaskCommand(app, taskCreationService, this.vaultAdapter, plugin, ontologySchemaService),
@@ -130,6 +135,7 @@ export class CommandRegistry {
       new SetFocusAreaCommand(app, plugin),
       new OpenQueryBuilderCommand(app, plugin),
       new EditPropertiesCommand(app, plugin),
+      new CreateAssetCommand(app, genericAssetCreationService, this.vaultAdapter, classDiscoveryService, ontologySchemaService),
     ];
   }
 

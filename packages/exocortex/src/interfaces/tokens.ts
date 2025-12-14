@@ -34,6 +34,7 @@ export const DI_TOKENS = {
   ConceptCreationService: Symbol.for("ConceptCreationService"),
   FleetingNoteCreationService: Symbol.for("FleetingNoteCreationService"),
   SupervisionCreationService: Symbol.for("SupervisionCreationService"),
+  GenericAssetCreationService: Symbol.for("GenericAssetCreationService"),
 
   // Frontmatter services
   TaskFrontmatterGenerator: Symbol.for("TaskFrontmatterGenerator"),
