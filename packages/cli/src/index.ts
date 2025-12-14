@@ -6,6 +6,7 @@ import { sparqlQueryCommand } from "./commands/sparql-query.js";
 import { commandCommand } from "./commands/command.js";
 import { watchCommand } from "./commands/watch.js";
 import { batchCommand } from "./commands/batch.js";
+import { batchRepairCommand } from "./commands/batch-repair.js";
 import { resolveCommand } from "./commands/resolve.js";
 
 // Version injected at build time by esbuild (see esbuild.config.mjs)
@@ -26,6 +27,7 @@ program
 program.addCommand(commandCommand());
 program.addCommand(watchCommand());
 program.addCommand(batchCommand());
+program.addCommand(batchRepairCommand());
 program.addCommand(resolveCommand());
 
 program.parse();
