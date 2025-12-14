@@ -2538,8 +2538,45 @@
   border-top: none;
 }
 
-/* Mobile responsive - narrower columns on small screens */
+/* ============================================================================
+   Mobile Layout Fix (Issue #877)
+   ============================================================================ */
+
+/*
+ * Problem: On iPhone, the table layout becomes unusable because:
+ * 1. Fixed column widths squeeze the Name column to single characters
+ * 2. table-layout: fixed distributes space equally, leaving no room for flexible columns
+ * 3. No horizontal scroll means content is truncated
+ *
+ * Solution: Enable horizontal scroll on mobile with minimum table width
+ * This preserves readability while allowing full content access via scrolling.
+ */
+
+/* Daily tasks table container - enable horizontal scroll on mobile */
+.exocortex-daily-tasks {
+  width: 100%;
+}
+
+/* Mobile: Enable horizontal scroll for task tables */
 @media (max-width: 768px) {
+  /* Container gets horizontal scroll */
+  .exocortex-daily-tasks {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Table maintains minimum readable width */
+  .exocortex-daily-tasks .exocortex-tasks-table {
+    min-width: 550px;
+  }
+
+  /* Name column - ensure minimum readable width */
+  .exocortex-tasks-table th.task-name-header,
+  .exocortex-tasks-table td.task-name {
+    min-width: 150px;
+  }
+
+  /* Time columns - compact but readable */
   .exocortex-tasks-table th.task-start-header,
   .exocortex-tasks-table td.task-start,
   .exocortex-tasks-table th.task-end-header,
@@ -2548,11 +2585,13 @@
     font-size: 0.85em;
   }
 
+  /* Status column - compact */
   .exocortex-tasks-table th.task-status-header,
   .exocortex-tasks-table td.task-status {
     width: 65px;
   }
 
+  /* Optional columns - compact when visible */
   .exocortex-tasks-table th.task-effort-area-header,
   .exocortex-tasks-table td.task-effort-area {
     width: 80px;
@@ -2561,6 +2600,30 @@
   .exocortex-tasks-table th.task-votes-header,
   .exocortex-tasks-table td.task-effort-votes {
     width: 50px;
+  }
+
+  /* Virtualized table container - also needs horizontal scroll */
+  .exocortex-virtualized {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .exocortex-virtualized .exocortex-tasks-table-header,
+  .exocortex-virtualized .exocortex-virtual-scroll-container .exocortex-tasks-table {
+    min-width: 550px;
+  }
+
+  /* Controls wrapper - prevent from being too wide */
+  .exocortex-daily-tasks-controls {
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 10px;
+  }
+
+  /* Smaller control buttons on mobile */
+  .exocortex-daily-tasks-controls button {
+    padding: 3px 6px;
+    font-size: 11px;
   }
 }
 
@@ -2622,8 +2685,27 @@
   white-space: nowrap;
 }
 
-/* Mobile responsive */
+/* Mobile responsive - Projects table also needs horizontal scroll (Issue #877) */
 @media (max-width: 768px) {
+  /* Projects section and table container get horizontal scroll */
+  .exocortex-daily-projects-section,
+  .exocortex-daily-projects {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Projects table maintains minimum readable width */
+  .exocortex-daily-projects-section .exocortex-projects-table,
+  .exocortex-daily-projects .exocortex-projects-table {
+    min-width: 450px;
+  }
+
+  /* Name column - ensure minimum readable width */
+  .exocortex-projects-table th:first-child,
+  .exocortex-projects-table td.project-name {
+    min-width: 150px;
+  }
+
   .exocortex-projects-table th:nth-child(2),
   .exocortex-projects-table td.project-start,
   .exocortex-projects-table th:nth-child(3),
