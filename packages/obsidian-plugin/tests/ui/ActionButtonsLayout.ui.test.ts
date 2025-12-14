@@ -12,7 +12,7 @@ import {
   IVaultAdapter,
   registerCoreServices,
   resetContainer,
-} from "@exocortex/core";
+} from "exocortex";
 
 describe("Layout Settings and Structure", () => {
   let renderer: UniversalLayoutRenderer;

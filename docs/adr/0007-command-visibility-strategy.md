@@ -212,7 +212,7 @@ describe('CommandVisibility', () => {
 ## Future
 
 After Issue #122:
-- Move `CommandVisibility.ts` to `@exocortex/core`
+- Move `CommandVisibility.ts` to `exocortex`
 - Use in both Plugin and CLI for consistent behavior
 - CLI can filter available commands based on file context
 

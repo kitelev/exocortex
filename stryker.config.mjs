@@ -11,10 +11,10 @@
  *
  * Usage:
  *   npm run test:mutation              # Run on critical files (fast)
- *   npm run test:mutation:core         # Run on @exocortex/core package utilities
+ *   npm run test:mutation:core         # Run on exocortex package utilities
  *   npm run test:mutation:report       # Open HTML report
  *
- * Note: This configuration is optimized for the @exocortex/core package utilities.
+ * Note: This configuration is optimized for the exocortex package utilities.
  * Uses inPlace mode to avoid sandbox copying issues with monorepo structure.
  *
  * @see https://stryker-mutator.io/docs/stryker-js/configuration/
@@ -30,14 +30,14 @@ export default {
   testRunner: "jest",
 
   // Jest configuration - inline config for proper monorepo test resolution
-  // This runs tests from packages/core against mutations in core utilities
+  // This runs tests from packages/exocortex against mutations in core utilities
   jest: {
     projectType: "custom",
     config: {
       preset: "ts-jest",
       testEnvironment: "node",
       // Run tests from core package
-      rootDir: "packages/core",
+      rootDir: "packages/exocortex",
       // Only run utility tests - other tests have pre-existing failures
       testMatch: ["<rootDir>/tests/utilities/**/*.test.ts"],
       // Setup reflect-metadata for TSyringe
@@ -88,18 +88,18 @@ export default {
   // These files have high business logic impact and comprehensive tests
   mutate: [
     // Core utilities - high value, well-tested
-    "packages/core/src/utilities/FrontmatterService.ts",
-    "packages/core/src/utilities/DateFormatter.ts",
-    "packages/core/src/utilities/MetadataHelpers.ts",
-    "packages/core/src/utilities/WikiLinkHelpers.ts",
+    "packages/exocortex/src/utilities/FrontmatterService.ts",
+    "packages/exocortex/src/utilities/DateFormatter.ts",
+    "packages/exocortex/src/utilities/MetadataHelpers.ts",
+    "packages/exocortex/src/utilities/WikiLinkHelpers.ts",
 
     // Command visibility rules - critical business logic
-    "packages/core/src/domain/commands/visibility/TaskVisibilityRules.ts",
-    "packages/core/src/domain/commands/visibility/EffortVisibilityRules.ts",
-    "packages/core/src/domain/commands/visibility/ProjectVisibilityRules.ts",
-    "packages/core/src/domain/commands/visibility/AreaVisibilityRules.ts",
-    "packages/core/src/domain/commands/visibility/AssetVisibilityRules.ts",
-    "packages/core/src/domain/commands/visibility/helpers.ts",
+    "packages/exocortex/src/domain/commands/visibility/TaskVisibilityRules.ts",
+    "packages/exocortex/src/domain/commands/visibility/EffortVisibilityRules.ts",
+    "packages/exocortex/src/domain/commands/visibility/ProjectVisibilityRules.ts",
+    "packages/exocortex/src/domain/commands/visibility/AreaVisibilityRules.ts",
+    "packages/exocortex/src/domain/commands/visibility/AssetVisibilityRules.ts",
+    "packages/exocortex/src/domain/commands/visibility/helpers.ts",
   ],
 
   // Ignore generated/external/test code

@@ -43,7 +43,7 @@ The Exocortex project follows the **Test Pyramid** architecture pattern, which p
 **Framework**: Jest + ts-jest
 
 **Locations**:
-- `packages/core/tests/unit/` - Core business logic
+- `packages/exocortex/tests/unit/` - Core business logic
 - `packages/obsidian-plugin/tests/unit/` - Plugin-specific logic
 - `packages/cli/tests/unit/` - CLI commands and utilities
 

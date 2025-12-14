@@ -47,8 +47,8 @@ jest.mock("../../src/presentation/components/AssetRelationsTable", () => ({
   AssetRelationsTableWithToggle: jest.fn(() => null),
 }));
 
-jest.mock("@exocortex/core", () => ({
-  ...jest.requireActual("@exocortex/core"),
+jest.mock("exocortex", () => ({
+  ...jest.requireActual("exocortex"),
   MetadataHelpers: {
     isAssetArchived: jest.fn().mockImplementation((metadata) => {
       return metadata?.exo__Asset_isArchived === true || metadata?.archived === true;
@@ -82,7 +82,7 @@ describe("RelationsRenderer", () => {
   let mockPlugin: any;
   let mockSettings: any;
   let mockRefresh: jest.Mock;
-  const { MetadataHelpers } = require("@exocortex/core");
+  const { MetadataHelpers } = require("exocortex");
   const { BlockerHelpers } = require("../../src/presentation/utils/BlockerHelpers");
 
   beforeEach(() => {

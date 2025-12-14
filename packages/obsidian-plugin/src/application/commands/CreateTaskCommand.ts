@@ -6,7 +6,7 @@ import {
   TaskCreationService,
   WikiLinkHelpers,
   LoggingService,
-} from "@exocortex/core";
+} from "exocortex";
 import { LabelInputModal, type LabelInputModalResult } from '@plugin/presentation/modals/LabelInputModal';
 import { DynamicAssetCreationModal, type DynamicAssetCreationResult } from '@plugin/presentation/modals/DynamicAssetCreationModal';
 import { ObsidianVaultAdapter } from '@plugin/adapters/ObsidianVaultAdapter';

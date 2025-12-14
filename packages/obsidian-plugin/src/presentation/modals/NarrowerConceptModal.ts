@@ -1,5 +1,5 @@
 import { App, Modal } from "obsidian";
-import { FilenameValidator } from "@exocortex/core";
+import { FilenameValidator } from "exocortex";
 
 export interface NarrowerConceptModalResult {
   fileName: string | null;

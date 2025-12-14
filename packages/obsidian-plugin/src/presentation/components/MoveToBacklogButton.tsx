@@ -1,6 +1,6 @@
 import React from "react";
 import { TFile } from "obsidian";
-import { canMoveToBacklog, CommandVisibilityContext } from "@exocortex/core";
+import { canMoveToBacklog, CommandVisibilityContext } from "exocortex";
 
 export interface MoveToBacklogButtonProps {
   instanceClass: string | string[] | null;

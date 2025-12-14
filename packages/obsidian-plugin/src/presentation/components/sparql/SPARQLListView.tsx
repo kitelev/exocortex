@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from "react";
-import type { Triple } from "@exocortex/core";
+import type { Triple } from "exocortex";
 
 export interface SPARQLListViewProps {
   triples: Triple[];

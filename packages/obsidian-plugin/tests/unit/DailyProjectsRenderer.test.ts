@@ -2,7 +2,7 @@ import { DailyProjectsRenderer } from "../../src/presentation/renderers/DailyPro
 import { TFile } from "obsidian";
 import { ExocortexSettings } from "../../src/domain/settings/ExocortexSettings";
 import { ILogger } from "../../src/infrastructure/logging/ILogger";
-import { MetadataExtractor, IVaultAdapter } from "@exocortex/core";
+import { MetadataExtractor, IVaultAdapter } from "exocortex";
 import { ReactRenderer } from "../../src/presentation/utils/ReactRenderer";
 
 describe("DailyProjectsRenderer", () => {

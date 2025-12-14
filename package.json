@@ -1,5 +1,5 @@
 {
-  "name": "exocortex-obsidian-plugin",
+  "name": "exocortex-monorepo",
   "version": "0.0.0-dev",
   "description": "Exocortex: A configurable UI system for Obsidian that transforms knowledge management through ontology-driven layouts and semantic capabilities",
   "main": "main.js",
@@ -11,7 +11,7 @@
   },
   "scripts": {
     "dev": "npm run dev -w @exocortex/obsidian-plugin",
-    "build": "npm run build -w @exocortex/core && npm run build --workspaces --if-present && tsc -noEmit -skipLibCheck && node packages/obsidian-plugin/esbuild.config.mjs production",
+    "build": "npm run build -w exocortex && npm run build --workspaces --if-present && tsc -noEmit -skipLibCheck && node packages/obsidian-plugin/esbuild.config.mjs production",
     "lint": "eslint packages/obsidian-plugin/src --ext .ts,.tsx",
     "lint:fix": "eslint packages/obsidian-plugin/src --ext .ts,.tsx --fix",
     "format": "prettier --write 'packages/**/*.{ts,tsx}'",
@@ -37,7 +37,7 @@
     "bdd:report": "node scripts/generate-bdd-report.js",
     "bdd:check": "node scripts/bdd-coverage.js --fail-on-uncovered",
     "test:mutation": "stryker run",
-    "test:mutation:core": "stryker run --mutate 'packages/core/src/**/*.ts'",
+    "test:mutation:core": "stryker run --mutate 'packages/exocortex/src/**/*.ts'",
     "test:mutation:report": "open mutation-report.html",
     "test:pyramid": "node scripts/check-test-pyramid.js",
     "test:pyramid:strict": "node scripts/check-test-pyramid.js --strict",

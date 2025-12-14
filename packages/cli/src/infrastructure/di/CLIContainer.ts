@@ -1,6 +1,6 @@
 import "reflect-metadata";
 import { container } from "tsyringe";
-import { DI_TOKENS } from "@exocortex/core";
+import { DI_TOKENS } from "exocortex";
 import { NodeLogger } from "./NodeLogger";
 import { NodeEventBus } from "./NodeEventBus";
 import { NodeConfiguration } from "./NodeConfiguration";

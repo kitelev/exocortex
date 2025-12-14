@@ -1,4 +1,4 @@
-import type { InMemoryTripleStore, SolutionMapping, Triple } from "@exocortex/core";
+import type { InMemoryTripleStore, SolutionMapping, Triple } from "exocortex";
 import { SPARQLQueryService } from '@plugin/application/services/SPARQLQueryService';
 import type ExocortexPlugin from '@plugin/ExocortexPlugin';
 

@@ -3,7 +3,7 @@
  */
 
 import type { App, Plugin, TFile } from "obsidian";
-import type { IVaultAdapter } from "@exocortex/core";
+import type { IVaultAdapter } from "exocortex";
 import type ExocortexPlugin from '@plugin/ExocortexPlugin';
 
 /**

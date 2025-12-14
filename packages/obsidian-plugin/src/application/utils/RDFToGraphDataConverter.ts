@@ -1,5 +1,5 @@
-import type { Triple } from "@exocortex/core";
-import type { GraphData, GraphNode, GraphEdge } from "@exocortex/core";
+import type { Triple } from "exocortex";
+import type { GraphData, GraphNode, GraphEdge } from "exocortex";
 
 export class RDFToGraphDataConverter {
   private static readonly RDFS_LABEL = "http://www.w3.org/2000/01/rdf-schema#label";

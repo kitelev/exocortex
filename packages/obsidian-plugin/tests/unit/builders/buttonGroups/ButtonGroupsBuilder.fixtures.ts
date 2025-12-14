@@ -15,7 +15,7 @@ import {
   LabelToAliasService,
   AssetConversionService,
   MetadataExtractor,
-} from "@exocortex/core";
+} from "exocortex";
 import { ILogger } from "../../../../src/infrastructure/logging/ILogger";
 
 export interface ButtonGroupsBuilderTestContext {

@@ -1,4 +1,4 @@
-import type { IConfiguration } from "@exocortex/core";
+import type { IConfiguration } from "exocortex";
 import { Plugin } from "obsidian";
 import type { ExocortexPluginInterface } from '@plugin/types';
 

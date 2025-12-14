@@ -1,5 +1,5 @@
 {
-  "name": "@exocortex/core",
+  "name": "exocortex",
   "version": "0.1.0",
   "description": "Core business logic for Exocortex knowledge management system",
   "main": "dist/index.js",

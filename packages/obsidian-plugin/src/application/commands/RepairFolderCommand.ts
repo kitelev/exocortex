@@ -1,6 +1,6 @@
 import { App, TFile, Notice } from "obsidian";
 import { ICommand } from "./ICommand";
-import { FolderRepairService, LoggingService } from "@exocortex/core";
+import { FolderRepairService, LoggingService } from "exocortex";
 
 export class RepairFolderCommand implements ICommand {
   id = "repair-folder";

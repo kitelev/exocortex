@@ -1,6 +1,6 @@
 import { NodeFsAdapter } from "../adapters/NodeFsAdapter.js";
 import { PathResolver } from "../utils/PathResolver.js";
-import { FrontmatterService, DateFormatter } from "@exocortex/core";
+import { FrontmatterService, DateFormatter } from "exocortex";
 import { TransactionManager } from "../utils/TransactionManager.js";
 import { ExitCodes } from "../utils/ExitCodes.js";
 import {

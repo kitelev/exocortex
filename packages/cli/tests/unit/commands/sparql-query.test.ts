@@ -1,6 +1,6 @@
 import { jest, describe, it, expect, beforeEach, afterEach } from "@jest/globals";
 import fs from "fs";
-import { SolutionMapping, IRI, Literal } from "@exocortex/core";
+import { SolutionMapping, IRI, Literal } from "exocortex";
 
 // Mock dependencies
 const mockTableFormatter = {
@@ -18,8 +18,8 @@ jest.unstable_mockModule("../../../src/formatters/JsonFormatter.js", () => ({
   JsonFormatter: jest.fn(() => mockJsonFormatter),
 }));
 
-// Mock the heavy @exocortex/core dependencies
-jest.unstable_mockModule("@exocortex/core", () => ({
+// Mock the heavy exocortex dependencies
+jest.unstable_mockModule("exocortex", () => ({
   InMemoryTripleStore: jest.fn(() => ({
     addAll: jest.fn(),
   })),
@@ -224,7 +224,7 @@ describe("sparqlQueryCommand", () => {
       existsSyncSpy.mockReturnValue(true);
 
       // The mocked parser returns successfully, but let's test error branch
-      const { SPARQLParser } = await import("@exocortex/core");
+      const { SPARQLParser } = await import("exocortex");
       (SPARQLParser as jest.Mock).mockImplementationOnce(() => ({
         parse: jest.fn(() => { throw new Error("Parse error"); }),
       }));

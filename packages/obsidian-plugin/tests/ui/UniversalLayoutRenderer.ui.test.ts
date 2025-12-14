@@ -19,7 +19,7 @@ import {
   IVaultAdapter,
   registerCoreServices,
   resetContainer,
-} from "@exocortex/core";
+} from "exocortex";
 
 describe("UniversalLayoutRenderer UI Integration", () => {
   let renderer: UniversalLayoutRenderer;

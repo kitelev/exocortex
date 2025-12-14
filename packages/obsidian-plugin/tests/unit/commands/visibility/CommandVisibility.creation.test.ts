@@ -1,10 +1,10 @@
-import type { CommandVisibilityContext } from "@exocortex/core";
+import type { CommandVisibilityContext } from "exocortex";
 import {
   canCreateTask,
   canCreateProject,
   canCreateEvent,
   canCreateChildArea,
-} from "@exocortex/core";
+} from "exocortex";
 
 describe("CommandVisibility - Creation Commands", () => {
   describe("canCreateTask", () => {

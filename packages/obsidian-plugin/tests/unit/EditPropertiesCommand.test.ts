@@ -29,7 +29,7 @@ import { EditPropertiesCommand } from "../../src/application/commands/EditProper
 import { App, TFile, Notice } from "obsidian";
 import { ExocortexPluginInterface } from "../../src/types";
 import { PropertyEditorModal } from "../../src/presentation/modals/PropertyEditorModal";
-import type { CommandVisibilityContext } from "@exocortex/core";
+import type { CommandVisibilityContext } from "exocortex";
 
 describe("EditPropertiesCommand", () => {
   let command: EditPropertiesCommand;

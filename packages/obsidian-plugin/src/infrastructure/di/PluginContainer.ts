@@ -4,7 +4,7 @@ import { App, Plugin } from "obsidian";
 import {
   DI_TOKENS,
   registerCoreServices,
-} from "@exocortex/core";
+} from "exocortex";
 import { ObsidianLogger } from "@plugin/infrastructure/di/ObsidianLogger";
 import { ObsidianEventBus } from "@plugin/infrastructure/di/ObsidianEventBus";
 import { ObsidianConfiguration } from "@plugin/infrastructure/di/ObsidianConfiguration";

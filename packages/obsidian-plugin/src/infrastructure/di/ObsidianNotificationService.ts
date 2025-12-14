@@ -1,4 +1,4 @@
-import { INotificationService } from "@exocortex/core";
+import { INotificationService } from "exocortex";
 import { Notice } from "obsidian";
 
 export class ObsidianNotificationService implements INotificationService {

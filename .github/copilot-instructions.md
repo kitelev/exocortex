@@ -23,7 +23,7 @@ Before making changes, always consult:
 
 ```
 packages/
-├── core/                 # @exocortex/core - Storage-agnostic business logic
+├── core/                 # exocortex - Storage-agnostic business logic
 ├── obsidian-plugin/      # @exocortex/obsidian-plugin - Obsidian UI integration
 └── cli/                  # @exocortex/cli - Command-line automation tool
 ```
@@ -47,7 +47,7 @@ Work primarily in the workspace context - changes often affect multiple packages
 
 ### Code Organization
 - Follow Clean Architecture layers: Domain → Application → Infrastructure → Presentation
-- Domain logic is storage-agnostic and lives in `@exocortex/core`
+- Domain logic is storage-agnostic and lives in `exocortex`
 - UI-specific code belongs in `@exocortex/obsidian-plugin`
 - Keep services focused on single responsibilities (SOLID principles)
 

@@ -4,8 +4,8 @@ import { CommandRegistry } from "../../../src/application/commands/CommandRegist
 import { App } from "obsidian";
 import { ExocortexPluginInterface } from "../../../src/types";
 
-// Mock @exocortex/core
-jest.mock("@exocortex/core", () => ({
+// Mock exocortex
+jest.mock("exocortex", () => ({
   TaskCreationService: jest.fn(),
   ProjectCreationService: jest.fn(),
   AreaCreationService: jest.fn(),

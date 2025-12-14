@@ -2,7 +2,7 @@ import fs from "fs-extra";
 import path from "path";
 import * as glob from "glob";
 import yaml from "js-yaml";
-import { FileNotFoundError, FileAlreadyExistsError, } from "@exocortex/core";
+import { FileNotFoundError, FileAlreadyExistsError, } from "exocortex";
 export class NodeFsAdapter {
     constructor(rootPath) {
         this.rootPath = rootPath;

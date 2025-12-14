@@ -226,4 +226,4 @@ jobs:
           echo "✅ Release v${{ steps.new_version.outputs.version }} created successfully"
           echo "📦 Tag: v${{ steps.new_version.outputs.version }}"
           echo "📝 Changelog generated from commits"
-          echo "📤 CLI published to npm as exocortex-cli@${{ steps.new_version.outputs.version }}"
+          echo "📤 CLI published to npm as @exocortex/cli@${{ steps.new_version.outputs.version }}"

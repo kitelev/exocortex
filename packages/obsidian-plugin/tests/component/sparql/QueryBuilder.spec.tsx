@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/experimental-ct-react";
 import { QueryBuilder } from "../../../src/presentation/components/sparql/QueryBuilder";
-import type { SolutionMapping, Triple } from "@exocortex/core";
+import type { SolutionMapping, Triple } from "exocortex";
 
 test.describe("QueryBuilder Component", () => {
   const mockApp = {

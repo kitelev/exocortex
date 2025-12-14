@@ -5,7 +5,7 @@ import {
   canStartEffort,
   TaskStatusService,
   LoggingService,
-} from "@exocortex/core";
+} from "exocortex";
 
 export class StartEffortCommand implements ICommand {
   id = "start-effort";

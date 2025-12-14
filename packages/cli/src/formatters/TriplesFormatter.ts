@@ -1,4 +1,4 @@
-import type { Triple } from "@exocortex/core";
+import type { Triple } from "exocortex";
 
 /**
  * Formatter for RDF triples output.

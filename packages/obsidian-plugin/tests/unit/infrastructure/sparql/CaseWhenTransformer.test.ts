@@ -1,4 +1,4 @@
-import { CaseWhenTransformer, CaseWhenTransformerError } from "@exocortex/core";
+import { CaseWhenTransformer, CaseWhenTransformerError } from "exocortex";
 
 describe("CaseWhenTransformer", () => {
   let transformer: CaseWhenTransformer;

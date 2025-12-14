@@ -1,7 +1,7 @@
 import { describe, it, expect } from "@jest/globals";
 import { TriplesFormatter } from "../../src/formatters/TriplesFormatter.js";
 
-// Mock Triple structure matching @exocortex/core
+// Mock Triple structure matching exocortex
 interface MockTriple {
   subject: { value: string };
   predicate: { value: string };

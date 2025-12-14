@@ -14,7 +14,7 @@ The Exocortex plugin uses a comprehensive testing strategy with multiple layers:
 ### Unit Tests
 
 **Location**:
-- Core: `packages/core/tests/`
+- Core: `packages/exocortex/tests/`
 - Plugin: `packages/obsidian-plugin/tests/unit/`
 - CLI: `packages/cli/tests/`
 

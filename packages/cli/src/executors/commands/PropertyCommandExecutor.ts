@@ -2,7 +2,7 @@ import path from "path";
 import { BaseCommandExecutor, CommandContext } from "./BaseCommandExecutor.js";
 import { ErrorHandler } from "../../utils/ErrorHandler.js";
 import { ExitCodes } from "../../utils/ExitCodes.js";
-import { DateFormatter } from "@exocortex/core";
+import { DateFormatter } from "exocortex";
 
 /**
  * Executes property-related commands (rename-to-uid, update-label, schedule, set-deadline)

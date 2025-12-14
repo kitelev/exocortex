@@ -1,7 +1,7 @@
 import { flushPromises, waitForCondition } from "./helpers/testHelpers";
 import { CreateTaskCommand } from "../../src/application/commands/CreateTaskCommand";
 import { App, TFile, Notice, MetadataCache, Workspace, WorkspaceLeaf } from "obsidian";
-import { TaskCreationService, CommandVisibilityContext, LoggingService } from "@exocortex/core";
+import { TaskCreationService, CommandVisibilityContext, LoggingService } from "exocortex";
 import { ObsidianVaultAdapter } from "../../src/adapters/ObsidianVaultAdapter";
 import { LabelInputModal } from "../../src/presentation/modals/LabelInputModal";
 import { ExocortexPluginInterface } from "../../src/types";
@@ -11,8 +11,8 @@ jest.mock("obsidian", () => ({
   Notice: jest.fn(),
 }));
 jest.mock("../../src/presentation/modals/LabelInputModal");
-jest.mock("@exocortex/core", () => ({
-  ...jest.requireActual("@exocortex/core"),
+jest.mock("exocortex", () => ({
+  ...jest.requireActual("exocortex"),
   canCreateTask: jest.fn(),
   LoggingService: {
     error: jest.fn(),
@@ -103,7 +103,7 @@ describe("CreateTaskCommand", () => {
   });
 
   describe("checkCallback", () => {
-    const mockCanCreateTask = require("@exocortex/core").canCreateTask;
+    const mockCanCreateTask = require("exocortex").canCreateTask;
 
     it("should return false when context is null", () => {
       const result = command.checkCallback(true, mockFile, null);

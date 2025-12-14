@@ -1,4 +1,4 @@
-# exocortex-cli
+# @exocortex/cli
 
 Command-line interface for Exocortex knowledge management system. Manage tasks, projects, and planning from the terminal without needing Obsidian.
 
@@ -23,13 +23,13 @@ This CLI follows [Semantic Versioning](https://semver.org/). The commands docume
 ## Installation
 
 ```bash
-npm install -g exocortex-cli
+npm install -g @exocortex/cli
 ```
 
 Or use directly with npx:
 
 ```bash
-npx exocortex-cli [command]
+npx @exocortex/cli [command]
 ```
 
 ## Usage
@@ -332,7 +332,7 @@ exocortex batch --file operations.json --vault ~/vault --format json
 
 ## Architecture
 
-The CLI uses `@exocortex/core` for business logic and implements a Node.js file system adapter:
+The CLI uses `exocortex` for business logic and implements a Node.js file system adapter:
 
 ```
 exocortex-cli/

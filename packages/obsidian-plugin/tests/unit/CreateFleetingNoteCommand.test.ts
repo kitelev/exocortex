@@ -3,7 +3,7 @@ import { App, Notice, TFile } from "obsidian";
 import {
   FleetingNoteCreationService,
   LoggingService,
-} from "@exocortex/core";
+} from "exocortex";
 import { FleetingNoteModal } from "../../src/presentation/modals/FleetingNoteModal";
 import { ObsidianVaultAdapter } from "../../src/adapters/ObsidianVaultAdapter";
 import { CommandHelpers } from "../../src/application/commands/helpers/CommandHelpers";
@@ -15,8 +15,8 @@ jest.mock("obsidian", () => ({
 
 jest.mock("../../src/presentation/modals/FleetingNoteModal");
 
-jest.mock("@exocortex/core", () => ({
-  ...jest.requireActual("@exocortex/core"),
+jest.mock("exocortex", () => ({
+  ...jest.requireActual("exocortex"),
   LoggingService: {
     error: jest.fn(),
   },

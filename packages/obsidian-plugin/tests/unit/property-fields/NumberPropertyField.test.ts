@@ -1,4 +1,4 @@
-import { PropertyFieldType } from "@exocortex/core";
+import { PropertyFieldType } from "exocortex";
 import { NumberPropertyField } from "../../../src/presentation/components/property-fields/NumberPropertyField";
 
 // Helper to extend HTMLElement with Obsidian's methods

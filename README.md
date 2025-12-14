@@ -37,7 +37,7 @@ This project is organized as a monorepo with multiple packages:
 
 ```
 packages/
-├── core/                    # @exocortex/core - Shared business logic (storage-agnostic)
+├── core/                    # exocortex - Shared business logic (storage-agnostic)
 ├── obsidian-plugin/         # @exocortex/obsidian-plugin - Obsidian UI integration
 └── cli/                     # @exocortex/cli - Command-line automation tool
 ```
@@ -47,7 +47,7 @@ packages/
 | Feature | Obsidian Plugin | CLI |
 |---------|----------------|-----|
 | **Primary Use** | Interactive UI in Obsidian | Terminal automation & scripting |
-| **Installation** | Obsidian plugin manager | `npm install -g exocortex-cli` |
+| **Installation** | Obsidian plugin manager | `npm install -g @exocortex/cli` |
 | **Task Management** | ✅ Visual buttons & commands | ✅ All status transitions |
 | **SPARQL Queries** | ✅ Live results in notes | ✅ Table/JSON/CSV output |
 | **Asset Creation** | ✅ Modal dialogs | ✅ Command-line flags |
@@ -68,10 +68,10 @@ The CLI (`@exocortex/cli`) enables managing your Exocortex vault from the termin
 
 ```bash
 # Global installation
-npm install -g exocortex-cli
+npm install -g @exocortex/cli
 
 # Or use directly with npx
-npx exocortex-cli --help
+npx @exocortex/cli --help
 ```
 
 **CLI Command Categories:**
@@ -683,7 +683,7 @@ Clean Architecture with domain-driven design organized in a monorepo:
 ```
 ┌───────────────────────── Monorepo Packages ─────────────────────────┐
 │                                                                       │
-│  📦 @exocortex/core                  📦 @exocortex/obsidian-plugin  │
+│  📦 exocortex                  📦 @exocortex/obsidian-plugin  │
 │  (Storage-agnostic logic)            (Obsidian UI)                  │
 │  ┌───── Presentation ─────┐          ┌───── Presentation ─────┐     │
 │  │ N/A (headless)          │          │ React Components       │     │
@@ -691,7 +691,7 @@ Clean Architecture with domain-driven design organized in a monorepo:
 │  ┌───── Application ──────┐          │ Tables, Trees, UI      │     │
 │  │ Services (14 total)    │          └────────────────────────┘     │
 │  │ Command Manager        │                     ↓                    │
-│  │ Business Logic         │          Uses @exocortex/core            │
+│  │ Business Logic         │          Uses exocortex            │
 │  └─────────────────────────┘                                         │
 │  ┌───── Domain ───────────┐                                          │
 │  │ Entities & Rules       │                                          │
@@ -702,7 +702,7 @@ Clean Architecture with domain-driven design organized in a monorepo:
 │  │ ObsidianVaultAdapter   │          │ Automation Scripts     │     │
 │  │ NodeFsAdapter          │          └────────────────────────┘     │
 │  └─────────────────────────┘                     ↓                    │
-│                                      Uses @exocortex/core            │
+│                                      Uses exocortex            │
 └───────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -864,7 +864,7 @@ Automate Exocortex workflows from the command line:
 
 For plugin developers and contributors:
 
-- **[Core API Reference](./docs/api/Core-API.md)** - @exocortex/core package documentation
+- **[Core API Reference](./docs/api/Core-API.md)** - exocortex package documentation
 - **[Plugin Development Guide](./docs/Plugin-Development-Guide.md)** - Extend Exocortex with custom functionality
 - **[TESTING.md](./TESTING.md)** - Comprehensive testing guide (test types, patterns, CI/CD, troubleshooting)
 - **[Testing Guide (Quick Reference)](./docs/Testing-Guide.md)** - Quick reference for common testing tasks

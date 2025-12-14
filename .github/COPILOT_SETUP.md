@@ -96,7 +96,7 @@ For more granular control, you can create additional instruction files:
 ```
 .github/
   instructions/
-    core.instructions.md        # Instructions for @exocortex/core package
+    core.instructions.md        # Instructions for exocortex package
     obsidian-plugin.instructions.md  # Instructions for UI layer
     testing.instructions.md     # Testing-specific guidelines
 ```
@@ -106,7 +106,7 @@ Each file can use YAML frontmatter to target specific paths:
 ```markdown
 ---
 paths:
-  - packages/core/**
+  - packages/exocortex/**
 ---
 # Core Package Instructions
 

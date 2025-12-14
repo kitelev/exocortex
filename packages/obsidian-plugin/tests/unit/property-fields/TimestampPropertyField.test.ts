@@ -1,4 +1,4 @@
-import { PropertyFieldType } from "@exocortex/core";
+import { PropertyFieldType } from "exocortex";
 import { TimestampPropertyField } from "../../../src/presentation/components/property-fields/TimestampPropertyField";
 
 // Helper to extend HTMLElement with Obsidian's methods

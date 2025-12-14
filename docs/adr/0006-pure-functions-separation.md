@@ -171,7 +171,7 @@ test('createTask creates file', async () => {
 
 ## Related
 
-- **Issue #122**: Will extract all pure functions to `@exocortex/core`
+- **Issue #122**: Will extract all pure functions to `exocortex`
 - **Issue #123**: Pure functions achieve 100% coverage easily
 - **API_CONTRACTS.md**: Documents which functions are pure
 
@@ -180,7 +180,7 @@ test('createTask creates file', async () => {
 After Issue #122, architecture will be:
 
 ```typescript
-// @exocortex/core (100% pure)
+// exocortex (100% pure)
 export class TaskFrontmatterGenerator {
   static generate(...): Record<string, any>  // ✅ PURE
 }

@@ -1,6 +1,6 @@
 import { TFile } from "obsidian";
 import { ILogger } from '@plugin/adapters/logging/ILogger';
-import { MetadataExtractor, IVaultAdapter, IFile } from "@exocortex/core";
+import { MetadataExtractor, IVaultAdapter, IFile } from "exocortex";
 
 export interface DailyNoteInfo {
   isDailyNote: boolean;

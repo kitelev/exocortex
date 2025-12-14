@@ -94,13 +94,13 @@ Exocortex is organized as a **monorepo** with multiple npm workspaces:
 
 ```
 /packages
-  /core                       - @exocortex/core (storage-agnostic business logic)
+  /core                       - exocortex (storage-agnostic business logic)
   /obsidian-plugin            - @exocortex/obsidian-plugin (Obsidian UI integration)
   /cli                        - @exocortex/cli (command-line automation tool)
 ```
 
 **Benefits:**
-- **Shared Core Logic**: Business logic in `@exocortex/core` is reused by both plugin and CLI
+- **Shared Core Logic**: Business logic in `exocortex` is reused by both plugin and CLI
 - **Independent Versioning**: Each package has its own version and release cycle
 - **Clear Boundaries**: Enforces separation between storage-agnostic logic and UI/CLI adapters
 - **Parallel Development**: Teams can work on different packages independently
@@ -109,11 +109,11 @@ Exocortex is organized as a **monorepo** with multiple npm workspaces:
 
 Exocortex follows **Clean Architecture** principles with clear separation of concerns.
 
-### Layer 1: Domain Layer (in @exocortex/core)
+### Layer 1: Domain Layer (in exocortex)
 
 **Purpose**: Core business entities, rules, and logic independent of any framework
 
-**Location**: `packages/core/src/domain/`
+**Location**: `packages/exocortex/src/domain/`
 
 **Components**:
 - **Constants**: `AssetClass`, `EffortStatus` enums
@@ -129,11 +129,11 @@ Exocortex follows **Clean Architecture** principles with clear separation of con
 - ✅ Highly testable (100% unit testable)
 - ✅ Reusable across adapters (CLI, Web, Mobile)
 
-### Layer 2: Application Layer (in @exocortex/core)
+### Layer 2: Application Layer (in exocortex)
 
 **Purpose**: Use cases and business services
 
-**Location**: `packages/core/src/application/services/`
+**Location**: `packages/exocortex/src/application/services/`
 
 **Components**:
 - `CommandManager` - Facade for all 32 commands
@@ -151,7 +151,7 @@ Exocortex follows **Clean Architecture** principles with clear separation of con
 
 **Purpose**: Implementation details and external integrations
 
-**Core Infrastructure** (`packages/core/src/infrastructure/`):
+**Core Infrastructure** (`packages/exocortex/src/infrastructure/`):
 - **IFileSystemAdapter**: Abstract interface for storage operations
 - **Utilities**: Pure helpers (DateFormatter, WikiLinkHelpers, FrontmatterService)
 
@@ -180,7 +180,7 @@ Exocortex follows **Clean Architecture** principles with clear separation of con
 - **Builders**: UI builders (`ButtonGroupsBuilder`)
 - **Modals**: Input dialogs (6 total)
 
-**Dependencies**: Obsidian API (App, Modal), React, @exocortex/core
+**Dependencies**: Obsidian API (App, Modal), React, exocortex
 
 **Characteristics**:
 - Obsidian-specific UI
@@ -210,7 +210,7 @@ Exocortex uses **TSyringe** (Microsoft's lightweight DI container) for dependenc
 
 ### Injectable Interfaces
 
-All cross-cutting concerns are abstracted through interfaces in `@exocortex/core`:
+All cross-cutting concerns are abstracted through interfaces in `exocortex`:
 
 | Interface | Purpose | Obsidian Implementation | CLI Implementation |
 |-----------|---------|------------------------|-------------------|
@@ -222,7 +222,7 @@ All cross-cutting concerns are abstracted through interfaces in `@exocortex/core
 
 **Interface Definitions:**
 ```typescript
-// packages/core/src/interfaces/ILogger.ts
+// packages/exocortex/src/interfaces/ILogger.ts
 export interface ILogger {
   debug(message: string, context?: Record<string, any>): void;
   info(message: string, context?: Record<string, any>): void;
@@ -230,21 +230,21 @@ export interface ILogger {
   error(message: string, error?: Error, context?: Record<string, any>): void;
 }
 
-// packages/core/src/interfaces/IEventBus.ts
+// packages/exocortex/src/interfaces/IEventBus.ts
 export interface IEventBus {
   publish<T = any>(eventName: string, data: T): void;
   subscribe<T = any>(eventName: string, handler: (data: T) => void): () => void;
   unsubscribe(eventName: string, handler: (data: any) => void): void;
 }
 
-// packages/core/src/interfaces/IConfiguration.ts
+// packages/exocortex/src/interfaces/IConfiguration.ts
 export interface IConfiguration {
   get<T = any>(key: string): T | undefined;
   set<T = any>(key: string, value: T): Promise<void>;
   getAll(): Record<string, any>;
 }
 
-// packages/core/src/interfaces/INotificationService.ts
+// packages/exocortex/src/interfaces/INotificationService.ts
 export interface INotificationService {
   info(message: string, duration?: number): void;
   success(message: string, duration?: number): void;
@@ -256,7 +256,7 @@ export interface INotificationService {
 
 ### DI Tokens (Type-Safe Injection)
 
-Tokens are Symbol-based constants defined in `@exocortex/core/interfaces/tokens.ts`:
+Tokens are Symbol-based constants defined in `exocortex/interfaces/tokens.ts`:
 
 ```typescript
 export const DI_TOKENS = {
@@ -286,7 +286,7 @@ export type DIToken = typeof DI_TOKENS[keyof typeof DI_TOKENS];
 ```typescript
 import "reflect-metadata";
 import { container } from "tsyringe";
-import { DI_TOKENS } from "@exocortex/core";
+import { DI_TOKENS } from "exocortex";
 import { ObsidianLogger } from "./ObsidianLogger";
 import { ObsidianEventBus } from "./ObsidianEventBus";
 import { ObsidianConfiguration } from "./ObsidianConfiguration";
@@ -350,7 +350,7 @@ export default class ExocortexPlugin extends Plugin {
 ```typescript
 import "reflect-metadata";
 import { container } from "tsyringe";
-import { DI_TOKENS } from "@exocortex/core";
+import { DI_TOKENS } from "exocortex";
 import { NodeLogger } from "./NodeLogger";
 import { NodeEventBus } from "./NodeEventBus";
 import { NodeConfiguration } from "./NodeConfiguration";
@@ -359,7 +359,7 @@ import { NodeNotificationService } from "./NodeNotificationService";
 export class CLIContainer {
   static setup(): void {
     container.register(DI_TOKENS.ILogger, {
-      useFactory: () => new NodeLogger("exocortex-cli"),
+      useFactory: () => new NodeLogger("@exocortex/cli"),
     });
 
     container.register(DI_TOKENS.IEventBus, {
@@ -406,7 +406,7 @@ const service = new PropertyCleanupService(vaultAdapter);
 **After (DI with @injectable and @inject):**
 ```typescript
 import { injectable, inject } from "tsyringe";
-import { DI_TOKENS, IVaultAdapter, ILogger, IFile } from "@exocortex/core";
+import { DI_TOKENS, IVaultAdapter, ILogger, IFile } from "exocortex";
 
 @injectable()
 export class PropertyCleanupService {
@@ -432,7 +432,7 @@ const service = container.resolve(PropertyCleanupService);
 **Migration Steps:**
 1. Add `@injectable()` decorator to class
 2. Add `@inject(DI_TOKENS.X)` to constructor parameters
-3. Import dependencies from `@exocortex/core`
+3. Import dependencies from `exocortex`
 4. Enable TypeScript decorators in `tsconfig.json`:
    ```json
    {
@@ -451,7 +451,7 @@ const service = container.resolve(PropertyCleanupService);
 ```typescript
 import "reflect-metadata";
 import { container } from "tsyringe";
-import { PropertyCleanupService, DI_TOKENS, IVaultAdapter, ILogger, IFile } from "@exocortex/core";
+import { PropertyCleanupService, DI_TOKENS, IVaultAdapter, ILogger, IFile } from "exocortex";
 
 describe("PropertyCleanupService with DI", () => {
   let mockVaultAdapter: jest.Mocked<IVaultAdapter>;
@@ -842,7 +842,7 @@ interface ITaskRepository {
 
 **CommandVisibility implements visibility strategies** using domain-segregated modules:
 
-**Structure** (`packages/core/src/domain/commands/visibility/`):
+**Structure** (`packages/exocortex/src/domain/commands/visibility/`):
 
 ```
 visibility/
@@ -1063,7 +1063,7 @@ All application errors extend the base `ApplicationError` class, providing:
 - **Timestamp** for when error occurred
 
 ```typescript
-// packages/core/src/domain/errors/ApplicationError.ts
+// packages/exocortex/src/domain/errors/ApplicationError.ts
 export abstract class ApplicationError extends Error {
   abstract readonly code: ErrorCode;      // Standardized error code
   abstract readonly retriable: boolean;   // Can operation be retried?
@@ -1091,7 +1091,7 @@ export abstract class ApplicationError extends Error {
 ### Error Code Ranges
 
 ```typescript
-// packages/core/src/domain/errors/ErrorCode.ts
+// packages/exocortex/src/domain/errors/ErrorCode.ts
 enum ErrorCode {
   // Validation Errors (1000-1999)
   INVALID_INPUT = 1000,
@@ -1137,7 +1137,7 @@ The centralized error handler provides:
 - **Telemetry hooks** for monitoring and alerting
 
 ```typescript
-// packages/core/src/application/errors/ApplicationErrorHandler.ts
+// packages/exocortex/src/application/errors/ApplicationErrorHandler.ts
 export class ApplicationErrorHandler {
   constructor(
     retryConfig?: RetryConfig,
@@ -1291,7 +1291,7 @@ throw new Error("Invalid transition");
 **Previous Problem**: Services directly used Obsidian `Vault`, `MetadataCache`, `TFile`
 
 **Solution Implemented**:
-- ✅ Extracted `@exocortex/core` package with `IFileSystemAdapter` interface
+- ✅ Extracted `exocortex` package with `IFileSystemAdapter` interface
 - ✅ Created `ObsidianVaultAdapter` in plugin package
 - ✅ Created `NodeFsAdapter` in CLI package
 - ✅ Services now storage-agnostic
@@ -1303,7 +1303,7 @@ throw new Error("Invalid transition");
 **Previous Problem**: Business logic mixed with UI code
 
 **Solution Implemented**:
-- ✅ Created `@exocortex/core` package with pure business logic
+- ✅ Created `exocortex` package with pure business logic
 - ✅ Zero external dependencies in core
 - ✅ Shared by both plugin and CLI
 
@@ -1349,7 +1349,7 @@ throw new Error("Invalid transition");
 
 ```mermaid
 graph TB
-    subgraph Core["@exocortex/core (Pure Business Logic)"]
+    subgraph Core["exocortex (Pure Business Logic)"]
         Domain[Domain Layer<br/>Constants, Models, Rules]
         Services[Application Services<br/>Task, Project, Status, etc.]
         Utils[Utilities<br/>Frontmatter, Date, WikiLink]

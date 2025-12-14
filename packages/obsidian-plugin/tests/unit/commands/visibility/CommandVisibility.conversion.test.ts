@@ -1,5 +1,5 @@
-import type { CommandVisibilityContext } from "@exocortex/core";
-import { canConvertTaskToProject, canConvertProjectToTask } from "@exocortex/core";
+import type { CommandVisibilityContext } from "exocortex";
+import { canConvertTaskToProject, canConvertProjectToTask } from "exocortex";
 
 describe("CommandVisibility - Conversion Commands", () => {
   describe("canConvertTaskToProject", () => {

@@ -91,7 +91,7 @@ describe("FrontmatterService", () => {
 **Framework**: Jest + ts-jest
 
 **Location**:
-- `packages/core/tests/` - Core business logic
+- `packages/exocortex/tests/` - Core business logic
 - `packages/obsidian-plugin/tests/unit/` - Plugin-specific logic
 - `packages/cli/tests/unit/` - CLI commands and utilities
 
@@ -102,10 +102,10 @@ describe("FrontmatterService", () => {
 npm run test:unit
 
 # Run single test file
-npx jest packages/core/tests/utilities/FrontmatterService.test.ts --no-coverage
+npx jest packages/exocortex/tests/utilities/FrontmatterService.test.ts --no-coverage
 
 # Run with watch mode (development)
-npx jest --watch packages/core/tests/utilities/FrontmatterService.test.ts
+npx jest --watch packages/exocortex/tests/utilities/FrontmatterService.test.ts
 ```
 
 **Example**:
@@ -480,7 +480,7 @@ This distribution is **healthy** and follows the test pyramid principles.
 
 ### Package-Specific Testing
 
-#### @exocortex/core
+#### exocortex
 
 Pure business logic, storage-agnostic utilities.
 
@@ -490,13 +490,13 @@ Pure business logic, storage-agnostic utilities.
 - Utility functions
 - SPARQL engine
 
-**Configuration**: `packages/core/jest.config.js`
+**Configuration**: `packages/exocortex/jest.config.js`
 
 **Coverage Threshold**: 95% (branches, functions, lines, statements)
 
 ```bash
 # Run core tests
-npx jest --config packages/core/jest.config.js
+npx jest --config packages/exocortex/jest.config.js
 ```
 
 #### @exocortex/obsidian-plugin
@@ -1068,7 +1068,7 @@ await page.evaluate(() => console.log("Debug from browser"));
 
 ### Code Examples
 
-- `packages/core/tests/` - Core package test examples
+- `packages/exocortex/tests/` - Core package test examples
 - `packages/obsidian-plugin/tests/unit/` - Unit test patterns
 - `packages/obsidian-plugin/tests/component/` - Component test patterns
 - `packages/obsidian-plugin/specs/features/` - BDD feature files

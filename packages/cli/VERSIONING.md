@@ -1,6 +1,6 @@
 # Versioning Policy
 
-This document defines the semantic versioning policy for **exocortex-cli**, establishing clear stability guarantees for API consumers including MCP tools and automation scripts.
+This document defines the semantic versioning policy for **@exocortex/cli**, establishing clear stability guarantees for API consumers including MCP tools and automation scripts.
 
 ---
 
@@ -19,7 +19,7 @@ This document defines the semantic versioning policy for **exocortex-cli**, esta
 
 ## Semantic Versioning
 
-exocortex-cli follows [Semantic Versioning 2.0.0](https://semver.org/):
+@exocortex/cli follows [Semantic Versioning 2.0.0](https://semver.org/):
 
 ```
 MAJOR.MINOR.PATCH
@@ -269,7 +269,7 @@ Exit codes standardized (0-8).
 
 ## MCP Integration Guidelines
 
-When wrapping exocortex-cli in MCP tools:
+When wrapping @exocortex/cli in MCP tools:
 
 ### 1. Use Exit Codes for Status
 
@@ -287,7 +287,7 @@ if (result.exitCode === 0) {
 ```json
 {
   "dependencies": {
-    "exocortex-cli": "^0.1.0"
+    "@exocortex/cli": "^0.1.0"
   }
 }
 ```
@@ -313,7 +313,7 @@ if (result.stderr.includes('WARNING: deprecated')) {
 
 ### 6. Version Compatibility Matrix
 
-| exocortex-cli | MCP Tool Compatibility |
+| @exocortex/cli | MCP Tool Compatibility |
 |---------------|------------------------|
 | 0.1.x | MCP tools targeting 0.1.x stable API |
 | 0.2.x | May require MCP tool updates |

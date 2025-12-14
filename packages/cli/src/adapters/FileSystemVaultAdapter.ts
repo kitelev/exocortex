@@ -1,7 +1,7 @@
 import fs from "fs-extra";
 import path from "path";
 import yaml from "js-yaml";
-import { IVaultAdapter, IFile, IFolder, IFrontmatter } from "@exocortex/core";
+import { IVaultAdapter, IFile, IFolder, IFrontmatter } from "exocortex";
 
 export class FileSystemVaultAdapter implements IVaultAdapter {
   constructor(private rootPath: string) {}

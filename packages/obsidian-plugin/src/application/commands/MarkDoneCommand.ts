@@ -5,7 +5,7 @@ import {
   canMarkDone,
   TaskStatusService,
   LoggingService,
-} from "@exocortex/core";
+} from "exocortex";
 
 export class MarkDoneCommand implements ICommand {
   id = "mark-done";

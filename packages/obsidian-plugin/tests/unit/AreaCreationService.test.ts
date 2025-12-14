@@ -1,4 +1,4 @@
-import { AreaCreationService } from "@exocortex/core";
+import { AreaCreationService } from "exocortex";
 
 describe("AreaCreationService", () => {
   let service: AreaCreationService;

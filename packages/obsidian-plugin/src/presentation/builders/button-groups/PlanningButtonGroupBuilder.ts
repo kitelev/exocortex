@@ -8,7 +8,7 @@ import {
   canVoteOnEffort,
   canSetActiveFocus,
   CommandVisibilityContext,
-} from "@exocortex/core";
+} from "exocortex";
 import { ILogger } from '@plugin/adapters/logging/ILogger';
 import { ExocortexSettings } from '@plugin/domain/settings/ExocortexSettings';
 import {

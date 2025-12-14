@@ -5,7 +5,7 @@ import {
   canPlanOnToday,
   TaskStatusService,
   LoggingService,
-} from "@exocortex/core";
+} from "exocortex";
 
 export class PlanOnTodayCommand implements ICommand {
   id = "plan-on-today";

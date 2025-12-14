@@ -2,7 +2,7 @@ import {
   FolderRepairService,
   type IVaultAdapter,
   type IFile,
-} from "@exocortex/core";
+} from "exocortex";
 
 describe("FolderRepairService", () => {
   let service: FolderRepairService;

@@ -17,12 +17,12 @@
 
 ### 🔴 P0 - CRITICAL (Must Test First)
 
-1. **packages/core/src/domain/commands/CommandVisibility.ts**
+1. **packages/exocortex/src/domain/commands/CommandVisibility.ts**
    - Lines: 515 | Coverage: 0% | Impact: CRITICAL
    - Controls all command visibility logic
    - Estimated tests: 40-50 | Target: 70% coverage
 
-2. **packages/core/src/utilities/FrontmatterService.ts**
+2. **packages/exocortex/src/utilities/FrontmatterService.ts**
    - Lines: 303 | Coverage: 0% | Impact: CRITICAL
    - Used by 15+ services for YAML manipulation
    - Estimated tests: 25-30 | Target: 80% coverage
@@ -41,7 +41,7 @@
 
 ### 🟡 P1 - HIGH (Test Second)
 
-5. **packages/core/src/utilities/DateFormatter.ts**
+5. **packages/exocortex/src/utilities/DateFormatter.ts**
    - Lines: 209 | Coverage: 0% | Impact: HIGH
    - Timestamp generation for all services
    - Estimated tests: 15-20 | Target: 85% coverage
@@ -51,12 +51,12 @@
    - Button generation logic (partial coverage exists)
    - Estimated tests: 15-20 (additional) | Target: 60% coverage
 
-7. **packages/core/src/services/StatusTimestampService.ts**
+7. **packages/exocortex/src/services/StatusTimestampService.ts**
    - Lines: 113 | Coverage: 0% | Impact: HIGH
    - Status change tracking
    - Estimated tests: 10-12 | Target: 75% coverage
 
-8. **packages/core/src/utilities/MetadataHelpers.ts**
+8. **packages/exocortex/src/utilities/MetadataHelpers.ts**
    - Lines: 113 | Coverage: 0% | Impact: HIGH
    - Metadata extraction utilities
    - Estimated tests: 12-15 | Target: 80% coverage
@@ -70,7 +70,7 @@
 
 ### 🟢 P2 - MEDIUM (Test Third)
 
-10. **packages/core/src/utilities/MetadataExtractor.ts**
+10. **packages/exocortex/src/utilities/MetadataExtractor.ts**
     - Lines: 80 | Coverage: 0% | Impact: MEDIUM
     - Estimated tests: 8-10 | Target: 70% coverage
 
@@ -138,7 +138,7 @@ Margin:        +233 statements over target ✅
 
 ### Step 1: Create Core Package Test Directory
 ```bash
-cd packages/core
+cd packages/exocortex
 mkdir -p tests/{domain,services,utilities}
 ```
 
@@ -191,7 +191,7 @@ module.exports = {
 ```bash
 # 1. Create test infrastructure
 cd /Users/kitelev/Documents/exocortex-development/worktrees/exocortex-claude1-test-coverage
-cd packages/core
+cd packages/exocortex
 mkdir -p tests/utilities
 touch tests/utilities/FrontmatterService.test.ts
 
@@ -222,7 +222,7 @@ COVERAGE=true CI=true npx jest --config packages/obsidian-plugin/jest.config.js 
 **START HERE:**
 ```bash
 # Create and implement first test
-packages/core/tests/utilities/FrontmatterService.test.ts
+packages/exocortex/tests/utilities/FrontmatterService.test.ts
 ```
 
 **Expected outcome:** +242 statements covered (80% of 303 lines)

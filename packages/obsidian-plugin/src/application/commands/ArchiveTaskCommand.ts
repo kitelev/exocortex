@@ -5,7 +5,7 @@ import {
   canArchiveTask,
   TaskStatusService,
   LoggingService,
-} from "@exocortex/core";
+} from "exocortex";
 
 export class ArchiveTaskCommand implements ICommand {
   id = "archive-task";

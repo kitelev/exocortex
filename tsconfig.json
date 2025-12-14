@@ -2,7 +2,7 @@
   "compilerOptions": {
     "baseUrl": ".",
     "paths": {
-      "@exocortex/core": ["./packages/core/src/index.ts"],
+      "exocortex": ["./packages/exocortex/src/index.ts"],
       "@plugin/types": ["./packages/obsidian-plugin/src/types/index.ts"],
       "@plugin/types/*": ["./packages/obsidian-plugin/src/types/*"],
       "@plugin/adapters/*": ["./packages/obsidian-plugin/src/adapters/*"],

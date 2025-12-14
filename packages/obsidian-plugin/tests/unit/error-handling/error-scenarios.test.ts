@@ -27,7 +27,7 @@ import {
   CommandVisibilityContext,
   LoggingService,
   IFile,
-} from "@exocortex/core";
+} from "exocortex";
 import { LabelInputModal } from "../../../src/presentation/modals/LabelInputModal";
 import { ExocortexPluginInterface } from "../../../src/types";
 import type ExocortexPlugin from "../../../src/ExocortexPlugin";
@@ -39,8 +39,8 @@ jest.mock("obsidian", () => ({
 }));
 jest.mock("../../../src/presentation/modals/LabelInputModal");
 jest.mock("../../../src/presentation/modals/DynamicAssetCreationModal");
-jest.mock("@exocortex/core", () => ({
-  ...jest.requireActual("@exocortex/core"),
+jest.mock("exocortex", () => ({
+  ...jest.requireActual("exocortex"),
   canCreateInstance: jest.fn(),
   LoggingService: {
     error: jest.fn(),
@@ -67,7 +67,7 @@ describe("CreateInstanceCommand Error Handling", () => {
   beforeEach(() => {
     jest.clearAllMocks();
 
-    const { canCreateInstance } = require("@exocortex/core");
+    const { canCreateInstance } = require("exocortex");
     canCreateInstance.mockReturnValue(true);
 
     mockLeaf = {

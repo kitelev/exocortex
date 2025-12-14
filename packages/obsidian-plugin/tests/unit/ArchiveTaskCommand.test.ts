@@ -1,14 +1,14 @@
 import { flushPromises, waitForCondition } from "./helpers/testHelpers";
 import { ArchiveTaskCommand } from "../../src/application/commands/ArchiveTaskCommand";
 import { TFile, Notice } from "obsidian";
-import { TaskStatusService, CommandVisibilityContext, LoggingService } from "@exocortex/core";
+import { TaskStatusService, CommandVisibilityContext, LoggingService } from "exocortex";
 
 jest.mock("obsidian", () => ({
   ...jest.requireActual("obsidian"),
   Notice: jest.fn(),
 }));
-jest.mock("@exocortex/core", () => ({
-  ...jest.requireActual("@exocortex/core"),
+jest.mock("exocortex", () => ({
+  ...jest.requireActual("exocortex"),
   canArchiveTask: jest.fn(),
   LoggingService: {
     error: jest.fn(),
@@ -55,7 +55,7 @@ describe("ArchiveTaskCommand", () => {
   });
 
   describe("checkCallback", () => {
-    const mockCanArchiveTask = require("@exocortex/core").canArchiveTask;
+    const mockCanArchiveTask = require("exocortex").canArchiveTask;
 
     it("should return false when context is null", () => {
       const result = command.checkCallback(true, mockFile, null);

@@ -2,7 +2,7 @@ import { App, Notice } from "obsidian";
 import {
   FleetingNoteCreationService,
   LoggingService,
-} from "@exocortex/core";
+} from "exocortex";
 import { ICommand } from "./ICommand";
 import { FleetingNoteModal, FleetingNoteModalResult } from '@plugin/presentation/modals/FleetingNoteModal';
 import { ObsidianVaultAdapter } from '@plugin/adapters/ObsidianVaultAdapter';

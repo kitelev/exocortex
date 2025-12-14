@@ -1,4 +1,4 @@
-import { PropertyFieldType } from "@exocortex/core";
+import { PropertyFieldType } from "exocortex";
 import { WikilinkPropertyField } from "../../../src/presentation/components/property-fields/WikilinkPropertyField";
 
 // Helper to extend HTMLElement with Obsidian's methods

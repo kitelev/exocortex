@@ -2,7 +2,7 @@ import type {
   IMultiVaultManager,
   IVaultContext,
   VaultChangeCallback,
-} from "@exocortex/core";
+} from "exocortex";
 
 /**
  * Single vault manager implementation for backward compatibility.

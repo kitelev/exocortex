@@ -7,7 +7,7 @@ import { LoggerFactory } from "../../src/adapters/logging/LoggerFactory";
 import { ObsidianVaultAdapter } from "../../src/adapters/ObsidianVaultAdapter";
 import { UniversalLayoutRenderer } from "../../src/presentation/renderers/UniversalLayoutRenderer";
 import { CommandManager } from "../../src/application/services/CommandManager";
-import { TaskStatusService, DI_TOKENS, registerCoreServices, resetContainer } from "@exocortex/core";
+import { TaskStatusService, DI_TOKENS, registerCoreServices, resetContainer } from "exocortex";
 import { TaskTrackingService } from "../../src/application/services/TaskTrackingService";
 import { AliasSyncService } from "../../src/application/services/AliasSyncService";
 import { SPARQLCodeBlockProcessor } from "../../src/application/processors/SPARQLCodeBlockProcessor";

@@ -15,7 +15,7 @@
 import type { MarkdownPostProcessorContext, App, Vault, MetadataCache, EventRef } from "obsidian";
 import { SPARQLCodeBlockProcessor } from "../../../src/application/processors/SPARQLCodeBlockProcessor";
 import type ExocortexPlugin from "../../../src/ExocortexPlugin";
-import { SPARQLParseError } from "@exocortex/core";
+import { SPARQLParseError } from "exocortex";
 
 // Mock Notice
 const mockNotice = jest.fn();

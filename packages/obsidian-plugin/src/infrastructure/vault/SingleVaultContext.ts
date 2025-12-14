@@ -1,4 +1,4 @@
-import type { IVaultContext, IVaultAdapter } from "@exocortex/core";
+import type { IVaultContext, IVaultAdapter } from "exocortex";
 
 /**
  * Single vault context implementation for backward compatibility.

@@ -1,14 +1,14 @@
 import { flushPromises } from "./helpers/testHelpers";
 import { CleanPropertiesCommand } from "../../src/application/commands/CleanPropertiesCommand";
 import { TFile, Notice } from "obsidian";
-import { PropertyCleanupService, CommandVisibilityContext, LoggingService } from "@exocortex/core";
+import { PropertyCleanupService, CommandVisibilityContext, LoggingService } from "exocortex";
 
 jest.mock("obsidian", () => ({
   ...jest.requireActual("obsidian"),
   Notice: jest.fn(),
 }));
-jest.mock("@exocortex/core", () => ({
-  ...jest.requireActual("@exocortex/core"),
+jest.mock("exocortex", () => ({
+  ...jest.requireActual("exocortex"),
   canCleanProperties: jest.fn(),
   LoggingService: {
     error: jest.fn(),
@@ -55,7 +55,7 @@ describe("CleanPropertiesCommand", () => {
   });
 
   describe("checkCallback", () => {
-    const mockCanCleanProperties = require("@exocortex/core").canCleanProperties;
+    const mockCanCleanProperties = require("exocortex").canCleanProperties;
 
     it("should return false when context is null", () => {
       const result = command.checkCallback(true, mockFile, null);

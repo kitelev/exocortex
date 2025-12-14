@@ -1,11 +1,11 @@
-import type { CommandVisibilityContext } from "@exocortex/core";
+import type { CommandVisibilityContext } from "exocortex";
 import {
   canArchiveTask,
   canCleanProperties,
   canRepairFolder,
   canRenameToUid,
   canCopyLabelToAliases,
-} from "@exocortex/core";
+} from "exocortex";
 
 describe("CommandVisibility - Maintenance Commands", () => {
   describe("canArchiveTask", () => {

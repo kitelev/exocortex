@@ -1,9 +1,9 @@
 import { flushPromises } from "./helpers/testHelpers";
 import { ConvertTaskToProjectCommand } from "../../src/application/commands/ConvertTaskToProjectCommand";
-import { AssetConversionService } from "@exocortex/core";
+import { AssetConversionService } from "exocortex";
 import { ObsidianVaultAdapter } from "../../src/adapters/ObsidianVaultAdapter";
 import { TFile } from "obsidian";
-import type { CommandVisibilityContext } from "@exocortex/core";
+import type { CommandVisibilityContext } from "exocortex";
 
 describe("ConvertTaskToProjectCommand", () => {
   let command: ConvertTaskToProjectCommand;

@@ -16,7 +16,7 @@ import {
   DEFAULT_SETTINGS,
 } from "./domain/settings/ExocortexSettings";
 import { ExocortexSettingTab } from "./presentation/settings/ExocortexSettingTab";
-import { TaskStatusService } from "@exocortex/core";
+import { TaskStatusService } from "exocortex";
 import { ObsidianVaultAdapter } from "./adapters/ObsidianVaultAdapter";
 import { TaskTrackingService } from "./application/services/TaskTrackingService";
 import { AliasSyncService } from "./application/services/AliasSyncService";

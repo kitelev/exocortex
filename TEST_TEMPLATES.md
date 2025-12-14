@@ -543,7 +543,7 @@ describe('UniversalLayoutRenderer', () => {
 ```typescript
 import { CreateInstanceCommand } from '../../src/application/commands/CreateInstanceCommand';
 import { App, TFile } from 'obsidian';
-import { ConceptCreationService } from '@exocortex/core';
+import { ConceptCreationService } from 'exocortex';
 
 describe('CreateInstanceCommand', () => {
   let command: CreateInstanceCommand;
@@ -706,7 +706,7 @@ describe('CommandVisibility', () => {
 
 ## Mock Helpers Library
 
-### Create: packages/core/tests/helpers/mockFactory.ts
+### Create: packages/exocortex/tests/helpers/mockFactory.ts
 
 ```typescript
 import { IVaultAdapter, IFile } from '../../src/interfaces/IVaultAdapter';
@@ -754,12 +754,12 @@ export function createMockContent(
 
 ### Individual File
 ```bash
-npx jest packages/core/tests/utilities/FrontmatterService.test.ts
+npx jest packages/exocortex/tests/utilities/FrontmatterService.test.ts
 ```
 
 ### All Core Tests
 ```bash
-npx jest --config packages/core/jest.config.js
+npx jest --config packages/exocortex/jest.config.js
 ```
 
 ### With Coverage
@@ -769,7 +769,7 @@ COVERAGE=true CI=true npx jest --config packages/obsidian-plugin/jest.config.js 
 
 ### Watch Mode (Development)
 ```bash
-npx jest --watch packages/core/tests/utilities/FrontmatterService.test.ts
+npx jest --watch packages/exocortex/tests/utilities/FrontmatterService.test.ts
 ```
 
 ---
@@ -819,6 +819,6 @@ COVERAGE=true CI=true npx jest --config packages/obsidian-plugin/jest.config.js 
 
 **Ready to start? Begin with:**
 ```bash
-touch packages/core/tests/utilities/FrontmatterService.test.ts
+touch packages/exocortex/tests/utilities/FrontmatterService.test.ts
 # Copy Template 1 above and start implementing!
 ```

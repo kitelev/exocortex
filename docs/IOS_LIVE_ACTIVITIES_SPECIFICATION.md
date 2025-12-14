@@ -718,7 +718,7 @@ enum iCloudError: LocalizedError {
 // packages/obsidian-plugin/src/infrastructure/services/TaskTrackingService.ts
 
 import { App, TFile, Notice, MetadataCache } from 'obsidian';
-import { EffortStatus } from '@exocortex/core';
+import { EffortStatus } from 'exocortex';
 
 interface TaskData {
   id: string;

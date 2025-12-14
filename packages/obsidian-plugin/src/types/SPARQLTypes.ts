@@ -5,7 +5,7 @@ export type {
   SelectQuery,
   ConstructQuery,
   InMemoryTripleStore,
-} from "@exocortex/core";
+} from "exocortex";
 
 export type {
   QueryResult,

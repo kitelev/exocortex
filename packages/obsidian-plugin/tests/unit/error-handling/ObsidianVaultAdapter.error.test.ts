@@ -14,7 +14,7 @@
 
 import { ObsidianVaultAdapter } from "../../../src/adapters/ObsidianVaultAdapter";
 import { Vault, TFile, TFolder, MetadataCache, App, FileManager } from "obsidian";
-import { IFile, IFolder } from "@exocortex/core";
+import { IFile, IFolder } from "exocortex";
 
 describe("ObsidianVaultAdapter Error Handling", () => {
   let adapter: ObsidianVaultAdapter;

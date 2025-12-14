@@ -4,7 +4,7 @@ import {
   NetworkError,
   type ILogger,
   type INotificationService,
-} from "@exocortex/core";
+} from "exocortex";
 
 export class AliasSyncService {
   private errorHandler: ApplicationErrorHandler;

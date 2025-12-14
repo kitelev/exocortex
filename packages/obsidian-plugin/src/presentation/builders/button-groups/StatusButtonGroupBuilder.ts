@@ -9,7 +9,7 @@ import {
   canMarkDone,
   canRollbackStatus,
   CommandVisibilityContext,
-} from "@exocortex/core";
+} from "exocortex";
 import { ILogger } from '@plugin/adapters/logging/ILogger';
 import {
   IButtonGroupBuilder,

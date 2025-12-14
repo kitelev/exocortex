@@ -74,7 +74,7 @@ export class CommandRegistry {
 
 ### 3. Add Visibility Rules
 
-`packages/core/src/domain/commands/CommandVisibility.ts`:
+`packages/exocortex/src/domain/commands/CommandVisibility.ts`:
 
 ```typescript
 export function canExecuteMyCustomCommand(metadata: Record<string, any>): boolean {

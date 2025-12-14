@@ -1,4 +1,4 @@
-import { INotificationService } from "@exocortex/core";
+import { INotificationService } from "exocortex";
 import * as readline from "readline";
 
 export class NodeNotificationService implements INotificationService {

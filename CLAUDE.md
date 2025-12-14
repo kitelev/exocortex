@@ -224,7 +224,7 @@ This directory is the **coordination hub** for parallel development of the Exoco
 
 ## ⚡ Quick Orientation (Read First)
 
-- **Product context**: Exocortex is an Obsidian plugin that renders ontology-driven layouts, links Areas → Projects → Tasks, tracks effort/status history, and exposes voting signals for prioritization. Core modules live under `src/` (presentation, application, domain, infrastructure) with shared utilities in `packages/core` and CLI tooling in `packages/cli`.
+- **Product context**: Exocortex is an Obsidian plugin that renders ontology-driven layouts, links Areas → Projects → Tasks, tracks effort/status history, and exposes voting signals for prioritization. Core modules live under `src/` (presentation, application, domain, infrastructure) with shared utilities in `packages/exocortex` and CLI tooling in `packages/cli`.
 - **Shared vocabulary**: Tasks (`ems__Task`) roll up into Projects and Areas, layout renderers are named `*Renderer`, command orchestration flows through `CommandManager` and command visibility rules, and “Effort” refers to timestamped work-state transitions plus vote tallies.
 - **Workflow baseline**: Always create a worktree under `/Users/kitelev/Documents/exocortex-development/worktrees/` (use `/worktree-create`). The main repo under `exocortex-obsidian-plugin/` is read-only for agents.
 - **Definition of done**: A task is finished only after its changes land through a PR, that PR is merged into `main`, and the release flow publishes successfully. Clean up the worktree afterwards.
@@ -758,7 +758,7 @@ gh release view v13.9.0 --json body
 - Branch protection (RULE 4)
 - BDD coverage (RULE 6)
 - Code style (RULE 7)
-- Monorepo structure (packages/core, packages/obsidian-plugin, packages/cli)
+- Monorepo structure (packages/exocortex, packages/obsidian-plugin, packages/cli)
 - Quality metrics (803 unit tests across all packages)
 - Troubleshooting
 
@@ -1210,7 +1210,7 @@ Grep "import.*Service" --output_mode=files_with_matches
 
 # ✅ GOOD: Return actionable summary
 "Found 47 test files across 3 packages:
-- packages/core/tests: 23 files
+- packages/exocortex/tests: 23 files
 - packages/cli/tests: 12 files
 - packages/obsidian-plugin/tests: 12 files"
 ```
@@ -1523,7 +1523,7 @@ npm run lint
 ```bash
 # Verify YOUR changes pass lint individually
 npx eslint packages/obsidian-plugin/src/path/to/your/file.ts
-npx eslint packages/core/src/path/to/another/file.ts
+npx eslint packages/exocortex/src/path/to/another/file.ts
 
 # If all pass → safe to use --no-verify
 git commit --no-verify -m "feat: your change"
@@ -1590,7 +1590,7 @@ frontmatter: createMockMetadata({ exo__Asset_label: null }),
 **Quick Detection**:
 ```bash
 # Check namespace URIs in code
-grep -A2 "static readonly EXO" packages/core/src/domain/models/rdf/Namespace.ts
+grep -A2 "static readonly EXO" packages/exocortex/src/domain/models/rdf/Namespace.ts
 
 # Check namespace URIs in vault
 grep "exo__Ontology_url" vault-path/03\ Knowledge/exo/!exo.md

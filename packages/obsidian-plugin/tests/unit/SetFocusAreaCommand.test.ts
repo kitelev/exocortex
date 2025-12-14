@@ -1,6 +1,6 @@
 import "reflect-metadata";
 import { container } from "tsyringe";
-import { DI_TOKENS, registerCoreServices, resetContainer } from "@exocortex/core";
+import { DI_TOKENS, registerCoreServices, resetContainer } from "exocortex";
 import { SetFocusAreaCommand } from "../../src/application/commands/SetFocusAreaCommand";
 import { App, Notice } from "obsidian";
 import { ExocortexPluginInterface } from "../../src/types";

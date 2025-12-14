@@ -7,9 +7,9 @@ import {
   DailyProject,
   DailyProjectsTableWithToggle,
 } from '@plugin/presentation/components/DailyProjectsTable';
-import { AssetClass, EffortStatus, IVaultAdapter } from "@exocortex/core";
-import { MetadataExtractor } from "@exocortex/core";
-import { EffortSortingHelpers } from "@exocortex/core";
+import { AssetClass, EffortStatus, IVaultAdapter } from "exocortex";
+import { MetadataExtractor } from "exocortex";
+import { EffortSortingHelpers } from "exocortex";
 import { BlockerHelpers } from '@plugin/presentation/utils/BlockerHelpers';
 import { DailyNoteHelpers } from "./helpers/DailyNoteHelpers";
 import { ObsidianApp, ExocortexPluginInterface } from '@plugin/types';

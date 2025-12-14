@@ -1,4 +1,4 @@
-import { IFileSystemAdapter } from "@exocortex/core";
+import { IFileSystemAdapter } from "exocortex";
 export declare class NodeFsAdapter implements IFileSystemAdapter {
     private rootPath;
     constructor(rootPath: string);

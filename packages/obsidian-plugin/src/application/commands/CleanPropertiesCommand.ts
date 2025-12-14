@@ -5,7 +5,7 @@ import {
   canCleanProperties,
   PropertyCleanupService,
   LoggingService,
-} from "@exocortex/core";
+} from "exocortex";
 
 export class CleanPropertiesCommand implements ICommand {
   id = "clean-properties";

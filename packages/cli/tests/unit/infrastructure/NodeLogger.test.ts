@@ -1,6 +1,6 @@
 import { jest, describe, it, expect, beforeEach, afterEach } from "@jest/globals";
 
-jest.unstable_mockModule("@exocortex/core", () => ({
+jest.unstable_mockModule("exocortex", () => ({
   ILogger: class {},
 }));
 

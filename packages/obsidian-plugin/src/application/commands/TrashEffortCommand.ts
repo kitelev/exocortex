@@ -5,7 +5,7 @@ import {
   canTrashEffort,
   TaskStatusService,
   LoggingService,
-} from "@exocortex/core";
+} from "exocortex";
 import {
   TrashReasonModal,
   type TrashReasonModalResult,

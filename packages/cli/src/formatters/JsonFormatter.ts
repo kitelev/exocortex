@@ -1,4 +1,4 @@
-import type { SolutionMapping } from "@exocortex/core";
+import type { SolutionMapping } from "exocortex";
 
 export class JsonFormatter {
   format(results: SolutionMapping[]): string {

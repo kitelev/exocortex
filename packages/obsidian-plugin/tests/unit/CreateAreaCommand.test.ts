@@ -4,7 +4,7 @@ import {
   AreaCreationService,
   CommandVisibilityContext,
   LoggingService,
-} from "@exocortex/core";
+} from "exocortex";
 import { LabelInputModal } from "../../src/presentation/modals/LabelInputModal";
 import { ObsidianVaultAdapter } from "../../src/adapters/ObsidianVaultAdapter";
 import { flushPromises, waitForCondition } from "./helpers/testHelpers";
@@ -14,8 +14,8 @@ jest.mock("obsidian", () => ({
   Notice: jest.fn(),
 }));
 jest.mock("../../src/presentation/modals/LabelInputModal");
-jest.mock("@exocortex/core", () => ({
-  ...jest.requireActual("@exocortex/core"),
+jest.mock("exocortex", () => ({
+  ...jest.requireActual("exocortex"),
   canCreateChildArea: jest.fn(),
   LoggingService: {
     error: jest.fn(),
@@ -95,7 +95,7 @@ describe("CreateAreaCommand", () => {
   });
 
   describe("checkCallback", () => {
-    const mockCanCreateChildArea = require("@exocortex/core").canCreateChildArea;
+    const mockCanCreateChildArea = require("exocortex").canCreateChildArea;
 
     it("should return false when context is null", () => {
       const result = command.checkCallback(true, mockFile, null);

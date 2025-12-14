@@ -1,4 +1,4 @@
-import { EffortVotingService } from "@exocortex/core";
+import { EffortVotingService } from "exocortex";
 import { TFile, Vault } from "obsidian";
 
 describe("EffortVotingService", () => {

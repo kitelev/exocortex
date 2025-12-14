@@ -1,11 +1,11 @@
-import type { CommandVisibilityContext } from "@exocortex/core";
+import type { CommandVisibilityContext } from "exocortex";
 import {
   canMoveToBacklog,
   canMoveToAnalysis,
   canMoveToToDo,
   canStartEffort,
   canMarkDone,
-} from "@exocortex/core";
+} from "exocortex";
 
 describe("CommandVisibility - Status Commands", () => {
   describe("canMoveToBacklog", () => {

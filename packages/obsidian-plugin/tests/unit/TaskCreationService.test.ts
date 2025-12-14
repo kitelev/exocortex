@@ -12,7 +12,7 @@ import {
   TaskFrontmatterGenerator,
   AlgorithmExtractor,
   DI_TOKENS,
-} from "@exocortex/core";
+} from "exocortex";
 
 describe("TaskCreationService", () => {
   let service: TaskCreationService;

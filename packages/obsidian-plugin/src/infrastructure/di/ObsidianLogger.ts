@@ -1,5 +1,5 @@
  
-import type { ILogger } from "@exocortex/core";
+import type { ILogger } from "exocortex";
 import { Plugin } from "obsidian";
 
 export class ObsidianLogger implements ILogger {

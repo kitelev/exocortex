@@ -1,6 +1,6 @@
 import React from "react";
 import { TFile } from "obsidian";
-import { canTrashEffort, CommandVisibilityContext } from "@exocortex/core";
+import { canTrashEffort, CommandVisibilityContext } from "exocortex";
 
 export interface TrashEffortButtonProps {
   instanceClass: string | string[] | null;

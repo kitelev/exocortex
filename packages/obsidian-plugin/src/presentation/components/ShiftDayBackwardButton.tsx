@@ -1,6 +1,6 @@
 import React from "react";
 import { TFile } from "obsidian";
-import { canShiftDayBackward, CommandVisibilityContext } from "@exocortex/core";
+import { canShiftDayBackward, CommandVisibilityContext } from "exocortex";
 import type { MetadataRecord } from '@plugin/types';
 
 export interface ShiftDayBackwardButtonProps {

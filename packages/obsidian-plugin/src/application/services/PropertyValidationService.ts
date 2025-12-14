@@ -5,7 +5,7 @@ import {
   ValidationError,
   type ILogger,
   type INotificationService,
-} from "@exocortex/core";
+} from "exocortex";
 import { SPARQLQueryService } from "./SPARQLQueryService";
 
 export class PropertyValidationService implements IPropertyValidationService {

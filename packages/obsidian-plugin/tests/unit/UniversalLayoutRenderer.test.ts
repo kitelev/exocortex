@@ -8,7 +8,7 @@ import {
   IVaultAdapter,
   registerCoreServices,
   resetContainer,
-} from "@exocortex/core";
+} from "exocortex";
 
 describe("UniversalLayoutRenderer", () => {
   let mockApp: any;

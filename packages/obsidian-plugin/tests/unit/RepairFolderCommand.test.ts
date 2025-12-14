@@ -1,14 +1,14 @@
 import { flushPromises } from "./helpers/testHelpers";
 import { RepairFolderCommand } from "../../src/application/commands/RepairFolderCommand";
 import { App, TFile, Notice } from "obsidian";
-import { FolderRepairService, LoggingService } from "@exocortex/core";
+import { FolderRepairService, LoggingService } from "exocortex";
 
 jest.mock("obsidian", () => ({
   ...jest.requireActual("obsidian"),
   Notice: jest.fn(),
 }));
-jest.mock("@exocortex/core", () => ({
-  ...jest.requireActual("@exocortex/core"),
+jest.mock("exocortex", () => ({
+  ...jest.requireActual("exocortex"),
   LoggingService: {
     error: jest.fn(),
   },

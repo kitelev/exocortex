@@ -13,7 +13,7 @@ import {
   ApplicationErrorHandler,
   type ILogger,
   type INotificationService,
-} from "@exocortex/core";
+} from "exocortex";
 import { VaultRDFIndexer } from '@plugin/infrastructure/VaultRDFIndexer';
 import { LoggerFactory } from '@plugin/adapters/logging/LoggerFactory';
 

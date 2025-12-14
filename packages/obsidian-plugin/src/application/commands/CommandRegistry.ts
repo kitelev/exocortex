@@ -18,7 +18,7 @@ import {
   FleetingNoteCreationService,
   DI_TOKENS,
   registerCoreServices,
-} from "@exocortex/core";
+} from "exocortex";
 import { LoggerFactory } from '@plugin/adapters/logging/LoggerFactory';
 import { SPARQLQueryService } from '@plugin/application/services/SPARQLQueryService';
 import { OntologySchemaService } from '@plugin/application/services/OntologySchemaService';

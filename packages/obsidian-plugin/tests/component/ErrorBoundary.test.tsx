@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/experimental-ct-react";
 import React from "react";
 import { ErrorBoundary } from "../../src/presentation/components/ErrorBoundary";
-import { ValidationError } from "@exocortex/core/domain/errors";
+import { ValidationError } from "exocortex/domain/errors";
 import {
   ThrowError,
   WorkingComponent,

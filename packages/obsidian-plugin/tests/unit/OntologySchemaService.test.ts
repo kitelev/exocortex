@@ -1,5 +1,5 @@
 import { OntologySchemaService, type OntologyPropertyDefinition } from "../../src/application/services/OntologySchemaService";
-import { PropertyFieldType } from "@exocortex/core";
+import { PropertyFieldType } from "exocortex";
 
 // Mock SPARQLQueryService
 const mockQuery = jest.fn();

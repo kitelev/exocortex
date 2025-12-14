@@ -1,6 +1,6 @@
 import { SPARQLQueryService } from "../../../src/application/services/SPARQLQueryService";
 import { VaultRDFIndexer } from "../../../src/infrastructure/VaultRDFIndexer";
-import { ApplicationErrorHandler } from "@exocortex/core";
+import { ApplicationErrorHandler } from "exocortex";
 import type { App, TFile } from "obsidian";
 
 // Mock VaultRDFIndexer - define the mock methods object in the factory
@@ -10,10 +10,10 @@ jest.mock("../../../src/infrastructure/VaultRDFIndexer", () => {
   };
 });
 
-// Mock @exocortex/core - ApplicationErrorHandler
-jest.mock("@exocortex/core", () => {
+// Mock exocortex - ApplicationErrorHandler
+jest.mock("exocortex", () => {
   return {
-    ...jest.requireActual("@exocortex/core"),
+    ...jest.requireActual("exocortex"),
     ApplicationErrorHandler: jest.fn(),
   };
 });

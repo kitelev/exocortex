@@ -1,14 +1,14 @@
 import { flushPromises } from "./helpers/testHelpers";
 import { PlanOnTodayCommand } from "../../src/application/commands/PlanOnTodayCommand";
 import { TFile, Notice } from "obsidian";
-import { TaskStatusService, CommandVisibilityContext, LoggingService } from "@exocortex/core";
+import { TaskStatusService, CommandVisibilityContext, LoggingService } from "exocortex";
 
 jest.mock("obsidian", () => ({
   ...jest.requireActual("obsidian"),
   Notice: jest.fn(),
 }));
-jest.mock("@exocortex/core", () => ({
-  ...jest.requireActual("@exocortex/core"),
+jest.mock("exocortex", () => ({
+  ...jest.requireActual("exocortex"),
   canPlanOnToday: jest.fn(),
   LoggingService: {
     error: jest.fn(),
@@ -55,7 +55,7 @@ describe("PlanOnTodayCommand", () => {
   });
 
   describe("checkCallback", () => {
-    const mockCanPlanOnToday = require("@exocortex/core").canPlanOnToday;
+    const mockCanPlanOnToday = require("exocortex").canPlanOnToday;
 
     it("should return false when context is null", () => {
       const result = command.checkCallback(true, mockFile, null);

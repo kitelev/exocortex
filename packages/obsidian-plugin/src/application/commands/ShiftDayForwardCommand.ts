@@ -5,7 +5,7 @@ import {
   canShiftDayForward,
   TaskStatusService,
   LoggingService,
-} from "@exocortex/core";
+} from "exocortex";
 
 export class ShiftDayForwardCommand implements ICommand {
   id = "shift-day-forward";

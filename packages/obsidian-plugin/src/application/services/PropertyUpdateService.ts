@@ -5,7 +5,7 @@ import {
   ApplicationErrorHandler,
   NetworkError,
   type INotificationService,
-} from "@exocortex/core";
+} from "exocortex";
 
 export class PropertyUpdateService {
   private logger: ILogger;

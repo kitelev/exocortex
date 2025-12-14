@@ -15,7 +15,7 @@ import {
   type AlgebraOperation,
   type ConstructOperation,
   type AlgebraTriple,
-} from "@exocortex/core";
+} from "exocortex";
 import type ExocortexPlugin from '@plugin/ExocortexPlugin';
 import { ObsidianVaultAdapter } from '@plugin/adapters/ObsidianVaultAdapter';
 import { ReactRenderer } from '@plugin/presentation/utils/ReactRenderer';

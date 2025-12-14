@@ -5,7 +5,7 @@ import {
   canCreateProject,
   ProjectCreationService,
   LoggingService,
-} from "@exocortex/core";
+} from "exocortex";
 import { LabelInputModal, type LabelInputModalResult } from '@plugin/presentation/modals/LabelInputModal';
 import { ObsidianVaultAdapter } from '@plugin/adapters/ObsidianVaultAdapter';
 

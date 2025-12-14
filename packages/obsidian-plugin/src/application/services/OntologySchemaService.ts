@@ -1,5 +1,5 @@
 import { SPARQLQueryService } from "./SPARQLQueryService";
-import { PropertyFieldType } from "@exocortex/core";
+import { PropertyFieldType } from "exocortex";
 import { LoggerFactory } from '@plugin/adapters/logging/LoggerFactory';
 
 /**

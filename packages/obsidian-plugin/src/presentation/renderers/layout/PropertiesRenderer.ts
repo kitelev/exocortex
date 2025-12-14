@@ -1,7 +1,7 @@
 import { TFile, Keymap } from "obsidian";
 import React from "react";
 import { ReactRenderer } from '@plugin/presentation/utils/ReactRenderer';
-import { MetadataExtractor } from "@exocortex/core";
+import { MetadataExtractor } from "exocortex";
 import { AssetPropertiesTable } from '@plugin/presentation/components/AssetPropertiesTable';
 import { AssetMetadataService } from "./helpers/AssetMetadataService";
 import { PropertyUpdateService } from '@plugin/application/services/PropertyUpdateService';

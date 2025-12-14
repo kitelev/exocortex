@@ -1,5 +1,5 @@
-import type { CommandVisibilityContext } from "@exocortex/core";
-import { canPlanOnToday, canTrashEffort } from "@exocortex/core";
+import type { CommandVisibilityContext } from "exocortex";
+import { canPlanOnToday, canTrashEffort } from "exocortex";
 
 describe("CommandVisibility - Effort Planning Commands", () => {
   describe("canPlanOnToday", () => {

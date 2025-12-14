@@ -1,4 +1,4 @@
-import { IConfiguration } from "@exocortex/core";
+import { IConfiguration } from "exocortex";
 import * as fs from "fs/promises";
 import * as path from "path";
 import * as os from "os";

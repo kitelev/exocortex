@@ -1,7 +1,7 @@
 import "reflect-metadata";
 import { container } from "tsyringe";
 import { PluginContainer } from "../../../../src/infrastructure/di/PluginContainer";
-import { DI_TOKENS } from "@exocortex/core";
+import { DI_TOKENS } from "exocortex";
 import { App, Plugin } from "obsidian";
 
 describe("PluginContainer", () => {

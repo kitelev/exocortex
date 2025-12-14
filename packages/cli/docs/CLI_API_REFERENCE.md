@@ -1,6 +1,6 @@
 # CLI API Reference
 
-> **API Stability**: This document defines the **stable API surface** for exocortex-cli v0.1.x. Commands and options documented here are considered stable and follow semantic versioning guarantees. See [VERSIONING.md](../VERSIONING.md) for versioning policy.
+> **API Stability**: This document defines the **stable API surface** for @exocortex/cli v0.1.x. Commands and options documented here are considered stable and follow semantic versioning guarantees. See [VERSIONING.md](../VERSIONING.md) for versioning policy.
 
 ---
 

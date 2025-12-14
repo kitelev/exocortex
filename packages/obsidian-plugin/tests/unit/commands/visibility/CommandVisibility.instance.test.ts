@@ -1,10 +1,10 @@
-import type { CommandVisibilityContext } from "@exocortex/core";
+import type { CommandVisibilityContext } from "exocortex";
 import {
   canCreateInstance,
   canCreateSubclass,
   inheritsFromPrototype,
   isPrototypeClass,
-} from "@exocortex/core";
+} from "exocortex";
 
 describe("CommandVisibility - Instance/Subclass Commands", () => {
   describe("canCreateInstance", () => {

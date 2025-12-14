@@ -1,5 +1,5 @@
-import { ClassCreationService } from "@exocortex/core";
-import { IVaultAdapter, IFile } from "@exocortex/core";
+import { ClassCreationService } from "exocortex";
+import { IVaultAdapter, IFile } from "exocortex";
 
 describe("ClassCreationService", () => {
   let service: ClassCreationService;

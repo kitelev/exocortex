@@ -1,4 +1,4 @@
-import { ProjectCreationService } from "@exocortex/core";
+import { ProjectCreationService } from "exocortex";
 
 describe("ProjectCreationService", () => {
   let service: ProjectCreationService;

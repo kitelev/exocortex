@@ -1,7 +1,7 @@
 import { TFile, Keymap } from "obsidian";
 import React from "react";
 import { ReactRenderer } from '@plugin/presentation/utils/ReactRenderer';
-import { MetadataExtractor, AssetClass, AreaHierarchyBuilder, IVaultAdapter } from "@exocortex/core";
+import { MetadataExtractor, AssetClass, AreaHierarchyBuilder, IVaultAdapter } from "exocortex";
 import { AreaHierarchyTree, type AreaClickEvent } from '@plugin/presentation/components/AreaHierarchyTree';
 import { AssetMetadataService } from "./helpers/AssetMetadataService";
 import { AssetRelation } from "./types";

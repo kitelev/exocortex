@@ -4,7 +4,7 @@ module.exports = {
   testMatch: [
     "<rootDir>/tests/unit/**/*.test.ts",
     "<rootDir>/tests/performance/**/*.test.ts",
-    "<rootDir>/../core/tests/**/*.test.ts",
+    "<rootDir>/../exocortex/tests/**/*.test.ts",
   ],
   testPathIgnorePatterns: [
     "/node_modules/",
@@ -15,14 +15,14 @@ module.exports = {
   ],
   collectCoverageFrom: [
     "<rootDir>/src/**/*.ts",
-    "<rootDir>/../core/src/**/*.ts",
+    "<rootDir>/../exocortex/src/**/*.ts",
     "!**/*.d.ts",
     "!**/node_modules/**",
     "!**/__tests__/**",
     "!**/tests/**",
   ],
   moduleNameMapper: {
-    "^@exocortex/core$": "<rootDir>/../core/src/index.ts",
+    "^exocortex$": "<rootDir>/../exocortex/src/index.ts",
     "^@plugin/types$": "<rootDir>/src/types/index.ts",
     "^@plugin/types/(.*)$": "<rootDir>/src/types/$1",
     "^@plugin/adapters/(.*)$": "<rootDir>/src/adapters/$1",
@@ -104,7 +104,7 @@ module.exports = {
           esModuleInterop: true,
           isolatedModules: true,
           paths: {
-            "@exocortex/core": ["<rootDir>/../core/src/index.ts"],
+            "exocortex": ["<rootDir>/../exocortex/src/index.ts"],
             "@plugin/types": ["<rootDir>/src/types/index.ts"],
             "@plugin/types/*": ["<rootDir>/src/types/*"],
             "@plugin/adapters/*": ["<rootDir>/src/adapters/*"],

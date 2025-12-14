@@ -5,7 +5,7 @@ import {
   canSetDraftStatus,
   TaskStatusService,
   LoggingService,
-} from "@exocortex/core";
+} from "exocortex";
 
 export class SetDraftStatusCommand implements ICommand {
   id = "set-draft-status";

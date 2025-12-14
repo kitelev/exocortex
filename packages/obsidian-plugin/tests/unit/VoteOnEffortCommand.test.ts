@@ -1,14 +1,14 @@
 import { VoteOnEffortCommand } from "../../src/application/commands/VoteOnEffortCommand";
 import { TFile, Notice } from "obsidian";
-import { EffortVotingService, CommandVisibilityContext, LoggingService } from "@exocortex/core";
+import { EffortVotingService, CommandVisibilityContext, LoggingService } from "exocortex";
 import { flushPromises } from "./helpers/testHelpers";
 
 jest.mock("obsidian", () => ({
   ...jest.requireActual("obsidian"),
   Notice: jest.fn(),
 }));
-jest.mock("@exocortex/core", () => ({
-  ...jest.requireActual("@exocortex/core"),
+jest.mock("exocortex", () => ({
+  ...jest.requireActual("exocortex"),
   canVoteOnEffort: jest.fn(),
   LoggingService: {
     error: jest.fn(),
@@ -55,7 +55,7 @@ describe("VoteOnEffortCommand", () => {
   });
 
   describe("checkCallback", () => {
-    const mockCanVoteOnEffort = require("@exocortex/core").canVoteOnEffort;
+    const mockCanVoteOnEffort = require("exocortex").canVoteOnEffort;
 
     it("should return false when context is null", () => {
       const result = command.checkCallback(true, mockFile, null);

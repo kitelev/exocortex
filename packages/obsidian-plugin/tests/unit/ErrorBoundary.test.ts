@@ -16,7 +16,7 @@ import {
   ApplicationErrorHandler,
   ValidationError,
   NetworkError,
-} from "@exocortex/core";
+} from "exocortex";
 import React, { Component, ReactNode, ErrorInfo } from "react";
 
 // Mock console.error to avoid noise in tests

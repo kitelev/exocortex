@@ -18,7 +18,7 @@ The Exocortex monorepo currently has:
 
 ### Coverage Breakdown by Package
 
-1. **@exocortex/core** (packages/core/): **0% coverage** - No tests exist
+1. **exocortex** (packages/exocortex/): **0% coverage** - No tests exist
    - 36 source files (~3,212 lines)
    - All business logic untested
 
@@ -40,14 +40,14 @@ These files contain critical business logic that's currently **completely untest
 
 | File | Lines | Coverage | Impact | Priority |
 |------|-------|----------|--------|----------|
-| **packages/core/src/domain/commands/CommandVisibility.ts** | 515 | 0% | CRITICAL | P0 |
-| **packages/core/src/utilities/FrontmatterService.ts** | 303 | 0% | CRITICAL | P0 |
-| **packages/core/src/utilities/DateFormatter.ts** | 209 | 0% | HIGH | P1 |
-| **packages/core/src/services/StatusTimestampService.ts** | 113 | 0% | HIGH | P1 |
-| **packages/core/src/utilities/MetadataHelpers.ts** | 113 | 0% | HIGH | P1 |
-| **packages/core/src/utilities/MetadataExtractor.ts** | 80 | 0% | MEDIUM | P2 |
-| **packages/core/src/services/PlanningService.ts** | ~100 | 0% | MEDIUM | P2 |
-| **packages/core/src/utilities/WikiLinkHelpers.ts** | ~50 | 0% | MEDIUM | P2 |
+| **packages/exocortex/src/domain/commands/CommandVisibility.ts** | 515 | 0% | CRITICAL | P0 |
+| **packages/exocortex/src/utilities/FrontmatterService.ts** | 303 | 0% | CRITICAL | P0 |
+| **packages/exocortex/src/utilities/DateFormatter.ts** | 209 | 0% | HIGH | P1 |
+| **packages/exocortex/src/services/StatusTimestampService.ts** | 113 | 0% | HIGH | P1 |
+| **packages/exocortex/src/utilities/MetadataHelpers.ts** | 113 | 0% | HIGH | P1 |
+| **packages/exocortex/src/utilities/MetadataExtractor.ts** | 80 | 0% | MEDIUM | P2 |
+| **packages/exocortex/src/services/PlanningService.ts** | ~100 | 0% | MEDIUM | P2 |
+| **packages/exocortex/src/utilities/WikiLinkHelpers.ts** | ~50 | 0% | MEDIUM | P2 |
 
 **Why Critical:**
 - CommandVisibility.ts controls which commands appear in UI (515 lines of conditional logic)
@@ -155,19 +155,19 @@ Additional Coverage Needed: 449 statements
 
 #### Week 1: Critical Utilities
 1. **Day 1: FrontmatterService.ts** (303 lines)
-   - Create: `packages/core/tests/utilities/FrontmatterService.test.ts`
+   - Create: `packages/exocortex/tests/utilities/FrontmatterService.test.ts`
    - Test: updateProperty, addProperty, removeProperty, parseFrontmatter
    - Coverage target: 80% (242 statements)
    - Estimated tests: 25-30 test cases
 
 2. **Day 2: DateFormatter.ts** (209 lines)
-   - Create: `packages/core/tests/utilities/DateFormatter.test.ts`
+   - Create: `packages/exocortex/tests/utilities/DateFormatter.test.ts`
    - Test: toLocalTimestamp, timezone handling, format variations
    - Coverage target: 85% (178 statements)
    - Estimated tests: 15-20 test cases
 
 3. **Day 3: CommandVisibility.ts** (515 lines)
-   - Create: `packages/core/tests/domain/CommandVisibility.test.ts`
+   - Create: `packages/exocortex/tests/domain/CommandVisibility.test.ts`
    - Test: All visibility functions (already partially tested in obsidian-plugin)
    - Coverage target: 70% (360 statements)
    - Estimated tests: 40-50 test cases
@@ -176,12 +176,12 @@ Additional Coverage Needed: 449 statements
 
 #### Week 2: Core Services
 4. **Day 4: MetadataHelpers.ts** (113 lines)
-   - Create: `packages/core/tests/utilities/MetadataHelpers.test.ts`
+   - Create: `packages/exocortex/tests/utilities/MetadataHelpers.test.ts`
    - Coverage target: 80% (90 statements)
    - Estimated tests: 12-15 test cases
 
 5. **Day 5: StatusTimestampService.ts** (113 lines)
-   - Create: `packages/core/tests/services/StatusTimestampService.test.ts`
+   - Create: `packages/exocortex/tests/services/StatusTimestampService.test.ts`
    - Coverage target: 75% (85 statements)
    - Estimated tests: 10-12 test cases
 
@@ -296,14 +296,14 @@ Target Exceeded:    +233 statements over 70% goal!
 ## Test Implementation Guidelines
 
 ### 1. Core Package Tests Setup
-First, create test infrastructure for @exocortex/core:
+First, create test infrastructure for exocortex:
 
 ```bash
-cd packages/core
+cd packages/exocortex
 mkdir -p tests/{domain,services,utilities}
 ```
 
-Update `packages/core/jest.config.js`:
+Update `packages/exocortex/jest.config.js`:
 ```javascript
 module.exports = {
   preset: 'ts-jest',

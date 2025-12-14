@@ -9,7 +9,7 @@ jest.unstable_mockModule("glob", () => ({
   glob: mockGlob,
 }));
 
-jest.unstable_mockModule("@exocortex/core", () => ({
+jest.unstable_mockModule("exocortex", () => ({
   FileNotFoundError: class FileNotFoundError extends Error {
     constructor(msg: string) {
       super(`File not found: ${msg}`);

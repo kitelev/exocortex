@@ -5,7 +5,7 @@ import {
   canPlanForEvening,
   TaskStatusService,
   LoggingService,
-} from "@exocortex/core";
+} from "exocortex";
 
 export class PlanForEveningCommand implements ICommand {
   id = "plan-for-evening";

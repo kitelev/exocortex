@@ -4,7 +4,7 @@ import {
   propertyNameToUri,
   uriToPropertyName,
   extractPropertyLabel,
-} from "@exocortex/core";
+} from "exocortex";
 
 describe("PropertyDefinition interface", () => {
   it("should allow creating a minimal property definition", () => {

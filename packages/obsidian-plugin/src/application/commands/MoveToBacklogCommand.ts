@@ -5,7 +5,7 @@ import {
   canMoveToBacklog,
   TaskStatusService,
   LoggingService,
-} from "@exocortex/core";
+} from "exocortex";
 
 export class MoveToBacklogCommand implements ICommand {
   id = "move-to-backlog";

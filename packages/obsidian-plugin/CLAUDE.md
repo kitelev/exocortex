@@ -447,18 +447,18 @@ expect(Notice).toHaveBeenCalledWith("Success");
 
 1. **Jest Unit Tests**: Use main package imports
    ```typescript
-   import { ValidationError, ServiceError } from "@exocortex/core";
+   import { ValidationError, ServiceError } from "exocortex";
    ```
 
 2. **Playwright Component Tests**: Use subpath imports
    ```typescript
-   import { ValidationError } from "@exocortex/core/domain/errors";
-   import { ApplicationErrorHandler } from "@exocortex/core/application/errors";
+   import { ValidationError } from "exocortex/domain/errors";
+   import { ApplicationErrorHandler } from "exocortex/application/errors";
    ```
 
 3. **Production Code**: Use main package imports
    ```typescript
-   import { ValidationError, ServiceError } from "@exocortex/core";
+   import { ValidationError, ServiceError } from "exocortex";
    ```
 
 **Why**: Playwright CT cannot parse TypeScript decorators. Subpath imports avoid loading services with decorators.
@@ -587,7 +587,7 @@ npm run bdd:check       # Enforced in CI (must pass)
 
 ```
 /packages
-  /core                       - @exocortex/core (storage-agnostic business logic)
+  /core                       - exocortex (storage-agnostic business logic)
     /src
       /domain                 - Entities, value objects, repository interfaces
       /application            - Use cases, services
@@ -613,7 +613,7 @@ Monorepo:
   - Shared dependencies across packages
   - Independent versioning per package
 
-Core (@exocortex/core):
+Core (exocortex):
   - TypeScript 4.9+ (strict mode)
   - Zero external dependencies (pure business logic)
   - Storage-agnostic design
@@ -622,12 +622,12 @@ Obsidian Plugin (@exocortex/obsidian-plugin):
   - Obsidian Plugin API 1.5.0+
   - ESBuild (bundling)
   - React 19.2.0 (UI components)
-  - Depends on @exocortex/core
+  - Depends on exocortex
 
 CLI (@exocortex/cli):
   - Node.js 18+
   - Commander.js (CLI framework)
-  - Depends on @exocortex/core
+  - Depends on exocortex
 
 Testing:
   - Jest (unit tests: 803 total across all packages)
@@ -1114,7 +1114,7 @@ chore: maintenance task
 
 ### CI Component Tests Fail with "Cannot find module"
 
-**Problem**: Component tests fail in CI with error "Cannot find module '@exocortex/core/dist/domain/errors/index.js'"
+**Problem**: Component tests fail in CI with error "Cannot find module 'exocortex/dist/domain/errors/index.js'"
 
 **Root Cause**: CI workflow doesn't build core package before running component tests, so dist/ folder doesn't exist.
 
@@ -1160,7 +1160,7 @@ setError({ message: "error", queryString: "SELECT ..." });
 
 ### Fresh Worktree Component Test Failures
 
-**Problem**: Component tests fail with "Cannot find module '@exocortex/core/dist/..." in fresh worktrees
+**Problem**: Component tests fail with "Cannot find module 'exocortex/dist/..." in fresh worktrees
 
 **Root Cause**: Fresh worktrees don't have built dist folders needed for Playwright CT subpath imports.
 
@@ -1336,7 +1336,7 @@ exocortex-assets-relations         // line 1196
    ```
 
 **Example from PR #352**:
-- Tried to export `TriplePattern` from `@exocortex/core`
+- Tried to export `TriplePattern` from `exocortex`
 - Exists in `packages/core/src/domain/TriplePattern.ts`
 - NOT in `packages/core/src/index.ts` → not public API
 - Solution: Removed from re-export list

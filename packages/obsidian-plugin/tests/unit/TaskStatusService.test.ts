@@ -1,6 +1,6 @@
 import "reflect-metadata";
 import { container } from "tsyringe";
-import { TaskStatusService, DI_TOKENS, registerCoreServices, resetContainer } from "@exocortex/core";
+import { TaskStatusService, DI_TOKENS, registerCoreServices, resetContainer } from "exocortex";
 import { TFile, Vault } from "obsidian";
 
 describe("TaskStatusService", () => {

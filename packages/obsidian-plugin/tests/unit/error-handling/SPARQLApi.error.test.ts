@@ -14,7 +14,7 @@ import { SPARQLApi } from "../../../src/application/api/SPARQLApi";
 import { SPARQLQueryService } from "../../../src/application/services/SPARQLQueryService";
 import type ExocortexPlugin from "../../../src/ExocortexPlugin";
 import type { App } from "obsidian";
-import { ServiceError, ValidationError } from "@exocortex/core";
+import { ServiceError, ValidationError } from "exocortex";
 
 jest.mock("../../../src/application/services/SPARQLQueryService");
 

@@ -2,7 +2,7 @@ import { v4 as uuidv4 } from "uuid";
 import { BaseCommandExecutor, CommandContext } from "./BaseCommandExecutor.js";
 import { ErrorHandler } from "../../utils/ErrorHandler.js";
 import { ExitCodes } from "../../utils/ExitCodes.js";
-import { DateFormatter, MetadataHelpers, FileAlreadyExistsError } from "@exocortex/core";
+import { DateFormatter, MetadataHelpers, FileAlreadyExistsError } from "exocortex";
 
 /**
  * Executes asset creation commands (create-task, create-project, etc.)

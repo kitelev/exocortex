@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import chalk from "chalk";
 import ora from "ora";
-import { PlanningService } from "@exocortex/core";
+import { PlanningService } from "exocortex";
 import { FileSystemVaultAdapter } from "../adapters/FileSystemVaultAdapter.js";
 import * as path from "path";
 export function planCommand() {

@@ -2,7 +2,7 @@ import { NodeFsAdapter } from "../adapters/NodeFsAdapter.js";
 import { PathResolver } from "../utils/PathResolver.js";
 import { ErrorHandler } from "../utils/ErrorHandler.js";
 import { ExitCodes } from "../utils/ExitCodes.js";
-import { FrontmatterService } from "@exocortex/core";
+import { FrontmatterService } from "exocortex";
 import type { CommandContext, FolderRepairResult } from "./commands/index.js";
 import {
   StatusCommandExecutor,

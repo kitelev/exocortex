@@ -1,7 +1,7 @@
 /**
  * Contract Definitions for Plugin-Core Interface
  *
- * These contracts define the expected behaviors of @exocortex/core components
+ * These contracts define the expected behaviors of exocortex components
  * when consumed by obsidian-plugin or any other consumer. Contract tests verify
  * that implementations adhere to these specifications.
  *

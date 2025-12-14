@@ -6,7 +6,7 @@ import {
   AreaSelectionModal,
   AreaSelectionModalResult,
 } from '@plugin/presentation/modals/AreaSelectionModal';
-import { SessionEventService } from "@exocortex/core";
+import { SessionEventService } from "exocortex";
 import { LoggerFactory } from '@plugin/adapters/logging/LoggerFactory';
 
 export class SetFocusAreaCommand implements ICommand {

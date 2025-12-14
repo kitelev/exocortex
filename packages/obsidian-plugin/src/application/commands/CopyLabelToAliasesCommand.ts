@@ -5,7 +5,7 @@ import {
   canCopyLabelToAliases,
   LabelToAliasService,
   LoggingService,
-} from "@exocortex/core";
+} from "exocortex";
 
 export class CopyLabelToAliasesCommand implements ICommand {
   id = "copy-label-to-aliases";

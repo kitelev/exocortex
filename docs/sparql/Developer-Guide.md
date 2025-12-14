@@ -24,14 +24,14 @@ This guide is for plugin developers who want to integrate SPARQL queries into th
                  │
                  ↓
 ┌─────────────────────────────────────────────────────────────┐
-│ NoteToRDFConverter (packages/core)                          │
+│ NoteToRDFConverter (packages/exocortex)                          │
 │ - Extracts frontmatter properties                           │
 │ - Converts to RDF triples                                   │
 └────────────────┬────────────────────────────────────────────┘
                  │
                  ↓
 ┌─────────────────────────────────────────────────────────────┐
-│ InMemoryTripleStore (packages/core)                         │
+│ InMemoryTripleStore (packages/exocortex)                         │
 │ - Stores triples with 6-index scheme (SPO/SOP/PSO/POS/OSP/OPS)│
 │ - O(1) lookup for all 2-known-term patterns                 │
 │ - LRU query result cache (1000 entries)                     │
@@ -67,7 +67,7 @@ This guide is for plugin developers who want to integrate SPARQL queries into th
 ### Package Structure
 
 ```
-@exocortex/core (storage-agnostic)
+exocortex (storage-agnostic)
 ├── domain/
 │   ├── Triple.ts                  # RDF triple representation
 │   ├── TripleStore.ts              # Interface for triple storage
@@ -203,7 +203,7 @@ interface ITripleStore {
 #### Adding Triples
 
 ```typescript
-import { Triple, IRI, Literal } from "@exocortex/core";
+import { Triple, IRI, Literal } from "exocortex";
 
 const triple = new Triple(
   IRI("vault://Notes/My-Note.md"),
@@ -273,7 +273,7 @@ tripleStore.match(subject, predicate, object)
 **Output**: Abstract Syntax Tree (AST)
 
 ```typescript
-import { SPARQLParser } from "@exocortex/core";
+import { SPARQLParser } from "exocortex";
 
 const parser = new SPARQLParser();
 const ast = parser.parse(`
@@ -305,7 +305,7 @@ try {
 **Output**: Algebra tree
 
 ```typescript
-import { AlgebraTranslator } from "@exocortex/core";
+import { AlgebraTranslator } from "exocortex";
 
 const translator = new AlgebraTranslator();
 const algebra = translator.translate(ast);
@@ -331,7 +331,7 @@ const algebra = translator.translate(ast);
 **Output**: Optimized algebra tree
 
 ```typescript
-import { AlgebraOptimizer } from "@exocortex/core";
+import { AlgebraOptimizer } from "exocortex";
 
 const optimizer = new AlgebraOptimizer();
 const optimizedAlgebra = optimizer.optimize(algebra);
@@ -350,7 +350,7 @@ const optimizedAlgebra = optimizer.optimize(algebra);
 **Output**: Solution mappings (bindings)
 
 ```typescript
-import { BGPExecutor } from "@exocortex/core";
+import { BGPExecutor } from "exocortex";
 
 const executor = new BGPExecutor(tripleStore);
 const results: SolutionMapping[] = [];
@@ -369,7 +369,7 @@ import {
   AlgebraOptimizer,
   BGPExecutor,
   InMemoryTripleStore
-} from "@exocortex/core";
+} from "exocortex";
 
 async function executeQuery(queryString: string, tripleStore: InMemoryTripleStore) {
   const parser = new SPARQLParser();
@@ -403,7 +403,7 @@ SPARQL Engine v2 introduces specialized executors for advanced features.
 Handles property path expressions (`+`, `*`, `?`, `^`, `/`, `|`).
 
 ```typescript
-import { PropertyPathExecutor } from "@exocortex/core";
+import { PropertyPathExecutor } from "exocortex";
 
 const pathExecutor = new PropertyPathExecutor(tripleStore);
 
@@ -431,7 +431,7 @@ for await (const binding of pathExecutor.execute(subject, path, object)) {
 Handles FILTER expressions including EXISTS/NOT EXISTS.
 
 ```typescript
-import { FilterExecutor, ExistsEvaluator } from "@exocortex/core";
+import { FilterExecutor, ExistsEvaluator } from "exocortex";
 
 const filterExecutor = new FilterExecutor();
 
@@ -460,7 +460,7 @@ for await (const binding of filterExecutor.execute(filterOp, inputSolutions)) {
 Automatically optimizes query plans.
 
 ```typescript
-import { AlgebraOptimizer } from "@exocortex/core";
+import { AlgebraOptimizer } from "exocortex";
 
 const optimizer = new AlgebraOptimizer();
 const optimizedPlan = optimizer.optimize(algebraTree);
@@ -484,7 +484,7 @@ const cost = optimizer.estimateCost(operation);
 Caches optimized query plans for repeated queries.
 
 ```typescript
-import { QueryPlanCache } from "@exocortex/core";
+import { QueryPlanCache } from "exocortex";
 
 const cache = new QueryPlanCache(100); // max 100 plans
 
@@ -516,7 +516,7 @@ cache.clear();
 #### Example: LIMIT Operator
 
 ```typescript
-import { SolutionMapping, AlgebraOperation } from "@exocortex/core";
+import { SolutionMapping, AlgebraOperation } from "exocortex";
 
 class LimitOperator {
   private limit: number;
@@ -591,7 +591,7 @@ const filteredResults = new FilterOperator(filterFn, bgpResults).execute();
 ### Extending BGPExecutor
 
 ```typescript
-import { BGPExecutor, InMemoryTripleStore, SolutionMapping } from "@exocortex/core";
+import { BGPExecutor, InMemoryTripleStore, SolutionMapping } from "exocortex";
 
 class CustomBGPExecutor extends BGPExecutor {
   constructor(tripleStore: InMemoryTripleStore) {
@@ -780,7 +780,7 @@ class HookedSPARQLApi extends SPARQLApi {
 **Custom triple store with persistence**:
 
 ```typescript
-import { InMemoryTripleStore, Triple } from "@exocortex/core";
+import { InMemoryTripleStore, Triple } from "exocortex";
 import { TFile, Vault } from "obsidian";
 
 class PersistentTripleStore extends InMemoryTripleStore {
@@ -821,7 +821,7 @@ class PersistentTripleStore extends InMemoryTripleStore {
 ### Unit Testing Triple Store
 
 ```typescript
-import { InMemoryTripleStore, Triple, IRI, Literal } from "@exocortex/core";
+import { InMemoryTripleStore, Triple, IRI, Literal } from "exocortex";
 
 describe("InMemoryTripleStore", () => {
   let store: InMemoryTripleStore;
@@ -872,7 +872,7 @@ describe("InMemoryTripleStore", () => {
 ### Unit Testing Query Execution
 
 ```typescript
-import { SPARQLParser, BGPExecutor, InMemoryTripleStore } from "@exocortex/core";
+import { SPARQLParser, BGPExecutor, InMemoryTripleStore } from "exocortex";
 
 describe("BGPExecutor", () => {
   let store: InMemoryTripleStore;

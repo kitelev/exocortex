@@ -7,7 +7,7 @@ import {
   LoggingService,
   WikiLinkHelpers,
   AssetClass
-} from "@exocortex/core";
+} from "exocortex";
 import { LabelInputModal } from "../../src/presentation/modals/LabelInputModal";
 import { DynamicAssetCreationModal } from "../../src/presentation/modals/DynamicAssetCreationModal";
 import { ObsidianVaultAdapter } from "../../src/adapters/ObsidianVaultAdapter";
@@ -19,8 +19,8 @@ jest.mock("obsidian", () => ({
 }));
 jest.mock("../../src/presentation/modals/LabelInputModal");
 jest.mock("../../src/presentation/modals/DynamicAssetCreationModal");
-jest.mock("@exocortex/core", () => ({
-  ...jest.requireActual("@exocortex/core"),
+jest.mock("exocortex", () => ({
+  ...jest.requireActual("exocortex"),
   canCreateInstance: jest.fn(),
   LoggingService: {
     error: jest.fn(),
@@ -48,7 +48,7 @@ describe("CreateInstanceCommand", () => {
     jest.clearAllMocks();
 
     // Setup WikiLinkHelpers mock
-    const { WikiLinkHelpers } = require("@exocortex/core");
+    const { WikiLinkHelpers } = require("exocortex");
     WikiLinkHelpers.normalize.mockImplementation((str: string) => str);
 
     // Create mock leaf
@@ -120,7 +120,7 @@ describe("CreateInstanceCommand", () => {
   });
 
   describe("checkCallback", () => {
-    const mockCanCreateInstance = require("@exocortex/core").canCreateInstance;
+    const mockCanCreateInstance = require("exocortex").canCreateInstance;
 
     it("should return false when context is null", () => {
       const result = command.checkCallback(true, mockFile, null);

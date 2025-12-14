@@ -3,7 +3,7 @@ import {
   type AssetRelation,
   type IVaultAdapter,
   type IFile,
-} from "@exocortex/core";
+} from "exocortex";
 
 describe("AreaHierarchyBuilder", () => {
   let builder: AreaHierarchyBuilder;

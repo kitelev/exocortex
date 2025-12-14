@@ -6,7 +6,7 @@ import {
   IFileSystemAdapter,
   FileNotFoundError,
   FileAlreadyExistsError,
-} from "@exocortex/core";
+} from "exocortex";
 
 export class NodeFsAdapter implements IFileSystemAdapter {
   constructor(private rootPath: string) {}

@@ -38,7 +38,7 @@ const PYRAMID_CONFIG = {
   testDirs: {
     unit: [
       'packages/obsidian-plugin/tests/unit',
-      'packages/core/tests',
+      'packages/exocortex/tests',
       'packages/cli/tests/unit',
     ],
     component: [

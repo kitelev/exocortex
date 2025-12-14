@@ -5,7 +5,7 @@ import {
   canConvertProjectToTask,
   AssetConversionService,
   LoggingService,
-} from "@exocortex/core";
+} from "exocortex";
 
 export class ConvertProjectToTaskCommand implements ICommand {
   id = "convert-project-to-task";

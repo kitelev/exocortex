@@ -1,9 +1,9 @@
-import type { CommandVisibilityContext } from "@exocortex/core";
+import type { CommandVisibilityContext } from "exocortex";
 import {
   canCreateRelatedTask,
   canCreateTaskForDailyNote,
   AssetClass,
-} from "@exocortex/core";
+} from "exocortex";
 
 describe("CommandVisibility - Task Creation Commands", () => {
   describe("canCreateRelatedTask", () => {

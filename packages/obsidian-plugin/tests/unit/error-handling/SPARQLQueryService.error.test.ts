@@ -19,7 +19,7 @@ import {
   ValidationError,
   type ILogger,
   type INotificationService,
-} from "@exocortex/core";
+} from "exocortex";
 
 // Mock dependencies
 jest.mock("../../../src/infrastructure/VaultRDFIndexer", () => ({

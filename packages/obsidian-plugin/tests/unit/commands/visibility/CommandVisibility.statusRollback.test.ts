@@ -1,5 +1,5 @@
-import type { CommandVisibilityContext } from "@exocortex/core";
-import { canRollbackStatus } from "@exocortex/core";
+import type { CommandVisibilityContext } from "exocortex";
+import { canRollbackStatus } from "exocortex";
 
 describe("CommandVisibility - Status Rollback Commands", () => {
   describe("canRollbackStatus", () => {

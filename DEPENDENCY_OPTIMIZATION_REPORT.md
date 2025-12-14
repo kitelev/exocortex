@@ -13,7 +13,7 @@ Completed comprehensive dependency audit and optimization for the Exocortex mono
 | Location | Size |
 |----------|------|
 | Root `node_modules/` | 257 MB |
-| `packages/core/node_modules/` | 3.3 MB |
+| `packages/exocortex/node_modules/` | 3.3 MB |
 | `packages/cli/node_modules/` | 2.6 MB |
 | `packages/obsidian-plugin/node_modules/` | 788 KB |
 | **Total** | **264 MB** |
@@ -66,7 +66,7 @@ Ran `npx depcheck --json` to identify unused dependencies.
 
 All workspaces use consistent TypeScript versions:
 - Root: `5.9.3`
-- `packages/core`: `^5.9.3`
+- `packages/exocortex`: `^5.9.3`
 - `packages/cli`: `^5.9.3`
 - Exception: `eslint-plugin-obsidianmd` has transitive dependency on `5.4.5`
 
@@ -101,7 +101,7 @@ npm uninstall eslint-plugin-import eslint-plugin-prettier
 | Location | Size | Change |
 |----------|------|--------|
 | Root `node_modules/` | 256 MB | -1 MB |
-| `packages/core/node_modules/` | 3.3 MB | 0 |
+| `packages/exocortex/node_modules/` | 3.3 MB | 0 |
 | `packages/cli/node_modules/` | 2.6 MB | 0 |
 | `packages/obsidian-plugin/node_modules/` | 788 KB | 0 |
 | **Total** | **263 MB** | **-1 MB (-0.4%)** |

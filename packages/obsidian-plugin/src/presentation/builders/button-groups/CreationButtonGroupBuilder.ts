@@ -11,7 +11,7 @@ import {
   WikiLinkHelpers,
   AssetClass,
   DateFormatter,
-} from "@exocortex/core";
+} from "exocortex";
 import {
   NarrowerConceptModal,
   type NarrowerConceptModalResult,

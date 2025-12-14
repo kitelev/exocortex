@@ -1,7 +1,7 @@
 import {
   SupervisionCreationService,
   type SupervisionFormData,
-} from "@exocortex/core";
+} from "exocortex";
 
 describe("SupervisionCreationService", () => {
   let service: SupervisionCreationService;

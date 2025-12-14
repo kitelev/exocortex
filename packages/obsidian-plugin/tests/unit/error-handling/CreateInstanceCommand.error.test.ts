@@ -20,7 +20,7 @@ import {
   LoggingService,
   WikiLinkHelpers,
   AssetClass,
-} from "@exocortex/core";
+} from "exocortex";
 import { LabelInputModal } from "../../../src/presentation/modals/LabelInputModal";
 import { DynamicAssetCreationModal } from "../../../src/presentation/modals/DynamicAssetCreationModal";
 import { ObsidianVaultAdapter } from "../../../src/adapters/ObsidianVaultAdapter";
@@ -32,8 +32,8 @@ jest.mock("obsidian", () => ({
 }));
 jest.mock("../../../src/presentation/modals/LabelInputModal");
 jest.mock("../../../src/presentation/modals/DynamicAssetCreationModal");
-jest.mock("@exocortex/core", () => ({
-  ...jest.requireActual("@exocortex/core"),
+jest.mock("exocortex", () => ({
+  ...jest.requireActual("exocortex"),
   canCreateInstance: jest.fn(),
   LoggingService: {
     error: jest.fn(),
@@ -60,7 +60,7 @@ describe("CreateInstanceCommand Error Handling", () => {
   beforeEach(() => {
     jest.clearAllMocks();
 
-    const { WikiLinkHelpers } = require("@exocortex/core");
+    const { WikiLinkHelpers } = require("exocortex");
     WikiLinkHelpers.normalize.mockImplementation((str: string) => str);
 
     mockLeaf = {
@@ -122,7 +122,7 @@ describe("CreateInstanceCommand Error Handling", () => {
   });
 
   describe("Modal Error Handling", () => {
-    const mockCanCreateInstance = require("@exocortex/core").canCreateInstance;
+    const mockCanCreateInstance = require("exocortex").canCreateInstance;
 
     it("should handle modal throwing an error during open", async () => {
       mockCanCreateInstance.mockReturnValue(true);
@@ -194,7 +194,7 @@ describe("CreateInstanceCommand Error Handling", () => {
   });
 
   describe("Task Creation Service Error Handling", () => {
-    const mockCanCreateInstance = require("@exocortex/core").canCreateInstance;
+    const mockCanCreateInstance = require("exocortex").canCreateInstance;
 
     it("should handle network error during task creation", async () => {
       mockCanCreateInstance.mockReturnValue(true);
@@ -332,7 +332,7 @@ describe("CreateInstanceCommand Error Handling", () => {
   });
 
   describe("File Conversion Error Handling", () => {
-    const mockCanCreateInstance = require("@exocortex/core").canCreateInstance;
+    const mockCanCreateInstance = require("exocortex").canCreateInstance;
 
     it("should throw error when toTFile returns null", async () => {
       mockCanCreateInstance.mockReturnValue(true);
@@ -378,7 +378,7 @@ describe("CreateInstanceCommand Error Handling", () => {
   });
 
   describe("Workspace Operation Error Handling", () => {
-    const mockCanCreateInstance = require("@exocortex/core").canCreateInstance;
+    const mockCanCreateInstance = require("exocortex").canCreateInstance;
 
     it("should handle openFile failure", async () => {
       mockCanCreateInstance.mockReturnValue(true);
@@ -445,7 +445,7 @@ describe("CreateInstanceCommand Error Handling", () => {
   });
 
   describe("Context and Input Validation Errors", () => {
-    const mockCanCreateInstance = require("@exocortex/core").canCreateInstance;
+    const mockCanCreateInstance = require("exocortex").canCreateInstance;
 
     it("should handle empty instanceClass array", async () => {
       mockCanCreateInstance.mockReturnValue(true);
@@ -526,7 +526,7 @@ describe("CreateInstanceCommand Error Handling", () => {
   });
 
   describe("Timeout and Long-Running Operation Handling", () => {
-    const mockCanCreateInstance = require("@exocortex/core").canCreateInstance;
+    const mockCanCreateInstance = require("exocortex").canCreateInstance;
 
     it("should handle file never becoming active (timeout scenario)", async () => {
       mockCanCreateInstance.mockReturnValue(true);
@@ -589,7 +589,7 @@ describe("CreateInstanceCommand Error Handling", () => {
   });
 
   describe("Open in New Tab Option Error Handling", () => {
-    const mockCanCreateInstance = require("@exocortex/core").canCreateInstance;
+    const mockCanCreateInstance = require("exocortex").canCreateInstance;
 
     it("should handle error when opening in new tab", async () => {
       mockCanCreateInstance.mockReturnValue(true);

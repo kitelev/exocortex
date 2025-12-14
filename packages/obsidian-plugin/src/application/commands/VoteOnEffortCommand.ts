@@ -5,7 +5,7 @@ import {
   canVoteOnEffort,
   EffortVotingService,
   LoggingService,
-} from "@exocortex/core";
+} from "exocortex";
 
 export class VoteOnEffortCommand implements ICommand {
   id = "vote-on-effort";

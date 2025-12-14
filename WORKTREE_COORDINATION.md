@@ -409,7 +409,7 @@ Essential topics covered there:
 - Branch protection (RULE 4)
 - BDD coverage (RULE 6)
 - Code style (RULE 7)
-- Monorepo structure (packages/core, packages/obsidian-plugin, packages/cli)
+- Monorepo structure (packages/exocortex, packages/obsidian-plugin, packages/cli)
 - Architecture patterns
 - Quality metrics (803 unit tests across all packages)
 - Troubleshooting

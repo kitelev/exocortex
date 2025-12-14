@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useMemo } from "react";
 import type { App } from "obsidian";
-import type { SolutionMapping, Triple } from "@exocortex/core";
+import type { SolutionMapping, Triple } from "exocortex";
 import {
   TEMPLATE_CATEGORIES,
   getTemplatesByCategory,

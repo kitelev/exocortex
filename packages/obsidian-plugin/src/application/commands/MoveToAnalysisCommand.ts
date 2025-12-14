@@ -5,7 +5,7 @@ import {
   canMoveToAnalysis,
   TaskStatusService,
   LoggingService,
-} from "@exocortex/core";
+} from "exocortex";
 
 export class MoveToAnalysisCommand implements ICommand {
   id = "move-to-analysis";

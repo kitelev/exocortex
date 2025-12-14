@@ -1,6 +1,6 @@
 import React from "react";
 import { TFile } from "obsidian";
-import { canMoveToToDo, CommandVisibilityContext } from "@exocortex/core";
+import { canMoveToToDo, CommandVisibilityContext } from "exocortex";
 
 export interface MoveToToDoButtonProps {
   instanceClass: string | string[] | null;

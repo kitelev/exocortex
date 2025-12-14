@@ -1,5 +1,5 @@
 import { DailyNoteHelpers } from "../../src/presentation/renderers/helpers/DailyNoteHelpers";
-import { MetadataExtractor } from "@exocortex/core";
+import { MetadataExtractor } from "exocortex";
 import { TFile } from "obsidian";
 
 describe("DailyNoteHelpers", () => {

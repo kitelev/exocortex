@@ -1,4 +1,4 @@
-import { PropertyFieldType } from "@exocortex/core";
+import { PropertyFieldType } from "exocortex";
 import { SizeSelectPropertyField, TASK_SIZE_OPTIONS } from "../../../src/presentation/components/property-fields/SizeSelectPropertyField";
 
 // Helper to extend HTMLElement with Obsidian's methods

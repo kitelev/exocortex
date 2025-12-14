@@ -1,5 +1,5 @@
 import { App } from "obsidian";
-import { PropertyFieldType, type PropertyDefinition } from "@exocortex/core";
+import { PropertyFieldType, type PropertyDefinition } from "exocortex";
 import type { ValidationResult } from "./types";
 import { TextPropertyField } from "./TextPropertyField";
 import { DatePropertyField } from "./DatePropertyField";

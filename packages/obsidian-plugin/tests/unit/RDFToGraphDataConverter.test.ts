@@ -1,5 +1,5 @@
 import { RDFToGraphDataConverter } from "../../src/application/utils/RDFToGraphDataConverter";
-import type { Triple, GraphData, GraphNode, GraphEdge } from "@exocortex/core";
+import type { Triple, GraphData, GraphNode, GraphEdge } from "exocortex";
 
 describe("RDFToGraphDataConverter", () => {
   describe("convert", () => {

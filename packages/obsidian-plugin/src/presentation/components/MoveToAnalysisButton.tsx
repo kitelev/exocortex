@@ -1,6 +1,6 @@
 import React from "react";
 import { TFile } from "obsidian";
-import { canMoveToAnalysis, CommandVisibilityContext } from "@exocortex/core";
+import { canMoveToAnalysis, CommandVisibilityContext } from "exocortex";
 
 export interface MoveToAnalysisButtonProps {
   instanceClass: string | string[] | null;

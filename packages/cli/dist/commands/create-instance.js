@@ -2,7 +2,7 @@ import { Command } from "commander";
 import chalk from "chalk";
 import ora from "ora";
 import * as path from "path";
-import { TaskCreationService, AssetClass } from "@exocortex/core";
+import { TaskCreationService, AssetClass } from "exocortex";
 import { FileSystemVaultAdapter } from "../adapters/FileSystemVaultAdapter.js";
 export function createInstanceCommand() {
     const cmd = new Command("instance");

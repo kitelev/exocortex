@@ -1,6 +1,6 @@
 import { AddSupervisionCommand } from "../../src/application/commands/AddSupervisionCommand";
 import { App, Notice, TFile, WorkspaceLeaf } from "obsidian";
-import { SupervisionCreationService, LoggingService } from "@exocortex/core";
+import { SupervisionCreationService, LoggingService } from "exocortex";
 import { SupervisionInputModal } from "../../src/presentation/modals/SupervisionInputModal";
 import { ObsidianVaultAdapter } from "../../src/adapters/ObsidianVaultAdapter";
 
@@ -9,8 +9,8 @@ jest.mock("obsidian", () => ({
   Notice: jest.fn(),
 }));
 jest.mock("../../src/presentation/modals/SupervisionInputModal");
-jest.mock("@exocortex/core", () => ({
-  ...jest.requireActual("@exocortex/core"),
+jest.mock("exocortex", () => ({
+  ...jest.requireActual("exocortex"),
   LoggingService: {
     error: jest.fn(),
   },

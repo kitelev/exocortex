@@ -1,14 +1,14 @@
 import { flushPromises, waitForCondition } from "./helpers/testHelpers";
 import { MarkDoneCommand } from "../../src/application/commands/MarkDoneCommand";
 import { TFile, Notice } from "obsidian";
-import { TaskStatusService, CommandVisibilityContext, LoggingService } from "@exocortex/core";
+import { TaskStatusService, CommandVisibilityContext, LoggingService } from "exocortex";
 
 jest.mock("obsidian", () => ({
   ...jest.requireActual("obsidian"),
   Notice: jest.fn(),
 }));
-jest.mock("@exocortex/core", () => ({
-  ...jest.requireActual("@exocortex/core"),
+jest.mock("exocortex", () => ({
+  ...jest.requireActual("exocortex"),
   canMarkDone: jest.fn(),
   LoggingService: {
     error: jest.fn(),
@@ -55,7 +55,7 @@ describe("MarkDoneCommand", () => {
   });
 
   describe("checkCallback", () => {
-    const mockCanMarkDone = require("@exocortex/core").canMarkDone;
+    const mockCanMarkDone = require("exocortex").canMarkDone;
 
     it("should return false when context is null", () => {
       const result = command.checkCallback(true, mockFile, null);

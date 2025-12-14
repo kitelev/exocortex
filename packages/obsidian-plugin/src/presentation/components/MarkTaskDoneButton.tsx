@@ -1,6 +1,6 @@
 import React from "react";
 import { TFile } from "obsidian";
-import { canMarkDone, CommandVisibilityContext } from "@exocortex/core";
+import { canMarkDone, CommandVisibilityContext } from "exocortex";
 
 export interface MarkTaskDoneButtonProps {
   instanceClass: string | string[] | null;

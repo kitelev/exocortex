@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import type { SolutionMapping, Triple } from "@exocortex/core";
+import type { SolutionMapping, Triple } from "exocortex";
 import type { App } from "obsidian";
 import { SPARQLTableView } from "./SPARQLTableView";
 import { SPARQLListView } from "./SPARQLListView";

@@ -1,4 +1,4 @@
-import { RenameToUidService, type IVaultAdapter } from "@exocortex/core";
+import { RenameToUidService, type IVaultAdapter } from "exocortex";
 
 describe("RenameToUidService", () => {
   let service: RenameToUidService;

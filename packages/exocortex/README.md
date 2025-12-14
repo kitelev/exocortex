@@ -1,4 +1,4 @@
-# @exocortex/core
+# exocortex
 
 Pure TypeScript business logic for Exocortex knowledge management system.
 
@@ -15,7 +15,7 @@ Pure TypeScript business logic for Exocortex knowledge management system.
 ## Installation
 
 ```bash
-npm install @exocortex/core
+npm install exocortex
 ```
 
 ## Usage
@@ -28,7 +28,7 @@ import {
   TaskStatusService,
   PlanningService,
   IFileSystemAdapter
-} from '@exocortex/core';
+} from 'exocortex';
 
 // Implement IFileSystemAdapter for your platform
 class MyFsAdapter implements IFileSystemAdapter {
@@ -58,7 +58,7 @@ await planningService.planOnToday(taskPath);
 ## Architecture
 
 ```
-@exocortex/core/
+exocortex/
 ├── domain/              - Business entities and constants
 │   ├── constants/       - AssetClass, EffortStatus enums
 │   ├── models/          - GraphNode, GraphData, AreaNode
@@ -170,7 +170,7 @@ await service.shiftDayBackward('tasks/123.md');
 Manipulate YAML frontmatter in markdown files.
 
 ```typescript
-import { FrontmatterService } from '@exocortex/core';
+import { FrontmatterService } from 'exocortex';
 
 const service = new FrontmatterService();
 
@@ -193,7 +193,7 @@ const removed = service.removeProperty(content, 'archived');
 Format dates for Exocortex.
 
 ```typescript
-import { DateFormatter } from '@exocortex/core';
+import { DateFormatter } from 'exocortex';
 
 // Local timestamp: 2025-10-26T14:30:00
 const timestamp = DateFormatter.toLocalTimestamp(new Date());
@@ -230,7 +230,7 @@ export interface IFileSystemAdapter {
 }
 ```
 
-See `exocortex-cli` package for Node.js implementation example.
+See `@exocortex/cli` package for Node.js implementation example.
 
 ## Constants
 

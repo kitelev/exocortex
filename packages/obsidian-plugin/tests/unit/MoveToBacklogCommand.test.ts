@@ -1,14 +1,14 @@
 import { flushPromises } from "./helpers/testHelpers";
 import { MoveToBacklogCommand } from "../../src/application/commands/MoveToBacklogCommand";
 import { TFile, Notice } from "obsidian";
-import { TaskStatusService, CommandVisibilityContext, LoggingService } from "@exocortex/core";
+import { TaskStatusService, CommandVisibilityContext, LoggingService } from "exocortex";
 
 jest.mock("obsidian", () => ({
   ...jest.requireActual("obsidian"),
   Notice: jest.fn(),
 }));
-jest.mock("@exocortex/core", () => ({
-  ...jest.requireActual("@exocortex/core"),
+jest.mock("exocortex", () => ({
+  ...jest.requireActual("exocortex"),
   canMoveToBacklog: jest.fn(),
   LoggingService: {
     error: jest.fn(),
@@ -55,7 +55,7 @@ describe("MoveToBacklogCommand", () => {
   });
 
   describe("checkCallback", () => {
-    const mockCanMoveToBacklog = require("@exocortex/core").canMoveToBacklog;
+    const mockCanMoveToBacklog = require("exocortex").canMoveToBacklog;
 
     it("should return false when context is null", () => {
       const result = command.checkCallback(true, mockFile, null);

@@ -1,7 +1,7 @@
 import { Modal, App, Notice, TFile, Plugin } from "obsidian";
 import React from "react";
-import type { SolutionMapping, Triple } from "@exocortex/core";
-import { ApplicationErrorHandler } from "@exocortex/core";
+import type { SolutionMapping, Triple } from "exocortex";
+import { ApplicationErrorHandler } from "exocortex";
 import { ReactRenderer } from '@plugin/presentation/utils/ReactRenderer';
 import { QueryBuilder } from '@plugin/presentation/components/sparql/QueryBuilder';
 import { SPARQLQueryService } from '@plugin/application/services/SPARQLQueryService';

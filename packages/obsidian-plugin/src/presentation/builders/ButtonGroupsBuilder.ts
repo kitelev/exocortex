@@ -17,7 +17,7 @@ import {
   LabelToAliasService,
   AssetConversionService,
   MetadataExtractor,
-} from "@exocortex/core";
+} from "exocortex";
 import {
   ButtonBuilderContext,
   ButtonBuilderServices,

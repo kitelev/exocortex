@@ -1,4 +1,4 @@
-import { AlgorithmExtractor } from "@exocortex/core";
+import { AlgorithmExtractor } from "exocortex";
 
 describe("AlgorithmExtractor", () => {
   let extractor: AlgorithmExtractor;

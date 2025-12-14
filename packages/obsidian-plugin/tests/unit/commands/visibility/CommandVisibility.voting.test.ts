@@ -1,5 +1,5 @@
-import type { CommandVisibilityContext } from "@exocortex/core";
-import { canVoteOnEffort } from "@exocortex/core";
+import type { CommandVisibilityContext } from "exocortex";
+import { canVoteOnEffort } from "exocortex";
 
 describe("CommandVisibility - Voting Commands", () => {
   describe("canVoteOnEffort", () => {

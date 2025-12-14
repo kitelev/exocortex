@@ -1,7 +1,7 @@
 import React from "react";
 import { render } from "@testing-library/react";
 import { SPARQLGraphView, extractPredicateName } from "../../src/presentation/components/sparql/SPARQLGraphView";
-import type { Triple, GraphNode } from "@exocortex/core";
+import type { Triple, GraphNode } from "exocortex";
 
 jest.mock("d3", () => ({
   select: jest.fn(() => ({

@@ -5,7 +5,7 @@ import {
   canMoveToToDo,
   TaskStatusService,
   LoggingService,
-} from "@exocortex/core";
+} from "exocortex";
 
 export class MoveToToDoCommand implements ICommand {
   id = "move-to-todo";

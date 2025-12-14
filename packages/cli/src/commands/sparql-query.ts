@@ -13,7 +13,7 @@ import {
   type SolutionMapping,
   type AlgebraOperation,
   type ConstructOperation,
-} from "@exocortex/core";
+} from "exocortex";
 import { FileSystemVaultAdapter } from "../adapters/FileSystemVaultAdapter.js";
 import { TableFormatter } from "../formatters/TableFormatter.js";
 import { JsonFormatter } from "../formatters/JsonFormatter.js";

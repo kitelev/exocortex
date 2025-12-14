@@ -5,7 +5,7 @@ import {
   canRenameToUid,
   RenameToUidService,
   LoggingService,
-} from "@exocortex/core";
+} from "exocortex";
 
 export class RenameToUidCommand implements ICommand {
   id = "rename-to-uid";

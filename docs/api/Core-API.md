@@ -1,19 +1,19 @@
 # Core API Reference
 
-**@exocortex/core - Storage-agnostic business logic package**
+**exocortex - Storage-agnostic business logic package**
 
 ---
 
 ## Overview
 
-The `@exocortex/core` package provides storage-independent business logic:
+The `exocortex` package provides storage-independent business logic:
 
 ```typescript
 import {
   TaskCreationService,
   EffortStatusWorkflow,
   RDFSerializer
-} from '@exocortex/core';
+} from 'exocortex';
 ```
 
 **Key benefits:**
@@ -28,7 +28,7 @@ import {
 ### Task Creation Service
 
 ```typescript
-import { TaskCreationService } from '@exocortex/core';
+import { TaskCreationService } from 'exocortex';
 
 class TaskCreationService {
   createTask(params: {
@@ -57,7 +57,7 @@ const task = await service.createTask({
 ### Project Creation Service
 
 ```typescript
-import { ProjectCreationService } from '@exocortex/core';
+import { ProjectCreationService } from 'exocortex';
 
 class ProjectCreationService {
   createProject(params: {
@@ -71,7 +71,7 @@ class ProjectCreationService {
 ### Effort Status Workflow
 
 ```typescript
-import { EffortStatusWorkflow } from '@exocortex/core';
+import { EffortStatusWorkflow } from 'exocortex';
 
 class EffortStatusWorkflow {
   canTransition(from: string, to: string): boolean;
@@ -96,7 +96,7 @@ if (workflow.canTransition(currentStatus, "ems__EffortStatusDoing")) {
 ### Effort Voting Service
 
 ```typescript
-import { EffortVotingService } from '@exocortex/core';
+import { EffortVotingService } from 'exocortex';
 
 class EffortVotingService {
   vote(metadata: Record<string, any>): Record<string, any>;
@@ -107,7 +107,7 @@ class EffortVotingService {
 ### Area Hierarchy Builder
 
 ```typescript
-import { AreaHierarchyBuilder } from '@exocortex/core';
+import { AreaHierarchyBuilder } from 'exocortex';
 
 interface AreaNode {
   area: string;
@@ -125,7 +125,7 @@ class AreaHierarchyBuilder {
 ### Planning Service
 
 ```typescript
-import { PlanningService } from '@exocortex/core';
+import { PlanningService } from 'exocortex';
 
 class PlanningService {
   planOnDate(
@@ -147,7 +147,7 @@ class PlanningService {
 ### Triple Store
 
 ```typescript
-import { InMemoryTripleStore } from '@exocortex/core';
+import { InMemoryTripleStore } from 'exocortex';
 
 const store = new InMemoryTripleStore();
 
@@ -169,7 +169,7 @@ const results = store.query({
 ### SPARQL Parser
 
 ```typescript
-import { SPARQLParser } from '@exocortex/core';
+import { SPARQLParser } from 'exocortex';
 
 const parser = new SPARQLParser();
 
@@ -186,7 +186,7 @@ const query = parser.parse(`
 ### RDF Serializer
 
 ```typescript
-import { RDFSerializer } from '@exocortex/core';
+import { RDFSerializer } from 'exocortex';
 
 const serializer = new RDFSerializer(tripleStore);
 
@@ -204,7 +204,7 @@ const jsonld = await serializer.serialize({ format: 'json-ld' });
 ### Frontmatter Service
 
 ```typescript
-import { FrontmatterService } from '@exocortex/core';
+import { FrontmatterService } from 'exocortex';
 
 class FrontmatterService {
   static parse(content: string): {
@@ -222,7 +222,7 @@ class FrontmatterService {
 ### Date Formatter
 
 ```typescript
-import { DateFormatter } from '@exocortex/core';
+import { DateFormatter } from 'exocortex';
 
 class DateFormatter {
   static toISODate(date: Date): string;  // "2025-11-10"
@@ -234,7 +234,7 @@ class DateFormatter {
 ### Wiki Link Helpers
 
 ```typescript
-import { WikiLinkHelpers } from '@exocortex/core';
+import { WikiLinkHelpers } from 'exocortex';
 
 class WikiLinkHelpers {
   static extractTarget(link: string): string;  // "[[Page]]" → "Page"
@@ -290,7 +290,7 @@ interface IFile {
 ### Creating Custom Service
 
 ```typescript
-import { IVaultAdapter } from '@exocortex/core';
+import { IVaultAdapter } from 'exocortex';
 
 class CustomService {
   constructor(private vault: IVaultAdapter) {}
@@ -313,7 +313,7 @@ class CustomService {
 ### Implementing Vault Adapter
 
 ```typescript
-import { IVaultAdapter, IFile } from '@exocortex/core';
+import { IVaultAdapter, IFile } from 'exocortex';
 
 class MyVaultAdapter implements IVaultAdapter {
   async read(path: string): Promise<string> {
@@ -374,7 +374,7 @@ interface AssetRelation {
 ### Core Errors
 
 ```typescript
-import { FileNotFoundError, FileAlreadyExistsError } from '@exocortex/core';
+import { FileNotFoundError, FileAlreadyExistsError } from 'exocortex';
 
 try {
   await vault.read('non-existent.md');
@@ -388,7 +388,7 @@ try {
 ### SPARQL Errors
 
 ```typescript
-import { SPARQLParseError } from '@exocortex/core';
+import { SPARQLParseError } from 'exocortex';
 
 try {
   parser.parse(invalidQuery);
@@ -407,7 +407,7 @@ try {
 ### Mocking Vault Adapter
 
 ```typescript
-import { IVaultAdapter } from '@exocortex/core';
+import { IVaultAdapter } from 'exocortex';
 
 class MockVaultAdapter implements IVaultAdapter {
   private files: Map<string, string> = new Map();
@@ -431,7 +431,7 @@ class MockVaultAdapter implements IVaultAdapter {
 ## Package Structure
 
 ```
-@exocortex/core/
+exocortex/
 ├── domain/           # Entities, value objects
 ├── services/         # Business logic services
 ├── infrastructure/   # RDF, SPARQL, storage

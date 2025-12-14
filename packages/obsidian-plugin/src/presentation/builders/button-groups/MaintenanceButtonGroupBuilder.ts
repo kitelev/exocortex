@@ -10,7 +10,7 @@ import {
   canConvertTaskToProject,
   canConvertProjectToTask,
   CommandVisibilityContext,
-} from "@exocortex/core";
+} from "exocortex";
 import { ILogger } from '@plugin/adapters/logging/ILogger';
 import { MetadataRecord } from '@plugin/types';
 import {

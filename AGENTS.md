@@ -19,14 +19,14 @@ Exocortex is a **knowledge management system** that gives users convenient contr
 - Tracks effort history and work state transitions
 - Surfaces vote-based prioritization signals
 - CLI tools for automation (`packages/cli`)
-- Shared semantic utilities (`packages/core`)
+- Shared semantic utilities (`packages/exocortex`)
 
 **Architecture**: Clean Architecture with strict layering
 - `src/presentation` - UI components and renderers
 - `src/application` - Use cases and orchestration
 - `src/domain` - Pure business logic (framework-independent)
 - `src/infrastructure` - I/O, external dependencies, Obsidian API
-- `packages/core` - Shared utilities across all packages
+- `packages/exocortex` - Shared utilities across all packages
 - `packages/cli` - Command-line interface tools
 
 ---
@@ -1259,12 +1259,12 @@ npm run check:types  # Catches unused imports, type errors
 **Before implementing SPARQL features:**
 1. Read vault ontology files to get correct namespace URIs
 2. Update code to match vault definitions (vault is source of truth)
-3. Verify both CLI and Obsidian plugin use same `packages/core/src/domain/models/rdf/Namespace.ts` constants
+3. Verify both CLI and Obsidian plugin use same `packages/exocortex/src/domain/models/rdf/Namespace.ts` constants
 4. Test SPARQL queries in both environments
 
 **Example**:
 ```typescript
-// packages/core/src/domain/models/rdf/Namespace.ts
+// packages/exocortex/src/domain/models/rdf/Namespace.ts
 static readonly EXO = new Namespace("exo", "https://exocortex.my/ontology/exo#");
 static readonly EMS = new Namespace("ems", "https://exocortex.my/ontology/ems#");
 ```
@@ -1283,7 +1283,7 @@ If SPARQL query executes without errors but returns 0 results:
 1. **Check namespace URI mismatch**:
    ```bash
    # Compare code URIs
-   grep -A2 "static readonly EXO" packages/core/src/domain/models/rdf/Namespace.ts
+   grep -A2 "static readonly EXO" packages/exocortex/src/domain/models/rdf/Namespace.ts
 
    # Compare vault URIs
    grep "exo__Ontology_url" /path/to/vault/03\ Knowledge/exo/!exo.md

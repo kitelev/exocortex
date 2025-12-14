@@ -25,7 +25,7 @@ import {
   LoggingService,
   IFile,
   IVaultContext,
-} from "@exocortex/core";
+} from "exocortex";
 import { LabelInputModal } from "../../src/presentation/modals/LabelInputModal";
 import { ObsidianVaultAdapter } from "../../src/adapters/ObsidianVaultAdapter";
 import { ExocortexPluginInterface } from "../../src/types";
@@ -44,8 +44,8 @@ jest.mock("obsidian", () => ({
 }));
 jest.mock("../../src/presentation/modals/LabelInputModal");
 jest.mock("../../src/application/services/SPARQLQueryService");
-jest.mock("@exocortex/core", () => ({
-  ...jest.requireActual("@exocortex/core"),
+jest.mock("exocortex", () => ({
+  ...jest.requireActual("exocortex"),
   canCreateInstance: jest.fn(),
   LoggingService: {
     error: jest.fn(),
@@ -72,7 +72,7 @@ describe("Error Handling - Negative Tests", () => {
     beforeEach(() => {
       jest.clearAllMocks();
 
-      const { WikiLinkHelpers } = require("@exocortex/core");
+      const { WikiLinkHelpers } = require("exocortex");
       WikiLinkHelpers.normalize.mockImplementation((str: string) => str);
 
       mockLeaf = {
@@ -123,7 +123,7 @@ describe("Error Handling - Negative Tests", () => {
     });
 
     it("should show error notice when toTFile returns null", async () => {
-      const mockCanCreateInstance = require("@exocortex/core").canCreateInstance;
+      const mockCanCreateInstance = require("exocortex").canCreateInstance;
       mockCanCreateInstance.mockReturnValue(true);
 
       const createdFile = { basename: "new-instance", path: "new-instance.md" };

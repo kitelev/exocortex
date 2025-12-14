@@ -1,6 +1,6 @@
 import React from "react";
 import { TFile } from "obsidian";
-import { canStartEffort, CommandVisibilityContext } from "@exocortex/core";
+import { canStartEffort, CommandVisibilityContext } from "exocortex";
 
 export interface StartEffortButtonProps {
   instanceClass: string | string[] | null;

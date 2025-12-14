@@ -1,5 +1,5 @@
 import { TFile } from "obsidian";
-import { CommandVisibilityContext } from "@exocortex/core";
+import { CommandVisibilityContext } from "exocortex";
 
 export interface ICommand {
   id: string;

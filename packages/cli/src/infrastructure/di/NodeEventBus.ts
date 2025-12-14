@@ -1,4 +1,4 @@
-import { IEventBus } from "@exocortex/core";
+import { IEventBus } from "exocortex";
 
 type EventHandler<T = any> = (data: T) => void;
 

@@ -1,14 +1,14 @@
 import { flushPromises } from "./helpers/testHelpers";
 import { RenameToUidCommand } from "../../src/application/commands/RenameToUidCommand";
 import { TFile, Notice } from "obsidian";
-import { RenameToUidService, CommandVisibilityContext, LoggingService } from "@exocortex/core";
+import { RenameToUidService, CommandVisibilityContext, LoggingService } from "exocortex";
 
 jest.mock("obsidian", () => ({
   ...jest.requireActual("obsidian"),
   Notice: jest.fn(),
 }));
-jest.mock("@exocortex/core", () => ({
-  ...jest.requireActual("@exocortex/core"),
+jest.mock("exocortex", () => ({
+  ...jest.requireActual("exocortex"),
   canRenameToUid: jest.fn(),
   LoggingService: {
     error: jest.fn(),
@@ -58,7 +58,7 @@ describe("RenameToUidCommand", () => {
   });
 
   describe("checkCallback", () => {
-    const mockCanRenameToUid = require("@exocortex/core").canRenameToUid;
+    const mockCanRenameToUid = require("exocortex").canRenameToUid;
 
     it("should return false when context is null", () => {
       const result = command.checkCallback(true, mockFile, null);

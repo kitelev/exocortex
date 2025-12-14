@@ -1,15 +1,15 @@
 import { flushPromises } from "./helpers/testHelpers";
 import { TrashEffortCommand } from "../../src/application/commands/TrashEffortCommand";
 import { App, TFile, Notice } from "obsidian";
-import { TaskStatusService, CommandVisibilityContext, LoggingService } from "@exocortex/core";
+import { TaskStatusService, CommandVisibilityContext, LoggingService } from "exocortex";
 import { TrashReasonModal, TrashReasonModalResult } from "../../src/presentation/modals/TrashReasonModal";
 
 jest.mock("obsidian", () => ({
   ...jest.requireActual("obsidian"),
   Notice: jest.fn(),
 }));
-jest.mock("@exocortex/core", () => ({
-  ...jest.requireActual("@exocortex/core"),
+jest.mock("exocortex", () => ({
+  ...jest.requireActual("exocortex"),
   canTrashEffort: jest.fn(),
   LoggingService: {
     error: jest.fn(),
@@ -74,7 +74,7 @@ describe("TrashEffortCommand", () => {
   });
 
   describe("checkCallback", () => {
-    const mockCanTrashEffort = require("@exocortex/core").canTrashEffort;
+    const mockCanTrashEffort = require("exocortex").canTrashEffort;
 
     it("should return false when context is null", () => {
       const result = command.checkCallback(true, mockFile, null);

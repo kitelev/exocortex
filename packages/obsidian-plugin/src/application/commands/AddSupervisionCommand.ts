@@ -1,6 +1,6 @@
 import { App, Notice } from "obsidian";
 import { ICommand } from "./ICommand";
-import { SupervisionCreationService, LoggingService } from "@exocortex/core";
+import { SupervisionCreationService, LoggingService } from "exocortex";
 import { SupervisionInputModal, SupervisionFormData } from '@plugin/presentation/modals/SupervisionInputModal';
 import { ObsidianVaultAdapter } from '@plugin/adapters/ObsidianVaultAdapter';
 

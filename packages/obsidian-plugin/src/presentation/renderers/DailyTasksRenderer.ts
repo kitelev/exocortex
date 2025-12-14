@@ -7,9 +7,9 @@ import {
   DailyTask,
   DailyTasksTableWithToggle,
 } from '@plugin/presentation/components/DailyTasksTable';
-import { AssetClass, EffortStatus, IVaultAdapter } from "@exocortex/core";
-import { MetadataExtractor } from "@exocortex/core";
-import { EffortSortingHelpers } from "@exocortex/core";
+import { AssetClass, EffortStatus, IVaultAdapter } from "exocortex";
+import { MetadataExtractor } from "exocortex";
+import { EffortSortingHelpers } from "exocortex";
 import { AssetMetadataService } from "./layout/helpers/AssetMetadataService";
 import { DailyNoteHelpers } from "./helpers/DailyNoteHelpers";
 import { BlockerHelpers } from '@plugin/presentation/utils/BlockerHelpers';

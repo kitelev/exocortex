@@ -9,7 +9,7 @@ import {
   TaskFrontmatterGenerator,
   AlgorithmExtractor,
   TaskCreationService,
-} from "@exocortex/core";
+} from "exocortex";
 
 jest.mock("obsidian", () => ({
   ...jest.requireActual("obsidian"),

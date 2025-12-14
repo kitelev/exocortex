@@ -2,7 +2,7 @@ import {
   EffortStatusWorkflow,
   EffortStatus,
   AssetClass,
-} from "@exocortex/core";
+} from "exocortex";
 
 describe("EffortStatusWorkflow", () => {
   let workflow: EffortStatusWorkflow;

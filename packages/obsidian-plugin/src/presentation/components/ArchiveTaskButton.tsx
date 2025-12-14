@@ -1,6 +1,6 @@
 import React from "react";
 import { TFile } from "obsidian";
-import { canArchiveTask, CommandVisibilityContext } from "@exocortex/core";
+import { canArchiveTask, CommandVisibilityContext } from "exocortex";
 
 export interface ArchiveTaskButtonProps {
   instanceClass: string | string[] | null;

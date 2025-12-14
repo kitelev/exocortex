@@ -1,6 +1,6 @@
 import { ObsidianVaultAdapter } from "../../src/adapters/ObsidianVaultAdapter";
 import { Vault, TFile, TFolder, MetadataCache, App, FileManager } from "obsidian";
-import { IFile, IFolder, IFrontmatter } from "@exocortex/core";
+import { IFile, IFolder, IFrontmatter } from "exocortex";
 
 describe("ObsidianVaultAdapter", () => {
   let adapter: ObsidianVaultAdapter;

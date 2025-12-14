@@ -1,10 +1,10 @@
 {
-  "name": "exocortex-cli",
+  "name": "@exocortex/cli",
   "version": "0.1.0",
   "description": "CLI tool for Exocortex knowledge management system - SPARQL queries, task management, and more",
   "main": "dist/index.js",
   "bin": {
-    "exocortex": "./dist/index.js"
+    "exocortex-cli": "./dist/index.js"
   },
   "files": [
     "dist",
@@ -33,12 +33,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/kitelev/exocortex-obsidian-plugin.git",
+    "url": "git+https://github.com/kitelev/exocortex.git",
     "directory": "packages/cli"
   },
-  "homepage": "https://github.com/kitelev/exocortex-obsidian-plugin/tree/main/packages/cli#readme",
+  "homepage": "https://github.com/kitelev/exocortex/tree/main/packages/cli#readme",
   "bugs": {
-    "url": "https://github.com/kitelev/exocortex-obsidian-plugin/issues"
+    "url": "https://github.com/kitelev/exocortex/issues"
   },
   "engines": {
     "node": ">=18.0.0"
@@ -53,7 +53,7 @@
     "ora": "^9.0.0"
   },
   "devDependencies": {
-    "@exocortex/core": "file:../core",
+    "exocortex": "file:../exocortex",
     "@types/fs-extra": "^11.0.0",
     "@types/jest": "^30.0.0",
     "@types/js-yaml": "^4.0.0",

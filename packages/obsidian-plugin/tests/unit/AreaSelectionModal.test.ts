@@ -3,11 +3,11 @@ import {
   AreaSelectionModalResult,
 } from "../../src/presentation/modals/AreaSelectionModal";
 import { App, TFile } from "obsidian";
-import { AssetClass } from "@exocortex/core";
+import { AssetClass } from "exocortex";
 
 jest.mock("../../src/adapters/ObsidianVaultAdapter");
-jest.mock("@exocortex/core", () => ({
-  ...jest.requireActual("@exocortex/core"),
+jest.mock("exocortex", () => ({
+  ...jest.requireActual("exocortex"),
   MetadataExtractor: jest.fn().mockImplementation(() => ({
     extractMetadata: jest.fn(),
   })),
@@ -130,7 +130,7 @@ describe("AreaSelectionModal", () => {
       metadataCache: mockMetadataCache,
     } as unknown as App;
 
-    const { MetadataExtractor } = require("@exocortex/core");
+    const { MetadataExtractor } = require("exocortex");
     MetadataExtractor.mockImplementation(() => ({
       extractMetadata: jest.fn((file: TFile) => {
         const cache = mockMetadataCache.getFileCache(file);

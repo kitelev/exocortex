@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from "react";
-import type { SolutionMapping } from "@exocortex/core";
+import type { SolutionMapping } from "exocortex";
 
 export interface SPARQLTableViewProps {
   results: SolutionMapping[];
