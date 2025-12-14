@@ -5,7 +5,7 @@
  * These tests verify the behavioral guarantees that the obsidian-plugin
  * depends on when executing SPARQL queries against the triple store.
  *
- * @see packages/core/contracts/QueryExecutor.contract.ts
+ * @see packages/exocortex/contracts/QueryExecutor.contract.ts
  */
 
 import { QueryExecutor } from "../../src/infrastructure/sparql/executors/QueryExecutor";

@@ -5,7 +5,7 @@
  * These tests verify the behavioral guarantees that the obsidian-plugin
  * depends on when consuming exocortex.
  *
- * @see packages/core/contracts/SPARQLParser.contract.ts
+ * @see packages/exocortex/contracts/SPARQLParser.contract.ts
  */
 
 import { SPARQLParser, SPARQLParseError } from "../../src/infrastructure/sparql/SPARQLParser";

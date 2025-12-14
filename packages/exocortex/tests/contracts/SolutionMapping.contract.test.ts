@@ -5,7 +5,7 @@
  * These tests verify the behavioral guarantees that the obsidian-plugin
  * depends on when working with query results.
  *
- * @see packages/core/contracts/SolutionMapping.contract.ts
+ * @see packages/exocortex/contracts/SolutionMapping.contract.ts
  */
 
 import { SolutionMapping } from "../../src/infrastructure/sparql/SolutionMapping";

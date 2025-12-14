@@ -47,7 +47,7 @@ WORKDIR /app
 
 # Copy package files from root and all workspaces
 COPY package*.json ./
-COPY packages/core/package*.json ./packages/core/
+COPY packages/exocortex/package*.json ./packages/exocortex/
 COPY packages/obsidian-plugin/package*.json ./packages/obsidian-plugin/
 COPY packages/cli/package*.json ./packages/cli/
 RUN npm ci --prefer-offline --no-audit

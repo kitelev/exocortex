@@ -5,7 +5,7 @@
  * These tests verify the behavioral guarantees that the obsidian-plugin
  * depends on when manipulating YAML frontmatter in markdown files.
  *
- * @see packages/core/contracts/FrontmatterService.contract.ts
+ * @see packages/exocortex/contracts/FrontmatterService.contract.ts
  */
 
 import { FrontmatterService } from "../../src/utilities/FrontmatterService";

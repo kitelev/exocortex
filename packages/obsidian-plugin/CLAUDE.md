@@ -1028,7 +1028,7 @@ When working with SPARQL queries or other user-facing features:
 
 **Key Entry Points:**
 
-1. **Core Package** (`packages/core/`)
+1. **Core Package** (`packages/exocortex/`)
    - `src/domain/` - Business entities and rules
    - `src/application/` - Services and use cases
    - `src/infrastructure/IFileSystemAdapter.ts` - Storage abstraction
@@ -1043,7 +1043,7 @@ When working with SPARQL queries or other user-facing features:
    - `src/commands/` - Command implementations
 
 4. **Tests**
-   - `packages/core/tests/` - Core business logic tests
+   - `packages/exocortex/tests/` - Core business logic tests
    - `packages/obsidian-plugin/tests/` - UI, component, E2E tests
    - `packages/cli/tests/` - CLI integration tests
 
@@ -1337,8 +1337,8 @@ exocortex-assets-relations         // line 1196
 
 **Example from PR #352**:
 - Tried to export `TriplePattern` from `exocortex`
-- Exists in `packages/core/src/domain/TriplePattern.ts`
-- NOT in `packages/core/src/index.ts` → not public API
+- Exists in `packages/exocortex/src/domain/TriplePattern.ts`
+- NOT in `packages/exocortex/src/index.ts` → not public API
 - Solution: Removed from re-export list
 
 **Prevention**: Always check package index.ts before assuming type availability.

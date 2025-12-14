@@ -5,7 +5,7 @@
  * Tests InMemoryTripleStore as the reference implementation.
  * These tests verify the behavioral guarantees that consumers depend on.
  *
- * @see packages/core/contracts/TripleStore.contract.ts
+ * @see packages/exocortex/contracts/TripleStore.contract.ts
  */
 
 import { InMemoryTripleStore } from "../../src/infrastructure/rdf/InMemoryTripleStore";
