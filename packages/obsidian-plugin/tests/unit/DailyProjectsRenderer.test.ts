@@ -418,7 +418,6 @@ describe("DailyProjectsRenderer", () => {
       const projectMetadata = {
         exo__Instance_class: "[[ems__Project]]",
         ems__Effort_day: "[[2025-10-20]]",
-        ems__Effort_startTimestamp: "2025-10-20T09:00:00",
         ems__Effort_status: "[[ems__EffortStatusDoing]]",
         ems__Effort_startTimestamp: "2025-10-20T09:00:00.000Z",
         ems__Effort_endTimestamp: "2025-10-20T17:00:00.000Z",
