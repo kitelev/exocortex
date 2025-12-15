@@ -43,8 +43,9 @@ jobs:
           # Use custom config to handle SPARQL 1.1 spec-required patterns
           config-file: ./.github/codeql/codeql-config.yml
 
-      - name: Autobuild
-        uses: github/codeql-action/autobuild@v3
+      # Note: For JavaScript/TypeScript, CodeQL can analyze source directly
+      # without autobuild. Skipping autobuild prevents analysis of generated
+      # bundled files (main.js) which contain third-party library code.
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3
