@@ -29,7 +29,7 @@ describe("SessionEventService", () => {
 
     mockVault.exists.mockResolvedValue(true);
 
-    service = new SessionEventService(mockVault, null);
+    service = new SessionEventService(mockVault);
   });
 
   describe("createSessionStartEvent", () => {
@@ -64,7 +64,8 @@ describe("SessionEventService", () => {
     });
 
     it("should use ontology asset folder and isDefinedBy when ontology is set", async () => {
-      const ontologyService = new SessionEventService(mockVault, "kitelev");
+      const ontologyService = new SessionEventService(mockVault);
+      ontologyService.setDefaultOntologyAsset("kitelev");
       const areaName = "Work";
       const mockOntologyFile: IFile = {
         path: "People/kitelev.md",
@@ -256,7 +257,8 @@ describe("SessionEventService", () => {
     });
 
     it("should use ontology asset folder for end events", async () => {
-      const ontologyService = new SessionEventService(mockVault, "myOntology");
+      const ontologyService = new SessionEventService(mockVault);
+      ontologyService.setDefaultOntologyAsset("myOntology");
       const areaName = "Work";
       const mockOntologyFile: IFile = {
         path: "Ontologies/myOntology.md",
@@ -286,7 +288,8 @@ describe("SessionEventService", () => {
     });
 
     it("should create ontology folder if it does not exist", async () => {
-      const ontologyService = new SessionEventService(mockVault, "myOntology");
+      const ontologyService = new SessionEventService(mockVault);
+      ontologyService.setDefaultOntologyAsset("myOntology");
       const areaName = "Work";
       const mockOntologyFile: IFile = {
         path: "Ontologies/myOntology.md",
