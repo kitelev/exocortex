@@ -40,6 +40,8 @@ jobs:
           languages: ${{ matrix.language }}
           # Use default queries plus security-extended
           queries: security-extended,security-and-quality
+          # Use custom config to handle SPARQL 1.1 spec-required patterns
+          config-file: ./.github/codeql/codeql-config.yml
 
       - name: Autobuild
         uses: github/codeql-action/autobuild@v3

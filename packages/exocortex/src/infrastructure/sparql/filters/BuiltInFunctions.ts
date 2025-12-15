@@ -641,9 +641,16 @@ export class BuiltInFunctions {
    * SPARQL 1.1 RAND function.
    * Returns a pseudo-random number between 0 (inclusive) and 1 (exclusive).
    *
+   * Per SPARQL 1.1 specification, this uses standard pseudo-random generation.
+   * Not intended for cryptographic purposes.
+   * https://www.w3.org/TR/sparql11-query/#func-rand
+   *
    * @returns Random number in range [0, 1)
    */
   static rand(): number {
+    // SPARQL 1.1 spec requires RAND() - this is for query logic, NOT security.
+    // CodeQL js/insecure-randomness: This is intentional per SPARQL 1.1 spec.
+    // lgtm[js/insecure-randomness]
     return Math.random();
   }
 
@@ -769,13 +776,19 @@ export class BuiltInFunctions {
    * SPARQL 1.1 MD5 function.
    * Returns the MD5 checksum, as a hex digit string.
    *
+   * WARNING: MD5 is cryptographically weak. This function exists ONLY for
+   * SPARQL 1.1 specification compliance. Do NOT use for security purposes.
+   * https://www.w3.org/TR/sparql11-query/#func-md5
+   *
    * @param str - String to hash
    * @returns Lowercase hex string of MD5 hash
    *
    * Example: MD5("test") = "098f6bcd4621d373cade4e832627b4f6"
    */
   static md5(str: string): string {
-    // Use Web Crypto API compatible implementation via Node.js crypto
+    // SPARQL 1.1 spec requires MD5 - this is for spec compliance, NOT security.
+    // CodeQL js/weak-cryptographic-algorithm: Intentional per W3C SPARQL 1.1 spec.
+    // lgtm[js/weak-cryptographic-algorithm]
     const crypto = require("crypto");
     return crypto.createHash("md5").update(str).digest("hex");
   }
@@ -784,12 +797,19 @@ export class BuiltInFunctions {
    * SPARQL 1.1 SHA1 function.
    * Returns the SHA1 checksum, as a hex digit string.
    *
+   * WARNING: SHA1 is cryptographically weak. This function exists ONLY for
+   * SPARQL 1.1 specification compliance. Do NOT use for security purposes.
+   * https://www.w3.org/TR/sparql11-query/#func-sha1
+   *
    * @param str - String to hash
    * @returns Lowercase hex string of SHA1 hash
    *
    * Example: SHA1("test") = "a94a8fe5ccb19ba61c4c0873d391e987982fbbd3"
    */
   static sha1(str: string): string {
+    // SPARQL 1.1 spec requires SHA1 - this is for spec compliance, NOT security.
+    // CodeQL js/weak-cryptographic-algorithm: Intentional per W3C SPARQL 1.1 spec.
+    // lgtm[js/weak-cryptographic-algorithm]
     const crypto = require("crypto");
     return crypto.createHash("sha1").update(str).digest("hex");
   }
@@ -969,10 +989,10 @@ export class BuiltInFunctions {
    * - BNODE("label") → _:label (consistent within query)
    */
   static bnode(label?: RDFTerm | undefined): BlankNode {
-    // No argument - generate unique blank node
+    // No argument - generate unique blank node using UUID (cryptographically secure)
     if (label === undefined) {
-      // Generate a unique ID using random component
-      const uniqueId = `b${Math.random().toString(36).substring(2, 11)}`;
+      // Use UUID v4 for unique blank node generation - already imported
+      const uniqueId = `b${uuidv4().replace(/-/g, "").substring(0, 12)}`;
       return new BlankNode(uniqueId);
     }
 

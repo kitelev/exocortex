@@ -1,0 +1,37 @@
+# CodeQL Configuration for Exocortex
+#
+# This file configures CodeQL analysis to handle false positives and
+# intentional security patterns required for SPARQL 1.1 specification compliance.
+
+name: "Exocortex CodeQL Configuration"
+
+# Path filters - include only source code, exclude tests and generated files
+paths:
+  - packages/*/src
+
+paths-ignore:
+  - "**/node_modules/**"
+  - "**/dist/**"
+  - "**/tests/**"
+  - "**/specs/**"
+  - "**/*.test.ts"
+  - "**/*.test.tsx"
+  - "**/*.spec.ts"
+  - "packages/obsidian-plugin/main.js"  # Generated bundled output
+
+# Query filters to suppress intentional false positives
+query-filters:
+  # Suppress weak crypto alerts for SPARQL 1.1 hash functions (MD5, SHA1)
+  # These are required by W3C SPARQL 1.1 specification for spec compliance
+  # https://www.w3.org/TR/sparql11-query/#func-hash
+  - exclude:
+      id: js/weak-cryptographic-algorithm
+      # Only suppress in BuiltInFunctions.ts where SPARQL hash functions are implemented
+      path: packages/exocortex/src/infrastructure/sparql/filters/BuiltInFunctions.ts
+
+  # Suppress insecure randomness for SPARQL 1.1 RAND() function
+  # RAND() is defined by W3C SPARQL 1.1 spec and not used for security
+  # https://www.w3.org/TR/sparql11-query/#func-rand
+  - exclude:
+      id: js/insecure-randomness
+      path: packages/exocortex/src/infrastructure/sparql/filters/BuiltInFunctions.ts
