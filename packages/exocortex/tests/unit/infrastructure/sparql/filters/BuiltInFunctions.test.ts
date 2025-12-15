@@ -2440,4 +2440,365 @@ describe("BuiltInFunctions", () => {
       });
     });
   });
+
+  describe("xsd:dayTimeDuration Support (SPARQL 1.1)", () => {
+    describe("parseDayTimeDuration", () => {
+      it("should parse hours only", () => {
+        expect(BuiltInFunctions.parseDayTimeDuration("PT5H")).toBe(5 * 60 * 60 * 1000);
+        expect(BuiltInFunctions.parseDayTimeDuration("PT1H")).toBe(60 * 60 * 1000);
+        expect(BuiltInFunctions.parseDayTimeDuration("PT24H")).toBe(24 * 60 * 60 * 1000);
+      });
+
+      it("should parse minutes only", () => {
+        expect(BuiltInFunctions.parseDayTimeDuration("PT30M")).toBe(30 * 60 * 1000);
+        expect(BuiltInFunctions.parseDayTimeDuration("PT1M")).toBe(60 * 1000);
+      });
+
+      it("should parse seconds only", () => {
+        expect(BuiltInFunctions.parseDayTimeDuration("PT45S")).toBe(45 * 1000);
+        expect(BuiltInFunctions.parseDayTimeDuration("PT0S")).toBe(0);
+      });
+
+      it("should parse decimal seconds", () => {
+        expect(BuiltInFunctions.parseDayTimeDuration("PT1.5S")).toBe(1500);
+        expect(BuiltInFunctions.parseDayTimeDuration("PT0.5S")).toBe(500);
+      });
+
+      it("should parse days only", () => {
+        expect(BuiltInFunctions.parseDayTimeDuration("P1D")).toBe(24 * 60 * 60 * 1000);
+        expect(BuiltInFunctions.parseDayTimeDuration("P7D")).toBe(7 * 24 * 60 * 60 * 1000);
+      });
+
+      it("should parse combined duration", () => {
+        // 1 day + 2 hours
+        expect(BuiltInFunctions.parseDayTimeDuration("P1DT2H")).toBe((24 + 2) * 60 * 60 * 1000);
+        // 8 hours 30 minutes
+        expect(BuiltInFunctions.parseDayTimeDuration("PT8H30M")).toBe((8 * 60 + 30) * 60 * 1000);
+        // 1 hour 30 minutes 45 seconds
+        expect(BuiltInFunctions.parseDayTimeDuration("PT1H30M45S")).toBe((1 * 3600 + 30 * 60 + 45) * 1000);
+      });
+
+      it("should parse negative durations", () => {
+        expect(BuiltInFunctions.parseDayTimeDuration("-PT5H")).toBe(-5 * 60 * 60 * 1000);
+        expect(BuiltInFunctions.parseDayTimeDuration("-PT8H30M")).toBe(-(8 * 60 + 30) * 60 * 1000);
+        expect(BuiltInFunctions.parseDayTimeDuration("-P1D")).toBe(-24 * 60 * 60 * 1000);
+      });
+
+      it("should handle whitespace", () => {
+        expect(BuiltInFunctions.parseDayTimeDuration("  PT5H  ")).toBe(5 * 60 * 60 * 1000);
+      });
+
+      it("should throw for empty string", () => {
+        expect(() => BuiltInFunctions.parseDayTimeDuration("")).toThrow("duration string is empty");
+      });
+
+      it("should throw for invalid format - missing P", () => {
+        expect(() => BuiltInFunctions.parseDayTimeDuration("T5H")).toThrow("must start with 'P'");
+      });
+
+      it("should throw for invalid format - wrong order", () => {
+        expect(() => BuiltInFunctions.parseDayTimeDuration("PT5M30H")).toThrow("invalid time component");
+      });
+    });
+
+    describe("formatDayTimeDuration", () => {
+      it("should format hours", () => {
+        expect(BuiltInFunctions.formatDayTimeDuration(5 * 60 * 60 * 1000)).toBe("PT5H");
+      });
+
+      it("should format minutes", () => {
+        expect(BuiltInFunctions.formatDayTimeDuration(30 * 60 * 1000)).toBe("PT30M");
+      });
+
+      it("should format seconds", () => {
+        expect(BuiltInFunctions.formatDayTimeDuration(45 * 1000)).toBe("PT45S");
+      });
+
+      it("should format zero duration", () => {
+        expect(BuiltInFunctions.formatDayTimeDuration(0)).toBe("PT0S");
+      });
+
+      it("should format days", () => {
+        expect(BuiltInFunctions.formatDayTimeDuration(24 * 60 * 60 * 1000)).toBe("P1DT0S");
+        expect(BuiltInFunctions.formatDayTimeDuration(7 * 24 * 60 * 60 * 1000)).toBe("P7DT0S");
+      });
+
+      it("should format combined duration", () => {
+        // 1 day + 2 hours
+        expect(BuiltInFunctions.formatDayTimeDuration((24 + 2) * 60 * 60 * 1000)).toBe("P1DT2H");
+        // 8 hours 30 minutes
+        expect(BuiltInFunctions.formatDayTimeDuration((8 * 60 + 30) * 60 * 1000)).toBe("PT8H30M");
+      });
+
+      it("should format negative durations", () => {
+        expect(BuiltInFunctions.formatDayTimeDuration(-5 * 60 * 60 * 1000)).toBe("-PT5H");
+        expect(BuiltInFunctions.formatDayTimeDuration(-(8 * 60 + 30) * 60 * 1000)).toBe("-PT8H30M");
+      });
+
+      it("should format decimal seconds", () => {
+        expect(BuiltInFunctions.formatDayTimeDuration(1500)).toBe("PT1.5S");
+      });
+    });
+
+    describe("xsdDayTimeDuration", () => {
+      it("should create Literal with correct datatype", () => {
+        const result = BuiltInFunctions.xsdDayTimeDuration("PT5H");
+        expect(result).toBeInstanceOf(Literal);
+        expect(result.value).toBe("PT5H");
+        expect(result.datatype?.value).toBe("http://www.w3.org/2001/XMLSchema#dayTimeDuration");
+      });
+
+      it("should validate the duration string", () => {
+        expect(() => BuiltInFunctions.xsdDayTimeDuration("invalid")).toThrow();
+      });
+    });
+
+    describe("compareDurations", () => {
+      it("should compare equal durations", () => {
+        expect(BuiltInFunctions.compareDurations("PT5H", "PT5H", "=")).toBe(true);
+        expect(BuiltInFunctions.compareDurations("PT5H", "PT300M", "=")).toBe(true); // 5h = 300min
+        expect(BuiltInFunctions.compareDurations("PT5H", "PT6H", "=")).toBe(false);
+      });
+
+      it("should compare not equal durations", () => {
+        expect(BuiltInFunctions.compareDurations("PT5H", "PT6H", "!=")).toBe(true);
+        expect(BuiltInFunctions.compareDurations("PT5H", "PT5H", "!=")).toBe(false);
+      });
+
+      it("should compare less than", () => {
+        expect(BuiltInFunctions.compareDurations("PT4H", "PT5H", "<")).toBe(true);
+        expect(BuiltInFunctions.compareDurations("PT5H", "PT5H", "<")).toBe(false);
+        expect(BuiltInFunctions.compareDurations("PT6H", "PT5H", "<")).toBe(false);
+      });
+
+      it("should compare greater than", () => {
+        expect(BuiltInFunctions.compareDurations("PT6H", "PT5H", ">")).toBe(true);
+        expect(BuiltInFunctions.compareDurations("PT5H", "PT5H", ">")).toBe(false);
+        expect(BuiltInFunctions.compareDurations("PT4H", "PT5H", ">")).toBe(false);
+      });
+
+      it("should compare with Literal objects", () => {
+        const d1 = new Literal("PT5H", new IRI("http://www.w3.org/2001/XMLSchema#dayTimeDuration"));
+        const d2 = new Literal("PT6H", new IRI("http://www.w3.org/2001/XMLSchema#dayTimeDuration"));
+        expect(BuiltInFunctions.compareDurations(d1, d2, "<")).toBe(true);
+      });
+
+      it("should handle negative durations", () => {
+        expect(BuiltInFunctions.compareDurations("-PT1H", "PT1H", "<")).toBe(true);
+        expect(BuiltInFunctions.compareDurations("-PT2H", "-PT1H", "<")).toBe(true);
+      });
+    });
+
+    describe("isDayTimeDuration", () => {
+      it("should return true for dayTimeDuration Literal", () => {
+        const dur = new Literal("PT5H", new IRI("http://www.w3.org/2001/XMLSchema#dayTimeDuration"));
+        expect(BuiltInFunctions.isDayTimeDuration(dur)).toBe(true);
+      });
+
+      it("should return false for other datatypes", () => {
+        const str = new Literal("PT5H");
+        const int = new Literal("5", new IRI("http://www.w3.org/2001/XMLSchema#integer"));
+        expect(BuiltInFunctions.isDayTimeDuration(str)).toBe(false);
+        expect(BuiltInFunctions.isDayTimeDuration(int)).toBe(false);
+      });
+
+      it("should return false for non-Literal values", () => {
+        expect(BuiltInFunctions.isDayTimeDuration("PT5H")).toBe(false);
+        expect(BuiltInFunctions.isDayTimeDuration(5)).toBe(false);
+        expect(BuiltInFunctions.isDayTimeDuration(null)).toBe(false);
+        expect(BuiltInFunctions.isDayTimeDuration(undefined)).toBe(false);
+      });
+    });
+
+    describe("dateTimeDiff", () => {
+      it("should calculate positive difference", () => {
+        const result = BuiltInFunctions.dateTimeDiff(
+          "2025-01-01T12:00:00Z",
+          "2025-01-01T10:00:00Z"
+        );
+        expect(result).toBeInstanceOf(Literal);
+        expect(result.value).toBe("PT2H");
+        expect(result.datatype?.value).toBe("http://www.w3.org/2001/XMLSchema#dayTimeDuration");
+      });
+
+      it("should calculate negative difference", () => {
+        const result = BuiltInFunctions.dateTimeDiff(
+          "2025-01-01T10:00:00Z",
+          "2025-01-01T12:00:00Z"
+        );
+        expect(result.value).toBe("-PT2H");
+      });
+
+      it("should handle day boundaries", () => {
+        const result = BuiltInFunctions.dateTimeDiff(
+          "2025-01-02T00:00:00Z",
+          "2025-01-01T00:00:00Z"
+        );
+        expect(result.value).toBe("P1DT0S");
+      });
+
+      it("should work with Literal inputs", () => {
+        const dt1 = new Literal("2025-01-01T14:00:00Z", new IRI("http://www.w3.org/2001/XMLSchema#dateTime"));
+        const dt2 = new Literal("2025-01-01T10:00:00Z", new IRI("http://www.w3.org/2001/XMLSchema#dateTime"));
+        const result = BuiltInFunctions.dateTimeDiff(dt1, dt2);
+        expect(result.value).toBe("PT4H");
+      });
+
+      it("should throw for invalid dateTime", () => {
+        expect(() => BuiltInFunctions.dateTimeDiff("invalid", "2025-01-01T10:00:00Z")).toThrow();
+      });
+    });
+
+    describe("dateTimeAdd", () => {
+      it("should add duration to dateTime", () => {
+        const result = BuiltInFunctions.dateTimeAdd(
+          "2025-01-01T10:00:00Z",
+          "PT2H"
+        );
+        expect(result).toBeInstanceOf(Literal);
+        expect(result.value).toBe("2025-01-01T12:00:00.000Z");
+        expect(result.datatype?.value).toBe("http://www.w3.org/2001/XMLSchema#dateTime");
+      });
+
+      it("should add negative duration (subtract)", () => {
+        const result = BuiltInFunctions.dateTimeAdd(
+          "2025-01-01T12:00:00Z",
+          "-PT2H"
+        );
+        expect(result.value).toBe("2025-01-01T10:00:00.000Z");
+      });
+
+      it("should handle day boundaries", () => {
+        const result = BuiltInFunctions.dateTimeAdd(
+          "2025-01-01T22:00:00Z",
+          "PT5H"
+        );
+        expect(result.value).toBe("2025-01-02T03:00:00.000Z");
+      });
+
+      it("should work with Literal inputs", () => {
+        const dt = new Literal("2025-01-01T10:00:00Z", new IRI("http://www.w3.org/2001/XMLSchema#dateTime"));
+        const dur = new Literal("PT30M", new IRI("http://www.w3.org/2001/XMLSchema#dayTimeDuration"));
+        const result = BuiltInFunctions.dateTimeAdd(dt, dur);
+        expect(result.value).toBe("2025-01-01T10:30:00.000Z");
+      });
+    });
+
+    describe("dateTimeSubtract", () => {
+      it("should subtract duration from dateTime", () => {
+        const result = BuiltInFunctions.dateTimeSubtract(
+          "2025-01-01T12:00:00Z",
+          "PT2H"
+        );
+        expect(result).toBeInstanceOf(Literal);
+        expect(result.value).toBe("2025-01-01T10:00:00.000Z");
+      });
+
+      it("should handle day boundaries", () => {
+        const result = BuiltInFunctions.dateTimeSubtract(
+          "2025-01-02T03:00:00Z",
+          "PT5H"
+        );
+        expect(result.value).toBe("2025-01-01T22:00:00.000Z");
+      });
+    });
+
+    describe("durationAdd", () => {
+      it("should add two durations", () => {
+        const result = BuiltInFunctions.durationAdd("PT2H", "PT30M");
+        expect(result).toBeInstanceOf(Literal);
+        expect(result.value).toBe("PT2H30M");
+        expect(result.datatype?.value).toBe("http://www.w3.org/2001/XMLSchema#dayTimeDuration");
+      });
+
+      it("should add durations with different components", () => {
+        const result = BuiltInFunctions.durationAdd("P1D", "PT2H");
+        expect(result.value).toBe("P1DT2H");
+      });
+    });
+
+    describe("durationSubtract", () => {
+      it("should subtract two durations", () => {
+        const result = BuiltInFunctions.durationSubtract("PT2H30M", "PT30M");
+        expect(result).toBeInstanceOf(Literal);
+        expect(result.value).toBe("PT2H");
+      });
+
+      it("should produce negative duration if needed", () => {
+        const result = BuiltInFunctions.durationSubtract("PT1H", "PT2H");
+        expect(result.value).toBe("-PT1H");
+      });
+    });
+
+    describe("durationMultiply", () => {
+      it("should multiply duration by number", () => {
+        const result = BuiltInFunctions.durationMultiply("PT2H", 2);
+        expect(result.value).toBe("PT4H");
+      });
+
+      it("should handle decimal multiplier", () => {
+        const result = BuiltInFunctions.durationMultiply("PT2H", 0.5);
+        expect(result.value).toBe("PT1H");
+      });
+
+      it("should handle negative multiplier", () => {
+        const result = BuiltInFunctions.durationMultiply("PT2H", -1);
+        expect(result.value).toBe("-PT2H");
+      });
+    });
+
+    describe("durationDivide", () => {
+      it("should divide duration by number", () => {
+        const result = BuiltInFunctions.durationDivide("PT4H", 2);
+        expect(result.value).toBe("PT2H");
+      });
+
+      it("should throw for division by zero", () => {
+        expect(() => BuiltInFunctions.durationDivide("PT4H", 0)).toThrow("division by zero");
+      });
+    });
+
+    describe("durationToX accessors", () => {
+      it("should convert to days", () => {
+        expect(BuiltInFunctions.durationToDays("P1D")).toBe(1);
+        expect(BuiltInFunctions.durationToDays("PT12H")).toBe(0.5);
+      });
+
+      it("should convert to hours", () => {
+        expect(BuiltInFunctions.durationToHours("PT5H")).toBe(5);
+        expect(BuiltInFunctions.durationToHours("PT90M")).toBe(1.5);
+        expect(BuiltInFunctions.durationToHours("P1D")).toBe(24);
+      });
+
+      it("should convert to minutes", () => {
+        expect(BuiltInFunctions.durationToMinutes("PT30M")).toBe(30);
+        expect(BuiltInFunctions.durationToMinutes("PT1H")).toBe(60);
+        expect(BuiltInFunctions.durationToMinutes("PT90S")).toBe(1.5);
+      });
+
+      it("should convert to seconds", () => {
+        expect(BuiltInFunctions.durationToSeconds("PT1M")).toBe(60);
+        expect(BuiltInFunctions.durationToSeconds("PT1H")).toBe(3600);
+        expect(BuiltInFunctions.durationToSeconds("PT1.5S")).toBe(1.5);
+      });
+    });
+
+    describe("compare() with dayTimeDuration", () => {
+      it("should compare dayTimeDuration Literals", () => {
+        const d1 = new Literal("PT5H", new IRI("http://www.w3.org/2001/XMLSchema#dayTimeDuration"));
+        const d2 = new Literal("PT6H", new IRI("http://www.w3.org/2001/XMLSchema#dayTimeDuration"));
+
+        expect(BuiltInFunctions.compare(d1, d2, "<")).toBe(true);
+        expect(BuiltInFunctions.compare(d1, d2, ">")).toBe(false);
+        expect(BuiltInFunctions.compare(d1, d1, "=")).toBe(true);
+      });
+
+      it("should handle equivalent durations with different formats", () => {
+        const d1 = new Literal("PT5H", new IRI("http://www.w3.org/2001/XMLSchema#dayTimeDuration"));
+        const d2 = new Literal("PT300M", new IRI("http://www.w3.org/2001/XMLSchema#dayTimeDuration"));
+
+        expect(BuiltInFunctions.compare(d1, d2, "=")).toBe(true);
+      });
+    });
+  });
 });

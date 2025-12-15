@@ -279,22 +279,65 @@ export class FilterExecutor {
    * Evaluate arithmetic expression (+, -, *, /).
    * Supports:
    * - Numeric arithmetic
-   * - xsd:dateTime subtraction (returns difference in milliseconds as number)
+   * - xsd:dateTime - xsd:dateTime = xsd:dayTimeDuration
+   * - xsd:dateTime +/- xsd:dayTimeDuration = xsd:dateTime
+   * - xsd:dayTimeDuration +/- xsd:dayTimeDuration = xsd:dayTimeDuration
+   * - xsd:dayTimeDuration * number = xsd:dayTimeDuration
+   * - xsd:dayTimeDuration / number = xsd:dayTimeDuration
    */
-  private evaluateArithmetic(expr: ArithmeticExpression, solution: SolutionMapping): number {
+  private evaluateArithmetic(expr: ArithmeticExpression, solution: SolutionMapping): number | Literal {
     const left = this.evaluateExpression(expr.left, solution);
     const right = this.evaluateExpression(expr.right, solution);
 
+    // Special handling for dateTime - dateTime = dayTimeDuration
+    if (expr.operator === "-" && this.isDateTimeValue(left) && this.isDateTimeValue(right)) {
+      return BuiltInFunctions.dateTimeDiff(left, right);
+    }
+
+    // Special handling for dateTime + dayTimeDuration = dateTime
+    if (expr.operator === "+" && this.isDateTimeValue(left) && this.isDayTimeDurationValue(right)) {
+      return BuiltInFunctions.dateTimeAdd(left, right);
+    }
+
+    // Special handling for dateTime - dayTimeDuration = dateTime
+    if (expr.operator === "-" && this.isDateTimeValue(left) && this.isDayTimeDurationValue(right)) {
+      return BuiltInFunctions.dateTimeSubtract(left, right);
+    }
+
+    // Special handling for dayTimeDuration + dayTimeDuration = dayTimeDuration
+    if (expr.operator === "+" && this.isDayTimeDurationValue(left) && this.isDayTimeDurationValue(right)) {
+      return BuiltInFunctions.durationAdd(left, right);
+    }
+
+    // Special handling for dayTimeDuration - dayTimeDuration = dayTimeDuration
+    if (expr.operator === "-" && this.isDayTimeDurationValue(left) && this.isDayTimeDurationValue(right)) {
+      return BuiltInFunctions.durationSubtract(left, right);
+    }
+
+    // Special handling for dayTimeDuration * number = dayTimeDuration
+    if (expr.operator === "*" && this.isDayTimeDurationValue(left) && !this.isDayTimeDurationValue(right)) {
+      const rightNum = this.toNumericValue(right);
+      return BuiltInFunctions.durationMultiply(left, rightNum);
+    }
+
+    // Special handling for number * dayTimeDuration = dayTimeDuration
+    if (expr.operator === "*" && !this.isDayTimeDurationValue(left) && this.isDayTimeDurationValue(right)) {
+      const leftNum = this.toNumericValue(left);
+      return BuiltInFunctions.durationMultiply(right, leftNum);
+    }
+
+    // Special handling for dayTimeDuration / number = dayTimeDuration
+    if (expr.operator === "/" && this.isDayTimeDurationValue(left) && !this.isDayTimeDurationValue(right)) {
+      const rightNum = this.toNumericValue(right);
+      if (rightNum === 0) {
+        throw new FilterExecutorError("Division by zero");
+      }
+      return BuiltInFunctions.durationDivide(left, rightNum);
+    }
+
+    // Standard numeric arithmetic
     const leftNum = this.toNumericValue(left);
     const rightNum = this.toNumericValue(right);
-
-    // Special handling for dateTime subtraction
-    if (expr.operator === "-" && this.isDateTimeValue(left) && this.isDateTimeValue(right)) {
-      const leftMs = this.parseDateTimeToMs(left);
-      const rightMs = this.parseDateTimeToMs(right);
-      // Return difference in milliseconds (positive value)
-      return leftMs - rightMs;
-    }
 
     switch (expr.operator) {
       case "+":
@@ -311,6 +354,17 @@ export class FilterExecutor {
       default:
         throw new FilterExecutorError(`Unknown arithmetic operator: ${expr.operator}`);
     }
+  }
+
+  /**
+   * Check if a value is an xsd:dayTimeDuration.
+   */
+  private isDayTimeDurationValue(value: any): boolean {
+    if (value instanceof Literal) {
+      const datatypeValue = value.datatype?.value || "";
+      return datatypeValue === "http://www.w3.org/2001/XMLSchema#dayTimeDuration";
+    }
+    return false;
   }
 
   /**
@@ -379,28 +433,6 @@ export class FilterExecutor {
       return datePattern.test(value);
     }
     return false;
-  }
-
-  /**
-   * Parse a dateTime value to milliseconds since epoch.
-   */
-  private parseDateTimeToMs(value: any): number {
-    let dateStr: string;
-    if (value instanceof Literal) {
-      dateStr = value.value;
-    } else if (typeof value === "string") {
-      dateStr = value;
-    } else if (value && typeof value === "object" && "value" in value) {
-      dateStr = String(value.value);
-    } else {
-      throw new FilterExecutorError(`Cannot parse dateTime: ${value}`);
-    }
-
-    const date = new Date(dateStr);
-    if (isNaN(date.getTime())) {
-      throw new FilterExecutorError(`Invalid dateTime format: ${dateStr}`);
-    }
-    return date.getTime();
   }
 
   private evaluateFunction(expr: any, solution: SolutionMapping): boolean | string | number | undefined | any {
@@ -608,6 +640,52 @@ export class FilterExecutor {
       case "xsd:decimal": {
         const decValue = this.evaluateExpression(expr.args[0], solution);
         return BuiltInFunctions.xsdDecimal(this.getStringValue(decValue));
+      }
+
+      // xsd:dayTimeDuration(?value) casts a value to dayTimeDuration (SPARQL 1.1 Issue #929)
+      case "daytimeduration":
+      case "xsd:daytimeduration": {
+        const durValue = this.evaluateExpression(expr.args[0], solution);
+        return BuiltInFunctions.xsdDayTimeDuration(this.getStringValue(durValue));
+      }
+
+      // Duration accessor/conversion functions (Issue #929)
+      case "durationtodays": {
+        const durDaysArg = this.evaluateExpression(expr.args[0], solution);
+        return BuiltInFunctions.durationToDays(durDaysArg);
+      }
+
+      case "durationtohours": {
+        const durHoursArg = this.evaluateExpression(expr.args[0], solution);
+        return BuiltInFunctions.durationToHours(durHoursArg);
+      }
+
+      case "durationtominutes": {
+        const durMinArg = this.evaluateExpression(expr.args[0], solution);
+        return BuiltInFunctions.durationToMinutes(durMinArg);
+      }
+
+      case "durationtoseconds": {
+        const durSecArg = this.evaluateExpression(expr.args[0], solution);
+        return BuiltInFunctions.durationToSeconds(durSecArg);
+      }
+
+      case "datetimediff": {
+        const dt1Arg = this.evaluateExpression(expr.args[0], solution);
+        const dt2Arg = this.evaluateExpression(expr.args[1], solution);
+        return BuiltInFunctions.dateTimeDiff(dt1Arg, dt2Arg);
+      }
+
+      case "datetimeadd": {
+        const dtAddArg = this.evaluateExpression(expr.args[0], solution);
+        const durAddArg = this.evaluateExpression(expr.args[1], solution);
+        return BuiltInFunctions.dateTimeAdd(dtAddArg, durAddArg);
+      }
+
+      case "datetimesubtract": {
+        const dtSubArg = this.evaluateExpression(expr.args[0], solution);
+        const durSubArg = this.evaluateExpression(expr.args[1], solution);
+        return BuiltInFunctions.dateTimeSubtract(dtSubArg, durSubArg);
       }
 
       // Duration conversion functions (for arithmetic results)
