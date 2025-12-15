@@ -119,11 +119,10 @@ export class ObsidianLauncher {
       "[ObsidianLauncher] DOM loaded, waiting for window.app to become available...",
     );
 
-    let pollCount = 0;
     const maxPolls = 60;
     let appFound = false;
 
-    while (pollCount < maxPolls && !appFound) {
+    for (let pollCount = 0; pollCount < maxPolls; pollCount++) {
       const pollResult = await this.window.evaluate(() => {
         const win = window as any;
         return {
@@ -150,7 +149,6 @@ export class ObsidianLauncher {
       }
 
       await this.window.waitForTimeout(1000);
-      pollCount++;
     }
 
     if (!appFound) {
