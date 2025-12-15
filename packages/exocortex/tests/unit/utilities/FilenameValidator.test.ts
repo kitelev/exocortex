@@ -380,4 +380,68 @@ describe("FilenameValidator", () => {
       expect(result.sanitized).toBe("file_name");
     });
   });
+
+  /**
+   * ReDoS (Regular Expression Denial of Service) Security Tests
+   *
+   * These tests verify that sanitize method is not vulnerable to catastrophic backtracking.
+   * Performance requirement: All operations should complete in <100ms even with adversarial input.
+   */
+  describe("ReDoS Security - sanitize", () => {
+    const TIMEOUT_MS = 100;
+
+    it("should handle input with many trailing spaces quickly", () => {
+      // Pattern that would cause catastrophic backtracking with /[. ]+$/
+      const maliciousInput = "file" + " ".repeat(10000);
+
+      const startTime = Date.now();
+      const result = FilenameValidator.sanitize(maliciousInput);
+      const elapsed = Date.now() - startTime;
+
+      expect(elapsed).toBeLessThan(TIMEOUT_MS);
+      expect(result).toBe("file");
+    });
+
+    it("should handle input with many trailing dots quickly", () => {
+      const maliciousInput = "file" + ".".repeat(10000);
+
+      const startTime = Date.now();
+      const result = FilenameValidator.sanitize(maliciousInput);
+      const elapsed = Date.now() - startTime;
+
+      expect(elapsed).toBeLessThan(TIMEOUT_MS);
+      expect(result).toBe("file");
+    });
+
+    it("should handle input with alternating trailing dots and spaces", () => {
+      const maliciousInput = "file" + ". ".repeat(5000);
+
+      const startTime = Date.now();
+      const result = FilenameValidator.sanitize(maliciousInput);
+      const elapsed = Date.now() - startTime;
+
+      expect(elapsed).toBeLessThan(TIMEOUT_MS);
+      expect(result).toBe("file");
+    });
+
+    it("should handle input with many consecutive invalid characters", () => {
+      // Many consecutive slashes that become underscores
+      const maliciousInput = "/".repeat(10000);
+
+      const startTime = Date.now();
+      const result = FilenameValidator.sanitize(maliciousInput);
+      const elapsed = Date.now() - startTime;
+
+      expect(elapsed).toBeLessThan(TIMEOUT_MS);
+      // Should collapse to empty string (all underscores, then stripped)
+      expect(result).toBe("");
+    });
+
+    it("should correctly sanitize legitimate filenames after fix", () => {
+      expect(FilenameValidator.sanitize("my-file.txt")).toBe("my-file.txt");
+      expect(FilenameValidator.sanitize("file name")).toBe("file name");
+      expect(FilenameValidator.sanitize("  trimmed  ")).toBe("trimmed");
+      expect(FilenameValidator.sanitize("a///b")).toBe("a_b");
+    });
+  });
 });

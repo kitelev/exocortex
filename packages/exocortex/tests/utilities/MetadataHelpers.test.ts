@@ -661,4 +661,45 @@ describe("MetadataHelpers", () => {
       expect(result).toBe("---\ntitle: Doc\n---\n\nLine 1\nLine 2\nLine 3\n");
     });
   });
+
+  /**
+   * ReDoS (Regular Expression Denial of Service) Security Tests
+   *
+   * These tests verify that regex patterns are not vulnerable to catastrophic backtracking.
+   * Performance requirement: All regex operations should complete in <100ms even with adversarial input.
+   */
+  describe("ReDoS Security - containsReference", () => {
+    const TIMEOUT_MS = 100;
+
+    it("should handle malicious nested bracket input quickly", () => {
+      // Pattern that would cause catastrophic backtracking with /\[\[([^\]]+)\]\]/
+      const maliciousInput = "[[".repeat(100) + "\\\\".repeat(100);
+
+      const startTime = Date.now();
+      const result = MetadataHelpers.containsReference(maliciousInput, "test.md");
+      const elapsed = Date.now() - startTime;
+
+      expect(elapsed).toBeLessThan(TIMEOUT_MS);
+      expect(result).toBe(false);
+    });
+
+    it("should handle input with many bracket characters", () => {
+      // Input designed to cause backtracking: [[a[[a[[a[[a...
+      const maliciousInput = "[[a".repeat(1000);
+
+      const startTime = Date.now();
+      const result = MetadataHelpers.containsReference(maliciousInput, "test.md");
+      const elapsed = Date.now() - startTime;
+
+      expect(elapsed).toBeLessThan(TIMEOUT_MS);
+      expect(result).toBe(false);
+    });
+
+    it("should correctly match legitimate wiki-links after fix", () => {
+      expect(MetadataHelpers.containsReference("[[TestFile]]", "TestFile.md")).toBe(true);
+      expect(MetadataHelpers.containsReference("[[folder/TestFile]]", "TestFile.md")).toBe(true);
+      expect(MetadataHelpers.containsReference("[[TestFile|Alias]]", "TestFile.md")).toBe(true);
+      expect(MetadataHelpers.containsReference("See [[TestFile]] for more", "TestFile.md")).toBe(true);
+    });
+  });
 });
