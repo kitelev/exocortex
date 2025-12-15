@@ -45,7 +45,9 @@ export class MetadataHelpers {
 
     if (typeof value === "string") {
       // Match only wiki-link syntax: [[Page]], [[Page|Alias]], [[folder/Page]]
-      const wikiLinkRegex = /\[\[([^\]]+)\]\]/g;
+      // Use [^\[\]]+ instead of [^\]]+ to avoid catastrophic backtracking (ReDoS)
+      // This pattern doesn't allow nested brackets, which is correct for wiki-links
+      const wikiLinkRegex = /\[\[([^\[\]]+)\]\]/g;
       let match;
       while ((match = wikiLinkRegex.exec(value)) !== null) {
         const linkContent = match[1];

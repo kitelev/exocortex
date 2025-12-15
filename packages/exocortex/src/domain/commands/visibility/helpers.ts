@@ -174,13 +174,16 @@ export function extractDailyNoteDate(metadata: Record<string, unknown>): string 
   if (!dayProperty) return null;
 
   if (typeof dayProperty === "string") {
-    const wikiLinkMatch = dayProperty.match(/\[\[(.+?)\]\]/);
+    // Use [^\[\]]+ instead of .+? to avoid ReDoS with malicious inputs like [[[[a
+    // The pattern [^\[\]]+ explicitly excludes bracket characters, preventing backtracking
+    const wikiLinkMatch = dayProperty.match(/\[\[([^\[\]]+)\]\]/);
     return wikiLinkMatch ? wikiLinkMatch[1] : dayProperty;
   }
 
   if (Array.isArray(dayProperty) && dayProperty.length > 0) {
     const firstValue = String(dayProperty[0]);
-    const wikiLinkMatch = firstValue.match(/\[\[(.+?)\]\]/);
+    // Use [^\[\]]+ instead of .+? to avoid ReDoS
+    const wikiLinkMatch = firstValue.match(/\[\[([^\[\]]+)\]\]/);
     return wikiLinkMatch ? wikiLinkMatch[1] : firstValue;
   }
 

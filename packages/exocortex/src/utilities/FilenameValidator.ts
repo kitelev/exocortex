@@ -171,24 +171,28 @@ export class FilenameValidator {
       result = result.substring(1);
     }
 
-    // Remove trailing dots and spaces
-    result = result.replace(/[. ]+$/, "");
+    // Remove trailing dots and spaces using a loop to avoid ReDoS
+    // The pattern /[. ]+$/ can cause exponential backtracking with repeated spaces
+    while (result.length > 0 && (result.endsWith(".") || result.endsWith(" "))) {
+      result = result.slice(0, -1);
+    }
 
-    // Collapse multiple replacement characters
-    const escapedReplacementChar = replacementChar.replace(
-      /[.*+?^${}()|[\]\\]/g,
-      "\\$&",
-    );
-    result = result.replace(
-      new RegExp(`${escapedReplacementChar}+`, "g"),
-      replacementChar,
-    );
+    // Collapse multiple replacement characters using string operations to avoid ReDoS
+    // Building regex from user input with quantifiers (e.g., /x+/g) is risky
+    if (result.includes(replacementChar)) {
+      const parts = result.split(replacementChar);
+      // Filter out empty parts (which represent consecutive replacement chars)
+      const filtered = parts.filter((part) => part !== "");
+      result = filtered.join(replacementChar);
+    }
 
-    // Remove leading/trailing replacement characters
-    result = result.replace(
-      new RegExp(`^${escapedReplacementChar}+|${escapedReplacementChar}+$`, "g"),
-      "",
-    );
+    // Remove leading/trailing replacement characters using string operations
+    while (result.startsWith(replacementChar)) {
+      result = result.slice(replacementChar.length);
+    }
+    while (result.endsWith(replacementChar)) {
+      result = result.slice(0, -replacementChar.length);
+    }
 
     // Handle reserved names by appending replacement char (AFTER cleanup)
     const baseName = this.getBaseName(result);
@@ -200,11 +204,10 @@ export class FilenameValidator {
     // Truncate to max length
     if (result.length > maxLength) {
       result = result.slice(0, maxLength);
-      // Clean up any trailing replacement char from truncation
-      result = result.replace(
-        new RegExp(`${escapedReplacementChar}+$`, "g"),
-        "",
-      );
+      // Clean up any trailing replacement char from truncation using string operations
+      while (result.endsWith(replacementChar)) {
+        result = result.slice(0, -replacementChar.length);
+      }
     }
 
     return result;

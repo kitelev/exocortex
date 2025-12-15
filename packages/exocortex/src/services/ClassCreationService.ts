@@ -43,10 +43,17 @@ export class ClassCreationService {
   }
 
   private generateFileName(label: string): string {
-    return label
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "");
+    let result = label.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+    // Remove leading dashes using a loop to avoid ReDoS
+    // The pattern /^-+|-+$/g with alternation can cause backtracking
+    while (result.startsWith("-")) {
+      result = result.slice(1);
+    }
+    // Remove trailing dashes
+    while (result.endsWith("-")) {
+      result = result.slice(0, -1);
+    }
+    return result;
   }
 
   private generateClassFrontmatter(
