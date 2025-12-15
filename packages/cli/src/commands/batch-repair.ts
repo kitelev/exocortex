@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { resolve, relative, join } from "path";
+import { resolve } from "path";
 import { BatchExecutor, type BatchResult, type BatchOperation } from "../executors/BatchExecutor.js";
 import { NodeFsAdapter } from "../adapters/NodeFsAdapter.js";
 import { ErrorHandler, type OutputFormat } from "../utils/ErrorHandler.js";
@@ -145,7 +145,6 @@ export function batchRepairCommand(): Command {
         }
 
         // Execute batch with custom progress tracking
-        const startTime = Date.now();
         const executor = new BatchExecutor(vaultPath, options.dryRun);
 
         // We can't directly hook into BatchExecutor's progress, so we'll use the results

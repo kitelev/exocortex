@@ -3,12 +3,7 @@ import { NodeFsAdapter } from "../adapters/NodeFsAdapter.js";
 import { PathResolver } from "../utils/PathResolver.js";
 import { FrontmatterService, DateFormatter } from "exocortex";
 import { TransactionManager } from "../utils/TransactionManager.js";
-import { ExitCodes } from "../utils/ExitCodes.js";
-import {
-  FileNotFoundError,
-  InvalidArgumentsError,
-  OperationFailedError,
-} from "../utils/errors/index.js";
+import { InvalidArgumentsError } from "../utils/errors/index.js";
 
 /**
  * Represents a single operation in a batch
@@ -272,8 +267,8 @@ export class BatchExecutor {
         "",
       );
 
-      // Read file to verify it exists
-      const content = await this.fsAdapter.readFile(relativePath);
+      // Read file to verify it exists (throws if not found)
+      await this.fsAdapter.readFile(relativePath);
 
       if (this.dryRun) {
         return {

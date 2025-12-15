@@ -2,7 +2,6 @@ import { ExitCodes } from "./ExitCodes.js";
 import { CLIError } from "./errors/CLIError.js";
 import {
   ErrorCode,
-  ErrorCategory,
   ResponseBuilder,
   type StructuredErrorResponse,
 } from "../responses/index.js";
