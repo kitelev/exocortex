@@ -17,7 +17,10 @@ paths-ignore:
   - "**/*.test.ts"
   - "**/*.test.tsx"
   - "**/*.spec.ts"
-  - "packages/obsidian-plugin/main.js"  # Generated bundled output
+  - "packages/obsidian-plugin/main.js"      # Generated bundled output
+  - "packages/obsidian-plugin/main.js.map"  # Source maps
+  - "**/debug-main.js"                      # Debug builds
+  - "**/debug-main.ts"                      # Debug builds
 
 # Query filters to suppress intentional false positives
 query-filters:
