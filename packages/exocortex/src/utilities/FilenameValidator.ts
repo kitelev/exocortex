@@ -89,7 +89,6 @@ export class FilenameValidator {
     } = options;
 
     const errors: string[] = [];
-    let sanitized = name;
 
     // Check for empty/whitespace-only
     if (!name || name.trim().length === 0) {
@@ -105,7 +104,7 @@ export class FilenameValidator {
     }
 
     // Trim whitespace for further checks
-    sanitized = name.trim();
+    let sanitized = name.trim();
 
     // Check for invalid characters
     if (this.INVALID_CHARS_PATTERN.test(sanitized)) {

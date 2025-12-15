@@ -150,7 +150,7 @@ export class BatchExecutor {
         // In atomic mode, rollback on first failure
         if (atomic && !this.dryRun) {
           await this.transactionManager.rollback();
-          rolledBack = true;
+          // Note: We return rolledBack: true explicitly below, no need to set variable
 
           // Mark remaining operations as not executed
           const remainingIndex = results.length;
