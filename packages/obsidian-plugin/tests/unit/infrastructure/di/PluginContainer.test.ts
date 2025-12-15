@@ -112,7 +112,7 @@ describe("PluginContainer", () => {
   it("should clear container instances on reset", () => {
     PluginContainer.setup(mockApp, mockPlugin);
 
-    const logger1 = container.resolve(DI_TOKENS.ILogger);
+    container.resolve(DI_TOKENS.ILogger);
 
     PluginContainer.reset();
 

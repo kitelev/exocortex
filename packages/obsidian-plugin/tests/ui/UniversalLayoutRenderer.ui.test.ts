@@ -13,7 +13,7 @@ import { App, TFile } from "obsidian";
 import { UniversalLayoutRenderer } from "../../src/presentation/renderers/UniversalLayoutRenderer";
 import { FileBuilder, ListBuilder } from "./helpers/FileBuilder";
 import { DEFAULT_SETTINGS } from "../../src/domain/settings/ExocortexSettings";
-import { waitForReact, waitForDomElement } from "../unit/helpers/testHelpers";
+import { waitForReact } from "../unit/helpers/testHelpers";
 import {
   DI_TOKENS,
   registerCoreServices,

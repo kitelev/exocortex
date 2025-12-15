@@ -2,7 +2,6 @@ import { PropertyPathExecutor } from "../../../../../src/infrastructure/sparql/e
 import type { ITripleStore } from "../../../../../src/interfaces/ITripleStore";
 import { Triple } from "../../../../../src/domain/models/rdf/Triple";
 import { IRI } from "../../../../../src/domain/models/rdf/IRI";
-import { Literal } from "../../../../../src/domain/models/rdf/Literal";
 import type { TripleElement, PropertyPath, IRI as AlgebraIRI } from "../../../../../src/infrastructure/sparql/algebra/AlgebraOperation";
 import { SolutionMapping } from "../../../../../src/infrastructure/sparql/SolutionMapping";
 
@@ -13,18 +12,10 @@ describe("PropertyPathExecutor", () => {
 
   // Helper to create IRI
   const iri = (value: string): IRI => new IRI(value);
-  const literal = (value: string): Literal => new Literal(value);
 
   // Helper to create algebra elements
   const algebraIri = (value: string): AlgebraIRI => ({ type: "iri", value });
   const algebraVar = (name: string): TripleElement => ({ type: "variable", value: name });
-
-  // Helper to create property paths
-  const simplePath = (predicate: string): PropertyPath => ({
-    type: "path",
-    pathType: "+",
-    items: [algebraIri(predicate)],
-  });
 
   beforeEach(() => {
     triples = [];

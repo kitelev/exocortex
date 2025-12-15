@@ -161,12 +161,6 @@ describe("exo:byUUID() Function", () => {
   });
 
   describe("Filter Expression Usage", () => {
-    async function* generateSolutions(solutions: SolutionMapping[]) {
-      for (const solution of solutions) {
-        yield solution;
-      }
-    }
-
     it("should filter solutions where subject equals byUUID result", async () => {
       // FILTER(?s = exo:byUUID('uuid'))
       const operation: FilterOperation = {

@@ -1,6 +1,5 @@
 import { UnionExecutor } from "../../../../../src/infrastructure/sparql/executors/UnionExecutor";
 import { SolutionMapping } from "../../../../../src/infrastructure/sparql/SolutionMapping";
-import { IRI } from "../../../../../src/domain/models/rdf/IRI";
 import { Literal } from "../../../../../src/domain/models/rdf/Literal";
 
 describe("UnionExecutor", () => {

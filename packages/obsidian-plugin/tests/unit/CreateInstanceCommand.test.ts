@@ -1,11 +1,10 @@
-import { flushPromises, waitForCondition } from "./helpers/testHelpers";
+import { flushPromises } from "./helpers/testHelpers";
 import { CreateInstanceCommand } from "../../src/application/commands/CreateInstanceCommand";
 import { App, TFile, Notice, WorkspaceLeaf } from "obsidian";
 import {
   TaskCreationService,
   CommandVisibilityContext,
   LoggingService,
-  WikiLinkHelpers,
   AssetClass
 } from "exocortex";
 import { LabelInputModal } from "../../src/presentation/modals/LabelInputModal";

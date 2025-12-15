@@ -1,5 +1,4 @@
 import {
-  _electron as electron,
   ElectronApplication,
   Page,
   chromium,

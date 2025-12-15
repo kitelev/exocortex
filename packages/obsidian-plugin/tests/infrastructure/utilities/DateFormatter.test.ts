@@ -378,7 +378,6 @@ describe("DateFormatter", () => {
 
     it("should shift effort day forward", () => {
       // Arrange
-      const currentDayWikilink = '"[[2025-10-24]]"';
       const currentDate = new Date("2025-10-24T00:00:00Z");
 
       // Act - shift forward one day
@@ -391,7 +390,6 @@ describe("DateFormatter", () => {
 
     it("should shift effort day backward", () => {
       // Arrange
-      const currentDayWikilink = '"[[2025-10-24]]"';
       const currentDate = new Date("2025-10-24T00:00:00Z");
 
       // Act - shift backward one day

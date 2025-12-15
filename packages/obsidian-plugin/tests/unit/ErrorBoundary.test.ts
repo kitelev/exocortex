@@ -10,14 +10,13 @@
 import {
   ErrorBoundary,
   ErrorBoundaryProps,
-  ErrorBoundaryState,
 } from "../../src/presentation/components/ErrorBoundary";
 import {
   ApplicationErrorHandler,
   ValidationError,
   NetworkError,
 } from "exocortex";
-import React, { Component, ReactNode, ErrorInfo } from "react";
+import React, { ReactNode, ErrorInfo } from "react";
 
 // Mock console.error to avoid noise in tests
 const originalConsoleError = console.error;
@@ -334,7 +333,7 @@ describe("ErrorBoundary", () => {
           errorInfo: { componentStack: "stack" },
         };
 
-        const rendered = boundary.render();
+        boundary.render();
 
         expect(fallback).not.toHaveBeenCalled();
       });
@@ -658,7 +657,6 @@ describe("ErrorBoundary", () => {
         }
       }
 
-      const boundary = new ErrorBoundary({ children: null });
       const error = new CustomError("Custom error", 500);
 
       const newState = ErrorBoundary.getDerivedStateFromError(error);

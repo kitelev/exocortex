@@ -1,5 +1,5 @@
 import React, { ErrorInfo } from "react";
-import { ReactRenderer, ReactRendererConfig } from "../../src/presentation/utils/ReactRenderer";
+import { ReactRenderer } from "../../src/presentation/utils/ReactRenderer";
 import { createRoot, Root } from "react-dom/client";
 import { ErrorBoundary } from "../../src/presentation/components/ErrorBoundary";
 import { LayoutErrorFallback } from "../../src/presentation/components/LayoutErrorFallback";

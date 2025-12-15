@@ -7,7 +7,6 @@ describe("SPARQLCodeBlockProcessor", () => {
   let mockPlugin: ExocortexPlugin;
   let mockContext: MarkdownPostProcessorContext;
   let mockEl: HTMLElement;
-  let mockMetadataCache: MetadataCache;
 
   beforeEach(() => {
     mockPlugin = {

@@ -5,7 +5,6 @@ import { ExocortexSettings } from "../../src/domain/settings/ExocortexSettings";
 import { TFile } from "obsidian";
 import {
   DI_TOKENS,
-  IVaultAdapter,
   registerCoreServices,
   resetContainer,
 } from "exocortex";

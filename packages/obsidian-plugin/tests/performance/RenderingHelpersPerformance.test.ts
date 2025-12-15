@@ -10,7 +10,6 @@
 import { LayoutConfigParser } from "../../src/presentation/renderers/helpers/LayoutConfigParser";
 import { SectionStateManager } from "../../src/presentation/renderers/helpers/SectionStateManager";
 import { DailyNoteHelpers } from "../../src/presentation/renderers/helpers/DailyNoteHelpers";
-import { MetadataExtractor, IVaultAdapter, IFile } from "exocortex";
 
 /**
  * Generate mock effort metadata for performance testing.

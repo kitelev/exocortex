@@ -127,11 +127,7 @@ test.describe("Area Tree Collapsible Functionality", () => {
     await launcher.waitForElement(".exocortex-area-tree", 60000);
 
     const newAreaTree = launcher.page.locator(".exocortex-area-tree");
-    
-    // Expand to see React Components
-    const reactComponentsRow = newAreaTree.locator('[data-area-path*="react-components.md"]');
-    const reactComponentsToggle = reactComponentsRow.locator(".area-tree-toggle");
-    
+
     // First verify React Components node exists but is initially collapsed
     await expect(newAreaTree.locator("text=React Components")).toBeVisible();
     await expect(newAreaTree.locator("text=Backend")).not.toBeVisible();

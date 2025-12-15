@@ -120,7 +120,7 @@ describe("StatusSelectPropertyField", () => {
 
   describe("constructor", () => {
     it("should render a select dropdown", () => {
-      const field = new StatusSelectPropertyField(containerEl, {
+      new StatusSelectPropertyField(containerEl, {
         property: {
           uri: "ems:status",
           name: "ems__Effort_status",
