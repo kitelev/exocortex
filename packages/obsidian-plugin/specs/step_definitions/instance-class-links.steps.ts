@@ -161,10 +161,9 @@ Then(
 Then("Instance Class column displays {string}", function (this: ExocortexWorld, expectedText: string) {
   const instanceClass = this.currentNote?.frontmatter.exo__Instance_class;
   if (expectedText === "-" || expectedText === "") {
-    assert.ok(
-      !instanceClass || instanceClass === "" || instanceClass === null,
-      "Expected empty or null instance class",
-    );
+    // Check for falsy value (undefined, null, empty string)
+    // !instanceClass handles null, undefined, and empty string
+    assert.ok(!instanceClass, "Expected empty or null instance class");
   } else {
     assert.ok(instanceClass, "Expected instance class to exist");
   }
@@ -172,10 +171,9 @@ Then("Instance Class column displays {string}", function (this: ExocortexWorld, 
 
 Then("Instance Class column is empty", function (this: ExocortexWorld) {
   const instanceClass = this.currentNote?.frontmatter.exo__Instance_class;
-  assert.ok(
-    !instanceClass || instanceClass === "" || instanceClass === null,
-    "Instance class should be empty",
-  );
+  // Check for falsy value (undefined, null, empty string)
+  // !instanceClass handles null, undefined, and empty string
+  assert.ok(!instanceClass, "Instance class should be empty");
 });
 
 Then("no error is thrown", function (this: ExocortexWorld) {

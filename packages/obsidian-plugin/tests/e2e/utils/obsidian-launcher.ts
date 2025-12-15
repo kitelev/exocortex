@@ -123,7 +123,7 @@ export class ObsidianLauncher {
     const maxPolls = 60;
     let appFound = false;
 
-    while (pollCount < maxPolls && !appFound) {
+    while (pollCount < maxPolls) {
       const pollResult = await this.window.evaluate(() => {
         const win = window as any;
         return {

@@ -101,7 +101,6 @@ export class BatchExecutor {
     const results: BatchOperationResult[] = [];
     let succeeded = 0;
     let failed = 0;
-    let rolledBack = false;
 
     if (operations.length === 0) {
       return {
@@ -179,7 +178,9 @@ export class BatchExecutor {
     }
 
     // Commit transaction if atomic mode and all succeeded
-    if (atomic && !this.dryRun && !rolledBack) {
+    // Note: If we reach this point, rolledBack is always false because
+    // atomic mode failures return early (line 167). So we only check atomic && !dryRun.
+    if (atomic && !this.dryRun) {
       await this.transactionManager.commit();
     }
 
@@ -193,7 +194,8 @@ export class BatchExecutor {
       results,
       durationMs: Date.now() - startTime,
       atomic,
-      ...(atomic && { rolledBack }),
+      // Note: If we reach this point, there was no rollback (atomic failures return early with rolledBack: true)
+      ...(atomic && { rolledBack: false }),
     };
   }
 
