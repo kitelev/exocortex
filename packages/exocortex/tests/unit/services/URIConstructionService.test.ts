@@ -64,9 +64,8 @@ describe("URIConstructionService", () => {
     });
 
     it("should use fallback for missing UID in non-strict mode", async () => {
-      const serviceNonStrict = new URIConstructionService(mockFileSystem, {
-        strictValidation: false,
-      });
+      const serviceNonStrict = new URIConstructionService(mockFileSystem);
+      serviceNonStrict.configure({ strictValidation: false });
 
       const asset = {
         path: "Tasks/review-pr.md",
