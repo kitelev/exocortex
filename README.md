@@ -184,17 +184,16 @@ Exocortex is a **monorepo** with three packages sharing Clean Architecture core:
 
 ## Quick Start
 
-### Option 1: Obsidian Plugin
+### Option 1: Obsidian Plugin (via BRAT)
 
 Best for: Visual knowledge management, daily planning, interactive exploration.
 
-```bash
-cd .obsidian/plugins
-git clone https://github.com/kitelev/exocortex
-cd exocortex && npm install && npm run build
-```
+1. Install [BRAT](https://github.com/TfTHacker/obsidian42-brat) plugin from Obsidian Community Plugins
+2. Open BRAT settings → **Add Beta Plugin**
+3. Enter repository: `kitelev/exocortex`
+4. Click **Add Plugin** and enable Exocortex in Community plugins
 
-Enable in Obsidian Settings → Community plugins → Exocortex.
+BRAT will automatically keep the plugin updated with new releases.
 
 ### Option 2: CLI
 
