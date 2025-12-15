@@ -330,12 +330,10 @@ On **collective level** — multiple exocortexes form **noosphere**.
 
 ### Getting Started
 - **[Installation Guide](./docs/Getting-Started.md)** — Step-by-step setup
-- **[First Steps](./docs/First-Steps.md)** — Your first knowledge assets
 
 ### By Interface
 
 **Obsidian Plugin:**
-- **[Plugin User Guide](./docs/obsidian/User-Guide.md)** — Complete feature reference
 - **[Command Reference](./docs/Command-Reference.md)** — All 32 commands documented
 
 **CLI:**
