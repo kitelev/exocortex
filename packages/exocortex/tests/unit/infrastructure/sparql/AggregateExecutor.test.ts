@@ -112,6 +112,20 @@ describe("AggregateExecutor", () => {
     },
   });
 
+  const createSampleAggregate = (
+    variable: string,
+    varName: string,
+    distinct = false
+  ): AggregateBinding => ({
+    variable,
+    expression: {
+      type: "aggregate",
+      aggregation: "sample",
+      expression: { type: "variable", name: varName },
+      distinct,
+    },
+  });
+
   describe("COUNT", () => {
     it("should count all solutions without grouping", () => {
       const solutions = [
@@ -312,6 +326,118 @@ describe("AggregateExecutor", () => {
 
       expect(results).toHaveLength(1);
       expect(getAggregateValue(results[0], "names")).toBe("Alice Bob");
+    });
+  });
+
+  describe("SAMPLE", () => {
+    it("should return an arbitrary value from the group", () => {
+      const solutions = [
+        createSolution({ name: "Alice" }),
+        createSolution({ name: "Bob" }),
+        createSolution({ name: "Charlie" }),
+      ];
+
+      const operation = createGroupOperation([], [createSampleAggregate("example", "name")]);
+      const results = executor.execute(operation, solutions);
+
+      expect(results).toHaveLength(1);
+      // SAMPLE returns an arbitrary value - in our implementation, the first one
+      expect(getAggregateValue(results[0], "example")).toBe("Alice");
+    });
+
+    it("should return space for empty group (unbound)", () => {
+      const solutions: SolutionMapping[] = [];
+
+      const operation = createGroupOperation([], [createSampleAggregate("example", "name")]);
+      const results = executor.execute(operation, solutions);
+
+      expect(results).toHaveLength(1);
+      // SAMPLE on empty group returns space (Literal cannot be empty string)
+      expect(getAggregateValue(results[0], "example")).toBe(" ");
+    });
+
+    it("should work with numeric values", () => {
+      const solutions = [
+        createSolution({ value: 42 }),
+        createSolution({ value: 100 }),
+        createSolution({ value: 7 }),
+      ];
+
+      const operation = createGroupOperation([], [createSampleAggregate("sample", "value")]);
+      const results = executor.execute(operation, solutions);
+
+      expect(results).toHaveLength(1);
+      expect(getAggregateValue(results[0], "sample")).toBe(42);
+    });
+
+    it("should work with GROUP BY", () => {
+      const solutions = [
+        createSolution({ type: "Task", name: "Task1" }),
+        createSolution({ type: "Task", name: "Task2" }),
+        createSolution({ type: "Project", name: "Project1" }),
+        createSolution({ type: "Project", name: "Project2" }),
+      ];
+
+      const operation = createGroupOperation(["type"], [createSampleAggregate("exampleName", "name")]);
+      const results = executor.execute(operation, solutions);
+
+      expect(results).toHaveLength(2);
+
+      const taskResult = results.find((r) => r.toJSON()["type"] === "Task");
+      const projectResult = results.find((r) => r.toJSON()["type"] === "Project");
+
+      // Each group should have a sample - the first value in each group
+      expect(getAggregateValue(taskResult!, "exampleName")).toBe("Task1");
+      expect(getAggregateValue(projectResult!, "exampleName")).toBe("Project1");
+    });
+
+    it("should handle SAMPLE DISTINCT", () => {
+      const solutions = [
+        createSolution({ name: "Alice" }),
+        createSolution({ name: "Alice" }),
+        createSolution({ name: "Bob" }),
+      ];
+
+      const operation = createGroupOperation([], [createSampleAggregate("example", "name", true)]);
+      const results = executor.execute(operation, solutions);
+
+      expect(results).toHaveLength(1);
+      // SAMPLE DISTINCT returns any unique value - implementation returns first
+      expect(getAggregateValue(results[0], "example")).toBe("Alice");
+    });
+
+    it("should skip missing values and return first bound value", () => {
+      const solutions = [
+        createSolution({}),  // name is unbound
+        createSolution({ name: "Bob" }),
+        createSolution({ name: "Charlie" }),
+      ];
+
+      const operation = createGroupOperation([], [createSampleAggregate("example", "name")]);
+      const results = executor.execute(operation, solutions);
+
+      expect(results).toHaveLength(1);
+      expect(getAggregateValue(results[0], "example")).toBe("Bob");
+    });
+
+    it("should work alongside other aggregates", () => {
+      const solutions = [
+        createSolution({ name: "Alice", value: 10 }),
+        createSolution({ name: "Bob", value: 20 }),
+        createSolution({ name: "Charlie", value: 30 }),
+      ];
+
+      const operation = createGroupOperation([], [
+        createSampleAggregate("exampleName", "name"),
+        createCountAggregate("count"),
+        createSumAggregate("total", "value"),
+      ]);
+      const results = executor.execute(operation, solutions);
+
+      expect(results).toHaveLength(1);
+      expect(getAggregateValue(results[0], "exampleName")).toBe("Alice");
+      expect(getAggregateValue(results[0], "count")).toBe(3);
+      expect(getAggregateValue(results[0], "total")).toBe(60);
     });
   });
 

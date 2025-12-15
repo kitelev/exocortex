@@ -358,7 +358,7 @@ export interface AggregateBinding {
 
 export interface AggregateExpression {
   type: "aggregate";
-  aggregation: "count" | "sum" | "avg" | "min" | "max" | "group_concat";
+  aggregation: "count" | "sum" | "avg" | "min" | "max" | "group_concat" | "sample";
   expression?: Expression;
   distinct: boolean;
   separator?: string;

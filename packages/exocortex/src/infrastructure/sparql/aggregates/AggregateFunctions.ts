@@ -101,6 +101,39 @@ export class AggregateFunctions {
     return values.join(separator);
   }
 
+  /**
+   * SAMPLE aggregate function (SPARQL 1.1).
+   * Returns an arbitrary value from the group.
+   *
+   * @param solutions - The solution mappings in the group
+   * @param variable - The variable to sample from
+   * @returns The first non-null value found, or null if empty
+   */
+  static sample(solutions: SolutionMapping[], variable: string): AggregateResult | null {
+    for (const solution of solutions) {
+      const value = solution.get(variable);
+      if (value) {
+        return this.toComparable(value);
+      }
+    }
+    return null;
+  }
+
+  /**
+   * SAMPLE DISTINCT aggregate function (SPARQL 1.1).
+   * Returns an arbitrary unique value from the group.
+   *
+   * @param solutions - The solution mappings in the group
+   * @param variable - The variable to sample from
+   * @returns The first unique non-null value found, or null if empty
+   */
+  static sampleDistinct(solutions: SolutionMapping[], variable: string): AggregateResult | null {
+    // For SAMPLE DISTINCT, we just return the first unique value
+    // Since we're returning an arbitrary value anyway, DISTINCT doesn't change behavior
+    // significantly - we just ensure we're returning a value that exists
+    return this.sample(solutions, variable);
+  }
+
   private static toNumber(literal: Literal): number {
     const datatype = literal.datatype?.value;
     if (datatype?.includes("#integer") || datatype?.includes("#decimal") || datatype?.includes("#double")) {

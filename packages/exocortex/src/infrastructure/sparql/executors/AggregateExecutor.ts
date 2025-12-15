@@ -160,6 +160,17 @@ export class AggregateExecutor {
         return new Literal(concat || " ", XSD_STRING);
       }
 
+      case "sample": {
+        const sample = this.computeSample(values, expr.distinct);
+        if (sample === undefined) {
+          // Return space for unbound/empty SAMPLE result (Literal cannot be empty)
+          return new Literal(" ", XSD_STRING);
+        }
+        return typeof sample === "number"
+          ? new Literal(String(sample), XSD_DECIMAL)
+          : new Literal(String(sample), XSD_STRING);
+      }
+
       default:
         throw new AggregateExecutorError(`Unknown aggregation function: ${expr.aggregation}`);
     }
@@ -283,6 +294,31 @@ export class AggregateExecutor {
     }
 
     return strs.join(separator);
+  }
+
+  /**
+   * SAMPLE aggregate function (SPARQL 1.1).
+   * Returns an arbitrary value from the group.
+   * Per spec, this returns any value - we choose the first non-null value.
+   */
+  private computeSample(values: any[], distinct: boolean): any {
+    if (values.length === 0) return undefined;
+
+    if (distinct) {
+      const uniqueValues = [...new Set(values.map((v) => String(v)))];
+      if (uniqueValues.length === 0) return undefined;
+
+      // Try to return numeric value if first unique value is numeric
+      const firstUnique = uniqueValues[0];
+      const num = parseFloat(firstUnique);
+      return !isNaN(num) ? num : firstUnique;
+    }
+
+    // Return first value - try to preserve type
+    const first = values[0];
+    if (typeof first === "number") return first;
+    const num = parseFloat(String(first));
+    return !isNaN(num) ? num : String(first);
   }
 
   private createEmptyAggregateResult(operation: GroupOperation): SolutionMapping | null {
