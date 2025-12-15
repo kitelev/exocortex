@@ -1,4 +1,4 @@
-import { jest, describe, it, expect, beforeEach, afterEach, beforeAll } from "@jest/globals";
+import { jest, describe, it, expect, beforeEach, afterEach } from "@jest/globals";
 import { ExitCodes } from "../../../src/utils/ExitCodes.js";
 
 // Mock dependencies before importing CommandExecutor

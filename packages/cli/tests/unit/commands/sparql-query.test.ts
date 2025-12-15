@@ -1,6 +1,5 @@
 import { jest, describe, it, expect, beforeEach, afterEach } from "@jest/globals";
 import fs from "fs";
-import { SolutionMapping, IRI, Literal } from "exocortex";
 
 // Mock dependencies
 const mockTableFormatter = {

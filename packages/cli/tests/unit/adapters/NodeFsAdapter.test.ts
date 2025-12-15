@@ -334,7 +334,7 @@ aliases:
     it("should accept custom root path", async () => {
       mockGlob.mockResolvedValue(["/test/vault/custom/file.md"]);
 
-      const result = await adapter.getMarkdownFiles("custom");
+      await adapter.getMarkdownFiles("custom");
 
       expect(mockGlob).toHaveBeenCalledWith(
         expect.stringContaining("/test/vault/custom/**/*.md"),

@@ -1,6 +1,5 @@
 import { jest, describe, it, expect, beforeEach, afterEach } from "@jest/globals";
 import fs from "fs-extra";
-import crypto from "crypto";
 
 const { TransactionManager } = await import("../../../src/utils/TransactionManager.js");
 

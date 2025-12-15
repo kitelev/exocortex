@@ -1,4 +1,4 @@
-import { SPARQLParser, SPARQLParseError, SelectQuery, ConstructQuery } from "../../../../src/infrastructure/sparql/SPARQLParser";
+import { SPARQLParser, SPARQLParseError, SelectQuery } from "../../../../src/infrastructure/sparql/SPARQLParser";
 
 describe("SPARQLParser", () => {
   let parser: SPARQLParser;

@@ -1,11 +1,4 @@
-import {
-  jest,
-  describe,
-  it,
-  expect,
-  beforeEach,
-  afterEach,
-} from "@jest/globals";
+import { describe, it, expect } from "@jest/globals";
 
 // Import the command creator
 import { batchRepairCommand } from "../../../src/commands/batch-repair.js";

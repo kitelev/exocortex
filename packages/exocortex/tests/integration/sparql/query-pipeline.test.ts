@@ -18,11 +18,7 @@ import { Literal } from "../../../src/domain/models/rdf/Literal";
 
 // Standard namespace URIs
 const RDF_TYPE = new IRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#type");
-const RDFS_LABEL = new IRI("http://www.w3.org/2000/01/rdf-schema#label");
-const RDFS_SUBCLASS_OF = new IRI("http://www.w3.org/2000/01/rdf-schema#subClassOf");
 const XSD_STRING = new IRI("http://www.w3.org/2001/XMLSchema#string");
-const XSD_INTEGER = new IRI("http://www.w3.org/2001/XMLSchema#integer");
-const XSD_DATE = new IRI("http://www.w3.org/2001/XMLSchema#date");
 const XSD_DATETIME = new IRI("http://www.w3.org/2001/XMLSchema#dateTime");
 
 // Exocortex-specific namespaces

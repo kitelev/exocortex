@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "@jest/globals";
+import { describe, it, expect } from "@jest/globals";
 import { ExitCodes } from "../../../../src/utils/ExitCodes.js";
 import { ErrorCode } from "../../../../src/responses/index.js";
 

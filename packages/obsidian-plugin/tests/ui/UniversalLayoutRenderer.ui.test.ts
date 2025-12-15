@@ -9,14 +9,13 @@
 
 import "reflect-metadata";
 import { container } from "tsyringe";
-import { App, TFile, MarkdownPostProcessorContext } from "obsidian";
+import { App, TFile } from "obsidian";
 import { UniversalLayoutRenderer } from "../../src/presentation/renderers/UniversalLayoutRenderer";
 import { FileBuilder, ListBuilder } from "./helpers/FileBuilder";
 import { DEFAULT_SETTINGS } from "../../src/domain/settings/ExocortexSettings";
 import { waitForReact, waitForDomElement } from "../unit/helpers/testHelpers";
 import {
   DI_TOKENS,
-  IVaultAdapter,
   registerCoreServices,
   resetContainer,
 } from "exocortex";

@@ -14,7 +14,6 @@ import { InMemoryTripleStore } from "../../../../src/infrastructure/rdf/InMemory
 import { Triple } from "../../../../src/domain/models/rdf/Triple";
 import { IRI } from "../../../../src/domain/models/rdf/IRI";
 import { Literal } from "../../../../src/domain/models/rdf/Literal";
-import { BlankNode } from "../../../../src/domain/models/rdf/BlankNode";
 
 describe("InMemoryTripleStore Edge Cases", () => {
   let store: InMemoryTripleStore;

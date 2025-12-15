@@ -80,9 +80,8 @@ jest.unstable_mockModule("exocortex", () => ({
 }));
 
 // Dynamic import after mocks
-const { FolderRepairExecutor } = await import(
-  "../../../src/executors/commands/FolderRepairExecutor.js"
-);
+// FolderRepairExecutor is indirectly used through CommandExecutor.executeRepairFolder()
+await import("../../../src/executors/commands/FolderRepairExecutor.js");
 const { CommandExecutor } = await import("../../../src/executors/CommandExecutor.js");
 
 describe("FolderRepairExecutor", () => {

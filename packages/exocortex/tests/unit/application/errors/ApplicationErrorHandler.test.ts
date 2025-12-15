@@ -6,7 +6,6 @@ import {
 import {
   NetworkError,
   ValidationError,
-  ApplicationError,
 } from "../../../../src/domain/errors/index.js";
 
 describe("ApplicationErrorHandler", () => {
@@ -112,8 +111,6 @@ describe("ApplicationErrorHandler", () => {
         backoffMultiplier: 2,
         maxDelayMs: 10000,
       });
-
-      const delays: number[] = [];
       const operation = jest
         .fn()
         .mockImplementation(

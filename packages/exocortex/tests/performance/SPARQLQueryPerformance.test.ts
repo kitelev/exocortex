@@ -151,8 +151,6 @@ describe("SPARQL Query Performance", () => {
   };
 
   describe("Small dataset (1K triples)", () => {
-    const TRIPLE_COUNT = 1000;
-
     beforeAll(async () => {
       store = new InMemoryTripleStore();
       executor = new QueryExecutor(store);

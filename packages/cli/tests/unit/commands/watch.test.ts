@@ -1,11 +1,4 @@
-import {
-  jest,
-  describe,
-  it,
-  expect,
-  beforeEach,
-  afterEach,
-} from "@jest/globals";
+import { describe, it, expect } from "@jest/globals";
 
 import { watchCommand } from "../../../src/commands/watch.js";
 

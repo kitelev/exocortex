@@ -2,14 +2,10 @@ import "reflect-metadata";
 import { container } from "tsyringe";
 import { TFile, Vault, MetadataCache } from "obsidian";
 import { UniversalLayoutRenderer } from "../../src/presentation/renderers/UniversalLayoutRenderer";
-import {
-  ExocortexSettings,
-  DEFAULT_SETTINGS,
-} from "../../src/domain/settings/ExocortexSettings";
+import { DEFAULT_SETTINGS } from "../../src/domain/settings/ExocortexSettings";
 import { flushPromises } from "../unit/helpers/testHelpers";
 import {
   DI_TOKENS,
-  IVaultAdapter,
   registerCoreServices,
   resetContainer,
 } from "exocortex";

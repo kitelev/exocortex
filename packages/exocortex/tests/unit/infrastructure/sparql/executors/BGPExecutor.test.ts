@@ -1,9 +1,9 @@
-import { BGPExecutor, BGPExecutorError } from "../../../../../src/infrastructure/sparql/executors/BGPExecutor";
+import { BGPExecutor } from "../../../../../src/infrastructure/sparql/executors/BGPExecutor";
 import { InMemoryTripleStore } from "../../../../../src/infrastructure/rdf/InMemoryTripleStore";
 import { Triple } from "../../../../../src/domain/models/rdf/Triple";
 import { IRI } from "../../../../../src/domain/models/rdf/IRI";
 import { Literal } from "../../../../../src/domain/models/rdf/Literal";
-import type { BGPOperation, PropertyPath } from "../../../../../src/infrastructure/sparql/algebra/AlgebraOperation";
+import type { BGPOperation } from "../../../../../src/infrastructure/sparql/algebra/AlgebraOperation";
 
 describe("BGPExecutor", () => {
   let tripleStore: InMemoryTripleStore;

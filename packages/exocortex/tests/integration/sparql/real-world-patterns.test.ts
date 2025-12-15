@@ -19,9 +19,7 @@ import { Literal } from "../../../src/domain/models/rdf/Literal";
 // Standard namespace URIs
 const RDF_TYPE = new IRI("http://www.w3.org/1999/02/22-rdf-syntax-ns#type");
 const XSD_STRING = new IRI("http://www.w3.org/2001/XMLSchema#string");
-const XSD_INTEGER = new IRI("http://www.w3.org/2001/XMLSchema#integer");
 const XSD_DATETIME = new IRI("http://www.w3.org/2001/XMLSchema#dateTime");
-const XSD_DECIMAL = new IRI("http://www.w3.org/2001/XMLSchema#decimal");
 
 // Exocortex-specific namespaces
 const EXO = "https://exocortex.my/ontology/exo#";
@@ -38,8 +36,6 @@ const EMS_EFFORT_STATUS = new IRI(`${EMS}Effort_status`);
 const EMS_EFFORT_PARENT = new IRI(`${EMS}Effort_parent`);
 const EMS_EFFORT_START_TIMESTAMP = new IRI(`${EMS}Effort_startTimestamp`);
 const EMS_EFFORT_END_TIMESTAMP = new IRI(`${EMS}Effort_endTimestamp`);
-const EMS_VOTE_VALUE = new IRI(`${EMS}Vote_value`);
-const EMS_VOTE_TIMESTAMP = new IRI(`${EMS}Vote_timestamp`);
 
 describe("Real-World SPARQL Query Patterns", () => {
   let parser: SPARQLParser;

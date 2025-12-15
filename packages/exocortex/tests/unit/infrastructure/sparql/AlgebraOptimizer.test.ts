@@ -227,7 +227,7 @@ describe("AlgebraOptimizer", () => {
     it("estimates cost for BGP operations", () => {
       const query = "SELECT ?s ?p ?o WHERE { ?s ?p ?o }";
       const ast = parser.parse(query);
-      const algebra = translator.translate(ast);
+      translator.translate(ast);
 
       expect(optimizer).toBeTruthy();
     });

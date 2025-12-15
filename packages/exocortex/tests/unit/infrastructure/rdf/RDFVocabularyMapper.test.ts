@@ -1,5 +1,4 @@
 import { RDFVocabularyMapper } from "../../../../src/infrastructure/rdf/RDFVocabularyMapper";
-import { Namespace } from "../../../../src/domain/models/rdf/Namespace";
 import { IRI } from "../../../../src/domain/models/rdf/IRI";
 
 describe("RDFVocabularyMapper", () => {

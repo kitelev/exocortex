@@ -1,5 +1,4 @@
 import { DynamicFrontmatterGenerator, PropertyDefinition, PropertyFieldType } from "../../src/services/DynamicFrontmatterGenerator";
-import { DateFormatter } from "../../src/utilities/DateFormatter";
 
 describe("DynamicFrontmatterGenerator", () => {
   let generator: DynamicFrontmatterGenerator;

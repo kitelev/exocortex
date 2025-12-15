@@ -6,7 +6,6 @@ import {
   beforeEach,
   afterEach,
 } from "@jest/globals";
-import { ExitCodes } from "../../../src/utils/ExitCodes.js";
 
 // Mock dependencies before importing BatchExecutor
 const mockPathResolverInstance = {
