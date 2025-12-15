@@ -19,6 +19,7 @@ paths-ignore:
   - "**/*.spec.ts"
   - "packages/obsidian-plugin/main.js"      # Generated bundled output
   - "packages/obsidian-plugin/main.js.map"  # Source maps
+  - "**/test-vault/**/main.js"              # Test vault generated plugin copy
   - "**/debug-main.js"                      # Debug builds
   - "**/debug-main.ts"                      # Debug builds
 
