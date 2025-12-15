@@ -169,8 +169,8 @@ Then(
     const baseName = this.lastCreatedNote?.file.basename || "";
     const formatRegex = nameFormat
       .replace("{timestamp}", "\\d{4}-\\d{2}-\\d{2}T\\d{2}-\\d{2}-\\d{2}")
-      .replace("{", "\\{")
-      .replace("}", "\\}");
+      .replace(/\{/g, "\\{")
+      .replace(/\}/g, "\\}");
     assert.ok(
       new RegExp(formatRegex).test(baseName) || baseName.startsWith("Task"),
       `Note name "${baseName}" should match format "${nameFormat}"`,
