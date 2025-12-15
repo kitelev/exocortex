@@ -18,6 +18,8 @@ export type SelectQuery = sparqljs.SelectQuery;
 export type ConstructQuery = sparqljs.ConstructQuery;
 export type AskQuery = sparqljs.AskQuery;
 export type DescribeQuery = sparqljs.DescribeQuery;
+export type Update = sparqljs.Update;
+export type UpdateOperation = sparqljs.UpdateOperation;
 export type QueryType = "SELECT" | "CONSTRUCT" | "ASK" | "DESCRIBE";
 
 export class SPARQLParser {
@@ -89,6 +91,30 @@ export class SPARQLParser {
 
   isDescribeQuery(query: SPARQLQuery): query is DescribeQuery {
     return "queryType" in query && query.type === "query" && query.queryType === "DESCRIBE";
+  }
+
+  /**
+   * Check if a parsed query is an UPDATE request.
+   * UPDATE requests contain one or more update operations (INSERT DATA, DELETE DATA, etc.)
+   */
+  isUpdateQuery(query: SPARQLQuery): query is Update {
+    return query.type === "update";
+  }
+
+  /**
+   * Check if an update operation is an INSERT DATA operation.
+   * INSERT DATA adds static triples without a WHERE clause.
+   */
+  isInsertDataOperation(operation: UpdateOperation): boolean {
+    return "updateType" in operation && operation.updateType === "insert";
+  }
+
+  /**
+   * Check if an update operation is a DELETE DATA operation.
+   * DELETE DATA removes static triples without a WHERE clause.
+   */
+  isDeleteDataOperation(operation: UpdateOperation): boolean {
+    return "updateType" in operation && operation.updateType === "delete";
   }
 
   private validateQuery(query: any): void {

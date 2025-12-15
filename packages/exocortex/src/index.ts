@@ -90,7 +90,7 @@ export { RDFVocabularyMapper } from "./infrastructure/rdf/RDFVocabularyMapper";
 export { NoteToRDFConverter } from "./services/NoteToRDFConverter";
 
 // SPARQL Engine exports
-export { SPARQLParser, SPARQLParseError, type SPARQLQuery, type SelectQuery, type ConstructQuery } from "./infrastructure/sparql/SPARQLParser";
+export { SPARQLParser, SPARQLParseError, type SPARQLQuery, type SelectQuery, type ConstructQuery, type Update, type UpdateOperation } from "./infrastructure/sparql/SPARQLParser";
 export { AlgebraTranslator } from "./infrastructure/sparql/algebra/AlgebraTranslator";
 export { AlgebraOptimizer } from "./infrastructure/sparql/algebra/AlgebraOptimizer";
 export { AlgebraSerializer } from "./infrastructure/sparql/algebra/AlgebraSerializer";
@@ -107,6 +107,7 @@ export { UnionExecutor } from "./infrastructure/sparql/executors/UnionExecutor";
 export { ConstructExecutor } from "./infrastructure/sparql/executors/ConstructExecutor";
 export { DescribeExecutor } from "./infrastructure/sparql/executors/DescribeExecutor";
 export { QueryExecutor } from "./infrastructure/sparql/executors/QueryExecutor";
+export { UpdateExecutor, UpdateExecutorError, type UpdateResult } from "./infrastructure/sparql/executors/UpdateExecutor";
 export { SolutionMapping } from "./infrastructure/sparql/SolutionMapping";
 export { BuiltInFunctions } from "./infrastructure/sparql/filters/BuiltInFunctions";
 export { AggregateFunctions } from "./infrastructure/sparql/aggregates/AggregateFunctions";
