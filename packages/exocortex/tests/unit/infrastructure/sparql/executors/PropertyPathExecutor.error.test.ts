@@ -12,7 +12,6 @@
 
 import {
   PropertyPathExecutor,
-  PropertyPathExecutorError,
 } from "../../../../../src/infrastructure/sparql/executors/PropertyPathExecutor";
 import type { ITripleStore } from "../../../../../src/interfaces/ITripleStore";
 import { Triple } from "../../../../../src/domain/models/rdf/Triple";

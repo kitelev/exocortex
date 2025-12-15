@@ -1,4 +1,4 @@
-import { TaskTrackingService, TaskData } from "../../src/application/services/TaskTrackingService";
+import { TaskTrackingService } from "../../src/application/services/TaskTrackingService";
 import type { App, TFile, Vault, MetadataCache } from "obsidian";
 import * as obsidian from "obsidian";
 

@@ -1,11 +1,4 @@
-import {
-  TestFixtureBuilder,
-  TaskFixture,
-  ProjectFixture,
-  AreaFixture,
-  MeetingFixture,
-  ConceptFixture,
-} from "./TestFixtureBuilder";
+import { TestFixtureBuilder } from "./TestFixtureBuilder";
 
 describe("TestFixtureBuilder", () => {
   beforeEach(() => {

@@ -313,7 +313,7 @@ describe("FrontmatterService Edge Cases", () => {
   describe("hasProperty() Edge Cases", () => {
     it("should detect property at start of frontmatter", () => {
       const content = "---\nfirst: value\nsecond: value\n---";
-      const parsed = service.parse(content);
+      service.parse(content);
 
       // Use internal check via updateProperty behavior
       const result = service.updateProperty(content, "first", "new");

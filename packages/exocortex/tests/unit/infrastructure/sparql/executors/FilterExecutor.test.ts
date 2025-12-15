@@ -1696,7 +1696,6 @@ describe("FilterExecutor", () => {
     });
 
     it("should evaluate HOURS function", async () => {
-      const xsdDateTime = new IRI("http://www.w3.org/2001/XMLSchema#dateTime");
       const operation: FilterOperation = {
         type: "filter",
         expression: {
@@ -1723,7 +1722,6 @@ describe("FilterExecutor", () => {
     });
 
     it("should evaluate MINUTES function", async () => {
-      const xsdDateTime = new IRI("http://www.w3.org/2001/XMLSchema#dateTime");
       const operation: FilterOperation = {
         type: "filter",
         expression: {
@@ -1747,7 +1745,6 @@ describe("FilterExecutor", () => {
     });
 
     it("should evaluate SECONDS function", async () => {
-      const xsdDateTime = new IRI("http://www.w3.org/2001/XMLSchema#dateTime");
       const operation: FilterOperation = {
         type: "filter",
         expression: {

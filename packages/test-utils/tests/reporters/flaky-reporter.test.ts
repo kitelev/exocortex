@@ -6,7 +6,6 @@ import FlakyReporter, {
   type FlakyReporterOptions,
 } from "../../src/reporters/flaky-reporter";
 import * as fs from "fs";
-import * as path from "path";
 
 // Mock fs module
 jest.mock("fs");

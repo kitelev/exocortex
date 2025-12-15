@@ -871,10 +871,9 @@ export class FileManager {
   }
 
   async processFrontMatter(
-    file: TFile,
+    _file: TFile,
     fn: (frontmatter: any) => void,
   ): Promise<void> {
-    const content = await this.vault.read(file);
     const frontmatter: any = {};
     fn(frontmatter);
     return Promise.resolve();

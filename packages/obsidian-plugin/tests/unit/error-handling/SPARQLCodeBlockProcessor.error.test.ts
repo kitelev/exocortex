@@ -420,8 +420,8 @@ describe("SPARQLCodeBlockProcessor Error Handling", () => {
       (processor as any).tripleStore = null;
 
       // Create a promise that will resolve after initial wait
-      let resolveLoad: () => void;
-      const loadPromise = new Promise<void>((resolve) => {
+      let resolveLoad!: () => void;
+      new Promise<void>((resolve) => {
         resolveLoad = resolve;
       });
 

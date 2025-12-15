@@ -138,14 +138,6 @@ test.describe("Dynamic Property Fields E2E", () => {
         .catch(() => false);
 
       if (isModalVisible) {
-        // Look for Label field (text input)
-        const labelSetting = modal.locator(
-          '.setting-item:has-text("Label"), .setting-item:has-text("label")',
-        );
-        const hasLabelField = await labelSetting
-          .isVisible({ timeout: 2000 })
-          .catch(() => false);
-
         // At minimum, there should be an input field
         const inputField = modal.locator('input[type="text"]').first();
         await expect(inputField).toBeVisible();
@@ -385,9 +377,6 @@ test.describe("Dynamic Property Fields E2E", () => {
       if (isModalVisible) {
         // The first input field should be focused
         const inputField = modal.locator('input[type="text"]').first();
-        const isFocused = await inputField.evaluate((el) => {
-          return document.activeElement === el;
-        });
 
         // Focus behavior depends on timing
         // At minimum, check the input is visible and can receive focus
@@ -492,12 +481,6 @@ test.describe("Dynamic Property Fields - Feature Toggle", () => {
     await window.waitForTimeout(500);
     await window.keyboard.press("Enter");
     await window.waitForTimeout(1000);
-
-    // When dynamic fields are disabled, it should NOT have the dynamic modal class
-    const dynamicModal = window.locator(".exocortex-dynamic-asset-modal");
-    const hasDynamicModal = await dynamicModal
-      .isVisible({ timeout: 2000 })
-      .catch(() => false);
 
     // There should be a modal, but it may be the LabelInputModal
     const anyModal = window.locator(".modal");

@@ -1,5 +1,5 @@
 import { ExocortexSettingTab } from "../../src/presentation/settings/ExocortexSettingTab";
-import { App, Setting } from "obsidian";
+import { Setting } from "obsidian";
 import { createMockApp, createMockTFile, createMockPlugin } from "./helpers/testHelpers";
 
 // Two-step mock pattern for constructor functions

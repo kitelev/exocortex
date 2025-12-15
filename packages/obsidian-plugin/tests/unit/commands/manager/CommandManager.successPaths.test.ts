@@ -4,7 +4,6 @@ import {
   TFile,
   Notice,
   flushPromises,
-  mockTrashReasonModalCallback,
 } from "./CommandManager.fixtures";
 
 describe("CommandManager - success paths", () => {

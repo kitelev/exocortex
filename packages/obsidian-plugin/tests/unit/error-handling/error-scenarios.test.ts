@@ -21,7 +21,7 @@ import { ObsidianVaultAdapter } from "../../../src/adapters/ObsidianVaultAdapter
 import { SPARQLApi } from "../../../src/application/api/SPARQLApi";
 import { SPARQLQueryService } from "../../../src/application/services/SPARQLQueryService";
 import { SPARQLCodeBlockProcessor } from "../../../src/application/processors/SPARQLCodeBlockProcessor";
-import { App, TFile, TFolder, Notice, WorkspaceLeaf, Vault, MetadataCache, FileManager } from "obsidian";
+import { App, TFile, Notice, WorkspaceLeaf, Vault, MetadataCache, FileManager } from "obsidian";
 import {
   TaskCreationService,
   CommandVisibilityContext,

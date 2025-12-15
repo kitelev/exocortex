@@ -1,7 +1,5 @@
 import {
   EffortStatusWorkflow,
-  EffortStatus,
-  AssetClass,
 } from "exocortex";
 
 describe("EffortStatusWorkflow", () => {

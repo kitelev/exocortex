@@ -85,7 +85,7 @@ describe("DateTimePropertyField", () => {
 
   describe("constructor", () => {
     it("should render datetime-local input", () => {
-      const field = new DateTimePropertyField(containerEl, {
+      new DateTimePropertyField(containerEl, {
         property: {
           uri: "ems:startTime",
           name: "ems__Effort_startTimestamp",
@@ -126,7 +126,7 @@ describe("DateTimePropertyField", () => {
 
   describe("value parsing", () => {
     it("should parse ISO 8601 datetime string", () => {
-      const field = new DateTimePropertyField(containerEl, {
+      new DateTimePropertyField(containerEl, {
         property: {
           uri: "ems:startTime",
           name: "ems__Effort_startTimestamp",
@@ -145,7 +145,7 @@ describe("DateTimePropertyField", () => {
     });
 
     it("should handle empty value", () => {
-      const field = new DateTimePropertyField(containerEl, {
+      new DateTimePropertyField(containerEl, {
         property: {
           uri: "ems:startTime",
           name: "ems__Effort_startTimestamp",

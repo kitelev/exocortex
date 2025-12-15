@@ -305,7 +305,7 @@ describe("Query Optimization", () => {
       const algebra1 = translator.translate(parsed1 as any);
       const optimized1 = optimizer.optimize(algebra1);
       await executor.executeAll(optimized1);
-      const firstTime = performance.now() - firstStart;
+      performance.now() - firstStart;
 
       // Cache the plan
       planCache.set(query, optimized1);

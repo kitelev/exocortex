@@ -18,8 +18,6 @@ import {
   TaskCreationService,
   CommandVisibilityContext,
   LoggingService,
-  WikiLinkHelpers,
-  AssetClass,
 } from "exocortex";
 import { LabelInputModal } from "../../../src/presentation/modals/LabelInputModal";
 import { DynamicAssetCreationModal } from "../../../src/presentation/modals/DynamicAssetCreationModal";

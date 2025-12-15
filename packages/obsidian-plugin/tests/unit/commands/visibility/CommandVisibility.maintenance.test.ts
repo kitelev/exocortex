@@ -3,7 +3,6 @@ import {
   canArchiveTask,
   canCleanProperties,
   canRepairFolder,
-  canRenameToUid,
   canCopyLabelToAliases,
 } from "exocortex";
 

@@ -204,10 +204,8 @@ test.describe("Component Rendering Performance", () => {
       const tasks = generateMockTasks(30);
 
       // Initial render
-      const initialStart = performance.now();
       const component = await mount(<DailyTasksTable tasks={tasks} />);
       await component.waitFor({ state: "visible" });
-      const initialDuration = performance.now() - initialStart;
 
       // Second render (update with same data - tests React reconciliation)
       const updateStart = performance.now();

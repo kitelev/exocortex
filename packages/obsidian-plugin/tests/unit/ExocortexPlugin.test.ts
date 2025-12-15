@@ -2,7 +2,7 @@ import { flushPromises, waitForCondition } from "./helpers/testHelpers";
 import "reflect-metadata";
 import { container } from "tsyringe";
 import ExocortexPlugin from "../../src/ExocortexPlugin";
-import { Plugin, MarkdownView, TFile } from "obsidian";
+import { MarkdownView, TFile } from "obsidian";
 import { LoggerFactory } from "../../src/adapters/logging/LoggerFactory";
 import { ObsidianVaultAdapter } from "../../src/adapters/ObsidianVaultAdapter";
 import { UniversalLayoutRenderer } from "../../src/presentation/renderers/UniversalLayoutRenderer";

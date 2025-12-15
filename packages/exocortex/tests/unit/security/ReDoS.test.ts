@@ -140,7 +140,7 @@ describe("ReDoS Security Tests", () => {
       const maliciousInput = ["[[[[a".repeat(1000)];
 
       const startTime = Date.now();
-      const result = extractDailyNoteDate({ pn__DailyNote_day: maliciousInput });
+      extractDailyNoteDate({ pn__DailyNote_day: maliciousInput });
       const elapsed = Date.now() - startTime;
 
       expect(elapsed).toBeLessThan(TIMEOUT_MS);
