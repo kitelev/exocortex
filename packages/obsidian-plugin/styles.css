@@ -3659,3 +3659,220 @@
     transition: none;
   }
 }
+
+/* ========================================
+   Graph Layout Renderer Styles
+   ======================================== */
+
+.exo-graph-container {
+  display: flex;
+  flex-direction: column;
+  background-color: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  overflow: hidden;
+  position: relative;
+}
+
+.exo-graph-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  background-color: var(--background-secondary);
+}
+
+.exo-graph-title {
+  margin: 0;
+  font-size: 1.1em;
+  font-weight: 600;
+  color: var(--text-normal);
+}
+
+.exo-graph-stats {
+  color: var(--text-muted);
+  font-size: 0.9em;
+}
+
+.exo-graph-svg {
+  display: block;
+  background-color: var(--background-primary);
+  cursor: grab;
+}
+
+.exo-graph-svg:active {
+  cursor: grabbing;
+}
+
+.exo-graph-empty {
+  padding: 24px;
+  text-align: center;
+}
+
+.exo-graph-empty-message {
+  color: var(--text-muted);
+  font-style: italic;
+  padding: 40px 20px;
+}
+
+/* Graph Nodes */
+.exo-graph-node {
+  transition: transform 0.1s ease;
+}
+
+.exo-graph-node-circle {
+  transition: r 0.1s ease, fill 0.1s ease, stroke 0.1s ease;
+}
+
+.exo-graph-node-draggable {
+  cursor: grab;
+}
+
+.exo-graph-node-draggable:active {
+  cursor: grabbing;
+}
+
+.exo-graph-node-hovered .exo-graph-node-circle {
+  filter: brightness(1.2);
+}
+
+.exo-graph-node-selected .exo-graph-node-circle {
+  stroke-width: 2;
+}
+
+.exo-graph-node-label {
+  font-family: var(--font-interface);
+  pointer-events: none;
+  text-shadow:
+    0 1px 0 var(--background-primary),
+    0 -1px 0 var(--background-primary),
+    1px 0 0 var(--background-primary),
+    -1px 0 0 var(--background-primary);
+}
+
+.exo-graph-node-ring {
+  animation: exo-graph-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes exo-graph-pulse {
+  0%, 100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 0.2;
+  }
+}
+
+/* Graph Edges */
+.exo-graph-edge {
+  transition: stroke-opacity 0.1s ease;
+}
+
+.exo-graph-edge-line {
+  fill: none;
+  transition: stroke 0.1s ease, stroke-width 0.1s ease;
+}
+
+.exo-graph-edge-hovered .exo-graph-edge-line {
+  stroke-opacity: 1;
+}
+
+.exo-graph-edge-selected .exo-graph-edge-line {
+  stroke: var(--interactive-accent);
+  stroke-width: 2;
+}
+
+.exo-graph-edge-label {
+  font-family: var(--font-interface);
+  pointer-events: none;
+  text-shadow:
+    0 1px 0 var(--background-primary),
+    0 -1px 0 var(--background-primary),
+    1px 0 0 var(--background-primary),
+    -1px 0 0 var(--background-primary);
+}
+
+.exo-graph-edge-hitarea {
+  pointer-events: stroke;
+}
+
+/* Graph Controls */
+.exo-graph-controls {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  z-index: 10;
+}
+
+.exo-graph-control-btn {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  background-color: var(--background-primary);
+  color: var(--text-normal);
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.exo-graph-control-btn:hover {
+  background-color: var(--background-modifier-hover);
+  border-color: var(--interactive-accent);
+}
+
+.exo-graph-control-btn:active {
+  background-color: var(--background-modifier-active-hover);
+}
+
+/* Responsive adjustments for smaller screens */
+@media (max-width: 768px) {
+  .exo-graph-container {
+    min-height: 300px;
+  }
+
+  .exo-graph-header {
+    padding: 10px 12px;
+  }
+
+  .exo-graph-control-btn {
+    width: 32px;
+    height: 32px;
+    font-size: 18px;
+  }
+}
+
+/* High contrast mode */
+@media (prefers-contrast: more) {
+  .exo-graph-node-circle {
+    stroke-width: 2;
+  }
+
+  .exo-graph-edge-line {
+    stroke-width: 2;
+  }
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .exo-graph-node,
+  .exo-graph-node-circle,
+  .exo-graph-edge,
+  .exo-graph-edge-line,
+  .exo-graph-control-btn {
+    transition: none;
+  }
+
+  .exo-graph-node-ring {
+    animation: none;
+    opacity: 0.3;
+  }
+}
