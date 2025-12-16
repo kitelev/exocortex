@@ -183,6 +183,47 @@ export class BuiltInFunctions {
    * @param term - RDF term to check
    * @returns true if term is a numeric literal, false otherwise
    */
+  /**
+   * SPARQL 1.2 hasLANGDIR function.
+   * https://w3c.github.io/sparql-12/spec/
+   *
+   * Returns true if the literal has both a language tag AND a base direction
+   * (i.e., is a directional language-tagged literal).
+   *
+   * A directional literal has format: `"value"@lang--dir` where dir is "ltr" or "rtl".
+   *
+   * @param term - RDF term to check
+   * @returns true if term is a literal with both language tag and direction, false otherwise
+   *
+   * @example
+   * // Directional literal with ltr direction
+   * hasLANGDIR("Hello"@en--ltr) → true
+   *
+   * // Directional literal with rtl direction
+   * hasLANGDIR("مرحبا"@ar--rtl) → true
+   *
+   * // Non-directional language-tagged literal
+   * hasLANGDIR("Hello"@en) → false
+   *
+   * // Plain literal (no language tag)
+   * hasLANGDIR("Hello") → false
+   *
+   * // IRI (not a literal)
+   * hasLANGDIR(<http://example.org>) → false
+   */
+  static hasLangdir(term: RDFTerm | undefined): boolean {
+    if (term === undefined) {
+      return false;
+    }
+
+    if (!(term instanceof Literal)) {
+      return false;
+    }
+
+    // Must have both language AND direction to return true
+    return !!term.language && !!term.direction;
+  }
+
   static isNumeric(term: RDFTerm | undefined): boolean {
     if (term === undefined) {
       return false;

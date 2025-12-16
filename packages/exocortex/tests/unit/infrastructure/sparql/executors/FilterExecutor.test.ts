@@ -3369,4 +3369,129 @@ describe("FilterExecutor", () => {
       expect((result as Literal).value).toBe("2025-01-15T05:00:00-05:00");
     });
   });
+
+  describe("hasLANGDIR function (SPARQL 1.2 Issue #960)", () => {
+    it("should return true for directional literal with ltr", async () => {
+      const operation: FilterOperation = {
+        type: "filter",
+        expression: {
+          type: "function",
+          function: "haslangdir",
+          args: [{ type: "variable", name: "x" }],
+        },
+        input: { type: "bgp", triples: [] },
+      };
+
+      const solution = new SolutionMapping();
+      solution.set("x", new Literal("Hello", undefined, "en", "ltr"));
+
+      const results = await executor.executeAll(operation, [solution]);
+      expect(results).toHaveLength(1);
+    });
+
+    it("should return true for directional literal with rtl", async () => {
+      const operation: FilterOperation = {
+        type: "filter",
+        expression: {
+          type: "function",
+          function: "haslangdir",
+          args: [{ type: "variable", name: "x" }],
+        },
+        input: { type: "bgp", triples: [] },
+      };
+
+      const solution = new SolutionMapping();
+      solution.set("x", new Literal("مرحبا", undefined, "ar", "rtl"));
+
+      const results = await executor.executeAll(operation, [solution]);
+      expect(results).toHaveLength(1);
+    });
+
+    it("should return false for language-only literal (no direction)", async () => {
+      const operation: FilterOperation = {
+        type: "filter",
+        expression: {
+          type: "function",
+          function: "haslangdir",
+          args: [{ type: "variable", name: "x" }],
+        },
+        input: { type: "bgp", triples: [] },
+      };
+
+      const solution = new SolutionMapping();
+      solution.set("x", new Literal("Hello", undefined, "en"));
+
+      const results = await executor.executeAll(operation, [solution]);
+      expect(results).toHaveLength(0);
+    });
+
+    it("should return false for plain literal", async () => {
+      const operation: FilterOperation = {
+        type: "filter",
+        expression: {
+          type: "function",
+          function: "haslangdir",
+          args: [{ type: "variable", name: "x" }],
+        },
+        input: { type: "bgp", triples: [] },
+      };
+
+      const solution = new SolutionMapping();
+      solution.set("x", new Literal("Hello"));
+
+      const results = await executor.executeAll(operation, [solution]);
+      expect(results).toHaveLength(0);
+    });
+
+    it("should return false for IRI", async () => {
+      const operation: FilterOperation = {
+        type: "filter",
+        expression: {
+          type: "function",
+          function: "haslangdir",
+          args: [{ type: "variable", name: "x" }],
+        },
+        input: { type: "bgp", triples: [] },
+      };
+
+      const solution = new SolutionMapping();
+      solution.set("x", new IRI("http://example.org/resource"));
+
+      const results = await executor.executeAll(operation, [solution]);
+      expect(results).toHaveLength(0);
+    });
+
+    it("should filter directional literals from mixed set", async () => {
+      const operation: FilterOperation = {
+        type: "filter",
+        expression: {
+          type: "function",
+          function: "haslangdir",
+          args: [{ type: "variable", name: "x" }],
+        },
+        input: { type: "bgp", triples: [] },
+      };
+
+      // Directional literal (should pass filter)
+      const solution1 = new SolutionMapping();
+      solution1.set("x", new Literal("Hello", undefined, "en", "ltr"));
+
+      // Language-only literal (should not pass filter)
+      const solution2 = new SolutionMapping();
+      solution2.set("x", new Literal("Bonjour", undefined, "fr"));
+
+      // Plain literal (should not pass filter)
+      const solution3 = new SolutionMapping();
+      solution3.set("x", new Literal("Plain text"));
+
+      // IRI (should not pass filter)
+      const solution4 = new SolutionMapping();
+      solution4.set("x", new IRI("http://example.org"));
+
+      const results = await executor.executeAll(operation, [solution1, solution2, solution3, solution4]);
+      expect(results).toHaveLength(1);
+      expect((results[0].get("x") as Literal).value).toBe("Hello");
+      expect((results[0].get("x") as Literal).direction).toBe("ltr");
+    });
+  });
 });

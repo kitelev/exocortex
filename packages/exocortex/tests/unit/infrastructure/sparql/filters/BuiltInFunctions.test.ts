@@ -3948,4 +3948,103 @@ describe("BuiltInFunctions", () => {
       });
     });
   });
+
+  describe("hasLANGDIR (SPARQL 1.2 Issue #960)", () => {
+    describe("returns true for directional literals", () => {
+      it("should return true for ltr directional literal", () => {
+        const literal = new Literal("Hello", undefined, "en", "ltr");
+        expect(BuiltInFunctions.hasLangdir(literal)).toBe(true);
+      });
+
+      it("should return true for rtl directional literal", () => {
+        const literal = new Literal("مرحبا", undefined, "ar", "rtl");
+        expect(BuiltInFunctions.hasLangdir(literal)).toBe(true);
+      });
+
+      it("should return true for directional literal with extended language tag", () => {
+        const literal = new Literal("Hello", undefined, "en-us", "ltr");
+        expect(BuiltInFunctions.hasLangdir(literal)).toBe(true);
+      });
+    });
+
+    describe("returns false for language-only literals", () => {
+      it("should return false for literal with language tag but no direction", () => {
+        const literal = new Literal("Hello", undefined, "en");
+        expect(BuiltInFunctions.hasLangdir(literal)).toBe(false);
+      });
+
+      it("should return false for literal with extended language tag but no direction", () => {
+        const literal = new Literal("Bonjour", undefined, "fr-ca");
+        expect(BuiltInFunctions.hasLangdir(literal)).toBe(false);
+      });
+    });
+
+    describe("returns false for plain literals", () => {
+      it("should return false for plain literal without language or datatype", () => {
+        const literal = new Literal("Hello");
+        expect(BuiltInFunctions.hasLangdir(literal)).toBe(false);
+      });
+
+      it("should return false for typed literal (xsd:string)", () => {
+        const xsdString = new IRI("http://www.w3.org/2001/XMLSchema#string");
+        const literal = new Literal("Hello", xsdString);
+        expect(BuiltInFunctions.hasLangdir(literal)).toBe(false);
+      });
+
+      it("should return false for typed literal (xsd:integer)", () => {
+        const xsdInteger = new IRI("http://www.w3.org/2001/XMLSchema#integer");
+        const literal = new Literal("42", xsdInteger);
+        expect(BuiltInFunctions.hasLangdir(literal)).toBe(false);
+      });
+    });
+
+    describe("returns false for non-literals", () => {
+      it("should return false for IRI", () => {
+        const iri = new IRI("http://example.org/resource");
+        expect(BuiltInFunctions.hasLangdir(iri)).toBe(false);
+      });
+
+      it("should return false for BlankNode", () => {
+        const blank = new BlankNode("b1");
+        expect(BuiltInFunctions.hasLangdir(blank)).toBe(false);
+      });
+
+      it("should return false for undefined", () => {
+        expect(BuiltInFunctions.hasLangdir(undefined)).toBe(false);
+      });
+    });
+
+    describe("Acceptance Criteria (Issue #960)", () => {
+      it("hasLANGDIR('Hello'@en--ltr) → true", () => {
+        const literal = new Literal("Hello", undefined, "en", "ltr");
+        expect(BuiltInFunctions.hasLangdir(literal)).toBe(true);
+      });
+
+      it("hasLANGDIR('Hello'@en) → false", () => {
+        const literal = new Literal("Hello", undefined, "en");
+        expect(BuiltInFunctions.hasLangdir(literal)).toBe(false);
+      });
+
+      it("hasLANGDIR('Hello') → false", () => {
+        const literal = new Literal("Hello");
+        expect(BuiltInFunctions.hasLangdir(literal)).toBe(false);
+      });
+
+      it("returns xsd:boolean type (true value)", () => {
+        const literal = new Literal("Hello", undefined, "en", "ltr");
+        const result = BuiltInFunctions.hasLangdir(literal);
+        // hasLangdir returns a native boolean, not a Literal
+        expect(typeof result).toBe("boolean");
+        expect(result).toBe(true);
+      });
+
+      it("returns xsd:boolean type (false value)", () => {
+        const literal = new Literal("Hello", undefined, "en");
+        const result = BuiltInFunctions.hasLangdir(literal);
+        // hasLangdir returns a native boolean, not a Literal
+        expect(typeof result).toBe("boolean");
+        expect(result).toBe(false);
+      });
+    });
+  });
 });

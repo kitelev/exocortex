@@ -820,6 +820,11 @@ export class FilterExecutor {
         const numericArg = this.getTermFromExpression(expr.args[0], solution);
         return BuiltInFunctions.isNumeric(numericArg);
 
+      // SPARQL 1.2 Type Checking Functions
+      case "haslangdir":
+        const hasLangdirArg = this.getTermFromExpression(expr.args[0], solution);
+        return BuiltInFunctions.hasLangdir(hasLangdirArg);
+
       case "sameterm":
         const sameTerm1 = this.getTermFromExpression(expr.args[0], solution);
         const sameTerm2 = this.getTermFromExpression(expr.args[1], solution);
