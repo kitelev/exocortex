@@ -27,6 +27,7 @@ import type {
   IRI,
   Literal,
   Variable,
+  QuotedTriple,
 } from "./AlgebraOperation";
 
 export class AlgebraTranslatorError extends Error {
@@ -608,8 +609,83 @@ export class AlgebraTranslator {
           type: "blank",
           value: element.value,
         };
+      case "Quad":
+        return this.translateQuotedTriple(element);
       default:
         throw new AlgebraTranslatorError(`Unsupported term type: ${element.termType}`);
+    }
+  }
+
+  /**
+   * Translate a quoted triple (RDF-Star) from sparqljs Quad format.
+   * sparqljs AST format:
+   * {
+   *   termType: "Quad",
+   *   value: "",
+   *   subject: { termType: "...", value: "..." },
+   *   predicate: { termType: "...", value: "..." },
+   *   object: { termType: "...", value: "..." },
+   *   graph: { termType: "DefaultGraph", value: "" }
+   * }
+   *
+   * SPARQL-Star (RDF-Star) allows triples to be used as subject or object
+   * in other triples, enabling statements about statements.
+   *
+   * Example:
+   * ```sparql
+   * # Query for sources claiming "Alice knows Bob"
+   * PREFIX : <http://example.org/>
+   * SELECT ?source WHERE {
+   *   << :Alice :knows :Bob >> :source ?source .
+   * }
+   * ```
+   */
+  private translateQuotedTriple(element: any): QuotedTriple {
+    if (!element.subject || !element.predicate || !element.object) {
+      throw new AlgebraTranslatorError("Quoted triple must have subject, predicate, and object");
+    }
+
+    // Translate the inner subject (can be another quoted triple)
+    const subject = this.translateTripleElement(element.subject);
+
+    // Translate the predicate (must be IRI or Variable in quoted triples)
+    const predicate = this.translateQuotedTriplePredicate(element.predicate);
+
+    // Translate the inner object (can be another quoted triple)
+    const object = this.translateTripleElement(element.object);
+
+    return {
+      type: "quoted",
+      subject,
+      predicate,
+      object,
+    };
+  }
+
+  /**
+   * Translate predicate in a quoted triple.
+   * In RDF-Star, predicates in quoted triples can only be IRIs or Variables.
+   */
+  private translateQuotedTriplePredicate(predicate: any): IRI | Variable {
+    if (!predicate || !predicate.termType) {
+      throw new AlgebraTranslatorError("Quoted triple predicate must have termType");
+    }
+
+    switch (predicate.termType) {
+      case "Variable":
+        return {
+          type: "variable",
+          value: predicate.value,
+        };
+      case "NamedNode":
+        return {
+          type: "iri",
+          value: predicate.value,
+        };
+      default:
+        throw new AlgebraTranslatorError(
+          `Quoted triple predicate must be IRI or Variable, got: ${predicate.termType}`
+        );
     }
   }
 

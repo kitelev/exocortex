@@ -1,5 +1,11 @@
 import type { ITripleStore } from "../../../interfaces/ITripleStore";
-import type { Triple as AlgebraTriple, TripleElement, PropertyPath, IRI } from "../algebra/AlgebraOperation";
+import type {
+  Triple as AlgebraTriple,
+  TripleElement,
+  PropertyPath,
+  IRI,
+  Variable as AlgebraVariable,
+} from "../algebra/AlgebraOperation";
 import { SolutionMapping } from "../SolutionMapping";
 import { IRI as RDFiri } from "../../../domain/models/rdf/IRI";
 import { BlankNode } from "../../../domain/models/rdf/BlankNode";
@@ -386,7 +392,7 @@ export class PropertyPathExecutor {
     return element;
   }
 
-  private isVariable(element: TripleElement): boolean {
+  private isVariable(element: TripleElement): element is AlgebraVariable {
     return element.type === "variable";
   }
 

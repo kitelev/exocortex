@@ -2700,4 +2700,178 @@ describe("AlgebraTranslator", () => {
       expect(() => translator.translate(invalidAst)).toThrow(AlgebraTranslatorError);
     });
   });
+
+  describe("RDF-Star / SPARQL 1.2 Triple Patterns", () => {
+    it("translates quoted triple in subject position", () => {
+      // SPARQL-Star syntax: << :Alice :knows :Bob >> :source ?source
+      const query = `
+        PREFIX : <http://example.org/>
+        SELECT ?source WHERE {
+          << :Alice :knows :Bob >> :source ?source .
+        }
+      `;
+      const ast = parser.parse(query);
+      const algebra = translator.translate(ast);
+
+      expect(algebra.type).toBe("project");
+      const input = (algebra as any).input;
+      expect(input.type).toBe("bgp");
+      expect(input.triples).toHaveLength(1);
+
+      const triple = input.triples[0];
+      // Subject should be a quoted triple
+      expect(triple.subject.type).toBe("quoted");
+      expect(triple.subject.subject.type).toBe("iri");
+      expect(triple.subject.subject.value).toBe("http://example.org/Alice");
+      expect(triple.subject.predicate.type).toBe("iri");
+      expect(triple.subject.predicate.value).toBe("http://example.org/knows");
+      expect(triple.subject.object.type).toBe("iri");
+      expect(triple.subject.object.value).toBe("http://example.org/Bob");
+
+      // Predicate and object of outer triple
+      expect(triple.predicate.type).toBe("iri");
+      expect(triple.predicate.value).toBe("http://example.org/source");
+      expect(triple.object.type).toBe("variable");
+      expect(triple.object.value).toBe("source");
+    });
+
+    it("translates quoted triple in object position", () => {
+      // SPARQL-Star syntax: ?claim :states << :Alice :knows :Bob >>
+      const query = `
+        PREFIX : <http://example.org/>
+        SELECT ?claim WHERE {
+          ?claim :states << :Alice :knows :Bob >> .
+        }
+      `;
+      const ast = parser.parse(query);
+      const algebra = translator.translate(ast);
+
+      expect(algebra.type).toBe("project");
+      const input = (algebra as any).input;
+      expect(input.type).toBe("bgp");
+      expect(input.triples).toHaveLength(1);
+
+      const triple = input.triples[0];
+      // Subject should be a variable
+      expect(triple.subject.type).toBe("variable");
+      expect(triple.subject.value).toBe("claim");
+
+      // Predicate
+      expect(triple.predicate.type).toBe("iri");
+      expect(triple.predicate.value).toBe("http://example.org/states");
+
+      // Object should be a quoted triple
+      expect(triple.object.type).toBe("quoted");
+      expect(triple.object.subject.type).toBe("iri");
+      expect(triple.object.subject.value).toBe("http://example.org/Alice");
+      expect(triple.object.predicate.type).toBe("iri");
+      expect(triple.object.predicate.value).toBe("http://example.org/knows");
+      expect(triple.object.object.type).toBe("iri");
+      expect(triple.object.object.value).toBe("http://example.org/Bob");
+    });
+
+    it("translates quoted triple with variables inside", () => {
+      // SPARQL-Star syntax: << ?person :knows ?target >> :confidence ?conf
+      const query = `
+        PREFIX : <http://example.org/>
+        SELECT ?person ?target ?conf WHERE {
+          << ?person :knows ?target >> :confidence ?conf .
+        }
+      `;
+      const ast = parser.parse(query);
+      const algebra = translator.translate(ast);
+
+      expect(algebra.type).toBe("project");
+      const input = (algebra as any).input;
+      expect(input.type).toBe("bgp");
+      expect(input.triples).toHaveLength(1);
+
+      const triple = input.triples[0];
+      // Subject is a quoted triple with variables
+      expect(triple.subject.type).toBe("quoted");
+      expect(triple.subject.subject.type).toBe("variable");
+      expect(triple.subject.subject.value).toBe("person");
+      expect(triple.subject.predicate.type).toBe("iri");
+      expect(triple.subject.predicate.value).toBe("http://example.org/knows");
+      expect(triple.subject.object.type).toBe("variable");
+      expect(triple.subject.object.value).toBe("target");
+
+      // Outer triple parts
+      expect(triple.predicate.type).toBe("iri");
+      expect(triple.object.type).toBe("variable");
+      expect(triple.object.value).toBe("conf");
+    });
+
+    it("translates nested quoted triples", () => {
+      // Nested SPARQL-Star: << << :Alice :knows :Bob >> :source :Wikipedia >> :verified ?verified
+      const query = `
+        PREFIX : <http://example.org/>
+        SELECT ?verified WHERE {
+          << << :Alice :knows :Bob >> :source :Wikipedia >> :verified ?verified .
+        }
+      `;
+      const ast = parser.parse(query);
+      const algebra = translator.translate(ast);
+
+      expect(algebra.type).toBe("project");
+      const input = (algebra as any).input;
+      expect(input.type).toBe("bgp");
+      expect(input.triples).toHaveLength(1);
+
+      const triple = input.triples[0];
+      // Outer subject is a quoted triple
+      expect(triple.subject.type).toBe("quoted");
+
+      // The inner quoted triple (subject of outer quoted)
+      const innerQuoted = triple.subject.subject;
+      expect(innerQuoted.type).toBe("quoted");
+      expect(innerQuoted.subject.type).toBe("iri");
+      expect(innerQuoted.subject.value).toBe("http://example.org/Alice");
+      expect(innerQuoted.predicate.type).toBe("iri");
+      expect(innerQuoted.predicate.value).toBe("http://example.org/knows");
+      expect(innerQuoted.object.type).toBe("iri");
+      expect(innerQuoted.object.value).toBe("http://example.org/Bob");
+
+      // The outer quoted's predicate and object
+      expect(triple.subject.predicate.type).toBe("iri");
+      expect(triple.subject.predicate.value).toBe("http://example.org/source");
+      expect(triple.subject.object.type).toBe("iri");
+      expect(triple.subject.object.value).toBe("http://example.org/Wikipedia");
+
+      // The outermost triple parts
+      expect(triple.predicate.type).toBe("iri");
+      expect(triple.predicate.value).toBe("http://example.org/verified");
+      expect(triple.object.type).toBe("variable");
+      expect(triple.object.value).toBe("verified");
+    });
+
+    it("translates multiple patterns with quoted triples", () => {
+      // Multiple patterns including quoted triples
+      const query = `
+        PREFIX : <http://example.org/>
+        SELECT ?person ?source ?type WHERE {
+          << ?person :knows :Bob >> :source ?source .
+          ?person a ?type .
+        }
+      `;
+      const ast = parser.parse(query);
+      const algebra = translator.translate(ast);
+
+      expect(algebra.type).toBe("project");
+      const input = (algebra as any).input;
+      expect(input.type).toBe("bgp");
+      expect(input.triples).toHaveLength(2);
+
+      // First triple has quoted subject
+      expect(input.triples[0].subject.type).toBe("quoted");
+      expect(input.triples[0].subject.subject.type).toBe("variable");
+      expect(input.triples[0].subject.subject.value).toBe("person");
+
+      // Second triple is regular
+      expect(input.triples[1].subject.type).toBe("variable");
+      expect(input.triples[1].subject.value).toBe("person");
+      expect(input.triples[1].predicate.type).toBe("iri");
+      expect(input.triples[1].predicate.value).toBe("http://www.w3.org/1999/02/22-rdf-syntax-ns#type");
+    });
+  });
 });

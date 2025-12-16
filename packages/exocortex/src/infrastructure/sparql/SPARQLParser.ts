@@ -28,7 +28,9 @@ export class SPARQLParser {
   private readonly caseWhenTransformer: CaseWhenTransformer;
 
   constructor() {
-    this.parser = new sparqljs.Parser();
+    // Enable SPARQL-Star (RDF-Star) support for triple patterns in subject/object positions
+    // SPARQL 1.2 spec: https://w3c.github.io/sparql-12/spec/
+    this.parser = new sparqljs.Parser({ sparqlStar: true });
     this.generator = new sparqljs.Generator();
     this.caseWhenTransformer = new CaseWhenTransformer();
   }

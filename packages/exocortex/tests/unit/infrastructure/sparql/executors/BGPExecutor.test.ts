@@ -3,7 +3,8 @@ import { InMemoryTripleStore } from "../../../../../src/infrastructure/rdf/InMem
 import { Triple } from "../../../../../src/domain/models/rdf/Triple";
 import { IRI } from "../../../../../src/domain/models/rdf/IRI";
 import { Literal } from "../../../../../src/domain/models/rdf/Literal";
-import type { BGPOperation } from "../../../../../src/infrastructure/sparql/algebra/AlgebraOperation";
+import { QuotedTriple as RDFQuotedTriple } from "../../../../../src/domain/models/rdf/QuotedTriple";
+import { BGPOperation, QuotedTriple as AlgebraQuotedTriple, PropertyPath } from "../../../../../src/infrastructure/sparql/algebra/AlgebraOperation";
 
 describe("BGPExecutor", () => {
   let tripleStore: InMemoryTripleStore;
@@ -619,6 +620,243 @@ describe("BGPExecutor", () => {
       // Verify task1 results
       const task1Results = results.filter((r) => r.get("task")?.toString().includes("task1"));
       expect(task1Results).toHaveLength(2);
+    });
+  });
+
+  describe("RDF-Star Triple Patterns (SPARQL 1.2)", () => {
+    beforeEach(async () => {
+      // Add RDF-Star data: statements about statements
+      // << :Alice :knows :Bob >> :source :Wikipedia .
+      // << :Alice :knows :Bob >> :confidence "0.9" .
+      // << :Bob :likes :Carol >> :source :Facebook .
+
+      const quotedTriple1 = new RDFQuotedTriple(ex("Alice"), ex("knows"), ex("Bob"));
+      const quotedTriple2 = new RDFQuotedTriple(ex("Bob"), ex("likes"), ex("Carol"));
+
+      await tripleStore.add(new Triple(quotedTriple1, ex("source"), ex("Wikipedia")));
+      await tripleStore.add(new Triple(quotedTriple1, ex("confidence"), new Literal("0.9")));
+      await tripleStore.add(new Triple(quotedTriple2, ex("source"), ex("Facebook")));
+    });
+
+    it("should match concrete quoted triple in subject position", async () => {
+      // Query: SELECT ?source WHERE { << :Alice :knows :Bob >> :source ?source }
+      const quotedPattern: AlgebraQuotedTriple = {
+        type: "quoted",
+        subject: { type: "iri", value: "http://example.org/Alice" },
+        predicate: { type: "iri", value: "http://example.org/knows" },
+        object: { type: "iri", value: "http://example.org/Bob" },
+      };
+
+      const bgp: BGPOperation = {
+        type: "bgp",
+        triples: [
+          {
+            subject: quotedPattern,
+            predicate: { type: "iri", value: "http://example.org/source" },
+            object: { type: "variable", value: "source" },
+          },
+        ],
+      };
+
+      const results = await executor.executeAll(bgp);
+      expect(results).toHaveLength(1);
+      expect(results[0].get("source")?.toString()).toContain("Wikipedia");
+    });
+
+    it("should match quoted triple with variable inside subject pattern", async () => {
+      // Query: SELECT ?person WHERE { << ?person :knows :Bob >> :source ?source }
+      const quotedPattern: AlgebraQuotedTriple = {
+        type: "quoted",
+        subject: { type: "variable", value: "person" },
+        predicate: { type: "iri", value: "http://example.org/knows" },
+        object: { type: "iri", value: "http://example.org/Bob" },
+      };
+
+      const bgp: BGPOperation = {
+        type: "bgp",
+        triples: [
+          {
+            subject: quotedPattern,
+            predicate: { type: "iri", value: "http://example.org/source" },
+            object: { type: "variable", value: "source" },
+          },
+        ],
+      };
+
+      const results = await executor.executeAll(bgp);
+      expect(results).toHaveLength(1);
+      expect(results[0].get("person")?.toString()).toContain("Alice");
+      expect(results[0].get("source")?.toString()).toContain("Wikipedia");
+    });
+
+    it("should match quoted triple with variable in object position of inner triple", async () => {
+      // Query: SELECT ?target WHERE { << :Alice :knows ?target >> :source :Wikipedia }
+      const quotedPattern: AlgebraQuotedTriple = {
+        type: "quoted",
+        subject: { type: "iri", value: "http://example.org/Alice" },
+        predicate: { type: "iri", value: "http://example.org/knows" },
+        object: { type: "variable", value: "target" },
+      };
+
+      const bgp: BGPOperation = {
+        type: "bgp",
+        triples: [
+          {
+            subject: quotedPattern,
+            predicate: { type: "iri", value: "http://example.org/source" },
+            object: { type: "iri", value: "http://example.org/Wikipedia" },
+          },
+        ],
+      };
+
+      const results = await executor.executeAll(bgp);
+      expect(results).toHaveLength(1);
+      expect(results[0].get("target")?.toString()).toContain("Bob");
+    });
+
+    it("should match quoted triple with multiple variables inside", async () => {
+      // Query: SELECT ?person ?target ?source WHERE { << ?person :knows ?target >> :source ?source }
+      const quotedPattern: AlgebraQuotedTriple = {
+        type: "quoted",
+        subject: { type: "variable", value: "person" },
+        predicate: { type: "iri", value: "http://example.org/knows" },
+        object: { type: "variable", value: "target" },
+      };
+
+      const bgp: BGPOperation = {
+        type: "bgp",
+        triples: [
+          {
+            subject: quotedPattern,
+            predicate: { type: "iri", value: "http://example.org/source" },
+            object: { type: "variable", value: "source" },
+          },
+        ],
+      };
+
+      const results = await executor.executeAll(bgp);
+      expect(results).toHaveLength(1);
+      expect(results[0].get("person")?.toString()).toContain("Alice");
+      expect(results[0].get("target")?.toString()).toContain("Bob");
+      expect(results[0].get("source")?.toString()).toContain("Wikipedia");
+    });
+
+    it("should match quoted triple in object position", async () => {
+      // Add triple with quoted triple in object position
+      // :claim1 :states << :Alice :knows :Bob >>
+      const quotedTriple = new RDFQuotedTriple(ex("Alice"), ex("knows"), ex("Bob"));
+      await tripleStore.add(new Triple(ex("claim1"), ex("states"), quotedTriple));
+
+      // Query: SELECT ?claim WHERE { ?claim :states << :Alice :knows :Bob >> }
+      const quotedPattern: AlgebraQuotedTriple = {
+        type: "quoted",
+        subject: { type: "iri", value: "http://example.org/Alice" },
+        predicate: { type: "iri", value: "http://example.org/knows" },
+        object: { type: "iri", value: "http://example.org/Bob" },
+      };
+
+      const bgp: BGPOperation = {
+        type: "bgp",
+        triples: [
+          {
+            subject: { type: "variable", value: "claim" },
+            predicate: { type: "iri", value: "http://example.org/states" },
+            object: quotedPattern,
+          },
+        ],
+      };
+
+      const results = await executor.executeAll(bgp);
+      expect(results).toHaveLength(1);
+      expect(results[0].get("claim")?.toString()).toContain("claim1");
+    });
+
+    it("should return empty results when quoted triple does not match", async () => {
+      // Query: SELECT ?source WHERE { << :Alice :knows :Carol >> :source ?source }
+      const quotedPattern: AlgebraQuotedTriple = {
+        type: "quoted",
+        subject: { type: "iri", value: "http://example.org/Alice" },
+        predicate: { type: "iri", value: "http://example.org/knows" },
+        object: { type: "iri", value: "http://example.org/Carol" }, // Wrong object
+      };
+
+      const bgp: BGPOperation = {
+        type: "bgp",
+        triples: [
+          {
+            subject: quotedPattern,
+            predicate: { type: "iri", value: "http://example.org/source" },
+            object: { type: "variable", value: "source" },
+          },
+        ],
+      };
+
+      const results = await executor.executeAll(bgp);
+      expect(results).toHaveLength(0);
+    });
+
+    it("should join quoted triple patterns with regular patterns", async () => {
+      // Query: SELECT ?person ?confidence WHERE {
+      //   << ?person :knows :Bob >> :confidence ?confidence .
+      //   ?person rdf:type :Person .
+      // }
+      await tripleStore.add(new Triple(ex("Alice"), rdfType, ex("Person")));
+
+      const quotedPattern: AlgebraQuotedTriple = {
+        type: "quoted",
+        subject: { type: "variable", value: "person" },
+        predicate: { type: "iri", value: "http://example.org/knows" },
+        object: { type: "iri", value: "http://example.org/Bob" },
+      };
+
+      const bgp: BGPOperation = {
+        type: "bgp",
+        triples: [
+          {
+            subject: quotedPattern,
+            predicate: { type: "iri", value: "http://example.org/confidence" },
+            object: { type: "variable", value: "confidence" },
+          },
+          {
+            subject: { type: "variable", value: "person" },
+            predicate: { type: "iri", value: "http://www.w3.org/1999/02/22-rdf-syntax-ns#type" },
+            object: { type: "iri", value: "http://example.org/Person" },
+          },
+        ],
+      };
+
+      const results = await executor.executeAll(bgp);
+      expect(results).toHaveLength(1);
+      expect(results[0].get("person")?.toString()).toContain("Alice");
+      expect((results[0].get("confidence") as Literal).value).toBe("0.9");
+    });
+
+    it("should match any statement about any triple with all variables", async () => {
+      // Query: SELECT ?s ?p ?o ?meta WHERE {
+      //   << ?s ?p ?o >> ?metaPred ?meta .
+      // }
+      // This is equivalent to finding all triples that have metadata
+      const quotedPattern: AlgebraQuotedTriple = {
+        type: "quoted",
+        subject: { type: "variable", value: "s" },
+        predicate: { type: "variable", value: "p" },
+        object: { type: "variable", value: "o" },
+      };
+
+      const bgp: BGPOperation = {
+        type: "bgp",
+        triples: [
+          {
+            subject: quotedPattern,
+            predicate: { type: "variable", value: "metaPred" },
+            object: { type: "variable", value: "meta" },
+          },
+        ],
+      };
+
+      const results = await executor.executeAll(bgp);
+      // We have 3 triples with quoted subjects in beforeEach
+      expect(results).toHaveLength(3);
     });
   });
 });

@@ -1,10 +1,24 @@
 import { IRI } from "./IRI";
 import { Literal } from "./Literal";
 import { BlankNode } from "./BlankNode";
+import type { QuotedTriple } from "./QuotedTriple";
 
-export type Subject = IRI | BlankNode;
+/**
+ * RDF Subject types.
+ * In RDF-Star, subjects can also include QuotedTriple (statements about statements).
+ */
+export type Subject = IRI | BlankNode | QuotedTriple;
+
+/**
+ * RDF Predicate type (always IRI).
+ */
 export type Predicate = IRI;
-export type Object = IRI | BlankNode | Literal;
+
+/**
+ * RDF Object types.
+ * In RDF-Star, objects can also include QuotedTriple (statements about statements).
+ */
+export type Object = IRI | BlankNode | Literal | QuotedTriple;
 
 export class Triple {
   private readonly _subject: Subject;
@@ -45,7 +59,7 @@ export class Triple {
     return true;
   }
 
-  private equalsNode(a: IRI | BlankNode | Literal, b: IRI | BlankNode | Literal): boolean {
+  private equalsNode(a: Subject | Object, b: Subject | Object): boolean {
     if (a instanceof IRI && b instanceof IRI) {
       return a.equals(b);
     }
@@ -58,7 +72,26 @@ export class Triple {
       return a.equals(b);
     }
 
+    // Handle QuotedTriple - check for termType since we can't use instanceof
+    // due to potential circular dependency issues at runtime
+    if (this.isQuotedTriple(a) && this.isQuotedTriple(b)) {
+      return a.equals(b);
+    }
+
     return false;
+  }
+
+  /**
+   * Type guard to check if a node is a QuotedTriple.
+   * Uses duck typing to avoid circular dependency issues.
+   */
+  private isQuotedTriple(node: Subject | Object): node is QuotedTriple {
+    return (
+      typeof node === "object" &&
+      node !== null &&
+      "termType" in node &&
+      (node as { termType: string }).termType === "QuotedTriple"
+    );
   }
 
   toString(): string {
@@ -69,7 +102,7 @@ export class Triple {
     return `${subjectStr} ${predicateStr} ${objectStr} .`;
   }
 
-  private nodeToString(node: IRI | BlankNode | Literal): string {
+  private nodeToString(node: Subject | Object): string {
     if (node instanceof IRI) {
       return `<${node.value}>`;
     }
@@ -79,6 +112,11 @@ export class Triple {
     }
 
     if (node instanceof Literal) {
+      return node.toString();
+    }
+
+    // Handle QuotedTriple using duck typing
+    if (this.isQuotedTriple(node)) {
       return node.toString();
     }
 

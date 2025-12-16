@@ -30,7 +30,29 @@ export interface Triple {
   object: TripleElement;
 }
 
-export type TripleElement = Variable | IRI | Literal | BlankNode;
+export type TripleElement = Variable | IRI | Literal | BlankNode | QuotedTriple;
+
+/**
+ * RDF-Star Quoted Triple (SPARQL 1.2)
+ * Represents a triple pattern that can appear in subject or object position.
+ * Used for matching statements about statements.
+ *
+ * Example:
+ * ```sparql
+ * # Find sources that claim "Alice knows Bob"
+ * SELECT ?source WHERE {
+ *   << :Alice :knows :Bob >> :source ?source .
+ * }
+ * ```
+ *
+ * SPARQL 1.2 spec: https://w3c.github.io/sparql-12/spec/
+ */
+export interface QuotedTriple {
+  type: "quoted";
+  subject: TripleElement;
+  predicate: IRI | Variable;
+  object: TripleElement;
+}
 
 /**
  * Property path expression for SPARQL 1.1 property paths.
