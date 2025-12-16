@@ -3876,3 +3876,499 @@
     opacity: 0.3;
   }
 }
+
+/* ========================================
+   Calendar Layout Renderer Styles
+   ======================================== */
+
+.exo-calendar-container {
+  display: flex;
+  flex-direction: column;
+  background-color: var(--background-primary);
+  border-radius: var(--radius-s);
+  border: 1px solid var(--background-modifier-border);
+  overflow: hidden;
+}
+
+/* Calendar Header */
+.exo-calendar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background-color: var(--background-secondary);
+  border-bottom: 1px solid var(--background-modifier-border);
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.exo-calendar-header-left {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.exo-calendar-title {
+  margin: 0;
+  font-size: 1.1em;
+  font-weight: 600;
+  color: var(--text-normal);
+}
+
+.exo-calendar-date-range {
+  color: var(--text-muted);
+  font-size: 0.9em;
+}
+
+.exo-calendar-header-center {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.exo-calendar-nav-btn {
+  padding: 6px 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  background-color: var(--background-primary);
+  color: var(--text-normal);
+  cursor: pointer;
+  font-size: 0.9em;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.exo-calendar-nav-btn:hover {
+  background-color: var(--background-modifier-hover);
+  border-color: var(--interactive-accent);
+}
+
+.exo-calendar-today-btn {
+  font-weight: 500;
+}
+
+.exo-calendar-header-right {
+  display: flex;
+  align-items: center;
+}
+
+.exo-calendar-view-selector {
+  display: flex;
+  border-radius: var(--radius-s);
+  overflow: hidden;
+  border: 1px solid var(--background-modifier-border);
+}
+
+.exo-calendar-view-btn {
+  padding: 6px 12px;
+  border: none;
+  background-color: var(--background-primary);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.85em;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.exo-calendar-view-btn:not(:last-child) {
+  border-right: 1px solid var(--background-modifier-border);
+}
+
+.exo-calendar-view-btn:hover {
+  background-color: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.exo-calendar-view-btn-active {
+  background-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.exo-calendar-view-btn-active:hover {
+  background-color: var(--interactive-accent-hover);
+  color: var(--text-on-accent);
+}
+
+/* Calendar Body */
+.exo-calendar-body {
+  flex: 1;
+  overflow: auto;
+}
+
+/* Empty State */
+.exo-calendar-empty {
+  padding: 24px;
+  text-align: center;
+}
+
+.exo-calendar-empty-message {
+  color: var(--text-muted);
+  font-style: italic;
+  padding: 40px 20px;
+}
+
+/* ========================================
+   Day/Week View Grid Styles
+   ======================================== */
+
+.exo-calendar-grid {
+  display: flex;
+  height: 100%;
+  min-height: 400px;
+}
+
+.exo-calendar-time-column {
+  flex: 0 0 60px;
+  border-right: 1px solid var(--background-modifier-border);
+  background-color: var(--background-secondary);
+}
+
+.exo-calendar-time-header {
+  height: 50px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.exo-calendar-time-slot-label {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  padding: 4px 8px 0 4px;
+  font-size: 0.75em;
+  color: var(--text-muted);
+  box-sizing: border-box;
+}
+
+.exo-calendar-days-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.exo-calendar-day-headers {
+  display: flex;
+  border-bottom: 1px solid var(--background-modifier-border);
+  background-color: var(--background-secondary);
+}
+
+.exo-calendar-day-header {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 4px;
+  border-right: 1px solid var(--background-modifier-border);
+}
+
+.exo-calendar-day-header:last-child {
+  border-right: none;
+}
+
+.exo-calendar-day-header-today {
+  background-color: var(--background-modifier-active-hover);
+}
+
+.exo-calendar-day-name {
+  font-size: 0.75em;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+.exo-calendar-day-number {
+  font-size: 1.1em;
+  font-weight: 500;
+  color: var(--text-normal);
+}
+
+.exo-calendar-day-header-today .exo-calendar-day-number {
+  color: var(--interactive-accent);
+}
+
+.exo-calendar-day-columns {
+  display: flex;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.exo-calendar-day-column {
+  flex: 1;
+  position: relative;
+  border-right: 1px solid var(--background-modifier-border);
+  min-width: 100px;
+}
+
+.exo-calendar-day-column:last-child {
+  border-right: none;
+}
+
+.exo-calendar-day-column-today {
+  background-color: rgba(var(--interactive-accent-rgb), 0.05);
+}
+
+.exo-calendar-time-slot {
+  border-bottom: 1px solid var(--background-modifier-border-focus);
+  box-sizing: border-box;
+}
+
+.exo-calendar-time-slot:nth-child(even) {
+  border-bottom-style: dashed;
+}
+
+.exo-calendar-events-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+}
+
+.exo-calendar-event-wrapper {
+  pointer-events: auto;
+}
+
+/* Current Time Indicator */
+.exo-calendar-current-time {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.exo-calendar-current-time-dot {
+  position: absolute;
+  left: -4px;
+  top: -4px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: var(--interactive-accent);
+}
+
+.exo-calendar-current-time-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background-color: var(--interactive-accent);
+}
+
+/* ========================================
+   Month View Styles
+   ======================================== */
+
+.exo-calendar-month {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.exo-calendar-month-header {
+  display: flex;
+  border-bottom: 1px solid var(--background-modifier-border);
+  background-color: var(--background-secondary);
+}
+
+.exo-calendar-month-day-header {
+  flex: 1;
+  padding: 8px 4px;
+  text-align: center;
+  font-size: 0.75em;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  border-right: 1px solid var(--background-modifier-border);
+}
+
+.exo-calendar-month-day-header:last-child {
+  border-right: none;
+}
+
+.exo-calendar-month-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.exo-calendar-month-week {
+  display: flex;
+  flex: 1;
+  min-height: 80px;
+}
+
+.exo-calendar-month-day {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  border-right: 1px solid var(--background-modifier-border);
+  border-bottom: 1px solid var(--background-modifier-border);
+  overflow: hidden;
+}
+
+.exo-calendar-month-day:last-child {
+  border-right: none;
+}
+
+.exo-calendar-month-day-today {
+  background-color: rgba(var(--interactive-accent-rgb), 0.1);
+}
+
+.exo-calendar-month-day-other {
+  background-color: var(--background-secondary);
+}
+
+.exo-calendar-month-day-other .exo-calendar-month-day-number {
+  color: var(--text-faint);
+}
+
+.exo-calendar-month-day-number {
+  font-size: 0.85em;
+  font-weight: 500;
+  color: var(--text-normal);
+  margin-bottom: 4px;
+}
+
+.exo-calendar-month-day-today .exo-calendar-month-day-number {
+  color: var(--interactive-accent);
+}
+
+.exo-calendar-month-events {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: hidden;
+}
+
+.exo-calendar-month-more {
+  font-size: 0.75em;
+  color: var(--text-muted);
+  padding: 2px 4px;
+}
+
+/* ========================================
+   Calendar Event Styles
+   ======================================== */
+
+.exo-calendar-event {
+  padding: 2px 6px;
+  border-radius: var(--radius-s);
+  border-left: 3px solid;
+  background-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+  font-size: 0.8em;
+  cursor: pointer;
+  overflow: hidden;
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+
+.exo-calendar-event:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+}
+
+.exo-calendar-event-draggable {
+  cursor: grab;
+}
+
+.exo-calendar-event-draggable:active {
+  cursor: grabbing;
+}
+
+.exo-calendar-event-dragging {
+  opacity: 0.7;
+  transform: scale(1.02);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+.exo-calendar-event-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.exo-calendar-event-title {
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.exo-calendar-event-time {
+  font-size: 0.9em;
+  opacity: 0.9;
+  white-space: nowrap;
+}
+
+/* Month view events are more compact */
+.exo-calendar-month-events .exo-calendar-event {
+  padding: 1px 4px;
+  font-size: 0.75em;
+}
+
+.exo-calendar-month-events .exo-calendar-event-content {
+  flex-direction: row;
+  gap: 4px;
+}
+
+.exo-calendar-month-events .exo-calendar-event-time {
+  display: none;
+}
+
+/* ========================================
+   Calendar Responsive Styles
+   ======================================== */
+
+@media screen and (max-width: 768px) {
+  .exo-calendar-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .exo-calendar-header-left,
+  .exo-calendar-header-center,
+  .exo-calendar-header-right {
+    justify-content: center;
+  }
+
+  .exo-calendar-day-column {
+    min-width: 60px;
+  }
+
+  .exo-calendar-time-column {
+    flex: 0 0 45px;
+  }
+
+  .exo-calendar-time-slot-label {
+    font-size: 0.65em;
+  }
+}
+
+/* High contrast mode */
+@media (prefers-contrast: more) {
+  .exo-calendar-event {
+    border-left-width: 4px;
+  }
+
+  .exo-calendar-current-time-line {
+    height: 3px;
+  }
+
+  .exo-calendar-day-column,
+  .exo-calendar-month-day {
+    border-width: 2px;
+  }
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .exo-calendar-event,
+  .exo-calendar-nav-btn,
+  .exo-calendar-view-btn {
+    transition: none;
+  }
+
+  .exo-calendar-event:hover {
+    transform: none;
+  }
+}
