@@ -1870,4 +1870,94 @@ export class BuiltInFunctions {
     const components = this.parseDurationComponents(durValue);
     return components.negative ? -components.seconds : components.seconds;
   }
+
+  // =========================================================================
+  // SPARQL 1.2 ADJUST Function (Issue #976)
+  // https://www.w3.org/TR/xpath-functions/#func-adjust-dateTime-to-timezone
+  // =========================================================================
+
+  /**
+   * SPARQL 1.2 ADJUST function.
+   * Adjusts a dateTime value to a different timezone while preserving the instant in time.
+   *
+   * If timezone is provided, the dateTime is converted to that timezone.
+   * If timezone is absent/undefined, the timezone is removed from the dateTime.
+   *
+   * @param dateTime - xsd:dateTime string or Literal
+   * @param timezone - Optional xsd:dayTimeDuration string or Literal representing the target timezone
+   * @returns Literal with xsd:dateTime datatype
+   *
+   * Examples:
+   * - ADJUST("2025-01-15T10:00:00Z", "PT5H") → "2025-01-15T15:00:00+05:00"
+   * - ADJUST("2025-01-15T10:00:00Z") → "2025-01-15T10:00:00" (no timezone)
+   * - ADJUST("2025-01-15T10:00:00+03:00", "-PT5H") → "2025-01-15T02:00:00-05:00"
+   */
+  static adjust(dateTime: string | Literal, timezone?: string | Literal): Literal {
+    const dtValue = dateTime instanceof Literal ? dateTime.value : dateTime;
+
+    // Parse the input dateTime
+    const date = new Date(dtValue);
+    if (isNaN(date.getTime())) {
+      throw new Error(`ADJUST: invalid dateTime: '${dtValue}'`);
+    }
+
+    // If no timezone provided, remove timezone information
+    if (timezone === undefined || timezone === null) {
+      // Format as dateTime without timezone (local representation)
+      // Use the UTC time values to create a "no timezone" representation
+      const year = date.getUTCFullYear();
+      const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+      const day = String(date.getUTCDate()).padStart(2, "0");
+      const hours = String(date.getUTCHours()).padStart(2, "0");
+      const minutes = String(date.getUTCMinutes()).padStart(2, "0");
+      const seconds = String(date.getUTCSeconds()).padStart(2, "0");
+      const ms = date.getUTCMilliseconds();
+
+      let result = `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
+      if (ms > 0) {
+        result += `.${String(ms).padStart(3, "0")}`;
+      }
+
+      return new Literal(result, new IRI("http://www.w3.org/2001/XMLSchema#dateTime"));
+    }
+
+    // Parse the target timezone as dayTimeDuration
+    const tzValue = timezone instanceof Literal ? timezone.value : timezone;
+    const tzOffsetMs = this.parseDayTimeDuration(tzValue);
+
+    // Validate timezone offset is within valid range (-14:00 to +14:00)
+    const maxOffsetMs = 14 * 60 * 60 * 1000;
+    if (Math.abs(tzOffsetMs) > maxOffsetMs) {
+      throw new Error(`ADJUST: timezone offset out of range: '${tzValue}'`);
+    }
+
+    // Get the UTC time in milliseconds
+    const utcMs = date.getTime();
+
+    // Create a new date adjusted to the target timezone
+    const adjustedDate = new Date(utcMs + tzOffsetMs);
+
+    // Format the adjusted dateTime with the target timezone
+    const year = adjustedDate.getUTCFullYear();
+    const month = String(adjustedDate.getUTCMonth() + 1).padStart(2, "0");
+    const day = String(adjustedDate.getUTCDate()).padStart(2, "0");
+    const hours = String(adjustedDate.getUTCHours()).padStart(2, "0");
+    const minutes = String(adjustedDate.getUTCMinutes()).padStart(2, "0");
+    const seconds = String(adjustedDate.getUTCSeconds()).padStart(2, "0");
+    const ms = adjustedDate.getUTCMilliseconds();
+
+    // Format timezone offset
+    const tzSign = tzOffsetMs >= 0 ? "+" : "-";
+    const tzHours = Math.floor(Math.abs(tzOffsetMs) / (60 * 60 * 1000));
+    const tzMins = Math.floor((Math.abs(tzOffsetMs) % (60 * 60 * 1000)) / (60 * 1000));
+    const tzStr = `${tzSign}${String(tzHours).padStart(2, "0")}:${String(tzMins).padStart(2, "0")}`;
+
+    let result = `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
+    if (ms > 0) {
+      result += `.${String(ms).padStart(3, "0")}`;
+    }
+    result += tzStr;
+
+    return new Literal(result, new IRI("http://www.w3.org/2001/XMLSchema#dateTime"));
+  }
 }

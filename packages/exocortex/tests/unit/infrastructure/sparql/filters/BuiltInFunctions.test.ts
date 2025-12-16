@@ -1112,6 +1112,146 @@ describe("BuiltInFunctions", () => {
       });
     });
 
+    describe("ADJUST", () => {
+      describe("adjust to different timezone", () => {
+        it("should adjust UTC to positive timezone (+05:00 Almaty)", () => {
+          const result = BuiltInFunctions.adjust("2025-01-15T10:00:00Z", "PT5H");
+          expect(result).toBeInstanceOf(Literal);
+          expect(result.value).toBe("2025-01-15T15:00:00+05:00");
+          expect(result.datatype?.value).toBe("http://www.w3.org/2001/XMLSchema#dateTime");
+        });
+
+        it("should adjust UTC to negative timezone (-05:00)", () => {
+          const result = BuiltInFunctions.adjust("2025-01-15T10:00:00Z", "-PT5H");
+          expect(result).toBeInstanceOf(Literal);
+          expect(result.value).toBe("2025-01-15T05:00:00-05:00");
+          expect(result.datatype?.value).toBe("http://www.w3.org/2001/XMLSchema#dateTime");
+        });
+
+        it("should handle timezone with minutes (+05:30 India)", () => {
+          const result = BuiltInFunctions.adjust("2025-01-15T10:00:00Z", "PT5H30M");
+          expect(result).toBeInstanceOf(Literal);
+          expect(result.value).toBe("2025-01-15T15:30:00+05:30");
+          expect(result.datatype?.value).toBe("http://www.w3.org/2001/XMLSchema#dateTime");
+        });
+
+        it("should handle negative timezone with minutes (-09:30)", () => {
+          const result = BuiltInFunctions.adjust("2025-01-15T10:00:00Z", "-PT9H30M");
+          expect(result).toBeInstanceOf(Literal);
+          expect(result.value).toBe("2025-01-15T00:30:00-09:30");
+          expect(result.datatype?.value).toBe("http://www.w3.org/2001/XMLSchema#dateTime");
+        });
+
+        it("should adjust from one timezone to another", () => {
+          // 10:00 +03:00 = 07:00 UTC, then to +05:00 = 12:00 +05:00
+          const result = BuiltInFunctions.adjust("2025-01-15T10:00:00+03:00", "PT5H");
+          expect(result).toBeInstanceOf(Literal);
+          expect(result.value).toBe("2025-01-15T12:00:00+05:00");
+          expect(result.datatype?.value).toBe("http://www.w3.org/2001/XMLSchema#dateTime");
+        });
+
+        it("should handle date change when crossing midnight (forward)", () => {
+          // 22:00 UTC + 5 hours = 03:00 next day
+          const result = BuiltInFunctions.adjust("2025-01-15T22:00:00Z", "PT5H");
+          expect(result).toBeInstanceOf(Literal);
+          expect(result.value).toBe("2025-01-16T03:00:00+05:00");
+          expect(result.datatype?.value).toBe("http://www.w3.org/2001/XMLSchema#dateTime");
+        });
+
+        it("should handle date change when crossing midnight (backward)", () => {
+          // 02:00 UTC - 5 hours = 21:00 previous day
+          const result = BuiltInFunctions.adjust("2025-01-15T02:00:00Z", "-PT5H");
+          expect(result).toBeInstanceOf(Literal);
+          expect(result.value).toBe("2025-01-14T21:00:00-05:00");
+          expect(result.datatype?.value).toBe("http://www.w3.org/2001/XMLSchema#dateTime");
+        });
+
+        it("should accept Literal input for dateTime", () => {
+          const dtLiteral = new Literal(
+            "2025-01-15T10:00:00Z",
+            new IRI("http://www.w3.org/2001/XMLSchema#dateTime")
+          );
+          const result = BuiltInFunctions.adjust(dtLiteral, "PT5H");
+          expect(result).toBeInstanceOf(Literal);
+          expect(result.value).toBe("2025-01-15T15:00:00+05:00");
+        });
+
+        it("should accept Literal input for timezone", () => {
+          const tzLiteral = new Literal(
+            "PT5H",
+            new IRI("http://www.w3.org/2001/XMLSchema#dayTimeDuration")
+          );
+          const result = BuiltInFunctions.adjust("2025-01-15T10:00:00Z", tzLiteral);
+          expect(result).toBeInstanceOf(Literal);
+          expect(result.value).toBe("2025-01-15T15:00:00+05:00");
+        });
+
+        it("should preserve milliseconds", () => {
+          const result = BuiltInFunctions.adjust("2025-01-15T10:00:00.500Z", "PT5H");
+          expect(result).toBeInstanceOf(Literal);
+          expect(result.value).toBe("2025-01-15T15:00:00.500+05:00");
+        });
+
+        it("should handle PT0S (UTC timezone)", () => {
+          const result = BuiltInFunctions.adjust("2025-01-15T10:00:00Z", "PT0S");
+          expect(result).toBeInstanceOf(Literal);
+          expect(result.value).toBe("2025-01-15T10:00:00+00:00");
+          expect(result.datatype?.value).toBe("http://www.w3.org/2001/XMLSchema#dateTime");
+        });
+      });
+
+      describe("remove timezone (single arg)", () => {
+        it("should remove timezone from UTC dateTime", () => {
+          const result = BuiltInFunctions.adjust("2025-01-15T10:00:00Z");
+          expect(result).toBeInstanceOf(Literal);
+          expect(result.value).toBe("2025-01-15T10:00:00");
+          expect(result.datatype?.value).toBe("http://www.w3.org/2001/XMLSchema#dateTime");
+        });
+
+        it("should remove timezone from offset dateTime", () => {
+          // 10:00 +03:00 = 07:00 UTC -> returns UTC time without timezone
+          const result = BuiltInFunctions.adjust("2025-01-15T10:00:00+03:00");
+          expect(result).toBeInstanceOf(Literal);
+          expect(result.value).toBe("2025-01-15T07:00:00");
+          expect(result.datatype?.value).toBe("http://www.w3.org/2001/XMLSchema#dateTime");
+        });
+
+        it("should preserve milliseconds when removing timezone", () => {
+          const result = BuiltInFunctions.adjust("2025-01-15T10:00:00.123Z");
+          expect(result).toBeInstanceOf(Literal);
+          expect(result.value).toBe("2025-01-15T10:00:00.123");
+        });
+
+        it("should handle undefined timezone (same as no arg)", () => {
+          const result = BuiltInFunctions.adjust("2025-01-15T10:00:00Z", undefined);
+          expect(result).toBeInstanceOf(Literal);
+          expect(result.value).toBe("2025-01-15T10:00:00");
+        });
+      });
+
+      describe("error handling", () => {
+        it("should throw for invalid dateTime", () => {
+          expect(() => BuiltInFunctions.adjust("invalid")).toThrow("ADJUST: invalid dateTime");
+        });
+
+        it("should throw for invalid timezone duration", () => {
+          expect(() => BuiltInFunctions.adjust("2025-01-15T10:00:00Z", "invalid")).toThrow();
+        });
+
+        it("should throw for timezone offset out of range (> +14:00)", () => {
+          expect(() => BuiltInFunctions.adjust("2025-01-15T10:00:00Z", "PT15H")).toThrow(
+            "ADJUST: timezone offset out of range"
+          );
+        });
+
+        it("should throw for timezone offset out of range (< -14:00)", () => {
+          expect(() => BuiltInFunctions.adjust("2025-01-15T10:00:00Z", "-PT15H")).toThrow(
+            "ADJUST: timezone offset out of range"
+          );
+        });
+      });
+    });
+
     describe("NOW", () => {
       it("should return ISO string format", () => {
         const result = BuiltInFunctions.now();

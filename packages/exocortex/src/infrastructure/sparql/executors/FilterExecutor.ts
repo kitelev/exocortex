@@ -642,6 +642,16 @@ export class FilterExecutor {
         const tzDate = this.getStringValue(this.evaluateExpression(expr.args[0], solution));
         return BuiltInFunctions.tz(tzDate);
 
+      // SPARQL 1.2 ADJUST function for timezone adjustment (Issue #976)
+      case "adjust": {
+        const adjustDateTime = this.evaluateExpression(expr.args[0], solution);
+        // Second argument (timezone) is optional
+        const adjustTimezone = expr.args.length > 1
+          ? this.evaluateExpression(expr.args[1], solution)
+          : undefined;
+        return BuiltInFunctions.adjust(adjustDateTime, adjustTimezone);
+      }
+
       case "now":
         return BuiltInFunctions.now();
 

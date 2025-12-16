@@ -3265,4 +3265,108 @@ describe("FilterExecutor", () => {
       expect(result).toBe("2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824");
     });
   });
+
+  describe("ADJUST function (SPARQL 1.2)", () => {
+    it("should evaluate ADJUST function with timezone argument", async () => {
+      const solution = new SolutionMapping();
+      solution.set(
+        "datetime",
+        new Literal("2025-01-15T10:00:00Z", new IRI("http://www.w3.org/2001/XMLSchema#dateTime"))
+      );
+
+      const result = executor.evaluateExpression(
+        {
+          type: "function",
+          function: "adjust",
+          args: [
+            { type: "variable", name: "datetime" },
+            { type: "literal", value: "PT5H" },
+          ],
+        },
+        solution
+      );
+      expect(result).toBeInstanceOf(Literal);
+      expect((result as Literal).value).toBe("2025-01-15T15:00:00+05:00");
+    });
+
+    it("should evaluate ADJUST function without timezone argument (removes timezone)", async () => {
+      const solution = new SolutionMapping();
+      solution.set(
+        "datetime",
+        new Literal("2025-01-15T10:00:00Z", new IRI("http://www.w3.org/2001/XMLSchema#dateTime"))
+      );
+
+      const result = executor.evaluateExpression(
+        {
+          type: "function",
+          function: "adjust",
+          args: [{ type: "variable", name: "datetime" }],
+        },
+        solution
+      );
+      expect(result).toBeInstanceOf(Literal);
+      expect((result as Literal).value).toBe("2025-01-15T10:00:00");
+    });
+
+    it("should filter using ADJUST function in comparison", async () => {
+      const operation: FilterOperation = {
+        type: "filter",
+        expression: {
+          type: "comparison",
+          operator: "=",
+          left: {
+            type: "function",
+            function: "adjust",
+            args: [
+              { type: "variable", name: "datetime" },
+              { type: "literal", value: "PT5H" },
+            ],
+          },
+          right: {
+            type: "literal",
+            value: "2025-01-15T15:00:00+05:00",
+            datatype: "http://www.w3.org/2001/XMLSchema#dateTime",
+          },
+        },
+        input: { type: "bgp", triples: [] },
+      };
+
+      const solution1 = new SolutionMapping();
+      solution1.set(
+        "datetime",
+        new Literal("2025-01-15T10:00:00Z", new IRI("http://www.w3.org/2001/XMLSchema#dateTime"))
+      );
+
+      const solution2 = new SolutionMapping();
+      solution2.set(
+        "datetime",
+        new Literal("2025-01-15T12:00:00Z", new IRI("http://www.w3.org/2001/XMLSchema#dateTime"))
+      );
+
+      const results = await executor.executeAll(operation, [solution1, solution2]);
+      expect(results).toHaveLength(1);
+    });
+
+    it("should evaluate ADJUST with negative timezone", async () => {
+      const solution = new SolutionMapping();
+      solution.set(
+        "datetime",
+        new Literal("2025-01-15T10:00:00Z", new IRI("http://www.w3.org/2001/XMLSchema#dateTime"))
+      );
+
+      const result = executor.evaluateExpression(
+        {
+          type: "function",
+          function: "adjust",
+          args: [
+            { type: "variable", name: "datetime" },
+            { type: "literal", value: "-PT5H" },
+          ],
+        },
+        solution
+      );
+      expect(result).toBeInstanceOf(Literal);
+      expect((result as Literal).value).toBe("2025-01-15T05:00:00-05:00");
+    });
+  });
 });
