@@ -2,6 +2,7 @@ import type { LayoutColumn } from "./LayoutColumn";
 import type { LayoutFilter } from "./LayoutFilter";
 import type { LayoutSort } from "./LayoutSort";
 import type { LayoutGroup } from "./LayoutGroup";
+import type { LayoutActions } from "./LayoutActions";
 
 /**
  * Layout type enumeration.
@@ -91,6 +92,12 @@ export interface BaseLayout {
    * Maps to exo__Layout_groupBy.
    */
   groupBy?: LayoutGroup;
+
+  /**
+   * Action buttons definition.
+   * Maps to exo__Layout_actions.
+   */
+  actions?: LayoutActions;
 }
 
 /**

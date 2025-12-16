@@ -29,6 +29,8 @@ export { ProgressRenderer } from "./ProgressRenderer";
 export { NumberRenderer } from "./NumberRenderer";
 export { TagsRenderer } from "./TagsRenderer";
 export { ImageRenderer } from "./ImageRenderer";
+export { ActionsRenderer } from "./ActionsRenderer";
+export type { ActionsRendererProps } from "./ActionsRenderer";
 
 // Re-export ColumnRenderer type from domain
 export type { ColumnRenderer } from "../../../domain/layout";

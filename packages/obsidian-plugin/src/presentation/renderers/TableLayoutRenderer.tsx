@@ -22,7 +22,7 @@ import type {
   TableLayoutOptions,
   CellValue,
 } from "./cell-renderers";
-import { getCellRenderer } from "./cell-renderers";
+import { getCellRenderer, ActionsRenderer } from "./cell-renderers";
 
 /**
  * Props for TableLayoutRenderer
@@ -65,6 +65,23 @@ export interface TableLayoutRendererProps {
    * Custom CSS class name
    */
   className?: string;
+
+  /**
+   * Callback to check if a command precondition is satisfied.
+   * Used for action buttons visibility.
+   * @param sparql - The SPARQL ASK query with $target placeholder
+   * @param assetUri - The URI to substitute for $target
+   * @returns true if the command should be visible/enabled
+   */
+  onCheckPrecondition?: (sparql: string, assetUri: string) => Promise<boolean>;
+
+  /**
+   * Callback to execute a command grounding.
+   * Used when action buttons are clicked.
+   * @param sparql - The SPARQL UPDATE query with $target and $now placeholders
+   * @param assetUri - The URI to substitute for $target
+   */
+  onExecuteCommand?: (sparql: string, assetUri: string) => Promise<void>;
 }
 
 /**
@@ -153,9 +170,13 @@ export const TableLayoutRenderer: React.FC<TableLayoutRendererProps> = ({
   options: propOptions,
   initialSort,
   className,
+  onCheckPrecondition,
+  onExecuteCommand,
 }) => {
   const options = { ...defaultOptions, ...propOptions };
   const columns = layout.columns || [];
+  const actions = layout.actions;
+  const hasActions = actions && actions.commands.length > 0 && actions.position === "column";
 
   // Sort state
   const [sortState, setSortState] = useState<TableSortState>(
@@ -315,6 +336,26 @@ export const TableLayoutRenderer: React.FC<TableLayoutRendererProps> = ({
     );
   };
 
+  // Render actions cell
+  const renderActionsCell = (row: TableRow) => {
+    if (!hasActions || !actions) return null;
+
+    // Get asset URI from row metadata or construct from path
+    const assetUri = (row.metadata?.uri as string) || `obsidian://vault/${encodeURIComponent(row.path)}`;
+
+    return (
+      <td key="__actions__" className="exo-layout-cell exo-layout-cell-actions">
+        <ActionsRenderer
+          actions={actions}
+          assetUri={assetUri}
+          assetPath={row.path}
+          onCheckPrecondition={onCheckPrecondition}
+          onExecuteCommand={onExecuteCommand}
+        />
+      </td>
+    );
+  };
+
   // Render row
   const renderRow = (row: TableRow, _index: number, style?: React.CSSProperties) => {
     return (
@@ -326,6 +367,7 @@ export const TableLayoutRenderer: React.FC<TableLayoutRendererProps> = ({
         style={style}
       >
         {columns.map((column) => renderCell(row, column))}
+        {renderActionsCell(row)}
       </tr>
     );
   };
@@ -339,17 +381,28 @@ export const TableLayoutRenderer: React.FC<TableLayoutRendererProps> = ({
           style={{ width: parseColumnWidth(column.width) }}
         />
       ))}
+      {hasActions && (
+        <col key="__actions__" style={{ width: "auto" }} />
+      )}
     </colgroup>
   );
 
   // Render table header
   const renderTableHeader = () => (
     <thead className="exo-layout-header">
-      <tr>{columns.map(renderHeader)}</tr>
+      <tr>
+        {columns.map(renderHeader)}
+        {hasActions && (
+          <th key="__actions__" className="exo-layout-column exo-layout-column-actions">
+            {actions?.showLabels ? "Actions" : ""}
+          </th>
+        )}
+      </tr>
     </thead>
   );
 
   // Empty state
+  const totalColumns = columns.length + (hasActions ? 1 : 0);
   if (sortedRows.length === 0) {
     return (
       <div className={`exo-layout-table-container exo-layout-table-empty ${className || ""}`}>
@@ -358,7 +411,7 @@ export const TableLayoutRenderer: React.FC<TableLayoutRendererProps> = ({
           {renderTableHeader()}
           <tbody>
             <tr>
-              <td colSpan={columns.length} className="exo-layout-empty-message">
+              <td colSpan={totalColumns} className="exo-layout-empty-message">
                 No data available
               </td>
             </tr>

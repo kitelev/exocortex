@@ -25,6 +25,8 @@ import {
   type LayoutFilter,
   type LayoutSort,
   type LayoutGroup,
+  type LayoutActions,
+  type CommandRef,
   LayoutType,
   getLayoutTypeFromInstanceClass,
   isLayoutFrontmatter,
@@ -32,6 +34,10 @@ import {
   createLayoutFilterFromFrontmatter,
   createLayoutSortFromFrontmatter,
   createLayoutGroupFromFrontmatter,
+  createLayoutActionsFromFrontmatter,
+  createCommandRefFromFrontmatter,
+  isLayoutActionsFrontmatter,
+  isCommandFrontmatter,
   isValidCalendarView,
 } from "../../domain/layout";
 
@@ -484,6 +490,186 @@ export class LayoutParser {
   }
 
   /**
+   * Load actions from frontmatter wikilink.
+   */
+  private async loadActions(
+    frontmatter: IFrontmatter,
+    options: LayoutParseOptions,
+  ): Promise<LayoutActions | undefined> {
+    const actionsValue = frontmatter["exo__Layout_actions"];
+    if (!actionsValue) {
+      return undefined;
+    }
+
+    // Handle both single link and array of links (take first if array)
+    const actionsLinks = this.normalizeToArray(actionsValue);
+    if (actionsLinks.length === 0) {
+      return undefined;
+    }
+
+    const actions = await this.loadLayoutActions(actionsLinks[0], options);
+    return actions || undefined;
+  }
+
+  /**
+   * Load a LayoutActions object from a wikilink.
+   */
+  private async loadLayoutActions(
+    wikilink: string,
+    options: LayoutParseOptions,
+  ): Promise<LayoutActions | null> {
+    const file = this.resolveWikiLink(wikilink, "");
+    if (!file) {
+      return null;
+    }
+
+    const frontmatter = this.vaultAdapter.getFrontmatter(file);
+    if (!frontmatter) {
+      return null;
+    }
+
+    // Verify this is a LayoutActions asset
+    if (!isLayoutActionsFrontmatter(frontmatter)) {
+      return null;
+    }
+
+    const partial = createLayoutActionsFromFrontmatter(frontmatter);
+    if (!partial) {
+      return null;
+    }
+
+    // Load commands
+    const commands = await this.loadCommands(frontmatter, options);
+
+    return {
+      uid: partial.uid!,
+      label: partial.label!,
+      commands,
+      position: partial.position || "column",
+      showLabels: partial.showLabels || false,
+    };
+  }
+
+  /**
+   * Load commands from frontmatter wikilinks.
+   */
+  private async loadCommands(
+    frontmatter: IFrontmatter,
+    options: LayoutParseOptions,
+  ): Promise<CommandRef[]> {
+    const commandsValue = frontmatter["exo__LayoutActions_commands"];
+    if (!commandsValue) {
+      return [];
+    }
+
+    const commandLinks = this.normalizeToArray(commandsValue);
+    const commands: CommandRef[] = [];
+
+    for (const link of commandLinks) {
+      const command = await this.loadCommand(link, options);
+      if (command) {
+        commands.push(command);
+      } else if (!options.gracefulDegradation) {
+        throw new Error(`Failed to load command: ${link}`);
+      }
+    }
+
+    return commands;
+  }
+
+  /**
+   * Load a single command from a wikilink.
+   */
+  private async loadCommand(
+    wikilink: string,
+    options: LayoutParseOptions,
+  ): Promise<CommandRef | null> {
+    const file = this.resolveWikiLink(wikilink, "");
+    if (!file) {
+      return null;
+    }
+
+    const frontmatter = this.vaultAdapter.getFrontmatter(file);
+    if (!frontmatter) {
+      return null;
+    }
+
+    // Verify this is a Command asset
+    if (!isCommandFrontmatter(frontmatter)) {
+      return null;
+    }
+
+    const partial = createCommandRefFromFrontmatter(frontmatter);
+    if (!partial) {
+      return null;
+    }
+
+    // Load precondition SPARQL
+    let preconditionSparql: string | undefined;
+    const preconditionLink = frontmatter["exo__Command_precondition"] as string | undefined;
+    if (preconditionLink) {
+      preconditionSparql = await this.loadPreconditionSparql(preconditionLink, options);
+    }
+
+    // Load grounding SPARQL
+    let groundingSparql: string | undefined;
+    const groundingLink = frontmatter["exo__Command_grounding"] as string | undefined;
+    if (groundingLink) {
+      groundingSparql = await this.loadGroundingSparql(groundingLink, options);
+    }
+
+    return {
+      uid: partial.uid!,
+      label: partial.label!,
+      icon: partial.icon,
+      preconditionSparql,
+      groundingSparql,
+    };
+  }
+
+  /**
+   * Load precondition SPARQL from a wikilink to a Precondition asset.
+   */
+  private async loadPreconditionSparql(
+    wikilink: string,
+    _options: LayoutParseOptions,
+  ): Promise<string | undefined> {
+    const file = this.resolveWikiLink(wikilink, "");
+    if (!file) {
+      return undefined;
+    }
+
+    const frontmatter = this.vaultAdapter.getFrontmatter(file);
+    if (!frontmatter) {
+      return undefined;
+    }
+
+    // Get the SPARQL ASK query from Precondition
+    return frontmatter["exo__Precondition_sparql"] as string | undefined;
+  }
+
+  /**
+   * Load grounding SPARQL from a wikilink to a Grounding asset.
+   */
+  private async loadGroundingSparql(
+    wikilink: string,
+    _options: LayoutParseOptions,
+  ): Promise<string | undefined> {
+    const file = this.resolveWikiLink(wikilink, "");
+    if (!file) {
+      return undefined;
+    }
+
+    const frontmatter = this.vaultAdapter.getFrontmatter(file);
+    if (!frontmatter) {
+      return undefined;
+    }
+
+    // Get the SPARQL UPDATE query from Grounding
+    return frontmatter["exo__Grounding_sparql"] as string | undefined;
+  }
+
+  /**
    * Load columns from frontmatter wikilinks.
    */
   private async loadColumns(
@@ -559,6 +745,7 @@ export class LayoutParser {
     options: LayoutParseOptions,
   ): Promise<TableLayout> {
     const columns = await this.loadColumns(frontmatter, options);
+    const actions = await this.loadActions(frontmatter, options);
 
     return {
       uid,
@@ -570,6 +757,7 @@ export class LayoutParser {
       filters,
       defaultSort,
       groupBy,
+      actions,
     };
   }
 
@@ -594,6 +782,7 @@ export class LayoutParser {
 
     // Optional columns for card content
     const columns = await this.loadColumns(frontmatter, options);
+    const actions = await this.loadActions(frontmatter, options);
 
     return {
       uid,
@@ -607,6 +796,7 @@ export class LayoutParser {
       filters,
       defaultSort,
       groupBy,
+      actions,
     };
   }
 
