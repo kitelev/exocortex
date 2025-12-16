@@ -225,8 +225,6 @@ export class LateralTransformer {
       );
     }
 
-    const braceStart = pos;
-
     // Find matching closing brace, accounting for nested braces
     let depth = 1;
     pos++;
@@ -294,9 +292,6 @@ export class LateralTransformer {
    * as a lateral join during algebra translation.
    */
   private transformLateral(lateralExpr: string): string {
-    // Extract the inner content (remove "LATERAL" and outer braces)
-    const lateralUpper = lateralExpr.toUpperCase();
-
     // Find the opening brace after LATERAL
     const braceStart = lateralExpr.indexOf("{");
     if (braceStart === -1) {
