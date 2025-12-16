@@ -3065,4 +3065,214 @@ describe("BuiltInFunctions", () => {
       });
     });
   });
+
+  // =========================================================================
+  // SPARQL 1.2 NORMALIZE Function Tests (Issue #982)
+  // =========================================================================
+
+  describe("NORMALIZE", () => {
+    describe("NFC normalization (default)", () => {
+      it("should normalize string to NFC by default", () => {
+        // "café" with combining acute accent (e + ́) should become precomposed é
+        const decomposed = "cafe\u0301"; // e + combining acute accent
+        const result = BuiltInFunctions.normalize(decomposed);
+        expect(result.value).toBe("café"); // precomposed é
+        expect(result.datatype?.value).toBe("http://www.w3.org/2001/XMLSchema#string");
+      });
+
+      it("should normalize Literal input to NFC", () => {
+        const decomposed = new Literal("cafe\u0301");
+        const result = BuiltInFunctions.normalize(decomposed);
+        expect(result.value).toBe("café");
+      });
+
+      it("should return already normalized string unchanged", () => {
+        const normalized = "café"; // precomposed
+        const result = BuiltInFunctions.normalize(normalized);
+        expect(result.value).toBe("café");
+      });
+
+      it("should handle plain ASCII strings", () => {
+        const result = BuiltInFunctions.normalize("hello");
+        expect(result.value).toBe("hello");
+      });
+
+      it("should throw for empty string (Literal constraint)", () => {
+        // Literal class does not allow empty strings
+        expect(() => BuiltInFunctions.normalize("")).toThrow("Literal value cannot be empty");
+      });
+    });
+
+    describe("NFD normalization", () => {
+      it("should decompose precomposed characters", () => {
+        const composed = "café"; // precomposed é
+        const result = BuiltInFunctions.normalize(composed, "NFD");
+        // NFD decomposes é into e + combining acute accent
+        expect(result.value).toBe("cafe\u0301");
+        expect(result.value.length).toBe(5); // c, a, f, e, combining accent
+      });
+
+      it("should accept lowercase form specification", () => {
+        const composed = "café";
+        const result = BuiltInFunctions.normalize(composed, "nfd");
+        expect(result.value).toBe("cafe\u0301");
+      });
+
+      it("should accept Literal as form parameter", () => {
+        const composed = "café";
+        const formLiteral = new Literal("NFD");
+        const result = BuiltInFunctions.normalize(composed, formLiteral);
+        expect(result.value).toBe("cafe\u0301");
+      });
+    });
+
+    describe("NFKC normalization (compatibility composition)", () => {
+      it("should decompose ligatures", () => {
+        // ﬁ (fi ligature) should become "fi"
+        const ligature = "\uFB01"; // ﬁ ligature
+        const result = BuiltInFunctions.normalize(ligature, "NFKC");
+        expect(result.value).toBe("fi");
+      });
+
+      it("should normalize fullwidth characters", () => {
+        // Ａ (fullwidth A) should become A
+        const fullwidth = "\uFF21"; // fullwidth A
+        const result = BuiltInFunctions.normalize(fullwidth, "NFKC");
+        expect(result.value).toBe("A");
+      });
+
+      it("should handle superscript numbers", () => {
+        // ² (superscript 2) should become 2
+        const superscript = "\u00B2";
+        const result = BuiltInFunctions.normalize(superscript, "NFKC");
+        expect(result.value).toBe("2");
+      });
+
+      it("should normalize roman numerals", () => {
+        // Ⅳ (Roman numeral 4) should become IV
+        const romanNumeral = "\u2163"; // Ⅳ
+        const result = BuiltInFunctions.normalize(romanNumeral, "NFKC");
+        expect(result.value).toBe("IV");
+      });
+    });
+
+    describe("NFKD normalization (compatibility decomposition)", () => {
+      it("should decompose ligatures and keep decomposed form", () => {
+        const ligature = "\uFB01"; // ﬁ ligature
+        const result = BuiltInFunctions.normalize(ligature, "NFKD");
+        expect(result.value).toBe("fi");
+      });
+
+      it("should decompose and keep accents separate", () => {
+        // ﬁ followed by precomposed é
+        const input = "\uFB01" + "é";
+        const result = BuiltInFunctions.normalize(input, "NFKD");
+        // Should be: f, i, e, combining acute accent
+        expect(result.value).toBe("fie\u0301");
+      });
+    });
+
+    describe("error handling", () => {
+      it("should throw for undefined string argument", () => {
+        expect(() => BuiltInFunctions.normalize(undefined)).toThrow("NORMALIZE: string argument is undefined");
+      });
+
+      it("should throw for invalid normalization form", () => {
+        expect(() => BuiltInFunctions.normalize("test", "INVALID")).toThrow(
+          "NORMALIZE: invalid normalization form 'INVALID'. Valid forms are: NFC, NFD, NFKC, NFKD"
+        );
+      });
+
+      it("should throw for empty normalization form", () => {
+        expect(() => BuiltInFunctions.normalize("test", "")).toThrow(
+          "NORMALIZE: invalid normalization form ''. Valid forms are: NFC, NFD, NFKC, NFKD"
+        );
+      });
+    });
+
+    describe("comparing equivalent strings after normalization", () => {
+      it("should make composed and decomposed strings equal after NFC normalization", () => {
+        const composed = "café"; // precomposed é
+        const decomposed = "cafe\u0301"; // e + combining acute accent
+
+        const normalizedComposed = BuiltInFunctions.normalize(composed, "NFC");
+        const normalizedDecomposed = BuiltInFunctions.normalize(decomposed, "NFC");
+
+        expect(normalizedComposed.value).toBe(normalizedDecomposed.value);
+      });
+
+      it("should make composed and decomposed strings equal after NFD normalization", () => {
+        const composed = "café";
+        const decomposed = "cafe\u0301";
+
+        const normalizedComposed = BuiltInFunctions.normalize(composed, "NFD");
+        const normalizedDecomposed = BuiltInFunctions.normalize(decomposed, "NFD");
+
+        expect(normalizedComposed.value).toBe(normalizedDecomposed.value);
+      });
+    });
+
+    describe("edge cases", () => {
+      it("should handle strings with multiple combining characters", () => {
+        // ö̀ (o with umlaut and grave accent)
+        const multiCombining = "o\u0308\u0300"; // o + combining diaeresis + combining grave
+        const result = BuiltInFunctions.normalize(multiCombining, "NFC");
+        // Result should have the composed form
+        expect(result.value.length).toBeLessThan(multiCombining.length);
+      });
+
+      it("should handle Korean Hangul", () => {
+        // 한 can be composed or decomposed
+        const composed = "\uD55C"; // 한
+        const decomposed = "\u1112\u1161\u11AB"; // ᄒ + ᅡ + ᆫ
+
+        const normalizedComposed = BuiltInFunctions.normalize(composed, "NFC");
+        const normalizedDecomposed = BuiltInFunctions.normalize(decomposed, "NFC");
+
+        expect(normalizedComposed.value).toBe(normalizedDecomposed.value);
+      });
+
+      it("should handle emoji with ZWJ sequences", () => {
+        // Family emoji (👨‍👩‍👧)
+        const family = "👨\u200D👩\u200D👧";
+        const result = BuiltInFunctions.normalize(family, "NFC");
+        expect(result.value).toBe(family); // ZWJ sequences should be preserved
+      });
+
+      it("should handle mixed scripts", () => {
+        const mixed = "Hello мир 世界";
+        const result = BuiltInFunctions.normalize(mixed, "NFC");
+        expect(result.value).toBe("Hello мир 世界");
+      });
+
+      it("should work with IRI input", () => {
+        const iri = new IRI("http://example.org/café");
+        const result = BuiltInFunctions.normalize(iri);
+        expect(result.value).toBe("http://example.org/café");
+      });
+
+      it("should work with BlankNode input", () => {
+        const blank = new BlankNode("café");
+        const result = BuiltInFunctions.normalize(blank);
+        expect(result.value).toBe("café");
+      });
+    });
+
+    describe("Acceptance Criteria (Issue #982)", () => {
+      it("NORMALIZE('café') should return NFC-normalized string", () => {
+        // The acceptance criteria expects that "café" returns NFC-normalized form
+        // With decomposed input:
+        const decomposed = "cafe\u0301";
+        const result = BuiltInFunctions.normalize(decomposed);
+        expect(result.value).toBe("café"); // precomposed
+        expect(result.datatype?.value).toBe("http://www.w3.org/2001/XMLSchema#string");
+      });
+
+      it("NORMALIZE('ﬁ', 'NFKC') should return 'fi'", () => {
+        const ligature = "\uFB01"; // ﬁ
+        const result = BuiltInFunctions.normalize(ligature, "NFKC");
+        expect(result.value).toBe("fi");
+      });
+    });
+  });
 });

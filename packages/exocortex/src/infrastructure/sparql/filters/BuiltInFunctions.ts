@@ -1960,4 +1960,77 @@ export class BuiltInFunctions {
 
     return new Literal(result, new IRI("http://www.w3.org/2001/XMLSchema#dateTime"));
   }
+
+  // =========================================================================
+  // SPARQL 1.2 NORMALIZE Function (Issue #982)
+  // https://www.w3.org/TR/sparql12-query/#func-normalize
+  // =========================================================================
+
+  /**
+   * Valid Unicode normalization forms per SPARQL 1.2 specification.
+   */
+  private static readonly VALID_NORMALIZATION_FORMS = ["NFC", "NFD", "NFKC", "NFKD"] as const;
+
+  /**
+   * SPARQL 1.2 NORMALIZE function.
+   * Normalizes a Unicode string to a canonical form for consistent comparison.
+   *
+   * Unicode normalization forms:
+   * - NFC (default): Canonical Decomposition, followed by Canonical Composition
+   * - NFD: Canonical Decomposition
+   * - NFKC: Compatibility Decomposition, followed by Canonical Composition
+   * - NFKD: Compatibility Decomposition
+   *
+   * @param str - String or Literal to normalize
+   * @param form - Optional normalization form (defaults to "NFC")
+   * @returns Literal with normalized string value
+   *
+   * Examples:
+   * - NORMALIZE("café") → NFC-normalized "café"
+   * - NORMALIZE("ﬁ", "NFKC") → "fi" (compatibility normalization decomposes ligatures)
+   * - NORMALIZE("Ω", "NFD") → NFD-normalized omega (decomposed form)
+   */
+  static normalize(str: RDFTerm | string | undefined, form?: RDFTerm | string | undefined): Literal {
+    if (str === undefined) {
+      throw new Error("NORMALIZE: string argument is undefined");
+    }
+
+    // Extract string value
+    let strValue: string;
+    if (str instanceof Literal) {
+      strValue = str.value;
+    } else if (str instanceof IRI) {
+      strValue = str.value;
+    } else if (str instanceof BlankNode) {
+      strValue = str.id;
+    } else if (typeof str === "string") {
+      strValue = str;
+    } else {
+      throw new Error("NORMALIZE: first argument must be a string or literal");
+    }
+
+    // Extract normalization form (default to NFC)
+    let normForm: string = "NFC";
+    if (form !== undefined) {
+      if (form instanceof Literal) {
+        normForm = form.value.toUpperCase();
+      } else if (typeof form === "string") {
+        normForm = form.toUpperCase();
+      } else if (form instanceof IRI) {
+        normForm = form.value.toUpperCase();
+      } else {
+        throw new Error("NORMALIZE: second argument must be a string literal");
+      }
+    }
+
+    // Validate normalization form
+    if (!this.VALID_NORMALIZATION_FORMS.includes(normForm as "NFC" | "NFD" | "NFKC" | "NFKD")) {
+      throw new Error(`NORMALIZE: invalid normalization form '${normForm}'. Valid forms are: NFC, NFD, NFKC, NFKD`);
+    }
+
+    // Apply Unicode normalization
+    const normalized = strValue.normalize(normForm as "NFC" | "NFD" | "NFKC" | "NFKD");
+
+    return new Literal(normalized, new IRI("http://www.w3.org/2001/XMLSchema#string"));
+  }
 }
