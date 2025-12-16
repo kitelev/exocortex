@@ -46,6 +46,138 @@ describe("BuiltInFunctions", () => {
     });
   });
 
+  describe("LANGDIR", () => {
+    describe("directional literals with ltr direction", () => {
+      it("should return 'en--ltr' for English with ltr direction", () => {
+        const literal = new Literal("Hello", undefined, "en", "ltr");
+        expect(BuiltInFunctions.langdir(literal)).toBe("en--ltr");
+      });
+
+      it("should return 'fr--ltr' for French with ltr direction", () => {
+        const literal = new Literal("Bonjour", undefined, "fr", "ltr");
+        expect(BuiltInFunctions.langdir(literal)).toBe("fr--ltr");
+      });
+
+      it("should handle language subtags with ltr direction", () => {
+        const literal = new Literal("Hello", undefined, "en-US", "ltr");
+        expect(BuiltInFunctions.langdir(literal)).toBe("en-us--ltr");
+      });
+    });
+
+    describe("directional literals with rtl direction", () => {
+      it("should return 'ar--rtl' for Arabic with rtl direction", () => {
+        const literal = new Literal("مرحبا", undefined, "ar", "rtl");
+        expect(BuiltInFunctions.langdir(literal)).toBe("ar--rtl");
+      });
+
+      it("should return 'he--rtl' for Hebrew with rtl direction", () => {
+        const literal = new Literal("שלום", undefined, "he", "rtl");
+        expect(BuiltInFunctions.langdir(literal)).toBe("he--rtl");
+      });
+
+      it("should handle language subtags with rtl direction", () => {
+        const literal = new Literal("مرحبا", undefined, "ar-EG", "rtl");
+        expect(BuiltInFunctions.langdir(literal)).toBe("ar-eg--rtl");
+      });
+    });
+
+    describe("non-directional language-tagged literals", () => {
+      it("should return 'en' for English without direction", () => {
+        const literal = new Literal("Hello", undefined, "en");
+        expect(BuiltInFunctions.langdir(literal)).toBe("en");
+      });
+
+      it("should return 'de' for German without direction", () => {
+        const literal = new Literal("Hallo", undefined, "de");
+        expect(BuiltInFunctions.langdir(literal)).toBe("de");
+      });
+
+      it("should handle language subtags without direction", () => {
+        const literal = new Literal("Hello", undefined, "en-GB");
+        expect(BuiltInFunctions.langdir(literal)).toBe("en-gb");
+      });
+    });
+
+    describe("literals without language tag", () => {
+      it("should return empty string for plain literal", () => {
+        const literal = new Literal("Hello");
+        expect(BuiltInFunctions.langdir(literal)).toBe("");
+      });
+
+      it("should return empty string for typed literal", () => {
+        const literal = new Literal("42", new IRI("http://www.w3.org/2001/XMLSchema#integer"));
+        expect(BuiltInFunctions.langdir(literal)).toBe("");
+      });
+
+      it("should return empty string for xsd:string typed literal", () => {
+        const literal = new Literal("Hello", new IRI("http://www.w3.org/2001/XMLSchema#string"));
+        expect(BuiltInFunctions.langdir(literal)).toBe("");
+      });
+    });
+
+    describe("non-literal terms", () => {
+      it("should return empty string for IRI", () => {
+        const iri = new IRI("http://example.org/resource");
+        expect(BuiltInFunctions.langdir(iri)).toBe("");
+      });
+
+      it("should return empty string for blank node", () => {
+        const blank = new BlankNode("b1");
+        expect(BuiltInFunctions.langdir(blank)).toBe("");
+      });
+    });
+
+    describe("error handling", () => {
+      it("should throw for undefined", () => {
+        expect(() => BuiltInFunctions.langdir(undefined)).toThrow("LANGDIR: argument is undefined");
+      });
+    });
+
+    describe("integration with FILTER", () => {
+      it("should work correctly for filtering by langdir value", () => {
+        const ltrLiteral = new Literal("Hello", undefined, "en", "ltr");
+        const rtlLiteral = new Literal("مرحبا", undefined, "ar", "rtl");
+        const noDirectionLiteral = new Literal("Bonjour", undefined, "fr");
+
+        // Simulate FILTER(?langdir = "en--ltr")
+        expect(BuiltInFunctions.langdir(ltrLiteral)).toBe("en--ltr");
+        expect(BuiltInFunctions.langdir(rtlLiteral)).toBe("ar--rtl");
+        expect(BuiltInFunctions.langdir(noDirectionLiteral)).toBe("fr");
+
+        // Filtering for RTL content
+        expect(BuiltInFunctions.langdir(rtlLiteral).endsWith("--rtl")).toBe(true);
+        expect(BuiltInFunctions.langdir(ltrLiteral).endsWith("--rtl")).toBe(false);
+      });
+    });
+
+    describe("Acceptance Criteria (Issue #958)", () => {
+      it("LANGDIR('Hello'@en--ltr) → 'en--ltr'", () => {
+        const literal = new Literal("Hello", undefined, "en", "ltr");
+        expect(BuiltInFunctions.langdir(literal)).toBe("en--ltr");
+      });
+
+      it("LANGDIR('مرحبا'@ar--rtl) → 'ar--rtl'", () => {
+        const literal = new Literal("مرحبا", undefined, "ar", "rtl");
+        expect(BuiltInFunctions.langdir(literal)).toBe("ar--rtl");
+      });
+
+      it("LANGDIR('Hello'@en) → 'en'", () => {
+        const literal = new Literal("Hello", undefined, "en");
+        expect(BuiltInFunctions.langdir(literal)).toBe("en");
+      });
+
+      it("LANGDIR('Hello') → ''", () => {
+        const literal = new Literal("Hello");
+        expect(BuiltInFunctions.langdir(literal)).toBe("");
+      });
+
+      it("LANGDIR(:IRI) → ''", () => {
+        const iri = new IRI("http://example.org/resource");
+        expect(BuiltInFunctions.langdir(iri)).toBe("");
+      });
+    });
+  });
+
   describe("langMatches", () => {
     describe("exact matches", () => {
       it("should return true for exact match", () => {

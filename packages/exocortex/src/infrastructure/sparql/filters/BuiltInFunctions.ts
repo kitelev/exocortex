@@ -40,6 +40,57 @@ export class BuiltInFunctions {
   }
 
   /**
+   * SPARQL 1.2 LANGDIR function.
+   * https://w3c.github.io/sparql-12/spec/
+   *
+   * Returns the combined language tag and base direction from a directional literal.
+   * The format is `lang--dir` (e.g., `"ar--rtl"`, `"en--ltr"`).
+   *
+   * For non-directional language-tagged literals, returns just the language tag.
+   * For non-literals or literals without language tags, returns empty string.
+   *
+   * @param term - RDF term to extract language direction from
+   * @returns String in format "lang--dir", "lang", or "" depending on the term
+   *
+   * @example
+   * // Directional literal with rtl direction
+   * LANGDIR("مرحبا"@ar--rtl) → "ar--rtl"
+   *
+   * // Directional literal with ltr direction
+   * LANGDIR("Hello"@en--ltr) → "en--ltr"
+   *
+   * // Non-directional language-tagged literal
+   * LANGDIR("Hello"@en) → "en"
+   *
+   * // Plain literal (no language tag)
+   * LANGDIR("Hello") → ""
+   *
+   * // IRI (not a literal)
+   * LANGDIR(<http://example.org>) → ""
+   */
+  static langdir(term: RDFTerm | undefined): string {
+    if (term === undefined) {
+      throw new Error("LANGDIR: argument is undefined");
+    }
+
+    if (!(term instanceof Literal)) {
+      return "";
+    }
+
+    if (!term.language) {
+      return "";
+    }
+
+    // If the literal has a direction, return "lang--dir" format
+    if (term.direction) {
+      return `${term.language}--${term.direction}`;
+    }
+
+    // No direction, just return the language tag
+    return term.language;
+  }
+
+  /**
    * SPARQL 1.1 langMatches function.
    * https://www.w3.org/TR/sparql11-query/#func-langMatches
    *
