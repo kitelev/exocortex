@@ -344,6 +344,85 @@ describe("SPARQLParser", () => {
         expect(parser.getQueryType(ast)).toBe("DESCRIBE");
       });
     });
+
+    describe("SPARQL 1.2 DESCRIBE options", () => {
+      it("parses DESCRIBE with DEPTH option", () => {
+        const query = `
+          DESCRIBE ?task DEPTH 2
+          WHERE {
+            ?task a <http://example.org/Task> .
+          }
+        `;
+        const result = parser.parseWithOptions(query);
+        expect(parser.isDescribeQuery(result.query)).toBe(true);
+        expect(result.describeOptions?.depth).toBe(2);
+      });
+
+      it("parses DESCRIBE with SYMMETRIC option", () => {
+        const query = `
+          DESCRIBE ?task SYMMETRIC
+          WHERE {
+            ?task a <http://example.org/Task> .
+          }
+        `;
+        const result = parser.parseWithOptions(query);
+        expect(parser.isDescribeQuery(result.query)).toBe(true);
+        expect(result.describeOptions?.symmetric).toBe(true);
+      });
+
+      it("parses DESCRIBE with both DEPTH and SYMMETRIC options", () => {
+        const query = `
+          DESCRIBE ?task DEPTH 3 SYMMETRIC
+          WHERE {
+            ?task a <http://example.org/Task> .
+          }
+        `;
+        const result = parser.parseWithOptions(query);
+        expect(parser.isDescribeQuery(result.query)).toBe(true);
+        expect(result.describeOptions?.depth).toBe(3);
+        expect(result.describeOptions?.symmetric).toBe(true);
+      });
+
+      it("returns undefined options for DESCRIBE without options", () => {
+        const query = `
+          DESCRIBE ?task
+          WHERE {
+            ?task a <http://example.org/Task> .
+          }
+        `;
+        const result = parser.parseWithOptions(query);
+        expect(parser.isDescribeQuery(result.query)).toBe(true);
+        expect(result.describeOptions).toBeUndefined();
+      });
+
+      it("attaches options to parsed query AST", () => {
+        const query = "DESCRIBE ?x DEPTH 2 SYMMETRIC";
+        const ast = parser.parse(query) as any;
+        expect(ast.describeOptions?.depth).toBe(2);
+        expect(ast.describeOptions?.symmetric).toBe(true);
+      });
+
+      it("hasDescribeOptions returns true for query with DEPTH", () => {
+        const query = "DESCRIBE ?x DEPTH 2";
+        expect(parser.hasDescribeOptions(query)).toBe(true);
+      });
+
+      it("hasDescribeOptions returns true for query with SYMMETRIC", () => {
+        const query = "DESCRIBE ?x SYMMETRIC";
+        expect(parser.hasDescribeOptions(query)).toBe(true);
+      });
+
+      it("hasDescribeOptions returns false for query without options", () => {
+        const query = "DESCRIBE ?x WHERE { ?x a :Person }";
+        expect(parser.hasDescribeOptions(query)).toBe(false);
+      });
+
+      it("getLastDescribeOptions returns options after parse", () => {
+        const query = "DESCRIBE ?x DEPTH 5";
+        parser.parse(query);
+        expect(parser.getLastDescribeOptions()?.depth).toBe(5);
+      });
+    });
   });
 
   describe("Error handling", () => {

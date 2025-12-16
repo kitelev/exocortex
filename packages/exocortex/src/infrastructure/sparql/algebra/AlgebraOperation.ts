@@ -17,6 +17,7 @@ export type AlgebraOperation =
   | LateralJoinOperation
   | ConstructOperation
   | AskOperation
+  | DescribeOperation
   | ServiceOperation
   | GraphOperation;
 
@@ -604,4 +605,59 @@ export interface GraphOperation {
   name: IRI | Variable;
   /** The graph pattern to evaluate within the named graph */
   pattern: AlgebraOperation;
+}
+
+/**
+ * DESCRIBE operation for resource description (SPARQL 1.2 extended).
+ *
+ * Returns all triples that describe the specified resources.
+ * By default, includes triples where the resource appears as either
+ * subject or object.
+ *
+ * SPARQL 1.2 extensions:
+ * - DEPTH: Limits how many hops to follow from the initial resource
+ * - SYMMETRIC: Explicitly includes both incoming and outgoing links
+ *
+ * Examples:
+ * ```sparql
+ * # Basic DESCRIBE
+ * DESCRIBE <http://example.org/resource>
+ *
+ * # DESCRIBE with depth limit (only direct triples)
+ * DESCRIBE ?x DEPTH 1 WHERE { ?x a :Person }
+ *
+ * # DESCRIBE with symmetric (explicit both directions)
+ * DESCRIBE ?x SYMMETRIC WHERE { ?x a :Person }
+ *
+ * # Combined options
+ * DESCRIBE ?x DEPTH 2 SYMMETRIC WHERE { ?x a :Person }
+ * ```
+ *
+ * SPARQL 1.2 spec: https://w3c.github.io/sparql-12/spec/
+ */
+export interface DescribeOperation {
+  type: "describe";
+  /**
+   * Resources to describe. Can be IRIs or Variables.
+   * If variables, they should be bound by the WHERE clause.
+   */
+  resources: (IRI | Variable)[];
+  /**
+   * Optional WHERE clause to bind variables in resources.
+   * If provided, DESCRIBE will describe all bindings for the variables.
+   */
+  where?: AlgebraOperation;
+  /**
+   * Maximum depth to follow from described resources.
+   * - undefined/0: Only direct triples (resource as subject or object)
+   * - 1: Direct triples plus one hop from those results
+   * - 2+: Follow N hops from the initial resource
+   */
+  depth?: number;
+  /**
+   * Whether to include both incoming and outgoing triples.
+   * Default behavior (false/undefined) already includes both directions,
+   * but SYMMETRIC makes this explicit per SPARQL 1.2.
+   */
+  symmetric?: boolean;
 }

@@ -6,6 +6,11 @@ import {
   PrefixStarTransformerError,
   VocabularyResolver,
 } from "./PrefixStarTransformer";
+import {
+  DescribeOptionsTransformer,
+  DescribeOptionsTransformerError,
+  type DescribeOptions,
+} from "./DescribeOptionsTransformer";
 
 export class SPARQLParseError extends Error {
   public readonly line?: number;
@@ -29,6 +34,23 @@ export type UpdateOperation = sparqljs.UpdateOperation;
 export type QueryType = "SELECT" | "CONSTRUCT" | "ASK" | "DESCRIBE";
 
 /**
+ * Extended DescribeQuery with SPARQL 1.2 options attached.
+ */
+export interface ExtendedDescribeQuery extends sparqljs.DescribeQuery {
+  /** SPARQL 1.2 DESCRIBE options (DEPTH, SYMMETRIC) */
+  describeOptions?: DescribeOptions;
+}
+
+/**
+ * Result of parsing a query, with optional metadata.
+ */
+export interface ParseResult {
+  query: SPARQLQuery;
+  /** DESCRIBE options if present (for DESCRIBE queries with DEPTH/SYMMETRIC) */
+  describeOptions?: DescribeOptions;
+}
+
+/**
  * Configuration options for the SPARQL parser.
  */
 export interface SPARQLParserOptions {
@@ -45,6 +67,10 @@ export class SPARQLParser {
   private readonly caseWhenTransformer: CaseWhenTransformer;
   private readonly lateralTransformer: LateralTransformer;
   private readonly prefixStarTransformer: PrefixStarTransformer;
+  private readonly describeOptionsTransformer: DescribeOptionsTransformer;
+
+  /** Store the last parsed DESCRIBE options for retrieval */
+  private lastDescribeOptions?: DescribeOptions;
 
   constructor(options?: SPARQLParserOptions) {
     // Enable SPARQL-Star (RDF-Star) support for triple patterns in subject/object positions
@@ -57,6 +83,7 @@ export class SPARQLParser {
     this.caseWhenTransformer = new CaseWhenTransformer();
     this.lateralTransformer = new LateralTransformer();
     this.prefixStarTransformer = new PrefixStarTransformer(options?.vocabularyResolver);
+    this.describeOptionsTransformer = new DescribeOptionsTransformer();
   }
 
   /**
@@ -65,20 +92,37 @@ export class SPARQLParser {
    * Note: This method does NOT support PREFIX* declarations (SPARQL 1.2).
    * For PREFIX* support, use parseAsync() instead.
    *
+   * For DESCRIBE queries with DEPTH/SYMMETRIC options, use parseWithOptions()
+   * or getLastDescribeOptions() after parsing.
+   *
    * @param queryString - The SPARQL query to parse
    * @returns The parsed query AST
    * @throws SPARQLParseError if parsing fails
    */
   parse(queryString: string): SPARQLQuery {
     try {
+      // Transform DESCRIBE options (DEPTH, SYMMETRIC) before other transformations
+      const describeResult = this.describeOptionsTransformer.transform(queryString);
+      this.lastDescribeOptions = describeResult.options;
+      let transformedQuery = describeResult.query;
+
       // Transform LATERAL joins to marked subqueries (SPARQL 1.2)
-      let transformedQuery = this.lateralTransformer.transform(queryString);
+      transformedQuery = this.lateralTransformer.transform(transformedQuery);
       // Transform CASE WHEN expressions to IF expressions before parsing
       transformedQuery = this.caseWhenTransformer.transform(transformedQuery);
       const parsed = this.parser.parse(transformedQuery);
       this.validateQuery(parsed);
+
+      // Attach DESCRIBE options to the parsed query if present
+      if (this.lastDescribeOptions && this.isDescribeQuery(parsed)) {
+        (parsed as ExtendedDescribeQuery).describeOptions = this.lastDescribeOptions;
+      }
+
       return parsed;
     } catch (error) {
+      if (error instanceof DescribeOptionsTransformerError) {
+        throw new SPARQLParseError(error.message);
+      }
       if (error instanceof LateralTransformerError) {
         throw new SPARQLParseError(error.message);
       }
@@ -101,6 +145,32 @@ export class SPARQLParser {
   }
 
   /**
+   * Parse a SPARQL query and return both the AST and any DESCRIBE options.
+   *
+   * This is the preferred method for parsing DESCRIBE queries with SPARQL 1.2
+   * options (DEPTH, SYMMETRIC).
+   *
+   * @param queryString - The SPARQL query to parse
+   * @returns ParseResult with query AST and optional DESCRIBE options
+   */
+  parseWithOptions(queryString: string): ParseResult {
+    const query = this.parse(queryString);
+    return {
+      query,
+      describeOptions: this.lastDescribeOptions,
+    };
+  }
+
+  /**
+   * Get the DESCRIBE options from the last parsed query.
+   *
+   * @returns The DESCRIBE options if the last query had them, undefined otherwise
+   */
+  getLastDescribeOptions(): DescribeOptions | undefined {
+    return this.lastDescribeOptions;
+  }
+
+  /**
    * Parse a SPARQL query string with support for PREFIX* declarations (SPARQL 1.2).
    *
    * PREFIX* allows importing all prefixes from a vocabulary:
@@ -115,16 +185,30 @@ export class SPARQLParser {
    */
   async parseAsync(queryString: string): Promise<SPARQLQuery> {
     try {
+      // Transform DESCRIBE options (DEPTH, SYMMETRIC) first
+      const describeResult = this.describeOptionsTransformer.transform(queryString);
+      this.lastDescribeOptions = describeResult.options;
+      let transformedQuery = describeResult.query;
+
       // First, transform PREFIX* declarations to regular PREFIX declarations
-      const prefixTransformed = await this.prefixStarTransformer.transform(queryString);
+      transformedQuery = await this.prefixStarTransformer.transform(transformedQuery);
       // Transform LATERAL joins to marked subqueries (SPARQL 1.2)
-      const lateralTransformed = this.lateralTransformer.transform(prefixTransformed);
+      transformedQuery = this.lateralTransformer.transform(transformedQuery);
       // Then transform CASE WHEN expressions to IF expressions
-      const caseTransformed = this.caseWhenTransformer.transform(lateralTransformed);
-      const parsed = this.parser.parse(caseTransformed);
+      transformedQuery = this.caseWhenTransformer.transform(transformedQuery);
+      const parsed = this.parser.parse(transformedQuery);
       this.validateQuery(parsed);
+
+      // Attach DESCRIBE options to the parsed query if present
+      if (this.lastDescribeOptions && this.isDescribeQuery(parsed)) {
+        (parsed as ExtendedDescribeQuery).describeOptions = this.lastDescribeOptions;
+      }
+
       return parsed;
     } catch (error) {
+      if (error instanceof DescribeOptionsTransformerError) {
+        throw new SPARQLParseError(error.message);
+      }
       if (error instanceof PrefixStarTransformerError) {
         throw new SPARQLParseError(error.message);
       }
@@ -150,6 +234,20 @@ export class SPARQLParser {
   }
 
   /**
+   * Parse async and return both the AST and any DESCRIBE options.
+   *
+   * @param queryString - The SPARQL query to parse
+   * @returns ParseResult with query AST and optional DESCRIBE options
+   */
+  async parseAsyncWithOptions(queryString: string): Promise<ParseResult> {
+    const query = await this.parseAsync(queryString);
+    return {
+      query,
+      describeOptions: this.lastDescribeOptions,
+    };
+  }
+
+  /**
    * Check if a query string contains PREFIX* declarations.
    * Use this to decide whether to use parse() or parseAsync().
    *
@@ -169,6 +267,16 @@ export class SPARQLParser {
    */
   hasLateral(queryString: string): boolean {
     return this.lateralTransformer.hasLateral(queryString);
+  }
+
+  /**
+   * Check if a query string contains DESCRIBE options (DEPTH/SYMMETRIC).
+   *
+   * @param queryString - The SPARQL query to check
+   * @returns true if the query contains DESCRIBE DEPTH or SYMMETRIC options
+   */
+  hasDescribeOptions(queryString: string): boolean {
+    return this.describeOptionsTransformer.hasDescribeOptions(queryString);
   }
 
   toString(query: SPARQLQuery): string {

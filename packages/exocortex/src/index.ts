@@ -90,7 +90,8 @@ export { RDFVocabularyMapper } from "./infrastructure/rdf/RDFVocabularyMapper";
 export { NoteToRDFConverter } from "./services/NoteToRDFConverter";
 
 // SPARQL Engine exports
-export { SPARQLParser, SPARQLParseError, type SPARQLQuery, type SelectQuery, type ConstructQuery, type Update, type UpdateOperation } from "./infrastructure/sparql/SPARQLParser";
+export { SPARQLParser, SPARQLParseError, type SPARQLQuery, type SelectQuery, type ConstructQuery, type Update, type UpdateOperation, type ExtendedDescribeQuery, type ParseResult } from "./infrastructure/sparql/SPARQLParser";
+export { DescribeOptionsTransformer, DescribeOptionsTransformerError, type DescribeOptions, type DescribeTransformResult } from "./infrastructure/sparql/DescribeOptionsTransformer";
 export { AlgebraTranslator } from "./infrastructure/sparql/algebra/AlgebraTranslator";
 export { AlgebraOptimizer } from "./infrastructure/sparql/algebra/AlgebraOptimizer";
 export { AlgebraSerializer } from "./infrastructure/sparql/algebra/AlgebraSerializer";
@@ -98,6 +99,7 @@ export type {
   AlgebraOperation,
   BGPOperation,
   ConstructOperation,
+  DescribeOperation,
   Triple as AlgebraTriple,
 } from "./infrastructure/sparql/algebra/AlgebraOperation";
 export { BGPExecutor } from "./infrastructure/sparql/executors/BGPExecutor";
@@ -105,7 +107,7 @@ export { FilterExecutor } from "./infrastructure/sparql/executors/FilterExecutor
 export { OptionalExecutor } from "./infrastructure/sparql/executors/OptionalExecutor";
 export { UnionExecutor } from "./infrastructure/sparql/executors/UnionExecutor";
 export { ConstructExecutor } from "./infrastructure/sparql/executors/ConstructExecutor";
-export { DescribeExecutor } from "./infrastructure/sparql/executors/DescribeExecutor";
+export { DescribeExecutor, type DescribeExecutorOptions } from "./infrastructure/sparql/executors/DescribeExecutor";
 export { QueryExecutor } from "./infrastructure/sparql/executors/QueryExecutor";
 export { UpdateExecutor, UpdateExecutorError, type UpdateResult } from "./infrastructure/sparql/executors/UpdateExecutor";
 export { SolutionMapping } from "./infrastructure/sparql/SolutionMapping";
