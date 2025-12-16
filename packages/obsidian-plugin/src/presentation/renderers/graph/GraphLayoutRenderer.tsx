@@ -105,7 +105,8 @@ export const GraphLayoutRenderer: React.FC<GraphLayoutRendererProps> = ({
   // State for simulation
   const [simNodes, setSimNodes] = useState<SimNode[]>([]);
   const [simEdges, setSimEdges] = useState<SimEdge[]>([]);
-  const [simulationReady, setSimulationReady] = useState(false);
+  // simulationReady can be used for loading indicators in future
+  const [, setSimulationReady] = useState(false);
 
   // State for interaction
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
@@ -174,18 +175,15 @@ export const GraphLayoutRenderer: React.FC<GraphLayoutRendererProps> = ({
     });
 
     // Resolve edge source/target to SimNode references
-    const initialEdges: SimEdge[] = edges
-      .map((edge) => {
-        const sourceId = typeof edge.source === "string" ? edge.source : edge.source.id;
-        const targetId = typeof edge.target === "string" ? edge.target : edge.target.id;
-        const sourceNode = nodeMap.get(sourceId);
-        const targetNode = nodeMap.get(targetId);
+    const initialEdges: SimEdge[] = [];
+    for (const edge of edges) {
+      const sourceId = typeof edge.source === "string" ? edge.source : edge.source.id;
+      const targetId = typeof edge.target === "string" ? edge.target : edge.target.id;
+      const sourceNode = nodeMap.get(sourceId);
+      const targetNode = nodeMap.get(targetId);
 
-        if (!sourceNode || !targetNode) {
-          return null;
-        }
-
-        return {
+      if (sourceNode && targetNode) {
+        initialEdges.push({
           id: edge.id,
           source: sourceNode,
           target: targetNode,
@@ -193,9 +191,9 @@ export const GraphLayoutRenderer: React.FC<GraphLayoutRendererProps> = ({
           property: edge.property,
           weight: edge.weight,
           color: edge.color,
-        };
-      })
-      .filter((e): e is SimEdge => e !== null);
+        });
+      }
+    }
 
     // Create D3 force simulation
     const simulation = forceSimulation<SimNode>(initialNodes)
@@ -269,36 +267,6 @@ export const GraphLayoutRenderer: React.FC<GraphLayoutRendererProps> = ({
       zoomRef.current = null;
     };
   }, [options.zoomable, options.minZoom, options.maxZoom, options.initialZoom]);
-
-  // Handle node drag
-  const handleNodeDrag = useCallback(
-    (nodeId: string, dx: number, dy: number) => {
-      if (!options.draggable || !simulationRef.current) return;
-
-      const node = simNodes.find((n) => n.id === nodeId);
-      if (node) {
-        node.fx = (node.x ?? 0) + dx / transform.k;
-        node.fy = (node.y ?? 0) + dy / transform.k;
-        simulationRef.current.alpha(0.3).restart();
-      }
-    },
-    [options.draggable, simNodes, transform.k]
-  );
-
-  // Handle node drag end
-  const handleNodeDragEnd = useCallback(
-    (nodeId: string) => {
-      if (!options.draggable || !simulationRef.current) return;
-
-      const node = simNodes.find((n) => n.id === nodeId);
-      if (node) {
-        node.fx = null;
-        node.fy = null;
-        simulationRef.current.alpha(0.3).restart();
-      }
-    },
-    [options.draggable, simNodes]
-  );
 
   // Get node color
   const getNodeColor = useCallback(

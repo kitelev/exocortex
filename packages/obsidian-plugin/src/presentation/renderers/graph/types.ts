@@ -8,7 +8,7 @@
  */
 
 import type { LayoutColumn } from "../../../domain/layout";
-import type { CellValue, TableRow } from "../cell-renderers";
+import type { TableRow } from "../cell-renderers";
 
 /**
  * Node data for graph visualization
