@@ -378,7 +378,13 @@ npm run test:all
 
 This project is developed primarily by AI agents (Claude Code, GitHub Copilot) following documented patterns. Human contributions welcome!
 
-See [CLAUDE.md](./CLAUDE.md) for AI agent guidelines.
+### AI Development Resources
+
+| Document | Purpose |
+|----------|---------|
+| **[CLAUDE.md](./CLAUDE.md)** | AI agent guidelines, worktree rules |
+| **[AI Development Patterns](./docs/AI-DEVELOPMENT-PATTERNS.md)** | Lessons from 96+ completed issues |
+| **[Architecture Guide](./ARCHITECTURE.md)** | Clean Architecture patterns |
 
 ---
 
