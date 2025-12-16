@@ -159,22 +159,6 @@ export class DescribeExecutor {
   }
 
   /**
-   * Simple describe without depth (original behavior for backward compatibility).
-   * Describes resource including both incoming and outgoing triples.
-   */
-  private async describeResource(resource: Subject | Predicate): Promise<Triple[]> {
-    const triples: Triple[] = [];
-
-    const asSubject = await this.tripleStore.match(resource, undefined, undefined);
-    triples.push(...asSubject);
-
-    const asObject = await this.tripleStore.match(undefined, undefined, resource);
-    triples.push(...asObject);
-
-    return triples;
-  }
-
-  /**
    * Describe a resource by IRI string.
    *
    * @param iri - The IRI string of the resource to describe
