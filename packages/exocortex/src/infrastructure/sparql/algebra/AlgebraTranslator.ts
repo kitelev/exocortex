@@ -62,7 +62,8 @@ export class AlgebraTranslator {
       return this.translateDescribe(query as ExtendedDescribeQuery);
     }
 
-    throw new AlgebraTranslatorError(`Query type ${query.queryType} not yet supported`);
+    // TypeScript knows this is unreachable for known query types, but we keep it for safety
+    throw new AlgebraTranslatorError(`Query type ${(query as any).queryType} not yet supported`);
   }
 
   private translateSelect(query: SelectQuery): AlgebraOperation {
@@ -1333,13 +1334,15 @@ export class AlgebraTranslator {
     // Handle DESCRIBE * (all variables from WHERE clause)
     if (query.variables && Array.isArray(query.variables)) {
       for (const v of query.variables) {
-        if (v === "*") {
+        const term = v as any;
+
+        // Handle Wildcard (*) - sparqljs represents it as an object with termType="Wildcard"
+        if (term.termType === "Wildcard" || term.value === "*") {
           // DESCRIBE * - will describe all bound variables from WHERE clause
           // This is handled at execution time
           continue;
         }
 
-        const term = v as any;
         if (term.termType === "Variable") {
           resources.push({
             type: "variable",

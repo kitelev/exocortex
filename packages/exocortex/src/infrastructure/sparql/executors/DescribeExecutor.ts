@@ -1,6 +1,6 @@
 import type { ITripleStore } from "../../../interfaces/ITripleStore";
 import type { Triple } from "../../../domain/models/rdf/Triple";
-import type { Subject, Predicate, RDFObject } from "../../../domain/models/rdf/Triple";
+import type { Subject, Predicate, Object as RDFObject } from "../../../domain/models/rdf/Triple";
 import { IRI } from "../../../domain/models/rdf/IRI";
 
 /**
