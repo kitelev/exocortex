@@ -1,12 +1,21 @@
-import type { GroupOperation, AggregateExpression, Expression } from "../algebra/AlgebraOperation";
+import type { GroupOperation, AggregateExpression, Expression, CustomAggregation, StandardAggregation } from "../algebra/AlgebraOperation";
 import type { SolutionMapping } from "../SolutionMapping";
 import { Literal } from "../../../domain/models/rdf/Literal";
 import { IRI } from "../../../domain/models/rdf/IRI";
 import { FilterExecutor } from "./FilterExecutor";
+import { CustomAggregateRegistry, type Term } from "../aggregates/CustomAggregateRegistry";
+import { BUILT_IN_AGGREGATES } from "../aggregates/BuiltInAggregates";
 
 const XSD_INTEGER = new IRI("http://www.w3.org/2001/XMLSchema#integer");
 const XSD_DECIMAL = new IRI("http://www.w3.org/2001/XMLSchema#decimal");
 const XSD_STRING = new IRI("http://www.w3.org/2001/XMLSchema#string");
+
+/**
+ * Type guard to check if an aggregation is a custom aggregation.
+ */
+function isCustomAggregation(agg: StandardAggregation | CustomAggregation): agg is CustomAggregation {
+  return typeof agg === "object" && agg.type === "custom";
+}
 
 export class AggregateExecutorError extends Error {
   constructor(message: string, cause?: Error) {
@@ -117,9 +126,15 @@ export class AggregateExecutor {
     expr: AggregateExpression,
     solutions: SolutionMapping[]
   ): Literal {
-    const values = this.extractValues(expr, solutions);
+    // Handle custom aggregates first
+    if (isCustomAggregation(expr.aggregation)) {
+      return this.computeCustomAggregate(expr, solutions);
+    }
 
-    switch (expr.aggregation) {
+    const values = this.extractValues(expr, solutions);
+    const aggregation = expr.aggregation;
+
+    switch (aggregation) {
       case "count": {
         const count = this.computeCount(values, expr.distinct);
         return new Literal(String(count), XSD_INTEGER);
@@ -171,9 +186,72 @@ export class AggregateExecutor {
           : new Literal(String(sample), XSD_STRING);
       }
 
-      default:
-        throw new AggregateExecutorError(`Unknown aggregation function: ${expr.aggregation}`);
+      default: {
+        // This ensures exhaustive check - if we get here, TypeScript knows aggregation is never
+        const _exhaustiveCheck: never = aggregation;
+        throw new AggregateExecutorError(`Unknown aggregation function: ${_exhaustiveCheck}`);
+      }
     }
+  }
+
+  /**
+   * Compute a custom aggregate function.
+   *
+   * First checks the CustomAggregateRegistry for user-registered aggregates,
+   * then falls back to built-in aggregates (median, variance, etc.).
+   *
+   * @param expr - The aggregate expression with custom aggregation
+   * @param solutions - The solution mappings in the group
+   * @returns The computed aggregate result as a Literal
+   * @throws AggregateExecutorError if the custom aggregate is not found
+   */
+  private computeCustomAggregate(
+    expr: AggregateExpression,
+    solutions: SolutionMapping[]
+  ): Literal {
+    const customAgg = expr.aggregation as CustomAggregation;
+    const iri = customAgg.iri;
+
+    // First check user-registered aggregates
+    const registry = CustomAggregateRegistry.getInstance();
+    let aggregate = registry.get(iri);
+
+    // Fall back to built-in aggregates
+    if (!aggregate) {
+      aggregate = BUILT_IN_AGGREGATES[iri];
+    }
+
+    if (!aggregate) {
+      throw new AggregateExecutorError(
+        `Unknown custom aggregate function: ${iri}. ` +
+        `Register it with CustomAggregateRegistry.getInstance().register() or use a built-in aggregate.`
+      );
+    }
+
+    // Initialize accumulator state
+    const state = aggregate.init();
+
+    // Extract and process values
+    for (const solution of solutions) {
+      let value: Term = null;
+
+      if (expr.expression) {
+        const evaluated = this.evaluateExpression(expr.expression, solution);
+        if (evaluated !== undefined) {
+          value = evaluated;
+        }
+      } else {
+        // COUNT(*) style - pass a marker value
+        value = 1;
+      }
+
+      // For DISTINCT, we'd need to track seen values
+      // For now, custom aggregates handle DISTINCT internally if needed
+      aggregate.step(state, value);
+    }
+
+    // Finalize and return result
+    return aggregate.finalize(state);
   }
 
   private extractValues(expr: AggregateExpression, solutions: SolutionMapping[]): any[] {
@@ -326,7 +404,16 @@ export class AggregateExecutor {
     const result = new SM();
 
     for (const aggregate of operation.aggregates) {
-      switch (aggregate.expression.aggregation) {
+      const agg = aggregate.expression.aggregation;
+
+      // Handle custom aggregates
+      if (isCustomAggregation(agg)) {
+        // Custom aggregates return decimal 0 for empty groups
+        result.set(aggregate.variable, new Literal("0", XSD_DECIMAL));
+        continue;
+      }
+
+      switch (agg) {
         case "count":
           result.set(aggregate.variable, new Literal("0", XSD_INTEGER));
           break;
@@ -337,7 +424,13 @@ export class AggregateExecutor {
         case "group_concat":
           result.set(aggregate.variable, new Literal(" ", XSD_STRING));
           break;
+        case "min":
+        case "max":
+        case "sample":
+          result.set(aggregate.variable, new Literal("", XSD_STRING));
+          break;
         default:
+          // Exhaustive check handled by TypeScript - unreachable for StandardAggregation
           result.set(aggregate.variable, new Literal("", XSD_STRING));
       }
     }

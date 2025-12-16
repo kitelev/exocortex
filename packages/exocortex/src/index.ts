@@ -113,6 +113,25 @@ export { UpdateExecutor, UpdateExecutorError, type UpdateResult } from "./infras
 export { SolutionMapping } from "./infrastructure/sparql/SolutionMapping";
 export { BuiltInFunctions } from "./infrastructure/sparql/filters/BuiltInFunctions";
 export { AggregateFunctions } from "./infrastructure/sparql/aggregates/AggregateFunctions";
+export {
+  CustomAggregateRegistry,
+  CustomAggregateError,
+  type CustomAggregate,
+  type AggregateState,
+  type Term as AggregateTerm,
+} from "./infrastructure/sparql/aggregates/CustomAggregateRegistry";
+export {
+  BUILT_IN_AGGREGATES,
+  EXO_AGGREGATE_NS,
+  medianAggregate,
+  varianceAggregate,
+  stddevAggregate,
+  modeAggregate,
+  createPercentileAggregate,
+  getNumericValue,
+  createDecimalLiteral,
+  createDoubleLiteral,
+} from "./infrastructure/sparql/aggregates/BuiltInAggregates";
 export { QueryPlanCache } from "./infrastructure/sparql/cache/QueryPlanCache";
 export { CaseWhenTransformer, CaseWhenTransformerError } from "./infrastructure/sparql/CaseWhenTransformer";
 export {

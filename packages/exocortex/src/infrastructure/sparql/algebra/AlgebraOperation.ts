@@ -380,9 +380,27 @@ export interface AggregateBinding {
   expression: AggregateExpression;
 }
 
+/**
+ * Standard SPARQL 1.1 aggregate function names.
+ */
+export type StandardAggregation = "count" | "sum" | "avg" | "min" | "max" | "group_concat" | "sample";
+
+/**
+ * Custom aggregate function reference (SPARQL 1.2).
+ * Contains the full IRI of the custom aggregate function.
+ */
+export interface CustomAggregation {
+  type: "custom";
+  iri: string;
+}
+
 export interface AggregateExpression {
   type: "aggregate";
-  aggregation: "count" | "sum" | "avg" | "min" | "max" | "group_concat" | "sample";
+  /**
+   * The aggregation function to apply.
+   * Can be a standard SPARQL 1.1 function name or a custom function reference.
+   */
+  aggregation: StandardAggregation | CustomAggregation;
   expression?: Expression;
   distinct: boolean;
   separator?: string;

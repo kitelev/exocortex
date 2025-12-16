@@ -376,14 +376,70 @@ export class AlgebraTranslator {
       .map((g: any) => g.expression.value);
   }
 
+  /**
+   * Translate an aggregate expression from sparqljs to our algebra format.
+   *
+   * Handles both standard SPARQL 1.1 aggregates (count, sum, avg, min, max, group_concat, sample)
+   * and SPARQL 1.2 custom aggregates identified by IRI.
+   *
+   * Standard aggregates come as lowercase strings: "count", "sum", etc.
+   * Custom aggregates come as IRI objects: { termType: "NamedNode", value: "http://..." }
+   * or as a full IRI string for prefixed names after prefix expansion.
+   */
   private translateAggregateExpression(expr: any): AggregateExpression {
-    return {
-      type: "aggregate",
-      aggregation: expr.aggregation.toLowerCase() as AggregateExpression["aggregation"],
-      expression: expr.expression ? this.translateExpression(expr.expression) : undefined,
-      distinct: expr.distinct || false,
-      separator: expr.separator,
-    };
+    const aggregation = expr.aggregation;
+
+    // Check if it's a standard aggregation (string like "count", "sum", etc.)
+    if (typeof aggregation === "string") {
+      const lowerAgg = aggregation.toLowerCase();
+      const standardAggregations = ["count", "sum", "avg", "min", "max", "group_concat", "sample"];
+
+      if (standardAggregations.includes(lowerAgg)) {
+        return {
+          type: "aggregate",
+          aggregation: lowerAgg as AggregateExpression["aggregation"],
+          expression: expr.expression ? this.translateExpression(expr.expression) : undefined,
+          distinct: expr.distinct || false,
+          separator: expr.separator,
+        };
+      }
+
+      // String but not a standard aggregation - treat as custom aggregate IRI
+      return {
+        type: "aggregate",
+        aggregation: { type: "custom", iri: aggregation },
+        expression: expr.expression ? this.translateExpression(expr.expression) : undefined,
+        distinct: expr.distinct || false,
+        separator: expr.separator,
+      };
+    }
+
+    // Custom aggregate as IRI object (NamedNode from sparqljs)
+    if (aggregation && typeof aggregation === "object") {
+      let iri: string;
+
+      if (aggregation.termType === "NamedNode" && aggregation.value) {
+        iri = aggregation.value;
+      } else if ("value" in aggregation) {
+        iri = String(aggregation.value);
+      } else {
+        throw new AlgebraTranslatorError(
+          `Invalid custom aggregate: expected IRI but got ${JSON.stringify(aggregation)}`
+        );
+      }
+
+      return {
+        type: "aggregate",
+        aggregation: { type: "custom", iri },
+        expression: expr.expression ? this.translateExpression(expr.expression) : undefined,
+        distinct: expr.distinct || false,
+        separator: expr.separator,
+      };
+    }
+
+    throw new AlgebraTranslatorError(
+      `Unknown aggregate format: ${JSON.stringify(aggregation)}`
+    );
   }
 
   /**
