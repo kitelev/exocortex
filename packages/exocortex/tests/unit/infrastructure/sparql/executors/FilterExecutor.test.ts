@@ -3754,4 +3754,116 @@ describe("FilterExecutor", () => {
       expect(results).toHaveLength(1);
     });
   });
+
+  // Issue #972: xsd:dateTime subtraction operator acceptance tests
+  describe("xsd:dateTime subtraction operator (Issue #972)", () => {
+    const xsdDateTime = new IRI("http://www.w3.org/2001/XMLSchema#dateTime");
+
+    it("should subtract two dateTime values and return dayTimeDuration (acceptance criteria)", async () => {
+      // Per Issue #972: "2025-01-15T10:00:00"^^xsd:dateTime - "2025-01-15T08:30:00"^^xsd:dateTime = "PT1H30M"
+      const operation: FilterOperation = {
+        type: "filter",
+        expression: {
+          type: "comparison",
+          operator: "=",
+          left: {
+            type: "arithmetic",
+            operator: "-",
+            left: { type: "variable", name: "end" },
+            right: { type: "variable", name: "start" },
+          },
+          right: { type: "literal", value: "PT1H30M", datatype: "http://www.w3.org/2001/XMLSchema#dayTimeDuration" },
+        },
+        input: { type: "bgp", triples: [] },
+      };
+
+      const solution = new SolutionMapping();
+      solution.set("end", new Literal("2025-01-15T10:00:00", xsdDateTime));
+      solution.set("start", new Literal("2025-01-15T08:30:00", xsdDateTime));
+
+      const results = await executor.executeAll(operation, [solution]);
+      expect(results).toHaveLength(1);
+    });
+
+    it("should handle timezone-aware calculation (Issue #972)", async () => {
+      // Same absolute time expressed in different timezones should give zero difference
+      const operation: FilterOperation = {
+        type: "filter",
+        expression: {
+          type: "comparison",
+          operator: "=",
+          left: {
+            type: "arithmetic",
+            operator: "-",
+            left: { type: "variable", name: "dt1" },
+            right: { type: "variable", name: "dt2" },
+          },
+          right: { type: "literal", value: "PT0S", datatype: "http://www.w3.org/2001/XMLSchema#dayTimeDuration" },
+        },
+        input: { type: "bgp", triples: [] },
+      };
+
+      const solution = new SolutionMapping();
+      // 10:00 UTC+0 = 15:00 UTC+5 (same moment in time)
+      solution.set("dt1", new Literal("2025-01-15T10:00:00Z", xsdDateTime));
+      solution.set("dt2", new Literal("2025-01-15T15:00:00+05:00", xsdDateTime));
+
+      const results = await executor.executeAll(operation, [solution]);
+      expect(results).toHaveLength(1);
+    });
+
+    it("should calculate sleep duration from Exocortex data (Issue #972 integration)", async () => {
+      // Test the exact SPARQL pattern from Issue #972:
+      // SELECT ?task ((?end - ?start) AS ?duration)
+      // WHERE { ?task ems:Effort_startTimestamp ?start . ?task ems:Effort_endTimestamp ?end . }
+      const operation: FilterOperation = {
+        type: "filter",
+        expression: {
+          type: "comparison",
+          operator: "=",
+          left: {
+            type: "arithmetic",
+            operator: "-",
+            left: { type: "variable", name: "end" },
+            right: { type: "variable", name: "start" },
+          },
+          right: { type: "literal", value: "PT8H15M", datatype: "http://www.w3.org/2001/XMLSchema#dayTimeDuration" },
+        },
+        input: { type: "bgp", triples: [] },
+      };
+
+      const solution = new SolutionMapping();
+      // Typical sleep: 23:30 to 07:45 next day = 8h 15m
+      solution.set("start", new Literal("2025-01-15T23:30:00", xsdDateTime));
+      solution.set("end", new Literal("2025-01-16T07:45:00", xsdDateTime));
+
+      const results = await executor.executeAll(operation, [solution]);
+      expect(results).toHaveLength(1);
+    });
+
+    it("should handle negative duration when start > end", async () => {
+      const operation: FilterOperation = {
+        type: "filter",
+        expression: {
+          type: "comparison",
+          operator: "=",
+          left: {
+            type: "arithmetic",
+            operator: "-",
+            left: { type: "variable", name: "earlier" },
+            right: { type: "variable", name: "later" },
+          },
+          right: { type: "literal", value: "-PT2H", datatype: "http://www.w3.org/2001/XMLSchema#dayTimeDuration" },
+        },
+        input: { type: "bgp", triples: [] },
+      };
+
+      const solution = new SolutionMapping();
+      solution.set("earlier", new Literal("2025-01-15T08:00:00Z", xsdDateTime));
+      solution.set("later", new Literal("2025-01-15T10:00:00Z", xsdDateTime));
+
+      const results = await executor.executeAll(operation, [solution]);
+      expect(results).toHaveLength(1);
+    });
+  });
 });

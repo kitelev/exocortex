@@ -3454,6 +3454,36 @@ describe("BuiltInFunctions", () => {
       it("should throw for invalid dateTime", () => {
         expect(() => BuiltInFunctions.dateTimeDiff("invalid", "2025-01-01T10:00:00Z")).toThrow();
       });
+
+      // Issue #972: Acceptance Criteria Tests
+      it("should return PT1H30M for 90-minute difference (Issue #972 acceptance criteria)", () => {
+        // Per Issue #972: "2025-01-15T10:00:00"^^xsd:dateTime - "2025-01-15T08:30:00"^^xsd:dateTime = "PT1H30M"
+        const dt1 = new Literal("2025-01-15T10:00:00", new IRI("http://www.w3.org/2001/XMLSchema#dateTime"));
+        const dt2 = new Literal("2025-01-15T08:30:00", new IRI("http://www.w3.org/2001/XMLSchema#dateTime"));
+        const result = BuiltInFunctions.dateTimeDiff(dt1, dt2);
+        expect(result).toBeInstanceOf(Literal);
+        expect(result.value).toBe("PT1H30M");
+        expect(result.datatype?.value).toBe("http://www.w3.org/2001/XMLSchema#dayTimeDuration");
+      });
+
+      it("should handle timezone-aware calculation (Issue #972)", () => {
+        // Same absolute time expressed in different timezones should give zero difference
+        // 10:00 UTC+0 = 15:00 UTC+5 (same moment in time)
+        const dt1 = new Literal("2025-01-15T10:00:00Z", new IRI("http://www.w3.org/2001/XMLSchema#dateTime"));
+        const dt2 = new Literal("2025-01-15T15:00:00+05:00", new IRI("http://www.w3.org/2001/XMLSchema#dateTime"));
+        const result = BuiltInFunctions.dateTimeDiff(dt1, dt2);
+        // Both represent the same instant in time, so difference should be PT0S
+        expect(result.value).toBe("PT0S");
+      });
+
+      it("should calculate sleep duration correctly (Issue #972 use case)", () => {
+        // Typical sleep scenario: went to bed at 23:30, woke up at 07:45
+        const endTime = new Literal("2025-01-16T07:45:00", new IRI("http://www.w3.org/2001/XMLSchema#dateTime"));
+        const startTime = new Literal("2025-01-15T23:30:00", new IRI("http://www.w3.org/2001/XMLSchema#dateTime"));
+        const result = BuiltInFunctions.dateTimeDiff(endTime, startTime);
+        // 8 hours and 15 minutes = PT8H15M
+        expect(result.value).toBe("PT8H15M");
+      });
     });
 
     describe("dateTimeAdd", () => {
