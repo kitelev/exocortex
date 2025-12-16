@@ -4108,4 +4108,113 @@ describe("FilterExecutor", () => {
       expect(results).toHaveLength(1);
     });
   });
+
+  // Issue #975: yearMonthDuration + yearMonthDuration arithmetic
+  describe("yearMonthDuration + yearMonthDuration arithmetic (Issue #975)", () => {
+    const xsdYearMonthDuration = new IRI("http://www.w3.org/2001/XMLSchema#yearMonthDuration");
+
+    it("should add two yearMonthDurations (acceptance criteria)", async () => {
+      // Per Issue #975: P1Y + P2M = P1Y2M
+      const operation: FilterOperation = {
+        type: "filter",
+        expression: {
+          type: "comparison",
+          operator: "=",
+          left: {
+            type: "arithmetic",
+            operator: "+",
+            left: { type: "variable", name: "d1" },
+            right: { type: "variable", name: "d2" },
+          },
+          right: { type: "literal", value: "P1Y2M", datatype: "http://www.w3.org/2001/XMLSchema#yearMonthDuration" },
+        },
+        input: { type: "bgp", triples: [] },
+      };
+
+      const solution = new SolutionMapping();
+      solution.set("d1", new Literal("P1Y", xsdYearMonthDuration));
+      solution.set("d2", new Literal("P2M", xsdYearMonthDuration));
+
+      const results = await executor.executeAll(operation, [solution]);
+      expect(results).toHaveLength(1);
+    });
+
+    it("should add yearMonthDurations with overflow to years", async () => {
+      // P1Y6M + P6M = P2Y
+      const operation: FilterOperation = {
+        type: "filter",
+        expression: {
+          type: "comparison",
+          operator: "=",
+          left: {
+            type: "arithmetic",
+            operator: "+",
+            left: { type: "variable", name: "d1" },
+            right: { type: "variable", name: "d2" },
+          },
+          right: { type: "literal", value: "P2Y", datatype: "http://www.w3.org/2001/XMLSchema#yearMonthDuration" },
+        },
+        input: { type: "bgp", triples: [] },
+      };
+
+      const solution = new SolutionMapping();
+      solution.set("d1", new Literal("P1Y6M", xsdYearMonthDuration));
+      solution.set("d2", new Literal("P6M", xsdYearMonthDuration));
+
+      const results = await executor.executeAll(operation, [solution]);
+      expect(results).toHaveLength(1);
+    });
+
+    it("should subtract two yearMonthDurations", async () => {
+      // P2Y - P6M = P1Y6M
+      const operation: FilterOperation = {
+        type: "filter",
+        expression: {
+          type: "comparison",
+          operator: "=",
+          left: {
+            type: "arithmetic",
+            operator: "-",
+            left: { type: "variable", name: "d1" },
+            right: { type: "variable", name: "d2" },
+          },
+          right: { type: "literal", value: "P1Y6M", datatype: "http://www.w3.org/2001/XMLSchema#yearMonthDuration" },
+        },
+        input: { type: "bgp", triples: [] },
+      };
+
+      const solution = new SolutionMapping();
+      solution.set("d1", new Literal("P2Y", xsdYearMonthDuration));
+      solution.set("d2", new Literal("P6M", xsdYearMonthDuration));
+
+      const results = await executor.executeAll(operation, [solution]);
+      expect(results).toHaveLength(1);
+    });
+
+    it("should produce negative yearMonthDuration if needed", async () => {
+      // P1Y - P1Y2M = -P2M
+      const operation: FilterOperation = {
+        type: "filter",
+        expression: {
+          type: "comparison",
+          operator: "=",
+          left: {
+            type: "arithmetic",
+            operator: "-",
+            left: { type: "variable", name: "d1" },
+            right: { type: "variable", name: "d2" },
+          },
+          right: { type: "literal", value: "-P2M", datatype: "http://www.w3.org/2001/XMLSchema#yearMonthDuration" },
+        },
+        input: { type: "bgp", triples: [] },
+      };
+
+      const solution = new SolutionMapping();
+      solution.set("d1", new Literal("P1Y", xsdYearMonthDuration));
+      solution.set("d2", new Literal("P1Y2M", xsdYearMonthDuration));
+
+      const results = await executor.executeAll(operation, [solution]);
+      expect(results).toHaveLength(1);
+    });
+  });
 });

@@ -2239,6 +2239,89 @@ export class BuiltInFunctions {
     return new Literal(resultStr, new IRI("http://www.w3.org/2001/XMLSchema#dayTimeDuration"));
   }
 
+  // =========================================================================
+  // xsd:yearMonthDuration Arithmetic (Issue #975)
+  // =========================================================================
+
+  /**
+   * Format total months as an xsd:yearMonthDuration string.
+   *
+   * @param totalMonths - Total number of months (can be negative)
+   * @returns Canonical xsd:yearMonthDuration string (e.g., "P1Y2M", "P3M", "-P1Y")
+   *
+   * Examples:
+   * - formatYearMonthDuration(14) → "P1Y2M"
+   * - formatYearMonthDuration(3) → "P3M"
+   * - formatYearMonthDuration(-12) → "-P1Y"
+   * - formatYearMonthDuration(0) → "P0M"
+   */
+  static formatYearMonthDuration(totalMonths: number): string {
+    const negative = totalMonths < 0;
+    const absMonths = Math.abs(totalMonths);
+
+    const years = Math.floor(absMonths / 12);
+    const months = absMonths % 12;
+
+    let result = negative ? "-P" : "P";
+
+    if (years > 0) {
+      result += `${years}Y`;
+    }
+
+    // Include months if non-zero, or if no years (to avoid "P" alone)
+    if (months > 0 || years === 0) {
+      result += `${months}M`;
+    }
+
+    return result;
+  }
+
+  /**
+   * Add two xsd:yearMonthDuration values.
+   * Per SPARQL 1.1 specification: yearMonthDuration + yearMonthDuration = yearMonthDuration
+   *
+   * @param duration1 - First yearMonthDuration string or Literal
+   * @param duration2 - Second yearMonthDuration string or Literal
+   * @returns Literal with xsd:yearMonthDuration datatype
+   *
+   * Examples:
+   * - yearMonthDurationAdd("P1Y", "P2M") → "P1Y2M"
+   * - yearMonthDurationAdd("P1Y6M", "P6M") → "P2Y"
+   */
+  static yearMonthDurationAdd(duration1: string | Literal, duration2: string | Literal): Literal {
+    const d1Value = duration1 instanceof Literal ? duration1.value : duration1;
+    const d2Value = duration2 instanceof Literal ? duration2.value : duration2;
+
+    const months1 = this.parseYearMonthDuration(d1Value);
+    const months2 = this.parseYearMonthDuration(d2Value);
+
+    const resultStr = this.formatYearMonthDuration(months1 + months2);
+    return new Literal(resultStr, new IRI("http://www.w3.org/2001/XMLSchema#yearMonthDuration"));
+  }
+
+  /**
+   * Subtract two xsd:yearMonthDuration values.
+   * Per SPARQL 1.1 specification: yearMonthDuration - yearMonthDuration = yearMonthDuration
+   *
+   * @param duration1 - First yearMonthDuration string or Literal (minuend)
+   * @param duration2 - Second yearMonthDuration string or Literal (subtrahend)
+   * @returns Literal with xsd:yearMonthDuration datatype
+   *
+   * Examples:
+   * - yearMonthDurationSubtract("P2Y", "P6M") → "P1Y6M"
+   * - yearMonthDurationSubtract("P1Y", "P1Y2M") → "-P2M"
+   */
+  static yearMonthDurationSubtract(duration1: string | Literal, duration2: string | Literal): Literal {
+    const d1Value = duration1 instanceof Literal ? duration1.value : duration1;
+    const d2Value = duration2 instanceof Literal ? duration2.value : duration2;
+
+    const months1 = this.parseYearMonthDuration(d1Value);
+    const months2 = this.parseYearMonthDuration(d2Value);
+
+    const resultStr = this.formatYearMonthDuration(months1 - months2);
+    return new Literal(resultStr, new IRI("http://www.w3.org/2001/XMLSchema#yearMonthDuration"));
+  }
+
   /**
    * Get the total number of days from an xsd:dayTimeDuration (as decimal).
    *

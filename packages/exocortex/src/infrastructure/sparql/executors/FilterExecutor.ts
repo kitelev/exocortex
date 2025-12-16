@@ -287,6 +287,7 @@ export class FilterExecutor {
    * - xsd:dateTime +/- xsd:dayTimeDuration = xsd:dateTime
    * - xsd:dateTime +/- xsd:yearMonthDuration = xsd:dateTime
    * - xsd:dayTimeDuration +/- xsd:dayTimeDuration = xsd:dayTimeDuration
+   * - xsd:yearMonthDuration +/- xsd:yearMonthDuration = xsd:yearMonthDuration (Issue #975)
    * - xsd:dayTimeDuration * number = xsd:dayTimeDuration
    * - xsd:dayTimeDuration / number = xsd:dayTimeDuration
    */
@@ -379,6 +380,16 @@ export class FilterExecutor {
         throw new FilterExecutorError("Division by zero");
       }
       return BuiltInFunctions.durationDivide(left, rightNum);
+    }
+
+    // Special handling for yearMonthDuration + yearMonthDuration = yearMonthDuration (Issue #975)
+    if (expr.operator === "+" && this.isYearMonthDurationValue(left) && this.isYearMonthDurationValue(right)) {
+      return BuiltInFunctions.yearMonthDurationAdd(left, right);
+    }
+
+    // Special handling for yearMonthDuration - yearMonthDuration = yearMonthDuration (Issue #975)
+    if (expr.operator === "-" && this.isYearMonthDurationValue(left) && this.isYearMonthDurationValue(right)) {
+      return BuiltInFunctions.yearMonthDurationSubtract(left, right);
     }
 
     // Standard numeric arithmetic

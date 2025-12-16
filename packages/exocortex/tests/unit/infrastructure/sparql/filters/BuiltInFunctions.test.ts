@@ -3595,6 +3595,88 @@ describe("BuiltInFunctions", () => {
       });
     });
 
+    // =========================================================================
+    // xsd:yearMonthDuration Arithmetic (Issue #975)
+    // =========================================================================
+
+    describe("formatYearMonthDuration", () => {
+      it("should format months only", () => {
+        expect(BuiltInFunctions.formatYearMonthDuration(3)).toBe("P3M");
+      });
+
+      it("should format years only", () => {
+        expect(BuiltInFunctions.formatYearMonthDuration(12)).toBe("P1Y");
+        expect(BuiltInFunctions.formatYearMonthDuration(24)).toBe("P2Y");
+      });
+
+      it("should format years and months combined", () => {
+        expect(BuiltInFunctions.formatYearMonthDuration(14)).toBe("P1Y2M");
+        expect(BuiltInFunctions.formatYearMonthDuration(18)).toBe("P1Y6M");
+      });
+
+      it("should format zero as P0M", () => {
+        expect(BuiltInFunctions.formatYearMonthDuration(0)).toBe("P0M");
+      });
+
+      it("should format negative months", () => {
+        expect(BuiltInFunctions.formatYearMonthDuration(-3)).toBe("-P3M");
+        expect(BuiltInFunctions.formatYearMonthDuration(-12)).toBe("-P1Y");
+        expect(BuiltInFunctions.formatYearMonthDuration(-14)).toBe("-P1Y2M");
+      });
+    });
+
+    describe("yearMonthDurationAdd", () => {
+      it("should add two yearMonthDurations", () => {
+        const result = BuiltInFunctions.yearMonthDurationAdd("P1Y", "P2M");
+        expect(result).toBeInstanceOf(Literal);
+        expect(result.value).toBe("P1Y2M");
+        expect(result.datatype?.value).toBe("http://www.w3.org/2001/XMLSchema#yearMonthDuration");
+      });
+
+      it("should add yearMonthDurations with overflow to years", () => {
+        const result = BuiltInFunctions.yearMonthDurationAdd("P1Y6M", "P6M");
+        expect(result.value).toBe("P2Y");
+      });
+
+      it("should add months-only durations", () => {
+        const result = BuiltInFunctions.yearMonthDurationAdd("P6M", "P8M");
+        expect(result.value).toBe("P1Y2M");
+      });
+
+      it("should handle Literal inputs", () => {
+        const d1 = new Literal("P1Y", new IRI("http://www.w3.org/2001/XMLSchema#yearMonthDuration"));
+        const d2 = new Literal("P3M", new IRI("http://www.w3.org/2001/XMLSchema#yearMonthDuration"));
+        const result = BuiltInFunctions.yearMonthDurationAdd(d1, d2);
+        expect(result.value).toBe("P1Y3M");
+      });
+    });
+
+    describe("yearMonthDurationSubtract", () => {
+      it("should subtract two yearMonthDurations", () => {
+        const result = BuiltInFunctions.yearMonthDurationSubtract("P2Y", "P6M");
+        expect(result).toBeInstanceOf(Literal);
+        expect(result.value).toBe("P1Y6M");
+        expect(result.datatype?.value).toBe("http://www.w3.org/2001/XMLSchema#yearMonthDuration");
+      });
+
+      it("should produce negative duration if needed", () => {
+        const result = BuiltInFunctions.yearMonthDurationSubtract("P1Y", "P1Y2M");
+        expect(result.value).toBe("-P2M");
+      });
+
+      it("should handle year underflow", () => {
+        const result = BuiltInFunctions.yearMonthDurationSubtract("P2Y", "P1Y6M");
+        expect(result.value).toBe("P6M");
+      });
+
+      it("should handle Literal inputs", () => {
+        const d1 = new Literal("P2Y", new IRI("http://www.w3.org/2001/XMLSchema#yearMonthDuration"));
+        const d2 = new Literal("P3M", new IRI("http://www.w3.org/2001/XMLSchema#yearMonthDuration"));
+        const result = BuiltInFunctions.yearMonthDurationSubtract(d1, d2);
+        expect(result.value).toBe("P1Y9M");
+      });
+    });
+
     describe("durationToX accessors", () => {
       it("should convert to days", () => {
         expect(BuiltInFunctions.durationToDays("P1D")).toBe(1);
