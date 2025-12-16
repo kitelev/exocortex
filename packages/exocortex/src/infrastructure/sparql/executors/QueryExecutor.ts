@@ -5,6 +5,7 @@ import type {
   FilterOperation,
   JoinOperation,
   LeftJoinOperation,
+  LateralJoinOperation,
   UnionOperation,
   MinusOperation,
   ValuesOperation,
@@ -194,6 +195,10 @@ export class QueryExecutor {
 
       case "subquery":
         yield* this.executeSubquery(operation);
+        break;
+
+      case "lateraljoin":
+        yield* this.executeLateralJoin(operation);
         break;
 
       case "service":
@@ -443,6 +448,151 @@ export class QueryExecutor {
     // The inner query has already been translated to algebra (project, filter, etc.)
     // so we just recursively execute it
     yield* this.execute(operation.query);
+  }
+
+  /**
+   * Execute a LATERAL join operation (SPARQL 1.2).
+   *
+   * LATERAL joins enable correlated subqueries where the inner query can
+   * reference variables from the outer query. For each solution from the
+   * outer (left) pattern, the inner (right) subquery is executed with
+   * the outer bindings substituted, and the results are joined.
+   *
+   * This is fundamentally different from regular joins where both sides
+   * are evaluated independently. LATERAL evaluation is:
+   * 1. Execute left pattern to get outer solutions
+   * 2. For each outer solution:
+   *    a. Substitute outer variables in the inner pattern
+   *    b. Execute the substituted inner pattern
+   *    c. Join each inner result with the outer solution
+   *
+   * Use case: "top N per group" patterns
+   * ```sparql
+   * SELECT ?person ?topFriend WHERE {
+   *   ?person a :Person .
+   *   LATERAL {
+   *     SELECT ?friend WHERE {
+   *       ?person :knows ?friend .
+   *     }
+   *     ORDER BY DESC(?score)
+   *     LIMIT 1
+   *   }
+   * }
+   * ```
+   *
+   * SPARQL 1.2 spec: https://w3c.github.io/sparql-12/spec/
+   */
+  private async *executeLateralJoin(operation: LateralJoinOperation): AsyncIterableIterator<SolutionMapping> {
+    // Collect all left (outer) solutions
+    const leftSolutions: SolutionMapping[] = [];
+    for await (const solution of this.execute(operation.left)) {
+      leftSolutions.push(solution);
+    }
+
+    // For each outer solution, execute the inner pattern with substituted bindings
+    for (const outerSolution of leftSolutions) {
+      // Substitute outer variable bindings in the inner pattern
+      // This is the key to correlated subqueries - the inner pattern
+      // sees concrete values from the outer binding
+      const substitutedPattern = this.substituteVariables(operation.right, outerSolution);
+
+      // Execute the substituted inner subquery
+      for await (const innerSolution of this.execute(substitutedPattern)) {
+        // Merge the outer and inner solutions
+        const merged = outerSolution.merge(innerSolution);
+        if (merged !== null) {
+          yield merged;
+        }
+      }
+    }
+  }
+
+  /**
+   * Substitute variable references in an algebra operation with concrete values
+   * from a solution mapping. This is used for LATERAL join execution.
+   *
+   * @param operation - The algebra operation to substitute variables in
+   * @param bindings - The solution mapping providing variable bindings
+   * @returns A new operation with variables replaced by concrete values
+   */
+  private substituteVariables(operation: AlgebraOperation, bindings: SolutionMapping): AlgebraOperation {
+    // Deep clone and substitute - using JSON for simplicity
+    const cloned = JSON.parse(JSON.stringify(operation));
+    return this.substituteInOperation(cloned, bindings);
+  }
+
+  /**
+   * Recursively substitute variables in an operation with values from bindings.
+   */
+  private substituteInOperation(operation: any, bindings: SolutionMapping): AlgebraOperation {
+    if (!operation || typeof operation !== 'object') {
+      return operation;
+    }
+
+    // Handle triple patterns in BGP
+    if (operation.type === 'bgp' && operation.triples) {
+      operation.triples = operation.triples.map((triple: any) => this.substituteInTriple(triple, bindings));
+      return operation;
+    }
+
+    // Recursively process nested operations
+    if (operation.input) {
+      operation.input = this.substituteInOperation(operation.input, bindings);
+    }
+    if (operation.left) {
+      operation.left = this.substituteInOperation(operation.left, bindings);
+    }
+    if (operation.right) {
+      operation.right = this.substituteInOperation(operation.right, bindings);
+    }
+    if (operation.pattern) {
+      operation.pattern = this.substituteInOperation(operation.pattern, bindings);
+    }
+    if (operation.query) {
+      operation.query = this.substituteInOperation(operation.query, bindings);
+    }
+    if (operation.where) {
+      operation.where = this.substituteInOperation(operation.where, bindings);
+    }
+
+    return operation;
+  }
+
+  /**
+   * Substitute variables in a triple pattern with values from bindings.
+   */
+  private substituteInTriple(triple: any, bindings: SolutionMapping): any {
+    return {
+      subject: this.substituteInTripleElement(triple.subject, bindings),
+      predicate: triple.predicate, // Predicate paths are not substituted
+      object: this.substituteInTripleElement(triple.object, bindings),
+    };
+  }
+
+  /**
+   * Substitute a variable in a triple element if it has a binding.
+   */
+  private substituteInTripleElement(element: any, bindings: SolutionMapping): any {
+    if (element && element.type === 'variable') {
+      const value = bindings.get(element.value);
+      if (value) {
+        // Convert RDF term to algebra representation
+        if (value instanceof IRI || (value as any).termType === 'NamedNode') {
+          return { type: 'iri', value: (value as any).value };
+        }
+        // Handle Literal
+        if ((value as any).termType === 'Literal' || typeof (value as any).value === 'string') {
+          const lit = value as any;
+          return {
+            type: 'literal',
+            value: lit.value,
+            datatype: lit.datatype?.value || lit._datatype?.value,
+            language: lit.language || lit._language,
+          };
+        }
+      }
+    }
+    return element;
   }
 
   /**

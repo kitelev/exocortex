@@ -1,5 +1,6 @@
 import * as sparqljs from "sparqljs";
 import { CaseWhenTransformer, CaseWhenTransformerError } from "./CaseWhenTransformer";
+import { LateralTransformer, LateralTransformerError } from "./LateralTransformer";
 import {
   PrefixStarTransformer,
   PrefixStarTransformerError,
@@ -42,6 +43,7 @@ export class SPARQLParser {
   private readonly parser: InstanceType<typeof sparqljs.Parser>;
   private readonly generator: InstanceType<typeof sparqljs.Generator>;
   private readonly caseWhenTransformer: CaseWhenTransformer;
+  private readonly lateralTransformer: LateralTransformer;
   private readonly prefixStarTransformer: PrefixStarTransformer;
 
   constructor(options?: SPARQLParserOptions) {
@@ -53,6 +55,7 @@ export class SPARQLParser {
     this.parser = new sparqljs.Parser({ sparqlStar: true });
     this.generator = new sparqljs.Generator({ sparqlStar: true });
     this.caseWhenTransformer = new CaseWhenTransformer();
+    this.lateralTransformer = new LateralTransformer();
     this.prefixStarTransformer = new PrefixStarTransformer(options?.vocabularyResolver);
   }
 
@@ -68,12 +71,17 @@ export class SPARQLParser {
    */
   parse(queryString: string): SPARQLQuery {
     try {
+      // Transform LATERAL joins to marked subqueries (SPARQL 1.2)
+      let transformedQuery = this.lateralTransformer.transform(queryString);
       // Transform CASE WHEN expressions to IF expressions before parsing
-      const transformedQuery = this.caseWhenTransformer.transform(queryString);
+      transformedQuery = this.caseWhenTransformer.transform(transformedQuery);
       const parsed = this.parser.parse(transformedQuery);
       this.validateQuery(parsed);
       return parsed;
     } catch (error) {
+      if (error instanceof LateralTransformerError) {
+        throw new SPARQLParseError(error.message);
+      }
       if (error instanceof CaseWhenTransformerError) {
         throw new SPARQLParseError(error.message);
       }
@@ -109,13 +117,18 @@ export class SPARQLParser {
     try {
       // First, transform PREFIX* declarations to regular PREFIX declarations
       const prefixTransformed = await this.prefixStarTransformer.transform(queryString);
+      // Transform LATERAL joins to marked subqueries (SPARQL 1.2)
+      const lateralTransformed = this.lateralTransformer.transform(prefixTransformed);
       // Then transform CASE WHEN expressions to IF expressions
-      const caseTransformed = this.caseWhenTransformer.transform(prefixTransformed);
+      const caseTransformed = this.caseWhenTransformer.transform(lateralTransformed);
       const parsed = this.parser.parse(caseTransformed);
       this.validateQuery(parsed);
       return parsed;
     } catch (error) {
       if (error instanceof PrefixStarTransformerError) {
+        throw new SPARQLParseError(error.message);
+      }
+      if (error instanceof LateralTransformerError) {
         throw new SPARQLParseError(error.message);
       }
       if (error instanceof CaseWhenTransformerError) {
@@ -146,6 +159,16 @@ export class SPARQLParser {
   hasPrefixStar(queryString: string): boolean {
     // Simple regex check - PREFIX followed by optional whitespace and *
     return /PREFIX\s*\*/i.test(queryString);
+  }
+
+  /**
+   * Check if a query string contains LATERAL keywords (SPARQL 1.2).
+   *
+   * @param queryString - The SPARQL query to check
+   * @returns true if the query contains LATERAL keywords
+   */
+  hasLateral(queryString: string): boolean {
+    return this.lateralTransformer.hasLateral(queryString);
   }
 
   toString(query: SPARQLQuery): string {

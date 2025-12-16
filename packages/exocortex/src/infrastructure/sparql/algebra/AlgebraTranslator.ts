@@ -1,9 +1,11 @@
 import type { SPARQLQuery, SelectQuery, ConstructQuery, AskQuery } from "../SPARQLParser";
+import { LateralTransformer } from "../LateralTransformer";
 import type {
   AlgebraOperation,
   BGPOperation,
   FilterOperation,
   LeftJoinOperation,
+  LateralJoinOperation,
   UnionOperation,
   MinusOperation,
   ValuesOperation,
@@ -378,6 +380,42 @@ export class AlgebraTranslator {
     };
   }
 
+  /**
+   * Check if a pattern is a lateral join marker (group containing lateral subquery).
+   * After LateralTransformer processing, LATERAL { SELECT ... } becomes
+   * { SELECT ?__LATERAL_JOIN__ ... }, which sparqljs parses as a group
+   * containing a SELECT query with the marker variable.
+   */
+  private isLateralPattern(pattern: any): boolean {
+    // Check if it's a direct query with lateral marker
+    if (pattern.type === "query" && this.isLateralSubquery(pattern)) {
+      return true;
+    }
+
+    // Check if it's a group containing a lateral subquery
+    if (pattern.type === "group" && pattern.patterns?.length === 1) {
+      const inner = pattern.patterns[0];
+      if (inner.type === "query" && this.isLateralSubquery(inner)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * Extract the inner subquery from a lateral pattern.
+   */
+  private extractLateralSubquery(pattern: any): any {
+    if (pattern.type === "query") {
+      return pattern;
+    }
+    if (pattern.type === "group" && pattern.patterns?.length === 1) {
+      return pattern.patterns[0];
+    }
+    throw new AlgebraTranslatorError("Invalid lateral pattern structure");
+  }
+
   private translateWhere(patterns: any[]): AlgebraOperation {
     if (patterns.length === 0) {
       throw new AlgebraTranslatorError("Empty WHERE clause");
@@ -398,12 +436,33 @@ export class AlgebraTranslator {
     } else if (otherPatterns.length === 1) {
       result = this.translatePattern(otherPatterns[0]);
     } else {
-      const operations = otherPatterns.map((p) => this.translatePattern(p));
-      result = operations.reduce((left, right) => ({
-        type: "join",
-        left,
-        right,
-      }));
+      // Join patterns, but use lateral join for lateral subqueries
+      result = this.translatePattern(otherPatterns[0]);
+
+      for (let i = 1; i < otherPatterns.length; i++) {
+        const rightPattern = otherPatterns[i];
+
+        if (this.isLateralPattern(rightPattern)) {
+          // Create a lateral join - the inner query can reference outer variables
+          const lateralSubquery = this.extractLateralSubquery(rightPattern);
+          const cleanedSubquery = this.removeLateralMarker(lateralSubquery);
+          const innerQuery = this.translateSelect(cleanedSubquery as SelectQuery);
+
+          result = {
+            type: "lateraljoin",
+            left: result,
+            right: innerQuery,
+          } as LateralJoinOperation;
+        } else {
+          // Regular join
+          const right = this.translatePattern(rightPattern);
+          result = {
+            type: "join",
+            left: result,
+            right,
+          };
+        }
+      }
     }
 
     // Apply BIND operations (they extend solutions with computed values)
@@ -1089,15 +1148,52 @@ export class AlgebraTranslator {
    *   distinct: boolean
    * }
    */
+  /**
+   * Check if a subquery pattern contains the lateral join marker.
+   * The marker is inserted by LateralTransformer as a special variable
+   * named __LATERAL_JOIN__ in the SELECT clause.
+   */
+  private isLateralSubquery(pattern: any): boolean {
+    if (pattern.queryType !== "SELECT" || !pattern.variables) {
+      return false;
+    }
+
+    return pattern.variables.some(
+      (v: any) =>
+        v.termType === "Variable" && v.value === LateralTransformer.LATERAL_MARKER
+    );
+  }
+
+  /**
+   * Remove the lateral marker variable from a subquery's SELECT clause.
+   * Returns a shallow copy of the pattern with the marker removed.
+   */
+  private removeLateralMarker(pattern: any): any {
+    if (!pattern.variables) {
+      return pattern;
+    }
+
+    return {
+      ...pattern,
+      variables: pattern.variables.filter(
+        (v: any) =>
+          !(v.termType === "Variable" && v.value === LateralTransformer.LATERAL_MARKER)
+      ),
+    };
+  }
+
   private translateSubquery(pattern: any): SubqueryOperation {
     if (pattern.queryType !== "SELECT") {
       throw new AlgebraTranslatorError(`Only SELECT subqueries are supported, got: ${pattern.queryType}`);
     }
 
+    // Check and remove lateral marker if present (it's handled at join level)
+    const cleanedPattern = this.removeLateralMarker(pattern);
+
     // Translate the inner SELECT query using the same translateSelect method
     // This reuses all existing logic for handling variables, WHERE clause,
     // GROUP BY, ORDER BY, LIMIT, OFFSET, DISTINCT, etc.
-    const innerQuery = this.translateSelect(pattern as SelectQuery);
+    const innerQuery = this.translateSelect(cleanedPattern as SelectQuery);
 
     return {
       type: "subquery",

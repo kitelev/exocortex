@@ -14,6 +14,7 @@ export type AlgebraOperation =
   | GroupOperation
   | ExtendOperation
   | SubqueryOperation
+  | LateralJoinOperation
   | ConstructOperation
   | AskOperation
   | ServiceOperation
@@ -408,6 +409,56 @@ export interface SubqueryOperation {
   type: "subquery";
   /** The complete algebra tree for the inner SELECT query */
   query: AlgebraOperation;
+}
+
+/**
+ * LATERAL join operation for correlated subqueries (SPARQL 1.2).
+ *
+ * LATERAL enables the inner subquery to reference variables from the outer query,
+ * creating a correlated subquery pattern. For each solution in the outer query,
+ * the inner subquery is executed with those variable bindings available.
+ *
+ * This is fundamentally different from regular subqueries which are executed
+ * independently and then joined. LATERAL subqueries are re-executed for each
+ * outer solution, enabling patterns like "top N per group".
+ *
+ * Example - Get top 1 friend for each person:
+ * ```sparql
+ * SELECT ?person ?topFriend
+ * WHERE {
+ *   ?person a :Person .
+ *   LATERAL {
+ *     SELECT ?friend WHERE {
+ *       ?person :knows ?friend .  # ?person comes from outer query!
+ *       ?friend :score ?score .
+ *     }
+ *     ORDER BY DESC(?score)
+ *     LIMIT 1
+ *   }
+ * }
+ * ```
+ *
+ * Semantics:
+ * - For each binding from the outer pattern (left side)
+ * - Execute the inner subquery with that binding's variables substituted
+ * - Join the inner results with the outer binding
+ * - If inner produces no results, the outer binding is excluded (inner join semantics)
+ *
+ * SPARQL 1.2 spec: https://w3c.github.io/sparql-12/spec/
+ */
+export interface LateralJoinOperation {
+  type: "lateraljoin";
+  /**
+   * The outer pattern that produces bindings.
+   * Variables from this pattern are visible to the inner subquery.
+   */
+  left: AlgebraOperation;
+  /**
+   * The correlated subquery.
+   * Can reference variables from the left/outer pattern.
+   * Executed once per solution from the left pattern.
+   */
+  right: AlgebraOperation;
 }
 
 /**
