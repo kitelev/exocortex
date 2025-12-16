@@ -1620,6 +1620,102 @@ describe("FilterExecutor", () => {
       const results = await executor.executeAll(operation, [solution]);
       expect(results).toHaveLength(1);
     });
+
+    it("should handle xsd:date subtraction producing clean day duration", async () => {
+      const xsdDate = new IRI("http://www.w3.org/2001/XMLSchema#date");
+      const xsdDayTimeDuration = new IRI("http://www.w3.org/2001/XMLSchema#dayTimeDuration");
+
+      // Use BIND-style arithmetic to get result as Literal
+      const operation: FilterOperation = {
+        type: "filter",
+        expression: {
+          type: "comparison",
+          operator: "=",
+          left: {
+            type: "arithmetic",
+            operator: "-",
+            left: { type: "variable", name: "futureDate" },
+            right: { type: "variable", name: "pastDate" },
+          } as any,
+          // Compare with expected duration literal
+          right: {
+            type: "literal",
+            value: new Literal("P14D", xsdDayTimeDuration),
+          },
+        },
+        input: { type: "bgp", triples: [] },
+      };
+
+      const solution = new SolutionMapping();
+      // 14 days apart
+      solution.set("futureDate", new Literal("2025-12-15", xsdDate));
+      solution.set("pastDate", new Literal("2025-12-01", xsdDate));
+
+      const results = await executor.executeAll(operation, [solution]);
+      expect(results).toHaveLength(1);
+    });
+
+    it("should produce negative duration for xsd:date when past - future", async () => {
+      const xsdDate = new IRI("http://www.w3.org/2001/XMLSchema#date");
+      const xsdDayTimeDuration = new IRI("http://www.w3.org/2001/XMLSchema#dayTimeDuration");
+
+      const operation: FilterOperation = {
+        type: "filter",
+        expression: {
+          type: "comparison",
+          operator: "=",
+          left: {
+            type: "arithmetic",
+            operator: "-",
+            left: { type: "variable", name: "pastDate" },
+            right: { type: "variable", name: "futureDate" },
+          } as any,
+          right: {
+            type: "literal",
+            value: new Literal("-P14D", xsdDayTimeDuration),
+          },
+        },
+        input: { type: "bgp", triples: [] },
+      };
+
+      const solution = new SolutionMapping();
+      solution.set("pastDate", new Literal("2025-12-01", xsdDate));
+      solution.set("futureDate", new Literal("2025-12-15", xsdDate));
+
+      const results = await executor.executeAll(operation, [solution]);
+      expect(results).toHaveLength(1);
+    });
+
+    it("should produce P0D for same xsd:date subtraction", async () => {
+      const xsdDate = new IRI("http://www.w3.org/2001/XMLSchema#date");
+      const xsdDayTimeDuration = new IRI("http://www.w3.org/2001/XMLSchema#dayTimeDuration");
+
+      const operation: FilterOperation = {
+        type: "filter",
+        expression: {
+          type: "comparison",
+          operator: "=",
+          left: {
+            type: "arithmetic",
+            operator: "-",
+            left: { type: "variable", name: "date1" },
+            right: { type: "variable", name: "date2" },
+          } as any,
+          right: {
+            type: "literal",
+            value: new Literal("P0D", xsdDayTimeDuration),
+          },
+        },
+        input: { type: "bgp", triples: [] },
+      };
+
+      const solution = new SolutionMapping();
+      solution.set("date1", new Literal("2025-12-15", xsdDate));
+      solution.set("date2", new Literal("2025-12-15", xsdDate));
+
+      const results = await executor.executeAll(operation, [solution]);
+      expect(results).toHaveLength(1);
+    });
   });
 
   describe("DateTime Accessor Functions", () => {

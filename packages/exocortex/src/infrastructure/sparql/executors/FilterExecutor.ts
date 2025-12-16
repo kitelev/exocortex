@@ -279,6 +279,7 @@ export class FilterExecutor {
    * Evaluate arithmetic expression (+, -, *, /).
    * Supports:
    * - Numeric arithmetic
+   * - xsd:date - xsd:date = xsd:dayTimeDuration (day-only format like "P14D")
    * - xsd:dateTime - xsd:dateTime = xsd:dayTimeDuration
    * - xsd:dateTime +/- xsd:dayTimeDuration = xsd:dateTime
    * - xsd:dayTimeDuration +/- xsd:dayTimeDuration = xsd:dayTimeDuration
@@ -288,6 +289,12 @@ export class FilterExecutor {
   private evaluateArithmetic(expr: ArithmeticExpression, solution: SolutionMapping): number | Literal {
     const left = this.evaluateExpression(expr.left, solution);
     const right = this.evaluateExpression(expr.right, solution);
+
+    // Special handling for xsd:date - xsd:date = dayTimeDuration (clean day format)
+    // Must check before dateTime since isDateTimeValue also matches dates
+    if (expr.operator === "-" && this.isDateValue(left) && this.isDateValue(right)) {
+      return BuiltInFunctions.dateDiff(left, right);
+    }
 
     // Special handling for dateTime - dateTime = dayTimeDuration
     if (expr.operator === "-" && this.isDateTimeValue(left) && this.isDateTimeValue(right)) {
@@ -416,7 +423,7 @@ export class FilterExecutor {
   }
 
   /**
-   * Check if a value represents an xsd:dateTime.
+   * Check if a value represents an xsd:dateTime or xsd:date.
    */
   private isDateTimeValue(value: any): boolean {
     if (value instanceof Literal) {
@@ -431,6 +438,19 @@ export class FilterExecutor {
     if (typeof value === "string") {
       const datePattern = /^\d{4}-\d{2}-\d{2}(T|\s)/;
       return datePattern.test(value);
+    }
+    return false;
+  }
+
+  /**
+   * Check if a value represents a pure xsd:date (not xsd:dateTime).
+   * Used to distinguish date-only subtraction from dateTime subtraction.
+   */
+  private isDateValue(value: any): boolean {
+    if (value instanceof Literal) {
+      const datatypeValue = value.datatype?.value || "";
+      // Only match xsd:date, NOT xsd:dateTime
+      return datatypeValue === "http://www.w3.org/2001/XMLSchema#date";
     }
     return false;
   }

@@ -3313,6 +3313,110 @@ describe("BuiltInFunctions", () => {
       });
     });
 
+    describe("isDate", () => {
+      it("should return true for xsd:date Literal", () => {
+        const date = new Literal("2025-12-15", new IRI("http://www.w3.org/2001/XMLSchema#date"));
+        expect(BuiltInFunctions.isDate(date)).toBe(true);
+      });
+
+      it("should return false for xsd:dateTime Literal", () => {
+        const dateTime = new Literal(
+          "2025-12-15T10:00:00Z",
+          new IRI("http://www.w3.org/2001/XMLSchema#dateTime")
+        );
+        expect(BuiltInFunctions.isDate(dateTime)).toBe(false);
+      });
+
+      it("should return false for other datatypes", () => {
+        const str = new Literal("2025-12-15");
+        const int = new Literal("5", new IRI("http://www.w3.org/2001/XMLSchema#integer"));
+        expect(BuiltInFunctions.isDate(str)).toBe(false);
+        expect(BuiltInFunctions.isDate(int)).toBe(false);
+      });
+
+      it("should return false for non-Literal values", () => {
+        expect(BuiltInFunctions.isDate("2025-12-15")).toBe(false);
+        expect(BuiltInFunctions.isDate(null)).toBe(false);
+        expect(BuiltInFunctions.isDate(undefined)).toBe(false);
+      });
+    });
+
+    describe("dateDiff", () => {
+      it("should return P0D for same date", () => {
+        const result = BuiltInFunctions.dateDiff("2025-12-15", "2025-12-15");
+        expect(result).toBeInstanceOf(Literal);
+        expect(result.value).toBe("P0D");
+        expect(result.datatype?.value).toBe("http://www.w3.org/2001/XMLSchema#dayTimeDuration");
+      });
+
+      it("should calculate positive difference (future - past)", () => {
+        const result = BuiltInFunctions.dateDiff("2025-12-15", "2025-12-01");
+        expect(result.value).toBe("P14D");
+      });
+
+      it("should calculate negative difference (past - future)", () => {
+        const result = BuiltInFunctions.dateDiff("2025-12-01", "2025-12-15");
+        expect(result.value).toBe("-P14D");
+      });
+
+      it("should work with Literal inputs", () => {
+        const date1 = new Literal("2025-12-15", new IRI("http://www.w3.org/2001/XMLSchema#date"));
+        const date2 = new Literal("2025-12-01", new IRI("http://www.w3.org/2001/XMLSchema#date"));
+        const result = BuiltInFunctions.dateDiff(date1, date2);
+        expect(result.value).toBe("P14D");
+      });
+
+      it("should handle dates with UTC timezone", () => {
+        const result = BuiltInFunctions.dateDiff("2025-12-15Z", "2025-12-01Z");
+        expect(result.value).toBe("P14D");
+      });
+
+      it("should handle dates with timezone offset", () => {
+        // Same date in different timezones should still produce day difference
+        const result = BuiltInFunctions.dateDiff("2025-12-15+05:00", "2025-12-01+05:00");
+        expect(result.value).toBe("P14D");
+      });
+
+      it("should throw for invalid first date", () => {
+        expect(() => BuiltInFunctions.dateDiff("invalid", "2025-12-01")).toThrow(
+          "dateDiff: invalid first date"
+        );
+      });
+
+      it("should throw for invalid second date", () => {
+        expect(() => BuiltInFunctions.dateDiff("2025-12-15", "invalid")).toThrow(
+          "dateDiff: invalid second date"
+        );
+      });
+
+      it("should handle year boundaries", () => {
+        const result = BuiltInFunctions.dateDiff("2026-01-01", "2025-12-31");
+        expect(result.value).toBe("P1D");
+      });
+
+      it("should handle month boundaries", () => {
+        const result = BuiltInFunctions.dateDiff("2025-02-01", "2025-01-31");
+        expect(result.value).toBe("P1D");
+      });
+
+      it("should handle leap year", () => {
+        // 2024 is a leap year, so Feb has 29 days
+        const result = BuiltInFunctions.dateDiff("2024-03-01", "2024-02-01");
+        expect(result.value).toBe("P29D");
+      });
+
+      it("should handle non-leap year", () => {
+        // 2025 is not a leap year, so Feb has 28 days
+        const result = BuiltInFunctions.dateDiff("2025-03-01", "2025-02-01");
+        expect(result.value).toBe("P28D");
+      });
+
+      it("should handle large date ranges", () => {
+        const result = BuiltInFunctions.dateDiff("2025-12-15", "2024-12-15");
+        expect(result.value).toBe("P365D");
+      });
+    });
+
     describe("dateTimeDiff", () => {
       it("should calculate positive difference", () => {
         const result = BuiltInFunctions.dateTimeDiff(

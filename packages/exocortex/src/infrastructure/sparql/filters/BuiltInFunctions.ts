@@ -1690,6 +1690,133 @@ export class BuiltInFunctions {
   }
 
   /**
+   * Check if a value is a pure xsd:date (not xsd:dateTime).
+   *
+   * @param value - Value to check
+   * @returns true if the value is an xsd:date Literal
+   */
+  static isDate(value: any): boolean {
+    if (value instanceof Literal) {
+      const datatypeValue = value.datatype?.value || "";
+      return datatypeValue === "http://www.w3.org/2001/XMLSchema#date";
+    }
+    return false;
+  }
+
+  /**
+   * Subtract two xsd:date values and return an xsd:dayTimeDuration.
+   * Per SPARQL 1.2 specification: date - date = dayTimeDuration
+   *
+   * Unlike dateTimeDiff, this function produces clean day-only durations
+   * (e.g., "P14D" instead of "P14DT0S") since dates have no time component.
+   *
+   * @param date1 - First date string or Literal (minuend)
+   * @param date2 - Second date string or Literal (subtrahend)
+   * @returns Literal with xsd:dayTimeDuration datatype representing the difference
+   *
+   * Examples:
+   * - dateDiff("2025-12-15", "2025-12-01") → "P14D"
+   * - dateDiff("2025-12-01", "2025-12-15") → "-P14D"
+   * - dateDiff("2025-12-15", "2025-12-15") → "P0D"
+   */
+  static dateDiff(date1: string | Literal, date2: string | Literal): Literal {
+    const d1Value = date1 instanceof Literal ? date1.value : date1;
+    const d2Value = date2 instanceof Literal ? date2.value : date2;
+
+    // Parse dates - for pure dates, normalize to start of day UTC
+    const d1 = this.parseXSDDate(d1Value);
+    const d2 = this.parseXSDDate(d2Value);
+
+    if (d1 === null) {
+      throw new Error(`dateDiff: invalid first date: '${d1Value}'`);
+    }
+    if (d2 === null) {
+      throw new Error(`dateDiff: invalid second date: '${d2Value}'`);
+    }
+
+    // Calculate difference in whole days
+    const diffMs = d1.getTime() - d2.getTime();
+    const diffDays = Math.round(diffMs / (24 * 60 * 60 * 1000));
+
+    // Format as clean day-only duration
+    const durationStr = this.formatDateDuration(diffDays);
+
+    return new Literal(durationStr, new IRI("http://www.w3.org/2001/XMLSchema#dayTimeDuration"));
+  }
+
+  /**
+   * Parse an xsd:date string into a Date object normalized to start of day UTC.
+   *
+   * Handles various date formats:
+   * - "2025-12-15" (standard xsd:date)
+   * - "2025-12-15Z" (with UTC timezone)
+   * - "2025-12-15+05:00" (with timezone offset)
+   *
+   * @param dateStr - xsd:date string
+   * @returns Date object normalized to UTC, or null if invalid
+   */
+  private static parseXSDDate(dateStr: string): Date | null {
+    // Match xsd:date format: YYYY-MM-DD with optional timezone
+    const datePattern = /^(-?\d{4})-(\d{2})-(\d{2})(Z|[+-]\d{2}:\d{2})?$/;
+    const match = dateStr.match(datePattern);
+
+    if (!match) {
+      // Try parsing as ISO string anyway (for compatibility)
+      const fallbackDate = new Date(dateStr);
+      if (isNaN(fallbackDate.getTime())) {
+        return null;
+      }
+      // Normalize to UTC start of day
+      return new Date(Date.UTC(
+        fallbackDate.getUTCFullYear(),
+        fallbackDate.getUTCMonth(),
+        fallbackDate.getUTCDate()
+      ));
+    }
+
+    const year = parseInt(match[1], 10);
+    const month = parseInt(match[2], 10) - 1; // JavaScript months are 0-based
+    const day = parseInt(match[3], 10);
+    const timezone = match[4];
+
+    // Create date at UTC start of day
+    let date = new Date(Date.UTC(year, month, day));
+
+    // Adjust for timezone if specified
+    if (timezone && timezone !== "Z") {
+      const tzMatch = timezone.match(/([+-])(\d{2}):(\d{2})/);
+      if (tzMatch) {
+        const sign = tzMatch[1] === "+" ? 1 : -1;
+        const hours = parseInt(tzMatch[2], 10);
+        const minutes = parseInt(tzMatch[3], 10);
+        const offsetMs = sign * (hours * 60 + minutes) * 60 * 1000;
+        // Subtract offset to normalize to UTC
+        date = new Date(date.getTime() - offsetMs);
+      }
+    }
+
+    return date;
+  }
+
+  /**
+   * Format a number of days as an xsd:dayTimeDuration string.
+   * Produces clean day-only format (P14D, -P14D, P0D).
+   *
+   * @param days - Number of days (can be negative)
+   * @returns xsd:dayTimeDuration string in day-only format
+   */
+  private static formatDateDuration(days: number): string {
+    if (days === 0) {
+      return "P0D";
+    }
+
+    const negative = days < 0;
+    const absDays = Math.abs(days);
+
+    return negative ? `-P${absDays}D` : `P${absDays}D`;
+  }
+
+  /**
    * Subtract two xsd:dateTime values and return an xsd:dayTimeDuration.
    * Per SPARQL 1.1 specification: dateTime - dateTime = dayTimeDuration
    *
