@@ -405,6 +405,113 @@ describe("SPARQL 1.1 Compliance - Built-in Functions", () => {
         expect(results).toHaveLength(1);
       });
     });
+
+    describe("LANGMATCHES direction-aware extension (SPARQL 1.2, Issue #961)", () => {
+      // Note: These tests verify direction-aware LANGMATCHES via direct string literals
+      // since LANGDIR() function is not yet supported in the SPARQL parser.
+      // The underlying BuiltInFunctions.langMatches() is thoroughly tested in unit tests.
+
+      it("should match language-only range: LANGMATCHES('ar--rtl', 'ar') → true via string literals", async () => {
+        // Test using string literals to verify the function works with directional tags
+        const query = `
+          PREFIX ex: <http://example.org/>
+          SELECT ?val WHERE {
+            ex:str3 ex:value ?val .
+            FILTER(LANGMATCHES("ar--rtl", "ar"))
+          }
+        `;
+
+        const parsed = parser.parse(query);
+        const algebra = translator.translate(parsed);
+        const results = await executor.executeAll(algebra);
+
+        // Should return results since LANGMATCHES("ar--rtl", "ar") is true
+        expect(results).toHaveLength(1);
+      });
+
+      it("should match exact directional tag: LANGMATCHES('ar--rtl', 'ar--rtl') → true", async () => {
+        const query = `
+          PREFIX ex: <http://example.org/>
+          SELECT ?val WHERE {
+            ex:str3 ex:value ?val .
+            FILTER(LANGMATCHES("ar--rtl", "ar--rtl"))
+          }
+        `;
+
+        const parsed = parser.parse(query);
+        const algebra = translator.translate(parsed);
+        const results = await executor.executeAll(algebra);
+
+        expect(results).toHaveLength(1);
+      });
+
+      it("should reject direction mismatch: LANGMATCHES('ar--rtl', 'ar--ltr') → false", async () => {
+        const query = `
+          PREFIX ex: <http://example.org/>
+          SELECT ?val WHERE {
+            ex:str3 ex:value ?val .
+            FILTER(LANGMATCHES("ar--rtl", "ar--ltr"))
+          }
+        `;
+
+        const parsed = parser.parse(query);
+        const algebra = translator.translate(parsed);
+        const results = await executor.executeAll(algebra);
+
+        // Should return no results since LANGMATCHES("ar--rtl", "ar--ltr") is false
+        expect(results).toHaveLength(0);
+      });
+
+      it("should match wildcard with directional tag: LANGMATCHES('ar--rtl', '*') → true", async () => {
+        const query = `
+          PREFIX ex: <http://example.org/>
+          SELECT ?val WHERE {
+            ex:str3 ex:value ?val .
+            FILTER(LANGMATCHES("ar--rtl", "*"))
+          }
+        `;
+
+        const parsed = parser.parse(query);
+        const algebra = translator.translate(parsed);
+        const results = await executor.executeAll(algebra);
+
+        expect(results).toHaveLength(1);
+      });
+
+      it("should reject non-directional tag with directional range: LANGMATCHES('ar', 'ar--rtl') → false", async () => {
+        const query = `
+          PREFIX ex: <http://example.org/>
+          SELECT ?val WHERE {
+            ex:str3 ex:value ?val .
+            FILTER(LANGMATCHES("ar", "ar--rtl"))
+          }
+        `;
+
+        const parsed = parser.parse(query);
+        const algebra = translator.translate(parsed);
+        const results = await executor.executeAll(algebra);
+
+        // Should return no results since non-directional "ar" doesn't match "ar--rtl"
+        expect(results).toHaveLength(0);
+      });
+
+      it("should remain backward compatible: LANGMATCHES('en', 'en') → true", async () => {
+        // Use existing test data with language tag but no direction
+        const query = `
+          PREFIX ex: <http://example.org/>
+          SELECT ?val WHERE {
+            ex:str3 ex:value ?val .
+            FILTER(LANGMATCHES(LANG(?val), "en"))
+          }
+        `;
+
+        const parsed = parser.parse(query);
+        const algebra = translator.translate(parsed);
+        const results = await executor.executeAll(algebra);
+
+        expect(results).toHaveLength(1);
+      });
+    });
   });
 
   describe("Numeric Functions", () => {

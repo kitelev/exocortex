@@ -942,6 +942,142 @@ describe("BuiltInFunctions", () => {
         expect(BuiltInFunctions.langMatches("eno", "en")).toBe(false);
       });
     });
+
+    describe("direction-aware matching (SPARQL 1.2 extension)", () => {
+      describe("language-only range matches any direction", () => {
+        it('LANGMATCHES("ar--rtl", "ar") returns true', () => {
+          expect(BuiltInFunctions.langMatches("ar--rtl", "ar")).toBe(true);
+        });
+
+        it('LANGMATCHES("he--rtl", "he") returns true', () => {
+          expect(BuiltInFunctions.langMatches("he--rtl", "he")).toBe(true);
+        });
+
+        it('LANGMATCHES("en--ltr", "en") returns true', () => {
+          expect(BuiltInFunctions.langMatches("en--ltr", "en")).toBe(true);
+        });
+
+        it('LANGMATCHES("en-US--ltr", "en") returns true', () => {
+          expect(BuiltInFunctions.langMatches("en-US--ltr", "en")).toBe(true);
+        });
+
+        it('LANGMATCHES("en-US--ltr", "en-US") returns true', () => {
+          expect(BuiltInFunctions.langMatches("en-US--ltr", "en-US")).toBe(true);
+        });
+      });
+
+      describe("exact match with direction", () => {
+        it('LANGMATCHES("ar--rtl", "ar--rtl") returns true', () => {
+          expect(BuiltInFunctions.langMatches("ar--rtl", "ar--rtl")).toBe(true);
+        });
+
+        it('LANGMATCHES("he--rtl", "he--rtl") returns true', () => {
+          expect(BuiltInFunctions.langMatches("he--rtl", "he--rtl")).toBe(true);
+        });
+
+        it('LANGMATCHES("en--ltr", "en--ltr") returns true', () => {
+          expect(BuiltInFunctions.langMatches("en--ltr", "en--ltr")).toBe(true);
+        });
+
+        it('LANGMATCHES("en-US--ltr", "en-US--ltr") returns true', () => {
+          expect(BuiltInFunctions.langMatches("en-US--ltr", "en-US--ltr")).toBe(true);
+        });
+      });
+
+      describe("direction mismatch returns false", () => {
+        it('LANGMATCHES("ar--rtl", "ar--ltr") returns false', () => {
+          expect(BuiltInFunctions.langMatches("ar--rtl", "ar--ltr")).toBe(false);
+        });
+
+        it('LANGMATCHES("en--ltr", "en--rtl") returns false', () => {
+          expect(BuiltInFunctions.langMatches("en--ltr", "en--rtl")).toBe(false);
+        });
+
+        it('LANGMATCHES("he--rtl", "he--ltr") returns false', () => {
+          expect(BuiltInFunctions.langMatches("he--rtl", "he--ltr")).toBe(false);
+        });
+      });
+
+      describe("wildcard matches all including directional", () => {
+        it('LANGMATCHES("ar--rtl", "*") returns true', () => {
+          expect(BuiltInFunctions.langMatches("ar--rtl", "*")).toBe(true);
+        });
+
+        it('LANGMATCHES("en--ltr", "*") returns true', () => {
+          expect(BuiltInFunctions.langMatches("en--ltr", "*")).toBe(true);
+        });
+
+        it('LANGMATCHES("en-US--ltr", "*") returns true', () => {
+          expect(BuiltInFunctions.langMatches("en-US--ltr", "*")).toBe(true);
+        });
+      });
+
+      describe("backward compatible with SPARQL 1.1", () => {
+        it('should still match non-directional tags: LANGMATCHES("en", "en") returns true', () => {
+          expect(BuiltInFunctions.langMatches("en", "en")).toBe(true);
+        });
+
+        it('should still match subtags: LANGMATCHES("en-US", "en") returns true', () => {
+          expect(BuiltInFunctions.langMatches("en-US", "en")).toBe(true);
+        });
+
+        it('should still reject different languages: LANGMATCHES("fr", "en") returns false', () => {
+          expect(BuiltInFunctions.langMatches("fr", "en")).toBe(false);
+        });
+
+        it('should still handle empty tag: LANGMATCHES("", "*") returns false', () => {
+          expect(BuiltInFunctions.langMatches("", "*")).toBe(false);
+        });
+      });
+
+      describe("direction is case-insensitive", () => {
+        it('LANGMATCHES("ar--RTL", "ar--rtl") returns true', () => {
+          expect(BuiltInFunctions.langMatches("ar--RTL", "ar--rtl")).toBe(true);
+        });
+
+        it('LANGMATCHES("ar--rtl", "ar--RTL") returns true', () => {
+          expect(BuiltInFunctions.langMatches("ar--rtl", "ar--RTL")).toBe(true);
+        });
+
+        it('LANGMATCHES("en--LTR", "en--ltr") returns true', () => {
+          expect(BuiltInFunctions.langMatches("en--LTR", "en--ltr")).toBe(true);
+        });
+      });
+
+      describe("prefix match with direction", () => {
+        it('LANGMATCHES("en-US--ltr", "en--ltr") returns true', () => {
+          expect(BuiltInFunctions.langMatches("en-US--ltr", "en--ltr")).toBe(true);
+        });
+
+        it('LANGMATCHES("ar-EG--rtl", "ar--rtl") returns true', () => {
+          expect(BuiltInFunctions.langMatches("ar-EG--rtl", "ar--rtl")).toBe(true);
+        });
+
+        it('LANGMATCHES("zh-Hans--ltr", "zh--ltr") returns true', () => {
+          expect(BuiltInFunctions.langMatches("zh-Hans--ltr", "zh--ltr")).toBe(true);
+        });
+
+        it('LANGMATCHES("en-US--ltr", "en--rtl") returns false (direction mismatch)', () => {
+          expect(BuiltInFunctions.langMatches("en-US--ltr", "en--rtl")).toBe(false);
+        });
+      });
+
+      describe("directional tag without direction in range", () => {
+        it("should match directional tag when range has no direction", () => {
+          // Tag has direction, range doesn't specify - should match language
+          expect(BuiltInFunctions.langMatches("ar--rtl", "ar")).toBe(true);
+          expect(BuiltInFunctions.langMatches("he--rtl", "he")).toBe(true);
+        });
+      });
+
+      describe("non-directional tag with directional range", () => {
+        it("should not match when tag has no direction but range requires one", () => {
+          // Tag doesn't have direction, range requires specific direction
+          expect(BuiltInFunctions.langMatches("ar", "ar--rtl")).toBe(false);
+          expect(BuiltInFunctions.langMatches("en", "en--ltr")).toBe(false);
+        });
+      });
+    });
   });
 
   describe("REGEX", () => {

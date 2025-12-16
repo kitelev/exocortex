@@ -91,33 +91,51 @@ export class BuiltInFunctions {
   }
 
   /**
-   * SPARQL 1.1 langMatches function.
+   * SPARQL 1.1/1.2 langMatches function with direction-aware extension.
    * https://www.w3.org/TR/sparql11-query/#func-langMatches
    *
    * Matches a language tag against a language range per RFC 4647 basic filtering.
+   * Extended to support directional language tags in the format "lang--dir".
    *
-   * @param languageTag - The language tag to check (e.g., "en", "en-US", "en-GB")
-   * @param languageRange - The language range to match against (e.g., "en", "*")
+   * @param languageTag - The language tag to check (e.g., "en", "en-US", "ar--rtl")
+   * @param languageRange - The language range to match against (e.g., "en", "*", "ar--rtl")
    * @returns true if the language tag matches the range, false otherwise
    *
    * Special cases:
-   * - Range "*" matches any non-empty language tag
+   * - Range "*" matches any non-empty language tag (including directional)
    * - Empty language tag matches nothing (except empty range for exact match)
    * - Case-insensitive comparison (per RFC 4647)
+   *
+   * Direction-aware matching (SPARQL 1.2 extension):
+   * - Tags can include direction: "ar--rtl", "he--rtl", "en--ltr"
+   * - Language-only range matches any direction: LANGMATCHES("ar--rtl", "ar") → true
+   * - Exact direction match: LANGMATCHES("ar--rtl", "ar--rtl") → true
+   * - Direction mismatch returns false: LANGMATCHES("ar--rtl", "ar--ltr") → false
    */
   static langMatches(languageTag: string, languageRange: string): boolean {
-    // Normalize both to lowercase for case-insensitive comparison
-    const tag = languageTag.toLowerCase();
-    const range = languageRange.toLowerCase();
+    // Parse direction from tag (format: "lang--dir")
+    const [tagLang, tagDir] = this.parseDirectionalLangTag(languageTag);
+    const [rangeLang, rangeDir] = this.parseDirectionalLangTag(languageRange);
+
+    // Normalize both language parts to lowercase for case-insensitive comparison
+    const tag = tagLang.toLowerCase();
+    const range = rangeLang.toLowerCase();
 
     // Special case: "*" matches any non-empty language tag
     if (range === "*") {
+      // Direction doesn't matter for wildcard - just check language is non-empty
       return tag !== "";
     }
 
     // Empty tag matches nothing (except empty range for exact match)
     if (tag === "") {
       return range === "";
+    }
+
+    // Check direction match if range specifies a direction
+    // If range has no direction, match any direction in tag
+    if (rangeDir && tagDir !== rangeDir) {
+      return false;
     }
 
     // Exact match
@@ -128,6 +146,32 @@ export class BuiltInFunctions {
     // Prefix match: tag starts with range followed by "-"
     // e.g., "en-US" matches "en", "en-GB-oed" matches "en-GB"
     return tag.startsWith(range + "-");
+  }
+
+  /**
+   * Parses a directional language tag into language and direction components.
+   *
+   * @param tag - The language tag, possibly with direction (e.g., "ar--rtl", "en")
+   * @returns Tuple of [language, direction] where direction may be undefined
+   *
+   * Examples:
+   * - parseDirectionalLangTag("ar--rtl") → ["ar", "rtl"]
+   * - parseDirectionalLangTag("en-US--ltr") → ["en-US", "ltr"]
+   * - parseDirectionalLangTag("en") → ["en", undefined]
+   * - parseDirectionalLangTag("en-US") → ["en-US", undefined]
+   */
+  private static parseDirectionalLangTag(
+    tag: string
+  ): [string, string | undefined] {
+    const dirSeparatorIndex = tag.indexOf("--");
+    if (dirSeparatorIndex === -1) {
+      return [tag, undefined];
+    }
+
+    const language = tag.substring(0, dirSeparatorIndex);
+    const direction = tag.substring(dirSeparatorIndex + 2).toLowerCase();
+
+    return [language, direction];
   }
 
   static datatype(term: RDFTerm | undefined): IRI {
