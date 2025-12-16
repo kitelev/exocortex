@@ -594,20 +594,45 @@ export class FilterExecutor {
         return BuiltInFunctions.month(monthDate);
 
       case "day":
-        const dayDate = this.getStringValue(this.evaluateExpression(expr.args[0], solution));
-        return BuiltInFunctions.day(dayDate);
+      case "days": {
+        const dayArg = this.evaluateExpression(expr.args[0], solution);
+        // Check if argument is an xsd:dayTimeDuration
+        if (this.isDayTimeDurationValue(dayArg)) {
+          return BuiltInFunctions.durationDays(dayArg);
+        }
+        // Otherwise treat as dateTime
+        return BuiltInFunctions.day(this.getStringValue(dayArg));
+      }
 
-      case "hours":
-        const hoursDate = this.getStringValue(this.evaluateExpression(expr.args[0], solution));
-        return BuiltInFunctions.hours(hoursDate);
+      case "hours": {
+        const hoursArg = this.evaluateExpression(expr.args[0], solution);
+        // Check if argument is an xsd:dayTimeDuration
+        if (this.isDayTimeDurationValue(hoursArg)) {
+          return BuiltInFunctions.durationHours(hoursArg);
+        }
+        // Otherwise treat as dateTime
+        return BuiltInFunctions.hours(this.getStringValue(hoursArg));
+      }
 
-      case "minutes":
-        const minutesDate = this.getStringValue(this.evaluateExpression(expr.args[0], solution));
-        return BuiltInFunctions.minutes(minutesDate);
+      case "minutes": {
+        const minutesArg = this.evaluateExpression(expr.args[0], solution);
+        // Check if argument is an xsd:dayTimeDuration
+        if (this.isDayTimeDurationValue(minutesArg)) {
+          return BuiltInFunctions.durationMinutes(minutesArg);
+        }
+        // Otherwise treat as dateTime
+        return BuiltInFunctions.minutes(this.getStringValue(minutesArg));
+      }
 
-      case "seconds":
-        const secondsDate = this.getStringValue(this.evaluateExpression(expr.args[0], solution));
-        return BuiltInFunctions.seconds(secondsDate);
+      case "seconds": {
+        const secondsArg = this.evaluateExpression(expr.args[0], solution);
+        // Check if argument is an xsd:dayTimeDuration
+        if (this.isDayTimeDurationValue(secondsArg)) {
+          return BuiltInFunctions.durationSeconds(secondsArg);
+        }
+        // Otherwise treat as dateTime
+        return BuiltInFunctions.seconds(this.getStringValue(secondsArg));
+      }
 
       case "timezone":
         const timezoneDate = this.getStringValue(this.evaluateExpression(expr.args[0], solution));
@@ -668,6 +693,29 @@ export class FilterExecutor {
       case "durationtoseconds": {
         const durSecArg = this.evaluateExpression(expr.args[0], solution);
         return BuiltInFunctions.durationToSeconds(durSecArg);
+      }
+
+      // Duration component accessor functions (Issue #989)
+      // These extract individual components from xsd:dayTimeDuration values
+      // (not total converted values)
+      case "durationdays": {
+        const durDaysCompArg = this.evaluateExpression(expr.args[0], solution);
+        return BuiltInFunctions.durationDays(durDaysCompArg);
+      }
+
+      case "durationhours": {
+        const durHoursCompArg = this.evaluateExpression(expr.args[0], solution);
+        return BuiltInFunctions.durationHours(durHoursCompArg);
+      }
+
+      case "durationminutes": {
+        const durMinCompArg = this.evaluateExpression(expr.args[0], solution);
+        return BuiltInFunctions.durationMinutes(durMinCompArg);
+      }
+
+      case "durationseconds": {
+        const durSecCompArg = this.evaluateExpression(expr.args[0], solution);
+        return BuiltInFunctions.durationSeconds(durSecCompArg);
       }
 
       case "datetimediff": {

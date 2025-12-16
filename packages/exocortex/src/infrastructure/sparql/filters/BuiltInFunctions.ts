@@ -1685,4 +1685,189 @@ export class BuiltInFunctions {
     const ms = this.parseDayTimeDuration(durValue);
     return ms / 1000;
   }
+
+  // =========================================================================
+  // xsd:dayTimeDuration Component Accessor Functions (SPARQL 1.1 Issue #989)
+  // https://www.w3.org/TR/xpath-functions/#dt-dayTimeDuration
+  // =========================================================================
+
+  /**
+   * Parse duration string and extract individual components.
+   * Internal helper for DAYS(), HOURS(), MINUTES(), SECONDS() functions.
+   *
+   * @param durationStr - xsd:dayTimeDuration string
+   * @returns Object with days, hours, minutes, seconds components
+   */
+  private static parseDurationComponents(durationStr: string): {
+    negative: boolean;
+    days: number;
+    hours: number;
+    minutes: number;
+    seconds: number;
+  } {
+    if (!durationStr) {
+      throw new Error("parseDurationComponents: duration string is empty");
+    }
+
+    // Handle sign
+    let negative = false;
+    let str = durationStr.trim();
+    if (str.startsWith("-")) {
+      negative = true;
+      str = str.substring(1);
+    }
+
+    // Must start with 'P'
+    if (!str.startsWith("P")) {
+      throw new Error(`parseDurationComponents: invalid format, must start with 'P': '${durationStr}'`);
+    }
+    str = str.substring(1);
+
+    let days = 0;
+    let hours = 0;
+    let minutes = 0;
+    let seconds = 0;
+
+    // Parse days (before T)
+    const tIndex = str.indexOf("T");
+    let dayPart = "";
+    let timePart = "";
+
+    if (tIndex === -1) {
+      // No time part, could be just days like "P1D"
+      dayPart = str;
+    } else {
+      dayPart = str.substring(0, tIndex);
+      timePart = str.substring(tIndex + 1);
+    }
+
+    // Parse days: nD
+    if (dayPart) {
+      const dayMatch = dayPart.match(/^(\d+(?:\.\d+)?)D$/);
+      if (dayMatch) {
+        days = parseFloat(dayMatch[1]);
+      } else if (dayPart !== "") {
+        throw new Error(`parseDurationComponents: invalid day component: '${dayPart}' in '${durationStr}'`);
+      }
+    }
+
+    // Parse time part: [nH][nM][nS] or [nH][nM][n.nS]
+    if (timePart) {
+      let remaining = timePart;
+
+      // Hours: nH
+      const hourMatch = remaining.match(/^(\d+(?:\.\d+)?)H/);
+      if (hourMatch) {
+        hours = parseFloat(hourMatch[1]);
+        remaining = remaining.substring(hourMatch[0].length);
+      }
+
+      // Minutes: nM
+      const minMatch = remaining.match(/^(\d+(?:\.\d+)?)M/);
+      if (minMatch) {
+        minutes = parseFloat(minMatch[1]);
+        remaining = remaining.substring(minMatch[0].length);
+      }
+
+      // Seconds: nS or n.nS
+      const secMatch = remaining.match(/^(\d+(?:\.\d+)?)S$/);
+      if (secMatch) {
+        seconds = parseFloat(secMatch[1]);
+        remaining = remaining.substring(secMatch[0].length);
+      }
+
+      // If there's remaining content, it's invalid
+      if (remaining !== "") {
+        throw new Error(`parseDurationComponents: invalid time component: '${remaining}' in '${durationStr}'`);
+      }
+    }
+
+    return { negative, days, hours, minutes, seconds };
+  }
+
+  /**
+   * DAYS accessor function for xsd:dayTimeDuration.
+   * Extracts the days component from a duration value.
+   *
+   * Per XPath/SPARQL functions specification, returns the integer days component.
+   *
+   * @param duration - xsd:dayTimeDuration string or Literal
+   * @returns Integer days component (can be negative)
+   *
+   * Examples:
+   * - DAYS("P1DT2H30M") → 1
+   * - DAYS("PT5H") → 0
+   * - DAYS("-P2DT3H") → -2
+   */
+  static durationDays(duration: string | Literal): number {
+    const durValue = duration instanceof Literal ? duration.value : duration;
+    const components = this.parseDurationComponents(durValue);
+    const result = Math.floor(components.days);
+    return components.negative ? -result : result;
+  }
+
+  /**
+   * HOURS accessor function for xsd:dayTimeDuration.
+   * Extracts the hours component from a duration value.
+   *
+   * Per XPath/SPARQL functions specification, returns the integer hours component
+   * (0-23 range, not total hours converted from days).
+   *
+   * @param duration - xsd:dayTimeDuration string or Literal
+   * @returns Integer hours component (can be negative, range -23 to 23)
+   *
+   * Examples:
+   * - HOURS("PT1H30M") → 1
+   * - HOURS("P1DT2H30M") → 2 (not 26)
+   * - HOURS("-PT8H30M") → -8
+   */
+  static durationHours(duration: string | Literal): number {
+    const durValue = duration instanceof Literal ? duration.value : duration;
+    const components = this.parseDurationComponents(durValue);
+    const result = Math.floor(components.hours);
+    return components.negative ? -result : result;
+  }
+
+  /**
+   * MINUTES accessor function for xsd:dayTimeDuration.
+   * Extracts the minutes component from a duration value.
+   *
+   * Per XPath/SPARQL functions specification, returns the integer minutes component
+   * (0-59 range, not total minutes converted from hours/days).
+   *
+   * @param duration - xsd:dayTimeDuration string or Literal
+   * @returns Integer minutes component (can be negative, range -59 to 59)
+   *
+   * Examples:
+   * - MINUTES("PT1H30M") → 30
+   * - MINUTES("PT90M") → 90 (if specified as 90M, returns 90)
+   * - MINUTES("-PT1H45M") → -45
+   */
+  static durationMinutes(duration: string | Literal): number {
+    const durValue = duration instanceof Literal ? duration.value : duration;
+    const components = this.parseDurationComponents(durValue);
+    const result = Math.floor(components.minutes);
+    return components.negative ? -result : result;
+  }
+
+  /**
+   * SECONDS accessor function for xsd:dayTimeDuration.
+   * Extracts the seconds component from a duration value.
+   *
+   * Per XPath/SPARQL functions specification, returns the decimal seconds component
+   * (includes fractional seconds, 0-59.999... range, not total seconds).
+   *
+   * @param duration - xsd:dayTimeDuration string or Literal
+   * @returns Decimal seconds component (can be negative)
+   *
+   * Examples:
+   * - SECONDS("PT1H30M45S") → 45
+   * - SECONDS("PT1.5S") → 1.5
+   * - SECONDS("-PT30.123S") → -30.123
+   */
+  static durationSeconds(duration: string | Literal): number {
+    const durValue = duration instanceof Literal ? duration.value : duration;
+    const components = this.parseDurationComponents(durValue);
+    return components.negative ? -components.seconds : components.seconds;
+  }
 }
