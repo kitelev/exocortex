@@ -3275,4 +3275,250 @@ describe("BuiltInFunctions", () => {
       });
     });
   });
+
+  // =========================================================================
+  // SPARQL 1.2 FOLD Function Tests (Issue #983)
+  // =========================================================================
+
+  describe("FOLD", () => {
+    describe("basic case folding", () => {
+      it("should convert uppercase to lowercase", () => {
+        const result = BuiltInFunctions.fold("Hello");
+        expect(result.value).toBe("hello");
+        expect(result.datatype?.value).toBe("http://www.w3.org/2001/XMLSchema#string");
+      });
+
+      it("should handle already lowercase string", () => {
+        const result = BuiltInFunctions.fold("hello");
+        expect(result.value).toBe("hello");
+      });
+
+      it("should handle all uppercase string", () => {
+        const result = BuiltInFunctions.fold("HELLO WORLD");
+        expect(result.value).toBe("hello world");
+      });
+
+      it("should handle mixed case string", () => {
+        const result = BuiltInFunctions.fold("HeLLo WoRLd");
+        expect(result.value).toBe("hello world");
+      });
+
+      it("should normalize Literal input", () => {
+        const literal = new Literal("HELLO");
+        const result = BuiltInFunctions.fold(literal);
+        expect(result.value).toBe("hello");
+      });
+
+      it("should handle numbers and special characters unchanged", () => {
+        const result = BuiltInFunctions.fold("Test123!@#");
+        expect(result.value).toBe("test123!@#");
+      });
+    });
+
+    describe("German ß case folding", () => {
+      it("should fold German ß to ss", () => {
+        const result = BuiltInFunctions.fold("Straße");
+        expect(result.value).toBe("strasse");
+      });
+
+      it("should fold capital ẞ to ss", () => {
+        const result = BuiltInFunctions.fold("STRAẞE");
+        expect(result.value).toBe("strasse");
+      });
+
+      it("should demonstrate difference from LCASE", () => {
+        // LCASE("Straße") = "straße" (lowercase preserves ß)
+        // FOLD("Straße") = "strasse" (case folding expands ß to ss)
+        const lcaseResult = BuiltInFunctions.lcase("Straße");
+        const foldResult = BuiltInFunctions.fold("Straße");
+
+        expect(lcaseResult).toBe("straße");
+        expect(foldResult.value).toBe("strasse");
+        expect(lcaseResult).not.toBe(foldResult.value);
+      });
+
+      it("should handle multiple ß characters", () => {
+        const result = BuiltInFunctions.fold("Fußball-Größe");
+        // ö stays as ö (standard lowercase), ß → ss
+        expect(result.value).toBe("fussball-grösse");
+      });
+    });
+
+    describe("Turkish İ handling", () => {
+      it("should fold Turkish dotted I (İ) correctly", () => {
+        const result = BuiltInFunctions.fold("İstanbul");
+        // İ (U+0130) → i + combining dot above (U+0307)
+        expect(result.value).toBe("i\u0307stanbul");
+      });
+
+      it("should fold regular I to lowercase i", () => {
+        const result = BuiltInFunctions.fold("Istanbul");
+        expect(result.value).toBe("istanbul");
+      });
+    });
+
+    describe("Greek sigma variants", () => {
+      it("should fold capital sigma (Σ) to lowercase sigma (σ)", () => {
+        const result = BuiltInFunctions.fold("ΣΕΛΛΑΣ");
+        // All sigmas (Σ and word-final ς) should fold to σ
+        expect(result.value).toBe("σελλασ");
+      });
+
+      it("should fold final sigma (ς) to lowercase sigma (σ)", () => {
+        const result = BuiltInFunctions.fold("ας");
+        // Final sigma ς → σ for consistent comparison
+        expect(result.value).toBe("ασ");
+      });
+
+      it("should handle word with sigma in middle and end", () => {
+        // In Greek, σ is used mid-word and ς at end
+        // Case folding normalizes both to σ for comparison
+        const result = BuiltInFunctions.fold("ΚΟΣΜΟΣ");
+        expect(result.value).toBe("κοσμοσ");
+      });
+    });
+
+    describe("ligature case folding", () => {
+      it("should fold ligature ﬁ to fi", () => {
+        const result = BuiltInFunctions.fold("ﬁle");
+        expect(result.value).toBe("file");
+      });
+
+      it("should fold ligature ﬂ to fl", () => {
+        const result = BuiltInFunctions.fold("ﬂoor");
+        expect(result.value).toBe("floor");
+      });
+
+      it("should fold ligature ﬀ to ff", () => {
+        const result = BuiltInFunctions.fold("aﬀair");
+        expect(result.value).toBe("affair");
+      });
+
+      it("should fold ligature ﬃ to ffi", () => {
+        const result = BuiltInFunctions.fold("oﬃce");
+        expect(result.value).toBe("office");
+      });
+
+      it("should fold ligature ﬄ to ffl", () => {
+        const result = BuiltInFunctions.fold("baﬄe");
+        expect(result.value).toBe("baffle");
+      });
+
+      it("should fold ligature ﬅ to st", () => {
+        const result = BuiltInFunctions.fold("ﬅar");
+        expect(result.value).toBe("star");
+      });
+    });
+
+    describe("special Unicode characters", () => {
+      it("should fold long S (ſ) to s", () => {
+        const result = BuiltInFunctions.fold("uſe");
+        expect(result.value).toBe("use");
+      });
+
+      it("should fold Kelvin sign (K) to k", () => {
+        const result = BuiltInFunctions.fold("\u212A"); // Kelvin sign
+        expect(result.value).toBe("k");
+      });
+
+      it("should fold Angstrom sign (Å) to å", () => {
+        const result = BuiltInFunctions.fold("\u212B"); // Angstrom sign
+        expect(result.value).toBe("å");
+      });
+    });
+
+    describe("case-insensitive comparison use case", () => {
+      it("should enable case-insensitive comparison with FOLD", () => {
+        // FILTER(FOLD(?name1) = FOLD(?name2))
+        const name1 = BuiltInFunctions.fold("Straße");
+        const name2 = BuiltInFunctions.fold("STRASSE");
+
+        expect(name1.value).toBe(name2.value); // Both become "strasse"
+      });
+
+      it("should handle mixed case German words consistently", () => {
+        const variations = ["Größe", "GRÖSSE", "größe", "GRÖßE"];
+        const folded = variations.map((v) => BuiltInFunctions.fold(v).value);
+
+        // All should fold to the same value: grösse (ö stays as ö, ß → ss)
+        expect(new Set(folded).size).toBe(1);
+        expect(folded[0]).toBe("grösse");
+      });
+    });
+
+    describe("input types", () => {
+      it("should accept string input", () => {
+        const result = BuiltInFunctions.fold("TEST");
+        expect(result.value).toBe("test");
+      });
+
+      it("should accept Literal input", () => {
+        const literal = new Literal("TEST");
+        const result = BuiltInFunctions.fold(literal);
+        expect(result.value).toBe("test");
+      });
+
+      it("should accept IRI input", () => {
+        const iri = new IRI("http://example.org/TEST");
+        const result = BuiltInFunctions.fold(iri);
+        expect(result.value).toBe("http://example.org/test");
+      });
+
+      it("should accept BlankNode input", () => {
+        const blank = new BlankNode("TEST");
+        const result = BuiltInFunctions.fold(blank);
+        expect(result.value).toBe("test");
+      });
+
+      it("should throw for undefined input", () => {
+        expect(() => BuiltInFunctions.fold(undefined)).toThrow(
+          "FOLD: string argument is undefined"
+        );
+      });
+    });
+
+    describe("edge cases", () => {
+      it("should throw for empty string (Literal constraint)", () => {
+        // Literal class does not allow empty strings
+        expect(() => BuiltInFunctions.fold("")).toThrow("Literal value cannot be empty");
+      });
+
+      it("should handle whitespace-only string", () => {
+        const result = BuiltInFunctions.fold("   ");
+        expect(result.value).toBe("   ");
+      });
+
+      it("should handle string with newlines", () => {
+        const result = BuiltInFunctions.fold("HELLO\nWORLD");
+        expect(result.value).toBe("hello\nworld");
+      });
+
+      it("should handle emoji (unchanged)", () => {
+        const result = BuiltInFunctions.fold("HELLO 👋");
+        expect(result.value).toBe("hello 👋");
+      });
+
+      it("should handle Chinese characters (unchanged)", () => {
+        const result = BuiltInFunctions.fold("Hello 世界");
+        expect(result.value).toBe("hello 世界");
+      });
+
+      it("should handle Cyrillic characters", () => {
+        const result = BuiltInFunctions.fold("ПРИВЕТ");
+        expect(result.value).toBe("привет");
+      });
+    });
+
+    describe("Acceptance Criteria (Issue #983)", () => {
+      it("FOLD('Hello') should return 'hello'", () => {
+        const result = BuiltInFunctions.fold("Hello");
+        expect(result.value).toBe("hello");
+      });
+
+      it("FOLD('Straße') should return 'strasse'", () => {
+        const result = BuiltInFunctions.fold("Straße");
+        expect(result.value).toBe("strasse");
+      });
+    });
+  });
 });

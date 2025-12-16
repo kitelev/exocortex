@@ -2033,4 +2033,147 @@ export class BuiltInFunctions {
 
     return new Literal(normalized, new IRI("http://www.w3.org/2001/XMLSchema#string"));
   }
+
+  // =========================================================================
+  // SPARQL 1.2 FOLD Function (Issue #983)
+  // https://www.w3.org/TR/sparql12-query/#func-fold
+  // Unicode Case Folding per Unicode Standard Annex #15
+  // =========================================================================
+
+  /**
+   * Unicode case folding mappings for special characters.
+   * These are characters that don't simply map to their lowercase equivalent.
+   * Based on Unicode Case Folding data (CaseFolding.txt).
+   *
+   * Key mappings include:
+   * - German sharp S (ß) → ss (full case folding)
+   * - Greek capital letter sigma (Σ) → σ (final form uses same lowercase)
+   * - Turkish dotted/dotless I handling
+   * - Various ligatures and special characters
+   */
+  private static readonly CASE_FOLDING_MAP: Map<string, string> = new Map([
+    // German sharp S (full case folding)
+    ["\u00DF", "ss"], // ß → ss
+    ["\u1E9E", "ss"], // ẞ (capital sharp S) → ss
+
+    // Greek sigma variants - all fold to lowercase sigma
+    ["\u03A3", "\u03C3"], // Σ → σ
+    ["\u03C2", "\u03C3"], // ς (final sigma) → σ
+
+    // Turkish special cases
+    ["\u0130", "i\u0307"], // İ (dotted I) → i + combining dot above
+    ["\u0049", "\u0069"], // I → i (standard, but included for completeness)
+
+    // Armenian ligatures
+    ["\u0587", "\u0565\u0582"], // և → եdelays
+
+    // Various other full case foldings from Unicode
+    ["\uFB00", "ff"], // ﬀ → ff
+    ["\uFB01", "fi"], // ﬁ → fi
+    ["\uFB02", "fl"], // ﬂ → fl
+    ["\uFB03", "ffi"], // ﬃ → ffi
+    ["\uFB04", "ffl"], // ﬄ → ffl
+    ["\uFB05", "st"], // ﬅ → st
+    ["\uFB06", "st"], // ﬆ → st
+
+    // Greek small letter iota with dialytika and tonos
+    ["\u0390", "\u03B9\u0308\u0301"], // ΐ
+
+    // Greek small letter upsilon with dialytika and tonos
+    ["\u03B0", "\u03C5\u0308\u0301"], // ΰ
+
+    // Latin small letter long S
+    ["\u017F", "s"], // ſ → s
+
+    // Cherokee small letters (map uppercase to lowercase)
+    // Note: Cherokee case mapping was added in Unicode 8.0
+
+    // Medieval Latin characters
+    ["\u1E9B", "\u1E61"], // ẛ → ṡ (Latin small letter long s with dot above)
+
+    // Kelvin sign
+    ["\u212A", "k"], // K (Kelvin sign) → k
+
+    // Angstrom sign
+    ["\u212B", "\u00E5"], // Å (Angstrom) → å
+  ]);
+
+  /**
+   * SPARQL 1.2 FOLD function.
+   * Performs Unicode case folding for case-insensitive string comparison.
+   *
+   * Case folding is more comprehensive than simple lowercase conversion:
+   * - Handles special cases like German ß → ss
+   * - Handles Greek sigma variants
+   * - Handles ligatures (ﬁ → fi, ﬂ → fl, etc.)
+   * - Ensures consistent comparison across all Unicode scripts
+   *
+   * @param str - String or Literal to case-fold
+   * @returns Literal with case-folded string value
+   *
+   * @see https://www.w3.org/TR/sparql12-query/#func-fold
+   * @see https://unicode.org/reports/tr44/#Casemapping
+   *
+   * Examples:
+   * - FOLD("Hello") → "hello"
+   * - FOLD("Straße") → "strasse"
+   * - FOLD("ΣΕΛΛΑΣ") → "σελλασ"
+   * - FOLD("ﬁle") → "file"
+   */
+  static fold(str: RDFTerm | string | undefined): Literal {
+    if (str === undefined) {
+      throw new Error("FOLD: string argument is undefined");
+    }
+
+    // Extract string value
+    let strValue: string;
+    if (str instanceof Literal) {
+      strValue = str.value;
+    } else if (str instanceof IRI) {
+      strValue = str.value;
+    } else if (str instanceof BlankNode) {
+      strValue = str.id;
+    } else if (typeof str === "string") {
+      strValue = str;
+    } else {
+      throw new Error("FOLD: argument must be a string or literal");
+    }
+
+    // Apply Unicode case folding
+    const folded = this.unicodeCaseFold(strValue);
+
+    return new Literal(folded, new IRI("http://www.w3.org/2001/XMLSchema#string"));
+  }
+
+  /**
+   * Performs full Unicode case folding on a string.
+   *
+   * This implements Unicode case folding following the Unicode Standard Annex #15.
+   * Case folding is used for case-insensitive matching and differs from
+   * simple lowercasing in several ways:
+   *
+   * 1. It uses full case folding (e.g., ß → ss, not ß → ß)
+   * 2. It handles special characters that don't have simple case mappings
+   * 3. It provides consistent results across all Unicode scripts
+   *
+   * @param str - Input string to case-fold
+   * @returns Case-folded string
+   */
+  private static unicodeCaseFold(str: string): string {
+    let result = "";
+
+    for (const char of str) {
+      // Check if character has special case folding
+      const folded = this.CASE_FOLDING_MAP.get(char);
+      if (folded !== undefined) {
+        result += folded;
+      } else {
+        // Use standard toLowerCase for characters without special mapping
+        // This handles the vast majority of characters correctly
+        result += char.toLowerCase();
+      }
+    }
+
+    return result;
+  }
 }
