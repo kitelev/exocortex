@@ -5,6 +5,12 @@ import {
   durationToMilliseconds,
   millisecondsToStructuredDuration,
   formatStructuredDuration,
+  YearMonthDuration,
+  parseXSDYearMonthDuration,
+  formatYearMonthDuration,
+  yearMonthDurationToMonths,
+  monthsToYearMonthDuration,
+  formatStructuredYearMonthDuration,
 } from "../../../../../src/infrastructure/sparql/datatypes/DurationTypes";
 
 describe("DurationTypes", () => {
@@ -483,6 +489,387 @@ describe("DurationTypes", () => {
 
       expect(ms).toBe(5400000);
       expect(formatDayTimeDuration(ms)).toBe("PT1H30M");
+    });
+  });
+
+  // ==========================================================================
+  // YearMonthDuration Tests
+  // ==========================================================================
+
+  describe("parseXSDYearMonthDuration", () => {
+    describe("basic parsing", () => {
+      it("should parse years only", () => {
+        const result = parseXSDYearMonthDuration("P1Y");
+        expect(result).toEqual({
+          negative: false,
+          years: 1,
+          months: 0,
+        });
+      });
+
+      it("should parse months only", () => {
+        const result = parseXSDYearMonthDuration("P6M");
+        expect(result).toEqual({
+          negative: false,
+          years: 0,
+          months: 6,
+        });
+      });
+
+      it("should parse years and months combined", () => {
+        const result = parseXSDYearMonthDuration("P1Y6M");
+        expect(result).toEqual({
+          negative: false,
+          years: 1,
+          months: 6,
+        });
+      });
+
+      it("should parse zero years", () => {
+        const result = parseXSDYearMonthDuration("P0Y");
+        expect(result).toEqual({
+          negative: false,
+          years: 0,
+          months: 0,
+        });
+      });
+
+      it("should parse zero months", () => {
+        const result = parseXSDYearMonthDuration("P0M");
+        expect(result).toEqual({
+          negative: false,
+          years: 0,
+          months: 0,
+        });
+      });
+
+      it("should parse large year values", () => {
+        const result = parseXSDYearMonthDuration("P100Y");
+        expect(result).toEqual({
+          negative: false,
+          years: 100,
+          months: 0,
+        });
+      });
+
+      it("should parse months > 12 (non-normalized)", () => {
+        const result = parseXSDYearMonthDuration("P18M");
+        expect(result).toEqual({
+          negative: false,
+          years: 0,
+          months: 18,
+        });
+      });
+    });
+
+    describe("negative durations", () => {
+      it("should parse negative years only", () => {
+        const result = parseXSDYearMonthDuration("-P1Y");
+        expect(result).toEqual({
+          negative: true,
+          years: 1,
+          months: 0,
+        });
+      });
+
+      it("should parse negative months only", () => {
+        const result = parseXSDYearMonthDuration("-P6M");
+        expect(result).toEqual({
+          negative: true,
+          years: 0,
+          months: 6,
+        });
+      });
+
+      it("should parse negative combined duration", () => {
+        const result = parseXSDYearMonthDuration("-P2Y3M");
+        expect(result).toEqual({
+          negative: true,
+          years: 2,
+          months: 3,
+        });
+      });
+    });
+
+    describe("whitespace handling", () => {
+      it("should handle leading whitespace", () => {
+        const result = parseXSDYearMonthDuration("  P1Y");
+        expect(result.years).toBe(1);
+      });
+
+      it("should handle trailing whitespace", () => {
+        const result = parseXSDYearMonthDuration("P1Y  ");
+        expect(result.years).toBe(1);
+      });
+
+      it("should handle surrounding whitespace", () => {
+        const result = parseXSDYearMonthDuration("  P1Y6M  ");
+        expect(result).toEqual({
+          negative: false,
+          years: 1,
+          months: 6,
+        });
+      });
+    });
+
+    describe("error handling", () => {
+      it("should throw for empty string", () => {
+        expect(() => parseXSDYearMonthDuration("")).toThrow(
+          "duration string is empty"
+        );
+      });
+
+      it("should throw for missing P prefix", () => {
+        expect(() => parseXSDYearMonthDuration("1Y")).toThrow(
+          "must start with 'P'"
+        );
+      });
+
+      it("should throw for just P without components", () => {
+        expect(() => parseXSDYearMonthDuration("P")).toThrow(
+          "must have at least one component"
+        );
+      });
+
+      it("should throw for time component T", () => {
+        expect(() => parseXSDYearMonthDuration("P1YT2H")).toThrow(
+          "must not contain time component 'T'"
+        );
+      });
+
+      it("should throw for day component D", () => {
+        expect(() => parseXSDYearMonthDuration("P1Y2D")).toThrow(
+          "contains day/time components"
+        );
+      });
+
+      it("should throw for hour component H", () => {
+        expect(() => parseXSDYearMonthDuration("P1Y2H")).toThrow(
+          "contains day/time components"
+        );
+      });
+
+      it("should throw for seconds component S", () => {
+        expect(() => parseXSDYearMonthDuration("P1Y2S")).toThrow(
+          "contains day/time components"
+        );
+      });
+
+      it("should throw for wrong order (months before years)", () => {
+        expect(() => parseXSDYearMonthDuration("P6M1Y")).toThrow(
+          "invalid format"
+        );
+      });
+
+      it("should throw for invalid characters", () => {
+        expect(() => parseXSDYearMonthDuration("P1Xa")).toThrow(
+          "invalid format"
+        );
+      });
+    });
+
+    describe("acceptance criteria", () => {
+      it('should parse "P1Y6M" correctly', () => {
+        const result = parseXSDYearMonthDuration("P1Y6M");
+        expect(result).toEqual({
+          negative: false,
+          years: 1,
+          months: 6,
+        });
+      });
+    });
+  });
+
+  describe("formatYearMonthDuration", () => {
+    describe("basic formatting", () => {
+      it("should format years only", () => {
+        expect(formatYearMonthDuration(12)).toBe("P1Y");
+      });
+
+      it("should format months only", () => {
+        expect(formatYearMonthDuration(6)).toBe("P6M");
+      });
+
+      it("should format years and months combined", () => {
+        expect(formatYearMonthDuration(18)).toBe("P1Y6M");
+      });
+
+      it("should format zero as P0M", () => {
+        expect(formatYearMonthDuration(0)).toBe("P0M");
+      });
+
+      it("should format exactly 1 year", () => {
+        expect(formatYearMonthDuration(12)).toBe("P1Y");
+      });
+
+      it("should format multiple years", () => {
+        expect(formatYearMonthDuration(24)).toBe("P2Y");
+      });
+
+      it("should format exactly 2 years 6 months", () => {
+        expect(formatYearMonthDuration(30)).toBe("P2Y6M");
+      });
+    });
+
+    describe("acceptance criteria", () => {
+      it('should format 18 months as "P1Y6M"', () => {
+        expect(formatYearMonthDuration(18)).toBe("P1Y6M");
+      });
+    });
+
+    describe("negative durations", () => {
+      it("should format negative months", () => {
+        expect(formatYearMonthDuration(-6)).toBe("-P6M");
+      });
+
+      it("should format negative years", () => {
+        expect(formatYearMonthDuration(-12)).toBe("-P1Y");
+      });
+
+      it("should format negative combined duration", () => {
+        expect(formatYearMonthDuration(-18)).toBe("-P1Y6M");
+      });
+    });
+  });
+
+  describe("yearMonthDurationToMonths", () => {
+    it("should convert years to months", () => {
+      const duration: YearMonthDuration = {
+        negative: false,
+        years: 1,
+        months: 0,
+      };
+      expect(yearMonthDurationToMonths(duration)).toBe(12);
+    });
+
+    it("should convert combined duration to months", () => {
+      const duration: YearMonthDuration = {
+        negative: false,
+        years: 1,
+        months: 6,
+      };
+      expect(yearMonthDurationToMonths(duration)).toBe(18);
+    });
+
+    it("should return negative for negative durations", () => {
+      const duration: YearMonthDuration = {
+        negative: true,
+        years: 0,
+        months: 6,
+      };
+      expect(yearMonthDurationToMonths(duration)).toBe(-6);
+    });
+
+    it("should handle zero duration", () => {
+      const duration: YearMonthDuration = {
+        negative: false,
+        years: 0,
+        months: 0,
+      };
+      expect(yearMonthDurationToMonths(duration)).toBe(0);
+    });
+  });
+
+  describe("monthsToYearMonthDuration", () => {
+    it("should convert months to years and remaining months", () => {
+      const result = monthsToYearMonthDuration(18);
+      expect(result).toEqual({
+        negative: false,
+        years: 1,
+        months: 6,
+      });
+    });
+
+    it("should handle negative months", () => {
+      const result = monthsToYearMonthDuration(-6);
+      expect(result).toEqual({
+        negative: true,
+        years: 0,
+        months: 6,
+      });
+    });
+
+    it("should handle exact year multiples", () => {
+      const result = monthsToYearMonthDuration(24);
+      expect(result).toEqual({
+        negative: false,
+        years: 2,
+        months: 0,
+      });
+    });
+
+    it("should handle zero", () => {
+      const result = monthsToYearMonthDuration(0);
+      expect(result).toEqual({
+        negative: false,
+        years: 0,
+        months: 0,
+      });
+    });
+  });
+
+  describe("formatStructuredYearMonthDuration", () => {
+    it("should format structured duration to string", () => {
+      const duration: YearMonthDuration = {
+        negative: false,
+        years: 1,
+        months: 6,
+      };
+      expect(formatStructuredYearMonthDuration(duration)).toBe("P1Y6M");
+    });
+
+    it("should format negative structured duration", () => {
+      const duration: YearMonthDuration = {
+        negative: true,
+        years: 2,
+        months: 0,
+      };
+      expect(formatStructuredYearMonthDuration(duration)).toBe("-P2Y");
+    });
+
+    it("should normalize months > 11 when formatting", () => {
+      // 1 year + 18 months = 2 years 6 months = 30 months
+      const duration: YearMonthDuration = {
+        negative: false,
+        years: 1,
+        months: 18,
+      };
+      // Total months = 12 + 18 = 30 = 2Y6M
+      expect(formatStructuredYearMonthDuration(duration)).toBe("P2Y6M");
+    });
+  });
+
+  describe("yearMonthDuration round-trip parsing and formatting", () => {
+    const testCases = [
+      "P1Y",
+      "P6M",
+      "P1Y6M",
+      "P0M",
+      "-P1Y",
+      "-P6M",
+      "-P2Y3M",
+      "P10Y",
+      "P11M",
+    ];
+
+    it.each(testCases)("should round-trip %s", (original) => {
+      const parsed = parseXSDYearMonthDuration(original);
+      const months = yearMonthDurationToMonths(parsed);
+      const formatted = formatYearMonthDuration(months);
+      const reparsed = parseXSDYearMonthDuration(formatted);
+
+      // The month value should be the same after round-trip
+      expect(yearMonthDurationToMonths(reparsed)).toBe(months);
+    });
+
+    it("should preserve value through parse → months → format → parse", () => {
+      // Test acceptance criteria round-trip
+      const original = "P1Y6M";
+      const parsed = parseXSDYearMonthDuration(original);
+      const months = yearMonthDurationToMonths(parsed);
+
+      expect(months).toBe(18);
+      expect(formatYearMonthDuration(months)).toBe("P1Y6M");
     });
   });
 });

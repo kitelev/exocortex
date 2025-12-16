@@ -1,11 +1,14 @@
 /**
- * XSD dayTimeDuration parsing and formatting utilities.
+ * XSD duration parsing and formatting utilities.
  *
- * This module provides structured parsing of ISO 8601 duration format
- * (P[n]DT[n]H[n]M[n]S) and formatting back to canonical representation.
+ * This module provides structured parsing of ISO 8601 duration formats:
+ * - dayTimeDuration: P[n]DT[n]H[n]M[n]S (days, hours, minutes, seconds)
+ * - yearMonthDuration: P[n]Y[n]M (years and months)
  *
  * @see https://www.w3.org/TR/xpath-functions/#dt-dayTimeDuration
+ * @see https://www.w3.org/TR/xpath-functions/#dt-yearMonthDuration
  * @see https://www.w3.org/TR/xmlschema-2/#dayTimeDuration
+ * @see https://www.w3.org/TR/xmlschema-2/#yearMonthDuration
  */
 
 /**
@@ -272,4 +275,214 @@ export function formatDayTimeDuration(ms: number): string {
 export function formatStructuredDuration(duration: DayTimeDuration): string {
   const ms = durationToMilliseconds(duration);
   return formatDayTimeDuration(ms);
+}
+
+// ============================================================================
+// YearMonthDuration Types and Functions
+// ============================================================================
+
+/**
+ * Structured representation of an xsd:yearMonthDuration value.
+ *
+ * Represents duration in terms of years and months
+ * with optional negative sign.
+ */
+export interface YearMonthDuration {
+  /** Whether the duration is negative */
+  negative: boolean;
+  /** Number of years (0-n) */
+  years: number;
+  /** Number of months (0-11 after normalization, but can be >11 if not normalized) */
+  months: number;
+}
+
+/**
+ * Parse an xsd:yearMonthDuration string into a structured object.
+ *
+ * Supports the ISO 8601 duration format:
+ * - `P[n]Y` - years only
+ * - `P[n]M` - months only
+ * - `P[n]Y[n]M` - years and months combined
+ * - Negative durations with leading `-`
+ *
+ * @param value - ISO 8601 yearMonthDuration string
+ * @returns Structured YearMonthDuration object
+ * @throws Error if the value is empty or invalid format
+ *
+ * @example
+ * // Basic parsing
+ * parseXSDYearMonthDuration("P1Y")       // { negative: false, years: 1, months: 0 }
+ * parseXSDYearMonthDuration("P6M")       // { negative: false, years: 0, months: 6 }
+ * parseXSDYearMonthDuration("P1Y6M")     // { negative: false, years: 1, months: 6 }
+ * parseXSDYearMonthDuration("-P1Y")      // { negative: true, years: 1, months: 0 }
+ */
+export function parseXSDYearMonthDuration(value: string): YearMonthDuration {
+  if (!value) {
+    throw new Error("parseXSDYearMonthDuration: duration string is empty");
+  }
+
+  let str = value.trim();
+  let negative = false;
+
+  // Check for negative sign
+  if (str.startsWith("-")) {
+    negative = true;
+    str = str.substring(1);
+  }
+
+  // Must start with 'P'
+  if (!str.startsWith("P")) {
+    throw new Error(
+      `parseXSDYearMonthDuration: invalid format, must start with 'P': '${value}'`
+    );
+  }
+  str = str.substring(1);
+
+  // Must not contain 'T' (that would be dayTimeDuration)
+  if (str.includes("T")) {
+    throw new Error(
+      `parseXSDYearMonthDuration: invalid format, must not contain time component 'T': '${value}'`
+    );
+  }
+
+  // Must not contain day/time components (D, H, S as designators)
+  if (/[DHS]/.test(str)) {
+    throw new Error(
+      `parseXSDYearMonthDuration: invalid format, contains day/time components: '${value}'`
+    );
+  }
+
+  let years = 0;
+  let months = 0;
+  let remaining = str;
+
+  // Parse years: nY
+  const yearMatch = remaining.match(/^(\d+)Y/);
+  if (yearMatch) {
+    years = parseInt(yearMatch[1], 10);
+    remaining = remaining.substring(yearMatch[0].length);
+  }
+
+  // Parse months: nM
+  const monthMatch = remaining.match(/^(\d+)M$/);
+  if (monthMatch) {
+    months = parseInt(monthMatch[1], 10);
+    remaining = remaining.substring(monthMatch[0].length);
+  }
+
+  // If there's remaining content that's not empty, it's invalid
+  if (remaining !== "") {
+    throw new Error(
+      `parseXSDYearMonthDuration: invalid format: '${value}'`
+    );
+  }
+
+  // Must have at least years or months
+  if (years === 0 && months === 0 && str !== "0Y" && str !== "0M" && str !== "0Y0M") {
+    // Check if original string was just "P" without any components
+    if (str === "") {
+      throw new Error(
+        `parseXSDYearMonthDuration: invalid format, must have at least one component: '${value}'`
+      );
+    }
+  }
+
+  return { negative, years, months };
+}
+
+/**
+ * Convert a YearMonthDuration to total months.
+ *
+ * @param duration - Structured YearMonthDuration object
+ * @returns Total months (negative if duration is negative)
+ *
+ * @example
+ * yearMonthDurationToMonths({ negative: false, years: 1, months: 6 })
+ * // Returns: 18 (1 year 6 months = 18 months)
+ */
+export function yearMonthDurationToMonths(duration: YearMonthDuration): number {
+  const totalMonths = duration.years * 12 + duration.months;
+  return duration.negative ? -totalMonths : totalMonths;
+}
+
+/**
+ * Convert total months to a YearMonthDuration structure.
+ *
+ * @param months - Total months (can be negative)
+ * @returns Structured YearMonthDuration object (normalized so months < 12)
+ *
+ * @example
+ * monthsToYearMonthDuration(18)
+ * // Returns: { negative: false, years: 1, months: 6 }
+ *
+ * monthsToYearMonthDuration(-6)
+ * // Returns: { negative: true, years: 0, months: 6 }
+ */
+export function monthsToYearMonthDuration(months: number): YearMonthDuration {
+  const negative = months < 0;
+  const absMonths = Math.abs(months);
+
+  const years = Math.floor(absMonths / 12);
+  const remainingMonths = absMonths % 12;
+
+  return { negative, years, months: remainingMonths };
+}
+
+/**
+ * Format total months as an xsd:yearMonthDuration string.
+ *
+ * Creates a canonical ISO 8601 duration string from months.
+ * The output format follows these rules:
+ * - Always starts with 'P' (or '-P' for negative)
+ * - Years are included as 'nY' if >= 12 months
+ * - Months are included as 'nM' if remainder after years
+ * - If input is 0, returns 'P0M'
+ *
+ * @param months - Duration in months (can be negative)
+ * @returns xsd:yearMonthDuration string in canonical format
+ *
+ * @example
+ * // Basic formatting
+ * formatYearMonthDuration(18)    // "P1Y6M"
+ * formatYearMonthDuration(12)    // "P1Y"
+ * formatYearMonthDuration(6)     // "P6M"
+ * formatYearMonthDuration(0)     // "P0M"
+ * formatYearMonthDuration(-18)   // "-P1Y6M"
+ */
+export function formatYearMonthDuration(months: number): string {
+  const negative = months < 0;
+  const absMonths = Math.abs(months);
+
+  const years = Math.floor(absMonths / 12);
+  const remainingMonths = absMonths % 12;
+
+  // Build duration string
+  let result = negative ? "-P" : "P";
+
+  // Add years if present
+  if (years > 0) {
+    result += `${years}Y`;
+  }
+
+  // Add months if present, or if no years (to avoid just "P")
+  if (remainingMonths > 0 || years === 0) {
+    result += `${remainingMonths}M`;
+  }
+
+  return result;
+}
+
+/**
+ * Format a YearMonthDuration structure as an xsd:yearMonthDuration string.
+ *
+ * @param duration - Structured YearMonthDuration object
+ * @returns xsd:yearMonthDuration string in canonical format
+ *
+ * @example
+ * formatStructuredYearMonthDuration({ negative: false, years: 1, months: 6 })
+ * // Returns: "P1Y6M"
+ */
+export function formatStructuredYearMonthDuration(duration: YearMonthDuration): string {
+  const months = yearMonthDurationToMonths(duration);
+  return formatYearMonthDuration(months);
 }
