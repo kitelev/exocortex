@@ -22,6 +22,7 @@ import { TaskTrackingService } from "./application/services/TaskTrackingService"
 import { AliasSyncService } from "./application/services/AliasSyncService";
 import { WikilinkAliasService } from "./application/services/WikilinkAliasService";
 import { SPARQLCodeBlockProcessor } from "./application/processors/SPARQLCodeBlockProcessor";
+import { LayoutCodeBlockProcessor } from "./application/processors/LayoutCodeBlockProcessor";
 import { SPARQLApi } from "./application/api/SPARQLApi";
 import { PluginContainer } from "./infrastructure/di/PluginContainer";
 import { createAliasIconExtension } from "./presentation/editor-extensions";
@@ -46,6 +47,7 @@ export default class ExocortexPlugin extends Plugin {
   private metadataCache!: LRUCache<string, Record<string, unknown>>;
   vaultAdapter!: ObsidianVaultAdapter;
   private sparqlProcessor!: SPARQLCodeBlockProcessor;
+  private layoutProcessor!: LayoutCodeBlockProcessor;
   sparql!: SPARQLApi;
   settings!: ExocortexSettings;
   private timerManager!: TimerManager;
@@ -95,6 +97,7 @@ export default class ExocortexPlugin extends Plugin {
         ttl: 5 * 60 * 1000, // 5 minutes
       });
       this.sparqlProcessor = new SPARQLCodeBlockProcessor(this);
+      this.layoutProcessor = new LayoutCodeBlockProcessor(this);
       this.sparql = new SPARQLApi(this);
 
       // Register the alias icon editor extension for Live Preview mode
@@ -118,6 +121,11 @@ export default class ExocortexPlugin extends Plugin {
       this.registerMarkdownCodeBlockProcessor(
         "sparql",
         (source, el, ctx) => this.sparqlProcessor.process(source, el, ctx)
+      );
+
+      this.registerMarkdownCodeBlockProcessor(
+        "exo-layout",
+        (source, el, ctx) => this.layoutProcessor.process(source, el, ctx)
       );
 
       this.registerEvent(
@@ -192,6 +200,11 @@ export default class ExocortexPlugin extends Plugin {
     // Cleanup SPARQL processor
     if (this.sparqlProcessor) {
       this.sparqlProcessor.cleanup();
+    }
+
+    // Cleanup Layout processor
+    if (this.layoutProcessor) {
+      this.layoutProcessor.cleanup();
     }
 
     if (this.sparql) {

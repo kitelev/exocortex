@@ -347,6 +347,23 @@ On **collective level** — multiple exocortexes form **noosphere**.
 - **[SPARQL User Guide](./docs/sparql/User-Guide.md)** — Tutorial from basics to advanced
 - **[Query Examples](./docs/sparql/Query-Examples.md)** — 30+ ready-to-use patterns
 
+### Layout Code Blocks
+
+Embed Layout definitions directly in your notes using the `exo-layout` code block:
+
+~~~markdown
+```exo-layout
+[[emslayout__UpcomingTasksLayout]]
+```
+~~~
+
+Features:
+- **Wikilink syntax** — Reference any Layout note with `[[LayoutName]]`
+- **Loading state** — Visual feedback while fetching data
+- **Error handling** — Clear error messages when Layout fails to load
+- **Auto-refresh** — Layout updates automatically when vault files change
+- **Interactive tables** — Sortable columns and inline editing
+
 ---
 
 ## Development
