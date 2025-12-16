@@ -178,6 +178,301 @@ describe("BuiltInFunctions", () => {
     });
   });
 
+  describe("STRLANGDIR", () => {
+    describe("create literal with ltr direction", () => {
+      it("should create 'Hello'@en--ltr from STRLANGDIR('Hello', 'en', 'ltr')", () => {
+        const result = BuiltInFunctions.strlangdir(
+          new Literal("Hello"),
+          new Literal("en"),
+          new Literal("ltr")
+        );
+        expect(result.value).toBe("Hello");
+        expect(result.language).toBe("en");
+        expect(result.direction).toBe("ltr");
+      });
+
+      it("should create literal with French ltr direction", () => {
+        const result = BuiltInFunctions.strlangdir(
+          new Literal("Bonjour"),
+          new Literal("fr"),
+          new Literal("ltr")
+        );
+        expect(result.value).toBe("Bonjour");
+        expect(result.language).toBe("fr");
+        expect(result.direction).toBe("ltr");
+      });
+
+      it("should handle language subtags with ltr direction", () => {
+        const result = BuiltInFunctions.strlangdir(
+          new Literal("Hello"),
+          new Literal("en-US"),
+          new Literal("ltr")
+        );
+        expect(result.value).toBe("Hello");
+        expect(result.language).toBe("en-us");
+        expect(result.direction).toBe("ltr");
+      });
+    });
+
+    describe("create literal with rtl direction", () => {
+      it("should create 'مرحبا'@ar--rtl from STRLANGDIR('مرحبا', 'ar', 'rtl')", () => {
+        const result = BuiltInFunctions.strlangdir(
+          new Literal("مرحبا"),
+          new Literal("ar"),
+          new Literal("rtl")
+        );
+        expect(result.value).toBe("مرحبا");
+        expect(result.language).toBe("ar");
+        expect(result.direction).toBe("rtl");
+      });
+
+      it("should create Hebrew literal with rtl direction", () => {
+        const result = BuiltInFunctions.strlangdir(
+          new Literal("שלום"),
+          new Literal("he"),
+          new Literal("rtl")
+        );
+        expect(result.value).toBe("שלום");
+        expect(result.language).toBe("he");
+        expect(result.direction).toBe("rtl");
+      });
+
+      it("should handle language subtags with rtl direction", () => {
+        const result = BuiltInFunctions.strlangdir(
+          new Literal("مرحبا"),
+          new Literal("ar-EG"),
+          new Literal("rtl")
+        );
+        expect(result.value).toBe("مرحبا");
+        expect(result.language).toBe("ar-eg");
+        expect(result.direction).toBe("rtl");
+      });
+    });
+
+    describe("error on invalid direction", () => {
+      it("should throw error for invalid direction 'xxx'", () => {
+        expect(() =>
+          BuiltInFunctions.strlangdir(
+            new Literal("text"),
+            new Literal("fr"),
+            new Literal("xxx")
+          )
+        ).toThrow("STRLANGDIR: invalid direction 'xxx'. Must be 'ltr' or 'rtl'");
+      });
+
+      it("should throw error for empty direction", () => {
+        expect(() =>
+          BuiltInFunctions.strlangdir(
+            new Literal("text"),
+            new Literal("en"),
+            new Literal("", new IRI("http://www.w3.org/2001/XMLSchema#string"))
+          )
+        ).toThrow("STRLANGDIR: invalid direction ''. Must be 'ltr' or 'rtl'");
+      });
+
+      it("should throw error for 'auto' direction", () => {
+        expect(() =>
+          BuiltInFunctions.strlangdir(
+            new Literal("text"),
+            new Literal("en"),
+            new Literal("auto")
+          )
+        ).toThrow("STRLANGDIR: invalid direction 'auto'. Must be 'ltr' or 'rtl'");
+      });
+    });
+
+    describe("round-trip: STRLANGDIR + LANGDIR", () => {
+      it("should create literal whose LANGDIR returns 'en--ltr'", () => {
+        const literal = BuiltInFunctions.strlangdir(
+          new Literal("Hello"),
+          new Literal("en"),
+          new Literal("ltr")
+        );
+        expect(BuiltInFunctions.langdir(literal)).toBe("en--ltr");
+      });
+
+      it("should create literal whose LANGDIR returns 'ar--rtl'", () => {
+        const literal = BuiltInFunctions.strlangdir(
+          new Literal("مرحبا"),
+          new Literal("ar"),
+          new Literal("rtl")
+        );
+        expect(BuiltInFunctions.langdir(literal)).toBe("ar--rtl");
+      });
+
+      it("should create literal whose LANG returns language without direction", () => {
+        const literal = BuiltInFunctions.strlangdir(
+          new Literal("Hello"),
+          new Literal("en"),
+          new Literal("ltr")
+        );
+        expect(BuiltInFunctions.lang(literal)).toBe("en");
+      });
+    });
+
+    describe("error handling", () => {
+      it("should throw for undefined lexical form", () => {
+        expect(() =>
+          BuiltInFunctions.strlangdir(undefined, new Literal("en"), new Literal("ltr"))
+        ).toThrow("STRLANGDIR: lexical form is undefined");
+      });
+
+      it("should throw for undefined language tag", () => {
+        expect(() =>
+          BuiltInFunctions.strlangdir(new Literal("Hello"), undefined, new Literal("ltr"))
+        ).toThrow("STRLANGDIR: language tag is undefined");
+      });
+
+      it("should throw for undefined direction", () => {
+        expect(() =>
+          BuiltInFunctions.strlangdir(new Literal("Hello"), new Literal("en"), undefined)
+        ).toThrow("STRLANGDIR: direction is undefined");
+      });
+
+      it("should throw if lexical form already has language tag", () => {
+        expect(() =>
+          BuiltInFunctions.strlangdir(
+            new Literal("Hello", undefined, "en"),
+            new Literal("fr"),
+            new Literal("ltr")
+          )
+        ).toThrow("STRLANGDIR: lexical form must not already have a language tag");
+      });
+
+      it("should throw for empty language tag", () => {
+        expect(() =>
+          BuiltInFunctions.strlangdir(
+            new Literal("Hello"),
+            new Literal("", new IRI("http://www.w3.org/2001/XMLSchema#string")),
+            new Literal("ltr")
+          )
+        ).toThrow("STRLANGDIR: language tag cannot be empty");
+      });
+
+      it("should throw for IRI as lexical form", () => {
+        expect(() =>
+          BuiltInFunctions.strlangdir(
+            new IRI("http://example.org"),
+            new Literal("en"),
+            new Literal("ltr")
+          )
+        ).toThrow("STRLANGDIR: lexical form must be a string literal");
+      });
+
+      it("should throw for IRI as language tag", () => {
+        expect(() =>
+          BuiltInFunctions.strlangdir(
+            new Literal("Hello"),
+            new IRI("http://example.org"),
+            new Literal("ltr")
+          )
+        ).toThrow("STRLANGDIR: language tag must be a string literal");
+      });
+
+      it("should throw for IRI as direction", () => {
+        expect(() =>
+          BuiltInFunctions.strlangdir(
+            new Literal("Hello"),
+            new Literal("en"),
+            new IRI("http://example.org")
+          )
+        ).toThrow("STRLANGDIR: direction must be a string literal");
+      });
+    });
+
+    describe("case-insensitive direction handling", () => {
+      it("should accept uppercase LTR", () => {
+        const result = BuiltInFunctions.strlangdir(
+          new Literal("Hello"),
+          new Literal("en"),
+          new Literal("LTR")
+        );
+        expect(result.direction).toBe("ltr");
+      });
+
+      it("should accept uppercase RTL", () => {
+        const result = BuiltInFunctions.strlangdir(
+          new Literal("مرحبا"),
+          new Literal("ar"),
+          new Literal("RTL")
+        );
+        expect(result.direction).toBe("rtl");
+      });
+
+      it("should accept mixed case Ltr", () => {
+        const result = BuiltInFunctions.strlangdir(
+          new Literal("Hello"),
+          new Literal("en"),
+          new Literal("Ltr")
+        );
+        expect(result.direction).toBe("ltr");
+      });
+    });
+
+    describe("integration test", () => {
+      it("should serialize correctly via toString()", () => {
+        const literal = BuiltInFunctions.strlangdir(
+          new Literal("Hello"),
+          new Literal("en"),
+          new Literal("ltr")
+        );
+        expect(literal.toString()).toBe('"Hello"@en--ltr');
+      });
+
+      it("should serialize RTL literal correctly", () => {
+        const literal = BuiltInFunctions.strlangdir(
+          new Literal("مرحبا"),
+          new Literal("ar"),
+          new Literal("rtl")
+        );
+        expect(literal.toString()).toBe('"مرحبا"@ar--rtl');
+      });
+
+      it("should work with STR function to extract value", () => {
+        const literal = BuiltInFunctions.strlangdir(
+          new Literal("Hello"),
+          new Literal("en"),
+          new Literal("ltr")
+        );
+        expect(BuiltInFunctions.str(literal)).toBe("Hello");
+      });
+    });
+
+    describe("Acceptance Criteria (Issue #959)", () => {
+      it("STRLANGDIR('Hello', 'en', 'ltr') → 'Hello'@en--ltr", () => {
+        const result = BuiltInFunctions.strlangdir(
+          new Literal("Hello"),
+          new Literal("en"),
+          new Literal("ltr")
+        );
+        expect(result.value).toBe("Hello");
+        expect(result.language).toBe("en");
+        expect(result.direction).toBe("ltr");
+      });
+
+      it("STRLANGDIR('مرحبا', 'ar', 'rtl') → 'مرحبا'@ar--rtl", () => {
+        const result = BuiltInFunctions.strlangdir(
+          new Literal("مرحبا"),
+          new Literal("ar"),
+          new Literal("rtl")
+        );
+        expect(result.value).toBe("مرحبا");
+        expect(result.language).toBe("ar");
+        expect(result.direction).toBe("rtl");
+      });
+
+      it("STRLANGDIR('text', 'fr', 'xxx') → Error", () => {
+        expect(() =>
+          BuiltInFunctions.strlangdir(
+            new Literal("text"),
+            new Literal("fr"),
+            new Literal("xxx")
+          )
+        ).toThrow("STRLANGDIR: invalid direction 'xxx'. Must be 'ltr' or 'rtl'");
+      });
+    });
+  });
+
   describe("langMatches", () => {
     describe("exact matches", () => {
       it("should return true for exact match", () => {

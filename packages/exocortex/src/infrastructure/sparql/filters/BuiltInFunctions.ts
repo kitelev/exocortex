@@ -1259,6 +1259,87 @@ export class BuiltInFunctions {
   }
 
   /**
+   * SPARQL 1.2 STRLANGDIR constructor function.
+   * https://w3c.github.io/sparql-12/spec/
+   *
+   * Creates a directional language-tagged literal with both language tag
+   * and base direction (ltr/rtl) for bidirectional text support.
+   *
+   * @param lexicalForm - String literal containing the text
+   * @param languageTag - String literal containing the language tag
+   * @param direction - String literal containing the direction ("ltr" or "rtl")
+   * @returns Literal with specified language tag and direction
+   *
+   * @see https://w3c.github.io/rdf-dir-literal/ - RDF Directional Literals
+   *
+   * Examples:
+   * - STRLANGDIR("Hello", "en", "ltr") → "Hello"@en--ltr
+   * - STRLANGDIR("مرحبا", "ar", "rtl") → "مرحبا"@ar--rtl
+   * - STRLANGDIR("text", "fr", "xxx") → Error (invalid direction)
+   */
+  static strlangdir(
+    lexicalForm: RDFTerm | undefined,
+    languageTag: RDFTerm | undefined,
+    direction: RDFTerm | undefined
+  ): Literal {
+    if (lexicalForm === undefined) {
+      throw new Error("STRLANGDIR: lexical form is undefined");
+    }
+
+    if (languageTag === undefined) {
+      throw new Error("STRLANGDIR: language tag is undefined");
+    }
+
+    if (direction === undefined) {
+      throw new Error("STRLANGDIR: direction is undefined");
+    }
+
+    // Get the lexical form string
+    let lexicalValue: string;
+    if (lexicalForm instanceof Literal) {
+      // Must be a simple literal (no language tag, no datatype other than xsd:string)
+      if (lexicalForm.language) {
+        throw new Error("STRLANGDIR: lexical form must not already have a language tag");
+      }
+      lexicalValue = lexicalForm.value;
+    } else if (typeof lexicalForm === "string") {
+      lexicalValue = lexicalForm;
+    } else {
+      throw new Error("STRLANGDIR: lexical form must be a string literal");
+    }
+
+    // Get the language tag string
+    let langValue: string;
+    if (languageTag instanceof Literal) {
+      langValue = languageTag.value;
+    } else if (typeof languageTag === "string") {
+      langValue = languageTag;
+    } else {
+      throw new Error("STRLANGDIR: language tag must be a string literal");
+    }
+
+    // Validate language tag is not empty
+    if (langValue === "") {
+      throw new Error("STRLANGDIR: language tag cannot be empty");
+    }
+
+    // Get the direction string
+    let dirValue: string;
+    if (direction instanceof Literal) {
+      dirValue = direction.value.toLowerCase();
+    } else {
+      throw new Error("STRLANGDIR: direction must be a string literal");
+    }
+
+    // Validate direction is 'ltr' or 'rtl'
+    if (dirValue !== "ltr" && dirValue !== "rtl") {
+      throw new Error(`STRLANGDIR: invalid direction '${dirValue}'. Must be 'ltr' or 'rtl'`);
+    }
+
+    return new Literal(lexicalValue, undefined, langValue, dirValue as "ltr" | "rtl");
+  }
+
+  /**
    * SPARQL 1.1 UUID constructor function.
    * https://www.w3.org/TR/sparql11-query/#func-uuid
    *
