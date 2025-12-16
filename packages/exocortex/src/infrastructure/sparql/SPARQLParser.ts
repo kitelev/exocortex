@@ -47,8 +47,11 @@ export class SPARQLParser {
   constructor(options?: SPARQLParserOptions) {
     // Enable SPARQL-Star (RDF-Star) support for triple patterns in subject/object positions
     // SPARQL 1.2 spec: https://w3c.github.io/sparql-12/spec/
+    // This enables:
+    // - Quoted triples: << :Alice :knows :Bob >>
+    // - Annotation syntax: ?s :knows ?o {| :source ?doc |} .
     this.parser = new sparqljs.Parser({ sparqlStar: true });
-    this.generator = new sparqljs.Generator();
+    this.generator = new sparqljs.Generator({ sparqlStar: true });
     this.caseWhenTransformer = new CaseWhenTransformer();
     this.prefixStarTransformer = new PrefixStarTransformer(options?.vocabularyResolver);
   }

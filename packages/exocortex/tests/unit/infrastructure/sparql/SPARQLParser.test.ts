@@ -610,4 +610,266 @@ describe("SPARQLParser", () => {
       }
     });
   });
+
+  describe("Annotation syntax (SPARQL 1.2)", () => {
+    describe("parsing", () => {
+      it("parses simple annotation syntax {| ... |}", () => {
+        const query = `
+          PREFIX : <http://example.org/>
+          SELECT ?s ?o ?doc WHERE {
+            ?s :knows ?o {| :source ?doc |} .
+          }
+        `;
+
+        const ast = parser.parse(query);
+        expect(parser.isSelectQuery(ast)).toBe(true);
+      });
+
+      it("parses annotation with multiple predicates using semicolon", () => {
+        const query = `
+          PREFIX : <http://example.org/>
+          SELECT ?s ?o ?doc ?conf WHERE {
+            ?s :knows ?o {| :source ?doc ; :confidence ?conf |} .
+          }
+        `;
+
+        const ast = parser.parse(query);
+        expect(parser.isSelectQuery(ast)).toBe(true);
+      });
+
+      it("parses annotation with literal values", () => {
+        const query = `
+          PREFIX : <http://example.org/>
+          SELECT ?s ?o WHERE {
+            ?s :knows ?o {| :certainty 0.95 |} .
+          }
+        `;
+
+        const ast = parser.parse(query);
+        expect(parser.isSelectQuery(ast)).toBe(true);
+      });
+
+      it("parses annotation with IRI values", () => {
+        const query = `
+          PREFIX : <http://example.org/>
+          SELECT ?s ?o WHERE {
+            ?s :knows ?o {| :source :Wikipedia |} .
+          }
+        `;
+
+        const ast = parser.parse(query);
+        expect(parser.isSelectQuery(ast)).toBe(true);
+      });
+
+      it("parses multiple annotated triple patterns", () => {
+        const query = `
+          PREFIX : <http://example.org/>
+          SELECT ?s ?o1 ?o2 ?doc1 ?doc2 WHERE {
+            ?s :knows ?o1 {| :source ?doc1 |} .
+            ?s :likes ?o2 {| :source ?doc2 |} .
+          }
+        `;
+
+        const ast = parser.parse(query);
+        expect(parser.isSelectQuery(ast)).toBe(true);
+      });
+
+      it("parses annotation on triple with blank node subject", () => {
+        const query = `
+          PREFIX : <http://example.org/>
+          SELECT ?o ?doc WHERE {
+            _:b1 :knows ?o {| :source ?doc |} .
+          }
+        `;
+
+        const ast = parser.parse(query);
+        expect(parser.isSelectQuery(ast)).toBe(true);
+      });
+    });
+
+    describe("expansion to quoted triples", () => {
+      it("expands annotation to base triple plus quoted triple pattern", () => {
+        const query = `
+          PREFIX : <http://example.org/>
+          SELECT ?s ?o ?doc WHERE {
+            ?s :knows ?o {| :source ?doc |} .
+          }
+        `;
+
+        const ast = parser.parse(query) as SelectQuery;
+
+        // The BGP should contain:
+        // 1. The base triple: ?s :knows ?o
+        // 2. The annotation triple: <<( ?s :knows ?o )>> :source ?doc
+        expect(ast.where).toBeDefined();
+        expect(ast.where!.length).toBeGreaterThan(0);
+
+        const bgp = ast.where![0] as { type: string; triples: any[] };
+        expect(bgp.type).toBe("bgp");
+        expect(bgp.triples.length).toBe(2);
+
+        // First triple: base triple
+        const baseTriple = bgp.triples[0];
+        expect(baseTriple.subject.termType).toBe("Variable");
+        expect(baseTriple.subject.value).toBe("s");
+        expect(baseTriple.predicate.termType).toBe("NamedNode");
+        expect(baseTriple.predicate.value).toBe("http://example.org/knows");
+        expect(baseTriple.object.termType).toBe("Variable");
+        expect(baseTriple.object.value).toBe("o");
+
+        // Second triple: annotation with quoted triple as subject
+        const annotationTriple = bgp.triples[1];
+        expect(annotationTriple.subject.termType).toBe("Quad");
+        expect(annotationTriple.predicate.termType).toBe("NamedNode");
+        expect(annotationTriple.predicate.value).toBe("http://example.org/source");
+        expect(annotationTriple.object.termType).toBe("Variable");
+        expect(annotationTriple.object.value).toBe("doc");
+      });
+
+      it("expands multiple annotations to multiple quoted triple patterns", () => {
+        const query = `
+          PREFIX : <http://example.org/>
+          SELECT ?s ?o ?doc ?conf WHERE {
+            ?s :knows ?o {| :source ?doc ; :confidence ?conf |} .
+          }
+        `;
+
+        const ast = parser.parse(query) as SelectQuery;
+
+        const bgp = ast.where![0] as { type: string; triples: any[] };
+        expect(bgp.type).toBe("bgp");
+        // Should have: base triple + source annotation + confidence annotation = 3 triples
+        expect(bgp.triples.length).toBe(3);
+
+        // All annotation triples should have the same quoted triple as subject
+        const quotedSubject1 = bgp.triples[1].subject;
+        const quotedSubject2 = bgp.triples[2].subject;
+        expect(quotedSubject1.termType).toBe("Quad");
+        expect(quotedSubject2.termType).toBe("Quad");
+
+        // Both quoted triples should reference the same base triple
+        expect(quotedSubject1.subject.value).toBe("s");
+        expect(quotedSubject2.subject.value).toBe("s");
+        expect(quotedSubject1.predicate.value).toBe("http://example.org/knows");
+        expect(quotedSubject2.predicate.value).toBe("http://example.org/knows");
+        expect(quotedSubject1.object.value).toBe("o");
+        expect(quotedSubject2.object.value).toBe("o");
+      });
+    });
+
+    describe("round-trip serialization", () => {
+      it("serializes annotation back to valid SPARQL (quoted triple syntax)", () => {
+        const query = `
+          PREFIX : <http://example.org/>
+          SELECT ?s ?o ?doc WHERE {
+            ?s :knows ?o {| :source ?doc |} .
+          }
+        `;
+
+        const ast = parser.parse(query);
+        const serialized = parser.toString(ast);
+        // Should be re-parseable
+        const reparsed = parser.parse(serialized);
+        expect(parser.isSelectQuery(reparsed)).toBe(true);
+      });
+
+      it("serializes multiple annotations correctly", () => {
+        const query = `
+          PREFIX : <http://example.org/>
+          SELECT ?s ?o ?doc ?conf WHERE {
+            ?s :knows ?o {| :source ?doc ; :confidence ?conf |} .
+          }
+        `;
+
+        const ast = parser.parse(query);
+        const serialized = parser.toString(ast);
+        const reparsed = parser.parse(serialized);
+        expect(parser.isSelectQuery(reparsed)).toBe(true);
+      });
+    });
+
+    describe("combined with other SPARQL features", () => {
+      it("works with FILTER on annotated triples", () => {
+        const query = `
+          PREFIX : <http://example.org/>
+          SELECT ?s ?o ?confidence WHERE {
+            ?s :knows ?o {| :confidence ?confidence |} .
+            FILTER(?confidence > 0.8)
+          }
+        `;
+
+        const ast = parser.parse(query);
+        expect(parser.isSelectQuery(ast)).toBe(true);
+      });
+
+      it("works with OPTIONAL containing annotated triples", () => {
+        const query = `
+          PREFIX : <http://example.org/>
+          SELECT ?s ?o ?doc WHERE {
+            ?s :knows ?o .
+            OPTIONAL {
+              ?s :likes ?x {| :source ?doc |} .
+            }
+          }
+        `;
+
+        const ast = parser.parse(query);
+        expect(parser.isSelectQuery(ast)).toBe(true);
+      });
+
+      it("works with ORDER BY on annotation values", () => {
+        const query = `
+          PREFIX : <http://example.org/>
+          SELECT ?s ?o ?confidence WHERE {
+            ?s :knows ?o {| :confidence ?confidence |} .
+          }
+          ORDER BY DESC(?confidence)
+        `;
+
+        const ast = parser.parse(query);
+        expect(parser.isSelectQuery(ast)).toBe(true);
+      });
+
+      it("works in CONSTRUCT queries", () => {
+        const query = `
+          PREFIX : <http://example.org/>
+          CONSTRUCT {
+            ?s :trustedKnowledge ?o .
+          }
+          WHERE {
+            ?s :knows ?o {| :confidence ?conf |} .
+            FILTER(?conf > 0.9)
+          }
+        `;
+
+        const ast = parser.parse(query);
+        expect(parser.isConstructQuery(ast)).toBe(true);
+      });
+
+      it("works in ASK queries", () => {
+        const query = `
+          PREFIX : <http://example.org/>
+          ASK {
+            :Alice :knows :Bob {| :source :Wikipedia |} .
+          }
+        `;
+
+        const ast = parser.parse(query);
+        expect(parser.isAskQuery(ast)).toBe(true);
+      });
+
+      it("works with PREFIX* and annotations combined", async () => {
+        const query = `
+          PREFIX* <http://schema.org/>
+          PREFIX : <http://example.org/>
+          SELECT ?s ?name ?source WHERE {
+            ?s schema:name ?name {| :source ?source |} .
+          }
+        `;
+
+        const ast = await parser.parseAsync(query);
+        expect(parser.isSelectQuery(ast)).toBe(true);
+      });
+    });
+  });
 });
