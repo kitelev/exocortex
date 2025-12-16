@@ -316,7 +316,7 @@ export const TableLayoutRenderer: React.FC<TableLayoutRendererProps> = ({
   };
 
   // Render row
-  const renderRow = (row: TableRow, index: number, style?: React.CSSProperties) => {
+  const renderRow = (row: TableRow, _index: number, style?: React.CSSProperties) => {
     return (
       <tr
         key={row.id}
