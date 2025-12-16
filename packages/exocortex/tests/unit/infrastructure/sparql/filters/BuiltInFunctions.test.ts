@@ -4287,4 +4287,171 @@ describe("BuiltInFunctions", () => {
       });
     });
   });
+
+  // =========================================================================
+  // xsd:time Subtraction Support (SPARQL 1.2 Issue #963)
+  // =========================================================================
+  describe("xsd:time Subtraction", () => {
+    describe("isTime", () => {
+      it("should return true for xsd:time Literal", () => {
+        const time = new Literal("14:30:00", new IRI("http://www.w3.org/2001/XMLSchema#time"));
+        expect(BuiltInFunctions.isTime(time)).toBe(true);
+      });
+
+      it("should return false for xsd:dateTime Literal", () => {
+        const dateTime = new Literal("2025-01-01T14:30:00Z", new IRI("http://www.w3.org/2001/XMLSchema#dateTime"));
+        expect(BuiltInFunctions.isTime(dateTime)).toBe(false);
+      });
+
+      it("should return false for xsd:date Literal", () => {
+        const date = new Literal("2025-01-01", new IRI("http://www.w3.org/2001/XMLSchema#date"));
+        expect(BuiltInFunctions.isTime(date)).toBe(false);
+      });
+
+      it("should return false for plain string", () => {
+        expect(BuiltInFunctions.isTime("14:30:00")).toBe(false);
+      });
+
+      it("should return false for null/undefined", () => {
+        expect(BuiltInFunctions.isTime(null)).toBe(false);
+        expect(BuiltInFunctions.isTime(undefined)).toBe(false);
+      });
+    });
+
+    describe("timeDiff", () => {
+      it("should return PT0S for same time", () => {
+        const result = BuiltInFunctions.timeDiff("12:00:00", "12:00:00");
+        expect(result).toBeInstanceOf(Literal);
+        expect(result.value).toBe("PT0S");
+        expect(result.datatype?.value).toBe("http://www.w3.org/2001/XMLSchema#dayTimeDuration");
+      });
+
+      it("should calculate positive difference (later - earlier)", () => {
+        const result = BuiltInFunctions.timeDiff("14:30:00", "10:00:00");
+        expect(result.value).toBe("PT4H30M");
+      });
+
+      it("should calculate negative difference (earlier - later)", () => {
+        const result = BuiltInFunctions.timeDiff("08:00:00", "23:00:00");
+        expect(result.value).toBe("-PT15H");
+      });
+
+      it("should handle seconds in time", () => {
+        const result = BuiltInFunctions.timeDiff("10:30:45", "10:30:00");
+        expect(result.value).toBe("PT45S");
+      });
+
+      it("should handle fractional seconds / milliseconds", () => {
+        const result = BuiltInFunctions.timeDiff("10:30:45.500", "10:30:45.000");
+        expect(result.value).toBe("PT0.5S");
+      });
+
+      it("should handle hours only difference", () => {
+        const result = BuiltInFunctions.timeDiff("15:00:00", "10:00:00");
+        expect(result.value).toBe("PT5H");
+      });
+
+      it("should handle minutes only difference", () => {
+        const result = BuiltInFunctions.timeDiff("10:45:00", "10:00:00");
+        expect(result.value).toBe("PT45M");
+      });
+
+      it("should handle complex difference (hours, minutes, seconds)", () => {
+        const result = BuiltInFunctions.timeDiff("14:35:45", "10:10:15");
+        // 4 hours, 25 minutes, 30 seconds
+        expect(result.value).toBe("PT4H25M30S");
+      });
+
+      it("should work with Literal inputs", () => {
+        const time1 = new Literal("14:30:00", new IRI("http://www.w3.org/2001/XMLSchema#time"));
+        const time2 = new Literal("10:00:00", new IRI("http://www.w3.org/2001/XMLSchema#time"));
+        const result = BuiltInFunctions.timeDiff(time1, time2);
+        expect(result.value).toBe("PT4H30M");
+      });
+
+      it("should handle timezone Z (UTC)", () => {
+        const result = BuiltInFunctions.timeDiff("14:30:00Z", "10:00:00Z");
+        expect(result.value).toBe("PT4H30M");
+      });
+
+      it("should handle timezone offset (+)", () => {
+        // 15:00:00+05:00 = 10:00:00 UTC
+        // 10:00:00+05:00 = 05:00:00 UTC
+        // Difference = 5 hours
+        const result = BuiltInFunctions.timeDiff("15:00:00+05:00", "10:00:00+05:00");
+        expect(result.value).toBe("PT5H");
+      });
+
+      it("should handle timezone offset (-)", () => {
+        // 10:00:00-05:00 = 15:00:00 UTC
+        // 08:00:00-05:00 = 13:00:00 UTC
+        // Difference = 2 hours
+        const result = BuiltInFunctions.timeDiff("10:00:00-05:00", "08:00:00-05:00");
+        expect(result.value).toBe("PT2H");
+      });
+
+      it("should handle mixed timezone comparison", () => {
+        // 15:00:00+05:00 = 10:00:00 UTC
+        // 10:00:00Z = 10:00:00 UTC
+        // Difference = 0
+        const result = BuiltInFunctions.timeDiff("15:00:00+05:00", "10:00:00Z");
+        expect(result.value).toBe("PT0S");
+      });
+
+      it("should handle midnight (00:00:00)", () => {
+        const result = BuiltInFunctions.timeDiff("02:00:00", "00:00:00");
+        expect(result.value).toBe("PT2H");
+      });
+
+      it("should handle near-midnight times", () => {
+        const result = BuiltInFunctions.timeDiff("23:59:59", "00:00:01");
+        // 23 hours, 59 minutes, 58 seconds
+        expect(result.value).toBe("PT23H59M58S");
+      });
+
+      it("should handle 24:00:00 as end of day", () => {
+        // 24:00:00 is valid per xsd:time spec, means end of day (same as 00:00:00 next day)
+        const result = BuiltInFunctions.timeDiff("24:00:00", "00:00:00");
+        // ISO 8601: "P1D" is cleaner than "P1DT0S" for exactly one day
+        expect(result.value).toBe("P1D");
+      });
+
+      it("should throw for invalid first time", () => {
+        expect(() => BuiltInFunctions.timeDiff("invalid", "10:00:00")).toThrow(
+          "timeDiff: invalid first time: 'invalid'"
+        );
+      });
+
+      it("should throw for invalid second time", () => {
+        expect(() => BuiltInFunctions.timeDiff("10:00:00", "invalid")).toThrow(
+          "timeDiff: invalid second time: 'invalid'"
+        );
+      });
+
+      it("should throw for time without seconds", () => {
+        // xsd:time requires HH:MM:SS format
+        expect(() => BuiltInFunctions.timeDiff("10:00", "09:00")).toThrow(
+          "timeDiff: invalid first time: '10:00'"
+        );
+      });
+
+      it("should throw for out of range hours", () => {
+        expect(() => BuiltInFunctions.timeDiff("25:00:00", "10:00:00")).toThrow(
+          "timeDiff: invalid first time: '25:00:00'"
+        );
+      });
+
+      it("should throw for out of range minutes", () => {
+        expect(() => BuiltInFunctions.timeDiff("10:60:00", "10:00:00")).toThrow(
+          "timeDiff: invalid first time: '10:60:00'"
+        );
+      });
+
+      it("should throw for out of range seconds", () => {
+        expect(() => BuiltInFunctions.timeDiff("10:00:60", "10:00:00")).toThrow(
+          "timeDiff: invalid first time: '10:00:60'"
+        );
+      });
+    });
+  });
 });

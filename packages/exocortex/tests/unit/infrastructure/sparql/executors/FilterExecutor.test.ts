@@ -3590,4 +3590,168 @@ describe("FilterExecutor", () => {
       expect((results[0].get("x") as Literal).direction).toBe("ltr");
     });
   });
+
+  // =========================================================================
+  // xsd:time Subtraction (SPARQL 1.2 Issue #963)
+  // =========================================================================
+  describe("xsd:time Subtraction", () => {
+    const xsdTime = new IRI("http://www.w3.org/2001/XMLSchema#time");
+
+    it("should calculate time difference and bind result", async () => {
+      // Simulates: BIND(?end - ?start AS ?duration) where ?start and ?end are xsd:time
+      const operation: FilterOperation = {
+        type: "filter",
+        expression: {
+          type: "comparison",
+          operator: "=",
+          left: {
+            type: "arithmetic",
+            operator: "-",
+            left: { type: "variable", name: "end" },
+            right: { type: "variable", name: "start" },
+          },
+          // 4.5 hours = 16200000 ms = PT4H30M
+          right: { type: "literal", value: "PT4H30M", datatype: "http://www.w3.org/2001/XMLSchema#dayTimeDuration" },
+        },
+        input: { type: "bgp", triples: [] },
+      };
+
+      const solution = new SolutionMapping();
+      solution.set("start", new Literal("10:00:00", xsdTime));
+      solution.set("end", new Literal("14:30:00", xsdTime));
+
+      const results = await executor.executeAll(operation, [solution]);
+      expect(results).toHaveLength(1);
+    });
+
+    it("should calculate negative time difference", async () => {
+      const operation: FilterOperation = {
+        type: "filter",
+        expression: {
+          type: "comparison",
+          operator: "=",
+          left: {
+            type: "arithmetic",
+            operator: "-",
+            left: { type: "variable", name: "early" },
+            right: { type: "variable", name: "late" },
+          },
+          right: { type: "literal", value: "-PT15H", datatype: "http://www.w3.org/2001/XMLSchema#dayTimeDuration" },
+        },
+        input: { type: "bgp", triples: [] },
+      };
+
+      const solution = new SolutionMapping();
+      solution.set("early", new Literal("08:00:00", xsdTime));
+      solution.set("late", new Literal("23:00:00", xsdTime));
+
+      const results = await executor.executeAll(operation, [solution]);
+      expect(results).toHaveLength(1);
+    });
+
+    it("should return PT0S for same time", async () => {
+      const operation: FilterOperation = {
+        type: "filter",
+        expression: {
+          type: "comparison",
+          operator: "=",
+          left: {
+            type: "arithmetic",
+            operator: "-",
+            left: { type: "variable", name: "time1" },
+            right: { type: "variable", name: "time2" },
+          },
+          right: { type: "literal", value: "PT0S", datatype: "http://www.w3.org/2001/XMLSchema#dayTimeDuration" },
+        },
+        input: { type: "bgp", triples: [] },
+      };
+
+      const solution = new SolutionMapping();
+      solution.set("time1", new Literal("12:00:00", xsdTime));
+      solution.set("time2", new Literal("12:00:00", xsdTime));
+
+      const results = await executor.executeAll(operation, [solution]);
+      expect(results).toHaveLength(1);
+    });
+
+    it("should handle time with seconds precision", async () => {
+      const operation: FilterOperation = {
+        type: "filter",
+        expression: {
+          type: "comparison",
+          operator: "=",
+          left: {
+            type: "arithmetic",
+            operator: "-",
+            left: { type: "variable", name: "end" },
+            right: { type: "variable", name: "start" },
+          },
+          right: { type: "literal", value: "PT45S", datatype: "http://www.w3.org/2001/XMLSchema#dayTimeDuration" },
+        },
+        input: { type: "bgp", triples: [] },
+      };
+
+      const solution = new SolutionMapping();
+      solution.set("start", new Literal("10:30:00", xsdTime));
+      solution.set("end", new Literal("10:30:45", xsdTime));
+
+      const results = await executor.executeAll(operation, [solution]);
+      expect(results).toHaveLength(1);
+    });
+
+    it("should handle times with timezone (Z)", async () => {
+      const operation: FilterOperation = {
+        type: "filter",
+        expression: {
+          type: "comparison",
+          operator: "=",
+          left: {
+            type: "arithmetic",
+            operator: "-",
+            left: { type: "variable", name: "end" },
+            right: { type: "variable", name: "start" },
+          },
+          right: { type: "literal", value: "PT5H", datatype: "http://www.w3.org/2001/XMLSchema#dayTimeDuration" },
+        },
+        input: { type: "bgp", triples: [] },
+      };
+
+      const solution = new SolutionMapping();
+      solution.set("start", new Literal("10:00:00Z", xsdTime));
+      solution.set("end", new Literal("15:00:00Z", xsdTime));
+
+      const results = await executor.executeAll(operation, [solution]);
+      expect(results).toHaveLength(1);
+    });
+
+    it("should not confuse xsd:time with xsd:dateTime subtraction", async () => {
+      // This tests that xsd:time and xsd:dateTime subtraction are handled separately
+      const xsdDateTime = new IRI("http://www.w3.org/2001/XMLSchema#dateTime");
+
+      // The operation that would work for dateTime but not time
+      const operation: FilterOperation = {
+        type: "filter",
+        expression: {
+          type: "comparison",
+          operator: "=",
+          left: {
+            type: "arithmetic",
+            operator: "-",
+            left: { type: "variable", name: "dt1" },
+            right: { type: "variable", name: "dt2" },
+          },
+          right: { type: "literal", value: "PT2H", datatype: "http://www.w3.org/2001/XMLSchema#dayTimeDuration" },
+        },
+        input: { type: "bgp", triples: [] },
+      };
+
+      const solution = new SolutionMapping();
+      solution.set("dt1", new Literal("2025-01-01T12:00:00Z", xsdDateTime));
+      solution.set("dt2", new Literal("2025-01-01T10:00:00Z", xsdDateTime));
+
+      // This should work for dateTime (verifying dateTime path is not affected)
+      const results = await executor.executeAll(operation, [solution]);
+      expect(results).toHaveLength(1);
+    });
+  });
 });

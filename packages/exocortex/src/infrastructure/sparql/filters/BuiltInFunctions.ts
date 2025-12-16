@@ -2520,4 +2520,138 @@ export class BuiltInFunctions {
 
     return result;
   }
+
+  // =========================================================================
+  // xsd:time Subtraction Support (SPARQL 1.2 Issue #963)
+  // https://www.w3.org/TR/xpath-functions/#func-subtract-times
+  // =========================================================================
+
+  /**
+   * Check if a value is an xsd:time Literal.
+   *
+   * @param value - Value to check
+   * @returns true if the value is an xsd:time Literal
+   */
+  static isTime(value: any): boolean {
+    if (value instanceof Literal) {
+      const datatypeValue = value.datatype?.value || "";
+      return datatypeValue === "http://www.w3.org/2001/XMLSchema#time";
+    }
+    return false;
+  }
+
+  /**
+   * Subtract two xsd:time values and return an xsd:dayTimeDuration.
+   * Per SPARQL 1.2 specification: time - time = dayTimeDuration
+   *
+   * Time values are treated as times within a single day (no date component).
+   * The result can be negative if the first time is earlier than the second.
+   *
+   * @param time1 - First time string or Literal (minuend)
+   * @param time2 - Second time string or Literal (subtrahend)
+   * @returns Literal with xsd:dayTimeDuration datatype representing the difference
+   *
+   * Examples:
+   * - timeDiff("14:30:00", "10:00:00") → "PT4H30M"
+   * - timeDiff("08:00:00", "23:00:00") → "-PT15H"
+   * - timeDiff("12:00:00", "12:00:00") → "PT0S"
+   * - timeDiff("10:30:45.500", "10:30:45") → "PT0.5S"
+   */
+  static timeDiff(time1: string | Literal, time2: string | Literal): Literal {
+    const t1Value = time1 instanceof Literal ? time1.value : time1;
+    const t2Value = time2 instanceof Literal ? time2.value : time2;
+
+    // Parse times into milliseconds from midnight
+    const t1Ms = this.parseXSDTime(t1Value);
+    const t2Ms = this.parseXSDTime(t2Value);
+
+    if (t1Ms === null) {
+      throw new Error(`timeDiff: invalid first time: '${t1Value}'`);
+    }
+    if (t2Ms === null) {
+      throw new Error(`timeDiff: invalid second time: '${t2Value}'`);
+    }
+
+    // Calculate difference in milliseconds
+    const diffMs = t1Ms - t2Ms;
+
+    // Format as dayTimeDuration
+    const durationStr = this.formatDayTimeDuration(diffMs);
+
+    return new Literal(durationStr, new IRI("http://www.w3.org/2001/XMLSchema#dayTimeDuration"));
+  }
+
+  /**
+   * Parse an xsd:time string into milliseconds from midnight.
+   *
+   * Handles various time formats:
+   * - "14:30:00" (standard xsd:time)
+   * - "14:30:00Z" (with UTC timezone)
+   * - "14:30:00+05:00" (with timezone offset)
+   * - "14:30:00.500" (with fractional seconds)
+   * - "14:30:00.500Z" (with fractional seconds and timezone)
+   *
+   * Timezone handling: When a timezone is present, the time is normalized
+   * to UTC for consistent comparison. E.g., "15:00:00+05:00" becomes
+   * 10:00:00 UTC (15:00 - 5 hours offset).
+   *
+   * @param timeStr - xsd:time string
+   * @returns Milliseconds from midnight (UTC), or null if invalid
+   */
+  private static parseXSDTime(timeStr: string): number | null {
+    // Match xsd:time format: HH:MM:SS[.sss][Z|±HH:MM]
+    // Per XSD spec: https://www.w3.org/TR/xmlschema-2/#time
+    const timePattern = /^(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(Z|[+-]\d{2}:\d{2})?$/;
+    const match = timeStr.match(timePattern);
+
+    if (!match) {
+      return null;
+    }
+
+    const hours = parseInt(match[1], 10);
+    const minutes = parseInt(match[2], 10);
+    const seconds = parseInt(match[3], 10);
+    const fractionalPart = match[4];
+    const timezone = match[5];
+
+    // Validate time components
+    if (hours < 0 || hours > 24 || minutes < 0 || minutes > 59 || seconds < 0 || seconds > 59) {
+      return null;
+    }
+    // Special case: 24:00:00 is valid but means midnight (end of day)
+    if (hours === 24 && (minutes !== 0 || seconds !== 0)) {
+      return null;
+    }
+
+    // Calculate milliseconds
+    let milliseconds = 0;
+    if (fractionalPart) {
+      // Pad or truncate to 3 digits for milliseconds
+      const normalizedFraction = fractionalPart.padEnd(3, "0").slice(0, 3);
+      milliseconds = parseInt(normalizedFraction, 10);
+    }
+
+    // Calculate total milliseconds from midnight
+    let totalMs = hours * 60 * 60 * 1000 + minutes * 60 * 1000 + seconds * 1000 + milliseconds;
+
+    // Handle 24:00:00 as 0 (next day's midnight = current day's end)
+    if (hours === 24) {
+      totalMs = 24 * 60 * 60 * 1000;
+    }
+
+    // Adjust for timezone if specified
+    if (timezone && timezone !== "Z") {
+      const tzMatch = timezone.match(/([+-])(\d{2}):(\d{2})/);
+      if (tzMatch) {
+        const sign = tzMatch[1] === "+" ? 1 : -1;
+        const tzHours = parseInt(tzMatch[2], 10);
+        const tzMinutes = parseInt(tzMatch[3], 10);
+        const offsetMs = sign * (tzHours * 60 + tzMinutes) * 60 * 1000;
+        // Subtract offset to normalize to UTC
+        totalMs -= offsetMs;
+      }
+    }
+
+    return totalMs;
+  }
 }
