@@ -511,4 +511,103 @@ describe("SPARQLParser", () => {
       expect(parser.getQueryType(ast)).toBe("DESCRIBE");
     });
   });
+
+  describe("PREFIX* detection (hasPrefixStar)", () => {
+    it("detects PREFIX* at start of query", () => {
+      const query = "PREFIX* <http://schema.org/> SELECT ?s WHERE { ?s ?p ?o }";
+      expect(parser.hasPrefixStar(query)).toBe(true);
+    });
+
+    it("detects PREFIX * with space", () => {
+      const query = "PREFIX * <http://schema.org/> SELECT ?s WHERE { ?s ?p ?o }";
+      expect(parser.hasPrefixStar(query)).toBe(true);
+    });
+
+    it("detects prefix* (lowercase)", () => {
+      const query = "prefix* <http://schema.org/> SELECT ?s WHERE { ?s ?p ?o }";
+      expect(parser.hasPrefixStar(query)).toBe(true);
+    });
+
+    it("returns false for regular PREFIX", () => {
+      const query = "PREFIX schema: <http://schema.org/> SELECT ?s WHERE { ?s ?p ?o }";
+      expect(parser.hasPrefixStar(query)).toBe(false);
+    });
+
+    it("returns false for query without PREFIX", () => {
+      const query = "SELECT ?s WHERE { ?s ?p ?o }";
+      expect(parser.hasPrefixStar(query)).toBe(false);
+    });
+  });
+
+  describe("PREFIX* async parsing (parseAsync)", () => {
+    it("parses query with PREFIX* using schema.org", async () => {
+      const query = `
+        PREFIX* <http://schema.org/>
+        SELECT ?s WHERE { ?s schema:name "Test" }
+      `;
+
+      const ast = await parser.parseAsync(query);
+      expect(parser.isSelectQuery(ast)).toBe(true);
+    });
+
+    it("parses query with multiple PREFIX* declarations", async () => {
+      const query = `
+        PREFIX* <http://schema.org/>
+        PREFIX* <http://xmlns.com/foaf/0.1/>
+        SELECT ?s WHERE { ?s schema:name ?name . ?s foaf:knows ?friend }
+      `;
+
+      const ast = await parser.parseAsync(query);
+      expect(parser.isSelectQuery(ast)).toBe(true);
+    });
+
+    it("parses query without PREFIX* (backward compatible)", async () => {
+      const query = `
+        PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+        SELECT ?name WHERE { ?person foaf:name ?name }
+      `;
+
+      const ast = await parser.parseAsync(query);
+      expect(parser.isSelectQuery(ast)).toBe(true);
+    });
+
+    it("supports CASE WHEN combined with PREFIX*", async () => {
+      const query = `
+        PREFIX* <http://schema.org/>
+        SELECT ?s (
+          CASE
+            WHEN ?price > 100 THEN "expensive"
+            ELSE "cheap"
+          END AS ?category
+        )
+        WHERE { ?s schema:price ?price }
+      `;
+
+      const ast = await parser.parseAsync(query);
+      expect(parser.isSelectQuery(ast)).toBe(true);
+    });
+
+    it("throws SPARQLParseError for malformed PREFIX*", async () => {
+      const query = `
+        PREFIX* <http://unclosed
+        SELECT ?s WHERE { ?s ?p ?o }
+      `;
+
+      await expect(parser.parseAsync(query)).rejects.toThrow("PREFIX* transformation error");
+    });
+
+    it("includes resolved prefixes in parsed AST", async () => {
+      const query = `
+        PREFIX* <http://schema.org/>
+        SELECT ?s WHERE { ?s schema:name "Test" }
+      `;
+
+      const ast = await parser.parseAsync(query);
+
+      // Check that prefixes are included in the parsed query
+      if ("prefixes" in ast) {
+        expect(ast.prefixes).toHaveProperty("schema");
+      }
+    });
+  });
 });

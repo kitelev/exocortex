@@ -1,5 +1,10 @@
 import * as sparqljs from "sparqljs";
 import { CaseWhenTransformer, CaseWhenTransformerError } from "./CaseWhenTransformer";
+import {
+  PrefixStarTransformer,
+  PrefixStarTransformerError,
+  VocabularyResolver,
+} from "./PrefixStarTransformer";
 
 export class SPARQLParseError extends Error {
   public readonly line?: number;
@@ -22,19 +27,42 @@ export type Update = sparqljs.Update;
 export type UpdateOperation = sparqljs.UpdateOperation;
 export type QueryType = "SELECT" | "CONSTRUCT" | "ASK" | "DESCRIBE";
 
+/**
+ * Configuration options for the SPARQL parser.
+ */
+export interface SPARQLParserOptions {
+  /**
+   * Custom vocabulary resolver for PREFIX* declarations.
+   * If not provided, uses the default WellKnownPrefixResolver.
+   */
+  vocabularyResolver?: VocabularyResolver;
+}
+
 export class SPARQLParser {
   private readonly parser: InstanceType<typeof sparqljs.Parser>;
   private readonly generator: InstanceType<typeof sparqljs.Generator>;
   private readonly caseWhenTransformer: CaseWhenTransformer;
+  private readonly prefixStarTransformer: PrefixStarTransformer;
 
-  constructor() {
+  constructor(options?: SPARQLParserOptions) {
     // Enable SPARQL-Star (RDF-Star) support for triple patterns in subject/object positions
     // SPARQL 1.2 spec: https://w3c.github.io/sparql-12/spec/
     this.parser = new sparqljs.Parser({ sparqlStar: true });
     this.generator = new sparqljs.Generator();
     this.caseWhenTransformer = new CaseWhenTransformer();
+    this.prefixStarTransformer = new PrefixStarTransformer(options?.vocabularyResolver);
   }
 
+  /**
+   * Parse a SPARQL query string synchronously.
+   *
+   * Note: This method does NOT support PREFIX* declarations (SPARQL 1.2).
+   * For PREFIX* support, use parseAsync() instead.
+   *
+   * @param queryString - The SPARQL query to parse
+   * @returns The parsed query AST
+   * @throws SPARQLParseError if parsing fails
+   */
   parse(queryString: string): SPARQLQuery {
     try {
       // Transform CASE WHEN expressions to IF expressions before parsing
@@ -59,6 +87,62 @@ export class SPARQLParser {
       }
       throw error;
     }
+  }
+
+  /**
+   * Parse a SPARQL query string with support for PREFIX* declarations (SPARQL 1.2).
+   *
+   * PREFIX* allows importing all prefixes from a vocabulary:
+   * ```sparql
+   * PREFIX* <http://schema.org/>
+   * SELECT ?s WHERE { ?s schema:name "Example" }
+   * ```
+   *
+   * @param queryString - The SPARQL query to parse
+   * @returns The parsed query AST
+   * @throws SPARQLParseError if parsing fails
+   */
+  async parseAsync(queryString: string): Promise<SPARQLQuery> {
+    try {
+      // First, transform PREFIX* declarations to regular PREFIX declarations
+      const prefixTransformed = await this.prefixStarTransformer.transform(queryString);
+      // Then transform CASE WHEN expressions to IF expressions
+      const caseTransformed = this.caseWhenTransformer.transform(prefixTransformed);
+      const parsed = this.parser.parse(caseTransformed);
+      this.validateQuery(parsed);
+      return parsed;
+    } catch (error) {
+      if (error instanceof PrefixStarTransformerError) {
+        throw new SPARQLParseError(error.message);
+      }
+      if (error instanceof CaseWhenTransformerError) {
+        throw new SPARQLParseError(error.message);
+      }
+      if (error instanceof Error) {
+        const match = error.message.match(/line (\d+), column (\d+)/);
+        const line = match ? parseInt(match[1], 10) : undefined;
+        const column = match ? parseInt(match[2], 10) : undefined;
+        throw new SPARQLParseError(
+          `SPARQL syntax error: ${error.message}`,
+          line,
+          column,
+          error,
+        );
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Check if a query string contains PREFIX* declarations.
+   * Use this to decide whether to use parse() or parseAsync().
+   *
+   * @param queryString - The SPARQL query to check
+   * @returns true if the query contains PREFIX* declarations
+   */
+  hasPrefixStar(queryString: string): boolean {
+    // Simple regex check - PREFIX followed by optional whitespace and *
+    return /PREFIX\s*\*/i.test(queryString);
   }
 
   toString(query: SPARQLQuery): string {
