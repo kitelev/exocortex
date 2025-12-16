@@ -2798,3 +2798,502 @@
     transform: none;
   }
 }
+
+/* ============================================================================
+   TableLayoutRenderer - Layout-based Table Rendering (Issue #967)
+   ============================================================================ */
+
+/*
+ * TableLayoutRenderer displays data from Layout definitions as interactive tables.
+ * Features:
+ * - Sortable columns (click header to sort)
+ * - Typed cell renderers (text, link, badge, datetime, duration, boolean, progress)
+ * - Inline editing for editable columns
+ * - Configurable column widths (px, %, fr, auto)
+ * - Virtualization for large datasets (>50 rows)
+ */
+
+/* Main container */
+.exo-layout-table-container {
+  width: 100%;
+  margin: 16px 0;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+}
+
+/* Main table */
+.exo-layout-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 0.9em;
+}
+
+/* Table header */
+.exo-layout-header {
+  background-color: var(--background-secondary);
+  border-bottom: 2px solid var(--background-modifier-border);
+}
+
+.exo-layout-header tr {
+  border-bottom: 2px solid var(--background-modifier-border);
+}
+
+/* Column header cells */
+.exo-layout-column {
+  padding: 10px 12px;
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-normal);
+  border-right: 1px solid var(--background-modifier-border);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  user-select: none;
+}
+
+.exo-layout-column:last-child {
+  border-right: none;
+}
+
+/* Sortable column styles */
+.exo-layout-column-sortable {
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.exo-layout-column-sortable:hover {
+  background-color: var(--background-modifier-hover);
+}
+
+.exo-layout-column-sorted {
+  background-color: var(--background-modifier-active-hover);
+  font-weight: 700;
+}
+
+/* Table body */
+.exo-layout-body {
+  background: var(--background-primary);
+}
+
+/* Table rows */
+.exo-layout-row {
+  border-bottom: 1px solid var(--background-modifier-border);
+  transition: background-color 0.15s ease;
+}
+
+.exo-layout-row:hover {
+  background-color: var(--background-secondary);
+}
+
+.exo-layout-row:last-child {
+  border-bottom: none;
+}
+
+/* Table cells */
+.exo-layout-cell {
+  padding: 8px 12px;
+  border-right: 1px solid var(--background-modifier-border);
+  color: var(--text-normal);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+}
+
+.exo-layout-cell:last-child {
+  border-right: none;
+}
+
+/* Editable cell styles */
+.exo-layout-cell-editable {
+  cursor: pointer;
+}
+
+.exo-layout-cell-editable:hover {
+  background-color: var(--background-modifier-hover);
+}
+
+.exo-layout-cell-editing {
+  background-color: var(--background-primary-alt);
+  padding: 4px 8px;
+}
+
+/* Empty message */
+.exo-layout-empty-message {
+  padding: 24px;
+  text-align: center;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* Virtualized table styles */
+.exo-layout-virtualized {
+  display: flex;
+  flex-direction: column;
+}
+
+.exo-layout-table-header-fixed {
+  border-bottom: none;
+}
+
+.exo-layout-virtual-scroll {
+  border-top: none;
+  border-radius: 0 0 8px 8px;
+}
+
+.exo-layout-virtual-table {
+  border-top: none;
+}
+
+/* ============================================================================
+   Cell Renderer Styles - Individual cell type styling
+   ============================================================================ */
+
+/* Text cell */
+.exo-cell-text {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Link cell */
+.exo-cell-link {
+  color: var(--link-color);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.exo-cell-link:hover {
+  color: var(--link-color-hover);
+  text-decoration: underline;
+}
+
+.exo-cell-link-empty {
+  color: var(--text-muted);
+}
+
+/* Badge cell */
+.exo-cell-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.85em;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.exo-cell-badge-clickable {
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.exo-cell-badge-clickable:hover {
+  filter: brightness(1.1);
+}
+
+.exo-cell-badge-empty {
+  color: var(--text-muted);
+  background: transparent;
+}
+
+/* Badge color variants */
+.exo-badge-blue {
+  background-color: rgba(59, 130, 246, 0.2);
+  color: #3b82f6;
+}
+
+.exo-badge-green {
+  background-color: rgba(34, 197, 94, 0.2);
+  color: #22c55e;
+}
+
+.exo-badge-yellow {
+  background-color: rgba(234, 179, 8, 0.2);
+  color: #eab308;
+}
+
+.exo-badge-orange {
+  background-color: rgba(249, 115, 22, 0.2);
+  color: #f97316;
+}
+
+.exo-badge-red {
+  background-color: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+}
+
+.exo-badge-purple {
+  background-color: rgba(168, 85, 247, 0.2);
+  color: #a855f7;
+}
+
+.exo-badge-pink {
+  background-color: rgba(236, 72, 153, 0.2);
+  color: #ec4899;
+}
+
+.exo-badge-gray {
+  background-color: rgba(107, 114, 128, 0.2);
+  color: #6b7280;
+}
+
+/* Dark theme badge adjustments */
+.theme-dark .exo-badge-blue { color: #60a5fa; }
+.theme-dark .exo-badge-green { color: #4ade80; }
+.theme-dark .exo-badge-yellow { color: #facc15; }
+.theme-dark .exo-badge-orange { color: #fb923c; }
+.theme-dark .exo-badge-red { color: #f87171; }
+.theme-dark .exo-badge-purple { color: #c084fc; }
+.theme-dark .exo-badge-pink { color: #f472b6; }
+.theme-dark .exo-badge-gray { color: #9ca3af; }
+
+/* DateTime cell */
+.exo-cell-datetime,
+.exo-cell-date,
+.exo-cell-time {
+  font-family: var(--font-monospace);
+  font-size: 0.9em;
+  white-space: nowrap;
+}
+
+.exo-cell-datetime-empty,
+.exo-cell-date-empty,
+.exo-cell-time-empty {
+  color: var(--text-muted);
+}
+
+/* Duration cell */
+.exo-cell-duration {
+  font-family: var(--font-monospace);
+  font-size: 0.9em;
+  white-space: nowrap;
+}
+
+.exo-cell-duration-empty {
+  color: var(--text-muted);
+}
+
+/* Boolean cell */
+.exo-cell-boolean {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.exo-cell-boolean-true {
+  color: #22c55e;
+  font-weight: 600;
+}
+
+.exo-cell-boolean-false {
+  color: var(--text-muted);
+}
+
+.exo-cell-boolean-unknown {
+  color: var(--text-muted);
+}
+
+.exo-cell-boolean-editable {
+  cursor: pointer;
+}
+
+.exo-cell-checkbox {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--interactive-accent);
+}
+
+.exo-cell-boolean-label {
+  font-size: 0.9em;
+}
+
+/* Number cell */
+.exo-cell-number {
+  font-family: var(--font-monospace);
+  text-align: right;
+}
+
+.exo-cell-number-empty {
+  color: var(--text-muted);
+  text-align: right;
+}
+
+/* Progress cell */
+.exo-cell-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 100px;
+}
+
+.exo-progress-track {
+  flex: 1;
+  height: 8px;
+  background-color: var(--background-modifier-border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.exo-progress-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.exo-progress-label {
+  font-size: 0.8em;
+  font-family: var(--font-monospace);
+  min-width: 36px;
+  text-align: right;
+}
+
+.exo-cell-progress-empty {
+  color: var(--text-muted);
+}
+
+/* Progress color variants */
+.exo-progress-complete .exo-progress-fill { background-color: #22c55e; }
+.exo-progress-high .exo-progress-fill { background-color: #3b82f6; }
+.exo-progress-medium .exo-progress-fill { background-color: #eab308; }
+.exo-progress-low .exo-progress-fill { background-color: #f97316; }
+.exo-progress-minimal .exo-progress-fill { background-color: #ef4444; }
+
+/* Tags cell */
+.exo-cell-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.exo-cell-tag {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-size: 0.8em;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.exo-cell-tag-clickable {
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.exo-cell-tag-clickable:hover {
+  filter: brightness(1.1);
+}
+
+.exo-cell-tags-empty {
+  color: var(--text-muted);
+}
+
+/* Tag color variants (same as badges) */
+.exo-tag-blue { background-color: rgba(59, 130, 246, 0.15); color: #3b82f6; }
+.exo-tag-green { background-color: rgba(34, 197, 94, 0.15); color: #22c55e; }
+.exo-tag-yellow { background-color: rgba(234, 179, 8, 0.15); color: #eab308; }
+.exo-tag-orange { background-color: rgba(249, 115, 22, 0.15); color: #f97316; }
+.exo-tag-red { background-color: rgba(239, 68, 68, 0.15); color: #ef4444; }
+.exo-tag-purple { background-color: rgba(168, 85, 247, 0.15); color: #a855f7; }
+.exo-tag-pink { background-color: rgba(236, 72, 153, 0.15); color: #ec4899; }
+.exo-tag-gray { background-color: rgba(107, 114, 128, 0.15); color: #6b7280; }
+
+/* Dark theme tag adjustments */
+.theme-dark .exo-tag-blue { color: #60a5fa; }
+.theme-dark .exo-tag-green { color: #4ade80; }
+.theme-dark .exo-tag-yellow { color: #facc15; }
+.theme-dark .exo-tag-orange { color: #fb923c; }
+.theme-dark .exo-tag-red { color: #f87171; }
+.theme-dark .exo-tag-purple { color: #c084fc; }
+.theme-dark .exo-tag-pink { color: #f472b6; }
+.theme-dark .exo-tag-gray { color: #9ca3af; }
+
+/* Image cell */
+.exo-cell-image {
+  display: inline-block;
+}
+
+.exo-cell-image-thumbnail {
+  max-width: 80px;
+  max-height: 60px;
+  object-fit: cover;
+  border-radius: 4px;
+  border: 1px solid var(--background-modifier-border);
+}
+
+.exo-cell-image-empty {
+  color: var(--text-muted);
+}
+
+/* Input styles for inline editing */
+.exo-cell-input {
+  width: 100%;
+  padding: 4px 8px;
+  border: 1px solid var(--interactive-accent);
+  border-radius: 4px;
+  background-color: var(--background-primary);
+  color: var(--text-normal);
+  font-size: 0.9em;
+  outline: none;
+}
+
+.exo-cell-input:focus {
+  box-shadow: 0 0 0 2px var(--interactive-accent-hover);
+}
+
+.exo-cell-input-number {
+  text-align: right;
+  font-family: var(--font-monospace);
+}
+
+/* Mobile responsive styles */
+@media (max-width: 768px) {
+  .exo-layout-table-container {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .exo-layout-table {
+    min-width: 500px;
+  }
+
+  .exo-layout-column,
+  .exo-layout-cell {
+    padding: 6px 8px;
+    font-size: 0.85em;
+  }
+
+  .exo-cell-progress {
+    min-width: 80px;
+  }
+}
+
+/* High contrast mode */
+@media (prefers-contrast: high) {
+  .exo-layout-table-container {
+    border-width: 2px;
+  }
+
+  .exo-layout-column,
+  .exo-layout-cell {
+    border-width: 2px;
+  }
+
+  .exo-layout-header {
+    border-bottom-width: 3px;
+  }
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .exo-layout-row,
+  .exo-layout-column-sortable,
+  .exo-cell-badge-clickable,
+  .exo-progress-fill {
+    transition: none;
+  }
+}

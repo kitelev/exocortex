@@ -19,10 +19,10 @@
   "dependencies": {
     "@codemirror/state": "^6.5.2",
     "@codemirror/view": "^6.38.1",
-    "exocortex": "*",
     "@tanstack/react-query": "^5.90.12",
     "@tanstack/react-virtual": "^3.13.13",
     "d3": "^7.9.0",
+    "exocortex": "*",
     "obsidian": "latest",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
@@ -34,6 +34,7 @@
   "devDependencies": {
     "@playwright/experimental-ct-react": "^1.55.1",
     "@playwright/test": "^1.55.1",
+    "@testing-library/jest-dom": "^6.9.1",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
     "esbuild-plugin-tsc": "^0.5.0",

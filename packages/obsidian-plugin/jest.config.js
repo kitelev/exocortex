@@ -3,6 +3,7 @@ module.exports = {
   testEnvironment: "jsdom",
   testMatch: [
     "<rootDir>/tests/unit/**/*.test.ts",
+    "<rootDir>/tests/unit/**/*.test.tsx",
     "<rootDir>/tests/performance/**/*.test.ts",
     "<rootDir>/../exocortex/tests/**/*.test.ts",
   ],
@@ -90,7 +91,7 @@ module.exports = {
   errorOnDeprecated: false,
   // Modern ts-jest configuration
   transform: {
-    "^.+\\.ts$": [
+    "^.+\\.tsx?$": [
       "ts-jest",
       {
         useESM: false,
