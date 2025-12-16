@@ -282,7 +282,10 @@ export class FilterExecutor {
    * - xsd:date - xsd:date = xsd:dayTimeDuration (day-only format like "P14D")
    * - xsd:time - xsd:time = xsd:dayTimeDuration
    * - xsd:dateTime - xsd:dateTime = xsd:dayTimeDuration
+   * - xsd:date +/- xsd:dayTimeDuration = xsd:date
+   * - xsd:date +/- xsd:yearMonthDuration = xsd:date
    * - xsd:dateTime +/- xsd:dayTimeDuration = xsd:dateTime
+   * - xsd:dateTime +/- xsd:yearMonthDuration = xsd:dateTime
    * - xsd:dayTimeDuration +/- xsd:dayTimeDuration = xsd:dayTimeDuration
    * - xsd:dayTimeDuration * number = xsd:dayTimeDuration
    * - xsd:dayTimeDuration / number = xsd:dayTimeDuration
@@ -307,6 +310,26 @@ export class FilterExecutor {
       return BuiltInFunctions.dateTimeDiff(left, right);
     }
 
+    // Special handling for date + dayTimeDuration = date (Issue #973)
+    if (expr.operator === "+" && this.isDateValue(left) && this.isDayTimeDurationValue(right)) {
+      return BuiltInFunctions.dateAdd(left, right);
+    }
+
+    // Special handling for date - dayTimeDuration = date (Issue #973)
+    if (expr.operator === "-" && this.isDateValue(left) && this.isDayTimeDurationValue(right)) {
+      return BuiltInFunctions.dateSubtract(left, right);
+    }
+
+    // Special handling for date + yearMonthDuration = date (Issue #973)
+    if (expr.operator === "+" && this.isDateValue(left) && this.isYearMonthDurationValue(right)) {
+      return BuiltInFunctions.dateAddYearMonth(left, right);
+    }
+
+    // Special handling for date - yearMonthDuration = date (Issue #973)
+    if (expr.operator === "-" && this.isDateValue(left) && this.isYearMonthDurationValue(right)) {
+      return BuiltInFunctions.dateSubtractYearMonth(left, right);
+    }
+
     // Special handling for dateTime + dayTimeDuration = dateTime
     if (expr.operator === "+" && this.isDateTimeValue(left) && this.isDayTimeDurationValue(right)) {
       return BuiltInFunctions.dateTimeAdd(left, right);
@@ -315,6 +338,16 @@ export class FilterExecutor {
     // Special handling for dateTime - dayTimeDuration = dateTime
     if (expr.operator === "-" && this.isDateTimeValue(left) && this.isDayTimeDurationValue(right)) {
       return BuiltInFunctions.dateTimeSubtract(left, right);
+    }
+
+    // Special handling for dateTime + yearMonthDuration = dateTime (Issue #973)
+    if (expr.operator === "+" && this.isDateTimeValue(left) && this.isYearMonthDurationValue(right)) {
+      return BuiltInFunctions.dateTimeAddYearMonth(left, right);
+    }
+
+    // Special handling for dateTime - yearMonthDuration = dateTime (Issue #973)
+    if (expr.operator === "-" && this.isDateTimeValue(left) && this.isYearMonthDurationValue(right)) {
+      return BuiltInFunctions.dateTimeSubtractYearMonth(left, right);
     }
 
     // Special handling for dayTimeDuration + dayTimeDuration = dayTimeDuration
@@ -376,6 +409,17 @@ export class FilterExecutor {
     if (value instanceof Literal) {
       const datatypeValue = value.datatype?.value || "";
       return datatypeValue === "http://www.w3.org/2001/XMLSchema#dayTimeDuration";
+    }
+    return false;
+  }
+
+  /**
+   * Check if a value is an xsd:yearMonthDuration.
+   */
+  private isYearMonthDurationValue(value: any): boolean {
+    if (value instanceof Literal) {
+      const datatypeValue = value.datatype?.value || "";
+      return datatypeValue === "http://www.w3.org/2001/XMLSchema#yearMonthDuration";
     }
     return false;
   }

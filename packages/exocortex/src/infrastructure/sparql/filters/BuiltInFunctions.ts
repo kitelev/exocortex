@@ -1904,6 +1904,263 @@ export class BuiltInFunctions {
   }
 
   /**
+   * Add a duration to an xsd:date value.
+   * Per SPARQL 1.1 specification: date + dayTimeDuration = date
+   *
+   * @param date - date string or Literal
+   * @param duration - xsd:dayTimeDuration string or Literal
+   * @returns Literal with xsd:date datatype
+   *
+   * Examples:
+   * - dateAdd("2025-01-15", "P7D") → "2025-01-22"
+   * - dateAdd("2025-01-31", "P1D") → "2025-02-01" (month boundary)
+   * - dateAdd("2025-12-31", "P1D") → "2026-01-01" (year boundary)
+   */
+  static dateAdd(date: string | Literal, duration: string | Literal): Literal {
+    const dateValue = date instanceof Literal ? date.value : date;
+    const durValue = duration instanceof Literal ? duration.value : duration;
+
+    const d = this.parseXSDDate(dateValue);
+    if (d === null) {
+      throw new Error(`dateAdd: invalid date: '${dateValue}'`);
+    }
+
+    const durationMs = this.parseDayTimeDuration(durValue);
+    const resultMs = d.getTime() + durationMs;
+    const resultDate = new Date(resultMs);
+
+    // Format as xsd:date (YYYY-MM-DD)
+    const year = resultDate.getUTCFullYear();
+    const month = String(resultDate.getUTCMonth() + 1).padStart(2, "0");
+    const day = String(resultDate.getUTCDate()).padStart(2, "0");
+    const dateStr = `${year}-${month}-${day}`;
+
+    return new Literal(dateStr, new IRI("http://www.w3.org/2001/XMLSchema#date"));
+  }
+
+  /**
+   * Subtract a duration from an xsd:date value.
+   * Per SPARQL 1.1 specification: date - dayTimeDuration = date
+   *
+   * @param date - date string or Literal
+   * @param duration - xsd:dayTimeDuration string or Literal
+   * @returns Literal with xsd:date datatype
+   *
+   * Examples:
+   * - dateSubtract("2025-01-22", "P7D") → "2025-01-15"
+   * - dateSubtract("2025-02-01", "P1D") → "2025-01-31" (month boundary)
+   * - dateSubtract("2026-01-01", "P1D") → "2025-12-31" (year boundary)
+   */
+  static dateSubtract(date: string | Literal, duration: string | Literal): Literal {
+    const dateValue = date instanceof Literal ? date.value : date;
+    const durValue = duration instanceof Literal ? duration.value : duration;
+
+    const d = this.parseXSDDate(dateValue);
+    if (d === null) {
+      throw new Error(`dateSubtract: invalid date: '${dateValue}'`);
+    }
+
+    const durationMs = this.parseDayTimeDuration(durValue);
+    const resultMs = d.getTime() - durationMs;
+    const resultDate = new Date(resultMs);
+
+    // Format as xsd:date (YYYY-MM-DD)
+    const year = resultDate.getUTCFullYear();
+    const month = String(resultDate.getUTCMonth() + 1).padStart(2, "0");
+    const day = String(resultDate.getUTCDate()).padStart(2, "0");
+    const dateStr = `${year}-${month}-${day}`;
+
+    return new Literal(dateStr, new IRI("http://www.w3.org/2001/XMLSchema#date"));
+  }
+
+  /**
+   * Parse an xsd:yearMonthDuration string and return the number of months.
+   *
+   * Format: PnYnM (e.g., "P1Y2M", "P3M", "P2Y", "-P1Y")
+   *
+   * @param durationStr - xsd:yearMonthDuration string
+   * @returns Number of months (positive or negative)
+   */
+  static parseYearMonthDuration(durationStr: string): number {
+    // Pattern: optional negative sign, P, optional years, optional months
+    const pattern = /^(-)?P(?:(\d+)Y)?(?:(\d+)M)?$/;
+    const match = durationStr.match(pattern);
+
+    if (!match) {
+      throw new Error(`parseYearMonthDuration: invalid format: '${durationStr}'`);
+    }
+
+    const negative = match[1] === "-";
+    const years = parseInt(match[2] || "0", 10);
+    const months = parseInt(match[3] || "0", 10);
+
+    // Validate that at least years or months is specified
+    if (!match[2] && !match[3]) {
+      throw new Error(`parseYearMonthDuration: invalid format (no duration components): '${durationStr}'`);
+    }
+
+    const totalMonths = years * 12 + months;
+    return negative ? -totalMonths : totalMonths;
+  }
+
+  /**
+   * Check if a value is an xsd:yearMonthDuration.
+   */
+  static isYearMonthDuration(value: string | Literal): boolean {
+    if (value instanceof Literal) {
+      const datatypeValue = value.datatype?.value || "";
+      return datatypeValue === "http://www.w3.org/2001/XMLSchema#yearMonthDuration";
+    }
+    return false;
+  }
+
+  /**
+   * Add a yearMonthDuration to a dateTime value.
+   * Per SPARQL 1.2 specification: dateTime + yearMonthDuration = dateTime
+   *
+   * @param dateTime - dateTime string or Literal
+   * @param duration - xsd:yearMonthDuration string or Literal
+   * @returns Literal with xsd:dateTime datatype
+   *
+   * Examples:
+   * - dateTimeAddYearMonth("2025-01-15T10:00:00Z", "P1Y") → "2026-01-15T10:00:00.000Z"
+   * - dateTimeAddYearMonth("2025-01-15T10:00:00Z", "P2M") → "2025-03-15T10:00:00.000Z"
+   * - dateTimeAddYearMonth("2025-01-31T10:00:00Z", "P1M") → "2025-02-28T10:00:00.000Z" (month end)
+   */
+  static dateTimeAddYearMonth(dateTime: string | Literal, duration: string | Literal): Literal {
+    const dtValue = dateTime instanceof Literal ? dateTime.value : dateTime;
+    const durValue = duration instanceof Literal ? duration.value : duration;
+
+    const d = new Date(dtValue);
+    if (isNaN(d.getTime())) {
+      throw new Error(`dateTimeAddYearMonth: invalid dateTime: '${dtValue}'`);
+    }
+
+    const months = this.parseYearMonthDuration(durValue);
+
+    // Add months to the date
+    const originalDay = d.getUTCDate();
+    d.setUTCMonth(d.getUTCMonth() + months);
+
+    // Handle month-end overflow (e.g., Jan 31 + 1 month should be Feb 28/29)
+    // If the day changed, we overflowed into the next month, so go back to last day of previous month
+    if (d.getUTCDate() !== originalDay) {
+      d.setUTCDate(0); // Set to last day of previous month
+    }
+
+    return new Literal(d.toISOString(), new IRI("http://www.w3.org/2001/XMLSchema#dateTime"));
+  }
+
+  /**
+   * Subtract a yearMonthDuration from a dateTime value.
+   * Per SPARQL 1.2 specification: dateTime - yearMonthDuration = dateTime
+   *
+   * @param dateTime - dateTime string or Literal
+   * @param duration - xsd:yearMonthDuration string or Literal
+   * @returns Literal with xsd:dateTime datatype
+   */
+  static dateTimeSubtractYearMonth(dateTime: string | Literal, duration: string | Literal): Literal {
+    const dtValue = dateTime instanceof Literal ? dateTime.value : dateTime;
+    const durValue = duration instanceof Literal ? duration.value : duration;
+
+    const d = new Date(dtValue);
+    if (isNaN(d.getTime())) {
+      throw new Error(`dateTimeSubtractYearMonth: invalid dateTime: '${dtValue}'`);
+    }
+
+    const months = this.parseYearMonthDuration(durValue);
+
+    // Subtract months from the date
+    const originalDay = d.getUTCDate();
+    d.setUTCMonth(d.getUTCMonth() - months);
+
+    // Handle month-end overflow
+    if (d.getUTCDate() !== originalDay) {
+      d.setUTCDate(0); // Set to last day of previous month
+    }
+
+    return new Literal(d.toISOString(), new IRI("http://www.w3.org/2001/XMLSchema#dateTime"));
+  }
+
+  /**
+   * Add a yearMonthDuration to a date value.
+   * Per SPARQL 1.2 specification: date + yearMonthDuration = date
+   *
+   * @param date - date string or Literal
+   * @param duration - xsd:yearMonthDuration string or Literal
+   * @returns Literal with xsd:date datatype
+   *
+   * Examples:
+   * - dateAddYearMonth("2025-01-15", "P1Y") → "2026-01-15"
+   * - dateAddYearMonth("2025-01-31", "P1M") → "2025-02-28" (month end adjustment)
+   */
+  static dateAddYearMonth(date: string | Literal, duration: string | Literal): Literal {
+    const dateValue = date instanceof Literal ? date.value : date;
+    const durValue = duration instanceof Literal ? duration.value : duration;
+
+    const d = this.parseXSDDate(dateValue);
+    if (d === null) {
+      throw new Error(`dateAddYearMonth: invalid date: '${dateValue}'`);
+    }
+
+    const months = this.parseYearMonthDuration(durValue);
+
+    // Add months to the date
+    const originalDay = d.getUTCDate();
+    d.setUTCMonth(d.getUTCMonth() + months);
+
+    // Handle month-end overflow
+    if (d.getUTCDate() !== originalDay) {
+      d.setUTCDate(0);
+    }
+
+    // Format as xsd:date (YYYY-MM-DD)
+    const year = d.getUTCFullYear();
+    const month = String(d.getUTCMonth() + 1).padStart(2, "0");
+    const day = String(d.getUTCDate()).padStart(2, "0");
+    const dateStr = `${year}-${month}-${day}`;
+
+    return new Literal(dateStr, new IRI("http://www.w3.org/2001/XMLSchema#date"));
+  }
+
+  /**
+   * Subtract a yearMonthDuration from a date value.
+   * Per SPARQL 1.2 specification: date - yearMonthDuration = date
+   *
+   * @param date - date string or Literal
+   * @param duration - xsd:yearMonthDuration string or Literal
+   * @returns Literal with xsd:date datatype
+   */
+  static dateSubtractYearMonth(date: string | Literal, duration: string | Literal): Literal {
+    const dateValue = date instanceof Literal ? date.value : date;
+    const durValue = duration instanceof Literal ? duration.value : duration;
+
+    const d = this.parseXSDDate(dateValue);
+    if (d === null) {
+      throw new Error(`dateSubtractYearMonth: invalid date: '${dateValue}'`);
+    }
+
+    const months = this.parseYearMonthDuration(durValue);
+
+    // Subtract months from the date
+    const originalDay = d.getUTCDate();
+    d.setUTCMonth(d.getUTCMonth() - months);
+
+    // Handle month-end overflow
+    if (d.getUTCDate() !== originalDay) {
+      d.setUTCDate(0);
+    }
+
+    // Format as xsd:date (YYYY-MM-DD)
+    const year = d.getUTCFullYear();
+    const month = String(d.getUTCMonth() + 1).padStart(2, "0");
+    const day = String(d.getUTCDate()).padStart(2, "0");
+    const dateStr = `${year}-${month}-${day}`;
+
+    return new Literal(dateStr, new IRI("http://www.w3.org/2001/XMLSchema#date"));
+  }
+
+  /**
    * Add two xsd:dayTimeDuration values.
    *
    * @param duration1 - First duration string or Literal

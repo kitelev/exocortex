@@ -4483,5 +4483,246 @@ describe("BuiltInFunctions", () => {
         );
       });
     });
+
+    // Issue #973: Date + Duration Arithmetic
+    describe("dateAdd", () => {
+      it("should add dayTimeDuration to date (Issue #973 acceptance criteria)", () => {
+        // Per Issue #973: "2025-01-15"^^xsd:date + "P7D"^^xsd:dayTimeDuration = "2025-01-22"^^xsd:date
+        const date = new Literal("2025-01-15", new IRI("http://www.w3.org/2001/XMLSchema#date"));
+        const duration = new Literal("P7D", new IRI("http://www.w3.org/2001/XMLSchema#dayTimeDuration"));
+        const result = BuiltInFunctions.dateAdd(date, duration);
+        expect(result).toBeInstanceOf(Literal);
+        expect(result.value).toBe("2025-01-22");
+        expect(result.datatype?.value).toBe("http://www.w3.org/2001/XMLSchema#date");
+      });
+
+      it("should handle string inputs", () => {
+        const result = BuiltInFunctions.dateAdd("2025-01-15", "P7D");
+        expect(result.value).toBe("2025-01-22");
+        expect(result.datatype?.value).toBe("http://www.w3.org/2001/XMLSchema#date");
+      });
+
+      it("should handle month boundary correctly", () => {
+        const result = BuiltInFunctions.dateAdd("2025-01-31", "P1D");
+        expect(result.value).toBe("2025-02-01");
+      });
+
+      it("should handle year boundary correctly", () => {
+        const result = BuiltInFunctions.dateAdd("2025-12-31", "P1D");
+        expect(result.value).toBe("2026-01-01");
+      });
+
+      it("should handle adding hours that overflow to next day", () => {
+        // Adding PT24H should advance to next day
+        const result = BuiltInFunctions.dateAdd("2025-01-15", "PT24H");
+        expect(result.value).toBe("2025-01-16");
+      });
+
+      it("should handle adding multiple days", () => {
+        const result = BuiltInFunctions.dateAdd("2025-01-01", "P30D");
+        expect(result.value).toBe("2025-01-31");
+      });
+
+      it("should throw for invalid date", () => {
+        expect(() => BuiltInFunctions.dateAdd("invalid", "P7D")).toThrow(
+          "dateAdd: invalid date"
+        );
+      });
+    });
+
+    describe("dateSubtract", () => {
+      it("should subtract dayTimeDuration from date", () => {
+        const result = BuiltInFunctions.dateSubtract("2025-01-22", "P7D");
+        expect(result).toBeInstanceOf(Literal);
+        expect(result.value).toBe("2025-01-15");
+        expect(result.datatype?.value).toBe("http://www.w3.org/2001/XMLSchema#date");
+      });
+
+      it("should work with Literal inputs", () => {
+        const date = new Literal("2025-02-01", new IRI("http://www.w3.org/2001/XMLSchema#date"));
+        const duration = new Literal("P1D", new IRI("http://www.w3.org/2001/XMLSchema#dayTimeDuration"));
+        const result = BuiltInFunctions.dateSubtract(date, duration);
+        expect(result.value).toBe("2025-01-31");
+      });
+
+      it("should handle year boundary correctly", () => {
+        const result = BuiltInFunctions.dateSubtract("2026-01-01", "P1D");
+        expect(result.value).toBe("2025-12-31");
+      });
+
+      it("should throw for invalid date", () => {
+        expect(() => BuiltInFunctions.dateSubtract("invalid", "P7D")).toThrow(
+          "dateSubtract: invalid date"
+        );
+      });
+    });
+
+    describe("parseYearMonthDuration", () => {
+      it("should parse years only", () => {
+        expect(BuiltInFunctions.parseYearMonthDuration("P1Y")).toBe(12);
+        expect(BuiltInFunctions.parseYearMonthDuration("P2Y")).toBe(24);
+      });
+
+      it("should parse months only", () => {
+        expect(BuiltInFunctions.parseYearMonthDuration("P3M")).toBe(3);
+        expect(BuiltInFunctions.parseYearMonthDuration("P11M")).toBe(11);
+      });
+
+      it("should parse years and months", () => {
+        expect(BuiltInFunctions.parseYearMonthDuration("P1Y2M")).toBe(14);
+        expect(BuiltInFunctions.parseYearMonthDuration("P2Y6M")).toBe(30);
+      });
+
+      it("should handle negative durations", () => {
+        expect(BuiltInFunctions.parseYearMonthDuration("-P1Y")).toBe(-12);
+        expect(BuiltInFunctions.parseYearMonthDuration("-P6M")).toBe(-6);
+        expect(BuiltInFunctions.parseYearMonthDuration("-P1Y2M")).toBe(-14);
+      });
+
+      it("should throw for invalid format", () => {
+        expect(() => BuiltInFunctions.parseYearMonthDuration("P1D")).toThrow("invalid format");
+        expect(() => BuiltInFunctions.parseYearMonthDuration("P")).toThrow("invalid format");
+        expect(() => BuiltInFunctions.parseYearMonthDuration("invalid")).toThrow("invalid format");
+      });
+    });
+
+    describe("isYearMonthDuration", () => {
+      it("should return true for yearMonthDuration literal", () => {
+        const literal = new Literal("P1Y2M", new IRI("http://www.w3.org/2001/XMLSchema#yearMonthDuration"));
+        expect(BuiltInFunctions.isYearMonthDuration(literal)).toBe(true);
+      });
+
+      it("should return false for dayTimeDuration literal", () => {
+        const literal = new Literal("P1D", new IRI("http://www.w3.org/2001/XMLSchema#dayTimeDuration"));
+        expect(BuiltInFunctions.isYearMonthDuration(literal)).toBe(false);
+      });
+
+      it("should return false for string", () => {
+        expect(BuiltInFunctions.isYearMonthDuration("P1Y")).toBe(false);
+      });
+    });
+
+    describe("dateTimeAddYearMonth", () => {
+      it("should add 1 year to dateTime", () => {
+        const result = BuiltInFunctions.dateTimeAddYearMonth("2025-01-15T10:00:00Z", "P1Y");
+        expect(result).toBeInstanceOf(Literal);
+        expect(result.value).toBe("2026-01-15T10:00:00.000Z");
+        expect(result.datatype?.value).toBe("http://www.w3.org/2001/XMLSchema#dateTime");
+      });
+
+      it("should add 2 months to dateTime", () => {
+        const result = BuiltInFunctions.dateTimeAddYearMonth("2025-01-15T10:00:00Z", "P2M");
+        expect(result.value).toBe("2025-03-15T10:00:00.000Z");
+      });
+
+      it("should add 1 year and 6 months to dateTime", () => {
+        const result = BuiltInFunctions.dateTimeAddYearMonth("2025-01-15T10:00:00Z", "P1Y6M");
+        expect(result.value).toBe("2026-07-15T10:00:00.000Z");
+      });
+
+      it("should handle month-end overflow (Jan 31 + 1M = Feb 28)", () => {
+        const result = BuiltInFunctions.dateTimeAddYearMonth("2025-01-31T10:00:00Z", "P1M");
+        expect(result.value).toBe("2025-02-28T10:00:00.000Z");
+      });
+
+      it("should handle leap year (Jan 31 + 1M = Feb 29 in leap year)", () => {
+        const result = BuiltInFunctions.dateTimeAddYearMonth("2024-01-31T10:00:00Z", "P1M");
+        expect(result.value).toBe("2024-02-29T10:00:00.000Z");
+      });
+
+      it("should work with Literal inputs", () => {
+        const dt = new Literal("2025-01-15T10:00:00Z", new IRI("http://www.w3.org/2001/XMLSchema#dateTime"));
+        const dur = new Literal("P1Y", new IRI("http://www.w3.org/2001/XMLSchema#yearMonthDuration"));
+        const result = BuiltInFunctions.dateTimeAddYearMonth(dt, dur);
+        expect(result.value).toBe("2026-01-15T10:00:00.000Z");
+      });
+
+      it("should throw for invalid dateTime", () => {
+        expect(() => BuiltInFunctions.dateTimeAddYearMonth("invalid", "P1Y")).toThrow(
+          "dateTimeAddYearMonth: invalid dateTime"
+        );
+      });
+    });
+
+    describe("dateTimeSubtractYearMonth", () => {
+      it("should subtract 1 year from dateTime", () => {
+        const result = BuiltInFunctions.dateTimeSubtractYearMonth("2025-01-15T10:00:00Z", "P1Y");
+        expect(result).toBeInstanceOf(Literal);
+        expect(result.value).toBe("2024-01-15T10:00:00.000Z");
+      });
+
+      it("should subtract 2 months from dateTime", () => {
+        const result = BuiltInFunctions.dateTimeSubtractYearMonth("2025-03-15T10:00:00Z", "P2M");
+        expect(result.value).toBe("2025-01-15T10:00:00.000Z");
+      });
+
+      it("should handle month-end overflow (Mar 31 - 1M = Feb 28)", () => {
+        const result = BuiltInFunctions.dateTimeSubtractYearMonth("2025-03-31T10:00:00Z", "P1M");
+        expect(result.value).toBe("2025-02-28T10:00:00.000Z");
+      });
+
+      it("should throw for invalid dateTime", () => {
+        expect(() => BuiltInFunctions.dateTimeSubtractYearMonth("invalid", "P1Y")).toThrow(
+          "dateTimeSubtractYearMonth: invalid dateTime"
+        );
+      });
+    });
+
+    describe("dateAddYearMonth", () => {
+      it("should add 1 year to date", () => {
+        const result = BuiltInFunctions.dateAddYearMonth("2025-01-15", "P1Y");
+        expect(result).toBeInstanceOf(Literal);
+        expect(result.value).toBe("2026-01-15");
+        expect(result.datatype?.value).toBe("http://www.w3.org/2001/XMLSchema#date");
+      });
+
+      it("should add 2 months to date", () => {
+        const result = BuiltInFunctions.dateAddYearMonth("2025-01-15", "P2M");
+        expect(result.value).toBe("2025-03-15");
+      });
+
+      it("should handle month-end overflow (Jan 31 + 1M = Feb 28)", () => {
+        const result = BuiltInFunctions.dateAddYearMonth("2025-01-31", "P1M");
+        expect(result.value).toBe("2025-02-28");
+      });
+
+      it("should work with Literal inputs", () => {
+        const date = new Literal("2025-01-15", new IRI("http://www.w3.org/2001/XMLSchema#date"));
+        const dur = new Literal("P1Y", new IRI("http://www.w3.org/2001/XMLSchema#yearMonthDuration"));
+        const result = BuiltInFunctions.dateAddYearMonth(date, dur);
+        expect(result.value).toBe("2026-01-15");
+      });
+
+      it("should throw for invalid date", () => {
+        expect(() => BuiltInFunctions.dateAddYearMonth("invalid", "P1Y")).toThrow(
+          "dateAddYearMonth: invalid date"
+        );
+      });
+    });
+
+    describe("dateSubtractYearMonth", () => {
+      it("should subtract 1 year from date", () => {
+        const result = BuiltInFunctions.dateSubtractYearMonth("2025-01-15", "P1Y");
+        expect(result).toBeInstanceOf(Literal);
+        expect(result.value).toBe("2024-01-15");
+        expect(result.datatype?.value).toBe("http://www.w3.org/2001/XMLSchema#date");
+      });
+
+      it("should subtract 2 months from date", () => {
+        const result = BuiltInFunctions.dateSubtractYearMonth("2025-03-15", "P2M");
+        expect(result.value).toBe("2025-01-15");
+      });
+
+      it("should handle month-end overflow (Mar 31 - 1M = Feb 28)", () => {
+        const result = BuiltInFunctions.dateSubtractYearMonth("2025-03-31", "P1M");
+        expect(result.value).toBe("2025-02-28");
+      });
+
+      it("should throw for invalid date", () => {
+        expect(() => BuiltInFunctions.dateSubtractYearMonth("invalid", "P1Y")).toThrow(
+          "dateSubtractYearMonth: invalid date"
+        );
+      });
+    });
   });
 });

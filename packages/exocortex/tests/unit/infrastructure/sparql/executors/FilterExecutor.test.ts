@@ -3866,4 +3866,246 @@ describe("FilterExecutor", () => {
       expect(results).toHaveLength(1);
     });
   });
+
+  // Issue #973: Date + Duration Arithmetic
+  describe("xsd:date + xsd:dayTimeDuration arithmetic (Issue #973)", () => {
+    const xsdDate = new IRI("http://www.w3.org/2001/XMLSchema#date");
+    const xsdDayTimeDuration = new IRI("http://www.w3.org/2001/XMLSchema#dayTimeDuration");
+
+    it("should add dayTimeDuration to date (acceptance criteria)", async () => {
+      // Per Issue #973: "2025-01-15"^^xsd:date + "P7D"^^xsd:dayTimeDuration = "2025-01-22"^^xsd:date
+      const operation: FilterOperation = {
+        type: "filter",
+        expression: {
+          type: "comparison",
+          operator: "=",
+          left: {
+            type: "arithmetic",
+            operator: "+",
+            left: { type: "variable", name: "startDate" },
+            right: { type: "variable", name: "duration" },
+          },
+          right: { type: "literal", value: "2025-01-22", datatype: "http://www.w3.org/2001/XMLSchema#date" },
+        },
+        input: { type: "bgp", triples: [] },
+      };
+
+      const solution = new SolutionMapping();
+      solution.set("startDate", new Literal("2025-01-15", xsdDate));
+      solution.set("duration", new Literal("P7D", xsdDayTimeDuration));
+
+      const results = await executor.executeAll(operation, [solution]);
+      expect(results).toHaveLength(1);
+    });
+
+    it("should subtract dayTimeDuration from date", async () => {
+      const operation: FilterOperation = {
+        type: "filter",
+        expression: {
+          type: "comparison",
+          operator: "=",
+          left: {
+            type: "arithmetic",
+            operator: "-",
+            left: { type: "variable", name: "endDate" },
+            right: { type: "variable", name: "duration" },
+          },
+          right: { type: "literal", value: "2025-01-15", datatype: "http://www.w3.org/2001/XMLSchema#date" },
+        },
+        input: { type: "bgp", triples: [] },
+      };
+
+      const solution = new SolutionMapping();
+      solution.set("endDate", new Literal("2025-01-22", xsdDate));
+      solution.set("duration", new Literal("P7D", xsdDayTimeDuration));
+
+      const results = await executor.executeAll(operation, [solution]);
+      expect(results).toHaveLength(1);
+    });
+
+    it("should handle month boundaries (date + duration)", async () => {
+      const operation: FilterOperation = {
+        type: "filter",
+        expression: {
+          type: "comparison",
+          operator: "=",
+          left: {
+            type: "arithmetic",
+            operator: "+",
+            left: { type: "variable", name: "date" },
+            right: { type: "variable", name: "duration" },
+          },
+          right: { type: "literal", value: "2025-02-01", datatype: "http://www.w3.org/2001/XMLSchema#date" },
+        },
+        input: { type: "bgp", triples: [] },
+      };
+
+      const solution = new SolutionMapping();
+      solution.set("date", new Literal("2025-01-31", xsdDate));
+      solution.set("duration", new Literal("P1D", xsdDayTimeDuration));
+
+      const results = await executor.executeAll(operation, [solution]);
+      expect(results).toHaveLength(1);
+    });
+  });
+
+  describe("xsd:date + xsd:yearMonthDuration arithmetic (Issue #973)", () => {
+    const xsdDate = new IRI("http://www.w3.org/2001/XMLSchema#date");
+    const xsdYearMonthDuration = new IRI("http://www.w3.org/2001/XMLSchema#yearMonthDuration");
+
+    it("should add yearMonthDuration to date", async () => {
+      const operation: FilterOperation = {
+        type: "filter",
+        expression: {
+          type: "comparison",
+          operator: "=",
+          left: {
+            type: "arithmetic",
+            operator: "+",
+            left: { type: "variable", name: "date" },
+            right: { type: "variable", name: "duration" },
+          },
+          right: { type: "literal", value: "2026-01-15", datatype: "http://www.w3.org/2001/XMLSchema#date" },
+        },
+        input: { type: "bgp", triples: [] },
+      };
+
+      const solution = new SolutionMapping();
+      solution.set("date", new Literal("2025-01-15", xsdDate));
+      solution.set("duration", new Literal("P1Y", xsdYearMonthDuration));
+
+      const results = await executor.executeAll(operation, [solution]);
+      expect(results).toHaveLength(1);
+    });
+
+    it("should subtract yearMonthDuration from date", async () => {
+      const operation: FilterOperation = {
+        type: "filter",
+        expression: {
+          type: "comparison",
+          operator: "=",
+          left: {
+            type: "arithmetic",
+            operator: "-",
+            left: { type: "variable", name: "date" },
+            right: { type: "variable", name: "duration" },
+          },
+          right: { type: "literal", value: "2024-01-15", datatype: "http://www.w3.org/2001/XMLSchema#date" },
+        },
+        input: { type: "bgp", triples: [] },
+      };
+
+      const solution = new SolutionMapping();
+      solution.set("date", new Literal("2025-01-15", xsdDate));
+      solution.set("duration", new Literal("P1Y", xsdYearMonthDuration));
+
+      const results = await executor.executeAll(operation, [solution]);
+      expect(results).toHaveLength(1);
+    });
+
+    it("should handle month-end adjustment (Jan 31 + 1M = Feb 28)", async () => {
+      const operation: FilterOperation = {
+        type: "filter",
+        expression: {
+          type: "comparison",
+          operator: "=",
+          left: {
+            type: "arithmetic",
+            operator: "+",
+            left: { type: "variable", name: "date" },
+            right: { type: "variable", name: "duration" },
+          },
+          right: { type: "literal", value: "2025-02-28", datatype: "http://www.w3.org/2001/XMLSchema#date" },
+        },
+        input: { type: "bgp", triples: [] },
+      };
+
+      const solution = new SolutionMapping();
+      solution.set("date", new Literal("2025-01-31", xsdDate));
+      solution.set("duration", new Literal("P1M", xsdYearMonthDuration));
+
+      const results = await executor.executeAll(operation, [solution]);
+      expect(results).toHaveLength(1);
+    });
+  });
+
+  describe("xsd:dateTime + xsd:yearMonthDuration arithmetic (Issue #973)", () => {
+    const xsdDateTime = new IRI("http://www.w3.org/2001/XMLSchema#dateTime");
+    const xsdYearMonthDuration = new IRI("http://www.w3.org/2001/XMLSchema#yearMonthDuration");
+
+    it("should add yearMonthDuration to dateTime", async () => {
+      const operation: FilterOperation = {
+        type: "filter",
+        expression: {
+          type: "comparison",
+          operator: "=",
+          left: {
+            type: "arithmetic",
+            operator: "+",
+            left: { type: "variable", name: "dt" },
+            right: { type: "variable", name: "duration" },
+          },
+          right: { type: "literal", value: "2026-01-15T10:00:00.000Z", datatype: "http://www.w3.org/2001/XMLSchema#dateTime" },
+        },
+        input: { type: "bgp", triples: [] },
+      };
+
+      const solution = new SolutionMapping();
+      solution.set("dt", new Literal("2025-01-15T10:00:00Z", xsdDateTime));
+      solution.set("duration", new Literal("P1Y", xsdYearMonthDuration));
+
+      const results = await executor.executeAll(operation, [solution]);
+      expect(results).toHaveLength(1);
+    });
+
+    it("should subtract yearMonthDuration from dateTime", async () => {
+      const operation: FilterOperation = {
+        type: "filter",
+        expression: {
+          type: "comparison",
+          operator: "=",
+          left: {
+            type: "arithmetic",
+            operator: "-",
+            left: { type: "variable", name: "dt" },
+            right: { type: "variable", name: "duration" },
+          },
+          right: { type: "literal", value: "2024-01-15T10:00:00.000Z", datatype: "http://www.w3.org/2001/XMLSchema#dateTime" },
+        },
+        input: { type: "bgp", triples: [] },
+      };
+
+      const solution = new SolutionMapping();
+      solution.set("dt", new Literal("2025-01-15T10:00:00Z", xsdDateTime));
+      solution.set("duration", new Literal("P1Y", xsdYearMonthDuration));
+
+      const results = await executor.executeAll(operation, [solution]);
+      expect(results).toHaveLength(1);
+    });
+
+    it("should handle month-end adjustment for dateTime (Jan 31 + 1M = Feb 28)", async () => {
+      const operation: FilterOperation = {
+        type: "filter",
+        expression: {
+          type: "comparison",
+          operator: "=",
+          left: {
+            type: "arithmetic",
+            operator: "+",
+            left: { type: "variable", name: "dt" },
+            right: { type: "variable", name: "duration" },
+          },
+          right: { type: "literal", value: "2025-02-28T10:00:00.000Z", datatype: "http://www.w3.org/2001/XMLSchema#dateTime" },
+        },
+        input: { type: "bgp", triples: [] },
+      };
+
+      const solution = new SolutionMapping();
+      solution.set("dt", new Literal("2025-01-31T10:00:00Z", xsdDateTime));
+      solution.set("duration", new Literal("P1M", xsdYearMonthDuration));
+
+      const results = await executor.executeAll(operation, [solution]);
+      expect(results).toHaveLength(1);
+    });
+  });
 });
