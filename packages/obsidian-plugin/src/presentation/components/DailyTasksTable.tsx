@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState, useLayoutEffect } from "react";
+import React, { useMemo, useRef, useState, useLayoutEffect, useCallback, useEffect } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { MetadataHelpers, EffortSortingHelpers } from "exocortex";
 import { useTableSortStore, useUIStore } from '@plugin/presentation/stores';
@@ -371,6 +371,39 @@ export const DailyTasksTable: React.FC<DailyTasksTableProps> = ({
 
   const shouldVirtualize = displayedTasks.length > VIRTUALIZATION_THRESHOLD;
 
+  // Synchronize column widths between header and body tables in virtualized mode
+  // This fixes misalignment caused by scrollbar width difference (Issue #941)
+  const [scrollbarWidth, setScrollbarWidth] = useState(0);
+
+  // Measure scrollbar width when scroll container is mounted
+  const measureScrollbarWidth = useCallback(() => {
+    if (!parentRef.current) return;
+
+    const scrollContainer = parentRef.current;
+    // Scrollbar width = total width - client width (visible content area)
+    const sbWidth = scrollContainer.offsetWidth - scrollContainer.clientWidth;
+    setScrollbarWidth(sbWidth);
+  }, []);
+
+  // Measure scrollbar width when virtualized mode is active and parent is mounted
+  useLayoutEffect(() => {
+    if (shouldVirtualize && isParentMounted) {
+      measureScrollbarWidth();
+    }
+  }, [shouldVirtualize, isParentMounted, measureScrollbarWidth]);
+
+  // Re-measure on window resize (scrollbar might appear/disappear)
+  useEffect(() => {
+    if (!shouldVirtualize) return;
+
+    const handleResize = () => {
+      measureScrollbarWidth();
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [shouldVirtualize, measureScrollbarWidth]);
+
   // Only initialize virtualizer when we need virtualization AND parent is mounted
   const rowVirtualizer = useVirtualizer({
     count: shouldVirtualize ? displayedTasks.length : 0,
@@ -645,10 +678,18 @@ export const DailyTasksTable: React.FC<DailyTasksTableProps> = ({
 
   return (
     <div className="exocortex-daily-tasks exocortex-virtualized">
-      <table className="exocortex-tasks-table exocortex-tasks-table-header">
-        {renderColGroup()}
-        {renderTableHeader()}
-      </table>
+      {/* Header wrapper with padding-right to account for scrollbar width (Issue #941) */}
+      <div
+        className="exocortex-tasks-table-header-wrapper"
+        style={{
+          paddingRight: scrollbarWidth > 0 ? `${scrollbarWidth}px` : undefined,
+        }}
+      >
+        <table className="exocortex-tasks-table exocortex-tasks-table-header">
+          {renderColGroup()}
+          {renderTableHeader()}
+        </table>
+      </div>
       <div
         ref={parentRef}
         className="exocortex-virtual-scroll-container"
