@@ -15,6 +15,10 @@ import {
   DirectionalLangTagTransformer,
   type BaseDirection,
 } from "./DirectionalLangTagTransformer";
+import {
+  TripleTermTransformer,
+  TripleTermTransformerError,
+} from "./TripleTermTransformer";
 
 export class SPARQLParseError extends Error {
   public readonly line?: number;
@@ -73,6 +77,7 @@ export class SPARQLParser {
   private readonly prefixStarTransformer: PrefixStarTransformer;
   private readonly describeOptionsTransformer: DescribeOptionsTransformer;
   private readonly directionalLangTagTransformer: DirectionalLangTagTransformer;
+  private readonly tripleTermTransformer: TripleTermTransformer;
 
   /** Store the last parsed DESCRIBE options for retrieval */
   private lastDescribeOptions?: DescribeOptions;
@@ -93,6 +98,7 @@ export class SPARQLParser {
     this.prefixStarTransformer = new PrefixStarTransformer(options?.vocabularyResolver);
     this.describeOptionsTransformer = new DescribeOptionsTransformer();
     this.directionalLangTagTransformer = new DirectionalLangTagTransformer();
+    this.tripleTermTransformer = new TripleTermTransformer();
   }
 
   /**
@@ -123,6 +129,8 @@ export class SPARQLParser {
       transformedQuery = this.lateralTransformer.transform(transformedQuery);
       // Transform CASE WHEN expressions to IF expressions before parsing
       transformedQuery = this.caseWhenTransformer.transform(transformedQuery);
+      // Transform triple term syntax <<( s p o )>> to << s p o >> (SPARQL 1.2 RDF-Star)
+      transformedQuery = this.tripleTermTransformer.transform(transformedQuery);
       const parsed = this.parser.parse(transformedQuery);
       this.validateQuery(parsed);
 
@@ -140,6 +148,9 @@ export class SPARQLParser {
         throw new SPARQLParseError(error.message);
       }
       if (error instanceof CaseWhenTransformerError) {
+        throw new SPARQLParseError(error.message);
+      }
+      if (error instanceof TripleTermTransformerError) {
         throw new SPARQLParseError(error.message);
       }
       if (error instanceof Error) {
@@ -213,6 +224,8 @@ export class SPARQLParser {
       transformedQuery = this.lateralTransformer.transform(transformedQuery);
       // Then transform CASE WHEN expressions to IF expressions
       transformedQuery = this.caseWhenTransformer.transform(transformedQuery);
+      // Transform triple term syntax <<( s p o )>> to << s p o >> (SPARQL 1.2 RDF-Star)
+      transformedQuery = this.tripleTermTransformer.transform(transformedQuery);
       const parsed = this.parser.parse(transformedQuery);
       this.validateQuery(parsed);
 
@@ -233,6 +246,9 @@ export class SPARQLParser {
         throw new SPARQLParseError(error.message);
       }
       if (error instanceof CaseWhenTransformerError) {
+        throw new SPARQLParseError(error.message);
+      }
+      if (error instanceof TripleTermTransformerError) {
         throw new SPARQLParseError(error.message);
       }
       if (error instanceof Error) {
@@ -304,6 +320,19 @@ export class SPARQLParser {
    */
   hasDirectionalLangTags(queryString: string): boolean {
     return this.directionalLangTagTransformer.hasDirectionalTags(queryString);
+  }
+
+  /**
+   * Check if a query string contains triple term syntax (SPARQL 1.2 RDF-Star).
+   *
+   * Triple term syntax uses `<<( subject predicate object )>>` which is
+   * equivalent to the standard `<< subject predicate object >>` syntax.
+   *
+   * @param queryString - The SPARQL query to check
+   * @returns true if the query contains <<( )>> syntax
+   */
+  hasTripleTermSyntax(queryString: string): boolean {
+    return this.tripleTermTransformer.hasTripleTermSyntax(queryString);
   }
 
   /**

@@ -1053,4 +1053,227 @@ describe("SPARQLParser", () => {
       expect(parser.getDirectionForLanguage("en")).toBe("ltr");
     });
   });
+
+  describe("triple term syntax (SPARQL 1.2 RDF-Star)", () => {
+    describe("hasTripleTermSyntax detection", () => {
+      it("should detect <<( )>> syntax", () => {
+        const query = `PREFIX : <http://example.org/>
+SELECT * WHERE { <<( :Alice :knows :Bob )>> ?p ?o }`;
+        expect(parser.hasTripleTermSyntax(query)).toBe(true);
+      });
+
+      it("should not detect standard << >> syntax", () => {
+        const query = `PREFIX : <http://example.org/>
+SELECT * WHERE { << :Alice :knows :Bob >> ?p ?o }`;
+        expect(parser.hasTripleTermSyntax(query)).toBe(false);
+      });
+
+      it("should not detect false positives in string literals", () => {
+        const query = `SELECT * WHERE { ?s ?p "<<( not a triple )>>" }`;
+        expect(parser.hasTripleTermSyntax(query)).toBe(false);
+      });
+    });
+
+    describe("parsing triple term syntax", () => {
+      it("should parse simple triple term with <<( )>> syntax", () => {
+        const query = `PREFIX : <http://example.org/>
+SELECT * WHERE { <<( :Alice :knows :Bob )>> :source ?doc }`;
+        const ast = parser.parse(query);
+        expect(parser.isSelectQuery(ast)).toBe(true);
+
+        // Should have been transformed and parsed successfully
+        // The BGP should contain triples with quoted triple as subject
+        const selectQuery = ast as SelectQuery;
+        expect(selectQuery.where).toBeDefined();
+        expect(selectQuery.where!.length).toBeGreaterThan(0);
+
+        const bgp = selectQuery.where![0] as { type: string; triples: any[] };
+        expect(bgp.type).toBe("bgp");
+        expect(bgp.triples.length).toBe(1);
+
+        // The subject should be a quoted triple (Quad in sparqljs)
+        const triple = bgp.triples[0];
+        expect(triple.subject.termType).toBe("Quad");
+        expect(triple.subject.subject.value).toBe("http://example.org/Alice");
+        expect(triple.subject.predicate.value).toBe("http://example.org/knows");
+        expect(triple.subject.object.value).toBe("http://example.org/Bob");
+      });
+
+      it("should parse triple term with variables", () => {
+        const query = `PREFIX : <http://example.org/>
+SELECT * WHERE { <<( ?person :knows ?friend )>> :source ?doc }`;
+        const ast = parser.parse(query);
+        expect(parser.isSelectQuery(ast)).toBe(true);
+
+        const selectQuery = ast as SelectQuery;
+        const bgp = selectQuery.where![0] as { type: string; triples: any[] };
+        expect(bgp.triples[0].subject.termType).toBe("Quad");
+        expect(bgp.triples[0].subject.subject.termType).toBe("Variable");
+        expect(bgp.triples[0].subject.subject.value).toBe("person");
+        expect(bgp.triples[0].subject.object.termType).toBe("Variable");
+        expect(bgp.triples[0].subject.object.value).toBe("friend");
+      });
+
+      it("should parse nested triple terms", () => {
+        const query = `PREFIX : <http://example.org/>
+SELECT * WHERE { <<( <<( :Alice :knows :Bob )>> :source :Wikipedia )>> :time ?t }`;
+        const ast = parser.parse(query);
+        expect(parser.isSelectQuery(ast)).toBe(true);
+
+        const selectQuery = ast as SelectQuery;
+        const bgp = selectQuery.where![0] as { type: string; triples: any[] };
+        const outerTriple = bgp.triples[0];
+
+        // Outer triple has a Quad as subject
+        expect(outerTriple.subject.termType).toBe("Quad");
+        // The nested subject is also a Quad
+        expect(outerTriple.subject.subject.termType).toBe("Quad");
+        expect(outerTriple.subject.subject.subject.value).toBe("http://example.org/Alice");
+      });
+
+      it("should parse multiple triple terms in one query", () => {
+        const query = `PREFIX : <http://example.org/>
+SELECT * WHERE {
+  <<( :Alice :knows :Bob )>> :source ?src1 .
+  <<( :Bob :knows :Carol )>> :source ?src2 .
+}`;
+        const ast = parser.parse(query);
+        expect(parser.isSelectQuery(ast)).toBe(true);
+
+        const selectQuery = ast as SelectQuery;
+        const bgp = selectQuery.where![0] as { type: string; triples: any[] };
+        expect(bgp.triples.length).toBe(2);
+        expect(bgp.triples[0].subject.termType).toBe("Quad");
+        expect(bgp.triples[1].subject.termType).toBe("Quad");
+      });
+
+      it("should parse triple term in FILTER", () => {
+        const query = `PREFIX : <http://example.org/>
+SELECT * WHERE {
+  ?triple ?p ?o .
+  FILTER(?triple = <<( :Alice :knows :Bob )>>)
+}`;
+        const ast = parser.parse(query);
+        expect(parser.isSelectQuery(ast)).toBe(true);
+
+        const selectQuery = ast as SelectQuery;
+        // Query should have WHERE clause with BGP and FILTER
+        expect(selectQuery.where).toBeDefined();
+      });
+
+      it("should parse triple term in BIND", () => {
+        const query = `PREFIX : <http://example.org/>
+SELECT ?triple WHERE {
+  BIND(<<( :Alice :knows :Bob )>> AS ?triple)
+}`;
+        const ast = parser.parse(query);
+        expect(parser.isSelectQuery(ast)).toBe(true);
+      });
+
+      it("should parse with literal objects", () => {
+        const query = `PREFIX : <http://example.org/>
+SELECT * WHERE { <<( :Alice :name "Alice Smith" )>> :source ?doc }`;
+        const ast = parser.parse(query);
+        expect(parser.isSelectQuery(ast)).toBe(true);
+
+        const selectQuery = ast as SelectQuery;
+        const bgp = selectQuery.where![0] as { type: string; triples: any[] };
+        expect(bgp.triples[0].subject.object.termType).toBe("Literal");
+        expect(bgp.triples[0].subject.object.value).toBe("Alice Smith");
+      });
+
+      it("should parse with typed literal objects", () => {
+        const query = `PREFIX : <http://example.org/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+SELECT * WHERE { <<( :Alice :age "30"^^xsd:integer )>> :source ?doc }`;
+        const ast = parser.parse(query);
+        expect(parser.isSelectQuery(ast)).toBe(true);
+
+        const selectQuery = ast as SelectQuery;
+        const bgp = selectQuery.where![0] as { type: string; triples: any[] };
+        expect(bgp.triples[0].subject.object.termType).toBe("Literal");
+        expect(bgp.triples[0].subject.object.value).toBe("30");
+      });
+
+      it("should parse with language-tagged literals", () => {
+        const query = `PREFIX : <http://example.org/>
+SELECT * WHERE { <<( :Alice :name "Alice"@en )>> :source ?doc }`;
+        const ast = parser.parse(query);
+        expect(parser.isSelectQuery(ast)).toBe(true);
+
+        const selectQuery = ast as SelectQuery;
+        const bgp = selectQuery.where![0] as { type: string; triples: any[] };
+        expect(bgp.triples[0].subject.object.termType).toBe("Literal");
+        expect(bgp.triples[0].subject.object.language).toBe("en");
+      });
+
+      it("should parse with blank node subject", () => {
+        const query = `PREFIX : <http://example.org/>
+SELECT * WHERE { <<( _:b1 :knows :Bob )>> :source ?doc }`;
+        const ast = parser.parse(query);
+        expect(parser.isSelectQuery(ast)).toBe(true);
+
+        const selectQuery = ast as SelectQuery;
+        const bgp = selectQuery.where![0] as { type: string; triples: any[] };
+        expect(bgp.triples[0].subject.subject.termType).toBe("BlankNode");
+      });
+    });
+
+    describe("round-trip serialization", () => {
+      it("should serialize and re-parse triple term query", () => {
+        const query = `PREFIX : <http://example.org/>
+SELECT * WHERE { <<( :Alice :knows :Bob )>> :source ?doc }`;
+        const ast = parser.parse(query);
+        const serialized = parser.toString(ast);
+        const reparsed = parser.parse(serialized);
+
+        expect(parser.isSelectQuery(reparsed)).toBe(true);
+      });
+    });
+
+    describe("combined with other SPARQL 1.2 features", () => {
+      it("should work with annotation syntax", () => {
+        const query = `PREFIX : <http://example.org/>
+SELECT * WHERE {
+  :Alice :knows :Bob {| :source ?doc |} .
+  <<( :Bob :knows :Carol )>> :source ?doc2 .
+}`;
+        const ast = parser.parse(query);
+        expect(parser.isSelectQuery(ast)).toBe(true);
+      });
+
+      it("should work with CASE WHEN", () => {
+        const query = `PREFIX : <http://example.org/>
+SELECT (CASE WHEN ?confidence > 0.9 THEN "high" ELSE "low" END AS ?level) WHERE {
+  <<( :Alice :knows :Bob )>> :confidence ?confidence .
+}`;
+        const ast = parser.parse(query);
+        expect(parser.isSelectQuery(ast)).toBe(true);
+      });
+
+      it("should work with parseAsync and PREFIX*", async () => {
+        const query = `PREFIX* <http://schema.org/>
+PREFIX : <http://example.org/>
+SELECT * WHERE { <<( :Alice :knows :Bob )>> schema:source ?doc }`;
+        const ast = await parser.parseAsync(query);
+        expect(parser.isSelectQuery(ast)).toBe(true);
+      });
+
+      it("should work with directional language tags", () => {
+        const query = `PREFIX : <http://example.org/>
+SELECT * WHERE { <<( :Resource :label "مرحبا"@ar--rtl )>> :source ?doc }`;
+        const ast = parser.parse(query);
+        expect(parser.isSelectQuery(ast)).toBe(true);
+        expect(parser.getDirectionForLanguage("ar")).toBe("rtl");
+      });
+    });
+
+    describe("error handling", () => {
+      it("should throw SPARQLParseError for unclosed triple term", () => {
+        const query = `PREFIX : <http://example.org/>
+SELECT * WHERE { <<( :Alice :knows :Bob :source ?doc }`;
+        expect(() => parser.parse(query)).toThrow();
+      });
+    });
+  });
 });
