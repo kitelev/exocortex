@@ -3831,6 +3831,78 @@ describe("BuiltInFunctions", () => {
         });
       });
 
+      // yearMonthDuration Component Accessors (Issue #990)
+      describe("durationYears", () => {
+        it("should extract years component from P1Y6M", () => {
+          expect(BuiltInFunctions.durationYears("P1Y6M")).toBe(1);
+        });
+
+        it("should return 0 when no years component", () => {
+          expect(BuiltInFunctions.durationYears("P3M")).toBe(0);
+        });
+
+        it("should handle negative durations", () => {
+          expect(BuiltInFunctions.durationYears("-P2Y3M")).toBe(-2);
+        });
+
+        it("should handle years only", () => {
+          expect(BuiltInFunctions.durationYears("P5Y")).toBe(5);
+        });
+
+        it("should work with Literal input", () => {
+          const durLiteral = new Literal("P3Y2M", new IRI("http://www.w3.org/2001/XMLSchema#yearMonthDuration"));
+          expect(BuiltInFunctions.durationYears(durLiteral)).toBe(3);
+        });
+
+        it("should throw for invalid duration format", () => {
+          expect(() => BuiltInFunctions.durationYears("invalid")).toThrow();
+        });
+      });
+
+      describe("durationMonths", () => {
+        it("should extract months component from P1Y6M", () => {
+          expect(BuiltInFunctions.durationMonths("P1Y6M")).toBe(6);
+        });
+
+        it("should return 0 when no months component", () => {
+          expect(BuiltInFunctions.durationMonths("P2Y")).toBe(0);
+        });
+
+        it("should handle negative durations", () => {
+          expect(BuiltInFunctions.durationMonths("-P1Y3M")).toBe(-3);
+        });
+
+        it("should handle months only", () => {
+          expect(BuiltInFunctions.durationMonths("P8M")).toBe(8);
+        });
+
+        it("should handle months exceeding 11 if specified", () => {
+          // If someone writes P14M, we return 14 as the component value
+          expect(BuiltInFunctions.durationMonths("P14M")).toBe(14);
+        });
+
+        it("should work with Literal input", () => {
+          const durLiteral = new Literal("P2Y5M", new IRI("http://www.w3.org/2001/XMLSchema#yearMonthDuration"));
+          expect(BuiltInFunctions.durationMonths(durLiteral)).toBe(5);
+        });
+
+        it("should throw for invalid duration format", () => {
+          expect(() => BuiltInFunctions.durationMonths("invalid")).toThrow();
+        });
+      });
+
+      describe("Acceptance Criteria (Issue #990)", () => {
+        it("YEARS('P1Y6M'^^xsd:yearMonthDuration) should return 1", () => {
+          const durLiteral = new Literal("P1Y6M", new IRI("http://www.w3.org/2001/XMLSchema#yearMonthDuration"));
+          expect(BuiltInFunctions.durationYears(durLiteral)).toBe(1);
+        });
+
+        it("MONTHS('P1Y6M'^^xsd:yearMonthDuration) should return 6", () => {
+          const durLiteral = new Literal("P1Y6M", new IRI("http://www.w3.org/2001/XMLSchema#yearMonthDuration"));
+          expect(BuiltInFunctions.durationMonths(durLiteral)).toBe(6);
+        });
+      });
+
       describe("Acceptance Criteria (Issue #989)", () => {
         it("HOURS('PT1H30M'^^xsd:dayTimeDuration) should return 1", () => {
           const durLiteral = new Literal("PT1H30M", new IRI("http://www.w3.org/2001/XMLSchema#dayTimeDuration"));

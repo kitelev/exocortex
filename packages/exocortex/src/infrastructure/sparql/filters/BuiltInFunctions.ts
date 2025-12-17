@@ -2323,6 +2323,80 @@ export class BuiltInFunctions {
   }
 
   /**
+   * Parse an xsd:yearMonthDuration string and return the components.
+   *
+   * Format: PnYnM (e.g., "P1Y2M", "P3M", "P2Y", "-P1Y")
+   *
+   * @param durationStr - xsd:yearMonthDuration string
+   * @returns Object with years, months, and negative flag
+   */
+  private static parseYearMonthDurationComponents(durationStr: string): {
+    years: number;
+    months: number;
+    negative: boolean;
+  } {
+    // Pattern: optional negative sign, P, optional years, optional months
+    const pattern = /^(-)?P(?:(\d+)Y)?(?:(\d+)M)?$/;
+    const match = durationStr.match(pattern);
+
+    if (!match) {
+      throw new Error(`parseYearMonthDurationComponents: invalid format: '${durationStr}'`);
+    }
+
+    const negative = match[1] === "-";
+    const years = parseInt(match[2] || "0", 10);
+    const months = parseInt(match[3] || "0", 10);
+
+    // Validate that at least years or months is specified
+    if (!match[2] && !match[3]) {
+      throw new Error(`parseYearMonthDurationComponents: invalid format (no duration components): '${durationStr}'`);
+    }
+
+    return { years, months, negative };
+  }
+
+  /**
+   * YEARS accessor function for xsd:yearMonthDuration.
+   * Extracts the years component from a yearMonthDuration value.
+   *
+   * Per XPath/SPARQL functions specification, returns the integer years component.
+   *
+   * @param duration - xsd:yearMonthDuration string or Literal
+   * @returns Integer years component (can be negative)
+   *
+   * Examples:
+   * - YEARS("P1Y6M") → 1
+   * - YEARS("P3M") → 0
+   * - YEARS("-P2Y3M") → -2
+   */
+  static durationYears(duration: string | Literal): number {
+    const durValue = duration instanceof Literal ? duration.value : duration;
+    const components = this.parseYearMonthDurationComponents(durValue);
+    return components.negative ? -components.years : components.years;
+  }
+
+  /**
+   * MONTHS accessor function for xsd:yearMonthDuration.
+   * Extracts the months component from a yearMonthDuration value.
+   *
+   * Per XPath/SPARQL functions specification, returns the integer months component
+   * (0-11 range, not total months converted from years).
+   *
+   * @param duration - xsd:yearMonthDuration string or Literal
+   * @returns Integer months component (can be negative, range -11 to 11)
+   *
+   * Examples:
+   * - MONTHS("P1Y6M") → 6
+   * - MONTHS("P14M") → 14 (if specified as 14M, returns 14)
+   * - MONTHS("-P1Y3M") → -3
+   */
+  static durationMonths(duration: string | Literal): number {
+    const durValue = duration instanceof Literal ? duration.value : duration;
+    const components = this.parseYearMonthDurationComponents(durValue);
+    return components.negative ? -components.months : components.months;
+  }
+
+  /**
    * Get the total number of days from an xsd:dayTimeDuration (as decimal).
    *
    * @param duration - Duration string or Literal

@@ -679,12 +679,26 @@ export class FilterExecutor {
 
       // SPARQL 1.1 DateTime accessor functions
       case "year":
-        const yearDate = this.getStringValue(this.evaluateExpression(expr.args[0], solution));
-        return BuiltInFunctions.year(yearDate);
+      case "years": {
+        const yearArg = this.evaluateExpression(expr.args[0], solution);
+        // Check if argument is an xsd:yearMonthDuration
+        if (this.isYearMonthDurationValue(yearArg)) {
+          return BuiltInFunctions.durationYears(yearArg);
+        }
+        // Otherwise treat as dateTime
+        return BuiltInFunctions.year(this.getStringValue(yearArg));
+      }
 
       case "month":
-        const monthDate = this.getStringValue(this.evaluateExpression(expr.args[0], solution));
-        return BuiltInFunctions.month(monthDate);
+      case "months": {
+        const monthArg = this.evaluateExpression(expr.args[0], solution);
+        // Check if argument is an xsd:yearMonthDuration
+        if (this.isYearMonthDurationValue(monthArg)) {
+          return BuiltInFunctions.durationMonths(monthArg);
+        }
+        // Otherwise treat as dateTime
+        return BuiltInFunctions.month(this.getStringValue(monthArg));
+      }
 
       case "day":
       case "days": {
@@ -819,6 +833,18 @@ export class FilterExecutor {
       case "durationseconds": {
         const durSecCompArg = this.evaluateExpression(expr.args[0], solution);
         return BuiltInFunctions.durationSeconds(durSecCompArg);
+      }
+
+      // yearMonthDuration component accessor functions (Issue #990)
+      // These extract individual components from xsd:yearMonthDuration values
+      case "durationyears": {
+        const durYearsArg = this.evaluateExpression(expr.args[0], solution);
+        return BuiltInFunctions.durationYears(durYearsArg);
+      }
+
+      case "durationmonths": {
+        const durMonthsArg = this.evaluateExpression(expr.args[0], solution);
+        return BuiltInFunctions.durationMonths(durMonthsArg);
       }
 
       case "datetimediff": {
