@@ -3148,4 +3148,145 @@ export class BuiltInFunctions {
 
     return new QuotedTriple(validSubject, validPredicate, validObject);
   }
+
+  /**
+   * SPARQL 1.2 SUBJECT accessor function (RDF-Star).
+   * https://w3c.github.io/sparql-12/spec/
+   *
+   * Extracts the subject component from a quoted triple.
+   * Returns the subject term, which can be an IRI, BlankNode, or nested QuotedTriple.
+   *
+   * @param triple - Must be a QuotedTriple
+   * @returns The subject term (IRI | BlankNode | QuotedTriple)
+   * @throws Error if argument is not a QuotedTriple
+   *
+   * @example
+   * ```sparql
+   * # Extract subject from quoted triple
+   * SELECT (SUBJECT(?triple) AS ?s) WHERE {
+   *   ?source :claims ?triple .
+   *   FILTER(isTRIPLE(?triple))
+   * }
+   * ```
+   *
+   * @example
+   * ```sparql
+   * # Use with BIND to decompose triple
+   * BIND(TRIPLE(:Alice, :knows, :Bob) AS ?t)
+   * BIND(SUBJECT(?t) AS ?subj)
+   * # ?subj = :Alice
+   * ```
+   */
+  static subject(triple: RDFTerm | QuotedTriple | undefined): IRI | BlankNode | QuotedTriple {
+    if (triple === undefined) {
+      throw new Error("SUBJECT: argument is undefined");
+    }
+
+    if (!(triple instanceof QuotedTriple)) {
+      const termType = triple instanceof IRI
+        ? "IRI"
+        : triple instanceof Literal
+          ? "Literal"
+          : triple instanceof BlankNode
+            ? "BlankNode"
+            : typeof triple;
+      throw new Error(`SUBJECT: argument must be QuotedTriple, got ${termType}`);
+    }
+
+    return triple.subject;
+  }
+
+  /**
+   * SPARQL 1.2 PREDICATE accessor function (RDF-Star).
+   * https://w3c.github.io/sparql-12/spec/
+   *
+   * Extracts the predicate component from a quoted triple.
+   * Returns an IRI (predicates are always IRIs in RDF).
+   *
+   * @param triple - Must be a QuotedTriple
+   * @returns The predicate IRI
+   * @throws Error if argument is not a QuotedTriple
+   *
+   * @example
+   * ```sparql
+   * # Extract predicate from quoted triple
+   * SELECT (PREDICATE(?triple) AS ?p) WHERE {
+   *   ?source :claims ?triple .
+   *   FILTER(isTRIPLE(?triple))
+   * }
+   * ```
+   *
+   * @example
+   * ```sparql
+   * # Use with BIND to decompose triple
+   * BIND(TRIPLE(:Alice, :knows, :Bob) AS ?t)
+   * BIND(PREDICATE(?t) AS ?pred)
+   * # ?pred = :knows
+   * ```
+   */
+  static predicate(triple: RDFTerm | QuotedTriple | undefined): IRI {
+    if (triple === undefined) {
+      throw new Error("PREDICATE: argument is undefined");
+    }
+
+    if (!(triple instanceof QuotedTriple)) {
+      const termType = triple instanceof IRI
+        ? "IRI"
+        : triple instanceof Literal
+          ? "Literal"
+          : triple instanceof BlankNode
+            ? "BlankNode"
+            : typeof triple;
+      throw new Error(`PREDICATE: argument must be QuotedTriple, got ${termType}`);
+    }
+
+    return triple.predicate;
+  }
+
+  /**
+   * SPARQL 1.2 OBJECT accessor function (RDF-Star).
+   * https://w3c.github.io/sparql-12/spec/
+   *
+   * Extracts the object component from a quoted triple.
+   * Returns the object term, which can be an IRI, BlankNode, Literal, or nested QuotedTriple.
+   *
+   * @param triple - Must be a QuotedTriple
+   * @returns The object term (IRI | BlankNode | Literal | QuotedTriple)
+   * @throws Error if argument is not a QuotedTriple
+   *
+   * @example
+   * ```sparql
+   * # Extract object from quoted triple
+   * SELECT (OBJECT(?triple) AS ?o) WHERE {
+   *   ?source :claims ?triple .
+   *   FILTER(isTRIPLE(?triple))
+   * }
+   * ```
+   *
+   * @example
+   * ```sparql
+   * # Use with BIND to decompose triple
+   * BIND(TRIPLE(:Alice, :knows, :Bob) AS ?t)
+   * BIND(OBJECT(?t) AS ?obj)
+   * # ?obj = :Bob
+   * ```
+   */
+  static object(triple: RDFTerm | QuotedTriple | undefined): IRI | BlankNode | Literal | QuotedTriple {
+    if (triple === undefined) {
+      throw new Error("OBJECT: argument is undefined");
+    }
+
+    if (!(triple instanceof QuotedTriple)) {
+      const termType = triple instanceof IRI
+        ? "IRI"
+        : triple instanceof Literal
+          ? "Literal"
+          : triple instanceof BlankNode
+            ? "BlankNode"
+            : typeof triple;
+      throw new Error(`OBJECT: argument must be QuotedTriple, got ${termType}`);
+    }
+
+    return triple.object;
+  }
 }

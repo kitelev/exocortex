@@ -975,6 +975,32 @@ export class FilterExecutor {
       case "byuuid":
         return this.evaluateByUUID(expr, solution);
 
+      // SPARQL 1.2 RDF-Star Accessor Functions
+      // Extract components from quoted triples
+      case "subject": {
+        const subjectArg = this.getTermFromExpression(expr.args[0], solution);
+        return BuiltInFunctions.subject(subjectArg);
+      }
+
+      case "predicate": {
+        const predicateArg = this.getTermFromExpression(expr.args[0], solution);
+        return BuiltInFunctions.predicate(predicateArg);
+      }
+
+      case "object": {
+        const objectArg = this.getTermFromExpression(expr.args[0], solution);
+        return BuiltInFunctions.object(objectArg);
+      }
+
+      // SPARQL 1.2 RDF-Star TRIPLE constructor function
+      // Constructs a quoted triple from subject, predicate, object
+      case "triple": {
+        const tripleSubject = this.getTermFromExpression(expr.args[0], solution);
+        const triplePredicate = this.getTermFromExpression(expr.args[1], solution);
+        const tripleObject = this.getTermFromExpression(expr.args[2], solution);
+        return BuiltInFunctions.triple(tripleSubject, triplePredicate, tripleObject);
+      }
+
       default:
         throw new FilterExecutorError(`Unknown function: ${funcName}`);
     }

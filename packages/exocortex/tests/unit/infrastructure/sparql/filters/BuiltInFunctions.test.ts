@@ -5075,4 +5075,332 @@ describe("BuiltInFunctions", () => {
       });
     });
   });
+
+  describe("SUBJECT (RDF-Star accessor)", () => {
+    describe("valid inputs", () => {
+      it("should extract IRI subject from quoted triple", () => {
+        const subject = new IRI("http://example.org/Alice");
+        const predicate = new IRI("http://example.org/knows");
+        const object = new IRI("http://example.org/Bob");
+        const triple = new QuotedTriple(subject, predicate, object);
+
+        const result = BuiltInFunctions.subject(triple);
+
+        expect(result).toBe(subject);
+        expect(result).toBeInstanceOf(IRI);
+        expect((result as IRI).value).toBe("http://example.org/Alice");
+      });
+
+      it("should extract BlankNode subject from quoted triple", () => {
+        const subject = new BlankNode("b1");
+        const predicate = new IRI("http://example.org/name");
+        const object = new Literal("Alice");
+        const triple = new QuotedTriple(subject, predicate, object);
+
+        const result = BuiltInFunctions.subject(triple);
+
+        expect(result).toBe(subject);
+        expect(result).toBeInstanceOf(BlankNode);
+        expect((result as BlankNode).id).toBe("b1");
+      });
+
+      it("should extract nested QuotedTriple subject", () => {
+        // Inner triple: << Alice knows Bob >>
+        const innerSubject = new IRI("http://example.org/Alice");
+        const innerPredicate = new IRI("http://example.org/knows");
+        const innerObject = new IRI("http://example.org/Bob");
+        const innerTriple = new QuotedTriple(innerSubject, innerPredicate, innerObject);
+
+        // Outer triple: << << Alice knows Bob >> source Wikipedia >>
+        const outerPredicate = new IRI("http://example.org/source");
+        const outerObject = new IRI("http://example.org/Wikipedia");
+        const outerTriple = new QuotedTriple(innerTriple, outerPredicate, outerObject);
+
+        const result = BuiltInFunctions.subject(outerTriple);
+
+        expect(result).toBeInstanceOf(QuotedTriple);
+        expect((result as QuotedTriple).equals(innerTriple)).toBe(true);
+      });
+    });
+
+    describe("error handling", () => {
+      it("should throw for undefined argument", () => {
+        expect(() => BuiltInFunctions.subject(undefined)).toThrow(
+          "SUBJECT: argument is undefined"
+        );
+      });
+
+      it("should throw for IRI argument", () => {
+        const iri = new IRI("http://example.org/Alice");
+        expect(() => BuiltInFunctions.subject(iri)).toThrow(
+          "SUBJECT: argument must be QuotedTriple, got IRI"
+        );
+      });
+
+      it("should throw for Literal argument", () => {
+        const literal = new Literal("Alice");
+        expect(() => BuiltInFunctions.subject(literal)).toThrow(
+          "SUBJECT: argument must be QuotedTriple, got Literal"
+        );
+      });
+
+      it("should throw for BlankNode argument", () => {
+        const blank = new BlankNode("b1");
+        expect(() => BuiltInFunctions.subject(blank)).toThrow(
+          "SUBJECT: argument must be QuotedTriple, got BlankNode"
+        );
+      });
+    });
+  });
+
+  describe("PREDICATE (RDF-Star accessor)", () => {
+    describe("valid inputs", () => {
+      it("should extract predicate IRI from quoted triple", () => {
+        const subject = new IRI("http://example.org/Alice");
+        const predicate = new IRI("http://example.org/knows");
+        const object = new IRI("http://example.org/Bob");
+        const triple = new QuotedTriple(subject, predicate, object);
+
+        const result = BuiltInFunctions.predicate(triple);
+
+        expect(result).toBe(predicate);
+        expect(result).toBeInstanceOf(IRI);
+        expect(result.value).toBe("http://example.org/knows");
+      });
+
+      it("should extract predicate from triple with Literal object", () => {
+        const subject = new IRI("http://example.org/Alice");
+        const predicate = new IRI("http://example.org/name");
+        const object = new Literal("Alice");
+        const triple = new QuotedTriple(subject, predicate, object);
+
+        const result = BuiltInFunctions.predicate(triple);
+
+        expect(result).toBeInstanceOf(IRI);
+        expect(result.value).toBe("http://example.org/name");
+      });
+
+      it("should extract predicate from nested triple", () => {
+        // Inner triple: << Alice knows Bob >>
+        const innerSubject = new IRI("http://example.org/Alice");
+        const innerPredicate = new IRI("http://example.org/knows");
+        const innerObject = new IRI("http://example.org/Bob");
+        const innerTriple = new QuotedTriple(innerSubject, innerPredicate, innerObject);
+
+        // Outer triple: << << Alice knows Bob >> source Wikipedia >>
+        const outerPredicate = new IRI("http://example.org/source");
+        const outerObject = new IRI("http://example.org/Wikipedia");
+        const outerTriple = new QuotedTriple(innerTriple, outerPredicate, outerObject);
+
+        const result = BuiltInFunctions.predicate(outerTriple);
+
+        expect(result).toBeInstanceOf(IRI);
+        expect(result.value).toBe("http://example.org/source");
+      });
+    });
+
+    describe("error handling", () => {
+      it("should throw for undefined argument", () => {
+        expect(() => BuiltInFunctions.predicate(undefined)).toThrow(
+          "PREDICATE: argument is undefined"
+        );
+      });
+
+      it("should throw for IRI argument", () => {
+        const iri = new IRI("http://example.org/knows");
+        expect(() => BuiltInFunctions.predicate(iri)).toThrow(
+          "PREDICATE: argument must be QuotedTriple, got IRI"
+        );
+      });
+
+      it("should throw for Literal argument", () => {
+        const literal = new Literal("knows");
+        expect(() => BuiltInFunctions.predicate(literal)).toThrow(
+          "PREDICATE: argument must be QuotedTriple, got Literal"
+        );
+      });
+
+      it("should throw for BlankNode argument", () => {
+        const blank = new BlankNode("b1");
+        expect(() => BuiltInFunctions.predicate(blank)).toThrow(
+          "PREDICATE: argument must be QuotedTriple, got BlankNode"
+        );
+      });
+    });
+  });
+
+  describe("OBJECT (RDF-Star accessor)", () => {
+    describe("valid inputs", () => {
+      it("should extract IRI object from quoted triple", () => {
+        const subject = new IRI("http://example.org/Alice");
+        const predicate = new IRI("http://example.org/knows");
+        const object = new IRI("http://example.org/Bob");
+        const triple = new QuotedTriple(subject, predicate, object);
+
+        const result = BuiltInFunctions.object(triple);
+
+        expect(result).toBe(object);
+        expect(result).toBeInstanceOf(IRI);
+        expect((result as IRI).value).toBe("http://example.org/Bob");
+      });
+
+      it("should extract Literal object from quoted triple", () => {
+        const subject = new IRI("http://example.org/Alice");
+        const predicate = new IRI("http://example.org/name");
+        const object = new Literal("Alice");
+        const triple = new QuotedTriple(subject, predicate, object);
+
+        const result = BuiltInFunctions.object(triple);
+
+        expect(result).toBe(object);
+        expect(result).toBeInstanceOf(Literal);
+        expect((result as Literal).value).toBe("Alice");
+      });
+
+      it("should extract typed Literal object", () => {
+        const subject = new IRI("http://example.org/Alice");
+        const predicate = new IRI("http://example.org/age");
+        const object = new Literal("30", new IRI("http://www.w3.org/2001/XMLSchema#integer"));
+        const triple = new QuotedTriple(subject, predicate, object);
+
+        const result = BuiltInFunctions.object(triple);
+
+        expect(result).toBeInstanceOf(Literal);
+        expect((result as Literal).value).toBe("30");
+        expect((result as Literal).datatype?.value).toBe("http://www.w3.org/2001/XMLSchema#integer");
+      });
+
+      it("should extract BlankNode object from quoted triple", () => {
+        const subject = new IRI("http://example.org/Alice");
+        const predicate = new IRI("http://example.org/address");
+        const object = new BlankNode("addr1");
+        const triple = new QuotedTriple(subject, predicate, object);
+
+        const result = BuiltInFunctions.object(triple);
+
+        expect(result).toBe(object);
+        expect(result).toBeInstanceOf(BlankNode);
+        expect((result as BlankNode).id).toBe("addr1");
+      });
+
+      it("should extract nested QuotedTriple object", () => {
+        // Inner triple: << Alice knows Bob >>
+        const innerSubject = new IRI("http://example.org/Alice");
+        const innerPredicate = new IRI("http://example.org/knows");
+        const innerObject = new IRI("http://example.org/Bob");
+        const innerTriple = new QuotedTriple(innerSubject, innerPredicate, innerObject);
+
+        // Outer triple: << Wikipedia claims << Alice knows Bob >> >>
+        const outerSubject = new IRI("http://example.org/Wikipedia");
+        const outerPredicate = new IRI("http://example.org/claims");
+        const outerTriple = new QuotedTriple(outerSubject, outerPredicate, innerTriple);
+
+        const result = BuiltInFunctions.object(outerTriple);
+
+        expect(result).toBeInstanceOf(QuotedTriple);
+        expect((result as QuotedTriple).equals(innerTriple)).toBe(true);
+      });
+    });
+
+    describe("error handling", () => {
+      it("should throw for undefined argument", () => {
+        expect(() => BuiltInFunctions.object(undefined)).toThrow(
+          "OBJECT: argument is undefined"
+        );
+      });
+
+      it("should throw for IRI argument", () => {
+        const iri = new IRI("http://example.org/Bob");
+        expect(() => BuiltInFunctions.object(iri)).toThrow(
+          "OBJECT: argument must be QuotedTriple, got IRI"
+        );
+      });
+
+      it("should throw for Literal argument", () => {
+        const literal = new Literal("Bob");
+        expect(() => BuiltInFunctions.object(literal)).toThrow(
+          "OBJECT: argument must be QuotedTriple, got Literal"
+        );
+      });
+
+      it("should throw for BlankNode argument", () => {
+        const blank = new BlankNode("b1");
+        expect(() => BuiltInFunctions.object(blank)).toThrow(
+          "OBJECT: argument must be QuotedTriple, got BlankNode"
+        );
+      });
+    });
+  });
+
+  describe("RDF-Star accessor roundtrip", () => {
+    it("should allow decompose and reconstruct triple", () => {
+      // Create original triple
+      const originalSubject = new IRI("http://example.org/Alice");
+      const originalPredicate = new IRI("http://example.org/knows");
+      const originalObject = new IRI("http://example.org/Bob");
+      const originalTriple = new QuotedTriple(originalSubject, originalPredicate, originalObject);
+
+      // Decompose
+      const extractedSubject = BuiltInFunctions.subject(originalTriple);
+      const extractedPredicate = BuiltInFunctions.predicate(originalTriple);
+      const extractedObject = BuiltInFunctions.object(originalTriple);
+
+      // Reconstruct
+      const reconstructedTriple = BuiltInFunctions.triple(
+        extractedSubject,
+        extractedPredicate,
+        extractedObject
+      );
+
+      // Verify equality
+      expect(reconstructedTriple.equals(originalTriple)).toBe(true);
+    });
+
+    it("should work with nested triples roundtrip", () => {
+      // Create nested triple: << << A knows B >> source Wikipedia >>
+      const innerSubject = new IRI("http://example.org/A");
+      const innerPredicate = new IRI("http://example.org/knows");
+      const innerObject = new IRI("http://example.org/B");
+      const innerTriple = new QuotedTriple(innerSubject, innerPredicate, innerObject);
+
+      const outerPredicate = new IRI("http://example.org/source");
+      const outerObject = new IRI("http://example.org/Wikipedia");
+      const outerTriple = new QuotedTriple(innerTriple, outerPredicate, outerObject);
+
+      // Decompose outer
+      const extractedNestedTriple = BuiltInFunctions.subject(outerTriple) as QuotedTriple;
+      const extractedOuterPred = BuiltInFunctions.predicate(outerTriple);
+      const extractedOuterObj = BuiltInFunctions.object(outerTriple);
+
+      // Decompose inner (from extracted)
+      const extractedInnerSubj = BuiltInFunctions.subject(extractedNestedTriple);
+      const extractedInnerPred = BuiltInFunctions.predicate(extractedNestedTriple);
+      const extractedInnerObj = BuiltInFunctions.object(extractedNestedTriple);
+
+      // Verify extracted inner components
+      expect((extractedInnerSubj as IRI).value).toBe("http://example.org/A");
+      expect(extractedInnerPred.value).toBe("http://example.org/knows");
+      expect((extractedInnerObj as IRI).value).toBe("http://example.org/B");
+
+      // Verify extracted outer components
+      expect(extractedOuterPred.value).toBe("http://example.org/source");
+      expect((extractedOuterObj as IRI).value).toBe("http://example.org/Wikipedia");
+
+      // Reconstruct inner
+      const reconstructedInner = BuiltInFunctions.triple(
+        extractedInnerSubj,
+        extractedInnerPred,
+        extractedInnerObj
+      );
+
+      // Reconstruct outer
+      const reconstructedOuter = BuiltInFunctions.triple(
+        reconstructedInner,
+        extractedOuterPred,
+        extractedOuterObj
+      );
+
+      expect(reconstructedOuter.equals(outerTriple)).toBe(true);
+    });
+  });
 });
