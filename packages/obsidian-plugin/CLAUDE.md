@@ -44,7 +44,7 @@ cd ../exocortex-[task-name]
 # ... work here ...
 
 # ❌ WRONG - Never work directly in main
-cd /Users/kitelev/Documents/exocortex-obsidian-plugin
+cd /Users/kitelev/Documents/exocortex
 # ... edit files here ... ❌ BLOCKED!
 ```
 
@@ -57,7 +57,7 @@ cd /Users/kitelev/Documents/exocortex-obsidian-plugin
 **Before starting ANY task, ask yourself:**
 1. ✅ Am I in a separate worktree?
 2. ✅ Did I sync with latest main first?
-3. ❌ Am I in `/Users/kitelev/Documents/exocortex-obsidian-plugin`? → STOP and create worktree!
+3. ❌ Am I in `/Users/kitelev/Documents/exocortex`? → STOP and create worktree!
 
 **Workflow enforcement:**
 ```bash
@@ -76,7 +76,7 @@ git fetch origin main && git rebase origin/main
 # ... your work ...
 
 # Step 4: Cleanup after merge
-cd /Users/kitelev/Documents/exocortex-obsidian-plugin
+cd /Users/kitelev/Documents/exocortex
 git worktree remove ../exocortex-fix-bug
 git pull origin main
 ```
@@ -148,7 +148,7 @@ gh pr merge --auto --squash   # All commits → 1 new commit on main
 # ✅ NO version bump commits (versions exist only as git tags)
 
 # 11. Cleanup worktree
-cd /Users/kitelev/Documents/exocortex-obsidian-plugin
+cd /Users/kitelev/Documents/exocortex
 git worktree remove ../exocortex-feature-name
 git pull origin main
 

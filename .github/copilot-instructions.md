@@ -99,7 +99,7 @@ npm run bdd:check       # Enforce ≥80% BDD coverage (CI requirement)
 
 ### Coverage Thresholds (Enforced in CI)
 - Global coverage: ≥55-64% (branches: 55%, functions: 60%, lines: 64%, statements: 63%)
-- Domain layer: ≥78-80% (higher standards for business logic; **aspirational, currently disabled in CI – see [issue #197](https://github.com/kitelev/exocortex-obsidian-plugin/issues/197)**)
+- Domain layer: ≥78-80% (higher standards for business logic; **aspirational, currently disabled in CI – see [issue #197](https://github.com/kitelev/exocortex/issues/197)**)
 - Long-term aspirational targets (not currently enforced): 70% global / 85% domain (current enforced targets are lower; see above and COVERAGE_QUICK_REFERENCE.md)
 
 ### Test Types

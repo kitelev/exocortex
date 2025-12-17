@@ -7,16 +7,16 @@ This directory is the **coordination hub** for parallel development of the Exoco
 **⚠️ CRITICAL**: This is NOT a working directory. All actual development happens in isolated worktrees.
 
 **🚨 MANDATORY PATH RULE**: ALL worktrees MUST be created in the `worktrees/` subdirectory:
-- ✅ CORRECT: `/Users/kitelev/Documents/exocortex-development/worktrees/exocortex-claude1-feat-xyz/`
-- ❌ WRONG: `/Users/kitelev/Documents/exocortex-development/exocortex-claude1-feat-xyz/`
+- ✅ CORRECT: `/Users/kitelev/Developer/exocortex-development/worktrees/exocortex-claude1-feat-xyz/`
+- ❌ WRONG: `/Users/kitelev/Developer/exocortex-development/exocortex-claude1-feat-xyz/`
 
 **DO NOT pollute this coordination directory with worktrees!** Use `/worktree-create` command which handles paths automatically.
 
 ## 📁 Directory Structure
 
 ```
-/Users/kitelev/Documents/exocortex-development/
-├── exocortex-obsidian-plugin/   # Main repository (READ-ONLY for Claude instances)
+/Users/kitelev/Developer/exocortex-development/
+├── exocortex/   # Main repository (READ-ONLY for Claude instances)
 │   └── CLAUDE.md                # Complete development guidelines
 ├── worktrees/                   # All worktrees live here (flat structure)
 │   ├── exocortex-claude1-feat-graph-viz/
@@ -31,13 +31,13 @@ This directory is the **coordination hub** for parallel development of the Exoco
 
 **❌ FORBIDDEN:**
 ```bash
-cd /Users/kitelev/Documents/exocortex-development/exocortex-obsidian-plugin
+cd /Users/kitelev/Developer/exocortex-development/exocortex
 # ... make edits ... ❌ BLOCKED!
 ```
 
 **✅ REQUIRED:**
 ```bash
-cd /Users/kitelev/Documents/exocortex-development
+cd /Users/kitelev/Developer/exocortex-development
 /worktree-create my-feature  # Use slash command
 cd worktrees/exocortex-[instance]-[task]
 # ... work here ... ✅ SAFE
@@ -47,12 +47,12 @@ cd worktrees/exocortex-[instance]-[task]
 
 **🚨 CRITICAL PATH REQUIREMENT:**
 
-ALL worktrees MUST be created inside `/Users/kitelev/Documents/exocortex-development/worktrees/`
+ALL worktrees MUST be created inside `/Users/kitelev/Developer/exocortex-development/worktrees/`
 
 **❌ ABSOLUTELY FORBIDDEN:**
 ```bash
 # DON'T create worktrees in root coordination directory!
-cd /Users/kitelev/Documents/exocortex-development
+cd /Users/kitelev/Developer/exocortex-development
 git worktree add exocortex-feat-something    # ❌ WRONG PATH!
 git worktree add ./my-feature                # ❌ WRONG PATH!
 git worktree add feature/something           # ❌ WRONG PATH!
@@ -63,17 +63,17 @@ git worktree add feature/something           # ❌ WRONG PATH!
 **✅ ONLY CORRECT WAY:**
 ```bash
 # Option 1: Use slash command (RECOMMENDED - handles paths automatically)
-cd /Users/kitelev/Documents/exocortex-development
+cd /Users/kitelev/Developer/exocortex-development
 /worktree-create my-feature  # Creates: worktrees/exocortex-claude1-feat-my-feature
 
 # Option 2: Manual creation (must specify worktrees/ path!)
-cd /Users/kitelev/Documents/exocortex-development/exocortex-obsidian-plugin
+cd /Users/kitelev/Developer/exocortex-development/exocortex
 git worktree add ../worktrees/exocortex-claude1-feat-my-feature -b feature/my-feature
 #                   ^^^^^^^^^^^^ MUST include worktrees/ prefix!
 ```
 
 **Why this matters:**
-- Keeps coordination directory clean (only `exocortex-obsidian-plugin/`, `worktrees/`, `CLAUDE.md`)
+- Keeps coordination directory clean (only `exocortex/`, `worktrees/`, `CLAUDE.md`)
 - Makes cleanup obvious (`rm -rf worktrees/*` after merge)
 - Prevents confusion about what's a worktree vs. what's infrastructure
 - Allows parallel instances to easily list all active work
@@ -81,7 +81,7 @@ git worktree add ../worktrees/exocortex-claude1-feat-my-feature -b feature/my-fe
 **Validation before starting work:**
 ```bash
 pwd  # Check you're in right place
-# Should output: /Users/kitelev/Documents/exocortex-development/worktrees/exocortex-*
+# Should output: /Users/kitelev/Developer/exocortex-development/worktrees/exocortex-*
 # If missing "worktrees/" in path → STOP! Wrong location!
 ```
 
@@ -128,7 +128,7 @@ worktrees/exocortex-claude5-exp-owl-reasoning
 
 **ALWAYS sync before creating worktree:**
 ```bash
-cd /Users/kitelev/Documents/exocortex-development/exocortex-obsidian-plugin
+cd /Users/kitelev/Developer/exocortex-development/exocortex
 git fetch origin main
 git pull origin main --rebase
 # Now create worktree
@@ -184,7 +184,7 @@ npm run test:all                # MANDATORY: Run ALL tests before PR
 /worktree-create my-feature
 
 # Or manually:
-cd /Users/kitelev/Documents/exocortex-development/exocortex-obsidian-plugin
+cd /Users/kitelev/Developer/exocortex-development/exocortex
 git worktree add ../worktrees/exocortex-claude1-feat-my-feature -b feature/my-feature
 cd ../worktrees/exocortex-claude1-feat-my-feature
 git fetch origin main && git rebase origin/main
@@ -194,9 +194,9 @@ git fetch origin main && git rebase origin/main
 
 ```bash
 # Work in worktree
-cd /Users/kitelev/Documents/exocortex-development/worktrees/exocortex-claude1-feat-my-feature
+cd /Users/kitelev/Developer/exocortex-development/worktrees/exocortex-claude1-feat-my-feature
 
-# Follow all rules from exocortex-obsidian-plugin/CLAUDE.md
+# Follow all rules from exocortex/CLAUDE.md
 # - Use agents for complex tasks
 # - Run npm run test:all before creating PR
 # - Never commit broken code
@@ -250,13 +250,13 @@ gh release list --limit 1
 
 ```bash
 # Step 1: Exit Claude Code session or switch to different directory
-cd /Users/kitelev/Documents/exocortex-development
+cd /Users/kitelev/Developer/exocortex-development
 
 # Step 2: THEN run cleanup
 /worktree-cleanup
 
 # Or manually:
-cd exocortex-obsidian-plugin
+cd exocortex
 git worktree remove ../worktrees/exocortex-[instance]-[type]-[task]
 git branch -D [branch-name]
 ```
@@ -277,7 +277,7 @@ git branch -D [branch-name]
 /worktree-cleanup
 
 # Or manually:
-cd /Users/kitelev/Documents/exocortex-development/exocortex-obsidian-plugin
+cd /Users/kitelev/Developer/exocortex-development/exocortex
 git worktree remove ../worktrees/exocortex-claude1-feat-my-feature
 git branch -d feature/my-feature
 ```
@@ -399,7 +399,7 @@ gh release view v13.9.0 --json body
 
 For complete development rules, see:
 ```
-exocortex-obsidian-plugin/CLAUDE.md
+exocortex/CLAUDE.md
 ```
 
 Essential topics covered there:
@@ -421,7 +421,7 @@ Essential topics covered there:
 ```bash
 # 1. Read this file (you're doing it!)
 # 2. Read main guidelines
-cat exocortex-obsidian-plugin/CLAUDE.md
+cat exocortex/CLAUDE.md
 
 # 3. Create your worktree
 /worktree-create my-first-task
@@ -448,8 +448,8 @@ gh pr create
 
 ```bash
 # Check where worktrees were created
-cd /Users/kitelev/Documents/exocortex-development
-ls -la  # Look for unexpected directories (not worktrees/, exocortex-obsidian-plugin/, or CLAUDE.md)
+cd /Users/kitelev/Developer/exocortex-development
+ls -la  # Look for unexpected directories (not worktrees/, exocortex/, or CLAUDE.md)
 
 # If you see directories like:
 # - exocortex-feat-something/
@@ -463,17 +463,17 @@ cd <wrong-worktree-name>
 git status
 
 # 2. If clean, just remove the worktree
-cd /Users/kitelev/Documents/exocortex-development/exocortex-obsidian-plugin
+cd /Users/kitelev/Developer/exocortex-development/exocortex
 git worktree remove ../<wrong-worktree-name>
 
 # 3. If has changes, stash them first
-cd /Users/kitelev/Documents/exocortex-development/<wrong-worktree-name>
+cd /Users/kitelev/Developer/exocortex-development/<wrong-worktree-name>
 git stash
-cd /Users/kitelev/Documents/exocortex-development/exocortex-obsidian-plugin
+cd /Users/kitelev/Developer/exocortex-development/exocortex
 git worktree remove ../<wrong-worktree-name>
 
 # 4. Create new worktree in CORRECT location
-cd /Users/kitelev/Documents/exocortex-development
+cd /Users/kitelev/Developer/exocortex-development
 /worktree-create correct-task-name  # Will create in worktrees/
 
 # 5. Apply stashed changes if needed
@@ -506,7 +506,7 @@ gh pr list  # Check open PRs
 ### "Lost track of current worktree"
 ```bash
 pwd  # Check current directory
-# Should be: /Users/kitelev/Documents/exocortex-development/worktrees/exocortex-*
+# Should be: /Users/kitelev/Developer/exocortex-development/worktrees/exocortex-*
 # If missing "worktrees/" in path → STOP! You're in the wrong place!
 ```
 

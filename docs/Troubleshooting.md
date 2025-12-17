@@ -173,7 +173,7 @@
 
 1. **Check Console**: Ctrl/Cmd + Shift + I → Console tab
 2. **Enable Debug**: Settings → Exocortex → Debug mode
-3. **GitHub Issues**: https://github.com/kitelev/exocortex-obsidian-plugin/issues
+3. **GitHub Issues**: https://github.com/kitelev/exocortex/issues
 4. **Forum**: https://forum.obsidian.md/
 
 ---

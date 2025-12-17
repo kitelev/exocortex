@@ -24,7 +24,7 @@ iOS Live Activities allow the Exocortex plugin to display active tasks on the iP
 
 ### For AI Agents
 
-1. **Always work in this worktree** - Never modify files in `/exocortex-obsidian-plugin/` directly
+1. **Always work in this worktree** - Never modify files in `/exocortex/` directly
 2. **Keep sync with main**: Run `git fetch origin main && git rebase origin/main` regularly
 3. **Follow TypeScript conventions**: See `.github/copilot-instructions.md`
 4. **Run tests before PR**: `npm run test:all`
@@ -36,7 +36,7 @@ iOS Live Activities allow the Exocortex plugin to display active tasks on the iP
 
 ```bash
 # Option 1: Copy node_modules from main repo (temporary)
-cp -r /Users/kitelev/Documents/exocortex-development/exocortex-obsidian-plugin/node_modules .
+cp -r /Users/kitelev/Developer/exocortex-development/exocortex/node_modules .
 
 # Option 2: Install ignoring scripts
 npm install --ignore-scripts

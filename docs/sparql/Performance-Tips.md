@@ -841,8 +841,8 @@ SELECT ?asset ?type1 ?type2 ?type3 WHERE {
 ## Resources
 
 - [SPARQL 1.1 Query Language](https://www.w3.org/TR/sparql11-query/)
-- [Exocortex GitHub](https://github.com/kitelev/exocortex-obsidian-plugin)
+- [Exocortex GitHub](https://github.com/kitelev/exocortex)
 
 ---
 
-**Need Help?** Report performance issues on [GitHub Issues](https://github.com/kitelev/exocortex-obsidian-plugin/issues) with your query and vault size!
+**Need Help?** Report performance issues on [GitHub Issues](https://github.com/kitelev/exocortex/issues) with your query and vault size!

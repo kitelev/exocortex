@@ -185,7 +185,7 @@ export class TaskFrontmatterGenerator {
   static generate(...): Record<string, any>  // ✅ PURE
 }
 
-// exocortex-obsidian-plugin (adapter)
+// exocortex (adapter)
 export class TaskCreationService {
   constructor(private fs: IFileSystemAdapter) {}  // Interface, not Vault
 

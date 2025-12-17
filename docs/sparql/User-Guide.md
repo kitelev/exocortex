@@ -1098,4 +1098,4 @@ That's a mismatch!
 
 ---
 
-**Need Help?** Open an issue on [GitHub](https://github.com/kitelev/exocortex-obsidian-plugin/issues) or ask in the community discussions!
+**Need Help?** Open an issue on [GitHub](https://github.com/kitelev/exocortex/issues) or ask in the community discussions!

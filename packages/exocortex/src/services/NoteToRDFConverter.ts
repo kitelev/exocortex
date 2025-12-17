@@ -156,7 +156,7 @@ export class NoteToRDFConverter {
     // Use encodeURI to preserve forward slashes (/) while encoding
     // spaces and other special characters. This fixes query mismatch
     // issues where exact URI matches fail due to inconsistent encoding.
-    // See: https://github.com/kitelev/exocortex-obsidian-plugin/issues/621
+    // See: https://github.com/kitelev/exocortex/issues/621
     const encodedPath = encodeURI(path);
     return new IRI(`${this.OBSIDIAN_VAULT_SCHEME}${encodedPath}`);
   }

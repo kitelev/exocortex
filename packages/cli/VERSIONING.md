@@ -342,5 +342,5 @@ We will commit to:
 ## Questions?
 
 For questions about versioning or API stability:
-- Open an issue: [GitHub Issues](https://github.com/kitelev/exocortex-obsidian-plugin/issues)
+- Open an issue: [GitHub Issues](https://github.com/kitelev/exocortex/issues)
 - Tag with `cli` and `api-stability` labels

@@ -6,7 +6,7 @@
  * - Error responses with categorization
  * - Recovery hints for common issues
  *
- * @see https://github.com/kitelev/exocortex-obsidian-plugin/issues/529
+ * @see https://github.com/kitelev/exocortex/issues/529
  */
 
 import type { ExitCodes } from "../utils/ExitCodes.js";

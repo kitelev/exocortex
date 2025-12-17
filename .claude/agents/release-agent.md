@@ -222,14 +222,14 @@ gh release view vX.Y.Z
 ```
 **Verify**:
 - Changelog content is included
-- Assets present: main.js, manifest.json, exocortex-obsidian-plugin.zip
+- Assets present: main.js, manifest.json, exocortex.zip
 - Release date is today
 - URL is accessible
 
 **Success**: ✅ Proceed to Step 19
 
 #### Step 19: Verify GitHub Actions is GREEN
-**Manual step**: Visit https://github.com/kitelev/exocortex-obsidian-plugin/actions
+**Manual step**: Visit https://github.com/kitelev/exocortex/actions
 **Check**: Latest workflow run has ✅ GREEN checkmark
 **If RED**: Task is INCOMPLETE - fix issues
 **Success**: ✅ Proceed to Step 20

@@ -1,7 +1,7 @@
 /**
  * Regression tests for Issue #612: GROUP BY with JOIN to resolve labels
  *
- * Issue: https://github.com/kitelev/exocortex-obsidian-plugin/issues/612
+ * Issue: https://github.com/kitelev/exocortex/issues/612
  *
  * This tests the scenario where GROUP BY is used with a variable
  * that is bound to a literal value through a JOIN pattern.

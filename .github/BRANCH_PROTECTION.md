@@ -26,7 +26,7 @@ Run the provided script to configure branch protection via GitHub API:
 
 ```bash
 # Navigate to project root
-cd /Users/kitelev/Documents/exocortex-obsidian-plugin
+cd /Users/kitelev/Documents/exocortex
 
 # Run setup script
 .github/scripts/setup-branch-protection.sh
@@ -57,7 +57,7 @@ If you prefer manual setup:
 
 1. Go to **Repository Settings**
    ```
-   https://github.com/kitelev/exocortex-obsidian-plugin/settings
+   https://github.com/kitelev/exocortex/settings
    ```
 
 2. Navigate to **Branches** in left sidebar
@@ -88,10 +88,10 @@ After setup, verify branch protection is active:
 
 ```bash
 # Check protection status via CLI
-gh api /repos/kitelev/exocortex-obsidian-plugin/branches/main/protection
+gh api /repos/kitelev/exocortex/branches/main/protection
 
 # Or visit web UI
-open https://github.com/kitelev/exocortex-obsidian-plugin/settings/branches
+open https://github.com/kitelev/exocortex/settings/branches
 ```
 
 You should see:
@@ -113,7 +113,7 @@ git push origin main
 **Expected result:**
 ```
 remote: error: GH006: Protected branch update failed
-To github.com:kitelev/exocortex-obsidian-plugin.git
+To github.com:kitelev/exocortex.git
  ! [remote rejected] main -> main (protected branch hook declined)
 error: failed to push some refs
 ```
@@ -198,7 +198,7 @@ gh pr checks --watch
 
 **Solution**:
 1. Verify workflow file names match required checks
-2. Check workflow ran: `https://github.com/kitelev/exocortex-obsidian-plugin/actions`
+2. Check workflow ran: `https://github.com/kitelev/exocortex/actions`
 3. Ensure workflow triggers on `pull_request` events
 
 ### Want to bypass for emergency

@@ -43,8 +43,8 @@ Exocortex transforms Obsidian into a powerful task management system with:
 **Option B: Manual Installation**
 ```bash
 cd /your/vault/.obsidian/plugins
-git clone https://github.com/kitelev/exocortex-obsidian-plugin
-cd exocortex-obsidian-plugin
+git clone https://github.com/kitelev/exocortex
+cd exocortex
 npm install && npm run build
 ```
 
@@ -352,7 +352,7 @@ Discover all 32 commands:
 
 - **Documentation**: See [full documentation index](../README.md#documentation)
 - **Troubleshooting**: [Troubleshooting Guide](Troubleshooting.md)
-- **Issues**: [GitHub Issues](https://github.com/kitelev/exocortex-obsidian-plugin/issues)
+- **Issues**: [GitHub Issues](https://github.com/kitelev/exocortex/issues)
 - **Community**: [Obsidian Forum](https://forum.obsidian.md/)
 
 ---

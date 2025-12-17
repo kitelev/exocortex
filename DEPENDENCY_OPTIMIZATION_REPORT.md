@@ -2,7 +2,7 @@
 
 **Date**: 2025-10-29
 **Branch**: refactor/deps-optimization
-**Issue**: https://github.com/kitelev/exocortex-obsidian-plugin/issues/175
+**Issue**: https://github.com/kitelev/exocortex/issues/175
 
 ## Executive Summary
 

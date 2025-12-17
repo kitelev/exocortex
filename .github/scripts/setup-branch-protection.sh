@@ -2,7 +2,7 @@
 
 set -e
 
-REPO="kitelev/exocortex-obsidian-plugin"
+REPO="kitelev/exocortex"
 BRANCH="main"
 
 echo "🔒 Setting up Branch Protection Rules for $REPO:$BRANCH"

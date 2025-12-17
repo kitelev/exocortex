@@ -92,7 +92,7 @@ EOF
 session:
   id: "uuid-v4"
   started: "2024-08-23T00:00:00Z"
-  project: "exocortex-obsidian-plugin"
+  project: "exocortex"
   
 bugs:
   critical:

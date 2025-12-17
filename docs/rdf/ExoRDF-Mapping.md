@@ -551,9 +551,9 @@ Expected memory increase: **~15-20%** (dual triples for mapped properties).
 
 ### Related Issues
 
-- [#366: Implement UID-Based URI Construction](https://github.com/kitelev/exocortex-obsidian-plugin/issues/366)
-- [#367: Integrate ExoRDF to RDF/RDFS Mapping into Triple Store](https://github.com/kitelev/exocortex-obsidian-plugin/issues/367)
-- [#368: Add Tests for ExoRDF to RDF/RDFS Mapping](https://github.com/kitelev/exocortex-obsidian-plugin/issues/368)
+- [#366: Implement UID-Based URI Construction](https://github.com/kitelev/exocortex/issues/366)
+- [#367: Integrate ExoRDF to RDF/RDFS Mapping into Triple Store](https://github.com/kitelev/exocortex/issues/367)
+- [#368: Add Tests for ExoRDF to RDF/RDFS Mapping](https://github.com/kitelev/exocortex/issues/368)
 
 ---
 

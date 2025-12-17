@@ -14,7 +14,7 @@
  * {
  *   file: 'packages/obsidian-plugin/tests/unit/services/MyService.test.ts',
  *   name: 'should handle async operation',
- *   issue: 'https://github.com/kitelev/exocortex-obsidian-plugin/issues/123',
+ *   issue: 'https://github.com/kitelev/exocortex/issues/123',
  *   reason: 'Race condition when network is slow',
  *   quarantinedAt: '2025-01-15',
  *   owner: 'developer-name',
@@ -29,7 +29,7 @@ export const QUARANTINED_TESTS: QuarantinedTest[] = [
   // {
   //   file: 'packages/obsidian-plugin/tests/unit/example.test.ts',
   //   name: 'test name that is flaky',
-  //   issue: 'https://github.com/kitelev/exocortex-obsidian-plugin/issues/XXX',
+  //   issue: 'https://github.com/kitelev/exocortex/issues/XXX',
   //   reason: 'Timing-dependent assertion that fails intermittently',
   //   quarantinedAt: '2025-12-11',
   //   owner: 'AI-agent',

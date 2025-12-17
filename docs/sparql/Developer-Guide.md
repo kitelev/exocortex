@@ -166,7 +166,7 @@ async *execute(algebra: AlgebraOperation): AsyncIterableIterator<SolutionMapping
 #### From Plugin Code
 
 ```typescript
-import type ExocortexPlugin from "exocortex-obsidian-plugin";
+import type ExocortexPlugin from "exocortex";
 
 const plugin: ExocortexPlugin = this.app.plugins.getPlugin("exocortex");
 const tripleStore = plugin.sparql.getTripleStore();
@@ -175,7 +175,7 @@ const tripleStore = plugin.sparql.getTripleStore();
 #### From SPARQLApi
 
 ```typescript
-import { SPARQLApi } from "exocortex-obsidian-plugin";
+import { SPARQLApi } from "exocortex";
 
 const sparqlApi = new SPARQLApi(plugin);
 const tripleStore = sparqlApi.getTripleStore();
@@ -727,7 +727,7 @@ this.registerMarkdownCodeBlockProcessor("sparql-custom", (source, el, ctx) => {
 
 ```typescript
 import React from "react";
-import { SPARQLResultViewerProps } from "exocortex-obsidian-plugin";
+import { SPARQLResultViewerProps } from "exocortex";
 
 export const CustomResultViewer: React.FC<SPARQLResultViewerProps> = ({
   results,
@@ -1091,7 +1091,7 @@ if (elapsed > 1000) {
 Use TypeScript types for better developer experience:
 
 ```typescript
-import type { QueryResult, SolutionMapping } from "exocortex-obsidian-plugin";
+import type { QueryResult, SolutionMapping } from "exocortex";
 
 async function getTasks(): Promise<SolutionMapping[]> {
   const result: QueryResult = await plugin.sparql.query(`
@@ -1116,10 +1116,10 @@ async function getTasks(): Promise<SolutionMapping[]> {
 
 ## Resources
 
-- [Exocortex GitHub Repository](https://github.com/kitelev/exocortex-obsidian-plugin)
+- [Exocortex GitHub Repository](https://github.com/kitelev/exocortex)
 - [SPARQL 1.1 Specification](https://www.w3.org/TR/sparql11-query/)
 - [RDF Primer](https://www.w3.org/TR/rdf-primer/)
 
 ---
 
-**Have questions?** Open an issue or discussion on [GitHub](https://github.com/kitelev/exocortex-obsidian-plugin/issues)!
+**Have questions?** Open an issue or discussion on [GitHub](https://github.com/kitelev/exocortex/issues)!

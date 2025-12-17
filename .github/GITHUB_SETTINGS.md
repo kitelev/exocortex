@@ -123,7 +123,7 @@ gh pr merge --squash
 **Why:** This determines if fork PRs require manual approval before running workflows. Since this is your personal repository and you're the primary contributor, you likely want workflows to run automatically.
 
 **Steps to configure:**
-1. Go to: https://github.com/kitelev/exocortex-obsidian-plugin/settings/actions
+1. Go to: https://github.com/kitelev/exocortex/settings/actions
 2. Scroll to "Fork pull request workflows from outside collaborators"
 3. Select your preferred option (recommended: "first-time contributors" or "run automatically")
 
@@ -157,13 +157,13 @@ To verify the configuration from command line:
 
 ```bash
 # Check merge settings
-gh api repos/kitelev/exocortex-obsidian-plugin | jq '{allow_merge_commit, allow_squash_merge, allow_rebase_merge, allow_auto_merge}'
+gh api repos/kitelev/exocortex | jq '{allow_merge_commit, allow_squash_merge, allow_rebase_merge, allow_auto_merge}'
 
 # Check branch protection
-gh api repos/kitelev/exocortex-obsidian-plugin/branches/main/protection | jq '{required_status_checks, required_linear_history, enforce_admins}'
+gh api repos/kitelev/exocortex/branches/main/protection | jq '{required_status_checks, required_linear_history, enforce_admins}'
 
 # Check Actions permissions
-gh api repos/kitelev/exocortex-obsidian-plugin/actions/permissions | jq '{enabled, allowed_actions}'
+gh api repos/kitelev/exocortex/actions/permissions | jq '{enabled, allowed_actions}'
 ```
 
 ## Expected Workflow Behavior
@@ -212,11 +212,11 @@ If you need to revert these changes:
 
 ```bash
 # Revert workflow changes
-cd /Users/kitelev/Documents/exocortex-development/exocortex-obsidian-plugin
+cd /Users/kitelev/Developer/exocortex-development/exocortex
 git checkout HEAD~1 .github/workflows/ci.yml
 
 # Revert merge settings (re-enable rebase, disable squash)
-gh api -X PATCH repos/kitelev/exocortex-obsidian-plugin \
+gh api -X PATCH repos/kitelev/exocortex \
   -f allow_squash_merge=false \
   -f allow_rebase_merge=true
 

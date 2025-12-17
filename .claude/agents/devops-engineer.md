@@ -206,7 +206,7 @@ terraform {
 }
 
 resource "github_repository" "exocortex" {
-  name        = "exocortex-obsidian-plugin"
+  name        = "exocortex"
   description = "Semantic knowledge management for Obsidian"
 
   has_downloads = true

@@ -15,7 +15,7 @@
 const fs = require("fs");
 
 // Configuration
-const REPO_URL = "https://github.com/kitelev/exocortex-obsidian-plugin";
+const REPO_URL = "https://github.com/kitelev/exocortex";
 
 const COMMIT_TYPES = {
   feat: { title: "Features", emoji: "rocket", order: 1 },

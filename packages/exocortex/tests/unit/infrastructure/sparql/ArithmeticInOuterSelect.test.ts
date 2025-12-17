@@ -1,7 +1,7 @@
 /**
  * Tests for Issue #609: Arithmetic expressions in outer SELECT with subqueries
  *
- * Issue: https://github.com/kitelev/exocortex-obsidian-plugin/issues/609
+ * Issue: https://github.com/kitelev/exocortex/issues/609
  *
  * This tests the scenario where arithmetic expressions in the outer SELECT
  * reference variables computed by an inner subquery (with aggregates).

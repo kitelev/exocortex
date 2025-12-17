@@ -1398,8 +1398,8 @@ Test queries in stages:
 
 - [SPARQL 1.1 Query Language](https://www.w3.org/TR/sparql11-query/)
 - [Exocortex Property Schema](../PROPERTY_SCHEMA.md)
-- [GitHub Repository](https://github.com/kitelev/exocortex-obsidian-plugin)
+- [GitHub Repository](https://github.com/kitelev/exocortex)
 
 ---
 
-**Share Your Queries!** Submit your useful queries via [GitHub Discussions](https://github.com/kitelev/exocortex-obsidian-plugin/discussions) to help the community!
+**Share Your Queries!** Submit your useful queries via [GitHub Discussions](https://github.com/kitelev/exocortex/discussions) to help the community!

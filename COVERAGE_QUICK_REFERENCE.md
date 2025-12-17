@@ -190,7 +190,7 @@ module.exports = {
 
 ```bash
 # 1. Create test infrastructure
-cd /Users/kitelev/Documents/exocortex-development/worktrees/exocortex-claude1-test-coverage
+cd /Users/kitelev/Developer/exocortex-development/worktrees/exocortex-claude1-test-coverage
 cd packages/exocortex
 mkdir -p tests/utilities
 touch tests/utilities/FrontmatterService.test.ts

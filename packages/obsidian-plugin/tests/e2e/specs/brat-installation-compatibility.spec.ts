@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { execSync } from "child_process";
 
-const GITHUB_REPO = "kitelev/exocortex-obsidian-plugin";
+const GITHUB_REPO = "kitelev/exocortex";
 const GITHUB_API = "https://api.github.com";
 
 const isMainBranch = () => {

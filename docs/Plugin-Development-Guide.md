@@ -9,7 +9,7 @@
 ### Project Setup
 
 ```bash
-cd /your/vault/.obsidian/plugins/exocortex-obsidian-plugin
+cd /your/vault/.obsidian/plugins/exocortex
 npm install
 npm run dev  # Watch mode
 ```
