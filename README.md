@@ -8,6 +8,7 @@
 [![CI](https://github.com/kitelev/exocortex/actions/workflows/ci.yml/badge.svg)](https://github.com/kitelev/exocortex/actions/workflows/ci.yml)
 [![Tests](https://img.shields.io/badge/tests-5700%2B-success)](https://github.com/kitelev/exocortex/actions)
 [![Coverage](https://img.shields.io/badge/coverage-80%25-brightgreen)](https://github.com/kitelev/exocortex/actions/workflows/ci.yml)
+[![SPARQL 1.2](https://img.shields.io/badge/SPARQL-1.2-blue)](./docs/sparql/SPARQL-1.2-Features.md)
 
 ---
 
@@ -320,8 +321,23 @@ On **collective level** — multiple exocortexes form **noosphere**.
 - **Clean Architecture** — clear layer separation
 - **SOLID Principles** — especially Single Responsibility
 - **Domain-Driven Design** — knowledge domain as system center
-- **Semantic Web** — RDF, SPARQL 1.1, OWL
+- **Semantic Web** — RDF, SPARQL 1.2, OWL, RDF-Star
 - **Local-first** — your data stays local, cloud is optional
+
+### SPARQL 1.2 Support
+
+Exocortex implements key SPARQL 1.2 features:
+
+| Feature | Description |
+|---------|-------------|
+| **LATERAL Joins** | Correlated subqueries for "top N per group" patterns |
+| **PREFIX*** | Auto-import prefixes from well-known vocabularies |
+| **DESCRIBE Options** | DEPTH and SYMMETRIC control for DESCRIBE queries |
+| **Directional Language Tags** | RTL/LTR text direction support (`@ar--rtl`) |
+| **DateTime Arithmetic** | Native date/time subtraction and duration operations |
+| **NORMALIZE/FOLD** | Unicode normalization and case folding |
+
+See **[SPARQL 1.2 Features](./docs/sparql/SPARQL-1.2-Features.md)** for complete documentation.
 
 ---
 
@@ -346,6 +362,8 @@ On **collective level** — multiple exocortexes form **noosphere**.
 ### SPARQL & Semantic Queries
 - **[SPARQL User Guide](./docs/sparql/User-Guide.md)** — Tutorial from basics to advanced
 - **[Query Examples](./docs/sparql/Query-Examples.md)** — 30+ ready-to-use patterns
+- **[SPARQL 1.2 Features](./docs/sparql/SPARQL-1.2-Features.md)** — LATERAL, PREFIX*, directionality, and more
+- **[SPARQL 1.2 Migration](./docs/sparql/SPARQL-1.2-Migration.md)** — Upgrading from SPARQL 1.1
 
 ### Layout Code Blocks
 
