@@ -120,6 +120,13 @@ export interface Literal {
   value: string;
   datatype?: string;
   language?: string;
+  /**
+   * Base direction for bidirectional text (SPARQL 1.2).
+   * Used with language-tagged literals for directional language tags.
+   * Format: `"text"@lang--dir` where dir is "ltr" or "rtl".
+   * @see https://w3c.github.io/rdf-dir-literal/
+   */
+  direction?: "ltr" | "rtl";
 }
 
 export interface BlankNode {

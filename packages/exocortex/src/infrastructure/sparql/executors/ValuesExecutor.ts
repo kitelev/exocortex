@@ -94,7 +94,8 @@ export class ValuesExecutor {
       return new Literal(
         term.value,
         term.datatype ? new IRI(term.datatype) : undefined,
-        term.language
+        term.language,
+        term.direction
       );
     }
     throw new ValuesExecutorError(`Unknown term type: ${(term as any).type}`);

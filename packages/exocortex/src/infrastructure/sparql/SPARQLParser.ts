@@ -11,6 +11,10 @@ import {
   DescribeOptionsTransformerError,
   type DescribeOptions,
 } from "./DescribeOptionsTransformer";
+import {
+  DirectionalLangTagTransformer,
+  type BaseDirection,
+} from "./DirectionalLangTagTransformer";
 
 export class SPARQLParseError extends Error {
   public readonly line?: number;
@@ -68,9 +72,13 @@ export class SPARQLParser {
   private readonly lateralTransformer: LateralTransformer;
   private readonly prefixStarTransformer: PrefixStarTransformer;
   private readonly describeOptionsTransformer: DescribeOptionsTransformer;
+  private readonly directionalLangTagTransformer: DirectionalLangTagTransformer;
 
   /** Store the last parsed DESCRIBE options for retrieval */
   private lastDescribeOptions?: DescribeOptions;
+
+  /** Store the last parsed direction mappings for retrieval */
+  private lastDirectionMappings: Map<string, BaseDirection> = new Map();
 
   constructor(options?: SPARQLParserOptions) {
     // Enable SPARQL-Star (RDF-Star) support for triple patterns in subject/object positions
@@ -84,6 +92,7 @@ export class SPARQLParser {
     this.lateralTransformer = new LateralTransformer();
     this.prefixStarTransformer = new PrefixStarTransformer(options?.vocabularyResolver);
     this.describeOptionsTransformer = new DescribeOptionsTransformer();
+    this.directionalLangTagTransformer = new DirectionalLangTagTransformer();
   }
 
   /**
@@ -105,6 +114,10 @@ export class SPARQLParser {
       const describeResult = this.describeOptionsTransformer.transform(queryString);
       this.lastDescribeOptions = describeResult.options;
       let transformedQuery = describeResult.query;
+
+      // Transform directional language tags (SPARQL 1.2) - e.g., @ar--rtl → @ar
+      transformedQuery = this.directionalLangTagTransformer.transform(transformedQuery);
+      this.lastDirectionMappings = this.directionalLangTagTransformer.getAllMappings();
 
       // Transform LATERAL joins to marked subqueries (SPARQL 1.2)
       transformedQuery = this.lateralTransformer.transform(transformedQuery);
@@ -189,6 +202,10 @@ export class SPARQLParser {
       const describeResult = this.describeOptionsTransformer.transform(queryString);
       this.lastDescribeOptions = describeResult.options;
       let transformedQuery = describeResult.query;
+
+      // Transform directional language tags (SPARQL 1.2) - e.g., @ar--rtl → @ar
+      transformedQuery = this.directionalLangTagTransformer.transform(transformedQuery);
+      this.lastDirectionMappings = this.directionalLangTagTransformer.getAllMappings();
 
       // First, transform PREFIX* declarations to regular PREFIX declarations
       transformedQuery = await this.prefixStarTransformer.transform(transformedQuery);
@@ -277,6 +294,36 @@ export class SPARQLParser {
    */
   hasDescribeOptions(queryString: string): boolean {
     return this.describeOptionsTransformer.hasDescribeOptions(queryString);
+  }
+
+  /**
+   * Check if a query string contains directional language tags (SPARQL 1.2).
+   *
+   * @param queryString - The SPARQL query to check
+   * @returns true if the query contains directional language tags like @ar--rtl
+   */
+  hasDirectionalLangTags(queryString: string): boolean {
+    return this.directionalLangTagTransformer.hasDirectionalTags(queryString);
+  }
+
+  /**
+   * Get the direction mappings from the last parsed query.
+   * Maps language tags to their directions (ltr/rtl).
+   *
+   * @returns Map of language tags to their directions
+   */
+  getLastDirectionMappings(): Map<string, BaseDirection> {
+    return new Map(this.lastDirectionMappings);
+  }
+
+  /**
+   * Get the direction for a specific language tag from the last parsed query.
+   *
+   * @param languageTag - The language tag to check (will be normalized to lowercase)
+   * @returns The direction if found, undefined otherwise
+   */
+  getDirectionForLanguage(languageTag: string): BaseDirection | undefined {
+    return this.lastDirectionMappings.get(languageTag.toLowerCase());
   }
 
   toString(query: SPARQLQuery): string {

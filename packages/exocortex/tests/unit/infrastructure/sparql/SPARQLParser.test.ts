@@ -951,4 +951,106 @@ describe("SPARQLParser", () => {
       });
     });
   });
+
+  describe("directional language tags (SPARQL 1.2)", () => {
+    it("should parse query with rtl directional language tag", () => {
+      const query = `SELECT * WHERE { ?s ?p "مرحبا"@ar--rtl }`;
+      const ast = parser.parse(query);
+
+      expect(parser.isSelectQuery(ast)).toBe(true);
+      expect(parser.getDirectionForLanguage("ar")).toBe("rtl");
+    });
+
+    it("should parse query with ltr directional language tag", () => {
+      const query = `SELECT * WHERE { ?s ?p "Hello"@en--ltr }`;
+      const ast = parser.parse(query);
+
+      expect(parser.isSelectQuery(ast)).toBe(true);
+      expect(parser.getDirectionForLanguage("en")).toBe("ltr");
+    });
+
+    it("should parse query with Hebrew rtl directional language tag", () => {
+      const query = `SELECT * WHERE { ?s ?p "שלום"@he--rtl }`;
+      const ast = parser.parse(query);
+
+      expect(parser.isSelectQuery(ast)).toBe(true);
+      expect(parser.getDirectionForLanguage("he")).toBe("rtl");
+    });
+
+    it("should handle complex language tags with region codes", () => {
+      const query = `SELECT * WHERE { ?s ?p "Hello"@en-US--ltr }`;
+      const ast = parser.parse(query);
+
+      expect(parser.isSelectQuery(ast)).toBe(true);
+      expect(parser.getDirectionForLanguage("en-US")).toBe("ltr");
+      expect(parser.getDirectionForLanguage("en-us")).toBe("ltr"); // Case insensitive
+    });
+
+    it("should handle multiple directional literals in same query", () => {
+      const query = `SELECT * WHERE {
+        ?s ?p "مرحبا"@ar--rtl .
+        ?s ?q "Hello"@en--ltr .
+      }`;
+      const ast = parser.parse(query);
+
+      expect(parser.isSelectQuery(ast)).toBe(true);
+      expect(parser.getDirectionForLanguage("ar")).toBe("rtl");
+      expect(parser.getDirectionForLanguage("en")).toBe("ltr");
+    });
+
+    it("should return all direction mappings", () => {
+      const query = `SELECT * WHERE {
+        ?s ?p "مرحبا"@ar--rtl .
+        ?s ?q "Hello"@en--ltr .
+        ?s ?r "שלום"@he--rtl .
+      }`;
+      parser.parse(query);
+
+      const mappings = parser.getLastDirectionMappings();
+      expect(mappings.size).toBe(3);
+      expect(mappings.get("ar")).toBe("rtl");
+      expect(mappings.get("en")).toBe("ltr");
+      expect(mappings.get("he")).toBe("rtl");
+    });
+
+    it("hasDirectionalLangTags should return true for directional queries", () => {
+      const query = `SELECT * WHERE { ?s ?p "مرحبا"@ar--rtl }`;
+      expect(parser.hasDirectionalLangTags(query)).toBe(true);
+    });
+
+    it("hasDirectionalLangTags should return false for regular queries", () => {
+      const query = `SELECT * WHERE { ?s ?p "Hello"@en }`;
+      expect(parser.hasDirectionalLangTags(query)).toBe(false);
+    });
+
+    it("should maintain backwards compatibility with regular language tags", () => {
+      const query = `SELECT * WHERE { ?s ?p "Bonjour"@fr }`;
+      const ast = parser.parse(query);
+
+      expect(parser.isSelectQuery(ast)).toBe(true);
+      expect(parser.getDirectionForLanguage("fr")).toBeUndefined();
+    });
+
+    it("should work with parseAsync", async () => {
+      const query = `SELECT * WHERE { ?s ?p "مرحبا"@ar--rtl }`;
+      const ast = await parser.parseAsync(query);
+
+      expect(parser.isSelectQuery(ast)).toBe(true);
+      expect(parser.getDirectionForLanguage("ar")).toBe("rtl");
+    });
+
+    it("should work with mixed directional and regular language tags", () => {
+      const query = `SELECT * WHERE {
+        ?s ?p "مرحبا"@ar--rtl .
+        ?s ?q "Bonjour"@fr .
+        ?s ?r "Hello"@en--ltr .
+      }`;
+      const ast = parser.parse(query);
+
+      expect(parser.isSelectQuery(ast)).toBe(true);
+      expect(parser.getDirectionForLanguage("ar")).toBe("rtl");
+      expect(parser.getDirectionForLanguage("fr")).toBeUndefined();
+      expect(parser.getDirectionForLanguage("en")).toBe("ltr");
+    });
+  });
 });

@@ -40,7 +40,21 @@ export class AlgebraTranslatorError extends Error {
   }
 }
 
+/** Direction mappings from directional language tags */
+export type DirectionMappings = Map<string, "ltr" | "rtl">;
+
 export class AlgebraTranslator {
+  /** Direction mappings set by SPARQLParser for directional language tags */
+  private directionMappings: DirectionMappings = new Map();
+
+  /**
+   * Set direction mappings from the SPARQLParser.
+   * These are used to add direction information to literal elements.
+   */
+  setDirectionMappings(mappings: DirectionMappings): void {
+    this.directionMappings = mappings;
+  }
+
   translate(query: SPARQLQuery): AlgebraOperation {
     if (query.type !== "query") {
       throw new AlgebraTranslatorError("Only query operations are supported (not updates)");
@@ -718,13 +732,22 @@ export class AlgebraTranslator {
           type: "iri",
           value: element.value,
         };
-      case "Literal":
-        return {
+      case "Literal": {
+        const literal: Literal = {
           type: "literal",
           value: element.value,
           datatype: element.datatype?.value,
           language: element.language,
         };
+        // Add direction if available from directional language tag mapping
+        if (element.language) {
+          const direction = this.directionMappings.get(element.language.toLowerCase());
+          if (direction) {
+            literal.direction = direction;
+          }
+        }
+        return literal;
+      }
       case "BlankNode":
         return {
           type: "blank",
@@ -1149,18 +1172,31 @@ export class AlgebraTranslator {
       const varName = key.startsWith("?") ? key.slice(1) : key;
       const termValue = term as any;
 
+      // UNDEF values in VALUES are represented as undefined - skip them
+      if (!termValue) {
+        continue;
+      }
+
       if (termValue.termType === "NamedNode") {
         binding[varName] = {
           type: "iri",
           value: termValue.value,
         } as IRI;
       } else if (termValue.termType === "Literal") {
-        binding[varName] = {
+        const literal: Literal = {
           type: "literal",
           value: termValue.value,
           datatype: termValue.datatype?.value,
           language: termValue.language || undefined,
-        } as Literal;
+        };
+        // Add direction if available from directional language tag mapping
+        if (termValue.language) {
+          const direction = this.directionMappings.get(termValue.language.toLowerCase());
+          if (direction) {
+            literal.direction = direction;
+          }
+        }
+        binding[varName] = literal;
       } else {
         throw new AlgebraTranslatorError(`Unsupported VALUES term type: ${termValue.termType}`);
       }

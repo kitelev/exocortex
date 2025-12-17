@@ -347,6 +347,7 @@ export class BGPExecutor {
         if (pattern.value !== term.value) return false;
         if (pattern.datatype !== term.datatype?.value) return false;
         if (pattern.language !== term.language) return false;
+        if (pattern.direction !== term.direction) return false;
         return true;
       case "blank":
         return term instanceof BlankNode && pattern.value === term.id;
@@ -551,7 +552,8 @@ export class BGPExecutor {
         return new Literal(
           element.value,
           element.datatype ? new IRI(element.datatype) : undefined,
-          element.language
+          element.language,
+          element.direction
         );
       case "blank":
         return new BlankNode(element.value);
@@ -580,6 +582,7 @@ export class BGPExecutor {
         value: term.value,
         datatype: term.datatype?.value,
         language: term.language,
+        direction: term.direction,
       };
     } else if (term instanceof BlankNode) {
       return {

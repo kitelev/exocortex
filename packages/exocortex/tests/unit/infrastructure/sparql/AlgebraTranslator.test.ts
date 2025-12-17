@@ -1618,10 +1618,11 @@ describe("AlgebraTranslator", () => {
       expect(() => translator.translate(ast)).toThrow(AlgebraTranslatorError);
     });
 
-    it("throws error for unsupported query types (DESCRIBE)", () => {
+    it("throws error for unsupported query types", () => {
+      // Use a hypothetical unsupported query type
       const ast: any = {
         type: "query",
-        queryType: "DESCRIBE",
+        queryType: "UNSUPPORTED_TYPE",
         where: [{ type: "bgp", triples: [] }],
       };
       expect(() => translator.translate(ast)).toThrow(AlgebraTranslatorError);
@@ -2872,6 +2873,143 @@ describe("AlgebraTranslator", () => {
       expect(input.triples[1].subject.value).toBe("person");
       expect(input.triples[1].predicate.type).toBe("iri");
       expect(input.triples[1].predicate.value).toBe("http://www.w3.org/1999/02/22-rdf-syntax-ns#type");
+    });
+  });
+
+  describe("Directional Language Tags (SPARQL 1.2)", () => {
+    it("adds direction to literals when mappings are set", () => {
+      const query = `SELECT * WHERE { ?s ?p "مرحبا"@ar }`;
+      const ast = parser.parse(query);
+
+      // Simulate what SPARQLParser does - set direction mappings
+      const directionMappings = new Map<string, "ltr" | "rtl">();
+      directionMappings.set("ar", "rtl");
+      translator.setDirectionMappings(directionMappings);
+
+      const algebra = translator.translate(ast);
+
+      expect(algebra.type).toBe("bgp");
+      const triples = (algebra as any).triples;
+      expect(triples[0].object.type).toBe("literal");
+      expect(triples[0].object.value).toBe("مرحبا");
+      expect(triples[0].object.language).toBe("ar");
+      expect(triples[0].object.direction).toBe("rtl");
+    });
+
+    it("adds ltr direction to literals", () => {
+      const query = `SELECT * WHERE { ?s ?p "Hello"@en }`;
+      const ast = parser.parse(query);
+
+      const directionMappings = new Map<string, "ltr" | "rtl">();
+      directionMappings.set("en", "ltr");
+      translator.setDirectionMappings(directionMappings);
+
+      const algebra = translator.translate(ast);
+
+      expect(algebra.type).toBe("bgp");
+      const triples = (algebra as any).triples;
+      expect(triples[0].object.type).toBe("literal");
+      expect(triples[0].object.direction).toBe("ltr");
+    });
+
+    it("does not add direction when no mapping exists", () => {
+      const query = `SELECT * WHERE { ?s ?p "Bonjour"@fr }`;
+      const ast = parser.parse(query);
+
+      // Set empty mappings
+      translator.setDirectionMappings(new Map());
+
+      const algebra = translator.translate(ast);
+
+      expect(algebra.type).toBe("bgp");
+      const triples = (algebra as any).triples;
+      expect(triples[0].object.type).toBe("literal");
+      expect(triples[0].object.language).toBe("fr");
+      expect(triples[0].object.direction).toBeUndefined();
+    });
+
+    it("handles multiple literals with different directions", () => {
+      const query = `SELECT * WHERE {
+        ?s ?p "مرحبا"@ar .
+        ?s ?q "Hello"@en .
+        ?s ?r "Bonjour"@fr .
+      }`;
+      const ast = parser.parse(query);
+
+      const directionMappings = new Map<string, "ltr" | "rtl">();
+      directionMappings.set("ar", "rtl");
+      directionMappings.set("en", "ltr");
+      // No mapping for "fr"
+      translator.setDirectionMappings(directionMappings);
+
+      const algebra = translator.translate(ast);
+
+      // Find the BGP (may be nested in joins)
+      let bgp = algebra;
+      while (bgp.type !== "bgp") {
+        bgp = (bgp as any).input || (bgp as any).left;
+      }
+
+      const triples = (bgp as any).triples;
+      const arTriple = triples.find((t: any) => t.object.language === "ar");
+      const enTriple = triples.find((t: any) => t.object.language === "en");
+      const frTriple = triples.find((t: any) => t.object.language === "fr");
+
+      expect(arTriple.object.direction).toBe("rtl");
+      expect(enTriple.object.direction).toBe("ltr");
+      expect(frTriple.object.direction).toBeUndefined();
+    });
+
+    it("handles case-insensitive language tag lookup", () => {
+      // Note: sparqljs normalizes language tags to lowercase
+      const query = `SELECT * WHERE { ?s ?p "Hello"@en-us }`;
+      const ast = parser.parse(query);
+
+      const directionMappings = new Map<string, "ltr" | "rtl">();
+      directionMappings.set("en-us", "ltr"); // Lowercase key
+      translator.setDirectionMappings(directionMappings);
+
+      const algebra = translator.translate(ast);
+
+      expect(algebra.type).toBe("bgp");
+      const triples = (algebra as any).triples;
+      expect(triples[0].object.language).toBe("en-us");
+      expect(triples[0].object.direction).toBe("ltr");
+    });
+
+    it("handles direction in VALUES bindings", () => {
+      const query = `SELECT ?text WHERE {
+        VALUES ?text { "مرحبا"@ar "Hello"@en }
+        ?s ?p ?text .
+      }`;
+      const ast = parser.parse(query);
+
+      const directionMappings = new Map<string, "ltr" | "rtl">();
+      directionMappings.set("ar", "rtl");
+      directionMappings.set("en", "ltr");
+      translator.setDirectionMappings(directionMappings);
+
+      const algebra = translator.translate(ast);
+
+      // Find the VALUES operation
+      let current: any = algebra;
+      let valuesOp: any = null;
+      const findValues = (op: any): any => {
+        if (op.type === "values") return op;
+        if (op.input) return findValues(op.input);
+        if (op.left) return findValues(op.left) || findValues(op.right);
+        return null;
+      };
+      valuesOp = findValues(current);
+
+      expect(valuesOp).not.toBeNull();
+      expect(valuesOp.bindings).toHaveLength(2);
+
+      const arBinding = valuesOp.bindings.find((b: any) => b.text?.language === "ar");
+      const enBinding = valuesOp.bindings.find((b: any) => b.text?.language === "en");
+
+      expect(arBinding.text.direction).toBe("rtl");
+      expect(enBinding.text.direction).toBe("ltr");
     });
   });
 });
