@@ -2,6 +2,7 @@ import type { Subject, Predicate, Object as RDFObject } from "../../../domain/mo
 import { IRI } from "../../../domain/models/rdf/IRI";
 import { Literal } from "../../../domain/models/rdf/Literal";
 import { BlankNode } from "../../../domain/models/rdf/BlankNode";
+import { QuotedTriple } from "../../../domain/models/rdf/QuotedTriple";
 import { v4 as uuidv4 } from "uuid";
 
 export type RDFTerm = Subject | Predicate | RDFObject;
@@ -3067,5 +3068,84 @@ export class BuiltInFunctions {
     }
 
     return totalMs;
+  }
+
+  /**
+   * SPARQL 1.2 TRIPLE constructor function (RDF-Star).
+   * https://w3c.github.io/sparql-12/spec/
+   *
+   * Constructs a quoted triple term from three RDF terms.
+   * This is the programmatic way to create RDF-Star triple terms within SPARQL queries.
+   *
+   * @param subject - IRI, BlankNode, or QuotedTriple (not Literal)
+   * @param predicate - Must be an IRI
+   * @param object - Any RDF term (IRI, BlankNode, Literal, QuotedTriple)
+   * @returns QuotedTriple instance
+   * @throws Error if subject is Literal or predicate is not IRI
+   *
+   * @example
+   * ```sparql
+   * # Create quoted triple dynamically
+   * SELECT (TRIPLE(?s, :knows, ?o) AS ?triple) WHERE {
+   *   ?s a :Person .
+   *   ?o a :Person .
+   * }
+   * ```
+   *
+   * @example
+   * ```sparql
+   * # Use in BIND to construct reification
+   * SELECT ?triple WHERE {
+   *   ?s :knows ?o .
+   *   BIND(TRIPLE(?s, :knows, ?o) AS ?triple)
+   * }
+   * ```
+   */
+  static triple(
+    subject: RDFTerm | QuotedTriple | undefined,
+    predicate: RDFTerm | undefined,
+    object: RDFTerm | QuotedTriple | undefined
+  ): QuotedTriple {
+    // Validate subject is not undefined
+    if (subject === undefined) {
+      throw new Error("TRIPLE: subject is undefined");
+    }
+
+    // Validate predicate is not undefined
+    if (predicate === undefined) {
+      throw new Error("TRIPLE: predicate is undefined");
+    }
+
+    // Validate object is not undefined
+    if (object === undefined) {
+      throw new Error("TRIPLE: object is undefined");
+    }
+
+    // Validate subject is not a Literal (per RDF-Star spec)
+    if (subject instanceof Literal) {
+      throw new Error(
+        `TRIPLE: subject must be IRI, BlankNode, or QuotedTriple, got Literal`
+      );
+    }
+
+    // Validate predicate is an IRI
+    if (!(predicate instanceof IRI)) {
+      const predicateType =
+        predicate instanceof Literal
+          ? "Literal"
+          : predicate instanceof BlankNode
+            ? "BlankNode"
+            : predicate instanceof QuotedTriple
+              ? "QuotedTriple"
+              : typeof predicate;
+      throw new Error(`TRIPLE: predicate must be IRI, got ${predicateType}`);
+    }
+
+    // Cast validated types
+    const validSubject = subject as IRI | BlankNode | QuotedTriple;
+    const validPredicate = predicate as IRI;
+    const validObject = object as IRI | BlankNode | Literal | QuotedTriple;
+
+    return new QuotedTriple(validSubject, validPredicate, validObject);
   }
 }

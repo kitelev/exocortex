@@ -2,6 +2,7 @@ import { BuiltInFunctions } from "../../../../../src/infrastructure/sparql/filte
 import { IRI } from "../../../../../src/domain/models/rdf/IRI";
 import { Literal } from "../../../../../src/domain/models/rdf/Literal";
 import { BlankNode } from "../../../../../src/domain/models/rdf/BlankNode";
+import { QuotedTriple } from "../../../../../src/domain/models/rdf/QuotedTriple";
 
 describe("BuiltInFunctions", () => {
   describe("STR", () => {
@@ -4876,6 +4877,201 @@ describe("BuiltInFunctions", () => {
         expect(() => BuiltInFunctions.dateSubtractYearMonth("invalid", "P1Y")).toThrow(
           "dateSubtractYearMonth: invalid date"
         );
+      });
+    });
+  });
+
+  describe("TRIPLE (RDF-Star constructor)", () => {
+    describe("valid inputs", () => {
+      it("should create QuotedTriple with IRI subject, IRI predicate, IRI object", () => {
+        const subject = new IRI("http://example.org/Alice");
+        const predicate = new IRI("http://example.org/knows");
+        const object = new IRI("http://example.org/Bob");
+
+        const result = BuiltInFunctions.triple(subject, predicate, object);
+
+        expect(result).toBeInstanceOf(QuotedTriple);
+        expect(result.subject).toBe(subject);
+        expect(result.predicate).toBe(predicate);
+        expect(result.object).toBe(object);
+      });
+
+      it("should create QuotedTriple with BlankNode subject", () => {
+        const subject = new BlankNode("b1");
+        const predicate = new IRI("http://example.org/name");
+        const object = new Literal("Alice");
+
+        const result = BuiltInFunctions.triple(subject, predicate, object);
+
+        expect(result).toBeInstanceOf(QuotedTriple);
+        expect(result.subject).toBe(subject);
+        expect(result.predicate).toBe(predicate);
+        expect(result.object).toBe(object);
+      });
+
+      it("should create QuotedTriple with Literal object", () => {
+        const subject = new IRI("http://example.org/Alice");
+        const predicate = new IRI("http://example.org/name");
+        const object = new Literal("Alice");
+
+        const result = BuiltInFunctions.triple(subject, predicate, object);
+
+        expect(result).toBeInstanceOf(QuotedTriple);
+        expect(result.object).toBeInstanceOf(Literal);
+        expect((result.object as Literal).value).toBe("Alice");
+      });
+
+      it("should create QuotedTriple with typed Literal object", () => {
+        const subject = new IRI("http://example.org/Alice");
+        const predicate = new IRI("http://example.org/age");
+        const object = new Literal("30", new IRI("http://www.w3.org/2001/XMLSchema#integer"));
+
+        const result = BuiltInFunctions.triple(subject, predicate, object);
+
+        expect(result).toBeInstanceOf(QuotedTriple);
+        expect(result.object).toBeInstanceOf(Literal);
+        expect((result.object as Literal).value).toBe("30");
+      });
+
+      it("should create QuotedTriple with language-tagged Literal object", () => {
+        const subject = new IRI("http://example.org/Alice");
+        const predicate = new IRI("http://example.org/name");
+        const object = new Literal("Alice", undefined, "en");
+
+        const result = BuiltInFunctions.triple(subject, predicate, object);
+
+        expect(result).toBeInstanceOf(QuotedTriple);
+        expect((result.object as Literal).language).toBe("en");
+      });
+
+      it("should create QuotedTriple with BlankNode object", () => {
+        const subject = new IRI("http://example.org/Alice");
+        const predicate = new IRI("http://example.org/address");
+        const object = new BlankNode("addr1");
+
+        const result = BuiltInFunctions.triple(subject, predicate, object);
+
+        expect(result).toBeInstanceOf(QuotedTriple);
+        expect(result.object).toBeInstanceOf(BlankNode);
+      });
+
+      it("should create QuotedTriple with nested QuotedTriple subject", () => {
+        // Create inner triple: << Alice knows Bob >>
+        const innerSubject = new IRI("http://example.org/Alice");
+        const innerPredicate = new IRI("http://example.org/knows");
+        const innerObject = new IRI("http://example.org/Bob");
+        const innerTriple = new QuotedTriple(innerSubject, innerPredicate, innerObject);
+
+        // Create outer triple with inner triple as subject
+        const outerPredicate = new IRI("http://example.org/source");
+        const outerObject = new IRI("http://example.org/Wikipedia");
+
+        const result = BuiltInFunctions.triple(innerTriple, outerPredicate, outerObject);
+
+        expect(result).toBeInstanceOf(QuotedTriple);
+        expect(result.subject).toBeInstanceOf(QuotedTriple);
+        expect((result.subject as QuotedTriple).equals(innerTriple)).toBe(true);
+      });
+
+      it("should create QuotedTriple with nested QuotedTriple object", () => {
+        // Create inner triple: << Alice knows Bob >>
+        const innerSubject = new IRI("http://example.org/Alice");
+        const innerPredicate = new IRI("http://example.org/knows");
+        const innerObject = new IRI("http://example.org/Bob");
+        const innerTriple = new QuotedTriple(innerSubject, innerPredicate, innerObject);
+
+        // Create outer triple with inner triple as object
+        const outerSubject = new IRI("http://example.org/Wikipedia");
+        const outerPredicate = new IRI("http://example.org/claims");
+
+        const result = BuiltInFunctions.triple(outerSubject, outerPredicate, innerTriple);
+
+        expect(result).toBeInstanceOf(QuotedTriple);
+        expect(result.object).toBeInstanceOf(QuotedTriple);
+        expect((result.object as QuotedTriple).equals(innerTriple)).toBe(true);
+      });
+    });
+
+    describe("error handling", () => {
+      it("should throw for undefined subject", () => {
+        const predicate = new IRI("http://example.org/knows");
+        const object = new IRI("http://example.org/Bob");
+
+        expect(() => BuiltInFunctions.triple(undefined, predicate, object)).toThrow(
+          "TRIPLE: subject is undefined"
+        );
+      });
+
+      it("should throw for undefined predicate", () => {
+        const subject = new IRI("http://example.org/Alice");
+        const object = new IRI("http://example.org/Bob");
+
+        expect(() => BuiltInFunctions.triple(subject, undefined, object)).toThrow(
+          "TRIPLE: predicate is undefined"
+        );
+      });
+
+      it("should throw for undefined object", () => {
+        const subject = new IRI("http://example.org/Alice");
+        const predicate = new IRI("http://example.org/knows");
+
+        expect(() => BuiltInFunctions.triple(subject, predicate, undefined)).toThrow(
+          "TRIPLE: object is undefined"
+        );
+      });
+
+      it("should throw for Literal subject", () => {
+        const subject = new Literal("Alice");
+        const predicate = new IRI("http://example.org/knows");
+        const object = new IRI("http://example.org/Bob");
+
+        expect(() => BuiltInFunctions.triple(subject, predicate, object)).toThrow(
+          "TRIPLE: subject must be IRI, BlankNode, or QuotedTriple, got Literal"
+        );
+      });
+
+      it("should throw for Literal predicate", () => {
+        const subject = new IRI("http://example.org/Alice");
+        const predicate = new Literal("knows");
+        const object = new IRI("http://example.org/Bob");
+
+        expect(() => BuiltInFunctions.triple(subject, predicate, object)).toThrow(
+          "TRIPLE: predicate must be IRI, got Literal"
+        );
+      });
+
+      it("should throw for BlankNode predicate", () => {
+        const subject = new IRI("http://example.org/Alice");
+        const predicate = new BlankNode("b1");
+        const object = new IRI("http://example.org/Bob");
+
+        expect(() => BuiltInFunctions.triple(subject, predicate, object)).toThrow(
+          "TRIPLE: predicate must be IRI, got BlankNode"
+        );
+      });
+    });
+
+    describe("output format", () => {
+      it("should produce correct string representation", () => {
+        const subject = new IRI("http://example.org/Alice");
+        const predicate = new IRI("http://example.org/knows");
+        const object = new IRI("http://example.org/Bob");
+
+        const result = BuiltInFunctions.triple(subject, predicate, object);
+
+        expect(result.toString()).toBe(
+          "<< <http://example.org/Alice> <http://example.org/knows> <http://example.org/Bob> >>"
+        );
+      });
+
+      it("should have termType QuotedTriple", () => {
+        const subject = new IRI("http://example.org/Alice");
+        const predicate = new IRI("http://example.org/knows");
+        const object = new IRI("http://example.org/Bob");
+
+        const result = BuiltInFunctions.triple(subject, predicate, object);
+
+        expect(result.termType).toBe("QuotedTriple");
       });
     });
   });
