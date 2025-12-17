@@ -133,6 +133,13 @@ export {
   createDoubleLiteral,
 } from "./infrastructure/sparql/aggregates/BuiltInAggregates";
 export { QueryPlanCache } from "./infrastructure/sparql/cache/QueryPlanCache";
+export {
+  ResultSerializer,
+  type ResultOutputFormat,
+  type ResultSerializeOptions,
+  type JSONResultBinding,
+  type JSONResultSet,
+} from "./infrastructure/sparql/serializers/ResultSerializer";
 export { CaseWhenTransformer, CaseWhenTransformerError } from "./infrastructure/sparql/CaseWhenTransformer";
 export {
   FilterContainsOptimizer,

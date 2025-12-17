@@ -425,6 +425,11 @@ export class RDFSerializer {
     }
 
     if (typeof obj["@language"] === "string") {
+      // SPARQL 1.2: Support directional literals with @direction
+      const direction = obj["@direction"];
+      if (direction === "ltr" || direction === "rtl") {
+        return new Literal(rawValue, undefined, obj["@language"], direction);
+      }
       return new Literal(rawValue, undefined, obj["@language"]);
     }
 

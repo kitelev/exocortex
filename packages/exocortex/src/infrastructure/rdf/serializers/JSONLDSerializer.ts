@@ -112,6 +112,10 @@ export class JSONLDSerializer {
         literal["@type"] = this.compactIri(object.datatype.value, context);
       } else if (object.language) {
         literal["@language"] = object.language;
+        // SPARQL 1.2: Include direction for directional literals
+        if (object.hasDirection() && object.direction) {
+          literal["@direction"] = object.direction;
+        }
       }
 
       return literal;
