@@ -944,6 +944,11 @@ export class FilterExecutor {
         const hasLangdirArg = this.getTermFromExpression(expr.args[0], solution);
         return BuiltInFunctions.hasLangdir(hasLangdirArg);
 
+      // SPARQL 1.2 isTRIPLE - RDF-Star type checking
+      case "istriple":
+        const isTripleArg = this.getTermFromExpression(expr.args[0], solution);
+        return BuiltInFunctions.isTriple(isTripleArg);
+
       case "sameterm":
         const sameTerm1 = this.getTermFromExpression(expr.args[0], solution);
         const sameTerm2 = this.getTermFromExpression(expr.args[1], solution);

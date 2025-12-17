@@ -494,5 +494,61 @@ describe("SPARQL 1.2 RDF-Star Integration Tests", () => {
         expect((paperCitation.object as QuotedTriple).object).toBe(statement);
       });
     });
+
+    describe("isTRIPLE Type Checking Function", () => {
+      it("should return true for QuotedTriple", () => {
+        const { BuiltInFunctions } = require("../../../src/infrastructure/sparql/filters/BuiltInFunctions");
+
+        const quotedTriple = new QuotedTriple(
+          new IRI(`${EX}Alice`),
+          new IRI(`${EX}knows`),
+          new IRI(`${EX}Bob`)
+        );
+
+        expect(BuiltInFunctions.isTriple(quotedTriple)).toBe(true);
+      });
+
+      it("should return false for IRI", () => {
+        const { BuiltInFunctions } = require("../../../src/infrastructure/sparql/filters/BuiltInFunctions");
+
+        const iri = new IRI(`${EX}Alice`);
+        expect(BuiltInFunctions.isTriple(iri)).toBe(false);
+      });
+
+      it("should return false for Literal", () => {
+        const { BuiltInFunctions } = require("../../../src/infrastructure/sparql/filters/BuiltInFunctions");
+
+        const literal = new Literal("test value", XSD_STRING);
+        expect(BuiltInFunctions.isTriple(literal)).toBe(false);
+      });
+
+      it("should return false for BlankNode", () => {
+        const { BuiltInFunctions } = require("../../../src/infrastructure/sparql/filters/BuiltInFunctions");
+
+        const blank = new BlankNode("b1");
+        expect(BuiltInFunctions.isTriple(blank)).toBe(false);
+      });
+
+      it("should return true for nested QuotedTriple", () => {
+        const { BuiltInFunctions } = require("../../../src/infrastructure/sparql/filters/BuiltInFunctions");
+
+        // Inner triple: Alice knows Bob
+        const innerTriple = new QuotedTriple(
+          new IRI(`${EX}Alice`),
+          new IRI(`${EX}knows`),
+          new IRI(`${EX}Bob`)
+        );
+
+        // Outer triple: << :Alice :knows :Bob >> :source :Wikipedia
+        const nestedTriple = new QuotedTriple(
+          innerTriple,
+          new IRI(`${EX}source`),
+          new IRI(`${EX}Wikipedia`)
+        );
+
+        expect(BuiltInFunctions.isTriple(nestedTriple)).toBe(true);
+        expect(BuiltInFunctions.isTriple(nestedTriple.subject)).toBe(true);
+      });
+    });
   });
 });

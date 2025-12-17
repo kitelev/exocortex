@@ -219,6 +219,40 @@ export class BuiltInFunctions {
   }
 
   /**
+   * SPARQL 1.2 isTRIPLE type checking function (RDF-Star).
+   * https://w3c.github.io/sparql-12/spec/
+   *
+   * Returns true if the term is a QuotedTriple, false otherwise.
+   * This function is used to filter queries to only process quoted triples.
+   *
+   * @param term - RDF term to check
+   * @returns true if term is a QuotedTriple, false otherwise
+   *
+   * @example
+   * ```sparql
+   * # Filter for quoted triples
+   * SELECT ?s ?p ?o WHERE {
+   *   ?s ?p ?o .
+   *   FILTER(isTRIPLE(?o))
+   * }
+   * ```
+   *
+   * @example
+   * ```sparql
+   * # Type checking in BIND
+   * BIND(isTRIPLE(<< :Alice :knows :Bob >>) AS ?isTriple)  # true
+   * BIND(isTRIPLE(:Alice) AS ?isTriple)                    # false
+   * BIND(isTRIPLE("text") AS ?isTriple)                    # false
+   * ```
+   */
+  static isTriple(term: RDFTerm | QuotedTriple | undefined): boolean {
+    if (term === undefined) {
+      return false;
+    }
+    return term instanceof QuotedTriple;
+  }
+
+  /**
    * SPARQL 1.1 isNumeric function.
    * https://www.w3.org/TR/sparql11-query/#func-isNumeric
    *

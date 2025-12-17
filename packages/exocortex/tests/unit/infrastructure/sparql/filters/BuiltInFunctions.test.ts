@@ -658,6 +658,62 @@ describe("BuiltInFunctions", () => {
     });
   });
 
+  describe("isTriple", () => {
+    it("should return true for QuotedTriple", () => {
+      const subject = new IRI("http://example.org/Alice");
+      const predicate = new IRI("http://example.org/knows");
+      const object = new IRI("http://example.org/Bob");
+      const quotedTriple = new QuotedTriple(subject, predicate, object);
+      expect(BuiltInFunctions.isTriple(quotedTriple)).toBe(true);
+    });
+
+    it("should return false for IRI", () => {
+      const iri = new IRI("http://example.org/resource");
+      expect(BuiltInFunctions.isTriple(iri)).toBe(false);
+    });
+
+    it("should return false for Literal", () => {
+      const literal = new Literal("test");
+      expect(BuiltInFunctions.isTriple(literal)).toBe(false);
+    });
+
+    it("should return false for BlankNode", () => {
+      const blank = new BlankNode("b1");
+      expect(BuiltInFunctions.isTriple(blank)).toBe(false);
+    });
+
+    it("should return false for undefined", () => {
+      expect(BuiltInFunctions.isTriple(undefined)).toBe(false);
+    });
+
+    it("should return xsd:boolean typed result as boolean value", () => {
+      const subject = new IRI("http://example.org/Alice");
+      const predicate = new IRI("http://example.org/knows");
+      const object = new IRI("http://example.org/Bob");
+      const quotedTriple = new QuotedTriple(subject, predicate, object);
+
+      // isTriple returns a boolean value (true/false)
+      const result = BuiltInFunctions.isTriple(quotedTriple);
+      expect(typeof result).toBe("boolean");
+      expect(result).toBe(true);
+    });
+
+    it("should return true for nested QuotedTriple", () => {
+      // Create inner quoted triple: << :A :b :C >>
+      const innerSubject = new IRI("http://example.org/A");
+      const innerPredicate = new IRI("http://example.org/b");
+      const innerObject = new IRI("http://example.org/C");
+      const innerTriple = new QuotedTriple(innerSubject, innerPredicate, innerObject);
+
+      // Create outer quoted triple: << << :A :b :C >> :source :Wikipedia >>
+      const outerPredicate = new IRI("http://example.org/source");
+      const outerObject = new IRI("http://example.org/Wikipedia");
+      const nestedTriple = new QuotedTriple(innerTriple, outerPredicate, outerObject);
+
+      expect(BuiltInFunctions.isTriple(nestedTriple)).toBe(true);
+    });
+  });
+
   describe("isNumeric", () => {
     describe("core numeric types", () => {
       it("should return true for xsd:integer", () => {
