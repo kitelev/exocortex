@@ -359,6 +359,7 @@ export const DailyTasksTable: React.FC<DailyTasksTableProps> = ({
   const ROW_HEIGHT = 35;
   const VIRTUALIZATION_THRESHOLD = 50;
   const parentRef = useRef<HTMLDivElement>(null);
+  const headerTableRef = useRef<HTMLTableElement>(null);
 
   // Track when parent element is mounted for virtualizer initialization
   const [isParentMounted, setIsParentMounted] = useState(false);
@@ -374,35 +375,45 @@ export const DailyTasksTable: React.FC<DailyTasksTableProps> = ({
   // Synchronize column widths between header and body tables in virtualized mode
   // This fixes misalignment caused by scrollbar width difference (Issue #941)
   const [scrollbarWidth, setScrollbarWidth] = useState(0);
+  const [nameColumnWidth, setNameColumnWidth] = useState<number | undefined>(undefined);
 
-  // Measure scrollbar width when scroll container is mounted
-  const measureScrollbarWidth = useCallback(() => {
+  // Measure scrollbar width and name column width when scroll container is mounted
+  const measureWidths = useCallback(() => {
     if (!parentRef.current) return;
 
     const scrollContainer = parentRef.current;
     // Scrollbar width = total width - client width (visible content area)
     const sbWidth = scrollContainer.offsetWidth - scrollContainer.clientWidth;
     setScrollbarWidth(sbWidth);
+
+    // Measure the name column width from the header table
+    if (headerTableRef.current) {
+      const nameHeader = headerTableRef.current.querySelector('th.task-name-header');
+      if (nameHeader) {
+        const width = (nameHeader as HTMLElement).offsetWidth;
+        setNameColumnWidth(width);
+      }
+    }
   }, []);
 
-  // Measure scrollbar width when virtualized mode is active and parent is mounted
+  // Measure widths when virtualized mode is active and parent is mounted
   useLayoutEffect(() => {
     if (shouldVirtualize && isParentMounted) {
-      measureScrollbarWidth();
+      measureWidths();
     }
-  }, [shouldVirtualize, isParentMounted, measureScrollbarWidth]);
+  }, [shouldVirtualize, isParentMounted, measureWidths]);
 
   // Re-measure on window resize (scrollbar might appear/disappear)
   useEffect(() => {
     if (!shouldVirtualize) return;
 
     const handleResize = () => {
-      measureScrollbarWidth();
+      measureWidths();
     };
 
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
-  }, [shouldVirtualize, measureScrollbarWidth]);
+  }, [shouldVirtualize, measureWidths]);
 
   // Only initialize virtualizer when we need virtualization AND parent is mounted
   const rowVirtualizer = useVirtualizer({
@@ -566,9 +577,15 @@ export const DailyTasksTable: React.FC<DailyTasksTableProps> = ({
   // Colgroup for synchronizing column widths between header and body tables
   // in virtualized mode. With table-layout: fixed, col widths are respected.
   // Widths must match CSS definitions in styles.css for .exocortex-tasks-table
-  const renderColGroup = () => (
+  //
+  // In virtualized mode, the body table uses measured name column width (Issue #941)
+  // to ensure alignment with the header table despite scrollbar width differences.
+  const renderColGroup = (forBody = false) => (
     <colgroup>
-      <col className="col-name" />
+      <col
+        className="col-name"
+        style={forBody && nameColumnWidth ? { width: `${nameColumnWidth}px` } : undefined}
+      />
       {showTime && (
         <>
           <col className="col-start" style={{ width: "90px" }} />
@@ -685,7 +702,10 @@ export const DailyTasksTable: React.FC<DailyTasksTableProps> = ({
           paddingRight: scrollbarWidth > 0 ? `${scrollbarWidth}px` : undefined,
         }}
       >
-        <table className="exocortex-tasks-table exocortex-tasks-table-header">
+        <table
+          ref={headerTableRef}
+          className="exocortex-tasks-table exocortex-tasks-table-header"
+        >
           {renderColGroup()}
           {renderTableHeader()}
         </table>
@@ -715,7 +735,8 @@ export const DailyTasksTable: React.FC<DailyTasksTableProps> = ({
               width: "100%",
             }}
           >
-            {renderColGroup()}
+            {/* Use measured name column width to sync with header (Issue #941) */}
+            {renderColGroup(true)}
             <tbody>
               {virtualItems.length > 0 ? (
                 virtualItems.map((virtualRow) => {

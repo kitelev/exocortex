@@ -2538,6 +2538,12 @@
   border-top: none;
 }
 
+/* Header wrapper for virtualized mode - syncs width with scroll container (Issue #941) */
+.exocortex-virtualized .exocortex-tasks-table-header-wrapper {
+  width: 100%;
+  box-sizing: border-box;
+}
+
 /* ============================================================================
    Mobile Layout Fix (Issue #877)
    ============================================================================ */
