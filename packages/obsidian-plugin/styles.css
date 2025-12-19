@@ -2571,41 +2571,51 @@
     -webkit-overflow-scrolling: touch;
   }
 
-  /* Table maintains minimum readable width */
+  /* Table maintains minimum readable width - reduced to allow more name space */
   .exocortex-daily-tasks .exocortex-tasks-table {
-    min-width: 550px;
+    min-width: 420px;
   }
 
-  /* Name column - ensure minimum readable width */
+  /* Name column - flexible width, takes remaining space after fixed columns */
   .exocortex-tasks-table th.task-name-header,
   .exocortex-tasks-table td.task-name {
-    min-width: 150px;
+    min-width: 180px;
+    max-width: none;
   }
 
-  /* Time columns - compact but readable */
+  /* Time columns - compact for "HH:mm" format (Issue #1055) */
   .exocortex-tasks-table th.task-start-header,
   .exocortex-tasks-table td.task-start,
   .exocortex-tasks-table th.task-end-header,
   .exocortex-tasks-table td.task-end {
-    width: 70px;
+    width: 55px;
+    min-width: 55px;
+    max-width: 55px;
     font-size: 0.85em;
+    padding: 6px 4px;
   }
 
   /* Status column - compact */
   .exocortex-tasks-table th.task-status-header,
   .exocortex-tasks-table td.task-status {
-    width: 65px;
+    width: 60px;
+    min-width: 60px;
+    max-width: 60px;
   }
 
   /* Optional columns - compact when visible */
   .exocortex-tasks-table th.task-effort-area-header,
   .exocortex-tasks-table td.task-effort-area {
-    width: 80px;
+    width: 70px;
+    min-width: 70px;
+    max-width: 70px;
   }
 
   .exocortex-tasks-table th.task-votes-header,
   .exocortex-tasks-table td.task-effort-votes {
-    width: 50px;
+    width: 45px;
+    min-width: 45px;
+    max-width: 45px;
   }
 
   /* Virtualized table container - also needs horizontal scroll */
@@ -2616,7 +2626,7 @@
 
   .exocortex-virtualized .exocortex-tasks-table-header,
   .exocortex-virtualized .exocortex-virtual-scroll-container .exocortex-tasks-table {
-    min-width: 550px;
+    min-width: 420px;
   }
 
   /* Controls wrapper - prevent from being too wide */
@@ -2691,7 +2701,7 @@
   white-space: nowrap;
 }
 
-/* Mobile responsive - Projects table also needs horizontal scroll (Issue #877) */
+/* Mobile responsive - Projects table also needs horizontal scroll (Issue #877, #1055) */
 @media (max-width: 768px) {
   /* Projects section and table container get horizontal scroll */
   .exocortex-daily-projects-section,
@@ -2700,33 +2710,37 @@
     -webkit-overflow-scrolling: touch;
   }
 
-  /* Projects table maintains minimum readable width */
+  /* Projects table maintains minimum readable width - reduced for more name space */
   .exocortex-daily-projects-section .exocortex-projects-table,
   .exocortex-daily-projects .exocortex-projects-table {
-    min-width: 450px;
+    min-width: 350px;
   }
 
-  /* Name column - ensure minimum readable width */
+  /* Name column - flexible width, takes remaining space after fixed columns */
   .exocortex-projects-table th:first-child,
   .exocortex-projects-table td.project-name {
     min-width: 150px;
+    max-width: none;
   }
 
+  /* Time columns - compact for "HH:mm" format (Issue #1055) */
   .exocortex-projects-table th:nth-child(2),
   .exocortex-projects-table td.project-start,
   .exocortex-projects-table th:nth-child(3),
   .exocortex-projects-table td.project-end {
-    width: 70px;
-    min-width: 70px;
-    max-width: 70px;
+    width: 55px;
+    min-width: 55px;
+    max-width: 55px;
     font-size: 0.85em;
+    padding: 6px 4px;
   }
 
+  /* Status column - compact */
   .exocortex-projects-table th:nth-child(4),
   .exocortex-projects-table td.project-status {
-    width: 70px;
-    min-width: 70px;
-    max-width: 70px;
+    width: 60px;
+    min-width: 60px;
+    max-width: 60px;
   }
 }
 

@@ -487,7 +487,7 @@ export const DailyTasksTable: React.FC<DailyTasksTableProps> = ({
         data-path={task.path}
         style={style}
       >
-        <td className="task-name">
+        <td className="task-name" title={getDisplayName(task)}>
           <a
             data-href={task.path}
             onClick={(e) => {
@@ -497,6 +497,7 @@ export const DailyTasksTable: React.FC<DailyTasksTableProps> = ({
             }}
             className="internal-link"
             style={{ cursor: "pointer" }}
+            title={getDisplayName(task)}
           >
             {getDisplayName(task)}
           </a>

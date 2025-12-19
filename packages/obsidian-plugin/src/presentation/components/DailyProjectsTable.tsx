@@ -211,7 +211,7 @@ export const DailyProjectsTable: React.FC<DailyProjectsTableProps> = ({
       data-path={project.path}
       style={style}
     >
-      <td className="project-name">
+      <td className="project-name" title={getDisplayName(project)}>
         <a
           data-href={project.path}
           onClick={(e) => {
@@ -221,6 +221,7 @@ export const DailyProjectsTable: React.FC<DailyProjectsTableProps> = ({
           }}
           className="internal-link"
           style={{ cursor: "pointer" }}
+          title={getDisplayName(project)}
         >
           {getDisplayName(project)}
         </a>
