@@ -1034,6 +1034,106 @@ const handleBlur = () => {
 
 **Real-world example**: See PR #396 (Property field UX improvements - fixed Escape key calling onChange)
 
+### SPARQL 1.2 Feature Implementation Pattern
+
+**When implementing SPARQL standard features (RDF-Star, DateTime, etc.), follow this order:**
+
+```
+1. Data Model Class     (e.g., QuotedTriple.ts)
+2. Constructor Function (e.g., TRIPLE(s, p, o))
+3. Type Checker         (e.g., isTRIPLE())
+4. Accessor Functions   (e.g., SUBJECT(), PREDICATE(), OBJECT())
+5. Parser Support       (e.g., <<( s p o )>> syntax)
+6. Serialization        (e.g., query result output)
+7. Integration Tests    (e.g., combined feature tests)
+```
+
+**Key insight**: Each step builds on the previous. Implementing sequentially with warm context yields 2-2.5x productivity gain.
+
+**Real-world examples**:
+- RDF-Star: Issues #951-955 (5 features in logical order)
+- DateTime Arithmetic: Issues #973-975, #988-990 (addition → subtraction → comparison)
+
+### Timezone-Safe DateTime Serialization Pattern
+
+**When saving user-input datetime values:**
+
+```typescript
+// ❌ WRONG: toISOString() converts to UTC
+const saved = new Date(userInput).toISOString();
+// User entered 20:05, saved as 15:05 → BROKEN!
+
+// ✅ CORRECT: Preserve user input as string
+function serializeTimestamp(userInput: string): string {
+  if (userInput.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/)) {
+    return userInput + ':00';  // Just add seconds
+  }
+  return userInput;
+}
+```
+
+**Key gotchas**:
+- `getTimezoneOffset()` returns **negative** for **positive** timezones (UTC+5 → -300)
+- `toISOString()` **always** converts to UTC
+- JavaScript Date is internally UTC
+
+**Real-world example**: Issue #1052 - Fixed +20 hour offset bug in plannedEndTimestamp
+
+### Mobile Table Layout Pattern
+
+**For tables with virtualization (>50 rows) or mobile display:**
+
+```css
+/* Flexbox for responsive tables */
+.task-table-row {
+  display: flex;
+  align-items: center;
+}
+
+/* Name column: flexible with truncation */
+.col-name {
+  flex: 1 1 auto;
+  min-width: 0;  /* Critical for text-overflow! */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Time columns: fixed width */
+.col-start, .col-end {
+  flex: 0 0 65px;
+}
+```
+
+**Key CSS rules**:
+- `min-width: 0`: Required for flex items to shrink below content size
+- `flex: 0 0 Xpx`: Fixed width (no grow, no shrink)
+- `flex: 1 1 auto`: Flexible (grows to fill space)
+
+**Real-world examples**:
+- Issue #941: Column misalignment in virtualized mode
+- Issue #1055: Mobile text truncation fix
+
+### Directional Language Tag Pattern (SPARQL 1.2)
+
+**For RTL language support:**
+
+```sparql
+-- Syntax: "text"@lang--dir
+"مرحبا"@ar--rtl      -- Arabic, right-to-left
+"Hello"@en--ltr      -- English, left-to-right
+```
+
+**Parser implementation**:
+```typescript
+if (langTag.includes('--')) {
+  const [language, direction] = langTag.split('--');
+  return createDirectionalLiteral(value, language, direction);
+}
+```
+
+**Real-world example**: Issues #991, #993 - Parse and serialize directional literals
+
 ---
 
 ## 🧠 Advanced Tool Use (Based on Anthropic Engineering Guide)
