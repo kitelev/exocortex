@@ -3,6 +3,7 @@ import {
   parseLocalDate,
   formatForInput,
   formatDisplayValue,
+  formatToLocalTimestamp,
 } from '@plugin/presentation/utils/dateTimeUtils';
 
 export interface DateTimePropertyFieldProps {
@@ -94,7 +95,9 @@ export const DateTimePropertyField: React.FC<DateTimePropertyFieldProps> = ({
     const parsed = parseLocalDate(textInput);
 
     if (parsed) {
-      onChange(parsed.toISOString());
+      // Store as local timestamp (without Z suffix) for consistency with the rest of codebase
+      // This avoids timezone conversion issues when the value is later parsed
+      onChange(formatToLocalTimestamp(parsed));
       setIsOpen(false);
       setError(null);
       onBlur?.();

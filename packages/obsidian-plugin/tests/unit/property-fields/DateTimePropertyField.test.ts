@@ -216,15 +216,17 @@ describe("DateTimePropertyField", () => {
   });
 
   describe("static methods", () => {
-    it("should generate current datetime with now()", () => {
+    it("should generate current datetime with now() in local timestamp format", () => {
       const now = DateTimePropertyField.now();
-      expect(now).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+      // Local timestamp format: YYYY-MM-DDTHH:mm:ss (no Z suffix)
+      expect(now).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/);
     });
 
-    it("should format Date object with formatDate()", () => {
-      const date = new Date("2024-12-31T14:30:00.000Z");
+    it("should format Date object with formatDate() as local timestamp", () => {
+      // Create a date and format it - result should match local time components
+      const date = new Date(2024, 11, 31, 14, 30, 0); // Dec 31, 2024, 14:30:00 local
       const formatted = DateTimePropertyField.formatDate(date);
-      expect(formatted).toBe("2024-12-31T14:30:00.000Z");
+      expect(formatted).toBe("2024-12-31T14:30:00");
     });
   });
 

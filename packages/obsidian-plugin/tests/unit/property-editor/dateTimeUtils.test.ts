@@ -2,6 +2,7 @@ import {
   parseLocalDate,
   formatForInput,
   formatDisplayValue,
+  formatToLocalTimestamp,
 } from "../../../src/presentation/utils/dateTimeUtils";
 
 describe("dateTimeUtils", () => {
@@ -152,17 +153,19 @@ describe("dateTimeUtils", () => {
     });
 
     describe("timezone handling", () => {
-      it("should store date as UTC when converted to ISO string", () => {
+      it("should store date as local timestamp string (without Z suffix)", () => {
         // Parse a local time
         const localDate = parseLocalDate("2025-12-02 13:03");
         expect(localDate).not.toBeNull();
 
-        // Convert to ISO string (UTC)
-        const isoString = localDate!.toISOString();
+        // Convert to local timestamp string (without Z suffix)
+        const localTimestamp = formatToLocalTimestamp(localDate!);
 
-        // The ISO string should represent the same point in time
-        // When we parse it back and get local hours, it should match
-        const parsedBack = new Date(isoString);
+        // The local timestamp should preserve the local time components
+        expect(localTimestamp).toBe("2025-12-02T13:03:00");
+
+        // When we parse it back, it should be interpreted as local time
+        const parsedBack = new Date(localTimestamp);
         expect(parsedBack.getHours()).toBe(13);
         expect(parsedBack.getMinutes()).toBe(3);
       });
@@ -174,8 +177,8 @@ describe("dateTimeUtils", () => {
         const parsed = parseLocalDate(userInput);
         expect(parsed).not.toBeNull();
 
-        // 2. Store as UTC ISO string
-        const storedValue = parsed!.toISOString();
+        // 2. Store as local timestamp string (without Z suffix)
+        const storedValue = formatToLocalTimestamp(parsed!);
 
         // 3. Format back for display
         const displayValue = formatForInput(storedValue);
@@ -301,14 +304,14 @@ describe("dateTimeUtils", () => {
 
       // First save
       const firstParse = parseLocalDate(originalInput);
-      const firstSave = firstParse!.toISOString();
+      const firstSave = formatToLocalTimestamp(firstParse!);
 
       // Open editor (format for input)
       const displayedValue = formatForInput(firstSave);
 
       // Second save (user doesn't change anything)
       const secondParse = parseLocalDate(displayedValue);
-      const secondSave = secondParse!.toISOString();
+      const secondSave = formatToLocalTimestamp(secondParse!);
 
       // Values should be identical - no drift
       expect(secondSave).toBe(firstSave);
@@ -316,18 +319,53 @@ describe("dateTimeUtils", () => {
 
     it("should preserve time across multiple edit cycles", () => {
       const originalInput = "2025-06-15 09:30";
-      let currentValue = parseLocalDate(originalInput)!.toISOString();
+      let currentValue = formatToLocalTimestamp(parseLocalDate(originalInput)!);
 
       // Simulate 5 edit cycles
       for (let i = 0; i < 5; i++) {
         const displayed = formatForInput(currentValue);
         const parsed = parseLocalDate(displayed);
-        currentValue = parsed!.toISOString();
+        currentValue = formatToLocalTimestamp(parsed!);
       }
 
       // Final display should match original input
       const finalDisplay = formatForInput(currentValue);
       expect(finalDisplay).toBe(originalInput);
+    });
+  });
+
+  describe("formatToLocalTimestamp", () => {
+    it("should format date as YYYY-MM-DDTHH:mm:ss without Z suffix", () => {
+      const date = new Date(2025, 11, 17, 20, 5, 30); // Dec 17, 2025, 20:05:30
+      const result = formatToLocalTimestamp(date);
+      expect(result).toBe("2025-12-17T20:05:30");
+    });
+
+    it("should pad single digit values with zeros", () => {
+      const date = new Date(2025, 0, 5, 3, 7, 9); // Jan 5, 2025, 03:07:09
+      const result = formatToLocalTimestamp(date);
+      expect(result).toBe("2025-01-05T03:07:09");
+    });
+
+    it("should not include Z suffix (unlike toISOString)", () => {
+      const date = new Date(2025, 11, 17, 20, 5, 0);
+      const result = formatToLocalTimestamp(date);
+      expect(result).not.toContain("Z");
+      expect(result).not.toContain("+");
+      expect(result).not.toContain("-05"); // No timezone offset
+    });
+
+    it("should be parseable back to the same local time", () => {
+      const original = new Date(2025, 11, 17, 20, 5, 30);
+      const formatted = formatToLocalTimestamp(original);
+      const parsed = new Date(formatted);
+
+      expect(parsed.getFullYear()).toBe(original.getFullYear());
+      expect(parsed.getMonth()).toBe(original.getMonth());
+      expect(parsed.getDate()).toBe(original.getDate());
+      expect(parsed.getHours()).toBe(original.getHours());
+      expect(parsed.getMinutes()).toBe(original.getMinutes());
+      expect(parsed.getSeconds()).toBe(original.getSeconds());
     });
   });
 });

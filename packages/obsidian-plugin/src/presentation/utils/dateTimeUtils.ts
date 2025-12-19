@@ -3,8 +3,12 @@
  *
  * Key design principle: All user input is interpreted as LOCAL time.
  * - Input: User enters "2025-12-02 13:03" meaning 1:03 PM in their timezone
- * - Storage: Converted to UTC ISO string (e.g., "2025-12-02T08:03:00.000Z" if UTC+5)
- * - Display: UTC string converted back to local time for display
+ * - Storage: Stored as local timestamp string (e.g., "2025-12-02T13:03:00") WITHOUT timezone suffix
+ * - Display: Local timestamp string displayed directly (no conversion needed)
+ *
+ * IMPORTANT: This is consistent with how timestamps are stored elsewhere in the codebase
+ * (TaskStatusService, StatusTimestampService) using DateFormatter.toLocalTimestamp().
+ * Storing without Z suffix avoids timezone conversion issues when parsing.
  */
 
 /**
@@ -115,6 +119,26 @@ export function formatForInput(isoString: string): string {
   } catch {
     return isoString;
   }
+}
+
+/**
+ * Formats a Date object as a local timestamp string for storage.
+ * Format: YYYY-MM-DDTHH:mm:ss (no timezone suffix)
+ *
+ * This format is consistent with DateFormatter.toLocalTimestamp() in @exocortex/core.
+ *
+ * @param date - The Date object to format
+ * @returns A local timestamp string like "2025-12-02T13:03:00"
+ */
+export function formatToLocalTimestamp(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  const seconds = String(date.getSeconds()).padStart(2, "0");
+
+  return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
 }
 
 /**

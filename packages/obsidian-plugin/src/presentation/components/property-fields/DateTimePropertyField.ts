@@ -108,17 +108,28 @@ export class DateTimePropertyField {
   }
 
   /**
-   * Format datetime-local input value to ISO 8601 string with timezone.
+   * Format datetime-local input value to local timestamp string.
+   * Format: YYYY-MM-DDTHH:mm:ss (no timezone suffix)
+   *
+   * This format is consistent with DateFormatter.toLocalTimestamp() in @exocortex/core,
+   * avoiding timezone conversion issues when the value is later parsed.
    */
   private formatToISO(value: string): string {
     if (!value) return "";
 
     // datetime-local gives us YYYY-MM-DDTHH:mm format
     try {
-      // Create date from the local time input and convert to ISO
+      // Create date from the local time input and format as local timestamp
       const date = new Date(value);
       if (!isNaN(date.getTime())) {
-        return date.toISOString();
+        // Format as local timestamp (without Z suffix)
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, "0");
+        const day = String(date.getDate()).padStart(2, "0");
+        const hours = String(date.getHours()).padStart(2, "0");
+        const minutes = String(date.getMinutes()).padStart(2, "0");
+        const seconds = String(date.getSeconds()).padStart(2, "0");
+        return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
       }
     } catch {
       // Fall through
@@ -201,17 +212,24 @@ export class DateTimePropertyField {
   }
 
   /**
-   * Get current datetime in ISO format.
+   * Get current datetime in local timestamp format.
    */
   static now(): string {
-    return new Date().toISOString();
+    return DateTimePropertyField.formatDate(new Date());
   }
 
   /**
-   * Format a Date object to ISO 8601 string.
+   * Format a Date object to local timestamp string.
+   * Format: YYYY-MM-DDTHH:mm:ss (no timezone suffix)
    */
   static formatDate(date: Date): string {
-    return date.toISOString();
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    const hours = String(date.getHours()).padStart(2, "0");
+    const minutes = String(date.getMinutes()).padStart(2, "0");
+    const seconds = String(date.getSeconds()).padStart(2, "0");
+    return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
   }
 
   /**
