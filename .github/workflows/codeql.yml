@@ -59,12 +59,15 @@ jobs:
 
       # Filter out known false positives before uploading
       # MD5/SHA1 usage in SPARQL is required by W3C spec, not for security
-      - name: Filter SARIF for SPARQL spec-required patterns
+      # main.js is a bundled file with minified third-party code (React, etc.)
+      - name: Filter SARIF for known false positives
         uses: advanced-security/filter-sarif@v1
         with:
           patterns: |
             -**/BuiltInFunctions.ts:js/weak-cryptographic-algorithm
             -**/BuiltInFunctions.ts:js/insecure-randomness
+            -**/main.js:js/useless-expression
+            -**/main.js:js/automatic-semicolon-insertion
           input: ${{ steps.analyze.outputs.sarif-output }}/javascript.sarif
           output: ${{ steps.analyze.outputs.sarif-output }}/javascript.sarif
 
