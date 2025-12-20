@@ -62,7 +62,8 @@ jobs:
       # - main.js: Bundled file with minified third-party code (reflect-metadata, etc.)
       #   Alerts from main.js are filtered because the bundled output includes polyfills
       #   and minified library code where patterns like unreachable statements, hoisted
-      #   var declarations, and trivial conditionals are valid optimization artifacts
+      #   var declarations, trivial conditionals, and unneeded defensive code are valid
+      #   optimization artifacts from esbuild's CommonJS/ESM interop helpers
       - name: Filter SARIF for known false positives
         uses: advanced-security/filter-sarif@v1
         with:
@@ -75,6 +76,7 @@ jobs:
             -**/main.js:js/use-before-declaration
             -**/main.js:js/unreachable-statement
             -**/main.js:js/redundant-operation
+            -**/main.js:js/unneeded-defensive-code
           input: ${{ steps.analyze.outputs.sarif-output }}/javascript.sarif
           output: ${{ steps.analyze.outputs.sarif-output }}/javascript.sarif
 
