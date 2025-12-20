@@ -2229,6 +2229,328 @@ WHERE {
 
 ---
 
+## 🔐 Code Quality Patterns (Dec 2025)
+
+> Patterns derived from 15 code quality issues (#1058-#1071) completed via static analysis cleanup.
+
+### Cryptographic Security Pattern
+
+From Issues #1059, #1060:
+
+**Problem**: Using `Math.random()` or weak hashing algorithms (MD5, SHA1) for security-sensitive operations.
+
+```typescript
+// ❌ WRONG: Math.random() is not cryptographically secure
+const id = Math.random().toString(36).substring(2, 9);
+const token = Math.random().toString(36) + Math.random().toString(36);
+
+// ❌ WRONG: MD5/SHA1 are cryptographically broken
+import { createHash } from 'crypto';
+const hash = createHash('md5').update(data).digest('hex');
+const signature = createHash('sha1').update(secret).digest('hex');
+```
+
+**Solution**: Use cryptographically secure alternatives:
+
+```typescript
+// ✅ CORRECT: crypto.randomUUID() for unique identifiers
+import { randomUUID, randomBytes, createHash } from 'crypto';
+const id = randomUUID();  // UUID v4, cryptographically secure
+
+// ✅ CORRECT: crypto.getRandomValues() for random bytes
+const buffer = new Uint8Array(16);
+crypto.getRandomValues(buffer);
+
+// ✅ CORRECT: crypto.randomBytes() for random tokens (Node.js)
+const token = randomBytes(32).toString('hex');
+
+// ✅ CORRECT: SHA-256 or SHA-512 for hashing
+const hash = createHash('sha256').update(data).digest('hex');
+const signature = createHash('sha512').update(secret).digest('hex');
+```
+
+**When to apply**:
+- Generating unique IDs used in security contexts (session tokens, API keys)
+- Any authentication or authorization tokens
+- File integrity verification
+- Content-addressed storage keys
+- Password hashing (prefer bcrypt/argon2 over raw SHA for passwords)
+
+**Reference**: Issues #1059, #1060
+
+### Variable Declaration Order Pattern
+
+From Issue #1067:
+
+**Problem**: Variables used before they are declared (hoisting issues in JavaScript/TypeScript).
+
+```typescript
+// ❌ WRONG: Using variable before declaration
+function process() {
+  console.log(data);  // 'data' is undefined here (var) or ReferenceError (let/const)
+  var data = loadData();
+}
+
+// ❌ WRONG: Temporal dead zone with let/const
+function init() {
+  setup(config);  // ReferenceError: Cannot access 'config' before initialization
+  const config = getConfig();
+}
+```
+
+**Solution**: Declare variables before use:
+
+```typescript
+// ✅ CORRECT: Declare before use
+function process() {
+  const data = loadData();
+  console.log(data);
+}
+
+// ✅ CORRECT: Proper initialization order
+function init() {
+  const config = getConfig();
+  setup(config);
+}
+```
+
+**Detection in CI**: ESLint `no-use-before-define` rule catches these issues.
+
+**Reference**: Issue #1067
+
+### Redundant Operation Pattern
+
+From Issue #1069:
+
+**Problem**: Operations comparing or operating on identical operands.
+
+```typescript
+// ❌ WRONG: Self-comparison (always true/false)
+if (value === value) { }  // Always true (except NaN)
+if (obj !== obj) { }       // Always false (except NaN)
+
+// ❌ WRONG: Self-assignment (no effect)
+x = x;
+
+// ❌ WRONG: Self-operation (identity or zero)
+const result = n - n;     // Always 0
+const same = n / n;        // Always 1 (except 0)
+```
+
+**Solution**: Remove redundant operations or fix the intended logic:
+
+```typescript
+// ✅ CORRECT: NaN check (the one valid use case)
+if (Number.isNaN(value)) { }  // Better than value !== value
+
+// ✅ CORRECT: Proper comparisons
+if (value === expectedValue) { }
+
+// ✅ CORRECT: Meaningful operations
+const difference = newValue - oldValue;
+```
+
+**When self-comparison is valid**: Checking for NaN (`value !== value` is true only for NaN), but prefer `Number.isNaN()` for clarity.
+
+**Reference**: Issue #1069
+
+### Unreachable Code Pattern
+
+From Issue #1068:
+
+**Problem**: Code that can never execute due to control flow.
+
+```typescript
+// ❌ WRONG: Code after unconditional return
+function getValue() {
+  return 42;
+  console.log('This never runs');  // Unreachable
+}
+
+// ❌ WRONG: Code after throw
+function validate(input) {
+  if (!input) {
+    throw new Error('Input required');
+    console.log('Never logged');  // Unreachable
+  }
+}
+
+// ❌ WRONG: Dead branch in conditionals
+function process(type) {
+  if (type === 'A') {
+    return handleA();
+  } else if (type === 'A') {  // Duplicate condition - unreachable
+    return handleSpecialA();
+  }
+}
+```
+
+**Solution**: Remove or restructure unreachable code:
+
+```typescript
+// ✅ CORRECT: No code after return/throw
+function getValue() {
+  return 42;
+}
+
+// ✅ CORRECT: Unique branches
+function process(type) {
+  if (type === 'A') {
+    return handleA();
+  } else if (type === 'A-special') {
+    return handleSpecialA();
+  }
+}
+```
+
+**Detection**: TypeScript with `allowUnreachableCode: false` in tsconfig.json
+
+**Reference**: Issue #1068
+
+### Unnecessary Defensive Code Pattern
+
+From Issues #1065, #1071:
+
+**Problem**: Checking for conditions that are impossible given the type system or prior logic.
+
+```typescript
+// ❌ WRONG: Checking type after type guard already verified
+function process(value: string | null) {
+  if (value === null) return;
+  // 'value' is now narrowed to 'string'
+  if (typeof value === 'string') {  // Always true - unnecessary
+    console.log(value.toUpperCase());
+  }
+}
+
+// ❌ WRONG: Checking defined after non-null assertion or required param
+function greet(name: string) {
+  if (name !== undefined) {  // Always true - 'name' is required
+    console.log(`Hello, ${name}`);
+  }
+}
+
+// ❌ WRONG: Trivial conditionals
+const result = true ? getValue() : getDefault();  // Always getValue()
+```
+
+**Solution**: Trust the type system and remove redundant checks:
+
+```typescript
+// ✅ CORRECT: Type narrowing eliminates need for further checks
+function process(value: string | null) {
+  if (value === null) return;
+  console.log(value.toUpperCase());  // TypeScript knows 'value' is string
+}
+
+// ✅ CORRECT: Required params don't need undefined checks
+function greet(name: string) {
+  console.log(`Hello, ${name}`);
+}
+
+// ✅ CORRECT: Remove trivial conditionals
+const result = getValue();
+```
+
+**Exception**: Keep defensive code when:
+- Handling external/untyped data (API responses, user input)
+- Dealing with `any` types from legacy code
+- Required by framework conventions (Obsidian API quirks)
+
+**Reference**: Issues #1065, #1071
+
+### Test Mock Duplicate Properties Pattern
+
+From Issue #1070:
+
+**Problem**: Duplicate property keys in test object literals (JavaScript silently uses last value).
+
+```typescript
+// ❌ WRONG: Duplicate properties in mock
+const mockUser = {
+  id: 1,
+  name: 'Alice',
+  email: 'alice@example.com',
+  name: 'Bob',  // Silently overwrites first 'name' → 'Bob'
+};
+
+// ❌ WRONG: Spread then override then duplicate
+const mockConfig = {
+  ...defaultConfig,
+  timeout: 5000,
+  timeout: 10000,  // Redundant duplicate
+};
+```
+
+**Solution**: Remove duplicates, keep intended value:
+
+```typescript
+// ✅ CORRECT: Each property once
+const mockUser = {
+  id: 1,
+  name: 'Alice',  // or 'Bob' - pick the intended value
+  email: 'alice@example.com',
+};
+
+// ✅ CORRECT: Single override
+const mockConfig = {
+  ...defaultConfig,
+  timeout: 10000,  // Just the final intended value
+};
+```
+
+**Detection**: ESLint `no-dupe-keys` rule catches these at lint time.
+
+**Reference**: Issue #1070
+
+### String Escaping in Tests Pattern
+
+From Issue #1061:
+
+**Problem**: Incomplete string escaping in BDD step definitions or regex patterns.
+
+```typescript
+// ❌ WRONG: Incomplete escaping in regex
+const step = /When I click the "(.+)" button/;
+// Matches: When I click the "Submit button" (captures "Submit button")
+// Should match: When I click the "Submit" button
+
+// ❌ WRONG: Unescaped special chars in template
+const selector = `[data-test="${value}"]`;  // XSS if value contains "
+```
+
+**Solution**: Properly escape all special characters:
+
+```typescript
+// ✅ CORRECT: Proper regex boundaries
+const step = /When I click the "([^"]+)" button/;
+// [^"]+ means "one or more non-quote characters"
+
+// ✅ CORRECT: Escape special chars in selectors
+const escapeSelector = (s: string) => s.replace(/["\\]/g, '\\$&');
+const selector = `[data-test="${escapeSelector(value)}"]`;
+```
+
+**Reference**: Issue #1061
+
+### Batch Code Quality Fixes Pattern
+
+**When fixing multiple static analysis issues efficiently:**
+
+1. **Group by category**: Fix all security issues together, then all quality issues
+2. **Use search patterns**: `grep -r "Math.random" packages/*/src/` to find all instances
+3. **Batch commits**: One commit per issue category (security, quality, testing)
+4. **Update suppressions**: If filtering in CI, update ignore files together
+
+**Typical timeline per issue type**:
+- Security fixes (crypto, escaping): 45-120 steps
+- Quality fixes (conditionals, declarations): 28-75 steps
+- Test fixes (duplicates, mocks): 28-35 steps
+
+**Reference**: Issues #1058-#1071 (15 issues, average ~69 steps each)
+
+---
+
 **Remember**:
 - 🚨 **ALL worktrees MUST be in `worktrees/` subdirectory - NO EXCEPTIONS!**
 - This directory exists to enable safe parallel development
