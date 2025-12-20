@@ -167,10 +167,13 @@ Then(
     assert.ok(this.lastCreatedNote, "Expected a new note to be created");
     // Verify name matches format (e.g., "Task-{timestamp}")
     const baseName = this.lastCreatedNote?.file.basename || "";
-    const formatRegex = nameFormat
-      .replace("{timestamp}", "\\d{4}-\\d{2}-\\d{2}T\\d{2}-\\d{2}-\\d{2}")
-      .replace(/\{/g, "\\{")
-      .replace(/\}/g, "\\}");
+    // First, escape all regex special characters in the format string to prevent ReDoS,
+    // then replace the {timestamp} placeholder with the timestamp pattern
+    const escapedFormat = escapeRegexSpecialChars(nameFormat);
+    const formatRegex = escapedFormat.replace(
+      escapeRegexSpecialChars("{timestamp}"),
+      "\\d{4}-\\d{2}-\\d{2}T\\d{2}-\\d{2}-\\d{2}",
+    );
     assert.ok(
       new RegExp(formatRegex).test(baseName) || baseName.startsWith("Task"),
       `Note name "${baseName}" should match format "${nameFormat}"`,
@@ -315,6 +318,17 @@ Then(
 // ============================================
 // Helper Functions
 // ============================================
+
+/**
+ * Escapes all regex special characters in a string.
+ * This prevents ReDoS attacks and ensures literal string matching.
+ *
+ * @param str - String to escape
+ * @returns Escaped string safe for use in RegExp
+ */
+function escapeRegexSpecialChars(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 
 function parseValue(value: string): any {
   if (value === '""' || value === "''") return "";
