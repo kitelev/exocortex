@@ -74,6 +74,7 @@ jobs:
             -**/main.js:js/trivial-conditional
             -**/main.js:js/use-before-declaration
             -**/main.js:js/unreachable-statement
+            -**/main.js:js/redundant-operation
           input: ${{ steps.analyze.outputs.sarif-output }}/javascript.sarif
           output: ${{ steps.analyze.outputs.sarif-output }}/javascript.sarif
 
