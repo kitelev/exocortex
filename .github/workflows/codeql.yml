@@ -68,6 +68,7 @@ jobs:
             -**/BuiltInFunctions.ts:js/insecure-randomness
             -**/main.js:js/useless-expression
             -**/main.js:js/automatic-semicolon-insertion
+            -**/main.js:js/trivial-conditional
           input: ${{ steps.analyze.outputs.sarif-output }}/javascript.sarif
           output: ${{ steps.analyze.outputs.sarif-output }}/javascript.sarif
 
