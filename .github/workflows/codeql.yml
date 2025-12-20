@@ -48,6 +48,28 @@ jobs:
       # bundled files (main.js) which contain third-party library code.
 
       - name: Perform CodeQL Analysis
+        id: analyze
         uses: github/codeql-action/analyze@v3
         with:
+          category: "/language:${{ matrix.language }}"
+          # Disable auto-upload so we can filter first
+          upload: false
+          # Output SARIF file for post-processing
+          output: sarif-results
+
+      # Filter out known false positives before uploading
+      # MD5/SHA1 usage in SPARQL is required by W3C spec, not for security
+      - name: Filter SARIF for SPARQL spec-required patterns
+        uses: advanced-security/filter-sarif@v1
+        with:
+          patterns: |
+            -**/BuiltInFunctions.ts:js/weak-cryptographic-algorithm
+            -**/BuiltInFunctions.ts:js/insecure-randomness
+          input: ${{ steps.analyze.outputs.sarif-output }}/javascript.sarif
+          output: ${{ steps.analyze.outputs.sarif-output }}/javascript.sarif
+
+      - name: Upload filtered SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: ${{ steps.analyze.outputs.sarif-output }}
           category: "/language:${{ matrix.language }}"
