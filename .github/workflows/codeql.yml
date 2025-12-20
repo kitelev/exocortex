@@ -60,8 +60,9 @@ jobs:
       # Filter out known false positives before uploading:
       # - BuiltInFunctions.ts: MD5/SHA1 usage in SPARQL is required by W3C spec
       # - main.js: Bundled file with minified third-party code (reflect-metadata, etc.)
-      #   The "use-before-declaration" alerts come from reflect-metadata's polyfill
-      #   patterns which are valid hoisted `var` declarations
+      #   Alerts from main.js are filtered because the bundled output includes polyfills
+      #   and minified library code where patterns like unreachable statements, hoisted
+      #   var declarations, and trivial conditionals are valid optimization artifacts
       - name: Filter SARIF for known false positives
         uses: advanced-security/filter-sarif@v1
         with:
@@ -72,6 +73,7 @@ jobs:
             -**/main.js:js/automatic-semicolon-insertion
             -**/main.js:js/trivial-conditional
             -**/main.js:js/use-before-declaration
+            -**/main.js:js/unreachable-statement
           input: ${{ steps.analyze.outputs.sarif-output }}/javascript.sarif
           output: ${{ steps.analyze.outputs.sarif-output }}/javascript.sarif
 
