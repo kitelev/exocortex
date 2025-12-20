@@ -42,7 +42,6 @@ const EMS_EFFORT_END_TIMESTAMP = new IRI(`${EMS}Effort_endTimestamp`);
  */
 class TestDataBuilder {
   private triples: Triple[] = [];
-  private counter = 0;
 
   /**
    * Create a task with label and optional metadata

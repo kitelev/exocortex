@@ -19,6 +19,9 @@ import type { FilterOperation } from "../../../../../src/infrastructure/sparql/a
 describe("FilterExecutor Error Scenarios", () => {
   let executor: FilterExecutor;
   const xsdInt = new IRI("http://www.w3.org/2001/XMLSchema#integer");
+  const xsdDouble = new IRI("http://www.w3.org/2001/XMLSchema#double");
+  const xsdDecimal = new IRI("http://www.w3.org/2001/XMLSchema#decimal");
+  const xsdDateTime = new IRI("http://www.w3.org/2001/XMLSchema#dateTime");
 
   beforeEach(() => {
     executor = new FilterExecutor();

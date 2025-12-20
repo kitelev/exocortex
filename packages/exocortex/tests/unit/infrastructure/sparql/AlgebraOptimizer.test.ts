@@ -1,20 +1,16 @@
 import { SPARQLParser } from "../../../../src/infrastructure/sparql/SPARQLParser";
 import { AlgebraTranslator } from "../../../../src/infrastructure/sparql/algebra/AlgebraTranslator";
 import { AlgebraOptimizer } from "../../../../src/infrastructure/sparql/algebra/AlgebraOptimizer";
-import { AlgebraSerializer } from "../../../../src/infrastructure/sparql/algebra/AlgebraSerializer";
-import type { AlgebraOperation, FilterOperation, JoinOperation } from "../../../../src/infrastructure/sparql/algebra/AlgebraOperation";
 
 describe("AlgebraOptimizer", () => {
   let parser: SPARQLParser;
   let translator: AlgebraTranslator;
   let optimizer: AlgebraOptimizer;
-  let serializer: AlgebraSerializer;
 
   beforeEach(() => {
     parser = new SPARQLParser();
     translator = new AlgebraTranslator();
     optimizer = new AlgebraOptimizer();
-    serializer = new AlgebraSerializer();
   });
 
   describe("Filter Push-Down", () => {
