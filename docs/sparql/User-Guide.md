@@ -13,7 +13,7 @@ Welcome to the SPARQL User Guide for Exocortex! This guide will teach you how to
 7. [Advanced Features (v2)](#advanced-features-v2)
 8. [Performance Best Practices](#performance-best-practices)
 9. [Common Pitfalls and Solutions](#common-pitfalls-and-solutions)
-10. [Security Considerations for Hash Functions](#security-considerations-for-hash-functions)
+10. [Security Considerations](#security-considerations)
 
 ---
 
@@ -1085,7 +1085,42 @@ That's a mismatch!
 
 ---
 
-## Security Considerations for Hash Functions
+## Security Considerations
+
+This section documents security-relevant SPARQL functions and their appropriate use cases.
+
+### SPARQL 1.1 RAND() Function
+
+The `RAND()` function returns a pseudo-random number in the range [0, 1) as defined in the [W3C SPARQL 1.1 specification](https://www.w3.org/TR/sparql11-query/#func-rand):
+
+```sparql
+# Random sampling - get 10 random tasks
+SELECT ?task ?label
+WHERE {
+  ?task exo:Instance_class "ems__Task" .
+  ?task exo:Asset_label ?label .
+}
+ORDER BY RAND()
+LIMIT 10
+```
+
+#### Security Note for RAND()
+
+> ⚠️ **Important**: `RAND()` uses standard pseudo-random number generation (JavaScript's `Math.random()`), which is **NOT cryptographically secure**.
+
+**Appropriate uses:**
+- ✅ Random sampling of query results
+- ✅ Shuffling result order
+- ✅ Statistical sampling for testing
+- ✅ Non-security randomization in queries
+
+**DO NOT use for:**
+- ❌ Generating security tokens
+- ❌ Cryptographic key generation
+- ❌ Session identifiers
+- ❌ Any security-critical purpose
+
+This is intentional per the SPARQL 1.1 specification which does not require cryptographic randomness for this function.
 
 ### SPARQL 1.1 Hash Functions
 
@@ -1132,7 +1167,9 @@ WHERE {
 ### References
 
 - [CWE-327: Use of Broken or Risky Cryptographic Algorithm](https://cwe.mitre.org/data/definitions/327.html)
+- [CWE-338: Use of Cryptographically Weak PRNG](https://cwe.mitre.org/data/definitions/338.html)
 - [SPARQL 1.1 Hash Functions Specification](https://www.w3.org/TR/sparql11-query/#func-hash)
+- [SPARQL 1.1 RAND() Function Specification](https://www.w3.org/TR/sparql11-query/#func-rand)
 
 ---
 

@@ -913,8 +913,14 @@ export class BuiltInFunctions {
    */
   static rand(): number {
     // SPARQL 1.1 spec requires RAND() - this is for query logic, NOT security.
-    // CodeQL js/insecure-randomness: This is intentional per SPARQL 1.1 spec.
-    // lgtm[js/insecure-randomness]
+    // This implements W3C SPARQL 1.1 RAND() function which returns pseudo-random
+    // numbers for query operations (sampling, shuffling).
+    //
+    // SECURITY CONTEXT: NOT used for cryptographic purposes, session tokens,
+    // or any security-sensitive randomness. The SPARQL spec explicitly allows
+    // non-cryptographic PRNGs for this function.
+    //
+    // Suppressed via: .github/codeql/codeql-config.yml (js/insecure-randomness)
     return Math.random();
   }
 
