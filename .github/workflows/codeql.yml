@@ -57,9 +57,11 @@ jobs:
           # Output SARIF file for post-processing
           output: sarif-results
 
-      # Filter out known false positives before uploading
-      # MD5/SHA1 usage in SPARQL is required by W3C spec, not for security
-      # main.js is a bundled file with minified third-party code (React, etc.)
+      # Filter out known false positives before uploading:
+      # - BuiltInFunctions.ts: MD5/SHA1 usage in SPARQL is required by W3C spec
+      # - main.js: Bundled file with minified third-party code (reflect-metadata, etc.)
+      #   The "use-before-declaration" alerts come from reflect-metadata's polyfill
+      #   patterns which are valid hoisted `var` declarations
       - name: Filter SARIF for known false positives
         uses: advanced-security/filter-sarif@v1
         with:
@@ -69,6 +71,7 @@ jobs:
             -**/main.js:js/useless-expression
             -**/main.js:js/automatic-semicolon-insertion
             -**/main.js:js/trivial-conditional
+            -**/main.js:js/use-before-declaration
           input: ${{ steps.analyze.outputs.sarif-output }}/javascript.sarif
           output: ${{ steps.analyze.outputs.sarif-output }}/javascript.sarif
 
