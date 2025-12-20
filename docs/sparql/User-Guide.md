@@ -13,6 +13,7 @@ Welcome to the SPARQL User Guide for Exocortex! This guide will teach you how to
 7. [Advanced Features (v2)](#advanced-features-v2)
 8. [Performance Best Practices](#performance-best-practices)
 9. [Common Pitfalls and Solutions](#common-pitfalls-and-solutions)
+10. [Security Considerations for Hash Functions](#security-considerations-for-hash-functions)
 
 ---
 
@@ -1081,6 +1082,57 @@ That's a mismatch!
 1. Verify exo__Asset_isDefinedBy references valid file
 2. Check ontology file has exo__Ontology_url property
 3. Use default ontology URL if needed
+
+---
+
+## Security Considerations for Hash Functions
+
+### SPARQL 1.1 Hash Functions
+
+Exocortex implements the standard SPARQL 1.1 hash functions as defined in the [W3C specification](https://www.w3.org/TR/sparql11-query/#func-hash):
+
+| Function | Algorithm | Security Status |
+|----------|-----------|-----------------|
+| `MD5(str)` | MD5 | ⚠️ Cryptographically weak |
+| `SHA1(str)` | SHA-1 | ⚠️ Cryptographically weak |
+| `SHA256(str)` | SHA-256 | ✅ Secure |
+| `SHA384(str)` | SHA-384 | ✅ Secure |
+| `SHA512(str)` | SHA-512 | ✅ Secure |
+
+### Important Security Notes
+
+> ⚠️ **WARNING**: MD5 and SHA1 are cryptographically broken and should NOT be used for security purposes (passwords, authentication, digital signatures).
+
+These functions exist in Exocortex **only for SPARQL 1.1 specification compliance**. They are appropriate for:
+
+- ✅ Data deduplication (finding identical content)
+- ✅ Checksums for change detection
+- ✅ Query result caching keys
+- ✅ Non-security fingerprinting
+
+**DO NOT use for:**
+
+- ❌ Password hashing
+- ❌ Authentication tokens
+- ❌ Cryptographic signatures
+- ❌ Any security-critical purpose
+
+### Recommended: Use SHA-256 or Stronger
+
+When you have a choice, prefer `SHA256()`, `SHA384()`, or `SHA512()`:
+
+```sparql
+# Preferred - SHA-256 for content hashing
+SELECT ?file (SHA256(?content) AS ?hash)
+WHERE {
+  ?file exo:Asset_content ?content .
+}
+```
+
+### References
+
+- [CWE-327: Use of Broken or Risky Cryptographic Algorithm](https://cwe.mitre.org/data/definitions/327.html)
+- [SPARQL 1.1 Hash Functions Specification](https://www.w3.org/TR/sparql11-query/#func-hash)
 
 ---
 

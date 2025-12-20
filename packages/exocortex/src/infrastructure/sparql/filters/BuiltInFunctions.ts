@@ -1051,10 +1051,10 @@ export class BuiltInFunctions {
    */
   static md5(str: string): string {
     // SPARQL 1.1 spec requires MD5 - this is for spec compliance, NOT security.
-    // CodeQL js/weak-cryptographic-algorithm: Intentional per W3C SPARQL 1.1 spec.
-    // lgtm[js/weak-cryptographic-algorithm]
+    // See https://www.w3.org/TR/sparql11-query/#func-md5
+    // codeql[js/weak-cryptographic-algorithm] SPARQL 1.1 spec-mandated function
     const crypto = require("crypto");
-    return crypto.createHash("md5").update(str).digest("hex");
+    return crypto.createHash("md5").update(str).digest("hex"); // nosec - SPARQL spec compliance
   }
 
   /**
@@ -1072,10 +1072,10 @@ export class BuiltInFunctions {
    */
   static sha1(str: string): string {
     // SPARQL 1.1 spec requires SHA1 - this is for spec compliance, NOT security.
-    // CodeQL js/weak-cryptographic-algorithm: Intentional per W3C SPARQL 1.1 spec.
-    // lgtm[js/weak-cryptographic-algorithm]
+    // See https://www.w3.org/TR/sparql11-query/#func-sha1
+    // codeql[js/weak-cryptographic-algorithm] SPARQL 1.1 spec-mandated function
     const crypto = require("crypto");
-    return crypto.createHash("sha1").update(str).digest("hex");
+    return crypto.createHash("sha1").update(str).digest("hex"); // nosec - SPARQL spec compliance
   }
 
   /**
