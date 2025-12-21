@@ -31,6 +31,7 @@ paths-ignore:
 # - js/insecure-randomness in BuiltInFunctions.ts (SPARQL 1.1 RAND() function)
 # - js/insecure-randomness in FilterExecutor.ts (calls RAND() for SPARQL queries)
 # - js/trivial-conditional in main.js (minified bundled code artifacts)
+# - js/useless-assignment-to-local in main.js (variable assigned in bundled preact code)
 #
 # SECURITY CONTEXT:
 # MD5 and SHA1 hash functions are required by W3C SPARQL 1.1 specification:
@@ -51,3 +52,8 @@ query-filters:
   # from bundled React/Preact code - these are not actual code quality issues
   - exclude:
       id: js/useless-expression
+  # Useless assignments in bundled code (e.g., preact's internal variable 't')
+  # are valid compiler artifacts - variables may be assigned for side effects
+  # or conditional use in minified output
+  - exclude:
+      id: js/useless-assignment-to-local

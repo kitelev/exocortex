@@ -79,6 +79,7 @@ jobs:
             -**/main.js:js/unreachable-statement
             -**/main.js:js/redundant-operation
             -**/main.js:js/unneeded-defensive-code
+            -**/main.js:js/useless-assignment-to-local
           input: ${{ steps.analyze.outputs.sarif-output }}/javascript.sarif
           output: ${{ steps.analyze.outputs.sarif-output }}/javascript.sarif
 
