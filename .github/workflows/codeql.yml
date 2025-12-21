@@ -65,6 +65,10 @@ jobs:
       #   and minified library code where patterns like unreachable statements, hoisted
       #   var declarations, trivial conditionals, and unneeded defensive code are valid
       #   optimization artifacts from esbuild's CommonJS/ESM interop helpers
+      # Filter out known false positives before uploading.
+      # Test files: TypeScript decorators (@inject) are stripped in compiled JS,
+      # making constructor calls appear to have "superfluous" arguments when
+      # tests pass mock dependencies directly - this is valid DI testing pattern.
       - name: Filter SARIF for known false positives
         uses: advanced-security/filter-sarif@v1
         with:
@@ -81,6 +85,7 @@ jobs:
             -**/main.js:js/unneeded-defensive-code
             -**/main.js:js/useless-assignment-to-local
             -**/main.js:js/unused-local-variable
+            -**/*.test.ts:js/superfluous-trailing-arguments
           input: ${{ steps.analyze.outputs.sarif-output }}/javascript.sarif
           output: ${{ steps.analyze.outputs.sarif-output }}/javascript.sarif
 

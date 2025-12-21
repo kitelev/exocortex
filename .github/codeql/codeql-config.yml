@@ -33,6 +33,7 @@ paths-ignore:
 # - js/trivial-conditional in main.js (minified bundled code artifacts)
 # - js/useless-assignment-to-local in main.js (variable assigned in bundled preact code)
 # - js/unused-local-variable in main.js (bundled code imports/declarations from third-party libs)
+# - js/superfluous-trailing-arguments in *.test.ts (TypeScript decorator @inject pattern)
 #
 # SECURITY CONTEXT:
 # MD5 and SHA1 hash functions are required by W3C SPARQL 1.1 specification:
