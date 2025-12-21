@@ -194,8 +194,14 @@ describe("Logger", () => {
         error.stack = "Error: Test error\n    at test.js:1:1";
         logger.error("Error occurred", error);
         expect(consoleErrorSpy).toHaveBeenCalledWith("[TestContext] Error occurred");
-        expect(consoleErrorSpy).toHaveBeenCalledWith("  Error: Test error");
-        expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("Stack trace"));
+        // Error message and stack trace are now combined in single call
+        // to avoid orphaned expressions after esbuild minification
+        expect(consoleErrorSpy).toHaveBeenCalledWith(
+          expect.stringContaining("  Error: Test error")
+        );
+        expect(consoleErrorSpy).toHaveBeenCalledWith(
+          expect.stringContaining("Stack trace")
+        );
       });
 
       it("should log error with error code and full context", () => {
@@ -209,8 +215,14 @@ describe("Logger", () => {
         expect(consoleErrorSpy).toHaveBeenCalledWith(
           "[TestContext] [SPARQL_001] Query execution failed"
         );
-        expect(consoleErrorSpy).toHaveBeenCalledWith("  Error: Query failed");
-        expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("Stack trace"));
+        // Error message and stack trace are now combined in single call
+        // to avoid orphaned expressions after esbuild minification
+        expect(consoleErrorSpy).toHaveBeenCalledWith(
+          expect.stringContaining("  Error: Query failed")
+        );
+        expect(consoleErrorSpy).toHaveBeenCalledWith(
+          expect.stringContaining("Stack trace")
+        );
         expect(consoleErrorSpy).toHaveBeenCalledWith(
           "  Context:",
           { queryPreview: "SELECT * WHERE" }

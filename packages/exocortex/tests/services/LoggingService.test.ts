@@ -96,35 +96,69 @@ describe("LoggingService", () => {
   });
 
   describe("error", () => {
-    it("should log error messages without Error object", () => {
+    // Note: The default isDevelopment is false (production mode).
+    // In production mode, stack traces are hidden and details are included in message.
+    // In development mode, stack is included in the message with full error object.
+
+    it("should log error messages without Error object in production mode", () => {
       LoggingService.error("error message");
-      expect(consoleErrorSpy).toHaveBeenCalledWith("[Exocortex ERROR] error message", "");
+      // No error details when no error provided
+      expect(consoleErrorSpy).toHaveBeenCalledWith("[Exocortex ERROR] error message");
     });
 
-    it("should log error messages with Error object", () => {
+    it("should log error messages with Error object in production mode", () => {
       const error = new Error("test error");
       LoggingService.error("error message", error);
-      expect(consoleErrorSpy).toHaveBeenCalledWith("[Exocortex ERROR] error message", error);
+      // In production mode, error details are included in message (no stack)
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        "[Exocortex ERROR] error message\n  Details: test error"
+      );
     });
 
-    it("should log error stack when available", () => {
+    it("should log error stack when in development mode", () => {
+      LoggingService.setDevelopmentMode(true);
       const error = new Error("test error");
       LoggingService.error("error message", error);
-      expect(consoleErrorSpy).toHaveBeenCalledTimes(2);
-      expect(consoleErrorSpy).toHaveBeenNthCalledWith(1, "[Exocortex ERROR] error message", error);
-      expect(consoleErrorSpy).toHaveBeenNthCalledWith(2, error.stack);
+      // In dev mode, stack is included in single console.error call
+      // to avoid orphaned expressions after esbuild minification
+      expect(consoleErrorSpy).toHaveBeenCalledTimes(1);
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining("[Exocortex ERROR] error message"),
+        error
+      );
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Stack trace"),
+        error
+      );
+      LoggingService.setDevelopmentMode(false);
     });
 
     it("should handle undefined error", () => {
       LoggingService.error("error message", undefined);
-      expect(consoleErrorSpy).toHaveBeenCalledWith("[Exocortex ERROR] error message", "");
+      expect(consoleErrorSpy).toHaveBeenCalledWith("[Exocortex ERROR] error message");
       expect(consoleErrorSpy).toHaveBeenCalledTimes(1);
     });
 
-    it("should handle error without stack", () => {
+    it("should handle error without stack in development mode", () => {
+      LoggingService.setDevelopmentMode(true);
+      const errorWithoutStack = { message: "error" } as Error;
+      // Error without stack - stack info part will be empty
+      LoggingService.error("error message", errorWithoutStack);
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        "[Exocortex ERROR] error message",
+        errorWithoutStack
+      );
+      expect(consoleErrorSpy).toHaveBeenCalledTimes(1);
+      LoggingService.setDevelopmentMode(false);
+    });
+
+    it("should handle error without stack in production mode", () => {
       const errorWithoutStack = { message: "error" } as Error;
       LoggingService.error("error message", errorWithoutStack);
-      expect(consoleErrorSpy).toHaveBeenCalledWith("[Exocortex ERROR] error message", errorWithoutStack);
+      // In production, error.message is included
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        "[Exocortex ERROR] error message\n  Details: error"
+      );
       expect(consoleErrorSpy).toHaveBeenCalledTimes(1);
     });
   });

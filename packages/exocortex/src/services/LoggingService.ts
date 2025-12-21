@@ -43,23 +43,36 @@ export class LoggingService {
     return this.isDevelopment;
   }
 
-  static debug(message: string, context?: unknown): void {
+  /**
+   * Log debug message.
+   * Note: These methods intentionally have empty bodies in production builds
+   * when console calls are dropped by esbuild. The function signature remains
+   * for API compatibility, but the bodies are no-ops.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  static debug(_message: string, _context?: unknown): void {
+    // Verbose check with console.debug inside keeps the method usable
+    // When console is dropped, the entire body becomes a no-op
     if (this.isVerbose) {
-      console.debug(`[Exocortex] ${message}`, context ?? "");
+      console.debug(`[Exocortex] ${_message}`, _context ?? "");
     }
   }
 
-  static info(message: string, context?: unknown): void {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  static info(_message: string, _context?: unknown): void {
     // eslint-disable-next-line no-console
-    console.log(`[Exocortex] ${message}`, context ?? "");
+    console.log(`[Exocortex] ${_message}`, _context ?? "");
   }
 
-  static warn(message: string, context?: unknown): void {
-    console.warn(`[Exocortex] ${message}`, context ?? "");
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  static warn(_message: string, _context?: unknown): void {
+    console.warn(`[Exocortex] ${_message}`, _context ?? "");
   }
 
   /**
    * Log an error with environment-aware stack trace handling.
+   * Note: In production builds, console calls may be dropped by esbuild.
+   * Stack trace is included in single console.error call to avoid orphaned expressions.
    *
    * @param message - User-friendly error message
    * @param error - Optional error object
@@ -70,17 +83,16 @@ export class LoggingService {
     const errorCodeStr = errorCode ? ` [${errorCode}]` : "";
 
     if (isDev) {
-      // Development: show full details
-      console.error(`[Exocortex ERROR]${errorCodeStr} ${message}`, error ?? "");
-      if (error?.stack) {
-        console.error(`  Stack trace:\n${error.stack}`);
-      }
+      // Development: show full details (stack included in single log)
+      const stackInfo = error?.stack ? `\n  Stack trace:\n${error.stack}` : "";
+      console.error(
+        `[Exocortex ERROR]${errorCodeStr} ${message}${stackInfo}`,
+        error ?? "",
+      );
     } else {
       // Production: sanitized output (no stack trace)
-      console.error(`[Exocortex ERROR]${errorCodeStr} ${message}`);
-      if (error?.message) {
-        console.error(`  Details: ${error.message}`);
-      }
+      const details = error?.message ? `\n  Details: ${error.message}` : "";
+      console.error(`[Exocortex ERROR]${errorCodeStr} ${message}${details}`);
     }
   }
 }

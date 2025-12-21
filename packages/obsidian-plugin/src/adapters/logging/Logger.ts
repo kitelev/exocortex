@@ -99,70 +99,72 @@ export class Logger implements ILogger {
 
   /**
    * Log error with ErrorLogOptions for structured logging
+   * Note: In production builds, console calls are dropped by esbuild.
+   * To avoid "expression has no effect" warnings, we consolidate
+   * conditional logging into single console.error calls.
    */
   private logWithOptions(message: string, options: ErrorLogOptions, isDev: boolean): void {
     const { errorCode, error, context } = options;
+    const errorCodeStr = errorCode ? ` [${errorCode}]` : "";
 
     if (isDev) {
-      // Development: show full details
-      const errorCodeStr = errorCode ? ` [${errorCode}]` : "";
+      // Development: show full details in single console calls
       console.error(`[${this.context}]${errorCodeStr} ${message}`);
-
-      if (error) {
-        if (this.isError(error)) {
-          console.error(`  Error: ${error.message}`);
-          if (error.stack) {
-            console.error(`  Stack trace:\n${error.stack}`);
-          }
-        } else {
-          console.error(`  Error:`, error);
-        }
-      }
-
-      if (context && Object.keys(context).length > 0) {
-        console.error(`  Context:`, context);
-      }
+      this.logErrorDetails(error);
+      this.logContext(context);
     } else {
       // Production: sanitized output
-      const errorCodeStr = errorCode ? ` [${errorCode}]` : "";
       const userMessage = errorCode ? ErrorMessages[errorCode] || message : message;
-
-      // Log user-friendly message with error code for debugging
       console.error(`[${this.context}]${errorCodeStr} ${userMessage}`);
+      this.logProductionError(error);
+    }
+  }
 
-      // Only log the error message (no stack trace)
-      if (error && this.isError(error)) {
-        console.error(`  Details: ${error.message}`);
-      }
+  /**
+   * Log error details in development mode
+   */
+  private logErrorDetails(error: unknown): void {
+    if (!error) return;
+    if (this.isError(error)) {
+      // Combine message and stack into single log to avoid orphaned expressions
+      const stackInfo = error.stack ? `\n  Stack trace:\n${error.stack}` : "";
+      console.error(`  Error: ${error.message}${stackInfo}`);
+    } else {
+      console.error(`  Error:`, error);
+    }
+  }
+
+  /**
+   * Log context in development mode
+   */
+  private logContext(context: Record<string, unknown> | undefined): void {
+    if (context && Object.keys(context).length > 0) {
+      console.error(`  Context:`, context);
+    }
+  }
+
+  /**
+   * Log error in production mode (message only, no stack)
+   */
+  private logProductionError(error: unknown): void {
+    if (error && this.isError(error)) {
+      console.error(`  Details: ${error.message}`);
     }
   }
 
   /**
    * Log simple error (backward compatible with existing code)
+   * Note: Uses helper methods to avoid orphaned expressions after console drops.
    */
   private logSimpleError(message: string, error: unknown, isDev: boolean): void {
+    console.error(`[${this.context}] ${message}`);
+
     if (isDev) {
       // Development: show full details
-      console.error(`[${this.context}] ${message}`);
-
-      if (error) {
-        if (this.isError(error)) {
-          console.error(`  Error: ${error.message}`);
-          if (error.stack) {
-            console.error(`  Stack trace:\n${error.stack}`);
-          }
-        } else {
-          console.error(`  Error:`, error);
-        }
-      }
+      this.logErrorDetails(error);
     } else {
       // Production: sanitized output
-      console.error(`[${this.context}] ${message}`);
-
-      // Only log the error message (no stack trace)
-      if (error && this.isError(error)) {
-        console.error(`  Details: ${error.message}`);
-      }
+      this.logProductionError(error);
     }
   }
 }
