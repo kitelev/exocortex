@@ -103,35 +103,35 @@ export class FilenameValidator {
       errors.push("Filename should not end with a space");
     }
 
-    // Trim whitespace for further checks
-    let sanitized = name.trim();
+    // Trim whitespace for validation checks
+    const trimmedName = name.trim();
 
     // Check for invalid characters
-    if (this.INVALID_CHARS_PATTERN.test(sanitized)) {
+    if (this.INVALID_CHARS_PATTERN.test(trimmedName)) {
       errors.push("Filename contains invalid characters: / \\ : * ? \" < > |");
     }
 
     // Check for reserved Windows names
-    const baseName = this.getBaseName(sanitized);
+    const baseName = this.getBaseName(trimmedName);
     if (this.RESERVED_NAMES.has(baseName.toUpperCase())) {
       errors.push(`"${baseName}" is a reserved filename on Windows`);
     }
 
     // Check for length
-    if (sanitized.length > maxLength) {
+    if (trimmedName.length > maxLength) {
       errors.push(`Filename exceeds maximum length of ${maxLength} characters`);
     }
 
     // Check for leading/trailing dots (problematic on Windows)
-    if (sanitized.startsWith(".")) {
+    if (trimmedName.startsWith(".")) {
       errors.push("Filename should not start with a dot");
     }
-    if (sanitized.endsWith(".")) {
+    if (trimmedName.endsWith(".")) {
       errors.push("Filename should not end with a dot");
     }
 
     // Create sanitized version
-    sanitized = this.sanitize(name, { maxLength, replacementChar });
+    const sanitized = this.sanitize(name, { maxLength, replacementChar });
 
     return {
       valid: errors.length === 0,
