@@ -170,7 +170,8 @@ Then(
     // First, escape all regex special characters in the format string to prevent ReDoS,
     // then replace the {timestamp} placeholder with the timestamp pattern
     const escapedFormat = escapeRegexSpecialChars(nameFormat);
-    const formatRegex = escapedFormat.replace(
+    // Use replaceAll to replace ALL occurrences of the escaped placeholder pattern
+    const formatRegex = escapedFormat.replaceAll(
       escapeRegexSpecialChars("{timestamp}"),
       "\\d{4}-\\d{2}-\\d{2}T\\d{2}-\\d{2}-\\d{2}",
     );
