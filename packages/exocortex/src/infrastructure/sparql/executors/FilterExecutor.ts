@@ -896,6 +896,9 @@ export class FilterExecutor {
         return BuiltInFunctions.floor(floorArg);
 
       case "rand":
+        // SPARQL 1.1 RAND() function - uses pseudo-random for query logic (sampling, shuffling).
+        // NOT for security purposes. See W3C spec: https://www.w3.org/TR/sparql11-query/#func-rand
+        // CodeQL js/insecure-randomness alert is filtered in .github/workflows/codeql.yml
         return BuiltInFunctions.rand();
 
       // SPARQL 1.1 Conditional Functions

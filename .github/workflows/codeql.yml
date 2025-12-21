@@ -58,7 +58,8 @@ jobs:
           output: sarif-results
 
       # Filter out known false positives before uploading:
-      # - BuiltInFunctions.ts: MD5/SHA1 usage in SPARQL is required by W3C spec
+      # - BuiltInFunctions.ts: MD5/SHA1 and RAND() usage in SPARQL is required by W3C spec
+      # - FilterExecutor.ts: Calls RAND() function - same SPARQL 1.1 spec compliance
       # - main.js: Bundled file with minified third-party code (reflect-metadata, etc.)
       #   Alerts from main.js are filtered because the bundled output includes polyfills
       #   and minified library code where patterns like unreachable statements, hoisted
@@ -70,6 +71,7 @@ jobs:
           patterns: |
             -**/BuiltInFunctions.ts:js/weak-cryptographic-algorithm
             -**/BuiltInFunctions.ts:js/insecure-randomness
+            -**/FilterExecutor.ts:js/insecure-randomness
             -**/main.js:js/useless-expression
             -**/main.js:js/automatic-semicolon-insertion
             -**/main.js:js/trivial-conditional

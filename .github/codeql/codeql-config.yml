@@ -29,6 +29,7 @@ paths-ignore:
 # The filter-sarif action removes these known false positives:
 # - js/weak-cryptographic-algorithm in BuiltInFunctions.ts (SPARQL 1.1 spec compliance)
 # - js/insecure-randomness in BuiltInFunctions.ts (SPARQL 1.1 RAND() function)
+# - js/insecure-randomness in FilterExecutor.ts (calls RAND() for SPARQL queries)
 # - js/trivial-conditional in main.js (minified bundled code artifacts)
 #
 # SECURITY CONTEXT:
