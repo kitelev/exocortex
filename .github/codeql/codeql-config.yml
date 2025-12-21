@@ -31,6 +31,7 @@ paths-ignore:
 # - js/insecure-randomness in BuiltInFunctions.ts (SPARQL 1.1 RAND() function)
 # - js/insecure-randomness in FilterExecutor.ts (calls RAND() for SPARQL queries)
 # - js/trivial-conditional in main.js (minified bundled code artifacts)
+# - js/unneeded-defensive-code in main.js (tslib __extends helper null checks)
 # - js/useless-assignment-to-local in main.js (variable assigned in bundled preact code)
 # - js/unused-local-variable in main.js (bundled code imports/declarations from third-party libs)
 # - js/superfluous-trailing-arguments in *.test.ts (TypeScript decorator @inject pattern)
@@ -66,3 +67,8 @@ query-filters:
   # not all exports are used but the bundler includes them for module resolution
   - exclude:
       id: js/unused-local-variable
+  # Unneeded defensive code in bundled code (e.g., tslib's __extends helper)
+  # generates _super !== null checks that are always true because the parent
+  # class reference is guaranteed to exist in TypeScript class inheritance
+  - exclude:
+      id: js/unneeded-defensive-code
