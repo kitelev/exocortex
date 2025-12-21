@@ -2,6 +2,18 @@ import { Given, When, Then } from "@cucumber/cucumber";
 import { ExocortexWorld } from "../support/world.js";
 import assert from "assert";
 
+/**
+ * Helper function to check if an instance class value is empty.
+ * Handles null, undefined, empty string, and empty array cases.
+ * Written as a separate function to avoid CodeQL comparison type issues.
+ */
+function isEmptyInstanceClass(value: unknown): boolean {
+  if (value == null) return true; // covers null and undefined
+  if (typeof value === "string") return value === "";
+  if (Array.isArray(value)) return value.length === 0;
+  return false;
+}
+
 // ============================================
 // Instance Class Display Tests
 // ============================================
@@ -162,10 +174,7 @@ Then("Instance Class column displays {string}", function (this: ExocortexWorld, 
   const instanceClass = this.currentNote?.frontmatter.exo__Instance_class;
   if (expectedText === "-" || expectedText === "") {
     // Check for empty/falsy instance class (null, undefined, empty string, or empty array)
-    const isEmpty =
-      !instanceClass ||
-      (typeof instanceClass === "string" && instanceClass === "") ||
-      (Array.isArray(instanceClass) && instanceClass.length === 0);
+    const isEmpty = isEmptyInstanceClass(instanceClass);
     assert.ok(isEmpty, "Expected empty or null instance class");
   } else {
     assert.ok(instanceClass, "Expected instance class to exist");
@@ -175,10 +184,7 @@ Then("Instance Class column displays {string}", function (this: ExocortexWorld, 
 Then("Instance Class column is empty", function (this: ExocortexWorld) {
   const instanceClass = this.currentNote?.frontmatter.exo__Instance_class;
   // Check for empty/falsy instance class (null, undefined, empty string, or empty array)
-  const isEmpty =
-    !instanceClass ||
-    (typeof instanceClass === "string" && instanceClass === "") ||
-    (Array.isArray(instanceClass) && instanceClass.length === 0);
+  const isEmpty = isEmptyInstanceClass(instanceClass);
   assert.ok(isEmpty, "Instance class should be empty");
 });
 
