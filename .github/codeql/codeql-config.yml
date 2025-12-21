@@ -34,6 +34,8 @@ paths-ignore:
 # - js/useless-assignment-to-local in main.js (variable assigned in bundled preact code)
 # - js/unused-local-variable in main.js (bundled code imports/declarations from third-party libs)
 # - js/superfluous-trailing-arguments in *.test.ts (TypeScript decorator @inject pattern)
+# - js/unused-local-variable in tests/** (test fixture variables, mock callbacks, intentional unused)
+# - js/unused-local-variable in scripts/* (development utility scripts)
 #
 # SECURITY CONTEXT:
 # MD5 and SHA1 hash functions are required by W3C SPARQL 1.1 specification:
