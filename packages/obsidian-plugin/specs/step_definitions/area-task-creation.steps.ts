@@ -167,14 +167,15 @@ Then(
     assert.ok(this.lastCreatedNote, "Expected a new note to be created");
     // Verify name matches format (e.g., "Task-{timestamp}")
     const baseName = this.lastCreatedNote?.file.basename || "";
-    // First, escape all regex special characters in the format string to prevent ReDoS,
-    // then replace the {timestamp} placeholder with the timestamp pattern
-    const escapedFormat = escapeRegexSpecialChars(nameFormat);
-    // Use replaceAll to replace ALL occurrences of the escaped placeholder pattern
-    const formatRegex = escapedFormat.replaceAll(
-      escapeRegexSpecialChars("{timestamp}"),
-      "\\d{4}-\\d{2}-\\d{2}T\\d{2}-\\d{2}-\\d{2}",
-    );
+    // Build regex pattern from name format by:
+    // 1. Splitting on {timestamp} placeholder (before escaping, to handle literal text)
+    // 2. Escaping each literal part for use in regex
+    // 3. Joining with timestamp pattern
+    const TIMESTAMP_PLACEHOLDER = "{timestamp}";
+    const TIMESTAMP_REGEX = "\\d{4}-\\d{2}-\\d{2}T\\d{2}-\\d{2}-\\d{2}";
+    const parts = nameFormat.split(TIMESTAMP_PLACEHOLDER);
+    const escapedParts = parts.map(escapeRegexSpecialChars);
+    const formatRegex = escapedParts.join(TIMESTAMP_REGEX);
     assert.ok(
       new RegExp(formatRegex).test(baseName) || baseName.startsWith("Task"),
       `Note name "${baseName}" should match format "${nameFormat}"`,
