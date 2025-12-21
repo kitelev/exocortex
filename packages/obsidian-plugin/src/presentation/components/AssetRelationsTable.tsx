@@ -60,8 +60,7 @@ const SingleTable: React.FC<SingleTableProps> = ({
   };
 
   const getInstanceClass = (metadata: Record<string, unknown>): WikiLink => {
-    const instanceClassRaw =
-      metadata?.exo__Instance_class || metadata?.["exo__Instance_class"] || "-";
+    const instanceClassRaw = metadata?.exo__Instance_class || "-";
 
     const instanceClass = Array.isArray(instanceClassRaw)
       ? instanceClassRaw[0] || "-"
