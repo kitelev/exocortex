@@ -85,11 +85,13 @@ jobs:
             -**/main.js:js/unneeded-defensive-code
             -**/main.js:js/useless-assignment-to-local
             -**/main.js:js/unused-local-variable
+            -**/main.js:js/comparison-between-incompatible-types
             -**/*.test.ts:js/superfluous-trailing-arguments
             -**/*.test.ts:js/unused-local-variable
             -**/*.test.tsx:js/unused-local-variable
             -**/tests/**:js/unused-local-variable
             -**/specs/**:js/unused-local-variable
+            -**/specs/**:js/comparison-between-incompatible-types
             -scripts/*:js/unused-local-variable
           input: ${{ steps.analyze.outputs.sarif-output }}/javascript.sarif
           output: ${{ steps.analyze.outputs.sarif-output }}/javascript.sarif

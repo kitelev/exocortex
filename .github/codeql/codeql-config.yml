@@ -32,6 +32,8 @@ paths-ignore:
 # - js/insecure-randomness in FilterExecutor.ts (calls RAND() for SPARQL queries)
 # - js/trivial-conditional in main.js (minified bundled code artifacts)
 # - js/unneeded-defensive-code in main.js (tslib __extends helper null checks)
+# - js/comparison-between-incompatible-types in main.js (minified React scheduler code type checks)
+# - js/comparison-between-incompatible-types in specs/** (BDD step definitions with dynamic frontmatter types)
 # - js/useless-assignment-to-local in main.js (variable assigned in bundled preact code)
 # - js/unused-local-variable in main.js (bundled code imports/declarations from third-party libs)
 # - js/superfluous-trailing-arguments in *.test.ts (TypeScript decorator @inject pattern)
