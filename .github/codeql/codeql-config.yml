@@ -32,6 +32,7 @@ paths-ignore:
 # - js/insecure-randomness in FilterExecutor.ts (calls RAND() for SPARQL queries)
 # - js/trivial-conditional in main.js (minified bundled code artifacts)
 # - js/useless-assignment-to-local in main.js (variable assigned in bundled preact code)
+# - js/unused-local-variable in main.js (bundled code imports/declarations from third-party libs)
 #
 # SECURITY CONTEXT:
 # MD5 and SHA1 hash functions are required by W3C SPARQL 1.1 specification:
@@ -57,3 +58,8 @@ query-filters:
   # or conditional use in minified output
   - exclude:
       id: js/useless-assignment-to-local
+  # Unused local variables in bundled code (e.g., reflect-metadata polyfills,
+  # XSD type constants from RDF libraries) are valid bundler artifacts where
+  # not all exports are used but the bundler includes them for module resolution
+  - exclude:
+      id: js/unused-local-variable
