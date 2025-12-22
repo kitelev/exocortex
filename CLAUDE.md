@@ -2600,6 +2600,67 @@ const selector = `[data-test="${escapeSelector(value)}"]`;
 
 **Reference**: Issues #1058-#1071 (15 issues, average ~69 steps each)
 
+### December 2025 Code Scanning Sprint Pattern
+
+**Large-scale code scanning sprint: 41 issues in one day (Issues #1072-#1140)**
+
+**Issue Prioritization by Severity:**
+
+| Priority | Category | Examples | Step Count |
+|----------|----------|----------|------------|
+| **P0** | Security-critical | Incomplete string escaping, insecure randomness, weak crypto | 30-63 steps |
+| **P1** | Code correctness | Useless assignments, unreachable code, identical operands | 34-117 steps |
+| **P2** | Code quality | Overwritten properties, undeclared variables, superfluous arguments | 25-54 steps |
+| **P3** | Cleanup | Unused variables, ASI issues | 25-79 steps |
+
+**Key Efficiency Techniques:**
+
+1. **Batch by rule ID**: Group all "useless-assignment" alerts into single issue
+2. **Parallel agent execution**: Multiple Claude Code sessions on different priorities
+3. **Pattern reuse**: Same CodeQL rule = same fix pattern (research once, apply many)
+4. **Skip redundant research**: All P1 useless-assignment fixes share same root cause
+
+**Common Fix Patterns:**
+
+```typescript
+// js/useless-assignment-to-local
+// ❌ ALERT: let x = val1; x = val2;
+// ✅ FIX: const x = val2;
+
+// js/superfluous-trailing-arguments
+// ❌ ALERT: fn(a, b, c) when fn takes 2 params
+// ✅ FIX: fn(a, b) or add param to signature
+
+// js/incomplete-string-escaping
+// ❌ ALERT: str.replace("pattern", userInput)
+// ✅ FIX: str.split("pattern").join(userInput)
+
+// js/identical-operands
+// ❌ ALERT: if (x === x)
+// ✅ FIX: if (x === expectedValue) or Number.isNaN(x)
+```
+
+**Metrics Achieved:**
+- 41 issues completed in 24 hours
+- Average 55 steps per issue (range: 25-117)
+- 9 P0 security issues fixed
+- Zero regressions (all tests passing)
+
+**Workflow:**
+```bash
+# 1. Query alerts by rule type
+gh api repos/kitelev/exocortex/code-scanning/alerts --jq '
+  group_by(.rule.id) | .[] | {rule: .[0].rule.id, count: length}
+'
+
+# 2. Create batched issue per rule type
+gh issue create --title "P1: Fix [alert type] (N alerts)" --body "..."
+
+# 3. Fix all in single PR (same pattern applies to all)
+```
+
+**Reference**: Issues #1072-#1140
+
 ---
 
 **Remember**:
