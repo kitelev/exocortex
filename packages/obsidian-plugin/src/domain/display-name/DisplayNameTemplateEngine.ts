@@ -6,6 +6,7 @@
  * - {{field.nested}} - Dot-notation for nested fields (e.g., {{custom.priority}})
  * - {{_basename}} - Original filename without extension
  * - {{_created}} - File creation date
+ * - {{statusEmoji}} - Status emoji based on ems__Effort_status (requires statusEmojis mapping)
  *
  * Special handling:
  * - Wikilink syntax [[link]] is stripped from values
@@ -16,12 +17,20 @@
  * - "{{exo__Asset_label}}: {{ems__Effort_status}}" - Label with status
  * - "[{{exo__Instance_class}}] {{exo__Asset_label}}" - Class prefix
  * - "{{_basename}} - {{exo__Asset_label}}" - Filename with label
+ * - "{{exo__Asset_label}} {{statusEmoji}}" - Label with status emoji (e.g., "Fix bug 🟢")
  */
 export class DisplayNameTemplateEngine {
   private static readonly PLACEHOLDER_PATTERN = /\{\{([^}]+)\}\}/g;
   private static readonly WIKILINK_PATTERN = /^\[\[|\]\]$/g;
 
-  constructor(private readonly template: string) {}
+  private statusEmojis: Record<string, string>;
+
+  constructor(
+    private readonly template: string,
+    statusEmojis?: Record<string, string>
+  ) {
+    this.statusEmojis = statusEmojis || {};
+  }
 
   /**
    * Render the template with provided metadata
@@ -78,9 +87,47 @@ export class DisplayNameTemplateEngine {
       return "";
     }
 
+    // Handle statusEmoji - looks up ems__Effort_status in emoji mapping
+    if (key === "statusEmoji") {
+      return this.resolveStatusEmoji(metadata);
+    }
+
     // Handle dot notation for nested fields
     const value = this.getNestedValue(metadata, key);
     return this.formatValue(value);
+  }
+
+  /**
+   * Resolve status emoji from ems__Effort_status using the emoji mapping
+   */
+  private resolveStatusEmoji(metadata: Record<string, unknown>): string {
+    const status = metadata.ems__Effort_status;
+    if (!status) return "";
+
+    const statusStr = this.formatValue(status);
+    if (!statusStr) return "";
+
+    // Try direct match first
+    if (this.statusEmojis[statusStr]) {
+      return this.statusEmojis[statusStr];
+    }
+
+    // Try to extract status from potential enum format (e.g., "DOING" from "ems__EffortStatus_DOING")
+    const statusParts = statusStr.split("_");
+    const lastPart = statusParts[statusParts.length - 1];
+    if (lastPart && this.statusEmojis[lastPart]) {
+      return this.statusEmojis[lastPart];
+    }
+
+    // Try case-insensitive match
+    const upperStatus = statusStr.toUpperCase();
+    for (const [key, emoji] of Object.entries(this.statusEmojis)) {
+      if (key.toUpperCase() === upperStatus) {
+        return emoji;
+      }
+    }
+
+    return "";
   }
 
   /**
@@ -190,9 +237,17 @@ export const DISPLAY_NAME_PRESETS = {
     name: "Label with status",
     template: "{{exo__Asset_label}}: {{ems__Effort_status}}",
   },
+  labelWithStatusEmoji: {
+    name: "Label with status emoji",
+    template: "{{exo__Asset_label}} {{statusEmoji}}",
+  },
   classPrefix: {
     name: "Class prefix",
     template: "[{{exo__Instance_class}}] {{exo__Asset_label}}",
+  },
+  classSuffix: {
+    name: "Class suffix",
+    template: "{{exo__Asset_label}} ({{exo__Instance_class}})",
   },
   basenameWithLabel: {
     name: "Filename with label",

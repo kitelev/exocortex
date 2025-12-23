@@ -1,6 +1,7 @@
 import { TFile, WorkspaceLeaf, Plugin, CachedMetadata } from "obsidian";
-import { DisplayNameTemplateEngine, DEFAULT_DISPLAY_NAME_TEMPLATE } from "@plugin/domain/display-name/DisplayNameTemplateEngine";
-import type { ExocortexSettings } from "@plugin/domain/settings/ExocortexSettings";
+import { DisplayNameResolver } from "@plugin/domain/display-name/DisplayNameResolver";
+import { DEFAULT_DISPLAY_NAME_TEMPLATE } from "@plugin/domain/display-name/DisplayNameTemplateEngine";
+import type { ExocortexSettings, DisplayNameSettings } from "@plugin/domain/settings/ExocortexSettings";
 
 /**
  * FileExplorerPatch - Patches Obsidian's File Explorer to show exo__Asset_label instead of filenames
@@ -35,10 +36,29 @@ export class FileExplorerPatch {
   }
 
   /**
-   * Get the display name template from settings
+   * Get the display name settings
    */
-  private getTemplate(): string {
-    return this.plugin.settings?.displayNameTemplate || DEFAULT_DISPLAY_NAME_TEMPLATE;
+  private getDisplayNameSettings(): DisplayNameSettings {
+    // Prefer new displayNameSettings, fall back to legacy displayNameTemplate
+    if (this.plugin.settings?.displayNameSettings) {
+      return this.plugin.settings.displayNameSettings;
+    }
+
+    // Legacy fallback: convert single template to DisplayNameSettings
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- Intentional backwards compatibility
+    const template = this.plugin.settings?.displayNameTemplate || DEFAULT_DISPLAY_NAME_TEMPLATE;
+    return {
+      defaultTemplate: template,
+      classTemplates: {},
+      statusEmojis: {},
+    };
+  }
+
+  /**
+   * Create a DisplayNameResolver with current settings
+   */
+  private createResolver(): DisplayNameResolver {
+    return new DisplayNameResolver(this.getDisplayNameSettings());
   }
 
   /**
@@ -172,7 +192,7 @@ export class FileExplorerPatch {
   }
 
   /**
-   * Get the display name from a file's frontmatter using the template engine
+   * Get the display name from a file's frontmatter using per-class template resolution
    */
   private getAssetLabel(file: TFile): string | null {
     const cache = this.app.metadataCache.getFileCache(file);
@@ -186,10 +206,13 @@ export class FileExplorerPatch {
     // Get creation date if available
     const createdDate = file.stat?.ctime ? new Date(file.stat.ctime) : undefined;
 
-    // Use template engine to render display name
-    const template = this.getTemplate();
-    const engine = new DisplayNameTemplateEngine(template);
-    const displayName = engine.render(metadata, file.basename, createdDate);
+    // Use DisplayNameResolver for per-class template resolution
+    const resolver = this.createResolver();
+    const displayName = resolver.resolve({
+      metadata,
+      basename: file.basename,
+      createdDate,
+    });
 
     if (displayName) {
       return displayName;

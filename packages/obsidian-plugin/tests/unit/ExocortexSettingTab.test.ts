@@ -26,10 +26,20 @@ describe("ExocortexSettingTab", () => {
   let MockSetting: any;
 
   beforeEach(() => {
+    // Create a mock element that has Obsidian's methods (recursive)
+    const createMockElement: () => any = () => {
+      const el = document.createElement("div");
+      // Add Obsidian-specific methods that return mock elements
+      (el as any).empty = jest.fn();
+      (el as any).createEl = jest.fn().mockImplementation(() => createMockElement());
+      (el as any).createDiv = jest.fn().mockImplementation(() => createMockElement());
+      (el as any).appendText = jest.fn();
+      return el;
+    };
     mockContainerEl = {
       empty: jest.fn(),
-      createEl: jest.fn().mockReturnValue(document.createElement("div")),
-      createDiv: jest.fn().mockReturnValue(document.createElement("div")),
+      createEl: jest.fn().mockImplementation(() => createMockElement()),
+      createDiv: jest.fn().mockImplementation(() => createMockElement()),
     };
 
     mockPlugin = createMockPlugin({
@@ -44,6 +54,17 @@ describe("ExocortexSettingTab", () => {
         showLabelsInTabTitles: true,
         displayNameTemplate: "{{exo__Asset_label}}",
         sortByDisplayName: false,
+        displayNameSettings: {
+          defaultTemplate: "{{exo__Asset_label}}",
+          classTemplates: {
+            "ems__Task": "{{exo__Asset_label}} {{statusEmoji}}",
+            "ems__TaskPrototype": "{{exo__Asset_label}} (TaskPrototype)",
+          },
+          statusEmojis: {
+            "DOING": "🟢",
+            "DONE": "✅",
+          },
+        },
       },
       saveSettings: jest.fn().mockResolvedValue(undefined),
       refreshLayout: jest.fn(),
@@ -62,6 +83,7 @@ describe("ExocortexSettingTab", () => {
         containerEl,
         setName: jest.fn().mockReturnThis(),
         setDesc: jest.fn().mockReturnThis(),
+        setHeading: jest.fn().mockReturnThis(),
         addDropdown: jest.fn().mockImplementation((callback) => {
           const dropdown = {
             addOption: jest.fn().mockReturnThis(),
@@ -88,14 +110,21 @@ describe("ExocortexSettingTab", () => {
           callback(text);
           return setting;
         }),
+        addButton: jest.fn().mockImplementation((callback) => {
+          const button = {
+            setButtonText: jest.fn().mockReturnThis(),
+            onClick: jest.fn().mockReturnThis(),
+            setCta: jest.fn().mockReturnThis(),
+          };
+          callback(button);
+          return setting;
+        }),
       };
       return setting;
     });
 
     settingTab = new ExocortexSettingTab(mockApp, mockPlugin);
     settingTab.containerEl = mockContainerEl;
-
-    jest.clearAllMocks();
   });
 
   describe("getOntologyAssets", () => {
@@ -320,8 +349,8 @@ describe("ExocortexSettingTab", () => {
 
       expect(mockContainerEl.empty).toHaveBeenCalled();
       expect(getOntologySpy).toHaveBeenCalledTimes(1);
-      // 9 original settings + 2 template settings (preset dropdown + custom template text)
-      expect(MockSetting).toHaveBeenCalledTimes(11);
+      // 9 original settings + 3 headings + 1 default template + 6 per-class templates + 5 status emojis + 1 reset button = 25
+      expect(MockSetting).toHaveBeenCalledTimes(25);
     });
 
     it("should render ontology dropdown with correct options", () => {
@@ -336,6 +365,7 @@ describe("ExocortexSettingTab", () => {
           containerEl,
           setName: jest.fn().mockReturnThis(),
           setDesc: jest.fn().mockReturnThis(),
+          setHeading: jest.fn().mockReturnThis(),
           addDropdown: jest.fn().mockImplementation((callback) => {
             const dropdown = {
               addOption: jest.fn().mockReturnThis(),
@@ -354,6 +384,15 @@ describe("ExocortexSettingTab", () => {
               onChange: jest.fn().mockReturnThis(),
             };
             callback(text);
+            return setting;
+          }),
+          addButton: jest.fn().mockImplementation((callback) => {
+            const button = {
+              setButtonText: jest.fn().mockReturnThis(),
+              onClick: jest.fn().mockReturnThis(),
+              setCta: jest.fn().mockReturnThis(),
+            };
+            callback(button);
             return setting;
           }),
         };
@@ -387,6 +426,7 @@ describe("ExocortexSettingTab", () => {
           containerEl,
           setName: jest.fn().mockReturnThis(),
           setDesc: jest.fn().mockReturnThis(),
+          setHeading: jest.fn().mockReturnThis(),
           addDropdown: jest.fn().mockImplementation((callback) => {
             const dropdown = {
               addOption: jest.fn().mockReturnThis(),
@@ -407,6 +447,15 @@ describe("ExocortexSettingTab", () => {
               onChange: jest.fn().mockReturnThis(),
             };
             callback(text);
+            return setting;
+          }),
+          addButton: jest.fn().mockImplementation((callback) => {
+            const button = {
+              setButtonText: jest.fn().mockReturnThis(),
+              onClick: jest.fn().mockReturnThis(),
+              setCta: jest.fn().mockReturnThis(),
+            };
+            callback(button);
             return setting;
           }),
         };
@@ -454,6 +503,7 @@ describe("ExocortexSettingTab", () => {
           containerEl,
           setName: jest.fn().mockReturnThis(),
           setDesc: jest.fn().mockReturnThis(),
+          setHeading: jest.fn().mockReturnThis(),
           addDropdown: jest.fn().mockReturnThis(),
           addToggle: jest.fn().mockImplementation((callback) => {
             const toggle = {
@@ -475,6 +525,15 @@ describe("ExocortexSettingTab", () => {
               onChange: jest.fn().mockReturnThis(),
             };
             callback(text);
+            return setting;
+          }),
+          addButton: jest.fn().mockImplementation((callback) => {
+            const button = {
+              setButtonText: jest.fn().mockReturnThis(),
+              onClick: jest.fn().mockReturnThis(),
+              setCta: jest.fn().mockReturnThis(),
+            };
+            callback(button);
             return setting;
           }),
         };
@@ -518,6 +577,7 @@ describe("ExocortexSettingTab", () => {
           containerEl,
           setName: jest.fn().mockReturnThis(),
           setDesc: jest.fn().mockReturnThis(),
+          setHeading: jest.fn().mockReturnThis(),
           addDropdown: jest.fn().mockReturnThis(),
           addToggle: jest.fn().mockImplementation((callback) => {
             const toggle = {
@@ -539,6 +599,15 @@ describe("ExocortexSettingTab", () => {
               onChange: jest.fn().mockReturnThis(),
             };
             callback(text);
+            return setting;
+          }),
+          addButton: jest.fn().mockImplementation((callback) => {
+            const button = {
+              setButtonText: jest.fn().mockReturnThis(),
+              onClick: jest.fn().mockReturnThis(),
+              setCta: jest.fn().mockReturnThis(),
+            };
+            callback(button);
             return setting;
           }),
         };
@@ -581,6 +650,7 @@ describe("ExocortexSettingTab", () => {
           containerEl,
           setName: jest.fn().mockReturnThis(),
           setDesc: jest.fn().mockReturnThis(),
+          setHeading: jest.fn().mockReturnThis(),
           addDropdown: jest.fn().mockReturnThis(),
           addToggle: jest.fn().mockImplementation((callback) => {
             const toggle = {
@@ -602,6 +672,15 @@ describe("ExocortexSettingTab", () => {
               onChange: jest.fn().mockReturnThis(),
             };
             callback(text);
+            return setting;
+          }),
+          addButton: jest.fn().mockImplementation((callback) => {
+            const button = {
+              setButtonText: jest.fn().mockReturnThis(),
+              onClick: jest.fn().mockReturnThis(),
+              setCta: jest.fn().mockReturnThis(),
+            };
+            callback(button);
             return setting;
           }),
         };
@@ -644,6 +723,7 @@ describe("ExocortexSettingTab", () => {
           containerEl,
           setName: jest.fn().mockReturnThis(),
           setDesc: jest.fn().mockReturnThis(),
+          setHeading: jest.fn().mockReturnThis(),
           addDropdown: jest.fn().mockReturnThis(),
           addToggle: jest.fn().mockImplementation((callback) => {
             const toggle = {
@@ -665,6 +745,15 @@ describe("ExocortexSettingTab", () => {
               onChange: jest.fn().mockReturnThis(),
             };
             callback(text);
+            return setting;
+          }),
+          addButton: jest.fn().mockImplementation((callback) => {
+            const button = {
+              setButtonText: jest.fn().mockReturnThis(),
+              onClick: jest.fn().mockReturnThis(),
+              setCta: jest.fn().mockReturnThis(),
+            };
+            callback(button);
             return setting;
           }),
         };
@@ -707,6 +796,7 @@ describe("ExocortexSettingTab", () => {
           containerEl,
           setName: jest.fn().mockReturnThis(),
           setDesc: jest.fn().mockReturnThis(),
+          setHeading: jest.fn().mockReturnThis(),
           addDropdown: jest.fn().mockReturnThis(),
           addToggle: jest.fn().mockImplementation((callback) => {
             const toggle = {
@@ -728,6 +818,15 @@ describe("ExocortexSettingTab", () => {
               onChange: jest.fn().mockReturnThis(),
             };
             callback(text);
+            return setting;
+          }),
+          addButton: jest.fn().mockImplementation((callback) => {
+            const button = {
+              setButtonText: jest.fn().mockReturnThis(),
+              onClick: jest.fn().mockReturnThis(),
+              setCta: jest.fn().mockReturnThis(),
+            };
+            callback(button);
             return setting;
           }),
         };
@@ -763,6 +862,7 @@ describe("ExocortexSettingTab", () => {
           containerEl,
           setName: jest.fn().mockReturnThis(),
           setDesc: jest.fn().mockReturnThis(),
+          setHeading: jest.fn().mockReturnThis(),
           addDropdown: jest.fn().mockImplementation((callback) => {
             const dropdown = {
               addOption: jest.fn().mockReturnThis(),
@@ -783,6 +883,15 @@ describe("ExocortexSettingTab", () => {
               onChange: jest.fn().mockReturnThis(),
             };
             callback(text);
+            return setting;
+          }),
+          addButton: jest.fn().mockImplementation((callback) => {
+            const button = {
+              setButtonText: jest.fn().mockReturnThis(),
+              onClick: jest.fn().mockReturnThis(),
+              setCta: jest.fn().mockReturnThis(),
+            };
+            callback(button);
             return setting;
           }),
         };

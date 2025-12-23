@@ -1,10 +1,8 @@
 import { App, PluginSettingTab, Setting } from "obsidian";
 import type ExocortexPlugin from '@plugin/ExocortexPlugin';
-import {
-  DisplayNameTemplateEngine,
-  DISPLAY_NAME_PRESETS,
-  DEFAULT_DISPLAY_NAME_TEMPLATE,
-} from "@plugin/domain/display-name/DisplayNameTemplateEngine";
+import { DEFAULT_DISPLAY_NAME_TEMPLATE } from "@plugin/domain/display-name/DisplayNameTemplateEngine";
+import { DisplayNameResolver } from "@plugin/domain/display-name/DisplayNameResolver";
+import { DEFAULT_DISPLAY_NAME_SETTINGS, type DisplayNameSettings } from "@plugin/domain/settings/ExocortexSettings";
 
 export class ExocortexSettingTab extends PluginSettingTab {
   plugin: ExocortexPlugin;
@@ -191,63 +189,136 @@ export class ExocortexSettingTab extends PluginSettingTab {
       );
 
     // Display Name Template section
-    containerEl.createEl("h3", { text: "Display Name Template" });
+    new Setting(containerEl)
+      .setName("Display name templates")
+      .setHeading();
 
-    // Preview element for the template
+    // Ensure displayNameSettings is initialized
+    if (!this.plugin.settings.displayNameSettings) {
+      this.plugin.settings.displayNameSettings = { ...DEFAULT_DISPLAY_NAME_SETTINGS };
+    }
+
+    const displayNameSettings = this.plugin.settings.displayNameSettings;
+
+    // Preview element for the templates
     const previewEl = containerEl.createDiv({
-      cls: "setting-item-description",
+      cls: "exocortex-template-preview",
     });
-    previewEl.style.marginBottom = "16px";
-    previewEl.style.padding = "8px";
-    previewEl.style.backgroundColor = "var(--background-secondary)";
-    previewEl.style.borderRadius = "4px";
-    this.updateTemplatePreview(previewEl, this.plugin.settings.displayNameTemplate);
+    this.updatePerClassPreview(previewEl, displayNameSettings);
 
+    // Default template
     new Setting(containerEl)
-      .setName("Template presets")
-      .setDesc("Choose a common template pattern")
-      .addDropdown((dropdown) => {
-        dropdown.addOption("", "Custom...");
-        Object.entries(DISPLAY_NAME_PRESETS).forEach(([key, preset]) => {
-          dropdown.addOption(key, preset.name);
-        });
-
-        // Set current selection based on template value
-        const currentTemplate = this.plugin.settings.displayNameTemplate;
-        const matchingPreset = Object.entries(DISPLAY_NAME_PRESETS).find(
-          ([_, preset]) => preset.template === currentTemplate
-        );
-        dropdown.setValue(matchingPreset ? matchingPreset[0] : "");
-
-        dropdown.onChange(async (value) => {
-          if (value && value in DISPLAY_NAME_PRESETS) {
-            const preset = DISPLAY_NAME_PRESETS[value as keyof typeof DISPLAY_NAME_PRESETS];
-            this.plugin.settings.displayNameTemplate = preset.template;
-            await this.plugin.saveSettings();
-            this.plugin.applyDisplayNameTemplate();
-            this.updateTemplatePreview(previewEl, preset.template);
-            // Refresh to update the text input
-            this.display();
-          }
-        });
-      });
-
-    new Setting(containerEl)
-      .setName("Custom template")
-      .setDesc(
-        "Use {{field}} placeholders for frontmatter values. " +
-        "Special variables: {{_basename}} (filename), {{_created}} (creation date)"
-      )
+      .setName("Default template")
+      .setDesc("Template used when no class-specific template is defined")
       .addText((text) =>
         text
           .setPlaceholder(DEFAULT_DISPLAY_NAME_TEMPLATE)
-          .setValue(this.plugin.settings.displayNameTemplate)
+          .setValue(displayNameSettings.defaultTemplate)
           .onChange(async (value) => {
             const template = value.trim() || DEFAULT_DISPLAY_NAME_TEMPLATE;
-            this.plugin.settings.displayNameTemplate = template;
+            displayNameSettings.defaultTemplate = template;
             await this.plugin.saveSettings();
             this.plugin.applyDisplayNameTemplate();
-            this.updateTemplatePreview(previewEl, template);
+            this.updatePerClassPreview(previewEl, displayNameSettings);
+          }),
+      );
+
+    // Per-class templates section
+    new Setting(containerEl)
+      .setName("Per-class templates")
+      .setHeading();
+
+    const classTemplatesDesc = containerEl.createDiv({ cls: "setting-item-description" });
+    const classTemplatesP = classTemplatesDesc.createEl("p");
+    classTemplatesP.appendText("Configure different display name templates for each asset class. Use ");
+    classTemplatesP.createEl("code", { text: "{{statusEmoji}}" });
+    classTemplatesP.appendText(" to show status as an emoji (e.g., 🟢 for Active).");
+
+    // Common classes to configure
+    const commonClasses = [
+      { key: "ems__Task", name: "Task" },
+      { key: "ems__TaskPrototype", name: "Task Prototype" },
+      { key: "ems__Project", name: "Project" },
+      { key: "ems__Area", name: "Area" },
+      { key: "ems__Meeting", name: "Meeting" },
+      { key: "ems__MeetingPrototype", name: "Meeting Prototype" },
+    ];
+
+    for (const { key, name } of commonClasses) {
+      new Setting(containerEl)
+        .setName(name)
+        .setDesc(`Template for ${name} assets`)
+        .addText((text) =>
+          text
+            .setPlaceholder(displayNameSettings.defaultTemplate)
+            .setValue(displayNameSettings.classTemplates[key] || "")
+            .onChange(async (value) => {
+              const template = value.trim();
+              if (template) {
+                displayNameSettings.classTemplates[key] = template;
+              } else {
+                delete displayNameSettings.classTemplates[key];
+              }
+              await this.plugin.saveSettings();
+              this.plugin.applyDisplayNameTemplate();
+              this.updatePerClassPreview(previewEl, displayNameSettings);
+            }),
+        );
+    }
+
+    // Status emoji configuration
+    new Setting(containerEl)
+      .setName("Status emoji mapping")
+      .setHeading();
+
+    const statusEmojiDesc = containerEl.createDiv({ cls: "setting-item-description" });
+    const statusEmojiP = statusEmojiDesc.createEl("p");
+    statusEmojiP.appendText("Map status values to emojis for use with ");
+    statusEmojiP.createEl("code", { text: "{{statusEmoji}}" });
+    statusEmojiP.appendText(".");
+
+    const commonStatuses = [
+      { key: "DOING", name: "Doing/Active", defaultEmoji: "🟢" },
+      { key: "DONE", name: "Done/Completed", defaultEmoji: "✅" },
+      { key: "BLOCKED", name: "Blocked", defaultEmoji: "🔴" },
+      { key: "BACKLOG", name: "Backlog/Pending", defaultEmoji: "📋" },
+      { key: "TRASHED", name: "Trashed/Cancelled", defaultEmoji: "🗑️" },
+    ];
+
+    for (const { key, name, defaultEmoji } of commonStatuses) {
+      new Setting(containerEl)
+        .setName(name)
+        .setDesc(`Emoji for "${key}" status`)
+        .addText((text) =>
+          text
+            .setPlaceholder(defaultEmoji)
+            .setValue(displayNameSettings.statusEmojis[key] || "")
+            .onChange(async (value) => {
+              const emoji = value.trim();
+              if (emoji) {
+                displayNameSettings.statusEmojis[key] = emoji;
+              } else {
+                delete displayNameSettings.statusEmojis[key];
+              }
+              await this.plugin.saveSettings();
+              this.plugin.applyDisplayNameTemplate();
+              this.updatePerClassPreview(previewEl, displayNameSettings);
+            }),
+        );
+    }
+
+    // Reset to defaults button
+    new Setting(containerEl)
+      .setName("Reset to defaults")
+      .setDesc("Reset all display name templates to default values")
+      .addButton((button) =>
+        button
+          .setButtonText("Reset")
+          .onClick(async () => {
+            this.plugin.settings.displayNameSettings = { ...DEFAULT_DISPLAY_NAME_SETTINGS };
+            await this.plugin.saveSettings();
+            this.plugin.applyDisplayNameTemplate();
+            this.display(); // Refresh UI
           }),
       );
 
@@ -255,32 +326,59 @@ export class ExocortexSettingTab extends PluginSettingTab {
     const helpEl = containerEl.createDiv({
       cls: "setting-item-description",
     });
-    helpEl.innerHTML = `
-      <strong>Available placeholders:</strong>
-      <ul style="margin: 8px 0; padding-left: 20px;">
-        <li><code>{{exo__Asset_label}}</code> - Asset label</li>
-        <li><code>{{exo__Instance_class}}</code> - Asset class (Task, Project, etc.)</li>
-        <li><code>{{ems__Effort_status}}</code> - Current effort status</li>
-        <li><code>{{_basename}}</code> - Original filename</li>
-        <li><code>{{_created}}</code> - File creation date</li>
-        <li><code>{{field.nested}}</code> - Dot notation for nested fields</li>
-      </ul>
-    `;
+    helpEl.createEl("strong", { text: "Available placeholders:" });
+    const placeholderList = helpEl.createEl("ul", { cls: "exocortex-placeholder-list" });
+    const placeholders = [
+      { code: "{{exo__Asset_label}}", desc: "Asset label" },
+      { code: "{{exo__Instance_class}}", desc: "Asset class (Task, Project, etc.)" },
+      { code: "{{ems__Effort_status}}", desc: "Current effort status" },
+      { code: "{{statusEmoji}}", desc: "Status as emoji (🟢, ✅, 🔴, etc.)" },
+      { code: "{{_basename}}", desc: "Original filename" },
+      { code: "{{_created}}", desc: "File creation date" },
+      { code: "{{field.nested}}", desc: "Dot notation for nested fields" },
+    ];
+    for (const { code, desc } of placeholders) {
+      const li = placeholderList.createEl("li");
+      li.createEl("code", { text: code });
+      li.appendText(` - ${desc}`);
+    }
   }
 
-  private updateTemplatePreview(previewEl: HTMLElement, template: string): void {
-    const engine = new DisplayNameTemplateEngine(template);
-    const sampleMetadata = {
-      exo__Asset_label: "Sample Task",
-      exo__Instance_class: "ems__Task",
-      ems__Effort_status: "🟡 IN_PROGRESS",
-    };
-    const preview = engine.render(sampleMetadata, "sample-file", new Date());
+  /**
+   * Update the per-class template preview
+   */
+  private updatePerClassPreview(previewEl: HTMLElement, settings: DisplayNameSettings): void {
+    const resolver = new DisplayNameResolver(settings);
 
-    if (preview) {
-      previewEl.innerHTML = `<strong>Preview:</strong> ${preview}`;
-    } else {
-      previewEl.innerHTML = `<strong>Preview:</strong> <em>(empty - will fall back to label or filename)</em>`;
+    const sampleAssets = [
+      {
+        metadata: { exo__Asset_label: "Fix bug", exo__Instance_class: "ems__Task", ems__Effort_status: "DOING" },
+        basename: "fix-bug-123",
+        name: "Task",
+      },
+      {
+        metadata: { exo__Asset_label: "Morning routine", exo__Instance_class: "ems__TaskPrototype" },
+        basename: "morning-routine",
+        name: "TaskPrototype",
+      },
+      {
+        metadata: { exo__Asset_label: "Alpha Project", exo__Instance_class: "ems__Project" },
+        basename: "alpha-project",
+        name: "Project",
+      },
+    ];
+
+    // Clear existing content
+    previewEl.empty();
+
+    previewEl.createEl("strong", { text: "Preview:" });
+    const previewList = previewEl.createEl("ul", { cls: "exocortex-preview-list" });
+
+    for (const { metadata, basename, name } of sampleAssets) {
+      const displayName = resolver.resolve({ metadata, basename, createdDate: new Date() });
+      const li = previewList.createEl("li");
+      li.createEl("strong", { text: `${name}: ` });
+      li.appendText(displayName || "(empty)");
     }
   }
 }

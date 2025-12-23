@@ -338,6 +338,103 @@ describe("DisplayNameTemplateEngine", () => {
     });
   });
 
+  describe("statusEmoji placeholder", () => {
+    const statusEmojis = {
+      "DOING": "🟢",
+      "DONE": "✅",
+      "BLOCKED": "🔴",
+      "BACKLOG": "📋",
+      "TRASHED": "🗑️",
+      "Active": "🟢",
+      "IN_PROGRESS": "🟢",
+    };
+
+    it("should render statusEmoji from ems__Effort_status", () => {
+      const engine = new DisplayNameTemplateEngine(
+        "{{exo__Asset_label}} {{statusEmoji}}",
+        statusEmojis
+      );
+      const result = engine.render(
+        { exo__Asset_label: "Fix bug", ems__Effort_status: "DOING" },
+        "fix-bug"
+      );
+      expect(result).toBe("Fix bug 🟢");
+    });
+
+    it("should handle case-insensitive status lookup", () => {
+      const engine = new DisplayNameTemplateEngine(
+        "{{exo__Asset_label}} {{statusEmoji}}",
+        statusEmojis
+      );
+      const result = engine.render(
+        { exo__Asset_label: "Task", ems__Effort_status: "doing" },
+        "task"
+      );
+      expect(result).toBe("Task 🟢");
+    });
+
+    it("should extract status from enum-style value", () => {
+      const engine = new DisplayNameTemplateEngine(
+        "{{exo__Asset_label}} {{statusEmoji}}",
+        statusEmojis
+      );
+      const result = engine.render(
+        { exo__Asset_label: "Task", ems__Effort_status: "ems__EffortStatus_DONE" },
+        "task"
+      );
+      expect(result).toBe("Task ✅");
+    });
+
+    it("should return empty string for missing status", () => {
+      const engine = new DisplayNameTemplateEngine(
+        "{{exo__Asset_label}} {{statusEmoji}}",
+        statusEmojis
+      );
+      const result = engine.render(
+        { exo__Asset_label: "Task" },
+        "task"
+      );
+      expect(result).toBe("Task");
+    });
+
+    it("should return empty string for unmapped status", () => {
+      const engine = new DisplayNameTemplateEngine(
+        "{{exo__Asset_label}} {{statusEmoji}}",
+        statusEmojis
+      );
+      const result = engine.render(
+        { exo__Asset_label: "Task", ems__Effort_status: "UNKNOWN_STATUS" },
+        "task"
+      );
+      expect(result).toBe("Task");
+    });
+
+    it("should work without statusEmojis mapping (empty)", () => {
+      const engine = new DisplayNameTemplateEngine(
+        "{{exo__Asset_label}} {{statusEmoji}}"
+      );
+      const result = engine.render(
+        { exo__Asset_label: "Task", ems__Effort_status: "DOING" },
+        "task"
+      );
+      expect(result).toBe("Task");
+    });
+
+    it("should have labelWithStatusEmoji preset", () => {
+      expect(DISPLAY_NAME_PRESETS.labelWithStatusEmoji).toBeDefined();
+      expect(DISPLAY_NAME_PRESETS.labelWithStatusEmoji.template).toBe(
+        "{{exo__Asset_label}} {{statusEmoji}}"
+      );
+    });
+
+    it("should have classSuffix preset", () => {
+      expect(DISPLAY_NAME_PRESETS.classSuffix).toBeDefined();
+      expect(DISPLAY_NAME_PRESETS.classSuffix.template).toBe(
+        "{{exo__Asset_label}} ({{exo__Instance_class}})"
+      );
+    });
+  });
+
   describe("edge cases", () => {
     it("should handle numeric values", () => {
       const engine = new DisplayNameTemplateEngine("Count: {{count}}");
