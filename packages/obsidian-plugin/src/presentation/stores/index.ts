@@ -41,3 +41,61 @@ export type {
   PersistedGraphState,
   UndoableGraphState,
 } from "./graphStore/types";
+
+// Graph Config Store exports
+export {
+  useGraphConfigStore,
+  getDefaultState as getDefaultConfigState,
+  getDefaultConfig,
+} from "./graphConfigStore/store";
+export {
+  useGraphConfig,
+  useGraphConfigSection,
+  usePhysicsConfig,
+  useRenderingConfig,
+  useInteractionConfig,
+  useFilterConfig,
+  useLayoutConfig,
+  useMinimapConfig,
+  useConfigValue,
+  useSetConfig,
+  useResetConfig,
+  useConfigState,
+  usePresets,
+  useConfigImportExport,
+  useConfigSubscription,
+  usePhysicsSettings,
+  useRenderingSettings,
+} from "./graphConfigStore/hooks";
+export {
+  BUILT_IN_PRESETS,
+  PERFORMANCE_PRESET,
+  QUALITY_PRESET,
+  DENSE_PRESET,
+  HIERARCHICAL_PRESET,
+  ACCESSIBILITY_PRESET,
+  RADIAL_PRESET,
+  COMPACT_PRESET,
+  getBuiltInPreset,
+  isBuiltInPreset,
+} from "./graphConfigStore/presets";
+export {
+  GraphConfigSchema,
+  validateConfig,
+  validatePartialConfig,
+  validatePreset,
+} from "./graphConfigStore/schema";
+export type {
+  GraphConfig,
+  GraphConfigState,
+  GraphConfigActions,
+  GraphConfigStore,
+  ConfigPreset,
+  DeepPartial,
+  PhysicsConfig,
+  RenderingConfig,
+  InteractionConfig,
+  FilterConfig as GraphFilterConfig,
+  LayoutConfig as GraphLayoutConfig,
+  MinimapConfig as GraphMinimapConfig,
+} from "./graphConfigStore/types";
