@@ -296,6 +296,25 @@ export default class ExocortexPlugin extends Plugin {
     }
   }
 
+  /**
+   * Apply display name template changes
+   * Called from settings when the displayNameTemplate changes
+   * Triggers re-evaluation of tab titles and file explorer labels
+   */
+  applyDisplayNameTemplate(): void {
+    // Re-apply file explorer labels with new template
+    if (this.settings.showLabelsInFileExplorer && this.fileExplorerPatch) {
+      this.fileExplorerPatch.disable();
+      this.fileExplorerPatch.enable();
+    }
+
+    // Re-apply tab title labels with new template
+    if (this.settings.showLabelsInTabTitles && this.tabTitlePatch) {
+      this.tabTitlePatch.disable();
+      this.tabTitlePatch.enable();
+    }
+  }
+
   private autoRenderLayout(): void {
     // Remove existing auto-rendered layouts
     this.removeAutoRenderedLayouts();

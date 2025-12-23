@@ -28,6 +28,8 @@ describe("ExocortexSettingTab", () => {
   beforeEach(() => {
     mockContainerEl = {
       empty: jest.fn(),
+      createEl: jest.fn().mockReturnValue(document.createElement("div")),
+      createDiv: jest.fn().mockReturnValue(document.createElement("div")),
     };
 
     mockPlugin = createMockPlugin({
@@ -38,9 +40,15 @@ describe("ExocortexSettingTab", () => {
         showArchivedAssets: false,
         showDailyNoteProjects: true,
         useDynamicPropertyFields: false,
+        showLabelsInFileExplorer: true,
+        showLabelsInTabTitles: true,
+        displayNameTemplate: "{{exo__Asset_label}}",
       },
       saveSettings: jest.fn().mockResolvedValue(undefined),
       refreshLayout: jest.fn(),
+      toggleFileExplorerLabels: jest.fn(),
+      toggleTabTitleLabels: jest.fn(),
+      applyDisplayNameTemplate: jest.fn(),
     });
 
     mockApp = createMockApp();
@@ -67,6 +75,15 @@ describe("ExocortexSettingTab", () => {
             onChange: jest.fn().mockReturnThis(),
           };
           callback(toggle);
+          return setting;
+        }),
+        addText: jest.fn().mockImplementation((callback) => {
+          const text = {
+            setPlaceholder: jest.fn().mockReturnThis(),
+            setValue: jest.fn().mockReturnThis(),
+            onChange: jest.fn().mockReturnThis(),
+          };
+          callback(text);
           return setting;
         }),
       };
@@ -301,7 +318,8 @@ describe("ExocortexSettingTab", () => {
 
       expect(mockContainerEl.empty).toHaveBeenCalled();
       expect(getOntologySpy).toHaveBeenCalledTimes(1);
-      expect(MockSetting).toHaveBeenCalledTimes(8);
+      // 8 original settings + 2 template settings (preset dropdown + custom template text)
+      expect(MockSetting).toHaveBeenCalledTimes(10);
     });
 
     it("should render ontology dropdown with correct options", () => {
@@ -327,6 +345,15 @@ describe("ExocortexSettingTab", () => {
             return setting;
           }),
           addToggle: jest.fn().mockReturnThis(),
+          addText: jest.fn().mockImplementation((callback) => {
+            const text = {
+              setPlaceholder: jest.fn().mockReturnThis(),
+              setValue: jest.fn().mockReturnThis(),
+              onChange: jest.fn().mockReturnThis(),
+            };
+            callback(text);
+            return setting;
+          }),
         };
         return setting;
       });
@@ -351,7 +378,8 @@ describe("ExocortexSettingTab", () => {
     it("should handle ontology dropdown change", async () => {
       jest.spyOn(settingTab as any, "getOntologyAssets").mockReturnValue(["Ontology1"]);
 
-      let onChangeCallback: ((value: string) => Promise<void>) | undefined;
+      // Track onChange callbacks for each dropdown
+      const onChangeCallbacks: Array<(value: string) => Promise<void>> = [];
       MockSetting.mockImplementation((containerEl: any) => {
         const setting = {
           containerEl,
@@ -362,7 +390,7 @@ describe("ExocortexSettingTab", () => {
               addOption: jest.fn().mockReturnThis(),
               setValue: jest.fn().mockReturnThis(),
               onChange: jest.fn().mockImplementation((cb) => {
-                onChangeCallback = cb;
+                onChangeCallbacks.push(cb);
                 return dropdown;
               }),
             };
@@ -370,23 +398,33 @@ describe("ExocortexSettingTab", () => {
             return setting;
           }),
           addToggle: jest.fn().mockReturnThis(),
+          addText: jest.fn().mockImplementation((callback) => {
+            const text = {
+              setPlaceholder: jest.fn().mockReturnThis(),
+              setValue: jest.fn().mockReturnThis(),
+              onChange: jest.fn().mockReturnThis(),
+            };
+            callback(text);
+            return setting;
+          }),
         };
         return setting;
       });
 
       settingTab.display();
 
-      // Trigger onChange
-      if (onChangeCallback) {
-        await onChangeCallback("Ontology1");
+      // First dropdown onChange is for ontology
+      const ontologyOnChange = onChangeCallbacks[0];
+      if (ontologyOnChange) {
+        await ontologyOnChange("Ontology1");
       }
 
       expect(mockPlugin.settings.defaultOntologyAsset).toBe("Ontology1");
       expect(mockPlugin.saveSettings).toHaveBeenCalled();
 
       // Test clearing the value
-      if (onChangeCallback) {
-        await onChangeCallback("");
+      if (ontologyOnChange) {
+        await ontologyOnChange("");
       }
 
       expect(mockPlugin.settings.defaultOntologyAsset).toBeNull();
@@ -426,6 +464,15 @@ describe("ExocortexSettingTab", () => {
               return toggle;
             });
             callback(toggle);
+            return setting;
+          }),
+          addText: jest.fn().mockImplementation((callback) => {
+            const text = {
+              setPlaceholder: jest.fn().mockReturnThis(),
+              setValue: jest.fn().mockReturnThis(),
+              onChange: jest.fn().mockReturnThis(),
+            };
+            callback(text);
             return setting;
           }),
         };
@@ -483,6 +530,15 @@ describe("ExocortexSettingTab", () => {
             callback(toggle);
             return setting;
           }),
+          addText: jest.fn().mockImplementation((callback) => {
+            const text = {
+              setPlaceholder: jest.fn().mockReturnThis(),
+              setValue: jest.fn().mockReturnThis(),
+              onChange: jest.fn().mockReturnThis(),
+            };
+            callback(text);
+            return setting;
+          }),
         };
         return setting;
       });
@@ -535,6 +591,15 @@ describe("ExocortexSettingTab", () => {
               return toggle;
             });
             callback(toggle);
+            return setting;
+          }),
+          addText: jest.fn().mockImplementation((callback) => {
+            const text = {
+              setPlaceholder: jest.fn().mockReturnThis(),
+              setValue: jest.fn().mockReturnThis(),
+              onChange: jest.fn().mockReturnThis(),
+            };
+            callback(text);
             return setting;
           }),
         };
@@ -591,6 +656,15 @@ describe("ExocortexSettingTab", () => {
             callback(toggle);
             return setting;
           }),
+          addText: jest.fn().mockImplementation((callback) => {
+            const text = {
+              setPlaceholder: jest.fn().mockReturnThis(),
+              setValue: jest.fn().mockReturnThis(),
+              onChange: jest.fn().mockReturnThis(),
+            };
+            callback(text);
+            return setting;
+          }),
         };
         return setting;
       });
@@ -645,6 +719,15 @@ describe("ExocortexSettingTab", () => {
             callback(toggle);
             return setting;
           }),
+          addText: jest.fn().mockImplementation((callback) => {
+            const text = {
+              setPlaceholder: jest.fn().mockReturnThis(),
+              setValue: jest.fn().mockReturnThis(),
+              onChange: jest.fn().mockReturnThis(),
+            };
+            callback(text);
+            return setting;
+          }),
         };
         return setting;
       });
@@ -671,7 +754,8 @@ describe("ExocortexSettingTab", () => {
         "OtherOntology",
       ]);
 
-      let dropdownSetValue: string | undefined;
+      // Track dropdown values by dropdown index
+      const dropdownValues: string[] = [];
       MockSetting.mockImplementation((containerEl: any) => {
         const setting = {
           containerEl,
@@ -681,7 +765,7 @@ describe("ExocortexSettingTab", () => {
             const dropdown = {
               addOption: jest.fn().mockReturnThis(),
               setValue: jest.fn().mockImplementation((value: string) => {
-                dropdownSetValue = value;
+                dropdownValues.push(value);
                 return dropdown;
               }),
               onChange: jest.fn().mockReturnThis(),
@@ -690,13 +774,23 @@ describe("ExocortexSettingTab", () => {
             return setting;
           }),
           addToggle: jest.fn().mockReturnThis(),
+          addText: jest.fn().mockImplementation((callback) => {
+            const text = {
+              setPlaceholder: jest.fn().mockReturnThis(),
+              setValue: jest.fn().mockReturnThis(),
+              onChange: jest.fn().mockReturnThis(),
+            };
+            callback(text);
+            return setting;
+          }),
         };
         return setting;
       });
 
       settingTab.display();
 
-      expect(dropdownSetValue).toBe("ExistingOntology");
+      // First dropdown is the ontology dropdown, which should have ExistingOntology
+      expect(dropdownValues[0]).toBe("ExistingOntology");
     });
   });
 });

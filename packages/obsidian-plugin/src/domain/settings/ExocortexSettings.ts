@@ -11,6 +11,7 @@ export interface ExocortexSettings {
   useDynamicPropertyFields: boolean;
   showLabelsInFileExplorer: boolean;
   showLabelsInTabTitles: boolean;
+  displayNameTemplate: string;
   [key: string]: unknown;
 }
 
@@ -27,4 +28,5 @@ export const DEFAULT_SETTINGS: ExocortexSettings = {
   useDynamicPropertyFields: false,
   showLabelsInFileExplorer: true,
   showLabelsInTabTitles: true,
+  displayNameTemplate: "{{exo__Asset_label}}",
 };

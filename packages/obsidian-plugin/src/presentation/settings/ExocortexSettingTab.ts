@@ -1,5 +1,10 @@
 import { App, PluginSettingTab, Setting } from "obsidian";
 import type ExocortexPlugin from '@plugin/ExocortexPlugin';
+import {
+  DisplayNameTemplateEngine,
+  DISPLAY_NAME_PRESETS,
+  DEFAULT_DISPLAY_NAME_TEMPLATE,
+} from "@plugin/domain/display-name/DisplayNameTemplateEngine";
 
 export class ExocortexSettingTab extends PluginSettingTab {
   plugin: ExocortexPlugin;
@@ -168,5 +173,98 @@ export class ExocortexSettingTab extends PluginSettingTab {
             this.plugin.toggleTabTitleLabels(value);
           }),
       );
+
+    // Display Name Template section
+    containerEl.createEl("h3", { text: "Display Name Template" });
+
+    // Preview element for the template
+    const previewEl = containerEl.createDiv({
+      cls: "setting-item-description",
+    });
+    previewEl.style.marginBottom = "16px";
+    previewEl.style.padding = "8px";
+    previewEl.style.backgroundColor = "var(--background-secondary)";
+    previewEl.style.borderRadius = "4px";
+    this.updateTemplatePreview(previewEl, this.plugin.settings.displayNameTemplate);
+
+    new Setting(containerEl)
+      .setName("Template presets")
+      .setDesc("Choose a common template pattern")
+      .addDropdown((dropdown) => {
+        dropdown.addOption("", "Custom...");
+        Object.entries(DISPLAY_NAME_PRESETS).forEach(([key, preset]) => {
+          dropdown.addOption(key, preset.name);
+        });
+
+        // Set current selection based on template value
+        const currentTemplate = this.plugin.settings.displayNameTemplate;
+        const matchingPreset = Object.entries(DISPLAY_NAME_PRESETS).find(
+          ([_, preset]) => preset.template === currentTemplate
+        );
+        dropdown.setValue(matchingPreset ? matchingPreset[0] : "");
+
+        dropdown.onChange(async (value) => {
+          if (value && value in DISPLAY_NAME_PRESETS) {
+            const preset = DISPLAY_NAME_PRESETS[value as keyof typeof DISPLAY_NAME_PRESETS];
+            this.plugin.settings.displayNameTemplate = preset.template;
+            await this.plugin.saveSettings();
+            this.plugin.applyDisplayNameTemplate();
+            this.updateTemplatePreview(previewEl, preset.template);
+            // Refresh to update the text input
+            this.display();
+          }
+        });
+      });
+
+    new Setting(containerEl)
+      .setName("Custom template")
+      .setDesc(
+        "Use {{field}} placeholders for frontmatter values. " +
+        "Special variables: {{_basename}} (filename), {{_created}} (creation date)"
+      )
+      .addText((text) =>
+        text
+          .setPlaceholder(DEFAULT_DISPLAY_NAME_TEMPLATE)
+          .setValue(this.plugin.settings.displayNameTemplate)
+          .onChange(async (value) => {
+            const template = value.trim() || DEFAULT_DISPLAY_NAME_TEMPLATE;
+            this.plugin.settings.displayNameTemplate = template;
+            await this.plugin.saveSettings();
+            this.plugin.applyDisplayNameTemplate();
+            this.updateTemplatePreview(previewEl, template);
+          }),
+      );
+
+    // Template syntax help
+    const helpEl = containerEl.createDiv({
+      cls: "setting-item-description",
+    });
+    helpEl.innerHTML = `
+      <strong>Available placeholders:</strong>
+      <ul style="margin: 8px 0; padding-left: 20px;">
+        <li><code>{{exo__Asset_label}}</code> - Asset label</li>
+        <li><code>{{exo__Instance_class}}</code> - Asset class (Task, Project, etc.)</li>
+        <li><code>{{ems__Effort_status}}</code> - Current effort status</li>
+        <li><code>{{_basename}}</code> - Original filename</li>
+        <li><code>{{_created}}</code> - File creation date</li>
+        <li><code>{{field.nested}}</code> - Dot notation for nested fields</li>
+      </ul>
+    `;
+  }
+
+  private updateTemplatePreview(previewEl: HTMLElement, template: string): void {
+    const engine = new DisplayNameTemplateEngine(template);
+    const sampleMetadata = {
+      exo__Asset_label: "Sample Task",
+      exo__Instance_class: "ems__Task",
+      ems__Effort_status: "🟡 IN_PROGRESS",
+    };
+    const preview = engine.render(sampleMetadata, "sample-file", new Date());
+
+    if (preview) {
+      previewEl.innerHTML = `<strong>Preview:</strong> ${preview}`;
+    } else {
+      previewEl.innerHTML = `<strong>Preview:</strong> <em>(empty - will fall back to label or filename)</em>`;
+    }
   }
 }

@@ -1,4 +1,6 @@
 import { TFile, WorkspaceLeaf, Plugin, CachedMetadata, MarkdownView } from "obsidian";
+import { DisplayNameTemplateEngine, DEFAULT_DISPLAY_NAME_TEMPLATE } from "@plugin/domain/display-name/DisplayNameTemplateEngine";
+import type { ExocortexSettings } from "@plugin/domain/settings/ExocortexSettings";
 
 /**
  * TabTitlePatch - Patches Obsidian's tab titles to show exo__Asset_label instead of filenames
@@ -13,17 +15,29 @@ import { TFile, WorkspaceLeaf, Plugin, CachedMetadata, MarkdownView } from "obsi
  * - Listens for metadata changes to update titles dynamically
  * - Stores original method for restoration on disable
  */
+// Plugin interface to access settings
+interface PluginWithSettings extends Plugin {
+  settings: ExocortexSettings;
+}
+
 export class TabTitlePatch {
   private app: Plugin["app"];
-  private plugin: Plugin;
+  private plugin: PluginWithSettings;
   private enabled = false;
   private patchedLeaves: WeakMap<WorkspaceLeaf, () => string> = new WeakMap();
   private metadataChangeHandler: (file: TFile, data: string, cache: CachedMetadata) => void;
 
   constructor(plugin: Plugin) {
-    this.plugin = plugin;
+    this.plugin = plugin as PluginWithSettings;
     this.app = plugin.app;
     this.metadataChangeHandler = this.handleMetadataChange.bind(this);
+  }
+
+  /**
+   * Get the display name template from settings
+   */
+  private getTemplate(): string {
+    return this.plugin.settings?.displayNameTemplate || DEFAULT_DISPLAY_NAME_TEMPLATE;
   }
 
   /**
@@ -139,7 +153,7 @@ export class TabTitlePatch {
   }
 
   /**
-   * Get the exo__Asset_label from a file's frontmatter
+   * Get the display name from a file's frontmatter using the template engine
    */
   private getAssetLabel(file: TFile): string | null {
     const cache = this.app.metadataCache.getFileCache(file);
@@ -147,12 +161,28 @@ export class TabTitlePatch {
 
     if (!frontmatter) return null;
 
+    // Build metadata for template rendering
+    const metadata = this.buildTemplateMetadata(frontmatter, file);
+
+    // Get creation date if available
+    const createdDate = file.stat?.ctime ? new Date(file.stat.ctime) : undefined;
+
+    // Use template engine to render display name
+    const template = this.getTemplate();
+    const engine = new DisplayNameTemplateEngine(template);
+    const displayName = engine.render(metadata, file.basename, createdDate);
+
+    if (displayName) {
+      return displayName;
+    }
+
+    // Fallback: try direct exo__Asset_label from frontmatter
     const label = frontmatter.exo__Asset_label;
     if (label && typeof label === "string" && label.trim() !== "") {
       return label.trim();
     }
 
-    // Fall back to prototype label if available
+    // Fallback: try prototype label if available
     const prototypeRef = frontmatter.exo__Asset_prototype;
     if (prototypeRef) {
       const prototypePath =
@@ -193,6 +223,52 @@ export class TabTitlePatch {
     }
 
     return null;
+  }
+
+  /**
+   * Build metadata object for template rendering, merging frontmatter with prototype data
+   */
+  private buildTemplateMetadata(
+    frontmatter: Record<string, unknown>,
+    _file: TFile
+  ): Record<string, unknown> {
+    const metadata = { ...frontmatter };
+
+    // If label is missing, try to get from prototype
+    if (!metadata.exo__Asset_label) {
+      const prototypeRef = metadata.exo__Asset_prototype;
+      if (prototypeRef) {
+        const prototypePath =
+          typeof prototypeRef === "string"
+            ? prototypeRef.replace(/^\[\[|\]\]$/g, "").replace(/^"|"$/g, "").trim()
+            : null;
+
+        if (prototypePath) {
+          let prototypeFile = this.app.metadataCache.getFirstLinkpathDest(
+            prototypePath,
+            ""
+          );
+
+          if (!prototypeFile && !prototypePath.endsWith(".md")) {
+            prototypeFile = this.app.metadataCache.getFirstLinkpathDest(
+              prototypePath + ".md",
+              ""
+            );
+          }
+
+          if (prototypeFile instanceof TFile) {
+            const prototypeCache = this.app.metadataCache.getFileCache(prototypeFile);
+            const prototypeMetadata = prototypeCache?.frontmatter;
+
+            if (prototypeMetadata?.exo__Asset_label) {
+              metadata.exo__Asset_label = prototypeMetadata.exo__Asset_label;
+            }
+          }
+        }
+      }
+    }
+
+    return metadata;
   }
 
   /**
