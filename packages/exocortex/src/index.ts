@@ -63,6 +63,10 @@ export type {
   URIConstructionOptions,
   AssetMetadata,
 } from "./services/URIConstructionService";
+export {
+  GraphQueryService,
+  type GraphQueryServiceConfig,
+} from "./services/GraphQueryService";
 
 // Utilities exports
 export { FrontmatterService } from "./utilities/FrontmatterService";
@@ -177,6 +181,16 @@ export type {
   IMultiVaultManager,
   VaultChangeCallback,
 } from "./interfaces/IMultiVaultManager";
+export type {
+  ITripleStore,
+  ITransaction,
+  GraphName,
+} from "./interfaces/ITripleStore";
+export {
+  TripleAlreadyExistsError,
+  TripleNotFoundError,
+  TransactionError,
+} from "./interfaces/ITripleStore";
 
 // DI Interfaces exports
 export type { ILogger } from "./interfaces/ILogger";

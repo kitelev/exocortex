@@ -63,6 +63,7 @@ export class RDFToGraphDataConverter {
   private static createNode(iri: string): GraphNode {
     const basename = this.extractBasename(iri);
     return {
+      id: iri,
       path: iri,
       title: basename,
       label: basename,
