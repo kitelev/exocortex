@@ -14,6 +14,7 @@ import type {
   EventSource,
   Position,
   EventModifiers,
+  EmitEventInput,
 } from "./types";
 import type { GraphNode, GraphEdge } from "exocortex";
 
@@ -90,18 +91,14 @@ export function useAllGraphEvents(
 /**
  * Get the emit function for emitting events.
  */
-export function useEmitGraphEvent(): <T extends GraphEvent>(
-  event: Omit<T, "id" | "timestamp" | "source"> & { type: T["type"]; source?: EventSource }
-) => void {
+export function useEmitGraphEvent(): (event: EmitEventInput) => void {
   return useGraphEventStore((s) => s.emit);
 }
 
 /**
  * Get the async emit function.
  */
-export function useEmitGraphEventAsync(): <T extends GraphEvent>(
-  event: Omit<T, "id" | "timestamp" | "source"> & { type: T["type"]; source?: EventSource }
-) => Promise<void> {
+export function useEmitGraphEventAsync(): (event: EmitEventInput) => Promise<void> {
   return useGraphEventStore((s) => s.emitAsync);
 }
 

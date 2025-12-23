@@ -20,7 +20,7 @@ import type {
   GraphEventState,
   EventSubscription,
   SubscriptionOptions,
-  EventSource,
+  EmitEventInput,
 } from "./types";
 
 /**
@@ -38,9 +38,9 @@ const DEFAULT_STATE: GraphEventState = {
 /**
  * Internal handler wrapper for options support
  */
-interface HandlerEntry<T extends GraphEvent = GraphEvent> {
+interface HandlerEntry {
   id: string;
-  handler: GraphEventHandler<T>;
+  handler: GraphEventHandler<GraphEvent>;
   options: SubscriptionOptions;
   lastCallTime?: number;
   debounceTimeout?: ReturnType<typeof setTimeout>;
@@ -98,10 +98,7 @@ function shouldCallHandler(
 /**
  * Call handler with debounce/throttle support
  */
-function callHandler<T extends GraphEvent>(
-  entry: HandlerEntry<T>,
-  event: T
-): void {
+function callHandler(entry: HandlerEntry, event: GraphEvent): void {
   const result = shouldCallHandler(entry, event);
 
   if (!result.call) {
@@ -145,9 +142,7 @@ export const useGraphEventStore = create<GraphEventStore>()(
       // Event Emission
       // ============================================================
 
-      emit: <T extends GraphEvent>(
-        eventData: Omit<T, "id" | "timestamp" | "source"> & { type: T["type"]; source?: EventSource }
-      ) => {
+      emit: (eventData: EmitEventInput) => {
         const state = get();
 
         const event = {
@@ -155,7 +150,7 @@ export const useGraphEventStore = create<GraphEventStore>()(
           id: generateEventId(),
           timestamp: Date.now(),
           source: eventData.source ?? "store",
-        } as T;
+        } as GraphEvent;
 
         // If batching, collect event
         if (state.isBatching) {
@@ -198,9 +193,7 @@ export const useGraphEventStore = create<GraphEventStore>()(
         }
       },
 
-      emitAsync: async <T extends GraphEvent>(
-        eventData: Omit<T, "id" | "timestamp" | "source"> & { type: T["type"]; source?: EventSource }
-      ): Promise<void> => {
+      emitAsync: async (eventData: EmitEventInput): Promise<void> => {
         const state = get();
 
         const event = {
@@ -208,7 +201,7 @@ export const useGraphEventStore = create<GraphEventStore>()(
           id: generateEventId(),
           timestamp: Date.now(),
           source: eventData.source ?? "store",
-        } as T;
+        } as GraphEvent;
 
         // If batching, collect event
         if (state.isBatching) {

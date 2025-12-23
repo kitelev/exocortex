@@ -491,11 +491,56 @@ export interface GraphEventState {
 }
 
 /**
+ * Input type for emitting events - allows any event without id/timestamp (auto-generated)
+ * and with optional source (defaults to "user")
+ */
+export type EmitEventInput =
+  | (Omit<NodeAddEvent, "id" | "timestamp" | "source"> & { source?: EventSource })
+  | (Omit<NodeUpdateEvent, "id" | "timestamp" | "source"> & { source?: EventSource })
+  | (Omit<NodeRemoveEvent, "id" | "timestamp" | "source"> & { source?: EventSource })
+  | (Omit<NodePositionEvent, "id" | "timestamp" | "source"> & { source?: EventSource })
+  | (Omit<NodeSelectEvent, "id" | "timestamp" | "source"> & { source?: EventSource })
+  | (Omit<NodeHoverEvent, "id" | "timestamp" | "source"> & { source?: EventSource })
+  | (Omit<NodeClickEvent, "id" | "timestamp" | "source"> & { source?: EventSource })
+  | (Omit<NodeDoubleClickEvent, "id" | "timestamp" | "source"> & { source?: EventSource })
+  | (Omit<NodeContextMenuEvent, "id" | "timestamp" | "source"> & { source?: EventSource })
+  | (Omit<NodeDragStartEvent, "id" | "timestamp" | "source"> & { source?: EventSource })
+  | (Omit<NodeDragEvent, "id" | "timestamp" | "source"> & { source?: EventSource })
+  | (Omit<NodeDragEndEvent, "id" | "timestamp" | "source"> & { source?: EventSource })
+  | (Omit<EdgeAddEvent, "id" | "timestamp" | "source"> & { source?: EventSource })
+  | (Omit<EdgeUpdateEvent, "id" | "timestamp" | "source"> & { source?: EventSource })
+  | (Omit<EdgeRemoveEvent, "id" | "timestamp" | "source"> & { source?: EventSource })
+  | (Omit<EdgeSelectEvent, "id" | "timestamp" | "source"> & { source?: EventSource })
+  | (Omit<EdgeHoverEvent, "id" | "timestamp" | "source"> & { source?: EventSource })
+  | (Omit<EdgeClickEvent, "id" | "timestamp" | "source"> & { source?: EventSource })
+  | (Omit<ViewportPanEvent, "id" | "timestamp" | "source"> & { source?: EventSource })
+  | (Omit<ViewportZoomEvent, "id" | "timestamp" | "source"> & { source?: EventSource })
+  | (Omit<ViewportResizeEvent, "id" | "timestamp" | "source"> & { source?: EventSource })
+  | (Omit<ViewportFitEvent, "id" | "timestamp" | "source"> & { source?: EventSource })
+  | (Omit<LayoutStartEvent, "id" | "timestamp" | "source"> & { source?: EventSource })
+  | (Omit<LayoutTickEvent, "id" | "timestamp" | "source"> & { source?: EventSource })
+  | (Omit<LayoutEndEvent, "id" | "timestamp" | "source"> & { source?: EventSource })
+  | (Omit<LayoutChangeEvent, "id" | "timestamp" | "source"> & { source?: EventSource })
+  | (Omit<SelectionChangeEvent, "id" | "timestamp" | "source"> & { source?: EventSource })
+  | (Omit<SelectionClearEvent, "id" | "timestamp" | "source"> & { source?: EventSource })
+  | (Omit<SelectionBoxStartEvent, "id" | "timestamp" | "source"> & { source?: EventSource })
+  | (Omit<SelectionBoxUpdateEvent, "id" | "timestamp" | "source"> & { source?: EventSource })
+  | (Omit<SelectionBoxEndEvent, "id" | "timestamp" | "source"> & { source?: EventSource })
+  | (Omit<DataLoadStartEvent, "id" | "timestamp" | "source"> & { source?: EventSource })
+  | (Omit<DataLoadEndEvent, "id" | "timestamp" | "source"> & { source?: EventSource })
+  | (Omit<DataLoadErrorEvent, "id" | "timestamp" | "source"> & { source?: EventSource })
+  | (Omit<DataSyncEvent, "id" | "timestamp" | "source"> & { source?: EventSource })
+  | (Omit<DataBatchEvent, "id" | "timestamp" | "source"> & { source?: EventSource })
+  | (Omit<FilterChangeEvent, "id" | "timestamp" | "source"> & { source?: EventSource })
+  | (Omit<FilterResetEvent, "id" | "timestamp" | "source"> & { source?: EventSource })
+  | (Omit<GraphErrorEvent, "id" | "timestamp" | "source"> & { source?: EventSource });
+
+/**
  * Event emitter actions
  */
 export interface GraphEventActions {
   /** Emit an event to all subscribers */
-  emit: <T extends GraphEvent>(event: Omit<T, "id" | "timestamp" | "source"> & { type: T["type"]; source?: EventSource }) => void;
+  emit: (event: EmitEventInput) => void;
 
   /** Subscribe to a specific event type */
   on: <T extends GraphEventType>(
@@ -514,7 +559,7 @@ export interface GraphEventActions {
   ) => void;
 
   /** Emit event and wait for async handlers */
-  emitAsync: <T extends GraphEvent>(event: Omit<T, "id" | "timestamp" | "source"> & { type: T["type"]; source?: EventSource }) => Promise<void>;
+  emitAsync: (event: EmitEventInput) => Promise<void>;
 
   /** Start batching events (emit as single batch event) */
   startBatch: () => void;
