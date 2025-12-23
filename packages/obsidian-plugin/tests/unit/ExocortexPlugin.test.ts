@@ -100,6 +100,7 @@ describe("ExocortexPlugin", () => {
     // Setup mock metadata cache
     mockMetadataCache = {
       on: jest.fn().mockReturnValue({ unsubscribe: jest.fn() }),
+      offref: jest.fn(),
       getFileCache: jest.fn(),
     };
 
@@ -939,17 +940,23 @@ describe("ExocortexPlugin", () => {
     it("should handle metadata changed event", async () => {
       // Arrange
       const mockFile = { path: "test.md" } as TFile;
-      const changedCall = mockMetadataCache.on.mock.calls.find(
+
+      // Find all changed handlers - the plugin's handler is the one that triggers handleMetadataChange
+      // which in turn calls taskTrackingService.handleFileChange
+      const changedCalls = mockMetadataCache.on.mock.calls.filter(
         call => call[0] === "changed"
       );
-      const changedHandler = changedCall?.[1];
+      // The plugin's changed handler is the second one (ExocortexAPI registers first)
+      const changedHandler = changedCalls.length > 1 ? changedCalls[1]?.[1] : changedCalls[0]?.[1];
 
       mockMetadataCache.getFileCache.mockReturnValue({
         frontmatter: { test: "data" },
       });
 
       // Act
-      await changedHandler(mockFile);
+      if (changedHandler) {
+        await changedHandler(mockFile);
+      }
 
       // Assert
       expect(mockTaskTrackingService.handleFileChange).toHaveBeenCalledWith(mockFile);

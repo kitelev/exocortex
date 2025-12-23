@@ -24,6 +24,7 @@ import { WikilinkAliasService } from "./application/services/WikilinkAliasServic
 import { SPARQLCodeBlockProcessor } from "./application/processors/SPARQLCodeBlockProcessor";
 import { LayoutCodeBlockProcessor } from "./application/processors/LayoutCodeBlockProcessor";
 import { SPARQLApi } from "./application/api/SPARQLApi";
+import { ExocortexAPI } from "./application/api/ExocortexAPI";
 import { PluginContainer } from "./infrastructure/di/PluginContainer";
 import { createAliasIconExtension } from "./presentation/editor-extensions";
 import { TimerManager } from "./infrastructure/timer";
@@ -52,6 +53,11 @@ export default class ExocortexPlugin extends Plugin {
   private sparqlProcessor!: SPARQLCodeBlockProcessor;
   private layoutProcessor!: LayoutCodeBlockProcessor;
   sparql!: SPARQLApi;
+  /**
+   * Public API for external plugin integration.
+   * Accessible via `app.plugins.getPlugin('exocortex').api`
+   */
+  api!: ExocortexAPI;
   settings!: ExocortexSettings;
   private timerManager!: TimerManager;
   // MutationObserver to detect when layout is removed by Obsidian re-renders (e.g., when processing embeds)
@@ -105,6 +111,7 @@ export default class ExocortexPlugin extends Plugin {
       this.sparqlProcessor = new SPARQLCodeBlockProcessor(this);
       this.layoutProcessor = new LayoutCodeBlockProcessor(this);
       this.sparql = new SPARQLApi(this);
+      this.api = new ExocortexAPI(this);
 
       // Register the alias icon editor extension for Live Preview mode
       this.registerEditorExtension(
@@ -244,6 +251,11 @@ export default class ExocortexPlugin extends Plugin {
       await this.sparql.dispose();
     }
 
+    // Cleanup public API
+    if (this.api) {
+      this.api.cleanup();
+    }
+
     // Cleanup layout renderer (includes backlinks cache, metadata cache, etc.)
     if (this.layoutRenderer) {
       this.layoutRenderer.cleanup();
@@ -286,6 +298,26 @@ export default class ExocortexPlugin extends Plugin {
 
   getSPARQLApi(): SPARQLApi | null {
     return this.sparql ?? null;
+  }
+
+  /**
+   * Returns the public API for external plugin integration.
+   *
+   * @returns The ExocortexAPI instance, or null if not initialized
+   *
+   * @example
+   * ```typescript
+   * // In another plugin
+   * const exocortex = app.plugins.getPlugin('exocortex');
+   * const api = exocortex?.getAPI();
+   * if (api) {
+   *   const label = api.getAssetLabel(file.path);
+   *   console.log(`Asset label: ${label}`);
+   * }
+   * ```
+   */
+  getAPI(): ExocortexAPI | null {
+    return this.api ?? null;
   }
 
   /**
