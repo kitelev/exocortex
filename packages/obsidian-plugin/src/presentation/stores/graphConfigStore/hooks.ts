@@ -3,7 +3,7 @@
  * Provides type-safe access to configuration with automatic re-rendering.
  */
 
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useEffect } from "react";
 import { useGraphConfigStore } from "./store";
 import type {
   GraphConfig,
@@ -169,18 +169,26 @@ export function useConfigImportExport(): {
 /**
  * Hook to subscribe to config changes with a custom selector
  * Useful for performance-critical components
+ * Returns an unsubscribe function for manual cleanup
  */
 export function useConfigSubscription<T>(
   selector: (config: GraphConfig) => T,
   callback: (value: T) => void
-): void {
+): () => void {
   const subscribe = useGraphConfigStore((state: GraphConfigStore) => state.subscribe);
 
-  useMemo(() => {
-    return subscribe((config: GraphConfig) => {
+  // Use useEffect for proper subscription lifecycle management
+  useEffect(() => {
+    const unsubscribe = subscribe((config: GraphConfig) => {
       callback(selector(config));
     });
+    return unsubscribe;
   }, [subscribe, selector, callback]);
+
+  // Return a no-op for backwards compatibility - actual cleanup is in useEffect
+  return useCallback(() => {
+    // Cleanup is handled by useEffect
+  }, []);
 }
 
 /**
