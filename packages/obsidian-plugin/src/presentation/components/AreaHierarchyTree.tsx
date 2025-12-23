@@ -1,4 +1,5 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
+import { useUIStore } from "@plugin/presentation/stores";
 
 export interface AreaNode {
   path: string;
@@ -175,6 +176,111 @@ export const AreaHierarchyTree: React.FC<AreaHierarchyTreeProps> = ({
           ))}
         </tbody>
       </table>
+    </div>
+  );
+};
+
+/**
+ * Recursively filters out archived areas from the tree.
+ * If an area is archived and showArchived is false, it and all its children are excluded.
+ */
+const filterArchivedAreas = (node: AreaNode, showArchived: boolean): AreaNode | null => {
+  // If not showing archived and this node is archived, exclude it entirely
+  if (!showArchived && node.isArchived) {
+    return null;
+  }
+
+  // Recursively filter children
+  const filteredChildren = node.children
+    .map(child => filterArchivedAreas(child, showArchived))
+    .filter((child): child is AreaNode => child !== null);
+
+  return {
+    ...node,
+    children: filteredChildren,
+  };
+};
+
+export interface AreaHierarchyTreeWithToggleProps extends AreaHierarchyTreeProps {
+  showArchived?: boolean;
+  onToggleArchived?: () => void;
+}
+
+export const AreaHierarchyTreeWithToggle: React.FC<AreaHierarchyTreeWithToggleProps> = ({
+  tree,
+  currentAreaPath,
+  onAreaClick,
+  getAssetLabel,
+  showArchived: propShowArchived,
+  onToggleArchived,
+}) => {
+  const storeShowArchived = useUIStore((state) => state.showArchived);
+  const storeToggleArchived = useUIStore((state) => state.toggleArchived);
+
+  const showArchived = propShowArchived ?? storeShowArchived;
+
+  const handleToggleArchived = () => {
+    if (onToggleArchived) {
+      onToggleArchived();
+    } else {
+      storeToggleArchived();
+    }
+  };
+
+  // Filter the tree based on showArchived setting
+  const filteredTree = useMemo(() => {
+    if (!tree) return tree;
+    const filtered = filterArchivedAreas(tree, showArchived);
+    return filtered || { ...tree, children: [] };
+  }, [tree, showArchived]);
+
+  if (!filteredTree.children || filteredTree.children.length === 0) {
+    return (
+      <div className="exocortex-area-tree-wrapper">
+        <div className="exocortex-area-tree-controls">
+          <button
+            className="exocortex-toggle-archived"
+            onClick={handleToggleArchived}
+            style={{
+              marginBottom: "8px",
+              padding: "4px 8px",
+              cursor: "pointer",
+              fontSize: "12px",
+            }}
+          >
+            {showArchived ? "Hide" : "Show"} Archived
+          </button>
+        </div>
+        <div className="exocortex-area-tree">
+          <h3>Area Hierarchy</h3>
+          <p className="exocortex-no-areas">No areas to display</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="exocortex-area-tree-wrapper">
+      <div className="exocortex-area-tree-controls">
+        <button
+          className="exocortex-toggle-archived"
+          onClick={handleToggleArchived}
+          style={{
+            marginBottom: "8px",
+            padding: "4px 8px",
+            cursor: "pointer",
+            fontSize: "12px",
+          }}
+        >
+          {showArchived ? "Hide" : "Show"} Archived
+        </button>
+      </div>
+      <AreaHierarchyTree
+        tree={filteredTree}
+        currentAreaPath={currentAreaPath}
+        onAreaClick={onAreaClick}
+        getAssetLabel={getAssetLabel}
+      />
     </div>
   );
 };

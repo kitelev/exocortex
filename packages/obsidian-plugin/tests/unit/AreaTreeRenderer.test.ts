@@ -31,6 +31,7 @@ jest.mock("exocortex", () => ({
 
 jest.mock("../../src/presentation/components/AreaHierarchyTree", () => ({
   AreaHierarchyTree: jest.fn(() => null),
+  AreaHierarchyTreeWithToggle: jest.fn(() => null),
 }));
 
 describe("AreaTreeRenderer", () => {

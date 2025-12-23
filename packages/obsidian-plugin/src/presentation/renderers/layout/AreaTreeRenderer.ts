@@ -2,7 +2,7 @@ import { TFile, Keymap } from "obsidian";
 import React from "react";
 import { ReactRenderer } from '@plugin/presentation/utils/ReactRenderer';
 import { MetadataExtractor, AssetClass, AreaHierarchyBuilder, IVaultAdapter } from "exocortex";
-import { AreaHierarchyTree, type AreaClickEvent } from '@plugin/presentation/components/AreaHierarchyTree';
+import { AreaHierarchyTreeWithToggle, type AreaClickEvent } from '@plugin/presentation/components/AreaHierarchyTree';
 import { AssetMetadataService } from "./helpers/AssetMetadataService";
 import { AssetRelation } from "./types";
 import { ILogger } from '@plugin/adapters/logging/ILogger';
@@ -72,7 +72,7 @@ export class AreaTreeRenderer {
 
     this.reactRenderer.render(
       treeContainer,
-      React.createElement(AreaHierarchyTree, {
+      React.createElement(AreaHierarchyTreeWithToggle, {
         tree,
         currentAreaPath: file.path,
         onAreaClick: async (path: string, event: AreaClickEvent) => {
