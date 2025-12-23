@@ -174,6 +174,22 @@ export class ExocortexSettingTab extends PluginSettingTab {
           }),
       );
 
+    new Setting(containerEl)
+      .setName("Sort file explorer by display name")
+      .setDesc(
+        "Sort files by their display name (exo__Asset_label) instead of filename. " +
+        "Useful for vaults with UUID-based filenames. Folders are always shown first.",
+      )
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.sortByDisplayName)
+          .onChange(async (value) => {
+            this.plugin.settings.sortByDisplayName = value;
+            await this.plugin.saveSettings();
+            this.plugin.toggleFileExplorerSort(value);
+          }),
+      );
+
     // Display Name Template section
     containerEl.createEl("h3", { text: "Display Name Template" });
 

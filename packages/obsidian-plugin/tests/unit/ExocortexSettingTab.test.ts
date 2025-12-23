@@ -43,11 +43,13 @@ describe("ExocortexSettingTab", () => {
         showLabelsInFileExplorer: true,
         showLabelsInTabTitles: true,
         displayNameTemplate: "{{exo__Asset_label}}",
+        sortByDisplayName: false,
       },
       saveSettings: jest.fn().mockResolvedValue(undefined),
       refreshLayout: jest.fn(),
       toggleFileExplorerLabels: jest.fn(),
       toggleTabTitleLabels: jest.fn(),
+      toggleFileExplorerSort: jest.fn(),
       applyDisplayNameTemplate: jest.fn(),
     });
 
@@ -318,8 +320,8 @@ describe("ExocortexSettingTab", () => {
 
       expect(mockContainerEl.empty).toHaveBeenCalled();
       expect(getOntologySpy).toHaveBeenCalledTimes(1);
-      // 8 original settings + 2 template settings (preset dropdown + custom template text)
-      expect(MockSetting).toHaveBeenCalledTimes(10);
+      // 9 original settings + 2 template settings (preset dropdown + custom template text)
+      expect(MockSetting).toHaveBeenCalledTimes(11);
     });
 
     it("should render ontology dropdown with correct options", () => {

@@ -12,6 +12,7 @@ export interface ExocortexSettings {
   showLabelsInFileExplorer: boolean;
   showLabelsInTabTitles: boolean;
   displayNameTemplate: string;
+  sortByDisplayName: boolean;
   [key: string]: unknown;
 }
 
@@ -29,4 +30,5 @@ export const DEFAULT_SETTINGS: ExocortexSettings = {
   showLabelsInFileExplorer: true,
   showLabelsInTabTitles: true,
   displayNameTemplate: "{{exo__Asset_label}}",
+  sortByDisplayName: false,
 };

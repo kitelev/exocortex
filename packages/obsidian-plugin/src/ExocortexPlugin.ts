@@ -29,6 +29,7 @@ import { createAliasIconExtension } from "./presentation/editor-extensions";
 import { TimerManager } from "./infrastructure/timer";
 import { LRUCache } from "./infrastructure/cache";
 import { FileExplorerPatch } from "./presentation/file-explorer/FileExplorerPatch";
+import { FileExplorerSortPatch } from "./presentation/file-explorer/FileExplorerSortPatch";
 import { TabTitlePatch } from "./presentation/tab-titles/TabTitlePatch";
 
 /**
@@ -56,6 +57,7 @@ export default class ExocortexPlugin extends Plugin {
   // MutationObserver to detect when layout is removed by Obsidian re-renders (e.g., when processing embeds)
   private layoutPersistenceObserver: MutationObserver | null = null;
   private fileExplorerPatch!: FileExplorerPatch;
+  private fileExplorerSortPatch!: FileExplorerSortPatch;
   private tabTitlePatch!: TabTitlePatch;
 
   override async onload(): Promise<void> {
@@ -189,6 +191,15 @@ export default class ExocortexPlugin extends Plugin {
         }, 500);
       }
 
+      // Initialize File Explorer sort patch
+      this.fileExplorerSortPatch = new FileExplorerSortPatch(this);
+      if (this.settings.sortByDisplayName) {
+        // Delay enabling to ensure File Explorer is fully loaded
+        this.timerManager.setTimeout("file-explorer-sort-patch", () => {
+          this.fileExplorerSortPatch.enable();
+        }, 600); // Slightly after label patch
+      }
+
       // Initialize Tab Title label patch
       this.tabTitlePatch = new TabTitlePatch(this);
       if (this.settings.showLabelsInTabTitles) {
@@ -248,6 +259,11 @@ export default class ExocortexPlugin extends Plugin {
       this.fileExplorerPatch.cleanup();
     }
 
+    // Cleanup File Explorer sort patch
+    if (this.fileExplorerSortPatch) {
+      this.fileExplorerSortPatch.cleanup();
+    }
+
     // Cleanup Tab Title patch
     if (this.tabTitlePatch) {
       this.tabTitlePatch.cleanup();
@@ -293,6 +309,18 @@ export default class ExocortexPlugin extends Plugin {
       this.tabTitlePatch.enable();
     } else {
       this.tabTitlePatch.disable();
+    }
+  }
+
+  /**
+   * Toggle File Explorer sort by display name on/off
+   * Called from settings when the sortByDisplayName toggle changes
+   */
+  toggleFileExplorerSort(enabled: boolean): void {
+    if (enabled) {
+      this.fileExplorerSortPatch.enable();
+    } else {
+      this.fileExplorerSortPatch.disable();
     }
   }
 
