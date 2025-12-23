@@ -28,6 +28,7 @@ import { PluginContainer } from "./infrastructure/di/PluginContainer";
 import { createAliasIconExtension } from "./presentation/editor-extensions";
 import { TimerManager } from "./infrastructure/timer";
 import { LRUCache } from "./infrastructure/cache";
+import { FileExplorerPatch } from "./presentation/file-explorer/FileExplorerPatch";
 
 /**
  * Exocortex Plugin - Automatic layout rendering
@@ -53,6 +54,7 @@ export default class ExocortexPlugin extends Plugin {
   private timerManager!: TimerManager;
   // MutationObserver to detect when layout is removed by Obsidian re-renders (e.g., when processing embeds)
   private layoutPersistenceObserver: MutationObserver | null = null;
+  private fileExplorerPatch!: FileExplorerPatch;
 
   override async onload(): Promise<void> {
     try {
@@ -176,6 +178,15 @@ export default class ExocortexPlugin extends Plugin {
         this.timerManager.setTimeout("auto-layout-initial", () => this.autoRenderLayout(), 150);
       }
 
+      // Initialize File Explorer label patch
+      this.fileExplorerPatch = new FileExplorerPatch(this);
+      if (this.settings.showLabelsInFileExplorer) {
+        // Delay enabling to ensure File Explorer is fully loaded
+        this.timerManager.setTimeout("file-explorer-patch", () => {
+          this.fileExplorerPatch.enable();
+        }, 500);
+      }
+
       this.logger.info("Exocortex Plugin loaded successfully");
     } catch (error) {
       this.logger?.error("Failed to load Exocortex Plugin", error as Error);
@@ -221,6 +232,11 @@ export default class ExocortexPlugin extends Plugin {
       this.metadataCache.cleanup();
     }
 
+    // Cleanup File Explorer patch
+    if (this.fileExplorerPatch) {
+      this.fileExplorerPatch.cleanup();
+    }
+
     this.logger?.info("Exocortex Plugin unloaded");
   }
 
@@ -238,6 +254,18 @@ export default class ExocortexPlugin extends Plugin {
 
   getSPARQLApi(): SPARQLApi | null {
     return this.sparql ?? null;
+  }
+
+  /**
+   * Toggle File Explorer label display on/off
+   * Called from settings when the showLabelsInFileExplorer toggle changes
+   */
+  toggleFileExplorerLabels(enabled: boolean): void {
+    if (enabled) {
+      this.fileExplorerPatch.enable();
+    } else {
+      this.fileExplorerPatch.disable();
+    }
   }
 
   private autoRenderLayout(): void {

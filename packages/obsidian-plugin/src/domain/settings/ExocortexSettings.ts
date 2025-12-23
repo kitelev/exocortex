@@ -9,6 +9,7 @@ export interface ExocortexSettings {
   showFullDateInEffortTimes: boolean;
   showDailyNoteProjects: boolean;
   useDynamicPropertyFields: boolean;
+  showLabelsInFileExplorer: boolean;
   [key: string]: unknown;
 }
 
@@ -23,4 +24,5 @@ export const DEFAULT_SETTINGS: ExocortexSettings = {
   showFullDateInEffortTimes: false,
   showDailyNoteProjects: true,
   useDynamicPropertyFields: false,
+  showLabelsInFileExplorer: true,
 };

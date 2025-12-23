@@ -93,6 +93,7 @@ describe("ExocortexPlugin", () => {
     mockWorkspace = {
       getActiveViewOfType: jest.fn().mockReturnValue(mockView),
       getActiveFile: jest.fn(),
+      getLeavesOfType: jest.fn().mockReturnValue([]),
       on: jest.fn().mockReturnValue({ unsubscribe: jest.fn() }),
     };
 
