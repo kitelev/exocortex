@@ -10,6 +10,7 @@ export interface ExocortexSettings {
   showDailyNoteProjects: boolean;
   useDynamicPropertyFields: boolean;
   showLabelsInFileExplorer: boolean;
+  showLabelsInTabTitles: boolean;
   [key: string]: unknown;
 }
 
@@ -25,4 +26,5 @@ export const DEFAULT_SETTINGS: ExocortexSettings = {
   showDailyNoteProjects: true,
   useDynamicPropertyFields: false,
   showLabelsInFileExplorer: true,
+  showLabelsInTabTitles: true,
 };

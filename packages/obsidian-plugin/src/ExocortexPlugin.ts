@@ -29,6 +29,7 @@ import { createAliasIconExtension } from "./presentation/editor-extensions";
 import { TimerManager } from "./infrastructure/timer";
 import { LRUCache } from "./infrastructure/cache";
 import { FileExplorerPatch } from "./presentation/file-explorer/FileExplorerPatch";
+import { TabTitlePatch } from "./presentation/tab-titles/TabTitlePatch";
 
 /**
  * Exocortex Plugin - Automatic layout rendering
@@ -55,6 +56,7 @@ export default class ExocortexPlugin extends Plugin {
   // MutationObserver to detect when layout is removed by Obsidian re-renders (e.g., when processing embeds)
   private layoutPersistenceObserver: MutationObserver | null = null;
   private fileExplorerPatch!: FileExplorerPatch;
+  private tabTitlePatch!: TabTitlePatch;
 
   override async onload(): Promise<void> {
     try {
@@ -187,6 +189,15 @@ export default class ExocortexPlugin extends Plugin {
         }, 500);
       }
 
+      // Initialize Tab Title label patch
+      this.tabTitlePatch = new TabTitlePatch(this);
+      if (this.settings.showLabelsInTabTitles) {
+        // Delay enabling to ensure workspace is fully loaded
+        this.timerManager.setTimeout("tab-title-patch", () => {
+          this.tabTitlePatch.enable();
+        }, 500);
+      }
+
       this.logger.info("Exocortex Plugin loaded successfully");
     } catch (error) {
       this.logger?.error("Failed to load Exocortex Plugin", error as Error);
@@ -237,6 +248,11 @@ export default class ExocortexPlugin extends Plugin {
       this.fileExplorerPatch.cleanup();
     }
 
+    // Cleanup Tab Title patch
+    if (this.tabTitlePatch) {
+      this.tabTitlePatch.cleanup();
+    }
+
     this.logger?.info("Exocortex Plugin unloaded");
   }
 
@@ -265,6 +281,18 @@ export default class ExocortexPlugin extends Plugin {
       this.fileExplorerPatch.enable();
     } else {
       this.fileExplorerPatch.disable();
+    }
+  }
+
+  /**
+   * Toggle Tab Title label display on/off
+   * Called from settings when the showLabelsInTabTitles toggle changes
+   */
+  toggleTabTitleLabels(enabled: boolean): void {
+    if (enabled) {
+      this.tabTitlePatch.enable();
+    } else {
+      this.tabTitlePatch.disable();
     }
   }
 

@@ -301,7 +301,7 @@ describe("ExocortexSettingTab", () => {
 
       expect(mockContainerEl.empty).toHaveBeenCalled();
       expect(getOntologySpy).toHaveBeenCalledTimes(1);
-      expect(MockSetting).toHaveBeenCalledTimes(7);
+      expect(MockSetting).toHaveBeenCalledTimes(8);
     });
 
     it("should render ontology dropdown with correct options", () => {
