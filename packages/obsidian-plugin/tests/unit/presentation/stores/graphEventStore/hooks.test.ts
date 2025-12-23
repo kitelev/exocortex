@@ -14,8 +14,18 @@ import {
   useEventHistoryEnabled,
   useEventBatch,
   useNodeClick,
+  useNodeDoubleClick,
   useNodeHover,
+  useNodeSelect,
+  useNodeDrag,
+  useEdgeClick,
+  useEdgeHover,
   useSelectionChange,
+  useViewportEvents,
+  useLayoutEvents,
+  useDataLoadingEvents,
+  useGraphError,
+  useRecentEvents,
 } from "../../../../../src/presentation/stores/graphEventStore/hooks";
 import {
   useGraphEventStore,
@@ -353,6 +363,268 @@ describe("GraphEventStore Hooks", () => {
 
       // All events should have been emitted after batch ends
       expect(handler).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe("useNodeDoubleClick", () => {
+    it("should call handler with node double-click details", () => {
+      const handler = jest.fn();
+      renderHook(() => useNodeDoubleClick(handler));
+
+      act(() => {
+        useGraphEventStore.getState().emit({
+          type: "node:dblclick",
+          nodeId: "test-node",
+          position: { x: 50, y: 100 },
+          modifiers: { shift: false, ctrl: true, alt: false, meta: false },
+        });
+      });
+
+      expect(handler).toHaveBeenCalledWith(
+        "test-node",
+        { x: 50, y: 100 },
+        { shift: false, ctrl: true, alt: false, meta: false }
+      );
+    });
+  });
+
+  describe("useNodeSelect", () => {
+    it("should call handler with node selection state", () => {
+      const handler = jest.fn();
+      renderHook(() => useNodeSelect(handler));
+
+      act(() => {
+        useGraphEventStore.getState().emit({
+          type: "node:select",
+          nodeId: "test-node",
+          selected: true,
+        });
+      });
+
+      expect(handler).toHaveBeenCalledWith("test-node", true);
+    });
+  });
+
+  describe("useNodeDrag", () => {
+    it("should call drag handlers", () => {
+      const onDragStart = jest.fn();
+      const onDrag = jest.fn();
+      const onDragEnd = jest.fn();
+      renderHook(() => useNodeDrag({ onDragStart, onDrag, onDragEnd }));
+
+      act(() => {
+        useGraphEventStore.getState().emit({
+          type: "node:dragstart",
+          nodeId: "test-node",
+          position: { x: 0, y: 0 },
+        });
+        useGraphEventStore.getState().emit({
+          type: "node:drag",
+          nodeId: "test-node",
+          position: { x: 10, y: 20 },
+        });
+        useGraphEventStore.getState().emit({
+          type: "node:dragend",
+          nodeId: "test-node",
+          position: { x: 30, y: 40 },
+          startPosition: { x: 0, y: 0 },
+        });
+      });
+
+      expect(onDragStart).toHaveBeenCalledWith("test-node", { x: 0, y: 0 });
+      expect(onDrag).toHaveBeenCalledWith("test-node", { x: 10, y: 20 });
+      expect(onDragEnd).toHaveBeenCalledWith("test-node", { x: 30, y: 40 }, { x: 0, y: 0 });
+    });
+  });
+
+  describe("useEdgeClick", () => {
+    it("should call handler with edge click details", () => {
+      const handler = jest.fn();
+      renderHook(() => useEdgeClick(handler));
+
+      act(() => {
+        useGraphEventStore.getState().emit({
+          type: "edge:click",
+          edgeId: "test-edge",
+          position: { x: 100, y: 200 },
+          modifiers: { shift: true, ctrl: false, alt: false, meta: false },
+        });
+      });
+
+      expect(handler).toHaveBeenCalledWith(
+        "test-edge",
+        { x: 100, y: 200 },
+        { shift: true, ctrl: false, alt: false, meta: false }
+      );
+    });
+  });
+
+  describe("useEdgeHover", () => {
+    it("should call handler with edge id", () => {
+      const handler = jest.fn();
+      renderHook(() => useEdgeHover(handler));
+
+      act(() => {
+        useGraphEventStore.getState().emit({ type: "edge:hover", edgeId: "test-edge" });
+      });
+
+      expect(handler).toHaveBeenCalledWith("test-edge");
+    });
+
+    it("should call handler with null when unhovered", () => {
+      const handler = jest.fn();
+      renderHook(() => useEdgeHover(handler));
+
+      act(() => {
+        useGraphEventStore.getState().emit({ type: "edge:hover", edgeId: null });
+      });
+
+      expect(handler).toHaveBeenCalledWith(null);
+    });
+  });
+
+  describe("useViewportEvents", () => {
+    it("should call viewport handlers", () => {
+      const onPan = jest.fn();
+      const onZoom = jest.fn();
+      const onResize = jest.fn();
+      const onFit = jest.fn();
+      renderHook(() => useViewportEvents({ onPan, onZoom, onResize, onFit }));
+
+      act(() => {
+        useGraphEventStore.getState().emit({
+          type: "viewport:pan",
+          offset: { x: 10, y: 20 },
+        });
+        useGraphEventStore.getState().emit({
+          type: "viewport:zoom",
+          zoom: 1.5,
+          center: { x: 100, y: 100 },
+        });
+        useGraphEventStore.getState().emit({
+          type: "viewport:resize",
+          width: 800,
+          height: 600,
+        });
+        useGraphEventStore.getState().emit({
+          type: "viewport:fit",
+        });
+      });
+
+      expect(onPan).toHaveBeenCalledWith({ x: 10, y: 20 });
+      expect(onZoom).toHaveBeenCalledWith(1.5, { x: 100, y: 100 });
+      expect(onResize).toHaveBeenCalledWith(800, 600);
+      expect(onFit).toHaveBeenCalled();
+    });
+  });
+
+  describe("useLayoutEvents", () => {
+    it("should call layout handlers", () => {
+      const onStart = jest.fn();
+      const onTick = jest.fn();
+      const onEnd = jest.fn();
+      const onChange = jest.fn();
+      renderHook(() => useLayoutEvents({ onStart, onTick, onEnd, onChange }));
+
+      act(() => {
+        useGraphEventStore.getState().emit({
+          type: "layout:start",
+          algorithm: "force",
+        });
+        useGraphEventStore.getState().emit({
+          type: "layout:tick",
+          alpha: 0.5,
+          progress: 50,
+        });
+        useGraphEventStore.getState().emit({
+          type: "layout:end",
+          algorithm: "force",
+          duration: 1000,
+        });
+        useGraphEventStore.getState().emit({
+          type: "layout:change",
+          algorithm: "grid",
+          previousAlgorithm: "force",
+        });
+      });
+
+      expect(onStart).toHaveBeenCalledWith("force");
+      expect(onTick).toHaveBeenCalledWith(0.5, 50);
+      expect(onEnd).toHaveBeenCalledWith("force", 1000);
+      expect(onChange).toHaveBeenCalledWith("grid", "force");
+    });
+  });
+
+  describe("useDataLoadingEvents", () => {
+    it("should call data loading handlers", () => {
+      const onLoadStart = jest.fn();
+      const onLoadEnd = jest.fn();
+      const onLoadError = jest.fn();
+      renderHook(() => useDataLoadingEvents({ onLoadStart, onLoadEnd, onLoadError }));
+
+      act(() => {
+        useGraphEventStore.getState().emit({
+          type: "data:loadstart",
+          dataSource: "vault",
+        });
+        useGraphEventStore.getState().emit({
+          type: "data:loadend",
+          nodeCount: 100,
+          edgeCount: 50,
+          duration: 500,
+        });
+        useGraphEventStore.getState().emit({
+          type: "data:loaderror",
+          error: "Connection failed",
+        });
+      });
+
+      expect(onLoadStart).toHaveBeenCalledWith("vault");
+      expect(onLoadEnd).toHaveBeenCalledWith(100, 50, 500);
+      expect(onLoadError).toHaveBeenCalledWith("Connection failed");
+    });
+  });
+
+  describe("useGraphError", () => {
+    it("should call handler with error details", () => {
+      const handler = jest.fn();
+      renderHook(() => useGraphError(handler));
+
+      act(() => {
+        useGraphEventStore.getState().emit({
+          type: "error",
+          error: "Something went wrong",
+          context: "data-loading",
+          recoverable: true,
+        });
+      });
+
+      expect(handler).toHaveBeenCalledWith("Something went wrong", "data-loading", true);
+    });
+  });
+
+  describe("useRecentEvents", () => {
+    it("should return recent events of specific type", () => {
+      // Enable history
+      act(() => {
+        useGraphEventStore.getState().setHistoryEnabled(true);
+      });
+
+      // Emit several events
+      act(() => {
+        useGraphEventStore.getState().emit({
+          type: "node:add",
+          node: { id: "node1", label: "N1", path: "/n1.md", isArchived: false, title: "N1" },
+        });
+        useGraphEventStore.getState().emit({
+          type: "node:add",
+          node: { id: "node2", label: "N2", path: "/n2.md", isArchived: false, title: "N2" },
+        });
+        useGraphEventStore.getState().emit({ type: "viewport:zoom", zoom: 1.5 });
+      });
+
+      const { result } = renderHook(() => useRecentEvents("node:add", 10));
+      expect(result.current).toHaveLength(2);
     });
   });
 });
