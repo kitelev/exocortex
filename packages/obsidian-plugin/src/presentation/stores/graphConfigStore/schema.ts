@@ -101,7 +101,7 @@ const validateSimulationConfig = createValidator((value, path) => {
     issues.push({ path: [...path, "velocityDecay"], message: "Must be a number between 0 and 1", received: value.velocityDecay });
   }
 
-  return issues.length > 0 ? { valid: false, issues } : { valid: true, data: value as GraphConfig["physics"]["simulation"] };
+  return issues.length > 0 ? { valid: false, issues } : { valid: true, data: value as unknown as GraphConfig["physics"]["simulation"] };
 });
 
 const validateCenterForceConfig = createValidator((value, path) => {
@@ -123,7 +123,7 @@ const validateCenterForceConfig = createValidator((value, path) => {
     issues.push({ path: [...path, "y"], message: "Must be a number", received: value.y });
   }
 
-  return issues.length > 0 ? { valid: false, issues } : { valid: true, data: value as GraphConfig["physics"]["center"] };
+  return issues.length > 0 ? { valid: false, issues } : { valid: true, data: value as unknown as GraphConfig["physics"]["center"] };
 });
 
 const validateLinkForceConfig = createValidator((value, path) => {
@@ -145,7 +145,7 @@ const validateLinkForceConfig = createValidator((value, path) => {
     issues.push({ path: [...path, "iterations"], message: "Must be an integer between 1 and 10", received: value.iterations });
   }
 
-  return issues.length > 0 ? { valid: false, issues } : { valid: true, data: value as GraphConfig["physics"]["link"] };
+  return issues.length > 0 ? { valid: false, issues } : { valid: true, data: value as unknown as GraphConfig["physics"]["link"] };
 });
 
 const validateChargeForceConfig = createValidator((value, path) => {
@@ -170,7 +170,7 @@ const validateChargeForceConfig = createValidator((value, path) => {
     issues.push({ path: [...path, "theta"], message: "Must be a number between 0 and 1", received: value.theta });
   }
 
-  return issues.length > 0 ? { valid: false, issues } : { valid: true, data: value as GraphConfig["physics"]["charge"] };
+  return issues.length > 0 ? { valid: false, issues } : { valid: true, data: value as unknown as GraphConfig["physics"]["charge"] };
 });
 
 const validateCollisionForceConfig = createValidator((value, path) => {
@@ -192,7 +192,7 @@ const validateCollisionForceConfig = createValidator((value, path) => {
     issues.push({ path: [...path, "iterations"], message: "Must be an integer between 1 and 10", received: value.iterations });
   }
 
-  return issues.length > 0 ? { valid: false, issues } : { valid: true, data: value as GraphConfig["physics"]["collision"] };
+  return issues.length > 0 ? { valid: false, issues } : { valid: true, data: value as unknown as GraphConfig["physics"]["collision"] };
 });
 
 const validateRadialForceConfig = createValidator((value, path) => {
@@ -217,7 +217,7 @@ const validateRadialForceConfig = createValidator((value, path) => {
     issues.push({ path: [...path, "y"], message: "Must be a number", received: value.y });
   }
 
-  return issues.length > 0 ? { valid: false, issues } : { valid: true, data: value as GraphConfig["physics"]["radial"] };
+  return issues.length > 0 ? { valid: false, issues } : { valid: true, data: value as unknown as GraphConfig["physics"]["radial"] };
 });
 
 const validatePhysicsConfig = createValidator((value, path) => {
@@ -248,7 +248,7 @@ const validatePhysicsConfig = createValidator((value, path) => {
   const radialResult = validateRadialForceConfig(value.radial, [...path, "radial"]);
   if (!radialResult.valid) issues.push(...radialResult.issues);
 
-  return issues.length > 0 ? { valid: false, issues } : { valid: true, data: value as GraphConfig["physics"] };
+  return issues.length > 0 ? { valid: false, issues } : { valid: true, data: value as unknown as GraphConfig["physics"] };
 });
 
 // ============================================================
@@ -271,7 +271,7 @@ const validatePerformanceConfig = createValidator((value, path) => {
     issues.push({ path: [...path, "antialias"], message: "Must be a boolean", received: value.antialias });
   }
 
-  return issues.length > 0 ? { valid: false, issues } : { valid: true, data: value as GraphConfig["rendering"]["performance"] };
+  return issues.length > 0 ? { valid: false, issues } : { valid: true, data: value as unknown as GraphConfig["rendering"]["performance"] };
 });
 
 const validateNodeRenderConfig = createValidator((value, path) => {
@@ -302,7 +302,7 @@ const validateNodeRenderConfig = createValidator((value, path) => {
     issues.push({ path: [...path, "shadowBlur"], message: "Must be a number between 0 and 50", received: value.shadowBlur });
   }
 
-  return issues.length > 0 ? { valid: false, issues } : { valid: true, data: value as GraphConfig["rendering"]["nodes"] };
+  return issues.length > 0 ? { valid: false, issues } : { valid: true, data: value as unknown as GraphConfig["rendering"]["nodes"] };
 });
 
 const validateEdgeRenderConfig = createValidator((value, path) => {
@@ -333,7 +333,7 @@ const validateEdgeRenderConfig = createValidator((value, path) => {
     issues.push({ path: [...path, "arrowSize"], message: "Must be a number between 2 and 20", received: value.arrowSize });
   }
 
-  return issues.length > 0 ? { valid: false, issues } : { valid: true, data: value as GraphConfig["rendering"]["edges"] };
+  return issues.length > 0 ? { valid: false, issues } : { valid: true, data: value as unknown as GraphConfig["rendering"]["edges"] };
 });
 
 const validateLabelRenderConfig = createValidator((value, path) => {
@@ -361,7 +361,7 @@ const validateLabelRenderConfig = createValidator((value, path) => {
     issues.push({ path: [...path, "offset"], message: "Must be a number between 0 and 50", received: value.offset });
   }
 
-  return issues.length > 0 ? { valid: false, issues } : { valid: true, data: value as GraphConfig["rendering"]["labels"] };
+  return issues.length > 0 ? { valid: false, issues } : { valid: true, data: value as unknown as GraphConfig["rendering"]["labels"] };
 });
 
 const validateBackgroundConfig = createValidator((value, path) => {
@@ -383,7 +383,7 @@ const validateBackgroundConfig = createValidator((value, path) => {
     issues.push({ path: [...path, "gridColor"], message: "Must be a string", received: value.gridColor });
   }
 
-  return issues.length > 0 ? { valid: false, issues } : { valid: true, data: value as GraphConfig["rendering"]["background"] };
+  return issues.length > 0 ? { valid: false, issues } : { valid: true, data: value as unknown as GraphConfig["rendering"]["background"] };
 });
 
 const validateRenderingConfig = createValidator((value, path) => {
@@ -407,7 +407,7 @@ const validateRenderingConfig = createValidator((value, path) => {
   const bgResult = validateBackgroundConfig(value.background, [...path, "background"]);
   if (!bgResult.valid) issues.push(...bgResult.issues);
 
-  return issues.length > 0 ? { valid: false, issues } : { valid: true, data: value as GraphConfig["rendering"] };
+  return issues.length > 0 ? { valid: false, issues } : { valid: true, data: value as unknown as GraphConfig["rendering"] };
 });
 
 // ============================================================
@@ -433,7 +433,7 @@ const validateZoomConfig = createValidator((value, path) => {
     issues.push({ path: [...path, "step"], message: "Must be a number between 1.01 and 2", received: value.step });
   }
 
-  return issues.length > 0 ? { valid: false, issues } : { valid: true, data: value as GraphConfig["interaction"]["zoom"] };
+  return issues.length > 0 ? { valid: false, issues } : { valid: true, data: value as unknown as GraphConfig["interaction"]["zoom"] };
 });
 
 const validatePanConfig = createValidator((value, path) => {
@@ -452,7 +452,7 @@ const validatePanConfig = createValidator((value, path) => {
     issues.push({ path: [...path, "friction"], message: "Must be a number between 0 and 1", received: value.friction });
   }
 
-  return issues.length > 0 ? { valid: false, issues } : { valid: true, data: value as GraphConfig["interaction"]["pan"] };
+  return issues.length > 0 ? { valid: false, issues } : { valid: true, data: value as unknown as GraphConfig["interaction"]["pan"] };
 });
 
 const validateSelectionConfig = createValidator((value, path) => {
@@ -471,7 +471,7 @@ const validateSelectionConfig = createValidator((value, path) => {
     issues.push({ path: [...path, "boxSelect"], message: "Must be a boolean", received: value.boxSelect });
   }
 
-  return issues.length > 0 ? { valid: false, issues } : { valid: true, data: value as GraphConfig["interaction"]["selection"] };
+  return issues.length > 0 ? { valid: false, issues } : { valid: true, data: value as unknown as GraphConfig["interaction"]["selection"] };
 });
 
 const validateDragConfig = createValidator((value, path) => {
@@ -490,7 +490,7 @@ const validateDragConfig = createValidator((value, path) => {
     issues.push({ path: [...path, "showPreview"], message: "Must be a boolean", received: value.showPreview });
   }
 
-  return issues.length > 0 ? { valid: false, issues } : { valid: true, data: value as GraphConfig["interaction"]["drag"] };
+  return issues.length > 0 ? { valid: false, issues } : { valid: true, data: value as unknown as GraphConfig["interaction"]["drag"] };
 });
 
 const validateClickConfig = createValidator((value, path) => {
@@ -506,7 +506,7 @@ const validateClickConfig = createValidator((value, path) => {
     issues.push({ path: [...path, "hoverDelay"], message: "Must be a number between 0 and 2000", received: value.hoverDelay });
   }
 
-  return issues.length > 0 ? { valid: false, issues } : { valid: true, data: value as GraphConfig["interaction"]["click"] };
+  return issues.length > 0 ? { valid: false, issues } : { valid: true, data: value as unknown as GraphConfig["interaction"]["click"] };
 });
 
 const validateTouchConfig = createValidator((value, path) => {
@@ -525,7 +525,7 @@ const validateTouchConfig = createValidator((value, path) => {
     issues.push({ path: [...path, "twoFingerPan"], message: "Must be a boolean", received: value.twoFingerPan });
   }
 
-  return issues.length > 0 ? { valid: false, issues } : { valid: true, data: value as GraphConfig["interaction"]["touch"] };
+  return issues.length > 0 ? { valid: false, issues } : { valid: true, data: value as unknown as GraphConfig["interaction"]["touch"] };
 });
 
 const validateInteractionConfig = createValidator((value, path) => {
@@ -552,7 +552,7 @@ const validateInteractionConfig = createValidator((value, path) => {
   const touchResult = validateTouchConfig(value.touch, [...path, "touch"]);
   if (!touchResult.valid) issues.push(...touchResult.issues);
 
-  return issues.length > 0 ? { valid: false, issues } : { valid: true, data: value as GraphConfig["interaction"] };
+  return issues.length > 0 ? { valid: false, issues } : { valid: true, data: value as unknown as GraphConfig["interaction"] };
 });
 
 // ============================================================
@@ -578,7 +578,7 @@ const validateFilterConfig = createValidator((value, path) => {
     issues.push({ path: [...path, "minDegree"], message: "Must be a non-negative integer", received: value.minDegree });
   }
 
-  return issues.length > 0 ? { valid: false, issues } : { valid: true, data: value as GraphConfig["filters"] };
+  return issues.length > 0 ? { valid: false, issues } : { valid: true, data: value as unknown as GraphConfig["filters"] };
 });
 
 // ============================================================
@@ -595,7 +595,7 @@ const validateForceLayoutConfig = createValidator((value, path) => {
     issues.push({ path: [...path, "initialIterations"], message: "Must be an integer between 0 and 500", received: value.initialIterations });
   }
 
-  return issues.length > 0 ? { valid: false, issues } : { valid: true, data: value as GraphConfig["layout"]["force"] };
+  return issues.length > 0 ? { valid: false, issues } : { valid: true, data: value as unknown as GraphConfig["layout"]["force"] };
 });
 
 const validateHierarchicalLayoutConfig = createValidator((value, path) => {
@@ -614,7 +614,7 @@ const validateHierarchicalLayoutConfig = createValidator((value, path) => {
     issues.push({ path: [...path, "nodeSeparation"], message: "Must be a number between 10 and 200", received: value.nodeSeparation });
   }
 
-  return issues.length > 0 ? { valid: false, issues } : { valid: true, data: value as GraphConfig["layout"]["hierarchical"] };
+  return issues.length > 0 ? { valid: false, issues } : { valid: true, data: value as unknown as GraphConfig["layout"]["hierarchical"] };
 });
 
 const validateRadialLayoutConfig = createValidator((value, path) => {
@@ -633,7 +633,7 @@ const validateRadialLayoutConfig = createValidator((value, path) => {
     issues.push({ path: [...path, "startAngle"], message: `Must be a number between 0 and ${Math.PI * 2}`, received: value.startAngle });
   }
 
-  return issues.length > 0 ? { valid: false, issues } : { valid: true, data: value as GraphConfig["layout"]["radial"] };
+  return issues.length > 0 ? { valid: false, issues } : { valid: true, data: value as unknown as GraphConfig["layout"]["radial"] };
 });
 
 const validateGridLayoutConfig = createValidator((value, path) => {
@@ -652,7 +652,7 @@ const validateGridLayoutConfig = createValidator((value, path) => {
     issues.push({ path: [...path, "cellHeight"], message: "Must be a number between 20 and 500", received: value.cellHeight });
   }
 
-  return issues.length > 0 ? { valid: false, issues } : { valid: true, data: value as GraphConfig["layout"]["grid"] };
+  return issues.length > 0 ? { valid: false, issues } : { valid: true, data: value as unknown as GraphConfig["layout"]["grid"] };
 });
 
 const validateLayoutConfig = createValidator((value, path) => {
@@ -677,7 +677,7 @@ const validateLayoutConfig = createValidator((value, path) => {
   const gridResult = validateGridLayoutConfig(value.grid, [...path, "grid"]);
   if (!gridResult.valid) issues.push(...gridResult.issues);
 
-  return issues.length > 0 ? { valid: false, issues } : { valid: true, data: value as GraphConfig["layout"] };
+  return issues.length > 0 ? { valid: false, issues } : { valid: true, data: value as unknown as GraphConfig["layout"] };
 });
 
 // ============================================================
@@ -706,7 +706,7 @@ const validateMinimapConfig = createValidator((value, path) => {
     issues.push({ path: [...path, "opacity"], message: "Must be a number between 0.1 and 1", received: value.opacity });
   }
 
-  return issues.length > 0 ? { valid: false, issues } : { valid: true, data: value as GraphConfig["minimap"] };
+  return issues.length > 0 ? { valid: false, issues } : { valid: true, data: value as unknown as GraphConfig["minimap"] };
 });
 
 // ============================================================
@@ -737,7 +737,7 @@ const validateGraphConfig = createValidator((value, path) => {
   const minimapResult = validateMinimapConfig(value.minimap, [...path, "minimap"]);
   if (!minimapResult.valid) issues.push(...minimapResult.issues);
 
-  return issues.length > 0 ? { valid: false, issues } : { valid: true, data: value as GraphConfig };
+  return issues.length > 0 ? { valid: false, issues } : { valid: true, data: value as unknown as GraphConfig };
 });
 
 // ============================================================
@@ -760,7 +760,7 @@ const validatePresetConfig = createValidator((value, path) => {
     issues.push({ path: [...path, "config"], message: "Must be an object", received: value.config });
   }
 
-  return issues.length > 0 ? { valid: false, issues } : { valid: true, data: value as ConfigPreset };
+  return issues.length > 0 ? { valid: false, issues } : { valid: true, data: value as unknown as ConfigPreset };
 });
 
 // ============================================================
@@ -789,6 +789,42 @@ export const RenderingConfigSchema = {
 export const InteractionConfigSchema = {
   safeParse: (value: unknown) => {
     const result = validateInteractionConfig(value, []);
+    return result.valid
+      ? { success: true, data: result.data }
+      : { success: false, error: { issues: result.issues } };
+  },
+};
+
+export const FilterConfigSchema = {
+  safeParse: (value: unknown) => {
+    const result = validateFilterConfig(value, []);
+    return result.valid
+      ? { success: true, data: result.data }
+      : { success: false, error: { issues: result.issues } };
+  },
+};
+
+export const LayoutConfigSchema = {
+  safeParse: (value: unknown) => {
+    const result = validateLayoutConfig(value, []);
+    return result.valid
+      ? { success: true, data: result.data }
+      : { success: false, error: { issues: result.issues } };
+  },
+};
+
+export const MinimapConfigSchema = {
+  safeParse: (value: unknown) => {
+    const result = validateMinimapConfig(value, []);
+    return result.valid
+      ? { success: true, data: result.data }
+      : { success: false, error: { issues: result.issues } };
+  },
+};
+
+export const ConfigPresetSchema = {
+  safeParse: (value: unknown) => {
+    const result = validatePresetConfig(value, []);
     return result.valid
       ? { success: true, data: result.data }
       : { success: false, error: { issues: result.issues } };
