@@ -30,7 +30,6 @@
     "reflect-metadata": "^0.2.2",
     "tsyringe": "^4.10.0",
     "uuid": "^11.1.0",
-    "zod": "^4.1.13",
     "zundo": "^2.3.0",
     "zustand": "^5.0.9"
   },
