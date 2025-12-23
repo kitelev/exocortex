@@ -4,6 +4,7 @@ export * from "./domain/constants/EffortStatus";
 export * from "./domain/models/GraphNode";
 export * from "./domain/models/GraphData";
 export * from "./domain/models/GraphEdge";
+export * from "./domain/models/GraphTypes";
 export * from "./domain/models/AreaNode";
 export * from "./domain/models/rdf";
 export * from "./domain/commands/CommandVisibility";
@@ -67,6 +68,10 @@ export {
   GraphQueryService,
   type GraphQueryServiceConfig,
 } from "./services/GraphQueryService";
+export {
+  TypeRegistry,
+  type TypeRegistryConfig,
+} from "./services/TypeRegistry";
 
 // Utilities exports
 export { FrontmatterService } from "./utilities/FrontmatterService";
