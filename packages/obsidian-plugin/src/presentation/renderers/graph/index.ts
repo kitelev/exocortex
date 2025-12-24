@@ -172,3 +172,15 @@ export type {
   IncrementalRendererOptions,
   RenderStats,
 } from "./IncrementalRenderer";
+
+// Visibility culling for off-screen elements
+export {
+  VisibilityCuller,
+  DEFAULT_VISIBILITY_CULLER_CONFIG,
+} from "./VisibilityCuller";
+export type {
+  ViewportBounds,
+  NodeBounds,
+  VisibilityCullerConfig,
+  VisibilityCullerStats,
+} from "./VisibilityCuller";
