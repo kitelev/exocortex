@@ -230,11 +230,11 @@ export class BarnesHutForce {
   private applyForce(
     tree: Quadtree<SimulationNode>,
     node: SimulationNode,
-    nodeIndex: number
+    _nodeIndex: number
   ): void {
     const theta2 = this._theta * this._theta;
 
-    tree.visit((quad, x0, y0, x1, y1) => {
+    tree.visit((quad, x0, _y0, x1, _y1) => {
       if (quad.value === 0) return true; // Skip empty quadrants
 
       // Distance from node to quadrant center of mass

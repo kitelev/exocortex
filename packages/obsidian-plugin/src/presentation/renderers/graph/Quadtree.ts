@@ -323,14 +323,14 @@ export class Quadtree<T extends QuadtreePoint> {
           );
           const newBounds = this.getChildBounds(x0, y0, x1, y1, newI);
 
-          node.children[existingI] = this.createNode(
+          node.children![existingI] = this.createNode(
             existingBounds.x0,
             existingBounds.y0,
             existingBounds.x1,
             existingBounds.y1,
             existingData
           );
-          node.children[newI] = this.createNode(
+          node.children![newI] = this.createNode(
             newBounds.x0,
             newBounds.y0,
             newBounds.x1,
@@ -349,7 +349,7 @@ export class Quadtree<T extends QuadtreePoint> {
           childBounds.y1
         );
         childNode.children = [undefined, undefined, undefined, undefined];
-        node.children[existingI] = childNode;
+        node.children![existingI] = childNode;
 
         node = childNode;
         x0 = childBounds.x0;
