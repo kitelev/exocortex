@@ -120,3 +120,23 @@ export type {
   RadiusScalingMode,
   RenderedNode,
 } from "./NodeRenderer";
+
+// Edge rendering with curved paths
+export {
+  EdgeRenderer,
+  EdgeStyleResolver,
+  DEFAULT_EDGE_STYLE,
+  DEFAULT_EDGE_TYPE_CONFIGS,
+  calculateEdgeEndpoints,
+} from "./EdgeRenderer";
+export type {
+  Position,
+  CurveType,
+  ArrowType,
+  ArrowPosition,
+  EdgeVisualStyle,
+  PredicateType,
+  EdgeTypeConfig,
+  CurvePoints,
+  RenderedEdge,
+} from "./EdgeRenderer";

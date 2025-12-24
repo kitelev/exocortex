@@ -24,8 +24,11 @@ export const mockGraphicsRoundRect = jest.fn();
 export const mockGraphicsFill = jest.fn();
 export const mockGraphicsMoveTo = jest.fn();
 export const mockGraphicsLineTo = jest.fn();
+export const mockGraphicsQuadraticCurveTo = jest.fn();
+export const mockGraphicsBezierCurveTo = jest.fn();
 export const mockGraphicsClosePath = jest.fn();
 export const mockGraphicsStroke = jest.fn();
+export const mockGraphicsSetStrokeStyle = jest.fn();
 export const mockGraphicsDestroy = jest.fn();
 export const mockGraphicsRemoveFromParent = jest.fn();
 export const mockTextDestroy = jest.fn();
@@ -87,12 +90,24 @@ export const Graphics = jest.fn().mockImplementation(() => {
       mockGraphicsLineTo(...args);
       return this;
     }),
+    quadraticCurveTo: jest.fn(function(this: unknown, ...args: unknown[]) {
+      mockGraphicsQuadraticCurveTo(...args);
+      return this;
+    }),
+    bezierCurveTo: jest.fn(function(this: unknown, ...args: unknown[]) {
+      mockGraphicsBezierCurveTo(...args);
+      return this;
+    }),
     closePath: jest.fn(function(this: unknown) {
       mockGraphicsClosePath();
       return this;
     }),
     stroke: jest.fn(function(this: unknown, ...args: unknown[]) {
       mockGraphicsStroke(...args);
+      return this;
+    }),
+    setStrokeStyle: jest.fn(function(this: unknown, ...args: unknown[]) {
+      mockGraphicsSetStrokeStyle(...args);
       return this;
     }),
     destroy: mockGraphicsDestroy,
