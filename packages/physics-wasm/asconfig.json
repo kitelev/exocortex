@@ -1,0 +1,37 @@
+{
+  "targets": {
+    "debug": {
+      "outFile": "build/physics.debug.wasm",
+      "textFile": "build/physics.debug.wat",
+      "sourceMap": true,
+      "debug": true,
+      "optimize": false,
+      "runtime": "stub",
+      "exportRuntime": true,
+      "memoryBase": 0,
+      "tableBase": 0,
+      "initialMemory": 64,
+      "maximumMemory": 1024,
+      "sharedMemory": false
+    },
+    "release": {
+      "outFile": "build/physics.wasm",
+      "textFile": "build/physics.wat",
+      "sourceMap": false,
+      "debug": false,
+      "optimizeLevel": 3,
+      "shrinkLevel": 1,
+      "noAssert": true,
+      "runtime": "stub",
+      "exportRuntime": true,
+      "memoryBase": 0,
+      "tableBase": 0,
+      "initialMemory": 64,
+      "maximumMemory": 1024,
+      "sharedMemory": false
+    }
+  },
+  "options": {
+    "bindings": "esm"
+  }
+}

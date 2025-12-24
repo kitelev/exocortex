@@ -1,0 +1,38 @@
+{
+  "name": "@exocortex/physics-wasm",
+  "version": "0.1.0",
+  "description": "High-performance WebAssembly physics engine for force-directed graph simulation",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "build"
+  ],
+  "scripts": {
+    "asbuild:debug": "asc assembly/index.ts --target debug",
+    "asbuild:release": "asc assembly/index.ts --target release",
+    "asbuild": "npm run asbuild:release",
+    "build:wasm": "npm run asbuild",
+    "build:ts": "tsc",
+    "build": "npm run build:wasm && npm run build:ts",
+    "test": "jest",
+    "test:wasm": "node --experimental-wasm-modules tests/wasm.test.js",
+    "clean": "rimraf build dist"
+  },
+  "keywords": [
+    "webassembly",
+    "wasm",
+    "physics",
+    "force-directed",
+    "graph",
+    "barnes-hut",
+    "simulation"
+  ],
+  "author": "A. Kitelev",
+  "license": "MIT",
+  "dependencies": {},
+  "devDependencies": {
+    "assemblyscript": "^0.27.34",
+    "@assemblyscript/loader": "^0.27.34"
+  }
+}

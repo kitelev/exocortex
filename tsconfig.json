@@ -49,6 +49,7 @@
     "packages/**/tests/**/*",
     "packages/**/dist/**/*",
     "packages/cli/**/*",
+    "packages/physics-wasm/**/*",
     "wdio.conf*.ts",
     "playwright.config.ts"
   ]
