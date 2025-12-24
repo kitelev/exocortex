@@ -15,6 +15,11 @@ import {
   usePhysicsWorkerState,
   useGetNodePositions,
   useGetNodeVelocities,
+  usePhysicsConfigUpdate,
+  usePhysicsController,
+  usePhysicsNodeDrag,
+  usePhysicsSimulation,
+  usePhysicsTick,
 } from "../../../../../src/presentation/stores/physicsWorkerStore/hooks";
 import {
   usePhysicsWorkerStore,
@@ -261,6 +266,123 @@ describe("Physics Worker Hooks", () => {
 
       const velocities = result.current();
       expect(velocities).toBeInstanceOf(Map);
+    });
+  });
+
+  describe("usePhysicsConfigUpdate", () => {
+    it("should return update config function", () => {
+      const { result } = renderHook(() => usePhysicsConfigUpdate());
+      expect(typeof result.current).toBe("function");
+    });
+  });
+
+  describe("usePhysicsController", () => {
+    it("should return controller or null", () => {
+      const { result } = renderHook(() => usePhysicsController());
+      // Controller may be null before initialization
+      expect(result.current === null || typeof result.current === "object").toBe(true);
+    });
+  });
+
+  describe("usePhysicsNodeDrag", () => {
+    it("should return drag handlers", () => {
+      const { result } = renderHook(() => usePhysicsNodeDrag("test-node"));
+
+      expect(typeof result.current.onDragStart).toBe("function");
+      expect(typeof result.current.onDrag).toBe("function");
+      expect(typeof result.current.onDragEnd).toBe("function");
+    });
+
+    it("should handle drag lifecycle", () => {
+      const { result } = renderHook(() => usePhysicsNodeDrag("test-node"));
+
+      // These should not throw
+      act(() => {
+        result.current.onDragStart(100, 100);
+      });
+
+      act(() => {
+        result.current.onDrag(150, 150);
+      });
+
+      act(() => {
+        result.current.onDragEnd();
+      });
+    });
+
+    it("should ignore drag when not dragging", () => {
+      const { result } = renderHook(() => usePhysicsNodeDrag("test-node"));
+
+      // onDrag without onDragStart should be ignored
+      act(() => {
+        result.current.onDrag(100, 100);
+      });
+
+      // onDragEnd without onDragStart should be ignored
+      act(() => {
+        result.current.onDragEnd();
+      });
+    });
+  });
+
+  describe("usePhysicsSimulation", () => {
+    const testNodes = [
+      { id: "n1", x: 0, y: 0 },
+      { id: "n2", x: 100, y: 100 },
+    ];
+    const testEdges = [{ source: "n1", target: "n2" }];
+
+    it("should return simulation state", () => {
+      const { result } = renderHook(() =>
+        usePhysicsSimulation(testNodes, testEdges, undefined, false)
+      );
+
+      expect(result.current).toHaveProperty("status");
+      expect(result.current).toHaveProperty("isSupported");
+      expect(result.current).toHaveProperty("isRunning");
+    });
+
+    it("should handle empty nodes", () => {
+      const { result } = renderHook(() =>
+        usePhysicsSimulation([], [], undefined, false)
+      );
+
+      expect(result.current.status).toBe("idle");
+    });
+
+    it("should handle unsupported environment", () => {
+      // Temporarily set isSupported to false
+      act(() => {
+        usePhysicsWorkerStore.setState({ isSupported: false });
+      });
+
+      const { result } = renderHook(() =>
+        usePhysicsSimulation(testNodes, testEdges, undefined, false)
+      );
+
+      expect(result.current.isSupported).toBe(false);
+    });
+  });
+
+  describe("usePhysicsTick", () => {
+    it("should accept callback", () => {
+      const callback = jest.fn();
+      // Should not throw
+      renderHook(() => usePhysicsTick(callback));
+    });
+
+    it("should accept custom throttle", () => {
+      const callback = jest.fn();
+      // Should not throw
+      renderHook(() => usePhysicsTick(callback, 32));
+    });
+
+    it("should not call callback when not running", () => {
+      const callback = jest.fn();
+      renderHook(() => usePhysicsTick(callback));
+
+      // Status is idle, callback should not be called
+      expect(callback).not.toHaveBeenCalled();
     });
   });
 });
