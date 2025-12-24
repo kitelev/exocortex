@@ -27,11 +27,26 @@ if [ "$COVERAGE" = "true" ]; then
     JEST_ARGS="$JEST_ARGS --coverage --coverageReporters=lcov --coverageReporters=json-summary --coverageReporters=text-summary"
 fi
 
-if npx jest $JEST_ARGS; then
-    echo "✅ Obsidian plugin tests passed!"
+# Use timeout to prevent Jest hanging in CI (5 minutes max per test suite)
+if [ "$CI" = "true" ]; then
+    if timeout 300 npx jest $JEST_ARGS; then
+        echo "✅ Obsidian plugin tests passed!"
+    else
+        RESULT=$?
+        if [ $RESULT -eq 124 ]; then
+            echo "❌ Obsidian plugin tests timed out after 5 minutes!"
+        else
+            echo "❌ Obsidian plugin tests failed!"
+        fi
+        exit 1
+    fi
 else
-    echo "❌ Obsidian plugin tests failed!"
-    exit 1
+    if npx jest $JEST_ARGS; then
+        echo "✅ Obsidian plugin tests passed!"
+    else
+        echo "❌ Obsidian plugin tests failed!"
+        exit 1
+    fi
 fi
 
 # Run CLI tests
@@ -42,11 +57,26 @@ if [ "$COVERAGE" = "true" ]; then
     CLI_JEST_ARGS="$CLI_JEST_ARGS --coverage --coverageReporters=lcov --coverageReporters=json-summary --coverageReporters=text-summary"
 fi
 
-if node --experimental-vm-modules ./node_modules/jest/bin/jest.js $CLI_JEST_ARGS; then
-    echo "✅ CLI tests passed!"
+# Use timeout for CLI tests as well
+if [ "$CI" = "true" ]; then
+    if timeout 120 node --experimental-vm-modules ./node_modules/jest/bin/jest.js $CLI_JEST_ARGS; then
+        echo "✅ CLI tests passed!"
+    else
+        RESULT=$?
+        if [ $RESULT -eq 124 ]; then
+            echo "❌ CLI tests timed out after 2 minutes!"
+        else
+            echo "❌ CLI tests failed!"
+        fi
+        exit 1
+    fi
 else
-    echo "❌ CLI tests failed!"
-    exit 1
+    if node --experimental-vm-modules ./node_modules/jest/bin/jest.js $CLI_JEST_ARGS; then
+        echo "✅ CLI tests passed!"
+    else
+        echo "❌ CLI tests failed!"
+        exit 1
+    fi
 fi
 
 echo "✅ All tests passed!"
