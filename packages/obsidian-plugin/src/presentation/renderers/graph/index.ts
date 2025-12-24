@@ -252,3 +252,42 @@ export type {
   FileContentProvider,
   GraphTooltipDataProviderConfig,
 } from "./GraphTooltipDataProvider";
+
+// Context menu manager for right-click menus
+export {
+  ContextMenuManager,
+  DEFAULT_CONTEXT_MENU_MANAGER_CONFIG,
+} from "./ContextMenuManager";
+export type {
+  Point as ContextMenuPoint,
+  ContextMenuState,
+  ContextMenuTarget,
+  ContextMenuItem,
+  ContextMenuProvider,
+  ContextMenuRenderer as IContextMenuRenderer,
+  ContextMenuManagerConfig,
+  ContextMenuEventType,
+  ContextMenuEvent,
+  ContextMenuEventListener,
+} from "./ContextMenuManager";
+
+// Context menu renderer for DOM-based menu display
+export {
+  ContextMenuRenderer,
+  DEFAULT_CONTEXT_MENU_RENDERER_CONFIG,
+} from "./ContextMenuRenderer";
+export type {
+  ContextMenuRendererConfig,
+} from "./ContextMenuRenderer";
+
+// Built-in context menu providers
+export {
+  NodeContextMenuProvider,
+  EdgeContextMenuProvider,
+  CanvasContextMenuProvider,
+  SelectionContextMenuProvider,
+  createDefaultProviders,
+} from "./ContextMenuProviders";
+export type {
+  ContextMenuCallbacks,
+} from "./ContextMenuProviders";
