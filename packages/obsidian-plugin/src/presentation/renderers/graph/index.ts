@@ -692,3 +692,59 @@ export type {
   PathFindingPanelProps,
   PathFindingButtonProps,
 } from "./pathfinding";
+
+// Level of Detail (LOD) system for performance optimization
+export {
+  LODSystem,
+  createLODSystem,
+  LODLevel,
+  DEFAULT_LOD_SETTINGS,
+  DEFAULT_LOD_THRESHOLDS,
+  DEFAULT_LOD_SYSTEM_CONFIG,
+} from "./LODSystem";
+export type {
+  LODSettings,
+  NodeLODSettings,
+  EdgeLODSettings,
+  LabelLODSettings,
+  LODThreshold,
+  LODSystemConfig,
+  LODEventType,
+  LODEvent,
+  LODEventListener,
+  LODStats,
+} from "./LODSystem";
+
+// Batched node renderer for high-performance instanced drawing
+export {
+  BatchedNodeRenderer,
+  createBatchedNodeRenderer,
+  DEFAULT_BATCH_CONFIG,
+  DEFAULT_BATCHED_NODE_RENDERER_CONFIG,
+} from "./BatchedNodeRenderer";
+export type {
+  BatchConfig,
+  BatchNode,
+  BatchRendererStats,
+  BatchedNodeRendererConfig,
+} from "./BatchedNodeRenderer";
+
+// GPU memory manager for resource lifecycle management
+export {
+  GPUMemoryManager,
+  createGPUMemoryManager,
+  getGlobalMemoryManager,
+  resetGlobalMemoryManager,
+  MemoryPressure,
+  DEFAULT_GPU_MEMORY_MANAGER_CONFIG,
+} from "./GPUMemoryManager";
+export type {
+  ResourceType,
+  ManagedResource,
+  MemoryUsage,
+  GPUMemoryManagerConfig,
+  GPUMemoryStats,
+  MemoryEventType,
+  MemoryEvent,
+  MemoryEventListener,
+} from "./GPUMemoryManager";
