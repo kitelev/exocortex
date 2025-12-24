@@ -100,6 +100,8 @@ module.exports = {
   // Test result optimization
   passWithNoTests: true,
   errorOnDeprecated: false,
+  // Force exit after all tests complete (prevents CI timeout from open handles)
+  forceExit: process.env.CI ? true : false,
   // Modern ts-jest configuration
   transform: {
     "^.+\\.tsx?$": [

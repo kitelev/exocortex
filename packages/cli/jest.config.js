@@ -32,6 +32,8 @@ module.exports = {
   ],
   coverageDirectory: "coverage",
   coverageReporters: ["text", "lcov", "html", "json-summary"],
+  // Force exit after all tests complete (prevents CI timeout from open handles)
+  forceExit: process.env.CI ? true : false,
   // Coverage thresholds per Test Pyramid policy (docs/TEST-PYRAMID.md)
   coverageThreshold: {
     global: {
