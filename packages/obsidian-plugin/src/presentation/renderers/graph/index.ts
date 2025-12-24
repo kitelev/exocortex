@@ -489,3 +489,31 @@ export type {
   ConstraintManagerConfig,
   SnapConfig,
 } from "./constraints";
+
+// Layout plugin architecture for extensible layout algorithms
+export {
+  BaseLayoutAlgorithm,
+  LayoutPluginRegistry,
+  layoutPluginRegistry,
+  createLayoutFactory,
+  createLayoutPlugin,
+  createBuiltInLayoutPlugin,
+} from "./LayoutPlugin";
+export type {
+  LayoutCategory,
+  GraphType,
+  LayoutOptionType,
+  LayoutOptionDefinition,
+  ValidationResult,
+  LayoutPluginMetadata,
+  LayoutFactory,
+  LayoutPlugin,
+  LayoutAlgorithmInstance,
+  ExtendedLayoutResult,
+  LayoutProgressCallback,
+  AsyncLayoutOptions,
+  PluginRegistryEventType,
+  PluginRegistryEvent,
+  PluginRegistryEventListener,
+  PluginFilter,
+} from "./LayoutPlugin";
