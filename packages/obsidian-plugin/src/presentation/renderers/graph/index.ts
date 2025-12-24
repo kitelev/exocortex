@@ -140,3 +140,17 @@ export type {
   CurvePoints,
   RenderedEdge,
 } from "./EdgeRenderer";
+
+// Label rendering with text sprites
+export {
+  LabelRenderer,
+  LabelStyleResolver,
+  DEFAULT_LABEL_STYLE,
+  calculateOptimalLabelPosition,
+} from "./LabelRenderer";
+export type {
+  LabelAnchor,
+  LabelVisualStyle,
+  RenderedLabel,
+  ViewportInfo,
+} from "./LabelRenderer";

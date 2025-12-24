@@ -58,6 +58,8 @@ export const Container = jest.fn().mockImplementation(() => ({
   destroy: mockContainerDestroy,
   sortableChildren: false,
   visible: true,
+  alpha: 1,
+  position: { set: mockPositionSet },
 }));
 
 export const Graphics = jest.fn().mockImplementation(() => {
@@ -117,9 +119,20 @@ export const Graphics = jest.fn().mockImplementation(() => {
   return graphics;
 });
 
-export const Text = jest.fn().mockImplementation(() => ({
-  destroy: mockTextDestroy,
-  anchor: { set: mockAnchorSet },
-  position: { set: jest.fn() },
-  text: "",
-}));
+export const mockTextGetBounds = jest.fn().mockReturnValue({ width: 100, height: 16 });
+export const mockTextRemoveFromParent = jest.fn();
+
+export const Text = jest.fn().mockImplementation((options?: { text?: string; style?: unknown }) => {
+  const textObj = {
+    destroy: mockTextDestroy,
+    anchor: { set: mockAnchorSet },
+    position: { set: jest.fn() },
+    text: options?.text ?? "",
+    style: options?.style ?? {},
+    getBounds: mockTextGetBounds,
+    visible: true,
+    alpha: 1,
+    removeFromParent: mockTextRemoveFromParent,
+  };
+  return textObj;
+});
