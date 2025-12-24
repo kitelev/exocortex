@@ -599,3 +599,55 @@ export type {
   FilterChangeCallback,
   GraphData as FilterGraphData,
 } from "./filter";
+
+// Search and highlight system for node discovery and type-based coloring
+export {
+  // Managers
+  TypeColorManager,
+  createTypeColorManager,
+  DEFAULT_TYPE_COLOR_MANAGER_CONFIG,
+  SearchManager,
+  createSearchManager,
+  DEFAULT_SEARCH_MANAGER_CONFIG,
+  // Components
+  SearchBox,
+  SearchButton,
+  ColorLegend,
+  ColorPickerModal,
+  // Constants and utilities
+  BUILT_IN_PALETTES,
+  DEFAULT_TYPE_COLORS,
+  DEFAULT_SEARCH_OPTIONS,
+  DEFAULT_HIGHLIGHT_STYLE,
+  generateColorFromString,
+  generateGoldenRatioColor,
+  hslToHex,
+  calculateContrastRatio,
+  getRelativeLuminance,
+  meetsWCAGAA,
+  formatTypeUri,
+} from "./search";
+export type {
+  // Types
+  TypeColorConfig,
+  ColorPalette,
+  SearchMatch,
+  SearchState,
+  SearchOptions,
+  HighlightStyle,
+  LegendItem,
+  LegendState,
+  ColorPickerState,
+  SearchEventType,
+  SearchEvent,
+  SearchEventListener,
+  // Manager configs
+  TypeColorManagerConfig,
+  OntologyInfo,
+  SearchManagerConfig,
+  // Component props
+  SearchBoxProps,
+  SearchButtonProps,
+  ColorLegendProps,
+  ColorPickerModalProps,
+} from "./search";
