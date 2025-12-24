@@ -44,8 +44,45 @@ let startTime = 0;
 // Message Handler
 // ============================================================
 
+// Valid message types that this worker accepts
+const VALID_MESSAGE_TYPES = [
+  "init",
+  "start",
+  "stop",
+  "config",
+  "edges",
+  "resize",
+  "fixNode",
+  "unfixNode",
+  "reheat",
+  "terminate",
+] as const;
+
+type ValidMessageType = typeof VALID_MESSAGE_TYPES[number];
+
+/**
+ * Validate that a message type is one we expect to handle.
+ * This prevents property injection attacks where an attacker
+ * might try to send malicious message types.
+ */
+function isValidMessageType(type: unknown): type is ValidMessageType {
+  return typeof type === "string" && VALID_MESSAGE_TYPES.includes(type as ValidMessageType);
+}
+
 self.onmessage = (event: MessageEvent<WorkerInMessage>) => {
+  // Web Workers only receive messages from their parent context (main thread).
+  // Unlike window.postMessage, Worker.postMessage does not have an origin
+  // since workers are same-origin by definition (loaded from same origin blob/URL).
+  // The message event comes from the trusted main thread that created this worker.
+
   const message = event.data;
+
+  // Validate message structure before processing
+  if (!message || typeof message !== "object" || !isValidMessageType(message.type)) {
+    // Ignore invalid messages silently - don't send error to avoid
+    // leaking information about valid message types
+    return;
+  }
 
   switch (message.type) {
     case "init":
