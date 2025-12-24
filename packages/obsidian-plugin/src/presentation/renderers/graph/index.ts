@@ -398,3 +398,50 @@ export type {
   RadialLayoutResult,
   RadialPresetName,
 } from "./RadialLayout";
+
+// Layout manager with smooth transitions between algorithms
+export {
+  LayoutManager,
+  createLayoutManager,
+  getEasingFunction,
+  interpolatePoint,
+  EASING_FUNCTIONS,
+  DEFAULT_TRANSITION_OPTIONS,
+  DEFAULT_LAYOUT_MANAGER_CONFIG,
+} from "./LayoutManager";
+export type {
+  Point as LayoutPoint,
+  EasingFunction,
+  EasingFunctionImpl,
+  LayoutTransitionOptions,
+  LayoutAlgorithmName,
+  LayoutAlgorithm,
+  LayoutResult,
+  LayoutManagerState,
+  LayoutManagerConfig,
+  LayoutManagerEventType,
+  LayoutManagerEvent,
+  LayoutManagerEventListener,
+} from "./LayoutManager";
+
+// Temporal layout algorithm for time-based data visualization
+export {
+  TemporalLayout,
+  createTemporalLayout,
+  DEFAULT_TEMPORAL_OPTIONS,
+  TEMPORAL_PRESETS,
+} from "./TemporalLayout";
+export type {
+  TimelineOrientation,
+  TimeScale,
+  LaneStrategy,
+  GapStrategy,
+  NodeAlignment,
+  TemporalLayoutOptions,
+  TemporalNode,
+  TemporalEdge,
+  Lane,
+  TimeMarker,
+  TemporalLayoutResult,
+  TemporalPresetName,
+} from "./TemporalLayout";
