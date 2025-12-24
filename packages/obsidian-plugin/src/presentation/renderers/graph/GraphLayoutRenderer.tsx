@@ -3,6 +3,7 @@
  *
  * Renders a GraphLayout definition as an interactive force-directed graph with:
  * - Force-directed layout using D3.js
+ * - Barnes-Hut algorithm for O(n log n) many-body force calculation
  * - Nodes from assets with configurable labels
  * - Edges from specified properties
  * - Click on node opens asset
@@ -33,6 +34,13 @@ import type {
 } from "./types";
 import { GraphNode } from "./GraphNode";
 import { GraphEdge } from "./GraphEdge";
+import { BarnesHutForce } from "./BarnesHutForce";
+
+/**
+ * Threshold for using Barnes-Hut algorithm (nodes count)
+ * For graphs with fewer nodes, naive O(n²) is fast enough
+ */
+const BARNES_HUT_THRESHOLD = 100;
 
 /**
  * Default graph layout options
@@ -51,6 +59,11 @@ const defaultOptions: GraphLayoutOptions = {
   showEdgeLabels: false,
   nodeColor: "var(--interactive-accent)",
   edgeColor: "var(--text-muted)",
+  // Barnes-Hut defaults
+  useBarnesHut: undefined, // Auto-detect based on node count
+  barnesHutTheta: 0.9,
+  distanceMin: 1,
+  distanceMax: Infinity,
 };
 
 /**
@@ -195,6 +208,10 @@ export const GraphLayoutRenderer: React.FC<GraphLayoutRendererProps> = ({
       }
     }
 
+    // Determine whether to use Barnes-Hut algorithm
+    const useBarnesHut =
+      options.useBarnesHut ?? initialNodes.length >= BARNES_HUT_THRESHOLD;
+
     // Create D3 force simulation
     const simulation = forceSimulation<SimNode>(initialNodes)
       .force(
@@ -203,12 +220,42 @@ export const GraphLayoutRenderer: React.FC<GraphLayoutRendererProps> = ({
           .id((d) => d.id)
           .distance(options.linkDistance!)
       )
-      .force("charge", forceManyBody().strength(options.chargeStrength!))
       .force("center", forceCenter(dimensions.width / 2, dimensions.height / 2))
       .force(
         "collision",
         forceCollide().radius((options.nodeRadius ?? 8) * 2)
       );
+
+    // Use Barnes-Hut for large graphs, or native forceManyBody for smaller ones
+    if (useBarnesHut) {
+      // Create Barnes-Hut force with custom tick handler
+      const barnesHutForce = new BarnesHutForce({
+        theta: options.barnesHutTheta ?? 0.9,
+        strength: options.chargeStrength ?? -300,
+        distanceMin: options.distanceMin ?? 1,
+        distanceMax: options.distanceMax ?? Infinity,
+      });
+      barnesHutForce.initialize(initialNodes);
+
+      // Add Barnes-Hut as a custom force
+      simulation.force("charge", (alpha: number) => {
+        barnesHutForce.force(alpha);
+      });
+    } else {
+      // Use native D3 forceManyBody for smaller graphs
+      const chargeForce = forceManyBody()
+        .strength(options.chargeStrength!)
+        .distanceMin(options.distanceMin ?? 1);
+
+      if (
+        options.distanceMax !== undefined &&
+        options.distanceMax !== Infinity
+      ) {
+        chargeForce.distanceMax(options.distanceMax);
+      }
+
+      simulation.force("charge", chargeForce);
+    }
 
     // Update state on each tick
     simulation.on("tick", () => {
@@ -231,7 +278,7 @@ export const GraphLayoutRenderer: React.FC<GraphLayoutRendererProps> = ({
       simulation.stop();
       simulationRef.current = null;
     };
-  }, [nodes, edges, dimensions.width, dimensions.height, options.chargeStrength, options.linkDistance, options.nodeRadius]);
+  }, [nodes, edges, dimensions.width, dimensions.height, options.chargeStrength, options.linkDistance, options.nodeRadius, options.useBarnesHut, options.barnesHutTheta, options.distanceMin, options.distanceMax]);
 
   // Setup zoom behavior
   useEffect(() => {

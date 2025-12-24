@@ -177,6 +177,36 @@ export interface GraphLayoutOptions {
     y: number;
     k: number;
   };
+
+  /**
+   * Whether to use Barnes-Hut algorithm for many-body force calculation.
+   * Provides O(n log n) complexity instead of O(n²) for large graphs.
+   * @default true (enabled for graphs with > 100 nodes)
+   */
+  useBarnesHut?: boolean;
+
+  /**
+   * Barnes-Hut approximation threshold (theta).
+   * Controls accuracy vs performance tradeoff:
+   * - 0.0 → Exact calculation (O(n²))
+   * - 0.5 → Good accuracy
+   * - 0.9 → Default (good performance)
+   * - 1.5 → Fast but less accurate
+   * @default 0.9
+   */
+  barnesHutTheta?: number;
+
+  /**
+   * Minimum distance between nodes (prevents infinite forces)
+   * @default 1
+   */
+  distanceMin?: number;
+
+  /**
+   * Maximum distance for force calculation (beyond this, force is 0)
+   * @default Infinity
+   */
+  distanceMax?: number;
 }
 
 /**

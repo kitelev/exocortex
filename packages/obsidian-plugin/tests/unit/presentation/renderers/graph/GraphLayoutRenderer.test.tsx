@@ -45,6 +45,8 @@ const createMockForceLink = () => {
 const createMockForceManyBody = () => {
   const force: Record<string, jest.Mock> = {};
   force.strength = jest.fn().mockReturnValue(force);
+  force.distanceMin = jest.fn().mockReturnValue(force);
+  force.distanceMax = jest.fn().mockReturnValue(force);
   return force;
 };
 

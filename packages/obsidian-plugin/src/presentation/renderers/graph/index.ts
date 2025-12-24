@@ -12,6 +12,21 @@ export { GraphLayoutRenderer } from "./GraphLayoutRenderer";
 export { GraphNode } from "./GraphNode";
 export { GraphEdge } from "./GraphEdge";
 
+// Barnes-Hut algorithm for O(n log n) many-body force calculation
+export { Quadtree } from "./Quadtree";
+export type { QuadtreeNode, QuadtreeBounds, QuadtreePoint } from "./Quadtree";
+
+export {
+  BarnesHutForce,
+  createBarnesHutForce,
+  applyBarnesHutForce,
+  benchmarkBarnesHut,
+} from "./BarnesHutForce";
+export type {
+  SimulationNode,
+  BarnesHutForceConfig,
+} from "./BarnesHutForce";
+
 export type {
   GraphNode as GraphNodeData,
   GraphEdge as GraphEdgeData,
