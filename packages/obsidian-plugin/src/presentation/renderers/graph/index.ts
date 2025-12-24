@@ -378,3 +378,23 @@ export type {
   HierarchicalLayoutResult,
   HierarchicalPresetName,
 } from "./HierarchicalLayout";
+
+// Radial/circular layout algorithm with focus node
+export {
+  RadialLayout,
+  createRadialLayout,
+  DEFAULT_RADIAL_OPTIONS,
+  RADIAL_PRESETS,
+} from "./RadialLayout";
+export type {
+  RadialSortBy,
+  SortOrder,
+  SubtreeAngleStrategy,
+  RingAssignmentAlgorithm,
+  EdgeRoutingStyle,
+  RadialLayoutOptions,
+  RadialNode,
+  RadialEdge,
+  RadialLayoutResult,
+  RadialPresetName,
+} from "./RadialLayout";
