@@ -291,3 +291,71 @@ export {
 export type {
   ContextMenuCallbacks,
 } from "./ContextMenuProviders";
+
+// Keyboard manager for keyboard navigation and shortcuts
+export {
+  KeyboardManager,
+  DEFAULT_KEYBOARD_MANAGER_CONFIG,
+  DEFAULT_KEY_BINDINGS,
+} from "./KeyboardManager";
+export type {
+  ModifierState,
+  KeyBinding,
+  KeyBindingContext,
+  ActionHandler,
+  KeyboardManagerConfig,
+  KeyboardEventType,
+  KeyboardEvent_Custom,
+  KeyboardEventListener,
+} from "./KeyboardManager";
+
+// Navigation manager for spatial navigation between nodes
+export {
+  NavigationManager,
+  DEFAULT_NAVIGATION_MANAGER_CONFIG,
+} from "./NavigationManager";
+export type {
+  NavigationDirection,
+  NavigationMode,
+  NavigationManagerConfig,
+  NavigationResult,
+  CandidateNode,
+  NavigationEventType,
+  NavigationEvent,
+  NavigationEventListener,
+} from "./NavigationManager";
+
+// Focus indicator for visual feedback on keyboard focus
+export {
+  FocusIndicator,
+  DEFAULT_FOCUS_INDICATOR_CONFIG,
+  DEFAULT_FOCUS_INDICATOR_STYLE,
+} from "./FocusIndicator";
+export type {
+  FocusIndicatorStyle,
+  FocusIndicatorConfig,
+  FocusState,
+  FocusIndicatorRenderData,
+  FocusEventType,
+  FocusEvent,
+  FocusEventListener,
+} from "./FocusIndicator";
+
+// Shortcut registrar for customizable keyboard shortcuts
+export {
+  ShortcutRegistrar,
+  DEFAULT_SHORTCUT_REGISTRAR_CONFIG,
+  DEFAULT_GRAPH_SHORTCUTS,
+  SHORTCUT_CATEGORY_TITLES,
+} from "./ShortcutRegistrar";
+export type {
+  ShortcutCategory,
+  Shortcut,
+  ShortcutConflict,
+  ShortcutProfile,
+  ShortcutRegistrarConfig,
+  HelpSection,
+  RegistrarEventType,
+  RegistrarEvent,
+  RegistrarEventListener,
+} from "./ShortcutRegistrar";
