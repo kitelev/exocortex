@@ -13,9 +13,17 @@ import {
   forceRadial,
   forceX,
   forceY,
-  type SimulationNode,
-  type SimulationLink,
-  type Force,
+  FORCE_PRESETS,
+  cloneForceConfiguration,
+  mergeForceConfiguration,
+  validateForceConfiguration,
+} from "@plugin/presentation/renderers/graph/ForceSimulation";
+import type {
+  SimulationNode,
+  SimulationLink,
+  Force,
+  ForceConfiguration,
+  ForcePresetName,
 } from "@plugin/presentation/renderers/graph/ForceSimulation";
 
 // ============================================================
@@ -966,5 +974,621 @@ describe("ForceSimulation Integration", () => {
     // Center of mass should have moved toward (100, 100)
     expect(avgXAfter).toBeGreaterThan(avgXBefore);
     expect(avgYAfter).toBeGreaterThan(avgYBefore);
+  });
+});
+
+// ============================================================
+// Configurable Force Parameters Tests
+// ============================================================
+
+describe("ForceConfiguration Interfaces", () => {
+  describe("FORCE_PRESETS", () => {
+    it("should have all expected presets", () => {
+      const expectedPresets: ForcePresetName[] = ["default", "dense", "sparse", "clustered", "radial"];
+      for (const preset of expectedPresets) {
+        expect(FORCE_PRESETS[preset]).toBeDefined();
+      }
+    });
+
+    it("should have valid default preset", () => {
+      const preset = FORCE_PRESETS.default;
+
+      expect(preset.center.enabled).toBe(true);
+      expect(preset.center.strength).toBe(0.1);
+      expect(preset.charge.enabled).toBe(true);
+      expect(preset.charge.strength).toBe(-300);
+      expect(preset.link.enabled).toBe(true);
+      expect(preset.link.distance).toBe(100);
+      expect(preset.collision.enabled).toBe(true);
+      expect(preset.velocityDecay).toBe(0.4);
+    });
+
+    it("should have dense preset with tighter layout", () => {
+      const preset = FORCE_PRESETS.dense;
+
+      expect(preset.charge.strength).toBe(-50); // Light repulsion
+      expect(preset.link.distance).toBe(30);    // Tight clusters
+      expect(preset.link.strength).toBe(1.5);   // Stronger links
+    });
+
+    it("should have sparse preset with expanded layout", () => {
+      const preset = FORCE_PRESETS.sparse;
+
+      expect(preset.charge.strength).toBe(-800); // Strong repulsion
+      expect(preset.link.distance).toBe(200);    // Loose layout
+      expect(preset.link.strength).toBe(0.5);    // Weaker links
+    });
+
+    it("should have clustered preset emphasizing community structure", () => {
+      const preset = FORCE_PRESETS.clustered;
+
+      expect(preset.link.strength).toBe(2);      // Very strong links
+      expect(preset.link.iterations).toBe(3);    // More iterations
+      expect(preset.charge.distanceMax).toBe(300); // Limited range
+    });
+  });
+
+  describe("cloneForceConfiguration", () => {
+    it("should create a deep copy of configuration", () => {
+      const original = FORCE_PRESETS.default;
+      const clone = cloneForceConfiguration(original);
+
+      // Check it's equal
+      expect(clone.center.strength).toBe(original.center.strength);
+      expect(clone.charge.strength).toBe(original.charge.strength);
+      expect(clone.link.distance).toBe(original.link.distance);
+
+      // Check it's a different object
+      clone.center.strength = 0.5;
+      expect(original.center.strength).toBe(0.1); // Original unchanged
+    });
+
+    it("should clone all nested properties", () => {
+      const original: ForceConfiguration = {
+        center: { enabled: true, strength: 0.2, x: 100, y: 200 },
+        charge: { enabled: true, strength: -500, distanceMin: 5, distanceMax: 500, theta: 0.8 },
+        link: { enabled: true, distance: 50, strength: 1.5, iterations: 2 },
+        collision: { enabled: true, radius: 10, strength: 0.9, iterations: 3 },
+        velocityDecay: 0.5,
+      };
+
+      const clone = cloneForceConfiguration(original);
+
+      expect(clone.center.x).toBe(100);
+      expect(clone.center.y).toBe(200);
+      expect(clone.charge.distanceMax).toBe(500);
+      expect(clone.collision.radius).toBe(10);
+    });
+  });
+
+  describe("mergeForceConfiguration", () => {
+    it("should merge partial config with defaults", () => {
+      const partial: Partial<ForceConfiguration> = {
+        charge: { enabled: true, strength: -500, distanceMin: 1, distanceMax: Infinity, theta: 0.9 },
+      };
+
+      const merged = mergeForceConfiguration(partial);
+
+      // Overridden values
+      expect(merged.charge.strength).toBe(-500);
+
+      // Default values preserved
+      expect(merged.center.strength).toBe(0.1);
+      expect(merged.link.distance).toBe(100);
+    });
+
+    it("should use custom base configuration", () => {
+      const partial: Partial<ForceConfiguration> = {
+        velocityDecay: 0.6,
+      };
+
+      const merged = mergeForceConfiguration(partial, FORCE_PRESETS.dense);
+
+      expect(merged.velocityDecay).toBe(0.6);
+      expect(merged.charge.strength).toBe(-50); // From dense preset
+    });
+
+    it("should handle deeply nested partial overrides", () => {
+      const partial: Partial<ForceConfiguration> = {
+        center: { enabled: true, strength: 0.3, x: 0, y: 0 },
+      };
+
+      const merged = mergeForceConfiguration(partial);
+
+      expect(merged.center.strength).toBe(0.3);
+      expect(merged.center.x).toBe(0);
+    });
+  });
+
+  describe("validateForceConfiguration", () => {
+    it("should return empty array for valid configuration", () => {
+      const errors = validateForceConfiguration(FORCE_PRESETS.default);
+      expect(errors).toHaveLength(0);
+    });
+
+    it("should detect invalid center.strength", () => {
+      const config = cloneForceConfiguration(FORCE_PRESETS.default);
+      config.center.strength = 1.5; // Out of range
+
+      const errors = validateForceConfiguration(config);
+      expect(errors).toContain("center.strength must be between 0 and 1");
+    });
+
+    it("should detect positive charge.strength (attraction instead of repulsion)", () => {
+      const config = cloneForceConfiguration(FORCE_PRESETS.default);
+      config.charge.strength = 100; // Should be negative
+
+      const errors = validateForceConfiguration(config);
+      expect(errors).toContain("charge.strength should be negative for repulsion (positive creates attraction)");
+    });
+
+    it("should detect invalid charge.theta", () => {
+      const config = cloneForceConfiguration(FORCE_PRESETS.default);
+      config.charge.theta = 3; // Out of range
+
+      const errors = validateForceConfiguration(config);
+      expect(errors).toContain("charge.theta should be between 0 and 2");
+    });
+
+    it("should detect invalid link.distance", () => {
+      const config = cloneForceConfiguration(FORCE_PRESETS.default);
+      config.link.distance = 5; // Too small
+
+      const errors = validateForceConfiguration(config);
+      expect(errors).toContain("link.distance should be between 10 and 500");
+    });
+
+    it("should detect invalid collision.strength", () => {
+      const config = cloneForceConfiguration(FORCE_PRESETS.default);
+      config.collision.strength = 1.5; // Out of range
+
+      const errors = validateForceConfiguration(config);
+      expect(errors).toContain("collision.strength should be between 0 and 1");
+    });
+
+    it("should detect invalid velocityDecay", () => {
+      const config = cloneForceConfiguration(FORCE_PRESETS.default);
+      config.velocityDecay = -0.1; // Out of range
+
+      const errors = validateForceConfiguration(config);
+      expect(errors).toContain("velocityDecay should be between 0 and 1");
+    });
+
+    it("should allow 'auto' for collision.radius", () => {
+      const config = cloneForceConfiguration(FORCE_PRESETS.default);
+      config.collision.radius = "auto";
+
+      const errors = validateForceConfiguration(config);
+      const radiusError = errors.find((e) => e.includes("collision.radius"));
+      expect(radiusError).toBeUndefined();
+    });
+
+    it("should detect multiple errors", () => {
+      const config = cloneForceConfiguration(FORCE_PRESETS.default);
+      config.center.strength = 2;
+      config.charge.strength = 100;
+      config.link.distance = 1;
+
+      const errors = validateForceConfiguration(config);
+      expect(errors.length).toBeGreaterThanOrEqual(3);
+    });
+  });
+});
+
+describe("ForceSimulation Configuration Methods", () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  describe("applyConfiguration", () => {
+    it("should apply a complete configuration", () => {
+      const sim = new ForceSimulation();
+      const nodes = createTestNodes(5);
+      const links = createTestLinks(nodes);
+
+      sim.nodes(nodes);
+      sim.applyConfiguration(FORCE_PRESETS.default, links);
+
+      expect(sim.force("center")).toBeDefined();
+      expect(sim.force("charge")).toBeDefined();
+      expect(sim.force("link")).toBeDefined();
+      expect(sim.force("collision")).toBeDefined();
+      expect(sim.velocityDecay()).toBe(0.4);
+    });
+
+    it("should disable forces when enabled is false", () => {
+      const sim = new ForceSimulation();
+      const nodes = createTestNodes(5);
+
+      const config: ForceConfiguration = {
+        center: { enabled: false, strength: 0.1, x: 0, y: 0 },
+        charge: { enabled: false, strength: -300, distanceMin: 1, distanceMax: Infinity, theta: 0.9 },
+        link: { enabled: false, distance: 100, strength: 1, iterations: 1 },
+        collision: { enabled: false, radius: "auto", strength: 0.7, iterations: 1 },
+        velocityDecay: 0.4,
+      };
+
+      sim.nodes(nodes);
+      sim.applyConfiguration(config);
+
+      expect(sim.force("center")).toBeUndefined();
+      expect(sim.force("charge")).toBeUndefined();
+      expect(sim.force("link")).toBeUndefined();
+      expect(sim.force("collision")).toBeUndefined();
+    });
+
+    it("should apply configuration with numeric collision radius", () => {
+      const sim = new ForceSimulation();
+      const nodes = createTestNodes(5);
+
+      const config = cloneForceConfiguration(FORCE_PRESETS.default);
+      config.collision.radius = 15;
+
+      sim.nodes(nodes);
+      sim.applyConfiguration(config);
+
+      const collision = sim.force("collision") as ReturnType<typeof forceCollide>;
+      expect(collision).toBeDefined();
+      expect(collision.radius()).toBe(15);
+    });
+
+    it("should apply configuration with auto collision radius", () => {
+      const sim = new ForceSimulation();
+      const nodes = createTestNodes(5);
+
+      const config = cloneForceConfiguration(FORCE_PRESETS.default);
+      config.collision.radius = "auto";
+
+      sim.nodes(nodes);
+      sim.applyConfiguration(config);
+
+      const collision = sim.force("collision") as ReturnType<typeof forceCollide>;
+      expect(collision).toBeDefined();
+      expect(typeof collision.radius()).toBe("function");
+    });
+
+    it("should be chainable", () => {
+      const sim = new ForceSimulation();
+      const nodes = createTestNodes(5);
+      const links = createTestLinks(nodes);
+
+      const result = sim.nodes(nodes).applyConfiguration(FORCE_PRESETS.default, links);
+
+      expect(result).toBe(sim);
+    });
+  });
+
+  describe("applyPreset", () => {
+    it("should apply named presets", () => {
+      const sim = new ForceSimulation();
+      const nodes = createTestNodes(5);
+      const links = createTestLinks(nodes);
+
+      sim.nodes(nodes);
+
+      // Test each preset
+      const presets: ForcePresetName[] = ["default", "dense", "sparse", "clustered", "radial"];
+      for (const preset of presets) {
+        sim.applyPreset(preset, links);
+
+        expect(sim.velocityDecay()).toBe(FORCE_PRESETS[preset].velocityDecay);
+        expect(sim.force("center")).toBeDefined();
+      }
+    });
+
+    it("should apply dense preset correctly", () => {
+      const sim = new ForceSimulation();
+      const nodes = createTestNodes(5);
+      const links = createTestLinks(nodes);
+
+      sim.nodes(nodes).applyPreset("dense", links);
+
+      expect(sim.velocityDecay()).toBe(0.5);
+
+      const charge = sim.force("charge") as ReturnType<typeof forceManyBody>;
+      expect(charge.strength()).toBe(-50);
+
+      const link = sim.force("link") as ReturnType<typeof forceLink>;
+      expect(link.distance()).toBe(30);
+    });
+  });
+
+  describe("getConfiguration", () => {
+    it("should return current configuration", () => {
+      const sim = new ForceSimulation();
+      const nodes = createTestNodes(5);
+      const links = createTestLinks(nodes);
+
+      sim.nodes(nodes).applyConfiguration(FORCE_PRESETS.default, links);
+
+      const config = sim.getConfiguration();
+
+      expect(config.velocityDecay).toBe(0.4);
+      expect(config.center?.enabled).toBe(true);
+      expect(config.center?.strength).toBe(0.1);
+      expect(config.charge?.enabled).toBe(true);
+      expect(config.charge?.strength).toBe(-300);
+      expect(config.link?.enabled).toBe(true);
+      expect(config.link?.distance).toBe(100);
+      expect(config.collision?.enabled).toBe(true);
+    });
+
+    it("should return disabled for missing forces", () => {
+      const sim = new ForceSimulation();
+      const nodes = createTestNodes(5);
+
+      sim.nodes(nodes);
+      // Don't apply any forces
+
+      const config = sim.getConfiguration();
+
+      expect(config.center?.enabled).toBe(false);
+      expect(config.charge?.enabled).toBe(false);
+      expect(config.link?.enabled).toBe(false);
+      expect(config.collision?.enabled).toBe(false);
+    });
+
+    it("should detect auto radius for collision", () => {
+      const sim = new ForceSimulation();
+      const nodes = createTestNodes(5);
+
+      sim.nodes(nodes);
+      sim.force("collision", forceCollide((node) => node.radius));
+
+      const config = sim.getConfiguration();
+
+      expect(config.collision?.radius).toBe("auto");
+    });
+
+    it("should detect numeric radius for collision", () => {
+      const sim = new ForceSimulation();
+      const nodes = createTestNodes(5);
+
+      sim.nodes(nodes);
+      sim.force("collision", forceCollide(12));
+
+      const config = sim.getConfiguration();
+
+      expect(config.collision?.radius).toBe(12);
+    });
+  });
+
+  describe("updateForceParam", () => {
+    it("should update center force parameters", () => {
+      const sim = new ForceSimulation();
+      const nodes = createTestNodes(5);
+
+      sim.nodes(nodes).applyPreset("default");
+
+      sim.updateForceParam("center", "strength", 0.5);
+      sim.updateForceParam("center", "x", 100);
+      sim.updateForceParam("center", "y", 200);
+
+      const center = sim.force("center") as ReturnType<typeof forceCenter>;
+      expect(center.strength()).toBe(0.5);
+      expect(center.x()).toBe(100);
+      expect(center.y()).toBe(200);
+    });
+
+    it("should update charge force parameters", () => {
+      const sim = new ForceSimulation();
+      const nodes = createTestNodes(5);
+
+      sim.nodes(nodes).applyPreset("default");
+
+      sim.updateForceParam("charge", "strength", -500);
+      sim.updateForceParam("charge", "distanceMin", 10);
+      sim.updateForceParam("charge", "distanceMax", 500);
+      sim.updateForceParam("charge", "theta", 0.5);
+
+      const charge = sim.force("charge") as ReturnType<typeof forceManyBody>;
+      expect(charge.strength()).toBe(-500);
+      expect(charge.distanceMin()).toBe(10);
+      expect(charge.distanceMax()).toBe(500);
+      expect(charge.theta()).toBe(0.5);
+    });
+
+    it("should update link force parameters", () => {
+      const sim = new ForceSimulation();
+      const nodes = createTestNodes(5);
+      const links = createTestLinks(nodes);
+
+      sim.nodes(nodes).applyPreset("default", links);
+
+      sim.updateForceParam("link", "distance", 150);
+      sim.updateForceParam("link", "strength", 0.8);
+      sim.updateForceParam("link", "iterations", 3);
+
+      const link = sim.force("link") as ReturnType<typeof forceLink>;
+      expect(link.distance()).toBe(150);
+      expect(link.strength()).toBe(0.8);
+      expect(link.iterations()).toBe(3);
+    });
+
+    it("should update collision force parameters", () => {
+      const sim = new ForceSimulation();
+      const nodes = createTestNodes(5);
+
+      sim.nodes(nodes).applyPreset("default");
+
+      sim.updateForceParam("collision", "strength", 0.9);
+      sim.updateForceParam("collision", "iterations", 2);
+      sim.updateForceParam("collision", "radius", 20);
+
+      const collision = sim.force("collision") as ReturnType<typeof forceCollide>;
+      expect(collision.strength()).toBe(0.9);
+      expect(collision.iterations()).toBe(2);
+      expect(collision.radius()).toBe(20);
+    });
+
+    it("should handle missing force gracefully", () => {
+      const sim = new ForceSimulation();
+      const nodes = createTestNodes(5);
+
+      sim.nodes(nodes);
+      // Don't apply any forces
+
+      // Should not throw
+      expect(() => sim.updateForceParam("center", "strength", 0.5)).not.toThrow();
+    });
+
+    it("should be chainable", () => {
+      const sim = new ForceSimulation();
+      const nodes = createTestNodes(5);
+
+      sim.nodes(nodes).applyPreset("default");
+
+      const result = sim
+        .updateForceParam("center", "strength", 0.2)
+        .updateForceParam("charge", "strength", -400);
+
+      expect(result).toBe(sim);
+    });
+  });
+
+  describe("reheat", () => {
+    it("should set alpha to specified value", () => {
+      const sim = new ForceSimulation({ alpha: 0.1 });
+      const nodes = createTestNodes(5);
+
+      sim.nodes(nodes);
+      sim.reheat(0.5);
+
+      expect(sim.alpha()).toBe(0.5);
+    });
+
+    it("should use default alpha of 0.3", () => {
+      const sim = new ForceSimulation({ alpha: 0.01 });
+      const nodes = createTestNodes(5);
+
+      sim.nodes(nodes);
+      sim.reheat();
+
+      expect(sim.alpha()).toBe(0.3);
+    });
+
+    it("should start simulation if not running", () => {
+      const sim = new ForceSimulation({ alpha: 0.1 });
+      const nodes = createTestNodes(5);
+
+      sim.nodes(nodes);
+      expect(sim.isRunning()).toBe(false);
+
+      sim.reheat();
+
+      expect(sim.isRunning()).toBe(true);
+      sim.stop();
+    });
+
+    it("should clamp alpha to valid range", () => {
+      const sim = new ForceSimulation();
+      const nodes = createTestNodes(5);
+
+      sim.nodes(nodes);
+
+      sim.reheat(1.5);
+      expect(sim.alpha()).toBe(1);
+
+      sim.stop();
+      sim.reheat(-0.5);
+      expect(sim.alpha()).toBe(sim.alphaMin());
+
+      sim.stop();
+    });
+
+    it("should be chainable", () => {
+      const sim = new ForceSimulation();
+      const nodes = createTestNodes(5);
+
+      sim.nodes(nodes);
+      const result = sim.reheat();
+
+      expect(result).toBe(sim);
+      sim.stop();
+    });
+  });
+});
+
+describe("Configuration Integration Tests", () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it("should allow real-time configuration updates during simulation", () => {
+    const nodes = createTestNodes(10);
+    const links = createTestLinks(nodes);
+
+    const sim = new ForceSimulation()
+      .nodes(nodes)
+      .applyPreset("default", links);
+
+    // Run initial ticks
+    sim.tick(10);
+
+    // Update configuration while running
+    sim.updateForceParam("charge", "strength", -500);
+    sim.updateForceParam("link", "distance", 50);
+
+    // Continue simulation
+    sim.tick(10);
+
+    // Verify parameters were updated
+    const charge = sim.force("charge") as ReturnType<typeof forceManyBody>;
+    expect(charge.strength()).toBe(-500);
+
+    const link = sim.force("link") as ReturnType<typeof forceLink>;
+    expect(link.distance()).toBe(50);
+  });
+
+  it("should switch presets mid-simulation", () => {
+    const nodes = createTestNodes(10);
+    const links = createTestLinks(nodes);
+
+    const sim = new ForceSimulation()
+      .nodes(nodes)
+      .applyPreset("default", links);
+
+    sim.tick(20);
+
+    // Switch to dense preset
+    sim.applyPreset("dense", links);
+    sim.reheat();
+
+    sim.tick(20);
+
+    // Verify dense preset parameters
+    expect(sim.velocityDecay()).toBe(0.5);
+    const charge = sim.force("charge") as ReturnType<typeof forceManyBody>;
+    expect(charge.strength()).toBe(-50);
+  });
+
+  it("should round-trip configuration through get/apply", () => {
+    const nodes = createTestNodes(5);
+    const links = createTestLinks(nodes);
+
+    const sim1 = new ForceSimulation()
+      .nodes(nodes)
+      .applyPreset("clustered", links);
+
+    const config = sim1.getConfiguration() as ForceConfiguration;
+
+    const sim2 = new ForceSimulation()
+      .nodes(nodes)
+      .applyConfiguration(config, links);
+
+    const config2 = sim2.getConfiguration() as ForceConfiguration;
+
+    expect(config2.velocityDecay).toBe(config.velocityDecay);
+    expect(config2.center?.strength).toBe(config.center?.strength);
+    expect(config2.charge?.strength).toBe(config.charge?.strength);
+    expect(config2.link?.distance).toBe(config.link?.distance);
   });
 });

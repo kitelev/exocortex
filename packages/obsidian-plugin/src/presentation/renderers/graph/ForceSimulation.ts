@@ -121,6 +121,306 @@ export interface SimulationMetrics {
   fps: number;
 }
 
+// ============================================================
+// Configurable Force Parameters
+// ============================================================
+
+/**
+ * Center force parameters for keeping the graph centered
+ *
+ * @example
+ * ```typescript
+ * const params: CenterForceParams = {
+ *   enabled: true,
+ *   strength: 0.1,  // Gentle centering (recommended)
+ *   x: 400,         // Center X
+ *   y: 300,         // Center Y
+ * };
+ * ```
+ */
+export interface CenterForceParams {
+  /** Whether the force is enabled (default: true) */
+  enabled: boolean;
+  /** Force strength 0-1 (default: 0.1)
+   * - 0: No centering, graph can drift
+   * - 0.1: Gentle centering (recommended)
+   * - 1: Strong centering, feels "sticky"
+   */
+  strength: number;
+  /** Center X coordinate (default: width/2) */
+  x: number;
+  /** Center Y coordinate (default: height/2) */
+  y: number;
+}
+
+/**
+ * Charge (repulsion) force parameters using Barnes-Hut algorithm
+ *
+ * @example
+ * ```typescript
+ * const params: ChargeForceParams = {
+ *   enabled: true,
+ *   strength: -300,    // Medium repulsion (default)
+ *   distanceMin: 1,
+ *   distanceMax: Infinity,
+ *   theta: 0.9,        // Barnes-Hut approximation
+ * };
+ * ```
+ */
+export interface ChargeForceParams {
+  /** Whether the force is enabled (default: true) */
+  enabled: boolean;
+  /** Charge strength, negative for repulsion (default: -300)
+   * - -30: Light repulsion (dense graphs)
+   * - -300: Medium repulsion (default)
+   * - -1000: Strong repulsion (sparse layout)
+   */
+  strength: number;
+  /** Minimum distance between nodes 1-100 (default: 1) */
+  distanceMin: number;
+  /** Maximum distance for force calculation (default: Infinity) */
+  distanceMax: number;
+  /** Barnes-Hut approximation threshold 0-2 (default: 0.9)
+   * - 0.5: Accurate but slow
+   * - 0.9: Balanced (default)
+   * - 1.5: Fast but less accurate
+   */
+  theta: number;
+}
+
+/**
+ * Link force parameters for maintaining edge distances
+ *
+ * @example
+ * ```typescript
+ * const params: LinkForceParams = {
+ *   enabled: true,
+ *   distance: 100,     // Default spacing
+ *   strength: 1,
+ *   iterations: 1,     // Fast (default)
+ * };
+ * ```
+ */
+export interface LinkForceParams {
+  /** Whether the force is enabled (default: true) */
+  enabled: boolean;
+  /** Target link distance 10-500 (default: 100)
+   * - 30: Tight clusters
+   * - 100: Default spacing
+   * - 300: Loose layout
+   */
+  distance: number;
+  /** Link strength 0-2 (default: 1) */
+  strength: number;
+  /** Constraint iterations per tick 1-10 (default: 1)
+   * - 1: Fast (default)
+   * - 3+: More stable but slower
+   */
+  iterations: number;
+}
+
+/**
+ * Collision force parameters for preventing node overlap
+ *
+ * @example
+ * ```typescript
+ * const params: CollisionForceParams = {
+ *   enabled: true,
+ *   radius: 'auto',    // Use node.radius
+ *   strength: 0.7,
+ *   iterations: 1,
+ * };
+ * ```
+ */
+export interface CollisionForceParams {
+  /** Whether the force is enabled (default: true) */
+  enabled: boolean;
+  /** Node collision radius or 'auto' for node.radius (default: 'auto') */
+  radius: number | "auto";
+  /** Collision response strength 0-1 (default: 0.7) */
+  strength: number;
+  /** Collision detection iterations 1-5 (default: 1) */
+  iterations: number;
+}
+
+/**
+ * Simulation velocity decay parameter
+ *
+ * Controls how quickly node velocities are damped.
+ * Higher values = more friction = faster settling.
+ */
+export interface VelocityDecayParams {
+  /** Velocity decay rate 0-1 (default: 0.4)
+   * - 0.1: Floaty, slow to settle
+   * - 0.4: Balanced (default)
+   * - 0.8: Heavy, fast settling
+   */
+  velocityDecay: number;
+}
+
+/**
+ * Complete force configuration combining all force parameters
+ *
+ * Allows users to configure all physics forces in one place
+ * for presets and real-time tuning.
+ *
+ * @example
+ * ```typescript
+ * // Dense graph preset
+ * const densePreset: ForceConfiguration = {
+ *   center: { enabled: true, strength: 0.15, x: 400, y: 300 },
+ *   charge: { enabled: true, strength: -50, distanceMin: 1, distanceMax: 200, theta: 0.9 },
+ *   link: { enabled: true, distance: 30, strength: 1.5, iterations: 2 },
+ *   collision: { enabled: true, radius: 'auto', strength: 0.8, iterations: 2 },
+ *   velocityDecay: 0.5,
+ * };
+ * ```
+ */
+export interface ForceConfiguration {
+  /** Center force parameters */
+  center: CenterForceParams;
+  /** Charge/repulsion force parameters */
+  charge: ChargeForceParams;
+  /** Link force parameters */
+  link: LinkForceParams;
+  /** Collision force parameters */
+  collision: CollisionForceParams;
+  /** Velocity decay rate */
+  velocityDecay: number;
+}
+
+/**
+ * Preset names for common graph configurations
+ */
+export type ForcePresetName = "default" | "dense" | "sparse" | "clustered" | "radial";
+
+/**
+ * Force configuration presets for different graph characteristics
+ */
+export const FORCE_PRESETS: Record<ForcePresetName, ForceConfiguration> = {
+  /** Default balanced configuration */
+  default: {
+    center: { enabled: true, strength: 0.1, x: 0, y: 0 },
+    charge: { enabled: true, strength: -300, distanceMin: 1, distanceMax: Infinity, theta: 0.9 },
+    link: { enabled: true, distance: 100, strength: 1, iterations: 1 },
+    collision: { enabled: true, radius: "auto", strength: 0.7, iterations: 1 },
+    velocityDecay: 0.4,
+  },
+  /** Dense graph with many edges - tighter layout */
+  dense: {
+    center: { enabled: true, strength: 0.15, x: 0, y: 0 },
+    charge: { enabled: true, strength: -50, distanceMin: 1, distanceMax: 200, theta: 0.9 },
+    link: { enabled: true, distance: 30, strength: 1.5, iterations: 2 },
+    collision: { enabled: true, radius: "auto", strength: 0.8, iterations: 2 },
+    velocityDecay: 0.5,
+  },
+  /** Sparse graph with few edges - expanded layout */
+  sparse: {
+    center: { enabled: true, strength: 0.05, x: 0, y: 0 },
+    charge: { enabled: true, strength: -800, distanceMin: 1, distanceMax: Infinity, theta: 0.9 },
+    link: { enabled: true, distance: 200, strength: 0.5, iterations: 1 },
+    collision: { enabled: true, radius: "auto", strength: 0.5, iterations: 1 },
+    velocityDecay: 0.3,
+  },
+  /** Clustered graph - emphasizes community structure */
+  clustered: {
+    center: { enabled: true, strength: 0.05, x: 0, y: 0 },
+    charge: { enabled: true, strength: -400, distanceMin: 1, distanceMax: 300, theta: 0.8 },
+    link: { enabled: true, distance: 50, strength: 2, iterations: 3 },
+    collision: { enabled: true, radius: "auto", strength: 0.9, iterations: 2 },
+    velocityDecay: 0.4,
+  },
+  /** Radial layout - nodes spread in circular pattern */
+  radial: {
+    center: { enabled: true, strength: 0.2, x: 0, y: 0 },
+    charge: { enabled: true, strength: -150, distanceMin: 1, distanceMax: 400, theta: 0.9 },
+    link: { enabled: true, distance: 80, strength: 0.8, iterations: 1 },
+    collision: { enabled: true, radius: "auto", strength: 0.9, iterations: 2 },
+    velocityDecay: 0.45,
+  },
+};
+
+/**
+ * Creates a deep copy of a force configuration
+ */
+export function cloneForceConfiguration(config: ForceConfiguration): ForceConfiguration {
+  return {
+    center: { ...config.center },
+    charge: { ...config.charge },
+    link: { ...config.link },
+    collision: { ...config.collision },
+    velocityDecay: config.velocityDecay,
+  };
+}
+
+/**
+ * Merges partial configuration with defaults
+ */
+export function mergeForceConfiguration(
+  partial: Partial<ForceConfiguration>,
+  base: ForceConfiguration = FORCE_PRESETS.default
+): ForceConfiguration {
+  return {
+    center: { ...base.center, ...partial.center },
+    charge: { ...base.charge, ...partial.charge },
+    link: { ...base.link, ...partial.link },
+    collision: { ...base.collision, ...partial.collision },
+    velocityDecay: partial.velocityDecay ?? base.velocityDecay,
+  };
+}
+
+/**
+ * Validates force configuration values are within acceptable ranges
+ */
+export function validateForceConfiguration(config: ForceConfiguration): string[] {
+  const errors: string[] = [];
+
+  // Center force validation
+  if (config.center.strength < 0 || config.center.strength > 1) {
+    errors.push("center.strength must be between 0 and 1");
+  }
+
+  // Charge force validation
+  if (config.charge.strength > 0) {
+    errors.push("charge.strength should be negative for repulsion (positive creates attraction)");
+  }
+  if (config.charge.distanceMin < 1 || config.charge.distanceMin > 100) {
+    errors.push("charge.distanceMin should be between 1 and 100");
+  }
+  if (config.charge.theta < 0 || config.charge.theta > 2) {
+    errors.push("charge.theta should be between 0 and 2");
+  }
+
+  // Link force validation
+  if (config.link.distance < 10 || config.link.distance > 500) {
+    errors.push("link.distance should be between 10 and 500");
+  }
+  if (config.link.strength < 0 || config.link.strength > 2) {
+    errors.push("link.strength should be between 0 and 2");
+  }
+  if (config.link.iterations < 1 || config.link.iterations > 10) {
+    errors.push("link.iterations should be between 1 and 10");
+  }
+
+  // Collision force validation
+  if (typeof config.collision.radius === "number" && config.collision.radius < 1) {
+    errors.push("collision.radius must be at least 1");
+  }
+  if (config.collision.strength < 0 || config.collision.strength > 1) {
+    errors.push("collision.strength should be between 0 and 1");
+  }
+  if (config.collision.iterations < 1 || config.collision.iterations > 5) {
+    errors.push("collision.iterations should be between 1 and 5");
+  }
+
+  // Velocity decay validation
+  if (config.velocityDecay < 0 || config.velocityDecay > 1) {
+    errors.push("velocityDecay should be between 0 and 1");
+  }
+
+  return errors;
+}
+
 /**
  * ForceSimulation - Main-thread force-directed layout implementation
  *
@@ -357,6 +657,245 @@ export class ForceSimulation<N extends SimulationNode = SimulationNode> {
    */
   forceNames(): string[] {
     return Array.from(this._forces.keys());
+  }
+
+  // ============================================================
+  // Configuration Methods
+  // ============================================================
+
+  /**
+   * Apply a complete force configuration to the simulation
+   *
+   * This is the recommended way to configure the simulation with
+   * coordinated force parameters. Updates all forces and simulation
+   * settings in one call.
+   *
+   * @param config Complete force configuration
+   * @param links Optional links array for link force (required if link force enabled)
+   * @returns this for chaining
+   *
+   * @example
+   * ```typescript
+   * // Apply a preset
+   * simulation.applyConfiguration(FORCE_PRESETS.dense, links);
+   *
+   * // Apply custom configuration
+   * simulation.applyConfiguration({
+   *   center: { enabled: true, strength: 0.1, x: 400, y: 300 },
+   *   charge: { enabled: true, strength: -200, distanceMin: 1, distanceMax: 500, theta: 0.9 },
+   *   link: { enabled: true, distance: 80, strength: 1, iterations: 1 },
+   *   collision: { enabled: true, radius: 'auto', strength: 0.7, iterations: 1 },
+   *   velocityDecay: 0.4,
+   * }, links);
+   * ```
+   */
+  applyConfiguration(config: ForceConfiguration, links?: SimulationLink<N>[]): this {
+    // Apply velocity decay
+    this._velocityDecay = config.velocityDecay;
+
+    // Configure center force
+    if (config.center.enabled) {
+      this.force("center", forceCenter<N>(config.center.x, config.center.y, {
+        strength: config.center.strength,
+      }));
+    } else {
+      this.force("center", null);
+    }
+
+    // Configure charge force
+    if (config.charge.enabled) {
+      this.force("charge", forceManyBody<N>({
+        strength: config.charge.strength,
+        distanceMin: config.charge.distanceMin,
+        distanceMax: config.charge.distanceMax,
+        theta: config.charge.theta,
+      }));
+    } else {
+      this.force("charge", null);
+    }
+
+    // Configure link force
+    if (config.link.enabled && links) {
+      this.force("link", forceLink<N>(links, {
+        distance: config.link.distance,
+        strength: config.link.strength,
+        iterations: config.link.iterations,
+      }));
+    } else if (!config.link.enabled) {
+      this.force("link", null);
+    }
+
+    // Configure collision force
+    if (config.collision.enabled) {
+      const radius = config.collision.radius === "auto"
+        ? ((node: N) => node.radius ?? 8)
+        : config.collision.radius;
+      this.force("collision", forceCollide<N>(radius, {
+        strength: config.collision.strength,
+        iterations: config.collision.iterations,
+      }));
+    } else {
+      this.force("collision", null);
+    }
+
+    return this;
+  }
+
+  /**
+   * Apply a named preset configuration
+   *
+   * @param preset Preset name
+   * @param links Optional links array for link force
+   * @returns this for chaining
+   *
+   * @example
+   * ```typescript
+   * simulation.applyPreset('dense', links);
+   * simulation.applyPreset('sparse', links);
+   * simulation.applyPreset('clustered', links);
+   * ```
+   */
+  applyPreset(preset: ForcePresetName, links?: SimulationLink<N>[]): this {
+    return this.applyConfiguration(FORCE_PRESETS[preset], links);
+  }
+
+  /**
+   * Get the current force configuration
+   *
+   * Extracts configuration from currently applied forces.
+   * Returns undefined for forces that are not applied.
+   *
+   * @returns Current force configuration (partial if some forces missing)
+   */
+  getConfiguration(): Partial<ForceConfiguration> {
+    const result: Partial<ForceConfiguration> = {
+      velocityDecay: this._velocityDecay,
+    };
+
+    // Extract center force config
+    const centerForce = this.force("center") as ReturnType<typeof forceCenter> | undefined;
+    if (centerForce) {
+      result.center = {
+        enabled: true,
+        strength: centerForce.strength(),
+        x: centerForce.x(),
+        y: centerForce.y(),
+      };
+    } else {
+      result.center = { enabled: false, strength: 0, x: 0, y: 0 };
+    }
+
+    // Extract charge force config
+    const chargeForce = this.force("charge") as ReturnType<typeof forceManyBody> | undefined;
+    if (chargeForce) {
+      result.charge = {
+        enabled: true,
+        strength: chargeForce.strength() as number,
+        distanceMin: chargeForce.distanceMin(),
+        distanceMax: chargeForce.distanceMax(),
+        theta: chargeForce.theta(),
+      };
+    } else {
+      result.charge = { enabled: false, strength: -300, distanceMin: 1, distanceMax: Infinity, theta: 0.9 };
+    }
+
+    // Extract link force config
+    const linkForce = this.force("link") as ReturnType<typeof forceLink> | undefined;
+    if (linkForce) {
+      result.link = {
+        enabled: true,
+        distance: linkForce.distance() as number,
+        strength: linkForce.strength() as number,
+        iterations: linkForce.iterations(),
+      };
+    } else {
+      result.link = { enabled: false, distance: 100, strength: 1, iterations: 1 };
+    }
+
+    // Extract collision force config
+    const collisionForce = this.force("collision") as ReturnType<typeof forceCollide> | undefined;
+    if (collisionForce) {
+      const radius = collisionForce.radius();
+      result.collision = {
+        enabled: true,
+        radius: typeof radius === "function" ? "auto" : radius,
+        strength: collisionForce.strength(),
+        iterations: collisionForce.iterations(),
+      };
+    } else {
+      result.collision = { enabled: false, radius: "auto", strength: 0.7, iterations: 1 };
+    }
+
+    return result;
+  }
+
+  /**
+   * Update a single force parameter without affecting others
+   *
+   * Useful for real-time preview of parameter changes.
+   *
+   * @param forceName The force to update
+   * @param param The parameter to change
+   * @param value The new value
+   * @returns this for chaining
+   *
+   * @example
+   * ```typescript
+   * simulation.updateForceParam('charge', 'strength', -500);
+   * simulation.updateForceParam('link', 'distance', 150);
+   * simulation.updateForceParam('center', 'x', 400);
+   * ```
+   */
+  updateForceParam(
+    forceName: "center" | "charge" | "link" | "collision",
+    param: string,
+    value: number | string | boolean
+  ): this {
+    const force = this.force(forceName);
+    if (!force) return this;
+
+    // Type-safe parameter updates
+    if (forceName === "center") {
+      const f = force as ReturnType<typeof forceCenter>;
+      if (param === "strength" && typeof value === "number") f.strength(value);
+      else if (param === "x" && typeof value === "number") f.x(value);
+      else if (param === "y" && typeof value === "number") f.y(value);
+    } else if (forceName === "charge") {
+      const f = force as ReturnType<typeof forceManyBody>;
+      if (param === "strength" && typeof value === "number") f.strength(value);
+      else if (param === "distanceMin" && typeof value === "number") f.distanceMin(value);
+      else if (param === "distanceMax" && typeof value === "number") f.distanceMax(value);
+      else if (param === "theta" && typeof value === "number") f.theta(value);
+    } else if (forceName === "link") {
+      const f = force as ReturnType<typeof forceLink>;
+      if (param === "distance" && typeof value === "number") f.distance(value);
+      else if (param === "strength" && typeof value === "number") f.strength(value);
+      else if (param === "iterations" && typeof value === "number") f.iterations(value);
+    } else if (forceName === "collision") {
+      const f = force as ReturnType<typeof forceCollide>;
+      if (param === "strength" && typeof value === "number") f.strength(value);
+      else if (param === "iterations" && typeof value === "number") f.iterations(value);
+      else if (param === "radius" && typeof value === "number") f.radius(value);
+    }
+
+    return this;
+  }
+
+  /**
+   * Reheat the simulation after configuration changes
+   *
+   * Sets alpha to a value that will continue the simulation
+   * without a full restart. Good for live preview of changes.
+   *
+   * @param alpha Alpha value to set (default: 0.3)
+   * @returns this for chaining
+   */
+  reheat(alpha: number = 0.3): this {
+    this._alpha = Math.max(this._alphaMin, Math.min(1, alpha));
+    if (!this._running) {
+      this.start();
+    }
+    return this;
   }
 
   // ============================================================

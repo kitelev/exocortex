@@ -77,3 +77,21 @@ export type {
   ForceXConfig,
   ForceYConfig,
 } from "./ForceSimulation";
+
+// Configurable force parameters
+export type {
+  CenterForceParams,
+  ChargeForceParams,
+  LinkForceParams,
+  CollisionForceParams,
+  VelocityDecayParams,
+  ForceConfiguration,
+  ForcePresetName,
+} from "./ForceSimulation";
+
+export {
+  FORCE_PRESETS,
+  cloneForceConfiguration,
+  mergeForceConfiguration,
+  validateForceConfiguration,
+} from "./ForceSimulation";
