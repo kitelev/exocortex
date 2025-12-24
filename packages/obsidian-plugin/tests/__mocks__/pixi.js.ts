@@ -19,11 +19,15 @@ export const mockAnchorSet = jest.fn();
 export const mockContainerDestroy = jest.fn();
 export const mockGraphicsClear = jest.fn();
 export const mockGraphicsCircle = jest.fn();
+export const mockGraphicsRect = jest.fn();
+export const mockGraphicsRoundRect = jest.fn();
 export const mockGraphicsFill = jest.fn();
 export const mockGraphicsMoveTo = jest.fn();
 export const mockGraphicsLineTo = jest.fn();
+export const mockGraphicsClosePath = jest.fn();
 export const mockGraphicsStroke = jest.fn();
 export const mockGraphicsDestroy = jest.fn();
+export const mockGraphicsRemoveFromParent = jest.fn();
 export const mockTextDestroy = jest.fn();
 
 export const Application = jest.fn().mockImplementation(() => ({
@@ -59,8 +63,16 @@ export const Graphics = jest.fn().mockImplementation(() => {
       mockGraphicsClear();
       return this;
     }),
-    circle: jest.fn(function(this: unknown) {
-      mockGraphicsCircle();
+    circle: jest.fn(function(this: unknown, ...args: unknown[]) {
+      mockGraphicsCircle(...args);
+      return this;
+    }),
+    rect: jest.fn(function(this: unknown, ...args: unknown[]) {
+      mockGraphicsRect(...args);
+      return this;
+    }),
+    roundRect: jest.fn(function(this: unknown, ...args: unknown[]) {
+      mockGraphicsRoundRect(...args);
       return this;
     }),
     fill: jest.fn(function(this: unknown, ...args: unknown[]) {
@@ -75,11 +87,16 @@ export const Graphics = jest.fn().mockImplementation(() => {
       mockGraphicsLineTo(...args);
       return this;
     }),
-    stroke: jest.fn(function(this: unknown) {
-      mockGraphicsStroke();
+    closePath: jest.fn(function(this: unknown) {
+      mockGraphicsClosePath();
+      return this;
+    }),
+    stroke: jest.fn(function(this: unknown, ...args: unknown[]) {
+      mockGraphicsStroke(...args);
       return this;
     }),
     destroy: mockGraphicsDestroy,
+    removeFromParent: mockGraphicsRemoveFromParent,
     position: { set: jest.fn() },
   };
   return graphics;

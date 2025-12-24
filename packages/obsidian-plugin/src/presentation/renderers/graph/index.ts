@@ -102,3 +102,21 @@ export type {
   PixiGraphRendererOptions,
   ViewportState,
 } from "./PixiGraphRenderer";
+
+// Node rendering with customizable shapes
+export {
+  NodeRenderer,
+  NodeStyleResolver,
+  SHAPE_DRAWERS,
+  DEFAULT_NODE_STYLE,
+  DEFAULT_NODE_TYPE_CONFIGS,
+  calculateNodeRadius,
+} from "./NodeRenderer";
+export type {
+  NodeShape,
+  NodeVisualStyle,
+  NodeTypeConfig,
+  OntologyClass,
+  RadiusScalingMode,
+  RenderedNode,
+} from "./NodeRenderer";
