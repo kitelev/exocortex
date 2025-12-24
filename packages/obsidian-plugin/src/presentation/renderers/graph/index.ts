@@ -517,3 +517,22 @@ export type {
   PluginRegistryEventListener,
   PluginFilter,
 } from "./LayoutPlugin";
+
+// Community detection using Louvain algorithm
+export {
+  detectCommunities,
+  assignCommunityColors,
+  CommunityLayout,
+  createCommunityDetectionPlugin,
+  communityDetectionPlugin,
+  COMMUNITY_COLOR_PALETTES,
+  COMMUNITY_DETECTION_OPTIONS,
+  COMMUNITY_DETECTION_METADATA,
+  DEFAULT_COMMUNITY_OPTIONS,
+} from "./CommunityDetection";
+export type {
+  CommunityAssignment,
+  Community,
+  CommunityDetectionResult,
+  CommunityDetectionOptions,
+} from "./CommunityDetection";
