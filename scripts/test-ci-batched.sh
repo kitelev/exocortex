@@ -21,8 +21,9 @@ echo "📦 Running obsidian-plugin tests..."
 # Build jest command with conditional coverage flag
 # Uses parallel workers by default (configured in jest.config.js)
 # --forceExit ensures Jest exits after tests (prevents hanging on open handles)
+# --detectOpenHandles shows what's keeping Jest alive (helps debug hanging)
 # Using node directly instead of npx for more reliable forceExit behavior
-JEST_ARGS="--config packages/obsidian-plugin/jest.config.js --forceExit"
+JEST_ARGS="--config packages/obsidian-plugin/jest.config.js --forceExit --detectOpenHandles"
 if [ "$COVERAGE" = "true" ]; then
     echo "📊 Coverage collection enabled"
     JEST_ARGS="$JEST_ARGS --coverage --coverageReporters=lcov --coverageReporters=json-summary --coverageReporters=text-summary"
