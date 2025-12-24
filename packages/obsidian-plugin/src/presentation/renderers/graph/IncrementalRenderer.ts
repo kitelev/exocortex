@@ -118,7 +118,7 @@ export interface RenderStats {
  * renderer.updateNodePositions(updatedNodes);
  *
  * // Update viewport (only transforms containers)
- * renderer.updateViewport({ zoom: 1.5, width: 800, height: 600 });
+ * renderer.updateViewport({ zoom: 1.5, bounds: { minX: -500, maxX: 500, minY: -400, maxY: 400 } });
  *
  * // Render only what changed
  * renderer.render();
@@ -158,7 +158,10 @@ export class IncrementalRenderer {
   private renderedLabels: Map<string, RenderedLabel> = new Map();
 
   /** Current viewport */
-  private viewport: ViewportInfo = { zoom: 1, width: 800, height: 600 };
+  private viewport: ViewportInfo = {
+    zoom: 1,
+    bounds: { minX: -1000, maxX: 1000, minY: -1000, maxY: 1000 },
+  };
 
   /** Selection state */
   private selectedNodes: Set<string> = new Set();
@@ -204,7 +207,10 @@ export class IncrementalRenderer {
     );
     this.labelRenderer = new LabelRenderer(
       new LabelStyleResolver(),
-      this.config.labelRenderer
+      {
+        textPoolSize: this.config.labelRenderer.poolSize,
+        graphicsPoolSize: this.config.labelRenderer.poolSize,
+      }
     );
   }
 
@@ -358,17 +364,25 @@ export class IncrementalRenderer {
    * @param viewport - New viewport state
    */
   updateViewport(viewport: Partial<ViewportInfo>): void {
-    const changed =
-      (viewport.zoom !== undefined && viewport.zoom !== this.viewport.zoom) ||
-      (viewport.width !== undefined && viewport.width !== this.viewport.width) ||
-      (viewport.height !== undefined && viewport.height !== this.viewport.height);
+    const boundsChanged =
+      viewport.bounds !== undefined &&
+      (viewport.bounds.minX !== this.viewport.bounds.minX ||
+        viewport.bounds.maxX !== this.viewport.bounds.maxX ||
+        viewport.bounds.minY !== this.viewport.bounds.minY ||
+        viewport.bounds.maxY !== this.viewport.bounds.maxY);
 
-    if (changed) {
-      this.viewport = { ...this.viewport, ...viewport };
+    const zoomChanged =
+      viewport.zoom !== undefined && viewport.zoom !== this.viewport.zoom;
+
+    if (zoomChanged || boundsChanged) {
+      this.viewport = {
+        zoom: viewport.zoom ?? this.viewport.zoom,
+        bounds: viewport.bounds ?? this.viewport.bounds,
+      };
       this.dirty.markDirty("viewport");
 
       // Labels may need update based on zoom level
-      if (viewport.zoom !== undefined) {
+      if (zoomChanged) {
         this.dirty.markDirty("labels");
         // Update the label renderer's viewport
         this.labelRenderer.updateViewport(this.viewport);
@@ -563,23 +577,19 @@ export class IncrementalRenderer {
     source: Position;
     target: Position;
   } {
-    const sourceX = sourceNode.x ?? 0;
-    const sourceY = sourceNode.y ?? 0;
-    const targetX = targetNode.x ?? 0;
-    const targetY = targetNode.y ?? 0;
+    const sourcePos: Position = {
+      x: sourceNode.x ?? 0,
+      y: sourceNode.y ?? 0,
+    };
+    const targetPos: Position = {
+      x: targetNode.x ?? 0,
+      y: targetNode.y ?? 0,
+    };
 
     const sourceRadius = sourceNode.size ?? 8;
     const targetRadius = targetNode.size ?? 8;
 
-    const endpoints = calculateEdgeEndpoints(
-      sourceX, sourceY, sourceRadius,
-      targetX, targetY, targetRadius
-    );
-
-    return {
-      source: { x: endpoints.sourceX, y: endpoints.sourceY },
-      target: { x: endpoints.targetX, y: endpoints.targetY },
-    };
+    return calculateEdgeEndpoints(sourcePos, targetPos, sourceRadius, targetRadius);
   }
 
   /**
