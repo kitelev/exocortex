@@ -154,3 +154,21 @@ export type {
   RenderedLabel,
   ViewportInfo,
 } from "./LabelRenderer";
+
+// Dirty-checking and incremental updates for performance optimization
+export {
+  DirtyTracker,
+  NodeEdgeIndex,
+  DEFAULT_DIRTY_TRACKER_CONFIG,
+} from "./DirtyTracker";
+export type {
+  DirtyFlag,
+  DirtyTrackerConfig,
+} from "./DirtyTracker";
+
+// Incremental renderer for efficient graph updates
+export { IncrementalRenderer } from "./IncrementalRenderer";
+export type {
+  IncrementalRendererOptions,
+  RenderStats,
+} from "./IncrementalRenderer";
