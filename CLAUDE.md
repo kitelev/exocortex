@@ -214,6 +214,57 @@ If user explicitly approves, then and only then edit AGENTS.md, CLAUDE.md, or ot
 - Release v13.47.2 created automatically
 - Complete documentation suite delivered in one session
 
+### Lessons from Graph View Sprint (December 2025)
+
+**Example of successful high-velocity development sprint** (completed Dec 24, 2025):
+
+**Scope:**
+- 30 issues completed in ~24 hours
+- ~3,150 agent steps total
+- 60,600+ lines of code added
+- Issues #1151-#1183
+
+**Sprint Structure (5 Phases):**
+
+| Phase | Focus | Issues | Steps |
+|-------|-------|--------|-------|
+| Foundation | Data model, state, events | #1151-1155 | 831 |
+| Physics | Force layout, optimization | #1156-1161 | 729 |
+| Rendering | WebGL, culling, sprites | #1162-1168 | 628 |
+| Interaction | Selection, keyboard, menus | #1169-1177 | 933 |
+| Semantic | Clustering, search, paths | #1178-1183 | 600 |
+
+**Why It Succeeded:**
+
+1. **Dependency chain respect**: Each phase built on previous phases
+2. **Parallel execution within phases**: Multiple issues in same phase ran in parallel
+3. **Warm context accumulation**: ~2.5x productivity gain by issue #10
+4. **Shared infrastructure reuse**: Physics simulation used by 5 different layouts
+5. **Test-driven stability**: Each issue included unit tests
+
+**Performance Achievements:**
+- 10,000+ nodes rendered at 60 FPS
+- Physics off main thread via Web Worker
+- Barnes-Hut O(n log n) optimization
+- Visibility culling for off-screen elements
+
+**Key Patterns Discovered (see PATTERNS.md):**
+- Graph View Sprint Development Pattern
+- WebGL Rendering Optimization Pattern
+- Barnes-Hut Force Simulation Pattern
+- Web Worker Physics Pattern
+- Louvain Community Detection Pattern
+- Graph Search and Highlight Pattern
+- Path Finding Pattern
+
+**When to Apply Sprint Pattern:**
+- New visualization systems (graphs, charts, 3D)
+- Performance-critical features
+- Clear phase boundaries
+- Parallel AI agent execution possible
+
+**Reference**: Issues #1151-#1183, PATTERNS.md § "Graph View Sprint Development Pattern"
+
 ---
 
 ## 🎯 Purpose
