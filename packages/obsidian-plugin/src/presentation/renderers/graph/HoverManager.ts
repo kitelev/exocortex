@@ -235,8 +235,10 @@ const DEFAULT_CONFIG: HoverManagerConfig = {
 export class HoverManager {
   private state: HoverState;
   private config: HoverManagerConfig;
-  private nodes: GraphNode[] = [];
   private edges: GraphEdge[] = [];
+
+  // Node lookup map for O(1) access by ID
+  private nodeMap: Map<string, GraphNode> = new Map();
 
   // Timer for delayed tooltip
   private hoverTimer: ReturnType<typeof setTimeout> | null = null;
@@ -274,12 +276,25 @@ export class HoverManager {
   }
 
   /**
-   * Set the nodes array for edge lookup
+   * Set the nodes array and build lookup map
    *
    * @param nodes - Array of graph nodes
    */
   setNodes(nodes: GraphNode[]): void {
-    this.nodes = nodes;
+    this.nodeMap.clear();
+    for (const node of nodes) {
+      this.nodeMap.set(node.id, node);
+    }
+  }
+
+  /**
+   * Get a node by ID
+   *
+   * @param id - Node ID
+   * @returns GraphNode or undefined if not found
+   */
+  getNode(id: string): GraphNode | undefined {
+    return this.nodeMap.get(id);
   }
 
   /**
@@ -826,8 +841,8 @@ export class HoverManager {
     this.highlightedNodeIds.clear();
     this.highlightedEdgeIds.clear();
     this.nodeToEdges.clear();
+    this.nodeMap.clear();
     this.listeners.clear();
-    this.nodes = [];
     this.edges = [];
     this.dataProvider = null;
     this.renderer = null;
