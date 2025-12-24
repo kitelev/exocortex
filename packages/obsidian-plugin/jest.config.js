@@ -27,6 +27,9 @@ module.exports = {
     "!**/tests/**",
     // Exclude Web Worker files - they run in Worker context and can't be unit tested with Jest
     "!**/*.worker.ts",
+    // Exclude IncrementalRenderer - requires WebGL/PixiJS rendering which is unavailable in JSDOM
+    // DirtyTracker (its core logic) is fully tested separately
+    "!**/IncrementalRenderer.ts",
   ],
   moduleNameMapper: {
     "^exocortex$": "<rootDir>/../exocortex/src/index.ts",
