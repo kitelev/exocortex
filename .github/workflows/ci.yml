@@ -85,7 +85,7 @@ jobs:
 
   test-unit:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 7
     container:
       image: mcr.microsoft.com/playwright:v1.57.0-jammy
 
@@ -138,7 +138,7 @@ jobs:
 
   test-coverage:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 7
     container:
       image: mcr.microsoft.com/playwright:v1.57.0-jammy
 
