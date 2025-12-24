@@ -566,3 +566,36 @@ export type {
   ClusterQueryExecutorConfig,
   ClusterRendererConfig,
 } from "./cluster";
+
+// Graph filtering system for semantic visualization
+export {
+  FilterManager,
+  getFilterManager,
+  resetFilterManager,
+  FilterPanel,
+  FilterPanelButton,
+  FilterIcon,
+  createTypeFilter,
+  createPredicateFilter,
+  createLiteralFilter,
+  createPathFilter,
+  createCompositeFilter,
+  generateFilterId,
+  DEFAULT_FILTER_PANEL_CONFIG,
+} from "./filter";
+export type {
+  GraphFilter,
+  TypeFilter,
+  PredicateFilter,
+  LiteralFilter,
+  PathFilter,
+  CustomSPARQLFilter,
+  CompositeFilter,
+  FilterPreset,
+  AdvancedFilterState,
+  TypeCounts,
+  FilterPanelConfig,
+  BaseFilter,
+  FilterChangeCallback,
+  GraphData as FilterGraphData,
+} from "./filter";
