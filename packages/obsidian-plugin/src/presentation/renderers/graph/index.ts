@@ -213,3 +213,42 @@ export type {
   SelectionEvent,
   SelectionEventListener,
 } from "./SelectionManager";
+
+// Hover manager for node/edge hover states and tooltips
+export {
+  HoverManager,
+  DEFAULT_HOVER_MANAGER_CONFIG,
+} from "./HoverManager";
+export type {
+  Point,
+  HoverState,
+  NodeType,
+  PropertyValue,
+  TooltipData,
+  TooltipDataProvider,
+  TooltipRenderer as ITooltipRenderer,
+  HoverManagerConfig,
+  HoverEventType,
+  HoverEvent,
+  HoverEventListener,
+} from "./HoverManager";
+
+// Tooltip renderer for rich metadata display
+export {
+  TooltipRenderer,
+  DEFAULT_TOOLTIP_RENDERER_CONFIG,
+} from "./TooltipRenderer";
+export type {
+  TooltipRendererConfig,
+} from "./TooltipRenderer";
+
+// Tooltip data provider for triple store integration
+export {
+  GraphTooltipDataProvider,
+  DEFAULT_GRAPH_TOOLTIP_PROVIDER_CONFIG,
+} from "./GraphTooltipDataProvider";
+export type {
+  TripleStore,
+  FileContentProvider,
+  GraphTooltipDataProviderConfig,
+} from "./GraphTooltipDataProvider";

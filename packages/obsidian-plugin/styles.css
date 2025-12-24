@@ -4392,3 +4392,159 @@
     transform: none;
   }
 }
+
+/* ============================================================================
+   Graph Tooltip - Rich metadata display for node/edge hover
+   ============================================================================ */
+
+.exo-graph-tooltip {
+  position: fixed;
+  max-width: var(--tooltip-max-width, 300px);
+  max-height: var(--tooltip-max-height, 400px);
+  padding: var(--tooltip-padding, 12px);
+  border-radius: var(--tooltip-border-radius, 8px);
+  background-color: var(--background-secondary, #1e1e2e);
+  border: 1px solid var(--background-modifier-border, #313244);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  color: var(--text-normal, #cdd6f4);
+  font-size: 12px;
+  line-height: 1.5;
+  z-index: var(--tooltip-z-index, 1000);
+  overflow: hidden;
+  pointer-events: none;
+  transition-property: opacity, transform;
+  transition-timing-function: ease;
+}
+
+.exo-graph-tooltip--hidden {
+  display: none;
+}
+
+.exo-graph-tooltip--visible {
+  display: block;
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.exo-graph-tooltip--animating-in {
+  opacity: 0;
+  transform: translateY(4px);
+}
+
+.exo-graph-tooltip--animating-out {
+  opacity: 0;
+  transform: translateY(4px);
+}
+
+.exo-tooltip-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.exo-tooltip-type {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.exo-tooltip-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-normal, #cdd6f4);
+  margin-bottom: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.exo-tooltip-thumbnail {
+  margin-bottom: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.exo-tooltip-thumbnail img {
+  width: 100%;
+  height: auto;
+  max-height: 150px;
+  object-fit: cover;
+}
+
+.exo-tooltip-relations {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.exo-tooltip-relation {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-muted, #a6adc8);
+}
+
+.exo-tooltip-properties {
+  border-top: 1px solid var(--background-modifier-border, #313244);
+  padding-top: 8px;
+  margin-top: 4px;
+}
+
+.exo-tooltip-property {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+  font-size: 11px;
+}
+
+.exo-tooltip-property-name {
+  color: var(--text-muted, #a6adc8);
+  flex-shrink: 0;
+}
+
+.exo-tooltip-property-value {
+  color: var(--text-normal, #cdd6f4);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.exo-tooltip-more-props {
+  font-size: 10px;
+  color: var(--text-muted, #a6adc8);
+  font-style: italic;
+  margin-top: 4px;
+}
+
+.exo-tooltip-preview {
+  border-top: 1px solid var(--background-modifier-border, #313244);
+  padding-top: 8px;
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--text-muted, #a6adc8);
+  line-height: 1.6;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+}
+
+.exo-tooltip-path {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--background-modifier-border, #313244);
+  font-size: 10px;
+  color: var(--text-faint, #6c7086);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
