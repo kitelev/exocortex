@@ -198,3 +198,18 @@ export type {
   ViewportEvent,
   ViewportEventListener,
 } from "./ViewportController";
+
+// Selection manager for node/edge selection with multi-select and box selection
+export {
+  SelectionManager,
+  DEFAULT_SELECTION_MANAGER_CONFIG,
+} from "./SelectionManager";
+export type {
+  Rect,
+  NormalizedRect,
+  SelectionState,
+  SelectionManagerConfig,
+  SelectionEventType,
+  SelectionEvent,
+  SelectionEventListener,
+} from "./SelectionManager";
