@@ -686,8 +686,6 @@ export function forceLink<N extends SimulationNode = SimulationNode>(
   let _strength = config.strength ?? 1;
   let _iterations = config.iterations ?? 1;
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  let nodes: N[] = [];
   let nodeById: Map<string, N> = new Map();
   let resolvedLinks: ResolvedLink<N>[] = [];
   let count: Map<N, number> = new Map();
@@ -781,7 +779,6 @@ export function forceLink<N extends SimulationNode = SimulationNode>(
   };
 
   force.initialize = (n: N[]) => {
-    nodes = n;
     nodeById = new Map(n.map((node) => [node.id, node]));
     initializeLinks();
   };
@@ -869,9 +866,19 @@ export function forceManyBody<N extends SimulationNode = SimulationNode>(
     if (nodes.length === 0) return;
 
     // Create Barnes-Hut force with current configuration
+    // Need to adapt the strength function to BarnesHutForce's SimulationNode type
+    let strengthForBH: number | ((node: BHSimulationNode, index: number, nodes: BHSimulationNode[]) => number);
+    if (typeof _strength === "function") {
+      const strengthFn = _strength as (node: N, index: number, nodes: N[]) => number;
+      strengthForBH = (node: BHSimulationNode, index: number, allNodes: BHSimulationNode[]) =>
+        strengthFn(node as unknown as N, index, allNodes as unknown as N[]);
+    } else {
+      strengthForBH = _strength;
+    }
+
     barnesHut = new BarnesHutForce({
       theta: _theta,
-      strength: _strength,
+      strength: strengthForBH,
       distanceMin: _distanceMin,
       distanceMax: _distanceMax,
     });
@@ -992,7 +999,8 @@ export function forceCollide<N extends SimulationNode = SimulationNode>(
 
   function initializeRadii() {
     if (typeof _radius === "function") {
-      radii = nodes.map((node, i) => _radius(node, i, nodes) as number);
+      const radiusFn = _radius as (node: N, index: number, nodes: N[]) => number;
+      radii = nodes.map((node, i) => radiusFn(node, i, nodes));
     } else {
       radii = nodes.map(() => _radius as number);
     }
@@ -1113,13 +1121,15 @@ export function forceRadial<N extends SimulationNode = SimulationNode>(
 
   function initialize() {
     if (typeof _radius === "function") {
-      radii = nodes.map((node, i) => _radius(node, i, nodes) as number);
+      const radiusFn = _radius as (node: N, index: number, nodes: N[]) => number;
+      radii = nodes.map((node, i) => radiusFn(node, i, nodes));
     } else {
       radii = nodes.map(() => _radius as number);
     }
 
     if (typeof _strength === "function") {
-      strengths = nodes.map((node, i) => (_strength as (node: N, index: number, nodes: N[]) => number)(node, i, nodes));
+      const strengthFn = _strength as (node: N, index: number, nodes: N[]) => number;
+      strengths = nodes.map((node, i) => strengthFn(node, i, nodes));
     } else {
       strengths = nodes.map(() => _strength as number);
     }
@@ -1182,7 +1192,7 @@ export function forceRadial<N extends SimulationNode = SimulationNode>(
     value?: number | ((node: N, index: number, nodes: N[]) => number)
   ): number | ((node: SimulationNode, index: number, nodes: SimulationNode[]) => number) | typeof force {
     if (value === undefined) return _strength as number | ((node: SimulationNode, index: number, nodes: SimulationNode[]) => number);
-    _strength = value;
+    _strength = value as typeof _strength;
     initialize();
     return force;
   } as {
@@ -1224,13 +1234,15 @@ export function forceX<N extends SimulationNode = SimulationNode>(
 
   function initialize() {
     if (typeof _x === "function") {
-      xz = nodes.map((node, i) => _x(node, i, nodes) as number);
+      const xFn = _x as (node: N, index: number, nodes: N[]) => number;
+      xz = nodes.map((node, i) => xFn(node, i, nodes));
     } else {
       xz = nodes.map(() => _x as number);
     }
 
     if (typeof _strength === "function") {
-      strengths = nodes.map((node, i) => (_strength as (node: N, index: number, nodes: N[]) => number)(node, i, nodes));
+      const strengthFn = _strength as (node: N, index: number, nodes: N[]) => number;
+      strengths = nodes.map((node, i) => strengthFn(node, i, nodes));
     } else {
       strengths = nodes.map(() => _strength as number);
     }
@@ -1271,7 +1283,7 @@ export function forceX<N extends SimulationNode = SimulationNode>(
     value?: number | ((node: N, index: number, nodes: N[]) => number)
   ): number | ((node: SimulationNode, index: number, nodes: SimulationNode[]) => number) | typeof force {
     if (value === undefined) return _strength as number | ((node: SimulationNode, index: number, nodes: SimulationNode[]) => number);
-    _strength = value;
+    _strength = value as typeof _strength;
     initialize();
     return force;
   } as {
@@ -1313,13 +1325,15 @@ export function forceY<N extends SimulationNode = SimulationNode>(
 
   function initialize() {
     if (typeof _y === "function") {
-      yz = nodes.map((node, i) => _y(node, i, nodes) as number);
+      const yFn = _y as (node: N, index: number, nodes: N[]) => number;
+      yz = nodes.map((node, i) => yFn(node, i, nodes));
     } else {
       yz = nodes.map(() => _y as number);
     }
 
     if (typeof _strength === "function") {
-      strengths = nodes.map((node, i) => (_strength as (node: N, index: number, nodes: N[]) => number)(node, i, nodes));
+      const strengthFn = _strength as (node: N, index: number, nodes: N[]) => number;
+      strengths = nodes.map((node, i) => strengthFn(node, i, nodes));
     } else {
       strengths = nodes.map(() => _strength as number);
     }
@@ -1360,7 +1374,7 @@ export function forceY<N extends SimulationNode = SimulationNode>(
     value?: number | ((node: N, index: number, nodes: N[]) => number)
   ): number | ((node: SimulationNode, index: number, nodes: SimulationNode[]) => number) | typeof force {
     if (value === undefined) return _strength as number | ((node: SimulationNode, index: number, nodes: SimulationNode[]) => number);
-    _strength = value;
+    _strength = value as typeof _strength;
     initialize();
     return force;
   } as {
