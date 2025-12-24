@@ -40,6 +40,7 @@ module.exports = {
     "^@plugin/(.*)$": "<rootDir>/src/$1",
     "^obsidian$": "<rootDir>/tests/__mocks__/obsidian.ts",
     "^d3$": "<rootDir>/tests/__mocks__/d3.ts",
+    "^pixi\\.js$": "<rootDir>/tests/__mocks__/pixi.js.ts",
   },
   // Coverage thresholds per Test Pyramid policy (docs/TEST-PYRAMID.md)
   // CI workflow (.github/workflows/ci.yml) uses: statements: 75, branches: 67, functions: 70, lines: 75

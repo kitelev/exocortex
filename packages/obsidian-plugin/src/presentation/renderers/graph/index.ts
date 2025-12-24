@@ -95,3 +95,10 @@ export {
   mergeForceConfiguration,
   validateForceConfiguration,
 } from "./ForceSimulation";
+
+// PixiJS WebGL2 renderer for high-performance graph rendering
+export { PixiGraphRenderer } from "./PixiGraphRenderer";
+export type {
+  PixiGraphRendererOptions,
+  ViewportState,
+} from "./PixiGraphRenderer";
