@@ -359,3 +359,22 @@ export type {
   RegistrarEvent,
   RegistrarEventListener,
 } from "./ShortcutRegistrar";
+
+// Hierarchical layout algorithm for tree/DAG visualization
+export {
+  HierarchicalLayout,
+  createHierarchicalLayout,
+  DEFAULT_HIERARCHICAL_OPTIONS,
+  HIERARCHICAL_PRESETS,
+} from "./HierarchicalLayout";
+export type {
+  LayoutDirection,
+  RankingAlgorithm,
+  CrossingMinimizationAlgorithm,
+  CoordinateAssignmentAlgorithm,
+  HierarchicalLayoutOptions,
+  HierarchicalNode,
+  HierarchicalEdge,
+  HierarchicalLayoutResult,
+  HierarchicalPresetName,
+} from "./HierarchicalLayout";
