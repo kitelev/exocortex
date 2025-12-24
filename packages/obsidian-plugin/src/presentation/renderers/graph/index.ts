@@ -536,3 +536,33 @@ export type {
   CommunityDetectionResult,
   CommunityDetectionOptions,
 } from "./CommunityDetection";
+
+// Node clustering visualization with SPARQL query execution
+export {
+  ClusterQueryExecutor,
+  ClusterRenderer,
+  DEFAULT_CLUSTER_QUERY_OPTIONS,
+  DEFAULT_CLUSTER_VISUALIZATION_OPTIONS,
+} from "./cluster";
+export type {
+  ClusterQueryOptions,
+  ClusterQueryResult,
+  ClusterQueryStats,
+  QueryValidationResult,
+  QueryValidationError,
+  QueryValidationWarning,
+  QueryPlan,
+  QueryPlanStep,
+  ClusterNode,
+  ClusterEdge,
+  ClusterVisualizationData,
+  ClusterVisualizationOptions,
+  ClusterBoundary,
+  ClusterSelectionState,
+  ClusterEventType,
+  ClusterEvent,
+  ClusterEventListener,
+  TripleStoreAdapter,
+  ClusterQueryExecutorConfig,
+  ClusterRendererConfig,
+} from "./cluster";
