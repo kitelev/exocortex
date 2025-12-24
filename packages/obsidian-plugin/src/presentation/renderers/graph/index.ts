@@ -184,3 +184,17 @@ export type {
   VisibilityCullerConfig,
   VisibilityCullerStats,
 } from "./VisibilityCuller";
+
+// Viewport controller for pan/zoom interactions
+export {
+  ViewportController,
+  DEFAULT_VIEWPORT_CONTROLLER_CONFIG,
+} from "./ViewportController";
+export type {
+  Position as ViewportPosition,
+  Viewport,
+  ViewportControllerConfig,
+  ViewportEventType,
+  ViewportEvent,
+  ViewportEventListener,
+} from "./ViewportController";
