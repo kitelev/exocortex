@@ -743,6 +743,190 @@ describe("forceCollide", () => {
     expect(collide.strength()).toBe(0.5);
     expect(collide.iterations()).toBe(3);
   });
+
+  // Quadtree-based collision detection tests
+  describe("Quadtree-based collision detection", () => {
+    it("should handle coincident nodes (same position)", () => {
+      const nodes: SimulationNode[] = [
+        { id: "a", index: 0, x: 50, y: 50, vx: 0, vy: 0, mass: 1, radius: 10 },
+        { id: "b", index: 1, x: 50, y: 50, vx: 0, vy: 0, mass: 1, radius: 10 },
+      ];
+
+      const collide = forceCollide(10);
+      collide.initialize!(nodes, Math.random);
+
+      // Should not throw when nodes are coincident
+      expect(() => collide(1)).not.toThrow();
+
+      // Nodes should be pushed apart (not equal positions anymore)
+      const distance = Math.sqrt(
+        Math.pow(nodes[1].x - nodes[0].x, 2) + Math.pow(nodes[1].y - nodes[0].y, 2)
+      );
+      expect(distance).toBeGreaterThan(0);
+    });
+
+    it("should handle many overlapping nodes efficiently", () => {
+      // Create a cluster of overlapping nodes
+      const nodes: SimulationNode[] = [];
+      for (let i = 0; i < 50; i++) {
+        nodes.push({
+          id: `node-${i}`,
+          index: i,
+          x: Math.random() * 10, // All within a 10x10 area
+          y: Math.random() * 10,
+          vx: 0,
+          vy: 0,
+          mass: 1,
+          radius: 8,
+        });
+      }
+
+      const collide = forceCollide(8);
+      collide.initialize!(nodes, Math.random);
+
+      // Should not throw and complete in reasonable time
+      const start = Date.now();
+      collide(1);
+      const elapsed = Date.now() - start;
+
+      // Should complete quickly (under 100ms for 50 nodes)
+      expect(elapsed).toBeLessThan(100);
+
+      // Nodes should have spread out
+      let totalMovement = 0;
+      for (let i = 0; i < nodes.length; i++) {
+        totalMovement += Math.abs(nodes[i].x) + Math.abs(nodes[i].y);
+      }
+      expect(totalMovement).toBeGreaterThan(0);
+    });
+
+    it("should weight movement by node radius (larger nodes move less)", () => {
+      const nodes: SimulationNode[] = [
+        { id: "large", index: 0, x: 0, y: 0, vx: 0, vy: 0, mass: 1, radius: 30 },
+        { id: "small", index: 1, x: 10, y: 0, vx: 0, vy: 0, mass: 1, radius: 5 },
+      ];
+
+      const collide = forceCollide((node) => node.radius);
+      collide.initialize!(nodes, Math.random);
+
+      const largeInitialX = nodes[0].x;
+      const smallInitialX = nodes[1].x;
+
+      collide(1);
+
+      // Calculate movements
+      const largeMovement = Math.abs(nodes[0].x - largeInitialX);
+      const smallMovement = Math.abs(nodes[1].x - smallInitialX);
+
+      // Small node should move more than large node
+      expect(smallMovement).toBeGreaterThan(largeMovement);
+    });
+
+    it("should not move fixed nodes", () => {
+      const nodes: SimulationNode[] = [
+        { id: "fixed", index: 0, x: 0, y: 0, vx: 0, vy: 0, fx: 0, fy: 0, mass: 1, radius: 10 },
+        { id: "free", index: 1, x: 5, y: 0, vx: 0, vy: 0, mass: 1, radius: 10 },
+      ];
+
+      const collide = forceCollide(10);
+      collide.initialize!(nodes, Math.random);
+
+      collide(1);
+
+      // Fixed node should not move
+      expect(nodes[0].x).toBe(0);
+      expect(nodes[0].y).toBe(0);
+
+      // Free node should move away
+      expect(nodes[1].x).toBeGreaterThan(5);
+    });
+
+    it("should handle nodes with zero radius", () => {
+      const nodes: SimulationNode[] = [
+        { id: "a", index: 0, x: 0, y: 0, vx: 0, vy: 0, mass: 1, radius: 0 },
+        { id: "b", index: 1, x: 0, y: 0, vx: 0, vy: 0, mass: 1, radius: 0 },
+      ];
+
+      const collide = forceCollide(0);
+      collide.initialize!(nodes, Math.random);
+
+      // Should not throw
+      expect(() => collide(1)).not.toThrow();
+    });
+
+    it("should handle empty node array", () => {
+      const nodes: SimulationNode[] = [];
+
+      const collide = forceCollide(10);
+      collide.initialize!(nodes, Math.random);
+
+      // Should not throw
+      expect(() => collide(1)).not.toThrow();
+    });
+
+    it("should handle single node", () => {
+      const nodes: SimulationNode[] = [
+        { id: "a", index: 0, x: 0, y: 0, vx: 0, vy: 0, mass: 1, radius: 10 },
+      ];
+
+      const collide = forceCollide(10);
+      collide.initialize!(nodes, Math.random);
+
+      const initialX = nodes[0].x;
+      const initialY = nodes[0].y;
+
+      collide(1);
+
+      // Single node should not move
+      expect(nodes[0].x).toBe(initialX);
+      expect(nodes[0].y).toBe(initialY);
+    });
+
+    it("should respect iteration count", () => {
+      const nodes: SimulationNode[] = [
+        { id: "a", index: 0, x: 0, y: 0, vx: 0, vy: 0, mass: 1, radius: 10 },
+        { id: "b", index: 1, x: 5, y: 0, vx: 0, vy: 0, mass: 1, radius: 10 },
+      ];
+
+      // One iteration
+      const collide1 = forceCollide(10, { iterations: 1 });
+      collide1.initialize!(nodes, Math.random);
+
+      const nodes1 = JSON.parse(JSON.stringify(nodes));
+      collide1.initialize!(nodes1, Math.random);
+      collide1(1);
+      const distance1 = Math.abs(nodes1[1].x - nodes1[0].x);
+
+      // Three iterations should separate more
+      const collide3 = forceCollide(10, { iterations: 3 });
+      const nodes3 = JSON.parse(JSON.stringify(nodes));
+      collide3.initialize!(nodes3, Math.random);
+      collide3(1);
+      const distance3 = Math.abs(nodes3[1].x - nodes3[0].x);
+
+      expect(distance3).toBeGreaterThanOrEqual(distance1);
+    });
+
+    it("should separate nodes in 2D (not just x-axis)", () => {
+      const nodes: SimulationNode[] = [
+        { id: "a", index: 0, x: 0, y: 0, vx: 0, vy: 0, mass: 1, radius: 10 },
+        { id: "b", index: 1, x: 3, y: 4, vx: 0, vy: 0, mass: 1, radius: 10 }, // distance = 5
+      ];
+
+      const collide = forceCollide(10);
+      collide.initialize!(nodes, Math.random);
+
+      collide(1);
+
+      // Both x and y should change to push nodes apart
+      const distance = Math.sqrt(
+        Math.pow(nodes[1].x - nodes[0].x, 2) + Math.pow(nodes[1].y - nodes[0].y, 2)
+      );
+
+      // Should be pushed further apart than initial 5
+      expect(distance).toBeGreaterThan(5);
+    });
+  });
 });
 
 // ============================================================

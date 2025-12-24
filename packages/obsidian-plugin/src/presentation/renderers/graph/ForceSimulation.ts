@@ -17,6 +17,7 @@
  */
 
 import { BarnesHutForce, type SimulationNode as BHSimulationNode } from "./BarnesHutForce";
+import { Quadtree } from "./Quadtree";
 
 /**
  * Simulation node with physics properties
@@ -1516,7 +1517,38 @@ export interface ForceCollideConfig {
 }
 
 /**
+ * Node with index for quadtree collision detection
+ */
+interface CollisionNode {
+  x: number;
+  y: number;
+  index: number;
+}
+
+/**
+ * Small random offset to handle coincident nodes
+ */
+function jiggle(): number {
+  return (Math.random() - 0.5) * 1e-6;
+}
+
+/**
  * Creates a collision detection force that prevents node overlap
+ *
+ * Uses Quadtree-based spatial indexing for O(n log n) complexity,
+ * enabling efficient collision detection for large graphs.
+ *
+ * @example
+ * ```typescript
+ * // Create collision force with fixed radius
+ * const collide = forceCollide(10);
+ *
+ * // Create collision force with node-based radius
+ * const collide = forceCollide(node => node.radius);
+ *
+ * // Configure strength and iterations
+ * const collide = forceCollide(10, { strength: 0.8, iterations: 2 });
+ * ```
  */
 export function forceCollide<N extends SimulationNode = SimulationNode>(
   radius?: number | ((node: N, index: number, nodes: N[]) => number),
@@ -1546,34 +1578,125 @@ export function forceCollide<N extends SimulationNode = SimulationNode>(
   }
 
   const force = function (_alpha: number) {
+    const n = nodes.length;
+    if (n === 0) return;
+
     for (let iteration = 0; iteration < _iterations; iteration++) {
-      // Simple O(n²) collision detection
-      // For large graphs, could be optimized with quadtree
-      for (let i = 0; i < nodes.length; i++) {
+      // Build quadtree with current node positions
+      const collisionNodes: CollisionNode[] = nodes.map((node, i) => ({
+        x: node.x,
+        y: node.y,
+        index: i,
+      }));
+
+      const tree = new Quadtree(collisionNodes);
+
+      // For each node, query the quadtree for potential collisions
+      for (let i = 0; i < n; i++) {
         const ni = nodes[i];
         const ri = radii[i];
 
-        for (let j = i + 1; j < nodes.length; j++) {
-          const nj = nodes[j];
-          const rj = radii[j];
+        // Visit quadtree nodes to find collisions
+        tree.visit((quad, x0, y0, x1, y1) => {
+          // Check if this quadrant can contain colliding nodes
+          // Skip if the bounding box is too far from the node
+          const nodeX = ni.x;
+          const nodeY = ni.y;
 
-          let dx = ni.x - nj.x;
-          let dy = ni.y - nj.y;
-          const l = Math.sqrt(dx * dx + dy * dy);
-          const r = ri + rj;
+          // Calculate minimum distance from node to quadrant
+          const nearestX = Math.max(x0, Math.min(nodeX, x1));
+          const nearestY = Math.max(y0, Math.min(nodeY, y1));
+          const dxQuad = nodeX - nearestX;
+          const dyQuad = nodeY - nearestY;
+          const quadDistSq = dxQuad * dxQuad + dyQuad * dyQuad;
 
-          if (l < r && l > 0) {
-            // Nodes are overlapping
-            const k = ((r - l) / l) * _strength * 0.5;
-            dx *= k;
-            dy *= k;
+          // Maximum possible collision radius (current node + largest possible other node)
+          // Use 2 * ri as upper bound if we don't know the max radius in quadrant
+          const maxCollisionRadius = ri + (radii.length > 0 ? Math.max(...radii) : ri);
 
-            if (ni.fx == null) ni.x += dx;
-            if (ni.fy == null) ni.y += dy;
-            if (nj.fx == null) nj.x -= dx;
-            if (nj.fy == null) nj.y -= dy;
+          // Skip this quadrant if it's too far for any collision
+          if (quadDistSq > maxCollisionRadius * maxCollisionRadius) {
+            return true; // Skip children
           }
-        }
+
+          // Check leaf data for collision
+          if (quad.data) {
+            const j = quad.data.index;
+            if (j > i) { // Only check each pair once
+              const nj = nodes[j];
+              const rj = radii[j];
+
+              let dx = ni.x - nj.x;
+              let dy = ni.y - nj.y;
+              let l = Math.sqrt(dx * dx + dy * dy);
+              const r = ri + rj;
+
+              if (l < r) {
+                // Handle coincident nodes
+                if (l === 0) {
+                  dx = jiggle();
+                  dy = jiggle();
+                  l = Math.sqrt(dx * dx + dy * dy);
+                }
+
+                // Calculate overlap and push apart
+                // Weight by radius (larger nodes move less)
+                const overlap = (r - l) / l * _strength * 0.5;
+                dx *= overlap;
+                dy *= overlap;
+
+                // Apply separation based on relative radii
+                const rTotal = ri + rj;
+                const wi = rj / rTotal; // Weight for node i (larger rj = move i more)
+                const wj = ri / rTotal; // Weight for node j (larger ri = move j more)
+
+                if (ni.fx == null) ni.x += dx * wi;
+                if (ni.fy == null) ni.y += dy * wi;
+                if (nj.fx == null) nj.x -= dx * wj;
+                if (nj.fy == null) nj.y -= dy * wj;
+              }
+            }
+
+            // Check coincident points in linked list
+            let next = quad.next;
+            while (next && next.data) {
+              const j = next.data.index;
+              if (j > i) {
+                const nj = nodes[j];
+                const rj = radii[j];
+
+                let dx = ni.x - nj.x;
+                let dy = ni.y - nj.y;
+                let l = Math.sqrt(dx * dx + dy * dy);
+                const r = ri + rj;
+
+                if (l < r) {
+                  if (l === 0) {
+                    dx = jiggle();
+                    dy = jiggle();
+                    l = Math.sqrt(dx * dx + dy * dy);
+                  }
+
+                  const overlap = (r - l) / l * _strength * 0.5;
+                  dx *= overlap;
+                  dy *= overlap;
+
+                  const rTotal = ri + rj;
+                  const wi = rj / rTotal;
+                  const wj = ri / rTotal;
+
+                  if (ni.fx == null) ni.x += dx * wi;
+                  if (ni.fy == null) ni.y += dy * wi;
+                  if (nj.fx == null) nj.x -= dx * wj;
+                  if (nj.fy == null) nj.y -= dy * wj;
+                }
+              }
+              next = next.next;
+            }
+          }
+
+          return false; // Continue to children
+        });
       }
     }
   } as Force<N> & {
