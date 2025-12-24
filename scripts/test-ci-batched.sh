@@ -21,15 +21,17 @@ echo "📦 Running obsidian-plugin tests..."
 # Build jest command with conditional coverage flag
 # Uses parallel workers by default (configured in jest.config.js)
 # --forceExit ensures Jest exits after tests (prevents hanging on open handles)
+# Using node directly instead of npx for more reliable forceExit behavior
 JEST_ARGS="--config packages/obsidian-plugin/jest.config.js --forceExit"
 if [ "$COVERAGE" = "true" ]; then
     echo "📊 Coverage collection enabled"
     JEST_ARGS="$JEST_ARGS --coverage --coverageReporters=lcov --coverageReporters=json-summary --coverageReporters=text-summary"
 fi
 
-# Use timeout to prevent Jest hanging in CI (5 minutes max per test suite)
+# Run Jest with timeout to prevent hanging
+# Using node directly for better signal handling (vs npx which can interfere with forceExit)
 if [ "$CI" = "true" ]; then
-    if timeout 300 npx jest $JEST_ARGS; then
+    if timeout 300 node ./node_modules/jest/bin/jest.js $JEST_ARGS; then
         echo "✅ Obsidian plugin tests passed!"
     else
         RESULT=$?
@@ -41,7 +43,7 @@ if [ "$CI" = "true" ]; then
         exit 1
     fi
 else
-    if npx jest $JEST_ARGS; then
+    if node ./node_modules/jest/bin/jest.js $JEST_ARGS; then
         echo "✅ Obsidian plugin tests passed!"
     else
         echo "❌ Obsidian plugin tests failed!"
