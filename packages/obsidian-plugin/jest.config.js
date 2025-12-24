@@ -25,6 +25,8 @@ module.exports = {
     "!**/node_modules/**",
     "!**/__tests__/**",
     "!**/tests/**",
+    // Exclude Web Worker files - they run in Worker context and can't be unit tested with Jest
+    "!**/*.worker.ts",
   ],
   moduleNameMapper: {
     "^exocortex$": "<rootDir>/../exocortex/src/index.ts",
