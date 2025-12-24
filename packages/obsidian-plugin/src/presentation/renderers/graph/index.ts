@@ -651,3 +651,44 @@ export type {
   ColorLegendProps,
   ColorPickerModalProps,
 } from "./search";
+
+// Path finding system for node-to-node path discovery
+export {
+  // Core algorithm
+  PathFinder,
+  createPathFinder,
+  // State management
+  PathFindingManager,
+  createPathFindingManager,
+  DEFAULT_PATH_FINDING_MANAGER_CONFIG,
+  // UI components
+  PathFindingPanel,
+  PathFindingButton,
+  // Constants
+  DEFAULT_PATH_FINDING_OPTIONS,
+  DEFAULT_PATH_VISUALIZATION_STYLE,
+  INITIAL_PATH_FINDING_STATE,
+} from "./pathfinding";
+export type {
+  // Types
+  PathFindingAlgorithm,
+  PathDirection,
+  EdgeWeightStrategy,
+  PathFindingOptions,
+  PathStep,
+  Path,
+  PathFindingResult,
+  PathVisualizationStyle,
+  PathFindingState,
+  PathFindingEventType,
+  PathFindingEvent,
+  PathFindingEventListener,
+  PathNode,
+  AdjacencyEntry,
+  PathGraph,
+  // Manager config
+  PathFindingManagerConfig,
+  // Component props
+  PathFindingPanelProps,
+  PathFindingButtonProps,
+} from "./pathfinding";
