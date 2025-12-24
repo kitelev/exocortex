@@ -44,3 +44,36 @@ export {
   extractEdges,
   buildGraphData,
 } from "./types";
+
+// Force-directed layout simulation (d3-force compatible)
+export { ForceSimulation } from "./ForceSimulation";
+export type {
+  SimulationNode as ForceSimulationNode,
+  SimulationLink,
+  Force,
+  SimulationEvent,
+  SimulationEventCallback,
+  ForceSimulationConfig,
+  SimulationMetrics,
+} from "./ForceSimulation";
+
+// Built-in forces
+export {
+  forceCenter,
+  forceLink,
+  forceManyBody,
+  forceCollide,
+  forceRadial,
+  forceX,
+  forceY,
+} from "./ForceSimulation";
+
+export type {
+  ForceCenterConfig,
+  ForceLinkConfig,
+  ForceManyBodyConfig,
+  ForceCollideConfig,
+  ForceRadialConfig,
+  ForceXConfig,
+  ForceYConfig,
+} from "./ForceSimulation";
