@@ -587,7 +587,7 @@ export class InferenceManager {
   private minimalJustification(
     rule: InferenceRule,
     premises: Triple[],
-    conclusion: Triple
+    _conclusion: Triple
   ): Justification {
     return {
       supportingFacts: premises,
@@ -710,7 +710,7 @@ export class InferenceManager {
    * Add event listener
    */
   addEventListener(
-    type: InferenceEventType,
+    _type: InferenceEventType,
     listener: InferenceEventListener
   ): void {
     this.listeners.add(listener);

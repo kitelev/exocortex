@@ -557,7 +557,7 @@ export class InferenceRenderer {
    * Add event listener
    */
   addEventListener(
-    type: InferenceEventType,
+    _type: InferenceEventType,
     listener: InferenceEventListener
   ): void {
     this.listeners.add(listener);

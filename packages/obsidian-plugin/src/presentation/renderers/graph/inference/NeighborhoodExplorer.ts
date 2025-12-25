@@ -11,7 +11,7 @@
  * @since 1.0.0
  */
 
-import type { GraphNode, GraphEdge } from "../types";
+// import type { GraphNode, GraphEdge } from "../types";
 import type {
   Triple,
   InferredFact,
@@ -590,7 +590,7 @@ export class NeighborhoodExplorer {
     centerId: string,
     options: NeighborhoodExplorationOptions,
     startTime: number,
-    error?: string
+    _error?: string
   ): NeighborhoodResult {
     return {
       centerId,
@@ -618,7 +618,7 @@ export class NeighborhoodExplorer {
    * Add event listener
    */
   addEventListener(
-    type: InferenceEventType,
+    _type: InferenceEventType,
     listener: InferenceEventListener
   ): void {
     this.listeners.add(listener);
