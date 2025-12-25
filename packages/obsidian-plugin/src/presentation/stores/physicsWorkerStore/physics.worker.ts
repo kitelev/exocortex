@@ -180,8 +180,8 @@ function handleStop(): void {
 function handleConfig(partialConfig: Partial<PhysicsWorkerConfig>): void {
   if (!config) return;
 
-  // Deep merge configuration
-  config = deepMerge(config, partialConfig);
+  // Type-safe merge configuration (no dynamic property access)
+  config = mergeConfig(config, partialConfig);
 
   if (stateArray) {
     stateArray[STATE_OFFSET.ALPHA_TARGET] = config.simulation.alphaTarget;
@@ -696,41 +696,53 @@ function sendError(error: unknown): void {
 }
 
 /**
- * Checks if a property name is safe (not a prototype pollution vector)
+ * Type-safe merge of PhysicsWorkerConfig.
+ * Uses explicit property access (no dynamic keys) to prevent prototype pollution
+ * and satisfy CodeQL's remote property injection checks.
  */
-function isSafePropertyName(key: string): boolean {
-  return key !== "__proto__" && key !== "constructor" && key !== "prototype";
-}
-
-function deepMerge<T extends object>(target: T, source: Partial<T>): T {
-  const output = { ...target };
-  for (const key of Object.keys(source) as (keyof T)[]) {
-    // Skip dangerous property names to prevent prototype pollution
-    if (!isSafePropertyName(key as string)) {
-      continue;
-    }
-
-    const sourceValue = source[key];
-    const targetValue = target[key];
-
-    if (
-      sourceValue !== undefined &&
-      typeof sourceValue === "object" &&
-      sourceValue !== null &&
-      !Array.isArray(sourceValue) &&
-      typeof targetValue === "object" &&
-      targetValue !== null &&
-      !Array.isArray(targetValue)
-    ) {
-      output[key] = deepMerge(
-        targetValue as object,
-        sourceValue as object
-      ) as T[keyof T];
-    } else if (sourceValue !== undefined) {
-      output[key] = sourceValue as T[keyof T];
-    }
-  }
-  return output;
+function mergeConfig(
+  target: PhysicsWorkerConfig,
+  source: Partial<PhysicsWorkerConfig>
+): PhysicsWorkerConfig {
+  return {
+    simulation: {
+      alphaMin: source.simulation?.alphaMin ?? target.simulation.alphaMin,
+      alphaDecay: source.simulation?.alphaDecay ?? target.simulation.alphaDecay,
+      alphaTarget:
+        source.simulation?.alphaTarget ?? target.simulation.alphaTarget,
+      velocityDecay:
+        source.simulation?.velocityDecay ?? target.simulation.velocityDecay,
+    },
+    center: {
+      enabled: source.center?.enabled ?? target.center.enabled,
+      strength: source.center?.strength ?? target.center.strength,
+      x: source.center?.x ?? target.center.x,
+      y: source.center?.y ?? target.center.y,
+    },
+    link: {
+      enabled: source.link?.enabled ?? target.link.enabled,
+      iterations: source.link?.iterations ?? target.link.iterations,
+    },
+    charge: {
+      enabled: source.charge?.enabled ?? target.charge.enabled,
+      strength: source.charge?.strength ?? target.charge.strength,
+      distanceMin: source.charge?.distanceMin ?? target.charge.distanceMin,
+      distanceMax: source.charge?.distanceMax ?? target.charge.distanceMax,
+      theta: source.charge?.theta ?? target.charge.theta,
+    },
+    collision: {
+      enabled: source.collision?.enabled ?? target.collision.enabled,
+      strength: source.collision?.strength ?? target.collision.strength,
+      iterations: source.collision?.iterations ?? target.collision.iterations,
+    },
+    radial: {
+      enabled: source.radial?.enabled ?? target.radial.enabled,
+      strength: source.radial?.strength ?? target.radial.strength,
+      radius: source.radial?.radius ?? target.radial.radius,
+      x: source.radial?.x ?? target.radial.x,
+      y: source.radial?.y ?? target.radial.y,
+    },
+  };
 }
 
 // Export for type checking (worker runs in its own context)
