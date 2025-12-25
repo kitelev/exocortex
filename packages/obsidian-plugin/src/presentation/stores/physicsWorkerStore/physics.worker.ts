@@ -695,9 +695,21 @@ function sendError(error: unknown): void {
   sendMessage({ type: "error", message: errorMessage, stack });
 }
 
+/**
+ * Checks if a property name is safe (not a prototype pollution vector)
+ */
+function isSafePropertyName(key: string): boolean {
+  return key !== "__proto__" && key !== "constructor" && key !== "prototype";
+}
+
 function deepMerge<T extends object>(target: T, source: Partial<T>): T {
   const output = { ...target };
   for (const key of Object.keys(source) as (keyof T)[]) {
+    // Skip dangerous property names to prevent prototype pollution
+    if (!isSafePropertyName(key as string)) {
+      continue;
+    }
+
     const sourceValue = source[key];
     const targetValue = target[key];
 
