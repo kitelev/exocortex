@@ -748,3 +748,56 @@ export type {
   MemoryEvent,
   MemoryEventListener,
 } from "./GPUMemoryManager";
+
+// Inference visualization for ontology reasoning and neighborhood exploration
+export {
+  // InferenceManager
+  InferenceManager,
+  createInferenceManager,
+  BUILT_IN_RULES,
+  // NeighborhoodExplorer
+  NeighborhoodExplorer,
+  createNeighborhoodExplorer,
+  // InferenceRenderer
+  InferenceRenderer,
+  createInferenceRenderer,
+  INFERENCE_TYPE_BADGES,
+  INFERENCE_TYPE_DESCRIPTIONS,
+  // Constants
+  DEFAULT_NEIGHBORHOOD_OPTIONS,
+  DEFAULT_INFERENCE_STYLE,
+  DEFAULT_INFERENCE_STATE,
+} from "./inference";
+export type {
+  // Core triple types
+  Triple as InferenceTriple,
+  TriplePattern,
+  InferenceType,
+  InferenceRule,
+  InferenceStep,
+  Justification,
+  InferredFact,
+  AnnotatedTriple,
+  // Neighborhood types
+  NeighborhoodDirection,
+  NeighborhoodExplorationOptions,
+  NeighborhoodNode,
+  NeighborhoodEdge,
+  NeighborhoodResult,
+  NeighborhoodStats,
+  // Visual types
+  InferenceVisualStyle,
+  InferenceVisualizationState,
+  InferenceEventType,
+  InferenceEvent,
+  InferenceEventListener,
+  // Manager/Explorer types
+  InferenceTripleStore,
+  InferenceManagerConfig,
+  NeighborhoodTripleStore,
+  NeighborhoodExplorerConfig,
+  // Renderer types
+  InferenceEdgeRenderData,
+  InferenceNodeRenderData,
+  InferenceRendererConfig,
+} from "./inference";
