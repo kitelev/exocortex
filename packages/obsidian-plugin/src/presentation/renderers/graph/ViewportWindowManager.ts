@@ -174,7 +174,6 @@ interface RTreeNode {
 class RTreeSpatialIndex {
   private root: RTreeNode | null = null;
   private readonly maxItemsPerNode = 16;
-  private readonly minItemsPerNode = 4;
   private itemCount = 0;
 
   /**
@@ -476,7 +475,6 @@ export class ViewportWindowManager {
   private edgeMap: Map<string, GraphEdge> = new Map();
 
   private currentWindow: ViewportWindow | null = null;
-  private previousWindow: ViewportWindow | null = null;
   private visibleNodes: Set<string> = new Set();
   private bufferedNodes: Set<string> = new Set();
   private priorityNodes: Set<string> = new Set();
@@ -644,7 +642,6 @@ export class ViewportWindowManager {
       return;
     }
 
-    this.previousWindow = this.currentWindow;
     this.currentWindow = { ...window };
 
     // Record scroll for prediction
@@ -1079,7 +1076,6 @@ export class ViewportWindowManager {
     this.priorityNodes.clear();
     this.visibleEdges.clear();
     this.currentWindow = null;
-    this.previousWindow = null;
     this.scrollHistory = [];
     this.updateDurations = [];
   }

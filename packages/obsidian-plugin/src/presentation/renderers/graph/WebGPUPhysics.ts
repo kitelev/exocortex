@@ -1236,7 +1236,9 @@ export class WebGPUPhysics {
           this.device.queue.writeBuffer(
             this.pingPong ? this.nodeBufferB! : this.nodeBufferA,
             0,
-            this.nodeDataArray
+            this.nodeDataArray.buffer,
+            this.nodeDataArray.byteOffset,
+            this.nodeDataArray.byteLength
           );
         }
       }
@@ -1259,7 +1261,9 @@ export class WebGPUPhysics {
           this.device.queue.writeBuffer(
             this.pingPong ? this.nodeBufferB! : this.nodeBufferA,
             0,
-            this.nodeDataArray
+            this.nodeDataArray.buffer,
+            this.nodeDataArray.byteOffset,
+            this.nodeDataArray.byteLength
           );
         }
       }
