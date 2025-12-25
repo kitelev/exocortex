@@ -217,6 +217,42 @@ export {
 // Types exports
 export type { SupervisionFormData } from "./types/SupervisionFormData";
 
+// Memory management exports
+export {
+  // Types
+  NODE_FLAGS,
+  DEFAULT_COLORS,
+  // StringTable
+  StringTable,
+  // CompactGraphStore
+  CompactGraphStore,
+  // MemoryPool
+  MemoryPool,
+  getGlobalPool,
+  resetGlobalPool,
+  // StreamingLoader
+  StreamingLoader,
+  createStreamingSource,
+} from "./infrastructure/memory";
+
+export type {
+  CompactNodeData,
+  CompactEdgeData,
+  CompactGraphStoreConfig,
+  MemoryStats,
+  NodeUpdate,
+  BatchUpdateResult,
+  ChunkNode,
+  ChunkEdge,
+  GraphChunk,
+  StreamingProgressEvent,
+  StreamingProgressCallback,
+  MemoryPoolConfig,
+  PoolStats,
+  StreamingLoaderConfig,
+  LoaderState,
+} from "./infrastructure/memory";
+
 // Error exports
 export * from "./domain/errors";
 export * from "./application/errors";
