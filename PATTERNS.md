@@ -1868,3 +1868,666 @@ function filterArchivedAreas(
 - **Recursive support**: Works with nested tree structures
 
 **Reference**: Issue #1142 - Area hierarchy archived toggle (PR #1148, 86 steps)
+
+---
+
+## Web Worker Security Pattern
+
+**When to use**: Handling `postMessage` events in Web Workers
+
+### Problem: Missing Origin Verification (CodeQL: js/missing-origin-check)
+
+Web Workers receiving messages via `postMessage` must verify the message origin to prevent cross-origin attacks.
+
+```typescript
+// ❌ VULNERABLE: No origin verification
+self.onmessage = (event: MessageEvent) => {
+  const { type, data } = event.data;
+  processCommand(type, data);
+};
+
+// ❌ STILL VULNERABLE: Checking origin but not acting on it
+self.onmessage = (event: MessageEvent) => {
+  console.log('Origin:', event.origin);  // Just logging, not blocking
+  const { type, data } = event.data;
+  processCommand(type, data);
+};
+```
+
+### Solution: Validate Origin Before Processing
+
+```typescript
+// ✅ SECURE: Explicit origin check with early return
+self.onmessage = (event: MessageEvent) => {
+  // Workers loaded from same origin receive empty string as origin
+  // Trust only same-origin or explicitly allowed origins
+  if (event.origin !== '' && event.origin !== self.location.origin) {
+    console.warn(`Rejected message from untrusted origin: ${event.origin}`);
+    return;  // Early return - don't process message
+  }
+
+  const { type, data } = event.data;
+  processCommand(type, data);
+};
+
+// ✅ ALTERNATIVE: Whitelist approach for specific origins
+const TRUSTED_ORIGINS = new Set([
+  '',  // Same-origin workers
+  'https://trusted-domain.com',
+]);
+
+self.onmessage = (event: MessageEvent) => {
+  if (!TRUSTED_ORIGINS.has(event.origin)) {
+    return;  // Silently reject untrusted origins
+  }
+  processCommand(event.data);
+};
+```
+
+### Key Insights
+
+1. **Web Workers from same origin**: `event.origin` is empty string `''`, not `null` or `undefined`
+2. **Must act on the check**: CodeQL flags code that reads `origin` but doesn't conditionally block
+3. **Early return pattern**: Return immediately if origin check fails
+4. **Logging optional**: Can log rejected origins for debugging, but must still block processing
+
+### Real-World Example (Issues #1211, #1248)
+
+```typescript
+// physics.worker.ts - Before fix
+self.onmessage = (event: MessageEvent) => {
+  const { type, nodes, edges } = event.data;
+  switch (type) {
+    case 'init': initPhysics(nodes, edges); break;
+    case 'tick': runSimulationTick(); break;
+  }
+};
+
+// physics.worker.ts - After fix (PR #1211)
+self.onmessage = (event: MessageEvent) => {
+  if (event.origin !== '' && event.origin !== self.location.origin) {
+    console.warn(`Untrusted origin rejected: ${event.origin}`);
+    return;
+  }
+
+  const { type, nodes, edges } = event.data;
+  switch (type) {
+    case 'init': initPhysics(nodes, edges); break;
+    case 'tick': runSimulationTick(); break;
+  }
+};
+```
+
+### Reference
+
+- Issues #1211, #1248: P1 Missing origin verification in physics.worker.ts
+- CodeQL alert: `js/missing-origin-check`
+
+---
+
+## Remote Property Injection Prevention Pattern
+
+**When to use**: Accessing object properties with dynamic/external keys
+
+### Problem: Remote Property Injection (CodeQL: js/remote-property-injection)
+
+Using external input as object property keys can lead to prototype pollution or unauthorized property access.
+
+```typescript
+// ❌ VULNERABLE: Direct use of external key
+function getNodeProperty(node: GraphNode, propertyKey: string): unknown {
+  return node[propertyKey];  // Attacker could use '__proto__', 'constructor', etc.
+}
+
+// ❌ VULNERABLE: No validation of message property access
+function handleMessage(event: MessageEvent) {
+  const { action, propertyName, value } = event.data;
+  if (action === 'update') {
+    state[propertyName] = value;  // Prototype pollution possible
+  }
+}
+```
+
+### Solution: Validate Property Keys with Allowlist
+
+```typescript
+// ✅ SECURE: Whitelist of allowed properties
+const ALLOWED_NODE_PROPERTIES = new Set([
+  'x', 'y', 'vx', 'vy', 'fx', 'fy',
+  'radius', 'mass', 'charge'
+]);
+
+function getNodeProperty(node: GraphNode, propertyKey: string): unknown {
+  if (!ALLOWED_NODE_PROPERTIES.has(propertyKey)) {
+    throw new Error(`Invalid property: ${propertyKey}`);
+  }
+  return node[propertyKey];
+}
+
+// ✅ SECURE: Object.hasOwn() check + blocklist
+const BLOCKED_PROPERTIES = new Set([
+  '__proto__', 'constructor', 'prototype',
+  '__defineGetter__', '__defineSetter__',
+  '__lookupGetter__', '__lookupSetter__'
+]);
+
+function safePropertyAccess(obj: object, key: string): unknown {
+  if (BLOCKED_PROPERTIES.has(key)) {
+    return undefined;
+  }
+  if (!Object.hasOwn(obj, key)) {
+    return undefined;
+  }
+  return obj[key as keyof typeof obj];
+}
+```
+
+### Message Handler Pattern with Type Safety
+
+```typescript
+// ✅ SECURE: Type-safe message handling with discriminated unions
+interface PhysicsMessage {
+  type: 'init' | 'tick' | 'update' | 'reset';
+  payload?: unknown;
+}
+
+interface UpdatePayload {
+  nodeId: string;
+  property: 'x' | 'y' | 'vx' | 'vy';  // Only allowed properties
+  value: number;
+}
+
+function handleMessage(event: MessageEvent<PhysicsMessage>) {
+  // Origin check first (see Web Worker Security Pattern)
+  if (event.origin !== '') return;
+
+  const { type, payload } = event.data;
+
+  switch (type) {
+    case 'update': {
+      const { nodeId, property, value } = payload as UpdatePayload;
+      // TypeScript ensures property is one of allowed values
+      updateNode(nodeId, property, value);
+      break;
+    }
+    // ... other cases
+  }
+}
+```
+
+### Real-World Example (Issues #1212, #1244)
+
+```typescript
+// physics.worker.ts - Before fix
+function applyForce(nodeId: string, forceType: string, value: number) {
+  const node = nodes.get(nodeId);
+  if (node) {
+    node[forceType] = value;  // Could write to any property
+  }
+}
+
+// physics.worker.ts - After fix (PR #1212)
+type ForceProperty = 'fx' | 'fy';  // Only allowed force properties
+
+function applyForce(nodeId: string, forceType: ForceProperty, value: number) {
+  const node = nodes.get(nodeId);
+  if (node && (forceType === 'fx' || forceType === 'fy')) {
+    node[forceType] = value;
+  }
+}
+```
+
+### Reference
+
+- Issues #1212, #1244: P0 Remote property injection in physics.worker.ts
+- CodeQL alert: `js/remote-property-injection`
+
+---
+
+## Graph Performance Optimization Patterns
+
+**When implementing high-performance graph visualization systems (10K+ nodes):**
+
+### Level of Detail (LOD) System (#1186)
+
+Render nodes at different detail levels based on zoom and importance.
+
+```typescript
+interface LODLevel {
+  minZoom: number;
+  maxZoom: number;
+  nodeRadius: (baseRadius: number) => number;
+  showLabel: boolean;
+  showEdges: boolean;
+  edgeWidth: number;
+}
+
+const LOD_LEVELS: LODLevel[] = [
+  { minZoom: 0, maxZoom: 0.1, nodeRadius: r => 2, showLabel: false, showEdges: false, edgeWidth: 0.5 },
+  { minZoom: 0.1, maxZoom: 0.5, nodeRadius: r => r * 0.5, showLabel: false, showEdges: true, edgeWidth: 1 },
+  { minZoom: 0.5, maxZoom: 2, nodeRadius: r => r, showLabel: true, showEdges: true, edgeWidth: 2 },
+  { minZoom: 2, maxZoom: Infinity, nodeRadius: r => r * 1.5, showLabel: true, showEdges: true, edgeWidth: 3 },
+];
+
+function getLODLevel(zoom: number): LODLevel {
+  return LOD_LEVELS.find(l => zoom >= l.minZoom && zoom < l.maxZoom)!;
+}
+```
+
+**Benefits**:
+- Zoomed out: Fast rendering, show only essential structure
+- Zoomed in: Full detail for focused nodes
+- Smooth transitions between levels
+
+### Streaming Graph Data (#1187)
+
+Load large graphs progressively without blocking UI.
+
+```typescript
+async function* streamGraphData(
+  source: AsyncIterable<Triple>,
+  batchSize: number = 1000
+): AsyncGenerator<GraphBatch> {
+  let nodes: GraphNode[] = [];
+  let edges: GraphEdge[] = [];
+
+  for await (const triple of source) {
+    // Convert triple to nodes/edges
+    const { sourceNode, edge, targetNode } = tripleToGraphElements(triple);
+    nodes.push(sourceNode, targetNode);
+    edges.push(edge);
+
+    if (nodes.length >= batchSize) {
+      yield { nodes, edges };
+      nodes = [];
+      edges = [];
+    }
+  }
+
+  if (nodes.length > 0) {
+    yield { nodes, edges };
+  }
+}
+
+// Usage with progressive rendering
+async function loadGraphProgressively(source: AsyncIterable<Triple>) {
+  for await (const batch of streamGraphData(source)) {
+    renderer.addNodes(batch.nodes);
+    renderer.addEdges(batch.edges);
+    await new Promise(r => requestAnimationFrame(r)); // Allow render
+  }
+}
+```
+
+**Key insights**:
+- **Batch size tuning**: 1000 items balances memory vs progress granularity
+- **requestAnimationFrame yielding**: Prevents UI freeze during loading
+- **Deduplication**: Use Map/Set to avoid duplicate nodes from multiple edges
+
+### WebGPU Physics Offloading (#1184)
+
+Use GPU compute shaders for force-directed layout physics.
+
+```typescript
+// Fallback strategy when WebGPU unavailable
+class PhysicsEngine {
+  private useGPU: boolean;
+  private gpuCompute: GPUComputeEngine | null = null;
+  private cpuWorker: Worker | null = null;
+
+  async initialize(): Promise<void> {
+    if (navigator.gpu) {
+      try {
+        const adapter = await navigator.gpu.requestAdapter();
+        if (adapter) {
+          this.gpuCompute = new GPUComputeEngine(adapter);
+          this.useGPU = true;
+          return;
+        }
+      } catch (e) {
+        console.warn('WebGPU initialization failed, falling back to CPU');
+      }
+    }
+
+    // Fallback to Web Worker CPU physics
+    this.cpuWorker = new Worker('physics.worker.js');
+    this.useGPU = false;
+  }
+
+  runTick(nodes: Float32Array): Float32Array {
+    if (this.useGPU && this.gpuCompute) {
+      return this.gpuCompute.computeForces(nodes);
+    } else {
+      return this.cpuWorker!.computeForces(nodes);
+    }
+  }
+}
+```
+
+**Key patterns**:
+- **Feature detection**: Check `navigator.gpu` before using WebGPU
+- **Graceful fallback**: Web Worker CPU implementation as backup
+- **TypedArrays**: Use Float32Array for efficient GPU data transfer
+
+### Reference
+
+- Issue #1184: WebGPU compute shaders (97 steps)
+- Issue #1186: Level of Detail system (117 steps)
+- Issue #1187: Streaming graph data (98 steps)
+
+---
+
+## Small UI Enhancement Pattern
+
+**When to use**: Quick visual improvements (color changes, spacing, icons)
+
+### Pattern Description
+
+Small UI changes are low-risk, high-value improvements that can be implemented in <60 minutes with high confidence of first-time CI success.
+
+### Checklist for Small UI Changes
+
+```bash
+# 1. Identify affected component
+rg -i "button|create task" packages/obsidian-plugin/src --type tsx -l
+
+# 2. Check existing design system
+cat packages/obsidian-plugin/src/styles/variables.css
+rg "color|green|primary" packages/obsidian-plugin/src/styles/
+
+# 3. Apply change (inline or CSS class)
+# 4. Verify accessibility (contrast ratio)
+# 5. Test in light/dark themes
+```
+
+### WCAG Accessibility Requirements
+
+```typescript
+// Minimum contrast ratios
+const WCAG_AA_NORMAL = 4.5;   // Normal text
+const WCAG_AA_LARGE = 3.0;    // Large text (>18px or >14px bold)
+const WCAG_AAA = 7.0;         // Enhanced compliance
+
+// Recommended green button colors (meet WCAG AA)
+const GREEN_BUTTON = {
+  background: '#10b981',  // Tailwind green-500
+  text: 'white',          // Contrast ratio: 5.8:1 ✓
+  hover: '#059669',       // Tailwind green-600
+  active: '#047857',      // Tailwind green-700
+};
+```
+
+### CSS Example
+
+```css
+.btn-create-task {
+  background-color: #10b981;
+  color: white;
+  padding: 8px 16px;
+  border-radius: 4px;
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.btn-create-task:hover {
+  background-color: #059669;
+}
+
+.btn-create-task:active {
+  background-color: #047857;
+}
+
+/* Dark theme compatibility */
+.theme-dark .btn-create-task {
+  /* Same colors work in dark mode due to good contrast */
+}
+```
+
+### Real-World Example: Green Button (#1242)
+
+**Task**: Make "Create Task" button green
+**Time**: 51 steps (~45 minutes)
+**Risk**: Low (CSS-only change)
+
+**Steps**:
+1. Located button in `TaskCreationModal.tsx`
+2. Added CSS class `.btn-create-task`
+3. Verified contrast ratio (5.8:1 > 4.5:1 minimum)
+4. Tested in light and dark themes
+5. PR merged same day
+
+### Reference
+
+- Issue #1242: Make Create Task button green (PR #1242, 51 steps)
+
+---
+
+## Duplicate Code Scanning Alert Pattern
+
+**When to use**: Handling duplicate code scanning alerts for the same vulnerability
+
+### Problem: Same Alert Appears Multiple Times
+
+Code scanning sometimes generates duplicate alerts for the same issue:
+- Alert created at line N
+- Code changes shift the alert to line M
+- Both alerts remain open until both are fixed
+
+### Detection
+
+```bash
+# Check for duplicate alerts by file + rule
+gh api repos/OWNER/REPO/code-scanning/alerts --jq '
+  .[] | select(.state == "open") |
+  {rule: .rule.id, file: .most_recent_instance.location.path, line: .most_recent_instance.location.start_line}
+' | sort | uniq -c | sort -rn | head -10
+```
+
+### Resolution Strategy
+
+1. **Fix once, verify twice**: Apply fix at current location, check if it closes both alerts
+2. **Monitor after fix**: Wait for next code scanning run to confirm closure
+3. **Combine in single PR**: If truly duplicate, one fix should close both
+
+### Real-World Example (December 2025)
+
+| Original Issue | Duplicate Issue | Alert | Resolution |
+|---------------|-----------------|-------|------------|
+| #1211 | #1248 | js/missing-origin-check | Single fix closed both |
+| #1212 | #1244 | js/remote-property-injection | Line shift, same fix |
+
+**Timeline**:
+- #1211 created 08:XX → fixed at line 72
+- #1248 created 16:XX → same file, line shifted to 72
+- PR #1211 merged → both alerts closed
+
+### Prevention
+
+- **Close duplicates early**: If you see duplicate issues for same file/rule, close the newer one as duplicate
+- **Reference original**: Add comment "Duplicate of #XXXX" when closing
+- **Monitor alert dashboard**: Check code scanning after each merge
+
+### Reference
+
+- Issues #1211/#1248: Duplicate origin check alerts
+- Issues #1212/#1244: Duplicate property injection alerts
+
+---
+
+## Semantic Multi-Hop Query Pattern
+
+**When to use**: Implementing graph exploration with configurable hop depth
+
+### Pattern Description
+
+Allow users to explore neighborhood of a node with configurable depth (1-hop, 2-hop, n-hop).
+
+### Implementation
+
+```typescript
+interface ExplorationOptions {
+  startNode: string;
+  maxHops: number;
+  direction: 'outgoing' | 'incoming' | 'both';
+  predicateFilter?: string[];  // Only follow these predicates
+  maxNodes?: number;           // Limit total results
+}
+
+async function exploreNeighborhood(
+  store: TripleStore,
+  options: ExplorationOptions
+): Promise<GraphNode[]> {
+  const visited = new Set<string>();
+  const toVisit: Array<{nodeId: string, depth: number}> = [
+    { nodeId: options.startNode, depth: 0 }
+  ];
+  const results: GraphNode[] = [];
+
+  while (toVisit.length > 0) {
+    const { nodeId, depth } = toVisit.shift()!;
+
+    if (visited.has(nodeId) || depth > options.maxHops) continue;
+    if (options.maxNodes && results.length >= options.maxNodes) break;
+
+    visited.add(nodeId);
+    const node = await store.getNode(nodeId);
+    if (node) results.push(node);
+
+    if (depth < options.maxHops) {
+      const neighbors = await getNeighbors(store, nodeId, options);
+      for (const neighbor of neighbors) {
+        if (!visited.has(neighbor)) {
+          toVisit.push({ nodeId: neighbor, depth: depth + 1 });
+        }
+      }
+    }
+  }
+
+  return results;
+}
+
+async function getNeighbors(
+  store: TripleStore,
+  nodeId: string,
+  options: ExplorationOptions
+): Promise<string[]> {
+  const neighbors: string[] = [];
+
+  if (options.direction !== 'incoming') {
+    const outgoing = await store.query(
+      `SELECT ?o WHERE { <${nodeId}> ?p ?o . FILTER(isIRI(?o)) }`
+    );
+    neighbors.push(...outgoing.map(r => r.o));
+  }
+
+  if (options.direction !== 'outgoing') {
+    const incoming = await store.query(
+      `SELECT ?s WHERE { ?s ?p <${nodeId}> . FILTER(isIRI(?s)) }`
+    );
+    neighbors.push(...incoming.map(r => r.s));
+  }
+
+  if (options.predicateFilter?.length) {
+    // Additional filtering by predicate type
+    return neighbors.filter(n => /* check predicate */);
+  }
+
+  return neighbors;
+}
+```
+
+### UI Integration
+
+```typescript
+// React component for hop selector
+const HopSelector: React.FC<{
+  value: number;
+  onChange: (hops: number) => void;
+}> = ({ value, onChange }) => (
+  <div className="hop-selector">
+    <label>Exploration Depth:</label>
+    <select value={value} onChange={e => onChange(parseInt(e.target.value))}>
+      <option value={1}>1 hop (direct connections)</option>
+      <option value={2}>2 hops (friends of friends)</option>
+      <option value={3}>3 hops</option>
+      <option value={5}>5 hops (warning: may be slow)</option>
+    </select>
+  </div>
+);
+```
+
+### Performance Considerations
+
+- **Exponential growth**: Each hop can multiply node count by average degree
+- **Limit results**: Always set `maxNodes` to prevent memory issues
+- **Progressive loading**: Stream results as they're discovered
+- **Cache visited**: Use Set for O(1) visited lookup
+
+### Reference
+
+- Issue #1183: Neighborhood exploration multi-hop (120 steps)
+
+---
+
+## Physics Worker Architecture Pattern
+
+**When to use**: Offloading heavy computation to Web Worker
+
+### Pattern Description
+
+The physics.worker.ts file handles force-directed graph layout simulation off the main thread.
+
+### Architecture
+
+```
+Main Thread                           Worker Thread
+-----------                           -------------
+GraphRenderer                         physics.worker.ts
+    │                                      │
+    ├─── postMessage({type: 'init'}) ───►  │
+    │                                      ├── Initialize simulation
+    │                                      │
+    ├─── postMessage({type: 'tick'}) ───►  │
+    │                                      ├── Calculate forces
+    │                                      ├── Update positions
+    │    ◄─── postMessage({positions}) ─── │
+    │                                      │
+    └── Update node positions              │
+```
+
+### Security Checklist for Workers
+
+After analyzing Issues #1211, #1212, #1244, #1248, all related to physics.worker.ts:
+
+```typescript
+// ✅ REQUIRED: Origin verification
+self.onmessage = (event: MessageEvent) => {
+  if (event.origin !== '' && event.origin !== self.location.origin) {
+    return;
+  }
+  // ... handle message
+};
+
+// ✅ REQUIRED: Type-safe message handling
+interface WorkerMessage {
+  type: 'init' | 'tick' | 'update' | 'stop';
+  payload?: unknown;
+}
+
+// ✅ REQUIRED: Property access validation
+type AllowedProperty = 'x' | 'y' | 'vx' | 'vy' | 'fx' | 'fy';
+const ALLOWED_PROPERTIES = new Set<AllowedProperty>(['x', 'y', 'vx', 'vy', 'fx', 'fy']);
+
+function updateNodeProperty(node: PhysicsNode, prop: string, value: number) {
+  if (!ALLOWED_PROPERTIES.has(prop as AllowedProperty)) {
+    throw new Error(`Invalid property: ${prop}`);
+  }
+  node[prop as AllowedProperty] = value;
+}
+```
+
+### Reference
+
+- Issues #1211, #1212, #1244, #1248: Security fixes for physics.worker.ts
+- Issue #1184: WebGPU compute shaders (uses same worker pattern)
