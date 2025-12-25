@@ -624,6 +624,47 @@
   background-color: var(--interactive-accent-hover);
 }
 
+/* Create Task Button - Green styling for primary creation action */
+.exocortex-create-task-btn {
+  padding: 0.35em 0.85em;
+  background-color: #4caf50;
+  color: #ffffff;
+  border: 1px solid #4caf50;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.9em;
+  font-weight: 500;
+  transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.exocortex-create-task-btn:hover {
+  background-color: #43a047;
+  border-color: #43a047;
+  box-shadow: 0 2px 8px rgba(76, 175, 80, 0.35);
+}
+
+.exocortex-create-task-btn:active {
+  background-color: #388e3c;
+  border-color: #388e3c;
+  box-shadow: 0 1px 4px rgba(76, 175, 80, 0.25);
+}
+
+/* Dark theme - slightly brighter green for better visibility */
+.theme-dark .exocortex-create-task-btn {
+  background-color: #66bb6a;
+  border-color: #66bb6a;
+}
+
+.theme-dark .exocortex-create-task-btn:hover {
+  background-color: #4caf50;
+  border-color: #4caf50;
+}
+
+.theme-dark .exocortex-create-task-btn:active {
+  background-color: #43a047;
+  border-color: #43a047;
+}
+
 .exocortex-asset-items {
   display: flex;
   flex-direction: column;
