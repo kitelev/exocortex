@@ -295,21 +295,29 @@ describe("PerformanceProfiler", () => {
     it("should emit warning events for slow frames", () => {
       const p = new PerformanceProfiler({
         autoProfile: false,
-        warningThreshold: 0.5, // Low threshold - 0.5ms
-        criticalThreshold: 1,
+        warningThreshold: 0.1, // Very low threshold - 0.1ms
+        criticalThreshold: 100, // High critical so we get warning, not critical
       });
 
       const warningEvents: ProfilerEvent[] = [];
+      const frameEvents: ProfilerEvent[] = [];
       p.on("warning", (event) => warningEvents.push(event));
+      p.on("frame", (event) => frameEvents.push(event));
 
       p.beginFrame();
-      // Busy wait to ensure frame takes more than 0.5ms
+      // Busy wait to ensure frame takes more than 0.1ms (reliable even on CI)
       const start = performance.now();
-      while (performance.now() - start < 1) {
-        // Busy wait for ~1ms
+      while (performance.now() - start < 10) {
+        // Busy wait for ~10ms to reliably exceed threshold
       }
       p.endFrame();
 
+      // Debug: check frame time
+      expect(frameEvents.length).toBe(1);
+      const frameTime = frameEvents[0].metrics.frameTime;
+      expect(frameTime).toBeGreaterThan(0.1);
+
+      // Should emit warning since frameTime > warningThreshold and < criticalThreshold
       expect(warningEvents.length).toBeGreaterThanOrEqual(1);
       p.dispose();
     });

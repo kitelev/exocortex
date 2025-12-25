@@ -1,10 +1,10 @@
 {
-  "timestamp": "2025-12-24T09:06:28.758Z",
+  "timestamp": "2025-12-25T18:16:33.450Z",
   "totalFlaky": 0,
   "tests": [],
   "summary": {
-    "totalTests": 79,
-    "totalSuites": 2,
+    "totalTests": 33,
+    "totalSuites": 1,
     "flakyPercentage": 0
   }
 }
