@@ -801,3 +801,36 @@ export type {
   InferenceNodeRenderData,
   InferenceRendererConfig,
 } from "./inference";
+
+// WebGPU physics simulation for GPU-accelerated force-directed layouts
+export {
+  WebGPUPhysics,
+  createWebGPUPhysics,
+  isWebGPUAvailable,
+  DEFAULT_WEBGPU_PHYSICS_CONFIG,
+} from "./WebGPUPhysics";
+export type {
+  PhysicsNode,
+  PhysicsEdge,
+  WebGPUPhysicsConfig,
+  WebGPUPhysicsState,
+  PhysicsEventType,
+  PhysicsEvent,
+  PhysicsEventListener,
+} from "./WebGPUPhysics";
+
+// Viewport windowing system for virtual scrolling and large graph support
+export {
+  ViewportWindowManager,
+  createViewportWindowManager,
+  DEFAULT_WINDOWING_OPTIONS,
+} from "./ViewportWindowManager";
+export type {
+  ViewportWindow,
+  WindowingOptions,
+  SpatialItem,
+  WindowingStats,
+  WindowingEventType,
+  WindowingEvent,
+  WindowingEventListener,
+} from "./ViewportWindowManager";
