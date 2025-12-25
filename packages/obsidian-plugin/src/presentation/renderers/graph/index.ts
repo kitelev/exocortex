@@ -834,3 +834,63 @@ export type {
   WindowingEvent,
   WindowingEventListener,
 } from "./ViewportWindowManager";
+
+// Performance profiling and optimization system for 100K+ node graphs
+export {
+  // Profiler
+  PerformanceProfiler,
+  createPerformanceProfiler,
+  getGlobalProfiler,
+  resetGlobalProfiler,
+  DEFAULT_PROFILER_OPTIONS,
+  // Bottleneck Detector
+  BottleneckDetector,
+  createBottleneckDetector,
+  DEFAULT_DETECTOR_CONFIG,
+  // Dashboard
+  PerformanceMetricsDashboard,
+  PerformanceDashboardButton,
+  DEFAULT_DASHBOARD_CONFIG,
+  // Auto Optimizer
+  AutoOptimizer,
+  createAutoOptimizer,
+  getOptimizationPresets,
+  DEFAULT_PERFORMANCE_TARGETS,
+  DEFAULT_OPTIMIZER_CONFIG,
+  DEFAULT_OPTIMIZATION_STATE,
+} from "./performance";
+export type {
+  // Profiler types
+  PerformanceMetrics,
+  ProfilerOptions,
+  SectionTiming,
+  ProfileSection,
+  PerformanceLevel,
+  FrameAnalysis,
+  ProfilerEventType,
+  ProfilerEvent,
+  ProfilerEventListener,
+  // Bottleneck types
+  BottleneckSeverity,
+  BottleneckCategory,
+  Bottleneck,
+  TrendDirection,
+  TrendAnalysis,
+  ResourceUtilization,
+  BottleneckAnalysis,
+  BottleneckDetectorConfig,
+  // Dashboard types
+  PerformanceMetricsDashboardProps,
+  DashboardConfig,
+  PerformanceDashboardButtonProps,
+  // Optimizer types
+  OptimizationAction,
+  OptimizationCategory,
+  OptimizationMode,
+  PerformanceTarget,
+  OptimizationState,
+  AutoOptimizerConfig,
+  OptimizerEventType,
+  OptimizerEvent,
+  OptimizerEventListener,
+} from "./performance";
