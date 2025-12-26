@@ -362,6 +362,7 @@ describe("ExportManager", () => {
             href: "",
             download: "",
             style: { display: "" },
+            classList: { add: jest.fn() },
             click: clickSpy,
           } as unknown as HTMLAnchorElement;
         }
