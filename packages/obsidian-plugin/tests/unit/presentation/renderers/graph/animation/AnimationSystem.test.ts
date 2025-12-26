@@ -202,8 +202,9 @@ describe("Easing Functions", () => {
 
   describe("easeInBack", () => {
     it("should overshoot backwards initially", () => {
-      expect(Easing.easeInBack(0)).toBe(0);
-      expect(Easing.easeInBack(1)).toBe(1);
+      // Use toBeCloseTo for floating-point precision
+      expect(Easing.easeInBack(0)).toBeCloseTo(0, 10);
+      expect(Easing.easeInBack(1)).toBeCloseTo(1, 10);
       // Should go negative initially
       expect(Easing.easeInBack(0.2)).toBeLessThan(0);
     });
@@ -211,8 +212,9 @@ describe("Easing Functions", () => {
 
   describe("easeOutBack", () => {
     it("should overshoot then settle", () => {
-      expect(Easing.easeOutBack(0)).toBe(0);
-      expect(Easing.easeOutBack(1)).toBe(1);
+      // Use toBeCloseTo for floating-point precision
+      expect(Easing.easeOutBack(0)).toBeCloseTo(0, 10);
+      expect(Easing.easeOutBack(1)).toBeCloseTo(1, 10);
       // Should overshoot past 1
       expect(Easing.easeOutBack(0.8)).toBeGreaterThan(1);
     });
