@@ -939,3 +939,38 @@ export type {
   PoolManagerEvent,
   PoolManagerEventListener,
 } from "./memory";
+
+// 3D Graph visualization with Three.js and WebGL2
+export {
+  Scene3DManager,
+  createScene3DManager,
+  ForceSimulation3D,
+  createForceSimulation3D,
+  DEFAULT_SCENE_3D_CONFIG,
+  DEFAULT_NODE_3D_STYLE,
+  DEFAULT_EDGE_3D_STYLE,
+  DEFAULT_LABEL_3D_STYLE,
+  DEFAULT_ORBIT_CONTROLS_CONFIG,
+  DEFAULT_FORCE_SIMULATION_3D_CONFIG,
+} from "./3d";
+export type {
+  Point3D,
+  Vector3D,
+  GraphNode3D,
+  GraphEdge3D,
+  GraphData3D,
+  Scene3DConfig,
+  Node3DStyle,
+  Edge3DStyle,
+  Label3DStyle,
+  OrbitControlsConfig,
+  ForceSimulation3DConfig,
+  Viewport3DState,
+  Renderer3DStats,
+  Scene3DEventType,
+  Scene3DEvent,
+  Scene3DEventListener,
+  SimulationEventType as Simulation3DEventType,
+  Simulation3DEvent,
+  Simulation3DEventListener,
+} from "./3d";
