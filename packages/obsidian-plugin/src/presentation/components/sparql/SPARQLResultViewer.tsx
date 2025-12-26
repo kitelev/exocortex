@@ -4,6 +4,7 @@ import type { App } from "obsidian";
 import { SPARQLTableView } from "./SPARQLTableView";
 import { SPARQLListView } from "./SPARQLListView";
 import { SPARQLGraphView } from "./SPARQLGraphView";
+import { SPARQLGraph3DView } from "./SPARQLGraph3DView";
 import { ViewModeSelector, type ViewMode } from "./ViewModeSelector";
 import { SPARQLEmptyState } from "./SPARQLEmptyState";
 
@@ -127,7 +128,7 @@ export const SPARQLResultViewer: React.FC<SPARQLResultViewerProps> = ({
   }, [isTriples, results]);
 
   const availableModes: ViewMode[] = useMemo(() => {
-    return isTriples ? ["list", "graph"] : ["table"];
+    return isTriples ? ["list", "graph", "graph3d"] : ["table"];
   }, [isTriples]);
 
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
@@ -175,6 +176,13 @@ export const SPARQLResultViewer: React.FC<SPARQLResultViewerProps> = ({
         case "graph":
           return (
             <SPARQLGraphView
+              triples={results}
+              onAssetClick={onAssetClick}
+            />
+          );
+        case "graph3d":
+          return (
+            <SPARQLGraph3DView
               triples={results}
               onAssetClick={onAssetClick}
             />
