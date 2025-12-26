@@ -1106,3 +1106,26 @@ export type {
   NodeAnimatorEvent,
   NodeAnimatorEventListener,
 } from "./animation";
+
+// Graph export functionality for PNG, JPEG, WebP, and SVG
+export {
+  ExportManager,
+  createExportManager,
+  DEFAULT_EXPORT_OPTIONS,
+  DEFAULT_EXPORT_MANAGER_CONFIG,
+  EXPORT_MIME_TYPES,
+  EXPORT_FILE_EXTENSIONS,
+} from "./export";
+export type {
+  ExportFormat,
+  ExportOptions,
+  ExportBounds,
+  ExportResult,
+  ExportNode,
+  ExportEdge,
+  ExportEventType,
+  ExportEvent,
+  ExportEventListener,
+  ExportManagerConfig,
+  ExportStats,
+} from "./export";
