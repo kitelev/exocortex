@@ -304,8 +304,8 @@ export class HierarchicalLayout {
       const sourceId = typeof edge.source === "string" ? edge.source : edge.source.id;
       const targetId = typeof edge.target === "string" ? edge.target : edge.target.id;
 
-      // Skip edges with missing nodes
-      if (!this.nodeMap.has(sourceId) || !this.nodeMap.has(targetId)) {
+      // Skip edges with missing nodes or self-loops
+      if (!this.nodeMap.has(sourceId) || !this.nodeMap.has(targetId) || sourceId === targetId) {
         continue;
       }
 
@@ -427,6 +427,9 @@ export class HierarchicalLayout {
 
       const neighbors = this.adjacency.get(nodeId) || new Set();
       for (const neighborId of neighbors) {
+        // Skip self-loops to prevent infinite loop
+        if (neighborId === nodeId) continue;
+
         const newRank = rank + 1;
         const currentRank = ranks.get(neighborId);
 
