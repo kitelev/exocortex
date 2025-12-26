@@ -770,6 +770,88 @@ export class Scene3DManager {
   }
 
   /**
+   * Reset camera to default position with smooth animation
+   *
+   * @param duration - Animation duration in milliseconds (default: 500)
+   */
+  resetCamera(duration: number = 500): void {
+    if (!this.camera || !this.controls) return;
+
+    const startPosition = {
+      x: this.camera.position.x,
+      y: this.camera.position.y,
+      z: this.camera.position.z,
+    };
+    const startTarget = {
+      x: this.controls.target.x,
+      y: this.controls.target.y,
+      z: this.controls.target.z,
+    };
+
+    const endPosition = { x: 0, y: 0, z: this.config.cameraDistance };
+    const endTarget = { x: 0, y: 0, z: 0 };
+
+    const startTime = performance.now();
+
+    const animate = (): void => {
+      const elapsed = performance.now() - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+
+      // Ease-out cubic for smooth deceleration
+      const eased = 1 - Math.pow(1 - progress, 3);
+
+      if (this.camera && this.controls) {
+        this.camera.position.set(
+          startPosition.x + (endPosition.x - startPosition.x) * eased,
+          startPosition.y + (endPosition.y - startPosition.y) * eased,
+          startPosition.z + (endPosition.z - startPosition.z) * eased
+        );
+        this.controls.target.set(
+          startTarget.x + (endTarget.x - startTarget.x) * eased,
+          startTarget.y + (endTarget.y - startTarget.y) * eased,
+          startTarget.z + (endTarget.z - startTarget.z) * eased
+        );
+        this.controls.update();
+
+        if (progress < 1) {
+          requestAnimationFrame(animate);
+        }
+      }
+    };
+
+    requestAnimationFrame(animate);
+  }
+
+  /**
+   * Set auto-rotate mode
+   *
+   * @param enabled - Whether to enable auto-rotation
+   * @param speed - Rotation speed (default: 2.0 degrees per frame)
+   */
+  setAutoRotate(enabled: boolean, speed?: number): void {
+    if (!this.controls) return;
+
+    this.controls.autoRotate = enabled;
+    if (speed !== undefined) {
+      this.controls.autoRotateSpeed = speed;
+    }
+  }
+
+  /**
+   * Get current auto-rotate state
+   */
+  getAutoRotate(): boolean {
+    return this.controls?.autoRotate ?? false;
+  }
+
+  /**
+   * Get current labels visibility state
+   */
+  getLabelsVisible(): boolean {
+    return this.labelGroup?.visible ?? true;
+  }
+
+  /**
    * Fit all nodes in view
    */
   fitToView(nodes: GraphNode3D[], padding: number = 1.5): void {

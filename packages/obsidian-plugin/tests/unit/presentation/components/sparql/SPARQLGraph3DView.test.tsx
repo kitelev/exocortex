@@ -7,7 +7,7 @@
  */
 
 import React from "react";
-import { render, screen, cleanup } from "@testing-library/react";
+import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import type { GraphData } from "exocortex";
 
@@ -22,6 +22,12 @@ const createSceneManagerMock = () => ({
   destroy: jest.fn(),
   fitToView: jest.fn(),
   isInitialized: jest.fn().mockReturnValue(true),
+  // New methods for 3D controls
+  resetCamera: jest.fn(),
+  setAutoRotate: jest.fn(),
+  setLabelsVisible: jest.fn(),
+  getAutoRotate: jest.fn().mockReturnValue(false),
+  getLabelsVisible: jest.fn().mockReturnValue(true),
 });
 
 const createSimulationMock = () => ({
@@ -303,8 +309,12 @@ describe("SPARQLGraph3DView", () => {
         />
       );
 
+      // Canvas takes 100% of wrapper height
       const canvas = screen.getByTestId("sparql-graph3d-canvas");
-      expect(canvas).toHaveStyle({ height: "600px" });
+      expect(canvas).toHaveStyle({ height: "100%" });
+      // Wrapper has the fixed height
+      const wrapper = screen.getByTestId("sparql-graph3d-wrapper");
+      expect(wrapper).toHaveStyle({ height: "600px" });
     });
 
     it("initializes Scene3DManager when valid triples are provided", () => {
@@ -578,6 +588,196 @@ describe("SPARQLGraph3DView", () => {
       nodeClickHandler({ type: "nodeClick" });
 
       expect(mockOnAssetClick).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("3D controls toolbar", () => {
+    const createValidTriples = () => [
+      {
+        subject: { toString: () => "<http://example.org/node1>" },
+        predicate: { toString: () => "<http://example.org/connects>" },
+        object: { toString: () => "<http://example.org/node2>" },
+        toString: () => "<http://example.org/node1> <http://example.org/connects> <http://example.org/node2> .",
+      },
+    ];
+
+    it("renders toolbar with all control buttons", () => {
+      render(
+        <SPARQLGraph3DView
+          triples={createValidTriples() as any}
+          onAssetClick={jest.fn()}
+        />
+      );
+
+      expect(screen.getByTestId("graph3d-controls-toolbar")).toBeInTheDocument();
+      expect(screen.getByTestId("graph3d-btn-reset")).toBeInTheDocument();
+      expect(screen.getByTestId("graph3d-btn-autorotate")).toBeInTheDocument();
+      expect(screen.getByTestId("graph3d-btn-labels")).toBeInTheDocument();
+      expect(screen.getByTestId("graph3d-btn-fullscreen")).toBeInTheDocument();
+    });
+
+    it("does not render toolbar when triples are empty", () => {
+      render(
+        <SPARQLGraph3DView
+          triples={[]}
+          onAssetClick={jest.fn()}
+        />
+      );
+
+      expect(screen.queryByTestId("graph3d-controls-toolbar")).not.toBeInTheDocument();
+    });
+
+    it("camera reset button calls resetCamera on Scene3DManager", () => {
+      render(
+        <SPARQLGraph3DView
+          triples={createValidTriples() as any}
+          onAssetClick={jest.fn()}
+        />
+      );
+
+      const resetButton = screen.getByTestId("graph3d-btn-reset");
+      fireEvent.click(resetButton);
+
+      expect(sceneManagerInstance.resetCamera).toHaveBeenCalledWith(500);
+    });
+
+    it("auto-rotate button toggles auto-rotation", () => {
+      render(
+        <SPARQLGraph3DView
+          triples={createValidTriples() as any}
+          onAssetClick={jest.fn()}
+        />
+      );
+
+      const autoRotateButton = screen.getByTestId("graph3d-btn-autorotate");
+
+      // Initially off
+      expect(autoRotateButton).not.toHaveClass("exo-graph3d-toolbar__btn--active");
+
+      // Click to enable
+      fireEvent.click(autoRotateButton);
+      expect(sceneManagerInstance.setAutoRotate).toHaveBeenCalledWith(true, 0.5);
+    });
+
+    it("labels button toggles labels visibility", () => {
+      render(
+        <SPARQLGraph3DView
+          triples={createValidTriples() as any}
+          onAssetClick={jest.fn()}
+        />
+      );
+
+      const labelsButton = screen.getByTestId("graph3d-btn-labels");
+
+      // Initially visible (active)
+      expect(labelsButton).toHaveClass("exo-graph3d-toolbar__btn--active");
+
+      // Click to hide
+      fireEvent.click(labelsButton);
+      expect(sceneManagerInstance.setLabelsVisible).toHaveBeenCalledWith(false);
+    });
+
+    it("initializes Scene3DManager with default control state", () => {
+      render(
+        <SPARQLGraph3DView
+          triples={createValidTriples() as any}
+          onAssetClick={jest.fn()}
+        />
+      );
+
+      // Labels should be visible by default
+      expect(sceneManagerInstance.setLabelsVisible).toHaveBeenCalledWith(true);
+      // Auto-rotate should be off by default
+      expect(sceneManagerInstance.setAutoRotate).toHaveBeenCalledWith(false, 0.5);
+    });
+
+    it("renders wrapper container for fullscreen support", () => {
+      render(
+        <SPARQLGraph3DView
+          triples={createValidTriples() as any}
+          onAssetClick={jest.fn()}
+        />
+      );
+
+      expect(screen.getByTestId("sparql-graph3d-wrapper")).toBeInTheDocument();
+    });
+
+    it("all buttons have tooltips", () => {
+      render(
+        <SPARQLGraph3DView
+          triples={createValidTriples() as any}
+          onAssetClick={jest.fn()}
+        />
+      );
+
+      expect(screen.getByTestId("graph3d-btn-reset")).toHaveAttribute("title", "Reset camera (R)");
+      expect(screen.getByTestId("graph3d-btn-autorotate")).toHaveAttribute("title", expect.stringContaining("Auto-rotate"));
+      expect(screen.getByTestId("graph3d-btn-labels")).toHaveAttribute("title", expect.stringContaining("Labels"));
+      expect(screen.getByTestId("graph3d-btn-fullscreen")).toHaveAttribute("title", expect.stringContaining("Fullscreen"));
+    });
+
+    it("buttons have accessible aria-labels", () => {
+      render(
+        <SPARQLGraph3DView
+          triples={createValidTriples() as any}
+          onAssetClick={jest.fn()}
+        />
+      );
+
+      expect(screen.getByTestId("graph3d-btn-reset")).toHaveAttribute("aria-label", "Reset camera to default view");
+      expect(screen.getByTestId("graph3d-btn-autorotate")).toHaveAttribute("aria-label");
+      expect(screen.getByTestId("graph3d-btn-labels")).toHaveAttribute("aria-label");
+      expect(screen.getByTestId("graph3d-btn-fullscreen")).toHaveAttribute("aria-label");
+    });
+  });
+
+  describe("keyboard shortcuts", () => {
+    const createValidTriples = () => [
+      {
+        subject: { toString: () => "<http://example.org/node1>" },
+        predicate: { toString: () => "<http://example.org/connects>" },
+        object: { toString: () => "<http://example.org/node2>" },
+        toString: () => "<http://example.org/node1> <http://example.org/connects> <http://example.org/node2> .",
+      },
+    ];
+
+    it("R key triggers camera reset", () => {
+      render(
+        <SPARQLGraph3DView
+          triples={createValidTriples() as any}
+          onAssetClick={jest.fn()}
+        />
+      );
+
+      fireEvent.keyDown(document, { key: "r" });
+
+      expect(sceneManagerInstance.resetCamera).toHaveBeenCalled();
+    });
+
+    it("A key toggles auto-rotate", () => {
+      render(
+        <SPARQLGraph3DView
+          triples={createValidTriples() as any}
+          onAssetClick={jest.fn()}
+        />
+      );
+
+      fireEvent.keyDown(document, { key: "a" });
+
+      expect(sceneManagerInstance.setAutoRotate).toHaveBeenCalled();
+    });
+
+    it("L key toggles labels visibility", () => {
+      render(
+        <SPARQLGraph3DView
+          triples={createValidTriples() as any}
+          onAssetClick={jest.fn()}
+        />
+      );
+
+      fireEvent.keyDown(document, { key: "l" });
+
+      expect(sceneManagerInstance.setLabelsVisible).toHaveBeenCalled();
     });
   });
 });

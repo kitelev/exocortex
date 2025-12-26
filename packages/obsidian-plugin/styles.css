@@ -4757,3 +4757,105 @@
   left: var(--context-menu-left, 0);
   top: var(--context-menu-top, 0);
 }
+
+/* ============================================================================
+   3D Graph Controls Toolbar
+   ============================================================================ */
+
+.exo-graph3d-toolbar {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px;
+  background-color: rgba(30, 30, 46, 0.9);
+  border: 1px solid rgba(147, 153, 178, 0.2);
+  border-radius: 8px;
+  backdrop-filter: blur(8px);
+  z-index: 100;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.exo-graph3d-toolbar__btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background-color: transparent;
+  color: var(--text-muted, #a6adc8);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.exo-graph3d-toolbar__btn:hover {
+  background-color: rgba(147, 153, 178, 0.15);
+  color: var(--text-normal, #cdd6f4);
+}
+
+.exo-graph3d-toolbar__btn:active {
+  transform: scale(0.95);
+}
+
+.exo-graph3d-toolbar__btn--active {
+  background-color: var(--interactive-accent, #6366f1);
+  color: var(--text-on-accent, #ffffff);
+}
+
+.exo-graph3d-toolbar__btn--active:hover {
+  background-color: var(--interactive-accent-hover, #5855e4);
+  color: var(--text-on-accent, #ffffff);
+}
+
+.exo-graph3d-toolbar__btn:focus-visible {
+  outline: 2px solid var(--interactive-accent, #6366f1);
+  outline-offset: 2px;
+}
+
+.exo-graph3d-toolbar__separator {
+  width: 1px;
+  height: 24px;
+  margin: 0 4px;
+  background-color: rgba(147, 153, 178, 0.3);
+}
+
+/* Fullscreen mode container */
+.sparql-graph3d-view--fullscreen {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  z-index: 9999 !important;
+  background-color: var(--background-primary, #1e1e2e);
+}
+
+.sparql-graph3d-view--fullscreen .exo-graph3d-toolbar {
+  top: 20px;
+  right: 20px;
+}
+
+/* Light theme overrides */
+.theme-light .exo-graph3d-toolbar {
+  background-color: rgba(255, 255, 255, 0.95);
+  border-color: rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.theme-light .exo-graph3d-toolbar__btn {
+  color: var(--text-muted, #6c7086);
+}
+
+.theme-light .exo-graph3d-toolbar__btn:hover {
+  background-color: rgba(0, 0, 0, 0.05);
+  color: var(--text-normal, #4c4f69);
+}
+
+.theme-light .exo-graph3d-toolbar__separator {
+  background-color: rgba(0, 0, 0, 0.15);
+}
