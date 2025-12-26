@@ -467,7 +467,7 @@ export const DEFAULT_FORCE_SIMULATION_3D_CONFIG: ForceSimulation3DConfig = {
   alphaTarget: 0,
   alphaDecay: 0.0228,
   velocityDecay: 0.4,
-  alphaMin: 0.001,
+  alphaMin: 0.01, // Stops simulation when forces stabilize (acceptance criteria: alpha < 0.01)
   useBarnesHut: true,
   theta: 0.9,
 };

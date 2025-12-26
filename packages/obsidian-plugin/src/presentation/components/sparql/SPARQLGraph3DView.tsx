@@ -96,10 +96,16 @@ export const SPARQLGraph3DView: React.FC<SPARQLGraph3DViewProps> = ({
     sceneManager.setNodes(nodes);
     sceneManager.setEdges(edges, nodes);
 
-    // Handle simulation ticks
+    // Handle simulation ticks - update positions in real-time
     simulation.on("tick", (event) => {
       const updatedNodes = event.nodes as GraphNode3D[];
       sceneManager.updatePositions(updatedNodes, edges);
+    });
+
+    // Handle simulation end - fit to view when forces stabilize
+    simulation.on("end", (event) => {
+      const finalNodes = event.nodes as GraphNode3D[];
+      sceneManager.fitToView(finalNodes);
     });
 
     // Handle node clicks
@@ -109,17 +115,11 @@ export const SPARQLGraph3DView: React.FC<SPARQLGraph3DViewProps> = ({
       }
     });
 
-    // Start simulation
+    // Start simulation - nodes animate from random positions to force-directed layout
     simulation.start();
 
-    // Fit view after a short delay for initial layout
-    const fitViewTimeout = setTimeout(() => {
-      sceneManager.fitToView(simulation.getNodes() as GraphNode3D[]);
-    }, 100);
-
-    // Cleanup - properly dispose WebGL resources
+    // Cleanup - stops simulation and releases WebGL resources on unmount/ViewMode switch
     return () => {
-      clearTimeout(fitViewTimeout);
       simulation.destroy();
       sceneManager.destroy();
       sceneManagerRef.current = null;

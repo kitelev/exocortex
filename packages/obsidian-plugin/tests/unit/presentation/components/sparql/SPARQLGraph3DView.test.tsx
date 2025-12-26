@@ -374,6 +374,101 @@ describe("SPARQLGraph3DView", () => {
 
       expect(simulationInstance.on).toHaveBeenCalledWith("tick", expect.any(Function));
     });
+
+    it("registers end event handler on ForceSimulation3D", () => {
+      render(
+        <SPARQLGraph3DView
+          triples={createValidTriples() as any}
+          onAssetClick={jest.fn()}
+        />
+      );
+
+      expect(simulationInstance.on).toHaveBeenCalledWith("end", expect.any(Function));
+    });
+  });
+
+  describe("force simulation integration", () => {
+    const createValidTriples = () => [
+      {
+        subject: { toString: () => "<http://example.org/node1>" },
+        predicate: { toString: () => "<http://example.org/connects>" },
+        object: { toString: () => "<http://example.org/node2>" },
+        toString: () => "<http://example.org/node1> <http://example.org/connects> <http://example.org/node2> .",
+      },
+    ];
+
+    it("updates node positions on simulation tick", () => {
+      render(
+        <SPARQLGraph3DView
+          triples={createValidTriples() as any}
+          onAssetClick={jest.fn()}
+        />
+      );
+
+      // Find the registered tick handler
+      const tickHandler = simulationInstance.on.mock.calls.find(
+        (call: [string, Function]) => call[0] === "tick"
+      )?.[1];
+
+      expect(tickHandler).toBeDefined();
+
+      // Simulate a tick event with updated node positions
+      const updatedNodes = [
+        { id: "http://example.org/node1", x: 10, y: 20, z: 30 },
+        { id: "http://example.org/node2", x: -10, y: -20, z: -30 },
+      ];
+      tickHandler({ type: "tick", alpha: 0.5, nodes: updatedNodes });
+
+      // Verify updatePositions was called with updated nodes
+      expect(sceneManagerInstance.updatePositions).toHaveBeenCalledWith(
+        updatedNodes,
+        expect.any(Array)
+      );
+    });
+
+    it("fits view to nodes when simulation ends", () => {
+      render(
+        <SPARQLGraph3DView
+          triples={createValidTriples() as any}
+          onAssetClick={jest.fn()}
+        />
+      );
+
+      // Find the registered end handler
+      const endHandler = simulationInstance.on.mock.calls.find(
+        (call: [string, Function]) => call[0] === "end"
+      )?.[1];
+
+      expect(endHandler).toBeDefined();
+
+      // Simulate an end event with final node positions
+      const finalNodes = [
+        { id: "http://example.org/node1", x: 100, y: 50, z: 0 },
+        { id: "http://example.org/node2", x: -100, y: -50, z: 0 },
+      ];
+      endHandler({ type: "end", alpha: 0.009, nodes: finalNodes });
+
+      // Verify fitToView was called with final nodes
+      expect(sceneManagerInstance.fitToView).toHaveBeenCalledWith(finalNodes);
+    });
+
+    it("simulation receives nodes and edges on initialization", () => {
+      render(
+        <SPARQLGraph3DView
+          triples={createValidTriples() as any}
+          onAssetClick={jest.fn()}
+        />
+      );
+
+      // ForceSimulation3D should be called with nodes and edges
+      expect(ForceSimulation3D).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({ id: "http://example.org/node1" }),
+          expect.objectContaining({ id: "http://example.org/node2" }),
+        ]),
+        expect.any(Array)
+      );
+    });
   });
 
   describe("cleanup on unmount", () => {

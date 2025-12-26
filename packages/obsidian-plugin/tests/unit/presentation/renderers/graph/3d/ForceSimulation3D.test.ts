@@ -293,6 +293,27 @@ describe("ForceSimulation3D", () => {
       simulation.start();
     });
 
+    it("emits end event when alpha reaches alphaMin threshold", (done) => {
+      const nodes: GraphNode3D[] = [
+        { id: "n1", label: "Node 1", path: "/n1" },
+      ];
+
+      // Use high alphaDecay for faster convergence in test
+      const simulation = new ForceSimulation3D(nodes, [], {
+        alphaDecay: 0.5, // Very fast decay for test
+        alphaMin: 0.01,
+      });
+
+      simulation.on("end", (event) => {
+        expect(event.type).toBe("end");
+        expect(event.alpha).toBeLessThan(0.01);
+        expect(event.nodes.length).toBe(1);
+        done();
+      });
+
+      simulation.start();
+    }, 10000); // Increase timeout for convergence
+
     it("removes event listeners", () => {
       const simulation = new ForceSimulation3D();
       const listener = jest.fn();
@@ -303,6 +324,48 @@ describe("ForceSimulation3D", () => {
       simulation.tick();
       expect(listener).not.toHaveBeenCalled();
     });
+  });
+
+  describe("convergence", () => {
+    it("converges when alpha drops below alphaMin (0.01)", () => {
+      const nodes: GraphNode3D[] = [
+        { id: "n1", label: "Node 1", path: "/n1" },
+        { id: "n2", label: "Node 2", path: "/n2" },
+      ];
+
+      const simulation = new ForceSimulation3D(nodes, [], {
+        alphaMin: 0.01,
+        alphaDecay: 0.1, // Fast decay for test
+      });
+
+      // Run ticks until alpha < alphaMin
+      let tickCount = 0;
+      while (simulation.getAlpha() >= 0.01 && tickCount < 100) {
+        simulation.tick();
+        tickCount++;
+      }
+
+      expect(simulation.getAlpha()).toBeLessThan(0.01);
+    });
+
+    it("simulation stops automatically when converged", (done) => {
+      const nodes: GraphNode3D[] = [
+        { id: "n1", label: "Node 1", path: "/n1" },
+      ];
+
+      const simulation = new ForceSimulation3D(nodes, [], {
+        alphaDecay: 0.5, // Very fast decay
+        alphaMin: 0.01,
+      });
+
+      simulation.on("end", () => {
+        // Simulation should have stopped
+        expect(simulation.isRunning()).toBe(false);
+        done();
+      });
+
+      simulation.start();
+    }, 10000);
   });
 
   describe("updateConfig", () => {
