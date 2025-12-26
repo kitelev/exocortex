@@ -974,3 +974,40 @@ export type {
   Simulation3DEvent,
   Simulation3DEventListener,
 } from "./3d";
+
+// Edge bundling for dense graphs
+export {
+  // Bundlers
+  StubBundler,
+  createStubBundler,
+  FDEBBundler,
+  createFDEBBundler,
+  HierarchicalBundler,
+  createHierarchicalBundler,
+  createEdgeBundler,
+  // Constants and utilities
+  DEFAULT_BUNDLING_CONFIG,
+  DEFAULT_HIERARCHICAL_CONFIG,
+  distance as bundlingDistance,
+  midpoint as bundlingMidpoint,
+  normalize as bundlingNormalize,
+  dot as bundlingDot,
+  subtract as bundlingSubtract,
+  add as bundlingAdd,
+  scale as bundlingScale,
+  lerp as bundlingLerp,
+  projectOntoLine,
+} from "./bundling";
+export type {
+  Vector2,
+  BundlingAlgorithm,
+  BundlingConfig,
+  BundledEdge,
+  EdgeSegment,
+  BundlingResult,
+  EdgeBundler,
+  CompatibilityMeasures,
+  HierarchicalBundlingConfig,
+  HierarchyNode,
+  EdgeBundlerFactory,
+} from "./bundling";
