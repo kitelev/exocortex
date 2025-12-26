@@ -10,6 +10,9 @@
  * - Theme-aware coloring (dark/light mode support)
  * - Ontology-based node coloring
  * - Predicate-based edge coloring
+ * - LOD (Level of Detail) for labels
+ * - Frustum culling for off-screen nodes
+ * - WebGL context loss recovery
  *
  * @module presentation/renderers/graph/3d
  * @since 1.0.0
@@ -17,6 +20,27 @@
 
 // Scene manager
 export { Scene3DManager, createScene3DManager } from "./Scene3DManager";
+
+// Performance manager
+export {
+  Graph3DPerformanceManager,
+  createGraph3DPerformanceManager,
+  DEFAULT_LOD_CONFIG,
+  DEFAULT_FRUSTUM_CULLING_CONFIG,
+  DEFAULT_WEBGL_RECOVERY_CONFIG,
+  DEFAULT_PERFORMANCE_CONFIG,
+} from "./Graph3DPerformanceManager";
+export type {
+  LODConfig,
+  FrustumCullingConfig,
+  WebGLRecoveryConfig,
+  PerformanceConfig,
+  NodeVisibility,
+  PerformanceEventType,
+  PerformanceEvent,
+  PerformanceEventListener,
+  PerformanceStats,
+} from "./Graph3DPerformanceManager";
 
 // Force simulation
 export {

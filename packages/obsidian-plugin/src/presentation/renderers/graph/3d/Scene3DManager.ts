@@ -36,6 +36,10 @@ import {
   DEFAULT_LABEL_3D_STYLE,
   DEFAULT_ORBIT_CONTROLS_CONFIG,
 } from "./types3d";
+import {
+  Graph3DPerformanceManager,
+  type PerformanceConfig,
+} from "./Graph3DPerformanceManager";
 
 /**
  * Internal representation of a rendered node
@@ -109,18 +113,26 @@ export class Scene3DManager {
   private sphereGeometry: THREE.SphereGeometry | null = null;
   private nodeMaterial: THREE.MeshStandardMaterial | null = null;
 
+  // Performance optimization
+  private performanceManager: Graph3DPerformanceManager | null = null;
+  private performanceConfig: Partial<PerformanceConfig>;
+  private lodEnabled = true;
+  private frustumCullingEnabled = true;
+
   constructor(
     config: Partial<Scene3DConfig> = {},
     nodeStyle: Partial<Node3DStyle> = {},
     edgeStyle: Partial<Edge3DStyle> = {},
     labelStyle: Partial<Label3DStyle> = {},
-    controlsConfig: Partial<OrbitControlsConfig> = {}
+    controlsConfig: Partial<OrbitControlsConfig> = {},
+    performanceConfig: Partial<PerformanceConfig> = {}
   ) {
     this.config = { ...DEFAULT_SCENE_3D_CONFIG, ...config };
     this.nodeStyle = { ...DEFAULT_NODE_3D_STYLE, ...nodeStyle };
     this.edgeStyle = { ...DEFAULT_EDGE_3D_STYLE, ...edgeStyle };
     this.labelStyle = { ...DEFAULT_LABEL_3D_STYLE, ...labelStyle };
     this.controlsConfig = { ...DEFAULT_ORBIT_CONTROLS_CONFIG, ...controlsConfig };
+    this.performanceConfig = performanceConfig;
 
     // Initialize event listener maps
     const eventTypes: Scene3DEventType[] = [
@@ -229,10 +241,73 @@ export class Scene3DManager {
     // Setup resize observer
     this.setupResizeObserver();
 
+    // Initialize performance manager for LOD, frustum culling, and WebGL recovery
+    this.performanceManager = new Graph3DPerformanceManager(this.performanceConfig);
+    this.performanceManager.initialize(
+      this.renderer,
+      this.camera,
+      container,
+      () => this.handleWebGLRecovery()
+    );
+
     // Start render loop
     this.startRenderLoop();
 
     this.initialized = true;
+  }
+
+  /**
+   * Handle WebGL context recovery
+   * Re-creates all GPU resources after context loss
+   */
+  private handleWebGLRecovery(): void {
+    // Re-create all node materials
+    for (const [, rendered] of this.renderedNodes) {
+      if (rendered.mesh.material instanceof THREE.MeshStandardMaterial) {
+        const color = rendered.mesh.material.color.getHex();
+        rendered.mesh.material.dispose();
+        rendered.mesh.material = new THREE.MeshStandardMaterial({
+          color,
+          emissive: color,
+          emissiveIntensity: this.nodeStyle.emissiveIntensity,
+          roughness: this.nodeStyle.roughness,
+          metalness: this.nodeStyle.metalness,
+        });
+      }
+    }
+
+    // Re-create all edge materials
+    for (const [, rendered] of this.renderedEdges) {
+      if (rendered.line.material instanceof THREE.LineBasicMaterial) {
+        const color = rendered.line.material.color.getHex();
+        rendered.line.material.dispose();
+        rendered.line.material = new THREE.LineBasicMaterial({
+          color,
+          opacity: this.edgeStyle.opacity,
+          transparent: true,
+        });
+      }
+    }
+
+    // Re-create label sprites (textures need to be recreated)
+    for (const [, rendered] of this.renderedNodes) {
+      if (rendered.labelSprite && this.labelGroup) {
+        this.labelGroup.remove(rendered.labelSprite);
+        if (rendered.labelSprite.material instanceof THREE.Material) {
+          rendered.labelSprite.material.dispose();
+        }
+        const newSprite = this.createLabelSprite(rendered.node.label);
+        this.labelGroup.add(newSprite);
+        rendered.labelSprite = newSprite;
+
+        // Update position
+        const x = rendered.node.x ?? 0;
+        const y = rendered.node.y ?? 0;
+        const z = rendered.node.z ?? 0;
+        const radius = (rendered.node.size ?? 1) * this.nodeStyle.radius;
+        newSprite.position.set(x, y + radius + this.labelStyle.yOffset, z);
+      }
+    }
   }
 
   /**
@@ -417,6 +492,17 @@ export class Scene3DManager {
         this.controls.update();
       }
 
+      // Update performance manager (FPS tracking, frustum update)
+      if (this.performanceManager) {
+        this.performanceManager.updateFPS();
+        this.performanceManager.updateFrustum();
+
+        // Apply LOD and frustum culling if enabled
+        if (this.lodEnabled || this.frustumCullingEnabled) {
+          this.applyPerformanceOptimizations();
+        }
+      }
+
       if (this.renderer && this.scene && this.camera) {
         this.renderer.render(this.scene, this.camera);
         this.emit("render", { type: "render" });
@@ -424,6 +510,60 @@ export class Scene3DManager {
     };
 
     animate();
+  }
+
+  /**
+   * Apply LOD and frustum culling optimizations
+   */
+  private applyPerformanceOptimizations(): void {
+    if (!this.performanceManager || !this.camera) return;
+
+    const tempVec = new THREE.Vector3();
+
+    for (const [, rendered] of this.renderedNodes) {
+      const node = rendered.node;
+      tempVec.set(node.x ?? 0, node.y ?? 0, node.z ?? 0);
+
+      const visibility = this.performanceManager.calculateNodeVisibility(
+        node.id,
+        tempVec,
+        (node.size ?? 1) * this.nodeStyle.radius
+      );
+
+      // Apply frustum culling
+      if (this.frustumCullingEnabled) {
+        rendered.mesh.visible = visibility.inFrustum;
+      }
+
+      // Apply LOD for labels
+      if (this.lodEnabled && rendered.labelSprite) {
+        if (visibility.labelVisible && visibility.inFrustum) {
+          rendered.labelSprite.visible = true;
+          // Apply opacity to label sprite material
+          if (rendered.labelSprite.material instanceof THREE.SpriteMaterial) {
+            rendered.labelSprite.material.opacity = visibility.labelOpacity;
+          }
+        } else {
+          rendered.labelSprite.visible = false;
+        }
+      }
+    }
+
+    // Also hide edges connected to culled nodes for consistency
+    if (this.frustumCullingEnabled) {
+      for (const [, rendered] of this.renderedEdges) {
+        const edge = rendered.edge;
+        const sourceId = typeof edge.source === "string" ? edge.source : edge.source.id;
+        const targetId = typeof edge.target === "string" ? edge.target : edge.target.id;
+
+        const sourceRendered = this.renderedNodes.get(sourceId);
+        const targetRendered = this.renderedNodes.get(targetId);
+
+        // Edge is visible if both source and target are visible
+        rendered.line.visible =
+          (sourceRendered?.mesh.visible ?? false) && (targetRendered?.mesh.visible ?? false);
+      }
+    }
   }
 
   /**
@@ -958,15 +1098,81 @@ export class Scene3DManager {
    */
   getStats(): Renderer3DStats {
     const info = this.renderer?.info;
+    const fps = this.performanceManager?.getFPS() ?? 60;
     return {
       nodeCount: this.renderedNodes.size,
       edgeCount: this.renderedEdges.size,
       labelCount: this.labelGroup?.children.length ?? 0,
-      fps: 60, // Would need frame timing to calculate actual FPS
+      fps,
       drawCalls: info?.render?.calls ?? 0,
       triangles: info?.render?.triangles ?? 0,
       memoryUsage: (info?.memory?.geometries ?? 0) * 1024 + (info?.memory?.textures ?? 0) * 1024,
     };
+  }
+
+  /**
+   * Get performance statistics including LOD and culling info
+   */
+  getPerformanceStats(): import("./Graph3DPerformanceManager").PerformanceStats | null {
+    return this.performanceManager?.getStats() ?? null;
+  }
+
+  /**
+   * Enable or disable LOD (Level of Detail) for labels
+   *
+   * @param enabled - Whether to enable LOD
+   */
+  setLODEnabled(enabled: boolean): void {
+    this.lodEnabled = enabled;
+    if (this.performanceManager) {
+      this.performanceManager.setLODEnabled(enabled);
+    }
+  }
+
+  /**
+   * Enable or disable frustum culling
+   *
+   * @param enabled - Whether to enable frustum culling
+   */
+  setFrustumCullingEnabled(enabled: boolean): void {
+    this.frustumCullingEnabled = enabled;
+    if (this.performanceManager) {
+      this.performanceManager.setFrustumCullingEnabled(enabled);
+    }
+
+    // If disabling culling, make all objects visible
+    if (!enabled) {
+      for (const [, rendered] of this.renderedNodes) {
+        rendered.mesh.visible = true;
+        if (rendered.labelSprite) {
+          rendered.labelSprite.visible = true;
+        }
+      }
+      for (const [, rendered] of this.renderedEdges) {
+        rendered.line.visible = true;
+      }
+    }
+  }
+
+  /**
+   * Get current LOD enabled state
+   */
+  getLODEnabled(): boolean {
+    return this.lodEnabled;
+  }
+
+  /**
+   * Get current frustum culling enabled state
+   */
+  getFrustumCullingEnabled(): boolean {
+    return this.frustumCullingEnabled;
+  }
+
+  /**
+   * Get the performance manager instance
+   */
+  getPerformanceManager(): Graph3DPerformanceManager | null {
+    return this.performanceManager;
   }
 
   /**
@@ -1117,6 +1323,12 @@ export class Scene3DManager {
       this.resizeObserver = null;
     }
 
+    // Destroy performance manager
+    if (this.performanceManager) {
+      this.performanceManager.destroy();
+      this.performanceManager = null;
+    }
+
     // Clear graphics
     this.clear();
 
@@ -1169,7 +1381,15 @@ export function createScene3DManager(
   nodeStyle?: Partial<Node3DStyle>,
   edgeStyle?: Partial<Edge3DStyle>,
   labelStyle?: Partial<Label3DStyle>,
-  controlsConfig?: Partial<OrbitControlsConfig>
+  controlsConfig?: Partial<OrbitControlsConfig>,
+  performanceConfig?: Partial<PerformanceConfig>
 ): Scene3DManager {
-  return new Scene3DManager(config, nodeStyle, edgeStyle, labelStyle, controlsConfig);
+  return new Scene3DManager(
+    config,
+    nodeStyle,
+    edgeStyle,
+    labelStyle,
+    controlsConfig,
+    performanceConfig
+  );
 }

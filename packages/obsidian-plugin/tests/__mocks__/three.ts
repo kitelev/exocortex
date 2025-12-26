@@ -44,6 +44,12 @@ export class Vector3 {
     this.z = v.z;
     return this;
   }
+  distanceTo(v: Vector3): number {
+    const dx = this.x - v.x;
+    const dy = this.y - v.y;
+    const dz = this.z - v.z;
+    return Math.sqrt(dx * dx + dy * dy + dz * dz);
+  }
 }
 
 // Mock Color class
@@ -90,6 +96,19 @@ export class Scene {
   }
 }
 
+// Mock Matrix4 class (must be before PerspectiveCamera)
+export class Matrix4 {
+  elements: number[] = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+
+  multiplyMatrices(_a: Matrix4, _b: Matrix4): this {
+    return this;
+  }
+
+  copy(_m: Matrix4): this {
+    return this;
+  }
+}
+
 // Mock Camera classes
 export class PerspectiveCamera {
   fov: number;
@@ -99,6 +118,8 @@ export class PerspectiveCamera {
   position: Vector3 = new Vector3();
   up: Vector3 = new Vector3(0, 1, 0);
   zoom = 1;
+  projectionMatrix: Matrix4 = new Matrix4();
+  matrixWorldInverse: Matrix4 = new Matrix4();
 
   constructor(fov = 50, aspect = 1, near = 0.1, far = 2000) {
     this.fov = fov;
@@ -112,6 +133,10 @@ export class PerspectiveCamera {
   }
 
   updateProjectionMatrix(): void {
+    // No-op
+  }
+
+  updateMatrixWorld(): void {
     // No-op
   }
 }
@@ -346,5 +371,50 @@ export class Raycaster {
 
   intersectObjects(_objects: unknown[], _recursive?: boolean): { point: Vector3; object: unknown }[] {
     return [];
+  }
+}
+
+// Mock Sphere class
+export class Sphere {
+  center: Vector3;
+  radius: number;
+
+  constructor(center?: Vector3, radius?: number) {
+    this.center = center ?? new Vector3();
+    this.radius = radius ?? 1;
+  }
+}
+
+// Mock Frustum class
+export class Frustum {
+  planes: { normal: Vector3; constant: number }[] = [];
+
+  setFromProjectionMatrix(_m: Matrix4): this {
+    // Create 6 frustum planes (simplified)
+    this.planes = [
+      { normal: new Vector3(1, 0, 0), constant: 1000 },
+      { normal: new Vector3(-1, 0, 0), constant: 1000 },
+      { normal: new Vector3(0, 1, 0), constant: 1000 },
+      { normal: new Vector3(0, -1, 0), constant: 1000 },
+      { normal: new Vector3(0, 0, 1), constant: 1000 },
+      { normal: new Vector3(0, 0, -1), constant: 1000 },
+    ];
+    return this;
+  }
+
+  intersectsSphere(sphere: Sphere): boolean {
+    // Simple frustum test: check if sphere center is within reasonable bounds
+    const center = sphere.center;
+    const radius = sphere.radius;
+
+    // Nodes within 500 units of origin are considered in frustum
+    const maxDistance = 500;
+    const distance = Math.sqrt(center.x * center.x + center.y * center.y + center.z * center.z);
+
+    return distance - radius < maxDistance;
+  }
+
+  containsPoint(_point: Vector3): boolean {
+    return true;
   }
 }
