@@ -40,6 +40,11 @@ import {
   Graph3DPerformanceManager,
   type PerformanceConfig,
 } from "./Graph3DPerformanceManager";
+import {
+  TouchGestureManager,
+  type TouchGestureConfig,
+  type TouchGestureEvent,
+} from "./TouchGestureManager";
 
 /**
  * Internal representation of a rendered node
@@ -119,13 +124,18 @@ export class Scene3DManager {
   private lodEnabled = true;
   private frustumCullingEnabled = true;
 
+  // Touch gesture support
+  private touchGestureManager: TouchGestureManager | null = null;
+  private touchGestureConfig: Partial<TouchGestureConfig>;
+
   constructor(
     config: Partial<Scene3DConfig> = {},
     nodeStyle: Partial<Node3DStyle> = {},
     edgeStyle: Partial<Edge3DStyle> = {},
     labelStyle: Partial<Label3DStyle> = {},
     controlsConfig: Partial<OrbitControlsConfig> = {},
-    performanceConfig: Partial<PerformanceConfig> = {}
+    performanceConfig: Partial<PerformanceConfig> = {},
+    touchGestureConfig: Partial<TouchGestureConfig> = {}
   ) {
     this.config = { ...DEFAULT_SCENE_3D_CONFIG, ...config };
     this.nodeStyle = { ...DEFAULT_NODE_3D_STYLE, ...nodeStyle };
@@ -133,6 +143,7 @@ export class Scene3DManager {
     this.labelStyle = { ...DEFAULT_LABEL_3D_STYLE, ...labelStyle };
     this.controlsConfig = { ...DEFAULT_ORBIT_CONTROLS_CONFIG, ...controlsConfig };
     this.performanceConfig = performanceConfig;
+    this.touchGestureConfig = touchGestureConfig;
 
     // Initialize event listener maps
     const eventTypes: Scene3DEventType[] = [
@@ -363,15 +374,128 @@ export class Scene3DManager {
   }
 
   /**
-   * Setup event handlers for mouse interactions
+   * Setup event handlers for mouse and touch interactions
    */
   private setupEventHandlers(): void {
     if (!this.renderer) return;
 
     const canvas = this.renderer.domElement;
 
+    // Mouse event handlers
     canvas.addEventListener("mousemove", this.handleMouseMove.bind(this));
     canvas.addEventListener("click", this.handleClick.bind(this));
+
+    // Touch gesture support for mobile devices
+    this.setupTouchEventHandlers(canvas);
+  }
+
+  /**
+   * Setup touch event handlers for mobile/tablet devices
+   */
+  private setupTouchEventHandlers(canvas: HTMLCanvasElement): void {
+    // OrbitControls already handles touch for rotation/zoom/pan
+    // We need to add tap-to-select and double-tap-to-fit functionality
+
+    this.touchGestureManager = new TouchGestureManager(canvas, this.touchGestureConfig);
+
+    // Tap to select node (equivalent to click)
+    this.touchGestureManager.on("tap", (event: TouchGestureEvent) => {
+      this.handleTouchTap(event);
+    });
+
+    // Double-tap to fit graph to view
+    this.touchGestureManager.on("doubleTap", (event: TouchGestureEvent) => {
+      this.handleDoubleTap(event);
+    });
+
+    // Long press for potential future use (e.g., context menu)
+    this.touchGestureManager.on("longPress", (event: TouchGestureEvent) => {
+      this.handleLongPress(event);
+    });
+  }
+
+  /**
+   * Handle touch tap for node selection (equivalent to click)
+   */
+  private handleTouchTap(event: TouchGestureEvent): void {
+    if (!this.renderer || !this.camera || !this.nodeGroup) return;
+
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    this.pointer.x = (event.x / rect.width) * 2 - 1;
+    this.pointer.y = -(event.y / rect.height) * 2 + 1;
+
+    this.raycaster.setFromCamera(this.pointer, this.camera);
+    const intersects = this.raycaster.intersectObjects(this.nodeGroup.children, false);
+
+    if (intersects.length > 0) {
+      const mesh = intersects[0].object as THREE.Mesh;
+      const nodeEntry = [...this.renderedNodes.values()].find(
+        (entry) => entry.mesh === mesh
+      );
+
+      if (nodeEntry) {
+        this.emit("nodeClick", {
+          type: "nodeClick",
+          node: nodeEntry.node,
+          worldPosition: {
+            x: intersects[0].point.x,
+            y: intersects[0].point.y,
+            z: intersects[0].point.z,
+          },
+          screenPosition: { x: event.x, y: event.y },
+        });
+      }
+    } else {
+      this.emit("backgroundClick", {
+        type: "backgroundClick",
+      });
+    }
+  }
+
+  /**
+   * Handle double-tap to fit all nodes in view
+   */
+  private handleDoubleTap(_event: TouchGestureEvent): void {
+    // Get all nodes and fit to view
+    const nodes = [...this.renderedNodes.values()].map((r) => r.node);
+    if (nodes.length > 0) {
+      this.fitToView(nodes);
+    }
+  }
+
+  /**
+   * Handle long press (for future use, e.g., context menu)
+   */
+  private handleLongPress(event: TouchGestureEvent): void {
+    if (!this.renderer || !this.camera || !this.nodeGroup) return;
+
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    this.pointer.x = (event.x / rect.width) * 2 - 1;
+    this.pointer.y = -(event.y / rect.height) * 2 + 1;
+
+    this.raycaster.setFromCamera(this.pointer, this.camera);
+    const intersects = this.raycaster.intersectObjects(this.nodeGroup.children, false);
+
+    if (intersects.length > 0) {
+      const mesh = intersects[0].object as THREE.Mesh;
+      const nodeEntry = [...this.renderedNodes.values()].find(
+        (entry) => entry.mesh === mesh
+      );
+
+      if (nodeEntry) {
+        // For now, emit nodeClick - can be extended for context menu later
+        this.emit("nodeClick", {
+          type: "nodeClick",
+          node: nodeEntry.node,
+          worldPosition: {
+            x: intersects[0].point.x,
+            y: intersects[0].point.y,
+            z: intersects[0].point.z,
+          },
+          screenPosition: { x: event.x, y: event.y },
+        });
+      }
+    }
   }
 
   /**
@@ -1329,6 +1453,12 @@ export class Scene3DManager {
       this.performanceManager = null;
     }
 
+    // Destroy touch gesture manager
+    if (this.touchGestureManager) {
+      this.touchGestureManager.destroy();
+      this.touchGestureManager = null;
+    }
+
     // Clear graphics
     this.clear();
 
@@ -1382,7 +1512,8 @@ export function createScene3DManager(
   edgeStyle?: Partial<Edge3DStyle>,
   labelStyle?: Partial<Label3DStyle>,
   controlsConfig?: Partial<OrbitControlsConfig>,
-  performanceConfig?: Partial<PerformanceConfig>
+  performanceConfig?: Partial<PerformanceConfig>,
+  touchGestureConfig?: Partial<TouchGestureConfig>
 ): Scene3DManager {
   return new Scene3DManager(
     config,
@@ -1390,6 +1521,14 @@ export function createScene3DManager(
     edgeStyle,
     labelStyle,
     controlsConfig,
-    performanceConfig
+    performanceConfig,
+    touchGestureConfig
   );
+}
+
+/**
+ * Check if the current device supports touch input
+ */
+export function isTouchDevice(): boolean {
+  return TouchGestureManager.isTouchDevice();
 }

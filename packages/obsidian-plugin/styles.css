@@ -4861,6 +4861,96 @@
 }
 
 /* ============================================================================
+   3D Graph Mobile/Touch Support (WCAG AAA: 48x48px minimum touch targets)
+   ============================================================================ */
+
+/* Touch-friendly toolbar on mobile devices */
+@media (pointer: coarse), (hover: none) {
+  .exo-graph3d-toolbar {
+    gap: 8px;
+    padding: 8px;
+    border-radius: 12px;
+  }
+
+  .exo-graph3d-toolbar__btn {
+    /* WCAG AAA compliance: 48x48px minimum touch target */
+    width: 48px;
+    height: 48px;
+    border-radius: 8px;
+    /* Larger icon size for better visibility */
+    font-size: 20px;
+  }
+
+  .exo-graph3d-toolbar__btn svg {
+    width: 24px;
+    height: 24px;
+  }
+
+  .exo-graph3d-toolbar__separator {
+    height: 32px;
+    margin: 0 8px;
+  }
+}
+
+/* Even larger touch targets on small screens (phones) */
+@media (pointer: coarse) and (max-width: 480px) {
+  .exo-graph3d-toolbar {
+    /* Full width toolbar at bottom for easier thumb access */
+    top: auto;
+    bottom: 16px;
+    left: 16px;
+    right: 16px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .exo-graph3d-toolbar__btn {
+    /* Slightly larger on phones */
+    width: 52px;
+    height: 52px;
+  }
+
+  .sparql-graph3d-view--fullscreen .exo-graph3d-toolbar {
+    top: auto;
+    bottom: 20px;
+    left: 20px;
+    right: 20px;
+  }
+}
+
+/* Tablet-specific adjustments */
+@media (pointer: coarse) and (min-width: 481px) and (max-width: 1024px) {
+  .exo-graph3d-toolbar {
+    top: 16px;
+    right: 16px;
+  }
+}
+
+/* Prevent accidental text selection during touch interactions */
+.exo-graph3d-toolbar,
+.exo-graph3d-toolbar__btn {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  touch-action: manipulation;
+}
+
+/* Active state for touch (more prominent feedback) */
+@media (pointer: coarse) {
+  .exo-graph3d-toolbar__btn:active {
+    transform: scale(0.92);
+    background-color: rgba(147, 153, 178, 0.25);
+  }
+
+  .exo-graph3d-toolbar__btn--active:active {
+    transform: scale(0.92);
+    background-color: var(--interactive-accent-hover, #5855e4);
+  }
+}
+
+/* ============================================================================
    3D Graph WebGL Recovery Overlay
    ============================================================================ */
 

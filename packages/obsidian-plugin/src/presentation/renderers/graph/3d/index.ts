@@ -19,7 +19,20 @@
  */
 
 // Scene manager
-export { Scene3DManager, createScene3DManager } from "./Scene3DManager";
+export { Scene3DManager, createScene3DManager, isTouchDevice } from "./Scene3DManager";
+
+// Touch gesture manager
+export {
+  TouchGestureManager,
+  createTouchGestureManager,
+  DEFAULT_TOUCH_GESTURE_CONFIG,
+} from "./TouchGestureManager";
+export type {
+  TouchGestureConfig,
+  TouchGestureEventType,
+  TouchGestureEvent,
+  TouchGestureEventListener,
+} from "./TouchGestureManager";
 
 // Performance manager
 export {
