@@ -23,6 +23,18 @@ import { BUILT_IN_PRESETS, getBuiltInPreset, isBuiltInPreset } from "./presets";
 const STORAGE_KEY = "exocortex-graph-config";
 
 /**
+ * Prototype pollution dangerous keys that must be blocked
+ */
+const DANGEROUS_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+
+/**
+ * Check if a property key is dangerous (could cause prototype pollution)
+ */
+function isDangerousKey(key: string): boolean {
+  return DANGEROUS_KEYS.has(key);
+}
+
+/**
  * Get value at path from nested object
  */
 function getAtPath<T>(obj: Record<string, unknown>, path: string): T | undefined {
@@ -44,9 +56,19 @@ function getAtPath<T>(obj: Record<string, unknown>, path: string): T | undefined
 
 /**
  * Set value at path in nested object (mutates)
+ * Guards against prototype pollution by blocking dangerous property names
  */
 function setAtPath(obj: Record<string, unknown>, path: string, value: unknown): void {
   const parts = path.split(".");
+
+  // Guard against prototype pollution - check all path parts
+  for (const part of parts) {
+    if (isDangerousKey(part)) {
+      console.warn(`[GraphConfig] Blocked attempt to set dangerous property: ${part}`);
+      return;
+    }
+  }
+
   let current: Record<string, unknown> = obj;
 
   for (let i = 0; i < parts.length - 1; i++) {
@@ -62,11 +84,17 @@ function setAtPath(obj: Record<string, unknown>, path: string, value: unknown): 
 
 /**
  * Deep merge two objects (target is mutated)
+ * Guards against prototype pollution by blocking dangerous property names
  */
 function deepMerge<T extends Record<string, unknown>>(target: T, source: DeepPartial<T> | undefined | null): T {
   if (!source) return target;
 
   for (const key of Object.keys(source)) {
+    // Guard against prototype pollution - skip dangerous keys
+    if (isDangerousKey(key)) {
+      continue;
+    }
+
     const sourceValue = (source as Record<string, unknown>)[key];
     const targetValue = (target as Record<string, unknown>)[key];
 
@@ -84,7 +112,7 @@ function deepMerge<T extends Record<string, unknown>>(target: T, source: DeepPar
         sourceValue as DeepPartial<Record<string, unknown>>
       );
     } else if (sourceValue !== undefined) {
-      (target as Record<string, unknown>)[key as string] = sourceValue;
+      (target as Record<string, unknown>)[key] = sourceValue;
     }
   }
 
