@@ -56,6 +56,8 @@ export interface ExocortexSettings {
   useDynamicPropertyFields: boolean;
   showLabelsInFileExplorer: boolean;
   showLabelsInTabTitles: boolean;
+  /** Apply display name templates to links in Obsidian's Properties block */
+  showLabelsInProperties: boolean;
   /** @deprecated Use displayNameSettings.defaultTemplate instead */
   displayNameTemplate: string;
   sortByDisplayName: boolean;
@@ -77,6 +79,7 @@ export const DEFAULT_SETTINGS: ExocortexSettings = {
   useDynamicPropertyFields: false,
   showLabelsInFileExplorer: true,
   showLabelsInTabTitles: true,
+  showLabelsInProperties: true,
   displayNameTemplate: "{{exo__Asset_label}}",
   sortByDisplayName: false,
   displayNameSettings: DEFAULT_DISPLAY_NAME_SETTINGS,

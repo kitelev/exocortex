@@ -32,6 +32,7 @@ import { LRUCache } from "./infrastructure/cache";
 import { FileExplorerPatch } from "./presentation/file-explorer/FileExplorerPatch";
 import { FileExplorerSortPatch } from "./presentation/file-explorer/FileExplorerSortPatch";
 import { TabTitlePatch } from "./presentation/tab-titles/TabTitlePatch";
+import { PropertiesLinkPatch } from "./presentation/properties/PropertiesLinkPatch";
 
 /**
  * Exocortex Plugin - Automatic layout rendering
@@ -65,6 +66,7 @@ export default class ExocortexPlugin extends Plugin {
   private fileExplorerPatch!: FileExplorerPatch;
   private fileExplorerSortPatch!: FileExplorerSortPatch;
   private tabTitlePatch!: TabTitlePatch;
+  private propertiesLinkPatch!: PropertiesLinkPatch;
 
   override async onload(): Promise<void> {
     try {
@@ -216,6 +218,15 @@ export default class ExocortexPlugin extends Plugin {
         }, 500);
       }
 
+      // Initialize Properties link patch
+      this.propertiesLinkPatch = new PropertiesLinkPatch(this);
+      if (this.settings.showLabelsInProperties) {
+        // Delay enabling to ensure Properties block is fully loaded
+        this.timerManager.setTimeout("properties-link-patch", () => {
+          this.propertiesLinkPatch.enable();
+        }, 500);
+      }
+
       this.logger.info("Exocortex Plugin loaded successfully");
     } catch (error) {
       this.logger?.error("Failed to load Exocortex Plugin", error as Error);
@@ -279,6 +290,11 @@ export default class ExocortexPlugin extends Plugin {
     // Cleanup Tab Title patch
     if (this.tabTitlePatch) {
       this.tabTitlePatch.cleanup();
+    }
+
+    // Cleanup Properties link patch
+    if (this.propertiesLinkPatch) {
+      this.propertiesLinkPatch.cleanup();
     }
 
     this.logger?.info("Exocortex Plugin unloaded");
@@ -357,9 +373,21 @@ export default class ExocortexPlugin extends Plugin {
   }
 
   /**
+   * Toggle Properties link label display on/off
+   * Called from settings when the showLabelsInProperties toggle changes
+   */
+  togglePropertiesLabels(enabled: boolean): void {
+    if (enabled) {
+      this.propertiesLinkPatch.enable();
+    } else {
+      this.propertiesLinkPatch.disable();
+    }
+  }
+
+  /**
    * Apply display name template changes
    * Called from settings when the displayNameTemplate changes
-   * Triggers re-evaluation of tab titles and file explorer labels
+   * Triggers re-evaluation of tab titles, file explorer labels, and properties links
    */
   applyDisplayNameTemplate(): void {
     // Re-apply file explorer labels with new template
@@ -372,6 +400,12 @@ export default class ExocortexPlugin extends Plugin {
     if (this.settings.showLabelsInTabTitles && this.tabTitlePatch) {
       this.tabTitlePatch.disable();
       this.tabTitlePatch.enable();
+    }
+
+    // Re-apply properties link labels with new template
+    if (this.settings.showLabelsInProperties && this.propertiesLinkPatch) {
+      this.propertiesLinkPatch.disable();
+      this.propertiesLinkPatch.enable();
     }
   }
 

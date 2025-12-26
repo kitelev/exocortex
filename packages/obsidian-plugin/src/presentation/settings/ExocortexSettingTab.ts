@@ -173,6 +173,21 @@ export class ExocortexSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
+      .setName("Show labels in properties block")
+      .setDesc(
+        "Display asset labels instead of filenames in the Properties block links",
+      )
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.showLabelsInProperties)
+          .onChange(async (value) => {
+            this.plugin.settings.showLabelsInProperties = value;
+            await this.plugin.saveSettings();
+            this.plugin.togglePropertiesLabels(value);
+          }),
+      );
+
+    new Setting(containerEl)
       .setName("Sort file explorer by display name")
       .setDesc(
         "Sort files by their display name (exo__Asset_label) instead of filename. " +
