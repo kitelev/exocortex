@@ -894,3 +894,48 @@ export type {
   OptimizerEvent,
   OptimizerEventListener,
 } from "./performance";
+
+// Memory optimization and object pooling system
+export {
+  // Object Pool
+  ObjectPool,
+  createObjectPool,
+  PoolExhaustedException,
+  DEFAULT_POOL_CONFIG,
+  // Poolable Types
+  BasePoolable,
+  RenderBatch,
+  EventObject,
+  ComputationBuffer,
+  PoolableVector2D,
+  PoolableRect,
+  // Pool Manager
+  PoolManager,
+  createPoolManager,
+  getGlobalPoolManager,
+  resetGlobalPoolManager,
+  MemoryPressureLevel,
+  POOL_NAMES,
+  DEFAULT_POOL_CONFIGS,
+  DEFAULT_POOL_MANAGER_CONFIG,
+} from "./memory";
+export type {
+  // Object Pool types
+  Poolable,
+  PoolConfig,
+  PoolMetrics,
+  PoolEventType,
+  PoolEvent,
+  PoolEventListener,
+  // Poolable Types
+  NodePosition,
+  EdgePosition,
+  PoolableEventType,
+  BufferType,
+  // Pool Manager types
+  PoolManagerConfig,
+  PoolManagerStats,
+  PoolManagerEventType,
+  PoolManagerEvent,
+  PoolManagerEventListener,
+} from "./memory";
