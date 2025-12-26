@@ -1129,3 +1129,56 @@ export type {
   ExportManagerConfig,
   ExportStats,
 } from "./export";
+
+// Accessibility system for WCAG 2.1 AA compliance
+export {
+  // Manager
+  AccessibilityManager,
+  createAccessibilityManager,
+  DEFAULT_ACCESSIBILITY_MANAGER_CONFIG,
+  // Virtual Cursor
+  VirtualCursor,
+  createVirtualCursor,
+  DEFAULT_VIRTUAL_CURSOR_CONFIG,
+  // Constants and utilities
+  DEFAULT_A11Y_CONFIG,
+  DEFAULT_REDUCED_MOTION_CONFIG,
+  HIGH_CONTRAST_THEMES,
+  WCAG_CONTRAST_RATIOS,
+  getScreenReaderCapabilities,
+  // Aliased WCAG utilities to avoid conflict with search module exports
+  a11yGetContrastRatio,
+  a11yGetRelativeLuminance,
+  a11yMeetsWCAGAA,
+  a11yMeetsWCAGAAA,
+} from "./accessibility";
+export type {
+  // Manager config
+  AccessibilityManagerConfig,
+  // Virtual cursor types
+  VirtualCursorConfig,
+  VirtualCursorNavigationResult,
+  VirtualCursorEventType,
+  VirtualCursorEvent,
+  VirtualCursorEventListener,
+  // Core types
+  A11yConfig,
+  A11yNode,
+  A11yEdge,
+  A11yEvent,
+  A11yEventType,
+  A11yEventListener,
+  A11yNavigationDirection,
+  A11yShortcut,
+  Announcement,
+  AnnouncementType,
+  AriaLivePoliteness,
+  FocusTrapConfig,
+  HighContrastColors,
+  ReducedMotionConfig,
+  ScreenReaderCapabilities,
+  ScreenReaderType,
+  SkipLink,
+  VirtualCursorMode,
+  VirtualCursorState,
+} from "./accessibility";

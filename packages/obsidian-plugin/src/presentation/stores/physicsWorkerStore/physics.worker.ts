@@ -502,7 +502,7 @@ function applyCollisionForce(): void {
 
         let dx = xi - xj;
         let dy = yi - yj;
-        let l = Math.sqrt(dx * dx + dy * dy);
+        const l = Math.sqrt(dx * dx + dy * dy);
         const r = ri + rj;
 
         if (l < r && l > 0) {
