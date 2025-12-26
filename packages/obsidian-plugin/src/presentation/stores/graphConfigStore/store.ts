@@ -23,18 +23,6 @@ import { BUILT_IN_PRESETS, getBuiltInPreset, isBuiltInPreset } from "./presets";
 const STORAGE_KEY = "exocortex-graph-config";
 
 /**
- * Prototype pollution dangerous keys that must be blocked
- */
-const DANGEROUS_KEYS = new Set(["__proto__", "constructor", "prototype"]);
-
-/**
- * Check if a property key is dangerous (could cause prototype pollution)
- */
-function isDangerousKey(key: string): boolean {
-  return DANGEROUS_KEYS.has(key);
-}
-
-/**
  * Get value at path from nested object
  */
 function getAtPath<T>(obj: Record<string, unknown>, path: string): T | undefined {
@@ -61,9 +49,9 @@ function getAtPath<T>(obj: Record<string, unknown>, path: string): T | undefined
 function setAtPath(obj: Record<string, unknown>, path: string, value: unknown): void {
   const parts = path.split(".");
 
-  // Guard against prototype pollution - check all path parts
+  // Guard against prototype pollution - check all path parts upfront
   for (const part of parts) {
-    if (isDangerousKey(part)) {
+    if (part === "__proto__" || part === "constructor" || part === "prototype") {
       console.warn(`[GraphConfig] Blocked attempt to set dangerous property: ${part}`);
       return;
     }
@@ -73,13 +61,22 @@ function setAtPath(obj: Record<string, unknown>, path: string, value: unknown): 
 
   for (let i = 0; i < parts.length - 1; i++) {
     const part = parts[i];
+    // Double-check for dangerous keys (satisfies static analysis)
+    if (part === "__proto__" || part === "constructor" || part === "prototype") {
+      return;
+    }
     if (!(part in current) || typeof current[part] !== "object" || current[part] === null) {
       current[part] = {};
     }
     current = current[part] as Record<string, unknown>;
   }
 
-  current[parts[parts.length - 1]] = value;
+  const lastKey = parts[parts.length - 1];
+  // Guard against prototype pollution at assignment point
+  if (lastKey === "__proto__" || lastKey === "constructor" || lastKey === "prototype") {
+    return;
+  }
+  current[lastKey] = value;
 }
 
 /**
@@ -91,7 +88,8 @@ function deepMerge<T extends Record<string, unknown>>(target: T, source: DeepPar
 
   for (const key of Object.keys(source)) {
     // Guard against prototype pollution - skip dangerous keys
-    if (isDangerousKey(key)) {
+    // Explicit inline check satisfies static analysis tools (CodeQL)
+    if (key === "__proto__" || key === "constructor" || key === "prototype") {
       continue;
     }
 
@@ -112,7 +110,11 @@ function deepMerge<T extends Record<string, unknown>>(target: T, source: DeepPar
         sourceValue as DeepPartial<Record<string, unknown>>
       );
     } else if (sourceValue !== undefined) {
-      (target as Record<string, unknown>)[key] = sourceValue;
+      // Only assign if it's an own property of target or a safe new key
+      // This check combined with the key filter above prevents prototype pollution
+      if (Object.prototype.hasOwnProperty.call(target, key) || !Object.prototype.hasOwnProperty.call(Object.prototype, key)) {
+        (target as Record<string, unknown>)[key] = sourceValue;
+      }
     }
   }
 
