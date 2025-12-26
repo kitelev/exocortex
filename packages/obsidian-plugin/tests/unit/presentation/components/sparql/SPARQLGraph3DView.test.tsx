@@ -28,6 +28,14 @@ const createSceneManagerMock = () => ({
   setLabelsVisible: jest.fn(),
   getAutoRotate: jest.fn().mockReturnValue(false),
   getLabelsVisible: jest.fn().mockReturnValue(true),
+  // Theme-related methods
+  setBackgroundColor: jest.fn(),
+  setFogColor: jest.fn(),
+  setLabelStyle: jest.fn(),
+  updateNodeColor: jest.fn(),
+  updateAllNodeColors: jest.fn(),
+  updateEdgeColor: jest.fn(),
+  updateAllEdgeColors: jest.fn(),
 });
 
 const createSimulationMock = () => ({
@@ -151,12 +159,16 @@ describe("SPARQLGraph3DView", () => {
         source: "http://example.org/node1",
         target: "http://example.org/node2",
         label: "connects",
+        property: "connects",
+        color: undefined, // No theme service provided
       });
       expect(result.edges[1]).toEqual({
         id: "edge-1",
         source: "http://example.org/node2",
         target: "http://example.org/node1",
         label: undefined,
+        property: "",
+        color: undefined, // No theme service provided
       });
     });
 

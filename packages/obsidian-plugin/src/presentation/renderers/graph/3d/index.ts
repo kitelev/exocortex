@@ -7,6 +7,9 @@
  * - Node and edge rendering with spheres and lines
  * - Label sprites with billboard behavior
  * - Raycasting for node interaction
+ * - Theme-aware coloring (dark/light mode support)
+ * - Ontology-based node coloring
+ * - Predicate-based edge coloring
  *
  * @module presentation/renderers/graph/3d
  * @since 1.0.0
@@ -25,6 +28,22 @@ export type {
   Simulation3DEvent,
   Simulation3DEventListener,
 } from "./ForceSimulation3D";
+
+// Theme service
+export {
+  Graph3DThemeService,
+  createGraph3DThemeService,
+  DEFAULT_THEME_CONFIG,
+} from "./Graph3DThemeService";
+export type {
+  ThemeMode,
+  OntologyNamespace,
+  ThemeColors,
+  Graph3DThemeConfig,
+  Graph3DThemeEventType,
+  Graph3DThemeEvent,
+  Graph3DThemeEventListener,
+} from "./Graph3DThemeService";
 
 // Types and configuration
 export type {

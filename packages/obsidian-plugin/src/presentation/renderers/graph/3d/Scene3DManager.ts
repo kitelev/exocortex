@@ -977,6 +977,96 @@ export class Scene3DManager {
   }
 
   /**
+   * Update scene background color
+   *
+   * @param color - Background color as hex number
+   */
+  setBackgroundColor(color: number): void {
+    if (this.scene) {
+      this.scene.background = new THREE.Color(color);
+    }
+  }
+
+  /**
+   * Update fog color
+   *
+   * @param color - Fog color as hex number
+   */
+  setFogColor(color: number): void {
+    if (this.scene && this.scene.fog) {
+      (this.scene.fog as THREE.Fog).color.setHex(color);
+    }
+  }
+
+  /**
+   * Update a node's color
+   *
+   * @param nodeId - ID of the node to update
+   * @param color - New color as hex number
+   */
+  updateNodeColor(nodeId: string, color: number): void {
+    const rendered = this.renderedNodes.get(nodeId);
+    if (rendered && rendered.mesh.material instanceof THREE.MeshStandardMaterial) {
+      rendered.mesh.material.color.setHex(color);
+      rendered.mesh.material.emissive.setHex(color);
+    }
+  }
+
+  /**
+   * Update all node colors using a color function
+   *
+   * @param colorFn - Function that takes node and returns hex color number
+   */
+  updateAllNodeColors(colorFn: (node: GraphNode3D) => number): void {
+    for (const [, rendered] of this.renderedNodes) {
+      const color = colorFn(rendered.node);
+      if (rendered.mesh.material instanceof THREE.MeshStandardMaterial) {
+        rendered.mesh.material.color.setHex(color);
+        rendered.mesh.material.emissive.setHex(color);
+      }
+    }
+  }
+
+  /**
+   * Update an edge's color
+   *
+   * @param edgeId - ID of the edge to update
+   * @param color - New color as hex number
+   */
+  updateEdgeColor(edgeId: string, color: number): void {
+    const rendered = this.renderedEdges.get(edgeId);
+    if (rendered && rendered.line.material instanceof THREE.LineBasicMaterial) {
+      rendered.line.material.color.setHex(color);
+    }
+  }
+
+  /**
+   * Update all edge colors using a color function
+   *
+   * @param colorFn - Function that takes edge and returns hex color number
+   */
+  updateAllEdgeColors(colorFn: (edge: GraphEdge3D) => number): void {
+    for (const [, rendered] of this.renderedEdges) {
+      const color = colorFn(rendered.edge);
+      if (rendered.line.material instanceof THREE.LineBasicMaterial) {
+        rendered.line.material.color.setHex(color);
+      }
+    }
+  }
+
+  /**
+   * Update label style (text color and background)
+   *
+   * @param color - Text color as CSS color string
+   * @param backgroundColor - Background color as CSS color string or null
+   */
+  setLabelStyle(color: string, backgroundColor: string | null): void {
+    this.labelStyle = { ...this.labelStyle, color, backgroundColor };
+    // Note: Existing labels won't be updated. This affects only new labels.
+    // To update existing labels, nodes would need to be re-rendered.
+  }
+
+  /**
    * Clear all nodes and edges
    */
   clear(): void {

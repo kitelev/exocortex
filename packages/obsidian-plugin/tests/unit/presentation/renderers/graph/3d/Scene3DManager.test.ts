@@ -213,4 +213,93 @@ describe("Scene3DManager", () => {
       expect(() => manager.clear()).not.toThrow();
     });
   });
+
+  describe("theme-related methods (without initialization)", () => {
+    it("can call setBackgroundColor without initialization", () => {
+      const manager = new Scene3DManager();
+
+      // Should not throw (no-op before initialization)
+      expect(() => manager.setBackgroundColor(0x1e1e1e)).not.toThrow();
+    });
+
+    it("can call setFogColor without initialization", () => {
+      const manager = new Scene3DManager();
+
+      // Should not throw (no-op before initialization)
+      expect(() => manager.setFogColor(0x1e1e1e)).not.toThrow();
+    });
+
+    it("can call updateNodeColor without initialization", () => {
+      const manager = new Scene3DManager();
+
+      // Should not throw (no-op before initialization)
+      expect(() => manager.updateNodeColor("node1", 0x4a90e2)).not.toThrow();
+    });
+
+    it("can call updateAllNodeColors without initialization", () => {
+      const manager = new Scene3DManager();
+      const colorFn = jest.fn(() => 0x4a90e2);
+
+      // Should not throw (no-op before initialization)
+      expect(() => manager.updateAllNodeColors(colorFn)).not.toThrow();
+
+      // Function shouldn't be called since there are no rendered nodes
+      expect(colorFn).not.toHaveBeenCalled();
+    });
+
+    it("can call updateEdgeColor without initialization", () => {
+      const manager = new Scene3DManager();
+
+      // Should not throw (no-op before initialization)
+      expect(() => manager.updateEdgeColor("edge1", 0xf5a623)).not.toThrow();
+    });
+
+    it("can call updateAllEdgeColors without initialization", () => {
+      const manager = new Scene3DManager();
+      const colorFn = jest.fn(() => 0xf5a623);
+
+      // Should not throw (no-op before initialization)
+      expect(() => manager.updateAllEdgeColors(colorFn)).not.toThrow();
+
+      // Function shouldn't be called since there are no rendered edges
+      expect(colorFn).not.toHaveBeenCalled();
+    });
+
+    it("can call setLabelStyle without initialization", () => {
+      const manager = new Scene3DManager();
+
+      // Should not throw
+      expect(() =>
+        manager.setLabelStyle("#E2E8F0", "rgba(30, 30, 30, 0.85)")
+      ).not.toThrow();
+    });
+  });
+
+  describe("camera controls", () => {
+    it("can call resetCamera without initialization", () => {
+      const manager = new Scene3DManager();
+
+      // Should not throw (no-op before initialization)
+      expect(() => manager.resetCamera()).not.toThrow();
+      expect(() => manager.resetCamera(1000)).not.toThrow();
+    });
+
+    it("can call setAutoRotate without initialization", () => {
+      const manager = new Scene3DManager();
+
+      // Should not throw (no-op before initialization)
+      expect(() => manager.setAutoRotate(true)).not.toThrow();
+      expect(() => manager.setAutoRotate(false, 2.0)).not.toThrow();
+    });
+
+    it("returns false for getAutoRotate before initialization", () => {
+      const manager = new Scene3DManager();
+      expect(manager.getAutoRotate()).toBe(false);
+    });
+
+    it("returns true for getLabelsVisible before initialization", () => {
+      const manager = new Scene3DManager();
+      expect(manager.getLabelsVisible()).toBe(true);
+    });
+  });
 });
