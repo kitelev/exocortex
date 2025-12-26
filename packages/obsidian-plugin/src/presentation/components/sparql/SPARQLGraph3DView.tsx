@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useCallback } from "react";
+import React, { useEffect, useRef, useCallback, useMemo } from "react";
 import type { Triple } from "exocortex";
 import type { GraphData } from "exocortex";
 import { RDFToGraphDataConverter } from "@plugin/application/utils/RDFToGraphDataConverter";
@@ -6,7 +6,7 @@ import { Scene3DManager } from "@plugin/presentation/renderers/graph/3d/Scene3DM
 import { ForceSimulation3D } from "@plugin/presentation/renderers/graph/3d/ForceSimulation3D";
 import type { GraphNode3D, GraphEdge3D } from "@plugin/presentation/renderers/graph/3d/types3d";
 
-interface SPARQLGraph3DViewProps {
+export interface SPARQLGraph3DViewProps {
   triples: Triple[];
   onAssetClick: (path: string) => void;
 }
@@ -14,7 +14,7 @@ interface SPARQLGraph3DViewProps {
 /**
  * Convert 2D graph data to 3D nodes and edges
  */
-const convertTo3DData = (
+export const convertTo3DData = (
   graphData: GraphData
 ): { nodes: GraphNode3D[]; edges: GraphEdge3D[] } => {
   const nodes: GraphNode3D[] = graphData.nodes.map((node) => ({
@@ -34,6 +34,23 @@ const convertTo3DData = (
   return { nodes, edges };
 };
 
+/**
+ * SPARQLGraph3DView - Interactive 3D graph visualization for SPARQL query results
+ *
+ * Converts SPARQL triples to 3D nodes and edges, renders them using WebGL2,
+ * and provides interactive camera controls (orbit, zoom, pan) and node click handling.
+ *
+ * @param triples - Array of RDF triples to visualize
+ * @param onAssetClick - Callback when user clicks on a node (receives asset path)
+ *
+ * @example
+ * ```tsx
+ * <SPARQLGraph3DView
+ *   triples={queryResults}
+ *   onAssetClick={(path) => navigateToAsset(path)}
+ * />
+ * ```
+ */
 export const SPARQLGraph3DView: React.FC<SPARQLGraph3DViewProps> = ({
   triples,
   onAssetClick,
@@ -41,6 +58,17 @@ export const SPARQLGraph3DView: React.FC<SPARQLGraph3DViewProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneManagerRef = useRef<Scene3DManager | null>(null);
   const simulationRef = useRef<ForceSimulation3D | null>(null);
+
+  // Memoize graph data conversion to avoid recalculation on every render
+  const graphData = useMemo(() => {
+    if (triples.length === 0) {
+      return { nodes: [] as GraphNode3D[], edges: [] as GraphEdge3D[] };
+    }
+    const converted: GraphData = RDFToGraphDataConverter.convert(triples);
+    return convertTo3DData(converted);
+  }, [triples]);
+
+  const hasNodes = graphData.nodes.length > 0;
 
   const handleNodeClick = useCallback(
     (path: string) => {
@@ -50,13 +78,10 @@ export const SPARQLGraph3DView: React.FC<SPARQLGraph3DViewProps> = ({
   );
 
   useEffect(() => {
-    if (!containerRef.current || triples.length === 0) return;
+    // Don't initialize WebGL context if there are no nodes to display
+    if (!containerRef.current || !hasNodes) return;
 
-    // Convert triples to graph data
-    const graphData: GraphData = RDFToGraphDataConverter.convert(triples);
-    const { nodes, edges } = convertTo3DData(graphData);
-
-    if (nodes.length === 0) return;
+    const { nodes, edges } = graphData;
 
     // Create and initialize scene manager
     const sceneManager = new Scene3DManager();
@@ -88,24 +113,47 @@ export const SPARQLGraph3DView: React.FC<SPARQLGraph3DViewProps> = ({
     simulation.start();
 
     // Fit view after a short delay for initial layout
-    setTimeout(() => {
+    const fitViewTimeout = setTimeout(() => {
       sceneManager.fitToView(simulation.getNodes() as GraphNode3D[]);
     }, 100);
 
-    // Cleanup
+    // Cleanup - properly dispose WebGL resources
     return () => {
+      clearTimeout(fitViewTimeout);
       simulation.destroy();
       sceneManager.destroy();
       sceneManagerRef.current = null;
       simulationRef.current = null;
     };
-  }, [triples, handleNodeClick]);
+  }, [graphData, hasNodes, handleNodeClick]);
+
+  // Display empty state message when there are no results to visualize
+  if (!hasNodes) {
+    return (
+      <div
+        className="sparql-graph3d-view sparql-graph3d-view-empty"
+        style={{
+          width: "100%",
+          height: "600px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: "var(--text-muted)",
+          fontSize: "14px",
+        }}
+        data-testid="sparql-graph3d-empty"
+      >
+        No results to visualize
+      </div>
+    );
+  }
 
   return (
     <div
       ref={containerRef}
       className="sparql-graph3d-view"
       style={{ width: "100%", height: "600px" }}
+      data-testid="sparql-graph3d-canvas"
     />
   );
 };
