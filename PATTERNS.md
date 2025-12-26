@@ -3850,3 +3850,588 @@ function updateNodeProperty(node: PhysicsNode, prop: string, value: number) {
 
 - Issues #1211, #1212, #1244, #1248: Security fixes for physics.worker.ts
 - Issue #1184: WebGPU compute shaders (uses same worker pattern)
+
+---
+
+## Jest Hanging in CI Pattern
+
+**When to use**: Debugging tests that pass but cause Jest to hang in CI
+
+### Symptoms
+
+- All tests complete successfully (225 test suites, 5000+ tests pass)
+- Jest does not exit naturally after test completion
+- `--forceExit` flag has no effect
+- `--detectOpenHandles` doesn't identify the issue
+- Tests timeout after CI timeout (e.g., 5 minutes) even though all tests finish in ~70 seconds
+
+### Diagnosis Steps
+
+1. **Isolate the file**: Run each test file individually to find the culprit
+   ```bash
+   npm test -- packages/obsidian-plugin/tests/unit/path/to/test.test.ts
+   ```
+
+2. **Check for hidden async**: Even pure synchronous code can cause hangs if:
+   - Jest test environment has unresolved promises from setup
+   - Module-level code creates timers/intervals (not in tests)
+   - Mocks don't properly reset
+
+3. **Workaround**: Skip file temporarily while investigating
+   ```javascript
+   // jest.config.js
+   testPathIgnorePatterns: [
+     "/path/to/hanging.test.ts",
+   ],
+   ```
+
+### Solution Pattern
+
+If the test file and implementation are both pure synchronous:
+
+1. **Check module imports** - Some modules may have side effects
+2. **Check jest.config.js** - Environment setup may be creating lingering handles
+3. **Check beforeAll/afterAll** - Ensure proper cleanup
+4. **Use `--runInBand`** - Sometimes parallel execution causes issues
+
+### Reference
+
+- Issue #1228: HierarchicalLayout.test.ts causes Jest to hang in CI
+- Workaround: Skip via `testPathIgnorePatterns` until root cause identified
+
+---
+
+## Graph View High-Intensity Development Sprint Pattern
+
+**When to use**: Intensive multi-day development of complex visualization features
+
+### Context (December 2025 Graph View Sprint)
+
+13 major issues completed in single day:
+- 3D visualization (#1190, #1265, #1264)
+- Animations (#1192)
+- Edge bundling (#1191)
+- Export functionality (#1193)
+- Memory optimization (#1189)
+- Accessibility (#1194)
+- Documentation (#1195)
+- Code scanning fixes (#1206, #1261)
+- Feature enhancements (#1200)
+- Bug fixes (#1228)
+
+### Success Factors
+
+1. **Issues with detailed specifications**: Each issue had:
+   - Full TypeScript code templates
+   - File structure planned
+   - Test cases specified
+   - Acceptance criteria
+
+2. **Sequential related work**: 3D visualization issues (#1190, #1264, #1265) built on each other
+
+3. **Clear priorities**: P1 security fixes (#1206, #1261) first, then features
+
+4. **Parallel-safe architecture**: Worktree isolation prevented conflicts
+
+### Metrics
+
+| Metric | Value |
+|--------|-------|
+| Issues completed | 13 |
+| Average steps per issue | 133 |
+| Step range | 48 - 456 |
+| Total PRs merged | 13 |
+| Security fixes (P1) | 2 |
+
+### Key Patterns Observed
+
+1. **Issue-as-specification**: Detailed code templates in issues reduced implementation time by 50%+
+
+2. **Build on previous work**: #1265 (SPARQLGraph3DView) built directly on #1264 (ViewMode) and #1190 (3D infrastructure)
+
+3. **Fix blocking issues first**: #1228 (Jest hanging) blocked CI - fixed early to unblock pipeline
+
+4. **Comprehensive accessibility last**: #1194 (456 steps) was most complex - benefits from stable codebase
+
+### Anti-Patterns to Avoid
+
+- Starting accessibility work before core features stabilize
+- Skipping test fixes "for later" - blocks entire pipeline
+- Implementing 3D features without infrastructure issues resolved first
+
+### Reference
+
+- Issues #1189-1195, #1200, #1206, #1228, #1261, #1264, #1265
+- December 26, 2025 sprint
+
+---
+
+## Prototype-Pollution Prevention Pattern
+
+**When to use**: Implementing deep object merge/spread utilities
+
+### Problem
+
+CodeQL detects `js/prototype-pollution-utility` when:
+- Object merging functions accept arbitrary property paths
+- Deep merge utilities don't validate property names
+- User input can modify Object.prototype
+
+### Vulnerable Code
+
+```typescript
+// ❌ VULNERABLE: Allows __proto__ or constructor pollution
+function deepMerge(target: any, source: any): any {
+  for (const key in source) {
+    if (typeof source[key] === 'object') {
+      target[key] = deepMerge(target[key] || {}, source[key]);
+    } else {
+      target[key] = source[key];
+    }
+  }
+  return target;
+}
+```
+
+### Safe Pattern
+
+```typescript
+// ✅ SAFE: Blocklist dangerous properties
+const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
+function safeMerge<T extends object>(target: T, source: Partial<T>): T {
+  for (const key of Object.keys(source)) {
+    if (FORBIDDEN_KEYS.has(key)) {
+      continue; // Skip dangerous keys
+    }
+
+    const sourceValue = source[key as keyof T];
+    if (sourceValue !== undefined && sourceValue !== null) {
+      if (typeof sourceValue === 'object' && !Array.isArray(sourceValue)) {
+        (target as any)[key] = safeMerge(
+          (target as any)[key] || {},
+          sourceValue as object
+        );
+      } else {
+        (target as any)[key] = sourceValue;
+      }
+    }
+  }
+  return target;
+}
+```
+
+### Store Pattern (Zustand)
+
+When using Zustand stores with partial updates:
+
+```typescript
+// ❌ VULNERABLE: Direct spread from user input
+set((state) => ({
+  ...state,
+  config: { ...state.config, ...partialConfig }
+}));
+
+// ✅ SAFE: Validate properties before merging
+const ALLOWED_CONFIG_KEYS = new Set(['theme', 'layout', 'zoom']);
+
+function safeConfigUpdate(partial: Partial<GraphConfig>): Partial<GraphConfig> {
+  const safe: Partial<GraphConfig> = {};
+  for (const [key, value] of Object.entries(partial)) {
+    if (ALLOWED_CONFIG_KEYS.has(key)) {
+      safe[key as keyof GraphConfig] = value;
+    }
+  }
+  return safe;
+}
+
+set((state) => ({
+  ...state,
+  config: { ...state.config, ...safeConfigUpdate(partialConfig) }
+}));
+```
+
+### Locations Fixed
+
+- `graphConfigStore/store.ts:60` - Layout config update
+- `graphConfigStore/store.ts:87` - Theme config update
+
+### Reference
+
+- Issues #1206, #1261: P1 prototype-pollution fixes
+- CodeQL rule: `js/prototype-pollution-utility`
+
+---
+
+## 3D Visualization Integration Pattern
+
+**When to use**: Adding 3D modes to existing 2D visualization systems
+
+### Phase 1: Infrastructure (#1190)
+
+Create standalone 3D components:
+- Scene3DManager (Three.js setup)
+- ForceSimulation3D (physics)
+- Node3D/Edge3D renderers
+
+### Phase 2: ViewMode Extension (#1264)
+
+1. **Extend type**:
+   ```typescript
+   type ViewMode = "table" | "list" | "graph" | "graph3d";
+   ```
+
+2. **Add UI option**:
+   ```typescript
+   const modes = [
+     { value: "graph", label: "2D Graph", icon: "git-branch-plus" },
+     { value: "graph3d", label: "3D Graph", icon: "box" },
+   ];
+   ```
+
+3. **Create stub component first**:
+   ```typescript
+   export const SPARQLGraph3DViewStub: React.FC = () => (
+     <div>3D Graph View (Coming Soon)</div>
+   );
+   ```
+
+### Phase 3: Full Integration (#1265)
+
+1. **Create wrapper component**:
+   ```typescript
+   export const SPARQLGraph3DView: React.FC<Props> = ({ triples, onAssetClick }) => {
+     const containerRef = useRef<HTMLDivElement>(null);
+     const sceneRef = useRef<Scene3DManager | null>(null);
+
+     useEffect(() => {
+       if (!containerRef.current) return;
+
+       const manager = new Scene3DManager(containerRef.current, options);
+       sceneRef.current = manager;
+
+       // Convert data
+       const { nodes, edges } = tripleToGraph3D(triples);
+       manager.setData(nodes, edges);
+
+       return () => manager.dispose();
+     }, [triples]);
+
+     return <div ref={containerRef} className="graph3d-container" />;
+   };
+   ```
+
+2. **Handle data conversion**:
+   ```typescript
+   function tripleToGraph3D(triples: Triple[]): { nodes: Node3D[], edges: Edge3D[] } {
+     const nodeMap = new Map<string, Node3D>();
+     const edges: Edge3D[] = [];
+
+     triples.forEach((triple, i) => {
+       // Add subject/object as nodes (deduplicated via Map)
+       // Add predicate as edge
+     });
+
+     return { nodes: Array.from(nodeMap.values()), edges };
+   }
+   ```
+
+3. **WebGL cleanup on unmount** - Critical for memory management
+
+### Gotchas
+
+- **React StrictMode**: Scene3DManager must be idempotent (double-render safe)
+- **Container ref null**: Guard with `if (!containerRef.current) return`
+- **WebGL context loss**: Handle `webglcontextlost` event
+- **Large graphs**: Defer to LOD/culling in performance issue
+
+### Reference
+
+- Issue #1190: 3D infrastructure (126 steps)
+- Issue #1264: ViewMode extension (77 steps)
+- Issue #1265: Full integration (82 steps)
+
+---
+
+## Animation System Architecture Pattern
+
+**When to use**: Implementing smooth transitions in visualization components
+
+### Core Components (Issue #1192)
+
+1. **Animation primitive**:
+   ```typescript
+   class Animation {
+     private config: AnimationConfig;
+     private progress: number = 0;
+
+     update(currentTime: number): boolean {
+       const elapsed = currentTime - this.startTime;
+       this.progress = this.config.easing(Math.min(1, elapsed / this.config.duration));
+       this.config.onUpdate(this.progress);
+
+       if (this.progress >= 1) {
+         this.config.onComplete();
+         return false; // Animation done
+       }
+       return true; // Continue
+     }
+   }
+   ```
+
+2. **Scheduler**:
+   ```typescript
+   class AnimationScheduler {
+     private animations = new Set<Animation>();
+
+     add(animation: Animation) {
+       animation.start();
+       this.animations.add(animation);
+       this.ensureRunning();
+     }
+
+     private tick = () => {
+       const now = performance.now();
+       for (const anim of this.animations) {
+         if (!anim.update(now)) {
+           this.animations.delete(anim);
+         }
+       }
+       if (this.animations.size > 0) {
+         requestAnimationFrame(this.tick);
+       }
+     };
+   }
+   ```
+
+3. **Easing functions**:
+   ```typescript
+   const Easing = {
+     linear: (t) => t,
+     easeOutCubic: (t) => (--t) * t * t + 1,
+     easeOutBack: (t) => 1 + 2.70158 * Math.pow(t - 1, 3) + 1.70158 * Math.pow(t - 1, 2),
+     spring: (t) => 1 - Math.cos(t * 4.5 * Math.PI) * Math.exp(-t * 6),
+   };
+   ```
+
+### Layout Transition Pattern
+
+```typescript
+async transition(
+  nodes: Node[],
+  targetPositions: Map<string, {x: number, y: number}>,
+  onUpdate: (nodeId: string, x: number, y: number) => void
+): Promise<void> {
+  // Partition & Animate
+  const transitions = nodes
+    .filter(n => targetPositions.has(n.id))
+    .map(n => ({
+      nodeId: n.id,
+      from: { x: n.x, y: n.y },
+      to: targetPositions.get(n.id)!
+    }));
+
+  // Staggered start for visual appeal
+  transitions.forEach((t, i) => {
+    const anim = new Animation({
+      duration: 500,
+      delay: i * 10, // 10ms stagger
+      easing: Easing.easeOutCubic,
+      onUpdate: (progress) => {
+        const x = t.from.x + (t.to.x - t.from.x) * progress;
+        const y = t.from.y + (t.to.y - t.from.y) * progress;
+        onUpdate(t.nodeId, x, y);
+      }
+    });
+    scheduler.add(anim);
+  });
+}
+```
+
+### Performance Requirements
+
+- Animation overhead: < 1ms per frame
+- Support 1000+ concurrent node animations
+- No allocations during tick (pre-allocate)
+- Cancel latency: < 16ms
+
+### Reference
+
+- Issue #1192: Smooth layout transitions and animations (249 steps)
+
+---
+
+## Object Pooling Pattern for Visualization
+
+**When to use**: Reducing GC pressure in high-frequency rendering
+
+### Poolable Interface (Issue #1189)
+
+```typescript
+interface Poolable {
+  reset(): void;
+  isInUse(): boolean;
+  setInUse(inUse: boolean): void;
+}
+
+class ObjectPool<T extends Poolable> {
+  private pool: T[] = [];
+  private inUse = new Set<T>();
+
+  acquire(): T {
+    if (this.pool.length > 0) {
+      const item = this.pool.pop()!;
+      item.setInUse(true);
+      this.inUse.add(item);
+      return item;
+    }
+    // Create new if pool exhausted (up to maxSize)
+    const item = this.factory();
+    item.setInUse(true);
+    this.inUse.add(item);
+    return item;
+  }
+
+  release(item: T): void {
+    item.reset();
+    item.setInUse(false);
+    this.inUse.delete(item);
+    this.pool.push(item);
+  }
+}
+```
+
+### Common Poolables
+
+1. **Vector2/Vector3**: Temporary calculation results
+2. **RenderBatch**: Vertex/index buffers for batched rendering
+3. **Event objects**: Pooled interaction events
+
+### Arena Allocator for Frame-Scope Data
+
+```typescript
+class ArenaAllocator {
+  private buffer: ArrayBuffer;
+  private offset = 0;
+
+  allocFloat32(count: number): Float32Array {
+    const byteOffset = this.alignOffset(4);
+    this.offset = byteOffset + count * 4;
+    return new Float32Array(this.buffer, byteOffset, count);
+  }
+
+  reset(): void {
+    this.offset = 0; // Instant "deallocation"
+  }
+}
+```
+
+### Performance Targets
+
+- Pool acquisition: < 100ns average
+- Pool release: < 50ns average
+- Zero GC during normal interaction
+
+### Reference
+
+- Issue #1189: Memory optimization and object pooling (76 steps)
+
+---
+
+## WCAG Accessibility Implementation Pattern
+
+**When to use**: Adding screen reader and keyboard support to visualization
+
+### Core Components (Issue #1194)
+
+1. **Live Region for Announcements**:
+   ```typescript
+   class AccessibilityManager {
+     private liveRegion: HTMLElement;
+
+     constructor() {
+       this.liveRegion = document.createElement('div');
+       this.liveRegion.setAttribute('role', 'log');
+       this.liveRegion.setAttribute('aria-live', 'polite');
+       this.liveRegion.className = 'sr-only'; // Visually hidden
+       document.body.appendChild(this.liveRegion);
+     }
+
+     announce(message: string): void {
+       this.liveRegion.textContent = '';
+       requestAnimationFrame(() => {
+         this.liveRegion.textContent = message;
+       });
+     }
+   }
+   ```
+
+2. **Virtual Cursor for Navigation**:
+   ```typescript
+   class VirtualCursor {
+     private nodes: A11yNode[] = [];
+     private currentIndex = -1;
+
+     moveNext(): A11yNode | null {
+       this.currentIndex = (this.currentIndex + 1) % this.nodes.length;
+       const node = this.nodes[this.currentIndex];
+       this.a11y.announce(`${node.label}. ${node.type}. ${node.connectionCount} connections.`);
+       return node;
+     }
+   }
+   ```
+
+3. **Keyboard Navigation**:
+   ```typescript
+   handleKeyDown(e: KeyboardEvent) {
+     switch (e.key) {
+       case 'ArrowRight':
+       case 'ArrowDown':
+         e.preventDefault();
+         this.virtualCursor.moveNext();
+         break;
+       case 'Enter':
+         e.preventDefault();
+         this.onNodeSelect?.(this.virtualCursor.getCurrentNode()?.id);
+         break;
+     }
+   }
+   ```
+
+4. **Reduced Motion Support**:
+   ```typescript
+   shouldReduceMotion(): boolean {
+     return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+   }
+
+   getAnimationDuration(normal: number): number {
+     return this.shouldReduceMotion() ? 0 : normal;
+   }
+   ```
+
+### Focus Indicator
+
+```typescript
+class FocusIndicator {
+  private graphics: PIXI.Graphics;
+
+  show(x: number, y: number, radius: number): void {
+    this.graphics.clear();
+    this.graphics.circle(x, y, radius + 8);
+    this.graphics.stroke({ width: 3, color: 0xffff00 }); // High contrast yellow
+  }
+}
+```
+
+### Checklist
+
+- [ ] WCAG 2.1 AA compliance
+- [ ] Screen reader support (VoiceOver, NVDA, JAWS)
+- [ ] Full keyboard navigation
+- [ ] High contrast mode
+- [ ] Reduced motion support
+- [ ] Focus indicators on interactive elements
+
+### Reference
+
+- Issue #1194: Accessibility (WCAG compliance, screen readers) (456 steps - most complex)
