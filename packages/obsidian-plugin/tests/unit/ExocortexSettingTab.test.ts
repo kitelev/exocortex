@@ -349,8 +349,8 @@ describe("ExocortexSettingTab", () => {
 
       expect(mockContainerEl.empty).toHaveBeenCalled();
       expect(getOntologySpy).toHaveBeenCalledTimes(1);
-      // 9 original settings + 3 headings + 1 default template + 6 per-class templates + 5 status emojis + 1 reset button = 25
-      expect(MockSetting).toHaveBeenCalledTimes(25);
+      // 10 original settings (added properties block) + 3 headings + 1 default template + 6 per-class templates + 5 status emojis + 1 reset button = 26
+      expect(MockSetting).toHaveBeenCalledTimes(26);
     });
 
     it("should render ontology dropdown with correct options", () => {

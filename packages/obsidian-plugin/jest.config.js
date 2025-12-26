@@ -17,9 +17,6 @@ module.exports = {
     "/tests/unit/ReactRenderer.test.tsx",
     "/tests/unit/SPARQLGraphView.test.tsx",
     "/tests/unit/LayoutErrorFallback.test.tsx",
-    // Temporarily skip HierarchicalLayout tests - causes Jest to hang in CI
-    // TODO: Investigate Jest hanging issue with this test file
-    "/tests/unit/presentation/renderers/graph/HierarchicalLayout.test.ts",
   ],
   collectCoverageFrom: [
     "<rootDir>/src/**/*.ts",
@@ -33,9 +30,9 @@ module.exports = {
     // Exclude IncrementalRenderer - requires WebGL/PixiJS rendering which is unavailable in JSDOM
     // DirtyTracker (its core logic) is fully tested separately
     "!**/IncrementalRenderer.ts",
-    // Temporarily exclude HierarchicalLayout - test causes Jest to hang in CI
-    // TODO: Investigate and fix the Jest hanging issue
-    "!**/HierarchicalLayout.ts",
+    // Exclude 3D graph components - require WebGL context unavailable in JSDOM
+    // Scene3DManager uses Three.js WebGL renderer
+    "!**/3d/Scene3DManager.ts",
   ],
   moduleNameMapper: {
     "^exocortex$": "<rootDir>/../exocortex/src/index.ts",
@@ -50,6 +47,8 @@ module.exports = {
     "^obsidian$": "<rootDir>/tests/__mocks__/obsidian.ts",
     "^d3$": "<rootDir>/tests/__mocks__/d3.ts",
     "^pixi\\.js$": "<rootDir>/tests/__mocks__/pixi.js.ts",
+    "^three$": "<rootDir>/tests/__mocks__/three.ts",
+    "^three/examples/jsm/controls/OrbitControls\\.js$": "<rootDir>/tests/__mocks__/three-addons.ts",
   },
   // Coverage thresholds per Test Pyramid policy (docs/TEST-PYRAMID.md)
   // CI workflow (.github/workflows/ci.yml) uses: statements: 75, branches: 67, functions: 70, lines: 75

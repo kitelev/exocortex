@@ -834,3 +834,351 @@ export type {
   WindowingEvent,
   WindowingEventListener,
 } from "./ViewportWindowManager";
+
+// Performance profiling and optimization system for 100K+ node graphs
+export {
+  // Profiler
+  PerformanceProfiler,
+  createPerformanceProfiler,
+  getGlobalProfiler,
+  resetGlobalProfiler,
+  DEFAULT_PROFILER_OPTIONS,
+  // Bottleneck Detector
+  BottleneckDetector,
+  createBottleneckDetector,
+  DEFAULT_DETECTOR_CONFIG,
+  // Dashboard
+  PerformanceMetricsDashboard,
+  PerformanceDashboardButton,
+  DEFAULT_DASHBOARD_CONFIG,
+  // Auto Optimizer
+  AutoOptimizer,
+  createAutoOptimizer,
+  getOptimizationPresets,
+  DEFAULT_PERFORMANCE_TARGETS,
+  DEFAULT_OPTIMIZER_CONFIG,
+  DEFAULT_OPTIMIZATION_STATE,
+} from "./performance";
+export type {
+  // Profiler types
+  PerformanceMetrics,
+  ProfilerOptions,
+  SectionTiming,
+  ProfileSection,
+  PerformanceLevel,
+  FrameAnalysis,
+  ProfilerEventType,
+  ProfilerEvent,
+  ProfilerEventListener,
+  // Bottleneck types
+  BottleneckSeverity,
+  BottleneckCategory,
+  Bottleneck,
+  TrendDirection,
+  TrendAnalysis,
+  ResourceUtilization,
+  BottleneckAnalysis,
+  BottleneckDetectorConfig,
+  // Dashboard types
+  PerformanceMetricsDashboardProps,
+  DashboardConfig,
+  PerformanceDashboardButtonProps,
+  // Optimizer types
+  OptimizationAction,
+  OptimizationCategory,
+  OptimizationMode,
+  PerformanceTarget,
+  OptimizationState,
+  AutoOptimizerConfig,
+  OptimizerEventType,
+  OptimizerEvent,
+  OptimizerEventListener,
+} from "./performance";
+
+// Memory optimization and object pooling system
+export {
+  // Object Pool
+  ObjectPool,
+  createObjectPool,
+  PoolExhaustedException,
+  DEFAULT_POOL_CONFIG,
+  // Poolable Types
+  BasePoolable,
+  RenderBatch,
+  EventObject,
+  ComputationBuffer,
+  PoolableVector2D,
+  PoolableRect,
+  // Pool Manager
+  PoolManager,
+  createPoolManager,
+  getGlobalPoolManager,
+  resetGlobalPoolManager,
+  MemoryPressureLevel,
+  POOL_NAMES,
+  DEFAULT_POOL_CONFIGS,
+  DEFAULT_POOL_MANAGER_CONFIG,
+} from "./memory";
+export type {
+  // Object Pool types
+  Poolable,
+  PoolConfig,
+  PoolMetrics,
+  PoolEventType,
+  PoolEvent,
+  PoolEventListener,
+  // Poolable Types
+  NodePosition,
+  EdgePosition,
+  PoolableEventType,
+  BufferType,
+  // Pool Manager types
+  PoolManagerConfig,
+  PoolManagerStats,
+  PoolManagerEventType,
+  PoolManagerEvent,
+  PoolManagerEventListener,
+} from "./memory";
+
+// 3D Graph visualization with Three.js and WebGL2
+export {
+  Scene3DManager,
+  createScene3DManager,
+  ForceSimulation3D,
+  createForceSimulation3D,
+  DEFAULT_SCENE_3D_CONFIG,
+  DEFAULT_NODE_3D_STYLE,
+  DEFAULT_EDGE_3D_STYLE,
+  DEFAULT_LABEL_3D_STYLE,
+  DEFAULT_ORBIT_CONTROLS_CONFIG,
+  DEFAULT_FORCE_SIMULATION_3D_CONFIG,
+} from "./3d";
+export type {
+  Point3D,
+  Vector3D,
+  GraphNode3D,
+  GraphEdge3D,
+  GraphData3D,
+  Scene3DConfig,
+  Node3DStyle,
+  Edge3DStyle,
+  Label3DStyle,
+  OrbitControlsConfig,
+  ForceSimulation3DConfig,
+  Viewport3DState,
+  Renderer3DStats,
+  Scene3DEventType,
+  Scene3DEvent,
+  Scene3DEventListener,
+  SimulationEventType as Simulation3DEventType,
+  Simulation3DEvent,
+  Simulation3DEventListener,
+} from "./3d";
+
+// Edge bundling for dense graphs
+export {
+  // Bundlers
+  StubBundler,
+  createStubBundler,
+  FDEBBundler,
+  createFDEBBundler,
+  HierarchicalBundler,
+  createHierarchicalBundler,
+  createEdgeBundler,
+  // Constants and utilities
+  DEFAULT_BUNDLING_CONFIG,
+  DEFAULT_HIERARCHICAL_CONFIG,
+  distance as bundlingDistance,
+  midpoint as bundlingMidpoint,
+  normalize as bundlingNormalize,
+  dot as bundlingDot,
+  subtract as bundlingSubtract,
+  add as bundlingAdd,
+  scale as bundlingScale,
+  lerp as bundlingLerp,
+  projectOntoLine,
+} from "./bundling";
+export type {
+  Vector2,
+  BundlingAlgorithm,
+  BundlingConfig,
+  BundledEdge,
+  EdgeSegment,
+  BundlingResult,
+  EdgeBundler,
+  CompatibilityMeasures,
+  HierarchicalBundlingConfig,
+  HierarchyNode,
+  EdgeBundlerFactory,
+} from "./bundling";
+
+// Animation system for smooth layout transitions
+export {
+  // Animation core
+  Animation,
+  AnimationLoop,
+  createAnimation,
+  createAnimationLoop,
+  animate,
+  Easing,
+  getEasing,
+  DEFAULT_ANIMATION_CONFIG,
+  ANIMATION_PRESETS,
+  // Interpolation utilities
+  lerp as animationLerp,
+  clamp as animationClamp,
+  lerpClamped,
+  inverseLerp,
+  remap,
+  interpolatePoint2D,
+  interpolatePoint3D,
+  interpolateBezierQuadratic,
+  interpolateBezierCubic,
+  interpolateCatmullRom,
+  hexToRgb,
+  rgbToHex,
+  rgbToHsl,
+  hslToRgb,
+  interpolateRgb,
+  interpolateRgba,
+  interpolateHsl,
+  interpolateHsla,
+  interpolateHex,
+  interpolateHexHsl,
+  interpolateOpacity,
+  interpolateScale,
+  interpolateRotation,
+  interpolateNodePosition,
+  interpolateNodePositions,
+  interpolateArray,
+  interpolatePointArray,
+  calculateStaggeredProgress,
+  interpolateStaggered,
+  // Layout transition manager
+  LayoutTransitionManager,
+  createLayoutTransitionManager,
+  transitionPositions,
+  DEFAULT_TRANSITION_CONFIG,
+  DEFAULT_TRANSITION_MANAGER_CONFIG,
+  TRANSITION_PRESETS,
+  // Node animator
+  NodeAnimator,
+  createNodeAnimator,
+  DEFAULT_NODE_VISUAL_STATE,
+  DEFAULT_ANIMATION_DURATIONS,
+  DEFAULT_ANIMATION_EASINGS,
+  DEFAULT_NODE_ANIMATOR_CONFIG,
+  NODE_VISUAL_PRESETS,
+} from "./animation";
+export type {
+  // Animation types
+  EasingFunction as AnimationEasingFunction,
+  EasingName as AnimationEasingName,
+  AnimationConfig,
+  AnimationState,
+  IAnimation,
+  IAnimationLoop,
+  // Interpolation types
+  Point2D as AnimationPoint2D,
+  Point3D as AnimationPoint3D,
+  RGBColor,
+  RGBAColor,
+  HSLColor,
+  HSLAColor,
+  NodePosition as AnimationNodePosition,
+  InterpolationOptions,
+  // Transition types
+  TransitionNodeState,
+  TransitionConfig,
+  TransitionState,
+  TransitionEventType,
+  TransitionEvent,
+  TransitionEventListener,
+  TransitionCallbacks,
+  LayoutTransitionManagerConfig,
+  // Node animator types
+  NodeVisualState,
+  NodeAnimationType,
+  NodeAnimationConfig,
+  NodeAnimatorState,
+  NodeAnimatorConfig,
+  NodeAnimatorEventType,
+  NodeAnimatorEvent,
+  NodeAnimatorEventListener,
+} from "./animation";
+
+// Graph export functionality for PNG, JPEG, WebP, and SVG
+export {
+  ExportManager,
+  createExportManager,
+  DEFAULT_EXPORT_OPTIONS,
+  DEFAULT_EXPORT_MANAGER_CONFIG,
+  EXPORT_MIME_TYPES,
+  EXPORT_FILE_EXTENSIONS,
+} from "./export";
+export type {
+  ExportFormat,
+  ExportOptions,
+  ExportBounds,
+  ExportResult,
+  ExportNode,
+  ExportEdge,
+  ExportEventType,
+  ExportEvent,
+  ExportEventListener,
+  ExportManagerConfig,
+  ExportStats,
+} from "./export";
+
+// Accessibility system for WCAG 2.1 AA compliance
+export {
+  // Manager
+  AccessibilityManager,
+  createAccessibilityManager,
+  DEFAULT_ACCESSIBILITY_MANAGER_CONFIG,
+  // Virtual Cursor
+  VirtualCursor,
+  createVirtualCursor,
+  DEFAULT_VIRTUAL_CURSOR_CONFIG,
+  // Constants and utilities
+  DEFAULT_A11Y_CONFIG,
+  DEFAULT_REDUCED_MOTION_CONFIG,
+  HIGH_CONTRAST_THEMES,
+  WCAG_CONTRAST_RATIOS,
+  getScreenReaderCapabilities,
+  // Aliased WCAG utilities to avoid conflict with search module exports
+  a11yGetContrastRatio,
+  a11yGetRelativeLuminance,
+  a11yMeetsWCAGAA,
+  a11yMeetsWCAGAAA,
+} from "./accessibility";
+export type {
+  // Manager config
+  AccessibilityManagerConfig,
+  // Virtual cursor types
+  VirtualCursorConfig,
+  VirtualCursorNavigationResult,
+  VirtualCursorEventType,
+  VirtualCursorEvent,
+  VirtualCursorEventListener,
+  // Core types
+  A11yConfig,
+  A11yNode,
+  A11yEdge,
+  A11yEvent,
+  A11yEventType,
+  A11yEventListener,
+  A11yNavigationDirection,
+  A11yShortcut,
+  Announcement,
+  AnnouncementType,
+  AriaLivePoliteness,
+  FocusTrapConfig,
+  HighContrastColors,
+  ReducedMotionConfig,
+  ScreenReaderCapabilities,
+  ScreenReaderType,
+  SkipLink,
+  VirtualCursorMode,
+  VirtualCursorState,
+} from "./accessibility";

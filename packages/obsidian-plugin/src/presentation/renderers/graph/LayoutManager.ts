@@ -506,7 +506,7 @@ export class LayoutManager {
     return new Promise<void>((resolve) => {
       const animate = (timestamp: number) => {
         const elapsed = timestamp - this.transitionStartTime;
-        let progress = Math.min(elapsed / transitionOptions.duration, 1);
+        const progress = Math.min(elapsed / transitionOptions.duration, 1);
 
         // Apply easing
         const easingFn = EASING_FUNCTIONS[transitionOptions.easing];

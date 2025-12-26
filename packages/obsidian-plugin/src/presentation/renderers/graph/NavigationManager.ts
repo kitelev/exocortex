@@ -377,7 +377,7 @@ export class NavigationManager {
     const fromY = fromNode.y ?? 0;
 
     // Find nodes on opposite side
-    let candidates: { node: GraphNodeData; distance: number }[] = [];
+    const candidates: { node: GraphNodeData; distance: number }[] = [];
 
     for (const node of this.nodes) {
       if (node.id === fromNode.id) continue;

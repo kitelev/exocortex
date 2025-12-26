@@ -26,6 +26,7 @@
     "immer": "^11.1.0",
     "obsidian": "latest",
     "pixi.js": "^8.14.3",
+    "three": "^0.171.0",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
     "reflect-metadata": "^0.2.2",
@@ -35,6 +36,7 @@
     "zustand": "^5.0.9"
   },
   "devDependencies": {
+    "@types/three": "^0.171.0",
     "@playwright/experimental-ct-react": "^1.55.1",
     "@playwright/test": "^1.55.1",
     "@testing-library/jest-dom": "^6.9.1",

@@ -44,29 +44,55 @@ function getAtPath<T>(obj: Record<string, unknown>, path: string): T | undefined
 
 /**
  * Set value at path in nested object (mutates)
+ * Guards against prototype pollution by blocking dangerous property names
  */
 function setAtPath(obj: Record<string, unknown>, path: string, value: unknown): void {
   const parts = path.split(".");
+
+  // Guard against prototype pollution - check all path parts upfront
+  for (const part of parts) {
+    if (part === "__proto__" || part === "constructor" || part === "prototype") {
+      console.warn(`[GraphConfig] Blocked attempt to set dangerous property: ${part}`);
+      return;
+    }
+  }
+
   let current: Record<string, unknown> = obj;
 
   for (let i = 0; i < parts.length - 1; i++) {
     const part = parts[i];
+    // Double-check for dangerous keys (satisfies static analysis)
+    if (part === "__proto__" || part === "constructor" || part === "prototype") {
+      return;
+    }
     if (!(part in current) || typeof current[part] !== "object" || current[part] === null) {
       current[part] = {};
     }
     current = current[part] as Record<string, unknown>;
   }
 
-  current[parts[parts.length - 1]] = value;
+  const lastKey = parts[parts.length - 1];
+  // Guard against prototype pollution at assignment point
+  if (lastKey === "__proto__" || lastKey === "constructor" || lastKey === "prototype") {
+    return;
+  }
+  current[lastKey] = value;
 }
 
 /**
  * Deep merge two objects (target is mutated)
+ * Guards against prototype pollution by blocking dangerous property names
  */
 function deepMerge<T extends Record<string, unknown>>(target: T, source: DeepPartial<T> | undefined | null): T {
   if (!source) return target;
 
   for (const key of Object.keys(source)) {
+    // Guard against prototype pollution - skip dangerous keys
+    // Explicit inline check satisfies static analysis tools (CodeQL)
+    if (key === "__proto__" || key === "constructor" || key === "prototype") {
+      continue;
+    }
+
     const sourceValue = (source as Record<string, unknown>)[key];
     const targetValue = (target as Record<string, unknown>)[key];
 
@@ -84,7 +110,11 @@ function deepMerge<T extends Record<string, unknown>>(target: T, source: DeepPar
         sourceValue as DeepPartial<Record<string, unknown>>
       );
     } else if (sourceValue !== undefined) {
-      (target as Record<string, unknown>)[key as string] = sourceValue;
+      // Only assign if it's an own property of target or a safe new key
+      // This check combined with the key filter above prevents prototype pollution
+      if (Object.prototype.hasOwnProperty.call(target, key) || !Object.prototype.hasOwnProperty.call(Object.prototype, key)) {
+        (target as Record<string, unknown>)[key] = sourceValue;
+      }
     }
   }
 
