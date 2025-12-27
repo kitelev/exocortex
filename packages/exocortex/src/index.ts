@@ -105,6 +105,25 @@ export {
   TypeRegistry,
   type TypeRegistryConfig,
 } from "./services/TypeRegistry";
+export {
+  NLToSPARQLService,
+  type NLToSPARQLConfig,
+  type NLToSPARQLResult,
+  DEFAULT_NL_TO_SPARQL_CONFIG,
+} from "./services/NLToSPARQLService";
+export {
+  SPARQL_TEMPLATES,
+  SPARQL_PREFIXES,
+  PREDICATES,
+  ASSET_CLASSES,
+  EFFORT_STATUSES,
+  KNOWN_PROTOTYPES,
+  findMatchingTemplates,
+  fillTemplate,
+  validateParameters,
+  getTemplateByName,
+  type SPARQLTemplate,
+} from "./services/SPARQLTemplateLibrary";
 
 // Utilities exports
 export { FrontmatterService } from "./utilities/FrontmatterService";
