@@ -93,5 +93,57 @@ describe("InvalidArgumentsError", () => {
       expect(response.error.code).toBe(ErrorCode.VALIDATION_INVALID_ARGUMENTS);
       expect(response.error.exitCode).toBe(ExitCodes.INVALID_ARGUMENTS);
     });
+
+    it("should include context in response", () => {
+      const error = new InvalidArgumentsError(
+        "Invalid argument",
+        undefined,
+        { argument: "--vault", providedValue: "" },
+      );
+
+      const response = error.toStructuredResponse();
+
+      expect(response.error.context?.argument).toBe("--vault");
+    });
+  });
+
+  describe("formatJson()", () => {
+    it("should return valid JSON string", () => {
+      const error = new InvalidArgumentsError("Invalid argument");
+
+      const json = error.formatJson();
+
+      expect(() => JSON.parse(json)).not.toThrow();
+      const parsed = JSON.parse(json);
+      expect(parsed.success).toBe(false);
+      expect(parsed.error.code).toBe(ErrorCode.VALIDATION_INVALID_ARGUMENTS);
+    });
+
+    it("should include stack when includeStack is true", () => {
+      const error = new InvalidArgumentsError("Invalid argument");
+
+      const json = error.formatJson(true);
+
+      const parsed = JSON.parse(json);
+      expect(parsed.error.stack).toBeDefined();
+    });
+
+    it("should not include stack when includeStack is false", () => {
+      const error = new InvalidArgumentsError("Invalid argument");
+
+      const json = error.formatJson(false);
+
+      const parsed = JSON.parse(json);
+      expect(parsed.error.stack).toBeUndefined();
+    });
+
+    it("should include exitCode in JSON output", () => {
+      const error = new InvalidArgumentsError("Invalid argument");
+
+      const json = error.formatJson();
+
+      const parsed = JSON.parse(json);
+      expect(parsed.error.exitCode).toBe(ExitCodes.INVALID_ARGUMENTS);
+    });
   });
 });
