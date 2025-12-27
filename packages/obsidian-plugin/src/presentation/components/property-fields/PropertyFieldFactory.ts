@@ -164,6 +164,8 @@ export class PropertyFieldFactory {
           disabled,
           app,
           classFilter,
+          rangeType: property.rangeType,
+          boostActiveAssets: true,
         });
 
       case PropertyFieldType.Enum:

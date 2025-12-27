@@ -726,4 +726,113 @@ describe("OntologySchemaService", () => {
       );
     });
   });
+
+  describe("getPropertyRangeClasses", () => {
+    it("should return range classes from SPARQL query", async () => {
+      mockSparqlService.query.mockResolvedValue([
+        new Map<string, unknown>([
+          ["range", "https://exocortex.my/ontology/ems#Project"],
+        ]),
+      ]);
+
+      const rangeClasses = await schemaService.getPropertyRangeClasses("ems__Effort_project");
+
+      expect(rangeClasses).toEqual(["ems__Project"]);
+    });
+
+    it("should return multiple range classes if defined", async () => {
+      mockSparqlService.query.mockResolvedValue([
+        new Map<string, unknown>([
+          ["range", "https://exocortex.my/ontology/ems#Project"],
+        ]),
+        new Map<string, unknown>([
+          ["range", "https://exocortex.my/ontology/ems#Area"],
+        ]),
+      ]);
+
+      const rangeClasses = await schemaService.getPropertyRangeClasses("ems__Effort_parent");
+
+      expect(rangeClasses).toContain("ems__Project");
+      expect(rangeClasses).toContain("ems__Area");
+    });
+
+    it("should infer ems__Project from property name containing 'project'", async () => {
+      mockSparqlService.query.mockResolvedValue([]);
+
+      const rangeClasses = await schemaService.getPropertyRangeClasses("ems__Effort_project");
+
+      expect(rangeClasses).toEqual(["ems__Project"]);
+    });
+
+    it("should infer ems__Area from property name containing 'area'", async () => {
+      mockSparqlService.query.mockResolvedValue([]);
+
+      const rangeClasses = await schemaService.getPropertyRangeClasses("ems__Task_area");
+
+      expect(rangeClasses).toEqual(["ems__Area"]);
+    });
+
+    it("should infer ems__Task from property name containing 'task'", async () => {
+      mockSparqlService.query.mockResolvedValue([]);
+
+      const rangeClasses = await schemaService.getPropertyRangeClasses("ems__Effort_task");
+
+      expect(rangeClasses).toEqual(["ems__Task"]);
+    });
+
+    it("should return empty array for 'parent' property (ambiguous)", async () => {
+      mockSparqlService.query.mockResolvedValue([]);
+
+      const rangeClasses = await schemaService.getPropertyRangeClasses("ems__Effort_parent");
+
+      expect(rangeClasses).toEqual([]);
+    });
+
+    it("should return empty array on query error with fallback to inference", async () => {
+      mockSparqlService.query.mockRejectedValue(new Error("Query failed"));
+
+      const rangeClasses = await schemaService.getPropertyRangeClasses("ems__Effort_project");
+
+      // Should fallback to inference
+      expect(rangeClasses).toEqual(["ems__Project"]);
+    });
+
+    it("should convert prefixed property name to full IRI", async () => {
+      mockSparqlService.query.mockResolvedValue([]);
+
+      await schemaService.getPropertyRangeClasses("ems__Effort_project");
+
+      expect(mockSparqlService.query).toHaveBeenCalledWith(
+        expect.stringContaining("<https://exocortex.my/ontology/ems#Effort_project>"),
+      );
+    });
+
+    it("should handle full IRI as property name", async () => {
+      mockSparqlService.query.mockResolvedValue([]);
+
+      await schemaService.getPropertyRangeClasses(
+        "https://exocortex.my/ontology/ems#Effort_project",
+      );
+
+      expect(mockSparqlService.query).toHaveBeenCalledWith(
+        expect.stringContaining("<https://exocortex.my/ontology/ems#Effort_project>"),
+      );
+    });
+
+    it("should skip non-exocortex range URIs", async () => {
+      mockSparqlService.query.mockResolvedValue([
+        new Map<string, unknown>([
+          ["range", "http://www.w3.org/2001/XMLSchema#string"],
+        ]),
+        new Map<string, unknown>([
+          ["range", "https://exocortex.my/ontology/ems#Project"],
+        ]),
+      ]);
+
+      const rangeClasses = await schemaService.getPropertyRangeClasses("ems__Effort_mixed");
+
+      // Only exocortex.my range should be returned
+      expect(rangeClasses).toEqual(["ems__Project"]);
+    });
+  });
 });

@@ -2159,6 +2159,92 @@
   font-style: italic;
 }
 
+/* Reference Field with Autocomplete */
+.property-field-reference-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+.property-field-reference-input {
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  background-color: var(--background-primary);
+  color: var(--text-normal);
+  font-size: 0.9em;
+}
+
+.property-field-reference-input:focus {
+  border-color: var(--interactive-accent);
+  outline: none;
+}
+
+.property-field-suggestions {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  max-height: 240px;
+  overflow-y: auto;
+  background-color: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-top: none;
+  border-radius: 0 0 4px 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 100;
+}
+
+.property-field-suggestions.is-hidden {
+  display: none;
+}
+
+.property-field-suggestion-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: background-color 0.1s ease;
+}
+
+.property-field-suggestion-item:hover,
+.property-field-suggestion-item.is-selected {
+  background-color: var(--background-modifier-hover);
+}
+
+.property-field-suggestion-status {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.property-field-suggestion-status.is-active {
+  background-color: var(--text-success);
+}
+
+.property-field-suggestion-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.property-field-suggestion-class {
+  font-size: 0.75em;
+  color: var(--text-faint);
+  padding: 2px 6px;
+  background-color: var(--background-secondary);
+  border-radius: 3px;
+}
+
+/* Required indicator */
+.required-indicator {
+  color: var(--text-error);
+  font-weight: 600;
+}
+
 /* Timestamp Field (read-only) */
 .timestamp-field-value {
   font-family: var(--font-monospace);

@@ -174,6 +174,88 @@ export class OntologySchemaService {
   }
 
   /**
+   * Get the range class(es) for a property.
+   *
+   * Returns the class names that are valid targets for this property.
+   * Uses rdfs:range from the ontology.
+   *
+   * @param propertyUri - The property URI (e.g., "ems__Effort_project")
+   * @returns Array of class names (e.g., ["ems__Project"])
+   *
+   * @example
+   * ```typescript
+   * const rangeClasses = await schemaService.getPropertyRangeClasses("ems__Effort_project");
+   * // Returns: ["ems__Project"]
+   * ```
+   */
+  async getPropertyRangeClasses(propertyUri: string): Promise<string[]> {
+    const fullUri = this.toPropertyIri(propertyUri);
+
+    const query = `
+      PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+      PREFIX exo: <https://exocortex.my/ontology/exo#>
+      PREFIX ems: <https://exocortex.my/ontology/ems#>
+
+      SELECT ?range WHERE {
+        <${fullUri}> rdfs:range ?range .
+      }
+    `;
+
+    try {
+      const results = await this.sparqlService.query(query);
+      const rangeClasses: string[] = [];
+
+      for (const binding of results) {
+        const rangeUri = binding.get("range");
+        if (rangeUri) {
+          const className = this.toClassName(String(rangeUri));
+          if (className) {
+            rangeClasses.push(className);
+          }
+        }
+      }
+
+      // If no range found, try to infer from property name
+      if (rangeClasses.length === 0) {
+        const inferred = this.inferRangeFromPropertyName(propertyUri);
+        if (inferred) {
+          rangeClasses.push(inferred);
+        }
+      }
+
+      return rangeClasses;
+    } catch (error) {
+      this.logger.warn(`Failed to get property range for ${propertyUri}`, error);
+      // Fallback to inference
+      const inferred = this.inferRangeFromPropertyName(propertyUri);
+      return inferred ? [inferred] : [];
+    }
+  }
+
+  /**
+   * Infer range class from property name when ontology data is unavailable.
+   */
+  private inferRangeFromPropertyName(propertyUri: string): string | null {
+    const lowerUri = propertyUri.toLowerCase();
+
+    if (lowerUri.includes("project") || lowerUri.endsWith("_project")) {
+      return "ems__Project";
+    }
+    if (lowerUri.includes("area") || lowerUri.endsWith("_area")) {
+      return "ems__Area";
+    }
+    if (lowerUri.includes("task") || lowerUri.endsWith("_task")) {
+      return "ems__Task";
+    }
+    if (lowerUri.includes("parent")) {
+      // Parent is usually same class or generic asset
+      return null;
+    }
+
+    return null;
+  }
+
+  /**
    * Convert property name to full IRI.
    */
   private toPropertyIri(propertyName: string): string {

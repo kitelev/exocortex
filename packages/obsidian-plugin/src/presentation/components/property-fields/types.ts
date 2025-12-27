@@ -66,6 +66,10 @@ export interface ReferencePropertyFieldProps extends PropertyFieldBaseProps {
   app: App;
   /** Optional filter for asset classes to suggest */
   classFilter?: string[];
+  /** Whether to boost active assets in suggestions (default: true) */
+  boostActiveAssets?: boolean;
+  /** Property range type for smart filtering (e.g., "ems__Project") */
+  rangeType?: string;
 }
 
 /**

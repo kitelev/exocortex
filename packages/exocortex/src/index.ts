@@ -145,6 +145,12 @@ export {
   type WeeklyPattern,
   type BehavioralInsight,
 } from "./services/TrendDetectionService";
+export {
+  AutocompleteService,
+  type AutocompleteSuggestion,
+  type AutocompleteConfig,
+  DEFAULT_AUTOCOMPLETE_CONFIG,
+} from "./services/AutocompleteService";
 
 // Utilities exports
 export { FrontmatterService } from "./utilities/FrontmatterService";

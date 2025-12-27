@@ -8,7 +8,22 @@ interface FileSuggestion {
   file: TFile;
   displayName: string;
   matchScore: number;
+  /** Whether the asset has active status */
+  isActive: boolean;
+  /** Asset class for display purposes */
+  assetClass?: string;
 }
+
+/**
+ * Constants for scoring configuration.
+ */
+const SCORE_EXACT_MATCH = 100;
+const SCORE_STARTS_WITH = 80;
+const SCORE_CONTAINS = 60;
+const SCORE_FUZZY = 40;
+const BOOST_ACTIVE = 20;
+const BOOST_RECENT_DAY = 10;
+const BOOST_RECENT_WEEK = 5;
 
 /**
  * Reference property field renderer with autocomplete.
@@ -177,17 +192,62 @@ export class ReferencePropertyField {
       return;
     }
 
-    const { app, classFilter } = this.props;
+    const { app, classFilter, rangeType } = this.props;
     const files = app.vault.getMarkdownFiles();
+
+    // Determine effective class filter
+    // Priority: explicit classFilter > rangeType > no filter
+    const effectiveClassFilter = this.getEffectiveClassFilter(classFilter, rangeType);
 
     // Filter and score files
     this.suggestions = files
-      .map((file) => this.scoreFile(file, query, classFilter))
+      .map((file) => this.scoreFile(file, query, effectiveClassFilter))
       .filter((suggestion): suggestion is FileSuggestion => suggestion !== null)
       .sort((a, b) => b.matchScore - a.matchScore)
       .slice(0, 10); // Limit to 10 suggestions
 
     this.renderSuggestions();
+  }
+
+  /**
+   * Determine effective class filter from props.
+   * Priority: explicit classFilter > rangeType > no filter
+   */
+  private getEffectiveClassFilter(classFilter?: string[], rangeType?: string): string[] | undefined {
+    // If explicit class filter is provided, use it
+    if (classFilter && classFilter.length > 0) {
+      return classFilter;
+    }
+
+    // If rangeType is provided, extract class name from it
+    if (rangeType) {
+      const className = this.extractClassFromRange(rangeType);
+      if (className) {
+        return [className];
+      }
+    }
+
+    return undefined;
+  }
+
+  /**
+   * Extract class name from range type URI.
+   * E.g., "https://exocortex.my/ontology/ems#Project" -> "ems__Project"
+   */
+  private extractClassFromRange(rangeType: string): string | null {
+    // Handle full IRI format
+    const iriMatch = rangeType.match(/https:\/\/exocortex\.my\/ontology\/([a-z]+)#(.+)$/);
+    if (iriMatch) {
+      const [, prefix, localName] = iriMatch;
+      return `${prefix}__${localName}`;
+    }
+
+    // Handle prefixed format (ems__Project, exo__Asset, etc.)
+    if (rangeType.match(/^[a-z]+__[A-Za-z_]+$/)) {
+      return rangeType;
+    }
+
+    return null;
   }
 
   /**
@@ -202,21 +262,26 @@ export class ReferencePropertyField {
     const queryLower = query.toLowerCase();
     const basenameLower = basename.toLowerCase();
 
+    // Read frontmatter for class and status checks
+    const cache = this.props.app.metadataCache.getFileCache(file);
+    const frontmatter = cache?.frontmatter;
+
     // Check class filter if provided
+    let assetClass: string | undefined;
     if (classFilter && classFilter.length > 0) {
-      // Read frontmatter to check class
-      const cache = this.props.app.metadataCache.getFileCache(file);
-      const frontmatter = cache?.frontmatter;
-      const instanceClass = frontmatter?.["exo__instanceClass"] as
+      const instanceClass = frontmatter?.["exo__Instance_class"] as
         | string
         | undefined;
 
       if (instanceClass) {
         // Extract class name from wikilink format
-        const className = instanceClass.replace(/^\[\[|\]\]$/g, "");
-        if (!classFilter.includes(className)) {
+        assetClass = instanceClass.replace(/^\[\[|\]\]$/g, "").replace(/^"|"$/g, "");
+        if (!classFilter.includes(assetClass)) {
           return null;
         }
+      } else {
+        // No class defined - exclude from filtered results
+        return null;
       }
     }
 
@@ -225,39 +290,68 @@ export class ReferencePropertyField {
 
     // Exact match
     if (basenameLower === queryLower) {
-      matchScore = 100;
+      matchScore = SCORE_EXACT_MATCH;
     }
     // Starts with query
     else if (basenameLower.startsWith(queryLower)) {
-      matchScore = 80;
+      matchScore = SCORE_STARTS_WITH;
     }
     // Contains query
     else if (basenameLower.includes(queryLower)) {
-      matchScore = 60;
+      matchScore = SCORE_CONTAINS;
     }
     // Fuzzy match (each character in order)
     else if (this.fuzzyMatch(queryLower, basenameLower)) {
-      matchScore = 40;
+      matchScore = SCORE_FUZZY;
     }
     // No match
     else {
       return null;
     }
 
+    // Check if asset is active (for boost)
+    const isActive = this.checkIfAssetIsActive(frontmatter);
+    const boostActiveAssets = this.props.boostActiveAssets !== false; // Default true
+
+    // Apply active status boost
+    if (boostActiveAssets && isActive) {
+      matchScore += BOOST_ACTIVE;
+    }
+
     // Boost recently modified files
     const daysSinceModified =
       (Date.now() - file.stat.mtime) / (1000 * 60 * 60 * 24);
     if (daysSinceModified < 1) {
-      matchScore += 10;
+      matchScore += BOOST_RECENT_DAY;
     } else if (daysSinceModified < 7) {
-      matchScore += 5;
+      matchScore += BOOST_RECENT_WEEK;
     }
 
     return {
       file,
       displayName: basename,
       matchScore,
+      isActive,
+      assetClass,
     };
+  }
+
+  /**
+   * Check if an asset has active status from frontmatter.
+   */
+  private checkIfAssetIsActive(frontmatter?: Record<string, unknown>): boolean {
+    if (!frontmatter) return false;
+
+    // Check ems__Effort_status property
+    const status = frontmatter["ems__Effort_status"] as string | undefined;
+    if (status) {
+      // Status can be in wikilink format: "[[ems__EffortStatus_Active]]"
+      // or string format: "Active"
+      const statusValue = status.replace(/^\[\[|\]\]$/g, "").replace(/^"|"$/g, "");
+      return statusValue.includes("Active") || statusValue.includes("EffortStatus_Active");
+    }
+
+    return false;
   }
 
   /**
@@ -292,8 +386,30 @@ export class ReferencePropertyField {
       const suggestion = this.suggestions[i];
       const item = this.suggestionsEl.createDiv({
         cls: "property-field-suggestion-item",
+      });
+
+      // Add active indicator if asset is active
+      if (suggestion.isActive) {
+        item.createSpan({
+          cls: "property-field-suggestion-status is-active",
+          text: "",
+        });
+      }
+
+      // Add the display name
+      item.createSpan({
+        cls: "property-field-suggestion-name",
         text: suggestion.displayName,
       });
+
+      // Add class indicator if available and filtering is active
+      if (suggestion.assetClass) {
+        const classLabel = this.formatClassLabel(suggestion.assetClass);
+        item.createSpan({
+          cls: "property-field-suggestion-class",
+          text: classLabel,
+        });
+      }
 
       item.addEventListener("mousedown", (e) => {
         e.preventDefault();
@@ -307,6 +423,15 @@ export class ReferencePropertyField {
     }
 
     this.showSuggestions();
+  }
+
+  /**
+   * Format class name for display.
+   * E.g., "ems__Project" -> "Project"
+   */
+  private formatClassLabel(className: string): string {
+    // Remove prefix (ems__, exo__, etc.)
+    return className.replace(/^[a-z]+__/, "");
   }
 
   /**
