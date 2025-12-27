@@ -4,6 +4,12 @@ import type { Triple } from "exocortex";
 export interface SPARQLListViewProps {
   triples: Triple[];
   onAssetClick?: (path: string, event: React.MouseEvent) => void;
+  /**
+   * Optional function to resolve asset labels for wikilinks without aliases.
+   * When provided, wikilinks like [[uuid]] will display the resolved label
+   * instead of the raw target path.
+   */
+  getAssetLabel?: (path: string) => string | null;
 }
 
 interface WikiLink {
@@ -39,7 +45,8 @@ const parseWikiLink = (value: string): WikiLink => {
 
 const renderValue = (
   value: string,
-  onAssetClick?: (path: string, event: React.MouseEvent) => void
+  onAssetClick?: (path: string, event: React.MouseEvent) => void,
+  getAssetLabel?: (path: string) => string | null,
 ): React.ReactNode => {
   if (!value || value === "") {
     return "-";
@@ -47,6 +54,20 @@ const renderValue = (
 
   if (isWikiLink(value)) {
     const parsed = parseWikiLink(value);
+    let displayText: string;
+
+    if (parsed.alias) {
+      // Wikilink has an explicit alias - use it
+      displayText = parsed.alias;
+    } else if (getAssetLabel) {
+      // No alias - try to resolve asset label
+      const resolvedLabel = getAssetLabel(parsed.target);
+      displayText = resolvedLabel || parsed.target;
+    } else {
+      // No alias and no resolver - use target path
+      displayText = parsed.target;
+    }
+
     return (
       <a
         data-href={parsed.target}
@@ -58,7 +79,7 @@ const renderValue = (
         }}
         style={{ cursor: "pointer" }}
       >
-        {parsed.alias || parsed.target}
+        {displayText}
       </a>
     );
   }
@@ -123,6 +144,7 @@ const formatObject = (object: string): string => {
 export const SPARQLListView: React.FC<SPARQLListViewProps> = ({
   triples,
   onAssetClick,
+  getAssetLabel,
 }) => {
   const [viewMode, setViewMode] = useState<"structured" | "raw">("structured");
   const [expandedSubjects, setExpandedSubjects] = useState<Set<string>>(new Set());
@@ -191,7 +213,7 @@ export const SPARQLListView: React.FC<SPARQLListViewProps> = ({
           {groups.map((group) => {
             const isExpanded = expandedSubjects.has(group.subject);
             const formattedSubject = formatSubject(group.subject, group.subjectType);
-            const displaySubject = renderValue(formattedSubject, onAssetClick);
+            const displaySubject = renderValue(formattedSubject, onAssetClick, getAssetLabel);
 
             return (
               <div key={group.subject} className="sparql-subject-group">
@@ -220,7 +242,7 @@ export const SPARQLListView: React.FC<SPARQLListViewProps> = ({
                         <div className="sparql-objects-list">
                           {objects.map((obj, idx) => (
                             <div key={idx} className="sparql-object-item">
-                              {renderValue(formatObject(obj), onAssetClick)}
+                              {renderValue(formatObject(obj), onAssetClick, getAssetLabel)}
                             </div>
                           ))}
                         </div>

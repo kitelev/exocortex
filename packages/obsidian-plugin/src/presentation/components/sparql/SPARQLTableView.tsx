@@ -6,6 +6,12 @@ export interface SPARQLTableViewProps {
   variables: string[];
   onAssetClick?: (path: string, event: React.MouseEvent) => void;
   pageSize?: number;
+  /**
+   * Optional function to resolve asset labels for wikilinks without aliases.
+   * When provided, wikilinks like [[uuid]] will display the resolved label
+   * instead of the raw target path.
+   */
+  getAssetLabel?: (path: string) => string | null;
 }
 
 interface SortState {
@@ -40,7 +46,8 @@ const parseWikiLink = (value: string): WikiLink => {
 
 const renderValue = (
   value: string | undefined,
-  onAssetClick?: (path: string, event: React.MouseEvent) => void
+  onAssetClick?: (path: string, event: React.MouseEvent) => void,
+  getAssetLabel?: (path: string) => string | null,
 ): React.ReactNode => {
   if (!value || value === "") {
     return "-";
@@ -48,6 +55,20 @@ const renderValue = (
 
   if (isWikiLink(value)) {
     const parsed = parseWikiLink(value);
+    let displayText: string;
+
+    if (parsed.alias) {
+      // Wikilink has an explicit alias - use it
+      displayText = parsed.alias;
+    } else if (getAssetLabel) {
+      // No alias - try to resolve asset label
+      const resolvedLabel = getAssetLabel(parsed.target);
+      displayText = resolvedLabel || parsed.target;
+    } else {
+      // No alias and no resolver - use target path
+      displayText = parsed.target;
+    }
+
     return (
       <a
         data-href={parsed.target}
@@ -59,7 +80,7 @@ const renderValue = (
         }}
         style={{ cursor: "pointer" }}
       >
-        {parsed.alias || parsed.target}
+        {displayText}
       </a>
     );
   }
@@ -83,6 +104,7 @@ export const SPARQLTableView: React.FC<SPARQLTableViewProps> = ({
   variables,
   onAssetClick,
   pageSize = 100,
+  getAssetLabel,
 }) => {
   const [sortState, setSortState] = useState<SortState>({
     column: variables[0] || "",
@@ -218,7 +240,7 @@ export const SPARQLTableView: React.FC<SPARQLTableViewProps> = ({
                 const value = result.get(variable)?.toString();
                 return (
                   <td key={`${currentPage}-${index}-${variable}`}>
-                    {renderValue(value, onAssetClick)}
+                    {renderValue(value, onAssetClick, getAssetLabel)}
                   </td>
                 );
               })}

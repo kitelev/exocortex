@@ -1,5 +1,10 @@
 /**
  * LinkRenderer - Renders wikilink cell values as clickable links
+ *
+ * Features:
+ * - Parses wikilinks in [[target]] or [[target|alias]] format
+ * - Resolves asset labels for wikilinks without aliases when getAssetLabel is provided
+ * - Falls back to target path if no label can be resolved
  */
 import React from "react";
 import type { CellRendererProps } from "./types";
@@ -25,11 +30,15 @@ function parseWikiLink(value: string): { target: string; alias?: string } | null
 /**
  * Renders a cell value as a clickable link.
  * Supports wikilink format ([[target]] or [[target|alias]]).
+ *
+ * When a wikilink has no alias and getAssetLabel is provided,
+ * attempts to resolve the target asset's exo:Asset_label for display.
  */
 export const LinkRenderer: React.FC<CellRendererProps> = ({
   value,
   assetPath,
   onLinkClick,
+  getAssetLabel,
 }) => {
   if (value == null || value === "") {
     return <span className="exo-cell-link exo-cell-link-empty">-</span>;
@@ -40,8 +49,20 @@ export const LinkRenderer: React.FC<CellRendererProps> = ({
 
   // If it's a wikilink
   if (parsed) {
-    const displayText = parsed.alias || parsed.target;
     const linkPath = parsed.target;
+    let displayText: string;
+
+    if (parsed.alias) {
+      // Wikilink has an explicit alias - use it
+      displayText = parsed.alias;
+    } else if (getAssetLabel) {
+      // No alias - try to resolve asset label
+      const resolvedLabel = getAssetLabel(linkPath);
+      displayText = resolvedLabel || linkPath;
+    } else {
+      // No alias and no resolver - use target path
+      displayText = linkPath;
+    }
 
     return (
       <a

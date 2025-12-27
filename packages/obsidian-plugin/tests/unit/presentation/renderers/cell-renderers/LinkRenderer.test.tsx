@@ -165,4 +165,61 @@ describe("LinkRenderer", () => {
       expect(screen.getByRole("link")).toHaveTextContent("Plain Text");
     });
   });
+
+  describe("Asset Label Resolution", () => {
+    it("resolves asset label for wikilink without alias when getAssetLabel provided", () => {
+      const getAssetLabel = jest.fn().mockReturnValue("Project Alpha");
+      render(
+        <LinkRenderer
+          value="[[abc123-def456]]"
+          column={createColumn()}
+          getAssetLabel={getAssetLabel}
+        />
+      );
+
+      expect(screen.getByRole("link")).toHaveTextContent("Project Alpha");
+      expect(screen.getByRole("link")).toHaveAttribute("data-href", "abc123-def456");
+      expect(getAssetLabel).toHaveBeenCalledWith("abc123-def456");
+    });
+
+    it("uses alias when provided even if getAssetLabel returns label", () => {
+      const getAssetLabel = jest.fn().mockReturnValue("Resolved Label");
+      render(
+        <LinkRenderer
+          value="[[target|Custom Alias]]"
+          column={createColumn()}
+          getAssetLabel={getAssetLabel}
+        />
+      );
+
+      expect(screen.getByRole("link")).toHaveTextContent("Custom Alias");
+      // getAssetLabel should not be called when alias is present
+      expect(getAssetLabel).not.toHaveBeenCalled();
+    });
+
+    it("falls back to target when getAssetLabel returns null", () => {
+      const getAssetLabel = jest.fn().mockReturnValue(null);
+      render(
+        <LinkRenderer
+          value="[[some-uuid]]"
+          column={createColumn()}
+          getAssetLabel={getAssetLabel}
+        />
+      );
+
+      expect(screen.getByRole("link")).toHaveTextContent("some-uuid");
+      expect(getAssetLabel).toHaveBeenCalledWith("some-uuid");
+    });
+
+    it("uses target when getAssetLabel is not provided", () => {
+      render(
+        <LinkRenderer
+          value="[[target-path]]"
+          column={createColumn()}
+        />
+      );
+
+      expect(screen.getByRole("link")).toHaveTextContent("target-path");
+    });
+  });
 });

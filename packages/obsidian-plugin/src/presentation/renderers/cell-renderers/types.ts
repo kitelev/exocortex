@@ -36,6 +36,13 @@ export interface CellRendererProps {
 
   /** Handler to exit editing mode */
   onBlur?: () => void;
+
+  /**
+   * Optional function to resolve asset labels for wikilinks without aliases.
+   * When provided, wikilinks like [[uuid]] will display the resolved label
+   * instead of the raw target path.
+   */
+  getAssetLabel?: (path: string) => string | null;
 }
 
 /**
