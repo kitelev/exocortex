@@ -59,18 +59,12 @@ const SingleTable: React.FC<SingleTableProps> = ({
     }));
   };
 
-  const getInstanceClass = (metadata: Record<string, unknown>): WikiLink => {
-    const instanceClassRaw = metadata?.exo__Instance_class || "-";
-
-    const instanceClass = Array.isArray(instanceClassRaw)
-      ? instanceClassRaw[0] || "-"
-      : instanceClassRaw || "-";
-
-    if (instanceClass === "-") {
+  const parseInstanceClassValue = (value: unknown): WikiLink => {
+    if (!value || value === "-") {
       return { target: "-" };
     }
 
-    const content = String(instanceClass).replace(/^\[\[|\]\]$/g, "");
+    const content = String(value).replace(/^\[\[|\]\]$/g, "");
     const pipeIndex = content.indexOf("|");
 
     if (pipeIndex !== -1) {
@@ -83,6 +77,28 @@ const SingleTable: React.FC<SingleTableProps> = ({
     return {
       target: content.trim(),
     };
+  };
+
+  const getInstanceClasses = (metadata: Record<string, unknown>): WikiLink[] => {
+    const instanceClassRaw = metadata?.exo__Instance_class;
+
+    if (!instanceClassRaw) {
+      return [{ target: "-" }];
+    }
+
+    if (Array.isArray(instanceClassRaw)) {
+      if (instanceClassRaw.length === 0) {
+        return [{ target: "-" }];
+      }
+      return instanceClassRaw.map(parseInstanceClassValue);
+    }
+
+    return [parseInstanceClassValue(instanceClassRaw)];
+  };
+
+  // Backward compatibility - returns first instance class for sorting
+  const getInstanceClass = (metadata: Record<string, unknown>): WikiLink => {
+    return getInstanceClasses(metadata)[0];
   };
 
   const getDisplayLabel = (relation: AssetRelation): string => {
@@ -247,8 +263,38 @@ const SingleTable: React.FC<SingleTableProps> = ({
     enabled: shouldVirtualize && isParentMounted,
   });
 
+  const renderInstanceClassCell = (metadata: Record<string, unknown>): React.ReactNode => {
+    const instanceClasses = getInstanceClasses(metadata);
+
+    // If only one class and it's the placeholder
+    if (instanceClasses.length === 1 && instanceClasses[0].target === "-") {
+      return "-";
+    }
+
+    return instanceClasses.map((instanceClass, index) => (
+      <React.Fragment key={`${instanceClass.target}-${index}`}>
+        {instanceClass.target !== "-" ? (
+          <a
+            data-href={instanceClass.target}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onAssetClick?.(instanceClass.target, e);
+            }}
+            className="internal-link"
+            style={{ cursor: "pointer" }}
+          >
+            {instanceClass.alias || instanceClass.target}
+          </a>
+        ) : (
+          "-"
+        )}
+        {index < instanceClasses.length - 1 ? ", " : ""}
+      </React.Fragment>
+    ));
+  };
+
   const renderRow = (relation: AssetRelation, index: number, style?: React.CSSProperties) => {
-    const instanceClass = getInstanceClass(relation.metadata);
     const uniqueKey = `${relation.path}-${relation.propertyName || "body"}-${index}`;
     const rowClassName = relation.isArchived ? "archived-asset" : "";
 
@@ -274,22 +320,7 @@ const SingleTable: React.FC<SingleTableProps> = ({
           </a>
         </td>
         <td className="instance-class">
-          {instanceClass.target !== "-" ? (
-            <a
-              data-href={instanceClass.target}
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                onAssetClick?.(instanceClass.target, e);
-              }}
-              className="internal-link"
-              style={{ cursor: "pointer" }}
-            >
-              {instanceClass.alias || instanceClass.target}
-            </a>
-          ) : (
-            "-"
-          )}
+          {renderInstanceClassCell(relation.metadata)}
         </td>
         {showProperties.map((prop) => (
           <td key={prop}>

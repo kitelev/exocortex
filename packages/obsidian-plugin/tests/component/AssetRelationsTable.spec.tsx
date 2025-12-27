@@ -200,6 +200,163 @@ test.describe("AssetRelationsTable Component", () => {
     ).toContainText("↑");
   });
 
+  test("should display multiple exo__Instance_class values as comma-separated links", async ({
+    mount,
+  }) => {
+    const relationsWithMultipleClasses: AssetRelation[] = [
+      {
+        path: "tasks/task1.md",
+        title: "Multi-Class Task",
+        propertyName: "assignedTo",
+        isBodyLink: false,
+        created: Date.now(),
+        modified: Date.now(),
+        metadata: {
+          exo__Instance_class: ["[[exo__Prototype]]", "[[inbox__Stuff]]", "ems__Task"],
+        },
+      },
+    ];
+
+    const component = await mount(
+      <AssetRelationsTable relations={relationsWithMultipleClasses} />,
+    );
+
+    // All three classes should be visible
+    await expect(component.locator("text=exo__Prototype")).toBeVisible();
+    await expect(component.locator("text=inbox__Stuff")).toBeVisible();
+    await expect(component.locator("text=ems__Task")).toBeVisible();
+
+    // Each class should be a clickable link
+    const instanceClassCell = component.locator(".instance-class").first();
+    const links = instanceClassCell.locator("a.internal-link");
+    await expect(links).toHaveCount(3);
+  });
+
+  test("should handle click on individual class links in multi-value cell", async ({
+    mount,
+  }) => {
+    let clickedPaths: string[] = [];
+
+    const relationsWithMultipleClasses: AssetRelation[] = [
+      {
+        path: "tasks/task1.md",
+        title: "Multi-Class Task",
+        propertyName: "assignedTo",
+        isBodyLink: false,
+        created: Date.now(),
+        modified: Date.now(),
+        metadata: {
+          exo__Instance_class: ["[[exo__Prototype]]", "[[inbox__Stuff]]"],
+        },
+      },
+    ];
+
+    const component = await mount(
+      <AssetRelationsTable
+        relations={relationsWithMultipleClasses}
+        onAssetClick={(path) => {
+          clickedPaths.push(path);
+        }}
+      />,
+    );
+
+    // Click on first class link
+    await component.locator('a:has-text("exo__Prototype")').click();
+    expect(clickedPaths).toContain("exo__Prototype");
+
+    // Click on second class link
+    await component.locator('a:has-text("inbox__Stuff")').click();
+    expect(clickedPaths).toContain("inbox__Stuff");
+  });
+
+  test("should display single exo__Instance_class value without comma", async ({
+    mount,
+  }) => {
+    const relationsWithSingleClass: AssetRelation[] = [
+      {
+        path: "tasks/task1.md",
+        title: "Single-Class Task",
+        propertyName: "assignedTo",
+        isBodyLink: false,
+        created: Date.now(),
+        modified: Date.now(),
+        metadata: {
+          exo__Instance_class: "[[ems__Task]]",
+        },
+      },
+    ];
+
+    const component = await mount(
+      <AssetRelationsTable relations={relationsWithSingleClass} />,
+    );
+
+    await expect(component.locator("text=ems__Task")).toBeVisible();
+
+    // Should have exactly one link in instance-class cell
+    const instanceClassCell = component.locator(".instance-class").first();
+    await expect(instanceClassCell.locator("a.internal-link")).toHaveCount(1);
+
+    // Cell text should not contain comma
+    const cellText = await instanceClassCell.textContent();
+    expect(cellText).not.toContain(",");
+  });
+
+  test("should display dash for empty exo__Instance_class array", async ({
+    mount,
+  }) => {
+    const relationsWithEmptyArray: AssetRelation[] = [
+      {
+        path: "tasks/task1.md",
+        title: "No-Class Task",
+        propertyName: "assignedTo",
+        isBodyLink: false,
+        created: Date.now(),
+        modified: Date.now(),
+        metadata: {
+          exo__Instance_class: [],
+        },
+      },
+    ];
+
+    const component = await mount(
+      <AssetRelationsTable relations={relationsWithEmptyArray} />,
+    );
+
+    const instanceClassCell = component.locator(".instance-class").first();
+    await expect(instanceClassCell).toHaveText("-");
+  });
+
+  test("should display multiple values in dynamic property columns", async ({
+    mount,
+  }) => {
+    const relationsWithMultiValueProps: AssetRelation[] = [
+      {
+        path: "tasks/task1.md",
+        title: "Task with Tags",
+        propertyName: "assignedTo",
+        isBodyLink: false,
+        created: Date.now(),
+        modified: Date.now(),
+        metadata: {
+          exo__Instance_class: "ems__Task",
+          tags: ["[[tag1]]", "[[tag2]]", "[[tag3]]"],
+        },
+      },
+    ];
+
+    const component = await mount(
+      <AssetRelationsTable
+        relations={relationsWithMultiValueProps}
+        showProperties={["tags"]}
+      />,
+    );
+
+    // All tags should be visible
+    await expect(component.locator("text=tag1")).toBeVisible();
+    await expect(component.locator("text=tag2")).toBeVisible();
+    await expect(component.locator("text=tag3")).toBeVisible();
+  });
+
   test("should display exo__Asset_label when present instead of filename", async ({
     mount,
   }) => {
