@@ -28,6 +28,7 @@ import type { LayoutRenderResult } from "../layout";
 import { ReactRenderer } from "@plugin/presentation/utils/ReactRenderer";
 import { LoggerFactory } from "@plugin/adapters/logging/LoggerFactory";
 import { TableLayoutRenderer } from "@plugin/presentation/renderers/TableLayoutRenderer";
+import { WikilinkLabelResolver } from "@plugin/presentation/utils/WikilinkLabelResolver";
 import type { TableLayout } from "@plugin/domain/layout";
 import { isTableLayout } from "@plugin/domain/layout";
 
@@ -91,6 +92,7 @@ export class LayoutCodeBlockProcessor {
   private plugin: ExocortexPlugin;
   private layoutService: LayoutService | null = null;
   private reactRenderer: ReactRenderer = new ReactRenderer();
+  private wikilinkResolver: WikilinkLabelResolver;
   private activeLayouts: Map<HTMLElement, ActiveLayout> = new Map();
   private readonly DEBOUNCE_DELAY = 500;
   /** Maximum age for active layouts (5 minutes in milliseconds) */
@@ -102,6 +104,7 @@ export class LayoutCodeBlockProcessor {
 
   constructor(plugin: ExocortexPlugin) {
     this.plugin = plugin;
+    this.wikilinkResolver = new WikilinkLabelResolver(plugin.app);
     this.startCleanupInterval();
   }
 
@@ -404,6 +407,7 @@ export class LayoutCodeBlockProcessor {
             newValue as import("@plugin/presentation/renderers/cell-renderers").CellValue
           );
         },
+        getAssetLabel: (path: string) => this.wikilinkResolver.getAssetLabel(path),
       })
     );
   }

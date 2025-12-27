@@ -82,6 +82,13 @@ export interface TableLayoutRendererProps {
    * @param assetUri - The URI to substitute for $target
    */
   onExecuteCommand?: (sparql: string, assetUri: string) => Promise<void>;
+
+  /**
+   * Optional function to resolve asset labels for wikilinks without aliases.
+   * When provided, wikilinks like [[uuid]] in text cells will display the
+   * resolved label instead of the raw target path.
+   */
+  getAssetLabel?: (path: string) => string | null;
 }
 
 /**
@@ -172,6 +179,7 @@ export const TableLayoutRenderer: React.FC<TableLayoutRendererProps> = ({
   className,
   onCheckPrecondition,
   onExecuteCommand,
+  getAssetLabel,
 }) => {
   const options = { ...defaultOptions, ...propOptions };
   const columns = layout.columns || [];
@@ -331,6 +339,7 @@ export const TableLayoutRenderer: React.FC<TableLayoutRendererProps> = ({
           onChange={(newValue) => handleCellChange(row.id, column.uid, newValue)}
           isEditing={isEditing}
           onBlur={() => setEditingCell(null)}
+          getAssetLabel={getAssetLabel}
         />
       </td>
     );
