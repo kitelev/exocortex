@@ -757,18 +757,49 @@
 }
 
 /* Mobile responsive adjustments */
+/* Generic table - enable horizontal scroll and prevent header word-breaks */
+.exocortex-table-container {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.exocortex-table th {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 @media (max-width: 768px) {
   .exocortex-cards-grid {
     grid-template-columns: 1fr;
   }
 
+  /* Enable horizontal scroll for tables on mobile (Issue #1318) */
+  .exocortex-table-container,
+  .exocortex-backlinks-table,
+  .exocortex-relation-table {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
   .exocortex-table {
     font-size: 0.9em;
+    min-width: 400px;
   }
 
   .exocortex-table th,
   .exocortex-table td {
     padding: 0.25em;
+  }
+
+  /* Prevent column header word-breaks on mobile */
+  .exocortex-table th,
+  .exocortex-relation-table th {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 150px;
+    min-width: 60px;
   }
 
   .exocortex-asset-header {
@@ -1535,6 +1566,93 @@
 @media (prefers-reduced-motion: reduce) {
   .sparql-refresh-spinner {
     animation: none;
+  }
+}
+
+/* ============================================================================
+   SPARQL Tables - Mobile Responsive Layout (Issue #1318)
+
+   Problem: Column headers with long names like 'exo_Instance_class' and
+   'ems__Effort_status' break mid-word on narrow mobile screens, making
+   tables unreadable.
+
+   Solution:
+   1. Enable horizontal scrolling for table containers on mobile
+   2. Prevent column headers from word-wrapping (white-space: nowrap)
+   3. Add minimum width for headers with ellipsis truncation
+   4. Slightly reduce font size on mobile for better fit
+   ============================================================================ */
+
+/* SPARQL container - enable horizontal scroll on mobile */
+.sparql-results-container {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* SPARQL table headers - prevent mid-word breaks */
+.sparql-results-table th {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+
+/* Mobile responsive SPARQL tables */
+@media (max-width: 768px) {
+  /* Container gets smooth horizontal scroll */
+  .sparql-results-container {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    margin: 0 -0.5em;
+    padding: 0 0.5em;
+  }
+
+  /* Table maintains minimum readable width */
+  .sparql-results-table {
+    min-width: 400px;
+    font-size: 0.9em;
+  }
+
+  /* Headers - compact padding, prevent word breaks */
+  .sparql-results-table th {
+    padding: 0.4em 0.5em;
+    white-space: nowrap;
+    min-width: 80px;
+    max-width: 150px;
+  }
+
+  /* Cells - compact padding */
+  .sparql-results-table td {
+    padding: 0.4em 0.5em;
+  }
+
+  /* Pagination - stack on mobile for better touch targets */
+  .sparql-pagination {
+    flex-direction: column;
+    gap: 0.5em;
+    align-items: stretch;
+  }
+
+  .pagination-controls {
+    justify-content: center;
+  }
+}
+
+/* Very narrow screens (iPhone SE, compact mode) */
+@media (max-width: 375px) {
+  .sparql-results-table {
+    min-width: 350px;
+    font-size: 0.85em;
+  }
+
+  .sparql-results-table th {
+    padding: 0.3em 0.4em;
+    min-width: 60px;
+    max-width: 120px;
+  }
+
+  .sparql-results-table td {
+    padding: 0.3em 0.4em;
   }
 }
 
