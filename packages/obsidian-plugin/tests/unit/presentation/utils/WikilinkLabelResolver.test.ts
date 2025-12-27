@@ -6,6 +6,8 @@ import {
   WikilinkLabelResolver,
   resolveWikilinkLabel,
   getWikilinkDisplayText,
+  containsWikilinks,
+  parseEmbeddedWikilinks,
 } from "@plugin/presentation/utils/WikilinkLabelResolver";
 import { TFile } from "obsidian";
 
@@ -326,6 +328,149 @@ describe("WikilinkLabelResolver", () => {
         const mockApp = createMockApp({});
         const result = getWikilinkDisplayText(mockApp, "plain text", "Fallback");
         expect(result).toBe("Fallback");
+      });
+    });
+  });
+
+  describe("containsWikilinks", () => {
+    it("returns true for string containing a wikilink", () => {
+      expect(containsWikilinks("• [[project-1]]")).toBe(true);
+      expect(containsWikilinks("text [[link]] more text")).toBe(true);
+      expect(containsWikilinks("[[standalone]]")).toBe(true);
+    });
+
+    it("returns true for string with multiple wikilinks", () => {
+      expect(containsWikilinks("[[link1]] and [[link2]]")).toBe(true);
+    });
+
+    it("returns false for string without wikilinks", () => {
+      expect(containsWikilinks("plain text")).toBe(false);
+      expect(containsWikilinks("some [not a wikilink] here")).toBe(false);
+      expect(containsWikilinks("")).toBe(false);
+    });
+
+    it("returns false for incomplete wikilinks", () => {
+      expect(containsWikilinks("[[incomplete")).toBe(false);
+      expect(containsWikilinks("incomplete]]")).toBe(false);
+    });
+  });
+
+  describe("parseEmbeddedWikilinks", () => {
+    it("parses text with embedded wikilink", () => {
+      const segments = parseEmbeddedWikilinks("• [[project-1]]");
+
+      expect(segments).toHaveLength(2);
+      expect(segments[0]).toEqual({ type: "text", content: "• " });
+      expect(segments[1]).toEqual({
+        type: "wikilink",
+        content: "[[project-1]]",
+        target: "project-1",
+        displayText: "project-1",
+      });
+    });
+
+    it("parses text with wikilink in middle", () => {
+      const segments = parseEmbeddedWikilinks("see [[link]] for details");
+
+      expect(segments).toHaveLength(3);
+      expect(segments[0]).toEqual({ type: "text", content: "see " });
+      expect(segments[1]).toEqual({
+        type: "wikilink",
+        content: "[[link]]",
+        target: "link",
+        displayText: "link",
+      });
+      expect(segments[2]).toEqual({ type: "text", content: " for details" });
+    });
+
+    it("parses multiple wikilinks", () => {
+      const segments = parseEmbeddedWikilinks("[[a]] and [[b]]");
+
+      expect(segments).toHaveLength(3);
+      expect(segments[0].type).toBe("wikilink");
+      expect(segments[0].target).toBe("a");
+      expect(segments[1].type).toBe("text");
+      expect(segments[1].content).toBe(" and ");
+      expect(segments[2].type).toBe("wikilink");
+      expect(segments[2].target).toBe("b");
+    });
+
+    it("respects existing aliases", () => {
+      const segments = parseEmbeddedWikilinks("see [[target|My Alias]]");
+
+      expect(segments).toHaveLength(2);
+      expect(segments[1]).toEqual({
+        type: "wikilink",
+        content: "[[target|My Alias]]",
+        target: "target",
+        displayText: "My Alias",
+      });
+    });
+
+    it("uses getAssetLabel when provided", () => {
+      const getAssetLabel = jest.fn((path: string) => {
+        if (path === "project-1") return "Project Alpha";
+        return null;
+      });
+
+      const segments = parseEmbeddedWikilinks("see [[project-1]]", getAssetLabel);
+
+      expect(segments).toHaveLength(2);
+      expect(segments[1]).toEqual({
+        type: "wikilink",
+        content: "[[project-1]]",
+        target: "project-1",
+        displayText: "Project Alpha",
+      });
+      expect(getAssetLabel).toHaveBeenCalledWith("project-1");
+    });
+
+    it("falls back to target when getAssetLabel returns null", () => {
+      const getAssetLabel = jest.fn(() => null);
+
+      const segments = parseEmbeddedWikilinks("see [[unknown]]", getAssetLabel);
+
+      expect(segments).toHaveLength(2);
+      expect(segments[1]).toEqual({
+        type: "wikilink",
+        content: "[[unknown]]",
+        target: "unknown",
+        displayText: "unknown",
+      });
+    });
+
+    it("preserves alias over getAssetLabel result", () => {
+      const getAssetLabel = jest.fn(() => "Resolved Label");
+
+      const segments = parseEmbeddedWikilinks("[[target|Custom Alias]]", getAssetLabel);
+
+      expect(segments).toHaveLength(1);
+      expect(segments[0].displayText).toBe("Custom Alias");
+      // getAssetLabel should not be called when alias exists
+      expect(getAssetLabel).not.toHaveBeenCalled();
+    });
+
+    it("handles plain text without wikilinks", () => {
+      const segments = parseEmbeddedWikilinks("plain text");
+
+      expect(segments).toHaveLength(1);
+      expect(segments[0]).toEqual({ type: "text", content: "plain text" });
+    });
+
+    it("handles empty string", () => {
+      const segments = parseEmbeddedWikilinks("");
+      expect(segments).toHaveLength(0);
+    });
+
+    it("handles standalone wikilink", () => {
+      const segments = parseEmbeddedWikilinks("[[only-link]]");
+
+      expect(segments).toHaveLength(1);
+      expect(segments[0]).toEqual({
+        type: "wikilink",
+        content: "[[only-link]]",
+        target: "only-link",
+        displayText: "only-link",
       });
     });
   });

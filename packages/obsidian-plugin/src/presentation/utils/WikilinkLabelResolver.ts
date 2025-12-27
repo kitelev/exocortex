@@ -217,3 +217,84 @@ export function getWikilinkDisplayText(
   const parsed = WikilinkLabelResolver.parseWikilink(wikilinkValue);
   return fallback || parsed?.target || wikilinkValue;
 }
+
+/**
+ * Check if a string contains any wikilinks (embedded or standalone).
+ *
+ * @param value - Value to check
+ * @returns true if the value contains any wikilinks
+ */
+export function containsWikilinks(value: string): boolean {
+  return /\[\[[^\]]+\]\]/.test(value);
+}
+
+/**
+ * Interface for parsed embedded wikilink segments.
+ */
+export interface WikilinkSegment {
+  type: "text" | "wikilink";
+  content: string;
+  target?: string;
+  displayText?: string;
+}
+
+/**
+ * Parse text containing embedded wikilinks into segments.
+ * Each segment is either plain text or a wikilink.
+ *
+ * @param content - Text content that may contain wikilinks
+ * @param getAssetLabel - Optional function to resolve asset labels
+ * @returns Array of segments representing the parsed content
+ */
+export function parseEmbeddedWikilinks(
+  content: string,
+  getAssetLabel?: (path: string) => string | null,
+): WikilinkSegment[] {
+  const segments: WikilinkSegment[] = [];
+  const wikilinkPattern = /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g;
+
+  let lastIndex = 0;
+  let match;
+
+  while ((match = wikilinkPattern.exec(content)) !== null) {
+    // Add text before the wikilink
+    if (match.index > lastIndex) {
+      segments.push({
+        type: "text",
+        content: content.substring(lastIndex, match.index),
+      });
+    }
+
+    const target = match[1].trim();
+    const alias = match[2]?.trim();
+
+    let displayText: string;
+    if (alias) {
+      displayText = alias;
+    } else if (getAssetLabel) {
+      const resolvedLabel = getAssetLabel(target);
+      displayText = resolvedLabel || target;
+    } else {
+      displayText = target;
+    }
+
+    segments.push({
+      type: "wikilink",
+      content: match[0],
+      target,
+      displayText,
+    });
+
+    lastIndex = match.index + match[0].length;
+  }
+
+  // Add remaining text after the last wikilink
+  if (lastIndex < content.length) {
+    segments.push({
+      type: "text",
+      content: content.substring(lastIndex),
+    });
+  }
+
+  return segments;
+}

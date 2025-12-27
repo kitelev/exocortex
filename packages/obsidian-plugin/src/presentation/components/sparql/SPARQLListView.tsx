@@ -1,5 +1,9 @@
 import React, { useState, useMemo } from "react";
 import type { Triple } from "exocortex";
+import {
+  containsWikilinks,
+  parseEmbeddedWikilinks,
+} from "@plugin/presentation/utils/WikilinkLabelResolver";
 
 export interface SPARQLListViewProps {
   triples: Triple[];
@@ -52,6 +56,7 @@ const renderValue = (
     return "-";
   }
 
+  // Check if the entire value is a standalone wikilink
   if (isWikiLink(value)) {
     const parsed = parseWikiLink(value);
     let displayText: string;
@@ -81,6 +86,36 @@ const renderValue = (
       >
         {displayText}
       </a>
+    );
+  }
+
+  // Check if value contains embedded wikilinks (e.g., "• [[uuid]]" or "text [[link]] more")
+  if (containsWikilinks(value)) {
+    const segments = parseEmbeddedWikilinks(value, getAssetLabel);
+
+    return (
+      <>
+        {segments.map((segment, index) => {
+          if (segment.type === "wikilink" && segment.target) {
+            return (
+              <a
+                key={index}
+                data-href={segment.target}
+                className="internal-link"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onAssetClick?.(segment.target!, e);
+                }}
+                style={{ cursor: "pointer" }}
+              >
+                {segment.displayText}
+              </a>
+            );
+          }
+          return <React.Fragment key={index}>{segment.content}</React.Fragment>;
+        })}
+      </>
     );
   }
 
