@@ -143,6 +143,21 @@ export {
 } from "./infrastructure/sparql/aggregates/BuiltInAggregates";
 export { QueryPlanCache } from "./infrastructure/sparql/cache/QueryPlanCache";
 export {
+  SPARQLResultCache,
+  createSPARQLResultCache,
+  type SPARQLResultCacheOptions,
+  type SPARQLResultCacheStats,
+  type CacheableResult,
+} from "./infrastructure/sparql/cache/SPARQLResultCache";
+export {
+  IncrementalIndexer,
+  createIncrementalIndexer,
+  type IncrementalIndexerOptions,
+  type IncrementalIndexerStats,
+  type FileChange,
+  type ChangeType,
+} from "./infrastructure/sparql/cache/IncrementalIndexer";
+export {
   ResultSerializer,
   type ResultOutputFormat,
   type ResultSerializeOptions,
