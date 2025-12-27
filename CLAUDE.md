@@ -2661,6 +2661,89 @@ gh issue create --title "P1: Fix [alert type] (N alerts)" --body "..."
 
 **Reference**: Issues #1072-#1140
 
+### December 2025 3D Graph View Sprint
+
+**5 issues implementing 3D graph visualization (Issues #1266-#1270)**
+
+Completed 3D graph view with force simulation, controls UI, theming, performance optimization, and mobile support.
+
+| Issue | Feature | Steps | Key Learning |
+|-------|---------|-------|--------------|
+| #1266 | Force simulation + Scene3DManager | 79 | Physics-render loop separation critical |
+| #1267 | 3D controls UI | 78 | Overlay state needs separate management |
+| #1268 | Theming (dark/light, ontology colors) | 60 | CSS variable mapping to 3D materials |
+| #1269 | Performance (LOD, culling, WebGL recovery) | 121 | GPU resource management essential |
+| #1270 | Mobile/touch support | 97 | Touch event normalization patterns |
+
+**Key Success Factors:**
+1. **Layered architecture**: UI → Scene3DManager → Physics/Rendering
+2. **Warm context**: Sequential issues share infrastructure knowledge
+3. **Performance-first**: LOD, frustum culling, throttled updates
+
+**Reference**: See PATTERNS.md § "3D Scene Integration Pattern"
+
+### December 2025 AI Integration Sprint
+
+**5 issues implementing AI capabilities (Issues #1281-#1285)**
+
+| Issue | Feature | Steps | Integration Type |
+|-------|---------|-------|-----------------|
+| #1281 | Webhook Integration | 143 | External tool connectivity |
+| #1282 | Semantic Search (Vector Embeddings) | 129 | Embedding + similarity search |
+| #1283 | Natural Language to SPARQL | 431 | LLM query translation |
+| #1284 | Behavioral Analytics Dashboard | 159 | Pattern detection |
+| #1285 | Smart Autocomplete | 160 | Context-aware suggestions |
+
+**Key Patterns:**
+1. **Consistent architecture**: Input → AI Processor → Query → Knowledge Base → Response
+2. **Validation layers**: Always validate AI-generated output before execution
+3. **Caching**: Cache embeddings and frequent queries for performance
+
+**Reference**: See PATTERNS.md § "AI Agent Integration Pattern"
+
+### Wikilink Body Replacement (Issues #1304, #1306)
+
+**Problem**: Wikilinks in body content show UUID filenames instead of human-readable labels.
+
+**Solution**: Replace wikilinks during body rendering with `exo:Asset_label` values.
+
+**Key Edge Cases Discovered:**
+1. Preserve existing aliases (`[[file|My Alias]]`)
+2. Skip code blocks and frontmatter
+3. Handle non-existent files gracefully
+4. Fall back to filename when label not available
+
+**Steps Required**: #1304 (106 steps) + #1306 bug fix (232 steps)
+
+**Reference**: See PATTERNS.md § "Wikilink Body Replacement Pattern"
+
+### Mobile Table Layout Fixes (Issues #1288, #1318)
+
+**Problem**: Tables with many columns break on mobile viewports.
+
+**Solutions:**
+1. Card-based layout on narrow screens
+2. `data-label` + `::before` for mobile column labels
+3. `white-space: nowrap` for headers to prevent word-breaking
+4. Priority columns for essential data
+
+**Steps Required**: #1288 (191 steps) + #1318 (67 steps)
+
+**Reference**: See PATTERNS.md § "Mobile Table Responsive Pattern"
+
+### Multi-Value Property Display (Issue #1300)
+
+**Problem**: Frontmatter arrays like `tags: [a, b, c]` need readable display in table cells.
+
+**Solution**: Component with `maxVisible` truncation and `+N more` tooltip.
+
+**Key Techniques:**
+1. Array value extraction with type coercion
+2. Configurable separator and max visible count
+3. Tooltip for hidden values
+
+**Reference**: See PATTERNS.md § "Multi-Value Property Display Pattern"
+
 ---
 
 **Remember**:

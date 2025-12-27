@@ -4435,3 +4435,579 @@ class FocusIndicator {
 ### Reference
 
 - Issue #1194: Accessibility (WCAG compliance, screen readers) (456 steps - most complex)
+
+---
+
+## 3D Scene Integration Pattern
+
+**When to use**: Implementing 3D visualization features with force simulation and camera controls
+
+### Pattern Description
+
+Complex 3D graph visualization requires integration across multiple subsystems: physics simulation, WebGL rendering, camera controls, and UI overlays. The key is proper separation of concerns with clear interfaces between layers.
+
+### Real-World Example: 3D Graph View (Issues #1266-#1270)
+
+| Issue | Feature | Steps | Key Challenge |
+|-------|---------|-------|---------------|
+| #1266 | Force simulation + Scene3DManager | 79 | Physics loop integration |
+| #1267 | 3D controls UI (reset, rotate, labels, fullscreen) | 78 | Overlay state management |
+| #1268 | Theming (dark/light, node colors by ontology) | 60 | CSS variable mapping to 3D |
+| #1269 | Performance optimization (LOD, culling, WebGL recovery) | 121 | GPU resource management |
+| #1270 | Mobile/touch support (pinch-zoom, rotation, selection) | 97 | Touch event normalization |
+
+**Total: 435 steps across 5 issues**
+
+### Architecture Layers
+
+```
+┌─────────────────────────────────────────┐
+│          UI Controls Layer              │
+│  (Camera reset, labels toggle, etc.)    │
+└─────────────────────┬───────────────────┘
+                      ↓
+┌─────────────────────────────────────────┐
+│          Scene3DManager                 │
+│  (Coordinates simulation + rendering)   │
+└─────────────────────┬───────────────────┘
+                      ↓
+┌─────────────────────────────────────────┐
+│  Physics Layer  │   Rendering Layer     │
+│  (Force sim)    │   (WebGL/Three.js)    │
+└─────────────────┴───────────────────────┘
+```
+
+### Key Implementation Details
+
+1. **Physics-Render Loop Separation**:
+   ```typescript
+   class Scene3DManager {
+     private simulation: ForceSimulation;
+     private renderer: WebGLRenderer;
+
+     update(): void {
+       // Physics step (fixed timestep)
+       this.simulation.step();
+
+       // Render with current positions
+       this.renderer.render(this.simulation.getNodes());
+     }
+   }
+   ```
+
+2. **Camera Control Binding**:
+   ```typescript
+   const controls = new OrbitControls(camera, renderer.domElement);
+   controls.enableDamping = true;
+   controls.dampingFactor = 0.05;
+   controls.minDistance = 50;
+   controls.maxDistance = 2000;
+   ```
+
+3. **Theme Color Mapping**:
+   ```typescript
+   getNodeColorByClass(className: string): number {
+     const colorMap: Record<string, number> = {
+       'ems__Task': 0x4a90d9,
+       'ems__Project': 0x7eb3a1,
+       'ems__Area': 0xe5a84b,
+       // ...
+     };
+     return colorMap[className] ?? 0x888888;
+   }
+   ```
+
+4. **Touch Event Normalization**:
+   ```typescript
+   handleTouchStart(e: TouchEvent): void {
+     if (e.touches.length === 1) {
+       this.startRotation(e.touches[0]);
+     } else if (e.touches.length === 2) {
+       this.startPinchZoom(e.touches[0], e.touches[1]);
+     }
+   }
+   ```
+
+### Performance Considerations
+
+- **LOD (Level of Detail)**: Reduce geometry at distance
+- **Frustum Culling**: Skip off-screen nodes
+- **WebGL Context Recovery**: Handle lost context gracefully
+- **Throttled Updates**: Limit physics updates to 60fps
+
+### Reference
+
+- Issues #1266-#1270: 3D Graph View Implementation (Dec 26-27 2025)
+
+---
+
+## Wikilink Body Replacement Pattern
+
+**When to use**: Replacing wikilinks in rendered content with human-readable labels
+
+### Problem
+
+Markdown files contain wikilinks like `[[uuid-based-filename]]` which are not user-friendly when rendered. Need to replace with `exo:Asset_label` values while preserving the link functionality.
+
+### Real-World Example: Issues #1304, #1306
+
+**Issue #1304** (106 steps): Basic wikilink replacement
+**Issue #1306** (232 steps): Bug fix for edge cases
+
+### Implementation Pattern
+
+```typescript
+interface WikilinkReplacement {
+  original: string;      // "[[original-link]]"
+  displayText: string;   // "Human Readable Label"
+  targetPath: string;    // "path/to/file.md"
+}
+
+function replaceWikilinks(
+  content: string,
+  getLabel: (path: string) => string | null
+): string {
+  // Match wikilinks: [[link]] or [[link|alias]]
+  const wikilinkPattern = /\[\[([^\]|]+)(\|([^\]]+))?\]\]/g;
+
+  return content.replace(wikilinkPattern, (match, link, _, alias) => {
+    // If alias exists, keep it
+    if (alias) return match;
+
+    // Resolve file path
+    const targetPath = resolveWikilink(link);
+    if (!targetPath) return match;
+
+    // Get label for target asset
+    const label = getLabel(targetPath);
+    if (!label) return match;
+
+    // Return wikilink with label as alias
+    return `[[${link}|${label}]]`;
+  });
+}
+```
+
+### Edge Cases to Handle
+
+1. **Wikilinks with existing aliases**: Don't replace `[[file|My Alias]]`
+2. **Non-existent files**: Keep original wikilink
+3. **Assets without labels**: Fall back to filename
+4. **Nested wikilinks in code blocks**: Skip fenced code blocks
+5. **Wikilinks in frontmatter**: Skip YAML frontmatter section
+
+### Testing Pattern
+
+```typescript
+describe('Wikilink replacement', () => {
+  it('should replace wikilink with asset label', () => {
+    const content = 'See [[task-uuid-123]] for details';
+    const getLabel = (path: string) =>
+      path.includes('123') ? 'Important Task' : null;
+
+    const result = replaceWikilinks(content, getLabel);
+
+    expect(result).toBe('See [[task-uuid-123|Important Task]] for details');
+  });
+
+  it('should preserve existing aliases', () => {
+    const content = '[[task-uuid|Custom Name]]';
+    const result = replaceWikilinks(content, () => 'Label');
+
+    expect(result).toBe('[[task-uuid|Custom Name]]');
+  });
+
+  it('should skip code blocks', () => {
+    const content = '```\n[[code-link]]\n```';
+    const result = replaceWikilinks(content, () => 'Label');
+
+    expect(result).toBe('```\n[[code-link]]\n```');
+  });
+});
+```
+
+### Reference
+
+- Issue #1304: Replace wikilinks with labels during rendering (PR #1304)
+- Issue #1306: Bug fix for wikilink replacement edge cases (PR #1306)
+
+---
+
+## AI Agent Integration Pattern
+
+**When to use**: Integrating LLM/AI capabilities with the knowledge base
+
+### Pattern Description
+
+AI integrations in Exocortex follow a consistent pattern: receive input → transform to structured query → execute against knowledge base → format response.
+
+### Real-World Example: December 2025 AI Features
+
+| Issue | Feature | Steps | Complexity |
+|-------|---------|-------|------------|
+| #1281 | Webhook Integration | 143 | External tool connectivity |
+| #1282 | Semantic Search (Vector Embeddings) | 129 | Embedding generation + similarity |
+| #1283 | Natural Language to SPARQL | 431 | LLM query translation |
+| #1284 | Behavioral Analytics Dashboard | 159 | Pattern detection + visualization |
+| #1285 | Smart Autocomplete | 160 | Context-aware suggestions |
+
+### Architecture Pattern
+
+```
+┌─────────────────┐
+│   User Input    │ (natural language, search query, partial text)
+└────────┬────────┘
+         ↓
+┌─────────────────┐
+│  AI Processor   │ (LLM for NL→SPARQL, embedding model for search)
+└────────┬────────┘
+         ↓
+┌─────────────────┐
+│  Query Layer    │ (SPARQL engine, vector store)
+└────────┬────────┘
+         ↓
+┌─────────────────┐
+│  Knowledge Base │ (RDF triple store, file system)
+└────────┬────────┘
+         ↓
+┌─────────────────┐
+│ Response Format │ (ranked results, suggestions, visualizations)
+└─────────────────┘
+```
+
+### NL-to-SPARQL Implementation (Issue #1283)
+
+```typescript
+class NLToSPARQLAgent {
+  constructor(
+    private llm: LLMProvider,
+    private ontologyContext: string,
+    private exampleQueries: QueryExample[]
+  ) {}
+
+  async translate(naturalQuery: string): Promise<string> {
+    const prompt = `
+      Given this ontology context:
+      ${this.ontologyContext}
+
+      And these example queries:
+      ${this.formatExamples()}
+
+      Translate to SPARQL:
+      "${naturalQuery}"
+    `;
+
+    const sparql = await this.llm.complete(prompt);
+    return this.validateAndClean(sparql);
+  }
+}
+```
+
+### Semantic Search Implementation (Issue #1282)
+
+```typescript
+class SemanticSearchService {
+  constructor(
+    private embeddingModel: EmbeddingModel,
+    private vectorStore: VectorStore
+  ) {}
+
+  async search(query: string, limit: number = 10): Promise<SearchResult[]> {
+    // Generate query embedding
+    const queryEmbedding = await this.embeddingModel.embed(query);
+
+    // Find similar vectors
+    const results = await this.vectorStore.similaritySearch(
+      queryEmbedding,
+      limit
+    );
+
+    return results.map(r => ({
+      path: r.metadata.path,
+      score: r.score,
+      snippet: r.metadata.snippet
+    }));
+  }
+}
+```
+
+### Webhook Integration (Issue #1281)
+
+```typescript
+interface WebhookConfig {
+  url: string;
+  secret: string;
+  events: WebhookEvent[];
+}
+
+class WebhookService {
+  async emit(event: WebhookEvent, payload: unknown): Promise<void> {
+    const signature = this.sign(payload);
+
+    await fetch(this.config.url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Webhook-Signature': signature
+      },
+      body: JSON.stringify({ event, payload, timestamp: Date.now() })
+    });
+  }
+}
+```
+
+### Key Success Factors
+
+1. **Clear ontology context**: LLM needs schema understanding
+2. **Example queries**: Few-shot learning improves accuracy
+3. **Validation layer**: Check generated SPARQL before execution
+4. **Fallback behavior**: Graceful degradation when AI fails
+5. **Caching**: Cache embeddings and frequent queries
+
+### Reference
+
+- Issues #1281-#1285: AI Integration Sprint (Dec 27 2025)
+
+---
+
+## Mobile Table Responsive Pattern
+
+**When to use**: Building tables that work on both desktop and mobile viewports
+
+### Problem
+
+Tables with many columns don't fit on mobile screens. Need responsive layouts that maintain usability while adapting to narrow viewports.
+
+### Real-World Example: Issues #1288, #1318
+
+**Issue #1288**: Mobile-First Daily Review interface (191 steps)
+**Issue #1318**: Mobile table layout column header fix (67 steps)
+
+### CSS Pattern
+
+```css
+/* Base table styles */
+.exocortex-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+/* Mobile-first: card-based layout */
+@media (max-width: 768px) {
+  .exocortex-table thead {
+    display: none; /* Hide header row */
+  }
+
+  .exocortex-table tr {
+    display: block;
+    margin-bottom: 1rem;
+    padding: 0.5rem;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+  }
+
+  .exocortex-table td {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.25rem 0;
+  }
+
+  .exocortex-table td::before {
+    content: attr(data-label);
+    font-weight: bold;
+    flex: 0 0 40%;
+  }
+}
+
+/* Prevent word breaking in headers */
+.exocortex-table th {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+```
+
+### React Component Pattern
+
+```tsx
+interface ResponsiveTableProps {
+  columns: Column[];
+  data: Row[];
+}
+
+const ResponsiveTable: React.FC<ResponsiveTableProps> = ({ columns, data }) => {
+  return (
+    <table className="exocortex-table">
+      <thead>
+        <tr>
+          {columns.map(col => (
+            <th key={col.key}>{col.label}</th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {data.map(row => (
+          <tr key={row.id}>
+            {columns.map(col => (
+              <td key={col.key} data-label={col.label}>
+                {row[col.key]}
+              </td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+};
+```
+
+### Key Techniques
+
+1. **Card Layout on Mobile**: Transform rows to stacked cards
+2. **Data Labels**: Use `data-label` + `::before` for mobile column labels
+3. **Priority Columns**: Show only essential columns on small screens
+4. **Horizontal Scroll**: Alternative for data-dense tables
+5. **Word Break Prevention**: `white-space: nowrap` for headers
+
+### Testing Mobile Layouts
+
+```typescript
+test.describe('Mobile table', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 667 }); // iPhone SE
+  });
+
+  test('should show card layout', async ({ page }) => {
+    await page.goto('/daily-review');
+
+    // Headers should be hidden
+    await expect(page.locator('thead')).not.toBeVisible();
+
+    // Each row should be a card
+    const rows = page.locator('tbody tr');
+    await expect(rows.first()).toHaveCSS('display', 'block');
+  });
+});
+```
+
+### Reference
+
+- Issue #1288: Mobile-First Daily Review (PR #1288)
+- Issue #1318: Mobile table header word-breaking fix (PR #1318)
+
+---
+
+## Multi-Value Property Display Pattern
+
+**When to use**: Displaying frontmatter properties that contain multiple values in table cells
+
+### Problem
+
+Frontmatter properties can be arrays: `tags: [work, urgent, followup]`. Need to display all values in a readable format within table cells.
+
+### Real-World Example: Issue #1300
+
+**Issue #1300**: Display multiple property values in Asset Relations table (51 steps)
+
+### Implementation Pattern
+
+```typescript
+interface MultiValueCellProps {
+  values: string[];
+  maxVisible?: number;
+  separator?: string;
+}
+
+const MultiValueCell: React.FC<MultiValueCellProps> = ({
+  values,
+  maxVisible = 3,
+  separator = ', '
+}) => {
+  if (values.length === 0) return <span className="empty">—</span>;
+
+  const visible = values.slice(0, maxVisible);
+  const hidden = values.length - maxVisible;
+
+  return (
+    <span className="multi-value-cell">
+      {visible.join(separator)}
+      {hidden > 0 && (
+        <span className="more-count" title={values.slice(maxVisible).join(', ')}>
+          +{hidden}
+        </span>
+      )}
+    </span>
+  );
+};
+```
+
+### CSS Styling
+
+```css
+.multi-value-cell {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.multi-value-cell .tag {
+  display: inline-block;
+  padding: 2px 6px;
+  background: var(--background-secondary);
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.multi-value-cell .more-count {
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: help;
+}
+```
+
+### Data Transformation
+
+```typescript
+function getPropertyValues(
+  metadata: Record<string, unknown>,
+  propertyKey: string
+): string[] {
+  const value = metadata[propertyKey];
+
+  if (value === undefined || value === null) return [];
+  if (Array.isArray(value)) return value.map(String);
+  return [String(value)];
+}
+```
+
+### Table Integration
+
+```tsx
+const AssetRelationsTable: React.FC<Props> = ({ assets }) => {
+  return (
+    <table>
+      {assets.map(asset => (
+        <tr key={asset.path}>
+          <td>{asset.label}</td>
+          <td>
+            <MultiValueCell
+              values={getPropertyValues(asset.metadata, 'tags')}
+              maxVisible={3}
+            />
+          </td>
+          <td>
+            <MultiValueCell
+              values={getPropertyValues(asset.metadata, 'exo__Instance_class')}
+              maxVisible={2}
+            />
+          </td>
+        </tr>
+      ))}
+    </table>
+  );
+};
+```
+
+### Reference
+
+- Issue #1300: Display multiple property values in table cells (PR #1300)
