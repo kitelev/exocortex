@@ -292,31 +292,48 @@ export class EmbeddingService {
    * Clean markdown content for embedding
    */
   private cleanMarkdownContent(content: string): string {
-    return (
-      content
-        // Remove frontmatter
-        .replace(/^---[\s\S]*?---\n*/m, "")
-        // Remove code blocks but keep code content
-        .replace(/```[\s\S]*?```/g, (match) => {
-          const code = match.replace(/```\w*\n?|\n?```/g, "");
-          return code;
-        })
-        // Remove inline code markers
-        .replace(/`([^`]+)`/g, "$1")
-        // Clean wiki-links to just text
-        .replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (_, link, alias) => alias || link)
-        // Remove markdown links but keep text
-        .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
-        // Remove image syntax
-        .replace(/!\[[^\]]*\]\([^)]+\)/g, "")
-        // Remove horizontal rules
-        .replace(/^---+$/gm, "")
-        // Remove HTML tags
-        .replace(/<[^>]+>/g, "")
-        // Normalize whitespace
-        .replace(/\n{3,}/g, "\n\n")
-        .trim()
-    );
+    let cleaned = content
+      // Remove frontmatter
+      .replace(/^---[\s\S]*?---\n*/m, "")
+      // Remove code blocks but keep code content
+      .replace(/```[\s\S]*?```/g, (match) => {
+        const code = match.replace(/```\w*\n?|\n?```/g, "");
+        return code;
+      })
+      // Remove inline code markers
+      .replace(/`([^`]+)`/g, "$1")
+      // Clean wiki-links to just text
+      .replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (_, link, alias) => alias || link)
+      // Remove markdown links but keep text
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+      // Remove image syntax
+      .replace(/!\[[^\]]*\]\([^)]+\)/g, "")
+      // Remove horizontal rules
+      .replace(/^---+$/gm, "");
+
+    // Remove HTML tags using loop to handle nested/malformed tags
+    cleaned = this.removeHtmlTags(cleaned);
+
+    // Normalize whitespace
+    return cleaned.replace(/\n{3,}/g, "\n\n").trim();
+  }
+
+  /**
+   * Remove HTML tags from text, handling nested and malformed tags.
+   * Uses iterative approach to ensure complete sanitization.
+   */
+  private removeHtmlTags(text: string): string {
+    const htmlTagPattern = /<[^>]*>/g;
+    let result = text;
+    let previousResult: string;
+
+    // Repeat until no more tags are found
+    do {
+      previousResult = result;
+      result = result.replace(htmlTagPattern, "");
+    } while (result !== previousResult);
+
+    return result;
   }
 
   /**
