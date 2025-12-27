@@ -124,6 +124,27 @@ export {
   getTemplateByName,
   type SPARQLTemplate,
 } from "./services/SPARQLTemplateLibrary";
+export {
+  AnalyticsService,
+  type AnalyticsPeriod,
+  type DurationStats,
+  type DailyAggregate,
+  type HourlyDistribution,
+  type SleepAnalysis,
+  type TaskCompletionAnalysis,
+  type ActivityFrequencyAnalysis,
+  type EffortData,
+} from "./services/AnalyticsService";
+export {
+  TrendDetectionService,
+  type TrendDirection,
+  type TrendStrength,
+  type TrendAnalysis,
+  type Anomaly,
+  type CorrelationResult,
+  type WeeklyPattern,
+  type BehavioralInsight,
+} from "./services/TrendDetectionService";
 
 // Utilities exports
 export { FrontmatterService } from "./utilities/FrontmatterService";
