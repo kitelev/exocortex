@@ -31,6 +31,8 @@ module.exports = {
     "!src/**/*.test.ts",
     // Exclude ask.ts from coverage - tested via e2e tests due to complex dependencies
     "!src/commands/ask.ts",
+    // Exclude daily-review.ts from coverage - actual logic tested in DailyReviewService.test.ts
+    "!src/commands/daily-review.ts",
   ],
   coverageDirectory: "coverage",
   coverageReporters: ["text", "lcov", "html", "json-summary"],
