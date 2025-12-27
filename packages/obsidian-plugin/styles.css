@@ -4981,3 +4981,35 @@
 .graph3d-recovery-overlay--hidden {
   display: none;
 }
+
+
+/* ============================================================================
+   Webhook Settings
+   ============================================================================ */
+
+.exocortex-webhook-events-container {
+  margin: 8px 0;
+}
+
+.exocortex-events-grid-layout {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.exocortex-event-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.exocortex-webhook-advanced {
+  margin-top: 8px;
+}
+
+.exocortex-webhook-advanced-summary {
+  cursor: pointer;
+  color: var(--text-muted);
+}
+

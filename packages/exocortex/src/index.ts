@@ -56,6 +56,14 @@ export { AssetConversionService } from "./services/AssetConversionService";
 export { SessionEventService } from "./services/SessionEventService";
 export { URIConstructionService } from "./services/URIConstructionService";
 export {
+  WebhookService,
+  type WebhookEventType,
+  type WebhookEventPayload,
+  type WebhookConfig,
+  type WebhookDispatchResult,
+  type RateLimitConfig,
+} from "./services/WebhookService";
+export {
   GenericAssetCreationService,
   type GenericAssetCreationConfig,
   type AssetPropertyDefinition,

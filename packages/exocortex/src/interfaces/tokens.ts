@@ -62,6 +62,9 @@ export const DI_TOKENS = {
   // Query services
   AreaHierarchyBuilder: Symbol.for("AreaHierarchyBuilder"),
   URIConstructionService: Symbol.for("URIConstructionService"),
+
+  // Integration services
+  WebhookService: Symbol.for("WebhookService"),
 } as const;
 
 export type DIToken = (typeof DI_TOKENS)[keyof typeof DI_TOKENS];

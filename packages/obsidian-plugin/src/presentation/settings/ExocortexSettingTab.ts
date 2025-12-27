@@ -1,8 +1,15 @@
-import { App, PluginSettingTab, Setting } from "obsidian";
+import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import type ExocortexPlugin from '@plugin/ExocortexPlugin';
 import { DEFAULT_DISPLAY_NAME_TEMPLATE } from "@plugin/domain/display-name/DisplayNameTemplateEngine";
 import { DisplayNameResolver } from "@plugin/domain/display-name/DisplayNameResolver";
-import { DEFAULT_DISPLAY_NAME_SETTINGS, type DisplayNameSettings } from "@plugin/domain/settings/ExocortexSettings";
+import {
+  DEFAULT_DISPLAY_NAME_SETTINGS,
+  DEFAULT_WEBHOOK_SETTINGS,
+  type DisplayNameSettings,
+  type StoredWebhookConfig,
+  type WebhookSettings,
+} from "@plugin/domain/settings/ExocortexSettings";
+import type { WebhookEventType } from "exocortex";
 
 export class ExocortexSettingTab extends PluginSettingTab {
   plugin: ExocortexPlugin;
@@ -357,6 +364,300 @@ export class ExocortexSettingTab extends PluginSettingTab {
       li.createEl("code", { text: code });
       li.appendText(` - ${desc}`);
     }
+
+    // Webhook Integration section
+    this.renderWebhookSettings(containerEl);
+  }
+
+  /**
+   * Render webhook settings section
+   */
+  private renderWebhookSettings(containerEl: HTMLElement): void {
+    // Ensure webhookSettings is initialized
+    if (!this.plugin.settings.webhookSettings) {
+      this.plugin.settings.webhookSettings = { ...DEFAULT_WEBHOOK_SETTINGS };
+    }
+
+    const webhookSettings = this.plugin.settings.webhookSettings;
+
+    new Setting(containerEl)
+      .setName("Webhook integrations")
+      .setHeading();
+
+    const webhookDesc = containerEl.createDiv({ cls: "setting-item-description" });
+    webhookDesc.createEl("p", {
+      text: "Send events to external services (n8n, Zapier, etc.) when changes occur in your vault", // eslint-disable-line obsidianmd/ui/sentence-case
+    });
+
+    // Global webhook toggle
+    new Setting(containerEl)
+      .setName("Enable webhooks")
+      .setDesc("Globally enable or disable all webhook integrations")
+      .addToggle((toggle) =>
+        toggle
+          .setValue(webhookSettings.enabled)
+          .onChange(async (value) => {
+            webhookSettings.enabled = value;
+            await this.plugin.saveSettings();
+            this.plugin.toggleWebhooks(value);
+          }),
+      );
+
+    // Webhooks list container
+    const webhooksListContainer = containerEl.createDiv({
+      cls: "exocortex-webhooks-list",
+    });
+
+    this.renderWebhooksList(webhooksListContainer, webhookSettings);
+
+    // Add new webhook button
+    new Setting(containerEl)
+      .setName("Add webhook")
+      .setDesc("Add a new webhook endpoint")
+      .addButton((button) =>
+        button
+          .setButtonText("Add webhook")
+          .setCta()
+          .onClick(() => {
+            const newWebhook: StoredWebhookConfig = {
+              id: this.generateWebhookId(),
+              name: "New webhook",
+              url: "",
+              events: [],
+              enabled: true,
+            };
+            webhookSettings.webhooks.push(newWebhook);
+            this.renderWebhooksList(webhooksListContainer, webhookSettings);
+          }),
+      );
+  }
+
+  /**
+   * Render the list of configured webhooks
+   */
+  private renderWebhooksList(container: HTMLElement, webhookSettings: WebhookSettings): void {
+    container.empty();
+
+    if (webhookSettings.webhooks.length === 0) {
+      container.createEl("p", {
+        // eslint-disable-next-line obsidianmd/ui/sentence-case
+        text: "No webhooks configured. Click 'Add webhook' to create one.",
+        cls: "exocortex-webhooks-empty",
+      });
+      return;
+    }
+
+    for (let i = 0; i < webhookSettings.webhooks.length; i++) {
+      const webhook = webhookSettings.webhooks[i];
+      this.renderWebhookItem(container, webhook, i, webhookSettings);
+    }
+  }
+
+  /**
+   * Render a single webhook configuration item
+   */
+  private renderWebhookItem(
+    container: HTMLElement,
+    webhook: StoredWebhookConfig,
+    index: number,
+    webhookSettings: WebhookSettings
+  ): void {
+    const webhookContainer = container.createDiv({
+      cls: "exocortex-webhook-item",
+    });
+
+    webhookContainer.style.cssText = `
+      border: 1px solid var(--background-modifier-border);
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 12px;
+    `;
+
+    // Webhook name and enable toggle
+    new Setting(webhookContainer)
+      .setName("Webhook name")
+      .addText((text) =>
+        text
+          .setPlaceholder("My webhook")
+          .setValue(webhook.name)
+          .onChange(async (value) => {
+            webhook.name = value;
+            await this.plugin.saveSettings();
+            this.plugin.updateWebhookConfig(webhook);
+          }),
+      )
+      .addToggle((toggle) =>
+        toggle
+          .setValue(webhook.enabled)
+          .setTooltip("Enable/disable this webhook")
+          .onChange(async (value) => {
+            webhook.enabled = value;
+            await this.plugin.saveSettings();
+            this.plugin.updateWebhookConfig(webhook);
+          }),
+      );
+
+    // Webhook URL
+    new Setting(webhookContainer)
+      .setName("URL")
+      .setDesc("The endpoint to send events to")
+      .addText((text) =>
+        text
+          .setPlaceholder("https://your-service.com/webhook")
+          .setValue(webhook.url)
+          .onChange(async (value) => {
+            webhook.url = value;
+            await this.plugin.saveSettings();
+            this.plugin.updateWebhookConfig(webhook);
+          }),
+      );
+
+    // Event types
+    const eventTypes: { value: WebhookEventType; label: string }[] = [
+      { value: "note.created", label: "Note created" },
+      { value: "note.updated", label: "Note updated" },
+      { value: "note.deleted", label: "Note deleted" },
+      { value: "task.completed", label: "Task completed" },
+      { value: "task.started", label: "Task started" },
+      { value: "task.blocked", label: "Task blocked" },
+      { value: "status.changed", label: "Status changed" },
+      { value: "property.changed", label: "Property changed" },
+    ];
+
+    const eventsContainer = webhookContainer.createDiv({
+      cls: "exocortex-webhook-events",
+    });
+    eventsContainer.addClass("exocortex-webhook-events-container");
+
+    new Setting(eventsContainer)
+      .setName("Events")
+      .setDesc("Select which events trigger this webhook (empty = all events)");
+
+    const eventsGrid = eventsContainer.createDiv({
+      cls: "exocortex-events-grid",
+    });
+    eventsGrid.addClass("exocortex-events-grid-layout");
+
+    for (const eventType of eventTypes) {
+      const eventLabel = eventsGrid.createEl("label", {
+        cls: "exocortex-event-checkbox",
+      });
+      eventLabel.addClass("exocortex-event-checkbox-label");
+
+      const checkbox = eventLabel.createEl("input", {
+        type: "checkbox",
+      });
+      checkbox.checked = webhook.events.includes(eventType.value);
+      checkbox.addEventListener("change", async () => {
+        if (checkbox.checked) {
+          if (!webhook.events.includes(eventType.value)) {
+            webhook.events.push(eventType.value);
+          }
+        } else {
+          const idx = webhook.events.indexOf(eventType.value);
+          if (idx !== -1) {
+            webhook.events.splice(idx, 1);
+          }
+        }
+        await this.plugin.saveSettings();
+        this.plugin.updateWebhookConfig(webhook);
+      });
+
+      eventLabel.createSpan({ text: eventType.label });
+    }
+
+    // Advanced settings (collapsed by default)
+    const advancedDetails = webhookContainer.createEl("details");
+    advancedDetails.addClass("exocortex-webhook-advanced");
+
+    const advancedSummary = advancedDetails.createEl("summary");
+    advancedSummary.textContent = "Advanced settings";
+    advancedSummary.addClass("exocortex-webhook-advanced-summary");
+
+    const advancedContent = advancedDetails.createDiv();
+
+    // Secret for HMAC
+    new Setting(advancedContent)
+      .setName("Secret")
+      // eslint-disable-next-line obsidianmd/ui/sentence-case
+      .setDesc("Optional secret for HMAC signature verification")
+      .addText((text) =>
+        text
+          // eslint-disable-next-line obsidianmd/ui/sentence-case
+          .setPlaceholder("your-secret-key")
+          .setValue(webhook.secret || "")
+          .onChange(async (value) => {
+            webhook.secret = value || undefined;
+            await this.plugin.saveSettings();
+            this.plugin.updateWebhookConfig(webhook);
+          }),
+      );
+
+    // Timeout
+    new Setting(advancedContent)
+      .setName("Timeout (ms)")
+      .setDesc("Request timeout in milliseconds (default: 30000)")
+      .addText((text) =>
+        text
+          .setPlaceholder("30000")
+          .setValue(webhook.timeout?.toString() || "")
+          .onChange(async (value) => {
+            const timeout = parseInt(value, 10);
+            webhook.timeout = isNaN(timeout) ? undefined : timeout;
+            await this.plugin.saveSettings();
+            this.plugin.updateWebhookConfig(webhook);
+          }),
+      );
+
+    // Retry count
+    new Setting(advancedContent)
+      .setName("Retry count")
+      .setDesc("Number of retries on failure (default: 3)")
+      .addText((text) =>
+        text
+          .setPlaceholder("3")
+          .setValue(webhook.retryCount?.toString() || "")
+          .onChange(async (value) => {
+            const retryCount = parseInt(value, 10);
+            webhook.retryCount = isNaN(retryCount) ? undefined : retryCount;
+            await this.plugin.saveSettings();
+            this.plugin.updateWebhookConfig(webhook);
+          }),
+      );
+
+    // Action buttons
+    new Setting(webhookContainer)
+      .addButton((button) =>
+        button
+          .setButtonText("Test")
+          .setTooltip("Send a test event to this webhook")
+          .onClick(async () => {
+            const result = await this.plugin.testWebhook(webhook.id);
+            if (result.success) {
+              new Notice(`Webhook test successful (${result.statusCode})`);
+            } else {
+              new Notice(`Webhook test failed: ${result.error}`);
+            }
+          }),
+      )
+      .addButton((button) =>
+        button
+          .setButtonText("Delete")
+          .setWarning()
+          .onClick(async () => {
+            webhookSettings.webhooks.splice(index, 1);
+            await this.plugin.saveSettings();
+            this.plugin.removeWebhook(webhook.id);
+            this.renderWebhooksList(container, webhookSettings);
+          }),
+      );
+  }
+
+  /**
+   * Generate a unique webhook ID
+   */
+  private generateWebhookId(): string {
+    return `webhook-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
   }
 
   /**

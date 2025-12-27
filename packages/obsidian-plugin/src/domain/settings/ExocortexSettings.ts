@@ -1,3 +1,48 @@
+import type { WebhookEventType } from "exocortex";
+
+/**
+ * Webhook configuration stored in settings
+ * Excludes runtime-only fields from WebhookConfig
+ */
+export interface StoredWebhookConfig {
+  /** Unique identifier for the webhook */
+  id: string;
+  /** Human-readable name */
+  name: string;
+  /** Target URL to send events to */
+  url: string;
+  /** Events to subscribe to (empty = all events) */
+  events: WebhookEventType[];
+  /** Whether the webhook is enabled */
+  enabled: boolean;
+  /** Optional secret for HMAC signature */
+  secret?: string;
+  /** Custom headers to include in requests */
+  headers?: Record<string, string>;
+  /** Timeout in milliseconds (default: 30000) */
+  timeout?: number;
+  /** Retry count on failure (default: 3) */
+  retryCount?: number;
+}
+
+/**
+ * Webhook settings configuration
+ */
+export interface WebhookSettings {
+  /** Whether webhooks are globally enabled */
+  enabled: boolean;
+  /** Configured webhooks */
+  webhooks: StoredWebhookConfig[];
+}
+
+/**
+ * Default webhook settings
+ */
+export const DEFAULT_WEBHOOK_SETTINGS: WebhookSettings = {
+  enabled: false,
+  webhooks: [],
+};
+
 /**
  * Per-class display name template configuration
  */
@@ -63,6 +108,8 @@ export interface ExocortexSettings {
   sortByDisplayName: boolean;
   /** Per-class display name template settings */
   displayNameSettings: DisplayNameSettings;
+  /** Webhook integration settings */
+  webhookSettings: WebhookSettings;
   [key: string]: unknown;
 }
 
@@ -83,4 +130,5 @@ export const DEFAULT_SETTINGS: ExocortexSettings = {
   displayNameTemplate: "{{exo__Asset_label}}",
   sortByDisplayName: false,
   displayNameSettings: DEFAULT_DISPLAY_NAME_SETTINGS,
+  webhookSettings: DEFAULT_WEBHOOK_SETTINGS,
 };
