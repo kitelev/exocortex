@@ -151,6 +151,13 @@ export {
   type AutocompleteConfig,
   DEFAULT_AUTOCOMPLETE_CONFIG,
 } from "./services/AutocompleteService";
+export {
+  DailyReviewService,
+  type Practice,
+  type DailyReviewSummary,
+  type QuickCaptureResult,
+  type CreateFromPracticeOptions,
+} from "./services/DailyReviewService";
 
 // Utilities exports
 export { FrontmatterService } from "./utilities/FrontmatterService";
