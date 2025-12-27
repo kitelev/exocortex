@@ -29,6 +29,8 @@ module.exports = {
     "src/**/*.ts",
     "!src/**/*.d.ts",
     "!src/**/*.test.ts",
+    // Exclude ask.ts from coverage - tested via e2e tests due to complex dependencies
+    "!src/commands/ask.ts",
   ],
   coverageDirectory: "coverage",
   coverageReporters: ["text", "lcov", "html", "json-summary"],

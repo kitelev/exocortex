@@ -151,6 +151,25 @@ describe("askCommand", () => {
       const option = cmd.options.find(o => o.long === "--explain");
       expect(option).toBeDefined();
     });
+
+    it("should have --show-query as boolean option", () => {
+      const cmd = askCommand();
+      const option = cmd.options.find(o => o.long === "--show-query");
+      // Boolean flags don't have required set
+      expect(option?.flags).toBe("--show-query");
+    });
+
+    it("should have --explain as boolean option", () => {
+      const cmd = askCommand();
+      const option = cmd.options.find(o => o.long === "--explain");
+      expect(option?.flags).toBe("--explain");
+    });
+
+    it("should have --format option accepting type argument", () => {
+      const cmd = askCommand();
+      const option = cmd.options.find(o => o.long === "--format");
+      expect(option?.flags).toBe("--format <type>");
+    });
   });
 
   // Note: These tests require complex mocking due to new ErrorHandler/VaultNotFoundError imports.
