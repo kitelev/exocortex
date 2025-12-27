@@ -298,4 +298,138 @@ describe("ErrorHandler", () => {
       expect(ErrorHandler.getFormat()).toBe("text");
     });
   });
+
+  describe("debug mode", () => {
+    const originalEnv = process.env.NODE_ENV;
+
+    afterEach(() => {
+      process.env.NODE_ENV = originalEnv;
+    });
+
+    it("should show stack trace in development mode for CLIError", () => {
+      process.env.NODE_ENV = "development";
+      const error = new FileNotFoundError("/path/to/file.md");
+
+      expect(() => ErrorHandler.handle(error)).toThrow("process.exit(3)");
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("Stack trace"));
+    });
+
+    it("should show stack trace in development mode for plain Error", () => {
+      process.env.NODE_ENV = "development";
+      const error = new Error("Some error");
+
+      expect(() => ErrorHandler.handle(error)).toThrow("process.exit(1)");
+      expect(consoleErrorSpy).toHaveBeenCalledWith(error.stack);
+    });
+
+    it("should include stack in JSON output for CLIError in debug mode", () => {
+      process.env.NODE_ENV = "development";
+      ErrorHandler.setFormat("json");
+      const error = new FileNotFoundError("/path/to/file.md");
+
+      expect(() => ErrorHandler.handle(error)).toThrow("process.exit(3)");
+
+      const jsonOutput = consoleLogSpy.mock.calls[0][0];
+      const parsed = JSON.parse(jsonOutput);
+      expect(parsed.error.stack).toBeDefined();
+    });
+
+    it("should include stack in JSON output for plain Error in debug mode", () => {
+      process.env.NODE_ENV = "development";
+      ErrorHandler.setFormat("json");
+      const error = new Error("Some error");
+
+      expect(() => ErrorHandler.handle(error)).toThrow("process.exit(1)");
+
+      const jsonOutput = consoleLogSpy.mock.calls[0][0];
+      const parsed = JSON.parse(jsonOutput);
+      expect(parsed.error.stack).toBeDefined();
+    });
+  });
+
+  describe("error classification - additional patterns", () => {
+    it("should classify 'modified' errors as concurrent modification", () => {
+      const error = new Error("File was modified by another process");
+
+      expect(() => ErrorHandler.handle(error)).toThrow("process.exit(8)");
+    });
+
+    it("should classify 'permission denied' as EACCES", () => {
+      const error = new Error("permission denied to access file");
+
+      expect(() => ErrorHandler.handle(error)).toThrow("process.exit(4)");
+    });
+
+    it("should classify 'Not a' as invalid arguments", () => {
+      const error = new Error("Not a valid file type");
+
+      expect(() => ErrorHandler.handle(error)).toThrow("process.exit(2)");
+    });
+  });
+
+  describe("recovery hints coverage", () => {
+    beforeEach(() => {
+      ErrorHandler.setFormat("json");
+    });
+
+    it("should provide recovery hint for vault not found", () => {
+      const error = new VaultNotFoundError("/path/to/vault");
+
+      expect(() => ErrorHandler.handle(error)).toThrow("process.exit(3)");
+
+      const jsonOutput = consoleLogSpy.mock.calls[0][0];
+      const parsed = JSON.parse(jsonOutput);
+      expect(parsed.error.recovery.message).toContain("vault");
+    });
+
+    it("should provide recovery hint for state transition errors", () => {
+      const error = new Error("Invalid state transition");
+
+      expect(() => ErrorHandler.handle(error)).toThrow("process.exit(6)");
+
+      const jsonOutput = consoleLogSpy.mock.calls[0][0];
+      const parsed = JSON.parse(jsonOutput);
+      expect(parsed.error.recovery.message).toContain("state transition");
+    });
+
+    it("should provide recovery hint for permission denied errors", () => {
+      const error = new Error("EACCES: permission denied");
+
+      expect(() => ErrorHandler.handle(error)).toThrow("process.exit(4)");
+
+      const jsonOutput = consoleLogSpy.mock.calls[0][0];
+      const parsed = JSON.parse(jsonOutput);
+      expect(parsed.error.recovery.message).toContain("permission");
+    });
+
+    it("should provide recovery hint for transaction errors", () => {
+      const error = new Error("Transaction failed");
+
+      expect(() => ErrorHandler.handle(error)).toThrow("process.exit(7)");
+
+      const jsonOutput = consoleLogSpy.mock.calls[0][0];
+      const parsed = JSON.parse(jsonOutput);
+      expect(parsed.error.recovery.message).toContain("Transaction");
+    });
+
+    it("should provide recovery hint for concurrent modification errors", () => {
+      const error = new Error("concurrent access violation");
+
+      expect(() => ErrorHandler.handle(error)).toThrow("process.exit(8)");
+
+      const jsonOutput = consoleLogSpy.mock.calls[0][0];
+      const parsed = JSON.parse(jsonOutput);
+      expect(parsed.error.recovery.message).toContain("modified");
+    });
+
+    it("should provide default recovery hint for unknown errors", () => {
+      const error = new Error("Something completely random");
+
+      expect(() => ErrorHandler.handle(error)).toThrow("process.exit(1)");
+
+      const jsonOutput = consoleLogSpy.mock.calls[0][0];
+      const parsed = JSON.parse(jsonOutput);
+      expect(parsed.error.recovery.message).toContain("unexpected error");
+    });
+  });
 });

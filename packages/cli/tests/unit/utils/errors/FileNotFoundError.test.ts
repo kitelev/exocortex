@@ -89,4 +89,66 @@ describe("FileNotFoundError", () => {
       expect(response.error.exitCode).toBe(ExitCodes.FILE_NOT_FOUND);
     });
   });
+
+  describe("formatJson()", () => {
+    it("should return valid JSON string", () => {
+      const error = new FileNotFoundError("/path/to/file.md");
+
+      const json = error.formatJson();
+
+      expect(() => JSON.parse(json)).not.toThrow();
+      const parsed = JSON.parse(json);
+      expect(parsed.success).toBe(false);
+      expect(parsed.error.code).toBe(ErrorCode.VALIDATION_FILE_NOT_FOUND);
+      expect(parsed.error.message).toBe("File not found: /path/to/file.md");
+    });
+
+    it("should include stack when includeStack is true", () => {
+      const error = new FileNotFoundError("/path/to/file.md");
+
+      const json = error.formatJson(true);
+
+      const parsed = JSON.parse(json);
+      expect(parsed.error.stack).toBeDefined();
+      expect(parsed.error.stack).toContain("FileNotFoundError");
+    });
+
+    it("should not include stack when includeStack is false", () => {
+      const error = new FileNotFoundError("/path/to/file.md");
+
+      const json = error.formatJson(false);
+
+      const parsed = JSON.parse(json);
+      expect(parsed.error.stack).toBeUndefined();
+    });
+
+    it("should include context in JSON output", () => {
+      const error = new FileNotFoundError("/path/to/file.md", { operation: "read" });
+
+      const json = error.formatJson();
+
+      const parsed = JSON.parse(json);
+      expect(parsed.error.context.filepath).toBe("/path/to/file.md");
+      expect(parsed.error.context.operation).toBe("read");
+    });
+
+    it("should include exitCode in JSON output", () => {
+      const error = new FileNotFoundError("/path/to/file.md");
+
+      const json = error.formatJson();
+
+      const parsed = JSON.parse(json);
+      expect(parsed.error.exitCode).toBe(ExitCodes.FILE_NOT_FOUND);
+    });
+
+    it("should include recovery in JSON output", () => {
+      const error = new FileNotFoundError("/path/to/file.md");
+
+      const json = error.formatJson();
+
+      const parsed = JSON.parse(json);
+      expect(parsed.error.recovery).toBeDefined();
+      expect(parsed.error.recovery.suggestion).toContain("ls -la");
+    });
+  });
 });
