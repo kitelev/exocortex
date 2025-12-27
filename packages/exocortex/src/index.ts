@@ -68,6 +68,31 @@ export {
   type GenericAssetCreationConfig,
   type AssetPropertyDefinition,
 } from "./services/GenericAssetCreationService";
+export {
+  EmbeddingService,
+  type EmbeddingProvider,
+  type EmbeddingConfig,
+  type EmbeddingResult,
+  type EmbeddingRequest,
+  type BatchEmbeddingResult,
+  DEFAULT_EMBEDDING_CONFIG,
+} from "./services/EmbeddingService";
+export {
+  VectorStore,
+  type VectorEntry,
+  type SimilarityResult,
+  type VectorStoreConfig,
+  type SerializedVectorStore,
+  DEFAULT_VECTOR_STORE_CONFIG,
+} from "./services/VectorStore";
+export {
+  SemanticSearchService,
+  type SemanticSearchConfig,
+  type SemanticSearchResult,
+  type IndexingStatus,
+  type FileContentProvider,
+  DEFAULT_SEMANTIC_SEARCH_CONFIG,
+} from "./services/SemanticSearchService";
 export type {
   URIConstructionOptions,
   AssetMetadata,

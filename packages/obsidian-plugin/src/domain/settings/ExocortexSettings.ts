@@ -1,4 +1,4 @@
-import type { WebhookEventType } from "exocortex";
+import type { WebhookEventType, EmbeddingProvider } from "exocortex";
 
 /**
  * Webhook configuration stored in settings
@@ -41,6 +41,38 @@ export interface WebhookSettings {
 export const DEFAULT_WEBHOOK_SETTINGS: WebhookSettings = {
   enabled: false,
   webhooks: [],
+};
+
+/**
+ * Semantic search settings configuration
+ */
+export interface SemanticSearchSettings {
+  /** Whether semantic search is enabled */
+  enabled: boolean;
+  /** Embedding provider to use */
+  provider: EmbeddingProvider;
+  /** API key for the embedding provider (encrypted/stored separately) */
+  apiKey?: string;
+  /** Model to use for embeddings */
+  model: string;
+  /** Whether to automatically embed new/changed files */
+  autoEmbed: boolean;
+  /** Minimum similarity threshold for search results (0-1) */
+  minSimilarity: number;
+  /** Maximum number of search results */
+  maxResults: number;
+}
+
+/**
+ * Default semantic search settings
+ */
+export const DEFAULT_SEMANTIC_SEARCH_SETTINGS: SemanticSearchSettings = {
+  enabled: false,
+  provider: "openai",
+  model: "text-embedding-3-small",
+  autoEmbed: true,
+  minSimilarity: 0.7,
+  maxResults: 10,
 };
 
 /**
@@ -110,6 +142,8 @@ export interface ExocortexSettings {
   displayNameSettings: DisplayNameSettings;
   /** Webhook integration settings */
   webhookSettings: WebhookSettings;
+  /** Semantic search settings */
+  semanticSearchSettings: SemanticSearchSettings;
   [key: string]: unknown;
 }
 
@@ -131,4 +165,5 @@ export const DEFAULT_SETTINGS: ExocortexSettings = {
   sortByDisplayName: false,
   displayNameSettings: DEFAULT_DISPLAY_NAME_SETTINGS,
   webhookSettings: DEFAULT_WEBHOOK_SETTINGS,
+  semanticSearchSettings: DEFAULT_SEMANTIC_SEARCH_SETTINGS,
 };

@@ -17,8 +17,10 @@ import {
   type StoredWebhookConfig,
 } from "./domain/settings/ExocortexSettings";
 import { ExocortexSettingTab } from "./presentation/settings/ExocortexSettingTab";
-import { TaskStatusService, WebhookService, type WebhookDispatchResult } from "exocortex";
+import { TaskStatusService, WebhookService, type WebhookDispatchResult, LoggingService } from "exocortex";
 import { WebhookDispatcher } from "./infrastructure/webhook";
+import { SemanticSearchManager } from "./infrastructure/semantic-search";
+import { SemanticSearchModal } from "./presentation/modals/SemanticSearchModal";
 import { ObsidianVaultAdapter } from "./adapters/ObsidianVaultAdapter";
 import { TaskTrackingService } from "./application/services/TaskTrackingService";
 import { AliasSyncService } from "./application/services/AliasSyncService";
@@ -71,6 +73,7 @@ export default class ExocortexPlugin extends Plugin {
   private propertiesLinkPatch!: PropertiesLinkPatch;
   private webhookService!: WebhookService;
   private webhookDispatcher!: WebhookDispatcher;
+  private semanticSearchManager!: SemanticSearchManager;
 
   override async onload(): Promise<void> {
     try {
@@ -249,6 +252,78 @@ export default class ExocortexPlugin extends Plugin {
         }),
       );
 
+      // Initialize Semantic Search
+      this.semanticSearchManager = new SemanticSearchManager(
+        this.app,
+        this.settings.semanticSearchSettings
+      );
+      await this.initializeSemanticSearch();
+
+      // Register semantic search commands
+      this.addCommand({
+        id: "semantic-search",
+        name: "Semantic search",
+        callback: () => {
+          new SemanticSearchModal(
+            this.app,
+            this.semanticSearchManager,
+            this.app.workspace.getActiveFile()
+          ).open();
+        },
+      });
+
+      this.addCommand({
+        id: "find-similar-notes",
+        name: "Find similar notes",
+        checkCallback: (checking: boolean) => {
+          const file = this.app.workspace.getActiveFile();
+          if (!file) {
+            return false;
+          }
+          if (!checking) {
+            new SemanticSearchModal(
+              this.app,
+              this.semanticSearchManager,
+              file
+            ).open();
+          }
+          return true;
+        },
+      });
+
+      this.addCommand({
+        id: "index-all-notes",
+        name: "Index all notes for semantic search",
+        callback: async () => {
+          if (!this.semanticSearchManager.isConfigured()) {
+            new Notice("Semantic search is not configured. Please add your API key in settings.");
+            return;
+          }
+          new Notice("Starting semantic search indexing...");
+          try {
+            const result = await this.semanticSearchManager.indexAll((status) => {
+              if (status.progress % 10 === 0) {
+                new Notice(`Indexing: ${status.progress}%`, 1000);
+              }
+            });
+            new Notice(
+              `Indexing complete: ${result.indexed} indexed, ${result.failed} failed${result.aborted ? " (aborted)" : ""}`
+            );
+          } catch (error) {
+            new Notice(`Indexing failed: ${error instanceof Error ? error.message : "Unknown error"}`);
+          }
+        },
+      });
+
+      this.addCommand({
+        id: "clear-semantic-index",
+        name: "Clear semantic search index",
+        callback: async () => {
+          await this.semanticSearchManager.clearIndex();
+          new Notice("Semantic search index cleared");
+        },
+      });
+
       this.logger.info("Exocortex Plugin loaded successfully");
     } catch (error) {
       this.logger?.error("Failed to load Exocortex Plugin", error as Error);
@@ -322,6 +397,11 @@ export default class ExocortexPlugin extends Plugin {
     // Cleanup Webhook dispatcher
     if (this.webhookDispatcher) {
       this.webhookDispatcher.cleanup();
+    }
+
+    // Cleanup Semantic Search manager
+    if (this.semanticSearchManager) {
+      this.semanticSearchManager.cleanup();
     }
 
     this.logger?.info("Exocortex Plugin unloaded");
@@ -494,6 +574,78 @@ export default class ExocortexPlugin extends Plugin {
    */
   async testWebhook(webhookId: string): Promise<WebhookDispatchResult> {
     return this.webhookDispatcher.testWebhook(webhookId);
+  }
+
+  /**
+   * Initialize Semantic Search
+   */
+  private async initializeSemanticSearch(): Promise<void> {
+    try {
+      await this.semanticSearchManager.initialize();
+
+      // Register file event handlers for auto-embedding
+      if (this.settings.semanticSearchSettings.autoEmbed) {
+        this.registerEvent(
+          this.app.vault.on("create", (file) => {
+            void this.semanticSearchManager.handleFileCreate(file);
+          }),
+        );
+
+        this.registerEvent(
+          this.app.vault.on("modify", (file) => {
+            if (file instanceof TFile) {
+              void this.semanticSearchManager.handleFileModify(file);
+            }
+          }),
+        );
+
+        this.registerEvent(
+          this.app.vault.on("delete", (file) => {
+            this.semanticSearchManager.handleFileDelete(file);
+          }),
+        );
+
+        this.registerEvent(
+          this.app.vault.on("rename", (file, oldPath) => {
+            void this.semanticSearchManager.handleFileRename(file, oldPath);
+          }),
+        );
+      }
+
+      LoggingService.debug("SemanticSearch initialized");
+    } catch (error) {
+      LoggingService.warn(
+        `Failed to initialize SemanticSearch: ${error instanceof Error ? error.message : "Unknown error"}`
+      );
+    }
+  }
+
+  /**
+   * Toggle semantic search on/off
+   */
+  toggleSemanticSearch(enabled: boolean): void {
+    this.settings.semanticSearchSettings.enabled = enabled;
+    if (enabled) {
+      void this.semanticSearchManager.initialize();
+    } else {
+      this.semanticSearchManager.cleanup();
+    }
+  }
+
+  /**
+   * Update semantic search settings
+   */
+  updateSemanticSearchSettings(): void {
+    this.semanticSearchManager.updateSettings(
+      this.settings.semanticSearchSettings
+    );
+  }
+
+  /**
+   * Get semantic search manager (for settings tab)
+   */
+  getSemanticSearchManager(): SemanticSearchManager {
+    return this.semanticSearchManager;
   }
 
   private autoRenderLayout(): void {

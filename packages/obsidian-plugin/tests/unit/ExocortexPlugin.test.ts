@@ -201,7 +201,7 @@ describe("ExocortexPlugin", () => {
         "sparql",
         expect.any(Function)
       );
-      expect(plugin.registerEvent).toHaveBeenCalledTimes(8);
+      expect(plugin.registerEvent).toHaveBeenCalledTimes(12);
       expect(mockLogger.info).toHaveBeenCalledWith("Exocortex Plugin loaded successfully");
     });
 

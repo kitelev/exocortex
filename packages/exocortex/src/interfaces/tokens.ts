@@ -65,6 +65,11 @@ export const DI_TOKENS = {
 
   // Integration services
   WebhookService: Symbol.for("WebhookService"),
+
+  // Semantic search services
+  EmbeddingService: Symbol.for("EmbeddingService"),
+  VectorStore: Symbol.for("VectorStore"),
+  SemanticSearchService: Symbol.for("SemanticSearchService"),
 } as const;
 
 export type DIToken = (typeof DI_TOKENS)[keyof typeof DI_TOKENS];
