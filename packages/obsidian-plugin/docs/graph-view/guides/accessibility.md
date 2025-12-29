@@ -1,8 +1,23 @@
 # Accessibility Guide
 
-This guide covers WCAG 2.1 AA compliance for Graph View, including screen reader support, keyboard navigation, and high contrast modes.
+This guide covers WCAG 2.1 AA compliance for Graph View, including screen reader support, keyboard navigation, high contrast modes, and the VirtualCursor system.
 
-## Accessibility Overview
+## Table of Contents
+
+- [WCAG 2.1 AA Compliance Overview](#wcag-21-aa-compliance-overview)
+- [AccessibilityManager](#accessibilitymanager)
+- [VirtualCursor Navigation](#virtualcursor-navigation)
+- [Keyboard Navigation](#keyboard-navigation)
+- [Screen Reader Support](#screen-reader-support)
+- [High Contrast Mode](#high-contrast-mode)
+- [Reduced Motion](#reduced-motion)
+- [Skip Links](#skip-links)
+- [Focus Management](#focus-management)
+- [Color Contrast Utilities](#color-contrast-utilities)
+- [Testing Accessibility](#testing-accessibility)
+- [Best Practices](#best-practices)
+
+## WCAG 2.1 AA Compliance Overview
 
 Graph View implements WCAG 2.1 Level AA compliance:
 
@@ -16,168 +31,314 @@ Graph View implements WCAG 2.1 Level AA compliance:
 | 2.4.7 Focus Visible | Focus indicator ring |
 | 4.1.2 Name, Role, Value | ARIA landmarks and live regions |
 
-## Accessibility Manager
+## AccessibilityManager
 
-### Setup
+The `AccessibilityManager` is the main orchestrator for all accessibility features. It coordinates screen reader announcements, keyboard navigation, high contrast mode, and reduced motion preferences.
+
+### Creating an AccessibilityManager
 
 ```typescript
 import {
   AccessibilityManager,
   createAccessibilityManager,
-  DEFAULT_A11Y_CONFIG,
+  DEFAULT_ACCESSIBILITY_MANAGER_CONFIG,
 } from "@exocortex/obsidian-plugin";
 
-const a11yManager = createAccessibilityManager({
-  enabled: true,
-  announceChanges: true,
-  focusVisible: true,
-  reducedMotion: "auto",  // Respect prefers-reduced-motion
-  highContrast: "auto",   // Respect prefers-contrast
-  screenReaderSupport: true,
+// Using the factory function (recommended)
+const a11y = createAccessibilityManager(container, {
+  enableScreenReader: true,
+  enableKeyboardNav: true,
+  announceSelections: true,
+  announceNavigations: true,
+});
+
+// Or using the constructor
+const a11y = new AccessibilityManager(container, {
+  virtualCursor: {
+    wrapAround: true,
+    defaultMode: "spatial",
+  },
+  highContrastColors: {
+    foreground: "#FFFFFF",
+    background: "#000000",
+  },
 });
 ```
 
-### Configuration
+### Configuration Options
+
+The `AccessibilityManagerConfig` extends `A11yConfig` with additional options:
 
 ```typescript
-interface A11yConfig {
-  enabled: boolean;           // Master switch
-  announceChanges: boolean;   // Announce via live region
-  focusVisible: boolean;      // Show focus indicator
-  reducedMotion: "auto" | "on" | "off";
-  highContrast: "auto" | "on" | "off";
-  screenReaderSupport: boolean;
-  keyboardNavigation: boolean;
-  minContrastRatio: number;   // Default: 4.5
+interface AccessibilityManagerConfig {
+  // Screen reader settings
+  enableScreenReader: boolean;        // Enable screen reader announcements (default: true)
+  announceSelections: boolean;        // Announce node selections (default: true)
+  announceNavigations: boolean;       // Announce navigation changes (default: true)
+  announceGraphChanges: boolean;      // Announce graph structure changes (default: true)
+  announcementDelay: number;          // Delay between announcements in ms (default: 500)
+  announcementDebounce: number;       // Debounce time for announcements in ms (default: 150)
+
+  // Keyboard navigation
+  enableKeyboardNav: boolean;         // Enable keyboard navigation (default: true)
+  virtualCursorMode: VirtualCursorMode; // Navigation mode: "spatial" | "linear" | "semantic"
+
+  // Visual preferences
+  respectReducedMotion: boolean;      // Respect prefers-reduced-motion (default: true)
+  highContrastMode: boolean;          // Enable high contrast mode (default: auto-detected)
+  focusIndicatorSize: number;         // Focus indicator size in pixels (default: 3)
+
+  // Skip links
+  enableSkipLinks: boolean;           // Enable skip links (default: true)
+
+  // Graph description
+  graphRoleDescription: string;       // Role description (default: "Knowledge graph visualization")
+
+  // Virtual cursor configuration
+  virtualCursor?: Partial<VirtualCursorConfig>;
+
+  // Custom high contrast colors
+  highContrastColors?: HighContrastColors;
+
+  // Custom skip links
+  skipLinks?: SkipLink[];
 }
 ```
 
-## Screen Reader Support
+### Setting Graph Data
 
-### ARIA Landmarks
+Provide nodes and edges to the manager for accessibility features:
 
 ```typescript
-// Graph container
-<div
-  role="application"
-  aria-label="Knowledge graph visualization"
-  aria-describedby="graph-instructions"
->
-  <div id="graph-instructions" className="sr-only">
-    Use arrow keys to navigate between nodes. Press Enter to open a node.
-    Press Tab to move to the next node. Press Escape to clear selection.
-  </div>
+const nodes: GraphNode[] = [
+  { id: "node1", label: "Project Alpha", path: "/alpha.md", x: 0, y: 0, group: "Project" },
+  { id: "node2", label: "Task Beta", path: "/beta.md", x: 100, y: 0, group: "Task" },
+];
 
-  {/* Graph canvas */}
-</div>
+const edges: GraphEdge[] = [
+  { id: "edge1", source: "node1", target: "node2", label: "contains" },
+];
+
+a11y.setGraphData(nodes, edges);
 ```
 
-### Live Region Announcements
+### Making Announcements
+
+Screen reader announcements use ARIA live regions:
 
 ```typescript
-import { AccessibilityManager } from "@exocortex/obsidian-plugin";
+// Polite announcement (non-urgent, waits for screen reader to finish current speech)
+a11y.announce("Navigated to Project Alpha", "navigation", "polite");
 
-const a11yManager = new AccessibilityManager();
+// Assertive announcement (urgent, interrupts current speech)
+a11y.announce("Error loading graph data", "error", "assertive");
 
-// Announce navigation
-navigationManager.on("navigate", (event) => {
-  const node = nodes.find((n) => n.id === event.toNodeId);
-  if (node) {
-    a11yManager.announce(
-      `Navigated to ${node.label}. ${getNodeDescription(node)}`,
-      "polite"
-    );
-  }
-});
-
-// Announce selection
-selectionManager.on("select", (event) => {
-  if (event.nodeIds.length === 1) {
-    const node = nodes.find((n) => n.id === event.nodeIds[0]);
-    a11yManager.announce(`Selected ${node?.label}`, "polite");
-  } else if (event.nodeIds.length > 1) {
-    a11yManager.announce(`Selected ${event.nodeIds.length} nodes`, "polite");
-  }
-});
-
-// Announce important changes
-a11yManager.announce("Graph layout changed to hierarchical", "assertive");
+// Announcement types: "navigation" | "selection" | "action" | "structure" | "error" | "help" | "status"
 ```
 
-### Node Descriptions
+### Event Handling
 
-Generate accessible descriptions for nodes:
+Listen to accessibility events:
 
 ```typescript
-function getNodeDescription(node: GraphNode): string {
-  const parts: string[] = [];
+// Navigation events
+a11y.on("a11y:navigation", (event) => {
+  console.log(`Navigated to: ${event.nodeId}`);
+  console.log(`Previous node: ${event.previousNodeId}`);
+});
 
-  // Type
-  if (node.group) {
-    parts.push(`Type: ${node.group}`);
-  }
+// Selection changes
+a11y.on("a11y:selection:change", (event) => {
+  console.log(`Selection changed: ${event.nodeId}`);
+});
 
-  // Connection count
-  const connections = getConnectionCount(node.id);
-  parts.push(`${connections} connections`);
+// Configuration changes
+a11y.on("a11y:config:change", (event) => {
+  console.log("Config updated:", event.config);
+});
 
-  // Status if available
-  if (node.metadata?.status) {
-    parts.push(`Status: ${node.metadata.status}`);
-  }
+// Announcements
+a11y.on("a11y:announcement", (event) => {
+  console.log(`Announced: ${event.message}`);
+});
 
-  return parts.join(". ");
+// Mode changes
+a11y.on("a11y:mode:change", (event) => {
+  console.log(`Navigation mode: ${event.mode}`);
+});
+
+// Remove listeners
+a11y.off("a11y:navigation", myListener);
+```
+
+### Cleanup
+
+Always destroy the manager when done:
+
+```typescript
+a11y.destroy();
+```
+
+## VirtualCursor Navigation
+
+The `VirtualCursor` provides screen reader-friendly virtual cursor navigation with three modes:
+- **Spatial**: Navigate to nearest node in arrow key direction
+- **Linear**: Navigate through nodes in order (Tab/Shift+Tab)
+- **Semantic**: Navigate by node type or relationship
+
+### Creating a VirtualCursor
+
+```typescript
+import {
+  VirtualCursor,
+  createVirtualCursor,
+  DEFAULT_VIRTUAL_CURSOR_CONFIG,
+} from "@exocortex/obsidian-plugin";
+
+const cursor = createVirtualCursor({
+  maxHistorySize: 50,        // Maximum navigation history entries
+  wrapAround: true,          // Wrap to start/end when reaching boundaries
+  defaultMode: "spatial",    // Default navigation mode
+  directionTolerance: 45,    // Angular tolerance for spatial navigation (degrees)
+  onPositionChange: (nodeId, previousNodeId) => {
+    console.log(`Moved from ${previousNodeId} to ${nodeId}`);
+  },
+  onModeChange: (mode) => {
+    console.log(`Mode changed to ${mode}`);
+  },
+});
+```
+
+### Setting Nodes and Connections
+
+```typescript
+// Set nodes
+cursor.setNodes(graphNodes);
+
+// Update connection information
+cursor.updateConnections([
+  { source: "node1", target: "node2", label: "contains" },
+  { source: "node1", target: "node3", label: "links to" },
+]);
+```
+
+### Navigation Methods
+
+```typescript
+// Spatial/Linear navigation (depends on current mode)
+cursor.navigate("up");       // Move up (spatial) or previous (linear)
+cursor.navigate("down");     // Move down (spatial) or next (linear)
+cursor.navigate("left");     // Move left (spatial)
+cursor.navigate("right");    // Move right (spatial)
+cursor.navigate("next");     // Next node in order
+cursor.navigate("previous"); // Previous node in order
+cursor.navigate("first");    // First node
+cursor.navigate("last");     // Last node
+
+// Navigate returns result object
+const result = cursor.navigate("right");
+if (result.success) {
+  console.log(`Navigated to ${result.nodeId}`);
 }
 
-// Apply to node
-a11yManager.setNodeLabel(node.id, {
-  name: node.label,
-  description: getNodeDescription(node),
-  role: "treeitem",
-  selected: isSelected(node.id),
-  expanded: isExpanded(node.id),
-});
+// Semantic navigation - navigate by node type
+cursor.navigateToType("Task", true);   // Next Task node
+cursor.navigateToType("Project", false); // Previous Project node
+
+// Navigate to connected node by index
+cursor.navigateToConnection(0); // First connected node
+cursor.navigateToConnection(1); // Second connected node
 ```
 
-## Virtual Cursor
-
-Screen reader users navigate via virtual cursor:
+### History Navigation
 
 ```typescript
-import { VirtualCursor, createVirtualCursor } from "@exocortex/obsidian-plugin";
+// Check if history navigation is available
+if (cursor.canGoBack()) {
+  cursor.goBack();
+}
 
-const virtualCursor = createVirtualCursor({
-  wrapAround: true,
-  sortOrder: "visual",  // visual, alphabetical, type
-  includeEdges: true,
+if (cursor.canGoForward()) {
+  cursor.goForward();
+}
+
+// Clear navigation history
+cursor.clearHistory();
+```
+
+### Position and State
+
+```typescript
+// Get current position
+const nodeId = cursor.getCurrentNodeId();
+
+// Get current node with accessibility info
+const a11yNode = cursor.getCurrentNode();
+if (a11yNode) {
+  console.log(`Label: ${a11yNode.label}`);
+  console.log(`Type: ${a11yNode.type}`);
+  console.log(`Connections: ${a11yNode.connectionCount}`);
+  console.log(`Connected to: ${a11yNode.connectedTo.join(", ")}`);
+}
+
+// Set position directly
+cursor.setPosition("node2");
+
+// Get all accessible nodes
+const allNodes = cursor.getA11yNodes();
+```
+
+### Mode Management
+
+```typescript
+// Get current mode
+const mode = cursor.getMode(); // "spatial" | "linear" | "semantic"
+
+// Set mode
+cursor.setMode("linear");
+cursor.setMode("semantic");
+cursor.setMode("spatial");
+```
+
+### Activation State
+
+```typescript
+// Activate cursor (focuses first node if no position set)
+cursor.activate();
+
+// Check if active
+if (cursor.isActive()) {
+  // Handle active state
+}
+
+// Deactivate cursor
+cursor.deactivate();
+
+// Reset cursor to initial state
+cursor.reset();
+```
+
+### Event Handling
+
+```typescript
+cursor.on("cursor:move", (event) => {
+  console.log(`Moved to ${event.nodeId} from ${event.previousNodeId}`);
 });
 
-// Navigate to next/previous
-virtualCursor.on("move", (event) => {
-  a11yManager.announce(
-    `${event.target.label}. ${event.target.description}`,
-    "polite"
-  );
-  focusIndicator.show(event.target.id);
+cursor.on("cursor:mode:change", (event) => {
+  console.log(`Mode changed to ${event.mode}`);
 });
 
-// Keyboard integration
-keyboardManager.on("action", (event) => {
-  switch (event.action) {
-    case "virtual-next":
-      virtualCursor.moveNext();
-      break;
-    case "virtual-prev":
-      virtualCursor.movePrevious();
-      break;
-    case "virtual-first":
-      virtualCursor.moveToFirst();
-      break;
-    case "virtual-last":
-      virtualCursor.moveToLast();
-      break;
-  }
+cursor.on("cursor:activate", () => {
+  console.log("Cursor activated");
 });
+
+cursor.on("cursor:deactivate", () => {
+  console.log("Cursor deactivated");
+});
+
+// Remove listener
+cursor.off("cursor:move", myListener);
 ```
 
 ## Keyboard Navigation
@@ -186,203 +347,362 @@ keyboardManager.on("action", (event) => {
 
 | Key | Action |
 |-----|--------|
-| Arrow keys | Spatial navigation |
-| Tab / Shift+Tab | Next/previous node |
-| Enter | Open/activate node |
-| Space | Toggle selection |
-| Escape | Clear selection |
-| + / - | Zoom in/out |
-| 0 | Reset zoom |
-| F | Fit to view |
-| H | Toggle help |
-| Ctrl+A | Select all |
+| Arrow Up | Navigate up (spatial mode) |
+| Arrow Down | Navigate down (spatial mode) |
+| Arrow Left | Navigate left (spatial mode) |
+| Arrow Right | Navigate right (spatial mode) |
+| Tab | Navigate to next node |
+| Shift+Tab | Navigate to previous node |
+| Home | Navigate to first node |
+| End | Navigate to last node |
+| Alt+Backspace | Go back in navigation history |
+| BrowserBack | Go back in navigation history |
+| BrowserForward | Go forward in navigation history |
+| Alt+M | Cycle navigation mode (spatial → linear → semantic) |
+| ? | Announce keyboard shortcuts help |
 
-### Focus Indicator
+### Customizing Keyboard Behavior
+
+The AccessibilityManager handles keyboard events internally. You can disable keyboard navigation:
 
 ```typescript
-import { FocusIndicator, DEFAULT_FOCUS_INDICATOR_STYLE } from "@exocortex/obsidian-plugin";
-
-const focusIndicator = new FocusIndicator(renderer.app, {
-  style: {
-    color: 0x6366f1,       // Visible focus color
-    width: 3,              // Thick enough to see
-    dashPattern: null,     // Solid line
-    glowEnabled: true,     // Additional visibility
-    glowColor: 0x6366f1,
-    glowAlpha: 0.4,
-    glowBlur: 15,
-  },
-  animationDuration: 150,
-});
-
-// Always show focus on keyboard navigation
-keyboardManager.on("action", () => {
-  focusIndicator.setVisible(true);
-});
-
-// Hide on mouse interaction (optional)
-container.addEventListener("mousedown", () => {
-  focusIndicator.setVisible(false);
+const a11y = new AccessibilityManager(container, {
+  enableKeyboardNav: false, // Disable built-in keyboard handling
 });
 ```
 
-### Focus Trap
+## Screen Reader Support
 
-Trap focus within graph for modal interactions:
+### Supported Screen Readers
 
-```typescript
-a11yManager.enableFocusTrap({
-  enabled: true,
-  returnFocus: true,  // Return focus on exit
-  escapeDeactivates: true,
-});
+The accessibility system supports major screen readers:
 
-// Disable when leaving graph
-a11yManager.disableFocusTrap();
+| Screen Reader | Platform | Support Level |
+|---------------|----------|---------------|
+| NVDA | Windows | Full |
+| JAWS | Windows | Full |
+| VoiceOver | macOS/iOS | Full |
+| Narrator | Windows | Good (limited SVG) |
+| Orca | Linux | Full |
+
+### ARIA Landmarks
+
+The graph container is set up with proper ARIA attributes:
+
+```html
+<div
+  role="application"
+  tabindex="0"
+  aria-roledescription="Knowledge graph visualization"
+  aria-labelledby="exo-graph-label-xyz"
+  aria-describedby="exo-graph-instructions-xyz"
+>
+  <span id="exo-graph-label-xyz" class="exo-a11y-label">
+    Knowledge graph visualization
+  </span>
+  <span id="exo-graph-instructions-xyz" class="exo-a11y-instructions">
+    Use arrow keys to navigate between nodes. Press Enter to open a node. Press Escape to exit.
+  </span>
+</div>
 ```
 
-## Color and Contrast
+### Live Regions
 
-### Contrast Checking
+Two live regions are created for announcements:
+
+- **Polite** (role="status", aria-live="polite"): Non-urgent announcements
+- **Assertive** (role="alert", aria-live="assertive"): Urgent announcements
+
+### Detecting Screen Reader Type
 
 ```typescript
-import {
-  a11yGetContrastRatio,
-  a11yMeetsWCAGAA,
-  a11yMeetsWCAGAAA,
-  WCAG_CONTRAST_RATIOS,
-} from "@exocortex/obsidian-plugin";
+const screenReaderType = a11y.detectScreenReader();
+// Returns: "nvda" | "jaws" | "voiceover" | "narrator" | "orca" | "unknown"
 
-// Check contrast ratio
-const foreground = 0xffffff;
-const background = 0x1a1a2e;
-const ratio = a11yGetContrastRatio(foreground, background);
+// Get capabilities for a screen reader type
+import { getScreenReaderCapabilities } from "@exocortex/obsidian-plugin";
 
-console.log(`Contrast ratio: ${ratio.toFixed(2)}:1`);
-console.log(`Meets WCAG AA: ${a11yMeetsWCAGAA(ratio)}`);
-console.log(`Meets WCAG AAA: ${a11yMeetsWCAGAAA(ratio)}`);
-
-// Minimum ratios
-// Text: 4.5:1 (AA), 7:1 (AAA)
-// Large text: 3:1 (AA), 4.5:1 (AAA)
-// UI components: 3:1 (AA)
+const capabilities = getScreenReaderCapabilities("voiceover");
+console.log(capabilities.supportsLiveRegions); // true
+console.log(capabilities.supportsSVGAccessibility); // true
 ```
 
-### High Contrast Mode
+### Accessible Node Representation
+
+Nodes are converted to accessible representations:
+
+```typescript
+interface A11yNode {
+  id: string;                // Node unique identifier
+  label: string;             // Human-readable label
+  type: string;              // Node type (e.g., "Project", "Task")
+  connectionCount: number;   // Number of connections
+  connectedTo: string[];     // Labels of connected nodes
+  position: { x: number; y: number }; // Position for spatial navigation
+  index: number;             // Index in navigation order
+  isSelected: boolean;       // Selection state
+  isFocused: boolean;        // Focus state
+  metadata?: Record<string, unknown>; // Additional data
+}
+```
+
+## High Contrast Mode
+
+### Enabling High Contrast
+
+```typescript
+// Enable with dark theme (white on black)
+a11y.enableHighContrast("dark");
+
+// Enable with light theme (black on white)
+a11y.enableHighContrast("light");
+
+// Enable without theme (uses existing/custom colors)
+a11y.enableHighContrast();
+
+// Disable high contrast
+a11y.disableHighContrast();
+
+// Check if active
+if (a11y.isHighContrastActive()) {
+  // Handle high contrast mode
+}
+```
+
+### Built-in High Contrast Themes
 
 ```typescript
 import { HIGH_CONTRAST_THEMES } from "@exocortex/obsidian-plugin";
 
-// Built-in high contrast themes
-const themes = {
-  dark: {
-    background: 0x000000,
-    foreground: 0xffffff,
-    accent: 0xffff00,    // Yellow for visibility
-    error: 0xff6b6b,
-    success: 0x6bff6b,
-  },
-  light: {
-    background: 0xffffff,
-    foreground: 0x000000,
-    accent: 0x0000ff,    // Blue for visibility
-    error: 0xff0000,
-    success: 0x008000,
-  },
-};
+// Dark theme (white on black)
+const darkTheme = HIGH_CONTRAST_THEMES.dark;
+// {
+//   foreground: "#FFFFFF",
+//   background: "#000000",
+//   accent: "#FFFF00",      // Yellow
+//   focusIndicator: "#00FFFF", // Cyan
+//   selection: "#0078D4",
+//   error: "#FF0000",
+//   border: "#FFFFFF"
+// }
 
-// Apply high contrast
-a11yManager.on("contrastChange", (event) => {
-  if (event.enabled) {
-    applyTheme(HIGH_CONTRAST_THEMES[getCurrentMode()]);
-  } else {
-    applyTheme(defaultTheme);
-  }
+// Light theme (black on white)
+const lightTheme = HIGH_CONTRAST_THEMES.light;
+// {
+//   foreground: "#000000",
+//   background: "#FFFFFF",
+//   accent: "#0000FF",      // Blue
+//   focusIndicator: "#FF6600", // Orange
+//   selection: "#0078D4",
+//   error: "#CC0000",
+//   border: "#000000"
+// }
+```
+
+### Custom High Contrast Colors
+
+```typescript
+// Set custom colors
+a11y.setHighContrastColors({
+  foreground: "#00FF00",
+  background: "#000033",
+  accent: "#FF00FF",
+  focusIndicator: "#FFFF00",
 });
 
-// Respect system preference
-if (window.matchMedia("(prefers-contrast: more)").matches) {
-  a11yManager.setHighContrast(true);
+// Get current colors
+const colors = a11y.getHighContrastColors();
+```
+
+### CSS Variables
+
+When high contrast is enabled, CSS variables are set on the container:
+
+```css
+.exo-high-contrast {
+  --exo-hc-foreground: #FFFFFF;
+  --exo-hc-background: #000000;
+  --exo-hc-accent: #FFFF00;
+  --exo-hc-focus: #00FFFF;
+  --exo-hc-selection: #0078D4;
+  --exo-hc-error: #FF0000;
+  --exo-hc-border: #FFFFFF;
 }
 ```
 
-### Color-Blind Safe Palette
+### Automatic Detection
 
-Use shapes in addition to color:
+High contrast mode is automatically detected from system preferences:
 
 ```typescript
-const colorBlindSafeConfig: Record<string, { color: number; shape: NodeShape }> = {
-  project: { color: 0x0077bb, shape: "hexagon" },   // Blue
-  area: { color: 0xee7733, shape: "diamond" },      // Orange
-  task: { color: 0x009988, shape: "circle" },       // Teal
-  resource: { color: 0xcc3311, shape: "triangle" }, // Red
-  note: { color: 0x33bbee, shape: "square" },       // Cyan
-};
-
-// Apply both color and shape
-function getNodeStyle(node: GraphNode): { color: number; shape: NodeShape } {
-  const config = colorBlindSafeConfig[node.group || "note"];
-  return {
-    color: config.color,
-    shape: config.shape,
-  };
-}
+// System high contrast detection via media query
+// (prefers-contrast: more) or (-ms-high-contrast: active)
 ```
 
 ## Reduced Motion
 
-Respect user preference for reduced motion:
+### Reduced Motion Configuration
 
 ```typescript
 import { DEFAULT_REDUCED_MOTION_CONFIG } from "@exocortex/obsidian-plugin";
 
-const reducedMotionConfig = {
-  transitionDuration: 0,    // Instant transitions
-  animationEnabled: false,  // No animations
-  simulationIterations: 1,  // Single-step layout
-};
-
-// Check preference
-const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-if (prefersReducedMotion) {
-  // Use instant layout
-  simulation.stop();
-  simulation.tick(300);  // Compute final positions
-  render();              // Render once
-} else {
-  // Normal animated simulation
-  simulation.on("tick", render);
-  simulation.start();
+interface ReducedMotionConfig {
+  disableAnimations: boolean;   // Disable all animations
+  disableTransitions: boolean;  // Disable CSS transitions
+  instantNavigation: boolean;   // Use instant navigation instead of smooth scrolling
+  reduceParallax: boolean;      // Reduce parallax effects
 }
 
-// Watch for preference changes
-window.matchMedia("(prefers-reduced-motion: reduce)").addEventListener("change", (e) => {
-  a11yManager.setReducedMotion(e.matches);
+// Default when prefers-reduced-motion is active:
+// {
+//   disableAnimations: true,
+//   disableTransitions: true,
+//   instantNavigation: true,
+//   reduceParallax: true
+// }
+```
+
+### Checking Reduced Motion
+
+```typescript
+// Check if reduced motion is active
+if (a11y.isReducedMotionActive()) {
+  // Use instant transitions
+}
+
+// Get full reduced motion config
+const config = a11y.getReducedMotionConfig();
+if (config.disableAnimations) {
+  // Skip animations
+}
+```
+
+### Respecting System Preferences
+
+```typescript
+const a11y = new AccessibilityManager(container, {
+  respectReducedMotion: true, // Default: true
 });
+
+// The manager automatically listens for preference changes
 ```
 
 ## Skip Links
 
-Allow users to skip to main content:
+Skip links allow keyboard users to bypass repeated content:
+
+### Default Skip Links
+
+Two default skip links are created:
+1. "Skip to graph" - Focus the graph container
+2. "Skip to first node" - Focus the first graph node
+
+### Custom Skip Links
 
 ```typescript
-import type { SkipLink } from "@exocortex/obsidian-plugin";
+const a11y = new AccessibilityManager(container, {
+  enableSkipLinks: true,
+  skipLinks: [
+    {
+      id: "skip-to-search",
+      label: "Skip to search",
+      targetId: "graph-search-input",
+      shortcut: "Alt+S", // Optional
+    },
+    {
+      id: "skip-to-filters",
+      label: "Skip to filters",
+      targetId: "graph-filter-panel",
+    },
+  ],
+});
+```
 
-const skipLinks: SkipLink[] = [
-  { id: "skip-to-graph", label: "Skip to graph", target: "#graph-canvas" },
-  { id: "skip-to-search", label: "Skip to search", target: "#graph-search" },
-  { id: "skip-to-filters", label: "Skip to filters", target: "#graph-filters" },
-];
+## Focus Management
 
-// Render skip links
-<nav className="skip-links" aria-label="Skip navigation">
-  {skipLinks.map((link) => (
-    <a key={link.id} href={link.target} className="skip-link">
-      {link.label}
-    </a>
-  ))}
-</nav>
+### Focusing Nodes
+
+```typescript
+// Focus a specific node
+a11y.focusNode("node2");
+
+// Get currently focused node ID
+const focusedId = a11y.getFocusedNodeId();
+```
+
+### Selecting Nodes
+
+```typescript
+// Toggle node selection (with announcement)
+a11y.selectNode("node1");
+```
+
+### Focus Traps
+
+Create a focus trap for modal dialogs:
+
+```typescript
+const releaseTrap = a11y.createFocusTrap({
+  container: modalElement,
+  initialFocus: firstButton,        // Element to focus initially
+  returnFocusTo: triggerButton,     // Element to return focus to on release
+  onEscape: () => {
+    closeModal();
+  },
+});
+
+// Check if focus trap is active
+if (a11y.hasFocusTrap()) {
+  // Handle trapped focus state
+}
+
+// Release the trap (also called on Escape if configured)
+releaseTrap();
+```
+
+## Color Contrast Utilities
+
+### Checking Contrast Ratios
+
+```typescript
+import {
+  getContrastRatio,
+  getRelativeLuminance,
+  meetsWCAGAA,
+  meetsWCAGAAA,
+  WCAG_CONTRAST_RATIOS,
+  // Aliased exports to avoid naming conflicts
+  a11yGetContrastRatio,
+  a11yMeetsWCAGAA,
+} from "@exocortex/obsidian-plugin";
+
+// Calculate contrast ratio
+const foreground = "#FFFFFF";
+const background = "#1a1a2e";
+const ratio = getContrastRatio(foreground, background);
+console.log(`Contrast ratio: ${ratio.toFixed(2)}:1`);
+
+// Check WCAG compliance
+const normalTextOK = meetsWCAGAA(foreground, background, false);  // 4.5:1 required
+const largeTextOK = meetsWCAGAA(foreground, background, true);    // 3:1 required
+const aaaOK = meetsWCAGAAA(foreground, background, false);        // 7:1 required
+
+// WCAG contrast requirements
+console.log(WCAG_CONTRAST_RATIOS);
+// {
+//   normalText: 4.5,    // AA level
+//   largeText: 3.0,     // AA level
+//   uiComponent: 3.0,   // AA level
+//   normalTextAAA: 7.0, // AAA level
+//   largeTextAAA: 4.5   // AAA level
+// }
+```
+
+### Relative Luminance
+
+```typescript
+const luminance = getRelativeLuminance("#FFFFFF"); // 1.0
+const darkLuminance = getRelativeLuminance("#000000"); // 0.0
 ```
 
 ## Testing Accessibility
@@ -390,24 +710,53 @@ const skipLinks: SkipLink[] = [
 ### Automated Testing
 
 ```typescript
-import { a11yGetContrastRatio, a11yMeetsWCAGAA } from "@exocortex/obsidian-plugin";
+import {
+  getContrastRatio,
+  meetsWCAGAA,
+  AccessibilityManager,
+} from "@exocortex/obsidian-plugin";
 
 describe("Graph Accessibility", () => {
-  test("all node colors meet contrast requirements", () => {
-    const background = 0x1a1a2e;
+  let container: HTMLElement;
+  let a11y: AccessibilityManager;
 
-    for (const [type, config] of Object.entries(nodeTypeConfigs)) {
-      const ratio = a11yGetContrastRatio(config.style.fill, background);
-      expect(a11yMeetsWCAGAA(ratio)).toBe(true);
-    }
+  beforeEach(() => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    a11y = new AccessibilityManager(container);
   });
 
-  test("focus indicator is visible", () => {
-    const focusColor = 0x6366f1;
-    const nodeColor = 0x64748b;
+  afterEach(() => {
+    a11y.destroy();
+    document.body.removeChild(container);
+  });
 
-    const ratio = a11yGetContrastRatio(focusColor, nodeColor);
-    expect(ratio).toBeGreaterThanOrEqual(3);  // UI component requirement
+  test("creates ARIA live regions", () => {
+    expect(document.querySelector('[aria-live="polite"]')).not.toBeNull();
+    expect(document.querySelector('[aria-live="assertive"]')).not.toBeNull();
+  });
+
+  test("sets proper ARIA attributes", () => {
+    expect(container.getAttribute("role")).toBe("application");
+    expect(container.getAttribute("tabindex")).toBe("0");
+    expect(container.hasAttribute("aria-labelledby")).toBe(true);
+  });
+
+  test("keyboard navigation works", () => {
+    a11y.setGraphData(nodes, edges);
+    a11y.focusNode("node1");
+
+    container.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab" }));
+    expect(a11y.getFocusedNodeId()).not.toBe("node1");
+  });
+
+  test("node colors meet contrast requirements", () => {
+    const background = "#1a1a2e";
+
+    for (const config of nodeTypeConfigs) {
+      const ratio = getContrastRatio(config.color, background);
+      expect(meetsWCAGAA(config.color, background)).toBe(true);
+    }
   });
 });
 ```
@@ -416,25 +765,31 @@ describe("Graph Accessibility", () => {
 
 - [ ] Navigate entire graph with keyboard only
 - [ ] Verify all actions accessible without mouse
-- [ ] Test with screen reader (VoiceOver, NVDA)
+- [ ] Test with screen reader (VoiceOver, NVDA, JAWS)
+- [ ] Verify announcements are clear and timely
 - [ ] Check high contrast mode
 - [ ] Verify reduced motion support
 - [ ] Test with browser zoom (200%)
 - [ ] Check focus visible at all times during keyboard use
+- [ ] Test skip links
+- [ ] Verify node descriptions are meaningful
 
 ## Best Practices
 
-1. **Color is not sole indicator**: Always pair color with shape or pattern
+1. **Color is not sole indicator**: Always pair color with shape or pattern for node types
 2. **Focus always visible**: Never hide focus indicator during keyboard navigation
 3. **Announce state changes**: Use live regions for dynamic updates
-4. **Respect preferences**: Honor reduced motion and contrast settings
-5. **Keyboard parity**: All mouse actions have keyboard equivalents
-6. **Meaningful labels**: Provide context, not just "Node 1"
+4. **Respect preferences**: Honor reduced motion and contrast settings automatically
+5. **Keyboard parity**: All mouse actions must have keyboard equivalents
+6. **Meaningful labels**: Provide context in labels, not just "Node 1"
 7. **Skip links**: Allow bypassing repeated content
 8. **Error recovery**: Announce errors and provide recovery path
+9. **Test with real users**: Involve users with disabilities in testing
+10. **Debounce announcements**: Prevent announcement spam during rapid navigation
 
 ## See Also
 
-- [Interactions](./interactions.md) - Keyboard navigation
-- [Styling](./styling.md) - Color contrast
-- [Configuration](../getting-started/configuration.md) - A11y options
+- [Interactions](./interactions.md) - Mouse and touch interactions
+- [Styling](./styling.md) - Visual customization
+- [Configuration](../getting-started/configuration.md) - Full configuration reference
+- [Events](../api/events.md) - Event system reference
