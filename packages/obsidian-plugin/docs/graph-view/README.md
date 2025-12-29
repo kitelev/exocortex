@@ -10,6 +10,8 @@ The Graph View module provides a comprehensive solution for rendering force-dire
 - **Barnes-Hut Algorithm**: O(n log n) force calculations for large graphs
 - **Multiple Layouts**: Force-directed, hierarchical, radial, temporal, and community detection
 - **Rich Interactions**: Pan, zoom, drag, selection, context menus, keyboard navigation
+- **Filtering & Search**: Type filters, predicate filters, text search with highlighting
+- **Type-Based Coloring**: Automatic colors with palettes, legends, and accessibility options
 - **WCAG 2.1 AA Accessibility**: Screen reader support, keyboard navigation, high contrast
 - **Semantic Integration**: SPARQL queries, RDF/triple store, ontology-driven visualization
 - **Export**: PNG, JPEG, WebP, and SVG export with customizable bounds
@@ -49,6 +51,8 @@ simulation.start();
 ### Guides
 - [Data Sources](./guides/data-sources.md) - Triple store, SPARQL, static data
 - [Layouts](./guides/layouts.md) - Force, hierarchical, radial, temporal layouts
+- [Filtering](./guides/filtering.md) - Filter nodes by type, property, and relationships
+- [Search](./guides/search.md) - Find and highlight nodes, type-based coloring
 - [Styling](./guides/styling.md) - Node/edge customization
 - [Interactions](./guides/interactions.md) - Selection, drag, zoom, context menus
 - [Performance](./guides/performance.md) - Large graph optimization
