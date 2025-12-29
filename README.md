@@ -365,6 +365,9 @@ See **[SPARQL 1.2 Features](./docs/sparql/SPARQL-1.2-Features.md)** for complete
 - **[SPARQL 1.2 Features](./docs/sparql/SPARQL-1.2-Features.md)** — LATERAL, PREFIX*, directionality, and more
 - **[SPARQL 1.2 Migration](./docs/sparql/SPARQL-1.2-Migration.md)** — Upgrading from SPARQL 1.1
 
+### Graph View & Inference
+- **[Inference & Reasoning Guide](./docs/graph-view/guides/inference.md)** — RDFS/OWL inference, neighborhood exploration, justifications
+
 ### Layout Code Blocks
 
 Embed Layout definitions directly in your notes using the `exo-layout` code block:
