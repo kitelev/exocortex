@@ -12,6 +12,7 @@ The Graph View module provides a comprehensive solution for rendering force-dire
 - **Rich Interactions**: Pan, zoom, drag, selection, context menus, keyboard navigation
 - **Filtering & Search**: Type filters, predicate filters, text search with highlighting
 - **Type-Based Coloring**: Automatic colors with palettes, legends, and accessibility options
+- **Path Finding**: BFS, Dijkstra, and bidirectional algorithms for discovering connections
 - **WCAG 2.1 AA Accessibility**: Screen reader support, keyboard navigation, high contrast
 - **Semantic Integration**: SPARQL queries, RDF/triple store, ontology-driven visualization
 - **Export**: PNG, JPEG, WebP, and SVG export with customizable bounds
@@ -59,6 +60,7 @@ simulation.start();
 - [Edge Bundling](./guides/edge-bundling.md) - Reduce visual clutter in dense graphs
 - [Export](./guides/export.md) - PNG, JPEG, WebP, SVG export
 - [Accessibility](./guides/accessibility.md) - WCAG compliance and screen readers
+- [Path Finding](./guides/path-finding.md) - Find paths between nodes
 - [Migration](./guides/migration.md) - Version upgrade guide
 
 ### API Reference
