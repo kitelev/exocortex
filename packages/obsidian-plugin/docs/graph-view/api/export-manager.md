@@ -15,7 +15,7 @@ import {
   type ExportEvent,
   type ExportManagerConfig,
   type ExportStats,
-} from "@exocortex/obsidian-plugin";
+} from "./presentation/renderers/graph";
 ```
 
 ## Class: ExportManager

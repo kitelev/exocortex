@@ -42,7 +42,7 @@ import {
   AccessibilityManager,
   createAccessibilityManager,
   DEFAULT_ACCESSIBILITY_MANAGER_CONFIG,
-} from "@exocortex/obsidian-plugin";
+} from "./presentation/renderers/graph";
 
 // Using the factory function (recommended)
 const a11y = createAccessibilityManager(container, {
@@ -193,7 +193,7 @@ import {
   VirtualCursor,
   createVirtualCursor,
   DEFAULT_VIRTUAL_CURSOR_CONFIG,
-} from "@exocortex/obsidian-plugin";
+} from "./presentation/renderers/graph";
 
 const cursor = createVirtualCursor({
   maxHistorySize: 50,        // Maximum navigation history entries
@@ -420,7 +420,7 @@ const screenReaderType = a11y.detectScreenReader();
 // Returns: "nvda" | "jaws" | "voiceover" | "narrator" | "orca" | "unknown"
 
 // Get capabilities for a screen reader type
-import { getScreenReaderCapabilities } from "@exocortex/obsidian-plugin";
+import { getScreenReaderCapabilities } from "./presentation/renderers/graph";
 
 const capabilities = getScreenReaderCapabilities("voiceover");
 console.log(capabilities.supportsLiveRegions); // true
@@ -472,7 +472,7 @@ if (a11y.isHighContrastActive()) {
 ### Built-in High Contrast Themes
 
 ```typescript
-import { HIGH_CONTRAST_THEMES } from "@exocortex/obsidian-plugin";
+import { HIGH_CONTRAST_THEMES } from "./presentation/renderers/graph";
 
 // Dark theme (white on black)
 const darkTheme = HIGH_CONTRAST_THEMES.dark;
@@ -544,7 +544,7 @@ High contrast mode is automatically detected from system preferences:
 ### Reduced Motion Configuration
 
 ```typescript
-import { DEFAULT_REDUCED_MOTION_CONFIG } from "@exocortex/obsidian-plugin";
+import { DEFAULT_REDUCED_MOTION_CONFIG } from "./presentation/renderers/graph";
 
 interface ReducedMotionConfig {
   disableAnimations: boolean;   // Disable all animations
@@ -674,7 +674,7 @@ import {
   // Aliased exports to avoid naming conflicts
   a11yGetContrastRatio,
   a11yMeetsWCAGAA,
-} from "@exocortex/obsidian-plugin";
+} from "./presentation/renderers/graph";
 
 // Calculate contrast ratio
 const foreground = "#FFFFFF";
@@ -714,7 +714,7 @@ import {
   getContrastRatio,
   meetsWCAGAA,
   AccessibilityManager,
-} from "@exocortex/obsidian-plugin";
+} from "./presentation/renderers/graph";
 
 describe("Graph Accessibility", () => {
   let container: HTMLElement;

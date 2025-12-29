@@ -7,7 +7,7 @@ This guide covers user interactions including selection, dragging, zooming, and 
 ### Single Selection
 
 ```typescript
-import { SelectionManager, DEFAULT_SELECTION_MANAGER_CONFIG } from "@exocortex/obsidian-plugin";
+import { SelectionManager, DEFAULT_SELECTION_MANAGER_CONFIG } from "./presentation/renderers/graph";
 
 const selectionManager = new SelectionManager({
   multiSelect: false,      // Only single selection
@@ -77,7 +77,7 @@ selectionManager.on("boxEnd", (event) => {
 ### Basic Hover
 
 ```typescript
-import { HoverManager, DEFAULT_HOVER_MANAGER_CONFIG } from "@exocortex/obsidian-plugin";
+import { HoverManager, DEFAULT_HOVER_MANAGER_CONFIG } from "./presentation/renderers/graph";
 
 const hoverManager = new HoverManager({
   hoverDelay: 200,         // Wait before hover triggers
@@ -109,7 +109,7 @@ hoverManager.on("leave", (event) => {
 ### Rich Tooltips
 
 ```typescript
-import { TooltipRenderer, GraphTooltipDataProvider } from "@exocortex/obsidian-plugin";
+import { TooltipRenderer, GraphTooltipDataProvider } from "./presentation/renderers/graph";
 
 const tooltipProvider = new GraphTooltipDataProvider({
   tripleStore: myTripleStore,
@@ -139,7 +139,7 @@ hoverManager.on("leave", () => {
 ### Viewport Control
 
 ```typescript
-import { ViewportController, DEFAULT_VIEWPORT_CONTROLLER_CONFIG } from "@exocortex/obsidian-plugin";
+import { ViewportController, DEFAULT_VIEWPORT_CONTROLLER_CONFIG } from "./presentation/renderers/graph";
 
 const viewport = new ViewportController(container, {
   pannable: true,
@@ -207,7 +207,7 @@ const viewport = new ViewportController(container, {
 ### Node Dragging
 
 ```typescript
-import { ForceSimulation } from "@exocortex/obsidian-plugin";
+import { ForceSimulation } from "./presentation/renderers/graph";
 
 let draggedNode: SimulationNode | null = null;
 
@@ -285,7 +285,7 @@ function onDoubleClick(nodeId: string): void {
 ### Setup
 
 ```typescript
-import { KeyboardManager, NavigationManager, DEFAULT_KEY_BINDINGS } from "@exocortex/obsidian-plugin";
+import { KeyboardManager, NavigationManager, DEFAULT_KEY_BINDINGS } from "./presentation/renderers/graph";
 
 const keyboardManager = new KeyboardManager({
   enabled: true,
@@ -392,7 +392,7 @@ import {
   ContextMenuManager,
   ContextMenuRenderer,
   createDefaultProviders,
-} from "@exocortex/obsidian-plugin";
+} from "./presentation/renderers/graph";
 
 const contextMenuManager = new ContextMenuManager();
 const contextMenuRenderer = new ContextMenuRenderer(container);
@@ -420,7 +420,7 @@ contextMenuManager.on("close", () => {
 ### Custom Menu Items
 
 ```typescript
-import { ContextMenuProvider, ContextMenuItem } from "@exocortex/obsidian-plugin";
+import { ContextMenuProvider, ContextMenuItem } from "./presentation/renderers/graph";
 
 const customProvider: ContextMenuProvider = {
   id: "custom",
@@ -462,7 +462,7 @@ contextMenuManager.addProvider(customProvider);
 ### Focus Indicator
 
 ```typescript
-import { FocusIndicator, DEFAULT_FOCUS_INDICATOR_STYLE } from "@exocortex/obsidian-plugin";
+import { FocusIndicator, DEFAULT_FOCUS_INDICATOR_STYLE } from "./presentation/renderers/graph";
 
 const focusIndicator = new FocusIndicator(renderer.app, {
   style: {

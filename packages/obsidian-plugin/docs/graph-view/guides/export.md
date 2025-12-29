@@ -5,7 +5,7 @@ Export your knowledge graphs to various image formats for sharing, presentations
 ## Quick Start
 
 ```typescript
-import { ExportManager } from "@exocortex/obsidian-plugin";
+import { ExportManager } from "./presentation/renderers/graph";
 
 // Create export manager
 const exportManager = new ExportManager();
@@ -280,7 +280,7 @@ exportManager.resetStats();
 Configure default behavior at construction:
 
 ```typescript
-import { ExportManager, type ExportManagerConfig } from "@exocortex/obsidian-plugin";
+import { ExportManager, type ExportManagerConfig } from "./presentation/renderers/graph";
 
 const config: Partial<ExportManagerConfig> = {
   // Maximum export dimension (default: 16384)
@@ -309,7 +309,7 @@ const exportManager = new ExportManager(config);
 Use the factory function for quick setup:
 
 ```typescript
-import { createExportManager } from "@exocortex/obsidian-plugin";
+import { createExportManager } from "./presentation/renderers/graph";
 
 const exportManager = createExportManager({
   maxDimension: 8192,

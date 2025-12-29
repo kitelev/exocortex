@@ -38,7 +38,7 @@ type GraphType =
 ### Creating a Layout Plugin
 
 ```typescript
-import { createLayoutPlugin, BaseLayoutAlgorithm } from "@exocortex/obsidian-plugin";
+import { createLayoutPlugin, BaseLayoutAlgorithm } from "./presentation/renderers/graph";
 
 class GridLayout extends BaseLayoutAlgorithm {
   compute(nodes: GraphNode[], edges: GraphEdge[]): LayoutResult {
@@ -87,7 +87,7 @@ const gridPlugin = createLayoutPlugin({
 ### Registering Plugins
 
 ```typescript
-import { layoutPluginRegistry } from "@exocortex/obsidian-plugin";
+import { layoutPluginRegistry } from "./presentation/renderers/graph";
 
 // Register plugin
 layoutPluginRegistry.register(gridPlugin);
@@ -196,7 +196,7 @@ simulation.force("group", forceGroup("group").strength(0.2).distance(50));
 ### Node Shape Renderer
 
 ```typescript
-import { SHAPE_DRAWERS, Graphics } from "@exocortex/obsidian-plugin";
+import { SHAPE_DRAWERS, Graphics } from "./presentation/renderers/graph";
 
 // Register custom shape
 SHAPE_DRAWERS.cloud = (graphics: Graphics, x: number, y: number, radius: number) => {

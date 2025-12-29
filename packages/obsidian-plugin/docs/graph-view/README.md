@@ -24,7 +24,7 @@ import {
   GraphLayoutRenderer,
   buildGraphData,
   ForceSimulation,
-} from "@exocortex/obsidian-plugin";
+} from "./presentation/renderers/graph";
 
 // Build graph from table data
 const graphData = buildGraphData(tableRows, "label", ["links", "references"]);

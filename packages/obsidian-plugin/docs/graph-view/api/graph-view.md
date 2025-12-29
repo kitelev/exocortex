@@ -5,8 +5,8 @@ The main React component for rendering graph visualizations.
 ## Import
 
 ```typescript
-import { GraphLayoutRenderer } from "@exocortex/obsidian-plugin";
-import type { GraphLayoutRendererProps, GraphNode, GraphEdge } from "@exocortex/obsidian-plugin";
+import { GraphLayoutRenderer } from "./presentation/renderers/graph";
+import type { GraphLayoutRendererProps, GraphNode, GraphEdge } from "./presentation/renderers/graph";
 ```
 
 ## Props
@@ -34,7 +34,7 @@ interface GraphLayoutRendererProps {
 
 ```tsx
 import React from "react";
-import { GraphLayoutRenderer } from "@exocortex/obsidian-plugin";
+import { GraphLayoutRenderer } from "./presentation/renderers/graph";
 
 function MyGraph() {
   const nodes = [
@@ -321,7 +321,7 @@ import type {
   GraphEdge,
   GraphData,
   GraphLayoutOptions,
-} from "@exocortex/obsidian-plugin";
+} from "./presentation/renderers/graph";
 
 const MyGraph: React.FC = () => {
   const ref = useRef<GraphLayoutRendererRef>(null);

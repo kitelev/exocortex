@@ -23,7 +23,7 @@ Passthrough bundler that returns straight edges. Use for:
 - Simple graphs where bundling is unnecessary
 
 ```typescript
-import { createStubBundler } from "@exocortex/obsidian-plugin";
+import { createStubBundler } from "./presentation/renderers/graph";
 
 const bundler = createStubBundler();
 const bundledEdges = bundler.bundle(edges, nodes);
@@ -41,7 +41,7 @@ Implements the Force-Directed Edge Bundling algorithm by Holten & van Wijk (2009
 - Configurable bundling strength
 
 ```typescript
-import { createFDEBBundler } from "@exocortex/obsidian-plugin";
+import { createFDEBBundler } from "./presentation/renderers/graph";
 
 const bundler = createFDEBBundler({
   iterations: 60,           // Number of simulation iterations
@@ -83,7 +83,7 @@ Implements hierarchical edge bundling based on Holten (2006). Routes edges throu
 - Optimal for tree-like data structures
 
 ```typescript
-import { createHierarchicalBundler } from "@exocortex/obsidian-plugin";
+import { createHierarchicalBundler } from "./presentation/renderers/graph";
 
 const bundler = createHierarchicalBundler({
   beta: 0.85,              // Bundling tightness (0 = straight, 1 = follow hierarchy)
@@ -108,7 +108,7 @@ const bundledEdges = bundler.bundle(edges, nodes);
 ### Basic Usage
 
 ```typescript
-import { createEdgeBundler } from "@exocortex/obsidian-plugin";
+import { createEdgeBundler } from "./presentation/renderers/graph";
 
 // Create bundler using factory (recommended)
 const bundler = createEdgeBundler("fdeb");
@@ -131,7 +131,7 @@ for (const edge of bundledEdges) {
 ### With Statistics
 
 ```typescript
-import { createFDEBBundler } from "@exocortex/obsidian-plugin";
+import { createFDEBBundler } from "./presentation/renderers/graph";
 
 const bundler = createFDEBBundler();
 const result = bundler.bundleWithStats(edges, nodeMap);
@@ -145,7 +145,7 @@ console.log(`Avg compatibility: ${result.averageCompatibility.toFixed(3)}`);
 ### Rendering Bundled Edges
 
 ```typescript
-import { createFDEBBundler } from "@exocortex/obsidian-plugin";
+import { createFDEBBundler } from "./presentation/renderers/graph";
 
 const bundler = createFDEBBundler();
 const bundledEdges = bundler.bundle(edges, nodeMap);
@@ -370,7 +370,7 @@ import {
   scale,          // Scale vector by scalar
   lerp,           // Linear interpolation
   projectOntoLine // Project point onto line segment
-} from "@exocortex/obsidian-plugin";
+} from "./presentation/renderers/graph";
 
 // Example: Calculate edge length
 const length = distance(sourcePos, targetPos);

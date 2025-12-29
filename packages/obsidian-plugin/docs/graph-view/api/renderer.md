@@ -12,7 +12,7 @@ import {
   LabelRenderer,
   BatchedNodeRenderer,
   IncrementalRenderer,
-} from "@exocortex/obsidian-plugin";
+} from "./presentation/renderers/graph";
 
 import type {
   PixiGraphRendererOptions,
@@ -23,7 +23,7 @@ import type {
   RenderedNode,
   RenderedEdge,
   RenderedLabel,
-} from "@exocortex/obsidian-plugin";
+} from "./presentation/renderers/graph";
 ```
 
 ## PixiGraphRenderer
@@ -202,7 +202,7 @@ nodeRenderer.dispose();
 ### Node Shapes
 
 ```typescript
-import { SHAPE_DRAWERS } from "@exocortex/obsidian-plugin";
+import { SHAPE_DRAWERS } from "./presentation/renderers/graph";
 
 // Available shapes
 const shapes: NodeShape[] = [
@@ -371,7 +371,7 @@ labelRenderer.setVisibility(true);   // Show all labels
 ### Label Positioning
 
 ```typescript
-import { calculateOptimalLabelPosition } from "@exocortex/obsidian-plugin";
+import { calculateOptimalLabelPosition } from "./presentation/renderers/graph";
 
 // Find best position avoiding overlaps
 const position = calculateOptimalLabelPosition(
@@ -458,7 +458,7 @@ incrementalRenderer.render();
 ### Use Object Pooling
 
 ```typescript
-import { PoolManager, getGlobalPoolManager } from "@exocortex/obsidian-plugin";
+import { PoolManager, getGlobalPoolManager } from "./presentation/renderers/graph";
 
 const poolManager = getGlobalPoolManager();
 
@@ -470,7 +470,7 @@ poolManager.prewarm("vector2d", 1000);
 ### Use Visibility Culling
 
 ```typescript
-import { VisibilityCuller } from "@exocortex/obsidian-plugin";
+import { VisibilityCuller } from "./presentation/renderers/graph";
 
 const culler = new VisibilityCuller({
   margin: 50,  // Pixels outside viewport to include
@@ -486,7 +486,7 @@ nodeRenderer.renderNodes(visibleNodes);
 ### Use Level of Detail
 
 ```typescript
-import { LODSystem, LODLevel } from "@exocortex/obsidian-plugin";
+import { LODSystem, LODLevel } from "./presentation/renderers/graph";
 
 const lodSystem = new LODSystem();
 

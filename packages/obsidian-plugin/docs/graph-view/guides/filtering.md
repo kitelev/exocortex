@@ -19,7 +19,7 @@ The Filter Panel is the primary UI for managing graph filters:
 ### Programmatic Filtering
 
 ```typescript
-import { FilterManager, createTypeFilter, generateFilterId } from "@exocortex/obsidian-plugin";
+import { FilterManager, createTypeFilter, generateFilterId } from "./presentation/renderers/graph";
 
 // Get the filter manager
 const filterManager = new FilterManager();
@@ -48,7 +48,7 @@ const { nodeIds, edgeIds } = filterManager.getFilteredResults();
 Filter nodes by their RDF type (asset class). This is the most common filter type.
 
 ```typescript
-import { createTypeFilter, generateFilterId } from "@exocortex/obsidian-plugin";
+import { createTypeFilter, generateFilterId } from "./presentation/renderers/graph";
 
 // Show only tasks
 const showTasks = createTypeFilter(
@@ -81,7 +81,7 @@ filterManager.addFilter(showTasks);
 Filter based on edge types (relationships between nodes).
 
 ```typescript
-import { createPredicateFilter, generateFilterId } from "@exocortex/obsidian-plugin";
+import { createPredicateFilter, generateFilterId } from "./presentation/renderers/graph";
 
 // Show only hierarchy relationships
 const hierarchyOnly = createPredicateFilter(
@@ -106,7 +106,7 @@ filterManager.addFilter(hierarchyOnly);
 Filter nodes by property values with comparison operators.
 
 ```typescript
-import { createLiteralFilter, generateFilterId } from "@exocortex/obsidian-plugin";
+import { createLiteralFilter, generateFilterId } from "./presentation/renderers/graph";
 
 // Filter tasks by status
 const completedTasks = createLiteralFilter(
@@ -153,7 +153,7 @@ filterManager.addFilter(completedTasks);
 Show nodes within a certain distance (hops) from a starting node. Uses BFS traversal.
 
 ```typescript
-import { createPathFilter, generateFilterId } from "@exocortex/obsidian-plugin";
+import { createPathFilter, generateFilterId } from "./presentation/renderers/graph";
 
 // Show all nodes within 2 hops of a specific node
 const neighborhood = createPathFilter(
@@ -178,7 +178,7 @@ filterManager.addFilter(neighborhood);
 Combine multiple filters with logical operators (AND, OR, NOT).
 
 ```typescript
-import { createCompositeFilter, createTypeFilter, generateFilterId } from "@exocortex/obsidian-plugin";
+import { createCompositeFilter, createTypeFilter, generateFilterId } from "./presentation/renderers/graph";
 
 // Create child filters
 const tasksFilter = createTypeFilter(
@@ -219,7 +219,7 @@ filterManager.addFilter(combinedFilter);
 The `FilterPanel` component provides an interactive UI for managing filters:
 
 ```tsx
-import { FilterPanel } from "@exocortex/obsidian-plugin";
+import { FilterPanel } from "./presentation/renderers/graph";
 
 function MyGraphView() {
   const [visibleNodeTypes, setVisibleNodeTypes] = useState(new Set<string>());
@@ -272,7 +272,7 @@ function MyGraphView() {
 Customize which filter sections are visible:
 
 ```typescript
-import { FilterPanelConfig, DEFAULT_FILTER_PANEL_CONFIG } from "@exocortex/obsidian-plugin";
+import { FilterPanelConfig, DEFAULT_FILTER_PANEL_CONFIG } from "./presentation/renderers/graph";
 
 const customConfig: FilterPanelConfig = {
   ...DEFAULT_FILTER_PANEL_CONFIG,

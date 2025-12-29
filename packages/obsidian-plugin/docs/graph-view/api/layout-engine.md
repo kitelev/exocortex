@@ -13,7 +13,7 @@ import {
   TemporalLayout,
   detectCommunities,
   LayoutPluginRegistry,
-} from "@exocortex/obsidian-plugin";
+} from "./presentation/renderers/graph";
 
 import type {
   LayoutAlgorithmName,
@@ -22,7 +22,7 @@ import type {
   HierarchicalLayoutOptions,
   RadialLayoutOptions,
   TemporalLayoutOptions,
-} from "@exocortex/obsidian-plugin";
+} from "./presentation/renderers/graph";
 ```
 
 ## LayoutManager
@@ -158,7 +158,7 @@ layout.setRoots(["node-1", "node-2"]);
 ### Presets
 
 ```typescript
-import { HIERARCHICAL_PRESETS } from "@exocortex/obsidian-plugin";
+import { HIERARCHICAL_PRESETS } from "./presentation/renderers/graph";
 
 const layout = new HierarchicalLayout(HIERARCHICAL_PRESETS.topDown);
 const layout = new HierarchicalLayout(HIERARCHICAL_PRESETS.leftRight);
@@ -232,7 +232,7 @@ const rings = layout.getRings();
 ### Presets
 
 ```typescript
-import { RADIAL_PRESETS } from "@exocortex/obsidian-plugin";
+import { RADIAL_PRESETS } from "./presentation/renderers/graph";
 
 const layout = new RadialLayout(RADIAL_PRESETS.balanced);
 const layout = new RadialLayout(RADIAL_PRESETS.compact);
@@ -294,7 +294,7 @@ const lanes: Lane[] = layout.getLanes();
 ### Presets
 
 ```typescript
-import { TEMPORAL_PRESETS } from "@exocortex/obsidian-plugin";
+import { TEMPORAL_PRESETS } from "./presentation/renderers/graph";
 
 const layout = new TemporalLayout(TEMPORAL_PRESETS.timeline);
 const layout = new TemporalLayout(TEMPORAL_PRESETS.swimlane);
@@ -326,7 +326,7 @@ for (const marker of markers) {
 Detect communities using the Louvain algorithm:
 
 ```typescript
-import { detectCommunities, CommunityLayout } from "@exocortex/obsidian-plugin";
+import { detectCommunities, CommunityLayout } from "./presentation/renderers/graph";
 
 // Detect communities
 const result = detectCommunities(nodes, edges, {
@@ -365,7 +365,7 @@ import {
   layoutPluginRegistry,
   createLayoutPlugin,
   BaseLayoutAlgorithm,
-} from "@exocortex/obsidian-plugin";
+} from "./presentation/renderers/graph";
 
 // Create custom layout
 class MyCustomLayout extends BaseLayoutAlgorithm {
@@ -421,7 +421,7 @@ const suitable = layoutPluginRegistry.getForGraphType("tree");
 Available easing functions for transitions:
 
 ```typescript
-import { getEasingFunction, EASING_FUNCTIONS } from "@exocortex/obsidian-plugin";
+import { getEasingFunction, EASING_FUNCTIONS } from "./presentation/renderers/graph";
 
 // Available easings
 const easings = [

@@ -77,7 +77,7 @@ import {
   NodeRenderer,
   EdgeRenderer,
   LabelRenderer,
-} from "@exocortex/obsidian-plugin";
+} from "./presentation/renderers/graph";
 ```
 
 ### Type Imports
@@ -92,7 +92,7 @@ import type {
   SimulationLink,
   NodeVisualStyle,
   EdgeVisualStyle,
-} from "@exocortex/obsidian-plugin";
+} from "./presentation/renderers/graph";
 ```
 
 ### Force System Imports
@@ -108,7 +108,7 @@ import {
   forceX,
   forceY,
   FORCE_PRESETS,
-} from "@exocortex/obsidian-plugin";
+} from "./presentation/renderers/graph";
 ```
 
 ### Layout Algorithm Imports
@@ -121,7 +121,7 @@ import {
   LayoutManager,
   detectCommunities,
   CommunityLayout,
-} from "@exocortex/obsidian-plugin";
+} from "./presentation/renderers/graph";
 ```
 
 ### Interaction Manager Imports
@@ -134,7 +134,7 @@ import {
   KeyboardManager,
   NavigationManager,
   ContextMenuManager,
-} from "@exocortex/obsidian-plugin";
+} from "./presentation/renderers/graph";
 ```
 
 ## Key Concepts

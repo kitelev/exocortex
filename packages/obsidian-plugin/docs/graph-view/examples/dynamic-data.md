@@ -10,8 +10,8 @@ import {
   forceCenter,
   forceManyBody,
   forceLink,
-} from "@exocortex/obsidian-plugin";
-import type { GraphNode, GraphEdge, SimulationNode } from "@exocortex/obsidian-plugin";
+} from "./presentation/renderers/graph";
+import type { GraphNode, GraphEdge, SimulationNode } from "./presentation/renderers/graph";
 
 class DynamicGraphManager {
   private nodes: SimulationNode[] = [];
@@ -160,7 +160,7 @@ class DynamicGraphManager {
 
 ```tsx
 import { useState, useEffect, useCallback } from "react";
-import type { GraphNode, GraphEdge } from "@exocortex/obsidian-plugin";
+import type { GraphNode, GraphEdge } from "./presentation/renderers/graph";
 
 interface GraphDataState {
   nodes: GraphNode[];
@@ -399,7 +399,7 @@ class VaultGraphSync extends Events {
 
 ```tsx
 import React, { useState, useEffect, useCallback } from "react";
-import { GraphLayoutRenderer } from "@exocortex/obsidian-plugin";
+import { GraphLayoutRenderer } from "./presentation/renderers/graph";
 
 const DynamicGraphView: React.FC<{ dataSource: DataSource }> = ({ dataSource }) => {
   const { nodes, edges, isLoading, addNode, removeNode } = useDynamicGraph(dataSource);

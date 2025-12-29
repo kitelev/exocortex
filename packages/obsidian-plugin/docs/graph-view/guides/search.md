@@ -17,7 +17,7 @@ The Graph View includes a powerful search system for finding nodes by text, navi
 ### Programmatic Search
 
 ```typescript
-import { SearchManager } from "@exocortex/obsidian-plugin";
+import { SearchManager } from "./presentation/renderers/graph";
 
 // Create search manager
 const searchManager = new SearchManager();
@@ -49,7 +49,7 @@ import {
   SearchManager,
   SearchManagerConfig,
   DEFAULT_SEARCH_MANAGER_CONFIG,
-} from "@exocortex/obsidian-plugin";
+} from "./presentation/renderers/graph";
 
 const config: Partial<SearchManagerConfig> = {
   searchOptions: {
@@ -176,7 +176,7 @@ const matchedIds = searchManager.getMatchedNodeIds();
 Subscribe to search events for real-time updates:
 
 ```typescript
-import { SearchEvent, SearchEventListener } from "@exocortex/obsidian-plugin";
+import { SearchEvent, SearchEventListener } from "./presentation/renderers/graph";
 
 const handleSearchEvent: SearchEventListener = (event: SearchEvent) => {
   switch (event.type) {
@@ -241,7 +241,7 @@ The TypeColorManager provides type-based coloring and a visual legend for the gr
 import {
   TypeColorManager,
   TypeColorManagerConfig,
-} from "@exocortex/obsidian-plugin";
+} from "./presentation/renderers/graph";
 
 const config: Partial<TypeColorManagerConfig> = {
   paletteId: "default",           // Color palette to use
@@ -430,7 +430,7 @@ colorManager.addEventListener((event) => {
 When `enforceContrast` is enabled, generated colors are checked for WCAG AA compliance:
 
 ```typescript
-import { meetsWCAGAA } from "@exocortex/obsidian-plugin";
+import { meetsWCAGAA } from "./presentation/renderers/graph";
 
 // Check if colors meet contrast requirements
 const isAccessible = meetsWCAGAA(
@@ -449,7 +449,7 @@ import {
   SearchManager,
   TypeColorManager,
   GraphNode,
-} from "@exocortex/obsidian-plugin";
+} from "./presentation/renderers/graph";
 
 class GraphSearchController {
   private searchManager: SearchManager;

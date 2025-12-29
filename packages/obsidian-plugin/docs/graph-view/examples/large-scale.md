@@ -13,8 +13,8 @@ import {
   BatchedNodeRenderer,
   QuadTree,
   WebGPUAccelerator,
-} from "@exocortex/obsidian-plugin";
-import type { GraphNode, GraphEdge, LODLevel } from "@exocortex/obsidian-plugin";
+} from "./presentation/renderers/graph";
+import type { GraphNode, GraphEdge, LODLevel } from "./presentation/renderers/graph";
 
 // Performance configuration for large graphs
 const largeGraphConfig = {
@@ -436,7 +436,7 @@ class WebGPUForceSimulation {
 ## Clustering for Overview
 
 ```typescript
-import { detectCommunities, ClusterLayout } from "@exocortex/obsidian-plugin";
+import { detectCommunities, ClusterLayout } from "./presentation/renderers/graph";
 
 class ClusteredGraphView {
   private clusters: Map<number, GraphNode[]> = new Map();
@@ -567,7 +567,7 @@ import {
   forceCenter,
   forceManyBody,
   forceLink,
-} from "@exocortex/obsidian-plugin";
+} from "./presentation/renderers/graph";
 
 interface LargeGraphProps {
   dataSource: GraphDataSource;

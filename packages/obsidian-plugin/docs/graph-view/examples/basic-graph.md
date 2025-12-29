@@ -16,8 +16,8 @@ import {
   LabelRenderer,
   ViewportController,
   SelectionManager,
-} from "@exocortex/obsidian-plugin";
-import type { GraphNode, GraphEdge, SimulationNode } from "@exocortex/obsidian-plugin";
+} from "./presentation/renderers/graph";
+import type { GraphNode, GraphEdge, SimulationNode } from "./presentation/renderers/graph";
 
 // 1. Define graph data
 const nodes: GraphNode[] = [
@@ -201,8 +201,8 @@ function cleanup(): void {
 
 ```tsx
 import React, { useEffect, useRef } from "react";
-import { GraphLayoutRenderer } from "@exocortex/obsidian-plugin";
-import type { GraphNode, GraphEdge } from "@exocortex/obsidian-plugin";
+import { GraphLayoutRenderer } from "./presentation/renderers/graph";
+import type { GraphNode, GraphEdge } from "./presentation/renderers/graph";
 
 const BasicGraph: React.FC = () => {
   const nodes: GraphNode[] = [

@@ -11,8 +11,8 @@ import {
   BaseLayoutAlgorithm,
   createLayoutPlugin,
   layoutPluginRegistry,
-} from "@exocortex/obsidian-plugin";
-import type { GraphNode, GraphEdge, LayoutResult } from "@exocortex/obsidian-plugin";
+} from "./presentation/renderers/graph";
+import type { GraphNode, GraphEdge, LayoutResult } from "./presentation/renderers/graph";
 
 interface SpiralLayoutOptions {
   centerX: number;
@@ -99,7 +99,7 @@ layoutPluginRegistry.register(spiralPlugin);
 A force layout with alignment constraints:
 
 ```typescript
-import { ForceSimulation, forceCenter, forceManyBody, forceLink, forceY } from "@exocortex/obsidian-plugin";
+import { ForceSimulation, forceCenter, forceManyBody, forceLink, forceY } from "./presentation/renderers/graph";
 
 interface GroupConstraintOptions {
   groupKey: string;
@@ -248,7 +248,7 @@ class SwimlaneLayout extends BaseLayoutAlgorithm<SwimlaneLayoutOptions> {
 Combines community detection with force simulation:
 
 ```typescript
-import { detectCommunities } from "@exocortex/obsidian-plugin";
+import { detectCommunities } from "./presentation/renderers/graph";
 
 class ClusterForceLayout extends BaseLayoutAlgorithm {
   compute(nodes: GraphNode[], edges: GraphEdge[]): LayoutResult {

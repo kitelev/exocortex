@@ -20,7 +20,7 @@ import {
   PathFindingManager,
   createPathFinder,
   createPathFindingManager,
-} from "@exocortex/obsidian-plugin";
+} from "./presentation/renderers/graph";
 
 // Create path finder with default options
 const pathFinder = createPathFinder();
@@ -47,7 +47,7 @@ The `PathFinder` class implements graph path finding algorithms.
 ### Creation
 
 ```typescript
-import { PathFinder, createPathFinder } from "@exocortex/obsidian-plugin";
+import { PathFinder, createPathFinder } from "./presentation/renderers/graph";
 
 // Using factory function (recommended)
 const pathFinder = createPathFinder({
@@ -66,7 +66,7 @@ const pathFinder = new PathFinder({
 ### Setting Graph Data
 
 ```typescript
-import type { GraphNode, GraphEdge } from "@exocortex/obsidian-plugin";
+import type { GraphNode, GraphEdge } from "./presentation/renderers/graph";
 
 const nodes: GraphNode[] = [
   { id: "A", label: "Node A", path: "/A.md" },
@@ -374,7 +374,7 @@ For UI integration, use `PathFindingManager` which handles:
 ### Basic Usage
 
 ```typescript
-import { createPathFindingManager } from "@exocortex/obsidian-plugin";
+import { createPathFindingManager } from "./presentation/renderers/graph";
 
 const manager = createPathFindingManager();
 
@@ -620,7 +620,7 @@ if (!result.found) {
 import {
   createPathFindingManager,
   PathFindingEventType,
-} from "@exocortex/obsidian-plugin";
+} from "./presentation/renderers/graph";
 
 // Setup
 const manager = createPathFindingManager({

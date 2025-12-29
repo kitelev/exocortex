@@ -15,7 +15,7 @@ import {
   forceX,
   forceY,
   FORCE_PRESETS,
-} from "@exocortex/obsidian-plugin";
+} from "./presentation/renderers/graph";
 
 import type {
   SimulationNode,
@@ -23,7 +23,7 @@ import type {
   Force,
   ForceSimulationConfig,
   SimulationMetrics,
-} from "@exocortex/obsidian-plugin";
+} from "./presentation/renderers/graph";
 ```
 
 ## Constructor
@@ -202,7 +202,7 @@ console.log(`Avg tick: ${metrics.avgTickTime}ms`);
 Centers the graph at a specific point:
 
 ```typescript
-import { forceCenter } from "@exocortex/obsidian-plugin";
+import { forceCenter } from "./presentation/renderers/graph";
 
 simulation.force("center", forceCenter(width / 2, height / 2));
 
@@ -217,7 +217,7 @@ simulation.force("center", center);
 Applies charge-based repulsion/attraction:
 
 ```typescript
-import { forceManyBody } from "@exocortex/obsidian-plugin";
+import { forceManyBody } from "./presentation/renderers/graph";
 
 const charge = forceManyBody()
   .strength(-300)        // Negative for repulsion
@@ -233,7 +233,7 @@ simulation.force("charge", charge);
 Applies link constraints:
 
 ```typescript
-import { forceLink } from "@exocortex/obsidian-plugin";
+import { forceLink } from "./presentation/renderers/graph";
 
 const links = [
   { source: "1", target: "2" },
@@ -254,7 +254,7 @@ simulation.force("link", linkForce);
 Prevents node overlap:
 
 ```typescript
-import { forceCollide } from "@exocortex/obsidian-plugin";
+import { forceCollide } from "./presentation/renderers/graph";
 
 const collide = forceCollide()
   .radius((d) => d.radius + 2)  // Collision radius
@@ -269,7 +269,7 @@ simulation.force("collide", collide);
 Pulls nodes toward a circular path:
 
 ```typescript
-import { forceRadial } from "@exocortex/obsidian-plugin";
+import { forceRadial } from "./presentation/renderers/graph";
 
 const radial = forceRadial(200, width / 2, height / 2)
   .strength(0.1);
@@ -282,7 +282,7 @@ simulation.force("radial", radial);
 Position forces along axes:
 
 ```typescript
-import { forceX, forceY } from "@exocortex/obsidian-plugin";
+import { forceX, forceY } from "./presentation/renderers/graph";
 
 // Pull nodes toward center X
 simulation.force("x", forceX(width / 2).strength(0.05));
@@ -303,7 +303,7 @@ simulation.force("x", forceX((d) => {
 Pre-configured force combinations:
 
 ```typescript
-import { FORCE_PRESETS } from "@exocortex/obsidian-plugin";
+import { FORCE_PRESETS } from "./presentation/renderers/graph";
 
 // Available presets
 FORCE_PRESETS.default     // Balanced for general use
@@ -387,7 +387,7 @@ function onDragEnd(node: SimulationNode) {
 For large graphs (1000+ nodes), the Barnes-Hut algorithm provides O(n log n) performance:
 
 ```typescript
-import { BarnesHutForce, createBarnesHutForce } from "@exocortex/obsidian-plugin";
+import { BarnesHutForce, createBarnesHutForce } from "./presentation/renderers/graph";
 
 // Create Barnes-Hut force
 const bhForce = createBarnesHutForce({

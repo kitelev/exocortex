@@ -74,7 +74,7 @@ For accelerated physics simulation on large graphs (10K+ nodes), WebGPU is recom
 Check WebGPU support:
 
 ```typescript
-import { isWebGPUAvailable } from "@exocortex/obsidian-plugin";
+import { isWebGPUAvailable } from "./presentation/renderers/graph";
 
 if (await isWebGPUAvailable()) {
   console.log("WebGPU acceleration available!");
@@ -166,7 +166,7 @@ import {
   // Utilities
   buildGraphData,
   detectCommunities,
-} from "@exocortex/obsidian-plugin";
+} from "./presentation/renderers/graph";
 ```
 
 ### Type Imports
@@ -179,7 +179,7 @@ import type {
   GraphLayoutOptions,
   SimulationNode,
   SimulationLink,
-} from "@exocortex/obsidian-plugin";
+} from "./presentation/renderers/graph";
 ```
 
 ## Verifying Installation
@@ -187,7 +187,7 @@ import type {
 Run this code to verify the installation:
 
 ```typescript
-import { ForceSimulation, forceCenter } from "@exocortex/obsidian-plugin";
+import { ForceSimulation, forceCenter } from "./presentation/renderers/graph";
 
 const simulation = new ForceSimulation();
 simulation.force("center", forceCenter(400, 300));

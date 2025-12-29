@@ -22,7 +22,7 @@ manager.once("eventType", callback);
 ### ForceSimulation
 
 ```typescript
-import { ForceSimulation } from "@exocortex/obsidian-plugin";
+import { ForceSimulation } from "./presentation/renderers/graph";
 
 const simulation = new ForceSimulation();
 
@@ -44,8 +44,8 @@ simulation.on("end", () => {
 ### SelectionManager
 
 ```typescript
-import { SelectionManager } from "@exocortex/obsidian-plugin";
-import type { SelectionEvent } from "@exocortex/obsidian-plugin";
+import { SelectionManager } from "./presentation/renderers/graph";
+import type { SelectionEvent } from "./presentation/renderers/graph";
 
 const selectionManager = new SelectionManager();
 
@@ -97,8 +97,8 @@ interface SelectionEvent {
 ### HoverManager
 
 ```typescript
-import { HoverManager } from "@exocortex/obsidian-plugin";
-import type { HoverEvent } from "@exocortex/obsidian-plugin";
+import { HoverManager } from "./presentation/renderers/graph";
+import type { HoverEvent } from "./presentation/renderers/graph";
 
 const hoverManager = new HoverManager();
 
@@ -138,8 +138,8 @@ interface HoverEvent {
 ### ViewportController
 
 ```typescript
-import { ViewportController } from "@exocortex/obsidian-plugin";
-import type { ViewportEvent } from "@exocortex/obsidian-plugin";
+import { ViewportController } from "./presentation/renderers/graph";
+import type { ViewportEvent } from "./presentation/renderers/graph";
 
 const viewportController = new ViewportController(container);
 
@@ -189,8 +189,8 @@ interface ViewportEvent {
 ### KeyboardManager
 
 ```typescript
-import { KeyboardManager } from "@exocortex/obsidian-plugin";
-import type { KeyboardEvent_Custom } from "@exocortex/obsidian-plugin";
+import { KeyboardManager } from "./presentation/renderers/graph";
+import type { KeyboardEvent_Custom } from "./presentation/renderers/graph";
 
 const keyboardManager = new KeyboardManager();
 
@@ -241,8 +241,8 @@ interface KeyboardEvent_Custom {
 ### NavigationManager
 
 ```typescript
-import { NavigationManager } from "@exocortex/obsidian-plugin";
-import type { NavigationEvent } from "@exocortex/obsidian-plugin";
+import { NavigationManager } from "./presentation/renderers/graph";
+import type { NavigationEvent } from "./presentation/renderers/graph";
 
 const navigationManager = new NavigationManager();
 
@@ -283,8 +283,8 @@ interface NavigationEvent {
 ### ContextMenuManager
 
 ```typescript
-import { ContextMenuManager } from "@exocortex/obsidian-plugin";
-import type { ContextMenuEvent } from "@exocortex/obsidian-plugin";
+import { ContextMenuManager } from "./presentation/renderers/graph";
+import type { ContextMenuEvent } from "./presentation/renderers/graph";
 
 const contextMenuManager = new ContextMenuManager();
 
@@ -339,8 +339,8 @@ interface ContextMenuItem {
 ### LayoutManager
 
 ```typescript
-import { LayoutManager } from "@exocortex/obsidian-plugin";
-import type { LayoutManagerEvent } from "@exocortex/obsidian-plugin";
+import { LayoutManager } from "./presentation/renderers/graph";
+import type { LayoutManagerEvent } from "./presentation/renderers/graph";
 
 const layoutManager = new LayoutManager();
 
@@ -373,8 +373,8 @@ layoutManager.on("transitionEnd", () => {
 ### PerformanceProfiler
 
 ```typescript
-import { PerformanceProfiler, getGlobalProfiler } from "@exocortex/obsidian-plugin";
-import type { ProfilerEvent } from "@exocortex/obsidian-plugin";
+import { PerformanceProfiler, getGlobalProfiler } from "./presentation/renderers/graph";
+import type { ProfilerEvent } from "./presentation/renderers/graph";
 
 const profiler = getGlobalProfiler();
 
@@ -394,8 +394,8 @@ profiler.on("warning", (event: { message: string; severity: string }) => {
 ### GPUMemoryManager
 
 ```typescript
-import { GPUMemoryManager, getGlobalMemoryManager } from "@exocortex/obsidian-plugin";
-import type { MemoryEvent } from "@exocortex/obsidian-plugin";
+import { GPUMemoryManager, getGlobalMemoryManager } from "./presentation/renderers/graph";
+import type { MemoryEvent } from "./presentation/renderers/graph";
 
 const memoryManager = getGlobalMemoryManager();
 
@@ -418,8 +418,8 @@ memoryManager.on("gc", (event: { freed: number }) => {
 ### AccessibilityManager
 
 ```typescript
-import { AccessibilityManager } from "@exocortex/obsidian-plugin";
-import type { A11yEvent } from "@exocortex/obsidian-plugin";
+import { AccessibilityManager } from "./presentation/renderers/graph";
+import type { A11yEvent } from "./presentation/renderers/graph";
 
 const a11yManager = new AccessibilityManager();
 

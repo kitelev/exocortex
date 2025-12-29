@@ -9,8 +9,8 @@ import {
   GraphLayoutRenderer,
   TripleStoreManager,
   buildGraphData,
-} from "@exocortex/obsidian-plugin";
-import type { GraphNode, GraphEdge, Triple } from "@exocortex/obsidian-plugin";
+} from "./presentation/renderers/graph";
+import type { GraphNode, GraphEdge, Triple } from "./presentation/renderers/graph";
 
 // 1. Create triple store
 const tripleStore = new TripleStoreManager();
@@ -129,7 +129,7 @@ function SemanticGraphView() {
 ## SPARQL Query Integration
 
 ```typescript
-import { SPARQLEngine, QueryExecutor } from "@exocortex/obsidian-plugin";
+import { SPARQLEngine, QueryExecutor } from "./presentation/renderers/graph";
 
 class KnowledgeGraphBuilder {
   private engine: SPARQLEngine;
@@ -268,7 +268,7 @@ class KnowledgeGraphBuilder {
 ## Ontology-Driven Visualization
 
 ```typescript
-import { OntologyManager, InferenceEngine } from "@exocortex/obsidian-plugin";
+import { OntologyManager, InferenceEngine } from "./presentation/renderers/graph";
 
 interface OntologyConfig {
   classes: Record<string, ClassConfig>;
@@ -345,7 +345,7 @@ applyOntologyStyles(nodes, edges, exocortexOntology);
 ## Inference and Reasoning
 
 ```typescript
-import { InferenceEngine, TransitiveClosureReasoner } from "@exocortex/obsidian-plugin";
+import { InferenceEngine, TransitiveClosureReasoner } from "./presentation/renderers/graph";
 
 class SemanticGraphEnricher {
   private reasoner: TransitiveClosureReasoner;
@@ -414,7 +414,7 @@ class SemanticGraphEnricher {
 ## Path Finding
 
 ```typescript
-import { PathFinder, ShortestPathAlgorithm } from "@exocortex/obsidian-plugin";
+import { PathFinder, ShortestPathAlgorithm } from "./presentation/renderers/graph";
 
 class SemanticPathFinder {
   private pathFinder: PathFinder;
@@ -472,7 +472,7 @@ import {
   GraphLayoutRenderer,
   TripleStoreManager,
   HierarchicalLayout,
-} from "@exocortex/obsidian-plugin";
+} from "./presentation/renderers/graph";
 
 function SemanticKnowledgeGraph({ vault }: { vault: Vault }) {
   const [graphData, setGraphData] = useState<{ nodes: GraphNode[]; edges: GraphEdge[] }>({

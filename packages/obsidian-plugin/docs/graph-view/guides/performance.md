@@ -18,7 +18,7 @@ This guide covers optimizing Graph View for large graphs (1K to 100K+ nodes).
 For O(n log n) many-body force calculation:
 
 ```typescript
-import { ForceSimulation, forceManyBody, BarnesHutForce } from "@exocortex/obsidian-plugin";
+import { ForceSimulation, forceManyBody, BarnesHutForce } from "./presentation/renderers/graph";
 
 const simulation = new ForceSimulation()
   .force("charge", forceManyBody()
@@ -38,7 +38,7 @@ const simulation = new ForceSimulation()
 GPU-accelerated simulation for 10K+ nodes:
 
 ```typescript
-import { WebGPUPhysics, isWebGPUAvailable, createWebGPUPhysics } from "@exocortex/obsidian-plugin";
+import { WebGPUPhysics, isWebGPUAvailable, createWebGPUPhysics } from "./presentation/renderers/graph";
 
 if (await isWebGPUAvailable()) {
   const physics = await createWebGPUPhysics({
@@ -91,7 +91,7 @@ render();
 Reduce visual complexity at low zoom:
 
 ```typescript
-import { LODSystem, createLODSystem, LODLevel } from "@exocortex/obsidian-plugin";
+import { LODSystem, createLODSystem, LODLevel } from "./presentation/renderers/graph";
 
 const lodSystem = createLODSystem({
   thresholds: [
@@ -129,7 +129,7 @@ viewport.on("change", (event) => {
 Only render visible elements:
 
 ```typescript
-import { VisibilityCuller, DEFAULT_VISIBILITY_CULLER_CONFIG } from "@exocortex/obsidian-plugin";
+import { VisibilityCuller, DEFAULT_VISIBILITY_CULLER_CONFIG } from "./presentation/renderers/graph";
 
 const culler = new VisibilityCuller({
   margin: 50,  // Include nodes slightly outside viewport
@@ -150,7 +150,7 @@ function render(): void {
 Use instanced drawing for many similar nodes:
 
 ```typescript
-import { BatchedNodeRenderer, createBatchedNodeRenderer } from "@exocortex/obsidian-plugin";
+import { BatchedNodeRenderer, createBatchedNodeRenderer } from "./presentation/renderers/graph";
 
 const batchRenderer = createBatchedNodeRenderer(renderer.app, {
   maxBatchSize: 1000,
@@ -176,7 +176,7 @@ batchRenderer.render();
 Only re-render changed elements:
 
 ```typescript
-import { IncrementalRenderer, DirtyTracker } from "@exocortex/obsidian-plugin";
+import { IncrementalRenderer, DirtyTracker } from "./presentation/renderers/graph";
 
 const dirtyTracker = new DirtyTracker();
 const incrementalRenderer = new IncrementalRenderer({
@@ -214,7 +214,7 @@ import {
   createPoolManager,
   getGlobalPoolManager,
   POOL_NAMES,
-} from "@exocortex/obsidian-plugin";
+} from "./presentation/renderers/graph";
 
 const poolManager = getGlobalPoolManager();
 
@@ -233,7 +233,7 @@ poolManager.release(POOL_NAMES.VECTOR_2D, vector);
 ### GPU Memory Management
 
 ```typescript
-import { GPUMemoryManager, getGlobalMemoryManager, MemoryPressure } from "@exocortex/obsidian-plugin";
+import { GPUMemoryManager, getGlobalMemoryManager, MemoryPressure } from "./presentation/renderers/graph";
 
 const memoryManager = getGlobalMemoryManager();
 
@@ -287,7 +287,7 @@ nodeRenderer.setShapeAtlas(shapeAtlas);
 Virtual scrolling for very large graphs:
 
 ```typescript
-import { ViewportWindowManager, createViewportWindowManager } from "@exocortex/obsidian-plugin";
+import { ViewportWindowManager, createViewportWindowManager } from "./presentation/renderers/graph";
 
 const windowManager = createViewportWindowManager({
   windowSize: 2000,    // Pixels per window
@@ -315,7 +315,7 @@ windowManager.on("windowChange", (event) => {
 ### Built-in Profiler
 
 ```typescript
-import { PerformanceProfiler, getGlobalProfiler } from "@exocortex/obsidian-plugin";
+import { PerformanceProfiler, getGlobalProfiler } from "./presentation/renderers/graph";
 
 const profiler = getGlobalProfiler();
 profiler.enable();
@@ -344,7 +344,7 @@ for (const [name, timing] of sections) {
 ### Bottleneck Detection
 
 ```typescript
-import { BottleneckDetector, createBottleneckDetector } from "@exocortex/obsidian-plugin";
+import { BottleneckDetector, createBottleneckDetector } from "./presentation/renderers/graph";
 
 const detector = createBottleneckDetector({
   sampleSize: 60,        // Frames to analyze
@@ -366,7 +366,7 @@ detector.on("bottleneck", (analysis) => {
 Automatic performance tuning:
 
 ```typescript
-import { AutoOptimizer, createAutoOptimizer } from "@exocortex/obsidian-plugin";
+import { AutoOptimizer, createAutoOptimizer } from "./presentation/renderers/graph";
 
 const optimizer = createAutoOptimizer({
   targetFPS: 60,
@@ -400,7 +400,7 @@ optimizer.start();
 ## Performance Dashboard
 
 ```typescript
-import { PerformanceMetricsDashboard, PerformanceDashboardButton } from "@exocortex/obsidian-plugin";
+import { PerformanceMetricsDashboard, PerformanceDashboardButton } from "./presentation/renderers/graph";
 
 // Add dashboard button
 const button = new PerformanceDashboardButton({

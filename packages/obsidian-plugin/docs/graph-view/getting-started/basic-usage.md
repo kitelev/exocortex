@@ -1,8 +1,176 @@
 # Basic Usage
 
-This guide shows how to create a simple force-directed graph visualization.
+This guide shows how to create a graph visualization using the Graph View components.
 
-## Minimal Working Example
+## Recommended: GraphLayoutRenderer Component
+
+The `GraphLayoutRenderer` is the primary way to create graph visualizations. It provides a complete solution with D3.js-based force simulation, Barnes-Hut optimization for large graphs, and full interactivity.
+
+```tsx
+import React from "react";
+import { GraphLayoutRenderer } from "./presentation/renderers/graph";
+import type { GraphNode, GraphEdge } from "./presentation/renderers/graph";
+
+function MyGraphView() {
+  const nodes: GraphNode[] = [
+    { id: "1", label: "Project Alpha", path: "projects/alpha.md", group: "project" },
+    { id: "2", label: "Task 1", path: "tasks/task1.md", group: "task" },
+    { id: "3", label: "Task 2", path: "tasks/task2.md", group: "task" },
+  ];
+
+  const edges: GraphEdge[] = [
+    { id: "e1", source: "1", target: "2", property: "hasTask" },
+    { id: "e2", source: "1", target: "3", property: "hasTask" },
+  ];
+
+  const handleNodeClick = (nodeId: string, path: string) => {
+    console.log(`Clicked node ${nodeId} at ${path}`);
+    // Navigate to file in Obsidian
+  };
+
+  return (
+    <GraphLayoutRenderer
+      layout={{
+        uid: "my-graph",
+        label: "Project Graph",
+        nodeLabel: "label",
+        edgeProperties: ["hasTask", "dependsOn"],
+      }}
+      nodes={nodes}
+      edges={edges}
+      onNodeClick={handleNodeClick}
+      options={{
+        width: "100%",
+        height: 500,
+        chargeStrength: -400,
+        linkDistance: 120,
+        showLabels: true,
+        zoomable: true,
+        draggable: true,
+      }}
+    />
+  );
+}
+```
+
+## Building Graph Data from Table Rows
+
+If you have data in table format (from Obsidian frontmatter), use `buildGraphData`:
+
+```typescript
+import { buildGraphData, rowsToNodes, extractEdges } from "./presentation/renderers/graph";
+import type { TableRow, GraphData } from "./presentation/renderers/graph";
+
+// Table rows from Obsidian query
+const tableRows: TableRow[] = [
+  {
+    id: "note-1",
+    path: "projects/alpha.md",
+    values: {
+      title: "Project Alpha",
+      status: "active",
+      links: ["[[tasks/task1.md|Task 1]]", "[[tasks/task2.md|Task 2]]"],
+    },
+  },
+  {
+    id: "note-2",
+    path: "tasks/task1.md",
+    values: {
+      title: "Task 1",
+      status: "in-progress",
+      parent: "[[projects/alpha.md|Project Alpha]]",
+    },
+  },
+];
+
+// Build graph data automatically
+const graphData: GraphData = buildGraphData(
+  tableRows,
+  "title", // Use 'title' column for labels
+  ["links", "parent"] // Extract edges from these properties
+);
+
+console.log(graphData.nodes); // Automatically extracted nodes
+console.log(graphData.edges); // Automatically extracted edges from wikilinks
+```
+
+## Customizing Node Colors by Type
+
+```tsx
+import { GraphLayoutRenderer } from "./presentation/renderers/graph";
+import type { GraphNode } from "./presentation/renderers/graph";
+
+const nodeColorByGroup = (node: GraphNode): string => {
+  switch (node.group) {
+    case "project":
+      return "#6366f1"; // Indigo
+    case "area":
+      return "#22c55e"; // Green
+    case "task":
+      return "#f59e0b"; // Amber
+    default:
+      return "#64748b"; // Slate
+  }
+};
+
+<GraphLayoutRenderer
+  layout={layout}
+  nodes={nodes}
+  edges={edges}
+  options={{
+    nodeColor: nodeColorByGroup,
+    edgeColor: "#4a4a6a",
+  }}
+/>;
+```
+
+## Adding Interactivity
+
+```typescript
+import {
+  SelectionManager,
+  HoverManager,
+  ViewportController,
+} from "./presentation/renderers/graph";
+
+// Selection with multi-select
+const selectionManager = new SelectionManager({
+  multiSelect: true,
+  boxSelect: true,
+});
+
+selectionManager.on("select", (event) => {
+  console.log("Selected:", event.nodeIds);
+});
+
+// Hover tooltips
+const hoverManager = new HoverManager({
+  hoverDelay: 200,
+  tooltipOffset: { x: 10, y: 10 },
+});
+
+hoverManager.on("hover", (event) => {
+  if (event.type === "enter") {
+    showTooltip(event.nodeId, event.position);
+  }
+});
+
+// Pan and zoom
+const viewportController = new ViewportController({
+  minZoom: 0.1,
+  maxZoom: 4,
+  pannable: true,
+  zoomable: true,
+});
+
+viewportController.on("change", (event) => {
+  console.log("Viewport:", event.x, event.y, event.scale);
+});
+```
+
+## Advanced: Manual Setup with PixiJS
+
+For advanced use cases requiring direct control over rendering, you can use the lower-level PixiJS components. This approach gives you full control but requires more setup:
 
 ```typescript
 import {
@@ -14,8 +182,8 @@ import {
   NodeRenderer,
   EdgeRenderer,
   LabelRenderer,
-} from "@exocortex/obsidian-plugin";
-import type { GraphNode, GraphEdge, SimulationNode } from "@exocortex/obsidian-plugin";
+} from "./presentation/renderers/graph";
+import type { GraphNode, GraphEdge, SimulationNode } from "./presentation/renderers/graph";
 
 // 1. Define your graph data
 const nodes: GraphNode[] = [
@@ -113,171 +281,6 @@ simulation.on("tick", () => {
 
 // 8. Start simulation
 simulation.start();
-```
-
-## Using the GraphLayoutRenderer Component
-
-For React-based usage in Obsidian, use the `GraphLayoutRenderer` component:
-
-```tsx
-import React from "react";
-import { GraphLayoutRenderer } from "@exocortex/obsidian-plugin";
-import type { GraphNode, GraphEdge } from "@exocortex/obsidian-plugin";
-
-function MyGraphView() {
-  const nodes: GraphNode[] = [
-    { id: "1", label: "Project Alpha", path: "projects/alpha.md", group: "project" },
-    { id: "2", label: "Task 1", path: "tasks/task1.md", group: "task" },
-    { id: "3", label: "Task 2", path: "tasks/task2.md", group: "task" },
-  ];
-
-  const edges: GraphEdge[] = [
-    { id: "e1", source: "1", target: "2", property: "hasTask" },
-    { id: "e2", source: "1", target: "3", property: "hasTask" },
-  ];
-
-  const handleNodeClick = (nodeId: string, path: string) => {
-    console.log(`Clicked node ${nodeId} at ${path}`);
-    // Navigate to file in Obsidian
-  };
-
-  return (
-    <GraphLayoutRenderer
-      layout={{
-        uid: "my-graph",
-        label: "Project Graph",
-        nodeLabel: "label",
-        edgeProperties: ["hasTask", "dependsOn"],
-      }}
-      nodes={nodes}
-      edges={edges}
-      onNodeClick={handleNodeClick}
-      options={{
-        width: "100%",
-        height: 500,
-        chargeStrength: -400,
-        linkDistance: 120,
-        showLabels: true,
-        zoomable: true,
-        draggable: true,
-      }}
-    />
-  );
-}
-```
-
-## Building Graph Data from Table Rows
-
-If you have data in table format (from Obsidian frontmatter), use `buildGraphData`:
-
-```typescript
-import { buildGraphData } from "@exocortex/obsidian-plugin";
-import type { TableRow } from "@exocortex/obsidian-plugin";
-
-// Table rows from Obsidian query
-const tableRows: TableRow[] = [
-  {
-    id: "note-1",
-    path: "projects/alpha.md",
-    values: {
-      title: "Project Alpha",
-      status: "active",
-      links: ["[[tasks/task1.md|Task 1]]", "[[tasks/task2.md|Task 2]]"],
-    },
-  },
-  {
-    id: "note-2",
-    path: "tasks/task1.md",
-    values: {
-      title: "Task 1",
-      status: "in-progress",
-      parent: "[[projects/alpha.md|Project Alpha]]",
-    },
-  },
-];
-
-// Build graph data automatically
-const graphData = buildGraphData(
-  tableRows,
-  "title", // Use 'title' column for labels
-  ["links", "parent"] // Extract edges from these properties
-);
-
-console.log(graphData.nodes); // Automatically extracted nodes
-console.log(graphData.edges); // Automatically extracted edges from wikilinks
-```
-
-## Customizing Node Colors by Type
-
-```typescript
-import { GraphLayoutRenderer } from "@exocortex/obsidian-plugin";
-
-const nodeColorByGroup = (node: GraphNode): string => {
-  switch (node.group) {
-    case "project":
-      return "#6366f1"; // Indigo
-    case "area":
-      return "#22c55e"; // Green
-    case "task":
-      return "#f59e0b"; // Amber
-    default:
-      return "#64748b"; // Slate
-  }
-};
-
-<GraphLayoutRenderer
-  layout={layout}
-  nodes={nodes}
-  edges={edges}
-  options={{
-    nodeColor: nodeColorByGroup,
-    edgeColor: "#4a4a6a",
-  }}
-/>;
-```
-
-## Adding Interactivity
-
-```typescript
-import {
-  SelectionManager,
-  HoverManager,
-  ViewportController,
-} from "@exocortex/obsidian-plugin";
-
-// Selection with multi-select
-const selectionManager = new SelectionManager({
-  multiSelect: true,
-  boxSelect: true,
-});
-
-selectionManager.on("select", (event) => {
-  console.log("Selected:", event.nodeIds);
-});
-
-// Hover tooltips
-const hoverManager = new HoverManager({
-  hoverDelay: 200,
-  tooltipOffset: { x: 10, y: 10 },
-});
-
-hoverManager.on("hover", (event) => {
-  if (event.type === "enter") {
-    showTooltip(event.nodeId, event.position);
-  }
-});
-
-// Pan and zoom
-const viewportController = new ViewportController({
-  minZoom: 0.1,
-  maxZoom: 4,
-  pannable: true,
-  zoomable: true,
-});
-
-viewportController.on("change", (event) => {
-  console.log("Viewport:", event.x, event.y, event.scale);
-});
 ```
 
 ## Cleanup

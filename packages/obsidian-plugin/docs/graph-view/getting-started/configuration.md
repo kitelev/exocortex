@@ -60,7 +60,7 @@ interface ForceSimulationConfig {
 ### Force Presets
 
 ```typescript
-import { FORCE_PRESETS } from "@exocortex/obsidian-plugin";
+import { FORCE_PRESETS } from "./presentation/renderers/graph";
 
 // Available presets
 const presets = {

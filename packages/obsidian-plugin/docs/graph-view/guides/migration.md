@@ -24,7 +24,7 @@ import { ForceSimulation } from "@exocortex/obsidian-plugin/physics";
 
 **After:**
 ```typescript
-import { PixiGraphRenderer, ForceSimulation } from "@exocortex/obsidian-plugin";
+import { PixiGraphRenderer, ForceSimulation } from "./presentation/renderers/graph";
 ```
 
 All graph-related exports are now available from the main package entry point.
@@ -66,7 +66,7 @@ simulation.force("charge", {
 
 **After:**
 ```typescript
-import { forceManyBody } from "@exocortex/obsidian-plugin";
+import { forceManyBody } from "./presentation/renderers/graph";
 
 simulation.force("charge", forceManyBody().strength(-300));
 ```
@@ -115,7 +115,7 @@ import {
   RadialLayout,
   TemporalLayout,
   LayoutManager,
-} from "@exocortex/obsidian-plugin";
+} from "./presentation/renderers/graph";
 
 // Switch layouts with animation
 const layoutManager = new LayoutManager();
@@ -128,7 +128,7 @@ await layoutManager.transitionTo("hierarchical", {
 #### Accessibility
 
 ```typescript
-import { AccessibilityManager } from "@exocortex/obsidian-plugin";
+import { AccessibilityManager } from "./presentation/renderers/graph";
 
 const a11yManager = new AccessibilityManager({
   screenReaderSupport: true,
@@ -144,7 +144,7 @@ import {
   LODSystem,
   VisibilityCuller,
   BatchedNodeRenderer,
-} from "@exocortex/obsidian-plugin";
+} from "./presentation/renderers/graph";
 
 // Automatic performance optimization
 const autoOptimizer = new AutoOptimizer({ targetFPS: 60 });

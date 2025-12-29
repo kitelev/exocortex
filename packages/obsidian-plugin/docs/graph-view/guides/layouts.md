@@ -33,7 +33,7 @@ import {
   forceLink,
   forceCollide,
   FORCE_PRESETS,
-} from "@exocortex/obsidian-plugin";
+} from "./presentation/renderers/graph";
 
 // Basic setup
 const simulation = new ForceSimulation()
@@ -95,7 +95,7 @@ For tree structures and directed acyclic graphs (DAGs).
 ### Configuration
 
 ```typescript
-import { HierarchicalLayout, HIERARCHICAL_PRESETS } from "@exocortex/obsidian-plugin";
+import { HierarchicalLayout, HIERARCHICAL_PRESETS } from "./presentation/renderers/graph";
 
 const layout = new HierarchicalLayout({
   direction: "TB",           // Top to Bottom
@@ -150,7 +150,7 @@ Circular arrangement with focus node at center.
 ### Configuration
 
 ```typescript
-import { RadialLayout, RADIAL_PRESETS } from "@exocortex/obsidian-plugin";
+import { RadialLayout, RADIAL_PRESETS } from "./presentation/renderers/graph";
 
 const layout = new RadialLayout({
   focusNode: selectedNodeId,  // Center node
@@ -204,7 +204,7 @@ Timeline-based layout for chronological data.
 ### Configuration
 
 ```typescript
-import { TemporalLayout, TEMPORAL_PRESETS } from "@exocortex/obsidian-plugin";
+import { TemporalLayout, TEMPORAL_PRESETS } from "./presentation/renderers/graph";
 
 const layout = new TemporalLayout({
   orientation: "horizontal",
@@ -254,7 +254,7 @@ Automatically detect and visualize communities.
 ### Configuration
 
 ```typescript
-import { detectCommunities, CommunityLayout, assignCommunityColors } from "@exocortex/obsidian-plugin";
+import { detectCommunities, CommunityLayout, assignCommunityColors } from "./presentation/renderers/graph";
 
 // Detect communities
 const detection = detectCommunities(nodes, edges, {
@@ -291,7 +291,7 @@ const result = layout.compute(nodes, edges);
 Smoothly animate between layouts:
 
 ```typescript
-import { LayoutTransitionManager, TRANSITION_PRESETS } from "@exocortex/obsidian-plugin";
+import { LayoutTransitionManager, TRANSITION_PRESETS } from "./presentation/renderers/graph";
 
 const transitionManager = new LayoutTransitionManager({
   duration: 500,
@@ -325,7 +325,7 @@ await transitionManager.transition(oldPositions, newResult.nodes, {
 Create custom layout algorithms:
 
 ```typescript
-import { BaseLayoutAlgorithm, LayoutPluginRegistry, layoutPluginRegistry } from "@exocortex/obsidian-plugin";
+import { BaseLayoutAlgorithm, LayoutPluginRegistry, layoutPluginRegistry } from "./presentation/renderers/graph";
 
 class CircularLayout extends BaseLayoutAlgorithm {
   compute(nodes: GraphNode[], edges: GraphEdge[]): LayoutResult {

@@ -10,7 +10,7 @@ This guide covers integrating the Graph View with Obsidian plugins, including fi
 import { Plugin, ItemView, WorkspaceLeaf } from "obsidian";
 import React from "react";
 import { createRoot, Root } from "react-dom/client";
-import { GraphLayoutRenderer } from "@exocortex/obsidian-plugin";
+import { GraphLayoutRenderer } from "./presentation/renderers/graph";
 
 const GRAPH_VIEW_TYPE = "exocortex-graph-view";
 
@@ -209,7 +209,7 @@ class GraphViewSync {
 
 ```typescript
 import { TFile, CachedMetadata } from "obsidian";
-import type { GraphNode, GraphEdge } from "@exocortex/obsidian-plugin";
+import type { GraphNode, GraphEdge } from "./presentation/renderers/graph";
 
 class VaultGraphBuilder {
   constructor(private app: App) {}
@@ -420,7 +420,7 @@ class ThemeObserver {
 
 ```typescript
 import { Menu } from "obsidian";
-import { ContextMenuManager, createDefaultProviders } from "@exocortex/obsidian-plugin";
+import { ContextMenuManager, createDefaultProviders } from "./presentation/renderers/graph";
 
 class ObsidianContextMenuProvider {
   constructor(

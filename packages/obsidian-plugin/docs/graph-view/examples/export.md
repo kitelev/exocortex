@@ -11,7 +11,7 @@ import {
   ExportManager,
   type ExportNode,
   type ExportEdge,
-} from "@exocortex/obsidian-plugin";
+} from "./presentation/renderers/graph";
 
 // Sample graph data
 const nodes: ExportNode[] = [
@@ -60,7 +60,7 @@ import {
   type ExportNode,
   type ExportEdge,
   type ExportFormat,
-} from "@exocortex/obsidian-plugin";
+} from "./presentation/renderers/graph";
 
 const nodes: ExportNode[] = [
   { id: "n1", label: "Central", x: 200, y: 200, color: "#6366f1", radius: 16 },
@@ -108,7 +108,7 @@ for (const r of results) {
 Export for print at 300 DPI:
 
 ```typescript
-import { ExportManager, type ExportNode, type ExportEdge } from "@exocortex/obsidian-plugin";
+import { ExportManager, type ExportNode, type ExportEdge } from "./presentation/renderers/graph";
 
 const nodes: ExportNode[] = [
   { id: "root", label: "Research Project", x: 400, y: 50, color: "#1e40af", radius: 20 },
@@ -167,7 +167,7 @@ console.log(`PNG: ${(pngResult.fileSize / 1024).toFixed(1)} KB (${pngResult.widt
 Export with transparency for use in presentations or designs:
 
 ```typescript
-import { ExportManager, type ExportNode, type ExportEdge } from "@exocortex/obsidian-plugin";
+import { ExportManager, type ExportNode, type ExportEdge } from "./presentation/renderers/graph";
 
 const nodes: ExportNode[] = [
   { id: "a", label: "Concept A", x: 100, y: 100, color: "#3b82f6", radius: 15 },
@@ -219,7 +219,7 @@ import {
   type ExportNode,
   type ExportEdge,
   type ExportEvent,
-} from "@exocortex/obsidian-plugin";
+} from "./presentation/renderers/graph";
 
 // Generate large graph
 function generateLargeGraph(nodeCount: number): { nodes: ExportNode[]; edges: ExportEdge[] } {
@@ -319,7 +319,7 @@ try {
 Export only a specific region of a large graph:
 
 ```typescript
-import { ExportManager, type ExportNode, type ExportEdge } from "@exocortex/obsidian-plugin";
+import { ExportManager, type ExportNode, type ExportEdge } from "./presentation/renderers/graph";
 
 // Large graph with many nodes spread across a wide area
 const nodes: ExportNode[] = [
@@ -387,7 +387,7 @@ console.log(`Full graph: ${fullResult.width}x${fullResult.height}px`);
 Export and copy directly to clipboard for pasting:
 
 ```typescript
-import { ExportManager, type ExportNode, type ExportEdge } from "@exocortex/obsidian-plugin";
+import { ExportManager, type ExportNode, type ExportEdge } from "./presentation/renderers/graph";
 
 const nodes: ExportNode[] = [
   { id: "idea", label: "Main Idea", x: 200, y: 100, color: "#6366f1", radius: 14 },
@@ -437,7 +437,7 @@ import {
   type ExportNode,
   type ExportEdge,
   type ExportStats,
-} from "@exocortex/obsidian-plugin";
+} from "./presentation/renderers/graph";
 
 const exportManager = new ExportManager();
 

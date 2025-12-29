@@ -7,8 +7,8 @@ This guide covers visual customization of nodes, edges, and labels.
 ### Basic Node Styles
 
 ```typescript
-import { NodeRenderer, DEFAULT_NODE_STYLE } from "@exocortex/obsidian-plugin";
-import type { NodeVisualStyle } from "@exocortex/obsidian-plugin";
+import { NodeRenderer, DEFAULT_NODE_STYLE } from "./presentation/renderers/graph";
+import type { NodeVisualStyle } from "./presentation/renderers/graph";
 
 const nodeStyle: NodeVisualStyle = {
   fill: 0x6366f1,        // Indigo fill
@@ -29,8 +29,8 @@ nodeRenderer.renderNode({
 ### Node Shapes
 
 ```typescript
-import { SHAPE_DRAWERS } from "@exocortex/obsidian-plugin";
-import type { NodeShape } from "@exocortex/obsidian-plugin";
+import { SHAPE_DRAWERS } from "./presentation/renderers/graph";
+import type { NodeShape } from "./presentation/renderers/graph";
 
 // Available shapes
 const shapes: NodeShape[] = [
@@ -91,8 +91,8 @@ function getConnectionColor(count: number): number {
 ### Node Size Scaling
 
 ```typescript
-import { calculateNodeRadius } from "@exocortex/obsidian-plugin";
-import type { RadiusScalingMode } from "@exocortex/obsidian-plugin";
+import { calculateNodeRadius } from "./presentation/renderers/graph";
+import type { RadiusScalingMode } from "./presentation/renderers/graph";
 
 // Scale by connection count
 const radius = calculateNodeRadius({
@@ -122,8 +122,8 @@ function scaleRadius(value: number, mode: RadiusScalingMode): number {
 ### Basic Edge Styles
 
 ```typescript
-import { EdgeRenderer, DEFAULT_EDGE_STYLE } from "@exocortex/obsidian-plugin";
-import type { EdgeVisualStyle } from "@exocortex/obsidian-plugin";
+import { EdgeRenderer, DEFAULT_EDGE_STYLE } from "./presentation/renderers/graph";
+import type { EdgeVisualStyle } from "./presentation/renderers/graph";
 
 const edgeStyle: EdgeVisualStyle = {
   color: 0x4a4a6a,       // Gray-blue
@@ -143,7 +143,7 @@ edgeRenderer.renderEdge({
 ### Curve Types
 
 ```typescript
-import type { CurveType } from "@exocortex/obsidian-plugin";
+import type { CurveType } from "./presentation/renderers/graph";
 
 // Straight line
 edgeRenderer.renderEdge({
@@ -176,7 +176,7 @@ edgeRenderer.renderEdge({
 ### Arrow Styles
 
 ```typescript
-import type { ArrowType, ArrowPosition } from "@exocortex/obsidian-plugin";
+import type { ArrowType, ArrowPosition } from "./presentation/renderers/graph";
 
 edgeRenderer.renderEdge({
   ...edge,
@@ -241,8 +241,8 @@ edgeRenderer.renderEdge({
 ### Basic Label Styles
 
 ```typescript
-import { LabelRenderer, DEFAULT_LABEL_STYLE } from "@exocortex/obsidian-plugin";
-import type { LabelVisualStyle } from "@exocortex/obsidian-plugin";
+import { LabelRenderer, DEFAULT_LABEL_STYLE } from "./presentation/renderers/graph";
+import type { LabelVisualStyle } from "./presentation/renderers/graph";
 
 const labelStyle: LabelVisualStyle = {
   fontFamily: "Inter, system-ui, sans-serif",
@@ -266,8 +266,8 @@ labelRenderer.renderLabel({
 ### Label Positioning
 
 ```typescript
-import { calculateOptimalLabelPosition } from "@exocortex/obsidian-plugin";
-import type { LabelAnchor } from "@exocortex/obsidian-plugin";
+import { calculateOptimalLabelPosition } from "./presentation/renderers/graph";
+import type { LabelAnchor } from "./presentation/renderers/graph";
 
 // Predefined positions
 const positions: LabelAnchor[] = [
@@ -373,8 +373,8 @@ function applyTheme(theme: "dark" | "light"): void {
 Style by ontology class:
 
 ```typescript
-import { DEFAULT_NODE_TYPE_CONFIGS } from "@exocortex/obsidian-plugin";
-import type { NodeTypeConfig, OntologyClass } from "@exocortex/obsidian-plugin";
+import { DEFAULT_NODE_TYPE_CONFIGS } from "./presentation/renderers/graph";
+import type { NodeTypeConfig, OntologyClass } from "./presentation/renderers/graph";
 
 const nodeTypeConfigs: Record<OntologyClass, NodeTypeConfig> = {
   "ems__Area": {
@@ -454,7 +454,7 @@ function getNodeStyle(node: GraphNode, state: NodeRenderState): NodeVisualStyle 
 Prepare styles for image export:
 
 ```typescript
-import { ExportManager } from "@exocortex/obsidian-plugin";
+import { ExportManager } from "./presentation/renderers/graph";
 
 const exportManager = new ExportManager(renderer);
 

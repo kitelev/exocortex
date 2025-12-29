@@ -7,7 +7,7 @@ This guide covers different ways to load and manage graph data.
 The simplest approach is providing graph data directly:
 
 ```typescript
-import type { GraphNode, GraphEdge } from "@exocortex/obsidian-plugin";
+import type { GraphNode, GraphEdge } from "./presentation/renderers/graph";
 
 const nodes: GraphNode[] = [
   { id: "1", label: "Project Alpha", path: "projects/alpha.md", group: "project" },
@@ -27,8 +27,8 @@ const edges: GraphEdge[] = [
 Convert tabular data (e.g., from Obsidian frontmatter) to graph format:
 
 ```typescript
-import { buildGraphData, rowsToNodes, extractEdges } from "@exocortex/obsidian-plugin";
-import type { TableRow, GraphData } from "@exocortex/obsidian-plugin";
+import { buildGraphData, rowsToNodes, extractEdges } from "./presentation/renderers/graph";
+import type { TableRow, GraphData } from "./presentation/renderers/graph";
 
 // Table rows from Obsidian query
 const tableRows: TableRow[] = [
@@ -63,8 +63,8 @@ const edges = extractEdges(tableRows, ["tasks", "references"]);
 For semantic graph data, integrate with a triple store:
 
 ```typescript
-import { GraphTooltipDataProvider } from "@exocortex/obsidian-plugin";
-import type { TripleStore, Triple } from "@exocortex/obsidian-plugin";
+import { GraphTooltipDataProvider } from "./presentation/renderers/graph";
+import type { TripleStore, Triple } from "./presentation/renderers/graph";
 
 // Implement triple store adapter
 class MyTripleStore implements TripleStore {
@@ -103,8 +103,8 @@ const dataProvider = new GraphTooltipDataProvider({
 Execute SPARQL queries to build graph data:
 
 ```typescript
-import { ClusterQueryExecutor } from "@exocortex/obsidian-plugin";
-import type { ClusterQueryResult, TripleStoreAdapter } from "@exocortex/obsidian-plugin";
+import { ClusterQueryExecutor } from "./presentation/renderers/graph";
+import type { ClusterQueryResult, TripleStoreAdapter } from "./presentation/renderers/graph";
 
 // Create query executor
 const executor = new ClusterQueryExecutor({
@@ -362,7 +362,7 @@ function GraphWithRealTimeData() {
 Filter graph data before rendering:
 
 ```typescript
-import { FilterManager, createTypeFilter, createPredicateFilter } from "@exocortex/obsidian-plugin";
+import { FilterManager, createTypeFilter, createPredicateFilter } from "./presentation/renderers/graph";
 
 const filterManager = new FilterManager();
 
