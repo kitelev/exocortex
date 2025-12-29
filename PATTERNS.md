@@ -4435,3 +4435,102 @@ class FocusIndicator {
 ### Reference
 
 - Issue #1194: Accessibility (WCAG compliance, screen readers) (456 steps - most complex)
+
+---
+
+## Documentation Sprint Pattern
+
+**When to use**: Creating documentation for multiple related features in a single development session
+
+### Pattern Description
+
+Documentation sprints leverage the **warm context** effect to rapidly create high-quality documentation for related subsystems. Unlike feature sprints, documentation sprints have lower risk (no code changes) and can be completed faster.
+
+### Real-World Example (December 29, 2025)
+
+7 documentation issues completed in ~5 hours:
+
+| Issue | Feature | Steps | Lines Added | PR |
+|-------|---------|-------|-------------|-----|
+| #1310 | Graph export | 47 | +1463 | #1321 |
+| #1311 | Edge bundling | 48 | +499 | #1322 |
+| #1312 | Accessibility | 52 | +355 | #1323 |
+| #1313 | Filter/search | 64 | +1134 | #1324 |
+| #1314 | Path finding | 63 | +727 | #1325 |
+| #1315 | Inference | 8 | +526 | #1326 |
+| #1316 | Import fix | 6 | +3 | #1327 |
+
+**Total**: 288 steps, 4707 lines of documentation in ~5 hours
+
+### Workflow
+
+```
+1. Research Phase (per feature: 5-10 min)
+   ├── Read implementation source code
+   ├── Identify public API surface
+   └── Find existing examples in tests
+
+2. Writing Phase (per feature: 20-30 min)
+   ├── Create guide in docs/guides/
+   ├── Add API docs in docs/api/
+   └── Update README.md with links
+
+3. Integration Phase (per feature: 5 min)
+   ├── Cross-link to related docs
+   └── Verify code examples compile
+
+4. PR Phase (per feature: 5 min)
+   ├── Commit with "docs:" prefix
+   ├── Create PR with summary
+   └── Enable auto-merge (low risk)
+```
+
+### Key Success Factors
+
+1. **Related features share context**: Edge bundling, path finding, and community detection all operate on graphs - understanding one helps document others
+
+2. **API patterns are consistent**: If `ExportManager` follows a factory pattern, `FilterManager` likely does too
+
+3. **README updates are mandatory**: Documentation without README links is invisible
+
+4. **Low step count for small fixes**: Issue #1316 (6 steps) fixed import patterns - small issues should be batched
+
+### Step Count Analysis
+
+| Step Range | Count | Type |
+|------------|-------|------|
+| 1-10 | 2 | Quick fixes, small updates |
+| 40-50 | 2 | Standard guide creation |
+| 60-70 | 3 | Comprehensive guides with examples |
+
+**Median**: 52 steps per documentation issue
+
+### Anti-Patterns
+
+- ❌ Writing docs without reading implementation first
+- ❌ Creating docs without updating README.md
+- ❌ Documenting unstable/WIP features (document after code stabilizes)
+- ❌ Copying code examples without testing them
+
+### Benefits vs Feature Sprints
+
+| Metric | Feature Sprint | Documentation Sprint |
+|--------|---------------|---------------------|
+| Risk | Medium-High | Low |
+| CI failures | Common | Rare (lint only) |
+| Rollback needed | Sometimes | Never |
+| User value | Delayed (requires release) | Immediate (docs published on merge) |
+| Step count | 100-200 average | 50-70 average |
+
+### When to Apply
+
+Use documentation sprints when:
+- Multiple related features lack documentation
+- Feature development complete but docs missing
+- New subsystem shipped (e.g., Graph View)
+- API stabilized and unlikely to change
+
+### Reference
+
+- Issues #1310-#1316: Graph View documentation sprint (December 29, 2025)
+- 7 issues, 5 hours, 4707 lines of documentation
