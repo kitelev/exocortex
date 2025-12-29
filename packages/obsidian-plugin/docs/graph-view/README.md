@@ -52,6 +52,7 @@ simulation.start();
 - [Styling](./guides/styling.md) - Node/edge customization
 - [Interactions](./guides/interactions.md) - Selection, drag, zoom, context menus
 - [Performance](./guides/performance.md) - Large graph optimization
+- [Edge Bundling](./guides/edge-bundling.md) - Reduce visual clutter in dense graphs
 - [Export](./guides/export.md) - PNG, JPEG, WebP, SVG export
 - [Accessibility](./guides/accessibility.md) - WCAG compliance and screen readers
 - [Migration](./guides/migration.md) - Version upgrade guide
