@@ -52,6 +52,7 @@ simulation.start();
 - [Styling](./guides/styling.md) - Node/edge customization
 - [Interactions](./guides/interactions.md) - Selection, drag, zoom, context menus
 - [Performance](./guides/performance.md) - Large graph optimization
+- [Export](./guides/export.md) - PNG, JPEG, WebP, SVG export
 - [Accessibility](./guides/accessibility.md) - WCAG compliance and screen readers
 - [Migration](./guides/migration.md) - Version upgrade guide
 
@@ -61,6 +62,7 @@ simulation.start();
 - [ForceSimulation](./api/physics-engine.md) - Physics simulation API
 - [LayoutManager](./api/layout-engine.md) - Layout algorithms API
 - [PixiGraphRenderer](./api/renderer.md) - WebGL2 renderer API
+- [ExportManager](./api/export-manager.md) - Image export API
 - [Events](./api/events.md) - Event system reference
 
 ### Examples
@@ -69,6 +71,7 @@ simulation.start();
 - [Custom Layout](./examples/custom-layout.md) - Custom layout implementation
 - [Semantic Graph](./examples/semantic-graph.md) - RDF/SPARQL integration
 - [Large Scale](./examples/large-scale.md) - 100K+ node optimization
+- [Export](./examples/export.md) - Image export examples
 
 ### Architecture
 - [Overview](./architecture/overview.md) - High-level architecture

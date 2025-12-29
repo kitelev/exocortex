@@ -267,6 +267,9 @@ renderer.destroy();
 - [LayoutManager](./layout-engine.md) - Layout algorithms
 - [PixiGraphRenderer](./renderer.md) - WebGL2 rendering
 
+### Export
+- [ExportManager](./export-manager.md) - Image export (PNG, JPEG, WebP, SVG)
+
 ### Event System
 - [Events](./events.md) - Event types and handlers
 
