@@ -4534,3 +4534,339 @@ Use documentation sprints when:
 
 - Issues #1310-#1316: Graph View documentation sprint (December 29, 2025)
 - 7 issues, 5 hours, 4707 lines of documentation
+
+---
+
+## Phased Feature Implementation Pattern
+
+**When to use**: Implementing features that affect multiple parts of the UI (Properties, Body, etc.)
+
+### Pattern Description
+
+Break features into phases where each phase builds on the previous:
+
+```
+Phase 1: Core Service (e.g., AssetLinkRenderer)
+    ↓
+Phase 2: First UI Integration (e.g., Properties block)
+    ↓
+Phase 3: Extended UI Integration (e.g., Body content)
+    ↓
+Phase 4: Polish & Edge Cases
+```
+
+### Real-World Example: Asset Link Label Replacement (December 2025)
+
+| Phase | Issue | Description | Steps |
+|-------|-------|-------------|-------|
+| 1 | #1333 | Properties block link replacement | 117 |
+| 2 | #1334 | Body content link replacement | 77 |
+| 3 | #1336 | Fix delete button regression | 63 |
+
+**Total**: 257 steps across 3 issues for complete feature
+
+### Why This Works
+
+1. **Reusable service**: Phase 1 creates `AssetLinkRenderer` used by all subsequent phases
+2. **Isolated testing**: Each phase can be tested independently
+3. **Regression detection**: Phase 3 (#1336) caught regression from Phase 2
+4. **Clear dependencies**: Issue descriptions explicitly state "depends on #XXXX"
+
+### Issue Structure for Phased Features
+
+```markdown
+## Depends on:
+- #1333 - Properties block link replacement (MUST be completed first)
+
+## This issue provides:
+- Shared service: AssetLinkRenderer
+- Reusable pattern: formatAssetLink(uri) → "Label (Class)"
+```
+
+### Gotchas
+
+- **Test after each phase**: Regressions appear in unexpected places (e.g., delete buttons)
+- **Document dependencies explicitly**: Issue body should list what MUST be done first
+- **Cache considerations**: Each phase may need cache warming/invalidation
+
+### Reference
+
+- Issues #1333, #1334, #1336 - Asset link label replacement (December 30, 2025)
+
+---
+
+## Body Link Indexing Pattern
+
+**When to use**: Extracting relationships from markdown content (not just frontmatter)
+
+### Pattern Description
+
+Index wikilinks from markdown body content to enable complete graph analysis.
+
+### Implementation
+
+```typescript
+class NoteToRDFConverter {
+  async convert(note: Note): Promise<Triple[]> {
+    const triples: Triple[] = [];
+
+    // Existing: frontmatter properties
+    triples.push(...this.convertFrontmatter(note));
+
+    // NEW: body links
+    triples.push(...this.extractBodyLinks(note));
+
+    return triples;
+  }
+
+  private extractBodyLinks(note: Note): Triple[] {
+    // Remove frontmatter
+    const bodyContent = note.content.replace(/^---[\s\S]*?---/, '');
+
+    // Extract wikilinks, handle aliases [[Target|Alias]]
+    const wikilinks = bodyContent.matchAll(/\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g);
+
+    const triples: Triple[] = [];
+    for (const match of wikilinks) {
+      const targetPath = this.resolveWikilink(match[1], note.path);
+      if (targetPath) {
+        triples.push({
+          subject: note.uri,
+          predicate: 'exo:Asset_relates',
+          object: this.pathToUri(targetPath)
+        });
+      }
+    }
+
+    return triples;
+  }
+}
+```
+
+### Edge Cases to Handle
+
+1. **Alias syntax**: `[[Target|Display Text]]` → extract "Target" only
+2. **Code blocks**: Exclude wikilinks inside ``` or inline code
+3. **Duplicate links**: Same link appears multiple times → deduplicate triples
+4. **Invalid targets**: `[[Non-existent]]` → skip with warning
+
+### Predicate Choice
+
+- **`exo:Asset_relates`**: Simple, unified relationship queries
+- **Alternative `exo:Asset_bodyLink`**: Distinguishes explicit (frontmatter) vs implicit (body) links
+
+### Reference
+
+- Issue #1329 - Index body links to RDF (December 30, 2025, 71 steps)
+
+---
+
+## UI Regression Detection Pattern
+
+**When to use**: After modifying rendering logic that touches existing UI elements
+
+### Pattern Description
+
+When adding new rendering features (e.g., formatted labels), always verify existing UI elements still work.
+
+### Regression Example: Delete Button Disappearance (#1336)
+
+**Feature added**: Replace link text with `${label} (${class})` format
+**Regression caused**: Delete button (×) for array property values disappeared
+
+**Root cause**: Custom rendering logic replaced original element structure that included the delete button.
+
+### Prevention Checklist
+
+After modifying rendering logic:
+
+```markdown
+- [ ] Click existing buttons - do they still work?
+- [ ] Hover over elements - do tooltips/actions appear?
+- [ ] Test array values - can individual items be deleted?
+- [ ] Test edit mode vs read mode - both work correctly?
+- [ ] Check keyboard navigation - still accessible?
+```
+
+### Fix Pattern
+
+When custom rendering hides native UI elements:
+
+```typescript
+// ❌ WRONG: Replacing entire element removes delete button
+link.outerHTML = `<span>${formattedText}</span>`;
+
+// ✅ CORRECT: Only modify text content, preserve structure
+link.textContent = formattedText;
+// OR: Append to existing structure
+link.querySelector('.text-content').textContent = formattedText;
+```
+
+### Testing for Regressions
+
+```typescript
+describe('Array property values', () => {
+  it('should show delete button on hover', async () => {
+    const component = await mount(<PropertyValue value="[[Asset]]" />);
+    await component.hover();
+    await expect(component.locator('.delete-button')).toBeVisible();
+  });
+
+  it('should remove value when delete clicked', async () => {
+    const onDelete = vi.fn();
+    const component = await mount(<PropertyValue onDelete={onDelete} />);
+    await component.locator('.delete-button').click();
+    expect(onDelete).toHaveBeenCalled();
+  });
+});
+```
+
+### Reference
+
+- Issue #1336 - Restore delete button after label formatting (December 30, 2025, 63 steps)
+
+---
+
+## Simple UI Enhancement Pattern
+
+**When to use**: Small visual changes with clear requirements (colors, visibility, styling)
+
+### Characteristics
+
+- **Low step count**: 7-21 steps typical
+- **Minimal research**: Changes are straightforward
+- **Low risk**: Styling changes rarely break functionality
+- **Quick wins**: High user value for low effort
+
+### Real-World Examples (December 2025)
+
+| Issue | Change | Steps | Time |
+|-------|--------|-------|------|
+| #1331 | Show button for all DailyNotes | 7 | ~15 min |
+| #1339 | Make button green | 21 | ~30 min |
+
+### Implementation Pattern
+
+```typescript
+// Before: Conditional visibility with date check
+function shouldShowButton(asset: Asset): boolean {
+  if (!asset.hasClass('pn__DailyNote')) return false;
+  const date = extractDate(asset);
+  return isToday(date) || isYesterday(date);  // ❌ Restrictive
+}
+
+// After: Simple class check
+function shouldShowButton(asset: Asset): boolean {
+  return asset.hasClass('pn__DailyNote');  // ✅ Always show for class
+}
+```
+
+### CSS Pattern for Visual Enhancement
+
+```css
+/* Use CSS variables for theme compatibility */
+.create-task-button.primary-action {
+  background-color: var(--color-green-primary, #22c55e);
+  color: var(--text-on-accent);
+}
+
+.create-task-button.primary-action:hover {
+  background-color: var(--color-green-primary-hover, #16a34a);
+}
+```
+
+### When to Use This Pattern
+
+- Removing artificial restrictions (date-based visibility)
+- Adding visual emphasis (colors, icons)
+- Improving consistency (same button style across views)
+- Quick UX wins requested by user
+
+### When NOT to Use
+
+- Changes require new logic or state management
+- Feature affects data persistence
+- Multiple components need coordinated changes
+
+### Reference
+
+- Issues #1331, #1339 - DailyNote button enhancements (December 30, 2025)
+
+---
+
+## Markdown Post-Processor Pattern
+
+**When to use**: Transforming rendered markdown content (links, text, formatting)
+
+### Pattern Description
+
+Use Obsidian's markdown post-processor API to modify rendered content without affecting source.
+
+### Implementation
+
+```typescript
+// In plugin main file
+class ExocortexPlugin extends Plugin {
+  async onload() {
+    this.registerMarkdownPostProcessor(async (element, context) => {
+      await this.processAssetLinks(element);
+    });
+  }
+
+  private async processAssetLinks(element: HTMLElement): Promise<void> {
+    // Find internal asset links
+    const links = element.querySelectorAll('a[href^="obsidian://vault/"]');
+
+    for (const link of Array.from(links)) {
+      const href = link.getAttribute('href');
+      if (!href) continue;
+
+      try {
+        const formatted = await this.assetLinkRenderer.format(href);
+        link.textContent = formatted;
+      } catch (error) {
+        console.warn('Failed to format asset link:', href, error);
+        // Keep original text on error - graceful degradation
+      }
+    }
+  }
+}
+```
+
+### Key Considerations
+
+1. **Post-processors run in reading mode only**: Edit mode shows raw markdown
+2. **Async processing**: Use `await` for queries, but handle race conditions
+3. **Error handling**: Never crash on bad links - log and continue
+4. **Performance**: Cache results to avoid repeated queries
+
+### Caching Strategy
+
+```typescript
+class AssetLinkCache {
+  private cache = new Map<string, { label: string; timestamp: number }>();
+  private TTL = 60000; // 1 minute
+
+  async getFormatted(uri: string): Promise<string> {
+    const cached = this.cache.get(uri);
+    if (cached && Date.now() - cached.timestamp < this.TTL) {
+      return cached.label;
+    }
+
+    const label = await this.fetchLabel(uri);
+    this.cache.set(uri, { label, timestamp: Date.now() });
+    return label;
+  }
+}
+```
+
+### Edge Cases
+
+- **External links**: Only process `obsidian://vault/` URIs
+- **Code blocks**: Post-processor shouldn't modify code examples
+- **Many links**: Batch queries for notes with 50+ links
+- **Missing metadata**: Fallback to filename when label unavailable
+
+### Reference
+
+- Issue #1334 - Body content link replacement (December 30, 2025, 77 steps)
