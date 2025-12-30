@@ -236,6 +236,7 @@ describe("DisplayNameResolver", () => {
       expect(DEFAULT_DISPLAY_NAME_SETTINGS.classTemplates["ems__TaskPrototype"]).toBeDefined();
       expect(DEFAULT_DISPLAY_NAME_SETTINGS.classTemplates["ems__Project"]).toBeDefined();
       expect(DEFAULT_DISPLAY_NAME_SETTINGS.classTemplates["ems__Area"]).toBeDefined();
+      expect(DEFAULT_DISPLAY_NAME_SETTINGS.classTemplates["pn__DailyNote"]).toBeDefined();
     });
 
     it("should have status emoji mappings", () => {
@@ -295,6 +296,19 @@ describe("DisplayNameResolver", () => {
       });
       // With cleanup logic, empty parentheses are removed
       expect(noClassResult).toBe("Asset Without Class");
+    });
+
+    it("should use basename template for pn__DailyNote class", () => {
+      const resolver = new DisplayNameResolver(DEFAULT_DISPLAY_NAME_SETTINGS);
+
+      // DailyNote uses basename (the date) since it typically has no label
+      const dailyNoteResult = resolver.resolve({
+        metadata: {
+          exo__Instance_class: "pn__DailyNote",
+        },
+        basename: "2025-10-15",
+      });
+      expect(dailyNoteResult).toBe("2025-10-15");
     });
   });
 });

@@ -106,6 +106,8 @@ export const DEFAULT_DISPLAY_NAME_SETTINGS: DisplayNameSettings = {
     "ems__Area": "{{exo__Asset_label}}",
     "ems__MeetingPrototype": "{{exo__Asset_label}} (MeetingPrototype)",
     "ems__Meeting": "{{exo__Asset_label}} {{statusEmoji}}",
+    // DailyNote uses the basename (date) as its display name since it typically doesn't have a label
+    "pn__DailyNote": "{{_basename}}",
   },
 
   statusEmojis: {
