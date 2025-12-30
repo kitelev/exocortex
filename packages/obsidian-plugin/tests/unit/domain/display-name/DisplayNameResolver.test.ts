@@ -224,8 +224,11 @@ describe("DisplayNameResolver", () => {
   });
 
   describe("DEFAULT_DISPLAY_NAME_SETTINGS", () => {
-    it("should have default template", () => {
-      expect(DEFAULT_DISPLAY_NAME_SETTINGS.defaultTemplate).toBe("{{exo__Asset_label}}");
+    it("should have default template with class suffix for all asset types", () => {
+      // Default template now includes class suffix for consistent display across all asset types
+      expect(DEFAULT_DISPLAY_NAME_SETTINGS.defaultTemplate).toBe(
+        "{{exo__Asset_label}} ({{exo__Instance_class}})"
+      );
     });
 
     it("should have class templates for common classes", () => {
@@ -264,6 +267,34 @@ describe("DisplayNameResolver", () => {
         basename: "morning-routine",
       });
       expect(prototypeResult).toBe("Morning routine (TaskPrototype)");
+    });
+
+    it("should use default template with class suffix for unknown asset types", () => {
+      const resolver = new DisplayNameResolver(DEFAULT_DISPLAY_NAME_SETTINGS);
+
+      // Custom/unknown asset class should use default template
+      const customResult = resolver.resolve({
+        metadata: {
+          exo__Asset_label: "My Custom Asset",
+          exo__Instance_class: "myapp__CustomClass",
+        },
+        basename: "custom-asset",
+      });
+      expect(customResult).toBe("My Custom Asset (myapp__CustomClass)");
+    });
+
+    it("should gracefully handle missing class in default template", () => {
+      const resolver = new DisplayNameResolver(DEFAULT_DISPLAY_NAME_SETTINGS);
+
+      // Asset with label but no class - cleanup removes empty parentheses
+      const noClassResult = resolver.resolve({
+        metadata: {
+          exo__Asset_label: "Asset Without Class",
+        },
+        basename: "no-class",
+      });
+      // With cleanup logic, empty parentheses are removed
+      expect(noClassResult).toBe("Asset Without Class");
     });
   });
 });

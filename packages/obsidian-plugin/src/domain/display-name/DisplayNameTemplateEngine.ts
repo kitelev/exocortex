@@ -57,13 +57,60 @@ export class DisplayNameTemplateEngine {
       }
     );
 
+    // Clean up the result to handle edge cases from missing values
+    const cleanedResult = this.cleanupResult(result);
+
     // Return null if template produces empty or whitespace-only result
-    const trimmedResult = result.trim();
-    if (trimmedResult === "") {
+    if (cleanedResult === "") {
       return null;
     }
 
-    return trimmedResult;
+    return cleanedResult;
+  }
+
+  /**
+   * Clean up rendered result to handle edge cases from missing values
+   *
+   * Handles cases like:
+   * - Empty parentheses at end: "Label ()" -> "Label"
+   * - Empty brackets at end: "Label []" -> "Label"
+   * - Empty parentheses at start: "() Label" -> "Label"
+   * - Standalone parentheses: "()" -> ""
+   * - Leading/trailing separators after empty values
+   *
+   * Note: Only removes empty brackets at string boundaries to avoid
+   * affecting content like "function() {}" which is valid text.
+   */
+  private cleanupResult(result: string): string {
+    let cleaned = result;
+
+    // Remove empty parentheses at end of string: "Label ()" -> "Label"
+    cleaned = cleaned.replace(/\s+\(\s*\)$/g, "");
+
+    // Remove empty parentheses at start of string: "() Label" -> "Label"
+    cleaned = cleaned.replace(/^\(\s*\)\s+/g, "");
+
+    // Remove standalone parentheses (entire string): "()" -> ""
+    if (cleaned === "()") {
+      cleaned = "";
+    }
+
+    // Remove empty brackets at end of string: "Label []" -> "Label"
+    cleaned = cleaned.replace(/\s+\[\s*\]$/g, "");
+
+    // Remove empty brackets at start of string: "[] Label" -> "Label"
+    cleaned = cleaned.replace(/^\[\s*\]\s+/g, "");
+
+    // Remove standalone brackets (entire string): "[]" -> ""
+    if (cleaned === "[]") {
+      cleaned = "";
+    }
+
+    // Remove multiple consecutive spaces
+    cleaned = cleaned.replace(/\s+/g, " ");
+
+    // Trim and return
+    return cleaned.trim();
   }
 
   /**
@@ -262,6 +309,6 @@ export const DISPLAY_NAME_PRESETS = {
 export type DisplayNamePresetKey = keyof typeof DISPLAY_NAME_PRESETS;
 
 /**
- * Default template (just shows label)
+ * Default template (shows label with class suffix for consistent display across all asset types)
  */
-export const DEFAULT_DISPLAY_NAME_TEMPLATE = DISPLAY_NAME_PRESETS.default.template;
+export const DEFAULT_DISPLAY_NAME_TEMPLATE = DISPLAY_NAME_PRESETS.classSuffix.template;

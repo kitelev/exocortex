@@ -281,8 +281,9 @@ describe("DisplayNameTemplateEngine", () => {
       );
     });
 
-    it("should export DEFAULT_DISPLAY_NAME_TEMPLATE", () => {
-      expect(DEFAULT_DISPLAY_NAME_TEMPLATE).toBe("{{exo__Asset_label}}");
+    it("should export DEFAULT_DISPLAY_NAME_TEMPLATE with class suffix", () => {
+      // Default template now includes class suffix for consistent display across all asset types
+      expect(DEFAULT_DISPLAY_NAME_TEMPLATE).toBe("{{exo__Asset_label}} ({{exo__Instance_class}})");
     });
   });
 
@@ -432,6 +433,97 @@ describe("DisplayNameTemplateEngine", () => {
       expect(DISPLAY_NAME_PRESETS.classSuffix.template).toBe(
         "{{exo__Asset_label}} ({{exo__Instance_class}})"
       );
+    });
+  });
+
+  describe("cleanup of missing values", () => {
+    it("should remove empty parentheses when class is missing", () => {
+      const engine = new DisplayNameTemplateEngine(
+        "{{exo__Asset_label}} ({{exo__Instance_class}})"
+      );
+      const result = engine.render(
+        { exo__Asset_label: "My Task" },
+        "my-task"
+      );
+      expect(result).toBe("My Task");
+    });
+
+    it("should remove empty parentheses when label is missing", () => {
+      const engine = new DisplayNameTemplateEngine(
+        "({{exo__Instance_class}}) {{exo__Asset_label}}"
+      );
+      const result = engine.render(
+        { exo__Asset_label: "My Task" },
+        "my-task"
+      );
+      expect(result).toBe("My Task");
+    });
+
+    it("should return null when both label and class are missing", () => {
+      const engine = new DisplayNameTemplateEngine(
+        "{{exo__Asset_label}} ({{exo__Instance_class}})"
+      );
+      const result = engine.render({}, "my-task");
+      expect(result).toBeNull();
+    });
+
+    it("should remove empty brackets when content is missing", () => {
+      const engine = new DisplayNameTemplateEngine(
+        "{{exo__Asset_label}} [{{status}}]"
+      );
+      const result = engine.render(
+        { exo__Asset_label: "My Task" },
+        "my-task"
+      );
+      expect(result).toBe("My Task");
+    });
+
+    it("should not affect angle brackets in middle of string", () => {
+      // Angle brackets in the middle of content should not be removed
+      // (only empty parentheses/brackets at string boundaries are cleaned)
+      const engine = new DisplayNameTemplateEngine(
+        "{{exo__Asset_label}} <{{category}}>"
+      );
+      const result = engine.render(
+        { exo__Asset_label: "My Task" },
+        "my-task"
+      );
+      // Empty angle brackets in middle remain - they are not at boundaries
+      expect(result).toBe("My Task <>");
+    });
+
+    it("should normalize multiple spaces to single space", () => {
+      const engine = new DisplayNameTemplateEngine(
+        "{{prefix}}   {{exo__Asset_label}}   {{suffix}}"
+      );
+      const result = engine.render(
+        { exo__Asset_label: "My Task" },
+        "my-task"
+      );
+      expect(result).toBe("My Task");
+    });
+
+    it("should preserve non-empty parentheses", () => {
+      const engine = new DisplayNameTemplateEngine(
+        "{{exo__Asset_label}} ({{exo__Instance_class}})"
+      );
+      const result = engine.render(
+        { exo__Asset_label: "My Task", exo__Instance_class: "ems__Task" },
+        "my-task"
+      );
+      expect(result).toBe("My Task (ems__Task)");
+    });
+
+    it("should handle default template with all asset types", () => {
+      // This tests the new default behavior: all asset types should display as "label (class)"
+      const engine = new DisplayNameTemplateEngine(DEFAULT_DISPLAY_NAME_TEMPLATE);
+
+      // Test with a custom asset class (not in predefined classTemplates)
+      const result = engine.render(
+        { exo__Asset_label: "My Custom Asset", exo__Instance_class: "myapp__CustomClass" },
+        "my-asset"
+      );
+      expect(result).toBe("My Custom Asset (myapp__CustomClass)");
     });
   });
 
