@@ -115,6 +115,84 @@ DCC = **ExoAPI** — semantic contract between exocortexes.
 
 ---
 
+## 42 Unique IT Ideas
+
+The Exocortex project encompasses a comprehensive vision for cognitive augmentation. Here are the core concepts that make this system unique:
+
+### Core Architecture (1-10)
+
+| # | Idea | Description |
+|---|------|-------------|
+| 1 | **Asset as Knowledge Quantum** | Atomic unit of knowledge with UUID, class, label, and semantic relationships |
+| 2 | **DCC (Direct Conceptual Communication)** | Communication without worldview conversion — semantic contract between exocortexes |
+| 3 | **ExoBlockchain** | Immutable knowledge provenance tracking — who, when, and how created each fact |
+| 4 | **ExoEcoSystem** | Federation of exocortexes forming collective intelligence network |
+| 5 | **Modular Ontology System** | IMS (concepts), EMS (tasks), ZTLK (notes), PTMS (personality), Observation (world tracking) |
+| 6 | **Simulacrum** | Digital representation of external entities (people, companies) for modeling interactions |
+| 7 | **ExoLang** | Domain-specific language for knowledge operations and transformations |
+| 8 | **Inference Engine** | Logical reasoning over knowledge graph — deriving new facts from existing |
+| 9 | **BOM (Brain Object Model)** | Inspired by DOM — programmatic access to consciousness structure |
+| 10 | **Ontological Relativity** | Each user has their own ontology, mapped to others through DCC |
+
+### Semantic Layer (11-20)
+
+| # | Idea | Description |
+|---|------|-------------|
+| 11 | **ExoRDF** | Extended RDF with temporal and provenance dimensions |
+| 12 | **ExoProphet** | Prediction engine based on personal patterns and knowledge graph |
+| 13 | **Braindance + IoT** | Integration with wearables (HR, glucose, location) for context enrichment |
+| 14 | **Action Tracking** | Every action becomes data — browsing, reading, communication patterns |
+| 15 | **"Not AI" Principle** | Exocortex stores verified facts; AI generates but cannot be trusted alone |
+| 16 | **ExoTag** | Semantic tags with inheritance and property propagation |
+| 17 | **Life Integration** | System becomes invisible layer over life, not separate application |
+| 18 | **Local-First Architecture** | Data stays on device, cloud is optional synchronization |
+| 19 | **IExE (Inference x Exocortex)** | Intelligence-enhanced reasoning combining human and machine cognition |
+| 20 | **ExoProtocol** | Communication standard between exocortex instances |
+
+### Process & Methodology (21-30)
+
+| # | Idea | Description |
+|---|------|-------------|
+| 21 | **Echoization** | Every external information piece gets internal representation with personal context |
+| 22 | **ExoAdapter** | Integration layer for external services (calendars, email, social) |
+| 23 | **Dynamic Naming** | Assets can have multiple names based on context and audience |
+| 24 | **Human as Execution Organ** | Exocortex plans, human executes — partnership model |
+| 25 | **Knowledge Monetization** | Verified knowledge as tradeable asset in ExoEcoSystem |
+| 26 | **Trigger System** | Automated reactions to patterns in knowledge graph changes |
+| 27 | **No Permanent Self** | Identity is emergent property of knowledge graph, not fixed entity |
+| 28 | **Breadcrumbs** | Automatic trail of attention and reasoning for later reconstruction |
+| 29 | **GTD Integration** | Getting Things Done methodology as native workflow |
+| 30 | **ExoLayout** | Flexible views over knowledge graph for different cognitive tasks |
+
+### Advanced Concepts (31-42)
+
+| # | Idea | Description |
+|---|------|-------------|
+| 31 | **Property Polymorphism** | Same property behaves differently based on subject class |
+| 32 | **Life Streams** | Parallel timelines of different life aspects (work, health, learning) |
+| 33 | **Human Consciousness Schema** | Formal model of consciousness structure (perception, memory, will) |
+| 34 | **Meta-Position** | Ability to observe your own cognitive processes through the system |
+| 35 | **7 Levels of Abstraction** | From raw data to wisdom, with explicit transformations |
+| 36 | **ExoFocus** | Attention management based on goals and current context |
+| 37 | **Cognitive Load Balancing** | Automatic task distribution based on mental energy patterns |
+| 38 | **Knowledge Decay Model** | Tracking and refreshing knowledge that becomes stale |
+| 39 | **Semantic Versioning of Beliefs** | Tracking how your understanding evolves over time |
+| 40 | **ExoMirror** | Reflection interface showing patterns in your cognition |
+| 41 | **Collective Wisdom Extraction** | Aggregating insights from ExoEcoSystem while preserving privacy |
+| 42 | **Consciousness Continuity** | Exocortex as vehicle for cognitive persistence beyond biological limits |
+
+### Ethics & Principles
+
+The project adheres to core ethical principles:
+
+- **Human Primacy** — Technology serves human flourishing, not replaces humanity
+- **Privacy by Design** — Personal knowledge remains under user control
+- **Transparency** — All inferences and recommendations are explainable
+- **Non-Manipulation** — System informs, never manipulates
+- **Open Standards** — Based on W3C Semantic Web standards (RDF, SPARQL, OWL)
+
+---
+
 ## Architecture
 
 Exocortex is a **monorepo** with three packages sharing Clean Architecture core:
