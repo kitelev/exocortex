@@ -37,6 +37,7 @@ import { FileExplorerPatch } from "./presentation/file-explorer/FileExplorerPatc
 import { FileExplorerSortPatch } from "./presentation/file-explorer/FileExplorerSortPatch";
 import { TabTitlePatch } from "./presentation/tab-titles/TabTitlePatch";
 import { PropertiesLinkPatch } from "./presentation/properties/PropertiesLinkPatch";
+import { BodyLinkPatch } from "./presentation/body/BodyLinkPatch";
 
 /**
  * Exocortex Plugin - Automatic layout rendering
@@ -71,6 +72,7 @@ export default class ExocortexPlugin extends Plugin {
   private fileExplorerSortPatch!: FileExplorerSortPatch;
   private tabTitlePatch!: TabTitlePatch;
   private propertiesLinkPatch!: PropertiesLinkPatch;
+  private bodyLinkPatch!: BodyLinkPatch;
   private webhookService!: WebhookService;
   private webhookDispatcher!: WebhookDispatcher;
   private semanticSearchManager!: SemanticSearchManager;
@@ -234,6 +236,15 @@ export default class ExocortexPlugin extends Plugin {
         }, 500);
       }
 
+      // Initialize Body link patch
+      this.bodyLinkPatch = new BodyLinkPatch(this);
+      if (this.settings.showLabelsInBody) {
+        // Delay enabling to ensure markdown body is fully loaded
+        this.timerManager.setTimeout("body-link-patch", () => {
+          this.bodyLinkPatch.enable();
+        }, 500);
+      }
+
       // Initialize Webhook integration
       this.webhookService = new WebhookService();
       this.webhookDispatcher = new WebhookDispatcher(this.app, this.webhookService);
@@ -394,6 +405,11 @@ export default class ExocortexPlugin extends Plugin {
       this.propertiesLinkPatch.cleanup();
     }
 
+    // Cleanup Body link patch
+    if (this.bodyLinkPatch) {
+      this.bodyLinkPatch.cleanup();
+    }
+
     // Cleanup Webhook dispatcher
     if (this.webhookDispatcher) {
       this.webhookDispatcher.cleanup();
@@ -492,9 +508,21 @@ export default class ExocortexPlugin extends Plugin {
   }
 
   /**
+   * Toggle Body link label display on/off
+   * Called from settings when the showLabelsInBody toggle changes
+   */
+  toggleBodyLabels(enabled: boolean): void {
+    if (enabled) {
+      this.bodyLinkPatch.enable();
+    } else {
+      this.bodyLinkPatch.disable();
+    }
+  }
+
+  /**
    * Apply display name template changes
    * Called from settings when the displayNameTemplate changes
-   * Triggers re-evaluation of tab titles, file explorer labels, and properties links
+   * Triggers re-evaluation of tab titles, file explorer labels, properties links, and body links
    */
   applyDisplayNameTemplate(): void {
     // Re-apply file explorer labels with new template
@@ -513,6 +541,12 @@ export default class ExocortexPlugin extends Plugin {
     if (this.settings.showLabelsInProperties && this.propertiesLinkPatch) {
       this.propertiesLinkPatch.disable();
       this.propertiesLinkPatch.enable();
+    }
+
+    // Re-apply body link labels with new template
+    if (this.settings.showLabelsInBody && this.bodyLinkPatch) {
+      this.bodyLinkPatch.disable();
+      this.bodyLinkPatch.enable();
     }
   }
 

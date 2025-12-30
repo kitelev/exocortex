@@ -195,6 +195,21 @@ export class ExocortexSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
+      .setName("Show labels in note body")
+      .setDesc(
+        "Display asset labels instead of filenames for links in the note body (reading mode)",
+      )
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.showLabelsInBody)
+          .onChange(async (value) => {
+            this.plugin.settings.showLabelsInBody = value;
+            await this.plugin.saveSettings();
+            this.plugin.toggleBodyLabels(value);
+          }),
+      );
+
+    new Setting(containerEl)
       .setName("Sort file explorer by display name")
       .setDesc(
         "Sort files by their display name (exo__Asset_label) instead of filename. " +
