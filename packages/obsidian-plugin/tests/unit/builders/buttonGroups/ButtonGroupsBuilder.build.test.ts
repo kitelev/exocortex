@@ -725,7 +725,7 @@ describe("ButtonGroupsBuilder - build", () => {
     expect(createTaskButton?.label).toBe("Create Task");
   });
 
-  it("should not show Create Task button for DailyNote with future date", async () => {
+  it("should show Create Task button for DailyNote with future date", async () => {
     const mockFile = {
       path: "2099-12-31.md",
       parent: { path: "Daily" },
@@ -750,7 +750,7 @@ describe("ButtonGroupsBuilder - build", () => {
     const createTaskButton = creationGroup?.buttons.find(
       (b) => b.id === "create-task-for-dailynote",
     );
-    expect(createTaskButton?.visible ?? false).toBe(false);
+    expect(createTaskButton?.visible).toBe(true);
   });
 
   it("should handle DailyNote with wiki-link date format", async () => {

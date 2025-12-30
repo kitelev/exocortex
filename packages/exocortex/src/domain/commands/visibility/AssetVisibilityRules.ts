@@ -5,7 +5,6 @@ import {
   hasEmptyProperties,
   needsFolderRepair,
   extractDailyNoteDate,
-  isCurrentDateGteDay,
   isPrototypeClass,
 } from "./helpers";
 import { AssetClass } from "../../constants";
@@ -128,7 +127,7 @@ export function canCreateSubclass(
 
 /**
  * Can execute "Create Task for DailyNote" command
- * Available for: pn__DailyNote assets when current date >= pn__DailyNote_day
+ * Available for: all pn__DailyNote assets (past, present, and future dates)
  */
 export function canCreateTaskForDailyNote(
   context: CommandVisibilityContext,
@@ -139,5 +138,5 @@ export function canCreateTaskForDailyNote(
   const dailyNoteDate = extractDailyNoteDate(context.metadata);
   if (!dailyNoteDate) return false;
 
-  return isCurrentDateGteDay(dailyNoteDate);
+  return true;
 }

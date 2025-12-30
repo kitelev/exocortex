@@ -184,7 +184,7 @@ describe("CommandVisibility - Task Creation Commands", () => {
       expect(canCreateTaskForDailyNote(context)).toBe(true);
     });
 
-    it("should return false for DailyNote with future date", () => {
+    it("should return true for DailyNote with future date", () => {
       const future = new Date();
       future.setFullYear(future.getFullYear() + 1);
       const futureStr = `${future.getFullYear()}-${String(future.getMonth() + 1).padStart(2, "0")}-${String(future.getDate()).padStart(2, "0")}`;
@@ -199,7 +199,7 @@ describe("CommandVisibility - Task Creation Commands", () => {
         currentFolder: "",
         expectedFolder: null,
       };
-      expect(canCreateTaskForDailyNote(context)).toBe(false);
+      expect(canCreateTaskForDailyNote(context)).toBe(true);
     });
 
     it("should return false for non-DailyNote asset", () => {
