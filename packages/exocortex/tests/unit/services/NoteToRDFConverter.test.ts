@@ -1539,4 +1539,392 @@ describe("NoteToRDFConverter", () => {
       });
     });
   });
+
+  // Issue #1329: Body wikilinks indexing to RDF
+  describe("Body wikilinks indexing (Issue #1329)", () => {
+    const file: IFile = {
+      path: "test-note.md",
+      basename: "test-note",
+      name: "test-note.md",
+      parent: null,
+    };
+
+    describe("extractBodyWikilinks", () => {
+      it("should extract simple wikilinks from body content", () => {
+        const bodyContent = "This links to [[Note A]] and [[Note B]].";
+        const links = converter.extractBodyWikilinks(bodyContent);
+        expect(links).toContain("Note A");
+        expect(links).toContain("Note B");
+        expect(links.length).toBe(2);
+      });
+
+      it("should extract wikilinks with aliases", () => {
+        const bodyContent = "See [[Note A|my alias]] for more info.";
+        const links = converter.extractBodyWikilinks(bodyContent);
+        expect(links).toContain("Note A");
+        expect(links).not.toContain("my alias");
+        expect(links.length).toBe(1);
+      });
+
+      it("should NOT extract embedded images (![[image.png]])", () => {
+        const bodyContent = "Here is an image: ![[image.png]] and a link [[Note]].";
+        const links = converter.extractBodyWikilinks(bodyContent);
+        expect(links).toContain("Note");
+        expect(links).not.toContain("image.png");
+        expect(links.length).toBe(1);
+      });
+
+      it("should return unique links only (no duplicates)", () => {
+        const bodyContent = "See [[Note A]], then [[Note B]], and again [[Note A]].";
+        const links = converter.extractBodyWikilinks(bodyContent);
+        expect(links).toContain("Note A");
+        expect(links).toContain("Note B");
+        expect(links.length).toBe(2);
+      });
+
+      it("should handle multiline content", () => {
+        const bodyContent = `
+This is the first paragraph with [[Note A]].
+
+This is the second paragraph with [[Note B]].
+
+And here is [[Note C|some alias]].
+`;
+        const links = converter.extractBodyWikilinks(bodyContent);
+        expect(links).toContain("Note A");
+        expect(links).toContain("Note B");
+        expect(links).toContain("Note C");
+        expect(links.length).toBe(3);
+      });
+
+      it("should handle wikilinks with paths", () => {
+        const bodyContent = "See [[folder/Note A]] and [[deep/nested/Note B]].";
+        const links = converter.extractBodyWikilinks(bodyContent);
+        expect(links).toContain("folder/Note A");
+        expect(links).toContain("deep/nested/Note B");
+        expect(links.length).toBe(2);
+      });
+
+      it("should handle wikilinks next to each other", () => {
+        const bodyContent = "Links: [[Note A]][[Note B]][[Note C]]";
+        const links = converter.extractBodyWikilinks(bodyContent);
+        expect(links).toContain("Note A");
+        expect(links).toContain("Note B");
+        expect(links).toContain("Note C");
+        expect(links.length).toBe(3);
+      });
+
+      it("should return empty array for content without wikilinks", () => {
+        const bodyContent = "This is plain text without any links.";
+        const links = converter.extractBodyWikilinks(bodyContent);
+        expect(links).toEqual([]);
+      });
+
+      it("should handle Cyrillic wikilinks", () => {
+        const bodyContent = "Это похоже на [[ИИН]] в Казахстане или [[ИНН]] в России.";
+        const links = converter.extractBodyWikilinks(bodyContent);
+        expect(links).toContain("ИИН");
+        expect(links).toContain("ИНН");
+        expect(links.length).toBe(2);
+      });
+
+      it("should handle wikilinks with class references", () => {
+        const bodyContent = "This asset is similar to [[exo__Theory]].";
+        const links = converter.extractBodyWikilinks(bodyContent);
+        expect(links).toContain("exo__Theory");
+        expect(links.length).toBe(1);
+      });
+    });
+
+    describe("convertNote with body wikilinks", () => {
+      it("should generate exo:Asset_bodyLink triples for body wikilinks", async () => {
+        const frontmatter = {
+          exo__Asset_label: "Test Note",
+        };
+
+        const fileContent = `---
+exo__Asset_label: Test Note
+---
+
+This note links to [[ИИН]] and [[ИНН]].
+`;
+
+        const targetFile: IFile = {
+          path: "03 Knowledge/ИИН.md",
+          basename: "ИИН",
+          name: "ИИН.md",
+          parent: null,
+        };
+
+        mockVault.getFrontmatter.mockReturnValue(frontmatter);
+        mockVault.read.mockResolvedValue(fileContent);
+        mockVault.getFirstLinkpathDest.mockImplementation((linkpath) => {
+          if (linkpath === "ИИН") return targetFile;
+          return null;
+        });
+
+        const triples = await converter.convertNote(file);
+
+        const bodyLinkTriples = triples.filter((t) =>
+          (t.predicate as IRI).value.includes("Asset_bodyLink")
+        );
+
+        // Should have 2 body link triples (ИИН and ИНН)
+        expect(bodyLinkTriples.length).toBe(2);
+
+        // Check predicate is correct
+        expect((bodyLinkTriples[0].predicate as IRI).value).toBe(
+          Namespace.EXO.term("Asset_bodyLink").value
+        );
+      });
+
+      it("should resolve body wikilinks to file IRIs when target exists", async () => {
+        const frontmatter = {
+          exo__Asset_label: "Test Note",
+        };
+
+        const fileContent = `---
+exo__Asset_label: Test Note
+---
+
+See [[My Target Note]] for details.
+`;
+
+        const targetFile: IFile = {
+          path: "folder/My Target Note.md",
+          basename: "My Target Note",
+          name: "My Target Note.md",
+          parent: null,
+        };
+
+        mockVault.getFrontmatter.mockReturnValue(frontmatter);
+        mockVault.read.mockResolvedValue(fileContent);
+        mockVault.getFirstLinkpathDest.mockReturnValue(targetFile);
+
+        const triples = await converter.convertNote(file);
+
+        const bodyLinkTriples = triples.filter((t) =>
+          (t.predicate as IRI).value.includes("Asset_bodyLink")
+        );
+
+        expect(bodyLinkTriples.length).toBe(1);
+        expect(bodyLinkTriples[0].object).toBeInstanceOf(IRI);
+        expect((bodyLinkTriples[0].object as IRI).value).toContain(
+          "obsidian://vault/folder/My%20Target%20Note.md"
+        );
+      });
+
+      it("should store unresolved body wikilinks as literals", async () => {
+        const frontmatter = {
+          exo__Asset_label: "Test Note",
+        };
+
+        const fileContent = `---
+exo__Asset_label: Test Note
+---
+
+This links to [[Nonexistent Note]].
+`;
+
+        mockVault.getFrontmatter.mockReturnValue(frontmatter);
+        mockVault.read.mockResolvedValue(fileContent);
+        mockVault.getFirstLinkpathDest.mockReturnValue(null);
+
+        const triples = await converter.convertNote(file);
+
+        const bodyLinkTriples = triples.filter((t) =>
+          (t.predicate as IRI).value.includes("Asset_bodyLink")
+        );
+
+        expect(bodyLinkTriples.length).toBe(1);
+        expect(bodyLinkTriples[0].object).toBeInstanceOf(Literal);
+        expect((bodyLinkTriples[0].object as Literal).value).toBe("Nonexistent Note");
+      });
+
+      it("should expand class references in body wikilinks to namespace URIs", async () => {
+        const frontmatter = {
+          exo__Asset_label: "Test Note",
+        };
+
+        const fileContent = `---
+exo__Asset_label: Test Note
+---
+
+This is similar to [[exo__Theory]] and [[ems__Task]].
+`;
+
+        mockVault.getFrontmatter.mockReturnValue(frontmatter);
+        mockVault.read.mockResolvedValue(fileContent);
+        mockVault.getFirstLinkpathDest.mockReturnValue(null);
+
+        const triples = await converter.convertNote(file);
+
+        const bodyLinkTriples = triples.filter((t) =>
+          (t.predicate as IRI).value.includes("Asset_bodyLink")
+        );
+
+        expect(bodyLinkTriples.length).toBe(2);
+
+        // Should be expanded to namespace URIs
+        const values = bodyLinkTriples.map((t) => (t.object as IRI).value);
+        expect(values).toContain(Namespace.EXO.term("Theory").value);
+        expect(values).toContain(Namespace.EMS.term("Task").value);
+      });
+
+      it("should NOT include embedded images in body links", async () => {
+        const frontmatter = {
+          exo__Asset_label: "Test Note",
+        };
+
+        const fileContent = `---
+exo__Asset_label: Test Note
+---
+
+Here is an image: ![[screenshot.png]] and a link [[Real Note]].
+`;
+
+        const targetFile: IFile = {
+          path: "Real Note.md",
+          basename: "Real Note",
+          name: "Real Note.md",
+          parent: null,
+        };
+
+        mockVault.getFrontmatter.mockReturnValue(frontmatter);
+        mockVault.read.mockResolvedValue(fileContent);
+        mockVault.getFirstLinkpathDest.mockReturnValue(targetFile);
+
+        const triples = await converter.convertNote(file);
+
+        const bodyLinkTriples = triples.filter((t) =>
+          (t.predicate as IRI).value.includes("Asset_bodyLink")
+        );
+
+        // Should only have 1 link (Real Note), not screenshot.png
+        expect(bodyLinkTriples.length).toBe(1);
+        expect((bodyLinkTriples[0].object as IRI).value).toContain("Real%20Note.md");
+      });
+
+      it("should handle file read errors gracefully", async () => {
+        const frontmatter = {
+          exo__Asset_label: "Test Note",
+        };
+
+        mockVault.getFrontmatter.mockReturnValue(frontmatter);
+        mockVault.read.mockRejectedValue(new Error("File read error"));
+
+        // Should NOT throw, just skip body links
+        const triples = await converter.convertNote(file);
+
+        // Should have Asset_fileName and Asset_label, but no body links
+        expect(triples.length).toBe(2);
+        const bodyLinkTriples = triples.filter((t) =>
+          (t.predicate as IRI).value.includes("Asset_bodyLink")
+        );
+        expect(bodyLinkTriples.length).toBe(0);
+      });
+
+      it("should handle notes without body content", async () => {
+        const frontmatter = {
+          exo__Asset_label: "Test Note",
+        };
+
+        const fileContent = `---
+exo__Asset_label: Test Note
+---
+`;
+
+        mockVault.getFrontmatter.mockReturnValue(frontmatter);
+        mockVault.read.mockResolvedValue(fileContent);
+
+        const triples = await converter.convertNote(file);
+
+        const bodyLinkTriples = triples.filter((t) =>
+          (t.predicate as IRI).value.includes("Asset_bodyLink")
+        );
+
+        expect(bodyLinkTriples.length).toBe(0);
+      });
+
+      it("should deduplicate body wikilinks", async () => {
+        const frontmatter = {
+          exo__Asset_label: "Test Note",
+        };
+
+        const fileContent = `---
+exo__Asset_label: Test Note
+---
+
+See [[Note A]], then [[Note A]] again, and [[Note A]] once more.
+`;
+
+        const targetFile: IFile = {
+          path: "Note A.md",
+          basename: "Note A",
+          name: "Note A.md",
+          parent: null,
+        };
+
+        mockVault.getFrontmatter.mockReturnValue(frontmatter);
+        mockVault.read.mockResolvedValue(fileContent);
+        mockVault.getFirstLinkpathDest.mockReturnValue(targetFile);
+
+        const triples = await converter.convertNote(file);
+
+        const bodyLinkTriples = triples.filter((t) =>
+          (t.predicate as IRI).value.includes("Asset_bodyLink")
+        );
+
+        // Should only have 1 triple for Note A (deduplicated)
+        expect(bodyLinkTriples.length).toBe(1);
+      });
+    });
+
+    describe("convertVault with body wikilinks", () => {
+      it("should index body wikilinks for all files in vault", async () => {
+        const file1: IFile = {
+          path: "note1.md",
+          basename: "note1",
+          name: "note1.md",
+          parent: null,
+        };
+
+        const file2: IFile = {
+          path: "note2.md",
+          basename: "note2",
+          name: "note2.md",
+          parent: null,
+        };
+
+        mockVault.getAllFiles.mockReturnValue([file1, file2]);
+
+        mockVault.getFrontmatter.mockReturnValue({
+          exo__Asset_label: "Test",
+        });
+
+        mockVault.read.mockImplementation(async (f) => {
+          if (f.path === "note1.md") {
+            return "---\nexo__Asset_label: Test\n---\n\nLink to [[Target A]]";
+          }
+          return "---\nexo__Asset_label: Test\n---\n\nLink to [[Target B]]";
+        });
+
+        mockVault.getFirstLinkpathDest.mockReturnValue(null);
+
+        const triples = await converter.convertVault();
+
+        const bodyLinkTriples = triples.filter((t) =>
+          (t.predicate as IRI).value.includes("Asset_bodyLink")
+        );
+
+        expect(bodyLinkTriples.length).toBe(2);
+        expect(
+          bodyLinkTriples.some((t) => (t.object as Literal).value === "Target A")
+        ).toBe(true);
+        expect(
+          bodyLinkTriples.some((t) => (t.object as Literal).value === "Target B")
+        ).toBe(true);
+      });
+    });
+  });
 });

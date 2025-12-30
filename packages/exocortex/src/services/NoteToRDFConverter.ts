@@ -21,6 +21,13 @@ export class NoteToRDFConverter {
   private readonly OBSIDIAN_VAULT_SCHEME = "obsidian://vault/";
   private readonly vocabularyMapper: RDFVocabularyMapper;
 
+  /**
+   * Regex pattern to match wikilinks in markdown body content.
+   * Matches: [[Target]] or [[Target|Alias]]
+   * Does not match wikilinks with angle brackets (embedded images: ![[image.png]])
+   */
+  private readonly BODY_WIKILINK_PATTERN = /(?<!!)\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g;
+
   constructor(
     @inject(DI_TOKENS.IVaultAdapter) private readonly vault: IVaultAdapter,
   ) {
@@ -100,6 +107,11 @@ export class NoteToRDFConverter {
         }
       }
     }
+
+    // Issue #1329: Index body wikilinks to RDF
+    // This enables SPARQL queries to find all notes referencing a target note
+    const bodyLinkTriples = await this.convertBodyWikilinks(file, subject);
+    triples.push(...bodyLinkTriples);
 
     return triples;
   }
@@ -337,5 +349,104 @@ export class NoteToRDFConverter {
     }
 
     return null;
+  }
+
+  /**
+   * Extracts the body content from a markdown file (everything after the frontmatter).
+   *
+   * @param content - Full file content including frontmatter
+   * @returns Body content without frontmatter, or full content if no frontmatter
+   */
+  private extractBodyContent(content: string): string {
+    // Frontmatter pattern: starts with ---, ends with ---
+    const frontmatterPattern = /^---\r?\n[\s\S]*?\r?\n---\r?\n?/;
+    return content.replace(frontmatterPattern, "");
+  }
+
+  /**
+   * Extracts all wikilinks from markdown body content.
+   *
+   * Matches both [[Target]] and [[Target|Alias]] formats.
+   * Does NOT match embedded images: ![[image.png]]
+   *
+   * @param bodyContent - The markdown body content (without frontmatter)
+   * @returns Array of unique wikilink targets
+   *
+   * @example
+   * ```typescript
+   * const links = extractBodyWikilinks("See [[Note A]] and [[Note B|alias]].");
+   * // Returns: ["Note A", "Note B"]
+   * ```
+   */
+  extractBodyWikilinks(bodyContent: string): string[] {
+    const links = new Set<string>();
+    let match: RegExpExecArray | null;
+
+    // Reset regex lastIndex for each call (important for global regex)
+    const pattern = new RegExp(this.BODY_WIKILINK_PATTERN.source, "g");
+
+    while ((match = pattern.exec(bodyContent)) !== null) {
+      // match[1] contains the link target (without alias)
+      if (match[1]) {
+        links.add(match[1]);
+      }
+    }
+
+    return Array.from(links);
+  }
+
+  /**
+   * Converts body wikilinks to RDF triples.
+   *
+   * Issue #1329: Index body wikilinks to enable complete graph analysis.
+   * Body links are stored with predicate exo:Asset_bodyLink.
+   *
+   * @param file - The source file
+   * @param subject - The subject IRI for the note
+   * @returns Array of triples for body links
+   */
+  async convertBodyWikilinks(
+    file: IFile,
+    subject: IRI,
+  ): Promise<Triple[]> {
+    const triples: Triple[] = [];
+
+    try {
+      const content = await this.vault.read(file);
+      const bodyContent = this.extractBodyContent(content);
+      const wikilinks = this.extractBodyWikilinks(bodyContent);
+
+      const bodyLinkPredicate = Namespace.EXO.term("Asset_bodyLink");
+
+      for (const linkTarget of wikilinks) {
+        // Try to resolve the wikilink to an actual file
+        const targetFile = this.vault.getFirstLinkpathDest(
+          linkTarget,
+          file.path
+        );
+
+        if (targetFile) {
+          // Link resolves to a file - use file IRI
+          const objectIRI = this.notePathToIRI(targetFile.path);
+          triples.push(new Triple(subject, bodyLinkPredicate, objectIRI));
+        } else if (this.isClassReference(linkTarget)) {
+          // Link might be a class reference (ems__/exo__ prefix)
+          const classIRI = this.expandClassValue(linkTarget);
+          if (classIRI) {
+            triples.push(new Triple(subject, bodyLinkPredicate, classIRI));
+          } else {
+            // Could not expand - store as literal
+            triples.push(new Triple(subject, bodyLinkPredicate, new Literal(linkTarget)));
+          }
+        } else {
+          // Link doesn't resolve - store the target as literal for discoverability
+          triples.push(new Triple(subject, bodyLinkPredicate, new Literal(linkTarget)));
+        }
+      }
+    } catch {
+      // If file read fails, silently skip body links (file may be binary or inaccessible)
+    }
+
+    return triples;
   }
 }
