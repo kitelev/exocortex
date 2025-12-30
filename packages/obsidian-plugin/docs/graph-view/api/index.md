@@ -59,6 +59,19 @@ The Graph View module exports a comprehensive set of components, algorithms, and
 │   ├── InferenceManager         # Ontology reasoning
 │   └── AccessibilityManager     # WCAG compliance
 │
+├── Advanced Systems
+│   ├── ConstraintManager        # Position constraints
+│   ├── ConstraintSolver         # Constraint resolution
+│   ├── ViewportWindowManager    # Virtual scrolling (100K+ nodes)
+│   ├── ClusterQueryExecutor     # SPARQL cluster queries
+│   ├── ClusterRenderer          # Cluster visualization
+│   ├── ObjectPool               # Generic object pooling
+│   ├── PoolManager              # Centralized pool management
+│   ├── TouchGestureManager      # Mobile/iPad gestures
+│   ├── ContextMenuManager       # Right-click menus
+│   ├── ContextMenuRenderer      # Menu DOM rendering
+│   └── ContextMenuProviders     # Built-in menu providers
+│
 └── Utilities
     ├── buildGraphData           # Data conversion
     ├── extractLabelFromWikilink # Label extraction
@@ -134,6 +147,52 @@ import {
   KeyboardManager,
   NavigationManager,
   ContextMenuManager,
+} from "./presentation/renderers/graph";
+```
+
+### Advanced Systems Imports
+
+```typescript
+// Constraints
+import {
+  ConstraintManager,
+  ConstraintSolver,
+  ConstraintType,
+} from "./presentation/renderers/graph";
+
+// Viewport windowing
+import {
+  ViewportWindowManager,
+} from "./presentation/renderers/graph";
+
+// Cluster queries
+import {
+  ClusterQueryExecutor,
+  ClusterRenderer,
+} from "./presentation/renderers/graph";
+
+// Memory optimization
+import {
+  ObjectPool,
+  PoolManager,
+  getGlobalPoolManager,
+  Poolable,
+} from "./presentation/renderers/graph/memory";
+
+// Touch gestures
+import {
+  TouchGestureManager,
+} from "./presentation/renderers/graph/3d";
+
+// Context menus
+import {
+  ContextMenuManager,
+  ContextMenuRenderer,
+  NodeContextMenuProvider,
+  EdgeContextMenuProvider,
+  CanvasContextMenuProvider,
+  SelectionContextMenuProvider,
+  createDefaultProviders,
 } from "./presentation/renderers/graph";
 ```
 
