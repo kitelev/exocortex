@@ -194,6 +194,14 @@ export class PropertiesLinkPatch {
   }
 
   /**
+   * Check if an element is inside a metadata container
+   * This prevents patching links in other contexts (e.g., daily navigation)
+   */
+  private isInsideMetadataContainer(el: HTMLElement): boolean {
+    return el.closest(".metadata-container") !== null;
+  }
+
+  /**
    * Resolve a file path to a TFile
    */
   private resolveFile(linkPath: string): TFile | null {
@@ -314,10 +322,11 @@ export class PropertiesLinkPatch {
               // Check for nested metadata containers
               this.patchPropertiesBlock(node);
             } else if (
-              node.classList?.contains("internal-link") ||
-              node.hasAttribute?.("data-href")
+              (node.classList?.contains("internal-link") ||
+                node.hasAttribute?.("data-href")) &&
+              this.isInsideMetadataContainer(node)
             ) {
-              // Direct link added
+              // Direct link added within metadata container
               this.patchLink(node);
             } else {
               // Check for links within added nodes
