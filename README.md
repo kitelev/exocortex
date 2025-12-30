@@ -365,8 +365,11 @@ See **[SPARQL 1.2 Features](./docs/sparql/SPARQL-1.2-Features.md)** for complete
 - **[SPARQL 1.2 Features](./docs/sparql/SPARQL-1.2-Features.md)** — LATERAL, PREFIX*, directionality, and more
 - **[SPARQL 1.2 Migration](./docs/sparql/SPARQL-1.2-Migration.md)** — Upgrading from SPARQL 1.1
 
-### Graph View & Inference
-- **[Inference & Reasoning Guide](./docs/graph-view/guides/inference.md)** — RDFS/OWL inference, neighborhood exploration, justifications
+### Graph View & Visualization
+- **[Graph View Overview](./docs/graph-view/README.md)** — Introduction to 2D and 3D graph visualization
+- **[3D Visualization Guide](./docs/graph-view/guides/3d-visualization.md)** — WebGL-powered 3D graph exploration
+- **[Configuration Reference](./docs/graph-view/guides/configuration.md)** — All configuration options for graph views
+- **[Inference & Reasoning Guide](./docs/graph-view/guides/inference.md)** — RDFS/OWL inference, neighborhood exploration
 
 ### Layout Code Blocks
 
