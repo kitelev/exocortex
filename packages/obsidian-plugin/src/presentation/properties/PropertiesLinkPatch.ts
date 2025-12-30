@@ -163,6 +163,10 @@ export class PropertiesLinkPatch {
 
   /**
    * Patch a single link element
+   *
+   * IMPORTANT: In multi-value properties, Obsidian places child elements like
+   * remove buttons (×) inside the link element. We must preserve these by updating
+   * only the text nodes, not replacing the entire innerHTML via textContent.
    */
   private patchLink(linkEl: HTMLElement): void {
     // Get the file path from data-href attribute
@@ -177,19 +181,64 @@ export class PropertiesLinkPatch {
     const displayName = this.getDisplayName(file);
     if (!displayName) return;
 
-    // Store original text for restoration
-    const originalText = linkEl.textContent || "";
+    // Store original text for restoration (before any modifications)
+    const originalText = this.getTextContent(linkEl);
     if (!linkEl.hasAttribute("data-original-text")) {
       linkEl.setAttribute("data-original-text", originalText);
     }
 
     // Only update if different from current text
-    if (linkEl.textContent !== displayName) {
-      linkEl.textContent = displayName;
+    if (this.getTextContent(linkEl) !== displayName) {
+      // Update text content while preserving child elements (like delete buttons)
+      this.setTextContentPreservingChildren(linkEl, displayName);
       this.patchedElements.set(linkEl, originalText);
 
       // Add tooltip with original filename
       linkEl.setAttribute("aria-label", `${displayName}\n(${file.basename}.md)`);
+    }
+  }
+
+  /**
+   * Get text content from an element, excluding text from child elements
+   * This returns only the direct text nodes' content
+   */
+  private getTextContent(el: HTMLElement): string {
+    let text = "";
+    for (const node of Array.from(el.childNodes)) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        text += node.textContent || "";
+      }
+    }
+    return text.trim() || el.textContent || "";
+  }
+
+  /**
+   * Set text content of an element while preserving child elements
+   *
+   * This method:
+   * 1. Collects all non-text child elements
+   * 2. Clears the element
+   * 3. Adds the new text as a text node
+   * 4. Re-appends the preserved child elements
+   *
+   * This preserves buttons, icons, and other interactive elements
+   * that Obsidian places inside link elements (e.g., remove buttons in multi-value properties)
+   */
+  private setTextContentPreservingChildren(el: HTMLElement, text: string): void {
+    // Collect all non-text child elements to preserve
+    const childElements: Element[] = [];
+    for (const node of Array.from(el.childNodes)) {
+      if (node.nodeType === Node.ELEMENT_NODE) {
+        childElements.push(node as Element);
+      }
+    }
+
+    // Clear the element and set new text
+    el.textContent = text;
+
+    // Re-append preserved child elements
+    for (const child of childElements) {
+      el.appendChild(child);
     }
   }
 
@@ -373,7 +422,8 @@ export class PropertiesLinkPatch {
     for (const link of Array.from(patchedLinks)) {
       const originalText = link.getAttribute("data-original-text");
       if (originalText) {
-        link.textContent = originalText;
+        // Restore text while preserving child elements (like delete buttons)
+        this.setTextContentPreservingChildren(link, originalText);
         link.removeAttribute("data-original-text");
         link.removeAttribute("aria-label");
       }
