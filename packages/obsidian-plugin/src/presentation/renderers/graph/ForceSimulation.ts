@@ -2046,3 +2046,146 @@ export function forceY<N extends SimulationNode = SimulationNode>(
 
   return force;
 }
+
+// ============================================================
+// Semantic Physics Forces
+// ============================================================
+
+import type { SemanticPhysicsConfig } from "../../stores/graphConfigStore/types";
+import { SemanticForceModifier, type SemanticLink, type SemanticNode } from "./SemanticForceModifier";
+
+/**
+ * Configuration for semantic link force
+ */
+export interface ForceSemanticLinkConfig<N extends SemanticNode = SemanticNode> extends ForceLinkConfig<N> {
+  /** Semantic physics configuration */
+  semantic?: SemanticPhysicsConfig;
+}
+
+/**
+ * Creates a semantic-aware link force that modifies attraction based on predicate types.
+ *
+ * This force wraps the standard link force with semantic modifiers that adjust
+ * link strength based on RDF/OWL predicates. For example:
+ * - rdfs:subClassOf links have 2x attraction (pull related nodes closer)
+ * - owl:disjointWith links have reduced attraction (allow nodes to separate)
+ *
+ * @param links - Array of links with optional predicate property
+ * @param config - Configuration including semantic physics settings
+ * @returns A composable force that can be added to ForceSimulation
+ *
+ * @example
+ * ```typescript
+ * const simulation = new ForceSimulation(nodes);
+ * simulation.force("link", forceSemanticLink(links, {
+ *   distance: 100,
+ *   strength: 1,
+ *   semantic: {
+ *     enabled: true,
+ *     predicates: [
+ *       { predicate: "rdfs:subClassOf", attractionMultiplier: 2.0, repulsionMultiplier: 1.0 },
+ *     ],
+ *     defaultAttractionMultiplier: 1.0,
+ *     defaultRepulsionMultiplier: 1.0,
+ *     typeBasedRepulsion: true,
+ *     differentTypeRepulsionMultiplier: 1.3,
+ *   },
+ * }));
+ * ```
+ */
+export function forceSemanticLink<N extends SemanticNode = SemanticNode>(
+  links: SemanticLink<N>[] = [],
+  config: ForceSemanticLinkConfig<N> = {}
+): Force<N> & {
+  links(): SemanticLink<N>[];
+  links(value: SemanticLink<N>[]): Force<N>;
+  distance(): number | ((link: SemanticLink<N>, index: number, links: SemanticLink<N>[]) => number);
+  distance(value: number | ((link: SemanticLink<N>, index: number, links: SemanticLink<N>[]) => number)): Force<N>;
+  strength(): number | ((link: SemanticLink<N>, index: number, links: SemanticLink<N>[]) => number);
+  strength(value: number | ((link: SemanticLink<N>, index: number, links: SemanticLink<N>[]) => number)): Force<N>;
+  iterations(): number;
+  iterations(value: number): Force<N>;
+  semanticConfig(): SemanticPhysicsConfig | undefined;
+  semanticConfig(value: SemanticPhysicsConfig): Force<N>;
+} {
+  const semanticConfig = config.semantic ?? {
+    enabled: false,
+    predicates: [],
+    defaultAttractionMultiplier: 1.0,
+    defaultRepulsionMultiplier: 1.0,
+    typeBasedRepulsion: false,
+    differentTypeRepulsionMultiplier: 1.0,
+  };
+
+  const semanticModifier = new SemanticForceModifier(semanticConfig);
+
+  // Compute strength with semantic modifier
+  const baseStrength = config.strength ?? 1;
+  const semanticStrength = (link: SemanticLink<N>, index: number, allLinks: SemanticLink<N>[]): number => {
+    const base = typeof baseStrength === "function"
+      ? baseStrength(link, index, allLinks)
+      : baseStrength;
+
+    if (!semanticModifier.isEnabled()) {
+      return base;
+    }
+
+    return semanticModifier.computeLinkStrength(base, link);
+  };
+
+  // Create the underlying force with semantic strength
+  const underlyingForce = forceLink<N>(links as SimulationLink<N>[], {
+    ...config,
+    strength: semanticStrength as (link: SimulationLink<N>, index: number, links: SimulationLink<N>[]) => number,
+  });
+
+  // Cast to add semantic-specific methods
+  const force = underlyingForce as Force<N> & {
+    links(): SemanticLink<N>[];
+    links(value: SemanticLink<N>[]): Force<N>;
+    distance(): number | ((link: SemanticLink<N>, index: number, links: SemanticLink<N>[]) => number);
+    distance(value: number | ((link: SemanticLink<N>, index: number, links: SemanticLink<N>[]) => number)): Force<N>;
+    strength(): number | ((link: SemanticLink<N>, index: number, links: SemanticLink<N>[]) => number);
+    strength(value: number | ((link: SemanticLink<N>, index: number, links: SemanticLink<N>[]) => number)): Force<N>;
+    iterations(): number;
+    iterations(value: number): Force<N>;
+    semanticConfig(): SemanticPhysicsConfig | undefined;
+    semanticConfig(value: SemanticPhysicsConfig): Force<N>;
+  };
+
+  // Add semantic config accessor
+  force.semanticConfig = function (
+    value?: SemanticPhysicsConfig
+  ): SemanticPhysicsConfig | undefined | typeof force {
+    if (value === undefined) {
+      return semanticModifier.getConfig();
+    }
+    semanticModifier.updateConfig(value);
+    return force;
+  } as {
+    (): SemanticPhysicsConfig | undefined;
+    (value: SemanticPhysicsConfig): typeof force;
+  };
+
+  return force;
+}
+
+/**
+ * Default semantic physics configuration for common ontology predicates
+ */
+export const DEFAULT_SEMANTIC_LINK_CONFIG: SemanticPhysicsConfig = {
+  enabled: true,
+  predicates: [
+    // Attraction modifiers: pull related nodes closer
+    { predicate: "rdfs:subClassOf", attractionMultiplier: 2.0, repulsionMultiplier: 1.0 },
+    { predicate: "exo:Asset_prototype", attractionMultiplier: 1.8, repulsionMultiplier: 1.0 },
+    { predicate: "dcterms:isPartOf", attractionMultiplier: 1.5, repulsionMultiplier: 1.0 },
+    { predicate: "ems:Effort_parent", attractionMultiplier: 1.5, repulsionMultiplier: 1.0 },
+    // Repulsion modifiers: push unrelated nodes apart
+    { predicate: "owl:disjointWith", attractionMultiplier: 0.5, repulsionMultiplier: 3.0 },
+  ],
+  defaultAttractionMultiplier: 1.0,
+  defaultRepulsionMultiplier: 1.0,
+  typeBasedRepulsion: true,
+  differentTypeRepulsionMultiplier: 1.3,
+};
