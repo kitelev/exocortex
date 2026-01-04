@@ -53,17 +53,22 @@ describe("Exo003 Types", () => {
       expect(props).not.toContain("prefix");
     });
 
-    it("should include anchor-specific properties", () => {
+    it("should include anchor-specific properties (strict spec: only uri)", () => {
       const props = ALLOWED_PROPERTIES[Exo003MetadataType.Anchor];
-      expect(props).toContain("localName");
-      expect(props).toContain("label");
+      expect(props).toContain("uri");
       expect(props).toContain("aliases");
+      // localName and label are NOT allowed per spec
+      expect(props).not.toContain("localName");
+      expect(props).not.toContain("label");
     });
 
-    it("should include blank_node-specific properties", () => {
+    it("should include blank_node-specific properties (strict spec: only uri)", () => {
       const props = ALLOWED_PROPERTIES[Exo003MetadataType.BlankNode];
-      expect(props).toContain("id");
-      expect(props).toContain("label");
+      expect(props).toContain("uri");
+      expect(props).toContain("aliases");
+      // id and label are NOT allowed per spec
+      expect(props).not.toContain("id");
+      expect(props).not.toContain("label");
     });
 
     it("should include statement-specific properties", () => {
@@ -73,13 +78,15 @@ describe("Exo003 Types", () => {
       expect(props).toContain("object");
     });
 
-    it("should include body-specific properties", () => {
+    it("should include body-specific properties (strict spec: no datatype/language/direction)", () => {
       const props = ALLOWED_PROPERTIES[Exo003MetadataType.Body];
       expect(props).toContain("subject");
       expect(props).toContain("predicate");
-      expect(props).toContain("datatype");
-      expect(props).toContain("language");
-      expect(props).toContain("direction");
+      expect(props).toContain("aliases");
+      // datatype, language, direction are NOT allowed per spec
+      expect(props).not.toContain("datatype");
+      expect(props).not.toContain("language");
+      expect(props).not.toContain("direction");
     });
 
     it("should NOT include uid and createdAt (stored as statements, not frontmatter)", () => {
@@ -125,14 +132,18 @@ describe("Exo003 Types", () => {
       expect(props).toContain("uri");
     });
 
-    it("should require anchor localName", () => {
+    it("should require anchor uri (strict spec)", () => {
       const props = REQUIRED_PROPERTIES[Exo003MetadataType.Anchor];
-      expect(props).toContain("localName");
+      expect(props).toContain("uri");
+      // localName is NOT required/allowed per spec
+      expect(props).not.toContain("localName");
     });
 
-    it("should require blank node id", () => {
+    it("should require blank node uri (strict spec)", () => {
       const props = REQUIRED_PROPERTIES[Exo003MetadataType.BlankNode];
-      expect(props).toContain("id");
+      expect(props).toContain("uri");
+      // id is NOT required/allowed per spec
+      expect(props).not.toContain("id");
     });
 
     it("should require all statement components", () => {
@@ -148,11 +159,13 @@ describe("Exo003 Types", () => {
       expect(props).toContain("predicate");
     });
 
-    it("should not require body content metadata (optional)", () => {
-      const props = REQUIRED_PROPERTIES[Exo003MetadataType.Body];
-      expect(props).not.toContain("datatype");
-      expect(props).not.toContain("language");
-      expect(props).not.toContain("direction");
+    it("should not have body content metadata (strict spec: no datatype/language/direction)", () => {
+      // Per spec, body does NOT have datatype/language/direction in frontmatter
+      // These are derived from TBox
+      const allowed = ALLOWED_PROPERTIES[Exo003MetadataType.Body];
+      expect(allowed).not.toContain("datatype");
+      expect(allowed).not.toContain("language");
+      expect(allowed).not.toContain("direction");
     });
   });
 

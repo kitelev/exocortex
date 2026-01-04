@@ -8,18 +8,20 @@
  * - Clear semantic structure - File type determines RDF meaning
  * - Optimized for Obsidian - Native integration with vault file system
  *
- * ## Minimal Frontmatter Specification
+ * ## Strict Frontmatter Allowlist (from specification)
  *
- * Each file type has a strict allowlist of frontmatter properties:
+ * **Only these frontmatter properties are allowed:** `metadata`, `uri`, `aliases`, `subject`, `predicate`, `object`
+ *
+ * Each file type has a strict allowlist:
  *
  * - **namespace**: `metadata`, `uri`, `aliases`
+ * - **anchor**: `metadata`, `uri`, `aliases`
+ * - **blank_node**: `metadata`, `uri`, `aliases`
  * - **statement**: `metadata`, `subject`, `predicate`, `object`, `aliases`
  * - **body**: `metadata`, `subject`, `predicate`, `aliases` (content in markdown body)
- * - **anchor**: `metadata`, `localName`, `label`, `aliases`
- * - **blank_node**: `metadata`, `id`, `label`, `aliases`
  *
- * Properties like `uid` and `createdAt` are stored as RDF statements,
- * not in frontmatter, to maintain semantic consistency.
+ * Properties like `uid`, `createdAt`, `localName`, `label`, `id`, `datatype`, `language`, `direction`
+ * are NOT allowed in frontmatter per specification.
  */
 
 /**
@@ -89,32 +91,26 @@ export interface Exo003NamespaceMetadata extends Exo003BaseMetadata {
  * Metadata for anchor files (named resources).
  * Represents a resource with a globally unique URI.
  *
- * Allowed frontmatter: metadata, localName, label, aliases
+ * Allowed frontmatter: metadata, uri, aliases
  */
 export interface Exo003AnchorMetadata extends Exo003BaseMetadata {
   metadata: Exo003MetadataType.Anchor;
 
-  /** The local name within the namespace (e.g., "Person", "Task") */
-  localName: string;
-
-  /** Human-readable label for this anchor */
-  label?: string;
+  /** The full URI for this anchor resource */
+  uri: string;
 }
 
 /**
  * Metadata for blank node files (anonymous resources).
  * Represents a resource without a global identifier.
  *
- * Allowed frontmatter: metadata, id, label, aliases
+ * Allowed frontmatter: metadata, uri, aliases
  */
 export interface Exo003BlankNodeMetadata extends Exo003BaseMetadata {
   metadata: Exo003MetadataType.BlankNode;
 
-  /** The blank node identifier (local to this knowledge base) */
-  id: string;
-
-  /** Human-readable label for this blank node */
-  label?: string;
+  /** The URI for this blank node (e.g., blank node identifier in URI form) */
+  uri: string;
 }
 
 /**
@@ -138,10 +134,13 @@ export interface Exo003StatementMetadata extends Exo003BaseMetadata {
 
 /**
  * Metadata for body files (literal content).
- * Contains textual content and optional language/datatype information.
+ * Contains textual content in the markdown body.
  *
- * Allowed frontmatter: metadata, subject, predicate, aliases, datatype, language, direction
+ * Allowed frontmatter: metadata, subject, predicate, aliases
  * The actual content is in the markdown body after frontmatter.
+ *
+ * Note: Language/datatype are derived from TBox (rdfs:range), not stored in frontmatter.
+ * Default language is @ru per specification.
  */
 export interface Exo003BodyMetadata extends Exo003BaseMetadata {
   metadata: Exo003MetadataType.Body;
@@ -151,15 +150,6 @@ export interface Exo003BodyMetadata extends Exo003BaseMetadata {
 
   /** Reference to the predicate this body is the value of */
   predicate: string;
-
-  /** The XSD datatype URI (if typed literal) */
-  datatype?: string;
-
-  /** Language tag (if language-tagged string, defaults to "ru") */
-  language?: string;
-
-  /** Base direction for bidirectional text ("ltr" or "rtl") */
-  direction?: "ltr" | "rtl";
 }
 
 /**
@@ -176,7 +166,8 @@ export type Exo003Metadata =
  * Allowed frontmatter properties for each metadata type.
  * Properties not in this list are forbidden and should trigger validation errors.
  *
- * Note: Uses minimal short property names per specification.
+ * Strict allowlist from specification:
+ * Only `metadata`, `uri`, `aliases`, `subject`, `predicate`, `object` are allowed.
  */
 export const ALLOWED_PROPERTIES: Record<Exo003MetadataType, readonly string[]> = {
   [Exo003MetadataType.Namespace]: [
@@ -187,15 +178,13 @@ export const ALLOWED_PROPERTIES: Record<Exo003MetadataType, readonly string[]> =
 
   [Exo003MetadataType.Anchor]: [
     "metadata",
-    "localName",
-    "label",
+    "uri",
     "aliases",
   ] as const,
 
   [Exo003MetadataType.BlankNode]: [
     "metadata",
-    "id",
-    "label",
+    "uri",
     "aliases",
   ] as const,
 
@@ -211,9 +200,6 @@ export const ALLOWED_PROPERTIES: Record<Exo003MetadataType, readonly string[]> =
     "metadata",
     "subject",
     "predicate",
-    "datatype",
-    "language",
-    "direction",
     "aliases",
   ] as const,
 };
@@ -221,8 +207,10 @@ export const ALLOWED_PROPERTIES: Record<Exo003MetadataType, readonly string[]> =
 /**
  * Required frontmatter properties for each metadata type.
  *
- * Note: Uses minimal short property names per specification.
- * uid and createdAt are NOT required in frontmatter - they are stored as statements.
+ * Strict requirements from specification:
+ * - namespace, anchor, blank_node: metadata, uri
+ * - statement: metadata, subject, predicate, object
+ * - body: metadata, subject, predicate
  */
 export const REQUIRED_PROPERTIES: Record<Exo003MetadataType, readonly string[]> = {
   [Exo003MetadataType.Namespace]: [
@@ -232,12 +220,12 @@ export const REQUIRED_PROPERTIES: Record<Exo003MetadataType, readonly string[]> 
 
   [Exo003MetadataType.Anchor]: [
     "metadata",
-    "localName",
+    "uri",
   ] as const,
 
   [Exo003MetadataType.BlankNode]: [
     "metadata",
-    "id",
+    "uri",
   ] as const,
 
   [Exo003MetadataType.Statement]: [

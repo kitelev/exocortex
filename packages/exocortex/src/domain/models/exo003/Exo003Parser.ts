@@ -10,6 +10,7 @@ import {
   REQUIRED_PROPERTIES,
   DEFAULT_LANGUAGE_TAG,
 } from "./types";
+// Note: DEFAULT_LANGUAGE_TAG is still used for toLiteral() when inferring language from TBox
 import { Exo003UUIDGenerator } from "./UUIDGenerator";
 import { IRI } from "../rdf/IRI";
 import { Literal, createDirectionalLiteral } from "../rdf/Literal";
@@ -194,16 +195,14 @@ export class Exo003Parser {
         return {
           ...base,
           metadata: Exo003MetadataType.Anchor,
-          localName: frontmatter["localName"] as string,
-          label: frontmatter["label"] as string | undefined,
+          uri: frontmatter["uri"] as string,
         } satisfies Exo003AnchorMetadata;
 
       case Exo003MetadataType.BlankNode:
         return {
           ...base,
           metadata: Exo003MetadataType.BlankNode,
-          id: frontmatter["id"] as string,
-          label: frontmatter["label"] as string | undefined,
+          uri: frontmatter["uri"] as string,
         } satisfies Exo003BlankNodeMetadata;
 
       case Exo003MetadataType.Statement:
@@ -221,9 +220,6 @@ export class Exo003Parser {
           metadata: Exo003MetadataType.Body,
           subject: frontmatter["subject"] as string,
           predicate: frontmatter["predicate"] as string,
-          datatype: frontmatter["datatype"] as string | undefined,
-          language: frontmatter["language"] as string | undefined,
-          direction: frontmatter["direction"] as "ltr" | "rtl" | undefined,
         } satisfies Exo003BodyMetadata;
     }
   }
@@ -255,12 +251,16 @@ export class Exo003Parser {
     frontmatter: Record<string, unknown>,
     errors: string[]
   ): void {
-    const localName = frontmatter["localName"];
+    const uri = frontmatter["uri"];
 
-    if (localName !== undefined && localName !== null && typeof localName !== "string") {
-      errors.push("localName must be a string");
-    } else if (typeof localName === "string" && localName.trim().length === 0) {
-      errors.push("localName cannot be empty");
+    if (uri && typeof uri !== "string") {
+      errors.push("uri must be a string");
+    } else if (uri) {
+      try {
+        new IRI(uri as string);
+      } catch {
+        errors.push(`uri is not a valid IRI: ${String(uri)}`);
+      }
     }
   }
 
@@ -271,12 +271,16 @@ export class Exo003Parser {
     frontmatter: Record<string, unknown>,
     errors: string[]
   ): void {
-    const id = frontmatter["id"];
+    const uri = frontmatter["uri"];
 
-    if (id !== undefined && id !== null && typeof id !== "string") {
-      errors.push("id must be a string");
-    } else if (typeof id === "string" && id.trim().length === 0) {
-      errors.push("id cannot be empty");
+    if (uri && typeof uri !== "string") {
+      errors.push("uri must be a string");
+    } else if (uri) {
+      try {
+        new IRI(uri as string);
+      } catch {
+        errors.push(`uri is not a valid IRI: ${String(uri)}`);
+      }
     }
   }
 
@@ -306,45 +310,24 @@ export class Exo003Parser {
 
   /**
    * Validate body-specific properties.
+   *
+   * Per specification, body only has: metadata, subject, predicate, aliases
+   * No datatype/language/direction in frontmatter - these are derived from TBox.
    */
   private static validateBodyMetadata(
     frontmatter: Record<string, unknown>,
     errors: string[],
-    warnings: string[]
+    _warnings: string[]
   ): void {
-    const datatype = frontmatter["datatype"];
-    const language = frontmatter["language"];
-    const direction = frontmatter["direction"];
+    const subject = frontmatter["subject"];
+    const predicate = frontmatter["predicate"];
 
-    // Cannot have both datatype and language
-    if (datatype && language) {
-      errors.push("Body cannot have both datatype and language");
+    // Subject and predicate should be wikilinks or URIs
+    if (subject && typeof subject !== "string") {
+      errors.push("subject must be a string");
     }
-
-    // Direction requires language
-    if (direction && !language) {
-      errors.push("direction requires language to be set");
-    }
-
-    // Validate direction value
-    if (direction && direction !== "ltr" && direction !== "rtl") {
-      errors.push('direction must be "ltr" or "rtl"');
-    }
-
-    // Validate datatype is a valid IRI
-    if (datatype && typeof datatype === "string") {
-      try {
-        new IRI(datatype);
-      } catch {
-        errors.push(`datatype is not a valid IRI: ${datatype}`);
-      }
-    }
-
-    // Warn if no language or datatype (will use default language)
-    if (!datatype && !language) {
-      warnings.push(
-        `No language or datatype specified. Will use default language tag: @${DEFAULT_LANGUAGE_TAG}`
-      );
+    if (predicate && typeof predicate !== "string") {
+      errors.push("predicate must be a string");
     }
   }
 
@@ -409,17 +392,25 @@ export class Exo003Parser {
   /**
    * Create a Literal from Exo 0.0.3 body metadata.
    *
-   * @param metadata - The body metadata
+   * Per specification, language/datatype are derived from TBox (rdfs:range),
+   * not stored in frontmatter. Default language is @ru.
+   *
+   * @param _metadata - The body metadata (used for future TBox lookup)
    * @param content - The literal content from the file body
+   * @param options - Optional language/datatype from TBox lookup
    * @returns A Literal with appropriate language/datatype
    */
-  static toLiteral(metadata: Exo003BodyMetadata, content: string): Literal {
-    if (metadata.datatype) {
-      return new Literal(content, new IRI(metadata.datatype));
+  static toLiteral(
+    _metadata: Exo003BodyMetadata,
+    content: string,
+    options?: { language?: string; datatype?: string; direction?: "ltr" | "rtl" }
+  ): Literal {
+    if (options?.datatype) {
+      return new Literal(content, new IRI(options.datatype));
     }
 
-    const language = metadata.language || DEFAULT_LANGUAGE_TAG;
-    return createDirectionalLiteral(content, language, metadata.direction);
+    const language = options?.language || DEFAULT_LANGUAGE_TAG;
+    return createDirectionalLiteral(content, language, options?.direction);
   }
 
   /**
@@ -440,10 +431,10 @@ export class Exo003Parser {
    * Generate deterministic UUID for metadata.
    *
    * @param metadata - The metadata to generate UUID for
-   * @param namespaceUri - The namespace URI for anchors
+   * @param _namespaceUri - Deprecated, namespace now derived from uri property
    * @returns Generated UUID
    */
-  static generateUUID(metadata: Exo003Metadata, namespaceUri?: string): string {
+  static generateUUID(metadata: Exo003Metadata, _namespaceUri?: string): string {
     switch (metadata.metadata) {
       case Exo003MetadataType.Namespace:
         return Exo003UUIDGenerator.generateNamespaceUUID(
@@ -451,17 +442,15 @@ export class Exo003Parser {
         );
 
       case Exo003MetadataType.Anchor:
-        if (!namespaceUri) {
-          throw new Error("Namespace URI required for anchor UUID generation");
-        }
-        return Exo003UUIDGenerator.generateAssetUUID(
-          namespaceUri,
-          (metadata as Exo003AnchorMetadata).localName
+        // Anchor has full URI, extract local name from it
+        return Exo003UUIDGenerator.generateNamespaceUUID(
+          (metadata as Exo003AnchorMetadata).uri
         );
 
       case Exo003MetadataType.BlankNode:
-        return Exo003UUIDGenerator.generateBlankNodeUUID(
-          (metadata as Exo003BlankNodeMetadata).id
+        // Blank node has full URI
+        return Exo003UUIDGenerator.generateNamespaceUUID(
+          (metadata as Exo003BlankNodeMetadata).uri
         );
 
       case Exo003MetadataType.Statement: {
@@ -475,11 +464,8 @@ export class Exo003Parser {
 
       case Exo003MetadataType.Body: {
         const body = metadata as Exo003BodyMetadata;
-        return Exo003UUIDGenerator.generateBodyUUID("", {
-          language: body.language,
-          direction: body.direction,
-          datatype: body.datatype,
-        });
+        // Body UUID based on subject + predicate per spec
+        return Exo003UUIDGenerator.generateBodyUUID(body.subject + "|" + body.predicate);
       }
     }
   }
