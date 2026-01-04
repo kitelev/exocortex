@@ -304,6 +304,86 @@ describe("PropertiesLinkPatch", () => {
     });
   });
 
+  describe("text wrapper span handling", () => {
+    it("should not duplicate text when link contains a text wrapper span (issue #1349)", () => {
+      // Simulate Obsidian wrapping link text in a span (e.g., <span class="link-text">UUID</span>)
+      mockLink.innerHTML = "";
+      const textSpan = document.createElement("span");
+      textSpan.className = "link-text";
+      textSpan.textContent = "f2dccb6a-802d-48d3-8e8a-2c4264197692";
+      mockLink.appendChild(textSpan);
+
+      const mockFile = new TFile();
+      Object.defineProperty(mockFile, "extension", { value: "md" });
+      Object.defineProperty(mockFile, "basename", { value: "f2dccb6a-802d-48d3-8e8a-2c4264197692" });
+      Object.defineProperty(mockFile, "stat", {
+        value: { ctime: Date.now() },
+      });
+
+      mockApp.metadataCache.getFirstLinkpathDest.mockReturnValue(mockFile);
+      mockApp.metadataCache.getFileCache.mockReturnValue({
+        frontmatter: {
+          exo__Asset_label: "Заполнить таблетницу",
+          exo__Instance_class: "TaskPrototype",
+        },
+      });
+
+      patch.enable();
+
+      // Bug #1349: Previously this would result in
+      // "Заполнить таблетницу (TaskPrototype) f2dccb6a-802d-48d3-8e8a-2c4264197692"
+      // because the span was preserved and re-appended
+      expect(mockLink.textContent).toBe("Заполнить таблетницу (TaskPrototype)");
+
+      // The text wrapper span should NOT be preserved (only interactive elements like delete buttons)
+      const preservedSpan = mockLink.querySelector(".link-text");
+      expect(preservedSpan).toBeNull();
+    });
+
+    it("should not preserve generic span elements as text wrappers", () => {
+      // Create a link with both a text wrapper span and a delete button
+      mockLink.innerHTML = "";
+      const textSpan = document.createElement("span");
+      textSpan.className = "some-text-wrapper";
+      textSpan.textContent = "uuid-text";
+      mockLink.appendChild(textSpan);
+
+      const deleteButton = document.createElement("span");
+      deleteButton.className = "multi-select-pill-remove-button";
+      deleteButton.textContent = "×";
+      mockLink.appendChild(deleteButton);
+
+      const mockFile = new TFile();
+      Object.defineProperty(mockFile, "extension", { value: "md" });
+      Object.defineProperty(mockFile, "basename", { value: "test-file" });
+      Object.defineProperty(mockFile, "stat", {
+        value: { ctime: Date.now() },
+      });
+
+      mockApp.metadataCache.getFirstLinkpathDest.mockReturnValue(mockFile);
+      mockApp.metadataCache.getFileCache.mockReturnValue({
+        frontmatter: {
+          exo__Asset_label: "Test Label",
+          exo__Instance_class: "ems__Task",
+        },
+      });
+
+      patch.enable();
+
+      // Text should be updated (no duplication from text wrapper)
+      expect(mockLink.textContent).toBe("Test Label (ems__Task)×");
+
+      // Text wrapper should NOT be preserved
+      const preservedTextSpan = mockLink.querySelector(".some-text-wrapper");
+      expect(preservedTextSpan).toBeNull();
+
+      // Delete button SHOULD be preserved
+      const preservedButton = mockLink.querySelector(".multi-select-pill-remove-button");
+      expect(preservedButton).not.toBeNull();
+      expect(preservedButton?.textContent).toBe("×");
+    });
+  });
+
   describe("multi-select pill handling", () => {
     it("should patch links inside multi-select-pill-content", () => {
       // Create multi-select pill structure
