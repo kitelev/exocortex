@@ -4870,3 +4870,602 @@ class AssetLinkCache {
 ### Reference
 
 - Issue #1334 - Body content link replacement (December 30, 2025, 77 steps)
+
+---
+
+## Spec-First Implementation Pattern
+
+**When to use**: Implementing features that must conform to an approved specification
+
+### Pattern Description
+
+When implementing features based on external specifications (file formats, protocols, data schemas), always:
+1. Read the specification FIRST (before writing any code)
+2. Identify the STRICT allowlist of allowed properties/fields
+3. Implement validation that REJECTS forbidden elements
+4. Test compliance BEFORE implementing logic
+
+### Real-World Example: Exo 0.0.3 File Format (Issues #1351, #1353, #1361)
+
+**Problem**: Initial implementation (PR #1352) deviated from specification:
+- Used `exo__metadataType` instead of `metadata`
+- Added `localName`, `label`, `id` properties (forbidden)
+- Included `datatype`, `language`, `direction` in body files (forbidden)
+
+**Result**: Three sequential PRs needed to align with spec:
+1. PR #1351 - Initial implementation (deviated from spec)
+2. PR #1360 - First alignment fix (#1353)
+3. PR #1363 - Second alignment fix (#1361)
+
+**Total effort**: ~450 steps across 3 issues (vs estimated ~150 steps if spec-first)
+
+### Correct Implementation Approach
+
+```typescript
+// Step 1: Define STRICT allowlist from specification
+export const ALLOWED_PROPERTIES: Record<MetadataType, readonly string[]> = {
+  namespace: ["metadata", "uri", "aliases"] as const,
+  anchor: ["metadata", "uri", "aliases"] as const,
+  blank_node: ["metadata", "uri", "aliases"] as const,
+  statement: ["metadata", "subject", "predicate", "object", "aliases"] as const,
+  body: ["metadata", "subject", "predicate", "aliases"] as const,
+};
+
+// Step 2: Validator REJECTS forbidden properties
+export function validateFrontmatter(
+  type: MetadataType,
+  frontmatter: Record<string, unknown>
+): ValidationResult {
+  const allowed = new Set(ALLOWED_PROPERTIES[type]);
+
+  for (const key of Object.keys(frontmatter)) {
+    if (!allowed.has(key)) {
+      return {
+        valid: false,
+        error: `Forbidden property "${key}". Allowed: ${Array.from(allowed).join(", ")}`
+      };
+    }
+  }
+
+  // Continue with required property validation...
+  return { valid: true };
+}
+```
+
+### Pre-Implementation Checklist
+
+- [ ] **Read specification document** (located in vault, docs/, or external source)
+- [ ] **Extract exact property names** (copy-paste, don't interpret)
+- [ ] **Define ALLOWED_PROPERTIES constant** (strict allowlist)
+- [ ] **Define REQUIRED_PROPERTIES constant** (minimum required)
+- [ ] **Implement validator FIRST** (before any parsing logic)
+- [ ] **Write rejection tests** (test that forbidden properties fail)
+- [ ] **Verify interface names match spec** (metadata, not metadataType)
+
+### Anti-Pattern: Implementation-First
+
+```typescript
+// ❌ WRONG: Adding properties "because they seem useful"
+interface AnchorMetadata {
+  metadata: "anchor";
+  uri: string;
+  localName: string;  // ❌ Not in spec - added for convenience
+  label?: string;     // ❌ Not in spec - "makes sense"
+}
+```
+
+### Why This Matters
+
+- **Spec compliance**: External systems expect exact format
+- **Migration burden**: Non-compliant files need migration
+- **Trust**: Users expect documented format to work
+- **Time**: Fix-then-fix-again costs 3x original effort
+
+### Key Insight
+
+**If specification says "ONLY these properties", treat everything else as FORBIDDEN, not optional.**
+
+**Reference**: Issues #1351, #1353, #1361 - Exo 0.0.3 implementation (January 2026)
+
+---
+
+## Frontmatter Empty Array Handling Pattern
+
+**When to use**: Processing frontmatter properties that may be empty arrays
+
+### Problem: YAML Empty Array Duplication
+
+When updating frontmatter, empty arrays can cause duplication:
+
+```yaml
+# Before rename operation
+---
+exo__Asset_uid: "test-uuid"
+aliases: []
+---
+
+# After rename (BUG): Duplicate property!
+---
+exo__Asset_uid: "new-uuid"
+aliases: []
+aliases:
+  - "new-alias"
+---
+```
+
+### Root Cause
+
+```typescript
+// ❌ WRONG: Merge without handling empty arrays
+async updateFrontmatter(file: TFile, updates: Record<string, any>) {
+  const existing = await this.read(file);
+  const merged = { ...existing, ...updates };
+  // Empty array in `existing` survives, new value appends
+  await this.write(file, merged);
+}
+```
+
+### Solution: Normalize Empty Arrays
+
+```typescript
+// ✅ CORRECT: Clean frontmatter before merge
+function cleanFrontmatter(fm: Record<string, any>): Record<string, any> {
+  return Object.fromEntries(
+    Object.entries(fm).filter(([_, value]) => {
+      // Remove empty arrays
+      if (Array.isArray(value) && value.length === 0) return false;
+      // Remove null/undefined
+      if (value === null || value === undefined) return false;
+      return true;
+    })
+  );
+}
+
+async updateFrontmatter(file: TFile, updates: Record<string, any>) {
+  const existing = await this.read(file);
+  const cleaned = cleanFrontmatter(existing);
+  const merged = { ...cleaned, ...updates };
+  await this.write(file, merged);
+}
+```
+
+### Alternative: Deep Merge with Override
+
+```typescript
+function mergeFrontmatter(
+  existing: Record<string, any>,
+  updates: Record<string, any>
+): Record<string, any> {
+  const result: Record<string, any> = {};
+  const allKeys = new Set([...Object.keys(existing), ...Object.keys(updates)]);
+
+  for (const key of allKeys) {
+    if (key in updates) {
+      // Update takes precedence - use new value
+      result[key] = updates[key];
+    } else if (key in existing) {
+      const value = existing[key];
+      // Only keep non-empty arrays
+      if (!Array.isArray(value) || value.length > 0) {
+        result[key] = value;
+      }
+    }
+  }
+
+  return result;
+}
+```
+
+### Test Cases to Cover
+
+```typescript
+describe("Frontmatter merge", () => {
+  it("should not duplicate empty aliases property", async () => {
+    const existing = { aliases: [], label: "Test" };
+    const updates = { aliases: ["new-alias"] };
+    const result = mergeFrontmatter(existing, updates);
+
+    const aliasKeys = Object.keys(result).filter(k => k === "aliases");
+    expect(aliasKeys.length).toBe(1);
+    expect(result.aliases).toEqual(["new-alias"]);
+  });
+
+  it("should remove empty arrays when no update provided", () => {
+    const existing = { aliases: [], label: "Test" };
+    const updates = { label: "Updated" };
+    const result = mergeFrontmatter(existing, updates);
+
+    expect(result.aliases).toBeUndefined();
+  });
+
+  it("should preserve non-empty arrays", () => {
+    const existing = { aliases: ["existing"], label: "Test" };
+    const updates = { label: "Updated" };
+    const result = mergeFrontmatter(existing, updates);
+
+    expect(result.aliases).toEqual(["existing"]);
+  });
+});
+```
+
+### When This Applies
+
+- **Rename commands**: Asset rename, UID rename
+- **Property updates**: Any frontmatter modification
+- **Import/migration**: Batch property changes
+- **Any operation using spread operator on frontmatter**
+
+**Reference**: Issue #1347 - Rename to UID duplicates empty aliases (January 2026, 55 steps)
+
+---
+
+## Regression Detection Pattern
+
+**When to use**: Fixing bugs introduced by recent changes
+
+### Pattern Description
+
+When a bug is reported, first identify if it's a regression (worked before, broke after a recent change).
+
+### Investigation Workflow
+
+```bash
+# 1. Find when the bug was introduced
+git log --oneline --all -- "path/to/affected/file.ts" | head -20
+
+# 2. Identify suspect commits
+git show <commit-hash> --stat
+
+# 3. Check if feature worked in previous version
+git checkout <previous-commit>
+npm run test -- affected.test.ts
+
+# 4. Confirm regression
+git checkout main
+npm run test -- affected.test.ts  # Should fail
+```
+
+### Real-World Example: Link Text Duplication (Issue #1349)
+
+**Symptom**: Properties block shows duplicated text like `Label UUID` instead of just `Label`
+
+**Investigation**:
+```bash
+# Recent commits to PropertiesLinkPatch.ts
+git log --oneline -5 -- src/presentation/properties/PropertiesLinkPatch.ts
+# Found: commit 500b7b50 (#1338) added delete button preservation
+```
+
+**Root Cause**: New code preserved ALL child elements, including text wrapper spans:
+
+```typescript
+// ❌ BUGGY: Preserves text spans that shouldn't be re-appended
+private setTextContentPreservingChildren(el: HTMLElement, text: string): void {
+  const childElements: Element[] = [];
+  for (const node of Array.from(el.childNodes)) {
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      childElements.push(node as Element);  // Preserves EVERYTHING
+    }
+  }
+  el.textContent = text;
+  childElements.forEach(child => el.appendChild(child));  // Duplicates text!
+}
+```
+
+**Fix**: Filter to only preserve interactive elements:
+
+```typescript
+// ✅ FIXED: Only preserve buttons, not text wrappers
+private setTextContentPreservingChildren(el: HTMLElement, text: string): void {
+  const childElements: Element[] = [];
+  for (const node of Array.from(el.childNodes)) {
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      const element = node as Element;
+      // Only preserve interactive elements
+      if (element.classList?.contains('multi-select-pill-remove-button') ||
+          element.tagName === 'BUTTON' ||
+          element.getAttribute('aria-label') === 'Remove') {
+        childElements.push(element);
+      }
+    }
+  }
+  el.textContent = text;
+  childElements.forEach(child => el.appendChild(child));
+}
+```
+
+### Regression Test Pattern
+
+Always add a regression test that would have caught the bug:
+
+```typescript
+describe("PropertiesLinkPatch", () => {
+  it("should not duplicate text when Obsidian wraps in span", () => {
+    // Setup: Simulate Obsidian's rendering with span wrapper
+    const link = document.createElement("a");
+    link.innerHTML = '<span class="link-text">UUID-123</span>';
+
+    // Act: Apply label transformation
+    patch.setTextContentPreservingChildren(link, "Display Label");
+
+    // Assert: No duplication
+    expect(link.textContent).toBe("Display Label");
+    expect(link.textContent).not.toContain("UUID");
+  });
+});
+```
+
+### Regression PR Checklist
+
+- [ ] Identified commit that introduced regression
+- [ ] Documented root cause in PR description
+- [ ] Added regression test that would have caught it
+- [ ] Verified fix doesn't break the original feature (#1338)
+- [ ] Cross-referenced original PR in commit message
+
+**Reference**: Issue #1349 - Link text duplication regression from #1338 (January 2026, 39 steps)
+
+---
+
+## Iterative Spec Alignment Pattern
+
+**When to use**: When initial implementation deviates from specification and requires multiple fixes
+
+### Pattern Description
+
+When specification compliance fails on first attempt, use iterative refinement with clear documentation of what was wrong and why.
+
+### Real-World Example: Exo 0.0.3 (Issues #1353 → #1361)
+
+**Timeline**:
+1. **PR #1352**: Initial implementation (deviated significantly)
+2. **Issue #1353** → **PR #1360**: First alignment (266 steps)
+   - Changed `exo__metadataType` → `metadata`
+   - Changed `exo__Statement_*` → `subject`, `predicate`, `object`
+   - But still had `localName`, `label`, `datatype` errors
+3. **Issue #1361** → **PR #1363**: Second alignment (101 steps)
+   - Anchor: `localName` → `uri`
+   - BlankNode: `id` → `uri`
+   - Body: removed `datatype`, `language`, `direction`
+
+**Key Insight**: Each fix revealed MORE deviations because the spec wasn't read as "strict allowlist"
+
+### Preventing Iteration
+
+**Before implementation:**
+```typescript
+// Create exhaustive test for EVERY forbidden property
+const FORBIDDEN_PROPERTIES_BY_TYPE = {
+  anchor: ["localName", "label", "id", "datatype", "language", "direction"],
+  blank_node: ["localName", "label", "datatype", "language", "direction"],
+  body: ["object", "datatype", "language", "direction"],
+  // ... etc
+};
+
+describe("Strict allowlist validation", () => {
+  for (const [type, forbidden] of Object.entries(FORBIDDEN_PROPERTIES_BY_TYPE)) {
+    for (const prop of forbidden) {
+      it(`should reject ${type} with forbidden property "${prop}"`, () => {
+        const frontmatter = { metadata: type, uri: "test://", [prop]: "value" };
+        expect(() => validate(frontmatter)).toThrow(`Forbidden property: ${prop}`);
+      });
+    }
+  }
+});
+```
+
+### Iteration Documentation
+
+When iteration IS needed, document clearly:
+
+```markdown
+## Why This Follow-Up Is Needed
+
+PR #1360 fixed primary issues but missed:
+1. **Anchor**: Still used `localName` (spec says `uri`)
+2. **Body**: Still had `datatype`/`language` (spec says none)
+
+## What Spec Actually Says
+
+> **ONLY these properties allowed:** metadata, uri, aliases, subject, predicate, object
+
+This is a STRICT allowlist. NOTHING else is permitted.
+```
+
+### Anti-Pattern: Partial Fixes
+
+```typescript
+// ❌ WRONG: Fixing only what's obviously broken
+if (prop === "exo__metadataType") {
+  // Fix this one
+} else {
+  // Leave other deviations for "later"
+}
+```
+
+### Correct Approach: Complete Audit
+
+```typescript
+// ✅ CORRECT: Check ALL properties against spec
+const specAllowed = new Set(["metadata", "uri", "aliases", "subject", "predicate", "object"]);
+const actual = Object.keys(currentImplementation.interface);
+
+const violations = actual.filter(prop => !specAllowed.has(prop));
+if (violations.length > 0) {
+  throw new Error(`Spec violations found: ${violations.join(", ")}`);
+}
+```
+
+### Metrics
+
+| Approach | PRs Required | Total Steps | Time |
+|----------|--------------|-------------|------|
+| Spec-first (ideal) | 1 | ~150 | 2-3 hours |
+| Iterative (actual) | 3 | ~450 | 8-10 hours |
+| Overhead | +2 PRs | +300 steps | +6 hours |
+
+**Reference**: Issues #1353, #1361 - Exo 0.0.3 iterative alignment (January 2026)
+
+---
+
+## Research-to-Decision Pattern
+
+**When to use**: Evaluating options (libraries, models, architectures) before implementation
+
+### Pattern Description
+
+Research tasks should produce:
+1. Clear comparison criteria
+2. Benchmark methodology
+3. Decision rationale
+4. Documentation for future reference
+
+### Real-World Example: Embedding Model Selection (Issue #1354)
+
+**Task**: Select embedding model for semantic search
+
+**Output Structure**:
+```markdown
+## docs/semantic-search/EMBEDDING-MODEL-SELECTION.md
+
+### Evaluation Criteria
+1. Privacy (local vs API-based)
+2. Performance (inference speed)
+3. Quality (semantic similarity accuracy)
+4. Size (model file size, memory usage)
+
+### Candidates Evaluated
+| Model | Local | Speed | Quality | Size |
+|-------|-------|-------|---------|------|
+| all-MiniLM-L6-v2 | ✅ | Fast | Good | 22MB |
+| bge-small-en | ✅ | Fast | Better | 33MB |
+| nomic-embed-text | ✅ | Medium | Best | 274MB |
+| OpenAI ada-002 | ❌ | Fast | Best | API |
+
+### Decision
+Selected: **nomic-embed-text**
+- Reason: Best quality while remaining local
+- Tradeoff: Larger size acceptable for quality gain
+
+### Benchmark Framework
+See BENCHMARK-FRAMEWORK.md for reproducible evaluation methodology.
+```
+
+### Research Task Deliverables
+
+1. **Comparison table**: Side-by-side metrics
+2. **Benchmark code**: Reproducible tests
+3. **Decision document**: Why chosen option is best
+4. **README**: Quick start for using selected solution
+
+### Directory Structure
+
+```
+docs/{feature-name}/
+├── README.md                     # Quick overview and usage
+├── {TOPIC}-SELECTION.md          # Decision rationale
+├── BENCHMARK-FRAMEWORK.md        # How to evaluate
+└── examples/                     # Sample usage
+```
+
+### Research vs Implementation Time
+
+| Phase | Effort | Value |
+|-------|--------|-------|
+| Research | 30% | High (prevents wrong choices) |
+| Documentation | 20% | High (enables future decisions) |
+| Implementation | 50% | Depends on research quality |
+
+**Reference**: Issue #1354 - Embedding model research (January 2026, 59 steps)
+
+---
+
+## Semantic Physics Integration Pattern
+
+**When to use**: Implementing physics-based layout algorithms that respond to semantic relationships
+
+### Pattern Description
+
+Force-directed layouts can be enhanced with "semantic physics" where RDF/OWL relationships influence force calculations.
+
+### Core Interface
+
+```typescript
+interface SemanticForceConfig {
+  predicate: string;
+  attractionMultiplier: number;  // 1.0 = default
+  repulsionMultiplier: number;   // 1.0 = default
+}
+
+const SEMANTIC_FORCES: SemanticForceConfig[] = [
+  // Hierarchy: children cluster under parents
+  { predicate: "rdfs:subClassOf", attractionMultiplier: 2.0, repulsionMultiplier: 0.5 },
+
+  // Prototypes: instances near their templates
+  { predicate: "exo:Asset_prototype", attractionMultiplier: 1.8, repulsionMultiplier: 0.6 },
+
+  // Parts: components stay near containers
+  { predicate: "dcterms:isPartOf", attractionMultiplier: 1.5, repulsionMultiplier: 0.8 },
+
+  // Disjoint: incompatible concepts separate
+  { predicate: "owl:disjointWith", attractionMultiplier: 0.3, repulsionMultiplier: 3.0 },
+];
+```
+
+### Implementation
+
+```typescript
+class SemanticPhysicsEngine {
+  constructor(private config: SemanticForceConfig[]) {}
+
+  getForceModifier(edge: GraphEdge): { attraction: number; repulsion: number } {
+    const config = this.config.find(c => c.predicate === edge.predicate);
+
+    return config
+      ? { attraction: config.attractionMultiplier, repulsion: config.repulsionMultiplier }
+      : { attraction: 1.0, repulsion: 1.0 };  // Default: no modification
+  }
+
+  applyToForceLayout(layout: ForceDirectedLayout, edges: GraphEdge[]): void {
+    for (const edge of edges) {
+      const modifier = this.getForceModifier(edge);
+      layout.setEdgeAttraction(edge.id, modifier.attraction);
+      layout.setNodeRepulsion(edge.source, edge.target, modifier.repulsion);
+    }
+  }
+}
+```
+
+### Edge Cases
+
+1. **Circular hierarchies**: `rdfs:subClassOf` loops → cap recursion depth
+2. **Conflicting forces**: Same edge has multiple predicates → use highest priority
+3. **Performance**: Cache force modifiers per edge, don't recalculate each frame
+4. **Extreme values**: Validate multipliers in range [0.1, 5.0] to prevent overlaps
+
+### Testing
+
+```typescript
+describe("SemanticPhysicsEngine", () => {
+  it("should cluster children under parents", () => {
+    const engine = new SemanticPhysicsEngine(SEMANTIC_FORCES);
+    const edge = { predicate: "rdfs:subClassOf", source: "child", target: "parent" };
+
+    const modifier = engine.getForceModifier(edge);
+
+    expect(modifier.attraction).toBe(2.0);
+    expect(modifier.repulsion).toBe(0.5);
+  });
+
+  it("should separate disjoint classes", () => {
+    const engine = new SemanticPhysicsEngine(SEMANTIC_FORCES);
+    const edge = { predicate: "owl:disjointWith", source: "classA", target: "classB" };
+
+    const modifier = engine.getForceModifier(edge);
+
+    expect(modifier.repulsion).toBe(3.0);
+  });
+});
+```
+
+**Reference**: Issue #1345 - Semantic Physics implementation (January 2026, 292 steps)
