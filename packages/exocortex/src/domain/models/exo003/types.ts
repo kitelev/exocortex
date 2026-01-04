@@ -7,6 +7,19 @@
  * - Conflict-free collaboration - Multiple users can modify different aspects simultaneously
  * - Clear semantic structure - File type determines RDF meaning
  * - Optimized for Obsidian - Native integration with vault file system
+ *
+ * ## Minimal Frontmatter Specification
+ *
+ * Each file type has a strict allowlist of frontmatter properties:
+ *
+ * - **namespace**: `metadata`, `uri`, `aliases`
+ * - **statement**: `metadata`, `subject`, `predicate`, `object`, `aliases`
+ * - **body**: `metadata`, `subject`, `predicate`, `aliases` (content in markdown body)
+ * - **anchor**: `metadata`, `localName`, `label`, `aliases`
+ * - **blank_node**: `metadata`, `id`, `label`, `aliases`
+ *
+ * Properties like `uid` and `createdAt` are stored as RDF statements,
+ * not in frontmatter, to maintain semantic consistency.
  */
 
 /**
@@ -47,95 +60,106 @@ export enum Exo003MetadataType {
 
 /**
  * Base interface for all Exo 0.0.3 file metadata.
+ *
+ * Note: uid and createdAt are NOT stored in frontmatter per specification.
+ * They should be stored as RDF statements linking to the file.
  */
 export interface Exo003BaseMetadata {
-  /** Unique identifier for this file (UUID v5) */
-  exo__Asset_uid: string;
-
-  /** Creation timestamp in local format (YYYY-MM-DDTHH:mm:ss) */
-  exo__Asset_createdAt: string;
-
   /** The metadata type determining how this file is interpreted */
-  exo__metadataType: Exo003MetadataType;
+  metadata: Exo003MetadataType;
 
-  /** Reference to the namespace this asset belongs to */
-  exo__Asset_isDefinedBy?: string;
+  /** Obsidian aliases for this file (optional) */
+  aliases?: string[];
 }
 
 /**
  * Metadata for namespace files.
  * Defines prefix-to-URI mappings for the knowledge base.
+ *
+ * Allowed frontmatter: metadata, uri, aliases
  */
 export interface Exo003NamespaceMetadata extends Exo003BaseMetadata {
-  exo__metadataType: Exo003MetadataType.Namespace;
-
-  /** The namespace prefix (e.g., "exo", "ems", "foaf") */
-  exo__Namespace_prefix: string;
+  metadata: Exo003MetadataType.Namespace;
 
   /** The full URI for this namespace */
-  exo__Namespace_uri: string;
+  uri: string;
 }
 
 /**
  * Metadata for anchor files (named resources).
  * Represents a resource with a globally unique URI.
+ *
+ * Allowed frontmatter: metadata, localName, label, aliases
  */
 export interface Exo003AnchorMetadata extends Exo003BaseMetadata {
-  exo__metadataType: Exo003MetadataType.Anchor;
+  metadata: Exo003MetadataType.Anchor;
 
   /** The local name within the namespace (e.g., "Person", "Task") */
-  exo__Anchor_localName: string;
+  localName: string;
 
   /** Human-readable label for this anchor */
-  exo__Asset_label?: string;
+  label?: string;
 }
 
 /**
  * Metadata for blank node files (anonymous resources).
  * Represents a resource without a global identifier.
+ *
+ * Allowed frontmatter: metadata, id, label, aliases
  */
 export interface Exo003BlankNodeMetadata extends Exo003BaseMetadata {
-  exo__metadataType: Exo003MetadataType.BlankNode;
+  metadata: Exo003MetadataType.BlankNode;
 
   /** The blank node identifier (local to this knowledge base) */
-  exo__BlankNode_id: string;
+  id: string;
 
   /** Human-readable label for this blank node */
-  exo__Asset_label?: string;
+  label?: string;
 }
 
 /**
  * Metadata for statement files (RDF triples).
  * Represents a single subject-predicate-object triple.
+ *
+ * Allowed frontmatter: metadata, subject, predicate, object, aliases
  */
 export interface Exo003StatementMetadata extends Exo003BaseMetadata {
-  exo__metadataType: Exo003MetadataType.Statement;
+  metadata: Exo003MetadataType.Statement;
 
   /** Reference to the subject (anchor, blank node, or statement file) */
-  exo__Statement_subject: string;
+  subject: string;
 
   /** Reference to the predicate (anchor file representing a property) */
-  exo__Statement_predicate: string;
+  predicate: string;
 
   /** Reference to the object (anchor, blank node, statement, or body file) */
-  exo__Statement_object: string;
+  object: string;
 }
 
 /**
  * Metadata for body files (literal content).
  * Contains textual content and optional language/datatype information.
+ *
+ * Allowed frontmatter: metadata, subject, predicate, aliases, datatype, language, direction
+ * The actual content is in the markdown body after frontmatter.
  */
 export interface Exo003BodyMetadata extends Exo003BaseMetadata {
-  exo__metadataType: Exo003MetadataType.Body;
+  metadata: Exo003MetadataType.Body;
+
+  /** Reference to the subject this body belongs to */
+  subject: string;
+
+  /** Reference to the predicate this body is the value of */
+  predicate: string;
 
   /** The XSD datatype URI (if typed literal) */
-  exo__Body_datatype?: string;
+  datatype?: string;
 
   /** Language tag (if language-tagged string, defaults to "ru") */
-  exo__Body_language?: string;
+  language?: string;
 
   /** Base direction for bidirectional text ("ltr" or "rtl") */
-  exo__Body_direction?: "ltr" | "rtl";
+  direction?: "ltr" | "rtl";
 }
 
 /**
@@ -151,97 +175,82 @@ export type Exo003Metadata =
 /**
  * Allowed frontmatter properties for each metadata type.
  * Properties not in this list are forbidden and should trigger validation errors.
+ *
+ * Note: Uses minimal short property names per specification.
  */
 export const ALLOWED_PROPERTIES: Record<Exo003MetadataType, readonly string[]> = {
   [Exo003MetadataType.Namespace]: [
-    "exo__Asset_uid",
-    "exo__Asset_createdAt",
-    "exo__metadataType",
-    "exo__Asset_isDefinedBy",
-    "exo__Namespace_prefix",
-    "exo__Namespace_uri",
+    "metadata",
+    "uri",
+    "aliases",
   ] as const,
 
   [Exo003MetadataType.Anchor]: [
-    "exo__Asset_uid",
-    "exo__Asset_createdAt",
-    "exo__metadataType",
-    "exo__Asset_isDefinedBy",
-    "exo__Anchor_localName",
-    "exo__Asset_label",
+    "metadata",
+    "localName",
+    "label",
     "aliases",
   ] as const,
 
   [Exo003MetadataType.BlankNode]: [
-    "exo__Asset_uid",
-    "exo__Asset_createdAt",
-    "exo__metadataType",
-    "exo__Asset_isDefinedBy",
-    "exo__BlankNode_id",
-    "exo__Asset_label",
+    "metadata",
+    "id",
+    "label",
     "aliases",
   ] as const,
 
   [Exo003MetadataType.Statement]: [
-    "exo__Asset_uid",
-    "exo__Asset_createdAt",
-    "exo__metadataType",
-    "exo__Asset_isDefinedBy",
-    "exo__Statement_subject",
-    "exo__Statement_predicate",
-    "exo__Statement_object",
+    "metadata",
+    "subject",
+    "predicate",
+    "object",
+    "aliases",
   ] as const,
 
   [Exo003MetadataType.Body]: [
-    "exo__Asset_uid",
-    "exo__Asset_createdAt",
-    "exo__metadataType",
-    "exo__Asset_isDefinedBy",
-    "exo__Body_datatype",
-    "exo__Body_language",
-    "exo__Body_direction",
+    "metadata",
+    "subject",
+    "predicate",
+    "datatype",
+    "language",
+    "direction",
+    "aliases",
   ] as const,
 };
 
 /**
  * Required frontmatter properties for each metadata type.
+ *
+ * Note: Uses minimal short property names per specification.
+ * uid and createdAt are NOT required in frontmatter - they are stored as statements.
  */
 export const REQUIRED_PROPERTIES: Record<Exo003MetadataType, readonly string[]> = {
   [Exo003MetadataType.Namespace]: [
-    "exo__Asset_uid",
-    "exo__Asset_createdAt",
-    "exo__metadataType",
-    "exo__Namespace_prefix",
-    "exo__Namespace_uri",
+    "metadata",
+    "uri",
   ] as const,
 
   [Exo003MetadataType.Anchor]: [
-    "exo__Asset_uid",
-    "exo__Asset_createdAt",
-    "exo__metadataType",
-    "exo__Anchor_localName",
+    "metadata",
+    "localName",
   ] as const,
 
   [Exo003MetadataType.BlankNode]: [
-    "exo__Asset_uid",
-    "exo__Asset_createdAt",
-    "exo__metadataType",
-    "exo__BlankNode_id",
+    "metadata",
+    "id",
   ] as const,
 
   [Exo003MetadataType.Statement]: [
-    "exo__Asset_uid",
-    "exo__Asset_createdAt",
-    "exo__metadataType",
-    "exo__Statement_subject",
-    "exo__Statement_predicate",
-    "exo__Statement_object",
+    "metadata",
+    "subject",
+    "predicate",
+    "object",
   ] as const,
 
   [Exo003MetadataType.Body]: [
-    "exo__Asset_uid",
-    "exo__Asset_createdAt",
-    "exo__metadataType",
+    "metadata",
+    "subject",
+    "predicate",
   ] as const,
 };
 

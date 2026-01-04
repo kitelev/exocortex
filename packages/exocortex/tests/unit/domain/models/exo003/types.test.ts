@@ -31,46 +31,65 @@ describe("Exo003 Types", () => {
       expect(ALLOWED_PROPERTIES[Exo003MetadataType.Body]).toBeDefined();
     });
 
-    it("should include common base properties for all types", () => {
+    it("should include 'metadata' property for all types", () => {
       for (const type of Object.values(Exo003MetadataType)) {
         const props = ALLOWED_PROPERTIES[type];
-        expect(props).toContain("exo__Asset_uid");
-        expect(props).toContain("exo__Asset_createdAt");
-        expect(props).toContain("exo__metadataType");
+        expect(props).toContain("metadata");
+      }
+    });
+
+    it("should include aliases for types that support it", () => {
+      // All types support aliases per specification
+      for (const type of Object.values(Exo003MetadataType)) {
+        const props = ALLOWED_PROPERTIES[type];
+        expect(props).toContain("aliases");
       }
     });
 
     it("should include namespace-specific properties", () => {
       const props = ALLOWED_PROPERTIES[Exo003MetadataType.Namespace];
-      expect(props).toContain("exo__Namespace_prefix");
-      expect(props).toContain("exo__Namespace_uri");
+      expect(props).toContain("uri");
+      // prefix is no longer part of frontmatter per spec
+      expect(props).not.toContain("prefix");
     });
 
     it("should include anchor-specific properties", () => {
       const props = ALLOWED_PROPERTIES[Exo003MetadataType.Anchor];
-      expect(props).toContain("exo__Anchor_localName");
-      expect(props).toContain("exo__Asset_label");
+      expect(props).toContain("localName");
+      expect(props).toContain("label");
       expect(props).toContain("aliases");
     });
 
     it("should include blank_node-specific properties", () => {
       const props = ALLOWED_PROPERTIES[Exo003MetadataType.BlankNode];
-      expect(props).toContain("exo__BlankNode_id");
-      expect(props).toContain("exo__Asset_label");
+      expect(props).toContain("id");
+      expect(props).toContain("label");
     });
 
     it("should include statement-specific properties", () => {
       const props = ALLOWED_PROPERTIES[Exo003MetadataType.Statement];
-      expect(props).toContain("exo__Statement_subject");
-      expect(props).toContain("exo__Statement_predicate");
-      expect(props).toContain("exo__Statement_object");
+      expect(props).toContain("subject");
+      expect(props).toContain("predicate");
+      expect(props).toContain("object");
     });
 
     it("should include body-specific properties", () => {
       const props = ALLOWED_PROPERTIES[Exo003MetadataType.Body];
-      expect(props).toContain("exo__Body_datatype");
-      expect(props).toContain("exo__Body_language");
-      expect(props).toContain("exo__Body_direction");
+      expect(props).toContain("subject");
+      expect(props).toContain("predicate");
+      expect(props).toContain("datatype");
+      expect(props).toContain("language");
+      expect(props).toContain("direction");
+    });
+
+    it("should NOT include uid and createdAt (stored as statements, not frontmatter)", () => {
+      for (const type of Object.values(Exo003MetadataType)) {
+        const props = ALLOWED_PROPERTIES[type];
+        expect(props).not.toContain("uid");
+        expect(props).not.toContain("createdAt");
+        expect(props).not.toContain("exo__Asset_uid");
+        expect(props).not.toContain("exo__Asset_createdAt");
+      }
     });
   });
 
@@ -83,12 +102,10 @@ describe("Exo003 Types", () => {
       expect(REQUIRED_PROPERTIES[Exo003MetadataType.Body]).toBeDefined();
     });
 
-    it("should require common base properties for all types", () => {
+    it("should require 'metadata' property for all types", () => {
       for (const type of Object.values(Exo003MetadataType)) {
         const props = REQUIRED_PROPERTIES[type];
-        expect(props).toContain("exo__Asset_uid");
-        expect(props).toContain("exo__Asset_createdAt");
-        expect(props).toContain("exo__metadataType");
+        expect(props).toContain("metadata");
       }
     });
 
@@ -103,34 +120,39 @@ describe("Exo003 Types", () => {
       }
     });
 
-    it("should require namespace-specific properties", () => {
+    it("should require namespace uri", () => {
       const props = REQUIRED_PROPERTIES[Exo003MetadataType.Namespace];
-      expect(props).toContain("exo__Namespace_prefix");
-      expect(props).toContain("exo__Namespace_uri");
+      expect(props).toContain("uri");
     });
 
-    it("should require anchor local name", () => {
+    it("should require anchor localName", () => {
       const props = REQUIRED_PROPERTIES[Exo003MetadataType.Anchor];
-      expect(props).toContain("exo__Anchor_localName");
+      expect(props).toContain("localName");
     });
 
     it("should require blank node id", () => {
       const props = REQUIRED_PROPERTIES[Exo003MetadataType.BlankNode];
-      expect(props).toContain("exo__BlankNode_id");
+      expect(props).toContain("id");
     });
 
     it("should require all statement components", () => {
       const props = REQUIRED_PROPERTIES[Exo003MetadataType.Statement];
-      expect(props).toContain("exo__Statement_subject");
-      expect(props).toContain("exo__Statement_predicate");
-      expect(props).toContain("exo__Statement_object");
+      expect(props).toContain("subject");
+      expect(props).toContain("predicate");
+      expect(props).toContain("object");
+    });
+
+    it("should require body subject and predicate", () => {
+      const props = REQUIRED_PROPERTIES[Exo003MetadataType.Body];
+      expect(props).toContain("subject");
+      expect(props).toContain("predicate");
     });
 
     it("should not require body content metadata (optional)", () => {
       const props = REQUIRED_PROPERTIES[Exo003MetadataType.Body];
-      expect(props).not.toContain("exo__Body_datatype");
-      expect(props).not.toContain("exo__Body_language");
-      expect(props).not.toContain("exo__Body_direction");
+      expect(props).not.toContain("datatype");
+      expect(props).not.toContain("language");
+      expect(props).not.toContain("direction");
     });
   });
 

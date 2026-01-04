@@ -76,7 +76,7 @@ export class Exo003Parser {
       };
     }
 
-    const metadataType = frontmatter["exo__metadataType"] as Exo003MetadataType;
+    const metadataType = frontmatter["metadata"] as Exo003MetadataType;
 
     try {
       const metadata = this.parseByType(frontmatter, metadataType);
@@ -108,18 +108,18 @@ export class Exo003Parser {
     const errors: string[] = [];
     const warnings: string[] = [];
 
-    // Check for metadataType
-    if (!frontmatter["exo__metadataType"]) {
-      errors.push("Missing required property: exo__metadataType");
+    // Check for metadata type
+    if (!frontmatter["metadata"]) {
+      errors.push("Missing required property: metadata");
       return { valid: false, errors, warnings };
     }
 
-    const metadataType = frontmatter["exo__metadataType"] as string;
+    const metadataType = frontmatter["metadata"] as string;
 
-    // Validate metadataType is a known type
+    // Validate metadata is a known type
     if (!Object.values(Exo003MetadataType).includes(metadataType as Exo003MetadataType)) {
       errors.push(
-        `Invalid exo__metadataType: ${metadataType}. Valid types: ${Object.values(
+        `Invalid metadata: ${metadataType}. Valid types: ${Object.values(
           Exo003MetadataType
         ).join(", ")}`
       );
@@ -178,53 +178,52 @@ export class Exo003Parser {
     type: Exo003MetadataType
   ): Exo003Metadata {
     const base = {
-      exo__Asset_uid: frontmatter["exo__Asset_uid"] as string,
-      exo__Asset_createdAt: frontmatter["exo__Asset_createdAt"] as string,
-      exo__metadataType: type,
-      exo__Asset_isDefinedBy: frontmatter["exo__Asset_isDefinedBy"] as string | undefined,
+      metadata: type,
+      aliases: frontmatter["aliases"] as string[] | undefined,
     };
 
     switch (type) {
       case Exo003MetadataType.Namespace:
         return {
           ...base,
-          exo__metadataType: Exo003MetadataType.Namespace,
-          exo__Namespace_prefix: frontmatter["exo__Namespace_prefix"] as string,
-          exo__Namespace_uri: frontmatter["exo__Namespace_uri"] as string,
+          metadata: Exo003MetadataType.Namespace,
+          uri: frontmatter["uri"] as string,
         } satisfies Exo003NamespaceMetadata;
 
       case Exo003MetadataType.Anchor:
         return {
           ...base,
-          exo__metadataType: Exo003MetadataType.Anchor,
-          exo__Anchor_localName: frontmatter["exo__Anchor_localName"] as string,
-          exo__Asset_label: frontmatter["exo__Asset_label"] as string | undefined,
+          metadata: Exo003MetadataType.Anchor,
+          localName: frontmatter["localName"] as string,
+          label: frontmatter["label"] as string | undefined,
         } satisfies Exo003AnchorMetadata;
 
       case Exo003MetadataType.BlankNode:
         return {
           ...base,
-          exo__metadataType: Exo003MetadataType.BlankNode,
-          exo__BlankNode_id: frontmatter["exo__BlankNode_id"] as string,
-          exo__Asset_label: frontmatter["exo__Asset_label"] as string | undefined,
+          metadata: Exo003MetadataType.BlankNode,
+          id: frontmatter["id"] as string,
+          label: frontmatter["label"] as string | undefined,
         } satisfies Exo003BlankNodeMetadata;
 
       case Exo003MetadataType.Statement:
         return {
           ...base,
-          exo__metadataType: Exo003MetadataType.Statement,
-          exo__Statement_subject: frontmatter["exo__Statement_subject"] as string,
-          exo__Statement_predicate: frontmatter["exo__Statement_predicate"] as string,
-          exo__Statement_object: frontmatter["exo__Statement_object"] as string,
+          metadata: Exo003MetadataType.Statement,
+          subject: frontmatter["subject"] as string,
+          predicate: frontmatter["predicate"] as string,
+          object: frontmatter["object"] as string,
         } satisfies Exo003StatementMetadata;
 
       case Exo003MetadataType.Body:
         return {
           ...base,
-          exo__metadataType: Exo003MetadataType.Body,
-          exo__Body_datatype: frontmatter["exo__Body_datatype"] as string | undefined,
-          exo__Body_language: frontmatter["exo__Body_language"] as string | undefined,
-          exo__Body_direction: frontmatter["exo__Body_direction"] as "ltr" | "rtl" | undefined,
+          metadata: Exo003MetadataType.Body,
+          subject: frontmatter["subject"] as string,
+          predicate: frontmatter["predicate"] as string,
+          datatype: frontmatter["datatype"] as string | undefined,
+          language: frontmatter["language"] as string | undefined,
+          direction: frontmatter["direction"] as "ltr" | "rtl" | undefined,
         } satisfies Exo003BodyMetadata;
     }
   }
@@ -236,24 +235,15 @@ export class Exo003Parser {
     frontmatter: Record<string, unknown>,
     errors: string[]
   ): void {
-    const prefix = frontmatter["exo__Namespace_prefix"];
-    const uri = frontmatter["exo__Namespace_uri"];
-
-    if (prefix && typeof prefix !== "string") {
-      errors.push("exo__Namespace_prefix must be a string");
-    } else if (prefix && !/^[a-zA-Z][a-zA-Z0-9_-]*$/.test(prefix as string)) {
-      errors.push(
-        "exo__Namespace_prefix must start with a letter and contain only letters, numbers, underscores, and hyphens"
-      );
-    }
+    const uri = frontmatter["uri"];
 
     if (uri && typeof uri !== "string") {
-      errors.push("exo__Namespace_uri must be a string");
+      errors.push("uri must be a string");
     } else if (uri) {
       try {
         new IRI(uri as string);
       } catch {
-        errors.push(`exo__Namespace_uri is not a valid IRI: ${uri}`);
+        errors.push(`uri is not a valid IRI: ${String(uri)}`);
       }
     }
   }
@@ -265,12 +255,12 @@ export class Exo003Parser {
     frontmatter: Record<string, unknown>,
     errors: string[]
   ): void {
-    const localName = frontmatter["exo__Anchor_localName"];
+    const localName = frontmatter["localName"];
 
     if (localName !== undefined && localName !== null && typeof localName !== "string") {
-      errors.push("exo__Anchor_localName must be a string");
+      errors.push("localName must be a string");
     } else if (typeof localName === "string" && localName.trim().length === 0) {
-      errors.push("exo__Anchor_localName cannot be empty");
+      errors.push("localName cannot be empty");
     }
   }
 
@@ -281,12 +271,12 @@ export class Exo003Parser {
     frontmatter: Record<string, unknown>,
     errors: string[]
   ): void {
-    const id = frontmatter["exo__BlankNode_id"];
+    const id = frontmatter["id"];
 
     if (id !== undefined && id !== null && typeof id !== "string") {
-      errors.push("exo__BlankNode_id must be a string");
+      errors.push("id must be a string");
     } else if (typeof id === "string" && id.trim().length === 0) {
-      errors.push("exo__BlankNode_id cannot be empty");
+      errors.push("id cannot be empty");
     }
   }
 
@@ -297,16 +287,17 @@ export class Exo003Parser {
     frontmatter: Record<string, unknown>,
     errors: string[]
   ): void {
-    const subject = frontmatter["exo__Statement_subject"];
-    const predicate = frontmatter["exo__Statement_predicate"];
-    const object = frontmatter["exo__Statement_object"];
+    const subject = frontmatter["subject"];
+    const predicate = frontmatter["predicate"];
+    const object = frontmatter["object"];
 
     // Subject, predicate, and object should be wikilinks or URIs
-    for (const [name, value] of [
-      ["exo__Statement_subject", subject],
-      ["exo__Statement_predicate", predicate],
-      ["exo__Statement_object", object],
-    ]) {
+    const entries: [string, unknown][] = [
+      ["subject", subject],
+      ["predicate", predicate],
+      ["object", object],
+    ];
+    for (const [name, value] of entries) {
       if (value && typeof value !== "string") {
         errors.push(`${name} must be a string`);
       }
@@ -321,23 +312,23 @@ export class Exo003Parser {
     errors: string[],
     warnings: string[]
   ): void {
-    const datatype = frontmatter["exo__Body_datatype"];
-    const language = frontmatter["exo__Body_language"];
-    const direction = frontmatter["exo__Body_direction"];
+    const datatype = frontmatter["datatype"];
+    const language = frontmatter["language"];
+    const direction = frontmatter["direction"];
 
     // Cannot have both datatype and language
     if (datatype && language) {
-      errors.push("Body cannot have both exo__Body_datatype and exo__Body_language");
+      errors.push("Body cannot have both datatype and language");
     }
 
     // Direction requires language
     if (direction && !language) {
-      errors.push("exo__Body_direction requires exo__Body_language to be set");
+      errors.push("direction requires language to be set");
     }
 
     // Validate direction value
     if (direction && direction !== "ltr" && direction !== "rtl") {
-      errors.push('exo__Body_direction must be "ltr" or "rtl"');
+      errors.push('direction must be "ltr" or "rtl"');
     }
 
     // Validate datatype is a valid IRI
@@ -345,7 +336,7 @@ export class Exo003Parser {
       try {
         new IRI(datatype);
       } catch {
-        errors.push(`exo__Body_datatype is not a valid IRI: ${datatype}`);
+        errors.push(`datatype is not a valid IRI: ${datatype}`);
       }
     }
 
@@ -377,7 +368,7 @@ export class Exo003Parser {
     bodyContent?: string
   ): Triple {
     // Resolve subject
-    const subjectRef = resolveReference(metadata.exo__Statement_subject);
+    const subjectRef = resolveReference(metadata.subject);
     let subject: Subject;
     if (subjectRef.type === "iri") {
       subject = new IRI(subjectRef.value);
@@ -388,14 +379,14 @@ export class Exo003Parser {
     }
 
     // Resolve predicate (must be IRI)
-    const predicateRef = resolveReference(metadata.exo__Statement_predicate);
+    const predicateRef = resolveReference(metadata.predicate);
     if (predicateRef.type !== "iri") {
       throw new Error("Statement predicate must be an IRI");
     }
     const predicate: Predicate = new IRI(predicateRef.value);
 
     // Resolve object
-    const objectRef = resolveReference(metadata.exo__Statement_object);
+    const objectRef = resolveReference(metadata.object);
     let object: RDFObject;
     if (objectRef.type === "iri") {
       object = new IRI(objectRef.value);
@@ -423,12 +414,12 @@ export class Exo003Parser {
    * @returns A Literal with appropriate language/datatype
    */
   static toLiteral(metadata: Exo003BodyMetadata, content: string): Literal {
-    if (metadata.exo__Body_datatype) {
-      return new Literal(content, new IRI(metadata.exo__Body_datatype));
+    if (metadata.datatype) {
+      return new Literal(content, new IRI(metadata.datatype));
     }
 
-    const language = metadata.exo__Body_language || DEFAULT_LANGUAGE_TAG;
-    return createDirectionalLiteral(content, language, metadata.exo__Body_direction);
+    const language = metadata.language || DEFAULT_LANGUAGE_TAG;
+    return createDirectionalLiteral(content, language, metadata.direction);
   }
 
   /**
@@ -438,7 +429,7 @@ export class Exo003Parser {
    * @returns True if this is valid Exo 0.0.3 format
    */
   static isExo003Format(frontmatter: Record<string, unknown>): boolean {
-    const metadataType = frontmatter["exo__metadataType"];
+    const metadataType = frontmatter["metadata"];
     return (
       typeof metadataType === "string" &&
       Object.values(Exo003MetadataType).includes(metadataType as Exo003MetadataType)
@@ -453,10 +444,10 @@ export class Exo003Parser {
    * @returns Generated UUID
    */
   static generateUUID(metadata: Exo003Metadata, namespaceUri?: string): string {
-    switch (metadata.exo__metadataType) {
+    switch (metadata.metadata) {
       case Exo003MetadataType.Namespace:
         return Exo003UUIDGenerator.generateNamespaceUUID(
-          (metadata as Exo003NamespaceMetadata).exo__Namespace_uri
+          (metadata as Exo003NamespaceMetadata).uri
         );
 
       case Exo003MetadataType.Anchor:
@@ -465,29 +456,29 @@ export class Exo003Parser {
         }
         return Exo003UUIDGenerator.generateAssetUUID(
           namespaceUri,
-          (metadata as Exo003AnchorMetadata).exo__Anchor_localName
+          (metadata as Exo003AnchorMetadata).localName
         );
 
       case Exo003MetadataType.BlankNode:
         return Exo003UUIDGenerator.generateBlankNodeUUID(
-          (metadata as Exo003BlankNodeMetadata).exo__BlankNode_id
+          (metadata as Exo003BlankNodeMetadata).id
         );
 
       case Exo003MetadataType.Statement: {
         const stmt = metadata as Exo003StatementMetadata;
         return Exo003UUIDGenerator.generateStatementUUID(
-          stmt.exo__Statement_subject,
-          stmt.exo__Statement_predicate,
-          stmt.exo__Statement_object
+          stmt.subject,
+          stmt.predicate,
+          stmt.object
         );
       }
 
       case Exo003MetadataType.Body: {
         const body = metadata as Exo003BodyMetadata;
         return Exo003UUIDGenerator.generateBodyUUID("", {
-          language: body.exo__Body_language,
-          direction: body.exo__Body_direction,
-          datatype: body.exo__Body_datatype,
+          language: body.language,
+          direction: body.direction,
+          datatype: body.datatype,
         });
       }
     }
