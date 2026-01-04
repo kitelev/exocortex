@@ -510,4 +510,176 @@ describe("RenameToUidService", () => {
       expect(mockVault.rename).not.toHaveBeenCalled();
     });
   });
+
+  describe("empty aliases handling (Issue #1347)", () => {
+    it("should NOT create duplicate aliases when empty aliases: [] exists", async () => {
+      const metadata = {
+        exo__Asset_uid: "asset-123",
+      };
+
+      mockVault.process.mockImplementation(async (file, fn) => {
+        const content = "---\ntitle: Test\naliases: []\n---\nContent";
+        const result = fn(content);
+        // Should NOT have duplicate aliases property
+        const aliasesMatches = result.match(/^aliases\s*:/gm);
+        expect(aliasesMatches?.length).toBe(1);
+        expect(result).toContain("aliases:");
+        expect(result).toContain("- old-name");
+        return result;
+      });
+
+      await service.renameToUid(mockFile, metadata);
+
+      expect(mockVault.process).toHaveBeenCalled();
+    });
+
+    it("should NOT create duplicate aliases when empty 'aliases:' exists (no value)", async () => {
+      const metadata = {
+        exo__Asset_uid: "asset-123",
+      };
+
+      mockVault.process.mockImplementation(async (file, fn) => {
+        const content = "---\ntitle: Test\naliases:\n---\nContent";
+        const result = fn(content);
+        // Should NOT have duplicate aliases property
+        const aliasesMatches = result.match(/^aliases\s*:/gm);
+        expect(aliasesMatches?.length).toBe(1);
+        expect(result).toContain("aliases:");
+        expect(result).toContain("- old-name");
+        return result;
+      });
+
+      await service.renameToUid(mockFile, metadata);
+
+      expect(mockVault.process).toHaveBeenCalled();
+    });
+
+    it("should NOT create duplicate aliases when 'aliases: null' exists", async () => {
+      const metadata = {
+        exo__Asset_uid: "asset-123",
+      };
+
+      mockVault.process.mockImplementation(async (file, fn) => {
+        const content = "---\ntitle: Test\naliases: null\n---\nContent";
+        const result = fn(content);
+        // Should NOT have duplicate aliases property
+        const aliasesMatches = result.match(/^aliases\s*:/gm);
+        expect(aliasesMatches?.length).toBe(1);
+        expect(result).toContain("aliases:");
+        expect(result).toContain("- old-name");
+        return result;
+      });
+
+      await service.renameToUid(mockFile, metadata);
+
+      expect(mockVault.process).toHaveBeenCalled();
+    });
+
+    it("should NOT create duplicate aliases when 'aliases: ~' exists (YAML null)", async () => {
+      const metadata = {
+        exo__Asset_uid: "asset-123",
+      };
+
+      mockVault.process.mockImplementation(async (file, fn) => {
+        const content = "---\ntitle: Test\naliases: ~\n---\nContent";
+        const result = fn(content);
+        // Should NOT have duplicate aliases property
+        const aliasesMatches = result.match(/^aliases\s*:/gm);
+        expect(aliasesMatches?.length).toBe(1);
+        expect(result).toContain("aliases:");
+        expect(result).toContain("- old-name");
+        return result;
+      });
+
+      await service.renameToUid(mockFile, metadata);
+
+      expect(mockVault.process).toHaveBeenCalled();
+    });
+
+    it("should add alias correctly when NO aliases property exists", async () => {
+      const metadata = {
+        exo__Asset_uid: "asset-123",
+      };
+
+      mockVault.process.mockImplementation(async (file, fn) => {
+        const content = "---\ntitle: Test\n---\nContent";
+        const result = fn(content);
+        // Should have exactly one aliases property
+        const aliasesMatches = result.match(/^aliases\s*:/gm);
+        expect(aliasesMatches?.length).toBe(1);
+        expect(result).toContain("aliases:");
+        expect(result).toContain("- old-name");
+        return result;
+      });
+
+      await service.renameToUid(mockFile, metadata);
+
+      expect(mockVault.process).toHaveBeenCalled();
+    });
+
+    it("should produce valid YAML when replacing empty aliases", async () => {
+      const metadata = {
+        exo__Asset_uid: "asset-123",
+      };
+
+      mockVault.process.mockImplementation(async (file, fn) => {
+        const content =
+          "---\nexo__Instance_class: ims__Concept\naliases: []\n---\nContent";
+        const result = fn(content);
+        // Result should be valid YAML - no duplicate keys
+        expect(result).toMatch(/^---\n[\s\S]+\n---/);
+        // Count aliases occurrences
+        const aliasesMatches = result.match(/^aliases\s*:/gm);
+        expect(aliasesMatches?.length).toBe(1);
+        return result;
+      });
+
+      await service.renameToUid(mockFile, metadata);
+
+      expect(mockVault.process).toHaveBeenCalled();
+    });
+
+    it("should NOT add aliases for archived assets even with empty aliases", async () => {
+      const metadata = {
+        exo__Asset_uid: "asset-123",
+        exo__Asset_isArchived: true,
+      };
+
+      mockVault.process.mockImplementation(async (file, fn) => {
+        const content = "---\ntitle: Test\naliases: []\n---\nContent";
+        const result = fn(content);
+        // For archived assets, no aliases should be added
+        // The existing empty aliases should remain as is
+        expect(result).toContain("exo__Asset_label: old-name");
+        expect(result).toContain("aliases: []");
+        // aliases should only appear once (the original empty one)
+        const aliasesMatches = result.match(/^aliases\s*:/gm);
+        expect(aliasesMatches?.length).toBe(1);
+        return result;
+      });
+
+      await service.renameToUid(mockFile, metadata);
+
+      expect(mockVault.process).toHaveBeenCalled();
+    });
+
+    it("should handle empty aliases with extra whitespace", async () => {
+      const metadata = {
+        exo__Asset_uid: "asset-123",
+      };
+
+      mockVault.process.mockImplementation(async (file, fn) => {
+        const content = "---\ntitle: Test\naliases:   [  ]\n---\nContent";
+        const result = fn(content);
+        const aliasesMatches = result.match(/^aliases\s*:/gm);
+        expect(aliasesMatches?.length).toBe(1);
+        expect(result).toContain("- old-name");
+        return result;
+      });
+
+      await service.renameToUid(mockFile, metadata);
+
+      expect(mockVault.process).toHaveBeenCalled();
+    });
+  });
 });

@@ -53,12 +53,35 @@ export class RenameToUidService {
         return content;
       }
 
-      const frontmatterContent = match[1];
-      const newFrontmatter = isArchived
-        ? `${frontmatterContent}\nexo__Asset_label: ${label}`
-        : `${frontmatterContent}\nexo__Asset_label: ${label}\naliases:\n  - ${label}`;
+      let frontmatterContent = match[1];
 
-      return content.replace(frontmatterRegex, `---\n${newFrontmatter}\n---`);
+      // Add label
+      frontmatterContent = `${frontmatterContent}\nexo__Asset_label: ${label}`;
+
+      // Add aliases if not archived
+      if (!isArchived) {
+        // Check if aliases property already exists in frontmatter
+        const aliasesExistPattern = /^aliases\s*:/m;
+        if (aliasesExistPattern.test(frontmatterContent)) {
+          // Remove existing empty aliases property (handles aliases: [], aliases:, aliases: null, etc.)
+          // Matches:
+          // - "aliases:" followed by newline or end of content
+          // - "aliases: []"
+          // - "aliases: null"
+          // - "aliases:\n" followed by no list items (no "  - ")
+          const emptyAliasesPattern =
+            /^aliases\s*:\s*(?:\[\s*\]|null|~)?(?:\n(?![ \t]*-))?/gm;
+          frontmatterContent = frontmatterContent.replace(
+            emptyAliasesPattern,
+            "",
+          );
+          // Clean up any trailing newlines that might be left
+          frontmatterContent = frontmatterContent.replace(/\n{2,}/g, "\n");
+        }
+        frontmatterContent = `${frontmatterContent}\naliases:\n  - ${label}`;
+      }
+
+      return content.replace(frontmatterRegex, `---\n${frontmatterContent}\n---`);
     });
   }
 
