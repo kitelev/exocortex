@@ -63,6 +63,14 @@ simulation.start();
 - [Path Finding](./guides/path-finding.md) - Find paths between nodes
 - [Migration](./guides/migration.md) - Version upgrade guide
 
+### Advanced Systems
+- [Constraint System](./guides/constraints.md) - User-controlled positioning and alignment
+- [Viewport Windowing](./guides/viewport-windowing.md) - Virtual scrolling for 100K+ nodes
+- [Cluster Queries](./guides/cluster-queries.md) - SPARQL-based semantic clustering
+- [Memory Optimization](./guides/memory-optimization.md) - Object pooling for GC optimization
+- [Touch Gestures](./guides/touch-gestures.md) - Mobile and iPad support
+- [Context Menus](./guides/context-menus.md) - Extensible right-click menu architecture
+
 ### API Reference
 - [Overview](./api/index.md) - API overview and module structure
 - [GraphLayoutRenderer](./api/graph-view.md) - Main component API

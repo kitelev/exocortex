@@ -72,6 +72,8 @@ export type {
   ChargeForceConfig,
   CollisionForceConfig,
   RadialForceConfig,
+  SemanticForceConfig,
+  SemanticPhysicsConfig,
   // Rendering types
   RenderingConfig,
   PerformanceConfig,

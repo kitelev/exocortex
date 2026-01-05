@@ -96,6 +96,46 @@ export interface RadialForceConfig {
 }
 
 /**
+ * Semantic force configuration for a specific predicate.
+ * Translates RDF/OWL predicates into physical force modifiers.
+ *
+ * @example
+ * // Make rdfs:subClassOf relationships pull nodes 2x closer
+ * { predicate: 'rdfs:subClassOf', attractionMultiplier: 2.0, repulsionMultiplier: 1.0 }
+ *
+ * @example
+ * // Make owl:disjointWith relationships push nodes 3x apart
+ * { predicate: 'owl:disjointWith', attractionMultiplier: 1.0, repulsionMultiplier: 3.0 }
+ */
+export interface SemanticForceConfig {
+  /** Predicate URI (e.g., 'rdfs:subClassOf', 'owl:disjointWith', 'exo:Asset_prototype') */
+  predicate: string;
+  /** Attraction force multiplier (1.0 = default, >1 = stronger attraction) */
+  attractionMultiplier: number;
+  /** Repulsion force multiplier (1.0 = default, >1 = stronger repulsion) */
+  repulsionMultiplier: number;
+}
+
+/**
+ * Semantic physics configuration.
+ * Controls how ontology relationships affect force-directed layout.
+ */
+export interface SemanticPhysicsConfig {
+  /** Enable semantic force modifiers */
+  enabled: boolean;
+  /** Per-predicate force configurations */
+  predicates: SemanticForceConfig[];
+  /** Default attraction multiplier for unconfigured predicates */
+  defaultAttractionMultiplier: number;
+  /** Default repulsion multiplier for unconfigured predicates */
+  defaultRepulsionMultiplier: number;
+  /** Apply type-based repulsion (different rdf:type = increased repulsion) */
+  typeBasedRepulsion: boolean;
+  /** Repulsion multiplier for nodes with different types */
+  differentTypeRepulsionMultiplier: number;
+}
+
+/**
  * Complete physics configuration
  */
 export interface PhysicsConfig {
@@ -113,6 +153,8 @@ export interface PhysicsConfig {
   collision: CollisionForceConfig;
   /** Radial force */
   radial: RadialForceConfig;
+  /** Semantic force modifiers based on ontology relationships */
+  semantic: SemanticPhysicsConfig;
 }
 
 // ============================================================

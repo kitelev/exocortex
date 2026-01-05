@@ -213,30 +213,43 @@ export class PropertiesLinkPatch {
   }
 
   /**
-   * Set text content of an element while preserving child elements
+   * Set text content of an element while preserving interactive child elements
    *
    * This method:
-   * 1. Collects all non-text child elements
+   * 1. Collects only interactive child elements (buttons, remove buttons)
    * 2. Clears the element
    * 3. Adds the new text as a text node
-   * 4. Re-appends the preserved child elements
+   * 4. Re-appends the preserved interactive child elements
    *
-   * This preserves buttons, icons, and other interactive elements
-   * that Obsidian places inside link elements (e.g., remove buttons in multi-value properties)
+   * This preserves buttons and other interactive elements that Obsidian places
+   * inside link elements (e.g., remove buttons in multi-value properties),
+   * while NOT preserving text wrapper spans that would cause text duplication.
+   *
+   * Bug fix for #1349: Previously, ALL child elements were preserved including
+   * text wrapper spans like `<span class="link-text">UUID</span>`, causing
+   * duplicated text when the span was re-appended after setting textContent.
    */
   private setTextContentPreservingChildren(el: HTMLElement, text: string): void {
-    // Collect all non-text child elements to preserve
+    // Collect only interactive child elements to preserve (not text wrappers)
     const childElements: Element[] = [];
     for (const node of Array.from(el.childNodes)) {
       if (node.nodeType === Node.ELEMENT_NODE) {
-        childElements.push(node as Element);
+        const element = node as Element;
+        // Only preserve interactive elements like delete buttons, not text wrappers
+        if (
+          element.classList?.contains("multi-select-pill-remove-button") ||
+          element.tagName === "BUTTON" ||
+          element.getAttribute("aria-label") === "Remove"
+        ) {
+          childElements.push(element);
+        }
       }
     }
 
     // Clear the element and set new text
     el.textContent = text;
 
-    // Re-append preserved child elements
+    // Re-append preserved interactive child elements
     for (const child of childElements) {
       el.appendChild(child);
     }

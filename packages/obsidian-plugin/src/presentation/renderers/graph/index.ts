@@ -66,11 +66,14 @@ export {
   forceRadial,
   forceX,
   forceY,
+  forceSemanticLink,
+  DEFAULT_SEMANTIC_LINK_CONFIG,
 } from "./ForceSimulation";
 
 export type {
   ForceCenterConfig,
   ForceLinkConfig,
+  ForceSemanticLinkConfig,
   ForceManyBodyConfig,
   ForceCollideConfig,
   ForceRadialConfig,
@@ -95,6 +98,17 @@ export {
   mergeForceConfiguration,
   validateForceConfiguration,
 } from "./ForceSimulation";
+
+// Semantic physics - ontology-driven force modifiers
+export {
+  SemanticForceModifier,
+  DEFAULT_SEMANTIC_PHYSICS_CONFIG,
+} from "./SemanticForceModifier";
+export type {
+  SemanticLink,
+  SemanticNode,
+  ForceModifier,
+} from "./SemanticForceModifier";
 
 // PixiJS WebGL2 renderer for high-performance graph rendering
 export { PixiGraphRenderer } from "./PixiGraphRenderer";

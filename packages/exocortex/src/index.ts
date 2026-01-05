@@ -7,6 +7,7 @@ export * from "./domain/models/GraphEdge";
 export * from "./domain/models/GraphTypes";
 export * from "./domain/models/AreaNode";
 export * from "./domain/models/rdf";
+export * from "./domain/models/exo003";
 export * from "./domain/commands/CommandVisibility";
 export type { IPropertyValidationService, ValidationResult } from "./domain/services/IPropertyValidationService";
 

@@ -220,6 +220,58 @@ const validateRadialForceConfig = createValidator((value, path) => {
   return issues.length > 0 ? { valid: false, issues } : { valid: true, data: value as unknown as GraphConfig["physics"]["radial"] };
 });
 
+const validateSemanticForceConfig = createValidator((value, path) => {
+  const issues: ValidationIssue[] = [];
+  if (!isObject(value)) {
+    return { valid: false, issues: [{ path, message: "Expected object", received: typeof value, expected: "object" }] };
+  }
+
+  if (!isString(value.predicate) || value.predicate.length === 0) {
+    issues.push({ path: [...path, "predicate"], message: "Must be a non-empty string", received: value.predicate });
+  }
+  if (!isNumber(value.attractionMultiplier) || !inRange(value.attractionMultiplier, 0, 10)) {
+    issues.push({ path: [...path, "attractionMultiplier"], message: "Must be a number between 0 and 10", received: value.attractionMultiplier });
+  }
+  if (!isNumber(value.repulsionMultiplier) || !inRange(value.repulsionMultiplier, 0, 10)) {
+    issues.push({ path: [...path, "repulsionMultiplier"], message: "Must be a number between 0 and 10", received: value.repulsionMultiplier });
+  }
+
+  return issues.length > 0 ? { valid: false, issues } : { valid: true, data: value };
+});
+
+const validateSemanticPhysicsConfig = createValidator((value, path) => {
+  const issues: ValidationIssue[] = [];
+  if (!isObject(value)) {
+    return { valid: false, issues: [{ path, message: "Expected object", received: typeof value, expected: "object" }] };
+  }
+
+  if (!isBoolean(value.enabled)) {
+    issues.push({ path: [...path, "enabled"], message: "Must be a boolean", received: value.enabled });
+  }
+  if (!isArray(value.predicates)) {
+    issues.push({ path: [...path, "predicates"], message: "Must be an array", received: value.predicates });
+  } else {
+    for (let i = 0; i < value.predicates.length; i++) {
+      const predResult = validateSemanticForceConfig(value.predicates[i], [...path, "predicates", String(i)]);
+      if (!predResult.valid) issues.push(...predResult.issues);
+    }
+  }
+  if (!isNumber(value.defaultAttractionMultiplier) || !inRange(value.defaultAttractionMultiplier, 0, 10)) {
+    issues.push({ path: [...path, "defaultAttractionMultiplier"], message: "Must be a number between 0 and 10", received: value.defaultAttractionMultiplier });
+  }
+  if (!isNumber(value.defaultRepulsionMultiplier) || !inRange(value.defaultRepulsionMultiplier, 0, 10)) {
+    issues.push({ path: [...path, "defaultRepulsionMultiplier"], message: "Must be a number between 0 and 10", received: value.defaultRepulsionMultiplier });
+  }
+  if (!isBoolean(value.typeBasedRepulsion)) {
+    issues.push({ path: [...path, "typeBasedRepulsion"], message: "Must be a boolean", received: value.typeBasedRepulsion });
+  }
+  if (!isNumber(value.differentTypeRepulsionMultiplier) || !inRange(value.differentTypeRepulsionMultiplier, 0, 10)) {
+    issues.push({ path: [...path, "differentTypeRepulsionMultiplier"], message: "Must be a number between 0 and 10", received: value.differentTypeRepulsionMultiplier });
+  }
+
+  return issues.length > 0 ? { valid: false, issues } : { valid: true, data: value as unknown as GraphConfig["physics"]["semantic"] };
+});
+
 const validatePhysicsConfig = createValidator((value, path) => {
   const issues: ValidationIssue[] = [];
   if (!isObject(value)) {
@@ -247,6 +299,9 @@ const validatePhysicsConfig = createValidator((value, path) => {
 
   const radialResult = validateRadialForceConfig(value.radial, [...path, "radial"]);
   if (!radialResult.valid) issues.push(...radialResult.issues);
+
+  const semanticResult = validateSemanticPhysicsConfig(value.semantic, [...path, "semantic"]);
+  if (!semanticResult.valid) issues.push(...semanticResult.issues);
 
   return issues.length > 0 ? { valid: false, issues } : { valid: true, data: value as unknown as GraphConfig["physics"] };
 });
@@ -884,6 +939,21 @@ export function getDefaultConfig(): GraphConfig {
         enabled: false,
         strength: 0.1,
         radius: 200,
+      },
+      semantic: {
+        enabled: true,
+        predicates: [
+          // Attraction modifiers: pull related nodes closer
+          { predicate: "rdfs:subClassOf", attractionMultiplier: 2.0, repulsionMultiplier: 1.0 },
+          { predicate: "exo:Asset_prototype", attractionMultiplier: 1.8, repulsionMultiplier: 1.0 },
+          { predicate: "dcterms:isPartOf", attractionMultiplier: 1.5, repulsionMultiplier: 1.0 },
+          // Repulsion modifiers: push unrelated nodes apart
+          { predicate: "owl:disjointWith", attractionMultiplier: 1.0, repulsionMultiplier: 3.0 },
+        ],
+        defaultAttractionMultiplier: 1.0,
+        defaultRepulsionMultiplier: 1.0,
+        typeBasedRepulsion: true,
+        differentTypeRepulsionMultiplier: 1.3,
       },
     },
     rendering: {
