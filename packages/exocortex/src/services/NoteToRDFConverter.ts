@@ -3,9 +3,18 @@ import type { IVaultAdapter, IFile } from "../interfaces/IVaultAdapter";
 import { Triple } from "../domain/models/rdf/Triple";
 import { IRI } from "../domain/models/rdf/IRI";
 import { Literal } from "../domain/models/rdf/Literal";
+import { BlankNode } from "../domain/models/rdf/BlankNode";
 import { Namespace } from "../domain/models/rdf/Namespace";
 import { DI_TOKENS } from "../interfaces/tokens";
 import { RDFVocabularyMapper } from "../infrastructure/rdf/RDFVocabularyMapper";
+import {
+  Exo003Parser,
+  Exo003MetadataType,
+  type Exo003AnchorMetadata,
+  type Exo003BlankNodeMetadata,
+  type Exo003StatementMetadata,
+  type Exo003BodyMetadata,
+} from "../domain/models/exo003";
 
 /**
  * Service for converting Obsidian notes (frontmatter + wikilinks) to RDF triples.
@@ -37,6 +46,9 @@ export class NoteToRDFConverter {
   /**
    * Converts a single note to RDF triples.
    *
+   * Supports both legacy format (exo__/ems__ prefixed properties) and
+   * Exo 0.0.3 format (metadata: namespace|anchor|blank_node|statement|body).
+   *
    * @param file - The file to convert
    * @returns Array of RDF triples representing the note's metadata
    *
@@ -53,6 +65,22 @@ export class NoteToRDFConverter {
       return [];
     }
 
+    // Issue #1366: Check for Exo 0.0.3 format first
+    if (Exo003Parser.isExo003Format(frontmatter)) {
+      return this.convertExo003Note(file, frontmatter);
+    }
+
+    // Legacy format processing
+    return this.convertLegacyNote(file, frontmatter);
+  }
+
+  /**
+   * Converts a legacy format note (exo__/ems__ properties) to RDF triples.
+   */
+  private async convertLegacyNote(
+    file: IFile,
+    frontmatter: Record<string, unknown>
+  ): Promise<Triple[]> {
     const triples: Triple[] = [];
     const subject = this.notePathToIRI(file.path);
 
@@ -114,6 +142,251 @@ export class NoteToRDFConverter {
     triples.push(...bodyLinkTriples);
 
     return triples;
+  }
+
+  /**
+   * Converts an Exo 0.0.3 format note to RDF triples.
+   *
+   * Issue #1366: Support for new file format where each RDF triple is stored as a separate file.
+   *
+   * @param file - The file to convert
+   * @param frontmatter - The parsed frontmatter
+   * @returns Array of RDF triples
+   */
+  private async convertExo003Note(
+    file: IFile,
+    frontmatter: Record<string, unknown>
+  ): Promise<Triple[]> {
+    const parseResult = Exo003Parser.parse(frontmatter);
+
+    if (!parseResult.success || !parseResult.metadata) {
+      // Invalid Exo 0.0.3 file - skip
+      return [];
+    }
+
+    const metadata = parseResult.metadata;
+    const triples: Triple[] = [];
+
+    switch (metadata.metadata) {
+      case Exo003MetadataType.Namespace:
+        // Namespace files don't generate triples directly
+        // They define prefix-to-URI mappings used by other files
+        break;
+
+      case Exo003MetadataType.Anchor:
+        triples.push(...this.convertExo003Anchor(file, metadata as Exo003AnchorMetadata));
+        break;
+
+      case Exo003MetadataType.BlankNode:
+        triples.push(...this.convertExo003BlankNode(file, metadata as Exo003BlankNodeMetadata));
+        break;
+
+      case Exo003MetadataType.Statement:
+        triples.push(...this.convertExo003Statement(file, metadata as Exo003StatementMetadata));
+        break;
+
+      case Exo003MetadataType.Body:
+        triples.push(...await this.convertExo003Body(file, metadata as Exo003BodyMetadata));
+        break;
+    }
+
+    return triples;
+  }
+
+  /**
+   * Converts an Exo 0.0.3 anchor file to RDF triples.
+   * Adds file-to-URI mapping triple.
+   */
+  private convertExo003Anchor(
+    file: IFile,
+    metadata: Exo003AnchorMetadata
+  ): Triple[] {
+    const fileIRI = this.notePathToIRI(file.path);
+    const anchorIRI = new IRI(metadata.uri);
+
+    // Map the file to its anchor URI using owl:sameAs
+    // This enables queries to find the file by its semantic URI
+    return [
+      new Triple(fileIRI, Namespace.OWL.term("sameAs"), anchorIRI),
+      new Triple(anchorIRI, Namespace.OWL.term("sameAs"), fileIRI),
+    ];
+  }
+
+  /**
+   * Converts an Exo 0.0.3 blank node file to RDF triples.
+   */
+  private convertExo003BlankNode(
+    file: IFile,
+    metadata: Exo003BlankNodeMetadata
+  ): Triple[] {
+    const fileIRI = this.notePathToIRI(file.path);
+
+    // Create a blank node with the URI as its identifier
+    // The URI in blank_node files is used as a stable identifier
+    const blankNodeId = metadata.uri.replace(/[^a-zA-Z0-9_-]/g, "_");
+
+    // Map the file to the blank node
+    return [
+      new Triple(fileIRI, Namespace.OWL.term("sameAs"), new BlankNode(blankNodeId)),
+    ];
+  }
+
+  /**
+   * Converts an Exo 0.0.3 statement file to RDF triples.
+   * Resolves wikilink references to anchor URIs.
+   */
+  private convertExo003Statement(
+    file: IFile,
+    metadata: Exo003StatementMetadata
+  ): Triple[] {
+    const triples: Triple[] = [];
+
+    try {
+      // Build a resolver function for wikilink references
+      const resolveReference = this.createExo003ReferenceResolver(file);
+
+      // Use Exo003Parser to convert to triple
+      const triple = Exo003Parser.toTriple(metadata, resolveReference);
+      triples.push(triple);
+
+      // Also add a triple linking the file to the statement
+      const fileIRI = this.notePathToIRI(file.path);
+      triples.push(
+        new Triple(fileIRI, Namespace.RDF.term("value"), triple.subject)
+      );
+    } catch {
+      // If conversion fails, skip this statement
+    }
+
+    return triples;
+  }
+
+  /**
+   * Converts an Exo 0.0.3 body file to RDF triples.
+   * The body content becomes the literal value of the triple.
+   */
+  private async convertExo003Body(
+    file: IFile,
+    metadata: Exo003BodyMetadata
+  ): Promise<Triple[]> {
+    const triples: Triple[] = [];
+
+    try {
+      // Read the file to get body content
+      const content = await this.vault.read(file);
+      const bodyContent = this.extractBodyContent(content);
+
+      // Build a resolver function for wikilink references
+      const resolveReference = this.createExo003ReferenceResolver(file);
+
+      // Resolve subject and predicate
+      const subjectRef = resolveReference(metadata.subject);
+      const predicateRef = resolveReference(metadata.predicate);
+
+      if (subjectRef.type === "literal") {
+        throw new Error("Body subject cannot be a literal");
+      }
+      if (predicateRef.type !== "iri") {
+        throw new Error("Body predicate must be an IRI");
+      }
+
+      const subject = subjectRef.type === "iri"
+        ? new IRI(subjectRef.value)
+        : new BlankNode(subjectRef.value);
+      const predicate = new IRI(predicateRef.value);
+
+      // Create the literal from body content
+      const literal = Exo003Parser.toLiteral(metadata, bodyContent.trim());
+
+      triples.push(new Triple(subject, predicate, literal));
+
+      // Also add a triple linking the file to the subject
+      const fileIRI = this.notePathToIRI(file.path);
+      triples.push(
+        new Triple(fileIRI, Namespace.RDF.term("value"), subject)
+      );
+    } catch {
+      // If conversion fails, skip this body
+    }
+
+    return triples;
+  }
+
+  /**
+   * Creates a reference resolver function for Exo 0.0.3 wikilink references.
+   *
+   * Resolves [[wikilink]] references to anchor/namespace URIs by looking up
+   * the target file's metadata.
+   */
+  private createExo003ReferenceResolver(
+    sourceFile: IFile
+  ): (ref: string) => {
+    type: "iri" | "blank" | "literal";
+    value: string;
+    language?: string;
+    direction?: "ltr" | "rtl";
+    datatype?: string;
+  } {
+    return (ref: string) => {
+      // Check if ref is a wikilink
+      const wikilink = this.extractWikilink(ref);
+      const targetPath = wikilink || ref;
+
+      // Try to resolve the target file
+      const targetFile = this.vault.getFirstLinkpathDest(targetPath, sourceFile.path);
+
+      if (targetFile) {
+        // Get the target file's frontmatter
+        const targetFrontmatter = this.vault.getFrontmatter(targetFile);
+
+        if (targetFrontmatter && Exo003Parser.isExo003Format(targetFrontmatter)) {
+          const parseResult = Exo003Parser.parse(targetFrontmatter);
+
+          if (parseResult.success && parseResult.metadata) {
+            const metadata = parseResult.metadata;
+
+            // Anchor and Namespace files have a URI
+            if (
+              metadata.metadata === Exo003MetadataType.Anchor ||
+              metadata.metadata === Exo003MetadataType.Namespace
+            ) {
+              return {
+                type: "iri",
+                value: (metadata as Exo003AnchorMetadata).uri,
+              };
+            }
+
+            // BlankNode files
+            if (metadata.metadata === Exo003MetadataType.BlankNode) {
+              return {
+                type: "blank",
+                value: (metadata as Exo003BlankNodeMetadata).uri.replace(/[^a-zA-Z0-9_-]/g, "_"),
+              };
+            }
+          }
+        }
+
+        // Target exists but is not Exo 0.0.3 format - use file IRI
+        return {
+          type: "iri",
+          value: this.notePathToIRI(targetFile.path).value,
+        };
+      }
+
+      // Check if this is a full URI (not a wikilink)
+      if (!wikilink && ref.includes("://")) {
+        return {
+          type: "iri",
+          value: ref,
+        };
+      }
+
+      // Could not resolve - treat as literal
+      return {
+        type: "literal",
+        value: ref,
+      };
+    };
   }
 
   /**

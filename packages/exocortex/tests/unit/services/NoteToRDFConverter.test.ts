@@ -3,7 +3,9 @@ import { NoteToRDFConverter } from "../../../src/services/NoteToRDFConverter";
 import { IVaultAdapter, IFile, IFrontmatter } from "../../../src/interfaces/IVaultAdapter";
 import { IRI } from "../../../src/domain/models/rdf/IRI";
 import { Literal } from "../../../src/domain/models/rdf/Literal";
+import { BlankNode } from "../../../src/domain/models/rdf/BlankNode";
 import { Namespace } from "../../../src/domain/models/rdf/Namespace";
+import { Exo003MetadataType } from "../../../src/domain/models/exo003";
 
 describe("NoteToRDFConverter", () => {
   let converter: NoteToRDFConverter;
@@ -1924,6 +1926,474 @@ See [[Note A]], then [[Note A]] again, and [[Note A]] once more.
         expect(
           bodyLinkTriples.some((t) => (t.object as Literal).value === "Target B")
         ).toBe(true);
+      });
+    });
+  });
+
+  // Issue #1366: Exo 0.0.3 file format support
+  describe("Exo 0.0.3 format support (Issue #1366)", () => {
+    const file: IFile = {
+      path: "exo003/test-file.md",
+      basename: "test-file",
+      name: "test-file.md",
+      parent: null,
+    };
+
+    describe("format detection", () => {
+      it("should detect Exo 0.0.3 anchor format", async () => {
+        const frontmatter: IFrontmatter = {
+          metadata: Exo003MetadataType.Anchor,
+          uri: "https://exocortex.my/ontology/ems#Task",
+        };
+
+        mockVault.getFrontmatter.mockReturnValue(frontmatter);
+
+        const triples = await converter.convertNote(file);
+
+        // Should generate owl:sameAs triples for anchor
+        const sameAsTriples = triples.filter((t) =>
+          (t.predicate as IRI).value.includes("owl#sameAs")
+        );
+        expect(sameAsTriples.length).toBe(2); // bidirectional sameAs
+      });
+
+      it("should detect Exo 0.0.3 namespace format", async () => {
+        const frontmatter: IFrontmatter = {
+          metadata: Exo003MetadataType.Namespace,
+          uri: "https://exocortex.my/ontology/ems#",
+        };
+
+        mockVault.getFrontmatter.mockReturnValue(frontmatter);
+
+        const triples = await converter.convertNote(file);
+
+        // Namespace files don't generate triples directly
+        expect(triples.length).toBe(0);
+      });
+
+      it("should detect Exo 0.0.3 blank_node format", async () => {
+        const frontmatter: IFrontmatter = {
+          metadata: Exo003MetadataType.BlankNode,
+          uri: "_:blank123",
+        };
+
+        mockVault.getFrontmatter.mockReturnValue(frontmatter);
+
+        const triples = await converter.convertNote(file);
+
+        // Should generate owl:sameAs triple to blank node
+        const sameAsTriples = triples.filter((t) =>
+          (t.predicate as IRI).value.includes("owl#sameAs")
+        );
+        expect(sameAsTriples.length).toBe(1);
+        expect(sameAsTriples[0].object).toBeInstanceOf(BlankNode);
+      });
+
+      it("should fallback to legacy format for non-Exo003 frontmatter", async () => {
+        const frontmatter: IFrontmatter = {
+          exo__Asset_label: "Legacy Note",
+          exo__Instance_class: "ems__Task",
+        };
+
+        mockVault.getFrontmatter.mockReturnValue(frontmatter);
+
+        const triples = await converter.convertNote(file);
+
+        // Should process as legacy format (with Asset_fileName)
+        const labelTriple = triples.find((t) =>
+          (t.predicate as IRI).value.includes("Asset_label")
+        );
+        expect(labelTriple).toBeDefined();
+        expect((labelTriple!.object as Literal).value).toBe("Legacy Note");
+      });
+    });
+
+    describe("anchor file conversion", () => {
+      it("should create bidirectional owl:sameAs triples", async () => {
+        const frontmatter: IFrontmatter = {
+          metadata: Exo003MetadataType.Anchor,
+          uri: "https://exocortex.my/ontology/ems#Meeting",
+        };
+
+        mockVault.getFrontmatter.mockReturnValue(frontmatter);
+
+        const triples = await converter.convertNote(file);
+
+        expect(triples.length).toBe(2);
+
+        // File IRI -> Anchor URI
+        const fileToUri = triples.find((t) =>
+          (t.subject as IRI).value.includes("obsidian://vault/")
+        );
+        expect(fileToUri).toBeDefined();
+        expect((fileToUri!.object as IRI).value).toBe("https://exocortex.my/ontology/ems#Meeting");
+
+        // Anchor URI -> File IRI
+        const uriToFile = triples.find((t) =>
+          (t.subject as IRI).value === "https://exocortex.my/ontology/ems#Meeting"
+        );
+        expect(uriToFile).toBeDefined();
+        expect((uriToFile!.object as IRI).value).toContain("obsidian://vault/");
+      });
+    });
+
+    describe("statement file conversion", () => {
+      it("should convert statement with URI references to triple", async () => {
+        const statementFile: IFile = {
+          path: "exo003/statement-1.md",
+          basename: "statement-1",
+          name: "statement-1.md",
+          parent: null,
+        };
+
+        const frontmatter: IFrontmatter = {
+          metadata: Exo003MetadataType.Statement,
+          subject: "[[anchor-subject]]",
+          predicate: "[[anchor-predicate]]",
+          object: "[[anchor-object]]",
+        };
+
+        const anchorSubject: IFile = {
+          path: "exo003/anchor-subject.md",
+          basename: "anchor-subject",
+          name: "anchor-subject.md",
+          parent: null,
+        };
+        const anchorPredicate: IFile = {
+          path: "exo003/anchor-predicate.md",
+          basename: "anchor-predicate",
+          name: "anchor-predicate.md",
+          parent: null,
+        };
+        const anchorObject: IFile = {
+          path: "exo003/anchor-object.md",
+          basename: "anchor-object",
+          name: "anchor-object.md",
+          parent: null,
+        };
+
+        mockVault.getFrontmatter.mockImplementation((f) => {
+          if (f === statementFile) return frontmatter;
+          if (f === anchorSubject) return {
+            metadata: Exo003MetadataType.Anchor,
+            uri: "https://example.org/subject",
+          };
+          if (f === anchorPredicate) return {
+            metadata: Exo003MetadataType.Anchor,
+            uri: "https://example.org/predicate",
+          };
+          if (f === anchorObject) return {
+            metadata: Exo003MetadataType.Anchor,
+            uri: "https://example.org/object",
+          };
+          return null;
+        });
+
+        mockVault.getFirstLinkpathDest.mockImplementation((linkpath) => {
+          if (linkpath === "anchor-subject") return anchorSubject;
+          if (linkpath === "anchor-predicate") return anchorPredicate;
+          if (linkpath === "anchor-object") return anchorObject;
+          return null;
+        });
+
+        const triples = await converter.convertNote(statementFile);
+
+        // Should have the statement triple + file reference triple
+        expect(triples.length).toBe(2);
+
+        const statementTriple = triples.find((t) =>
+          (t.subject as IRI).value === "https://example.org/subject"
+        );
+        expect(statementTriple).toBeDefined();
+        expect((statementTriple!.predicate as IRI).value).toBe("https://example.org/predicate");
+        expect((statementTriple!.object as IRI).value).toBe("https://example.org/object");
+      });
+
+      it("should handle statement with inline URIs (not wikilinks)", async () => {
+        const frontmatter: IFrontmatter = {
+          metadata: Exo003MetadataType.Statement,
+          subject: "https://example.org/subject",
+          predicate: "https://example.org/predicate",
+          object: "https://example.org/object",
+        };
+
+        mockVault.getFrontmatter.mockReturnValue(frontmatter);
+        mockVault.getFirstLinkpathDest.mockReturnValue(null);
+
+        const triples = await converter.convertNote(file);
+
+        expect(triples.length).toBe(2);
+
+        const statementTriple = triples.find((t) =>
+          (t.subject as IRI).value === "https://example.org/subject"
+        );
+        expect(statementTriple).toBeDefined();
+      });
+    });
+
+    describe("body file conversion", () => {
+      it("should convert body file to literal triple", async () => {
+        const bodyFile: IFile = {
+          path: "exo003/body-1.md",
+          basename: "body-1",
+          name: "body-1.md",
+          parent: null,
+        };
+
+        const frontmatter: IFrontmatter = {
+          metadata: Exo003MetadataType.Body,
+          subject: "[[anchor-subject]]",
+          predicate: "[[anchor-predicate]]",
+        };
+
+        const anchorSubject: IFile = {
+          path: "exo003/anchor-subject.md",
+          basename: "anchor-subject",
+          name: "anchor-subject.md",
+          parent: null,
+        };
+        const anchorPredicate: IFile = {
+          path: "exo003/anchor-predicate.md",
+          basename: "anchor-predicate",
+          name: "anchor-predicate.md",
+          parent: null,
+        };
+
+        const bodyContent = `---
+metadata: body
+subject: "[[anchor-subject]]"
+predicate: "[[anchor-predicate]]"
+---
+
+This is the body content of the note.
+It can contain **markdown** formatting.
+`;
+
+        mockVault.getFrontmatter.mockImplementation((f) => {
+          if (f === bodyFile) return frontmatter;
+          if (f === anchorSubject) return {
+            metadata: Exo003MetadataType.Anchor,
+            uri: "https://example.org/subject",
+          };
+          if (f === anchorPredicate) return {
+            metadata: Exo003MetadataType.Anchor,
+            uri: "https://example.org/description",
+          };
+          return null;
+        });
+
+        mockVault.getFirstLinkpathDest.mockImplementation((linkpath) => {
+          if (linkpath === "anchor-subject") return anchorSubject;
+          if (linkpath === "anchor-predicate") return anchorPredicate;
+          return null;
+        });
+
+        mockVault.read.mockResolvedValue(bodyContent);
+
+        const triples = await converter.convertNote(bodyFile);
+
+        // Should have the body triple + file reference triple
+        expect(triples.length).toBe(2);
+
+        const bodyTriple = triples.find((t) =>
+          (t.subject as IRI).value === "https://example.org/subject"
+        );
+        expect(bodyTriple).toBeDefined();
+        expect((bodyTriple!.predicate as IRI).value).toBe("https://example.org/description");
+        expect(bodyTriple!.object).toBeInstanceOf(Literal);
+        expect((bodyTriple!.object as Literal).value).toContain("This is the body content");
+      });
+    });
+
+    describe("reference resolution", () => {
+      it("should resolve wikilinks to anchor URIs", async () => {
+        const frontmatter: IFrontmatter = {
+          metadata: Exo003MetadataType.Statement,
+          subject: "[[my-anchor]]",
+          predicate: "https://example.org/predicate",
+          object: "https://example.org/object",
+        };
+
+        const anchorFile: IFile = {
+          path: "exo003/my-anchor.md",
+          basename: "my-anchor",
+          name: "my-anchor.md",
+          parent: null,
+        };
+
+        mockVault.getFrontmatter.mockImplementation((f) => {
+          if (f === file) return frontmatter;
+          if (f === anchorFile) return {
+            metadata: Exo003MetadataType.Anchor,
+            uri: "https://example.org/my-resolved-anchor",
+          };
+          return null;
+        });
+
+        mockVault.getFirstLinkpathDest.mockImplementation((linkpath) => {
+          if (linkpath === "my-anchor") return anchorFile;
+          return null;
+        });
+
+        const triples = await converter.convertNote(file);
+
+        const statementTriple = triples.find((t) =>
+          (t.subject as IRI).value === "https://example.org/my-resolved-anchor"
+        );
+        expect(statementTriple).toBeDefined();
+      });
+
+      it("should resolve wikilinks to blank nodes", async () => {
+        const frontmatter: IFrontmatter = {
+          metadata: Exo003MetadataType.Statement,
+          subject: "[[my-blank-node]]",
+          predicate: "https://example.org/predicate",
+          object: "https://example.org/object",
+        };
+
+        const blankNodeFile: IFile = {
+          path: "exo003/my-blank-node.md",
+          basename: "my-blank-node",
+          name: "my-blank-node.md",
+          parent: null,
+        };
+
+        mockVault.getFrontmatter.mockImplementation((f) => {
+          if (f === file) return frontmatter;
+          if (f === blankNodeFile) return {
+            metadata: Exo003MetadataType.BlankNode,
+            uri: "_:b1",
+          };
+          return null;
+        });
+
+        mockVault.getFirstLinkpathDest.mockImplementation((linkpath) => {
+          if (linkpath === "my-blank-node") return blankNodeFile;
+          return null;
+        });
+
+        const triples = await converter.convertNote(file);
+
+        const statementTriple = triples.find((t) =>
+          t.subject instanceof BlankNode
+        );
+        expect(statementTriple).toBeDefined();
+      });
+
+      it("should fall back to file IRI for non-Exo003 targets", async () => {
+        const frontmatter: IFrontmatter = {
+          metadata: Exo003MetadataType.Statement,
+          subject: "[[legacy-file]]",
+          predicate: "https://example.org/predicate",
+          object: "https://example.org/object",
+        };
+
+        const legacyFile: IFile = {
+          path: "legacy/legacy-file.md",
+          basename: "legacy-file",
+          name: "legacy-file.md",
+          parent: null,
+        };
+
+        mockVault.getFrontmatter.mockImplementation((f) => {
+          if (f === file) return frontmatter;
+          if (f === legacyFile) return {
+            exo__Asset_label: "Legacy Asset",
+          };
+          return null;
+        });
+
+        mockVault.getFirstLinkpathDest.mockImplementation((linkpath) => {
+          if (linkpath === "legacy-file") return legacyFile;
+          return null;
+        });
+
+        const triples = await converter.convertNote(file);
+
+        const statementTriple = triples.find((t) =>
+          (t.subject as IRI).value.includes("obsidian://vault/legacy/legacy-file.md")
+        );
+        expect(statementTriple).toBeDefined();
+      });
+    });
+
+    describe("invalid Exo 0.0.3 files", () => {
+      it("should return empty array for invalid Exo 0.0.3 frontmatter", async () => {
+        const frontmatter: IFrontmatter = {
+          metadata: Exo003MetadataType.Anchor,
+          // missing uri - invalid
+        };
+
+        mockVault.getFrontmatter.mockReturnValue(frontmatter);
+
+        const triples = await converter.convertNote(file);
+
+        expect(triples).toEqual([]);
+      });
+
+      it("should return empty array for statement with forbidden properties", async () => {
+        const frontmatter: IFrontmatter = {
+          metadata: Exo003MetadataType.Statement,
+          subject: "[[subject]]",
+          predicate: "[[predicate]]",
+          object: "[[object]]",
+          uid: "forbidden-property", // Not allowed in Exo 0.0.3
+        };
+
+        mockVault.getFrontmatter.mockReturnValue(frontmatter);
+
+        const triples = await converter.convertNote(file);
+
+        // Should skip invalid files
+        expect(triples).toEqual([]);
+      });
+    });
+
+    describe("convertVault with mixed formats", () => {
+      it("should handle vault with both legacy and Exo 0.0.3 files", async () => {
+        const legacyFile: IFile = {
+          path: "legacy-note.md",
+          basename: "legacy-note",
+          name: "legacy-note.md",
+          parent: null,
+        };
+
+        const exo003File: IFile = {
+          path: "exo003/anchor.md",
+          basename: "anchor",
+          name: "anchor.md",
+          parent: null,
+        };
+
+        mockVault.getAllFiles.mockReturnValue([legacyFile, exo003File]);
+
+        mockVault.getFrontmatter.mockImplementation((f) => {
+          if (f.path === "legacy-note.md") {
+            return {
+              exo__Asset_label: "Legacy Note",
+            };
+          }
+          if (f.path === "exo003/anchor.md") {
+            return {
+              metadata: Exo003MetadataType.Anchor,
+              uri: "https://example.org/anchor",
+            };
+          }
+          return null;
+        });
+
+        const triples = await converter.convertVault();
+
+        // Should have triples from both legacy and Exo 0.0.3 files
+        const legacyTriples = triples.filter((t) =>
+          (t.predicate as IRI).value.includes("Asset_label")
+        );
+        const exo003Triples = triples.filter((t) =>
+          (t.predicate as IRI).value.includes("owl#sameAs")
+        );
+
+        expect(legacyTriples.length).toBe(1);
+        expect(exo003Triples.length).toBe(2); // bidirectional sameAs
       });
     });
   });
