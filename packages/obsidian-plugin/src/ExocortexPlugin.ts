@@ -38,6 +38,7 @@ import { FileExplorerSortPatch } from "./presentation/file-explorer/FileExplorer
 import { TabTitlePatch } from "./presentation/tab-titles/TabTitlePatch";
 import { PropertiesLinkPatch } from "./presentation/properties/PropertiesLinkPatch";
 import { BodyLinkPatch } from "./presentation/body/BodyLinkPatch";
+import { GraphViewPatch } from "./presentation/graph-view/GraphViewPatch";
 
 /**
  * Exocortex Plugin - Automatic layout rendering
@@ -73,6 +74,7 @@ export default class ExocortexPlugin extends Plugin {
   private tabTitlePatch!: TabTitlePatch;
   private propertiesLinkPatch!: PropertiesLinkPatch;
   private bodyLinkPatch!: BodyLinkPatch;
+  private graphViewPatch!: GraphViewPatch;
   private webhookService!: WebhookService;
   private webhookDispatcher!: WebhookDispatcher;
   private semanticSearchManager!: SemanticSearchManager;
@@ -245,6 +247,15 @@ export default class ExocortexPlugin extends Plugin {
         }, 500);
       }
 
+      // Initialize Graph View label patch
+      this.graphViewPatch = new GraphViewPatch(this);
+      if (this.settings.showLabelsInGraphView) {
+        // Delay enabling to ensure Graph View is fully loaded
+        this.timerManager.setTimeout("graph-view-patch", () => {
+          this.graphViewPatch.enable();
+        }, 500);
+      }
+
       // Initialize Webhook integration
       this.webhookService = new WebhookService();
       this.webhookDispatcher = new WebhookDispatcher(this.app, this.webhookService);
@@ -410,6 +421,11 @@ export default class ExocortexPlugin extends Plugin {
       this.bodyLinkPatch.cleanup();
     }
 
+    // Cleanup Graph View patch
+    if (this.graphViewPatch) {
+      this.graphViewPatch.cleanup();
+    }
+
     // Cleanup Webhook dispatcher
     if (this.webhookDispatcher) {
       this.webhookDispatcher.cleanup();
@@ -520,6 +536,18 @@ export default class ExocortexPlugin extends Plugin {
   }
 
   /**
+   * Toggle Graph View label display on/off
+   * Called from settings when the showLabelsInGraphView toggle changes
+   */
+  toggleGraphViewLabels(enabled: boolean): void {
+    if (enabled) {
+      this.graphViewPatch.enable();
+    } else {
+      this.graphViewPatch.disable();
+    }
+  }
+
+  /**
    * Apply display name template changes
    * Called from settings when the displayNameTemplate changes
    * Triggers re-evaluation of tab titles, file explorer labels, properties links, and body links
@@ -547,6 +575,12 @@ export default class ExocortexPlugin extends Plugin {
     if (this.settings.showLabelsInBody && this.bodyLinkPatch) {
       this.bodyLinkPatch.disable();
       this.bodyLinkPatch.enable();
+    }
+
+    // Re-apply graph view labels with new template
+    if (this.settings.showLabelsInGraphView && this.graphViewPatch) {
+      this.graphViewPatch.disable();
+      this.graphViewPatch.enable();
     }
   }
 

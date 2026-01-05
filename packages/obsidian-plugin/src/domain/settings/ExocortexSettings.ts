@@ -143,6 +143,8 @@ export interface ExocortexSettings {
   showLabelsInProperties: boolean;
   /** Apply display name templates to links in markdown body content (reading mode) */
   showLabelsInBody: boolean;
+  /** Apply display name templates to nodes in Obsidian's Graph View */
+  showLabelsInGraphView: boolean;
   /** @deprecated Use displayNameSettings.defaultTemplate instead */
   displayNameTemplate: string;
   sortByDisplayName: boolean;
@@ -170,6 +172,7 @@ export const DEFAULT_SETTINGS: ExocortexSettings = {
   showLabelsInTabTitles: true,
   showLabelsInProperties: true,
   showLabelsInBody: true,
+  showLabelsInGraphView: true,
   displayNameTemplate: "{{exo__Asset_label}} ({{exo__Instance_class}})",
   sortByDisplayName: false,
   displayNameSettings: DEFAULT_DISPLAY_NAME_SETTINGS,

@@ -210,6 +210,21 @@ export class ExocortexSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
+      .setName("Show labels in graph view")
+      .setDesc(
+        "Display asset labels instead of filenames for nodes in Obsidian's graph view",
+      )
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.showLabelsInGraphView)
+          .onChange(async (value) => {
+            this.plugin.settings.showLabelsInGraphView = value;
+            await this.plugin.saveSettings();
+            this.plugin.toggleGraphViewLabels(value);
+          }),
+      );
+
+    new Setting(containerEl)
       .setName("Sort file explorer by display name")
       .setDesc(
         "Sort files by their display name (exo__Asset_label) instead of filename. " +
