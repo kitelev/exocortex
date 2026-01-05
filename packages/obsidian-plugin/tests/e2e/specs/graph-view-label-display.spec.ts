@@ -67,22 +67,31 @@ test.describe("Graph View Label Display", () => {
       // Open the global Graph View
       await app.commands.executeCommandById("graph:open");
 
-      // Wait for graph view to render
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      // Wait for graph view to render with retries
+      const maxRetries = 15;
+      const retryDelay = 500;
+      let nodes: any[] | null = null;
 
-      // Get the graph view leaf
-      const graphLeaves = app.workspace.getLeavesOfType("graph");
-      if (!graphLeaves || graphLeaves.length === 0) {
-        return { success: false, error: "No graph view found" };
+      for (let attempt = 0; attempt < maxRetries; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, retryDelay));
+
+        const graphLeaves = app.workspace.getLeavesOfType("graph");
+        if (!graphLeaves || graphLeaves.length === 0) {
+          continue;
+        }
+
+        const graphLeaf = graphLeaves[0];
+        const graphView = graphLeaf.view as any;
+        const renderer = graphView?.renderer;
+        nodes = renderer?.nodes;
+
+        if (nodes && Array.isArray(nodes) && nodes.length > 0) {
+          break;
+        }
       }
 
-      const graphLeaf = graphLeaves[0];
-      const graphView = graphLeaf.view as any;
-      const renderer = graphView?.renderer;
-      const nodes = renderer?.nodes;
-
-      if (!nodes || !Array.isArray(nodes)) {
-        return { success: false, error: "No graph nodes found" };
+      if (!nodes || !Array.isArray(nodes) || nodes.length === 0) {
+        return { success: false, error: "No graph nodes found after retries" };
       }
 
       // Find our test file node
@@ -156,22 +165,31 @@ test.describe("Graph View Label Display", () => {
       // Open the global Graph View
       await app.commands.executeCommandById("graph:open");
 
-      // Wait for graph view to render
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      // Wait for graph view to render with retries
+      const maxRetries = 15;
+      const retryDelay = 500;
+      let nodes: any[] | null = null;
 
-      // Get the graph view leaf
-      const graphLeaves = app.workspace.getLeavesOfType("graph");
-      if (!graphLeaves || graphLeaves.length === 0) {
-        return { success: false, error: "No graph view found" };
+      for (let attempt = 0; attempt < maxRetries; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, retryDelay));
+
+        const graphLeaves = app.workspace.getLeavesOfType("graph");
+        if (!graphLeaves || graphLeaves.length === 0) {
+          continue;
+        }
+
+        const graphLeaf = graphLeaves[0];
+        const graphView = graphLeaf.view as any;
+        const renderer = graphView?.renderer;
+        nodes = renderer?.nodes;
+
+        if (nodes && Array.isArray(nodes) && nodes.length > 0) {
+          break;
+        }
       }
 
-      const graphLeaf = graphLeaves[0];
-      const graphView = graphLeaf.view as any;
-      const renderer = graphView?.renderer;
-      const nodes = renderer?.nodes;
-
-      if (!nodes || !Array.isArray(nodes)) {
-        return { success: false, error: "No graph nodes found" };
+      if (!nodes || !Array.isArray(nodes) || nodes.length === 0) {
+        return { success: false, error: "No graph nodes found after retries" };
       }
 
       // Find our test file node (no label)
@@ -249,22 +267,31 @@ test.describe("Graph View Label Display", () => {
       // Open the global Graph View
       await app.commands.executeCommandById("graph:open");
 
-      // Wait for graph view to render
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      // Wait for graph view to render with retries
+      const maxRetries = 15;
+      const retryDelay = 500;
+      let nodes: any[] | null = null;
 
-      // Get the graph view leaf
-      const graphLeaves = app.workspace.getLeavesOfType("graph");
-      if (!graphLeaves || graphLeaves.length === 0) {
-        return { success: false, error: "No graph view found" };
+      for (let attempt = 0; attempt < maxRetries; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, retryDelay));
+
+        const graphLeaves = app.workspace.getLeavesOfType("graph");
+        if (!graphLeaves || graphLeaves.length === 0) {
+          continue;
+        }
+
+        const graphLeaf = graphLeaves[0];
+        const graphView = graphLeaf.view as any;
+        const renderer = graphView?.renderer;
+        nodes = renderer?.nodes;
+
+        if (nodes && Array.isArray(nodes) && nodes.length > 0) {
+          break;
+        }
       }
 
-      const graphLeaf = graphLeaves[0];
-      const graphView = graphLeaf.view as any;
-      const renderer = graphView?.renderer;
-      const nodes = renderer?.nodes;
-
-      if (!nodes || !Array.isArray(nodes)) {
-        return { success: false, error: "No graph nodes found" };
+      if (!nodes || !Array.isArray(nodes) || nodes.length === 0) {
+        return { success: false, error: "No graph nodes found after retries" };
       }
 
       // Find our test file node (has prototype but no direct label)
@@ -337,11 +364,19 @@ test.describe("Graph View Label Display", () => {
       // Open the local Graph View
       await app.commands.executeCommandById("graph:open-local");
 
-      // Wait for local graph view to render
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      // Wait for local graph view to render with retries
+      const maxRetries = 15;
+      const retryDelay = 500;
+      let localGraphLeaves: any[] = [];
 
-      // Get the local graph view leaf
-      const localGraphLeaves = app.workspace.getLeavesOfType("localgraph");
+      for (let attempt = 0; attempt < maxRetries; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, retryDelay));
+        localGraphLeaves = app.workspace.getLeavesOfType("localgraph");
+        if (localGraphLeaves && localGraphLeaves.length > 0) {
+          break;
+        }
+      }
+
       if (!localGraphLeaves || localGraphLeaves.length === 0) {
         return { success: false, error: "No local graph view found" };
       }
@@ -427,22 +462,32 @@ test.describe("Graph View Label Display", () => {
       // Open the global Graph View
       await app.commands.executeCommandById("graph:open");
 
-      // Wait for graph view to render
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      // Wait for graph view to render with retries
+      const maxRetries = 15;
+      const retryDelay = 500;
+      let nodes: any[] | null = null;
+      let graphView: any = null;
 
-      // Get the graph view leaf
-      const graphLeaves = app.workspace.getLeavesOfType("graph");
-      if (!graphLeaves || graphLeaves.length === 0) {
-        return { success: false, error: "No graph view found" };
+      for (let attempt = 0; attempt < maxRetries; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, retryDelay));
+
+        const graphLeaves = app.workspace.getLeavesOfType("graph");
+        if (!graphLeaves || graphLeaves.length === 0) {
+          continue;
+        }
+
+        const graphLeaf = graphLeaves[0];
+        graphView = graphLeaf.view as any;
+        const renderer = graphView?.renderer;
+        nodes = renderer?.nodes;
+
+        if (nodes && Array.isArray(nodes) && nodes.length > 0) {
+          break;
+        }
       }
 
-      const graphLeaf = graphLeaves[0];
-      const graphView = graphLeaf.view as any;
-      const renderer = graphView?.renderer;
-      let nodes = renderer?.nodes;
-
-      if (!nodes || !Array.isArray(nodes)) {
-        return { success: false, error: "No graph nodes found" };
+      if (!nodes || !Array.isArray(nodes) || nodes.length === 0) {
+        return { success: false, error: "No graph nodes found after retries" };
       }
 
       // Find our test file node and get initial display text
@@ -467,7 +512,7 @@ test.describe("Graph View Label Display", () => {
       });
 
       // Wait for metadata change to propagate
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+      await new Promise((resolve) => setTimeout(resolve, 2000));
 
       // Re-fetch nodes after metadata change
       nodes = graphView?.renderer?.nodes;
