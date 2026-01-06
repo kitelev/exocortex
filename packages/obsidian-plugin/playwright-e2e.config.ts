@@ -1,7 +1,11 @@
 import { defineConfig } from "@playwright/test";
+import * as path from "path";
+
+// Resolve paths relative to this config file's directory
+const configDir = path.dirname(__filename);
 
 export default defineConfig({
-  testDir: "./tests/e2e/specs",
+  testDir: path.join(configDir, "./tests/e2e/specs"),
   // fullyParallel: false - E2E tests share Obsidian state, must run serially per shard
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
@@ -20,15 +24,21 @@ export default defineConfig({
     ...(process.env.CI
       ? ([["blob", { outputDir: "blob-report" }]] as const)
       : []),
-    ["html", { outputFolder: "playwright-report-e2e", open: "never" }],
+    [
+      "html",
+      {
+        outputFolder: path.join(configDir, "playwright-report-e2e"),
+        open: "never",
+      },
+    ],
     // Custom E2E reporter with improved formatting and hierarchy
-    ["./playwright-e2e-reporter.ts"],
+    [path.join(configDir, "playwright-e2e-reporter.ts")],
     ...(process.env.CI ? [["github", {}] as ["github", {}]] : []),
-    ["./playwright-no-flaky-reporter.ts"],
+    [path.join(configDir, "playwright-no-flaky-reporter.ts")],
   ],
 
   // Output directory for test artifacts (videos, screenshots, traces)
-  outputDir: "test-results",
+  outputDir: path.join(configDir, "test-results"),
 
   use: {
     trace: "retain-on-failure",
