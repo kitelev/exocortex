@@ -1,0 +1,88 @@
+name: Blocker Check
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  issues: read
+  pull-requests: read
+
+jobs:
+  check-blockers:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check for blocked issues
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prBody = context.payload.pull_request.body || '';
+
+            // Find all "Closes #XXX" or "Fixes #XXX" references
+            const closingPattern = /(?:closes?|fixes?|resolves?)\s+#(\d+)/gi;
+            const matches = [...prBody.matchAll(closingPattern)];
+
+            if (matches.length === 0) {
+              console.log('No closing issues found in PR body');
+              return;
+            }
+
+            const issueNumbers = matches.map(m => parseInt(m[1]));
+            console.log(`Found closing issues: ${issueNumbers.join(', ')}`);
+
+            const blockedIssues = [];
+
+            for (const issueNumber of issueNumbers) {
+              // Use GitHub's blockedBy API (not sub-issues!)
+              const query = `
+                query($owner: String!, $repo: String!, $number: Int!) {
+                  repository(owner: $owner, name: $repo) {
+                    issue(number: $number) {
+                      blockedBy(first: 20) {
+                        nodes {
+                          number
+                          title
+                          state
+                        }
+                      }
+                    }
+                  }
+                }
+              `;
+
+              const result = await github.graphql(query, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                number: issueNumber
+              });
+
+              const blockers = result.repository.issue.blockedBy?.nodes || [];
+              const openBlockers = blockers.filter(b => b.state === 'OPEN');
+
+              if (openBlockers.length > 0) {
+                blockedIssues.push({
+                  issue: issueNumber,
+                  blockers: openBlockers
+                });
+              }
+            }
+
+            if (blockedIssues.length > 0) {
+              let message = '## Blocker Check Failed\n\n';
+              message += 'This PR attempts to close issues that have open blockers:\n\n';
+
+              for (const blocked of blockedIssues) {
+                message += `### Issue #${blocked.issue}\n`;
+                message += 'Open blockers (via GitHub blockedBy API):\n';
+                for (const blocker of blocked.blockers) {
+                  message += `- [ ] #${blocker.number}: ${blocker.title}\n`;
+                }
+                message += '\n';
+              }
+
+              message += '\n**Action required:** Close all blocker issues before merging this PR, or remove the `Closes #XXX` reference.\n';
+
+              core.setFailed(message);
+            } else {
+              console.log('All closing issues have their blockers resolved');
+            }
