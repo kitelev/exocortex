@@ -947,7 +947,7 @@ All functions marked ✅ PURE can be copied to Core **as-is**:
 ## 🔗 Related Documentation
 
 - [ARCHITECTURE.md](../ARCHITECTURE.md) - System architecture
-- [PROPERTY_SCHEMA.md](PROPERTY_SCHEMA.md) - Property reference
+- [PROPERTY_SCHEMA.md](./PROPERTY_SCHEMA.md) - Property reference
 - Source files in `/src/infrastructure/services/`
 
 ---

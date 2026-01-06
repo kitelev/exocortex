@@ -144,7 +144,7 @@
 
 1. **Check Syntax**: Use Query Builder to validate
 2. **Check Triple Store**: Reload layout to refresh data
-3. **See**: [SPARQL Troubleshooting](sparql/User-Guide.md#troubleshooting)
+3. **See**: [SPARQL Troubleshooting](./sparql/User-Guide.md#troubleshooting)
 
 ---
 
@@ -179,6 +179,6 @@
 ---
 
 **See also:**
-- [Getting Started Guide](Getting-Started.md)
-- [Command Reference](Command-Reference.md)
-- [SPARQL Troubleshooting](sparql/User-Guide.md#troubleshooting)
+- [Getting Started Guide](./Getting-Started.md)
+- [Command Reference](./Command-Reference.md)
+- [SPARQL Troubleshooting](./sparql/User-Guide.md#troubleshooting)

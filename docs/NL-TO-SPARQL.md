@@ -292,6 +292,6 @@ Create an HTTP webhook that:
 
 ## Related Documentation
 
-- [SPARQL Documentation](./sparql/README.md) - Full SPARQL reference
-- [CLI Documentation](./cli/README.md) - CLI command reference
-- [EXOCORTEX-KNOWLEDGE.md](/Users/kitelev/Developer/EXOCORTEX-KNOWLEDGE.md) - Query examples
+- [SPARQL User Guide](./sparql/User-Guide.md) - Full SPARQL reference
+- [CLI Command Reference](./cli/Command-Reference.md) - CLI command reference
+- [Query Examples](./sparql/Query-Examples.md) - SPARQL query patterns

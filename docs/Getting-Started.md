@@ -290,25 +290,25 @@ Now that you have the basics, explore advanced features:
 
 ### 1. Workflow Management
 Learn the complete effort lifecycle:
-- [Task Workflows](workflows/Task-Workflow.md)
-- [Project Workflows](workflows/Project-Workflow.md)
+- [Task Workflows](./workflows/Task-Workflow.md)
+- [Project Workflows](./workflows/Project-Workflow.md)
 
 ### 2. Daily Planning
 Master daily note organization:
-- [Daily Planning Guide](workflows/Daily-Planning.md)
+- [Daily Planning Guide](./workflows/Daily-Planning.md)
 
 ### 3. Area Hierarchies
 Build knowledge domains:
-- [Area Organization Guide](workflows/Area-Organization.md)
+- [Area Organization Guide](./workflows/Area-Organization.md)
 
 ### 4. Command Reference
 Discover all 32 commands:
-- [Command Reference](Command-Reference.md)
+- [Command Reference](./Command-Reference.md)
 
 ### 5. Advanced Features
-- [SPARQL Queries](sparql/User-Guide.md)
-- [Effort Voting System](workflows/Effort-Voting.md)
-- [Mobile/iOS Usage](Performance-Guide.md#mobile-optimization)
+- [SPARQL Queries](./sparql/User-Guide.md)
+- [Effort Voting System](./workflows/Effort-Voting.md)
+- [Mobile/iOS Usage](./Performance-Guide.md#mobile-optimization)
 
 ---
 
@@ -351,10 +351,10 @@ Discover all 32 commands:
 ## Getting Help
 
 - **Documentation**: See [full documentation index](../README.md#documentation)
-- **Troubleshooting**: [Troubleshooting Guide](Troubleshooting.md)
+- **Troubleshooting**: [Troubleshooting Guide](./Troubleshooting.md)
 - **Issues**: [GitHub Issues](https://github.com/kitelev/exocortex/issues)
 - **Community**: [Obsidian Forum](https://forum.obsidian.md/)
 
 ---
 
-**Next**: [Task Workflows →](workflows/Task-Workflow.md)
+**Next**: [Task Workflows →](./workflows/Task-Workflow.md)

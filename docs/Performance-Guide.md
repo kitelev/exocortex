@@ -80,5 +80,5 @@ Current sizes:
 ---
 
 **See also:**
-- [SPARQL Performance Tips](sparql/Performance-Tips.md)
+- [SPARQL Performance Tips](./sparql/Performance-Tips.md)
 - [Architecture](../ARCHITECTURE.md)

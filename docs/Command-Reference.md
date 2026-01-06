@@ -665,7 +665,7 @@ Special-purpose commands.
 2. Build SPARQL query visually
 3. Copy generated query to markdown
 
-**See**: [SPARQL Query Builder Guide](sparql/User-Guide.md#query-builder)
+**See**: [SPARQL Query Builder Guide](./sparql/User-Guide.md#query-builder)
 
 **Visibility**: Always available.
 
@@ -760,6 +760,6 @@ Commands appear contextually based on note type and state:
 ---
 
 **See also**:
-- [Getting Started Guide](Getting-Started.md)
-- [Task Workflow](workflows/Task-Workflow.md)
-- [Project Workflow](workflows/Project-Workflow.md)
+- [Getting Started Guide](./Getting-Started.md)
+- [Task Workflow](./workflows/Task-Workflow.md)
+- [Project Workflow](./workflows/Project-Workflow.md)
