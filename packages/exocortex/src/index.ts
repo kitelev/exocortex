@@ -314,8 +314,13 @@ export {
   type SelectOptions,
 } from "./domain/ports/IUIProvider";
 
-// Action Context export
+// Action Types exports
 export type { ActionContext } from "./domain/types/ActionContext";
+export type {
+  ActionResult,
+  ActionDefinition,
+  ActionHandler,
+} from "./domain/types/ActionTypes";
 
 // DI Container exports
 export {

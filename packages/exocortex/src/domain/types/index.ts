@@ -7,3 +7,8 @@ export {
   extractPropertyLabel,
 } from "./PropertyDefinition";
 export { type ActionContext } from "./ActionContext";
+export {
+  type ActionResult,
+  type ActionDefinition,
+  type ActionHandler,
+} from "./ActionTypes";
