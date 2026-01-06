@@ -266,24 +266,26 @@ describe("Milestone v1.3 Acceptance: RDF-Driven Commands", () => {
   describe("Blocker Status Documentation", () => {
     /**
      * Documents the blocked state for tracking
+     * Updated: Issues #1433, #1438-#1441 are now CLOSED.
+     * Issue #1442 is being completed with this PR.
      */
     it("should document all blocker issues", () => {
       const blockerIssues = [
-        { id: 1433, title: "[Plugin] Implement RdfCommandRegistry", status: "OPEN" },
-        { id: 1438, title: "[Ontology] Create ems-ui commands namespace section", status: "OPEN" },
-        { id: 1439, title: "[Commands] Define Create commands in RDF", status: "OPEN" },
-        { id: 1440, title: "[Commands] Define Status commands in RDF", status: "OPEN" },
-        { id: 1441, title: "[Commands] Define Navigation commands in RDF", status: "OPEN" },
-        { id: 1442, title: "[Commands] Migrate all 36 commands to RDF", status: "OPEN" },
+        { id: 1433, title: "[Plugin] Implement RdfCommandRegistry", status: "CLOSED" },
+        { id: 1438, title: "[Ontology] Create ems-ui commands namespace section", status: "CLOSED" },
+        { id: 1439, title: "[Commands] Define Create commands in RDF", status: "CLOSED" },
+        { id: 1440, title: "[Commands] Define Status commands in RDF", status: "CLOSED" },
+        { id: 1441, title: "[Commands] Define Navigation commands in RDF", status: "CLOSED" },
+        { id: 1442, title: "[Commands] Migrate all 36 commands to RDF", status: "IN_PROGRESS" },
         { id: 1443, title: "[Docs] Update documentation for Milestone v1.3", status: "OPEN" },
       ];
 
-      // All blockers must be closed before this issue can proceed
+      // Most blockers are now closed
       const openBlockers = blockerIssues.filter(b => b.status === "OPEN");
-      expect(openBlockers.length).toBe(7);
+      expect(openBlockers.length).toBe(1);
 
       // Document this for issue tracking
-      // Once all blockers are CLOSED, the skipped tests should be unskipped
+      // RDF command definitions are complete, tests can use mocked data
     });
 
     /**
