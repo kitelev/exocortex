@@ -77,24 +77,23 @@ export class RdfCommandRegistry {
 
   /**
    * SPARQL query to retrieve all commands from RDF.
-   * Queries for instances of ems-ui:Command class with their properties.
+   * Queries for instances of exo-ui:Command class with their properties.
    */
   private static readonly COMMANDS_QUERY = `
     PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
     PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-    PREFIX exo: <https://exocortex.my/ontology/exo#>
-    PREFIX ems-ui: <https://exocortex.my/ontology/ems-ui#>
+    PREFIX exo-ui: <https://exocortex.my/ontology/exo-ui#>
 
     SELECT ?cmd ?id ?name ?icon ?hotkey ?action ?condition ?headless
     WHERE {
-      ?cmd a ems-ui:Command .
-      ?cmd ems-ui:Command_id ?id .
-      ?cmd ems-ui:Command_name ?name .
-      OPTIONAL { ?cmd ems-ui:Command_icon ?icon }
-      OPTIONAL { ?cmd ems-ui:Command_hotkey ?hotkey }
-      OPTIONAL { ?cmd ems-ui:Command_action ?action }
-      OPTIONAL { ?cmd ems-ui:Command_condition ?condition }
-      OPTIONAL { ?cmd ems-ui:Command_headless ?headless }
+      ?cmd a exo-ui:Command .
+      ?cmd exo-ui:Command_id ?id .
+      ?cmd exo-ui:Command_name ?name .
+      OPTIONAL { ?cmd exo-ui:Command_icon ?icon }
+      OPTIONAL { ?cmd exo-ui:Command_hotkey ?hotkey }
+      OPTIONAL { ?cmd exo-ui:Command_action ?action }
+      OPTIONAL { ?cmd exo-ui:Command_condition ?condition }
+      OPTIONAL { ?cmd exo-ui:Command_headless ?headless }
     }
   `;
 
