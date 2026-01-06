@@ -91,6 +91,67 @@ const metadata = createMockMetadata({
 
 ---
 
+## E2E Test Logging
+
+E2E tests use a structured logging system for improved readability and debugging.
+
+### Log Levels
+
+Control verbosity via `E2E_LOG_LEVEL` environment variable:
+
+| Level | Value | Description |
+|-------|-------|-------------|
+| ERROR | 0 | Only errors (red) |
+| WARN | 1 | Errors + warnings (yellow) |
+| INFO | 2 | Normal output (default) |
+| DEBUG | 3 | Verbose debugging (gray) |
+
+```bash
+# Run with debug logging
+E2E_LOG_LEVEL=3 npm run test:e2e
+
+# Run with errors only (quiet mode)
+E2E_LOG_LEVEL=0 npm run test:e2e
+```
+
+### Using test.step() for Clarity
+
+Wrap major test operations in `test.step()` for hierarchical output:
+
+```typescript
+test("should display tasks", async () => {
+  await test.step("Open daily note", async () => {
+    await launcher.openFile("Daily Notes/2025-10-16.md");
+  });
+
+  await test.step("Verify tasks visible", async () => {
+    await expect(tasksTable).toBeVisible();
+  });
+});
+```
+
+### Custom Logger Usage
+
+The `TestLogger` class provides structured logging for test utilities:
+
+```typescript
+import { TestLogger, LogLevel } from "./logger";
+
+const logger = new TestLogger("MyComponent");
+
+logger.phase("Setup");
+logger.info("Starting test...");
+logger.debug("Debug details", { port: 9222 });
+logger.phaseEnd("Setup", true);
+
+// Output:
+// ─── Setup ─────────────────────────────────
+// [MyComponent] INFO: Starting test...
+// ✓ Setup completed
+```
+
+---
+
 ## Additional Resources
 
 - **[TESTING.md](../TESTING.md)** - Comprehensive testing guide (recommended)

@@ -7,6 +7,7 @@ import * as path from "path";
 import * as fs from "fs";
 import * as os from "os";
 import { spawn, ChildProcess } from "child_process";
+import { TestLogger, LogLevel } from "./logger";
 
 export class ObsidianLauncher {
   private app: ElectronApplication | null = null;
@@ -14,10 +15,12 @@ export class ObsidianLauncher {
   private vaultPath: string;
   private electronProcess: ChildProcess | null = null;
   private cdpPort: number;
+  private logger: TestLogger;
 
   constructor(vaultPath?: string) {
     this.vaultPath = vaultPath || path.join(__dirname, "../test-vault");
     this.cdpPort = 9222;
+    this.logger = new TestLogger("ObsidianLauncher");
   }
 
   async launch(): Promise<void> {
@@ -25,12 +28,12 @@ export class ObsidianLauncher {
       process.env.OBSIDIAN_PATH ||
       "/Applications/Obsidian.app/Contents/MacOS/Obsidian";
 
-    console.log("[ObsidianLauncher] Launching Obsidian from:", obsidianPath);
-    console.log("[ObsidianLauncher] Vault path:", this.vaultPath);
-    console.log("[ObsidianLauncher] DOCKER env:", process.env.DOCKER);
-    console.log("[ObsidianLauncher] DISPLAY env:", process.env.DISPLAY);
+    this.logger.phase("Launch");
+    this.logger.info("Starting Obsidian", { path: obsidianPath, vault: this.vaultPath });
+    this.logger.debug("Environment", { DOCKER: process.env.DOCKER, DISPLAY: process.env.DISPLAY });
 
     if (!fs.existsSync(obsidianPath)) {
+      this.logger.error(`Obsidian not found at ${obsidianPath}. Set OBSIDIAN_PATH environment variable.`);
       throw new Error(
         `Obsidian not found at ${obsidianPath}. Set OBSIDIAN_PATH environment variable.`,
       );
@@ -42,7 +45,7 @@ export class ObsidianLauncher {
 
     // In Docker/CI, we need additional flags to run in headless environment
     if (process.env.CI || process.env.DOCKER) {
-      console.log("[ObsidianLauncher] Adding Docker/CI flags...");
+      this.logger.debug("Adding Docker/CI flags for headless environment");
       args.push(
         "--no-sandbox",
         "--disable-gpu",
@@ -58,10 +61,8 @@ export class ObsidianLauncher {
       );
     }
 
-    console.log(
-      `[ObsidianLauncher] Spawning Electron process with CDP port ${this.cdpPort}...`,
-    );
-    console.log("[ObsidianLauncher] Args:", args);
+    this.logger.step(`Spawning Electron process (CDP port ${this.cdpPort})`);
+    this.logger.debug("Launch args", args);
 
     this.electronProcess = spawn(obsidianPath, args, {
       env: {
@@ -71,52 +72,44 @@ export class ObsidianLauncher {
       stdio: "inherit",
     });
 
-    console.log(
-      "[ObsidianLauncher] Electron process spawned, PID:",
-      this.electronProcess.pid,
-    );
+    this.logger.debug("Electron process spawned", { pid: this.electronProcess.pid });
 
     await this.waitForPort(this.cdpPort, 45000);
-    console.log(`[ObsidianLauncher] CDP port ${this.cdpPort} is ready`);
+    this.logger.step("CDP port ready");
 
-    console.log("[ObsidianLauncher] Connecting to Electron via CDP...");
+    this.logger.step("Connecting to Electron via CDP");
     const browser = await chromium.connectOverCDP(
       `http://localhost:${this.cdpPort}`,
       { timeout: 30000 },
     );
-    console.log("[ObsidianLauncher] Connected to browser via CDP");
+    this.logger.debug("Connected to browser via CDP");
 
     const contexts = browser.contexts();
-    console.log(
-      `[ObsidianLauncher] Found ${contexts.length} browser context(s)`,
-    );
+    this.logger.debug("Browser contexts found", { count: contexts.length });
 
     if (contexts.length === 0) {
+      this.logger.error("No browser contexts found after CDP connection");
       throw new Error("No browser contexts found after CDP connection");
     }
 
     const context = contexts[0];
     const pages = context.pages();
-    console.log(
-      `[ObsidianLauncher] Found ${pages.length} page(s) in first context`,
-    );
+    this.logger.debug("Pages in first context", { count: pages.length });
 
     if (pages.length > 1) {
       this.window = pages[1];
-      console.log("[ObsidianLauncher] Using second page (trashhalo pattern)");
+      this.logger.debug("Using second page (trashhalo pattern)");
     } else if (pages.length === 1) {
       this.window = pages[0];
-      console.log("[ObsidianLauncher] Using first page (only one available)");
+      this.logger.debug("Using first page (only one available)");
     } else {
-      console.log("[ObsidianLauncher] No pages yet, waiting for page event...");
+      this.logger.debug("No pages yet, waiting for page event...");
       this.window = await context.waitForEvent("page", { timeout: 30000 });
-      console.log("[ObsidianLauncher] Got page from event");
+      this.logger.debug("Got page from event");
     }
 
     await this.window.waitForLoadState("domcontentloaded", { timeout: 30000 });
-    console.log(
-      "[ObsidianLauncher] DOM loaded, waiting for window.app to become available...",
-    );
+    this.logger.step("DOM loaded, waiting for window.app");
 
     const maxPolls = 60;
     let appFound = false;
@@ -133,36 +126,31 @@ export class ObsidianLauncher {
 
       if (pollResult.hasApp && pollResult.hasWorkspace && pollResult.hasVault) {
         appFound = true;
-        console.log(
-          "[ObsidianLauncher] App object found after",
-          pollCount,
-          "polls",
-        );
+        this.logger.debug("App object found", { polls: pollCount });
         break;
       }
 
-      if (pollCount % 5 === 0) {
-        console.log(
-          `[ObsidianLauncher] Poll ${pollCount}/${maxPolls}: app=${pollResult.hasApp}, workspace=${pollResult.hasWorkspace}, vault=${pollResult.hasVault}`,
-        );
+      if (pollCount % 10 === 0) {
+        this.logger.debug(`Polling for app`, { poll: pollCount, max: maxPolls, ...pollResult });
       }
 
       await this.window.waitForTimeout(1000);
     }
 
     if (!appFound) {
+      this.logger.error("window.app not available after 60 seconds");
       throw new Error("window.app not available after 60 seconds");
     }
 
-    console.log("[ObsidianLauncher] Obsidian app object available!");
+    this.logger.step("Obsidian app object available");
 
-    console.log("[ObsidianLauncher] Checking for trust dialog...");
+    this.logger.step("Checking for trust dialog");
     await this.handleTrustDialog();
 
-    console.log("[ObsidianLauncher] Waiting for vault to finish indexing...");
+    this.logger.step("Waiting for vault indexing");
     await this.waitForVaultReady();
 
-    console.log("[ObsidianLauncher] Obsidian ready!");
+    this.logger.phaseEnd("Launch", true);
   }
 
   private createObsidianConfig(): void {
@@ -175,7 +163,7 @@ export class ObsidianLauncher {
 
     if (!fs.existsSync(configDir)) {
       fs.mkdirSync(configDir, { recursive: true });
-      console.log("[ObsidianLauncher] Created config directory:", configDir);
+      this.logger.debug("Created config directory", { path: configDir });
     }
 
     const vaultId = "test-vault-e2e";
@@ -191,8 +179,7 @@ export class ObsidianLauncher {
     };
 
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
-    console.log("[ObsidianLauncher] Created Obsidian config at:", configPath);
-    console.log("[ObsidianLauncher] Registered vault:", this.vaultPath);
+    this.logger.debug("Created Obsidian config", { configPath, vaultPath: this.vaultPath });
   }
 
   private async handleTrustDialog(): Promise<void> {
@@ -201,8 +188,6 @@ export class ObsidianLauncher {
     }
 
     try {
-      console.log("[ObsidianLauncher] Looking for trust dialog...");
-
       const trustButton = await this.window
         .locator('button:has-text("Trust author and enable plugins")')
         .first();
@@ -212,13 +197,8 @@ export class ObsidianLauncher {
         .catch(() => false);
 
       if (isVisible) {
-        console.log(
-          '[ObsidianLauncher] Trust dialog found! Clicking "Trust author and enable plugins" button...',
-        );
+        this.logger.info("Trust dialog found, clicking button");
         await trustButton.click();
-        console.log(
-          "[ObsidianLauncher] Trust button clicked, waiting for dialog to disappear...",
-        );
 
         await this.window
           .waitForSelector(
@@ -229,22 +209,15 @@ export class ObsidianLauncher {
             },
           )
           .catch(() => {
-            console.log(
-              "[ObsidianLauncher] Trust dialog did not disappear, but continuing...",
-            );
+            this.logger.warn("Trust dialog did not disappear, continuing anyway");
           });
 
-        console.log("[ObsidianLauncher] Trust dialog handled successfully");
+        this.logger.debug("Trust dialog handled successfully");
       } else {
-        console.log(
-          "[ObsidianLauncher] Trust dialog not present (vault already trusted or not required)",
-        );
+        this.logger.debug("Trust dialog not present (vault already trusted)");
       }
     } catch (error) {
-      console.log(
-        "[ObsidianLauncher] No trust dialog found or error handling it:",
-        error,
-      );
+      this.logger.debug("No trust dialog found or error handling it", { error: String(error) });
     }
   }
 
@@ -275,26 +248,18 @@ export class ObsidianLauncher {
 
       if (vaultStatus.ready && vaultStatus.fileCount > 0) {
         // Give Obsidian extra time to fully index all files before considering vault ready
-        console.log(
-          `[ObsidianLauncher] Vault has ${vaultStatus.fileCount} files, waiting for stabilization...`,
-        );
+        this.logger.debug("Vault has files, waiting for stabilization", { fileCount: vaultStatus.fileCount });
         await new Promise((resolve) => setTimeout(resolve, 2000));
 
-        console.log(
-          `[ObsidianLauncher] Vault ready with ${vaultStatus.fileCount} markdown files indexed`,
-        );
+        this.logger.info("Vault ready", { markdownFiles: vaultStatus.fileCount });
         return;
       }
 
-      console.log(
-        `[ObsidianLauncher] Vault indexing... (${vaultStatus.fileCount} files found)`,
-      );
+      this.logger.debug("Vault indexing", { filesFound: vaultStatus.fileCount });
       await new Promise((resolve) => setTimeout(resolve, checkInterval));
     }
 
-    console.log(
-      "[ObsidianLauncher] WARNING: Vault indexing timeout, continuing anyway...",
-    );
+    this.logger.warn("Vault indexing timeout, continuing anyway");
   }
 
   private async waitForPort(port: number, timeout: number): Promise<void> {
@@ -312,9 +277,7 @@ export class ObsidianLauncher {
           },
           (res) => {
             if (res.statusCode === 200) {
-              console.log(
-                `[ObsidianLauncher] Port ${port} is accepting connections`,
-              );
+              this.logger.debug("Port is accepting connections", { port });
               resolve();
             } else {
               retryCheck();
@@ -331,6 +294,7 @@ export class ObsidianLauncher {
 
       const retryCheck = () => {
         if (Date.now() - startTime > timeout) {
+          this.logger.error(`Timeout waiting for port ${port} after ${timeout}ms`);
           reject(
             new Error(`Timeout waiting for port ${port} after ${timeout}ms`),
           );
@@ -349,7 +313,8 @@ export class ObsidianLauncher {
     }
 
     const normalizedPath = filePath.replace(/\\/g, "/");
-    console.log(`[ObsidianLauncher] Opening file: ${normalizedPath}`);
+    this.logger.phase("Open File");
+    this.logger.info("Opening file", { path: normalizedPath });
 
     const maxRetries = 10;
     const retryDelay = 1000;
@@ -395,22 +360,17 @@ export class ObsidianLauncher {
       }
 
       if (i < maxRetries - 1 && fileOpenResult.retryable) {
-        console.log(
-          `[ObsidianLauncher] File not ready, retrying (${i + 1}/${maxRetries})...`,
-        );
+        this.logger.debug("File not ready, retrying", { attempt: i + 1, maxRetries, error: fileOpenResult.error });
         await new Promise((resolve) => setTimeout(resolve, retryDelay));
       }
     }
 
-    console.log("[ObsidianLauncher] File open result:", fileOpenResult);
-
     if (!fileOpenResult.success) {
+      this.logger.error("Failed to open file", { error: fileOpenResult.error });
       throw new Error(`Failed to open file: ${fileOpenResult.error}`);
     }
 
-    console.log(
-      "[ObsidianLauncher] Waiting for file load and plugin render...",
-    );
+    this.logger.step("Waiting for file load and plugin render");
     await this.window
       .waitForLoadState("networkidle", { timeout: 5000 })
       .catch(() => {});
@@ -430,11 +390,14 @@ export class ObsidianLauncher {
       };
     });
 
-    console.log("[ObsidianLauncher] Final view info:", finalViewInfo);
+    this.logger.debug("Final view info", finalViewInfo);
 
     if (!finalViewInfo.hasLeaf) {
+      this.logger.error("No active leaf after opening file");
       throw new Error("No active leaf after opening file");
     }
+
+    this.logger.phaseEnd("Open File", true);
   }
 
   async getWindow(): Promise<Page> {
@@ -448,6 +411,7 @@ export class ObsidianLauncher {
     if (!this.window) {
       throw new Error("Obsidian not launched. Call launch() first.");
     }
+    this.logger.debug("Waiting for element", { selector, timeout });
     await this.window.waitForSelector(selector, { timeout });
   }
 
@@ -456,9 +420,7 @@ export class ObsidianLauncher {
       throw new Error("Obsidian not launched. Call launch() first.");
     }
 
-    console.log(
-      "[ObsidianLauncher] Checking for modal dialogs and dismissing them...",
-    );
+    this.logger.debug("Checking for modal dialogs");
 
     const maxAttempts = 5;
     let attempt = 0;
@@ -472,13 +434,11 @@ export class ObsidianLauncher {
           .catch(() => false);
 
         if (!modalVisible) {
-          console.log("[ObsidianLauncher] No modals present");
+          this.logger.debug("No modals present");
           break;
         }
 
-        console.log(
-          `[ObsidianLauncher] Modal detected (attempt ${attempt + 1}/${maxAttempts}), dismissing...`,
-        );
+        this.logger.debug("Modal detected, dismissing", { attempt: attempt + 1, maxAttempts });
 
         // Try to find and click close button
         const closeButton = this.window.locator(".modal-close-button").first();
@@ -487,11 +447,11 @@ export class ObsidianLauncher {
           .catch(() => false);
 
         if (closeButtonVisible) {
-          console.log("[ObsidianLauncher] Clicking modal close button");
+          this.logger.debug("Clicking modal close button");
           await closeButton.click();
         } else {
           // No close button, try pressing Escape
-          console.log("[ObsidianLauncher] No close button, pressing Escape");
+          this.logger.debug("No close button, pressing Escape");
           await this.window.keyboard.press("Escape");
         }
 
@@ -503,31 +463,28 @@ export class ObsidianLauncher {
           .catch(() => {});
         attempt++;
       } catch (error) {
-        console.log("[ObsidianLauncher] Error while dismissing modals:", error);
+        this.logger.debug("Error while dismissing modals", { error: String(error) });
         break;
       }
     }
-
-    console.log("[ObsidianLauncher] Finished modal dismissal process");
   }
 
   async close(): Promise<void> {
-    console.log("[ObsidianLauncher] Starting cleanup...");
+    this.logger.phase("Teardown");
 
     if (this.window) {
       try {
+        this.logger.step("Closing window");
         await this.window.close();
       } catch (error) {
-        console.log("[ObsidianLauncher] Window close error (expected):", error);
+        this.logger.debug("Window close error (expected)", { error: String(error) });
       }
       this.window = null;
     }
 
     if (this.electronProcess) {
       const pid = this.electronProcess.pid;
-      console.log(
-        `[ObsidianLauncher] Killing Electron process PID ${pid} with SIGKILL...`,
-      );
+      this.logger.step(`Killing Electron process (PID ${pid})`);
 
       try {
         // Use SIGKILL for immediate termination
@@ -542,7 +499,7 @@ export class ObsidianLauncher {
             } catch (e) {
               // Process doesn't exist anymore
               clearInterval(checkInterval);
-              console.log(`[ObsidianLauncher] Process ${pid} terminated`);
+              this.logger.debug("Process terminated", { pid });
               resolve();
             }
           }, 100);
@@ -550,32 +507,25 @@ export class ObsidianLauncher {
           // Timeout after 5 seconds
           setTimeout(() => {
             clearInterval(checkInterval);
-            console.log(
-              `[ObsidianLauncher] Process ${pid} termination timeout (continuing anyway)`,
-            );
+            this.logger.warn("Process termination timeout, continuing anyway", { pid });
             resolve();
           }, 5000);
         });
       } catch (error) {
-        console.log(
-          "[ObsidianLauncher] Process kill error (may already be dead):",
-          error,
-        );
+        this.logger.debug("Process kill error (may already be dead)", { error: String(error) });
       }
 
       this.electronProcess = null;
     }
 
-    console.log(
-      `[ObsidianLauncher] Waiting for CDP port ${this.cdpPort} to be released...`,
-    );
+    this.logger.step("Waiting for CDP port release");
     await this.waitForPortClosed(this.cdpPort, 5000);
-    console.log(`[ObsidianLauncher] CDP port ${this.cdpPort} released`);
+    this.logger.debug("CDP port released", { port: this.cdpPort });
 
     await new Promise((resolve) => setTimeout(resolve, 1000));
 
     this.app = null;
-    console.log("[ObsidianLauncher] Cleanup complete");
+    this.logger.phaseEnd("Teardown", true);
   }
 
   private async waitForPortClosed(
@@ -603,7 +553,7 @@ export class ObsidianLauncher {
 
         req.on("error", () => {
           // Port not responding = port is closed
-          console.log(`[ObsidianLauncher] Port ${port} is closed`);
+          this.logger.debug("Port is closed", { port });
           resolve();
         });
 
@@ -617,9 +567,7 @@ export class ObsidianLauncher {
 
       const retryCheck = () => {
         if (Date.now() - startTime > timeout) {
-          console.log(
-            `[ObsidianLauncher] Timeout waiting for port ${port} to close (continuing anyway)`,
-          );
+          this.logger.warn("Timeout waiting for port to close, continuing anyway", { port });
           resolve(); // Don't reject, just warn
         } else {
           setTimeout(checkPort, 200);

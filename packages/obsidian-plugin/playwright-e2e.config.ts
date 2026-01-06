@@ -21,7 +21,8 @@ export default defineConfig({
       ? ([["blob", { outputDir: "blob-report" }]] as const)
       : []),
     ["html", { outputFolder: "playwright-report-e2e", open: "never" }],
-    ["list"],
+    // Custom E2E reporter with improved formatting and hierarchy
+    ["./playwright-e2e-reporter.ts"],
     ...(process.env.CI ? [["github", {}] as ["github", {}]] : []),
     ["./playwright-no-flaky-reporter.ts"],
   ],
