@@ -12,7 +12,7 @@
  */
 
 import { ITripleStore } from "../../../../src/interfaces/ITripleStore";
-import { IUIProvider } from "../../../../src/domain/ports/IUIProvider";
+import { IUIProvider, HeadlessError } from "../../../../src/domain/ports/IUIProvider";
 import { ActionContext } from "../../../../src/domain/types/ActionContext";
 import {
   ActionResult,
@@ -20,21 +20,25 @@ import {
   ActionHandler,
 } from "../../../../src/domain/types/ActionTypes";
 import { ActionInterpreter } from "../../../../src/domain/services/ActionInterpreter";
+import { GenericAssetCreationService } from "../../../../src/services/GenericAssetCreationService";
+import { IFile } from "../../../../src/interfaces/IVaultAdapter";
 
 describe("ActionInterpreter", () => {
   let mockTripleStore: ITripleStore;
   let mockUIProvider: IUIProvider;
   let mockContext: ActionContext;
 
+  const createMockUIProvider = (isHeadless: boolean): IUIProvider => ({
+    showInputModal: jest.fn(),
+    showSelectModal: jest.fn(),
+    showConfirm: jest.fn(),
+    notify: jest.fn(),
+    navigate: jest.fn(),
+    isHeadless,
+  });
+
   beforeEach(() => {
-    mockUIProvider = {
-      showInputModal: jest.fn(),
-      showSelectModal: jest.fn(),
-      showConfirm: jest.fn(),
-      notify: jest.fn(),
-      navigate: jest.fn(),
-      isHeadless: false,
-    };
+    mockUIProvider = createMockUIProvider(false);
 
     mockTripleStore = {
       add: jest.fn(),
@@ -296,21 +300,197 @@ describe("ActionInterpreter", () => {
     });
   });
 
-  describe("built-in handlers (stub implementations)", () => {
-    it("should have CreateAssetAction handler that returns not implemented", async () => {
-      const interpreter = new ActionInterpreter(mockTripleStore);
+  describe("CreateAssetAction handler (Issue #1405)", () => {
+    let mockAssetCreationService: jest.Mocked<GenericAssetCreationService>;
+    let mockFile: IFile;
+
+    beforeEach(() => {
+      mockFile = {
+        path: "tasks/test-uuid.md",
+        basename: "test-uuid",
+        name: "test-uuid.md",
+        parent: { path: "tasks", name: "tasks" },
+      };
+
+      mockAssetCreationService = {
+        createAsset: jest.fn().mockResolvedValue(mockFile),
+      } as unknown as jest.Mocked<GenericAssetCreationService>;
+    });
+
+    it("should create asset with targetClass in UI mode", async () => {
+      const interpreter = new ActionInterpreter(
+        mockTripleStore,
+        mockAssetCreationService
+      );
 
       jest.spyOn(interpreter as any, "loadActionDefinition").mockResolvedValue({
         type: "exo-ui:CreateAssetAction",
-        params: { targetClass: "Task" },
+        params: { targetClass: "ems__Task" },
       });
 
-      const result = await interpreter.execute("test:action", mockContext);
+      // UI mode: isHeadless = false
+      const uiContext: ActionContext = {
+        tripleStore: mockTripleStore,
+        uiProvider: createMockUIProvider(false),
+      };
 
-      expect(result.success).toBe(false);
-      expect(result.message).toContain("Not implemented");
+      const result = await interpreter.execute("test:action", uiContext);
+
+      expect(result.success).toBe(true);
+      expect(result.navigateTo).toBe(mockFile);
+      expect(result.refresh).toBe(true);
+      expect(mockAssetCreationService.createAsset).toHaveBeenCalledWith(
+        expect.objectContaining({
+          className: "ems__Task",
+        })
+      );
     });
 
+    it("should use template if provided", async () => {
+      const interpreter = new ActionInterpreter(
+        mockTripleStore,
+        mockAssetCreationService
+      );
+
+      jest.spyOn(interpreter as any, "loadActionDefinition").mockResolvedValue({
+        type: "exo-ui:CreateAssetAction",
+        params: {
+          targetClass: "ems__Task",
+          template: "meeting-notes",
+        },
+      });
+
+      const uiContext: ActionContext = {
+        tripleStore: mockTripleStore,
+        uiProvider: createMockUIProvider(false),
+      };
+
+      const result = await interpreter.execute("test:action", uiContext);
+
+      expect(result.success).toBe(true);
+      expect(mockAssetCreationService.createAsset).toHaveBeenCalledWith(
+        expect.objectContaining({
+          className: "ems__Task",
+          label: "meeting-notes",
+        })
+      );
+    });
+
+    it("should use location if provided", async () => {
+      const interpreter = new ActionInterpreter(
+        mockTripleStore,
+        mockAssetCreationService
+      );
+
+      jest.spyOn(interpreter as any, "loadActionDefinition").mockResolvedValue({
+        type: "exo-ui:CreateAssetAction",
+        params: {
+          targetClass: "ems__Task",
+          location: "projects/my-project",
+        },
+      });
+
+      const uiContext: ActionContext = {
+        tripleStore: mockTripleStore,
+        uiProvider: createMockUIProvider(false),
+      };
+
+      const result = await interpreter.execute("test:action", uiContext);
+
+      expect(result.success).toBe(true);
+      expect(mockAssetCreationService.createAsset).toHaveBeenCalledWith(
+        expect.objectContaining({
+          className: "ems__Task",
+          folderPath: "projects/my-project",
+        })
+      );
+    });
+
+    it("should throw HeadlessError if CLI mode without location", async () => {
+      const interpreter = new ActionInterpreter(
+        mockTripleStore,
+        mockAssetCreationService
+      );
+
+      jest.spyOn(interpreter as any, "loadActionDefinition").mockResolvedValue({
+        type: "exo-ui:CreateAssetAction",
+        params: { targetClass: "ems__Task" },
+        // No location provided
+      });
+
+      // Headless mode: isHeadless = true
+      const cliContext: ActionContext = {
+        tripleStore: mockTripleStore,
+        uiProvider: createMockUIProvider(true),
+      };
+
+      const result = await interpreter.execute("test:action", cliContext);
+
+      expect(result.success).toBe(false);
+      expect(result.message).toContain("requires UI");
+      expect(result.message).toContain("--location");
+    });
+
+    it("should work in CLI mode with location provided", async () => {
+      const interpreter = new ActionInterpreter(
+        mockTripleStore,
+        mockAssetCreationService
+      );
+
+      jest.spyOn(interpreter as any, "loadActionDefinition").mockResolvedValue({
+        type: "exo-ui:CreateAssetAction",
+        params: {
+          targetClass: "ems__Task",
+          location: "inbox/tasks",
+        },
+      });
+
+      // Headless mode: isHeadless = true
+      const cliContext: ActionContext = {
+        tripleStore: mockTripleStore,
+        uiProvider: createMockUIProvider(true),
+      };
+
+      const result = await interpreter.execute("test:action", cliContext);
+
+      expect(result.success).toBe(true);
+      expect(result.navigateTo).toBe(mockFile);
+      expect(mockAssetCreationService.createAsset).toHaveBeenCalledWith(
+        expect.objectContaining({
+          className: "ems__Task",
+          folderPath: "inbox/tasks",
+        })
+      );
+    });
+
+    it("should return error if asset creation fails", async () => {
+      mockAssetCreationService.createAsset.mockRejectedValue(
+        new Error("Vault not initialized")
+      );
+
+      const interpreter = new ActionInterpreter(
+        mockTripleStore,
+        mockAssetCreationService
+      );
+
+      jest.spyOn(interpreter as any, "loadActionDefinition").mockResolvedValue({
+        type: "exo-ui:CreateAssetAction",
+        params: { targetClass: "ems__Task" },
+      });
+
+      const uiContext: ActionContext = {
+        tripleStore: mockTripleStore,
+        uiProvider: createMockUIProvider(false),
+      };
+
+      const result = await interpreter.execute("test:action", uiContext);
+
+      expect(result.success).toBe(false);
+      expect(result.message).toContain("Vault not initialized");
+    });
+  });
+
+  describe("built-in handlers (stub implementations)", () => {
     it("should have UpdatePropertyAction handler", async () => {
       const interpreter = new ActionInterpreter(mockTripleStore);
 

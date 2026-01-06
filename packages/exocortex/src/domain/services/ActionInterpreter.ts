@@ -19,6 +19,8 @@ import {
   ActionDefinition,
   ActionHandler,
 } from "../types/ActionTypes";
+import { HeadlessError } from "../ports/IUIProvider";
+import { GenericAssetCreationService } from "../../services/GenericAssetCreationService";
 
 /**
  * Namespace URI for exo-ui ontology
@@ -74,7 +76,10 @@ export class ActionInterpreter {
    */
   private customHandlers: Map<string, ActionHandler> = new Map();
 
-  constructor(private tripleStore: ITripleStore) {
+  constructor(
+    private tripleStore: ITripleStore,
+    private assetCreationService?: GenericAssetCreationService
+  ) {
     this.registerBuiltinHandlers();
   }
 
@@ -211,13 +216,60 @@ export class ActionInterpreter {
 
   /**
    * Create new asset from template
+   *
+   * Parameters:
+   * - targetClass: Asset class to create (e.g., "ems__Task")
+   * - template: Optional template name for the asset label
+   * - location: Folder path for asset creation (required in headless mode)
+   *
    * @see Issue #1405
+   * @see /Users/kitelev/vault-2025/03 Knowledge/concepts/RDF-Driven Architecture Implementation Plan (Note).md
+   * Phase 3: ActionInterpreter Runtime (lines 1537-1550)
    */
-  private createAssetHandler: ActionHandler = async (def, _ctx) => {
-    return {
-      success: false,
-      message: `Not implemented: CreateAssetAction (targetClass: ${String(def.params.targetClass)})`,
-    };
+  private createAssetHandler: ActionHandler = async (def, ctx) => {
+    const targetClass = def.params.targetClass as string;
+    const template = def.params.template as string | undefined;
+    const location = def.params.location as string | undefined;
+
+    // Headless check: CLI mode requires explicit location
+    if (ctx.uiProvider.isHeadless && !location) {
+      const error = new HeadlessError(
+        "CreateAssetAction without location",
+        "--location <path>"
+      );
+      return {
+        success: false,
+        message: error.message,
+      };
+    }
+
+    // Ensure asset creation service is available
+    if (!this.assetCreationService) {
+      return {
+        success: false,
+        message: "AssetCreationService not initialized",
+      };
+    }
+
+    try {
+      // Create asset using GenericAssetCreationService
+      const newFile = await this.assetCreationService.createAsset({
+        className: targetClass,
+        label: template,
+        folderPath: location,
+      });
+
+      return {
+        success: true,
+        navigateTo: newFile,
+        refresh: true,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: `Failed to create asset: ${error instanceof Error ? error.message : String(error)}`,
+      };
+    }
   };
 
   /**
