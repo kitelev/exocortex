@@ -11,7 +11,6 @@ import {
   NoteToRDFConverter,
   Triple,
   type SolutionMapping,
-  type AlgebraOperation,
   type ConstructOperation,
 } from "exocortex";
 import { FileSystemVaultAdapter } from "../adapters/FileSystemVaultAdapter.js";
@@ -64,8 +63,12 @@ export function sparqlQueryCommand(): Command {
         }
         const loadStartTime = Date.now();
 
+        // Issue #1388: FileSystemVaultAdapter now uses a basename cache for
+        // O(1) cross-directory wikilink resolution. The cache is built lazily
+        // on the first wikilink lookup that requires vault-wide search.
         const vaultAdapter = new FileSystemVaultAdapter(vaultPath, options.folder);
         const converter = new NoteToRDFConverter(vaultAdapter);
+
         const triples = await converter.convertVault();
 
         const tripleStore = new InMemoryTripleStore();

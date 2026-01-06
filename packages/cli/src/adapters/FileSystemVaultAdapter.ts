@@ -6,8 +6,43 @@ import { IVaultAdapter, IFile, IFolder, IFrontmatter } from "exocortex";
 export class FileSystemVaultAdapter implements IVaultAdapter {
   private folderFilter?: string;
 
+  /**
+   * Issue #1388: Cache for basename → relative path lookups.
+   *
+   * For large vaults like exocortex-public-ontologies (162k files),
+   * walking the entire directory tree for each wikilink resolution
+   * is extremely slow. This cache stores basename → path mappings
+   * built during the first full scan.
+   *
+   * Key: basename (e.g., "uuid.md")
+   * Value: relative path (e.g., "rdfs/uuid.md")
+   */
+  private basenameCache: Map<string, string> | null = null;
+
   constructor(private rootPath: string, folderFilter?: string) {
     this.folderFilter = folderFilter;
+  }
+
+  /**
+   * Build the basename cache by scanning the entire vault.
+   *
+   * This is called automatically on the first findFileByBasename() call,
+   * but can be called explicitly to pre-warm the cache.
+   */
+  buildBasenameCache(): void {
+    if (this.basenameCache !== null) {
+      return; // Already built
+    }
+
+    this.basenameCache = new Map();
+
+    this.walkDirectory(this.rootPath, (filePath) => {
+      const basename = path.basename(filePath);
+      // Only store if not already present (first match wins)
+      if (!this.basenameCache!.has(basename)) {
+        this.basenameCache!.set(basename, path.relative(this.rootPath, filePath));
+      }
+    });
   }
 
   async read(file: IFile): Promise<string> {
@@ -177,20 +212,18 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
    * Used for resolving Exo 0.0.3 wikilinks where the target file
    * may be in a different directory than the source.
    *
+   * Issue #1388: Uses a basename cache for O(1) lookups after the first
+   * full scan. This dramatically improves performance for large vaults.
+   *
    * @param basename - The filename to search for (e.g., "uuid.md")
    * @returns The relative path to the file, or null if not found
    */
   private findFileByBasename(basename: string): string | null {
-    let foundPath: string | null = null;
+    // Build the cache on first use (lazy initialization)
+    this.buildBasenameCache();
 
-    this.walkDirectory(this.rootPath, (filePath) => {
-      if (foundPath) return; // Early exit once found
-      if (path.basename(filePath) === basename) {
-        foundPath = path.relative(this.rootPath, filePath);
-      }
-    });
-
-    return foundPath;
+    // O(1) cache lookup
+    return this.basenameCache!.get(basename) || null;
   }
 
   async process(file: IFile, fn: (content: string) => string): Promise<string> {

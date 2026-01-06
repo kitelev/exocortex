@@ -17,6 +17,22 @@ import {
 } from "../domain/models/exo003";
 
 /**
+ * Mapping for UUID-based anchor file resolution.
+ *
+ * Issue #1388: For exocortex-public-ontologies, files use UUID-based filenames
+ * across multiple directories. This interface enables O(1) lookup instead of
+ * O(n) directory traversal for each wikilink resolution.
+ */
+export interface Exo003UuidMapping {
+  /** The canonical URI from the anchor file */
+  uri: string;
+  /** The type of the file (iri for anchor/namespace, blank for blank_node) */
+  type: "iri" | "blank";
+  /** The relative path to the file (optional, for debugging) */
+  filePath?: string;
+}
+
+/**
  * Service for converting Obsidian notes (frontmatter + wikilinks) to RDF triples.
  *
  * @example
@@ -37,10 +53,56 @@ export class NoteToRDFConverter {
    */
   private readonly BODY_WIKILINK_PATTERN = /(?<!!)\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g;
 
+  /**
+   * Pre-built UUID → URI index for O(1) wikilink resolution.
+   *
+   * Issue #1388: When processing exocortex-public-ontologies with 100k+ files,
+   * per-file directory traversal is too slow. This index enables fast lookups.
+   *
+   * Key: UUID (filename without .md extension)
+   * Value: Mapping with URI and type
+   */
+  private uuidIndex: Map<string, Exo003UuidMapping> | null = null;
+
   constructor(
     @inject(DI_TOKENS.IVaultAdapter) private readonly vault: IVaultAdapter,
   ) {
     this.vocabularyMapper = new RDFVocabularyMapper();
+  }
+
+  /**
+   * Set a pre-built UUID → URI index for efficient wikilink resolution.
+   *
+   * When working with large ontology directories (like exocortex-public-ontologies),
+   * building an index upfront and using this method enables O(1) lookups instead
+   * of O(n) directory traversal for each wikilink.
+   *
+   * @param index - Map from UUID to URI mapping
+   *
+   * @example
+   * ```typescript
+   * // Build index from anchor files
+   * const index = new Map<string, Exo003UuidMapping>();
+   * for (const file of anchorFiles) {
+   *   const uuid = path.basename(file.path, '.md');
+   *   index.set(uuid, { uri: file.frontmatter.uri, type: 'iri' });
+   * }
+   *
+   * // Set index before conversion
+   * converter.setUuidIndex(index);
+   * const triples = await converter.convertVault();
+   * ```
+   */
+  setUuidIndex(index: Map<string, Exo003UuidMapping>): void {
+    this.uuidIndex = index;
+  }
+
+  /**
+   * Clear the UUID index.
+   * After calling this, the converter will fall back to directory traversal.
+   */
+  clearUuidIndex(): void {
+    this.uuidIndex = null;
   }
 
   /**
@@ -317,6 +379,9 @@ export class NoteToRDFConverter {
    *
    * Resolves [[wikilink]] references to anchor/namespace URIs by looking up
    * the target file's metadata.
+   *
+   * Issue #1388: When a UUID index is set via setUuidIndex(), this method uses
+   * O(1) index lookup first, falling back to directory traversal only when needed.
    */
   private createExo003ReferenceResolver(
     sourceFile: IFile
@@ -332,7 +397,27 @@ export class NoteToRDFConverter {
       const wikilink = this.extractWikilink(ref);
       const targetPath = wikilink || ref;
 
-      // Try to resolve the target file
+      // Issue #1388: Try UUID index lookup first (O(1))
+      // This is critical for performance with large ontology directories
+      if (this.uuidIndex) {
+        const indexResult = this.uuidIndex.get(targetPath);
+        if (indexResult) {
+          return {
+            type: indexResult.type,
+            value: indexResult.uri,
+          };
+        }
+      }
+
+      // Check if this is a full URI (not a wikilink) - check before file resolution
+      if (!wikilink && ref.includes("://")) {
+        return {
+          type: "iri",
+          value: ref,
+        };
+      }
+
+      // Fallback: Try to resolve the target file via directory traversal
       const targetFile = this.vault.getFirstLinkpathDest(targetPath, sourceFile.path);
 
       if (targetFile) {
@@ -370,14 +455,6 @@ export class NoteToRDFConverter {
         return {
           type: "iri",
           value: this.notePathToIRI(targetFile.path).value,
-        };
-      }
-
-      // Check if this is a full URI (not a wikilink)
-      if (!wikilink && ref.includes("://")) {
-        return {
-          type: "iri",
-          value: ref,
         };
       }
 

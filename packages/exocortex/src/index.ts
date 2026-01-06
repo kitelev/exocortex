@@ -183,7 +183,7 @@ export {
 } from "./infrastructure/rdf/RDFSerializer";
 export { InMemoryTripleStore } from "./infrastructure/rdf/InMemoryTripleStore";
 export { RDFVocabularyMapper } from "./infrastructure/rdf/RDFVocabularyMapper";
-export { NoteToRDFConverter } from "./services/NoteToRDFConverter";
+export { NoteToRDFConverter, type Exo003UuidMapping } from "./services/NoteToRDFConverter";
 
 // SPARQL Engine exports
 export { SPARQLParser, SPARQLParseError, type SPARQLQuery, type SelectQuery, type ConstructQuery, type Update, type UpdateOperation, type ExtendedDescribeQuery, type ParseResult } from "./infrastructure/sparql/SPARQLParser";
