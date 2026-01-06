@@ -124,26 +124,73 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
     await fs.ensureDir(fullPath);
   }
 
+  /**
+   * Resolves a wikilink to a file in the vault.
+   *
+   * Resolution strategy (like Obsidian):
+   * 1. Try relative to source file's directory
+   * 2. Try from vault root
+   * 3. Search entire vault for files with matching basename (for Exo 0.0.3 UUID filenames)
+   *
+   * Issue #1380: Statement files in Exo 0.0.3 format use wikilinks like [[UUID|alias]]
+   * where the UUID file may be in a different directory (e.g., exo/, rdfs/, owl/).
+   * This method now searches the entire vault when relative resolution fails.
+   */
   getFirstLinkpathDest(linkpath: string, sourcePath: string): IFile | null {
     const sourceDir = path.dirname(this.resolvePath(sourcePath));
-    let resolvedPath: string;
+    const filenameWithExt = linkpath.endsWith(".md") ? linkpath : `${linkpath}.md`;
+    const basename = path.basename(filenameWithExt);
 
+    // Strategy 1: Resolve relative to source file's directory
+    let resolvedPath: string;
     if (path.isAbsolute(linkpath)) {
       resolvedPath = this.resolvePath(linkpath);
     } else {
       resolvedPath = path.resolve(sourceDir, linkpath);
     }
-
     if (!linkpath.endsWith(".md")) {
       resolvedPath += ".md";
     }
-
     if (fs.existsSync(resolvedPath)) {
       const relativePath = path.relative(this.rootPath, resolvedPath);
       return this.createFileObject(relativePath);
     }
 
+    // Strategy 2: Try from vault root
+    const rootRelativePath = path.join(this.rootPath, filenameWithExt);
+    if (fs.existsSync(rootRelativePath)) {
+      return this.createFileObject(filenameWithExt);
+    }
+
+    // Strategy 3: Search entire vault for files with matching basename
+    // This handles Exo 0.0.3 UUID filenames that can be in any directory
+    const matchingFile = this.findFileByBasename(basename);
+    if (matchingFile) {
+      return this.createFileObject(matchingFile);
+    }
+
     return null;
+  }
+
+  /**
+   * Searches the entire vault for a file with the given basename.
+   * Used for resolving Exo 0.0.3 wikilinks where the target file
+   * may be in a different directory than the source.
+   *
+   * @param basename - The filename to search for (e.g., "uuid.md")
+   * @returns The relative path to the file, or null if not found
+   */
+  private findFileByBasename(basename: string): string | null {
+    let foundPath: string | null = null;
+
+    this.walkDirectory(this.rootPath, (filePath) => {
+      if (foundPath) return; // Early exit once found
+      if (path.basename(filePath) === basename) {
+        foundPath = path.relative(this.rootPath, filePath);
+      }
+    });
+
+    return foundPath;
   }
 
   async process(file: IFile, fn: (content: string) => string): Promise<string> {
