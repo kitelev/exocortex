@@ -65,6 +65,7 @@ COPY main.js ./packages/obsidian-plugin/
 COPY manifest.json ./packages/obsidian-plugin/
 COPY packages/obsidian-plugin/tests/e2e/ ./packages/obsidian-plugin/tests/e2e/
 COPY packages/obsidian-plugin/playwright-e2e.config.ts ./packages/obsidian-plugin/
+COPY packages/obsidian-plugin/playwright-e2e-reporter.ts ./packages/obsidian-plugin/
 COPY packages/obsidian-plugin/playwright-no-flaky-reporter.ts ./packages/obsidian-plugin/
 
 # Create test vault and install pre-built plugin
