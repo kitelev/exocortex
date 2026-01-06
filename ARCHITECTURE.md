@@ -1343,6 +1343,136 @@ throw new Error("Invalid transition");
 
 ---
 
+## 🎯 RDF-Driven Architecture (Milestone v1.0)
+
+### Vision: Configuration over Code
+
+RDF-Driven Architecture enables extending Exocortex functionality through RDF ontologies instead of TypeScript code:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        RDF-Driven Architecture                              │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │                     exo-ui Ontology (RDF)                           │   │
+│  │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐            │   │
+│  │  │ Command  │  │  Button  │  │  Action  │  │ Condition│            │   │
+│  │  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘            │   │
+│  │       │              │              │              │                 │   │
+│  │       └──────────────┴──────────────┴──────────────┘                 │   │
+│  │                          ↓ SPARQL queries                            │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                    │                                        │
+│                                    ▼                                        │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │                      ActionInterpreter                              │   │
+│  │                                                                     │   │
+│  │   Fixed Verbs (TypeScript)          IUIProvider Interface          │   │
+│  │   ┌────────────────────┐            ┌────────────────────┐         │   │
+│  │   │ CreateAssetAction  │            │ showInputModal()   │         │   │
+│  │   │ UpdateProperty     │            │ showSelectModal()  │         │   │
+│  │   │ NavigateAction     │            │ showConfirm()      │         │   │
+│  │   │ ExecuteSPARQL      │            │ notify()           │         │   │
+│  │   │ ShowModalAction    │            │ navigate()         │         │   │
+│  │   │ CompositeAction    │            │ isHeadless         │         │   │
+│  │   └────────────────────┘            └────────────────────┘         │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                    │                                        │
+│                    ┌───────────────┴───────────────┐                       │
+│                    ▼                               ▼                        │
+│  ┌──────────────────────────┐    ┌──────────────────────────┐             │
+│  │   ObsidianUIProvider     │    │      CLIUIProvider       │             │
+│  │   (Interactive mode)     │    │    (Headless mode)       │             │
+│  │                          │    │                          │             │
+│  │ • Obsidian Modals        │    │ • CLI Arguments          │             │
+│  │ • Notice API             │    │ • Console Output         │             │
+│  │ • File Navigation        │    │ • HeadlessError          │             │
+│  └──────────────────────────┘    └──────────────────────────┘             │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Key Concepts
+
+#### 1. exo-ui Ontology
+
+Defines UI elements declaratively in RDF:
+
+| Class | Purpose |
+|-------|---------|
+| `exo-ui:Command` | Command in Obsidian Command Palette |
+| `exo-ui:Button` | UI button with label, icon, variant |
+| `exo-ui:Action` | Base class for executable actions |
+| `exo-ui:Condition` | Visibility condition (SPARQL ASK or property check) |
+| `exo-ui:ButtonGroup` | Semantic grouping (Creation, Status, Planning, Maintenance) |
+| `exo-ui:Layout` | Table/view configuration |
+
+#### 2. Fixed Verbs vs Properties
+
+**Fixed Verbs** are action types implemented in TypeScript — they define **what the system can do**:
+- `CreateAssetAction` — Create new asset
+- `UpdatePropertyAction` — Update property value
+- `NavigateAction` — Navigate to asset
+- `ExecuteSPARQLAction` — Execute SPARQL query
+- `ShowModalAction` — Show modal dialog
+- `CompositeAction` — Execute sequence of actions
+
+**Properties** configure these verbs via RDF — they define **how actions behave**:
+- `exo-ui:Action_targetClass` — Which class to create
+- `exo-ui:Action_targetProperty` — Which property to update
+- `exo-ui:Button_condition` — When to show the button
+
+#### 3. IUIProvider Interface
+
+Abstracts UI operations for CLI/Obsidian compatibility:
+
+```typescript
+interface IUIProvider {
+  showInputModal(options: ModalOptions): Promise<string>;
+  showSelectModal<T>(options: SelectOptions<T>): Promise<T>;
+  showConfirm(message: string): Promise<boolean>;
+  notify(message: string, duration?: number): void;
+  navigate(target: string): Promise<void>;
+  readonly isHeadless: boolean;
+}
+```
+
+**Implementations:**
+- `ObsidianUIProvider` — Uses Obsidian modals and notices
+- `CLIUIProvider` — Throws `HeadlessError` for interactive operations
+
+#### 4. ActionContext
+
+Context object passed to action handlers:
+
+```typescript
+interface ActionContext {
+  currentAsset?: IFile;              // Current file
+  tripleStore: ITripleStore;         // For SPARQL queries
+  uiProvider: IUIProvider;           // UI abstraction
+  cliArgs?: Record<string, string>;  // CLI arguments (headless)
+}
+```
+
+### Benefits
+
+| Before (TypeScript-driven) | After (RDF-driven) |
+|---------------------------|-------------------|
+| 50+ lines of TypeScript per button | 10 lines of RDF |
+| npm build + publish | Import RDF file |
+| Restart Obsidian | Instant effect |
+| Developer-only | User-configurable |
+| Single platform | CLI + Obsidian |
+
+### Related Files
+
+- `packages/exocortex/src/domain/ports/IUIProvider.ts` — Interface definition
+- `packages/exocortex/src/domain/types/ActionContext.ts` — Context type
+- `exocortex-public-ontologies/exo-ui/` — UI ontology (planned)
+
+---
+
 ## 🚀 Current Architecture (Monorepo Implementation)
 
 ### Three-Tier Architecture (IMPLEMENTED)
@@ -1412,6 +1542,7 @@ graph TB
 | 1.0 | 2025-10-26 | Initial architecture documentation (pre-#122) |
 | 1.1 | 2025-11-26 | Added Error Handling section (#438) |
 | 1.2 | 2025-11-29 | Documented CommandVisibility domain segregation (#468) |
+| 1.3 | 2026-01-07 | Added RDF-Driven Architecture section (Milestone v1.0 #1401) |
 
 ---
 

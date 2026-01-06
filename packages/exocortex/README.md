@@ -62,13 +62,86 @@ exocortex/
 ├── domain/              - Business entities and constants
 │   ├── constants/       - AssetClass, EffortStatus enums
 │   ├── models/          - GraphNode, GraphData, AreaNode
-│   └── commands/        - Command visibility logic
+│   ├── commands/        - Command visibility logic
+│   ├── ports/           - IUIProvider interface
+│   └── types/           - ActionContext, PropertyDefinition
 ├── application/         - Use cases and services
 │   └── services/        - TaskCreationService, ProjectCreationService, etc.
 └── infrastructure/      - Utilities and interfaces
     ├── interfaces/      - IFileSystemAdapter
     └── utilities/       - FrontmatterService, DateFormatter, etc.
 ```
+
+## IUIProvider: CLI/Obsidian Abstraction
+
+The `IUIProvider` interface abstracts UI operations for cross-platform compatibility:
+
+```typescript
+import { IUIProvider, HeadlessError, ActionContext } from 'exocortex';
+
+// Use within ActionContext
+async function handleAction(ctx: ActionContext): Promise<void> {
+  if (ctx.uiProvider.isHeadless) {
+    // CLI mode: use command-line arguments
+    const targetProject = ctx.cliArgs?.project;
+    if (!targetProject) {
+      throw new HeadlessError(
+        'Select project',
+        'Use --project <name> argument'
+      );
+    }
+  } else {
+    // Obsidian mode: show interactive modal
+    const targetProject = await ctx.uiProvider.showInputModal({
+      title: 'Select Project',
+      placeholder: 'Enter project name...'
+    });
+  }
+}
+```
+
+### IUIProvider Methods
+
+| Method | Description | CLI Behavior |
+|--------|-------------|--------------|
+| `showInputModal(options)` | Show text input modal | Throws `HeadlessError` |
+| `showSelectModal(options)` | Show selection modal | Throws `HeadlessError` |
+| `showConfirm(message)` | Show confirmation dialog | Throws `HeadlessError` |
+| `notify(message, duration?)` | Display notification | Prints to stdout |
+| `navigate(target)` | Navigate to asset | Prints path to stdout |
+| `isHeadless` | Check if running headless | Returns `true` in CLI |
+
+### HeadlessError
+
+When an action requires UI but is running in CLI mode:
+
+```typescript
+throw new HeadlessError(
+  'Input modal: "Enter task label"',  // Action description
+  'Use --label argument'               // CLI alternative
+);
+// Error message: "Input modal: \"Enter task label\" requires UI. CLI alternative: Use --label argument"
+```
+
+### ActionContext
+
+Context object passed to action handlers:
+
+```typescript
+interface ActionContext {
+  currentAsset?: IFile;              // Current file (if any)
+  tripleStore: ITripleStore;         // For SPARQL queries
+  uiProvider: IUIProvider;           // UI abstraction
+  cliArgs?: Record<string, string>;  // CLI arguments (headless mode)
+}
+```
+
+### Implementations
+
+| Implementation | Package | Description |
+|----------------|---------|-------------|
+| `ObsidianUIProvider` | `@exocortex/obsidian-plugin` | Uses Obsidian modals and Notice API |
+| `CLIUIProvider` | `@kitelev/exocortex-cli` | Headless mode, console output |
 
 ## Services
 
