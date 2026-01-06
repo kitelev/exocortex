@@ -88,6 +88,13 @@ describe("sparqlQueryCommand", () => {
       const cmd = sparqlQueryCommand();
       expect(cmd.description()).toBe("Execute SPARQL query against Obsidian vault");
     });
+
+    it("should have --folder option", () => {
+      const cmd = sparqlQueryCommand();
+      const folderOption = cmd.options.find(opt => opt.long === "--folder");
+      expect(folderOption).toBeDefined();
+      expect(folderOption?.description).toBe("Limit indexing to specific folder (relative to vault root)");
+    });
   });
 
   // Skip query execution tests temporarily due to complex mocking requirements

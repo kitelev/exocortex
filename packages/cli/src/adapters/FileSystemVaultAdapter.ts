@@ -4,7 +4,11 @@ import yaml from "js-yaml";
 import { IVaultAdapter, IFile, IFolder, IFrontmatter } from "exocortex";
 
 export class FileSystemVaultAdapter implements IVaultAdapter {
-  constructor(private rootPath: string) {}
+  private folderFilter?: string;
+
+  constructor(private rootPath: string, folderFilter?: string) {
+    this.folderFilter = folderFilter;
+  }
 
   async read(file: IFile): Promise<string> {
     const fullPath = this.resolvePath(file.path);
@@ -65,7 +69,16 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
 
   getAllFiles(): IFile[] {
     const files: IFile[] = [];
-    this.walkDirectory(this.rootPath, (filePath) => {
+    const startPath = this.folderFilter
+      ? path.join(this.rootPath, this.folderFilter)
+      : this.rootPath;
+
+    // Validate folder exists if filter is specified
+    if (this.folderFilter && !fs.existsSync(startPath)) {
+      throw new Error(`Folder not found: ${this.folderFilter}`);
+    }
+
+    this.walkDirectory(startPath, (filePath) => {
       if (filePath.endsWith(".md")) {
         const relativePath = path.relative(this.rootPath, filePath);
         files.push(this.createFileObject(relativePath));

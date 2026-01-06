@@ -24,6 +24,7 @@ import { ResponseBuilder, type QueryResult, type ConstructResult } from "../resp
 
 export interface SparqlQueryOptions {
   vault: string;
+  folder?: string;
   format: "table" | "json" | "csv" | "ntriples";
   output?: OutputFormat;
   explain?: boolean;
@@ -36,6 +37,7 @@ export function sparqlQueryCommand(): Command {
     .description("Execute SPARQL query against Obsidian vault")
     .argument("<query>", "SPARQL query string or path to .sparql file")
     .option("--vault <path>", "Path to Obsidian vault", process.cwd())
+    .option("--folder <path>", "Limit indexing to specific folder (relative to vault root)")
     .option("--format <type>", "Output format: table|json|csv|ntriples", "table")
     .option("--output <type>", "Response format: text|json (for MCP tools)", "text")
     .option("--explain", "Show optimized query plan")
@@ -57,11 +59,12 @@ export function sparqlQueryCommand(): Command {
 
         // Only show progress in text mode
         if (outputFormat === "text") {
-          console.log(`📦 Loading vault: ${vaultPath}...`);
+          const folderInfo = options.folder ? ` (folder: ${options.folder})` : "";
+          console.log(`📦 Loading vault: ${vaultPath}${folderInfo}...`);
         }
         const loadStartTime = Date.now();
 
-        const vaultAdapter = new FileSystemVaultAdapter(vaultPath);
+        const vaultAdapter = new FileSystemVaultAdapter(vaultPath, options.folder);
         const converter = new NoteToRDFConverter(vaultAdapter);
         const triples = await converter.convertVault();
 
