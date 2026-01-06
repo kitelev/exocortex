@@ -559,8 +559,22 @@ export class NoteToRDFConverter {
     return value;
   }
 
+  /**
+   * Extracts the target path from a wikilink.
+   *
+   * Handles both formats:
+   * - `[[Target]]` → "Target"
+   * - `[[Target|Alias]]` → "Target" (strips the alias)
+   *
+   * Issue #1377: Statement files in Exo 0.0.3 format use wikilinks with aliases
+   * like `[[UUID|rdfs:label]]`. The alias part must be stripped to resolve the file.
+   *
+   * @param value - The wikilink string
+   * @returns The target path (without alias), or null if not a wikilink
+   */
   private extractWikilink(value: string): string | null {
-    const match = value.match(/^\[\[([^\]]+)\]\]$/);
+    // Match wikilinks with optional alias: [[Target]] or [[Target|Alias]]
+    const match = value.match(/^\[\[([^\]|]+)(?:\|[^\]]+)?\]\]$/);
     return match ? match[1] : null;
   }
 

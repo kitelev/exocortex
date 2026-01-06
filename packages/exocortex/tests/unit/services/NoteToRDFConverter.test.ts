@@ -2129,6 +2129,88 @@ See [[Note A]], then [[Note A]] again, and [[Note A]] once more.
         );
         expect(statementTriple).toBeDefined();
       });
+
+      it("should handle wikilinks with aliases (Issue #1377)", async () => {
+        // In Exo 0.0.3 format (exocortex-public-ontologies), wikilinks have aliases:
+        // [[6c019c8a-8d4b-5769-ac66-bd348ce4f104|exo:DatatypeProperty]]
+        const statementFile: IFile = {
+          path: "exo/statement-1.md",
+          basename: "statement-1",
+          name: "statement-1.md",
+          parent: null,
+        };
+
+        const frontmatter: IFrontmatter = {
+          metadata: Exo003MetadataType.Statement,
+          subject: "[[6c019c8a-8d4b-5769-ac66-bd348ce4f104|exo:DatatypeProperty]]",
+          predicate: "[[d55dc3fe-9a9f-5908-baae-e67d0fa0eab0|rdfs:subClassOf]]",
+          object: "[[73d101aa-9788-5397-ac46-4569ceaae23d|owl:DatatypeProperty]]",
+        };
+
+        // Anchor files have UUID names without the alias
+        const anchorSubject: IFile = {
+          path: "exo/6c019c8a-8d4b-5769-ac66-bd348ce4f104.md",
+          basename: "6c019c8a-8d4b-5769-ac66-bd348ce4f104",
+          name: "6c019c8a-8d4b-5769-ac66-bd348ce4f104.md",
+          parent: null,
+        };
+        const anchorPredicate: IFile = {
+          path: "rdfs/d55dc3fe-9a9f-5908-baae-e67d0fa0eab0.md",
+          basename: "d55dc3fe-9a9f-5908-baae-e67d0fa0eab0",
+          name: "d55dc3fe-9a9f-5908-baae-e67d0fa0eab0.md",
+          parent: null,
+        };
+        const anchorObject: IFile = {
+          path: "owl/73d101aa-9788-5397-ac46-4569ceaae23d.md",
+          basename: "73d101aa-9788-5397-ac46-4569ceaae23d",
+          name: "73d101aa-9788-5397-ac46-4569ceaae23d.md",
+          parent: null,
+        };
+
+        mockVault.getFrontmatter.mockImplementation((f) => {
+          if (f === statementFile) return frontmatter;
+          if (f === anchorSubject) return {
+            metadata: Exo003MetadataType.Anchor,
+            uri: "https://exocortex.my/ontology/exo#DatatypeProperty",
+          };
+          if (f === anchorPredicate) return {
+            metadata: Exo003MetadataType.Anchor,
+            uri: "http://www.w3.org/2000/01/rdf-schema#subClassOf",
+          };
+          if (f === anchorObject) return {
+            metadata: Exo003MetadataType.Anchor,
+            uri: "http://www.w3.org/2002/07/owl#DatatypeProperty",
+          };
+          return null;
+        });
+
+        // The key fix: wikilinks with aliases should resolve to the file
+        // by stripping the alias (the part after |)
+        mockVault.getFirstLinkpathDest.mockImplementation((linkpath) => {
+          // Without the fix, linkpath would be "6c019c8a-8d4b-5769-ac66-bd348ce4f104|exo:DatatypeProperty"
+          // With the fix, linkpath should be "6c019c8a-8d4b-5769-ac66-bd348ce4f104"
+          if (linkpath === "6c019c8a-8d4b-5769-ac66-bd348ce4f104") return anchorSubject;
+          if (linkpath === "d55dc3fe-9a9f-5908-baae-e67d0fa0eab0") return anchorPredicate;
+          if (linkpath === "73d101aa-9788-5397-ac46-4569ceaae23d") return anchorObject;
+          return null;
+        });
+
+        const triples = await converter.convertNote(statementFile);
+
+        // Should have the statement triple + file reference triple
+        expect(triples.length).toBe(2);
+
+        const statementTriple = triples.find((t) =>
+          (t.subject as IRI).value === "https://exocortex.my/ontology/exo#DatatypeProperty"
+        );
+        expect(statementTriple).toBeDefined();
+        expect((statementTriple!.predicate as IRI).value).toBe(
+          "http://www.w3.org/2000/01/rdf-schema#subClassOf"
+        );
+        expect((statementTriple!.object as IRI).value).toBe(
+          "http://www.w3.org/2002/07/owl#DatatypeProperty"
+        );
+      });
     });
 
     describe("body file conversion", () => {
