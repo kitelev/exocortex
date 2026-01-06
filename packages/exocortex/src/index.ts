@@ -322,6 +322,9 @@ export type {
   ActionHandler,
 } from "./domain/types/ActionTypes";
 
+// Action Interpreter export
+export { ActionInterpreter } from "./domain/services/ActionInterpreter";
+
 // DI Container exports
 export {
   registerCoreServices,
