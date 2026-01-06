@@ -6,3 +6,4 @@ export {
   uriToPropertyName,
   extractPropertyLabel,
 } from "./PropertyDefinition";
+export { type ActionContext } from "./ActionContext";

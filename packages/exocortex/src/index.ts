@@ -314,6 +314,9 @@ export {
   type SelectOptions,
 } from "./domain/ports/IUIProvider";
 
+// Action Context export
+export type { ActionContext } from "./domain/types/ActionContext";
+
 // DI Container exports
 export {
   registerCoreServices,
