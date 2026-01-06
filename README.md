@@ -427,7 +427,8 @@ See **[SPARQL 1.2 Features](./docs/sparql/SPARQL-1.2-Features.md)** for complete
 ### By Interface
 
 **Obsidian Plugin:**
-- **[Command Reference](./docs/Command-Reference.md)** — All 32 commands documented
+- **[RDF-Driven Commands](./docs/COMMANDS.md)** — All 36 commands, RDF structure, conditions, hotkeys
+- **[Command Reference](./docs/Command-Reference.md)** — Legacy command documentation
 
 **CLI:**
 - **[CLI Command Reference](./docs/cli/Command-Reference.md)** — Complete syntax
