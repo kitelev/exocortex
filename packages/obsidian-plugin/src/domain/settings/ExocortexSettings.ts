@@ -154,6 +154,8 @@ export interface ExocortexSettings {
   webhookSettings: WebhookSettings;
   /** Semantic search settings */
   semanticSearchSettings: SemanticSearchSettings;
+  /** Use RDF-driven button rendering (experimental) */
+  useRdfButtons: boolean;
   [key: string]: unknown;
 }
 
@@ -178,4 +180,5 @@ export const DEFAULT_SETTINGS: ExocortexSettings = {
   displayNameSettings: DEFAULT_DISPLAY_NAME_SETTINGS,
   webhookSettings: DEFAULT_WEBHOOK_SETTINGS,
   semanticSearchSettings: DEFAULT_SEMANTIC_SEARCH_SETTINGS,
+  useRdfButtons: false, // Disabled by default, enable for RDF-driven UI
 };

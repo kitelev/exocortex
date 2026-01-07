@@ -14,6 +14,14 @@ import { LabelToAliasService, AssetConversionService } from "exocortex";
 import { BacklinksCacheManager } from '@plugin/adapters/caching/BacklinksCacheManager';
 import { EventListenerManager } from '@plugin/adapters/events/EventListenerManager';
 import { ButtonGroupsBuilder } from '@plugin/presentation/builders/ButtonGroupsBuilder';
+import { RdfButtonGroupsBuilder } from '@plugin/presentation/builders/RdfButtonGroupsBuilder';
+import type { ActionInterpreter, ConditionEvaluator } from '@plugin/presentation/builders/RdfButtonGroupsBuilder';
+import type { ButtonGroup } from '@plugin/presentation/components/ActionButtonsGroup';
+import {
+  createNoOpActionInterpreter,
+  createAlwaysTrueConditionEvaluator,
+} from '@plugin/presentation/adapters/RdfButtonAdapters';
+import { SPARQLQueryService } from '@plugin/application/services/SPARQLQueryService';
 import { DailyTasksRenderer } from "./DailyTasksRenderer";
 import { DailyProjectsRenderer } from "./DailyProjectsRenderer";
 import { PropertiesRenderer } from "./layout/PropertiesRenderer";
@@ -51,6 +59,10 @@ export class UniversalLayoutRenderer {
   private metadataExtractor: MetadataExtractor;
   private rootContainer: HTMLElement | null = null;
   private buttonGroupsBuilder!: ButtonGroupsBuilder;
+  private rdfButtonGroupsBuilder?: RdfButtonGroupsBuilder;
+  private actionInterpreter?: ActionInterpreter;
+  private conditionEvaluator?: ConditionEvaluator;
+  private sparqlQueryService?: SPARQLQueryService;
   private dailyTasksRenderer!: DailyTasksRenderer;
   private dailyProjectsRenderer!: DailyProjectsRenderer;
   private vaultAdapter: IVaultAdapter;
@@ -112,6 +124,11 @@ export class UniversalLayoutRenderer {
   private initializeRenderers(): void {
     const services = this.resolveServices();
 
+    // Initialize RDF button support if enabled
+    if (this.settings.useRdfButtons) {
+      this.initializeRdfButtonSupport();
+    }
+
     this.propertiesRenderer = new PropertiesRenderer(
       this.app, this.reactRenderer, this.metadataExtractor, this.metadataService);
 
@@ -170,6 +187,85 @@ export class UniversalLayoutRenderer {
     });
   }
 
+  /**
+   * Initialize RDF-driven button support.
+   *
+   * Creates ActionInterpreter, ConditionEvaluator, and RdfButtonGroupsBuilder
+   * for RDF-driven button rendering. Falls back to no-op implementations
+   * if components are not available.
+   */
+  private initializeRdfButtonSupport(): void {
+    try {
+      // Create SPARQL query service for RDF queries
+      this.sparqlQueryService = new SPARQLQueryService(this.app);
+
+      // Create no-op ActionInterpreter (full implementation in future PR)
+      // See Issue #1439 for ActionInterpreter runtime integration
+      this.actionInterpreter = createNoOpActionInterpreter();
+
+      // Create always-true ConditionEvaluator (full implementation in future PR)
+      // See Issue #1405 for ConditionEvaluator integration with triple store
+      this.conditionEvaluator = createAlwaysTrueConditionEvaluator();
+
+      // Create RdfButtonGroupsBuilder with all dependencies
+      this.rdfButtonGroupsBuilder = new RdfButtonGroupsBuilder(
+        this.sparqlQueryService,
+        this.actionInterpreter,
+        this.conditionEvaluator
+      );
+
+      this.logger.info("RDF button support initialized");
+    } catch (error) {
+      this.logger.error("Failed to initialize RDF button support", { error });
+      // Leave rdfButtonGroupsBuilder undefined to fall back to legacy
+    }
+  }
+
+  /**
+   * Build button groups for the current file.
+   *
+   * When useRdfButtons is enabled, tries RDF buttons first and falls back
+   * to legacy ButtonGroupsBuilder if no RDF buttons are found or on error.
+   */
+  private async buildButtonGroups(file: TFile): Promise<ButtonGroup[]> {
+    // If RDF buttons are enabled and builder is available, try RDF first
+    if (this.settings.useRdfButtons && this.rdfButtonGroupsBuilder) {
+      try {
+        const assetUri = this.buildAssetUri(file);
+        const rdfGroups = await this.rdfButtonGroupsBuilder.buildButtonGroups(assetUri);
+
+        if (rdfGroups.length > 0) {
+          this.logger.debug("Using RDF buttons", { count: rdfGroups.length });
+          return rdfGroups;
+        }
+
+        // No RDF buttons found, fall back to legacy
+        this.logger.debug("No RDF buttons found, falling back to legacy");
+      } catch (error) {
+        this.logger.warn("RDF button loading failed, falling back to legacy", { error });
+      }
+    }
+
+    // Fall back to legacy button builder
+    return this.buttonGroupsBuilder.build(file);
+  }
+
+  /**
+   * Build asset URI from file path.
+   * Uses the file's UID if available, otherwise the file path.
+   */
+  private buildAssetUri(file: TFile): string {
+    const metadata = this.metadataExtractor.extractMetadata(file);
+    const uid = metadata?.exo__Asset_uid as string;
+
+    if (uid) {
+      return `https://exocortex.my/assets/${uid}`;
+    }
+
+    // Fall back to file path
+    return `file://${file.path}`;
+  }
+
   private resolveServices() {
     return {
       taskCreation: container.resolve(TaskCreationService),
@@ -201,6 +297,12 @@ export class UniversalLayoutRenderer {
     this.backlinksCacheManager.cleanup();
     this.metadataCache.cleanup();
     this.sectionStateManager.cleanup();
+
+    // Cleanup RDF button support
+    if (this.sparqlQueryService) {
+      void this.sparqlQueryService.dispose();
+    }
+
     this.currentFilePath = null;
     this.rootContainer = null;
   }
@@ -253,7 +355,7 @@ export class UniversalLayoutRenderer {
           renderHeader, this.sectionStateManager.isCollapsed("properties"));
       }
 
-      const buttonGroups = await this.buttonGroupsBuilder.build(currentFile);
+      const buttonGroups = await this.buildButtonGroups(currentFile);
       if (buttonGroups.length > 0) {
         const buttonsContainer = el.createDiv({ cls: "exocortex-buttons-section" });
         this.reactRenderer.render(buttonsContainer, React.createElement(ActionButtonsGroup, { groups: buttonGroups }));
