@@ -22,6 +22,7 @@ import {
 import { ActionInterpreter } from "../../../../src/domain/services/ActionInterpreter";
 import { GenericAssetCreationService } from "../../../../src/services/GenericAssetCreationService";
 import { IFile, IVaultAdapter } from "../../../../src/interfaces/IVaultAdapter";
+import { WebhookService } from "../../../../src/services/WebhookService";
 
 describe("ActionInterpreter", () => {
   let mockTripleStore: ITripleStore;
@@ -1443,6 +1444,210 @@ describe("ActionInterpreter", () => {
       expect(result.data).toBeDefined();
       expect(Array.isArray(result.data)).toBe(true);
       expect((result.data as unknown[]).length).toBe(0);
+    });
+  });
+
+  describe("TriggerHookAction handler (Issue #1410)", () => {
+    let mockWebhookService: jest.Mocked<Pick<WebhookService, "dispatchEvent">>;
+
+    beforeEach(() => {
+      mockWebhookService = {
+        dispatchEvent: jest.fn().mockResolvedValue([{ success: true }]),
+      };
+    });
+
+    it("should trigger webhook with hookName and payload", async () => {
+      const interpreter = new ActionInterpreter(
+        mockTripleStore,
+        undefined, // assetCreationService
+        undefined, // vaultAdapter
+        undefined, // fileSystem
+        mockWebhookService as unknown as WebhookService // webhookService
+      );
+
+      jest.spyOn(interpreter as any, "loadActionDefinition").mockResolvedValue({
+        type: "exo-ui:TriggerHookAction",
+        params: {
+          hookName: "task-completed",
+          payload: JSON.stringify({ taskId: "123", status: "done" }),
+        },
+      });
+
+      const result = await interpreter.execute("test:hook-action", mockContext);
+
+      expect(result.success).toBe(true);
+      expect(mockWebhookService.dispatchEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event: "property.changed",
+          data: expect.objectContaining({
+            hookName: "task-completed",
+            payload: { taskId: "123", status: "done" },
+          }),
+        })
+      );
+    });
+
+    it("should return error if hookName is missing", async () => {
+      const interpreter = new ActionInterpreter(
+        mockTripleStore,
+        undefined,
+        undefined,
+        undefined,
+        mockWebhookService as unknown as WebhookService
+      );
+
+      jest.spyOn(interpreter as any, "loadActionDefinition").mockResolvedValue({
+        type: "exo-ui:TriggerHookAction",
+        params: {
+          // No hookName
+          payload: JSON.stringify({ test: "data" }),
+        },
+      });
+
+      const result = await interpreter.execute("test:hook-action", mockContext);
+
+      expect(result.success).toBe(false);
+      expect(result.message).toContain("hookName");
+    });
+
+    it("should return error if webhookService is not initialized", async () => {
+      const interpreter = new ActionInterpreter(
+        mockTripleStore,
+        undefined,
+        undefined,
+        undefined,
+        undefined // No webhookService
+      );
+
+      jest.spyOn(interpreter as any, "loadActionDefinition").mockResolvedValue({
+        type: "exo-ui:TriggerHookAction",
+        params: {
+          hookName: "test-hook",
+        },
+      });
+
+      const result = await interpreter.execute("test:hook-action", mockContext);
+
+      expect(result.success).toBe(false);
+      expect(result.message).toContain("WebhookService not initialized");
+    });
+
+    it("should handle payload as object (not stringified)", async () => {
+      const interpreter = new ActionInterpreter(
+        mockTripleStore,
+        undefined,
+        undefined,
+        undefined,
+        mockWebhookService as unknown as WebhookService
+      );
+
+      jest.spyOn(interpreter as any, "loadActionDefinition").mockResolvedValue({
+        type: "exo-ui:TriggerHookAction",
+        params: {
+          hookName: "event-hook",
+          payload: { direct: "object", value: 42 },
+        },
+      });
+
+      const result = await interpreter.execute("test:hook-action", mockContext);
+
+      expect(result.success).toBe(true);
+      expect(mockWebhookService.dispatchEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            payload: { direct: "object", value: 42 },
+          }),
+        })
+      );
+    });
+
+    it("should handle empty payload gracefully", async () => {
+      const interpreter = new ActionInterpreter(
+        mockTripleStore,
+        undefined,
+        undefined,
+        undefined,
+        mockWebhookService as unknown as WebhookService
+      );
+
+      jest.spyOn(interpreter as any, "loadActionDefinition").mockResolvedValue({
+        type: "exo-ui:TriggerHookAction",
+        params: {
+          hookName: "simple-hook",
+          // No payload
+        },
+      });
+
+      const result = await interpreter.execute("test:hook-action", mockContext);
+
+      expect(result.success).toBe(true);
+      expect(mockWebhookService.dispatchEvent).toHaveBeenCalled();
+    });
+
+    it("should handle webhook dispatch failure gracefully", async () => {
+      mockWebhookService.dispatchEvent.mockRejectedValue(
+        new Error("Network error")
+      );
+
+      const interpreter = new ActionInterpreter(
+        mockTripleStore,
+        undefined,
+        undefined,
+        undefined,
+        mockWebhookService as unknown as WebhookService
+      );
+
+      jest.spyOn(interpreter as any, "loadActionDefinition").mockResolvedValue({
+        type: "exo-ui:TriggerHookAction",
+        params: {
+          hookName: "failing-hook",
+        },
+      });
+
+      const result = await interpreter.execute("test:hook-action", mockContext);
+
+      expect(result.success).toBe(false);
+      expect(result.message).toContain("Failed to trigger hook");
+      expect(result.message).toContain("Network error");
+    });
+
+    it("should include filePath from currentAsset in webhook payload", async () => {
+      const interpreter = new ActionInterpreter(
+        mockTripleStore,
+        undefined,
+        undefined,
+        undefined,
+        mockWebhookService as unknown as WebhookService
+      );
+
+      const mockFile: IFile = {
+        path: "tasks/current-task.md",
+        basename: "current-task",
+        name: "current-task.md",
+        parent: { path: "tasks", name: "tasks" },
+      };
+
+      jest.spyOn(interpreter as any, "loadActionDefinition").mockResolvedValue({
+        type: "exo-ui:TriggerHookAction",
+        params: {
+          hookName: "context-hook",
+        },
+      });
+
+      const contextWithAsset: ActionContext = {
+        tripleStore: mockTripleStore,
+        uiProvider: createMockUIProvider(false),
+        currentAsset: mockFile,
+      };
+
+      const result = await interpreter.execute("test:hook-action", contextWithAsset);
+
+      expect(result.success).toBe(true);
+      expect(mockWebhookService.dispatchEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          filePath: "tasks/current-task.md",
+        })
+      );
     });
   });
 });

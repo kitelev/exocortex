@@ -27,6 +27,7 @@ import { SPARQLParser } from "../../infrastructure/sparql/SPARQLParser";
 import { AlgebraTranslator } from "../../infrastructure/sparql/algebra/AlgebraTranslator";
 import { QueryExecutor } from "../../infrastructure/sparql/executors/QueryExecutor";
 import type { SelectQuery } from "../../infrastructure/sparql/SPARQLParser";
+import type { WebhookService } from "../../services/WebhookService";
 
 /**
  * Namespace URI for exo-ui ontology
@@ -86,7 +87,8 @@ export class ActionInterpreter {
     private tripleStore: ITripleStore,
     private assetCreationService?: GenericAssetCreationService,
     private vaultAdapter?: IVaultAdapter,
-    private fileSystem?: IFileSystemMetadataProvider
+    private fileSystem?: IFileSystemMetadataProvider,
+    private webhookService?: WebhookService
   ) {
     this.registerBuiltinHandlers();
   }
@@ -603,13 +605,72 @@ export class ActionInterpreter {
 
   /**
    * Trigger external webhook
+   *
+   * Parameters:
+   * - hookName: Name/identifier of the hook to trigger (required)
+   * - payload: Data to send with the webhook (optional, can be string or object)
+   *
+   * The handler dispatches a "property.changed" event to the webhook service
+   * with the hookName and payload in the data field.
+   *
    * @see Issue #1410
+   * @see /Users/kitelev/vault-2025/03 Knowledge/concepts/RDF-Driven Architecture Implementation Plan (Note).md
+   * Phase 3: ActionInterpreter Runtime (lines 1607-1613)
    */
-  private triggerHookHandler: ActionHandler = async (def, _ctx) => {
-    return {
-      success: false,
-      message: `Not implemented: TriggerHookAction (hookName: ${String(def.params.hookName)})`,
-    };
+  private triggerHookHandler: ActionHandler = async (def, ctx) => {
+    const hookName = def.params.hookName as string | undefined;
+    const payloadParam = def.params.payload;
+
+    // Validate hookName parameter
+    if (!hookName) {
+      return {
+        success: false,
+        message: "TriggerHookAction requires 'hookName' parameter",
+      };
+    }
+
+    // Ensure webhook service is available
+    if (!this.webhookService) {
+      return {
+        success: false,
+        message: "WebhookService not initialized",
+      };
+    }
+
+    // Parse payload if it's a JSON string
+    let payload: Record<string, unknown> | undefined;
+    if (typeof payloadParam === "string") {
+      try {
+        payload = JSON.parse(payloadParam) as Record<string, unknown>;
+      } catch {
+        // If not valid JSON, use as-is wrapped in object
+        payload = { raw: payloadParam };
+      }
+    } else if (payloadParam && typeof payloadParam === "object") {
+      payload = payloadParam as Record<string, unknown>;
+    }
+
+    try {
+      // Dispatch webhook event
+      await this.webhookService.dispatchEvent({
+        event: "property.changed",
+        timestamp: new Date().toISOString(),
+        filePath: ctx.currentAsset?.path ?? "",
+        data: {
+          hookName,
+          payload,
+        },
+      });
+
+      return {
+        success: true,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: `Failed to trigger hook: ${error instanceof Error ? error.message : String(error)}`,
+      };
+    }
   };
 
   /**
