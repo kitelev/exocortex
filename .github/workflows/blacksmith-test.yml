@@ -1,9 +1,0 @@
-name: Blacksmith Test
-
-on: [push]
-
-jobs:
-  test:
-    runs-on: blacksmith-2
-    steps:
-      - run: echo "Blacksmith works!"
