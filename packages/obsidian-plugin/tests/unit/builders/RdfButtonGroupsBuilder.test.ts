@@ -4289,4 +4289,300 @@ describe("RdfButtonGroupsBuilder", () => {
       expect(groups[1].title).toBe("Maintenance");
     });
   });
+
+  /**
+   * RenameToUidButton with CustomHandlerAction Tests (Issue #1428)
+   *
+   * Tests for RenameToUidButton which renames files from human-readable names
+   * to UID-based format for better link stability.
+   * Uses CustomHandlerAction to delegate to registered TypeScript handler.
+   *
+   * RDF Definition:
+   * ```turtle
+   * ems-ui:RenameToUidButton a exo-ui:Button ;
+   *     rdfs:label "Rename to UID" ;
+   *     exo-ui:Button_icon "fingerprint" ;
+   *     exo-ui:Button_variant "secondary" ;
+   *     exo-ui:Button_group exo-ui:MaintenanceButtonGroup ;
+   *     exo-ui:Button_order 30 ;
+   *     exo-ui:Button_tooltip "Rename file to UID format" ;
+   *     exo-ui:Button_action ems-ui:RenameToUidAction ;
+   *     exo-ui:Button_condition ems-ui:IsNotUidNamedCondition .
+   *
+   * ems-ui:RenameToUidAction a exo-ui:CustomHandlerAction ;
+   *     exo-ui:Action_handler "ems:renameToUid" ;
+   *     exo-ui:Action_headless true .
+   *
+   * ems-ui:IsNotUidNamedCondition a exo-ui:NotCondition ;
+   *     exo-ui:NotCondition_operand ems-ui:IsUidNamedCondition .
+   *
+   * ems-ui:IsUidNamedCondition a exo-ui:RegexCondition ;
+   *     exo-ui:RegexCondition_property exo:Asset_filename ;
+   *     exo-ui:RegexCondition_pattern "^[a-f0-9-]{36}\\.md$" .
+   * ```
+   *
+   * @see https://github.com/kitelev/exocortex/issues/1428
+   */
+  describe("RenameToUidButton with CustomHandlerAction (Issue #1428)", () => {
+    it("should load RenameToUidButton with secondary variant and fingerprint icon from RDF", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#MaintenanceButtonGroup",
+            label: "Maintenance",
+            order: "4",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#RenameToUidButton",
+            label: "Rename to UID",
+            icon: "fingerprint",
+            variant: "secondary",
+            order: "30",
+            action: "https://exocortex.my/ontology/ems-ui#RenameToUidAction",
+            tooltip: "Rename file to UID format",
+          }),
+        ]);
+
+      const groups = await builder.buildButtonGroups("test:some-asset");
+
+      expect(groups).toHaveLength(1);
+      expect(groups[0].title).toBe("Maintenance");
+      expect(groups[0].buttons).toHaveLength(1);
+
+      const renameButton = groups[0].buttons[0];
+      expect(renameButton.label).toBe("Rename to UID");
+      expect(renameButton.icon).toBe("fingerprint");
+      expect(renameButton.variant).toBe("secondary");
+      expect(renameButton.tooltip).toBe("Rename file to UID format");
+    });
+
+    it("should show RenameToUidButton when IsNotUidNamedCondition evaluates to true", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#MaintenanceButtonGroup",
+            label: "Maintenance",
+            order: "4",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#RenameToUidButton",
+            label: "Rename to UID",
+            icon: "fingerprint",
+            variant: "secondary",
+            order: "30",
+            action: "https://exocortex.my/ontology/ems-ui#RenameToUidAction",
+            condition: "https://exocortex.my/ontology/ems-ui#IsNotUidNamedCondition",
+          }),
+        ]);
+
+      // File is NOT UID-named → condition is TRUE → button visible
+      mockConditionEvaluator.evaluate.mockResolvedValue(true);
+
+      const groups = await builder.buildButtonGroups("test:My Important Task.md");
+
+      expect(groups).toHaveLength(1);
+      expect(groups[0].buttons).toHaveLength(1);
+      expect(groups[0].buttons[0].label).toBe("Rename to UID");
+
+      // ConditionEvaluator should be called with IsNotUidNamedCondition
+      expect(mockConditionEvaluator.evaluate).toHaveBeenCalledWith(
+        "https://exocortex.my/ontology/ems-ui#IsNotUidNamedCondition",
+        "test:My Important Task.md",
+      );
+    });
+
+    it("should hide RenameToUidButton when file is already UID-named", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#MaintenanceButtonGroup",
+            label: "Maintenance",
+            order: "4",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#RenameToUidButton",
+            label: "Rename to UID",
+            icon: "fingerprint",
+            variant: "secondary",
+            order: "30",
+            action: "https://exocortex.my/ontology/ems-ui#RenameToUidAction",
+            condition: "https://exocortex.my/ontology/ems-ui#IsNotUidNamedCondition",
+          }),
+        ]);
+
+      // File IS UID-named → IsNotUidNamedCondition is FALSE → button hidden
+      mockConditionEvaluator.evaluate.mockResolvedValue(false);
+
+      const groups = await builder.buildButtonGroups("test:abc12345-def6-7890-abcd-ef1234567890.md");
+
+      // Group should be empty (no visible buttons) so not included
+      expect(groups).toHaveLength(0);
+    });
+
+    it("should execute RenameToUidAction through ActionInterpreter when clicked", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#MaintenanceButtonGroup",
+            label: "Maintenance",
+            order: "4",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#RenameToUidButton",
+            label: "Rename to UID",
+            action: "https://exocortex.my/ontology/ems-ui#RenameToUidAction",
+          }),
+        ]);
+
+      mockActionInterpreter.execute.mockResolvedValue({
+        success: true,
+        message: "File renamed to UID successfully",
+      });
+
+      const assetUri = "https://exocortex.my/vault/My Task.md";
+      const groups = await builder.buildButtonGroups(assetUri);
+      const renameButton = groups[0].buttons[0];
+
+      // Click the RenameToUidButton
+      await renameButton.onClick();
+
+      // ActionInterpreter should be called with RenameToUidAction URI
+      expect(mockActionInterpreter.execute).toHaveBeenCalledWith(
+        "https://exocortex.my/ontology/ems-ui#RenameToUidAction",
+        { currentAsset: assetUri },
+      );
+    });
+
+    it("should show RenameToUidButton in MaintenanceButtonGroup with CleanupButton and RepairButton", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#MaintenanceButtonGroup",
+            label: "Maintenance",
+            order: "4",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#CleanupButton",
+            label: "Cleanup",
+            icon: "eraser",
+            variant: "secondary",
+            order: "10",
+            action: "https://exocortex.my/ontology/ems-ui#CleanupAction",
+          }),
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#RepairButton",
+            label: "Repair",
+            icon: "wrench",
+            variant: "warning",
+            order: "20",
+            action: "https://exocortex.my/ontology/ems-ui#RepairAction",
+          }),
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#RenameToUidButton",
+            label: "Rename to UID",
+            icon: "fingerprint",
+            variant: "secondary",
+            order: "30",
+            action: "https://exocortex.my/ontology/ems-ui#RenameToUidAction",
+          }),
+        ]);
+
+      const groups = await builder.buildButtonGroups("test:some-task");
+
+      expect(groups).toHaveLength(1);
+      expect(groups[0].title).toBe("Maintenance");
+      expect(groups[0].buttons).toHaveLength(3);
+      expect(groups[0].buttons[0].label).toBe("Cleanup");
+      expect(groups[0].buttons[1].label).toBe("Repair");
+      expect(groups[0].buttons[2].label).toBe("Rename to UID");
+    });
+
+    it("should show RenameToUidButton after RepairButton in MaintenanceButtonGroup (order 30 vs 20)", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#MaintenanceButtonGroup",
+            label: "Maintenance",
+            order: "4",
+          }),
+        ])
+        // Buttons returned in non-sorted order to verify ORDER BY works
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#RenameToUidButton",
+            label: "Rename to UID",
+            icon: "fingerprint",
+            variant: "secondary",
+            order: "30",
+            action: "https://exocortex.my/ontology/ems-ui#RenameToUidAction",
+          }),
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#RepairButton",
+            label: "Repair",
+            icon: "wrench",
+            variant: "warning",
+            order: "20",
+            action: "https://exocortex.my/ontology/ems-ui#RepairAction",
+          }),
+        ]);
+
+      const groups = await builder.buildButtonGroups("test:some-task");
+
+      expect(groups).toHaveLength(1);
+      expect(groups[0].buttons).toHaveLength(2);
+      // Order should be: Repair (20) then RenameToUid (30)
+      expect(groups[0].buttons[0].label).toBe("Rename to UID");
+      expect(groups[0].buttons[1].label).toBe("Repair");
+    });
+
+    it("should show RenameToUidButton with conditional visibility alongside always-visible buttons", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#MaintenanceButtonGroup",
+            label: "Maintenance",
+            order: "4",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#CleanupButton",
+            label: "Cleanup",
+            order: "10",
+            action: "https://exocortex.my/ontology/ems-ui#CleanupAction",
+            // No condition - always visible
+          }),
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#RenameToUidButton",
+            label: "Rename to UID",
+            order: "30",
+            action: "https://exocortex.my/ontology/ems-ui#RenameToUidAction",
+            condition: "https://exocortex.my/ontology/ems-ui#IsNotUidNamedCondition",
+          }),
+        ]);
+
+      // IsNotUidNamedCondition evaluates to true (file not UID-named)
+      mockConditionEvaluator.evaluate.mockResolvedValue(true);
+
+      const groups = await builder.buildButtonGroups("test:Human Readable Name.md");
+
+      expect(groups).toHaveLength(1);
+      expect(groups[0].buttons).toHaveLength(2);
+      expect(groups[0].buttons[0].label).toBe("Cleanup");
+      expect(groups[0].buttons[1].label).toBe("Rename to UID");
+
+      // ConditionEvaluator should only be called once for RenameToUidButton
+      expect(mockConditionEvaluator.evaluate).toHaveBeenCalledTimes(1);
+    });
+  });
 });
