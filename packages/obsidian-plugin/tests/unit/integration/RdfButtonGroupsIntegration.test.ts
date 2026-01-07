@@ -2,9 +2,10 @@
  * Integration tests for RdfButtonGroupsBuilder with UniversalLayoutRenderer
  *
  * Tests the integration between RDF-driven button rendering and the main layout renderer.
- * Verifies that RDF buttons are properly loaded, filtered, and rendered with fallback to legacy.
+ * Verifies that RDF buttons are properly loaded, filtered, and rendered.
  *
  * @see https://github.com/kitelev/exocortex/issues/1429
+ * @see https://github.com/kitelev/exocortex/issues/1437 (legacy ButtonGroupsBuilder removed)
  */
 
 import "reflect-metadata";
@@ -131,26 +132,17 @@ describe("RdfButtonGroupsBuilder Integration with UniversalLayoutRenderer", () =
   });
 
   describe("RdfButtonGroupsBuilder instantiation", () => {
-    it("should have rdfButtonGroupsBuilder property when useRdfButtons is enabled", () => {
+    it("should always have rdfButtonGroupsBuilder property (legacy ButtonGroupsBuilder removed)", () => {
       const renderer = new UniversalLayoutRenderer(mockApp, mockSettings, mockPlugin, mockVaultAdapter);
       const renderer_any = renderer as any;
 
-      // The renderer should have an rdfButtonGroupsBuilder when RDF buttons are enabled
+      // The renderer should always have an rdfButtonGroupsBuilder (legacy removed)
       expect(renderer_any.rdfButtonGroupsBuilder).toBeDefined();
-    });
-
-    it("should not have rdfButtonGroupsBuilder when useRdfButtons is disabled", () => {
-      mockSettings.useRdfButtons = false;
-      const renderer = new UniversalLayoutRenderer(mockApp, mockSettings, mockPlugin, mockVaultAdapter);
-      const renderer_any = renderer as any;
-
-      // When disabled, rdfButtonGroupsBuilder should be undefined
-      expect(renderer_any.rdfButtonGroupsBuilder).toBeUndefined();
     });
   });
 
   describe("Button rendering with RDF", () => {
-    it("should try RDF buttons first when useRdfButtons is enabled", async () => {
+    it("should use RDF buttons for rendering", async () => {
       const renderer = new UniversalLayoutRenderer(mockApp, mockSettings, mockPlugin, mockVaultAdapter);
       const renderer_any = renderer as any;
 
@@ -183,7 +175,6 @@ describe("RdfButtonGroupsBuilder Integration with UniversalLayoutRenderer", () =
       // Mock other dependencies
       renderer_any.dailyNavRenderer = { render: jest.fn() };
       renderer_any.propertiesRenderer = { render: jest.fn().mockResolvedValue(undefined) };
-      renderer_any.buttonGroupsBuilder = { build: jest.fn().mockResolvedValue([]) };
       renderer_any.dailyTasksRenderer = { render: jest.fn().mockResolvedValue(undefined) };
       renderer_any.dailyProjectsRenderer = { render: jest.fn().mockResolvedValue(undefined) };
       renderer_any.areaTreeRenderer = { render: jest.fn().mockResolvedValue(undefined) };
@@ -197,11 +188,11 @@ describe("RdfButtonGroupsBuilder Integration with UniversalLayoutRenderer", () =
       const el = document.createElement("div");
       await renderer.render("", el, {} as any);
 
-      // RDF button builder should be called first
+      // RDF button builder should be called
       expect(renderer_any.rdfButtonGroupsBuilder.buildButtonGroups).toHaveBeenCalled();
     });
 
-    it("should fallback to legacy buttons when RDF returns empty", async () => {
+    it("should handle empty RDF buttons gracefully (no buttons rendered)", async () => {
       const renderer = new UniversalLayoutRenderer(mockApp, mockSettings, mockPlugin, mockVaultAdapter);
       const renderer_any = renderer as any;
 
@@ -217,25 +208,6 @@ describe("RdfButtonGroupsBuilder Integration with UniversalLayoutRenderer", () =
         buildButtonGroups: jest.fn().mockResolvedValue([]),
       };
 
-      // Mock legacy button builder to return buttons
-      const mockLegacyButtonGroups = [
-        {
-          id: "legacy-status",
-          title: "Status",
-          buttons: [
-            {
-              id: "legacy-start",
-              label: "Legacy Start",
-              onClick: jest.fn(),
-            },
-          ],
-        },
-      ];
-
-      renderer_any.buttonGroupsBuilder = {
-        build: jest.fn().mockResolvedValue(mockLegacyButtonGroups),
-      };
-
       // Mock other dependencies
       renderer_any.dailyNavRenderer = { render: jest.fn() };
       renderer_any.propertiesRenderer = { render: jest.fn().mockResolvedValue(undefined) };
@@ -252,62 +224,8 @@ describe("RdfButtonGroupsBuilder Integration with UniversalLayoutRenderer", () =
       const el = document.createElement("div");
       await renderer.render("", el, {} as any);
 
-      // Legacy builder should be called as fallback
-      expect(renderer_any.buttonGroupsBuilder.build).toHaveBeenCalled();
-    });
-
-    it("should use only RDF buttons when they exist (no fallback)", async () => {
-      const renderer = new UniversalLayoutRenderer(mockApp, mockSettings, mockPlugin, mockVaultAdapter);
-      const renderer_any = renderer as any;
-
-      const mockFile = {
-        path: "test.md",
-        basename: "test",
-      } as TFile;
-
-      mockApp.workspace.getActiveFile.mockReturnValue(mockFile);
-
-      // Mock RDF button builder to return buttons
-      const mockRdfButtonGroups = [
-        {
-          id: "test:StatusGroup",
-          title: "Status",
-          buttons: [
-            {
-              id: "test:StartButton",
-              label: "Start",
-              onClick: jest.fn(),
-            },
-          ],
-        },
-      ];
-
-      renderer_any.rdfButtonGroupsBuilder = {
-        buildButtonGroups: jest.fn().mockResolvedValue(mockRdfButtonGroups),
-      };
-
-      renderer_any.buttonGroupsBuilder = {
-        build: jest.fn().mockResolvedValue([{ id: "legacy" }]),
-      };
-
-      // Mock other dependencies
-      renderer_any.dailyNavRenderer = { render: jest.fn() };
-      renderer_any.propertiesRenderer = { render: jest.fn().mockResolvedValue(undefined) };
-      renderer_any.dailyTasksRenderer = { render: jest.fn().mockResolvedValue(undefined) };
-      renderer_any.dailyProjectsRenderer = { render: jest.fn().mockResolvedValue(undefined) };
-      renderer_any.areaTreeRenderer = { render: jest.fn().mockResolvedValue(undefined) };
-      renderer_any.relationsRenderer = {
-        render: jest.fn().mockResolvedValue(undefined),
-        getAssetRelations: jest.fn().mockResolvedValue([]),
-      };
-      renderer_any.backlinksCacheManager = { getBacklinks: jest.fn().mockReturnValue(new Map()) };
-      renderer_any.metadataExtractor = { extractMetadata: jest.fn().mockReturnValue({}) };
-
-      const el = document.createElement("div");
-      await renderer.render("", el, {} as any);
-
-      // Legacy builder should NOT be called when RDF buttons exist
-      expect(renderer_any.buttonGroupsBuilder.build).not.toHaveBeenCalled();
+      // Should render without errors even with no buttons
+      expect(renderer_any.rdfButtonGroupsBuilder.buildButtonGroups).toHaveBeenCalled();
     });
   });
 
@@ -372,7 +290,7 @@ describe("RdfButtonGroupsBuilder Integration with UniversalLayoutRenderer", () =
   });
 
   describe("Error handling", () => {
-    it("should gracefully handle RDF button loading errors", async () => {
+    it("should gracefully handle RDF button loading errors (no buttons rendered)", async () => {
       const renderer = new UniversalLayoutRenderer(mockApp, mockSettings, mockPlugin, mockVaultAdapter);
       const renderer_any = renderer as any;
 
@@ -386,11 +304,6 @@ describe("RdfButtonGroupsBuilder Integration with UniversalLayoutRenderer", () =
       // Mock RDF button builder to throw an error
       renderer_any.rdfButtonGroupsBuilder = {
         buildButtonGroups: jest.fn().mockRejectedValue(new Error("SPARQL query failed")),
-      };
-
-      // Mock legacy fallback
-      renderer_any.buttonGroupsBuilder = {
-        build: jest.fn().mockResolvedValue([]),
       };
 
       // Mock other dependencies
@@ -408,11 +321,8 @@ describe("RdfButtonGroupsBuilder Integration with UniversalLayoutRenderer", () =
 
       const el = document.createElement("div");
 
-      // Should not throw, should fall back to legacy
+      // Should not throw - error is handled gracefully, no buttons rendered
       await expect(renderer.render("", el, {} as any)).resolves.not.toThrow();
-
-      // Legacy builder should be called as fallback after error
-      expect(renderer_any.buttonGroupsBuilder.build).toHaveBeenCalled();
     });
   });
 

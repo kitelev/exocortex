@@ -20,8 +20,8 @@ describe("IncrementalUpdateHandler", () => {
       propertiesRenderer: {
         render: jest.fn().mockResolvedValue(undefined),
       },
-      buttonGroupsBuilder: {
-        build: jest.fn().mockResolvedValue([]),
+      rdfButtonGroupsBuilder: {
+        buildButtonGroups: jest.fn().mockResolvedValue([]),
       },
       dailyTasksRenderer: {
         render: jest.fn().mockResolvedValue(undefined),
@@ -47,6 +47,9 @@ describe("IncrementalUpdateHandler", () => {
         renderHeader: jest.fn(),
       },
       eventListenerManager: {},
+      metadataExtractor: {
+        extractMetadata: jest.fn().mockReturnValue({}),
+      },
     };
 
     handler = new IncrementalUpdateHandler(mockDeps);
@@ -238,8 +241,8 @@ describe("IncrementalUpdateHandler", () => {
       sectionContainer.remove = jest.fn();
       mockRootContainer.appendChild(sectionContainer);
 
-      // Mock that build returns button groups
-      mockDeps.buttonGroupsBuilder.build.mockResolvedValue([{ buttons: [] }]);
+      // Mock that buildButtonGroups returns button groups
+      mockDeps.rdfButtonGroupsBuilder.buildButtonGroups.mockResolvedValue([{ buttons: [] }]);
 
       // Mock createDiv on rootContainer
       mockRootContainer.createDiv = jest.fn().mockReturnValue(document.createElement("div"));
@@ -252,7 +255,8 @@ describe("IncrementalUpdateHandler", () => {
       );
 
       expect(sectionContainer.remove).toHaveBeenCalled();
-      expect(mockDeps.buttonGroupsBuilder.build).toHaveBeenCalledWith(mockFile);
+      // RdfButtonGroupsBuilder.buildButtonGroups is called with asset URI (from file path)
+      expect(mockDeps.rdfButtonGroupsBuilder.buildButtonGroups).toHaveBeenCalledWith("file://test.md");
     });
 
     it("should not create buttons container when no button groups", async () => {
@@ -261,8 +265,8 @@ describe("IncrementalUpdateHandler", () => {
       sectionContainer.remove = jest.fn();
       mockRootContainer.appendChild(sectionContainer);
 
-      // Mock that build returns empty array
-      mockDeps.buttonGroupsBuilder.build.mockResolvedValue([]);
+      // Mock that buildButtonGroups returns empty array
+      mockDeps.rdfButtonGroupsBuilder.buildButtonGroups.mockResolvedValue([]);
 
       // Mock createDiv on rootContainer
       mockRootContainer.createDiv = jest.fn().mockReturnValue(document.createElement("div"));

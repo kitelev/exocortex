@@ -8,12 +8,11 @@
  * 4. SingleVaultManager - vault switching errors
  * 5. LRUCache - invalid constructor parameters
  * 6. ObsidianConfiguration - settings not initialized
- * 7. FileCreationHelper - created file not found
- * 8. SPARQLApi - query service error propagation
- * 9. Resource exhaustion scenarios
- * 10. Concurrent modification and edge cases
- * 11. Error recovery and cleanup
- * 12. Additional invalid input handling
+ * 7. SPARQLApi - query service error propagation
+ * 8. Resource exhaustion scenarios
+ * 9. Concurrent modification and edge cases
+ * 10. Error recovery and cleanup
+ * 11. Additional invalid input handling
  */
 
 import { flushPromises } from "./helpers/testHelpers";
@@ -32,10 +31,8 @@ import { ExocortexPluginInterface } from "../../src/types";
 import { SingleVaultManager } from "../../src/infrastructure/vault/SingleVaultManager";
 import { LRUCache } from "../../src/infrastructure/cache/LRUCache";
 import { ObsidianConfiguration } from "../../src/infrastructure/di/ObsidianConfiguration";
-import { openCreatedFile } from "../../src/presentation/builders/button-groups/FileCreationHelper";
 import { SPARQLApi } from "../../src/application/api/SPARQLApi";
 import { SPARQLQueryService } from "../../src/application/services/SPARQLQueryService";
-import { ILogger } from "../../src/adapters/logging/ILogger";
 
 // Mock external modules
 jest.mock("obsidian", () => ({
@@ -424,60 +421,7 @@ describe("Error Handling - Negative Tests", () => {
     });
   });
 
-  describe("7. FileCreationHelper - created file not found", () => {
-    it("should throw error when created file not found in vault", async () => {
-      const mockApp = {
-        vault: {
-          getAbstractFileByPath: jest.fn().mockReturnValue(null),
-        },
-        workspace: {
-          getLeaf: jest.fn(),
-        },
-      } as unknown as any;
-
-      const mockLogger: ILogger = {
-        debug: jest.fn(),
-        info: jest.fn(),
-        warn: jest.fn(),
-        error: jest.fn(),
-      };
-
-      const createdFile = { path: "nonexistent.md" };
-
-      await expect(
-        openCreatedFile(mockApp, createdFile, {}, mockLogger, "test")
-      ).rejects.toThrow("Created file not found: nonexistent.md");
-    });
-
-    it("should throw error when path points to folder", async () => {
-      const mockFolder = Object.create(TFolder.prototype);
-      Object.assign(mockFolder, { path: "folder", name: "folder" });
-
-      const mockApp = {
-        vault: {
-          getAbstractFileByPath: jest.fn().mockReturnValue(mockFolder),
-        },
-        workspace: {
-          getLeaf: jest.fn(),
-        },
-      } as unknown as any;
-
-      const mockLogger: ILogger = {
-        debug: jest.fn(),
-        info: jest.fn(),
-        warn: jest.fn(),
-        error: jest.fn(),
-      };
-
-      const createdFile = { path: "folder" };
-
-      await expect(
-        openCreatedFile(mockApp, createdFile, {}, mockLogger, "test")
-      ).rejects.toThrow("Created file not found: folder");
-    });
-  });
-
-  describe("8. SPARQLApi - query service error propagation", () => {
+  describe("7. SPARQLApi - query service error propagation", () => {
     let api: SPARQLApi;
     let mockPlugin: any;
     let mockQueryService: jest.Mocked<SPARQLQueryService>;
@@ -527,7 +471,7 @@ describe("Error Handling - Negative Tests", () => {
     });
   });
 
-  describe("9. Resource exhaustion scenarios", () => {
+  describe("8. Resource exhaustion scenarios", () => {
     it("should handle LRU cache eviction correctly under pressure", () => {
       const cache = new LRUCache<number, string>(3);
 
@@ -564,7 +508,7 @@ describe("Error Handling - Negative Tests", () => {
     });
   });
 
-  describe("10. Concurrent modification and edge cases", () => {
+  describe("9. Concurrent modification and edge cases", () => {
     it("should handle undefined values in cache", () => {
       const cache = new LRUCache<string, number | undefined>(10);
 
@@ -599,7 +543,7 @@ describe("Error Handling - Negative Tests", () => {
     });
   });
 
-  describe("11. Error recovery and cleanup", () => {
+  describe("10. Error recovery and cleanup", () => {
     it("should cleanup LRU cache properly", () => {
       const cache = new LRUCache<string, number>(10);
 
@@ -644,7 +588,7 @@ describe("Error Handling - Negative Tests", () => {
     });
   });
 
-  describe("12. Additional invalid input handling", () => {
+  describe("11. Additional invalid input handling", () => {
     it("should handle empty vault ID in SingleVaultManager", () => {
       const mockVaultContext: IVaultContext = {
         vaultId: "",
