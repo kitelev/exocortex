@@ -8,7 +8,9 @@
  * Phase 3: ActionInterpreter Runtime (lines 1469-1640)
  *
  * Issue #1404: Implement ActionInterpreter base structure
+ * Issue #1413: Integrate ActionInterpreter with IUIProvider
  * @see https://github.com/kitelev/exocortex/issues/1404
+ * @see https://github.com/kitelev/exocortex/issues/1413
  */
 
 import { ITripleStore } from "../../interfaces/ITripleStore";
@@ -20,7 +22,7 @@ import {
   ActionDefinition,
   ActionHandler,
 } from "../types/ActionTypes";
-import { HeadlessError } from "../ports/IUIProvider";
+import { HeadlessError, IUIProvider } from "../ports/IUIProvider";
 import { GenericAssetCreationService } from "../../services/GenericAssetCreationService";
 import type { IVaultAdapter, IFile, IFrontmatter } from "../../interfaces/IVaultAdapter";
 import { SPARQLParser } from "../../infrastructure/sparql/SPARQLParser";
@@ -57,7 +59,15 @@ const RDF_TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type";
  *
  * @example
  * ```typescript
- * const interpreter = new ActionInterpreter(tripleStore);
+ * // Create interpreter with UI provider for Obsidian mode
+ * const interpreter = new ActionInterpreter(
+ *   tripleStore,
+ *   assetCreationService,
+ *   vaultAdapter,
+ *   fileSystem,
+ *   webhookService,
+ *   obsidianUIProvider  // Optional: IUIProvider for UI operations
+ * );
  *
  * // Register custom handler (escape hatch)
  * interpreter.registerCustomHandler('custom:MyHandler', async (def, ctx) => {
@@ -68,7 +78,7 @@ const RDF_TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type";
  * // Execute action by URI
  * const result = await interpreter.execute(
  *   'https://exocortex.my/actions/create-task-1',
- *   context
+ *   context  // Context can also provide uiProvider (takes precedence)
  * );
  * ```
  */
@@ -83,13 +93,21 @@ export class ActionInterpreter {
    */
   private customHandlers: Map<string, ActionHandler> = new Map();
 
+  /**
+   * Default UI provider (can be overridden by context.uiProvider at execution time)
+   * @see Issue #1413: Integrate ActionInterpreter with IUIProvider
+   */
+  private uiProvider?: IUIProvider;
+
   constructor(
     private tripleStore: ITripleStore,
     private assetCreationService?: GenericAssetCreationService,
     private vaultAdapter?: IVaultAdapter,
     private fileSystem?: IFileSystemMetadataProvider,
-    private webhookService?: WebhookService
+    private webhookService?: WebhookService,
+    uiProvider?: IUIProvider
   ) {
+    this.uiProvider = uiProvider;
     this.registerBuiltinHandlers();
   }
 
@@ -126,6 +144,16 @@ export class ActionInterpreter {
    */
   hasHandler(actionType: string): boolean {
     return this.handlers.has(actionType) || this.customHandlers.has(actionType);
+  }
+
+  /**
+   * Get the default UI provider (if set in constructor)
+   *
+   * @returns IUIProvider instance or undefined
+   * @see Issue #1413: Integrate ActionInterpreter with IUIProvider
+   */
+  getUIProvider(): IUIProvider | undefined {
+    return this.uiProvider;
   }
 
   /**

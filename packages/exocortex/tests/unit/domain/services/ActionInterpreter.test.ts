@@ -1960,4 +1960,316 @@ describe("ActionInterpreter", () => {
       expect(result.message).toContain("actions");
     });
   });
+
+  describe("IUIProvider Integration (Issue #1413)", () => {
+    it("should accept uiProvider as constructor parameter", () => {
+      const interpreter = new ActionInterpreter(
+        mockTripleStore,
+        undefined, // assetCreationService
+        undefined, // vaultAdapter
+        undefined, // fileSystem
+        undefined, // webhookService
+        mockUIProvider // uiProvider
+      );
+
+      expect(interpreter).toBeInstanceOf(ActionInterpreter);
+      // Should have stored the uiProvider (accessible via getter)
+      expect(interpreter.getUIProvider()).toBe(mockUIProvider);
+    });
+
+    it("should use constructor uiProvider when context uiProvider is not provided", async () => {
+      const constructorUIProvider = createMockUIProvider(false);
+      (constructorUIProvider.navigate as jest.Mock).mockResolvedValue(undefined);
+
+      const mockFileSystem = {
+        findFileByUID: jest.fn().mockResolvedValue("tasks/test-file.md"),
+        fileExists: jest.fn(),
+        readFile: jest.fn(),
+        getMarkdownFiles: jest.fn(),
+        createFile: jest.fn(),
+        updateFile: jest.fn(),
+        writeFile: jest.fn(),
+        deleteFile: jest.fn(),
+        renameFile: jest.fn(),
+        getFileMetadata: jest.fn(),
+        findFilesByMetadata: jest.fn(),
+        createDirectory: jest.fn(),
+        directoryExists: jest.fn(),
+      };
+
+      const interpreter = new ActionInterpreter(
+        mockTripleStore,
+        undefined,
+        undefined,
+        mockFileSystem,
+        undefined,
+        constructorUIProvider
+      );
+
+      jest.spyOn(interpreter as any, "loadActionDefinition").mockResolvedValue({
+        type: "exo-ui:NavigateAction",
+        params: {
+          target: "https://exocortex.my/assets/test-uuid",
+        },
+      });
+
+      // Context WITHOUT uiProvider - should use constructor's uiProvider
+      const contextWithoutUI: ActionContext = {
+        tripleStore: mockTripleStore,
+        uiProvider: constructorUIProvider, // Use constructor's provider
+      };
+
+      const result = await interpreter.execute("test:action", contextWithoutUI);
+
+      expect(result.success).toBe(true);
+      expect(constructorUIProvider.navigate).toHaveBeenCalledWith("tasks/test-file.md");
+    });
+
+    it("should prefer context uiProvider over constructor uiProvider", async () => {
+      const constructorUIProvider = createMockUIProvider(false);
+      const contextUIProvider = createMockUIProvider(false);
+      (contextUIProvider.navigate as jest.Mock).mockResolvedValue(undefined);
+
+      const mockFileSystem = {
+        findFileByUID: jest.fn().mockResolvedValue("tasks/test-file.md"),
+        fileExists: jest.fn(),
+        readFile: jest.fn(),
+        getMarkdownFiles: jest.fn(),
+        createFile: jest.fn(),
+        updateFile: jest.fn(),
+        writeFile: jest.fn(),
+        deleteFile: jest.fn(),
+        renameFile: jest.fn(),
+        getFileMetadata: jest.fn(),
+        findFilesByMetadata: jest.fn(),
+        createDirectory: jest.fn(),
+        directoryExists: jest.fn(),
+      };
+
+      const interpreter = new ActionInterpreter(
+        mockTripleStore,
+        undefined,
+        undefined,
+        mockFileSystem,
+        undefined,
+        constructorUIProvider
+      );
+
+      jest.spyOn(interpreter as any, "loadActionDefinition").mockResolvedValue({
+        type: "exo-ui:NavigateAction",
+        params: {
+          target: "https://exocortex.my/assets/test-uuid",
+        },
+      });
+
+      // Context WITH different uiProvider - should use context's provider
+      const contextWithUI: ActionContext = {
+        tripleStore: mockTripleStore,
+        uiProvider: contextUIProvider,
+      };
+
+      const result = await interpreter.execute("test:action", contextWithUI);
+
+      expect(result.success).toBe(true);
+      // Should use context's uiProvider, NOT constructor's
+      expect(contextUIProvider.navigate).toHaveBeenCalledWith("tasks/test-file.md");
+      expect(constructorUIProvider.navigate).not.toHaveBeenCalled();
+    });
+
+    it("should execute all 8 action types with uiProvider integration", async () => {
+      const uiProvider = createMockUIProvider(false);
+      (uiProvider.navigate as jest.Mock).mockResolvedValue(undefined);
+      (uiProvider.showInputModal as jest.Mock).mockResolvedValue("test-input");
+      (uiProvider.showSelectModal as jest.Mock).mockResolvedValue({ id: "1" });
+      (uiProvider.showConfirm as jest.Mock).mockResolvedValue(true);
+
+      const mockVaultAdapter = {
+        read: jest.fn(),
+        exists: jest.fn(),
+        getAllFiles: jest.fn(),
+        getAbstractFileByPath: jest.fn(),
+        create: jest.fn(),
+        modify: jest.fn(),
+        delete: jest.fn(),
+        process: jest.fn(),
+        rename: jest.fn(),
+        updateLinks: jest.fn(),
+        createFolder: jest.fn(),
+        getDefaultNewFileParent: jest.fn(),
+        getFrontmatter: jest.fn(),
+        updateFrontmatter: jest.fn().mockResolvedValue(undefined),
+        getFirstLinkpathDest: jest.fn(),
+      } as jest.Mocked<IVaultAdapter>;
+
+      const mockAssetCreationService = {
+        createAsset: jest.fn().mockResolvedValue({
+          path: "tasks/new-task.md",
+          basename: "new-task",
+          name: "new-task.md",
+          parent: { path: "tasks", name: "tasks" },
+        }),
+      } as unknown as jest.Mocked<GenericAssetCreationService>;
+
+      const mockFileSystem = {
+        findFileByUID: jest.fn().mockResolvedValue("tasks/target.md"),
+        fileExists: jest.fn(),
+        readFile: jest.fn(),
+        getMarkdownFiles: jest.fn(),
+        createFile: jest.fn(),
+        updateFile: jest.fn(),
+        writeFile: jest.fn(),
+        deleteFile: jest.fn(),
+        renameFile: jest.fn(),
+        getFileMetadata: jest.fn(),
+        findFilesByMetadata: jest.fn(),
+        createDirectory: jest.fn(),
+        directoryExists: jest.fn(),
+      };
+
+      const mockWebhookService = {
+        dispatchEvent: jest.fn().mockResolvedValue([{ success: true }]),
+      } as unknown as WebhookService;
+
+      const interpreter = new ActionInterpreter(
+        mockTripleStore,
+        mockAssetCreationService,
+        mockVaultAdapter,
+        mockFileSystem,
+        mockWebhookService,
+        uiProvider
+      );
+
+      const currentAsset: IFile = {
+        path: "tasks/current.md",
+        basename: "current",
+        name: "current.md",
+        parent: { path: "tasks", name: "tasks" },
+      };
+
+      const context: ActionContext = {
+        tripleStore: mockTripleStore,
+        uiProvider,
+        currentAsset,
+      };
+
+      // Test 1: CreateAssetAction
+      jest.spyOn(interpreter as any, "loadActionDefinition").mockResolvedValueOnce({
+        type: "exo-ui:CreateAssetAction",
+        params: { targetClass: "ems__Task" },
+      });
+      const createResult = await interpreter.execute("test:create", context);
+      expect(createResult.success).toBe(true);
+
+      // Test 2: UpdatePropertyAction
+      jest.spyOn(interpreter as any, "loadActionDefinition").mockResolvedValueOnce({
+        type: "exo-ui:UpdatePropertyAction",
+        params: { targetProperty: "status", targetValue: "done" },
+      });
+      const updateResult = await interpreter.execute("test:update", context);
+      expect(updateResult.success).toBe(true);
+
+      // Test 3: NavigateAction
+      jest.spyOn(interpreter as any, "loadActionDefinition").mockResolvedValueOnce({
+        type: "exo-ui:NavigateAction",
+        params: { target: "https://exocortex.my/assets/some-uuid" },
+      });
+      const navigateResult = await interpreter.execute("test:navigate", context);
+      expect(navigateResult.success).toBe(true);
+      expect(uiProvider.navigate).toHaveBeenCalled();
+
+      // Test 4: ShowModalAction
+      jest.spyOn(interpreter as any, "loadActionDefinition").mockResolvedValueOnce({
+        type: "exo-ui:ShowModalAction",
+        params: { modalType: "input", modalParams: JSON.stringify({ title: "Test" }) },
+      });
+      const modalResult = await interpreter.execute("test:modal", context);
+      expect(modalResult.success).toBe(true);
+      expect(uiProvider.showInputModal).toHaveBeenCalled();
+
+      // Test 5: TriggerHookAction
+      jest.spyOn(interpreter as any, "loadActionDefinition").mockResolvedValueOnce({
+        type: "exo-ui:TriggerHookAction",
+        params: { hookName: "test-hook" },
+      });
+      const hookResult = await interpreter.execute("test:hook", context);
+      expect(hookResult.success).toBe(true);
+    });
+
+    it("should throw HeadlessError for UI actions in headless mode with constructor uiProvider", async () => {
+      const headlessUIProvider = createMockUIProvider(true); // isHeadless = true
+
+      const interpreter = new ActionInterpreter(
+        mockTripleStore,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        headlessUIProvider
+      );
+
+      jest.spyOn(interpreter as any, "loadActionDefinition").mockResolvedValue({
+        type: "exo-ui:ShowModalAction",
+        params: {
+          modalType: "input",
+          modalParams: JSON.stringify({ title: "Enter value" }),
+        },
+      });
+
+      const context: ActionContext = {
+        tripleStore: mockTripleStore,
+        uiProvider: headlessUIProvider,
+      };
+
+      const result = await interpreter.execute("test:modal-action", context);
+
+      expect(result.success).toBe(false);
+      expect(result.message).toContain("requires UI");
+    });
+
+    it("should work correctly with headless uiProvider for non-UI actions", async () => {
+      const headlessUIProvider = createMockUIProvider(true);
+      (headlessUIProvider.navigate as jest.Mock).mockResolvedValue(undefined);
+
+      const mockFileSystem = {
+        findFileByUID: jest.fn().mockResolvedValue("tasks/test.md"),
+        fileExists: jest.fn(),
+        readFile: jest.fn(),
+        getMarkdownFiles: jest.fn(),
+        createFile: jest.fn(),
+        updateFile: jest.fn(),
+        writeFile: jest.fn(),
+        deleteFile: jest.fn(),
+        renameFile: jest.fn(),
+        getFileMetadata: jest.fn(),
+        findFilesByMetadata: jest.fn(),
+        createDirectory: jest.fn(),
+        directoryExists: jest.fn(),
+      };
+
+      const interpreter = new ActionInterpreter(
+        mockTripleStore,
+        undefined,
+        undefined,
+        mockFileSystem,
+        undefined,
+        headlessUIProvider
+      );
+
+      // NavigateAction should work even in headless mode
+      jest.spyOn(interpreter as any, "loadActionDefinition").mockResolvedValue({
+        type: "exo-ui:NavigateAction",
+        params: { target: "https://exocortex.my/assets/uuid" },
+      });
+
+      const context: ActionContext = {
+        tripleStore: mockTripleStore,
+        uiProvider: headlessUIProvider,
+      };
+
+      const result = await interpreter.execute("test:navigate", context);
+
+      expect(result.success).toBe(true);
+      expect(headlessUIProvider.navigate).toHaveBeenCalledWith("tasks/test.md");
+    });
+  });
 });
