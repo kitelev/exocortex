@@ -325,6 +325,9 @@ export type {
 // Action Interpreter export
 export { ActionInterpreter } from "./domain/services/ActionInterpreter";
 
+// Condition Evaluator export
+export { ConditionEvaluator } from "./domain/services/ConditionEvaluator";
+
 // DI Container exports
 export {
   registerCoreServices,
