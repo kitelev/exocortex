@@ -1060,4 +1060,251 @@ describe("RdfButtonGroupsBuilder", () => {
       expect(groups[0].buttons[1].label).toBe("Done");
     });
   });
+
+  /**
+   * TrashButton with ShowModalAction Tests (Issue #1421)
+   *
+   * Tests for TrashButton which uses CompositeAction containing:
+   * - ShowTrashReasonModal (ShowModalAction for input)
+   * - SetStatusTrashedAction (UpdatePropertyAction for ems:Effort_status → ems:EffortStatusTrashed)
+   *
+   * Key difference from other buttons: Action_headless = false (UI-only!)
+   * In CLI mode, this will throw HeadlessError with Action_cliAlternative suggestion.
+   *
+   * RDF Definition:
+   * ```turtle
+   * ems-ui:TrashButton a exo-ui:Button ;
+   *     rdfs:label "Trash" ;
+   *     exo-ui:Button_icon "trash" ;
+   *     exo-ui:Button_variant "danger" ;
+   *     exo-ui:Button_group exo-ui:StatusButtonGroup ;
+   *     exo-ui:Button_order 100 ;
+   *     exo-ui:Button_action ems-ui:TrashAction ;
+   *     exo-ui:Button_condition ems-ui:IsNotTrashedCondition .
+   *
+   * ems-ui:TrashAction a exo-ui:CompositeAction ;
+   *     exo-ui:Action_actions (ems-ui:ShowTrashReasonModal ems-ui:SetStatusTrashedAction) ;
+   *     exo-ui:Action_headless false .
+   *
+   * ems-ui:ShowTrashReasonModal a exo-ui:ShowModalAction ;
+   *     exo-ui:Action_modalType "input" ;
+   *     exo-ui:Action_modalParams "{\"title\": \"Trash Reason\", \"placeholder\": \"Why are you trashing this?\"}" ;
+   *     exo-ui:Action_cliAlternative "--reason \"text\"" .
+   *
+   * ems-ui:SetStatusTrashedAction a exo-ui:UpdatePropertyAction ;
+   *     exo-ui:Action_targetProperty ems:Effort_status ;
+   *     exo-ui:Action_targetValue ems:EffortStatusTrashed .
+   *
+   * ems-ui:IsNotTrashedCondition a exo-ui:Condition ;
+   *     exo-ui:Condition_not ems-ui:IsTrashedCondition .
+   * ```
+   *
+   * @see https://github.com/kitelev/exocortex/issues/1421
+   */
+  describe("TrashButton with ShowModalAction (Issue #1421)", () => {
+    it("should load TrashButton with danger variant and trash icon from RDF", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#StatusButtonGroup",
+            label: "Status",
+            order: "1",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#TrashButton",
+            label: "Trash",
+            icon: "trash",
+            variant: "danger",
+            order: "100",
+            action: "https://exocortex.my/ontology/ems-ui#TrashAction",
+            condition: "https://exocortex.my/ontology/ems-ui#IsNotTrashedCondition",
+          }),
+        ]);
+
+      // Condition passes (asset is NOT trashed)
+      mockConditionEvaluator.evaluate.mockResolvedValue(true);
+
+      const groups = await builder.buildButtonGroups("test:active-task");
+
+      expect(groups).toHaveLength(1);
+      expect(groups[0].buttons).toHaveLength(1);
+
+      const trashButton = groups[0].buttons[0];
+      expect(trashButton.label).toBe("Trash");
+      expect(trashButton.icon).toBe("trash");
+      expect(trashButton.variant).toBe("danger");
+    });
+
+    it("should hide TrashButton when IsNotTrashedCondition is false (asset already trashed)", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#StatusButtonGroup",
+            label: "Status",
+            order: "1",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#TrashButton",
+            label: "Trash",
+            icon: "trash",
+            variant: "danger",
+            action: "https://exocortex.my/ontology/ems-ui#TrashAction",
+            condition: "https://exocortex.my/ontology/ems-ui#IsNotTrashedCondition",
+          }),
+        ]);
+
+      // Condition fails (asset IS already trashed)
+      mockConditionEvaluator.evaluate.mockResolvedValue(false);
+
+      const groups = await builder.buildButtonGroups("test:trashed-task");
+
+      // Group should be empty because TrashButton is filtered out
+      expect(groups).toHaveLength(0);
+    });
+
+    it("should execute TrashAction (CompositeAction with ShowModalAction) through ActionInterpreter when clicked", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#StatusButtonGroup",
+            label: "Status",
+            order: "1",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#TrashButton",
+            label: "Trash",
+            action: "https://exocortex.my/ontology/ems-ui#TrashAction",
+            condition: "https://exocortex.my/ontology/ems-ui#IsNotTrashedCondition",
+          }),
+        ]);
+
+      mockConditionEvaluator.evaluate.mockResolvedValue(true);
+      mockActionInterpreter.execute.mockResolvedValue({
+        success: true,
+        refresh: true,
+      });
+
+      const assetUri = "https://exocortex.my/vault/active-task.md";
+      const groups = await builder.buildButtonGroups(assetUri);
+      const trashButton = groups[0].buttons[0];
+
+      // Click the TrashButton
+      await trashButton.onClick();
+
+      // ActionInterpreter should be called with TrashAction URI
+      expect(mockActionInterpreter.execute).toHaveBeenCalledWith(
+        "https://exocortex.my/ontology/ems-ui#TrashAction",
+        { currentAsset: assetUri },
+      );
+    });
+
+    it("should evaluate IsNotTrashedCondition with correct asset URI", async () => {
+      const assetUri = "https://exocortex.my/vault/my-effort.md";
+
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#StatusButtonGroup",
+            label: "Status",
+            order: "1",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#TrashButton",
+            label: "Trash",
+            action: "https://exocortex.my/ontology/ems-ui#TrashAction",
+            condition: "https://exocortex.my/ontology/ems-ui#IsNotTrashedCondition",
+          }),
+        ]);
+
+      mockConditionEvaluator.evaluate.mockResolvedValue(true);
+
+      await builder.buildButtonGroups(assetUri);
+
+      // ConditionEvaluator should be called with IsNotTrashedCondition and asset URI
+      expect(mockConditionEvaluator.evaluate).toHaveBeenCalledWith(
+        "https://exocortex.my/ontology/ems-ui#IsNotTrashedCondition",
+        assetUri,
+      );
+    });
+
+    it("should show TrashButton at high order (100) after other status buttons", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#StatusButtonGroup",
+            label: "Status",
+            order: "1",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#StartButton",
+            label: "Start",
+            icon: "play",
+            variant: "primary",
+            order: "10",
+            action: "https://exocortex.my/ontology/ems-ui#StartAction",
+            condition: "https://exocortex.my/ontology/ems-ui#IsToDoCondition",
+          }),
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#TrashButton",
+            label: "Trash",
+            icon: "trash",
+            variant: "danger",
+            order: "100",
+            action: "https://exocortex.my/ontology/ems-ui#TrashAction",
+            condition: "https://exocortex.my/ontology/ems-ui#IsNotTrashedCondition",
+          }),
+        ]);
+
+      // Both conditions pass
+      mockConditionEvaluator.evaluate.mockResolvedValue(true);
+
+      const groups = await builder.buildButtonGroups("test:todo-task");
+
+      expect(groups).toHaveLength(1);
+      expect(groups[0].buttons).toHaveLength(2);
+      // Start should come before Trash (order 10 vs 100)
+      expect(groups[0].buttons[0].label).toBe("Start");
+      expect(groups[0].buttons[1].label).toBe("Trash");
+    });
+
+    it("should show TrashButton for any non-trashed status (Draft, Backlog, ToDo, Doing, Done)", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#StatusButtonGroup",
+            label: "Status",
+            order: "1",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#TrashButton",
+            label: "Trash",
+            icon: "trash",
+            variant: "danger",
+            action: "https://exocortex.my/ontology/ems-ui#TrashAction",
+            condition: "https://exocortex.my/ontology/ems-ui#IsNotTrashedCondition",
+          }),
+        ]);
+
+      // IsNotTrashedCondition passes (asset is in Draft status, NOT trashed)
+      mockConditionEvaluator.evaluate.mockResolvedValue(true);
+
+      const groups = await builder.buildButtonGroups("test:draft-task");
+
+      expect(groups).toHaveLength(1);
+      expect(groups[0].buttons).toHaveLength(1);
+      expect(groups[0].buttons[0].label).toBe("Trash");
+    });
+  });
 });

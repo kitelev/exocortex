@@ -2572,4 +2572,380 @@ describe("ActionInterpreter", () => {
       expect(mockVaultAdapter.updateFrontmatter).toHaveBeenCalled();
     });
   });
+
+  /**
+   * TrashAction CompositeAction Tests (Issue #1421)
+   *
+   * Tests for TrashAction which is a CompositeAction containing:
+   * - ShowTrashReasonModal (ShowModalAction for input)
+   * - SetStatusTrashedAction (UpdatePropertyAction for ems:Effort_status → ems:EffortStatusTrashed)
+   *
+   * Key difference from DoneAction: Action_headless = false (UI-only!)
+   * In CLI mode, ShowModalAction will fail with HeadlessError.
+   *
+   * RDF Definition:
+   * ```turtle
+   * ems-ui:TrashAction a exo-ui:CompositeAction ;
+   *     exo-ui:Action_actions (ems-ui:ShowTrashReasonModal ems-ui:SetStatusTrashedAction) ;
+   *     exo-ui:Action_headless false .
+   *
+   * ems-ui:ShowTrashReasonModal a exo-ui:ShowModalAction ;
+   *     exo-ui:Action_modalType "input" ;
+   *     exo-ui:Action_modalParams "{\"title\": \"Trash Reason\", \"placeholder\": \"Why are you trashing this?\"}" ;
+   *     exo-ui:Action_cliAlternative "--reason \"text\"" .
+   *
+   * ems-ui:SetStatusTrashedAction a exo-ui:UpdatePropertyAction ;
+   *     exo-ui:Action_targetProperty ems:Effort_status ;
+   *     exo-ui:Action_targetValue ems:EffortStatusTrashed .
+   * ```
+   *
+   * @see https://github.com/kitelev/exocortex/issues/1421
+   */
+  describe("TrashAction CompositeAction (Issue #1421)", () => {
+    let mockVaultAdapter: jest.Mocked<IVaultAdapter>;
+    let mockFile: IFile;
+
+    beforeEach(() => {
+      mockFile = {
+        path: "efforts/active-task.md",
+        basename: "active-task",
+        name: "active-task.md",
+        parent: { path: "efforts", name: "efforts" },
+      };
+
+      mockVaultAdapter = {
+        read: jest.fn(),
+        exists: jest.fn(),
+        getAllFiles: jest.fn(),
+        getAbstractFileByPath: jest.fn(),
+        create: jest.fn(),
+        modify: jest.fn(),
+        delete: jest.fn(),
+        process: jest.fn(),
+        rename: jest.fn(),
+        updateLinks: jest.fn(),
+        createFolder: jest.fn(),
+        getDefaultNewFileParent: jest.fn(),
+        getFrontmatter: jest.fn(),
+        updateFrontmatter: jest.fn().mockResolvedValue(undefined),
+        getFirstLinkpathDest: jest.fn(),
+      } as jest.Mocked<IVaultAdapter>;
+    });
+
+    it("should execute ShowTrashReasonModal and SetStatusTrashedAction in sequence in UI mode", async () => {
+      const interpreter = new ActionInterpreter(
+        mockTripleStore,
+        undefined,
+        mockVaultAdapter
+      );
+
+      const uiProvider = createMockUIProvider(false); // UI mode
+      (uiProvider.showInputModal as jest.Mock).mockResolvedValue("No longer needed");
+
+      const executionOrder: string[] = [];
+
+      const loadActionSpy = jest.spyOn(interpreter as any, "loadActionDefinition");
+      loadActionSpy.mockImplementation(async (uri) => {
+        if (uri === "ems-ui:TrashAction") {
+          return {
+            type: "exo-ui:CompositeAction",
+            params: {
+              actions: JSON.stringify([
+                "ems-ui:ShowTrashReasonModal",
+                "ems-ui:SetStatusTrashedAction",
+              ]),
+              Action_headless: false, // UI-only!
+            },
+          };
+        }
+        if (uri === "ems-ui:ShowTrashReasonModal") {
+          executionOrder.push("modal");
+          return {
+            type: "exo-ui:ShowModalAction",
+            params: {
+              modalType: "input",
+              modalParams: JSON.stringify({
+                title: "Trash Reason",
+                placeholder: "Why are you trashing this?",
+              }),
+              Action_cliAlternative: "--reason \"text\"",
+            },
+          };
+        }
+        if (uri === "ems-ui:SetStatusTrashedAction") {
+          executionOrder.push("status");
+          return {
+            type: "exo-ui:UpdatePropertyAction",
+            params: {
+              targetProperty: "ems__Effort_status",
+              targetValue: "ems__EffortStatusTrashed",
+            },
+          };
+        }
+        throw new Error(`Unknown action: ${uri}`);
+      });
+
+      const contextWithAsset: ActionContext = {
+        tripleStore: mockTripleStore,
+        uiProvider,
+        currentAsset: mockFile,
+      };
+
+      const result = await interpreter.execute("ems-ui:TrashAction", contextWithAsset);
+
+      expect(result.success).toBe(true);
+      expect(result.refresh).toBe(true);
+      // Both sub-actions should execute in order
+      expect(executionOrder).toEqual(["modal", "status"]);
+      // Modal should be shown
+      expect(uiProvider.showInputModal).toHaveBeenCalledWith({
+        title: "Trash Reason",
+        placeholder: "Why are you trashing this?",
+      });
+      // Status should be updated
+      expect(mockVaultAdapter.updateFrontmatter).toHaveBeenCalled();
+    });
+
+    it("should fail in headless (CLI) mode with HeadlessError and cliAlternative suggestion", async () => {
+      const interpreter = new ActionInterpreter(
+        mockTripleStore,
+        undefined,
+        mockVaultAdapter
+      );
+
+      const loadActionSpy = jest.spyOn(interpreter as any, "loadActionDefinition");
+      loadActionSpy.mockImplementation(async (uri) => {
+        if (uri === "ems-ui:TrashAction") {
+          return {
+            type: "exo-ui:CompositeAction",
+            params: {
+              actions: JSON.stringify([
+                "ems-ui:ShowTrashReasonModal",
+                "ems-ui:SetStatusTrashedAction",
+              ]),
+              Action_headless: false, // UI-only!
+            },
+          };
+        }
+        if (uri === "ems-ui:ShowTrashReasonModal") {
+          return {
+            type: "exo-ui:ShowModalAction",
+            params: {
+              modalType: "input",
+              modalParams: JSON.stringify({
+                title: "Trash Reason",
+                placeholder: "Why are you trashing this?",
+              }),
+              Action_cliAlternative: "--reason \"text\"",
+            },
+          };
+        }
+        throw new Error(`Unknown action: ${uri}`);
+      });
+
+      const headlessContext: ActionContext = {
+        tripleStore: mockTripleStore,
+        uiProvider: createMockUIProvider(true), // Headless mode
+        currentAsset: mockFile,
+      };
+
+      const result = await interpreter.execute("ems-ui:TrashAction", headlessContext);
+
+      expect(result.success).toBe(false);
+      expect(result.message).toContain("requires UI");
+      expect(result.message).toContain("--reason");
+    });
+
+    it("should stop TrashAction execution if ShowTrashReasonModal is cancelled", async () => {
+      const interpreter = new ActionInterpreter(
+        mockTripleStore,
+        undefined,
+        mockVaultAdapter
+      );
+
+      const uiProvider = createMockUIProvider(false);
+      (uiProvider.showInputModal as jest.Mock).mockRejectedValue(
+        new Error("User cancelled")
+      );
+
+      const executionOrder: string[] = [];
+
+      const loadActionSpy = jest.spyOn(interpreter as any, "loadActionDefinition");
+      loadActionSpy.mockImplementation(async (uri) => {
+        if (uri === "ems-ui:TrashAction") {
+          return {
+            type: "exo-ui:CompositeAction",
+            params: {
+              actions: JSON.stringify([
+                "ems-ui:ShowTrashReasonModal",
+                "ems-ui:SetStatusTrashedAction",
+              ]),
+            },
+          };
+        }
+        if (uri === "ems-ui:ShowTrashReasonModal") {
+          executionOrder.push("modal");
+          return {
+            type: "exo-ui:ShowModalAction",
+            params: {
+              modalType: "input",
+              modalParams: JSON.stringify({ title: "Trash Reason" }),
+            },
+          };
+        }
+        if (uri === "ems-ui:SetStatusTrashedAction") {
+          executionOrder.push("status");
+          return {
+            type: "exo-ui:UpdatePropertyAction",
+            params: {
+              targetProperty: "ems__Effort_status",
+              targetValue: "ems__EffortStatusTrashed",
+            },
+          };
+        }
+        throw new Error(`Unknown action: ${uri}`);
+      });
+
+      const contextWithAsset: ActionContext = {
+        tripleStore: mockTripleStore,
+        uiProvider,
+        currentAsset: mockFile,
+      };
+
+      const result = await interpreter.execute("ems-ui:TrashAction", contextWithAsset);
+
+      expect(result.success).toBe(false);
+      expect(result.message).toContain("User cancelled");
+      // SetStatusTrashedAction should NOT be executed after modal cancellation
+      expect(executionOrder).toEqual(["modal"]);
+      expect(mockVaultAdapter.updateFrontmatter).not.toHaveBeenCalled();
+    });
+
+    it("should set ems__Effort_status to ems__EffortStatusTrashed", async () => {
+      const interpreter = new ActionInterpreter(
+        mockTripleStore,
+        undefined,
+        mockVaultAdapter
+      );
+
+      const uiProvider = createMockUIProvider(false);
+      (uiProvider.showInputModal as jest.Mock).mockResolvedValue("Duplicate task");
+
+      let capturedFrontmatter: Record<string, unknown> = {};
+
+      mockVaultAdapter.updateFrontmatter.mockImplementation(
+        async (_file, updaterFn) => {
+          const testFrontmatter = { ems__Effort_status: "ems__EffortStatusDoing" };
+          capturedFrontmatter = updaterFn(testFrontmatter);
+          return undefined;
+        }
+      );
+
+      const loadActionSpy = jest.spyOn(interpreter as any, "loadActionDefinition");
+      loadActionSpy.mockImplementation(async (uri) => {
+        if (uri === "ems-ui:TrashAction") {
+          return {
+            type: "exo-ui:CompositeAction",
+            params: {
+              actions: JSON.stringify([
+                "ems-ui:ShowTrashReasonModal",
+                "ems-ui:SetStatusTrashedAction",
+              ]),
+            },
+          };
+        }
+        if (uri === "ems-ui:ShowTrashReasonModal") {
+          return {
+            type: "exo-ui:ShowModalAction",
+            params: {
+              modalType: "input",
+              modalParams: JSON.stringify({ title: "Trash Reason" }),
+            },
+          };
+        }
+        if (uri === "ems-ui:SetStatusTrashedAction") {
+          return {
+            type: "exo-ui:UpdatePropertyAction",
+            params: {
+              targetProperty: "ems__Effort_status",
+              targetValue: "ems__EffortStatusTrashed",
+            },
+          };
+        }
+        throw new Error(`Unknown action: ${uri}`);
+      });
+
+      const contextWithAsset: ActionContext = {
+        tripleStore: mockTripleStore,
+        uiProvider,
+        currentAsset: mockFile,
+      };
+
+      const result = await interpreter.execute("ems-ui:TrashAction", contextWithAsset);
+
+      expect(result.success).toBe(true);
+      expect(capturedFrontmatter["ems__Effort_status"]).toBe("ems__EffortStatusTrashed");
+    });
+
+    it("should pass user input from ShowTrashReasonModal to next action via previousResult", async () => {
+      const interpreter = new ActionInterpreter(
+        mockTripleStore,
+        undefined,
+        mockVaultAdapter
+      );
+
+      const uiProvider = createMockUIProvider(false);
+      const trashReason = "This task is obsolete";
+      (uiProvider.showInputModal as jest.Mock).mockResolvedValue(trashReason);
+
+      let capturedPreviousResult: unknown;
+
+      interpreter.registerCustomHandler("custom:LogReason", async (_def, ctx) => {
+        capturedPreviousResult = ctx.previousResult;
+        return { success: true };
+      });
+
+      const loadActionSpy = jest.spyOn(interpreter as any, "loadActionDefinition");
+      loadActionSpy.mockImplementation(async (uri) => {
+        if (uri === "ems-ui:TrashWithReasonAction") {
+          return {
+            type: "exo-ui:CompositeAction",
+            params: {
+              actions: JSON.stringify([
+                "ems-ui:ShowTrashReasonModal",
+                "custom:LogReason",
+              ]),
+            },
+          };
+        }
+        if (uri === "ems-ui:ShowTrashReasonModal") {
+          return {
+            type: "exo-ui:ShowModalAction",
+            params: {
+              modalType: "input",
+              modalParams: JSON.stringify({ title: "Trash Reason" }),
+            },
+          };
+        }
+        if (uri === "custom:LogReason") {
+          return {
+            type: "exo-ui:CustomHandlerAction",
+            params: { handler: "custom:LogReason" },
+          };
+        }
+        throw new Error(`Unknown action: ${uri}`);
+      });
+
+      const contextWithAsset: ActionContext = {
+        tripleStore: mockTripleStore,
+        uiProvider,
+        currentAsset: mockFile,
+      };
+
+      const result = await interpreter.execute("ems-ui:TrashWithReasonAction", contextWithAsset);
+
+      expect(result.success).toBe(true);
+      expect(capturedPreviousResult).toBe(trashReason);
+    });
+  });
 });
