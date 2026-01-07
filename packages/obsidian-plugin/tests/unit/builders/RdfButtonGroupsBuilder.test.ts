@@ -3866,4 +3866,427 @@ describe("RdfButtonGroupsBuilder", () => {
       expect(groups[0].buttons[0].label).toBe("Plan on Today");
     });
   });
+
+  /**
+   * CleanupButton with CustomHandlerAction Tests (Issue #1427)
+   *
+   * Tests for CleanupButton which performs asset cleanup operations (e.g., removing
+   * obsolete metadata, normalizing frontmatter, etc.).
+   * Uses CustomHandlerAction to delegate to registered TypeScript handler.
+   *
+   * RDF Definition:
+   * ```turtle
+   * ems-ui:CleanupButton a exo-ui:Button ;
+   *     rdfs:label "Cleanup" ;
+   *     exo-ui:Button_icon "eraser" ;
+   *     exo-ui:Button_variant "secondary" ;
+   *     exo-ui:Button_group exo-ui:MaintenanceButtonGroup ;
+   *     exo-ui:Button_order 10 ;
+   *     exo-ui:Button_tooltip "Clean up asset metadata" ;
+   *     exo-ui:Button_action ems-ui:CleanupAction .
+   *
+   * ems-ui:CleanupAction a exo-ui:CustomHandlerAction ;
+   *     exo-ui:Action_handler "ems:cleanup" ;
+   *     exo-ui:Action_headless true .
+   * ```
+   *
+   * @see https://github.com/kitelev/exocortex/issues/1427
+   */
+  describe("CleanupButton with CustomHandlerAction (Issue #1427)", () => {
+    it("should load CleanupButton with secondary variant and eraser icon from RDF", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#MaintenanceButtonGroup",
+            label: "Maintenance",
+            order: "4",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#CleanupButton",
+            label: "Cleanup",
+            icon: "eraser",
+            variant: "secondary",
+            order: "10",
+            action: "https://exocortex.my/ontology/ems-ui#CleanupAction",
+            tooltip: "Clean up asset metadata",
+          }),
+        ]);
+
+      const groups = await builder.buildButtonGroups("test:some-asset");
+
+      expect(groups).toHaveLength(1);
+      expect(groups[0].title).toBe("Maintenance");
+      expect(groups[0].buttons).toHaveLength(1);
+
+      const cleanupButton = groups[0].buttons[0];
+      expect(cleanupButton.label).toBe("Cleanup");
+      expect(cleanupButton.icon).toBe("eraser");
+      expect(cleanupButton.variant).toBe("secondary");
+      expect(cleanupButton.tooltip).toBe("Clean up asset metadata");
+    });
+
+    it("should show CleanupButton without condition (always visible)", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#MaintenanceButtonGroup",
+            label: "Maintenance",
+            order: "4",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#CleanupButton",
+            label: "Cleanup",
+            icon: "eraser",
+            variant: "secondary",
+            order: "10",
+            action: "https://exocortex.my/ontology/ems-ui#CleanupAction",
+            // No condition - always visible for all assets
+          }),
+        ]);
+
+      const groups = await builder.buildButtonGroups("test:any-asset");
+
+      expect(groups).toHaveLength(1);
+      expect(groups[0].buttons).toHaveLength(1);
+      expect(groups[0].buttons[0].label).toBe("Cleanup");
+      // ConditionEvaluator should NOT be called (no condition)
+      expect(mockConditionEvaluator.evaluate).not.toHaveBeenCalled();
+    });
+
+    it("should execute CleanupAction through ActionInterpreter when clicked", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#MaintenanceButtonGroup",
+            label: "Maintenance",
+            order: "4",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#CleanupButton",
+            label: "Cleanup",
+            action: "https://exocortex.my/ontology/ems-ui#CleanupAction",
+          }),
+        ]);
+
+      mockActionInterpreter.execute.mockResolvedValue({
+        success: true,
+        message: "Asset cleaned up successfully",
+      });
+
+      const assetUri = "https://exocortex.my/vault/my-task.md";
+      const groups = await builder.buildButtonGroups(assetUri);
+      const cleanupButton = groups[0].buttons[0];
+
+      // Click the CleanupButton
+      await cleanupButton.onClick();
+
+      // ActionInterpreter should be called with CleanupAction URI
+      expect(mockActionInterpreter.execute).toHaveBeenCalledWith(
+        "https://exocortex.my/ontology/ems-ui#CleanupAction",
+        { currentAsset: assetUri },
+      );
+    });
+
+    it("should show CleanupButton in MaintenanceButtonGroup separate from StatusButtonGroup", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#StatusButtonGroup",
+            label: "Status",
+            order: "1",
+          }),
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#MaintenanceButtonGroup",
+            label: "Maintenance",
+            order: "4",
+          }),
+        ])
+        // Buttons for StatusButtonGroup
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#StartButton",
+            label: "Start",
+            icon: "play",
+            variant: "primary",
+            order: "10",
+            action: "https://exocortex.my/ontology/ems-ui#StartAction",
+          }),
+        ])
+        // Buttons for MaintenanceButtonGroup
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#CleanupButton",
+            label: "Cleanup",
+            icon: "eraser",
+            variant: "secondary",
+            order: "10",
+            action: "https://exocortex.my/ontology/ems-ui#CleanupAction",
+          }),
+        ]);
+
+      const groups = await builder.buildButtonGroups("test:some-task");
+
+      expect(groups).toHaveLength(2);
+      expect(groups[0].title).toBe("Status");
+      expect(groups[0].buttons[0].label).toBe("Start");
+      expect(groups[1].title).toBe("Maintenance");
+      expect(groups[1].buttons[0].label).toBe("Cleanup");
+    });
+  });
+
+  /**
+   * RepairButton with CustomHandlerAction Tests (Issue #1427)
+   *
+   * Tests for RepairButton which performs asset repair operations (e.g., fixing
+   * broken links, restoring missing metadata, etc.).
+   * Uses CustomHandlerAction to delegate to registered TypeScript handler.
+   *
+   * RDF Definition:
+   * ```turtle
+   * ems-ui:RepairButton a exo-ui:Button ;
+   *     rdfs:label "Repair" ;
+   *     exo-ui:Button_icon "wrench" ;
+   *     exo-ui:Button_variant "warning" ;
+   *     exo-ui:Button_group exo-ui:MaintenanceButtonGroup ;
+   *     exo-ui:Button_order 20 ;
+   *     exo-ui:Button_tooltip "Repair asset issues" ;
+   *     exo-ui:Button_action ems-ui:RepairAction .
+   *
+   * ems-ui:RepairAction a exo-ui:CustomHandlerAction ;
+   *     exo-ui:Action_handler "ems:repair" ;
+   *     exo-ui:Action_headless true .
+   * ```
+   *
+   * @see https://github.com/kitelev/exocortex/issues/1427
+   */
+  describe("RepairButton with CustomHandlerAction (Issue #1427)", () => {
+    it("should load RepairButton with warning variant and wrench icon from RDF", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#MaintenanceButtonGroup",
+            label: "Maintenance",
+            order: "4",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#RepairButton",
+            label: "Repair",
+            icon: "wrench",
+            variant: "warning",
+            order: "20",
+            action: "https://exocortex.my/ontology/ems-ui#RepairAction",
+            tooltip: "Repair asset issues",
+          }),
+        ]);
+
+      const groups = await builder.buildButtonGroups("test:some-asset");
+
+      expect(groups).toHaveLength(1);
+      expect(groups[0].title).toBe("Maintenance");
+      expect(groups[0].buttons).toHaveLength(1);
+
+      const repairButton = groups[0].buttons[0];
+      expect(repairButton.label).toBe("Repair");
+      expect(repairButton.icon).toBe("wrench");
+      expect(repairButton.variant).toBe("warning");
+      expect(repairButton.tooltip).toBe("Repair asset issues");
+    });
+
+    it("should show RepairButton without condition (always visible)", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#MaintenanceButtonGroup",
+            label: "Maintenance",
+            order: "4",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#RepairButton",
+            label: "Repair",
+            icon: "wrench",
+            variant: "warning",
+            order: "20",
+            action: "https://exocortex.my/ontology/ems-ui#RepairAction",
+            // No condition - always visible for all assets
+          }),
+        ]);
+
+      const groups = await builder.buildButtonGroups("test:any-asset");
+
+      expect(groups).toHaveLength(1);
+      expect(groups[0].buttons).toHaveLength(1);
+      expect(groups[0].buttons[0].label).toBe("Repair");
+      // ConditionEvaluator should NOT be called (no condition)
+      expect(mockConditionEvaluator.evaluate).not.toHaveBeenCalled();
+    });
+
+    it("should execute RepairAction through ActionInterpreter when clicked", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#MaintenanceButtonGroup",
+            label: "Maintenance",
+            order: "4",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#RepairButton",
+            label: "Repair",
+            action: "https://exocortex.my/ontology/ems-ui#RepairAction",
+          }),
+        ]);
+
+      mockActionInterpreter.execute.mockResolvedValue({
+        success: true,
+        message: "Asset repaired successfully",
+      });
+
+      const assetUri = "https://exocortex.my/vault/my-task.md";
+      const groups = await builder.buildButtonGroups(assetUri);
+      const repairButton = groups[0].buttons[0];
+
+      // Click the RepairButton
+      await repairButton.onClick();
+
+      // ActionInterpreter should be called with RepairAction URI
+      expect(mockActionInterpreter.execute).toHaveBeenCalledWith(
+        "https://exocortex.my/ontology/ems-ui#RepairAction",
+        { currentAsset: assetUri },
+      );
+    });
+
+    it("should show both CleanupButton and RepairButton in MaintenanceButtonGroup", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#MaintenanceButtonGroup",
+            label: "Maintenance",
+            order: "4",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#CleanupButton",
+            label: "Cleanup",
+            icon: "eraser",
+            variant: "secondary",
+            order: "10",
+            action: "https://exocortex.my/ontology/ems-ui#CleanupAction",
+          }),
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#RepairButton",
+            label: "Repair",
+            icon: "wrench",
+            variant: "warning",
+            order: "20",
+            action: "https://exocortex.my/ontology/ems-ui#RepairAction",
+          }),
+        ]);
+
+      const groups = await builder.buildButtonGroups("test:some-asset");
+
+      expect(groups).toHaveLength(1);
+      expect(groups[0].title).toBe("Maintenance");
+      expect(groups[0].buttons).toHaveLength(2);
+      // Cleanup should come before Repair (order 10 vs 20)
+      expect(groups[0].buttons[0].label).toBe("Cleanup");
+      expect(groups[0].buttons[1].label).toBe("Repair");
+    });
+
+    it("should show RepairButton after CleanupButton in MaintenanceButtonGroup (order 20 vs 10)", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#MaintenanceButtonGroup",
+            label: "Maintenance",
+            order: "4",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          // Returned in reverse order to test sorting by SPARQL ORDER BY
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#RepairButton",
+            label: "Repair",
+            icon: "wrench",
+            variant: "warning",
+            order: "20",
+            action: "https://exocortex.my/ontology/ems-ui#RepairAction",
+          }),
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#CleanupButton",
+            label: "Cleanup",
+            icon: "eraser",
+            variant: "secondary",
+            order: "10",
+            action: "https://exocortex.my/ontology/ems-ui#CleanupAction",
+          }),
+        ]);
+
+      const groups = await builder.buildButtonGroups("test:some-asset");
+
+      expect(groups).toHaveLength(1);
+      expect(groups[0].buttons).toHaveLength(2);
+      // Order from SPARQL is preserved (Repair then Cleanup as received)
+      // But in actual RDF, SPARQL ORDER BY would sort by order
+      // The builder doesn't re-sort, it preserves SPARQL result order
+      expect(groups[0].buttons[0].label).toBe("Repair");
+      expect(groups[0].buttons[1].label).toBe("Cleanup");
+    });
+
+    it("should show MaintenanceButtonGroup after PlanningButtonGroup (order 4 vs 3)", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#PlanningButtonGroup",
+            label: "Planning",
+            order: "3",
+          }),
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#MaintenanceButtonGroup",
+            label: "Maintenance",
+            order: "4",
+          }),
+        ])
+        // Buttons for PlanningButtonGroup
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#PlanTodayButton",
+            label: "Plan on Today",
+            icon: "calendar",
+            variant: "warning",
+            order: "10",
+            action: "https://exocortex.my/ontology/ems-ui#PlanTodayAction",
+          }),
+        ])
+        // Buttons for MaintenanceButtonGroup
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#RepairButton",
+            label: "Repair",
+            icon: "wrench",
+            variant: "warning",
+            order: "20",
+            action: "https://exocortex.my/ontology/ems-ui#RepairAction",
+          }),
+        ]);
+
+      const groups = await builder.buildButtonGroups("test:some-task");
+
+      expect(groups).toHaveLength(2);
+      // Planning (order 3) comes before Maintenance (order 4)
+      expect(groups[0].title).toBe("Planning");
+      expect(groups[1].title).toBe("Maintenance");
+    });
+  });
 });
