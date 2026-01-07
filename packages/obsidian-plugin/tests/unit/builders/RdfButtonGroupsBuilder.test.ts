@@ -3462,4 +3462,408 @@ describe("RdfButtonGroupsBuilder", () => {
       expect(groups[0].buttons[0].label).toBe("Plan on Today");
     });
   });
+
+  /**
+   * ShiftForwardButton with CompositeAction Tests (Issue #1426)
+   *
+   * Tests for ShiftForwardButton which uses CompositeAction to shift
+   * plannedStartTimestamp from today to tomorrow (next day).
+   * This is a Planning Button visible for any Effort that is planned for today.
+   *
+   * RDF Definition:
+   * ```turtle
+   * ems-ui:ShiftForwardButton a exo-ui:Button ;
+   *     rdfs:label "Shift Forward" ;
+   *     exo-ui:Button_icon "chevron-right" ;
+   *     exo-ui:Button_variant "warning" ;
+   *     exo-ui:Button_group exo-ui:PlanningButtonGroup ;
+   *     exo-ui:Button_order 30 ;
+   *     exo-ui:Button_tooltip "Shift this effort to tomorrow" ;
+   *     exo-ui:Button_action ems-ui:ShiftForwardAction ;
+   *     exo-ui:Button_condition ems-ui:CanShiftForwardCondition .
+   *
+   * ems-ui:ShiftForwardAction a exo-ui:CompositeAction ;
+   *     exo-ui:Action_actions (ems-ui:ClearPlannedStartTimestampAction ems-ui:SetTomorrowTimestampAction) ;
+   *     exo-ui:Action_headless true .
+   *
+   * ems-ui:ClearPlannedStartTimestampAction a exo-ui:UpdatePropertyAction ;
+   *     exo-ui:Action_targetProperty ems:Effort_plannedStartTimestamp ;
+   *     exo-ui:Action_targetValue "" .
+   *
+   * ems-ui:SetTomorrowTimestampAction a exo-ui:UpdatePropertyAction ;
+   *     exo-ui:Action_targetProperty ems:Effort_plannedStartTimestamp ;
+   *     exo-ui:Action_targetValue "{{tomorrowStartTimestamp}}" .
+   *
+   * ems-ui:CanShiftForwardCondition a exo-ui:Condition ;
+   *     exo-ui:Condition_sparql """
+   *         ASK {
+   *             ?asset a ems:Effort .
+   *             ?asset ems:Effort_plannedStartTimestamp ?ts .
+   *             FILTER(STRSTARTS(STR(?ts), "{{today}}"))
+   *         }
+   *     """ .
+   * ```
+   *
+   * @see https://github.com/kitelev/exocortex/issues/1426
+   */
+  describe("ShiftForwardButton with CompositeAction (Issue #1426)", () => {
+    it("should load ShiftForwardButton with warning variant and chevron-right icon from RDF", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#PlanningButtonGroup",
+            label: "Planning",
+            order: "3",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#ShiftForwardButton",
+            label: "Shift Forward",
+            icon: "chevron-right",
+            variant: "warning",
+            order: "30",
+            action: "https://exocortex.my/ontology/ems-ui#ShiftForwardAction",
+            condition: "https://exocortex.my/ontology/ems-ui#CanShiftForwardCondition",
+            tooltip: "Shift this effort to tomorrow",
+          }),
+        ]);
+
+      // Condition passes (effort IS planned for today)
+      mockConditionEvaluator.evaluate.mockResolvedValue(true);
+
+      const groups = await builder.buildButtonGroups("test:today-planned-task");
+
+      expect(groups).toHaveLength(1);
+      expect(groups[0].id).toBe("https://exocortex.my/ontology/exo-ui#PlanningButtonGroup");
+      expect(groups[0].title).toBe("Planning");
+      expect(groups[0].buttons).toHaveLength(1);
+
+      const shiftForwardButton = groups[0].buttons[0];
+      expect(shiftForwardButton.label).toBe("Shift Forward");
+      expect(shiftForwardButton.icon).toBe("chevron-right");
+      expect(shiftForwardButton.variant).toBe("warning");
+      expect(shiftForwardButton.tooltip).toBe("Shift this effort to tomorrow");
+    });
+
+    it("should hide ShiftForwardButton when CanShiftForwardCondition is false (not planned for today)", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#PlanningButtonGroup",
+            label: "Planning",
+            order: "3",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#ShiftForwardButton",
+            label: "Shift Forward",
+            icon: "chevron-right",
+            variant: "warning",
+            action: "https://exocortex.my/ontology/ems-ui#ShiftForwardAction",
+            condition: "https://exocortex.my/ontology/ems-ui#CanShiftForwardCondition",
+          }),
+        ]);
+
+      // Condition fails (effort is NOT planned for today)
+      mockConditionEvaluator.evaluate.mockResolvedValue(false);
+
+      const groups = await builder.buildButtonGroups("test:unplanned-task");
+
+      // Group should be empty because ShiftForwardButton is filtered out
+      expect(groups).toHaveLength(0);
+    });
+
+    it("should execute ShiftForwardAction (CompositeAction) through ActionInterpreter when clicked", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#PlanningButtonGroup",
+            label: "Planning",
+            order: "3",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#ShiftForwardButton",
+            label: "Shift Forward",
+            action: "https://exocortex.my/ontology/ems-ui#ShiftForwardAction",
+            condition: "https://exocortex.my/ontology/ems-ui#CanShiftForwardCondition",
+          }),
+        ]);
+
+      mockConditionEvaluator.evaluate.mockResolvedValue(true);
+      mockActionInterpreter.execute.mockResolvedValue({
+        success: true,
+        refresh: true,
+      });
+
+      const assetUri = "https://exocortex.my/vault/today-task.md";
+      const groups = await builder.buildButtonGroups(assetUri);
+      const shiftForwardButton = groups[0].buttons[0];
+
+      // Click the ShiftForwardButton
+      await shiftForwardButton.onClick();
+
+      // ActionInterpreter should be called with ShiftForwardAction URI
+      expect(mockActionInterpreter.execute).toHaveBeenCalledWith(
+        "https://exocortex.my/ontology/ems-ui#ShiftForwardAction",
+        { currentAsset: assetUri },
+      );
+    });
+
+    it("should evaluate CanShiftForwardCondition with correct asset URI", async () => {
+      const assetUri = "https://exocortex.my/vault/my-effort.md";
+
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#PlanningButtonGroup",
+            label: "Planning",
+            order: "3",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#ShiftForwardButton",
+            label: "Shift Forward",
+            action: "https://exocortex.my/ontology/ems-ui#ShiftForwardAction",
+            condition: "https://exocortex.my/ontology/ems-ui#CanShiftForwardCondition",
+          }),
+        ]);
+
+      mockConditionEvaluator.evaluate.mockResolvedValue(true);
+
+      await builder.buildButtonGroups(assetUri);
+
+      // ConditionEvaluator should be called with CanShiftForwardCondition and asset URI
+      expect(mockConditionEvaluator.evaluate).toHaveBeenCalledWith(
+        "https://exocortex.my/ontology/ems-ui#CanShiftForwardCondition",
+        assetUri,
+      );
+    });
+
+    it("should show ShiftForwardButton for Task that IS planned for today", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#PlanningButtonGroup",
+            label: "Planning",
+            order: "3",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#ShiftForwardButton",
+            label: "Shift Forward",
+            icon: "chevron-right",
+            variant: "warning",
+            order: "30",
+            action: "https://exocortex.my/ontology/ems-ui#ShiftForwardAction",
+            condition: "https://exocortex.my/ontology/ems-ui#CanShiftForwardCondition",
+          }),
+        ]);
+
+      // CanShiftForwardCondition passes (task IS planned for today)
+      mockConditionEvaluator.evaluate.mockResolvedValue(true);
+
+      const groups = await builder.buildButtonGroups("test:today-task");
+
+      expect(groups).toHaveLength(1);
+      expect(groups[0].buttons).toHaveLength(1);
+      expect(groups[0].buttons[0].label).toBe("Shift Forward");
+    });
+
+    it("should show ShiftForwardButton for Project that IS planned for today", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#PlanningButtonGroup",
+            label: "Planning",
+            order: "3",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#ShiftForwardButton",
+            label: "Shift Forward",
+            icon: "chevron-right",
+            variant: "warning",
+            order: "30",
+            action: "https://exocortex.my/ontology/ems-ui#ShiftForwardAction",
+            condition: "https://exocortex.my/ontology/ems-ui#CanShiftForwardCondition",
+          }),
+        ]);
+
+      // CanShiftForwardCondition passes (project IS planned for today)
+      mockConditionEvaluator.evaluate.mockResolvedValue(true);
+
+      const groups = await builder.buildButtonGroups("test:today-project");
+
+      expect(groups).toHaveLength(1);
+      expect(groups[0].buttons).toHaveLength(1);
+      expect(groups[0].buttons[0].label).toBe("Shift Forward");
+    });
+  });
+
+  /**
+   * ShiftForwardButton integration with other Planning Buttons (Issue #1426)
+   *
+   * Tests for ShiftForwardButton appearing alongside PlanTodayButton and PlanEveningButton
+   * in the PlanningButtonGroup based on different conditions.
+   */
+  describe("ShiftForwardButton integration with Planning Buttons (Issue #1426)", () => {
+    it("should show all Planning buttons when asset has no planned timestamp and is in Backlog", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#PlanningButtonGroup",
+            label: "Planning",
+            order: "3",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#PlanTodayButton",
+            label: "Plan on Today",
+            icon: "calendar",
+            variant: "warning",
+            order: "10",
+            action: "https://exocortex.my/ontology/ems-ui#PlanTodayAction",
+            condition: "https://exocortex.my/ontology/ems-ui#CanPlanOnTodayCondition",
+          }),
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#PlanEveningButton",
+            label: "Plan for Evening (19:00)",
+            icon: "moon",
+            variant: "warning",
+            order: "20",
+            action: "https://exocortex.my/ontology/ems-ui#PlanEveningAction",
+            condition: "https://exocortex.my/ontology/ems-ui#CanPlanForEveningCondition",
+          }),
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#ShiftForwardButton",
+            label: "Shift Forward",
+            icon: "chevron-right",
+            variant: "warning",
+            order: "30",
+            action: "https://exocortex.my/ontology/ems-ui#ShiftForwardAction",
+            condition: "https://exocortex.my/ontology/ems-ui#CanShiftForwardCondition",
+          }),
+        ]);
+
+      // All conditions pass for this scenario
+      mockConditionEvaluator.evaluate.mockResolvedValue(true);
+
+      const groups = await builder.buildButtonGroups("test:backlog-task");
+
+      expect(groups).toHaveLength(1);
+      expect(groups[0].title).toBe("Planning");
+      expect(groups[0].buttons).toHaveLength(3);
+      // Buttons should be in order: Plan on Today (10), Plan for Evening (20), Shift Forward (30)
+      expect(groups[0].buttons[0].label).toBe("Plan on Today");
+      expect(groups[0].buttons[1].label).toBe("Plan for Evening (19:00)");
+      expect(groups[0].buttons[2].label).toBe("Shift Forward");
+    });
+
+    it("should show only ShiftForwardButton when asset is planned for today (not Backlog)", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#PlanningButtonGroup",
+            label: "Planning",
+            order: "3",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#PlanTodayButton",
+            label: "Plan on Today",
+            icon: "calendar",
+            variant: "warning",
+            order: "10",
+            action: "https://exocortex.my/ontology/ems-ui#PlanTodayAction",
+            condition: "https://exocortex.my/ontology/ems-ui#CanPlanOnTodayCondition",
+          }),
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#PlanEveningButton",
+            label: "Plan for Evening (19:00)",
+            icon: "moon",
+            variant: "warning",
+            order: "20",
+            action: "https://exocortex.my/ontology/ems-ui#PlanEveningAction",
+            condition: "https://exocortex.my/ontology/ems-ui#CanPlanForEveningCondition",
+          }),
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#ShiftForwardButton",
+            label: "Shift Forward",
+            icon: "chevron-right",
+            variant: "warning",
+            order: "30",
+            action: "https://exocortex.my/ontology/ems-ui#ShiftForwardAction",
+            condition: "https://exocortex.my/ontology/ems-ui#CanShiftForwardCondition",
+          }),
+        ]);
+
+      // For asset planned for today:
+      // - CanPlanOnTodayCondition = false (already planned for today)
+      // - CanPlanForEveningCondition = false (not Backlog)
+      // - CanShiftForwardCondition = true (IS planned for today)
+      mockConditionEvaluator.evaluate
+        .mockResolvedValueOnce(false)  // CanPlanOnTodayCondition fails
+        .mockResolvedValueOnce(false)  // CanPlanForEveningCondition fails
+        .mockResolvedValueOnce(true);  // CanShiftForwardCondition passes
+
+      const groups = await builder.buildButtonGroups("test:today-planned-task");
+
+      expect(groups).toHaveLength(1);
+      expect(groups[0].buttons).toHaveLength(1);
+      expect(groups[0].buttons[0].label).toBe("Shift Forward");
+    });
+
+    it("should show PlanTodayButton but hide ShiftForwardButton when asset is not planned yet", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#PlanningButtonGroup",
+            label: "Planning",
+            order: "3",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#PlanTodayButton",
+            label: "Plan on Today",
+            icon: "calendar",
+            variant: "warning",
+            order: "10",
+            action: "https://exocortex.my/ontology/ems-ui#PlanTodayAction",
+            condition: "https://exocortex.my/ontology/ems-ui#CanPlanOnTodayCondition",
+          }),
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#ShiftForwardButton",
+            label: "Shift Forward",
+            icon: "chevron-right",
+            variant: "warning",
+            order: "30",
+            action: "https://exocortex.my/ontology/ems-ui#ShiftForwardAction",
+            condition: "https://exocortex.my/ontology/ems-ui#CanShiftForwardCondition",
+          }),
+        ]);
+
+      // For unplanned asset:
+      // - CanPlanOnTodayCondition = true (not planned for today)
+      // - CanShiftForwardCondition = false (not planned for today)
+      mockConditionEvaluator.evaluate
+        .mockResolvedValueOnce(true)   // CanPlanOnTodayCondition passes
+        .mockResolvedValueOnce(false); // CanShiftForwardCondition fails
+
+      const groups = await builder.buildButtonGroups("test:unplanned-task");
+
+      expect(groups).toHaveLength(1);
+      expect(groups[0].buttons).toHaveLength(1);
+      expect(groups[0].buttons[0].label).toBe("Plan on Today");
+    });
+  });
 });
