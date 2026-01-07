@@ -377,6 +377,17 @@ export type {
   LoaderState,
 } from "./infrastructure/memory";
 
+// SHACL Validation exports
+export {
+  ShaclValidator,
+  type ValidationResult as ShaclValidationResult,
+  type ValidationViolation,
+} from "./services/shacl/ShaclValidator";
+export {
+  COMMAND_SHAPE_TURTLE,
+  COMMAND_SHAPE_DEFINITION,
+} from "./services/shacl/shapes/CommandShape";
+
 // Error exports
 export * from "./domain/errors";
 export * from "./application/errors";
