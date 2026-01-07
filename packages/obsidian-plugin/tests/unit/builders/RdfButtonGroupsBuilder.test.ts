@@ -2875,4 +2875,591 @@ describe("RdfButtonGroupsBuilder", () => {
       expect(areaButton.tooltip).toBe("Create a new area");
     });
   });
+
+  /**
+   * PlanTodayButton with UpdatePropertyAction Tests (Issue #1425)
+   *
+   * Tests for PlanTodayButton which sets ems:Effort_plannedStartTimestamp to today's start.
+   * This is a Planning Button visible for any Effort NOT already planned for today.
+   *
+   * RDF Definition:
+   * ```turtle
+   * ems-ui:PlanTodayButton a exo-ui:Button ;
+   *     rdfs:label "Plan on Today" ;
+   *     exo-ui:Button_icon "calendar" ;
+   *     exo-ui:Button_variant "warning" ;
+   *     exo-ui:Button_group exo-ui:PlanningButtonGroup ;
+   *     exo-ui:Button_order 10 ;
+   *     exo-ui:Button_tooltip "Plan this effort for today" ;
+   *     exo-ui:Button_action ems-ui:PlanTodayAction ;
+   *     exo-ui:Button_condition ems-ui:CanPlanOnTodayCondition .
+   *
+   * ems-ui:PlanTodayAction a exo-ui:UpdatePropertyAction ;
+   *     exo-ui:Action_targetProperty ems:Effort_plannedStartTimestamp ;
+   *     exo-ui:Action_targetValue "{{todayStartTimestamp}}" ;
+   *     exo-ui:Action_headless true .
+   *
+   * ems-ui:CanPlanOnTodayCondition a exo-ui:Condition ;
+   *     exo-ui:Condition_sparql """
+   *         ASK {
+   *             ?asset a ems:Effort .
+   *             FILTER NOT EXISTS {
+   *                 ?asset ems:Effort_plannedStartTimestamp ?ts .
+   *                 FILTER(STRSTARTS(STR(?ts), "{{today}}"))
+   *             }
+   *         }
+   *     """ .
+   * ```
+   *
+   * @see https://github.com/kitelev/exocortex/issues/1425
+   */
+  describe("PlanTodayButton with UpdatePropertyAction (Issue #1425)", () => {
+    it("should load PlanTodayButton with warning variant and calendar icon from RDF", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#PlanningButtonGroup",
+            label: "Planning",
+            order: "3",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#PlanTodayButton",
+            label: "Plan on Today",
+            icon: "calendar",
+            variant: "warning",
+            order: "10",
+            action: "https://exocortex.my/ontology/ems-ui#PlanTodayAction",
+            condition: "https://exocortex.my/ontology/ems-ui#CanPlanOnTodayCondition",
+            tooltip: "Plan this effort for today",
+          }),
+        ]);
+
+      // Condition passes (effort NOT already planned for today)
+      mockConditionEvaluator.evaluate.mockResolvedValue(true);
+
+      const groups = await builder.buildButtonGroups("test:unplanned-task");
+
+      expect(groups).toHaveLength(1);
+      expect(groups[0].id).toBe("https://exocortex.my/ontology/exo-ui#PlanningButtonGroup");
+      expect(groups[0].title).toBe("Planning");
+      expect(groups[0].buttons).toHaveLength(1);
+
+      const planTodayButton = groups[0].buttons[0];
+      expect(planTodayButton.label).toBe("Plan on Today");
+      expect(planTodayButton.icon).toBe("calendar");
+      expect(planTodayButton.variant).toBe("warning");
+      expect(planTodayButton.tooltip).toBe("Plan this effort for today");
+    });
+
+    it("should hide PlanTodayButton when CanPlanOnTodayCondition is false (already planned for today)", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#PlanningButtonGroup",
+            label: "Planning",
+            order: "3",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#PlanTodayButton",
+            label: "Plan on Today",
+            icon: "calendar",
+            variant: "warning",
+            action: "https://exocortex.my/ontology/ems-ui#PlanTodayAction",
+            condition: "https://exocortex.my/ontology/ems-ui#CanPlanOnTodayCondition",
+          }),
+        ]);
+
+      // Condition fails (effort IS already planned for today)
+      mockConditionEvaluator.evaluate.mockResolvedValue(false);
+
+      const groups = await builder.buildButtonGroups("test:already-planned-task");
+
+      // Group should be empty because PlanTodayButton is filtered out
+      expect(groups).toHaveLength(0);
+    });
+
+    it("should execute PlanTodayAction through ActionInterpreter when clicked", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#PlanningButtonGroup",
+            label: "Planning",
+            order: "3",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#PlanTodayButton",
+            label: "Plan on Today",
+            action: "https://exocortex.my/ontology/ems-ui#PlanTodayAction",
+            condition: "https://exocortex.my/ontology/ems-ui#CanPlanOnTodayCondition",
+          }),
+        ]);
+
+      mockConditionEvaluator.evaluate.mockResolvedValue(true);
+      mockActionInterpreter.execute.mockResolvedValue({
+        success: true,
+        refresh: true,
+      });
+
+      const assetUri = "https://exocortex.my/vault/unplanned-task.md";
+      const groups = await builder.buildButtonGroups(assetUri);
+      const planTodayButton = groups[0].buttons[0];
+
+      // Click the PlanTodayButton
+      await planTodayButton.onClick();
+
+      // ActionInterpreter should be called with PlanTodayAction URI
+      expect(mockActionInterpreter.execute).toHaveBeenCalledWith(
+        "https://exocortex.my/ontology/ems-ui#PlanTodayAction",
+        { currentAsset: assetUri },
+      );
+    });
+
+    it("should evaluate CanPlanOnTodayCondition with correct asset URI", async () => {
+      const assetUri = "https://exocortex.my/vault/my-effort.md";
+
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#PlanningButtonGroup",
+            label: "Planning",
+            order: "3",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#PlanTodayButton",
+            label: "Plan on Today",
+            action: "https://exocortex.my/ontology/ems-ui#PlanTodayAction",
+            condition: "https://exocortex.my/ontology/ems-ui#CanPlanOnTodayCondition",
+          }),
+        ]);
+
+      mockConditionEvaluator.evaluate.mockResolvedValue(true);
+
+      await builder.buildButtonGroups(assetUri);
+
+      // ConditionEvaluator should be called with CanPlanOnTodayCondition and asset URI
+      expect(mockConditionEvaluator.evaluate).toHaveBeenCalledWith(
+        "https://exocortex.my/ontology/ems-ui#CanPlanOnTodayCondition",
+        assetUri,
+      );
+    });
+
+    it("should show PlanTodayButton for Task that is NOT planned for today", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#PlanningButtonGroup",
+            label: "Planning",
+            order: "3",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#PlanTodayButton",
+            label: "Plan on Today",
+            icon: "calendar",
+            variant: "warning",
+            order: "10",
+            action: "https://exocortex.my/ontology/ems-ui#PlanTodayAction",
+            condition: "https://exocortex.my/ontology/ems-ui#CanPlanOnTodayCondition",
+          }),
+        ]);
+
+      // CanPlanOnTodayCondition passes (task is NOT planned for today)
+      mockConditionEvaluator.evaluate.mockResolvedValue(true);
+
+      const groups = await builder.buildButtonGroups("test:backlog-task");
+
+      expect(groups).toHaveLength(1);
+      expect(groups[0].buttons).toHaveLength(1);
+      expect(groups[0].buttons[0].label).toBe("Plan on Today");
+    });
+
+    it("should show PlanTodayButton for Project that is NOT planned for today", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#PlanningButtonGroup",
+            label: "Planning",
+            order: "3",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#PlanTodayButton",
+            label: "Plan on Today",
+            icon: "calendar",
+            variant: "warning",
+            order: "10",
+            action: "https://exocortex.my/ontology/ems-ui#PlanTodayAction",
+            condition: "https://exocortex.my/ontology/ems-ui#CanPlanOnTodayCondition",
+          }),
+        ]);
+
+      // CanPlanOnTodayCondition passes (project is NOT planned for today)
+      mockConditionEvaluator.evaluate.mockResolvedValue(true);
+
+      const groups = await builder.buildButtonGroups("test:project");
+
+      expect(groups).toHaveLength(1);
+      expect(groups[0].buttons).toHaveLength(1);
+      expect(groups[0].buttons[0].label).toBe("Plan on Today");
+    });
+  });
+
+  /**
+   * PlanEveningButton with UpdatePropertyAction Tests (Issue #1425)
+   *
+   * Tests for PlanEveningButton which sets ems:Effort_plannedStartTimestamp to 19:00 today.
+   * This is a Planning Button visible for Task/Meeting with Backlog status.
+   *
+   * RDF Definition:
+   * ```turtle
+   * ems-ui:PlanEveningButton a exo-ui:Button ;
+   *     rdfs:label "Plan for Evening (19:00)" ;
+   *     exo-ui:Button_icon "moon" ;
+   *     exo-ui:Button_variant "warning" ;
+   *     exo-ui:Button_group exo-ui:PlanningButtonGroup ;
+   *     exo-ui:Button_order 20 ;
+   *     exo-ui:Button_tooltip "Plan this effort for this evening at 19:00" ;
+   *     exo-ui:Button_action ems-ui:PlanEveningAction ;
+   *     exo-ui:Button_condition ems-ui:CanPlanForEveningCondition .
+   *
+   * ems-ui:PlanEveningAction a exo-ui:UpdatePropertyAction ;
+   *     exo-ui:Action_targetProperty ems:Effort_plannedStartTimestamp ;
+   *     exo-ui:Action_targetValue "{{eveningTimestamp}}" ;
+   *     exo-ui:Action_headless true .
+   *
+   * ems-ui:CanPlanForEveningCondition a exo-ui:Condition ;
+   *     exo-ui:Condition_sparql """
+   *         ASK {
+   *             { ?asset a ems:Task } UNION { ?asset a ems:Meeting }
+   *             ?asset ems:Effort_status ems:EffortStatusBacklog .
+   *         }
+   *     """ .
+   * ```
+   *
+   * @see https://github.com/kitelev/exocortex/issues/1425
+   */
+  describe("PlanEveningButton with UpdatePropertyAction (Issue #1425)", () => {
+    it("should load PlanEveningButton with warning variant and moon icon from RDF", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#PlanningButtonGroup",
+            label: "Planning",
+            order: "3",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#PlanEveningButton",
+            label: "Plan for Evening (19:00)",
+            icon: "moon",
+            variant: "warning",
+            order: "20",
+            action: "https://exocortex.my/ontology/ems-ui#PlanEveningAction",
+            condition: "https://exocortex.my/ontology/ems-ui#CanPlanForEveningCondition",
+            tooltip: "Plan this effort for this evening at 19:00",
+          }),
+        ]);
+
+      // Condition passes (Task/Meeting with Backlog status)
+      mockConditionEvaluator.evaluate.mockResolvedValue(true);
+
+      const groups = await builder.buildButtonGroups("test:backlog-task");
+
+      expect(groups).toHaveLength(1);
+      expect(groups[0].id).toBe("https://exocortex.my/ontology/exo-ui#PlanningButtonGroup");
+      expect(groups[0].title).toBe("Planning");
+      expect(groups[0].buttons).toHaveLength(1);
+
+      const planEveningButton = groups[0].buttons[0];
+      expect(planEveningButton.label).toBe("Plan for Evening (19:00)");
+      expect(planEveningButton.icon).toBe("moon");
+      expect(planEveningButton.variant).toBe("warning");
+      expect(planEveningButton.tooltip).toBe("Plan this effort for this evening at 19:00");
+    });
+
+    it("should hide PlanEveningButton when CanPlanForEveningCondition is false (not Backlog status)", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#PlanningButtonGroup",
+            label: "Planning",
+            order: "3",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#PlanEveningButton",
+            label: "Plan for Evening (19:00)",
+            icon: "moon",
+            variant: "warning",
+            action: "https://exocortex.my/ontology/ems-ui#PlanEveningAction",
+            condition: "https://exocortex.my/ontology/ems-ui#CanPlanForEveningCondition",
+          }),
+        ]);
+
+      // Condition fails (task is NOT in Backlog status)
+      mockConditionEvaluator.evaluate.mockResolvedValue(false);
+
+      const groups = await builder.buildButtonGroups("test:doing-task");
+
+      // Group should be empty because PlanEveningButton is filtered out
+      expect(groups).toHaveLength(0);
+    });
+
+    it("should execute PlanEveningAction through ActionInterpreter when clicked", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#PlanningButtonGroup",
+            label: "Planning",
+            order: "3",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#PlanEveningButton",
+            label: "Plan for Evening (19:00)",
+            action: "https://exocortex.my/ontology/ems-ui#PlanEveningAction",
+            condition: "https://exocortex.my/ontology/ems-ui#CanPlanForEveningCondition",
+          }),
+        ]);
+
+      mockConditionEvaluator.evaluate.mockResolvedValue(true);
+      mockActionInterpreter.execute.mockResolvedValue({
+        success: true,
+        refresh: true,
+      });
+
+      const assetUri = "https://exocortex.my/vault/backlog-task.md";
+      const groups = await builder.buildButtonGroups(assetUri);
+      const planEveningButton = groups[0].buttons[0];
+
+      // Click the PlanEveningButton
+      await planEveningButton.onClick();
+
+      // ActionInterpreter should be called with PlanEveningAction URI
+      expect(mockActionInterpreter.execute).toHaveBeenCalledWith(
+        "https://exocortex.my/ontology/ems-ui#PlanEveningAction",
+        { currentAsset: assetUri },
+      );
+    });
+
+    it("should evaluate CanPlanForEveningCondition with correct asset URI", async () => {
+      const assetUri = "https://exocortex.my/vault/my-effort.md";
+
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#PlanningButtonGroup",
+            label: "Planning",
+            order: "3",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#PlanEveningButton",
+            label: "Plan for Evening (19:00)",
+            action: "https://exocortex.my/ontology/ems-ui#PlanEveningAction",
+            condition: "https://exocortex.my/ontology/ems-ui#CanPlanForEveningCondition",
+          }),
+        ]);
+
+      mockConditionEvaluator.evaluate.mockResolvedValue(true);
+
+      await builder.buildButtonGroups(assetUri);
+
+      // ConditionEvaluator should be called with CanPlanForEveningCondition and asset URI
+      expect(mockConditionEvaluator.evaluate).toHaveBeenCalledWith(
+        "https://exocortex.my/ontology/ems-ui#CanPlanForEveningCondition",
+        assetUri,
+      );
+    });
+
+    it("should show PlanEveningButton for Task with Backlog status", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#PlanningButtonGroup",
+            label: "Planning",
+            order: "3",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#PlanEveningButton",
+            label: "Plan for Evening (19:00)",
+            icon: "moon",
+            variant: "warning",
+            order: "20",
+            action: "https://exocortex.my/ontology/ems-ui#PlanEveningAction",
+            condition: "https://exocortex.my/ontology/ems-ui#CanPlanForEveningCondition",
+          }),
+        ]);
+
+      // CanPlanForEveningCondition passes (Task with Backlog status)
+      mockConditionEvaluator.evaluate.mockResolvedValue(true);
+
+      const groups = await builder.buildButtonGroups("test:backlog-task");
+
+      expect(groups).toHaveLength(1);
+      expect(groups[0].buttons).toHaveLength(1);
+      expect(groups[0].buttons[0].label).toBe("Plan for Evening (19:00)");
+    });
+
+    it("should show PlanEveningButton for Meeting with Backlog status", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#PlanningButtonGroup",
+            label: "Planning",
+            order: "3",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#PlanEveningButton",
+            label: "Plan for Evening (19:00)",
+            icon: "moon",
+            variant: "warning",
+            order: "20",
+            action: "https://exocortex.my/ontology/ems-ui#PlanEveningAction",
+            condition: "https://exocortex.my/ontology/ems-ui#CanPlanForEveningCondition",
+          }),
+        ]);
+
+      // CanPlanForEveningCondition passes (Meeting with Backlog status)
+      mockConditionEvaluator.evaluate.mockResolvedValue(true);
+
+      const groups = await builder.buildButtonGroups("test:backlog-meeting");
+
+      expect(groups).toHaveLength(1);
+      expect(groups[0].buttons).toHaveLength(1);
+      expect(groups[0].buttons[0].label).toBe("Plan for Evening (19:00)");
+    });
+
+    it("should hide PlanEveningButton for Project (only Task/Meeting allowed)", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#PlanningButtonGroup",
+            label: "Planning",
+            order: "3",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#PlanEveningButton",
+            label: "Plan for Evening (19:00)",
+            icon: "moon",
+            variant: "warning",
+            action: "https://exocortex.my/ontology/ems-ui#PlanEveningAction",
+            condition: "https://exocortex.my/ontology/ems-ui#CanPlanForEveningCondition",
+          }),
+        ]);
+
+      // Condition fails (Project is NOT Task/Meeting)
+      mockConditionEvaluator.evaluate.mockResolvedValue(false);
+
+      const groups = await builder.buildButtonGroups("test:backlog-project");
+
+      // Group should be empty because PlanEveningButton is filtered out
+      expect(groups).toHaveLength(0);
+    });
+
+    it("should show both PlanTodayButton and PlanEveningButton in PlanningButtonGroup", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#PlanningButtonGroup",
+            label: "Planning",
+            order: "3",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#PlanTodayButton",
+            label: "Plan on Today",
+            icon: "calendar",
+            variant: "warning",
+            order: "10",
+            action: "https://exocortex.my/ontology/ems-ui#PlanTodayAction",
+            condition: "https://exocortex.my/ontology/ems-ui#CanPlanOnTodayCondition",
+          }),
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#PlanEveningButton",
+            label: "Plan for Evening (19:00)",
+            icon: "moon",
+            variant: "warning",
+            order: "20",
+            action: "https://exocortex.my/ontology/ems-ui#PlanEveningAction",
+            condition: "https://exocortex.my/ontology/ems-ui#CanPlanForEveningCondition",
+          }),
+        ]);
+
+      // Both conditions pass (Task in Backlog, not yet planned for today)
+      mockConditionEvaluator.evaluate.mockResolvedValue(true);
+
+      const groups = await builder.buildButtonGroups("test:backlog-task");
+
+      expect(groups).toHaveLength(1);
+      expect(groups[0].title).toBe("Planning");
+      expect(groups[0].buttons).toHaveLength(2);
+      // Buttons should be in order: Plan on Today (10), Plan for Evening (20)
+      expect(groups[0].buttons[0].label).toBe("Plan on Today");
+      expect(groups[0].buttons[1].label).toBe("Plan for Evening (19:00)");
+    });
+
+    it("should show PlanTodayButton but hide PlanEveningButton for ToDo Task (not Backlog)", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#PlanningButtonGroup",
+            label: "Planning",
+            order: "3",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#PlanTodayButton",
+            label: "Plan on Today",
+            icon: "calendar",
+            variant: "warning",
+            order: "10",
+            action: "https://exocortex.my/ontology/ems-ui#PlanTodayAction",
+            condition: "https://exocortex.my/ontology/ems-ui#CanPlanOnTodayCondition",
+          }),
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#PlanEveningButton",
+            label: "Plan for Evening (19:00)",
+            icon: "moon",
+            variant: "warning",
+            order: "20",
+            action: "https://exocortex.my/ontology/ems-ui#PlanEveningAction",
+            condition: "https://exocortex.my/ontology/ems-ui#CanPlanForEveningCondition",
+          }),
+        ]);
+
+      // For ToDo Task: CanPlanOnTodayCondition = true, CanPlanForEveningCondition = false
+      mockConditionEvaluator.evaluate
+        .mockResolvedValueOnce(true)   // CanPlanOnTodayCondition passes
+        .mockResolvedValueOnce(false); // CanPlanForEveningCondition fails (not Backlog)
+
+      const groups = await builder.buildButtonGroups("test:todo-task");
+
+      expect(groups).toHaveLength(1);
+      expect(groups[0].buttons).toHaveLength(1);
+      expect(groups[0].buttons[0].label).toBe("Plan on Today");
+    });
+  });
 });
