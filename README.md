@@ -571,6 +571,9 @@ See **[SPARQL 1.2 Features](./docs/sparql/SPARQL-1.2-Features.md)** for complete
 - **[Core API Reference](./docs/api/Core-API.md)** — TypeScript API
 - **[Architecture Guide](./ARCHITECTURE.md)** — Clean Architecture patterns
 
+**Validation:**
+- **[SHACL Validation Guide](./docs/VALIDATION.md)** — Validate RDF against SHACL shapes, CLI command, error reference
+
 ### SPARQL & Semantic Queries
 - **[SPARQL User Guide](./docs/sparql/User-Guide.md)** — Tutorial from basics to advanced
 - **[Query Examples](./docs/sparql/Query-Examples.md)** — 30+ ready-to-use patterns
