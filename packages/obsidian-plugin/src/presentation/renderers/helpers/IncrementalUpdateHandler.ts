@@ -1,10 +1,11 @@
 import React from "react";
 import { TFile } from "obsidian";
+import { MetadataExtractor } from "exocortex";
 import { EventListenerManager } from '@plugin/adapters/events/EventListenerManager';
 import { BacklinksCacheManager } from '@plugin/adapters/caching/BacklinksCacheManager';
 import { ReactRenderer } from '@plugin/presentation/utils/ReactRenderer';
 import { ActionButtonsGroup } from '@plugin/presentation/components/ActionButtonsGroup';
-import { ButtonGroupsBuilder } from '@plugin/presentation/builders/ButtonGroupsBuilder';
+import { RdfButtonGroupsBuilder } from '@plugin/presentation/builders/RdfButtonGroupsBuilder';
 import { DailyTasksRenderer } from '@plugin/presentation/renderers/DailyTasksRenderer';
 import { DailyProjectsRenderer } from '@plugin/presentation/renderers/DailyProjectsRenderer';
 import { PropertiesRenderer } from '@plugin/presentation/renderers/layout/PropertiesRenderer';
@@ -17,7 +18,7 @@ type RenderHeaderFn = (container: HTMLElement, sectionId: string, title: string)
 
 interface RendererDependencies {
   propertiesRenderer: PropertiesRenderer;
-  buttonGroupsBuilder: ButtonGroupsBuilder;
+  rdfButtonGroupsBuilder?: RdfButtonGroupsBuilder;
   dailyTasksRenderer: DailyTasksRenderer;
   dailyProjectsRenderer: DailyProjectsRenderer;
   areaTreeRenderer: AreaTreeRenderer;
@@ -26,6 +27,7 @@ interface RendererDependencies {
   backlinksCacheManager: BacklinksCacheManager;
   sectionStateManager: SectionStateManager;
   eventListenerManager: EventListenerManager;
+  metadataExtractor: MetadataExtractor;
 }
 
 /**
@@ -199,7 +201,14 @@ export class IncrementalUpdateHandler {
     file: TFile,
   ): Promise<void> {
     container.remove();
-    const buttonGroups = await this.deps.buttonGroupsBuilder.build(file);
+
+    if (!this.deps.rdfButtonGroupsBuilder) {
+      return;
+    }
+
+    const assetUri = this.buildAssetUri(file);
+    const buttonGroups = await this.deps.rdfButtonGroupsBuilder.buildButtonGroups(assetUri);
+
     if (buttonGroups.length > 0) {
       const buttonsContainer = rootContainer.createDiv({ cls: "exocortex-buttons-section" });
       this.deps.reactRenderer.render(
@@ -207,6 +216,22 @@ export class IncrementalUpdateHandler {
         React.createElement(ActionButtonsGroup, { groups: buttonGroups }),
       );
     }
+  }
+
+  /**
+   * Build asset URI from file path.
+   * Uses the file's UID if available, otherwise the file path.
+   */
+  private buildAssetUri(file: TFile): string {
+    const metadata = this.deps.metadataExtractor.extractMetadata(file);
+    const uid = metadata?.exo__Asset_uid as string;
+
+    if (uid) {
+      return `https://exocortex.my/assets/${uid}`;
+    }
+
+    // Fall back to file path
+    return `file://${file.path}`;
   }
 
   private async updateRelationSection(

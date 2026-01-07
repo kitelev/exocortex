@@ -1,19 +1,13 @@
 import { MarkdownPostProcessorContext, TFile } from "obsidian";
-import { container } from "tsyringe";
 import { ILogger } from '@plugin/adapters/logging/ILogger';
 import { LoggerFactory } from '@plugin/adapters/logging/LoggerFactory';
 import React from "react";
 import { ReactRenderer } from '@plugin/presentation/utils/ReactRenderer';
 import { ExocortexSettings } from '@plugin/domain/settings/ExocortexSettings';
 import { ActionButtonsGroup } from '@plugin/presentation/components/ActionButtonsGroup';
-import { TaskCreationService, IVaultAdapter, MetadataExtractor } from "exocortex";
-import { ProjectCreationService, AreaCreationService, ClassCreationService } from "exocortex";
-import { ConceptCreationService, TaskStatusService, PropertyCleanupService } from "exocortex";
-import { FolderRepairService, RenameToUidService, EffortVotingService } from "exocortex";
-import { LabelToAliasService, AssetConversionService } from "exocortex";
+import { IVaultAdapter, MetadataExtractor } from "exocortex";
 import { BacklinksCacheManager } from '@plugin/adapters/caching/BacklinksCacheManager';
 import { EventListenerManager } from '@plugin/adapters/events/EventListenerManager';
-import { ButtonGroupsBuilder } from '@plugin/presentation/builders/ButtonGroupsBuilder';
 import { RdfButtonGroupsBuilder } from '@plugin/presentation/builders/RdfButtonGroupsBuilder';
 import type { ActionInterpreter, ConditionEvaluator } from '@plugin/presentation/builders/RdfButtonGroupsBuilder';
 import type { ButtonGroup } from '@plugin/presentation/components/ActionButtonsGroup';
@@ -44,7 +38,7 @@ import { LRUCache } from '@plugin/infrastructure/cache';
  *
  * Uses specialized renderers for each section:
  * - PropertiesRenderer: Asset properties
- * - ButtonGroupsBuilder: Action buttons
+ * - RdfButtonGroupsBuilder: RDF-driven action buttons
  * - DailyTasksRenderer/DailyProjectsRenderer: Daily note sections
  * - AreaTreeRenderer/RelationsRenderer: Asset relations
  */
@@ -58,7 +52,6 @@ export class UniversalLayoutRenderer {
   private reactRenderer: ReactRenderer;
   private metadataExtractor: MetadataExtractor;
   private rootContainer: HTMLElement | null = null;
-  private buttonGroupsBuilder!: ButtonGroupsBuilder;
   private rdfButtonGroupsBuilder?: RdfButtonGroupsBuilder;
   private actionInterpreter?: ActionInterpreter;
   private conditionEvaluator?: ConditionEvaluator;
@@ -122,12 +115,8 @@ export class UniversalLayoutRenderer {
   }
 
   private initializeRenderers(): void {
-    const services = this.resolveServices();
-
-    // Initialize RDF button support if enabled
-    if (this.settings.useRdfButtons) {
-      this.initializeRdfButtonSupport();
-    }
+    // Initialize RDF button support (always enabled now - legacy ButtonGroupsBuilder removed)
+    this.initializeRdfButtonSupport();
 
     this.propertiesRenderer = new PropertiesRenderer(
       this.app, this.reactRenderer, this.metadataExtractor, this.metadataService);
@@ -139,27 +128,6 @@ export class UniversalLayoutRenderer {
     this.relationsRenderer = new RelationsRenderer(
       this.app, this.settings, this.reactRenderer, this.backlinksCacheManager,
       this.metadataService, this.plugin, () => this.refresh(), this.vaultAdapter);
-
-    this.buttonGroupsBuilder = new ButtonGroupsBuilder({
-      app: this.app,
-      settings: this.settings,
-      plugin: this.plugin,
-      taskCreationService: services.taskCreation,
-      projectCreationService: services.projectCreation,
-      areaCreationService: services.areaCreation,
-      classCreationService: services.classCreation,
-      conceptCreationService: services.conceptCreation,
-      taskStatusService: services.taskStatus,
-      propertyCleanupService: services.propertyCleanup,
-      folderRepairService: services.folderRepair,
-      renameToUidService: services.renameToUid,
-      effortVotingService: services.effortVoting,
-      labelToAliasService: services.labelToAlias,
-      assetConversionService: services.assetConversion,
-      metadataExtractor: this.metadataExtractor,
-      logger: this.logger,
-      refresh: () => this.refresh(),
-    });
 
     this.dailyTasksRenderer = new DailyTasksRenderer(
       this.app, this.settings, this.plugin, this.logger,
@@ -175,7 +143,7 @@ export class UniversalLayoutRenderer {
 
     this.incrementalUpdateHandler = new IncrementalUpdateHandler({
       propertiesRenderer: this.propertiesRenderer,
-      buttonGroupsBuilder: this.buttonGroupsBuilder,
+      rdfButtonGroupsBuilder: this.rdfButtonGroupsBuilder,
       dailyTasksRenderer: this.dailyTasksRenderer,
       dailyProjectsRenderer: this.dailyProjectsRenderer,
       areaTreeRenderer: this.areaTreeRenderer,
@@ -184,6 +152,7 @@ export class UniversalLayoutRenderer {
       backlinksCacheManager: this.backlinksCacheManager,
       sectionStateManager: this.sectionStateManager,
       eventListenerManager: this.eventListenerManager,
+      metadataExtractor: this.metadataExtractor,
     });
   }
 
@@ -191,8 +160,7 @@ export class UniversalLayoutRenderer {
    * Initialize RDF-driven button support.
    *
    * Creates ActionInterpreter, ConditionEvaluator, and RdfButtonGroupsBuilder
-   * for RDF-driven button rendering. Falls back to no-op implementations
-   * if components are not available.
+   * for RDF-driven button rendering.
    */
   private initializeRdfButtonSupport(): void {
     try {
@@ -217,37 +185,34 @@ export class UniversalLayoutRenderer {
       this.logger.info("RDF button support initialized");
     } catch (error) {
       this.logger.error("Failed to initialize RDF button support", { error });
-      // Leave rdfButtonGroupsBuilder undefined to fall back to legacy
+      // rdfButtonGroupsBuilder will be undefined - no buttons will be rendered
     }
   }
 
   /**
-   * Build button groups for the current file.
+   * Build button groups for the current file using RDF-driven button definitions.
    *
-   * When useRdfButtons is enabled, tries RDF buttons first and falls back
-   * to legacy ButtonGroupsBuilder if no RDF buttons are found or on error.
+   * Returns empty array if RdfButtonGroupsBuilder is not available or fails.
    */
   private async buildButtonGroups(file: TFile): Promise<ButtonGroup[]> {
-    // If RDF buttons are enabled and builder is available, try RDF first
-    if (this.settings.useRdfButtons && this.rdfButtonGroupsBuilder) {
-      try {
-        const assetUri = this.buildAssetUri(file);
-        const rdfGroups = await this.rdfButtonGroupsBuilder.buildButtonGroups(assetUri);
-
-        if (rdfGroups.length > 0) {
-          this.logger.debug("Using RDF buttons", { count: rdfGroups.length });
-          return rdfGroups;
-        }
-
-        // No RDF buttons found, fall back to legacy
-        this.logger.debug("No RDF buttons found, falling back to legacy");
-      } catch (error) {
-        this.logger.warn("RDF button loading failed, falling back to legacy", { error });
-      }
+    if (!this.rdfButtonGroupsBuilder) {
+      this.logger.debug("RDF button builder not available, skipping buttons");
+      return [];
     }
 
-    // Fall back to legacy button builder
-    return this.buttonGroupsBuilder.build(file);
+    try {
+      const assetUri = this.buildAssetUri(file);
+      const rdfGroups = await this.rdfButtonGroupsBuilder.buildButtonGroups(assetUri);
+
+      if (rdfGroups.length > 0) {
+        this.logger.debug("Using RDF buttons", { count: rdfGroups.length });
+      }
+
+      return rdfGroups;
+    } catch (error) {
+      this.logger.warn("RDF button loading failed", { error });
+      return [];
+    }
   }
 
   /**
@@ -264,23 +229,6 @@ export class UniversalLayoutRenderer {
 
     // Fall back to file path
     return `file://${file.path}`;
-  }
-
-  private resolveServices() {
-    return {
-      taskCreation: container.resolve(TaskCreationService),
-      projectCreation: container.resolve(ProjectCreationService),
-      areaCreation: container.resolve(AreaCreationService),
-      classCreation: container.resolve(ClassCreationService),
-      conceptCreation: container.resolve(ConceptCreationService),
-      taskStatus: container.resolve(TaskStatusService),
-      propertyCleanup: container.resolve(PropertyCleanupService),
-      folderRepair: container.resolve(FolderRepairService),
-      renameToUid: container.resolve(RenameToUidService),
-      effortVoting: container.resolve(EffortVotingService),
-      labelToAlias: container.resolve(LabelToAliasService),
-      assetConversion: container.resolve(AssetConversionService),
-    };
   }
 
   public invalidateBacklinksCache(): void {
