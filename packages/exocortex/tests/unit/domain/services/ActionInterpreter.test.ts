@@ -1341,4 +1341,108 @@ describe("ActionInterpreter", () => {
       expect(result.message).toContain("User cancelled");
     });
   });
+
+  describe("ExecuteSPARQLAction handler (Issue #1408)", () => {
+    it("should execute SPARQL query and return results", async () => {
+      // Mock triple store match to return data for the query
+      const mockTriples = [
+        {
+          subject: {
+            termType: "NamedNode" as const,
+            value: "https://example.com/task1",
+          },
+          predicate: {
+            termType: "NamedNode" as const,
+            value: "https://exocortex.my/ontology/exo#Asset_label",
+          },
+          object: { termType: "Literal" as const, value: "Task 1" },
+          toString: () => "<task1> exo:Asset_label 'Task 1'",
+        },
+        {
+          subject: {
+            termType: "NamedNode" as const,
+            value: "https://example.com/task2",
+          },
+          predicate: {
+            termType: "NamedNode" as const,
+            value: "https://exocortex.my/ontology/exo#Asset_label",
+          },
+          object: { termType: "Literal" as const, value: "Task 2" },
+          toString: () => "<task2> exo:Asset_label 'Task 2'",
+        },
+      ];
+
+      (mockTripleStore.match as jest.Mock).mockResolvedValue(mockTriples);
+
+      const interpreter = new ActionInterpreter(mockTripleStore);
+
+      jest.spyOn(interpreter as any, "loadActionDefinition").mockResolvedValue({
+        type: "exo-ui:ExecuteSPARQLAction",
+        params: {
+          query:
+            "SELECT ?s ?p ?o WHERE { ?s ?p ?o } LIMIT 10",
+        },
+      });
+
+      const result = await interpreter.execute("test:sparql-action", mockContext);
+
+      expect(result.success).toBe(true);
+      expect(result.data).toBeDefined();
+      // Results should be an array (even if empty)
+      expect(Array.isArray(result.data)).toBe(true);
+    });
+
+    it("should return error if query parameter is missing", async () => {
+      const interpreter = new ActionInterpreter(mockTripleStore);
+
+      jest.spyOn(interpreter as any, "loadActionDefinition").mockResolvedValue({
+        type: "exo-ui:ExecuteSPARQLAction",
+        params: {
+          // No query parameter
+        },
+      });
+
+      const result = await interpreter.execute("test:sparql-action", mockContext);
+
+      expect(result.success).toBe(false);
+      expect(result.message).toContain("query");
+    });
+
+    it("should return error if query is invalid SPARQL", async () => {
+      const interpreter = new ActionInterpreter(mockTripleStore);
+
+      jest.spyOn(interpreter as any, "loadActionDefinition").mockResolvedValue({
+        type: "exo-ui:ExecuteSPARQLAction",
+        params: {
+          query: "INVALID QUERY SYNTAX {{{",
+        },
+      });
+
+      const result = await interpreter.execute("test:sparql-action", mockContext);
+
+      expect(result.success).toBe(false);
+      expect(result.message).toContain("Failed to execute SPARQL query");
+    });
+
+    it("should execute query and return empty results if no matches", async () => {
+      (mockTripleStore.match as jest.Mock).mockResolvedValue([]);
+
+      const interpreter = new ActionInterpreter(mockTripleStore);
+
+      jest.spyOn(interpreter as any, "loadActionDefinition").mockResolvedValue({
+        type: "exo-ui:ExecuteSPARQLAction",
+        params: {
+          query:
+            "SELECT ?s WHERE { ?s <http://example.com/nonexistent> 'nothing' }",
+        },
+      });
+
+      const result = await interpreter.execute("test:sparql-action", mockContext);
+
+      expect(result.success).toBe(true);
+      expect(result.data).toBeDefined();
+      expect(Array.isArray(result.data)).toBe(true);
+      expect((result.data as unknown[]).length).toBe(0);
+    });
+  });
 });

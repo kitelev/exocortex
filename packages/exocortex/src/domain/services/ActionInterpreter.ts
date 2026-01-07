@@ -23,6 +23,10 @@ import {
 import { HeadlessError } from "../ports/IUIProvider";
 import { GenericAssetCreationService } from "../../services/GenericAssetCreationService";
 import type { IVaultAdapter, IFile, IFrontmatter } from "../../interfaces/IVaultAdapter";
+import { SPARQLParser } from "../../infrastructure/sparql/SPARQLParser";
+import { AlgebraTranslator } from "../../infrastructure/sparql/algebra/AlgebraTranslator";
+import { QueryExecutor } from "../../infrastructure/sparql/executors/QueryExecutor";
+import type { SelectQuery } from "../../infrastructure/sparql/SPARQLParser";
 
 /**
  * Namespace URI for exo-ui ontology
@@ -456,13 +460,59 @@ export class ActionInterpreter {
 
   /**
    * Execute SPARQL query
+   *
+   * Parameters:
+   * - query: SPARQL query string to execute
+   *
    * @see Issue #1408
+   * @see /Users/kitelev/vault-2025/03 Knowledge/concepts/RDF-Driven Architecture Implementation Plan (Note).md
+   * Phase 3: ActionInterpreter Runtime (lines 1592-1596)
    */
-  private executeSparqlHandler: ActionHandler = async (_def, _ctx) => {
-    return {
-      success: false,
-      message: `Not implemented: ExecuteSPARQLAction`,
-    };
+  private executeSparqlHandler: ActionHandler = async (def, _ctx) => {
+    const query = def.params.query as string | undefined;
+
+    // Validate query parameter
+    if (!query) {
+      return {
+        success: false,
+        message: "ExecuteSPARQLAction requires 'query' parameter",
+      };
+    }
+
+    try {
+      // Parse SPARQL query
+      const parser = new SPARQLParser();
+      const parsed = parser.parse(query);
+
+      // Check if it's a SELECT query (only SELECT is supported currently)
+      if (parsed.type !== "query" || parsed.queryType !== "SELECT") {
+        return {
+          success: false,
+          message: "ExecuteSPARQLAction only supports SELECT queries",
+        };
+      }
+
+      // Translate to algebra
+      const translator = new AlgebraTranslator();
+      const algebra = translator.translate(parsed as SelectQuery);
+
+      // Execute query
+      const executor = new QueryExecutor(this.tripleStore);
+      const results = await executor.executeAll(algebra);
+
+      // Convert results to array of plain objects
+      const data = results.map((solution) => solution.toJSON());
+
+      return {
+        success: true,
+        data,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: `Failed to execute SPARQL query: ${error instanceof Error ? error.message : String(error)}`,
+      };
+    }
   };
 
   /**
