@@ -2663,6 +2663,348 @@ gh issue create --title "P1: Fix [alert type] (N alerts)" --body "..."
 
 ---
 
+## 🔧 January 2026 Patterns
+
+### RDF-Driven Button System Migration Sprint
+
+**Milestone-based development: 62 issues completed Jan 6-7, 2026 (Issues #1396-#1493)**
+
+The Button System migration demonstrates large-scale coordinated development across multiple milestones, transforming hardcoded UI button logic into an RDF-driven declarative system.
+
+#### Sprint Structure (4 Milestones)
+
+| Milestone | Focus | Issues | Step Count Range |
+|-----------|-------|--------|------------------|
+| **v1.0** | Core Infrastructure | #1396-#1405 | 50-110 steps |
+| **v1.1** | Action Handlers | #1406-#1415 | 64-110 steps |
+| **v1.2** | Button Definitions | #1416-#1432 | 28-161 steps |
+| **v1.3** | SHACL Validation | #1434-#1447 | 68-223 steps |
+
+#### Implementation Pattern: Fixed Verbs Architecture
+
+The core insight was defining Actions as "fixed verbs" (ontology classes) that can be combined:
+
+```turtle
+# Action types (verbs)
+exo-ui:CreateAssetAction rdfs:subClassOf exo-ui:Action .
+exo-ui:UpdatePropertyAction rdfs:subClassOf exo-ui:Action .
+exo-ui:NavigateAction rdfs:subClassOf exo-ui:Action .
+exo-ui:ShowModalAction rdfs:subClassOf exo-ui:Action .
+exo-ui:ExecuteSPARQLAction rdfs:subClassOf exo-ui:Action .
+exo-ui:CompositeAction rdfs:subClassOf exo-ui:Action .  # Combines other actions
+```
+
+#### Key Success Factors
+
+1. **Milestone isolation**: Each milestone testable independently before proceeding
+2. **Acceptance testing per milestone**: Issues #1402, #1415, #1432, #1434 were dedicated testing phases
+3. **Sequential dependency respect**: Ontology → Handlers → Buttons → Validation
+4. **Documentation alongside implementation**: #1401, #1414, #1431, #1443 documented each milestone
+
+#### High-Step-Count Patterns
+
+| Issue | Steps | Description | Why Complex |
+|-------|-------|-------------|-------------|
+| #1444 | 223 | SHACL shapes for Button class | Complex property constraints |
+| #1437 | 156 | Remove legacy ButtonGroupsBuilder | Careful deprecation needed |
+| #1415 | 157 | v1.1 Acceptance Testing | Cross-component integration |
+| #1419 | 161 | DoneButton with CompositeAction | Multiple action coordination |
+
+#### CompositeAction Pattern
+
+When a button needs multiple effects (e.g., "Done" = mark done + stop effort), use CompositeAction:
+
+```turtle
+ems-ui:DoneButton a exo-ui:Button ;
+  exo-ui:Button_action [
+    a exo-ui:CompositeAction ;
+    exo-ui:CompositeAction_actions (
+      [ a exo-ui:UpdatePropertyAction ;
+        exo-ui:UpdatePropertyAction_property ems:Effort_status ;
+        exo-ui:UpdatePropertyAction_value "Done" ]
+      [ a exo-ui:CustomHandlerAction ;
+        exo-ui:CustomHandlerAction_handlerName "stopEffort" ]
+    )
+  ] .
+```
+
+#### Parallel Issue Execution
+
+Multiple issues were executed simultaneously on same day:
+- #1419 appears 4 times in postmortems (70, 105, 143, 161 steps) - different sessions
+- #1417 appears 3 times (37, 63, 93 steps)
+- #1434 appears 3 times (58, 84, 97 steps)
+
+This indicates parallel agent execution on related sub-tasks.
+
+**Reference**: Issues #1396-#1493 (62 issues, Jan 6-7 2026)
+
+---
+
+### SHACL Validation Integration Pattern
+
+**When adding schema validation to RDF-driven systems:**
+
+#### Implementation Order
+
+```
+1. Define SHACL shapes for core classes (Command, Button, Action)
+2. Add property constraints (required, cardinality, datatype)
+3. Integrate validation library (rdf-validate-shacl or shacl-js)
+4. Wire validation into ActionInterpreter
+5. Add headless property for API/CLI execution
+```
+
+#### Real-World Implementation (Issues #1435, #1444-#1447)
+
+| Issue | Steps | Focus |
+|-------|-------|-------|
+| #1435 | 89 | Command class shapes |
+| #1444 | 223 | Button class shapes (most complex) |
+| #1445 | 76 | Action type shapes |
+| #1446 | 68 | Action_headless property (required) |
+| #1447 | 133 | shacl-js library integration |
+
+#### Why Button Shapes Were Most Complex (#1444 - 223 steps)
+
+Button shapes required:
+- Cardinality constraints on `Button_action` (exactly 1)
+- Conditional properties based on action type
+- Visibility condition validation
+- Icon and label constraints
+- Cross-referencing ButtonGroup membership
+
+#### Action_headless Property Pattern
+
+**Critical insight**: Actions need `headless: true` for CLI/API execution without UI:
+
+```turtle
+# SHACL shape requiring headless property
+exo-ui:ActionShape a sh:NodeShape ;
+  sh:targetClass exo-ui:Action ;
+  sh:property [
+    sh:path exo-ui:Action_headless ;
+    sh:datatype xsd:boolean ;
+    sh:minCount 1 ;  # Required
+    sh:maxCount 1 ;
+  ] .
+```
+
+Without `Action_headless`, CLI commands fail silently when trying to execute UI-dependent actions.
+
+**Reference**: Issues #1435, #1444-#1447
+
+---
+
+### UIProvider Abstraction Pattern
+
+**When creating platform-agnostic UI actions:**
+
+#### Problem
+
+Actions like `ShowModalAction` need different implementations:
+- Obsidian plugin: Use Obsidian Modal API
+- CLI: Use terminal prompts or skip
+- Tests: Use mock provider
+
+#### Solution: IUIProvider Interface
+
+```typescript
+interface IUIProvider {
+  showModal(config: ModalConfig): Promise<ModalResult>;
+  showNotification(message: string, type: NotificationType): void;
+  navigateTo(path: string): Promise<void>;
+  confirm(message: string): Promise<boolean>;
+}
+```
+
+#### Implementation per Platform
+
+| Platform | Issue | Implementation |
+|----------|-------|----------------|
+| Core Interface | #1397 | IUIProvider interface definition |
+| Obsidian | #1398 | ObsidianUIProvider (85 steps) |
+| CLI | #1399 | CLIUIProvider (107 steps) |
+| Integration | #1400 | Add to ActionContext (110 steps) |
+
+#### ActionContext Integration
+
+```typescript
+interface ActionContext {
+  tripleStore: ITripleStore;
+  vault: IVaultAdapter;
+  uiProvider: IUIProvider;  // Added in #1400
+  currentFile: TFile;
+}
+```
+
+**Reference**: Issues #1397-#1400
+
+---
+
+### Flaky E2E Test Stabilization Pattern
+
+**When E2E tests fail intermittently in CI:**
+
+#### Issue #1493: layout-overflow-styling.spec.ts (59 steps)
+
+**Root Cause**: CSS styling tests are timing-sensitive and viewport-dependent.
+
+**Solution Pattern**:
+
+```typescript
+// ❌ FLAKY: Direct assertion on computed styles
+expect(await element.evaluate(e => getComputedStyle(e).overflow)).toBe('hidden');
+
+// ✅ STABLE: Wait for condition with retry
+await expect.poll(
+  async () => await element.evaluate(e => getComputedStyle(e).overflow),
+  { timeout: 10000, intervals: [500, 1000, 2000] }
+).toBe('hidden');
+```
+
+**Additional stabilization techniques**:
+1. **Viewport normalization**: Set explicit viewport before tests
+2. **Animation completion**: Wait for CSS transitions to finish
+3. **Layout reflow**: Force layout recalculation before assertions
+4. **CI-specific timeouts**: Increase timeouts 2-3x for CI environment
+
+**Reference**: Issue #1493
+
+---
+
+### ConditionEvaluator Pattern for Button Visibility
+
+**When buttons should appear/disappear based on asset state:**
+
+#### Issue #1412: Implement ConditionEvaluator (98 steps)
+
+Evaluates SPARQL-based visibility conditions:
+
+```turtle
+ems-ui:StartButton a exo-ui:Button ;
+  exo-ui:Button_visibilityCondition [
+    a exo-ui:SPARQLCondition ;
+    exo-ui:SPARQLCondition_query """
+      ASK WHERE {
+        ?asset ems:Effort_status "ToDo" .
+      }
+    """
+  ] .
+```
+
+#### Implementation Structure
+
+```typescript
+class ConditionEvaluator {
+  async evaluate(
+    condition: Condition,
+    context: ConditionContext
+  ): Promise<boolean> {
+    switch (condition.type) {
+      case 'SPARQLCondition':
+        return this.evaluateSPARQL(condition, context);
+      case 'PropertyCondition':
+        return this.evaluateProperty(condition, context);
+      case 'CompositeCondition':
+        return this.evaluateComposite(condition, context);
+      default:
+        return false;  // Unknown condition = hide button
+    }
+  }
+}
+```
+
+**Reference**: Issue #1412
+
+---
+
+### RdfButtonGroupsBuilder Migration Pattern
+
+**When migrating from hardcoded to RDF-driven button generation:**
+
+#### Phase 1: Create RdfButtonGroupsBuilder (#1417)
+
+Build buttons from RDF definitions instead of hardcoded switch statements.
+
+#### Phase 2: Side-by-Side Running (#1430, 76 steps)
+
+Run both old and new implementations in parallel:
+
+```typescript
+class HybridButtonGroupsBuilder {
+  build(asset: Asset): ButtonGroup[] {
+    const legacyButtons = this.legacyBuilder.build(asset);
+    const rdfButtons = this.rdfBuilder.build(asset);
+
+    // Feature flag for gradual rollout
+    if (this.settings.useRdfButtons) {
+      return rdfButtons;
+    }
+    return legacyButtons;
+  }
+}
+```
+
+#### Phase 3: Integration (#1429, 105 steps)
+
+Wire RdfButtonGroupsBuilder into UniversalLayoutRenderer.
+
+#### Phase 4: Legacy Removal (#1437, 156 steps)
+
+**High step count due to careful deprecation**:
+1. Identify all legacy ButtonGroupsBuilder usages
+2. Verify all functionality migrated to RDF
+3. Remove legacy classes
+4. Update all tests
+5. Clean up imports
+
+**Reference**: Issues #1417, #1429, #1430, #1437
+
+---
+
+### Milestone Acceptance Testing Pattern
+
+**Each milestone concludes with dedicated acceptance testing issue:**
+
+| Milestone | Acceptance Issue | Steps |
+|-----------|------------------|-------|
+| v1.0 | #1402 | 55 |
+| v1.1 | #1415 | 157 |
+| v1.2 | #1432 | 82 |
+| v1.3 | #1434 | 97 |
+
+#### Acceptance Testing Checklist
+
+```markdown
+## Milestone vX.Y Acceptance Testing
+
+### Unit Test Verification
+- [ ] All new tests pass: `npm test -- packages/*/tests/unit/**/*Action*.test.ts`
+- [ ] No regressions: `npm run test:all`
+
+### Integration Testing
+- [ ] Action handlers work with real triple store
+- [ ] Button visibility conditions evaluate correctly
+- [ ] CompositeActions execute in order
+
+### E2E Testing
+- [ ] Buttons render in Obsidian UI
+- [ ] Click handlers trigger correct actions
+- [ ] Error states handled gracefully
+
+### Documentation
+- [ ] CHANGELOG updated
+- [ ] API docs generated
+- [ ] Migration guide written (if breaking changes)
+```
+
+**Key insight**: Acceptance testing issues have moderate step counts (55-157) because they focus on verification rather than implementation. Higher counts indicate integration issues discovered during testing.
+
+**Reference**: Issues #1402, #1415, #1432, #1434
+
+---
+
 **Remember**:
 - 🚨 **ALL worktrees MUST be in `worktrees/` subdirectory - NO EXCEPTIONS!**
 - This directory exists to enable safe parallel development
