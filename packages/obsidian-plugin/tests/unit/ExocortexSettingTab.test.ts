@@ -349,8 +349,8 @@ describe("ExocortexSettingTab", () => {
 
       expect(mockContainerEl.empty).toHaveBeenCalled();
       expect(getOntologySpy).toHaveBeenCalledTimes(1);
-      // 12 original settings (added showLabelsInGraphView) + 3 headings + 1 default template + 6 per-class templates + 5 status emojis + 1 reset button + 3 webhook settings (heading, toggle, add button) = 31
-      expect(MockSetting).toHaveBeenCalledTimes(31);
+      // 12 original settings (added showLabelsInGraphView) + 1 useRdfButtons + 3 headings + 1 default template + 6 per-class templates + 5 status emojis + 1 reset button + 3 webhook settings (heading, toggle, add button) = 32
+      expect(MockSetting).toHaveBeenCalledTimes(32);
     });
 
     it("should render ontology dropdown with correct options", () => {
@@ -902,6 +902,125 @@ describe("ExocortexSettingTab", () => {
 
       // First dropdown is the ontology dropdown, which should have ExistingOntology
       expect(dropdownValues[0]).toBe("ExistingOntology");
+    });
+
+    it("should render Use RDF Buttons toggle", () => {
+      jest.spyOn(settingTab as any, "getOntologyAssets").mockReturnValue([]);
+
+      let settingNames: string[] = [];
+      MockSetting.mockImplementation((containerEl: any) => {
+        const setting = {
+          containerEl,
+          setName: jest.fn().mockImplementation((name: string) => {
+            settingNames.push(name);
+            return setting;
+          }),
+          setDesc: jest.fn().mockReturnThis(),
+          setHeading: jest.fn().mockReturnThis(),
+          addDropdown: jest.fn().mockReturnThis(),
+          addToggle: jest.fn().mockImplementation((callback) => {
+            const toggle = {
+              setValue: jest.fn().mockReturnThis(),
+              onChange: jest.fn().mockReturnThis(),
+            };
+            callback(toggle);
+            return setting;
+          }),
+          addText: jest.fn().mockImplementation((callback) => {
+            const text = {
+              setPlaceholder: jest.fn().mockReturnThis(),
+              setValue: jest.fn().mockReturnThis(),
+              onChange: jest.fn().mockReturnThis(),
+            };
+            callback(text);
+            return setting;
+          }),
+          addButton: jest.fn().mockImplementation((callback) => {
+            const button = {
+              setButtonText: jest.fn().mockReturnThis(),
+              onClick: jest.fn().mockReturnThis(),
+              setCta: jest.fn().mockReturnThis(),
+            };
+            callback(button);
+            return setting;
+          }),
+        };
+        return setting;
+      });
+
+      settingTab.display();
+
+      // Check that "Use RDF Buttons" setting is rendered
+      expect(settingNames).toContain("Use RDF buttons");
+    });
+
+    it("should handle Use RDF Buttons toggle change", async () => {
+      jest.spyOn(settingTab as any, "getOntologyAssets").mockReturnValue([]);
+
+      // Add useRdfButtons to mock settings
+      mockPlugin.settings.useRdfButtons = false;
+
+      let toggleCallbacks: any[] = [];
+      let settingNames: string[] = [];
+      MockSetting.mockImplementation((containerEl: any) => {
+        const setting = {
+          containerEl,
+          setName: jest.fn().mockImplementation((name: string) => {
+            settingNames.push(name);
+            return setting;
+          }),
+          setDesc: jest.fn().mockReturnThis(),
+          setHeading: jest.fn().mockReturnThis(),
+          addDropdown: jest.fn().mockReturnThis(),
+          addToggle: jest.fn().mockImplementation((callback) => {
+            const toggle = {
+              setValue: jest.fn().mockReturnThis(),
+              onChange: jest.fn().mockReturnThis(),
+            };
+            toggleCallbacks.push({ toggle, callback, onChange: null, settingName: settingNames[settingNames.length - 1] });
+            toggle.onChange.mockImplementation((cb: any) => {
+              toggleCallbacks[toggleCallbacks.length - 1].onChange = cb;
+              return toggle;
+            });
+            callback(toggle);
+            return setting;
+          }),
+          addText: jest.fn().mockImplementation((callback) => {
+            const text = {
+              setPlaceholder: jest.fn().mockReturnThis(),
+              setValue: jest.fn().mockReturnThis(),
+              onChange: jest.fn().mockReturnThis(),
+            };
+            callback(text);
+            return setting;
+          }),
+          addButton: jest.fn().mockImplementation((callback) => {
+            const button = {
+              setButtonText: jest.fn().mockReturnThis(),
+              onClick: jest.fn().mockReturnThis(),
+              setCta: jest.fn().mockReturnThis(),
+            };
+            callback(button);
+            return setting;
+          }),
+        };
+        return setting;
+      });
+
+      settingTab.display();
+
+      // Find the RDF buttons toggle by setting name
+      const rdfToggle = toggleCallbacks.find((t) => t.settingName === "Use RDF buttons");
+      expect(rdfToggle).toBeDefined();
+      expect(rdfToggle.toggle.setValue).toHaveBeenCalledWith(false);
+
+      if (rdfToggle?.onChange) {
+        await rdfToggle.onChange(true);
+      }
+
+      expect(mockPlugin.settings.useRdfButtons).toBe(true);
+      expect(mockPlugin.saveSettings).toHaveBeenCalled();
+      expect(mockPlugin.refreshLayout).toHaveBeenCalled();
     });
   });
 });
