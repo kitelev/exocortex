@@ -498,4 +498,247 @@ describe("RdfCommandRegistry", () => {
       await expect(registry.loadFromTripleStore()).resolves.not.toThrow();
     });
   });
+
+  /**
+   * Status Commands Tests
+   *
+   * Tests for Issue #1440: Status commands (Mark Done, Start, Pause)
+   * with SPARQL-based visibility conditions.
+   *
+   * @see https://github.com/kitelev/exocortex/issues/1440
+   */
+  describe("Status commands (Issue #1440)", () => {
+    describe("MarkDoneCommand", () => {
+      it("should parse MarkDone command with IsDoingStatus condition", async () => {
+        mockSparqlService.query.mockResolvedValue([
+          createMockSolutionMapping({
+            cmd: "https://exocortex.my/ontology/ems-ui#MarkDoneCommand",
+            id: "mark-done",
+            name: "Mark Done",
+            icon: "check-circle",
+            hotkey: "Mod+D",
+            action: "https://exocortex.my/ontology/ems-ui#MarkDoneAction",
+            condition: "https://exocortex.my/ontology/ems-ui#IsDoingStatus",
+          }),
+        ]);
+
+        const commands = await registry.queryCommands();
+
+        expect(commands).toHaveLength(1);
+        expect(commands[0]).toMatchObject({
+          uri: "https://exocortex.my/ontology/ems-ui#MarkDoneCommand",
+          id: "mark-done",
+          name: "Mark Done",
+          icon: "check-circle",
+          hotkey: "Mod+D",
+          action: "https://exocortex.my/ontology/ems-ui#MarkDoneAction",
+          condition: "https://exocortex.my/ontology/ems-ui#IsDoingStatus",
+        });
+      });
+
+      it("should register MarkDone command with checkCallback for condition", async () => {
+        mockSparqlService.query.mockResolvedValue([
+          createMockSolutionMapping({
+            cmd: "https://exocortex.my/ontology/ems-ui#MarkDoneCommand",
+            id: "mark-done",
+            name: "Mark Done",
+            icon: "check-circle",
+            condition: "https://exocortex.my/ontology/ems-ui#IsDoingStatus",
+          }),
+        ]);
+
+        await registry.loadFromTripleStore();
+
+        expect(mockPlugin.addCommand).toHaveBeenCalledWith(
+          expect.objectContaining({
+            id: "mark-done",
+            name: "Mark Done",
+            icon: "check-circle",
+            checkCallback: expect.any(Function),
+          }),
+        );
+      });
+    });
+
+    describe("StartCommand", () => {
+      it("should parse Start command with IsToDoStatus condition", async () => {
+        mockSparqlService.query.mockResolvedValue([
+          createMockSolutionMapping({
+            cmd: "https://exocortex.my/ontology/ems-ui#StartCommand",
+            id: "start",
+            name: "Start",
+            icon: "play",
+            hotkey: "Mod+S",
+            action: "https://exocortex.my/ontology/ems-ui#StartAction",
+            condition: "https://exocortex.my/ontology/ems-ui#IsToDoStatus",
+          }),
+        ]);
+
+        const commands = await registry.queryCommands();
+
+        expect(commands).toHaveLength(1);
+        expect(commands[0]).toMatchObject({
+          uri: "https://exocortex.my/ontology/ems-ui#StartCommand",
+          id: "start",
+          name: "Start",
+          icon: "play",
+          hotkey: "Mod+S",
+          action: "https://exocortex.my/ontology/ems-ui#StartAction",
+          condition: "https://exocortex.my/ontology/ems-ui#IsToDoStatus",
+        });
+      });
+
+      it("should register Start command with checkCallback for condition", async () => {
+        mockSparqlService.query.mockResolvedValue([
+          createMockSolutionMapping({
+            cmd: "https://exocortex.my/ontology/ems-ui#StartCommand",
+            id: "start",
+            name: "Start",
+            icon: "play",
+            condition: "https://exocortex.my/ontology/ems-ui#IsToDoStatus",
+          }),
+        ]);
+
+        await registry.loadFromTripleStore();
+
+        expect(mockPlugin.addCommand).toHaveBeenCalledWith(
+          expect.objectContaining({
+            id: "start",
+            name: "Start",
+            icon: "play",
+            checkCallback: expect.any(Function),
+          }),
+        );
+      });
+    });
+
+    describe("PauseCommand", () => {
+      it("should parse Pause command with IsDoingStatus condition", async () => {
+        mockSparqlService.query.mockResolvedValue([
+          createMockSolutionMapping({
+            cmd: "https://exocortex.my/ontology/ems-ui#PauseCommand",
+            id: "pause",
+            name: "Pause",
+            icon: "pause",
+            action: "https://exocortex.my/ontology/ems-ui#PauseAction",
+            condition: "https://exocortex.my/ontology/ems-ui#IsDoingStatus",
+          }),
+        ]);
+
+        const commands = await registry.queryCommands();
+
+        expect(commands).toHaveLength(1);
+        expect(commands[0]).toMatchObject({
+          uri: "https://exocortex.my/ontology/ems-ui#PauseCommand",
+          id: "pause",
+          name: "Pause",
+          icon: "pause",
+          action: "https://exocortex.my/ontology/ems-ui#PauseAction",
+          condition: "https://exocortex.my/ontology/ems-ui#IsDoingStatus",
+        });
+      });
+
+      it("should register Pause command with checkCallback for condition", async () => {
+        mockSparqlService.query.mockResolvedValue([
+          createMockSolutionMapping({
+            cmd: "https://exocortex.my/ontology/ems-ui#PauseCommand",
+            id: "pause",
+            name: "Pause",
+            icon: "pause",
+            condition: "https://exocortex.my/ontology/ems-ui#IsDoingStatus",
+          }),
+        ]);
+
+        await registry.loadFromTripleStore();
+
+        expect(mockPlugin.addCommand).toHaveBeenCalledWith(
+          expect.objectContaining({
+            id: "pause",
+            name: "Pause",
+            icon: "pause",
+            checkCallback: expect.any(Function),
+          }),
+        );
+      });
+    });
+
+    describe("All status commands together", () => {
+      it("should load all three status commands from RDF", async () => {
+        mockSparqlService.query.mockResolvedValue([
+          createMockSolutionMapping({
+            cmd: "https://exocortex.my/ontology/ems-ui#MarkDoneCommand",
+            id: "mark-done",
+            name: "Mark Done",
+            icon: "check-circle",
+            condition: "https://exocortex.my/ontology/ems-ui#IsDoingStatus",
+          }),
+          createMockSolutionMapping({
+            cmd: "https://exocortex.my/ontology/ems-ui#StartCommand",
+            id: "start",
+            name: "Start",
+            icon: "play",
+            condition: "https://exocortex.my/ontology/ems-ui#IsToDoStatus",
+          }),
+          createMockSolutionMapping({
+            cmd: "https://exocortex.my/ontology/ems-ui#PauseCommand",
+            id: "pause",
+            name: "Pause",
+            icon: "pause",
+            condition: "https://exocortex.my/ontology/ems-ui#IsDoingStatus",
+          }),
+        ]);
+
+        await registry.loadFromTripleStore();
+
+        expect(mockPlugin.addCommand).toHaveBeenCalledTimes(3);
+
+        const commands = registry.getLoadedCommands();
+        expect(commands).toHaveLength(3);
+
+        const markDone = commands.find(c => c.id === "mark-done");
+        const start = commands.find(c => c.id === "start");
+        const pause = commands.find(c => c.id === "pause");
+
+        expect(markDone).toBeDefined();
+        expect(start).toBeDefined();
+        expect(pause).toBeDefined();
+      });
+
+      it("should have correct conditions for status commands", async () => {
+        mockSparqlService.query.mockResolvedValue([
+          createMockSolutionMapping({
+            cmd: "https://exocortex.my/ontology/ems-ui#MarkDoneCommand",
+            id: "mark-done",
+            name: "Mark Done",
+            condition: "https://exocortex.my/ontology/ems-ui#IsDoingStatus",
+          }),
+          createMockSolutionMapping({
+            cmd: "https://exocortex.my/ontology/ems-ui#StartCommand",
+            id: "start",
+            name: "Start",
+            condition: "https://exocortex.my/ontology/ems-ui#IsToDoStatus",
+          }),
+          createMockSolutionMapping({
+            cmd: "https://exocortex.my/ontology/ems-ui#PauseCommand",
+            id: "pause",
+            name: "Pause",
+            condition: "https://exocortex.my/ontology/ems-ui#IsDoingStatus",
+          }),
+        ]);
+
+        const commands = await registry.queryCommands();
+
+        const markDone = commands.find(c => c.id === "mark-done");
+        const start = commands.find(c => c.id === "start");
+        const pause = commands.find(c => c.id === "pause");
+
+        // MarkDone and Pause should have IsDoingStatus (visible when task is Doing)
+        expect(markDone?.condition).toBe("https://exocortex.my/ontology/ems-ui#IsDoingStatus");
+        expect(pause?.condition).toBe("https://exocortex.my/ontology/ems-ui#IsDoingStatus");
+
+        // Start should have IsToDoStatus (visible when task is ToDo)
+        expect(start?.condition).toBe("https://exocortex.my/ontology/ems-ui#IsToDoStatus");
+      });
+    });
+  });
 });
