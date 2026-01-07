@@ -5469,3 +5469,276 @@ describe("SemanticPhysicsEngine", () => {
 ```
 
 **Reference**: Issue #1345 - Semantic Physics implementation (January 2026, 292 steps)
+
+---
+
+## Ontology Migration Sprint Pattern
+
+**When to use**: Migrating command definitions, UI components, or domain models from code to RDF/ontology
+
+### Pattern Description
+
+Large-scale ontology work requires systematic namespace creation, followed by class definitions, property definitions, and finally instances. This pattern was proven during the January 2026 Command Migration Sprint.
+
+### Sprint Structure (January 2026 - 10 issues in 1 day)
+
+| Phase | Issue | Description | Steps |
+|-------|-------|-------------|-------|
+| **1. Namespace** | #1391 | Create exo-ui namespace and core classes | 143 |
+| **2. Actions** | #1392 | Define Action subclasses (Fixed Verbs) | 54-86 |
+| **3. Properties** | #1393 | Define Command/Button/Condition properties | 199 |
+| **4. Instances** | #1394 | Create ButtonGroup instances | 257 |
+| **5. Prefixes** | #1395 | Add to _prefixes.yaml and validate | 82 |
+| **6. Commands NS** | #1438 | Create ems-ui commands namespace section | 91 |
+| **7. Create Cmds** | #1439 | Define Create commands (Task, Project, Area) | 134 |
+| **8. Status Cmds** | #1440 | Define Status commands (Mark Done, Start, Pause) | 144 |
+| **9. Nav Cmds** | #1441 | Define Navigation commands (Go to Parent) | 94 |
+| **10. Migration** | #1442 | Migrate all 36 commands to RDF | 118 |
+
+**Total**: ~1400 steps across 10 issues in single day
+
+### Implementation Order (Critical Path)
+
+```
+1. Create namespace + core classes (exo-ui:Command, exo-ui:Button, etc.)
+   ↓
+2. Define Action subclasses (verbs: Create, Start, MarkDone, Navigate, etc.)
+   ↓
+3. Add properties (command → action mapping, visibility conditions)
+   ↓
+4. Create instances (ButtonGroup, specific commands)
+   ↓
+5. Register prefixes in _prefixes.yaml
+   ↓
+6. Migrate existing code-defined commands to RDF
+```
+
+### Cross-Repository Coordination
+
+**Key insight**: Ontology changes span two repositories:
+
+| Repository | Changes | Timing |
+|------------|---------|--------|
+| `exocortex-public-ontologies` | TTL definitions, prefixes, properties | First |
+| `exocortex` (plugin) | SPARQL queries, registry, tests | Second |
+
+**Same PR number convention**: For traceability, use same issue number in both repos when possible (e.g., #1441 in both repos for Navigation commands).
+
+### Benefits
+
+- **Type safety**: RDF schema catches property misuse
+- **Queryable**: Commands discoverable via SPARQL
+- **Extensible**: New commands without code changes
+- **Documentation**: Ontology self-documents command structure
+
+### Validation Pattern
+
+After migration, validate completeness:
+
+```typescript
+// Test that all 36 commands are registered
+it("should register all 36 RDF commands", async () => {
+  const commands = await registry.getAllCommands();
+  expect(commands.length).toBe(36);
+
+  // Verify each command has required properties
+  for (const cmd of commands) {
+    expect(cmd.action).toBeDefined();
+    expect(cmd.label).toBeDefined();
+    expect(cmd.visibilityCondition).toBeDefined();
+  }
+});
+```
+
+**Reference**: Issues #1391-#1442 - Command Migration Sprint (January 2026)
+
+---
+
+## File Format Evolution Pattern
+
+**When to use**: Adding support for new file formats (e.g., Exo 0.0.3) that require multi-layer implementation
+
+### Pattern Description
+
+New file format support is never single-layer. It requires coordinated changes across parser, SPARQL indexer, plugin renderer, and often reveals edge cases that need regression fixes.
+
+### Implementation Layers (Exo 0.0.3 Example)
+
+| Layer | Issue | Description | Steps |
+|-------|-------|-------------|-------|
+| **1. Core Parser** | #1366 | Support anchor/statement/body parsing | 81 |
+| **2. CLI SPARQL** | #1367 | Support SPARQL queries on new format | 90 |
+| **3. Regression #1** | #1377 | Statement files not converted to RDF | 131 |
+| **4. Regression #2** | #1380 | Statement files still not indexed | 128 |
+| **5. Cross-repo** | #1388 | Support public-ontologies statement format | 160 |
+
+### Regression Pattern
+
+**Key insight**: New format support almost always triggers regressions:
+
+```
+Initial implementation → Works for basic cases
+↓
+Integration testing → Edge case discovered
+↓
+Regression fix #1 → Statement files not indexed
+↓
+More testing → Another edge case
+↓
+Regression fix #2 → Statement files still not indexed
+```
+
+**Budget 2-3 follow-up issues** for any new format support.
+
+### Testing Strategy
+
+1. **Unit tests**: Parser handles all format variations
+2. **Integration tests**: CLI SPARQL queries return expected results
+3. **E2E tests**: Plugin renders new format correctly
+4. **Regression tests**: Add test for each bug found
+
+```typescript
+// Regression test example
+it("should index statement files in Exo 0.0.3 format", async () => {
+  // This test was added after Issue #1380
+  const result = await cli.sparql("SELECT ?s WHERE { ?s a exo:Statement }");
+  expect(result.length).toBeGreaterThan(0);
+});
+```
+
+### Cross-Repository Format Support
+
+When format support spans repositories (e.g., exocortex-public-ontologies uses different statement format):
+
+1. Implement in main repo first
+2. Add O(1) cross-directory resolution (Issue #1389)
+3. Test with real ontology files
+4. Document format differences
+
+**Reference**: Issues #1366, #1367, #1377, #1380, #1388 - Exo 0.0.3 Support (January 2026)
+
+---
+
+## E2E Test Stabilization Pattern
+
+**When to use**: Fixing flaky E2E tests that fail intermittently in CI
+
+### Pattern Description
+
+E2E test flakiness is a significant time sink. This pattern provides systematic approach to stabilization based on Issue #1384 (150 steps to fix).
+
+### Common Causes and Solutions
+
+| Cause | Symptoms | Solution |
+|-------|----------|----------|
+| **Quadtree performance** | Timeout in graph layout | Skip timing tests in CI |
+| **Random cancellation** | Tests abort randomly | Increase retry count |
+| **Timing sensitivity** | Pass locally, fail CI | Use waitFor() with generous timeouts |
+| **Resource contention** | Parallel tests interfere | Run in serial mode |
+
+### CI-Specific Configuration
+
+```typescript
+// playwright.config.ts
+export default defineConfig({
+  // Longer timeouts for CI
+  timeout: process.env.CI ? 60000 : 30000,
+  expect: {
+    timeout: process.env.CI ? 15000 : 5000,
+  },
+  // More retries in CI
+  retries: process.env.CI ? 3 : 0,
+  // Serial execution for flaky suites
+  fullyParallel: !process.env.CI,
+});
+```
+
+### Skip Timing-Sensitive Tests in CI
+
+```typescript
+// Skip performance timing tests in CI
+const describeOrSkip = process.env.CI ? describe.skip : describe;
+
+describeOrSkip("Performance timing", () => {
+  it("should complete within 100ms", async () => {
+    // This test is flaky in CI due to resource variability
+    const start = Date.now();
+    await performOperation();
+    expect(Date.now() - start).toBeLessThan(100);
+  });
+});
+```
+
+### Stabilization Checklist
+
+- [ ] Identify flaky tests from CI logs
+- [ ] Categorize by cause (timing, resources, parallelism)
+- [ ] Add appropriate waits/retries
+- [ ] Skip timing tests in CI
+- [ ] Increase timeouts for slow operations
+- [ ] Run 10+ CI builds to verify stability
+
+### Step Count Reality
+
+**Warning**: E2E stabilization is high-effort work:
+- Issue #1384: 150 steps
+- Multiple CI runs to verify fixes
+- Often requires iterative debugging
+
+**Budget 100-200 steps** for significant E2E flakiness issues.
+
+**Reference**: Issue #1384 - E2E tests flaky (January 2026, 150 steps)
+
+---
+
+## Milestone Acceptance Testing Pattern
+
+**When to use**: Final validation before milestone release
+
+### Pattern Description
+
+Before releasing a milestone, comprehensive acceptance and integration testing ensures all features work together correctly.
+
+### Testing Phases (Issue #1434)
+
+| Phase | Description | Focus |
+|-------|-------------|-------|
+| **1. Unit tests** | All package tests pass | Individual components |
+| **2. Integration tests** | Cross-package interactions | Service boundaries |
+| **3. E2E tests** | Full workflow validation | User journeys |
+| **4. Acceptance tests** | Verify all acceptance criteria | Requirements |
+
+### Acceptance Test Structure
+
+```typescript
+// packages/obsidian-plugin/tests/acceptance/v1.3/
+describe("Milestone v1.3 Acceptance Tests", () => {
+  describe("RDF Command Registry", () => {
+    it("should load all 36 commands from RDF", async () => {
+      // AC: All commands discoverable via SPARQL
+    });
+
+    it("should respect visibility conditions", async () => {
+      // AC: Commands only visible when conditions met
+    });
+  });
+
+  describe("Exo 0.0.3 Format", () => {
+    it("should parse anchor/statement/body sections", async () => {
+      // AC: New file format renders correctly
+    });
+  });
+});
+```
+
+### Quality Gates
+
+Before milestone merge:
+- ✅ All unit tests pass (1800+)
+- ✅ All component tests pass (168+)
+- ✅ All E2E tests pass (55+)
+- ✅ All acceptance tests pass
+- ✅ No P0/P1 open issues
+- ✅ Documentation updated
+
+**Reference**: Issue #1434 - Milestone v1.3 Acceptance Testing (95 steps)
