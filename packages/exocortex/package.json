@@ -39,6 +39,10 @@
   "author": "A. Kitelev",
   "license": "MIT",
   "dependencies": {
+    "@rdfjs/data-model": "^2.1.1",
+    "@rdfjs/dataset": "^2.0.2",
+    "@rdfjs/parser-n3": "^2.1.0",
+    "rdf-validate-shacl": "^0.6.5",
     "sparqljs": "^3.7.3",
     "uuid": "^11.1.0"
   },
