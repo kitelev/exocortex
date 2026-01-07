@@ -1650,4 +1650,314 @@ describe("ActionInterpreter", () => {
       );
     });
   });
+
+  describe("CustomHandlerAction handler (Issue #1411)", () => {
+    it("should find and execute registered custom handler", async () => {
+      const interpreter = new ActionInterpreter(mockTripleStore);
+
+      // Register a custom handler
+      let handlerCalled = false;
+      let receivedDef: ActionDefinition | undefined;
+      let receivedCtx: ActionContext | undefined;
+
+      interpreter.registerCustomHandler("custom:MyHandler", async (def, ctx) => {
+        handlerCalled = true;
+        receivedDef = def;
+        receivedCtx = ctx;
+        return { success: true, data: { customResult: "value" } };
+      });
+
+      jest.spyOn(interpreter as any, "loadActionDefinition").mockResolvedValue({
+        type: "exo-ui:CustomHandlerAction",
+        params: {
+          handler: "custom:MyHandler",
+          customParam: "test-value",
+        },
+      });
+
+      const result = await interpreter.execute("test:custom-action", mockContext);
+
+      expect(result.success).toBe(true);
+      expect(result.data).toEqual({ customResult: "value" });
+      expect(handlerCalled).toBe(true);
+      expect(receivedDef?.params.customParam).toBe("test-value");
+      expect(receivedCtx?.tripleStore).toBe(mockTripleStore);
+    });
+
+    it("should return error if custom handler not found", async () => {
+      const interpreter = new ActionInterpreter(mockTripleStore);
+
+      jest.spyOn(interpreter as any, "loadActionDefinition").mockResolvedValue({
+        type: "exo-ui:CustomHandlerAction",
+        params: {
+          handler: "custom:NonExistentHandler",
+        },
+      });
+
+      const result = await interpreter.execute("test:custom-action", mockContext);
+
+      expect(result.success).toBe(false);
+      expect(result.message).toContain("Custom handler not found");
+      expect(result.message).toContain("custom:NonExistentHandler");
+    });
+
+    it("should pass all params from definition to custom handler", async () => {
+      const interpreter = new ActionInterpreter(mockTripleStore);
+
+      let capturedParams: Record<string, unknown> = {};
+
+      interpreter.registerCustomHandler("custom:ParamCapture", async (def) => {
+        capturedParams = def.params;
+        return { success: true };
+      });
+
+      jest.spyOn(interpreter as any, "loadActionDefinition").mockResolvedValue({
+        type: "exo-ui:CustomHandlerAction",
+        params: {
+          handler: "custom:ParamCapture",
+          param1: "value1",
+          param2: 42,
+          param3: true,
+        },
+      });
+
+      await interpreter.execute("test:custom-action", mockContext);
+
+      expect(capturedParams.param1).toBe("value1");
+      expect(capturedParams.param2).toBe(42);
+      expect(capturedParams.param3).toBe(true);
+    });
+
+    it("should propagate custom handler failure", async () => {
+      const interpreter = new ActionInterpreter(mockTripleStore);
+
+      interpreter.registerCustomHandler("custom:FailingHandler", async () => {
+        return { success: false, message: "Custom handler error" };
+      });
+
+      jest.spyOn(interpreter as any, "loadActionDefinition").mockResolvedValue({
+        type: "exo-ui:CustomHandlerAction",
+        params: {
+          handler: "custom:FailingHandler",
+        },
+      });
+
+      const result = await interpreter.execute("test:custom-action", mockContext);
+
+      expect(result.success).toBe(false);
+      expect(result.message).toBe("Custom handler error");
+    });
+  });
+
+  describe("CompositeAction handler (Issue #1411)", () => {
+    it("should execute actions sequentially", async () => {
+      const interpreter = new ActionInterpreter(mockTripleStore);
+
+      const executionOrder: string[] = [];
+
+      interpreter.registerCustomHandler("custom:Action1", async () => {
+        executionOrder.push("action1");
+        return { success: true };
+      });
+
+      interpreter.registerCustomHandler("custom:Action2", async () => {
+        executionOrder.push("action2");
+        return { success: true };
+      });
+
+      interpreter.registerCustomHandler("custom:Action3", async () => {
+        executionOrder.push("action3");
+        return { success: true };
+      });
+
+      // Mock loadActionDefinition to return different definitions based on URI
+      const loadActionSpy = jest.spyOn(interpreter as any, "loadActionDefinition");
+      loadActionSpy.mockImplementation(async (uri) => {
+        if (uri === "test:composite-action") {
+          return {
+            type: "exo-ui:CompositeAction",
+            params: {
+              actions: JSON.stringify([
+                "test:action1",
+                "test:action2",
+                "test:action3",
+              ]),
+            },
+          };
+        }
+        if (uri === "test:action1") {
+          return { type: "exo-ui:CustomHandlerAction", params: { handler: "custom:Action1" } };
+        }
+        if (uri === "test:action2") {
+          return { type: "exo-ui:CustomHandlerAction", params: { handler: "custom:Action2" } };
+        }
+        if (uri === "test:action3") {
+          return { type: "exo-ui:CustomHandlerAction", params: { handler: "custom:Action3" } };
+        }
+        throw new Error(`Unknown action: ${uri}`);
+      });
+
+      const result = await interpreter.execute("test:composite-action", mockContext);
+
+      expect(result.success).toBe(true);
+      expect(executionOrder).toEqual(["action1", "action2", "action3"]);
+    });
+
+    it("should stop on first failure", async () => {
+      const interpreter = new ActionInterpreter(mockTripleStore);
+
+      const executionOrder: string[] = [];
+
+      interpreter.registerCustomHandler("custom:Action1", async () => {
+        executionOrder.push("action1");
+        return { success: true };
+      });
+
+      interpreter.registerCustomHandler("custom:FailingAction", async () => {
+        executionOrder.push("failing");
+        return { success: false, message: "Action failed!" };
+      });
+
+      interpreter.registerCustomHandler("custom:Action3", async () => {
+        executionOrder.push("action3");
+        return { success: true };
+      });
+
+      const loadActionSpy = jest.spyOn(interpreter as any, "loadActionDefinition");
+      loadActionSpy.mockImplementation(async (uri) => {
+        if (uri === "test:composite-action") {
+          return {
+            type: "exo-ui:CompositeAction",
+            params: {
+              actions: JSON.stringify([
+                "test:action1",
+                "test:failing",
+                "test:action3",
+              ]),
+            },
+          };
+        }
+        if (uri === "test:action1") {
+          return { type: "exo-ui:CustomHandlerAction", params: { handler: "custom:Action1" } };
+        }
+        if (uri === "test:failing") {
+          return { type: "exo-ui:CustomHandlerAction", params: { handler: "custom:FailingAction" } };
+        }
+        if (uri === "test:action3") {
+          return { type: "exo-ui:CustomHandlerAction", params: { handler: "custom:Action3" } };
+        }
+        throw new Error(`Unknown action: ${uri}`);
+      });
+
+      const result = await interpreter.execute("test:composite-action", mockContext);
+
+      expect(result.success).toBe(false);
+      expect(result.message).toBe("Action failed!");
+      // Action3 should NOT be executed
+      expect(executionOrder).toEqual(["action1", "failing"]);
+    });
+
+    it("should pass data from previous action via context.previousResult", async () => {
+      const interpreter = new ActionInterpreter(mockTripleStore);
+
+      let capturedPreviousResult: unknown;
+
+      interpreter.registerCustomHandler("custom:Producer", async () => {
+        return { success: true, data: { producedValue: "from-producer" } };
+      });
+
+      interpreter.registerCustomHandler("custom:Consumer", async (_def, ctx) => {
+        capturedPreviousResult = ctx.previousResult;
+        return { success: true };
+      });
+
+      const loadActionSpy = jest.spyOn(interpreter as any, "loadActionDefinition");
+      loadActionSpy.mockImplementation(async (uri) => {
+        if (uri === "test:composite-action") {
+          return {
+            type: "exo-ui:CompositeAction",
+            params: {
+              actions: JSON.stringify([
+                "test:producer",
+                "test:consumer",
+              ]),
+            },
+          };
+        }
+        if (uri === "test:producer") {
+          return { type: "exo-ui:CustomHandlerAction", params: { handler: "custom:Producer" } };
+        }
+        if (uri === "test:consumer") {
+          return { type: "exo-ui:CustomHandlerAction", params: { handler: "custom:Consumer" } };
+        }
+        throw new Error(`Unknown action: ${uri}`);
+      });
+
+      const result = await interpreter.execute("test:composite-action", mockContext);
+
+      expect(result.success).toBe(true);
+      expect(capturedPreviousResult).toEqual({ producedValue: "from-producer" });
+    });
+
+    it("should return success with refresh true for successful composite execution", async () => {
+      const interpreter = new ActionInterpreter(mockTripleStore);
+
+      interpreter.registerCustomHandler("custom:SimpleAction", async () => {
+        return { success: true };
+      });
+
+      const loadActionSpy = jest.spyOn(interpreter as any, "loadActionDefinition");
+      loadActionSpy.mockImplementation(async (uri) => {
+        if (uri === "test:composite-action") {
+          return {
+            type: "exo-ui:CompositeAction",
+            params: {
+              actions: JSON.stringify(["test:simple"]),
+            },
+          };
+        }
+        if (uri === "test:simple") {
+          return { type: "exo-ui:CustomHandlerAction", params: { handler: "custom:SimpleAction" } };
+        }
+        throw new Error(`Unknown action: ${uri}`);
+      });
+
+      const result = await interpreter.execute("test:composite-action", mockContext);
+
+      expect(result.success).toBe(true);
+      expect(result.refresh).toBe(true);
+    });
+
+    it("should handle empty actions array gracefully", async () => {
+      const interpreter = new ActionInterpreter(mockTripleStore);
+
+      jest.spyOn(interpreter as any, "loadActionDefinition").mockResolvedValue({
+        type: "exo-ui:CompositeAction",
+        params: {
+          actions: JSON.stringify([]),
+        },
+      });
+
+      const result = await interpreter.execute("test:composite-action", mockContext);
+
+      // Empty composite should succeed (no actions to fail)
+      expect(result.success).toBe(true);
+    });
+
+    it("should return error if actions param is not provided", async () => {
+      const interpreter = new ActionInterpreter(mockTripleStore);
+
+      jest.spyOn(interpreter as any, "loadActionDefinition").mockResolvedValue({
+        type: "exo-ui:CompositeAction",
+        params: {
+          // No actions param
+        },
+      });
+
+      const result = await interpreter.execute("test:composite-action", mockContext);
+
+      expect(result.success).toBe(false);
+      expect(result.message).toContain("actions");
+    });
+  });
 });
