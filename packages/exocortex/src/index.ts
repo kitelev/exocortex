@@ -306,6 +306,25 @@ export type { IConfiguration } from "./interfaces/IConfiguration";
 export type { INotificationService } from "./interfaces/INotificationService";
 export { DI_TOKENS, type DIToken } from "./interfaces/tokens";
 
+// UI Provider exports (CLI/Obsidian abstraction)
+export {
+  HeadlessError,
+  type IUIProvider,
+  type ModalOptions,
+  type SelectOptions,
+} from "./domain/ports/IUIProvider";
+
+// Action Types exports
+export type { ActionContext } from "./domain/types/ActionContext";
+export type {
+  ActionResult,
+  ActionDefinition,
+  ActionHandler,
+} from "./domain/types/ActionTypes";
+
+// Action Interpreter export
+export { ActionInterpreter } from "./domain/services/ActionInterpreter";
+
 // DI Container exports
 export {
   registerCoreServices,

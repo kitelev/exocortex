@@ -310,6 +310,87 @@ const results = await sparql.query(`
 
 ---
 
+## RDF-Driven Architecture (Milestone v1.0)
+
+**Vision:** Extend Exocortex functionality by importing RDF files, not writing TypeScript code.
+
+### What is RDF-Driven Architecture?
+
+RDF-Driven Architecture allows UI elements (commands, buttons, layouts) to be defined declaratively in RDF ontologies. This means:
+
+- **No TypeScript code** required to add new buttons or commands
+- **No compilation** — changes take effect immediately
+- **No plugin releases** — users can customize their own workflows
+- **Portable** — same RDF works in both Obsidian and CLI
+
+### Core Components
+
+| Component | Purpose | Package |
+|-----------|---------|---------|
+| **exo-ui Ontology** | Defines UI elements: Command, Button, Action, Condition, Layout | [exocortex-public-ontologies](https://github.com/kitelev/exocortex-public-ontologies) |
+| **IUIProvider** | Abstracts UI operations for CLI/Obsidian compatibility | `exocortex` (core) |
+| **ActionContext** | Context object for action handlers | `exocortex` (core) |
+
+### Fixed Verbs (Action Types)
+
+Actions are the "verbs" of the system — they define **what happens** when a button is clicked or command executed:
+
+| Action Type | Description | Headless? |
+|-------------|-------------|-----------|
+| `CreateAssetAction` | Create new asset from template | ✅ Yes |
+| `UpdatePropertyAction` | Update property on current/specified asset | ✅ Yes |
+| `NavigateAction` | Navigate to asset or SPARQL result | ✅ Yes |
+| `ExecuteSPARQLAction` | Execute SPARQL query | ✅ Yes |
+| `ShowModalAction` | Show interactive modal dialog | ❌ No |
+| `TriggerHookAction` | Trigger webhook or internal hook | ❌ No |
+| `CustomHandlerAction` | Call registered TypeScript handler | Depends |
+| `CompositeAction` | Execute sequence of actions | Depends |
+
+### IUIProvider: CLI/Obsidian Abstraction
+
+The `IUIProvider` interface allows the same action code to work in both Obsidian (with modals) and CLI (headless):
+
+```typescript
+// Check execution mode
+if (ctx.uiProvider.isHeadless) {
+  // CLI: Use command-line arguments
+  const project = ctx.cliArgs?.project;
+} else {
+  // Obsidian: Show interactive modal
+  const project = await ctx.uiProvider.showInputModal({
+    title: 'Select Project'
+  });
+}
+```
+
+**Implementations:**
+- `ObsidianUIProvider` — Uses Obsidian modals and notices
+- `CLIUIProvider` — Headless mode, throws `HeadlessError` for interactive operations
+
+### Example: Adding a Custom Button via RDF
+
+Instead of writing TypeScript:
+
+```turtle
+my-workflow:ReviewButton a exo-ui:Button ;
+    exo-ui:Button_label "Review" ;
+    exo-ui:Button_icon "eye" ;
+    exo-ui:Button_variant "primary" ;
+    exo-ui:Button_group exo-ui:StatusButtonGroup ;
+    exo-ui:Button_action my-workflow:SetReviewStatusAction ;
+    exo-ui:Button_condition my-workflow:IsDoingCondition ;
+    exo-ui:Action_headless true .
+```
+
+This button:
+- Appears in the Status button group
+- Shows only when task status is "Doing"
+- Works in both Obsidian and CLI
+
+See the [RDF-Driven Architecture Plan](./docs/RDF-Driven-Architecture.md) for complete documentation.
+
+---
+
 ## Key Features
 
 ### Semantic Query System (SPARQL)
@@ -427,7 +508,8 @@ See **[SPARQL 1.2 Features](./docs/sparql/SPARQL-1.2-Features.md)** for complete
 ### By Interface
 
 **Obsidian Plugin:**
-- **[Command Reference](./docs/Command-Reference.md)** — All 32 commands documented
+- **[RDF-Driven Commands](./docs/COMMANDS.md)** — All 36 commands, RDF structure, conditions, hotkeys
+- **[Command Reference](./docs/Command-Reference.md)** — Legacy command documentation
 
 **CLI:**
 - **[CLI Command Reference](./docs/cli/Command-Reference.md)** — Complete syntax
