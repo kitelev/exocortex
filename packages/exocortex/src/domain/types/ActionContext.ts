@@ -62,4 +62,19 @@ export interface ActionContext {
 
   /** CLI arguments (if running in CLI mode) */
   cliArgs?: Record<string, string>;
+
+  /**
+   * Result data from previous action in CompositeAction sequence.
+   *
+   * When actions are executed sequentially in a CompositeAction,
+   * each action's result.data is passed to the next action via
+   * this property, enabling data flow between actions.
+   *
+   * @example
+   * ```typescript
+   * // Action 2 can access data from Action 1:
+   * const previousData = ctx.previousResult;
+   * ```
+   */
+  previousResult?: unknown;
 }

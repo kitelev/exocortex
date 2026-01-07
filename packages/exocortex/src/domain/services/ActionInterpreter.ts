@@ -693,12 +693,73 @@ export class ActionInterpreter {
 
   /**
    * Execute multiple actions in sequence
-   * @see Issue #1412
+   *
+   * Parameters:
+   * - actions: JSON array of action URIs to execute sequentially
+   *
+   * The handler:
+   * 1. Parses the actions array from JSON string
+   * 2. Executes each action in sequence
+   * 3. Stops on first failure, returning that failure result
+   * 4. Passes data from each action to the next via context.previousResult
+   * 5. Returns success with refresh=true when all actions complete
+   *
+   * @see Issue #1411
+   * @see /Users/kitelev/vault-2025/03 Knowledge/concepts/RDF-Driven Architecture Implementation Plan (Note).md
+   * Phase 3: ActionInterpreter Runtime (lines 1615-1640)
    */
-  private compositeHandler: ActionHandler = async (_def, _ctx) => {
+  private compositeHandler: ActionHandler = async (def, ctx) => {
+    const actionsParam = def.params.actions as string | undefined;
+
+    // Validate actions parameter
+    if (!actionsParam) {
+      return {
+        success: false,
+        message: "CompositeAction requires 'actions' parameter",
+      };
+    }
+
+    // Parse actions array from JSON string
+    let actionUris: string[];
+    try {
+      actionUris = JSON.parse(actionsParam) as string[];
+    } catch (error) {
+      return {
+        success: false,
+        message: `Invalid actions JSON: ${error instanceof Error ? error.message : String(error)}`,
+      };
+    }
+
+    // Validate it's an array
+    if (!Array.isArray(actionUris)) {
+      return {
+        success: false,
+        message: "CompositeAction 'actions' must be a JSON array of action URIs",
+      };
+    }
+
+    // Execute actions sequentially
+    let currentContext = ctx;
+
+    for (const actionUri of actionUris) {
+      const result = await this.execute(actionUri, currentContext);
+
+      if (!result.success) {
+        // Stop on first failure
+        return result;
+      }
+
+      // Pass data to next action via context.previousResult
+      currentContext = {
+        ...currentContext,
+        previousResult: result.data,
+      };
+    }
+
+    // All actions completed successfully
     return {
-      success: false,
-      message: `Not implemented: CompositeAction`,
+      success: true,
+      refresh: true,
     };
   };
 }
