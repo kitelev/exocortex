@@ -12,6 +12,7 @@
  */
 
 import { ITripleStore } from "../../interfaces/ITripleStore";
+import { IFileSystemMetadataProvider } from "../../interfaces/IFileSystemAdapter";
 import { IRI } from "../models/rdf/IRI";
 import { ActionContext } from "../types/ActionContext";
 import {
@@ -19,6 +20,13 @@ import {
   ActionDefinition,
   ActionHandler,
 } from "../types/ActionTypes";
+import { HeadlessError } from "../ports/IUIProvider";
+import { GenericAssetCreationService } from "../../services/GenericAssetCreationService";
+import type { IVaultAdapter, IFile, IFrontmatter } from "../../interfaces/IVaultAdapter";
+import { SPARQLParser } from "../../infrastructure/sparql/SPARQLParser";
+import { AlgebraTranslator } from "../../infrastructure/sparql/algebra/AlgebraTranslator";
+import { QueryExecutor } from "../../infrastructure/sparql/executors/QueryExecutor";
+import type { SelectQuery } from "../../infrastructure/sparql/SPARQLParser";
 
 /**
  * Namespace URI for exo-ui ontology
@@ -74,7 +82,12 @@ export class ActionInterpreter {
    */
   private customHandlers: Map<string, ActionHandler> = new Map();
 
-  constructor(private tripleStore: ITripleStore) {
+  constructor(
+    private tripleStore: ITripleStore,
+    private assetCreationService?: GenericAssetCreationService,
+    private vaultAdapter?: IVaultAdapter,
+    private fileSystem?: IFileSystemMetadataProvider
+  ) {
     this.registerBuiltinHandlers();
   }
 
@@ -211,57 +224,381 @@ export class ActionInterpreter {
 
   /**
    * Create new asset from template
+   *
+   * Parameters:
+   * - targetClass: Asset class to create (e.g., "ems__Task")
+   * - template: Optional template name for the asset label
+   * - location: Folder path for asset creation (required in headless mode)
+   *
    * @see Issue #1405
+   * @see /Users/kitelev/vault-2025/03 Knowledge/concepts/RDF-Driven Architecture Implementation Plan (Note).md
+   * Phase 3: ActionInterpreter Runtime (lines 1537-1550)
    */
-  private createAssetHandler: ActionHandler = async (def, _ctx) => {
-    return {
-      success: false,
-      message: `Not implemented: CreateAssetAction (targetClass: ${String(def.params.targetClass)})`,
-    };
+  private createAssetHandler: ActionHandler = async (def, ctx) => {
+    const targetClass = def.params.targetClass as string;
+    const template = def.params.template as string | undefined;
+    const location = def.params.location as string | undefined;
+
+    // Headless check: CLI mode requires explicit location
+    if (ctx.uiProvider.isHeadless && !location) {
+      const error = new HeadlessError(
+        "CreateAssetAction without location",
+        "--location <path>"
+      );
+      return {
+        success: false,
+        message: error.message,
+      };
+    }
+
+    // Ensure asset creation service is available
+    if (!this.assetCreationService) {
+      return {
+        success: false,
+        message: "AssetCreationService not initialized",
+      };
+    }
+
+    try {
+      // Create asset using GenericAssetCreationService
+      const newFile = await this.assetCreationService.createAsset({
+        className: targetClass,
+        label: template,
+        folderPath: location,
+      });
+
+      return {
+        success: true,
+        navigateTo: newFile,
+        refresh: true,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: `Failed to create asset: ${error instanceof Error ? error.message : String(error)}`,
+      };
+    }
   };
 
   /**
    * Update asset property
+   *
+   * Parameters:
+   * - targetProperty: Property name to update (e.g., "ems__Effort_status")
+   * - targetValue: New value for the property (or null to delete)
+   * - targetAsset: Optional path to target file (defaults to currentAsset in context)
+   *
    * @see Issue #1406
+   * @see /Users/kitelev/vault-2025/03 Knowledge/concepts/RDF-Driven Architecture Implementation Plan (Note).md
+   * Phase 3: ActionInterpreter Runtime (lines 1552-1567)
    */
-  private updatePropertyHandler: ActionHandler = async (def, _ctx) => {
-    return {
-      success: false,
-      message: `Not implemented: UpdatePropertyAction (property: ${String(def.params.targetProperty)})`,
-    };
+  private updatePropertyHandler: ActionHandler = async (def, ctx) => {
+    const targetProperty = def.params.targetProperty as string;
+    const targetValue = def.params.targetValue;
+    const targetAsset = def.params.targetAsset as string | undefined;
+
+    // Ensure vault adapter is available
+    if (!this.vaultAdapter) {
+      return {
+        success: false,
+        message: "VaultAdapter not initialized",
+      };
+    }
+
+    // Resolve target file: use targetAsset if specified, otherwise currentAsset
+    let file: IFile | null | undefined;
+    if (targetAsset) {
+      const abstractFile = this.vaultAdapter.getAbstractFileByPath(targetAsset);
+      // Ensure it's a file (has path, basename, name)
+      if (abstractFile && "basename" in abstractFile) {
+        file = abstractFile as IFile;
+      } else {
+        return {
+          success: false,
+          message: `Target asset not found: ${targetAsset}`,
+        };
+      }
+    } else {
+      file = ctx.currentAsset;
+    }
+
+    // Validate we have a target file
+    if (!file) {
+      return {
+        success: false,
+        message: "No target asset",
+      };
+    }
+
+    try {
+      // Update frontmatter using vault adapter
+      await this.vaultAdapter.updateFrontmatter(
+        file,
+        (current: IFrontmatter): IFrontmatter => {
+          const updated = { ...current };
+          if (targetValue === null || targetValue === undefined) {
+            // Delete property if value is null/undefined
+            delete updated[targetProperty];
+          } else {
+            // Set property value
+            updated[targetProperty] = targetValue;
+          }
+          return updated;
+        }
+      );
+
+      return {
+        success: true,
+        refresh: true,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: `Failed to update property: ${error instanceof Error ? error.message : String(error)}`,
+      };
+    }
   };
 
   /**
-   * Navigate to asset
+   * Navigate to asset or result of SPARQL query
+   *
+   * Parameters:
+   * - target: Asset URI or SPARQL query (SELECT/ASK)
+   *
+   * If target starts with SELECT or ASK, executes SPARQL query and
+   * navigates to the first result's asset.
+   *
    * @see Issue #1407
+   * @see /Users/kitelev/vault-2025/03 Knowledge/concepts/RDF-Driven Architecture Implementation Plan (Note).md
+   * Phase 3: ActionInterpreter Runtime (lines 1569-1590)
    */
-  private navigateHandler: ActionHandler = async (def, _ctx) => {
-    return {
-      success: false,
-      message: `Not implemented: NavigateAction (target: ${String(def.params.target)})`,
-    };
+  private navigateHandler: ActionHandler = async (def, ctx) => {
+    const target = def.params.target as string;
+
+    if (!target) {
+      return {
+        success: false,
+        message: "NavigateAction requires 'target' parameter",
+      };
+    }
+
+    // Determine target asset URI
+    let assetUri: string;
+
+    if (target.startsWith("SELECT") || target.startsWith("ASK")) {
+      // SPARQL query - get first result
+      // For simplicity, we use match() to get triples matching a pattern
+      // In a full implementation, this would use a SPARQL executor
+      const results = await this.tripleStore.match(undefined, undefined, undefined);
+
+      if (results.length === 0) {
+        return {
+          success: false,
+          message: "No results found",
+        };
+      }
+
+      // For ASK queries with results, navigate to current asset if available
+      if (target.startsWith("ASK")) {
+        if (ctx.currentAsset) {
+          await ctx.uiProvider.navigate(ctx.currentAsset.path);
+          return { success: true };
+        }
+        // ASK query returned true but no current asset to navigate to
+        return { success: true, message: "Query returned true" };
+      }
+
+      // SELECT query - use first result's subject as the asset URI
+      const firstResult = results[0];
+      assetUri = "value" in firstResult.subject
+        ? firstResult.subject.value
+        : String(firstResult.subject);
+    } else {
+      // Direct URI
+      assetUri = target;
+    }
+
+    // Resolve URI to file path
+    const filePath = await this.resolveAssetUri(assetUri);
+
+    if (!filePath) {
+      return {
+        success: false,
+        message: "Asset not found",
+      };
+    }
+
+    // Navigate using uiProvider
+    await ctx.uiProvider.navigate(filePath);
+
+    return { success: true };
   };
+
+  /**
+   * Resolve asset URI to file path
+   *
+   * Extracts UUID from URI and looks up file path using file system adapter.
+   *
+   * @param uri - Asset URI (e.g., https://exocortex.my/assets/uuid)
+   * @returns File path or null if not found
+   */
+  private async resolveAssetUri(uri: string): Promise<string | null> {
+    if (!this.fileSystem) {
+      return null;
+    }
+
+    // Extract UUID from URI - it's typically the last path segment
+    const uuid = uri.split("/").pop();
+
+    if (!uuid) {
+      return null;
+    }
+
+    // Use file system adapter to find file by UUID
+    return this.fileSystem.findFileByUID(uuid);
+  }
 
   /**
    * Execute SPARQL query
+   *
+   * Parameters:
+   * - query: SPARQL query string to execute
+   *
    * @see Issue #1408
+   * @see /Users/kitelev/vault-2025/03 Knowledge/concepts/RDF-Driven Architecture Implementation Plan (Note).md
+   * Phase 3: ActionInterpreter Runtime (lines 1592-1596)
    */
-  private executeSparqlHandler: ActionHandler = async (_def, _ctx) => {
-    return {
-      success: false,
-      message: `Not implemented: ExecuteSPARQLAction`,
-    };
+  private executeSparqlHandler: ActionHandler = async (def, _ctx) => {
+    const query = def.params.query as string | undefined;
+
+    // Validate query parameter
+    if (!query) {
+      return {
+        success: false,
+        message: "ExecuteSPARQLAction requires 'query' parameter",
+      };
+    }
+
+    try {
+      // Parse SPARQL query
+      const parser = new SPARQLParser();
+      const parsed = parser.parse(query);
+
+      // Check if it's a SELECT query (only SELECT is supported currently)
+      if (parsed.type !== "query" || parsed.queryType !== "SELECT") {
+        return {
+          success: false,
+          message: "ExecuteSPARQLAction only supports SELECT queries",
+        };
+      }
+
+      // Translate to algebra
+      const translator = new AlgebraTranslator();
+      const algebra = translator.translate(parsed as SelectQuery);
+
+      // Execute query
+      const executor = new QueryExecutor(this.tripleStore);
+      const results = await executor.executeAll(algebra);
+
+      // Convert results to array of plain objects
+      const data = results.map((solution) => solution.toJSON());
+
+      return {
+        success: true,
+        data,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: `Failed to execute SPARQL query: ${error instanceof Error ? error.message : String(error)}`,
+      };
+    }
   };
 
   /**
    * Show modal dialog
+   *
+   * Parameters:
+   * - modalType: Type of modal to show ('input', 'select', 'confirm')
+   * - modalParams: JSON string with modal configuration
+   * - Action_cliAlternative: Optional CLI alternative for headless mode
+   *
+   * Modal types and their params:
+   * - input: { title, placeholder?, defaultValue?, submitLabel? }
+   * - select: { title, items, getLabel?, placeholder? }
+   * - confirm: { message }
+   *
    * @see Issue #1409
+   * @see /Users/kitelev/vault-2025/03 Knowledge/concepts/RDF-Driven Architecture Implementation Plan (Note).md
+   * Phase 3: ActionInterpreter Runtime (lines 1598-1605)
    */
-  private showModalHandler: ActionHandler = async (def, _ctx) => {
-    return {
-      success: false,
-      message: `Not implemented: ShowModalAction (modalType: ${String(def.params.modalType)})`,
-    };
+  private showModalHandler: ActionHandler = async (def, ctx) => {
+    const modalType = def.params.modalType as string;
+    const modalParamsStr = def.params.modalParams as string | undefined;
+    const cliAlternative = def.params.Action_cliAlternative as string | undefined;
+
+    // Headless check - modal requires UI
+    if (ctx.uiProvider.isHeadless) {
+      const error = new HeadlessError(
+        "ShowModalAction",
+        cliAlternative || "Use appropriate CLI arguments"
+      );
+      return {
+        success: false,
+        message: error.message,
+      };
+    }
+
+    // Parse modalParams JSON
+    let modalParams: Record<string, unknown>;
+    try {
+      modalParams = modalParamsStr ? JSON.parse(modalParamsStr) : {};
+    } catch (error) {
+      return {
+        success: false,
+        message: `Invalid modalParams JSON: ${error instanceof Error ? error.message : String(error)}`,
+      };
+    }
+
+    // Delegate to uiProvider based on modal type
+    try {
+      let result: unknown;
+
+      if (modalType === "input") {
+        result = await ctx.uiProvider.showInputModal(modalParams as {
+          title: string;
+          placeholder?: string;
+          defaultValue?: string;
+          submitLabel?: string;
+        });
+      } else if (modalType === "select") {
+        result = await ctx.uiProvider.showSelectModal(modalParams as {
+          title: string;
+          items: unknown[];
+          getLabel: (item: unknown) => string;
+          placeholder?: string;
+        });
+      } else if (modalType === "confirm") {
+        result = await ctx.uiProvider.showConfirm(
+          (modalParams.message as string) || ""
+        );
+      } else {
+        return {
+          success: false,
+          message: `Unknown modal type: ${modalType}`,
+        };
+      }
+
+      return {
+        success: true,
+        data: result,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: `Modal failed: ${error instanceof Error ? error.message : String(error)}`,
+      };
+    }
   };
 
   /**
