@@ -23,10 +23,12 @@
 /**
  * SHACL shape for base exo-ui:Action class.
  *
+ * Required properties:
+ * - exo-ui:Action_headless (xsd:boolean) - Whether action runs without UI (Issue #1446)
+ *
  * Optional properties (inherited by all subclasses):
  * - exo-ui:Action_cliCommand (xsd:string) - CLI command alternative
  * - exo-ui:Action_cliAlternative (xsd:string) - CLI argument syntax
- * - exo-ui:Action_headless (xsd:boolean) - Whether action runs without UI
  *
  * Note: This shape is defined using named blank nodes for compatibility
  * with the basic TurtleParser. Each sh:property is defined as a separate
@@ -56,8 +58,9 @@ _:prop_cliAlternative sh:message "Action cliAlternative must be a string" .
 exo-ui:ActionShape sh:property _:prop_headless .
 _:prop_headless sh:path exo-ui:Action_headless .
 _:prop_headless sh:datatype xsd:boolean .
+_:prop_headless sh:minCount "1" .
 _:prop_headless sh:maxCount "1" .
-_:prop_headless sh:message "Action headless must be a boolean" .
+_:prop_headless sh:message "Action must declare headless capability" .
 `;
 
 /**
@@ -222,8 +225,9 @@ export const ACTION_SHAPE_DEFINITION = {
     headless: {
       path: "https://exocortex.my/ontology/exo-ui#Action_headless",
       datatype: "http://www.w3.org/2001/XMLSchema#boolean",
+      minCount: 1,
       maxCount: 1,
-      required: false,
+      required: true,
     },
   },
 };

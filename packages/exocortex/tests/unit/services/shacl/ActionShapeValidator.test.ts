@@ -20,7 +20,7 @@ describe("ActionShape SHACL Validation (Issue #1445)", () => {
   });
 
   describe("Base Action Shape Validation", () => {
-    it("should pass for valid base Action with required properties", async () => {
+    it("should pass for valid base Action with required properties (including headless)", async () => {
       const validActionRdf = `
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
@@ -28,16 +28,17 @@ describe("ActionShape SHACL Validation (Issue #1445)", () => {
 @prefix ex: <https://example.org/> .
 
 ex:MyAction rdf:type exo-ui:Action .
+ex:MyAction exo-ui:Action_headless "true"^^xsd:boolean .
       `;
 
       const result = await validator.validate(validActionRdf, ACTION_SHAPE_TURTLE);
 
-      // Base Action has no required properties - should pass
+      // Base Action requires Action_headless (Issue #1446)
       expect(result.conforms).toBe(true);
       expect(result.violations).toHaveLength(0);
     });
 
-    it("should pass for Action with optional cliCommand property", async () => {
+    it("should pass for Action with optional cliCommand property and required headless", async () => {
       const actionWithCliRdf = `
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
@@ -46,6 +47,7 @@ ex:MyAction rdf:type exo-ui:Action .
 
 ex:MyAction rdf:type exo-ui:Action .
 ex:MyAction exo-ui:Action_cliCommand "exocortex-cli task start"^^xsd:string .
+ex:MyAction exo-ui:Action_headless "true"^^xsd:boolean .
       `;
 
       const result = await validator.validate(actionWithCliRdf, ACTION_SHAPE_TURTLE);
@@ -101,6 +103,24 @@ ex:MyAction exo-ui:Action_headless "not-a-bool"^^xsd:string .
 
       expect(result.conforms).toBe(false);
       expect(result.violations.some(v => v.path?.includes("Action_headless"))).toBe(true);
+    });
+
+    it("should fail for Action without Action_headless (required property) - Issue #1446", async () => {
+      const actionWithoutHeadlessRdf = `
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix exo-ui: <https://exocortex.my/ontology/exo-ui#> .
+@prefix ex: <https://example.org/> .
+
+ex:MyAction rdf:type exo-ui:Action .
+ex:MyAction exo-ui:Action_cliCommand "exocortex-cli do-something"^^xsd:string .
+      `;
+
+      const result = await validator.validate(actionWithoutHeadlessRdf, ACTION_SHAPE_TURTLE);
+
+      expect(result.conforms).toBe(false);
+      expect(result.violations.some(v => v.path?.includes("Action_headless"))).toBe(true);
+      expect(result.violations.some(v => v.message?.includes("must declare headless"))).toBe(true);
     });
   });
 
@@ -408,6 +428,7 @@ ex:SomeOtherThing ex:someProperty "value" .
 @prefix ex: <https://example.org/> .
 
 ex:ValidAction rdf:type exo-ui:Action .
+ex:ValidAction exo-ui:Action_headless "false"^^xsd:boolean .
 
 ex:SomeOtherThing rdf:type ex:NotAnAction .
 ex:SomeOtherThing ex:randomProperty "value" .
