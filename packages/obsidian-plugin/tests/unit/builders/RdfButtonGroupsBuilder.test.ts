@@ -1867,4 +1867,356 @@ describe("RdfButtonGroupsBuilder", () => {
       expect(groups[0].buttons[0].label).toBe("Schedule");
     });
   });
+
+  /**
+   * CreateTaskButton with CreateAssetAction Tests (Issue #1423)
+   *
+   * Tests for CreateTaskButton which uses CreateAssetAction to create a new Task.
+   * This is a Creation Button (not Status Button) - always visible and uses UI modal.
+   *
+   * RDF Definition:
+   * ```turtle
+   * ems-ui:CreateTaskButton a exo-ui:Button ;
+   *     rdfs:label "Create Task" ;
+   *     exo-ui:Button_icon "plus-circle" ;
+   *     exo-ui:Button_variant "primary" ;
+   *     exo-ui:Button_group exo-ui:CreationButtonGroup ;
+   *     exo-ui:Button_order 10 ;
+   *     exo-ui:Button_tooltip "Create a new task" ;
+   *     exo-ui:Button_action ems-ui:CreateTaskAction ;
+   *     exo-ui:Button_condition exo-ui:AlwaysVisible .
+   *
+   * ems-ui:CreateTaskAction a exo-ui:CreateAssetAction ;
+   *     exo-ui:Action_targetClass ems:Task ;
+   *     exo-ui:Action_template ems:DefaultTaskTemplate ;
+   *     exo-ui:Action_location "01 Inbox/" ;
+   *     exo-ui:Action_headless false .
+   * ```
+   *
+   * @see https://github.com/kitelev/exocortex/issues/1423
+   */
+  describe("CreateTaskButton with CreateAssetAction (Issue #1423)", () => {
+    it("should load CreateTaskButton with primary variant and plus-circle icon from RDF", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#CreationButtonGroup",
+            label: "Creation",
+            order: "2",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#CreateTaskButton",
+            label: "Create Task",
+            icon: "plus-circle",
+            variant: "primary",
+            order: "10",
+            action: "https://exocortex.my/ontology/ems-ui#CreateTaskAction",
+            condition: "https://exocortex.my/ontology/exo-ui#AlwaysVisible",
+            tooltip: "Create a new task",
+          }),
+        ]);
+
+      // AlwaysVisible condition always passes
+      mockConditionEvaluator.evaluate.mockResolvedValue(true);
+
+      const groups = await builder.buildButtonGroups("test:some-asset");
+
+      expect(groups).toHaveLength(1);
+      expect(groups[0].id).toBe("https://exocortex.my/ontology/exo-ui#CreationButtonGroup");
+      expect(groups[0].title).toBe("Creation");
+      expect(groups[0].buttons).toHaveLength(1);
+
+      const createTaskButton = groups[0].buttons[0];
+      expect(createTaskButton.label).toBe("Create Task");
+      expect(createTaskButton.icon).toBe("plus-circle");
+      expect(createTaskButton.variant).toBe("primary");
+      expect(createTaskButton.tooltip).toBe("Create a new task");
+    });
+
+    it("should show CreateTaskButton for any asset type (AlwaysVisible condition)", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#CreationButtonGroup",
+            label: "Creation",
+            order: "2",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#CreateTaskButton",
+            label: "Create Task",
+            icon: "plus-circle",
+            variant: "primary",
+            action: "https://exocortex.my/ontology/ems-ui#CreateTaskAction",
+            condition: "https://exocortex.my/ontology/exo-ui#AlwaysVisible",
+          }),
+        ]);
+
+      // AlwaysVisible always evaluates to true
+      mockConditionEvaluator.evaluate.mockResolvedValue(true);
+
+      // Test with different asset types - should always show
+      const groups1 = await builder.buildButtonGroups("test:project-asset");
+      expect(groups1).toHaveLength(1);
+      expect(groups1[0].buttons[0].label).toBe("Create Task");
+
+      // Reset mocks for next test
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#CreationButtonGroup",
+            label: "Creation",
+            order: "2",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#CreateTaskButton",
+            label: "Create Task",
+            icon: "plus-circle",
+            variant: "primary",
+            action: "https://exocortex.my/ontology/ems-ui#CreateTaskAction",
+            condition: "https://exocortex.my/ontology/exo-ui#AlwaysVisible",
+          }),
+        ]);
+
+      const groups2 = await builder.buildButtonGroups("test:area-asset");
+      expect(groups2).toHaveLength(1);
+      expect(groups2[0].buttons[0].label).toBe("Create Task");
+    });
+
+    it("should execute CreateTaskAction through ActionInterpreter when clicked", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#CreationButtonGroup",
+            label: "Creation",
+            order: "2",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#CreateTaskButton",
+            label: "Create Task",
+            action: "https://exocortex.my/ontology/ems-ui#CreateTaskAction",
+            condition: "https://exocortex.my/ontology/exo-ui#AlwaysVisible",
+          }),
+        ]);
+
+      mockConditionEvaluator.evaluate.mockResolvedValue(true);
+      mockActionInterpreter.execute.mockResolvedValue({
+        success: true,
+        refresh: true,
+        navigateTo: { path: "01 Inbox/New Task.md" } as any,
+      });
+
+      const assetUri = "https://exocortex.my/vault/current-project.md";
+      const groups = await builder.buildButtonGroups(assetUri);
+      const createTaskButton = groups[0].buttons[0];
+
+      // Click the CreateTaskButton
+      await createTaskButton.onClick();
+
+      // ActionInterpreter should be called with CreateTaskAction URI
+      expect(mockActionInterpreter.execute).toHaveBeenCalledWith(
+        "https://exocortex.my/ontology/ems-ui#CreateTaskAction",
+        { currentAsset: assetUri },
+      );
+    });
+
+    it("should evaluate AlwaysVisible condition with correct asset URI", async () => {
+      const assetUri = "https://exocortex.my/vault/my-project.md";
+
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#CreationButtonGroup",
+            label: "Creation",
+            order: "2",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#CreateTaskButton",
+            label: "Create Task",
+            action: "https://exocortex.my/ontology/ems-ui#CreateTaskAction",
+            condition: "https://exocortex.my/ontology/exo-ui#AlwaysVisible",
+          }),
+        ]);
+
+      mockConditionEvaluator.evaluate.mockResolvedValue(true);
+
+      await builder.buildButtonGroups(assetUri);
+
+      // ConditionEvaluator should be called with AlwaysVisible and asset URI
+      expect(mockConditionEvaluator.evaluate).toHaveBeenCalledWith(
+        "https://exocortex.my/ontology/exo-ui#AlwaysVisible",
+        assetUri,
+      );
+    });
+
+    it("should place CreateTaskButton in CreationButtonGroup separate from StatusButtonGroup", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#StatusButtonGroup",
+            label: "Status",
+            order: "1",
+          }),
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#CreationButtonGroup",
+            label: "Creation",
+            order: "2",
+          }),
+        ])
+        // StatusButtonGroup buttons
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#StartButton",
+            label: "Start",
+            icon: "play",
+            variant: "primary",
+            order: "10",
+            action: "https://exocortex.my/ontology/ems-ui#StartAction",
+            condition: "https://exocortex.my/ontology/ems-ui#IsToDoCondition",
+          }),
+        ])
+        // CreationButtonGroup buttons
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#CreateTaskButton",
+            label: "Create Task",
+            icon: "plus-circle",
+            variant: "primary",
+            order: "10",
+            action: "https://exocortex.my/ontology/ems-ui#CreateTaskAction",
+            condition: "https://exocortex.my/ontology/exo-ui#AlwaysVisible",
+          }),
+        ]);
+
+      // All conditions pass
+      mockConditionEvaluator.evaluate.mockResolvedValue(true);
+
+      const groups = await builder.buildButtonGroups("test:todo-task");
+
+      expect(groups).toHaveLength(2);
+      expect(groups[0].title).toBe("Status");
+      expect(groups[0].buttons[0].label).toBe("Start");
+      expect(groups[1].title).toBe("Creation");
+      expect(groups[1].buttons[0].label).toBe("Create Task");
+    });
+
+    it("should show CreateTaskButton alongside status buttons for ToDo task", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#StatusButtonGroup",
+            label: "Status",
+            order: "1",
+          }),
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#CreationButtonGroup",
+            label: "Creation",
+            order: "2",
+          }),
+        ])
+        // StatusButtonGroup: StartButton visible for ToDo
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#StartButton",
+            label: "Start",
+            icon: "play",
+            variant: "primary",
+            order: "10",
+            action: "https://exocortex.my/ontology/ems-ui#StartAction",
+            condition: "https://exocortex.my/ontology/ems-ui#IsToDoCondition",
+          }),
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#DoneButton",
+            label: "Done",
+            icon: "check",
+            variant: "success",
+            order: "20",
+            action: "https://exocortex.my/ontology/ems-ui#DoneAction",
+            condition: "https://exocortex.my/ontology/ems-ui#IsDoingCondition",
+          }),
+        ])
+        // CreationButtonGroup: CreateTaskButton always visible
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#CreateTaskButton",
+            label: "Create Task",
+            icon: "plus-circle",
+            variant: "primary",
+            order: "10",
+            action: "https://exocortex.my/ontology/ems-ui#CreateTaskAction",
+            condition: "https://exocortex.my/ontology/exo-ui#AlwaysVisible",
+          }),
+        ]);
+
+      // For ToDo task: IsToDoCondition = true, IsDoingCondition = false, AlwaysVisible = true
+      mockConditionEvaluator.evaluate
+        .mockResolvedValueOnce(true)   // IsToDoCondition passes (Start visible)
+        .mockResolvedValueOnce(false)  // IsDoingCondition fails (Done hidden)
+        .mockResolvedValueOnce(true);  // AlwaysVisible passes (Create Task visible)
+
+      const groups = await builder.buildButtonGroups("test:todo-task");
+
+      expect(groups).toHaveLength(2);
+      // Status group has only Start button
+      expect(groups[0].title).toBe("Status");
+      expect(groups[0].buttons).toHaveLength(1);
+      expect(groups[0].buttons[0].label).toBe("Start");
+      // Creation group has Create Task button
+      expect(groups[1].title).toBe("Creation");
+      expect(groups[1].buttons).toHaveLength(1);
+      expect(groups[1].buttons[0].label).toBe("Create Task");
+    });
+
+    it("should show multiple creation buttons in CreationButtonGroup", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#CreationButtonGroup",
+            label: "Creation",
+            order: "2",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#CreateTaskButton",
+            label: "Create Task",
+            icon: "plus-circle",
+            variant: "primary",
+            order: "10",
+            action: "https://exocortex.my/ontology/ems-ui#CreateTaskAction",
+            condition: "https://exocortex.my/ontology/exo-ui#AlwaysVisible",
+          }),
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#CreateProjectButton",
+            label: "Create Project",
+            icon: "folder-plus",
+            variant: "primary",
+            order: "20",
+            action: "https://exocortex.my/ontology/ems-ui#CreateProjectAction",
+            condition: "https://exocortex.my/ontology/exo-ui#AlwaysVisible",
+          }),
+        ]);
+
+      // Both conditions pass (AlwaysVisible)
+      mockConditionEvaluator.evaluate.mockResolvedValue(true);
+
+      const groups = await builder.buildButtonGroups("test:project");
+
+      expect(groups).toHaveLength(1);
+      expect(groups[0].title).toBe("Creation");
+      expect(groups[0].buttons).toHaveLength(2);
+      // Buttons should be in order: Create Task (10), Create Project (20)
+      expect(groups[0].buttons[0].label).toBe("Create Task");
+      expect(groups[0].buttons[1].label).toBe("Create Project");
+    });
+  });
 });
