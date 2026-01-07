@@ -9,6 +9,10 @@ export interface ActionButton {
   onClick: () => void | Promise<void>;
   variant?: "primary" | "secondary" | "success" | "warning" | "danger";
   visible?: boolean;
+  /** Lucide icon name (optional) */
+  icon?: string;
+  /** Tooltip text (optional) */
+  tooltip?: string;
 }
 
 /**
