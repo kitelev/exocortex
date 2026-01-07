@@ -391,6 +391,56 @@ See the [RDF-Driven Architecture Plan](./docs/RDF-Driven-Architecture.md) for co
 
 ---
 
+## RDF-Driven Buttons (Milestone v1.2)
+
+**Vision:** All UI buttons are defined declaratively in RDF ontologies — no TypeScript code required to customize workflows.
+
+### Built-in Button Groups
+
+Exocortex ships with 29 buttons organized into 4 groups:
+
+| Group | Buttons | Purpose |
+|-------|---------|---------|
+| **Creation** | Create Task, Create Project, Create Area, Create Instance, Create Related Task, Create Narrower Concept, Create Subclass, Create Task (DailyNote) | Create new assets from context |
+| **Status** | Set Draft, Move to Backlog, Move to Analysis, Move to ToDo, Start Effort, Mark Done, Rollback Status | Transition task lifecycle |
+| **Planning** | Set Active Focus, Plan on Today, Plan for Evening, Shift Day ◀, Shift Day ▶, Vote | Time-based planning |
+| **Maintenance** | Trash, Archive, Clean Properties, Repair Folder, Rename to UID, Copy Label to Aliases, Convert to Project, Convert to Task | Asset maintenance |
+
+### Button Visibility
+
+Buttons automatically show/hide based on context:
+
+```yaml
+# Button shows only when:
+# - Asset is a Task or Project
+# - Status is "Doing"
+# - Not archived
+condition:
+  assetClass: [ems:Task, ems:Project]
+  propertyValue:
+    property: ems:Effort_status
+    value: "[[emsstatus__Doing]]"
+  isArchived: false
+```
+
+### Custom Buttons via RDF
+
+Add your own buttons without TypeScript:
+
+```turtle
+my:ReviewButton a exo-ui:Button ;
+    rdfs:label "Request Review" ;
+    exo-ui:Button_icon "eye" ;
+    exo-ui:Button_variant "primary" ;
+    exo-ui:Button_group exo-ui:StatusButtonGroup ;
+    exo-ui:Button_action my:SetReviewStatusAction ;
+    exo-ui:Button_condition my:IsDoingCondition .
+```
+
+See **[Button Reference](./docs/BUTTONS.md)** for complete documentation and **[Custom Buttons Tutorial](./docs/tutorials/CUSTOM-BUTTONS.md)** for step-by-step guide.
+
+---
+
 ## Key Features
 
 ### Semantic Query System (SPARQL)
@@ -509,6 +559,8 @@ See **[SPARQL 1.2 Features](./docs/sparql/SPARQL-1.2-Features.md)** for complete
 
 **Obsidian Plugin:**
 - **[RDF-Driven Commands](./docs/COMMANDS.md)** — All 36 commands, RDF structure, conditions, hotkeys
+- **[RDF-Driven Buttons](./docs/BUTTONS.md)** — All 29 buttons, visibility conditions, customization
+- **[Custom Buttons Tutorial](./docs/tutorials/CUSTOM-BUTTONS.md)** — Step-by-step guide to adding custom buttons
 - **[Command Reference](./docs/Command-Reference.md)** — Legacy command documentation
 
 **CLI:**
