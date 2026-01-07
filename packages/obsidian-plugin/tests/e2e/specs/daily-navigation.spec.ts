@@ -74,7 +74,8 @@ test.describe("Daily Note Navigation", () => {
     await launcher.waitForModalsToClose(10000);
     await window.waitForTimeout(5000);
 
-    await launcher.waitForElement(".exocortex-buttons-section", 60000);
+    // Wait for properties section as layout-ready signal (buttons removed in Issue #1437)
+    await launcher.waitForElement(".exocortex-properties-section", 60000);
 
     const navContainer = window.locator(".exocortex-daily-navigation");
     const isVisible = await navContainer.isVisible().catch(() => false);

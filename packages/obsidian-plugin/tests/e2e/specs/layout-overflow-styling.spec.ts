@@ -32,7 +32,7 @@ test.describe("Layout Overflow and Styling Consistency", () => {
     await launcher.waitForModalsToClose(10000);
 
     // Wait for the layout to render
-    await launcher.waitForElement(".exocortex-buttons-section", 30000);
+    await launcher.waitForElement(".exocortex-properties-section", 30000);
 
     // Check if asset relations section exists
     const relationsSection = window.locator(".exocortex-assets-relations");
@@ -65,7 +65,7 @@ test.describe("Layout Overflow and Styling Consistency", () => {
 
     const window = await launcher.getWindow();
     await launcher.waitForModalsToClose(10000);
-    await launcher.waitForElement(".exocortex-buttons-section", 30000);
+    await launcher.waitForElement(".exocortex-properties-section", 30000);
 
     // Check font sizes in different Exocortex sections
     const sections = [
@@ -105,7 +105,7 @@ test.describe("Layout Overflow and Styling Consistency", () => {
 
     const window = await launcher.getWindow();
     await launcher.waitForModalsToClose(10000);
-    await launcher.waitForElement(".exocortex-buttons-section", 30000);
+    await launcher.waitForElement(".exocortex-properties-section", 30000);
 
     // Additional wait for CSS layout stabilization
     // Tables need time to calculate their final widths after initial render
@@ -160,7 +160,7 @@ test.describe("Layout Overflow and Styling Consistency", () => {
 
     const window = await launcher.getWindow();
     await launcher.waitForModalsToClose(10000);
-    await launcher.waitForElement(".exocortex-buttons-section", 30000);
+    await launcher.waitForElement(".exocortex-properties-section", 30000);
 
     // Check if relations controls exist
     const controls = window.locator(".exocortex-relations-controls");
@@ -188,7 +188,7 @@ test.describe("Layout Overflow and Styling Consistency", () => {
 
     const window = await launcher.getWindow();
     await launcher.waitForModalsToClose(10000);
-    await launcher.waitForElement(".exocortex-buttons-section", 30000);
+    await launcher.waitForElement(".exocortex-properties-section", 30000);
 
     // Check table cells for overflow handling
     const cells = window.locator(".exocortex-relations-table td");
@@ -218,7 +218,7 @@ test.describe("Layout Overflow and Styling Consistency", () => {
 
     const window = await launcher.getWindow();
     await launcher.waitForModalsToClose(10000);
-    await launcher.waitForElement(".exocortex-buttons-section", 30000);
+    await launcher.waitForElement(".exocortex-properties-section", 30000);
 
     // Check for virtualized container (appears when >50 items)
     const virtualContainer = window.locator(".exocortex-virtual-scroll-container");
@@ -245,7 +245,7 @@ test.describe("Layout Overflow and Styling Consistency", () => {
 
     const window = await launcher.getWindow();
     await launcher.waitForModalsToClose(10000);
-    await launcher.waitForElement(".exocortex-buttons-section", 30000);
+    await launcher.waitForElement(".exocortex-properties-section", 30000);
 
     // Get viewport width
     const viewportWidth = await window.evaluate(() => window.innerWidth);
