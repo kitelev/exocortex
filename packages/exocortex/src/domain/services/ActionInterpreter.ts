@@ -467,13 +467,88 @@ export class ActionInterpreter {
 
   /**
    * Show modal dialog
+   *
+   * Parameters:
+   * - modalType: Type of modal to show ('input', 'select', 'confirm')
+   * - modalParams: JSON string with modal configuration
+   * - Action_cliAlternative: Optional CLI alternative for headless mode
+   *
+   * Modal types and their params:
+   * - input: { title, placeholder?, defaultValue?, submitLabel? }
+   * - select: { title, items, getLabel?, placeholder? }
+   * - confirm: { message }
+   *
    * @see Issue #1409
+   * @see /Users/kitelev/vault-2025/03 Knowledge/concepts/RDF-Driven Architecture Implementation Plan (Note).md
+   * Phase 3: ActionInterpreter Runtime (lines 1598-1605)
    */
-  private showModalHandler: ActionHandler = async (def, _ctx) => {
-    return {
-      success: false,
-      message: `Not implemented: ShowModalAction (modalType: ${String(def.params.modalType)})`,
-    };
+  private showModalHandler: ActionHandler = async (def, ctx) => {
+    const modalType = def.params.modalType as string;
+    const modalParamsStr = def.params.modalParams as string | undefined;
+    const cliAlternative = def.params.Action_cliAlternative as string | undefined;
+
+    // Headless check - modal requires UI
+    if (ctx.uiProvider.isHeadless) {
+      const error = new HeadlessError(
+        "ShowModalAction",
+        cliAlternative || "Use appropriate CLI arguments"
+      );
+      return {
+        success: false,
+        message: error.message,
+      };
+    }
+
+    // Parse modalParams JSON
+    let modalParams: Record<string, unknown>;
+    try {
+      modalParams = modalParamsStr ? JSON.parse(modalParamsStr) : {};
+    } catch (error) {
+      return {
+        success: false,
+        message: `Invalid modalParams JSON: ${error instanceof Error ? error.message : String(error)}`,
+      };
+    }
+
+    // Delegate to uiProvider based on modal type
+    try {
+      let result: unknown;
+
+      if (modalType === "input") {
+        result = await ctx.uiProvider.showInputModal(modalParams as {
+          title: string;
+          placeholder?: string;
+          defaultValue?: string;
+          submitLabel?: string;
+        });
+      } else if (modalType === "select") {
+        result = await ctx.uiProvider.showSelectModal(modalParams as {
+          title: string;
+          items: unknown[];
+          getLabel: (item: unknown) => string;
+          placeholder?: string;
+        });
+      } else if (modalType === "confirm") {
+        result = await ctx.uiProvider.showConfirm(
+          (modalParams.message as string) || ""
+        );
+      } else {
+        return {
+          success: false,
+          message: `Unknown modal type: ${modalType}`,
+        };
+      }
+
+      return {
+        success: true,
+        data: result,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: `Modal failed: ${error instanceof Error ? error.message : String(error)}`,
+      };
+    }
   };
 
   /**

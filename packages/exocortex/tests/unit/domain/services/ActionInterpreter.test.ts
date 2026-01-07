@@ -1093,4 +1093,252 @@ describe("ActionInterpreter", () => {
       expect(updatedFrontmatter["other"]).toBe("value");
     });
   });
+
+  describe("ShowModalAction handler (Issue #1409)", () => {
+    it("should show input modal and return user input", async () => {
+      const interpreter = new ActionInterpreter(mockTripleStore);
+
+      const uiProvider = createMockUIProvider(false);
+      (uiProvider.showInputModal as jest.Mock).mockResolvedValue("user input value");
+
+      jest.spyOn(interpreter as any, "loadActionDefinition").mockResolvedValue({
+        type: "exo-ui:ShowModalAction",
+        params: {
+          modalType: "input",
+          modalParams: JSON.stringify({
+            title: "Enter task name",
+            placeholder: "Task name...",
+            defaultValue: "Default",
+          }),
+        },
+      });
+
+      const context: ActionContext = {
+        tripleStore: mockTripleStore,
+        uiProvider,
+      };
+
+      const result = await interpreter.execute("test:action", context);
+
+      expect(result.success).toBe(true);
+      expect(result.data).toBe("user input value");
+      expect(uiProvider.showInputModal).toHaveBeenCalledWith({
+        title: "Enter task name",
+        placeholder: "Task name...",
+        defaultValue: "Default",
+      });
+    });
+
+    it("should show select modal and return selected item", async () => {
+      const interpreter = new ActionInterpreter(mockTripleStore);
+
+      const selectedItem = { id: "project-1", name: "Project Alpha" };
+      const uiProvider = createMockUIProvider(false);
+      (uiProvider.showSelectModal as jest.Mock).mockResolvedValue(selectedItem);
+
+      jest.spyOn(interpreter as any, "loadActionDefinition").mockResolvedValue({
+        type: "exo-ui:ShowModalAction",
+        params: {
+          modalType: "select",
+          modalParams: JSON.stringify({
+            title: "Select project",
+            items: [
+              { id: "project-1", name: "Project Alpha" },
+              { id: "project-2", name: "Project Beta" },
+            ],
+            placeholder: "Search projects...",
+          }),
+        },
+      });
+
+      const context: ActionContext = {
+        tripleStore: mockTripleStore,
+        uiProvider,
+      };
+
+      const result = await interpreter.execute("test:action", context);
+
+      expect(result.success).toBe(true);
+      expect(result.data).toEqual(selectedItem);
+      expect(uiProvider.showSelectModal).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Select project",
+          placeholder: "Search projects...",
+        })
+      );
+    });
+
+    it("should show confirm modal and return boolean result", async () => {
+      const interpreter = new ActionInterpreter(mockTripleStore);
+
+      const uiProvider = createMockUIProvider(false);
+      (uiProvider.showConfirm as jest.Mock).mockResolvedValue(true);
+
+      jest.spyOn(interpreter as any, "loadActionDefinition").mockResolvedValue({
+        type: "exo-ui:ShowModalAction",
+        params: {
+          modalType: "confirm",
+          modalParams: JSON.stringify({
+            message: "Are you sure you want to delete this task?",
+          }),
+        },
+      });
+
+      const context: ActionContext = {
+        tripleStore: mockTripleStore,
+        uiProvider,
+      };
+
+      const result = await interpreter.execute("test:action", context);
+
+      expect(result.success).toBe(true);
+      expect(result.data).toBe(true);
+      expect(uiProvider.showConfirm).toHaveBeenCalledWith(
+        "Are you sure you want to delete this task?"
+      );
+    });
+
+    it("should throw HeadlessError in CLI mode", async () => {
+      const interpreter = new ActionInterpreter(mockTripleStore);
+
+      jest.spyOn(interpreter as any, "loadActionDefinition").mockResolvedValue({
+        type: "exo-ui:ShowModalAction",
+        params: {
+          modalType: "input",
+          modalParams: JSON.stringify({ title: "Enter value" }),
+        },
+      });
+
+      // Headless mode: isHeadless = true
+      const cliContext: ActionContext = {
+        tripleStore: mockTripleStore,
+        uiProvider: createMockUIProvider(true),
+      };
+
+      const result = await interpreter.execute("test:action", cliContext);
+
+      expect(result.success).toBe(false);
+      expect(result.message).toContain("requires UI");
+    });
+
+    it("should use Action_cliAlternative from params in HeadlessError", async () => {
+      const interpreter = new ActionInterpreter(mockTripleStore);
+
+      jest.spyOn(interpreter as any, "loadActionDefinition").mockResolvedValue({
+        type: "exo-ui:ShowModalAction",
+        params: {
+          modalType: "input",
+          modalParams: JSON.stringify({ title: "Enter value" }),
+          Action_cliAlternative: "--value <string>",
+        },
+      });
+
+      // Headless mode: isHeadless = true
+      const cliContext: ActionContext = {
+        tripleStore: mockTripleStore,
+        uiProvider: createMockUIProvider(true),
+      };
+
+      const result = await interpreter.execute("test:action", cliContext);
+
+      expect(result.success).toBe(false);
+      expect(result.message).toContain("--value <string>");
+    });
+
+    it("should return error for unknown modal type", async () => {
+      const interpreter = new ActionInterpreter(mockTripleStore);
+
+      jest.spyOn(interpreter as any, "loadActionDefinition").mockResolvedValue({
+        type: "exo-ui:ShowModalAction",
+        params: {
+          modalType: "unknown",
+          modalParams: "{}",
+        },
+      });
+
+      const uiContext: ActionContext = {
+        tripleStore: mockTripleStore,
+        uiProvider: createMockUIProvider(false),
+      };
+
+      const result = await interpreter.execute("test:action", uiContext);
+
+      expect(result.success).toBe(false);
+      expect(result.message).toContain("Unknown modal type");
+    });
+
+    it("should handle missing modalParams (use empty object)", async () => {
+      const interpreter = new ActionInterpreter(mockTripleStore);
+
+      const uiProvider = createMockUIProvider(false);
+      (uiProvider.showInputModal as jest.Mock).mockResolvedValue("result");
+
+      jest.spyOn(interpreter as any, "loadActionDefinition").mockResolvedValue({
+        type: "exo-ui:ShowModalAction",
+        params: {
+          modalType: "input",
+          // No modalParams - should use empty object
+        },
+      });
+
+      const context: ActionContext = {
+        tripleStore: mockTripleStore,
+        uiProvider,
+      };
+
+      const result = await interpreter.execute("test:action", context);
+
+      expect(result.success).toBe(true);
+      expect(uiProvider.showInputModal).toHaveBeenCalledWith({});
+    });
+
+    it("should handle invalid JSON in modalParams gracefully", async () => {
+      const interpreter = new ActionInterpreter(mockTripleStore);
+
+      jest.spyOn(interpreter as any, "loadActionDefinition").mockResolvedValue({
+        type: "exo-ui:ShowModalAction",
+        params: {
+          modalType: "input",
+          modalParams: "invalid json {{{",
+        },
+      });
+
+      const uiContext: ActionContext = {
+        tripleStore: mockTripleStore,
+        uiProvider: createMockUIProvider(false),
+      };
+
+      const result = await interpreter.execute("test:action", uiContext);
+
+      expect(result.success).toBe(false);
+      expect(result.message).toContain("Invalid modalParams");
+    });
+
+    it("should handle modal rejection gracefully", async () => {
+      const interpreter = new ActionInterpreter(mockTripleStore);
+
+      const uiProvider = createMockUIProvider(false);
+      (uiProvider.showInputModal as jest.Mock).mockRejectedValue(
+        new Error("User cancelled")
+      );
+
+      jest.spyOn(interpreter as any, "loadActionDefinition").mockResolvedValue({
+        type: "exo-ui:ShowModalAction",
+        params: {
+          modalType: "input",
+          modalParams: JSON.stringify({ title: "Enter value" }),
+        },
+      });
+
+      const context: ActionContext = {
+        tripleStore: mockTripleStore,
+        uiProvider,
+      };
+
+      const result = await interpreter.execute("test:action", context);
+
+      expect(result.success).toBe(false);
+      expect(result.message).toContain("User cancelled");
+    });
+  });
 });
