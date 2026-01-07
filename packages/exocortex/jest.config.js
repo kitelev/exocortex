@@ -16,8 +16,10 @@ module.exports = {
       statements: 95,
     },
   },
-  // Handle ES modules from node_modules (uuid v13)
-  transformIgnorePatterns: ['node_modules/(?!(uuid)/)'],
+  // Handle ES modules from node_modules (uuid v13, rdf-validate-shacl and its dependencies)
+  transformIgnorePatterns: [
+    'node_modules/(?!(uuid|rdf-validate-shacl|@rdfjs|@vocabulary|clownface|rdf-dataset-ext|rdf-literal|rdf-validate-datatype|is-dataset-core|debug|n3)/)',
+  ],
   transform: {
     '^.+\\.ts$': 'ts-jest',
     '^.+\\.(js|mjs)$': 'babel-jest',
