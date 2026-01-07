@@ -1,0 +1,552 @@
+/**
+ * RdfButtonGroupsBuilder Unit Tests
+ *
+ * Tests for RDF-driven button groups loading with condition filtering.
+ *
+ * @see https://github.com/kitelev/exocortex/issues/1417
+ */
+
+import "reflect-metadata";
+import {
+  RdfButtonGroupsBuilder,
+  ActionInterpreter,
+  ConditionEvaluator,
+} from "../../../src/presentation/builders/RdfButtonGroupsBuilder";
+import { SPARQLQueryService } from "../../../src/application/services/SPARQLQueryService";
+import { App } from "obsidian";
+
+/**
+ * Helper to create a mock SolutionMapping that behaves like the real class.
+ * The real SolutionMapping uses .get(variableName) to retrieve values.
+ */
+function createMockSolutionMapping(bindings: Record<string, string | undefined>): { get: (key: string) => { value: string } | undefined } {
+  return {
+    get: (key: string) => {
+      const value = bindings[key];
+      if (value === undefined) {
+        return undefined;
+      }
+      return { value };
+    },
+  };
+}
+
+// Mock SPARQLQueryService
+jest.mock("../../../src/application/services/SPARQLQueryService", () => ({
+  SPARQLQueryService: jest.fn().mockImplementation(() => ({
+    initialize: jest.fn().mockResolvedValue(undefined),
+    query: jest.fn().mockResolvedValue([]),
+    refresh: jest.fn().mockResolvedValue(undefined),
+    dispose: jest.fn(),
+    getTripleStore: jest.fn(),
+  })),
+}));
+
+// Mock LoggerFactory - use arrow function without jest.fn() to survive clearAllMocks
+jest.mock("../../../src/adapters/logging/LoggerFactory", () => ({
+  LoggerFactory: {
+    create: () => ({
+      debug: jest.fn(),
+      info: jest.fn(),
+      warn: jest.fn(),
+      error: jest.fn(),
+    }),
+  },
+}));
+
+describe("RdfButtonGroupsBuilder", () => {
+  let mockApp: App;
+  let mockSparqlService: jest.Mocked<SPARQLQueryService>;
+  let mockActionInterpreter: jest.Mocked<ActionInterpreter>;
+  let mockConditionEvaluator: jest.Mocked<ConditionEvaluator>;
+  let builder: RdfButtonGroupsBuilder;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+
+    mockApp = {
+      vault: {
+        getMarkdownFiles: jest.fn().mockReturnValue([]),
+        getName: jest.fn().mockReturnValue("Test Vault"),
+      },
+      metadataCache: {
+        getFileCache: jest.fn(),
+      },
+      workspace: {
+        getActiveFile: jest.fn(),
+      },
+    } as unknown as App;
+
+    mockSparqlService = new SPARQLQueryService(
+      mockApp,
+    ) as jest.Mocked<SPARQLQueryService>;
+    mockSparqlService.query = jest.fn().mockResolvedValue([]);
+    mockSparqlService.initialize = jest.fn().mockResolvedValue(undefined);
+
+    mockActionInterpreter = {
+      execute: jest.fn().mockResolvedValue({ success: true }),
+    } as unknown as jest.Mocked<ActionInterpreter>;
+
+    mockConditionEvaluator = {
+      evaluate: jest.fn().mockResolvedValue(true),
+    } as unknown as jest.Mocked<ConditionEvaluator>;
+
+    builder = new RdfButtonGroupsBuilder(
+      mockSparqlService,
+      mockActionInterpreter,
+      mockConditionEvaluator,
+    );
+  });
+
+  describe("constructor", () => {
+    it("should create instance with sparql service, action interpreter, and condition evaluator", () => {
+      expect(builder).toBeInstanceOf(RdfButtonGroupsBuilder);
+    });
+  });
+
+  describe("buildButtonGroups", () => {
+    it("should return empty array when no button groups in RDF", async () => {
+      mockSparqlService.query.mockResolvedValue([]);
+
+      const groups = await builder.buildButtonGroups("test:asset1");
+
+      expect(groups).toEqual([]);
+    });
+
+    it("should load button groups from RDF", async () => {
+      // First query: button groups
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "test:StatusGroup",
+            label: "Status",
+            order: "1",
+          }),
+        ])
+        // Second query: buttons for StatusGroup
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "test:StartButton",
+            label: "Start",
+            icon: "play",
+            variant: "primary",
+            order: "1",
+            action: "test:StartAction",
+          }),
+        ]);
+
+      const groups = await builder.buildButtonGroups("test:asset1");
+
+      expect(groups).toHaveLength(1);
+      expect(groups[0].id).toBe("test:StatusGroup");
+      expect(groups[0].title).toBe("Status");
+    });
+
+    it("should filter buttons by condition", async () => {
+      // First query: button groups
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "test:StatusGroup",
+            label: "Status",
+            order: "1",
+          }),
+        ])
+        // Second query: buttons with conditions
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "test:StartButton",
+            label: "Start",
+            action: "test:StartAction",
+            condition: "test:IsToDoCondition",
+          }),
+          createMockSolutionMapping({
+            button: "test:DoneButton",
+            label: "Done",
+            action: "test:DoneAction",
+            condition: "test:IsDoingCondition",
+          }),
+        ]);
+
+      // First button condition: true, second: false
+      mockConditionEvaluator.evaluate
+        .mockResolvedValueOnce(true)
+        .mockResolvedValueOnce(false);
+
+      const groups = await builder.buildButtonGroups("test:asset1");
+
+      expect(groups).toHaveLength(1);
+      expect(groups[0].buttons).toHaveLength(1);
+      expect(groups[0].buttons[0].label).toBe("Start");
+    });
+
+    it("should include buttons without condition (always visible)", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "test:MaintenanceGroup",
+            label: "Maintenance",
+            order: "1",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "test:CleanupButton",
+            label: "Cleanup",
+            action: "test:CleanupAction",
+            // No condition - always visible
+          }),
+        ]);
+
+      const groups = await builder.buildButtonGroups("test:asset1");
+
+      expect(groups).toHaveLength(1);
+      expect(groups[0].buttons).toHaveLength(1);
+      expect(groups[0].buttons[0].label).toBe("Cleanup");
+    });
+
+    it("should exclude empty groups (all buttons filtered)", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "test:StatusGroup",
+            label: "Status",
+            order: "1",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "test:StartButton",
+            label: "Start",
+            action: "test:StartAction",
+            condition: "test:NeverTrueCondition",
+          }),
+        ]);
+
+      // All conditions false
+      mockConditionEvaluator.evaluate.mockResolvedValue(false);
+
+      const groups = await builder.buildButtonGroups("test:asset1");
+
+      expect(groups).toHaveLength(0);
+    });
+
+    it("should preserve button order from RDF", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "test:StatusGroup",
+            label: "Status",
+            order: "1",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "test:Button3",
+            label: "Third",
+            action: "test:Action3",
+            order: "3",
+          }),
+          createMockSolutionMapping({
+            button: "test:Button1",
+            label: "First",
+            action: "test:Action1",
+            order: "1",
+          }),
+          createMockSolutionMapping({
+            button: "test:Button2",
+            label: "Second",
+            action: "test:Action2",
+            order: "2",
+          }),
+        ]);
+
+      const groups = await builder.buildButtonGroups("test:asset1");
+
+      // Buttons should be sorted by order from SPARQL ORDER BY
+      expect(groups[0].buttons[0].label).toBe("Third");
+      expect(groups[0].buttons[1].label).toBe("First");
+      expect(groups[0].buttons[2].label).toBe("Second");
+    });
+  });
+
+  describe("onClick executes ActionInterpreter", () => {
+    it("should execute action through ActionInterpreter when button clicked", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "test:StatusGroup",
+            label: "Status",
+            order: "1",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "test:StartButton",
+            label: "Start",
+            action: "test:StartAction",
+          }),
+        ]);
+
+      const groups = await builder.buildButtonGroups("test:asset1");
+      const startButton = groups[0].buttons[0];
+
+      // Click the button
+      await startButton.onClick();
+
+      expect(mockActionInterpreter.execute).toHaveBeenCalledWith(
+        "test:StartAction",
+        { currentAsset: "test:asset1" },
+      );
+    });
+
+    it("should pass currentAsset context to ActionInterpreter", async () => {
+      const assetUri = "https://exocortex.my/vault/my-task.md";
+
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "test:StatusGroup",
+            label: "Status",
+            order: "1",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "test:DoneButton",
+            label: "Done",
+            action: "test:MarkDoneAction",
+          }),
+        ]);
+
+      const groups = await builder.buildButtonGroups(assetUri);
+      await groups[0].buttons[0].onClick();
+
+      expect(mockActionInterpreter.execute).toHaveBeenCalledWith(
+        "test:MarkDoneAction",
+        { currentAsset: assetUri },
+      );
+    });
+  });
+
+  describe("button properties", () => {
+    it("should parse button variant from RDF", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "test:StatusGroup",
+            label: "Status",
+            order: "1",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "test:DangerButton",
+            label: "Delete",
+            action: "test:DeleteAction",
+            variant: "danger",
+          }),
+        ]);
+
+      const groups = await builder.buildButtonGroups("test:asset1");
+
+      expect(groups[0].buttons[0].variant).toBe("danger");
+    });
+
+    it("should default variant to secondary when not specified", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "test:StatusGroup",
+            label: "Status",
+            order: "1",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "test:Button",
+            label: "Action",
+            action: "test:Action",
+            // No variant
+          }),
+        ]);
+
+      const groups = await builder.buildButtonGroups("test:asset1");
+
+      expect(groups[0].buttons[0].variant).toBe("secondary");
+    });
+
+    it("should parse icon from RDF", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "test:StatusGroup",
+            label: "Status",
+            order: "1",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "test:PlayButton",
+            label: "Play",
+            action: "test:PlayAction",
+            icon: "play-circle",
+          }),
+        ]);
+
+      const groups = await builder.buildButtonGroups("test:asset1");
+
+      expect(groups[0].buttons[0].icon).toBe("play-circle");
+    });
+
+    it("should parse tooltip from RDF", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "test:StatusGroup",
+            label: "Status",
+            order: "1",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "test:HelpButton",
+            label: "Help",
+            action: "test:HelpAction",
+            tooltip: "Click for help",
+          }),
+        ]);
+
+      const groups = await builder.buildButtonGroups("test:asset1");
+
+      expect(groups[0].buttons[0].tooltip).toBe("Click for help");
+    });
+  });
+
+  describe("multiple button groups", () => {
+    it("should load multiple button groups", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "test:StatusGroup",
+            label: "Status",
+            order: "1",
+          }),
+          createMockSolutionMapping({
+            group: "test:PlanningGroup",
+            label: "Planning",
+            order: "2",
+          }),
+        ])
+        // Buttons for StatusGroup
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "test:StartButton",
+            label: "Start",
+            action: "test:StartAction",
+          }),
+        ])
+        // Buttons for PlanningGroup
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "test:PlanButton",
+            label: "Plan Today",
+            action: "test:PlanAction",
+          }),
+        ]);
+
+      const groups = await builder.buildButtonGroups("test:asset1");
+
+      expect(groups).toHaveLength(2);
+      expect(groups[0].title).toBe("Status");
+      expect(groups[1].title).toBe("Planning");
+    });
+
+    it("should preserve group order from RDF", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "test:ThirdGroup",
+            label: "Third",
+            order: "3",
+          }),
+          createMockSolutionMapping({
+            group: "test:FirstGroup",
+            label: "First",
+            order: "1",
+          }),
+          createMockSolutionMapping({
+            group: "test:SecondGroup",
+            label: "Second",
+            order: "2",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "test:B1",
+            label: "B1",
+            action: "test:A1",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "test:B2",
+            label: "B2",
+            action: "test:A2",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "test:B3",
+            label: "B3",
+            action: "test:A3",
+          }),
+        ]);
+
+      const groups = await builder.buildButtonGroups("test:asset1");
+
+      // Groups should be in order from SPARQL ORDER BY
+      expect(groups[0].title).toBe("Third");
+      expect(groups[1].title).toBe("First");
+      expect(groups[2].title).toBe("Second");
+    });
+  });
+
+  describe("error handling", () => {
+    it("should handle SPARQL query errors gracefully", async () => {
+      mockSparqlService.query.mockRejectedValue(new Error("SPARQL error"));
+
+      const groups = await builder.buildButtonGroups("test:asset1");
+
+      expect(groups).toEqual([]);
+    });
+
+    it("should handle condition evaluation errors gracefully", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "test:StatusGroup",
+            label: "Status",
+            order: "1",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "test:Button",
+            label: "Action",
+            action: "test:Action",
+            condition: "test:BadCondition",
+          }),
+        ]);
+
+      mockConditionEvaluator.evaluate.mockRejectedValue(
+        new Error("Condition error"),
+      );
+
+      const groups = await builder.buildButtonGroups("test:asset1");
+
+      // Button with failed condition should be excluded
+      expect(groups).toHaveLength(0);
+    });
+  });
+});
