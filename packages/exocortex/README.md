@@ -305,6 +305,155 @@ export interface IFileSystemAdapter {
 
 See `@exocortex/cli` package for Node.js implementation example.
 
+## ActionInterpreter: RDF-Driven Action Execution
+
+The `ActionInterpreter` is the core of the declarative UI system. Actions are defined in RDF using the `exo-ui` ontology, and this interpreter loads and executes them.
+
+### Fixed Verbs (8 Built-in Action Types)
+
+| Action Type | Description |
+|-------------|-------------|
+| `CreateAssetAction` | Create new asset from template |
+| `UpdatePropertyAction` | Update asset property |
+| `NavigateAction` | Navigate to asset or SPARQL query result |
+| `ExecuteSPARQLAction` | Execute SPARQL query |
+| `ShowModalAction` | Show modal dialog (input, select, confirm) |
+| `TriggerHookAction` | Trigger external webhook |
+| `CustomHandlerAction` | Delegate to registered TypeScript handler |
+| `CompositeAction` | Execute multiple actions in sequence |
+
+### Basic Usage
+
+```typescript
+import { ActionInterpreter, ActionContext, ITripleStore, IUIProvider } from 'exocortex';
+
+// Create interpreter with dependencies
+const interpreter = new ActionInterpreter(
+  tripleStore,           // Required: ITripleStore for RDF queries
+  assetCreationService,  // Optional: For CreateAssetAction
+  vaultAdapter,          // Optional: For UpdatePropertyAction
+  fileSystem,            // Optional: For NavigateAction
+  webhookService,        // Optional: For TriggerHookAction
+  uiProvider             // Optional: Default IUIProvider
+);
+
+// Execute action by URI
+const context: ActionContext = {
+  tripleStore: tripleStore,
+  uiProvider: obsidianUIProvider,
+  currentAsset: currentFile,
+  cliArgs: { label: 'My Task' }  // For CLI mode
+};
+
+const result = await interpreter.execute(
+  'https://exocortex.my/actions/create-task-1',
+  context
+);
+
+if (result.success) {
+  console.log('Action completed', result.navigateTo, result.data);
+} else {
+  console.error('Action failed:', result.message);
+}
+```
+
+### Custom Handlers (Escape Hatch)
+
+Register custom TypeScript handlers for specialized logic:
+
+```typescript
+// Register custom handler
+interpreter.registerCustomHandler('custom:SyncToRemote', async (def, ctx) => {
+  const projectId = def.params.projectId as string;
+
+  // Custom sync logic
+  await syncProjectToRemote(projectId);
+
+  return {
+    success: true,
+    message: 'Project synced successfully',
+    data: { projectId, syncedAt: new Date().toISOString() }
+  };
+});
+
+// Check if handler exists
+if (interpreter.hasHandler('custom:SyncToRemote')) {
+  // Handler is registered
+}
+```
+
+### Headless Mode (CLI)
+
+The ActionInterpreter supports both Obsidian (interactive) and CLI (headless) modes:
+
+```typescript
+// In CLI mode, check isHeadless and use cliArgs
+async function handleCreateTask(ctx: ActionContext): Promise<void> {
+  if (ctx.uiProvider.isHeadless) {
+    // CLI mode: use command-line arguments
+    const label = ctx.cliArgs?.label;
+    if (!label) {
+      throw new HeadlessError(
+        'CreateAssetAction without label',
+        'Use --label <name> argument'
+      );
+    }
+    // Create with label from CLI
+  } else {
+    // Obsidian mode: show interactive modal
+    const label = await ctx.uiProvider.showInputModal({
+      title: 'Enter task label',
+      placeholder: 'Task name...'
+    });
+  }
+}
+```
+
+### CompositeAction: Chaining Actions
+
+Execute multiple actions in sequence, passing data between them:
+
+```typescript
+// Define composite action in RDF
+// exo-ui:myComposite a exo-ui:CompositeAction ;
+//   exo-ui:actions '["action:step1", "action:step2", "action:step3"]' .
+
+// Each action's result.data is passed to next via ctx.previousResult
+interpreter.registerCustomHandler('custom:ProcessData', async (def, ctx) => {
+  const previousData = ctx.previousResult as { value: number };
+  const newValue = previousData.value * 2;
+
+  return {
+    success: true,
+    data: { value: newValue }  // Passed to next action
+  };
+});
+```
+
+### ActionResult Interface
+
+```typescript
+interface ActionResult {
+  success: boolean;      // Whether action succeeded
+  message?: string;      // Success/error message
+  navigateTo?: IFile;    // Asset to navigate to after action
+  refresh?: boolean;     // Whether to refresh UI
+  data?: unknown;        // Data returned by action (for composites)
+}
+```
+
+### ActionContext Interface
+
+```typescript
+interface ActionContext {
+  currentAsset?: IFile;              // Current file (if any)
+  tripleStore: ITripleStore;         // For SPARQL queries
+  uiProvider: IUIProvider;           // UI abstraction
+  cliArgs?: Record<string, string>;  // CLI arguments (headless mode)
+  previousResult?: unknown;          // Data from previous action in composite
+}
+```
+
 ## Constants
 
 ### AssetClass
