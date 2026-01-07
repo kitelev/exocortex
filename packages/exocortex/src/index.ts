@@ -384,6 +384,10 @@ export {
   type ValidationViolation,
 } from "./services/shacl/ShaclValidator";
 export {
+  ValidationErrorFormatter,
+  type NoticeConfig,
+} from "./services/shacl/ValidationErrorFormatter";
+export {
   COMMAND_SHAPE_TURTLE,
   COMMAND_SHAPE_DEFINITION,
 } from "./services/shacl/shapes/CommandShape";

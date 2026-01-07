@@ -30,4 +30,7 @@ export enum ExitCodes {
 
   /** Concurrent modification detected (file changed during operation) */
   CONCURRENT_MODIFICATION = 8,
+
+  /** Validation failed (SHACL or other validation errors) */
+  VALIDATION_ERROR = 9,
 }
