@@ -2272,4 +2272,304 @@ describe("ActionInterpreter", () => {
       expect(headlessUIProvider.navigate).toHaveBeenCalledWith("tasks/test.md");
     });
   });
+
+  /**
+   * DoneAction CompositeAction Tests (Issue #1419)
+   *
+   * Tests for DoneAction which is a CompositeAction containing:
+   * - SetStatusDoneAction (UpdatePropertyAction for ems:Effort_status → ems:EffortStatusDone)
+   * - SetEndTimestampAction (UpdatePropertyAction for ems:Effort_endTimestamp → {{now}})
+   *
+   * RDF Definition:
+   * ```turtle
+   * ems-ui:DoneAction a exo-ui:CompositeAction ;
+   *     exo-ui:Action_actions (ems-ui:SetStatusDoneAction ems-ui:SetEndTimestampAction) ;
+   *     exo-ui:Action_headless true .
+   *
+   * ems-ui:SetStatusDoneAction a exo-ui:UpdatePropertyAction ;
+   *     exo-ui:Action_targetProperty ems:Effort_status ;
+   *     exo-ui:Action_targetValue ems:EffortStatusDone .
+   *
+   * ems-ui:SetEndTimestampAction a exo-ui:UpdatePropertyAction ;
+   *     exo-ui:Action_targetProperty ems:Effort_endTimestamp ;
+   *     exo-ui:Action_targetValue "{{now}}" .
+   * ```
+   *
+   * @see https://github.com/kitelev/exocortex/issues/1419
+   */
+  describe("DoneAction CompositeAction (Issue #1419)", () => {
+    let mockVaultAdapter: jest.Mocked<IVaultAdapter>;
+    let mockFile: IFile;
+
+    beforeEach(() => {
+      mockFile = {
+        path: "efforts/doing-task.md",
+        basename: "doing-task",
+        name: "doing-task.md",
+        parent: { path: "efforts", name: "efforts" },
+      };
+
+      mockVaultAdapter = {
+        read: jest.fn(),
+        exists: jest.fn(),
+        getAllFiles: jest.fn(),
+        getAbstractFileByPath: jest.fn(),
+        create: jest.fn(),
+        modify: jest.fn(),
+        delete: jest.fn(),
+        process: jest.fn(),
+        rename: jest.fn(),
+        updateLinks: jest.fn(),
+        createFolder: jest.fn(),
+        getDefaultNewFileParent: jest.fn(),
+        getFrontmatter: jest.fn(),
+        updateFrontmatter: jest.fn().mockResolvedValue(undefined),
+        getFirstLinkpathDest: jest.fn(),
+      } as jest.Mocked<IVaultAdapter>;
+    });
+
+    it("should execute SetStatusDoneAction and SetEndTimestampAction in sequence", async () => {
+      const interpreter = new ActionInterpreter(
+        mockTripleStore,
+        undefined,
+        mockVaultAdapter
+      );
+
+      const executionOrder: string[] = [];
+
+      // Mock loadActionDefinition to return DoneAction and its sub-actions
+      const loadActionSpy = jest.spyOn(interpreter as any, "loadActionDefinition");
+      loadActionSpy.mockImplementation(async (uri) => {
+        if (uri === "ems-ui:DoneAction") {
+          return {
+            type: "exo-ui:CompositeAction",
+            params: {
+              actions: JSON.stringify([
+                "ems-ui:SetStatusDoneAction",
+                "ems-ui:SetEndTimestampAction",
+              ]),
+              Action_headless: true,
+            },
+          };
+        }
+        if (uri === "ems-ui:SetStatusDoneAction") {
+          executionOrder.push("status");
+          return {
+            type: "exo-ui:UpdatePropertyAction",
+            params: {
+              targetProperty: "ems__Effort_status",
+              targetValue: "ems__EffortStatusDone",
+            },
+          };
+        }
+        if (uri === "ems-ui:SetEndTimestampAction") {
+          executionOrder.push("endTimestamp");
+          return {
+            type: "exo-ui:UpdatePropertyAction",
+            params: {
+              targetProperty: "ems__Effort_endTimestamp",
+              targetValue: "{{now}}",
+            },
+          };
+        }
+        throw new Error(`Unknown action: ${uri}`);
+      });
+
+      const contextWithAsset: ActionContext = {
+        tripleStore: mockTripleStore,
+        uiProvider: createMockUIProvider(false),
+        currentAsset: mockFile,
+      };
+
+      const result = await interpreter.execute("ems-ui:DoneAction", contextWithAsset);
+
+      expect(result.success).toBe(true);
+      expect(result.refresh).toBe(true);
+      // Both sub-actions should execute in order
+      expect(executionOrder).toEqual(["status", "endTimestamp"]);
+      // updateFrontmatter should be called twice (once for each UpdatePropertyAction)
+      expect(mockVaultAdapter.updateFrontmatter).toHaveBeenCalledTimes(2);
+    });
+
+    it("should stop DoneAction execution if SetStatusDoneAction fails", async () => {
+      const interpreter = new ActionInterpreter(
+        mockTripleStore,
+        undefined,
+        mockVaultAdapter
+      );
+
+      // Make the first updateFrontmatter call fail
+      mockVaultAdapter.updateFrontmatter.mockRejectedValueOnce(
+        new Error("Status update failed")
+      );
+
+      const executionOrder: string[] = [];
+
+      const loadActionSpy = jest.spyOn(interpreter as any, "loadActionDefinition");
+      loadActionSpy.mockImplementation(async (uri) => {
+        if (uri === "ems-ui:DoneAction") {
+          return {
+            type: "exo-ui:CompositeAction",
+            params: {
+              actions: JSON.stringify([
+                "ems-ui:SetStatusDoneAction",
+                "ems-ui:SetEndTimestampAction",
+              ]),
+            },
+          };
+        }
+        if (uri === "ems-ui:SetStatusDoneAction") {
+          executionOrder.push("status");
+          return {
+            type: "exo-ui:UpdatePropertyAction",
+            params: {
+              targetProperty: "ems__Effort_status",
+              targetValue: "ems__EffortStatusDone",
+            },
+          };
+        }
+        if (uri === "ems-ui:SetEndTimestampAction") {
+          executionOrder.push("endTimestamp");
+          return {
+            type: "exo-ui:UpdatePropertyAction",
+            params: {
+              targetProperty: "ems__Effort_endTimestamp",
+              targetValue: "{{now}}",
+            },
+          };
+        }
+        throw new Error(`Unknown action: ${uri}`);
+      });
+
+      const contextWithAsset: ActionContext = {
+        tripleStore: mockTripleStore,
+        uiProvider: createMockUIProvider(false),
+        currentAsset: mockFile,
+      };
+
+      const result = await interpreter.execute("ems-ui:DoneAction", contextWithAsset);
+
+      expect(result.success).toBe(false);
+      expect(result.message).toContain("Status update failed");
+      // SetEndTimestampAction should NOT be executed after failure
+      expect(executionOrder).toEqual(["status"]);
+      // updateFrontmatter should only be called once (for the failed status action)
+      expect(mockVaultAdapter.updateFrontmatter).toHaveBeenCalledTimes(1);
+    });
+
+    it("should set both ems__Effort_status and ems__Effort_endTimestamp properties", async () => {
+      const interpreter = new ActionInterpreter(
+        mockTripleStore,
+        undefined,
+        mockVaultAdapter
+      );
+
+      const capturedFrontmatterUpdates: Record<string, unknown>[] = [];
+
+      // Capture frontmatter updates
+      mockVaultAdapter.updateFrontmatter.mockImplementation(
+        async (_file, updaterFn) => {
+          const testFrontmatter = {};
+          const updated = updaterFn(testFrontmatter);
+          capturedFrontmatterUpdates.push(updated);
+          return undefined;
+        }
+      );
+
+      const loadActionSpy = jest.spyOn(interpreter as any, "loadActionDefinition");
+      loadActionSpy.mockImplementation(async (uri) => {
+        if (uri === "ems-ui:DoneAction") {
+          return {
+            type: "exo-ui:CompositeAction",
+            params: {
+              actions: JSON.stringify([
+                "ems-ui:SetStatusDoneAction",
+                "ems-ui:SetEndTimestampAction",
+              ]),
+            },
+          };
+        }
+        if (uri === "ems-ui:SetStatusDoneAction") {
+          return {
+            type: "exo-ui:UpdatePropertyAction",
+            params: {
+              targetProperty: "ems__Effort_status",
+              targetValue: "ems__EffortStatusDone",
+            },
+          };
+        }
+        if (uri === "ems-ui:SetEndTimestampAction") {
+          return {
+            type: "exo-ui:UpdatePropertyAction",
+            params: {
+              targetProperty: "ems__Effort_endTimestamp",
+              targetValue: "2025-01-07T12:00:00.000Z",
+            },
+          };
+        }
+        throw new Error(`Unknown action: ${uri}`);
+      });
+
+      const contextWithAsset: ActionContext = {
+        tripleStore: mockTripleStore,
+        uiProvider: createMockUIProvider(false),
+        currentAsset: mockFile,
+      };
+
+      const result = await interpreter.execute("ems-ui:DoneAction", contextWithAsset);
+
+      expect(result.success).toBe(true);
+      expect(capturedFrontmatterUpdates).toHaveLength(2);
+
+      // First update: status
+      expect(capturedFrontmatterUpdates[0]["ems__Effort_status"]).toBe("ems__EffortStatusDone");
+
+      // Second update: endTimestamp
+      expect(capturedFrontmatterUpdates[1]["ems__Effort_endTimestamp"]).toBe("2025-01-07T12:00:00.000Z");
+    });
+
+    it("should work in headless (CLI) mode with Action_headless true", async () => {
+      const interpreter = new ActionInterpreter(
+        mockTripleStore,
+        undefined,
+        mockVaultAdapter
+      );
+
+      const loadActionSpy = jest.spyOn(interpreter as any, "loadActionDefinition");
+      loadActionSpy.mockImplementation(async (uri) => {
+        if (uri === "ems-ui:DoneAction") {
+          return {
+            type: "exo-ui:CompositeAction",
+            params: {
+              actions: JSON.stringify([
+                "ems-ui:SetStatusDoneAction",
+              ]),
+              Action_headless: true, // Marked as headless-compatible
+            },
+          };
+        }
+        if (uri === "ems-ui:SetStatusDoneAction") {
+          return {
+            type: "exo-ui:UpdatePropertyAction",
+            params: {
+              targetProperty: "ems__Effort_status",
+              targetValue: "ems__EffortStatusDone",
+            },
+          };
+        }
+        throw new Error(`Unknown action: ${uri}`);
+      });
+
+      const headlessContext: ActionContext = {
+        tripleStore: mockTripleStore,
+        uiProvider: createMockUIProvider(true), // Headless mode
+        currentAsset: mockFile,
+      };
+
+      const result = await interpreter.execute("ems-ui:DoneAction", headlessContext);
+
+      expect(result.success).toBe(true);
+      expect(mockVaultAdapter.updateFrontmatter).toHaveBeenCalled();
+    });
+  });
 });
