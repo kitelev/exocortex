@@ -1307,4 +1307,564 @@ describe("RdfButtonGroupsBuilder", () => {
       expect(groups[0].buttons[0].label).toBe("Trash");
     });
   });
+
+  /**
+   * ToBacklogButton with UpdatePropertyAction Tests (Issue #1422)
+   *
+   * Tests for ToBacklogButton which transitions an effort from Draft/ToDo → Backlog.
+   * Uses UpdatePropertyAction to set ems:Effort_status to ems:EffortStatusBacklog.
+   *
+   * RDF Definition:
+   * ```turtle
+   * ems-ui:ToBacklogButton a exo-ui:Button ;
+   *     rdfs:label "To Backlog" ;
+   *     exo-ui:Button_icon "archive" ;
+   *     exo-ui:Button_variant "secondary" ;
+   *     exo-ui:Button_group exo-ui:StatusButtonGroup ;
+   *     exo-ui:Button_order 5 ;
+   *     exo-ui:Button_action ems-ui:ToBacklogAction ;
+   *     exo-ui:Button_condition ems-ui:CanMoveToBacklogCondition .
+   *
+   * ems-ui:ToBacklogAction a exo-ui:UpdatePropertyAction ;
+   *     exo-ui:Action_targetProperty ems:Effort_status ;
+   *     exo-ui:Action_targetValue ems:EffortStatusBacklog ;
+   *     exo-ui:Action_headless true .
+   *
+   * ems-ui:CanMoveToBacklogCondition a exo-ui:Condition ;
+   *     exo-ui:Condition_sparql """
+   *         ASK {
+   *             ?asset a ems:Effort .
+   *             ?asset ems:Effort_status ?status .
+   *             FILTER(?status IN (ems:EffortStatusDraft, ems:EffortStatusToDo))
+   *         }
+   *     """ .
+   * ```
+   *
+   * @see https://github.com/kitelev/exocortex/issues/1422
+   */
+  describe("ToBacklogButton with UpdatePropertyAction (Issue #1422)", () => {
+    it("should load ToBacklogButton with secondary variant and archive icon from RDF", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#StatusButtonGroup",
+            label: "Status",
+            order: "1",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#ToBacklogButton",
+            label: "To Backlog",
+            icon: "archive",
+            variant: "secondary",
+            order: "5",
+            action: "https://exocortex.my/ontology/ems-ui#ToBacklogAction",
+            condition: "https://exocortex.my/ontology/ems-ui#CanMoveToBacklogCondition",
+          }),
+        ]);
+
+      // Condition passes (asset is in Draft or ToDo status)
+      mockConditionEvaluator.evaluate.mockResolvedValue(true);
+
+      const groups = await builder.buildButtonGroups("test:draft-task");
+
+      expect(groups).toHaveLength(1);
+      expect(groups[0].buttons).toHaveLength(1);
+
+      const toBacklogButton = groups[0].buttons[0];
+      expect(toBacklogButton.label).toBe("To Backlog");
+      expect(toBacklogButton.icon).toBe("archive");
+      expect(toBacklogButton.variant).toBe("secondary");
+    });
+
+    it("should hide ToBacklogButton when CanMoveToBacklogCondition is false (asset in Doing)", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#StatusButtonGroup",
+            label: "Status",
+            order: "1",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#ToBacklogButton",
+            label: "To Backlog",
+            icon: "archive",
+            variant: "secondary",
+            action: "https://exocortex.my/ontology/ems-ui#ToBacklogAction",
+            condition: "https://exocortex.my/ontology/ems-ui#CanMoveToBacklogCondition",
+          }),
+        ]);
+
+      // Condition fails (asset is NOT in Draft/ToDo status - it's in Doing)
+      mockConditionEvaluator.evaluate.mockResolvedValue(false);
+
+      const groups = await builder.buildButtonGroups("test:doing-task");
+
+      // Group should be empty because ToBacklogButton is filtered out
+      expect(groups).toHaveLength(0);
+    });
+
+    it("should execute ToBacklogAction through ActionInterpreter when clicked", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#StatusButtonGroup",
+            label: "Status",
+            order: "1",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#ToBacklogButton",
+            label: "To Backlog",
+            action: "https://exocortex.my/ontology/ems-ui#ToBacklogAction",
+            condition: "https://exocortex.my/ontology/ems-ui#CanMoveToBacklogCondition",
+          }),
+        ]);
+
+      mockConditionEvaluator.evaluate.mockResolvedValue(true);
+      mockActionInterpreter.execute.mockResolvedValue({
+        success: true,
+        refresh: true,
+      });
+
+      const assetUri = "https://exocortex.my/vault/draft-task.md";
+      const groups = await builder.buildButtonGroups(assetUri);
+      const toBacklogButton = groups[0].buttons[0];
+
+      // Click the ToBacklogButton
+      await toBacklogButton.onClick();
+
+      // ActionInterpreter should be called with ToBacklogAction URI
+      expect(mockActionInterpreter.execute).toHaveBeenCalledWith(
+        "https://exocortex.my/ontology/ems-ui#ToBacklogAction",
+        { currentAsset: assetUri },
+      );
+    });
+
+    it("should evaluate CanMoveToBacklogCondition with correct asset URI", async () => {
+      const assetUri = "https://exocortex.my/vault/my-effort.md";
+
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#StatusButtonGroup",
+            label: "Status",
+            order: "1",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#ToBacklogButton",
+            label: "To Backlog",
+            action: "https://exocortex.my/ontology/ems-ui#ToBacklogAction",
+            condition: "https://exocortex.my/ontology/ems-ui#CanMoveToBacklogCondition",
+          }),
+        ]);
+
+      mockConditionEvaluator.evaluate.mockResolvedValue(true);
+
+      await builder.buildButtonGroups(assetUri);
+
+      // ConditionEvaluator should be called with CanMoveToBacklogCondition and asset URI
+      expect(mockConditionEvaluator.evaluate).toHaveBeenCalledWith(
+        "https://exocortex.my/ontology/ems-ui#CanMoveToBacklogCondition",
+        assetUri,
+      );
+    });
+
+    it("should show ToBacklogButton for Draft asset", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#StatusButtonGroup",
+            label: "Status",
+            order: "1",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#ToBacklogButton",
+            label: "To Backlog",
+            icon: "archive",
+            variant: "secondary",
+            order: "5",
+            action: "https://exocortex.my/ontology/ems-ui#ToBacklogAction",
+            condition: "https://exocortex.my/ontology/ems-ui#CanMoveToBacklogCondition",
+          }),
+        ]);
+
+      // CanMoveToBacklogCondition passes (asset is in Draft status)
+      mockConditionEvaluator.evaluate.mockResolvedValue(true);
+
+      const groups = await builder.buildButtonGroups("test:draft-task");
+
+      expect(groups).toHaveLength(1);
+      expect(groups[0].buttons).toHaveLength(1);
+      expect(groups[0].buttons[0].label).toBe("To Backlog");
+    });
+
+    it("should show ToBacklogButton for ToDo asset", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#StatusButtonGroup",
+            label: "Status",
+            order: "1",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#ToBacklogButton",
+            label: "To Backlog",
+            icon: "archive",
+            variant: "secondary",
+            order: "5",
+            action: "https://exocortex.my/ontology/ems-ui#ToBacklogAction",
+            condition: "https://exocortex.my/ontology/ems-ui#CanMoveToBacklogCondition",
+          }),
+        ]);
+
+      // CanMoveToBacklogCondition passes (asset is in ToDo status)
+      mockConditionEvaluator.evaluate.mockResolvedValue(true);
+
+      const groups = await builder.buildButtonGroups("test:todo-task");
+
+      expect(groups).toHaveLength(1);
+      expect(groups[0].buttons).toHaveLength(1);
+      expect(groups[0].buttons[0].label).toBe("To Backlog");
+    });
+
+    it("should show ToBacklogButton at order 5 before StartButton", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#StatusButtonGroup",
+            label: "Status",
+            order: "1",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#ToBacklogButton",
+            label: "To Backlog",
+            icon: "archive",
+            variant: "secondary",
+            order: "5",
+            action: "https://exocortex.my/ontology/ems-ui#ToBacklogAction",
+            condition: "https://exocortex.my/ontology/ems-ui#CanMoveToBacklogCondition",
+          }),
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#StartButton",
+            label: "Start",
+            icon: "play",
+            variant: "primary",
+            order: "10",
+            action: "https://exocortex.my/ontology/ems-ui#StartAction",
+            condition: "https://exocortex.my/ontology/ems-ui#IsToDoCondition",
+          }),
+        ]);
+
+      // Both conditions pass for ToDo asset
+      mockConditionEvaluator.evaluate.mockResolvedValue(true);
+
+      const groups = await builder.buildButtonGroups("test:todo-task");
+
+      expect(groups).toHaveLength(1);
+      expect(groups[0].buttons).toHaveLength(2);
+      // ToBacklog should come before Start (order 5 vs 10)
+      expect(groups[0].buttons[0].label).toBe("To Backlog");
+      expect(groups[0].buttons[1].label).toBe("Start");
+    });
+  });
+
+  /**
+   * ScheduleButton with UpdatePropertyAction Tests (Issue #1422)
+   *
+   * Tests for ScheduleButton which transitions an effort from Backlog → ToDo.
+   * Uses UpdatePropertyAction to set ems:Effort_status to ems:EffortStatusToDo.
+   *
+   * RDF Definition:
+   * ```turtle
+   * ems-ui:ScheduleButton a exo-ui:Button ;
+   *     rdfs:label "Schedule" ;
+   *     exo-ui:Button_icon "calendar" ;
+   *     exo-ui:Button_variant "primary" ;
+   *     exo-ui:Button_group exo-ui:StatusButtonGroup ;
+   *     exo-ui:Button_order 8 ;
+   *     exo-ui:Button_action ems-ui:ScheduleAction ;
+   *     exo-ui:Button_condition ems-ui:IsBacklogCondition .
+   *
+   * ems-ui:ScheduleAction a exo-ui:UpdatePropertyAction ;
+   *     exo-ui:Action_targetProperty ems:Effort_status ;
+   *     exo-ui:Action_targetValue ems:EffortStatusToDo ;
+   *     exo-ui:Action_headless true .
+   *
+   * ems-ui:IsBacklogCondition a exo-ui:Condition ;
+   *     exo-ui:Condition_hasProperty ems:Effort_status ;
+   *     exo-ui:Condition_propertyValue ems:EffortStatusBacklog .
+   * ```
+   *
+   * @see https://github.com/kitelev/exocortex/issues/1422
+   */
+  describe("ScheduleButton with UpdatePropertyAction (Issue #1422)", () => {
+    it("should load ScheduleButton with primary variant and calendar icon from RDF", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#StatusButtonGroup",
+            label: "Status",
+            order: "1",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#ScheduleButton",
+            label: "Schedule",
+            icon: "calendar",
+            variant: "primary",
+            order: "8",
+            action: "https://exocortex.my/ontology/ems-ui#ScheduleAction",
+            condition: "https://exocortex.my/ontology/ems-ui#IsBacklogCondition",
+          }),
+        ]);
+
+      // Condition passes (asset is in Backlog status)
+      mockConditionEvaluator.evaluate.mockResolvedValue(true);
+
+      const groups = await builder.buildButtonGroups("test:backlog-task");
+
+      expect(groups).toHaveLength(1);
+      expect(groups[0].buttons).toHaveLength(1);
+
+      const scheduleButton = groups[0].buttons[0];
+      expect(scheduleButton.label).toBe("Schedule");
+      expect(scheduleButton.icon).toBe("calendar");
+      expect(scheduleButton.variant).toBe("primary");
+    });
+
+    it("should hide ScheduleButton when IsBacklogCondition is false (asset not in Backlog)", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#StatusButtonGroup",
+            label: "Status",
+            order: "1",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#ScheduleButton",
+            label: "Schedule",
+            icon: "calendar",
+            variant: "primary",
+            action: "https://exocortex.my/ontology/ems-ui#ScheduleAction",
+            condition: "https://exocortex.my/ontology/ems-ui#IsBacklogCondition",
+          }),
+        ]);
+
+      // Condition fails (asset is NOT in Backlog status)
+      mockConditionEvaluator.evaluate.mockResolvedValue(false);
+
+      const groups = await builder.buildButtonGroups("test:todo-task");
+
+      // Group should be empty because ScheduleButton is filtered out
+      expect(groups).toHaveLength(0);
+    });
+
+    it("should execute ScheduleAction through ActionInterpreter when clicked", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#StatusButtonGroup",
+            label: "Status",
+            order: "1",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#ScheduleButton",
+            label: "Schedule",
+            action: "https://exocortex.my/ontology/ems-ui#ScheduleAction",
+            condition: "https://exocortex.my/ontology/ems-ui#IsBacklogCondition",
+          }),
+        ]);
+
+      mockConditionEvaluator.evaluate.mockResolvedValue(true);
+      mockActionInterpreter.execute.mockResolvedValue({
+        success: true,
+        refresh: true,
+      });
+
+      const assetUri = "https://exocortex.my/vault/backlog-task.md";
+      const groups = await builder.buildButtonGroups(assetUri);
+      const scheduleButton = groups[0].buttons[0];
+
+      // Click the ScheduleButton
+      await scheduleButton.onClick();
+
+      // ActionInterpreter should be called with ScheduleAction URI
+      expect(mockActionInterpreter.execute).toHaveBeenCalledWith(
+        "https://exocortex.my/ontology/ems-ui#ScheduleAction",
+        { currentAsset: assetUri },
+      );
+    });
+
+    it("should evaluate IsBacklogCondition with correct asset URI", async () => {
+      const assetUri = "https://exocortex.my/vault/my-effort.md";
+
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#StatusButtonGroup",
+            label: "Status",
+            order: "1",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#ScheduleButton",
+            label: "Schedule",
+            action: "https://exocortex.my/ontology/ems-ui#ScheduleAction",
+            condition: "https://exocortex.my/ontology/ems-ui#IsBacklogCondition",
+          }),
+        ]);
+
+      mockConditionEvaluator.evaluate.mockResolvedValue(true);
+
+      await builder.buildButtonGroups(assetUri);
+
+      // ConditionEvaluator should be called with IsBacklogCondition and asset URI
+      expect(mockConditionEvaluator.evaluate).toHaveBeenCalledWith(
+        "https://exocortex.my/ontology/ems-ui#IsBacklogCondition",
+        assetUri,
+      );
+    });
+
+    it("should show ScheduleButton only for Backlog assets, not Draft/ToDo", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#StatusButtonGroup",
+            label: "Status",
+            order: "1",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#ScheduleButton",
+            label: "Schedule",
+            icon: "calendar",
+            variant: "primary",
+            order: "8",
+            action: "https://exocortex.my/ontology/ems-ui#ScheduleAction",
+            condition: "https://exocortex.my/ontology/ems-ui#IsBacklogCondition",
+          }),
+        ]);
+
+      // IsBacklogCondition fails (asset is in ToDo status, not Backlog)
+      mockConditionEvaluator.evaluate.mockResolvedValue(false);
+
+      const groups = await builder.buildButtonGroups("test:todo-task");
+
+      expect(groups).toHaveLength(0);
+    });
+
+    it("should show ScheduleButton at order 8 between ToBacklogButton and StartButton", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#StatusButtonGroup",
+            label: "Status",
+            order: "1",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#ToBacklogButton",
+            label: "To Backlog",
+            icon: "archive",
+            variant: "secondary",
+            order: "5",
+            action: "https://exocortex.my/ontology/ems-ui#ToBacklogAction",
+            condition: "https://exocortex.my/ontology/ems-ui#CanMoveToBacklogCondition",
+          }),
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#ScheduleButton",
+            label: "Schedule",
+            icon: "calendar",
+            variant: "primary",
+            order: "8",
+            action: "https://exocortex.my/ontology/ems-ui#ScheduleAction",
+            condition: "https://exocortex.my/ontology/ems-ui#IsBacklogCondition",
+          }),
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#StartButton",
+            label: "Start",
+            icon: "play",
+            variant: "primary",
+            order: "10",
+            action: "https://exocortex.my/ontology/ems-ui#StartAction",
+            condition: "https://exocortex.my/ontology/ems-ui#IsToDoCondition",
+          }),
+        ]);
+
+      // All conditions pass - theoretical scenario for order testing
+      mockConditionEvaluator.evaluate.mockResolvedValue(true);
+
+      const groups = await builder.buildButtonGroups("test:task");
+
+      expect(groups).toHaveLength(1);
+      expect(groups[0].buttons).toHaveLength(3);
+      // Buttons should be in order: ToBacklog (5), Schedule (8), Start (10)
+      expect(groups[0].buttons[0].label).toBe("To Backlog");
+      expect(groups[0].buttons[1].label).toBe("Schedule");
+      expect(groups[0].buttons[2].label).toBe("Start");
+    });
+
+    it("should show both ToBacklogButton and ScheduleButton on Backlog asset", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#StatusButtonGroup",
+            label: "Status",
+            order: "1",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#ToBacklogButton",
+            label: "To Backlog",
+            icon: "archive",
+            variant: "secondary",
+            order: "5",
+            action: "https://exocortex.my/ontology/ems-ui#ToBacklogAction",
+            condition: "https://exocortex.my/ontology/ems-ui#CanMoveToBacklogCondition",
+          }),
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#ScheduleButton",
+            label: "Schedule",
+            icon: "calendar",
+            variant: "primary",
+            order: "8",
+            action: "https://exocortex.my/ontology/ems-ui#ScheduleAction",
+            condition: "https://exocortex.my/ontology/ems-ui#IsBacklogCondition",
+          }),
+        ]);
+
+      // For Backlog asset: CanMoveToBacklogCondition = false (already in Backlog), IsBacklogCondition = true
+      mockConditionEvaluator.evaluate
+        .mockResolvedValueOnce(false)  // CanMoveToBacklogCondition fails (already Backlog)
+        .mockResolvedValueOnce(true);  // IsBacklogCondition passes
+
+      const groups = await builder.buildButtonGroups("test:backlog-task");
+
+      expect(groups).toHaveLength(1);
+      expect(groups[0].buttons).toHaveLength(1);
+      expect(groups[0].buttons[0].label).toBe("Schedule");
+    });
+  });
 });
