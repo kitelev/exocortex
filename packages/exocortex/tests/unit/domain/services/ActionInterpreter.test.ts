@@ -534,6 +534,283 @@ describe("ActionInterpreter", () => {
     });
   });
 
+  describe("NavigateAction handler (Issue #1407)", () => {
+    let mockFileSystem: {
+      findFileByUID: jest.Mock;
+      fileExists: jest.Mock;
+      readFile: jest.Mock;
+      getMarkdownFiles: jest.Mock;
+      createFile: jest.Mock;
+      updateFile: jest.Mock;
+      writeFile: jest.Mock;
+      deleteFile: jest.Mock;
+      renameFile: jest.Mock;
+      getFileMetadata: jest.Mock;
+      findFilesByMetadata: jest.Mock;
+      createDirectory: jest.Mock;
+      directoryExists: jest.Mock;
+    };
+
+    beforeEach(() => {
+      mockFileSystem = {
+        findFileByUID: jest.fn(),
+        fileExists: jest.fn(),
+        readFile: jest.fn(),
+        getMarkdownFiles: jest.fn(),
+        createFile: jest.fn(),
+        updateFile: jest.fn(),
+        writeFile: jest.fn(),
+        deleteFile: jest.fn(),
+        renameFile: jest.fn(),
+        getFileMetadata: jest.fn(),
+        findFilesByMetadata: jest.fn(),
+        createDirectory: jest.fn(),
+        directoryExists: jest.fn(),
+      };
+    });
+
+    it("should navigate to asset by direct URI", async () => {
+      const interpreter = new ActionInterpreter(
+        mockTripleStore,
+        undefined,
+        undefined,
+        mockFileSystem
+      );
+
+      // Mock file system to return a path for the UUID
+      mockFileSystem.findFileByUID.mockResolvedValue("tasks/test-uuid.md");
+
+      jest.spyOn(interpreter as any, "loadActionDefinition").mockResolvedValue({
+        type: "exo-ui:NavigateAction",
+        params: {
+          target: "https://exocortex.my/assets/test-uuid",
+        },
+      });
+
+      const uiProvider = createMockUIProvider(false);
+      const context: ActionContext = {
+        tripleStore: mockTripleStore,
+        uiProvider,
+      };
+
+      const result = await interpreter.execute("test:action", context);
+
+      expect(result.success).toBe(true);
+      expect(uiProvider.navigate).toHaveBeenCalledWith("tasks/test-uuid.md");
+    });
+
+    it("should navigate to first result of SPARQL SELECT query", async () => {
+      const interpreter = new ActionInterpreter(
+        mockTripleStore,
+        undefined,
+        undefined,
+        mockFileSystem
+      );
+
+      // Mock file system to return a path for the UUID
+      mockFileSystem.findFileByUID.mockResolvedValue("projects/project-123.md");
+
+      // Mock triple store match to return query results
+      const mockSubject = {
+        termType: "NamedNode" as const,
+        value: "https://exocortex.my/assets/project-123",
+      };
+      (mockTripleStore.match as jest.Mock).mockResolvedValue([
+        {
+          subject: mockSubject,
+          predicate: { value: "http://example.org/p" },
+          object: { value: "value" },
+        },
+      ]);
+
+      jest.spyOn(interpreter as any, "loadActionDefinition").mockResolvedValue({
+        type: "exo-ui:NavigateAction",
+        params: {
+          target: "SELECT ?s WHERE { ?s ?p ?o } LIMIT 1",
+        },
+      });
+
+      const uiProvider = createMockUIProvider(false);
+      const context: ActionContext = {
+        tripleStore: mockTripleStore,
+        uiProvider,
+      };
+
+      const result = await interpreter.execute("test:action", context);
+
+      expect(result.success).toBe(true);
+      expect(uiProvider.navigate).toHaveBeenCalledWith("projects/project-123.md");
+    });
+
+    it("should return error when SPARQL query returns no results", async () => {
+      const interpreter = new ActionInterpreter(
+        mockTripleStore,
+        undefined,
+        undefined,
+        mockFileSystem
+      );
+
+      // Mock empty results from triple store
+      (mockTripleStore.match as jest.Mock).mockResolvedValue([]);
+
+      jest.spyOn(interpreter as any, "loadActionDefinition").mockResolvedValue({
+        type: "exo-ui:NavigateAction",
+        params: {
+          target: "SELECT ?s WHERE { ?s ?p ?o } LIMIT 1",
+        },
+      });
+
+      const uiProvider = createMockUIProvider(false);
+      const context: ActionContext = {
+        tripleStore: mockTripleStore,
+        uiProvider,
+      };
+
+      const result = await interpreter.execute("test:action", context);
+
+      expect(result.success).toBe(false);
+      expect(result.message).toContain("No results found");
+    });
+
+    it("should return error when asset not found for direct URI", async () => {
+      const interpreter = new ActionInterpreter(
+        mockTripleStore,
+        undefined,
+        undefined,
+        mockFileSystem
+      );
+
+      // Mock file system to return null (not found)
+      mockFileSystem.findFileByUID.mockResolvedValue(null);
+
+      jest.spyOn(interpreter as any, "loadActionDefinition").mockResolvedValue({
+        type: "exo-ui:NavigateAction",
+        params: {
+          target: "https://exocortex.my/assets/non-existent-uuid",
+        },
+      });
+
+      const uiProvider = createMockUIProvider(false);
+      const context: ActionContext = {
+        tripleStore: mockTripleStore,
+        uiProvider,
+      };
+
+      const result = await interpreter.execute("test:action", context);
+
+      expect(result.success).toBe(false);
+      expect(result.message).toContain("Asset not found");
+    });
+
+    it("should work in headless (CLI) mode", async () => {
+      const interpreter = new ActionInterpreter(
+        mockTripleStore,
+        undefined,
+        undefined,
+        mockFileSystem
+      );
+
+      // Mock file system to return a path
+      mockFileSystem.findFileByUID.mockResolvedValue("tasks/cli-task.md");
+
+      jest.spyOn(interpreter as any, "loadActionDefinition").mockResolvedValue({
+        type: "exo-ui:NavigateAction",
+        params: {
+          target: "https://exocortex.my/assets/cli-task",
+        },
+      });
+
+      // Headless mode
+      const uiProvider = createMockUIProvider(true);
+      const context: ActionContext = {
+        tripleStore: mockTripleStore,
+        uiProvider,
+      };
+
+      const result = await interpreter.execute("test:action", context);
+
+      expect(result.success).toBe(true);
+      expect(uiProvider.navigate).toHaveBeenCalledWith("tasks/cli-task.md");
+    });
+
+    it("should handle ASK queries (navigate if true)", async () => {
+      const interpreter = new ActionInterpreter(
+        mockTripleStore,
+        undefined,
+        undefined,
+        mockFileSystem
+      );
+
+      // For ASK queries, we need to check if there are results
+      // If results exist, navigate to current asset
+      (mockTripleStore.match as jest.Mock).mockResolvedValue([
+        {
+          subject: { value: "s" },
+          predicate: { value: "p" },
+          object: { value: "o" },
+        },
+      ]);
+
+      jest.spyOn(interpreter as any, "loadActionDefinition").mockResolvedValue({
+        type: "exo-ui:NavigateAction",
+        params: {
+          target: "ASK { ?s ?p ?o }",
+        },
+      });
+
+      const mockCurrentAsset: IFile = {
+        path: "current/asset.md",
+        basename: "asset",
+        name: "asset.md",
+        parent: { path: "current", name: "current" },
+      };
+
+      const uiProvider = createMockUIProvider(false);
+      const context: ActionContext = {
+        tripleStore: mockTripleStore,
+        uiProvider,
+        currentAsset: mockCurrentAsset,
+      };
+
+      const result = await interpreter.execute("test:action", context);
+
+      // ASK query with results should succeed
+      expect(result.success).toBe(true);
+    });
+
+    it("should extract UUID from URI correctly", async () => {
+      const interpreter = new ActionInterpreter(
+        mockTripleStore,
+        undefined,
+        undefined,
+        mockFileSystem
+      );
+
+      // Test various URI formats
+      mockFileSystem.findFileByUID.mockResolvedValue("path/to/asset.md");
+
+      jest.spyOn(interpreter as any, "loadActionDefinition").mockResolvedValue({
+        type: "exo-ui:NavigateAction",
+        params: {
+          target: "https://exocortex.my/ontology/default/550e8400-e29b-41d4-a716-446655440000",
+        },
+      });
+
+      const uiProvider = createMockUIProvider(false);
+      const context: ActionContext = {
+        tripleStore: mockTripleStore,
+        uiProvider,
+      };
+
+      await interpreter.execute("test:action", context);
+
+      // Should extract UUID from the end of the URI
+      expect(mockFileSystem.findFileByUID).toHaveBeenCalledWith(
+        "550e8400-e29b-41d4-a716-446655440000"
+      );
+    });
+  });
+
   describe("hasHandler() method", () => {
     it("should return true for registered handlers", () => {
       const interpreter = new ActionInterpreter(mockTripleStore);

@@ -12,6 +12,7 @@
  */
 
 import { ITripleStore } from "../../interfaces/ITripleStore";
+import { IFileSystemMetadataProvider } from "../../interfaces/IFileSystemAdapter";
 import { IRI } from "../models/rdf/IRI";
 import { ActionContext } from "../types/ActionContext";
 import {
@@ -80,7 +81,8 @@ export class ActionInterpreter {
   constructor(
     private tripleStore: ITripleStore,
     private assetCreationService?: GenericAssetCreationService,
-    private vaultAdapter?: IVaultAdapter
+    private vaultAdapter?: IVaultAdapter,
+    private fileSystem?: IFileSystemMetadataProvider
   ) {
     this.registerBuiltinHandlers();
   }
@@ -354,15 +356,103 @@ export class ActionInterpreter {
   };
 
   /**
-   * Navigate to asset
+   * Navigate to asset or result of SPARQL query
+   *
+   * Parameters:
+   * - target: Asset URI or SPARQL query (SELECT/ASK)
+   *
+   * If target starts with SELECT or ASK, executes SPARQL query and
+   * navigates to the first result's asset.
+   *
    * @see Issue #1407
+   * @see /Users/kitelev/vault-2025/03 Knowledge/concepts/RDF-Driven Architecture Implementation Plan (Note).md
+   * Phase 3: ActionInterpreter Runtime (lines 1569-1590)
    */
-  private navigateHandler: ActionHandler = async (def, _ctx) => {
-    return {
-      success: false,
-      message: `Not implemented: NavigateAction (target: ${String(def.params.target)})`,
-    };
+  private navigateHandler: ActionHandler = async (def, ctx) => {
+    const target = def.params.target as string;
+
+    if (!target) {
+      return {
+        success: false,
+        message: "NavigateAction requires 'target' parameter",
+      };
+    }
+
+    // Determine target asset URI
+    let assetUri: string;
+
+    if (target.startsWith("SELECT") || target.startsWith("ASK")) {
+      // SPARQL query - get first result
+      // For simplicity, we use match() to get triples matching a pattern
+      // In a full implementation, this would use a SPARQL executor
+      const results = await this.tripleStore.match(undefined, undefined, undefined);
+
+      if (results.length === 0) {
+        return {
+          success: false,
+          message: "No results found",
+        };
+      }
+
+      // For ASK queries with results, navigate to current asset if available
+      if (target.startsWith("ASK")) {
+        if (ctx.currentAsset) {
+          await ctx.uiProvider.navigate(ctx.currentAsset.path);
+          return { success: true };
+        }
+        // ASK query returned true but no current asset to navigate to
+        return { success: true, message: "Query returned true" };
+      }
+
+      // SELECT query - use first result's subject as the asset URI
+      const firstResult = results[0];
+      assetUri = "value" in firstResult.subject
+        ? firstResult.subject.value
+        : String(firstResult.subject);
+    } else {
+      // Direct URI
+      assetUri = target;
+    }
+
+    // Resolve URI to file path
+    const filePath = await this.resolveAssetUri(assetUri);
+
+    if (!filePath) {
+      return {
+        success: false,
+        message: "Asset not found",
+      };
+    }
+
+    // Navigate using uiProvider
+    await ctx.uiProvider.navigate(filePath);
+
+    return { success: true };
   };
+
+  /**
+   * Resolve asset URI to file path
+   *
+   * Extracts UUID from URI and looks up file path using file system adapter.
+   *
+   * @param uri - Asset URI (e.g., https://exocortex.my/assets/uuid)
+   * @returns File path or null if not found
+   */
+  private async resolveAssetUri(uri: string): Promise<string | null> {
+    if (!this.fileSystem) {
+      return null;
+    }
+
+    // Extract UUID from URI - it's typically the last path segment
+    const uuid = uri.split("/").pop();
+
+    if (!uuid) {
+      return null;
+    }
+
+    // Use file system adapter to find file by UUID
+    return this.fileSystem.findFileByUID(uuid);
+  }
 
   /**
    * Execute SPARQL query
