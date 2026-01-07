@@ -1465,10 +1465,156 @@ interface ActionContext {
 | Developer-only | User-configurable |
 | Single platform | CLI + Obsidian |
 
+### Phase 3: ActionInterpreter Runtime (IMPLEMENTED)
+
+The `ActionInterpreter` is the execution engine that brings RDF-Driven Architecture to life. It loads action definitions from the triple store and dispatches them to appropriate handlers.
+
+#### ActionInterpreter Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                        ActionInterpreter Runtime                                 │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                  │
+│   ┌─────────────────────────────────────────────────────────────────────────┐   │
+│   │                         execute(actionUri, context)                      │   │
+│   │                                                                          │   │
+│   │   1. loadActionDefinition(uri)  ──────────────────────────────┐         │   │
+│   │      ↓                                                         ↓         │   │
+│   │   ┌──────────────────────┐                          ┌────────────────┐  │   │
+│   │   │  Triple Store Query  │  ──→ rdf:type ──→       │ ActionDefinition│  │   │
+│   │   │  ?action ?p ?o       │  ──→ exo-ui:* ──→       │ {type, params}  │  │   │
+│   │   └──────────────────────┘                          └────────────────┘  │   │
+│   │                                                               ↓          │   │
+│   │   2. Find handler for type                                    ↓          │   │
+│   │      ↓                                                                   │   │
+│   │   ┌────────────────────────────────────────────────────────────────┐    │   │
+│   │   │                     Handler Registry                            │    │   │
+│   │   │  ┌─────────────────────┐  ┌─────────────────────────────────┐  │    │   │
+│   │   │  │  Built-in Handlers  │  │      Custom Handlers            │  │    │   │
+│   │   │  │  (Fixed Verbs)      │  │   (TypeScript escape hatch)     │  │    │   │
+│   │   │  └─────────────────────┘  └─────────────────────────────────┘  │    │   │
+│   │   └────────────────────────────────────────────────────────────────┘    │   │
+│   │                                                               ↓          │   │
+│   │   3. Execute handler(definition, context)                     ↓          │   │
+│   │      ↓                                                                   │   │
+│   │   ┌──────────────────────────────────────────────────────────────────┐  │   │
+│   │   │                      ActionResult                                 │  │   │
+│   │   │  { success, message?, navigateTo?, refresh?, data? }             │  │   │
+│   │   └──────────────────────────────────────────────────────────────────┘  │   │
+│   └─────────────────────────────────────────────────────────────────────────┘   │
+│                                                                                  │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### Complete Fixed Verbs (8 Types)
+
+| Verb | Handler | Parameters | Description |
+|------|---------|------------|-------------|
+| `CreateAssetAction` | `createAssetHandler` | `targetClass`, `template?`, `location?` | Creates new asset using GenericAssetCreationService |
+| `UpdatePropertyAction` | `updatePropertyHandler` | `targetProperty`, `targetValue`, `targetAsset?` | Updates frontmatter property on current or specified asset |
+| `NavigateAction` | `navigateHandler` | `target` (URI or SPARQL query) | Navigates to asset by URI or first SPARQL result |
+| `ExecuteSPARQLAction` | `executeSparqlHandler` | `query` | Executes SPARQL SELECT query and returns results |
+| `ShowModalAction` | `showModalHandler` | `modalType`, `modalParams`, `Action_cliAlternative?` | Shows input/select/confirm modal (throws HeadlessError in CLI) |
+| `TriggerHookAction` | `triggerHookHandler` | `hookName`, `payload?` | Dispatches webhook event via WebhookService |
+| `CustomHandlerAction` | `customHandler` | `handler` (handler ID) | Delegates to registered TypeScript handler |
+| `CompositeAction` | `compositeHandler` | `actions` (JSON array of URIs) | Executes actions sequentially, passes data via `ctx.previousResult` |
+
+#### Usage Example
+
+```typescript
+import { ActionInterpreter } from 'exocortex';
+
+// Initialize with dependencies
+const interpreter = new ActionInterpreter(
+  tripleStore,
+  assetCreationService,
+  vaultAdapter,
+  fileSystem,
+  webhookService,
+  uiProvider
+);
+
+// Register custom handler for specialized logic
+interpreter.registerCustomHandler('custom:ExportProject', async (def, ctx) => {
+  const projectId = def.params.projectId as string;
+  const format = def.params.format as string || 'json';
+
+  // Custom export logic
+  const exportData = await exportProject(projectId, format);
+
+  return {
+    success: true,
+    data: { exportedFile: exportData.path },
+    message: `Project exported to ${exportData.path}`
+  };
+});
+
+// Execute action defined in RDF
+const result = await interpreter.execute(
+  'https://exocortex.my/actions/create-weekly-task',
+  {
+    tripleStore,
+    uiProvider: obsidianUIProvider,
+    currentAsset: activeFile
+  }
+);
+```
+
+#### HeadlessError: CLI Mode Support
+
+When actions require UI interaction but run in CLI mode:
+
+```typescript
+// CreateAssetAction in CLI mode without --location throws:
+// HeadlessError: "CreateAssetAction without location" requires UI.
+//   CLI alternative: --location <path>
+
+// ShowModalAction always throws in CLI mode:
+// HeadlessError: "ShowModalAction" requires UI.
+//   CLI alternative: Use appropriate CLI arguments
+
+// Solution: Actions can specify Action_cliAlternative in RDF
+// exo-ui:myAction exo-ui:Action_cliAlternative "--value <string>" .
+```
+
+#### CompositeAction Data Flow
+
+```
+Action 1          Action 2              Action 3
+   │                 │                     │
+   │ execute()       │                     │
+   ↓                 │                     │
+┌──────────┐        │                     │
+│ result = │        │                     │
+│ {        │        │                     │
+│  success │        │                     │
+│  data: X │─────────→ ctx.previousResult │
+│ }        │        │     = X             │
+└──────────┘        │                     │
+                    ↓                     │
+               ┌──────────┐              │
+               │ result = │              │
+               │ {        │              │
+               │  data: Y │──────────────→ ctx.previousResult
+               │ }        │              │     = Y
+               └──────────┘              │
+                                         ↓
+                                    ┌──────────┐
+                                    │ result = │
+                                    │ {        │
+                                    │  refresh │
+                                    │ }        │
+                                    └──────────┘
+```
+
 ### Related Files
 
-- `packages/exocortex/src/domain/ports/IUIProvider.ts` — Interface definition
-- `packages/exocortex/src/domain/types/ActionContext.ts` — Context type
+- `packages/exocortex/src/domain/services/ActionInterpreter.ts` — Main implementation
+- `packages/exocortex/src/domain/types/ActionTypes.ts` — Type definitions
+- `packages/exocortex/src/domain/types/ActionContext.ts` — Context interface
+- `packages/exocortex/src/domain/ports/IUIProvider.ts` — UI abstraction interface
+- `packages/exocortex/tests/unit/domain/services/ActionInterpreter.test.ts` — 312 lines of tests
 - `exocortex-public-ontologies/exo-ui/` — UI ontology (planned)
 
 ---
@@ -1543,6 +1689,7 @@ graph TB
 | 1.1 | 2025-11-26 | Added Error Handling section (#438) |
 | 1.2 | 2025-11-29 | Documented CommandVisibility domain segregation (#468) |
 | 1.3 | 2026-01-07 | Added RDF-Driven Architecture section (Milestone v1.0 #1401) |
+| 1.4 | 2026-01-07 | Added ActionInterpreter Runtime documentation (Issue #1414) |
 
 ---
 
