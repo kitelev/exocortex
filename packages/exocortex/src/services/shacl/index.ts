@@ -11,3 +11,4 @@
 export { ShaclValidator } from "./ShaclValidator";
 export type { ValidationResult, ValidationViolation } from "./ShaclValidator";
 export { COMMAND_SHAPE_TURTLE, COMMAND_SHAPE_DEFINITION } from "./shapes/CommandShape";
+export { BUTTON_SHAPE_TURTLE, BUTTON_SHAPE_DEFINITION } from "./shapes/ButtonShape";
