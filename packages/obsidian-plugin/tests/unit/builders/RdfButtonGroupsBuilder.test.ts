@@ -549,4 +549,208 @@ describe("RdfButtonGroupsBuilder", () => {
       expect(groups).toHaveLength(0);
     });
   });
+
+  /**
+   * DoneButton with CompositeAction Tests (Issue #1419)
+   *
+   * Tests for DoneButton which uses CompositeAction to execute
+   * multiple sub-actions (SetStatusDoneAction + SetEndTimestampAction).
+   *
+   * RDF Definition:
+   * ```turtle
+   * ems-ui:DoneButton a exo-ui:Button ;
+   *     rdfs:label "Done" ;
+   *     exo-ui:Button_icon "check" ;
+   *     exo-ui:Button_variant "success" ;
+   *     exo-ui:Button_group exo-ui:StatusButtonGroup ;
+   *     exo-ui:Button_order 20 ;
+   *     exo-ui:Button_tooltip "Mark as completed" ;
+   *     exo-ui:Button_action ems-ui:DoneAction ;
+   *     exo-ui:Button_condition ems-ui:IsDoingCondition .
+   *
+   * ems-ui:DoneAction a exo-ui:CompositeAction ;
+   *     exo-ui:Action_actions (ems-ui:SetStatusDoneAction ems-ui:SetEndTimestampAction) ;
+   *     exo-ui:Action_headless true .
+   * ```
+   *
+   * @see https://github.com/kitelev/exocortex/issues/1419
+   */
+  describe("DoneButton with CompositeAction (Issue #1419)", () => {
+    it("should load DoneButton with success variant and check icon from RDF", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#StatusButtonGroup",
+            label: "Status",
+            order: "1",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#DoneButton",
+            label: "Done",
+            icon: "check",
+            variant: "success",
+            order: "20",
+            action: "https://exocortex.my/ontology/ems-ui#DoneAction",
+            condition: "https://exocortex.my/ontology/ems-ui#IsDoingCondition",
+            tooltip: "Mark as completed",
+          }),
+        ]);
+
+      // Condition passes (asset is in "Doing" status)
+      mockConditionEvaluator.evaluate.mockResolvedValue(true);
+
+      const groups = await builder.buildButtonGroups("test:effort-doing-task");
+
+      expect(groups).toHaveLength(1);
+      expect(groups[0].buttons).toHaveLength(1);
+
+      const doneButton = groups[0].buttons[0];
+      expect(doneButton.label).toBe("Done");
+      expect(doneButton.icon).toBe("check");
+      expect(doneButton.variant).toBe("success");
+      expect(doneButton.tooltip).toBe("Mark as completed");
+    });
+
+    it("should hide DoneButton when IsDoingCondition is false", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#StatusButtonGroup",
+            label: "Status",
+            order: "1",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#DoneButton",
+            label: "Done",
+            icon: "check",
+            variant: "success",
+            action: "https://exocortex.my/ontology/ems-ui#DoneAction",
+            condition: "https://exocortex.my/ontology/ems-ui#IsDoingCondition",
+          }),
+        ]);
+
+      // Condition fails (asset is NOT in "Doing" status)
+      mockConditionEvaluator.evaluate.mockResolvedValue(false);
+
+      const groups = await builder.buildButtonGroups("test:todo-task");
+
+      // Group should be empty because DoneButton is filtered out
+      expect(groups).toHaveLength(0);
+    });
+
+    it("should execute DoneAction (CompositeAction) through ActionInterpreter when clicked", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#StatusButtonGroup",
+            label: "Status",
+            order: "1",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#DoneButton",
+            label: "Done",
+            action: "https://exocortex.my/ontology/ems-ui#DoneAction",
+            condition: "https://exocortex.my/ontology/ems-ui#IsDoingCondition",
+          }),
+        ]);
+
+      mockConditionEvaluator.evaluate.mockResolvedValue(true);
+      mockActionInterpreter.execute.mockResolvedValue({
+        success: true,
+        refresh: true,
+      });
+
+      const assetUri = "https://exocortex.my/vault/doing-task.md";
+      const groups = await builder.buildButtonGroups(assetUri);
+      const doneButton = groups[0].buttons[0];
+
+      // Click the DoneButton
+      await doneButton.onClick();
+
+      // ActionInterpreter should be called with DoneAction URI
+      expect(mockActionInterpreter.execute).toHaveBeenCalledWith(
+        "https://exocortex.my/ontology/ems-ui#DoneAction",
+        { currentAsset: assetUri },
+      );
+    });
+
+    it("should evaluate IsDoingCondition with correct asset URI", async () => {
+      const assetUri = "https://exocortex.my/vault/my-effort.md";
+
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#StatusButtonGroup",
+            label: "Status",
+            order: "1",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#DoneButton",
+            label: "Done",
+            action: "https://exocortex.my/ontology/ems-ui#DoneAction",
+            condition: "https://exocortex.my/ontology/ems-ui#IsDoingCondition",
+          }),
+        ]);
+
+      mockConditionEvaluator.evaluate.mockResolvedValue(true);
+
+      await builder.buildButtonGroups(assetUri);
+
+      // ConditionEvaluator should be called with IsDoingCondition and asset URI
+      expect(mockConditionEvaluator.evaluate).toHaveBeenCalledWith(
+        "https://exocortex.my/ontology/ems-ui#IsDoingCondition",
+        assetUri,
+      );
+    });
+
+    it("should show both StartButton and DoneButton when their conditions match different assets", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#StatusButtonGroup",
+            label: "Status",
+            order: "1",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#StartButton",
+            label: "Start",
+            icon: "play",
+            variant: "primary",
+            order: "10",
+            action: "https://exocortex.my/ontology/ems-ui#StartAction",
+            condition: "https://exocortex.my/ontology/ems-ui#IsToDoCondition",
+          }),
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#DoneButton",
+            label: "Done",
+            icon: "check",
+            variant: "success",
+            order: "20",
+            action: "https://exocortex.my/ontology/ems-ui#DoneAction",
+            condition: "https://exocortex.my/ontology/ems-ui#IsDoingCondition",
+          }),
+        ]);
+
+      // For this test: IsToDoCondition = true (asset is ToDo), IsDoingCondition = false
+      mockConditionEvaluator.evaluate
+        .mockResolvedValueOnce(true)  // IsToDoCondition passes
+        .mockResolvedValueOnce(false); // IsDoingCondition fails
+
+      const groups = await builder.buildButtonGroups("test:todo-task");
+
+      expect(groups).toHaveLength(1);
+      expect(groups[0].buttons).toHaveLength(1);
+      expect(groups[0].buttons[0].label).toBe("Start");
+    });
+  });
 });
