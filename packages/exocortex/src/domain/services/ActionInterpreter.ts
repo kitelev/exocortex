@@ -21,6 +21,7 @@ import {
 } from "../types/ActionTypes";
 import { HeadlessError } from "../ports/IUIProvider";
 import { GenericAssetCreationService } from "../../services/GenericAssetCreationService";
+import type { IVaultAdapter, IFile, IFrontmatter } from "../../interfaces/IVaultAdapter";
 
 /**
  * Namespace URI for exo-ui ontology
@@ -78,7 +79,8 @@ export class ActionInterpreter {
 
   constructor(
     private tripleStore: ITripleStore,
-    private assetCreationService?: GenericAssetCreationService
+    private assetCreationService?: GenericAssetCreationService,
+    private vaultAdapter?: IVaultAdapter
   ) {
     this.registerBuiltinHandlers();
   }
@@ -274,13 +276,81 @@ export class ActionInterpreter {
 
   /**
    * Update asset property
+   *
+   * Parameters:
+   * - targetProperty: Property name to update (e.g., "ems__Effort_status")
+   * - targetValue: New value for the property (or null to delete)
+   * - targetAsset: Optional path to target file (defaults to currentAsset in context)
+   *
    * @see Issue #1406
+   * @see /Users/kitelev/vault-2025/03 Knowledge/concepts/RDF-Driven Architecture Implementation Plan (Note).md
+   * Phase 3: ActionInterpreter Runtime (lines 1552-1567)
    */
-  private updatePropertyHandler: ActionHandler = async (def, _ctx) => {
-    return {
-      success: false,
-      message: `Not implemented: UpdatePropertyAction (property: ${String(def.params.targetProperty)})`,
-    };
+  private updatePropertyHandler: ActionHandler = async (def, ctx) => {
+    const targetProperty = def.params.targetProperty as string;
+    const targetValue = def.params.targetValue;
+    const targetAsset = def.params.targetAsset as string | undefined;
+
+    // Ensure vault adapter is available
+    if (!this.vaultAdapter) {
+      return {
+        success: false,
+        message: "VaultAdapter not initialized",
+      };
+    }
+
+    // Resolve target file: use targetAsset if specified, otherwise currentAsset
+    let file: IFile | null | undefined;
+    if (targetAsset) {
+      const abstractFile = this.vaultAdapter.getAbstractFileByPath(targetAsset);
+      // Ensure it's a file (has path, basename, name)
+      if (abstractFile && "basename" in abstractFile) {
+        file = abstractFile as IFile;
+      } else {
+        return {
+          success: false,
+          message: `Target asset not found: ${targetAsset}`,
+        };
+      }
+    } else {
+      file = ctx.currentAsset;
+    }
+
+    // Validate we have a target file
+    if (!file) {
+      return {
+        success: false,
+        message: "No target asset",
+      };
+    }
+
+    try {
+      // Update frontmatter using vault adapter
+      await this.vaultAdapter.updateFrontmatter(
+        file,
+        (current: IFrontmatter): IFrontmatter => {
+          const updated = { ...current };
+          if (targetValue === null || targetValue === undefined) {
+            // Delete property if value is null/undefined
+            delete updated[targetProperty];
+          } else {
+            // Set property value
+            updated[targetProperty] = targetValue;
+          }
+          return updated;
+        }
+      );
+
+      return {
+        success: true,
+        refresh: true,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: `Failed to update property: ${error instanceof Error ? error.message : String(error)}`,
+      };
+    }
   };
 
   /**

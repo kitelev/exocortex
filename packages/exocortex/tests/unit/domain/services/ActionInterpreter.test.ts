@@ -21,7 +21,7 @@ import {
 } from "../../../../src/domain/types/ActionTypes";
 import { ActionInterpreter } from "../../../../src/domain/services/ActionInterpreter";
 import { GenericAssetCreationService } from "../../../../src/services/GenericAssetCreationService";
-import { IFile } from "../../../../src/interfaces/IVaultAdapter";
+import { IFile, IVaultAdapter } from "../../../../src/interfaces/IVaultAdapter";
 
 describe("ActionInterpreter", () => {
   let mockTripleStore: ITripleStore;
@@ -545,6 +545,275 @@ describe("ActionInterpreter", () => {
       const interpreter = new ActionInterpreter(mockTripleStore);
 
       expect(interpreter.hasHandler("unknown:Action")).toBe(false);
+    });
+  });
+
+  describe("UpdatePropertyAction handler (Issue #1406)", () => {
+    let mockVaultAdapter: jest.Mocked<IVaultAdapter>;
+    let mockFile: IFile;
+
+    beforeEach(() => {
+      mockFile = {
+        path: "tasks/test-uuid.md",
+        basename: "test-uuid",
+        name: "test-uuid.md",
+        parent: { path: "tasks", name: "tasks" },
+      };
+
+      mockVaultAdapter = {
+        read: jest.fn(),
+        exists: jest.fn(),
+        getAllFiles: jest.fn(),
+        getAbstractFileByPath: jest.fn(),
+        create: jest.fn(),
+        modify: jest.fn(),
+        delete: jest.fn(),
+        process: jest.fn(),
+        rename: jest.fn(),
+        updateLinks: jest.fn(),
+        createFolder: jest.fn(),
+        getDefaultNewFileParent: jest.fn(),
+        getFrontmatter: jest.fn(),
+        updateFrontmatter: jest.fn().mockResolvedValue(undefined),
+        getFirstLinkpathDest: jest.fn(),
+      } as jest.Mocked<IVaultAdapter>;
+    });
+
+    it("should update property on currentAsset", async () => {
+      const interpreter = new ActionInterpreter(
+        mockTripleStore,
+        undefined, // assetCreationService
+        mockVaultAdapter
+      );
+
+      jest.spyOn(interpreter as any, "loadActionDefinition").mockResolvedValue({
+        type: "exo-ui:UpdatePropertyAction",
+        params: {
+          targetProperty: "ems__Effort_status",
+          targetValue: "active",
+        },
+      });
+
+      const contextWithAsset: ActionContext = {
+        tripleStore: mockTripleStore,
+        uiProvider: createMockUIProvider(false),
+        currentAsset: mockFile,
+      };
+
+      const result = await interpreter.execute("test:action", contextWithAsset);
+
+      expect(result.success).toBe(true);
+      expect(result.refresh).toBe(true);
+      expect(mockVaultAdapter.updateFrontmatter).toHaveBeenCalledWith(
+        mockFile,
+        expect.any(Function)
+      );
+
+      // Verify the updater function sets the property correctly
+      const updaterFn = mockVaultAdapter.updateFrontmatter.mock.calls[0][1];
+      const testFrontmatter = { existingProp: "value" };
+      const updatedFrontmatter = updaterFn(testFrontmatter);
+      expect(updatedFrontmatter["ems__Effort_status"]).toBe("active");
+    });
+
+    it("should update property on targetAsset if specified", async () => {
+      const targetFile: IFile = {
+        path: "projects/target-project.md",
+        basename: "target-project",
+        name: "target-project.md",
+        parent: { path: "projects", name: "projects" },
+      };
+
+      mockVaultAdapter.getAbstractFileByPath.mockReturnValue(targetFile);
+
+      const interpreter = new ActionInterpreter(
+        mockTripleStore,
+        undefined,
+        mockVaultAdapter
+      );
+
+      jest.spyOn(interpreter as any, "loadActionDefinition").mockResolvedValue({
+        type: "exo-ui:UpdatePropertyAction",
+        params: {
+          targetProperty: "ems__Project_status",
+          targetValue: "completed",
+          targetAsset: "projects/target-project.md",
+        },
+      });
+
+      const contextWithAsset: ActionContext = {
+        tripleStore: mockTripleStore,
+        uiProvider: createMockUIProvider(false),
+        currentAsset: mockFile, // Should be ignored when targetAsset is provided
+      };
+
+      const result = await interpreter.execute("test:action", contextWithAsset);
+
+      expect(result.success).toBe(true);
+      expect(result.refresh).toBe(true);
+      expect(mockVaultAdapter.getAbstractFileByPath).toHaveBeenCalledWith(
+        "projects/target-project.md"
+      );
+      expect(mockVaultAdapter.updateFrontmatter).toHaveBeenCalledWith(
+        targetFile,
+        expect.any(Function)
+      );
+
+      // Verify the updater function sets the property correctly
+      const updaterFn = mockVaultAdapter.updateFrontmatter.mock.calls[0][1];
+      const testFrontmatter = {};
+      const updatedFrontmatter = updaterFn(testFrontmatter);
+      expect(updatedFrontmatter["ems__Project_status"]).toBe("completed");
+    });
+
+    it("should return error if no asset (neither currentAsset nor targetAsset)", async () => {
+      const interpreter = new ActionInterpreter(
+        mockTripleStore,
+        undefined,
+        mockVaultAdapter
+      );
+
+      jest.spyOn(interpreter as any, "loadActionDefinition").mockResolvedValue({
+        type: "exo-ui:UpdatePropertyAction",
+        params: {
+          targetProperty: "status",
+          targetValue: "active",
+        },
+      });
+
+      // Context without currentAsset
+      const contextWithoutAsset: ActionContext = {
+        tripleStore: mockTripleStore,
+        uiProvider: createMockUIProvider(false),
+        // No currentAsset
+      };
+
+      const result = await interpreter.execute("test:action", contextWithoutAsset);
+
+      expect(result.success).toBe(false);
+      expect(result.message).toContain("No target asset");
+    });
+
+    it("should return error if targetAsset not found", async () => {
+      mockVaultAdapter.getAbstractFileByPath.mockReturnValue(null);
+
+      const interpreter = new ActionInterpreter(
+        mockTripleStore,
+        undefined,
+        mockVaultAdapter
+      );
+
+      jest.spyOn(interpreter as any, "loadActionDefinition").mockResolvedValue({
+        type: "exo-ui:UpdatePropertyAction",
+        params: {
+          targetProperty: "status",
+          targetValue: "active",
+          targetAsset: "nonexistent/file.md",
+        },
+      });
+
+      const contextWithAsset: ActionContext = {
+        tripleStore: mockTripleStore,
+        uiProvider: createMockUIProvider(false),
+        currentAsset: mockFile,
+      };
+
+      const result = await interpreter.execute("test:action", contextWithAsset);
+
+      expect(result.success).toBe(false);
+      expect(result.message).toContain("not found");
+    });
+
+    it("should return error if vaultAdapter is not provided", async () => {
+      const interpreter = new ActionInterpreter(
+        mockTripleStore,
+        undefined,
+        undefined // No vaultAdapter
+      );
+
+      jest.spyOn(interpreter as any, "loadActionDefinition").mockResolvedValue({
+        type: "exo-ui:UpdatePropertyAction",
+        params: {
+          targetProperty: "status",
+          targetValue: "active",
+        },
+      });
+
+      const contextWithAsset: ActionContext = {
+        tripleStore: mockTripleStore,
+        uiProvider: createMockUIProvider(false),
+        currentAsset: mockFile,
+      };
+
+      const result = await interpreter.execute("test:action", contextWithAsset);
+
+      expect(result.success).toBe(false);
+      expect(result.message).toContain("VaultAdapter not initialized");
+    });
+
+    it("should handle update failure gracefully", async () => {
+      mockVaultAdapter.updateFrontmatter.mockRejectedValue(
+        new Error("File locked")
+      );
+
+      const interpreter = new ActionInterpreter(
+        mockTripleStore,
+        undefined,
+        mockVaultAdapter
+      );
+
+      jest.spyOn(interpreter as any, "loadActionDefinition").mockResolvedValue({
+        type: "exo-ui:UpdatePropertyAction",
+        params: {
+          targetProperty: "status",
+          targetValue: "active",
+        },
+      });
+
+      const contextWithAsset: ActionContext = {
+        tripleStore: mockTripleStore,
+        uiProvider: createMockUIProvider(false),
+        currentAsset: mockFile,
+      };
+
+      const result = await interpreter.execute("test:action", contextWithAsset);
+
+      expect(result.success).toBe(false);
+      expect(result.message).toContain("Failed to update property");
+      expect(result.message).toContain("File locked");
+    });
+
+    it("should support null value to remove property", async () => {
+      const interpreter = new ActionInterpreter(
+        mockTripleStore,
+        undefined,
+        mockVaultAdapter
+      );
+
+      jest.spyOn(interpreter as any, "loadActionDefinition").mockResolvedValue({
+        type: "exo-ui:UpdatePropertyAction",
+        params: {
+          targetProperty: "ems__Effort_status",
+          targetValue: null,
+        },
+      });
+
+      const contextWithAsset: ActionContext = {
+        tripleStore: mockTripleStore,
+        uiProvider: createMockUIProvider(false),
+        currentAsset: mockFile,
+      };
+
+      const result = await interpreter.execute("test:action", contextWithAsset);
+
+      expect(result.success).toBe(true);
+
+      // Verify the updater function removes the property
+      const updaterFn = mockVaultAdapter.updateFrontmatter.mock.calls[0][1];
+      const testFrontmatter = { "ems__Effort_status": "active", other: "value" };
+      const updatedFrontmatter = updaterFn(testFrontmatter);
+      expect(updatedFrontmatter["ems__Effort_status"]).toBeUndefined();
+      expect(updatedFrontmatter["other"]).toBe("value");
     });
   });
 });
