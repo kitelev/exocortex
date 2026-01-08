@@ -2,13 +2,17 @@
  * Tests for LayoutSelector - RDF-driven layout selection service
  *
  * Issue #1459: Implement LayoutSelector service in ActionInterpreter
+ * Issue #1462: Comprehensive unit tests for LayoutSelector
  * @see https://github.com/kitelev/exocortex/issues/1459
+ * @see https://github.com/kitelev/exocortex/issues/1462
  *
  * Tests for:
  * - selectLayout() - Select layout based on asset's rdf:type classes
  * - loadLayout() - Load layout definition with blocks from RDF
  * - Caching behavior for layout definitions
  * - Class priority (most specific → parent → default)
+ * - Edge cases (empty types, unknown types, multiple applicable layouts)
+ * - Error handling (triple store failures, malformed data)
  */
 
 import { ITripleStore } from "../../../../src/interfaces/ITripleStore";
@@ -225,6 +229,372 @@ describe("LayoutSelector", () => {
 
       expect(layout).toBeDefined();
       expect(layout!.uri).toBe(`${EXO_UI_NS}DailyNoteLayout`);
+    });
+  });
+
+  describe("edge cases", () => {
+    const RDF_TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type";
+    const EXO_UI_NS = "https://exocortex.my/ontology/exo-ui#";
+    const EXO_NS = "https://exocortex.my/ontology/exo#";
+    const RDFS_NS = "http://www.w3.org/2000/01/rdf-schema#";
+
+    it("should handle asset with empty types array", async () => {
+      const selector = new LayoutSelector(mockTripleStore);
+      const assetUri = "https://exocortex.my/assets/no-types-123";
+
+      // Asset has no rdf:type triples
+      mockTripleStore.match.mockImplementation(async (subject, predicate) => {
+        const subjectStr = subject && "value" in subject ? subject.value : "";
+        const predStr = predicate && "value" in predicate ? predicate.value : "";
+
+        // Query 1: Get asset's classes - returns empty
+        if (subjectStr === assetUri && predStr === RDF_TYPE) {
+          return [];
+        }
+
+        // Query 2: Layout_appliesTo for DefaultAssetLayout
+        if (predStr === `${EXO_UI_NS}Layout_appliesTo`) {
+          return [];
+        }
+
+        // Label for DefaultAssetLayout
+        if (subjectStr === `${EXO_UI_NS}DefaultAssetLayout` && predStr === `${RDFS_NS}label`) {
+          return [createTriple(`${EXO_UI_NS}DefaultAssetLayout`, `${RDFS_NS}label`, "Default Asset Layout")];
+        }
+
+        return [];
+      });
+
+      const layout = await selector.selectLayout(assetUri);
+
+      // Should fallback to DefaultAssetLayout
+      expect(layout).toBeDefined();
+      expect(layout!.uri).toBe(`${EXO_UI_NS}DefaultAssetLayout`);
+    });
+
+    it("should handle asset with only owl:NamedIndividual type", async () => {
+      const selector = new LayoutSelector(mockTripleStore);
+      const assetUri = "https://exocortex.my/assets/named-individual-123";
+      const OWL_NS = "http://www.w3.org/2002/07/owl#";
+
+      // Asset has only owl:NamedIndividual type (no specific layout)
+      mockTripleStore.match.mockImplementation(async (subject, predicate) => {
+        const subjectStr = subject && "value" in subject ? subject.value : "";
+        const predStr = predicate && "value" in predicate ? predicate.value : "";
+
+        if (subjectStr === assetUri && predStr === RDF_TYPE) {
+          return [
+            createTriple(assetUri, RDF_TYPE, `${OWL_NS}NamedIndividual`),
+          ];
+        }
+
+        // No layout for owl:NamedIndividual, fallback to DefaultAssetLayout
+        if (predStr === `${EXO_UI_NS}Layout_appliesTo`) {
+          return [
+            createTriple(`${EXO_UI_NS}DefaultAssetLayout`, `${EXO_UI_NS}Layout_appliesTo`, `${EXO_NS}Asset`),
+          ];
+        }
+
+        if (subjectStr === `${EXO_UI_NS}DefaultAssetLayout` && predStr === `${RDFS_NS}label`) {
+          return [createTriple(`${EXO_UI_NS}DefaultAssetLayout`, `${RDFS_NS}label`, "Default Asset Layout")];
+        }
+
+        return [];
+      });
+
+      const layout = await selector.selectLayout(assetUri);
+
+      expect(layout).toBeDefined();
+      expect(layout!.uri).toBe(`${EXO_UI_NS}DefaultAssetLayout`);
+    });
+
+    it("should handle multiple applicable layouts and choose first match", async () => {
+      const selector = new LayoutSelector(mockTripleStore);
+      const assetUri = "https://exocortex.my/assets/multi-layout-123";
+
+      // Asset has types that could match multiple layouts
+      mockTripleStore.match.mockImplementation(async (subject, predicate) => {
+        const subjectStr = subject && "value" in subject ? subject.value : "";
+        const predStr = predicate && "value" in predicate ? predicate.value : "";
+
+        if (subjectStr === assetUri && predStr === RDF_TYPE) {
+          return [
+            createTriple(assetUri, RDF_TYPE, `${EXO_NS}Task`),
+            createTriple(assetUri, RDF_TYPE, `${EXO_NS}Effort`),
+          ];
+        }
+
+        // Both Task and Effort have layouts
+        if (predStr === `${EXO_UI_NS}Layout_appliesTo`) {
+          return [
+            createTriple(`${EXO_UI_NS}TaskLayout`, `${EXO_UI_NS}Layout_appliesTo`, `${EXO_NS}Task`),
+            createTriple(`${EXO_UI_NS}EffortLayout`, `${EXO_UI_NS}Layout_appliesTo`, `${EXO_NS}Effort`),
+          ];
+        }
+
+        if (subjectStr === `${EXO_UI_NS}TaskLayout` && predStr === `${RDFS_NS}label`) {
+          return [createTriple(`${EXO_UI_NS}TaskLayout`, `${RDFS_NS}label`, "Task Layout")];
+        }
+
+        return [];
+      });
+
+      const layout = await selector.selectLayout(assetUri);
+
+      // Should choose first matching layout (TaskLayout, since Task is first in types)
+      expect(layout).toBeDefined();
+      expect(layout!.uri).toBe(`${EXO_UI_NS}TaskLayout`);
+    });
+
+    it("should handle layout with no blocks", async () => {
+      const selector = new LayoutSelector(mockTripleStore);
+      const layoutUri = `${EXO_UI_NS}EmptyLayout`;
+
+      mockTripleStore.match.mockImplementation(async (subject, predicate) => {
+        const subjectStr = subject && "value" in subject ? subject.value : "";
+        const predStr = predicate && "value" in predicate ? predicate.value : "";
+
+        if (subjectStr === layoutUri && predStr === `${RDFS_NS}label`) {
+          return [createTriple(layoutUri, `${RDFS_NS}label`, "Empty Layout")];
+        }
+
+        if (subjectStr === layoutUri && predStr === `${EXO_UI_NS}Layout_blocks`) {
+          return []; // No blocks
+        }
+
+        return [];
+      });
+
+      const layout = await selector.loadLayout(layoutUri);
+
+      expect(layout).toBeDefined();
+      expect(layout!.uri).toBe(layoutUri);
+      expect(layout!.label).toBe("Empty Layout");
+      expect(layout!.blocks).toHaveLength(0);
+    });
+
+    it("should handle layout with missing label", async () => {
+      const selector = new LayoutSelector(mockTripleStore);
+      const layoutUri = `${EXO_UI_NS}NoLabelLayout`;
+
+      mockTripleStore.match.mockImplementation(async (subject, predicate) => {
+        const subjectStr = subject && "value" in subject ? subject.value : "";
+        const predStr = predicate && "value" in predicate ? predicate.value : "";
+
+        // No label triple
+        if (subjectStr === layoutUri && predStr === `${RDFS_NS}label`) {
+          return [];
+        }
+
+        if (subjectStr === layoutUri && predStr === `${EXO_UI_NS}Layout_blocks`) {
+          return [];
+        }
+
+        return [];
+      });
+
+      const layout = await selector.loadLayout(layoutUri);
+
+      expect(layout).toBeDefined();
+      expect(layout!.uri).toBe(layoutUri);
+      expect(layout!.label).toBe("Unnamed Layout"); // Default label
+    });
+
+    it("should handle block with missing properties", async () => {
+      const selector = new LayoutSelector(mockTripleStore);
+      const layoutUri = `${EXO_UI_NS}MinimalBlockLayout`;
+
+      mockTripleStore.match.mockImplementation(async (subject, predicate) => {
+        const subjectStr = subject && "value" in subject ? subject.value : "";
+        const predStr = predicate && "value" in predicate ? predicate.value : "";
+
+        if (subjectStr === layoutUri && predStr === `${RDFS_NS}label`) {
+          return [createTriple(layoutUri, `${RDFS_NS}label`, "Minimal Block Layout")];
+        }
+
+        if (subjectStr === layoutUri && predStr === `${EXO_UI_NS}Layout_blocks`) {
+          return [createTriple(layoutUri, `${EXO_UI_NS}Layout_blocks`, `${EXO_UI_NS}MinimalBlock`)];
+        }
+
+        // Block has no properties set
+        if (subjectStr === `${EXO_UI_NS}MinimalBlock`) {
+          return [];
+        }
+
+        return [];
+      });
+
+      const layout = await selector.loadLayout(layoutUri);
+
+      expect(layout).toBeDefined();
+      expect(layout!.blocks).toHaveLength(1);
+      // Should have default values
+      expect(layout!.blocks[0].uri).toBe(`${EXO_UI_NS}MinimalBlock`);
+      expect(layout!.blocks[0].order).toBe(0); // Default
+      expect(layout!.blocks[0].query).toBe(""); // Default
+      expect(layout!.blocks[0].renderer).toBe("text"); // Default
+      expect(layout!.blocks[0].headless).toBe(true); // Default
+    });
+  });
+
+  describe("error handling", () => {
+    const EXO_UI_NS = "https://exocortex.my/ontology/exo-ui#";
+    const RDFS_NS = "http://www.w3.org/2000/01/rdf-schema#";
+    const RDF_TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type";
+
+    it("should handle triple store errors gracefully in loadLayout", async () => {
+      const selector = new LayoutSelector(mockTripleStore);
+      const layoutUri = `${EXO_UI_NS}ErrorLayout`;
+
+      // Simulate triple store error
+      mockTripleStore.match.mockRejectedValue(new Error("Triple store connection failed"));
+
+      const layout = await selector.loadLayout(layoutUri);
+
+      expect(layout).toBeNull();
+    });
+
+    it("should cache null result for failed layout loads", async () => {
+      const selector = new LayoutSelector(mockTripleStore);
+      const layoutUri = `${EXO_UI_NS}FailingLayout`;
+
+      // First call throws error
+      mockTripleStore.match.mockRejectedValueOnce(new Error("First error"));
+
+      const layout1 = await selector.loadLayout(layoutUri);
+      expect(layout1).toBeNull();
+
+      // Second call should use cached null value (no new error thrown)
+      const layout2 = await selector.loadLayout(layoutUri);
+      expect(layout2).toBeNull();
+      // Should only have 1 call (cached after first failure)
+      expect(mockTripleStore.match).toHaveBeenCalledTimes(1);
+    });
+
+    it("should handle block loading errors gracefully", async () => {
+      const selector = new LayoutSelector(mockTripleStore);
+      const layoutUri = `${EXO_UI_NS}BlockErrorLayout`;
+
+      mockTripleStore.match.mockImplementation(async (subject, predicate) => {
+        const subjectStr = subject && "value" in subject ? subject.value : "";
+        const predStr = predicate && "value" in predicate ? predicate.value : "";
+
+        if (subjectStr === layoutUri && predStr === `${RDFS_NS}label`) {
+          return [createTriple(layoutUri, `${RDFS_NS}label`, "Block Error Layout")];
+        }
+
+        if (subjectStr === layoutUri && predStr === `${EXO_UI_NS}Layout_blocks`) {
+          return [
+            createTriple(layoutUri, `${EXO_UI_NS}Layout_blocks`, `${EXO_UI_NS}GoodBlock`),
+            createTriple(layoutUri, `${EXO_UI_NS}Layout_blocks`, `${EXO_UI_NS}BadBlock`),
+          ];
+        }
+
+        // GoodBlock succeeds
+        if (subjectStr === `${EXO_UI_NS}GoodBlock`) {
+          if (predStr === `${EXO_UI_NS}LayoutBlock_order`) {
+            return [createTriple(`${EXO_UI_NS}GoodBlock`, predStr, 1)];
+          }
+          if (predStr === `${EXO_UI_NS}LayoutBlock_renderer`) {
+            return [createTriple(`${EXO_UI_NS}GoodBlock`, predStr, "good-renderer")];
+          }
+          return [];
+        }
+
+        // BadBlock throws error
+        if (subjectStr === `${EXO_UI_NS}BadBlock`) {
+          throw new Error("Block loading failed");
+        }
+
+        return [];
+      });
+
+      const layout = await selector.loadLayout(layoutUri);
+
+      expect(layout).toBeDefined();
+      // Should have only the good block, bad block silently fails
+      expect(layout!.blocks).toHaveLength(1);
+      expect(layout!.blocks[0].uri).toBe(`${EXO_UI_NS}GoodBlock`);
+    });
+
+    it("should handle selectLayout when triple store returns undefined", async () => {
+      const selector = new LayoutSelector(mockTripleStore);
+      const assetUri = "https://exocortex.my/assets/undefined-123";
+
+      mockTripleStore.match.mockImplementation(async (subject, predicate) => {
+        const subjectStr = subject && "value" in subject ? subject.value : "";
+        const predStr = predicate && "value" in predicate ? predicate.value : "";
+
+        if (subjectStr === assetUri && predStr === RDF_TYPE) {
+          return []; // No types
+        }
+
+        if (subjectStr === `${EXO_UI_NS}DefaultAssetLayout` && predStr === `${RDFS_NS}label`) {
+          return [createTriple(`${EXO_UI_NS}DefaultAssetLayout`, `${RDFS_NS}label`, "Default")];
+        }
+
+        return [];
+      });
+
+      const layout = await selector.selectLayout(assetUri);
+
+      // Should still return DefaultAssetLayout
+      expect(layout).toBeDefined();
+      expect(layout!.uri).toBe(`${EXO_UI_NS}DefaultAssetLayout`);
+    });
+
+    it("should handle RDF list with circular reference", async () => {
+      const selector = new LayoutSelector(mockTripleStore);
+      const layoutUri = `${EXO_UI_NS}CircularListLayout`;
+      const RDF_NS = "http://www.w3.org/1999/02/22-rdf-syntax-ns#";
+
+      mockTripleStore.match.mockImplementation(async (subject, predicate) => {
+        const subjectStr = getSubjectString(subject as Subject);
+        const predStr = predicate && "value" in predicate ? predicate.value : "";
+
+        if (subjectStr === layoutUri && predStr === `${RDFS_NS}label`) {
+          return [createTriple(layoutUri, `${RDFS_NS}label`, "Circular Layout")];
+        }
+
+        if (subjectStr === layoutUri && predStr === `${EXO_UI_NS}Layout_blocks`) {
+          return [createTriple(layoutUri, `${EXO_UI_NS}Layout_blocks`, "_:circular1")];
+        }
+
+        // Circular reference: _:circular1 -> _:circular2 -> _:circular1
+        if (subjectStr === "_:circular1") {
+          if (predStr === `${RDF_NS}first`) {
+            return [createTriple("_:circular1", `${RDF_NS}first`, `${EXO_UI_NS}Block1`)];
+          }
+          if (predStr === `${RDF_NS}rest`) {
+            return [createTriple("_:circular1", `${RDF_NS}rest`, "_:circular2")];
+          }
+        }
+
+        if (subjectStr === "_:circular2") {
+          if (predStr === `${RDF_NS}first`) {
+            return [createTriple("_:circular2", `${RDF_NS}first`, `${EXO_UI_NS}Block2`)];
+          }
+          if (predStr === `${RDF_NS}rest`) {
+            return [createTriple("_:circular2", `${RDF_NS}rest`, "_:circular1")]; // Circular!
+          }
+        }
+
+        // Block properties
+        if (subjectStr === `${EXO_UI_NS}Block1` && predStr === `${EXO_UI_NS}LayoutBlock_order`) {
+          return [createTriple(`${EXO_UI_NS}Block1`, predStr, 1)];
+        }
+        if (subjectStr === `${EXO_UI_NS}Block2` && predStr === `${EXO_UI_NS}LayoutBlock_order`) {
+          return [createTriple(`${EXO_UI_NS}Block2`, predStr, 2)];
+        }
+
+        return [];
+      });
+
+      const layout = await selector.loadLayout(layoutUri);
+
+      // Should handle circular reference without infinite loop
+      expect(layout).toBeDefined();
+      expect(layout!.blocks.length).toBeLessThanOrEqual(2);
     });
   });
 
