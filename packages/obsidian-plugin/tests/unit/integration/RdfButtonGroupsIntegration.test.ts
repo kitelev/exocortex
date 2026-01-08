@@ -132,11 +132,14 @@ describe("RdfButtonGroupsBuilder Integration with UniversalLayoutRenderer", () =
   });
 
   describe("RdfButtonGroupsBuilder instantiation", () => {
-    it("should always have rdfButtonGroupsBuilder property (legacy ButtonGroupsBuilder removed)", () => {
+    it("should have rdfButtonGroupsBuilder property when useRdfButtons is true", () => {
+      // mockSettings already has useRdfButtons: true (set in beforeEach)
+      expect(mockSettings.useRdfButtons).toBe(true);
+
       const renderer = new UniversalLayoutRenderer(mockApp, mockSettings, mockPlugin, mockVaultAdapter);
       const renderer_any = renderer as any;
 
-      // The renderer should always have an rdfButtonGroupsBuilder (legacy removed)
+      // The renderer should have rdfButtonGroupsBuilder when feature flag is enabled
       expect(renderer_any.rdfButtonGroupsBuilder).toBeDefined();
     });
   });
@@ -334,6 +337,113 @@ describe("RdfButtonGroupsBuilder Integration with UniversalLayoutRenderer", () =
       // IncrementalUpdateHandler should have access to rdfButtonGroupsBuilder
       const handler = renderer_any.incrementalUpdateHandler;
       expect(handler).toBeDefined();
+    });
+  });
+
+  describe("Feature flag: useRdfButtons", () => {
+    it("should initialize RdfButtonGroupsBuilder when useRdfButtons is true", () => {
+      mockSettings.useRdfButtons = true;
+
+      const renderer = new UniversalLayoutRenderer(mockApp, mockSettings, mockPlugin, mockVaultAdapter);
+      const renderer_any = renderer as any;
+
+      expect(renderer_any.rdfButtonGroupsBuilder).toBeDefined();
+    });
+
+    it("should NOT initialize RdfButtonGroupsBuilder when useRdfButtons is false", () => {
+      mockSettings.useRdfButtons = false;
+
+      const renderer = new UniversalLayoutRenderer(mockApp, mockSettings, mockPlugin, mockVaultAdapter);
+      const renderer_any = renderer as any;
+
+      expect(renderer_any.rdfButtonGroupsBuilder).toBeUndefined();
+    });
+
+    it("should NOT render buttons when useRdfButtons is false", async () => {
+      mockSettings.useRdfButtons = false;
+
+      const renderer = new UniversalLayoutRenderer(mockApp, mockSettings, mockPlugin, mockVaultAdapter);
+      const renderer_any = renderer as any;
+
+      const mockFile = {
+        path: "test.md",
+        basename: "test",
+      } as TFile;
+
+      mockApp.workspace.getActiveFile.mockReturnValue(mockFile);
+
+      // Mock other dependencies
+      renderer_any.dailyNavRenderer = { render: jest.fn() };
+      renderer_any.propertiesRenderer = { render: jest.fn().mockResolvedValue(undefined) };
+      renderer_any.dailyTasksRenderer = { render: jest.fn().mockResolvedValue(undefined) };
+      renderer_any.dailyProjectsRenderer = { render: jest.fn().mockResolvedValue(undefined) };
+      renderer_any.areaTreeRenderer = { render: jest.fn().mockResolvedValue(undefined) };
+      renderer_any.relationsRenderer = {
+        render: jest.fn().mockResolvedValue(undefined),
+        getAssetRelations: jest.fn().mockResolvedValue([]),
+      };
+      renderer_any.backlinksCacheManager = { getBacklinks: jest.fn().mockReturnValue(new Map()) };
+      renderer_any.metadataExtractor = { extractMetadata: jest.fn().mockReturnValue({}) };
+
+      const el = document.createElement("div");
+      await renderer.render("", el, {} as any);
+
+      // No button container should be created when feature flag is disabled
+      const buttonsContainer = el.querySelector(".exocortex-buttons-section");
+      expect(buttonsContainer).toBeNull();
+    });
+
+    it("should render buttons when useRdfButtons is true and buttons exist", async () => {
+      mockSettings.useRdfButtons = true;
+
+      const renderer = new UniversalLayoutRenderer(mockApp, mockSettings, mockPlugin, mockVaultAdapter);
+      const renderer_any = renderer as any;
+
+      const mockFile = {
+        path: "test.md",
+        basename: "test",
+      } as TFile;
+
+      mockApp.workspace.getActiveFile.mockReturnValue(mockFile);
+
+      // Mock RDF button builder to return buttons
+      const mockRdfButtonGroups = [
+        {
+          id: "test:StatusGroup",
+          title: "Status",
+          buttons: [
+            {
+              id: "test:StartButton",
+              label: "Start",
+              onClick: jest.fn(),
+            },
+          ],
+        },
+      ];
+
+      renderer_any.rdfButtonGroupsBuilder = {
+        buildButtonGroups: jest.fn().mockResolvedValue(mockRdfButtonGroups),
+      };
+
+      // Mock other dependencies
+      renderer_any.dailyNavRenderer = { render: jest.fn() };
+      renderer_any.propertiesRenderer = { render: jest.fn().mockResolvedValue(undefined) };
+      renderer_any.dailyTasksRenderer = { render: jest.fn().mockResolvedValue(undefined) };
+      renderer_any.dailyProjectsRenderer = { render: jest.fn().mockResolvedValue(undefined) };
+      renderer_any.areaTreeRenderer = { render: jest.fn().mockResolvedValue(undefined) };
+      renderer_any.relationsRenderer = {
+        render: jest.fn().mockResolvedValue(undefined),
+        getAssetRelations: jest.fn().mockResolvedValue([]),
+      };
+      renderer_any.backlinksCacheManager = { getBacklinks: jest.fn().mockReturnValue(new Map()) };
+      renderer_any.metadataExtractor = { extractMetadata: jest.fn().mockReturnValue({}) };
+
+      const el = document.createElement("div");
+      await renderer.render("", el, {} as any);
+
+      // Buttons container should be created when feature flag is enabled and buttons exist
+      const buttonsContainer = el.querySelector(".exocortex-buttons-section");
+      expect(buttonsContainer).not.toBeNull();
     });
   });
 });
