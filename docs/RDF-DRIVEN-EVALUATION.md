@@ -136,58 +136,94 @@ const CREATE_TASK_BUTTON = {
 
 ## Metrics: The Honest Numbers
 
-### Lines of Code Breakdown
+> **Note:** Metrics measured using `cloc` (v2.06) tool on 2026-01-08.
+> Baseline: commit `8f9eb353` (before RDF-Driven Architecture v1.0 milestone)
+> Final: commit `ffd06a47` (after RDF-Driven Architecture v2.0 milestone)
 
-| Metric | Value | Notes |
-|--------|-------|-------|
-| **TypeScript (total)** | ~379,000 LOC | All `.ts` files in packages/ |
-| **TypeScript (tests)** | ~208,000 LOC | `.test.ts` files (55% of total) |
-| **TypeScript (source)** | ~171,000 LOC | Non-test TypeScript |
-| **RDF/TTL** | 0 LOC | Ontologies in external repo |
-| **RDF definitions (conceptual)** | ~5,000 "RDF LOC" | Commands, buttons, layouts in ontology |
+### TypeScript LOC (packages/obsidian-plugin/src)
 
-### The Reality Check
-
-| Metric | Before v1.3 | After v1.5 | Change |
+| Metric | Before v1.0 | After v2.0 | Change |
 |--------|-------------|------------|--------|
-| **TypeScript LOC** | ~350,000 | ~379,000 | +8% |
-| **RDF definitions** | ~0 | ~5,000 | New |
-| **Total "code"** | ~350,000 | ~384,000 | +10% |
+| **Files** | 368 | 333 | **-35 (-9.5%)** |
+| **Code LOC** | 75,440 | 74,365 | **-1,075 (-1.4%)** |
+| **Comment LOC** | 25,777 | 26,596 | +819 (+3.2%) |
+| **Blank lines** | 13,702 | 13,680 | -22 (-0.2%) |
+| **Total lines** | 114,919 | 114,641 | -278 (-0.2%) |
 
-**Why code INCREASED, not decreased:**
+### RDF Ontologies (exocortex-public-ontologies)
 
-1. **New features**: Graph View (60k+ LOC), SPARQL 1.2, SHACL validation
-2. **RDF infrastructure**: RdfCommandRegistry, RdfButtonService, LayoutSelector
-3. **Dual implementations**: Legacy compatibility during migration
-4. **Tests**: Comprehensive test coverage for RDF components
+| Directory | Before Files | After Files | Before Lines | After Lines | Change (Lines) |
+|-----------|--------------|-------------|--------------|-------------|----------------|
+| ems | 58 | 58 | 348 | 348 | 0 |
+| ems-ui | 26 | 203 | 200 | 1,558 | **+1,358 (+679%)** |
+| exo | 63 | 63 | 414 | 414 | 0 |
+| exo-ui | 0 | 487 | 0 | 3,754 | **+3,754 (new)** |
+| **Total** | **147** | **811** | **962** | **6,074** | **+5,112 (+531%)** |
 
-### What "RDF-Driven" Actually Means
+### Summary: Code Migration
+
+| Metric | Before | After | Change |
+|--------|--------|-------|--------|
+| **TypeScript LOC** | 75,440 | 74,365 | **-1,075 (-1.4%)** |
+| **TypeScript Files** | 368 | 333 | **-35 (-9.5%)** |
+| **RDF Files** | 147 | 811 | **+664 (+452%)** |
+| **RDF Lines** | 962 | 6,074 | **+5,112 (+531%)** |
+| **Total (TS + RDF)** | 76,402 | 80,439 | **+4,037 (+5.3%)** |
+
+### Key Observations
+
+1. **TypeScript decreased slightly** (-1.4% LOC, -9.5% files)
+   - UI configuration code moved to RDF definitions
+   - 35 fewer TypeScript files to maintain
+
+2. **RDF definitions grew significantly** (+531% lines, +452% files)
+   - Commands, buttons, actions, conditions now declarative
+   - exo-ui namespace added (487 new files, 3,754 lines)
+   - ems-ui namespace expanded (177 new files, 1,358 new lines)
+
+3. **Total code volume increased** (+5.3%)
+   - RDF infrastructure added (new namespace, SHACL shapes)
+   - But: TypeScript portion is MORE maintainable
+   - Declarative RDF easier to modify than procedural TypeScript
+
+### What the Numbers Mean
 
 ```
 ┌────────────────────────────────────────────────────────────────────┐
-│                    CODE DISTRIBUTION                               │
+│                    MIGRATION IMPACT                                 │
 ├────────────────────────────────────────────────────────────────────┤
 │                                                                    │
-│  UI Configuration (Commands, Buttons, Layouts)                     │
+│  UI Configuration Layer                                            │
 │  ────────────────────────────────────────────                      │
-│  BEFORE: Hardcoded TypeScript (~15,000 LOC)                        │
-│  AFTER:  RDF definitions (~5,000 "RDF LOC")                        │
-│          + TypeScript glue (~8,000 LOC)                            │
-│  RESULT: Net ~2,000 LOC REDUCTION for this layer                   │
+│  BEFORE: Embedded in TypeScript (est. 5-8k LOC)                    │
+│  AFTER:  RDF definitions (6,074 lines)                             │
+│          + TypeScript glue (~2k LOC)                               │
+│  RESULT: Explicit, declarative, introspectable                     │
 │                                                                    │
-│  Core Application Logic                                            │
-│  ──────────────────────                                            │
-│  Unchanged: ~120,000 LOC (algorithms, services, domain)            │
+│  Core TypeScript                                                   │
+│  ─────────────────                                                 │
+│  Net reduction: -1,075 LOC                                         │
+│  35 fewer files to maintain                                        │
 │                                                                    │
-│  New Features (v1.3-v1.5)                                          │
-│  ─────────────────────────                                         │
-│  Added: ~90,000 LOC (Graph View, SPARQL 1.2, validation, CLI)      │
-│                                                                    │
-│  Tests                                                             │
-│  ─────                                                             │
-│  Increased: ~150,000 → ~208,000 LOC (+39%)                         │
+│  Value Proposition                                                 │
+│  ─────────────────                                                 │
+│  NOT about writing less code                                       │
+│  ABOUT making code more maintainable and extensible                │
 │                                                                    │
 └────────────────────────────────────────────────────────────────────┘
+```
+
+### Measurement Commands (Reproducible)
+
+```bash
+# TypeScript metrics (from exocortex repo root)
+cloc packages/obsidian-plugin/src --include-lang=TypeScript --json
+
+# RDF file counts (from exocortex-public-ontologies repo)
+find ems ems-ui exo exo-ui -name '*.md' | wc -l
+
+# RDF line counts
+cat ems/*.md ems-ui/*.md exo/*.md exo-ui/*.md | wc -l
 ```
 
 ---
@@ -421,3 +457,4 @@ See: [COMMANDS.md](./COMMANDS.md), [BUTTONS.md](./BUTTONS.md), [LAYOUTS.md](./LA
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | 2026-01-08 | Initial honest evaluation document |
+| 1.1 | 2026-01-08 | Added measured LOC metrics (Issue #1468) |
