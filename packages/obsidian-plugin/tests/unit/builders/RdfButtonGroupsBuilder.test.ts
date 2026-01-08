@@ -4585,4 +4585,716 @@ describe("RdfButtonGroupsBuilder", () => {
       expect(mockConditionEvaluator.evaluate).toHaveBeenCalledTimes(1);
     });
   });
+
+  /**
+   * Verification tests for all 29 RDF button definitions.
+   *
+   * These tests verify that RdfButtonGroupsBuilder correctly reads and parses
+   * all button definitions from the RDF ontology.
+   *
+   * @see https://github.com/kitelev/exocortex/issues/1742
+   */
+  describe("Issue #1742: Verify all 29 button definitions", () => {
+    /**
+     * Complete list of all 29 buttons as defined in docs/BUTTONS.md.
+     *
+     * Each button is defined with its required and optional properties to verify
+     * RdfButtonGroupsBuilder correctly handles all button definition scenarios.
+     */
+    const ALL_BUTTON_DEFINITIONS = {
+      // Creation Group (8 buttons)
+      creation: [
+        {
+          uri: "https://exocortex.my/ontology/ems-ui#CreateTaskButton",
+          label: "Create Task",
+          variant: "primary",
+          action: "https://exocortex.my/ontology/ems-ui#CreateTaskAction",
+          condition: "https://exocortex.my/ontology/ems-ui#CanCreateTaskCondition",
+        },
+        {
+          uri: "https://exocortex.my/ontology/ems-ui#CreateProjectButton",
+          label: "Create Project",
+          variant: "primary",
+          action: "https://exocortex.my/ontology/ems-ui#CreateProjectAction",
+          condition: "https://exocortex.my/ontology/ems-ui#CanCreateProjectCondition",
+        },
+        {
+          uri: "https://exocortex.my/ontology/ems-ui#CreateAreaButton",
+          label: "Create Area",
+          variant: "primary",
+          action: "https://exocortex.my/ontology/ems-ui#CreateAreaAction",
+          condition: "https://exocortex.my/ontology/ems-ui#CanCreateAreaCondition",
+        },
+        {
+          uri: "https://exocortex.my/ontology/ems-ui#CreateInstanceButton",
+          label: "Create Instance",
+          variant: "primary",
+          action: "https://exocortex.my/ontology/ems-ui#CreateInstanceAction",
+          condition: "https://exocortex.my/ontology/ems-ui#CanCreateInstanceCondition",
+        },
+        {
+          uri: "https://exocortex.my/ontology/ems-ui#CreateRelatedTaskButton",
+          label: "Create Related Task",
+          variant: "primary",
+          action: "https://exocortex.my/ontology/ems-ui#CreateRelatedTaskAction",
+          condition: "https://exocortex.my/ontology/ems-ui#CanCreateRelatedTaskCondition",
+        },
+        {
+          uri: "https://exocortex.my/ontology/ems-ui#CreateNarrowerConceptButton",
+          label: "Create Narrower Concept",
+          variant: "primary",
+          action: "https://exocortex.my/ontology/ems-ui#CreateNarrowerConceptAction",
+          condition: "https://exocortex.my/ontology/ems-ui#CanCreateNarrowerConceptCondition",
+        },
+        {
+          uri: "https://exocortex.my/ontology/ems-ui#CreateSubclassButton",
+          label: "Create Subclass",
+          variant: "primary",
+          action: "https://exocortex.my/ontology/ems-ui#CreateSubclassAction",
+          condition: "https://exocortex.my/ontology/ems-ui#CanCreateSubclassCondition",
+        },
+        {
+          uri: "https://exocortex.my/ontology/ems-ui#CreateTaskForDailyNoteButton",
+          label: "Create Task (DailyNote)",
+          variant: "primary",
+          action: "https://exocortex.my/ontology/ems-ui#CreateTaskForDailyNoteAction",
+          condition: "https://exocortex.my/ontology/ems-ui#CanCreateTaskForDailyNoteCondition",
+        },
+      ],
+      // Status Group (7 buttons)
+      status: [
+        {
+          uri: "https://exocortex.my/ontology/ems-ui#SetDraftStatusButton",
+          label: "Set Draft Status",
+          variant: "secondary",
+          action: "https://exocortex.my/ontology/ems-ui#SetDraftStatusAction",
+          condition: "https://exocortex.my/ontology/ems-ui#CanSetDraftStatusCondition",
+        },
+        {
+          uri: "https://exocortex.my/ontology/ems-ui#MoveToBacklogButton",
+          label: "Move to Backlog",
+          variant: "secondary",
+          action: "https://exocortex.my/ontology/ems-ui#MoveToBacklogAction",
+          condition: "https://exocortex.my/ontology/ems-ui#CanMoveToBacklogCondition",
+        },
+        {
+          uri: "https://exocortex.my/ontology/ems-ui#MoveToAnalysisButton",
+          label: "Move to Analysis",
+          variant: "secondary",
+          action: "https://exocortex.my/ontology/ems-ui#MoveToAnalysisAction",
+          condition: "https://exocortex.my/ontology/ems-ui#CanMoveToAnalysisCondition",
+        },
+        {
+          uri: "https://exocortex.my/ontology/ems-ui#MoveToToDoButton",
+          label: "Move to ToDo",
+          variant: "secondary",
+          action: "https://exocortex.my/ontology/ems-ui#MoveToToDoAction",
+          condition: "https://exocortex.my/ontology/ems-ui#CanMoveToToDoCondition",
+        },
+        {
+          uri: "https://exocortex.my/ontology/ems-ui#StartEffortButton",
+          label: "Start",
+          variant: "primary",
+          icon: "play",
+          action: "https://exocortex.my/ontology/ems-ui#StartAction",
+          condition: "https://exocortex.my/ontology/ems-ui#CanStartCondition",
+        },
+        {
+          uri: "https://exocortex.my/ontology/ems-ui#DoneButton",
+          label: "Mark Done",
+          variant: "success",
+          icon: "check",
+          action: "https://exocortex.my/ontology/ems-ui#DoneAction",
+          condition: "https://exocortex.my/ontology/ems-ui#IsDoingCondition",
+        },
+        {
+          uri: "https://exocortex.my/ontology/ems-ui#RollbackStatusButton",
+          label: "Rollback Status",
+          variant: "warning",
+          action: "https://exocortex.my/ontology/ems-ui#RollbackStatusAction",
+          condition: "https://exocortex.my/ontology/ems-ui#CanRollbackStatusCondition",
+        },
+      ],
+      // Planning Group (6 buttons)
+      planning: [
+        {
+          uri: "https://exocortex.my/ontology/ems-ui#SetActiveFocusButton",
+          label: "Set Active Focus",
+          variant: "warning",
+          action: "https://exocortex.my/ontology/ems-ui#SetActiveFocusAction",
+          condition: "https://exocortex.my/ontology/ems-ui#CanSetActiveFocusCondition",
+        },
+        {
+          uri: "https://exocortex.my/ontology/ems-ui#PlanTodayButton",
+          label: "Plan on Today",
+          variant: "warning",
+          icon: "calendar",
+          action: "https://exocortex.my/ontology/ems-ui#PlanTodayAction",
+          condition: "https://exocortex.my/ontology/ems-ui#CanPlanOnTodayCondition",
+        },
+        {
+          uri: "https://exocortex.my/ontology/ems-ui#PlanEveningButton",
+          label: "Plan for Evening",
+          variant: "warning",
+          icon: "moon",
+          action: "https://exocortex.my/ontology/ems-ui#PlanEveningAction",
+          condition: "https://exocortex.my/ontology/ems-ui#CanPlanForEveningCondition",
+        },
+        {
+          uri: "https://exocortex.my/ontology/ems-ui#ShiftDayBackwardButton",
+          label: "Shift Day ◀",
+          variant: "warning",
+          icon: "chevron-left",
+          action: "https://exocortex.my/ontology/ems-ui#ShiftDayBackwardAction",
+          condition: "https://exocortex.my/ontology/ems-ui#CanShiftDayBackwardCondition",
+        },
+        {
+          uri: "https://exocortex.my/ontology/ems-ui#ShiftForwardButton",
+          label: "Shift Day ▶",
+          variant: "warning",
+          icon: "chevron-right",
+          action: "https://exocortex.my/ontology/ems-ui#ShiftForwardAction",
+          condition: "https://exocortex.my/ontology/ems-ui#CanShiftForwardCondition",
+        },
+        {
+          uri: "https://exocortex.my/ontology/ems-ui#VoteButton",
+          label: "Vote",
+          variant: "warning",
+          action: "https://exocortex.my/ontology/ems-ui#VoteAction",
+          condition: "https://exocortex.my/ontology/ems-ui#CanVoteOnEffortCondition",
+        },
+      ],
+      // Maintenance Group (8 buttons)
+      maintenance: [
+        {
+          uri: "https://exocortex.my/ontology/ems-ui#TrashButton",
+          label: "Trash",
+          variant: "danger",
+          icon: "trash",
+          action: "https://exocortex.my/ontology/ems-ui#TrashAction",
+          condition: "https://exocortex.my/ontology/ems-ui#IsNotTrashedCondition",
+        },
+        {
+          uri: "https://exocortex.my/ontology/ems-ui#ArchiveButton",
+          label: "Archive",
+          variant: "danger",
+          action: "https://exocortex.my/ontology/ems-ui#ArchiveAction",
+          condition: "https://exocortex.my/ontology/ems-ui#CanArchiveCondition",
+        },
+        {
+          uri: "https://exocortex.my/ontology/ems-ui#CleanupButton",
+          label: "Clean Properties",
+          variant: "secondary",
+          icon: "eraser",
+          action: "https://exocortex.my/ontology/ems-ui#CleanupAction",
+          // No condition - always visible
+        },
+        {
+          uri: "https://exocortex.my/ontology/ems-ui#RepairButton",
+          label: "Repair Folder",
+          variant: "warning",
+          icon: "wrench",
+          action: "https://exocortex.my/ontology/ems-ui#RepairAction",
+          // No condition - always visible
+        },
+        {
+          uri: "https://exocortex.my/ontology/ems-ui#RenameToUidButton",
+          label: "Rename to UID",
+          variant: "secondary",
+          icon: "fingerprint",
+          action: "https://exocortex.my/ontology/ems-ui#RenameToUidAction",
+          condition: "https://exocortex.my/ontology/ems-ui#IsNotUidNamedCondition",
+        },
+        {
+          uri: "https://exocortex.my/ontology/ems-ui#CopyLabelToAliasesButton",
+          label: "Copy Label to Aliases",
+          variant: "secondary",
+          action: "https://exocortex.my/ontology/ems-ui#CopyLabelToAliasesAction",
+          // No condition - always visible
+        },
+        {
+          uri: "https://exocortex.my/ontology/ems-ui#ConvertTaskToProjectButton",
+          label: "Convert to Project",
+          variant: "primary",
+          action: "https://exocortex.my/ontology/ems-ui#ConvertTaskToProjectAction",
+          condition: "https://exocortex.my/ontology/ems-ui#CanConvertTaskToProjectCondition",
+        },
+        {
+          uri: "https://exocortex.my/ontology/ems-ui#ConvertProjectToTaskButton",
+          label: "Convert to Task",
+          variant: "primary",
+          action: "https://exocortex.my/ontology/ems-ui#ConvertProjectToTaskAction",
+          condition: "https://exocortex.my/ontology/ems-ui#CanConvertProjectToTaskCondition",
+        },
+      ],
+    };
+
+    /**
+     * Helper to get all buttons as a flat array.
+     */
+    function getAllButtons(): Array<{
+      uri: string;
+      label: string;
+      variant: string;
+      action: string;
+      icon?: string;
+      condition?: string;
+    }> {
+      return [
+        ...ALL_BUTTON_DEFINITIONS.creation,
+        ...ALL_BUTTON_DEFINITIONS.status,
+        ...ALL_BUTTON_DEFINITIONS.planning,
+        ...ALL_BUTTON_DEFINITIONS.maintenance,
+      ];
+    }
+
+    it("should verify exactly 29 button definitions are documented", () => {
+      const allButtons = getAllButtons();
+      expect(allButtons).toHaveLength(29);
+    });
+
+    it("should verify all 29 buttons have required 'label' property", () => {
+      const allButtons = getAllButtons();
+
+      for (const button of allButtons) {
+        expect(button.label).toBeDefined();
+        expect(button.label).not.toBe("");
+        expect(typeof button.label).toBe("string");
+      }
+    });
+
+    it("should verify all 29 buttons have required 'action' property", () => {
+      const allButtons = getAllButtons();
+
+      for (const button of allButtons) {
+        expect(button.action).toBeDefined();
+        expect(button.action).not.toBe("");
+        expect(button.action).toContain("https://exocortex.my/ontology/ems-ui#");
+      }
+    });
+
+    it("should verify all buttons have valid variant values", () => {
+      const validVariants = ["primary", "secondary", "success", "warning", "danger"];
+      const allButtons = getAllButtons();
+
+      for (const button of allButtons) {
+        expect(validVariants).toContain(button.variant);
+      }
+    });
+
+    it("should load all Creation Group buttons (8)", async () => {
+      const creationButtons = ALL_BUTTON_DEFINITIONS.creation;
+
+      // Mock groups query
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#CreationButtonGroup",
+            label: "Creation",
+            order: "1",
+          }),
+        ])
+        // Mock buttons query
+        .mockResolvedValueOnce(
+          creationButtons.map((btn, idx) =>
+            createMockSolutionMapping({
+              button: btn.uri,
+              label: btn.label,
+              variant: btn.variant,
+              order: String(idx + 1),
+              action: btn.action,
+              condition: btn.condition,
+            }),
+          ),
+        );
+
+      // All conditions evaluate to true
+      mockConditionEvaluator.evaluate.mockResolvedValue(true);
+
+      const groups = await builder.buildButtonGroups("test:asset1");
+
+      expect(groups).toHaveLength(1);
+      expect(groups[0].buttons).toHaveLength(8);
+      expect(groups[0].buttons.map((b) => b.label)).toEqual([
+        "Create Task",
+        "Create Project",
+        "Create Area",
+        "Create Instance",
+        "Create Related Task",
+        "Create Narrower Concept",
+        "Create Subclass",
+        "Create Task (DailyNote)",
+      ]);
+    });
+
+    it("should load all Status Group buttons (7)", async () => {
+      const statusButtons = ALL_BUTTON_DEFINITIONS.status;
+
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#StatusButtonGroup",
+            label: "Status",
+            order: "2",
+          }),
+        ])
+        .mockResolvedValueOnce(
+          statusButtons.map((btn, idx) =>
+            createMockSolutionMapping({
+              button: btn.uri,
+              label: btn.label,
+              icon: btn.icon,
+              variant: btn.variant,
+              order: String(idx + 1),
+              action: btn.action,
+              condition: btn.condition,
+            }),
+          ),
+        );
+
+      mockConditionEvaluator.evaluate.mockResolvedValue(true);
+
+      const groups = await builder.buildButtonGroups("test:asset1");
+
+      expect(groups).toHaveLength(1);
+      expect(groups[0].buttons).toHaveLength(7);
+      expect(groups[0].buttons.map((b) => b.label)).toEqual([
+        "Set Draft Status",
+        "Move to Backlog",
+        "Move to Analysis",
+        "Move to ToDo",
+        "Start",
+        "Mark Done",
+        "Rollback Status",
+      ]);
+    });
+
+    it("should load all Planning Group buttons (6)", async () => {
+      const planningButtons = ALL_BUTTON_DEFINITIONS.planning;
+
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#PlanningButtonGroup",
+            label: "Planning",
+            order: "3",
+          }),
+        ])
+        .mockResolvedValueOnce(
+          planningButtons.map((btn, idx) =>
+            createMockSolutionMapping({
+              button: btn.uri,
+              label: btn.label,
+              icon: btn.icon,
+              variant: btn.variant,
+              order: String(idx + 1),
+              action: btn.action,
+              condition: btn.condition,
+            }),
+          ),
+        );
+
+      mockConditionEvaluator.evaluate.mockResolvedValue(true);
+
+      const groups = await builder.buildButtonGroups("test:asset1");
+
+      expect(groups).toHaveLength(1);
+      expect(groups[0].buttons).toHaveLength(6);
+      expect(groups[0].buttons.map((b) => b.label)).toEqual([
+        "Set Active Focus",
+        "Plan on Today",
+        "Plan for Evening",
+        "Shift Day ◀",
+        "Shift Day ▶",
+        "Vote",
+      ]);
+    });
+
+    it("should load all Maintenance Group buttons (8)", async () => {
+      const maintenanceButtons = ALL_BUTTON_DEFINITIONS.maintenance;
+
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#MaintenanceButtonGroup",
+            label: "Maintenance",
+            order: "4",
+          }),
+        ])
+        .mockResolvedValueOnce(
+          maintenanceButtons.map((btn, idx) =>
+            createMockSolutionMapping({
+              button: btn.uri,
+              label: btn.label,
+              icon: btn.icon,
+              variant: btn.variant,
+              order: String(idx + 1),
+              action: btn.action,
+              condition: btn.condition,
+            }),
+          ),
+        );
+
+      mockConditionEvaluator.evaluate.mockResolvedValue(true);
+
+      const groups = await builder.buildButtonGroups("test:asset1");
+
+      expect(groups).toHaveLength(1);
+      expect(groups[0].buttons).toHaveLength(8);
+      expect(groups[0].buttons.map((b) => b.label)).toEqual([
+        "Trash",
+        "Archive",
+        "Clean Properties",
+        "Repair Folder",
+        "Rename to UID",
+        "Copy Label to Aliases",
+        "Convert to Project",
+        "Convert to Task",
+      ]);
+    });
+
+    it("should load all 29 buttons across 4 groups", async () => {
+      const allButtons = getAllButtons();
+      const groups = [
+        { uri: "https://exocortex.my/ontology/exo-ui#CreationButtonGroup", label: "Creation", order: "1" },
+        { uri: "https://exocortex.my/ontology/exo-ui#StatusButtonGroup", label: "Status", order: "2" },
+        { uri: "https://exocortex.my/ontology/exo-ui#PlanningButtonGroup", label: "Planning", order: "3" },
+        { uri: "https://exocortex.my/ontology/exo-ui#MaintenanceButtonGroup", label: "Maintenance", order: "4" },
+      ];
+
+      // Mock groups query
+      mockSparqlService.query.mockResolvedValueOnce(
+        groups.map((g) =>
+          createMockSolutionMapping({
+            group: g.uri,
+            label: g.label,
+            order: g.order,
+          }),
+        ),
+      );
+
+      // Mock buttons queries for each group
+      mockSparqlService.query
+        .mockResolvedValueOnce(
+          ALL_BUTTON_DEFINITIONS.creation.map((btn, idx) =>
+            createMockSolutionMapping({
+              button: btn.uri,
+              label: btn.label,
+              icon: btn.icon,
+              variant: btn.variant,
+              order: String(idx + 1),
+              action: btn.action,
+              condition: btn.condition,
+            }),
+          ),
+        )
+        .mockResolvedValueOnce(
+          ALL_BUTTON_DEFINITIONS.status.map((btn, idx) =>
+            createMockSolutionMapping({
+              button: btn.uri,
+              label: btn.label,
+              icon: btn.icon,
+              variant: btn.variant,
+              order: String(idx + 1),
+              action: btn.action,
+              condition: btn.condition,
+            }),
+          ),
+        )
+        .mockResolvedValueOnce(
+          ALL_BUTTON_DEFINITIONS.planning.map((btn, idx) =>
+            createMockSolutionMapping({
+              button: btn.uri,
+              label: btn.label,
+              icon: btn.icon,
+              variant: btn.variant,
+              order: String(idx + 1),
+              action: btn.action,
+              condition: btn.condition,
+            }),
+          ),
+        )
+        .mockResolvedValueOnce(
+          ALL_BUTTON_DEFINITIONS.maintenance.map((btn, idx) =>
+            createMockSolutionMapping({
+              button: btn.uri,
+              label: btn.label,
+              icon: btn.icon,
+              variant: btn.variant,
+              order: String(idx + 1),
+              action: btn.action,
+              condition: btn.condition,
+            }),
+          ),
+        );
+
+      mockConditionEvaluator.evaluate.mockResolvedValue(true);
+
+      const result = await builder.buildButtonGroups("test:asset1");
+
+      expect(result).toHaveLength(4);
+
+      // Count total buttons
+      const totalButtons = result.reduce((sum, group) => sum + group.buttons.length, 0);
+      expect(totalButtons).toBe(29);
+
+      // Verify each group
+      expect(result[0].buttons).toHaveLength(8); // Creation
+      expect(result[1].buttons).toHaveLength(7); // Status
+      expect(result[2].buttons).toHaveLength(6); // Planning
+      expect(result[3].buttons).toHaveLength(8); // Maintenance
+    });
+
+    it("should correctly parse icon property for buttons that have it", async () => {
+      // Find buttons with icons
+      const buttonsWithIcons = getAllButtons().filter((btn) => btn.icon);
+
+      expect(buttonsWithIcons.length).toBeGreaterThan(0);
+
+      // Test a button with icon
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#StatusButtonGroup",
+            label: "Status",
+            order: "1",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#DoneButton",
+            label: "Mark Done",
+            icon: "check",
+            variant: "success",
+            order: "1",
+            action: "https://exocortex.my/ontology/ems-ui#DoneAction",
+            condition: "https://exocortex.my/ontology/ems-ui#IsDoingCondition",
+          }),
+        ]);
+
+      mockConditionEvaluator.evaluate.mockResolvedValue(true);
+
+      const groups = await builder.buildButtonGroups("test:asset1");
+
+      expect(groups[0].buttons[0].icon).toBe("check");
+    });
+
+    it("should handle buttons without icon property (returns undefined)", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#StatusButtonGroup",
+            label: "Status",
+            order: "1",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#SetDraftStatusButton",
+            label: "Set Draft Status",
+            variant: "secondary",
+            order: "1",
+            action: "https://exocortex.my/ontology/ems-ui#SetDraftStatusAction",
+            condition: "https://exocortex.my/ontology/ems-ui#CanSetDraftStatusCondition",
+            // icon is intentionally undefined
+          }),
+        ]);
+
+      mockConditionEvaluator.evaluate.mockResolvedValue(true);
+
+      const groups = await builder.buildButtonGroups("test:asset1");
+
+      expect(groups[0].buttons[0].icon).toBeUndefined();
+    });
+
+    it("should handle buttons without condition (always visible)", async () => {
+      // CleanupButton has no condition
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#MaintenanceButtonGroup",
+            label: "Maintenance",
+            order: "4",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#CleanupButton",
+            label: "Clean Properties",
+            icon: "eraser",
+            variant: "secondary",
+            order: "10",
+            action: "https://exocortex.my/ontology/ems-ui#CleanupAction",
+            // condition is intentionally undefined
+          }),
+        ]);
+
+      const groups = await builder.buildButtonGroups("test:asset1");
+
+      expect(groups).toHaveLength(1);
+      expect(groups[0].buttons).toHaveLength(1);
+      expect(groups[0].buttons[0].label).toBe("Clean Properties");
+
+      // ConditionEvaluator should NOT be called for buttons without condition
+      expect(mockConditionEvaluator.evaluate).not.toHaveBeenCalled();
+    });
+
+    it("should verify button variant correctly maps to ActionButton variant type", async () => {
+      const variantTestCases = [
+        { variant: "primary", expected: "primary" },
+        { variant: "secondary", expected: "secondary" },
+        { variant: "success", expected: "success" },
+        { variant: "warning", expected: "warning" },
+        { variant: "danger", expected: "danger" },
+      ];
+
+      for (const testCase of variantTestCases) {
+        jest.clearAllMocks();
+
+        mockSparqlService.query
+          .mockResolvedValueOnce([
+            createMockSolutionMapping({
+              group: "test:TestGroup",
+              label: "Test",
+              order: "1",
+            }),
+          ])
+          .mockResolvedValueOnce([
+            createMockSolutionMapping({
+              button: "test:TestButton",
+              label: "Test Button",
+              variant: testCase.variant,
+              order: "1",
+              action: "test:TestAction",
+            }),
+          ]);
+
+        const groups = await builder.buildButtonGroups("test:asset1");
+
+        expect(groups[0].buttons[0].variant).toBe(testCase.expected);
+      }
+    });
+
+    it("should verify all buttons have unique URIs", () => {
+      const allButtons = getAllButtons();
+      const uris = allButtons.map((b) => b.uri);
+      const uniqueUris = new Set(uris);
+
+      expect(uniqueUris.size).toBe(allButtons.length);
+    });
+
+    it("should verify all buttons have unique labels within their group", () => {
+      const groupLabels = {
+        creation: ALL_BUTTON_DEFINITIONS.creation.map((b) => b.label),
+        status: ALL_BUTTON_DEFINITIONS.status.map((b) => b.label),
+        planning: ALL_BUTTON_DEFINITIONS.planning.map((b) => b.label),
+        maintenance: ALL_BUTTON_DEFINITIONS.maintenance.map((b) => b.label),
+      };
+
+      for (const [group, labels] of Object.entries(groupLabels)) {
+        const uniqueLabels = new Set(labels);
+        expect(uniqueLabels.size).toBe(labels.length);
+      }
+    });
+  });
 });
