@@ -115,10 +115,8 @@ export class UniversalLayoutRenderer {
   }
 
   private initializeRenderers(): void {
-    // Initialize RDF button support only when feature flag is enabled
-    if (this.settings.useRdfButtons) {
-      this.initializeRdfButtonSupport();
-    }
+    // Initialize RDF button support (always enabled after validation)
+    this.initializeRdfButtonSupport();
 
     this.propertiesRenderer = new PropertiesRenderer(
       this.app, this.reactRenderer, this.metadataExtractor, this.metadataService);

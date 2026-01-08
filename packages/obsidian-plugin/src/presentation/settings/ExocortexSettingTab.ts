@@ -150,23 +150,6 @@ export class ExocortexSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      // eslint-disable-next-line obsidianmd/ui/sentence-case
-      .setName("Use RDF buttons")
-      .setDesc(
-        // eslint-disable-next-line obsidianmd/ui/sentence-case
-        "Enable RDF-driven button rendering (experimental)",
-      )
-      .addToggle((toggle) =>
-        toggle
-          .setValue(this.plugin.settings.useRdfButtons)
-          .onChange(async (value) => {
-            this.plugin.settings.useRdfButtons = value;
-            await this.plugin.saveSettings();
-            this.plugin.refreshLayout();
-          }),
-      );
-
-    new Setting(containerEl)
       .setName("Show labels in file explorer")
       .setDesc(
         "Display asset labels instead of filenames in the file explorer sidebar",
