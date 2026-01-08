@@ -441,6 +441,60 @@ See **[Button Reference](./docs/BUTTONS.md)** for complete documentation and **[
 
 ---
 
+## RDF-Driven Layouts (Milestone v1.5)
+
+**Vision:** Asset presentation is controlled by RDF layout definitions — adaptive views based on asset class.
+
+### Layout Architecture
+
+```
+Asset (rdf:type) ──► LayoutSelector ──► Layout ──► LayoutBlock[]
+                                              │
+                                              ▼
+                                    ┌─────────────────┐
+                                    │ Renderer        │
+                                    │ (identity,      │
+                                    │  relations,     │
+                                    │  area-tree...)  │
+                                    └─────────────────┘
+```
+
+### Default Layout Blocks
+
+| Block | Purpose | Renderer |
+|-------|---------|----------|
+| **IdentityBlock** | Asset label, UID, creation date | `identity` |
+| **ClassificationBlock** | Class and prototype info | `classification` |
+| **InboundRelationsBlock** | Assets referencing this one (backlinks) | `relations-table` |
+| **OutboundRelationsBlock** | Assets this one references | `relations-table` |
+| **UsageContextBlock** | Collections, body mentions | `usage-context` |
+| **BodyContentBlock** | Markdown body content | `markdown` |
+
+### Class-Specific Layouts
+
+Layouts are automatically selected based on asset's `rdf:type`:
+
+- **AreaLayout** — Shows hierarchical area tree for `ems:Area` assets
+- **DailyNoteLayout** — Shows tasks/projects for `pn:DailyNote` assets
+- **DefaultAssetLayout** — Fallback for all other asset types
+
+### CLI Commands
+
+```bash
+# Get all relations for an asset
+exocortex asset relations --file "concept.md" --vault ~/vault
+
+# Get only backlinks
+exocortex asset backlinks --file "task.md" --format json
+
+# Get references (outbound relations)
+exocortex asset references --file "project.md" --predicate "exo:Asset_relates"
+```
+
+See **[Layouts Reference](./docs/LAYOUTS.md)** for complete documentation.
+
+---
+
 ## Key Features
 
 ### Semantic Query System (SPARQL)
