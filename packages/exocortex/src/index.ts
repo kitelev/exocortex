@@ -325,6 +325,14 @@ export type {
 // Action Interpreter export
 export { ActionInterpreter } from "./domain/services/ActionInterpreter";
 
+// Layout Selector export
+export {
+  LayoutSelector,
+  type Layout,
+  type LayoutBlock,
+  type LayoutBlockRenderer,
+} from "./domain/services/LayoutSelector";
+
 // Condition Evaluator export
 export { ConditionEvaluator } from "./domain/services/ConditionEvaluator";
 
