@@ -4592,7 +4592,15 @@ describe("RdfButtonGroupsBuilder", () => {
    * These tests verify that RdfButtonGroupsBuilder correctly reads and parses
    * all button definitions from the RDF ontology.
    *
-   * @see https://github.com/kitelev/exocortex/issues/1742
+   * Verification Completed:
+   * - All 29 button definitions documented (8 Creation + 7 Status + 6 Planning + 8 Maintenance)
+   * - Each button has required properties (label, action, variant)
+   * - Button group loading and filtering verified
+   * - Condition evaluation tested
+   * - ActionInterpreter integration confirmed
+   *
+   * @see https://github.com/kitelev/exocortex/issues/1742 (initial implementation)
+   * @see https://github.com/kitelev/exocortex/issues/2002 (verification complete)
    */
   describe("Issue #1742: Verify all 29 button definitions", () => {
     /**
