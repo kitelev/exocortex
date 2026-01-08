@@ -5305,4 +5305,223 @@ describe("RdfButtonGroupsBuilder", () => {
       }
     });
   });
+
+  /**
+   * Edge case tests for achieving ≥90% code coverage (Issue #2005)
+   *
+   * These tests cover edge cases for:
+   * - Error handling in buildButtonGroups outer catch block
+   * - Error handling in loadButtonsForGroup
+   * - parseGroupResult returning null when data is missing
+   * - parseButtonResult returning null when data is missing
+   * - extractValueFromMapping handling primitive values
+   */
+  describe("Edge cases for coverage (Issue #2005)", () => {
+    describe("parseGroupResult edge cases", () => {
+      it("should return null when group URI is missing", async () => {
+        mockSparqlService.query.mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: undefined, // Missing URI
+            label: "Status",
+            order: "1",
+          }),
+        ]);
+
+        const groups = await builder.buildButtonGroups("test:asset1");
+
+        // Group should be filtered out due to missing URI
+        expect(groups).toEqual([]);
+      });
+
+      it("should return null when label is missing", async () => {
+        mockSparqlService.query.mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "test:StatusGroup",
+            label: undefined, // Missing label
+            order: "1",
+          }),
+        ]);
+
+        const groups = await builder.buildButtonGroups("test:asset1");
+
+        // Group should be filtered out due to missing label
+        expect(groups).toEqual([]);
+      });
+    });
+
+    describe("parseButtonResult edge cases", () => {
+      it("should filter out button when URI is missing", async () => {
+        mockSparqlService.query
+          .mockResolvedValueOnce([
+            createMockSolutionMapping({
+              group: "test:StatusGroup",
+              label: "Status",
+              order: "1",
+            }),
+          ])
+          .mockResolvedValueOnce([
+            createMockSolutionMapping({
+              button: undefined, // Missing URI
+              label: "Start",
+              action: "test:StartAction",
+            }),
+          ]);
+
+        const groups = await builder.buildButtonGroups("test:asset1");
+
+        // Group should be empty because button was filtered out
+        expect(groups).toEqual([]);
+      });
+
+      it("should filter out button when label is missing", async () => {
+        mockSparqlService.query
+          .mockResolvedValueOnce([
+            createMockSolutionMapping({
+              group: "test:StatusGroup",
+              label: "Status",
+              order: "1",
+            }),
+          ])
+          .mockResolvedValueOnce([
+            createMockSolutionMapping({
+              button: "test:StartButton",
+              label: undefined, // Missing label
+              action: "test:StartAction",
+            }),
+          ]);
+
+        const groups = await builder.buildButtonGroups("test:asset1");
+
+        // Group should be empty because button was filtered out
+        expect(groups).toEqual([]);
+      });
+
+      it("should filter out button when action is missing", async () => {
+        mockSparqlService.query
+          .mockResolvedValueOnce([
+            createMockSolutionMapping({
+              group: "test:StatusGroup",
+              label: "Status",
+              order: "1",
+            }),
+          ])
+          .mockResolvedValueOnce([
+            createMockSolutionMapping({
+              button: "test:StartButton",
+              label: "Start",
+              action: undefined, // Missing action
+            }),
+          ]);
+
+        const groups = await builder.buildButtonGroups("test:asset1");
+
+        // Group should be empty because button was filtered out
+        expect(groups).toEqual([]);
+      });
+    });
+
+    describe("loadButtonsForGroup error handling", () => {
+      it("should return empty array when button query fails", async () => {
+        mockSparqlService.query
+          .mockResolvedValueOnce([
+            createMockSolutionMapping({
+              group: "test:StatusGroup",
+              label: "Status",
+              order: "1",
+            }),
+          ])
+          .mockRejectedValueOnce(new Error("Button query failed"));
+
+        const groups = await builder.buildButtonGroups("test:asset1");
+
+        // Group should not appear because button loading failed (returns empty)
+        expect(groups).toEqual([]);
+      });
+    });
+
+    describe("buildButtonGroups outer error handling", () => {
+      it("should return empty array when unexpected error occurs during group processing", async () => {
+        // Simulate an error thrown during group iteration
+        mockSparqlService.query.mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "test:StatusGroup",
+            label: "Status",
+            order: "1",
+          }),
+        ]);
+
+        // Override loadButtonsForGroup to throw during iteration
+        // This requires accessing the internal method, which isn't possible directly
+        // Instead, we make the second query throw to test the outer catch
+        mockSparqlService.query.mockImplementation(() => {
+          throw new Error("Unexpected synchronous error");
+        });
+
+        const groups = await builder.buildButtonGroups("test:asset1");
+
+        expect(groups).toEqual([]);
+      });
+    });
+
+    describe("extractValueFromMapping edge cases", () => {
+      it("should handle primitive string values directly", async () => {
+        // Create a mock that returns a primitive string instead of object with value
+        const primitiveMapping = {
+          get: (key: string) => {
+            if (key === "group") return "test:StatusGroup";
+            if (key === "label") return "Status";
+            if (key === "order") return "1";
+            return undefined;
+          },
+        };
+
+        mockSparqlService.query
+          .mockResolvedValueOnce([primitiveMapping])
+          .mockResolvedValueOnce([
+            {
+              get: (key: string) => {
+                if (key === "button") return "test:StartButton";
+                if (key === "label") return "Start";
+                if (key === "action") return "test:StartAction";
+                return undefined;
+              },
+            },
+          ]);
+
+        const groups = await builder.buildButtonGroups("test:asset1");
+
+        expect(groups).toHaveLength(1);
+        expect(groups[0].title).toBe("Status");
+        expect(groups[0].buttons).toHaveLength(1);
+        expect(groups[0].buttons[0].label).toBe("Start");
+      });
+
+      it("should handle numeric values in mapping", async () => {
+        // Create a mock that returns a number value
+        const numericMapping = {
+          get: (key: string) => {
+            if (key === "group") return { value: "test:StatusGroup" };
+            if (key === "label") return { value: "Status" };
+            if (key === "order") return 1; // Numeric value without wrapper
+            return undefined;
+          },
+        };
+
+        mockSparqlService.query
+          .mockResolvedValueOnce([numericMapping])
+          .mockResolvedValueOnce([
+            createMockSolutionMapping({
+              button: "test:StartButton",
+              label: "Start",
+              action: "test:StartAction",
+            }),
+          ]);
+
+        const groups = await builder.buildButtonGroups("test:asset1");
+
+        expect(groups).toHaveLength(1);
+        expect(groups[0].title).toBe("Status");
+      });
+    });
+  });
 });
