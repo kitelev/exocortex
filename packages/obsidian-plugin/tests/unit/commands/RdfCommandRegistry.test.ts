@@ -10,6 +10,8 @@ import "reflect-metadata";
 import { RdfCommandRegistry, RdfCommand } from "../../../src/application/commands/RdfCommandRegistry";
 import { Plugin, App } from "obsidian";
 import { SPARQLQueryService } from "../../../src/application/services/SPARQLQueryService";
+import { ActionBridge, ActionMappingError } from "../../../src/application/bridges/ActionBridge";
+import { ActionInterpreter } from "exocortex";
 
 /**
  * Helper to create a mock SolutionMapping that behaves like the real class.
@@ -738,6 +740,196 @@ describe("RdfCommandRegistry", () => {
 
         // Start should have IsToDoStatus (visible when task is ToDo)
         expect(start?.condition).toBe("https://exocortex.my/ontology/ems-ui#IsToDoStatus");
+      });
+    });
+  });
+
+  /**
+   * Issue #1998: Integrate ActionBridge into RdfCommandRegistry
+   *
+   * Tests for executeCommand() integration with ActionBridge and ActionInterpreter.
+   *
+   * @see https://github.com/kitelev/exocortex/issues/1998
+   */
+  describe("executeCommand with ActionBridge integration (Issue #1998)", () => {
+    let mockActionBridge: jest.Mocked<ActionBridge>;
+    let mockActionInterpreter: jest.Mocked<ActionInterpreter>;
+    let mockTripleStore: unknown;
+
+    beforeEach(() => {
+      mockActionBridge = {
+        toActionDefinition: jest.fn().mockReturnValue({
+          type: "exo-ui:CreateAssetAction",
+          params: { assetClass: "Task" },
+        }),
+      } as unknown as jest.Mocked<ActionBridge>;
+
+      mockActionInterpreter = {
+        execute: jest.fn().mockResolvedValue({ success: true }),
+      } as unknown as jest.Mocked<ActionInterpreter>;
+
+      // Mock triple store for ActionContext
+      mockTripleStore = {
+        match: jest.fn().mockResolvedValue([]),
+      };
+      mockSparqlService.getTripleStore = jest.fn().mockReturnValue(mockTripleStore);
+    });
+
+    describe("Feature: RdfCommandRegistry executes commands via ActionInterpreter", () => {
+      describe("Scenario: Execute CreateTask command", () => {
+        it("should call ActionBridge.toActionDefinition when executeCommand is called", async () => {
+          // Given RdfCommandRegistry is initialized with ActionBridge and ActionInterpreter
+          const registryWithDeps = new RdfCommandRegistry(
+            mockPlugin,
+            mockSparqlService,
+            mockActionBridge,
+            mockActionInterpreter
+          );
+
+          // When executeCommand is called with a CreateTask command
+          const command: RdfCommand = {
+            uri: "https://exocortex.my/commands/CreateTask",
+            id: "create-task",
+            name: "Create Task",
+            action: "https://exocortex.my/ontology/exo-ui#CreateAssetAction",
+          };
+
+          await (registryWithDeps as unknown as { executeCommand: (cmd: RdfCommand) => Promise<void> }).executeCommand(command);
+
+          // Then ActionBridge.toActionDefinition is called
+          expect(mockActionBridge.toActionDefinition).toHaveBeenCalledWith({
+            type: "https://exocortex.my/ontology/exo-ui#CreateAssetAction",
+            params: {},
+          });
+        });
+
+        it("should call ActionInterpreter.execute after ActionBridge mapping", async () => {
+          // Given RdfCommandRegistry with ActionBridge and ActionInterpreter
+          const registryWithDeps = new RdfCommandRegistry(
+            mockPlugin,
+            mockSparqlService,
+            mockActionBridge,
+            mockActionInterpreter
+          );
+
+          // When executeCommand is called
+          const command: RdfCommand = {
+            uri: "https://exocortex.my/commands/CreateTask",
+            id: "create-task",
+            name: "Create Task",
+            action: "https://exocortex.my/ontology/exo-ui#CreateAssetAction",
+          };
+
+          await (registryWithDeps as unknown as { executeCommand: (cmd: RdfCommand) => Promise<void> }).executeCommand(command);
+
+          // Then ActionInterpreter.execute is called with the action URI
+          expect(mockActionInterpreter.execute).toHaveBeenCalled();
+        });
+      });
+
+      describe("Scenario: Handle missing action", () => {
+        it("should log warning when command has no action defined", async () => {
+          // Given a command without action defined
+          const command: RdfCommand = {
+            uri: "https://exocortex.my/commands/NoAction",
+            id: "no-action",
+            name: "No Action Command",
+            // No action property
+          };
+
+          const registryWithDeps = new RdfCommandRegistry(
+            mockPlugin,
+            mockSparqlService,
+            mockActionBridge,
+            mockActionInterpreter
+          );
+
+          // When executeCommand is called
+          await (registryWithDeps as unknown as { executeCommand: (cmd: RdfCommand) => Promise<void> }).executeCommand(command);
+
+          // Then ActionInterpreter.execute is not called
+          expect(mockActionInterpreter.execute).not.toHaveBeenCalled();
+        });
+      });
+    });
+
+    describe("Error handling", () => {
+      it("should handle ActionMappingError from ActionBridge gracefully", async () => {
+        // Given ActionBridge throws ActionMappingError
+        mockActionBridge.toActionDefinition.mockImplementation(() => {
+          throw new ActionMappingError("https://exocortex.my/ontology/exo-ui#UnknownAction");
+        });
+
+        const registryWithDeps = new RdfCommandRegistry(
+          mockPlugin,
+          mockSparqlService,
+          mockActionBridge,
+          mockActionInterpreter
+        );
+
+        const command: RdfCommand = {
+          uri: "https://exocortex.my/commands/Unknown",
+          id: "unknown",
+          name: "Unknown Command",
+          action: "https://exocortex.my/ontology/exo-ui#UnknownAction",
+        };
+
+        // When executeCommand is called
+        // Then it should not throw (errors are caught and logged)
+        await expect(
+          (registryWithDeps as unknown as { executeCommand: (cmd: RdfCommand) => Promise<void> }).executeCommand(command)
+        ).resolves.not.toThrow();
+      });
+
+      it("should handle ActionInterpreter execution errors gracefully", async () => {
+        // Given ActionInterpreter.execute returns failure
+        mockActionInterpreter.execute.mockResolvedValue({
+          success: false,
+          message: "Failed to create asset",
+        });
+
+        const registryWithDeps = new RdfCommandRegistry(
+          mockPlugin,
+          mockSparqlService,
+          mockActionBridge,
+          mockActionInterpreter
+        );
+
+        const command: RdfCommand = {
+          uri: "https://exocortex.my/commands/CreateTask",
+          id: "create-task",
+          name: "Create Task",
+          action: "https://exocortex.my/ontology/exo-ui#CreateAssetAction",
+        };
+
+        // When executeCommand is called
+        // Then it should not throw
+        await expect(
+          (registryWithDeps as unknown as { executeCommand: (cmd: RdfCommand) => Promise<void> }).executeCommand(command)
+        ).resolves.not.toThrow();
+      });
+    });
+
+    describe("Backward compatibility", () => {
+      it("should work without ActionBridge/ActionInterpreter (fallback to logging)", async () => {
+        // Given registry without ActionBridge and ActionInterpreter
+        const registryWithoutDeps = new RdfCommandRegistry(
+          mockPlugin,
+          mockSparqlService
+        );
+
+        const command: RdfCommand = {
+          uri: "https://exocortex.my/commands/CreateTask",
+          id: "create-task",
+          name: "Create Task",
+          action: "https://exocortex.my/ontology/exo-ui#CreateAssetAction",
+        };
+
+        // When executeCommand is called
+        // Then it should not throw (falls back to logging)
+        await expect(
+          (registryWithoutDeps as unknown as { executeCommand: (cmd: RdfCommand) => Promise<void> }).executeCommand(command)
+        ).resolves.not.toThrow();
       });
     });
   });

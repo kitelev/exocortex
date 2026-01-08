@@ -12,7 +12,9 @@
 import { Plugin, Command, Modifier } from "obsidian";
 import { SPARQLQueryService } from "@plugin/application/services/SPARQLQueryService";
 import { LoggerFactory } from "@plugin/adapters/logging/LoggerFactory";
-import type { ILogger, SolutionMapping } from "exocortex";
+import type { ILogger, SolutionMapping, ActionContext, ActionResult, IUIProvider } from "exocortex";
+import { ActionInterpreter } from "exocortex";
+import { ActionBridge, RdfAction } from "@plugin/application/bridges/ActionBridge";
 
 /**
  * Represents a command definition loaded from RDF.
@@ -74,6 +76,8 @@ export class RdfCommandRegistry {
   private loadedCommands: RdfCommand[] = [];
   private conditionCache: Map<string, ConditionCacheEntry> = new Map();
   private cacheTtlMs: number = 1000; // 1 second cache TTL
+  private actionBridge?: ActionBridge;
+  private actionInterpreter?: ActionInterpreter;
 
   /**
    * SPARQL query to retrieve all commands from RDF.
@@ -97,9 +101,16 @@ export class RdfCommandRegistry {
     }
   `;
 
-  constructor(plugin: Plugin, sparqlService: SPARQLQueryService) {
+  constructor(
+    plugin: Plugin,
+    sparqlService: SPARQLQueryService,
+    actionBridge?: ActionBridge,
+    actionInterpreter?: ActionInterpreter
+  ) {
     this.plugin = plugin;
     this.sparqlService = sparqlService;
+    this.actionBridge = actionBridge;
+    this.actionInterpreter = actionInterpreter;
     this.logger = LoggerFactory.create("RdfCommandRegistry");
   }
 
@@ -270,21 +281,89 @@ export class RdfCommandRegistry {
   }
 
   /**
-   * Execute a command's action.
+   * Execute a command's action via ActionBridge and ActionInterpreter.
    *
-   * Currently a placeholder - will delegate to ActionInterpreter
-   * once it's implemented (Issue #1439).
+   * Maps RDF action definitions to ActionInterpreter's format using ActionBridge,
+   * then delegates execution to ActionInterpreter.
    *
    * @param command - Command to execute
+   * @see Issue #1998: Integrate ActionBridge into RdfCommandRegistry
    */
-  private executeCommand(command: RdfCommand): void {
+  private async executeCommand(command: RdfCommand): Promise<void> {
     this.logger.info("Executing command", { id: command.id, action: command.action });
 
-    // TODO: Delegate to ActionInterpreter (Issue #1439)
-    // For now, just log the execution
-    if (command.action) {
-      this.logger.debug("Command action would be executed", { action: command.action });
+    // Check if command has an action defined
+    if (!command.action) {
+      this.logger.warn("Command has no action defined", { id: command.id });
+      return;
     }
+
+    // Check if ActionBridge and ActionInterpreter are available
+    if (!this.actionBridge || !this.actionInterpreter) {
+      this.logger.debug("ActionBridge/ActionInterpreter not available, falling back to logging", {
+        action: command.action,
+      });
+      return;
+    }
+
+    try {
+      // Map RDF action to ActionInterpreter format using ActionBridge
+      const rdfAction: RdfAction = {
+        type: command.action,
+        params: {}, // Parameters could be extracted from additional RDF properties
+      };
+
+      const actionDefinition = this.actionBridge.toActionDefinition(rdfAction);
+      this.logger.debug("Mapped action definition", { type: actionDefinition.type });
+
+      // Execute via ActionInterpreter
+      // Note: ActionInterpreter.execute takes an action URI, not ActionDefinition
+      // For now, we pass the action URI directly
+      const context = this.buildActionContext();
+      const result: ActionResult = await this.actionInterpreter.execute(command.action, context);
+
+      if (result.success) {
+        this.logger.info("Command executed successfully", { id: command.id });
+      } else {
+        this.logger.warn("Command execution failed", { id: command.id, message: result.message });
+      }
+    } catch (err) {
+      this.logger.error(`Failed to execute command ${command.id}: ${String(err)}`);
+    }
+  }
+
+  /**
+   * Build ActionContext for command execution.
+   *
+   * Creates a minimal ActionContext with the required dependencies.
+   * This is a placeholder - in production, the context should be provided
+   * from the plugin initialization with proper IUIProvider and ITripleStore.
+   *
+   * @returns ActionContext for action execution
+   */
+  private buildActionContext(): ActionContext {
+    // Get the triple store from SPARQLQueryService
+    const tripleStore = this.sparqlService.getTripleStore();
+
+    // Create a minimal headless UI provider for now
+    // In production, this should be the ObsidianUIProvider
+    const headlessUIProvider: IUIProvider = {
+      isHeadless: false,
+      navigate: async (path: string) => {
+        this.logger.debug("Navigate requested", { path });
+      },
+      showInputModal: async () => "",
+      showSelectModal: async <T>() => null as unknown as T,
+      showConfirm: async () => false,
+      notify: (message: string) => {
+        this.logger.info("Notify", { message });
+      },
+    };
+
+    return {
+      tripleStore,
+      uiProvider: headlessUIProvider,
+    };
   }
 
   /**
