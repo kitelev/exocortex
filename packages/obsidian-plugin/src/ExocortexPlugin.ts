@@ -136,9 +136,9 @@ export default class ExocortexPlugin extends Plugin {
         ),
       );
 
-      // Initialize CommandManager and register all commands
+      // Initialize CommandManager and register all commands from RDF
       this.commandManager = new CommandManager(this.app);
-      this.commandManager.registerAllCommands(this, () =>
+      await this.commandManager.registerAllCommands(this, () =>
         this.autoRenderLayout(),
       );
 
