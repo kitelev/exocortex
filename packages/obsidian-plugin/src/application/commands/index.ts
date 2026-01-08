@@ -1,28 +1,13 @@
+/**
+ * Commands Module - RDF-driven command system
+ *
+ * This module exports the RDF-driven command registry. Commands are defined
+ * in the RDF triple store and loaded dynamically via SPARQL queries.
+ *
+ * @since 2.0.0 - Migrated from legacy CommandRegistry to RdfCommandRegistry
+ * @see RdfCommandRegistry
+ */
+
 export type { ICommand } from "./ICommand";
-export { CommandRegistry } from "./CommandRegistry";
-export { CreateTaskCommand } from "./CreateTaskCommand";
-export { CreateProjectCommand } from "./CreateProjectCommand";
-export { CreateInstanceCommand } from "./CreateInstanceCommand";
-export { CreateRelatedTaskCommand } from "./CreateRelatedTaskCommand";
-export { SetDraftStatusCommand } from "./SetDraftStatusCommand";
-export { MoveToBacklogCommand } from "./MoveToBacklogCommand";
-export { MoveToAnalysisCommand } from "./MoveToAnalysisCommand";
-export { MoveToToDoCommand } from "./MoveToToDoCommand";
-export { StartEffortCommand } from "./StartEffortCommand";
-export { PlanOnTodayCommand } from "./PlanOnTodayCommand";
-export { PlanForEveningCommand } from "./PlanForEveningCommand";
-export { ShiftDayBackwardCommand } from "./ShiftDayBackwardCommand";
-export { ShiftDayForwardCommand } from "./ShiftDayForwardCommand";
-export { MarkDoneCommand } from "./MarkDoneCommand";
-export { TrashEffortCommand } from "./TrashEffortCommand";
-export { ArchiveTaskCommand } from "./ArchiveTaskCommand";
-export { CleanPropertiesCommand } from "./CleanPropertiesCommand";
-export { RepairFolderCommand } from "./RepairFolderCommand";
-export { RenameToUidCommand } from "./RenameToUidCommand";
-export { VoteOnEffortCommand } from "./VoteOnEffortCommand";
-export { CopyLabelToAliasesCommand } from "./CopyLabelToAliasesCommand";
-export { AddSupervisionCommand } from "./AddSupervisionCommand";
-export { ReloadLayoutCommand } from "./ReloadLayoutCommand";
-export { TogglePropertiesVisibilityCommand } from "./TogglePropertiesVisibilityCommand";
-export { ToggleLayoutVisibilityCommand } from "./ToggleLayoutVisibilityCommand";
-export { ToggleArchivedAssetsCommand } from "./ToggleArchivedAssetsCommand";
+export { RdfCommandRegistry } from "./RdfCommandRegistry";
+export type { RdfCommand, ParsedHotkey } from "./RdfCommandRegistry";

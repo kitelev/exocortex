@@ -5742,3 +5742,416 @@ Before milestone merge:
 - ✅ Documentation updated
 
 **Reference**: Issue #1434 - Milestone v1.3 Acceptance Testing (95 steps)
+
+---
+
+## RDF-Driven Button System Pattern
+
+**When to use**: Migrating hardcoded UI logic to declarative RDF definitions
+
+### Pattern Description
+
+Transform imperative button definitions (switch statements, hardcoded actions) into declarative RDF triples that define buttons, actions, and visibility conditions. This enables:
+- Runtime button discovery via SPARQL queries
+- User-customizable button groups
+- Platform-agnostic action execution
+- Schema validation via SHACL
+
+### Architecture Layers
+
+```
+┌─────────────────────────────────────────────┐
+│                   UI Layer                   │
+│  (RdfButtonGroupsBuilder → React Components) │
+└─────────────────────────────────────────────┘
+                      │
+                      ▼
+┌─────────────────────────────────────────────┐
+│              Interpreter Layer               │
+│    (ActionInterpreter → Action Handlers)     │
+└─────────────────────────────────────────────┘
+                      │
+                      ▼
+┌─────────────────────────────────────────────┐
+│             RDF Definition Layer             │
+│   (Button → Action → VisibilityCondition)    │
+└─────────────────────────────────────────────┘
+                      │
+                      ▼
+┌─────────────────────────────────────────────┐
+│            Validation Layer                  │
+│           (SHACL Shapes)                     │
+└─────────────────────────────────────────────┘
+```
+
+### Core RDF Structure
+
+```turtle
+# Button definition
+ems-ui:StartButton a exo-ui:Button ;
+  exo-ui:Button_label "▶ Start" ;
+  exo-ui:Button_icon "play" ;
+  exo-ui:Button_action ems-ui:StartAction ;
+  exo-ui:Button_visibilityCondition ems-ui:IsToDoCondition .
+
+# Action definition (verb)
+ems-ui:StartAction a exo-ui:UpdatePropertyAction ;
+  exo-ui:UpdatePropertyAction_property ems:Effort_status ;
+  exo-ui:UpdatePropertyAction_value "Doing" ;
+  exo-ui:Action_headless true .
+
+# Visibility condition (SPARQL ASK)
+ems-ui:IsToDoCondition a exo-ui:SPARQLCondition ;
+  exo-ui:SPARQLCondition_query """
+    ASK WHERE { ?asset ems:Effort_status "ToDo" }
+  """ .
+```
+
+### Action Types (Fixed Verbs)
+
+| Action Type | Purpose | Example |
+|-------------|---------|---------|
+| `CreateAssetAction` | Create new file with metadata | CreateTask, CreateProject |
+| `UpdatePropertyAction` | Modify frontmatter property | Start, Done, Pause |
+| `NavigateAction` | Open file or URL | GoToParent |
+| `ShowModalAction` | Display confirmation/input dialog | Trash (with reason) |
+| `ExecuteSPARQLAction` | Run SPARQL UPDATE | Batch operations |
+| `TriggerHookAction` | Invoke registered callback | Custom integrations |
+| `CompositeAction` | Combine multiple actions | Done = MarkDone + StopEffort |
+| `CustomHandlerAction` | Call named handler function | Legacy compatibility |
+
+### CompositeAction Pattern
+
+When button needs multiple effects:
+
+```turtle
+ems-ui:DoneButton a exo-ui:Button ;
+  exo-ui:Button_action [
+    a exo-ui:CompositeAction ;
+    exo-ui:CompositeAction_actions (
+      [ a exo-ui:UpdatePropertyAction ;
+        exo-ui:UpdatePropertyAction_property ems:Effort_status ;
+        exo-ui:UpdatePropertyAction_value "Done" ]
+      [ a exo-ui:CustomHandlerAction ;
+        exo-ui:CustomHandlerAction_handlerName "stopEffort" ]
+    )
+  ] .
+```
+
+### TypeScript Implementation
+
+```typescript
+// ActionInterpreter.ts
+class ActionInterpreter {
+  private handlers: Map<string, ActionHandler>;
+
+  async execute(action: Action, context: ActionContext): Promise<void> {
+    const handler = this.handlers.get(action.type);
+    if (!handler) {
+      throw new ActionError(`Unknown action type: ${action.type}`);
+    }
+
+    // Validate with SHACL before execution
+    await this.validator.validate(action);
+
+    // Execute action
+    await handler.execute(action, context);
+  }
+}
+
+// CompositeActionHandler.ts
+class CompositeActionHandler implements ActionHandler {
+  async execute(action: CompositeAction, context: ActionContext): Promise<void> {
+    for (const subAction of action.actions) {
+      await this.interpreter.execute(subAction, context);
+    }
+  }
+}
+```
+
+### Migration Strategy (4 Phases)
+
+1. **Phase 1: Core Infrastructure** (Issues #1396-#1405)
+   - Define ontology namespace and classes
+   - Create IUIProvider interface
+   - Implement ActionInterpreter base
+
+2. **Phase 2: Action Handlers** (Issues #1406-#1413)
+   - Implement each action type handler
+   - Add ConditionEvaluator for visibility
+   - Wire IUIProvider into ActionContext
+
+3. **Phase 3: Button Definitions** (Issues #1416-#1432)
+   - Define all buttons in RDF
+   - Create RdfButtonGroupsBuilder
+   - Run legacy and RDF buttons side-by-side
+
+4. **Phase 4: Validation & Cleanup** (Issues #1434-#1447)
+   - Add SHACL shapes for validation
+   - Acceptance testing
+   - Remove legacy ButtonGroupsBuilder
+
+### Testing Strategy
+
+```typescript
+// Unit test for action handler
+describe("UpdatePropertyActionHandler", () => {
+  it("should update frontmatter property", async () => {
+    const action = {
+      type: "UpdatePropertyAction",
+      property: "ems:Effort_status",
+      value: "Done"
+    };
+
+    await handler.execute(action, mockContext);
+
+    expect(mockVault.modify).toHaveBeenCalledWith(
+      mockFile,
+      expect.stringContaining("ems__Effort_status: Done")
+    );
+  });
+});
+
+// Integration test for button visibility
+describe("Button Visibility", () => {
+  it("should show Start button only for ToDo status", async () => {
+    const asset = createMockAsset({ status: "ToDo" });
+    const buttons = await builder.buildForAsset(asset);
+
+    expect(buttons.some(b => b.label === "▶ Start")).toBe(true);
+  });
+});
+```
+
+### Benefits Over Hardcoded Approach
+
+| Aspect | Hardcoded | RDF-Driven |
+|--------|-----------|------------|
+| **Discovery** | Grep code | SPARQL query |
+| **Customization** | Fork repo | Edit TTL files |
+| **Validation** | TypeScript | SHACL shapes |
+| **Documentation** | JSDoc | Self-describing ontology |
+| **Extensibility** | New code + tests | New RDF instances |
+
+### Reference
+
+- Issues #1396-#1447: Button System Migration Sprint (62 issues, Jan 2026)
+- Ontology: `exocortex-public-ontologies/ontologies/exo-ui/`
+- SHACL Shapes: `exocortex-public-ontologies/shapes/exo-ui/`
+
+---
+
+## SHACL Validation Integration Pattern
+
+**When to use**: Adding schema validation to RDF-driven systems
+
+### Pattern Description
+
+SHACL (Shapes Constraint Language) validates RDF data against defined shapes. Use it to:
+- Ensure required properties are present
+- Validate cardinality constraints
+- Check datatype correctness
+- Enforce domain/range relationships
+
+### Implementation Steps
+
+1. **Define Shapes** (Issues #1435, #1444, #1445)
+2. **Add Property Constraints** (Issue #1446)
+3. **Integrate Validation Library** (Issue #1447)
+4. **Wire into Application** (ActionInterpreter)
+
+### SHACL Shape Examples
+
+```turtle
+# Button must have exactly one action
+exo-ui:ButtonShape a sh:NodeShape ;
+  sh:targetClass exo-ui:Button ;
+  sh:property [
+    sh:path exo-ui:Button_action ;
+    sh:minCount 1 ;
+    sh:maxCount 1 ;
+    sh:class exo-ui:Action ;
+    sh:message "Button must have exactly one action"
+  ] ;
+  sh:property [
+    sh:path exo-ui:Button_label ;
+    sh:datatype xsd:string ;
+    sh:minCount 1 ;
+    sh:message "Button must have a label"
+  ] .
+
+# Action must declare headless mode
+exo-ui:ActionShape a sh:NodeShape ;
+  sh:targetClass exo-ui:Action ;
+  sh:property [
+    sh:path exo-ui:Action_headless ;
+    sh:datatype xsd:boolean ;
+    sh:minCount 1 ;
+    sh:message "Action must declare headless mode"
+  ] .
+```
+
+### TypeScript Integration
+
+```typescript
+import { Validator } from 'rdf-validate-shacl';
+import { DataFactory, Store } from 'n3';
+
+class SHACLValidator {
+  private validator: Validator;
+
+  constructor(shapesStore: Store) {
+    this.validator = new Validator(shapesStore);
+  }
+
+  async validate(dataStore: Store): Promise<ValidationResult> {
+    const report = await this.validator.validate(dataStore);
+
+    if (!report.conforms) {
+      const errors = report.results.map(r => ({
+        path: r.path?.value,
+        message: r.message[0]?.value,
+        severity: r.severity?.value
+      }));
+      throw new ValidationError(errors);
+    }
+
+    return { valid: true };
+  }
+}
+```
+
+### Validation Timing
+
+- **Startup**: Validate button definitions when plugin loads
+- **Runtime**: Validate before action execution
+- **Development**: CI pipeline validates ontology changes
+
+### Reference
+
+- Issues #1435, #1444-#1447: SHACL Integration (Jan 2026)
+- Library: `rdf-validate-shacl` or `shacl-js`
+
+---
+
+## UIProvider Abstraction Pattern
+
+**When to use**: Creating platform-agnostic UI operations
+
+### Pattern Description
+
+Abstract UI operations behind an interface to support multiple platforms (Obsidian, CLI, tests) with a single action definition.
+
+### Interface Definition
+
+```typescript
+interface IUIProvider {
+  // Modal operations
+  showModal(config: ModalConfig): Promise<ModalResult>;
+  showConfirmDialog(message: string): Promise<boolean>;
+  showInputDialog(config: InputConfig): Promise<string | null>;
+
+  // Notifications
+  showNotification(message: string, type: NotificationType): void;
+  showError(error: Error): void;
+
+  // Navigation
+  navigateTo(path: string): Promise<void>;
+  openInNewPane(path: string): Promise<void>;
+
+  // File operations (UI-driven)
+  showFilePicker(config: FilePickerConfig): Promise<string | null>;
+  showFolderPicker(config: FolderPickerConfig): Promise<string | null>;
+}
+
+type NotificationType = 'info' | 'success' | 'warning' | 'error';
+```
+
+### Platform Implementations
+
+```typescript
+// ObsidianUIProvider.ts (Issue #1398)
+class ObsidianUIProvider implements IUIProvider {
+  constructor(private app: App) {}
+
+  async showModal(config: ModalConfig): Promise<ModalResult> {
+    return new Promise((resolve) => {
+      const modal = new ConfigurableModal(this.app, config, resolve);
+      modal.open();
+    });
+  }
+
+  async navigateTo(path: string): Promise<void> {
+    const file = this.app.vault.getAbstractFileByPath(path);
+    if (file instanceof TFile) {
+      await this.app.workspace.getLeaf().openFile(file);
+    }
+  }
+}
+
+// CLIUIProvider.ts (Issue #1399)
+class CLIUIProvider implements IUIProvider {
+  async showModal(config: ModalConfig): Promise<ModalResult> {
+    // CLI prompts or headless skip
+    if (config.allowHeadless) {
+      return { confirmed: true, data: config.defaults };
+    }
+
+    // Use readline for interactive CLI
+    const answer = await this.prompt(config.message);
+    return { confirmed: true, data: answer };
+  }
+
+  async navigateTo(path: string): Promise<void> {
+    console.log(`Would navigate to: ${path}`);
+  }
+}
+
+// MockUIProvider.ts (for tests)
+class MockUIProvider implements IUIProvider {
+  public modalResults: ModalResult[] = [];
+
+  async showModal(config: ModalConfig): Promise<ModalResult> {
+    return this.modalResults.shift() ?? { confirmed: false };
+  }
+}
+```
+
+### ActionContext Integration
+
+```typescript
+interface ActionContext {
+  tripleStore: ITripleStore;
+  vault: IVaultAdapter;
+  uiProvider: IUIProvider;  // Platform-specific provider
+  currentFile: TFile;
+  settings: PluginSettings;
+}
+```
+
+### Usage in Action Handlers
+
+```typescript
+// ShowModalActionHandler.ts
+class ShowModalActionHandler implements ActionHandler {
+  async execute(action: ShowModalAction, context: ActionContext): Promise<ActionResult> {
+    const result = await context.uiProvider.showModal({
+      title: action.title,
+      message: action.message,
+      buttons: action.buttons,
+      allowHeadless: action.headless
+    });
+
+    if (!result.confirmed) {
+      return { cancelled: true };
+    }
+
+    // Continue with result data
+    return { success: true, data: result.data };
+  }
+}
+```
+
+### Reference
+
+- Issues #1397-#1400: UIProvider Implementation (Jan 2026)
