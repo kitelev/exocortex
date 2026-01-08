@@ -82,20 +82,20 @@ const EXPECTED_COMMANDS = {
 const EXPECTED_COMMAND_COUNT = Object.keys(EXPECTED_COMMANDS).length; // 36
 
 describe("Milestone v1.3 Acceptance: RDF-Driven Commands", () => {
-  describe("Baseline: Current Command Registry", () => {
+  describe("RDF Command System", () => {
     /**
-     * Documents the current (legacy) command count before RDF migration
-     * The current implementation has 34 commands hardcoded in CommandRegistry.ts
+     * Documents the expected command count in the RDF-driven system (36 commands)
+     * Legacy CommandRegistry was removed in v2.0 cleanup (Issue #1466)
      */
-    it("should document current baseline of 34 commands in legacy CommandRegistry", () => {
-      // This documents the expected baseline from CommandRegistry.ts
-      // See packages/obsidian-plugin/src/application/commands/CommandRegistry.ts
-      const LEGACY_COMMAND_COUNT = 34;
-      expect(LEGACY_COMMAND_COUNT).toBe(34);
-    });
-
-    it("should document expected command count after RDF migration (36)", () => {
-      // After migration, we expect 36 commands (added GoToParent, GoToProject, GoToArea)
+    it("should have 36 commands defined in RDF", () => {
+      // After full migration to RDF-driven commands, we have 36 commands total:
+      // - Create commands: 6
+      // - Status commands: 13
+      // - Maintenance commands: 5
+      // - UI Toggle commands: 4
+      // - Conversion commands: 2
+      // - Navigation commands: 3
+      // - Special commands: 3
       expect(EXPECTED_COMMAND_COUNT).toBe(36);
     });
   });

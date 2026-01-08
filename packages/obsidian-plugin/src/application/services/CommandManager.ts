@@ -1,64 +1,39 @@
-import { App, TFile } from "obsidian";
+import { App } from "obsidian";
 import { ExocortexPluginInterface } from '@plugin/types';
-import { CommandRegistry } from '@plugin/application/commands/CommandRegistry';
-import { MetadataExtractor } from "exocortex";
-import { ObsidianVaultAdapter } from '@plugin/adapters/ObsidianVaultAdapter';
-import { CommandVisibilityContext } from "exocortex";
+import { RdfCommandRegistry } from '@plugin/application/commands/RdfCommandRegistry';
+import { SPARQLQueryService } from '@plugin/application/services/SPARQLQueryService';
+import { LoggerFactory } from '@plugin/adapters/logging/LoggerFactory';
 
+/**
+ * CommandManager - orchestrates command registration with Obsidian.
+ *
+ * Uses RdfCommandRegistry to load command definitions from the RDF triple store
+ * and register them with the Obsidian plugin.
+ *
+ * @since 2.0.0 - Migrated from legacy CommandRegistry to RdfCommandRegistry
+ */
 export class CommandManager {
-  private commandRegistry: CommandRegistry | null = null;
-  private metadataExtractor: MetadataExtractor;
-  private vaultAdapter: ObsidianVaultAdapter;
+  private rdfCommandRegistry: RdfCommandRegistry | null = null;
 
   constructor(private app: App) {
-    this.vaultAdapter = new ObsidianVaultAdapter(
-      app.vault,
-      app.metadataCache,
-      app,
-    );
-    this.metadataExtractor = new MetadataExtractor(this.vaultAdapter);
-    // CommandRegistry is lazily initialized in registerAllCommands()
+    // RdfCommandRegistry is lazily initialized in registerAllCommands()
     // to avoid needing a placeholder plugin instance
   }
 
-  registerAllCommands(
+  /**
+   * Register all commands from RDF definitions with the plugin.
+   *
+   * @param plugin - The Exocortex plugin instance
+   * @param _reloadLayoutCallback - Optional callback for layout reload (legacy, kept for API compatibility)
+   */
+  async registerAllCommands(
     plugin: ExocortexPluginInterface,
-    reloadLayoutCallback?: () => void,
-  ): void {
-    this.commandRegistry = new CommandRegistry(this.app, plugin, reloadLayoutCallback);
+    _reloadLayoutCallback?: () => void,
+  ): Promise<void> {
+    const logger = LoggerFactory.create("CommandManager");
+    const sparqlService = new SPARQLQueryService(this.app, logger);
 
-    const commands = this.commandRegistry.getAllCommands();
-
-    for (const command of commands) {
-      if (command.checkCallback) {
-        plugin.addCommand({
-          id: command.id,
-          name: command.name,
-          checkCallback: (checking: boolean) => {
-            const file = this.app.workspace.getActiveFile();
-            if (!file) return false;
-
-            const context = this.getContext(file);
-            if (!command.checkCallback) return false;
-            return command.checkCallback(checking, file, context);
-          },
-        });
-      } else if (command.callback) {
-        plugin.addCommand({
-          id: command.id,
-          name: command.name,
-          callback: command.callback,
-        });
-      }
-    }
-  }
-
-  private getContext(file: TFile): CommandVisibilityContext | null {
-    const context = this.metadataExtractor.extractCommandVisibilityContext(file);
-
-    return {
-      ...context,
-      expectedFolder: null,
-    };
+    this.rdfCommandRegistry = new RdfCommandRegistry(plugin, sparqlService);
+    await this.rdfCommandRegistry.loadFromTripleStore();
   }
 }
