@@ -33,6 +33,8 @@ module.exports = {
     "!src/commands/ask.ts",
     // Exclude daily-review.ts from coverage - actual logic tested in DailyReviewService.test.ts
     "!src/commands/daily-review.ts",
+    // Exclude asset.ts from coverage - command structure tested, execution requires real vault
+    "!src/commands/asset.ts",
   ],
   coverageDirectory: "coverage",
   coverageReporters: ["text", "lcov", "html", "json-summary"],
