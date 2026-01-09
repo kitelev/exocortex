@@ -203,7 +203,7 @@ votes:
 
 - **Property**: `ems__Effort_votes`
 - **Service**: `EffortVotingService`
-- **UI**: VoteOnEffortButton component
+- **UI**: Vote button in ActionButtonsGroup
 - **Setting**: `showEffortVotes` toggle
 - **Command**: "Vote on Effort" in Command Palette
 
