@@ -1,8 +1,8 @@
 # Exocortex Architecture
 
-**Version**: 0.0.0-dev
-**Last Updated**: 2025-10-26
-**Status**: Current State (Before Core Extraction)
+**Version**: 14.0.0
+**Last Updated**: 2026-01-09
+**Status**: Current State (RDF-Driven Architecture Complete)
 
 ---
 
@@ -17,8 +17,11 @@
 7. [Property Schema](#property-schema)
 8. [Design Patterns](#design-patterns)
 9. [Error Handling](#error-handling)
-10. [Current Limitations](#current-limitations)
-11. [Future Architecture](#future-architecture)
+10. [RDF-Driven Architecture](#rdf-driven-architecture-milestone-v10)
+11. [RDF-Driven Button System](#rdf-driven-button-system-milestone-v12)
+12. [SHACL Validation Pipeline](#shacl-validation-pipeline-milestone-v13)
+13. [Current State](#current-architecture-monorepo-implementation)
+14. [Additional Resources](#additional-resources)
 
 ---
 
@@ -1619,6 +1622,351 @@ Action 1          Action 2              Action 3
 
 ---
 
+## 🎛️ RDF-Driven Button System (Milestone v1.2)
+
+The RDF-Driven Button System replaces hardcoded button definitions with declarative RDF configurations. Instead of adding TypeScript code for each new button, buttons are defined in RDF ontology files and loaded at runtime.
+
+### Overview
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     RDF-Driven Button System Architecture                    │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│   ┌─────────────────────────────────────────────────────────────────────┐   │
+│   │                     exo-ui Ontology (RDF)                           │   │
+│   │  ┌──────────────┐ ┌─────────────┐ ┌────────────┐ ┌────────────────┐ │   │
+│   │  │ ButtonGroup  │ │   Button    │ │   Action   │ │   Condition    │ │   │
+│   │  │ (Creation,   │ │ (label,     │ │ (8 Fixed   │ │ (SPARQL ASK,   │ │   │
+│   │  │  Status...)  │ │  icon...)   │ │  Verbs)    │ │  property...)  │ │   │
+│   │  └──────────────┘ └─────────────┘ └────────────┘ └────────────────┘ │   │
+│   └─────────────────────────────────────────────────────────────────────┘   │
+│                                    │                                        │
+│                         SPARQL queries                                      │
+│                                    ▼                                        │
+│   ┌─────────────────────────────────────────────────────────────────────┐   │
+│   │                    RdfButtonGroupsBuilder                           │   │
+│   │  1. Query ButtonGroups from triple store                            │   │
+│   │  2. Query Buttons for each group                                    │   │
+│   │  3. Filter buttons by ConditionEvaluator                            │   │
+│   │  4. Return visible ButtonGroup[] for rendering                      │   │
+│   └─────────────────────────────────────────────────────────────────────┘   │
+│                                    │                                        │
+│                                    ▼                                        │
+│   ┌─────────────────────────────────────────────────────────────────────┐   │
+│   │                       ActionButtonsGroup                            │   │
+│   │            React component renders buttons                          │   │
+│   │               onClick → ActionInterpreter.execute()                 │   │
+│   └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Key Components
+
+#### 1. RdfButtonGroupsBuilder
+
+**File**: `packages/obsidian-plugin/src/presentation/builders/RdfButtonGroupsBuilder.ts`
+
+Replaces the hardcoded `ButtonGroupsBuilder` with dynamic RDF-based button loading:
+
+```typescript
+export class RdfButtonGroupsBuilder {
+  private sparqlService: SPARQLQueryService;
+  private actionInterpreter: ActionInterpreter;
+  private conditionEvaluator: ConditionEvaluator;
+
+  async buildButtonGroups(assetUri: string): Promise<ButtonGroup[]> {
+    // 1. Load all ButtonGroups from RDF via SPARQL
+    // 2. For each group, load Buttons with their actions and conditions
+    // 3. Filter buttons using ConditionEvaluator
+    // 4. Return only groups with at least one visible button
+  }
+}
+```
+
+**SPARQL Queries Used**:
+- `BUTTON_GROUPS_QUERY`: Retrieves all `exo-ui:ButtonGroup` instances with labels and order
+- `BUTTONS_QUERY_TEMPLATE`: For each group, queries buttons with action, condition, icon, variant
+
+#### 2. ConditionEvaluator
+
+**File**: `packages/exocortex/src/domain/services/ConditionEvaluator.ts`
+
+Evaluates button visibility conditions defined in RDF:
+
+```typescript
+export class ConditionEvaluator {
+  async evaluate(conditionUri: string, assetUri: string): Promise<boolean>
+}
+```
+
+**Supported Condition Types**:
+
+| Type | RDF Property | Example |
+|------|--------------|---------|
+| SPARQL ASK | `exo-ui:condition_sparql` | `ASK { ?asset a ems:Task }` |
+| Class Check | `exo-ui:condition_assetClass` | `ems:Task` |
+| Property Exists | `exo-ui:condition_hasProperty` | `ems:Effort_status` |
+| Property Value | `exo-ui:condition_propertyValue` | `"active"` |
+| NOT | `exo-ui:condition_not` | Negates inner condition |
+| AND | `exo-ui:condition_and` | All conditions must be true |
+| OR | `exo-ui:condition_or` | At least one must be true |
+
+**Example Condition in RDF**:
+```turtle
+exo-ui:isTaskInDoing a exo-ui:Condition ;
+    exo-ui:condition_assetClass ems:Task ;
+    exo-ui:condition_hasProperty ems:Effort_status ;
+    exo-ui:condition_propertyValue "[[ems__EffortStatusDoing]]" .
+```
+
+#### 3. CompositeAction Pattern
+
+For buttons requiring multiple sequential operations, `CompositeAction` chains actions together:
+
+```
+Button Click
+    │
+    ▼
+CompositeAction
+    │
+    ├──▶ Action 1: UpdatePropertyAction
+    │         ↓ result.data
+    ├──▶ Action 2: TriggerHookAction (receives previousResult)
+    │         ↓ result.data
+    └──▶ Action 3: NavigateAction (receives previousResult)
+    │
+    ▼
+Final Result (success, refresh=true)
+```
+
+**Example**: "Mark Done" button in RDF:
+```turtle
+exo-ui:markDoneComposite a exo-ui:CompositeAction ;
+    exo-ui:Action_actions """[
+        "exo-ui:updateStatusToDone",
+        "exo-ui:stopEffortTracking"
+    ]""" .
+```
+
+### Before vs After Comparison
+
+| Aspect | Before (TypeScript-driven) | After (RDF-driven) |
+|--------|---------------------------|-------------------|
+| Add new button | 50+ lines TypeScript | 10 lines RDF |
+| Change button label | Code change + npm build | Edit RDF file |
+| Reorder buttons | Code change + npm build | Change `Button_order` in RDF |
+| Visibility logic | TypeScript function | SPARQL ASK or property check |
+| Deploy changes | Plugin update + restart | Reload ontology |
+| User customization | ❌ Not possible | ✅ Edit RDF |
+
+### Implementation Files
+
+| Component | File | Purpose |
+|-----------|------|---------|
+| Builder | `obsidian-plugin/.../RdfButtonGroupsBuilder.ts` | Load buttons from RDF |
+| Evaluator | `exocortex/.../ConditionEvaluator.ts` | Evaluate visibility conditions |
+| Condition Types | `exocortex/.../ConditionTypes.ts` | TypeScript interfaces |
+| Button Component | `obsidian-plugin/.../RdfButton.tsx` | React button component |
+| Action Component | `obsidian-plugin/.../ActionButtonsGroup.tsx` | Renders button groups |
+
+---
+
+## 🛡️ SHACL Validation Pipeline (Milestone v1.3)
+
+SHACL (Shapes Constraint Language) validation ensures RDF data conforms to defined schemas before use. This prevents runtime errors from malformed button definitions, actions, or conditions.
+
+### Overview
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         SHACL Validation Pipeline                            │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│   ┌─────────────────┐       ┌─────────────────┐       ┌─────────────────┐   │
+│   │ RDF Data File   │       │ SHACL Shapes    │       │ ShaclValidator  │   │
+│   │ (Commands,      │  +    │ (CommandShape,  │  ──▶  │                 │   │
+│   │  Buttons,       │       │  ButtonShape,   │       │ validate(data,  │   │
+│   │  Actions)       │       │  ActionShape)   │       │         shapes) │   │
+│   └─────────────────┘       └─────────────────┘       └────────┬────────┘   │
+│                                                                 │            │
+│                                        ┌────────────────────────┘            │
+│                                        ▼                                     │
+│   ┌────────────────────────────────────────────────────────────────────┐    │
+│   │                      ValidationResult                               │    │
+│   │  {                                                                  │    │
+│   │    conforms: boolean,                                               │    │
+│   │    violations: [{                                                   │    │
+│   │      focusNode: "exo-ui:myButton",                                  │    │
+│   │      path: "Button_id",                                             │    │
+│   │      message: "Button requires exactly one Button_id",              │    │
+│   │      severity: "Violation"                                          │    │
+│   │    }]                                                               │    │
+│   │  }                                                                  │    │
+│   └────────────────────────────────────────────────────────────────────┘    │
+│                                        │                                     │
+│              ┌─────────────────────────┼─────────────────────────┐          │
+│              ▼                         ▼                         ▼          │
+│   ┌──────────────────┐    ┌──────────────────┐    ┌──────────────────┐     │
+│   │  Console Output  │    │   JSON Output    │    │  Obsidian Notice │     │
+│   │  (CLI validate)  │    │  (Programmatic)  │    │  (Plugin UI)     │     │
+│   └──────────────────┘    └──────────────────┘    └──────────────────┘     │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### SHACL Shape Definitions
+
+#### CommandShape
+
+**File**: `packages/exocortex/src/services/shacl/shapes/CommandShape.ts`
+
+Validates `exo-ui:Command` class instances:
+
+| Property | Constraint | Description |
+|----------|------------|-------------|
+| `Command_id` | Exactly 1, xsd:string | Unique command identifier |
+| `Command_name` | Min 1, xsd:string | Display name in command palette |
+| `Command_action` | Min 1, IRI | Action to execute |
+| `Command_icon` | Optional, xsd:string | Lucide icon name |
+| `Command_hotkey` | Optional, xsd:string | Keyboard shortcut |
+| `Command_condition` | Optional, IRI | Visibility condition |
+| `Command_headless` | Optional, xsd:boolean | Allow CLI execution |
+
+#### ButtonShape
+
+**File**: `packages/exocortex/src/services/shacl/shapes/ButtonShape.ts`
+
+Validates `exo-ui:Button` class instances:
+
+| Property | Constraint | Description |
+|----------|------------|-------------|
+| `Button_id` | Exactly 1, xsd:string | Unique button identifier |
+| `Button_action` | Min 1, IRI | Action to execute |
+| `Button_label` | Optional, xsd:string | Button text |
+| `Button_icon` | Optional, xsd:string | Lucide icon name |
+| `Button_tooltip` | Optional, xsd:string | Hover tooltip |
+| `Button_condition` | Optional, IRI | Visibility condition |
+| `Button_group` | Optional, IRI | Parent ButtonGroup |
+| `Button_order` | Optional, xsd:integer | Sort order within group |
+| `Button_variant` | Optional, xsd:string | Visual style variant |
+
+#### ActionShape
+
+**File**: `packages/exocortex/src/services/shacl/shapes/ActionShape.ts`
+
+Validates `exo-ui:Action` and all 8 subclasses:
+
+**Base Action Constraints**:
+| Property | Constraint | Description |
+|----------|------------|-------------|
+| `Action_headless` | Required, xsd:boolean | Whether action works in CLI mode |
+
+**Action Subclass Constraints**:
+
+| Action Type | Required Properties |
+|-------------|-------------------|
+| CreateAssetAction | `targetClass` |
+| UpdatePropertyAction | `targetProperty`, `targetValue` |
+| NavigateAction | `target` |
+| ExecuteSPARQLAction | `query` |
+| ShowModalAction | `modalType` |
+| CustomHandlerAction | `handler` |
+| CompositeAction | `actions` |
+| TriggerHookAction | (none additional) |
+
+### ShaclValidator Service
+
+**File**: `packages/exocortex/src/services/shacl/ShaclValidator.ts`
+
+```typescript
+export class ShaclValidator {
+  async validate(
+    dataTurtle: string,
+    shapesTurtle: string
+  ): Promise<ValidationResult>
+}
+
+interface ValidationResult {
+  conforms: boolean;
+  violations: ValidationViolation[];
+}
+
+interface ValidationViolation {
+  focusNode: string;           // Node that failed validation
+  path?: string;               // Property path that was violated
+  message: string;             // Human-readable error
+  severity: "Violation" | "Warning" | "Info";
+  sourceConstraintComponent?: string;
+}
+```
+
+### ValidationErrorFormatter
+
+**File**: `packages/exocortex/src/services/shacl/ValidationErrorFormatter.ts`
+
+Formats validation results for different environments:
+
+```typescript
+export class ValidationErrorFormatter {
+  // Console/CLI output
+  formatForConsole(result: ValidationResult): string;
+
+  // Machine-parseable JSON
+  formatAsJson(result: ValidationResult): string;
+
+  // Obsidian Notice with emojis
+  formatForNotice(result: ValidationResult): {
+    message: string;
+    duration: number;  // 10s violations, 5s warnings, 3s info
+  };
+}
+```
+
+### CLI Integration
+
+**File**: `packages/cli/src/commands/validate.ts`
+
+```bash
+# Validate ontology against shapes
+exocortex validate --ontology ui-ontology.ttl --shapes command-shape.ttl
+
+# JSON output for CI/CD
+exocortex validate --ontology ui-ontology.ttl --shapes shapes.ttl --format json
+
+# Exit codes:
+# 0 = SUCCESS (conforms)
+# 65 = VALIDATION_ERROR (violations found)
+```
+
+### Integration Points
+
+1. **Build-time validation**: CI validates RDF files before deployment
+2. **Runtime validation**: ActionInterpreter validates action definitions before execution
+3. **Development feedback**: Immediate validation errors during ontology editing
+4. **CLI automation**: `exocortex validate` for pre-commit hooks
+
+### Implementation Files
+
+| Component | File | Purpose |
+|-----------|------|---------|
+| Validator | `exocortex/.../shacl/ShaclValidator.ts` | Core validation logic |
+| Formatter | `exocortex/.../shacl/ValidationErrorFormatter.ts` | Output formatting |
+| CommandShape | `exocortex/.../shacl/shapes/CommandShape.ts` | Command constraints |
+| ButtonShape | `exocortex/.../shacl/shapes/ButtonShape.ts` | Button constraints |
+| ActionShape | `exocortex/.../shacl/shapes/ActionShape.ts` | Action constraints |
+| CLI Command | `cli/.../commands/validate.ts` | CLI integration |
+
+### Test Coverage
+
+- `CommandShapeValidator.test.ts` — Tests Command shape validation
+- `ButtonShapeValidator.test.ts` — Tests Button shape validation
+- `ActionShapeValidator.test.ts` — Tests Action shape validation
+- `ValidationErrorFormatter.test.ts` — Tests output formatting
+
+---
+
 ## 🚀 Current Architecture (Monorepo Implementation)
 
 ### Three-Tier Architecture (IMPLEMENTED)
@@ -1690,8 +2038,9 @@ graph TB
 | 1.2 | 2025-11-29 | Documented CommandVisibility domain segregation (#468) |
 | 1.3 | 2026-01-07 | Added RDF-Driven Architecture section (Milestone v1.0 #1401) |
 | 1.4 | 2026-01-07 | Added ActionInterpreter Runtime documentation (Issue #1414) |
+| 2.0 | 2026-01-09 | Added RDF-Driven Button System (Milestone v1.2) and SHACL Validation Pipeline (Milestone v1.3) documentation (#2062) |
 
 ---
 
 **Maintainer**: @kitelev
-**Related Issues**: #122 (Core Extraction), #123 (Test Coverage), #125 (Type Safety)
+**Related Issues**: #122 (Core Extraction), #123 (Test Coverage), #125 (Type Safety), #2062 (Architecture Documentation Update)
