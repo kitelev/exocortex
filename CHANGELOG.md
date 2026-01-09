@@ -1,5 +1,56 @@
 ## [Unreleased]
 
+## [14.0.0] - 2026-01-09
+
+### Changed
+
+**v14.0 - Legacy Code Cleanup Complete**: This major release marks the completion of the RDF-Driven Architecture migration, removing 20,268 lines of legacy button code while maintaining full functionality.
+
+**Highlights:**
+- **ActionInterpreter integration complete** (Phase 1): Full integration of the ActionInterpreter service for executing RDF-defined button actions
+- **RdfButtonGroupsBuilder replaces 18 hardcoded buttons** (Phase 2-3): All button components now generated dynamically from RDF definitions
+- **Full RDF-Driven Architecture achieved**: Complete migration from hardcoded TypeScript buttons to semantic, data-driven UI
+
+**Breaking Changes:**
+- None (internal refactoring only)
+
+**Metrics:**
+- **22 cleanup PRs merged**
+- **20,719 lines deleted**, 451 lines added
+- **Net reduction: 20,268 LOC**
+- **35+ TypeScript files removed**
+- **18 legacy button components eliminated**
+- Test coverage maintained: 8,363 tests (7,653 obsidian-plugin + 710 CLI)
+- Bundle size stable: 1.85 MB
+
+**Removed Components:**
+1. ArchiveTaskButton
+2. CleanEmptyPropertiesButton
+3. CreateInstanceButton
+4. CreateProjectButton
+5. CreateTaskButton
+6. MarkTaskDoneButton
+7. MoveToAnalysisButton
+8. MoveToBacklogButton
+9. MoveToToDoButton
+10. PlanOnTodayButton
+11. RenameToUidButton
+12. RepairFolderButton
+13. RollbackStatusButton
+14. ShiftDayBackwardButton
+15. ShiftDayForwardButton
+16. StartEffortButton
+17. TrashEffortButton
+18. VoteOnEffortButton
+19. ButtonGroupsBuilder (legacy)
+20. CommandRegistry (legacy)
+
+**Architecture Transformation:**
+- Before: 18+ specialized button components with hardcoded configurations (~21,000 LOC)
+- After: 1 generic RdfButton component with 29 buttons defined in RDF (~800 LOC infrastructure)
+
+For detailed metrics and validation, see [docs/v14-validation-report.md](docs/v14-validation-report.md) and [docs/RDFDA-EVOLUTION.md](docs/RDFDA-EVOLUTION.md).
+
 ## [12.15.54] - 2025-10-18
 
 ### Changed
