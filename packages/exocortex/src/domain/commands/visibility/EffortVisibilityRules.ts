@@ -137,18 +137,6 @@ export function canTrashEffort(context: CommandVisibilityContext): boolean {
 }
 
 /**
- * Can execute "Vote on Effort" command
- * Available for: Task and Project efforts (not archived)
- */
-export function canVoteOnEffort(context: CommandVisibilityContext): boolean {
-  if (!isEffort(context.instanceClass)) return false;
-
-  if (isAssetArchived(context.isArchived)) return false;
-
-  return true;
-}
-
-/**
  * Can execute "Rollback Status" command
  * Available for: Efforts with non-null, non-Trashed status (workflow-based rollback)
  */

@@ -62,7 +62,6 @@ export {
   canStartEffort,
   canMarkDone,
   canTrashEffort,
-  canVoteOnEffort,
   canRollbackStatus,
   canArchiveTask,
 } from "./EffortVisibilityRules";
