@@ -613,7 +613,7 @@ Core tables, trees, and action buttons:
 | **Tables** (4) | `DailyTasksTable`, `DailyProjectsTable`, `AssetPropertiesTable`, `AssetRelationsTable` |
 | **Trees** (1) | `AreaHierarchyTree` |
 | **Button Groups** (1) | `ActionButtonsGroup` |
-| **Action Buttons** (5) | `StartEffortButton`, `VoteOnEffortButton`, `TrashEffortButton`, `ShiftDayForwardButton`, `RdfButton` |
+| **Action Buttons** (4) | `StartEffortButton`, `VoteOnEffortButton`, `TrashEffortButton`, `RdfButton` |
 | **Utilities** (2) | `ErrorBoundary`, `LayoutErrorFallback` |
 
 #### Property Fields (14 files in `property-fields/`)
