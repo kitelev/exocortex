@@ -1,6 +1,6 @@
 import React from "react";
 
-export type ViewMode = "table" | "list" | "graph" | "graph3d";
+export type ViewMode = "table" | "list";
 
 export interface ViewModeSelectorProps {
   currentMode: ViewMode;
@@ -16,15 +16,11 @@ export const ViewModeSelector: React.FC<ViewModeSelectorProps> = ({
   const modeLabels: Record<ViewMode, string> = {
     table: "table",
     list: "list",
-    graph: "graph",
-    graph3d: "3D graph",
   };
 
   const modeIcons: Record<ViewMode, string> = {
     table: "▤",
     list: "☰",
-    graph: "●—●",
-    graph3d: "◇",
   };
 
   return (

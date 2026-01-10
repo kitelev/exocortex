@@ -15,7 +15,6 @@ module.exports = {
     "/tests/infrastructure/",
     // Temporarily skip these broken tests until ErrorBoundary mocking is fixed
     "/tests/unit/ReactRenderer.test.tsx",
-    "/tests/unit/SPARQLGraphView.test.tsx",
     "/tests/unit/LayoutErrorFallback.test.tsx",
   ],
   collectCoverageFrom: [
@@ -27,12 +26,6 @@ module.exports = {
     "!**/tests/**",
     // Exclude Web Worker files - they run in Worker context and can't be unit tested with Jest
     "!**/*.worker.ts",
-    // Exclude IncrementalRenderer - requires WebGL/PixiJS rendering which is unavailable in JSDOM
-    // DirtyTracker (its core logic) is fully tested separately
-    "!**/IncrementalRenderer.ts",
-    // Exclude 3D graph components - require WebGL context unavailable in JSDOM
-    // Scene3DManager uses Three.js WebGL renderer
-    "!**/3d/Scene3DManager.ts",
   ],
   moduleNameMapper: {
     "^exocortex$": "<rootDir>/../exocortex/src/index.ts",
@@ -46,20 +39,17 @@ module.exports = {
     "^@plugin/(.*)$": "<rootDir>/src/$1",
     "^obsidian$": "<rootDir>/tests/__mocks__/obsidian.ts",
     "^d3$": "<rootDir>/tests/__mocks__/d3.ts",
-    "^pixi\\.js$": "<rootDir>/tests/__mocks__/pixi.js.ts",
-    "^three$": "<rootDir>/tests/__mocks__/three.ts",
-    "^three/examples/jsm/controls/OrbitControls\\.js$": "<rootDir>/tests/__mocks__/three-addons.ts",
   },
   // Coverage thresholds per Test Pyramid policy (docs/TEST-PYRAMID.md)
-  // CI workflow (.github/workflows/ci.yml) uses: statements: 75, branches: 66, functions: 70, lines: 75
-  // Note: branches threshold lowered from 67% to 66% after legacy CommandRegistry removal (#1466)
-  // This is expected when deleting well-tested code that artificially inflated coverage
+  // CI workflow (.github/workflows/ci.yml) uses: statements: 73, branches: 61, functions: 66, lines: 73
+  // Note: thresholds lowered after graph visualization removal (#2066) - removed ~130k lines of well-tested code
+  // Previous: statements: 75, branches: 66, functions: 70, lines: 75
   coverageThreshold: {
     global: {
-      statements: 75,
-      branches: 66,
-      functions: 70,
-      lines: 75,
+      statements: 73,
+      branches: 61,
+      functions: 66,
+      lines: 73,
     },
   },
   // Handle ES modules from node_modules
