@@ -6155,3 +6155,560 @@ class ShowModalActionHandler implements ActionHandler {
 ### Reference
 
 - Issues #1397-#1400: UIProvider Implementation (Jan 2026)
+
+---
+
+## RDF-Driven UI Button System Pattern
+
+**When to use**: Building UI components that read configuration from RDF ontology instead of hardcoded values
+
+### Pattern Description
+
+Instead of hardcoding button definitions in TypeScript, define them in RDF ontology and read them at runtime via SPARQL. This enables:
+- Configuration without code changes
+- Consistent behavior across CLI and Plugin
+- Easier testing via RDF mocking
+- Self-documenting UI structure
+
+### Implementation Structure (Issues #1997-#2006)
+
+```
+1. Ontology Definition (exo-ui.ttl)
+   - exo-ui:Button, exo-ui:ButtonGroup classes
+   - exo-ui:action, exo-ui:visibilityCondition properties
+   ↓
+2. ActionBridge (Core)
+   - Maps RDF button definitions to ActionInterpreter
+   - Resolves action URIs to executable handlers
+   ↓
+3. RdfButtonGroupsBuilder (Plugin)
+   - Reads all button definitions via SPARQL
+   - Groups buttons by ButtonGroup membership
+   - Returns platform-agnostic button specifications
+   ↓
+4. RdfButton Component (Plugin)
+   - Generic React component for RDF-defined buttons
+   - Receives action URI, triggers via ActionBridge
+```
+
+### Code Structure
+
+```typescript
+// ActionBridge.ts
+export class ActionBridge {
+  constructor(
+    private readonly tripleStore: ITripleStore,
+    private readonly actionInterpreter: IActionInterpreter
+  ) {}
+
+  async executeButtonAction(buttonUri: string, context: ActionContext): Promise<ActionResult> {
+    // 1. Query button's action URI from RDF
+    const actionUri = await this.getButtonAction(buttonUri);
+
+    // 2. Resolve action definition from ontology
+    const actionDef = await this.resolveActionDefinition(actionUri);
+
+    // 3. Execute via ActionInterpreter
+    return this.actionInterpreter.execute(actionDef, context);
+  }
+
+  private async getButtonAction(buttonUri: string): Promise<string> {
+    const query = `
+      SELECT ?action WHERE {
+        <${buttonUri}> exo-ui:action ?action .
+      }
+    `;
+    const results = await this.tripleStore.query(query);
+    return results[0].action.value;
+  }
+}
+```
+
+```typescript
+// RdfButtonGroupsBuilder.ts
+export class RdfButtonGroupsBuilder {
+  async buildButtonGroups(assetUri: string): Promise<ButtonGroup[]> {
+    const query = `
+      SELECT ?group ?groupLabel ?button ?buttonLabel ?action ?order
+      WHERE {
+        ?group a exo-ui:ButtonGroup .
+        ?group rdfs:label ?groupLabel .
+        ?button exo-ui:memberOf ?group .
+        ?button rdfs:label ?buttonLabel .
+        ?button exo-ui:action ?action .
+        OPTIONAL { ?button exo-ui:order ?order }
+        FILTER(exo-ui:visibleFor(?button, <${assetUri}>))
+      }
+      ORDER BY ?group ?order
+    `;
+    // Group results by ButtonGroup, return structured data
+  }
+}
+```
+
+### Benefits
+
+| Aspect | Before (Hardcoded) | After (RDF-Driven) |
+|--------|-------------------|-------------------|
+| Adding button | Code change + build | TTL edit only |
+| Testing | Mock each button | Load test ontology |
+| Documentation | Separate from code | Self-documenting RDF |
+| CLI/Plugin parity | Duplicate logic | Shared ontology |
+
+### Migration Strategy (Issues #2007-#2012)
+
+1. **Create RDF definitions** first (parallel to existing code)
+2. **Implement RdfButtonGroupsBuilder** to read definitions
+3. **Add feature flag** to toggle between old/new systems
+4. **Parallel rendering validation** (Issue #2006) to ensure parity
+5. **Remove legacy components** one by one after validation
+
+### Cleanup Checklist (from Issues #2008-#2012)
+
+```bash
+# Each legacy button removal follows this pattern:
+
+# 1. Verify RDF equivalent exists
+grep -r "exo-ui:CreateTaskButton" ontologies/exo-ui.ttl
+
+# 2. Verify no remaining imports
+grep -r "CreateTaskButton" packages/*/src --include="*.ts" --include="*.tsx"
+
+# 3. Remove component file
+rm packages/obsidian-plugin/src/presentation/components/buttons/CreateTaskButton.tsx
+
+# 4. Update barrel exports
+# Edit index.ts to remove export
+
+# 5. Run tests
+npm run test:all
+```
+
+### Real-World Metrics (January 2026)
+
+| Issue | Component Removed | Steps |
+|-------|------------------|-------|
+| #2008 | ArchiveTaskButton | 52 |
+| #2009 | CleanEmptyPropertiesButton | 42+62 |
+| #2010 | CreateInstanceButton | 28+53 |
+| #2011 | CreateProjectButton | 50+58 |
+| #2012 | CreateTaskButton | 48+53 |
+
+**Total**: ~450 steps for 5 component removals (~90 steps each)
+
+### Reference
+
+- Issues #1997-#2012: RDF-Driven Button System (Jan 2026)
+- Issue #2002: Verified all 29 button definitions read correctly
+- Issue #2006: Parallel rendering validation
+
+---
+
+## Integration Test Pattern: CLI/Plugin Parity
+
+**When to use**: Ensuring CLI and Obsidian Plugin return identical data for same queries
+
+### Pattern Description (Issue #1463)
+
+When both CLI and Plugin access the same knowledge base, integration tests must verify they return identical results. This catches:
+- Different SPARQL query implementations
+- Platform-specific data transformations
+- Inconsistent date/time handling
+
+### Test Structure
+
+```typescript
+describe('CLI/Plugin Parity', () => {
+  let cliResults: QueryResult[];
+  let pluginResults: QueryResult[];
+
+  beforeAll(async () => {
+    // Same vault, same query, different platforms
+    cliResults = await runCliQuery('SELECT ?task WHERE { ?task a ems:Task }');
+    pluginResults = await runPluginQuery('SELECT ?task WHERE { ?task a ems:Task }');
+  });
+
+  it('should return same number of results', () => {
+    expect(cliResults.length).toBe(pluginResults.length);
+  });
+
+  it('should return same URIs in same order', () => {
+    const cliUris = cliResults.map(r => r.task.value);
+    const pluginUris = pluginResults.map(r => r.task.value);
+    expect(cliUris).toEqual(pluginUris);
+  });
+
+  it('should return same property values', () => {
+    for (let i = 0; i < cliResults.length; i++) {
+      expect(cliResults[i]).toEqual(pluginResults[i]);
+    }
+  });
+});
+```
+
+### Key Areas to Test
+
+1. **Daily Tasks/Projects** (Issue #1461): Time-based filtering
+2. **Asset Relations** (Issue #1456): Bidirectional links
+3. **Area Tree** (Issue #1461): Hierarchical data
+4. **Backlinks/References** (Issue #1456): Graph traversal
+
+### Common Parity Issues
+
+| Issue | Symptom | Root Cause |
+|-------|---------|------------|
+| Different counts | CLI: 42, Plugin: 38 | Different default filters |
+| Different order | Random order | Missing ORDER BY |
+| Different dates | Off by 1 day | Timezone handling |
+| Missing properties | undefined vs null | Optional property handling |
+
+### Reference
+
+- Issue #1463: Integration tests for CLI/Plugin parity
+- Issue #1469: Verification of unified ActionInterpreter
+
+---
+
+## Layout Block Definition Pattern
+
+**When to use**: Defining reusable UI layout blocks in RDF ontology (Issues #1451-#1454, #1457-#1458)
+
+### Pattern Description
+
+Layouts are composed of typed blocks that define:
+- What data to display (SPARQL query)
+- How to display it (renderer reference)
+- Where to place it (order property)
+
+### Ontology Structure
+
+```turtle
+# Base LayoutBlock class
+exo-ui:LayoutBlock a rdfs:Class ;
+  rdfs:label "Layout Block" ;
+  rdfs:comment "A reusable UI block within a layout" .
+
+# Block properties
+exo-ui:query a rdf:Property ;
+  rdfs:domain exo-ui:LayoutBlock ;
+  rdfs:range xsd:string ;
+  rdfs:comment "SPARQL query to fetch block data" .
+
+exo-ui:renderer a rdf:Property ;
+  rdfs:domain exo-ui:LayoutBlock ;
+  rdfs:range xsd:string ;
+  rdfs:comment "Renderer component name" .
+
+exo-ui:order a rdf:Property ;
+  rdfs:domain exo-ui:LayoutBlock ;
+  rdfs:range xsd:integer ;
+  rdfs:comment "Display order within layout" .
+```
+
+### Block Type Examples
+
+```turtle
+# Identity block - shows asset label, class, status
+exo-ui:IdentityBlock a exo-ui:LayoutBlock ;
+  rdfs:label "Identity Block" ;
+  exo-ui:renderer "IdentityRenderer" ;
+  exo-ui:order 10 .
+
+# Relations block - shows outbound/inbound relations
+exo-ui:OutboundRelationsBlock a exo-ui:LayoutBlock ;
+  rdfs:label "Outbound Relations" ;
+  exo-ui:renderer "RelationsRenderer" ;
+  exo-ui:query """
+    SELECT ?target ?predicate WHERE {
+      ?asset ?predicate ?target .
+      FILTER(isIRI(?target))
+    }
+  """ ;
+  exo-ui:order 20 .
+
+# Body content block - renders markdown body
+exo-ui:BodyContentBlock a exo-ui:LayoutBlock ;
+  rdfs:label "Body Content" ;
+  exo-ui:renderer "MarkdownRenderer" ;
+  exo-ui:order 100 .
+```
+
+### Layout Composition
+
+```turtle
+# DefaultAssetLayout - LODE-style layout
+exo-ui:DefaultAssetLayout a exo-ui:Layout ;
+  rdfs:label "Default Asset Layout" ;
+  exo-ui:hasBlock exo-ui:IdentityBlock ;
+  exo-ui:hasBlock exo-ui:ClassificationBlock ;
+  exo-ui:hasBlock exo-ui:OutboundRelationsBlock ;
+  exo-ui:hasBlock exo-ui:InboundRelationsBlock ;
+  exo-ui:hasBlock exo-ui:BodyContentBlock .
+
+# AreaLayout - hierarchy-focused
+exo-ui:AreaLayout a exo-ui:Layout ;
+  rdfs:label "Area Layout" ;
+  exo-ui:hasBlock exo-ui:AreaHierarchyBlock ;
+  exo-ui:hasBlock exo-ui:ProjectsInAreaBlock ;
+  exo-ui:hasBlock exo-ui:TasksInAreaBlock .
+```
+
+### Implementation Pattern
+
+```typescript
+// LayoutSelector.ts (Issue #1459)
+class LayoutSelector {
+  async selectLayout(assetUri: string): Promise<Layout> {
+    // 1. Get asset's class
+    const assetClass = await this.getAssetClass(assetUri);
+
+    // 2. Find layout for class (with inheritance)
+    const layoutUri = await this.findLayoutForClass(assetClass);
+
+    // 3. Load layout blocks
+    return this.loadLayout(layoutUri);
+  }
+
+  private async findLayoutForClass(classUri: string): Promise<string> {
+    // Check class hierarchy for layout assignment
+    const query = `
+      SELECT ?layout WHERE {
+        { <${classUri}> exo-ui:hasLayout ?layout }
+        UNION
+        { <${classUri}> rdfs:subClassOf+ ?superClass .
+          ?superClass exo-ui:hasLayout ?layout }
+      }
+      LIMIT 1
+    `;
+    // Returns most specific layout
+  }
+}
+```
+
+### Step Count Reality (Jan 2026)
+
+| Issue | Block Type | Steps |
+|-------|-----------|-------|
+| #1451 | DefaultAssetLayout | 123 |
+| #1452 | Identity/Classification | 70 |
+| #1453 | Outbound/Inbound Relations | 119 |
+| #1454 | UsageContext/BodyContent | 39 |
+| #1457 | AreaLayout | 274 |
+| #1458 | DailyNoteLayout | 212 |
+
+**Key insight**: Layout blocks with hierarchy (Area, DailyNote) take 2-3x more steps than simple blocks.
+
+### Reference
+
+- Issues #1451-#1454, #1457-#1458: Layout Block Definitions
+- Issue #1459: LayoutSelector service implementation
+- Issue #1462: Column class for table blocks
+
+---
+
+## Honest Metrics Documentation Pattern
+
+**When to use**: Documenting ROI of architectural decisions with real data (Issue #1467, #1468)
+
+### Pattern Description
+
+When claiming benefits of architectural changes (e.g., "RDF reduces code"), measure and document actual metrics before and after.
+
+### What to Measure
+
+```markdown
+## Metrics: Before/After RDF Migration
+
+### Lines of Code
+| Category | Before | After | Change |
+|----------|--------|-------|--------|
+| Button components | 2,450 | 0 | -100% |
+| Ontology definitions | 0 | 1,200 | +1,200 |
+| Bridge/Builder code | 0 | 850 | +850 |
+| **Net change** | 2,450 | 2,050 | **-16%** |
+
+### Cognitive Complexity
+| Aspect | Before | After |
+|--------|--------|-------|
+| Files to understand | 29 | 3 |
+| Dependency depth | 4 | 2 |
+| Test files | 29 | 5 |
+
+### Development Velocity
+| Task | Before | After |
+|------|--------|-------|
+| Add new button | 2 hours | 15 minutes |
+| Change button label | 30 minutes | 2 minutes |
+| Add visibility condition | 1 hour | 5 minutes |
+```
+
+### Honest Evaluation Template
+
+```markdown
+## RDF ≠ Less Code, RDF = Better Structure
+
+### What We Gained
+- Single source of truth for button definitions
+- Declarative visibility conditions
+- CLI/Plugin parity guaranteed
+- Self-documenting configuration
+
+### What We Lost
+- TypeScript type safety on button props
+- IDE autocomplete for button names
+- Stack traces point to generic handlers
+- Learning curve for SPARQL
+
+### Net Assessment
+RDF migration was worth it because:
+1. Configuration changes don't require builds
+2. Testing is simpler (load different ontology)
+3. Feature parity between CLI/Plugin is automatic
+
+RDF migration would NOT be worth it if:
+1. Button definitions changed rarely
+2. Only one platform (no CLI)
+3. Team unfamiliar with RDF/SPARQL
+```
+
+### Reference
+
+- Issue #1467: Honest evaluation documentation
+- Issue #1468: LOC metrics before/after
+
+---
+
+## Legacy Code Removal Sprint Pattern
+
+**When to use**: Systematically removing replaced code after migration
+
+### Pattern Description (Issues #2007-#2012)
+
+After migrating functionality to new system (RDF, new architecture), legacy code remains. Remove it in organized sprints:
+
+### Sprint Structure
+
+```
+Phase 1: Feature Flag Removal (#2007)
+└── Remove toggle, force new code path
+
+Phase 2: Component Removal (#2008-#2012)
+├── #2008: ArchiveTaskButton
+├── #2009: CleanEmptyPropertiesButton
+├── #2010: CreateInstanceButton
+├── #2011: CreateProjectButton
+└── #2012: CreateTaskButton
+
+Phase 3: Dead Code Cleanup
+└── Remove unused imports, types, tests
+```
+
+### Per-Component Removal Checklist
+
+```bash
+# 1. Verify component is unused
+grep -r "ComponentName" packages/*/src --include="*.ts" --include="*.tsx"
+# Should only show the component file itself
+
+# 2. Check test coverage moved
+grep -r "ComponentName" packages/*/tests
+# Should show no remaining tests OR tests for new system
+
+# 3. Remove component file
+rm packages/obsidian-plugin/src/presentation/components/buttons/ComponentName.tsx
+
+# 4. Remove from barrel exports
+# Edit index.ts
+
+# 5. Remove component-specific tests (if any remain)
+rm packages/obsidian-plugin/tests/component/buttons/ComponentName.test.tsx
+
+# 6. Run full test suite
+npm run test:all
+
+# 7. Commit with clear message
+git commit -m "chore(cleanup): remove ComponentName component (#ISSUE)"
+```
+
+### Common Issues During Removal
+
+| Issue | Symptom | Solution |
+|-------|---------|----------|
+| Import errors | "Cannot find module" | Check barrel exports |
+| Test failures | "Element not found" | Tests still reference old component |
+| Type errors | "Property does not exist" | Interface still expects old prop |
+
+### Metrics from Jan 2026 Sprint
+
+- **5 components removed** in ~8 hours
+- **~450 steps total** (~90 per component)
+- **Zero regressions** (all tests passing)
+- **LOC reduction**: ~2,400 lines removed
+
+### Reference
+
+- Issues #2007-#2012: Legacy button removal sprint
+- Issue #1466: Legacy CommandRegistry removal (121 steps)
+
+---
+
+## Milestone Acceptance Testing Pattern
+
+**When to use**: Validating milestone completion before release (Issues #1450, #1465, #1470)
+
+### Pattern Description
+
+Each milestone ends with dedicated acceptance testing that:
+1. Verifies all issues in milestone are complete
+2. Runs integration tests across subsystems
+3. Documents any gaps or follow-up work
+
+### Acceptance Test Structure
+
+```markdown
+## Milestone v1.4 Acceptance Testing
+
+### Prerequisites Check
+- [ ] All issues in milestone closed
+- [ ] All PRs merged
+- [ ] CI green on main
+- [ ] Documentation updated
+
+### Integration Tests
+- [ ] CLI commands work end-to-end
+- [ ] Plugin renders all layouts correctly
+- [ ] RDF queries return expected data
+- [ ] Button actions execute successfully
+
+### Cross-Platform Verification
+- [ ] CLI: `exocortex-cli daily-tasks` returns data
+- [ ] Plugin: Daily Note layout renders
+- [ ] Both show same task count
+
+### Performance Check
+- [ ] Layout rendering < 500ms
+- [ ] SPARQL queries < 100ms
+- [ ] No memory leaks in 10-minute session
+
+### Sign-off
+- Tested by: [Agent ID]
+- Date: [Timestamp]
+- Result: PASS / FAIL
+- Notes: [Any observations]
+```
+
+### Step Count Reality
+
+| Milestone | Issue | Steps | Duration |
+|-----------|-------|-------|----------|
+| v1.4 | #1450 | 53 | ~1 hour |
+| v1.5 | #1465 | 69 | ~1.5 hours |
+| v2.0 | #1470 | 72 | ~1.5 hours |
+
+**Key insight**: Acceptance testing takes 50-70 steps regardless of milestone size.
+
+### Reference
+
+- Issue #1450: Milestone v1.4 Acceptance
+- Issue #1465: Milestone v1.5 Acceptance
+- Issue #1470: Milestone v2.0 Final Acceptance
