@@ -41,14 +41,14 @@ module.exports = {
     "^d3$": "<rootDir>/tests/__mocks__/d3.ts",
   },
   // Coverage thresholds per Test Pyramid policy (docs/TEST-PYRAMID.md)
-  // CI workflow (.github/workflows/ci.yml) uses: statements: 73, branches: 61, functions: 66, lines: 73
-  // Note: thresholds lowered after graph visualization removal (#2066) - removed ~130k lines of well-tested code
-  // Previous: statements: 75, branches: 66, functions: 70, lines: 75
+  // CI workflow (.github/workflows/ci.yml) uses: statements: 72.5, branches: 61, functions: 65.5, lines: 73
+  // Note: thresholds lowered after iOS Live Activities removal (#2068) - removed TaskTrackingService
+  // Previous: statements: 73, branches: 61, functions: 66, lines: 73
   coverageThreshold: {
     global: {
-      statements: 73,
+      statements: 72.5,
       branches: 61,
-      functions: 66,
+      functions: 65.5,
       lines: 73,
     },
   },
