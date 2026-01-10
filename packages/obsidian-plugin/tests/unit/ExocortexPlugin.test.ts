@@ -8,7 +8,6 @@ import { ObsidianVaultAdapter } from "../../src/adapters/ObsidianVaultAdapter";
 import { UniversalLayoutRenderer } from "../../src/presentation/renderers/UniversalLayoutRenderer";
 import { CommandManager } from "../../src/application/services/CommandManager";
 import { TaskStatusService, DI_TOKENS, registerCoreServices, resetContainer } from "exocortex";
-import { TaskTrackingService } from "../../src/application/services/TaskTrackingService";
 import { AliasSyncService } from "../../src/application/services/AliasSyncService";
 import { SPARQLCodeBlockProcessor } from "../../src/application/processors/SPARQLCodeBlockProcessor";
 import { ExocortexSettingTab } from "../../src/presentation/settings/ExocortexSettingTab";
@@ -19,7 +18,6 @@ jest.mock("../../src/adapters/logging/LoggerFactory");
 jest.mock("../../src/adapters/ObsidianVaultAdapter");
 jest.mock("../../src/presentation/renderers/UniversalLayoutRenderer");
 jest.mock("../../src/application/services/CommandManager");
-jest.mock("../../src/application/services/TaskTrackingService");
 jest.mock("../../src/application/services/AliasSyncService");
 jest.mock("../../src/application/processors/SPARQLCodeBlockProcessor");
 jest.mock("../../src/presentation/settings/ExocortexSettingTab");
@@ -37,7 +35,6 @@ describe("ExocortexPlugin", () => {
   let mockLayoutRenderer: any;
   let mockCommandManager: any;
   let mockTaskStatusService: any;
-  let mockTaskTrackingService: any;
   let mockAliasSyncService: any;
   let mockSparqlProcessor: any;
   let mockWorkspace: any;
@@ -136,12 +133,6 @@ describe("ExocortexPlugin", () => {
     jest.spyOn(mockTaskStatusService, 'syncEffortEndTimestamp').mockResolvedValue(undefined);
     jest.spyOn(mockTaskStatusService, 'shiftPlannedEndTimestamp').mockResolvedValue(undefined);
 
-    // Setup mock task tracking service
-    mockTaskTrackingService = {
-      handleFileChange: jest.fn().mockResolvedValue(undefined),
-    };
-    (TaskTrackingService as jest.Mock).mockImplementation(() => mockTaskTrackingService);
-
     // Setup mock alias sync service
     mockAliasSyncService = {
       syncAliases: jest.fn().mockResolvedValue(undefined),
@@ -192,7 +183,6 @@ describe("ExocortexPlugin", () => {
       expect(ObsidianVaultAdapter).toHaveBeenCalledWith(mockVault, mockMetadataCache, mockApp);
       expect(UniversalLayoutRenderer).toHaveBeenCalledWith(mockApp, plugin.settings, plugin, plugin.vaultAdapter);
       // TaskStatusService is now resolved from DI container, not instantiated directly
-      expect(TaskTrackingService).toHaveBeenCalledWith(mockApp, mockVault, mockMetadataCache);
       expect(SPARQLCodeBlockProcessor).toHaveBeenCalledWith(plugin);
       expect(CommandManager).toHaveBeenCalledWith(mockApp);
       expect(mockCommandManager.registerAllCommands).toHaveBeenCalled();
@@ -561,7 +551,6 @@ describe("ExocortexPlugin", () => {
       await (plugin as any).handleMetadataChange(mockFile);
 
       // Assert
-      expect(mockTaskTrackingService.handleFileChange).toHaveBeenCalledWith(mockFile);
       expect(mockTaskStatusService.syncEffortEndTimestamp).toHaveBeenCalledWith(
         mockFile,
         new Date("2023-11-01T11:00:00Z")
@@ -605,8 +594,8 @@ describe("ExocortexPlugin", () => {
       // Act
       await (plugin as any).handleMetadataChange(mockFile);
 
-      // Assert
-      expect(mockTaskTrackingService.handleFileChange).not.toHaveBeenCalled();
+      // Assert - no error should be thrown
+      expect(mockTaskStatusService.syncEffortEndTimestamp).not.toHaveBeenCalled();
     });
 
     it("should skip when no frontmatter", async () => {
@@ -616,8 +605,8 @@ describe("ExocortexPlugin", () => {
       // Act
       await (plugin as any).handleMetadataChange(mockFile);
 
-      // Assert
-      expect(mockTaskTrackingService.handleFileChange).not.toHaveBeenCalled();
+      // Assert - no error should be thrown
+      expect(mockTaskStatusService.syncEffortEndTimestamp).not.toHaveBeenCalled();
     });
 
     it("should not double-shift plannedEndTimestamp on recursive metadata change event", async () => {
@@ -678,8 +667,7 @@ describe("ExocortexPlugin", () => {
       // Act
       await (plugin as any).handleMetadataChange(mockFile);
 
-      // Assert
-      expect(mockTaskTrackingService.handleFileChange).toHaveBeenCalledWith(mockFile);
+      // Assert - no error should be thrown
       // Metadata should be cached
     });
 
@@ -706,9 +694,17 @@ describe("ExocortexPlugin", () => {
     it("should handle errors gracefully", async () => {
       // Arrange
       const error = new Error("Metadata processing failed");
-      mockTaskTrackingService.handleFileChange.mockRejectedValue(error);
+      jest.spyOn(mockAliasSyncService, 'syncAliases').mockRejectedValue(error);
       mockMetadataCache.getFileCache.mockReturnValue({
-        frontmatter: { test: "data" },
+        frontmatter: { exo__Asset_label: "test" },
+      });
+
+      // First call to cache metadata
+      await (plugin as any).handleMetadataChange(mockFile);
+
+      // Change label to trigger syncAliases
+      mockMetadataCache.getFileCache.mockReturnValue({
+        frontmatter: { exo__Asset_label: "test2" },
       });
 
       // Act
@@ -942,7 +938,6 @@ describe("ExocortexPlugin", () => {
       const mockFile = { path: "test.md" } as TFile;
 
       // Find all changed handlers - the plugin's handler is the one that triggers handleMetadataChange
-      // which in turn calls taskTrackingService.handleFileChange
       const changedCalls = mockMetadataCache.on.mock.calls.filter(
         call => call[0] === "changed"
       );
@@ -958,8 +953,8 @@ describe("ExocortexPlugin", () => {
         await changedHandler(mockFile);
       }
 
-      // Assert
-      expect(mockTaskTrackingService.handleFileChange).toHaveBeenCalledWith(mockFile);
+      // Assert - handler was invoked without errors
+      expect(mockMetadataCache.getFileCache).toHaveBeenCalled();
     });
 
     it("should handle file-open event", async () => {
