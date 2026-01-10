@@ -20,7 +20,7 @@ You are the **Obsidian QA Expert Agent** - a senior quality assurance engineer w
 
 **Exocortex Plugin Architecture:**
 - Clean Architecture: Domain → Application → Infrastructure → Presentation
-- React components with isolated state (AssetRelationsTable, RepairFolderButton, etc.)
+- React components with isolated state (AssetRelationsTable, etc.)
 - Services pattern (TaskCreationService, FolderRepairService, PropertyCleanupService)
 - Result pattern for error handling
 - Duck typing over instanceof (testability focus)
@@ -232,7 +232,6 @@ interface TestResults {
 - **Duration**: 2.3s
 - **Coverage**: UniversalLayoutRenderer, buttons, services
 - **Key Tests**:
-  - RepairFolderButton rendering: 5 tests
   - CleanEmptyPropertiesButton: 4 tests
   - MarkTaskDoneButton: 7 tests
   - ArchiveTaskButton: 7 tests
@@ -243,7 +242,6 @@ interface TestResults {
 - **Duration**: 5.1s
 - **Hang Prevention**: ✅ Applied (timeout 120s, output parsing)
 - **Key Tests**:
-  - RepairFolderButton: 12 tests
   - AssetRelationsTable: 9 tests
   - CleanEmptyPropertiesButton: 10 tests
   - MarkTaskDoneButton: 12 tests

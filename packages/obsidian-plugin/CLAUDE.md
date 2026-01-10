@@ -208,7 +208,7 @@ gh release list --limit 1
    - Coverage: All true/false branches, archived states, class types
 
 3. **New UI Component → Component Tests (MANDATORY)**
-   - Example: `VoteOnEffortButton.tsx` → `VoteOnEffortButton.spec.tsx`
+   - Example: `RdfButton.tsx` → `RdfButton.spec.tsx`
    - Coverage: Render conditions, click handlers, prop variations
    - Use Playwright Component Testing
 

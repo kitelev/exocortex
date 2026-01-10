@@ -100,7 +100,7 @@ test.describe("ViewModeSelector Visual Regression", () => {
       <ViewModeSelector
         currentMode="table"
         onModeChange={() => {}}
-        availableModes={["table", "list", "graph"]}
+        availableModes={["table", "list"]}
       />,
     );
     await expect(component).toHaveScreenshot("view-mode-table-selected.png");
@@ -111,21 +111,10 @@ test.describe("ViewModeSelector Visual Regression", () => {
       <ViewModeSelector
         currentMode="list"
         onModeChange={() => {}}
-        availableModes={["table", "list", "graph"]}
+        availableModes={["table", "list"]}
       />,
     );
     await expect(component).toHaveScreenshot("view-mode-list-selected.png");
-  });
-
-  test("graph mode selected", async ({ mount }) => {
-    const component = await mount(
-      <ViewModeSelector
-        currentMode="graph"
-        onModeChange={() => {}}
-        availableModes={["table", "list", "graph"]}
-      />,
-    );
-    await expect(component).toHaveScreenshot("view-mode-graph-selected.png");
   });
 
   test("limited modes available", async ({ mount }) => {
@@ -133,7 +122,7 @@ test.describe("ViewModeSelector Visual Regression", () => {
       <ViewModeSelector
         currentMode="table"
         onModeChange={() => {}}
-        availableModes={["table", "list"]}
+        availableModes={["table"]}
       />,
     );
     await expect(component).toHaveScreenshot("view-mode-limited.png");
@@ -144,7 +133,7 @@ test.describe("ViewModeSelector Visual Regression", () => {
       <ViewModeSelector
         currentMode="table"
         onModeChange={() => {}}
-        availableModes={["table", "list", "graph"]}
+        availableModes={["table", "list"]}
       />,
     );
     // Hover on the list button (second option)

@@ -1,7 +1,7 @@
 /**
  * ViewModeSelector Unit Tests
  *
- * Tests for the ViewModeSelector component including the new graph3d view mode.
+ * Tests for the ViewModeSelector component for table and list view modes.
  */
 
 import React from "react";
@@ -16,7 +16,7 @@ describe("ViewModeSelector", () => {
   const defaultProps = {
     currentMode: "table" as ViewMode,
     onModeChange: jest.fn(),
-    availableModes: ["table", "list", "graph", "graph3d"] as ViewMode[],
+    availableModes: ["table", "list"] as ViewMode[],
   };
 
   beforeEach(() => {
@@ -28,74 +28,60 @@ describe("ViewModeSelector", () => {
       render(<ViewModeSelector {...defaultProps} />);
 
       const buttons = screen.getAllByRole("button");
-      expect(buttons).toHaveLength(4);
+      expect(buttons).toHaveLength(2);
     });
 
     it("should render only specified available modes", () => {
       render(
         <ViewModeSelector
           {...defaultProps}
-          availableModes={["list", "graph"]}
+          availableModes={["list"]}
         />
       );
 
       const buttons = screen.getAllByRole("button");
-      expect(buttons).toHaveLength(2);
+      expect(buttons).toHaveLength(1);
       expect(screen.getByText("list")).toBeInTheDocument();
-      expect(screen.getByText("graph")).toBeInTheDocument();
       expect(screen.queryByText("table")).not.toBeInTheDocument();
-      expect(screen.queryByText("3D graph")).not.toBeInTheDocument();
-    });
-
-    it("should render graph3d mode when available", () => {
-      render(
-        <ViewModeSelector
-          {...defaultProps}
-          availableModes={["list", "graph", "graph3d"]}
-        />
-      );
-
-      expect(screen.getByText("3D graph")).toBeInTheDocument();
     });
 
     it("should highlight active mode button", () => {
       render(
         <ViewModeSelector
           {...defaultProps}
-          currentMode="graph3d"
-          availableModes={["list", "graph", "graph3d"]}
+          currentMode="list"
+          availableModes={["table", "list"]}
         />
       );
 
       const activeButton = screen.getByRole("button", { pressed: true });
-      expect(activeButton).toHaveTextContent("3D graph");
+      expect(activeButton).toHaveTextContent("list");
     });
   });
 
   describe("mode labels and icons", () => {
-    it("should display correct label for graph3d", () => {
+    it("should display correct label for table", () => {
       render(
         <ViewModeSelector
           {...defaultProps}
-          availableModes={["graph3d"]}
-          currentMode="graph3d"
+          availableModes={["table"]}
+          currentMode="table"
         />
       );
 
-      expect(screen.getByText("3D graph")).toBeInTheDocument();
+      expect(screen.getByText("table")).toBeInTheDocument();
     });
 
-    it("should display correct icon for graph3d", () => {
+    it("should display correct label for list", () => {
       render(
         <ViewModeSelector
           {...defaultProps}
-          availableModes={["graph3d"]}
-          currentMode="graph3d"
+          availableModes={["list"]}
+          currentMode="list"
         />
       );
 
-      // The cube icon for 3D graph
-      expect(screen.getByText("◇")).toBeInTheDocument();
+      expect(screen.getByText("list")).toBeInTheDocument();
     });
 
     it("should display all mode icons correctly", () => {
@@ -103,8 +89,6 @@ describe("ViewModeSelector", () => {
 
       expect(screen.getByText("▤")).toBeInTheDocument(); // table
       expect(screen.getByText("☰")).toBeInTheDocument(); // list
-      expect(screen.getByText("●—●")).toBeInTheDocument(); // graph
-      expect(screen.getByText("◇")).toBeInTheDocument(); // graph3d
     });
 
     it("should display all mode labels correctly", () => {
@@ -112,8 +96,6 @@ describe("ViewModeSelector", () => {
 
       expect(screen.getByText("table")).toBeInTheDocument();
       expect(screen.getByText("list")).toBeInTheDocument();
-      expect(screen.getByText("graph")).toBeInTheDocument();
-      expect(screen.getByText("3D graph")).toBeInTheDocument();
     });
   });
 
@@ -124,16 +106,16 @@ describe("ViewModeSelector", () => {
         <ViewModeSelector
           {...defaultProps}
           onModeChange={onModeChange}
-          availableModes={["list", "graph", "graph3d"]}
+          availableModes={["table", "list"]}
         />
       );
 
-      const graph3dButton = screen.getByRole("button", {
-        name: /switch to graph3d view/i,
+      const listButton = screen.getByRole("button", {
+        name: /switch to list view/i,
       });
-      fireEvent.click(graph3dButton);
+      fireEvent.click(listButton);
 
-      expect(onModeChange).toHaveBeenCalledWith("graph3d");
+      expect(onModeChange).toHaveBeenCalledWith("list");
     });
 
     it("should call onModeChange with correct mode for each button", () => {
@@ -142,66 +124,73 @@ describe("ViewModeSelector", () => {
         <ViewModeSelector {...defaultProps} onModeChange={onModeChange} />
       );
 
+      const tableButton = screen.getByRole("button", {
+        name: /switch to table view/i,
+      });
+      fireEvent.click(tableButton);
+      expect(onModeChange).toHaveBeenCalledWith("table");
+
       const listButton = screen.getByRole("button", {
         name: /switch to list view/i,
       });
       fireEvent.click(listButton);
       expect(onModeChange).toHaveBeenCalledWith("list");
-
-      const graphButton = screen.getByRole("button", {
-        name: /switch to graph view/i,
-      });
-      fireEvent.click(graphButton);
-      expect(onModeChange).toHaveBeenCalledWith("graph");
-
-      const graph3dButton = screen.getByRole("button", {
-        name: /switch to graph3d view/i,
-      });
-      fireEvent.click(graph3dButton);
-      expect(onModeChange).toHaveBeenCalledWith("graph3d");
     });
   });
 
   describe("accessibility", () => {
-    it("should have accessible aria-label for graph3d button", () => {
+    it("should have accessible aria-label for table button", () => {
       render(
         <ViewModeSelector
           {...defaultProps}
-          availableModes={["graph3d"]}
-          currentMode="graph3d"
+          availableModes={["table"]}
+          currentMode="table"
         />
       );
 
       const button = screen.getByRole("button");
-      expect(button).toHaveAttribute("aria-label", "switch to graph3d view");
+      expect(button).toHaveAttribute("aria-label", "switch to table view");
     });
 
-    it("should set aria-pressed based on active state for graph3d", () => {
+    it("should have accessible aria-label for list button", () => {
       render(
         <ViewModeSelector
           {...defaultProps}
-          currentMode="graph3d"
-          availableModes={["list", "graph", "graph3d"]}
+          availableModes={["list"]}
+          currentMode="list"
         />
       );
+
+      const button = screen.getByRole("button");
+      expect(button).toHaveAttribute("aria-label", "switch to list view");
+    });
+
+    it("should set aria-pressed based on active state", () => {
+      render(
+        <ViewModeSelector
+          {...defaultProps}
+          currentMode="list"
+          availableModes={["table", "list"]}
+        />
+      );
+
+      const tableButton = screen.getByRole("button", {
+        name: /switch to table view/i,
+      });
+      expect(tableButton).toHaveAttribute("aria-pressed", "false");
 
       const listButton = screen.getByRole("button", {
         name: /switch to list view/i,
       });
-      expect(listButton).toHaveAttribute("aria-pressed", "false");
-
-      const graph3dButton = screen.getByRole("button", {
-        name: /switch to graph3d view/i,
-      });
-      expect(graph3dButton).toHaveAttribute("aria-pressed", "true");
+      expect(listButton).toHaveAttribute("aria-pressed", "true");
     });
   });
 
   describe("ViewMode type", () => {
-    it("should support all four view modes in the type", () => {
+    it("should support table and list view modes in the type", () => {
       // Type test - if this compiles, the type is correct
-      const modes: ViewMode[] = ["table", "list", "graph", "graph3d"];
-      expect(modes).toHaveLength(4);
+      const modes: ViewMode[] = ["table", "list"];
+      expect(modes).toHaveLength(2);
     });
   });
 });
