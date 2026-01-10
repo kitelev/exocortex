@@ -12,12 +12,12 @@ test.describe("ViewModeSelector", () => {
       <ViewModeSelector
         currentMode="table"
         onModeChange={() => {}}
-        availableModes={["table", "list", "graph"]}
+        availableModes={["table", "list"]}
       />,
     );
 
     await expect(component.locator(".sparql-view-mode-selector")).toBeVisible();
-    await expect(component.locator(".sparql-view-mode-button")).toHaveCount(3);
+    await expect(component.locator(".sparql-view-mode-button")).toHaveCount(2);
   });
 
   test("should render only specified available modes", async ({ mount }) => {
@@ -25,28 +25,27 @@ test.describe("ViewModeSelector", () => {
       <ViewModeSelector
         currentMode="list"
         onModeChange={() => {}}
-        availableModes={["list", "graph"]}
+        availableModes={["list"]}
       />,
     );
 
     const buttons = component.locator(".sparql-view-mode-button");
-    await expect(buttons).toHaveCount(2);
+    await expect(buttons).toHaveCount(1);
     await expect(buttons.nth(0)).toContainText("list");
-    await expect(buttons.nth(1)).toContainText("graph");
   });
 
   test("should highlight active mode button", async ({ mount }) => {
     const component = await mount(
       <ViewModeSelector
-        currentMode="graph"
+        currentMode="list"
         onModeChange={() => {}}
-        availableModes={["list", "graph"]}
+        availableModes={["table", "list"]}
       />,
     );
 
     const activeButton = component.locator(".sparql-view-mode-button.active");
     await expect(activeButton).toHaveCount(1);
-    await expect(activeButton).toContainText("graph");
+    await expect(activeButton).toContainText("list");
   });
 
   test("should call onModeChange when mode button clicked", async ({
@@ -61,7 +60,7 @@ test.describe("ViewModeSelector", () => {
       <ViewModeSelector
         currentMode="table"
         onModeChange={handleModeChange}
-        availableModes={["table", "list", "graph"]}
+        availableModes={["table", "list"]}
       />,
     );
 
@@ -78,19 +77,17 @@ test.describe("ViewModeSelector", () => {
       <ViewModeSelector
         currentMode="table"
         onModeChange={() => {}}
-        availableModes={["table", "list", "graph"]}
+        availableModes={["table", "list"]}
       />,
     );
 
     const icons = component.locator(".sparql-view-mode-icon");
-    await expect(icons).toHaveCount(3);
+    await expect(icons).toHaveCount(2);
 
     // Table icon: ▤
     await expect(icons.nth(0)).toHaveText("▤");
     // List icon: ☰
     await expect(icons.nth(1)).toHaveText("☰");
-    // Graph icon: ●—●
-    await expect(icons.nth(2)).toHaveText("●—●");
   });
 
   test("should display mode labels", async ({ mount }) => {
@@ -98,15 +95,14 @@ test.describe("ViewModeSelector", () => {
       <ViewModeSelector
         currentMode="list"
         onModeChange={() => {}}
-        availableModes={["table", "list", "graph"]}
+        availableModes={["table", "list"]}
       />,
     );
 
     const labels = component.locator(".sparql-view-mode-label");
-    await expect(labels).toHaveCount(3);
+    await expect(labels).toHaveCount(2);
     await expect(labels.nth(0)).toHaveText("table");
     await expect(labels.nth(1)).toHaveText("list");
-    await expect(labels.nth(2)).toHaveText("graph");
   });
 
   test("should have accessible aria-label on buttons", async ({ mount }) => {
@@ -134,17 +130,17 @@ test.describe("ViewModeSelector", () => {
   test("should set aria-pressed based on active state", async ({ mount }) => {
     const component = await mount(
       <ViewModeSelector
-        currentMode="graph"
+        currentMode="list"
         onModeChange={() => {}}
-        availableModes={["list", "graph"]}
+        availableModes={["table", "list"]}
       />,
     );
 
-    const listButton = component.locator(".sparql-view-mode-button").first();
-    await expect(listButton).toHaveAttribute("aria-pressed", "false");
+    const tableButton = component.locator(".sparql-view-mode-button").first();
+    await expect(tableButton).toHaveAttribute("aria-pressed", "false");
 
-    const graphButton = component.locator(".sparql-view-mode-button").nth(1);
-    await expect(graphButton).toHaveAttribute("aria-pressed", "true");
+    const listButton = component.locator(".sparql-view-mode-button").nth(1);
+    await expect(listButton).toHaveAttribute("aria-pressed", "true");
   });
 
   test("should render single mode correctly", async ({ mount }) => {

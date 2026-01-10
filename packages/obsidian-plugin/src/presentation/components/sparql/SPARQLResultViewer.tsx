@@ -3,8 +3,6 @@ import type { SolutionMapping, Triple } from "exocortex";
 import type { App } from "obsidian";
 import { SPARQLTableView } from "./SPARQLTableView";
 import { SPARQLListView } from "./SPARQLListView";
-import { SPARQLGraphView } from "./SPARQLGraphView";
-import { SPARQLGraph3DView } from "./SPARQLGraph3DView";
 import { ViewModeSelector, type ViewMode } from "./ViewModeSelector";
 import { SPARQLEmptyState } from "./SPARQLEmptyState";
 
@@ -21,27 +19,6 @@ const isTripleArray = (results: SolutionMapping[] | Triple[]): results is Triple
   return results.length > 0 && "subject" in results[0];
 };
 
-const shouldDefaultToGraph = (triples: Triple[]): boolean => {
-  if (triples.length === 0) {
-    return false;
-  }
-
-  let relationshipCount = 0;
-
-  for (const triple of triples) {
-    const subjectStr = triple.subject.toString();
-    const objectStr = triple.object.toString();
-
-    const isSubjectIRI = subjectStr.startsWith("<") && subjectStr.endsWith(">");
-    const isObjectIRI = objectStr.startsWith("<") && objectStr.endsWith(">");
-
-    if (isSubjectIRI && isObjectIRI) {
-      relationshipCount++;
-    }
-  }
-
-  return relationshipCount >= 2;
-};
 
 const extractVariables = (queryString: string): string[] => {
   const selectMatch = queryString.match(/SELECT\s+([\s\S]*?)\s+WHERE/i);
@@ -121,14 +98,11 @@ export const SPARQLResultViewer: React.FC<SPARQLResultViewerProps> = ({
   const isTriples = isTripleArray(results);
 
   const defaultMode: ViewMode = useMemo(() => {
-    if (!isTriples) {
-      return "table";
-    }
-    return shouldDefaultToGraph(results) ? "graph" : "list";
-  }, [isTriples, results]);
+    return isTriples ? "list" : "table";
+  }, [isTriples]);
 
   const availableModes: ViewMode[] = useMemo(() => {
-    return isTriples ? ["list", "graph", "graph3d"] : ["table"];
+    return isTriples ? ["list"] : ["table"];
   }, [isTriples]);
 
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
@@ -172,36 +146,12 @@ export const SPARQLResultViewer: React.FC<SPARQLResultViewerProps> = ({
 
   const renderView = () => {
     if (isTriples) {
-      switch (viewMode) {
-        case "graph":
-          return (
-            <SPARQLGraphView
-              triples={results}
-              onAssetClick={onAssetClick}
-            />
-          );
-        case "graph3d":
-          return (
-            <SPARQLGraph3DView
-              triples={results}
-              onAssetClick={onAssetClick}
-            />
-          );
-        case "list":
-          return (
-            <SPARQLListView
-              triples={results}
-              onAssetClick={(path, event) => onAssetClick(path, event)}
-            />
-          );
-        default:
-          return (
-            <SPARQLListView
-              triples={results}
-              onAssetClick={(path, event) => onAssetClick(path, event)}
-            />
-          );
-      }
+      return (
+        <SPARQLListView
+          triples={results}
+          onAssetClick={(path, event) => onAssetClick(path, event)}
+        />
+      );
     } else {
       return (
         <SPARQLTableView
