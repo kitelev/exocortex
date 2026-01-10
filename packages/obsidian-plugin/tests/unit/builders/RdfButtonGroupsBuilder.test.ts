@@ -2221,6 +2221,123 @@ describe("RdfButtonGroupsBuilder", () => {
   });
 
   /**
+   * CreateTaskForDailyNoteButton Tests (Issue #2069)
+   *
+   * Tests for CreateTaskForDailyNoteButton which appears specifically for DailyNote assets.
+   * This button should display with GREEN color (success variant) to visually distinguish
+   * it as a primary action for task creation in the daily workflow.
+   *
+   * RDF Definition:
+   * ```turtle
+   * ems-ui:CreateTaskForDailyNoteButton a exo-ui:Button ;
+   *     rdfs:label "Create Task (DailyNote)" ;
+   *     exo-ui:Button_icon "plus-circle" ;
+   *     exo-ui:Button_variant "success" ;
+   *     exo-ui:Button_group exo-ui:CreationButtonGroup ;
+   *     exo-ui:Button_tooltip "Create a new task for this daily note" ;
+   *     exo-ui:Button_action ems-ui:CreateTaskForDailyNoteAction ;
+   *     exo-ui:Button_condition ems-ui:CanCreateTaskForDailyNoteCondition .
+   * ```
+   *
+   * @see https://github.com/kitelev/exocortex/issues/2069
+   */
+  describe("CreateTaskForDailyNoteButton with success variant (Issue #2069)", () => {
+    it("should load CreateTaskForDailyNoteButton with success (green) variant from RDF", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#CreationButtonGroup",
+            label: "Creation",
+            order: "2",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#CreateTaskForDailyNoteButton",
+            label: "Create Task (DailyNote)",
+            icon: "plus-circle",
+            variant: "success",
+            action: "https://exocortex.my/ontology/ems-ui#CreateTaskForDailyNoteAction",
+            condition: "https://exocortex.my/ontology/ems-ui#CanCreateTaskForDailyNoteCondition",
+            tooltip: "Create a new task for this daily note",
+          }),
+        ]);
+
+      // Condition passes for DailyNote asset
+      mockConditionEvaluator.evaluate.mockResolvedValue(true);
+
+      const groups = await builder.buildButtonGroups("test:daily-note-asset");
+
+      expect(groups).toHaveLength(1);
+      expect(groups[0].title).toBe("Creation");
+      expect(groups[0].buttons).toHaveLength(1);
+
+      const createTaskForDailyNoteButton = groups[0].buttons[0];
+      expect(createTaskForDailyNoteButton.label).toBe("Create Task (DailyNote)");
+      expect(createTaskForDailyNoteButton.icon).toBe("plus-circle");
+      expect(createTaskForDailyNoteButton.variant).toBe("success");
+      expect(createTaskForDailyNoteButton.tooltip).toBe("Create a new task for this daily note");
+    });
+
+    it("should only show CreateTaskForDailyNoteButton for DailyNote assets (condition-based)", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#CreationButtonGroup",
+            label: "Creation",
+            order: "2",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#CreateTaskForDailyNoteButton",
+            label: "Create Task (DailyNote)",
+            variant: "success",
+            action: "https://exocortex.my/ontology/ems-ui#CreateTaskForDailyNoteAction",
+            condition: "https://exocortex.my/ontology/ems-ui#CanCreateTaskForDailyNoteCondition",
+          }),
+        ]);
+
+      // Condition fails for non-DailyNote asset
+      mockConditionEvaluator.evaluate.mockResolvedValue(false);
+
+      const groups = await builder.buildButtonGroups("test:project-asset");
+
+      // Button should be filtered out because condition fails
+      expect(groups).toHaveLength(0);
+    });
+
+    it("should display CreateTaskForDailyNoteButton as visually prominent green action", async () => {
+      mockSparqlService.query
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            group: "https://exocortex.my/ontology/exo-ui#CreationButtonGroup",
+            label: "Creation",
+            order: "2",
+          }),
+        ])
+        .mockResolvedValueOnce([
+          createMockSolutionMapping({
+            button: "https://exocortex.my/ontology/ems-ui#CreateTaskForDailyNoteButton",
+            label: "Create Task (DailyNote)",
+            variant: "success",
+            action: "https://exocortex.my/ontology/ems-ui#CreateTaskForDailyNoteAction",
+            condition: "https://exocortex.my/ontology/ems-ui#CanCreateTaskForDailyNoteCondition",
+          }),
+        ]);
+
+      mockConditionEvaluator.evaluate.mockResolvedValue(true);
+
+      const groups = await builder.buildButtonGroups("test:daily-note-2025-01-10");
+
+      const button = groups[0].buttons[0];
+      // Verify the button uses "success" variant which renders as green
+      // This CSS class mapping: exocortex-action-button--success = green color (#4caf50)
+      expect(button.variant).toBe("success");
+    });
+  });
+
+  /**
    * CreateProjectButton with CreateAssetAction Tests (Issue #1424)
    *
    * Tests for CreateProjectButton which uses CreateAssetAction to create a new Project.
@@ -4664,7 +4781,7 @@ describe("RdfButtonGroupsBuilder", () => {
         {
           uri: "https://exocortex.my/ontology/ems-ui#CreateTaskForDailyNoteButton",
           label: "Create Task (DailyNote)",
-          variant: "primary",
+          variant: "success",
           action: "https://exocortex.my/ontology/ems-ui#CreateTaskForDailyNoteAction",
           condition: "https://exocortex.my/ontology/ems-ui#CanCreateTaskForDailyNoteCondition",
         },
