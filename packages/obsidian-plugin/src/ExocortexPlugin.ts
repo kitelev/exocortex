@@ -22,7 +22,6 @@ import { WebhookDispatcher } from "./infrastructure/webhook";
 import { SemanticSearchManager } from "./infrastructure/semantic-search";
 import { SemanticSearchModal } from "./presentation/modals/SemanticSearchModal";
 import { ObsidianVaultAdapter } from "./adapters/ObsidianVaultAdapter";
-import { TaskTrackingService } from "./application/services/TaskTrackingService";
 import { AliasSyncService } from "./application/services/AliasSyncService";
 import { WikilinkAliasService } from "./application/services/WikilinkAliasService";
 import { SPARQLCodeBlockProcessor } from "./application/processors/SPARQLCodeBlockProcessor";
@@ -49,7 +48,6 @@ export default class ExocortexPlugin extends Plugin {
   private layoutRenderer!: UniversalLayoutRenderer;
   private commandManager!: CommandManager;
   private taskStatusService!: TaskStatusService;
-  private taskTrackingService!: TaskTrackingService;
   private aliasSyncService!: AliasSyncService;
   private wikilinkAliasService!: WikilinkAliasService;
   // Use LRU cache with max 1000 entries and 5-minute TTL to prevent unbounded memory growth
@@ -102,11 +100,6 @@ export default class ExocortexPlugin extends Plugin {
         this.vaultAdapter,
       );
       this.taskStatusService = container.resolve(TaskStatusService);
-      this.taskTrackingService = new TaskTrackingService(
-        this.app,
-        this.app.vault,
-        this.app.metadataCache
-      );
       this.aliasSyncService = new AliasSyncService(
         this.app.metadataCache,
         this.app
@@ -867,9 +860,6 @@ export default class ExocortexPlugin extends Plugin {
       if (!metadata) {
         return;
       }
-
-      // iOS Live Activities: Track status changes to DOING
-      await this.taskTrackingService.handleFileChange(file);
 
       const currentAssetLabel = metadata.exo__Asset_label;
       const currentEndTimestamp = metadata.ems__Effort_endTimestamp;
