@@ -6712,3 +6712,454 @@ Each milestone ends with dedicated acceptance testing that:
 - Issue #1450: Milestone v1.4 Acceptance
 - Issue #1465: Milestone v1.5 Acceptance
 - Issue #1470: Milestone v2.0 Final Acceptance
+
+---
+
+## Legacy Code Cleanup Sprint Pattern
+
+**When to use**: Systematically removing deprecated components after architecture migration
+
+### Pattern Description
+
+When migrating to a new architecture (e.g., RDF-Driven Button System), legacy hardcoded components become obsolete. This pattern documents how to efficiently remove them in a batch cleanup sprint.
+
+### Real-World Example: v14.0 Button Cleanup (January 2026)
+
+**Context**: After RDF-Driven Button System implementation (Issues #1391-#1442), 14 hardcoded button components became obsolete.
+
+| Phase | Issue Range | Components | Steps/Issue |
+|-------|-------------|------------|-------------|
+| 1. Component removal | #2013-#2025 | 13 buttons | 43-65 |
+| 2. Dead code cleanup | #2026 | Shared code | 96 |
+| 3. Documentation | #2027 | RDFDA-EVOLUTION | 69 |
+| 4. Final validation | #2028 | Metrics report | 77 |
+| 5. Release | #2029 | v14.0 release | 63 |
+
+**Total**: 14 button components removed, ~50 steps average per component
+
+### Cleanup Order (Critical Path)
+
+```
+1. Remove feature flag → Commit to new architecture
+   ↓
+2. Remove individual components (parallel) → Each is independent
+   ↓
+3. Remove dead shared code → After all components gone
+   ↓
+4. Update documentation → Reflect new architecture
+   ↓
+5. Final validation → Metrics, tests, coverage
+   ↓
+6. Release → Version bump with changelog
+```
+
+### Component Removal Checklist
+
+For each deprecated component:
+
+```bash
+# 1. Delete component file
+rm packages/obsidian-plugin/src/presentation/components/SomeButton.tsx
+
+# 2. Search for imports
+rg "SomeButton" packages/obsidian-plugin/src/
+
+# 3. Remove from exports (index.ts files)
+# 4. Remove from any registries or builders
+# 5. Delete associated tests
+rm packages/obsidian-plugin/tests/unit/components/SomeButton.test.ts
+
+# 6. Verify build
+npm run build
+
+# 7. Verify tests pass
+npm run test:unit
+```
+
+### Issue Template for Component Cleanup
+
+```markdown
+## Summary
+Delete {ComponentName}.tsx component.
+
+## Related Issues
+- **Blocked by:** #{previous-cleanup-issue}
+
+## Files to Delete
+- `packages/obsidian-plugin/src/presentation/components/{ComponentName}.tsx`
+
+## Acceptance Criteria
+- [ ] Component deleted, imports removed, build passes
+```
+
+### Key Success Factors
+
+1. **Sequential dependencies**: Each cleanup blocks next (prevents conflicts)
+2. **Minimal issue scope**: One component = one issue = one PR
+3. **Automated validation**: Build + tests after each removal
+4. **Feature flag removal first**: Commit to new architecture before cleanup
+
+### Metrics from v14.0 Cleanup Sprint
+
+| Metric | Value |
+|--------|-------|
+| Components removed | 14 |
+| Issues processed | 21 |
+| Average steps per component | ~50 |
+| Total lines removed | ~3,500 |
+| Build time reduction | ~15% |
+| Test suite speedup | ~8% |
+
+### Anti-Patterns Avoided
+
+- ❌ Removing multiple components in one PR (merge conflicts)
+- ❌ Skipping build verification (broken imports)
+- ❌ Removing shared code before all dependents gone
+- ❌ Keeping feature flags "just in case"
+
+**Reference**: Issues #2013-#2029 - v14.0 Legacy Code Cleanup (January 2026)
+
+---
+
+## Graph Visualization Removal Pattern
+
+**When to use**: Temporarily removing complex subsystem that's not immediately needed
+
+### Pattern Description
+
+When a feature (like graph visualization) adds significant complexity but isn't core to current product needs, systematic removal can simplify maintenance. Git history preserves code for future re-implementation.
+
+### Real-World Example: Issue #2066 (January 2026)
+
+**Removed components**:
+- PixiJS renderers (graph/)
+- 3D visualization (SPARQLGraph3DView)
+- Force simulation stores
+- GraphViewPatch
+- Associated E2E tests
+
+**Preserved**:
+- SPARQL query engine (core functionality)
+- RDF triple store (data layer)
+- Layout renderers (DailyTasks, Projects)
+
+### Removal Checklist
+
+```bash
+# 1. Identify removal scope
+find packages/obsidian-plugin/src -name "*graph*" -o -name "*Graph*"
+
+# 2. Remove directories
+rm -rf packages/obsidian-plugin/src/presentation/renderers/graph/
+rm -rf packages/obsidian-plugin/src/presentation/stores/graphStore/
+
+# 3. Remove individual files
+rm packages/obsidian-plugin/src/presentation/components/sparql/SPARQLGraphView.tsx
+
+# 4. Search for broken imports
+rg "from.*graph" packages/obsidian-plugin/src/
+
+# 5. Remove dependencies from package.json
+# (pixi.js, three, @types/three, d3-force, etc.)
+
+# 6. Verify build
+npm run build
+
+# 7. Verify remaining tests pass
+npm run test:unit
+```
+
+### Decision Criteria for Removal vs. Keep
+
+| Factor | Remove | Keep |
+|--------|--------|------|
+| Active usage | No users | Active users |
+| Maintenance burden | High (3+ libs) | Low (stable) |
+| Core functionality | Nice-to-have | Essential |
+| Re-implementation cost | Git history available | Complex/undocumented |
+| Build impact | Significant (>500KB) | Minimal |
+
+### Benefits Achieved
+
+- Bundle size reduced by ~500KB
+- Build time reduced by ~10%
+- Fewer dependency updates to manage
+- Simpler codebase for core features
+- Clearer architecture documentation
+
+**Reference**: Issue #2066 - Remove graph visualization logic (168 steps)
+
+---
+
+## Test Coverage Improvement Pattern
+
+**When to use**: Incrementally improving test coverage toward quality threshold
+
+### Pattern Description
+
+Systematic identification and testing of uncovered code paths to move toward coverage goals (e.g., 80% → 81% → ... → 95%).
+
+### Real-World Example: Issue #2064 (January 2026)
+
+**Goal**: Increase coverage from 80% to 81%
+
+**Steps**:
+1. Generate coverage report (`npm run test -- --coverage`)
+2. Analyze uncovered files (sort by coverage ascending)
+3. Prioritize business logic over trivial code
+4. Write 15-25 targeted test cases
+5. Verify 1% improvement
+
+### Coverage Analysis Workflow
+
+```bash
+# 1. Generate HTML coverage report
+npm run test -- --coverage --coverageReporters=html
+
+# 2. Open in browser
+open coverage/index.html
+
+# 3. Identify low-coverage files
+# Sort by "Lines" ascending in the report
+
+# 4. Check specific file
+npm run test -- --coverage --collectCoverageFrom="packages/core/src/path/to/file.ts"
+```
+
+### Test Target Prioritization
+
+| Priority | Target | Example |
+|----------|--------|---------|
+| 1. High | Error handling branches | catch blocks, validation failures |
+| 2. High | Business logic | domain services, value objects |
+| 3. Medium | Edge cases | null values, empty arrays, boundaries |
+| 4. Low | Trivial code | simple getters, pass-through functions |
+
+### Test Writing Pattern
+
+```typescript
+describe('ValueObject edge cases', () => {
+  it('should return false for null values', () => {
+    const vo = new TestValueObject({ value: 'test' });
+    expect(vo.equals(null)).toBe(false);
+  });
+
+  it('should handle deeply nested comparison', () => {
+    const vo1 = new ComplexValueObject({ nested: { deep: 123 } });
+    const vo2 = new ComplexValueObject({ nested: { deep: 123 } });
+    expect(vo1.equals(vo2)).toBe(true);
+  });
+});
+```
+
+### Metrics from Issue #2064
+
+| Metric | Value |
+|--------|-------|
+| Steps | 147 |
+| New test cases | ~25 |
+| Coverage increase | 1% (80% → 81%) |
+| Test execution time | +2 seconds |
+
+### Key Insights
+
+- **Focus on branches**: Uncovered branches often hide bugs
+- **Error paths first**: Most bugs are in error handling
+- **Quality over quantity**: 25 meaningful tests > 100 trivial tests
+- **Incremental is sustainable**: 1% per sprint compounds
+
+**Reference**: Issue #2064 - Increase test coverage from 80% to 81% (147 steps)
+
+---
+
+## Architecture Documentation Sync Pattern
+
+**When to use**: Keeping ARCHITECTURE.md current after major implementation work
+
+### Pattern Description
+
+After implementing significant architectural changes (like RDF-Driven Button System), immediately update ARCHITECTURE.md to reflect the new reality.
+
+### Real-World Example: Issue #2062 (January 2026)
+
+**Trigger**: ARCHITECTURE.md was 73+ days outdated after RDF-Driven Button System implementation (62 issues).
+
+**Updates Required**:
+- ActionInterpreter runtime documentation (8 fixed verbs)
+- RdfButtonGroupsBuilder migration pattern
+- CompositeAction pattern for multi-step buttons
+- ConditionEvaluator for visibility rules
+- SHACL validation integration
+- IUIProvider abstraction
+
+### Documentation Sections to Update
+
+```markdown
+## RDF-Driven Architecture (Updated Section)
+
+### ActionInterpreter Runtime
+- 8 fixed verb types: CreateAsset, UpdateProperty, Navigate...
+- CompositeAction for sequential execution
+- ConditionEvaluator for visibility rules
+
+### Platform Abstraction
+- IUIProvider interface
+- Obsidian implementation
+- CLI implementation
+- Test mock implementation
+
+### SHACL Validation
+- Schema validation pipeline
+- Action_headless property requirement
+- Validation error handling
+```
+
+### Sync Triggers
+
+Update ARCHITECTURE.md when:
+- New subsystem implemented (>10 issues)
+- Architecture pattern changed (e.g., DI container)
+- New abstraction layer added
+- Major dependency changed
+- Platform support added
+
+### Update Checklist
+
+- [ ] Read implementation issues for decisions
+- [ ] Update relevant sections
+- [ ] Add new sections for new concepts
+- [ ] Update/add Mermaid diagrams
+- [ ] Update "Last Updated" date
+- [ ] Add revision history entry
+- [ ] Cross-reference PATTERNS.md
+
+**Reference**: Issue #2062 - Update ARCHITECTURE.md with RDF-Driven Button System (83 steps)
+
+---
+
+## RDF-Driven UI Migration Completion Pattern
+
+**When to use**: Final steps of migrating UI system from code to ontology
+
+### Pattern Description
+
+After migrating UI components (buttons, commands) to RDF definitions, the final steps involve removing feature flags, cleaning up legacy code, updating documentation, and validating the complete system.
+
+### Migration Completion Phases
+
+```
+Phase 1: Feature Flag Removal (Issue #2038)
+├── Commit to new RDF-driven system
+├── Remove A/B testing infrastructure
+└── Update configuration documentation
+
+Phase 2: Legacy Component Removal (Issues #2013-#2025)
+├── Remove each hardcoded component
+├── Clean imports and exports
+└── Verify build after each removal
+
+Phase 3: Dead Code Cleanup (Issue #2026)
+├── Remove shared utilities only used by legacy
+├── Clean visibility rules
+└── Remove unused type definitions
+
+Phase 4: Documentation Update (Issue #2027)
+├── Update RDFDA-EVOLUTION document
+├── Document migration lessons learned
+└── Update user-facing docs
+
+Phase 5: Validation (Issue #2028)
+├── Run full test suite
+├── Generate coverage report
+├── Manual testing in target environment
+└── Document final metrics
+
+Phase 6: Release (Issue #2029)
+├── Version bump (major if breaking)
+├── Generate changelog
+├── Publish release
+└── Notify stakeholders
+```
+
+### Validation Report Template
+
+```markdown
+## v14.0 Validation Report
+
+### Metrics
+- Components removed: 14
+- Lines of code removed: ~3,500
+- Test coverage: 81.2%
+- Build time: 45s (↓ from 52s)
+- Bundle size: 2.1MB (↓ from 2.6MB)
+
+### Test Results
+- Unit tests: 847/847 passing
+- Component tests: 23/23 passing
+- E2E tests: 11/11 passing
+
+### Manual Testing
+- [ ] Plugin loads in Obsidian
+- [ ] Daily Note renders correctly
+- [ ] All buttons functional via RDF
+- [ ] No console errors
+
+### Sign-off
+- Date: 2026-01-09
+- Tested by: Claude Code Agent
+- Result: PASS
+```
+
+**Reference**: Issues #2027-#2029 - v14.0 Migration Completion (January 2026)
+
+---
+
+## Create Button Styling Pattern
+
+**When to use**: UI enhancement to make primary action buttons visually prominent
+
+### Pattern Description
+
+Primary action buttons (like "Create Task") should be visually distinct from secondary actions using color and styling.
+
+### Real-World Example: Issue #2069 (January 2026)
+
+**Change**: Make "Create Task" button green in DailyNote layout
+
+**Implementation**:
+
+```css
+/* Primary action button styling */
+.exocortex-create-task-button {
+  background-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+  font-weight: 500;
+}
+
+.exocortex-create-task-button:hover {
+  background-color: var(--interactive-accent-hover);
+}
+```
+
+### Button Hierarchy
+
+| Type | Color | Use Case |
+|------|-------|----------|
+| Primary | Green/Accent | Create, Submit, Confirm |
+| Secondary | Default | Navigate, View, Toggle |
+| Danger | Red | Delete, Archive, Destructive |
+| Subtle | Gray | Cancel, Close, Dismiss |
+
+### Obsidian Theme Integration
+
+Always use CSS variables for Obsidian compatibility:
+
+```css
+/* ✅ CORRECT: Uses Obsidian variables */
+background-color: var(--interactive-accent);
+
+/* ❌ WRONG: Hardcoded colors break themes */
+background-color: #4caf50;
+```
+
+**Reference**: Issue #2069 - Make Create Task button green (83 steps)
