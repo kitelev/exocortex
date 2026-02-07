@@ -7163,3 +7163,99 @@ background-color: #4caf50;
 ```
 
 **Reference**: Issue #2069 - Make Create Task button green (83 steps)
+
+---
+
+## Knowledge Asset Existence Check Pattern
+
+**When to use**: Before creating new ExoAssistantKnowledge assets in Exocortex vault
+
+### Pattern Description
+
+Always check for existing knowledge assets via SPARQL before creating new ones. This prevents duplicate knowledge, saves time, and ensures knowledge consolidation.
+
+### The Problem
+
+Knowledge migration tasks (like Issues #2074, #2075) often target topics that have already been migrated as part of larger consolidation efforts. Without checking first, agents waste time:
+- Creating duplicate assets
+- Losing context from consolidated knowledge
+- Fragmenting related information
+
+### SPARQL Query Before Creation
+
+```sparql
+PREFIX exo: <https://exocortex.my/ontology/exo#>
+SELECT ?uid ?label WHERE {
+  ?s exo:Instance_class ?class .
+  FILTER(CONTAINS(STR(?class), 'b0474610-5fa7-4ec4-a947-f85f26e93455'))
+  ?s exo:Asset_uid ?uid .
+  ?s exo:Asset_label ?label .
+  FILTER(
+    CONTAINS(LCASE(?label), '<keyword1>') ||
+    CONTAINS(LCASE(?label), '<keyword2>')
+  )
+  FILTER NOT EXISTS { ?s exo:Asset_deprecatedBy ?newer }
+}
+```
+
+### Implementation Pattern
+
+```bash
+# Step 1: Search for existing knowledge on topic
+exocortex-cli sparql query --vault /Users/kitelev/vault-2025 "
+PREFIX exo: <https://exocortex.my/ontology/exo#>
+SELECT ?uid ?label WHERE {
+  ?s exo:Instance_class ?class .
+  FILTER(CONTAINS(STR(?class), 'b0474610-5fa7-4ec4-a947-f85f26e93455'))
+  ?s exo:Asset_uid ?uid .
+  ?s exo:Asset_label ?label .
+  FILTER(CONTAINS(LCASE(?label), 'wait node') || CONTAINS(LCASE(?label), 'n8n'))
+  FILTER NOT EXISTS { ?s exo:Asset_deprecatedBy ?newer }
+}"
+
+# Step 2: If found, read the asset to verify coverage
+cat "/Users/kitelev/vault-2025/03 Knowledge/inbox/<found-uuid>.md"
+
+# Step 3: If topic already covered → close issue as resolved
+# Step 4: If topic not covered → create new asset or extend existing
+```
+
+### Real-World Examples
+
+**Issue #2074 (n8n Wait node expects GET, not POST)**:
+- Agent searched for existing knowledge first
+- Found: `7d187958-169d-404d-b238-4bba5df55c20` ("n8n критические правила")
+- Asset already contained ПРАВИЛО 3: Wait нода — ожидает GET, не POST
+- **Result**: 10 steps, closed as already resolved
+
+**Issue #2075 (Issue Executor via curl, not MCP)**:
+- Agent searched for existing knowledge first
+- Found: `1835b866-844f-4b0b-96af-4da6f85de3c9` ("GitHub Issue Executor — запуск и управление")
+- Asset already contained curl examples and MCP timeout explanation
+- **Result**: 7 steps, closed as already resolved
+
+### Efficiency Gains
+
+| Approach | Steps | Time |
+|----------|-------|------|
+| Create without checking | 30-50 | 30-45 min |
+| Check first, found existing | 7-10 | 5-10 min |
+| **Savings** | 20-40 steps | 20-35 min |
+
+### When Knowledge Is Not Found
+
+If SPARQL returns empty:
+1. Verify search keywords are comprehensive
+2. Try alternative terms (English/Russian, synonyms)
+3. Check for partial matches that could be extended
+4. Only then create new asset
+
+### Consolidation Insight
+
+Large migration efforts often consolidate multiple small topics into comprehensive assets:
+- "n8n критические правила" covers IF node, HTTP Request, Wait node, Execute Workflow
+- "GitHub Issue Executor — запуск и управление" covers curl, MCP, Issue Lock, DAG dependencies
+
+**Lesson**: Individual migration issues may already be covered by broader consolidation work.
+
+**Reference**: Issues #2074, #2075 - Knowledge Migration (closed as already resolved, 17 total steps)
