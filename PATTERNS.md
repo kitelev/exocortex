@@ -5469,3 +5469,289 @@ describe("SemanticPhysicsEngine", () => {
 ```
 
 **Reference**: Issue #1345 - Semantic Physics implementation (January 2026, 292 steps)
+
+---
+
+## CLI Performance Cache Pattern
+
+**When to use**: Optimizing CLI commands that repeatedly load expensive resources (vault parsing, triple store building, etc.)
+
+### Pattern Description
+
+When CLI commands need to load expensive resources (like a vault's triple store), implement a file-based cache that persists between invocations. This eliminates redundant I/O operations and dramatically speeds up sequential command execution.
+
+### Problem Statement
+
+```typescript
+// BEFORE: Each CLI invocation reloads entire vault (500-800ms for 10k files)
+const vaultAdapter = new FileSystemVaultAdapter(vaultPath);
+const converter = new NoteToRDFConverter(vaultAdapter);
+const triples = await converter.convertVault();  // ← 500-800ms every time
+```
+
+### Solution Architecture
+
+```
+CLI Command → CacheManager → [Cache Hit?]
+                               ├─ YES → Load from cache (10-50ms)
+                               └─ NO  → Build + Save cache (500-800ms)
+```
+
+### Implementation (Issue #2082)
+
+```typescript
+// packages/cli/src/cache/CacheManager.ts
+interface CacheMetadata {
+  version: string;           // CLI version for compatibility
+  timestamp: number;         // Cache creation time
+  vaultPath: string;         // Absolute path to vault
+  tripleCount: number;       // Number of triples cached
+}
+
+interface CacheData {
+  metadata: CacheMetadata;
+  triples: Triple[];
+}
+
+export class CacheManager {
+  private getCachePath(vaultPath: string): string {
+    return join(vaultPath, ".exocortex", "cache", "triples.json");
+  }
+
+  async loadOrBuild(
+    vaultPath: string,
+    buildFn: () => Promise<Triple[]>
+  ): Promise<Triple[]> {
+    const cachePath = this.getCachePath(vaultPath);
+
+    if (this.isCacheValid(vaultPath, cachePath)) {
+      const data: CacheData = JSON.parse(readFileSync(cachePath, "utf-8"));
+      return data.triples;
+    }
+
+    // Cache miss or invalid - build fresh
+    const triples = await buildFn();
+    this.saveCache(vaultPath, cachePath, triples);
+    return triples;
+  }
+
+  private isCacheValid(vaultPath: string, cachePath: string): boolean {
+    if (!existsSync(cachePath)) return false;
+
+    const vaultMtime = statSync(vaultPath).mtimeMs;
+    const cacheMtime = statSync(cachePath).mtimeMs;
+
+    return cacheMtime > vaultMtime;  // Cache newer than vault
+  }
+}
+```
+
+### Command Integration
+
+```typescript
+// Add --use-cache option to existing commands
+.option("--use-cache", "Use persistent cache (faster for repeated queries)")
+
+// Usage
+if (options.useCache) {
+  triples = await cacheManager.loadOrBuild(vaultPath, async () => {
+    return await converter.convertVault();
+  });
+} else {
+  triples = await converter.convertVault();
+}
+```
+
+### Cache Invalidation Strategies
+
+| Strategy | Complexity | Accuracy | Use Case |
+|----------|------------|----------|----------|
+| **mtime-based** | Low | Medium | Default - fast checks, covers most changes |
+| **content-hash** | High | High | When exact invalidation needed |
+| **manual** | None | N/A | Add `--force-rebuild` option |
+
+### Performance Results
+
+| Metric | Before | After (cached) | Improvement |
+|--------|--------|----------------|-------------|
+| First query | 800ms | 800ms | N/A (cache build) |
+| Second query | 800ms | 10ms | **80x faster** |
+| 10 sequential queries | 8000ms | 890ms | **9x faster** |
+| Validator workflow (15 queries) | 12s | 1.2s | **10x faster** |
+
+### Cache Location Convention
+
+```
+<vault-path>/
+└── .exocortex/
+    └── cache/
+        └── triples.json     # ~1.5x size of source markdown
+```
+
+**Why this location:**
+- Vault-relative (portable across machines if vault moves)
+- Hidden in `.exocortex/` (doesn't pollute vault)
+- Can be gitignored if vault is version controlled
+
+### Error Handling
+
+```typescript
+try {
+  const cached = JSON.parse(readFileSync(cachePath, "utf-8"));
+  return cached.triples;
+} catch (error) {
+  // Corrupted cache - rebuild silently
+  console.warn(`Cache corrupted, rebuilding: ${error.message}`);
+  return await this.buildAndSave(vaultPath, buildFn);
+}
+```
+
+### Testing Checklist
+
+- [ ] `loadOrBuild()` returns triples from cache if valid
+- [ ] `loadOrBuild()` rebuilds cache if vault modified
+- [ ] `loadOrBuild()` rebuilds cache if cache file missing
+- [ ] Cache metadata includes correct version, timestamp, tripleCount
+- [ ] Corrupted JSON triggers rebuild (not crash)
+- [ ] Directory created if `.exocortex/cache/` missing
+
+**Reference**: Issue #2082, PR #2084 - SPARQL Vault Cache (100 steps, +973 lines, 80x speedup)
+
+---
+
+## Major Feature Removal Pattern
+
+**When to use**: Removing large features/dependencies to reduce bundle size, complexity, or maintenance burden
+
+### Pattern Description
+
+Sometimes the best code is no code. Removing unused or experimental features can dramatically improve:
+- Bundle size (faster installation)
+- Build times
+- Maintenance burden
+- Code complexity
+
+### Decision Framework
+
+Before removing a feature, validate:
+
+| Question | Threshold | Issue #2083 Result |
+|----------|-----------|-------------------|
+| Active users? | <5% of user base | 0% (experimental) |
+| Bundle impact? | >20% of total size | 75% (1.5MB of 2.0MB) |
+| Maintenance cost? | >10% of codebase | 8% (104 of ~1200 files) |
+| Alternative exists? | External tool available | Yes (Obsidian Graph View) |
+
+### Removal Checklist
+
+#### Phase 1: Dependencies
+```json
+// package.json - BEFORE
+{
+  "dependencies": {
+    "three": "^0.171.0",        // 1.3 MB
+    "pixi.js": "^8.14.3",       // 0.2 MB
+    "@types/three": "^0.171.0"
+  }
+}
+
+// package.json - AFTER
+{
+  "dependencies": {
+    // Removed: three, pixi.js, @types/three
+  }
+}
+```
+
+#### Phase 2: Source Code
+```bash
+# Delete entire feature directories (Issue #2083: 104 files)
+rm -rf src/presentation/renderers/graph/
+rm -rf src/presentation/stores/graphStore/
+rm -rf src/presentation/stores/graphConfigStore/
+rm -rf src/presentation/stores/physicsWorkerStore/
+```
+
+#### Phase 3: Integration Points
+```typescript
+// BEFORE: ViewModeSelector.tsx
+type ViewMode = 'table' | 'graph' | 'raw';
+
+// AFTER: ViewModeSelector.tsx
+type ViewMode = 'table' | 'raw';
+```
+
+#### Phase 4: Tests
+```bash
+# Delete associated tests
+rm -rf tests/unit/presentation/renderers/graph/
+rm -rf tests/performance/ForceSimulation3DPerformance.test.ts
+```
+
+#### Phase 5: Settings
+```typescript
+// Remove from settings interface
+interface ExocortexSettings {
+  // graph3DEnabled: boolean;  // REMOVED
+  // graphLayoutType: string;  // REMOVED
+}
+```
+
+### Impact Metrics (Issue #2083)
+
+| Metric | Before | After | Change |
+|--------|--------|-------|--------|
+| Bundle size | 2.0 MB | 0.5 MB | **-75%** |
+| Source files | 1,200 | 1,096 | **-104 files** |
+| Dependencies | 45 | 42 | **-3 packages** |
+| Lines of code | ~180k | ~50k | **-129,442 lines** |
+| BRAT install time | 23s | <10s | **-57%** |
+
+### Follow-up Issues Pattern
+
+Major removals often trigger follow-up work:
+
+| Issue | Purpose | Steps |
+|-------|---------|-------|
+| #2086 | Main removal PR | 170 |
+| #2087 | Fix coverage thresholds | 30 |
+| #2088 | Update CI workflow | 25 |
+
+**Budget 2-3 follow-up issues** for cleanup after major removals.
+
+### Communication
+
+**Breaking change documentation:**
+```markdown
+## Breaking Changes
+
+The following features have been removed:
+- 2D graph visualization of SPARQL results
+- 3D graph visualization of SPARQL results
+- Graph-related settings
+- Graph export functionality
+
+**Migration**: Users who need graph visualization should:
+1. Stay on the previous version (v14.x), OR
+2. Export SPARQL results and use external graph tools
+```
+
+### Rollback Plan
+
+```bash
+# If removal causes unexpected issues:
+git revert <merge-commit-sha>
+npm install
+npm run build
+# Verify restoration worked
+npm run test:all
+```
+
+### When NOT to Remove
+
+- Feature has active users (even if small %)
+- No external alternative exists
+- Removal would break API contracts
+- Time investment to remove > maintenance burden
+
+**Reference**: Issue #2083, PR #2086 - Remove Graph Visualization (170 steps, -129,442 lines, 75% bundle reduction)
