@@ -1,11 +1,8 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useMemo } from "react";
 import type { SolutionMapping, Triple } from "exocortex";
 import type { App } from "obsidian";
 import { SPARQLTableView } from "./SPARQLTableView";
 import { SPARQLListView } from "./SPARQLListView";
-import { SPARQLGraphView } from "./SPARQLGraphView";
-import { SPARQLGraph3DView } from "./SPARQLGraph3DView";
-import { ViewModeSelector, type ViewMode } from "./ViewModeSelector";
 import { SPARQLEmptyState } from "./SPARQLEmptyState";
 
 export interface SPARQLResultViewerProps {
@@ -15,32 +12,8 @@ export interface SPARQLResultViewerProps {
   app: App;
 }
 
-const STORAGE_KEY = "exocortex-sparql-view-mode";
-
 const isTripleArray = (results: SolutionMapping[] | Triple[]): results is Triple[] => {
   return results.length > 0 && "subject" in results[0];
-};
-
-const shouldDefaultToGraph = (triples: Triple[]): boolean => {
-  if (triples.length === 0) {
-    return false;
-  }
-
-  let relationshipCount = 0;
-
-  for (const triple of triples) {
-    const subjectStr = triple.subject.toString();
-    const objectStr = triple.object.toString();
-
-    const isSubjectIRI = subjectStr.startsWith("<") && subjectStr.endsWith(">");
-    const isObjectIRI = objectStr.startsWith("<") && objectStr.endsWith(">");
-
-    if (isSubjectIRI && isObjectIRI) {
-      relationshipCount++;
-    }
-  }
-
-  return relationshipCount >= 2;
 };
 
 const extractVariables = (queryString: string): string[] => {
@@ -82,25 +55,6 @@ const exportToCSV = (results: SolutionMapping[], variables: string[]): void => {
   URL.revokeObjectURL(url);
 };
 
-const exportToJSON = (results: SolutionMapping[], variables: string[]): void => {
-  const jsonData = results.map((result) => {
-    const obj: Record<string, string> = {};
-    variables.forEach((variable) => {
-      obj[variable] = result.get(variable)?.toString() || "";
-    });
-    return obj;
-  });
-
-  const json = JSON.stringify(jsonData, null, 2);
-  const blob = new Blob([json], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `sparql-results-${Date.now()}.json`;
-  a.click();
-  URL.revokeObjectURL(url);
-};
-
 const exportToTurtle = (triples: Triple[]): void => {
   const turtle = triples.map((t) => t.toString()).join("\n");
   const blob = new Blob([turtle], { type: "text/turtle" });
@@ -116,40 +70,8 @@ export const SPARQLResultViewer: React.FC<SPARQLResultViewerProps> = ({
   results,
   queryString,
   onAssetClick,
-  app,
 }) => {
   const isTriples = isTripleArray(results);
-
-  const defaultMode: ViewMode = useMemo(() => {
-    if (!isTriples) {
-      return "table";
-    }
-    return shouldDefaultToGraph(results) ? "graph" : "list";
-  }, [isTriples, results]);
-
-  const availableModes: ViewMode[] = useMemo(() => {
-    return isTriples ? ["list", "graph", "graph3d"] : ["table"];
-  }, [isTriples]);
-
-  const [viewMode, setViewMode] = useState<ViewMode>(() => {
-    try {
-      const stored = app.loadLocalStorage(STORAGE_KEY);
-      if (stored && availableModes.includes(stored as ViewMode)) {
-        return stored as ViewMode;
-      }
-    } catch (error) {
-      console.warn("[Exocortex SPARQL] Could not read view mode from localStorage:", error);
-    }
-    return defaultMode;
-  });
-
-  useEffect(() => {
-    try {
-      app.saveLocalStorage(STORAGE_KEY, viewMode);
-    } catch (error) {
-      console.warn("[Exocortex SPARQL] Could not save view mode to localStorage:", error);
-    }
-  }, [viewMode, app]);
 
   const variables = useMemo(() => {
     if (isTriples) {
@@ -162,54 +84,7 @@ export const SPARQLResultViewer: React.FC<SPARQLResultViewerProps> = ({
     if (isTriples) {
       exportToTurtle(results);
     } else {
-      if (viewMode === "table") {
-        exportToCSV(results, variables);
-      } else {
-        exportToJSON(results, variables);
-      }
-    }
-  };
-
-  const renderView = () => {
-    if (isTriples) {
-      switch (viewMode) {
-        case "graph":
-          return (
-            <SPARQLGraphView
-              triples={results}
-              onAssetClick={onAssetClick}
-            />
-          );
-        case "graph3d":
-          return (
-            <SPARQLGraph3DView
-              triples={results}
-              onAssetClick={onAssetClick}
-            />
-          );
-        case "list":
-          return (
-            <SPARQLListView
-              triples={results}
-              onAssetClick={(path, event) => onAssetClick(path, event)}
-            />
-          );
-        default:
-          return (
-            <SPARQLListView
-              triples={results}
-              onAssetClick={(path, event) => onAssetClick(path, event)}
-            />
-          );
-      }
-    } else {
-      return (
-        <SPARQLTableView
-          results={results}
-          variables={variables}
-          onAssetClick={(path, event) => onAssetClick(path, event)}
-        />
-      );
+      exportToCSV(results, variables);
     }
   };
 
@@ -219,38 +94,31 @@ export const SPARQLResultViewer: React.FC<SPARQLResultViewerProps> = ({
 
   return (
     <div className="sparql-result-viewer">
-      {availableModes.length > 1 && (
-        <div className="sparql-result-viewer-controls">
-          <ViewModeSelector
-            currentMode={viewMode}
-            onModeChange={setViewMode}
-            availableModes={availableModes}
-          />
-          <button
-            className="sparql-export-button"
-            onClick={handleExport}
-            aria-label="export results"
-          >
-            ⬇ export
-          </button>
+      <div className="sparql-result-viewer-controls">
+        <div className="sparql-view-mode-info">
+          {isTriples ? "list" : "table"} view
         </div>
-      )}
-      {availableModes.length === 1 && (
-        <div className="sparql-result-viewer-controls">
-          <div className="sparql-view-mode-info">
-            {viewMode} view
-          </div>
-          <button
-            className="sparql-export-button"
-            onClick={handleExport}
-            aria-label="export results"
-          >
-            ⬇ export
-          </button>
-        </div>
-      )}
+        <button
+          className="sparql-export-button"
+          onClick={handleExport}
+          aria-label="export results"
+        >
+          ⬇ export
+        </button>
+      </div>
       <div className="sparql-result-viewer-content">
-        {renderView()}
+        {isTriples ? (
+          <SPARQLListView
+            triples={results}
+            onAssetClick={(path, event) => onAssetClick(path, event)}
+          />
+        ) : (
+          <SPARQLTableView
+            results={results}
+            variables={variables}
+            onAssetClick={(path, event) => onAssetClick(path, event)}
+          />
+        )}
       </div>
     </div>
   );
