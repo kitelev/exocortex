@@ -5,16 +5,24 @@ import React from "react";
 import { ReactRenderer } from '@plugin/presentation/utils/ReactRenderer';
 import { ExocortexSettings } from '@plugin/domain/settings/ExocortexSettings';
 import { ActionButtonsGroup } from '@plugin/presentation/components/ActionButtonsGroup';
-import { IVaultAdapter, MetadataExtractor } from "exocortex";
+import {
+  IVaultAdapter,
+  MetadataExtractor,
+  ActionInterpreter as CoreActionInterpreter,
+  ConditionEvaluator as CoreConditionEvaluator,
+} from "exocortex";
 import { BacklinksCacheManager } from '@plugin/adapters/caching/BacklinksCacheManager';
 import { EventListenerManager } from '@plugin/adapters/events/EventListenerManager';
 import { RdfButtonGroupsBuilder } from '@plugin/presentation/builders/RdfButtonGroupsBuilder';
 import type { ActionInterpreter, ConditionEvaluator } from '@plugin/presentation/builders/RdfButtonGroupsBuilder';
 import type { ButtonGroup } from '@plugin/presentation/components/ActionButtonsGroup';
 import {
+  ActionInterpreterAdapter,
+  ConditionEvaluatorAdapter,
   createNoOpActionInterpreter,
   createAlwaysTrueConditionEvaluator,
 } from '@plugin/presentation/adapters/RdfButtonAdapters';
+import { ObsidianUIProvider } from '@plugin/infrastructure/ObsidianUIProvider';
 import { SPARQLQueryService } from '@plugin/application/services/SPARQLQueryService';
 import { DailyTasksRenderer } from "./DailyTasksRenderer";
 import { DailyProjectsRenderer } from "./DailyProjectsRenderer";
@@ -161,32 +169,120 @@ export class UniversalLayoutRenderer {
    *
    * Creates ActionInterpreter, ConditionEvaluator, and RdfButtonGroupsBuilder
    * for RDF-driven button rendering.
+   *
+   * Uses real implementations from @exocortex/core wrapped with plugin-layer adapters:
+   * - CoreConditionEvaluator: Evaluates RDF conditions via SPARQL ASK queries
+   * - CoreActionInterpreter: Executes RDF actions (UpdatePropertyAction, etc.)
    */
   private initializeRdfButtonSupport(): void {
     try {
       // Create SPARQL query service for RDF queries
       this.sparqlQueryService = new SPARQLQueryService(this.app);
 
-      // Create no-op ActionInterpreter (full implementation in future PR)
-      // See Issue #1439 for ActionInterpreter runtime integration
-      this.actionInterpreter = createNoOpActionInterpreter();
+      // Initialize SPARQL service to get triple store
+      // Note: initialization is async, but we handle it in buildButtonGroups
+      void this.sparqlQueryService.initialize().then(() => {
+        this.initializeRealAdapters();
+      }).catch((error) => {
+        this.logger.warn("Failed to initialize SPARQL service, using fallback adapters", { error });
+        this.initializeFallbackAdapters();
+      });
 
-      // Create always-true ConditionEvaluator (full implementation in future PR)
-      // See Issue #1405 for ConditionEvaluator integration with triple store
-      this.conditionEvaluator = createAlwaysTrueConditionEvaluator();
+      // Use fallback adapters initially until SPARQL service is ready
+      this.initializeFallbackAdapters();
 
-      // Create RdfButtonGroupsBuilder with all dependencies
+      this.logger.info("RDF button support initialized (pending SPARQL initialization)");
+    } catch (error) {
+      this.logger.error("Failed to initialize RDF button support", { error });
+      // rdfButtonGroupsBuilder will be undefined - no buttons will be rendered
+    }
+  }
+
+  /**
+   * Initialize real adapters using core implementations.
+   * Called after SPARQL service is initialized.
+   */
+  private initializeRealAdapters(): void {
+    if (!this.sparqlQueryService) return;
+
+    try {
+      const tripleStore = this.sparqlQueryService.getTripleStore();
+
+      // Create UI provider for Obsidian environment
+      const uiProvider = new ObsidianUIProvider(this.app);
+
+      // Create core ConditionEvaluator with triple store access
+      const coreConditionEvaluator = new CoreConditionEvaluator(tripleStore);
+      this.conditionEvaluator = new ConditionEvaluatorAdapter(coreConditionEvaluator);
+
+      // Create core ActionInterpreter with required dependencies
+      const coreActionInterpreter = new CoreActionInterpreter(
+        tripleStore,
+        undefined, // assetCreationService - not needed for UpdatePropertyAction
+        this.vaultAdapter,
+        undefined, // fileSystem - not needed for UpdatePropertyAction
+        undefined, // webhookService - not needed for basic actions
+        uiProvider
+      );
+
+      // Create ActionInterpreterAdapter with file resolver
+      this.actionInterpreter = new ActionInterpreterAdapter(
+        coreActionInterpreter,
+        tripleStore,
+        uiProvider,
+        (assetUri: string) => this.resolveAssetUriToFile(assetUri)
+      );
+
+      // Recreate RdfButtonGroupsBuilder with real adapters
       this.rdfButtonGroupsBuilder = new RdfButtonGroupsBuilder(
         this.sparqlQueryService,
         this.actionInterpreter,
         this.conditionEvaluator
       );
 
-      this.logger.info("RDF button support initialized");
+      this.logger.info("RDF button support initialized with real adapters");
     } catch (error) {
-      this.logger.error("Failed to initialize RDF button support", { error });
-      // rdfButtonGroupsBuilder will be undefined - no buttons will be rendered
+      this.logger.error("Failed to initialize real adapters, keeping fallback", { error });
     }
+  }
+
+  /**
+   * Initialize fallback adapters (no-op action, always-true condition).
+   * Used when SPARQL service is not ready or fails.
+   */
+  private initializeFallbackAdapters(): void {
+    this.actionInterpreter = createNoOpActionInterpreter();
+    this.conditionEvaluator = createAlwaysTrueConditionEvaluator();
+
+    this.rdfButtonGroupsBuilder = new RdfButtonGroupsBuilder(
+      this.sparqlQueryService!,
+      this.actionInterpreter,
+      this.conditionEvaluator
+    );
+  }
+
+  /**
+   * Resolve asset URI to IFile.
+   * Extracts UUID from URI and looks up the file.
+   *
+   * @param assetUri - Asset URI (e.g., https://exocortex.my/assets/uuid)
+   * @returns IFile or null if not found
+   */
+  private resolveAssetUriToFile(assetUri: string): import("exocortex").IFile | null {
+    // Extract UUID from URI - it's typically the last path segment
+    const uuid = assetUri.split("/").pop();
+    if (!uuid) return null;
+
+    // Search through all files for matching UID
+    const allFiles = this.vaultAdapter.getAllFiles();
+    for (const file of allFiles) {
+      const frontmatter = this.vaultAdapter.getFrontmatter(file);
+      if (frontmatter?.exo__Asset_uid === uuid) {
+        return file;
+      }
+    }
+
+    return null;
   }
 
   /**
