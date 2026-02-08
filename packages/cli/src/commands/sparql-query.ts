@@ -21,6 +21,7 @@ import { TriplesFormatter } from "../formatters/TriplesFormatter.js";
 import { ErrorHandler, type OutputFormat } from "../utils/ErrorHandler.js";
 import { VaultNotFoundError } from "../utils/errors/index.js";
 import { ResponseBuilder, type QueryResult, type ConstructResult } from "../responses/index.js";
+import { CacheManager } from "../cache/CacheManager.js";
 
 export interface SparqlQueryOptions {
   vault: string;
@@ -29,6 +30,7 @@ export interface SparqlQueryOptions {
   explain?: boolean;
   stats?: boolean;
   noOptimize?: boolean;
+  useCache?: boolean;
 }
 
 export function sparqlQueryCommand(): Command {
@@ -41,6 +43,7 @@ export function sparqlQueryCommand(): Command {
     .option("--explain", "Show optimized query plan")
     .option("--stats", "Show execution statistics")
     .option("--no-optimize", "Disable query optimization")
+    .option("--use-cache", "Use persistent cache (faster for repeated queries)")
     .action(async (queryArg: string, options: SparqlQueryOptions) => {
       const outputFormat = (options.output || "text") as OutputFormat;
       ErrorHandler.setFormat(outputFormat);
@@ -61,16 +64,33 @@ export function sparqlQueryCommand(): Command {
         }
         const loadStartTime = Date.now();
 
-        const vaultAdapter = new FileSystemVaultAdapter(vaultPath);
-        const converter = new NoteToRDFConverter(vaultAdapter);
-        const triples = await converter.convertVault();
+        let triples: Triple[];
+        let cacheHit = false;
+
+        if (options.useCache) {
+          // Use cached triples for faster loading
+          const cacheManager = new CacheManager(vaultPath);
+          const cacheResult = await cacheManager.loadOrBuild();
+          triples = cacheResult.triples;
+          cacheHit = cacheResult.cacheHit;
+
+          if (outputFormat === "text" && cacheHit) {
+            console.log(`🚀 Cache hit! Loading from persistent cache...`);
+          }
+        } else {
+          // Traditional vault loading
+          const vaultAdapter = new FileSystemVaultAdapter(vaultPath);
+          const converter = new NoteToRDFConverter(vaultAdapter);
+          triples = await converter.convertVault();
+        }
 
         const tripleStore = new InMemoryTripleStore();
         await tripleStore.addAll(triples);
 
         const loadDuration = Date.now() - loadStartTime;
         if (outputFormat === "text") {
-          console.log(`✅ Loaded ${triples.length} triples in ${loadDuration}ms\n`);
+          const cacheStatus = cacheHit ? " (from cache)" : "";
+          console.log(`✅ Loaded ${triples.length} triples in ${loadDuration}ms${cacheStatus}\n`);
           console.log(`🔍 Parsing SPARQL query...`);
         }
 
@@ -141,6 +161,7 @@ export function sparqlQueryCommand(): Command {
               loadDurationMs: loadDuration,
               execDurationMs: execDuration,
               triplesScanned: triples.length,
+              cacheHit,
             });
             console.log(JSON.stringify(response, null, 2));
           } else {
@@ -155,11 +176,14 @@ export function sparqlQueryCommand(): Command {
 
             if (options.stats) {
               console.log(`\n📊 Execution Statistics:`);
-              console.log(`  Vault loading: ${loadDuration}ms`);
+              console.log(`  Vault loading: ${loadDuration}ms${cacheHit ? " (from cache)" : ""}`);
               console.log(`  Query execution: ${execDuration}ms`);
               console.log(`  Total time: ${totalDuration}ms`);
               console.log(`  Triples scanned: ${triples.length}`);
               console.log(`  Triples generated: ${resultTriples.length}`);
+              if (options.useCache) {
+                console.log(`  Cache: ${cacheHit ? "HIT" : "MISS (rebuilt)"}`);
+              }
             }
           }
         } else {
@@ -182,6 +206,7 @@ export function sparqlQueryCommand(): Command {
               loadDurationMs: loadDuration,
               execDurationMs: execDuration,
               triplesScanned: triples.length,
+              cacheHit,
             });
             console.log(JSON.stringify(response, null, 2));
           } else {
@@ -196,11 +221,14 @@ export function sparqlQueryCommand(): Command {
 
             if (options.stats) {
               console.log(`\n📊 Execution Statistics:`);
-              console.log(`  Vault loading: ${loadDuration}ms`);
+              console.log(`  Vault loading: ${loadDuration}ms${cacheHit ? " (from cache)" : ""}`);
               console.log(`  Query execution: ${execDuration}ms`);
               console.log(`  Total time: ${totalDuration}ms`);
               console.log(`  Triples scanned: ${triples.length}`);
               console.log(`  Results returned: ${results.length}`);
+              if (options.useCache) {
+                console.log(`  Cache: ${cacheHit ? "HIT" : "MISS (rebuilt)"}`);
+              }
             }
           }
         }

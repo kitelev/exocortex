@@ -14,5 +14,7 @@ export {
   type QueryResult,
   type ConstructResult,
   type ResolveResult,
+  type CacheResult,
+  type CacheStatsResult,
   ResponseBuilder,
 } from "./StructuredResponse.js";
