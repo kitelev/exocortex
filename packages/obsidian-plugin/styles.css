@@ -665,6 +665,33 @@
   border-color: #43a047;
 }
 
+/* Trash button with red X icon */
+.exocortex-trash-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 8px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: var(--text-error);
+  border-radius: 4px;
+  transition: opacity 0.15s ease, background-color 0.15s ease;
+}
+
+.exocortex-trash-btn:hover {
+  opacity: 0.8;
+  background-color: var(--background-modifier-hover);
+}
+
+.exocortex-trash-btn:active {
+  opacity: 0.6;
+}
+
+.exocortex-trash-icon {
+  stroke: currentColor;
+}
+
 .exocortex-asset-items {
   display: flex;
   flex-direction: column;
