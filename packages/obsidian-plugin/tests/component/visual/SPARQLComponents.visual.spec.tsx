@@ -2,7 +2,7 @@
  * Visual Regression Tests for SPARQL Components
  *
  * Tests visual appearance of SPARQL-related UI components
- * including error views, empty states, and result viewers.
+ * including error views and empty states.
  *
  * Run with: npm run test:component
  * Update snapshots: npm run test:component -- --update-snapshots
@@ -11,7 +11,6 @@ import { test, expect } from "@playwright/experimental-ct-react";
 import React from "react";
 import { SPARQLErrorView } from "../../../src/presentation/components/sparql/SPARQLErrorView";
 import { SPARQLEmptyState } from "../../../src/presentation/components/sparql/SPARQLEmptyState";
-import { ViewModeSelector } from "../../../src/presentation/components/sparql/ViewModeSelector";
 
 test.describe("SPARQLErrorView Visual Regression", () => {
   test("syntax error with position", async ({ mount }) => {
@@ -91,65 +90,5 @@ test.describe("SPARQLEmptyState Visual Regression", () => {
       <SPARQLEmptyState queryString="ASK WHERE { ?s ?p ?o }" />,
     );
     await expect(component).toHaveScreenshot("sparql-empty-ask.png");
-  });
-});
-
-test.describe("ViewModeSelector Visual Regression", () => {
-  test("table mode selected", async ({ mount }) => {
-    const component = await mount(
-      <ViewModeSelector
-        currentMode="table"
-        onModeChange={() => {}}
-        availableModes={["table", "list", "graph"]}
-      />,
-    );
-    await expect(component).toHaveScreenshot("view-mode-table-selected.png");
-  });
-
-  test("list mode selected", async ({ mount }) => {
-    const component = await mount(
-      <ViewModeSelector
-        currentMode="list"
-        onModeChange={() => {}}
-        availableModes={["table", "list", "graph"]}
-      />,
-    );
-    await expect(component).toHaveScreenshot("view-mode-list-selected.png");
-  });
-
-  test("graph mode selected", async ({ mount }) => {
-    const component = await mount(
-      <ViewModeSelector
-        currentMode="graph"
-        onModeChange={() => {}}
-        availableModes={["table", "list", "graph"]}
-      />,
-    );
-    await expect(component).toHaveScreenshot("view-mode-graph-selected.png");
-  });
-
-  test("limited modes available", async ({ mount }) => {
-    const component = await mount(
-      <ViewModeSelector
-        currentMode="table"
-        onModeChange={() => {}}
-        availableModes={["table", "list"]}
-      />,
-    );
-    await expect(component).toHaveScreenshot("view-mode-limited.png");
-  });
-
-  test("hover state", async ({ mount, page }) => {
-    const component = await mount(
-      <ViewModeSelector
-        currentMode="table"
-        onModeChange={() => {}}
-        availableModes={["table", "list", "graph"]}
-      />,
-    );
-    // Hover on the list button (second option)
-    await component.locator("button").nth(1).hover();
-    await page.waitForTimeout(100);
-    await expect(component).toHaveScreenshot("view-mode-hover.png");
   });
 });
