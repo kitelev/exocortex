@@ -6,7 +6,6 @@
 // Store
 export {
   useGraphStore,
-  getTemporalStore,
   undo,
   redo,
   canUndo,

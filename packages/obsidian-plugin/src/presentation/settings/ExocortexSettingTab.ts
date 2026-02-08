@@ -182,7 +182,7 @@ export class ExocortexSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Show labels in properties block")
       .setDesc(
-        "Display asset labels instead of filenames in the Properties block links",
+        "Display asset labels instead of filenames in the properties block links",
       )
       .addToggle((toggle) =>
         toggle

@@ -253,8 +253,11 @@ export class ExocortexAPI {
         continue;
       }
 
+      if (!(sourceFile instanceof TFile)) {
+        continue;
+      }
       const sourceFrontmatter = this.plugin.app.metadataCache.getFileCache(
-        sourceFile as TFile
+        sourceFile
       )?.frontmatter || {};
 
       const referencingProperties = MetadataHelpers.findAllReferencingProperties(

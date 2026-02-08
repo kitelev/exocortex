@@ -55,7 +55,11 @@ export class FileExplorerSortPatch {
    * Get the display name template from settings
    */
   private getTemplate(): string {
-    return this.plugin.settings?.displayNameTemplate || DEFAULT_DISPLAY_NAME_TEMPLATE;
+    // Prefer new displayNameSettings, fall back to legacy displayNameTemplate
+    if (this.plugin.settings?.displayNameSettings?.defaultTemplate) {
+      return this.plugin.settings.displayNameSettings.defaultTemplate;
+    }
+    return DEFAULT_DISPLAY_NAME_TEMPLATE;
   }
 
   /**

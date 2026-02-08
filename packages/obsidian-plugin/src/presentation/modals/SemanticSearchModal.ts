@@ -102,6 +102,7 @@ export class SemanticSearchModal extends Modal {
 
     if (!this.searchManager.isConfigured()) {
       this.statusContainer.createEl("p", {
+        // eslint-disable-next-line obsidianmd/ui/sentence-case -- API key is a proper noun
         text: "Semantic search is not configured. Add your OpenAI API key in settings.",
         cls: "semantic-search-warning",
       });
@@ -118,6 +119,7 @@ export class SemanticSearchModal extends Modal {
       });
     } else if (indexedCount === 0) {
       this.statusContainer.createEl("p", {
+        // eslint-disable-next-line obsidianmd/ui/sentence-case -- command name is quoted
         text: "No notes indexed yet. Use the 'Index all notes' command to build the index.",
         cls: "semantic-search-info",
       });

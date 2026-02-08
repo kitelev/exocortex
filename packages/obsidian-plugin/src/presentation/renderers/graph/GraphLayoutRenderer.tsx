@@ -301,12 +301,10 @@ export const GraphLayoutRenderer: React.FC<GraphLayoutRendererProps> = ({
 
     // Apply initial transform
     if (options.initialZoom) {
-      svg.call(
-        zoomBehavior.transform,
-        zoomIdentity
-          .translate(options.initialZoom.x, options.initialZoom.y)
-          .scale(options.initialZoom.k)
-      );
+      const initialTransform = zoomIdentity
+        .translate(options.initialZoom.x, options.initialZoom.y)
+        .scale(options.initialZoom.k);
+      svg.call(zoomBehavior.transform.bind(zoomBehavior), initialTransform);
     }
 
     return () => {
@@ -473,7 +471,8 @@ export const GraphLayoutRenderer: React.FC<GraphLayoutRendererProps> = ({
             onClick={() => {
               if (svgRef.current && zoomRef.current) {
                 const svg = select(svgRef.current);
-                svg.transition().duration(300).call(zoomRef.current.scaleBy, 1.5);
+                const zoom = zoomRef.current;
+                svg.transition().duration(300).call(zoom.scaleBy.bind(zoom), 1.5);
               }
             }}
             title="Zoom in"
@@ -485,7 +484,8 @@ export const GraphLayoutRenderer: React.FC<GraphLayoutRendererProps> = ({
             onClick={() => {
               if (svgRef.current && zoomRef.current) {
                 const svg = select(svgRef.current);
-                svg.transition().duration(300).call(zoomRef.current.scaleBy, 0.67);
+                const zoom = zoomRef.current;
+                svg.transition().duration(300).call(zoom.scaleBy.bind(zoom), 0.67);
               }
             }}
             title="Zoom out"
@@ -497,11 +497,12 @@ export const GraphLayoutRenderer: React.FC<GraphLayoutRendererProps> = ({
             onClick={() => {
               if (svgRef.current && zoomRef.current) {
                 const svg = select(svgRef.current);
+                const zoom = zoomRef.current;
                 svg
                   .transition()
                   .duration(300)
                   .call(
-                    zoomRef.current.transform,
+                    zoom.transform.bind(zoom),
                     zoomIdentity.translate(0, 0).scale(1)
                   );
               }

@@ -11,7 +11,6 @@ export type {
 // Graph Store exports
 export {
   useGraphStore,
-  getTemporalStore,
   undo,
   redo,
   canUndo,

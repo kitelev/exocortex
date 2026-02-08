@@ -126,7 +126,7 @@ export class RenderBatch extends BasePoolable {
     super();
     this.nodeCapacity = nodeCapacity;
     this.edgeCapacity = edgeCapacity;
-    this.batchId = `batch-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    this.batchId = `batch-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
   }
 
   reset(): void {

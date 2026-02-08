@@ -157,7 +157,7 @@ export class DisplayNameResolver {
 /**
  * Create a DisplayNameResolver with default settings
  */
-export function createDefaultResolver(): DisplayNameResolver {
-  const { DEFAULT_DISPLAY_NAME_SETTINGS } = require("@plugin/domain/settings/ExocortexSettings");
+export async function createDefaultResolver(): Promise<DisplayNameResolver> {
+  const { DEFAULT_DISPLAY_NAME_SETTINGS } = await import("@plugin/domain/settings/ExocortexSettings");
   return new DisplayNameResolver(DEFAULT_DISPLAY_NAME_SETTINGS);
 }

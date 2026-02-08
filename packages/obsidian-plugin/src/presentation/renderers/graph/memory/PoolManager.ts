@@ -330,7 +330,7 @@ export class PoolManager {
     });
 
     if (this.config.debug) {
-      console.log(`PoolManager: Registered pool '${name}'`);
+      console.debug(`PoolManager: Registered pool '${name}'`);
     }
   }
 
@@ -356,7 +356,7 @@ export class PoolManager {
     });
 
     if (this.config.debug) {
-      console.log(`PoolManager: Unregistered pool '${name}'`);
+      console.debug(`PoolManager: Unregistered pool '${name}'`);
     }
 
     return true;
@@ -498,7 +498,7 @@ export class PoolManager {
       });
 
       if (this.config.debug) {
-        console.log(
+        console.debug(
           `PoolManager: Pressure changed from ${previousPressure} to ${newPressure}`
         );
       }
@@ -539,7 +539,7 @@ export class PoolManager {
       if (!entry.essential) {
         const shrunk = entry.pool.shrink();
         if (shrunk > 0 && this.config.debug) {
-          console.log(`PoolManager: Shrunk pool '${name}' by ${shrunk} objects`);
+          console.debug(`PoolManager: Shrunk pool '${name}' by ${shrunk} objects`);
         }
       }
     }
@@ -552,7 +552,7 @@ export class PoolManager {
     for (const [name, entry] of this.pools) {
       const shrunk = entry.pool.shrink();
       if (shrunk > 0 && this.config.debug) {
-        console.log(`PoolManager: Shrunk pool '${name}' by ${shrunk} objects`);
+        console.debug(`PoolManager: Shrunk pool '${name}' by ${shrunk} objects`);
       }
     }
 
@@ -578,7 +578,7 @@ export class PoolManager {
         if (shrunk === 0) break;
 
         if (this.config.debug) {
-          console.log(`PoolManager: Emergency shrink pool '${name}' by ${shrunk}`);
+          console.debug(`PoolManager: Emergency shrink pool '${name}' by ${shrunk}`);
         }
       }
     }
@@ -670,7 +670,7 @@ export class PoolManager {
     for (const [name, entry] of this.pools) {
       entry.pool.clear();
       if (this.config.debug) {
-        console.log(`PoolManager: Reset pool '${name}'`);
+        console.debug(`PoolManager: Reset pool '${name}'`);
       }
     }
 

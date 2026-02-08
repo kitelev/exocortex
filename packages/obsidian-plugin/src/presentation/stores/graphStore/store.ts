@@ -3,6 +3,10 @@
  * Provides reactive state with persistence and devtools support.
  */
 
+/* eslint-disable no-restricted-globals */
+// Using localStorage directly here because this store is used as a Zustand
+// persistence adapter that doesn't have access to Obsidian App instance.
+
 import { create } from "zustand";
 import { persist, subscribeWithSelector } from "zustand/middleware";
 import { immer } from "zustand/middleware/immer";

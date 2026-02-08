@@ -568,10 +568,11 @@ export class WebGPUPhysics {
       this.state.webgpuAvailable = true;
       return true;
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
       this.emit({
         type: "fallback",
         state: this.state,
-        message: `WebGPU initialization failed: ${error}`,
+        message: `WebGPU initialization failed: ${errorMessage}`,
         error: error instanceof Error ? error : new Error(String(error)),
       });
       return false;

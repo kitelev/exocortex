@@ -529,10 +529,12 @@ export class FocusIndicator {
    * Enable high contrast mode
    */
   enableHighContrast(): void {
-    this.config.style.highContrast = true;
-    this.config.style.enablePulse = false;
-    this.config.style.enableGlow = false;
-    this.config.style.thickness = DEFAULT_STYLE.thickness * 1.5;
+    Object.assign(this.config.style, {
+      highContrast: true,
+      enablePulse: false,
+      enableGlow: false,
+      thickness: DEFAULT_STYLE.thickness * 1.5,
+    });
     this.stopAnimation();
   }
 
@@ -540,10 +542,12 @@ export class FocusIndicator {
    * Disable high contrast mode
    */
   disableHighContrast(): void {
-    this.config.style.highContrast = false;
-    this.config.style.enablePulse = DEFAULT_STYLE.enablePulse;
-    this.config.style.enableGlow = DEFAULT_STYLE.enableGlow;
-    this.config.style.thickness = DEFAULT_STYLE.thickness;
+    Object.assign(this.config.style, {
+      highContrast: false,
+      enablePulse: DEFAULT_STYLE.enablePulse,
+      enableGlow: DEFAULT_STYLE.enableGlow,
+      thickness: DEFAULT_STYLE.thickness,
+    });
 
     if (this.focusState && this.config.style.enablePulse) {
       this.startAnimation();

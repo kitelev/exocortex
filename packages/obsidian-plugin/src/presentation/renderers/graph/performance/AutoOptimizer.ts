@@ -347,7 +347,7 @@ export class AutoOptimizer {
       this.emit("optimization-reverted", last, this.state);
 
       if (this.config.verbose) {
-        console.log(`[AutoOptimizer] Reverted: ${last.name}`);
+        console.debug(`[AutoOptimizer] Reverted: ${last.name}`);
       }
 
       return true;
@@ -470,7 +470,7 @@ export class AutoOptimizer {
       this.emit("optimization-applied", action, this.state);
 
       if (this.config.verbose) {
-        console.log(
+        console.debug(
           `[AutoOptimizer] Applied: ${action.name} (estimated +${action.estimatedImprovement}%)`
         );
       }
