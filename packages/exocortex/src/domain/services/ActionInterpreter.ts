@@ -42,6 +42,91 @@ const EXO_UI_NS = "https://exocortex.my/ontology/exo-ui#";
 const RDF_TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type";
 
 /**
+ * Template patterns supported in action parameters
+ */
+const TEMPLATE_PATTERNS = {
+  NOW: /\{\{now\}\}/g,
+  ASSET_UID: /\{\{asset\.uid\}\}/g,
+  ASSET_PATH: /\{\{asset\.path\}\}/g,
+} as const;
+
+/**
+ * Exocortex ontology namespace prefix
+ */
+const EXOCORTEX_NS_PREFIX = "https://exocortex.my/ontology/";
+
+/**
+ * Well-known resource IRI to UUID mappings for EMS status values
+ */
+const WELL_KNOWN_UUIDS: Record<string, string> = {
+  "https://exocortex.my/ontology/ems#EffortStatusAnalysis": "f8e3a2b1-9c4d-4e5f-8a6b-7c8d9e0f1a2b",
+  "https://exocortex.my/ontology/ems#EffortStatusDoing": "027e78f4-6e16-4b36-b8fb-5510507d5745",
+  "https://exocortex.my/ontology/ems#EffortStatusDone": "7b9b3116-7c3c-438c-9618-94fe301320a6",
+};
+
+/**
+ * Convert IRI to frontmatter property name
+ *
+ * @example
+ * iriToFrontmatterProperty("https://exocortex.my/ontology/ems#Effort_status")
+ * // Returns: "ems__Effort_status"
+ *
+ * @param iri - Full IRI of the property
+ * @returns Frontmatter-compatible property name with double underscore
+ */
+function iriToFrontmatterProperty(iri: string): string {
+  // Pattern: https://exocortex.my/ontology/{namespace}#{localName}
+  const match = iri.match(/https:\/\/exocortex\.my\/ontology\/([^#]+)#(.+)/);
+  if (match) {
+    const [, namespace, localName] = match;
+    return `${namespace}__${localName}`;
+  }
+  // Fallback for non-Exocortex IRIs: use local name
+  const hashIndex = iri.lastIndexOf("#");
+  if (hashIndex !== -1) {
+    return iri.substring(hashIndex + 1);
+  }
+  const slashIndex = iri.lastIndexOf("/");
+  if (slashIndex !== -1) {
+    return iri.substring(slashIndex + 1);
+  }
+  return iri;
+}
+
+/**
+ * Convert resource IRI to wikilink format
+ *
+ * For well-known resources (like EMS statuses), uses static UUID mapping.
+ * For unknown IRIs, returns the value unchanged (literal values).
+ *
+ * @example
+ * iriToWikilink("https://exocortex.my/ontology/ems#EffortStatusDone")
+ * // Returns: "[[7b9b3116-7c3c-438c-9618-94fe301320a6]]"
+ *
+ * @param iri - Full IRI of the resource
+ * @returns Wikilink format or original value if not a known resource
+ */
+function iriToWikilink(iri: string): string {
+  // Check well-known UUIDs first
+  const uuid = WELL_KNOWN_UUIDS[iri];
+  if (uuid) {
+    return `"[[${uuid}]]"`;
+  }
+  // Not a known resource IRI, return as-is (likely a literal value)
+  return iri;
+}
+
+/**
+ * Check if a value is an Exocortex resource IRI
+ *
+ * @param value - Value to check
+ * @returns true if value starts with Exocortex ontology namespace
+ */
+function isExocortexIRI(value: string): boolean {
+  return value.startsWith(EXOCORTEX_NS_PREFIX);
+}
+
+/**
  * ActionInterpreter - orchestrates RDF-driven action execution
  *
  * This is the core of the declarative UI system. Actions are defined in RDF
@@ -201,6 +286,9 @@ export class ActionInterpreter {
    * - Action type (rdf:type)
    * - Action parameters (exo-ui:* properties)
    *
+   * Multi-value predicates (same predicate with multiple objects) are
+   * aggregated into arrays to support RDF-style multi-value statements.
+   *
    * @param actionUri - URI of the action
    * @returns Parsed action definition
    * @throws Error if action type not found
@@ -234,7 +322,18 @@ export class ActionInterpreter {
         const paramName = predicateValue.substring(EXO_UI_NS.length);
         const objectValue =
           "value" in triple.object ? triple.object.value : String(triple.object);
-        params[paramName] = objectValue;
+
+        // Aggregate multi-value predicates into arrays
+        const existing = params[paramName];
+        if (existing !== undefined) {
+          if (Array.isArray(existing)) {
+            existing.push(objectValue);
+          } else {
+            params[paramName] = [existing, objectValue];
+          }
+        } else {
+          params[paramName] = objectValue;
+        }
       }
     }
 
@@ -311,6 +410,52 @@ export class ActionInterpreter {
   };
 
   /**
+   * Resolve template placeholders in a value
+   *
+   * Supported templates:
+   * - {{now}} - Current ISO timestamp (e.g., "2024-01-15T10:30:00+0500")
+   * - {{asset.uid}} - Current asset's UID
+   * - {{asset.path}} - Current asset's file path
+   *
+   * @param value - The value that may contain template placeholders
+   * @param ctx - Action context for resolving asset-related templates
+   * @returns Resolved value with all templates replaced
+   */
+  private resolveTemplates(value: unknown, ctx: ActionContext): unknown {
+    if (typeof value !== "string") {
+      return value;
+    }
+
+    let resolved = value;
+
+    // {{now}} - Current ISO timestamp in local timezone
+    if (TEMPLATE_PATTERNS.NOW.test(resolved)) {
+      const now = new Date();
+      // Format: YYYY-MM-DDTHH:mm:ss+HHMM (ISO 8601 with timezone offset)
+      const tzOffset = -now.getTimezoneOffset();
+      const sign = tzOffset >= 0 ? "+" : "-";
+      const hours = String(Math.floor(Math.abs(tzOffset) / 60)).padStart(2, "0");
+      const minutes = String(Math.abs(tzOffset) % 60).padStart(2, "0");
+      const isoWithTz = now.toISOString().slice(0, 19) + sign + hours + minutes;
+      resolved = resolved.replace(TEMPLATE_PATTERNS.NOW, isoWithTz);
+    }
+
+    // {{asset.uid}} - Current asset's UID from frontmatter
+    if (TEMPLATE_PATTERNS.ASSET_UID.test(resolved) && ctx.currentAsset) {
+      // Asset UID would be extracted from frontmatter or file name
+      const uid = ctx.currentAsset.basename.replace(/\.md$/, "");
+      resolved = resolved.replace(TEMPLATE_PATTERNS.ASSET_UID, uid);
+    }
+
+    // {{asset.path}} - Current asset's file path
+    if (TEMPLATE_PATTERNS.ASSET_PATH.test(resolved) && ctx.currentAsset) {
+      resolved = resolved.replace(TEMPLATE_PATTERNS.ASSET_PATH, ctx.currentAsset.path);
+    }
+
+    return resolved;
+  }
+
+  /**
    * Update asset property
    *
    * Parameters:
@@ -323,9 +468,23 @@ export class ActionInterpreter {
    * Phase 3: ActionInterpreter Runtime (lines 1552-1567)
    */
   private updatePropertyHandler: ActionHandler = async (def, ctx) => {
-    const targetProperty = def.params.targetProperty as string;
-    const targetValue = def.params.targetValue;
+    // Support both RDF format (Action_targetProperty) and legacy format (targetProperty)
+    const rawProperty = (def.params.Action_targetProperty ?? def.params.targetProperty) as string;
+    const rawValue = def.params.Action_targetValue ?? def.params.targetValue;
     const targetAsset = def.params.targetAsset as string | undefined;
+
+    // Convert IRI property to frontmatter property name if needed
+    const targetProperty = isExocortexIRI(rawProperty)
+      ? iriToFrontmatterProperty(rawProperty)
+      : rawProperty;
+
+    // Resolve templates in targetValue (e.g., {{now}})
+    let targetValue = this.resolveTemplates(rawValue, ctx);
+
+    // Convert IRI value to wikilink format if it's a resource reference
+    if (typeof targetValue === "string" && isExocortexIRI(targetValue)) {
+      targetValue = iriToWikilink(targetValue);
+    }
 
     // Ensure vault adapter is available
     if (!this.vaultAdapter) {
@@ -723,10 +882,11 @@ export class ActionInterpreter {
    * Execute multiple actions in sequence
    *
    * Parameters:
-   * - actions: JSON array of action URIs to execute sequentially
+   * - Action_actions: Array of action URIs (from RDF multi-value triples)
+   *                   or JSON array string (legacy format)
    *
    * The handler:
-   * 1. Parses the actions array from JSON string
+   * 1. Handles both array (from RDF) and JSON string (legacy) formats
    * 2. Executes each action in sequence
    * 3. Stops on first failure, returning that failure result
    * 4. Passes data from each action to the next via context.previousResult
@@ -737,32 +897,40 @@ export class ActionInterpreter {
    * Phase 3: ActionInterpreter Runtime (lines 1615-1640)
    */
   private compositeHandler: ActionHandler = async (def, ctx) => {
-    const actionsParam = def.params.actions as string | undefined;
+    // Support both RDF multi-value format (Action_actions) and legacy format (actions)
+    const actionsParam = def.params.Action_actions ?? def.params.actions;
 
     // Validate actions parameter
     if (!actionsParam) {
       return {
         success: false,
-        message: "CompositeAction requires 'actions' parameter",
+        message: "CompositeAction requires 'Action_actions' or 'actions' parameter",
       };
     }
 
-    // Parse actions array from JSON string
+    // Handle both array (from RDF multi-value) and JSON string (legacy)
     let actionUris: string[];
-    try {
-      actionUris = JSON.parse(actionsParam) as string[];
-    } catch (error) {
+    if (Array.isArray(actionsParam)) {
+      // RDF multi-value format: already an array
+      actionUris = actionsParam as string[];
+    } else if (typeof actionsParam === "string") {
+      // Legacy JSON string format
+      try {
+        const parsed = JSON.parse(actionsParam);
+        if (Array.isArray(parsed)) {
+          actionUris = parsed as string[];
+        } else {
+          // Single action as string
+          actionUris = [actionsParam];
+        }
+      } catch {
+        // Not JSON, treat as single action URI
+        actionUris = [actionsParam];
+      }
+    } else {
       return {
         success: false,
-        message: `Invalid actions JSON: ${error instanceof Error ? error.message : String(error)}`,
-      };
-    }
-
-    // Validate it's an array
-    if (!Array.isArray(actionUris)) {
-      return {
-        success: false,
-        message: "CompositeAction 'actions' must be a JSON array of action URIs",
+        message: "CompositeAction 'actions' must be an array or JSON string of action URIs",
       };
     }
 

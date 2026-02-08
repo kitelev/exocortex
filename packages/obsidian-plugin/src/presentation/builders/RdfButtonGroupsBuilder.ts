@@ -154,7 +154,7 @@ export class RdfButtonGroupsBuilder {
     WHERE {
       ?button a exo-ui:Button .
       ?button exo-ui:Button_group <GROUP_URI> .
-      ?button exo-ui:Button_label ?label .
+      ?button rdfs:label ?label .
       ?button exo-ui:Button_action ?action .
       OPTIONAL { ?button exo-ui:Button_icon ?icon }
       OPTIONAL { ?button exo-ui:Button_variant ?variant }

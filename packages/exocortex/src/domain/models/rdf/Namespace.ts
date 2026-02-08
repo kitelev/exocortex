@@ -59,4 +59,37 @@ export class Namespace {
   static readonly EXO = new Namespace("exo", "https://exocortex.my/ontology/exo#");
 
   static readonly EMS = new Namespace("ems", "https://exocortex.my/ontology/ems#");
+
+  static readonly EXO_UI = new Namespace("exo-ui", "https://exocortex.my/ontology/exo-ui#");
+
+  static readonly EMS_UI = new Namespace("ems-ui", "https://exocortex.my/ontology/ems-ui#");
+
+  /**
+   * All known namespaces for prefix resolution
+   */
+  static readonly ALL: Namespace[] = [
+    Namespace.RDF,
+    Namespace.RDFS,
+    Namespace.OWL,
+    Namespace.XSD,
+    Namespace.EXO,
+    Namespace.EMS,
+    Namespace.EXO_UI,
+    Namespace.EMS_UI,
+  ];
+
+  /**
+   * Expand a prefixed name (e.g., "ems:Effort_status") to full IRI
+   * @param prefixedName - The prefixed name to expand
+   * @returns Full IRI or null if prefix not found
+   */
+  static expandPrefixedName(prefixedName: string): string | null {
+    for (const ns of Namespace.ALL) {
+      const expanded = ns.expand(prefixedName);
+      if (expanded) {
+        return expanded.value;
+      }
+    }
+    return null;
+  }
 }

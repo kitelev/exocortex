@@ -697,4 +697,154 @@ describe("ConditionEvaluator", () => {
       );
     });
   });
+
+  describe("evaluate() - SPARQL with prefixed names", () => {
+    const conditionUri = "https://exocortex.my/conditions/prefix-condition-1";
+    const assetUri = "https://exocortex.my/assets/task-1";
+    const EMS_EFFORT_STATUS = "https://exocortex.my/ontology/ems#Effort_status";
+    const EMS_DOING_STATUS = "https://exocortex.my/ontology/ems#EffortStatusDoing";
+
+    it("should expand ems: prefix in SPARQL ASK query", async () => {
+      mockTripleStore.match.mockImplementation(async (subject) => {
+        const subjectValue =
+          subject && "value" in subject ? subject.value : String(subject);
+
+        if (subjectValue === conditionUri) {
+          // SPARQL query using prefixed names (as defined in RDF in vault)
+          return [
+            createTriple(
+              conditionUri,
+              CONDITION_PREDICATES.SPARQL,
+              "ASK { ?asset ems:Effort_status ems:EffortStatusDoing }"
+            ),
+          ];
+        }
+
+        // Asset has Doing status
+        if (subjectValue === assetUri) {
+          return [createTriple(assetUri, EMS_EFFORT_STATUS, EMS_DOING_STATUS)];
+        }
+
+        return [];
+      });
+
+      const result = await evaluator.evaluate(conditionUri, assetUri);
+
+      // Should work because prefix is expanded to full URI
+      expect(result).toBe(true);
+    });
+
+    it("should expand exo-ui: prefix in SPARQL ASK query", async () => {
+      const EXO_UI_BUTTON = "https://exocortex.my/ontology/exo-ui#Button";
+
+      mockTripleStore.match.mockImplementation(async (subject) => {
+        const subjectValue =
+          subject && "value" in subject ? subject.value : String(subject);
+
+        if (subjectValue === conditionUri) {
+          return [
+            createTriple(
+              conditionUri,
+              CONDITION_PREDICATES.SPARQL,
+              "ASK { ?asset a exo-ui:Button }"
+            ),
+          ];
+        }
+
+        if (subjectValue === assetUri) {
+          return [createTriple(assetUri, RDF_TYPE, EXO_UI_BUTTON)];
+        }
+
+        return [];
+      });
+
+      const result = await evaluator.evaluate(conditionUri, assetUri);
+
+      expect(result).toBe(true);
+    });
+
+    it("should handle mixed prefixed and full URI syntax", async () => {
+      mockTripleStore.match.mockImplementation(async (subject) => {
+        const subjectValue =
+          subject && "value" in subject ? subject.value : String(subject);
+
+        if (subjectValue === conditionUri) {
+          // Mixed: full URI for predicate, prefixed for object
+          return [
+            createTriple(
+              conditionUri,
+              CONDITION_PREDICATES.SPARQL,
+              "ASK { ?asset <https://exocortex.my/ontology/ems#Effort_status> ems:EffortStatusDoing }"
+            ),
+          ];
+        }
+
+        if (subjectValue === assetUri) {
+          return [createTriple(assetUri, EMS_EFFORT_STATUS, EMS_DOING_STATUS)];
+        }
+
+        return [];
+      });
+
+      const result = await evaluator.evaluate(conditionUri, assetUri);
+
+      expect(result).toBe(true);
+    });
+
+    it("should return false when condition is not met even with prefix resolution", async () => {
+      const EMS_DONE_STATUS = "https://exocortex.my/ontology/ems#EffortStatusDone";
+
+      mockTripleStore.match.mockImplementation(async (subject) => {
+        const subjectValue =
+          subject && "value" in subject ? subject.value : String(subject);
+
+        if (subjectValue === conditionUri) {
+          // Looking for Doing status
+          return [
+            createTriple(
+              conditionUri,
+              CONDITION_PREDICATES.SPARQL,
+              "ASK { ?asset ems:Effort_status ems:EffortStatusDoing }"
+            ),
+          ];
+        }
+
+        // But asset has Done status
+        if (subjectValue === assetUri) {
+          return [createTriple(assetUri, EMS_EFFORT_STATUS, EMS_DONE_STATUS)];
+        }
+
+        return [];
+      });
+
+      const result = await evaluator.evaluate(conditionUri, assetUri);
+
+      expect(result).toBe(false);
+    });
+
+    it("should leave unknown prefixes unchanged", async () => {
+      mockTripleStore.match.mockImplementation(async (subject) => {
+        const subjectValue =
+          subject && "value" in subject ? subject.value : String(subject);
+
+        if (subjectValue === conditionUri) {
+          // Unknown prefix 'foo:' - should not be expanded
+          return [
+            createTriple(
+              conditionUri,
+              CONDITION_PREDICATES.SPARQL,
+              "ASK { ?asset foo:SomeProperty foo:SomeValue }"
+            ),
+          ];
+        }
+
+        return [];
+      });
+
+      const result = await evaluator.evaluate(conditionUri, assetUri);
+
+      // Should return false because pattern doesn't match (prefix not expanded to <...>)
+      expect(result).toBe(false);
+    });
+  });
 });

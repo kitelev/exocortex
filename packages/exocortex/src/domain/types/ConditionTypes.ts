@@ -82,7 +82,7 @@ export const EXO_UI_CONDITION_NS = "https://exocortex.my/ontology/exo-ui#";
  */
 export const CONDITION_PREDICATES = {
   /** SPARQL query predicate */
-  SPARQL: `${EXO_UI_CONDITION_NS}condition_sparql`,
+  SPARQL: `${EXO_UI_CONDITION_NS}Condition_sparql`,
 
   /** Asset class predicate */
   ASSET_CLASS: `${EXO_UI_CONDITION_NS}condition_assetClass`,
