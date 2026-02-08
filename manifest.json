@@ -1,7 +1,7 @@
 {
   "id": "exocortex",
   "name": "Exocortex",
-  "version": "0.0.0-dev",
+  "version": "15.0.0",
   "minAppVersion": "1.5.0",
   "description": "Configurable UI system for Obsidian with ontology-driven layouts",
   "author": "A. Kitelev",

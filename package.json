@@ -1,6 +1,6 @@
 {
   "name": "exocortex-monorepo",
-  "version": "0.0.0-dev",
+  "version": "15.0.0",
   "description": "Exocortex: A configurable UI system for Obsidian that transforms knowledge management through ontology-driven layouts and semantic capabilities",
   "main": "main.js",
   "workspaces": [
