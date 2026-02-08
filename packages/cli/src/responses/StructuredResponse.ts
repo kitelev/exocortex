@@ -184,6 +184,30 @@ export interface ResolveResult {
   uri: string;
 }
 
+export interface CacheResult {
+  /** Action performed (build, invalidate) */
+  action: "build" | "invalidate";
+  /** Path to cache file */
+  cachePath: string;
+  /** Number of triples cached */
+  tripleCount: number;
+  /** Duration in milliseconds */
+  durationMs: number;
+}
+
+export interface CacheStatsResult {
+  /** Number of triples in cache */
+  tripleCount: number;
+  /** Cache creation timestamp (ISO 8601) */
+  createdAt: string;
+  /** Whether cache is currently valid */
+  isValid: boolean;
+  /** Cache file size in bytes */
+  sizeBytes: number;
+  /** Path to cache file */
+  cachePath: string;
+}
+
 /**
  * Builder for structured responses
  */

@@ -3,6 +3,7 @@
 import "reflect-metadata";
 import { Command } from "commander";
 import { sparqlQueryCommand } from "./commands/sparql-query.js";
+import { sparqlIndexCommand } from "./commands/sparql-index.js";
 import { commandCommand } from "./commands/command.js";
 import { watchCommand } from "./commands/watch.js";
 import { batchCommand } from "./commands/batch.js";
@@ -21,10 +22,12 @@ program
   .description("CLI tool for Exocortex knowledge management system")
   .version(__CLI_VERSION__);
 
-program
+const sparqlCommand = program
   .command("sparql")
-  .description("SPARQL query execution")
-  .addCommand(sparqlQueryCommand());
+  .description("SPARQL query execution and cache management");
+
+sparqlCommand.addCommand(sparqlQueryCommand());
+sparqlCommand.addCommand(sparqlIndexCommand());
 
 program.addCommand(commandCommand());
 program.addCommand(watchCommand());

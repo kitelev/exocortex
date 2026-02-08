@@ -41,12 +41,25 @@ jest.unstable_mockModule("exocortex", () => ({
     convertVault: jest.fn().mockResolvedValue([]),
   })),
   SolutionMapping: class SolutionMapping extends Map {},
-  IRI: class IRI { constructor(public value: string) {} },
-  Literal: class Literal { constructor(public value: string) {} },
+  IRI: jest.fn(),
+  Literal: jest.fn(),
+  BlankNode: jest.fn(),
+  Triple: jest.fn(),
 }));
 
 jest.unstable_mockModule("../../../src/adapters/FileSystemVaultAdapter.js", () => ({
   FileSystemVaultAdapter: jest.fn(),
+}));
+
+// Mock CacheManager for --use-cache option
+jest.unstable_mockModule("../../../src/cache/CacheManager.js", () => ({
+  CacheManager: jest.fn(() => ({
+    loadOrBuild: jest.fn().mockResolvedValue({ triples: [], cacheHit: false, durationMs: 10 }),
+    buildCache: jest.fn().mockResolvedValue({ tripleCount: 0, durationMs: 10 }),
+    getCacheStats: jest.fn().mockResolvedValue(null),
+    invalidate: jest.fn().mockResolvedValue(undefined),
+    getCachePath: jest.fn().mockReturnValue("/mock/cache/path"),
+  })),
 }));
 
 const { sparqlQueryCommand } = await import("../../../src/commands/sparql-query.js");
