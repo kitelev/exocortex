@@ -2948,4 +2948,203 @@ describe("ActionInterpreter", () => {
       expect(capturedPreviousResult).toBe(trashReason);
     });
   });
+
+  describe("Template resolution in UpdatePropertyAction", () => {
+    let mockVaultAdapter: jest.Mocked<IVaultAdapter>;
+    let mockFile: IFile;
+
+    beforeEach(() => {
+      mockFile = {
+        path: "tasks/test-uuid.md",
+        basename: "test-uuid",
+        name: "test-uuid.md",
+        parent: { path: "tasks", name: "tasks" },
+      };
+
+      mockVaultAdapter = {
+        read: jest.fn(),
+        exists: jest.fn(),
+        getAllFiles: jest.fn(),
+        getAbstractFileByPath: jest.fn(),
+        create: jest.fn(),
+        modify: jest.fn(),
+        delete: jest.fn(),
+        process: jest.fn(),
+        rename: jest.fn(),
+        updateLinks: jest.fn(),
+        createFolder: jest.fn(),
+        getDefaultNewFileParent: jest.fn(),
+        getFrontmatter: jest.fn(),
+        updateFrontmatter: jest.fn().mockResolvedValue(undefined),
+        getFirstLinkpathDest: jest.fn(),
+      } as jest.Mocked<IVaultAdapter>;
+    });
+
+    it("should resolve {{now}} template to current ISO timestamp", async () => {
+      const interpreter = new ActionInterpreter(
+        mockTripleStore,
+        undefined,
+        mockVaultAdapter
+      );
+
+      jest.spyOn(interpreter as any, "loadActionDefinition").mockResolvedValue({
+        type: "exo-ui:UpdatePropertyAction",
+        params: {
+          targetProperty: "ems__Effort_completedAt",
+          targetValue: "{{now}}",
+        },
+      });
+
+      const contextWithAsset: ActionContext = {
+        tripleStore: mockTripleStore,
+        uiProvider: createMockUIProvider(false),
+        currentAsset: mockFile,
+      };
+
+      const result = await interpreter.execute("test:action", contextWithAsset);
+
+      expect(result.success).toBe(true);
+
+      // Verify the updater function resolves {{now}} to actual timestamp
+      const updaterFn = mockVaultAdapter.updateFrontmatter.mock.calls[0][1];
+      const testFrontmatter = {};
+      const updatedFrontmatter = updaterFn(testFrontmatter);
+
+      // Check that the value is an ISO timestamp (not the literal "{{now}}")
+      const completedAt = updatedFrontmatter["ems__Effort_completedAt"];
+      expect(completedAt).not.toBe("{{now}}");
+      // ISO timestamp pattern: YYYY-MM-DDTHH:mm:ss+HHMM
+      expect(completedAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{4}$/);
+    });
+
+    it("should resolve {{asset.path}} template to current asset path", async () => {
+      const interpreter = new ActionInterpreter(
+        mockTripleStore,
+        undefined,
+        mockVaultAdapter
+      );
+
+      jest.spyOn(interpreter as any, "loadActionDefinition").mockResolvedValue({
+        type: "exo-ui:UpdatePropertyAction",
+        params: {
+          targetProperty: "ems__Task_sourcePath",
+          targetValue: "{{asset.path}}",
+        },
+      });
+
+      const contextWithAsset: ActionContext = {
+        tripleStore: mockTripleStore,
+        uiProvider: createMockUIProvider(false),
+        currentAsset: mockFile,
+      };
+
+      const result = await interpreter.execute("test:action", contextWithAsset);
+
+      expect(result.success).toBe(true);
+
+      const updaterFn = mockVaultAdapter.updateFrontmatter.mock.calls[0][1];
+      const updatedFrontmatter = updaterFn({});
+
+      expect(updatedFrontmatter["ems__Task_sourcePath"]).toBe("tasks/test-uuid.md");
+    });
+
+    it("should resolve {{asset.uid}} template to current asset UID", async () => {
+      const interpreter = new ActionInterpreter(
+        mockTripleStore,
+        undefined,
+        mockVaultAdapter
+      );
+
+      jest.spyOn(interpreter as any, "loadActionDefinition").mockResolvedValue({
+        type: "exo-ui:UpdatePropertyAction",
+        params: {
+          targetProperty: "ems__Task_sourceUid",
+          targetValue: "{{asset.uid}}",
+        },
+      });
+
+      const contextWithAsset: ActionContext = {
+        tripleStore: mockTripleStore,
+        uiProvider: createMockUIProvider(false),
+        currentAsset: mockFile,
+      };
+
+      const result = await interpreter.execute("test:action", contextWithAsset);
+
+      expect(result.success).toBe(true);
+
+      const updaterFn = mockVaultAdapter.updateFrontmatter.mock.calls[0][1];
+      const updatedFrontmatter = updaterFn({});
+
+      // Should extract basename without .md extension
+      expect(updatedFrontmatter["ems__Task_sourceUid"]).toBe("test-uuid");
+    });
+
+    it("should not modify non-string values", async () => {
+      const interpreter = new ActionInterpreter(
+        mockTripleStore,
+        undefined,
+        mockVaultAdapter
+      );
+
+      jest.spyOn(interpreter as any, "loadActionDefinition").mockResolvedValue({
+        type: "exo-ui:UpdatePropertyAction",
+        params: {
+          targetProperty: "ems__Task_priority",
+          targetValue: 42, // number, not string
+        },
+      });
+
+      const contextWithAsset: ActionContext = {
+        tripleStore: mockTripleStore,
+        uiProvider: createMockUIProvider(false),
+        currentAsset: mockFile,
+      };
+
+      const result = await interpreter.execute("test:action", contextWithAsset);
+
+      expect(result.success).toBe(true);
+
+      const updaterFn = mockVaultAdapter.updateFrontmatter.mock.calls[0][1];
+      const updatedFrontmatter = updaterFn({});
+
+      expect(updatedFrontmatter["ems__Task_priority"]).toBe(42);
+    });
+
+    it("should handle templates that cannot be resolved (no currentAsset)", async () => {
+      const interpreter = new ActionInterpreter(
+        mockTripleStore,
+        undefined,
+        mockVaultAdapter
+      );
+
+      mockVaultAdapter.getAbstractFileByPath.mockReturnValue(mockFile);
+
+      jest.spyOn(interpreter as any, "loadActionDefinition").mockResolvedValue({
+        type: "exo-ui:UpdatePropertyAction",
+        params: {
+          targetProperty: "test_prop",
+          targetValue: "{{asset.path}}",
+          targetAsset: "tasks/test-uuid.md",
+        },
+      });
+
+      // Context without currentAsset
+      const contextWithoutAsset: ActionContext = {
+        tripleStore: mockTripleStore,
+        uiProvider: createMockUIProvider(false),
+        // No currentAsset
+      };
+
+      const result = await interpreter.execute("test:action", contextWithoutAsset);
+
+      expect(result.success).toBe(true);
+
+      const updaterFn = mockVaultAdapter.updateFrontmatter.mock.calls[0][1];
+      const updatedFrontmatter = updaterFn({});
+
+      // Template stays unreplaced if no currentAsset
+      expect(updatedFrontmatter["test_prop"]).toBe("{{asset.path}}");
+    });
+  });
 });

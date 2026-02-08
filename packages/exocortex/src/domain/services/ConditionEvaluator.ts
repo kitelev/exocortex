@@ -18,6 +18,7 @@ import { ITripleStore } from "../../interfaces/ITripleStore";
 import { Triple } from "../models/rdf/Triple";
 import { IRI } from "../models/rdf/IRI";
 import { Literal } from "../models/rdf/Literal";
+import { Namespace } from "../models/rdf/Namespace";
 import {
   ConditionDefinition,
   CONDITION_PREDICATES,
@@ -162,26 +163,68 @@ export class ConditionEvaluator {
   }
 
   /**
+   * Expand prefixed names in SPARQL query to full URIs
+   *
+   * Transforms patterns like:
+   * - `ems:Effort_status` → `<https://exocortex.my/ontology/ems#Effort_status>`
+   * - `exo-ui:Button` → `<https://exocortex.my/ontology/exo-ui#Button>`
+   *
+   * @param query - SPARQL query with possible prefixed names
+   * @returns Query with all prefixed names expanded to full URIs in angle brackets
+   */
+  private expandPrefixes(query: string): string {
+    // Match prefixed names: prefix:localName
+    // Exclude patterns already in angle brackets or quoted strings
+    const prefixPattern = /(?<![<"'])([a-zA-Z][a-zA-Z0-9_-]*):([a-zA-Z_][a-zA-Z0-9_]*)(?![>"])/g;
+
+    return query.replace(prefixPattern, (match, prefix, localName) => {
+      const prefixedName = `${prefix}:${localName}`;
+      const expanded = Namespace.expandPrefixedName(prefixedName);
+      if (expanded) {
+        return `<${expanded}>`;
+      }
+      // If prefix not found, leave as-is
+      return match;
+    });
+  }
+
+  /**
    * Evaluate SPARQL ASK condition
    * Simplified implementation: parses simple ASK patterns and checks using match()
+   *
+   * Supports both full URI syntax and prefixed names:
+   * - `ASK { ?asset <https://exocortex.my/ontology/ems#Effort_status> <...> }`
+   * - `ASK { ?asset ems:Effort_status ems:EffortStatusDoing }`
    */
   private async evaluateSparqlCondition(
     sparqlQuery: string,
     assetUri: string
   ): Promise<boolean> {
+    // First expand any prefixed names to full URIs
+    const expandedQuery = this.expandPrefixes(sparqlQuery);
+
     // Replace ?asset placeholder with actual asset URI
-    const processedQuery = sparqlQuery.replace(/\?asset/g, `<${assetUri}>`);
+    const processedQuery = expandedQuery.replace(/\?asset/g, `<${assetUri}>`);
 
     // Parse simple ASK patterns:
     // Pattern 1: ASK { <uri> a <class> }
     // Pattern 2: ASK { <uri> <predicate> 'value' }
     // Pattern 3: ASK { <uri> <predicate> ?var }
+    // Pattern 4: ASK { <uri> <predicate> <object> }
 
     const typePattern = /<([^>]+)>\s+a\s+<([^>]+)>/;
     const typeMatch = processedQuery.match(typePattern);
     if (typeMatch) {
       const [, subjectUri, classUri] = typeMatch;
       return this.evaluateClassCondition(classUri, subjectUri);
+    }
+
+    // Pattern for IRI object: <subject> <predicate> <object>
+    const iriPattern = /<([^>]+)>\s+<([^>]+)>\s+<([^>]+)>/;
+    const iriMatch = processedQuery.match(iriPattern);
+    if (iriMatch) {
+      const [, subjectUri, predicateUri, objectUri] = iriMatch;
+      return this.evaluatePropertyCondition(predicateUri, objectUri, subjectUri);
     }
 
     const literalPattern = /<([^>]+)>\s+<([^>]+)>\s+'([^']+)'/;
