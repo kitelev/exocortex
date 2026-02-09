@@ -600,6 +600,36 @@ describe("ButtonGroupsBuilder - build", () => {
     expect(archiveButton?.visible).toBe(true);
   });
 
+  it("should display archive button with 📦 emoji", async () => {
+    const mockFile = {
+      path: "test.md",
+      parent: { path: "Tasks" },
+      basename: "TestTask",
+    } as TFile;
+    const metadata = {
+      exo__Instance_class: "[[ems__Task]]",
+      ems__Effort_status: "[[ems__EffortStatusDone]]",
+    };
+
+    ctx.mockMetadataExtractor.extractMetadata.mockReturnValue(metadata);
+    ctx.mockMetadataExtractor.extractInstanceClass.mockReturnValue(
+      "[[ems__Task]]",
+    );
+    ctx.mockMetadataExtractor.extractStatus.mockReturnValue(
+      "[[ems__EffortStatusDone]]",
+    );
+    ctx.mockMetadataExtractor.extractIsArchived.mockReturnValue(false);
+    ctx.mockFolderRepairService.getExpectedFolder.mockResolvedValue("Tasks");
+
+    const groups = await ctx.builder.build(mockFile);
+
+    const maintenanceGroup = groups.find((g) => g.id === "maintenance");
+    const archiveButton = maintenanceGroup?.buttons.find(
+      (b) => b.id === "archive",
+    );
+    expect(archiveButton?.label).toBe("📦 Archive");
+  });
+
   it("should hide archive button for already archived tasks", async () => {
     const mockFile = {
       path: "test.md",

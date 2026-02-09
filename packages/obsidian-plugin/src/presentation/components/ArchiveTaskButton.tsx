@@ -53,7 +53,7 @@ export const ArchiveTaskButton: React.FC<ArchiveTaskButtonProps> = ({
       onClick={handleClick}
       type="button"
     >
-      To Archive
+      📦 To Archive
     </button>
   );
 };
