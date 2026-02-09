@@ -78,7 +78,7 @@ export class MaintenanceButtonGroupBuilder implements IButtonGroupBuilder {
   ): ActionButton {
     return {
       id: "archive",
-      label: "Archive",
+      label: "📦 Archive",
       variant: "danger",
       visible: canArchiveTask(context),
       onClick: async () => {

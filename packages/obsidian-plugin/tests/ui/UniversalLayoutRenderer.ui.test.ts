@@ -765,7 +765,7 @@ describe("UniversalLayoutRenderer UI Integration", () => {
       // Find Archive button by text content
       const buttons = domContainer.querySelectorAll(".exocortex-action-button");
       const archiveBtn = Array.from(buttons).find(
-        (btn) => btn.textContent === "Archive",
+        (btn) => btn.textContent === "📦 Archive",
       );
       expect(archiveBtn).toBeTruthy();
     });
@@ -816,7 +816,7 @@ describe("UniversalLayoutRenderer UI Integration", () => {
 
       const buttons = domContainer.querySelectorAll(".exocortex-action-button");
       const archiveBtn = Array.from(buttons).find(
-        (btn) => btn.textContent === "Archive",
+        (btn) => btn.textContent === "📦 Archive",
       );
       expect(archiveBtn).toBeTruthy();
     });
@@ -844,7 +844,7 @@ describe("UniversalLayoutRenderer UI Integration", () => {
       // Find Archive button by text content
       const buttons = domContainer.querySelectorAll(".exocortex-action-button");
       const archiveBtn = Array.from(buttons).find(
-        (btn) => btn.textContent === "Archive",
+        (btn) => btn.textContent === "📦 Archive",
       );
       expect(archiveBtn).toBeTruthy();
     });
@@ -895,7 +895,7 @@ describe("UniversalLayoutRenderer UI Integration", () => {
 
       const buttons = domContainer.querySelectorAll(".exocortex-action-button");
       const archiveBtn = Array.from(buttons).find(
-        (btn) => btn.textContent === "Archive",
+        (btn) => btn.textContent === "📦 Archive",
       );
       expect(archiveBtn).toBeTruthy();
     });
@@ -921,7 +921,7 @@ describe("UniversalLayoutRenderer UI Integration", () => {
 
       const buttons = domContainer.querySelectorAll(".exocortex-action-button");
       const archiveBtn = Array.from(buttons).find(
-        (btn) => btn.textContent === "Archive",
+        (btn) => btn.textContent === "📦 Archive",
       );
       expect(archiveBtn).toBeTruthy();
     });
