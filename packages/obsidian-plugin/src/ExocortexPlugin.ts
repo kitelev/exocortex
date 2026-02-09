@@ -961,10 +961,69 @@ export default class ExocortexPlugin extends Plugin {
           !isNaN(previousDate.getTime())
         ) {
           const deltaMs = currentDate.getTime() - previousDate.getTime();
-          await this.taskStatusService.shiftPlannedEndTimestamp(file, deltaMs);
-          this.logger.info(
-            `Shifted ems__Effort_plannedEndTimestamp by ${deltaMs}ms`,
-          );
+
+          // Issue #2095: Idempotency check for Obsidian Sync
+          // When synced from another device, plannedEndTimestamp may already be shifted.
+          // Check if the current plannedEndTimestamp equals the expected value to avoid double-shift.
+          const currentPlannedEndTimestamp =
+            metadata.ems__Effort_plannedEndTimestamp;
+          const previousPlannedEndTimestamp =
+            cachedMetadata.ems__Effort_plannedEndTimestamp;
+
+          if (currentPlannedEndTimestamp && previousPlannedEndTimestamp) {
+            const currentEndDate = new Date(
+              String(currentPlannedEndTimestamp),
+            );
+            const previousEndDate = new Date(
+              String(previousPlannedEndTimestamp),
+            );
+
+            if (
+              !isNaN(currentEndDate.getTime()) &&
+              !isNaN(previousEndDate.getTime())
+            ) {
+              const expectedEndTimestamp =
+                previousEndDate.getTime() + deltaMs;
+              const actualEndTimestamp = currentEndDate.getTime();
+
+              // If plannedEndTimestamp is already at expected value, skip the shift
+              // This happens when syncing from another device that already applied the shift
+              if (actualEndTimestamp === expectedEndTimestamp) {
+                this.logger.info(
+                  `Skipping plannedEndTimestamp shift - already at expected value (sync from another device)`,
+                );
+                // Update cache for plannedEndTimestamp to reflect synced value
+                cachedMetadata.ems__Effort_plannedEndTimestamp =
+                  currentPlannedEndTimestamp;
+              } else {
+                await this.taskStatusService.shiftPlannedEndTimestamp(
+                  file,
+                  deltaMs,
+                );
+                this.logger.info(
+                  `Shifted ems__Effort_plannedEndTimestamp by ${deltaMs}ms`,
+                );
+              }
+            } else {
+              // Dates are invalid, proceed with shift
+              await this.taskStatusService.shiftPlannedEndTimestamp(
+                file,
+                deltaMs,
+              );
+              this.logger.info(
+                `Shifted ems__Effort_plannedEndTimestamp by ${deltaMs}ms`,
+              );
+            }
+          } else {
+            // No plannedEndTimestamp to check, proceed with shift
+            await this.taskStatusService.shiftPlannedEndTimestamp(
+              file,
+              deltaMs,
+            );
+            this.logger.info(
+              `Shifted ems__Effort_plannedEndTimestamp by ${deltaMs}ms`,
+            );
+          }
         }
       }
 

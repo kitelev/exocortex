@@ -643,6 +643,96 @@ describe("ExocortexPlugin", () => {
       );
     });
 
+    it("should not shift plannedEndTimestamp when synced via Obsidian Sync (idempotent fix for Issue #2095)", async () => {
+      // Scenario: Device A changes plannedStartTimestamp and shifts plannedEndTimestamp.
+      // When synced to Device B via Obsidian Sync, Device B receives the already-shifted
+      // plannedEndTimestamp. The plugin should detect this and NOT shift again.
+      //
+      // Timeline:
+      // 1. Device B cache: plannedStart=08:00 (old), plannedEnd=10:00 (old, not yet shifted)
+      // 2. File synced: plannedStart=09:00 (new), plannedEnd=11:00 (already shifted by Device A)
+      // 3. Delta would be +1 hour, but plannedEnd is already at expected value (10:00 + 1hr = 11:00)
+      // 4. Plugin should NOT shift again (would result in 12:00, which is wrong!)
+
+      // Initial state on Device B (before sync)
+      const metadataBeforeSync = {
+        ems__Effort_plannedStartTimestamp: "2023-11-01T08:00:00",
+        ems__Effort_plannedEndTimestamp: "2023-11-01T10:00:00",
+      };
+      mockMetadataCache.getFileCache.mockReturnValue({
+        frontmatter: metadataBeforeSync,
+      });
+
+      // Cache the initial state
+      await (plugin as any).handleMetadataChange(mockFile);
+
+      // Clear mock call counts from initial caching
+      jest.clearAllMocks();
+
+      // Now simulate Obsidian Sync bringing in the file with BOTH timestamps already updated
+      // Device A already shifted plannedEndTimestamp, so it matches the expected value
+      const metadataAfterSync = {
+        ems__Effort_plannedStartTimestamp: "2023-11-01T09:00:00",  // +1 hour
+        ems__Effort_plannedEndTimestamp: "2023-11-01T11:00:00",    // Already shifted by +1 hour
+      };
+      mockMetadataCache.getFileCache.mockReturnValue({
+        frontmatter: metadataAfterSync,
+      });
+
+      // Handle the metadata change from sync
+      await (plugin as any).handleMetadataChange(mockFile);
+
+      // The plugin should NOT shift plannedEndTimestamp because it's already at expected value
+      // If this test fails (shiftPlannedEndTimestamp is called), that's the bug from Issue #2095
+      expect(mockTaskStatusService.shiftPlannedEndTimestamp).not.toHaveBeenCalled();
+    });
+
+    it("should still shift plannedEndTimestamp on local change (Issue #2095 edge case)", async () => {
+      // Scenario: User changes plannedStartTimestamp locally on the same device.
+      // The plannedEndTimestamp hasn't been shifted yet, so it should be shifted.
+      //
+      // Timeline:
+      // 1. Local cache: plannedStart=08:00, plannedEnd=10:00
+      // 2. User changes: plannedStart=09:00, plannedEnd=10:00 (NOT shifted yet)
+      // 3. Delta is +1 hour, and plannedEnd is still at old value (10:00, not 11:00)
+      // 4. Plugin SHOULD shift to 11:00
+
+      // Initial state
+      const metadataInitial = {
+        ems__Effort_plannedStartTimestamp: "2023-11-01T08:00:00",
+        ems__Effort_plannedEndTimestamp: "2023-11-01T10:00:00",
+      };
+      mockMetadataCache.getFileCache.mockReturnValue({
+        frontmatter: metadataInitial,
+      });
+
+      // Cache the initial state
+      await (plugin as any).handleMetadataChange(mockFile);
+
+      // Clear mock call counts from initial caching
+      jest.clearAllMocks();
+
+      // User changes plannedStartTimestamp locally, but plannedEndTimestamp is still old
+      const metadataAfterLocalChange = {
+        ems__Effort_plannedStartTimestamp: "2023-11-01T09:00:00",  // +1 hour
+        ems__Effort_plannedEndTimestamp: "2023-11-01T10:00:00",    // NOT shifted yet
+      };
+      mockMetadataCache.getFileCache.mockReturnValue({
+        frontmatter: metadataAfterLocalChange,
+      });
+
+      // Handle the metadata change
+      await (plugin as any).handleMetadataChange(mockFile);
+
+      // The plugin SHOULD shift plannedEndTimestamp because it's not at expected value
+      const expectedDelta = 60 * 60 * 1000; // 1 hour in ms
+      expect(mockTaskStatusService.shiftPlannedEndTimestamp).toHaveBeenCalledTimes(1);
+      expect(mockTaskStatusService.shiftPlannedEndTimestamp).toHaveBeenCalledWith(
+        mockFile,
+        expectedDelta
+      );
+    });
+
     it("should not double-sync endTimestamp on recursive metadata change event", async () => {
       const metadata = {
         ems__Effort_endTimestamp: "2023-11-01T10:00:00Z",
