@@ -5755,3 +5755,366 @@ npm run test:all
 - Time investment to remove > maintenance burden
 
 **Reference**: Issue #2083, PR #2086 - Remove Graph Visualization (170 steps, -129,442 lines, 75% bundle reduction)
+
+---
+
+## Wikilink Alias Handling Pattern
+
+**When to use**: Parsing or modifying Obsidian wikilinks that may contain user-defined aliases (`[[uid|alias]]`)
+
+### Pattern Description
+
+Obsidian wikilinks support both bare references (`[[uuid]]`) and aliased references (`[[uuid|My Custom Name]]`). Code that processes wikilinks must:
+1. Extract the UID/path correctly regardless of alias presence
+2. Preserve user-defined aliases when appropriate
+3. Apply automatic labels only to bare links without aliases
+
+### UID Extraction from Wikilinks
+
+**Problem**: Need to extract the target UID from wikilinks with optional aliases.
+
+```typescript
+// ❌ WRONG: Fails with aliased links
+const uid = wikilinkValue.replace(/\[\[|\]\]/g, '');
+// Input: "[[uuid|My Alias]]" → Output: "uuid|My Alias" (BROKEN)
+
+// ✅ CORRECT: Extract only the UID part
+function extractWikilinkTarget(wikilink: string): string {
+  const match = wikilink.match(/\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/);
+  return match ? match[1].trim() : wikilink;
+}
+// Input: "[[uuid|My Alias]]" → Output: "uuid" (CORRECT)
+// Input: "[[uuid]]" → Output: "uuid" (CORRECT)
+```
+
+### Regex Breakdown
+
+```
+\[\[          - Match opening [[
+([^\]|]+)     - Capture group 1: One or more chars that are NOT ] or |
+(?:\|[^\]]+)? - Non-capturing optional group: | followed by alias text
+\]\]          - Match closing ]]
+```
+
+### Preserving User Aliases in DOM Manipulation
+
+**Problem**: Automatic label patching overwrites user-defined aliases.
+
+**Solution**: Detect if user provided explicit alias before applying automatic labels.
+
+```typescript
+private patchLink(linkEl: HTMLElement): void {
+  const dataHref = linkEl.getAttribute("data-href");
+  if (!dataHref) return;
+
+  const file = this.resolveFile(dataHref);
+  if (!file) return;
+
+  const displayName = this.getDisplayName(file);
+  if (!displayName) return;
+
+  // Detect user-defined alias
+  const currentText = linkEl.textContent || "";
+  const cleanedHref = dataHref.replace(/\.md$/, "").trim();
+
+  // If textContent differs from both data-href AND basename, user provided alias
+  const hasUserAlias = currentText !== cleanedHref && currentText !== file.basename;
+
+  if (hasUserAlias) {
+    // Preserve user alias - do NOT overwrite
+    return;
+  }
+
+  // Apply automatic label resolution for bare links
+  linkEl.textContent = displayName;
+}
+```
+
+### Test Cases for Wikilink Parsing
+
+```typescript
+describe("extractWikilinkTarget", () => {
+  it("extracts UID from bare wikilink", () => {
+    expect(extractWikilinkTarget("[[ems__EffortStatusBacklog]]"))
+      .toBe("ems__EffortStatusBacklog");
+  });
+
+  it("extracts UID from aliased wikilink (English)", () => {
+    expect(extractWikilinkTarget("[[ems__EffortStatusBacklog|Backlog]]"))
+      .toBe("ems__EffortStatusBacklog");
+  });
+
+  it("extracts UID from aliased wikilink (Russian)", () => {
+    expect(extractWikilinkTarget("[[ems__EffortStatusBacklog|Беклог]]"))
+      .toBe("ems__EffortStatusBacklog");
+  });
+
+  it("extracts UUID from aliased wikilink", () => {
+    expect(extractWikilinkTarget("[[753a44d5-846c-4b82-9196-4fd9a4d48777|Custom Label]]"))
+      .toBe("753a44d5-846c-4b82-9196-4fd9a4d48777");
+  });
+
+  it("returns original string for non-wikilink input", () => {
+    expect(extractWikilinkTarget("plain text")).toBe("plain text");
+  });
+});
+```
+
+### Where This Pattern Applies
+
+| Component | Purpose | Implementation |
+|-----------|---------|----------------|
+| StatusSelectPropertyField | Parse status for button rendering | Extract UID before comparison |
+| BodyLinkPatch | Beautify links in note body | Preserve user aliases |
+| PropertiesLinkPatch | Beautify links in Properties block | Preserve user aliases |
+| LinkRenderer (SPARQL) | Render links in query results | Already handles aliases |
+
+### Benefits
+
+- **i18n Support**: Users can use localized aliases (Беклог, 待办事项, etc.)
+- **Custom Labels**: Users control displayed text in specific contexts
+- **Backward Compatible**: Bare links still get automatic labels
+
+**Reference**: Issues #2097, #2098, PRs #2099, #2100 - Wikilink Alias Handling (February 2026)
+
+---
+
+## Idempotency Pattern for Sync Operations
+
+**When to use**: Operations triggered by file modification events that may fire multiple times during Obsidian Sync
+
+### Pattern Description
+
+When Obsidian Sync replicates changes between devices, the `vault.on("modify")` event fires on the receiving device. If your plugin modifies files in response to `modify` events, this creates a feedback loop where changes get applied multiple times.
+
+### Problem: Duplicate Operations During Sync
+
+```
+Device A: User changes plannedStartTimestamp
+  → Plugin shifts plannedEndTimestamp (+4 hours)
+  → File synced to Device B
+
+Device B: Receives synced file
+  → vault.on("modify") fires
+  → Plugin shifts plannedEndTimestamp again (+4 hours) ← WRONG!
+  → Total shift: +8 hours instead of +4 hours
+```
+
+### Solution: Idempotency Check Before Modification
+
+**Option A: Track Previous Values in Cache**
+
+```typescript
+// Store the previous value when we make changes
+const cachedState = new Map<string, string>();
+
+async function handleModify(file: TFile): Promise<void> {
+  const metadata = await this.loadMetadata(file);
+  const currentStart = metadata.ems__Effort_plannedStartTimestamp;
+  const currentEnd = metadata.ems__Effort_plannedEndTimestamp;
+
+  const cacheKey = file.path;
+  const cachedStart = cachedState.get(cacheKey + ':start');
+  const cachedEnd = cachedState.get(cacheKey + ':end');
+
+  // Skip if this is a sync event (end timestamp already matches expected shift)
+  if (cachedStart && cachedEnd) {
+    const expectedDelta = new Date(currentStart).getTime() - new Date(cachedStart).getTime();
+    const actualEndDelta = new Date(currentEnd).getTime() - new Date(cachedEnd).getTime();
+
+    // If end timestamp already shifted by the same delta, this is a sync - skip
+    if (Math.abs(expectedDelta - actualEndDelta) < 1000) {
+      // Update cache to current values
+      cachedState.set(cacheKey + ':start', currentStart);
+      cachedState.set(cacheKey + ':end', currentEnd);
+      return; // Already applied - idempotent
+    }
+  }
+
+  // Apply the shift (first-time or local change)
+  const deltaMs = calculateDelta(cachedStart, currentStart);
+  await this.shiftEndTimestamp(file, deltaMs);
+
+  // Update cache
+  cachedState.set(cacheKey + ':start', currentStart);
+  cachedState.set(cacheKey + ':end', newEndTimestamp);
+}
+```
+
+**Option B: Hash-Based Idempotency Token**
+
+```typescript
+// Store hash of the operation in frontmatter (persists across devices)
+async function handleModify(file: TFile): Promise<void> {
+  const metadata = await this.loadMetadata(file);
+  const currentStart = metadata.ems__Effort_plannedStartTimestamp;
+  const currentEnd = metadata.ems__Effort_plannedEndTimestamp;
+
+  // Create hash of current state
+  const stateHash = hash(`${currentStart}-${currentEnd}`);
+  const lastOperationHash = metadata._lastTimestampOperationHash;
+
+  if (stateHash === lastOperationHash) {
+    // Operation already applied (idempotent check passed)
+    return;
+  }
+
+  // Apply the shift
+  const newEnd = await this.shiftEndTimestamp(file, deltaMs);
+
+  // Store hash of new state to prevent re-application
+  await this.updateFrontmatter(file, {
+    _lastTimestampOperationHash: hash(`${currentStart}-${newEnd}`)
+  });
+}
+```
+
+### When to Apply Idempotency
+
+| Scenario | Apply Idempotency | Reason |
+|----------|-------------------|--------|
+| Timestamp shift on property change | ✅ Yes | Sync causes duplicate events |
+| Status change button click | ❌ No | User action, not event-driven |
+| Cache refresh on file modify | ❌ No | Read-only operation |
+| Automatic metadata correction | ✅ Yes | Could fire on sync |
+
+### Testing Idempotency
+
+```typescript
+describe("Idempotency", () => {
+  it("should apply shift exactly once for local changes", async () => {
+    const file = createMockFile({ plannedStart: "10:00", plannedEnd: "11:00" });
+
+    await plugin.handleModify(file);
+
+    expect(file.metadata.plannedEnd).toBe("11:30"); // +30 min shift
+  });
+
+  it("should NOT apply shift on sync (second modify event)", async () => {
+    const file = createMockFile({ plannedStart: "10:30", plannedEnd: "11:30" });
+
+    // Simulate sync: same file arrives with shift already applied
+    await plugin.handleModify(file);
+
+    // Should remain unchanged (idempotent)
+    expect(file.metadata.plannedEnd).toBe("11:30");
+  });
+
+  it("should handle 100 consecutive modify events without drift", async () => {
+    const file = createMockFile({ plannedStart: "10:00", plannedEnd: "11:00" });
+
+    // Simulate rapid sync events
+    for (let i = 0; i < 100; i++) {
+      await plugin.handleModify(file);
+    }
+
+    // Should shift only once
+    expect(file.metadata.plannedEnd).toBe("11:30");
+  });
+});
+```
+
+### Benefits
+
+- **Multi-device safety**: Same result regardless of sync order
+- **No data corruption**: Operations don't accumulate errors
+- **Debuggability**: Hash/cache makes state traceable
+
+### Anti-Patterns to Avoid
+
+- ❌ Relying on debounce alone (sync can be delayed)
+- ❌ Using only in-memory cache (lost on restart)
+- ❌ Comparing timestamps with millisecond precision (rounding errors)
+- ❌ Skipping tests for sync scenarios
+
+**Reference**: Issue #2095, PR #2096 - Idempotency for plannedEndTimestamp (50 steps, February 2026)
+
+---
+
+## Post-Removal Dependency Cleanup Pattern
+
+**When to use**: After removing a major feature, clean up orphaned dependencies
+
+### Pattern Description
+
+When removing a large feature (like graph visualization), some dependencies become dead code. This pattern ensures complete cleanup of all orphaned packages.
+
+### Implementation Workflow
+
+```bash
+# 1. Verify feature is fully removed (prerequisite)
+test ! -f src/components/RemovedFeature.tsx || exit 1
+
+# 2. Identify orphaned dependencies with ripgrep
+rg "from ['\"]package-name['\"]" src/ --type ts
+# If empty → package is orphaned
+
+# 3. Remove each orphaned package
+npm uninstall package-name @types/package-name
+
+# 4. Rebuild and test
+npm run build && npm run test:all
+
+# 5. Measure bundle size reduction
+ls -lh dist/main.js  # Compare before/after
+```
+
+### February 2026 Example: D3, immer, zundo Removal
+
+After removing graph visualization (#2083), these dependencies became dead code:
+
+| Package | Size | Used By | Status After #2083 |
+|---------|------|---------|-------------------|
+| d3 | ~250 KB | SPARQLGraphView | Dead code |
+| immer | ~15 KB | Graph stores (Zustand) | Dead code |
+| zundo | ~5 KB | Nothing (never used) | Dead code |
+| @types/d3 | - | TypeScript | Dead code |
+
+**Verification Commands:**
+```bash
+# Check D3 imports (should be empty after graph removal)
+rg "from ['\"]d3['\"]" packages/obsidian-plugin/src/ --type ts
+
+# Check immer imports (only graph stores use it)
+rg "from ['\"]immer['\"]" packages/obsidian-plugin/src/ --type ts
+
+# Check zundo imports (should be empty)
+rg "from ['\"]zundo['\"]" packages/obsidian-plugin/src/ --type ts
+```
+
+### Best Practices
+
+1. **Use npm uninstall** - Don't manually edit package.json
+2. **Verify with ripgrep** - Ensure zero imports before removal
+3. **Check type imports** - Search for `import type { ... } from 'pkg'`
+4. **Rebuild immediately** - Catch missing dependencies early
+5. **Measure results** - Document bundle size reduction
+
+### Results Achieved (PR #2090)
+
+| Metric | Change |
+|--------|--------|
+| Lines removed | 762 (mostly package-lock.json) |
+| Packages removed | 4 (d3, @types/d3, immer, zundo) |
+| Bundle size | ~270 KB smaller |
+| Build time | Faster (fewer modules to process) |
+
+### Checklist for Dependency Cleanup
+
+- [ ] Feature removal PR is merged and released
+- [ ] All imports of candidate packages return empty from ripgrep
+- [ ] Both runtime (`from 'pkg'`) and type (`import type`) imports checked
+- [ ] Packages removed via `npm uninstall`
+- [ ] `npm run build` succeeds without warnings
+- [ ] `npm run test:all` passes
+- [ ] Bundle size measured and documented
+- [ ] CHANGELOG updated with removal notes
+
+### When NOT to Remove Dependencies
+
+- Package is used by remaining features (verify with ripgrep)
+- Package is a peer dependency of kept packages
+- Package provides polyfills needed at runtime
+- Removal causes TypeScript compilation errors
+
+**Reference**: Issue #2085, PR #2090 - Remove D3, immer, zundo (75 steps, -762 lines, February 2026)
