@@ -18,7 +18,7 @@ test.describe("ArchiveTaskButton Component", () => {
 
     // Component IS the button (no wrapper div)
     await expect(component).toBeVisible();
-    await expect(component).toHaveText("To Archive");
+    await expect(component).toHaveText("📦 To Archive");
   });
 
   test("should render button for Task with any status not archived", async ({
@@ -36,7 +36,7 @@ test.describe("ArchiveTaskButton Component", () => {
 
     // Component should now render for any non-archived asset
     await expect(component).toBeVisible();
-    await expect(component).toHaveText("To Archive");
+    await expect(component).toHaveText("📦 To Archive");
   });
 
   test("should NOT render button for already archived Task", async ({
@@ -71,7 +71,7 @@ test.describe("ArchiveTaskButton Component", () => {
 
     // Component should now render for any non-archived asset
     await expect(component).toBeVisible();
-    await expect(component).toHaveText("To Archive");
+    await expect(component).toHaveText("📦 To Archive");
   });
 
   test("should render button for Done Project not archived", async ({
@@ -89,7 +89,7 @@ test.describe("ArchiveTaskButton Component", () => {
 
     // Component IS the button (no wrapper div)
     await expect(component).toBeVisible();
-    await expect(component).toHaveText("To Archive");
+    await expect(component).toHaveText("📦 To Archive");
   });
 
   test("should render button for Project with any status not archived", async ({
@@ -107,7 +107,7 @@ test.describe("ArchiveTaskButton Component", () => {
 
     // Component should now render for any non-archived asset
     await expect(component).toBeVisible();
-    await expect(component).toHaveText("To Archive");
+    await expect(component).toHaveText("📦 To Archive");
   });
 
   test("should NOT render button for already archived Project", async ({
@@ -142,7 +142,7 @@ test.describe("ArchiveTaskButton Component", () => {
 
     // Component should now render for any non-archived asset, even without class
     await expect(component).toBeVisible();
-    await expect(component).toHaveText("To Archive");
+    await expect(component).toHaveText("📦 To Archive");
   });
 
   test("should handle Task class without brackets", async ({ mount }) => {
