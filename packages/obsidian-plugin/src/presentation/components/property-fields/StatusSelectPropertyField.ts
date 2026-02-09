@@ -1,5 +1,6 @@
 import { Setting } from "obsidian";
 import type { StatusSelectPropertyFieldProps, ValidationResult } from "./types";
+import { WikilinkLabelResolver } from "@plugin/presentation/utils/WikilinkLabelResolver";
 
 /**
  * Status options for effort status select.
@@ -102,6 +103,7 @@ export class StatusSelectPropertyField {
 
   /**
    * Normalize value to match option format.
+   * Supports wikilinks with aliases (e.g., [[ems__EffortStatusBacklog|Беклог]])
    */
   private normalizeValue(value: string): string {
     if (!value) return "";
@@ -113,9 +115,17 @@ export class StatusSelectPropertyField {
       }
     }
 
-    // Strip quotes first, then brackets to get base status name
-    let cleanValue = value.replace(/^"|"$/g, ""); // Remove outer quotes
-    cleanValue = cleanValue.replace(/^\[\[|\]\]$/g, ""); // Remove brackets
+    // Strip quotes first
+    let cleanValue = value.replace(/^"|"$/g, "");
+
+    // Parse wikilink to extract target (handles aliases like [[target|alias]])
+    const parsed = WikilinkLabelResolver.parseWikilink(cleanValue);
+    if (parsed) {
+      cleanValue = parsed.target;
+    } else {
+      // Fallback: remove brackets if not a valid wikilink format
+      cleanValue = cleanValue.replace(/^\[\[|\]\]$/g, "");
+    }
 
     for (const option of EFFORT_STATUS_OPTIONS) {
       const cleanOption = option.value.replace(/^\[\[|\]\]$/g, "");
@@ -146,11 +156,23 @@ export class StatusSelectPropertyField {
 
   /**
    * Get the display label for a status value.
+   * Supports wikilinks with aliases (e.g., [[ems__EffortStatusBacklog|Беклог]])
    */
   static getLabel(value: string): string {
     if (!value) return "-";
 
-    const cleanValue = value.replace(/^\[\[|\]\]$/g, "").replace(/^"|"$/g, "");
+    // Remove outer quotes first
+    let cleanValue = value.replace(/^"|"$/g, "");
+
+    // Parse wikilink to extract target (handles aliases like [[target|alias]])
+    const parsed = WikilinkLabelResolver.parseWikilink(cleanValue);
+    if (parsed) {
+      cleanValue = parsed.target;
+    } else {
+      // Fallback: remove brackets if not a valid wikilink format
+      cleanValue = cleanValue.replace(/^\[\[|\]\]$/g, "");
+    }
+
     for (const option of EFFORT_STATUS_OPTIONS) {
       const cleanOption = option.value.replace(/^\[\[|\]\]$/g, "");
       if (cleanOption === cleanValue) {
