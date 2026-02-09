@@ -167,6 +167,11 @@ export class PropertiesLinkPatch {
    * IMPORTANT: In multi-value properties, Obsidian places child elements like
    * remove buttons (×) inside the link element. We must preserve these by updating
    * only the text nodes, not replacing the entire innerHTML via textContent.
+   *
+   * IMPORTANT: Preserves user-defined aliases (Issue #2097).
+   * If the current textContent differs from the file basename AND the cleaned data-href,
+   * the user provided an explicit alias and we should not overwrite it.
+   * However, if we already patched this link (has data-original-text), allow re-patching.
    */
   private patchLink(linkEl: HTMLElement): void {
     // Get the file path from data-href attribute
@@ -177,12 +182,32 @@ export class PropertiesLinkPatch {
     const file = this.resolveFile(dataHref);
     if (!file) return;
 
+    // Clean the data-href to get what Obsidian would show for a bare wikilink
+    const cleanedDataHref = dataHref
+      .replace(/^\[\[|\]\]$/g, "") // Remove wikilink brackets
+      .replace(/^"|"$/g, "") // Remove quotes
+      .replace(/\.md$/, "") // Remove .md extension
+      .trim();
+
+    // Check for user-defined alias (Issue #2097)
+    // Get text content excluding interactive elements (like delete buttons)
+    const currentText = this.getTextContentForAliasCheck(linkEl).trim();
+    const wasAlreadyPatched = linkEl.hasAttribute("data-original-text");
+    const matchesBasename = currentText === file.basename;
+    const matchesDataHref = currentText === cleanedDataHref;
+    const hasUserAlias = currentText !== "" && !matchesBasename && !matchesDataHref && !wasAlreadyPatched;
+
+    if (hasUserAlias) {
+      // User provided explicit alias - preserve it, don't overwrite
+      return;
+    }
+
     // Get the display name for this file
     const displayName = this.getDisplayName(file);
     if (!displayName) return;
 
-    // Store original text for restoration (before any modifications)
-    const originalText = this.getTextContent(linkEl);
+    // Store original text for restoration (use data-original-text if already stored)
+    const originalText = linkEl.getAttribute("data-original-text") || this.getTextContent(linkEl);
     if (!linkEl.hasAttribute("data-original-text")) {
       linkEl.setAttribute("data-original-text", originalText);
     }
@@ -210,6 +235,33 @@ export class PropertiesLinkPatch {
       }
     }
     return text.trim() || el.textContent || "";
+  }
+
+  /**
+   * Get text content for alias detection, excluding interactive elements
+   * This is used to determine if user provided a custom alias.
+   * Excludes delete buttons and other interactive elements from the text.
+   */
+  private getTextContentForAliasCheck(el: HTMLElement): string {
+    let text = "";
+    for (const node of Array.from(el.childNodes)) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        text += node.textContent || "";
+      } else if (node.nodeType === Node.ELEMENT_NODE) {
+        const element = node as Element;
+        // Exclude interactive elements (delete buttons, etc.)
+        if (
+          element.classList?.contains("multi-select-pill-remove-button") ||
+          element.tagName === "BUTTON" ||
+          element.getAttribute("aria-label") === "Remove"
+        ) {
+          continue;
+        }
+        // Include text from non-interactive child elements (like text wrapper spans)
+        text += element.textContent || "";
+      }
+    }
+    return text.trim();
   }
 
   /**

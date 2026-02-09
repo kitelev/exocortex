@@ -179,6 +179,12 @@ export class BodyLinkPatch {
 
   /**
    * Patch a single link element
+   *
+   * IMPORTANT: Preserves user-defined aliases (Issue #2097).
+   * If the current textContent differs from the file basename AND the cleaned data-href,
+   * the user provided an explicit alias and we should not overwrite it.
+   * However, if we already patched this link (has data-body-patched),
+   * we should re-patch to pick up metadata changes.
    */
   private patchLink(linkEl: HTMLElement): void {
     // Get the file path from data-href attribute
@@ -189,12 +195,33 @@ export class BodyLinkPatch {
     const file = this.resolveFile(dataHref);
     if (!file) return;
 
+    // Clean the data-href to get what Obsidian would show for a bare wikilink
+    const cleanedDataHref = dataHref
+      .replace(/^\[\[|\]\]$/g, "") // Remove wikilink brackets
+      .replace(/^"|"$/g, "") // Remove quotes
+      .replace(/\.md$/, "") // Remove .md extension
+      .trim();
+
+    // Check for user-defined alias (Issue #2097)
+    // If textContent differs from BOTH file basename AND cleaned data-href,
+    // user provided explicit alias. BUT: if already patched, allow re-patching.
+    const currentText = (linkEl.textContent || "").trim();
+    const wasAlreadyPatched = linkEl.hasAttribute("data-body-patched");
+    const matchesBasename = currentText === file.basename;
+    const matchesDataHref = currentText === cleanedDataHref;
+    const hasUserAlias = currentText !== "" && !matchesBasename && !matchesDataHref && !wasAlreadyPatched;
+
+    if (hasUserAlias) {
+      // User provided explicit alias - preserve it, don't overwrite
+      return;
+    }
+
     // Get the display name for this file
     const displayName = this.getDisplayName(file);
     if (!displayName) return;
 
-    // Store original text for restoration
-    const originalText = linkEl.textContent || "";
+    // Store original text for restoration (use data-original-text if already stored)
+    const originalText = linkEl.getAttribute("data-original-text") || linkEl.textContent || "";
     if (!linkEl.hasAttribute("data-original-text")) {
       linkEl.setAttribute("data-original-text", originalText);
     }

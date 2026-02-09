@@ -402,6 +402,90 @@ describe("BodyLinkPatch", () => {
     });
   });
 
+  describe("user-defined alias preservation (issue #2097)", () => {
+    it("should preserve user-defined alias when link has custom text (not matching file basename)", () => {
+      // User wrote [[uuid|My Custom Name]] - Obsidian renders this with textContent="My Custom Name"
+      mockLink.textContent = "My Custom Name";
+      mockLink.setAttribute("data-href", "f2dccb6a-802d-48d3-8e8a-2c4264197692");
+
+      const mockFile = new TFile();
+      Object.defineProperty(mockFile, "extension", { value: "md" });
+      Object.defineProperty(mockFile, "basename", { value: "f2dccb6a-802d-48d3-8e8a-2c4264197692" });
+      Object.defineProperty(mockFile, "stat", {
+        value: { ctime: Date.now() },
+      });
+
+      mockApp.metadataCache.getFirstLinkpathDest.mockReturnValue(mockFile);
+      mockApp.metadataCache.getFileCache.mockReturnValue({
+        frontmatter: {
+          exo__Asset_label: "Auto Label from Metadata",
+          exo__Instance_class: "ems__Task",
+        },
+      });
+
+      patch.enable();
+
+      // User alias should be preserved - NOT overwritten with resolved label
+      expect(mockLink.textContent).toBe("My Custom Name");
+      // Should NOT be marked as patched since we preserved the alias
+      expect(mockLink.getAttribute("data-body-patched")).toBeNull();
+    });
+
+    it("should resolve label for bare wikilinks (text matches file basename)", () => {
+      // User wrote [[uuid]] - Obsidian renders this with textContent="uuid"
+      mockLink.textContent = "f2dccb6a-802d-48d3-8e8a-2c4264197692";
+      mockLink.setAttribute("data-href", "f2dccb6a-802d-48d3-8e8a-2c4264197692");
+
+      const mockFile = new TFile();
+      Object.defineProperty(mockFile, "extension", { value: "md" });
+      Object.defineProperty(mockFile, "basename", { value: "f2dccb6a-802d-48d3-8e8a-2c4264197692" });
+      Object.defineProperty(mockFile, "stat", {
+        value: { ctime: Date.now() },
+      });
+
+      mockApp.metadataCache.getFirstLinkpathDest.mockReturnValue(mockFile);
+      mockApp.metadataCache.getFileCache.mockReturnValue({
+        frontmatter: {
+          exo__Asset_label: "Task Label",
+          exo__Instance_class: "ems__Task",
+        },
+      });
+
+      patch.enable();
+
+      // Bare wikilink - label should be resolved
+      expect(mockLink.textContent).toBe("Task Label (ems__Task)");
+      expect(mockLink.getAttribute("data-body-patched")).toBe("true");
+    });
+
+    it("should preserve alias even when it differs only by whitespace from basename", () => {
+      // Edge case: user alias might have trimmed whitespace
+      mockLink.textContent = "Custom Alias";
+      mockLink.setAttribute("data-href", "custom-alias");
+
+      const mockFile = new TFile();
+      Object.defineProperty(mockFile, "extension", { value: "md" });
+      Object.defineProperty(mockFile, "basename", { value: "custom-alias" });
+      Object.defineProperty(mockFile, "stat", {
+        value: { ctime: Date.now() },
+      });
+
+      mockApp.metadataCache.getFirstLinkpathDest.mockReturnValue(mockFile);
+      mockApp.metadataCache.getFileCache.mockReturnValue({
+        frontmatter: {
+          exo__Asset_label: "Some Label",
+          exo__Instance_class: "ems__Task",
+        },
+      });
+
+      patch.enable();
+
+      // "Custom Alias" differs from "custom-alias" basename - preserve user alias
+      expect(mockLink.textContent).toBe("Custom Alias");
+      expect(mockLink.getAttribute("data-body-patched")).toBeNull();
+    });
+  });
+
   describe("metadata change handling", () => {
     it("should update link text when metadata changes", () => {
       const mockFile = new TFile();
