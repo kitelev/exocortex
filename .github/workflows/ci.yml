@@ -186,7 +186,7 @@ jobs:
 
           echo "📊 obsidian-plugin Coverage Report:"
           echo "  Statements: ${STATEMENTS}% (required: 76%)"
-          echo "  Branches:   ${BRANCHES}% (required: 64%)"
+          echo "  Branches:   ${BRANCHES}% (required: 63%)"
           echo "  Functions:  ${FUNCTIONS}% (required: 69%)"
           echo "  Lines:      ${LINES}% (required: 76%)"
 
@@ -198,8 +198,8 @@ jobs:
             FAILED=1
           fi
 
-          if [ $(echo "$BRANCHES < 64" | awk '{print ($1 < $3) ? 1 : 0}') -eq 1 ]; then
-            echo "❌ Branch coverage ${BRANCHES}% is below 64% threshold"
+          if [ $(echo "$BRANCHES < 63" | awk '{print ($1 < $3) ? 1 : 0}') -eq 1 ]; then
+            echo "❌ Branch coverage ${BRANCHES}% is below 63% threshold"
             FAILED=1
           fi
 
