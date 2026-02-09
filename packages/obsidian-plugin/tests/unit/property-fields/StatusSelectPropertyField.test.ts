@@ -216,6 +216,72 @@ describe("StatusSelectPropertyField", () => {
       ) as HTMLSelectElement | null;
       expect(select!.value).toBe("[[ems__EffortStatusDoing]]");
     });
+
+    describe("Issue #2098: wikilink alias handling", () => {
+      it("should normalize wikilink with English alias", () => {
+        new StatusSelectPropertyField(containerEl, {
+          property: {
+            uri: "ems:status",
+            name: "ems__Effort_status",
+            label: "Status",
+            fieldType: PropertyFieldType.StatusSelect,
+          },
+          value: "[[ems__EffortStatusBacklog|Backlog]]",
+          onChange: jest.fn(),
+        });
+
+        const select = containerEl.querySelector(
+          "select",
+        ) as HTMLSelectElement | null;
+        expect(select!.value).toBe("[[ems__EffortStatusBacklog]]");
+      });
+
+      it("should normalize wikilink with Russian alias", () => {
+        new StatusSelectPropertyField(containerEl, {
+          property: {
+            uri: "ems:status",
+            name: "ems__Effort_status",
+            label: "Status",
+            fieldType: PropertyFieldType.StatusSelect,
+          },
+          value: "[[ems__EffortStatusBacklog|Беклог]]",
+          onChange: jest.fn(),
+        });
+
+        const select = containerEl.querySelector(
+          "select",
+        ) as HTMLSelectElement | null;
+        expect(select!.value).toBe("[[ems__EffortStatusBacklog]]");
+      });
+
+      it("should normalize wikilink with alias for all status types", () => {
+        const statusCases = [
+          { input: "[[ems__EffortStatusDraft|Draft]]", expected: "[[ems__EffortStatusDraft]]" },
+          { input: "[[ems__EffortStatusBacklog|ems:Backlog]]", expected: "[[ems__EffortStatusBacklog]]" },
+          { input: "[[ems__EffortStatusDoing|В работе]]", expected: "[[ems__EffortStatusDoing]]" },
+          { input: "[[ems__EffortStatusDone|Готово]]", expected: "[[ems__EffortStatusDone]]" },
+          { input: "[[ems__EffortStatusTrashed|Удалено]]", expected: "[[ems__EffortStatusTrashed]]" },
+        ];
+
+        for (const { input, expected } of statusCases) {
+          const testContainer = document.createElement("div");
+          new StatusSelectPropertyField(testContainer, {
+            property: {
+              uri: "ems:status",
+              name: "ems__Effort_status",
+              label: "Status",
+              fieldType: PropertyFieldType.StatusSelect,
+            },
+            value: input,
+            onChange: jest.fn(),
+          });
+
+          const select = testContainer.querySelector("select") as HTMLSelectElement | null;
+          expect(select!.value).toBe(expected);
+          testContainer.remove();
+        }
+      });
+    });
   });
 
   describe("getLabel static method", () => {
@@ -245,6 +311,30 @@ describe("StatusSelectPropertyField", () => {
       expect(StatusSelectPropertyField.getLabel("unknown_status")).toBe(
         "unknown_status",
       );
+    });
+
+    describe("Issue #2098: wikilink alias handling", () => {
+      it("should return correct label for wikilink with English alias", () => {
+        expect(StatusSelectPropertyField.getLabel("[[ems__EffortStatusDoing|Doing]]")).toBe(
+          "Doing",
+        );
+      });
+
+      it("should return correct label for wikilink with Russian alias", () => {
+        expect(StatusSelectPropertyField.getLabel("[[ems__EffortStatusBacklog|Беклог]]")).toBe(
+          "Backlog",
+        );
+      });
+
+      it("should return correct label for all status types with aliases", () => {
+        expect(StatusSelectPropertyField.getLabel("[[ems__EffortStatusDraft|Черновик]]")).toBe("Draft");
+        expect(StatusSelectPropertyField.getLabel("[[ems__EffortStatusBacklog|ems:Backlog]]")).toBe("Backlog");
+        expect(StatusSelectPropertyField.getLabel("[[ems__EffortStatusAnalysis|Анализ]]")).toBe("Analysis");
+        expect(StatusSelectPropertyField.getLabel("[[ems__EffortStatusToDo|К выполнению]]")).toBe("To Do");
+        expect(StatusSelectPropertyField.getLabel("[[ems__EffortStatusDoing|В работе]]")).toBe("Doing");
+        expect(StatusSelectPropertyField.getLabel("[[ems__EffortStatusDone|Готово]]")).toBe("Done");
+        expect(StatusSelectPropertyField.getLabel("[[ems__EffortStatusTrashed|Удалено]]")).toBe("Trashed");
+      });
     });
   });
 

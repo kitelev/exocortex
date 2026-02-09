@@ -1,5 +1,6 @@
 import { Setting } from "obsidian";
 import type { SizeSelectPropertyFieldProps, ValidationResult } from "./types";
+import { WikilinkLabelResolver } from "@plugin/presentation/utils/WikilinkLabelResolver";
 
 /**
  * Task size options for size select.
@@ -101,6 +102,7 @@ export class SizeSelectPropertyField {
 
   /**
    * Normalize value to match option format.
+   * Supports wikilinks with aliases (e.g., [[ems__TaskSize_M|Medium]])
    */
   private normalizeValue(value: string): string {
     if (!value) return "";
@@ -112,8 +114,18 @@ export class SizeSelectPropertyField {
       }
     }
 
-    // Try to match without brackets or quotes
-    const cleanValue = value.replace(/^\[\[|\]\]$/g, "").replace(/^"|"$/g, "");
+    // Remove outer quotes first
+    let cleanValue = value.replace(/^"|"$/g, "");
+
+    // Parse wikilink to extract target (handles aliases like [[target|alias]])
+    const parsed = WikilinkLabelResolver.parseWikilink(cleanValue);
+    if (parsed) {
+      cleanValue = parsed.target;
+    } else {
+      // Fallback: remove brackets if not a valid wikilink format
+      cleanValue = cleanValue.replace(/^\[\[|\]\]$/g, "");
+    }
+
     for (const option of TASK_SIZE_OPTIONS) {
       const cleanOption = option.value.replace(/^\[\[|\]\]$/g, "");
       if (cleanOption === cleanValue) {
@@ -150,11 +162,23 @@ export class SizeSelectPropertyField {
 
   /**
    * Get the display label for a size value.
+   * Supports wikilinks with aliases (e.g., [[ems__TaskSize_M|Medium]])
    */
   static getLabel(value: string): string {
     if (!value) return "-";
 
-    const cleanValue = value.replace(/^\[\[|\]\]$/g, "").replace(/^"|"$/g, "");
+    // Remove outer quotes first
+    let cleanValue = value.replace(/^"|"$/g, "");
+
+    // Parse wikilink to extract target (handles aliases like [[target|alias]])
+    const parsed = WikilinkLabelResolver.parseWikilink(cleanValue);
+    if (parsed) {
+      cleanValue = parsed.target;
+    } else {
+      // Fallback: remove brackets if not a valid wikilink format
+      cleanValue = cleanValue.replace(/^\[\[|\]\]$/g, "");
+    }
+
     for (const option of TASK_SIZE_OPTIONS) {
       const cleanOption = option.value.replace(/^\[\[|\]\]$/g, "");
       if (cleanOption === cleanValue) {
