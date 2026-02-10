@@ -6118,3 +6118,123 @@ rg "from ['\"]zundo['\"]" packages/obsidian-plugin/src/ --type ts
 - Removal causes TypeScript compilation errors
 
 **Reference**: Issue #2085, PR #2090 - Remove D3, immer, zundo (75 steps, -762 lines, February 2026)
+
+---
+
+## RDF Dual Storage Pattern for UUID-based Wikilinks
+
+**When to use**: Storing UUID-based wikilinks in RDF format for improved SPARQL queryability
+
+### Problem Statement
+
+UUID-based wikilinks like `[[e3347bcf-bb50-4fb7-9064-14266469384b]]` are common in knowledge management systems for referencing assets by unique identifiers. When converted to RDF, storing only the File IRI makes UUID-literal SPARQL queries fail:
+
+```turtle
+# Only File IRI stored (old behavior)
+<note> exo:Asset_prototype <obsidian://vault/.../e3347bcf-bb50-4fb7-9064-14266469384b.md> .
+
+# This SPARQL query fails:
+SELECT ?s WHERE {
+  ?s exo:Asset_prototype "e3347bcf-bb50-4fb7-9064-14266469384b"
+}
+# Result: 0 matches (searching for Literal, stored as IRI)
+```
+
+### Solution: Dual Storage
+
+Store **both** File IRI and UUID Literal for UUID-based wikilinks:
+
+```turtle
+# Dual storage (new behavior)
+<note> exo:Asset_prototype <obsidian://vault/.../e3347bcf-bb50-4fb7-9064-14266469384b.md> .
+<note> exo:Asset_prototype "e3347bcf-bb50-4fb7-9064-14266469384b" .
+```
+
+Now both query patterns work:
+- By File IRI: `?s exo:Asset_prototype <obsidian://...>` ✅
+- By UUID Literal: `?s exo:Asset_prototype "e3347bcf-bb50-4fb7-9064-14266469384b"` ✅
+
+### Implementation Pattern
+
+```typescript
+// 1. Add UUID detection helper
+private isUUID(value: string): boolean {
+  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  return uuidPattern.test(value);
+}
+
+// 2. Modify return type to support array (dual storage)
+private async valueToRDFObject(
+  value: any,
+  sourceFile: IFile
+): Promise<(IRI | Literal)[]> {  // Changed from single value to array
+  // ... existing wikilink extraction logic ...
+
+  if (targetFile) {
+    const fileIRI = this.notePathToIRI(targetFile.path);
+
+    // If wikilink is a UUID, store both IRI and Literal
+    if (this.isUUID(wikilink)) {
+      const uuidLiteral = new Literal(wikilink);
+      return [fileIRI, uuidLiteral];
+    }
+
+    return [fileIRI];  // Non-UUID: single value
+  }
+  // ... rest of logic ...
+}
+
+// 3. Update caller to handle array (flatten results)
+for (const val of Array.isArray(propValue) ? propValue : [propValue]) {
+  const objectNodes = await this.valueToRDFObject(val, file);
+  for (const objectNode of objectNodes) {
+    triples.push(new Triple(subject, predicate, objectNode));
+  }
+}
+```
+
+### Key Implementation Details
+
+1. **UUID Regex**: Use case-insensitive pattern to match UUIDs in any case format
+2. **Extract from wikilink**: Store the clean UUID, not `[[uuid]]`
+3. **Conditional dual storage**: Only apply when wikilink IS a UUID (non-UUID wikilinks store single IRI)
+4. **No duplicate when file doesn't exist**: If target file not found, fall back to single Literal (existing behavior)
+5. **Array flattening**: Caller must iterate over returned array
+
+### Test Coverage Requirements
+
+| Test Case | Expected Behavior |
+|-----------|-------------------|
+| Valid lowercase UUID | `isUUID()` returns true |
+| Valid uppercase UUID | `isUUID()` returns true |
+| Non-UUID string | `isUUID()` returns false |
+| UUID without dashes | `isUUID()` returns false |
+| UUID wikilink (file exists) | Returns `[IRI, Literal]` |
+| Non-UUID wikilink | Returns `[IRI]` (single element) |
+| UUID wikilink (file missing) | Returns `[Literal]` (single element) |
+| Array of UUID wikilinks | Each element produces 2 triples |
+
+### Benefits
+
+- **SPARQL flexibility**: Query by either File IRI or UUID Literal
+- **No breaking changes**: File IRI still works for graph navigation
+- **Additive**: Existing queries continue to work
+- **Selective**: Only applies to UUID wikilinks (no overhead for regular wikilinks)
+
+### When to Apply
+
+- Properties that reference assets by UUID (e.g., `exo__Asset_prototype`, `ems__Effort_parent`)
+- Knowledge graphs where UUID-based queries are common
+- Systems needing to search by UUID without file path resolution
+
+### Performance Considerations
+
+- **Additional triples**: Each UUID wikilink produces 2 triples instead of 1
+- **Index size**: RDF store grows ~proportionally to UUID wikilink count
+- **Query speed**: Literal lookup may be faster than IRI lookup (shorter strings)
+
+**Acceptable overhead**: For a vault with 10,000 notes and 50% UUID references:
+- Additional triples: ~5,000 (negligible for modern RDF stores)
+- Query performance: Unchanged (both patterns indexed)
+
+**Reference**: Issue #2102, PR #2104 - Dual storage for UUID-based wikilinks (72 steps, +296 lines, February 2026)
