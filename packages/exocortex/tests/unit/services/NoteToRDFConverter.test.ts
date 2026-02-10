@@ -2397,4 +2397,230 @@ It can contain **markdown** formatting.
       });
     });
   });
+
+  // Issue #2102: Dual storage for UUID-based wikilinks
+  describe("Dual storage for UUID-based wikilinks (Issue #2102)", () => {
+    const file: IFile = {
+      path: "test-note.md",
+      basename: "test-note",
+      name: "test-note.md",
+      parent: null,
+    };
+
+    describe("isUUID helper method", () => {
+      it("should detect valid lowercase UUIDs", () => {
+        expect(converter.isUUID("e3347bcf-bb50-4fb7-9064-14266469384b")).toBe(true);
+        expect(converter.isUUID("f2dccb6a-802d-48d3-8e8a-2c4264197692")).toBe(true);
+        expect(converter.isUUID("2d369bb0-159f-4639-911d-ec2c585e8d00")).toBe(true);
+      });
+
+      it("should detect valid uppercase UUIDs", () => {
+        expect(converter.isUUID("E3347BCF-BB50-4FB7-9064-14266469384B")).toBe(true);
+      });
+
+      it("should detect valid mixed-case UUIDs", () => {
+        expect(converter.isUUID("e3347BCF-bb50-4FB7-9064-14266469384b")).toBe(true);
+      });
+
+      it("should reject non-UUID strings", () => {
+        expect(converter.isUUID("not-a-uuid")).toBe(false);
+        expect(converter.isUUID("ems__Task")).toBe(false);
+        expect(converter.isUUID("My Document")).toBe(false);
+        expect(converter.isUUID("123")).toBe(false);
+        expect(converter.isUUID("")).toBe(false);
+      });
+
+      it("should reject UUIDs without dashes", () => {
+        expect(converter.isUUID("e3347bcfbb504fb7906414266469384b")).toBe(false);
+      });
+
+      it("should reject UUIDs with wrong format", () => {
+        expect(converter.isUUID("e3347bcf-bb50-4fb7-9064-14266469384")).toBe(false); // too short
+        expect(converter.isUUID("e3347bcf-bb50-4fb7-9064-14266469384bb")).toBe(false); // too long
+        expect(converter.isUUID("g3347bcf-bb50-4fb7-9064-14266469384b")).toBe(false); // invalid char
+      });
+    });
+
+    describe("valueToRDFObjects dual storage", () => {
+      it("should return array with IRI and Literal for UUID wikilink when file exists", async () => {
+        const uuid = "e3347bcf-bb50-4fb7-9064-14266469384b";
+        const targetFile: IFile = {
+          path: `03 Knowledge/kitelev/${uuid}.md`,
+          basename: uuid,
+          name: `${uuid}.md`,
+          parent: null,
+        };
+
+        mockVault.getFirstLinkpathDest.mockReturnValue(targetFile);
+
+        const frontmatter: IFrontmatter = {
+          exo__Asset_prototype: `[[${uuid}]]`,
+        };
+
+        mockVault.getFrontmatter.mockReturnValue(frontmatter);
+        mockVault.read.mockResolvedValue("---\nsome: yaml\n---\n");
+
+        const triples = await converter.convertNote(file);
+
+        // Find triples for exo__Asset_prototype
+        const prototypeTriples = triples.filter((t) =>
+          (t.predicate as IRI).value.includes("Asset_prototype")
+        );
+
+        // Should have 2 triples: one with IRI (file reference), one with Literal (UUID)
+        expect(prototypeTriples.length).toBe(2);
+
+        // One should be an IRI (file path)
+        const iriTriple = prototypeTriples.find((t) => t.object instanceof IRI);
+        expect(iriTriple).toBeDefined();
+        expect((iriTriple!.object as IRI).value).toContain("obsidian://vault/");
+        expect((iriTriple!.object as IRI).value).toContain(uuid);
+
+        // One should be a Literal (UUID string)
+        const literalTriple = prototypeTriples.find((t) => t.object instanceof Literal);
+        expect(literalTriple).toBeDefined();
+        expect((literalTriple!.object as Literal).value).toBe(uuid);
+      });
+
+      it("should return array with single IRI for non-UUID wikilink", async () => {
+        const targetFile: IFile = {
+          path: "Development.md",
+          basename: "Development",
+          name: "Development.md",
+          parent: null,
+        };
+
+        mockVault.getFirstLinkpathDest.mockReturnValue(targetFile);
+
+        const frontmatter: IFrontmatter = {
+          ems__Effort_area: "[[Development]]",
+        };
+
+        mockVault.getFrontmatter.mockReturnValue(frontmatter);
+        mockVault.read.mockResolvedValue("---\nsome: yaml\n---\n");
+
+        const triples = await converter.convertNote(file);
+
+        // Find triples for ems__Effort_area
+        const areaTriples = triples.filter((t) =>
+          (t.predicate as IRI).value.includes("Effort_area")
+        );
+
+        // Should have 1 triple (non-UUID wikilink)
+        expect(areaTriples.length).toBe(1);
+        expect(areaTriples[0].object).toBeInstanceOf(IRI);
+        expect((areaTriples[0].object as IRI).value).toContain("obsidian://vault/Development.md");
+      });
+
+      it("should store UUID literal without brackets when extracting from wikilink", async () => {
+        const uuid = "f2dccb6a-802d-48d3-8e8a-2c4264197692";
+        const targetFile: IFile = {
+          path: `inbox/${uuid}.md`,
+          basename: uuid,
+          name: `${uuid}.md`,
+          parent: null,
+        };
+
+        mockVault.getFirstLinkpathDest.mockReturnValue(targetFile);
+
+        const frontmatter: IFrontmatter = {
+          exo__Asset_prototype: `[[${uuid}]]`,
+        };
+
+        mockVault.getFrontmatter.mockReturnValue(frontmatter);
+        mockVault.read.mockResolvedValue("---\nsome: yaml\n---\n");
+
+        const triples = await converter.convertNote(file);
+
+        const prototypeTriples = triples.filter((t) =>
+          (t.predicate as IRI).value.includes("Asset_prototype")
+        );
+
+        const literalTriple = prototypeTriples.find((t) => t.object instanceof Literal);
+        expect(literalTriple).toBeDefined();
+        // UUID should be stored without the wikilink brackets
+        expect((literalTriple!.object as Literal).value).toBe(uuid);
+        expect((literalTriple!.object as Literal).value).not.toContain("[[");
+        expect((literalTriple!.object as Literal).value).not.toContain("]]");
+      });
+
+      it("should handle array of UUID wikilinks", async () => {
+        const uuid1 = "e3347bcf-bb50-4fb7-9064-14266469384b";
+        const uuid2 = "f2dccb6a-802d-48d3-8e8a-2c4264197692";
+
+        mockVault.getFirstLinkpathDest.mockImplementation((linkpath: string) => {
+          if (linkpath === uuid1) {
+            return {
+              path: `knowledge/${uuid1}.md`,
+              basename: uuid1,
+              name: `${uuid1}.md`,
+              parent: null,
+            };
+          }
+          if (linkpath === uuid2) {
+            return {
+              path: `knowledge/${uuid2}.md`,
+              basename: uuid2,
+              name: `${uuid2}.md`,
+              parent: null,
+            };
+          }
+          return null;
+        });
+
+        const frontmatter: IFrontmatter = {
+          exo__Asset_references: [`[[${uuid1}]]`, `[[${uuid2}]]`],
+        };
+
+        mockVault.getFrontmatter.mockReturnValue(frontmatter);
+        mockVault.read.mockResolvedValue("---\nsome: yaml\n---\n");
+
+        const triples = await converter.convertNote(file);
+
+        const referenceTriples = triples.filter((t) =>
+          (t.predicate as IRI).value.includes("Asset_references")
+        );
+
+        // Each UUID wikilink should produce 2 triples (IRI + Literal)
+        // So 2 UUIDs * 2 triples = 4 triples
+        expect(referenceTriples.length).toBe(4);
+
+        const iriTriples = referenceTriples.filter((t) => t.object instanceof IRI);
+        const literalTriples = referenceTriples.filter((t) => t.object instanceof Literal);
+
+        expect(iriTriples.length).toBe(2);
+        expect(literalTriples.length).toBe(2);
+
+        // Verify UUIDs are stored as literals
+        const literalValues = literalTriples.map((t) => (t.object as Literal).value);
+        expect(literalValues).toContain(uuid1);
+        expect(literalValues).toContain(uuid2);
+      });
+
+      it("should not create duplicate Literal when wikilink target file doesn't exist", async () => {
+        const uuid = "e3347bcf-bb50-4fb7-9064-14266469384b";
+
+        // File not found
+        mockVault.getFirstLinkpathDest.mockReturnValue(null);
+
+        const frontmatter: IFrontmatter = {
+          exo__Asset_prototype: `[[${uuid}]]`,
+        };
+
+        mockVault.getFrontmatter.mockReturnValue(frontmatter);
+        mockVault.read.mockResolvedValue("---\nsome: yaml\n---\n");
+
+        const triples = await converter.convertNote(file);
+
+        const prototypeTriples = triples.filter((t) =>
+          (t.predicate as IRI).value.includes("Asset_prototype")
+        );
+
+        // When file doesn't exist, should fall back to literal (existing behavior)
+        // Should be 1 triple, not 2 (no dual storage when file doesn't exist)
+        expect(prototypeTriples.length).toBe(1);
+        expect(prototypeTriples[0].object).toBeInstanceOf(Literal);
+      });
+    });
+  });
 });

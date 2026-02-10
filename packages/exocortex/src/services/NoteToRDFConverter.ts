@@ -106,20 +106,23 @@ export class NoteToRDFConverter {
           const objectNode = this.valueToClassURI(val);
           triples.push(new Triple(subject, predicate, objectNode));
         } else {
-          const objectNode = await this.valueToRDFObject(val, file);
-          triples.push(new Triple(subject, predicate, objectNode));
+          // Issue #2102: valueToRDFObject now returns array for dual storage support
+          const objectNodes = await this.valueToRDFObject(val, file);
+          for (const objectNode of objectNodes) {
+            triples.push(new Triple(subject, predicate, objectNode));
 
-          // Issue #871: Generate additional RDFS triple for properties with vocabulary mappings
-          // This enables SPARQL queries using standard RDFS predicates like rdfs:domain, rdfs:range
-          // to work with Exocortex ontology properties.
-          if (this.vocabularyMapper.hasMappingFor(key) && objectNode instanceof IRI) {
-            const mappedTriple = this.vocabularyMapper.generateMappedTriple(
-              subject,
-              key,
-              objectNode,
-            );
-            if (mappedTriple) {
-              triples.push(mappedTriple);
+            // Issue #871: Generate additional RDFS triple for properties with vocabulary mappings
+            // This enables SPARQL queries using standard RDFS predicates like rdfs:domain, rdfs:range
+            // to work with Exocortex ontology properties.
+            if (this.vocabularyMapper.hasMappingFor(key) && objectNode instanceof IRI) {
+              const mappedTriple = this.vocabularyMapper.generateMappedTriple(
+                subject,
+                key,
+                objectNode,
+              );
+              if (mappedTriple) {
+                triples.push(mappedTriple);
+              }
             }
           }
         }
@@ -464,10 +467,20 @@ export class NoteToRDFConverter {
     throw new Error(`Invalid property key: ${key}`);
   }
 
+  /**
+   * Converts a frontmatter value to RDF object(s).
+   *
+   * Issue #2102: For UUID-based wikilinks, returns both File IRI and UUID Literal
+   * to enable SPARQL queries that search by UUID string.
+   *
+   * @param value - The frontmatter value to convert
+   * @param sourceFile - The source file for resolving wikilinks
+   * @returns Array of RDF objects (IRI or Literal). UUID wikilinks return [IRI, Literal].
+   */
   private async valueToRDFObject(
     value: any,
     sourceFile: IFile
-  ): Promise<IRI | Literal> {
+  ): Promise<(IRI | Literal)[]> {
     if (typeof value === "string") {
       const cleanValue = this.removeQuotes(value);
 
@@ -478,51 +491,61 @@ export class NoteToRDFConverter {
           sourceFile.path
         );
         if (targetFile) {
-          return this.notePathToIRI(targetFile.path);
+          const fileIRI = this.notePathToIRI(targetFile.path);
+
+          // Issue #2102: If wikilink is a UUID, store both IRI and Literal
+          // This enables SPARQL queries like:
+          // ?s exo:Asset_prototype "e3347bcf-bb50-4fb7-9064-14266469384b"
+          if (this.isUUID(wikilink)) {
+            const uuidLiteral = new Literal(wikilink);
+            return [fileIRI, uuidLiteral];
+          }
+
+          return [fileIRI];
         }
         // If target file not found but wikilink is a class reference,
         // expand to namespace URI (Issue #667, #668: normalize Instance_class/Property_domain)
         if (this.isClassReference(wikilink)) {
           const classIRI = this.expandClassValue(wikilink);
           if (classIRI) {
-            return classIRI;
+            return [classIRI];
           }
         }
-        return new Literal(cleanValue);
+        return [new Literal(cleanValue)];
       }
 
       if (this.isClassReference(cleanValue)) {
         const classIRI = this.expandClassValue(cleanValue);
         if (classIRI) {
-          return classIRI;
+          return [classIRI];
         }
       }
 
       // Check for ISO 8601 dateTime format and apply xsd:dateTime datatype
       if (this.isISO8601DateTime(cleanValue)) {
-        return new Literal(cleanValue, Namespace.XSD.term("dateTime"));
+        return [new Literal(cleanValue, Namespace.XSD.term("dateTime"))];
       }
 
-      return new Literal(cleanValue);
+      return [new Literal(cleanValue)];
     }
 
     if (typeof value === "boolean") {
-      return new Literal(value.toString());
+      return [new Literal(value.toString())];
     }
 
     if (typeof value === "number") {
-      return new Literal(
+      return [new Literal(
         value.toString(),
         Namespace.XSD.term("decimal")
-      );
+      )];
     }
 
     // Handle Date objects (js-yaml auto-parses ISO 8601 strings to Date)
     if (value instanceof Date) {
-      return new Literal(value.toISOString(), Namespace.XSD.term("dateTime"));
+      return [new Literal(value.toISOString(), Namespace.XSD.term("dateTime"))];
     }
 
-    return new Literal(String(value));
+    return [new Literal(String(value))];
   }
 
   /**
@@ -606,6 +629,27 @@ export class NoteToRDFConverter {
     // Invalid: "ems__Effort_blocker сделать массивом" (contains spaces)
     return (value.startsWith("ems__") || value.startsWith("exo__"))
       && !/\s/.test(value);
+  }
+
+  /**
+   * Check if a string is a valid UUID format.
+   *
+   * Issue #2102: Used to detect UUID-based wikilinks for dual storage
+   * (both File IRI and UUID Literal).
+   *
+   * @param value - String to check
+   * @returns True if value is a valid UUID format
+   *
+   * @example
+   * ```typescript
+   * isUUID("e3347bcf-bb50-4fb7-9064-14266469384b")  // → true
+   * isUUID("ems__Task")                              // → false
+   * isUUID("My Document")                            // → false
+   * ```
+   */
+  isUUID(value: string): boolean {
+    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    return uuidPattern.test(value);
   }
 
   private expandClassValue(value: string): IRI | null {
