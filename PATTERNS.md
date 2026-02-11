@@ -6238,3 +6238,175 @@ for (const val of Array.isArray(propValue) ? propValue : [propValue]) {
 - Query performance: Unchanged (both patterns indexed)
 
 **Reference**: Issue #2102, PR #2104 - Dual storage for UUID-based wikilinks (72 steps, +296 lines, February 2026)
+
+---
+
+## Dead Code Elimination Pattern
+
+**When to use**: Removing unused packages, modules, or features from a monorepo codebase
+
+### Pattern Description
+
+Systematic approach to safely remove dead code, ensuring no hidden dependencies exist before deletion. Critical for maintaining a clean, efficient codebase.
+
+### Verification Workflow (MANDATORY Before Deletion)
+
+```bash
+# 1. Identify candidate for removal
+# Look for packages/modules with no imports in src/ directories
+
+# 2. Comprehensive grep search - MUST return zero results
+grep -r "package-name" packages/*/src/ --include="*.ts" --include="*.tsx"
+grep -r "ImportedClass\|ImportedFunction" packages/*/src/
+
+# 3. Check package.json dependencies
+grep -r "package-name" packages/*/package.json
+
+# 4. Check for indirect references (re-exports, barrel files)
+grep -r "from.*package-name" packages/*/src/index.ts
+
+# 5. Search test files (tests may import but don't count as "usage")
+grep -r "package-name" packages/*/tests/ --include="*.ts"
+```
+
+### Implementation Steps
+
+| Step | Action | Validation |
+|------|--------|------------|
+| 1 | Verify unused | `grep` returns zero results in src/ |
+| 2 | Check tsconfig.json | Remove from `references` if present |
+| 3 | Remove directory | `rm -rf packages/package-name/` |
+| 4 | Clean lockfile | Run `npm install` to regenerate |
+| 5 | Verify build | `npm run build` passes |
+| 6 | Run tests | All tests pass |
+
+### Real-World Example: physics-wasm Removal (Issue #2106)
+
+**Background**: `packages/physics-wasm/` provided physics simulation for force-directed graph visualization. After graph feature removal in previous refactoring, the package became dead code.
+
+**Verification**:
+```bash
+grep -r "physics-wasm\|PhysicsEngine\|ForceGraph" packages/*/src/
+# (no results) ✓ - Confirmed unused
+```
+
+**Files Removed** (2,320 lines total):
+
+| File | Lines | Purpose |
+|------|-------|---------|
+| `assembly/index.ts` | 770 | AssemblyScript WASM source |
+| `src/PhysicsEngine.ts` | 596 | TypeScript engine wrapper |
+| `tests/PhysicsEngine.test.ts` | 428 | Unit tests |
+| `src/types.ts` | 278 | Type definitions |
+| `src/index.ts` | 56 | Barrel export |
+| `package.json` | 38 | Package manifest |
+| `asconfig.json` | 37 | AssemblyScript config |
+| `jest.config.js` | 24 | Test config |
+| `tsconfig.json` | 21 | TypeScript config |
+| `.gitignore` | 13 | Git ignore |
+| `assembly/tsconfig.json` | 6 | WASM TypeScript config |
+
+**tsconfig.json Update Required**:
+```json
+// Before
+{
+  "references": [
+    { "path": "packages/core" },
+    { "path": "packages/physics-wasm" },  // ← Remove this line
+    { "path": "packages/obsidian-plugin" }
+  ]
+}
+
+// After
+{
+  "references": [
+    { "path": "packages/core" },
+    { "path": "packages/obsidian-plugin" }
+  ]
+}
+```
+
+### Benefits of Proactive Dead Code Removal
+
+| Benefit | Impact |
+|---------|--------|
+| **Reduced build time** | Fewer packages to compile |
+| **Smaller bundle** | Less code = faster load |
+| **Lower maintenance** | No outdated deps to update |
+| **Cleaner codebase** | Easier navigation for AI agents |
+| **Reduced attack surface** | Fewer potential vulnerabilities |
+| **Cleaner lockfile** | Removed ~52 lines from package-lock.json |
+
+### When to Trigger Dead Code Audit
+
+- After removing a major feature (e.g., graph visualization)
+- During refactoring sprints
+- When updating dependencies (check for orphaned packages)
+- Quarterly codebase health review
+- After feature flag removal
+
+### Common Dead Code Candidates
+
+| Type | Detection Method |
+|------|------------------|
+| Unused packages | `grep -r "package-name" packages/*/src/` |
+| Orphan utilities | Search for functions with 0 call sites |
+| Legacy features | Check for feature flags always false |
+| Deprecated APIs | Search for `@deprecated` annotations |
+| Test-only imports | Only imported in tests/, not src/ |
+
+### Anti-Patterns to Avoid
+
+**❌ Don't delete without verification:**
+```bash
+# WRONG: Assume unused because "I don't remember using it"
+rm -rf packages/something/
+
+# CORRECT: Always verify with grep first
+grep -r "something" packages/*/src/ || rm -rf packages/something/
+```
+
+**❌ Don't keep "just in case":**
+```
+Keeping dead code "in case we need it later" is an anti-pattern:
+- Git history preserves everything (can recover with `git checkout`)
+- Dead code still needs maintenance (dependency updates)
+- Confuses new contributors and AI agents
+- Increases CI time and bundle size
+```
+
+**❌ Don't skip lockfile regeneration:**
+```bash
+# WRONG: Delete package but keep old lockfile entries
+rm -rf packages/something/
+
+# CORRECT: Always regenerate lockfile
+rm -rf packages/something/ && npm install
+```
+
+### Metrics (Issue #2106)
+
+| Metric | Value |
+|--------|-------|
+| Steps | 47 |
+| Lines removed | 2,320 |
+| Files deleted | 13 |
+| Time | ~15-20 minutes |
+| Errors encountered | 0 |
+| CI status | ✅ All checks passed |
+
+### Rollback Plan
+
+If deletion causes unexpected issues:
+```bash
+# Restore from git history
+git checkout HEAD~1 -- packages/physics-wasm/
+
+# Reinstall dependencies
+npm install
+
+# Verify build
+npm run build
+```
+
+**Reference**: Issue #2106, PR #2107 - Remove unused physics-wasm package (47 steps, -2320 lines, February 2026)
