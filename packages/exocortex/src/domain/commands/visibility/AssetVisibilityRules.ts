@@ -37,8 +37,10 @@ export function canCreateEvent(context: CommandVisibilityContext): boolean {
  */
 export function canCreateInstance(context: CommandVisibilityContext): boolean {
   // Check for known prototype instance classes (backward compatibility)
+  // Includes both string-based and UID-based identifiers (Issue #2110)
   if (
     hasClass(context.instanceClass, AssetClass.TASK_PROTOTYPE) ||
+    hasClass(context.instanceClass, AssetClass.TASK_PROTOTYPE_UID) ||
     hasClass(context.instanceClass, AssetClass.MEETING_PROTOTYPE) ||
     hasClass(context.instanceClass, AssetClass.EVENT_PROTOTYPE) ||
     hasClass(context.instanceClass, AssetClass.PROJECT_PROTOTYPE)

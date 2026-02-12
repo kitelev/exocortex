@@ -32,6 +32,59 @@ describe("CommandVisibility - Instance/Subclass Commands", () => {
       expect(canCreateInstance(context)).toBe(true);
     });
 
+    // UID-based class identifier tests for Issue #2110
+    describe("UID-based class identifier for TaskPrototype", () => {
+      const TASK_PROTOTYPE_UID = "75302770-279e-4a59-ba85-09df29725713";
+
+      it("should return true for TaskPrototype UID with wiki-link brackets", () => {
+        const context: CommandVisibilityContext = {
+          instanceClass: `[[${TASK_PROTOTYPE_UID}]]`,
+          currentStatus: null,
+          metadata: {},
+          isArchived: false,
+          currentFolder: "",
+          expectedFolder: null,
+        };
+        expect(canCreateInstance(context)).toBe(true);
+      });
+
+      it("should return true for TaskPrototype UID without brackets", () => {
+        const context: CommandVisibilityContext = {
+          instanceClass: TASK_PROTOTYPE_UID,
+          currentStatus: null,
+          metadata: {},
+          isArchived: false,
+          currentFolder: "",
+          expectedFolder: null,
+        };
+        expect(canCreateInstance(context)).toBe(true);
+      });
+
+      it("should return true for array with TaskPrototype UID", () => {
+        const context: CommandVisibilityContext = {
+          instanceClass: [`[[${TASK_PROTOTYPE_UID}]]`, "[[SomeOtherClass]]"],
+          currentStatus: null,
+          metadata: {},
+          isArchived: false,
+          currentFolder: "",
+          expectedFolder: null,
+        };
+        expect(canCreateInstance(context)).toBe(true);
+      });
+
+      it("should return true for mixed array with string name and UID", () => {
+        const context: CommandVisibilityContext = {
+          instanceClass: ["[[SomeOtherClass]]", `[[${TASK_PROTOTYPE_UID}]]`],
+          currentStatus: null,
+          metadata: {},
+          isArchived: false,
+          currentFolder: "",
+          expectedFolder: null,
+        };
+        expect(canCreateInstance(context)).toBe(true);
+      });
+    });
+
     it("should return false for ems__Task", () => {
       const context: CommandVisibilityContext = {
         instanceClass: "[[ems__Task]]",

@@ -101,6 +101,8 @@ export const DEFAULT_DISPLAY_NAME_SETTINGS: DisplayNameSettings = {
 
   classTemplates: {
     "ems__TaskPrototype": "{{exo__Asset_label}} (TaskPrototype)",
+    // UID-based identifier for ems__TaskPrototype (Issue #2110)
+    "75302770-279e-4a59-ba85-09df29725713": "{{exo__Asset_label}} (TaskPrototype)",
     "ems__Task": "{{exo__Asset_label}} {{statusEmoji}}",
     "ems__Project": "{{exo__Asset_label}}",
     "ems__Area": "{{exo__Asset_label}}",
