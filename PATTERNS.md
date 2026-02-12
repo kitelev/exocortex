@@ -6410,3 +6410,130 @@ npm run build
 ```
 
 **Reference**: Issue #2106, PR #2107 - Remove unused physics-wasm package (47 steps, -2320 lines, February 2026)
+
+---
+
+## Dual Identifier Backward Compatibility Pattern
+
+**When to use**: Migrating from string-based identifiers (e.g., `ems__TaskPrototype`) to UID-based identifiers (e.g., `75302770-279e-4a59-ba85-09df29725713`) while maintaining backward compatibility.
+
+### Pattern Description
+
+When renaming asset files from human-readable names to UID-based names (for consistency and uniqueness), the code must recognize both identifier formats to avoid breaking existing vaults.
+
+### Implementation Structure
+
+```
+1. Add UID constant alongside existing string constant
+   ↓
+2. Update all visibility/detection rules to check BOTH identifiers
+   ↓
+3. Update settings/templates for UID-based display
+   ↓
+4. Write tests for BOTH identifiers
+```
+
+### Code Example (Issue #2110, PR #2111)
+
+**Step 1: Add constant to AssetClass.ts**
+```typescript
+// packages/exocortex/src/domain/constants/AssetClass.ts
+export enum AssetClass {
+  // Existing string-based identifier
+  TASK_PROTOTYPE = "ems__TaskPrototype",
+
+  // NEW: UID-based identifier (same class, different file naming)
+  TASK_PROTOTYPE_UID = "75302770-279e-4a59-ba85-09df29725713",
+}
+```
+
+**Step 2: Update visibility rules**
+```typescript
+// packages/exocortex/src/domain/commands/visibility/AssetVisibilityRules.ts
+export function canCreateInstance(context: CommandVisibilityContext): boolean {
+  if (
+    hasClass(context.instanceClass, AssetClass.TASK_PROTOTYPE) ||
+    hasClass(context.instanceClass, AssetClass.TASK_PROTOTYPE_UID) ||  // NEW
+    // ... other prototypes
+  ) {
+    return true;
+  }
+  return isPrototypeClass(context.instanceClass, context.metadata);
+}
+```
+
+**Step 3: Update display settings**
+```typescript
+// packages/obsidian-plugin/src/domain/settings/ExocortexSettings.ts
+classTemplates: {
+  "ems__TaskPrototype": "{{exo__Asset_label}} (TaskPrototype)",
+  // NEW: Same template for UID-based identifier
+  "75302770-279e-4a59-ba85-09df29725713": "{{exo__Asset_label}} (TaskPrototype)",
+}
+```
+
+**Step 4: Update button builders**
+```typescript
+// packages/obsidian-plugin/src/presentation/builders/button-groups/CreationButtonGroupBuilder.ts
+const defaultValue = isMeeting ||
+  sourceClass === AssetClass.TASK_PROTOTYPE ||
+  sourceClass === AssetClass.TASK_PROTOTYPE_UID  // NEW
+    ? this.generateDefaultLabel(metadata, file.basename)
+    : "";
+```
+
+### Test Pattern
+
+```typescript
+describe("canCreateInstance", () => {
+  it.each([
+    ["string-based", AssetClass.TASK_PROTOTYPE],
+    ["UID-based", AssetClass.TASK_PROTOTYPE_UID],
+  ])("should return true for %s TaskPrototype", (_, classValue) => {
+    const context = createContext({ instanceClass: classValue });
+    expect(canCreateInstance(context)).toBe(true);
+  });
+});
+```
+
+### Key Benefits
+
+1. **Zero downtime migration**: Users can rename files at their own pace
+2. **Backward compatibility**: Old vaults with string-based names continue working
+3. **Forward compatibility**: New vaults use UID-based naming from start
+4. **Consistent behavior**: Same functionality regardless of identifier format
+
+### When to Apply
+
+- Migrating prototype classes (TaskPrototype, MeetingPrototype, ProjectPrototype)
+- Renaming any asset class from human-readable to UID format
+- Adding support for wikilink-style UIDs (e.g., `[[75302770-...]]`)
+
+### Gotchas
+
+- **Search all usages**: `grep -r "ems__TaskPrototype"` to find all hardcoded strings
+- **Same template for both**: Display templates should be identical to avoid UX confusion
+- **Test both identifiers**: Parameterized tests (`it.each`) ensure both paths work
+- **Wikilink stripping**: UID may arrive as `"[[uuid]]"` - strip brackets before comparison
+
+### Metrics (Issue #2110, PR #2111)
+
+| Metric | Value |
+|--------|-------|
+| Steps | 58 |
+| Lines added | 63 |
+| Lines removed | 1 |
+| Files modified | 5 |
+| Tests added | 53 lines |
+| Time | ~18 minutes |
+| Errors encountered | 0 |
+| CI status | ✅ All checks passed |
+
+### Success Factors
+
+1. **Clear issue specification**: Issue #2110 had detailed implementation steps
+2. **Existing patterns**: Followed established AssetClass constant pattern
+3. **Focused scope**: Single prototype class migration (not all at once)
+4. **Comprehensive tests**: 53 lines of tests ensured backward compatibility
+
+**Reference**: Issue #2110, PR #2111 - Support UID-based class identifier for ems__TaskPrototype (58 steps, +63 lines, February 2026)
