@@ -102,7 +102,10 @@ export class CreationButtonGroupBuilder implements IButtonGroupBuilder {
         onClick: async () => {
           const sourceClass = this.normalizeClass(instanceClass);
           const isMeeting = sourceClass === AssetClass.MEETING_PROTOTYPE;
-          const defaultValue = isMeeting || sourceClass === AssetClass.TASK_PROTOTYPE
+          // Support both string-based and UID-based TaskPrototype identifiers (Issue #2110)
+          const isTaskPrototype = sourceClass === AssetClass.TASK_PROTOTYPE ||
+            sourceClass === AssetClass.TASK_PROTOTYPE_UID;
+          const defaultValue = isMeeting || isTaskPrototype
             ? this.generateDefaultLabel(metadata, file.basename)
             : "";
           const result = await promptForLabel(app, defaultValue, !isMeeting);
