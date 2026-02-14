@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useLayoutEffect } from "react";
+import React, { useState, useMemo, useRef, useLayoutEffect, useCallback, useEffect } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 
 export interface AssetRelation {
@@ -253,6 +253,36 @@ const SingleTable: React.FC<SingleTableProps> = ({
 
   const shouldVirtualize = sortedItems.length > VIRTUALIZATION_THRESHOLD;
 
+  // Synchronize column widths between header and body tables in virtualized mode
+  // This fixes misalignment caused by scrollbar width difference (Issue #941, #2116)
+  const [scrollbarWidth, setScrollbarWidth] = useState(0);
+
+  // Measure scrollbar width when scroll container is mounted
+  const measureWidths = useCallback(() => {
+    if (!parentRef.current) return;
+
+    const scrollContainer = parentRef.current;
+    // Scrollbar width = total width - client width (visible content area)
+    const sbWidth = scrollContainer.offsetWidth - scrollContainer.clientWidth;
+    setScrollbarWidth(sbWidth);
+  }, []);
+
+  // Measure widths when virtualized mode is active and parent is mounted
+  useLayoutEffect(() => {
+    if (shouldVirtualize && isParentMounted) {
+      measureWidths();
+    }
+  }, [shouldVirtualize, isParentMounted, measureWidths]);
+
+  // Re-measure on window resize (scrollbar might appear/disappear)
+  useEffect(() => {
+    if (!shouldVirtualize) return;
+
+    const handleResize = () => measureWidths();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, [shouldVirtualize, measureWidths]);
+
   // Only initialize virtualizer when we need virtualization AND parent is mounted
   const rowVirtualizer = useVirtualizer({
     count: shouldVirtualize ? sortedItems.length : 0,
@@ -406,10 +436,18 @@ const SingleTable: React.FC<SingleTableProps> = ({
 
   return (
     <div className="exocortex-relations-virtualized">
-      <table className="exocortex-relations-table exocortex-relations-table-header" style={{ tableLayout: "fixed", width: "100%" }}>
-        {renderColGroup()}
-        {renderTableHeader()}
-      </table>
+      {/* Header wrapper with padding-right to account for scrollbar width (Issue #941, #2116) */}
+      <div
+        className="exocortex-relations-table-header-wrapper"
+        style={{
+          paddingRight: scrollbarWidth > 0 ? `${scrollbarWidth}px` : undefined,
+        }}
+      >
+        <table className="exocortex-relations-table exocortex-relations-table-header" style={{ tableLayout: "fixed", width: "100%" }}>
+          {renderColGroup()}
+          {renderTableHeader()}
+        </table>
+      </div>
       <div
         ref={parentRef}
         className="exocortex-virtual-scroll-container"
