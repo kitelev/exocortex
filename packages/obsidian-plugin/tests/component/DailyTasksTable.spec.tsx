@@ -2131,11 +2131,9 @@ test.describe("Overlapping Planned Task Periods Highlighting", () => {
     const task1Row = component.locator('tr[data-path="task1.md"]');
     const task2Row = component.locator('tr[data-path="task2.md"]');
 
-    const task1Class = await task1Row.getAttribute("class");
-    const task2Class = await task2Row.getAttribute("class");
-
-    expect(task1Class).not.toContain("task-overlap-conflict");
-    expect(task2Class).not.toContain("task-overlap-conflict");
+    // Use not.toHaveClass instead of getAttribute to handle null class attribute
+    await expect(task1Row).not.toHaveClass(/task-overlap-conflict/);
+    await expect(task2Row).not.toHaveClass(/task-overlap-conflict/);
   });
 
   test("should skip tasks without planned timestamps", async ({
@@ -2190,11 +2188,9 @@ test.describe("Overlapping Planned Task Periods Highlighting", () => {
     const task1Row = component.locator('tr[data-path="task1.md"]');
     const task2Row = component.locator('tr[data-path="task2.md"]');
 
-    const task1Class = await task1Row.getAttribute("class");
-    const task2Class = await task2Row.getAttribute("class");
-
-    expect(task1Class).not.toContain("task-overlap-conflict");
-    expect(task2Class).not.toContain("task-overlap-conflict");
+    // Use not.toHaveClass instead of getAttribute to handle null class attribute
+    await expect(task1Row).not.toHaveClass(/task-overlap-conflict/);
+    await expect(task2Row).not.toHaveClass(/task-overlap-conflict/);
   });
 
   test("should not consider touching periods as overlapping (end = start)", async ({
@@ -2252,11 +2248,9 @@ test.describe("Overlapping Planned Task Periods Highlighting", () => {
     const task1Row = component.locator('tr[data-path="task1.md"]');
     const task2Row = component.locator('tr[data-path="task2.md"]');
 
-    const task1Class = await task1Row.getAttribute("class");
-    const task2Class = await task2Row.getAttribute("class");
-
-    expect(task1Class).not.toContain("task-overlap-conflict");
-    expect(task2Class).not.toContain("task-overlap-conflict");
+    // Use not.toHaveClass instead of getAttribute to handle null class attribute
+    await expect(task1Row).not.toHaveClass(/task-overlap-conflict/);
+    await expect(task2Row).not.toHaveClass(/task-overlap-conflict/);
   });
 
   test("should highlight multiple overlapping tasks correctly", async ({
@@ -2338,7 +2332,7 @@ test.describe("Overlapping Planned Task Periods Highlighting", () => {
     await expect(task1Row).toHaveClass(/task-overlap-conflict/);
     await expect(task2Row).toHaveClass(/task-overlap-conflict/);
 
-    const task3Class = await task3Row.getAttribute("class");
-    expect(task3Class).not.toContain("task-overlap-conflict");
+    // Use not.toHaveClass instead of getAttribute to handle null class attribute
+    await expect(task3Row).not.toHaveClass(/task-overlap-conflict/);
   });
 });
