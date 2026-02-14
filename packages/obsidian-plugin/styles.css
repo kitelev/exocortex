@@ -2650,9 +2650,11 @@
 }
 
 /* Table overflow handling for very wide tables */
+/* Issue #2120: Use table-layout: fixed to ensure colgroup column widths are respected */
+/* Without table-layout: fixed, column widths from colgroup are ignored and columns appear merged */
 .exocortex-relations-table {
   min-width: 100%;
-  table-layout: auto;
+  table-layout: fixed;
 }
 
 /* Prevent cell content from causing overflow */
