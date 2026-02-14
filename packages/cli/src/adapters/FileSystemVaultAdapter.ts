@@ -3,7 +3,13 @@ import path from "path";
 import yaml from "js-yaml";
 import { IVaultAdapter, IFile, IFolder, IFrontmatter } from "exocortex";
 
+/** UUID v4 pattern for wikilink resolution */
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export class FileSystemVaultAdapter implements IVaultAdapter {
+  /** UUID (lowercase) → relative filepath mapping for O(1) lookups */
+  private uuidIndex: Map<string, string> | null = null;
+
   constructor(private rootPath: string) {}
 
   async read(file: IFile): Promise<string> {
@@ -112,16 +118,43 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
   }
 
   getFirstLinkpathDest(linkpath: string, sourcePath: string): IFile | null {
+    // Step 1: Strip wikilink alias if present: "uuid|label" → "uuid"
+    const cleanLinkpath = linkpath.split("|")[0].trim();
+
+    // Handle empty linkpath after stripping
+    if (!cleanLinkpath) {
+      return null;
+    }
+
+    // Step 2: Check if linkpath is a UUID and resolve via index
+    if (UUID_PATTERN.test(cleanLinkpath)) {
+      // Build index lazily on first UUID lookup
+      if (this.uuidIndex === null) {
+        this.buildUuidIndex();
+      }
+
+      const normalizedUuid = cleanLinkpath.toLowerCase();
+      const relativePath = this.uuidIndex!.get(normalizedUuid);
+
+      if (relativePath) {
+        return this.createFileObject(relativePath);
+      }
+
+      // UUID not found in index - return null
+      return null;
+    }
+
+    // Step 3: Fall back to existing relative path resolution for non-UUID linkpaths
     const sourceDir = path.dirname(this.resolvePath(sourcePath));
     let resolvedPath: string;
 
-    if (path.isAbsolute(linkpath)) {
-      resolvedPath = this.resolvePath(linkpath);
+    if (path.isAbsolute(cleanLinkpath)) {
+      resolvedPath = this.resolvePath(cleanLinkpath);
     } else {
-      resolvedPath = path.resolve(sourceDir, linkpath);
+      resolvedPath = path.resolve(sourceDir, cleanLinkpath);
     }
 
-    if (!linkpath.endsWith(".md")) {
+    if (!cleanLinkpath.endsWith(".md")) {
       resolvedPath += ".md";
     }
 
@@ -131,6 +164,29 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
     }
 
     return null;
+  }
+
+  /**
+   * Build UUID-to-filepath index by scanning the vault.
+   * Called lazily on first UUID lookup.
+   */
+  private buildUuidIndex(): void {
+    this.uuidIndex = new Map();
+
+    this.walkDirectory(this.rootPath, (fullPath) => {
+      if (fullPath.endsWith(".md")) {
+        const filename = path.basename(fullPath, ".md");
+        // Check if filename starts with a UUID
+        const uuidMatch = filename.match(
+          /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i,
+        );
+        if (uuidMatch) {
+          const uuid = uuidMatch[1].toLowerCase();
+          const relativePath = path.relative(this.rootPath, fullPath);
+          this.uuidIndex!.set(uuid, relativePath);
+        }
+      }
+    });
   }
 
   async process(file: IFile, fn: (content: string) => string): Promise<string> {
