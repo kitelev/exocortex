@@ -1,4 +1,4 @@
-import { Vault, TFile, TFolder, MetadataCache, App } from "obsidian";
+import { Vault, TFile, TFolder, MetadataCache, App, parseYaml } from "obsidian";
 import { IVaultAdapter, IFile, IFolder, IFrontmatter } from "exocortex";
 
 export class ObsidianVaultAdapter implements IVaultAdapter {
@@ -59,6 +59,70 @@ export class ObsidianVaultAdapter implements IVaultAdapter {
     const obsidianFile = this.toObsidianFile(file);
     const cache = this.metadataCache.getFileCache(obsidianFile);
     return cache?.frontmatter || null;
+  }
+
+  /**
+   * Get frontmatter with fallback to direct YAML parsing when Obsidian metadata
+   * cache is unavailable (e.g., during vault indexing at startup).
+   *
+   * This enables UI components like Create Instance buttons to work immediately
+   * when opening files, without waiting for Obsidian's metadata cache to populate.
+   *
+   * @param file The file to get frontmatter from
+   * @returns Parsed frontmatter or null if unavailable or invalid
+   */
+  async getFrontmatterWithFallback(file: IFile): Promise<IFrontmatter | null> {
+    // Try cache first (normal operation, fast path)
+    const obsidianFile = this.toObsidianFile(file);
+    const cache = this.metadataCache.getFileCache(obsidianFile);
+
+    if (cache?.frontmatter) {
+      return cache.frontmatter;
+    }
+
+    // Fallback: direct YAML parsing (during vault indexing)
+    try {
+      const content = await this.vault.read(obsidianFile);
+      return this.extractFrontmatter(content);
+    } catch {
+      // File read error - return null gracefully
+      return null;
+    }
+  }
+
+  /**
+   * Extract frontmatter from raw file content using direct YAML parsing.
+   *
+   * @param content Raw file content
+   * @returns Parsed frontmatter or null if not found or invalid
+   */
+  private extractFrontmatter(content: string): IFrontmatter | null {
+    // Match YAML frontmatter block: starts with ---, ends with ---
+    const frontmatterRegex = /^---\n([\s\S]*?)\n---/;
+    const match = content.match(frontmatterRegex);
+
+    if (!match) {
+      return null;
+    }
+
+    const yamlContent = match[1];
+
+    // Handle empty frontmatter
+    if (!yamlContent || yamlContent.trim() === "") {
+      return null;
+    }
+
+    try {
+      const parsed = parseYaml(yamlContent);
+
+      // Ensure parsed result is an object
+      return typeof parsed === "object" && parsed !== null
+        ? (parsed as IFrontmatter)
+        : null;
+    } catch {
+      // YAML parsing error - return null gracefully
+      return null;
+    }
   }
 
   async updateFrontmatter(

@@ -885,6 +885,109 @@ export function normalizePath(path: string): string {
   return path.replace(/\\/g, "/");
 }
 
+/**
+ * Mock parseYaml function - parses YAML content to JavaScript object.
+ * This is a simplified implementation for testing purposes that handles
+ * common frontmatter patterns used in Obsidian notes.
+ *
+ * @param yamlContent The YAML string to parse
+ * @returns Parsed object or throws on invalid YAML
+ */
+export function parseYaml(yamlContent: string): any {
+  // Use a simple line-by-line parser that handles common frontmatter patterns
+  const lines = yamlContent.split("\n");
+  const result: Record<string, any> = {};
+  const stack: { obj: Record<string, any>; indent: number }[] = [{ obj: result, indent: -2 }];
+  let currentArray: any[] | null = null;
+  let currentArrayKey: string | null = null;
+
+  for (const line of lines) {
+    // Skip empty lines
+    if (!line.trim()) continue;
+
+    // Calculate indentation
+    const indent = line.search(/\S/);
+    const trimmed = line.trim();
+
+    // Check for array item (starts with "- ")
+    if (trimmed.startsWith("- ")) {
+      const value = trimmed.slice(2).trim();
+      if (currentArray !== null) {
+        // Remove quotes from value
+        const unquoted = value.replace(/^["']|["']$/g, "");
+        currentArray.push(unquoted);
+      }
+      continue;
+    }
+
+    // Check for key-value or key:
+    const colonMatch = trimmed.match(/^([^:]+):\s*(.*)$/);
+    if (colonMatch) {
+      const key = colonMatch[1].trim();
+      let value = colonMatch[2].trim();
+
+      // Pop stack until we find parent at lower indent
+      while (stack.length > 1 && stack[stack.length - 1].indent >= indent) {
+        stack.pop();
+      }
+
+      const parent = stack[stack.length - 1].obj;
+
+      if (!value) {
+        // Key with no value - could be array or nested object
+        // Look ahead to determine
+        const arrayMarker = lines.findIndex((l, i) =>
+          i > lines.indexOf(line) && l.trim().startsWith("- ")
+        );
+        const nextNonEmpty = lines.findIndex((l, i) =>
+          i > lines.indexOf(line) && l.trim() && !l.trim().startsWith("#")
+        );
+
+        if (nextNonEmpty > -1 && lines[nextNonEmpty]?.trim().startsWith("- ")) {
+          // It's an array
+          currentArray = [];
+          currentArrayKey = key;
+          parent[key] = currentArray;
+        } else {
+          // It's a nested object
+          const nested: Record<string, any> = {};
+          parent[key] = nested;
+          stack.push({ obj: nested, indent });
+          currentArray = null;
+          currentArrayKey = null;
+        }
+      } else {
+        // Key with value
+        currentArray = null;
+        currentArrayKey = null;
+
+        // Remove surrounding quotes
+        if ((value.startsWith('"') && value.endsWith('"')) ||
+            (value.startsWith("'") && value.endsWith("'"))) {
+          value = value.slice(1, -1);
+        }
+
+        // Try to parse special values
+        if (value === "true") {
+          parent[key] = true;
+        } else if (value === "false") {
+          parent[key] = false;
+        } else if (value === "null") {
+          parent[key] = null;
+        } else if (/^-?\d+$/.test(value)) {
+          parent[key] = parseInt(value, 10);
+        } else if (/^-?\d+\.\d+$/.test(value)) {
+          parent[key] = parseFloat(value);
+        } else {
+          parent[key] = value;
+        }
+      }
+    }
+  }
+
+  return result;
+}
+
 // Mock requestUrl function
 export function requestUrl(request: {
   url: string;
