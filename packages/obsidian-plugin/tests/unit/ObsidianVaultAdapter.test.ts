@@ -360,6 +360,186 @@ describe("ObsidianVaultAdapter", () => {
 
       expect(result).toBeNull();
     });
+
+    describe("Issue #2103: Fallback YAML parsing when cache unavailable", () => {
+      it("should parse frontmatter directly from file content when cache returns null", async () => {
+        const file: IFile = {
+          path: "test/prototype.md",
+          basename: "prototype",
+          name: "prototype.md",
+          parent: null,
+        };
+
+        const fileContent = `---
+exo__Instance_class: "[[ems__TaskPrototype]]"
+exo__Asset_label: "Test Task Template"
+ems__Effort_status: "[[ems__EffortStatusBacklog]]"
+---
+
+# Task Template Content
+`;
+
+        mockVault.getAbstractFileByPath.mockReturnValue(mockTFile);
+        mockMetadataCache.getFileCache.mockReturnValue(null);
+        mockVault.read.mockResolvedValue(fileContent);
+
+        const result = await adapter.getFrontmatterWithFallback(file);
+
+        expect(result).toEqual({
+          "exo__Instance_class": "[[ems__TaskPrototype]]",
+          "exo__Asset_label": "Test Task Template",
+          "ems__Effort_status": "[[ems__EffortStatusBacklog]]",
+        });
+      });
+
+      it("should use cache when available", async () => {
+        const file: IFile = {
+          path: "test/file.md",
+          basename: "file",
+          name: "file.md",
+          parent: null,
+        };
+
+        const cachedFrontmatter = {
+          "exo__Instance_class": "[[ems__Task]]",
+          "exo__Asset_label": "From Cache",
+        };
+
+        mockVault.getAbstractFileByPath.mockReturnValue(mockTFile);
+        mockMetadataCache.getFileCache.mockReturnValue({
+          frontmatter: cachedFrontmatter,
+        } as any);
+
+        const result = await adapter.getFrontmatterWithFallback(file);
+
+        expect(result).toEqual(cachedFrontmatter);
+        expect(mockVault.read).not.toHaveBeenCalled();
+      });
+
+      it("should return null if file has no frontmatter", async () => {
+        const file: IFile = {
+          path: "test/no-frontmatter.md",
+          basename: "no-frontmatter",
+          name: "no-frontmatter.md",
+          parent: null,
+        };
+
+        const fileContent = `# Just Content
+No frontmatter here.
+`;
+
+        mockVault.getAbstractFileByPath.mockReturnValue(mockTFile);
+        mockMetadataCache.getFileCache.mockReturnValue(null);
+        mockVault.read.mockResolvedValue(fileContent);
+
+        const result = await adapter.getFrontmatterWithFallback(file);
+
+        expect(result).toBeNull();
+      });
+
+      it("should handle YAML that parseYaml cannot process gracefully", async () => {
+        const file: IFile = {
+          path: "test/unparseable.md",
+          basename: "unparseable",
+          name: "unparseable.md",
+          parent: null,
+        };
+
+        // Frontmatter that will trigger a parse error (tabs in wrong places)
+        const fileContent = `---
+\t\tinvalid
+---
+
+# Content
+`;
+
+        mockVault.getAbstractFileByPath.mockReturnValue(mockTFile);
+        mockMetadataCache.getFileCache.mockReturnValue(null);
+        mockVault.read.mockResolvedValue(fileContent);
+
+        // The mock parseYaml will return an empty object for unparseable content
+        // In production, Obsidian's parseYaml might throw or return null
+        const result = await adapter.getFrontmatterWithFallback(file);
+
+        // Result should be an object (even if empty) or null, but NOT throw
+        expect(result === null || typeof result === "object").toBe(true);
+      });
+
+      it("should handle empty frontmatter", async () => {
+        const file: IFile = {
+          path: "test/empty-fm.md",
+          basename: "empty-fm",
+          name: "empty-fm.md",
+          parent: null,
+        };
+
+        const fileContent = `---
+---
+
+# Content
+`;
+
+        mockVault.getAbstractFileByPath.mockReturnValue(mockTFile);
+        mockMetadataCache.getFileCache.mockReturnValue(null);
+        mockVault.read.mockResolvedValue(fileContent);
+
+        const result = await adapter.getFrontmatterWithFallback(file);
+
+        expect(result).toBeNull();
+      });
+
+      it("should handle complex frontmatter with arrays and nested objects", async () => {
+        const file: IFile = {
+          path: "test/complex.md",
+          basename: "complex",
+          name: "complex.md",
+          parent: null,
+        };
+
+        const fileContent = `---
+exo__Instance_class:
+  - "[[ems__TaskPrototype]]"
+  - "[[exo__Asset]]"
+aliases:
+  - "Task Template"
+  - "Template 1"
+nested:
+  key: value
+---
+
+# Content
+`;
+
+        mockVault.getAbstractFileByPath.mockReturnValue(mockTFile);
+        mockMetadataCache.getFileCache.mockReturnValue(null);
+        mockVault.read.mockResolvedValue(fileContent);
+
+        const result = await adapter.getFrontmatterWithFallback(file);
+
+        expect(result).toEqual({
+          "exo__Instance_class": ["[[ems__TaskPrototype]]", "[[exo__Asset]]"],
+          "aliases": ["Task Template", "Template 1"],
+          "nested": { key: "value" },
+        });
+      });
+
+      it("should return null when file read fails", async () => {
+        const file: IFile = {
+          path: "test/error.md",
+          basename: "error",
+          name: "error.md",
+          parent: null,
+        };
+
+        mockVault.getAbstractFileByPath.mockReturnValue(mockTFile);
+        mockMetadataCache.getFileCache.mockReturnValue(null);
+        mockVault.read.mockRejectedValue(new Error("File read error"));
+
+        const result = await adapter.getFrontmatterWithFallback(file);
+
+        expect(result).toBeNull();
+      });
+    });
   });
 
   describe("updateFrontmatter", () => {
