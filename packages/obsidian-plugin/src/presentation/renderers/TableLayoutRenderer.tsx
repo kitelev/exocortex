@@ -11,7 +11,7 @@
  * @module presentation/renderers
  * @since 1.0.0
  */
-import React, { useState, useMemo, useCallback, useRef, useLayoutEffect } from "react";
+import React, { useState, useMemo, useCallback, useRef, useLayoutEffect, useEffect } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 
 import type { TableLayout, LayoutColumn } from "../../domain/layout";
@@ -280,6 +280,36 @@ export const TableLayoutRenderer: React.FC<TableLayoutRendererProps> = ({
   const shouldVirtualize =
     options.virtualize && sortedRows.length > VIRTUALIZATION_THRESHOLD;
 
+  // Synchronize column widths between header and body tables in virtualized mode
+  // This fixes misalignment caused by scrollbar width difference (Issue #941, #2116)
+  const [scrollbarWidth, setScrollbarWidth] = useState(0);
+
+  // Measure scrollbar width when scroll container is mounted
+  const measureWidths = useCallback(() => {
+    if (!parentRef.current) return;
+
+    const scrollContainer = parentRef.current;
+    // Scrollbar width = total width - client width (visible content area)
+    const sbWidth = scrollContainer.offsetWidth - scrollContainer.clientWidth;
+    setScrollbarWidth(sbWidth);
+  }, []);
+
+  // Measure widths when virtualized mode is active and parent is mounted
+  useLayoutEffect(() => {
+    if (shouldVirtualize && isParentMounted) {
+      measureWidths();
+    }
+  }, [shouldVirtualize, isParentMounted, measureWidths]);
+
+  // Re-measure on window resize (scrollbar might appear/disappear)
+  useEffect(() => {
+    if (!shouldVirtualize) return;
+
+    const handleResize = () => measureWidths();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, [shouldVirtualize, measureWidths]);
+
   const rowVirtualizer = useVirtualizer({
     count: shouldVirtualize ? sortedRows.length : 0,
     getScrollElement: () => parentRef.current,
@@ -455,11 +485,18 @@ export const TableLayoutRenderer: React.FC<TableLayoutRendererProps> = ({
 
   return (
     <div className={`exo-layout-table-container exo-layout-virtualized ${className || ""}`}>
-      {/* Fixed header table */}
-      <table className="exo-layout-table exo-layout-table-header-fixed">
-        {renderColGroup()}
-        {renderTableHeader()}
-      </table>
+      {/* Header wrapper with padding-right to account for scrollbar width (Issue #941, #2116) */}
+      <div
+        className="exo-layout-table-header-wrapper"
+        style={{
+          paddingRight: scrollbarWidth > 0 ? `${scrollbarWidth}px` : undefined,
+        }}
+      >
+        <table className="exo-layout-table exo-layout-table-header-fixed">
+          {renderColGroup()}
+          {renderTableHeader()}
+        </table>
+      </div>
 
       {/* Scrollable body */}
       <div
