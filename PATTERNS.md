@@ -6537,3 +6537,367 @@ describe("canCreateInstance", () => {
 4. **Comprehensive tests**: 53 lines of tests ensured backward compatibility
 
 **Reference**: Issue #2110, PR #2111 - Support UID-based class identifier for ems__TaskPrototype (58 steps, +63 lines, February 2026)
+
+---
+
+## Metadata Cache Fallback Pattern
+
+**When to use**: Plugin features that depend on Obsidian's `metadataCache.getFileCache()` must work even when the cache is unavailable (during vault indexing after startup).
+
+### Problem
+
+When Obsidian indexes a vault (first launch or after cache invalidation), `metadataCache.getFileCache()` returns `null` until indexing completes. This causes:
+- UI components like "Create Instance" buttons to be hidden
+- Plugin features to fail silently
+- Poor UX during vault initialization
+
+### Solution Pattern
+
+Use direct YAML parsing as fallback when metadata cache is unavailable:
+
+```typescript
+// FrontmatterFallback.ts
+import { App, TFile } from "obsidian";
+import yaml from "js-yaml";
+
+export class FrontmatterFallback {
+  constructor(private app: App) {}
+
+  async getFrontmatter(file: TFile): Promise<Record<string, any> | null> {
+    // Primary path: Use cache (fast, normal operation)
+    const cache = this.app.metadataCache.getFileCache(file);
+    if (cache?.frontmatter) {
+      return cache.frontmatter;
+    }
+
+    // Fallback path: Direct YAML parsing (during indexing)
+    try {
+      const content = await this.app.vault.read(file);
+      return this.extractFrontmatter(content);
+    } catch (error) {
+      console.error("Frontmatter fallback failed:", error);
+      return null;
+    }
+  }
+
+  private extractFrontmatter(content: string): Record<string, any> | null {
+    const frontmatterRegex = /^---\n([\s\S]*?)\n---/;
+    const match = content.match(frontmatterRegex);
+
+    if (!match) return null;
+
+    try {
+      const parsed = yaml.load(match[1]);
+      return typeof parsed === "object" && parsed !== null ? parsed : null;
+    } catch (error) {
+      return null;
+    }
+  }
+}
+```
+
+### Key Benefits
+
+1. **Immediate availability**: UI features work without waiting for cache
+2. **Graceful degradation**: Fallback activates automatically, cache used when ready
+3. **Pattern reuse**: CLI already uses direct parsing in `FileSystemVaultAdapter.extractFrontmatter()`
+4. **Error resilience**: Try-catch handles malformed YAML gracefully
+
+### When to Apply
+
+- Any code using `metadataCache.getFileCache()` for button/command visibility
+- Renderers that check frontmatter properties before rendering
+- Command handlers that validate asset class before execution
+
+### Gotchas
+
+- **Performance**: Direct YAML parsing is slower than cache lookup - always try cache first
+- **js-yaml dependency**: Plugin already includes this via Obsidian, no extra bundle size
+- **YAML edge cases**: Multi-line strings, anchors, and aliases may parse differently
+
+### Metrics (Issue #2103, PR #2103)
+
+| Metric | Value |
+|--------|-------|
+| Steps | 65 |
+| Files modified | 3 |
+| Tests added | 5 |
+| Time | ~30 minutes |
+| Errors encountered | 0 |
+| CI status | ✅ All checks passed |
+
+**Reference**: Issue #2103, PR #2103 - Make plugin independent from Obsidian metadata cache (65 steps, February 2026)
+
+---
+
+## Task Period Overlap Detection Pattern
+
+**When to use**: Highlighting scheduling conflicts when multiple tasks have overlapping planned periods.
+
+### Problem
+
+Users plan tasks with `ems__Effort_plannedStartTimestamp` and `ems__Effort_plannedEndTimestamp`. Overlapping periods indicate overcommitment but are not visually distinct without manual inspection.
+
+### Solution Pattern
+
+Use interval overlap algorithm with memoization:
+
+```typescript
+// Interval overlap detection: start1 <= end2 && start2 <= end1
+const periodsOverlap = (
+  start1: number, end1: number,
+  start2: number, end2: number
+): boolean => {
+  return start1 <= end2 && start2 <= end1;
+};
+
+// Memoized calculation of all overlapping tasks
+const tasksWithOverlaps = useMemo(() => {
+  const tasksByPlanned = tasks.filter(
+    t => t.metadata.ems__Effort_plannedStartTimestamp &&
+         t.metadata.ems__Effort_plannedEndTimestamp
+  );
+
+  const overlapping = new Set<string>();
+
+  // O(n²) pairwise comparison - acceptable for <100 tasks
+  for (let i = 0; i < tasksByPlanned.length; i++) {
+    const task1 = tasksByPlanned[i];
+    const start1 = new Date(task1.metadata.ems__Effort_plannedStartTimestamp as string).getTime();
+    const end1 = new Date(task1.metadata.ems__Effort_plannedEndTimestamp as string).getTime();
+
+    for (let j = i + 1; j < tasksByPlanned.length; j++) {
+      const task2 = tasksByPlanned[j];
+      const start2 = new Date(task2.metadata.ems__Effort_plannedStartTimestamp as string).getTime();
+      const end2 = new Date(task2.metadata.ems__Effort_plannedEndTimestamp as string).getTime();
+
+      if (periodsOverlap(start1, end1, start2, end2)) {
+        overlapping.add(task1.path);
+        overlapping.add(task2.path);
+      }
+    }
+  }
+
+  return overlapping;
+}, [tasks]);
+```
+
+### CSS Styling
+
+```css
+/* Pleasant dark red background for conflict rows */
+.task-overlap-conflict {
+  background-color: rgba(139, 0, 0, 0.12);  /* DarkRed with 12% opacity */
+}
+
+/* Dark theme variant */
+.theme-dark .task-overlap-conflict {
+  background-color: rgba(178, 34, 34, 0.15);  /* Firebrick, slightly lighter */
+}
+```
+
+### Row Rendering
+
+```tsx
+<div
+  className={`task-table-row ${
+    tasksWithOverlaps.has(task.path) ? 'task-overlap-conflict' : ''
+  }`}
+>
+```
+
+### Key Benefits
+
+1. **Visual instant feedback**: Users spot conflicts without manual calculation
+2. **Performance**: O(n²) with useMemo prevents recalculation on every render
+3. **Accessibility**: Color contrast ≥4.5:1 (WCAG AA compliant)
+
+### Gotchas
+
+- **Tasks without planned timestamps**: Skip in overlap check (don't count as overlap)
+- **Zero-duration tasks**: Same start/end time is not considered overlap
+- **Timezone handling**: Use getTime() for numeric comparison, not string comparison
+
+### Metrics (Issue #2108, PR #2108)
+
+| Metric | Value |
+|--------|-------|
+| Steps | 113 |
+| Files modified | 3 |
+| Tests added | 6 |
+| Time | ~40 minutes |
+| Errors encountered | 0 |
+| CI status | ✅ All checks passed |
+
+**Reference**: Issue #2108, PR #2108 - Highlight overlapping planned task periods in DailyNote table (113 steps, February 2026)
+
+---
+
+## UUID Wikilink Resolution Pattern
+
+**When to use**: CLI or plugin must resolve wikilinks that reference files by UUID (e.g., `[[ebf717aa-4070-4b37-abde-10a700e354fc|Label]]`).
+
+### Problem
+
+Obsidian files can be named by UUID (e.g., `ebf717aa-4070-4b37-abde-10a700e354fc.md`). When frontmatter contains wikilinks like:
+
+```yaml
+exo__Class_superClass:
+  - "[[ems__EffortPrototype]]"           # ✅ Resolves (relative path)
+  - "[[ebf717aa-4070-4b37-abde-10a700e354fc|exo__Prototype]]"  # ❌ May NOT resolve
+```
+
+The standard relative path resolution fails because UUID-named files require vault-wide search.
+
+### Solution Pattern
+
+Build UUID-to-filepath index at adapter initialization:
+
+```typescript
+export class FileSystemVaultAdapter implements IVaultAdapter {
+  private uuidIndex: Map<string, string> = new Map(); // uuid -> filepath
+
+  constructor(private rootPath: string) {
+    this.buildUuidIndex();
+  }
+
+  private buildUuidIndex(): void {
+    const files = this.getAllFiles();
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+    for (const file of files) {
+      const basename = path.basename(file.path, ".md");
+      if (uuidRegex.test(basename)) {
+        this.uuidIndex.set(basename.toLowerCase(), file.path);
+      }
+    }
+  }
+
+  getFirstLinkpathDest(linkpath: string, sourcePath: string): IFile | null {
+    // Strip wikilink alias: "uuid|label" → "uuid"
+    const cleanLinkpath = linkpath.split('|')[0].trim();
+
+    // Check if linkpath is a UUID
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (uuidRegex.test(cleanLinkpath)) {
+      const filePath = this.uuidIndex.get(cleanLinkpath.toLowerCase());
+      if (filePath) {
+        return this.createFileObject(filePath);
+      }
+    }
+
+    // Fall back to existing relative path resolution
+    // ... existing code ...
+  }
+}
+```
+
+### Key Benefits
+
+1. **O(1) lookup**: Map-based index vs O(n) vault scan per resolution
+2. **Case-insensitive**: Normalizes UUIDs to lowercase for matching
+3. **Alias handling**: Strips `|label` suffix from wikilinks automatically
+4. **Vault-wide**: Finds files regardless of directory structure
+
+### When to Apply
+
+- CLI SPARQL queries that follow `rdfs:subClassOf` or other property paths
+- Resolving `exo__Instance_class` wikilinks to class definitions
+- Any file lookup where filename may be a UUID
+
+### Gotchas
+
+- **Index refresh**: Must update index on file create/rename/delete operations
+- **Case sensitivity**: UUIDs may be mixed case in frontmatter - normalize to lowercase
+- **Wikilink brackets**: Strip `[[` and `]]` before checking UUID pattern
+- **External changes**: If files are modified outside CLI, index becomes stale (document this limitation)
+
+### Metrics (Issue #2113, PR #2113)
+
+| Metric | Value |
+|--------|-------|
+| Steps | 56 |
+| Files modified | 2 |
+| Tests added | 8 |
+| Time | ~25 minutes |
+| Errors encountered | 0 |
+| CI status | ✅ All checks passed |
+
+**Reference**: Issue #2113, PR #2113 - Resolve UUID-based wikilinks in FileSystemVaultAdapter (56 steps, February 2026)
+
+---
+
+## Virtualized Table Scrollbar Compensation Pattern
+
+**When to use**: Tables with >50 rows use virtualization (TanStack Virtual) with split header/body tables. This causes column misalignment due to scrollbar width.
+
+### Problem
+
+When tables exceed the virtualization threshold:
+- **Header table**: Fixed, no scrollbar
+- **Body table**: Inside scroll container, has scrollbar (~17px width)
+
+Result: Body columns are narrower than header columns → misalignment.
+
+### Solution Pattern
+
+Measure scrollbar width and apply as padding to header:
+
+```typescript
+// 1. State for scrollbar width
+const [scrollbarWidth, setScrollbarWidth] = useState(0);
+
+// 2. useEffect to measure scrollbar when virtualization activates
+useEffect(() => {
+  if (parentRef.current && isVirtualized) {
+    const scrollWidth = parentRef.current.offsetWidth - parentRef.current.clientWidth;
+    setScrollbarWidth(scrollWidth);
+  }
+}, [isVirtualized, virtualRows]);
+
+// 3. Apply padding to header table
+<table style={{ paddingRight: scrollbarWidth > 0 ? `${scrollbarWidth}px` : undefined }}>
+  {/* Header content */}
+</table>
+
+<div ref={parentRef} className="scroll-container">
+  <table>
+    {/* Body content */}
+  </table>
+</div>
+```
+
+### Key Formula
+
+```typescript
+const scrollbarWidth = parentRef.current.offsetWidth - parentRef.current.clientWidth;
+// offsetWidth: total width including scrollbar
+// clientWidth: content width excluding scrollbar
+// difference: scrollbar width (~17px on most systems, 0 if overlay scrollbars)
+```
+
+### Where to Apply
+
+Any component using virtualization with separate header/body tables:
+- `DailyTasksTable.tsx` (PR #941 - original fix)
+- `AssetRelationsTable.tsx` (PR #2116)
+- `TableLayoutRenderer.tsx` (PR #2116)
+
+### Gotchas
+
+- **OS-specific scrollbars**: macOS overlay scrollbars have width 0, Windows/Linux ~17px
+- **Dependency array**: Include `virtualRows` to recalculate when content changes
+- **Conditional rendering**: Only measure when `isVirtualized` is true
+
+### Metrics (Issue #2116, PR #2116)
+
+| Metric | Value |
+|--------|-------|
+| Steps | 53 |
+| Files modified | 2 |
+| Lines added | 16 |
+| Time | ~15 minutes |
+| Errors encountered | 0 |
+| CI status | ✅ All checks passed |
+
+**Reference**: Issue #2116, PR #2116 - Apply scrollbar width fix to AssetRelationsTable and TableLayoutRenderer (53 steps, February 2026)
