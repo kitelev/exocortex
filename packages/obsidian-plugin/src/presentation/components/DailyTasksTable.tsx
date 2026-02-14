@@ -40,6 +40,19 @@ export interface DailyTasksTableProps {
   showStatus?: boolean;
 }
 
+/**
+ * Detect if two time periods overlap.
+ * Uses strict inequality (< not <=) so touching periods (end1 === start2) are not considered overlapping.
+ */
+const periodsOverlap = (
+  start1: number,
+  end1: number,
+  start2: number,
+  end2: number,
+): boolean => {
+  return start1 < end2 && start2 < end1;
+};
+
 export const DailyTasksTable: React.FC<DailyTasksTableProps> = ({
   tasks,
   onTaskClick,
@@ -76,6 +89,55 @@ export const DailyTasksTable: React.FC<DailyTasksTableProps> = ({
   const showEmptySlots = propShowEmptySlots ?? storeShowEmptySlots;
   const showTime = propShowTime ?? storeShowTime;
   const showStatus = propShowStatus ?? storeShowStatus;
+
+  /**
+   * Find tasks with overlapping planned periods.
+   * Only considers tasks that have both plannedStartTimestamp and plannedEndTimestamp.
+   * Returns a Set of task paths that have overlapping periods.
+   */
+  const tasksWithOverlaps = useMemo(() => {
+    const overlapping = new Set<string>();
+
+    // Filter tasks with valid planned timestamps
+    const tasksWithPlannedTimes = tasks.filter((task) => {
+      const start = task.metadata.ems__Effort_plannedStartTimestamp;
+      const end = task.metadata.ems__Effort_plannedEndTimestamp;
+      return start != null && end != null;
+    });
+
+    // Compare each pair of tasks for overlap
+    for (let i = 0; i < tasksWithPlannedTimes.length; i++) {
+      const task1 = tasksWithPlannedTimes[i];
+      const start1Str = task1.metadata.ems__Effort_plannedStartTimestamp;
+      const end1Str = task1.metadata.ems__Effort_plannedEndTimestamp;
+
+      // Parse timestamps - handle both ISO strings and numeric timestamps
+      const start1 = new Date(start1Str as string | number).getTime();
+      const end1 = new Date(end1Str as string | number).getTime();
+
+      // Skip if timestamps are invalid
+      if (isNaN(start1) || isNaN(end1)) continue;
+
+      for (let j = i + 1; j < tasksWithPlannedTimes.length; j++) {
+        const task2 = tasksWithPlannedTimes[j];
+        const start2Str = task2.metadata.ems__Effort_plannedStartTimestamp;
+        const end2Str = task2.metadata.ems__Effort_plannedEndTimestamp;
+
+        const start2 = new Date(start2Str as string | number).getTime();
+        const end2 = new Date(end2Str as string | number).getTime();
+
+        // Skip if timestamps are invalid
+        if (isNaN(start2) || isNaN(end2)) continue;
+
+        if (periodsOverlap(start1, end1, start2, end2)) {
+          overlapping.add(task1.path);
+          overlapping.add(task2.path);
+        }
+      }
+    }
+
+    return overlapping;
+  }, [tasks]);
 
   const handleSort = (column: string) => {
     toggleSort("dailyTasks", column);
@@ -481,10 +543,13 @@ export const DailyTasksTable: React.FC<DailyTasksTableProps> = ({
       }
     }
 
+    const hasOverlap = tasksWithOverlaps.has(task.path);
+
     return (
       <tr
         key={`${task.path}-${index}`}
         data-path={task.path}
+        className={hasOverlap ? "task-overlap-conflict" : undefined}
         style={style}
       >
         <td className="task-name" title={getDisplayName(task)}>

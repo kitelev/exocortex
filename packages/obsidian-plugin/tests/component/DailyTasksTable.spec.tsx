@@ -2016,3 +2016,329 @@ test.describe("Large Data Volume Rendering (100 records)", () => {
     await expect(scrollContainer).toHaveCSS("overflow", "auto");
   });
 });
+
+test.describe("Overlapping Planned Task Periods Highlighting", () => {
+  test("should highlight rows with overlapping planned periods", async ({
+    mount,
+  }) => {
+    const overlappingTasks: DailyTask[] = [
+      {
+        file: { path: "task1.md", basename: "task1" },
+        path: "task1.md",
+        title: "Task 1",
+        label: "Task 1",
+        startTime: "09:00",
+        endTime: "10:00",
+        startTimestamp: null,
+        endTimestamp: null,
+        status: "ems__EffortStatusInProgress",
+        metadata: {
+          ems__Effort_plannedStartTimestamp: "2025-01-15T09:00:00",
+          ems__Effort_plannedEndTimestamp: "2025-01-15T10:30:00",
+        },
+        isDone: false,
+        isTrashed: false,
+        isDoing: false,
+        isMeeting: false,
+        isBlocked: false,
+      },
+      {
+        file: { path: "task2.md", basename: "task2" },
+        path: "task2.md",
+        title: "Task 2",
+        label: "Task 2",
+        startTime: "10:00",
+        endTime: "11:00",
+        startTimestamp: null,
+        endTimestamp: null,
+        status: "ems__EffortStatusInProgress",
+        metadata: {
+          ems__Effort_plannedStartTimestamp: "2025-01-15T10:00:00",
+          ems__Effort_plannedEndTimestamp: "2025-01-15T11:00:00",
+        },
+        isDone: false,
+        isTrashed: false,
+        isDoing: false,
+        isMeeting: false,
+        isBlocked: false,
+      },
+    ];
+
+    const component = await mount(
+      <DailyTasksTable tasks={overlappingTasks} />,
+    );
+
+    // Both tasks should have the overlap conflict class since they overlap
+    // Task 1: 09:00-10:30, Task 2: 10:00-11:00 → overlap between 10:00-10:30
+    const task1Row = component.locator('tr[data-path="task1.md"]');
+    const task2Row = component.locator('tr[data-path="task2.md"]');
+
+    await expect(task1Row).toHaveClass(/task-overlap-conflict/);
+    await expect(task2Row).toHaveClass(/task-overlap-conflict/);
+  });
+
+  test("should not highlight rows without overlapping periods", async ({
+    mount,
+  }) => {
+    const nonOverlappingTasks: DailyTask[] = [
+      {
+        file: { path: "task1.md", basename: "task1" },
+        path: "task1.md",
+        title: "Task 1",
+        label: "Task 1",
+        startTime: "09:00",
+        endTime: "10:00",
+        startTimestamp: null,
+        endTimestamp: null,
+        status: "ems__EffortStatusInProgress",
+        metadata: {
+          ems__Effort_plannedStartTimestamp: "2025-01-15T09:00:00",
+          ems__Effort_plannedEndTimestamp: "2025-01-15T10:00:00",
+        },
+        isDone: false,
+        isTrashed: false,
+        isDoing: false,
+        isMeeting: false,
+        isBlocked: false,
+      },
+      {
+        file: { path: "task2.md", basename: "task2" },
+        path: "task2.md",
+        title: "Task 2",
+        label: "Task 2",
+        startTime: "10:30",
+        endTime: "11:30",
+        startTimestamp: null,
+        endTimestamp: null,
+        status: "ems__EffortStatusInProgress",
+        metadata: {
+          ems__Effort_plannedStartTimestamp: "2025-01-15T10:30:00",
+          ems__Effort_plannedEndTimestamp: "2025-01-15T11:30:00",
+        },
+        isDone: false,
+        isTrashed: false,
+        isDoing: false,
+        isMeeting: false,
+        isBlocked: false,
+      },
+    ];
+
+    const component = await mount(
+      <DailyTasksTable tasks={nonOverlappingTasks} />,
+    );
+
+    // No overlap: Task 1 ends at 10:00, Task 2 starts at 10:30
+    const task1Row = component.locator('tr[data-path="task1.md"]');
+    const task2Row = component.locator('tr[data-path="task2.md"]');
+
+    const task1Class = await task1Row.getAttribute("class");
+    const task2Class = await task2Row.getAttribute("class");
+
+    expect(task1Class).not.toContain("task-overlap-conflict");
+    expect(task2Class).not.toContain("task-overlap-conflict");
+  });
+
+  test("should skip tasks without planned timestamps", async ({
+    mount,
+  }) => {
+    const mixedTasks: DailyTask[] = [
+      {
+        file: { path: "task1.md", basename: "task1" },
+        path: "task1.md",
+        title: "Task 1",
+        label: "Task 1",
+        startTime: "09:00",
+        endTime: "10:00",
+        startTimestamp: null,
+        endTimestamp: null,
+        status: "ems__EffortStatusInProgress",
+        metadata: {
+          ems__Effort_plannedStartTimestamp: "2025-01-15T09:00:00",
+          ems__Effort_plannedEndTimestamp: "2025-01-15T10:30:00",
+        },
+        isDone: false,
+        isTrashed: false,
+        isDoing: false,
+        isMeeting: false,
+        isBlocked: false,
+      },
+      {
+        file: { path: "task2.md", basename: "task2" },
+        path: "task2.md",
+        title: "Task 2 - No Planned Times",
+        label: "Task 2 - No Planned Times",
+        startTime: "10:00",
+        endTime: "11:00",
+        startTimestamp: null,
+        endTimestamp: null,
+        status: "ems__EffortStatusInProgress",
+        metadata: {},  // No planned timestamps
+        isDone: false,
+        isTrashed: false,
+        isDoing: false,
+        isMeeting: false,
+        isBlocked: false,
+      },
+    ];
+
+    const component = await mount(
+      <DailyTasksTable tasks={mixedTasks} />,
+    );
+
+    // Task 1 has planned timestamps but no other task overlaps (task2 has none)
+    // So neither should be marked as overlapping
+    const task1Row = component.locator('tr[data-path="task1.md"]');
+    const task2Row = component.locator('tr[data-path="task2.md"]');
+
+    const task1Class = await task1Row.getAttribute("class");
+    const task2Class = await task2Row.getAttribute("class");
+
+    expect(task1Class).not.toContain("task-overlap-conflict");
+    expect(task2Class).not.toContain("task-overlap-conflict");
+  });
+
+  test("should not consider touching periods as overlapping (end = start)", async ({
+    mount,
+  }) => {
+    const touchingTasks: DailyTask[] = [
+      {
+        file: { path: "task1.md", basename: "task1" },
+        path: "task1.md",
+        title: "Task 1",
+        label: "Task 1",
+        startTime: "09:00",
+        endTime: "10:00",
+        startTimestamp: null,
+        endTimestamp: null,
+        status: "ems__EffortStatusInProgress",
+        metadata: {
+          ems__Effort_plannedStartTimestamp: "2025-01-15T09:00:00",
+          ems__Effort_plannedEndTimestamp: "2025-01-15T10:00:00",
+        },
+        isDone: false,
+        isTrashed: false,
+        isDoing: false,
+        isMeeting: false,
+        isBlocked: false,
+      },
+      {
+        file: { path: "task2.md", basename: "task2" },
+        path: "task2.md",
+        title: "Task 2",
+        label: "Task 2",
+        startTime: "10:00",
+        endTime: "11:00",
+        startTimestamp: null,
+        endTimestamp: null,
+        status: "ems__EffortStatusInProgress",
+        metadata: {
+          ems__Effort_plannedStartTimestamp: "2025-01-15T10:00:00",
+          ems__Effort_plannedEndTimestamp: "2025-01-15T11:00:00",
+        },
+        isDone: false,
+        isTrashed: false,
+        isDoing: false,
+        isMeeting: false,
+        isBlocked: false,
+      },
+    ];
+
+    const component = await mount(
+      <DailyTasksTable tasks={touchingTasks} />,
+    );
+
+    // Task 1 ends at exactly 10:00, Task 2 starts at exactly 10:00
+    // This should NOT be considered an overlap (touching, not overlapping)
+    const task1Row = component.locator('tr[data-path="task1.md"]');
+    const task2Row = component.locator('tr[data-path="task2.md"]');
+
+    const task1Class = await task1Row.getAttribute("class");
+    const task2Class = await task2Row.getAttribute("class");
+
+    expect(task1Class).not.toContain("task-overlap-conflict");
+    expect(task2Class).not.toContain("task-overlap-conflict");
+  });
+
+  test("should highlight multiple overlapping tasks correctly", async ({
+    mount,
+  }) => {
+    const multipleOverlaps: DailyTask[] = [
+      {
+        file: { path: "task1.md", basename: "task1" },
+        path: "task1.md",
+        title: "Task 1",
+        label: "Task 1",
+        startTime: "09:00",
+        endTime: "11:00",
+        startTimestamp: null,
+        endTimestamp: null,
+        status: "ems__EffortStatusInProgress",
+        metadata: {
+          ems__Effort_plannedStartTimestamp: "2025-01-15T09:00:00",
+          ems__Effort_plannedEndTimestamp: "2025-01-15T11:00:00",
+        },
+        isDone: false,
+        isTrashed: false,
+        isDoing: false,
+        isMeeting: false,
+        isBlocked: false,
+      },
+      {
+        file: { path: "task2.md", basename: "task2" },
+        path: "task2.md",
+        title: "Task 2",
+        label: "Task 2",
+        startTime: "10:00",
+        endTime: "12:00",
+        startTimestamp: null,
+        endTimestamp: null,
+        status: "ems__EffortStatusInProgress",
+        metadata: {
+          ems__Effort_plannedStartTimestamp: "2025-01-15T10:00:00",
+          ems__Effort_plannedEndTimestamp: "2025-01-15T12:00:00",
+        },
+        isDone: false,
+        isTrashed: false,
+        isDoing: false,
+        isMeeting: false,
+        isBlocked: false,
+      },
+      {
+        file: { path: "task3.md", basename: "task3" },
+        path: "task3.md",
+        title: "Task 3",
+        label: "Task 3",
+        startTime: "14:00",
+        endTime: "15:00",
+        startTimestamp: null,
+        endTimestamp: null,
+        status: "ems__EffortStatusInProgress",
+        metadata: {
+          ems__Effort_plannedStartTimestamp: "2025-01-15T14:00:00",
+          ems__Effort_plannedEndTimestamp: "2025-01-15T15:00:00",
+        },
+        isDone: false,
+        isTrashed: false,
+        isDoing: false,
+        isMeeting: false,
+        isBlocked: false,
+      },
+    ];
+
+    const component = await mount(
+      <DailyTasksTable tasks={multipleOverlaps} />,
+    );
+
+    // Task 1 (09:00-11:00) overlaps with Task 2 (10:00-12:00)
+    // Task 3 (14:00-15:00) does not overlap with anyone
+    const task1Row = component.locator('tr[data-path="task1.md"]');
+    const task2Row = component.locator('tr[data-path="task2.md"]');
+    const task3Row = component.locator('tr[data-path="task3.md"]');
+
+    await expect(task1Row).toHaveClass(/task-overlap-conflict/);
+    await expect(task2Row).toHaveClass(/task-overlap-conflict/);
+
+    const task3Class = await task3Row.getAttribute("class");
+    expect(task3Class).not.toContain("task-overlap-conflict");
+  });
+});

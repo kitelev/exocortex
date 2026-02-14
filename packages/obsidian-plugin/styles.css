@@ -2800,6 +2800,24 @@
   font-style: italic;
 }
 
+/* Overlapping planned periods - schedule conflict highlight */
+.exocortex-tasks-table tr.task-overlap-conflict {
+  background-color: rgba(139, 0, 0, 0.12);  /* Dark red, pleasant for eyes */
+}
+
+.exocortex-tasks-table tr.task-overlap-conflict:hover {
+  background-color: rgba(139, 0, 0, 0.18);  /* Slightly stronger on hover */
+}
+
+/* Dark theme variant */
+.theme-dark .exocortex-tasks-table tr.task-overlap-conflict {
+  background-color: rgba(178, 34, 34, 0.15);  /* Firebrick, slightly lighter for dark mode */
+}
+
+.theme-dark .exocortex-tasks-table tr.task-overlap-conflict:hover {
+  background-color: rgba(178, 34, 34, 0.22);
+}
+
 /* Virtualized table-specific styles for proper alignment */
 .exocortex-virtualized .exocortex-tasks-table-header {
   border-bottom: none;
