@@ -6901,3 +6901,373 @@ Any component using virtualization with separate header/body tables:
 | CI status | ✅ All checks passed |
 
 **Reference**: Issue #2116, PR #2116 - Apply scrollbar width fix to AssetRelationsTable and TableLayoutRenderer (53 steps, February 2026)
+
+---
+
+## Class-Based Filtering Pattern for Detection Algorithms
+
+**When to use**: Before running detection algorithms (overlap, conflict, validation) that should exclude certain asset classes
+
+### Problem
+
+Some detection algorithms apply to all assets by default, but certain asset classes should be excluded from detection:
+- `ems__Context` tasks describe WHERE/HOW (not WHAT), so they don't conflict with actual tasks
+- Archived items shouldn't trigger active-only validations
+- Template assets shouldn't be counted in statistics
+
+### Solution
+
+Filter by `exo__Instance_class` BEFORE running detection logic:
+
+```typescript
+const tasksWithOverlaps = useMemo(() => {
+  // Step 1: Filter out excluded classes BEFORE detection
+  const eligibleTasks = tasks.filter((task) => {
+    const start = task.metadata.ems__Effort_plannedStartTimestamp;
+    const end = task.metadata.ems__Effort_plannedEndTimestamp;
+
+    // Check for excluded classes
+    const classes = task.metadata.exo__Instance_class;
+    const isContext = Array.isArray(classes)
+      ? classes.some((c: string) => c.includes('ems__Context'))
+      : typeof classes === 'string' && classes.includes('ems__Context');
+
+    return start != null && end != null && !isContext;
+  });
+
+  // Step 2: Run detection only on eligible tasks
+  return detectOverlaps(eligibleTasks);
+}, [tasks]);
+```
+
+### Handling Multiple Class Formats
+
+`exo__Instance_class` can appear in several formats - handle all of them:
+
+```typescript
+function hasClass(metadata: Record<string, unknown>, targetClass: string): boolean {
+  const classes = metadata.exo__Instance_class;
+
+  if (!classes) return false;
+
+  // Format 1: Single string - "ems__Task"
+  if (typeof classes === 'string') {
+    return classes.includes(targetClass);
+  }
+
+  // Format 2: Array - ["ems__Task", "ems__Context"]
+  if (Array.isArray(classes)) {
+    return classes.some((c: string) =>
+      typeof c === 'string' && c.includes(targetClass)
+    );
+  }
+
+  // Format 3: Wiki-link - "[[ems__Context]]" or "[[uuid|ems__Context]]"
+  // Already handled by includes() check
+
+  return false;
+}
+```
+
+### Key Insight
+
+Context tasks (`ems__Context`) describe the circumstances under which other tasks are performed:
+- "Commute to office" + "Review PR" is NOT a conflict - the review happens DURING commute
+- Context provides metadata about task execution environment
+- Exclude contexts from time-based conflict detection
+
+### Test Cases
+
+```typescript
+it("should exclude ems__Context from overlap detection", () => {
+  const tasks = [
+    { class: "ems__Task", start: "09:00", end: "11:00" },
+    { class: "ems__Context", start: "09:30", end: "10:30" }, // Should be excluded
+  ];
+
+  const overlaps = detectOverlaps(filterEligible(tasks));
+
+  expect(overlaps).toHaveLength(0); // No overlap because context excluded
+});
+
+it("should detect overlaps between regular tasks", () => {
+  const tasks = [
+    { class: "ems__Task", start: "09:00", end: "11:00" },
+    { class: "ems__Task", start: "10:00", end: "12:00" },
+  ];
+
+  const overlaps = detectOverlaps(filterEligible(tasks));
+
+  expect(overlaps).toHaveLength(2); // Both tasks marked as overlapping
+});
+```
+
+### Metrics (Issue #2128, PR #2128)
+
+| Metric | Value |
+|--------|-------|
+| Steps | 55 |
+| Files modified | 2 |
+| Test cases added | 5 |
+| Time | ~45 minutes |
+| Errors encountered | 0 |
+| CI status | ✅ All checks passed |
+
+**Reference**: Issue #2128, PR #2128 - Exclude ems__Context tasks from overlap detection (55 steps, February 2026)
+
+---
+
+## Command Implementation Pattern with Timestamp Service
+
+**When to use**: Adding new Obsidian commands that update frontmatter timestamps
+
+### Architecture
+
+```
+┌─────────────────────────┐
+│   CommandRegistry.ts    │ ← Registration + DI wiring
+├─────────────────────────┤
+│  MarkReviewedCommand.ts │ ← Command class (ICommand interface)
+├─────────────────────────┤
+│ EffortVisibilityRules.ts│ ← Visibility logic (canMarkReviewed)
+├─────────────────────────┤
+│ StatusTimestampService.ts│ ← Shared timestamp service
+├─────────────────────────┤
+│  FrontmatterService.ts  │ ← Low-level frontmatter ops
+└─────────────────────────┘
+```
+
+### Step-by-Step Implementation
+
+#### 1. Add Visibility Rule (EffortVisibilityRules.ts)
+
+```typescript
+export function canMarkReviewed(context: CommandVisibilityContext): boolean {
+  return (
+    (isTask(context.instanceClass) || isProject(context.instanceClass)) &&
+    !context.isArchived
+  );
+}
+```
+
+#### 2. Add Service Method (StatusTimestampService.ts)
+
+```typescript
+async addReviewTimestamp(file: IFile): Promise<void> {
+  const content = await this.vault.read(file);
+  const timestamp = DateFormatter.toLocalTimestamp(new Date());
+
+  const updated = this.frontmatterService.updateProperty(
+    content,
+    "ems__Effort_lastReviewTimestamp",
+    timestamp
+  );
+
+  await this.vault.modify(file, updated);
+}
+```
+
+#### 3. Create Command Class (MarkReviewedCommand.ts)
+
+```typescript
+export class MarkReviewedCommand implements ICommand {
+  id = "mark-reviewed";
+  name = "Mark as reviewed";
+
+  constructor(private statusTimestampService: StatusTimestampService) {}
+
+  checkCallback = (
+    checking: boolean,
+    file: TFile,
+    context: CommandVisibilityContext | null
+  ): boolean => {
+    if (!context || !canMarkReviewed(context)) return false;
+
+    if (!checking) {
+      void (async () => {
+        try {
+          await this.execute(file);
+        } catch (error) {
+          new Notice(`Failed to mark as reviewed: ${error}`);
+          LoggingService.error("Mark reviewed error", error);
+        }
+      })();
+    }
+
+    return true;
+  };
+
+  private async execute(file: TFile): Promise<void> {
+    await this.statusTimestampService.addReviewTimestamp(file);
+    new Notice(`Marked as reviewed: ${file.basename}`);
+  }
+}
+```
+
+#### 4. Register Command (CommandRegistry.ts)
+
+```typescript
+// In registerAllCommands()
+this.registerCommand(
+  new MarkReviewedCommand(this.statusTimestampService)
+);
+```
+
+### Key Pattern Elements
+
+1. **Visibility First**: Define when command is visible (`canMarkReviewed`)
+2. **Reuse Services**: Use existing `StatusTimestampService` for consistency
+3. **Error Handling**: Wrap async in try-catch with user notice
+4. **Single Responsibility**: Command only orchestrates, service does the work
+5. **Reference Implementation**: Copy from `MarkDoneCommand.ts`
+
+### Test Checklist
+
+- [ ] Visibility rule returns true for Task
+- [ ] Visibility rule returns true for Project
+- [ ] Visibility rule returns false for archived Task
+- [ ] Visibility rule returns false for Area
+- [ ] Service method creates timestamp property
+- [ ] Service method updates existing timestamp
+- [ ] Command executes successfully
+- [ ] Command shows error notice on failure
+
+### Metrics (Issue #2124, PR #2124)
+
+| Metric | Value |
+|--------|-------|
+| Steps | 41 |
+| Files modified | 10 |
+| Test cases added | ~15 |
+| Time | ~35 minutes |
+| Errors encountered | 0 |
+| CI status | ✅ All checks passed |
+
+**Reference**: Issue #2124, PR #2124 - Add 'Reviewed' command (41 steps, February 2026)
+
+---
+
+## CodeMirror 6 Label Replacement Pattern
+
+**When to use**: Replacing displayed text in Obsidian's Live Preview (editor) mode
+
+### Problem
+
+Obsidian uses different rendering systems for different modes:
+- **Reading View**: DOM-based, use MutationObserver + DOM patching (`BodyLinkPatch.ts`)
+- **Live Preview**: CodeMirror 6, use ViewPlugin + Decorations (`AliasIconViewPlugin.ts`)
+
+Wikilinks like `[[uuid]]` need to display as `exo__Asset_label` in both modes.
+
+### Solution: Decoration.replace()
+
+```typescript
+// In ViewPlugin class
+private buildDecorations(view: EditorView): DecorationSet {
+  const builder = new RangeSetBuilder<Decoration>();
+
+  // Find wikilinks without aliases: [[uuid]] (no pipe)
+  const wikilinkPattern = /\[\[([^\]|]+)\]\]/g;
+  const text = view.state.doc.sliceString(view.viewport.from, view.viewport.to);
+
+  let match;
+  while ((match = wikilinkPattern.exec(text)) !== null) {
+    const targetPath = match[1].trim();
+    const label = this.resolveLabel(targetPath);
+
+    if (label && label !== targetPath) {
+      // Key: Use Decoration.replace() to substitute text
+      const decoration = Decoration.replace({
+        widget: new InlineTextWidget(label),
+      });
+
+      const from = view.viewport.from + match.index;
+      const to = from + match[0].length;
+
+      builder.add(from, to, decoration);
+    }
+  }
+
+  return builder.finish();
+}
+```
+
+### Widget Implementation
+
+```typescript
+class InlineTextWidget extends WidgetType {
+  constructor(private label: string) {
+    super();
+  }
+
+  toDOM(): HTMLElement {
+    const span = document.createElement("span");
+    span.textContent = this.label;
+    span.className = "cm-wikilink-label";
+    return span;
+  }
+
+  eq(other: InlineTextWidget): boolean {
+    return this.label === other.label;
+  }
+}
+```
+
+### Key Differences: widget() vs replace()
+
+| Method | Effect | Use Case |
+|--------|--------|----------|
+| `Decoration.widget()` | Adds element (doesn't hide original) | Icons, badges |
+| `Decoration.replace()` | Replaces text with widget | Label substitution |
+| `Decoration.mark()` | Applies CSS class to range | Highlighting |
+
+### Cursor-Aware Editing
+
+When user edits wikilink, show original UUID:
+
+```typescript
+private isInEditRange(view: EditorView, from: number, to: number): boolean {
+  const selection = view.state.selection.main;
+  return selection.from <= to && selection.to >= from;
+}
+
+// In buildDecorations():
+if (!this.isInEditRange(view, from, to)) {
+  builder.add(from, to, decoration);
+  // Only decorate when cursor is outside the wikilink
+}
+```
+
+### Settings Integration
+
+```typescript
+// ExocortexSettings.ts
+interface ExocortexSettings {
+  showLabelsInLivePreview: boolean;  // Default: true
+}
+
+// In ViewPlugin
+if (this.settings.showLabelsInLivePreview) {
+  // Apply decorations
+}
+```
+
+### Performance Considerations
+
+- **Viewport-only rendering**: Only process visible content (`view.viewport.from/to`)
+- **Label caching**: Use LRU cache for `resolveLabel()` lookups
+- **Efficient updates**: ViewPlugin's `update()` only rebuilds when document changes
+
+### Metrics (Issue #2126, PR #2126)
+
+| Metric | Value |
+|--------|-------|
+| Steps | 102 |
+| Files modified | 7 |
+| New files created | 1 (WikilinkLabelViewPlugin.ts) |
+| Test cases added | ~10 |
+| Time | ~90 minutes |
+| Errors encountered | 0 |
+| CI status | ✅ All checks passed |
+
+**Reference**: Issue #2126, PR #2126 - Display wikilinks by exo__Asset_label in live preview (102 steps, February 2026)
