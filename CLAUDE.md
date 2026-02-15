@@ -2663,6 +2663,50 @@ gh issue create --title "P1: Fix [alert type] (N alerts)" --body "..."
 
 ---
 
+## 📊 February 2026 Lessons (Issues #2124-#2128)
+
+> Patterns discovered from 3 completed issues (198 total steps)
+
+### Class-Based Filtering for Detection Algorithms
+
+From Issue #2128 (55 steps): When running detection algorithms (overlap, conflict, validation), filter by `exo__Instance_class` BEFORE detection:
+
+```typescript
+// Filter out ems__Context before overlap detection
+const isContext = Array.isArray(classes)
+  ? classes.some((c: string) => c.includes('ems__Context'))
+  : typeof classes === 'string' && classes.includes('ems__Context');
+
+if (!isContext) {
+  // Include in overlap detection
+}
+```
+
+**Key insight**: Context tasks describe WHERE/HOW (not WHAT) - they don't conflict with actual tasks.
+
+### Command Implementation Checklist
+
+From Issue #2124 (41 steps): When adding new commands:
+
+1. Add visibility rule in `EffortVisibilityRules.ts`
+2. Add service method in `StatusTimestampService.ts`
+3. Create command class implementing `ICommand`
+4. Register in `CommandRegistry.ts`
+5. Reference `MarkDoneCommand.ts` for pattern
+
+### CodeMirror 6 Label Replacement
+
+From Issue #2126 (102 steps): For Live Preview text substitution:
+
+- Use `Decoration.replace()` (not `widget()`) to substitute text
+- Use `Decoration.widget()` to add elements without hiding original
+- Viewport-only rendering: `view.viewport.from/to`
+- Cursor-aware editing: show original when editing
+
+**Full patterns**: See PATTERNS.md sections added in this sprint.
+
+---
+
 **Remember**:
 - 🚨 **ALL worktrees MUST be in `worktrees/` subdirectory - NO EXCEPTIONS!**
 - This directory exists to enable safe parallel development
