@@ -65,6 +65,7 @@ export {
   canVoteOnEffort,
   canRollbackStatus,
   canArchiveTask,
+  canMarkReviewed,
 } from "./EffortVisibilityRules";
 
 // Asset visibility rules

@@ -179,3 +179,23 @@ export function canRollbackStatus(context: CommandVisibilityContext): boolean {
 export function canArchiveTask(context: CommandVisibilityContext): boolean {
   return !isAssetArchived(context.isArchived);
 }
+
+/**
+ * Can execute "Mark as Reviewed" command
+ * Available for: Task or Project (not archived)
+ * Allows user to update ems__Effort_lastReviewTimestamp
+ */
+export function canMarkReviewed(context: CommandVisibilityContext): boolean {
+  // Only Task or Project (not Meeting)
+  if (
+    !hasClass(context.instanceClass, AssetClass.TASK) &&
+    !hasClass(context.instanceClass, AssetClass.PROJECT)
+  ) {
+    return false;
+  }
+
+  // Not available for archived assets
+  if (isAssetArchived(context.isArchived)) return false;
+
+  return true;
+}

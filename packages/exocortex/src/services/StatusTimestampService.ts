@@ -54,6 +54,19 @@ export class StatusTimestampService {
     await this.vault.modify(taskFile, updated);
   }
 
+  async addReviewTimestamp(taskFile: IFile): Promise<void> {
+    const content = await this.vault.read(taskFile);
+    const timestamp = DateFormatter.toLocalTimestamp(new Date());
+
+    const updated = this.frontmatterService.updateProperty(
+      content,
+      "ems__Effort_lastReviewTimestamp",
+      timestamp,
+    );
+
+    await this.vault.modify(taskFile, updated);
+  }
+
   async addEndAndResolutionTimestamps(
     taskFile: IFile,
     date?: Date,

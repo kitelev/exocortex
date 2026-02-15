@@ -378,4 +378,95 @@ Task content.`;
       expect(mockVault.modify).toHaveBeenCalled();
     });
   });
+
+  describe("addReviewTimestamp", () => {
+    it("should add lastReviewTimestamp to frontmatter", async () => {
+      const originalContent = `---
+title: My Task
+ems__Effort_status: "[[ems__EffortStatusBacklog]]"
+---
+
+Task content.`;
+
+      const expectedContent = `---
+title: My Task
+ems__Effort_status: "[[ems__EffortStatusBacklog]]"
+ems__Effort_lastReviewTimestamp: ${mockTimestamp}
+---
+
+Task content.`;
+
+      mockVault.read.mockResolvedValue(originalContent);
+
+      await service.addReviewTimestamp(mockFile);
+
+      expect(mockVault.read).toHaveBeenCalledWith(mockFile);
+      expect(mockVault.modify).toHaveBeenCalledWith(mockFile, expectedContent);
+      expect(DateFormatter.toLocalTimestamp).toHaveBeenCalledWith(
+        expect.any(Date),
+      );
+    });
+
+    it("should update existing lastReviewTimestamp", async () => {
+      const originalContent = `---
+title: My Task
+ems__Effort_lastReviewTimestamp: 2024-01-01T09:00:00
+---
+
+Task content.`;
+
+      const expectedContent = `---
+title: My Task
+ems__Effort_lastReviewTimestamp: ${mockTimestamp}
+---
+
+Task content.`;
+
+      mockVault.read.mockResolvedValue(originalContent);
+
+      await service.addReviewTimestamp(mockFile);
+
+      expect(mockVault.modify).toHaveBeenCalledWith(mockFile, expectedContent);
+    });
+
+    it("should handle content without frontmatter", async () => {
+      const originalContent = "Task content without frontmatter.";
+
+      const expectedContent = `---
+ems__Effort_lastReviewTimestamp: ${mockTimestamp}
+---
+Task content without frontmatter.`;
+
+      mockVault.read.mockResolvedValue(originalContent);
+
+      await service.addReviewTimestamp(mockFile);
+
+      expect(mockVault.modify).toHaveBeenCalledWith(mockFile, expectedContent);
+    });
+
+    it("should preserve other frontmatter properties", async () => {
+      const originalContent = `---
+exo__Asset_label: "My Project"
+exo__Instance_class: "[[ems__Project]]"
+ems__Effort_status: "[[ems__EffortStatusToDo]]"
+---
+
+Project description.`;
+
+      const expectedContent = `---
+exo__Asset_label: "My Project"
+exo__Instance_class: "[[ems__Project]]"
+ems__Effort_status: "[[ems__EffortStatusToDo]]"
+ems__Effort_lastReviewTimestamp: ${mockTimestamp}
+---
+
+Project description.`;
+
+      mockVault.read.mockResolvedValue(originalContent);
+
+      await service.addReviewTimestamp(mockFile);
+
+      expect(mockVault.modify).toHaveBeenCalledWith(mockFile, expectedContent);
+    });
+  });
 });

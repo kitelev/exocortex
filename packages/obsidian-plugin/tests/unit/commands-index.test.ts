@@ -27,6 +27,7 @@ describe("Commands Index Exports", () => {
       "ShiftDayBackwardCommand",
       "ShiftDayForwardCommand",
       "MarkDoneCommand",
+      "MarkReviewedCommand",
       "TrashEffortCommand",
       "ArchiveTaskCommand",
       "CleanPropertiesCommand",
@@ -55,9 +56,9 @@ describe("Commands Index Exports", () => {
     const commandClasses = exports.filter((key) => key.endsWith("Command"));
     const registryClasses = exports.filter((key) => key.endsWith("Registry"));
 
-    expect(commandClasses.length).toBe(26); // All commands
+    expect(commandClasses.length).toBe(27); // All commands
     expect(registryClasses.length).toBe(1); // CommandRegistry
-    expect(exports.length).toBe(27); // Total exports (excluding ICommand type)
+    expect(exports.length).toBe(28); // Total exports (excluding ICommand type)
   });
 
   it("should have all exported classes be constructable", () => {
