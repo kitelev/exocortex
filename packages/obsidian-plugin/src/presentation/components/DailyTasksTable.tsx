@@ -53,6 +53,35 @@ const periodsOverlap = (
   return start1 < end2 && start2 < end1;
 };
 
+/**
+ * Check if a task is a context task (has ems__Context class).
+ * Context tasks describe WHERE or HOW other tasks are executed, not WHAT is being done.
+ * They should be excluded from overlap detection to avoid false-positive scheduling conflicts.
+ *
+ * Handles multiple formats:
+ * - Single string: "ems__Context" or "[[ems__Context]]"
+ * - Array: ["[[ems__Task]]", "[[ems__Context]]"]
+ */
+const isContextTask = (metadata: Record<string, unknown>): boolean => {
+  const classes = metadata.exo__Instance_class;
+
+  if (classes == null) {
+    return false;
+  }
+
+  if (Array.isArray(classes)) {
+    return classes.some((c: unknown) =>
+      typeof c === 'string' && c.includes('ems__Context')
+    );
+  }
+
+  if (typeof classes === 'string') {
+    return classes.includes('ems__Context');
+  }
+
+  return false;
+};
+
 export const DailyTasksTable: React.FC<DailyTasksTableProps> = ({
   tasks,
   onTaskClick,
@@ -93,15 +122,22 @@ export const DailyTasksTable: React.FC<DailyTasksTableProps> = ({
   /**
    * Find tasks with overlapping planned periods.
    * Only considers tasks that have both plannedStartTimestamp and plannedEndTimestamp.
+   * Excludes context tasks (ems__Context) from overlap detection to avoid false-positive conflicts.
    * Returns a Set of task paths that have overlapping periods.
    */
   const tasksWithOverlaps = useMemo(() => {
     const overlapping = new Set<string>();
 
-    // Filter tasks with valid planned timestamps
+    // Filter tasks with valid planned timestamps, excluding context tasks
     const tasksWithPlannedTimes = tasks.filter((task) => {
       const start = task.metadata.ems__Effort_plannedStartTimestamp;
       const end = task.metadata.ems__Effort_plannedEndTimestamp;
+
+      // Exclude context tasks from overlap detection
+      if (isContextTask(task.metadata)) {
+        return false;
+      }
+
       return start != null && end != null;
     });
 
