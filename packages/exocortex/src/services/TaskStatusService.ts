@@ -163,6 +163,10 @@ export class TaskStatusService {
     await this.shiftDay(taskFile, 1);
   }
 
+  async markAsReviewed(taskFile: IFile): Promise<void> {
+    await this.timestampService.addReviewTimestamp(taskFile);
+  }
+
   async rollbackStatus(taskFile: IFile): Promise<void> {
     const content = await this.vault.read(taskFile);
     const currentStatus = this.extractCurrentStatus(content);

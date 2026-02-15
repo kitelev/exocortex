@@ -14,6 +14,7 @@ export { PlanForEveningCommand } from "./PlanForEveningCommand";
 export { ShiftDayBackwardCommand } from "./ShiftDayBackwardCommand";
 export { ShiftDayForwardCommand } from "./ShiftDayForwardCommand";
 export { MarkDoneCommand } from "./MarkDoneCommand";
+export { MarkReviewedCommand } from "./MarkReviewedCommand";
 export { TrashEffortCommand } from "./TrashEffortCommand";
 export { ArchiveTaskCommand } from "./ArchiveTaskCommand";
 export { CleanPropertiesCommand } from "./CleanPropertiesCommand";

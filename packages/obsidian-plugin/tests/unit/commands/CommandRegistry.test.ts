@@ -195,8 +195,8 @@ describe("CommandRegistry", () => {
       const registry = new CommandRegistry(mockApp, mockPlugin);
       const commands = registry.getAllCommands();
 
-      // 34 commands are registered based on source (including CreateAssetCommand)
-      expect(commands.length).toBe(34);
+      // 35 commands are registered based on source (including MarkReviewedCommand)
+      expect(commands.length).toBe(35);
     });
 
     it("should return same array on multiple calls", () => {

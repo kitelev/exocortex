@@ -41,6 +41,7 @@ import { PlanForEveningCommand } from "./PlanForEveningCommand";
 import { ShiftDayBackwardCommand } from "./ShiftDayBackwardCommand";
 import { ShiftDayForwardCommand } from "./ShiftDayForwardCommand";
 import { MarkDoneCommand } from "./MarkDoneCommand";
+import { MarkReviewedCommand } from "./MarkReviewedCommand";
 import { TrashEffortCommand } from "./TrashEffortCommand";
 import { ArchiveTaskCommand } from "./ArchiveTaskCommand";
 import { CleanPropertiesCommand } from "./CleanPropertiesCommand";
@@ -118,6 +119,7 @@ export class CommandRegistry {
       new ShiftDayBackwardCommand(taskStatusService),
       new ShiftDayForwardCommand(taskStatusService),
       new MarkDoneCommand(taskStatusService),
+      new MarkReviewedCommand(taskStatusService),
       new TrashEffortCommand(app, taskStatusService),
       new ArchiveTaskCommand(taskStatusService),
       new CleanPropertiesCommand(propertyCleanupService),
