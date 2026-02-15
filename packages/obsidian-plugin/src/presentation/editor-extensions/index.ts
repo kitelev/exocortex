@@ -4,3 +4,8 @@ export {
   createAliasIconExtension,
   type IAliasService,
 } from "./AliasIconViewPlugin";
+export {
+  WikilinkLabelViewPlugin,
+  createWikilinkLabelExtension,
+  type WikilinkMatch,
+} from "./WikilinkLabelViewPlugin";
