@@ -2336,3 +2336,344 @@ test.describe("Overlapping Planned Task Periods Highlighting", () => {
     await expect(task3Row).not.toHaveClass(/task-overlap-conflict/);
   });
 });
+
+test.describe("Context Task Overlap Exclusion (Issue #2128)", () => {
+  test("should exclude context task (with ems__Context class) from overlap detection", async ({
+    mount,
+  }) => {
+    const tasksWithContext: DailyTask[] = [
+      {
+        file: { path: "regular-task.md", basename: "regular-task" },
+        path: "regular-task.md",
+        title: "Regular Task",
+        label: "Regular Task",
+        startTime: "09:00",
+        endTime: "11:00",
+        startTimestamp: null,
+        endTimestamp: null,
+        status: "ems__EffortStatusInProgress",
+        metadata: {
+          ems__Effort_plannedStartTimestamp: "2025-01-15T09:00:00",
+          ems__Effort_plannedEndTimestamp: "2025-01-15T11:00:00",
+        },
+        isDone: false,
+        isTrashed: false,
+        isDoing: false,
+        isMeeting: false,
+        isBlocked: false,
+      },
+      {
+        file: { path: "context-task.md", basename: "context-task" },
+        path: "context-task.md",
+        title: "In Transit",
+        label: "In Transit",
+        startTime: "10:00",
+        endTime: "11:00",
+        startTimestamp: null,
+        endTimestamp: null,
+        status: "ems__EffortStatusInProgress",
+        metadata: {
+          exo__Instance_class: "[[ems__Context]]",
+          ems__Effort_plannedStartTimestamp: "2025-01-15T10:00:00",
+          ems__Effort_plannedEndTimestamp: "2025-01-15T11:00:00",
+        },
+        isDone: false,
+        isTrashed: false,
+        isDoing: false,
+        isMeeting: false,
+        isBlocked: false,
+      },
+    ];
+
+    const component = await mount(
+      <DailyTasksTable tasks={tasksWithContext} />,
+    );
+
+    // Context task overlaps with regular task (10:00-11:00 overlaps with 09:00-11:00)
+    // BUT context task should be excluded from overlap detection
+    // So neither should be highlighted
+    const regularTaskRow = component.locator('tr[data-path="regular-task.md"]');
+    const contextTaskRow = component.locator('tr[data-path="context-task.md"]');
+
+    await expect(regularTaskRow).not.toHaveClass(/task-overlap-conflict/);
+    await expect(contextTaskRow).not.toHaveClass(/task-overlap-conflict/);
+  });
+
+  test("should exclude context task with array class format from overlap detection", async ({
+    mount,
+  }) => {
+    const tasksWithContextArray: DailyTask[] = [
+      {
+        file: { path: "regular-task.md", basename: "regular-task" },
+        path: "regular-task.md",
+        title: "Regular Task",
+        label: "Regular Task",
+        startTime: "09:00",
+        endTime: "11:00",
+        startTimestamp: null,
+        endTimestamp: null,
+        status: "ems__EffortStatusInProgress",
+        metadata: {
+          ems__Effort_plannedStartTimestamp: "2025-01-15T09:00:00",
+          ems__Effort_plannedEndTimestamp: "2025-01-15T11:00:00",
+        },
+        isDone: false,
+        isTrashed: false,
+        isDoing: false,
+        isMeeting: false,
+        isBlocked: false,
+      },
+      {
+        file: { path: "context-task.md", basename: "context-task" },
+        path: "context-task.md",
+        title: "Commute",
+        label: "Commute",
+        startTime: "10:00",
+        endTime: "11:00",
+        startTimestamp: null,
+        endTimestamp: null,
+        status: "ems__EffortStatusInProgress",
+        metadata: {
+          exo__Instance_class: ["[[ems__Task]]", "[[ems__Context]]"],
+          ems__Effort_plannedStartTimestamp: "2025-01-15T10:00:00",
+          ems__Effort_plannedEndTimestamp: "2025-01-15T11:00:00",
+        },
+        isDone: false,
+        isTrashed: false,
+        isDoing: false,
+        isMeeting: false,
+        isBlocked: false,
+      },
+    ];
+
+    const component = await mount(
+      <DailyTasksTable tasks={tasksWithContextArray} />,
+    );
+
+    // Context task has multiple classes including ems__Context
+    // Should be excluded from overlap detection
+    const regularTaskRow = component.locator('tr[data-path="regular-task.md"]');
+    const contextTaskRow = component.locator('tr[data-path="context-task.md"]');
+
+    await expect(regularTaskRow).not.toHaveClass(/task-overlap-conflict/);
+    await expect(contextTaskRow).not.toHaveClass(/task-overlap-conflict/);
+  });
+
+  test("should still highlight overlapping regular tasks (existing behavior preserved)", async ({
+    mount,
+  }) => {
+    const regularOverlappingTasks: DailyTask[] = [
+      {
+        file: { path: "task1.md", basename: "task1" },
+        path: "task1.md",
+        title: "Task 1",
+        label: "Task 1",
+        startTime: "09:00",
+        endTime: "11:00",
+        startTimestamp: null,
+        endTimestamp: null,
+        status: "ems__EffortStatusInProgress",
+        metadata: {
+          exo__Instance_class: "[[ems__Task]]",
+          ems__Effort_plannedStartTimestamp: "2025-01-15T09:00:00",
+          ems__Effort_plannedEndTimestamp: "2025-01-15T11:00:00",
+        },
+        isDone: false,
+        isTrashed: false,
+        isDoing: false,
+        isMeeting: false,
+        isBlocked: false,
+      },
+      {
+        file: { path: "task2.md", basename: "task2" },
+        path: "task2.md",
+        title: "Task 2",
+        label: "Task 2",
+        startTime: "10:00",
+        endTime: "12:00",
+        startTimestamp: null,
+        endTimestamp: null,
+        status: "ems__EffortStatusInProgress",
+        metadata: {
+          exo__Instance_class: "[[ems__Task]]",
+          ems__Effort_plannedStartTimestamp: "2025-01-15T10:00:00",
+          ems__Effort_plannedEndTimestamp: "2025-01-15T12:00:00",
+        },
+        isDone: false,
+        isTrashed: false,
+        isDoing: false,
+        isMeeting: false,
+        isBlocked: false,
+      },
+    ];
+
+    const component = await mount(
+      <DailyTasksTable tasks={regularOverlappingTasks} />,
+    );
+
+    // Two regular tasks overlap → BOTH should be highlighted
+    const task1Row = component.locator('tr[data-path="task1.md"]');
+    const task2Row = component.locator('tr[data-path="task2.md"]');
+
+    await expect(task1Row).toHaveClass(/task-overlap-conflict/);
+    await expect(task2Row).toHaveClass(/task-overlap-conflict/);
+  });
+
+  test("should render context task in table (not hidden)", async ({
+    mount,
+  }) => {
+    const tasksWithContext: DailyTask[] = [
+      {
+        file: { path: "context-task.md", basename: "context-task" },
+        path: "context-task.md",
+        title: "In Transit",
+        label: "In Transit",
+        startTime: "10:00",
+        endTime: "11:00",
+        startTimestamp: null,
+        endTimestamp: null,
+        status: "ems__EffortStatusInProgress",
+        metadata: {
+          exo__Instance_class: "[[ems__Context]]",
+          ems__Effort_plannedStartTimestamp: "2025-01-15T10:00:00",
+          ems__Effort_plannedEndTimestamp: "2025-01-15T11:00:00",
+        },
+        isDone: false,
+        isTrashed: false,
+        isDoing: false,
+        isMeeting: false,
+        isBlocked: false,
+      },
+    ];
+
+    const component = await mount(
+      <DailyTasksTable tasks={tasksWithContext} />,
+    );
+
+    // Context task should still be visible in the table
+    const contextTaskRow = component.locator('tr[data-path="context-task.md"]');
+    await expect(contextTaskRow).toBeVisible();
+    await expect(contextTaskRow.locator(".task-name a")).toContainText("In Transit");
+  });
+
+  test("should handle context task without wiki-link format", async ({
+    mount,
+  }) => {
+    const tasksWithPlainContext: DailyTask[] = [
+      {
+        file: { path: "regular-task.md", basename: "regular-task" },
+        path: "regular-task.md",
+        title: "Regular Task",
+        label: "Regular Task",
+        startTime: "09:00",
+        endTime: "11:00",
+        startTimestamp: null,
+        endTimestamp: null,
+        status: "ems__EffortStatusInProgress",
+        metadata: {
+          ems__Effort_plannedStartTimestamp: "2025-01-15T09:00:00",
+          ems__Effort_plannedEndTimestamp: "2025-01-15T11:00:00",
+        },
+        isDone: false,
+        isTrashed: false,
+        isDoing: false,
+        isMeeting: false,
+        isBlocked: false,
+      },
+      {
+        file: { path: "context-task.md", basename: "context-task" },
+        path: "context-task.md",
+        title: "At Office",
+        label: "At Office",
+        startTime: "10:00",
+        endTime: "11:00",
+        startTimestamp: null,
+        endTimestamp: null,
+        status: "ems__EffortStatusInProgress",
+        metadata: {
+          exo__Instance_class: "ems__Context",
+          ems__Effort_plannedStartTimestamp: "2025-01-15T10:00:00",
+          ems__Effort_plannedEndTimestamp: "2025-01-15T11:00:00",
+        },
+        isDone: false,
+        isTrashed: false,
+        isDoing: false,
+        isMeeting: false,
+        isBlocked: false,
+      },
+    ];
+
+    const component = await mount(
+      <DailyTasksTable tasks={tasksWithPlainContext} />,
+    );
+
+    // Context task with plain string class (no wiki-link format)
+    // Should still be excluded from overlap detection
+    const regularTaskRow = component.locator('tr[data-path="regular-task.md"]');
+    const contextTaskRow = component.locator('tr[data-path="context-task.md"]');
+
+    await expect(regularTaskRow).not.toHaveClass(/task-overlap-conflict/);
+    await expect(contextTaskRow).not.toHaveClass(/task-overlap-conflict/);
+  });
+
+  test("should not exclude task without ems__Context class", async ({
+    mount,
+  }) => {
+    const tasksWithoutContext: DailyTask[] = [
+      {
+        file: { path: "task1.md", basename: "task1" },
+        path: "task1.md",
+        title: "Task 1",
+        label: "Task 1",
+        startTime: "09:00",
+        endTime: "11:00",
+        startTimestamp: null,
+        endTimestamp: null,
+        status: "ems__EffortStatusInProgress",
+        metadata: {
+          exo__Instance_class: "[[ems__Task]]",
+          ems__Effort_plannedStartTimestamp: "2025-01-15T09:00:00",
+          ems__Effort_plannedEndTimestamp: "2025-01-15T11:00:00",
+        },
+        isDone: false,
+        isTrashed: false,
+        isDoing: false,
+        isMeeting: false,
+        isBlocked: false,
+      },
+      {
+        file: { path: "task2.md", basename: "task2" },
+        path: "task2.md",
+        title: "Task 2",
+        label: "Task 2",
+        startTime: "10:00",
+        endTime: "12:00",
+        startTimestamp: null,
+        endTimestamp: null,
+        status: "ems__EffortStatusInProgress",
+        metadata: {
+          exo__Instance_class: "[[ems__Meeting]]",
+          ems__Effort_plannedStartTimestamp: "2025-01-15T10:00:00",
+          ems__Effort_plannedEndTimestamp: "2025-01-15T12:00:00",
+        },
+        isDone: false,
+        isTrashed: false,
+        isDoing: false,
+        isMeeting: true,
+        isBlocked: false,
+      },
+    ];
+
+    const component = await mount(
+      <DailyTasksTable tasks={tasksWithoutContext} />,
+    );
+
+    // Both tasks have class but NOT ems__Context
+    // Should still participate in overlap detection
+    const task1Row = component.locator('tr[data-path="task1.md"]');
+    const task2Row = component.locator('tr[data-path="task2.md"]');
+
+    await expect(task1Row).toHaveClass(/task-overlap-conflict/);
+    await expect(task2Row).toHaveClass(/task-overlap-conflict/);
+  });
+});
