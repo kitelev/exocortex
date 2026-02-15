@@ -30,7 +30,7 @@ import { LayoutCodeBlockProcessor } from "./application/processors/LayoutCodeBlo
 import { SPARQLApi } from "./application/api/SPARQLApi";
 import { ExocortexAPI } from "./application/api/ExocortexAPI";
 import { PluginContainer } from "./infrastructure/di/PluginContainer";
-import { createAliasIconExtension } from "./presentation/editor-extensions";
+import { createAliasIconExtension, createWikilinkLabelExtension } from "./presentation/editor-extensions";
 import { TimerManager } from "./infrastructure/timer";
 import { LRUCache } from "./infrastructure/cache";
 import { FileExplorerPatch } from "./presentation/file-explorer/FileExplorerPatch";
@@ -133,6 +133,16 @@ export default class ExocortexPlugin extends Plugin {
           this.app.metadataCache,
           this.wikilinkAliasService,
           (message: string) => new Notice(message),
+        ),
+      );
+
+      // Register wikilink label extension for Live Preview mode
+      // Displays wikilinks by exo__Asset_label instead of raw UUID
+      this.registerEditorExtension(
+        createWikilinkLabelExtension(
+          this.app,
+          this.app.metadataCache,
+          this.settings,
         ),
       );
 

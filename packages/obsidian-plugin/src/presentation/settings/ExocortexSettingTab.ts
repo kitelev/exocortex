@@ -225,6 +225,22 @@ export class ExocortexSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
+      .setName("Show labels in live preview")
+      .setDesc(
+        "Display asset labels instead of UUIDs for wikilinks in live preview mode (edit mode). " +
+        "When enabled, [[uuid]] will show as 'Asset Label' while editing.",
+      )
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.showLabelsInLivePreview)
+          .onChange(async (value) => {
+            this.plugin.settings.showLabelsInLivePreview = value;
+            await this.plugin.saveSettings();
+            // Setting change triggers decoration rebuild via settings reference
+          }),
+      );
+
+    new Setting(containerEl)
       .setName("Sort file explorer by display name")
       .setDesc(
         "Sort files by their display name (exo__Asset_label) instead of filename. " +
