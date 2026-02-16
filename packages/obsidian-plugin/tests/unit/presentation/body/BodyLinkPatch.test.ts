@@ -550,4 +550,116 @@ describe("BodyLinkPatch", () => {
       }).not.toThrow();
     });
   });
+
+  describe("block reference support (Issue #2133)", () => {
+    it("should handle block references in data-href and append block id to display", () => {
+      // User wrote [[uuid#^blockid]] - Obsidian renders this with data-href containing block ref
+      mockLink.setAttribute("data-href", "5764fb33-9cb1-43a4-a9be-43c534922798#^jgp9nz");
+      mockLink.textContent = "5764fb33-9cb1-43a4-a9be-43c534922798#^jgp9nz";
+
+      const mockFile = new TFile();
+      Object.defineProperty(mockFile, "extension", { value: "md" });
+      Object.defineProperty(mockFile, "basename", { value: "5764fb33-9cb1-43a4-a9be-43c534922798" });
+      Object.defineProperty(mockFile, "stat", {
+        value: { ctime: Date.now() },
+      });
+
+      mockApp.metadataCache.getFirstLinkpathDest.mockReturnValue(mockFile);
+      mockApp.metadataCache.getFileCache.mockReturnValue({
+        frontmatter: {
+          exo__Asset_label: "My Document",
+          exo__Instance_class: "ems__Task",
+        },
+      });
+
+      patch.enable();
+
+      // Should resolve to "My Document (ems__Task) > ^jgp9nz"
+      expect(mockLink.textContent).toBe("My Document (ems__Task) > ^jgp9nz");
+      expect(mockLink.getAttribute("data-body-patched")).toBe("true");
+    });
+
+    it("should handle heading references in data-href and append heading to display", () => {
+      // User wrote [[uuid#Header]] - Obsidian renders with data-href containing heading ref
+      mockLink.setAttribute("data-href", "doc-uuid#Section Title");
+      mockLink.textContent = "doc-uuid#Section Title";
+
+      const mockFile = new TFile();
+      Object.defineProperty(mockFile, "extension", { value: "md" });
+      Object.defineProperty(mockFile, "basename", { value: "doc-uuid" });
+      Object.defineProperty(mockFile, "stat", {
+        value: { ctime: Date.now() },
+      });
+
+      mockApp.metadataCache.getFirstLinkpathDest.mockReturnValue(mockFile);
+      mockApp.metadataCache.getFileCache.mockReturnValue({
+        frontmatter: {
+          exo__Asset_label: "My Document",
+          exo__Instance_class: "lit__Article",
+        },
+      });
+
+      patch.enable();
+
+      // Should resolve to "My Document (lit__Article) > Section Title"
+      expect(mockLink.textContent).toBe("My Document (lit__Article) > Section Title");
+      expect(mockLink.getAttribute("data-body-patched")).toBe("true");
+    });
+
+    it("should preserve user alias for block reference links", () => {
+      // User wrote [[uuid#^blockid|My Custom Link]] - alias takes priority
+      mockLink.setAttribute("data-href", "doc-uuid#^abc123");
+      mockLink.textContent = "My Custom Link"; // User-provided alias
+
+      const mockFile = new TFile();
+      Object.defineProperty(mockFile, "extension", { value: "md" });
+      Object.defineProperty(mockFile, "basename", { value: "doc-uuid" });
+      Object.defineProperty(mockFile, "stat", {
+        value: { ctime: Date.now() },
+      });
+
+      mockApp.metadataCache.getFirstLinkpathDest.mockReturnValue(mockFile);
+      mockApp.metadataCache.getFileCache.mockReturnValue({
+        frontmatter: {
+          exo__Asset_label: "Document Label",
+          exo__Instance_class: "ems__Task",
+        },
+      });
+
+      patch.enable();
+
+      // User alias should be preserved - NOT overwritten
+      expect(mockLink.textContent).toBe("My Custom Link");
+      expect(mockLink.getAttribute("data-body-patched")).toBeNull();
+    });
+
+    it("should resolve block reference file path correctly (stripping block ref)", () => {
+      mockLink.setAttribute("data-href", "my-file#^block123");
+      mockLink.textContent = "my-file#^block123";
+
+      const mockFile = new TFile();
+      Object.defineProperty(mockFile, "extension", { value: "md" });
+      Object.defineProperty(mockFile, "basename", { value: "my-file" });
+      Object.defineProperty(mockFile, "stat", {
+        value: { ctime: Date.now() },
+      });
+
+      // The getFirstLinkpathDest should be called with just the file path (no block ref)
+      mockApp.metadataCache.getFirstLinkpathDest.mockReturnValue(mockFile);
+      mockApp.metadataCache.getFileCache.mockReturnValue({
+        frontmatter: {
+          exo__Asset_label: "Test Label",
+          exo__Instance_class: "ems__Task",
+        },
+      });
+
+      patch.enable();
+
+      // Should have tried to resolve with just the file path
+      expect(mockApp.metadataCache.getFirstLinkpathDest).toHaveBeenCalledWith(
+        "my-file",
+        ""
+      );
+    });
+  });
 });
