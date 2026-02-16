@@ -198,4 +198,70 @@ describe("DailyTasksRenderer - edge cases and error handling", () => {
     expect(tasks[0].startTime).toBeTruthy();
     expect(tasks[0].endTime).toBeTruthy();
   });
+
+  // Issue #2135: Prototype class resolution uses wrong property name
+  it("should resolve prototype classes using exo__Asset_prototype (Issue #2135)", async () => {
+    const mockFile = {
+      path: "test.md",
+      parent: { path: "DailyNotes" },
+      basename: "2025-10-20",
+    } as TFile;
+    const dailyNoteMetadata = {
+      exo__Instance_class: "[[pn__DailyNote]]",
+      pn__DailyNote_day: "[[2025-10-20]]",
+    };
+
+    const taskFile = {
+      path: "task.md",
+      basename: "task",
+    } as TFile;
+
+    const prototypeFile = {
+      path: "fb3d12b2-9552-4866-a31e-2b5f65ea433c.md",
+      basename: "fb3d12b2-9552-4866-a31e-2b5f65ea433c",
+    } as TFile;
+
+    // Task has exo__Asset_prototype (correct property used in vault)
+    const taskMetadata = {
+      exo__Instance_class: "[[ems__Task]]",
+      ems__Effort_day: "[[2025-10-20]]",
+      ems__Effort_startTimestamp: "2025-10-20T09:00:00",
+      ems__Effort_status: "[[ems__EffortStatusDoing]]",
+      exo__Asset_prototype: "[[fb3d12b2-9552-4866-a31e-2b5f65ea433c]]",
+    };
+
+    // Prototype has ems__Context class (should exclude from overlap detection)
+    const prototypeMetadata = {
+      exo__Instance_class: ["[[ems__Task]]", "[[ems__Context]]"],
+    };
+
+    // The metadata extractor is called in this order:
+    // 1. For the DailyNote file (in render method)
+    // 2. For the task file (in getDailyTasks loop - first the task, then prototype is skipped since it's not a task for the day)
+    // 3. For the prototype file (in getDailyTasks - it doesn't match day filter, but we check prototype file anyway)
+    // 4. For the prototype file (in resolvePrototypeClasses)
+    ctx.mockMetadataExtractor.extractMetadata
+      .mockImplementation((file: any) => {
+        if (file.path === "test.md") return dailyNoteMetadata;
+        if (file.path === "task.md") return taskMetadata;
+        if (file.path === "fb3d12b2-9552-4866-a31e-2b5f65ea433c.md") return prototypeMetadata;
+        return {};
+      });
+
+    ctx.mockMetadataExtractor.extractInstanceClass.mockReturnValue(
+      "[[pn__DailyNote]]",
+    );
+
+    ctx.mockVaultAdapter.getAllFiles.mockReturnValue([taskFile, prototypeFile]);
+
+    const mockEl = createMockElement();
+    await ctx.renderer.render(mockEl, mockFile);
+
+    expect(ctx.mockReactRenderer.render).toHaveBeenCalled();
+    const renderCall = ctx.mockReactRenderer.render.mock.calls[0];
+    const tasks = renderCall[1].props.tasks;
+
+    // _prototypeClasses should be resolved from prototype's exo__Instance_class
+    expect(tasks[0].metadata._prototypeClasses).toEqual(["[[ems__Task]]", "[[ems__Context]]"]);
+  });
 });
