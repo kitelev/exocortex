@@ -2677,3 +2677,251 @@ test.describe("Context Task Overlap Exclusion (Issue #2128)", () => {
     await expect(task2Row).toHaveClass(/task-overlap-conflict/);
   });
 });
+
+test.describe("Prototype-based Context Task Exclusion (Issue #2131)", () => {
+  test("should exclude task whose prototype has ems__Context class from overlap detection", async ({
+    mount,
+  }) => {
+    // This task has a prototype that has ems__Context class
+    // It should be treated as a context task for overlap detection purposes
+    const tasksWithPrototypeContext: DailyTask[] = [
+      {
+        file: { path: "regular-task.md", basename: "regular-task" },
+        path: "regular-task.md",
+        title: "Regular Task",
+        label: "Regular Task",
+        startTime: "09:00",
+        endTime: "11:00",
+        startTimestamp: null,
+        endTimestamp: null,
+        status: "ems__EffortStatusInProgress",
+        metadata: {
+          ems__Effort_plannedStartTimestamp: "2025-01-15T09:00:00",
+          ems__Effort_plannedEndTimestamp: "2025-01-15T11:00:00",
+        },
+        isDone: false,
+        isTrashed: false,
+        isDoing: false,
+        isMeeting: false,
+        isBlocked: false,
+      },
+      {
+        file: { path: "commute-instance.md", basename: "commute-instance" },
+        path: "commute-instance.md",
+        title: "Morning Commute",
+        label: "Morning Commute",
+        startTime: "10:00",
+        endTime: "11:00",
+        startTimestamp: null,
+        endTimestamp: null,
+        status: "ems__EffortStatusInProgress",
+        metadata: {
+          // Task has a prototype that is a Context
+          exo__Instance_prototype: "[[commute-prototype|Commute]]",
+          // The prototype's classes are passed as resolved metadata
+          _prototypeClasses: ["[[ems__Task]]", "[[ems__Context]]"],
+          ems__Effort_plannedStartTimestamp: "2025-01-15T10:00:00",
+          ems__Effort_plannedEndTimestamp: "2025-01-15T11:00:00",
+        },
+        isDone: false,
+        isTrashed: false,
+        isDoing: false,
+        isMeeting: false,
+        isBlocked: false,
+      },
+    ];
+
+    const component = await mount(
+      <DailyTasksTable tasks={tasksWithPrototypeContext} />,
+    );
+
+    // Prototype-based context task overlaps with regular task
+    // BUT should be excluded from overlap detection because prototype has ems__Context
+    const regularTaskRow = component.locator('tr[data-path="regular-task.md"]');
+    const prototypeContextTaskRow = component.locator('tr[data-path="commute-instance.md"]');
+
+    await expect(regularTaskRow).not.toHaveClass(/task-overlap-conflict/);
+    await expect(prototypeContextTaskRow).not.toHaveClass(/task-overlap-conflict/);
+  });
+
+  test("should exclude task whose prototype has ems__Context class (single string format)", async ({
+    mount,
+  }) => {
+    const tasksWithPrototypeContextString: DailyTask[] = [
+      {
+        file: { path: "regular-task.md", basename: "regular-task" },
+        path: "regular-task.md",
+        title: "Regular Task",
+        label: "Regular Task",
+        startTime: "09:00",
+        endTime: "11:00",
+        startTimestamp: null,
+        endTimestamp: null,
+        status: "ems__EffortStatusInProgress",
+        metadata: {
+          ems__Effort_plannedStartTimestamp: "2025-01-15T09:00:00",
+          ems__Effort_plannedEndTimestamp: "2025-01-15T11:00:00",
+        },
+        isDone: false,
+        isTrashed: false,
+        isDoing: false,
+        isMeeting: false,
+        isBlocked: false,
+      },
+      {
+        file: { path: "lunch-break.md", basename: "lunch-break" },
+        path: "lunch-break.md",
+        title: "Lunch Break",
+        label: "Lunch Break",
+        startTime: "10:00",
+        endTime: "11:00",
+        startTimestamp: null,
+        endTimestamp: null,
+        status: "ems__EffortStatusInProgress",
+        metadata: {
+          exo__Instance_prototype: "[[lunch-prototype|Lunch]]",
+          _prototypeClasses: "[[ems__Context]]",
+          ems__Effort_plannedStartTimestamp: "2025-01-15T10:00:00",
+          ems__Effort_plannedEndTimestamp: "2025-01-15T11:00:00",
+        },
+        isDone: false,
+        isTrashed: false,
+        isDoing: false,
+        isMeeting: false,
+        isBlocked: false,
+      },
+    ];
+
+    const component = await mount(
+      <DailyTasksTable tasks={tasksWithPrototypeContextString} />,
+    );
+
+    const regularTaskRow = component.locator('tr[data-path="regular-task.md"]');
+    const lunchTaskRow = component.locator('tr[data-path="lunch-break.md"]');
+
+    await expect(regularTaskRow).not.toHaveClass(/task-overlap-conflict/);
+    await expect(lunchTaskRow).not.toHaveClass(/task-overlap-conflict/);
+  });
+
+  test("should NOT exclude task whose prototype does NOT have ems__Context class", async ({
+    mount,
+  }) => {
+    const tasksWithNonContextPrototype: DailyTask[] = [
+      {
+        file: { path: "task1.md", basename: "task1" },
+        path: "task1.md",
+        title: "Task 1",
+        label: "Task 1",
+        startTime: "09:00",
+        endTime: "11:00",
+        startTimestamp: null,
+        endTimestamp: null,
+        status: "ems__EffortStatusInProgress",
+        metadata: {
+          ems__Effort_plannedStartTimestamp: "2025-01-15T09:00:00",
+          ems__Effort_plannedEndTimestamp: "2025-01-15T11:00:00",
+        },
+        isDone: false,
+        isTrashed: false,
+        isDoing: false,
+        isMeeting: false,
+        isBlocked: false,
+      },
+      {
+        file: { path: "task2.md", basename: "task2" },
+        path: "task2.md",
+        title: "Task from Prototype",
+        label: "Task from Prototype",
+        startTime: "10:00",
+        endTime: "11:00",
+        startTimestamp: null,
+        endTimestamp: null,
+        status: "ems__EffortStatusInProgress",
+        metadata: {
+          exo__Instance_prototype: "[[some-prototype|Some Task]]",
+          // Prototype has ems__Task class, but NOT ems__Context
+          _prototypeClasses: ["[[ems__Task]]"],
+          ems__Effort_plannedStartTimestamp: "2025-01-15T10:00:00",
+          ems__Effort_plannedEndTimestamp: "2025-01-15T11:00:00",
+        },
+        isDone: false,
+        isTrashed: false,
+        isDoing: false,
+        isMeeting: false,
+        isBlocked: false,
+      },
+    ];
+
+    const component = await mount(
+      <DailyTasksTable tasks={tasksWithNonContextPrototype} />,
+    );
+
+    // Prototype does NOT have ems__Context, so should participate in overlap detection
+    const task1Row = component.locator('tr[data-path="task1.md"]');
+    const task2Row = component.locator('tr[data-path="task2.md"]');
+
+    await expect(task1Row).toHaveClass(/task-overlap-conflict/);
+    await expect(task2Row).toHaveClass(/task-overlap-conflict/);
+  });
+
+  test("should handle missing _prototypeClasses gracefully", async ({
+    mount,
+  }) => {
+    const tasksWithPrototypeNoClasses: DailyTask[] = [
+      {
+        file: { path: "task1.md", basename: "task1" },
+        path: "task1.md",
+        title: "Task 1",
+        label: "Task 1",
+        startTime: "09:00",
+        endTime: "11:00",
+        startTimestamp: null,
+        endTimestamp: null,
+        status: "ems__EffortStatusInProgress",
+        metadata: {
+          ems__Effort_plannedStartTimestamp: "2025-01-15T09:00:00",
+          ems__Effort_plannedEndTimestamp: "2025-01-15T11:00:00",
+        },
+        isDone: false,
+        isTrashed: false,
+        isDoing: false,
+        isMeeting: false,
+        isBlocked: false,
+      },
+      {
+        file: { path: "task2.md", basename: "task2" },
+        path: "task2.md",
+        title: "Task with Prototype",
+        label: "Task with Prototype",
+        startTime: "10:00",
+        endTime: "11:00",
+        startTimestamp: null,
+        endTimestamp: null,
+        status: "ems__EffortStatusInProgress",
+        metadata: {
+          // Has prototype reference but _prototypeClasses not resolved
+          exo__Instance_prototype: "[[some-prototype|Some Task]]",
+          // _prototypeClasses is missing - should handle gracefully
+          ems__Effort_plannedStartTimestamp: "2025-01-15T10:00:00",
+          ems__Effort_plannedEndTimestamp: "2025-01-15T11:00:00",
+        },
+        isDone: false,
+        isTrashed: false,
+        isDoing: false,
+        isMeeting: false,
+        isBlocked: false,
+      },
+    ];
+
+    const component = await mount(
+      <DailyTasksTable tasks={tasksWithPrototypeNoClasses} />,
+    );
+
+    // Without resolved _prototypeClasses, should participate in overlap detection
+    const task1Row = component.locator('tr[data-path="task1.md"]');
+    const task2Row = component.locator('tr[data-path="task2.md"]');
+
+    await expect(task1Row).toHaveClass(/task-overlap-conflict/);
+    await expect(task2Row).toHaveClass(/task-overlap-conflict/);
+  });
+});
