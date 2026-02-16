@@ -95,7 +95,7 @@ const isContextTask = (metadata: Record<string, unknown>): boolean => {
   }
 
   // Check prototype's classes (Issue #2131)
-  // _prototypeClasses is pre-resolved by the renderer for tasks with exo__Instance_prototype
+  // _prototypeClasses is pre-resolved by the renderer for tasks with exo__Asset_prototype
   if (classListHasContext(metadata._prototypeClasses)) {
     return true;
   }

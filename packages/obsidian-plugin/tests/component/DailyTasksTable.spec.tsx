@@ -2717,7 +2717,7 @@ test.describe("Prototype-based Context Task Exclusion (Issue #2131)", () => {
         status: "ems__EffortStatusInProgress",
         metadata: {
           // Task has a prototype that is a Context
-          exo__Instance_prototype: "[[commute-prototype|Commute]]",
+          exo__Asset_prototype: "[[commute-prototype|Commute]]",
           // The prototype's classes are passed as resolved metadata
           _prototypeClasses: ["[[ems__Task]]", "[[ems__Context]]"],
           ems__Effort_plannedStartTimestamp: "2025-01-15T10:00:00",
@@ -2779,7 +2779,7 @@ test.describe("Prototype-based Context Task Exclusion (Issue #2131)", () => {
         endTimestamp: null,
         status: "ems__EffortStatusInProgress",
         metadata: {
-          exo__Instance_prototype: "[[lunch-prototype|Lunch]]",
+          exo__Asset_prototype: "[[lunch-prototype|Lunch]]",
           _prototypeClasses: "[[ems__Context]]",
           ems__Effort_plannedStartTimestamp: "2025-01-15T10:00:00",
           ems__Effort_plannedEndTimestamp: "2025-01-15T11:00:00",
@@ -2838,7 +2838,7 @@ test.describe("Prototype-based Context Task Exclusion (Issue #2131)", () => {
         endTimestamp: null,
         status: "ems__EffortStatusInProgress",
         metadata: {
-          exo__Instance_prototype: "[[some-prototype|Some Task]]",
+          exo__Asset_prototype: "[[some-prototype|Some Task]]",
           // Prototype has ems__Task class, but NOT ems__Context
           _prototypeClasses: ["[[ems__Task]]"],
           ems__Effort_plannedStartTimestamp: "2025-01-15T10:00:00",
@@ -2900,7 +2900,7 @@ test.describe("Prototype-based Context Task Exclusion (Issue #2131)", () => {
         status: "ems__EffortStatusInProgress",
         metadata: {
           // Has prototype reference but _prototypeClasses not resolved
-          exo__Instance_prototype: "[[some-prototype|Some Task]]",
+          exo__Asset_prototype: "[[some-prototype|Some Task]]",
           // _prototypeClasses is missing - should handle gracefully
           ems__Effort_plannedStartTimestamp: "2025-01-15T10:00:00",
           ems__Effort_plannedEndTimestamp: "2025-01-15T11:00:00",

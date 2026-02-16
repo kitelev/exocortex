@@ -319,10 +319,10 @@ export class DailyTasksRenderer {
   }
 
   /**
-   * Resolve prototype's classes for a task with exo__Instance_prototype.
+   * Resolve prototype's classes for a task with exo__Asset_prototype.
    * Returns the prototype's exo__Instance_class if found, null otherwise.
    *
-   * @param metadata - Task's metadata containing potential exo__Instance_prototype
+   * @param metadata - Task's metadata containing potential exo__Asset_prototype
    * @param allFiles - All files in vault for prototype lookup
    * @returns Prototype's classes or null if not found
    */
@@ -330,7 +330,7 @@ export class DailyTasksRenderer {
     metadata: Record<string, unknown>,
     allFiles: IFile[],
   ): unknown {
-    const prototypeRef = metadata.exo__Instance_prototype;
+    const prototypeRef = metadata.exo__Asset_prototype;
     if (!prototypeRef || typeof prototypeRef !== 'string') {
       return null;
     }
