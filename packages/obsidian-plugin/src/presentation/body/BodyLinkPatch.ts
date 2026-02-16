@@ -185,11 +185,18 @@ export class BodyLinkPatch {
    * the user provided an explicit alias and we should not overwrite it.
    * However, if we already patched this link (has data-body-patched),
    * we should re-patch to pick up metadata changes.
+   *
+   * Also supports block references (Issue #2133):
+   * - [[file#^blockid]] displays as "Label > ^blockid"
+   * - [[file#Heading]] displays as "Label > Heading"
    */
   private patchLink(linkEl: HTMLElement): void {
     // Get the file path from data-href attribute
     const dataHref = linkEl.getAttribute("data-href");
     if (!dataHref) return;
+
+    // Parse the link to get file path and optional block/heading reference
+    const { blockId, headingRef } = this.parseLinkRef(dataHref);
 
     // Try to find the linked file
     const file = this.resolveFile(dataHref);
@@ -209,7 +216,19 @@ export class BodyLinkPatch {
     const wasAlreadyPatched = linkEl.hasAttribute("data-body-patched");
     const matchesBasename = currentText === file.basename;
     const matchesDataHref = currentText === cleanedDataHref;
-    const hasUserAlias = currentText !== "" && !matchesBasename && !matchesDataHref && !wasAlreadyPatched;
+    // Also check if textContent matches basename + block/heading ref (for block reference links)
+    const expectedBlockRefText = blockId
+      ? `${file.basename}#^${blockId}`
+      : headingRef
+        ? `${file.basename}#${headingRef}`
+        : file.basename;
+    const matchesBlockRefText = currentText === expectedBlockRefText;
+    const hasUserAlias =
+      currentText !== "" &&
+      !matchesBasename &&
+      !matchesDataHref &&
+      !matchesBlockRefText &&
+      !wasAlreadyPatched;
 
     if (hasUserAlias) {
       // User provided explicit alias - preserve it, don't overwrite
@@ -217,8 +236,15 @@ export class BodyLinkPatch {
     }
 
     // Get the display name for this file
-    const displayName = this.getDisplayName(file);
+    let displayName = this.getDisplayName(file);
     if (!displayName) return;
+
+    // Append block or heading reference to display name (Issue #2133)
+    if (blockId) {
+      displayName = `${displayName} > ^${blockId}`;
+    } else if (headingRef) {
+      displayName = `${displayName} > ${headingRef}`;
+    }
 
     // Store original text for restoration (use data-original-text if already stored)
     const originalText = linkEl.getAttribute("data-original-text") || linkEl.textContent || "";
@@ -231,8 +257,13 @@ export class BodyLinkPatch {
       linkEl.textContent = displayName;
       this.patchedElements.set(linkEl, originalText);
 
-      // Add tooltip with original filename
-      linkEl.setAttribute("aria-label", `${displayName}\n(${file.basename}.md)`);
+      // Add tooltip with original filename (include block/heading ref if present)
+      const tooltipPath = blockId
+        ? `${file.basename}.md#^${blockId}`
+        : headingRef
+          ? `${file.basename}.md#${headingRef}`
+          : `${file.basename}.md`;
+      linkEl.setAttribute("aria-label", `${displayName}\n(${tooltipPath})`);
 
       // Add a data attribute to mark this as body-patched for easier identification
       linkEl.setAttribute("data-body-patched", "true");
@@ -240,23 +271,59 @@ export class BodyLinkPatch {
   }
 
   /**
-   * Resolve a file path to a TFile
+   * Parse a link path to extract file path and optional block/heading reference.
+   * Examples:
+   * - "file" -> { filePath: "file", blockId: undefined, headingRef: undefined }
+   * - "file#^blockid" -> { filePath: "file", blockId: "blockid", headingRef: undefined }
+   * - "file#Heading" -> { filePath: "file", blockId: undefined, headingRef: "Heading" }
    */
-  private resolveFile(linkPath: string): TFile | null {
-    // Clean up the path
+  private parseLinkRef(linkPath: string): {
+    filePath: string;
+    blockId?: string;
+    headingRef?: string;
+  } {
+    // Clean up the path first
     const cleanPath = linkPath
       .replace(/^\[\[|\]\]$/g, "") // Remove wikilink brackets
       .replace(/^"|"$/g, "") // Remove quotes
       .trim();
 
-    if (!cleanPath) return null;
+    // Check for block reference: file#^blockid
+    const blockMatch = cleanPath.match(/^([^#]+)#\^([a-zA-Z0-9]+)$/);
+    if (blockMatch) {
+      return {
+        filePath: blockMatch[1].trim(),
+        blockId: blockMatch[2].trim(),
+      };
+    }
+
+    // Check for heading reference: file#Heading (no ^ means heading)
+    const headingMatch = cleanPath.match(/^([^#]+)#(.+)$/);
+    if (headingMatch) {
+      return {
+        filePath: headingMatch[1].trim(),
+        headingRef: headingMatch[2].trim(),
+      };
+    }
+
+    return { filePath: cleanPath };
+  }
+
+  /**
+   * Resolve a file path to a TFile
+   */
+  private resolveFile(linkPath: string): TFile | null {
+    // Parse the link to get file path (stripping block/heading ref)
+    const { filePath } = this.parseLinkRef(linkPath);
+
+    if (!filePath) return null;
 
     // Try to find the file
-    let file = this.app.metadataCache.getFirstLinkpathDest(cleanPath, "");
+    let file = this.app.metadataCache.getFirstLinkpathDest(filePath, "");
 
     // Try with .md extension if not found
-    if (!file && !cleanPath.endsWith(".md")) {
-      file = this.app.metadataCache.getFirstLinkpathDest(cleanPath + ".md", "");
+    if (!file && !filePath.endsWith(".md")) {
+      file = this.app.metadataCache.getFirstLinkpathDest(filePath + ".md", "");
     }
 
     if (file instanceof TFile && file.extension === "md") {

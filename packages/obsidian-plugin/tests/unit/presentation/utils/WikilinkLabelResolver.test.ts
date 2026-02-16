@@ -474,4 +474,239 @@ describe("WikilinkLabelResolver", () => {
       });
     });
   });
+
+  describe("block reference support (Issue #2133)", () => {
+    describe("parseWikilink with block references", () => {
+      it("parses wikilink with block reference", () => {
+        const result = WikilinkLabelResolver.parseWikilink("[[5764fb33-9cb1-43a4-a9be-43c534922798#^jgp9nz]]");
+        expect(result).toEqual({
+          target: "5764fb33-9cb1-43a4-a9be-43c534922798",
+          blockId: "jgp9nz",
+          alias: undefined,
+        });
+      });
+
+      it("parses wikilink with block reference and alias", () => {
+        const result = WikilinkLabelResolver.parseWikilink("[[uuid-123#^block1|Custom Alias]]");
+        expect(result).toEqual({
+          target: "uuid-123",
+          blockId: "block1",
+          alias: "Custom Alias",
+        });
+      });
+
+      it("parses block reference with alphanumeric block id", () => {
+        const result = WikilinkLabelResolver.parseWikilink("[[target#^abc123xyz]]");
+        expect(result).toEqual({
+          target: "target",
+          blockId: "abc123xyz",
+          alias: undefined,
+        });
+      });
+
+      it("handles wikilink without block reference (returns undefined blockId)", () => {
+        const result = WikilinkLabelResolver.parseWikilink("[[simple-target]]");
+        expect(result).toEqual({
+          target: "simple-target",
+          blockId: undefined,
+          alias: undefined,
+        });
+      });
+
+      it("handles header reference (not block reference)", () => {
+        // Header references use # without ^, should NOT be treated as block reference
+        const result = WikilinkLabelResolver.parseWikilink("[[file#Header Section]]");
+        expect(result).toEqual({
+          target: "file",
+          blockId: undefined,
+          headingRef: "Header Section",
+          alias: undefined,
+        });
+      });
+
+      it("handles header reference with alias", () => {
+        const result = WikilinkLabelResolver.parseWikilink("[[file#Header|My Link]]");
+        expect(result).toEqual({
+          target: "file",
+          blockId: undefined,
+          headingRef: "Header",
+          alias: "My Link",
+        });
+      });
+    });
+
+    describe("resolveWikilinkLabel with block references", () => {
+      const createMockApp = (labels: Record<string, string>) => {
+        const mockApp = {
+          metadataCache: {
+            getFirstLinkpathDest: jest.fn().mockImplementation((path: string) => {
+              if (labels[path] || labels[path.replace(".md", "")]) {
+                const mockFile = new TFile();
+                (mockFile as unknown as { path: string }).path = path;
+                return mockFile;
+              }
+              return null;
+            }),
+            getFileCache: jest.fn().mockImplementation((file: TFile) => {
+              const pathWithoutExt = file.path.replace(".md", "");
+              const label = labels[file.path] || labels[pathWithoutExt];
+              if (label) {
+                return { frontmatter: { exo__Asset_label: label } };
+              }
+              return null;
+            }),
+          },
+        };
+        return mockApp as unknown as import("@plugin/types").ObsidianApp;
+      };
+
+      it("resolves block reference with label and appends block id", () => {
+        const mockApp = createMockApp({
+          "5764fb33-9cb1-43a4-a9be-43c534922798": "My Document",
+        });
+        const resolver = new WikilinkLabelResolver(mockApp);
+        const result = resolver.resolveWikilinkLabel("[[5764fb33-9cb1-43a4-a9be-43c534922798#^jgp9nz]]");
+
+        expect(result).toEqual({
+          target: "5764fb33-9cb1-43a4-a9be-43c534922798",
+          displayText: "My Document > ^jgp9nz",
+          hasAlias: false,
+        });
+      });
+
+      it("preserves custom alias for block reference", () => {
+        const mockApp = createMockApp({
+          "uuid-123": "Document Title",
+        });
+        const resolver = new WikilinkLabelResolver(mockApp);
+        const result = resolver.resolveWikilinkLabel("[[uuid-123#^block1|My Custom Link]]");
+
+        expect(result).toEqual({
+          target: "uuid-123",
+          displayText: "My Custom Link",
+          hasAlias: true,
+        });
+      });
+
+      it("falls back to target with block id when label not found", () => {
+        const mockApp = createMockApp({});
+        const resolver = new WikilinkLabelResolver(mockApp);
+        const result = resolver.resolveWikilinkLabel("[[unknown-file#^blockref]]");
+
+        expect(result).toEqual({
+          target: "unknown-file",
+          displayText: "unknown-file > ^blockref",
+          hasAlias: false,
+        });
+      });
+
+      it("handles heading reference (not block) display format", () => {
+        const mockApp = createMockApp({
+          "my-file": "My Document",
+        });
+        const resolver = new WikilinkLabelResolver(mockApp);
+        const result = resolver.resolveWikilinkLabel("[[my-file#Section Title]]");
+
+        expect(result).toEqual({
+          target: "my-file",
+          displayText: "My Document > Section Title",
+          hasAlias: false,
+        });
+      });
+    });
+
+    describe("processContent with block references", () => {
+      const createMockApp = (labels: Record<string, string>) => {
+        const mockApp = {
+          metadataCache: {
+            getFirstLinkpathDest: jest.fn().mockImplementation((path: string) => {
+              if (labels[path] || labels[path.replace(".md", "")]) {
+                const mockFile = new TFile();
+                (mockFile as unknown as { path: string }).path = path;
+                return mockFile;
+              }
+              return null;
+            }),
+            getFileCache: jest.fn().mockImplementation((file: TFile) => {
+              const pathWithoutExt = file.path.replace(".md", "");
+              const label = labels[file.path] || labels[pathWithoutExt];
+              if (label) {
+                return { frontmatter: { exo__Asset_label: label } };
+              }
+              return null;
+            }),
+          },
+        };
+        return mockApp as unknown as import("@plugin/types").ObsidianApp;
+      };
+
+      it("replaces block reference wikilinks with resolved labels", () => {
+        const mockApp = createMockApp({
+          "doc-uuid": "Important Document",
+        });
+        const resolver = new WikilinkLabelResolver(mockApp);
+
+        const content = "See [[doc-uuid#^abc123]] for details";
+        const result = resolver.processContent(content);
+
+        expect(result).toBe("See [[doc-uuid#^abc123|Important Document > ^abc123]] for details");
+      });
+
+      it("preserves existing aliases in block references", () => {
+        const mockApp = createMockApp({
+          "doc-uuid": "Important Document",
+        });
+        const resolver = new WikilinkLabelResolver(mockApp);
+
+        const content = "See [[doc-uuid#^abc123|Custom Name]] for details";
+        const result = resolver.processContent(content);
+
+        expect(result).toBe("See [[doc-uuid#^abc123|Custom Name]] for details");
+      });
+    });
+
+    describe("parseEmbeddedWikilinks with block references", () => {
+      it("parses block reference wikilink", () => {
+        const segments = parseEmbeddedWikilinks("see [[doc#^block1]] here");
+
+        expect(segments).toHaveLength(3);
+        expect(segments[1]).toEqual({
+          type: "wikilink",
+          content: "[[doc#^block1]]",
+          target: "doc",
+          blockId: "block1",
+          displayText: "doc > ^block1",
+        });
+      });
+
+      it("parses block reference with getAssetLabel", () => {
+        const getAssetLabel = jest.fn((path: string) => {
+          if (path === "my-doc") return "My Document";
+          return null;
+        });
+
+        const segments = parseEmbeddedWikilinks("see [[my-doc#^ref123]]", getAssetLabel);
+
+        expect(segments).toHaveLength(2);
+        expect(segments[1]).toEqual({
+          type: "wikilink",
+          content: "[[my-doc#^ref123]]",
+          target: "my-doc",
+          blockId: "ref123",
+          displayText: "My Document > ^ref123",
+        });
+        expect(getAssetLabel).toHaveBeenCalledWith("my-doc");
+      });
+
+      it("preserves alias over resolved label for block references", () => {
+        const getAssetLabel = jest.fn(() => "Resolved Label");
+
+        const segments = parseEmbeddedWikilinks("[[doc#^block|My Alias]]", getAssetLabel);
+
+        expect(segments).toHaveLength(1);
+        expect(segments[0].displayText).toBe("My Alias");
+        expect(getAssetLabel).not.toHaveBeenCalled();
+      });
+    });
+  });
 });

@@ -15,6 +15,8 @@ import { ObsidianApp } from "@plugin/types";
 export interface WikilinkParsed {
   target: string;
   alias?: string;
+  blockId?: string;
+  headingRef?: string;
 }
 
 export interface WikilinkResolved {
@@ -28,17 +30,38 @@ export class WikilinkLabelResolver {
 
   /**
    * Parse a wikilink string into its components.
+   * Supports:
+   * - Simple wikilinks: [[target]]
+   * - Wikilinks with aliases: [[target|alias]]
+   * - Block references: [[target#^blockId]]
+   * - Block references with aliases: [[target#^blockId|alias]]
+   * - Heading references: [[target#Heading]]
+   * - Heading references with aliases: [[target#Heading|alias]]
    *
    * @param value - Value that might be a wikilink
-   * @returns Parsed target and alias, or null if not a wikilink
+   * @returns Parsed target, blockId, headingRef and alias, or null if not a wikilink
    */
   static parseWikilink(value: string): WikilinkParsed | null {
-    // Match [[target]] or [[target|alias]]
-    const match = value.match(/^\[\[([^\]|]+)(?:\|([^\]]+))?\]\]$/);
+    // Match [[target]] or [[target#^blockId]] or [[target#Heading]] or [[target|alias]] or [[target#^blockId|alias]] or [[target#Heading|alias]]
+    // Pattern breakdown:
+    // - ([^#\]|]+) - target (no #, ], or |)
+    // - (?:#\^([a-zA-Z0-9]+))? - optional block reference (# followed by ^ and alphanumeric id)
+    // - (?:#([^\]|^]+))? - optional heading reference (# followed by text, no ], |, or ^)
+    // - (?:\|([^\]]+))? - optional alias (| followed by text)
+    const match = value.match(
+      /^\[\[([^#\]|]+)(?:#\^([a-zA-Z0-9]+))?(?:#([^\]|^]+))?(?:\|([^\]]+))?\]\]$/,
+    );
     if (match) {
+      const target = match[1].trim();
+      const blockId = match[2]?.trim();
+      const headingRef = match[3]?.trim();
+      const alias = match[4]?.trim();
+
       return {
-        target: match[1].trim(),
-        alias: match[2]?.trim(),
+        target,
+        blockId,
+        headingRef,
+        alias,
       };
     }
     return null;
@@ -118,9 +141,11 @@ export class WikilinkLabelResolver {
    *
    * If the wikilink has an alias, returns the alias.
    * Otherwise, attempts to resolve the target asset's exo__Asset_label.
+   * For block references, appends " > ^blockId" to the label.
+   * For heading references, appends " > Heading" to the label.
    * Falls back to the original target if no label is found.
    *
-   * @param wikilinkValue - The wikilink string (e.g., "[[target]]" or "[[target|alias]]")
+   * @param wikilinkValue - The wikilink string (e.g., "[[target]]" or "[[target|alias]]" or "[[target#^blockId]]")
    * @returns Resolved wikilink with display text
    */
   resolveWikilinkLabel(wikilinkValue: string): WikilinkResolved | null {
@@ -140,40 +165,73 @@ export class WikilinkLabelResolver {
 
     // Try to resolve the asset label
     const label = this.getAssetLabel(parsed.target);
+    const baseLabel = label || parsed.target;
+
+    // Build display text with block or heading reference suffix
+    let displayText = baseLabel;
+    if (parsed.blockId) {
+      displayText = `${baseLabel} > ^${parsed.blockId}`;
+    } else if (parsed.headingRef) {
+      displayText = `${baseLabel} > ${parsed.headingRef}`;
+    }
+
     return {
       target: parsed.target,
-      displayText: label || parsed.target,
+      displayText,
       hasAlias: false,
     };
   }
 
   /**
    * Process text content and replace all wikilinks without aliases
-   * with resolved asset labels.
+   * with resolved asset labels. Supports block and heading references.
    *
    * @param content - Text content containing wikilinks
    * @returns Processed content with resolved labels
    */
   processContent(content: string): string {
-    // Match all wikilinks
-    const wikilinkPattern = /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g;
+    // Match all wikilinks including block/heading references
+    // Pattern: [[target]] or [[target#^blockId]] or [[target#Heading]] or [[target|alias]] etc.
+    const wikilinkPattern = /\[\[([^#\]|]+)(?:#\^([a-zA-Z0-9]+))?(?:#([^\]|^]+))?(?:\|([^\]]+))?\]\]/g;
 
-    return content.replace(wikilinkPattern, (match, target, alias) => {
-      // If wikilink has an alias, keep the original
-      if (alias) {
+    return content.replace(
+      wikilinkPattern,
+      (match, target, blockId, headingRef, alias) => {
+        // If wikilink has an alias, keep the original
+        if (alias) {
+          return match;
+        }
+
+        const trimmedTarget = target.trim();
+        const trimmedBlockId = blockId?.trim();
+        const trimmedHeadingRef = headingRef?.trim();
+
+        // Try to resolve the asset label
+        const label = this.getAssetLabel(trimmedTarget);
+
+        // Build the link path portion (target + optional block/heading ref)
+        let linkPath = trimmedTarget;
+        if (trimmedBlockId) {
+          linkPath = `${trimmedTarget}#^${trimmedBlockId}`;
+        } else if (trimmedHeadingRef) {
+          linkPath = `${trimmedTarget}#${trimmedHeadingRef}`;
+        }
+
+        // Build display text
+        if (label) {
+          let displayText = label;
+          if (trimmedBlockId) {
+            displayText = `${label} > ^${trimmedBlockId}`;
+          } else if (trimmedHeadingRef) {
+            displayText = `${label} > ${trimmedHeadingRef}`;
+          }
+          return `[[${linkPath}|${displayText}]]`;
+        }
+
+        // Return original if no label found
         return match;
-      }
-
-      // Try to resolve the asset label
-      const label = this.getAssetLabel(target.trim());
-      if (label) {
-        // Replace the wikilink display text with the label
-        return `[[${target}|${label}]]`;
-      }
-
-      // Return original if no label found
-      return match;
-    });
+      },
+    );
   }
 }
 
@@ -235,12 +293,15 @@ export interface WikilinkSegment {
   type: "text" | "wikilink";
   content: string;
   target?: string;
+  blockId?: string;
+  headingRef?: string;
   displayText?: string;
 }
 
 /**
  * Parse text containing embedded wikilinks into segments.
  * Each segment is either plain text or a wikilink.
+ * Supports block references ([[target#^blockId]]) and heading references ([[target#Heading]]).
  *
  * @param content - Text content that may contain wikilinks
  * @param getAssetLabel - Optional function to resolve asset labels
@@ -251,7 +312,9 @@ export function parseEmbeddedWikilinks(
   getAssetLabel?: (path: string) => string | null,
 ): WikilinkSegment[] {
   const segments: WikilinkSegment[] = [];
-  const wikilinkPattern = /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g;
+  // Match wikilinks including block/heading references
+  const wikilinkPattern =
+    /\[\[([^#\]|]+)(?:#\^([a-zA-Z0-9]+))?(?:#([^\]|^]+))?(?:\|([^\]]+))?\]\]/g;
 
   let lastIndex = 0;
   let match;
@@ -266,24 +329,50 @@ export function parseEmbeddedWikilinks(
     }
 
     const target = match[1].trim();
-    const alias = match[2]?.trim();
+    const blockId = match[2]?.trim();
+    const headingRef = match[3]?.trim();
+    const alias = match[4]?.trim();
 
     let displayText: string;
     if (alias) {
+      // Alias takes priority - don't call getAssetLabel
       displayText = alias;
-    } else if (getAssetLabel) {
-      const resolvedLabel = getAssetLabel(target);
-      displayText = resolvedLabel || target;
     } else {
-      displayText = target;
+      // Resolve label if function provided
+      let baseLabel: string;
+      if (getAssetLabel) {
+        const resolvedLabel = getAssetLabel(target);
+        baseLabel = resolvedLabel || target;
+      } else {
+        baseLabel = target;
+      }
+
+      // Append block or heading reference to display text
+      if (blockId) {
+        displayText = `${baseLabel} > ^${blockId}`;
+      } else if (headingRef) {
+        displayText = `${baseLabel} > ${headingRef}`;
+      } else {
+        displayText = baseLabel;
+      }
     }
 
-    segments.push({
+    const segment: WikilinkSegment = {
       type: "wikilink",
       content: match[0],
       target,
       displayText,
-    });
+    };
+
+    // Add blockId/headingRef to segment if present
+    if (blockId) {
+      segment.blockId = blockId;
+    }
+    if (headingRef) {
+      segment.headingRef = headingRef;
+    }
+
+    segments.push(segment);
 
     lastIndex = match.index + match[0].length;
   }
