@@ -54,17 +54,10 @@ const periodsOverlap = (
 };
 
 /**
- * Check if a task is a context task (has ems__Context class).
- * Context tasks describe WHERE or HOW other tasks are executed, not WHAT is being done.
- * They should be excluded from overlap detection to avoid false-positive scheduling conflicts.
- *
- * Handles multiple formats:
- * - Single string: "ems__Context" or "[[ems__Context]]"
- * - Array: ["[[ems__Task]]", "[[ems__Context]]"]
+ * Check if a class list contains ems__Context class.
+ * Handles both string and array formats.
  */
-const isContextTask = (metadata: Record<string, unknown>): boolean => {
-  const classes = metadata.exo__Instance_class;
-
+const classListHasContext = (classes: unknown): boolean => {
   if (classes == null) {
     return false;
   }
@@ -77,6 +70,34 @@ const isContextTask = (metadata: Record<string, unknown>): boolean => {
 
   if (typeof classes === 'string') {
     return classes.includes('ems__Context');
+  }
+
+  return false;
+};
+
+/**
+ * Check if a task is a context task (has ems__Context class).
+ * Context tasks describe WHERE or HOW other tasks are executed, not WHAT is being done.
+ * They should be excluded from overlap detection to avoid false-positive scheduling conflicts.
+ *
+ * This function checks for ems__Context in two places:
+ * 1. Direct class membership via exo__Instance_class
+ * 2. Prototype's class membership via _prototypeClasses (pre-resolved by renderer)
+ *
+ * Handles multiple formats:
+ * - Single string: "ems__Context" or "[[ems__Context]]"
+ * - Array: ["[[ems__Task]]", "[[ems__Context]]"]
+ */
+const isContextTask = (metadata: Record<string, unknown>): boolean => {
+  // Check direct class membership
+  if (classListHasContext(metadata.exo__Instance_class)) {
+    return true;
+  }
+
+  // Check prototype's classes (Issue #2131)
+  // _prototypeClasses is pre-resolved by the renderer for tasks with exo__Instance_prototype
+  if (classListHasContext(metadata._prototypeClasses)) {
+    return true;
   }
 
   return false;

@@ -7,7 +7,7 @@ import {
   DailyTask,
   DailyTasksTableWithToggle,
 } from '@plugin/presentation/components/DailyTasksTable';
-import { AssetClass, EffortStatus, IVaultAdapter } from "exocortex";
+import { AssetClass, EffortStatus, IVaultAdapter, IFile } from "exocortex";
 import { MetadataExtractor } from "exocortex";
 import { EffortSortingHelpers } from "exocortex";
 import { AssetMetadataService } from "./layout/helpers/AssetMetadataService";
@@ -235,6 +235,13 @@ export class DailyTasksRenderer {
 
         const isBlocked = BlockerHelpers.isEffortBlocked(this.app, metadata);
 
+        // Resolve prototype classes for overlap detection (Issue #2131)
+        // If task has a prototype, look up the prototype's classes
+        const prototypeClasses = this.resolvePrototypeClasses(metadata, allFiles);
+        const enrichedMetadata = prototypeClasses
+          ? { ...metadata, _prototypeClasses: prototypeClasses }
+          : metadata;
+
         tasks.push({
           file: {
             path: file.path,
@@ -248,7 +255,7 @@ export class DailyTasksRenderer {
           startTimestamp: startTimestamp || plannedStartTimestamp || null,
           endTimestamp: endTimestamp || plannedEndTimestamp || null,
           status: getStatusLabel(effortStatusStr),
-          metadata,
+          metadata: enrichedMetadata,
           isDone,
           isTrashed,
           isDoing,
@@ -292,6 +299,58 @@ export class DailyTasksRenderer {
       this.logger.error("Failed to get daily tasks", { error });
       return [];
     }
+  }
+
+  /**
+   * Extract target UID from wikilink format.
+   * Handles: "[[uid|alias]]", "[[uid]]", "uid"
+   */
+  private extractWikilinkTarget(value: string): string | null {
+    if (!value) return null;
+
+    // Match [[target|alias]] or [[target]]
+    const wikilinkMatch = value.match(/\[\[([^\]|]+)/);
+    if (wikilinkMatch) {
+      return wikilinkMatch[1].trim();
+    }
+
+    // Already a plain string (UID)
+    return value.trim();
+  }
+
+  /**
+   * Resolve prototype's classes for a task with exo__Instance_prototype.
+   * Returns the prototype's exo__Instance_class if found, null otherwise.
+   *
+   * @param metadata - Task's metadata containing potential exo__Instance_prototype
+   * @param allFiles - All files in vault for prototype lookup
+   * @returns Prototype's classes or null if not found
+   */
+  private resolvePrototypeClasses(
+    metadata: Record<string, unknown>,
+    allFiles: IFile[],
+  ): unknown {
+    const prototypeRef = metadata.exo__Instance_prototype;
+    if (!prototypeRef || typeof prototypeRef !== 'string') {
+      return null;
+    }
+
+    const prototypeTarget = this.extractWikilinkTarget(prototypeRef);
+    if (!prototypeTarget) {
+      return null;
+    }
+
+    // Find prototype file by basename or path
+    const prototypeFile = allFiles.find(
+      (f) => f.basename === prototypeTarget || f.path === prototypeTarget || f.path.includes(prototypeTarget)
+    );
+
+    if (!prototypeFile) {
+      return null;
+    }
+
+    const prototypeMetadata = this.metadataExtractor.extractMetadata(prototypeFile);
+    return prototypeMetadata.exo__Instance_class || null;
   }
 
   private getChildAreas(
