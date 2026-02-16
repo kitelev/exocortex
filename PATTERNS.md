@@ -7271,3 +7271,310 @@ if (this.settings.showLabelsInLivePreview) {
 | CI status | ✅ All checks passed |
 
 **Reference**: Issue #2126, PR #2126 - Display wikilinks by exo__Asset_label in live preview (102 steps, February 2026)
+
+---
+
+## Prototype Class Inheritance Pattern
+
+**When to use**: Implementing metadata classification that should propagate from prototype to instances
+
+### Pattern Description
+
+When an asset uses `exo__Asset_prototype` to reference a prototype, the prototype's class membership should be inherited for classification purposes (e.g., overlap detection exclusion).
+
+### Problem
+
+Task "Morning Commute" has `exo__Asset_prototype: "[[commute-prototype]]"` but no direct `ems__Context` class. The prototype "Commute" has `ems__Context` class. Without prototype lookup, "Morning Commute" isn't recognized as a context task.
+
+### Solution
+
+```typescript
+// Step 1: Check direct class membership
+function hasClassDirectly(metadata: FrontmatterCache, className: string): boolean {
+  const classes = metadata.exo__Instance_class || [];
+  const classArray = Array.isArray(classes) ? classes : [classes];
+  return classArray.some(c => typeof c === 'string' && c.includes(className));
+}
+
+// Step 2: Resolve prototype's classes
+async function resolvePrototypeClasses(
+  metadata: FrontmatterCache,
+  app: ObsidianApp
+): Promise<string[]> {
+  // ⚠️ CRITICAL: Use exo__Asset_prototype, NOT exo__Instance_prototype
+  const prototypeRef = metadata.exo__Asset_prototype;
+  if (!prototypeRef) return [];
+
+  const prototypeUid = extractUidFromWikilink(prototypeRef);
+  if (!prototypeUid) return [];
+
+  const prototypeFile = app.metadataCache.getFirstLinkpathDest(prototypeUid, '');
+  if (!prototypeFile) return [];
+
+  const prototypeMeta = app.metadataCache.getFileCache(prototypeFile);
+  return prototypeMeta?.frontmatter?.exo__Instance_class || [];
+}
+
+// Step 3: Combined check
+async function hasClassDirectlyOrThroughPrototype(
+  metadata: FrontmatterCache,
+  className: string,
+  app: ObsidianApp
+): Promise<boolean> {
+  if (hasClassDirectly(metadata, className)) return true;
+
+  const prototypeClasses = await resolvePrototypeClasses(metadata, app);
+  return prototypeClasses.some(c => c.includes(className));
+}
+```
+
+### Critical Property Name
+
+| ❌ WRONG | ✅ CORRECT |
+|----------|-----------|
+| `exo__Instance_prototype` (6 vault occurrences) | `exo__Asset_prototype` (3098 occurrences) |
+
+**Mnemonic**: Assets have prototypes, not instances. "Asset → prototype" makes semantic sense.
+
+### Vault Occurrence Validation
+
+Before implementing prototype lookups, validate property names exist in vault:
+
+```bash
+# Count occurrences to validate correct property name
+grep -r "exo__Instance_prototype" /path/to/vault --include="*.md" | wc -l
+# Result: 6 (wrong!)
+
+grep -r "exo__Asset_prototype" /path/to/vault --include="*.md" | wc -l
+# Result: 3098 (correct!)
+```
+
+### Testing Pattern
+
+```typescript
+describe("Prototype-based classification", () => {
+  it("should detect class through prototype", async () => {
+    const task = {
+      exo__Asset_prototype: "[[context-prototype]]",
+      exo__Instance_class: [],  // No direct class
+    };
+
+    mockGetFileCache.mockReturnValueOnce({
+      frontmatter: {
+        exo__Instance_class: ["[[ems__Context]]"],
+      },
+    });
+
+    const result = await hasClassDirectlyOrThroughPrototype(
+      task, "ems__Context", mockApp
+    );
+
+    expect(result).toBe(true);
+  });
+});
+```
+
+### Real-World Use Case
+
+**Overlap Detection Exclusion (Issues #2131, #2135)**:
+- Tasks with `ems__Context` class are excluded from time overlap highlighting
+- Recurring contexts ("Commute", "Lunch Break") use prototypes
+- Prototype-based lookup reduces maintenance overhead
+
+**Metrics:**
+
+| Issue | Steps | Result |
+|-------|-------|--------|
+| #2131 (feat: prototype detection) | 62 | +340 lines |
+| #2135 (fix: property name) | 74 | +74 lines |
+
+**Reference**: Issues #2131, #2135 - Prototype class inheritance for overlap detection (136 combined steps, February 2026)
+
+---
+
+## Block Reference Wikilink Pattern
+
+**When to use**: Extending wikilink rendering to support `[[uuid#^blockid]]` and `[[uuid#Heading]]` formats
+
+### Pattern Description
+
+Block and heading references require special parsing to extract the reference part and append it to the resolved label.
+
+### Regex Evolution
+
+```typescript
+// BEFORE: Simple wikilinks only
+const simplePattern = /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g;
+// Matches: [[uuid]], [[uuid|alias]]
+
+// AFTER: Block/heading references
+const fullPattern = /\[\[([^#\]|]+)(?:#(\^)?([^\]|]+))?(?:\|([^\]]+))?\]\]/g;
+// Matches: [[uuid]], [[uuid|alias]], [[uuid#^block]], [[uuid#Heading]], [[uuid#^block|alias]]
+```
+
+### Parsing Interface
+
+```typescript
+interface WikilinkParsed {
+  target: string;        // UUID or path
+  alias?: string;        // Custom display name |...|
+  blockId?: string;      // Block reference (^abc123)
+  headingRef?: string;   // Heading reference (#Heading)
+  isBlock: boolean;      // true if ^, false if heading
+}
+
+function parseWikilink(value: string): WikilinkParsed | null {
+  const match = value.match(/^\[\[([^#\]|]+)(?:#(\^)?([^\]|]+))?(?:\|([^\]]+))?\]\]$/);
+  if (!match) return null;
+
+  return {
+    target: match[1].trim(),
+    isBlock: match[2] === '^',
+    blockId: match[2] === '^' ? match[3]?.trim() : undefined,
+    headingRef: match[2] !== '^' ? match[3]?.trim() : undefined,
+    alias: match[4]?.trim(),
+  };
+}
+```
+
+### Display Formatting
+
+```typescript
+function formatDisplayName(
+  label: string,
+  parsed: WikilinkParsed
+): string {
+  // Custom alias takes priority
+  if (parsed.alias) return parsed.alias;
+
+  // Block reference: "Label > ^blockid"
+  if (parsed.blockId) {
+    return `${label} > ^${parsed.blockId}`;
+  }
+
+  // Heading reference: "Label > Heading"
+  if (parsed.headingRef) {
+    return `${label} > ${parsed.headingRef}`;
+  }
+
+  return label;
+}
+```
+
+### Cross-View Consistency
+
+Apply same formatting in both modes:
+
+| Mode | Implementation | Component |
+|------|----------------|-----------|
+| Live Preview | CodeMirror ViewPlugin | `WikilinkLabelViewPlugin.ts` |
+| Reading View | MutationObserver + DOM | `BodyLinkPatch.ts` |
+
+### BodyLinkPatch Extension
+
+```typescript
+// Reading View: Extract ref from data-href attribute
+private parseLinkRef(href: string): { path: string; ref?: string } {
+  const hashIndex = href.indexOf('#');
+  if (hashIndex === -1) {
+    return { path: href };
+  }
+
+  return {
+    path: href.substring(0, hashIndex),
+    ref: href.substring(hashIndex + 1),  // "^blockid" or "Heading"
+  };
+}
+
+// Apply to resolved display name
+const { path, ref } = this.parseLinkRef(dataHref);
+const resolvedName = this.resolveDisplayName(path);
+const finalName = ref
+  ? ref.startsWith('^')
+    ? `${resolvedName} > ${ref}`        // Block: "Label > ^blockid"
+    : `${resolvedName} > ${ref}`        // Heading: "Label > Heading"
+  : resolvedName;
+```
+
+### Metrics (Issue #2133, PR #2134)
+
+| Metric | Value |
+|--------|-------|
+| Steps | 74 |
+| Files modified | 4 |
+| Lines added | +546 |
+| Lines deleted | -43 |
+| Unit tests added | 24 |
+
+**Reference**: Issue #2133, PR #2134 - Block reference wikilink display (74 steps, February 2026)
+
+---
+
+## Property Name Verification Pattern
+
+**When to use**: Implementing features that depend on frontmatter property names
+
+### Pattern Description
+
+Before using a frontmatter property name, verify it exists in the vault with significant occurrences. Property names that look plausible but are rarely used indicate a naming error.
+
+### Problem Scenario
+
+Issue #2135 revealed that `exo__Instance_prototype` was used instead of `exo__Asset_prototype`. The code compiled, tests passed (with mock data), but the feature didn't work in production.
+
+### Verification Command
+
+```bash
+# Run BEFORE implementation to confirm property exists
+grep -r "PROPERTY_NAME" /path/to/vault --include="*.md" | wc -l
+
+# Examples:
+grep -r "exo__Instance_prototype" ~/vault-2025 --include="*.md" | wc -l
+# Result: 6 ← Too low! Likely wrong property name
+
+grep -r "exo__Asset_prototype" ~/vault-2025 --include="*.md" | wc -l
+# Result: 3098 ← Correct, widely used
+```
+
+### Occurrence Thresholds
+
+| Count | Interpretation | Action |
+|-------|----------------|--------|
+| 0 | Property doesn't exist | Verify ontology, check spelling |
+| 1-10 | Test data or schema only | Probably wrong, investigate |
+| 100+ | Real usage | Correct property name |
+| 1000+ | Core property | Definitely correct |
+
+### Integration into Development Flow
+
+1. **Before implementation**: Run grep to verify property name
+2. **If count < 100**: Stop and verify in ontology
+3. **Add to test name**: "should use exo__Asset_prototype (not exo__Instance_prototype)"
+4. **Document in PR**: Include occurrence count for validation
+
+### Defensive Test Pattern
+
+```typescript
+describe("Property name validation", () => {
+  // Explicit test name prevents future property name confusion
+  it("should resolve prototype using exo__Asset_prototype (NOT exo__Instance_prototype)", () => {
+    const metadata = {
+      exo__Asset_prototype: "[[prototype-uid]]",  // Correct property
+    };
+
+    const result = resolvePrototypeClasses(metadata);
+
+    expect(result).toBeDefined();
+  });
+});
+```
+
+### Real-World Impact
+
+**Issue #2135**:
+- Root cause: PR #2132 used `exo__Instance_prototype` (6 occurrences) instead of `exo__Asset_prototype` (3098 occurrences)
+- Symptom: Tasks with prototypes weren't excluded from overlap detection
+- Time to find: 74 steps of investigation
+- Prevention: 30-second grep command before implementation
+
+**Reference**: Issue #2135, PR #2137 - Property name mismatch fix (74 steps, February 2026)
