@@ -22,6 +22,8 @@ describe("WikilinkLabelViewPlugin", () => {
         to: 21, // [[abc123-def456]] = 17 chars, starts at 4, ends at 4+17=21
         targetPath: "abc123-def456",
         hasAlias: false,
+        blockId: undefined,
+        headingRef: undefined,
       });
     });
 
@@ -89,6 +91,72 @@ describe("WikilinkLabelViewPlugin", () => {
 
       expect(matches).toHaveLength(1);
       expect(matches[0].targetPath).toBe("369c1b17-1296-4ec8-bdb9-c73fb74c0085");
+    });
+
+    it("should parse block reference wikilink", () => {
+      const matches = WikilinkLabelViewPlugin.parseWikilinksFromText(
+        "[[5764fb33-9cb1-43a4-a9be-43c534922798#^jgp9nz]]",
+        0
+      );
+
+      expect(matches).toHaveLength(1);
+      expect(matches[0].targetPath).toBe("5764fb33-9cb1-43a4-a9be-43c534922798");
+      expect(matches[0].blockId).toBe("jgp9nz");
+      expect(matches[0].headingRef).toBeUndefined();
+      expect(matches[0].hasAlias).toBe(false);
+    });
+
+    it("should parse heading reference wikilink", () => {
+      const matches = WikilinkLabelViewPlugin.parseWikilinksFromText(
+        "[[some-file#My Heading]]",
+        0
+      );
+
+      expect(matches).toHaveLength(1);
+      expect(matches[0].targetPath).toBe("some-file");
+      expect(matches[0].headingRef).toBe("My Heading");
+      expect(matches[0].blockId).toBeUndefined();
+      expect(matches[0].hasAlias).toBe(false);
+    });
+
+    it("should skip block reference wikilink with alias", () => {
+      const matches = WikilinkLabelViewPlugin.parseWikilinksFromText(
+        "[[file#^block|Custom Alias]]",
+        0
+      );
+
+      // Wikilinks with aliases should be skipped
+      expect(matches).toHaveLength(0);
+    });
+
+    it("should skip heading reference wikilink with alias", () => {
+      const matches = WikilinkLabelViewPlugin.parseWikilinksFromText(
+        "[[file#Heading|Custom Alias]]",
+        0
+      );
+
+      // Wikilinks with aliases should be skipped
+      expect(matches).toHaveLength(0);
+    });
+
+    it("should handle mixed wikilinks with block references", () => {
+      const matches = WikilinkLabelViewPlugin.parseWikilinksFromText(
+        "[[uuid1]] and [[uuid2#^block]] and [[uuid3#Heading]]",
+        0
+      );
+
+      expect(matches).toHaveLength(3);
+      expect(matches[0].targetPath).toBe("uuid1");
+      expect(matches[0].blockId).toBeUndefined();
+      expect(matches[0].headingRef).toBeUndefined();
+
+      expect(matches[1].targetPath).toBe("uuid2");
+      expect(matches[1].blockId).toBe("block");
+      expect(matches[1].headingRef).toBeUndefined();
+
+      expect(matches[2].targetPath).toBe("uuid3");
+      expect(matches[2].blockId).toBeUndefined();
+      expect(matches[2].headingRef).toBe("Heading");
     });
   });
 
