@@ -23,6 +23,10 @@ export interface WikilinkMatch {
   targetPath: string;
   /** Whether the wikilink has an explicit alias */
   hasAlias: boolean;
+  /** Optional block reference ID (e.g., "jgp9nz" from [[file#^jgp9nz]]) */
+  blockId?: string;
+  /** Optional heading reference (e.g., "Heading" from [[file#Heading]]) */
+  headingRef?: string;
 }
 
 /**
@@ -127,10 +131,20 @@ export class WikilinkLabelViewPlugin {
       }
 
       // Resolve the label for this target
-      const label = WikilinkLabelViewPlugin.resolveLabel(
+      const baseLabel = WikilinkLabelViewPlugin.resolveLabel(
         this.metadataCache,
         wikilink.targetPath,
       );
+
+      // Build display text with block or heading reference suffix
+      let label = baseLabel;
+      if (label) {
+        if (wikilink.blockId) {
+          label = `${label} > ^${wikilink.blockId}`;
+        } else if (wikilink.headingRef) {
+          label = `${label} > ${wikilink.headingRef}`;
+        }
+      }
 
       // Only create decoration if we found a label different from the target
       if (label && label !== wikilink.targetPath) {
@@ -163,6 +177,12 @@ export class WikilinkLabelViewPlugin {
    * Parse wikilinks from text, extracting only those without aliases.
    * This is a static method for easier testing.
    *
+   * Supports:
+   * - Simple wikilinks: [[target]]
+   * - Block references: [[target#^blockId]]
+   * - Heading references: [[target#Heading]]
+   * - Wikilinks with aliases are excluded: [[target|alias]]
+   *
    * @param text - The text to parse
    * @param offset - Offset to add to positions (for viewport-based parsing)
    * @returns Array of WikilinkMatch objects for wikilinks without aliases
@@ -170,14 +190,20 @@ export class WikilinkLabelViewPlugin {
   static parseWikilinksFromText(text: string, offset: number): WikilinkMatch[] {
     const matches: WikilinkMatch[] = [];
 
-    // Pattern: [[target]] or [[target|alias]]
-    // We only want [[target]] without pipe
-    const wikilinkPattern = /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g;
+    // Pattern: [[target]] or [[target#^blockId]] or [[target#Heading]] or [[target|alias]]
+    // Captures:
+    // 1. target (no #, ], or |)
+    // 2. optional block reference (^alphanumeric after #)
+    // 3. optional heading reference (text after # without ^ and without ] or |)
+    // 4. optional alias (after |)
+    const wikilinkPattern = /\[\[([^#\]|]+)(?:#\^([a-zA-Z0-9]+))?(?:#([^\]|^]+))?(?:\|([^\]]+))?\]\]/g;
 
     let match;
     while ((match = wikilinkPattern.exec(text)) !== null) {
       const targetPath = match[1].trim();
-      const alias = match[2]?.trim();
+      const blockId = match[2]?.trim();
+      const headingRef = match[3]?.trim();
+      const alias = match[4]?.trim();
 
       // Only include wikilinks WITHOUT aliases
       if (!alias) {
@@ -186,6 +212,8 @@ export class WikilinkLabelViewPlugin {
           to: offset + match.index + match[0].length,
           targetPath,
           hasAlias: false,
+          blockId,
+          headingRef,
         });
       }
     }
