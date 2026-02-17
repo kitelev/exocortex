@@ -217,17 +217,36 @@ export class BodyLinkPatch {
     const matchesBasename = currentText === file.basename;
     const matchesDataHref = currentText === cleanedDataHref;
     // Also check if textContent matches basename + block/heading ref (for block reference links)
+    // Obsidian may render in different formats (Issue #2139):
+    // - "basename#^blockid" (standard format)
+    // - "basename#blockid" (without caret)
+    // - "basename > ^blockid" (separator format)
+    // - "basename#Heading" (heading reference)
     const expectedBlockRefText = blockId
       ? `${file.basename}#^${blockId}`
       : headingRef
         ? `${file.basename}#${headingRef}`
         : file.basename;
     const matchesBlockRefText = currentText === expectedBlockRefText;
+
+    // Issue #2139: Additional patterns Obsidian might render that should be patched
+    // (not user aliases)
+    const matchesBlockRefWithoutCaret = blockId
+      ? currentText === `${file.basename}#${blockId}`
+      : false;
+    const matchesBlockRefSeparatorFormat = blockId
+      ? currentText === `${file.basename} > ^${blockId}`
+      : headingRef
+        ? currentText === `${file.basename} > ${headingRef}`
+        : false;
+
     const hasUserAlias =
       currentText !== "" &&
       !matchesBasename &&
       !matchesDataHref &&
       !matchesBlockRefText &&
+      !matchesBlockRefWithoutCaret &&
+      !matchesBlockRefSeparatorFormat &&
       !wasAlreadyPatched;
 
     if (hasUserAlias) {
