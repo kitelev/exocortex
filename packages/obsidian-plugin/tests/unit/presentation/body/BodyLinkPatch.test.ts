@@ -661,5 +661,137 @@ describe("BodyLinkPatch", () => {
         ""
       );
     });
+
+    /**
+     * Issue #2139: Block references in Reading View display UUID instead of resolved label
+     *
+     * BUG SCENARIO: When Obsidian renders a block reference link like [[uuid#^blockid]],
+     * it may render the textContent as just "uuid" (basename only) instead of "uuid#^blockid".
+     * In this case, the link should still be patched to show "Asset Label > ^blockid".
+     *
+     * The bug was that matchesBasename would be true, causing the code to think
+     * this is a bare wikilink without block reference, and thus not appending "> ^blockid".
+     */
+    it("should patch block reference when Obsidian renders textContent as basename only (Issue #2139)", () => {
+      // Obsidian renders [[uuid#^blockid]] with textContent = "uuid" (basename only!)
+      const uuid = "84e75603-0103-4594-8499-09dc404800b0";
+      mockLink.setAttribute("data-href", `${uuid}#^jgp9nz`);
+      mockLink.textContent = uuid; // Obsidian renders just the basename
+
+      const mockFile = new TFile();
+      Object.defineProperty(mockFile, "extension", { value: "md" });
+      Object.defineProperty(mockFile, "basename", { value: uuid });
+      Object.defineProperty(mockFile, "stat", {
+        value: { ctime: Date.now() },
+      });
+
+      mockApp.metadataCache.getFirstLinkpathDest.mockReturnValue(mockFile);
+      mockApp.metadataCache.getFileCache.mockReturnValue({
+        frontmatter: {
+          exo__Asset_label: "My Document Label",
+          exo__Instance_class: "ems__Task",
+        },
+      });
+
+      patch.enable();
+
+      // MUST display as "My Document Label (ems__Task) > ^jgp9nz"
+      // NOT as "My Document Label (ems__Task)" (missing block ref)
+      // NOT as "84e75603-0103-4594-8499-09dc404800b0 > ^jgp9nz" (unresolved UUID)
+      expect(mockLink.textContent).toBe("My Document Label (ems__Task) > ^jgp9nz");
+      expect(mockLink.getAttribute("data-body-patched")).toBe("true");
+    });
+
+    it("should patch heading reference when Obsidian renders textContent as basename only (Issue #2139)", () => {
+      // Obsidian renders [[uuid#Heading]] with textContent = "uuid" (basename only!)
+      const uuid = "84e75603-0103-4594-8499-09dc404800b0";
+      mockLink.setAttribute("data-href", `${uuid}#Section Title`);
+      mockLink.textContent = uuid; // Obsidian renders just the basename
+
+      const mockFile = new TFile();
+      Object.defineProperty(mockFile, "extension", { value: "md" });
+      Object.defineProperty(mockFile, "basename", { value: uuid });
+      Object.defineProperty(mockFile, "stat", {
+        value: { ctime: Date.now() },
+      });
+
+      mockApp.metadataCache.getFirstLinkpathDest.mockReturnValue(mockFile);
+      mockApp.metadataCache.getFileCache.mockReturnValue({
+        frontmatter: {
+          exo__Asset_label: "My Document Label",
+          exo__Instance_class: "lit__Article",
+        },
+      });
+
+      patch.enable();
+
+      // MUST display as "My Document Label (lit__Article) > Section Title"
+      expect(mockLink.textContent).toBe("My Document Label (lit__Article) > Section Title");
+      expect(mockLink.getAttribute("data-body-patched")).toBe("true");
+    });
+
+    /**
+     * Issue #2139: Additional edge case where Obsidian might render block ref without caret symbol
+     * e.g., "uuid#blockid" instead of "uuid#^blockid"
+     */
+    it("should patch block reference when Obsidian renders without caret symbol (Issue #2139 edge case)", () => {
+      // Obsidian renders [[uuid#^blockid]] with textContent = "uuid#blockid" (missing ^)
+      const uuid = "84e75603-0103-4594-8499-09dc404800b0";
+      mockLink.setAttribute("data-href", `${uuid}#^jgp9nz`);
+      mockLink.textContent = `${uuid}#jgp9nz`; // Missing caret - potential Obsidian variation
+
+      const mockFile = new TFile();
+      Object.defineProperty(mockFile, "extension", { value: "md" });
+      Object.defineProperty(mockFile, "basename", { value: uuid });
+      Object.defineProperty(mockFile, "stat", {
+        value: { ctime: Date.now() },
+      });
+
+      mockApp.metadataCache.getFirstLinkpathDest.mockReturnValue(mockFile);
+      mockApp.metadataCache.getFileCache.mockReturnValue({
+        frontmatter: {
+          exo__Asset_label: "My Document Label",
+          exo__Instance_class: "ems__Task",
+        },
+      });
+
+      patch.enable();
+
+      // Should still resolve to label with block ref
+      expect(mockLink.textContent).toBe("My Document Label (ems__Task) > ^jgp9nz");
+      expect(mockLink.getAttribute("data-body-patched")).toBe("true");
+    });
+
+    /**
+     * Issue #2139: Edge case where Obsidian might render block ref as "basename > ^blockid"
+     * (the already-partially-patched format but with basename instead of label)
+     */
+    it("should patch when Obsidian renders basename with separator format (Issue #2139 edge case)", () => {
+      // Obsidian renders [[uuid#^blockid]] with textContent = "uuid > ^blockid"
+      const uuid = "84e75603-0103-4594-8499-09dc404800b0";
+      mockLink.setAttribute("data-href", `${uuid}#^jgp9nz`);
+      mockLink.textContent = `${uuid} > ^jgp9nz`; // Obsidian auto-formats with " > "
+
+      const mockFile = new TFile();
+      Object.defineProperty(mockFile, "extension", { value: "md" });
+      Object.defineProperty(mockFile, "basename", { value: uuid });
+      Object.defineProperty(mockFile, "stat", {
+        value: { ctime: Date.now() },
+      });
+
+      mockApp.metadataCache.getFirstLinkpathDest.mockReturnValue(mockFile);
+      mockApp.metadataCache.getFileCache.mockReturnValue({
+        frontmatter: {
+          exo__Asset_label: "My Document Label",
+          exo__Instance_class: "ems__Task",
+        },
+      });
+
+      patch.enable();
+
+      // Should resolve to label with block ref (replacing basename with label)
+      expect(mockLink.textContent).toBe("My Document Label (ems__Task) > ^jgp9nz");
+      expect(mockLink.getAttribute("data-body-patched")).toBe("true");
+    });
   });
 });
