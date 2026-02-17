@@ -7578,3 +7578,149 @@ describe("Property name validation", () => {
 - Prevention: 30-second grep command before implementation
 
 **Reference**: Issue #2135, PR #2137 - Property name mismatch fix (74 steps, February 2026)
+
+---
+
+## Obsidian Wikilink Text Rendering Variations Pattern
+
+**When to use**: Implementing features that patch or modify wikilink display in Obsidian
+
+### Pattern Description
+
+Obsidian renders wikilink text content in multiple undocumented formats depending on:
+- View mode (Live Preview vs Reading View)
+- Link type (simple wikilink, block reference, heading reference)
+- Obsidian version
+- User aliases (explicit `[[target|alias]]` syntax)
+
+When writing code that patches wikilink display, you must anticipate ALL possible text formats Obsidian may render, not just the expected format.
+
+### The Problem: Incomplete Format Matching (Issue #2139)
+
+```typescript
+// ❌ WRONG: Only matches one expected format
+const expectedBlockRefText = `${file.basename}#^${blockId}`;
+const matchesBlockRefText = currentText === expectedBlockRefText;
+
+// If Obsidian renders "basename > ^blockid" instead of "basename#^blockid",
+// the match fails and hasUserAlias becomes true incorrectly
+```
+
+### The Solution: Multi-Format Matching
+
+```typescript
+// ✅ CORRECT: Match ALL known Obsidian rendering formats
+const matchesBlockRefText = blockId
+  ? currentText === `${file.basename}#^${blockId}`     // Standard format
+  : false;
+
+const matchesBlockRefWithoutCaret = blockId
+  ? currentText === `${file.basename}#${blockId}`       // Without caret
+  : false;
+
+const matchesBlockRefSeparatorFormat = blockId
+  ? currentText === `${file.basename} > ^${blockId}`    // Separator format
+  : headingRef
+    ? currentText === `${file.basename} > ${headingRef}`
+    : false;
+
+// Update guard clause to include all formats
+const hasUserAlias =
+  currentText !== "" &&
+  !matchesBasename &&
+  !matchesDataHref &&
+  !matchesBlockRefText &&
+  !matchesBlockRefWithoutCaret &&         // NEW
+  !matchesBlockRefSeparatorFormat &&       // NEW
+  !wasAlreadyPatched;
+```
+
+### Known Obsidian Wikilink Text Formats
+
+| Link Type | Possible Text Formats |
+|-----------|----------------------|
+| Simple `[[page]]` | `page`, `page.md` |
+| Block ref `[[page#^id]]` | `page#^id`, `page#id`, `page > ^id`, `page` |
+| Heading ref `[[page#Heading]]` | `page#Heading`, `page > Heading`, `page` |
+| With alias `[[page\|Alias]]` | `Alias` (always preserved) |
+
+### Guard Clause Best Practices
+
+When implementing `hasUserAlias` or similar guards:
+
+1. **Start permissive, narrow later**: Consider all unknown text as "maybe Obsidian-generated" initially
+2. **Log actual values**: Add temporary logging to capture real Obsidian output before finalizing
+3. **Test both view modes**: Live Preview and Reading View may render differently
+4. **Preserve user intent**: Explicit aliases (`[[target|Alias]]`) must always be preserved
+
+### Investigation Pattern (Debug-First)
+
+```typescript
+// Step 1: Add temporary debug logging
+console.log("BodyLinkPatch debug:", {
+  currentText,
+  expectedBlockRefText,
+  matchesBlockRefText,
+  file: file.basename,
+  blockId,
+});
+
+// Step 2: Open a note with [[uuid#^blockid]] in Reading View
+// Step 3: Check console output for actual currentText value
+// Step 4: Add missing format to match conditions
+// Step 5: Remove debug logging
+```
+
+### Test Pattern for Wikilink Patching
+
+```typescript
+describe("Wikilink format variations (Issue #2139)", () => {
+  it("should patch block reference when textContent is basename only", () => {
+    mockLink.setAttribute("data-href", `${uuid}#^jgp9nz`);
+    mockLink.textContent = uuid; // Obsidian renders just basename
+
+    patch.enable();
+
+    expect(mockLink.textContent).toBe("Asset Label (Class) > ^jgp9nz");
+  });
+
+  it("should patch block reference without caret symbol", () => {
+    mockLink.textContent = `${uuid}#jgp9nz`; // Missing caret
+    // ... test patching still works
+  });
+
+  it("should patch block reference with separator format", () => {
+    mockLink.textContent = `${uuid} > ^jgp9nz`; // Separator format
+    // ... test patching still works
+  });
+
+  it("should preserve explicit user alias", () => {
+    mockLink.textContent = "Custom Alias"; // User provided
+    // ... test alias is NOT overwritten
+  });
+});
+```
+
+### Cross-Mode Consistency Checklist
+
+When implementing wikilink features:
+
+- [ ] Test in **Live Preview** mode (typically uses `WikilinkLabelViewPlugin.ts` or similar CM6 extension)
+- [ ] Test in **Reading View** mode (typically uses `BodyLinkPatch.ts` or MutationObserver)
+- [ ] Test **simple wikilinks** `[[page]]`
+- [ ] Test **block references** `[[page#^id]]`
+- [ ] Test **heading references** `[[page#Heading]]`
+- [ ] Test **aliased links** `[[page|Alias]]`
+- [ ] Verify **tooltip/aria-label** matches display text
+- [ ] Test **navigation** (clicking link goes to correct location)
+
+### Real-World Impact
+
+**Issue #2139**: Block references in Reading View displayed UUID instead of resolved label
+- **Root cause**: `hasUserAlias` guard didn't recognize Obsidian's separator format (`basename > ^blockid`)
+- **Symptom**: `84e75603-0103-4594-8499-09dc404800b0 > ^jgp9nz` instead of `Asset Label > ^jgp9nz`
+- **Fix**: Added recognition for 2 additional Obsidian text rendering formats
+- **Time**: 41 steps (quick fix once root cause identified via debug logging)
+- **Tests added**: 4 regression tests covering format variations
+
+**Reference**: Issue #2139, PR #2140 - Block reference Reading View fix (41 steps, February 2026)
