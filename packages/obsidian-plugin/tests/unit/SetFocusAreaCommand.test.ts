@@ -52,7 +52,6 @@ describe("SetFocusAreaCommand", () => {
     mockPlugin = {
       settings: {
         activeFocusArea: null,
-        defaultOntologyAsset: null,
       },
       saveSettings: jest.fn(),
       refreshLayout: jest.fn(),

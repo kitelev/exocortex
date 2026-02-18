@@ -31,7 +31,6 @@ test.describe("Dynamic Property Fields E2E", () => {
       activeFocusArea: null,
       showEffortArea: false,
       showEffortVotes: false,
-      defaultOntologyAsset: null,
       showFullDateInEffortTimes: false,
       showDailyNoteProjects: true,
       useDynamicPropertyFields: true, // Enable dynamic fields
@@ -51,7 +50,6 @@ test.describe("Dynamic Property Fields E2E", () => {
       activeFocusArea: null,
       showEffortArea: false,
       showEffortVotes: false,
-      defaultOntologyAsset: null,
       showFullDateInEffortTimes: false,
       showDailyNoteProjects: true,
       useDynamicPropertyFields: false, // Disable dynamic fields
@@ -444,7 +442,6 @@ test.describe("Dynamic Property Fields - Feature Toggle", () => {
       activeFocusArea: null,
       showEffortArea: false,
       showEffortVotes: false,
-      defaultOntologyAsset: null,
       showFullDateInEffortTimes: false,
       showDailyNoteProjects: true,
       useDynamicPropertyFields: false, // Disabled

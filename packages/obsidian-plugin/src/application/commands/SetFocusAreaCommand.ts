@@ -20,9 +20,6 @@ export class SetFocusAreaCommand implements ICommand {
     private plugin: ExocortexPluginInterface,
   ) {
     this.sessionEventService = container.resolve(SessionEventService);
-    this.sessionEventService.setDefaultOntologyAsset(
-      (this.plugin.settings?.defaultOntologyAsset as string | null) ?? null,
-    );
   }
 
   callback = async (): Promise<void> => {

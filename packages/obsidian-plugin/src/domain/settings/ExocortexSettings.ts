@@ -135,7 +135,6 @@ export interface ExocortexSettings {
   activeFocusArea: string | null;
   showEffortArea: boolean;
   showEffortVotes: boolean;
-  defaultOntologyAsset: string | null;
   showFullDateInEffortTimes: boolean;
   showDailyNoteProjects: boolean;
   useDynamicPropertyFields: boolean;
@@ -174,7 +173,6 @@ export const DEFAULT_SETTINGS: ExocortexSettings = {
   activeFocusArea: null,
   showEffortArea: false,
   showEffortVotes: false,
-  defaultOntologyAsset: null,
   showFullDateInEffortTimes: false,
   showDailyNoteProjects: true,
   useDynamicPropertyFields: false,
