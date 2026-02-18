@@ -161,6 +161,12 @@ export class Plugin {
     return document.createElement("div");
   }
 
+  registerEditorSuggest(suggest: EditorSuggest<any>): void {
+    // Mock implementation for EditorSuggest registration
+    (this as any).registeredSuggests = (this as any).registeredSuggests || [];
+    (this as any).registeredSuggests.push(suggest);
+  }
+
   async onload(): Promise<void> {
     // Override in actual plugin
   }
@@ -256,6 +262,87 @@ export class Modal {
 
   onOpen(): void {}
   onClose(): void {}
+}
+
+export interface FuzzyMatch<T> {
+  item: T;
+  match: {
+    score: number;
+    matches: [number, number][];
+  };
+}
+
+export class FuzzySuggestModal<T> {
+  app: App;
+  inputEl: HTMLInputElement;
+  items: T[] = [];
+  containerEl: HTMLElement;
+  resultContainerEl: HTMLElement;
+
+  constructor(app: App) {
+    this.app = app;
+    this.inputEl = document.createElement("input");
+    this.containerEl = document.createElement("div");
+    this.resultContainerEl = document.createElement("div");
+  }
+
+  setPlaceholder(placeholder: string): void {
+    this.inputEl.placeholder = placeholder;
+  }
+
+  getItems(): T[] {
+    return this.items;
+  }
+
+  getItemText(_item: T): string {
+    return "";
+  }
+
+  renderSuggestion(_match: FuzzyMatch<T>, _el: HTMLElement): void {}
+
+  onChooseItem(_item: T, _evt: MouseEvent | KeyboardEvent): void {}
+
+  open(): void {}
+  close(): void {}
+}
+
+export interface EditorSuggestTriggerInfo {
+  start: { line: number; ch: number };
+  end: { line: number; ch: number };
+  query: string;
+}
+
+export interface EditorSuggestContext {
+  start: { line: number; ch: number };
+  end: { line: number; ch: number };
+  query: string;
+  editor: Editor;
+  file: TFile | null;
+}
+
+export class EditorSuggest<T> {
+  app: App;
+  context: EditorSuggestContext | null = null;
+
+  constructor(app: App) {
+    this.app = app;
+  }
+
+  onTrigger(
+    _cursor: EditorPosition,
+    _editor: Editor,
+    _file: TFile | null
+  ): EditorSuggestTriggerInfo | null {
+    return null;
+  }
+
+  getSuggestions(_context: EditorSuggestContext): T[] {
+    return [];
+  }
+
+  renderSuggestion(_suggestion: T, _el: HTMLElement): void {}
+
+  selectSuggestion(_suggestion: T, _evt: MouseEvent | KeyboardEvent): void {}
 }
 
 export class PluginSettingTab {
@@ -807,7 +894,16 @@ export class MetadataCache {
   }
 }
 
-export interface Editor {}
+export interface EditorPosition {
+  line: number;
+  ch: number;
+}
+
+export interface Editor {
+  getLine(line: number): string;
+  replaceRange(replacement: string, from: EditorPosition, to?: EditorPosition): void;
+  setCursor(pos: EditorPosition): void;
+}
 
 export interface MarkdownPostProcessorContext {
   sourcePath: string;

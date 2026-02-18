@@ -36,6 +36,8 @@ import { TabTitlePatch } from "./presentation/tab-titles/TabTitlePatch";
 import { PropertiesLinkPatch } from "./presentation/properties/PropertiesLinkPatch";
 import { BodyLinkPatch } from "./presentation/body/BodyLinkPatch";
 import { GraphViewPatch } from "./presentation/graph-view/GraphViewPatch";
+import { ExocortexQuickSwitcher } from "./presentation/quick-switcher/ExocortexQuickSwitcher";
+import { WikilinkLabelSuggest } from "./presentation/wikilink-suggest/WikilinkLabelSuggest";
 
 /**
  * Exocortex Plugin - Automatic layout rendering
@@ -72,6 +74,7 @@ export default class ExocortexPlugin extends Plugin {
   private bodyLinkPatch!: BodyLinkPatch;
   private graphViewPatch!: GraphViewPatch;
   private semanticSearchManager!: SemanticSearchManager;
+  private wikilinkLabelSuggest: WikilinkLabelSuggest | null = null;
 
   override async onload(): Promise<void> {
     try {
@@ -250,6 +253,26 @@ export default class ExocortexPlugin extends Plugin {
           this.graphViewPatch.enable();
         }, 500);
       }
+
+      // Initialize Wikilink autocomplete with labels
+      // Always register it - it checks settings internally to enable/disable
+      this.wikilinkLabelSuggest = new WikilinkLabelSuggest(
+        this,
+        this.settings.displayNameSettings
+      );
+      this.registerEditorSuggest(this.wikilinkLabelSuggest);
+
+      // Register Quick Switcher command (always available, respects settings when opened)
+      this.addCommand({
+        id: "open-quick-switcher-with-labels",
+        name: "Open quick switcher (with asset labels)",
+        callback: () => {
+          new ExocortexQuickSwitcher(
+            this.app,
+            this.settings.displayNameSettings
+          ).open();
+        },
+      });
 
       // Initialize Semantic Search
       this.semanticSearchManager = new SemanticSearchManager(
@@ -499,6 +522,31 @@ export default class ExocortexPlugin extends Plugin {
       this.graphViewPatch.enable();
     } else {
       this.graphViewPatch.disable();
+    }
+  }
+
+  /**
+   * Toggle Quick Switcher labels on/off
+   * Called from settings when the showLabelsInQuickSwitcher toggle changes
+   * Note: Quick Switcher respects the setting when opened via command
+   */
+  toggleQuickSwitcherLabels(_enabled: boolean): void {
+    // Quick Switcher is created on-demand when opened via command,
+    // so we just need to save the setting (already done in settings tab)
+    // The modal will read the current setting when instantiated
+  }
+
+  /**
+   * Toggle Wikilink autocomplete labels on/off
+   * Called from settings when the showLabelsInWikilinkAutocomplete toggle changes
+   * Note: WikilinkLabelSuggest checks settings internally, so this is just for saving
+   */
+  toggleWikilinkAutocompleteLabels(_enabled: boolean): void {
+    // WikilinkLabelSuggest checks settings.showLabelsInWikilinkAutocomplete internally
+    // in onTrigger(), so we just need to save the setting (already done in settings tab)
+    // Update the resolver settings if needed
+    if (this.wikilinkLabelSuggest) {
+      this.wikilinkLabelSuggest.updateSettings(this.settings.displayNameSettings);
     }
   }
 

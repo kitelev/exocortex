@@ -153,6 +153,38 @@ export class ExocortexSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
+      .setName("Show labels in quick switcher")
+      .setDesc(
+        "Display asset labels instead of filenames in quick switcher (Ctrl+O / Cmd+O). " +
+        "Search by label to find files more easily.",
+      )
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.showLabelsInQuickSwitcher)
+          .onChange(async (value) => {
+            this.plugin.settings.showLabelsInQuickSwitcher = value;
+            await this.plugin.saveSettings();
+            this.plugin.toggleQuickSwitcherLabels(value);
+          }),
+      );
+
+    new Setting(containerEl)
+      .setName("Show labels in wikilink autocomplete")
+      .setDesc(
+        "Display asset labels instead of filenames when typing [[ to autocomplete links. " +
+        "Makes it easier to find and reference assets by their labels.",
+      )
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.showLabelsInWikilinkAutocomplete)
+          .onChange(async (value) => {
+            this.plugin.settings.showLabelsInWikilinkAutocomplete = value;
+            await this.plugin.saveSettings();
+            this.plugin.toggleWikilinkAutocompleteLabels(value);
+          }),
+      );
+
+    new Setting(containerEl)
       .setName("Sort file explorer by display name")
       .setDesc(
         "Sort files by their display name (exo__Asset_label) instead of filename. " +
