@@ -26,9 +26,6 @@ describe("IncrementalUpdateHandler", () => {
       dailyTasksRenderer: {
         render: jest.fn().mockResolvedValue(undefined),
       },
-      dailyProjectsRenderer: {
-        render: jest.fn().mockResolvedValue(undefined),
-      },
       areaTreeRenderer: {
         render: jest.fn().mockResolvedValue(undefined),
       },
@@ -294,23 +291,6 @@ describe("IncrementalUpdateHandler", () => {
 
       expect(sectionContainer.empty).toHaveBeenCalled();
       expect(mockDeps.dailyTasksRenderer.render).toHaveBeenCalled();
-    });
-
-    it("should update daily projects section", async () => {
-      const sectionContainer = document.createElement("div");
-      sectionContainer.className = "exocortex-daily-projects-section";
-      sectionContainer.empty = jest.fn();
-      mockRootContainer.appendChild(sectionContainer);
-
-      await handler.updateSections(
-        mockRootContainer,
-        mockFile,
-        [LayoutSection.DAILY_PROJECTS],
-        {}
-      );
-
-      expect(sectionContainer.empty).toHaveBeenCalled();
-      expect(mockDeps.dailyProjectsRenderer.render).toHaveBeenCalled();
     });
 
     it("should update area tree section", async () => {

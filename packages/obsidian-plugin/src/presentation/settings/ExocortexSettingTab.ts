@@ -66,21 +66,6 @@ export class ExocortexSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Show projects in daily notes")
-      .setDesc(
-        "Display the projects section in the layout for daily notes",
-      )
-      .addToggle((toggle) =>
-        toggle
-          .setValue(this.plugin.settings.showDailyNoteProjects)
-          .onChange(async (value) => {
-            this.plugin.settings.showDailyNoteProjects = value;
-            await this.plugin.saveSettings();
-            this.plugin.refreshLayout();
-          }),
-      );
-
-    new Setting(containerEl)
       .setName("Use dynamic property fields")
       .setDesc(
         "Generate modal fields from ontology (experimental)",

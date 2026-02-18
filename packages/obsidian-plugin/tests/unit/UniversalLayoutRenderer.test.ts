@@ -44,7 +44,6 @@ describe("UniversalLayoutRenderer", () => {
       showPropertiesSection: false,
       showLayoutByDefault: true,
       showArchivedAssets: false,
-      showDailyNoteProjects: true,
     } as ExocortexSettings;
 
     mockPlugin = {
@@ -277,7 +276,6 @@ describe("UniversalLayoutRenderer", () => {
       renderer_any.propertiesRenderer = { render: jest.fn().mockResolvedValue(undefined) };
       renderer_any.buttonGroupsBuilder = { build: jest.fn().mockResolvedValue([]) };
       renderer_any.dailyTasksRenderer = { render: jest.fn().mockResolvedValue(undefined) };
-      renderer_any.dailyProjectsRenderer = { render: jest.fn().mockResolvedValue(undefined) };
       renderer_any.areaTreeRenderer = { render: jest.fn().mockResolvedValue(undefined) };
       renderer_any.relationsRenderer = {
         render: jest.fn().mockResolvedValue(undefined),
@@ -291,70 +289,6 @@ describe("UniversalLayoutRenderer", () => {
 
       expect(renderer_any.dailyNavRenderer.render).toHaveBeenCalled();
       expect(renderer_any.currentFilePath).toBe("test.md");
-    });
-
-    it("should render daily projects section when showDailyNoteProjects is true", async () => {
-      mockSettings.showDailyNoteProjects = true;
-      const renderer = new UniversalLayoutRenderer(mockApp, mockSettings, mockPlugin, mockVaultAdapter);
-      const renderer_any = renderer as any;
-
-      const mockFile = {
-        path: "test.md",
-        basename: "test",
-      } as TFile;
-
-      mockApp.workspace.getActiveFile.mockReturnValue(mockFile);
-
-      // Mock dependencies
-      renderer_any.dailyNavRenderer = { render: jest.fn() };
-      renderer_any.propertiesRenderer = { render: jest.fn().mockResolvedValue(undefined) };
-      renderer_any.buttonGroupsBuilder = { build: jest.fn().mockResolvedValue([]) };
-      renderer_any.dailyTasksRenderer = { render: jest.fn().mockResolvedValue(undefined) };
-      renderer_any.dailyProjectsRenderer = { render: jest.fn().mockResolvedValue(undefined) };
-      renderer_any.areaTreeRenderer = { render: jest.fn().mockResolvedValue(undefined) };
-      renderer_any.relationsRenderer = {
-        render: jest.fn().mockResolvedValue(undefined),
-        getAssetRelations: jest.fn().mockResolvedValue([]),
-      };
-      renderer_any.backlinksCacheManager = { getBacklinks: jest.fn().mockReturnValue(new Map()) };
-      renderer_any.metadataExtractor = { extractMetadata: jest.fn().mockReturnValue({}) };
-
-      const el = document.createElement("div");
-      await renderer.render("", el, {} as any);
-
-      expect(renderer_any.dailyProjectsRenderer.render).toHaveBeenCalled();
-    });
-
-    it("should not render daily projects section when showDailyNoteProjects is false", async () => {
-      mockSettings.showDailyNoteProjects = false;
-      const renderer = new UniversalLayoutRenderer(mockApp, mockSettings, mockPlugin, mockVaultAdapter);
-      const renderer_any = renderer as any;
-
-      const mockFile = {
-        path: "test.md",
-        basename: "test",
-      } as TFile;
-
-      mockApp.workspace.getActiveFile.mockReturnValue(mockFile);
-
-      // Mock dependencies
-      renderer_any.dailyNavRenderer = { render: jest.fn() };
-      renderer_any.propertiesRenderer = { render: jest.fn().mockResolvedValue(undefined) };
-      renderer_any.buttonGroupsBuilder = { build: jest.fn().mockResolvedValue([]) };
-      renderer_any.dailyTasksRenderer = { render: jest.fn().mockResolvedValue(undefined) };
-      renderer_any.dailyProjectsRenderer = { render: jest.fn().mockResolvedValue(undefined) };
-      renderer_any.areaTreeRenderer = { render: jest.fn().mockResolvedValue(undefined) };
-      renderer_any.relationsRenderer = {
-        render: jest.fn().mockResolvedValue(undefined),
-        getAssetRelations: jest.fn().mockResolvedValue([]),
-      };
-      renderer_any.backlinksCacheManager = { getBacklinks: jest.fn().mockReturnValue(new Map()) };
-      renderer_any.metadataExtractor = { extractMetadata: jest.fn().mockReturnValue({}) };
-
-      const el = document.createElement("div");
-      await renderer.render("", el, {} as any);
-
-      expect(renderer_any.dailyProjectsRenderer.render).not.toHaveBeenCalled();
     });
   });
 
@@ -401,7 +335,6 @@ describe("UniversalLayoutRenderer", () => {
       renderer_any.propertiesRenderer = { render: jest.fn().mockResolvedValue(undefined) };
       renderer_any.buttonGroupsBuilder = { build: jest.fn().mockResolvedValue([]) };
       renderer_any.dailyTasksRenderer = { render: jest.fn().mockResolvedValue(undefined) };
-      renderer_any.dailyProjectsRenderer = { render: jest.fn().mockResolvedValue(undefined) };
       renderer_any.areaTreeRenderer = { render: jest.fn().mockResolvedValue(undefined) };
       renderer_any.relationsRenderer = {
         render: jest.fn().mockResolvedValue(undefined),

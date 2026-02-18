@@ -2,7 +2,6 @@ export enum LayoutSection {
   PROPERTIES = "properties",
   BUTTONS = "buttons",
   DAILY_TASKS = "daily-tasks",
-  DAILY_PROJECTS = "daily-projects",
   AREA_TREE = "area-tree",
   RELATIONS = "relations",
 }
@@ -23,7 +22,6 @@ export class PropertyDependencyResolver {
       LayoutSection.PROPERTIES,
       LayoutSection.BUTTONS,
       LayoutSection.DAILY_TASKS,
-      LayoutSection.DAILY_PROJECTS,
       LayoutSection.RELATIONS,
     ],
     "exo__Asset_createdAt": [LayoutSection.PROPERTIES],
@@ -34,7 +32,6 @@ export class PropertyDependencyResolver {
       LayoutSection.PROPERTIES,
       LayoutSection.BUTTONS,
       LayoutSection.DAILY_TASKS,
-      LayoutSection.DAILY_PROJECTS,
     ],
     "ems__Effort_votes": [
       LayoutSection.PROPERTIES,
@@ -47,7 +44,6 @@ export class PropertyDependencyResolver {
     "ems__Effort_area": [
       LayoutSection.PROPERTIES,
       LayoutSection.DAILY_TASKS,
-      LayoutSection.DAILY_PROJECTS,
     ],
     "ems__Effort_parent": [
       LayoutSection.PROPERTIES,
@@ -80,7 +76,6 @@ export class PropertyDependencyResolver {
 
     "ems__Project_blockedBy": [
       LayoutSection.PROPERTIES,
-      LayoutSection.DAILY_PROJECTS,
       LayoutSection.RELATIONS,
     ],
     "ems__Project_blocks": [
@@ -91,7 +86,6 @@ export class PropertyDependencyResolver {
     "pn__DailyNote_day": [
       LayoutSection.PROPERTIES,
       LayoutSection.DAILY_TASKS,
-      LayoutSection.DAILY_PROJECTS,
     ],
 
     "ims__Concept_broader": [

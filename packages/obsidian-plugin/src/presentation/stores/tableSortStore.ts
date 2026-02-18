@@ -9,7 +9,6 @@ const DEFAULT_SORT_STATE: SortState = {
 
 const DEFAULT_TABLE_SORT_STATE: TableSortState = {
   dailyTasks: { ...DEFAULT_SORT_STATE },
-  dailyProjects: { ...DEFAULT_SORT_STATE },
   assetRelations: { ...DEFAULT_SORT_STATE },
   assetProperties: { ...DEFAULT_SORT_STATE },
 };
@@ -61,7 +60,6 @@ export const useTableSortStore = create<TableSortStore>()(
         name: "exocortex-table-sort-v1",
         partialize: (state) => ({
           dailyTasks: state.dailyTasks,
-          dailyProjects: state.dailyProjects,
           assetRelations: state.assetRelations,
           assetProperties: state.assetProperties,
         }),

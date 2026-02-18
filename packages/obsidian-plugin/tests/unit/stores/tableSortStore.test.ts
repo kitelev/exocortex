@@ -30,7 +30,6 @@ describe("TableSortStore", () => {
     localStorageMock.clear();
     useTableSortStore.setState({
       dailyTasks: { column: "", order: "asc" },
-      dailyProjects: { column: "", order: "asc" },
       assetRelations: { column: "", order: "asc" },
       assetProperties: { column: "", order: "asc" },
     });
@@ -41,7 +40,6 @@ describe("TableSortStore", () => {
       const state = useTableSortStore.getState();
 
       expect(state.dailyTasks).toEqual({ column: "", order: "asc" });
-      expect(state.dailyProjects).toEqual({ column: "", order: "asc" });
       expect(state.assetRelations).toEqual({ column: "", order: "asc" });
       expect(state.assetProperties).toEqual({ column: "", order: "asc" });
     });
@@ -54,15 +52,6 @@ describe("TableSortStore", () => {
       expect(useTableSortStore.getState().dailyTasks).toEqual({
         column: "name",
         order: "asc",
-      });
-    });
-
-    it("should set sort for dailyProjects table", () => {
-      useTableSortStore.getState().setSort("dailyProjects", "status", "desc");
-
-      expect(useTableSortStore.getState().dailyProjects).toEqual({
-        column: "status",
-        order: "desc",
       });
     });
 
@@ -86,14 +75,14 @@ describe("TableSortStore", () => {
 
     it("should not affect other tables when setting sort", () => {
       useTableSortStore.getState().setSort("dailyTasks", "name", "asc");
-      useTableSortStore.getState().setSort("dailyProjects", "start", "desc");
+      useTableSortStore.getState().setSort("assetRelations", "title", "desc");
 
       expect(useTableSortStore.getState().dailyTasks).toEqual({
         column: "name",
         order: "asc",
       });
-      expect(useTableSortStore.getState().dailyProjects).toEqual({
-        column: "start",
+      expect(useTableSortStore.getState().assetRelations).toEqual({
+        column: "title",
         order: "desc",
       });
     });
@@ -122,7 +111,6 @@ describe("TableSortStore", () => {
     it("should toggle to desc when clicking same column with asc", () => {
       useTableSortStore.setState({
         dailyTasks: { column: "name", order: "asc" },
-        dailyProjects: { column: "", order: "asc" },
         assetRelations: { column: "", order: "asc" },
         assetProperties: { column: "", order: "asc" },
       });
@@ -138,7 +126,6 @@ describe("TableSortStore", () => {
     it("should toggle to asc when clicking same column with desc", () => {
       useTableSortStore.setState({
         dailyTasks: { column: "name", order: "desc" },
-        dailyProjects: { column: "", order: "asc" },
         assetRelations: { column: "", order: "asc" },
         assetProperties: { column: "", order: "asc" },
       });
@@ -154,7 +141,6 @@ describe("TableSortStore", () => {
     it("should reset to asc when clicking different column", () => {
       useTableSortStore.setState({
         dailyTasks: { column: "name", order: "desc" },
-        dailyProjects: { column: "", order: "asc" },
         assetRelations: { column: "", order: "asc" },
         assetProperties: { column: "", order: "asc" },
       });
@@ -169,15 +155,15 @@ describe("TableSortStore", () => {
 
     it("should work for different tables independently", () => {
       useTableSortStore.getState().toggleSort("dailyTasks", "name");
-      useTableSortStore.getState().toggleSort("dailyProjects", "start");
+      useTableSortStore.getState().toggleSort("assetRelations", "title");
       useTableSortStore.getState().toggleSort("dailyTasks", "name");
 
       expect(useTableSortStore.getState().dailyTasks).toEqual({
         column: "name",
         order: "desc",
       });
-      expect(useTableSortStore.getState().dailyProjects).toEqual({
-        column: "start",
+      expect(useTableSortStore.getState().assetRelations).toEqual({
+        column: "title",
         order: "asc",
       });
     });
@@ -187,8 +173,7 @@ describe("TableSortStore", () => {
     it("should reset sort for specific table", () => {
       useTableSortStore.setState({
         dailyTasks: { column: "name", order: "desc" },
-        dailyProjects: { column: "start", order: "asc" },
-        assetRelations: { column: "", order: "asc" },
+        assetRelations: { column: "title", order: "asc" },
         assetProperties: { column: "", order: "asc" },
       });
 
@@ -198,8 +183,8 @@ describe("TableSortStore", () => {
         column: "",
         order: "asc",
       });
-      expect(useTableSortStore.getState().dailyProjects).toEqual({
-        column: "start",
+      expect(useTableSortStore.getState().assetRelations).toEqual({
+        column: "title",
         order: "asc",
       });
     });
@@ -218,7 +203,6 @@ describe("TableSortStore", () => {
     it("should reset all tables to default sort state", () => {
       useTableSortStore.setState({
         dailyTasks: { column: "name", order: "desc" },
-        dailyProjects: { column: "start", order: "asc" },
         assetRelations: { column: "title", order: "desc" },
         assetProperties: { column: "value", order: "asc" },
       });
@@ -227,7 +211,6 @@ describe("TableSortStore", () => {
 
       const state = useTableSortStore.getState();
       expect(state.dailyTasks).toEqual({ column: "", order: "asc" });
-      expect(state.dailyProjects).toEqual({ column: "", order: "asc" });
       expect(state.assetRelations).toEqual({ column: "", order: "asc" });
       expect(state.assetProperties).toEqual({ column: "", order: "asc" });
     });
@@ -237,7 +220,6 @@ describe("TableSortStore", () => {
 
       const state = useTableSortStore.getState();
       expect(state.dailyTasks).toEqual({ column: "", order: "asc" });
-      expect(state.dailyProjects).toEqual({ column: "", order: "asc" });
     });
   });
 
