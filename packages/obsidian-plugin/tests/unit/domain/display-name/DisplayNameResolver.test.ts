@@ -5,15 +5,9 @@ describe("DisplayNameResolver", () => {
   const defaultSettings: DisplayNameSettings = {
     defaultTemplate: "{{exo__Asset_label}}",
     classTemplates: {
-      "ems__Task": "{{exo__Asset_label}} {{statusEmoji}}",
+      "ems__Task": "{{exo__Asset_label}}",
       "ems__TaskPrototype": "{{exo__Asset_label}} (TaskPrototype)",
       "ems__Project": "{{exo__Asset_label}}",
-    },
-    statusEmojis: {
-      "DOING": "🟢",
-      "DONE": "✅",
-      "BLOCKED": "🔴",
-      "BACKLOG": "📋",
     },
   };
 
@@ -24,11 +18,10 @@ describe("DisplayNameResolver", () => {
         metadata: {
           exo__Asset_label: "Fix bug",
           exo__Instance_class: "ems__Task",
-          ems__Effort_status: "DOING",
         },
         basename: "fix-bug",
       });
-      expect(result).toBe("Fix bug 🟢");
+      expect(result).toBe("Fix bug");
     });
 
     it("should use class-specific template for ems__TaskPrototype", () => {
@@ -84,11 +77,10 @@ describe("DisplayNameResolver", () => {
         metadata: {
           exo__Asset_label: "Review PR",
           exo__Instance_class: "[[ems__Task]]",
-          ems__Effort_status: "DONE",
         },
         basename: "review-pr",
       });
-      expect(result).toBe("Review PR ✅");
+      expect(result).toBe("Review PR");
     });
 
     it("should handle array instance class (use first element)", () => {
@@ -97,11 +89,10 @@ describe("DisplayNameResolver", () => {
         metadata: {
           exo__Asset_label: "Multi-class Asset",
           exo__Instance_class: ["ems__Task", "ems__Meeting"],
-          ems__Effort_status: "BLOCKED",
         },
         basename: "multi-class",
       });
-      expect(result).toBe("Multi-class Asset 🔴");
+      expect(result).toBe("Multi-class Asset");
     });
 
     it("should handle quoted instance class", () => {
@@ -110,18 +101,16 @@ describe("DisplayNameResolver", () => {
         metadata: {
           exo__Asset_label: "Quoted Task",
           exo__Instance_class: '"ems__Task"',
-          ems__Effort_status: "BACKLOG",
         },
         basename: "quoted-task",
       });
-      expect(result).toBe("Quoted Task 📋");
+      expect(result).toBe("Quoted Task");
     });
 
     it("should return null for empty template result", () => {
       const settings: DisplayNameSettings = {
         defaultTemplate: "{{missing_field}}",
         classTemplates: {},
-        statusEmojis: {},
       };
       const resolver = new DisplayNameResolver(settings);
       const result = resolver.resolve({
@@ -135,7 +124,6 @@ describe("DisplayNameResolver", () => {
       const settings: DisplayNameSettings = {
         defaultTemplate: "{{_created}} - {{exo__Asset_label}}",
         classTemplates: {},
-        statusEmojis: {},
       };
       const resolver = new DisplayNameResolver(settings);
       const result = resolver.resolve({
@@ -151,7 +139,7 @@ describe("DisplayNameResolver", () => {
     it("should return class-specific template when available", () => {
       const resolver = new DisplayNameResolver(defaultSettings);
       expect(resolver.getTemplateForClass("ems__Task")).toBe(
-        "{{exo__Asset_label}} {{statusEmoji}}"
+        "{{exo__Asset_label}}"
       );
     });
 
@@ -168,23 +156,6 @@ describe("DisplayNameResolver", () => {
     });
   });
 
-  describe("getStatusEmoji", () => {
-    it("should return emoji for direct status match", () => {
-      const resolver = new DisplayNameResolver(defaultSettings);
-      expect(resolver.getStatusEmoji("DOING")).toBe("🟢");
-    });
-
-    it("should return emoji for case-insensitive match", () => {
-      const resolver = new DisplayNameResolver(defaultSettings);
-      expect(resolver.getStatusEmoji("doing")).toBe("🟢");
-    });
-
-    it("should return null for unknown status", () => {
-      const resolver = new DisplayNameResolver(defaultSettings);
-      expect(resolver.getStatusEmoji("UNKNOWN")).toBeNull();
-    });
-  });
-
   describe("getConfiguredClasses", () => {
     it("should return list of configured classes", () => {
       const resolver = new DisplayNameResolver(defaultSettings);
@@ -192,17 +163,6 @@ describe("DisplayNameResolver", () => {
       expect(classes).toContain("ems__Task");
       expect(classes).toContain("ems__TaskPrototype");
       expect(classes).toContain("ems__Project");
-    });
-  });
-
-  describe("getConfiguredStatuses", () => {
-    it("should return list of configured statuses", () => {
-      const resolver = new DisplayNameResolver(defaultSettings);
-      const statuses = resolver.getConfiguredStatuses();
-      expect(statuses).toContain("DOING");
-      expect(statuses).toContain("DONE");
-      expect(statuses).toContain("BLOCKED");
-      expect(statuses).toContain("BACKLOG");
     });
   });
 
@@ -216,7 +176,6 @@ describe("DisplayNameResolver", () => {
       const settings: DisplayNameSettings = {
         defaultTemplate: "{{exo__Asset_label}}",
         classTemplates: {},
-        statusEmojis: {},
       };
       const resolver = new DisplayNameResolver(settings);
       expect(resolver.hasClassTemplates()).toBe(false);
@@ -239,25 +198,18 @@ describe("DisplayNameResolver", () => {
       expect(DEFAULT_DISPLAY_NAME_SETTINGS.classTemplates["pn__DailyNote"]).toBeDefined();
     });
 
-    it("should have status emoji mappings", () => {
-      expect(DEFAULT_DISPLAY_NAME_SETTINGS.statusEmojis["DOING"]).toBe("🟢");
-      expect(DEFAULT_DISPLAY_NAME_SETTINGS.statusEmojis["DONE"]).toBe("✅");
-      expect(DEFAULT_DISPLAY_NAME_SETTINGS.statusEmojis["BLOCKED"]).toBe("🔴");
-    });
-
     it("should work correctly with resolver", () => {
       const resolver = new DisplayNameResolver(DEFAULT_DISPLAY_NAME_SETTINGS);
 
-      // Task with status
+      // Task
       const taskResult = resolver.resolve({
         metadata: {
           exo__Asset_label: "Fix bug",
           exo__Instance_class: "ems__Task",
-          ems__Effort_status: "DOING",
         },
         basename: "fix-bug",
       });
-      expect(taskResult).toBe("Fix bug 🟢");
+      expect(taskResult).toBe("Fix bug");
 
       // TaskPrototype
       const prototypeResult = resolver.resolve({

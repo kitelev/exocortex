@@ -63,7 +63,6 @@ describe("GraphViewPatch", () => {
         displayNameSettings: {
           defaultTemplate: "{{exo__Asset_label}}",
           classTemplates: {},
-          statusEmojis: {},
         },
       },
     };

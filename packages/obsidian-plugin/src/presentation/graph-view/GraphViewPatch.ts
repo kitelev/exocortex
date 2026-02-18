@@ -93,7 +93,6 @@ export class GraphViewPatch {
     return {
       defaultTemplate: template,
       classTemplates: {},
-      statusEmojis: {},
     };
   }
 

@@ -51,7 +51,6 @@ export class BodyLinkPatch {
     return {
       defaultTemplate: template,
       classTemplates: {},
-      statusEmojis: {},
     };
   }
 
