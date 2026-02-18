@@ -150,6 +150,21 @@ export class ExocortexSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
+      .setName("Auto-adjust planned end time")
+      .setDesc(
+        "Automatically shift plannedEndTimestamp when plannedStartTimestamp changes. " +
+        "Disable if using Obsidian Sync to prevent duplicate shifts.",
+      )
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.autoAdjustPlannedEndTimestamp)
+          .onChange(async (value) => {
+            this.plugin.settings.autoAdjustPlannedEndTimestamp = value;
+            await this.plugin.saveSettings();
+          }),
+      );
+
+    new Setting(containerEl)
       .setName("Show labels in file explorer")
       .setDesc(
         "Display asset labels instead of filenames in the file explorer sidebar",

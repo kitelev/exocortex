@@ -958,21 +958,28 @@ export default class ExocortexPlugin extends Plugin {
         cachedMetadata.ems__Effort_plannedStartTimestamp =
           currentPlannedStartTimestamp;
 
-        const currentDate = new Date(
-          String(currentPlannedStartTimestamp),
-        );
-        const previousDate = previousPlannedStartTimestamp
-          ? new Date(String(previousPlannedStartTimestamp))
-          : null;
+        // Issue #2142: Check setting before auto-adjusting plannedEndTimestamp
+        // When disabled, skip automatic adjustment to prevent double-shift with Obsidian Sync
+        if (!this.settings.autoAdjustPlannedEndTimestamp) {
+          this.logger.info(
+            `Skipping plannedEndTimestamp adjustment - autoAdjustPlannedEndTimestamp is disabled`,
+          );
+        } else {
+          const currentDate = new Date(
+            String(currentPlannedStartTimestamp),
+          );
+          const previousDate = previousPlannedStartTimestamp
+            ? new Date(String(previousPlannedStartTimestamp))
+            : null;
 
-        if (
-          !isNaN(currentDate.getTime()) &&
-          previousDate &&
-          !isNaN(previousDate.getTime())
-        ) {
-          const deltaMs = currentDate.getTime() - previousDate.getTime();
+          if (
+            !isNaN(currentDate.getTime()) &&
+            previousDate &&
+            !isNaN(previousDate.getTime())
+          ) {
+            const deltaMs = currentDate.getTime() - previousDate.getTime();
 
-          // Issue #2095: Idempotency check for Obsidian Sync
+            // Issue #2095: Idempotency check for Obsidian Sync
           // When synced from another device, plannedEndTimestamp may already be shifted.
           // Check if the current plannedEndTimestamp equals the expected value to avoid double-shift.
           const currentPlannedEndTimestamp =
@@ -1034,6 +1041,7 @@ export default class ExocortexPlugin extends Plugin {
               `Shifted ems__Effort_plannedEndTimestamp by ${deltaMs}ms`,
             );
           }
+        }
         }
       }
 
