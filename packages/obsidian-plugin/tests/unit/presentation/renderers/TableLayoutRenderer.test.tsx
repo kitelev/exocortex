@@ -20,11 +20,13 @@ import { LayoutType } from "@plugin/domain/layout";
 import type { TableRow } from "@plugin/presentation/renderers/cell-renderers";
 
 // Mock @tanstack/react-virtual
+const mockUseVirtualizer = jest.fn(() => ({
+  getVirtualItems: () => [],
+  getTotalSize: () => 0,
+}));
+
 jest.mock("@tanstack/react-virtual", () => ({
-  useVirtualizer: jest.fn(() => ({
-    getVirtualItems: () => [],
-    getTotalSize: () => 0,
-  })),
+  useVirtualizer: (...args: unknown[]) => mockUseVirtualizer(...args),
 }));
 
 describe("TableLayoutRenderer", () => {
@@ -421,6 +423,275 @@ describe("TableLayoutRenderer", () => {
       fireEvent.click(link);
 
       expect(onLinkClick).toHaveBeenCalledWith("target", expect.any(Object));
+    });
+  });
+
+  describe("Issue #2152: Virtualized Table Column Alignment", () => {
+    // These tests verify that virtualized rows maintain proper column widths
+    // even when position: absolute is applied.
+    //
+    // The fix measures header cell widths and applies them as explicit pixel
+    // widths to virtualized body cells. This ensures cells stay aligned even
+    // when rows have position: absolute (which breaks table-layout: fixed).
+    //
+    // Note: In jsdom, offsetWidth returns 0, so we test the rendering structure
+    // rather than actual computed widths. The important behavior is that:
+    // 1. Virtualized mode renders the header table with a ref for measurement
+    // 2. Virtualized rows get useComputedWidth=true passed to renderRow
+    // 3. The fallback to column.width works when computed widths aren't available
+
+    afterEach(() => {
+      // Reset the mock after each test
+      mockUseVirtualizer.mockReset();
+      mockUseVirtualizer.mockImplementation(() => ({
+        getVirtualItems: () => [],
+        getTotalSize: () => 0,
+      }));
+    });
+
+    it("renders virtualized mode with proper structure for column width synchronization", () => {
+      // Mock virtualizer to return virtual items (simulating >50 rows)
+      mockUseVirtualizer.mockImplementation(() => ({
+        getVirtualItems: () => [
+          { index: 0, start: 0, size: 35, key: "0" },
+          { index: 1, start: 35, size: 35, key: "1" },
+          { index: 2, start: 70, size: 35, key: "2" },
+        ],
+        getTotalSize: () => 1750, // 50 rows * 35px
+      }));
+
+      const columns = [
+        createColumn({ uid: "col-1", header: "Name", width: "200px" }),
+        createColumn({ uid: "col-2", header: "Status", width: "100px" }),
+        createColumn({ uid: "col-3", header: "Date", width: "150px" }),
+      ];
+      const layout = createLayout(columns);
+
+      // Create >50 rows to trigger virtualization
+      const rows = Array.from({ length: 51 }, (_, i) =>
+        createRow({
+          id: `row-${i}`,
+          values: {
+            "col-1": `Name ${i}`,
+            "col-2": `Status ${i}`,
+            "col-3": `2024-01-${String(i + 1).padStart(2, "0")}`,
+          },
+        })
+      );
+
+      const { container } = render(
+        <TableLayoutRenderer
+          layout={layout}
+          rows={rows}
+          options={{ virtualize: true }}
+        />
+      );
+
+      // Check that virtualized mode is active
+      expect(container.querySelector(".exo-layout-virtualized")).toBeInTheDocument();
+
+      // Verify the structure for width synchronization:
+      // 1. Header table exists with header-fixed class
+      const headerTable = container.querySelector(".exo-layout-table-header-fixed");
+      expect(headerTable).toBeInTheDocument();
+
+      // 2. Virtual table exists for body rows
+      const virtualTable = container.querySelector(".exo-layout-virtual-table");
+      expect(virtualTable).toBeInTheDocument();
+
+      // 3. Both tables have colgroups with matching column count
+      const headerCols = headerTable?.querySelectorAll("colgroup col");
+      const bodyCols = virtualTable?.querySelectorAll("colgroup col");
+      expect(headerCols?.length).toBe(3);
+      expect(bodyCols?.length).toBe(3);
+
+      // 4. Body cells have width styles (fallback to column.width when computed widths unavailable)
+      const cells = virtualTable?.querySelectorAll("tbody tr:first-child td");
+      expect(cells?.length).toBe(3);
+      // In jsdom, computed widths are 0, so cells use column.width fallback
+      expect(cells?.[0]).toHaveStyle({ width: "200px" });
+      expect(cells?.[1]).toHaveStyle({ width: "100px" });
+      expect(cells?.[2]).toHaveStyle({ width: "150px" });
+    });
+
+    it("colgroup widths match between header and body tables in virtualized mode", () => {
+      mockUseVirtualizer.mockImplementation(() => ({
+        getVirtualItems: () => [
+          { index: 0, start: 0, size: 35, key: "0" },
+        ],
+        getTotalSize: () => 1750,
+      }));
+
+      const columns = [
+        createColumn({ uid: "col-1", header: "Name", width: "40%" }),
+        createColumn({ uid: "col-2", header: "Status", width: "30%" }),
+        createColumn({ uid: "col-3", header: "Actions", width: "30%" }),
+      ];
+      const layout = createLayout(columns);
+
+      const rows = Array.from({ length: 51 }, (_, i) =>
+        createRow({
+          id: `row-${i}`,
+          values: {
+            "col-1": `Name ${i}`,
+            "col-2": `Status ${i}`,
+            "col-3": `Action ${i}`,
+          },
+        })
+      );
+
+      const { container } = render(
+        <TableLayoutRenderer
+          layout={layout}
+          rows={rows}
+          options={{ virtualize: true }}
+        />
+      );
+
+      // Both header table and body table should have matching colgroups
+      const colgroups = container.querySelectorAll("colgroup");
+      expect(colgroups.length).toBe(2); // One in header, one in body
+
+      // Get col elements from both tables
+      const headerCols = colgroups[0]?.querySelectorAll("col");
+      const bodyCols = colgroups[1]?.querySelectorAll("col");
+
+      expect(headerCols?.length).toBe(bodyCols?.length);
+
+      // Widths should match
+      headerCols?.forEach((col, i) => {
+        const bodyCol = bodyCols?.[i];
+        expect(col.style.width).toBe(bodyCol?.style.width);
+      });
+    });
+
+    it("virtualized rows have position: absolute style applied", () => {
+      mockUseVirtualizer.mockImplementation(() => ({
+        getVirtualItems: () => [
+          { index: 0, start: 0, size: 35, key: "0" },
+          { index: 1, start: 35, size: 35, key: "1" },
+        ],
+        getTotalSize: () => 1750,
+      }));
+
+      const columns = [
+        createColumn({ uid: "col-1", header: "Name", width: "200px" }),
+        createColumn({ uid: "col-2", header: "Status", width: "100px" }),
+      ];
+      const layout = createLayout(columns);
+
+      const rows = Array.from({ length: 51 }, (_, i) =>
+        createRow({
+          id: `row-${i}`,
+          values: {
+            "col-1": `Name ${i}`,
+            "col-2": `Status ${i}`,
+          },
+        })
+      );
+
+      const { container } = render(
+        <TableLayoutRenderer
+          layout={layout}
+          rows={rows}
+          options={{ virtualize: true }}
+        />
+      );
+
+      // Virtualized rows should have position: absolute
+      const virtualTableRows = container.querySelectorAll(".exo-layout-virtual-table tbody tr");
+      expect(virtualTableRows.length).toBe(2);
+
+      virtualTableRows.forEach((row) => {
+        expect(row).toHaveStyle({ position: "absolute" });
+      });
+    });
+
+    it("handles window resize events in virtualized mode", () => {
+      mockUseVirtualizer.mockImplementation(() => ({
+        getVirtualItems: () => [
+          { index: 0, start: 0, size: 35, key: "0" },
+        ],
+        getTotalSize: () => 1750,
+      }));
+
+      const columns = [
+        createColumn({ uid: "col-1", header: "Name", width: "200px" }),
+        createColumn({ uid: "col-2", header: "Status", width: "100px" }),
+      ];
+      const layout = createLayout(columns);
+
+      const rows = Array.from({ length: 51 }, (_, i) =>
+        createRow({
+          id: `row-${i}`,
+          values: {
+            "col-1": `Name ${i}`,
+            "col-2": `Status ${i}`,
+          },
+        })
+      );
+
+      const { container } = render(
+        <TableLayoutRenderer
+          layout={layout}
+          rows={rows}
+          options={{ virtualize: true }}
+        />
+      );
+
+      // Verify virtualized container is rendered
+      expect(container.querySelector(".exo-layout-virtualized")).toBeInTheDocument();
+
+      // Trigger resize event - should not throw
+      fireEvent(window, new Event("resize"));
+
+      // Cells should still have width styles after resize
+      const cells = container.querySelectorAll(".exo-layout-virtual-table tbody td");
+      expect(cells.length).toBeGreaterThanOrEqual(2);
+      expect(cells[0]).toHaveStyle({ width: "200px" });
+      expect(cells[1]).toHaveStyle({ width: "100px" });
+    });
+
+    it("non-virtualized tables render normally", () => {
+      // Reset mock to default (no virtual items)
+      mockUseVirtualizer.mockImplementation(() => ({
+        getVirtualItems: () => [],
+        getTotalSize: () => 0,
+      }));
+
+      const columns = [
+        createColumn({ uid: "col-1", header: "Name", width: "200px" }),
+        createColumn({ uid: "col-2", header: "Status", width: "100px" }),
+      ];
+      const layout = createLayout(columns);
+
+      // Less than 50 rows - should not trigger virtualization
+      const rows = Array.from({ length: 10 }, (_, i) =>
+        createRow({
+          id: `row-${i}`,
+          values: {
+            "col-1": `Name ${i}`,
+            "col-2": `Status ${i}`,
+          },
+        })
+      );
+
+      const { container } = render(
+        <TableLayoutRenderer
+          layout={layout}
+          rows={rows}
+          options={{ virtualize: true }}
+        />
+      );
+
+      // Should NOT be in virtualized mode
+      expect(container.querySelector(".exo-layout-virtualized")).not.toBeInTheDocument();
+
+      // Regular table cells should still have width from column definition
+      const cells = container.querySelectorAll("tbody td");
+      expect(cells.length).toBeGreaterThanOrEqual(2);
+      expect(cells[0]).toHaveStyle({ width: "200px" });
+      expect(cells[1]).toHaveStyle({ width: "100px" });
     });
   });
 });
