@@ -373,4 +373,195 @@ describe("GraphViewPatch", () => {
       expect(nodePrototype.nm_originalGetDisplayText).toBe(originalGetDisplayText);
     });
   });
+
+  describe("Issue #2151: node.text.text update and renderer.changed()", () => {
+    it("should update node.text.text after patching prototype", () => {
+      // Create a mock node with text property (like Obsidian's Graph View nodes)
+      const nodePrototype = {
+        getDisplayText: originalGetDisplayText,
+      };
+      const mockNodeWithText = Object.create(nodePrototype);
+      mockNodeWithText.id = "test-file.md";
+      mockNodeWithText.text = { text: "original-filename.md" };
+
+      mockGraphView.renderer = {
+        nodes: [mockNodeWithText],
+        changed: jest.fn(),
+      };
+
+      const mockFile = new TFile();
+      Object.defineProperty(mockFile, "extension", { value: "md" });
+      Object.defineProperty(mockFile, "basename", { value: "test-file" });
+      mockApp.vault.getAbstractFileByPath.mockReturnValue(mockFile);
+      mockApp.metadataCache.getFileCache.mockReturnValue({
+        frontmatter: { exo__Asset_label: "My Custom Label" },
+      });
+
+      patch.enable();
+
+      // The node.text.text should be updated with the label
+      expect(mockNodeWithText.text.text).toBe("My Custom Label");
+    });
+
+    it("should call renderer.changed() after updating node labels", () => {
+      const nodePrototype = {
+        getDisplayText: originalGetDisplayText,
+      };
+      const mockNodeWithText = Object.create(nodePrototype);
+      mockNodeWithText.id = "test-file.md";
+      mockNodeWithText.text = { text: "original-filename.md" };
+
+      const mockChanged = jest.fn();
+      mockGraphView.renderer = {
+        nodes: [mockNodeWithText],
+        changed: mockChanged,
+      };
+
+      const mockFile = new TFile();
+      Object.defineProperty(mockFile, "extension", { value: "md" });
+      Object.defineProperty(mockFile, "basename", { value: "test-file" });
+      mockApp.vault.getAbstractFileByPath.mockReturnValue(mockFile);
+      mockApp.metadataCache.getFileCache.mockReturnValue({
+        frontmatter: { exo__Asset_label: "My Custom Label" },
+      });
+
+      patch.enable();
+
+      // renderer.changed() should be called to trigger visual refresh
+      expect(mockChanged).toHaveBeenCalled();
+    });
+
+    it("should update multiple nodes' text.text values", () => {
+      const nodePrototype = {
+        getDisplayText: originalGetDisplayText,
+      };
+      const node1 = Object.create(nodePrototype);
+      node1.id = "file1.md";
+      node1.text = { text: "file1.md" };
+
+      const node2 = Object.create(nodePrototype);
+      node2.id = "file2.md";
+      node2.text = { text: "file2.md" };
+
+      mockGraphView.renderer = {
+        nodes: [node1, node2],
+        changed: jest.fn(),
+      };
+
+      const mockFile = new TFile();
+      Object.defineProperty(mockFile, "extension", { value: "md" });
+      Object.defineProperty(mockFile, "basename", { value: "test" });
+      mockApp.vault.getAbstractFileByPath.mockReturnValue(mockFile);
+      mockApp.metadataCache.getFileCache.mockReturnValue({
+        frontmatter: { exo__Asset_label: "Updated Label" },
+      });
+
+      patch.enable();
+
+      // Both nodes' text should be updated
+      expect(node1.text.text).toBe("Updated Label");
+      expect(node2.text.text).toBe("Updated Label");
+    });
+
+    it("should restore node.text.text to original on disable", () => {
+      const nodePrototype = {
+        getDisplayText: originalGetDisplayText,
+      };
+      const mockNodeWithText = Object.create(nodePrototype);
+      mockNodeWithText.id = "test-file.md";
+      mockNodeWithText.text = { text: "original-filename.md" };
+
+      const mockChanged = jest.fn();
+      mockGraphView.renderer = {
+        nodes: [mockNodeWithText],
+        changed: mockChanged,
+      };
+
+      const mockFile = new TFile();
+      Object.defineProperty(mockFile, "extension", { value: "md" });
+      Object.defineProperty(mockFile, "basename", { value: "test-file" });
+      mockApp.vault.getAbstractFileByPath.mockReturnValue(mockFile);
+      mockApp.metadataCache.getFileCache.mockReturnValue({
+        frontmatter: { exo__Asset_label: "My Custom Label" },
+      });
+
+      patch.enable();
+      expect(mockNodeWithText.text.text).toBe("My Custom Label");
+
+      patch.disable();
+      // After disable, text should be restored to original
+      expect(mockNodeWithText.text.text).toBe("original-filename.md");
+    });
+
+    it("should handle nodes without text property gracefully", () => {
+      const nodePrototype = {
+        getDisplayText: originalGetDisplayText,
+      };
+      const nodeWithoutText = Object.create(nodePrototype);
+      nodeWithoutText.id = "test-file.md";
+      // No text property
+
+      mockGraphView.renderer = {
+        nodes: [nodeWithoutText],
+        changed: jest.fn(),
+      };
+
+      const mockFile = new TFile();
+      Object.defineProperty(mockFile, "extension", { value: "md" });
+      Object.defineProperty(mockFile, "basename", { value: "test-file" });
+      mockApp.vault.getAbstractFileByPath.mockReturnValue(mockFile);
+      mockApp.metadataCache.getFileCache.mockReturnValue({
+        frontmatter: { exo__Asset_label: "My Custom Label" },
+      });
+
+      // Should not throw when node doesn't have text property
+      expect(() => patch.enable()).not.toThrow();
+    });
+
+    it("should refresh node.text.text when metadata changes", () => {
+      const nodePrototype = {
+        getDisplayText: originalGetDisplayText,
+      };
+      const mockNodeWithText = Object.create(nodePrototype);
+      mockNodeWithText.id = "test-file.md";
+      mockNodeWithText.text = { text: "original-filename.md" };
+
+      const mockChanged = jest.fn();
+      mockGraphView.renderer = {
+        nodes: [mockNodeWithText],
+        changed: mockChanged,
+      };
+
+      const mockFile = new TFile();
+      Object.defineProperty(mockFile, "extension", { value: "md" });
+      Object.defineProperty(mockFile, "basename", { value: "test-file" });
+      Object.defineProperty(mockFile, "path", { value: "test-file.md" });
+      mockApp.vault.getAbstractFileByPath.mockReturnValue(mockFile);
+
+      // Initial label
+      mockApp.metadataCache.getFileCache.mockReturnValue({
+        frontmatter: { exo__Asset_label: "Initial Label" },
+      });
+
+      patch.enable();
+      expect(mockNodeWithText.text.text).toBe("Initial Label");
+
+      // Update the label
+      mockApp.metadataCache.getFileCache.mockReturnValue({
+        frontmatter: { exo__Asset_label: "Updated Label" },
+      });
+
+      // Simulate metadata change
+      const metadataCallback = mockApp.metadataCache.on.mock.calls.find(
+        (call: [string, Function]) => call[0] === "changed"
+      )?.[1];
+
+      if (metadataCallback) {
+        metadataCallback(mockFile);
+      }
+
+      // The node.text.text should be updated with new label
+      expect(mockNodeWithText.text.text).toBe("Updated Label");
+    });
+  });
 });

@@ -27,14 +27,20 @@ interface PluginWithSettings extends Plugin {
 }
 
 // Obsidian internal types for graph nodes (not exposed in public API)
+interface GraphNodeText {
+  text: string;
+}
+
 interface GraphNode {
   id: string;
+  text?: GraphNodeText;
   getDisplayText: () => string;
   nm_originalGetDisplayText?: () => string;
 }
 
 interface GraphRenderer {
   nodes?: GraphNode[];
+  changed?: () => void;
 }
 
 interface GraphView {
@@ -184,6 +190,28 @@ export class GraphViewPatch {
 
     for (const node of nodes) {
       this.patchNode(node);
+      // Update node.text.text with the display text after patching
+      this.updateNodeText(node);
+    }
+
+    // Signal the renderer that changes have occurred to trigger visual refresh
+    if (typeof renderer?.changed === "function") {
+      renderer.changed();
+    }
+  }
+
+  /**
+   * Update a node's text.text property with its display text
+   * This is necessary because Obsidian's Graph View caches the text
+   * and doesn't call getDisplayText() on every render.
+   */
+  private updateNodeText(node: GraphNode): void {
+    if (!node || !node.text) return;
+
+    // Get the display text (will use patched method if prototype was patched)
+    const displayText = node.getDisplayText();
+    if (displayText) {
+      node.text.text = displayText;
     }
   }
 
@@ -379,8 +407,43 @@ export class GraphViewPatch {
    * Refresh all graph views (trigger re-render)
    */
   private refreshAllGraphViews(): void {
-    // Re-patch to ensure new nodes get labels
-    this.patchAllGraphViews();
+    if (!this.enabled) return;
+
+    // Refresh global graph views
+    const graphLeaves = this.getGraphLeaves("graph");
+    for (const leaf of graphLeaves) {
+      this.refreshGraphView(leaf);
+    }
+
+    // Refresh local graph views
+    const localGraphLeaves = this.getGraphLeaves("localgraph");
+    for (const leaf of localGraphLeaves) {
+      this.refreshGraphView(leaf);
+    }
+  }
+
+  /**
+   * Refresh a single graph view by updating node text and signaling changes
+   */
+  private refreshGraphView(leaf: WorkspaceLeaf): void {
+    const view = leaf.view as unknown as GraphView;
+    const renderer = view?.renderer;
+    const nodes = renderer?.nodes;
+
+    if (!nodes || !Array.isArray(nodes)) return;
+
+    // Update text for all nodes
+    for (const node of nodes) {
+      // Patch new nodes if they haven't been patched yet
+      this.patchNode(node);
+      // Update the node's text property
+      this.updateNodeText(node);
+    }
+
+    // Signal the renderer to refresh
+    if (typeof renderer?.changed === "function") {
+      renderer.changed();
+    }
   }
 
   /**
@@ -415,6 +478,13 @@ export class GraphViewPatch {
 
     for (const node of nodes) {
       this.restoreNode(node);
+      // Restore the node's text to the original display text
+      this.updateNodeText(node);
+    }
+
+    // Signal the renderer to refresh with restored text
+    if (typeof renderer?.changed === "function") {
+      renderer.changed();
     }
   }
 
