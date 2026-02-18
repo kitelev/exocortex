@@ -84,6 +84,10 @@ export interface ExocortexSettings {
   showLabelsInGraphView: boolean;
   /** Display wikilinks by exo__Asset_label in live preview mode (edit mode) */
   showLabelsInLivePreview: boolean;
+  /** Show asset labels in Quick Switcher (Ctrl+O / Cmd+O) instead of file basenames */
+  showLabelsInQuickSwitcher: boolean;
+  /** Show asset labels in wikilink autocomplete ([[ suggestions) instead of file basenames */
+  showLabelsInWikilinkAutocomplete: boolean;
   /** @deprecated Use displayNameSettings.defaultTemplate instead */
   displayNameTemplate: string;
   sortByDisplayName: boolean;
@@ -113,6 +117,8 @@ export const DEFAULT_SETTINGS: ExocortexSettings = {
   showLabelsInBody: true,
   showLabelsInGraphView: true,
   showLabelsInLivePreview: true,
+  showLabelsInQuickSwitcher: true,
+  showLabelsInWikilinkAutocomplete: true,
   displayNameTemplate: "{{exo__Asset_label}} ({{exo__Instance_class}})",
   sortByDisplayName: false,
   displayNameSettings: DEFAULT_DISPLAY_NAME_SETTINGS,

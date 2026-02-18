@@ -5388,6 +5388,50 @@
 }
 
 /* ============================================================================
+   Quick Switcher with Asset Labels
+   ============================================================================ */
+
+.exocortex-quick-switcher-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 0;
+}
+
+.exocortex-quick-switcher-label {
+  font-weight: 500;
+  color: var(--text-normal);
+}
+
+.exocortex-quick-switcher-path {
+  font-size: 0.85em;
+  color: var(--text-muted);
+  font-family: var(--font-monospace);
+}
+
+/* ============================================================================
+   Wikilink Autocomplete with Asset Labels
+   ============================================================================ */
+
+.exocortex-wikilink-suggest-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 0;
+}
+
+.exocortex-wikilink-suggest-label {
+  font-weight: 500;
+  color: var(--text-normal);
+}
+
+.exocortex-wikilink-suggest-path {
+  font-size: 0.85em;
+  color: var(--text-muted);
+  font-family: var(--font-monospace);
+}
+
+/* ============================================================================
    Behavioral Analytics Dashboard Styles
    ============================================================================ */
 
