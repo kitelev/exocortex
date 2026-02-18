@@ -794,4 +794,380 @@ describe("BodyLinkPatch", () => {
       expect(mockLink.getAttribute("data-body-patched")).toBe("true");
     });
   });
+
+  describe("wikilinks inside markdown tables (Issue #2153)", () => {
+    it("should resolve wikilink label inside table cell", () => {
+      // Create a table with a wikilink inside a cell - this is how Obsidian renders markdown tables
+      const table = document.createElement("table");
+      const tbody = document.createElement("tbody");
+      const tr = document.createElement("tr");
+      const td = document.createElement("td");
+
+      const tableLink = document.createElement("a");
+      tableLink.className = "internal-link";
+      tableLink.setAttribute("data-href", "7db5eeff-718a-49b0-8d2b-39b084a356e3");
+      tableLink.textContent = "7db5eeff-718a-49b0-8d2b-39b084a356e3";
+
+      td.appendChild(tableLink);
+      tr.appendChild(td);
+      tbody.appendChild(tr);
+      table.appendChild(tbody);
+      mockPreviewView.appendChild(table);
+
+      const mockFile = new TFile();
+      Object.defineProperty(mockFile, "extension", { value: "md" });
+      Object.defineProperty(mockFile, "basename", { value: "7db5eeff-718a-49b0-8d2b-39b084a356e3" });
+      Object.defineProperty(mockFile, "stat", {
+        value: { ctime: Date.now() },
+      });
+
+      mockApp.metadataCache.getFirstLinkpathDest.mockReturnValue(mockFile);
+      mockApp.metadataCache.getFileCache.mockReturnValue({
+        frontmatter: {
+          exo__Asset_label: "ems__Project",
+          exo__Instance_class: "ems__Project",
+        },
+      });
+
+      patch.enable();
+
+      // Table link should be patched to show the label, not the UUID
+      expect(tableLink.textContent).toBe("ems__Project (ems__Project)");
+      expect(tableLink.getAttribute("data-body-patched")).toBe("true");
+    });
+
+    it("should resolve multiple wikilinks in different table cells", () => {
+      // Create a table with multiple cells containing wikilinks
+      const table = document.createElement("table");
+      const tbody = document.createElement("tbody");
+
+      // First row: header
+      const headerRow = document.createElement("tr");
+      const th1 = document.createElement("th");
+      th1.textContent = "Field";
+      const th2 = document.createElement("th");
+      th2.textContent = "Value";
+      headerRow.appendChild(th1);
+      headerRow.appendChild(th2);
+      tbody.appendChild(headerRow);
+
+      // Second row: Project link
+      const row1 = document.createElement("tr");
+      const td1_1 = document.createElement("td");
+      td1_1.textContent = "Project";
+      const td1_2 = document.createElement("td");
+      const projectLink = document.createElement("a");
+      projectLink.className = "internal-link";
+      projectLink.setAttribute("data-href", "7db5eeff-718a-49b0-8d2b-39b084a356e3");
+      projectLink.textContent = "7db5eeff-718a-49b0-8d2b-39b084a356e3";
+      td1_2.appendChild(projectLink);
+      row1.appendChild(td1_1);
+      row1.appendChild(td1_2);
+      tbody.appendChild(row1);
+
+      // Third row: Status link
+      const row2 = document.createElement("tr");
+      const td2_1 = document.createElement("td");
+      td2_1.textContent = "Status";
+      const td2_2 = document.createElement("td");
+      const statusLink = document.createElement("a");
+      statusLink.className = "internal-link";
+      statusLink.setAttribute("data-href", "027e78f4-6e16-4b36-b8fb-5510507d5745");
+      statusLink.textContent = "027e78f4-6e16-4b36-b8fb-5510507d5745";
+      td2_2.appendChild(statusLink);
+      row2.appendChild(td2_1);
+      row2.appendChild(td2_2);
+      tbody.appendChild(row2);
+
+      table.appendChild(tbody);
+      mockPreviewView.appendChild(table);
+
+      // Mock two different files with different labels
+      const projectFile = new TFile();
+      Object.defineProperty(projectFile, "extension", { value: "md" });
+      Object.defineProperty(projectFile, "basename", { value: "7db5eeff-718a-49b0-8d2b-39b084a356e3" });
+      Object.defineProperty(projectFile, "stat", { value: { ctime: Date.now() } });
+
+      const statusFile = new TFile();
+      Object.defineProperty(statusFile, "extension", { value: "md" });
+      Object.defineProperty(statusFile, "basename", { value: "027e78f4-6e16-4b36-b8fb-5510507d5745" });
+      Object.defineProperty(statusFile, "stat", { value: { ctime: Date.now() } });
+
+      // Mock different file lookups for each link
+      mockApp.metadataCache.getFirstLinkpathDest.mockImplementation((path: string) => {
+        if (path.includes("7db5eeff")) return projectFile;
+        if (path.includes("027e78f4")) return statusFile;
+        return null;
+      });
+
+      mockApp.metadataCache.getFileCache.mockImplementation((file: TFile) => {
+        if (file === projectFile) {
+          return {
+            frontmatter: {
+              exo__Asset_label: "ems__Project",
+              exo__Instance_class: "ems__Project",
+            },
+          };
+        }
+        if (file === statusFile) {
+          return {
+            frontmatter: {
+              exo__Asset_label: "ems__EffortStatusDoing",
+              exo__Instance_class: "ems__EffortStatus",
+            },
+          };
+        }
+        return null;
+      });
+
+      patch.enable();
+
+      // Both table links should be patched
+      expect(projectLink.textContent).toBe("ems__Project (ems__Project)");
+      expect(projectLink.getAttribute("data-body-patched")).toBe("true");
+
+      expect(statusLink.textContent).toBe("ems__EffortStatusDoing (ems__EffortStatus)");
+      expect(statusLink.getAttribute("data-body-patched")).toBe("true");
+    });
+
+    it("should handle mixed content: paragraph links and table links together", () => {
+      // Create a paragraph with a link
+      const paragraph = document.createElement("p");
+      const paraLink = document.createElement("a");
+      paraLink.className = "internal-link";
+      paraLink.setAttribute("data-href", "para-file-uuid");
+      paraLink.textContent = "para-file-uuid";
+      paragraph.appendChild(paraLink);
+      mockPreviewView.appendChild(paragraph);
+
+      // Create a table with a link
+      const table = document.createElement("table");
+      const tbody = document.createElement("tbody");
+      const tr = document.createElement("tr");
+      const td = document.createElement("td");
+      const tableLink = document.createElement("a");
+      tableLink.className = "internal-link";
+      tableLink.setAttribute("data-href", "table-file-uuid");
+      tableLink.textContent = "table-file-uuid";
+      td.appendChild(tableLink);
+      tr.appendChild(td);
+      tbody.appendChild(tr);
+      table.appendChild(tbody);
+      mockPreviewView.appendChild(table);
+
+      // Mock files
+      const paraFile = new TFile();
+      Object.defineProperty(paraFile, "extension", { value: "md" });
+      Object.defineProperty(paraFile, "basename", { value: "para-file-uuid" });
+      Object.defineProperty(paraFile, "stat", { value: { ctime: Date.now() } });
+
+      const tableFile = new TFile();
+      Object.defineProperty(tableFile, "extension", { value: "md" });
+      Object.defineProperty(tableFile, "basename", { value: "table-file-uuid" });
+      Object.defineProperty(tableFile, "stat", { value: { ctime: Date.now() } });
+
+      mockApp.metadataCache.getFirstLinkpathDest.mockImplementation((path: string) => {
+        if (path.includes("para-file")) return paraFile;
+        if (path.includes("table-file")) return tableFile;
+        return null;
+      });
+
+      mockApp.metadataCache.getFileCache.mockImplementation((file: TFile) => {
+        if (file === paraFile) {
+          return {
+            frontmatter: {
+              exo__Asset_label: "Paragraph Label",
+              exo__Instance_class: "ems__Task",
+            },
+          };
+        }
+        if (file === tableFile) {
+          return {
+            frontmatter: {
+              exo__Asset_label: "Table Label",
+              exo__Instance_class: "ems__Project",
+            },
+          };
+        }
+        return null;
+      });
+
+      patch.enable();
+
+      // Both should be patched
+      expect(paraLink.textContent).toBe("Paragraph Label (ems__Task)");
+      expect(tableLink.textContent).toBe("Table Label (ems__Project)");
+    });
+
+    it("should exclude table links inside metadata-container", () => {
+      // Create a metadata container with a table
+      const metadataContainer = document.createElement("div");
+      metadataContainer.className = "metadata-container";
+
+      const table = document.createElement("table");
+      const tbody = document.createElement("tbody");
+      const tr = document.createElement("tr");
+      const td = document.createElement("td");
+      const metaTableLink = document.createElement("a");
+      metaTableLink.className = "internal-link";
+      metaTableLink.setAttribute("data-href", "meta-uuid");
+      metaTableLink.textContent = "meta-uuid";
+      td.appendChild(metaTableLink);
+      tr.appendChild(td);
+      tbody.appendChild(tr);
+      table.appendChild(tbody);
+      metadataContainer.appendChild(table);
+      mockPreviewView.appendChild(metadataContainer);
+
+      const mockFile = new TFile();
+      Object.defineProperty(mockFile, "extension", { value: "md" });
+      Object.defineProperty(mockFile, "basename", { value: "meta-uuid" });
+      Object.defineProperty(mockFile, "stat", { value: { ctime: Date.now() } });
+
+      mockApp.metadataCache.getFirstLinkpathDest.mockReturnValue(mockFile);
+      mockApp.metadataCache.getFileCache.mockReturnValue({
+        frontmatter: {
+          exo__Asset_label: "Should Not Appear",
+          exo__Instance_class: "ems__Task",
+        },
+      });
+
+      patch.enable();
+
+      // Table link inside metadata-container should NOT be patched
+      expect(metaTableLink.textContent).toBe("meta-uuid");
+      expect(metaTableLink.getAttribute("data-body-patched")).toBeNull();
+    });
+
+    it("should exclude table links inside exocortex components", () => {
+      // Create an exocortex component with a table
+      const exoComponent = document.createElement("div");
+      exoComponent.className = "exocortex-auto-layout";
+
+      const table = document.createElement("table");
+      const tbody = document.createElement("tbody");
+      const tr = document.createElement("tr");
+      const td = document.createElement("td");
+      const exoTableLink = document.createElement("a");
+      exoTableLink.className = "internal-link";
+      exoTableLink.setAttribute("data-href", "exo-uuid");
+      exoTableLink.textContent = "exo-uuid";
+      td.appendChild(exoTableLink);
+      tr.appendChild(td);
+      tbody.appendChild(tr);
+      table.appendChild(tbody);
+      exoComponent.appendChild(table);
+      mockPreviewView.appendChild(exoComponent);
+
+      const mockFile = new TFile();
+      Object.defineProperty(mockFile, "extension", { value: "md" });
+      Object.defineProperty(mockFile, "basename", { value: "exo-uuid" });
+      Object.defineProperty(mockFile, "stat", { value: { ctime: Date.now() } });
+
+      mockApp.metadataCache.getFirstLinkpathDest.mockReturnValue(mockFile);
+      mockApp.metadataCache.getFileCache.mockReturnValue({
+        frontmatter: {
+          exo__Asset_label: "Should Not Appear",
+          exo__Instance_class: "ems__Task",
+        },
+      });
+
+      patch.enable();
+
+      // Table link inside exocortex component should NOT be patched
+      expect(exoTableLink.textContent).toBe("exo-uuid");
+      expect(exoTableLink.getAttribute("data-body-patched")).toBeNull();
+    });
+
+    it("should resolve dynamically added table links via MutationObserver", async () => {
+      // Setup mock before enabling patch
+      const mockFile = new TFile();
+      Object.defineProperty(mockFile, "extension", { value: "md" });
+      Object.defineProperty(mockFile, "basename", { value: "dynamic-uuid" });
+      Object.defineProperty(mockFile, "stat", { value: { ctime: Date.now() } });
+
+      mockApp.metadataCache.getFirstLinkpathDest.mockReturnValue(mockFile);
+      mockApp.metadataCache.getFileCache.mockReturnValue({
+        frontmatter: {
+          exo__Asset_label: "Dynamic Label",
+          exo__Instance_class: "ems__Task",
+        },
+      });
+
+      // Enable patch first (MutationObserver starts listening)
+      patch.enable();
+
+      // Then dynamically add a table with wikilink - simulating Obsidian's rendering
+      const table = document.createElement("table");
+      const tbody = document.createElement("tbody");
+      const tr = document.createElement("tr");
+      const td = document.createElement("td");
+      const dynamicLink = document.createElement("a");
+      dynamicLink.className = "internal-link";
+      dynamicLink.setAttribute("data-href", "dynamic-uuid");
+      dynamicLink.textContent = "dynamic-uuid";
+
+      td.appendChild(dynamicLink);
+      tr.appendChild(td);
+      tbody.appendChild(tr);
+      table.appendChild(tbody);
+
+      // Append to the preview view - this triggers MutationObserver
+      mockPreviewView.appendChild(table);
+
+      // Wait for MutationObserver to process
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      // Link should be patched by MutationObserver
+      expect(dynamicLink.textContent).toBe("Dynamic Label (ems__Task)");
+      expect(dynamicLink.getAttribute("data-body-patched")).toBe("true");
+    });
+
+    it("should handle table cells added in separate mutations", async () => {
+      // Setup mock
+      const mockFile = new TFile();
+      Object.defineProperty(mockFile, "extension", { value: "md" });
+      Object.defineProperty(mockFile, "basename", { value: "cell-uuid" });
+      Object.defineProperty(mockFile, "stat", { value: { ctime: Date.now() } });
+
+      mockApp.metadataCache.getFirstLinkpathDest.mockReturnValue(mockFile);
+      mockApp.metadataCache.getFileCache.mockReturnValue({
+        frontmatter: {
+          exo__Asset_label: "Cell Label",
+          exo__Instance_class: "ems__Project",
+        },
+      });
+
+      patch.enable();
+
+      // First, add the table structure to preview view
+      const table = document.createElement("table");
+      const tbody = document.createElement("tbody");
+      const tr = document.createElement("tr");
+      const td = document.createElement("td");
+
+      tbody.appendChild(tr);
+      table.appendChild(tbody);
+      mockPreviewView.appendChild(table);
+
+      // Wait for initial mutation
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      // Then add the cell content in a separate mutation (simulates Obsidian behavior)
+      const cellLink = document.createElement("a");
+      cellLink.className = "internal-link";
+      cellLink.setAttribute("data-href", "cell-uuid");
+      cellLink.textContent = "cell-uuid";
+
+      td.appendChild(cellLink);
+      tr.appendChild(td);
+
+      // Wait for second mutation
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      // Link should still be patched
+      expect(cellLink.textContent).toBe("Cell Label (ems__Project)");
+      expect(cellLink.getAttribute("data-body-patched")).toBe("true");
+    });
+  });
 });
