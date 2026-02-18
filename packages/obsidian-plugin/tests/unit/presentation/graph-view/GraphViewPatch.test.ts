@@ -1,43 +1,46 @@
 import { GraphViewPatch } from "../../../../src/presentation/graph-view/GraphViewPatch";
-import { TFile, WorkspaceLeaf } from "obsidian";
+import { TFile } from "obsidian";
 
 describe("GraphViewPatch", () => {
   let patch: GraphViewPatch;
-  let mockPlugin: any;
-  let mockApp: any;
-  let mockGraphLeaf: any;
-  let mockGraphView: any;
-  let mockNode: any;
+  let mockPlugin: ReturnType<typeof createMockPlugin>;
+  let mockApp: ReturnType<typeof createMockApp>;
+  let mockGraphLeaf: ReturnType<typeof createMockGraphLeaf>;
+  let mockGraphView: ReturnType<typeof createMockGraphView>;
+  let mockNode: ReturnType<typeof createMockNode>["node"];
   let originalGetDisplayText: jest.Mock;
 
-  beforeEach(() => {
-    originalGetDisplayText = jest.fn().mockReturnValue("original-filename.md");
-
-    // Create a mock node with a prototype chain
+  function createMockNode() {
+    const getDisplayText = jest.fn().mockReturnValue("original-filename.md");
     const nodePrototype = {
-      getDisplayText: originalGetDisplayText,
+      getDisplayText,
     };
-    mockNode = Object.create(nodePrototype);
-    mockNode.id = "test-file.md";
+    const node = Object.create(nodePrototype);
+    node.id = "test-file.md";
+    node.text = { text: "original-filename.md" };
+    return { node, prototype: nodePrototype, getDisplayText };
+  }
 
-    mockGraphView = {
+  function createMockGraphView() {
+    return {
       renderer: {
-        nodes: [mockNode],
+        nodes: [] as ReturnType<typeof createMockNode>["node"][],
+        changed: jest.fn(),
+        onIframeLoad: jest.fn(),
       },
     };
+  }
 
-    mockGraphLeaf = {
-      view: mockGraphView,
+  function createMockGraphLeaf() {
+    return {
+      view: createMockGraphView(),
     };
+  }
 
-    mockApp = {
+  function createMockApp() {
+    return {
       workspace: {
-        getLeavesOfType: jest.fn().mockImplementation((type: string) => {
-          if (type === "graph" || type === "localgraph") {
-            return [mockGraphLeaf];
-          }
-          return [];
-        }),
+        getLeavesOfType: jest.fn().mockReturnValue([]),
         on: jest.fn().mockReturnValue({ id: "test" }),
       },
       vault: {
@@ -49,9 +52,12 @@ describe("GraphViewPatch", () => {
         on: jest.fn().mockReturnValue({ id: "test" }),
       },
     };
+  }
 
-    mockPlugin = {
-      app: mockApp,
+  function createMockPlugin() {
+    const app = createMockApp();
+    return {
+      app,
       registerEvent: jest.fn(),
       settings: {
         displayNameSettings: {
@@ -61,26 +67,40 @@ describe("GraphViewPatch", () => {
         },
       },
     };
+  }
 
-    patch = new GraphViewPatch(mockPlugin);
+  beforeEach(() => {
+    mockPlugin = createMockPlugin();
+    mockApp = mockPlugin.app;
+
+    const nodeData = createMockNode();
+    mockNode = nodeData.node;
+    originalGetDisplayText = nodeData.getDisplayText;
+
+    mockGraphView = createMockGraphView();
+    mockGraphView.renderer.nodes = [mockNode];
+
+    mockGraphLeaf = {
+      view: mockGraphView,
+    };
+
+    mockApp.workspace.getLeavesOfType = jest.fn().mockImplementation((type: string) => {
+      if (type === "graph" || type === "localgraph") {
+        return [mockGraphLeaf];
+      }
+      return [];
+    });
+
+    patch = new GraphViewPatch(mockPlugin as never);
   });
 
   afterEach(() => {
     patch.cleanup();
     jest.clearAllMocks();
+    jest.useRealTimers();
   });
 
   describe("enable", () => {
-    it("should register layout-change event on enable", () => {
-      patch.enable();
-
-      expect(mockPlugin.registerEvent).toHaveBeenCalled();
-      expect(mockApp.workspace.on).toHaveBeenCalledWith(
-        "layout-change",
-        expect.any(Function)
-      );
-    });
-
     it("should register metadata change event on enable", () => {
       patch.enable();
 
@@ -94,16 +114,37 @@ describe("GraphViewPatch", () => {
       patch.enable();
       patch.enable();
 
-      // Should only register events once (2 calls: layout-change + metadata)
-      expect(mockPlugin.registerEvent).toHaveBeenCalledTimes(2);
+      // Should only register metadata event once
+      expect(mockApp.metadataCache.on).toHaveBeenCalledTimes(1);
     });
 
-    it("should patch both graph and localgraph views", () => {
+    it("should patch graph views when nodes are available", () => {
+      const mockFile = new TFile();
+      Object.defineProperty(mockFile, "extension", { value: "md" });
+      Object.defineProperty(mockFile, "basename", { value: "test-file" });
+      mockApp.vault.getAbstractFileByPath.mockReturnValue(mockFile);
+
+      mockApp.metadataCache.getFileCache.mockReturnValue({
+        frontmatter: {
+          exo__Asset_label: "Test Label",
+        },
+      });
+
       patch.enable();
 
-      // Both graph and localgraph should be queried
-      expect(mockApp.workspace.getLeavesOfType).toHaveBeenCalledWith("graph");
-      expect(mockApp.workspace.getLeavesOfType).toHaveBeenCalledWith("localgraph");
+      expect(mockNode.getDisplayText()).toBe("Test Label");
+    });
+
+    it("should bind to layout-change when no graph views available", () => {
+      // No graph views available yet
+      mockApp.workspace.getLeavesOfType = jest.fn().mockReturnValue([]);
+
+      patch.enable();
+
+      expect(mockApp.workspace.on).toHaveBeenCalledWith(
+        "layout-change",
+        expect.any(Function)
+      );
     });
   });
 
@@ -147,7 +188,7 @@ describe("GraphViewPatch", () => {
     });
   });
 
-  describe("getDisplayText patching", () => {
+  describe("getDisplayText patching via FunctionReplacer", () => {
     it("should return asset label when available", () => {
       const mockFile = new TFile();
       Object.defineProperty(mockFile, "extension", { value: "md" });
@@ -173,17 +214,24 @@ describe("GraphViewPatch", () => {
       Object.defineProperty(mockPrototypeFile, "extension", { value: "md" });
       mockApp.vault.getAbstractFileByPath.mockReturnValue(mockFile);
 
-      mockApp.metadataCache.getFileCache
-        .mockReturnValueOnce({
-          frontmatter: {
-            exo__Asset_prototype: "[[prototype-path]]",
-          },
-        })
-        .mockReturnValueOnce({
-          frontmatter: {
-            exo__Asset_label: "Prototype Label",
-          },
-        });
+      // Use mockImplementation to handle multiple calls with different returns
+      mockApp.metadataCache.getFileCache.mockImplementation((file: TFile) => {
+        if (file === mockFile) {
+          return {
+            frontmatter: {
+              exo__Asset_prototype: "[[prototype-path]]",
+            },
+          };
+        }
+        if (file === mockPrototypeFile) {
+          return {
+            frontmatter: {
+              exo__Asset_label: "Prototype Label",
+            },
+          };
+        }
+        return null;
+      });
       mockApp.metadataCache.getFirstLinkpathDest.mockReturnValue(mockPrototypeFile);
 
       patch.enable();
@@ -260,9 +308,10 @@ describe("GraphViewPatch", () => {
     });
 
     it("should fallback when node has no id", () => {
-      const nodeWithoutId = Object.create({
+      const nodePrototype = {
         getDisplayText: originalGetDisplayText,
-      });
+      };
+      const nodeWithoutId = Object.create(nodePrototype);
 
       mockGraphView.renderer.nodes = [nodeWithoutId];
 
@@ -342,16 +391,18 @@ describe("GraphViewPatch", () => {
     });
   });
 
-  describe("prototype patching", () => {
-    it("should only patch prototype once for multiple nodes", () => {
+  describe("FunctionReplacer prototype patching", () => {
+    it("should patch prototype once for multiple nodes", () => {
       // Create multiple nodes with same prototype
       const nodePrototype = {
         getDisplayText: originalGetDisplayText,
       };
       const node1 = Object.create(nodePrototype);
       node1.id = "file1.md";
+      node1.text = { text: "file1.md" };
       const node2 = Object.create(nodePrototype);
       node2.id = "file2.md";
+      node2.text = { text: "file2.md" };
 
       mockGraphView.renderer.nodes = [node1, node2];
 
@@ -368,13 +419,36 @@ describe("GraphViewPatch", () => {
       // Both nodes should use the same patched prototype
       expect(node1.getDisplayText()).toBe("Label");
       expect(node2.getDisplayText()).toBe("Label");
+    });
 
-      // The original method should still be stored
-      expect(nodePrototype.nm_originalGetDisplayText).toBe(originalGetDisplayText);
+    it("should preserve this context in replacement", () => {
+      const nodePrototype = {
+        getDisplayText: function (this: { id: string }) {
+          return this.id;
+        },
+      };
+      const node = Object.create(nodePrototype);
+      node.id = "context-test.md";
+      node.text = { text: "context-test.md" };
+
+      mockGraphView.renderer.nodes = [node];
+
+      const mockFile = new TFile();
+      Object.defineProperty(mockFile, "extension", { value: "md" });
+      Object.defineProperty(mockFile, "basename", { value: "context-test" });
+      mockApp.vault.getAbstractFileByPath.mockReturnValue(mockFile);
+      mockApp.metadataCache.getFileCache.mockReturnValue({
+        frontmatter: { exo__Asset_label: "Context Label" },
+      });
+
+      patch.enable();
+
+      // Patched method should access correct node's id via this context
+      expect(node.getDisplayText()).toBe("Context Label");
     });
   });
 
-  describe("Issue #2151: node.text.text update and renderer.changed()", () => {
+  describe("Issue #2151: node.text.text update and renderer refresh", () => {
     it("should update node.text.text after patching prototype", () => {
       // Create a mock node with text property (like Obsidian's Graph View nodes)
       const nodePrototype = {
@@ -387,6 +461,7 @@ describe("GraphViewPatch", () => {
       mockGraphView.renderer = {
         nodes: [mockNodeWithText],
         changed: jest.fn(),
+        onIframeLoad: jest.fn(),
       };
 
       const mockFile = new TFile();
@@ -403,7 +478,7 @@ describe("GraphViewPatch", () => {
       expect(mockNodeWithText.text.text).toBe("My Custom Label");
     });
 
-    it("should call renderer.changed() after updating node labels", () => {
+    it("should call renderer.onIframeLoad() for more reliable refresh", () => {
       const nodePrototype = {
         getDisplayText: originalGetDisplayText,
       };
@@ -411,10 +486,11 @@ describe("GraphViewPatch", () => {
       mockNodeWithText.id = "test-file.md";
       mockNodeWithText.text = { text: "original-filename.md" };
 
-      const mockChanged = jest.fn();
+      const mockOnIframeLoad = jest.fn();
       mockGraphView.renderer = {
         nodes: [mockNodeWithText],
-        changed: mockChanged,
+        changed: jest.fn(),
+        onIframeLoad: mockOnIframeLoad,
       };
 
       const mockFile = new TFile();
@@ -427,7 +503,36 @@ describe("GraphViewPatch", () => {
 
       patch.enable();
 
-      // renderer.changed() should be called to trigger visual refresh
+      // renderer.onIframeLoad() should be called for more reliable refresh
+      expect(mockOnIframeLoad).toHaveBeenCalled();
+    });
+
+    it("should fallback to renderer.changed() when onIframeLoad not available", () => {
+      const nodePrototype = {
+        getDisplayText: originalGetDisplayText,
+      };
+      const mockNodeWithText = Object.create(nodePrototype);
+      mockNodeWithText.id = "test-file.md";
+      mockNodeWithText.text = { text: "original-filename.md" };
+
+      const mockChanged = jest.fn();
+      mockGraphView.renderer = {
+        nodes: [mockNodeWithText],
+        changed: mockChanged,
+        // onIframeLoad not available
+      };
+
+      const mockFile = new TFile();
+      Object.defineProperty(mockFile, "extension", { value: "md" });
+      Object.defineProperty(mockFile, "basename", { value: "test-file" });
+      mockApp.vault.getAbstractFileByPath.mockReturnValue(mockFile);
+      mockApp.metadataCache.getFileCache.mockReturnValue({
+        frontmatter: { exo__Asset_label: "My Custom Label" },
+      });
+
+      patch.enable();
+
+      // renderer.changed() should be called as fallback
       expect(mockChanged).toHaveBeenCalled();
     });
 
@@ -446,6 +551,7 @@ describe("GraphViewPatch", () => {
       mockGraphView.renderer = {
         nodes: [node1, node2],
         changed: jest.fn(),
+        onIframeLoad: jest.fn(),
       };
 
       const mockFile = new TFile();
@@ -475,6 +581,7 @@ describe("GraphViewPatch", () => {
       mockGraphView.renderer = {
         nodes: [mockNodeWithText],
         changed: mockChanged,
+        onIframeLoad: jest.fn(),
       };
 
       const mockFile = new TFile();
@@ -504,6 +611,7 @@ describe("GraphViewPatch", () => {
       mockGraphView.renderer = {
         nodes: [nodeWithoutText],
         changed: jest.fn(),
+        onIframeLoad: jest.fn(),
       };
 
       const mockFile = new TFile();
@@ -526,10 +634,10 @@ describe("GraphViewPatch", () => {
       mockNodeWithText.id = "test-file.md";
       mockNodeWithText.text = { text: "original-filename.md" };
 
-      const mockChanged = jest.fn();
       mockGraphView.renderer = {
         nodes: [mockNodeWithText],
-        changed: mockChanged,
+        changed: jest.fn(),
+        onIframeLoad: jest.fn(),
       };
 
       const mockFile = new TFile();
@@ -562,6 +670,128 @@ describe("GraphViewPatch", () => {
 
       // The node.text.text should be updated with new label
       expect(mockNodeWithText.text.text).toBe("Updated Label");
+    });
+  });
+
+  describe("Issue #2157: FunctionReplacer lifecycle and background init", () => {
+    it("should use FunctionReplacer pattern for type-safe method wrapping", () => {
+      const mockFile = new TFile();
+      Object.defineProperty(mockFile, "extension", { value: "md" });
+      Object.defineProperty(mockFile, "basename", { value: "test-file" });
+      mockApp.vault.getAbstractFileByPath.mockReturnValue(mockFile);
+
+      mockApp.metadataCache.getFileCache.mockReturnValue({
+        frontmatter: { exo__Asset_label: "Test Label" },
+      });
+
+      patch.enable();
+
+      // FunctionReplacer should patch the prototype's getDisplayText
+      expect(mockNode.getDisplayText()).toBe("Test Label");
+
+      patch.disable();
+
+      // FunctionReplacer should restore original method
+      expect(mockNode.getDisplayText()).toBe("original-filename.md");
+    });
+
+    it("should run background init when views exist but no nodes yet", () => {
+      jest.useFakeTimers();
+
+      // Graph view exists but has no nodes initially
+      mockGraphView.renderer.nodes = [];
+
+      // Enable the patch - should trigger background init (not layout-change bind)
+      patch.enable();
+
+      // Now add nodes before timeout fires
+      const nodePrototype = {
+        getDisplayText: originalGetDisplayText,
+      };
+      const node = Object.create(nodePrototype);
+      node.id = "test-file.md";
+      node.text = { text: "test-file.md" };
+      mockGraphView.renderer.nodes = [node];
+
+      const mockFile = new TFile();
+      Object.defineProperty(mockFile, "extension", { value: "md" });
+      Object.defineProperty(mockFile, "basename", { value: "test-file" });
+      mockApp.vault.getAbstractFileByPath.mockReturnValue(mockFile);
+      mockApp.metadataCache.getFileCache.mockReturnValue({
+        frontmatter: { exo__Asset_label: "Delayed Label" },
+      });
+
+      // Advance timers to trigger background init
+      jest.advanceTimersByTime(200);
+
+      // Node should now be patched via background init
+      expect(node.getDisplayText()).toBe("Delayed Label");
+    });
+
+    it("should clear pending timeout on disable", () => {
+      jest.useFakeTimers();
+
+      // Graph view exists but has no nodes - will trigger background init
+      mockGraphView.renderer.nodes = [];
+
+      patch.enable();
+
+      // Disable before timeout fires
+      patch.disable();
+
+      // Advance timers - should not throw or cause issues
+      jest.advanceTimersByTime(300);
+
+      expect(() => jest.advanceTimersByTime(100)).not.toThrow();
+    });
+
+    it("should handle both graph and localgraph views", () => {
+      const globalGraphLeaf = {
+        view: {
+          renderer: {
+            nodes: [mockNode],
+            changed: jest.fn(),
+            onIframeLoad: jest.fn(),
+          },
+        },
+      };
+
+      const localNodePrototype = {
+        getDisplayText: jest.fn().mockReturnValue("local-original.md"),
+      };
+      const localNode = Object.create(localNodePrototype);
+      localNode.id = "local-file.md";
+      localNode.text = { text: "local-original.md" };
+
+      const localGraphLeaf = {
+        view: {
+          renderer: {
+            nodes: [localNode],
+            changed: jest.fn(),
+            onIframeLoad: jest.fn(),
+          },
+        },
+      };
+
+      mockApp.workspace.getLeavesOfType = jest.fn().mockImplementation((type: string) => {
+        if (type === "graph") return [globalGraphLeaf];
+        if (type === "localgraph") return [localGraphLeaf];
+        return [];
+      });
+
+      const mockFile = new TFile();
+      Object.defineProperty(mockFile, "extension", { value: "md" });
+      Object.defineProperty(mockFile, "basename", { value: "test" });
+      mockApp.vault.getAbstractFileByPath.mockReturnValue(mockFile);
+      mockApp.metadataCache.getFileCache.mockReturnValue({
+        frontmatter: { exo__Asset_label: "Unified Label" },
+      });
+
+      patch.enable();
+
+      // Both views should have onIframeLoad called for refresh
+      expect(globalGraphLeaf.view.renderer.onIframeLoad).toHaveBeenCalled();
+      expect(localGraphLeaf.view.renderer.onIframeLoad).toHaveBeenCalled();
     });
   });
 });
