@@ -426,6 +426,10 @@ export class BodyLinkPatch {
 
   /**
    * Set up MutationObserver to detect markdown body DOM changes
+   *
+   * Issue #2153: Uses queueMicrotask to defer link processing, ensuring the DOM
+   * is fully attached before checking ancestors. This is critical for table cells
+   * where Obsidian may render content asynchronously.
    */
   private setupObserver(): void {
     if (this.observer) {
@@ -434,6 +438,9 @@ export class BodyLinkPatch {
 
     this.observer = new MutationObserver((mutations) => {
       if (!this.enabled) return;
+
+      // Collect links to process - use Set to deduplicate
+      const linksToProcess = new Set<HTMLElement>();
 
       for (const mutation of mutations) {
         // Check for added nodes that might contain links
@@ -444,29 +451,40 @@ export class BodyLinkPatch {
 
             // Check if this is a markdown preview view
             if (node.classList?.contains("markdown-preview-view")) {
+              // For preview views, patch immediately (they're definitely attached)
               this.patchBodyContent(node.parentElement || node);
             } else if (node.querySelector?.(".markdown-preview-view")) {
               // Check for nested preview views
               this.patchBodyContent(node);
-            } else if (
-              node.classList?.contains("internal-link") &&
-              this.isInsideMarkdownBody(node)
-            ) {
-              // Direct link added within markdown body
-              this.patchLink(node);
+            } else if (node.classList?.contains("internal-link")) {
+              // Direct link added - collect for deferred processing
+              linksToProcess.add(node);
             } else {
-              // Check for links within added nodes (but exclude metadata and our components)
-              const links = node.querySelectorAll<HTMLElement>(
-                ".internal-link"
-              );
+              // Check for links within added nodes (including tables, lists, etc.)
+              // Issue #2153: This handles wikilinks inside table cells
+              const links = node.querySelectorAll<HTMLElement>(".internal-link");
               for (const link of Array.from(links)) {
-                if (this.isInsideMarkdownBody(link)) {
-                  this.patchLink(link);
-                }
+                linksToProcess.add(link);
               }
             }
           }
         }
+      }
+
+      // Issue #2153: Defer link processing using queueMicrotask
+      // This ensures the DOM is fully attached before we check ancestors like
+      // .markdown-preview-view. Critical for table cells which may be added
+      // to the DOM in multiple steps (table structure first, then cell content).
+      if (linksToProcess.size > 0) {
+        queueMicrotask(() => {
+          if (!this.enabled) return;
+          for (const link of linksToProcess) {
+            // Re-check if link is in markdown body after DOM is fully attached
+            if (this.isInsideMarkdownBody(link)) {
+              this.patchLink(link);
+            }
+          }
+        });
       }
     });
 
