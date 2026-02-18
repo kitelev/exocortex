@@ -49,7 +49,6 @@ describe("ExocortexSettingTab", () => {
         showArchivedAssets: false,
         showDailyNoteProjects: true,
         useDynamicPropertyFields: false,
-        showLabelsInFileExplorer: true,
         showLabelsInTabTitles: true,
         displayNameTemplate: "{{exo__Asset_label}}",
         sortByDisplayName: false,
@@ -67,7 +66,6 @@ describe("ExocortexSettingTab", () => {
       },
       saveSettings: jest.fn().mockResolvedValue(undefined),
       refreshLayout: jest.fn(),
-      toggleFileExplorerLabels: jest.fn(),
       toggleTabTitleLabels: jest.fn(),
       toggleFileExplorerSort: jest.fn(),
       applyDisplayNameTemplate: jest.fn(),
@@ -131,8 +129,8 @@ describe("ExocortexSettingTab", () => {
       settingTab.display();
 
       expect(mockContainerEl.empty).toHaveBeenCalled();
-      // 13 original settings (removed ontology dropdown, kept autoAdjustPlannedEndTimestamp Issue #2142) + 3 headings + 1 default template + 6 per-class templates + 5 status emojis + 1 reset button + 3 webhook settings (heading, toggle, add button) = 32
-      expect(MockSetting).toHaveBeenCalledTimes(32);
+      // 12 original settings (removed showLabelsInFileExplorer, ontology dropdown; kept autoAdjustPlannedEndTimestamp Issue #2142) + 3 headings + 1 default template + 6 per-class templates + 5 status emojis + 1 reset button + 3 webhook settings (heading, toggle, add button) = 31
+      expect(MockSetting).toHaveBeenCalledTimes(31);
     });
 
     it("should render layout visibility toggle as first setting", () => {
