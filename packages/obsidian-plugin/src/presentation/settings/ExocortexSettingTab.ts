@@ -110,21 +110,6 @@ export class ExocortexSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Show labels in file explorer")
-      .setDesc(
-        "Display asset labels instead of filenames in the file explorer sidebar",
-      )
-      .addToggle((toggle) =>
-        toggle
-          .setValue(this.plugin.settings.showLabelsInFileExplorer)
-          .onChange(async (value) => {
-            this.plugin.settings.showLabelsInFileExplorer = value;
-            await this.plugin.saveSettings();
-            this.plugin.toggleFileExplorerLabels(value);
-          }),
-      );
-
-    new Setting(containerEl)
       .setName("Show labels in tab titles")
       .setDesc(
         "Display asset labels instead of filenames in tab headers",

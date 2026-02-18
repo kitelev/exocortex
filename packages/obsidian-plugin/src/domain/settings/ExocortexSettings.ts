@@ -138,7 +138,6 @@ export interface ExocortexSettings {
   showFullDateInEffortTimes: boolean;
   showDailyNoteProjects: boolean;
   useDynamicPropertyFields: boolean;
-  showLabelsInFileExplorer: boolean;
   showLabelsInTabTitles: boolean;
   /** Apply display name templates to links in Obsidian's Properties block */
   showLabelsInProperties: boolean;
@@ -176,7 +175,6 @@ export const DEFAULT_SETTINGS: ExocortexSettings = {
   showFullDateInEffortTimes: false,
   showDailyNoteProjects: true,
   useDynamicPropertyFields: false,
-  showLabelsInFileExplorer: true,
   showLabelsInTabTitles: true,
   showLabelsInProperties: true,
   showLabelsInBody: true,

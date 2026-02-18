@@ -33,7 +33,6 @@ import { PluginContainer } from "./infrastructure/di/PluginContainer";
 import { createAliasIconExtension, createWikilinkLabelExtension } from "./presentation/editor-extensions";
 import { TimerManager } from "./infrastructure/timer";
 import { LRUCache } from "./infrastructure/cache";
-import { FileExplorerPatch } from "./presentation/file-explorer/FileExplorerPatch";
 import { FileExplorerSortPatch } from "./presentation/file-explorer/FileExplorerSortPatch";
 import { TabTitlePatch } from "./presentation/tab-titles/TabTitlePatch";
 import { PropertiesLinkPatch } from "./presentation/properties/PropertiesLinkPatch";
@@ -69,7 +68,6 @@ export default class ExocortexPlugin extends Plugin {
   private timerManager!: TimerManager;
   // MutationObserver to detect when layout is removed by Obsidian re-renders (e.g., when processing embeds)
   private layoutPersistenceObserver: MutationObserver | null = null;
-  private fileExplorerPatch!: FileExplorerPatch;
   private fileExplorerSortPatch!: FileExplorerSortPatch;
   private tabTitlePatch!: TabTitlePatch;
   private propertiesLinkPatch!: PropertiesLinkPatch;
@@ -210,15 +208,6 @@ export default class ExocortexPlugin extends Plugin {
       const activeFile = this.app.workspace.getActiveFile();
       if (activeFile) {
         this.timerManager.setTimeout("auto-layout-initial", () => this.autoRenderLayout(), 150);
-      }
-
-      // Initialize File Explorer label patch
-      this.fileExplorerPatch = new FileExplorerPatch(this);
-      if (this.settings.showLabelsInFileExplorer) {
-        // Delay enabling to ensure File Explorer is fully loaded
-        this.timerManager.setTimeout("file-explorer-patch", () => {
-          this.fileExplorerPatch.enable();
-        }, 500);
       }
 
       // Initialize File Explorer sort patch
@@ -406,11 +395,6 @@ export default class ExocortexPlugin extends Plugin {
       this.metadataCache.cleanup();
     }
 
-    // Cleanup File Explorer patch
-    if (this.fileExplorerPatch) {
-      this.fileExplorerPatch.cleanup();
-    }
-
     // Cleanup File Explorer sort patch
     if (this.fileExplorerSortPatch) {
       this.fileExplorerSortPatch.cleanup();
@@ -486,18 +470,6 @@ export default class ExocortexPlugin extends Plugin {
   }
 
   /**
-   * Toggle File Explorer label display on/off
-   * Called from settings when the showLabelsInFileExplorer toggle changes
-   */
-  toggleFileExplorerLabels(enabled: boolean): void {
-    if (enabled) {
-      this.fileExplorerPatch.enable();
-    } else {
-      this.fileExplorerPatch.disable();
-    }
-  }
-
-  /**
    * Toggle Tab Title label display on/off
    * Called from settings when the showLabelsInTabTitles toggle changes
    */
@@ -563,12 +535,6 @@ export default class ExocortexPlugin extends Plugin {
    * Triggers re-evaluation of tab titles, file explorer labels, properties links, and body links
    */
   applyDisplayNameTemplate(): void {
-    // Re-apply file explorer labels with new template
-    if (this.settings.showLabelsInFileExplorer && this.fileExplorerPatch) {
-      this.fileExplorerPatch.disable();
-      this.fileExplorerPatch.enable();
-    }
-
     // Re-apply tab title labels with new template
     if (this.settings.showLabelsInTabTitles && this.tabTitlePatch) {
       this.tabTitlePatch.disable();
