@@ -214,9 +214,7 @@ export class ExocortexSettingTab extends PluginSettingTab {
 
     const classTemplatesDesc = containerEl.createDiv({ cls: "setting-item-description" });
     const classTemplatesP = classTemplatesDesc.createEl("p");
-    classTemplatesP.appendText("Configure different display name templates for each asset class. Use ");
-    classTemplatesP.createEl("code", { text: "{{statusEmoji}}" });
-    classTemplatesP.appendText(" to show status as an emoji (e.g., 🟢 for Active).");
+    classTemplatesP.appendText("Configure different display name templates for each asset class.");
 
     // Common classes to configure
     const commonClasses = [
@@ -250,47 +248,6 @@ export class ExocortexSettingTab extends PluginSettingTab {
         );
     }
 
-    // Status emoji configuration
-    new Setting(containerEl)
-      .setName("Status emoji mapping")
-      .setHeading();
-
-    const statusEmojiDesc = containerEl.createDiv({ cls: "setting-item-description" });
-    const statusEmojiP = statusEmojiDesc.createEl("p");
-    statusEmojiP.appendText("Map status values to emojis for use with ");
-    statusEmojiP.createEl("code", { text: "{{statusEmoji}}" });
-    statusEmojiP.appendText(".");
-
-    const commonStatuses = [
-      { key: "DOING", name: "Doing/Active", defaultEmoji: "🟢" },
-      { key: "DONE", name: "Done/Completed", defaultEmoji: "✅" },
-      { key: "BLOCKED", name: "Blocked", defaultEmoji: "🔴" },
-      { key: "BACKLOG", name: "Backlog/Pending", defaultEmoji: "📋" },
-      { key: "TRASHED", name: "Trashed/Cancelled", defaultEmoji: "🗑️" },
-    ];
-
-    for (const { key, name, defaultEmoji } of commonStatuses) {
-      new Setting(containerEl)
-        .setName(name)
-        .setDesc(`Emoji for "${key}" status`)
-        .addText((text) =>
-          text
-            .setPlaceholder(defaultEmoji)
-            .setValue(displayNameSettings.statusEmojis[key] || "")
-            .onChange(async (value) => {
-              const emoji = value.trim();
-              if (emoji) {
-                displayNameSettings.statusEmojis[key] = emoji;
-              } else {
-                delete displayNameSettings.statusEmojis[key];
-              }
-              await this.plugin.saveSettings();
-              this.plugin.applyDisplayNameTemplate();
-              this.updatePerClassPreview(previewEl, displayNameSettings);
-            }),
-        );
-    }
-
     // Reset to defaults button
     new Setting(containerEl)
       .setName("Reset to defaults")
@@ -316,7 +273,6 @@ export class ExocortexSettingTab extends PluginSettingTab {
       { code: "{{exo__Asset_label}}", desc: "Asset label" },
       { code: "{{exo__Instance_class}}", desc: "Asset class (Task, Project, etc.)" },
       { code: "{{ems__Effort_status}}", desc: "Current effort status" },
-      { code: "{{statusEmoji}}", desc: "Status as emoji (🟢, ✅, 🔴, etc.)" },
       { code: "{{_basename}}", desc: "Original filename" },
       { code: "{{_created}}", desc: "File creation date" },
       { code: "{{field.nested}}", desc: "Dot notation for nested fields" },

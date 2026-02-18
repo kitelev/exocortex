@@ -84,9 +84,6 @@ export interface DisplayNameSettings {
 
   /** Per-class template overrides (key = class name like "ems__Task") */
   classTemplates: Record<string, string>;
-
-  /** Status emoji mapping (key = status value, value = emoji) */
-  statusEmojis: Record<string, string>;
 }
 
 /**
@@ -103,28 +100,13 @@ export const DEFAULT_DISPLAY_NAME_SETTINGS: DisplayNameSettings = {
     "ems__TaskPrototype": "{{exo__Asset_label}} (TaskPrototype)",
     // UID-based identifier for ems__TaskPrototype (Issue #2110)
     "75302770-279e-4a59-ba85-09df29725713": "{{exo__Asset_label}} (TaskPrototype)",
-    "ems__Task": "{{exo__Asset_label}} {{statusEmoji}}",
+    "ems__Task": "{{exo__Asset_label}}",
     "ems__Project": "{{exo__Asset_label}}",
     "ems__Area": "{{exo__Asset_label}}",
     "ems__MeetingPrototype": "{{exo__Asset_label}} (MeetingPrototype)",
-    "ems__Meeting": "{{exo__Asset_label}} {{statusEmoji}}",
+    "ems__Meeting": "{{exo__Asset_label}}",
     // DailyNote uses the basename (date) as its display name since it typically doesn't have a label
     "pn__DailyNote": "{{_basename}}",
-  },
-
-  statusEmojis: {
-    "Active": "🟢",
-    "Blocked": "🔴",
-    "Paused": "⏸️",
-    "Completed": "✅",
-    "Cancelled": "❌",
-    "Pending": "⏳",
-    "IN_PROGRESS": "🟢",
-    "DONE": "✅",
-    "TRASHED": "🗑️",
-    "BACKLOG": "📋",
-    "BLOCKED": "🔴",
-    "DOING": "🟢",
   },
 };
 

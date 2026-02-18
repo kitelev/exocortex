@@ -49,7 +49,6 @@ export class TabTitlePatch {
     return {
       defaultTemplate: template,
       classTemplates: {},
-      statusEmojis: {},
     };
   }
 

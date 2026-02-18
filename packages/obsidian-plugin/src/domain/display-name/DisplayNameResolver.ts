@@ -5,7 +5,6 @@
  * - Determines the appropriate template based on asset class
  * - Uses DisplayNameTemplateEngine for template rendering
  * - Falls back to default template if no class-specific template exists
- * - Handles status emoji mapping
  *
  * Resolution algorithm:
  * 1. Extract exo__Instance_class from metadata
@@ -46,11 +45,8 @@ export class DisplayNameResolver {
     // Get appropriate template for this class
     const template = this.getTemplateForClass(assetClass);
 
-    // Render using template engine with status emoji support
-    const engine = new DisplayNameTemplateEngine(
-      template,
-      this.settings.statusEmojis
-    );
+    // Render using template engine
+    const engine = new DisplayNameTemplateEngine(template);
 
     return engine.render(metadata, basename, createdDate);
   }
@@ -116,33 +112,6 @@ export class DisplayNameResolver {
    */
   getConfiguredClasses(): string[] {
     return Object.keys(this.settings.classTemplates);
-  }
-
-  /**
-   * Get list of all configured status emojis
-   */
-  getConfiguredStatuses(): string[] {
-    return Object.keys(this.settings.statusEmojis);
-  }
-
-  /**
-   * Get emoji for a status value
-   */
-  getStatusEmoji(status: string): string | null {
-    // Try direct match
-    if (this.settings.statusEmojis[status]) {
-      return this.settings.statusEmojis[status];
-    }
-
-    // Try case-insensitive match
-    const upperStatus = status.toUpperCase();
-    for (const [key, emoji] of Object.entries(this.settings.statusEmojis)) {
-      if (key.toUpperCase() === upperStatus) {
-        return emoji;
-      }
-    }
-
-    return null;
   }
 
   /**

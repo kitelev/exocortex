@@ -49,7 +49,6 @@ export class PropertiesLinkPatch {
     return {
       defaultTemplate: template,
       classTemplates: {},
-      statusEmojis: {},
     };
   }
 

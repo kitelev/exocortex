@@ -54,7 +54,6 @@ describe("BodyLinkPatch", () => {
         displayNameSettings: {
           defaultTemplate: "{{exo__Asset_label}} ({{exo__Instance_class}})",
           classTemplates: {},
-          statusEmojis: {},
         },
       },
     };
