@@ -158,6 +158,12 @@ export interface ExocortexSettings {
   webhookSettings: WebhookSettings;
   /** Semantic search settings */
   semanticSearchSettings: SemanticSearchSettings;
+  /**
+   * Auto-adjust plannedEndTimestamp when plannedStartTimestamp changes.
+   * Disabled by default to prevent double-shift issues with Obsidian Sync.
+   * @see Issue #2142
+   */
+  autoAdjustPlannedEndTimestamp: boolean;
   [key: string]: unknown;
 }
 
@@ -183,4 +189,5 @@ export const DEFAULT_SETTINGS: ExocortexSettings = {
   displayNameSettings: DEFAULT_DISPLAY_NAME_SETTINGS,
   webhookSettings: DEFAULT_WEBHOOK_SETTINGS,
   semanticSearchSettings: DEFAULT_SEMANTIC_SEARCH_SETTINGS,
+  autoAdjustPlannedEndTimestamp: false,
 };

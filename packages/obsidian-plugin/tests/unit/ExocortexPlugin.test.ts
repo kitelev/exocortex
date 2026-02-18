@@ -323,6 +323,32 @@ describe("ExocortexPlugin", () => {
       expect(plugin.settings.useDynamicPropertyFields).toBe(false);
     });
 
+    it("should have autoAdjustPlannedEndTimestamp disabled by default (Issue #2142)", async () => {
+      // Arrange
+      plugin.loadData = jest.fn().mockResolvedValue(null);
+
+      // Act
+      await plugin.loadSettings();
+
+      // Assert
+      // Default should be false to prevent double-shift issues with Obsidian Sync
+      expect(plugin.settings.autoAdjustPlannedEndTimestamp).toBe(false);
+    });
+
+    it("should persist autoAdjustPlannedEndTimestamp setting when enabled", async () => {
+      // Arrange
+      const savedSettings = {
+        autoAdjustPlannedEndTimestamp: true,
+      };
+      plugin.loadData = jest.fn().mockResolvedValue(savedSettings);
+
+      // Act
+      await plugin.loadSettings();
+
+      // Assert
+      expect(plugin.settings.autoAdjustPlannedEndTimestamp).toBe(true);
+    });
+
     it("should persist useDynamicPropertyFields setting when enabled", async () => {
       // Arrange
       const savedSettings = {
@@ -573,6 +599,9 @@ describe("ExocortexPlugin", () => {
 
     it("should handle planned start timestamp change", async () => {
       // Arrange
+      // Enable auto-adjust setting (disabled by default since Issue #2142)
+      plugin.settings.autoAdjustPlannedEndTimestamp = true;
+
       const metadata = {
         ems__Effort_plannedStartTimestamp: "2023-11-01T08:00:00Z",
       };
@@ -621,6 +650,9 @@ describe("ExocortexPlugin", () => {
     });
 
     it("should not double-shift plannedEndTimestamp on recursive metadata change event", async () => {
+      // Enable auto-adjust setting (disabled by default since Issue #2142)
+      plugin.settings.autoAdjustPlannedEndTimestamp = true;
+
       const metadata = {
         ems__Effort_plannedStartTimestamp: "2023-11-01T08:00:00Z",
       };
@@ -644,6 +676,9 @@ describe("ExocortexPlugin", () => {
     });
 
     it("should not shift plannedEndTimestamp when synced via Obsidian Sync (idempotent fix for Issue #2095)", async () => {
+      // Enable auto-adjust setting (disabled by default since Issue #2142)
+      plugin.settings.autoAdjustPlannedEndTimestamp = true;
+
       // Scenario: Device A changes plannedStartTimestamp and shifts plannedEndTimestamp.
       // When synced to Device B via Obsidian Sync, Device B receives the already-shifted
       // plannedEndTimestamp. The plugin should detect this and NOT shift again.
@@ -687,7 +722,90 @@ describe("ExocortexPlugin", () => {
       expect(mockTaskStatusService.shiftPlannedEndTimestamp).not.toHaveBeenCalled();
     });
 
+    it("should NOT shift plannedEndTimestamp when autoAdjustPlannedEndTimestamp setting is false (Issue #2142)", async () => {
+      // Scenario: User has disabled auto-adjustment to prevent issues with Obsidian Sync.
+      // When plannedStartTimestamp changes, plannedEndTimestamp should NOT be auto-shifted.
+
+      // Ensure setting is disabled (default)
+      plugin.settings.autoAdjustPlannedEndTimestamp = false;
+
+      // Initial state
+      const metadataInitial = {
+        ems__Effort_plannedStartTimestamp: "2023-11-01T08:00:00",
+        ems__Effort_plannedEndTimestamp: "2023-11-01T10:00:00",
+      };
+      mockMetadataCache.getFileCache.mockReturnValue({
+        frontmatter: metadataInitial,
+      });
+
+      // Cache the initial state
+      await (plugin as any).handleMetadataChange(mockFile);
+
+      // Clear mock call counts from initial caching
+      jest.clearAllMocks();
+
+      // User changes plannedStartTimestamp
+      const metadataAfterChange = {
+        ems__Effort_plannedStartTimestamp: "2023-11-01T09:00:00",  // +1 hour
+        ems__Effort_plannedEndTimestamp: "2023-11-01T10:00:00",    // NOT shifted
+      };
+      mockMetadataCache.getFileCache.mockReturnValue({
+        frontmatter: metadataAfterChange,
+      });
+
+      // Handle the metadata change
+      await (plugin as any).handleMetadataChange(mockFile);
+
+      // The plugin should NOT shift plannedEndTimestamp because setting is disabled
+      expect(mockTaskStatusService.shiftPlannedEndTimestamp).not.toHaveBeenCalled();
+    });
+
+    it("should shift plannedEndTimestamp when autoAdjustPlannedEndTimestamp setting is true (Issue #2142)", async () => {
+      // Scenario: User has enabled auto-adjustment. Normal behavior should apply.
+
+      // Enable the setting
+      plugin.settings.autoAdjustPlannedEndTimestamp = true;
+
+      // Initial state
+      const metadataInitial = {
+        ems__Effort_plannedStartTimestamp: "2023-11-01T08:00:00",
+        ems__Effort_plannedEndTimestamp: "2023-11-01T10:00:00",
+      };
+      mockMetadataCache.getFileCache.mockReturnValue({
+        frontmatter: metadataInitial,
+      });
+
+      // Cache the initial state
+      await (plugin as any).handleMetadataChange(mockFile);
+
+      // Clear mock call counts from initial caching
+      jest.clearAllMocks();
+
+      // User changes plannedStartTimestamp
+      const metadataAfterChange = {
+        ems__Effort_plannedStartTimestamp: "2023-11-01T09:00:00",  // +1 hour
+        ems__Effort_plannedEndTimestamp: "2023-11-01T10:00:00",    // NOT shifted yet
+      };
+      mockMetadataCache.getFileCache.mockReturnValue({
+        frontmatter: metadataAfterChange,
+      });
+
+      // Handle the metadata change
+      await (plugin as any).handleMetadataChange(mockFile);
+
+      // The plugin SHOULD shift plannedEndTimestamp because setting is enabled
+      const expectedDelta = 60 * 60 * 1000; // 1 hour in ms
+      expect(mockTaskStatusService.shiftPlannedEndTimestamp).toHaveBeenCalledTimes(1);
+      expect(mockTaskStatusService.shiftPlannedEndTimestamp).toHaveBeenCalledWith(
+        mockFile,
+        expectedDelta
+      );
+    });
+
     it("should still shift plannedEndTimestamp on local change (Issue #2095 edge case)", async () => {
+      // Enable auto-adjust setting (disabled by default since Issue #2142)
+      plugin.settings.autoAdjustPlannedEndTimestamp = true;
+
       // Scenario: User changes plannedStartTimestamp locally on the same device.
       // The plannedEndTimestamp hasn't been shifted yet, so it should be shifted.
       //
