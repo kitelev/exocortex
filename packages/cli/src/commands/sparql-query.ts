@@ -22,6 +22,7 @@ import { ErrorHandler, type OutputFormat } from "../utils/ErrorHandler.js";
 import { VaultNotFoundError } from "../utils/errors/index.js";
 import { ResponseBuilder, type QueryResult, type ConstructResult } from "../responses/index.js";
 import { CacheManager } from "../cache/CacheManager.js";
+import { ProgressIndicator } from "../utils/ProgressIndicator.js";
 
 export interface SparqlQueryOptions {
   vault: string;
@@ -133,18 +134,21 @@ export function sparqlQueryCommand(): Command {
           console.log();
         }
 
-        if (outputFormat === "text") {
-          console.log(`🎯 Executing query...`);
-        }
         const execStartTime = Date.now();
-
         const executor = new QueryExecutor(tripleStore);
+
+        // Progress indicator for long-running query execution (TTY mode only)
+        const progressIndicator = outputFormat === "text"
+          ? new ProgressIndicator("Executing query", { delayMs: 2000 })
+          : null;
 
         // Execute based on query type
         if (executor.isConstructQuery(algebra)) {
           // CONSTRUCT query - returns triples
+          progressIndicator?.start();
           const resultTriples = await executor.executeConstruct(algebra);
           const execDuration = Date.now() - execStartTime;
+          progressIndicator?.stop();
           const totalDuration = Date.now() - startTime;
 
           if (outputFormat === "json") {
@@ -188,8 +192,10 @@ export function sparqlQueryCommand(): Command {
           }
         } else {
           // SELECT query - returns solution mappings
+          progressIndicator?.start();
           const results = await executor.executeAll(algebra);
           const execDuration = Date.now() - execStartTime;
+          progressIndicator?.stop();
           const totalDuration = Date.now() - startTime;
 
           if (outputFormat === "json") {
