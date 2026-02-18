@@ -64,7 +64,6 @@ describe("Error Handling - Negative Tests", () => {
     let mockApp: jest.Mocked<App>;
     let mockTaskCreationService: jest.Mocked<TaskCreationService>;
     let mockVaultAdapter: jest.Mocked<ObsidianVaultAdapter>;
-    let mockPlugin: jest.Mocked<ExocortexPluginInterface>;
     let mockFile: jest.Mocked<TFile>;
     let mockContext: CommandVisibilityContext;
     let mockLeaf: jest.Mocked<WorkspaceLeaf>;
@@ -101,12 +100,6 @@ describe("Error Handling - Negative Tests", () => {
         toTFile: jest.fn().mockReturnValue(null),
       } as unknown as jest.Mocked<ObsidianVaultAdapter>;
 
-      mockPlugin = {
-        settings: {
-          useDynamicPropertyFields: false,
-        },
-      } as unknown as jest.Mocked<ExocortexPluginInterface>;
-
       mockFile = {
         path: "test-file.md",
         basename: "test-file",
@@ -119,7 +112,7 @@ describe("Error Handling - Negative Tests", () => {
         isDraft: false,
       };
 
-      command = new CreateInstanceCommand(mockApp, mockTaskCreationService, mockVaultAdapter, mockPlugin);
+      command = new CreateInstanceCommand(mockApp, mockTaskCreationService, mockVaultAdapter);
     });
 
     it("should show error notice when toTFile returns null", async () => {

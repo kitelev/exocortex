@@ -8,10 +8,7 @@ import {
   LoggingService,
 } from "exocortex";
 import { LabelInputModal, type LabelInputModalResult } from '@plugin/presentation/modals/LabelInputModal';
-import { DynamicAssetCreationModal, type DynamicAssetCreationResult } from '@plugin/presentation/modals/DynamicAssetCreationModal';
 import { ObsidianVaultAdapter } from '@plugin/adapters/ObsidianVaultAdapter';
-import { ExocortexPluginInterface } from '@plugin/types';
-import type { OntologySchemaService } from '@plugin/application/services/OntologySchemaService';
 
 export class CreateTaskCommand implements ICommand {
   id = "create-task";
@@ -21,8 +18,6 @@ export class CreateTaskCommand implements ICommand {
     private app: App,
     private taskCreationService: TaskCreationService,
     private vaultAdapter: ObsidianVaultAdapter,
-    private plugin: ExocortexPluginInterface,
-    private schemaService?: OntologySchemaService,
   ) {}
 
   checkCallback = (checking: boolean, file: TFile, context: CommandVisibilityContext | null): boolean => {
@@ -43,9 +38,7 @@ export class CreateTaskCommand implements ICommand {
   };
 
   private async execute(file: TFile, context: CommandVisibilityContext): Promise<void> {
-    const useDynamicFields = this.plugin.settings.useDynamicPropertyFields ?? false;
-
-    const result = await this.showModal(useDynamicFields);
+    const result = await this.showModal();
 
     if (result.label === null) {
       return;
@@ -87,22 +80,10 @@ export class CreateTaskCommand implements ICommand {
   }
 
   /**
-   * Shows the appropriate modal based on the useDynamicPropertyFields setting.
-   * @param useDynamicFields - If true, shows DynamicAssetCreationModal; otherwise LabelInputModal
+   * Shows the label input modal for creating a new task.
    * @returns Promise resolving to the modal result
    */
-  private showModal(useDynamicFields: boolean): Promise<LabelInputModalResult> {
-    if (useDynamicFields) {
-      return new Promise<DynamicAssetCreationResult>((resolve) => {
-        new DynamicAssetCreationModal(
-          this.app,
-          "ems__Task",
-          resolve,
-          this.schemaService,
-        ).open();
-      });
-    }
-
+  private showModal(): Promise<LabelInputModalResult> {
     return new Promise<LabelInputModalResult>((resolve) => {
       new LabelInputModal(this.app, resolve).open();
     });

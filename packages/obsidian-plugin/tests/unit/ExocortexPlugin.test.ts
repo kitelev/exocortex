@@ -312,17 +312,6 @@ describe("ExocortexPlugin", () => {
       expect(plugin.settings).toEqual(DEFAULT_SETTINGS);
     });
 
-    it("should have useDynamicPropertyFields disabled by default", async () => {
-      // Arrange
-      plugin.loadData = jest.fn().mockResolvedValue(null);
-
-      // Act
-      await plugin.loadSettings();
-
-      // Assert
-      expect(plugin.settings.useDynamicPropertyFields).toBe(false);
-    });
-
     it("should have autoAdjustPlannedEndTimestamp disabled by default (Issue #2142)", async () => {
       // Arrange
       plugin.loadData = jest.fn().mockResolvedValue(null);
@@ -349,19 +338,6 @@ describe("ExocortexPlugin", () => {
       expect(plugin.settings.autoAdjustPlannedEndTimestamp).toBe(true);
     });
 
-    it("should persist useDynamicPropertyFields setting when enabled", async () => {
-      // Arrange
-      const savedSettings = {
-        useDynamicPropertyFields: true,
-      };
-      plugin.loadData = jest.fn().mockResolvedValue(savedSettings);
-
-      // Act
-      await plugin.loadSettings();
-
-      // Assert
-      expect(plugin.settings.useDynamicPropertyFields).toBe(true);
-    });
   });
 
   describe("saveSettings", () => {

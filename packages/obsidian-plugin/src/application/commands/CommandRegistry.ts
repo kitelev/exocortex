@@ -103,10 +103,10 @@ export class CommandRegistry {
     const classDiscoveryService = new ClassDiscoveryService(sparqlQueryService);
 
     this.commands = [
-      new CreateTaskCommand(app, taskCreationService, this.vaultAdapter, plugin, ontologySchemaService),
+      new CreateTaskCommand(app, taskCreationService, this.vaultAdapter),
       new CreateProjectCommand(app, projectCreationService, this.vaultAdapter),
       new CreateAreaCommand(app, areaCreationService, this.vaultAdapter),
-      new CreateInstanceCommand(app, taskCreationService, this.vaultAdapter, plugin, ontologySchemaService),
+      new CreateInstanceCommand(app, taskCreationService, this.vaultAdapter),
       new CreateFleetingNoteCommand(app, fleetingNoteCreationService, this.vaultAdapter),
       new CreateRelatedTaskCommand(app, taskCreationService, this.vaultAdapter),
       new SetDraftStatusCommand(taskStatusService),

@@ -4,7 +4,7 @@
 
 ## Overview
 
-The Exocortex ontology defines the structure of your knowledge base: what types of assets exist (Task, Project, Area, etc.) and what properties they have. When you enable [Dynamic Property Fields](./DYNAMIC_FIELDS.md), the plugin reads this ontology to generate creation forms automatically.
+The Exocortex ontology defines the structure of your knowledge base: what types of assets exist (Task, Project, Area, etc.) and what properties they have. The plugin reads this ontology to understand the schema of your knowledge base.
 
 This guide shows you how to:
 
@@ -170,12 +170,11 @@ myns:Task_assignee a rdf:Property ;
     rdfs:comment "Person responsible for this task" .
 ```
 
-### Step 4: Verify in Modal
+### Step 4: Verify Properties
 
-1. Enable "Use dynamic property fields" in Settings
-2. Navigate to a note where you can create the target asset type
-3. Invoke the creation command
-4. Verify your new property appears in the modal
+1. Navigate to a note where you can create the target asset type
+2. Invoke the creation command
+3. Verify your new property is recognized by the plugin via SPARQL queries
 
 ## Creating Custom Classes
 
@@ -336,7 +335,6 @@ Before expecting your property to appear in modals:
 - [ ] Property is NOT marked `owl:deprecated true`
 - [ ] Ontology file has `exo__Instance_class: exo__Ontology`
 - [ ] Default ontology is set in plugin settings
-- [ ] "Use dynamic property fields" is enabled in settings
 
 ## Troubleshooting
 
@@ -372,7 +370,6 @@ ORDER BY ?label
 
 ## Related Documentation
 
-- [Dynamic Property Fields Guide](./DYNAMIC_FIELDS.md) - How the feature works
 - [SPARQL User Guide](./sparql/User-Guide.md) - Query your ontology
 - [Property Schema Reference](./PROPERTY_SCHEMA.md) - Standard properties
 - [ExoRDF Mapping](./rdf/ExoRDF-Mapping.md) - RDF/RDFS mapping details

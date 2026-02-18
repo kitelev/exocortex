@@ -65,7 +65,6 @@ export interface ExocortexPluginInterface extends Plugin {
     activeFocusArea?: string | null;
     showEffortArea?: boolean;
     showEffortVotes?: boolean;
-    useDynamicPropertyFields?: boolean;
   };
   vaultAdapter: IVaultAdapter;
   saveSettings(): Promise<void>;

@@ -66,20 +66,6 @@ export class ExocortexSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Use dynamic property fields")
-      .setDesc(
-        "Generate modal fields from ontology (experimental)",
-      )
-      .addToggle((toggle) =>
-        toggle
-          .setValue(this.plugin.settings.useDynamicPropertyFields)
-          .onChange(async (value) => {
-            this.plugin.settings.useDynamicPropertyFields = value;
-            await this.plugin.saveSettings();
-          }),
-      );
-
-    new Setting(containerEl)
       .setName("Auto-adjust planned end time")
       .setDesc(
         "Automatically shift plannedEndTimestamp when plannedStartTimestamp changes. " +

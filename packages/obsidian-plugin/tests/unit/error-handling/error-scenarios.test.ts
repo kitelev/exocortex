@@ -29,7 +29,6 @@ import {
   IFile,
 } from "exocortex";
 import { LabelInputModal } from "../../../src/presentation/modals/LabelInputModal";
-import { ExocortexPluginInterface } from "../../../src/types";
 import type ExocortexPlugin from "../../../src/ExocortexPlugin";
 
 // Mocks
@@ -38,7 +37,6 @@ jest.mock("obsidian", () => ({
   Notice: jest.fn(),
 }));
 jest.mock("../../../src/presentation/modals/LabelInputModal");
-jest.mock("../../../src/presentation/modals/DynamicAssetCreationModal");
 jest.mock("exocortex", () => ({
   ...jest.requireActual("exocortex"),
   canCreateInstance: jest.fn(),
@@ -59,7 +57,6 @@ describe("CreateInstanceCommand Error Handling", () => {
   let mockApp: jest.Mocked<App>;
   let mockTaskCreationService: jest.Mocked<TaskCreationService>;
   let mockVaultAdapter: jest.Mocked<ObsidianVaultAdapter>;
-  let mockPlugin: jest.Mocked<ExocortexPluginInterface>;
   let mockFile: jest.Mocked<TFile>;
   let mockContext: CommandVisibilityContext;
   let mockLeaf: jest.Mocked<WorkspaceLeaf>;
@@ -95,12 +92,6 @@ describe("CreateInstanceCommand Error Handling", () => {
       toTFile: jest.fn(),
     } as unknown as jest.Mocked<ObsidianVaultAdapter>;
 
-    mockPlugin = {
-      settings: {
-        useDynamicPropertyFields: false,
-      },
-    } as unknown as jest.Mocked<ExocortexPluginInterface>;
-
     mockFile = {
       path: "test-file.md",
       basename: "test-file",
@@ -113,7 +104,7 @@ describe("CreateInstanceCommand Error Handling", () => {
       isDraft: false,
     };
 
-    command = new CreateInstanceCommand(mockApp, mockTaskCreationService, mockVaultAdapter, mockPlugin);
+    command = new CreateInstanceCommand(mockApp, mockTaskCreationService, mockVaultAdapter);
   });
 
   describe("Scenario 1: toTFile returns null (file conversion failure)", () => {
