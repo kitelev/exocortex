@@ -2,6 +2,7 @@ import { TFile, WorkspaceLeaf, Plugin, CachedMetadata } from "obsidian";
 import { DisplayNameResolver } from "@plugin/domain/display-name/DisplayNameResolver";
 import { DEFAULT_DISPLAY_NAME_TEMPLATE } from "@plugin/domain/display-name/DisplayNameTemplateEngine";
 import type { ExocortexSettings, DisplayNameSettings } from "@plugin/domain/settings/ExocortexSettings";
+import { FunctionReplacer } from "@plugin/infrastructure/utils/FunctionReplacer";
 
 /**
  * GraphViewPatch - Patches Obsidian's Graph View to show exo__Asset_label instead of filenames
@@ -10,15 +11,21 @@ import type { ExocortexSettings, DisplayNameSettings } from "@plugin/domain/sett
  * for notes that have exo__Asset_label set in their frontmatter. Falls back to
  * the original filename if no label is set.
  *
- * Implementation approach:
- * - Patches graph node prototypes by monkey-patching getDisplayText()
- * - Listens for layout-change events to re-patch when graph views are opened
- * - Listens for metadata changes to refresh the graph
- * - Stores original methods for restoration on disable
+ * Implementation approach (FunctionReplacer pattern based on obsidian-front-matter-title):
+ * - Uses FunctionReplacer for type-safe method wrapping with proper this context
+ * - Implements bind/unbind lifecycle for event management
+ * - Uses onIframeLoad() for reliable graph refresh
+ * - Handles dynamically created nodes via layout-change events with background init
  *
  * Graph View Types:
  * - "graph" - Global graph view (View > Open graph view)
  * - "localgraph" - Local graph view (more options > Open local graph)
+ *
+ * Key improvements over previous implementation:
+ * - FunctionReplacer preserves this context correctly
+ * - Background init handles nodes created after initial patch window
+ * - onIframeLoad() provides more reliable refresh than renderer.changed()
+ * - Clean enable/disable lifecycle via replacer.enable()/disable()
  */
 
 // Plugin interface to access settings
@@ -35,25 +42,34 @@ interface GraphNode {
   id: string;
   text?: GraphNodeText;
   getDisplayText: () => string;
-  nm_originalGetDisplayText?: () => string;
 }
 
 interface GraphRenderer {
   nodes?: GraphNode[];
   changed?: () => void;
+  onIframeLoad?: () => void;
 }
 
 interface GraphView {
   renderer?: GraphRenderer;
 }
 
+/**
+ * Arguments passed to FunctionReplacer implementation
+ */
+interface GraphPatchArgs {
+  patch: GraphViewPatch;
+}
+
 export class GraphViewPatch {
   private app: Plugin["app"];
   private plugin: PluginWithSettings;
   private enabled = false;
-  private patchedPrototypes: WeakSet<object> = new WeakSet();
+  private bound = false;
+  private replacer: FunctionReplacer<GraphNode, "getDisplayText", GraphPatchArgs> | null = null;
   private metadataChangeHandler: (file: TFile, data: string, cache: CachedMetadata) => void;
   private layoutChangeHandler: () => void;
+  private initTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
   constructor(plugin: Plugin) {
     this.plugin = plugin as PluginWithSettings;
@@ -95,13 +111,11 @@ export class GraphViewPatch {
     if (this.enabled) return;
     this.enabled = true;
 
-    // Initial patch of existing graph views
-    this.patchAllGraphViews();
-
-    // Listen for layout changes (new graph views, reopened views, etc.)
-    this.plugin.registerEvent(
-      this.app.workspace.on("layout-change", this.layoutChangeHandler)
-    );
+    // Try to initialize replacement immediately
+    if (!this.initReplacement()) {
+      // If no nodes available yet, bind to layout-change events
+      this.bind();
+    }
 
     // Listen for metadata changes to refresh the graph
     this.plugin.registerEvent(
@@ -116,8 +130,23 @@ export class GraphViewPatch {
     if (!this.enabled) return;
     this.enabled = false;
 
-    // Restore all patched prototypes
-    this.restoreAllGraphViews();
+    // Clear any pending background init
+    if (this.initTimeoutId !== null) {
+      clearTimeout(this.initTimeoutId);
+      this.initTimeoutId = null;
+    }
+
+    // Unbind layout-change listener
+    this.unbind();
+
+    // Disable the replacement
+    if (this.replacer) {
+      this.replacer.disable();
+      this.replacer = null;
+    }
+
+    // Refresh all graph views to restore original labels
+    this.refreshAllGraphViews();
   }
 
   /**
@@ -128,12 +157,37 @@ export class GraphViewPatch {
   }
 
   /**
-   * Handle layout changes to patch new graph views
+   * Bind to layout-change events (used when waiting for graph nodes to appear)
+   */
+  private bind(): void {
+    if (this.bound) return;
+    this.bound = true;
+
+    this.plugin.registerEvent(
+      this.app.workspace.on("layout-change", this.layoutChangeHandler)
+    );
+  }
+
+  /**
+   * Unbind from layout-change events
+   */
+  private unbind(): void {
+    if (!this.bound) return;
+    this.bound = false;
+    // Note: Obsidian's registerEvent handles cleanup automatically when plugin unloads
+  }
+
+  /**
+   * Handle layout changes to initialize replacement when graph views appear
    */
   private handleLayoutChange(): void {
     if (!this.enabled) return;
-    // Use setTimeout to ensure DOM is updated after layout change
-    setTimeout(() => this.patchAllGraphViews(), 100);
+
+    // Try to initialize replacement
+    if (this.initReplacement()) {
+      // Successfully initialized, unbind layout-change listener
+      this.unbind();
+    }
   }
 
   /**
@@ -143,28 +197,103 @@ export class GraphViewPatch {
     if (!this.enabled) return;
     if (file.extension !== "md") return;
 
-    // Refresh all graph views when metadata changes
-    // This ensures labels are updated when exo__Asset_label changes
-    this.refreshAllGraphViews();
+    // Update specific file in graph views
+    this.updateFileInGraphViews(file.path);
   }
 
   /**
-   * Patch all graph views in the workspace
+   * Initialize the FunctionReplacer on the first available node prototype
+   *
+   * @returns true if replacement was initialized, false if no nodes available yet
    */
-  private patchAllGraphViews(): void {
-    if (!this.enabled) return;
+  private initReplacement(): boolean {
+    // Find the first available graph node
+    const node = this.getFirstNode();
 
-    // Patch global graph views
+    if (node) {
+      // Get the prototype to patch
+      const proto = Object.getPrototypeOf(node) as GraphNode;
+
+      // Create the FunctionReplacer
+      this.replacer = FunctionReplacer.create(
+        proto,
+        "getDisplayText",
+        { patch: this },
+        function (args, _defaultArgs, vanilla) {
+          // `this` is the GraphNode instance
+          const label = args.patch.getAssetLabel(this.id);
+          return label ?? vanilla.call(this);
+        }
+      );
+
+      // Enable the replacement
+      this.replacer.enable();
+
+      // Refresh all graph views to show new labels
+      this.refreshAllGraphViews();
+
+      return true;
+    } else if (this.getViews().length > 0) {
+      // Graph views exist but have no nodes yet - try again in background
+      this.runBackgroundInit();
+      return true; // Return true to indicate we're handling it
+    }
+
+    return false;
+  }
+
+  /**
+   * Run background initialization to handle cases where graph views exist
+   * but nodes haven't been created yet
+   */
+  private runBackgroundInit(): void {
+    // Clear any previous timeout
+    if (this.initTimeoutId !== null) {
+      clearTimeout(this.initTimeoutId);
+    }
+
+    // Try again after a delay
+    this.initTimeoutId = setTimeout(() => {
+      this.initTimeoutId = null;
+      if (this.enabled && !this.replacer) {
+        this.initReplacement();
+      }
+    }, 200);
+  }
+
+  /**
+   * Get the first available graph node from any open graph view
+   */
+  private getFirstNode(): GraphNode | null {
+    for (const view of this.getViews()) {
+      const nodes = view.renderer?.nodes ?? [];
+      if (nodes.length > 0) {
+        return nodes[0];
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Get all open graph views
+   */
+  private getViews(): GraphView[] {
     const graphLeaves = this.getGraphLeaves("graph");
+    const localGraphLeaves = this.getGraphLeaves("localgraph");
+
+    const views: GraphView[] = [];
+
     for (const leaf of graphLeaves) {
-      this.patchGraphView(leaf);
+      const view = leaf.view as unknown as GraphView;
+      if (view) views.push(view);
     }
 
-    // Patch local graph views
-    const localGraphLeaves = this.getGraphLeaves("localgraph");
     for (const leaf of localGraphLeaves) {
-      this.patchGraphView(leaf);
+      const view = leaf.view as unknown as GraphView;
+      if (view) views.push(view);
     }
+
+    return views;
   }
 
   /**
@@ -179,24 +308,61 @@ export class GraphViewPatch {
   }
 
   /**
-   * Patch a single graph view
+   * Refresh all graph views by triggering onIframeLoad
+   * This is more reliable than renderer.changed() for updating labels
    */
-  private patchGraphView(leaf: WorkspaceLeaf): void {
-    const view = leaf.view as unknown as GraphView;
-    const renderer = view?.renderer;
-    const nodes = renderer?.nodes;
+  private refreshAllGraphViews(): void {
+    for (const view of this.getViews()) {
+      const renderer = view.renderer;
+      if (renderer) {
+        // Update node.text.text for all nodes
+        this.updateNodeTexts(renderer);
 
-    if (!nodes || !Array.isArray(nodes)) return;
-
-    for (const node of nodes) {
-      this.patchNode(node);
-      // Update node.text.text with the display text after patching
-      this.updateNodeText(node);
+        // Trigger refresh using onIframeLoad (more reliable) or changed()
+        if (typeof renderer.onIframeLoad === "function") {
+          renderer.onIframeLoad();
+        } else if (typeof renderer.changed === "function") {
+          renderer.changed();
+        }
+      }
     }
+  }
 
-    // Signal the renderer that changes have occurred to trigger visual refresh
-    if (typeof renderer?.changed === "function") {
-      renderer.changed();
+  /**
+   * Update a specific file's node in all graph views
+   */
+  private updateFileInGraphViews(filePath: string): void {
+    for (const view of this.getViews()) {
+      const renderer = view.renderer;
+      const nodes = renderer?.nodes ?? [];
+
+      let needsRefresh = false;
+
+      for (const node of nodes) {
+        if (node.id === filePath) {
+          this.updateNodeText(node);
+          needsRefresh = true;
+          break;
+        }
+      }
+
+      if (needsRefresh) {
+        if (typeof renderer?.onIframeLoad === "function") {
+          renderer.onIframeLoad();
+        } else if (typeof renderer?.changed === "function") {
+          renderer.changed();
+        }
+      }
+    }
+  }
+
+  /**
+   * Update node.text.text for all nodes in a renderer
+   */
+  private updateNodeTexts(renderer: GraphRenderer): void {
+    const nodes = renderer.nodes ?? [];
+    for (const node of nodes) {
+      this.updateNodeText(node);
     }
   }
 
@@ -208,7 +374,7 @@ export class GraphViewPatch {
   private updateNodeText(node: GraphNode): void {
     if (!node || !node.text) return;
 
-    // Get the display text (will use patched method if prototype was patched)
+    // Get the display text (will use patched method if replacement is active)
     const displayText = node.getDisplayText();
     if (displayText) {
       node.text.text = displayText;
@@ -216,69 +382,12 @@ export class GraphViewPatch {
   }
 
   /**
-   * Patch a single graph node to use asset labels
-   */
-  private patchNode(node: GraphNode): void {
-    // Skip if not a valid node with getDisplayText
-    if (!node || typeof node.getDisplayText !== "function") return;
-
-    // Get the prototype to patch
-    const proto = Object.getPrototypeOf(node);
-    if (!proto) return;
-
-    // Skip if already patched
-    if (this.patchedPrototypes.has(proto)) return;
-
-    // Store original method
-    const originalGetDisplayText = proto.getDisplayText;
-    proto.nm_originalGetDisplayText = originalGetDisplayText;
-
-    // Create patched method
-    proto.getDisplayText = this.createPatchedGetDisplayText(originalGetDisplayText);
-
-    // Mark as patched
-    this.patchedPrototypes.add(proto);
-  }
-
-  /**
-   * Create a patched getDisplayText function
-   *
-   * Uses closure to capture patch instance state without aliasing `this`
-   */
-  private createPatchedGetDisplayText(
-    originalMethod: () => string
-  ): (this: GraphNode) => string {
-    // Capture instance methods in closures to avoid `this` aliasing
-    const isEnabled = (): boolean => this.enabled;
-    const getLabel = (filePath: string): string | null => this.getAssetLabel(filePath);
-
-    return function (this: GraphNode): string {
-      // If patch is disabled, return original
-      if (!isEnabled()) {
-        return originalMethod.call(this);
-      }
-
-      // Get the file path from the node id
-      const filePath = this.id;
-      if (!filePath) {
-        return originalMethod.call(this);
-      }
-
-      // Try to get the asset label
-      const label = getLabel(filePath);
-      if (label) {
-        return label;
-      }
-
-      // Fall back to original method
-      return originalMethod.call(this);
-    };
-  }
-
-  /**
    * Get the display name from a file's frontmatter using per-class template resolution
+   * This is called by the FunctionReplacer implementation
    */
-  private getAssetLabel(filePath: string): string | null {
+  getAssetLabel(filePath: string): string | null {
+    if (!this.enabled) return null;
+
     // Get the file from vault
     const file = this.app.vault.getAbstractFileByPath(filePath);
     if (!(file instanceof TFile) || file.extension !== "md") {
@@ -401,104 +510,5 @@ export class GraphViewPatch {
     }
 
     return metadata;
-  }
-
-  /**
-   * Refresh all graph views (trigger re-render)
-   */
-  private refreshAllGraphViews(): void {
-    if (!this.enabled) return;
-
-    // Refresh global graph views
-    const graphLeaves = this.getGraphLeaves("graph");
-    for (const leaf of graphLeaves) {
-      this.refreshGraphView(leaf);
-    }
-
-    // Refresh local graph views
-    const localGraphLeaves = this.getGraphLeaves("localgraph");
-    for (const leaf of localGraphLeaves) {
-      this.refreshGraphView(leaf);
-    }
-  }
-
-  /**
-   * Refresh a single graph view by updating node text and signaling changes
-   */
-  private refreshGraphView(leaf: WorkspaceLeaf): void {
-    const view = leaf.view as unknown as GraphView;
-    const renderer = view?.renderer;
-    const nodes = renderer?.nodes;
-
-    if (!nodes || !Array.isArray(nodes)) return;
-
-    // Update text for all nodes
-    for (const node of nodes) {
-      // Patch new nodes if they haven't been patched yet
-      this.patchNode(node);
-      // Update the node's text property
-      this.updateNodeText(node);
-    }
-
-    // Signal the renderer to refresh
-    if (typeof renderer?.changed === "function") {
-      renderer.changed();
-    }
-  }
-
-  /**
-   * Restore all patched graph views to original methods
-   */
-  private restoreAllGraphViews(): void {
-    // Restore global graph views
-    const graphLeaves = this.getGraphLeaves("graph");
-    for (const leaf of graphLeaves) {
-      this.restoreGraphView(leaf);
-    }
-
-    // Restore local graph views
-    const localGraphLeaves = this.getGraphLeaves("localgraph");
-    for (const leaf of localGraphLeaves) {
-      this.restoreGraphView(leaf);
-    }
-
-    // Clear the patched prototypes set
-    this.patchedPrototypes = new WeakSet();
-  }
-
-  /**
-   * Restore a single graph view
-   */
-  private restoreGraphView(leaf: WorkspaceLeaf): void {
-    const view = leaf.view as unknown as GraphView;
-    const renderer = view?.renderer;
-    const nodes = renderer?.nodes;
-
-    if (!nodes || !Array.isArray(nodes)) return;
-
-    for (const node of nodes) {
-      this.restoreNode(node);
-      // Restore the node's text to the original display text
-      this.updateNodeText(node);
-    }
-
-    // Signal the renderer to refresh with restored text
-    if (typeof renderer?.changed === "function") {
-      renderer.changed();
-    }
-  }
-
-  /**
-   * Restore a single node's original getDisplayText method
-   */
-  private restoreNode(node: GraphNode): void {
-    if (!node) return;
-
-    const proto = Object.getPrototypeOf(node);
-    if (!proto || !proto.nm_originalGetDisplayText) return;
-
-    // Restore original method
-    proto.getDisplayText = proto.nm_originalGetDisplayText;
-    delete proto.nm_originalGetDisplayText;
   }
 }
