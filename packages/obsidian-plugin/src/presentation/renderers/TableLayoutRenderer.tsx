@@ -284,7 +284,13 @@ export const TableLayoutRenderer: React.FC<TableLayoutRendererProps> = ({
   // This fixes misalignment caused by scrollbar width difference (Issue #941, #2116)
   const [scrollbarWidth, setScrollbarWidth] = useState(0);
 
-  // Measure scrollbar width when scroll container is mounted
+  // Track computed pixel widths for virtualized cells (Issue #2152)
+  // When rows have position: absolute, table-layout: fixed doesn't work
+  // We measure header cell widths and apply them explicitly to body cells
+  const headerTableRef = useRef<HTMLTableElement>(null);
+  const [computedColumnWidths, setComputedColumnWidths] = useState<number[]>([]);
+
+  // Measure scrollbar width and column widths when scroll container is mounted
   const measureWidths = useCallback(() => {
     if (!parentRef.current) return;
 
@@ -292,6 +298,17 @@ export const TableLayoutRenderer: React.FC<TableLayoutRendererProps> = ({
     // Scrollbar width = total width - client width (visible content area)
     const sbWidth = scrollContainer.offsetWidth - scrollContainer.clientWidth;
     setScrollbarWidth(sbWidth);
+
+    // Measure header cell widths for virtualized row alignment (Issue #2152)
+    if (headerTableRef.current) {
+      const headerCells = headerTableRef.current.querySelectorAll("thead th");
+      const widths: number[] = [];
+      headerCells.forEach((cell) => {
+        // Use offsetWidth to get the actual rendered pixel width
+        widths.push((cell as HTMLElement).offsetWidth);
+      });
+      setComputedColumnWidths(widths);
+    }
   }, []);
 
   // Measure widths when virtualized mode is active and parent is mounted
@@ -301,7 +318,7 @@ export const TableLayoutRenderer: React.FC<TableLayoutRendererProps> = ({
     }
   }, [shouldVirtualize, isParentMounted, measureWidths]);
 
-  // Re-measure on window resize (scrollbar might appear/disappear)
+  // Re-measure on window resize (scrollbar might appear/disappear, column widths change)
   useEffect(() => {
     if (!shouldVirtualize) return;
 
@@ -346,7 +363,8 @@ export const TableLayoutRenderer: React.FC<TableLayoutRendererProps> = ({
   };
 
   // Render cell
-  const renderCell = (row: TableRow, column: LayoutColumn) => {
+  // computedWidth is used in virtualized mode to apply measured pixel widths (Issue #2152)
+  const renderCell = (row: TableRow, column: LayoutColumn, columnIndex: number, useComputedWidth: boolean) => {
     const value = row.values[column.uid];
     const CellRenderer = getCellRenderer(column.renderer);
     const isEditing =
@@ -354,11 +372,17 @@ export const TableLayoutRenderer: React.FC<TableLayoutRendererProps> = ({
     const isClickable =
       options.editable && column.editable && !isEditing;
 
+    // In virtualized mode, use computed pixel widths to ensure alignment
+    // when rows have position: absolute (Issue #2152)
+    const cellWidth = useComputedWidth && computedColumnWidths[columnIndex]
+      ? `${computedColumnWidths[columnIndex]}px`
+      : parseColumnWidth(column.width);
+
     return (
       <td
         key={column.uid}
         className={`exo-layout-cell exo-layout-cell-${column.renderer || "text"} ${isEditing ? "exo-layout-cell-editing" : ""} ${isClickable ? "exo-layout-cell-editable" : ""}`}
-        style={{ width: parseColumnWidth(column.width) }}
+        style={{ width: cellWidth }}
         onClick={() => !isEditing && handleCellClick(row.id, column)}
       >
         <CellRenderer
@@ -396,7 +420,8 @@ export const TableLayoutRenderer: React.FC<TableLayoutRendererProps> = ({
   };
 
   // Render row
-  const renderRow = (row: TableRow, _index: number, style?: React.CSSProperties) => {
+  // useComputedWidth is true for virtualized rows to apply measured pixel widths (Issue #2152)
+  const renderRow = (row: TableRow, _index: number, style?: React.CSSProperties, useComputedWidth = false) => {
     return (
       <tr
         key={row.id}
@@ -405,7 +430,7 @@ export const TableLayoutRenderer: React.FC<TableLayoutRendererProps> = ({
         data-path={row.path}
         style={style}
       >
-        {columns.map((column) => renderCell(row, column))}
+        {columns.map((column, columnIndex) => renderCell(row, column, columnIndex, useComputedWidth))}
         {renderActionsCell(row)}
       </tr>
     );
@@ -492,7 +517,8 @@ export const TableLayoutRenderer: React.FC<TableLayoutRendererProps> = ({
           paddingRight: scrollbarWidth > 0 ? `${scrollbarWidth}px` : undefined,
         }}
       >
-        <table className="exo-layout-table exo-layout-table-header-fixed">
+        {/* Header table with ref for measuring column widths (Issue #2152) */}
+        <table ref={headerTableRef} className="exo-layout-table exo-layout-table-header-fixed">
           {renderColGroup()}
           {renderTableHeader()}
         </table>
@@ -525,6 +551,9 @@ export const TableLayoutRenderer: React.FC<TableLayoutRendererProps> = ({
               {virtualItems.length > 0 ? (
                 virtualItems.map((virtualRow) => {
                   const row = sortedRows[virtualRow.index];
+                  // Pass useComputedWidth=true for virtualized rows (Issue #2152)
+                  // This ensures cells use measured pixel widths instead of
+                  // percentage/auto widths that don't work with position: absolute
                   return renderRow(row, virtualRow.index, {
                     position: "absolute",
                     top: 0,
@@ -532,7 +561,7 @@ export const TableLayoutRenderer: React.FC<TableLayoutRendererProps> = ({
                     width: "100%",
                     height: `${virtualRow.size}px`,
                     transform: `translateY(${virtualRow.start}px)`,
-                  });
+                  }, true);
                 })
               ) : (
                 // Fallback: render all rows if virtualizer hasn't initialized
