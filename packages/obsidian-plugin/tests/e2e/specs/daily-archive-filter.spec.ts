@@ -74,65 +74,6 @@ test.describe("DailyNote Archive Filter", () => {
     expect(finalTableContent).not.toContain("Archived Task");
   });
 
-  test("should toggle archived projects visibility with button click", async () => {
-    await launcher.openFile("Daily Notes/2025-10-18.md");
-
-    const window = await launcher.getWindow();
-
-    await launcher.waitForModalsToClose(10000);
-    await window.waitForTimeout(5000);
-
-    await launcher.waitForElement(".exocortex-daily-projects-section", 60000);
-
-    const toggleButton = window.locator(
-      ".exocortex-daily-projects-section .exocortex-toggle-archived",
-    );
-    await expect(toggleButton).toBeVisible({ timeout: 10000 });
-
-    const initialButtonText = await toggleButton.textContent();
-    expect(initialButtonText).toContain("Show Archived");
-
-    const projectsTable = window
-      .locator(".exocortex-daily-projects-section table")
-      .first();
-    await expect(projectsTable).toBeVisible({ timeout: 10000 });
-
-    const rows = projectsTable.locator("tbody tr");
-    await expect(rows.first()).toBeVisible({ timeout: 5000 });
-
-    const initialRowCount = await rows.count();
-
-    const tableContent = await projectsTable.textContent();
-    expect(tableContent).not.toContain("Archived Project");
-
-    await toggleButton.click();
-    await window.waitForTimeout(2000);
-
-    const updatedButtonText = await toggleButton.textContent();
-    expect(updatedButtonText).toContain("Hide Archived");
-
-    const updatedRows = projectsTable.locator("tbody tr");
-    const updatedRowCount = await updatedRows.count();
-
-    expect(updatedRowCount).toBeGreaterThan(initialRowCount);
-
-    const updatedTableContent = await projectsTable.textContent();
-    expect(updatedTableContent).toContain("Archived Project");
-
-    await toggleButton.click();
-    await window.waitForTimeout(2000);
-
-    const finalButtonText = await toggleButton.textContent();
-    expect(finalButtonText).toContain("Show Archived");
-
-    const finalRows = projectsTable.locator("tbody tr");
-    const finalRowCount = await finalRows.count();
-    expect(finalRowCount).toBe(initialRowCount);
-
-    const finalTableContent = await projectsTable.textContent();
-    expect(finalTableContent).not.toContain("Archived Project");
-  });
-
   test("should persist archived filter state across page refreshes", async () => {
     await launcher.openFile("Daily Notes/2025-10-18.md");
 

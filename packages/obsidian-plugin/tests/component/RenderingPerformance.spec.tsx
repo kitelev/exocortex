@@ -18,10 +18,6 @@ import {
   DailyTask,
 } from "../../src/presentation/components/DailyTasksTable";
 import {
-  DailyProjectsTable,
-  DailyProject,
-} from "../../src/presentation/components/DailyProjectsTable";
-import {
   AssetRelationsTable,
   AssetRelation,
 } from "../../src/presentation/components/AssetRelationsTable";
@@ -67,46 +63,6 @@ function generateMockTasks(count: number): DailyTask[] {
   }
 
   return tasks;
-}
-
-/**
- * Generate mock daily projects for performance testing.
- */
-function generateMockProjects(count: number): DailyProject[] {
-  const projects: DailyProject[] = [];
-  const statuses = [
-    "ems__EffortStatusInProgress",
-    "ems__EffortStatusDone",
-    "ems__EffortStatusPlanned",
-  ];
-
-  for (let i = 0; i < count; i++) {
-    const hour = 8 + Math.floor(i / 4);
-    const minute = (i % 4) * 15;
-    const startTime = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
-    const endHour = hour + 1;
-    const endTime = `${String(endHour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
-
-    projects.push({
-      file: { path: `project-${i}.md`, basename: `project-${i}` },
-      path: `project-${i}.md`,
-      title: `Project ${i}`,
-      label: `Performance Test Project ${i}`,
-      startTime,
-      endTime,
-      startTimestamp: null,
-      endTimestamp: null,
-      status: statuses[i % statuses.length],
-      metadata: {
-        exo__Asset_label: `Project ${i}`,
-      },
-      isDone: i % 3 === 2,
-      isTrashed: false,
-      isBlocked: i % 10 === 0,
-    });
-  }
-
-  return projects;
 }
 
 /**
@@ -239,30 +195,6 @@ test.describe("Component Rendering Performance", () => {
     });
   });
 
-  test.describe("DailyProjectsTable Performance", () => {
-    test("should render 10 projects in < 500ms", async ({ mount }) => {
-      const projects = generateMockProjects(10);
-
-      const start = performance.now();
-      const component = await mount(<DailyProjectsTable projects={projects} />);
-      await component.waitFor({ state: "visible" });
-      const duration = performance.now() - start;
-
-      expect(duration).toBeLessThan(THRESHOLDS.SMALL_TABLE);
-    });
-
-    test("should render 50 projects in < 1000ms", async ({ mount }) => {
-      const projects = generateMockProjects(50);
-
-      const start = performance.now();
-      const component = await mount(<DailyProjectsTable projects={projects} />);
-      await component.waitFor({ state: "visible" });
-      const duration = performance.now() - start;
-
-      expect(duration).toBeLessThan(THRESHOLDS.MEDIUM_TABLE);
-    });
-  });
-
   test.describe("AssetRelationsTable Performance", () => {
     test("should render 20 relations in < 500ms", async ({ mount }) => {
       const relations = generateMockRelations(20);
@@ -324,36 +256,4 @@ test.describe("Rendering Performance Regression Guards", () => {
     expect(p90Duration).toBeLessThan(500);
   });
 
-  test("DailyProjectsTable should maintain consistent render times", async ({
-    mount,
-  }) => {
-    const projects = generateMockProjects(15);
-    const durations: number[] = [];
-
-    for (let i = 0; i < 10; i++) {
-      const start = performance.now();
-      const component = await mount(<DailyProjectsTable projects={projects} />);
-      await component.waitFor({ state: "visible" });
-      durations.push(performance.now() - start);
-
-      await component.unmount();
-    }
-
-    // Calculate standard deviation to check for consistent performance
-    const avgDuration = durations.reduce((a, b) => a + b, 0) / durations.length;
-    const variance =
-      durations.reduce((sum, d) => sum + Math.pow(d - avgDuration, 2), 0) /
-      durations.length;
-    const stdDev = Math.sqrt(variance);
-
-    // Coefficient of variation should be reasonable (< 150%)
-    // Note: High variance is expected with very fast operations (single-digit ms)
-    // due to timer resolution and system background activity.
-    // This threshold catches only severe performance instability.
-    const coefficientOfVariation = stdDev / avgDuration;
-    expect(coefficientOfVariation).toBeLessThan(1.5);
-
-    // Average should also be reasonable
-    expect(avgDuration).toBeLessThan(500);
-  });
 });

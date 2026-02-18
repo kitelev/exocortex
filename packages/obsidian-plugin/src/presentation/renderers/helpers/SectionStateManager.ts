@@ -7,7 +7,7 @@ export class SectionStateManager {
   private collapsedSections: Map<string, boolean>;
 
   constructor(defaultSections: string[] = [
-    "properties", "buttons", "daily-tasks", "daily-projects", "area-tree", "relations"
+    "properties", "buttons", "daily-tasks", "area-tree", "relations"
   ]) {
     this.collapsedSections = new Map(defaultSections.map(id => [id, false]));
   }

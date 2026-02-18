@@ -47,7 +47,6 @@ describe("ExocortexSettingTab", () => {
         layoutVisible: true,
         showPropertiesSection: true,
         showArchivedAssets: false,
-        showDailyNoteProjects: true,
         useDynamicPropertyFields: false,
         showLabelsInTabTitles: true,
         displayNameTemplate: "{{exo__Asset_label}}",
@@ -129,8 +128,8 @@ describe("ExocortexSettingTab", () => {
       settingTab.display();
 
       expect(mockContainerEl.empty).toHaveBeenCalled();
-      // 12 original settings (removed showLabelsInFileExplorer, ontology dropdown; kept autoAdjustPlannedEndTimestamp Issue #2142) + 3 headings + 1 default template + 6 per-class templates + 5 status emojis + 1 reset button + 3 webhook settings (heading, toggle, add button) = 31
-      expect(MockSetting).toHaveBeenCalledTimes(31);
+      // 11 original settings (removed showLabelsInFileExplorer, ontology dropdown, showDailyNoteProjects; kept autoAdjustPlannedEndTimestamp Issue #2142) + 3 headings + 1 default template + 6 per-class templates + 5 status emojis + 1 reset button + 3 webhook settings (heading, toggle, add button) = 30
+      expect(MockSetting).toHaveBeenCalledTimes(30);
     });
 
     it("should render layout visibility toggle as first setting", () => {
@@ -341,81 +340,12 @@ describe("ExocortexSettingTab", () => {
       expect(mockPlugin.refreshLayout).toHaveBeenCalled();
     });
 
-    it("should render Daily Note Projects toggle", () => {
-      settingTab.display();
-
-      const fourthSetting = (MockSetting as jest.Mock).mock.results[3].value;
-      expect(fourthSetting.setName).toHaveBeenCalledWith("Show projects in daily notes");
-      expect(fourthSetting.setDesc).toHaveBeenCalledWith(
-        "Display the projects section in the layout for daily notes"
-      );
-    });
-
-    it("should handle Daily Note Projects toggle change", async () => {
-      let toggleCallbacks: any[] = [];
-      MockSetting.mockImplementation((containerEl: any) => {
-        const setting = {
-          containerEl,
-          setName: jest.fn().mockReturnThis(),
-          setDesc: jest.fn().mockReturnThis(),
-          setHeading: jest.fn().mockReturnThis(),
-          addDropdown: jest.fn().mockReturnThis(),
-          addToggle: jest.fn().mockImplementation((callback) => {
-            const toggle = {
-              setValue: jest.fn().mockReturnThis(),
-              onChange: jest.fn().mockReturnThis(),
-            };
-            toggleCallbacks.push({ toggle, callback, onChange: null });
-            toggle.onChange.mockImplementation((cb: any) => {
-              toggleCallbacks[toggleCallbacks.length - 1].onChange = cb;
-              return toggle;
-            });
-            callback(toggle);
-            return setting;
-          }),
-          addText: jest.fn().mockImplementation((callback) => {
-            const text = {
-              setPlaceholder: jest.fn().mockReturnThis(),
-              setValue: jest.fn().mockReturnThis(),
-              onChange: jest.fn().mockReturnThis(),
-            };
-            callback(text);
-            return setting;
-          }),
-          addButton: jest.fn().mockImplementation((callback) => {
-            const button = {
-              setButtonText: jest.fn().mockReturnThis(),
-              onClick: jest.fn().mockReturnThis(),
-              setCta: jest.fn().mockReturnThis(),
-            };
-            callback(button);
-            return setting;
-          }),
-        };
-        return setting;
-      });
-
-      settingTab.display();
-
-      // Fourth setting's toggle (Daily Note Projects)
-      const dailyProjectsToggle = toggleCallbacks[3];
-      expect(dailyProjectsToggle.toggle.setValue).toHaveBeenCalledWith(true);
-
-      if (dailyProjectsToggle.onChange) {
-        await dailyProjectsToggle.onChange(false);
-      }
-
-      expect(mockPlugin.settings.showDailyNoteProjects).toBe(false);
-      expect(mockPlugin.saveSettings).toHaveBeenCalled();
-      expect(mockPlugin.refreshLayout).toHaveBeenCalled();
-    });
-
     it("should render Dynamic Property Fields toggle", () => {
       settingTab.display();
 
-      const fifthSetting = (MockSetting as jest.Mock).mock.results[4].value;
-      expect(fifthSetting.setName).toHaveBeenCalledWith("Use dynamic property fields");
-      expect(fifthSetting.setDesc).toHaveBeenCalledWith(
+      const fourthSetting = (MockSetting as jest.Mock).mock.results[3].value;
+      expect(fourthSetting.setName).toHaveBeenCalledWith("Use dynamic property fields");
+      expect(fourthSetting.setDesc).toHaveBeenCalledWith(
         "Generate modal fields from ontology (experimental)"
       );
     });
@@ -466,8 +396,8 @@ describe("ExocortexSettingTab", () => {
 
       settingTab.display();
 
-      // Fifth setting's toggle (Dynamic Property Fields)
-      const dynamicFieldsToggle = toggleCallbacks[4];
+      // Fourth setting's toggle (Dynamic Property Fields)
+      const dynamicFieldsToggle = toggleCallbacks[3];
       expect(dynamicFieldsToggle.toggle.setValue).toHaveBeenCalledWith(false);
 
       if (dynamicFieldsToggle.onChange) {

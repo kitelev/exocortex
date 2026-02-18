@@ -17,7 +17,7 @@ describe("SectionStateManager", () => {
     it("should initialize with default sections as not collapsed", () => {
       const defaultSections = [
         "properties", "buttons", "daily-tasks",
-        "daily-projects", "area-tree", "relations"
+        "area-tree", "relations"
       ];
 
       for (const section of defaultSections) {
@@ -319,9 +319,9 @@ describe("SectionStateManager", () => {
         }
       });
 
-      manager.renderHeader(container, "daily-projects", "Daily Projects", mockEventManager);
+      manager.renderHeader(container, "area-tree", "Area Tree", mockEventManager);
 
-      expect(manager.isCollapsed("daily-projects")).toBe(false);
+      expect(manager.isCollapsed("area-tree")).toBe(false);
 
       const mockEvent = {
         key: " ",
@@ -331,7 +331,7 @@ describe("SectionStateManager", () => {
       keydownHandler(mockEvent);
 
       expect(mockEvent.preventDefault).toHaveBeenCalled();
-      expect(manager.isCollapsed("daily-projects")).toBe(true);
+      expect(manager.isCollapsed("area-tree")).toBe(true);
     });
 
     it("should not toggle on other keys", () => {

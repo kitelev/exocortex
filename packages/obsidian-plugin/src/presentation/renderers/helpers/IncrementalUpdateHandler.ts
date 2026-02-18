@@ -6,7 +6,6 @@ import { ReactRenderer } from '@plugin/presentation/utils/ReactRenderer';
 import { ActionButtonsGroup } from '@plugin/presentation/components/ActionButtonsGroup';
 import { ButtonGroupsBuilder } from '@plugin/presentation/builders/ButtonGroupsBuilder';
 import { DailyTasksRenderer } from '@plugin/presentation/renderers/DailyTasksRenderer';
-import { DailyProjectsRenderer } from '@plugin/presentation/renderers/DailyProjectsRenderer';
 import { PropertiesRenderer } from '@plugin/presentation/renderers/layout/PropertiesRenderer';
 import { AreaTreeRenderer } from '@plugin/presentation/renderers/layout/AreaTreeRenderer';
 import { RelationsRenderer, UniversalLayoutConfig } from '@plugin/presentation/renderers/layout/RelationsRenderer';
@@ -19,7 +18,6 @@ interface RendererDependencies {
   propertiesRenderer: PropertiesRenderer;
   buttonGroupsBuilder: ButtonGroupsBuilder;
   dailyTasksRenderer: DailyTasksRenderer;
-  dailyProjectsRenderer: DailyProjectsRenderer;
   areaTreeRenderer: AreaTreeRenderer;
   relationsRenderer: RelationsRenderer;
   reactRenderer: ReactRenderer;
@@ -52,7 +50,6 @@ export class IncrementalUpdateHandler {
     [LayoutSection.PROPERTIES]: ".exocortex-properties-section",
     [LayoutSection.BUTTONS]: ".exocortex-buttons-section",
     [LayoutSection.DAILY_TASKS]: ".exocortex-daily-tasks-section",
-    [LayoutSection.DAILY_PROJECTS]: ".exocortex-daily-projects-section",
     [LayoutSection.AREA_TREE]: ".exocortex-area-tree-section",
     [LayoutSection.RELATIONS]: ".exocortex-assets-relations",
   };
@@ -168,7 +165,6 @@ export class IncrementalUpdateHandler {
         await this.updateButtons(rootContainer, container, file);
         break;
       case LayoutSection.DAILY_TASKS:
-      case LayoutSection.DAILY_PROJECTS:
       case LayoutSection.AREA_TREE:
       case LayoutSection.RELATIONS:
         await this.updateRelationSection(rootContainer, container, file, section, config, renderHeader);
@@ -226,10 +222,6 @@ export class IncrementalUpdateHandler {
       case LayoutSection.DAILY_TASKS:
         await this.deps.dailyTasksRenderer.render(
           parent, file, renderHeader, ssm.isCollapsed("daily-tasks"));
-        break;
-      case LayoutSection.DAILY_PROJECTS:
-        await this.deps.dailyProjectsRenderer.render(
-          parent, file, renderHeader, ssm.isCollapsed("daily-projects"));
         break;
       case LayoutSection.AREA_TREE:
         await this.deps.areaTreeRenderer.render(

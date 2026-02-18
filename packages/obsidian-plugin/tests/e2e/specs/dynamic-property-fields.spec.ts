@@ -32,7 +32,6 @@ test.describe("Dynamic Property Fields E2E", () => {
       showEffortArea: false,
       showEffortVotes: false,
       showFullDateInEffortTimes: false,
-      showDailyNoteProjects: true,
       useDynamicPropertyFields: true, // Enable dynamic fields
     };
 
@@ -51,7 +50,6 @@ test.describe("Dynamic Property Fields E2E", () => {
       showEffortArea: false,
       showEffortVotes: false,
       showFullDateInEffortTimes: false,
-      showDailyNoteProjects: true,
       useDynamicPropertyFields: false, // Disable dynamic fields
     };
 
@@ -443,7 +441,6 @@ test.describe("Dynamic Property Fields - Feature Toggle", () => {
       showEffortArea: false,
       showEffortVotes: false,
       showFullDateInEffortTimes: false,
-      showDailyNoteProjects: true,
       useDynamicPropertyFields: false, // Disabled
     };
 

@@ -29,15 +29,14 @@ describe("PropertyDependencyResolver", () => {
       expect(sections).toHaveLength(3);
     });
 
-    it("should map exo__Asset_isArchived to Properties + Buttons + Daily Tasks + Daily Projects + Relations", () => {
+    it("should map exo__Asset_isArchived to Properties + Buttons + Daily Tasks + Relations", () => {
       const sections = resolver.getAffectedSections(["exo__Asset_isArchived"]);
 
       expect(sections).toContain(LayoutSection.PROPERTIES);
       expect(sections).toContain(LayoutSection.BUTTONS);
       expect(sections).toContain(LayoutSection.DAILY_TASKS);
-      expect(sections).toContain(LayoutSection.DAILY_PROJECTS);
       expect(sections).toContain(LayoutSection.RELATIONS);
-      expect(sections).toHaveLength(5);
+      expect(sections).toHaveLength(4);
     });
 
     it("should map timestamp properties to Properties only", () => {
@@ -52,14 +51,13 @@ describe("PropertyDependencyResolver", () => {
   });
 
   describe("Effort properties (ems__Effort_)", () => {
-    it("should map ems__Effort_status to Properties + Buttons + Daily Tasks + Daily Projects", () => {
+    it("should map ems__Effort_status to Properties + Buttons + Daily Tasks", () => {
       const sections = resolver.getAffectedSections(["ems__Effort_status"]);
 
       expect(sections).toContain(LayoutSection.PROPERTIES);
       expect(sections).toContain(LayoutSection.BUTTONS);
       expect(sections).toContain(LayoutSection.DAILY_TASKS);
-      expect(sections).toContain(LayoutSection.DAILY_PROJECTS);
-      expect(sections).toHaveLength(4);
+      expect(sections).toHaveLength(3);
     });
 
     it("should map ems__Effort_votes to Properties + Daily Tasks", () => {
@@ -78,13 +76,12 @@ describe("PropertyDependencyResolver", () => {
       expect(sections).toHaveLength(2);
     });
 
-    it("should map ems__Effort_area to Properties + Daily Tasks + Daily Projects", () => {
+    it("should map ems__Effort_area to Properties + Daily Tasks", () => {
       const sections = resolver.getAffectedSections(["ems__Effort_area"]);
 
       expect(sections).toContain(LayoutSection.PROPERTIES);
       expect(sections).toContain(LayoutSection.DAILY_TASKS);
-      expect(sections).toContain(LayoutSection.DAILY_PROJECTS);
-      expect(sections).toHaveLength(3);
+      expect(sections).toHaveLength(2);
     });
 
     it("should map ems__Effort_parent to Properties + Relations", () => {
@@ -145,15 +142,14 @@ describe("PropertyDependencyResolver", () => {
   });
 
   describe("Project properties (ems__Project_)", () => {
-    it("should map ems__Project_blockedBy to Properties + Daily Projects + Relations", () => {
+    it("should map ems__Project_blockedBy to Properties + Relations", () => {
       const sections = resolver.getAffectedSections([
         "ems__Project_blockedBy",
       ]);
 
       expect(sections).toContain(LayoutSection.PROPERTIES);
-      expect(sections).toContain(LayoutSection.DAILY_PROJECTS);
       expect(sections).toContain(LayoutSection.RELATIONS);
-      expect(sections).toHaveLength(3);
+      expect(sections).toHaveLength(2);
     });
 
     it("should map ems__Project_blocks to Properties + Relations", () => {
@@ -166,13 +162,12 @@ describe("PropertyDependencyResolver", () => {
   });
 
   describe("Daily Note properties (pn__DailyNote_)", () => {
-    it("should map pn__DailyNote_day to Properties + Daily Tasks + Daily Projects", () => {
+    it("should map pn__DailyNote_day to Properties + Daily Tasks", () => {
       const sections = resolver.getAffectedSections(["pn__DailyNote_day"]);
 
       expect(sections).toContain(LayoutSection.PROPERTIES);
       expect(sections).toContain(LayoutSection.DAILY_TASKS);
-      expect(sections).toContain(LayoutSection.DAILY_PROJECTS);
-      expect(sections).toHaveLength(3);
+      expect(sections).toHaveLength(2);
     });
   });
 
@@ -234,8 +229,7 @@ describe("PropertyDependencyResolver", () => {
       expect(sections).toContain(LayoutSection.PROPERTIES);
       expect(sections).toContain(LayoutSection.BUTTONS);
       expect(sections).toContain(LayoutSection.DAILY_TASKS);
-      expect(sections).toContain(LayoutSection.DAILY_PROJECTS);
-      expect(sections).toHaveLength(4);
+      expect(sections).toHaveLength(3);
     });
 
     it("should deduplicate sections when multiple properties affect same section", () => {
@@ -263,10 +257,9 @@ describe("PropertyDependencyResolver", () => {
       expect(sections).toContain(LayoutSection.PROPERTIES);
       expect(sections).toContain(LayoutSection.BUTTONS);
       expect(sections).toContain(LayoutSection.DAILY_TASKS);
-      expect(sections).toContain(LayoutSection.DAILY_PROJECTS);
       expect(sections).toContain(LayoutSection.AREA_TREE);
       expect(sections).toContain(LayoutSection.RELATIONS);
-      expect(sections).toHaveLength(6);
+      expect(sections).toHaveLength(5);
     });
   });
 

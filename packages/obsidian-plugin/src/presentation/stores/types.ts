@@ -28,7 +28,6 @@ export interface UIStore extends UISettings {
 
 export interface TableSortState {
   dailyTasks: SortState;
-  dailyProjects: SortState;
   assetRelations: SortState;
   assetProperties: SortState;
 }
