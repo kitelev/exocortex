@@ -136,6 +136,59 @@
 
 ---
 
+## Graph View Shows UUIDs Instead of Labels
+
+**Problem**: Graph View displays UUID filenames like `84e75603-0103-4594-8499-09dc404800b0` instead of readable labels.
+
+**Solutions**:
+
+1. **Enable Setting**: Settings → Exocortex → "Show labels in graph view" (ON)
+
+2. **Close and Reopen Graph**: After enabling setting, close Graph View tab and reopen
+   - Use Cmd/Ctrl + G (local graph) or "Open graph view" command
+
+3. **Check Label Property**: Notes must have `exo__Asset_label` in frontmatter
+   ```yaml
+   exo__Asset_label: "My Project"
+   ```
+
+4. **Reload Plugin**: Settings → Community plugins → Exocortex → Toggle off/on
+
+5. **Check Both Graph Types**:
+   - **Global graph** (full vault): May have different behavior than local graph
+   - **Local graph** (current note): Should show immediate connections
+
+**Note**: Graph View labels update when you open the graph, not automatically when settings change.
+
+---
+
+## Wikilinks in Tables Show UUIDs
+
+**Problem**: Wikilinks inside markdown tables display raw UUIDs while links in regular paragraphs show labels.
+
+**Example**:
+```markdown
+| Link | Shows UUID? |
+|------|-------------|
+| [[uuid-here]] | ❌ Shows UUID |
+
+But [[uuid-here]] in text shows label correctly ✅
+```
+
+**Solutions**:
+
+1. **Update Plugin**: Ensure you're on latest version (v14.81.0+)
+   - Settings → Community plugins → Check for updates
+
+2. **Switch View Mode**: Toggle between Reading/Live Preview and back
+   - Press Cmd/Ctrl + E twice
+
+3. **Reload Layout**: Cmd/Ctrl + P → "Reload Layout"
+
+**Note**: This was fixed in version 14.81.0. Update plugin if experiencing this issue.
+
+---
+
 ## SPARQL Queries Failing
 
 **Problem**: SPARQL code blocks show errors.

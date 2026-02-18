@@ -7724,3 +7724,418 @@ When implementing wikilink features:
 - **Tests added**: 4 regression tests covering format variations
 
 **Reference**: Issue #2139, PR #2140 - Block reference Reading View fix (41 steps, February 2026)
+
+---
+
+## FunctionReplacer Pattern for Obsidian Patches
+
+**When to use**: Monkey-patching Obsidian internal methods (Graph View, File Explorer, etc.)
+
+### Problem: Direct Prototype Assignment Fails
+
+```typescript
+// ❌ WRONG: Direct assignment has multiple failure modes
+GraphNode.prototype.getDisplayText = function() {
+  return this.getLabel() || originalGetDisplayText.call(this);
+};
+
+// Problems:
+// 1. Timing: Nodes created BEFORE patch don't get updated
+// 2. Multiple prototypes: Global vs Local graph may have different classes
+// 3. No cleanup: Can't restore original on plugin disable
+// 4. Lost context: Patch doesn't know when to apply vs bypass
+```
+
+### Solution: FunctionReplacer Factory
+
+```typescript
+// ✅ CORRECT: Factory pattern with lifecycle management
+type Restorer = () => void;
+
+function replacePrototypeMethod<T extends object>(
+  proto: T,
+  methodName: keyof T,
+  factory: (original: T[keyof T]) => T[keyof T]
+): Restorer {
+  const original = proto[methodName];
+  proto[methodName] = factory(original);
+  return () => {
+    proto[methodName] = original;
+  };
+}
+
+// Usage in GraphViewPatch
+private restorers: Map<object, () => void> = new Map();
+
+private patchProto(proto: object): void {
+  if (this.restorers.has(proto)) return;  // Already patched
+
+  const restorer = replacePrototypeMethod(
+    proto as GraphNode,
+    "getDisplayText",
+    (original) => {
+      const isEnabled = () => this.enabled;
+      const getLabel = (id: string) => this.getAssetLabel(id);
+      return function (this: GraphNode): string {
+        if (!isEnabled()) return (original as () => string).call(this);
+        return getLabel(this.id) ?? (original as () => string).call(this);
+      };
+    }
+  );
+  this.restorers.set(proto, restorer);
+}
+
+private unpatchAll(): void {
+  this.restorers.forEach((restore) => restore());
+  this.restorers.clear();
+}
+```
+
+### Key Benefits
+
+| Aspect | Direct Assignment | FunctionReplacer |
+|--------|-------------------|------------------|
+| Cleanup | Manual tracking | Automatic restorer |
+| Multiple prototypes | Fails silently | Maps each prototype |
+| Enable/disable | Re-implements logic | Calls restorer |
+| Original reference | Lost on reassign | Preserved in closure |
+| Testing | Hard to mock | Can inject factory |
+
+### Handling Multiple Prototypes (Graph View Example)
+
+```typescript
+// Obsidian may use different classes for Global vs Local graph
+private patchAllGraphViews(): void {
+  const prototypes = new Set<object>();
+
+  for (const viewType of ["graph", "localgraph"] as const) {
+    for (const leaf of this.getGraphLeaves(viewType)) {
+      const view = leaf.view as GraphView;
+      const renderer = view?.renderer as GraphRenderer;
+
+      // Each node may have a different prototype!
+      for (const node of renderer?.nodes ?? []) {
+        const proto = Object.getPrototypeOf(node);
+        if (!prototypes.has(proto)) {
+          prototypes.add(proto);
+          this.patchProto(proto);
+        }
+      }
+    }
+  }
+}
+```
+
+### Forced Re-render After Patching
+
+Patching the prototype only affects **future** method calls. Nodes already rendered need a re-render:
+
+```typescript
+private forceRedrawGraphView(leaf: WorkspaceLeaf): void {
+  const view = leaf.view as unknown as GraphView;
+  const renderer = view?.renderer as unknown as Record<string, unknown>;
+  if (!renderer) return;
+
+  // Strategy 1: Internal reset if available
+  if (typeof renderer["onIframeLoad"] === "function") {
+    (renderer["onIframeLoad"] as () => void)();
+    return;
+  }
+
+  // Strategy 2: Trigger layout-change event
+  this.app.workspace.trigger("layout-change");
+}
+```
+
+### Common Pitfalls
+
+- **setTimeout(100ms) is fragile**: Use event-driven triggers instead
+- **Single patch point**: Global vs Local graph views may differ
+- **Missing re-render**: Patching alone doesn't update existing nodes
+- **Unit tests pass, production fails**: Mocks hide timing/lifecycle issues
+
+**Reference**: Issues #2149, #2151, #2157 - Graph View label fixes (17-150 steps, February 2026)
+
+---
+
+## Obsidian Patch Lifecycle Pattern
+
+**When to use**: Any feature that patches Obsidian internals
+
+### Full Lifecycle Structure
+
+```typescript
+export class FeaturePatch {
+  private enabled = false;
+  private restorers: Map<object, () => void> = new Map();
+  private eventRefs: EventRef[] = [];
+
+  enable(): void {
+    if (this.enabled) return;
+    this.enabled = true;
+
+    // 1. Register event listeners
+    this.registerEvents();
+
+    // 2. Apply patches
+    this.patchAll();
+
+    // 3. Force initial render
+    this.refreshAll();
+  }
+
+  disable(): void {
+    if (!this.enabled) return;
+    this.enabled = false;
+
+    // 1. Restore all patches
+    this.restorers.forEach(restore => restore());
+    this.restorers.clear();
+
+    // 2. Unregister events
+    this.eventRefs.forEach(ref =>
+      this.app.workspace.offref(ref)
+    );
+    this.eventRefs.clear();
+
+    // 3. Force re-render to show original state
+    this.refreshAll();
+  }
+
+  private registerEvents(): void {
+    // Debounced handler for layout changes
+    const debouncedRefresh = debounce(() => {
+      this.patchAll();
+      this.refreshAll();
+    }, 200);
+
+    this.eventRefs.push(
+      this.app.workspace.on("layout-change", debouncedRefresh)
+    );
+
+    // Metadata changes may affect labels
+    this.eventRefs.push(
+      this.app.metadataCache.on("changed", (file) => {
+        // Only refresh if relevant file changed
+        if (this.isRelevantFile(file)) {
+          this.refreshAll();
+        }
+      })
+    );
+  }
+}
+```
+
+### Enable/Disable Toggle in Settings
+
+```typescript
+// ExocortexSettingTab.ts
+new Setting(containerEl)
+  .setName("Show labels in graph view")
+  .setDesc("Display exo__Asset_label instead of UUID filenames")
+  .addToggle(toggle => toggle
+    .setValue(this.plugin.settings.showLabelsInGraphView)
+    .onChange(async (value) => {
+      this.plugin.settings.showLabelsInGraphView = value;
+      await this.plugin.saveSettings();
+
+      // CRITICAL: Toggle the patch state
+      if (value) {
+        this.plugin.graphViewPatch.enable();
+      } else {
+        this.plugin.graphViewPatch.disable();
+      }
+    })
+  );
+```
+
+### Common Issues and Solutions
+
+| Issue | Symptom | Solution |
+|-------|---------|----------|
+| Race condition at startup | Feature doesn't work on first open | Use `onLayoutReady()` or debounced enable |
+| Toggle doesn't take effect | Need to close/reopen view | Call `refreshAll()` after enable/disable |
+| Events leak on disable | Memory bloat, stale handlers | Store `EventRef[]`, call `offref()` |
+| Patch applied twice | Duplicate labels, errors | Guard with `restorers.has(proto)` |
+
+**Reference**: Issues #2149, #2157 - Graph View patch lifecycle (February 2026)
+
+---
+
+## Feature Removal Sprint Pattern
+
+**When to use**: Removing deprecated settings and their associated logic across architecture layers
+
+### Pattern Description
+
+Removing a setting like "Show projects in daily notes" touches 6+ architecture layers. A systematic approach prevents orphaned code and missed cleanup.
+
+### Removal Checklist by Layer
+
+```
+Domain Layer
+  □ settings/ExocortexSettings.ts - Remove property from interface + DEFAULT_SETTINGS
+
+Presentation Layer
+  □ settings/ExocortexSettingTab.ts - Remove toggle UI
+  □ renderers/*Renderer.ts - Remove renderer file entirely
+  □ components/*Table.tsx - Remove component file entirely
+  □ stores/tableSortStore.ts - Remove sort state
+  □ renderers/UniversalLayoutRenderer.ts - Remove import, field, instantiation, guard
+
+Application Layer
+  □ services/PropertyDependencyResolver.ts - Remove enum value + all mappings
+  □ services/IncrementalUpdateHandler.ts - Remove section handling + CSS selector
+
+Infrastructure Layer
+  □ CSS files - Remove section classes (if any)
+
+Tests Layer
+  □ Unit tests - Remove or update affected test files
+  □ Component tests - Delete component spec files
+  □ E2E tests - Remove integration specs
+```
+
+### Search Commands Before Removal
+
+```bash
+# Find all references to the setting
+grep -r "showDailyNoteProjects" packages/obsidian-plugin/src/
+
+# Find all references to the renderer/component
+grep -r "DailyProjectsRenderer\|DailyProjectsTable" packages/obsidian-plugin/
+
+# Find enum usage
+grep -r "DAILY_PROJECTS\|daily-projects" packages/obsidian-plugin/src/
+```
+
+### Real-World Example: Daily Projects Removal (#2144)
+
+**Scope**: 147 steps, 2323 lines deleted
+
+| File | Change |
+|------|--------|
+| `ExocortexSettings.ts` | Removed `showDailyNoteProjects: boolean` |
+| `ExocortexSettingTab.ts` | Removed toggle (lines 123-136) |
+| `DailyProjectsRenderer.ts` | **Deleted entire file** |
+| `DailyProjectsTable.tsx` | **Deleted entire file** |
+| `PropertyDependencyResolver.ts` | Removed 5 enum mappings |
+| `IncrementalUpdateHandler.ts` | Removed section case |
+| `SectionStateManager.ts` | Removed from known sections |
+| `tableSortStore.ts` | Removed `dailyProjects` state |
+| `UniversalLayoutRenderer.ts` | Removed import, field, instantiation |
+| Tests (7 files) | Updated or deleted |
+
+### February 2026 Sprint: 3 Settings Removed
+
+| Issue | Setting Removed | Steps | Deletions |
+|-------|-----------------|-------|-----------|
+| #2144 | Show projects in daily notes | 147 | 2323 lines |
+| #2145 | Default ontology asset | 70 | 608 lines |
+| #2148 | Show labels in file explorer | 60 | 789 lines |
+
+**Total**: 277 steps, 3720 lines deleted in one day
+
+### Benefits of Batch Removal
+
+- **Warm context**: Same patterns, same file locations
+- **Lower error rate**: Each removal follows identical checklist
+- **Clean commits**: Each removal is atomic (one setting per PR)
+- **Quick reviews**: Deletions are easy to verify
+
+**Reference**: Issues #2144, #2145, #2148 - Feature Removal Sprint (February 2026)
+
+---
+
+## MutationObserver DOM Coverage Pattern
+
+**When to use**: Patching DOM elements dynamically added by Obsidian
+
+### Problem: Observer Misses Nested Elements
+
+```typescript
+// ❌ INCOMPLETE: Misses links inside added tables/containers
+this.observer = new MutationObserver((mutations) => {
+  for (const mutation of mutations) {
+    for (const node of mutation.addedNodes) {
+      if (node instanceof HTMLElement) {
+        // Only gets DIRECT links, not nested ones
+        const links = node.querySelectorAll('a.internal-link');
+        links.forEach(link => this.patchLink(link));
+      }
+    }
+  }
+});
+```
+
+### Solution: Check Both Node and Descendants
+
+```typescript
+// ✅ COMPLETE: Handles direct matches AND nested elements
+this.observer = new MutationObserver((mutations) => {
+  for (const mutation of mutations) {
+    for (const node of mutation.addedNodes) {
+      if (node instanceof HTMLElement) {
+        // Case 1: Node IS the target element (e.g., link inside <td>)
+        if (node.matches('a.internal-link')) {
+          this.patchLink(node as HTMLAnchorElement);
+        }
+
+        // Case 2: Node CONTAINS target elements (tables, divs, etc.)
+        node.querySelectorAll('a.internal-link').forEach(link => {
+          this.patchLink(link as HTMLAnchorElement);
+        });
+      }
+    }
+  }
+});
+```
+
+### Observer Configuration
+
+```typescript
+this.observer.observe(container, {
+  childList: true,    // Watch for added/removed children
+  subtree: true,      // Required for nested elements (tables!)
+  characterData: false, // Usually not needed
+  attributes: false,  // Only if watching attribute changes
+});
+```
+
+### Common Obsidian Rendering Contexts
+
+| Context | DOM Structure | Special Handling |
+|---------|---------------|------------------|
+| Paragraph | `<p><a class="internal-link">` | Standard `querySelectorAll` |
+| List item | `<li><a class="internal-link">` | Standard `querySelectorAll` |
+| Table cell | `<td><a class="internal-link">` | Requires `subtree: true` |
+| Callout | `<div class="callout"><a>` | Nested container |
+| Embedded note | `<div class="markdown-embed">` | Separate observer may fire |
+
+### Testing DOM Coverage
+
+```typescript
+describe("MutationObserver coverage", () => {
+  it("should patch links in paragraph", async () => {
+    container.innerHTML = '<p><a class="internal-link">Link</a></p>';
+    await waitForObserver();
+    expect(container.querySelector('a')?.textContent).toBe("Patched");
+  });
+
+  it("should patch links in table cell", async () => {
+    container.innerHTML = '<table><tr><td><a class="internal-link">Link</a></td></tr></table>';
+    await waitForObserver();
+    expect(container.querySelector('a')?.textContent).toBe("Patched");
+  });
+
+  it("should patch link added directly (not as child)", async () => {
+    const link = document.createElement('a');
+    link.className = 'internal-link';
+    container.appendChild(link);
+    await waitForObserver();
+    expect(link.textContent).toBe("Patched");
+  });
+});
+```
+
+**Reference**: Issue #2153 - Wikilinks in tables not resolved (56 steps, February 2026)
