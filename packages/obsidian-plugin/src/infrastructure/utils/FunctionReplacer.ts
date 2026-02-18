@@ -126,12 +126,11 @@ export class FunctionReplacer<
 
     // Replace with wrapper that calls our implementation
     // Using function() syntax (not arrow) to preserve `this` context of the target
-    this.target[this.method] = function (
-      this: Target,
-      ...callArgs: unknown[]
-    ): unknown {
-      return self.implementation.call(this, self.args, callArgs, self.vanilla);
-    } as unknown as Target[Method];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    this.target[this.method] = function (this: Target, ...callArgs: any[]): any {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return self.implementation.call(this, self.args, callArgs as any, self.vanilla as any);
+    } as Target[Method];
 
     return true;
   }

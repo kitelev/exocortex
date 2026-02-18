@@ -215,10 +215,11 @@ export class GraphViewPatch {
       const proto = Object.getPrototypeOf(node) as GraphNode;
 
       // Create the FunctionReplacer
+      const patchArgs: GraphPatchArgs = { patch: this };
       this.replacer = FunctionReplacer.create(
         proto,
         "getDisplayText",
-        { patch: this },
+        patchArgs,
         function (args, _defaultArgs, vanilla) {
           // `this` is the GraphNode instance
           const label = args.patch.getAssetLabel(this.id);
@@ -227,7 +228,9 @@ export class GraphViewPatch {
       );
 
       // Enable the replacement
-      this.replacer.enable();
+      if (this.replacer) {
+        this.replacer.enable();
+      }
 
       // Refresh all graph views to show new labels
       this.refreshAllGraphViews();
