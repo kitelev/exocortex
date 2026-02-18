@@ -136,7 +136,6 @@ export interface ExocortexSettings {
   showEffortArea: boolean;
   showEffortVotes: boolean;
   showFullDateInEffortTimes: boolean;
-  useDynamicPropertyFields: boolean;
   showLabelsInTabTitles: boolean;
   /** Apply display name templates to links in Obsidian's Properties block */
   showLabelsInProperties: boolean;
@@ -172,7 +171,6 @@ export const DEFAULT_SETTINGS: ExocortexSettings = {
   showEffortArea: false,
   showEffortVotes: false,
   showFullDateInEffortTimes: false,
-  useDynamicPropertyFields: false,
   showLabelsInTabTitles: true,
   showLabelsInProperties: true,
   showLabelsInBody: true,

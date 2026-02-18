@@ -20,16 +20,13 @@ import {
   LoggingService,
 } from "exocortex";
 import { LabelInputModal } from "../../../src/presentation/modals/LabelInputModal";
-import { DynamicAssetCreationModal } from "../../../src/presentation/modals/DynamicAssetCreationModal";
 import { ObsidianVaultAdapter } from "../../../src/adapters/ObsidianVaultAdapter";
-import { ExocortexPluginInterface } from "../../../src/types";
 
 jest.mock("obsidian", () => ({
   ...jest.requireActual("obsidian"),
   Notice: jest.fn(),
 }));
 jest.mock("../../../src/presentation/modals/LabelInputModal");
-jest.mock("../../../src/presentation/modals/DynamicAssetCreationModal");
 jest.mock("exocortex", () => ({
   ...jest.requireActual("exocortex"),
   canCreateInstance: jest.fn(),
@@ -94,9 +91,7 @@ describe("CreateInstanceCommand Error Handling", () => {
     } as unknown as jest.Mocked<ObsidianVaultAdapter>;
 
     mockPlugin = {
-      settings: {
-        useDynamicPropertyFields: false,
-      },
+      settings: {},
     } as unknown as jest.Mocked<ExocortexPluginInterface>;
 
     mockFile = {
@@ -166,29 +161,6 @@ describe("CreateInstanceCommand Error Handling", () => {
       expect(mockTaskCreationService.createTask).not.toHaveBeenCalled();
     });
 
-    it("should handle DynamicAssetCreationModal throwing error", async () => {
-      mockCanCreateInstance.mockReturnValue(true);
-      mockPlugin.settings.useDynamicPropertyFields = true;
-
-      (DynamicAssetCreationModal as jest.Mock).mockImplementation(() => ({
-        open: jest.fn(() => {
-          throw new Error("Dynamic modal failed to load schema");
-        }),
-      }));
-
-      const result = command.checkCallback(false, mockFile, mockContext);
-      expect(result).toBe(true);
-
-      await flushPromises();
-
-      expect(LoggingService.error).toHaveBeenCalledWith(
-        "Create instance error",
-        expect.any(Error)
-      );
-      expect(Notice).toHaveBeenCalledWith(
-        "Failed to create instance: Dynamic modal failed to load schema"
-      );
-    });
   });
 
   describe("Task Creation Service Error Handling", () => {
@@ -501,26 +473,6 @@ describe("CreateInstanceCommand Error Handling", () => {
       );
     });
 
-    it("should handle useDynamicPropertyFields being undefined", async () => {
-      mockCanCreateInstance.mockReturnValue(true);
-      // Settings exists but useDynamicPropertyFields is undefined
-      mockPlugin.settings = {} as any;
-      const createdFile = { basename: "new-instance", path: "new-instance.md" };
-      mockTaskCreationService.createTask.mockResolvedValue(createdFile as any);
-
-      (LabelInputModal as jest.Mock).mockImplementation((app, callback) => ({
-        open: jest.fn(() => {
-          setTimeout(() => callback({ label: "Test", taskSize: "small" }), 0);
-        }),
-      }));
-
-      // Should use nullish coalescing for useDynamicPropertyFields
-      command.checkCallback(false, mockFile, mockContext);
-      await flushPromises();
-
-      // Should fall back to LabelInputModal (dynamic fields false by default)
-      expect(LabelInputModal).toHaveBeenCalled();
-    });
   });
 
   describe("Timeout and Long-Running Operation Handling", () => {

@@ -8,16 +8,13 @@ import {
   AssetClass
 } from "exocortex";
 import { LabelInputModal } from "../../src/presentation/modals/LabelInputModal";
-import { DynamicAssetCreationModal } from "../../src/presentation/modals/DynamicAssetCreationModal";
 import { ObsidianVaultAdapter } from "../../src/adapters/ObsidianVaultAdapter";
-import { ExocortexPluginInterface } from "../../src/types";
 
 jest.mock("obsidian", () => ({
   ...jest.requireActual("obsidian"),
   Notice: jest.fn(),
 }));
 jest.mock("../../src/presentation/modals/LabelInputModal");
-jest.mock("../../src/presentation/modals/DynamicAssetCreationModal");
 jest.mock("exocortex", () => ({
   ...jest.requireActual("exocortex"),
   canCreateInstance: jest.fn(),
@@ -37,7 +34,6 @@ describe("CreateInstanceCommand", () => {
   let mockApp: jest.Mocked<App>;
   let mockTaskCreationService: jest.Mocked<TaskCreationService>;
   let mockVaultAdapter: jest.Mocked<ObsidianVaultAdapter>;
-  let mockPlugin: jest.Mocked<ExocortexPluginInterface>;
   let mockFile: jest.Mocked<TFile>;
   let mockContext: CommandVisibilityContext;
   let mockLeaf: jest.Mocked<WorkspaceLeaf>;
@@ -86,13 +82,6 @@ describe("CreateInstanceCommand", () => {
       toTFile: jest.fn().mockReturnValue(mockTFile),
     } as unknown as jest.Mocked<ObsidianVaultAdapter>;
 
-    // Create mock plugin with settings (toggle OFF by default)
-    mockPlugin = {
-      settings: {
-        useDynamicPropertyFields: false,
-      },
-    } as unknown as jest.Mocked<ExocortexPluginInterface>;
-
     // Create mock file
     mockFile = {
       path: "test-file.md",
@@ -108,7 +97,7 @@ describe("CreateInstanceCommand", () => {
     };
 
     // Create command instance
-    command = new CreateInstanceCommand(mockApp, mockTaskCreationService, mockVaultAdapter, mockPlugin);
+    command = new CreateInstanceCommand(mockApp, mockTaskCreationService, mockVaultAdapter);
   });
 
   describe("id and name", () => {
@@ -376,149 +365,5 @@ describe("CreateInstanceCommand", () => {
       expect(Notice).toHaveBeenCalledWith("Instance created: new-instance");
     });
 
-    it("should use DynamicAssetCreationModal when useDynamicPropertyFields is true", async () => {
-      mockCanCreateInstance.mockReturnValue(true);
-      // Enable dynamic property fields
-      mockPlugin.settings.useDynamicPropertyFields = true;
-
-      const createdFile = { basename: "new-instance", path: "new-instance.md" };
-      mockTaskCreationService.createTask.mockResolvedValue(createdFile as any);
-
-      // Mock DynamicAssetCreationModal to return label and propertyValues
-      (DynamicAssetCreationModal as jest.Mock).mockImplementation((app, className, callback) => ({
-        open: jest.fn(() => {
-          setTimeout(() => callback({
-            label: "Dynamic Instance",
-            taskSize: "medium",
-            openInNewTab: false,
-            propertyValues: { exo__Asset_label: "Dynamic Instance" }
-          }), 0);
-        }),
-      }));
-
-      const result = command.checkCallback(false, mockFile, mockContext);
-      expect(result).toBe(true);
-
-      // Wait for async execution
-      await flushPromises();
-
-      // Verify DynamicAssetCreationModal was used with correct class name
-      expect(DynamicAssetCreationModal).toHaveBeenCalledWith(
-        mockApp,
-        "Task",
-        expect.any(Function),
-        undefined, // schemaService (optional)
-      );
-      expect(LabelInputModal).not.toHaveBeenCalled();
-
-      expect(mockTaskCreationService.createTask).toHaveBeenCalledWith(
-        mockFile,
-        { key: "value" },
-        "Task",
-        "Dynamic Instance",
-        "medium"
-      );
-      expect(Notice).toHaveBeenCalledWith("Instance created: new-instance");
-    });
-
-    it("should use LabelInputModal when useDynamicPropertyFields is false", async () => {
-      mockCanCreateInstance.mockReturnValue(true);
-      // Disable dynamic property fields (default)
-      mockPlugin.settings.useDynamicPropertyFields = false;
-
-      const createdFile = { basename: "new-instance", path: "new-instance.md" };
-      mockTaskCreationService.createTask.mockResolvedValue(createdFile as any);
-
-      (LabelInputModal as jest.Mock).mockImplementation((app, callback) => ({
-        open: jest.fn(() => {
-          setTimeout(() => callback({ label: "Static Instance", taskSize: "small" }), 0);
-        }),
-      }));
-
-      const result = command.checkCallback(false, mockFile, mockContext);
-      expect(result).toBe(true);
-
-      // Wait for async execution
-      await flushPromises();
-
-      expect(LabelInputModal).toHaveBeenCalled();
-      expect(DynamicAssetCreationModal).not.toHaveBeenCalled();
-      expect(mockTaskCreationService.createTask).toHaveBeenCalled();
-    });
-
-    it("should use DynamicAssetCreationModal for ems__Effort class when toggle ON", async () => {
-      mockCanCreateInstance.mockReturnValue(true);
-      mockPlugin.settings.useDynamicPropertyFields = true;
-
-      // Use ems__Effort as the instance class
-      const effortContext = {
-        ...mockContext,
-        instanceClass: "ems__Effort",
-      };
-
-      const createdFile = { basename: "new-effort", path: "new-effort.md" };
-      mockTaskCreationService.createTask.mockResolvedValue(createdFile as any);
-
-      (DynamicAssetCreationModal as jest.Mock).mockImplementation((app, className, callback) => ({
-        open: jest.fn(() => {
-          setTimeout(() => callback({
-            label: "My Effort",
-            taskSize: null,
-            openInNewTab: false,
-            propertyValues: {}
-          }), 0);
-        }),
-      }));
-
-      const result = command.checkCallback(false, mockFile, effortContext);
-      expect(result).toBe(true);
-
-      // Wait for async execution
-      await flushPromises();
-
-      // Verify DynamicAssetCreationModal was used with ems__Effort class name
-      expect(DynamicAssetCreationModal).toHaveBeenCalledWith(
-        mockApp,
-        "ems__Effort",
-        expect.any(Function),
-        undefined, // schemaService (optional)
-      );
-
-      expect(mockTaskCreationService.createTask).toHaveBeenCalledWith(
-        mockFile,
-        { key: "value" },
-        "ems__Effort",
-        "My Effort",
-        null
-      );
-      expect(Notice).toHaveBeenCalledWith("Instance created: new-effort");
-    });
-
-    it("should handle DynamicAssetCreationModal cancellation", async () => {
-      mockCanCreateInstance.mockReturnValue(true);
-      mockPlugin.settings.useDynamicPropertyFields = true;
-
-      // Mock modal to return null (cancelled)
-      (DynamicAssetCreationModal as jest.Mock).mockImplementation((app, className, callback) => ({
-        open: jest.fn(() => {
-          setTimeout(() => callback({
-            label: null,
-            taskSize: null,
-            openInNewTab: false,
-            propertyValues: {}
-          }), 0);
-        }),
-      }));
-
-      const result = command.checkCallback(false, mockFile, mockContext);
-      expect(result).toBe(true);
-
-      // Wait for async execution
-      await flushPromises();
-
-      expect(DynamicAssetCreationModal).toHaveBeenCalled();
-      expect(mockTaskCreationService.createTask).not.toHaveBeenCalled();
-      expect(Notice).not.toHaveBeenCalled();
-    });
   });
 });
