@@ -63,9 +63,6 @@ export const DI_TOKENS = {
   AreaHierarchyBuilder: Symbol.for("AreaHierarchyBuilder"),
   URIConstructionService: Symbol.for("URIConstructionService"),
 
-  // Integration services
-  WebhookService: Symbol.for("WebhookService"),
-
   // Semantic search services
   EmbeddingService: Symbol.for("EmbeddingService"),
   VectorStore: Symbol.for("VectorStore"),

@@ -14,11 +14,9 @@ import { CommandManager } from "./application/services/CommandManager";
 import {
   ExocortexSettings,
   DEFAULT_SETTINGS,
-  type StoredWebhookConfig,
 } from "./domain/settings/ExocortexSettings";
 import { ExocortexSettingTab } from "./presentation/settings/ExocortexSettingTab";
-import { TaskStatusService, WebhookService, type WebhookDispatchResult, LoggingService } from "exocortex";
-import { WebhookDispatcher } from "./infrastructure/webhook";
+import { TaskStatusService, LoggingService } from "exocortex";
 import { SemanticSearchManager } from "./infrastructure/semantic-search";
 import { SemanticSearchModal } from "./presentation/modals/SemanticSearchModal";
 import { ObsidianVaultAdapter } from "./adapters/ObsidianVaultAdapter";
@@ -73,8 +71,6 @@ export default class ExocortexPlugin extends Plugin {
   private propertiesLinkPatch!: PropertiesLinkPatch;
   private bodyLinkPatch!: BodyLinkPatch;
   private graphViewPatch!: GraphViewPatch;
-  private webhookService!: WebhookService;
-  private webhookDispatcher!: WebhookDispatcher;
   private semanticSearchManager!: SemanticSearchManager;
 
   override async onload(): Promise<void> {
@@ -255,24 +251,6 @@ export default class ExocortexPlugin extends Plugin {
         }, 500);
       }
 
-      // Initialize Webhook integration
-      this.webhookService = new WebhookService();
-      this.webhookDispatcher = new WebhookDispatcher(this.app, this.webhookService);
-      this.initializeWebhooks();
-
-      // Register webhook event handlers
-      this.registerEvent(
-        this.app.vault.on("create", (file) => {
-          void this.webhookDispatcher.handleFileCreate(file);
-        }),
-      );
-
-      this.registerEvent(
-        this.app.vault.on("delete", (file) => {
-          void this.webhookDispatcher.handleFileDelete(file);
-        }),
-      );
-
       // Initialize Semantic Search
       this.semanticSearchManager = new SemanticSearchManager(
         this.app,
@@ -420,11 +398,6 @@ export default class ExocortexPlugin extends Plugin {
       this.graphViewPatch.cleanup();
     }
 
-    // Cleanup Webhook dispatcher
-    if (this.webhookDispatcher) {
-      this.webhookDispatcher.cleanup();
-    }
-
     // Cleanup Semantic Search manager
     if (this.semanticSearchManager) {
       this.semanticSearchManager.cleanup();
@@ -558,66 +531,6 @@ export default class ExocortexPlugin extends Plugin {
       this.graphViewPatch.disable();
       this.graphViewPatch.enable();
     }
-  }
-
-  /**
-   * Initialize webhooks from saved settings
-   */
-  private initializeWebhooks(): void {
-    const webhookSettings = this.settings.webhookSettings;
-    if (!webhookSettings) {
-      return;
-    }
-
-    // Register all saved webhooks
-    for (const webhook of webhookSettings.webhooks) {
-      try {
-        this.webhookService.registerWebhook(webhook);
-      } catch (error) {
-        this.logger.warn(`Failed to register webhook ${webhook.name}: ${String(error)}`);
-      }
-    }
-
-    // Enable dispatcher if webhooks are globally enabled
-    if (webhookSettings.enabled) {
-      this.webhookDispatcher.enable();
-    }
-  }
-
-  /**
-   * Toggle webhook integration on/off
-   * Called from settings when the global webhook toggle changes
-   */
-  toggleWebhooks(enabled: boolean): void {
-    if (enabled) {
-      this.webhookDispatcher.enable();
-    } else {
-      this.webhookDispatcher.disable();
-    }
-  }
-
-  /**
-   * Update a webhook configuration
-   * Called from settings when webhook details change
-   */
-  updateWebhookConfig(webhook: StoredWebhookConfig): void {
-    this.webhookService.updateWebhook(webhook.id, webhook);
-  }
-
-  /**
-   * Remove a webhook
-   * Called from settings when a webhook is deleted
-   */
-  removeWebhook(webhookId: string): void {
-    this.webhookService.unregisterWebhook(webhookId);
-  }
-
-  /**
-   * Test a webhook by sending a test event
-   * Called from settings to verify webhook configuration
-   */
-  async testWebhook(webhookId: string): Promise<WebhookDispatchResult> {
-    return this.webhookDispatcher.testWebhook(webhookId);
   }
 
   /**
@@ -1034,9 +947,6 @@ export default class ExocortexPlugin extends Plugin {
       }
 
       this.metadataCache.set(file.path, { ...metadata });
-
-      // Dispatch webhook events for metadata changes
-      await this.webhookDispatcher.handleMetadataChange(file);
     } catch (error) {
       this.logger.error(
         `Failed to handle metadata change for ${file.path}`,

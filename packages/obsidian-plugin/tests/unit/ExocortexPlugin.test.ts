@@ -201,7 +201,8 @@ describe("ExocortexPlugin", () => {
         "sparql",
         expect.any(Function)
       );
-      expect(plugin.registerEvent).toHaveBeenCalledTimes(12);
+      // 12 original events - 2 webhook events (file create, file delete) = 10 (Issue #2164)
+      expect(plugin.registerEvent).toHaveBeenCalledTimes(10);
       expect(mockLogger.info).toHaveBeenCalledWith("Exocortex Plugin loaded successfully");
     });
 
