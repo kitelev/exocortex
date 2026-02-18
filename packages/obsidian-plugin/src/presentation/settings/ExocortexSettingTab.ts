@@ -19,65 +19,10 @@ export class ExocortexSettingTab extends PluginSettingTab {
     this.plugin = plugin;
   }
 
-  private getOntologyAssets(): string[] {
-    const files = this.app.vault.getMarkdownFiles();
-    const ontologyAssets: string[] = [];
-
-    for (const file of files) {
-      const cache = this.app.metadataCache.getFileCache(file);
-      const frontmatter = cache?.frontmatter;
-
-      if (!frontmatter) continue;
-
-      // Check if file has exo__Instance_class containing exo__Ontology
-      const instanceClass = frontmatter.exo__Instance_class;
-      if (!instanceClass) continue;
-
-      const classArray = Array.isArray(instanceClass)
-        ? instanceClass
-        : [instanceClass];
-
-      const hasOntologyClass = classArray.some(
-        (cls: string) =>
-          cls === "exo__Ontology" ||
-          cls === '"[[exo__Ontology]]"' ||
-          cls === "[[exo__Ontology]]",
-      );
-
-      if (hasOntologyClass) {
-        ontologyAssets.push(file.basename);
-      }
-    }
-
-    return ontologyAssets.sort((a, b) => a.localeCompare(b));
-  }
-
   display(): void {
     const { containerEl } = this;
 
     containerEl.empty();
-
-    // Cache ontology assets once per display
-    const ontologyAssets = this.getOntologyAssets();
-
-    new Setting(containerEl)
-      .setName("Default ontology asset")
-      .setDesc("Choose the ontology asset to use for created events")
-      .addDropdown((dropdown) => {
-
-        dropdown.addOption("", "None (use events folder)");
-        
-        ontologyAssets.forEach((assetName) => {
-          dropdown.addOption(assetName, assetName);
-        });
-        
-        dropdown
-          .setValue(this.plugin.settings.defaultOntologyAsset || "")
-          .onChange(async (value) => {
-            this.plugin.settings.defaultOntologyAsset = value || null;
-            await this.plugin.saveSettings();
-          });
-      });
 
     new Setting(containerEl)
       .setName("Show layout")

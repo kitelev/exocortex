@@ -13,16 +13,10 @@ import { DI_TOKENS } from "../interfaces/tokens";
 @injectable()
 export class SessionEventService {
   private folderPathCache: string | null = null;
-  private defaultOntologyAsset: string | null = null;
 
   constructor(
     @inject(DI_TOKENS.IVaultAdapter) private vault: IVaultAdapter,
   ) {}
-
-  setDefaultOntologyAsset(asset: string | null): void {
-    this.defaultOntologyAsset = asset;
-    this.folderPathCache = null;
-  }
 
   /**
    * Create a session start event when user activates a focus area
@@ -43,33 +37,15 @@ export class SessionEventService {
   }
 
   /**
-   * Find the folder path where the ontology asset is located
-   * @returns Folder path for ontology asset or vault's default new file location as fallback
+   * Get the folder path for session events
+   * @returns Vault's default new file location
    */
-  private async getOntologyAssetFolder(): Promise<string> {
+  private getSessionEventFolder(): string {
     // Return cached value if available
     if (this.folderPathCache !== null) {
       return this.folderPathCache;
     }
 
-    if (!this.defaultOntologyAsset) {
-      const defaultFolder = this.vault.getDefaultNewFileParent();
-      this.folderPathCache = defaultFolder?.path || "";
-      return this.folderPathCache;
-    }
-
-    const allFiles = this.vault.getAllFiles();
-
-    for (const file of allFiles) {
-      // Match by basename without extension
-      if (file.basename === this.defaultOntologyAsset) {
-        const folderPath = file.parent?.path || "";
-        this.folderPathCache = folderPath;
-        return this.folderPathCache;
-      }
-    }
-
-    // Fallback to vault's default new file location if ontology asset not found
     const defaultFolder = this.vault.getDefaultNewFileParent();
     this.folderPathCache = defaultFolder?.path || "";
     return this.folderPathCache;
@@ -88,21 +64,17 @@ export class SessionEventService {
     const uid = uuidv4();
     const timestamp = DateFormatter.toLocalTimestamp(new Date());
 
-    const ontologyRef = this.defaultOntologyAsset
-      ? `"[[${this.defaultOntologyAsset}]]"`
-      : '"[[!kitelev]]"';
-
     const frontmatter = {
       exo__Asset_uid: uid,
       exo__Asset_createdAt: timestamp,
-      exo__Asset_isDefinedBy: ontologyRef,
+      exo__Asset_isDefinedBy: '"[[!kitelev]]"',
       exo__Instance_class: [`"[[${eventType}]]"`],
       ems__SessionEvent_timestamp: timestamp,
       ems__Session_area: `"[[${areaName}]]"`,
     };
 
     const fileContent = MetadataHelpers.buildFileContent(frontmatter);
-    const folderPath = await this.getOntologyAssetFolder();
+    const folderPath = this.getSessionEventFolder();
 
     // Ensure folder exists before creating file
     if (folderPath && !(await this.vault.exists(folderPath))) {

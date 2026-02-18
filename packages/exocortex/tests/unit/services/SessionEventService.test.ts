@@ -63,40 +63,27 @@ describe("SessionEventService", () => {
       expect(fileContent).not.toContain("aliases");
     });
 
-    it("should use ontology asset folder and isDefinedBy when ontology is set", async () => {
-      const ontologyService = new SessionEventService(mockVault);
-      ontologyService.setDefaultOntologyAsset("kitelev");
+    it("should always use default ontology reference (!kitelev)", async () => {
       const areaName = "Work";
-      const mockOntologyFile: IFile = {
-        path: "People/kitelev.md",
-        basename: "kitelev",
-        name: "kitelev.md",
-        parent: {
-          path: "People",
-          name: "People",
-        } as any,
-      };
       const mockCreatedFile: IFile = {
-        path: "People/test-uid.md",
+        path: "test-uid.md",
         basename: "test-uid",
         name: "test-uid.md",
         parent: null,
       };
 
-      mockVault.getAllFiles.mockReturnValue([mockOntologyFile]);
+      mockVault.getAllFiles.mockReturnValue([]);
       mockVault.create.mockResolvedValue(mockCreatedFile);
 
-      const result = await ontologyService.createSessionStartEvent(areaName);
+      const result = await service.createSessionStartEvent(areaName);
 
       expect(mockVault.create).toHaveBeenCalled();
       expect(result).toBe(mockCreatedFile);
 
       const createCall = mockVault.create.mock.calls[0];
-      const [filePath, fileContent] = createCall;
+      const [, fileContent] = createCall;
 
-      expect(filePath).toMatch(/^People\/.+\.md$/);
-      expect(fileContent).toContain('"[[kitelev]]"');
-      expect(fileContent).not.toContain('"[[!kitelev]]"');
+      expect(fileContent).toContain('"[[!kitelev]]"');
     });
 
     it("should use correct timestamp format (ISO 8601)", async () => {
@@ -256,65 +243,24 @@ describe("SessionEventService", () => {
       ).resolves.toBe(mockCreatedFile);
     });
 
-    it("should use ontology asset folder for end events", async () => {
-      const ontologyService = new SessionEventService(mockVault);
-      ontologyService.setDefaultOntologyAsset("myOntology");
+    it("should use default folder for end events", async () => {
       const areaName = "Work";
-      const mockOntologyFile: IFile = {
-        path: "Ontologies/myOntology.md",
-        basename: "myOntology",
-        name: "myOntology.md",
-        parent: {
-          path: "Ontologies",
-          name: "Ontologies",
-        } as any,
-      };
       const mockCreatedFile: IFile = {
-        path: "Ontologies/test-uid.md",
+        path: "test-uid.md",
         basename: "test-uid",
         name: "test-uid.md",
         parent: null,
       };
 
-      mockVault.getAllFiles.mockReturnValue([mockOntologyFile]);
+      mockVault.getAllFiles.mockReturnValue([]);
       mockVault.create.mockResolvedValue(mockCreatedFile);
 
-      await ontologyService.createSessionEndEvent(areaName);
+      await service.createSessionEndEvent(areaName);
 
       const createCall = mockVault.create.mock.calls[0];
       const [filePath] = createCall;
 
-      expect(filePath).toMatch(/^Ontologies\/.+\.md$/);
-    });
-
-    it("should create ontology folder if it does not exist", async () => {
-      const ontologyService = new SessionEventService(mockVault);
-      ontologyService.setDefaultOntologyAsset("myOntology");
-      const areaName = "Work";
-      const mockOntologyFile: IFile = {
-        path: "Ontologies/myOntology.md",
-        basename: "myOntology",
-        name: "myOntology.md",
-        parent: {
-          path: "Ontologies",
-          name: "Ontologies",
-        } as any,
-      };
-      const mockCreatedFile: IFile = {
-        path: "Ontologies/test-uid.md",
-        basename: "test-uid",
-        name: "test-uid.md",
-        parent: null,
-      };
-
-      mockVault.getAllFiles.mockReturnValue([mockOntologyFile]);
-      mockVault.exists.mockResolvedValue(false);
-      mockVault.create.mockResolvedValue(mockCreatedFile);
-
-      await ontologyService.createSessionEndEvent(areaName);
-
-      expect(mockVault.createFolder).toHaveBeenCalledWith("Ontologies");
-      expect(mockVault.create).toHaveBeenCalled();
+      expect(filePath).toMatch(/^[0-9a-f-]+\.md$/);
     });
   });
 });
