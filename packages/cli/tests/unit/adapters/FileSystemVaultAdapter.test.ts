@@ -376,4 +376,181 @@ describe("FileSystemVaultAdapter", () => {
       });
     });
   });
+
+  describe("getAllFiles() - directory boundary and hidden folders", () => {
+    // Issue #2159: CLI scans .Trash and other system directories instead of vault only
+
+    describe("regression test for Issue #2159", () => {
+      it("should skip hidden directories like .Trash", () => {
+        // Scenario: vault has .Trash directory that should not be scanned
+
+        readdirSyncSpy.mockImplementation((dir) => {
+          const dirStr = String(dir);
+          if (dirStr === rootPath) {
+            return [
+              { name: ".Trash", isDirectory: () => true, isFile: () => false },
+              { name: ".obsidian", isDirectory: () => true, isFile: () => false },
+              { name: "notes", isDirectory: () => true, isFile: () => false },
+              { name: "test.md", isDirectory: () => false, isFile: () => true },
+            ] as unknown as fs.Dirent[];
+          }
+          if (dirStr === path.join(rootPath, "notes")) {
+            return [
+              { name: "note1.md", isDirectory: () => false, isFile: () => true },
+            ] as unknown as fs.Dirent[];
+          }
+          // These should NOT be called - hidden dirs should be skipped
+          if (dirStr === path.join(rootPath, ".Trash")) {
+            throw new Error("EPERM: operation not permitted, scandir '/test/vault/.Trash'");
+          }
+          if (dirStr === path.join(rootPath, ".obsidian")) {
+            return [
+              { name: "config.json", isDirectory: () => false, isFile: () => true },
+            ] as unknown as fs.Dirent[];
+          }
+          return [] as unknown as fs.Dirent[];
+        });
+
+        const files = adapter.getAllFiles();
+
+        // Should only include visible markdown files
+        const filePaths = files.map((f) => f.path);
+        expect(filePaths).toContain("test.md");
+        expect(filePaths).toContain("notes/note1.md");
+        // Should NOT include hidden directory contents
+        expect(filePaths.some((p) => p.includes(".Trash"))).toBe(false);
+        expect(filePaths.some((p) => p.includes(".obsidian"))).toBe(false);
+      });
+
+      it("should handle EPERM errors gracefully without crashing", () => {
+        // Scenario: directory scan encounters permission error
+
+        readdirSyncSpy.mockImplementation((dir) => {
+          const dirStr = String(dir);
+          if (dirStr === rootPath) {
+            return [
+              { name: "accessible", isDirectory: () => true, isFile: () => false },
+              { name: "restricted", isDirectory: () => true, isFile: () => false },
+              { name: "test.md", isDirectory: () => false, isFile: () => true },
+            ] as unknown as fs.Dirent[];
+          }
+          if (dirStr === path.join(rootPath, "accessible")) {
+            return [
+              { name: "note1.md", isDirectory: () => false, isFile: () => true },
+            ] as unknown as fs.Dirent[];
+          }
+          if (dirStr === path.join(rootPath, "restricted")) {
+            const error = new Error("EPERM: operation not permitted") as NodeJS.ErrnoException;
+            error.code = "EPERM";
+            throw error;
+          }
+          return [] as unknown as fs.Dirent[];
+        });
+
+        // Should NOT throw - should skip inaccessible directories
+        const files = adapter.getAllFiles();
+
+        const filePaths = files.map((f) => f.path);
+        expect(filePaths).toContain("test.md");
+        expect(filePaths).toContain("accessible/note1.md");
+        // restricted directory files should be skipped, not cause crash
+      });
+    });
+
+    describe("directory boundary enforcement", () => {
+      it("should not traverse parent directories via symlinks", () => {
+        // Scenario: symlink in vault points outside vault root
+
+        readdirSyncSpy.mockImplementation((dir) => {
+          const dirStr = String(dir);
+          if (dirStr === rootPath) {
+            return [
+              { name: "notes", isDirectory: () => true, isFile: () => false },
+              { name: "external-link", isDirectory: () => true, isFile: () => false },
+              { name: "test.md", isDirectory: () => false, isFile: () => true },
+            ] as unknown as fs.Dirent[];
+          }
+          if (dirStr === path.join(rootPath, "notes")) {
+            return [
+              { name: "note1.md", isDirectory: () => false, isFile: () => true },
+            ] as unknown as fs.Dirent[];
+          }
+          // Symlink that escapes vault
+          if (dirStr === path.join(rootPath, "external-link")) {
+            return [
+              { name: "sensitive.md", isDirectory: () => false, isFile: () => true },
+            ] as unknown as fs.Dirent[];
+          }
+          return [] as unknown as fs.Dirent[];
+        });
+
+        const files = adapter.getAllFiles();
+
+        // Should include regular files
+        const filePaths = files.map((f) => f.path);
+        expect(filePaths).toContain("test.md");
+        expect(filePaths).toContain("notes/note1.md");
+      });
+
+      it("should only return .md files within vault boundary", () => {
+        readdirSyncSpy.mockImplementation((dir) => {
+          const dirStr = String(dir);
+          if (dirStr === rootPath) {
+            return [
+              { name: "subdir", isDirectory: () => true, isFile: () => false },
+              { name: "note.md", isDirectory: () => false, isFile: () => true },
+              { name: "image.png", isDirectory: () => false, isFile: () => true },
+              { name: "data.json", isDirectory: () => false, isFile: () => true },
+            ] as unknown as fs.Dirent[];
+          }
+          if (dirStr === path.join(rootPath, "subdir")) {
+            return [
+              { name: "nested.md", isDirectory: () => false, isFile: () => true },
+              { name: "config.yaml", isDirectory: () => false, isFile: () => true },
+            ] as unknown as fs.Dirent[];
+          }
+          return [] as unknown as fs.Dirent[];
+        });
+
+        const files = adapter.getAllFiles();
+
+        const filePaths = files.map((f) => f.path);
+        // Only .md files should be returned
+        expect(filePaths).toContain("note.md");
+        expect(filePaths).toContain("subdir/nested.md");
+        expect(filePaths).not.toContain("image.png");
+        expect(filePaths).not.toContain("data.json");
+        expect(filePaths).not.toContain("subdir/config.yaml");
+      });
+    });
+
+    describe("hidden directory patterns", () => {
+      const hiddenDirs = [".Trash", ".obsidian", ".git", ".DS_Store_folder", ".hidden"];
+
+      it.each(hiddenDirs)("should skip hidden directory: %s", (hiddenDir) => {
+        readdirSyncSpy.mockImplementation((dir) => {
+          const dirStr = String(dir);
+          if (dirStr === rootPath) {
+            return [
+              { name: hiddenDir, isDirectory: () => true, isFile: () => false },
+              { name: "visible.md", isDirectory: () => false, isFile: () => true },
+            ] as unknown as fs.Dirent[];
+          }
+          // This should NOT be reached for hidden directories
+          if (dirStr === path.join(rootPath, hiddenDir)) {
+            return [
+              { name: "secret.md", isDirectory: () => false, isFile: () => true },
+            ] as unknown as fs.Dirent[];
+          }
+          return [] as unknown as fs.Dirent[];
+        });
+
+        const files = adapter.getAllFiles();
+
+        const filePaths = files.map((f) => f.path);
+        expect(filePaths).toContain("visible.md");
+        expect(filePaths.some((p) => p.includes(hiddenDir))).toBe(false);
+      });
+    });
+  });
 });

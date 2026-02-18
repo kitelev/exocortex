@@ -279,16 +279,50 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
     }
   }
 
+  /**
+   * Check if a directory entry should be skipped during traversal.
+   * Skips hidden directories (starting with .) to avoid:
+   * - System directories like .Trash, .DS_Store folders
+   * - Configuration directories like .obsidian, .git
+   * - Other hidden directories that may have restricted permissions
+   */
+  private shouldSkipDirectory(name: string): boolean {
+    return name.startsWith(".");
+  }
+
+  /**
+   * Recursively walk directory structure, calling callback for each file.
+   *
+   * Security features:
+   * - Skips hidden directories to avoid .Trash, .obsidian, etc.
+   * - Handles EPERM/EACCES errors gracefully by skipping inaccessible directories
+   * - Only processes files within the vault boundary
+   */
   private walkDirectory(
     dir: string,
     callback: (filePath: string) => void,
   ): void {
-    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    let entries: fs.Dirent[];
+
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch (error) {
+      // Handle permission errors gracefully - skip inaccessible directories
+      const nodeError = error as NodeJS.ErrnoException;
+      if (nodeError.code === "EPERM" || nodeError.code === "EACCES") {
+        return; // Skip this directory silently
+      }
+      throw error; // Re-throw other errors
+    }
 
     for (const entry of entries) {
       const fullPath = path.join(dir, entry.name);
 
       if (entry.isDirectory()) {
+        // Skip hidden directories (.Trash, .obsidian, .git, etc.)
+        if (this.shouldSkipDirectory(entry.name)) {
+          continue;
+        }
         this.walkDirectory(fullPath, callback);
       } else if (entry.isFile()) {
         callback(fullPath);
