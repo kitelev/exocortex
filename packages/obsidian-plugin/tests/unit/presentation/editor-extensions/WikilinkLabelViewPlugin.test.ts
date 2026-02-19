@@ -158,6 +158,105 @@ describe("WikilinkLabelViewPlugin", () => {
       expect(matches[2].blockId).toBeUndefined();
       expect(matches[2].headingRef).toBe("Heading");
     });
+
+    describe("Issue #2182: Wikilinks inside Obsidian Callout blocks", () => {
+      it("should find wikilinks inside [!note] callout block", () => {
+        const calloutText = `> [!note]
+> This is a note callout with [[some-uuid]] inside.`;
+
+        const matches = WikilinkLabelViewPlugin.parseWikilinksFromText(calloutText, 0);
+
+        expect(matches).toHaveLength(1);
+        expect(matches[0].targetPath).toBe("some-uuid");
+        expect(matches[0].hasAlias).toBe(false);
+      });
+
+      it("should find multiple wikilinks inside callout block", () => {
+        const calloutText = `> [!warning]
+> First link: [[uuid-1]]
+> Second link: [[uuid-2]]
+> Third link: [[uuid-3]]`;
+
+        const matches = WikilinkLabelViewPlugin.parseWikilinksFromText(calloutText, 0);
+
+        expect(matches).toHaveLength(3);
+        expect(matches[0].targetPath).toBe("uuid-1");
+        expect(matches[1].targetPath).toBe("uuid-2");
+        expect(matches[2].targetPath).toBe("uuid-3");
+      });
+
+      it("should find wikilinks in various callout types", () => {
+        const calloutTypes = ["note", "warning", "info", "tip", "example", "quote", "danger", "bug", "abstract"];
+
+        for (const type of calloutTypes) {
+          const calloutText = `> [!${type}]
+> Link inside: [[test-uuid-${type}]]`;
+
+          const matches = WikilinkLabelViewPlugin.parseWikilinksFromText(calloutText, 0);
+
+          expect(matches).toHaveLength(1);
+          expect(matches[0].targetPath).toBe(`test-uuid-${type}`);
+        }
+      });
+
+      it("should find wikilinks with block references inside callout", () => {
+        const calloutText = `> [!note]
+> See [[document#^block123]] for details.`;
+
+        const matches = WikilinkLabelViewPlugin.parseWikilinksFromText(calloutText, 0);
+
+        expect(matches).toHaveLength(1);
+        expect(matches[0].targetPath).toBe("document");
+        expect(matches[0].blockId).toBe("block123");
+      });
+
+      it("should find wikilinks with heading references inside callout", () => {
+        const calloutText = `> [!info]
+> Check out [[page#My Heading]] for more info.`;
+
+        const matches = WikilinkLabelViewPlugin.parseWikilinksFromText(calloutText, 0);
+
+        expect(matches).toHaveLength(1);
+        expect(matches[0].targetPath).toBe("page");
+        expect(matches[0].headingRef).toBe("My Heading");
+      });
+
+      it("should skip wikilinks with aliases inside callout", () => {
+        const calloutText = `> [!note]
+> See [[uuid|Custom Label]] for details.`;
+
+        const matches = WikilinkLabelViewPlugin.parseWikilinksFromText(calloutText, 0);
+
+        // Wikilinks with aliases should be skipped (already have display text)
+        expect(matches).toHaveLength(0);
+      });
+
+      it("should handle nested callouts with wikilinks", () => {
+        const nestedCalloutText = `> [!note]
+> Outer callout with [[outer-uuid]]
+> > [!warning]
+> > Nested callout with [[inner-uuid]]`;
+
+        const matches = WikilinkLabelViewPlugin.parseWikilinksFromText(nestedCalloutText, 0);
+
+        expect(matches).toHaveLength(2);
+        expect(matches[0].targetPath).toBe("outer-uuid");
+        expect(matches[1].targetPath).toBe("inner-uuid");
+      });
+
+      it("should apply offset correctly for wikilinks inside callout", () => {
+        const calloutText = `> [!note]
+> Link: [[uuid]]`;
+
+        const offset = 100;
+        const matches = WikilinkLabelViewPlugin.parseWikilinksFromText(calloutText, offset);
+
+        expect(matches).toHaveLength(1);
+        // Verify positions are adjusted by offset
+        expect(matches[0].from).toBeGreaterThanOrEqual(offset);
+        expect(matches[0].to).toBeGreaterThan(matches[0].from);
+      });
+    });
   });
 
   describe("shouldShowLabelForWikilink", () => {
