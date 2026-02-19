@@ -682,4 +682,149 @@ describe("RenameToUidService", () => {
       expect(mockVault.process).toHaveBeenCalled();
     });
   });
+
+  describe("existing non-empty aliases handling (Issue #2180)", () => {
+    it("should append to existing aliases array without breaking YAML structure", async () => {
+      const metadata = {
+        exo__Asset_uid: "asset-123",
+      };
+
+      mockVault.process.mockImplementation(async (file, fn) => {
+        const content = "---\ntitle: Test\naliases:\n  - old-alias-1\n  - old-alias-2\n---\nContent";
+        const result = fn(content);
+        // Should have exactly one aliases property
+        const aliasesMatches = result.match(/^aliases\s*:/gm);
+        expect(aliasesMatches?.length).toBe(1);
+        // Should preserve existing aliases
+        expect(result).toContain("- old-alias-1");
+        expect(result).toContain("- old-alias-2");
+        // Should append new alias
+        expect(result).toContain("- old-name");
+        // YAML should remain valid
+        expect(result).toMatch(/^---\n[\s\S]+\n---/);
+        return result;
+      });
+
+      await service.renameToUid(mockFile, metadata);
+
+      expect(mockVault.process).toHaveBeenCalled();
+    });
+
+    it("should append to existing aliases in inline array format", async () => {
+      const metadata = {
+        exo__Asset_uid: "asset-123",
+      };
+
+      mockVault.process.mockImplementation(async (file, fn) => {
+        const content = "---\ntitle: Test\naliases: [existing-alias]\n---\nContent";
+        const result = fn(content);
+        // Should have exactly one aliases property
+        const aliasesMatches = result.match(/^aliases\s*:/gm);
+        expect(aliasesMatches?.length).toBe(1);
+        // Should contain both old and new aliases
+        expect(result).toMatch(/existing-alias/);
+        expect(result).toContain("old-name");
+        return result;
+      });
+
+      await service.renameToUid(mockFile, metadata);
+
+      expect(mockVault.process).toHaveBeenCalled();
+    });
+
+    it("should NOT add duplicate alias if old filename already in aliases", async () => {
+      const metadata = {
+        exo__Asset_uid: "asset-123",
+      };
+
+      mockVault.process.mockImplementation(async (file, fn) => {
+        const content = "---\ntitle: Test\naliases:\n  - old-name\n  - other-alias\n---\nContent";
+        const result = fn(content);
+        // Should have exactly one aliases property
+        const aliasesMatches = result.match(/^aliases\s*:/gm);
+        expect(aliasesMatches?.length).toBe(1);
+        // Should NOT have duplicate old-name
+        const oldNameMatches = result.match(/- old-name/g);
+        expect(oldNameMatches?.length).toBe(1);
+        expect(result).toContain("- other-alias");
+        return result;
+      });
+
+      await service.renameToUid(mockFile, metadata);
+
+      expect(mockVault.process).toHaveBeenCalled();
+    });
+
+    it("should handle existing aliases with complex YAML formatting", async () => {
+      const metadata = {
+        exo__Asset_uid: "asset-123",
+      };
+
+      mockVault.process.mockImplementation(async (file, fn) => {
+        const content = "---\nexo__Instance_class: ims__Concept\naliases:\n  - \"quoted alias\"\n  - alias with spaces\notherProp: value\n---\nContent";
+        const result = fn(content);
+        // Should have exactly one aliases property
+        const aliasesMatches = result.match(/^aliases\s*:/gm);
+        expect(aliasesMatches?.length).toBe(1);
+        // Should preserve existing aliases
+        expect(result).toMatch(/quoted alias/);
+        expect(result).toContain("alias with spaces");
+        // Should append new alias
+        expect(result).toContain("- old-name");
+        // Should preserve other properties
+        expect(result).toContain("exo__Instance_class: ims__Concept");
+        expect(result).toContain("otherProp: value");
+        return result;
+      });
+
+      await service.renameToUid(mockFile, metadata);
+
+      expect(mockVault.process).toHaveBeenCalled();
+    });
+
+    it("should preserve existing aliases for archived assets (no modification)", async () => {
+      const metadata = {
+        exo__Asset_uid: "asset-123",
+        exo__Asset_isArchived: true,
+      };
+
+      mockVault.process.mockImplementation(async (file, fn) => {
+        const content = "---\ntitle: Test\naliases:\n  - existing-alias\n---\nContent";
+        const result = fn(content);
+        // For archived assets, aliases should NOT be modified
+        expect(result).toContain("aliases:");
+        expect(result).toContain("- existing-alias");
+        // Should NOT add the old filename
+        expect(result).not.toMatch(/- old-name$/m);
+        return result;
+      });
+
+      await service.renameToUid(mockFile, metadata);
+
+      expect(mockVault.process).toHaveBeenCalled();
+    });
+
+    it("should handle single existing alias in list format", async () => {
+      const metadata = {
+        exo__Asset_uid: "asset-123",
+      };
+
+      mockVault.process.mockImplementation(async (file, fn) => {
+        const content = "---\ntitle: Test\naliases:\n  - single-alias\n---\nContent";
+        const result = fn(content);
+        // Should have exactly one aliases property
+        const aliasesMatches = result.match(/^aliases\s*:/gm);
+        expect(aliasesMatches?.length).toBe(1);
+        // Should preserve existing alias
+        expect(result).toContain("- single-alias");
+        // Should append new alias
+        expect(result).toContain("- old-name");
+        return result;
+      });
+
+      await service.renameToUid(mockFile, metadata);
+
+      expect(mockVault.process).toHaveBeenCalled();
+    });
+  });
 });
