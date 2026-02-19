@@ -1,8 +1,8 @@
 # Exocortex Architecture
 
-**Version**: 0.0.0-dev
-**Last Updated**: 2025-10-26
-**Status**: Current State (Before Core Extraction)
+**Version**: 15.0.1
+**Last Updated**: 2026-02-19
+**Status**: Monorepo v15.x (Clean Architecture)
 
 ---
 
@@ -47,21 +47,21 @@ Exocortex is a **knowledge management technology** that provides:
 ### Core Technologies
 
 ```yaml
-Language: TypeScript 4.8.4
+Language: TypeScript 5.9.3
 Runtime: Obsidian Plugin API 1.5.0+
-UI Framework: React 19.2.0
-Build Tool: ESBuild 0.17.3
+UI Framework: React 19.2.3
+Build Tool: ESBuild 0.27.1
 Package Manager: npm
 ```
 
 ### Testing Stack
 
 ```yaml
-Unit Tests: Jest 30.0.5 + ts-jest
+Unit Tests: Jest 30.2.0 + ts-jest
 UI Tests: jest-environment-obsidian 0.0.1
-Component Tests: Playwright CT 1.55.1
-E2E Tests: Playwright 1.55.1 (Docker)
-Coverage: Jest coverage (current: 44%, target: 95%)
+Component Tests: Playwright CT 1.56.1
+E2E Tests: Playwright 1.56.1 (Docker)
+Coverage: Jest coverage (current: 80%, target: 95%)
 BDD: Gherkin features (current: 80% coverage)
 ```
 
@@ -69,7 +69,7 @@ BDD: Gherkin features (current: 80% coverage)
 
 ```yaml
 Linter: ESLint 9.38.0
-  - typescript-eslint 8.46.2
+  - typescript-eslint 8.49.0
   - eslint-plugin-obsidianmd 0.1.6 (official)
 Formatter: Prettier 3.6.2
 Pre-commit: Husky 9.1.7
@@ -1382,7 +1382,7 @@ graph TB
 **For Users**:
 - ✅ CLI for automation (Claude Code integration)
 - ✅ Faster development (parallel Core/Plugin work)
-- ✅ More reliable (Core has 80% test coverage, 803 unit tests)
+- ✅ More reliable (Core has 80% test coverage, 740+ unit tests)
 - ✅ Batch operations without Obsidian running
 
 **For Developers**:
@@ -1412,6 +1412,7 @@ graph TB
 | 1.0 | 2025-10-26 | Initial architecture documentation (pre-#122) |
 | 1.1 | 2025-11-26 | Added Error Handling section (#438) |
 | 1.2 | 2025-11-29 | Documented CommandVisibility domain segregation (#468) |
+| 1.3 | 2026-02-19 | Updated to v15.0.1: tech stack versions, test counts (#2176) |
 
 ---
 

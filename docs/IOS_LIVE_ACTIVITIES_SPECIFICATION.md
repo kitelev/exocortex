@@ -228,7 +228,7 @@ When a user starts working on a task (changes status to `[[ems__EffortStatusDoin
 - Deployment Target: iOS 16.1+
 
 **Obsidian Plugin:**
-- Language: TypeScript 4.9+
+- Language: TypeScript 5.9+
 - Runtime: Obsidian Plugin API 1.5.0+
 - Build Tool: ESBuild
 - Storage: Obsidian Vault API + FileManager
