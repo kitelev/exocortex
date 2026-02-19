@@ -1,5 +1,7 @@
 # Exocortex
 
+Hello "Working Copy"!
+
 > "Экзокортекс — это как я хочу мыслить — не в ловушке линейных документов или иерархических папок, а в живой паутине смыслов, растущей вместе со мной."
 
 **A cognitive infrastructure that augments human intelligence through semantic knowledge organization, ontology-driven reasoning, and AI integration.**
