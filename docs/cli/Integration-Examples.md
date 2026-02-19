@@ -45,7 +45,7 @@ jobs:
           node-version: '18'
 
       - name: Install Exocortex CLI
-        run: npm install -g @exocortex/cli
+        run: npm install -g @kitelev/exocortex-cli
 
       - name: Create task from issue
         env:
@@ -106,7 +106,7 @@ jobs:
           path: vault
 
       - name: Install Exocortex CLI
-        run: npm install -g @exocortex/cli
+        run: npm install -g @kitelev/exocortex-cli
 
       - name: Extract task UID from PR
         id: extract
@@ -172,7 +172,7 @@ jobs:
           token: ${{ secrets.VAULT_TOKEN }}
 
       - name: Install Exocortex CLI
-        run: npm install -g @exocortex/cli
+        run: npm install -g @kitelev/exocortex-cli
 
       - name: Generate status report
         run: |
@@ -238,7 +238,7 @@ update_tasks:
     - main
   script:
     - git clone https://gitlab.com/username/my-vault.git vault
-    - npm install -g @exocortex/cli
+    - npm install -g @kitelev/exocortex-cli
 
     # Extract task UIDs from commit messages
     - |
@@ -280,7 +280,7 @@ archive_tasks:
     - schedules
   script:
     - git clone https://gitlab.com/username/my-vault.git vault
-    - npm install -g @exocortex/cli
+    - npm install -g @kitelev/exocortex-cli
 
     # Archive tasks completed >30 days ago
     - |
