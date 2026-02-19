@@ -101,9 +101,11 @@ export class WikilinkLabelViewPlugin {
   }
 
   update(update: ViewUpdate): void {
-    // Rebuild decorations when document changes, viewport changes, or selection changes
+    // Rebuild decorations when document changes, viewport changes, geometry changes, or selection changes
     // Selection change is important for cursor-aware editing
-    if (update.docChanged || update.viewportChanged || update.selectionSet) {
+    // Geometry changes catch visible range updates that may not be viewport changes
+    // (e.g., when callout blocks are expanded/collapsed)
+    if (update.docChanged || update.viewportChanged || update.selectionSet || update.geometryChanged) {
       this.decorations = this.buildDecorations(update.view);
     }
   }
@@ -166,11 +168,27 @@ export class WikilinkLabelViewPlugin {
    * Find all wikilinks without aliases in the current view.
    * Wikilinks without aliases have the format: [[target]]
    * Wikilinks with aliases ([[target|alias]]) are excluded.
+   *
+   * Uses visibleRanges instead of viewport to correctly handle:
+   * - Callout blocks and other collapsed/expanded content
+   * - Large documents with partially visible ranges
+   * - Content that may be rendered differently in Live Preview mode
+   *
+   * Issue #2182: Wikilinks inside Callout blocks were not getting label
+   * substitution because we only looked at viewport, not visibleRanges.
    */
   private findWikilinksWithoutAliases(view: EditorView): WikilinkMatch[] {
-    const { from, to } = view.viewport;
-    const text = view.state.doc.sliceString(from, to);
-    return WikilinkLabelViewPlugin.parseWikilinksFromText(text, from);
+    const matches: WikilinkMatch[] = [];
+
+    // Use visibleRanges to iterate over all actually visible content
+    // This properly handles callout blocks and other special rendering
+    for (const { from, to } of view.visibleRanges) {
+      const text = view.state.doc.sliceString(from, to);
+      const rangeMatches = WikilinkLabelViewPlugin.parseWikilinksFromText(text, from);
+      matches.push(...rangeMatches);
+    }
+
+    return matches;
   }
 
   /**
