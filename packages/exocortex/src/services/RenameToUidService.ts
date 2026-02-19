@@ -60,29 +60,89 @@ export class RenameToUidService {
 
       // Add aliases if not archived
       if (!isArchived) {
-        // Check if aliases property already exists in frontmatter
-        const aliasesExistPattern = /^aliases\s*:/m;
-        if (aliasesExistPattern.test(frontmatterContent)) {
-          // Remove existing empty aliases property (handles aliases: [], aliases:, aliases: null, etc.)
-          // Matches:
-          // - "aliases:" followed by newline or end of content
-          // - "aliases: []"
-          // - "aliases: null"
-          // - "aliases:\n" followed by no list items (no "  - ")
-          const emptyAliasesPattern =
-            /^aliases\s*:\s*(?:\[\s*\]|null|~)?(?:\n(?![ \t]*-))?/gm;
-          frontmatterContent = frontmatterContent.replace(
-            emptyAliasesPattern,
-            "",
-          );
-          // Clean up any trailing newlines that might be left
-          frontmatterContent = frontmatterContent.replace(/\n{2,}/g, "\n");
-        }
-        frontmatterContent = `${frontmatterContent}\naliases:\n  - ${label}`;
+        frontmatterContent = this.updateAliases(frontmatterContent, label);
       }
 
       return content.replace(frontmatterRegex, `---\n${frontmatterContent}\n---`);
     });
+  }
+
+  /**
+   * Updates the aliases property in frontmatter content.
+   * - If aliases doesn't exist: creates new aliases with the label
+   * - If aliases is empty ([], null, ~, or no value): replaces with new aliases
+   * - If aliases has existing values: appends the label if not already present
+   */
+  private updateAliases(frontmatterContent: string, label: string): string {
+    // Check if aliases property exists
+    const aliasesExistPattern = /^aliases\s*:/m;
+    if (!aliasesExistPattern.test(frontmatterContent)) {
+      // No aliases property - add new one
+      return `${frontmatterContent}\naliases:\n  - ${label}`;
+    }
+
+    // Check for existing non-empty aliases in list format (  - value)
+    const aliasesWithValuesPattern =
+      /^aliases\s*:\s*\n((?:[ \t]*-[ \t]+[^\n]+\n?)+)/m;
+    const aliasesWithValuesMatch = frontmatterContent.match(
+      aliasesWithValuesPattern,
+    );
+
+    if (aliasesWithValuesMatch) {
+      // Has existing aliases in list format - extract them and append new one
+      const existingAliasesBlock = aliasesWithValuesMatch[1];
+      const existingAliases = existingAliasesBlock
+        .split("\n")
+        .filter((line) => line.trim().startsWith("-"))
+        .map((line) => line.replace(/^[ \t]*-[ \t]+/, "").trim());
+
+      // Check if label already exists in aliases (avoid duplicates)
+      if (existingAliases.includes(label)) {
+        // Already exists - no change needed
+        return frontmatterContent;
+      }
+
+      // Append new alias to existing block
+      const newAliasesBlock = `${existingAliasesBlock.trimEnd()}\n  - ${label}\n`;
+      return frontmatterContent.replace(aliasesWithValuesMatch[1], newAliasesBlock);
+    }
+
+    // Check for inline array format aliases: [value1, value2]
+    const inlineAliasesPattern = /^aliases\s*:\s*\[([^\]]*)\]/m;
+    const inlineMatch = frontmatterContent.match(inlineAliasesPattern);
+
+    if (inlineMatch) {
+      const inlineContent = inlineMatch[1].trim();
+      if (inlineContent === "") {
+        // Empty inline array - replace with list format
+        return frontmatterContent.replace(
+          inlineAliasesPattern,
+          `aliases:\n  - ${label}`,
+        );
+      }
+
+      // Non-empty inline array - parse and check for duplicates
+      const existingAliases = inlineContent
+        .split(",")
+        .map((a) => a.trim().replace(/^["']|["']$/g, ""));
+
+      if (existingAliases.includes(label)) {
+        return frontmatterContent;
+      }
+
+      // Append new alias to inline array
+      return frontmatterContent.replace(
+        inlineAliasesPattern,
+        `aliases: [${inlineContent}, ${label}]`,
+      );
+    }
+
+    // Empty aliases property (aliases:, aliases: null, aliases: ~) - replace it
+    const emptyAliasesPattern = /^aliases\s*:\s*(?:null|~)?\s*$/m;
+    return frontmatterContent.replace(
+      emptyAliasesPattern,
+      `aliases:\n  - ${label}`,
+    );
   }
 
   private isAssetArchived(metadata: Record<string, any>): boolean {
