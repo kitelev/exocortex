@@ -34,6 +34,7 @@ describe("UIStore", () => {
       showEmptySlots: true,
       showTime: true,
       showStatus: true,
+      showTimeEstimate: false,
     });
   });
 
@@ -49,6 +50,7 @@ describe("UIStore", () => {
       expect(state.showEmptySlots).toBe(true);
       expect(state.showTime).toBe(true);
       expect(state.showStatus).toBe(true);
+      expect(state.showTimeEstimate).toBe(false);
     });
   });
 
@@ -215,6 +217,33 @@ describe("UIStore", () => {
     });
   });
 
+  describe("toggleTimeEstimate", () => {
+    it("should toggle showTimeEstimate from false to true", () => {
+      expect(useUIStore.getState().showTimeEstimate).toBe(false);
+
+      useUIStore.getState().toggleTimeEstimate();
+
+      expect(useUIStore.getState().showTimeEstimate).toBe(true);
+    });
+
+    it("should toggle showTimeEstimate from true to false", () => {
+      useUIStore.setState({ showTimeEstimate: true });
+
+      useUIStore.getState().toggleTimeEstimate();
+
+      expect(useUIStore.getState().showTimeEstimate).toBe(false);
+    });
+
+    it("should not affect other settings when toggling", () => {
+      useUIStore.setState({ showEffortArea: true, showEffortVotes: true });
+
+      useUIStore.getState().toggleTimeEstimate();
+
+      expect(useUIStore.getState().showEffortArea).toBe(true);
+      expect(useUIStore.getState().showEffortVotes).toBe(true);
+    });
+  });
+
   describe("resetToDefaults", () => {
     it("should reset all settings to defaults", () => {
       useUIStore.setState({
@@ -226,6 +255,7 @@ describe("UIStore", () => {
         showEmptySlots: false,
         showTime: false,
         showStatus: false,
+        showTimeEstimate: true,
       });
 
       useUIStore.getState().resetToDefaults();
@@ -239,6 +269,7 @@ describe("UIStore", () => {
       expect(state.showEmptySlots).toBe(true);
       expect(state.showTime).toBe(true);
       expect(state.showStatus).toBe(true);
+      expect(state.showTimeEstimate).toBe(false);
     });
 
     it("should work when already at defaults", () => {
@@ -253,6 +284,7 @@ describe("UIStore", () => {
       expect(state.showEmptySlots).toBe(true);
       expect(state.showTime).toBe(true);
       expect(state.showStatus).toBe(true);
+      expect(state.showTimeEstimate).toBe(false);
     });
   });
 
@@ -273,6 +305,7 @@ describe("UIStore", () => {
       useUIStore.getState().toggleFocusMode();
       useUIStore.getState().toggleTime();
       useUIStore.getState().toggleStatus();
+      useUIStore.getState().toggleTimeEstimate();
 
       const state = useUIStore.getState();
       expect(state.showArchived).toBe(true);
@@ -282,6 +315,7 @@ describe("UIStore", () => {
       expect(state.focusMode).toBe(true);
       expect(state.showTime).toBe(false); // Default is true, so toggle makes it false
       expect(state.showStatus).toBe(false); // Default is true, so toggle makes it false
+      expect(state.showTimeEstimate).toBe(true); // Default is false, so toggle makes it true
     });
   });
 });
@@ -298,6 +332,7 @@ describe("getUIDefaults", () => {
     expect(defaults.showEmptySlots).toBe(true);
     expect(defaults.showTime).toBe(true);
     expect(defaults.showStatus).toBe(true);
+    expect(defaults.showTimeEstimate).toBe(false);
   });
 
   it("should return a new object each time", () => {

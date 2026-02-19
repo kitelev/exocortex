@@ -12,6 +12,7 @@ export interface UISettings {
   showEmptySlots: boolean;
   showTime: boolean;
   showStatus: boolean;
+  showTimeEstimate: boolean;
 }
 
 export interface UIStore extends UISettings {
@@ -23,6 +24,7 @@ export interface UIStore extends UISettings {
   toggleEmptySlots: () => void;
   toggleTime: () => void;
   toggleStatus: () => void;
+  toggleTimeEstimate: () => void;
   resetToDefaults: () => void;
 }
 

@@ -38,6 +38,7 @@ export interface DailyTasksTableProps {
   showEmptySlots?: boolean;
   showTime?: boolean;
   showStatus?: boolean;
+  showTimeEstimate?: boolean;
 }
 
 /**
@@ -116,6 +117,7 @@ export const DailyTasksTable: React.FC<DailyTasksTableProps> = ({
   showEmptySlots: propShowEmptySlots,
   showTime: propShowTime,
   showStatus: propShowStatus,
+  showTimeEstimate: propShowTimeEstimate,
 }) => {
   const sortState = useTableSortStore((state) => state.dailyTasks);
   const toggleSort = useTableSortStore((state) => state.toggleSort);
@@ -130,6 +132,7 @@ export const DailyTasksTable: React.FC<DailyTasksTableProps> = ({
   const storeShowEmptySlots = useUIStore((state) => state.showEmptySlots);
   const storeShowTime = useUIStore((state) => state.showTime);
   const storeShowStatus = useUIStore((state) => state.showStatus);
+  const storeShowTimeEstimate = useUIStore((state) => state.showTimeEstimate);
 
   const showArchived = propShowArchived ?? storeShowArchived;
   const showEffortArea = propShowEffortArea ?? storeShowEffortArea;
@@ -139,6 +142,20 @@ export const DailyTasksTable: React.FC<DailyTasksTableProps> = ({
   const showEmptySlots = propShowEmptySlots ?? storeShowEmptySlots;
   const showTime = propShowTime ?? storeShowTime;
   const showStatus = propShowStatus ?? storeShowStatus;
+  const showTimeEstimate = propShowTimeEstimate ?? storeShowTimeEstimate;
+
+  /**
+   * Formats time estimate in minutes to a human-readable string.
+   * Examples: 90 -> "1h 30m", 45 -> "45m", 120 -> "2h", 0 -> "-", null -> "-"
+   */
+  const formatTimeEstimate = (minutes: number | null | undefined): string => {
+    if (minutes == null || minutes <= 0) return "-";
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    if (hours === 0) return `${mins}m`;
+    if (mins === 0) return `${hours}h`;
+    return `${hours}h ${mins}m`;
+  };
 
   /**
    * Find tasks with overlapping planned periods.
@@ -361,6 +378,14 @@ export const DailyTasksTable: React.FC<DailyTasksTableProps> = ({
               ? b.metadata.ems__Effort_votes
               : -1;
             break;
+          case "timeEstimate":
+            aValue = typeof a.metadata.ems__Effort_timeEstimateMinutes === "number"
+              ? a.metadata.ems__Effort_timeEstimateMinutes
+              : -1;
+            bValue = typeof b.metadata.ems__Effort_timeEstimateMinutes === "number"
+              ? b.metadata.ems__Effort_timeEstimateMinutes
+              : -1;
+            break;
           default:
             return 0;
         }
@@ -572,6 +597,7 @@ export const DailyTasksTable: React.FC<DailyTasksTableProps> = ({
           {showStatus && <td className="task-status empty-slot-cell">-</td>}
           {showEffortArea && <td className="task-effort-area empty-slot-cell">-</td>}
           {showEffortVotes && <td className="task-effort-votes empty-slot-cell">-</td>}
+          {showTimeEstimate && <td className="task-time-estimate empty-slot-cell">-</td>}
         </tr>
       );
     }
@@ -693,6 +719,13 @@ export const DailyTasksTable: React.FC<DailyTasksTableProps> = ({
               : "-"}
           </td>
         )}
+        {showTimeEstimate && (
+          <td className="task-time-estimate">
+            {formatTimeEstimate(
+              task.metadata.ems__Effort_timeEstimateMinutes as number | null | undefined
+            )}
+          </td>
+        )}
       </tr>
     );
   };
@@ -718,6 +751,7 @@ export const DailyTasksTable: React.FC<DailyTasksTableProps> = ({
       {showStatus && <col className="col-status" style={{ width: "100px" }} />}
       {showEffortArea && <col className="col-effort-area" style={{ width: "120px" }} />}
       {showEffortVotes && <col className="col-votes" style={{ width: "70px" }} />}
+      {showTimeEstimate && <col className="col-time-estimate" style={{ width: "80px" }} />}
     </colgroup>
   );
 
@@ -785,6 +819,17 @@ export const DailyTasksTable: React.FC<DailyTasksTableProps> = ({
           >
             Votes{" "}
             {sortState.column === "votes" &&
+              (sortState.order === "asc" ? "↑" : "↓")}
+          </th>
+        )}
+        {showTimeEstimate && (
+          <th
+            onClick={() => handleSort("timeEstimate")}
+            className="sortable task-time-estimate-header"
+            style={{ cursor: "pointer" }}
+          >
+            Time{" "}
+            {sortState.column === "timeEstimate" &&
               (sortState.order === "asc" ? "↑" : "↓")}
           </th>
         )}
@@ -896,6 +941,7 @@ export interface DailyTasksTableWithToggleProps
     | "showEmptySlots"
     | "showTime"
     | "showStatus"
+    | "showTimeEstimate"
   > {
   showEffortArea?: boolean;
   onToggleEffortArea?: () => void;
@@ -913,6 +959,8 @@ export interface DailyTasksTableWithToggleProps
   onToggleTime?: () => void;
   showStatus?: boolean;
   onToggleStatus?: () => void;
+  showTimeEstimate?: boolean;
+  onToggleTimeEstimate?: () => void;
 }
 
 export const DailyTasksTableWithToggle: React.FC<
@@ -934,6 +982,8 @@ export const DailyTasksTableWithToggle: React.FC<
   onToggleTime,
   showStatus: propShowStatus,
   onToggleStatus,
+  showTimeEstimate: propShowTimeEstimate,
+  onToggleTimeEstimate,
   ...props
 }) => {
   const storeShowEffortArea = useUIStore((state) => state.showEffortArea);
@@ -946,6 +996,7 @@ export const DailyTasksTableWithToggle: React.FC<
   const storeShowEmptySlots = useUIStore((state) => state.showEmptySlots);
   const storeShowTime = useUIStore((state) => state.showTime);
   const storeShowStatus = useUIStore((state) => state.showStatus);
+  const storeShowTimeEstimate = useUIStore((state) => state.showTimeEstimate);
 
   const storeToggleEffortArea = useUIStore((state) => state.toggleEffortArea);
   const storeToggleEffortVotes = useUIStore((state) => state.toggleEffortVotes);
@@ -955,6 +1006,7 @@ export const DailyTasksTableWithToggle: React.FC<
   const storeToggleEmptySlots = useUIStore((state) => state.toggleEmptySlots);
   const storeToggleTime = useUIStore((state) => state.toggleTime);
   const storeToggleStatus = useUIStore((state) => state.toggleStatus);
+  const storeToggleTimeEstimate = useUIStore((state) => state.toggleTimeEstimate);
 
   const showEffortArea = propShowEffortArea ?? storeShowEffortArea;
   const showEffortVotes = propShowEffortVotes ?? storeShowEffortVotes;
@@ -964,6 +1016,7 @@ export const DailyTasksTableWithToggle: React.FC<
   const showEmptySlots = propShowEmptySlots ?? storeShowEmptySlots;
   const showTime = propShowTime ?? storeShowTime;
   const showStatus = propShowStatus ?? storeShowStatus;
+  const showTimeEstimate = propShowTimeEstimate ?? storeShowTimeEstimate;
 
   const handleToggleEffortArea = () => {
     if (onToggleEffortArea) {
@@ -1026,6 +1079,14 @@ export const DailyTasksTableWithToggle: React.FC<
       onToggleStatus();
     } else {
       storeToggleStatus();
+    }
+  };
+
+  const handleToggleTimeEstimate = () => {
+    if (onToggleTimeEstimate) {
+      onToggleTimeEstimate();
+    } else {
+      storeToggleTimeEstimate();
     }
   };
 
@@ -1128,12 +1189,25 @@ export const DailyTasksTableWithToggle: React.FC<
           onClick={handleToggleStatus}
           style={{
             marginBottom: "8px",
+            marginRight: "8px",
             padding: "4px 8px",
             cursor: "pointer",
             fontSize: "12px",
           }}
         >
           {showStatus ? "Hide" : "Show"} Status
+        </button>
+        <button
+          className="exocortex-toggle-time-estimate"
+          onClick={handleToggleTimeEstimate}
+          style={{
+            marginBottom: "8px",
+            padding: "4px 8px",
+            cursor: "pointer",
+            fontSize: "12px",
+          }}
+        >
+          {showTimeEstimate ? "Hide" : "Show"} Time Est
         </button>
       </div>
       <DailyTasksTable
@@ -1146,6 +1220,7 @@ export const DailyTasksTableWithToggle: React.FC<
         showEmptySlots={showEmptySlots}
         showTime={showTime}
         showStatus={showStatus}
+        showTimeEstimate={showTimeEstimate}
       />
     </div>
   );

@@ -149,6 +149,12 @@ export class DailyTasksRenderer {
           await this.plugin.saveSettings();
           await this.refresh();
         },
+        showTimeEstimate: this.settings.showTimeEstimate,
+        onToggleTimeEstimate: async () => {
+          this.settings.showTimeEstimate = !this.settings.showTimeEstimate;
+          await this.plugin.saveSettings();
+          await this.refresh();
+        },
         onTaskClick: async (path: string, event: React.MouseEvent) => {
           const isModPressed = Keymap.isModEvent(
             event.nativeEvent as MouseEvent,
