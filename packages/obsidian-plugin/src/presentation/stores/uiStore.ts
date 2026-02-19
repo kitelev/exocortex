@@ -11,6 +11,7 @@ const DEFAULT_UI_SETTINGS: UISettings = {
   showEmptySlots: true,
   showTime: true,
   showStatus: true,
+  showTimeEstimate: false,
 };
 
 export const useUIStore = create<UIStore>()(
@@ -77,6 +78,13 @@ export const useUIStore = create<UIStore>()(
             "toggleStatus",
           ),
 
+        toggleTimeEstimate: () =>
+          set(
+            (state) => ({ showTimeEstimate: !state.showTimeEstimate }),
+            false,
+            "toggleTimeEstimate",
+          ),
+
         resetToDefaults: () =>
           set(DEFAULT_UI_SETTINGS, false, "resetToDefaults"),
       }),
@@ -91,6 +99,7 @@ export const useUIStore = create<UIStore>()(
           showEmptySlots: state.showEmptySlots,
           showTime: state.showTime,
           showStatus: state.showStatus,
+          showTimeEstimate: state.showTimeEstimate,
         }),
       },
     ),

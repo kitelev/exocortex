@@ -74,6 +74,7 @@ export const setupDailyTasksRendererTest = (): DailyTasksRendererTestContext => 
     activeFocusArea: null,
     showEffortArea: true,
     showEffortVotes: true,
+    showTimeEstimate: false,
   } as ExocortexSettings;
 
   const mockPlugin = {
