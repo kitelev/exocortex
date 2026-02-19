@@ -8139,3 +8139,752 @@ describe("MutationObserver coverage", () => {
 ```
 
 **Reference**: Issue #2153 - Wikilinks in tables not resolved (56 steps, February 2026)
+
+---
+
+## Frontmatter Array Preservation Pattern
+
+**When to use**: Modifying frontmatter that may contain existing array properties (e.g., `aliases`)
+
+### Problem: Direct Frontmatter Modification Corrupts YAML
+
+```typescript
+// ❌ WRONG: Directly manipulating frontmatter string
+const content = await this.app.vault.read(file);
+const newContent = content.replace(
+  /^---\n[\s\S]*?\n---/,
+  `---\naliases:\n  - ${newAlias}\n---`
+);
+await this.app.vault.modify(file, newContent);
+// Result: Overwrites existing aliases, may corrupt YAML structure
+```
+
+### Solution: Use Obsidian's processFrontMatter API
+
+```typescript
+// ✅ CORRECT: Use Obsidian's safe YAML manipulation
+async renameToUID(file: TFile): Promise<void> {
+  const currentName = file.basename;
+  const metadata = this.app.metadataCache.getFileCache(file);
+
+  // Read existing frontmatter safely
+  const existingAliases = metadata?.frontmatter?.aliases || [];
+
+  // Check for duplicates before adding
+  const updatedAliases = existingAliases.includes(currentName)
+    ? existingAliases
+    : [...existingAliases, currentName];
+
+  // Use processFrontMatter for safe YAML updates
+  await this.app.fileManager.processFrontMatter(file, (fm) => {
+    fm.aliases = updatedAliases;
+  });
+
+  // Now safe to rename
+  const uuid = metadata?.frontmatter?.uid || generateUUID();
+  await this.app.fileManager.renameFile(file, `${uuid}.md`);
+}
+```
+
+### Key Points
+
+1. **Always read existing values first**: Check `metadata?.frontmatter?.property`
+2. **Check for duplicates**: Avoid adding duplicate entries to arrays
+3. **Use `processFrontMatter()`**: Obsidian handles YAML formatting safely
+4. **Order matters**: Update frontmatter BEFORE renaming file
+
+### Edge Cases to Handle
+
+- Empty aliases array (`aliases: []`) vs no aliases property
+- Single-value aliases (string) vs array format
+- Special characters in filenames that need YAML escaping
+- Unicode characters in filenames
+
+### Testing Pattern
+
+```typescript
+describe("Rename to UID with aliases", () => {
+  it("should append to existing aliases array", async () => {
+    const file = createMockFile("test.md", {
+      aliases: ["existing-alias-1", "existing-alias-2"]
+    });
+
+    await command.execute(file);
+
+    const fm = await readFrontmatter(file);
+    expect(fm.aliases).toEqual([
+      "existing-alias-1",
+      "existing-alias-2",
+      "test"  // Old basename appended
+    ]);
+  });
+
+  it("should not duplicate existing alias", async () => {
+    const file = createMockFile("test.md", {
+      aliases: ["test"]  // Already contains basename
+    });
+
+    await command.execute(file);
+
+    const fm = await readFrontmatter(file);
+    expect(fm.aliases).toEqual(["test"]);  // No duplicate
+  });
+});
+```
+
+**Reference**: Issue #2180 - Rename to UID breaks frontmatter with aliases (63 steps, February 2026)
+
+---
+
+## Settings Cleanup Sprint Pattern
+
+**When to use**: Removing multiple unused/obsolete settings from plugin
+
+### Pattern Description
+
+When removing settings, batch related removals in a single sprint session for maximum efficiency. Each setting removal follows an identical checklist, and warm context from previous removals reduces errors.
+
+### February 2026 Sprint Example: 4 Settings Removed
+
+| Issue | Setting Removed | Steps | Files Changed |
+|-------|-----------------|-------|---------------|
+| #2162 | Default ontology asset | 31 | 8 |
+| #2163 | Status emoji mapping | 87 | 12 |
+| #2146 | Use dynamic property fields | 117 | 15 |
+| #2164 | Webhook integration | 91 | 10 |
+
+**Total**: 326 steps, 4 settings removed in one day
+
+### Setting Removal Checklist
+
+For EACH setting, follow this exact order:
+
+1. **Domain Layer** (`ExocortexSettings.ts`)
+   - [ ] Remove interface field: `settingName: Type;`
+   - [ ] Remove from `DEFAULT_SETTINGS`
+
+2. **Presentation Layer** (`ExocortexSettingTab.ts`)
+   - [ ] Remove helper methods (e.g., `getXxxOptions()`)
+   - [ ] Remove `new Setting()` block
+   - [ ] Remove imports if no longer needed
+
+3. **Application Layer** (Commands, Services)
+   - [ ] Remove all call sites reading the setting
+   - [ ] Remove related service methods if orphaned
+   - [ ] Clean up constructor parameters
+
+4. **Test Files**
+   - [ ] Remove describe blocks testing the setting
+   - [ ] Remove/update fixture objects containing the field
+   - [ ] Update mock indices (Setting blocks shift when one removed)
+   - [ ] Remove spy calls for deleted helper methods
+
+5. **Verification**
+   ```bash
+   # Must return zero matches
+   grep -r "settingName" packages/ --include="*.ts" --include="*.tsx"
+
+   npm run check:types  # Must pass
+   npm run test:all     # Must pass 100%
+   ```
+
+### Why Batching Works
+
+- **Same file patterns**: All removals touch `ExocortexSettings.ts`, `ExocortexSettingTab.ts`
+- **Warm context**: After first removal, file structure is fresh in memory
+- **Lower error rate**: Checklist becomes automatic after first execution
+- **Quick reviews**: Each PR is small, focused deletion
+
+### Mock Index Shifting Gotcha
+
+**CRITICAL**: When removing a Setting block, all subsequent indices shift:
+
+```typescript
+// BEFORE removal - ontology dropdown is index 0
+(MockSetting as jest.Mock).mock.results[0]  // Ontology dropdown
+(MockSetting as jest.Mock).mock.results[1]  // Show layout
+(MockSetting as jest.Mock).mock.results[2]  // Use labels
+
+// AFTER removal - indices shift down
+(MockSetting as jest.Mock).mock.results[0]  // Show layout (was 1)
+(MockSetting as jest.Mock).mock.results[1]  // Use labels (was 2)
+```
+
+**Always audit ALL `mock.results[N]` indices** when removing a Setting.
+
+### Anti-Patterns
+
+- ❌ Removing setting from interface but leaving call sites
+- ❌ Deleting tests without running test suite
+- ❌ Forgetting to update fixture objects in E2E tests
+- ❌ Not verifying with grep after removal
+
+**Reference**: Issues #2162, #2163, #2146, #2164 - Settings Cleanup Sprint (February 2026)
+
+---
+
+## Virtualized Table Column Alignment Pattern
+
+**When to use**: Tables with virtualized rendering (>50 rows) that need consistent column widths
+
+### Problem: position:absolute Breaks table-layout:fixed
+
+```tsx
+// Standard virtualization applies absolute positioning
+return renderRow(row, virtualRow.index, {
+  position: "absolute",
+  top: 0,
+  left: 0,
+  width: "100%",
+  height: `${virtualRow.size}px`,
+  transform: `translateY(${virtualRow.start}px)`,
+});
+```
+
+**Result**: `<tr>` with `position: absolute` is removed from document flow:
+- `<td>` cells lose relationship with `<colgroup>` and `<th>` widths
+- `table-layout: fixed` stops working
+- Cells collapse to minimum content width
+
+### Solution: Explicit Width Synchronization
+
+```tsx
+// Step 1: Measure header cell widths after mount
+const [columnWidths, setColumnWidths] = useState<number[]>([]);
+const headerRef = useRef<HTMLTableRowElement>(null);
+
+useLayoutEffect(() => {
+  if (headerRef.current) {
+    const cells = headerRef.current.querySelectorAll('th');
+    const widths = Array.from(cells).map(cell => cell.offsetWidth);
+    setColumnWidths(widths);
+  }
+}, [columns]);
+
+// Step 2: Apply widths to virtualized rows
+const renderVirtualizedRow = (row: Row, style: CSSProperties) => (
+  <tr style={style}>
+    {columns.map((col, i) => (
+      <td key={col.id} style={{
+        width: columnWidths[i] || 'auto',
+        minWidth: columnWidths[i] || 'auto',
+        maxWidth: columnWidths[i] || 'auto',
+      }}>
+        {row[col.id]}
+      </td>
+    ))}
+  </tr>
+);
+```
+
+### Alternative: CSS Grid for Virtualized Mode
+
+```tsx
+// Convert to CSS Grid only for virtualized rendering
+<div
+  className="virtualized-table-grid"
+  style={{
+    display: 'grid',
+    gridTemplateColumns: columns.map(c => c.width || '1fr').join(' '),
+  }}
+>
+  {virtualItems.map(virtualRow => (
+    <div
+      key={virtualRow.index}
+      style={{
+        position: 'absolute',
+        transform: `translateY(${virtualRow.start}px)`,
+        display: 'contents',  // Allows children to participate in grid
+      }}
+    >
+      {columns.map(col => (
+        <div className="grid-cell">{row[col.id]}</div>
+      ))}
+    </div>
+  ))}
+</div>
+```
+
+### Window Resize Handling
+
+```typescript
+// Re-measure widths on resize
+useEffect(() => {
+  const handleResize = debounce(() => {
+    if (headerRef.current) {
+      const cells = headerRef.current.querySelectorAll('th');
+      const widths = Array.from(cells).map(cell => cell.offsetWidth);
+      setColumnWidths(widths);
+    }
+  }, 100);
+
+  window.addEventListener('resize', handleResize);
+  return () => window.removeEventListener('resize', handleResize);
+}, []);
+```
+
+### Virtualization Threshold
+
+```typescript
+const VIRTUALIZATION_THRESHOLD = 50;
+
+const shouldVirtualize = rows.length > VIRTUALIZATION_THRESHOLD;
+
+return shouldVirtualize
+  ? renderVirtualizedTable(rows)  // Uses explicit widths
+  : renderStandardTable(rows);     // Uses table-layout: fixed
+```
+
+**Reference**: Issue #2152 - Virtualized table column alignment (70 steps, February 2026)
+
+---
+
+## CodeMirror Callout Context Pattern
+
+**When to use**: Applying CodeMirror decorations that need to work inside Obsidian Callout blocks
+
+### Problem: Decorations Don't Apply Inside Callouts
+
+```typescript
+// Standard decoration approach
+buildDecorations(view: EditorView): DecorationSet {
+  const builder = new RangeSetBuilder<Decoration>();
+  const wikilinks = this.findWikilinks(view);  // ← Misses links in Callouts
+
+  for (const wikilink of wikilinks) {
+    builder.add(wikilink.from, wikilink.to, decoration);
+  }
+
+  return builder.finish();
+}
+```
+
+**Root Cause**: Callout blocks use special syntax parsing. Standard `viewportLineRanges` may not include Callout content correctly.
+
+### Solution: Use visibleRanges Instead of viewportLineRanges
+
+```typescript
+buildDecorations(view: EditorView): DecorationSet {
+  const builder = new RangeSetBuilder<Decoration>();
+
+  // ✅ Use visibleRanges for comprehensive coverage
+  for (const { from, to } of view.visibleRanges) {
+    const text = view.state.doc.sliceString(from, to);
+    const wikilinks = this.parseWikilinksFromText(text, from);
+
+    for (const wikilink of wikilinks) {
+      if (!this.isCursorInsideMatch(wikilink, cursorPos)) {
+        builder.add(wikilink.from, wikilink.to, decoration);
+      }
+    }
+  }
+
+  return builder.finish();
+}
+```
+
+### Callout Syntax Reference
+
+```markdown
+> [!note]
+> This is a note callout with [[wikilink]].
+
+> [!warning] Title
+> Warning content with [[another-link]].
+
+> [!tip]+ Collapsible
+> Collapsible tip with [[nested-link]].
+```
+
+### Testing Callout Context
+
+```typescript
+describe("Wikilink labels in Callouts", () => {
+  it("should apply decoration inside [!note] callout", async () => {
+    const content = `> [!note]
+> [[uuid-123]]`;
+
+    const view = createEditorView(content);
+    const decorations = plugin.buildDecorations(view);
+
+    expect(decorations.size).toBe(1);
+  });
+
+  it("should handle nested callouts", async () => {
+    const content = `> [!info]
+> Outer content [[link1]]
+>> [!warning]
+>> Nested content [[link2]]`;
+
+    const view = createEditorView(content);
+    const decorations = plugin.buildDecorations(view);
+
+    expect(decorations.size).toBe(2);
+  });
+});
+```
+
+### Performance Consideration
+
+```typescript
+// Debounce decoration updates for large documents
+const debouncedUpdate = debounce(() => {
+  this.decorations = this.buildDecorations(view);
+  view.dispatch({});  // Trigger redraw
+}, 50);
+```
+
+**Reference**: Issue #2182 - Wikilink labels not displayed in Callout blocks (81 steps, February 2026)
+
+---
+
+## Toggle Button State Management Pattern
+
+**When to use**: Adding show/hide toggle buttons to table layouts (like time estimates in DailyNote)
+
+### Pattern Structure
+
+```
+1. Add state to Zustand store (uiStore.ts)
+2. Create toggle button component
+3. Add conditional rendering in table
+4. Format display value
+5. Persist preference (optional)
+```
+
+### Implementation
+
+```typescript
+// Step 1: uiStore.ts - Central state management
+interface UIState {
+  showTimeEstimate: boolean;
+}
+
+interface UIActions {
+  toggleTimeEstimate: () => void;
+}
+
+export const useUIStore = create<UIState & UIActions>()(
+  persist(
+    (set) => ({
+      showTimeEstimate: false,
+      toggleTimeEstimate: () =>
+        set((s) => ({ showTimeEstimate: !s.showTimeEstimate })),
+    }),
+    { name: 'exocortex-ui-settings' }  // Persist to localStorage
+  )
+);
+```
+
+```typescript
+// Step 2: Toggle button in table header
+export const DailyTasksTable: React.FC<Props> = ({ tasks }) => {
+  const { showTimeEstimate, toggleTimeEstimate } = useUIStore();
+
+  return (
+    <div>
+      <div className="table-controls">
+        <button
+          className={`toggle-btn ${showTimeEstimate ? 'active' : ''}`}
+          onClick={toggleTimeEstimate}
+          title="Toggle time estimates"
+        >
+          ⏱ Time
+        </button>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Task</th>
+            {showTimeEstimate && <th>Estimate</th>}
+          </tr>
+        </thead>
+        <tbody>
+          {tasks.map(task => (
+            <tr key={task.id}>
+              <td>{task.title}</td>
+              {showTimeEstimate && (
+                <td>{formatTimeEstimate(task.timeEstimateMinutes)}</td>
+              )}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+};
+```
+
+```typescript
+// Step 3: Format utility
+function formatTimeEstimate(minutes: number | null | undefined): string {
+  if (!minutes || minutes === 0) return '';
+
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+
+  if (hours > 0 && mins > 0) return `${hours}h ${mins}m`;
+  if (hours > 0) return `${hours}h`;
+  return `${mins}m`;
+}
+```
+
+### CSS Styling
+
+```css
+.toggle-btn {
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  cursor: pointer;
+  font-size: 12px;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+
+.toggle-btn:hover {
+  opacity: 1;
+}
+
+.toggle-btn.active {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  opacity: 1;
+}
+```
+
+### Testing Toggle Behavior
+
+```typescript
+describe("Time estimate toggle", () => {
+  it("should show estimates when toggle is ON", async () => {
+    useUIStore.setState({ showTimeEstimate: true });
+
+    const { container } = render(
+      <DailyTasksTable tasks={[{ timeEstimateMinutes: 90 }]} />
+    );
+
+    expect(container.textContent).toContain("1h 30m");
+  });
+
+  it("should hide estimates when toggle is OFF", async () => {
+    useUIStore.setState({ showTimeEstimate: false });
+
+    const { container } = render(
+      <DailyTasksTable tasks={[{ timeEstimateMinutes: 90 }]} />
+    );
+
+    expect(container.textContent).not.toContain("1h 30m");
+  });
+
+  it("should format various time values correctly", () => {
+    expect(formatTimeEstimate(90)).toBe("1h 30m");
+    expect(formatTimeEstimate(45)).toBe("45m");
+    expect(formatTimeEstimate(120)).toBe("2h");
+    expect(formatTimeEstimate(0)).toBe("");
+    expect(formatTimeEstimate(null)).toBe("");
+  });
+});
+```
+
+### Multiple Toggles Pattern
+
+```typescript
+// When multiple properties are toggleable
+interface UIState {
+  showTimeEstimate: boolean;
+  showVotes: boolean;
+  showPriority: boolean;
+}
+
+// Group toggles in UI
+<div className="table-controls">
+  <ToggleButton
+    label="⏱ Time"
+    active={showTimeEstimate}
+    onClick={toggleTimeEstimate}
+  />
+  <ToggleButton
+    label="👍 Votes"
+    active={showVotes}
+    onClick={toggleVotes}
+  />
+  <ToggleButton
+    label="🔥 Priority"
+    active={showPriority}
+    onClick={togglePriority}
+  />
+</div>
+```
+
+**Reference**: Issue #2178 - Time estimate toggle in DailyNote (121 steps, February 2026)
+
+---
+
+## EditorSuggest Label Resolution Pattern
+
+**When to use**: Extending Obsidian's autocomplete (like `[[` wikilink suggest) to show asset labels
+
+### Problem: Default Suggest Shows UUIDs
+
+```typescript
+// Obsidian's default behavior shows file basenames
+// For UUID-named files, users see: abc123-def4-5678...
+```
+
+### Solution: Custom EditorSuggest with Label Resolution
+
+```typescript
+// WikilinkLabelSuggest.ts
+export class WikilinkLabelSuggest extends EditorSuggest<TFile> {
+  constructor(
+    app: App,
+    private resolver: WikilinkLabelResolver
+  ) {
+    super(app);
+  }
+
+  // Trigger on [[ pattern
+  onTrigger(
+    cursor: EditorPosition,
+    editor: Editor
+  ): EditorSuggestTriggerInfo | null {
+    const line = editor.getLine(cursor.line).substring(0, cursor.ch);
+    const match = line.match(/\[\[([^\]|]*)$/);
+
+    if (!match) return null;
+
+    return {
+      start: { line: cursor.line, ch: cursor.ch - match[1].length },
+      end: cursor,
+      query: match[1]
+    };
+  }
+
+  // Search by BOTH label and basename
+  getSuggestions(context: EditorSuggestContext): TFile[] {
+    const query = context.query.toLowerCase();
+
+    return this.app.vault.getMarkdownFiles()
+      .filter(file => {
+        const label = this.resolver.getAssetLabel(file.path);
+        const basename = file.basename;
+
+        // Match against label OR basename
+        return (
+          label?.toLowerCase().includes(query) ||
+          basename.toLowerCase().includes(query)
+        );
+      })
+      .sort((a, b) => {
+        // Prioritize label matches
+        const labelA = this.resolver.getAssetLabel(a.path) || a.basename;
+        const labelB = this.resolver.getAssetLabel(b.path) || b.basename;
+        return labelA.localeCompare(labelB);
+      })
+      .slice(0, 20);  // Limit results
+  }
+
+  // Display label in suggestion list
+  renderSuggestion(file: TFile, el: HTMLElement): void {
+    const label = this.resolver.getAssetLabel(file.path);
+    const basename = file.basename;
+
+    if (label && label !== basename) {
+      el.createEl('div', { text: label, cls: 'suggestion-label' });
+      el.createEl('div', { text: basename, cls: 'suggestion-basename' });
+    } else {
+      el.setText(basename);
+    }
+  }
+
+  // Insert with alias if label exists
+  selectSuggestion(file: TFile, evt: MouseEvent | KeyboardEvent): void {
+    const label = this.resolver.getAssetLabel(file.path);
+    const basename = file.basename;
+
+    // Insert [[uuid|label]] or [[uuid]]
+    const insertText = label && label !== basename
+      ? `[[${basename}|${label}]]`
+      : `[[${basename}]]`;
+
+    this.context?.editor.replaceRange(
+      insertText,
+      this.context.start,
+      this.context.end
+    );
+  }
+}
+```
+
+### Registration in Plugin
+
+```typescript
+// ExocortexPlugin.ts
+onload() {
+  // Register custom suggest
+  this.registerEditorSuggest(
+    new WikilinkLabelSuggest(this.app, this.wikilinkLabelResolver)
+  );
+}
+```
+
+### CSS for Suggestion Display
+
+```css
+.suggestion-label {
+  font-weight: 500;
+  color: var(--text-normal);
+}
+
+.suggestion-basename {
+  font-size: 0.85em;
+  color: var(--text-muted);
+  font-family: var(--font-monospace);
+}
+```
+
+### Testing
+
+```typescript
+describe("WikilinkLabelSuggest", () => {
+  it("should trigger on [[", () => {
+    const trigger = suggest.onTrigger(
+      { line: 0, ch: 5 },
+      mockEditor("test [[qu")
+    );
+
+    expect(trigger).not.toBeNull();
+    expect(trigger?.query).toBe("qu");
+  });
+
+  it("should find files by label", () => {
+    resolver.getAssetLabel.mockImplementation((path) => {
+      if (path === "abc123.md") return "My Project";
+      return null;
+    });
+
+    const results = suggest.getSuggestions({ query: "proj" });
+
+    expect(results).toContainEqual(
+      expect.objectContaining({ basename: "abc123" })
+    );
+  });
+
+  it("should insert [[uuid|label]] format", () => {
+    resolver.getAssetLabel.mockReturnValue("My Project");
+
+    suggest.selectSuggestion(mockFile("abc123.md"), mockEvent);
+
+    expect(mockEditor.replaceRange).toHaveBeenCalledWith(
+      "[[abc123|My Project]]",
+      expect.any(Object),
+      expect.any(Object)
+    );
+  });
+});
+```
+
+**Reference**: Issue #2166 - Show asset labels in Quick Switcher and [[ autocomplete (126 steps, February 2026)
