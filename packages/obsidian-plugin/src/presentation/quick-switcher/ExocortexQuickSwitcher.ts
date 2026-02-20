@@ -117,15 +117,27 @@ export class ExocortexQuickSwitcher extends FuzzySuggestModal<TFile> {
   /**
    * Get the display text for fuzzy matching
    * This is what the user searches against
+   * Returns concatenated string: label + aliases + UID for multi-field search
    */
   getItemText(file: TFile): string {
     const cachedLabel = this.labelCache.get(file.path);
-    if (cachedLabel) {
-      return cachedLabel;
-    }
+    const label = cachedLabel || this.getDisplayName(file);
 
-    // Fallback to computing if not cached
-    return this.getDisplayName(file);
+    // Get aliases from frontmatter
+    const cache = this.app.metadataCache.getFileCache(file);
+    const aliases = cache?.frontmatter?.aliases || [];
+
+    // Handle both array and string aliases
+    const aliasArray = Array.isArray(aliases) ? aliases : (aliases ? [aliases] : []);
+
+    // Concatenate all searchable fields: label + aliases + UID
+    const searchableText = [
+      label,
+      ...aliasArray,
+      file.basename,
+    ].join(' ');
+
+    return searchableText;
   }
 
   /**
@@ -133,7 +145,13 @@ export class ExocortexQuickSwitcher extends FuzzySuggestModal<TFile> {
    */
   override renderSuggestion(match: FuzzyMatch<TFile>, el: HTMLElement): void {
     const file = match.item;
-    const label = this.getItemText(file);
+    // Get just the display label for rendering (not the full searchable text)
+    const cachedLabel = this.labelCache.get(file.path);
+    const label = cachedLabel || this.getDisplayName(file);
+
+    // Get classes from frontmatter
+    const cache = this.app.metadataCache.getFileCache(file);
+    const classes = cache?.frontmatter?.exo__Instance_class || [];
 
     // Create main container
     const suggestionContent = el.createDiv({ cls: "exocortex-quick-switcher-item" });
@@ -144,13 +162,25 @@ export class ExocortexQuickSwitcher extends FuzzySuggestModal<TFile> {
       cls: "exocortex-quick-switcher-label",
     });
 
-    // Show file path as secondary info if label differs from basename
-    if (label !== file.basename) {
+    // Show classes instead of path if available
+    const classArray = Array.isArray(classes) ? classes : (classes ? [classes] : []);
+    if (classArray.length > 0) {
+      const classNames = classArray.map((c: string) => this.extractClassName(c)).join(', ');
       suggestionContent.createEl("span", {
-        text: file.path,
-        cls: "exocortex-quick-switcher-path",
+        text: classNames,
+        cls: "exocortex-quick-switcher-classes",
       });
     }
+  }
+
+  /**
+   * Extract class name from IRI or return the string as-is
+   * E.g., "https://example.org/ontology#ems__Project" -> "ems__Project"
+   */
+  private extractClassName(classIRI: string): string {
+    // Extract last segment after # or /
+    const match = classIRI.match(/[#/]([^#/]+)$/);
+    return match ? match[1] : classIRI;
   }
 
   /**
