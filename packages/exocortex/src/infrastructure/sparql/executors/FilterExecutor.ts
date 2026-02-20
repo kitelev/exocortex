@@ -2,6 +2,7 @@ import type { FilterOperation, Expression, AlgebraOperation, ExistsExpression, A
 import type { SolutionMapping } from "../SolutionMapping";
 import type { ITripleStore } from "../../../interfaces/ITripleStore";
 import { BuiltInFunctions } from "../filters/BuiltInFunctions";
+import { functionHandlers, type FunctionContext } from "../filters/FunctionRegistry";
 import { IRI } from "../../../domain/models/rdf/IRI";
 import { Literal } from "../../../domain/models/rdf/Literal";
 
@@ -528,387 +529,80 @@ export class FilterExecutor {
     return false;
   }
 
-  private evaluateFunction(expr: any, solution: SolutionMapping): boolean | string | number | undefined | any {
-    // Handle both string function names and NamedNode (IRI) function references
-    let funcName: string;
-    if (typeof expr.function === "string") {
-      funcName = expr.function.toLowerCase();
-    } else if (expr.function && typeof expr.function === "object" && "value" in expr.function) {
-      // For IRI functions like exo:dateDiffMinutes, extract local name from IRI
-      const iri = expr.function.value;
-      const localName = iri.includes("#") ? iri.split("#").pop() : iri.split("/").pop();
-      funcName = (localName || iri).toLowerCase();
-    } else {
-      throw new FilterExecutorError(`Unknown function format: ${expr.function}`);
+  /**
+   * Evaluate a SPARQL function call expression.
+   *
+   * Uses a function registry pattern for most functions, with special handling
+   * for functions that require lazy evaluation (COALESCE, IF) or instance state (byUUID).
+   *
+   * @param expr - Function call expression
+   * @param solution - Current solution mapping
+   * @returns Function result
+   */
+  private evaluateFunction(expr: unknown, solution: SolutionMapping): boolean | string | number | undefined | unknown {
+    const typedExpr = expr as { function: string | { value: string }; args: Expression[] };
+
+    // Extract function name from string or IRI
+    const funcName = this.extractFunctionName(typedExpr.function);
+
+    // Handle special functions that require lazy evaluation or instance state
+    const specialResult = this.evaluateSpecialFunction(funcName, typedExpr.args, solution);
+    if (specialResult !== undefined) {
+      return specialResult.value;
     }
 
+    // Look up function in registry
+    const handler = functionHandlers.get(funcName);
+    if (!handler) {
+      throw new FilterExecutorError(`Unknown function: ${funcName}`);
+    }
+
+    // Create evaluation context
+    const ctx: FunctionContext = {
+      evaluateExpression: (e, s) => this.evaluateExpression(e, s),
+      getTermFromExpression: (e, s) => this.getTermFromExpression(e, s),
+      getStringValue: (v) => this.getStringValue(v),
+      solution,
+      isYearMonthDurationValue: (v) => this.isYearMonthDurationValue(v),
+      isDayTimeDurationValue: (v) => this.isDayTimeDurationValue(v),
+    };
+
+    return handler(typedExpr.args, ctx);
+  }
+
+  /**
+   * Extract function name from string or IRI reference.
+   */
+  private extractFunctionName(func: string | { value: string }): string {
+    if (typeof func === "string") {
+      return func.toLowerCase();
+    }
+    if (func && typeof func === "object" && "value" in func) {
+      // For IRI functions like exo:dateDiffMinutes, extract local name from IRI
+      const iri = func.value;
+      const localName = iri.includes("#") ? iri.split("#").pop() : iri.split("/").pop();
+      return (localName || iri).toLowerCase();
+    }
+    throw new FilterExecutorError(`Unknown function format: ${func}`);
+  }
+
+  /**
+   * Handle special functions that require lazy evaluation or instance state.
+   * Returns { value: result } if handled, undefined if not a special function.
+   */
+  private evaluateSpecialFunction(
+    funcName: string,
+    args: Expression[],
+    solution: SolutionMapping
+  ): { value: unknown } | undefined {
     switch (funcName) {
-      case "str":
-        const strArg = this.getTermFromExpression(expr.args[0], solution);
-        return BuiltInFunctions.str(strArg);
-
-      case "lang":
-        const langArg = this.getTermFromExpression(expr.args[0], solution);
-        return BuiltInFunctions.lang(langArg);
-
-      case "datatype":
-        const dtArg = this.getTermFromExpression(expr.args[0], solution);
-        return BuiltInFunctions.datatype(dtArg).value;
-
-      case "bound":
-        if (expr.args[0].type === "variable") {
-          const term = solution.get(expr.args[0].name);
-          return BuiltInFunctions.bound(term);
-        }
-        return true;
-
-      case "isiri":
-      case "isuri":
-        const iriArg = this.getTermFromExpression(expr.args[0], solution);
-        return BuiltInFunctions.isIRI(iriArg);
-
-      case "isblank":
-        const blankArg = this.getTermFromExpression(expr.args[0], solution);
-        return BuiltInFunctions.isBlank(blankArg);
-
-      case "isliteral":
-        const litArg = this.getTermFromExpression(expr.args[0], solution);
-        return BuiltInFunctions.isLiteral(litArg);
-
-      case "regex":
-        const text = this.getStringValue(this.evaluateExpression(expr.args[0], solution));
-        const pattern = this.getStringValue(this.evaluateExpression(expr.args[1], solution));
-        const flags = expr.args[2] ? this.getStringValue(this.evaluateExpression(expr.args[2], solution)) : undefined;
-        return BuiltInFunctions.regex(text, pattern, flags);
-
-      case "langmatches":
-        const langTag = this.getStringValue(this.evaluateExpression(expr.args[0], solution));
-        const langRange = this.getStringValue(this.evaluateExpression(expr.args[1], solution));
-        return BuiltInFunctions.langMatches(langTag, langRange);
-
-      // W3C SPARQL 1.1 String Functions
-      case "contains":
-        const containsStr = this.getStringValue(this.evaluateExpression(expr.args[0], solution));
-        const containsSubstr = this.getStringValue(this.evaluateExpression(expr.args[1], solution));
-        return BuiltInFunctions.contains(containsStr, containsSubstr);
-
-      case "strstarts":
-        const startsStr = this.getStringValue(this.evaluateExpression(expr.args[0], solution));
-        const startsPrefix = this.getStringValue(this.evaluateExpression(expr.args[1], solution));
-        return BuiltInFunctions.strStarts(startsStr, startsPrefix);
-
-      case "strends":
-        const endsStr = this.getStringValue(this.evaluateExpression(expr.args[0], solution));
-        const endsSuffix = this.getStringValue(this.evaluateExpression(expr.args[1], solution));
-        return BuiltInFunctions.strEnds(endsStr, endsSuffix);
-
-      case "strlen":
-        const lenStr = this.getStringValue(this.evaluateExpression(expr.args[0], solution));
-        return BuiltInFunctions.strlen(lenStr);
-
-      case "ucase":
-        const ucaseStr = this.getStringValue(this.evaluateExpression(expr.args[0], solution));
-        return BuiltInFunctions.ucase(ucaseStr);
-
-      case "lcase":
-        const lcaseStr = this.getStringValue(this.evaluateExpression(expr.args[0], solution));
-        return BuiltInFunctions.lcase(lcaseStr);
-
-      case "substr":
-        const substrStr = this.getStringValue(this.evaluateExpression(expr.args[0], solution));
-        const substrStart = Number(this.evaluateExpression(expr.args[1], solution));
-        if (expr.args[2]) {
-          const substrLength = Number(this.evaluateExpression(expr.args[2], solution));
-          return BuiltInFunctions.substr(substrStr, substrStart, substrLength);
-        }
-        return BuiltInFunctions.substr(substrStr, substrStart);
-
-      case "strbefore":
-        const beforeStr = this.getStringValue(this.evaluateExpression(expr.args[0], solution));
-        const beforeSep = this.getStringValue(this.evaluateExpression(expr.args[1], solution));
-        return BuiltInFunctions.strBefore(beforeStr, beforeSep);
-
-      case "strafter":
-        const afterStr = this.getStringValue(this.evaluateExpression(expr.args[0], solution));
-        const afterSep = this.getStringValue(this.evaluateExpression(expr.args[1], solution));
-        return BuiltInFunctions.strAfter(afterStr, afterSep);
-
-      case "concat":
-        const concatArgs = expr.args.map((arg: Expression) =>
-          this.getStringValue(this.evaluateExpression(arg, solution))
-        );
-        return BuiltInFunctions.concat(...concatArgs);
-
-      case "replace":
-        const replaceStr = this.getStringValue(this.evaluateExpression(expr.args[0], solution));
-        const replacePattern = this.getStringValue(this.evaluateExpression(expr.args[1], solution));
-        const replaceReplacement = this.getStringValue(this.evaluateExpression(expr.args[2], solution));
-        const replaceFlags = expr.args[3] ? this.getStringValue(this.evaluateExpression(expr.args[3], solution)) : undefined;
-        return BuiltInFunctions.replace(replaceStr, replacePattern, replaceReplacement, replaceFlags);
-
-      // Date comparison functions
-      case "parsedate":
-        const parseDateArg = this.getStringValue(this.evaluateExpression(expr.args[0], solution));
-        return BuiltInFunctions.parseDate(parseDateArg);
-
-      case "datebefore":
-        const beforeDate1 = this.getStringValue(this.evaluateExpression(expr.args[0], solution));
-        const beforeDate2 = this.getStringValue(this.evaluateExpression(expr.args[1], solution));
-        return BuiltInFunctions.dateBefore(beforeDate1, beforeDate2);
-
-      case "dateafter":
-        const afterDate1 = this.getStringValue(this.evaluateExpression(expr.args[0], solution));
-        const afterDate2 = this.getStringValue(this.evaluateExpression(expr.args[1], solution));
-        return BuiltInFunctions.dateAfter(afterDate1, afterDate2);
-
-      case "dateinrange":
-        const rangeDate = this.getStringValue(this.evaluateExpression(expr.args[0], solution));
-        const rangeStart = this.getStringValue(this.evaluateExpression(expr.args[1], solution));
-        const rangeEnd = this.getStringValue(this.evaluateExpression(expr.args[2], solution));
-        return BuiltInFunctions.dateInRange(rangeDate, rangeStart, rangeEnd);
-
-      case "datediffminutes":
-        const diffMinDate1 = this.getStringValue(this.evaluateExpression(expr.args[0], solution));
-        const diffMinDate2 = this.getStringValue(this.evaluateExpression(expr.args[1], solution));
-        return BuiltInFunctions.dateDiffMinutes(diffMinDate1, diffMinDate2);
-
-      case "datediffhours":
-        const diffHoursDate1 = this.getStringValue(this.evaluateExpression(expr.args[0], solution));
-        const diffHoursDate2 = this.getStringValue(this.evaluateExpression(expr.args[1], solution));
-        return BuiltInFunctions.dateDiffHours(diffHoursDate1, diffHoursDate2);
-
-      // SPARQL 1.1 DateTime accessor functions
-      case "year":
-      case "years": {
-        const yearArg = this.evaluateExpression(expr.args[0], solution);
-        // Check if argument is an xsd:yearMonthDuration
-        if (this.isYearMonthDurationValue(yearArg)) {
-          return BuiltInFunctions.durationYears(yearArg);
-        }
-        // Otherwise treat as dateTime
-        return BuiltInFunctions.year(this.getStringValue(yearArg));
-      }
-
-      case "month":
-      case "months": {
-        const monthArg = this.evaluateExpression(expr.args[0], solution);
-        // Check if argument is an xsd:yearMonthDuration
-        if (this.isYearMonthDurationValue(monthArg)) {
-          return BuiltInFunctions.durationMonths(monthArg);
-        }
-        // Otherwise treat as dateTime
-        return BuiltInFunctions.month(this.getStringValue(monthArg));
-      }
-
-      case "day":
-      case "days": {
-        const dayArg = this.evaluateExpression(expr.args[0], solution);
-        // Check if argument is an xsd:dayTimeDuration
-        if (this.isDayTimeDurationValue(dayArg)) {
-          return BuiltInFunctions.durationDays(dayArg);
-        }
-        // Otherwise treat as dateTime
-        return BuiltInFunctions.day(this.getStringValue(dayArg));
-      }
-
-      case "hours": {
-        const hoursArg = this.evaluateExpression(expr.args[0], solution);
-        // Check if argument is an xsd:dayTimeDuration
-        if (this.isDayTimeDurationValue(hoursArg)) {
-          return BuiltInFunctions.durationHours(hoursArg);
-        }
-        // Otherwise treat as dateTime
-        return BuiltInFunctions.hours(this.getStringValue(hoursArg));
-      }
-
-      case "minutes": {
-        const minutesArg = this.evaluateExpression(expr.args[0], solution);
-        // Check if argument is an xsd:dayTimeDuration
-        if (this.isDayTimeDurationValue(minutesArg)) {
-          return BuiltInFunctions.durationMinutes(minutesArg);
-        }
-        // Otherwise treat as dateTime
-        return BuiltInFunctions.minutes(this.getStringValue(minutesArg));
-      }
-
-      case "seconds": {
-        const secondsArg = this.evaluateExpression(expr.args[0], solution);
-        // Check if argument is an xsd:dayTimeDuration
-        if (this.isDayTimeDurationValue(secondsArg)) {
-          return BuiltInFunctions.durationSeconds(secondsArg);
-        }
-        // Otherwise treat as dateTime
-        return BuiltInFunctions.seconds(this.getStringValue(secondsArg));
-      }
-
-      case "timezone":
-        const timezoneDate = this.getStringValue(this.evaluateExpression(expr.args[0], solution));
-        return BuiltInFunctions.timezone(timezoneDate);
-
-      case "tz":
-        const tzDate = this.getStringValue(this.evaluateExpression(expr.args[0], solution));
-        return BuiltInFunctions.tz(tzDate);
-
-      // SPARQL 1.2 ADJUST function for timezone adjustment (Issue #976)
-      case "adjust": {
-        const adjustDateTime = this.evaluateExpression(expr.args[0], solution);
-        // Second argument (timezone) is optional
-        const adjustTimezone = expr.args.length > 1
-          ? this.evaluateExpression(expr.args[1], solution)
-          : undefined;
-        return BuiltInFunctions.adjust(adjustDateTime, adjustTimezone);
-      }
-
-      case "now":
-        return BuiltInFunctions.now();
-
-      // XSD Type casting functions - for SPARQL dateTime arithmetic (Issue #534)
-      // xsd:dateTime(?value) casts a value to dateTime for arithmetic operations
-      case "datetime":
-      case "xsd:datetime": {
-        const dtValue = this.evaluateExpression(expr.args[0], solution);
-        return BuiltInFunctions.xsdDateTime(this.getStringValue(dtValue));
-      }
-
-      // xsd:integer(?value) casts a value to integer for arithmetic operations
-      case "integer":
-      case "xsd:integer": {
-        const intValue = this.evaluateExpression(expr.args[0], solution);
-        return BuiltInFunctions.xsdInteger(this.getStringValue(intValue));
-      }
-
-      // xsd:decimal(?value) casts a value to decimal for arithmetic operations
-      case "decimal":
-      case "xsd:decimal": {
-        const decValue = this.evaluateExpression(expr.args[0], solution);
-        return BuiltInFunctions.xsdDecimal(this.getStringValue(decValue));
-      }
-
-      // xsd:dayTimeDuration(?value) casts a value to dayTimeDuration (SPARQL 1.1 Issue #929)
-      case "daytimeduration":
-      case "xsd:daytimeduration": {
-        const durValue = this.evaluateExpression(expr.args[0], solution);
-        return BuiltInFunctions.xsdDayTimeDuration(this.getStringValue(durValue));
-      }
-
-      // Duration accessor/conversion functions (Issue #929)
-      case "durationtodays": {
-        const durDaysArg = this.evaluateExpression(expr.args[0], solution);
-        return BuiltInFunctions.durationToDays(durDaysArg);
-      }
-
-      case "durationtohours": {
-        const durHoursArg = this.evaluateExpression(expr.args[0], solution);
-        return BuiltInFunctions.durationToHours(durHoursArg);
-      }
-
-      case "durationtominutes": {
-        const durMinArg = this.evaluateExpression(expr.args[0], solution);
-        return BuiltInFunctions.durationToMinutes(durMinArg);
-      }
-
-      case "durationtoseconds": {
-        const durSecArg = this.evaluateExpression(expr.args[0], solution);
-        return BuiltInFunctions.durationToSeconds(durSecArg);
-      }
-
-      // Duration component accessor functions (Issue #989)
-      // These extract individual components from xsd:dayTimeDuration values
-      // (not total converted values)
-      case "durationdays": {
-        const durDaysCompArg = this.evaluateExpression(expr.args[0], solution);
-        return BuiltInFunctions.durationDays(durDaysCompArg);
-      }
-
-      case "durationhours": {
-        const durHoursCompArg = this.evaluateExpression(expr.args[0], solution);
-        return BuiltInFunctions.durationHours(durHoursCompArg);
-      }
-
-      case "durationminutes": {
-        const durMinCompArg = this.evaluateExpression(expr.args[0], solution);
-        return BuiltInFunctions.durationMinutes(durMinCompArg);
-      }
-
-      case "durationseconds": {
-        const durSecCompArg = this.evaluateExpression(expr.args[0], solution);
-        return BuiltInFunctions.durationSeconds(durSecCompArg);
-      }
-
-      // yearMonthDuration component accessor functions (Issue #990)
-      // These extract individual components from xsd:yearMonthDuration values
-      case "durationyears": {
-        const durYearsArg = this.evaluateExpression(expr.args[0], solution);
-        return BuiltInFunctions.durationYears(durYearsArg);
-      }
-
-      case "durationmonths": {
-        const durMonthsArg = this.evaluateExpression(expr.args[0], solution);
-        return BuiltInFunctions.durationMonths(durMonthsArg);
-      }
-
-      case "datetimediff": {
-        const dt1Arg = this.evaluateExpression(expr.args[0], solution);
-        const dt2Arg = this.evaluateExpression(expr.args[1], solution);
-        return BuiltInFunctions.dateTimeDiff(dt1Arg, dt2Arg);
-      }
-
-      case "datetimeadd": {
-        const dtAddArg = this.evaluateExpression(expr.args[0], solution);
-        const durAddArg = this.evaluateExpression(expr.args[1], solution);
-        return BuiltInFunctions.dateTimeAdd(dtAddArg, durAddArg);
-      }
-
-      case "datetimesubtract": {
-        const dtSubArg = this.evaluateExpression(expr.args[0], solution);
-        const durSubArg = this.evaluateExpression(expr.args[1], solution);
-        return BuiltInFunctions.dateTimeSubtract(dtSubArg, durSubArg);
-      }
-
-      // Duration conversion functions (for arithmetic results)
-      case "mstominutes":
-        const msMinArg = Number(this.evaluateExpression(expr.args[0], solution));
-        return BuiltInFunctions.msToMinutes(msMinArg);
-
-      case "mstohours":
-        const msHoursArg = Number(this.evaluateExpression(expr.args[0], solution));
-        return BuiltInFunctions.msToHours(msHoursArg);
-
-      case "mstoseconds":
-        const msSecArg = Number(this.evaluateExpression(expr.args[0], solution));
-        return BuiltInFunctions.msToSeconds(msSecArg);
-
-      // SPARQL 1.1 Numeric Functions
-      case "abs":
-        const absArg = Number(this.evaluateExpression(expr.args[0], solution));
-        return BuiltInFunctions.abs(absArg);
-
-      case "round":
-        const roundArg = Number(this.evaluateExpression(expr.args[0], solution));
-        return BuiltInFunctions.round(roundArg);
-
-      case "ceil":
-        const ceilArg = Number(this.evaluateExpression(expr.args[0], solution));
-        return BuiltInFunctions.ceil(ceilArg);
-
-      case "floor":
-        const floorArg = Number(this.evaluateExpression(expr.args[0], solution));
-        return BuiltInFunctions.floor(floorArg);
-
-      case "rand":
-        // SPARQL 1.1 RAND() function - uses pseudo-random for query logic (sampling, shuffling).
-        // NOT for security purposes. See W3C spec: https://www.w3.org/TR/sparql11-query/#func-rand
-        // CodeQL js/insecure-randomness alert is filtered in .github/workflows/codeql.yml
-        return BuiltInFunctions.rand();
-
-      // SPARQL 1.1 Conditional Functions
       case "coalesce":
         // COALESCE evaluates arguments lazily, returning first non-error, non-unbound value
-        for (const arg of expr.args) {
+        for (const arg of args) {
           try {
             const value = this.evaluateExpression(arg, solution);
             if (value !== undefined && value !== null) {
-              return value;
+              return { value };
             }
           } catch {
             // Skip errors and try next argument
@@ -916,107 +610,36 @@ export class FilterExecutor {
           }
         }
         // All arguments were unbound or errored - return undefined (unbound)
-        return undefined;
+        return { value: undefined };
 
       case "if":
         // IF requires exactly 3 arguments: condition, thenExpr, elseExpr
-        if (!expr.args || expr.args.length !== 3) {
+        if (!args || args.length !== 3) {
           throw new FilterExecutorError("IF requires exactly 3 arguments");
         }
         // Evaluate condition first
-        const condition = this.evaluateExpression(expr.args[0], solution);
+        const condition = this.evaluateExpression(args[0], solution);
         // Convert to boolean (handle various truthy/falsy values)
         const conditionBool = this.toBoolean(condition);
-        // Only evaluate the appropriate branch
-        return conditionBool
-          ? this.evaluateExpression(expr.args[1], solution)
-          : this.evaluateExpression(expr.args[2], solution);
+        // Only evaluate the appropriate branch (lazy evaluation)
+        const result = conditionBool
+          ? this.evaluateExpression(args[1], solution)
+          : this.evaluateExpression(args[2], solution);
+        return { value: result };
 
-      // SPARQL 1.1 String URI Functions
-      case "encode_for_uri":
-        const encodeArg = this.getStringValue(this.evaluateExpression(expr.args[0], solution));
-        return BuiltInFunctions.encodeForUri(encodeArg);
-
-      // SPARQL 1.1 RDF Term Functions
-      case "isnumeric":
-        const numericArg = this.getTermFromExpression(expr.args[0], solution);
-        return BuiltInFunctions.isNumeric(numericArg);
-
-      // SPARQL 1.2 Type Checking Functions
-      case "haslangdir":
-        const hasLangdirArg = this.getTermFromExpression(expr.args[0], solution);
-        return BuiltInFunctions.hasLangdir(hasLangdirArg);
-
-      // SPARQL 1.2 isTRIPLE - RDF-Star type checking
-      case "istriple":
-        const isTripleArg = this.getTermFromExpression(expr.args[0], solution);
-        return BuiltInFunctions.isTriple(isTripleArg);
-
-      case "sameterm":
-        const sameTerm1 = this.getTermFromExpression(expr.args[0], solution);
-        const sameTerm2 = this.getTermFromExpression(expr.args[1], solution);
-        return BuiltInFunctions.sameTerm(sameTerm1, sameTerm2);
-
-      // SPARQL 1.1 Hash Functions
-      case "md5":
-        const md5Arg = this.getStringValue(this.evaluateExpression(expr.args[0], solution));
-        return BuiltInFunctions.md5(md5Arg);
-
-      case "sha1":
-        const sha1Arg = this.getStringValue(this.evaluateExpression(expr.args[0], solution));
-        return BuiltInFunctions.sha1(sha1Arg);
-
-      case "sha256":
-        const sha256Arg = this.getStringValue(this.evaluateExpression(expr.args[0], solution));
-        return BuiltInFunctions.sha256(sha256Arg);
-
-      case "sha384":
-        const sha384Arg = this.getStringValue(this.evaluateExpression(expr.args[0], solution));
-        return BuiltInFunctions.sha384(sha384Arg);
-
-      case "sha512":
-        const sha512Arg = this.getStringValue(this.evaluateExpression(expr.args[0], solution));
-        return BuiltInFunctions.sha512(sha512Arg);
-
-      // Exocortex Extension Function: exo:byUUID()
-      // Resolves UUID to full file path URI using O(1) index lookup
       case "byuuid":
-        return this.evaluateByUUID(expr, solution);
-
-      // SPARQL 1.2 RDF-Star Accessor Functions
-      // Extract components from quoted triples
-      case "subject": {
-        const subjectArg = this.getTermFromExpression(expr.args[0], solution);
-        return BuiltInFunctions.subject(subjectArg);
-      }
-
-      case "predicate": {
-        const predicateArg = this.getTermFromExpression(expr.args[0], solution);
-        return BuiltInFunctions.predicate(predicateArg);
-      }
-
-      case "object": {
-        const objectArg = this.getTermFromExpression(expr.args[0], solution);
-        return BuiltInFunctions.object(objectArg);
-      }
-
-      // SPARQL 1.2 RDF-Star TRIPLE constructor function
-      // Constructs a quoted triple from subject, predicate, object
-      case "triple": {
-        const tripleSubject = this.getTermFromExpression(expr.args[0], solution);
-        const triplePredicate = this.getTermFromExpression(expr.args[1], solution);
-        const tripleObject = this.getTermFromExpression(expr.args[2], solution);
-        return BuiltInFunctions.triple(tripleSubject, triplePredicate, tripleObject);
-      }
+        // Exocortex extension function - requires instance state (tripleStore, uuidCache)
+        return { value: this.evaluateByUUID({ args } as unknown, solution) };
 
       default:
-        throw new FilterExecutorError(`Unknown function: ${funcName}`);
+        return undefined;
     }
   }
 
-  private getTermFromExpression(expr: Expression, solution: SolutionMapping): any {
-    if (expr.type === "variable") {
-      return solution.get(expr.name);
+  private getTermFromExpression(expr: Expression, solution: SolutionMapping): unknown {
+    const anyExpr = expr as { type: string; name?: string };
+    if (anyExpr.type === "variable" && anyExpr.name) {
+      return solution.get(anyExpr.name);
     }
     return undefined;
   }
