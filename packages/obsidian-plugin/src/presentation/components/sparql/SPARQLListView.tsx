@@ -97,15 +97,16 @@ const renderValue = (
       <>
         {segments.map((segment, index) => {
           if (segment.type === "wikilink" && segment.target) {
+            const targetPath = segment.target;
             return (
               <a
                 key={index}
-                data-href={segment.target}
+                data-href={targetPath}
                 className="internal-link"
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
-                  onAssetClick?.(segment.target!, e);
+                  onAssetClick?.(targetPath, e);
                 }}
                 style={{ cursor: "pointer" }}
               >
@@ -130,21 +131,23 @@ const groupBySubject = (triples: Triple[]): SubjectGroup[] => {
     const predicateStr = triple.predicate.toString();
     const objectStr = triple.object.toString();
 
-    if (!groups.has(subjectStr)) {
-      groups.set(subjectStr, {
+    let group = groups.get(subjectStr);
+    if (!group) {
+      group = {
         subject: subjectStr,
         subjectType: triple.subject.constructor.name,
         predicates: new Map(),
-      });
+      };
+      groups.set(subjectStr, group);
     }
 
-    const group = groups.get(subjectStr)!;
-
-    if (!group.predicates.has(predicateStr)) {
-      group.predicates.set(predicateStr, []);
+    let predicateObjects = group.predicates.get(predicateStr);
+    if (!predicateObjects) {
+      predicateObjects = [];
+      group.predicates.set(predicateStr, predicateObjects);
     }
 
-    group.predicates.get(predicateStr)!.push(objectStr);
+    predicateObjects.push(objectStr);
   }
 
   return Array.from(groups.values());

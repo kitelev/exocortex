@@ -542,11 +542,11 @@ export class LayoutParser {
     const commands = await this.loadCommands(frontmatter, options);
 
     return {
-      uid: partial.uid!,
-      label: partial.label!,
+      uid: partial.uid,
+      label: partial.label,
       commands,
-      position: partial.position || "column",
-      showLabels: partial.showLabels || false,
+      position: partial.position,
+      showLabels: partial.showLabels,
     };
   }
 
@@ -619,8 +619,8 @@ export class LayoutParser {
     }
 
     return {
-      uid: partial.uid!,
-      label: partial.label!,
+      uid: partial.uid,
+      label: partial.label,
       icon: partial.icon,
       preconditionSparql,
       groundingSparql,

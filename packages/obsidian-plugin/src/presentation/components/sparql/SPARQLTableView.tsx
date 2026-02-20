@@ -98,15 +98,16 @@ const renderValue = (
       <>
         {segments.map((segment, index) => {
           if (segment.type === "wikilink" && segment.target) {
+            const targetPath = segment.target;
             return (
               <a
                 key={index}
-                data-href={segment.target}
+                data-href={targetPath}
                 className="internal-link"
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
-                  onAssetClick?.(segment.target!, e);
+                  onAssetClick?.(targetPath, e);
                 }}
                 style={{ cursor: "pointer" }}
               >

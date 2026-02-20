@@ -103,6 +103,13 @@ export function isValidActionPosition(value: unknown): value is ActionPosition {
 }
 
 /**
+ * Partial LayoutActions with guaranteed uid and label
+ */
+export type PartialLayoutActions = Pick<LayoutActions, "uid" | "label" | "position" | "showLabels"> & {
+  commands: CommandRef[];
+};
+
+/**
  * Create a LayoutActions object from frontmatter data.
  *
  * @param frontmatter - The YAML frontmatter object
@@ -110,7 +117,7 @@ export function isValidActionPosition(value: unknown): value is ActionPosition {
  */
 export function createLayoutActionsFromFrontmatter(
   frontmatter: Record<string, unknown>,
-): Partial<LayoutActions> | null {
+): PartialLayoutActions | null {
   const uid = frontmatter["exo__Asset_uid"] as string | undefined;
   const label = frontmatter["exo__Asset_label"] as string | undefined;
 
@@ -137,6 +144,11 @@ export function createLayoutActionsFromFrontmatter(
 }
 
 /**
+ * Partial CommandRef with guaranteed uid and label
+ */
+export type PartialCommandRef = Pick<CommandRef, "uid" | "label" | "icon">;
+
+/**
  * Create a CommandRef object from frontmatter data.
  *
  * @param frontmatter - The YAML frontmatter object from a Command asset
@@ -144,7 +156,7 @@ export function createLayoutActionsFromFrontmatter(
  */
 export function createCommandRefFromFrontmatter(
   frontmatter: Record<string, unknown>,
-): Partial<CommandRef> | null {
+): PartialCommandRef | null {
   const uid = frontmatter["exo__Asset_uid"] as string | undefined;
   const label = frontmatter["exo__Asset_label"] as string | undefined;
 

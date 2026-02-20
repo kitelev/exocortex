@@ -263,11 +263,12 @@ export const TableLayoutRenderer: React.FC<TableLayoutRendererProps> = ({
 
     // Apply sorting
     if (sortState.columnUid) {
-      const sortColumn = columns.find((c) => c.uid === sortState.columnUid);
+      const sortColumnUid = sortState.columnUid;
+      const sortColumn = columns.find((c) => c.uid === sortColumnUid);
       if (sortColumn && sortColumn.sortable !== false) {
         result.sort((a, b) => {
-          const aValue = a.values[sortState.columnUid!];
-          const bValue = b.values[sortState.columnUid!];
+          const aValue = a.values[sortColumnUid];
+          const bValue = b.values[sortColumnUid];
           return compareCellValues(aValue, bValue, sortState.direction);
         });
       }
