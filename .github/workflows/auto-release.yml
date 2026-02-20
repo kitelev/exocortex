@@ -162,6 +162,59 @@ jobs:
           cd release-files
           zip -r ../${{ github.event.repository.name }}.zip ./*
 
+      - name: Validate BRAT compatibility
+        if: steps.commits.outputs.has_commits == 'true' && steps.check_tag.outputs.tag_exists == 'false'
+        run: |
+          echo "🔍 Validating BRAT compatibility..."
+
+          # BRAT requires these files for auto-update functionality
+          # See: https://github.com/TfTHacker/obsidian42-brat
+          REQUIRED_FILES=(
+            "packages/obsidian-plugin/main.js"
+            "packages/obsidian-plugin/manifest.json"
+          )
+
+          # styles.css is optional but expected
+          OPTIONAL_FILES=(
+            "packages/obsidian-plugin/styles.css"
+          )
+
+          MISSING_FILES=()
+
+          # Check required files
+          for file in "${REQUIRED_FILES[@]}"; do
+            if [ ! -f "$file" ]; then
+              MISSING_FILES+=("$file")
+              echo "❌ Missing REQUIRED: $file"
+            else
+              SIZE=$(stat -c%s "$file")
+              echo "✅ Found: $file ($SIZE bytes)"
+            fi
+          done
+
+          # Check optional files (warn but don't fail)
+          for file in "${OPTIONAL_FILES[@]}"; do
+            if [ ! -f "$file" ]; then
+              echo "⚠️  Optional missing: $file"
+            else
+              SIZE=$(stat -c%s "$file")
+              echo "✅ Found: $file ($SIZE bytes)"
+            fi
+          done
+
+          # Fail if any required files are missing
+          if [ ${#MISSING_FILES[@]} -gt 0 ]; then
+            echo ""
+            echo "💥 BRAT compatibility check FAILED!"
+            echo "Missing required files for BRAT auto-update:"
+            printf '  - %s\n' "${MISSING_FILES[@]}"
+            exit 1
+          fi
+
+          echo ""
+          echo "✅ BRAT compatibility validated successfully"
+          echo "   Plugin can be installed via BRAT using: kitelev/exocortex"
+
       - name: Generate changelog from commits
         if: steps.commits.outputs.has_commits == 'true' && steps.check_tag.outputs.tag_exists == 'false'
         id: changelog
@@ -171,6 +224,32 @@ jobs:
           COMMITS_FILE="commits.txt" \
           OUTPUT_FILE="release_notes.md" \
           node .github/scripts/generate-changelog.js
+
+      - name: Add BRAT installation instructions to release notes
+        if: steps.commits.outputs.has_commits == 'true' && steps.check_tag.outputs.tag_exists == 'false'
+        run: |
+          cat >> release_notes.md << 'EOF'
+
+          ---
+
+          ## Installation
+
+          ### Via BRAT (Recommended for Beta Testing)
+
+          1. Install [BRAT](https://github.com/TfTHacker/obsidian42-brat) from Obsidian Community Plugins
+          2. Open BRAT settings → **Add Beta Plugin**
+          3. Enter: `kitelev/exocortex`
+          4. Click **Add Plugin** and enable in Community Plugins
+
+          BRAT will automatically update the plugin when new releases are published.
+
+          ### Manual Installation
+
+          1. Download `main.js`, `manifest.json`, and `styles.css` from this release
+          2. Create folder: `<vault>/.obsidian/plugins/exocortex/`
+          3. Copy downloaded files to the folder
+          4. Reload Obsidian and enable the plugin
+          EOF
 
       - name: Create git tag
         if: steps.commits.outputs.has_commits == 'true' && steps.check_tag.outputs.tag_exists == 'false'
