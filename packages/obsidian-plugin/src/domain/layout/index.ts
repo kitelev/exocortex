@@ -102,6 +102,8 @@ export {
   type ActionPosition,
   type CommandRef,
   type LayoutActions,
+  type PartialLayoutActions,
+  type PartialCommandRef,
   isValidActionPosition,
   createLayoutActionsFromFrontmatter,
   createCommandRefFromFrontmatter,

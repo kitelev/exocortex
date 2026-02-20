@@ -449,13 +449,22 @@ export const DailyTasksTable: React.FC<DailyTasksTableProps> = ({
    * Minimum gap size is 5 minutes.
    */
   const calculateEmptySlots = (taskList: DailyTask[]): DailyTask[] => {
+    // Type guard for tasks with valid timestamps
+    type TaskWithTimestamps = DailyTask & {
+      startTimestamp: string | number;
+      endTimestamp: string | number;
+    };
+
+    const hasValidTimestamps = (t: DailyTask): t is TaskWithTimestamps =>
+      !t.isEmptySlot && t.startTimestamp !== null && t.endTimestamp !== null;
+
     // Filter tasks with valid timestamps and sort by start time
     const tasksWithTime = taskList
-      .filter((t) => !t.isEmptySlot && t.startTimestamp && t.endTimestamp)
+      .filter(hasValidTimestamps)
       .map((t) => ({
         task: t,
-        start: new Date(t.startTimestamp!).getTime(),
-        end: new Date(t.endTimestamp!).getTime(),
+        start: new Date(t.startTimestamp).getTime(),
+        end: new Date(t.endTimestamp).getTime(),
       }))
       .sort((a, b) => a.start - b.start);
 
@@ -698,7 +707,7 @@ export const DailyTasksTable: React.FC<DailyTasksTableProps> = ({
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
-                  onTaskClick?.(effortAreaParsed!.target, e);
+                  onTaskClick?.(effortAreaParsed.target, e);
                 }}
                 className="internal-link"
                 style={{ cursor: "pointer" }}

@@ -43,7 +43,6 @@ export type FunctionPropertyNames<T> = {
  * @param defaultArgs - Arguments passed to the original method call
  * @param vanilla - The original (unpatched) method
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type ReplacementImplementation<
   Target,
   Method extends FunctionPropertyNames<Required<Target>>,

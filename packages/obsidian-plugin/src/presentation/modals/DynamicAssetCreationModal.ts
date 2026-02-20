@@ -94,17 +94,22 @@ export class DynamicAssetCreationModal extends Modal {
 
   /**
    * Load properties from schema service and render fields.
+   * This method should only be called when schemaService is defined.
    */
   private async loadPropertiesAndRender(contentEl: HTMLElement): Promise<void> {
+    // Guard: this method is only called when schemaService is defined
+    const schemaService = this.schemaService;
+    if (!schemaService) {
+      return;
+    }
+
     // Show loading indicator
     const loadingEl = contentEl.createDiv({ cls: "loading-message" });
     loadingEl.setText("Loading properties...");
 
     try {
       // Fetch properties from ontology
-      this.properties = await this.schemaService!.getClassProperties(
-        this.className,
-      );
+      this.properties = await schemaService.getClassProperties(this.className);
 
       // Filter out deprecated properties
       const activeProperties = this.properties.filter((p) => !p.deprecated);
@@ -114,8 +119,7 @@ export class DynamicAssetCreationModal extends Modal {
 
       // If no properties found, use defaults
       if (activeProperties.length === 0) {
-        const defaultProps =
-          this.schemaService!.getDefaultProperties(this.className);
+        const defaultProps = schemaService.getDefaultProperties(this.className);
         this.renderDynamicFields(contentEl, defaultProps);
       } else {
         this.renderDynamicFields(contentEl, activeProperties);
