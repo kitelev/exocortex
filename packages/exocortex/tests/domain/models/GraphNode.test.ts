@@ -4,6 +4,7 @@ describe("GraphNode", () => {
   describe("GraphNodeData", () => {
     it("should accept valid GraphNodeData", () => {
       const data: GraphNodeData = {
+        id: "note-123",
         path: "/path/to/note.md",
         title: "My Note",
         label: "Note Label",
@@ -11,6 +12,7 @@ describe("GraphNode", () => {
         isArchived: false
       };
 
+      expect(data.id).toBe("note-123");
       expect(data.path).toBe("/path/to/note.md");
       expect(data.title).toBe("My Note");
       expect(data.label).toBe("Note Label");
@@ -20,6 +22,7 @@ describe("GraphNode", () => {
 
     it("should allow optional assetClass", () => {
       const data: GraphNodeData = {
+        id: "note-456",
         path: "/path/to/note.md",
         title: "My Note",
         label: "Note Label",
@@ -31,6 +34,7 @@ describe("GraphNode", () => {
 
     it("should handle archived node", () => {
       const data: GraphNodeData = {
+        id: "archived-789",
         path: "/archived/note.md",
         title: "Archived Note",
         label: "Old Label",
@@ -44,6 +48,7 @@ describe("GraphNode", () => {
   describe("GraphNode", () => {
     it("should extend GraphNodeData with position properties", () => {
       const node: GraphNode = {
+        id: "positioned-node",
         path: "/path/to/note.md",
         title: "My Note",
         label: "Note Label",
@@ -58,6 +63,7 @@ describe("GraphNode", () => {
 
     it("should allow velocity properties", () => {
       const node: GraphNode = {
+        id: "velocity-node",
         path: "/path/to/note.md",
         title: "My Note",
         label: "Note Label",
@@ -72,6 +78,7 @@ describe("GraphNode", () => {
 
     it("should allow fixed position properties", () => {
       const node: GraphNode = {
+        id: "fixed-node",
         path: "/path/to/note.md",
         title: "My Note",
         label: "Note Label",
@@ -86,6 +93,7 @@ describe("GraphNode", () => {
 
     it("should allow null for fixed position", () => {
       const node: GraphNode = {
+        id: "nullable-node",
         path: "/path/to/note.md",
         title: "My Note",
         label: "Note Label",
@@ -100,6 +108,7 @@ describe("GraphNode", () => {
 
     it("should work without optional position properties", () => {
       const node: GraphNode = {
+        id: "minimal-node",
         path: "/path/to/note.md",
         title: "My Note",
         label: "Note Label",

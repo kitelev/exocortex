@@ -1,3 +1,4 @@
+import "reflect-metadata";
 import { FleetingNoteCreationService } from "../../src/services/FleetingNoteCreationService";
 import { IVaultAdapter, IFile } from "../../src/interfaces/IVaultAdapter";
 import { DateFormatter } from "../../src/utilities/DateFormatter";

@@ -53,7 +53,7 @@ describe("PropertyCleanupService with DI", () => {
       path: "test.md",
       name: "test.md",
       basename: "test",
-      extension: "md",
+      parent: null,
     };
 
     mockVaultAdapter.read.mockResolvedValue(`---
@@ -73,7 +73,7 @@ Content`);
       path: "test.md",
       name: "test.md",
       basename: "test",
-      extension: "md",
+      parent: null,
     };
 
     const fileContent = `---

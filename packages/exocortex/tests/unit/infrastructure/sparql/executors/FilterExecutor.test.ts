@@ -2,7 +2,12 @@ import { FilterExecutor } from "../../../../../src/infrastructure/sparql/executo
 import { SolutionMapping } from "../../../../../src/infrastructure/sparql/SolutionMapping";
 import { IRI } from "../../../../../src/domain/models/rdf/IRI";
 import { Literal } from "../../../../../src/domain/models/rdf/Literal";
-import type { FilterOperation } from "../../../../../src/infrastructure/sparql/algebra/AlgebraOperation";
+import type {
+  FilterOperation,
+  InExpression,
+  ExistsExpression,
+  AlgebraOperation,
+} from "../../../../../src/infrastructure/sparql/algebra/AlgebraOperation";
 
 describe("FilterExecutor", () => {
   let executor: FilterExecutor;

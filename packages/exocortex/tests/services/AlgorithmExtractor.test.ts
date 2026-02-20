@@ -1,3 +1,4 @@
+import "reflect-metadata";
 import { AlgorithmExtractor } from "../../src/services/AlgorithmExtractor";
 
 describe("AlgorithmExtractor", () => {
