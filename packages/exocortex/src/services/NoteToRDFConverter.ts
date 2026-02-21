@@ -404,24 +404,154 @@ export class NoteToRDFConverter {
    * ```
    */
   async convertVault(): Promise<Triple[]> {
+    const result = await this.convertVaultWithValidation({ strict: false });
+    return result.triples;
+  }
+
+  /**
+   * Information about a file that was skipped during vault conversion.
+   */
+  public static readonly SkippedFileInfo = class {
+    constructor(
+      public readonly path: string,
+      public readonly reason: string,
+    ) {}
+  };
+
+  /**
+   * Result of vault conversion with validation information.
+   *
+   * Issue #2205: Provides detailed information about files that were skipped
+   * during indexing, including reasons and summary statistics.
+   */
+  public static readonly VaultValidationResult = class {
+    constructor(
+      public readonly triples: Triple[],
+      public readonly skippedFiles: Array<{ path: string; reason: string }>,
+      public readonly summary: {
+        total: number;
+        indexed: number;
+        skipped: number;
+      },
+    ) {}
+  };
+
+  /**
+   * Options for vault conversion with validation.
+   */
+  public static readonly VaultValidationOptions = class {
+    constructor(
+      public readonly strict: boolean = false,
+    ) {}
+  };
+
+  /**
+   * Converts all notes in the vault to RDF triples with validation.
+   *
+   * Issue #2205: Enhanced version of convertVault that provides detailed
+   * information about skipped files and supports strict mode.
+   *
+   * @param options - Validation options
+   * @param options.strict - If true, throws on first invalid IRI instead of skipping
+   * @returns Result containing triples, skipped files, and summary statistics
+   *
+   * @example
+   * ```typescript
+   * // Non-strict mode (default): skip invalid files, return all valid triples
+   * const result = await converter.convertVaultWithValidation();
+   * console.log(`Indexed ${result.summary.indexed}, skipped ${result.summary.skipped}`);
+   *
+   * // Strict mode: fail fast on first invalid IRI
+   * await converter.convertVaultWithValidation({ strict: true });
+   * ```
+   *
+   * @throws Error if strict mode is enabled and an invalid IRI is encountered
+   */
+  async convertVaultWithValidation(
+    options: { strict?: boolean } = {}
+  ): Promise<{
+    triples: Triple[];
+    skippedFiles: Array<{ path: string; reason: string }>;
+    summary: { total: number; indexed: number; skipped: number };
+  }> {
     const files = this.vault.getAllFiles();
     const allTriples: Triple[] = [];
+    const skippedFiles: Array<{ path: string; reason: string }> = [];
+    const strict = options.strict ?? false;
 
     for (const file of files) {
       try {
         const triples = await this.convertNote(file);
         allTriples.push(...triples);
       } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+
+        if (strict) {
+          throw new Error(
+            `Invalid IRI for file "${file.path}": ${reason}`
+          );
+        }
+
+        // Issue #2205: Collect skipped files with detailed reasons
+        skippedFiles.push({
+          path: file.path,
+          reason: `Invalid IRI: ${reason}`,
+        });
+
         // Issue #684: Skip files with invalid IRIs instead of crashing
-        // This allows SPARQL queries to continue processing valid files
-        // even when vault contains files with problematic characters (e.g., angle brackets <>)
         console.warn(`⚠️ Skipping file with invalid IRI: ${file.path}`);
-        console.warn(`   Reason: ${error instanceof Error ? error.message : String(error)}`);
-        continue;
+        console.warn(`   Reason: ${reason}`);
       }
     }
 
-    return allTriples;
+    return {
+      triples: allTriples,
+      skippedFiles,
+      summary: {
+        total: files.length,
+        indexed: files.length - skippedFiles.length,
+        skipped: skippedFiles.length,
+      },
+    };
+  }
+
+  /**
+   * Validates all files in the vault for IRI issues without converting.
+   *
+   * Issue #2205: Check vault health by identifying files that would
+   * cause IRI validation errors during indexing.
+   *
+   * @returns Array of files with IRI issues and their reasons
+   *
+   * @example
+   * ```typescript
+   * const issues = await converter.validateVault();
+   * if (issues.length > 0) {
+   *   console.log(`Found ${issues.length} files with IRI issues:`);
+   *   for (const issue of issues) {
+   *     console.log(`  - ${issue.path}: ${issue.reason}`);
+   *   }
+   * }
+   * ```
+   */
+  async validateVault(): Promise<Array<{ path: string; reason: string }>> {
+    const files = this.vault.getAllFiles();
+    const issues: Array<{ path: string; reason: string }> = [];
+
+    for (const file of files) {
+      // Check if the file path can be converted to a valid IRI
+      const encodedPath = encodeURI(file.path);
+      const iriString = `${this.OBSIDIAN_VAULT_SCHEME}${encodedPath}`;
+
+      if (!IRI.isValidIRI(iriString)) {
+        issues.push({
+          path: file.path,
+          reason: `Path "${file.path}" cannot be converted to a valid IRI`,
+        });
+      }
+    }
+
+    return issues;
   }
 
   /**

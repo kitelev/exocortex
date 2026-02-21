@@ -4,14 +4,14 @@ import path from "path";
 import os from "os";
 
 // Mock CacheManager
-const mockBuildCache = jest.fn();
+const mockBuildCacheWithValidation = jest.fn();
 const mockGetCacheStats = jest.fn();
 const mockInvalidate = jest.fn();
 const mockGetCachePath = jest.fn();
 
 jest.unstable_mockModule("../../../src/cache/CacheManager.js", () => ({
   CacheManager: jest.fn(() => ({
-    buildCache: mockBuildCache,
+    buildCacheWithValidation: mockBuildCacheWithValidation,
     getCacheStats: mockGetCacheStats,
     invalidate: mockInvalidate,
     getCachePath: mockGetCachePath,
@@ -41,7 +41,12 @@ describe("sparqlIndexCommand", () => {
 
     // Default mock return values
     mockGetCachePath.mockReturnValue(path.join(vaultPath, ".exocortex", "cache", "triples.json"));
-    mockBuildCache.mockResolvedValue({ tripleCount: 1000, durationMs: 500 });
+    mockBuildCacheWithValidation.mockResolvedValue({
+      tripleCount: 1000,
+      durationMs: 500,
+      skippedFiles: [],
+      summary: { total: 100, indexed: 100, skipped: 0 },
+    });
     mockGetCacheStats.mockResolvedValue({
       tripleCount: 1000,
       createdAt: new Date(),
@@ -76,7 +81,7 @@ describe("sparqlIndexCommand", () => {
         "--vault", vaultPath,
       ]);
 
-      expect(mockBuildCache).toHaveBeenCalled();
+      expect(mockBuildCacheWithValidation).toHaveBeenCalled();
       expect(consoleLogSpy).toHaveBeenCalledWith(
         expect.stringContaining("Created cache with")
       );
@@ -90,7 +95,7 @@ describe("sparqlIndexCommand", () => {
         "--output", "json",
       ]);
 
-      expect(mockBuildCache).toHaveBeenCalled();
+      expect(mockBuildCacheWithValidation).toHaveBeenCalled();
       // JSON output should contain success and data
       expect(consoleLogSpy).toHaveBeenCalledWith(
         expect.stringContaining('"success"')
@@ -120,7 +125,7 @@ describe("sparqlIndexCommand", () => {
       ]);
 
       expect(mockInvalidate).toHaveBeenCalled();
-      expect(mockBuildCache).toHaveBeenCalled();
+      expect(mockBuildCacheWithValidation).toHaveBeenCalled();
     });
   });
 
