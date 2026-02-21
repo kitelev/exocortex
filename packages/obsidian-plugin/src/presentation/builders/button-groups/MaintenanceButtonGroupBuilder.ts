@@ -1,4 +1,4 @@
-import { TFile } from "obsidian";
+import { TFile, Notice } from "obsidian";
 import { ActionButton } from '@plugin/presentation/components/ActionButtonsGroup';
 import {
   canTrashEffort,
@@ -7,6 +7,7 @@ import {
   canRepairFolder,
   canRenameToUid,
   canCopyLabelToAliases,
+  canCopyFleetingNoteLabel,
   canConvertTaskToProject,
   canConvertProjectToTask,
   CommandVisibilityContext,
@@ -45,6 +46,7 @@ export class MaintenanceButtonGroupBuilder implements IButtonGroupBuilder {
       this.repairFolderButton(file, visibilityContext, expectedFolder, currentFolder, logger, refresh),
       this.renameToUidButton(file, metadata, visibilityContext, logger, refresh),
       this.copyLabelToAliasesButton(file, visibilityContext, logger, refresh),
+      this.copyFleetingNoteLabelButton(file, visibilityContext, logger),
       this.convertTaskToProjectButton(file, visibilityContext, logger, refresh),
       this.convertProjectToTaskButton(file, visibilityContext, logger, refresh),
     ];
@@ -180,6 +182,69 @@ export class MaintenanceButtonGroupBuilder implements IButtonGroupBuilder {
         logger.info(`Copied label to aliases: ${file.path}`);
       },
     };
+  }
+
+  private copyFleetingNoteLabelButton(
+    file: TFile,
+    context: CommandVisibilityContext,
+    logger: ILogger,
+  ): ActionButton {
+    return {
+      id: "copy-fleeting-note-label",
+      label: "Copy Label",
+      variant: "secondary",
+      visible: canCopyFleetingNoteLabel(context),
+      onClick: async () => {
+        try {
+          const content = await this.services.app.vault.read(file);
+          const label = this.extractLabelFromContent(content);
+
+          if (!label) {
+            new Notice("Label is empty");
+            return;
+          }
+
+          await navigator.clipboard.writeText(label);
+          new Notice("Label copied to clipboard");
+          logger.info(`Copied fleeting note label: ${file.path}`);
+        } catch (error) {
+          new Notice(`Failed to copy label: ${error instanceof Error ? error.message : String(error)}`);
+          logger.error(`Failed to copy fleeting note label: ${file.path}`, error instanceof Error ? error : undefined);
+        }
+      },
+    };
+  }
+
+  /**
+   * Extracts the label (first non-empty line of body) from file content.
+   *
+   * @param content - Full file content including frontmatter
+   * @returns The trimmed first line of body, or null if empty
+   */
+  private extractLabelFromContent(content: string): string | null {
+    const lines = content.split("\n");
+
+    // Find body start after frontmatter
+    let bodyStartIndex = 0;
+    if (lines[0] === "---") {
+      // Find closing ---
+      for (let i = 1; i < lines.length; i++) {
+        if (lines[i] === "---") {
+          bodyStartIndex = i + 1;
+          break;
+        }
+      }
+    }
+
+    // Find first non-empty line in body
+    for (let i = bodyStartIndex; i < lines.length; i++) {
+      const trimmedLine = lines[i].trim();
+      if (trimmedLine) {
+        return trimmedLine;
+      }
+    }
+
+    return null;
   }
 
   private convertTaskToProjectButton(
