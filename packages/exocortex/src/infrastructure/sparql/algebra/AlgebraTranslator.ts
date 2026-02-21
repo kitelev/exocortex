@@ -510,10 +510,37 @@ export class AlgebraTranslator {
       // Only filters/binds with no base patterns - use empty BGP
       result = { type: "bgp", triples: [] } as BGPOperation;
     } else if (otherPatterns.length === 1) {
-      result = this.translatePattern(otherPatterns[0]);
+      // Issue #2208: Handle single OPTIONAL pattern specially
+      // OPTIONAL at the start with no preceding patterns uses empty BGP as left
+      if (otherPatterns[0].type === "optional") {
+        result = {
+          type: "leftjoin",
+          left: { type: "bgp", triples: [] } as BGPOperation,
+          right: this.translateWhere(otherPatterns[0].patterns),
+          expression: otherPatterns[0].expression
+            ? this.translateExpression(otherPatterns[0].expression)
+            : undefined,
+        } as LeftJoinOperation;
+      } else {
+        result = this.translatePattern(otherPatterns[0]);
+      }
     } else {
       // Join patterns, but use lateral join for lateral subqueries
-      result = this.translatePattern(otherPatterns[0]);
+      // and LEFT JOIN for OPTIONAL patterns (Issue #2208)
+
+      // Handle first pattern specially if it's OPTIONAL (use empty BGP as left)
+      if (otherPatterns[0].type === "optional") {
+        result = {
+          type: "leftjoin",
+          left: { type: "bgp", triples: [] } as BGPOperation,
+          right: this.translateWhere(otherPatterns[0].patterns),
+          expression: otherPatterns[0].expression
+            ? this.translateExpression(otherPatterns[0].expression)
+            : undefined,
+        } as LeftJoinOperation;
+      } else {
+        result = this.translatePattern(otherPatterns[0]);
+      }
 
       for (let i = 1; i < otherPatterns.length; i++) {
         const rightPattern = otherPatterns[i];
@@ -529,6 +556,19 @@ export class AlgebraTranslator {
             left: result,
             right: innerQuery,
           } as LateralJoinOperation;
+        } else if (rightPattern.type === "optional") {
+          // Issue #2208: OPTIONAL uses LEFT JOIN semantics
+          // The accumulated left-side patterns become the left operand
+          // SPARQL spec: "If the optional part does not match, it does not
+          // eliminate the solution, it just means the optional variables are unbound."
+          result = {
+            type: "leftjoin",
+            left: result,
+            right: this.translateWhere(rightPattern.patterns),
+            expression: rightPattern.expression
+              ? this.translateExpression(rightPattern.expression)
+              : undefined,
+          } as LeftJoinOperation;
         } else {
           // Regular join
           const right = this.translatePattern(rightPattern);

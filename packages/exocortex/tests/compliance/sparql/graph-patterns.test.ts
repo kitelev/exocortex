@@ -3,7 +3,7 @@
  *
  * Coverage Status:
  * - BGP: ✅ Implemented
- * - OPTIONAL: ⚠️ Partial (only returns matching results, not left outer join)
+ * - OPTIONAL: ✅ Implemented (Issue #2208: Fixed LEFT JOIN semantics)
  * - UNION: ✅ Implemented
  * - MINUS: ⚠️ Partial (not correctly excluding)
  * - FILTER: ✅ Implemented
@@ -58,9 +58,8 @@ describe("SPARQL 1.1 Graph Patterns Compliance", () => {
   });
 
   describe("OPTIONAL", () => {
-    // OPTIONAL currently only returns rows where the optional pattern matches
-    // This is incorrect - it should return all rows from the left side
-    it.skip("should include optional matches when present (left outer join)", async () => {
+    // Issue #2208: Fixed OPTIONAL to use LEFT JOIN semantics
+    it("should include optional matches when present (left outer join)", async () => {
       const { store, executor } = createTestEnvironment();
       await loadTestData(store, TEST_DATA.foafPersons());
 
@@ -93,8 +92,8 @@ describe("SPARQL 1.1 Graph Patterns Compliance", () => {
       `;
 
       const results = await executeQuery(executor, query);
-      // Currently returns only the row with mbox (Alice)
-      expect(results.length).toBeGreaterThanOrEqual(1);
+      // Issue #2208: Now returns all 3 rows with LEFT JOIN semantics
+      expect(results.length).toBe(3);
       const alice = results.find((r) => r.name === "Alice");
       expect(alice?.mbox).toBeDefined();
     });
