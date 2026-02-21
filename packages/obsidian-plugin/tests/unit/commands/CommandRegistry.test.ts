@@ -195,8 +195,8 @@ describe("CommandRegistry", () => {
       const registry = new CommandRegistry(mockApp, mockPlugin);
       const commands = registry.getAllCommands();
 
-      // 35 commands are registered based on source (including MarkReviewedCommand)
-      expect(commands.length).toBe(35);
+      // 36 commands are registered (including CopyFleetingNoteLabelCommand)
+      expect(commands.length).toBe(36);
     });
 
     it("should return same array on multiple calls", () => {

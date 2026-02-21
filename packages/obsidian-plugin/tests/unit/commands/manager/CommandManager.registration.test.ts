@@ -41,7 +41,7 @@ describe("CommandManager - registration", () => {
         ctx.commandManager.registerAllCommands(ctx.mockPlugin);
       }).not.toThrow();
 
-      expect(ctx.mockPlugin.addCommand).toHaveBeenCalledTimes(35);
+      expect(ctx.mockPlugin.addCommand).toHaveBeenCalledTimes(36);
     });
 
     it("should register commands with correct IDs", () => {

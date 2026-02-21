@@ -49,6 +49,7 @@ import { RepairFolderCommand } from "./RepairFolderCommand";
 import { RenameToUidCommand } from "./RenameToUidCommand";
 import { VoteOnEffortCommand } from "./VoteOnEffortCommand";
 import { CopyLabelToAliasesCommand } from "./CopyLabelToAliasesCommand";
+import { CopyFleetingNoteLabelCommand } from "./CopyFleetingNoteLabelCommand";
 import { AddSupervisionCommand } from "./AddSupervisionCommand";
 import { ReloadLayoutCommand } from "./ReloadLayoutCommand";
 import { TogglePropertiesVisibilityCommand } from "./TogglePropertiesVisibilityCommand";
@@ -127,6 +128,7 @@ export class CommandRegistry {
       new RenameToUidCommand(renameToUidService),
       new VoteOnEffortCommand(effortVotingService),
       new CopyLabelToAliasesCommand(labelToAliasService),
+      new CopyFleetingNoteLabelCommand(app),
       new AddSupervisionCommand(app, supervisionCreationService, this.vaultAdapter),
       new ReloadLayoutCommand(reloadLayoutCallback),
       new TogglePropertiesVisibilityCommand(plugin),
