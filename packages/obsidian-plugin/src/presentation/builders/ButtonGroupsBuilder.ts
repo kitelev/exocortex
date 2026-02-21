@@ -123,6 +123,7 @@ export class ButtonGroupsBuilder {
 
     // Aggregate services for button builders
     this.services = {
+      app,
       taskCreationService,
       projectCreationService,
       areaCreationService,

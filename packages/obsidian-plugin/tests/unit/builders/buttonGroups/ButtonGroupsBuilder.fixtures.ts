@@ -48,6 +48,9 @@ export function setupButtonGroupsBuilderTest(): ButtonGroupsBuilderTestContext {
       }),
       setActiveLeaf: jest.fn(),
     },
+    vault: {
+      read: jest.fn().mockResolvedValue("---\n---\nMock Label Content"),
+    },
   };
 
   const mockSettings = {

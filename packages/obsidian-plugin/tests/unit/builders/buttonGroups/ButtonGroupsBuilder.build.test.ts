@@ -866,4 +866,65 @@ describe("ButtonGroupsBuilder - build", () => {
     );
     expect(createTaskButton?.visible).toBe(true);
   });
+
+  it("should show Copy Label button for FleetingNote", async () => {
+    const mockFile = {
+      path: "fleeting.md",
+      parent: { path: "FleetingNotes" },
+      basename: "fleeting",
+    } as TFile;
+    const metadata = {
+      exo__Instance_class: "[[ztlk__FleetingNote]]",
+    };
+
+    ctx.mockMetadataExtractor.extractMetadata.mockReturnValue(metadata);
+    ctx.mockMetadataExtractor.extractInstanceClass.mockReturnValue(
+      "[[ztlk__FleetingNote]]",
+    );
+    ctx.mockMetadataExtractor.extractStatus.mockReturnValue(null);
+    ctx.mockMetadataExtractor.extractIsArchived.mockReturnValue(false);
+    ctx.mockFolderRepairService.getExpectedFolder.mockResolvedValue("FleetingNotes");
+
+    const groups = await ctx.builder.build(mockFile);
+
+    const maintenanceGroup = groups.find((g) => g.id === "maintenance");
+    const copyLabelButton = maintenanceGroup?.buttons.find(
+      (b) => b.id === "copy-fleeting-note-label",
+    );
+    expect(copyLabelButton).toBeDefined();
+    expect(copyLabelButton?.visible).toBe(true);
+  });
+
+  it("should NOT show Copy Label button for Task", async () => {
+    const mockFile = {
+      path: "task.md",
+      parent: { path: "Tasks" },
+      basename: "task",
+    } as TFile;
+    const metadata = {
+      exo__Instance_class: "[[ems__Task]]",
+      ems__Effort_status: "[[ems__EffortStatusBacklog]]",
+    };
+
+    ctx.mockMetadataExtractor.extractMetadata.mockReturnValue(metadata);
+    ctx.mockMetadataExtractor.extractInstanceClass.mockReturnValue(
+      "[[ems__Task]]",
+    );
+    ctx.mockMetadataExtractor.extractStatus.mockReturnValue(
+      "[[ems__EffortStatusBacklog]]",
+    );
+    ctx.mockMetadataExtractor.extractIsArchived.mockReturnValue(false);
+    ctx.mockFolderRepairService.getExpectedFolder.mockResolvedValue("Tasks");
+
+    const groups = await ctx.builder.build(mockFile);
+
+    const maintenanceGroup = groups.find((g) => g.id === "maintenance");
+    const copyLabelButton = maintenanceGroup?.buttons.find(
+      (b) => b.id === "copy-fleeting-note-label",
+    );
+    // Button may or may not exist, but if it exists it should not be visible
+    if (copyLabelButton) {
+      expect(copyLabelButton.visible).toBe(false);
+    }
+  });
 });

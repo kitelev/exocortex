@@ -36,6 +36,7 @@ export interface ButtonBuilderContext {
  * Services container for button actions
  */
 export interface ButtonBuilderServices {
+  app: ObsidianApp;
   taskCreationService: TaskCreationService;
   projectCreationService: ProjectCreationService;
   areaCreationService: AreaCreationService;
