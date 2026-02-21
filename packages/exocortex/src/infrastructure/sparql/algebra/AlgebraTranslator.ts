@@ -99,11 +99,19 @@ export class AlgebraTranslator {
     const aggregates = this.extractAggregatesWithMapping(query.variables, aggregateVarMap);
     const groupVars = this.extractGroupVariables(query.group);
 
-    if (aggregates.length > 0 || groupVars.length > 0) {
+    // Extract and translate HAVING expressions, collecting any additional aggregates
+    const havingExpressions = this.extractHavingExpressions(
+      (query as any).having,
+      aggregates,
+      aggregateVarMap
+    );
+
+    if (aggregates.length > 0 || groupVars.length > 0 || havingExpressions.length > 0) {
       operation = {
         type: "group",
         variables: groupVars,
         aggregates: aggregates,
+        having: havingExpressions.length > 0 ? havingExpressions : undefined,
         input: operation,
       };
     }
@@ -388,6 +396,38 @@ export class AlgebraTranslator {
     return group
       .filter((g: any) => g.expression && g.expression.termType === "Variable")
       .map((g: any) => g.expression.value);
+  }
+
+  /**
+   * Extract and translate HAVING expressions.
+   *
+   * HAVING expressions can contain aggregate functions that may or may not
+   * appear in the SELECT clause. We need to:
+   * 1. Find any aggregate functions in HAVING
+   * 2. Create bindings for them (if not already in aggregates list)
+   * 3. Transform the HAVING expression to reference the computed aggregate variables
+   *
+   * @param having - The raw HAVING expressions from sparqljs
+   * @param aggregates - The aggregates array to add any new aggregates to
+   * @param aggregateVarMap - Map from sparqljs aggregate objects to variable names
+   * @returns The translated HAVING expressions
+   */
+  private extractHavingExpressions(
+    having: any[] | undefined,
+    aggregates: AggregateBinding[],
+    aggregateVarMap: Map<any, string>
+  ): Expression[] {
+    if (!having || having.length === 0) return [];
+
+    // First, collect any aggregates in HAVING that aren't already tracked
+    for (const expr of having) {
+      this.collectNestedAggregates(expr, aggregates, aggregateVarMap);
+    }
+
+    // Then transform HAVING expressions to reference aggregate variable bindings
+    return having.map((expr) =>
+      this.transformExpressionWithAggregateVars(expr, aggregateVarMap)
+    );
   }
 
   /**
