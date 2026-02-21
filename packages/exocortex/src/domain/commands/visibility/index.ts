@@ -79,4 +79,5 @@ export {
   canCreateNarrowerConcept,
   canCreateSubclass,
   canCreateTaskForDailyNote,
+  canCopyFleetingNoteLabel,
 } from "./AssetVisibilityRules";

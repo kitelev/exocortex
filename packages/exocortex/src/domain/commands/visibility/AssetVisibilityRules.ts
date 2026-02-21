@@ -142,3 +142,17 @@ export function canCreateTaskForDailyNote(
 
   return true;
 }
+
+/**
+ * Can execute "Copy Label" command for fleeting notes
+ * Available for: ztlk__FleetingNote assets only
+ * Supports both string-based and UID-based identifiers
+ */
+export function canCopyFleetingNoteLabel(
+  context: CommandVisibilityContext,
+): boolean {
+  return (
+    hasClass(context.instanceClass, AssetClass.FLEETING_NOTE) ||
+    hasClass(context.instanceClass, AssetClass.FLEETING_NOTE_UID)
+  );
+}

@@ -17,4 +17,7 @@ export enum AssetClass {
   SESSION_END_EVENT = "ems__SessionEndEvent",
   PROTOTYPE = "exo__Prototype",
   CLASS = "exo__Class",
+  FLEETING_NOTE = "ztlk__FleetingNote",
+  /** UID-based identifier for ztlk__FleetingNote (Issue #2200) */
+  FLEETING_NOTE_UID = "fca0a931-a01f-48e4-b72a-4af206c94bc7",
 }

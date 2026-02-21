@@ -4,6 +4,7 @@ import {
   canCleanProperties,
   canRepairFolder,
   canCopyLabelToAliases,
+  canCopyFleetingNoteLabel,
 } from "exocortex";
 
 describe("CommandVisibility - Maintenance Commands", () => {
@@ -433,6 +434,128 @@ describe("CommandVisibility - Maintenance Commands", () => {
         expectedFolder: null,
       };
       expect(canCopyLabelToAliases(context)).toBe(true);
+    });
+  });
+
+  describe("canCopyFleetingNoteLabel", () => {
+    it("should return true for ztlk__FleetingNote class", () => {
+      const context: CommandVisibilityContext = {
+        instanceClass: "[[ztlk__FleetingNote]]",
+        currentStatus: null,
+        metadata: {},
+        isArchived: false,
+        currentFolder: "",
+        expectedFolder: null,
+      };
+      expect(canCopyFleetingNoteLabel(context)).toBe(true);
+    });
+
+    it("should return true for ztlk__FleetingNote without wiki-link brackets", () => {
+      const context: CommandVisibilityContext = {
+        instanceClass: "ztlk__FleetingNote",
+        currentStatus: null,
+        metadata: {},
+        isArchived: false,
+        currentFolder: "",
+        expectedFolder: null,
+      };
+      expect(canCopyFleetingNoteLabel(context)).toBe(true);
+    });
+
+    it("should return true for fleeting note UUID", () => {
+      const context: CommandVisibilityContext = {
+        instanceClass: "[[fca0a931-a01f-48e4-b72a-4af206c94bc7]]",
+        currentStatus: null,
+        metadata: {},
+        isArchived: false,
+        currentFolder: "",
+        expectedFolder: null,
+      };
+      expect(canCopyFleetingNoteLabel(context)).toBe(true);
+    });
+
+    it("should return true for fleeting note UUID without wiki-link brackets", () => {
+      const context: CommandVisibilityContext = {
+        instanceClass: "fca0a931-a01f-48e4-b72a-4af206c94bc7",
+        currentStatus: null,
+        metadata: {},
+        isArchived: false,
+        currentFolder: "",
+        expectedFolder: null,
+      };
+      expect(canCopyFleetingNoteLabel(context)).toBe(true);
+    });
+
+    it("should return true when fleeting note class is in array", () => {
+      const context: CommandVisibilityContext = {
+        instanceClass: ["[[exo__Asset]]", "[[ztlk__FleetingNote]]"],
+        currentStatus: null,
+        metadata: {},
+        isArchived: false,
+        currentFolder: "",
+        expectedFolder: null,
+      };
+      expect(canCopyFleetingNoteLabel(context)).toBe(true);
+    });
+
+    it("should return true when fleeting note UUID is in array", () => {
+      const context: CommandVisibilityContext = {
+        instanceClass: ["[[exo__Asset]]", "[[fca0a931-a01f-48e4-b72a-4af206c94bc7]]"],
+        currentStatus: null,
+        metadata: {},
+        isArchived: false,
+        currentFolder: "",
+        expectedFolder: null,
+      };
+      expect(canCopyFleetingNoteLabel(context)).toBe(true);
+    });
+
+    it("should return false for ems__Task class", () => {
+      const context: CommandVisibilityContext = {
+        instanceClass: "[[ems__Task]]",
+        currentStatus: null,
+        metadata: {},
+        isArchived: false,
+        currentFolder: "",
+        expectedFolder: null,
+      };
+      expect(canCopyFleetingNoteLabel(context)).toBe(false);
+    });
+
+    it("should return false for ems__Project class", () => {
+      const context: CommandVisibilityContext = {
+        instanceClass: "[[ems__Project]]",
+        currentStatus: null,
+        metadata: {},
+        isArchived: false,
+        currentFolder: "",
+        expectedFolder: null,
+      };
+      expect(canCopyFleetingNoteLabel(context)).toBe(false);
+    });
+
+    it("should return false for null instanceClass", () => {
+      const context: CommandVisibilityContext = {
+        instanceClass: null,
+        currentStatus: null,
+        metadata: {},
+        isArchived: false,
+        currentFolder: "",
+        expectedFolder: null,
+      };
+      expect(canCopyFleetingNoteLabel(context)).toBe(false);
+    });
+
+    it("should return false for empty array instanceClass", () => {
+      const context: CommandVisibilityContext = {
+        instanceClass: [],
+        currentStatus: null,
+        metadata: {},
+        isArchived: false,
+        currentFolder: "",
+        expectedFolder: null,
+      };
+      expect(canCopyFleetingNoteLabel(context)).toBe(false);
     });
   });
 });
