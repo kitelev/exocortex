@@ -1157,6 +1157,50 @@ describe("BuiltInFunctions", () => {
     it("should throw for invalid regex", () => {
       expect(() => BuiltInFunctions.regex("test", "[invalid")).toThrow("REGEX: invalid pattern");
     });
+
+    // Issue #2207: Cyrillic and Unicode support
+    describe("Unicode/Cyrillic support (Issue #2207)", () => {
+      it("should support case-insensitive matching for Cyrillic text", () => {
+        // Lowercase pattern matching uppercase text
+        expect(BuiltInFunctions.regex("Проект", "проект", "i")).toBe(true);
+        // Uppercase pattern matching lowercase text
+        expect(BuiltInFunctions.regex("проект", "ПРОЕКТ", "i")).toBe(true);
+      });
+
+      it("should match Cyrillic text with all uppercase", () => {
+        expect(BuiltInFunctions.regex("ТЕКСТ", "текст", "i")).toBe(true);
+        expect(BuiltInFunctions.regex("текст", "ТЕКСТ", "i")).toBe(true);
+      });
+
+      it("should handle Cyrillic ё/Ё correctly", () => {
+        // ё and Ё are the same letter, different cases
+        expect(BuiltInFunctions.regex("Ёлка", "ёлка", "i")).toBe(true);
+        expect(BuiltInFunctions.regex("ёлка", "Ёлка", "i")).toBe(true);
+      });
+
+      it("should support Unicode character classes with u flag", () => {
+        // \p{L} matches any Unicode letter
+        expect(BuiltInFunctions.regex("Привет", "\\p{L}+")).toBe(true);
+        expect(BuiltInFunctions.regex("Hello", "\\p{L}+")).toBe(true);
+        expect(BuiltInFunctions.regex("123", "\\p{L}+")).toBe(false);
+      });
+
+      it("should support Unicode character classes with case-insensitive flag", () => {
+        // \p{L} with case-insensitive should work
+        expect(BuiltInFunctions.regex("ПРИВЕТ", "\\p{L}+", "i")).toBe(true);
+      });
+
+      it("should match Cyrillic patterns without flags", () => {
+        expect(BuiltInFunctions.regex("Привет мир", "мир")).toBe(true);
+        expect(BuiltInFunctions.regex("Привет мир", "Привет")).toBe(true);
+      });
+
+      it("should support Unicode in complex patterns", () => {
+        // Pattern with Cyrillic and special regex characters
+        expect(BuiltInFunctions.regex("Проект-2024", "Проект-\\d+")).toBe(true);
+        expect(BuiltInFunctions.regex("проект-2024", "проект-\\d+", "i")).toBe(true);
+      });
+    });
   });
 
   describe("Comparison", () => {
@@ -1428,6 +1472,23 @@ describe("BuiltInFunctions", () => {
 
     it("should throw for invalid regex", () => {
       expect(() => BuiltInFunctions.replace("test", "[invalid", "x")).toThrow("REPLACE: invalid pattern");
+    });
+
+    // Issue #2207: Unicode support for REPLACE
+    describe("Unicode/Cyrillic support (Issue #2207)", () => {
+      it("should support case-insensitive replacement for Cyrillic", () => {
+        expect(BuiltInFunctions.replace("Привет мир", "привет", "Здравствуй", "i")).toBe("Здравствуй мир");
+      });
+
+      it("should support Unicode character classes in patterns", () => {
+        // \p{L} matches any Unicode letter
+        expect(BuiltInFunctions.replace("Hello123World", "\\p{L}+", "X")).toBe("X123X");
+        expect(BuiltInFunctions.replace("Привет123Мир", "\\p{L}+", "X")).toBe("X123X");
+      });
+
+      it("should replace Cyrillic patterns correctly", () => {
+        expect(BuiltInFunctions.replace("Проект-2024-Проект", "Проект", "Задача")).toBe("Задача-2024-Задача");
+      });
     });
   });
 

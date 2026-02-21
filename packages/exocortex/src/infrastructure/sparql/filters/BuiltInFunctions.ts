@@ -341,9 +341,28 @@ export class BuiltInFunctions {
     return numericTypes.includes(datatype);
   }
 
+  /**
+   * SPARQL REGEX function with Unicode support.
+   *
+   * Per SPARQL 1.1 specification, REGEX is based on XPath/XQuery regex which
+   * uses XSD patterns that are Unicode-aware by default. To match this behavior
+   * in JavaScript, we always include the 'u' (Unicode) flag.
+   *
+   * This enables:
+   * - Case-insensitive matching for non-ASCII characters (Cyrillic, Greek, etc.)
+   * - Unicode character classes like \p{L} (any letter), \p{N} (any number)
+   *
+   * @param text - The text to match against
+   * @param pattern - The regex pattern (XPath/XSD regex syntax)
+   * @param flags - Optional flags: 's' (dotall), 'm' (multiline), 'i' (case-insensitive), 'x' (extended)
+   * @returns true if pattern matches text
+   */
   static regex(text: string, pattern: string, flags?: string): boolean {
     try {
-      const regex = new RegExp(pattern, flags);
+      // Always add 'u' flag for Unicode-aware matching (SPARQL 1.1 compliance)
+      // This enables proper Cyrillic/Unicode case-insensitive matching and \p{} classes
+      const unicodeFlags = flags ? (flags.includes("u") ? flags : flags + "u") : "u";
+      const regex = new RegExp(pattern, unicodeFlags);
       return regex.test(text);
     } catch (error) {
       throw new Error(`REGEX: invalid pattern '${pattern}': ${(error as Error).message}`);
@@ -545,12 +564,17 @@ export class BuiltInFunctions {
   }
 
   /**
-   * SPARQL 1.1 REPLACE function.
+   * SPARQL 1.1 REPLACE function with Unicode support.
    * https://www.w3.org/TR/sparql11-query/#func-replace
+   *
+   * Always includes 'u' flag for Unicode-aware matching (SPARQL 1.1 compliance).
    */
   static replace(str: string, pattern: string, replacement: string, flags?: string): string {
     try {
-      const regex = new RegExp(pattern, flags || "g");
+      // Always add 'u' flag for Unicode-aware matching, ensure 'g' flag is present for replace
+      const baseFlags = flags || "g";
+      const unicodeFlags = baseFlags.includes("u") ? baseFlags : baseFlags + "u";
+      const regex = new RegExp(pattern, unicodeFlags);
       return str.replace(regex, replacement);
     } catch (error) {
       throw new Error(`REPLACE: invalid pattern '${pattern}': ${(error as Error).message}`);
