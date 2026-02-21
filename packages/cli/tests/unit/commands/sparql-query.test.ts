@@ -25,6 +25,16 @@ jest.unstable_mockModule("exocortex", () => ({
   SPARQLParser: jest.fn(() => ({
     parse: jest.fn().mockReturnValue({ type: "query" }),
   })),
+  SPARQLParseError: class SPARQLParseError extends Error {
+    public readonly line?: number;
+    public readonly column?: number;
+    constructor(message: string, line?: number, column?: number) {
+      super(message);
+      this.name = "SPARQLParseError";
+      this.line = line;
+      this.column = column;
+    }
+  },
   AlgebraTranslator: jest.fn(() => ({
     translate: jest.fn().mockReturnValue({ type: "bgp", patterns: [] }),
   })),

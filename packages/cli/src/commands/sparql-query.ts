@@ -4,6 +4,7 @@ import { resolve } from "path";
 import {
   InMemoryTripleStore,
   SPARQLParser,
+  SPARQLParseError,
   AlgebraTranslator,
   AlgebraOptimizer,
   AlgebraSerializer,
@@ -11,7 +12,6 @@ import {
   NoteToRDFConverter,
   Triple,
   type SolutionMapping,
-  type AlgebraOperation,
   type ConstructOperation,
 } from "exocortex";
 import { FileSystemVaultAdapter } from "../adapters/FileSystemVaultAdapter.js";
@@ -21,7 +21,8 @@ import { CsvFormatter } from "../formatters/CsvFormatter.js";
 import { TriplesFormatter } from "../formatters/TriplesFormatter.js";
 import { ErrorHandler, type OutputFormat } from "../utils/ErrorHandler.js";
 import { VaultNotFoundError, InvalidArgumentsError } from "../utils/errors/index.js";
-import { ResponseBuilder, type QueryResult, type ConstructResult } from "../responses/index.js";
+import { ResponseBuilder, ErrorCode, type QueryResult, type ConstructResult } from "../responses/index.js";
+import { ExitCodes } from "../utils/ExitCodes.js";
 import { CacheManager } from "../cache/CacheManager.js";
 import { ProgressIndicator } from "../utils/ProgressIndicator.js";
 
@@ -30,6 +31,7 @@ export interface SparqlQueryOptions {
   format: "table" | "json" | "csv" | "ntriples";
   output?: OutputFormat;
   explain?: boolean;
+  dryRun?: boolean;
   stats?: boolean;
   noOptimize?: boolean;
   useCache?: boolean;
@@ -86,6 +88,7 @@ export function sparqlQueryCommand(): Command {
     .option("--format <type>", "Output format: table|json|csv|ntriples", "table")
     .option("--output <type>", "Response format: text|json (for MCP tools)", "text")
     .option("--timeout <duration>", "Query timeout (e.g., 30s, 5000ms)", "10s")
+    .option("--dry-run", "Validate query syntax without executing (no vault loading)")
     .option("--explain", "Show optimized query plan")
     .option("--stats", "Show execution statistics")
     .option("--no-optimize", "Disable query optimization")
@@ -101,6 +104,12 @@ export function sparqlQueryCommand(): Command {
         const timeoutMs = parseTimeout(options.timeout || "10s");
 
         const queryString = loadQuery(queryArg);
+
+        // Dry-run mode: validate syntax only, no vault loading
+        if (options.dryRun) {
+          await executeDryRun(queryString, options, outputFormat);
+          return;
+        }
 
         const vaultPath = resolve(options.vault);
         if (!existsSync(vaultPath)) {
@@ -308,6 +317,110 @@ function loadQuery(queryArg: string): string {
   }
 
   return queryArg;
+}
+
+/**
+ * Execute dry-run mode: validate query syntax without loading vault or executing.
+ * This is useful for checking query syntax before running expensive operations.
+ */
+async function executeDryRun(
+  queryString: string,
+  options: SparqlQueryOptions,
+  outputFormat: OutputFormat
+): Promise<void> {
+  const parser = new SPARQLParser();
+
+  try {
+    // Parse query to validate syntax
+    const ast = parser.parse(queryString);
+
+    // Translate to algebra (validates query structure)
+    const translator = new AlgebraTranslator();
+    let algebra = translator.translate(ast);
+
+    // Optimize if requested (validates optimization rules)
+    if (!options.noOptimize && algebra.type !== "construct") {
+      const optimizer = new AlgebraOptimizer();
+      algebra = optimizer.optimize(algebra);
+    } else if (!options.noOptimize && algebra.type === "construct") {
+      const optimizer = new AlgebraOptimizer();
+      const constructOp = algebra as ConstructOperation;
+      algebra = {
+        ...constructOp,
+        where: optimizer.optimize(constructOp.where),
+      };
+    }
+
+    if (outputFormat === "json") {
+      // JSON response for MCP tools
+      const response = ResponseBuilder.success({
+        valid: true,
+        queryType: getQueryType(ast),
+        message: "Query syntax is valid",
+      });
+      console.log(JSON.stringify(response, null, 2));
+    } else {
+      // Text mode output
+      console.log(`✅ Query syntax is valid`);
+      console.log(`   Query type: ${getQueryType(ast)}`);
+
+      // Show query plan if --explain is also set
+      if (options.explain) {
+        console.log(`\n📊 Query Plan:`);
+        const serializer = new AlgebraSerializer();
+        if (algebra.type === "construct") {
+          const constructOp = algebra as ConstructOperation;
+          console.log("CONSTRUCT Template:");
+          console.log("  (template patterns)");
+          console.log("WHERE:");
+          console.log(serializer.toString(constructOp.where));
+        } else {
+          console.log(serializer.toString(algebra));
+        }
+      }
+    }
+  } catch (error) {
+    // Handle parse errors with detailed information
+    if (error instanceof SPARQLParseError) {
+      const locationInfo = error.line !== undefined
+        ? ` at line ${error.line}${error.column !== undefined ? `, column ${error.column}` : ""}`
+        : "";
+
+      if (outputFormat === "json") {
+        const response = ResponseBuilder.error(
+          ErrorCode.VALIDATION_INVALID_FORMAT,
+          error.message,
+          ExitCodes.INVALID_ARGUMENTS,
+          {
+            context: {
+              valid: false,
+              line: error.line,
+              column: error.column,
+            },
+          }
+        );
+        console.log(JSON.stringify(response, null, 2));
+      } else {
+        console.error(`❌ Syntax error${locationInfo}:`);
+        console.error(`   ${error.message}`);
+      }
+      process.exit(ExitCodes.INVALID_ARGUMENTS);
+    }
+    throw error;
+  }
+}
+
+/**
+ * Get the query type from a parsed AST.
+ */
+function getQueryType(ast: any): string {
+  if (ast.type === "update") {
+    return "UPDATE";
+  }
+  if ("queryType" in ast) {
+    return ast.queryType as string;
+  }
+  return "UNKNOWN";
 }
 
 function formatSelectResults(results: SolutionMapping[], format: string): void {
