@@ -420,8 +420,23 @@ export class QueryExecutor {
 
     // Use AggregateExecutor to compute grouped results
     const results = this.aggregateExecutor.execute(operation, inputSolutions);
-    for (const result of results) {
-      yield result;
+
+    // Apply HAVING filter if present
+    if (operation.having && operation.having.length > 0) {
+      for (const result of results) {
+        // All HAVING conditions must be true
+        const passesHaving = operation.having.every((expr) => {
+          const value = this.filterExecutor.evaluateExpression(expr as any, result);
+          return value === true;
+        });
+        if (passesHaving) {
+          yield result;
+        }
+      }
+    } else {
+      for (const result of results) {
+        yield result;
+      }
     }
   }
 

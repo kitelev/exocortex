@@ -593,8 +593,7 @@ describe("SPARQL 1.1 Compliance - Aggregate Functions", () => {
   });
 
   describe("HAVING Clause", () => {
-    // HAVING clause filtering not fully implemented - returns all groups
-    it.skip("should filter groups by aggregate condition", async () => {
+    it("should filter groups by aggregate condition", async () => {
       const query = `
         PREFIX ex: <http://example.org/>
         SELECT ?dept (COUNT(?emp) AS ?empCount) WHERE {
@@ -615,7 +614,7 @@ describe("SPARQL 1.1 Compliance - Aggregate Functions", () => {
       }
     });
 
-    it.skip("should filter groups by aggregate comparison", async () => {
+    it("should filter groups by aggregate comparison", async () => {
       const query = `
         PREFIX ex: <http://example.org/>
         SELECT ?dept (AVG(?salary) AS ?avgSalary) WHERE {

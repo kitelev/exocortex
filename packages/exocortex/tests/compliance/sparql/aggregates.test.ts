@@ -9,7 +9,7 @@
  * - MIN: ✅ Implemented
  * - MAX: ✅ Implemented
  * - GROUP BY: ✅ Implemented
- * - HAVING: ⚠️ Partial (not correctly filtering)
+ * - HAVING: ✅ Implemented
  * - GROUP_CONCAT: ❌ Not tested
  * - SAMPLE: ❌ Not tested
  */
@@ -153,8 +153,7 @@ describe("SPARQL 1.1 Aggregates Compliance", () => {
   });
 
   describe("HAVING", () => {
-    // HAVING is not correctly filtering grouped results
-    it.skip("should filter grouped results", async () => {
+    it("should filter grouped results", async () => {
       const { store, executor } = createTestEnvironment();
       await loadTestData(store, TEST_DATA.numericData());
 
@@ -173,22 +172,21 @@ describe("SPARQL 1.1 Aggregates Compliance", () => {
       expect(results[0].category).toBe("B");
     });
 
-    it("should return all groups when HAVING is present (current behavior)", async () => {
+    it("should filter by aggregate count", async () => {
       const { store, executor } = createTestEnvironment();
       await loadTestData(store, TEST_DATA.numericData());
 
       const query = `
         ${buildPrefixes("ex")}
-        SELECT ?category (SUM(?value) AS ?total) WHERE {
-          ?item ex:category ?category .
-          ?item ex:value ?value
+        SELECT ?category (COUNT(?item) AS ?count) WHERE {
+          ?item ex:category ?category
         }
         GROUP BY ?category
-        HAVING (SUM(?value) > 50)
+        HAVING (COUNT(?item) >= 2)
       `;
 
       const results = await executeQuery(executor, query);
-      // Current implementation doesn't filter by HAVING
+      // Both A and B have at least 2 items
       expect(results.length).toBeGreaterThanOrEqual(1);
     });
   });

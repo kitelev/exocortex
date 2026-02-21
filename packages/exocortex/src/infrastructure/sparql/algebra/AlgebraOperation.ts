@@ -375,10 +375,29 @@ export interface ReducedOperation {
   input: AlgebraOperation;
 }
 
+/**
+ * GROUP BY operation with optional HAVING clause.
+ *
+ * SPARQL 1.1 GROUP BY groups solutions by the specified variables,
+ * then computes aggregate functions over each group.
+ *
+ * HAVING filters the grouped results based on aggregate conditions.
+ * It operates on the grouped solutions AFTER aggregation is computed.
+ *
+ * Example:
+ * ```sparql
+ * SELECT ?category (COUNT(?item) AS ?count)
+ * WHERE { ?item ex:category ?category }
+ * GROUP BY ?category
+ * HAVING (COUNT(?item) > 5)
+ * ```
+ */
 export interface GroupOperation {
   type: "group";
   variables: string[];
   aggregates: AggregateBinding[];
+  /** HAVING clause filter expressions. Applied after grouping and aggregation. */
+  having?: Expression[];
   input: AlgebraOperation;
 }
 
