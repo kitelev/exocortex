@@ -17,9 +17,10 @@ import {
 import { FileSystemVaultAdapter } from "../adapters/FileSystemVaultAdapter.js";
 import { TableFormatter } from "../formatters/TableFormatter.js";
 import { JsonFormatter } from "../formatters/JsonFormatter.js";
+import { CsvFormatter } from "../formatters/CsvFormatter.js";
 import { TriplesFormatter } from "../formatters/TriplesFormatter.js";
 import { ErrorHandler, type OutputFormat } from "../utils/ErrorHandler.js";
-import { VaultNotFoundError } from "../utils/errors/index.js";
+import { VaultNotFoundError, InvalidArgumentsError } from "../utils/errors/index.js";
 import { ResponseBuilder, type QueryResult, type ConstructResult } from "../responses/index.js";
 import { CacheManager } from "../cache/CacheManager.js";
 import { ProgressIndicator } from "../utils/ProgressIndicator.js";
@@ -32,6 +33,49 @@ export interface SparqlQueryOptions {
   stats?: boolean;
   noOptimize?: boolean;
   useCache?: boolean;
+  timeout?: string;
+}
+
+/**
+ * Parse timeout string into milliseconds.
+ * Supports formats: "30s", "5000ms", "15" (defaults to seconds)
+ */
+export function parseTimeout(timeoutStr: string): number {
+  const trimmed = timeoutStr.trim().toLowerCase();
+
+  // Check for milliseconds
+  if (trimmed.endsWith("ms")) {
+    const value = parseInt(trimmed.slice(0, -2), 10);
+    if (isNaN(value) || value <= 0) {
+      throw new InvalidArgumentsError(
+        `Invalid timeout format: "${timeoutStr}". Value must be a positive number.`,
+        'exocortex sparql query --timeout "30s" or --timeout "5000ms"'
+      );
+    }
+    return value;
+  }
+
+  // Check for seconds
+  if (trimmed.endsWith("s")) {
+    const value = parseInt(trimmed.slice(0, -1), 10);
+    if (isNaN(value) || value <= 0) {
+      throw new InvalidArgumentsError(
+        `Invalid timeout format: "${timeoutStr}". Value must be a positive number.`,
+        'exocortex sparql query --timeout "30s" or --timeout "5000ms"'
+      );
+    }
+    return value * 1000;
+  }
+
+  // Plain number defaults to seconds
+  const value = parseInt(trimmed, 10);
+  if (isNaN(value) || value <= 0) {
+    throw new InvalidArgumentsError(
+      `Invalid timeout format: "${timeoutStr}". Use formats like "30s", "5000ms", or just a number (seconds).`,
+      'exocortex sparql query --timeout "30s" or --timeout "5000ms"'
+    );
+  }
+  return value * 1000;
 }
 
 export function sparqlQueryCommand(): Command {
@@ -41,6 +85,7 @@ export function sparqlQueryCommand(): Command {
     .option("--vault <path>", "Path to Obsidian vault", process.cwd())
     .option("--format <type>", "Output format: table|json|csv|ntriples", "table")
     .option("--output <type>", "Response format: text|json (for MCP tools)", "text")
+    .option("--timeout <duration>", "Query timeout (e.g., 30s, 5000ms)", "10s")
     .option("--explain", "Show optimized query plan")
     .option("--stats", "Show execution statistics")
     .option("--no-optimize", "Disable query optimization")
@@ -51,6 +96,9 @@ export function sparqlQueryCommand(): Command {
 
       try {
         const startTime = Date.now();
+
+        // Parse timeout
+        const timeoutMs = parseTimeout(options.timeout || "10s");
 
         const queryString = loadQuery(queryArg);
 
@@ -136,6 +184,11 @@ export function sparqlQueryCommand(): Command {
 
         const execStartTime = Date.now();
         const executor = new QueryExecutor(tripleStore);
+
+        // Set query timeout if the executor supports it
+        if (typeof executor.setTimeout === "function") {
+          executor.setTimeout(timeoutMs);
+        }
 
         // Progress indicator for long-running query execution (TTY mode only)
         const progressIndicator = outputFormat === "text"
@@ -262,6 +315,11 @@ function formatSelectResults(results: SolutionMapping[], format: string): void {
     case "json":
       const jsonFormatter = new JsonFormatter();
       console.log(jsonFormatter.format(results));
+      break;
+
+    case "csv":
+      const csvFormatter = new CsvFormatter();
+      console.log(csvFormatter.format(results));
       break;
 
     case "table":
