@@ -11,6 +11,7 @@ export interface SparqlIndexOptions {
   output?: OutputFormat;
   stats?: boolean;
   force?: boolean;
+  strict?: boolean;
 }
 
 /**
@@ -25,6 +26,7 @@ export interface SparqlIndexOptions {
  * exocortex sparql index --vault /path/to/vault
  * exocortex sparql index --vault /path/to/vault --stats
  * exocortex sparql index --vault /path/to/vault --force
+ * exocortex sparql index --vault /path/to/vault --strict
  */
 export function sparqlIndexCommand(): Command {
   return new Command("index")
@@ -33,6 +35,7 @@ export function sparqlIndexCommand(): Command {
     .option("--output <type>", "Response format: text|json (for MCP tools)", "text")
     .option("--stats", "Show cache statistics after building")
     .option("--force", "Force rebuild even if cache is valid")
+    .option("--strict", "Fail on first invalid IRI instead of skipping")
     .action(async (options: SparqlIndexOptions) => {
       const outputFormat = (options.output || "text") as OutputFormat;
       ErrorHandler.setFormat(outputFormat);
@@ -54,13 +57,15 @@ export function sparqlIndexCommand(): Command {
           await cacheManager.invalidate();
         }
 
-        // Build cache
+        // Build cache with validation
         if (outputFormat === "text") {
           console.log(`📦 Building triple cache for: ${vaultPath}...`);
         }
 
         const startTime = Date.now();
-        const result = await cacheManager.buildCache();
+        const result = await cacheManager.buildCacheWithValidation({
+          strict: options.strict ?? false,
+        });
         const totalDuration = Date.now() - startTime;
 
         if (outputFormat === "json") {
@@ -69,6 +74,12 @@ export function sparqlIndexCommand(): Command {
             cachePath,
             tripleCount: result.tripleCount,
             durationMs: result.durationMs,
+          };
+
+          // Include validation info
+          const validationInfo = {
+            summary: result.summary,
+            skippedFiles: result.skippedFiles,
           };
 
           // Include stats if requested
@@ -83,19 +94,32 @@ export function sparqlIndexCommand(): Command {
                 cachePath,
               };
               const response = ResponseBuilder.success(
-                { cache: cacheResult, stats: statsResult },
+                { cache: cacheResult, stats: statsResult, validation: validationInfo },
                 { durationMs: totalDuration }
               );
               console.log(JSON.stringify(response, null, 2));
             }
           } else {
-            const response = ResponseBuilder.success(cacheResult, {
-              durationMs: totalDuration,
-            });
+            const response = ResponseBuilder.success(
+              { cache: cacheResult, validation: validationInfo },
+              { durationMs: totalDuration }
+            );
             console.log(JSON.stringify(response, null, 2));
           }
         } else {
-          console.log(`✅ Created cache with ${result.tripleCount.toLocaleString()} triples at ${cachePath}`);
+          // Show warnings for skipped files
+          if (result.skippedFiles.length > 0) {
+            console.log("\n⚠️  Files skipped due to IRI issues:");
+            for (const file of result.skippedFiles) {
+              console.log(`   - ${file.path}`);
+              console.log(`     ${file.reason}`);
+            }
+            console.log("");
+          }
+
+          // Show summary
+          console.log(`✅ Indexed ${result.summary.indexed} files, skipped ${result.summary.skipped} (total: ${result.summary.total})`);
+          console.log(`📊 Created cache with ${result.tripleCount.toLocaleString()} triples at ${cachePath}`);
           console.log(`⏱️  Build time: ${result.durationMs}ms`);
 
           if (options.stats) {

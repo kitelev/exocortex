@@ -5,9 +5,12 @@ import os from "os";
 
 // Mock exocortex dependencies
 const mockConvertVault = jest.fn();
+const mockConvertVaultWithValidation = jest.fn();
 jest.unstable_mockModule("exocortex", () => ({
   NoteToRDFConverter: jest.fn(() => ({
     convertVault: mockConvertVault,
+    convertVaultWithValidation: mockConvertVaultWithValidation,
+    validateVault: jest.fn().mockResolvedValue([]),
   })),
   Triple: jest.fn(),
   IRI: jest.fn(),
@@ -118,13 +121,17 @@ describe("CacheManager", () => {
           object: { value: "Test" },
         },
       ];
-      mockConvertVault.mockResolvedValue(mockTriples);
+      mockConvertVaultWithValidation.mockResolvedValue({
+        triples: mockTriples,
+        skippedFiles: [],
+        summary: { total: 1, indexed: 1, skipped: 0 },
+      });
 
       const result = await cacheManager.loadOrBuild();
 
       expect(result.triples).toHaveLength(1);
       expect(result.cacheHit).toBe(false);
-      expect(mockConvertVault).toHaveBeenCalled();
+      expect(mockConvertVaultWithValidation).toHaveBeenCalled();
     });
 
     it("should load from cache when cache is valid", async () => {
@@ -186,12 +193,16 @@ describe("CacheManager", () => {
           object: { value: "Fresh" },
         },
       ];
-      mockConvertVault.mockResolvedValue(mockTriples);
+      mockConvertVaultWithValidation.mockResolvedValue({
+        triples: mockTriples,
+        skippedFiles: [],
+        summary: { total: 1, indexed: 1, skipped: 0 },
+      });
 
       const result = await cacheManager.loadOrBuild();
 
       expect(result.cacheHit).toBe(false);
-      expect(mockConvertVault).toHaveBeenCalled();
+      expect(mockConvertVaultWithValidation).toHaveBeenCalled();
     });
   });
 
@@ -261,7 +272,11 @@ describe("CacheManager", () => {
           object: { value: "Note 2" },
         },
       ];
-      mockConvertVault.mockResolvedValue(mockTriples);
+      mockConvertVaultWithValidation.mockResolvedValue({
+        triples: mockTriples,
+        skippedFiles: [],
+        summary: { total: 2, indexed: 2, skipped: 0 },
+      });
 
       const result = await cacheManager.buildCache();
 

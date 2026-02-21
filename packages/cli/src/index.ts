@@ -11,6 +11,7 @@ import { batchRepairCommand } from "./commands/batch-repair.js";
 import { resolveCommand } from "./commands/resolve.js";
 import { askCommand } from "./commands/ask.js";
 import { dailyReviewCommand } from "./commands/daily-review.js";
+import { validateCommand } from "./commands/validate.js";
 
 // Version injected at build time by esbuild (see esbuild.config.mjs)
 declare const __CLI_VERSION__: string;
@@ -36,5 +37,6 @@ program.addCommand(batchRepairCommand());
 program.addCommand(resolveCommand());
 program.addCommand(askCommand());
 program.addCommand(dailyReviewCommand());
+program.addCommand(validateCommand());
 
 program.parse();

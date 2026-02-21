@@ -83,6 +83,41 @@ export interface BuildCacheResult {
 }
 
 /**
+ * Information about a file that was skipped during indexing
+ */
+export interface SkippedFileInfo {
+  /** Path of the skipped file */
+  path: string;
+  /** Reason why the file was skipped */
+  reason: string;
+}
+
+/**
+ * Result of buildCacheWithValidation operation
+ */
+export interface BuildCacheWithValidationResult extends BuildCacheResult {
+  /** Files that were skipped during indexing */
+  skippedFiles: SkippedFileInfo[];
+  /** Summary statistics */
+  summary: {
+    /** Total number of files in vault */
+    total: number;
+    /** Number of files successfully indexed */
+    indexed: number;
+    /** Number of files skipped */
+    skipped: number;
+  };
+}
+
+/**
+ * Options for building cache with validation
+ */
+export interface BuildCacheOptions {
+  /** If true, throws on first invalid IRI instead of skipping */
+  strict?: boolean;
+}
+
+/**
  * Manages persistent triple cache for SPARQL queries.
  *
  * The cache stores RDF triples converted from vault notes, eliminating
@@ -202,18 +237,42 @@ export class CacheManager {
    * Converts all vault notes to RDF triples and saves them to the cache file.
    */
   async buildCache(): Promise<BuildCacheResult> {
+    const result = await this.buildCacheWithValidation({ strict: false });
+    return {
+      tripleCount: result.tripleCount,
+      durationMs: result.durationMs,
+    };
+  }
+
+  /**
+   * Builds and persists the triple cache with validation.
+   *
+   * Issue #2205: Enhanced version that provides detailed information about
+   * files that were skipped during indexing.
+   *
+   * @param options - Build options
+   * @param options.strict - If true, throws on first invalid IRI instead of skipping
+   * @returns Result with triples, skipped files, and summary statistics
+   *
+   * @throws Error if strict mode is enabled and an invalid IRI is encountered
+   */
+  async buildCacheWithValidation(
+    options: BuildCacheOptions = {}
+  ): Promise<BuildCacheWithValidationResult> {
     const startTime = Date.now();
 
-    // Convert vault to triples
+    // Convert vault to triples with validation
     const vaultAdapter = new FileSystemVaultAdapter(this.vaultPath);
     const converter = new NoteToRDFConverter(vaultAdapter);
-    const triples = await converter.convertVault();
+    const validationResult = await converter.convertVaultWithValidation({
+      strict: options.strict ?? false,
+    });
 
     // Get vault mtime for cache validation
     const vaultStats = await fs.stat(this.vaultPath);
 
     // Serialize triples
-    const serializedTriples = triples.map(this.serializeTriple);
+    const serializedTriples = validationResult.triples.map(this.serializeTriple);
 
     // Build cache data
     const cacheData: CacheData = {
@@ -221,7 +280,7 @@ export class CacheManager {
         version: this.cliVersion,
         timestamp: Date.now(),
         vaultPath: this.vaultPath,
-        tripleCount: triples.length,
+        tripleCount: validationResult.triples.length,
         vaultMtime: vaultStats.mtimeMs,
       },
       triples: serializedTriples,
@@ -234,9 +293,25 @@ export class CacheManager {
     await fs.writeJson(this.cachePath, cacheData, { spaces: 0 });
 
     return {
-      tripleCount: triples.length,
+      tripleCount: validationResult.triples.length,
       durationMs: Date.now() - startTime,
+      skippedFiles: validationResult.skippedFiles,
+      summary: validationResult.summary,
     };
+  }
+
+  /**
+   * Validates vault files for IRI issues without building cache.
+   *
+   * Issue #2205: Check vault health by identifying files that would
+   * cause IRI validation errors during indexing.
+   *
+   * @returns Array of files with IRI issues and their reasons
+   */
+  async validateVault(): Promise<SkippedFileInfo[]> {
+    const vaultAdapter = new FileSystemVaultAdapter(this.vaultPath);
+    const converter = new NoteToRDFConverter(vaultAdapter);
+    return converter.validateVault();
   }
 
   /**
