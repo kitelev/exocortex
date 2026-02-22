@@ -2707,6 +2707,112 @@ From Issue #2126 (102 steps): For Live Preview text substitution:
 
 ---
 
+## 📊 February 20-22, 2026 Sprint Lessons (Issues #2184-#2226)
+
+> Experience digitized from 23 completed issues (~1,700 total steps across 3 days)
+
+### SPARQL Feature Sprint (8 issues, 2 days)
+
+**Issues #2204, #2207, #2208, #2217-2221**: SPARQL 1.1 full support + CLI enhancements
+
+**Key Success Factors:**
+1. **Foundation first**: #2204 (SPARQL 1.1) established patterns for all subsequent features
+2. **Semantic fixes early**: #2207 (Cyrillic REGEX) and #2208 (OPTIONAL LEFT JOIN) before adding DX features
+3. **DX before UX**: Debugging tools (--explain, --dry-run) before user-facing polish
+4. **Warm context**: Average 73 steps vs 110 for first feature (34% reduction)
+
+**Implementation Order:**
+```
+Core SPARQL Features (GROUP BY, HAVING, subqueries)
+    ↓
+Query Semantics Fixes (OPTIONAL, REGEX)
+    ↓
+DX Improvements (--explain, --dry-run)
+    ↓
+Performance (caching, timeout protection)
+    ↓
+UX Polish (error messages with suggestions)
+```
+
+### CLI Enhancement Sprint (7 issues)
+
+**Issues #2206, #2213, #2217-2221**: Flags, formats, debugging, caching
+
+**Features implemented:**
+- `--timeout` flag for query protection
+- `--format` flags (JSON/CSV/NTriples output)
+- `--explain` dry-run mode
+- Query result caching with TTL
+- SPARQL query templates library
+- Enhanced error messages with suggestions
+
+**Key Pattern: Composable Flags**
+```bash
+# All flags work together
+exocortex-cli sparql query \
+  --folder /vault \
+  --timeout 5000 \
+  --format json \
+  --explain \
+  "SELECT ?s WHERE { ?s a ems:Task }"
+```
+
+### Test Coverage Sprint (2 issues)
+
+**Issues #2185, #2187**: Coverage increase from 38% to 60%
+
+**Approach:**
+1. Identify coverage gaps via lcov report
+2. Prioritize by user impact (critical paths first)
+3. Add unit tests for uncovered branches
+4. Add integration tests for user journeys
+
+### Code Quality Sprint (3 issues)
+
+**Issues #2184, #2186, #2226**: ESLint, code smells, P0 security fix
+
+**Security Fix Pattern (Issue #2226):**
+```typescript
+// ❌ VULNERABLE: replace() interprets $ sequences
+const result = template.replace("{{value}}", userInput);
+
+// ✅ SECURE: split/join doesn't interpret special characters
+const result = template.split("{{value}}").join(userInput);
+```
+
+### UX Features (3 issues)
+
+**Issues #2198, #2200, #2202**: Quick Switcher + Copy Label
+
+**Copy Command Pattern:**
+1. Check visibility (asset has the property)
+2. Extract value from frontmatter
+3. Copy to clipboard with `navigator.clipboard.writeText()`
+4. Show Notice for feedback
+
+**Gotcha**: Issue #2202 was follow-up fix for incomplete #2200. Always verify commands work in:
+- Command palette
+- Right-click context menu
+- Hotkey assignment
+- All relevant asset types
+
+### Sprint Metrics Summary
+
+| Category | Issues | Total Steps | Avg Steps |
+|----------|--------|-------------|-----------|
+| SPARQL | 8 | ~600 | 75 |
+| CLI UX | 7 | ~510 | 73 |
+| Testing | 2 | 217 | 109 |
+| Quality | 3 | 270 | 90 |
+| UX | 3 | 219 | 73 |
+| **Total** | **23** | **~1,700** | **74** |
+
+**Key Insight**: Batching related features reduces average step count from 90-110 (cold start) to 73 (warm context).
+
+**Full patterns**: See PATTERNS.md § "SPARQL Feature Sprint Pattern", "CLI UX Enhancement Sprint Pattern", etc.
+
+---
+
 **Remember**:
 - 🚨 **ALL worktrees MUST be in `worktrees/` subdirectory - NO EXCEPTIONS!**
 - This directory exists to enable safe parallel development
