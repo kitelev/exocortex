@@ -8888,3 +8888,554 @@ describe("WikilinkLabelSuggest", () => {
 ```
 
 **Reference**: Issue #2166 - Show asset labels in Quick Switcher and [[ autocomplete (126 steps, February 2026)
+
+---
+
+## SPARQL Feature Sprint Pattern
+
+**When to use**: Implementing multiple related SPARQL features in sequence
+
+### Pattern Description
+
+Complete related SPARQL features in a single sprint, building each feature on the foundation of the previous. This pattern was proven during the February 2026 SPARQL Enhancement Sprint.
+
+### Sprint Structure (February 20-22, 2026)
+
+| Day | Issues | Features | Steps |
+|-----|--------|----------|-------|
+| **Day 1** | #2204 | SPARQL 1.1 full support (GROUP BY, HAVING, subqueries, property paths) | 110 |
+| **Day 2** | #2207, #2208 | REGEX Cyrillic support, OPTIONAL LEFT JOIN semantics | 85+76 |
+| **Day 2** | #2217-2221 | Timeout protection, dry-run, templates, caching, error messages | 62-78 each |
+
+**Total**: 8 SPARQL issues, ~600 steps, 2 days
+
+### Implementation Order (Critical Path)
+
+```
+1. Core SPARQL Feature (GROUP BY, HAVING, etc.)
+   ↓
+2. Query Semantics Fixes (OPTIONAL, REGEX)
+   ↓
+3. DX Improvements (--explain, --dry-run)
+   ↓
+4. Performance (caching, timeout protection)
+   ↓
+5. UX Polish (error messages with suggestions, templates)
+```
+
+### Key Success Factors
+
+1. **Foundation first**: Issue #2204 (SPARQL 1.1 full support) established patterns for all subsequent features
+2. **Semantic fixes early**: #2207 (Cyrillic REGEX) and #2208 (OPTIONAL LEFT JOIN) fixed core query semantics before adding features
+3. **DX before UX**: Debugging tools (--explain, --dry-run) before user-facing polish
+4. **Warm context**: Each feature built on understanding from previous (average 73 steps vs 110 for first)
+
+### Anti-Patterns Avoided
+
+- ❌ Adding UX features before core semantics work
+- ❌ Implementing caching before understanding query patterns
+- ❌ Adding timeout protection without --explain to debug timeouts
+- ❌ Spacing SPARQL features weeks apart (context loss)
+
+### Real-World Code Pattern: --explain Flag
+
+```typescript
+// CLI dry-run mode implementation
+if (options.explain) {
+  const plan = queryEngine.explain(query);
+  console.log("Query Plan:");
+  console.log(JSON.stringify(plan, null, 2));
+  console.log("\nEstimated cost:", plan.estimatedCost);
+  console.log("Indexes used:", plan.indexesUsed.join(", "));
+  return; // Don't execute
+}
+```
+
+### Real-World Code Pattern: Enhanced Error Messages
+
+```typescript
+// Error suggestion mapping
+const errorSuggestions: Map<RegExp, string> = new Map([
+  [/Unknown prefix: (\w+)/, 'Did you forget to declare PREFIX $1: <...>?'],
+  [/Property .* not found/, 'Check property name spelling. Available: exo:, ems:, ims:'],
+  [/Syntax error at line (\d+)/, 'Check for missing brackets, dots, or semicolons'],
+]);
+
+function enhanceError(error: Error): string {
+  for (const [pattern, suggestion] of errorSuggestions) {
+    const match = error.message.match(pattern);
+    if (match) {
+      return `${error.message}\n\n💡 Suggestion: ${suggestion.replace('$1', match[1] || '')}`;
+    }
+  }
+  return error.message;
+}
+```
+
+### Benefits
+
+- **Compound learning**: Each SPARQL feature shares query engine internals
+- **Consistent API**: All features follow same CLI flag patterns
+- **Reduced debugging**: Semantic fixes (#2207, #2208) prevent cascading issues
+- **User-centric order**: Users get debugging tools before they need to debug performance
+
+**Reference**: Issues #2204, #2207, #2208, #2217-2221 - SPARQL Enhancement Sprint (February 2026)
+
+---
+
+## CLI UX Enhancement Sprint Pattern
+
+**When to use**: Adding multiple CLI flags, output formats, and developer experience features
+
+### Pattern Description
+
+Batch related CLI enhancements together, implementing in order: flags → formats → debugging → caching → error handling.
+
+### Sprint Structure (February 2026)
+
+| Issue | Feature | Steps | Dependencies |
+|-------|---------|-------|--------------|
+| #2206 | --timeout, --format flags, classes command | 56-84 | None |
+| #2213 | --explain, --dry-run debugging | 77 | #2206 (flag infrastructure) |
+| #2217 | Timeout protection | 76 | #2206 (--timeout flag) |
+| #2218 | Dry-run mode | 62 | #2213 (--explain) |
+| #2219 | Query templates library | 78 | None |
+| #2220 | Result caching with TTL | 69 | None |
+| #2221 | Enhanced error messages | 71 | None |
+
+### Implementation Order
+
+```
+1. Flag Infrastructure (--timeout, --format)
+   ↓
+2. Debugging Tools (--explain, --dry-run)
+   ↓
+3. Protection Features (timeout, validation)
+   ↓
+4. Performance Features (caching)
+   ↓
+5. UX Polish (error messages, templates)
+```
+
+### Key Code Pattern: Output Format Handling
+
+```typescript
+// CLI output format pattern (Issue #2206)
+type OutputFormat = 'table' | 'json' | 'csv' | 'ntriples';
+
+function formatOutput(results: QueryResult[], format: OutputFormat): string {
+  switch (format) {
+    case 'json':
+      return JSON.stringify(results, null, 2);
+    case 'csv':
+      return convertToCSV(results);
+    case 'ntriples':
+      return convertToNTriples(results);
+    case 'table':
+    default:
+      return formatAsTable(results);
+  }
+}
+```
+
+### Key Code Pattern: Timeout Protection
+
+```typescript
+// Timeout wrapper pattern (Issue #2217)
+async function executeWithTimeout<T>(
+  operation: () => Promise<T>,
+  timeoutMs: number,
+  operationName: string
+): Promise<T> {
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    setTimeout(() => {
+      reject(new Error(
+        `${operationName} timed out after ${timeoutMs}ms.\n` +
+        `💡 Try: --explain to analyze query complexity`
+      ));
+    }, timeoutMs);
+  });
+
+  return Promise.race([operation(), timeoutPromise]);
+}
+```
+
+### Benefits
+
+- **Incremental complexity**: Simple flags first, complex features later
+- **Debug-first**: Users can understand issues before they're blocked
+- **Consistent patterns**: All features share flag parsing, output formatting
+- **Composable**: --explain + --timeout + --format all work together
+
+**Reference**: Issues #2206, #2213, #2217-2221 - CLI Enhancement Sprint (February 2026)
+
+---
+
+## Test Coverage Sprint Pattern
+
+**When to use**: Systematically increasing test coverage for critical paths
+
+### Pattern Description
+
+Achieve significant coverage increases by targeting critical user paths first, then expanding to edge cases.
+
+### Sprint Structure (February 2026)
+
+| Issue | Goal | Steps | Result |
+|-------|------|-------|--------|
+| #2185 | Increase coverage 38% → 60% | 83 | Achieved |
+| #2187 | Add integration tests for critical paths | 134 | 12+ integration tests added |
+
+### Implementation Order
+
+```
+1. Identify coverage gaps (lcov report)
+   ↓
+2. Prioritize by user impact (critical paths first)
+   ↓
+3. Add unit tests for uncovered branches
+   ↓
+4. Add integration tests for user journeys
+   ↓
+5. Verify coverage targets met
+```
+
+### Critical Path Identification
+
+```bash
+# Generate coverage report
+npm run test:coverage
+
+# Find least-covered critical files
+cat coverage/lcov-report/index.html | grep -A2 "src/domain" | sort
+
+# Prioritize by import count (more imports = more critical)
+grep -r "from.*domain" src/ | cut -d: -f2 | sort | uniq -c | sort -rn
+```
+
+### Key Pattern: Integration Test Structure
+
+```typescript
+// Integration test for critical user path (Issue #2187)
+describe("Task Creation Flow (Critical Path)", () => {
+  let vault: MockVault;
+  let service: TaskCreationService;
+
+  beforeEach(() => {
+    vault = createMockVault();
+    service = container.resolve(TaskCreationService);
+  });
+
+  it("should create task with all required properties", async () => {
+    const result = await service.createTask({
+      title: "Test Task",
+      parent: "[[project-uuid]]",
+    });
+
+    expect(result.path).toMatch(/\.md$/);
+
+    const content = await vault.read(result);
+    expect(content).toContain("ems__Effort_status:");
+    expect(content).toContain("exo__Instance_class:");
+  });
+
+  it("should inherit area from parent project", async () => {
+    // Test area inheritance critical path
+  });
+
+  it("should set timestamps correctly", async () => {
+    // Test timestamp handling critical path
+  });
+});
+```
+
+### Coverage Target Guidelines
+
+| Coverage Level | Risk | Recommendation |
+|----------------|------|----------------|
+| < 40% | High | Priority improvement needed |
+| 40-60% | Medium | Focus on critical paths |
+| 60-80% | Low | Maintain, add edge cases |
+| > 80% | Minimal | Maintenance mode |
+
+**Reference**: Issues #2185, #2187 - Test Coverage Sprint (February 2026)
+
+---
+
+## Copy Command Pattern
+
+**When to use**: Implementing clipboard copy commands for asset properties
+
+### Pattern Description
+
+Implement "Copy X" commands that extract specific properties from assets and copy to clipboard.
+
+### Implementation (Issue #2200, #2202)
+
+```typescript
+// CopyLabelCommand.ts
+export class CopyLabelCommand implements ICommand {
+  id = "copy-label";
+  name = "Copy Label";
+
+  checkCallback(checking: boolean, file: TFile): boolean {
+    // Visibility check
+    const frontmatter = app.metadataCache.getFileCache(file)?.frontmatter;
+    const label = frontmatter?.exo__Asset_label;
+
+    if (!label) return false;
+
+    if (!checking) {
+      this.execute(file, label);
+    }
+    return true;
+  }
+
+  private execute(file: TFile, label: string): void {
+    navigator.clipboard.writeText(label);
+    new Notice(`Copied: ${label}`);
+  }
+}
+```
+
+### Key Implementation Details
+
+1. **Visibility**: Command only shows when asset has the property
+2. **Feedback**: Use Notice to confirm action
+3. **Error handling**: Handle clipboard permission denied
+
+### Common Gotcha: Incomplete Implementation
+
+Issue #2202 was created because #2200 didn't fully implement the feature. Lesson: Always verify command works in:
+- Command palette
+- Right-click context menu
+- Hotkey assignment
+- All relevant asset types
+
+**Reference**: Issues #2200, #2202 - Copy Label Command (February 2026)
+
+---
+
+## RDF/IRI Validation Pattern
+
+**When to use**: Handling invalid IRIs in RDF triples gracefully
+
+### Pattern Description
+
+Validate and sanitize IRIs before using in RDF operations to prevent parsing failures.
+
+### Implementation (Issue #2205)
+
+```typescript
+// IRI validation pattern
+const IRI_REGEX = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
+
+function validateIRI(iri: string): { valid: boolean; sanitized?: string; error?: string } {
+  // Check basic structure
+  if (!iri || typeof iri !== 'string') {
+    return { valid: false, error: 'IRI must be a non-empty string' };
+  }
+
+  // Check scheme
+  if (!IRI_REGEX.test(iri)) {
+    return { valid: false, error: `Invalid IRI scheme: ${iri}` };
+  }
+
+  // Check for problematic characters
+  const problematic = iri.match(/[\s<>"{}|\\^`]/g);
+  if (problematic) {
+    const sanitized = iri.replace(/[\s<>"{}|\\^`]/g, (char) =>
+      encodeURIComponent(char)
+    );
+    return { valid: true, sanitized };
+  }
+
+  return { valid: true };
+}
+```
+
+### Graceful Degradation
+
+```typescript
+// Skip invalid IRIs instead of failing
+function processTriples(triples: Triple[]): Triple[] {
+  return triples.filter(triple => {
+    const subjectValid = validateIRI(triple.subject);
+    const predicateValid = validateIRI(triple.predicate);
+
+    if (!subjectValid.valid) {
+      console.warn(`Skipping triple with invalid subject: ${triple.subject}`);
+      return false;
+    }
+
+    if (!predicateValid.valid) {
+      console.warn(`Skipping triple with invalid predicate: ${triple.predicate}`);
+      return false;
+    }
+
+    return true;
+  });
+}
+```
+
+**Reference**: Issue #2205 - Invalid IRI handling (96 steps, February 2026)
+
+---
+
+## Quick Switcher Enhancement Pattern
+
+**When to use**: Enhancing Obsidian's Quick Switcher with additional search fields
+
+### Pattern Description
+
+Extend Quick Switcher to search by asset labels, aliases, and UIDs in addition to filenames.
+
+### Implementation (Issue #2198)
+
+```typescript
+// QuickSwitcherEnhancement.ts
+export class QuickSwitcherEnhancement {
+  private resolver: WikilinkLabelResolver;
+
+  enhanceSuggestions(suggestions: TFile[]): EnhancedSuggestion[] {
+    return suggestions.map(file => {
+      const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
+
+      return {
+        file,
+        displayText: this.getDisplayText(file, frontmatter),
+        searchText: this.buildSearchText(file, frontmatter),
+        subtitle: this.getSubtitle(file, frontmatter),
+      };
+    });
+  }
+
+  private buildSearchText(file: TFile, fm: FrontMatter | undefined): string {
+    const parts = [file.basename];
+
+    if (fm?.exo__Asset_label) parts.push(fm.exo__Asset_label);
+    if (fm?.aliases) parts.push(...fm.aliases);
+    // UID is already in basename for UUID-named files
+
+    return parts.join(' ').toLowerCase();
+  }
+
+  private getDisplayText(file: TFile, fm: FrontMatter | undefined): string {
+    return fm?.exo__Asset_label || file.basename;
+  }
+
+  private getSubtitle(file: TFile, fm: FrontMatter | undefined): string {
+    // Show classes instead of path
+    const classes = fm?.exo__Instance_class;
+    if (Array.isArray(classes) && classes.length > 0) {
+      return classes.map(c => c.replace(/[\[\]]/g, '')).join(', ');
+    }
+    return file.parent?.path || '';
+  }
+}
+```
+
+### UI Considerations
+
+- **Display**: Show label as primary text, classes as subtitle
+- **Search**: Match against label, aliases, UID, and basename
+- **Performance**: Cache search text computation
+
+**Reference**: Issue #2198 - Enhanced Quick Switcher (50 steps, February 2026)
+
+---
+
+## Security Fix Sprint Pattern
+
+**When to use**: Addressing code scanning security alerts systematically
+
+### Pattern Description
+
+Process P0 (security) alerts with highest priority, implementing consistent fix patterns.
+
+### February 2026 Example: String Escaping (Issue #2226)
+
+**Alert**: Incomplete string escaping or encoding
+**Severity**: P0 (Security-critical)
+**Steps**: 66
+
+### Fix Pattern: Split-Join for Safe Replacement
+
+```typescript
+// ❌ VULNERABLE: replace() interprets $ sequences
+const result = template.replace("{{value}}", userInput);
+
+// ✅ SECURE: split/join doesn't interpret special characters
+const result = template.split("{{value}}").join(userInput);
+```
+
+### Verification Checklist
+
+1. ✅ All instances of vulnerable pattern identified
+2. ✅ Each instance converted to safe pattern
+3. ✅ Unit tests added for edge cases (input with $, &, `)
+4. ✅ Code scanning re-run to verify alert cleared
+5. ✅ PR labeled with P0 tag
+
+### Common Security Patterns
+
+| Alert Type | Fix Pattern |
+|------------|-------------|
+| Incomplete string escaping | split/join instead of replace |
+| Insecure randomness | crypto.randomUUID() or crypto.getRandomValues() |
+| Weak crypto | Use AES-GCM, avoid MD5/SHA1 for security |
+| Prototype pollution | Object.create(null) for dictionaries |
+
+**Reference**: Issue #2226 - P0 String Escaping Fix (February 2026)
+
+---
+
+## Documentation Sprint Pattern
+
+**When to use**: Creating ADRs and technical documentation
+
+### Pattern Description
+
+Document architecture decisions using Architecture Decision Records (ADR) format.
+
+### Implementation (Issue #2188)
+
+**Structure**:
+```
+docs/
+├── adr/
+│   ├── 0001-use-clean-architecture.md
+│   ├── 0002-sparql-v2-implementation.md
+│   ├── 0003-tsyringe-dependency-injection.md
+│   └── README.md (ADR index)
+```
+
+**ADR Template**:
+```markdown
+# ADR-NNNN: Title
+
+## Status
+Accepted | Proposed | Deprecated | Superseded by ADR-XXXX
+
+## Context
+What is the issue that we're seeing that is motivating this decision?
+
+## Decision
+What is the change that we're proposing and/or doing?
+
+## Consequences
+What becomes easier or more difficult because of this change?
+
+## References
+- Issue #XXX
+- PR #YYY
+```
+
+### When to Create ADR
+
+- New architectural patterns (DI, SPARQL engine, caching)
+- Technology choices (TSyringe vs InversifyJS)
+- Breaking changes to existing patterns
+- Performance-critical decisions
+
+**Reference**: Issue #2188 - ADR Documentation (47 steps, February 2026)
