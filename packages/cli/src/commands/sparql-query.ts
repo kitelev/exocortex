@@ -24,6 +24,7 @@ import { VaultNotFoundError, InvalidArgumentsError, QueryTimeoutError } from "..
 import { ResponseBuilder, ErrorCode, type QueryResult, type ConstructResult } from "../responses/index.js";
 import { ExitCodes } from "../utils/ExitCodes.js";
 import { CacheManager } from "../cache/CacheManager.js";
+import { QueryResultCache } from "../cache/QueryResultCache.js";
 import { ProgressIndicator } from "../utils/ProgressIndicator.js";
 import { QueryAnalyzer } from "../utils/QueryAnalyzer.js";
 import { TemplateRegistry } from "../templates/TemplateRegistry.js";
@@ -37,9 +38,33 @@ export interface SparqlQueryOptions {
   stats?: boolean;
   noOptimize?: boolean;
   useCache?: boolean;
+  cacheTtl?: string;
+  cache?: boolean;
   timeout?: string;
   template?: string;
   param?: string;
+}
+
+/** Default TTL for query result cache in seconds */
+export const DEFAULT_CACHE_TTL_SECONDS = 300;
+
+/**
+ * Parse cache TTL string into seconds.
+ * Supports plain number (seconds).
+ */
+export function parseCacheTtl(ttlStr: string | undefined): number {
+  if (!ttlStr) {
+    return DEFAULT_CACHE_TTL_SECONDS;
+  }
+
+  const value = parseInt(ttlStr.trim(), 10);
+  if (isNaN(value) || value <= 0) {
+    throw new InvalidArgumentsError(
+      `Invalid cache TTL: "${ttlStr}". Must be a positive number (seconds).`,
+      'exocortex sparql query --cache-ttl 600 "SELECT * WHERE { ?s ?p ?o }"'
+    );
+  }
+  return value;
 }
 
 /**
@@ -119,7 +144,9 @@ export function sparqlQueryCommand(): Command {
     .option("--explain", "Show optimized query plan")
     .option("--stats", "Show execution statistics")
     .option("--no-optimize", "Disable query optimization")
-    .option("--use-cache", "Use persistent cache (faster for repeated queries)")
+    .option("--use-cache", "Use persistent triple cache (faster vault loading)")
+    .option("--cache-ttl <seconds>", "Query result cache TTL in seconds (default: 300)")
+    .option("--no-cache", "Bypass query result cache")
     .option("--template <name>", "Use a predefined query template")
     .option("--param <params>", "Template parameters (format: key=value,key2=value2)")
     .action(async (queryArg: string | undefined, options: SparqlQueryOptions) => {
@@ -131,6 +158,10 @@ export function sparqlQueryCommand(): Command {
 
         // Parse timeout
         const timeoutMs = parseTimeout(options.timeout || "30s");
+
+        // Parse cache TTL
+        const cacheTtlSeconds = parseCacheTtl(options.cacheTtl);
+        const useQueryResultCache = options.cache !== false; // --no-cache sets this to false
 
         // Resolve query string from template or direct input
         let queryString: string;
@@ -163,6 +194,39 @@ export function sparqlQueryCommand(): Command {
         }
 
         const vaultPath = resolve(options.vault);
+
+        // Check query result cache first (before vault loading)
+        if (useQueryResultCache) {
+          const queryResultCache = new QueryResultCache();
+          const cachedResult = await queryResultCache.get(queryString, cacheTtlSeconds);
+
+          if (cachedResult !== null) {
+            const totalDuration = Date.now() - startTime;
+
+            if (outputFormat === "json") {
+              // Return cached JSON response
+              const response = ResponseBuilder.success(cachedResult, {
+                durationMs: totalDuration,
+                itemCount: (cachedResult as { count?: number }).count || 0,
+                queryResultCacheHit: true,
+              });
+              console.log(JSON.stringify(response, null, 2));
+            } else {
+              // Text mode: show cached indicator and results
+              console.log(`📦 (cached) Query result loaded from cache in ${totalDuration}ms\n`);
+              const result = cachedResult as { type: string; bindings?: unknown[]; triples?: unknown[] };
+              if (result.type === "select" && result.bindings) {
+                console.log(`✅ Found ${result.bindings.length} result(s)\n`);
+                // Output cached bindings
+                formatCachedSelectResults(result.bindings, options.format);
+              } else if (result.type === "construct" && result.triples) {
+                console.log(`✅ Generated ${result.triples.length} triple(s)\n`);
+                formatCachedConstructResults(result.triples, options.format);
+              }
+            }
+            return;
+          }
+        }
         if (!existsSync(vaultPath)) {
           throw new VaultNotFoundError(vaultPath);
         }
@@ -268,6 +332,18 @@ export function sparqlQueryCommand(): Command {
           progressIndicator?.stop();
           const totalDuration = Date.now() - startTime;
 
+          // Cache the CONSTRUCT result for future queries
+          if (useQueryResultCache) {
+            const triplesFormatter = new TriplesFormatter();
+            const cacheableResult = {
+              type: "construct",
+              count: resultTriples.length,
+              triples: JSON.parse(triplesFormatter.formatJson(resultTriples)),
+            };
+            const queryResultCache = new QueryResultCache();
+            await queryResultCache.set(queryString, cacheableResult, cacheTtlSeconds);
+          }
+
           if (outputFormat === "json") {
             // Structured JSON response for MCP tools
             const triplesFormatter = new TriplesFormatter();
@@ -283,6 +359,7 @@ export function sparqlQueryCommand(): Command {
               execDurationMs: execDuration,
               triplesScanned: triples.length,
               cacheHit,
+              queryResultCacheHit: false,
             });
             console.log(JSON.stringify(response, null, 2));
           } else {
@@ -303,7 +380,10 @@ export function sparqlQueryCommand(): Command {
               console.log(`  Triples scanned: ${triples.length}`);
               console.log(`  Triples generated: ${resultTriples.length}`);
               if (options.useCache) {
-                console.log(`  Cache: ${cacheHit ? "HIT" : "MISS (rebuilt)"}`);
+                console.log(`  Triple cache: ${cacheHit ? "HIT" : "MISS (rebuilt)"}`);
+              }
+              if (useQueryResultCache) {
+                console.log(`  Query result cache: MISS (cached for next run)`);
               }
             }
           }
@@ -319,9 +399,20 @@ export function sparqlQueryCommand(): Command {
           progressIndicator?.stop();
           const totalDuration = Date.now() - startTime;
 
+          // Cache the SELECT result for future queries
+          const bindings = results.map((r) => r.toJSON());
+          if (useQueryResultCache) {
+            const cacheableResult = {
+              type: "select",
+              count: results.length,
+              bindings,
+            };
+            const queryResultCache = new QueryResultCache();
+            await queryResultCache.set(queryString, cacheableResult, cacheTtlSeconds);
+          }
+
           if (outputFormat === "json") {
             // Structured JSON response for MCP tools
-            const bindings = results.map((r) => r.toJSON());
             const queryResult: QueryResult = {
               query: queryString,
               count: results.length,
@@ -334,6 +425,7 @@ export function sparqlQueryCommand(): Command {
               execDurationMs: execDuration,
               triplesScanned: triples.length,
               cacheHit,
+              queryResultCacheHit: false,
             });
             console.log(JSON.stringify(response, null, 2));
           } else {
@@ -354,7 +446,10 @@ export function sparqlQueryCommand(): Command {
               console.log(`  Triples scanned: ${triples.length}`);
               console.log(`  Results returned: ${results.length}`);
               if (options.useCache) {
-                console.log(`  Cache: ${cacheHit ? "HIT" : "MISS (rebuilt)"}`);
+                console.log(`  Triple cache: ${cacheHit ? "HIT" : "MISS (rebuilt)"}`);
+              }
+              if (useQueryResultCache) {
+                console.log(`  Query result cache: MISS (cached for next run)`);
               }
             }
           }
@@ -537,4 +632,91 @@ function formatConstructResults(triples: Triple[], format: string): void {
       console.log(formatter.formatTable(triples));
       break;
   }
+}
+
+/**
+ * Format cached SELECT results for text output.
+ * Bindings are already serialized JSON from the cache.
+ */
+function formatCachedSelectResults(bindings: unknown[], format: string): void {
+  switch (format) {
+    case "json":
+      console.log(JSON.stringify(bindings, null, 2));
+      break;
+
+    case "csv":
+      // Convert bindings to CSV format
+      if (bindings.length === 0) {
+        console.log("");
+        return;
+      }
+      const headers = Object.keys(bindings[0] as Record<string, unknown>);
+      console.log(headers.join(","));
+      for (const row of bindings) {
+        const values = headers.map(h => {
+          const val = (row as Record<string, unknown>)[h];
+          if (val === null || val === undefined) return "";
+          return String(val).includes(",") ? `"${val}"` : String(val);
+        });
+        console.log(values.join(","));
+      }
+      break;
+
+    case "table":
+    default:
+      // Simple table format for cached results
+      if (bindings.length === 0) {
+        console.log("No results.");
+        return;
+      }
+      const cols = Object.keys(bindings[0] as Record<string, unknown>);
+      console.log(cols.join("\t"));
+      console.log(cols.map(() => "---").join("\t"));
+      for (const row of bindings) {
+        const values = cols.map(c => String((row as Record<string, unknown>)[c] ?? ""));
+        console.log(values.join("\t"));
+      }
+      break;
+  }
+}
+
+/**
+ * Format cached CONSTRUCT results for text output.
+ * Triples are already serialized JSON from the cache.
+ */
+function formatCachedConstructResults(triples: unknown[], format: string): void {
+  switch (format) {
+    case "json":
+      console.log(JSON.stringify(triples, null, 2));
+      break;
+
+    case "ntriples":
+      // Convert to N-Triples format
+      for (const triple of triples as Array<{ subject: string; predicate: string; object: string }>) {
+        console.log(`<${triple.subject}> <${triple.predicate}> ${formatNTriplesObject(triple.object)} .`);
+      }
+      break;
+
+    case "table":
+    default:
+      // Simple table format
+      console.log("Subject\tPredicate\tObject");
+      console.log("---\t---\t---");
+      for (const triple of triples as Array<{ subject: string; predicate: string; object: string }>) {
+        console.log(`${triple.subject}\t${triple.predicate}\t${triple.object}`);
+      }
+      break;
+  }
+}
+
+/**
+ * Format an object value for N-Triples output.
+ */
+function formatNTriplesObject(obj: string): string {
+  // Check if it's a URI or literal
+  if (obj.startsWith("http://") || obj.startsWith("https://") || obj.startsWith("urn:")) {
+    return `<${obj}>`;
+  }
+  // Assume literal
+  return `"${obj.replace(/"/g, '\\"')}"`;
 }
