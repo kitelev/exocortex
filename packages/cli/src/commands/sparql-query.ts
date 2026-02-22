@@ -29,6 +29,7 @@ import { ProgressIndicator } from "../utils/ProgressIndicator.js";
 import { QueryAnalyzer } from "../utils/QueryAnalyzer.js";
 import { TemplateRegistry } from "../templates/TemplateRegistry.js";
 import { SPARQLErrorEnhancer } from "../utils/SPARQLErrorEnhancer.js";
+import { NTriplesFormatter } from "../utils/NTriplesFormatter.js";
 
 export interface SparqlQueryOptions {
   vault: string;
@@ -757,12 +758,9 @@ function formatCachedConstructResults(triples: unknown[], format: string): void 
 
 /**
  * Format an object value for N-Triples output.
+ * Uses NTriplesFormatter utility for proper string escaping.
+ * Fixes code scanning alert js/incomplete-sanitization (Issue #2226).
  */
 function formatNTriplesObject(obj: string): string {
-  // Check if it's a URI or literal
-  if (obj.startsWith("http://") || obj.startsWith("https://") || obj.startsWith("urn:")) {
-    return `<${obj}>`;
-  }
-  // Assume literal
-  return `"${obj.replace(/"/g, '\\"')}"`;
+  return NTriplesFormatter.formatObject(obj);
 }
