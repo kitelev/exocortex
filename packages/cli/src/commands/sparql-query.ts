@@ -28,6 +28,7 @@ import { QueryResultCache } from "../cache/QueryResultCache.js";
 import { ProgressIndicator } from "../utils/ProgressIndicator.js";
 import { QueryAnalyzer } from "../utils/QueryAnalyzer.js";
 import { TemplateRegistry } from "../templates/TemplateRegistry.js";
+import { SPARQLErrorEnhancer } from "../utils/SPARQLErrorEnhancer.js";
 
 export interface SparqlQueryOptions {
   vault: string;
@@ -455,6 +456,46 @@ export function sparqlQueryCommand(): Command {
           }
         }
       } catch (error) {
+        // Enhance SPARQL-specific errors with better messages and suggestions
+        const enhancer = new SPARQLErrorEnhancer();
+        const errorType = enhancer.classifyError(error as Error);
+
+        // Only enhance SPARQL-related errors (syntax, prefix, timeout)
+        if (errorType !== "unknown") {
+          const enhanced = enhancer.enhanceError(error as Error, queryString);
+
+          if (outputFormat === "json") {
+            const response = ResponseBuilder.error(
+              ErrorCode.VALIDATION_INVALID_FORMAT,
+              enhanced.message,
+              ExitCodes.INVALID_ARGUMENTS,
+              {
+                context: {
+                  errorType: enhanced.type,
+                  suggestions: enhanced.suggestions,
+                  line: enhanced.line,
+                  column: enhanced.column,
+                  queryContext: enhanced.context ? {
+                    startLine: enhanced.context.startLine,
+                    endLine: enhanced.context.endLine,
+                    errorLine: enhanced.context.errorLine,
+                  } : undefined,
+                },
+                recovery: {
+                  message: enhanced.suggestions?.[0] || "Check query syntax",
+                },
+              }
+            );
+            console.log(JSON.stringify(response, null, 2));
+            process.exit(ExitCodes.INVALID_ARGUMENTS);
+          } else {
+            // Text mode - show enhanced error with formatting
+            console.error(enhancer.formatForText(enhanced));
+            process.exit(ExitCodes.INVALID_ARGUMENTS);
+          }
+        }
+
+        // Fall back to default error handling for non-SPARQL errors
         ErrorHandler.handle(error as Error);
       }
     });
@@ -552,33 +593,38 @@ async function executeDryRun(
       console.log(`   Query type: ${getQueryType(ast)}`);
     }
   } catch (error) {
-    // Handle parse errors with detailed information
-    if (error instanceof SPARQLParseError) {
-      const locationInfo = error.line !== undefined
-        ? ` at line ${error.line}${error.column !== undefined ? `, column ${error.column}` : ""}`
-        : "";
+    // Handle parse errors with enhanced information
+    const enhancer = new SPARQLErrorEnhancer();
+    const enhanced = enhancer.enhanceError(error as Error, queryString);
 
-      if (outputFormat === "json") {
-        const response = ResponseBuilder.error(
-          ErrorCode.VALIDATION_INVALID_FORMAT,
-          error.message,
-          ExitCodes.INVALID_ARGUMENTS,
-          {
-            context: {
-              valid: false,
-              line: error.line,
-              column: error.column,
-            },
-          }
-        );
-        console.log(JSON.stringify(response, null, 2));
-      } else {
-        console.error(`❌ Syntax error${locationInfo}:`);
-        console.error(`   ${error.message}`);
-      }
-      process.exit(ExitCodes.INVALID_ARGUMENTS);
+    if (outputFormat === "json") {
+      const response = ResponseBuilder.error(
+        ErrorCode.VALIDATION_INVALID_FORMAT,
+        enhanced.message,
+        ExitCodes.INVALID_ARGUMENTS,
+        {
+          context: {
+            valid: false,
+            errorType: enhanced.type,
+            suggestions: enhanced.suggestions,
+            line: enhanced.line,
+            column: enhanced.column,
+            queryContext: enhanced.context ? {
+              startLine: enhanced.context.startLine,
+              endLine: enhanced.context.endLine,
+              errorLine: enhanced.context.errorLine,
+            } : undefined,
+          },
+          recovery: {
+            message: enhanced.suggestions?.[0] || "Check query syntax",
+          },
+        }
+      );
+      console.log(JSON.stringify(response, null, 2));
+    } else {
+      console.error(enhancer.formatForText(enhanced));
     }
-    throw error;
+    process.exit(ExitCodes.INVALID_ARGUMENTS);
   }
 }
 
