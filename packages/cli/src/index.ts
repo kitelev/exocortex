@@ -4,6 +4,7 @@ import "reflect-metadata";
 import { Command } from "commander";
 import { sparqlQueryCommand } from "./commands/sparql-query.js";
 import { sparqlIndexCommand } from "./commands/sparql-index.js";
+import { sparqlTemplatesCommand } from "./commands/sparql-templates.js";
 import { commandCommand } from "./commands/command.js";
 import { watchCommand } from "./commands/watch.js";
 import { batchCommand } from "./commands/batch.js";
@@ -30,6 +31,7 @@ const sparqlCommand = program
 
 sparqlCommand.addCommand(sparqlQueryCommand());
 sparqlCommand.addCommand(sparqlIndexCommand());
+sparqlCommand.addCommand(sparqlTemplatesCommand());
 
 program.addCommand(commandCommand());
 program.addCommand(watchCommand());

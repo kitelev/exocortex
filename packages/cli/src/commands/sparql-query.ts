@@ -26,6 +26,7 @@ import { ExitCodes } from "../utils/ExitCodes.js";
 import { CacheManager } from "../cache/CacheManager.js";
 import { ProgressIndicator } from "../utils/ProgressIndicator.js";
 import { QueryAnalyzer } from "../utils/QueryAnalyzer.js";
+import { TemplateRegistry } from "../templates/TemplateRegistry.js";
 
 export interface SparqlQueryOptions {
   vault: string;
@@ -37,6 +38,8 @@ export interface SparqlQueryOptions {
   noOptimize?: boolean;
   useCache?: boolean;
   timeout?: string;
+  template?: string;
+  param?: string;
 }
 
 /**
@@ -107,7 +110,7 @@ export async function executeWithTimeout<T>(
 export function sparqlQueryCommand(): Command {
   return new Command("query")
     .description("Execute SPARQL query against Obsidian vault")
-    .argument("<query>", "SPARQL query string or path to .sparql file")
+    .argument("[query]", "SPARQL query string or path to .sparql file (optional if --template is used)")
     .option("--vault <path>", "Path to Obsidian vault", process.cwd())
     .option("--format <type>", "Output format: table|json|csv|ntriples", "table")
     .option("--output <type>", "Response format: text|json (for MCP tools)", "text")
@@ -117,7 +120,9 @@ export function sparqlQueryCommand(): Command {
     .option("--stats", "Show execution statistics")
     .option("--no-optimize", "Disable query optimization")
     .option("--use-cache", "Use persistent cache (faster for repeated queries)")
-    .action(async (queryArg: string, options: SparqlQueryOptions) => {
+    .option("--template <name>", "Use a predefined query template")
+    .option("--param <params>", "Template parameters (format: key=value,key2=value2)")
+    .action(async (queryArg: string | undefined, options: SparqlQueryOptions) => {
       const outputFormat = (options.output || "text") as OutputFormat;
       ErrorHandler.setFormat(outputFormat);
 
@@ -127,7 +132,29 @@ export function sparqlQueryCommand(): Command {
         // Parse timeout
         const timeoutMs = parseTimeout(options.timeout || "30s");
 
-        const queryString = loadQuery(queryArg);
+        // Resolve query string from template or direct input
+        let queryString: string;
+        if (options.template) {
+          const registry = new TemplateRegistry();
+          const params = options.param ? registry.parseParamString(options.param) : {};
+          queryString = registry.applyTemplate(options.template, params);
+
+          if (outputFormat === "text") {
+            const template = registry.getTemplate(options.template);
+            console.log(`📋 Using template: ${options.template}`);
+            if (Object.keys(params).length > 0) {
+              console.log(`   Parameters: ${Object.entries(params).map(([k, v]) => `${k}=${v}`).join(", ")}`);
+            }
+            console.log();
+          }
+        } else if (queryArg) {
+          queryString = loadQuery(queryArg);
+        } else {
+          throw new InvalidArgumentsError(
+            "Either a query argument or --template flag is required.",
+            'exocortex sparql query "SELECT * WHERE { ?s ?p ?o }" or exocortex sparql query --template tasks-by-date --param date=2024-01-15'
+          );
+        }
 
         // Dry-run mode: validate syntax only, no vault loading
         if (options.dryRun) {
