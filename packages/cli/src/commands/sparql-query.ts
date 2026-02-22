@@ -20,7 +20,7 @@ import { JsonFormatter } from "../formatters/JsonFormatter.js";
 import { CsvFormatter } from "../formatters/CsvFormatter.js";
 import { TriplesFormatter } from "../formatters/TriplesFormatter.js";
 import { ErrorHandler, type OutputFormat } from "../utils/ErrorHandler.js";
-import { VaultNotFoundError, InvalidArgumentsError } from "../utils/errors/index.js";
+import { VaultNotFoundError, InvalidArgumentsError, QueryTimeoutError } from "../utils/errors/index.js";
 import { ResponseBuilder, ErrorCode, type QueryResult, type ConstructResult } from "../responses/index.js";
 import { ExitCodes } from "../utils/ExitCodes.js";
 import { CacheManager } from "../cache/CacheManager.js";
@@ -80,6 +80,29 @@ export function parseTimeout(timeoutStr: string): number {
   return value * 1000;
 }
 
+/**
+ * Execute a query with timeout protection using Promise.race pattern.
+ *
+ * @param queryPromise - The promise representing the query execution
+ * @param timeoutMs - Timeout in milliseconds
+ * @param startTime - Start time for elapsed calculation
+ * @returns The query result or throws QueryTimeoutError
+ */
+export async function executeWithTimeout<T>(
+  queryPromise: Promise<T>,
+  timeoutMs: number,
+  startTime: number = Date.now(),
+): Promise<T> {
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    setTimeout(() => {
+      const elapsedMs = Date.now() - startTime;
+      reject(new QueryTimeoutError(timeoutMs, elapsedMs));
+    }, timeoutMs);
+  });
+
+  return Promise.race([queryPromise, timeoutPromise]);
+}
+
 export function sparqlQueryCommand(): Command {
   return new Command("query")
     .description("Execute SPARQL query against Obsidian vault")
@@ -87,7 +110,7 @@ export function sparqlQueryCommand(): Command {
     .option("--vault <path>", "Path to Obsidian vault", process.cwd())
     .option("--format <type>", "Output format: table|json|csv|ntriples", "table")
     .option("--output <type>", "Response format: text|json (for MCP tools)", "text")
-    .option("--timeout <duration>", "Query timeout (e.g., 30s, 5000ms)", "10s")
+    .option("--timeout <duration>", "Query timeout (e.g., 30s, 5000ms)", "30s")
     .option("--dry-run", "Validate query syntax without executing (no vault loading)")
     .option("--explain", "Show optimized query plan")
     .option("--stats", "Show execution statistics")
@@ -101,7 +124,7 @@ export function sparqlQueryCommand(): Command {
         const startTime = Date.now();
 
         // Parse timeout
-        const timeoutMs = parseTimeout(options.timeout || "10s");
+        const timeoutMs = parseTimeout(options.timeout || "30s");
 
         const queryString = loadQuery(queryArg);
 
@@ -208,7 +231,11 @@ export function sparqlQueryCommand(): Command {
         if (executor.isConstructQuery(algebra)) {
           // CONSTRUCT query - returns triples
           progressIndicator?.start();
-          const resultTriples = await executor.executeConstruct(algebra);
+          const resultTriples = await executeWithTimeout(
+            executor.executeConstruct(algebra),
+            timeoutMs,
+            execStartTime,
+          );
           const execDuration = Date.now() - execStartTime;
           progressIndicator?.stop();
           const totalDuration = Date.now() - startTime;
@@ -255,7 +282,11 @@ export function sparqlQueryCommand(): Command {
         } else {
           // SELECT query - returns solution mappings
           progressIndicator?.start();
-          const results = await executor.executeAll(algebra);
+          const results = await executeWithTimeout(
+            executor.executeAll(algebra),
+            timeoutMs,
+            execStartTime,
+          );
           const execDuration = Date.now() - execStartTime;
           progressIndicator?.stop();
           const totalDuration = Date.now() - startTime;
