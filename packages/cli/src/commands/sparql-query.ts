@@ -25,6 +25,7 @@ import { ResponseBuilder, ErrorCode, type QueryResult, type ConstructResult } fr
 import { ExitCodes } from "../utils/ExitCodes.js";
 import { CacheManager } from "../cache/CacheManager.js";
 import { ProgressIndicator } from "../utils/ProgressIndicator.js";
+import { QueryAnalyzer } from "../utils/QueryAnalyzer.js";
 
 export interface SparqlQueryOptions {
   vault: string;
@@ -353,12 +354,45 @@ function loadQuery(queryArg: string): string {
 /**
  * Execute dry-run mode: validate query syntax without loading vault or executing.
  * This is useful for checking query syntax before running expensive operations.
+ *
+ * When --explain is also set, provides comprehensive query analysis including:
+ * - Prefixes used
+ * - Variables selected
+ * - Triple pattern count
+ * - Complexity estimation
+ * - Query plan (algebra)
  */
 async function executeDryRun(
   queryString: string,
   options: SparqlQueryOptions,
   outputFormat: OutputFormat
 ): Promise<void> {
+  // Use QueryAnalyzer for comprehensive analysis when --explain is set
+  if (options.explain) {
+    const analyzer = new QueryAnalyzer();
+    const result = await analyzer.analyze(queryString, {
+      includeAlgebraPlan: true,
+      optimize: !options.noOptimize,
+    });
+
+    if (outputFormat === "json") {
+      // JSON response for MCP tools with full analysis
+      const response = ResponseBuilder.success(result);
+      console.log(JSON.stringify(response, null, 2));
+    } else {
+      // Text mode output with formatted analysis
+      if (result.valid) {
+        console.log(`✅ Query syntax is valid\n`);
+        console.log(analyzer.formatAnalysis(result, "text"));
+      } else {
+        console.log(analyzer.formatAnalysis(result, "text"));
+        process.exit(ExitCodes.INVALID_ARGUMENTS);
+      }
+    }
+    return;
+  }
+
+  // Simple validation without full analysis
   const parser = new SPARQLParser();
 
   try {
@@ -394,21 +428,6 @@ async function executeDryRun(
       // Text mode output
       console.log(`✅ Query syntax is valid`);
       console.log(`   Query type: ${getQueryType(ast)}`);
-
-      // Show query plan if --explain is also set
-      if (options.explain) {
-        console.log(`\n📊 Query Plan:`);
-        const serializer = new AlgebraSerializer();
-        if (algebra.type === "construct") {
-          const constructOp = algebra as ConstructOperation;
-          console.log("CONSTRUCT Template:");
-          console.log("  (template patterns)");
-          console.log("WHERE:");
-          console.log(serializer.toString(constructOp.where));
-        } else {
-          console.log(serializer.toString(algebra));
-        }
-      }
     }
   } catch (error) {
     // Handle parse errors with detailed information
