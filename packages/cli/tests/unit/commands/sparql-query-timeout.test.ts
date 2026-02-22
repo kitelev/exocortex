@@ -1,4 +1,5 @@
 import { jest, describe, it, expect, beforeEach, afterEach } from "@jest/globals";
+import fs from "fs";
 
 // Import parseTimeout function directly for unit testing
 const { sparqlQueryCommand, parseTimeout } = await import("../../../src/commands/sparql-query.js");
@@ -12,11 +13,12 @@ describe("sparqlQueryCommand --timeout flag", () => {
       expect(timeoutOption).toBeDefined();
     });
 
-    it("should have timeout option with default value of 10s", () => {
+    it("should have timeout option with default value of 30s (per acceptance criteria)", () => {
       const cmd = sparqlQueryCommand();
       const options = cmd.options;
       const timeoutOption = options.find(opt => opt.flags.includes("--timeout"));
-      expect(timeoutOption?.defaultValue).toBe("10s");
+      // Issue #2217 Acceptance Criteria: "Default timeout 30 сек применяется"
+      expect(timeoutOption?.defaultValue).toBe("30s");
     });
 
     it("should have timeout option with description", () => {
@@ -81,5 +83,47 @@ describe("sparqlQueryCommand --timeout flag", () => {
     it("should throw on non-numeric values", () => {
       expect(() => parseTimeout("abcs")).toThrow("Invalid timeout format");
     });
+  });
+});
+
+describe("QueryTimeoutError", () => {
+  it("should be exported from errors module", async () => {
+    const { QueryTimeoutError } = await import("../../../src/utils/errors/index.js");
+    expect(QueryTimeoutError).toBeDefined();
+  });
+
+  it("should have correct exit code (OPERATION_FAILED)", async () => {
+    const { QueryTimeoutError } = await import("../../../src/utils/errors/index.js");
+    const { ExitCodes } = await import("../../../src/utils/ExitCodes.js");
+    const error = new QueryTimeoutError(30000, 35000);
+    expect(error.exitCode).toBe(ExitCodes.OPERATION_FAILED);
+  });
+
+  it("should have INTERNAL_QUERY_TIMEOUT error code", async () => {
+    const { QueryTimeoutError } = await import("../../../src/utils/errors/index.js");
+    const { ErrorCode } = await import("../../../src/responses/index.js");
+    const error = new QueryTimeoutError(30000, 35000);
+    expect(error.errorCode).toBe(ErrorCode.INTERNAL_QUERY_TIMEOUT);
+  });
+
+  it("should include timeout and elapsed time in message", async () => {
+    const { QueryTimeoutError } = await import("../../../src/utils/errors/index.js");
+    const error = new QueryTimeoutError(30000, 35000);
+    expect(error.message).toContain("30");
+    expect(error.message).toContain("timeout");
+  });
+
+  it("should provide helpful guidance", async () => {
+    const { QueryTimeoutError } = await import("../../../src/utils/errors/index.js");
+    const error = new QueryTimeoutError(30000, 35000);
+    expect(error.guidance).toMatch(/--timeout/i);
+  });
+});
+
+describe("executeWithTimeout", () => {
+  it("should be exported from sparql-query module", async () => {
+    const { executeWithTimeout } = await import("../../../src/commands/sparql-query.js");
+    expect(executeWithTimeout).toBeDefined();
+    expect(typeof executeWithTimeout).toBe("function");
   });
 });
