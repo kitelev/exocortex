@@ -83,6 +83,17 @@ jest.unstable_mockModule("../../../src/utils/ProgressIndicator.js", () => ({
   })),
 }));
 
+// Mock QueryAnalyzer for --explain mode
+const mockAnalyzeFn = jest.fn();
+const mockFormatAnalysisFn = jest.fn();
+
+jest.unstable_mockModule("../../../src/utils/QueryAnalyzer.js", () => ({
+  QueryAnalyzer: jest.fn(() => ({
+    analyze: mockAnalyzeFn,
+    formatAnalysis: mockFormatAnalysisFn,
+  })),
+}));
+
 const { sparqlQueryCommand } = await import("../../../src/commands/sparql-query.js");
 
 describe("sparqlQueryCommand --dry-run flag", () => {
@@ -102,6 +113,21 @@ describe("sparqlQueryCommand --dry-run flag", () => {
 
     // Reset parser mock to success state
     mockParseFn.mockReturnValue({ type: "query", queryType: "SELECT" });
+
+    // Reset QueryAnalyzer mocks
+    mockAnalyzeFn.mockResolvedValue({
+      valid: true,
+      queryType: "SELECT",
+      prefixes: [],
+      variables: ["?s"],
+      triplePatternCount: 1,
+      complexity: "low",
+      hasFilter: false,
+      hasUnion: false,
+      hasOptional: false,
+      algebraPlan: "BGP()",
+    });
+    mockFormatAnalysisFn.mockReturnValue("Query Type: SELECT\nVariables: ?s\nComplexity: low\nQuery Plan:\nBGP()");
   });
 
   afterEach(() => {
@@ -220,6 +246,69 @@ describe("sparqlQueryCommand --dry-run flag", () => {
         call => call[0]?.toString().includes("Loading vault")
       );
       expect(loadingVaultCalls.length).toBe(0);
+    });
+
+    it("should use QueryAnalyzer for comprehensive analysis when --explain is set", async () => {
+      mockAnalyzeFn.mockResolvedValue({
+        valid: true,
+        queryType: "SELECT",
+        prefixes: [{ prefix: "rdf", iri: "http://www.w3.org/1999/02/22-rdf-syntax-ns#" }],
+        variables: ["?s", "?label"],
+        triplePatternCount: 3,
+        complexity: "medium",
+        hasFilter: true,
+        hasUnion: false,
+        hasOptional: true,
+        algebraPlan: "LeftJoin(BGP(...), BGP(...))",
+      });
+      mockFormatAnalysisFn.mockReturnValue(
+        "Query Type: SELECT\n\nPrefixes:\n  rdf: <...>\n\nVariables:\n  ?s, ?label\n\nTriple Patterns: 3\n\nFeatures: FILTER, OPTIONAL\n\nComplexity: medium\n\nQuery Plan:\nLeftJoin(...)"
+      );
+
+      const cmd = sparqlQueryCommand();
+      await cmd.parseAsync([
+        "node", "test",
+        "SELECT ?s ?label WHERE { ?s ?p ?o OPTIONAL { ?s rdfs:label ?label } FILTER(bound(?label)) }",
+        "--vault", "/test/vault",
+        "--dry-run",
+        "--explain",
+      ]);
+
+      // Should call QueryAnalyzer.analyze
+      expect(mockAnalyzeFn).toHaveBeenCalled();
+      // Should call formatAnalysis
+      expect(mockFormatAnalysisFn).toHaveBeenCalled();
+      // Should show valid message
+      expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining("valid"));
+    });
+
+    it("should show detailed error with suggestions when syntax error occurs in --explain mode", async () => {
+      mockAnalyzeFn.mockResolvedValue({
+        valid: false,
+        error: {
+          message: "Unknown prefix: rdf",
+          line: 2,
+          column: 5,
+          suggestions: ["Add prefix declaration: PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>"],
+        },
+      });
+      mockFormatAnalysisFn.mockReturnValue(
+        "Syntax Error:\n  Position: line 2, column 5\n  Unknown prefix: rdf\n\nSuggestions:\n  - Add prefix declaration: PREFIX rdf: <...>"
+      );
+
+      const cmd = sparqlQueryCommand();
+      await cmd.parseAsync([
+        "node", "test",
+        "SELECT ?s WHERE { ?s rdf:type ?o }",
+        "--vault", "/test/vault",
+        "--dry-run",
+        "--explain",
+      ]);
+
+      // Should show formatted error with suggestions
+      expect(mockFormatAnalysisFn).toHaveBeenCalled();
+      // Should exit with error code
+      expect(processExitSpy).toHaveBeenCalled();
     });
   });
 });
