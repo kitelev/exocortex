@@ -10,7 +10,7 @@ import { TaskCreationService, IVaultAdapter, MetadataExtractor } from "exocortex
 import { ProjectCreationService, AreaCreationService, ClassCreationService } from "exocortex";
 import { ConceptCreationService, TaskStatusService, PropertyCleanupService } from "exocortex";
 import { FolderRepairService, RenameToUidService, EffortVotingService } from "exocortex";
-import { LabelToAliasService, AssetConversionService } from "exocortex";
+import { LabelToAliasService, AssetConversionService, CriticalityZoneService } from "exocortex";
 import { BacklinksCacheManager } from '@plugin/adapters/caching/BacklinksCacheManager';
 import { EventListenerManager } from '@plugin/adapters/events/EventListenerManager';
 import { ButtonGroupsBuilder } from '@plugin/presentation/builders/ButtonGroupsBuilder';
@@ -137,6 +137,7 @@ export class UniversalLayoutRenderer {
       effortVotingService: services.effortVoting,
       labelToAliasService: services.labelToAlias,
       assetConversionService: services.assetConversion,
+      criticalityZoneService: services.criticalityZone,
       metadataExtractor: this.metadataExtractor,
       logger: this.logger,
       refresh: () => this.refresh(),
@@ -174,6 +175,7 @@ export class UniversalLayoutRenderer {
       effortVoting: container.resolve(EffortVotingService),
       labelToAlias: container.resolve(LabelToAliasService),
       assetConversion: container.resolve(AssetConversionService),
+      criticalityZone: container.resolve(CriticalityZoneService),
     };
   }
 

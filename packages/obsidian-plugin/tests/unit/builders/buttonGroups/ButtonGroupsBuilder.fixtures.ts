@@ -15,6 +15,7 @@ import {
   LabelToAliasService,
   AssetConversionService,
   MetadataExtractor,
+  CriticalityZoneService,
 } from "exocortex";
 import { ILogger } from "../../../../src/infrastructure/logging/ILogger";
 
@@ -35,6 +36,7 @@ export interface ButtonGroupsBuilderTestContext {
   mockEffortVotingService: jest.Mocked<EffortVotingService>;
   mockLabelToAliasService: jest.Mocked<LabelToAliasService>;
   mockAssetConversionService: jest.Mocked<AssetConversionService>;
+  mockCriticalityZoneService: jest.Mocked<CriticalityZoneService>;
   mockMetadataExtractor: jest.Mocked<MetadataExtractor>;
   mockLogger: jest.Mocked<ILogger>;
   mockRefresh: jest.Mock;
@@ -126,6 +128,12 @@ export function setupButtonGroupsBuilderTest(): ButtonGroupsBuilderTestContext {
     convertProjectToTask: jest.fn(),
   } as any;
 
+  const mockCriticalityZoneService = {
+    setZoneToday: jest.fn(),
+    setZoneThisWeek: jest.fn(),
+    setZoneSomeday: jest.fn(),
+  } as any;
+
   const mockMetadataExtractor = {
     extractMetadata: jest.fn(),
     extractInstanceClass: jest.fn(),
@@ -158,6 +166,7 @@ export function setupButtonGroupsBuilderTest(): ButtonGroupsBuilderTestContext {
     effortVotingService: mockEffortVotingService,
     labelToAliasService: mockLabelToAliasService,
     assetConversionService: mockAssetConversionService,
+    criticalityZoneService: mockCriticalityZoneService,
     metadataExtractor: mockMetadataExtractor,
     logger: mockLogger,
     refresh: mockRefresh,
@@ -180,6 +189,7 @@ export function setupButtonGroupsBuilderTest(): ButtonGroupsBuilderTestContext {
     mockEffortVotingService,
     mockLabelToAliasService,
     mockAssetConversionService,
+    mockCriticalityZoneService,
     mockMetadataExtractor,
     mockLogger,
     mockRefresh,

@@ -35,6 +35,7 @@ export {
   canCreateTask,
   canCreateRelatedTask,
   canConvertTaskToProject,
+  canSetCriticalityZone,
 } from "./TaskVisibilityRules";
 
 // Project visibility rules

@@ -28,6 +28,7 @@ import { NoteToRDFConverter } from "../services/NoteToRDFConverter";
 import { AreaHierarchyBuilder } from "../services/AreaHierarchyBuilder";
 import { URIConstructionService } from "../services/URIConstructionService";
 import { GenericAssetCreationService } from "../services/GenericAssetCreationService";
+import { CriticalityZoneService } from "../services/CriticalityZoneService";
 
 /**
  * Register all core services with the DI container.
@@ -154,6 +155,12 @@ export function registerCoreServices(
   targetContainer.registerSingleton(
     DI_TOKENS.URIConstructionService,
     URIConstructionService,
+  );
+
+  // Task planning services (depend on IVaultAdapter)
+  targetContainer.registerSingleton(
+    DI_TOKENS.CriticalityZoneService,
+    CriticalityZoneService,
   );
 }
 
