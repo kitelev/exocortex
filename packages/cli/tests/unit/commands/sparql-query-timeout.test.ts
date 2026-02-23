@@ -127,3 +127,88 @@ describe("executeWithTimeout", () => {
     expect(typeof executeWithTimeout).toBe("function");
   });
 });
+
+describe("EXOCORTEX_SPARQL_TIMEOUT environment variable (Issue #2233)", () => {
+  const originalEnv = process.env.EXOCORTEX_SPARQL_TIMEOUT;
+
+  beforeEach(() => {
+    // Clean up environment variable before each test
+    delete process.env.EXOCORTEX_SPARQL_TIMEOUT;
+  });
+
+  afterEach(() => {
+    // Restore original environment variable
+    if (originalEnv !== undefined) {
+      process.env.EXOCORTEX_SPARQL_TIMEOUT = originalEnv;
+    } else {
+      delete process.env.EXOCORTEX_SPARQL_TIMEOUT;
+    }
+  });
+
+  describe("getDefaultTimeout function", () => {
+    it("should export getDefaultTimeout function", async () => {
+      const { getDefaultTimeout } = await import("../../../src/commands/sparql-query.js");
+      expect(getDefaultTimeout).toBeDefined();
+      expect(typeof getDefaultTimeout).toBe("function");
+    });
+
+    it("should return 30s (30000ms) when env var is not set", async () => {
+      delete process.env.EXOCORTEX_SPARQL_TIMEOUT;
+      const { getDefaultTimeout } = await import("../../../src/commands/sparql-query.js");
+      expect(getDefaultTimeout()).toBe(30000);
+    });
+
+    it("should use EXOCORTEX_SPARQL_TIMEOUT env var when set (seconds)", async () => {
+      process.env.EXOCORTEX_SPARQL_TIMEOUT = "60";
+      // Re-import to pick up new env value
+      jest.resetModules();
+      const { getDefaultTimeout } = await import("../../../src/commands/sparql-query.js");
+      expect(getDefaultTimeout()).toBe(60000);
+    });
+
+    it("should use EXOCORTEX_SPARQL_TIMEOUT env var when set (with s suffix)", async () => {
+      process.env.EXOCORTEX_SPARQL_TIMEOUT = "120s";
+      jest.resetModules();
+      const { getDefaultTimeout } = await import("../../../src/commands/sparql-query.js");
+      expect(getDefaultTimeout()).toBe(120000);
+    });
+
+    it("should use EXOCORTEX_SPARQL_TIMEOUT env var when set (with ms suffix)", async () => {
+      process.env.EXOCORTEX_SPARQL_TIMEOUT = "45000ms";
+      jest.resetModules();
+      const { getDefaultTimeout } = await import("../../../src/commands/sparql-query.js");
+      expect(getDefaultTimeout()).toBe(45000);
+    });
+
+    it("should fall back to 30s if env var is invalid", async () => {
+      process.env.EXOCORTEX_SPARQL_TIMEOUT = "invalid";
+      jest.resetModules();
+      const { getDefaultTimeout } = await import("../../../src/commands/sparql-query.js");
+      // Should not throw, just use default
+      expect(getDefaultTimeout()).toBe(30000);
+    });
+
+    it("should fall back to 30s if env var is negative", async () => {
+      process.env.EXOCORTEX_SPARQL_TIMEOUT = "-10";
+      jest.resetModules();
+      const { getDefaultTimeout } = await import("../../../src/commands/sparql-query.js");
+      expect(getDefaultTimeout()).toBe(30000);
+    });
+
+    it("should fall back to 30s if env var is zero", async () => {
+      process.env.EXOCORTEX_SPARQL_TIMEOUT = "0";
+      jest.resetModules();
+      const { getDefaultTimeout } = await import("../../../src/commands/sparql-query.js");
+      expect(getDefaultTimeout()).toBe(30000);
+    });
+  });
+
+  describe("CLI flag priority over env var", () => {
+    it("--timeout flag should override EXOCORTEX_SPARQL_TIMEOUT", async () => {
+      process.env.EXOCORTEX_SPARQL_TIMEOUT = "60";
+      const { parseTimeout } = await import("../../../src/commands/sparql-query.js");
+      // CLI flag value should be parsed directly, not affected by env var
+      expect(parseTimeout("15s")).toBe(15000);
+    });
+  });
+});

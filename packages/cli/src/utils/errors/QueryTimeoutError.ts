@@ -49,8 +49,9 @@ export class QueryTimeoutError extends CLIError {
 
 To fix this:
   1. Increase timeout: --timeout ${timeoutSec * 2}s
-  2. Simplify query: reduce WHERE clauses or add LIMIT
-  3. Use cache: --use-cache for faster vault loading${partialResultsCount !== undefined ? `
+  2. Set global timeout: export EXOCORTEX_SPARQL_TIMEOUT=${timeoutSec * 2}s
+  3. Simplify query: reduce WHERE clauses or add LIMIT
+  4. Use cache: --use-cache for faster vault loading${partialResultsCount !== undefined ? `
 
 Partial results: ${partialResultsCount} result(s) were collected before timeout.` : ""}`;
   }

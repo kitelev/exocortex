@@ -50,6 +50,83 @@ export interface SparqlQueryOptions {
 /** Default TTL for query result cache in seconds */
 export const DEFAULT_CACHE_TTL_SECONDS = 300;
 
+/** Default timeout in milliseconds (30 seconds) */
+export const DEFAULT_TIMEOUT_MS = 30000;
+
+/** Environment variable name for configuring default timeout */
+export const ENV_SPARQL_TIMEOUT = "EXOCORTEX_SPARQL_TIMEOUT";
+
+/**
+ * Get the default timeout value in milliseconds.
+ *
+ * Priority:
+ * 1. EXOCORTEX_SPARQL_TIMEOUT environment variable (if valid)
+ * 2. DEFAULT_TIMEOUT_MS (30000ms = 30s)
+ *
+ * This allows users to set a global default timeout without
+ * specifying --timeout flag on every command.
+ *
+ * @returns Default timeout in milliseconds
+ */
+export function getDefaultTimeout(): number {
+  const envValue = process.env[ENV_SPARQL_TIMEOUT];
+
+  if (!envValue) {
+    return DEFAULT_TIMEOUT_MS;
+  }
+
+  try {
+    const parsed = parseTimeoutSafe(envValue);
+    if (parsed !== null && parsed > 0) {
+      return parsed;
+    }
+  } catch {
+    // Invalid env value, fall back to default
+  }
+
+  return DEFAULT_TIMEOUT_MS;
+}
+
+/**
+ * Safely parse a timeout string without throwing errors.
+ * Returns null if the value is invalid.
+ *
+ * @param timeoutStr - Timeout string (e.g., "30s", "5000ms", "15")
+ * @returns Timeout in milliseconds or null if invalid
+ */
+function parseTimeoutSafe(timeoutStr: string): number | null {
+  const trimmed = timeoutStr.trim().toLowerCase();
+
+  if (!trimmed) {
+    return null;
+  }
+
+  // Check for milliseconds
+  if (trimmed.endsWith("ms")) {
+    const value = parseInt(trimmed.slice(0, -2), 10);
+    if (isNaN(value) || value <= 0) {
+      return null;
+    }
+    return value;
+  }
+
+  // Check for seconds
+  if (trimmed.endsWith("s")) {
+    const value = parseInt(trimmed.slice(0, -1), 10);
+    if (isNaN(value) || value <= 0) {
+      return null;
+    }
+    return value * 1000;
+  }
+
+  // Plain number defaults to seconds
+  const value = parseInt(trimmed, 10);
+  if (isNaN(value) || value <= 0) {
+    return null;
+  }
+  return value * 1000;
+}
+
 /**
  * Parse cache TTL string into seconds.
  * Supports plain number (seconds).
@@ -158,8 +235,11 @@ export function sparqlQueryCommand(): Command {
       try {
         const startTime = Date.now();
 
-        // Parse timeout
-        const timeoutMs = parseTimeout(options.timeout || "30s");
+        // Parse timeout - CLI flag takes priority over env var, which takes priority over default
+        // Priority: --timeout flag > EXOCORTEX_SPARQL_TIMEOUT env var > 30s default
+        const timeoutMs = options.timeout
+          ? parseTimeout(options.timeout)
+          : getDefaultTimeout();
 
         // Parse cache TTL
         const cacheTtlSeconds = parseCacheTtl(options.cacheTtl);
