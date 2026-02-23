@@ -2813,6 +2813,66 @@ const result = template.split("{{value}}").join(userInput);
 
 ---
 
+## 📊 February 23, 2026 Sprint Lessons (Issues #2231-#2233)
+
+> Experience digitized from 2 completed issues (~155 total steps)
+
+### Button Group Implementation (Issue #2231)
+
+**Task**: Add Criticality Zone buttons to ems__Task layout
+**Steps**: 101 | **Status**: Merged
+
+**Implementation Pattern**:
+```
+Service → Visibility Rules → ButtonGroupBuilder → Registration → DI Container
+```
+
+**Key Files Modified**:
+- `CriticalityZoneService.ts` - Business logic for zone assignment
+- `TaskVisibilityRules.ts` - Button display conditions
+- `CriticalityZoneButtonGroupBuilder.ts` - Button group creation
+- `ButtonGroupsBuilder.ts` - Builder registration
+- `container.ts` - DI registration
+
+**Lesson**: Use dedicated service + builder pattern for new button groups. Keep business logic (UUID mappings, validation) in service, presentation logic (button creation, labels) in builder.
+
+**Reference**: See PATTERNS.md § "Button Group Implementation Pattern"
+
+### SPARQL Timeout Investigation (Issue #2233)
+
+**Task**: Fix SPARQL query timeouts blocking analytical queries
+**Steps**: 54 | **Status**: Completed (research/analysis)
+
+**Root Cause**: Default timeout too short for analytical queries on large vaults.
+
+**Solution Implemented** (PR #2234):
+- Added `EXOCORTEX_SPARQL_TIMEOUT` environment variable
+- Default remains 30s for typical queries
+- Users can extend to 5+ minutes for analytical queries
+
+**Usage Pattern**:
+```bash
+# Default (30s) - typical queries
+npx @kitelev/exocortex-cli sparql query "SELECT ?s WHERE { ?s a ems:Task }"
+
+# Extended (60s) - aggregations
+EXOCORTEX_SPARQL_TIMEOUT=60 npx @kitelev/exocortex-cli sparql query "..."
+```
+
+**Lesson**: For timeout issues, add user-configurable options via environment variables before attempting complex optimizations. Clear error messages with usage examples accelerate user self-service.
+
+**Reference**: See PATTERNS.md § "SPARQL Timeout Configuration Pattern"
+
+### Sprint Summary
+
+| Issue | Type | Steps | Key Pattern |
+|-------|------|-------|-------------|
+| #2231 | Feature | 101 | Button Group Implementation |
+| #2233 | Investigation | 54 | Timeout Configuration |
+| **Total** | | **155** | |
+
+---
+
 **Remember**:
 - 🚨 **ALL worktrees MUST be in `worktrees/` subdirectory - NO EXCEPTIONS!**
 - This directory exists to enable safe parallel development

@@ -9439,3 +9439,180 @@ What becomes easier or more difficult because of this change?
 - Performance-critical decisions
 
 **Reference**: Issue #2188 - ADR Documentation (47 steps, February 2026)
+
+---
+
+## Button Group Implementation Pattern
+
+**When to use**: Adding new button groups to asset layouts (e.g., Criticality Zone, Quick Actions)
+
+### Pattern Description
+
+Implement new button groups using the ButtonGroupBuilder architecture with dedicated services and visibility rules.
+
+### Implementation Layers (Issue #2231 Example)
+
+```
+1. Domain Service (CriticalityZoneService.ts)
+   └── Business logic for zone assignment
+   └── UUID mapping for zone values
+   ↓
+2. Visibility Rules (TaskVisibilityRules.ts)
+   └── Determine when buttons are shown
+   └── Class-specific conditions
+   ↓
+3. Button Group Builder (CriticalityZoneButtonGroupBuilder.ts)
+   └── Create ButtonGroup with actions
+   └── Connect to service methods
+   ↓
+4. Registration (ButtonGroupsBuilder.ts)
+   └── Add builder to registry
+   └── Integrate with UniversalLayoutRenderer
+   ↓
+5. DI Container (container.ts)
+   └── Register service
+   └── Bind interface to implementation
+```
+
+### Real-World Example: Criticality Zone Buttons (Issue #2231)
+
+**Files Modified (10 files, 101 steps)**:
+- `packages/exocortex/src/services/CriticalityZoneService.ts` (NEW)
+- `packages/exocortex/src/domain/commands/visibility/TaskVisibilityRules.ts`
+- `packages/exocortex/src/domain/commands/visibility/index.ts`
+- `packages/exocortex/src/interfaces/tokens.ts`
+- `packages/exocortex/src/infrastructure/container.ts`
+- `packages/obsidian-plugin/src/presentation/builders/button-groups/CriticalityZoneButtonGroupBuilder.ts` (NEW)
+- `packages/obsidian-plugin/src/presentation/builders/ButtonGroupsBuilder.ts`
+- `packages/obsidian-plugin/src/presentation/renderers/UniversalLayoutRenderer.ts`
+- Tests: `CriticalityZoneButtonGroupBuilder.test.ts`, fixtures
+
+**UUID Wikilink Format for Button Actions**:
+```typescript
+// CriticalityZoneService.ts
+const ZONE_UUIDS = {
+  today: 'e266a2e9-9eb0-431d-b1fe-b95b9d3e9a3f',
+  thisWeek: 'c7f1a968-0959-4ac7-ac82-31b0cdc2aba7',
+  someday: '6968a0fc-7a41-4393-82b1-17d767c7ad7c',
+};
+
+// Button click handler sets frontmatter:
+// ems__Task_zone: "[[e266a2e9-9eb0-431d-b1fe-b95b9d3e9a3f]]"
+```
+
+### Implementation Checklist
+
+- [ ] Create domain service with business logic
+- [ ] Add service interface to tokens.ts
+- [ ] Register service in container.ts
+- [ ] Define visibility rules in appropriate *VisibilityRules.ts
+- [ ] Create ButtonGroupBuilder with actions
+- [ ] Register builder in ButtonGroupsBuilder.ts
+- [ ] Add builder call in UniversalLayoutRenderer
+- [ ] Write unit tests for builder
+- [ ] Add test fixtures
+
+### Expected Timeline
+
+| Phase | Time |
+|-------|------|
+| Service implementation | 15-20 min |
+| Visibility rules | 10-15 min |
+| ButtonGroupBuilder | 20-30 min |
+| Integration | 10-15 min |
+| Testing | 20-30 min |
+| **Total** | ~90-120 min |
+
+**Reference**: Issue #2231 - Criticality Zone Buttons (101 steps, merged February 2026)
+
+---
+
+## SPARQL Timeout Configuration Pattern
+
+**When to use**: Handling long-running SPARQL queries that may timeout
+
+### Pattern Description
+
+Add configurable timeout support for CLI SPARQL queries via environment variable and command-line flags.
+
+### Implementation (Issue #2233/PR #2234)
+
+**Environment Variable Support**:
+```typescript
+// packages/cli/src/commands/sparql-query.ts
+const DEFAULT_TIMEOUT_MS = 30000; // 30 seconds
+
+function getTimeoutMs(): number {
+  const envTimeout = process.env.EXOCORTEX_SPARQL_TIMEOUT;
+  if (envTimeout) {
+    const parsed = parseInt(envTimeout, 10);
+    if (!isNaN(parsed) && parsed > 0) {
+      return parsed * 1000; // Convert seconds to ms
+    }
+  }
+  return DEFAULT_TIMEOUT_MS;
+}
+```
+
+**Error Handling**:
+```typescript
+// packages/cli/src/utils/errors/QueryTimeoutError.ts
+export class QueryTimeoutError extends Error {
+  constructor(timeoutMs: number) {
+    super(
+      `Query timed out after ${timeoutMs / 1000} seconds. ` +
+      `Try: EXOCORTEX_SPARQL_TIMEOUT=60 npx @kitelev/exocortex-cli sparql query "..."`
+    );
+    this.name = 'QueryTimeoutError';
+  }
+}
+```
+
+### Usage
+
+```bash
+# Default timeout (30s)
+npx @kitelev/exocortex-cli sparql query "SELECT ?s WHERE { ?s ?p ?o }"
+
+# Extended timeout (60s)
+EXOCORTEX_SPARQL_TIMEOUT=60 npx @kitelev/exocortex-cli sparql query "SELECT ..."
+
+# Very long timeout for analytical queries (5 min)
+EXOCORTEX_SPARQL_TIMEOUT=300 npx @kitelev/exocortex-cli sparql query "SELECT (COUNT(*) AS ?count) WHERE { ... }"
+```
+
+### Investigation Pattern for Timeout Issues
+
+When facing SPARQL timeout issues:
+
+1. **Identify query complexity**:
+   ```bash
+   # Check estimated result size
+   npx @kitelev/exocortex-cli sparql query "SELECT (COUNT(*) AS ?n) WHERE { ... }"
+   ```
+
+2. **Profile with extended timeout**:
+   ```bash
+   EXOCORTEX_SPARQL_TIMEOUT=120 time npx @kitelev/exocortex-cli sparql query "..."
+   ```
+
+3. **Optimize query if needed**:
+   - Add LIMIT clause for large result sets
+   - Use more specific WHERE patterns
+   - Break into smaller date ranges for analytical queries
+
+### Key Insight from Issue #2233
+
+**Problem**: Analytical queries (aggregations over many days) timed out, blocking `/self-audit` and similar skills.
+
+**Root Cause Analysis** (54 steps):
+- Default timeout too short for analytical queries
+- No user-configurable timeout option
+- Error messages didn't guide users to solutions
+
+**Solution** (PR #2234):
+- Added `EXOCORTEX_SPARQL_TIMEOUT` environment variable
+- Clear error messages with usage examples
+- Default remains 30s (fast for typical queries)
+
+**Reference**: Issue #2233 - SPARQL Timeout Investigation (54 steps, February 2026)
