@@ -54,6 +54,7 @@ export const DI_TOKENS = {
   PlanningService: Symbol.for("PlanningService"),
   EffortVotingService: Symbol.for("EffortVotingService"),
   SessionEventService: Symbol.for("SessionEventService"),
+  CriticalityZoneService: Symbol.for("CriticalityZoneService"),
 
   // Conversion services
   AssetConversionService: Symbol.for("AssetConversionService"),

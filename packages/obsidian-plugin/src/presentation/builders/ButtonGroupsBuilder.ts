@@ -17,6 +17,7 @@ import {
   LabelToAliasService,
   AssetConversionService,
   MetadataExtractor,
+  CriticalityZoneService,
 } from "exocortex";
 import {
   ButtonBuilderContext,
@@ -27,6 +28,7 @@ import {
   StatusButtonGroupBuilder,
   PlanningButtonGroupBuilder,
   MaintenanceButtonGroupBuilder,
+  CriticalityZoneButtonGroupBuilder,
 } from "./button-groups";
 import { ObsidianApp, ExocortexPluginInterface } from '@plugin/types';
 
@@ -65,6 +67,8 @@ export interface ButtonGroupsBuilderConfig {
   labelToAliasService: LabelToAliasService;
   /** Service for converting between task and project */
   assetConversionService: AssetConversionService;
+  /** Service for setting criticality zones */
+  criticalityZoneService: CriticalityZoneService;
   /** Extractor for file metadata */
   metadataExtractor: MetadataExtractor;
   /** Logger instance */
@@ -109,6 +113,7 @@ export class ButtonGroupsBuilder {
       effortVotingService,
       labelToAliasService,
       assetConversionService,
+      criticalityZoneService,
       metadataExtractor,
       logger,
       refresh,
@@ -143,6 +148,7 @@ export class ButtonGroupsBuilder {
       new CreationButtonGroupBuilder(this.services),
       new StatusButtonGroupBuilder(this.services),
       new PlanningButtonGroupBuilder(this.services),
+      new CriticalityZoneButtonGroupBuilder({ criticalityZoneService }),
       new MaintenanceButtonGroupBuilder(this.services),
     ];
   }

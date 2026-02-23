@@ -151,6 +151,11 @@ export {
   type QuickCaptureResult,
   type CreateFromPracticeOptions,
 } from "./services/DailyReviewService";
+export {
+  CriticalityZoneService,
+  CriticalityZoneUUIDs,
+  type CriticalityZone,
+} from "./services/CriticalityZoneService";
 
 // Utilities exports
 export { FrontmatterService } from "./utilities/FrontmatterService";

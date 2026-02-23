@@ -39,3 +39,15 @@ export function canConvertTaskToProject(
 ): boolean {
   return hasClass(context.instanceClass, AssetClass.TASK);
 }
+
+/**
+ * Can execute "Set Criticality Zone" command
+ * Available for: ems__Task assets that are not archived
+ */
+export function canSetCriticalityZone(
+  context: CommandVisibilityContext,
+): boolean {
+  if (!hasClass(context.instanceClass, AssetClass.TASK)) return false;
+  if (isAssetArchived(context.isArchived)) return false;
+  return true;
+}
