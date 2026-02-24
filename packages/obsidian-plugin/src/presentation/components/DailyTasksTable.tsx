@@ -42,6 +42,48 @@ export interface DailyTasksTableProps {
 }
 
 /**
+ * Calculate duration in minutes from timestamps when explicit timeEstimateMinutes is missing.
+ * Issue #2236: Dynamic time calculation for Time column in DailyNote Tasks table.
+ *
+ * Priority order:
+ * 1. Calculate from actual timestamps (startTimestamp → endTimestamp)
+ * 2. Calculate from planned timestamps (plannedStartTimestamp → plannedEndTimestamp)
+ * 3. Return null if no valid timestamp pair
+ *
+ * @param metadata - Task metadata containing timestamp fields
+ * @returns Duration in minutes, or null if no valid timestamps
+ */
+export const calculateTimeFromTimestamps = (
+  metadata: Record<string, unknown>
+): number | null => {
+  // Priority 1: Actual timestamps (fact > plan)
+  const startActual = metadata.ems__Effort_startTimestamp;
+  const endActual = metadata.ems__Effort_endTimestamp;
+
+  if (startActual != null && endActual != null) {
+    const start = new Date(startActual as string | number).getTime();
+    const end = new Date(endActual as string | number).getTime();
+    if (!isNaN(start) && !isNaN(end) && end >= start) {
+      return Math.round((end - start) / (1000 * 60)); // Convert ms to minutes
+    }
+  }
+
+  // Priority 2: Planned timestamps
+  const startPlanned = metadata.ems__Effort_plannedStartTimestamp;
+  const endPlanned = metadata.ems__Effort_plannedEndTimestamp;
+
+  if (startPlanned != null && endPlanned != null) {
+    const start = new Date(startPlanned as string | number).getTime();
+    const end = new Date(endPlanned as string | number).getTime();
+    if (!isNaN(start) && !isNaN(end) && end >= start) {
+      return Math.round((end - start) / (1000 * 60));
+    }
+  }
+
+  return null; // No valid timestamps
+};
+
+/**
  * Detect if two time periods overlap.
  * Uses strict inequality (< not <=) so touching periods (end1 === start2) are not considered overlapping.
  */
@@ -731,7 +773,8 @@ export const DailyTasksTable: React.FC<DailyTasksTableProps> = ({
         {showTimeEstimate && (
           <td className="task-time-estimate">
             {formatTimeEstimate(
-              task.metadata.ems__Effort_timeEstimateMinutes as number | null | undefined
+              (task.metadata.ems__Effort_timeEstimateMinutes as number | null | undefined)
+                ?? calculateTimeFromTimestamps(task.metadata)
             )}
           </td>
         )}
