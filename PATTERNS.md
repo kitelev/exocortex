@@ -9616,3 +9616,134 @@ When facing SPARQL timeout issues:
 - Default remains 30s (fast for typical queries)
 
 **Reference**: Issue #2233 - SPARQL Timeout Investigation (54 steps, February 2026)
+
+---
+
+## Component Variant Coverage Pattern
+
+**When to use**: Implementing UI features that must work across multiple component variants (regular items, empty slots, grouped items, etc.)
+
+### Pattern Description
+
+When adding a new feature to a UI component (like a table or tree), ensure ALL variants of that component receive the feature. Common variants include:
+- Regular items
+- Empty slots / placeholder items
+- Grouped / aggregated items
+- Archived items
+- Error states
+
+### Real-World Example: Dynamic Time Calculation (February 2026)
+
+**Parent Feature (Issue #2236)**: Added `calculateTimeFromTimestamps()` to calculate time from timestamps when explicit estimate is missing.
+
+| Component | Implementation | Status |
+|-----------|---------------|--------|
+| Regular Tasks | ✅ Updated Time column | Done in #2236 |
+| Empty Slots | ❌ Missed initially | Fixed in #2238 |
+
+**Root Cause of Follow-up Issue #2238:**
+```typescript
+// createEmptySlot() returned metadata: {} 
+// But calculateTimeFromTimestamps() expected:
+// - ems__Effort_startTimestamp
+// - ems__Effort_endTimestamp
+// Empty Slots had timestamps in different structure (startTimestamp/endTimestamp)
+```
+
+**Key Metrics:**
+- #2236: 50 steps, 244 additions, 15 unit tests
+- #2238: 62 steps, 235 additions, 6 unit tests (fix for missed variant)
+- Combined: 112 steps, 21 tests
+
+### Implementation Checklist for New UI Features
+
+Before considering a UI feature complete:
+
+```markdown
+- [ ] **Regular items** - Main use case implemented and tested
+- [ ] **Empty slots/placeholders** - Feature works for placeholder items
+- [ ] **Metadata mapping** - Property names consistent across all variants
+- [ ] **Edge cases** - Null/undefined/invalid values handled
+- [ ] **Unit tests per variant** - Each variant has dedicated test coverage
+```
+
+### Anti-Pattern: Incomplete Variant Coverage
+
+**❌ WRONG (Issue #2238 scenario):**
+```typescript
+// Feature implementation only for regular tasks
+const timeValue = calculateTimeFromTimestamps(task.metadata);
+// BUT: Empty Slots have different metadata structure → shows nothing
+```
+
+**✅ CORRECT (Complete coverage):**
+```typescript
+// 1. Check all component variants
+const variants = ['regularTasks', 'emptySlots', 'groupedTasks'];
+
+// 2. Ensure metadata structure is consistent
+function createEmptySlot(start: string, end: string) {
+  return {
+    metadata: {
+      // Map timestamps to expected property names
+      ems__Effort_startTimestamp: start,
+      ems__Effort_endTimestamp: end,
+    }
+  };
+}
+
+// 3. Feature works for all variants
+variants.forEach(variant => {
+  const timeValue = calculateTimeFromTimestamps(item.metadata);
+  // Works consistently across all variants
+});
+```
+
+### Testing Strategy for Variant Coverage
+
+```typescript
+describe('Time Column Feature', () => {
+  // Test each variant explicitly
+  describe('Regular Tasks', () => {
+    it('should calculate time from actual timestamps', () => { ... });
+    it('should fall back to planned timestamps', () => { ... });
+  });
+
+  describe('Empty Slots', () => {
+    it('should calculate time from slot timestamps', () => { ... });
+    it('should handle slots without timestamps', () => { ... });
+  });
+
+  // Cross-variant consistency test
+  describe('Cross-Variant Consistency', () => {
+    it('should produce same output format for all variants', () => {
+      const regular = calculateTimeFromTimestamps(regularTask.metadata);
+      const empty = calculateTimeFromTimestamps(emptySlot.metadata);
+      // Both return same format (number | null)
+      expect(typeof regular).toBe(typeof empty);
+    });
+  });
+});
+```
+
+### Benefits
+
+- **Prevents follow-up fixes**: Catch all variants in initial implementation
+- **Consistent UX**: All component states behave uniformly
+- **Reduced step count**: One comprehensive PR vs feature + fix PR
+- **Better test coverage**: Explicit tests for each variant
+
+### When to Apply
+
+Use this pattern when implementing:
+- Table columns with calculated values
+- Tree node decorations (icons, badges)
+- Status indicators
+- Any computed UI element
+
+**Key Questions to Ask:**
+1. "What other item types exist in this component?"
+2. "Do placeholder/empty items use the same metadata structure?"
+3. "Are there grouped/aggregated views that need this feature?"
+
+**Reference**: Issues #2236 + #2238 - Dynamic Time Column (112 combined steps, February 2026)
