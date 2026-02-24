@@ -475,7 +475,11 @@ export const DailyTasksTable: React.FC<DailyTasksTableProps> = ({
       startTimestamp,
       endTimestamp,
       status: "-",
-      metadata: {},
+      // Issue #2238: Include timestamps in metadata for dynamic time calculation
+      metadata: {
+        ems__Effort_startTimestamp: startTimestamp,
+        ems__Effort_endTimestamp: endTimestamp,
+      },
       isDone: false,
       isTrashed: false,
       isDoing: false,
@@ -648,7 +652,11 @@ export const DailyTasksTable: React.FC<DailyTasksTableProps> = ({
           {showStatus && <td className="task-status empty-slot-cell">-</td>}
           {showEffortArea && <td className="task-effort-area empty-slot-cell">-</td>}
           {showEffortVotes && <td className="task-effort-votes empty-slot-cell">-</td>}
-          {showTimeEstimate && <td className="task-time-estimate empty-slot-cell">-</td>}
+          {showTimeEstimate && (
+            <td className="task-time-estimate empty-slot-cell">
+              {formatTimeEstimate(calculateTimeFromTimestamps(task.metadata))}
+            </td>
+          )}
         </tr>
       );
     }
