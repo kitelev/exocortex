@@ -78,6 +78,68 @@ export const KNOWN_PROTOTYPES = {
 } as const;
 
 /**
+ * Known ontology class mappings: NL terms → class identifier
+ * The `match` field is used in FILTER(CONTAINS(STR(?class), match))
+ * so it works for both full IRIs and wikilink strings.
+ */
+export interface KnownClass {
+  /** NL terms (Russian|English) that refer to this class */
+  terms: string[];
+  /** String to match via CONTAINS(STR(?class), ...) */
+  match: string;
+  /** Human-readable class name */
+  label: string;
+}
+
+export const KNOWN_CLASSES: KnownClass[] = [
+  {
+    terms: ["концепт", "concept", "концепты", "концептов"],
+    match: "dda12c48-6886-4624-8710-ed4ba92ce2b3",
+    label: "ims__Concept",
+  },
+  {
+    terms: ["задача", "задачи", "задач", "task", "tasks"],
+    match: "1b20a8f0-d745-4e93-91db-4531b3df120e",
+    label: "ems__Task",
+  },
+  {
+    terms: ["проект", "проекты", "проектов", "project", "projects"],
+    match: "7db5eeff-718a-49b0-8d2b-39b084a356e3",
+    label: "ems__Project",
+  },
+  {
+    terms: ["конспект", "конспекты", "конспектов", "conspect"],
+    match: "8efe8da6-0b88-4752-b90a-109280111c43",
+    label: "lit__Conspect",
+  },
+  {
+    terms: ["встреча", "встречи", "встреч", "meeting", "meetings"],
+    match: "ems#Meeting",
+    label: "ems__Meeting",
+  },
+  {
+    terms: ["область", "области", "area", "areas"],
+    match: "ems#Area",
+    label: "ems__Area",
+  },
+  {
+    terms: ["персона", "персоны", "персон", "человек", "люди", "людей", "людям", "person", "persons"],
+    match: "ims__Person",
+    label: "ims__Person",
+  },
+];
+
+/**
+ * Find a known class by NL term in query
+ */
+export function findClassByTerm(query: string): KnownClass | undefined {
+  const lower = query.toLowerCase();
+  return KNOWN_CLASSES.find((c) =>
+    c.terms.some((t) => lower.includes(t))
+  );
+}
+
+/**
  * SPARQL query template interface
  */
 export interface SPARQLTemplate {
@@ -451,6 +513,86 @@ WHERE {
       "покажи запись с UUID",
     ],
     keywords: ["UUID", "uid"],
+  },
+  {
+    name: "find_by_class_and_keyword",
+    description:
+      "Find entities of a specific ontology class matching a keyword pattern",
+    template: `${SPARQL_PREFIXES}
+
+SELECT ?uid ?label WHERE {
+  ?s ${PREDICATES.INSTANCE_CLASS} ?class .
+  FILTER(CONTAINS(STR(?class), "{{classMatch}}"))
+  ?s ${PREDICATES.ASSET_UID} ?uid .
+  ?s ${PREDICATES.ASSET_LABEL} ?label .
+  FILTER(REGEX(?label, "{{regexPattern}}", "i"))
+  FILTER NOT EXISTS { ?s exo:Asset_deprecatedBy ?newer }
+}
+ORDER BY ?label
+LIMIT {{limit}}`,
+    parameters: [
+      {
+        name: "classMatch",
+        description: "Class identifier to match (UUID or IRI fragment)",
+        required: true,
+        example: "dda12c48-6886-4624-8710-ed4ba92ce2b3",
+      },
+      {
+        name: "regexPattern",
+        description: "REGEX pattern to match in labels (supports | for OR)",
+        required: true,
+        example: "agent|sandbox",
+      },
+      {
+        name: "limit",
+        description: "Maximum number of results",
+        required: false,
+        example: "100",
+      },
+    ],
+    examples: [
+      "найди все концепты связанные с agent или sandbox",
+      "концепты про управление",
+      "задачи содержащие review",
+      "проекты со словом migration",
+    ],
+    keywords: [],
+  },
+  {
+    name: "find_by_class",
+    description: "List all entities of a specific ontology class",
+    template: `${SPARQL_PREFIXES}
+
+SELECT ?uid ?label WHERE {
+  ?s ${PREDICATES.INSTANCE_CLASS} ?class .
+  FILTER(CONTAINS(STR(?class), "{{classMatch}}"))
+  ?s ${PREDICATES.ASSET_UID} ?uid .
+  ?s ${PREDICATES.ASSET_LABEL} ?label .
+  FILTER NOT EXISTS { ?s exo:Asset_deprecatedBy ?newer }
+}
+ORDER BY ?label
+LIMIT {{limit}}`,
+    parameters: [
+      {
+        name: "classMatch",
+        description: "Class identifier to match (UUID or IRI fragment)",
+        required: true,
+        example: "dda12c48-6886-4624-8710-ed4ba92ce2b3",
+      },
+      {
+        name: "limit",
+        description: "Maximum number of results",
+        required: false,
+        example: "100",
+      },
+    ],
+    examples: [
+      "все концепты",
+      "покажи все задачи",
+      "список проектов",
+      "все конспекты",
+    ],
+    keywords: [],
   },
   {
     name: "areas",

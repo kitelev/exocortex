@@ -5,11 +5,14 @@ import {
   SPARQL_PREFIXES,
   PREDICATES,
   KNOWN_PROTOTYPES,
+  KNOWN_CLASSES,
+  findClassByTerm,
   findMatchingTemplates,
   fillTemplate,
   validateParameters,
   getTemplateByName,
   type SPARQLTemplate,
+  type KnownClass,
 } from "./SPARQLTemplateLibrary";
 
 /**
@@ -125,6 +128,15 @@ export class NLToSPARQLService {
     "подстричь ногти": KNOWN_PROTOTYPES.CUT_NAILS,
   };
 
+  // Words to strip when extracting search keywords (class terms + noise)
+  private classTermsToStrip = [
+    ...KNOWN_CLASSES.flatMap((c) => c.terms),
+    "все", "всех", "найди", "найти", "покажи", "список",
+    "связанные", "связанных", "связанный", "про", "содержащие",
+    "со словом", "или", "and", "or", "с", "на", "по", "для",
+    "активные", "активных", "все",
+  ];
+
   constructor(config: Partial<NLToSPARQLConfig> = {}) {
     this.config = { ...DEFAULT_NL_TO_SPARQL_CONFIG, ...config };
   }
@@ -141,18 +153,52 @@ export class NLToSPARQLService {
       return this.handleUuidQuery(query, uuidMatch[1]);
     }
 
-    // 2. Find matching templates
+    // 2. Detect ontology class from NL terms
+    const detectedClass = findClassByTerm(query);
+
+    // 3. Find matching templates
     const matchingTemplates = findMatchingTemplates(query, 3);
 
+    // 4. If a specific, parameter-free template matches well, use it
+    //    These templates are self-contained and more precise than class-based queries
+    const specificTemplates = new Set([
+      "active_projects", "projects_without_tasks", "areas", "persons", "find_prototype",
+      "sleep_analysis", "recent_activities",
+    ]);
+
+    if (matchingTemplates.length > 0) {
+      const bestTemplate = matchingTemplates[0];
+      if (specificTemplates.has(bestTemplate.name)) {
+        // Specific template wins over class detection
+        return this.buildTemplateResult(query, bestTemplate, matchingTemplates);
+      }
+    }
+
+    // 5. If a class was detected, prefer class-based query
+    if (detectedClass) {
+      return this.handleClassQuery(query, detectedClass);
+    }
+
+    // 6. Fall back to template matching or generic fallback
     if (matchingTemplates.length === 0) {
       return this.createFallbackQuery(query);
     }
 
-    // 3. Get the best matching template
     const bestTemplate = matchingTemplates[0];
+    return this.buildTemplateResult(query, bestTemplate, matchingTemplates);
+  }
+
+  /**
+   * Build result from a matched template, with parameter extraction and validation
+   */
+  private buildTemplateResult(
+    query: string,
+    bestTemplate: SPARQLTemplate,
+    matchingTemplates: SPARQLTemplate[]
+  ): NLToSPARQLResult {
     const params = this.extractParameters(query, bestTemplate);
 
-    // 4. Validate parameters
+    // Validate parameters
     const validation = validateParameters(bestTemplate, params);
 
     if (!validation.valid) {
@@ -167,6 +213,11 @@ export class NLToSPARQLService {
       // Re-validate
       const revalidation = validateParameters(bestTemplate, params);
       if (!revalidation.valid) {
+        // If class detected, try class-based before full fallback
+        const detectedClass = findClassByTerm(query);
+        if (detectedClass) {
+          return this.handleClassQuery(query, detectedClass);
+        }
         return this.createFallbackQuery(query, {
           template: bestTemplate,
           missingParams: revalidation.missing,
@@ -174,7 +225,7 @@ export class NLToSPARQLService {
       }
     }
 
-    // 5. Fill template and return result
+    // Fill template and return result
     const sparqlQuery = fillTemplate(bestTemplate, params);
     const confidence = this.calculateConfidence(query, bestTemplate, params);
 
@@ -239,6 +290,92 @@ export class NLToSPARQLService {
       isFallback: false,
       alternatives: [],
     };
+  }
+
+  /**
+   * Handle class-based queries (e.g., "найди все концепты про agent")
+   */
+  private handleClassQuery(query: string, knownClass: KnownClass): NLToSPARQLResult {
+    const keywords = this.extractSearchTerms(query, knownClass);
+
+    if (keywords.length > 0) {
+      // Class + keyword search
+      const template = getTemplateByName("find_by_class_and_keyword");
+      if (!template) {
+        throw new Error("Template find_by_class_and_keyword not found");
+      }
+      const regexPattern = keywords.join("|");
+      const params = {
+        classMatch: knownClass.match,
+        regexPattern,
+        limit: this.extractLimit(query),
+      };
+      return {
+        query: fillTemplate(template, params),
+        templateName: template.name,
+        parameters: params,
+        confidence: 0.85,
+        explanation: `Поиск ${knownClass.label} по паттерну "${regexPattern}"`,
+        isFallback: false,
+        alternatives: [],
+      };
+    }
+
+    // Class only (no keywords)
+    const template = getTemplateByName("find_by_class");
+    if (!template) {
+      throw new Error("Template find_by_class not found");
+    }
+    const params = {
+      classMatch: knownClass.match,
+      limit: this.extractLimit(query),
+    };
+    return {
+      query: fillTemplate(template, params),
+      templateName: template.name,
+      parameters: params,
+      confidence: 0.8,
+      explanation: `Список всех ${knownClass.label}`,
+      isFallback: false,
+      alternatives: [],
+    };
+  }
+
+  /**
+   * Extract meaningful search terms from query, stripping class names and noise words.
+   * Uses split-and-filter approach since \b doesn't work with Cyrillic in JS regex.
+   */
+  private extractSearchTerms(query: string, knownClass: KnownClass): string[] {
+    const words = query.toLowerCase().split(/\s+/);
+
+    // Build set of words to remove (class terms + noise)
+    const stopWords = new Set([
+      ...knownClass.terms,
+      "все", "всех", "всю", "весь",
+      "найди", "найти", "покажи", "покажешь", "список",
+      "связанные", "связанных", "связанный",
+      "про", "содержащие", "со", "словом",
+      "или", "и", "and", "or",
+      "с", "на", "по", "для", "в", "за", "от", "к",
+      "активные", "активных",
+      "мои", "моих", "мой", "моя",
+      "какие", "какой", "какая", "какого",
+      "что", "где", "как", "кто",
+    ]);
+
+    // Filter: keep words that are not stop words, >= 2 chars, not pure numbers
+    const terms = words.filter((w) =>
+      w.length >= 2 && !stopWords.has(w) && !/^\d+$/.test(w)
+    );
+
+    return terms;
+  }
+
+  /**
+   * Escape special regex characters in a string
+   */
+  private escapeRegex(str: string): string {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   }
 
   /**
@@ -431,7 +568,8 @@ export class NLToSPARQLService {
 SELECT ?s ?label ?class WHERE {
   ?s ${PREDICATES.ASSET_LABEL} ?label .
   OPTIONAL { ?s ${PREDICATES.INSTANCE_CLASS} ?class }
-  FILTER(CONTAINS(LCASE(?label), "${keyword.toLowerCase()}"))
+  FILTER(REGEX(?label, "${keyword}", "i"))
+  FILTER NOT EXISTS { ?s exo:Asset_deprecatedBy ?newer }
 }
 ORDER BY ?label
 LIMIT ${this.config.defaultLimit}`;

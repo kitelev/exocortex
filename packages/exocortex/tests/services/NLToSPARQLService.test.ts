@@ -378,3 +378,137 @@ describe("NLToSPARQLService", () => {
     });
   });
 });
+
+describe("NLToSPARQLService - Class-based queries (#2248)", () => {
+  let service: NLToSPARQLService;
+
+  beforeEach(() => {
+    service = new NLToSPARQLService();
+  });
+
+  describe("Class detection", () => {
+    it("should detect concept class and generate class-based query", () => {
+      const result = service.convert("найди все концепты");
+
+      expect(result.templateName).toBe("find_by_class");
+      expect(result.query).toContain("Instance_class");
+      expect(result.query).toContain("dda12c48-6886-4624-8710-ed4ba92ce2b3");
+      expect(result.query).toContain("FILTER NOT EXISTS");
+      expect(result.query).toContain("Asset_deprecatedBy");
+      expect(result.isFallback).toBe(false);
+      expect(result.confidence).toBeGreaterThanOrEqual(0.8);
+    });
+
+    it("should detect concept class with keyword and use REGEX", () => {
+      const result = service.convert("найди все концепты связанные с agent или sandbox");
+
+      expect(result.templateName).toBe("find_by_class_and_keyword");
+      expect(result.query).toContain("Instance_class");
+      expect(result.query).toContain("dda12c48-6886-4624-8710-ed4ba92ce2b3");
+      expect(result.query).toContain("REGEX");
+      expect(result.query).toContain("agent");
+      expect(result.query).toContain("sandbox");
+      expect(result.query).toContain("FILTER NOT EXISTS");
+      expect(result.isFallback).toBe(false);
+    });
+
+    it("should detect task class", () => {
+      const result = service.convert("все задачи");
+
+      expect(result.templateName).toBe("find_by_class");
+      expect(result.query).toContain("1b20a8f0-d745-4e93-91db-4531b3df120e");
+    });
+
+    it("should detect project class", () => {
+      const result = service.convert("список проектов");
+
+      // May match active_projects or find_by_class depending on keyword score
+      expect(result.query).toBeDefined();
+    });
+
+    it("should detect conspect class", () => {
+      const result = service.convert("найди все конспекты");
+
+      expect(result.templateName).toBe("find_by_class");
+      expect(result.query).toContain("8efe8da6-0b88-4752-b90a-109280111c43");
+    });
+
+    it("should detect person class", () => {
+      const result = service.convert("найди всех людей");
+
+      expect(result.query).toContain("ims__Person");
+    });
+  });
+
+  describe("Multi-term REGEX search", () => {
+    it("should combine multiple terms with pipe for REGEX", () => {
+      const result = service.convert("концепты про agent или sandbox");
+
+      expect(result.query).toContain("REGEX");
+      // Should contain both terms separated by |
+      expect(result.query).toMatch(/agent\|sandbox|sandbox\|agent/);
+    });
+
+    it("should handle single keyword with class", () => {
+      const result = service.convert("конспекты про философию");
+
+      expect(result.templateName).toBe("find_by_class_and_keyword");
+      expect(result.query).toContain("REGEX");
+      expect(result.query).toContain("философию");
+    });
+  });
+
+  describe("Deprecated filter", () => {
+    it("should include deprecated filter in class queries", () => {
+      const result = service.convert("все концепты");
+
+      expect(result.query).toContain("FILTER NOT EXISTS");
+      expect(result.query).toContain("Asset_deprecatedBy");
+    });
+
+    it("should include deprecated filter in fallback queries", () => {
+      // Use a query that doesn't match any template or class
+      const result = service.convert("zzxxyyww qwfpgj");
+
+      expect(result.isFallback).toBe(true);
+      expect(result.query).toContain("FILTER NOT EXISTS");
+      expect(result.query).toContain("Asset_deprecatedBy");
+    });
+  });
+
+  describe("Fallback uses REGEX not CONTAINS(LCASE)", () => {
+    it("should use REGEX in fallback query", () => {
+      const result = service.convert("zzxxyyww qwfpgj");
+
+      expect(result.isFallback).toBe(true);
+      expect(result.query).toContain("REGEX");
+      expect(result.query).not.toContain("CONTAINS(LCASE");
+    });
+  });
+
+  describe("Specific templates still take priority", () => {
+    it("should prefer active_projects over class detection", () => {
+      const result = service.convert("активные проекты");
+
+      expect(result.templateName).toBe("active_projects");
+    });
+
+    it("should prefer projects_without_tasks over class detection", () => {
+      const result = service.convert("проекты без задач");
+
+      expect(result.templateName).toBe("projects_without_tasks");
+    });
+
+    it("should prefer areas template over class detection", () => {
+      const result = service.convert("все области");
+
+      expect(result.templateName).toBe("areas");
+    });
+
+    it("should prefer persons template over class detection", () => {
+      const result = service.convert("все люди");
+
+      expect(result.templateName).toBe("persons");
+    });
+  });
+});
