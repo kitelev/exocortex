@@ -5,7 +5,7 @@ import {
   SPARQL_PREFIXES,
   PREDICATES,
   KNOWN_PROTOTYPES,
-  KNOWN_CLASSES,
+  // KNOWN_CLASSES, // TODO: Restore when keyword extraction is implemented
   findClassByTerm,
   findMatchingTemplates,
   fillTemplate,
@@ -128,14 +128,14 @@ export class NLToSPARQLService {
     "подстричь ногти": KNOWN_PROTOTYPES.CUT_NAILS,
   };
 
-  // Words to strip when extracting search keywords (class terms + noise)
-  private classTermsToStrip = [
-    ...KNOWN_CLASSES.flatMap((c) => c.terms),
-    "все", "всех", "найди", "найти", "покажи", "список",
-    "связанные", "связанных", "связанный", "про", "содержащие",
-    "со словом", "или", "and", "or", "с", "на", "по", "для",
-    "активные", "активных", "все",
-  ];
+  // TODO: Restore when keyword extraction is implemented (Issue #2248)
+  // private classTermsToStrip = [
+  //   ...KNOWN_CLASSES.flatMap((c) => c.terms),
+  //   "все", "всех", "найди", "найти", "покажи", "список",
+  //   "связанные", "связанных", "связанный", "про", "содержащие",
+  //   "со словом", "или", "and", "or", "с", "на", "по", "для",
+  //   "активные", "активных", "все",
+  // ];
 
   constructor(config: Partial<NLToSPARQLConfig> = {}) {
     this.config = { ...DEFAULT_NL_TO_SPARQL_CONFIG, ...config };
@@ -371,12 +371,10 @@ export class NLToSPARQLService {
     return terms;
   }
 
-  /**
-   * Escape special regex characters in a string
-   */
-  private escapeRegex(str: string): string {
-    return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  }
+  // TODO: Restore when needed (Issue #2248)
+  // private escapeRegex(str: string): string {
+  //   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  // }
 
   /**
    * Extract parameters from natural language query based on template
