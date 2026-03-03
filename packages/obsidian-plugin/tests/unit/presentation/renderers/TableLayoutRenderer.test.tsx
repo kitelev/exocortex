@@ -449,7 +449,7 @@ describe("TableLayoutRenderer", () => {
       }));
     });
 
-    it("renders virtualized mode with proper structure for column width synchronization", () => {
+    it("renders virtualized mode with single table and sticky header", () => {
       // Mock virtualizer to return virtual items (simulating >50 rows)
       mockUseVirtualizer.mockImplementation(() => ({
         getVirtualItems: () => [
@@ -490,31 +490,28 @@ describe("TableLayoutRenderer", () => {
       // Check that virtualized mode is active
       expect(container.querySelector(".exo-layout-virtualized")).toBeInTheDocument();
 
-      // Verify the structure for width synchronization:
-      // 1. Header table exists with header-fixed class
-      const headerTable = container.querySelector(".exo-layout-table-header-fixed");
-      expect(headerTable).toBeInTheDocument();
+      // Single table with colgroup, thead, and tbody
+      const tables = container.querySelectorAll("table");
+      expect(tables.length).toBe(1);
 
-      // 2. Virtual table exists for body rows
-      const virtualTable = container.querySelector(".exo-layout-virtual-table");
-      expect(virtualTable).toBeInTheDocument();
+      const table = tables[0];
+      expect(table.querySelector("colgroup")).toBeInTheDocument();
+      expect(table.querySelector("thead")).toBeInTheDocument();
+      expect(table.querySelector("tbody")).toBeInTheDocument();
 
-      // 3. Both tables have colgroups with matching column count
-      const headerCols = headerTable?.querySelectorAll("colgroup col");
-      const bodyCols = virtualTable?.querySelectorAll("colgroup col");
-      expect(headerCols?.length).toBe(3);
-      expect(bodyCols?.length).toBe(3);
+      // Colgroup has correct column count
+      const cols = table.querySelectorAll("colgroup col");
+      expect(cols.length).toBe(3);
 
-      // 4. Body cells have width styles (fallback to column.width when computed widths unavailable)
-      const cells = virtualTable?.querySelectorAll("tbody tr:first-child td");
+      // Body cells have width styles from column definitions
+      const cells = table.querySelectorAll("tbody tr:first-child td");
       expect(cells?.length).toBe(3);
-      // In jsdom, computed widths are 0, so cells use column.width fallback
       expect(cells?.[0]).toHaveStyle({ width: "200px" });
       expect(cells?.[1]).toHaveStyle({ width: "100px" });
       expect(cells?.[2]).toHaveStyle({ width: "150px" });
     });
 
-    it("colgroup widths match between header and body tables in virtualized mode", () => {
+    it("uses single table with shared colgroup in virtualized mode", () => {
       mockUseVirtualizer.mockImplementation(() => ({
         getVirtualItems: () => [
           { index: 0, start: 0, size: 35, key: "0" },
@@ -548,21 +545,15 @@ describe("TableLayoutRenderer", () => {
         />
       );
 
-      // Both header table and body table should have matching colgroups
+      // Single table means one colgroup shared by header and body
       const colgroups = container.querySelectorAll("colgroup");
-      expect(colgroups.length).toBe(2); // One in header, one in body
+      expect(colgroups.length).toBe(1);
 
-      // Get col elements from both tables
-      const headerCols = colgroups[0]?.querySelectorAll("col");
-      const bodyCols = colgroups[1]?.querySelectorAll("col");
-
-      expect(headerCols?.length).toBe(bodyCols?.length);
-
-      // Widths should match
-      headerCols?.forEach((col, i) => {
-        const bodyCol = bodyCols?.[i];
-        expect(col.style.width).toBe(bodyCol?.style.width);
-      });
+      const cols = colgroups[0]?.querySelectorAll("col");
+      expect(cols?.length).toBe(3);
+      expect(cols?.[0]).toHaveStyle({ width: "40%" });
+      expect(cols?.[1]).toHaveStyle({ width: "30%" });
+      expect(cols?.[2]).toHaveStyle({ width: "30%" });
     });
 
     it("virtualized rows have position: absolute style applied", () => {
@@ -599,7 +590,7 @@ describe("TableLayoutRenderer", () => {
       );
 
       // Virtualized rows should have position: absolute
-      const virtualTableRows = container.querySelectorAll(".exo-layout-virtual-table tbody tr");
+      const virtualTableRows = container.querySelectorAll(".exo-layout-virtualized tbody tr");
       expect(virtualTableRows.length).toBe(2);
 
       virtualTableRows.forEach((row) => {
@@ -646,7 +637,7 @@ describe("TableLayoutRenderer", () => {
       fireEvent(window, new Event("resize"));
 
       // Cells should still have width styles after resize
-      const cells = container.querySelectorAll(".exo-layout-virtual-table tbody td");
+      const cells = container.querySelectorAll(".exo-layout-virtualized tbody td");
       expect(cells.length).toBeGreaterThanOrEqual(2);
       expect(cells[0]).toHaveStyle({ width: "200px" });
       expect(cells[1]).toHaveStyle({ width: "100px" });

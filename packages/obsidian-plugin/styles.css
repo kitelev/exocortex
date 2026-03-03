@@ -3246,17 +3246,14 @@
   flex-direction: column;
 }
 
-.exo-layout-table-header-fixed {
-  border-bottom: none;
+.exo-layout-virtualized .exo-layout-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
 }
 
 .exo-layout-virtual-scroll {
-  border-top: none;
   border-radius: 0 0 8px 8px;
-}
-
-.exo-layout-virtual-table {
-  border-top: none;
 }
 
 /* ============================================================================
