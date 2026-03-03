@@ -210,7 +210,7 @@ export class QueryExecutor {
         break;
 
       default:
-        throw new QueryExecutorError(`Unknown operation type: ${(operation as any).type}`);
+        throw new QueryExecutorError(`Unknown operation type: ${(operation as unknown).type}`);
     }
   }
 
@@ -230,12 +230,46 @@ export class QueryExecutor {
       leftSolutions.push(solution);
     }
 
-    // For each left solution, execute right and merge compatible
-    for (const leftSolution of leftSolutions) {
-      for await (const rightSolution of this.execute(operation.right)) {
-        const merged = leftSolution.merge(rightSolution);
-        if (merged !== null) {
-          yield merged;
+    if (leftSolutions.length === 0) {
+      return;
+    }
+
+    // Find shared variables between left results and right operation
+    const leftVars = new Set<string>();
+    for (const sol of leftSolutions) {
+      for (const v of sol.variables()) {
+        leftVars.add(v);
+      }
+    }
+    const rightVars = this.collectOperationVariables(operation.right);
+    const hasSharedVars = [...leftVars].some(v => rightVars.has(v));
+
+    if (hasSharedVars) {
+      // BIND JOIN: substitute shared variable bindings into right operand
+      // before execution, enabling index lookups in the triple store.
+      // Turns O(N*M) into O(N*selectivity) for cross-BGP joins.
+      for (const leftSolution of leftSolutions) {
+        const boundRight = this.substituteVariables(operation.right, leftSolution);
+        for await (const rightSolution of this.execute(boundRight)) {
+          const merged = leftSolution.merge(rightSolution);
+          if (merged !== null) {
+            yield merged;
+          }
+        }
+      }
+    } else {
+      // HASH JOIN: no shared variables, collect right solutions once
+      // then cross-product merge. Avoids re-executing right for each left.
+      const rightSolutions: SolutionMapping[] = [];
+      for await (const solution of this.execute(operation.right)) {
+        rightSolutions.push(solution);
+      }
+      for (const leftSolution of leftSolutions) {
+        for (const rightSolution of rightSolutions) {
+          const merged = leftSolution.merge(rightSolution);
+          if (merged !== null) {
+            yield merged;
+          }
         }
       }
     }
@@ -426,7 +460,7 @@ export class QueryExecutor {
       for (const result of results) {
         // All HAVING conditions must be true
         const passesHaving = operation.having.every((expr) => {
-          const value = this.filterExecutor.evaluateExpression(expr as any, result);
+          const value = this.filterExecutor.evaluateExpression(expr as unknown, result);
           return value === true;
         });
         if (passesHaving) {
@@ -445,7 +479,7 @@ export class QueryExecutor {
       const clone = solution.clone();
       const value = this.evaluateExtendExpression(operation.expression, solution);
       if (value !== undefined) {
-        clone.set(operation.variable, value);
+        clone.set(operation.variable, value as unknown);
       }
       yield clone;
     }
@@ -539,14 +573,16 @@ export class QueryExecutor {
   /**
    * Recursively substitute variables in an operation with values from bindings.
    */
-  private substituteInOperation(operation: any, bindings: SolutionMapping): AlgebraOperation {
-    if (!operation || typeof operation !== 'object') {
-      return operation;
+  private substituteInOperation(op: unknown, bindings: SolutionMapping): AlgebraOperation {
+    if (!op || typeof op !== 'object') {
+      return op as AlgebraOperation;
     }
+
+    const operation = op;
 
     // Handle triple patterns in BGP
     if (operation.type === 'bgp' && operation.triples) {
-      operation.triples = operation.triples.map((triple: any) => this.substituteInTriple(triple, bindings));
+      operation.triples = operation.triples.map((triple: unknown) => this.substituteInTriple(triple, bindings));
       return operation;
     }
 
@@ -570,13 +606,54 @@ export class QueryExecutor {
       operation.where = this.substituteInOperation(operation.where, bindings);
     }
 
+    // Substitute variables in filter expressions (handles EXISTS/NOT EXISTS patterns)
+    if (operation.expression) {
+      this.substituteInExpression(operation.expression, bindings);
+    }
+
     return operation;
+  }
+
+  /**
+   * Recursively substitute variables in filter expressions.
+   * Primarily needed to handle EXISTS/NOT EXISTS patterns which contain
+   * AlgebraOperations that need variable substitution for bind join correctness.
+   */
+  private substituteInExpression(expr: unknown, bindings: SolutionMapping): void {
+    if (!expr || typeof expr !== 'object') return;
+
+    // Handle EXISTS/NOT EXISTS patterns
+    if (expr.type === 'exists' && expr.pattern) {
+      expr.pattern = this.substituteInOperation(expr.pattern, bindings);
+    }
+
+    // Recurse into sub-expressions
+    if (expr.left) this.substituteInExpression(expr.left, bindings);
+    if (expr.right) this.substituteInExpression(expr.right, bindings);
+    if (expr.operands) {
+      for (const op of expr.operands) {
+        this.substituteInExpression(op, bindings);
+      }
+    }
+    if (expr.args) {
+      for (const arg of expr.args) {
+        this.substituteInExpression(arg, bindings);
+      }
+    }
+    if (expr.expression) {
+      this.substituteInExpression(expr.expression, bindings);
+    }
+    if (expr.list) {
+      for (const item of expr.list) {
+        this.substituteInExpression(item, bindings);
+      }
+    }
   }
 
   /**
    * Substitute variables in a triple pattern with values from bindings.
    */
-  private substituteInTriple(triple: any, bindings: SolutionMapping): any {
+  private substituteInTriple(triple: unknown, bindings: SolutionMapping): unknown {
     return {
       subject: this.substituteInTripleElement(triple.subject, bindings),
       predicate: triple.predicate, // Predicate paths are not substituted
@@ -587,22 +664,22 @@ export class QueryExecutor {
   /**
    * Substitute a variable in a triple element if it has a binding.
    */
-  private substituteInTripleElement(element: any, bindings: SolutionMapping): any {
+  private substituteInTripleElement(element: unknown, bindings: SolutionMapping): unknown {
     if (element && element.type === 'variable') {
       const value = bindings.get(element.value);
-      if (value) {
+      if (value != null) {
         // Convert RDF term to algebra representation
-        if (value instanceof IRI || (value as any).termType === 'NamedNode') {
-          return { type: 'iri', value: (value as any).value };
+        if (value instanceof IRI || (value as unknown).termType === 'NamedNode') {
+          return { type: 'iri', value: (value as unknown).value };
         }
         // Handle Literal
-        if ((value as any).termType === 'Literal' || typeof (value as any).value === 'string') {
-          const lit = value as any;
+        if ((value as unknown).termType === 'Literal' || typeof (value as unknown).value === 'string') {
+          const lit = value as unknown;
           return {
             type: 'literal',
             value: lit.value,
-            datatype: lit.datatype?.value || lit._datatype?.value,
-            language: lit.language || lit._language,
+            datatype: lit.datatype?.value ?? lit._datatype?.value,
+            language: lit.language ?? lit._language,
           };
         }
       }
@@ -700,7 +777,7 @@ export class QueryExecutor {
   private evaluateExtendExpression(
     expr: ExtendOperation["expression"],
     solution: SolutionMapping
-  ): any {
+  ): unknown {
     if (expr.type === "aggregate") {
       // Aggregates in extend are handled at the group level
       return undefined;
@@ -709,21 +786,115 @@ export class QueryExecutor {
     // Use FilterExecutor's evaluateExpression for all other expression types
     // This handles: variable, literal, function (REPLACE, STR, etc.), comparison, logical
     try {
-      return this.filterExecutor.evaluateExpression(expr as any, solution);
+      return this.filterExecutor.evaluateExpression(expr as unknown, solution);
     } catch {
       return undefined;
     }
   }
 
-  private getExpressionValue(expr: any, solution: SolutionMapping): any {
+  private getExpressionValue(expr: unknown, solution: SolutionMapping): unknown {
     if (expr.type === "variable") {
       const term = solution.get(expr.name);
       if (term) {
-        return (term as any).value ?? (term as any).id ?? String(term);
+        return (term as unknown).value ?? (term as unknown).id ?? String(term);
       }
       return undefined;
     }
-    return expr.value;
+    return (expr as unknown).value;
+  }
+
+  /**
+   * Collect all variable names referenced in an algebra operation.
+   * Used to find shared variables between join operands for bind join optimization.
+   */
+  private collectOperationVariables(operation: unknown): Set<string> {
+    const vars = new Set<string>();
+    this.collectVarsFromOperation(operation, vars);
+    return vars;
+  }
+
+  private collectVarsFromOperation(operation: unknown, vars: Set<string>): void {
+    if (!operation || typeof operation !== 'object') return;
+
+    // Collect from BGP triple patterns
+    if (operation.type === 'bgp' && operation.triples) {
+      for (const triple of operation.triples) {
+        this.collectVarsFromElement(triple.subject, vars);
+        if (triple.predicate?.type !== 'path') {
+          this.collectVarsFromElement(triple.predicate, vars);
+        }
+        this.collectVarsFromElement(triple.object, vars);
+      }
+    }
+
+    // Collect from VALUES
+    if (operation.type === 'values' && operation.variables) {
+      for (const v of operation.variables) {
+        vars.add(v);
+      }
+    }
+
+    // Collect from filter expressions
+    if (operation.expression) {
+      this.collectVarsFromExpressionTree(operation.expression, vars);
+    }
+
+    // Collect from extend variable
+    if (operation.type === 'extend' && operation.variable) {
+      vars.add(operation.variable);
+    }
+
+    // Recurse into nested operations
+    if (operation.input) this.collectVarsFromOperation(operation.input, vars);
+    if (operation.left) this.collectVarsFromOperation(operation.left, vars);
+    if (operation.right) this.collectVarsFromOperation(operation.right, vars);
+    if (operation.pattern) this.collectVarsFromOperation(operation.pattern, vars);
+    if (operation.query) this.collectVarsFromOperation(operation.query, vars);
+    if (operation.where) this.collectVarsFromOperation(operation.where, vars);
+  }
+
+  private collectVarsFromElement(element: unknown, vars: Set<string>): void {
+    if (!element) return;
+    if (element.type === 'variable') {
+      vars.add(element.value);
+    }
+    // Handle quoted triples
+    if (element.type === 'quoted') {
+      this.collectVarsFromElement(element.subject, vars);
+      this.collectVarsFromElement(element.predicate, vars);
+      this.collectVarsFromElement(element.object, vars);
+    }
+  }
+
+  private collectVarsFromExpressionTree(expr: unknown, vars: Set<string>): void {
+    if (!expr || typeof expr !== 'object') return;
+    if (expr.type === 'variable' && expr.name) {
+      vars.add(expr.name);
+    }
+    // Handle EXISTS patterns
+    if (expr.type === 'exists' && expr.pattern) {
+      this.collectVarsFromOperation(expr.pattern, vars);
+    }
+    if (expr.left) this.collectVarsFromExpressionTree(expr.left, vars);
+    if (expr.right) this.collectVarsFromExpressionTree(expr.right, vars);
+    if (expr.operands) {
+      for (const op of expr.operands) {
+        this.collectVarsFromExpressionTree(op, vars);
+      }
+    }
+    if (expr.args) {
+      for (const arg of expr.args) {
+        this.collectVarsFromExpressionTree(arg, vars);
+      }
+    }
+    if (expr.expression) {
+      this.collectVarsFromExpressionTree(expr.expression, vars);
+    }
+    if (expr.list) {
+      for (const item of expr.list) {
+        this.collectVarsFromExpressionTree(item, vars);
+      }
+    }
   }
 
   private getSolutionKey(solution: SolutionMapping): string {
