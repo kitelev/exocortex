@@ -210,7 +210,7 @@ export class QueryExecutor {
         break;
 
       default:
-        throw new QueryExecutorError(`Unknown operation type: ${(operation as unknown).type}`);
+        throw new QueryExecutorError(`Unknown operation type: ${(operation as any).type}`);
     }
   }
 
@@ -460,7 +460,7 @@ export class QueryExecutor {
       for (const result of results) {
         // All HAVING conditions must be true
         const passesHaving = operation.having.every((expr) => {
-          const value = this.filterExecutor.evaluateExpression(expr as unknown, result);
+          const value = this.filterExecutor.evaluateExpression(expr as any, result);
           return value === true;
         });
         if (passesHaving) {
@@ -479,7 +479,7 @@ export class QueryExecutor {
       const clone = solution.clone();
       const value = this.evaluateExtendExpression(operation.expression, solution);
       if (value !== undefined) {
-        clone.set(operation.variable, value as unknown);
+        clone.set(operation.variable, value as any);
       }
       yield clone;
     }
@@ -573,7 +573,7 @@ export class QueryExecutor {
   /**
    * Recursively substitute variables in an operation with values from bindings.
    */
-  private substituteInOperation(op: unknown, bindings: SolutionMapping): AlgebraOperation {
+  private substituteInOperation(op: any, bindings: SolutionMapping): AlgebraOperation {
     if (!op || typeof op !== 'object') {
       return op as AlgebraOperation;
     }
@@ -619,7 +619,7 @@ export class QueryExecutor {
    * Primarily needed to handle EXISTS/NOT EXISTS patterns which contain
    * AlgebraOperations that need variable substitution for bind join correctness.
    */
-  private substituteInExpression(expr: unknown, bindings: SolutionMapping): void {
+  private substituteInExpression(expr: any, bindings: SolutionMapping): void {
     if (!expr || typeof expr !== 'object') return;
 
     // Handle EXISTS/NOT EXISTS patterns
@@ -653,7 +653,7 @@ export class QueryExecutor {
   /**
    * Substitute variables in a triple pattern with values from bindings.
    */
-  private substituteInTriple(triple: unknown, bindings: SolutionMapping): unknown {
+  private substituteInTriple(triple: any, bindings: SolutionMapping): unknown {
     return {
       subject: this.substituteInTripleElement(triple.subject, bindings),
       predicate: triple.predicate, // Predicate paths are not substituted
@@ -664,17 +664,17 @@ export class QueryExecutor {
   /**
    * Substitute a variable in a triple element if it has a binding.
    */
-  private substituteInTripleElement(element: unknown, bindings: SolutionMapping): unknown {
+  private substituteInTripleElement(element: any, bindings: SolutionMapping): unknown {
     if (element && element.type === 'variable') {
       const value = bindings.get(element.value);
       if (value != null) {
         // Convert RDF term to algebra representation
-        if (value instanceof IRI || (value as unknown).termType === 'NamedNode') {
-          return { type: 'iri', value: (value as unknown).value };
+        if (value instanceof IRI || (value as any).termType === 'NamedNode') {
+          return { type: 'iri', value: (value as any).value };
         }
         // Handle Literal
-        if ((value as unknown).termType === 'Literal' || typeof (value as unknown).value === 'string') {
-          const lit = value as unknown;
+        if ((value as any).termType === 'Literal' || typeof (value as any).value === 'string') {
+          const lit = value as any;
           return {
             type: 'literal',
             value: lit.value,
@@ -786,21 +786,21 @@ export class QueryExecutor {
     // Use FilterExecutor's evaluateExpression for all other expression types
     // This handles: variable, literal, function (REPLACE, STR, etc.), comparison, logical
     try {
-      return this.filterExecutor.evaluateExpression(expr as unknown, solution);
+      return this.filterExecutor.evaluateExpression(expr as any, solution);
     } catch {
       return undefined;
     }
   }
 
-  private getExpressionValue(expr: unknown, solution: SolutionMapping): unknown {
+  private getExpressionValue(expr: any, solution: SolutionMapping): unknown {
     if (expr.type === "variable") {
       const term = solution.get(expr.name);
       if (term) {
-        return (term as unknown).value ?? (term as unknown).id ?? String(term);
+        return (term as any).value ?? (term as any).id ?? String(term);
       }
       return undefined;
     }
-    return (expr as unknown).value;
+    return (expr as any).value;
   }
 
   /**
@@ -813,7 +813,7 @@ export class QueryExecutor {
     return vars;
   }
 
-  private collectVarsFromOperation(operation: unknown, vars: Set<string>): void {
+  private collectVarsFromOperation(operation: any, vars: Set<string>): void {
     if (!operation || typeof operation !== 'object') return;
 
     // Collect from BGP triple patterns
@@ -853,7 +853,7 @@ export class QueryExecutor {
     if (operation.where) this.collectVarsFromOperation(operation.where, vars);
   }
 
-  private collectVarsFromElement(element: unknown, vars: Set<string>): void {
+  private collectVarsFromElement(element: any, vars: Set<string>): void {
     if (!element) return;
     if (element.type === 'variable') {
       vars.add(element.value);
@@ -866,7 +866,7 @@ export class QueryExecutor {
     }
   }
 
-  private collectVarsFromExpressionTree(expr: unknown, vars: Set<string>): void {
+  private collectVarsFromExpressionTree(expr: any, vars: Set<string>): void {
     if (!expr || typeof expr !== 'object') return;
     if (expr.type === 'variable' && expr.name) {
       vars.add(expr.name);
