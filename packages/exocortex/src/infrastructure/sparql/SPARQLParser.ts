@@ -19,6 +19,7 @@ import {
   TripleTermTransformer,
   TripleTermTransformerError,
 } from "./TripleTermTransformer";
+import { VaultPrefixTransformer } from "./VaultPrefixTransformer";
 
 export class SPARQLParseError extends Error {
   public readonly line?: number;
@@ -78,6 +79,7 @@ export class SPARQLParser {
   private readonly describeOptionsTransformer: DescribeOptionsTransformer;
   private readonly directionalLangTagTransformer: DirectionalLangTagTransformer;
   private readonly tripleTermTransformer: TripleTermTransformer;
+  private readonly vaultPrefixTransformer: VaultPrefixTransformer;
 
   /** Store the last parsed DESCRIBE options for retrieval */
   private lastDescribeOptions?: DescribeOptions;
@@ -99,6 +101,29 @@ export class SPARQLParser {
     this.describeOptionsTransformer = new DescribeOptionsTransformer();
     this.directionalLangTagTransformer = new DirectionalLangTagTransformer();
     this.tripleTermTransformer = new TripleTermTransformer();
+    this.vaultPrefixTransformer = new VaultPrefixTransformer();
+  }
+
+  /**
+   * Set vault namespace prefixes for automatic PREFIX injection.
+   *
+   * When set, queries using prefixed names matching vault namespaces
+   * will have PREFIX declarations automatically injected before parsing.
+   *
+   * @param prefixes - Map of prefix name to base IRI
+   *   e.g., Map { "kitelev" => "obsidian://vault/03%20Knowledge/kitelev/" }
+   *
+   * @example
+   * ```typescript
+   * parser.setVaultPrefixes(new Map([
+   *   ["kitelev", "obsidian://vault/03%20Knowledge/kitelev/"],
+   * ]));
+   * // Now queries can use kitelev:uuid without explicit PREFIX declaration
+   * parser.parse('SELECT ?l WHERE { kitelev:uuid exo:Asset_label ?l }');
+   * ```
+   */
+  setVaultPrefixes(prefixes: Map<string, string>): void {
+    this.vaultPrefixTransformer.setVaultPrefixes(prefixes);
   }
 
   /**
@@ -116,8 +141,11 @@ export class SPARQLParser {
    */
   parse(queryString: string): SPARQLQuery {
     try {
+      // Inject vault namespace PREFIX declarations for undeclared vault prefixes
+      const withVaultPrefixes = this.vaultPrefixTransformer.transform(queryString);
+
       // Transform DESCRIBE options (DEPTH, SYMMETRIC) before other transformations
-      const describeResult = this.describeOptionsTransformer.transform(queryString);
+      const describeResult = this.describeOptionsTransformer.transform(withVaultPrefixes);
       this.lastDescribeOptions = describeResult.options;
       let transformedQuery = describeResult.query;
 
@@ -209,8 +237,11 @@ export class SPARQLParser {
    */
   async parseAsync(queryString: string): Promise<SPARQLQuery> {
     try {
+      // Inject vault namespace PREFIX declarations for undeclared vault prefixes
+      const withVaultPrefixes = this.vaultPrefixTransformer.transform(queryString);
+
       // Transform DESCRIBE options (DEPTH, SYMMETRIC) first
-      const describeResult = this.describeOptionsTransformer.transform(queryString);
+      const describeResult = this.describeOptionsTransformer.transform(withVaultPrefixes);
       this.lastDescribeOptions = describeResult.options;
       let transformedQuery = describeResult.query;
 

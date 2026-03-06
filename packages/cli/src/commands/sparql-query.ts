@@ -30,6 +30,7 @@ import { QueryAnalyzer } from "../utils/QueryAnalyzer.js";
 import { TemplateRegistry } from "../templates/TemplateRegistry.js";
 import { SPARQLErrorEnhancer } from "../utils/SPARQLErrorEnhancer.js";
 import { NTriplesFormatter } from "../utils/NTriplesFormatter.js";
+import { scanVaultNamespaces } from "../utils/VaultNamespaceScanner.js";
 
 export interface SparqlQueryOptions {
   vault: string;
@@ -350,6 +351,13 @@ export function sparqlQueryCommand(): Command {
         }
 
         const parser = new SPARQLParser();
+
+        // Scan vault for namespace directories and auto-register prefixes
+        const vaultPrefixes = scanVaultNamespaces(vaultPath);
+        if (vaultPrefixes.size > 0) {
+          parser.setVaultPrefixes(vaultPrefixes);
+        }
+
         const ast = parser.parse(queryString);
 
         if (outputFormat === "text") {

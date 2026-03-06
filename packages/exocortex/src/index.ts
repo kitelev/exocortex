@@ -252,6 +252,7 @@ export {
   type JSONResultSet,
 } from "./infrastructure/sparql/serializers/ResultSerializer";
 export { CaseWhenTransformer, CaseWhenTransformerError } from "./infrastructure/sparql/CaseWhenTransformer";
+export { VaultPrefixTransformer } from "./infrastructure/sparql/VaultPrefixTransformer";
 export {
   FilterContainsOptimizer,
   type ContainsUUIDPattern,
