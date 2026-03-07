@@ -469,6 +469,31 @@ export class AlgebraOptimizer {
   }
 
   private reorderJoin(join: JoinOperation): AlgebraOperation {
+    // Prefer the constrained (small cardinality) side as LEFT for bind join.
+    // A subtree is "constrained" if it contains VALUES, concrete BGP objects,
+    // or FILTER with constants — it produces fewer intermediate results.
+    const leftConstrained = this.isConstrained(join.left);
+    const rightConstrained = this.isConstrained(join.right);
+
+    // If right is constrained but left is not, swap (right → left for bind join)
+    if (rightConstrained && !leftConstrained) {
+      return {
+        type: "join",
+        left: this.joinReordering(join.right),
+        right: this.joinReordering(join.left),
+      };
+    }
+
+    // If left IS constrained and right is NOT, keep order (constrained side LEFT is optimal)
+    if (leftConstrained && !rightConstrained) {
+      return {
+        type: "join",
+        left: this.joinReordering(join.left),
+        right: this.joinReordering(join.right),
+      };
+    }
+
+    // Both constrained or neither: fall back to cost estimate
     const leftCost = this.estimateCost(join.left);
     const rightCost = this.estimateCost(join.right);
 
@@ -487,14 +512,50 @@ export class AlgebraOptimizer {
     };
   }
 
+  /**
+   * Check if an operation subtree is "constrained" — likely to produce
+   * a small result set due to VALUES, concrete objects, or selective filters.
+   */
+  private isConstrained(operation: AlgebraOperation): boolean {
+    if (operation.type === "values") return true;
+
+    if (operation.type === "bgp") {
+      // BGP with any concrete (non-variable) object is constrained
+      return operation.triples.some(
+        t => t.object.type !== "variable" || t.subject.type !== "variable"
+      );
+    }
+
+    if (operation.type === "filter") {
+      return this.isConstrained(operation.input);
+    }
+
+    if (operation.type === "join") {
+      return this.isConstrained(operation.left) || this.isConstrained(operation.right);
+    }
+
+    if (operation.type === "union") {
+      return this.isConstrained(operation.left) && this.isConstrained(operation.right);
+    }
+
+    return false;
+  }
+
   private estimateCost(operation: AlgebraOperation): number {
     if (operation.type === "bgp") {
-      let cost = operation.triples.length * 100;
+      let cost = 0;
 
       for (const triple of operation.triples) {
-        if (triple.subject.type === "variable") cost += 10;
-        if (triple.predicate.type === "variable") cost += 20;
-        if (triple.object.type === "variable") cost += 10;
+        let tripleCost = 10; // base cost per triple
+        // Variable subject = scanning many subjects (high cost)
+        if (triple.subject.type === "variable") tripleCost *= 10;
+        // Variable predicate = very unselective (rare but expensive)
+        if (triple.predicate.type === "variable") tripleCost *= 20;
+        // Variable object = unselective (matches all values for given s/p)
+        if (triple.object.type === "variable") tripleCost *= 5;
+        // Concrete object = highly selective (index lookup)
+        // Concrete subject = also selective
+        cost += tripleCost;
       }
 
       return cost;
@@ -505,7 +566,13 @@ export class AlgebraOptimizer {
     }
 
     if (operation.type === "join") {
-      return this.estimateCost(operation.left) * this.estimateCost(operation.right);
+      const leftCost = this.estimateCost(operation.left);
+      const rightCost = this.estimateCost(operation.right);
+      // If one side is VALUES, the join is highly selective (constraining)
+      if (operation.left.type === "values" || operation.right.type === "values") {
+        return Math.min(leftCost, rightCost) * 2;
+      }
+      return leftCost * rightCost;
     }
 
     if (operation.type === "leftjoin") {
@@ -514,6 +581,12 @@ export class AlgebraOptimizer {
 
     if (operation.type === "union") {
       return this.estimateCost(operation.left) + this.estimateCost(operation.right);
+    }
+
+    if (operation.type === "values") {
+      // VALUES constrains to a small set of concrete bindings
+      const bindings = (operation as any).bindings;
+      return Array.isArray(bindings) ? bindings.length * 5 : 10;
     }
 
     if (operation.type === "minus") {
