@@ -159,8 +159,8 @@ export class NLToSPARQLService {
     // 3. Find matching templates
     const matchingTemplates = findMatchingTemplates(query, 3);
 
-    // 4. If a specific, parameter-free template matches well, use it
-    //    These templates are self-contained and more precise than class-based queries
+    // 4. If a specific template matched by KEYWORD (not just example words),
+    //    it takes priority — these are precise, domain-specific queries
     const specificTemplates = new Set([
       "active_projects", "projects_without_tasks", "areas", "persons", "find_prototype",
       "sleep_analysis", "recent_activities",
@@ -169,12 +169,19 @@ export class NLToSPARQLService {
     if (matchingTemplates.length > 0) {
       const bestTemplate = matchingTemplates[0];
       if (specificTemplates.has(bestTemplate.name)) {
-        // Specific template wins over class detection
-        return this.buildTemplateResult(query, bestTemplate, matchingTemplates);
+        // Only use specific template if it matched via keyword (strong signal)
+        // Use word-boundary matching to avoid false positives (e.g., "персон" ≠ "сон")
+        const queryWords = query.split(/\s+/);
+        const hasKeywordMatch = bestTemplate.keywords.some(
+          (kw) => queryWords.includes(kw.toLowerCase())
+        );
+        if (hasKeywordMatch) {
+          return this.buildTemplateResult(query, bestTemplate, matchingTemplates);
+        }
       }
     }
 
-    // 5. If a class was detected, prefer class-based query
+    // 5. If a class was detected from NL terms, prefer class-based query
     if (detectedClass) {
       return this.handleClassQuery(query, detectedClass);
     }

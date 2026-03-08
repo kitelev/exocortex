@@ -622,7 +622,7 @@ WHERE {
 ORDER BY ?label`,
     parameters: [],
     examples: ["все люди", "контакты", "persons"],
-    keywords: ["люди", "контакты", "persons", "person"],
+    keywords: ["люди", "контакты", "персон", "персоны", "персона", "persons", "person"],
   },
 ];
 
