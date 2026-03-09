@@ -42,7 +42,7 @@ describe("FleetingNoteCreationService", () => {
       exo__Asset_isDefinedBy: '"[[!kitelev]]"',
       exo__Asset_uid: "test-uuid-123",
       exo__Asset_createdAt: mockTimestamp,
-      exo__Instance_class: ['"[[ztlk__FleetingNote]]"'],
+      exo__Instance_class: ['"[[fca0a931-a01f-48e4-b72a-4af206c94bc7]]"'],
       exo__Asset_label: "My note label",
       aliases: ["My note label"],
     });
