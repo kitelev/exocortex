@@ -33,7 +33,7 @@ export class SupervisionCreationService {
       exo__Asset_isDefinedBy: '"[[!kitelev]]"',
       exo__Asset_uid: uid,
       exo__Asset_createdAt: timestamp,
-      exo__Instance_class: ['"[[ztlk__FleetingNote]]"'],
+      exo__Instance_class: ['"[[fca0a931-a01f-48e4-b72a-4af206c94bc7]]"'],
       ztlk__FleetingNote_type: '"[[CBT-Diary Record]]"',
     };
   }

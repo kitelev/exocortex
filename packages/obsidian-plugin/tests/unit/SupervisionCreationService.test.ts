@@ -23,7 +23,7 @@ describe("SupervisionCreationService", () => {
       expect(frontmatter.exo__Asset_uid).toBe(uid);
       expect(frontmatter.exo__Asset_createdAt).toBeDefined();
       expect(frontmatter.exo__Instance_class).toEqual([
-        '"[[ztlk__FleetingNote]]"',
+        '"[[fca0a931-a01f-48e4-b72a-4af206c94bc7]]"',
       ]);
       expect(frontmatter.ztlk__FleetingNote_type).toBe(
         '"[[CBT-Diary Record]]"',
@@ -178,7 +178,7 @@ describe("SupervisionCreationService", () => {
       expect(content).toContain("exo__Asset_uid:");
       expect(content).toContain("exo__Asset_createdAt:");
       expect(content).toContain(
-        'exo__Instance_class:\n  - "[[ztlk__FleetingNote]]"',
+        'exo__Instance_class:\n  - "[[fca0a931-a01f-48e4-b72a-4af206c94bc7]]"',
       );
       expect(content).toContain(
         'ztlk__FleetingNote_type: "[[CBT-Diary Record]]"',
