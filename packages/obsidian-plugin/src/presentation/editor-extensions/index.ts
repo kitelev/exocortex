@@ -5,6 +5,10 @@ export {
   type IAliasService,
 } from "./AliasIconViewPlugin";
 export {
+  RedundantAliasRemoveWidget,
+  type RedundantAliasRemoveClickResult,
+} from "./RedundantAliasRemoveWidget";
+export {
   WikilinkLabelViewPlugin,
   createWikilinkLabelExtension,
   type WikilinkMatch,

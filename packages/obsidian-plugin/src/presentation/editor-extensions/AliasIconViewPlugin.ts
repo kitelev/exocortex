@@ -9,6 +9,8 @@ import { RangeSetBuilder, Extension } from "@codemirror/state";
 import { TFile } from "obsidian";
 import type { App, MetadataCache } from "obsidian";
 import { AliasIconWidget, type AliasIconClickResult } from "./AliasIconWidget";
+import { RedundantAliasRemoveWidget, type RedundantAliasRemoveClickResult } from "./RedundantAliasRemoveWidget";
+import { WikilinkLabelViewPlugin } from "./WikilinkLabelViewPlugin";
 
 /**
  * Represents a parsed wikilink with its position and extracted components.
@@ -44,6 +46,8 @@ export class AliasIconViewPlugin {
   private aliasService: IAliasService;
   private notifyUser: (message: string) => void;
   private pendingAliases: Set<string> = new Set();
+  private pendingRemovals: Set<string> = new Set();
+  private view: EditorView;
 
   constructor(
     view: EditorView,
@@ -56,6 +60,7 @@ export class AliasIconViewPlugin {
     this.metadataCache = metadataCache;
     this.aliasService = aliasService;
     this.notifyUser = notifyUser;
+    this.view = view;
     this.decorations = this.buildDecorations(view);
   }
 
@@ -75,7 +80,24 @@ export class AliasIconViewPlugin {
     this.pendingAliases.delete(this.getPendingKey(targetPath, alias));
   }
 
+  private getRemovalKey(from: number, to: number): string {
+    return `${from}|${to}`;
+  }
+
+  isRemovalPending(from: number, to: number): boolean {
+    return this.pendingRemovals.has(this.getRemovalKey(from, to));
+  }
+
+  markRemovalAsPending(from: number, to: number): void {
+    this.pendingRemovals.add(this.getRemovalKey(from, to));
+  }
+
+  unmarkRemovalAsPending(from: number, to: number): void {
+    this.pendingRemovals.delete(this.getRemovalKey(from, to));
+  }
+
   update(update: ViewUpdate): void {
+    this.view = update.view;
     if (update.docChanged || update.viewportChanged) {
       this.decorations = this.buildDecorations(update.view);
     }
@@ -96,26 +118,86 @@ export class AliasIconViewPlugin {
         continue;
       }
 
-      const existingAliases = this.aliasService.getAliases(targetFile);
+      // Check if alias equals exo__Asset_label (redundant alias)
+      const targetLabel = WikilinkLabelViewPlugin.resolveLabel(this.metadataCache, wikilink.targetPath);
 
-      // Check if alias is already in target's aliases or pending addition
-      if (!existingAliases.includes(wikilink.alias) && !this.isPending(targetFile.path, wikilink.alias)) {
-        const widget = new AliasIconWidget(
+      if (targetLabel && wikilink.alias === targetLabel && !this.isRemovalPending(wikilink.from, wikilink.to)) {
+        // Alias is redundant — show remove icon
+        const widget = new RedundantAliasRemoveWidget(
+          wikilink.from,
+          wikilink.to,
           targetFile.path,
           wikilink.alias,
-          (path: string, alias: string) => this.handleAddAlias(path, alias),
+          (from: number, to: number, _path: string, _alias: string) =>
+            this.handleRemoveRedundantAlias(from, to),
         );
 
         const decoration = Decoration.widget({
           widget,
-          side: 1, // Position after the wikilink
+          side: 1,
         });
 
         builder.add(wikilink.to, wikilink.to, decoration);
+      } else {
+        const existingAliases = this.aliasService.getAliases(targetFile);
+
+        // Check if alias is already in target's aliases or pending addition
+        if (!existingAliases.includes(wikilink.alias) && !this.isPending(targetFile.path, wikilink.alias)) {
+          const widget = new AliasIconWidget(
+            targetFile.path,
+            wikilink.alias,
+            (path: string, alias: string) => this.handleAddAlias(path, alias),
+          );
+
+          const decoration = Decoration.widget({
+            widget,
+            side: 1,
+          });
+
+          builder.add(wikilink.to, wikilink.to, decoration);
+        }
       }
     }
 
     return builder.finish();
+  }
+
+  /**
+   * Handle clicking the remove redundant alias icon.
+   * Transforms [[uuid|Label]] → [[uuid]] by editing the document.
+   */
+  private async handleRemoveRedundantAlias(
+    from: number,
+    to: number,
+  ): Promise<RedundantAliasRemoveClickResult> {
+    this.markRemovalAsPending(from, to);
+
+    try {
+      const currentText = this.view.state.doc.sliceString(from, to);
+
+      // Parse [[target|alias]] to extract target
+      const match = currentText.match(/^\[\[([^\]|]+)\|[^\]]+\]\]$/);
+      if (!match) {
+        this.unmarkRemovalAsPending(from, to);
+        return { success: false, error: "Could not parse wikilink" };
+      }
+
+      const target = match[1];
+      const newText = `[[${target}]]`;
+
+      this.view.dispatch({
+        changes: { from, to, insert: newText },
+      });
+
+      this.notifyUser("Removed redundant alias");
+      setTimeout(() => this.unmarkRemovalAsPending(from, to), 100);
+      return { success: true };
+    } catch (error) {
+      this.unmarkRemovalAsPending(from, to);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      this.notifyUser(`Failed to remove alias: ${errorMessage}`);
+      return { success: false, error: errorMessage };
+    }
   }
 
   /**
