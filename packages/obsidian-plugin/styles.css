@@ -3112,6 +3112,66 @@
 }
 
 /* ============================================================================
+   RedundantAliasRemoveWidget - Remove redundant wikilink aliases (Issue #2259)
+   ============================================================================ */
+
+.exocortex-alias-remove-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 2px;
+  cursor: pointer;
+  opacity: 0.6;
+  vertical-align: middle;
+  color: var(--text-muted);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.exocortex-alias-remove-icon:hover,
+.exocortex-alias-remove-icon.is-hovered {
+  opacity: 1;
+  transform: scale(1.1);
+  color: var(--text-warning);
+}
+
+.exocortex-alias-remove-icon.is-hidden {
+  display: none;
+}
+
+.exocortex-alias-remove-icon:active {
+  transform: scale(0.95);
+}
+
+.exocortex-alias-remove-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.theme-dark .exocortex-alias-remove-icon {
+  color: var(--text-muted);
+}
+
+@media (prefers-contrast: high) {
+  .exocortex-alias-remove-icon {
+    opacity: 1;
+    border: 1px solid currentColor;
+    border-radius: 2px;
+    padding: 1px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .exocortex-alias-remove-icon {
+    transition: none;
+  }
+
+  .exocortex-alias-remove-icon:hover,
+  .exocortex-alias-remove-icon.is-hovered {
+    transform: none;
+  }
+}
+
+/* ============================================================================
    TableLayoutRenderer - Layout-based Table Rendering (Issue #967)
    ============================================================================ */
 
