@@ -6,6 +6,7 @@ import {
   TaskCreationService,
   WikiLinkHelpers,
   AssetClass,
+  DateFormatter,
   LoggingService,
 } from "exocortex";
 import { LabelInputModal, type LabelInputModalResult } from '@plugin/presentation/modals/LabelInputModal';
@@ -49,7 +50,11 @@ export class CreateInstanceCommand implements ICommand {
 
     const showTaskSize = sourceClass !== AssetClass.MEETING_PROTOTYPE;
 
-    const result = await this.showModal(showTaskSize);
+    // Generate default label: prototype label + current date (Issue #2261)
+    const baseLabel = String(metadata.exo__Asset_label || file.basename);
+    const defaultLabel = `${baseLabel} ${DateFormatter.toDateString(new Date())}`;
+
+    const result = await this.showModal(showTaskSize, defaultLabel);
 
     if (result.label === null) {
       return;
@@ -84,9 +89,9 @@ export class CreateInstanceCommand implements ICommand {
    * @param showTaskSize - Whether to show task size selector
    * @returns Promise resolving to the modal result
    */
-  private showModal(showTaskSize: boolean): Promise<LabelInputModalResult> {
+  private showModal(showTaskSize: boolean, defaultLabel: string = ""): Promise<LabelInputModalResult> {
     return new Promise<LabelInputModalResult>((resolve) => {
-      new LabelInputModal(this.app, resolve, "", showTaskSize).open();
+      new LabelInputModal(this.app, resolve, defaultLabel, showTaskSize).open();
     });
   }
 

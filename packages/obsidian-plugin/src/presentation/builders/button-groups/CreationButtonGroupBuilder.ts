@@ -102,12 +102,9 @@ export class CreationButtonGroupBuilder implements IButtonGroupBuilder {
         onClick: async () => {
           const sourceClass = this.normalizeClass(instanceClass);
           const isMeeting = sourceClass === AssetClass.MEETING_PROTOTYPE;
-          // Support both string-based and UID-based TaskPrototype identifiers (Issue #2110)
-          const isTaskPrototype = sourceClass === AssetClass.TASK_PROTOTYPE ||
-            sourceClass === AssetClass.TASK_PROTOTYPE_UID;
-          const defaultValue = isMeeting || isTaskPrototype
-            ? this.generateDefaultLabel(metadata, file.basename)
-            : "";
+          // Generate default label for all prototypes (Issue #2261)
+          // Label = prototype's exo__Asset_label + current date
+          const defaultValue = this.generateDefaultLabel(metadata, file.basename);
           const result = await promptForLabel(app, defaultValue, !isMeeting);
           if (result.label === null) return;
           const created = await taskCreationService.createTask(
