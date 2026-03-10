@@ -217,6 +217,33 @@ describe("CommandVisibility - Instance/Subclass Commands", () => {
       expect(canCreateInstance(context)).toBe(true);
     });
 
+    // Instance of exo__Prototype (Issue #2261)
+    describe("assets with exo__Prototype in instanceClass", () => {
+      it("should return true for asset with exo__Prototype in instanceClass array", () => {
+        const context: CommandVisibilityContext = {
+          instanceClass: ["[[ztlk__FleetingNote]]", "[[exo__Prototype]]"],
+          currentStatus: null,
+          metadata: {},
+          isArchived: false,
+          currentFolder: "",
+          expectedFolder: null,
+        };
+        expect(canCreateInstance(context)).toBe(true);
+      });
+
+      it("should return true for asset with exo__Prototype as single instanceClass", () => {
+        const context: CommandVisibilityContext = {
+          instanceClass: "[[exo__Prototype]]",
+          currentStatus: null,
+          metadata: {},
+          isArchived: false,
+          currentFolder: "",
+          expectedFolder: null,
+        };
+        expect(canCreateInstance(context)).toBe(true);
+      });
+    });
+
     // Direct prototype inheritance via exo__Class_superClass
     describe("prototype inheritance via exo__Class_superClass", () => {
       it("should return true for class with exo__Class_superClass pointing to exo__Prototype", () => {

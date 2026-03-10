@@ -48,6 +48,12 @@ export function canCreateInstance(context: CommandVisibilityContext): boolean {
     return true;
   }
 
+  // Check if asset is an instance of exo__Prototype (Issue #2261)
+  // This covers any custom prototype class (e.g., ztlk__FleetingNotePrototype)
+  if (hasClass(context.instanceClass, AssetClass.PROTOTYPE)) {
+    return true;
+  }
+
   // Check if asset is a class definition that inherits from exo__Prototype
   return isPrototypeClass(context.instanceClass, context.metadata);
 }

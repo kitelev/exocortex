@@ -151,7 +151,7 @@ describe("CreateInstanceCommand", () => {
       expect(LabelInputModal).toHaveBeenCalledWith(
         mockApp,
         expect.any(Function),
-        "",
+        "test-file 2026-03-10",
         true
       );
       expect(mockTaskCreationService.createTask).toHaveBeenCalledWith(
@@ -267,7 +267,7 @@ describe("CreateInstanceCommand", () => {
       expect(LabelInputModal).toHaveBeenCalledWith(
         mockApp,
         expect.any(Function),
-        "",
+        "test-file 2026-03-10",
         false // showTaskSize should be false for MeetingPrototype
       );
     });
