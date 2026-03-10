@@ -3,7 +3,7 @@ import { ExocortexPluginInterface } from '@plugin/types';
 import { CommandRegistry } from '@plugin/application/commands/CommandRegistry';
 import { MetadataExtractor } from "exocortex";
 import { ObsidianVaultAdapter } from '@plugin/adapters/ObsidianVaultAdapter';
-import { CommandVisibilityContext } from "exocortex";
+import { CommandVisibilityContext, WikiLinkHelpers } from "exocortex";
 
 export class CommandManager {
   private commandRegistry: CommandRegistry | null = null;
@@ -59,6 +59,43 @@ export class CommandManager {
     return {
       ...context,
       expectedFolder: null,
+      classIsPrototype: this.resolveClassIsPrototype(context.instanceClass),
     };
+  }
+
+  /**
+   * Check if any of the asset's instance classes is a prototype (Issue #2261).
+   * Resolves UUID-based class references by looking up the class file's metadata.
+   */
+  private resolveClassIsPrototype(instanceClass: string | string[] | null): boolean {
+    if (!instanceClass) return false;
+    if (!this.app.metadataCache?.getFirstLinkpathDest) return false;
+
+    const classes = Array.isArray(instanceClass) ? instanceClass : [instanceClass];
+
+    for (const cls of classes) {
+      const normalized = WikiLinkHelpers.normalize(cls);
+      if (!normalized) continue;
+
+      const classFile = this.app.metadataCache.getFirstLinkpathDest(normalized, "");
+      if (!classFile) continue;
+
+      const classCache = this.app.metadataCache.getFileCache(classFile);
+      const classMeta = classCache?.frontmatter;
+      if (!classMeta) continue;
+
+      const classInstanceClass = classMeta.exo__Instance_class;
+      if (!classInstanceClass) continue;
+
+      const classClasses = Array.isArray(classInstanceClass) ? classInstanceClass : [classInstanceClass];
+      for (const cc of classClasses) {
+        const normalizedCC = WikiLinkHelpers.normalize(cc);
+        if (normalizedCC === "exo__Prototype" || normalizedCC === "ebf717aa-4070-4b37-abde-10a700e354fc") {
+          return true;
+        }
+      }
+    }
+
+    return false;
   }
 }

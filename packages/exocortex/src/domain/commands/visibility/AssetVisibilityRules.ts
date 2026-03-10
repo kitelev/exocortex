@@ -54,6 +54,12 @@ export function canCreateInstance(context: CommandVisibilityContext): boolean {
     return true;
   }
 
+  // Check if the asset's class (resolved by plugin) is a prototype (Issue #2261)
+  // This covers instances whose instanceClass is a UUID pointing to a prototype
+  if (context.classIsPrototype) {
+    return true;
+  }
+
   // Check if asset is a class definition that inherits from exo__Prototype
   return isPrototypeClass(context.instanceClass, context.metadata);
 }
