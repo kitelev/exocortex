@@ -5,7 +5,8 @@ import {
   TaskCreationService,
   CommandVisibilityContext,
   LoggingService,
-  AssetClass
+  AssetClass,
+  DateFormatter
 } from "exocortex";
 import { LabelInputModal } from "../../src/presentation/modals/LabelInputModal";
 import { ObsidianVaultAdapter } from "../../src/adapters/ObsidianVaultAdapter";
@@ -151,7 +152,7 @@ describe("CreateInstanceCommand", () => {
       expect(LabelInputModal).toHaveBeenCalledWith(
         mockApp,
         expect.any(Function),
-        "test-file 2026-03-10",
+        `test-file ${DateFormatter.toDateString(new Date())}`,
         true
       );
       expect(mockTaskCreationService.createTask).toHaveBeenCalledWith(
@@ -267,7 +268,7 @@ describe("CreateInstanceCommand", () => {
       expect(LabelInputModal).toHaveBeenCalledWith(
         mockApp,
         expect.any(Function),
-        "test-file 2026-03-10",
+        `test-file ${DateFormatter.toDateString(new Date())}`,
         false // showTaskSize should be false for MeetingPrototype
       );
     });
