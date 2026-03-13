@@ -1,4 +1,4 @@
-import { Setting } from "obsidian";
+import { Notice, Setting, setIcon } from "obsidian";
 import type { TextPropertyFieldProps, ValidationResult } from "./types";
 
 /**
@@ -78,7 +78,31 @@ export class TextPropertyField {
       }
     });
 
+    if (property.name === "exo__Asset_uid" && value) {
+      this.addCopyButton(setting, value);
+    }
+
     return setting;
+  }
+
+  private addCopyButton(setting: Setting, value: string): void {
+    const btn = setting.controlEl.createEl("button", {
+      cls: "clickable-icon",
+      attr: {
+        "aria-label": "Copy uid",
+      },
+    });
+    setIcon(btn, "copy");
+    btn.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(value);
+        setIcon(btn, "check");
+        new Notice("Uid copied to clipboard");
+        setTimeout(() => setIcon(btn, "copy"), 1500);
+      } catch {
+        new Notice("Failed to copy uid");
+      }
+    });
   }
 
   /**

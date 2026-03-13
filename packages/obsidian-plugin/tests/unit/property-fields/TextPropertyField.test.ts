@@ -3,6 +3,19 @@ import { TextPropertyField } from "../../../src/presentation/components/property
 
 // Helper to extend HTMLElement with Obsidian's methods
 function extendElement(el: HTMLElement): HTMLElement {
+  (el as any).createEl = (tag: string, options?: { cls?: string; text?: string; attr?: Record<string, string> }) => {
+    const child = document.createElement(tag);
+    if (options?.cls) child.className = options.cls;
+    if (options?.text) child.textContent = options.text;
+    if (options?.attr) {
+      for (const [key, val] of Object.entries(options.attr)) {
+        child.setAttribute(key, val);
+      }
+    }
+    extendElement(child);
+    el.appendChild(child);
+    return child;
+  };
   (el as any).createDiv = (options?: { cls?: string; text?: string }) => {
     const div = document.createElement("div");
     if (options?.cls) div.className = options.cls;
@@ -27,6 +40,10 @@ function extendElement(el: HTMLElement): HTMLElement {
 
 // Mock Obsidian's Setting class
 jest.mock("obsidian", () => ({
+  Notice: jest.fn(),
+  setIcon: jest.fn((el: HTMLElement, icon: string) => {
+    el.dataset.icon = icon;
+  }),
   Setting: class {
     settingEl = extendElement(document.createElement("div"));
     nameEl = extendElement(document.createElement("div"));
@@ -284,6 +301,134 @@ describe("TextPropertyField", () => {
       field.setValue("Updated");
       const input = containerEl.querySelector("input") as HTMLInputElement | null;
       expect(input!.value).toBe("Updated");
+    });
+  });
+
+  describe("copy UID button", () => {
+    const UID_VALUE = "fca0a931-a01f-48e4-b72a-4af206c94bc7";
+
+    beforeEach(() => {
+      Object.assign(navigator, {
+        clipboard: {
+          writeText: jest.fn().mockResolvedValue(undefined),
+        },
+      });
+    });
+
+    it("should render copy button for exo__Asset_uid property", () => {
+      new TextPropertyField(containerEl, {
+        property: {
+          uri: "exo:Asset_uid",
+          name: "exo__Asset_uid",
+          label: "UID",
+          fieldType: PropertyFieldType.Text,
+        },
+        value: UID_VALUE,
+        onChange: jest.fn(),
+      });
+
+      const btn = containerEl.querySelector("button.clickable-icon");
+      expect(btn).not.toBeNull();
+      expect(btn!.getAttribute("aria-label")).toBe("Copy uid");
+    });
+
+    it("should not render copy button for other text properties", () => {
+      new TextPropertyField(containerEl, {
+        property: {
+          uri: "exo:Asset_label",
+          name: "exo__Asset_label",
+          label: "Label",
+          fieldType: PropertyFieldType.Text,
+        },
+        value: "Some Label",
+        onChange: jest.fn(),
+      });
+
+      const btn = containerEl.querySelector("button.clickable-icon");
+      expect(btn).toBeNull();
+    });
+
+    it("should not render copy button when UID value is empty", () => {
+      new TextPropertyField(containerEl, {
+        property: {
+          uri: "exo:Asset_uid",
+          name: "exo__Asset_uid",
+          label: "UID",
+          fieldType: PropertyFieldType.Text,
+        },
+        value: "",
+        onChange: jest.fn(),
+      });
+
+      const btn = containerEl.querySelector("button.clickable-icon");
+      expect(btn).toBeNull();
+    });
+
+    it("should copy UID to clipboard on click", async () => {
+      new TextPropertyField(containerEl, {
+        property: {
+          uri: "exo:Asset_uid",
+          name: "exo__Asset_uid",
+          label: "UID",
+          fieldType: PropertyFieldType.Text,
+        },
+        value: UID_VALUE,
+        onChange: jest.fn(),
+      });
+
+      const btn = containerEl.querySelector("button.clickable-icon") as HTMLButtonElement;
+      btn.click();
+
+      await new Promise(process.nextTick);
+
+      expect(navigator.clipboard.writeText).toHaveBeenCalledWith(UID_VALUE);
+    });
+
+    it("should show Notice after successful copy", async () => {
+      const { Notice } = require("obsidian");
+
+      new TextPropertyField(containerEl, {
+        property: {
+          uri: "exo:Asset_uid",
+          name: "exo__Asset_uid",
+          label: "UID",
+          fieldType: PropertyFieldType.Text,
+        },
+        value: UID_VALUE,
+        onChange: jest.fn(),
+      });
+
+      const btn = containerEl.querySelector("button.clickable-icon") as HTMLButtonElement;
+      btn.click();
+
+      await new Promise(process.nextTick);
+
+      expect(Notice).toHaveBeenCalledWith("Uid copied to clipboard");
+    });
+
+    it("should change icon to check after copy", async () => {
+      const { setIcon } = require("obsidian");
+
+      new TextPropertyField(containerEl, {
+        property: {
+          uri: "exo:Asset_uid",
+          name: "exo__Asset_uid",
+          label: "UID",
+          fieldType: PropertyFieldType.Text,
+        },
+        value: UID_VALUE,
+        onChange: jest.fn(),
+      });
+
+      const btn = containerEl.querySelector("button.clickable-icon") as HTMLButtonElement;
+      btn.click();
+
+      await new Promise(process.nextTick);
+
+      const calls = setIcon.mock.calls;
+      const checkCall = calls.find((c: any[]) => c[1] === "check");
+      expect(checkCall).toBeDefined();
+      expect(checkCall![0]).toBe(btn);
     });
   });
 
