@@ -1,5 +1,5 @@
-import React, { useState, useMemo, useEffect } from "react";
-import { TFile } from "obsidian";
+import React, { useState, useMemo, useEffect, useCallback, useRef } from "react";
+import { TFile, setIcon } from "obsidian";
 import { PropertyUpdateService } from '@plugin/application/services/PropertyUpdateService';
 import { PropertyValidationService } from '@plugin/application/services/PropertyValidationService';
 import { TextPropertyField } from "./properties/TextPropertyField";
@@ -21,16 +21,47 @@ export interface AssetPropertiesTableProps {
   metadata: Record<string, unknown>;
   onLinkClick?: (path: string, event: React.MouseEvent) => void;
   getAssetLabel?: (path: string) => string | null;
+  onRemoveRedundantAlias?: (file: TFile, propertyKey: string, target: string, alias: string) => Promise<void>;
   file?: TFile;
   propertyUpdateService?: PropertyUpdateService;
   propertyValidationService?: PropertyValidationService;
   editable?: boolean;
 }
 
+/**
+ * Helper component to render the bookmark-minus icon via Obsidian's setIcon.
+ */
+const AliasRemoveIcon: React.FC<{
+  alias: string;
+  onClick: () => void;
+}> = ({ alias, onClick }) => {
+  const spanRef = useRef<HTMLSpanElement>(null);
+
+  useEffect(() => {
+    if (spanRef.current) {
+      setIcon(spanRef.current, "bookmark-minus");
+    }
+  }, []);
+
+  return (
+    <span
+      ref={spanRef}
+      className="exocortex-alias-remove-icon"
+      aria-label={`Remove redundant alias "${alias}"`}
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onClick();
+      }}
+    />
+  );
+};
+
 export const AssetPropertiesTable: React.FC<AssetPropertiesTableProps> = ({
   metadata,
   onLinkClick,
   getAssetLabel,
+  onRemoveRedundantAlias,
   file,
   propertyUpdateService,
   propertyValidationService,
@@ -145,6 +176,25 @@ export const AssetPropertiesTable: React.FC<AssetPropertiesTableProps> = ({
     return "text";
   };
 
+  const [hiddenAliasIcons, setHiddenAliasIcons] = useState<Set<string>>(new Set());
+
+  const handleRemoveAlias = useCallback(async (propertyKey: string, target: string, alias: string) => {
+    if (!file || !onRemoveRedundantAlias) return;
+
+    const iconKey = `${propertyKey}:${target}`;
+    setHiddenAliasIcons(prev => new Set(prev).add(iconKey));
+
+    try {
+      await onRemoveRedundantAlias(file, propertyKey, target, alias);
+    } catch {
+      setHiddenAliasIcons(prev => {
+        const next = new Set(prev);
+        next.delete(iconKey);
+        return next;
+      });
+    }
+  }, [file, onRemoveRedundantAlias]);
+
   const handlePropertyUpdate = async (key: string, newValue: unknown) => {
     if (!file || !propertyUpdateService) return;
 
@@ -181,11 +231,11 @@ export const AssetPropertiesTable: React.FC<AssetPropertiesTableProps> = ({
       case "boolean":
       case "number":
       default:
-        return renderValue(value);
+        return renderValue(value, key);
     }
   };
 
-  const renderValue = (value: unknown): React.ReactNode => {
+  const renderValue = (value: unknown, propertyKey?: string): React.ReactNode => {
     if (value === null || value === undefined) {
       return "-";
     }
@@ -199,19 +249,31 @@ export const AssetPropertiesTable: React.FC<AssetPropertiesTableProps> = ({
         const parsed = parseWikiLink(value);
         const label = getAssetLabel?.(parsed.target);
         const displayText = parsed.alias || label || parsed.target;
+        const alias = parsed.alias;
+        const isRedundantAlias = alias != null && label != null && alias === label;
+        const iconKey = propertyKey ? `${propertyKey}:${parsed.target}` : "";
+        const iconHidden = hiddenAliasIcons.has(iconKey);
         return (
-          <a
-            data-href={parsed.target}
-            className="internal-link"
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              onLinkClick?.(parsed.target, e);
-            }}
-            style={{ cursor: "pointer" }}
-          >
-            {displayText}
-          </a>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: "2px" }}>
+            <a
+              data-href={parsed.target}
+              className="internal-link"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onLinkClick?.(parsed.target, e);
+              }}
+              style={{ cursor: "pointer" }}
+            >
+              {displayText}
+            </a>
+            {isRedundantAlias && alias && onRemoveRedundantAlias && propertyKey && !iconHidden && (
+              <AliasRemoveIcon
+                alias={alias}
+                onClick={() => handleRemoveAlias(propertyKey, parsed.target, alias)}
+              />
+            )}
+          </span>
         );
       }
       return value;
@@ -222,7 +284,7 @@ export const AssetPropertiesTable: React.FC<AssetPropertiesTableProps> = ({
         <>
           {value.map((item, index) => (
             <React.Fragment key={index}>
-              {renderValue(item)}
+              {renderValue(item, propertyKey)}
               {index < value.length - 1 ? ", " : ""}
             </React.Fragment>
           ))}
@@ -363,7 +425,7 @@ export const AssetPropertiesTable: React.FC<AssetPropertiesTableProps> = ({
                 >
                   {editable && file && propertyUpdateService
                     ? renderEditableField(key, value)
-                    : renderValue(value)}
+                    : renderValue(value, key)}
                 </td>
               </tr>
             );

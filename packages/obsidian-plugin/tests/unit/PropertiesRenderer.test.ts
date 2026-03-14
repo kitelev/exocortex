@@ -96,6 +96,7 @@ describe("PropertiesRenderer", () => {
           metadata,
           onLinkClick: expect.any(Function),
           getAssetLabel: expect.any(Function),
+          onRemoveRedundantAlias: expect.any(Function),
         })
       );
     });
@@ -183,6 +184,56 @@ describe("PropertiesRenderer", () => {
 
         expect(mockMetadataService.getAssetLabel).toHaveBeenCalledWith("some/path.md");
         expect(result).toBe("Asset Label");
+      });
+    });
+
+    describe("onRemoveRedundantAlias callback", () => {
+      let onRemoveRedundantAlias: (file: any, key: string, target: string, alias: string) => Promise<void>;
+
+      beforeEach(async () => {
+        const metadata = createMockMetadata({
+          parent: "[[some-uuid|My Label]]",
+        });
+        mockMetadataExtractor.extractMetadata.mockReturnValue(metadata);
+
+        await renderer.render(mockElement, mockFile);
+
+        const createElementCall = (React.createElement as jest.Mock).mock.calls[0];
+        onRemoveRedundantAlias = createElementCall[1].onRemoveRedundantAlias;
+      });
+
+      it("should update single wikilink property to remove alias", async () => {
+        mockApp.fileManager.processFrontMatter.mockImplementation(
+          (_file: any, callback: (fm: any) => void) => {
+            const fm: Record<string, unknown> = {};
+            callback(fm);
+            expect(fm.parent).toBe("[[some-uuid]]");
+          },
+        );
+
+        await onRemoveRedundantAlias(mockFile, "parent", "some-uuid", "My Label");
+      });
+
+      it("should update array property to remove alias from matching element", async () => {
+        const metadata = createMockMetadata({
+          tags: ["[[uuid1|Label One]]", "[[uuid2|Keep This]]"],
+        });
+        mockMetadataExtractor.extractMetadata.mockReturnValue(metadata);
+
+        await renderer.render(mockElement, mockFile);
+
+        const createElementCall = (React.createElement as jest.Mock).mock.calls[1];
+        const callback = createElementCall[1].onRemoveRedundantAlias;
+
+        mockApp.fileManager.processFrontMatter.mockImplementation(
+          (_file: any, cb: (fm: any) => void) => {
+            const fm: Record<string, unknown> = {};
+            cb(fm);
+            expect(fm.tags).toEqual(["[[uuid1]]", "[[uuid2|Keep This]]"]);
+          },
+        );
+
+        await callback(mockFile, "tags", "uuid1", "Label One");
       });
     });
 
