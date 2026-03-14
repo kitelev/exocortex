@@ -51,6 +51,10 @@ jest.unstable_mockModule("exocortex", () => ({
     convertVault: jest.fn().mockResolvedValue([]),
   })),
   SolutionMapping: class SolutionMapping extends Map {},
+  UpdateExecutor: jest.fn(() => ({
+    execute: jest.fn().mockResolvedValue({ insertedCount: 0, deletedCount: 0 }),
+  })),
+  UpdateExecutorError: class UpdateExecutorError extends Error {},
   IRI: jest.fn(),
   Literal: jest.fn(),
   BlankNode: jest.fn(),
