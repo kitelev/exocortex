@@ -85,6 +85,33 @@ export class PropertiesRenderer {
           },
           getAssetLabel: (path: string) =>
             this.metadataService.getAssetLabel(path),
+          onRemoveRedundantAlias: async (
+            targetFile: TFile,
+            propertyKey: string,
+            target: string,
+            alias: string,
+          ) => {
+            const currentValue = filteredMetadata[propertyKey];
+            const oldWikilink = `[[${target}|${alias}]]`;
+            const newWikilink = `[[${target}]]`;
+
+            if (Array.isArray(currentValue)) {
+              const updatedArray = currentValue.map((item: unknown) =>
+                item === oldWikilink ? newWikilink : item,
+              );
+              await this.propertyUpdateService.updateProperty(
+                targetFile,
+                propertyKey,
+                updatedArray,
+              );
+            } else {
+              await this.propertyUpdateService.updateProperty(
+                targetFile,
+                propertyKey,
+                newWikilink,
+              );
+            }
+          },
           file: file,
           propertyUpdateService: this.propertyUpdateService,
           editable: options?.editable ?? true,
