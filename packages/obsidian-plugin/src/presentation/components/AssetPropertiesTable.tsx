@@ -31,6 +31,42 @@ export interface AssetPropertiesTableProps {
 /**
  * Helper component to render the bookmark-minus icon via Obsidian's setIcon.
  */
+const CopyUidIcon: React.FC<{
+  value: string;
+}> = ({ value }) => {
+  const spanRef = useRef<HTMLSpanElement>(null);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (spanRef.current) {
+      setIcon(spanRef.current, copied ? "check" : "copy");
+    }
+  }, [copied]);
+
+  const handleClick = async () => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // ignore
+    }
+  };
+
+  return (
+    <span
+      ref={spanRef}
+      className="clickable-icon exo-copy-uid-btn"
+      aria-label="Copy uid"
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        handleClick();
+      }}
+    />
+  );
+};
+
 const AliasRemoveIcon: React.FC<{
   alias: string;
   onClick: () => void;
@@ -245,6 +281,15 @@ export const AssetPropertiesTable: React.FC<AssetPropertiesTableProps> = ({
     }
 
     if (typeof value === "string") {
+      if (propertyKey === "exo__Asset_uid" && value) {
+        return (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+            {value}
+            <CopyUidIcon value={value} />
+          </span>
+        );
+      }
+
       if (isWikiLink(value)) {
         const parsed = parseWikiLink(value);
         const label = getAssetLabel?.(parsed.target);
