@@ -5,6 +5,67 @@ import { createMockTFile } from "./helpers/testHelpers";
 
 // Uses the __mocks__/obsidian.ts mock via moduleNameMapper (no jest.mock needed)
 
+describe("AssetPropertiesTable - Copy UID button", () => {
+  beforeEach(() => {
+    Object.assign(navigator, {
+      clipboard: {
+        writeText: jest.fn().mockResolvedValue(undefined),
+      },
+    });
+  });
+
+  it("renders copy button for exo__Asset_uid property", () => {
+    const { container } = render(
+      <AssetPropertiesTable
+        metadata={{ exo__Asset_uid: "fca0a931-a01f-48e4-b72a-4af206c94bc7" }}
+      />,
+    );
+
+    const btn = container.querySelector(".exo-copy-uid-btn");
+    expect(btn).not.toBeNull();
+    expect(btn?.getAttribute("aria-label")).toBe("Copy uid");
+  });
+
+  it("does not render copy button for other properties", () => {
+    const { container } = render(
+      <AssetPropertiesTable
+        metadata={{ exo__Asset_label: "Some Label" }}
+      />,
+    );
+
+    const btn = container.querySelector(".exo-copy-uid-btn");
+    expect(btn).toBeNull();
+  });
+
+  it("copies UID to clipboard on click", async () => {
+    const uid = "fca0a931-a01f-48e4-b72a-4af206c94bc7";
+    const { container } = render(
+      <AssetPropertiesTable metadata={{ exo__Asset_uid: uid }} />,
+    );
+
+    const btn = container.querySelector(".exo-copy-uid-btn");
+    expect(btn).not.toBeNull();
+
+    await act(async () => {
+      btn!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(uid);
+  });
+
+  it("uses setIcon with copy icon", () => {
+    const { container } = render(
+      <AssetPropertiesTable
+        metadata={{ exo__Asset_uid: "test-uid" }}
+      />,
+    );
+
+    const btn = container.querySelector(".exo-copy-uid-btn");
+    expect(btn).not.toBeNull();
+    expect(btn?.getAttribute("data-icon-name")).toBe("copy");
+  });
+});
+
 describe("AssetPropertiesTable - Redundant Alias Remove", () => {
   const mockFile = createMockTFile("test/file.md");
 
