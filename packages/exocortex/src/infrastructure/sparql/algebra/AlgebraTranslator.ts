@@ -205,7 +205,20 @@ export class AlgebraTranslator {
     if (!query.where || query.where.length === 0) {
       throw new AlgebraTranslatorError("CONSTRUCT query must have WHERE clause");
     }
-    const where = this.translateWhere(query.where);
+    let where: AlgebraOperation = this.translateWhere(query.where);
+
+    // Apply LIMIT/OFFSET to the WHERE clause solutions (same as SELECT).
+    // sparqljs parses LIMIT/OFFSET on CONSTRUCT but @types/sparqljs omits them
+    // from ConstructQuery, so we cast to access the runtime properties.
+    const queryAny = query as unknown as { limit?: number; offset?: number };
+    if (queryAny.limit !== undefined || queryAny.offset !== undefined) {
+      where = {
+        type: "slice",
+        limit: queryAny.limit,
+        offset: queryAny.offset,
+        input: where,
+      };
+    }
 
     return {
       type: "construct",

@@ -11,6 +11,8 @@ import {
   QueryExecutor,
   NoteToRDFConverter,
   Triple,
+  UpdateExecutor,
+  type UpdateResult,
   type SolutionMapping,
   type ConstructOperation,
 } from "exocortex";
@@ -360,6 +362,51 @@ export function sparqlQueryCommand(): Command {
 
         const ast = parser.parse(queryString);
 
+        // Route UPDATE queries (INSERT DATA / DELETE DATA) directly to UpdateExecutor
+        if (ast.type === "update") {
+          if (outputFormat === "text") {
+            console.log(`🔄 Executing SPARQL UPDATE...`);
+          }
+          const execStartTime = Date.now();
+          const updateExecutor = new UpdateExecutor(tripleStore);
+          const updateResults = await executeWithTimeout(
+            updateExecutor.execute(ast),
+            timeoutMs,
+            execStartTime,
+          );
+          const execDuration = Date.now() - execStartTime;
+          const totalDuration = Date.now() - startTime;
+
+          if (outputFormat === "json") {
+            const response = ResponseBuilder.success({
+              query: queryString,
+              type: "update",
+              results: updateResults,
+            }, {
+              durationMs: totalDuration,
+              itemCount: updateResults.length,
+              loadDurationMs: loadDuration,
+              execDurationMs: execDuration,
+              triplesScanned: triples.length,
+              cacheHit,
+            });
+            console.log(JSON.stringify(response, null, 2));
+          } else {
+            formatUpdateResults(updateResults, options.format);
+            console.log();
+            console.log(`⚠️  Changes applied to in-memory store only (not persisted to vault files)`);
+
+            if (options.stats) {
+              console.log(`\n📊 Execution Statistics:`);
+              console.log(`  Vault loading: ${loadDuration}ms${cacheHit ? " (from cache)" : ""}`);
+              console.log(`  Query execution: ${execDuration}ms`);
+              console.log(`  Total time: ${totalDuration}ms`);
+              console.log(`  Triples scanned: ${triples.length}`);
+            }
+          }
+          return;
+        }
+
         if (outputFormat === "text") {
           console.log(`🔄 Translating to algebra...`);
         }
@@ -591,7 +638,7 @@ export function sparqlQueryCommand(): Command {
 }
 
 function loadQuery(queryArg: string): string {
-  if (queryArg.includes("SELECT") || queryArg.includes("CONSTRUCT")) {
+  if (queryArg.includes("SELECT") || queryArg.includes("CONSTRUCT") || queryArg.includes("INSERT") || queryArg.includes("DELETE")) {
     return queryArg;
   }
 
@@ -651,21 +698,24 @@ async function executeDryRun(
     // Parse query to validate syntax
     const ast = parser.parse(queryString);
 
-    // Translate to algebra (validates query structure)
-    const translator = new AlgebraTranslator();
-    let algebra = translator.translate(ast);
+    // UPDATE queries don't go through algebra translation
+    if (ast.type !== "update") {
+      // Translate to algebra (validates query structure)
+      const translator = new AlgebraTranslator();
+      let algebra = translator.translate(ast);
 
-    // Optimize if requested (validates optimization rules)
-    if (!options.noOptimize && algebra.type !== "construct") {
-      const optimizer = new AlgebraOptimizer();
-      algebra = optimizer.optimize(algebra);
-    } else if (!options.noOptimize && algebra.type === "construct") {
-      const optimizer = new AlgebraOptimizer();
-      const constructOp = algebra as ConstructOperation;
-      algebra = {
-        ...constructOp,
-        where: optimizer.optimize(constructOp.where),
-      };
+      // Optimize if requested (validates optimization rules)
+      if (!options.noOptimize && algebra.type !== "construct") {
+        const optimizer = new AlgebraOptimizer();
+        algebra = optimizer.optimize(algebra);
+      } else if (!options.noOptimize && algebra.type === "construct") {
+        const optimizer = new AlgebraOptimizer();
+        const constructOp = algebra as ConstructOperation;
+        algebra = {
+          ...constructOp,
+          where: optimizer.optimize(constructOp.where),
+        };
+      }
     }
 
     if (outputFormat === "json") {
@@ -851,4 +901,36 @@ function formatCachedConstructResults(triples: unknown[], format: string): void 
  */
 function formatNTriplesObject(obj: string): string {
   return NTriplesFormatter.formatObject(obj);
+}
+
+/**
+ * Format UPDATE results for text output.
+ */
+function formatUpdateResults(results: UpdateResult[], format: string): void {
+  for (const result of results) {
+    const parts: string[] = [`${result.type.toUpperCase()}`];
+    if (result.inserted !== undefined) {
+      parts.push(`inserted: ${result.inserted}`);
+    }
+    if (result.deleted !== undefined) {
+      parts.push(`deleted: ${result.deleted}`);
+    }
+    parts.push(result.success ? "OK" : "FAILED");
+
+    switch (format) {
+      case "json":
+        console.log(JSON.stringify(result, null, 2));
+        break;
+      case "csv":
+        if (results.indexOf(result) === 0) {
+          console.log("type,inserted,deleted,success");
+        }
+        console.log(`${result.type},${result.inserted ?? ""},${result.deleted ?? ""},${result.success}`);
+        break;
+      case "table":
+      default:
+        console.log(`✅ ${parts.join(" | ")}`);
+        break;
+    }
+  }
 }
