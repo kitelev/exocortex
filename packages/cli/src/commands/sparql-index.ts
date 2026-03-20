@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import { existsSync } from "fs";
 import { resolve } from "path";
+import { InMemoryTripleStore, RDFSInferenceEngine } from "exocortex";
 import { CacheManager } from "../cache/CacheManager.js";
 import { ErrorHandler, type OutputFormat } from "../utils/ErrorHandler.js";
 import { VaultNotFoundError } from "../utils/errors/index.js";
@@ -12,6 +13,7 @@ export interface SparqlIndexOptions {
   stats?: boolean;
   force?: boolean;
   strict?: boolean;
+  inference?: boolean;
 }
 
 /**
@@ -36,6 +38,7 @@ export function sparqlIndexCommand(): Command {
     .option("--stats", "Show cache statistics after building")
     .option("--force", "Force rebuild even if cache is valid")
     .option("--strict", "Fail on first invalid IRI instead of skipping")
+    .option("--no-inference", "Disable RDFS subClassOf inference materialization")
     .action(async (options: SparqlIndexOptions) => {
       const outputFormat = (options.output || "text") as OutputFormat;
       ErrorHandler.setFormat(outputFormat);
@@ -66,6 +69,28 @@ export function sparqlIndexCommand(): Command {
         const result = await cacheManager.buildCacheWithValidation({
           strict: options.strict ?? false,
         });
+
+        // RDFS inference materialization (enabled by default)
+        let inferredCount = 0;
+        if (options.inference !== false) {
+          const { triples } = await cacheManager.loadOrBuild();
+          const tripleStore = new InMemoryTripleStore();
+          await tripleStore.addAll(triples);
+
+          const engine = new RDFSInferenceEngine();
+          inferredCount = await engine.materialize(tripleStore);
+
+          if (inferredCount > 0) {
+            const allTriples = await tripleStore.match();
+            await cacheManager.saveTriples(allTriples);
+            result.tripleCount += inferredCount;
+          }
+
+          if (outputFormat === "text" && inferredCount > 0) {
+            console.log(`🧠 Materialized ${inferredCount} inferred Instance_class triples`);
+          }
+        }
+
         const totalDuration = Date.now() - startTime;
 
         if (outputFormat === "json") {

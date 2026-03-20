@@ -350,6 +350,29 @@ export class CacheManager {
   }
 
   /**
+   * Save an array of triples to cache, replacing existing cache content.
+   * Used after materialization to persist inferred triples alongside explicit ones.
+   */
+  async saveTriples(triples: Triple[]): Promise<void> {
+    const vaultStats = await fs.stat(this.vaultPath);
+    const serializedTriples = triples.map(this.serializeTriple);
+
+    const cacheData: CacheData = {
+      metadata: {
+        version: this.cliVersion,
+        timestamp: Date.now(),
+        vaultPath: this.vaultPath,
+        tripleCount: triples.length,
+        vaultMtime: vaultStats.mtimeMs,
+      },
+      triples: serializedTriples,
+    };
+
+    await fs.ensureDir(path.dirname(this.cachePath));
+    await fs.writeJson(this.cachePath, cacheData, { spaces: 0 });
+  }
+
+  /**
    * Serializes a Triple to JSON-compatible format
    */
   private serializeTriple(triple: Triple): SerializedTriple {

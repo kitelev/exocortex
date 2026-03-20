@@ -183,6 +183,7 @@ export {
 } from "./infrastructure/rdf/RDFSerializer";
 export { InMemoryTripleStore } from "./infrastructure/rdf/InMemoryTripleStore";
 export { RDFVocabularyMapper } from "./infrastructure/rdf/RDFVocabularyMapper";
+export { RDFSInferenceEngine } from "./infrastructure/rdf/RDFSInferenceEngine";
 export { NoteToRDFConverter } from "./services/NoteToRDFConverter";
 
 // SPARQL Engine exports
