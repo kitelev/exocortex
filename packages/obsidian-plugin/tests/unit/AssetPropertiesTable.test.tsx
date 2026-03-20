@@ -64,6 +64,53 @@ describe("AssetPropertiesTable - Copy UID button", () => {
     expect(btn).not.toBeNull();
     expect(btn?.getAttribute("data-icon-name")).toBe("copy");
   });
+
+  it("renders copy button in editable mode (default layout view)", () => {
+    const mockFile = createMockTFile("test/file.md");
+    const mockPropertyUpdateService = {
+      updateProperty: jest.fn().mockResolvedValue(undefined),
+    };
+    const { container } = render(
+      <AssetPropertiesTable
+        metadata={{ exo__Asset_uid: "abc-123-def" }}
+        editable={true}
+        file={mockFile}
+        propertyUpdateService={mockPropertyUpdateService as never}
+      />,
+    );
+
+    const btn = container.querySelector(".exo-copy-uid-btn");
+    expect(btn).not.toBeNull();
+    expect(btn?.getAttribute("aria-label")).toBe("Copy uid");
+    // UID should be displayed as text, not as an editable input
+    const input = container.querySelector("input.exocortex-property-text-input");
+    // The UID row should not have an editable text input
+    const uidText = container.textContent;
+    expect(uidText).toContain("abc-123-def");
+  });
+
+  it("does not make UID editable even in editable mode", () => {
+    const mockFile = createMockTFile("test/file.md");
+    const mockPropertyUpdateService = {
+      updateProperty: jest.fn().mockResolvedValue(undefined),
+    };
+    const { container } = render(
+      <AssetPropertiesTable
+        metadata={{ exo__Asset_uid: "abc-123", exo__Asset_label: "Test" }}
+        editable={true}
+        file={mockFile}
+        propertyUpdateService={mockPropertyUpdateService as never}
+      />,
+    );
+
+    // UID row should have copy button, not text input
+    const copyBtn = container.querySelector(".exo-copy-uid-btn");
+    expect(copyBtn).not.toBeNull();
+
+    // Label row should still have editable text input
+    const inputs = container.querySelectorAll("input.exocortex-property-text-input");
+    expect(inputs.length).toBe(1); // only label, not uid
+  });
 });
 
 describe("AssetPropertiesTable - Redundant Alias Remove", () => {

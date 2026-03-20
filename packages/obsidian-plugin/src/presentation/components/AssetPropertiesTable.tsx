@@ -242,6 +242,16 @@ export const AssetPropertiesTable: React.FC<AssetPropertiesTableProps> = ({
   };
 
   const renderEditableField = (key: string, value: unknown): React.ReactNode => {
+    // UID is system-generated and should not be editable; show with copy button
+    if (key === "exo__Asset_uid" && typeof value === "string" && value) {
+      return (
+        <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+          {value}
+          <CopyUidIcon value={value} />
+        </span>
+      );
+    }
+
     const propertyType = detectPropertyType(value);
 
     switch (propertyType) {
