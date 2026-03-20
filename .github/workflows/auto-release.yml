@@ -121,6 +121,7 @@ jobs:
         with:
           node-version: "22"
           cache: "npm"
+          registry-url: "https://registry.npmjs.org"
 
       - name: Update package.json and manifest.json
         if: steps.commits.outputs.has_commits == 'true' && steps.check_tag.outputs.tag_exists == 'false'
@@ -274,10 +275,14 @@ jobs:
           draft: false
           prerelease: false
 
-      - name: Setup npm for publishing
+      - name: Verify npm auth
         if: steps.commits.outputs.has_commits == 'true' && steps.check_tag.outputs.tag_exists == 'false'
         run: |
-          echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
+          echo "🔑 Verifying npm authentication..."
+          npm whoami --registry https://registry.npmjs.org
+          echo "✅ npm auth verified"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Update CLI package version
         if: steps.commits.outputs.has_commits == 'true' && steps.check_tag.outputs.tag_exists == 'false'
