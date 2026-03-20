@@ -8,6 +8,8 @@ const mockBuildCacheWithValidation = jest.fn();
 const mockGetCacheStats = jest.fn();
 const mockInvalidate = jest.fn();
 const mockGetCachePath = jest.fn();
+const mockLoadOrBuild = jest.fn();
+const mockSaveTriples = jest.fn();
 
 jest.unstable_mockModule("../../../src/cache/CacheManager.js", () => ({
   CacheManager: jest.fn(() => ({
@@ -15,6 +17,23 @@ jest.unstable_mockModule("../../../src/cache/CacheManager.js", () => ({
     getCacheStats: mockGetCacheStats,
     invalidate: mockInvalidate,
     getCachePath: mockGetCachePath,
+    loadOrBuild: mockLoadOrBuild,
+    saveTriples: mockSaveTriples,
+  })),
+}));
+
+// Mock exocortex RDFS inference
+const mockAddAll = jest.fn();
+const mockMatch = jest.fn();
+const mockMaterialize = jest.fn();
+
+jest.unstable_mockModule("exocortex", () => ({
+  InMemoryTripleStore: jest.fn(() => ({
+    addAll: mockAddAll,
+    match: mockMatch,
+  })),
+  RDFSInferenceEngine: jest.fn(() => ({
+    materialize: mockMaterialize,
   })),
 }));
 
@@ -54,6 +73,11 @@ describe("sparqlIndexCommand", () => {
       sizeBytes: 50000,
     });
     mockInvalidate.mockResolvedValue(undefined);
+    mockLoadOrBuild.mockResolvedValue({ triples: [] });
+    mockSaveTriples.mockResolvedValue(undefined);
+    mockAddAll.mockResolvedValue(undefined);
+    mockMatch.mockResolvedValue([]);
+    mockMaterialize.mockResolvedValue(0);
   });
 
   afterEach(async () => {
