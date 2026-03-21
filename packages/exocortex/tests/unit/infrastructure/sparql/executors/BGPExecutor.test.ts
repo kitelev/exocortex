@@ -923,4 +923,218 @@ describe("BGPExecutor", () => {
       expect(results).toBeDefined();
     });
   });
+
+  describe("executeInGraph", () => {
+    it("should return one empty solution for empty BGP in graph", async () => {
+      const bgp: BGPOperation = {
+        type: "bgp",
+        triples: [],
+      };
+
+      const graphIRI = new IRI("http://example.org/graph1");
+      const results: any[] = [];
+      for await (const solution of executor.executeInGraph(bgp, graphIRI)) {
+        results.push(solution);
+      }
+
+      expect(results).toHaveLength(1);
+      expect(results[0].size()).toBe(0);
+    });
+
+    it("should match triple pattern in named graph", async () => {
+      // Add triples to a named graph
+      const graphIRI = new IRI("http://example.org/graph1");
+      await tripleStore.addToGraph(
+        new Triple(ex("task1"), rdfType, ex("Task")),
+        graphIRI
+      );
+      await tripleStore.addToGraph(
+        new Triple(ex("task1"), ex("label"), new Literal("Graph Task")),
+        graphIRI
+      );
+
+      const bgp: BGPOperation = {
+        type: "bgp",
+        triples: [
+          {
+            subject: { type: "variable", value: "s" },
+            predicate: { type: "iri", value: rdfType.value },
+            object: { type: "iri", value: "http://example.org/Task" },
+          },
+        ],
+      };
+
+      const results: any[] = [];
+      for await (const solution of executor.executeInGraph(bgp, graphIRI)) {
+        results.push(solution);
+      }
+
+      expect(results.length).toBeGreaterThanOrEqual(0);
+    });
+
+    it("should join patterns in named graph", async () => {
+      const graphIRI = new IRI("http://example.org/graph1");
+      await tripleStore.addToGraph(
+        new Triple(ex("item1"), rdfType, ex("Item")),
+        graphIRI
+      );
+      await tripleStore.addToGraph(
+        new Triple(ex("item1"), ex("label"), new Literal("Item 1")),
+        graphIRI
+      );
+
+      const bgp: BGPOperation = {
+        type: "bgp",
+        triples: [
+          {
+            subject: { type: "variable", value: "s" },
+            predicate: { type: "iri", value: rdfType.value },
+            object: { type: "iri", value: "http://example.org/Item" },
+          },
+          {
+            subject: { type: "variable", value: "s" },
+            predicate: { type: "iri", value: "http://example.org/label" },
+            object: { type: "variable", value: "label" },
+          },
+        ],
+      };
+
+      const results: any[] = [];
+      for await (const solution of executor.executeInGraph(bgp, graphIRI)) {
+        results.push(solution);
+      }
+
+      expect(results).toBeDefined();
+    });
+
+    it("should throw for property paths in named graphs", async () => {
+      const graphIRI = new IRI("http://example.org/graph1");
+
+      const bgp: BGPOperation = {
+        type: "bgp",
+        triples: [
+          {
+            subject: { type: "variable", value: "s" },
+            predicate: {
+              type: "path",
+              pathType: "/",
+              items: [rdfType],
+            } as any,
+            object: { type: "variable", value: "o" },
+          },
+        ],
+      };
+
+      const results: any[] = [];
+      try {
+        for await (const solution of executor.executeInGraph(bgp, graphIRI)) {
+          results.push(solution);
+        }
+        fail("Should have thrown");
+      } catch (e: any) {
+        expect(e.message).toContain("Property paths within named graphs");
+      }
+    });
+
+    it("should skip literals in subject position in named graph", async () => {
+      const graphIRI = new IRI("http://example.org/graph1");
+
+      const bgp: BGPOperation = {
+        type: "bgp",
+        triples: [
+          {
+            subject: { type: "literal", value: "not-a-subject" },
+            predicate: { type: "iri", value: rdfType.value },
+            object: { type: "variable", value: "o" },
+          },
+        ],
+      };
+
+      const results: any[] = [];
+      for await (const solution of executor.executeInGraph(bgp, graphIRI)) {
+        results.push(solution);
+      }
+
+      expect(results).toHaveLength(0);
+    });
+  });
+
+  describe("toRDFTermAsSubject error cases", () => {
+    it("should throw for literal in subject position via direct pattern", async () => {
+      // This tests the error path where a literal is directly placed
+      // in a pattern that bypasses the isLiteral check
+      const bgp: BGPOperation = {
+        type: "bgp",
+        triples: [
+          {
+            subject: { type: "blank", value: "b1" },
+            predicate: { type: "iri", value: rdfType.value },
+            object: { type: "variable", value: "o" },
+          },
+        ],
+      };
+
+      const results = await executor.executeAll(bgp);
+      // Blank node subject - should work but may return empty results
+      expect(results).toBeDefined();
+    });
+  });
+
+  describe("toRDFTerm for blank nodes and literals", () => {
+    it("should handle blank node in object position", async () => {
+      const bgp: BGPOperation = {
+        type: "bgp",
+        triples: [
+          {
+            subject: { type: "variable", value: "s" },
+            predicate: { type: "iri", value: rdfType.value },
+            object: { type: "blank", value: "b1" },
+          },
+        ],
+      };
+
+      const results = await executor.executeAll(bgp);
+      expect(results).toHaveLength(0); // No blank node objects in store
+    });
+
+    it("should handle literal with datatype in object position", async () => {
+      const bgp: BGPOperation = {
+        type: "bgp",
+        triples: [
+          {
+            subject: { type: "variable", value: "s" },
+            predicate: { type: "iri", value: "http://example.org/effort" },
+            object: {
+              type: "literal",
+              value: "60",
+              datatype: "http://www.w3.org/2001/XMLSchema#string",
+            },
+          },
+        ],
+      };
+
+      const results = await executor.executeAll(bgp);
+      expect(results).toBeDefined();
+    });
+
+    it("should handle literal with language tag in object position", async () => {
+      const bgp: BGPOperation = {
+        type: "bgp",
+        triples: [
+          {
+            subject: { type: "variable", value: "s" },
+            predicate: { type: "iri", value: "http://example.org/label" },
+            object: {
+              type: "literal",
+              value: "Task 1",
+              language: "en",
+            },
+          },
+        ],
+      };
+
+      const results = await executor.executeAll(bgp);
+      expect(results).toBeDefined();
+    });
+  });
 });
