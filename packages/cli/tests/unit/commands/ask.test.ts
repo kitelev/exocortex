@@ -54,6 +54,9 @@ jest.unstable_mockModule("exocortex", () => ({
       { getVariables: () => ["s"], toJSON: () => ({ s: "http://example.org/test" }) },
     ]),
   })),
+  SPARQL_PREFIXES: `PREFIX exo: <https://exocortex.my/ontology/exo#>
+PREFIX ems: <https://exocortex.my/ontology/ems#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>`,
 }));
 
 jest.unstable_mockModule("../../../src/adapters/FileSystemVaultAdapter.js", () => ({
