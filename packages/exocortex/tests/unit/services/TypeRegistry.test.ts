@@ -761,6 +761,366 @@ describe("TypeRegistry", () => {
     });
   });
 
+  describe("style resolution without merge", () => {
+    it("should use highest priority only when mergeStyles is false", () => {
+      const noMergeRegistry = new TypeRegistry(null, {
+        includeBuiltInStyles: false,
+        styleResolution: {
+          mergeStyles: false,
+          inheritParentStyles: true,
+          defaultNodeStyle: DEFAULT_NODE_STYLE,
+          defaultEdgeStyle: DEFAULT_EDGE_STYLE,
+        },
+      });
+
+      noMergeRegistry.registerNodeType({
+        uri: "http://example.org/Base",
+        label: "Base",
+        source: "custom",
+        style: { color: "#ff0000", size: 10 },
+        priority: 1,
+      });
+
+      noMergeRegistry.registerNodeType({
+        uri: "http://example.org/Derived",
+        label: "Derived",
+        source: "custom",
+        style: { color: "#00ff00", borderWidth: 3 },
+        priority: 2,
+      });
+
+      const style = noMergeRegistry.resolveNodeStyle([
+        "http://example.org/Base",
+        "http://example.org/Derived",
+      ]);
+
+      // Only highest priority style is applied
+      expect(style.color).toBe("#00ff00");
+      expect(style.borderWidth).toBe(3);
+    });
+  });
+
+  describe("resolveNodeType with rdf:type as primary", () => {
+    it("should use rdf:type when no assetClass", () => {
+      registry.registerNodeType({
+        uri: "http://example.org/CustomType",
+        label: "Custom",
+        source: "custom",
+        style: {},
+        priority: 1,
+      });
+
+      const node: GraphNode = {
+        id: "test-node",
+        path: "test.md",
+        title: "Test",
+        label: "Test",
+        isArchived: false,
+        properties: {
+          [RDF_TYPE_PREDICATES.RDF_TYPE]: "http://example.org/CustomType",
+        },
+      };
+
+      const typeInfo = registry.resolveNodeType(node);
+      expect(typeInfo.primaryType).toBe("http://example.org/CustomType");
+      expect(typeInfo.source).toBe("rdf:type");
+    });
+
+    it("should not add rdf:type if already present via assetClass", () => {
+      registry.registerNodeType({
+        uri: "ems__Task",
+        label: "Task",
+        source: "custom",
+        style: {},
+        priority: 1,
+      });
+
+      const node: GraphNode = {
+        id: "test-node",
+        path: "test.md",
+        title: "Test",
+        label: "Test",
+        assetClass: "ems__Task",
+        isArchived: false,
+        properties: {
+          [RDF_TYPE_PREDICATES.RDF_TYPE]: "ems__Task",
+        },
+      };
+
+      const typeInfo = registry.resolveNodeType(node);
+      // Should not duplicate
+      const taskCount = typeInfo.types.filter(t => t === "ems__Task").length;
+      expect(taskCount).toBe(1);
+    });
+  });
+
+  describe("groupNodesByType with groupByParentType", () => {
+    it("should group by parent type when specified", () => {
+      registry.registerNodeType({
+        uri: "http://example.org/Animal",
+        label: "Animal",
+        source: "custom",
+        style: {},
+        priority: 0,
+      });
+
+      registry.registerNodeType({
+        uri: "ems__Task",
+        label: "Task",
+        parentTypes: ["http://example.org/Animal"],
+        source: "custom",
+        style: {},
+        priority: 1,
+      });
+
+      const nodes: GraphNode[] = [
+        { id: "1", path: "1.md", title: "T1", label: "T1", assetClass: "ems__Task", isArchived: false },
+      ];
+
+      const groups = registry.groupNodesByType(nodes, [], {
+        groupByParentType: true,
+        groupLevel: 1,
+      });
+
+      // Should group by parent type at level 1
+      expect(groups.length).toBe(1);
+    });
+
+    it("should group all as 'all' when groupByNodeType is false", () => {
+      const nodes: GraphNode[] = [
+        { id: "1", path: "1.md", title: "T1", label: "T1", assetClass: "ems__Task", isArchived: false },
+        { id: "2", path: "2.md", title: "T2", label: "T2", assetClass: "ems__Project", isArchived: false },
+      ];
+
+      const groups = registry.groupNodesByType(nodes, [], {
+        groupByNodeType: false,
+        groupByParentType: false,
+      });
+
+      expect(groups.length).toBe(1);
+      expect(groups[0].id).toBe("all");
+      expect(groups[0].nodeIds).toHaveLength(2);
+    });
+  });
+
+  describe("filterNodes with includeInferred", () => {
+    it("should include subtypes when includeInferred is true", () => {
+      registry.registerNodeType({
+        uri: "http://example.org/Effort",
+        label: "Effort",
+        source: "custom",
+        style: {},
+        priority: 0,
+      });
+
+      registry.registerNodeType({
+        uri: "ems__Task",
+        label: "Task",
+        parentTypes: ["http://example.org/Effort"],
+        source: "custom",
+        style: {},
+        priority: 1,
+      });
+
+      const nodes: GraphNode[] = [
+        { id: "1", path: "1.md", title: "T1", label: "T1", assetClass: "ems__Task", isArchived: false },
+      ];
+
+      const filtered = registry.filterNodes(nodes, {
+        includeNodeTypes: ["http://example.org/Effort"],
+        includeInferred: true,
+      });
+
+      expect(filtered).toHaveLength(1);
+    });
+
+    it("should exclude subtypes when includeInferred is true for exclude filter", () => {
+      registry.registerNodeType({
+        uri: "http://example.org/Effort",
+        label: "Effort",
+        source: "custom",
+        style: {},
+        priority: 0,
+      });
+
+      registry.registerNodeType({
+        uri: "ems__Task",
+        label: "Task",
+        parentTypes: ["http://example.org/Effort"],
+        source: "custom",
+        style: {},
+        priority: 1,
+      });
+
+      const nodes: GraphNode[] = [
+        { id: "1", path: "1.md", title: "T1", label: "T1", assetClass: "ems__Task", isArchived: false },
+      ];
+
+      const filtered = registry.filterNodes(nodes, {
+        excludeNodeTypes: ["http://example.org/Effort"],
+        includeInferred: true,
+      });
+
+      expect(filtered).toHaveLength(0);
+    });
+  });
+
+  describe("discoverTypes", () => {
+    it("should discover types from triple store", async () => {
+      const { InMemoryTripleStore } = await import("../../../src/infrastructure/rdf/InMemoryTripleStore");
+      const { IRI } = await import("../../../src/domain/models/rdf/IRI");
+      const { Triple } = await import("../../../src/domain/models/rdf/Triple");
+      const { Literal } = await import("../../../src/domain/models/rdf/Literal");
+
+      const tripleStore = new InMemoryTripleStore();
+      const discoveryRegistry = new TypeRegistry(tripleStore, { includeBuiltInStyles: false });
+
+      // Add class definition
+      await tripleStore.add(new Triple(
+        new IRI("http://example.org/MyClass"),
+        new IRI(RDF_TYPE_PREDICATES.RDF_TYPE),
+        new IRI("http://www.w3.org/2000/01/rdf-schema#Class")
+      ));
+
+      // Add label
+      await tripleStore.add(new Triple(
+        new IRI("http://example.org/MyClass"),
+        new IRI(RDF_TYPE_PREDICATES.RDFS_LABEL),
+        new Literal("My Class")
+      ));
+
+      // Add comment
+      await tripleStore.add(new Triple(
+        new IRI("http://example.org/MyClass"),
+        new IRI(RDF_TYPE_PREDICATES.RDFS_COMMENT),
+        new Literal("A test class")
+      ));
+
+      await discoveryRegistry.discoverTypes();
+
+      const nodeType = discoveryRegistry.getNodeType("http://example.org/MyClass");
+      expect(nodeType).toBeDefined();
+      expect(nodeType?.label).toBe("My Class");
+      expect(nodeType?.description).toBe("A test class");
+    });
+
+    it("should discover subclass hierarchy from triple store", async () => {
+      const { InMemoryTripleStore } = await import("../../../src/infrastructure/rdf/InMemoryTripleStore");
+      const { IRI } = await import("../../../src/domain/models/rdf/IRI");
+      const { Triple } = await import("../../../src/domain/models/rdf/Triple");
+
+      const tripleStore = new InMemoryTripleStore();
+      const discoveryRegistry = new TypeRegistry(tripleStore, { includeBuiltInStyles: false });
+
+      // Parent class
+      await tripleStore.add(new Triple(
+        new IRI("http://example.org/Parent"),
+        new IRI(RDF_TYPE_PREDICATES.RDF_TYPE),
+        new IRI("http://www.w3.org/2000/01/rdf-schema#Class")
+      ));
+
+      // Child class
+      await tripleStore.add(new Triple(
+        new IRI("http://example.org/Child"),
+        new IRI(RDF_TYPE_PREDICATES.RDF_TYPE),
+        new IRI("http://www.w3.org/2000/01/rdf-schema#Class")
+      ));
+
+      // Subclass relationship
+      await tripleStore.add(new Triple(
+        new IRI("http://example.org/Child"),
+        new IRI(RDF_TYPE_PREDICATES.RDFS_SUBCLASS_OF),
+        new IRI("http://example.org/Parent")
+      ));
+
+      await discoveryRegistry.discoverTypes();
+
+      const parents = discoveryRegistry.getParentTypes("http://example.org/Child");
+      expect(parents).toContain("http://example.org/Parent");
+    });
+
+    it("should not re-discover types if already complete", async () => {
+      const { InMemoryTripleStore } = await import("../../../src/infrastructure/rdf/InMemoryTripleStore");
+      const tripleStore = new InMemoryTripleStore();
+      const discoveryRegistry = new TypeRegistry(tripleStore, { includeBuiltInStyles: false });
+
+      await discoveryRegistry.discoverTypes();
+      // Call again - should be a no-op
+      await discoveryRegistry.discoverTypes();
+    });
+
+    it("should skip when no triple store", async () => {
+      const noStoreRegistry = new TypeRegistry(null, { includeBuiltInStyles: false });
+      await noStoreRegistry.discoverTypes(); // should not throw
+    });
+
+    it("should discover owl:Class types", async () => {
+      const { InMemoryTripleStore } = await import("../../../src/infrastructure/rdf/InMemoryTripleStore");
+      const { IRI } = await import("../../../src/domain/models/rdf/IRI");
+      const { Triple } = await import("../../../src/domain/models/rdf/Triple");
+
+      const tripleStore = new InMemoryTripleStore();
+      const discoveryRegistry = new TypeRegistry(tripleStore, { includeBuiltInStyles: false });
+
+      // Add OWL class definition
+      await tripleStore.add(new Triple(
+        new IRI("http://example.org/OwlClass"),
+        new IRI(RDF_TYPE_PREDICATES.RDF_TYPE),
+        new IRI("http://www.w3.org/2002/07/owl#Class")
+      ));
+
+      await discoveryRegistry.discoverTypes();
+
+      const nodeType = discoveryRegistry.getNodeType("http://example.org/OwlClass");
+      expect(nodeType).toBeDefined();
+      expect(nodeType?.source).toBe("owl:Class");
+    });
+  });
+
+  describe("validateTypes with edge source not found", () => {
+    it("should not error when edge source node not in nodes array", () => {
+      const nodes: GraphNode[] = [
+        { id: "1", path: "1.md", title: "T1", label: "T1", assetClass: "ems__Task", isArchived: false },
+      ];
+
+      registry.registerNodeType({
+        uri: "ems__Task",
+        label: "Task",
+        source: "custom",
+        style: {},
+        priority: 1,
+      });
+
+      registry.registerEdgeType({
+        uri: "http://ex.org/link",
+        label: "link",
+        domain: ["ems__Project"],
+        source: "custom",
+        style: {},
+        priority: 1,
+      });
+
+      const edges: GraphEdge[] = [
+        { id: "e1", source: "unknown-node", target: "1", type: "semantic", predicate: "http://ex.org/link" },
+      ];
+
+      const result = registry.validateTypes(nodes, edges);
+      // No error when source not found (edge source not in nodes)
+      expect(result.errors.filter(e => e.code === "DOMAIN_VIOLATION")).toHaveLength(0);
+    });
+  });
+
+  describe("unregisterType for non-existent type", () => {
+    it("should not emit event when unregistering non-existent type", () => {
+      const events: string[] = [];
+      registry.subscribe(event => events.push(event.type));
+
+      registry.unregisterType("http://example.org/DoesNotExist");
+
+      expect(events).not.toContain("type-removed");
+    });
+  });
+
   describe("subscribe", () => {
     it("should call callback on events", () => {
       const events: string[] = [];

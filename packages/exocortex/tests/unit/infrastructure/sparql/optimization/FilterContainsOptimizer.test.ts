@@ -352,6 +352,477 @@ describe("FilterContainsOptimizer", () => {
     });
   });
 
+  describe("optimizeSync recursive through nested operations", () => {
+    it("should recurse through join operations", () => {
+      const query = `
+        SELECT * WHERE {
+          { ?s ?p ?o . }
+          { ?a ?b ?c . }
+          FILTER(CONTAINS(STR(?s), "${TEST_UUID_1}"))
+        }
+      `;
+
+      const parsed = parser.parse(query);
+      const algebra = translator.translate(parsed as any);
+      const subjectUris = [`https://exocortex.my/ontology/ems/${TEST_UUID_1}`];
+
+      const optimized = optimizer.optimizeSync(algebra, subjectUris);
+      expect(optimized).toBeDefined();
+    });
+
+    it("should recurse through leftjoin operations", () => {
+      const query = `
+        SELECT * WHERE {
+          ?s ?p ?o .
+          OPTIONAL { ?s <http://example.org/name> ?name }
+          FILTER(CONTAINS(STR(?s), "${TEST_UUID_1}"))
+        }
+      `;
+
+      const parsed = parser.parse(query);
+      const algebra = translator.translate(parsed as any);
+      const subjectUris = [`https://exocortex.my/ontology/ems/${TEST_UUID_1}`];
+
+      const optimized = optimizer.optimizeSync(algebra, subjectUris);
+      expect(optimized).toBeDefined();
+    });
+
+    it("should recurse through union operations", () => {
+      const query = `
+        SELECT * WHERE {
+          {
+            ?s ?p ?o .
+            FILTER(CONTAINS(STR(?s), "${TEST_UUID_1}"))
+          }
+          UNION
+          { ?a ?b ?c . }
+        }
+      `;
+
+      const parsed = parser.parse(query);
+      const algebra = translator.translate(parsed as any);
+      const subjectUris = [`https://exocortex.my/ontology/ems/${TEST_UUID_1}`];
+
+      const optimized = optimizer.optimizeSync(algebra, subjectUris);
+      expect(optimized).toBeDefined();
+    });
+
+    it("should recurse through project operations", () => {
+      const query = `
+        SELECT ?s WHERE {
+          ?s ?p ?o .
+          FILTER(CONTAINS(STR(?s), "${TEST_UUID_1}"))
+        }
+      `;
+
+      const parsed = parser.parse(query);
+      const algebra = translator.translate(parsed as any);
+      const subjectUris = [`https://exocortex.my/ontology/ems/${TEST_UUID_1}`];
+
+      const optimized = optimizer.optimizeSync(algebra, subjectUris);
+      expect(optimized).toBeDefined();
+
+      const hints = optimizer.getLastOptimizationHints();
+      expect(hints.length).toBe(1);
+    });
+
+    it("should recurse through orderby operations", () => {
+      const query = `
+        SELECT * WHERE {
+          ?s ?p ?o .
+          FILTER(CONTAINS(STR(?s), "${TEST_UUID_1}"))
+        }
+        ORDER BY ?s
+      `;
+
+      const parsed = parser.parse(query);
+      const algebra = translator.translate(parsed as any);
+      const subjectUris = [`https://exocortex.my/ontology/ems/${TEST_UUID_1}`];
+
+      const optimized = optimizer.optimizeSync(algebra, subjectUris);
+      expect(optimized).toBeDefined();
+    });
+
+    it("should recurse through slice operations", () => {
+      const query = `
+        SELECT * WHERE {
+          ?s ?p ?o .
+          FILTER(CONTAINS(STR(?s), "${TEST_UUID_1}"))
+        }
+        LIMIT 10
+      `;
+
+      const parsed = parser.parse(query);
+      const algebra = translator.translate(parsed as any);
+      const subjectUris = [`https://exocortex.my/ontology/ems/${TEST_UUID_1}`];
+
+      const optimized = optimizer.optimizeSync(algebra, subjectUris);
+      expect(optimized).toBeDefined();
+    });
+
+    it("should recurse through distinct operations", () => {
+      const query = `
+        SELECT DISTINCT ?s WHERE {
+          ?s ?p ?o .
+          FILTER(CONTAINS(STR(?s), "${TEST_UUID_1}"))
+        }
+      `;
+
+      const parsed = parser.parse(query);
+      const algebra = translator.translate(parsed as any);
+      const subjectUris = [`https://exocortex.my/ontology/ems/${TEST_UUID_1}`];
+
+      const optimized = optimizer.optimizeSync(algebra, subjectUris);
+      expect(optimized).toBeDefined();
+    });
+
+    it("should recurse through group operations", () => {
+      const query = `
+        SELECT (COUNT(?o) AS ?count) WHERE {
+          ?s ?p ?o .
+          FILTER(CONTAINS(STR(?s), "${TEST_UUID_1}"))
+        }
+        GROUP BY ?s
+      `;
+
+      const parsed = parser.parse(query);
+      const algebra = translator.translate(parsed as any);
+      const subjectUris = [`https://exocortex.my/ontology/ems/${TEST_UUID_1}`];
+
+      const optimized = optimizer.optimizeSync(algebra, subjectUris);
+      expect(optimized).toBeDefined();
+    });
+
+    it("should pass through unrecognized operation types", () => {
+      const customOp = { type: "custom", data: "test" } as any;
+      const result = optimizer.optimizeSync(customOp);
+      expect(result).toEqual(customOp);
+    });
+  });
+
+  describe("optimize async recursive through nested operations", () => {
+    it("should recurse through leftjoin operations", async () => {
+      const query = `
+        SELECT * WHERE {
+          ?s ?p ?o .
+          OPTIONAL { ?s <http://example.org/name> ?name }
+          FILTER(CONTAINS(STR(?s), "${TEST_UUID_1}"))
+        }
+      `;
+
+      const parsed = parser.parse(query);
+      const algebra = translator.translate(parsed as any);
+
+      const optimized = await optimizer.optimize(algebra);
+      expect(optimized).toBeDefined();
+    });
+
+    it("should recurse through union operations", async () => {
+      const query = `
+        SELECT * WHERE {
+          {
+            ?s ?p ?o .
+            FILTER(CONTAINS(STR(?s), "${TEST_UUID_1}"))
+          }
+          UNION
+          { ?a ?b ?c . }
+        }
+      `;
+
+      const parsed = parser.parse(query);
+      const algebra = translator.translate(parsed as any);
+
+      const optimized = await optimizer.optimize(algebra);
+      expect(optimized).toBeDefined();
+    });
+
+    it("should recurse through distinct operations", async () => {
+      const query = `
+        SELECT DISTINCT ?s WHERE {
+          ?s ?p ?o .
+          FILTER(CONTAINS(STR(?s), "${TEST_UUID_1}"))
+        }
+      `;
+
+      const parsed = parser.parse(query);
+      const algebra = translator.translate(parsed as any);
+
+      const optimized = await optimizer.optimize(algebra);
+      expect(optimized).toBeDefined();
+    });
+
+    it("should recurse through group operations", async () => {
+      const query = `
+        SELECT (COUNT(?o) AS ?count) WHERE {
+          ?s ?p ?o .
+          FILTER(CONTAINS(STR(?s), "${TEST_UUID_1}"))
+        }
+        GROUP BY ?s
+      `;
+
+      const parsed = parser.parse(query);
+      const algebra = translator.translate(parsed as any);
+
+      const optimized = await optimizer.optimize(algebra);
+      expect(optimized).toBeDefined();
+    });
+
+    it("should recurse through slice operations", async () => {
+      const query = `
+        SELECT * WHERE {
+          ?s ?p ?o .
+          FILTER(CONTAINS(STR(?s), "${TEST_UUID_1}"))
+        }
+        LIMIT 10 OFFSET 5
+      `;
+
+      const parsed = parser.parse(query);
+      const algebra = translator.translate(parsed as any);
+
+      const optimized = await optimizer.optimize(algebra);
+      expect(optimized).toBeDefined();
+    });
+
+    it("should pass through unrecognized operation types", async () => {
+      const customOp = { type: "custom", data: "test" } as any;
+      const result = await optimizer.optimize(customOp);
+      expect(result).toEqual(customOp);
+    });
+  });
+
+  describe("rewriteFilter with multiple matching URIs", () => {
+    it("should create VALUES clause for multiple matches", async () => {
+      // Add another subject with same UUID pattern
+      const query = `
+        SELECT * WHERE {
+          ?s ?p ?o .
+          FILTER(CONTAINS(STR(?s), "${TEST_UUID_1}"))
+        }
+      `;
+
+      // Add another triple with same UUID
+      await store.add(
+        createTriple(
+          `https://exocortex.my/other/${TEST_UUID_1}`,
+          "http://example.org/type",
+          "http://example.org/Other"
+        )
+      );
+
+      const parsed = parser.parse(query);
+      const algebra = translator.translate(parsed as any);
+
+      const optimized = await optimizer.optimize(algebra);
+      expect(optimized).toBeDefined();
+
+      const hints = optimizer.getLastOptimizationHints();
+      expect(hints.length).toBe(1);
+      // Multiple matches: no single matchedUri
+      expect(hints[0].matchedUri).toBeUndefined();
+    });
+  });
+
+  describe("rewriteFilter with no matching URIs", () => {
+    it("should keep filter when no URIs match", async () => {
+      const query = `
+        SELECT * WHERE {
+          ?s ?p ?o .
+          FILTER(CONTAINS(STR(?s), "00000000-0000-0000-0000-000000000000"))
+        }
+      `;
+
+      const parsed = parser.parse(query);
+      const algebra = translator.translate(parsed as any);
+
+      const optimized = await optimizer.optimize(algebra);
+      expect(optimized).toBeDefined();
+
+      const hints = optimizer.getLastOptimizationHints();
+      expect(hints.length).toBe(1);
+      expect(hints[0].estimatedSpeedup).toBe("N/A");
+    });
+  });
+
+  describe("findSubjectsContainingUUID without store", () => {
+    it("should return empty without triple store", async () => {
+      const noStoreOptimizer = new FilterContainsOptimizer();
+
+      const query = `
+        SELECT * WHERE {
+          ?s ?p ?o .
+          FILTER(CONTAINS(STR(?s), "${TEST_UUID_1}"))
+        }
+      `;
+
+      const parsed = parser.parse(query);
+      const algebra = translator.translate(parsed as any);
+
+      const optimized = await noStoreOptimizer.optimize(algebra);
+      expect(optimized).toBeDefined();
+    });
+  });
+
+  describe("analyzeRecursive through nested operation types", () => {
+    it("should analyze through leftjoin operations", () => {
+      const query = `
+        SELECT * WHERE {
+          ?s ?p ?o .
+          OPTIONAL {
+            ?s <http://example.org/name> ?name .
+            FILTER(CONTAINS(STR(?s), "${TEST_UUID_1}"))
+          }
+        }
+      `;
+
+      const parsed = parser.parse(query);
+      const algebra = translator.translate(parsed as any);
+
+      const hints = optimizer.analyzeQuery(algebra);
+      expect(hints.length).toBe(1);
+    });
+
+    it("should analyze through union operations", () => {
+      const query = `
+        SELECT * WHERE {
+          {
+            ?s ?p ?o .
+            FILTER(CONTAINS(STR(?s), "${TEST_UUID_1}"))
+          }
+          UNION
+          { ?a ?b ?c . }
+        }
+      `;
+
+      const parsed = parser.parse(query);
+      const algebra = translator.translate(parsed as any);
+
+      const hints = optimizer.analyzeQuery(algebra);
+      expect(hints.length).toBe(1);
+    });
+
+    it("should analyze through distinct operations", () => {
+      const query = `
+        SELECT DISTINCT ?s WHERE {
+          ?s ?p ?o .
+          FILTER(CONTAINS(STR(?s), "${TEST_UUID_1}"))
+        }
+      `;
+
+      const parsed = parser.parse(query);
+      const algebra = translator.translate(parsed as any);
+
+      const hints = optimizer.analyzeQuery(algebra);
+      expect(hints.length).toBe(1);
+    });
+
+    it("should analyze through group operations", () => {
+      const query = `
+        SELECT (COUNT(?o) AS ?count) WHERE {
+          ?s ?p ?o .
+          FILTER(CONTAINS(STR(?s), "${TEST_UUID_1}"))
+        }
+        GROUP BY ?s
+      `;
+
+      const parsed = parser.parse(query);
+      const algebra = translator.translate(parsed as any);
+
+      const hints = optimizer.analyzeQuery(algebra);
+      expect(hints.length).toBe(1);
+    });
+  });
+
+  describe("optimizeSync with no matching subjects", () => {
+    it("should handle empty subjectUris array", () => {
+      const query = `
+        SELECT * WHERE {
+          ?s ?p ?o .
+          FILTER(CONTAINS(STR(?s), "${TEST_UUID_1}"))
+        }
+      `;
+
+      const parsed = parser.parse(query);
+      const algebra = translator.translate(parsed as any);
+
+      const optimized = optimizer.optimizeSync(algebra, []);
+      expect(optimized).toBeDefined();
+
+      const hints = optimizer.getLastOptimizationHints();
+      expect(hints.length).toBe(1);
+    });
+  });
+
+  describe("injectSubjectConstraint into join/filter", () => {
+    it("should inject into join with nested BGP", () => {
+      const query = `
+        SELECT * WHERE {
+          ?s <http://example.org/type> <http://example.org/Task> .
+          ?s <http://example.org/name> ?name .
+          FILTER(CONTAINS(STR(?s), "${TEST_UUID_1}"))
+        }
+      `;
+
+      const parsed = parser.parse(query);
+      const algebra = translator.translate(parsed as any);
+      const subjectUris = [`https://exocortex.my/ontology/ems/${TEST_UUID_1}`];
+
+      const optimized = optimizer.optimizeSync(algebra, subjectUris);
+      expect(optimized).toBeDefined();
+    });
+  });
+
+  describe("detectContainsUUIDPattern edge cases", () => {
+    it("should handle function with non-string function name (object)", () => {
+      const expr: Expression = {
+        type: "functionCall",
+        function: { value: "CONTAINS" } as any,
+        args: [
+          {
+            type: "functionCall",
+            function: { value: "STR" } as any,
+            args: [{ type: "variable", name: "s" }],
+          },
+          { type: "literal", value: TEST_UUID_1 },
+        ],
+      };
+
+      const pattern = optimizer.detectContainsUUIDPattern(expr);
+      expect(pattern).not.toBeNull();
+      expect(pattern!.variable).toBe("s");
+    });
+
+    it("should return null for non-literal second argument", () => {
+      const expr: Expression = {
+        type: "function",
+        function: "contains",
+        args: [
+          {
+            type: "function",
+            function: "str",
+            args: [{ type: "variable", name: "s" }],
+          },
+          { type: "variable", name: "uuid" },
+        ],
+      };
+
+      const pattern = optimizer.detectContainsUUIDPattern(expr);
+      expect(pattern).toBeNull();
+    });
+
+    it("should return null for contains with wrong number of args", () => {
+      const expr: Expression = {
+        type: "function",
+        function: "contains",
+        args: [
+          { type: "variable", name: "s" },
+        ],
+      };
+
+      const pattern = optimizer.detectContainsUUIDPattern(expr);
+      expect(pattern).toBeNull();
+    });
+  });
+
   describe("performance characteristics", () => {
     it("should provide O(1) lookup via UUID index vs O(n) scan", async () => {
       // Create a fresh store for this test with only one UUID-containing subject

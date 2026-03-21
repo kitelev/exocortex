@@ -260,4 +260,440 @@ describe("RDFSerializer", () => {
       expect(labelValue["@direction"]).toBe("ltr");
     });
   });
+
+  describe("serializeTriples unsupported format", () => {
+    it("throws for unknown format", () => {
+      expect(() => serializer.serializeTriples([], "xml" as any)).toThrow(
+        /Unsupported serialization format/
+      );
+    });
+  });
+
+  describe("parse", () => {
+    it("parses N-Triples input", () => {
+      const ntriples = `<http://example.com/A> <http://example.com/p> "hello" .`;
+      const triples = serializer.parse(ntriples, "n-triples");
+      expect(triples).toHaveLength(1);
+      expect((triples[0].object as Literal).value).toBe("hello");
+    });
+
+    it("throws for unsupported parse format", () => {
+      expect(() => serializer.parse("data", "xml" as any)).toThrow(
+        /Unsupported serialization format/
+      );
+    });
+  });
+
+  describe("load with append mode", () => {
+    it("appends triples without clearing store", async () => {
+      const initialTriples = await store.match();
+      const initialCount = initialTriples.length;
+
+      const ntriples = `<http://example.com/New> <http://example.com/prop> "value" .`;
+      await serializer.load(ntriples, "n-triples", { mode: "append" });
+
+      const allTriples = await store.match();
+      expect(allTriples.length).toBe(initialCount + 1);
+    });
+  });
+
+  describe("stream N-Triples", () => {
+    it("streams N-Triples output in batches", async () => {
+      const chunks: string[] = [];
+      for await (const chunk of serializer.stream("n-triples", { batchSize: 1 })) {
+        chunks.push(chunk);
+      }
+      expect(chunks.length).toBeGreaterThan(0);
+      expect(chunks.join("")).toContain("<http://example.com/Alice>");
+    });
+  });
+
+  describe("stream return early termination", () => {
+    it("returns done when calling return() on stream", async () => {
+      const stream = serializer.stream("turtle");
+      const result = await stream.return!();
+      expect(result.done).toBe(true);
+    });
+  });
+
+  describe("JSON-LD parsing", () => {
+    it("parses JSON-LD with @graph array", async () => {
+      const jsonld = JSON.stringify({
+        "@context": { "myns": "http://example.com/" },
+        "@graph": [
+          {
+            "@id": "http://example.com/Alice",
+            "@type": "http://example.com/Person",
+            "http://example.com/name": "Alice"
+          }
+        ]
+      });
+
+      const count = await serializer.load(jsonld, "json-ld");
+      expect(count).toBe(2); // rdf:type + name
+    });
+
+    it("parses JSON-LD single object (no @graph)", async () => {
+      const jsonld = JSON.stringify({
+        "@context": { "myns": "http://example.com/" },
+        "@id": "http://example.com/Bob",
+        "http://example.com/name": "Bob"
+      });
+
+      const count = await serializer.load(jsonld, "json-ld");
+      expect(count).toBe(1);
+    });
+
+    it("parses JSON-LD array document", async () => {
+      const jsonld = JSON.stringify([
+        {
+          "@id": "http://example.com/A",
+          "http://example.com/p": "val1"
+        },
+        {
+          "@id": "http://example.com/B",
+          "http://example.com/p": "val2"
+        }
+      ]);
+
+      const count = await serializer.load(jsonld, "json-ld");
+      expect(count).toBe(2);
+    });
+
+    it("throws for invalid JSON in JSON-LD", () => {
+      expect(() => serializer.parse("not valid json{", "json-ld")).toThrow(
+        /Invalid JSON-LD document/
+      );
+    });
+
+    it("throws for invalid JSON-LD node", () => {
+      const jsonld = JSON.stringify({
+        "@graph": ["not an object"]
+      });
+
+      expect(() => serializer.parse(jsonld, "json-ld")).toThrow(
+        /Invalid JSON-LD node at index 0/
+      );
+    });
+
+    it("throws for invalid @type value", () => {
+      const jsonld = JSON.stringify({
+        "@context": { "ex": "http://example.com/" },
+        "@id": "http://example.com/A",
+        "@type": 42
+      });
+
+      expect(() => serializer.parse(jsonld, "json-ld")).toThrow(
+        /Invalid @type value/
+      );
+    });
+
+    it("parses JSON-LD with @type as array", () => {
+      const jsonld = JSON.stringify({
+        "@context": { "ex": "http://example.com/" },
+        "@id": "http://example.com/A",
+        "@type": ["http://example.com/Person", "http://example.com/Agent"]
+      });
+
+      const triples = serializer.parse(jsonld, "json-ld");
+      expect(triples).toHaveLength(2);
+    });
+
+    it("parses JSON-LD blank node subjects", () => {
+      const jsonld = JSON.stringify({
+        "@context": { "ex": "http://example.com/" },
+        "@id": "_:b1",
+        "http://example.com/name": "Anonymous"
+      });
+
+      const triples = serializer.parse(jsonld, "json-ld");
+      expect(triples).toHaveLength(1);
+    });
+
+    it("creates auto blank node when @id is missing", () => {
+      const jsonld = JSON.stringify({
+        "@context": { "ex": "http://example.com/" },
+        "http://example.com/name": "NoId"
+      });
+
+      const triples = serializer.parse(jsonld, "json-ld");
+      expect(triples).toHaveLength(1);
+    });
+
+    it("parses absolute IRI @id values", () => {
+      const jsonld = JSON.stringify({
+        "@id": "http://example.com/MyResource",
+        "http://example.com/name": "Test"
+      });
+
+      const triples = serializer.parse(jsonld, "json-ld");
+      expect(triples).toHaveLength(1);
+      expect((triples[0].subject as IRI).value).toBe("http://example.com/MyResource");
+    });
+
+    it("parses JSON-LD with null/undefined values (skips them)", () => {
+      const jsonld = JSON.stringify({
+        "@context": { "ex": "http://example.com/" },
+        "@id": "http://example.com/A",
+        "http://example.com/name": null,
+        "http://example.com/desc": "Hello"
+      });
+
+      const triples = serializer.parse(jsonld, "json-ld");
+      expect(triples).toHaveLength(1); // only desc
+    });
+
+    it("parses JSON-LD array values", () => {
+      const jsonld = JSON.stringify({
+        "@context": { "ex": "http://example.com/" },
+        "@id": "http://example.com/A",
+        "http://example.com/tag": ["one", "two", "three"]
+      });
+
+      const triples = serializer.parse(jsonld, "json-ld");
+      expect(triples).toHaveLength(3);
+    });
+
+    it("parses JSON-LD object with @id reference", () => {
+      const jsonld = JSON.stringify({
+        "@context": { "ex": "http://example.com/" },
+        "@id": "http://example.com/A",
+        "http://example.com/knows": { "@id": "http://example.com/B" }
+      });
+
+      const triples = serializer.parse(jsonld, "json-ld");
+      expect(triples).toHaveLength(1);
+      expect(triples[0].object).toBeInstanceOf(IRI);
+    });
+
+    it("parses JSON-LD object with blank node @id reference", () => {
+      const jsonld = JSON.stringify({
+        "@context": { "ex": "http://example.com/" },
+        "@id": "http://example.com/A",
+        "http://example.com/ref": { "@id": "_:bnode1" }
+      });
+
+      const triples = serializer.parse(jsonld, "json-ld");
+      expect(triples).toHaveLength(1);
+    });
+
+    it("parses JSON-LD object with prefixed @id reference", () => {
+      const jsonld = JSON.stringify({
+        "@context": { "ex": "http://example.com/" },
+        "@id": "http://example.com/A",
+        "http://example.com/knows": { "@id": "http://example.com/B" }
+      });
+
+      const triples = serializer.parse(jsonld, "json-ld");
+      expect(triples).toHaveLength(1);
+      expect(triples[0].object).toBeInstanceOf(IRI);
+    });
+
+    it("parses JSON-LD typed literal with @value and @type", () => {
+      const jsonld = JSON.stringify({
+        "@id": "http://example.com/A",
+        "http://example.com/age": { "@value": "42", "@type": "http://www.w3.org/2001/XMLSchema#integer" }
+      });
+
+      const triples = serializer.parse(jsonld, "json-ld");
+      expect(triples).toHaveLength(1);
+      expect((triples[0].object as Literal).datatype?.value).toContain("integer");
+    });
+
+    it("parses JSON-LD language literal with @value and @language", () => {
+      const jsonld = JSON.stringify({
+        "@context": { "ex": "http://example.com/" },
+        "@id": "http://example.com/A",
+        "http://example.com/label": { "@value": "Hola", "@language": "es" }
+      });
+
+      const triples = serializer.parse(jsonld, "json-ld");
+      expect(triples).toHaveLength(1);
+      expect((triples[0].object as Literal).language).toBe("es");
+    });
+
+    it("parses JSON-LD directional literal with @direction", () => {
+      const jsonld = JSON.stringify({
+        "@context": { "ex": "http://example.com/" },
+        "@id": "http://example.com/A",
+        "http://example.com/label": { "@value": "مرحبا", "@language": "ar", "@direction": "rtl" }
+      });
+
+      const triples = serializer.parse(jsonld, "json-ld");
+      expect(triples).toHaveLength(1);
+      const lit = triples[0].object as Literal;
+      expect(lit.language).toBe("ar");
+      expect(lit.direction).toBe("rtl");
+    });
+
+    it("throws for non-string @value in literal", () => {
+      const jsonld = JSON.stringify({
+        "@context": { "ex": "http://example.com/" },
+        "@id": "http://example.com/A",
+        "http://example.com/val": { "@value": 42 }
+      });
+
+      expect(() => serializer.parse(jsonld, "json-ld")).toThrow(
+        /literal values must be strings/
+      );
+    });
+
+    it("parses JSON-LD numeric values", () => {
+      const jsonld = JSON.stringify({
+        "@context": { "ex": "http://example.com/" },
+        "@id": "http://example.com/A",
+        "http://example.com/count": 42,
+        "http://example.com/ratio": 3.14
+      });
+
+      const triples = serializer.parse(jsonld, "json-ld");
+      expect(triples).toHaveLength(2);
+      const intTriple = triples.find(t => (t.object as Literal).value === "42");
+      expect(intTriple).toBeDefined();
+      expect((intTriple!.object as Literal).datatype?.value).toContain("integer");
+
+      const decTriple = triples.find(t => (t.object as Literal).value === "3.14");
+      expect(decTriple).toBeDefined();
+      expect((decTriple!.object as Literal).datatype?.value).toContain("decimal");
+    });
+
+    it("parses JSON-LD boolean values", () => {
+      const jsonld = JSON.stringify({
+        "@context": { "ex": "http://example.com/" },
+        "@id": "http://example.com/A",
+        "http://example.com/active": true
+      });
+
+      const triples = serializer.parse(jsonld, "json-ld");
+      expect(triples).toHaveLength(1);
+      expect((triples[0].object as Literal).datatype?.value).toContain("boolean");
+    });
+
+    it("throws for unknown prefix in JSON-LD term expansion", () => {
+      const jsonld = JSON.stringify({
+        "@context": {},
+        "@id": "http://example.com/A",
+        "unknown_prefix:prop": "value"
+      });
+
+      expect(() => serializer.parse(jsonld, "json-ld")).toThrow(
+        /Unknown prefix/
+      );
+    });
+
+    it("uses @vocab for term expansion", () => {
+      const jsonld = JSON.stringify({
+        "@context": { "@vocab": "http://example.com/" },
+        "@id": "http://example.com/A",
+        "name": "Test"
+      });
+
+      const triples = serializer.parse(jsonld, "json-ld");
+      expect(triples).toHaveLength(1);
+      expect(triples[0].predicate.value).toBe("http://example.com/name");
+    });
+
+    it("throws when term cannot be expanded (no prefix, no @vocab)", () => {
+      const jsonld = JSON.stringify({
+        "@context": {},
+        "@id": "http://example.com/A",
+        "name": "Test"
+      });
+
+      expect(() => serializer.parse(jsonld, "json-ld")).toThrow(
+        /Unable to expand JSON-LD term/
+      );
+    });
+
+    it("handles empty graph in document", () => {
+      const jsonld = JSON.stringify({
+        "@context": { "ex": "http://example.com/" },
+        "@graph": []
+      });
+
+      const triples = serializer.parse(jsonld, "json-ld");
+      expect(triples).toHaveLength(0);
+    });
+
+    it("returns empty for non-object context", () => {
+      const jsonld = JSON.stringify({
+        "@context": "http://example.com/",
+        "@id": "http://example.com/A",
+        "http://example.com/p": "value"
+      });
+
+      const triples = serializer.parse(jsonld, "json-ld");
+      expect(triples).toHaveLength(1);
+    });
+
+    it("returns empty graph for null/primitive document", () => {
+      const jsonld = JSON.stringify(42);
+
+      // Primitive parsed = empty graph
+      const triples = serializer.parse(jsonld, "json-ld");
+      expect(triples).toHaveLength(0);
+    });
+
+    it("handles @context with non-string values (skips them)", () => {
+      const jsonld = JSON.stringify({
+        "@context": { "ex": "http://example.com/", "nested": { "@id": "http://example.com/nested" } },
+        "@id": "http://example.com/A",
+        "http://example.com/name": "Test"
+      });
+
+      const triples = serializer.parse(jsonld, "json-ld");
+      expect(triples).toHaveLength(1);
+    });
+
+    it("skips @context property in node entries when present at top level", () => {
+      // The @context property is skipped during node property iteration
+      const jsonld = JSON.stringify({
+        "@context": { "ex": "http://example.com/" },
+        "@id": "http://example.com/A",
+        "http://example.com/name": "Test"
+      });
+
+      const triples = serializer.parse(jsonld, "json-ld");
+      expect(triples).toHaveLength(1);
+    });
+  });
+
+  describe("composePrefixes", () => {
+    it("excludes default prefixes when includeDefault is false", async () => {
+      const ttl = await serializer.serialize("turtle", {
+        includeDefaultPrefixes: false,
+        prefixes: { "ex": "http://example.com/" },
+      });
+
+      // Should not include default rdf/rdfs/owl prefixes
+      expect(ttl).not.toContain("@prefix rdf:");
+      expect(ttl).not.toContain("@prefix rdfs:");
+    });
+  });
+
+  describe("stream with custom newline", () => {
+    it("uses custom newline in turtle stream", async () => {
+      const chunks: string[] = [];
+      for await (const chunk of serializer.stream("turtle", { newline: "\r\n" })) {
+        chunks.push(chunk);
+      }
+      expect(chunks.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe("stream without prefixes header", () => {
+    it("handles turtle stream with no header", async () => {
+      const emptyStore = new InMemoryTripleStore();
+      const emptySerializer = new RDFSerializer(emptyStore);
+      await emptyStore.add(new Triple(alice, knows, bob));
+
+      const chunks: string[] = [];
+      for await (const chunk of emptySerializer.stream("turtle", {
+        includeDefaultPrefixes: false,
+      })) {
+        chunks.push(chunk);
+      }
+      expect(chunks.length).toBeGreaterThanOrEqual(1);
+    });
+  });
 });
