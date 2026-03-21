@@ -202,10 +202,72 @@ describe("AssetCreationService", () => {
         },
       });
 
-      expect(result.frontmatter["ztlk__Note_developedFrom"]).toBe(
-        "[[some-uuid|Label]]",
+      // Wikilink values should be quoted and wrapped in array
+      expect(result.frontmatter["ztlk__Note_developedFrom"]).toEqual(
+        ['"[[some-uuid|Label]]"'],
       );
+      // Plain values remain as scalar
       expect(result.frontmatter["custom_prop"]).toBe("custom_value");
+    });
+
+    describe("Issue #2293: wikilink property quoting", () => {
+      it("should quote wikilink values and wrap in array", async () => {
+        const result = await service.create({
+          classShortName: "ztlk__PermanentNote",
+          label: "Test Note",
+          vault: "/vault",
+          properties: {
+            "exo__Asset_relates": "[[some-uuid|My Asset]]",
+          },
+        });
+
+        expect(result.frontmatter["exo__Asset_relates"]).toEqual(
+          ['"[[some-uuid|My Asset]]"'],
+        );
+      });
+
+      it("should not quote plain text values", async () => {
+        const result = await service.create({
+          classShortName: "ztlk__PermanentNote",
+          label: "Test Note",
+          vault: "/vault",
+          properties: {
+            "custom_prop": "plain text value",
+          },
+        });
+
+        expect(result.frontmatter["custom_prop"]).toBe("plain text value");
+      });
+
+      it("should handle wikilink without label", async () => {
+        const result = await service.create({
+          classShortName: "ztlk__PermanentNote",
+          label: "Test Note",
+          vault: "/vault",
+          properties: {
+            "exo__Asset_relates": "[[some-uuid]]",
+          },
+        });
+
+        expect(result.frontmatter["exo__Asset_relates"]).toEqual(
+          ['"[[some-uuid]]"'],
+        );
+      });
+
+      it("should not double-quote already quoted wikilinks", async () => {
+        const result = await service.create({
+          classShortName: "ztlk__PermanentNote",
+          label: "Test Note",
+          vault: "/vault",
+          properties: {
+            "exo__Asset_relates": '"[[some-uuid|Label]]"',
+          },
+        });
+
+        expect(result.frontmatter["exo__Asset_relates"]).toEqual(
+          ['"[[some-uuid|Label]]"'],
+        );
+      });
     });
 
     it("should not override system properties via --property", async () => {

@@ -187,11 +187,33 @@ export class AssetCreationService {
         ) {
           continue;
         }
-        fm[key] = value;
+        fm[key] = this.formatPropertyValue(value);
       }
     }
 
     return fm;
+  }
+
+  /**
+   * Format a property value for frontmatter.
+   *
+   * Wikilink values (containing `[[`) are quoted and wrapped in a YAML array
+   * so Obsidian can parse them correctly. Plain values are left as scalars.
+   *
+   * @param value - The raw property value string
+   * @returns Formatted value: `string` for plain values, `string[]` for wikilinks
+   */
+  private formatPropertyValue(value: string): string | string[] {
+    if (!value.includes("[[")) {
+      return value;
+    }
+
+    // Quote the wikilink if not already quoted
+    const quoted =
+      value.startsWith('"') && value.endsWith('"') ? value : `"${value}"`;
+
+    // Wrap in array for YAML list format
+    return [quoted];
   }
 
   /**
