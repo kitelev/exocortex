@@ -195,7 +195,7 @@ The project adheres to core ethical principles:
 
 ## Architecture
 
-Exocortex is a **monorepo** with three packages sharing Clean Architecture core:
+Exocortex is a **monorepo** with four packages sharing Clean Architecture core:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -255,9 +255,10 @@ Exocortex is a **monorepo** with three packages sharing Clean Architecture core:
 
 | Package | npm | Purpose |
 |---------|-----|---------|
-| **exocortex** | `exocortex` | Core business logic, domain models, SPARQL engine |
+| **exocortex** | Private | Core business logic, domain models, SPARQL engine |
 | **@exocortex/obsidian-plugin** | Private | Interactive UI for visual knowledge management |
 | **@kitelev/exocortex-cli** | `@kitelev/exocortex-cli` | CLI for automation and AI agent integration |
+| **@exocortex/test-utils** | Private | Shared test utilities and mock factories |
 
 ---
 
