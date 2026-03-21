@@ -223,22 +223,22 @@ functionHandlers.set("sameterm", (args, ctx) => {
 // =============================================================================
 
 functionHandlers.set("abs", (args, ctx) => {
-  const num = Number(ctx.evaluateExpression(args[0], ctx.solution));
+  const num = Number(ctx.getStringValue(ctx.evaluateExpression(args[0], ctx.solution)));
   return BuiltInFunctions.abs(num);
 });
 
 functionHandlers.set("round", (args, ctx) => {
-  const num = Number(ctx.evaluateExpression(args[0], ctx.solution));
+  const num = Number(ctx.getStringValue(ctx.evaluateExpression(args[0], ctx.solution)));
   return BuiltInFunctions.round(num);
 });
 
 functionHandlers.set("ceil", (args, ctx) => {
-  const num = Number(ctx.evaluateExpression(args[0], ctx.solution));
+  const num = Number(ctx.getStringValue(ctx.evaluateExpression(args[0], ctx.solution)));
   return BuiltInFunctions.ceil(num);
 });
 
 functionHandlers.set("floor", (args, ctx) => {
-  const num = Number(ctx.evaluateExpression(args[0], ctx.solution));
+  const num = Number(ctx.getStringValue(ctx.evaluateExpression(args[0], ctx.solution)));
   return BuiltInFunctions.floor(num);
 });
 
@@ -307,9 +307,11 @@ const createDateTimeAccessor = (
 };
 
 // year/years - can work on dateTime or yearMonthDuration
+// Note: static methods use `this` to reference other static methods (e.g., parseDurationComponents),
+// so they must be bound to the BuiltInFunctions class to preserve the correct `this` context.
 const yearHandler = createDateTimeAccessor(
-  BuiltInFunctions.year,
-  BuiltInFunctions.durationYears,
+  BuiltInFunctions.year.bind(BuiltInFunctions),
+  BuiltInFunctions.durationYears.bind(BuiltInFunctions),
   null
 );
 functionHandlers.set("year", yearHandler);
@@ -317,8 +319,8 @@ functionHandlers.set("years", yearHandler);
 
 // month/months - can work on dateTime or yearMonthDuration
 const monthHandler = createDateTimeAccessor(
-  BuiltInFunctions.month,
-  BuiltInFunctions.durationMonths,
+  BuiltInFunctions.month.bind(BuiltInFunctions),
+  BuiltInFunctions.durationMonths.bind(BuiltInFunctions),
   null
 );
 functionHandlers.set("month", monthHandler);
@@ -326,32 +328,32 @@ functionHandlers.set("months", monthHandler);
 
 // day/days - can work on dateTime or dayTimeDuration
 const dayHandler = createDateTimeAccessor(
-  BuiltInFunctions.day,
+  BuiltInFunctions.day.bind(BuiltInFunctions),
   null,
-  BuiltInFunctions.durationDays
+  BuiltInFunctions.durationDays.bind(BuiltInFunctions)
 );
 functionHandlers.set("day", dayHandler);
 functionHandlers.set("days", dayHandler);
 
 // hours - can work on dateTime or dayTimeDuration
 functionHandlers.set("hours", createDateTimeAccessor(
-  BuiltInFunctions.hours,
+  BuiltInFunctions.hours.bind(BuiltInFunctions),
   null,
-  BuiltInFunctions.durationHours
+  BuiltInFunctions.durationHours.bind(BuiltInFunctions)
 ));
 
 // minutes - can work on dateTime or dayTimeDuration
 functionHandlers.set("minutes", createDateTimeAccessor(
-  BuiltInFunctions.minutes,
+  BuiltInFunctions.minutes.bind(BuiltInFunctions),
   null,
-  BuiltInFunctions.durationMinutes
+  BuiltInFunctions.durationMinutes.bind(BuiltInFunctions)
 ));
 
 // seconds - can work on dateTime or dayTimeDuration
 functionHandlers.set("seconds", createDateTimeAccessor(
-  BuiltInFunctions.seconds,
+  BuiltInFunctions.seconds.bind(BuiltInFunctions),
   null,
-  BuiltInFunctions.durationSeconds
+  BuiltInFunctions.durationSeconds.bind(BuiltInFunctions)
 ));
 
 functionHandlers.set("timezone", (args, ctx) => {

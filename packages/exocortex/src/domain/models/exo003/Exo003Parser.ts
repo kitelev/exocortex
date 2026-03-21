@@ -276,10 +276,15 @@ export class Exo003Parser {
     if (uri && typeof uri !== "string") {
       errors.push("uri must be a string");
     } else if (uri) {
-      try {
-        new IRI(uri as string);
-      } catch {
-        errors.push(`uri is not a valid IRI: ${String(uri)}`);
+      // Blank node URIs use the "_:" prefix which is not a valid IRI.
+      // Accept both blank node notation (_:id) and valid IRIs.
+      const uriStr = uri as string;
+      if (!uriStr.startsWith("_:")) {
+        try {
+          new IRI(uriStr);
+        } catch {
+          errors.push(`uri is not a valid IRI or blank node identifier: ${String(uri)}`);
+        }
       }
     }
   }
