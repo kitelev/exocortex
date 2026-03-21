@@ -62,6 +62,14 @@ jest.unstable_mockModule("exocortex", () => ({
   Literal: jest.fn(),
   BlankNode: jest.fn(),
   Triple: jest.fn(),
+  SPARQL_PREFIXES: `PREFIX exo: <https://exocortex.my/ontology/exo#>
+PREFIX ems: <https://exocortex.my/ontology/ems#>
+PREFIX ims: <https://exocortex.my/ontology/ims#>
+PREFIX gtd: <https://exocortex.my/ontology/gtd#>
+PREFIX period: <https://exocortex.my/ontology/period#>
+PREFIX lit: <https://exocortex.my/ontology/lit#>
+PREFIX inbox: <https://exocortex.my/ontology/inbox#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>`,
 }));
 
 jest.unstable_mockModule("../../../src/adapters/FileSystemVaultAdapter.js", () => ({

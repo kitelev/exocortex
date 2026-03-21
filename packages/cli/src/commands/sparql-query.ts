@@ -15,6 +15,7 @@ import {
   type UpdateResult,
   type SolutionMapping,
   type ConstructOperation,
+  SPARQL_PREFIXES,
 } from "exocortex";
 import { FileSystemVaultAdapter } from "../adapters/FileSystemVaultAdapter.js";
 import { TableFormatter } from "../formatters/TableFormatter.js";
@@ -33,6 +34,7 @@ import { TemplateRegistry } from "../templates/TemplateRegistry.js";
 import { SPARQLErrorEnhancer } from "../utils/SPARQLErrorEnhancer.js";
 import { NTriplesFormatter } from "../utils/NTriplesFormatter.js";
 import { scanVaultNamespaces } from "../utils/VaultNamespaceScanner.js";
+import { injectExocortexPrefixes, transformShorthandNotation, filterOntologyPrefixes } from "../utils/QueryPrefixInjector.js";
 
 export interface SparqlQueryOptions {
   vault: string;
@@ -354,8 +356,15 @@ export function sparqlQueryCommand(): Command {
 
         const parser = new SPARQLParser();
 
+        // Transform shorthand notation: <exo__Property> → exo:Property
+        queryString = transformShorthandNotation(queryString);
+
+        // Auto-inject missing Exocortex PREFIX declarations
+        queryString = injectExocortexPrefixes(queryString);
+
         // Scan vault for namespace directories and auto-register prefixes
-        const vaultPrefixes = scanVaultNamespaces(vaultPath);
+        // Filter out ontology prefixes to avoid collision (exo/, ems/ dirs vs ontology IRIs)
+        const vaultPrefixes = filterOntologyPrefixes(scanVaultNamespaces(vaultPath));
         if (vaultPrefixes.size > 0) {
           parser.setVaultPrefixes(vaultPrefixes);
         }
