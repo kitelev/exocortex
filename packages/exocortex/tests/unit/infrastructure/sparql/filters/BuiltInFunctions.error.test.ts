@@ -13,6 +13,7 @@
 import { BuiltInFunctions } from "../../../../../src/infrastructure/sparql/filters/BuiltInFunctions";
 import { IRI } from "../../../../../src/domain/models/rdf/IRI";
 import { Literal } from "../../../../../src/domain/models/rdf/Literal";
+import { BlankNode } from "../../../../../src/domain/models/rdf/BlankNode";
 
 describe("BuiltInFunctions Error Scenarios", () => {
   describe("STR function errors", () => {

@@ -8,7 +8,7 @@ import {
   PermissionError,
   NotFoundError,
   ResourceExhaustedError,
-} from "../../../../src/domain/errors/index.js";
+} from "../../../../src/domain/errors/index";
 
 describe("ApplicationError", () => {
   describe("ValidationError", () => {

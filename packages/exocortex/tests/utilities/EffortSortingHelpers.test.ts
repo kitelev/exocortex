@@ -59,15 +59,15 @@ describe("EffortSortingHelpers", () => {
     });
 
     it("should treat null timestamp as 00:00:00 (no specific time)", () => {
-      const taskWithTime = { startTimestamp: "2025-01-15T09:00:00" };
-      const taskWithNull = { startTimestamp: null };
+      const taskWithTime: { startTimestamp: string | null } = { startTimestamp: "2025-01-15T09:00:00" };
+      const taskWithNull: { startTimestamp: string | null } = { startTimestamp: null };
 
       expect(EffortSortingHelpers.sortByStartTime(taskWithTime, taskWithNull)).toBe(-1);
       expect(EffortSortingHelpers.sortByStartTime(taskWithNull, taskWithTime)).toBe(1);
     });
 
     it("should sort full task list correctly", () => {
-      const tasks = [
+      const tasks: Array<{ startTimestamp: string | null; name: string }> = [
         { startTimestamp: null, name: "No time 1" },
         { startTimestamp: "2025-01-15T14:30:00", name: "Afternoon" },
         { startTimestamp: "2025-01-15T00:00:00", name: "No time 2" },

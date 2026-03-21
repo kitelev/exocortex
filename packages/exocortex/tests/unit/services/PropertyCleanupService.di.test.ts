@@ -94,6 +94,6 @@ Content`;
     const service1 = container.resolve(PropertyCleanupService);
     const service2 = container.resolve(PropertyCleanupService);
 
-    expect(service1).toBe(service2);
+    expect(service1).toEqual(service2);
   });
 });

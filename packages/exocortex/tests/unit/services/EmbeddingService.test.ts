@@ -1,18 +1,17 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
 import {
   EmbeddingService,
   DEFAULT_EMBEDDING_CONFIG,
 } from "../../../src/services/EmbeddingService";
 
 // Mock fetch
-const mockFetch = vi.fn();
-global.fetch = mockFetch;
+const mockFetch = jest.fn();
+(global as any).fetch = mockFetch;
 
 describe("EmbeddingService", () => {
   let service: EmbeddingService;
 
   beforeEach(() => {
-    vi.clearAllMocks();
+    jest.clearAllMocks();
     service = new EmbeddingService();
   });
 

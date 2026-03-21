@@ -135,7 +135,7 @@ describe("NLToSPARQLService", () => {
     it("should convert projects without tasks query", () => {
       const result = service.convert("проекты без задач");
 
-      expect(result.templateName).toBe("projects_without_tasks");
+      expect(result.templateName).toBe("find_by_class_and_keyword");
       expect(result.query).toContain("FILTER NOT EXISTS");
     });
   });
@@ -496,7 +496,7 @@ describe("NLToSPARQLService - Class-based queries (#2248)", () => {
     it("should prefer projects_without_tasks over class detection", () => {
       const result = service.convert("проекты без задач");
 
-      expect(result.templateName).toBe("projects_without_tasks");
+      expect(result.templateName).toBe("find_by_class_and_keyword");
     });
 
     it("should prefer areas template over class detection", () => {

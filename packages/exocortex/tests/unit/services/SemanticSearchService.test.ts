@@ -1,12 +1,11 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
 import {
   SemanticSearchService,
   DEFAULT_SEMANTIC_SEARCH_CONFIG,
 } from "../../../src/services/SemanticSearchService";
 
 // Mock fetch
-const mockFetch = vi.fn();
-global.fetch = mockFetch;
+const mockFetch = jest.fn();
+(global as any).fetch = mockFetch;
 
 describe("SemanticSearchService", () => {
   let service: SemanticSearchService;
@@ -21,7 +20,7 @@ describe("SemanticSearchService", () => {
   });
 
   beforeEach(() => {
-    vi.clearAllMocks();
+    jest.clearAllMocks();
     service = new SemanticSearchService();
   });
 

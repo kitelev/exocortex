@@ -26,9 +26,9 @@ class MockTripleStore implements ITripleStore {
   }
 
   async match(
-    subject?: typeof triple.subject,
-    predicate?: typeof triple.predicate,
-    object?: typeof triple.object
+    subject?: Triple['subject'],
+    predicate?: Triple['predicate'],
+    object?: Triple['object']
   ): Promise<Triple[]> {
     const results: Triple[] = [];
 
@@ -66,24 +66,24 @@ class MockTripleStore implements ITripleStore {
     return this.triples.size;
   }
 
-  async subjects(): Promise<Array<typeof triple.subject>> {
-    const subjects = new Set<typeof triple.subject>();
+  async subjects(): Promise<Array<Triple['subject']>> {
+    const subjects = new Set<Triple['subject']>();
     for (const triple of this.triples.values()) {
       subjects.add(triple.subject);
     }
     return Array.from(subjects);
   }
 
-  async predicates(): Promise<Array<typeof triple.predicate>> {
-    const predicates = new Set<typeof triple.predicate>();
+  async predicates(): Promise<Array<Triple['predicate']>> {
+    const predicates = new Set<Triple['predicate']>();
     for (const triple of this.triples.values()) {
       predicates.add(triple.predicate);
     }
     return Array.from(predicates);
   }
 
-  async objects(): Promise<Array<typeof triple.object>> {
-    const objects = new Set<typeof triple.object>();
+  async objects(): Promise<Array<Triple['object']>> {
+    const objects = new Set<Triple['object']>();
     for (const triple of this.triples.values()) {
       objects.add(triple.object);
     }

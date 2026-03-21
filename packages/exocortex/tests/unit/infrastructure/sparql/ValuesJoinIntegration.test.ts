@@ -14,7 +14,7 @@ import { SPARQLParser } from "../../../../src/infrastructure/sparql/SPARQLParser
 import type { ITripleStore } from "../../../../src/interfaces/ITripleStore";
 import { IRI } from "../../../../src/domain/models/rdf/IRI";
 import { Literal } from "../../../../src/domain/models/rdf/Literal";
-import type { Triple } from "../../../../src/domain/models/rdf/Triple";
+import { Triple } from "../../../../src/domain/models/rdf/Triple";
 
 /**
  * Simple in-memory triple store for testing.
@@ -97,26 +97,26 @@ describe("VALUES clause with JOIN (Issue #607)", () => {
 
     // Add test triples - note that triple store returns xsd:string typed literals
     await store.addAll([
-      {
-        subject: new IRI("http://example.org/task1"),
-        predicate: EXO_LABEL,
-        object: new Literal("Поспать 2025-11-01", new IRI(XSD_STRING)),
-      },
-      {
-        subject: new IRI("http://example.org/task2"),
-        predicate: EXO_LABEL,
-        object: new Literal("Поспать 2025-11-02", new IRI(XSD_STRING)),
-      },
-      {
-        subject: new IRI("http://example.org/task3"),
-        predicate: EXO_LABEL,
-        object: new Literal("Поспать 2025-11-03", new IRI(XSD_STRING)),
-      },
-      {
-        subject: new IRI("http://example.org/task4"),
-        predicate: EXO_LABEL,
-        object: new Literal("Other Task", new IRI(XSD_STRING)),
-      },
+      new Triple(
+        new IRI("http://example.org/task1"),
+        EXO_LABEL,
+        new Literal("Поспать 2025-11-01", new IRI(XSD_STRING)),
+      ),
+      new Triple(
+        new IRI("http://example.org/task2"),
+        EXO_LABEL,
+        new Literal("Поспать 2025-11-02", new IRI(XSD_STRING)),
+      ),
+      new Triple(
+        new IRI("http://example.org/task3"),
+        EXO_LABEL,
+        new Literal("Поспать 2025-11-03", new IRI(XSD_STRING)),
+      ),
+      new Triple(
+        new IRI("http://example.org/task4"),
+        EXO_LABEL,
+        new Literal("Other Task", new IRI(XSD_STRING)),
+      ),
     ]);
   });
 
@@ -206,16 +206,16 @@ describe("VALUES clause with JOIN (Issue #607)", () => {
       // Add more test data with additional predicate
       const EXO_STATUS = new IRI("https://exocortex.my/ontology/ems#status");
       await store.addAll([
-        {
-          subject: new IRI("http://example.org/task1"),
-          predicate: EXO_STATUS,
-          object: new Literal("completed", new IRI(XSD_STRING)),
-        },
-        {
-          subject: new IRI("http://example.org/task2"),
-          predicate: EXO_STATUS,
-          object: new Literal("pending", new IRI(XSD_STRING)),
-        },
+        new Triple(
+          new IRI("http://example.org/task1"),
+          EXO_STATUS,
+          new Literal("completed", new IRI(XSD_STRING)),
+        ),
+        new Triple(
+          new IRI("http://example.org/task2"),
+          EXO_STATUS,
+          new Literal("pending", new IRI(XSD_STRING)),
+        ),
       ]);
 
       const query = `
@@ -246,11 +246,11 @@ describe("VALUES clause with JOIN (Issue #607)", () => {
       // Add year data
       const EXO_YEAR = new IRI("https://exocortex.my/ontology/exo#year");
       await store.addAll([
-        {
-          subject: new IRI("http://example.org/task1"),
-          predicate: EXO_YEAR,
-          object: new Literal("2025", new IRI("http://www.w3.org/2001/XMLSchema#integer")),
-        },
+        new Triple(
+          new IRI("http://example.org/task1"),
+          EXO_YEAR,
+          new Literal("2025", new IRI("http://www.w3.org/2001/XMLSchema#integer")),
+        ),
       ]);
 
       const query = `
@@ -280,16 +280,16 @@ describe("VALUES clause with JOIN (Issue #607)", () => {
       const EMS_PROJECT = new IRI("https://exocortex.my/ontology/ems#Project");
 
       await store.addAll([
-        {
-          subject: new IRI("http://example.org/task1"),
-          predicate: RDF_TYPE,
-          object: EMS_TASK,
-        },
-        {
-          subject: new IRI("http://example.org/task2"),
-          predicate: RDF_TYPE,
-          object: EMS_PROJECT,
-        },
+        new Triple(
+          new IRI("http://example.org/task1"),
+          RDF_TYPE,
+          EMS_TASK,
+        ),
+        new Triple(
+          new IRI("http://example.org/task2"),
+          RDF_TYPE,
+          EMS_PROJECT,
+        ),
       ]);
 
       const query = `
@@ -353,11 +353,11 @@ describe("VALUES clause with JOIN (Issue #607)", () => {
 
     it("should handle multiple matching triples for same VALUES value", async () => {
       // Add duplicate label
-      await store.add({
-        subject: new IRI("http://example.org/task5"),
-        predicate: EXO_LABEL,
-        object: new Literal("Поспать 2025-11-01", new IRI(XSD_STRING)),
-      });
+      await store.add(new Triple(
+        new IRI("http://example.org/task5"),
+        EXO_LABEL,
+        new Literal("Поспать 2025-11-01", new IRI(XSD_STRING)),
+      ));
 
       const query = `
         PREFIX exo: <https://exocortex.my/ontology/exo#>
@@ -380,11 +380,11 @@ describe("VALUES clause with JOIN (Issue #607)", () => {
 
     it("should handle VALUES with Unicode characters correctly", async () => {
       // Add label with special Unicode
-      await store.add({
-        subject: new IRI("http://example.org/task6"),
-        predicate: EXO_LABEL,
-        object: new Literal("日本語テスト", new IRI(XSD_STRING)),
-      });
+      await store.add(new Triple(
+        new IRI("http://example.org/task6"),
+        EXO_LABEL,
+        new Literal("日本語テスト", new IRI(XSD_STRING)),
+      ));
 
       const query = `
         PREFIX exo: <https://exocortex.my/ontology/exo#>

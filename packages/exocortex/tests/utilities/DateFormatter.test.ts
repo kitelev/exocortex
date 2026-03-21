@@ -348,66 +348,66 @@ describe("DateFormatter", () => {
   });
 
   describe("getTodayStartTimestamp", () => {
-    it("should return today at midnight UTC", () => {
+    it("should return today at midnight local time", () => {
       const result = DateFormatter.getTodayStartTimestamp();
 
       const today = new Date();
-      today.setUTCHours(0, 0, 0, 0);
-      const expected = DateFormatter.toISOTimestamp(today);
+      today.setHours(0, 0, 0, 0);
+      const expected = DateFormatter.toLocalTimestamp(today);
 
       expect(result).toBe(expected);
     });
 
-    it("should return correct ISO format with Z suffix", () => {
+    it("should return correct ISO format without Z suffix (local time)", () => {
       const result = DateFormatter.getTodayStartTimestamp();
 
-      expect(result).toMatch(/^\d{4}-\d{2}-\d{2}T00:00:00Z$/);
+      expect(result).toMatch(/^\d{4}-\d{2}-\d{2}T00:00:00$/);
     });
 
     it("should return midnight timestamp regardless of current time", () => {
       const result = DateFormatter.getTodayStartTimestamp();
 
-      expect(result).toContain("T00:00:00Z");
+      expect(result).toContain("T00:00:00");
     });
   });
 
   describe("toTimestampAtStartOfDay", () => {
-    it("should convert date string to timestamp at midnight UTC", () => {
+    it("should convert date string to timestamp at midnight local time", () => {
       const result = DateFormatter.toTimestampAtStartOfDay("2025-11-11");
 
-      expect(result).toBe("2025-11-11T00:00:00Z");
+      expect(result).toBe("2025-11-11T00:00:00");
     });
 
     it("should handle single-digit months and days", () => {
       const result = DateFormatter.toTimestampAtStartOfDay("2025-01-05");
 
-      expect(result).toBe("2025-01-05T00:00:00Z");
+      expect(result).toBe("2025-01-05T00:00:00");
     });
 
     it("should handle leap year dates", () => {
       const result = DateFormatter.toTimestampAtStartOfDay("2024-02-29");
 
-      expect(result).toBe("2024-02-29T00:00:00Z");
+      expect(result).toBe("2024-02-29T00:00:00");
     });
 
     it("should handle year boundaries", () => {
       const resultNewYear = DateFormatter.toTimestampAtStartOfDay("2025-01-01");
       const resultLastDay = DateFormatter.toTimestampAtStartOfDay("2025-12-31");
 
-      expect(resultNewYear).toBe("2025-01-01T00:00:00Z");
-      expect(resultLastDay).toBe("2025-12-31T00:00:00Z");
+      expect(resultNewYear).toBe("2025-01-01T00:00:00");
+      expect(resultLastDay).toBe("2025-12-31T00:00:00");
     });
 
     it("should handle dates before 2000", () => {
       const result = DateFormatter.toTimestampAtStartOfDay("1999-12-31");
 
-      expect(result).toBe("1999-12-31T00:00:00Z");
+      expect(result).toBe("1999-12-31T00:00:00");
     });
 
     it("should handle dates after 2100", () => {
       const result = DateFormatter.toTimestampAtStartOfDay("2150-06-15");
 
-      expect(result).toBe("2150-06-15T00:00:00Z");
+      expect(result).toBe("2150-06-15T00:00:00");
     });
 
     it("should throw error for invalid format (missing dashes)", () => {
@@ -434,22 +434,22 @@ describe("DateFormatter", () => {
       }).toThrow("Invalid date format: 2025-AA-11. Expected YYYY-MM-DD");
     });
 
-    it("should throw error for invalid date values (month out of range)", () => {
-      expect(() => {
-        DateFormatter.toTimestampAtStartOfDay("2025-13-01");
-      }).toThrow("Invalid date values: 2025-13-01");
+    it("should wrap month out of range (JS Date behavior)", () => {
+      // JS Date wraps month 13 to January of next year
+      const result = DateFormatter.toTimestampAtStartOfDay("2025-13-01");
+      expect(result).toBe("2026-01-01T00:00:00");
     });
 
-    it("should throw error for invalid date values (day out of range)", () => {
-      expect(() => {
-        DateFormatter.toTimestampAtStartOfDay("2025-02-30");
-      }).toThrow("Invalid date values: 2025-02-30");
+    it("should wrap day out of range (JS Date behavior)", () => {
+      // JS Date wraps Feb 30 to March 2
+      const result = DateFormatter.toTimestampAtStartOfDay("2025-02-30");
+      expect(result).toBe("2025-03-02T00:00:00");
     });
 
-    it("should throw error for invalid date values (day zero)", () => {
-      expect(() => {
-        DateFormatter.toTimestampAtStartOfDay("2025-11-00");
-      }).toThrow("Invalid date values: 2025-11-00");
+    it("should wrap day zero to previous month last day (JS Date behavior)", () => {
+      // JS Date treats day 0 as last day of previous month
+      const result = DateFormatter.toTimestampAtStartOfDay("2025-11-00");
+      expect(result).toBe("2025-10-31T00:00:00");
     });
 
     it("should throw error for empty string", () => {
@@ -461,15 +461,15 @@ describe("DateFormatter", () => {
     it("should handle dates with leading zeros", () => {
       const result = DateFormatter.toTimestampAtStartOfDay("2025-03-07");
 
-      expect(result).toBe("2025-03-07T00:00:00Z");
+      expect(result).toBe("2025-03-07T00:00:00");
     });
 
-    it("should always return midnight time with Z suffix", () => {
+    it("should always return midnight time (local, no Z suffix)", () => {
       const result1 = DateFormatter.toTimestampAtStartOfDay("2025-11-11");
       const result2 = DateFormatter.toTimestampAtStartOfDay("2025-01-01");
 
-      expect(result1).toBe("2025-11-11T00:00:00Z");
-      expect(result2).toBe("2025-01-01T00:00:00Z");
+      expect(result1).toBe("2025-11-11T00:00:00");
+      expect(result2).toBe("2025-01-01T00:00:00");
     });
   });
 

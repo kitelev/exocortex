@@ -35,7 +35,7 @@ describe("VaultPrefixTransformer", () => {
       expect(transformer.transform(query)).toBe(query);
     });
 
-    it("should inject PREFIX for undeclared vault namespace", () => {
+    it("should replace vault prefixed name with full IRI", () => {
       transformer.setVaultPrefixes(
         new Map([["kitelev", "obsidian://vault/03%20Knowledge/kitelev/"]])
       );
@@ -47,12 +47,14 @@ SELECT ?label WHERE {
 
       const result = transformer.transform(query);
 
+      // Should replace kitelev:uuid with full IRI (including .md suffix)
       expect(result).toContain(
-        "PREFIX kitelev: <obsidian://vault/03%20Knowledge/kitelev/>"
+        "<obsidian://vault/03%20Knowledge/kitelev/dce4f087-1393-4e1b-a09f-8da39d3a5fa3.md>"
       );
-      // Original query should be preserved
+      // Original PREFIX exo: should be preserved
       expect(result).toContain("PREFIX exo:");
-      expect(result).toContain("kitelev:dce4f087-1393-4e1b-a09f-8da39d3a5fa3");
+      // The prefixed name should be replaced (no longer present)
+      expect(result).not.toContain("kitelev:dce4f087-1393-4e1b-a09f-8da39d3a5fa3");
     });
 
     it("should not inject PREFIX if already declared by user", () => {
@@ -91,14 +93,14 @@ SELECT ?label WHERE {
       const result = transformer.transform(query);
 
       expect(result).toContain(
-        "PREFIX kitelev: <obsidian://vault/03%20Knowledge/kitelev/>"
+        "<obsidian://vault/03%20Knowledge/kitelev/uuid1.md>"
       );
       expect(result).toContain(
-        "PREFIX shared: <obsidian://vault/03%20Knowledge/shared/>"
+        "<obsidian://vault/03%20Knowledge/shared/uuid2.md>"
       );
     });
 
-    it("should not inject unused vault prefixes", () => {
+    it("should not replace unused vault prefixes", () => {
       transformer.setVaultPrefixes(
         new Map([
           ["kitelev", "obsidian://vault/03%20Knowledge/kitelev/"],
@@ -112,8 +114,8 @@ SELECT ?label WHERE {
 
       const result = transformer.transform(query);
 
-      expect(result).toContain("PREFIX kitelev:");
-      expect(result).not.toContain("PREFIX unused:");
+      expect(result).toContain("<obsidian://vault/03%20Knowledge/kitelev/uuid1.md>");
+      expect(result).not.toContain("unused");
     });
 
     it("should not match prefixes inside string literals", () => {
@@ -203,8 +205,8 @@ SELECT ?label WHERE {
 
       const result = transformer.transform(query);
 
-      expect(result).toMatch(
-        /^PREFIX kitelev: <obsidian:\/\/vault\/03%20Knowledge\/kitelev\/>\n/
+      expect(result).toContain(
+        "<obsidian://vault/03%20Knowledge/kitelev/dce4f087-1393-4e1b-a09f-8da39d3a5fa3.md>"
       );
     });
 
@@ -259,9 +261,9 @@ SELECT ?s WHERE { ?s exo:Asset_label ?o }`;
 
       const result = transformer.transform(query);
 
-      // Should inject only one PREFIX declaration
-      const nsCount = (result.match(/PREFIX ns:/g) || []).length;
-      expect(nsCount).toBe(1);
+      // Both prefixed names should be replaced with full IRIs
+      expect(result).toContain("<obsidian://vault/03%20Knowledge/ns/uuid1.md>");
+      expect(result).toContain("<obsidian://vault/03%20Knowledge/ns/uuid2.md>");
     });
   });
 });

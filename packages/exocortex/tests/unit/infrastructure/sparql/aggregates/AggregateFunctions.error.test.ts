@@ -15,9 +15,13 @@ import { AggregateFunctions } from "../../../../../src/infrastructure/sparql/agg
 import { SolutionMapping } from "../../../../../src/infrastructure/sparql/SolutionMapping";
 import { IRI } from "../../../../../src/domain/models/rdf/IRI";
 import { Literal } from "../../../../../src/domain/models/rdf/Literal";
+import { BlankNode } from "../../../../../src/domain/models/rdf/BlankNode";
 
 describe("AggregateFunctions Error Scenarios", () => {
   const xsdInt = new IRI("http://www.w3.org/2001/XMLSchema#integer");
+  const xsdDecimal = new IRI("http://www.w3.org/2001/XMLSchema#decimal");
+  const xsdString = new IRI("http://www.w3.org/2001/XMLSchema#string");
+  const xsdDouble = new IRI("http://www.w3.org/2001/XMLSchema#double");
 
   describe("COUNT edge cases", () => {
     it("should return 0 for empty solution set", () => {

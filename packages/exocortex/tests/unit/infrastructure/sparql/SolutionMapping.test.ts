@@ -315,7 +315,7 @@ describe("SolutionMapping", () => {
       // Join should work - this is the bug fix
       const merged = valuesSolution.merge(bgpSolution);
       expect(merged).not.toBeNull();
-      expect(merged!.get("s")!.toString()).toBe("<http://example.org/task1>");
+      expect(merged!.get("s")!.toString()).toBe("http://example.org/task1");
       expect((merged!.get("label") as Literal).value).toBe("Label1");
     });
 

@@ -154,7 +154,7 @@ describe("ReDoS Security Tests", () => {
 
     it("should return null for missing or empty property", () => {
       expect(extractDailyNoteDate({})).toBe(null);
-      expect(extractDailyNoteDate({ pn__DailyNote_day: "" })).toBe("");
+      expect(extractDailyNoteDate({ pn__DailyNote_day: "" })).toBe(null);
       expect(extractDailyNoteDate({ pn__DailyNote_day: null })).toBe(null);
     });
   });
