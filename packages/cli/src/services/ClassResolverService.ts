@@ -2,10 +2,15 @@ import { NodeFsAdapter } from "../adapters/NodeFsAdapter.js";
 
 /**
  * Error thrown when a class short name cannot be resolved in the vault.
+ * Includes available class names as suggestions when available.
  */
 export class ClassNotFoundError extends Error {
-  constructor(className: string) {
-    super(`Class '${className}' not found in vault`);
+  constructor(className: string, availableClasses?: string[]) {
+    let message = `Class '${className}' not found in vault`;
+    if (availableClasses && availableClasses.length > 0) {
+      message += `\nAvailable classes: ${availableClasses.join(", ")}`;
+    }
+    super(message);
     this.name = "ClassNotFoundError";
   }
 }
@@ -53,7 +58,10 @@ export class ClassResolverService {
     const uuid = index.get(classShortName);
 
     if (!uuid) {
-      throw new ClassNotFoundError(classShortName);
+      const availableClasses = Array.from(index.keys()).filter(
+        (name) => !this.isUUID(name),
+      );
+      throw new ClassNotFoundError(classShortName, availableClasses);
     }
 
     return uuid;
@@ -84,8 +92,10 @@ export class ClassResolverService {
    * Build the class name -> UUID index by scanning vault files.
    *
    * Scans all markdown files and looks for files where exo__Instance_class
-   * contains "ims__Class". For those files, the basename (without .md) is
-   * used as the short name and exo__Asset_uid as the UUID.
+   * contains "ims__Class" or "exo__Class". For those files:
+   * - exo__Asset_uid is used as the UUID (preferred)
+   * - If exo__Asset_uid is missing, the file basename is used if it is a valid UUID
+   * - The file basename and exo__Asset_label are used as lookup keys
    */
   private async buildIndex(vaultPath: string): Promise<Map<string, string>> {
     const index = new Map<string, string>();
@@ -100,23 +110,27 @@ export class ClassResolverService {
           continue;
         }
 
-        const uid = metadata.exo__Asset_uid;
+        // Determine UUID: prefer exo__Asset_uid, fallback to filename if it's a UUID
+        const basename = this.getBasename(file);
+        let uid = metadata.exo__Asset_uid;
+        if (!uid && this.isUUID(basename)) {
+          uid = basename;
+        }
         if (!uid) {
           continue;
         }
 
-        // Use the file basename (without .md) as the short name
-        const basename = this.getBasename(file);
+        const uidStr = String(uid);
 
-        // Also index by exo__Asset_label if available
-        const label = metadata.exo__Asset_label;
-
+        // Index by basename (for human-named files like ztlk__PermanentNote.md)
         if (basename) {
-          index.set(basename, String(uid));
+          index.set(basename, uidStr);
         }
 
+        // Index by exo__Asset_label (primary lookup key for UUID-named files)
+        const label = metadata.exo__Asset_label;
         if (label && typeof label === "string" && label !== basename) {
-          index.set(label, String(uid));
+          index.set(label, uidStr);
         }
       } catch {
         // Skip files that can't be read
@@ -129,6 +143,7 @@ export class ClassResolverService {
 
   /**
    * Check if a file's metadata indicates it is a class definition.
+   * Recognizes both `ims__Class` (legacy) and `exo__Class` (current) markers.
    */
   private isClassDefinition(metadata: Record<string, unknown>): boolean {
     const instanceClass = metadata.exo__Instance_class;
@@ -141,7 +156,7 @@ export class ClassResolverService {
 
     return classValues.some((value) => {
       const str = String(value);
-      return str.includes("ims__Class");
+      return str.includes("ims__Class") || str.includes("exo__Class");
     });
   }
 

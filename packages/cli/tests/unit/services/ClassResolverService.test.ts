@@ -49,6 +49,22 @@ describe("ClassResolverService", () => {
       expect(uuid).toBe("abc-123-def-456");
     });
 
+    it("should resolve class by exo__Asset_label when file is named by UUID", async () => {
+      // Real-world scenario: class file named by UUID, label holds the class name
+      mockFsAdapter.getMarkdownFiles.mockResolvedValue([
+        "03 Knowledge/ztlk/38b234f7-949a-4da0-bab0-c4ca559808d1.md",
+      ]);
+      mockFsAdapter.getFileMetadata.mockResolvedValue({
+        exo__Instance_class: ['"[[exo__Class]]"'],
+        exo__Asset_uid: "38b234f7-949a-4da0-bab0-c4ca559808d1",
+        exo__Asset_label: "ztlk__PermanentNote",
+      });
+
+      const uuid = await resolver.resolve("/vault", "ztlk__PermanentNote");
+
+      expect(uuid).toBe("38b234f7-949a-4da0-bab0-c4ca559808d1");
+    });
+
     it("should resolve class by label", async () => {
       mockFsAdapter.getMarkdownFiles.mockResolvedValue([
         "03 Knowledge/classes/some-file.md",
@@ -64,7 +80,49 @@ describe("ClassResolverService", () => {
       expect(uuid).toBe("uuid-from-label");
     });
 
-    it("should throw ClassNotFoundError for unknown class", async () => {
+    it("should recognize exo__Class in exo__Instance_class (not just ims__Class)", async () => {
+      mockFsAdapter.getMarkdownFiles.mockResolvedValue([
+        "03 Knowledge/ztlk/some-uuid.md",
+      ]);
+      mockFsAdapter.getFileMetadata.mockResolvedValue({
+        exo__Instance_class: ['"[[exo__Class]]"'],
+        exo__Asset_uid: "exo-class-uuid",
+        exo__Asset_label: "ztlk__PermanentNote",
+      });
+
+      const uuid = await resolver.resolve("/vault", "ztlk__PermanentNote");
+
+      expect(uuid).toBe("exo-class-uuid");
+    });
+
+    it("should throw ClassNotFoundError with available class suggestions", async () => {
+      mockFsAdapter.getMarkdownFiles.mockResolvedValue([
+        "class1.md",
+        "class2.md",
+      ]);
+      mockFsAdapter.getFileMetadata
+        .mockResolvedValueOnce({
+          exo__Instance_class: ['"[[exo__Class]]"'],
+          exo__Asset_uid: "uuid-1",
+          exo__Asset_label: "ztlk__PermanentNote",
+        })
+        .mockResolvedValueOnce({
+          exo__Instance_class: ['"[[exo__Class]]"'],
+          exo__Asset_uid: "uuid-2",
+          exo__Asset_label: "ems__Task",
+        });
+
+      await expect(
+        resolver.resolve("/vault", "xyz__Unknown"),
+      ).rejects.toThrow(/xyz__Unknown/);
+
+      // Should include available class names as suggestions
+      await expect(
+        resolver.resolve("/vault", "xyz__Unknown"),
+      ).rejects.toThrow(/Available classes:/);
+    });
+
+    it("should throw ClassNotFoundError for unknown class with no available classes", async () => {
       mockFsAdapter.getMarkdownFiles.mockResolvedValue([]);
 
       await expect(
@@ -106,7 +164,7 @@ describe("ClassResolverService", () => {
       expect(mockFsAdapter.getMarkdownFiles).toHaveBeenCalledTimes(1);
     });
 
-    it("should skip files without exo__Instance_class containing ims__Class", async () => {
+    it("should skip files without exo__Instance_class containing class marker", async () => {
       mockFsAdapter.getMarkdownFiles.mockResolvedValue([
         "task.md",
         "class.md",
@@ -166,6 +224,21 @@ describe("ClassResolverService", () => {
 
       expect(uuid).toBe("string-class-uuid");
     });
+
+    it("should use UUID from filename when exo__Asset_uid is missing but filename is UUID", async () => {
+      mockFsAdapter.getMarkdownFiles.mockResolvedValue([
+        "03 Knowledge/ztlk/38b234f7-949a-4da0-bab0-c4ca559808d1.md",
+      ]);
+      mockFsAdapter.getFileMetadata.mockResolvedValue({
+        exo__Instance_class: ['"[[exo__Class]]"'],
+        // No exo__Asset_uid — but filename IS a UUID
+        exo__Asset_label: "ztlk__PermanentNote",
+      });
+
+      const uuid = await resolver.resolve("/vault", "ztlk__PermanentNote");
+
+      expect(uuid).toBe("38b234f7-949a-4da0-bab0-c4ca559808d1");
+    });
   });
 
   describe("listClasses()", () => {
@@ -187,6 +260,21 @@ describe("ClassResolverService", () => {
       const classes = await resolver.listClasses("/vault");
 
       expect(classes).toContain("ems__Task");
+      expect(classes).toContain("ztlk__PermanentNote");
+    });
+
+    it("should return classes with exo__Class instance type", async () => {
+      mockFsAdapter.getMarkdownFiles.mockResolvedValue([
+        "38b234f7-949a-4da0-bab0-c4ca559808d1.md",
+      ]);
+      mockFsAdapter.getFileMetadata.mockResolvedValue({
+        exo__Instance_class: ['"[[exo__Class]]"'],
+        exo__Asset_uid: "38b234f7-949a-4da0-bab0-c4ca559808d1",
+        exo__Asset_label: "ztlk__PermanentNote",
+      });
+
+      const classes = await resolver.listClasses("/vault");
+
       expect(classes).toContain("ztlk__PermanentNote");
     });
   });
