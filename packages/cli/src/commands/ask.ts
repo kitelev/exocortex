@@ -11,6 +11,8 @@ import {
   QueryExecutor,
 } from "exocortex";
 import { FileSystemVaultAdapter } from "../adapters/FileSystemVaultAdapter.js";
+import { injectExocortexPrefixes, transformShorthandNotation, filterOntologyPrefixes } from "../utils/QueryPrefixInjector.js";
+import { scanVaultNamespaces } from "../utils/VaultNamespaceScanner.js";
 import { TableFormatter } from "../formatters/TableFormatter.js";
 import { JsonFormatter } from "../formatters/JsonFormatter.js";
 import { ErrorHandler, type OutputFormat } from "../utils/ErrorHandler.js";
@@ -133,8 +135,16 @@ export function askCommand(): Command {
         }
 
         // Parse and execute SPARQL
+        let sparqlQuery = conversionResult.query;
+        sparqlQuery = transformShorthandNotation(sparqlQuery);
+        sparqlQuery = injectExocortexPrefixes(sparqlQuery);
+
         const parser = new SPARQLParser();
-        const ast = parser.parse(conversionResult.query);
+        const vaultPrefixes = filterOntologyPrefixes(scanVaultNamespaces(vaultPath));
+        if (vaultPrefixes.size > 0) {
+          parser.setVaultPrefixes(vaultPrefixes);
+        }
+        const ast = parser.parse(sparqlQuery);
 
         const translator = new AlgebraTranslator();
         let algebra = translator.translate(ast);
