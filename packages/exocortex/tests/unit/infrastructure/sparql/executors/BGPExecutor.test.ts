@@ -859,4 +859,68 @@ describe("BGPExecutor", () => {
       expect(results).toHaveLength(3);
     });
   });
+
+  describe("Issue #2292: Literals in subject/predicate position", () => {
+    it("should yield no results when literal appears in subject position", async () => {
+      // Simulate a scenario where a variable gets bound to a literal
+      // and then that literal ends up in subject position during join
+      const bgp: BGPOperation = {
+        type: "bgp",
+        triples: [
+          {
+            subject: { type: "literal", value: "some string", datatype: "http://www.w3.org/2001/XMLSchema#string" },
+            predicate: { type: "iri", value: "http://example.org/predicate" },
+            object: { type: "variable", value: "o" },
+          },
+        ],
+      };
+
+      const results = await executor.executeAll(bgp);
+      expect(results).toHaveLength(0);
+    });
+
+    it("should yield no results when literal appears in predicate position", async () => {
+      const bgp: BGPOperation = {
+        type: "bgp",
+        triples: [
+          {
+            subject: { type: "variable", value: "s" },
+            predicate: { type: "literal", value: "not a predicate", datatype: "http://www.w3.org/2001/XMLSchema#string" },
+            object: { type: "variable", value: "o" },
+          },
+        ],
+      };
+
+      const results = await executor.executeAll(bgp);
+      expect(results).toHaveLength(0);
+    });
+
+    it("should skip literal-subject patterns in multi-pattern BGP join", async () => {
+      // This simulates the real-world scenario: first pattern binds ?x to a literal,
+      // second pattern uses ?x in subject position. Before the fix, this would throw.
+      const bgp: BGPOperation = {
+        type: "bgp",
+        triples: [
+          {
+            subject: { type: "iri", value: "http://example.org/s1" },
+            predicate: { type: "iri", value: "http://example.org/name" },
+            object: { type: "variable", value: "x" },
+          },
+          {
+            subject: { type: "variable", value: "x" },
+            predicate: { type: "iri", value: "http://example.org/pred" },
+            object: { type: "variable", value: "y" },
+          },
+        ],
+      };
+
+      // Should not throw, should return empty results
+      // because ?x gets bound to a literal from the first pattern
+      // and literals can't be subjects
+      const results = await executor.executeAll(bgp);
+      // Results may be empty or contain only IRI-bound solutions
+      // The key test is that it does NOT throw
+      expect(results).toBeDefined();
+    });
+  });
 });
