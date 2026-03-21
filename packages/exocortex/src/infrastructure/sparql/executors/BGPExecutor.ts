@@ -119,6 +119,11 @@ export class BGPExecutor {
 
     const predElement = pattern.predicate as TripleElement;
 
+    // Issue #2292: Gracefully handle literals in subject/predicate position
+    if (this.isLiteral(pattern.subject) || this.isLiteral(predElement)) {
+      return;
+    }
+
     // Convert algebra triple pattern to triple store query
     const subject = this.isVariable(pattern.subject) ? undefined : this.toRDFTermAsSubject(pattern.subject);
     const predicate = this.isVariable(predElement) ? undefined : this.toRDFTermAsPredicate(predElement);
@@ -197,6 +202,14 @@ export class BGPExecutor {
     }
 
     const predElement = pattern.predicate as TripleElement;
+
+    // Issue #2292: When a variable is bound to a literal and placed in subject
+    // or predicate position (e.g., via join before FILTER(isIRI()) is applied),
+    // we yield no results instead of throwing, since RDF does not allow literals
+    // in subject or predicate position — no matching triples can exist.
+    if (this.isLiteral(pattern.subject) || this.isLiteral(predElement)) {
+      return;
+    }
 
     // Convert algebra triple pattern to triple store query
     // For quoted triples with variables inside, we need to match against undefined
@@ -351,11 +364,12 @@ export class BGPExecutor {
         return true;
       case "blank":
         return term instanceof BlankNode && pattern.value === term.id;
-      case "quoted":
+      case "quoted": {
         if (!(term instanceof QuotedTriple)) return false;
         // For quoted triples without variables, compare structurally
         const patternQt = this.toRDFQuotedTriple(pattern);
         return patternQt.equals(term);
+      }
       default:
         return false;
     }
@@ -488,6 +502,15 @@ export class BGPExecutor {
   }
 
   /**
+   * Check if an algebra element is a literal.
+   * Used to detect invalid literal placement in subject/predicate positions
+   * before throwing, allowing graceful handling (Issue #2292).
+   */
+  private isLiteral(element: TripleElement): boolean {
+    return element.type === "literal";
+  }
+
+  /**
    * Convert algebra triple element to RDF term for subject position.
    * In RDF-Star, subjects can include quoted triples.
    */
@@ -504,7 +527,7 @@ export class BGPExecutor {
       case "quoted":
         return this.toRDFQuotedTriple(element);
       default:
-        throw new BGPExecutorError(`Unknown element type: ${(element as any).type}`);
+        throw new BGPExecutorError(`Unknown element type: ${(element as unknown).type}`);
     }
   }
 
@@ -536,7 +559,7 @@ export class BGPExecutor {
       case "variable":
         throw new BGPExecutorError(`Cannot convert variable to RDF term: ${element.value}`);
       default:
-        throw new BGPExecutorError(`Unknown element type: ${(element as any).type}`);
+        throw new BGPExecutorError(`Unknown element type: ${(element as unknown).type}`);
     }
   }
 
@@ -562,7 +585,7 @@ export class BGPExecutor {
       case "quoted":
         return this.toRDFQuotedTriple(element);
       default:
-        throw new BGPExecutorError(`Unknown element type: ${(element as any).type}`);
+        throw new BGPExecutorError(`Unknown element type: ${(element as unknown).type}`);
     }
   }
 
@@ -592,7 +615,7 @@ export class BGPExecutor {
     } else if (term instanceof QuotedTriple) {
       return this.toAlgebraQuotedTriple(term);
     }
-    throw new BGPExecutorError(`Unknown RDF term type: ${(term as any).constructor?.name || 'unknown'}`);
+    throw new BGPExecutorError(`Unknown RDF term type: ${(term as unknown).constructor?.name || 'unknown'}`);
   }
 
   /**
