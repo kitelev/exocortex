@@ -113,7 +113,7 @@ describe("AssetCreationService", () => {
       );
     });
 
-    it("should set correct frontmatter fields", async () => {
+    it("should set correct frontmatter fields with wikilink [[uuid|className]]", async () => {
       const result = await service.create({
         classShortName: "ztlk__PermanentNote",
         label: "Test Note",
@@ -123,7 +123,7 @@ describe("AssetCreationService", () => {
       expect(result.frontmatter).toMatchObject({
         exo__Asset_uid: "generated-uuid-1234-5678-9012-abcdef123456",
         exo__Asset_label: "Test Note",
-        exo__Instance_class: ['"[[ztlk__PermanentNote]]"'],
+        exo__Instance_class: ['"[[resolved-class-uuid|ztlk__PermanentNote]]"'],
       });
     });
 
@@ -307,6 +307,20 @@ describe("AssetCreationService", () => {
         expect.any(Object),
         "# Body content\n\nSome text here.",
       );
+    });
+
+    it("should use wikilink with UUID and label for exo__Instance_class", async () => {
+      mockClassResolver.resolve.mockResolvedValue("38b234f7-949a-4da0-bab0-c4ca559808d1");
+
+      const result = await service.create({
+        classShortName: "ztlk__PermanentNote",
+        label: "Test Note",
+        vault: "/vault",
+      });
+
+      expect(result.frontmatter.exo__Instance_class).toEqual([
+        '"[[38b234f7-949a-4da0-bab0-c4ca559808d1|ztlk__PermanentNote]]"',
+      ]);
     });
 
     it("should throw error for empty label", async () => {

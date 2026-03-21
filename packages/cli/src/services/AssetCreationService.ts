@@ -160,7 +160,7 @@ export class AssetCreationService {
     fm["exo__Asset_label"] = params.label;
     fm["exo__Asset_createdAt"] = params.timestamp;
     fm["exo__Asset_createdBy"] = `"[[${params.createdBy}]]"`;
-    fm["exo__Instance_class"] = [`"[[${params.classShortName}]]"`];
+    fm["exo__Instance_class"] = [`"[[${params.classUuid}|${params.classShortName}]]"`];
 
     // Aliases
     const allAliases = [params.label];

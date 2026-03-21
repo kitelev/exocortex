@@ -191,8 +191,11 @@ export function createCommand(): Command {
         // Parse properties from --property flags
         const properties = parseProperties(options.property);
 
-        // Resolve body content
-        const body = await resolveBody(options);
+        // Resolve body content and parse escape sequences
+        let body = await resolveBody(options);
+        if (body) {
+          body = body.replace(/\\n/g, "\n");
+        }
 
         // Create services
         const fsAdapter = new NodeFsAdapter(vaultPath);
