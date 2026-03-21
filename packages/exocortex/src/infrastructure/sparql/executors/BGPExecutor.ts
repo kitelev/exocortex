@@ -527,7 +527,7 @@ export class BGPExecutor {
       case "quoted":
         return this.toRDFQuotedTriple(element);
       default:
-        throw new BGPExecutorError(`Unknown element type: ${(element as unknown).type}`);
+        throw new BGPExecutorError(`Unknown element type: ${String(element)}`);
     }
   }
 
@@ -559,7 +559,7 @@ export class BGPExecutor {
       case "variable":
         throw new BGPExecutorError(`Cannot convert variable to RDF term: ${element.value}`);
       default:
-        throw new BGPExecutorError(`Unknown element type: ${(element as unknown).type}`);
+        throw new BGPExecutorError(`Unknown element type: ${String(element)}`);
     }
   }
 
@@ -585,7 +585,7 @@ export class BGPExecutor {
       case "quoted":
         return this.toRDFQuotedTriple(element);
       default:
-        throw new BGPExecutorError(`Unknown element type: ${(element as unknown).type}`);
+        throw new BGPExecutorError(`Unknown element type: ${String(element)}`);
     }
   }
 
@@ -615,7 +615,7 @@ export class BGPExecutor {
     } else if (term instanceof QuotedTriple) {
       return this.toAlgebraQuotedTriple(term);
     }
-    throw new BGPExecutorError(`Unknown RDF term type: ${(term as unknown).constructor?.name || 'unknown'}`);
+    throw new BGPExecutorError(`Unknown RDF term type: ${String(term)}`);
   }
 
   /**
