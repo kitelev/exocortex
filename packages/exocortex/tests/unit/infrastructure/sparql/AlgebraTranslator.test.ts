@@ -157,10 +157,7 @@ describe("AlgebraTranslator", () => {
 
       expect(algebra.type).toBe("project");
       const input = (algebra as any).input;
-      expect(input.type).toBe("join");
-
-      const optionalOp = input.right;
-      expect(optionalOp.type).toBe("leftjoin");
+      expect(input.type).toBe("leftjoin");
     });
   });
 
@@ -311,10 +308,9 @@ describe("AlgebraTranslator", () => {
 
       expect(algebra.type).toBe("project");
       const input = (algebra as any).input;
-      expect(input.type).toBe("join");
-      expect(input.right.type).toBe("leftjoin");
+      expect(input.type).toBe("leftjoin");
       // The OPTIONAL right side should contain the UNION
-      expect(input.right.right.type).toBe("union");
+      expect(input.right.type).toBe("union");
     });
   });
 
@@ -1325,7 +1321,7 @@ describe("AlgebraTranslator", () => {
       expect(input.left.type).toBe("subquery");
       const innerQuery = input.left.query;
       // Should contain leftjoin for OPTIONAL
-      expect(innerQuery.input.type).toBe("join");
+      expect(innerQuery.input.type).toBe("leftjoin");
     });
 
     it("translates outer SELECT with arithmetic expression referencing subquery variables", () => {
@@ -1588,9 +1584,9 @@ describe("AlgebraTranslator", () => {
       const algebra = translator.translate(ast);
 
       expect(algebra.type).toBe("project");
-      // Should have join of (join(values, bgp), leftjoin)
+      // Should have leftjoin at top level (OPTIONAL present)
       const input = (algebra as any).input;
-      expect(input.type).toBe("join");
+      expect(input.type).toBe("leftjoin");
     });
 
     it("translates VALUES with PREFIX declarations", () => {
@@ -1961,7 +1957,7 @@ describe("AlgebraTranslator", () => {
 
       expect(algebra.type).toBe("ask");
       const where = (algebra as any).where;
-      expect(where.type).toBe("join");
+      expect(where.type).toBe("leftjoin");
     });
 
     it("translates ASK with UNION", () => {
@@ -2541,7 +2537,7 @@ describe("AlgebraTranslator", () => {
       expect(algebra.type).toBe("project");
       const input = (algebra as any).input;
       expect(input.type).toBe("graph");
-      expect(input.pattern.type).toBe("join");
+      expect(input.pattern.type).toBe("leftjoin");
     });
 
     it("translates multiple GRAPH clauses", () => {

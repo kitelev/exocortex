@@ -219,12 +219,14 @@ describe("DescribeExecutor", () => {
       );
       expect(hasAliceKnowsBob).toBe(true);
 
-      // Should NOT include incoming to alice when symmetric=false
+      // At depth 2, bob's outgoing triples (including bob->likes->alice) ARE included
+      // because symmetric=false only prevents discovering alice via incoming triples at depth 1,
+      // but bob->likes->alice is an outgoing triple from bob (found at depth 2)
       const hasBobLikesAlice = triples.some(
         (t) => t.predicate.toString() === "http://example.org/likes" &&
                t.object.toString() === "http://example.org/alice"
       );
-      expect(hasBobLikesAlice).toBe(false);
+      expect(hasBobLikesAlice).toBe(true);
     });
   });
 

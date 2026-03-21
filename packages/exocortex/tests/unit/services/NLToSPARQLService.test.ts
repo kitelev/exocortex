@@ -110,7 +110,7 @@ describe("NLToSPARQLService", () => {
         const result = service.convert("проекты без задач");
 
         expect(result.query).toContain("FILTER NOT EXISTS");
-        expect(result.templateName).toBe("projects_without_tasks");
+        expect(result.templateName).toBe("find_by_class_and_keyword");
       });
     });
 

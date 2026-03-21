@@ -2,11 +2,11 @@ import { describe, it, expect, jest, beforeEach } from "@jest/globals";
 import {
   ApplicationErrorHandler,
   type ErrorTelemetryHook,
-} from "../../../../src/application/errors/index.js";
+} from "../../../../src/application/errors/index";
 import {
   NetworkError,
   ValidationError,
-} from "../../../../src/domain/errors/index.js";
+} from "../../../../src/domain/errors/index";
 
 describe("ApplicationErrorHandler", () => {
   let handler: ApplicationErrorHandler;
@@ -60,7 +60,7 @@ describe("ApplicationErrorHandler", () => {
 
   describe("executeWithRetry()", () => {
     it("should return result on first success", async () => {
-      const operation = jest.fn().mockResolvedValue("success");
+      const operation = jest.fn<() => Promise<unknown>>().mockResolvedValue("success");
 
       const result = await handler.executeWithRetry(operation);
 
@@ -70,7 +70,7 @@ describe("ApplicationErrorHandler", () => {
 
     it("should retry retriable errors", async () => {
       const operation = jest
-        .fn()
+        .fn<() => Promise<unknown>>()
         .mockRejectedValueOnce(new NetworkError("Connection failed"))
         .mockRejectedValueOnce(new NetworkError("Timeout"))
         .mockResolvedValue("success");
@@ -83,7 +83,7 @@ describe("ApplicationErrorHandler", () => {
 
     it("should not retry non-retriable errors", async () => {
       const operation = jest
-        .fn()
+        .fn<() => Promise<unknown>>()
         .mockRejectedValue(new ValidationError("Invalid input"));
 
       await expect(handler.executeWithRetry(operation)).rejects.toThrow(
@@ -95,7 +95,7 @@ describe("ApplicationErrorHandler", () => {
     it("should throw after max retries exhausted", async () => {
       const handler = new ApplicationErrorHandler({ maxRetries: 2 });
       const operation = jest
-        .fn()
+        .fn<() => Promise<unknown>>()
         .mockRejectedValue(new NetworkError("Connection failed"));
 
       await expect(handler.executeWithRetry(operation)).rejects.toThrow(
@@ -112,7 +112,7 @@ describe("ApplicationErrorHandler", () => {
         maxDelayMs: 10000,
       });
       const operation = jest
-        .fn()
+        .fn<() => Promise<unknown>>()
         .mockImplementation(
           () =>
             new Promise((_, reject) =>
@@ -135,14 +135,14 @@ describe("ApplicationErrorHandler", () => {
 
     it("should respect maxDelayMs cap", async () => {
       const handler = new ApplicationErrorHandler({
-        maxRetries: 10,
-        initialDelayMs: 1000,
+        maxRetries: 3,
+        initialDelayMs: 100,
         backoffMultiplier: 10,
-        maxDelayMs: 2000, // Cap at 2 seconds
+        maxDelayMs: 200, // Cap at 200ms
       });
 
       const operation = jest
-        .fn()
+        .fn<() => Promise<unknown>>()
         .mockRejectedValue(new NetworkError("Failed"));
 
       const startTime = Date.now();
@@ -153,9 +153,9 @@ describe("ApplicationErrorHandler", () => {
       }
       const totalTime = Date.now() - startTime;
 
-      // Even with 10x multiplier, delays should be capped at 2000ms
-      // Total should be less than 10 * 2000ms = 20 seconds
-      expect(totalTime).toBeLessThan(20000);
+      // Even with 10x multiplier, delays should be capped at 200ms
+      // Total should be less than 3 * 200ms = 600ms + overhead
+      expect(totalTime).toBeLessThan(2000);
     });
 
     it("should call telemetry hooks on retry", async () => {
@@ -167,7 +167,7 @@ describe("ApplicationErrorHandler", () => {
 
       const error = new NetworkError("Failed");
       const operation = jest
-        .fn()
+        .fn<() => Promise<unknown>>()
         .mockRejectedValueOnce(error)
         .mockResolvedValue("success");
 
@@ -186,7 +186,7 @@ describe("ApplicationErrorHandler", () => {
       handler.registerTelemetryHook(mockHook);
 
       const error = new NetworkError("Failed");
-      const operation = jest.fn().mockRejectedValue(error);
+      const operation = jest.fn<() => Promise<unknown>>().mockRejectedValue(error);
 
       try {
         await handler.executeWithRetry(operation);
@@ -228,7 +228,7 @@ describe("ApplicationErrorHandler", () => {
       handler.registerTelemetryHook(mockHook);
 
       const error = new ValidationError("Test", { field: "email" });
-      const operation = jest.fn().mockRejectedValue(error);
+      const operation = jest.fn<() => Promise<unknown>>().mockRejectedValue(error);
 
       try {
         await handler.executeWithRetry(operation, { userId: 123 });
@@ -291,8 +291,13 @@ describe("ApplicationErrorHandler", () => {
 
   describe("Retry configuration", () => {
     it("should use default configuration", async () => {
+      // Override handler with short delays for testing
+      handler = new ApplicationErrorHandler({
+        maxRetries: 3,
+        initialDelayMs: 10,
+      });
       const operation = jest
-        .fn()
+        .fn<() => Promise<unknown>>()
         .mockRejectedValue(new NetworkError("Failed"));
 
       try {
@@ -312,7 +317,7 @@ describe("ApplicationErrorHandler", () => {
       });
 
       const operation = jest
-        .fn()
+        .fn<() => Promise<unknown>>()
         .mockRejectedValue(new NetworkError("Failed"));
 
       try {
@@ -329,7 +334,7 @@ describe("ApplicationErrorHandler", () => {
       const handler = new ApplicationErrorHandler({ maxRetries: 0 });
 
       const operation = jest
-        .fn()
+        .fn<() => Promise<unknown>>()
         .mockRejectedValue(new NetworkError("Failed"));
 
       try {
@@ -353,7 +358,7 @@ describe("ApplicationErrorHandler", () => {
     });
 
     it("should not retry plain errors by default", async () => {
-      const operation = jest.fn().mockRejectedValue(new Error("Failed"));
+      const operation = jest.fn<() => Promise<unknown>>().mockRejectedValue(new Error("Failed"));
 
       try {
         await handler.executeWithRetry(operation);

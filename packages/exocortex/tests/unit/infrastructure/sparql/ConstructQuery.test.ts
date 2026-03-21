@@ -282,7 +282,7 @@ describe("CONSTRUCT Query Support", () => {
       const triples = await executor.executeConstruct(algebra);
 
       expect(triples).toHaveLength(1);
-      expect(triples[0].subject.value).toBe("http://example.org/task1");
+      expect((triples[0].subject as IRI).value).toBe("http://example.org/task1");
     });
 
     it("should handle CONSTRUCT with BIND expression", async () => {
@@ -301,7 +301,10 @@ describe("CONSTRUCT Query Support", () => {
 
       expect(triples).toHaveLength(2);
 
-      const statuses = triples.map((t) => (t.object as Literal).value);
+      const statuses = triples.map((t) => {
+        const obj = t.object;
+        return obj instanceof Literal ? obj.value : obj.toString();
+      });
       expect(statuses).toContain("COMPLETED");
       expect(statuses).toContain("PENDING");
     });

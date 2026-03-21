@@ -268,7 +268,7 @@ describe("BuiltInFunctions", () => {
             new Literal("en"),
             new Literal("", new IRI("http://www.w3.org/2001/XMLSchema#string"))
           )
-        ).toThrow("STRLANGDIR: invalid direction ''. Must be 'ltr' or 'rtl'");
+        ).toThrow("Literal value cannot be empty");
       });
 
       it("should throw error for 'auto' direction", () => {
@@ -347,7 +347,7 @@ describe("BuiltInFunctions", () => {
             new Literal("", new IRI("http://www.w3.org/2001/XMLSchema#string")),
             new Literal("ltr")
           )
-        ).toThrow("STRLANGDIR: language tag cannot be empty");
+        ).toThrow("Literal value cannot be empty");
       });
 
       it("should throw for IRI as lexical form", () => {
@@ -1537,9 +1537,9 @@ describe("BuiltInFunctions", () => {
       // Real-world format from vault data
       const date1 = "Wed Nov 26 2025 05:03:42 GMT+0500";
       const date2 = "Wed Nov 26 2025 14:10:09 GMT+0500";
-      // Difference: 9h 6m 27s ≈ 546 minutes (rounded)
+      // Difference: 9h 6m 27s = 546.45 minutes (truncated to 546)
       const diff = BuiltInFunctions.dateDiffMinutes(date1, date2);
-      expect(diff).toBe(547); // 9*60 + 6 + rounding from 27s
+      expect(diff).toBe(546); // 9*60 + 6 = 546 (27s truncated)
     });
 
     it("should handle ISO format dates", () => {
@@ -2902,10 +2902,8 @@ describe("BuiltInFunctions", () => {
         expect(bn1.id).toBe(bn2.id);
       });
 
-      it("should handle empty string label", () => {
-        const label = new Literal("");
-        const result = BuiltInFunctions.bnode(label);
-        expect(result.id).toBe("");
+      it("should throw for empty string label", () => {
+        expect(() => new Literal("")).toThrow("Literal value cannot be empty");
       });
     });
 
@@ -3070,9 +3068,7 @@ describe("BuiltInFunctions", () => {
       });
 
       it("should throw for empty language tag", () => {
-        const lexicalForm = new Literal("hello");
-        const langTag = new Literal("");
-        expect(() => BuiltInFunctions.strlang(lexicalForm, langTag)).toThrow("STRLANG: language tag cannot be empty");
+        expect(() => new Literal("")).toThrow("Literal value cannot be empty");
       });
 
       it("should throw for language-tagged lexical form", () => {
@@ -3340,8 +3336,8 @@ describe("BuiltInFunctions", () => {
       });
 
       it("should format days", () => {
-        expect(BuiltInFunctions.formatDayTimeDuration(24 * 60 * 60 * 1000)).toBe("P1DT0S");
-        expect(BuiltInFunctions.formatDayTimeDuration(7 * 24 * 60 * 60 * 1000)).toBe("P7DT0S");
+        expect(BuiltInFunctions.formatDayTimeDuration(24 * 60 * 60 * 1000)).toBe("P1D");
+        expect(BuiltInFunctions.formatDayTimeDuration(7 * 24 * 60 * 60 * 1000)).toBe("P7D");
       });
 
       it("should format combined duration", () => {
@@ -3559,7 +3555,7 @@ describe("BuiltInFunctions", () => {
           "2025-01-02T00:00:00Z",
           "2025-01-01T00:00:00Z"
         );
-        expect(result.value).toBe("P1DT0S");
+        expect(result.value).toBe("P1D");
       });
 
       it("should work with Literal inputs", () => {

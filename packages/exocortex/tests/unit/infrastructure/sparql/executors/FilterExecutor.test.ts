@@ -1645,7 +1645,8 @@ describe("FilterExecutor", () => {
           // Compare with expected duration literal
           right: {
             type: "literal",
-            value: new Literal("P14D", xsdDayTimeDuration),
+            value: "P14D",
+            datatype: xsdDayTimeDuration.value,
           },
         },
         input: { type: "bgp", triples: [] },
@@ -1677,7 +1678,8 @@ describe("FilterExecutor", () => {
           } as any,
           right: {
             type: "literal",
-            value: new Literal("-P14D", xsdDayTimeDuration),
+            value: "-P14D",
+            datatype: xsdDayTimeDuration.value,
           },
         },
         input: { type: "bgp", triples: [] },
@@ -1708,7 +1710,8 @@ describe("FilterExecutor", () => {
           } as any,
           right: {
             type: "literal",
-            value: new Literal("P0D", xsdDayTimeDuration),
+            value: "P0D",
+            datatype: xsdDayTimeDuration.value,
           },
         },
         input: { type: "bgp", triples: [] },

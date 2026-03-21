@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+// jest globals are provided automatically
 import {
   VectorStore,
   VectorEntry,

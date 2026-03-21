@@ -1,6 +1,8 @@
 import { InMemoryTripleStore } from "../../../../src/infrastructure/rdf/InMemoryTripleStore";
 import { RDFVocabularyMapper } from "../../../../src/infrastructure/rdf/RDFVocabularyMapper";
 import { Namespace } from "../../../../src/domain/models/rdf/Namespace";
+import { IRI } from "../../../../src/domain/models/rdf/IRI";
+import { Triple } from "../../../../src/domain/models/rdf/Triple";
 
 describe("InMemoryTripleStore RDF/RDFS Mapping Integration", () => {
   let store: InMemoryTripleStore;

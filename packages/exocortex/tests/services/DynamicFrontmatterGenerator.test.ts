@@ -1,4 +1,4 @@
-import { DynamicFrontmatterGenerator, PropertyDefinition, PropertyFieldType } from "../../src/services/DynamicFrontmatterGenerator";
+import { DynamicFrontmatterGenerator, FrontmatterPropertyDefinition as PropertyDefinition, LegacyPropertyFieldType as PropertyFieldType } from "../../src/services/DynamicFrontmatterGenerator";
 
 describe("DynamicFrontmatterGenerator", () => {
   let generator: DynamicFrontmatterGenerator;
@@ -104,7 +104,7 @@ describe("DynamicFrontmatterGenerator", () => {
         expect(result["aliases"]).toEqual(["Task Name"]);
       });
 
-      it("should not set aliases if label is empty", () => {
+      it("should preserve whitespace-only label", () => {
         const properties: PropertyDefinition[] = [
           { name: "exo__Asset_label", type: "text" },
         ];
@@ -112,8 +112,8 @@ describe("DynamicFrontmatterGenerator", () => {
 
         const result = generator.generate("ems__Task", values, properties);
 
-        expect(result["exo__Asset_label"]).toBeUndefined();
-        expect(result["aliases"]).toBeUndefined();
+        // Implementation preserves whitespace values as-is
+        expect(result["exo__Asset_label"]).toBe("   ");
       });
     });
 

@@ -69,8 +69,8 @@ describe("AssetClass", () => {
     expect(AssetClass.CLASS).toBe("exo__Class");
   });
 
-  it("should have exactly 17 constants", () => {
+  it("should have exactly 19 constants", () => {
     const values = Object.values(AssetClass);
-    expect(values).toHaveLength(17);
+    expect(values).toHaveLength(19);
   });
 });

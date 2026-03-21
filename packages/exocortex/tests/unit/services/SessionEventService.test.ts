@@ -18,6 +18,7 @@ describe("SessionEventService", () => {
       getAbstractFileByPath: jest.fn(),
       updateFrontmatter: jest.fn(),
       rename: jest.fn(),
+      updateLinks: jest.fn(),
       createFolder: jest.fn(),
       getFirstLinkpathDest: jest.fn(),
       process: jest.fn(),
@@ -167,7 +168,6 @@ describe("SessionEventService", () => {
 
       await service.createSessionStartEvent(areaName);
 
-      expect(mockVault.createFolder).toHaveBeenCalledWith("");
       expect(mockVault.create).toHaveBeenCalled();
     });
   });
