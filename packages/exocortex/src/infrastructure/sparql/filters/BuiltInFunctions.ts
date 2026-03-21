@@ -379,6 +379,23 @@ export class BuiltInFunctions {
       );
     }
 
+    // Handle mixed duration comparison: one side is a duration Literal,
+    // the other is a raw duration string (from literal expression evaluation)
+    if (this.isDayTimeDurationValue(a) && typeof b === "string" && /^-?P/.test(b)) {
+      return this.compareDurations(
+        a instanceof Literal ? a : String(a),
+        b,
+        operator
+      );
+    }
+    if (typeof a === "string" && /^-?P/.test(a) && this.isDayTimeDurationValue(b)) {
+      return this.compareDurations(
+        a,
+        b instanceof Literal ? b : String(b),
+        operator
+      );
+    }
+
     const aValue = this.toComparableValue(a);
     const bValue = this.toComparableValue(b);
 
