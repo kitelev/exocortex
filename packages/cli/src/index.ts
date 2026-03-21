@@ -14,6 +14,7 @@ import { askCommand } from "./commands/ask.js";
 import { dailyReviewCommand } from "./commands/daily-review.js";
 import { validateCommand } from "./commands/validate.js";
 import { classesCommand } from "./commands/classes.js";
+import { createCommand } from "./commands/create.js";
 
 // Version injected at build time by esbuild (see esbuild.config.mjs)
 declare const __CLI_VERSION__: string;
@@ -42,5 +43,6 @@ program.addCommand(askCommand());
 program.addCommand(dailyReviewCommand());
 program.addCommand(validateCommand());
 program.addCommand(classesCommand());
+program.addCommand(createCommand());
 
 program.parse();
