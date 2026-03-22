@@ -662,6 +662,150 @@ describe("MetadataHelpers", () => {
     });
   });
 
+  describe("containsReference - mutation killing", () => {
+    it("should return false for falsy value (0)", () => {
+      expect(MetadataHelpers.containsReference(0, "MyFile.md")).toBe(false);
+    });
+
+    it("should return false for empty string", () => {
+      expect(MetadataHelpers.containsReference("", "MyFile.md")).toBe(false);
+    });
+
+    it("should return false for object with toString matching wiki-link pattern", () => {
+      // Kills mutant 190: typeof value === "string" → true
+      // If mutation makes this always true, objects would be treated as strings
+      // and RegExp.exec would coerce via toString, potentially finding a match
+      const objWithToString = { toString: () => "[[MyFile]]" };
+      expect(MetadataHelpers.containsReference(objWithToString, "MyFile.md")).toBe(false);
+    });
+
+    it("should handle string value with wiki-link reference", () => {
+      expect(MetadataHelpers.containsReference("[[MyFile]]", "MyFile.md")).toBe(true);
+    });
+
+    it("should strip .md extension from fileName before matching", () => {
+      expect(MetadataHelpers.containsReference("[[test.md.backup]]", "test.md.backup.md")).toBe(true);
+    });
+
+    it("should handle alias part correctly by splitting on pipe", () => {
+      expect(MetadataHelpers.containsReference("[[MyFile | Some Alias]]", "MyFile.md")).toBe(true);
+    });
+
+    it("should handle .md extension stripping only at end of filename", () => {
+      expect(MetadataHelpers.containsReference("[[file.md.backup]]", "file.md.backup.md")).toBe(true);
+    });
+  });
+
+  describe("isAssetArchived - mutation killing", () => {
+    it("should use optional chaining for exo__Asset_isArchived", () => {
+      // Kills mutant 730: OptionalChaining removal
+      // If optional chaining is removed, accessing property on undefined metadata would throw
+      expect(MetadataHelpers.isAssetArchived({})).toBe(false);
+    });
+
+    it("should check exoArchivedValue is not undefined AND not null", () => {
+      // Kills mutant 731: ConditionalExpression 'true' for the compound check
+      // Kills mutant 733: LogicalOperator || instead of && (would always be true)
+      // Kills mutant 734: ConditionalExpression 'true' for !== undefined
+      // Kills mutant 736: ConditionalExpression 'true' for !== null
+      // If the condition is always true, undefined values would enter the if block
+      expect(MetadataHelpers.isAssetArchived({ exo__Asset_isArchived: undefined })).toBe(false);
+      expect(MetadataHelpers.isAssetArchived({ exo__Asset_isArchived: null })).toBe(false);
+    });
+
+    it("should return true for boolean true via explicit check", () => {
+      // Kills mutant 742: ConditionalExpression 'false' for exoArchivedValue === true check
+      expect(MetadataHelpers.isAssetArchived({ exo__Asset_isArchived: true })).toBe(true);
+    });
+
+    it("should return false for exo__Asset_isArchived: false (boolean check)", () => {
+      // Kills mutant 773: ConditionalExpression 'false' for typeof boolean check
+      // If the typeof boolean check returns false, boolean false would not be returned
+      expect(MetadataHelpers.isAssetArchived({ exo__Asset_isArchived: false })).toBe(false);
+    });
+
+    it("should detect typeof boolean check for exo field", () => {
+      // Kills mutant 775: StringLiteral "" instead of "boolean"
+      // If "boolean" is replaced with "", typeof check fails, boolean values not caught
+      expect(MetadataHelpers.isAssetArchived({ exo__Asset_isArchived: false })).toBe(false);
+      // A non-boolean non-string non-number non-true non-1 value should also return false
+      expect(MetadataHelpers.isAssetArchived({ exo__Asset_isArchived: "random" })).toBe(false);
+    });
+
+    it("should return boolean value directly for exo field", () => {
+      // Kills mutant 776: BlockStatement '{}' for typeof boolean branch
+      // If the block is empty, boolean false would not be returned, falling through to legacy check
+      const metaFalse = { exo__Asset_isArchived: false, archived: true };
+      expect(MetadataHelpers.isAssetArchived(metaFalse)).toBe(false);
+    });
+
+    it("should use optional chaining for legacy archived field", () => {
+      // Kills mutant 777: OptionalChaining removal for metadata.archived
+      expect(MetadataHelpers.isAssetArchived({})).toBe(false);
+    });
+
+    it("should return false when legacy archived is undefined", () => {
+      // Kills mutant 779: ConditionalExpression 'false' for undefined/null check
+      // Kills mutant 780: LogicalOperator && instead of || (would require both undefined AND null)
+      // Kills mutant 781: ConditionalExpression 'false' for === undefined
+      // Kills mutant 783: ConditionalExpression 'false' for === null
+      expect(MetadataHelpers.isAssetArchived({ archived: undefined })).toBe(false);
+      expect(MetadataHelpers.isAssetArchived({ archived: null })).toBe(false);
+    });
+
+    it("should return false for archived undefined/null via early return", () => {
+      // Kills mutant 785: BlockStatement '{}' for the early return block
+      // If block is empty, undefined/null values would fall through to boolean/number/string checks
+      // and potentially return non-boolean values
+      const result = MetadataHelpers.isAssetArchived({ archived: undefined });
+      expect(result).toBe(false);
+    });
+
+    it("should return false when no archived fields exist at all", () => {
+      // Ensures the function returns false at the end
+      expect(MetadataHelpers.isAssetArchived({ status: "active" })).toBe(false);
+    });
+  });
+
+  describe("ensureQuoted - mutation killing", () => {
+    it("should return empty quotes for falsy value", () => {
+      // Kills mutant 849: ConditionalExpression 'false' for !value check
+      expect(MetadataHelpers.ensureQuoted("")).toBe('""');
+    });
+
+    it("should check for empty quoted string specifically", () => {
+      // Kills mutant 851: StringLiteral "" instead of '""'
+      expect(MetadataHelpers.ensureQuoted('""')).toBe('""');
+    });
+
+    it("should check startsWith and endsWith for quotes", () => {
+      // Kills mutant 856: MethodExpression removing endsWith check
+      // Kills mutant 857: StringLiteral "" instead of '"'
+      // If endsWith is removed, a string starting with " but not ending with " would pass
+      const partialQuote = '"hello';
+      const result = MetadataHelpers.ensureQuoted(partialQuote);
+      expect(result).toBe('""hello"'); // Should wrap because not fully quoted
+
+      // Already quoted should be returned as-is
+      const fullyQuoted = '"hello"';
+      expect(MetadataHelpers.ensureQuoted(fullyQuoted)).toBe('"hello"');
+    });
+
+    it("should wrap unquoted value in quotes", () => {
+      expect(MetadataHelpers.ensureQuoted("value")).toBe('"value"');
+    });
+
+    it("should not double-quote already quoted value", () => {
+      expect(MetadataHelpers.ensureQuoted('"already"')).toBe('"already"');
+    });
+
+    it("should handle string ending with quote but not starting with quote", () => {
+      // Kills mutant 856: if endsWith check is removed/mutated
+      const result = MetadataHelpers.ensureQuoted('hello"');
+      expect(result).toBe('"hello""');
+    });
+  });
+
   /**
    * ReDoS (Regular Expression Denial of Service) Security Tests
    *
