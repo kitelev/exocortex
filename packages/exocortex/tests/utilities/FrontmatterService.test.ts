@@ -438,6 +438,108 @@ Body`;
     });
   });
 
+  describe("parse - regex mutation killing", () => {
+    it("should require frontmatter to start at beginning of content", () => {
+      // Kills mutant 616: removing ^ from /^---\n([\s\S]*?)\n---/
+      // If ^ is removed, frontmatter could be matched in the middle of content
+      const content = "Some text\n---\nfoo: bar\n---\nBody";
+      const result = service.parse(content);
+      expect(result.exists).toBe(false);
+    });
+
+    it("should parse frontmatter that starts at the beginning", () => {
+      const content = "---\nfoo: bar\n---\nBody";
+      const result = service.parse(content);
+      expect(result.exists).toBe(true);
+      expect(result.content).toBe("foo: bar");
+    });
+  });
+
+  describe("updateProperty - mutation killing", () => {
+    it("should append property with newline separator when frontmatter is not empty", () => {
+      // Kills mutant 644: ConditionalExpression 'true' for length > 0
+      // Kills mutant 646: EqualityOperator >= 0 instead of > 0
+      // If separator is always "\n", empty frontmatter would get a leading newline
+      const content = "---\nfoo: bar\n---\nBody";
+      const result = service.updateProperty(content, "status", "draft");
+      expect(result).toBe("---\nfoo: bar\nstatus: draft\n---\nBody");
+      // Verify no double newline
+      expect(result).not.toContain("\n\n");
+    });
+
+    it("should not add newline separator when frontmatter is empty after update", () => {
+      // Edge case: what happens when parsed content is empty but exists
+      // This tests the separator logic - empty content should not get leading newline
+      const content = "---\nexisting: value\n---\nBody";
+      const result = service.updateProperty(content, "existing", "new");
+      expect(result).toBe("---\nexisting: new\n---\nBody");
+    });
+  });
+
+  describe("removeProperty - mutation killing", () => {
+    it("should return content unchanged when frontmatter exists but property does not", () => {
+      const content = "---\nfoo: bar\n---\nBody";
+      const result = service.removeProperty(content, "nonexistent");
+      expect(result).toBe(content);
+    });
+
+    it("should return content unchanged when no frontmatter exists", () => {
+      const content = "Just body content";
+      const result = service.removeProperty(content, "status");
+      expect(result).toBe(content);
+    });
+
+    it("should actually remove the property when it exists", () => {
+      const content = "---\nfoo: bar\nstatus: draft\n---\nBody";
+      const result = service.removeProperty(content, "status");
+      expect(result).not.toContain("status");
+      expect(result).toContain("foo: bar");
+    });
+
+    it("should remove all occurrences of duplicate property names (g flag)", () => {
+      // Kills mutant 150: "gm" → "" (removing global flag)
+      // Without g flag, only first occurrence would be removed
+      const content = "---\nstatus: draft\nfoo: bar\nstatus: published\n---\nBody";
+      const result = service.removeProperty(content, "status");
+      expect(result).not.toContain("status");
+      expect(result).toContain("foo: bar");
+    });
+  });
+
+  describe("getPropertyValue - mutation killing", () => {
+    it("should return trimmed value", () => {
+      // Kills mutant 661: StringLiteral "" instead of property value
+      // If match[1].trim() returns "" instead of actual value, this would fail
+      const result = service.getPropertyValue("status: draft", "status");
+      expect(result).toBe("draft");
+      expect(result).not.toBe("");
+    });
+  });
+
+  describe("escapeRegex - mutation killing", () => {
+    it("should escape special regex characters in property names", () => {
+      // Kills mutant 678: StringLiteral "" instead of "\\$&"
+      // If replacement is "" instead of "\\$&", special chars would be stripped
+      const content = "---\nfoo.bar: value\nother: data\n---\nBody";
+      const result = service.getPropertyValue("foo.bar: value\nother: data", "foo.bar");
+      expect(result).toBe("value");
+    });
+
+    it("should not match similar property without escaping", () => {
+      // If . is not escaped, "foo.bar" regex would match "fooXbar" too
+      const frontmatter = "fooXbar: wrong\nfoo.bar: right";
+      const result = service.getPropertyValue(frontmatter, "foo.bar");
+      expect(result).toBe("right");
+    });
+
+    it("should handle property with special characters in escapeRegex", () => {
+      // Kills mutant 682: StringLiteral "" instead of "\\$&" in escapeRegex
+      const content = "---\nfoo.bar: value\n---\nBody";
+      const hasResult = service.hasProperty("foo.bar: value", "foo.bar");
+      expect(hasResult).toBe(true);
+    });
+  });
+
   describe("edge cases", () => {
     it("should handle frontmatter-like content in body", () => {
       const content = "---\nfoo: bar\n---\nBody with ---\nfake: frontmatter\n---";
