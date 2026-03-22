@@ -32,6 +32,7 @@ import { LRUCache } from "./infrastructure/cache";
 import { FileExplorerSortPatch } from "./presentation/file-explorer/FileExplorerSortPatch";
 import { TabTitlePatch } from "./presentation/tab-titles/TabTitlePatch";
 import { PropertiesLinkPatch } from "./presentation/properties/PropertiesLinkPatch";
+import { PropertiesUidCopyPatch } from "./presentation/properties/PropertiesUidCopyPatch";
 import { BodyLinkPatch } from "./presentation/body/BodyLinkPatch";
 import { GraphViewPatch } from "./presentation/graph-view/GraphViewPatch";
 
@@ -68,6 +69,7 @@ export default class ExocortexPlugin extends Plugin {
   private tabTitlePatch!: TabTitlePatch;
   private propertiesLinkPatch!: PropertiesLinkPatch;
   private bodyLinkPatch!: BodyLinkPatch;
+  private propertiesUidCopyPatch!: PropertiesUidCopyPatch;
   private graphViewPatch!: GraphViewPatch;
 
   override async onload(): Promise<void> {
@@ -230,6 +232,12 @@ export default class ExocortexPlugin extends Plugin {
         }, 500);
       }
 
+      // Initialize Properties UID copy button patch (always enabled)
+      this.propertiesUidCopyPatch = new PropertiesUidCopyPatch(this);
+      this.timerManager.setTimeout("properties-uid-copy-patch", () => {
+        this.propertiesUidCopyPatch.enable();
+      }, 500);
+
       // Initialize Body link patch
       this.bodyLinkPatch = new BodyLinkPatch(this);
       if (this.settings.showLabelsInBody) {
@@ -311,6 +319,11 @@ export default class ExocortexPlugin extends Plugin {
     // Cleanup Properties link patch
     if (this.propertiesLinkPatch) {
       this.propertiesLinkPatch.cleanup();
+    }
+
+    // Cleanup Properties UID copy button patch
+    if (this.propertiesUidCopyPatch) {
+      this.propertiesUidCopyPatch.cleanup();
     }
 
     // Cleanup Body link patch
