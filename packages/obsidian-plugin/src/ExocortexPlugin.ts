@@ -29,7 +29,6 @@ import { PluginContainer } from "./infrastructure/di/PluginContainer";
 import { createAliasIconExtension, createWikilinkLabelExtension } from "./presentation/editor-extensions";
 import { TimerManager } from "./infrastructure/timer";
 import { LRUCache } from "./infrastructure/cache";
-import { FileExplorerSortPatch } from "./presentation/file-explorer/FileExplorerSortPatch";
 import { TabTitlePatch } from "./presentation/tab-titles/TabTitlePatch";
 import { PropertiesLinkPatch } from "./presentation/properties/PropertiesLinkPatch";
 import { PropertiesUidCopyPatch } from "./presentation/properties/PropertiesUidCopyPatch";
@@ -65,7 +64,6 @@ export default class ExocortexPlugin extends Plugin {
   private timerManager!: TimerManager;
   // MutationObserver to detect when layout is removed by Obsidian re-renders (e.g., when processing embeds)
   private layoutPersistenceObserver: MutationObserver | null = null;
-  private fileExplorerSortPatch!: FileExplorerSortPatch;
   private tabTitlePatch!: TabTitlePatch;
   private propertiesLinkPatch!: PropertiesLinkPatch;
   private bodyLinkPatch!: BodyLinkPatch;
@@ -205,15 +203,6 @@ export default class ExocortexPlugin extends Plugin {
         this.timerManager.setTimeout("auto-layout-initial", () => this.autoRenderLayout(), 150);
       }
 
-      // Initialize File Explorer sort patch
-      this.fileExplorerSortPatch = new FileExplorerSortPatch(this);
-      if (this.settings.sortByDisplayName) {
-        // Delay enabling to ensure File Explorer is fully loaded
-        this.timerManager.setTimeout("file-explorer-sort-patch", () => {
-          this.fileExplorerSortPatch.enable();
-        }, 600); // Slightly after label patch
-      }
-
       // Initialize Tab Title label patch
       this.tabTitlePatch = new TabTitlePatch(this);
       if (this.settings.showLabelsInTabTitles) {
@@ -306,11 +295,6 @@ export default class ExocortexPlugin extends Plugin {
       this.metadataCache.cleanup();
     }
 
-    // Cleanup File Explorer sort patch
-    if (this.fileExplorerSortPatch) {
-      this.fileExplorerSortPatch.cleanup();
-    }
-
     // Cleanup Tab Title patch
     if (this.tabTitlePatch) {
       this.tabTitlePatch.cleanup();
@@ -384,18 +368,6 @@ export default class ExocortexPlugin extends Plugin {
       this.tabTitlePatch.enable();
     } else {
       this.tabTitlePatch.disable();
-    }
-  }
-
-  /**
-   * Toggle File Explorer sort by display name on/off
-   * Called from settings when the sortByDisplayName toggle changes
-   */
-  toggleFileExplorerSort(enabled: boolean): void {
-    if (enabled) {
-      this.fileExplorerSortPatch.enable();
-    } else {
-      this.fileExplorerSortPatch.disable();
     }
   }
 

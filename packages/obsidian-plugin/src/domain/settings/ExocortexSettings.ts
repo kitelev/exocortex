@@ -51,7 +51,6 @@ export interface ExocortexSettings {
   showLabelsInLivePreview: boolean;
   /** @deprecated Use displayNameSettings.defaultTemplate instead */
   displayNameTemplate: string;
-  sortByDisplayName: boolean;
   /** Per-class display name template settings */
   displayNameSettings: DisplayNameSettings;
   /**
@@ -76,7 +75,6 @@ export const DEFAULT_SETTINGS: ExocortexSettings = {
   showLabelsInGraphView: true,
   showLabelsInLivePreview: true,
   displayNameTemplate: "{{exo__Asset_label}} ({{exo__Instance_class}})",
-  sortByDisplayName: false,
   displayNameSettings: DEFAULT_DISPLAY_NAME_SETTINGS,
   autoAdjustPlannedEndTimestamp: false,
 };
