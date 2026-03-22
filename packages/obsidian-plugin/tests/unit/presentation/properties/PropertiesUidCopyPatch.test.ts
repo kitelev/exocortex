@@ -187,6 +187,55 @@ describe("PropertiesUidCopyPatch", () => {
       expect(buttons.length).toBe(1);
     });
 
+    it("should find uid property by key text when data-property-key is absent", () => {
+      const property = document.createElement("div");
+      property.className = "metadata-property";
+
+      const keyEl = document.createElement("div");
+      keyEl.className = "metadata-property-key";
+      const keyInput = document.createElement("input");
+      keyInput.value = "exo__Asset_uid";
+      keyEl.appendChild(keyInput);
+      property.appendChild(keyEl);
+
+      const valueEl = document.createElement("div");
+      valueEl.className = "metadata-property-value";
+      const valInput = document.createElement("input");
+      valInput.type = "text";
+      valInput.value = "fallback-uid-123";
+      valueEl.appendChild(valInput);
+      property.appendChild(valueEl);
+
+      mockMetadataContainer.appendChild(property);
+
+      patch.enable();
+
+      const button = property.querySelector(".exo-uid-copy-btn");
+      expect(button).toBeTruthy();
+    });
+
+    it("should find uid property by key text content (no input)", () => {
+      const property = document.createElement("div");
+      property.className = "metadata-property";
+
+      const keyEl = document.createElement("div");
+      keyEl.className = "metadata-property-key";
+      keyEl.textContent = "exo__Asset_uid";
+      property.appendChild(keyEl);
+
+      const valueEl = document.createElement("div");
+      valueEl.className = "metadata-property-value";
+      valueEl.textContent = "text-uid-456";
+      property.appendChild(valueEl);
+
+      mockMetadataContainer.appendChild(property);
+
+      patch.enable();
+
+      const button = property.querySelector(".exo-uid-copy-btn");
+      expect(button).toBeTruthy();
+    });
+
     it("should not add button when value is empty", () => {
       const uidProp = createUidProperty("");
       mockMetadataContainer.appendChild(uidProp);
