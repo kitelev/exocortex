@@ -4,6 +4,7 @@ import { existsSync } from "fs";
 import { NodeFsAdapter } from "../adapters/NodeFsAdapter.js";
 import { ClassResolverService } from "../services/ClassResolverService.js";
 import { ArchiveService } from "../services/ArchiveService.js";
+import { ArchiveVerifyService } from "../services/ArchiveVerifyService.js";
 import { ErrorHandler } from "../utils/ErrorHandler.js";
 import { VaultNotFoundError } from "../utils/errors/index.js";
 
@@ -13,11 +14,12 @@ import { VaultNotFoundError } from "../utils/errors/index.js";
 interface ArchiveCommandOptions {
   vault: string;
   archiveVault: string;
-  class: string;
-  year: string;
+  class?: string;
+  year?: string;
   dryRun?: boolean;
   noReferenced?: boolean;
   json?: boolean;
+  verify?: boolean;
 }
 
 /**
@@ -25,6 +27,9 @@ interface ArchiveCommandOptions {
  *
  * Transfers archived assets from the active vault to a separate archive vault,
  * ensuring zero broken links by checking references before moving.
+ *
+ * When `--verify` is passed, runs integrity verification instead of archival:
+ * checks for broken cross-vault links, missing ontologies, and vault statistics.
  *
  * @returns Commander Command instance configured for asset archival
  *
@@ -42,6 +47,11 @@ interface ArchiveCommandOptions {
  *   --vault /path/to/active-vault \
  *   --archive-vault /path/to/archive-vault \
  *   --class ems__Task --year 2025
+ *
+ * # Verify archive integrity
+ * exocortex archive --verify \
+ *   --vault /path/to/active-vault \
+ *   --archive-vault /path/to/archive-vault
  * ```
  */
 export function archiveCommand(): Command {
@@ -51,11 +61,11 @@ export function archiveCommand(): Command {
     )
     .requiredOption("--vault <path>", "Path to the active vault")
     .requiredOption("--archive-vault <path>", "Path to the archive vault")
-    .requiredOption(
+    .option(
       "--class <names>",
       "Comma-separated class short names or UUIDs (e.g. ems__Task,ems__Meeting)",
     )
-    .requiredOption(
+    .option(
       "--year <year>",
       "Filter by resolution/end timestamp year (e.g. 2025)",
     )
@@ -65,6 +75,11 @@ export function archiveCommand(): Command {
       "Skip assets referenced by non-archived (default: true)",
     )
     .option("--json", "Output in JSON format (default: true)", true)
+    .option(
+      "--verify",
+      "Verify archive integrity instead of archiving (read-only)",
+      false,
+    )
     .action(async (options: ArchiveCommandOptions) => {
       try {
         // Validate vault paths
@@ -76,6 +91,30 @@ export function archiveCommand(): Command {
         const archiveVaultPath = resolve(options.archiveVault);
         if (!existsSync(archiveVaultPath)) {
           throw new VaultNotFoundError(archiveVaultPath);
+        }
+
+        // Branch: verify mode
+        if (options.verify) {
+          const activeFs = new NodeFsAdapter(vaultPath);
+          const archiveFs = new NodeFsAdapter(archiveVaultPath);
+          const verifyService = new ArchiveVerifyService(activeFs, archiveFs);
+
+          const result = await verifyService.verify();
+
+          process.stdout.write(JSON.stringify(result, null, 2) + "\n");
+          process.exit(result.ok ? 0 : 1);
+        }
+
+        // Archive mode: validate required options
+        if (!options.class) {
+          throw new Error(
+            "--class is required for archive operation. Use --verify for integrity check.",
+          );
+        }
+        if (!options.year) {
+          throw new Error(
+            "--year is required for archive operation. Use --verify for integrity check.",
+          );
         }
 
         // Parse year
