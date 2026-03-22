@@ -85,13 +85,48 @@ export class PropertiesUidCopyPatch {
     const metadataContainer = container.querySelector<HTMLElement>(".metadata-container");
     if (!metadataContainer) return;
 
-    const uidProperties = metadataContainer.querySelectorAll<HTMLElement>(
-      `.metadata-property[data-property-key="${PROPERTY_KEY}"]`
-    );
-
-    for (const propertyEl of Array.from(uidProperties)) {
+    const uidProperties = this.findUidProperties(metadataContainer);
+    for (const propertyEl of uidProperties) {
       this.addCopyButton(propertyEl);
     }
+  }
+
+  private findUidProperties(metadataContainer: HTMLElement): HTMLElement[] {
+    const results: HTMLElement[] = [];
+
+    const byDataAttr = metadataContainer.querySelectorAll<HTMLElement>(
+      `.metadata-property[data-property-key="${PROPERTY_KEY}"]`
+    );
+    if (byDataAttr.length > 0) {
+      return Array.from(byDataAttr);
+    }
+
+    const allProperties = metadataContainer.querySelectorAll<HTMLElement>(".metadata-property");
+    for (const prop of Array.from(allProperties)) {
+      const keyEl = prop.querySelector<HTMLElement>(".metadata-property-key");
+      if (!keyEl) continue;
+      const keyText = this.extractKeyText(keyEl);
+      if (keyText === PROPERTY_KEY) {
+        results.push(prop);
+      }
+    }
+
+    return results;
+  }
+
+  private isUidProperty(el: HTMLElement): boolean {
+    if (el.getAttribute("data-property-key") === PROPERTY_KEY) return true;
+    const keyEl = el.querySelector<HTMLElement>(".metadata-property-key");
+    if (!keyEl) return false;
+    return this.extractKeyText(keyEl) === PROPERTY_KEY;
+  }
+
+  private extractKeyText(keyEl: HTMLElement): string {
+    const input = keyEl.querySelector<HTMLInputElement>("input");
+    if (input?.value?.trim()) {
+      return input.value.trim();
+    }
+    return (keyEl.textContent || "").trim().replace(/\u200B/g, "");
   }
 
   private addCopyButton(propertyEl: HTMLElement): void {
@@ -167,17 +202,15 @@ export class PropertiesUidCopyPatch {
             this.patchPropertiesBlock(node.parentElement || node);
           } else if (node.querySelector?.(".metadata-container")) {
             this.patchPropertiesBlock(node);
-          } else if (
-            node.classList?.contains("metadata-property") &&
-            node.getAttribute("data-property-key") === PROPERTY_KEY
-          ) {
-            this.addCopyButton(node);
+          } else if (node.classList?.contains("metadata-property")) {
+            if (this.isUidProperty(node)) {
+              this.addCopyButton(node);
+            }
           } else {
-            const uidProps = node.querySelectorAll?.<HTMLElement>(
-              `.metadata-property[data-property-key="${PROPERTY_KEY}"]`
-            );
-            if (uidProps?.length) {
-              for (const prop of Array.from(uidProps)) {
+            const mc = node.querySelector?.(".metadata-container") as HTMLElement | null;
+            if (mc) {
+              const uidProps = this.findUidProperties(mc);
+              for (const prop of uidProps) {
                 this.addCopyButton(prop);
               }
             }
