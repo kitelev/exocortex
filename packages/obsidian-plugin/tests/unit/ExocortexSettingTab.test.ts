@@ -48,7 +48,6 @@ describe("ExocortexSettingTab", () => {
         showArchivedAssets: false,
         showLabelsInTabTitles: true,
         displayNameTemplate: "{{exo__Asset_label}}",
-        sortByDisplayName: false,
         displayNameSettings: {
           defaultTemplate: "{{exo__Asset_label}}",
           classTemplates: {
@@ -60,7 +59,6 @@ describe("ExocortexSettingTab", () => {
       saveSettings: jest.fn().mockResolvedValue(undefined),
       refreshLayout: jest.fn(),
       toggleTabTitleLabels: jest.fn(),
-      toggleFileExplorerSort: jest.fn(),
       applyDisplayNameTemplate: jest.fn(),
     });
 
@@ -122,9 +120,10 @@ describe("ExocortexSettingTab", () => {
       settingTab.display();
 
       expect(mockContainerEl.empty).toHaveBeenCalled();
-      // 7 toggle settings + 2 headings + 1 default template + 6 per-class templates + 1 reset button = 17
+      // 6 toggle settings + 2 headings + 1 default template + 6 per-class templates + 1 reset button = 16
       // Removed: showPropertiesSection (Issue #2321), showLabelsInQuickSwitcher, showLabelsInWikilinkAutocomplete (Issue #2318)
-      expect(MockSetting).toHaveBeenCalledTimes(19);
+      // Removed: sortByDisplayName (Issue #2327)
+      expect(MockSetting).toHaveBeenCalledTimes(18);
     });
 
     it("should render layout visibility toggle as first setting", () => {
