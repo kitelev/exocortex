@@ -3172,6 +3172,51 @@
 }
 
 /* ============================================================================
+   PropertiesUidCopyPatch - Copy UID button in native Properties block (#2320)
+   ============================================================================ */
+
+.exo-uid-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 4px;
+  cursor: pointer;
+  opacity: 0.5;
+  vertical-align: middle;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  padding: 2px;
+  border-radius: var(--radius-s);
+  transition: opacity 0.15s ease, color 0.15s ease;
+}
+
+.exo-uid-copy-btn:hover {
+  opacity: 1;
+  color: var(--text-accent);
+  background: var(--background-modifier-hover);
+}
+
+.exo-uid-copy-btn:active {
+  transform: scale(0.9);
+}
+
+.exo-uid-copy-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .exo-uid-copy-btn {
+    transition: none;
+  }
+
+  .exo-uid-copy-btn:active {
+    transform: none;
+  }
+}
+
+/* ============================================================================
    TableLayoutRenderer - Layout-based Table Rendering (Issue #967)
    ============================================================================ */
 
