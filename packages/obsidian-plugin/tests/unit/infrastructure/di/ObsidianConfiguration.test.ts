@@ -11,7 +11,7 @@ describe("ObsidianConfiguration", () => {
       settings: {
         currentOntology: "test-ontology",
         showLayoutSection: true,
-        showPropertiesSection: false,
+        showArchivedAssets: false,
         nested: {
           deep: {
             value: "nested-value",
@@ -39,7 +39,7 @@ describe("ObsidianConfiguration", () => {
     });
 
     it("should return false boolean value", () => {
-      const result = config.get<boolean>("showPropertiesSection");
+      const result = config.get<boolean>("showArchivedAssets");
 
       expect(result).toBe(false);
     });
@@ -145,9 +145,9 @@ describe("ObsidianConfiguration", () => {
     });
 
     it("should set boolean value", async () => {
-      await config.set("showPropertiesSection", true);
+      await config.set("showArchivedAssets", true);
 
-      expect(mockPlugin.settings?.showPropertiesSection).toBe(true);
+      expect(mockPlugin.settings?.showArchivedAssets).toBe(true);
     });
 
     it("should set array value", async () => {

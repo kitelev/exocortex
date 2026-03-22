@@ -52,7 +52,7 @@ import { CopyLabelToAliasesCommand } from "./CopyLabelToAliasesCommand";
 import { CopyFleetingNoteLabelCommand } from "./CopyFleetingNoteLabelCommand";
 import { AddSupervisionCommand } from "./AddSupervisionCommand";
 import { ReloadLayoutCommand } from "./ReloadLayoutCommand";
-import { TogglePropertiesVisibilityCommand } from "./TogglePropertiesVisibilityCommand";
+
 import { ToggleLayoutVisibilityCommand } from "./ToggleLayoutVisibilityCommand";
 import { ToggleArchivedAssetsCommand } from "./ToggleArchivedAssetsCommand";
 import { ConvertTaskToProjectCommand } from "./ConvertTaskToProjectCommand";
@@ -130,7 +130,7 @@ export class CommandRegistry {
       new CopyFleetingNoteLabelCommand(app),
       new AddSupervisionCommand(app, supervisionCreationService, this.vaultAdapter),
       new ReloadLayoutCommand(reloadLayoutCallback),
-      new TogglePropertiesVisibilityCommand(plugin),
+
       new ToggleLayoutVisibilityCommand(plugin),
       new ToggleArchivedAssetsCommand(plugin),
       new ConvertTaskToProjectCommand(assetConversionService),

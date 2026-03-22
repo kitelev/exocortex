@@ -34,19 +34,6 @@ export class ExocortexSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Show properties section")
-      .setDesc("Display the properties table in the layout")
-      .addToggle((toggle) =>
-        toggle
-          .setValue(this.plugin.settings.showPropertiesSection)
-          .onChange(async (value) => {
-            this.plugin.settings.showPropertiesSection = value;
-            await this.plugin.saveSettings();
-            this.plugin.refreshLayout();
-          }),
-      );
-
-    new Setting(containerEl)
       .setName("Show archived assets")
       .setDesc(
         "Display archived assets in relations table with visual distinction",

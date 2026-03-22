@@ -41,7 +41,6 @@ describe("UniversalLayoutRenderer", () => {
     };
 
     mockSettings = {
-      showPropertiesSection: false,
       showLayoutByDefault: true,
       showArchivedAssets: false,
     } as ExocortexSettings;

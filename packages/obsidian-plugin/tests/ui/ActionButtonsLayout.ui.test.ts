@@ -125,82 +125,10 @@ describe("Layout Settings and Structure", () => {
     resetContainer();
   });
 
-  describe("Properties Section Visibility", () => {
-    it("should NOT render properties section when showPropertiesSection is false", async () => {
-      const settings: ExocortexSettings = {
-        ...DEFAULT_SETTINGS,
-        showPropertiesSection: false,
-      };
-      renderer = new UniversalLayoutRenderer(mockApp, settings, mockPlugin, mockVaultAdapter);
-
-      const mockFile = {
-        path: "test-area.md",
-        basename: "test-area",
-        parent: { path: "Areas" },
-      } as TFile;
-
-      mockApp.workspace.getActiveFile.mockReturnValue(mockFile);
-      mockMetadataCache.getFileCache = jest.fn(() => ({
-        frontmatter: {
-          exo__Instance_class: "[[ems__Area]]",
-          exo__Asset_uid: "test-123",
-        },
-      }));
-
-      const container = document.createElement("div");
-      await renderer.render("", container, {} as any);
-
-      const propertiesSection = container.querySelector(
-        ".exocortex-properties-section",
-      );
-      expect(propertiesSection).toBeNull();
-    });
-
-    it("should render properties section when showPropertiesSection is true", async () => {
-      const mockFile = new TFile();
-      (mockFile as any).path = "test-area.md";
-      (mockFile as any).basename = "test-area";
-      (mockFile as any).parent = { path: "Areas" };
-      (mockFile as any).stat = { ctime: Date.now(), mtime: Date.now() };
-
-      mockApp.workspace.getActiveFile.mockReturnValue(mockFile);
-      (mockApp.vault.getAbstractFileByPath as jest.Mock).mockImplementation(
-        (path: string) => {
-          if (path === "test-area.md") return mockFile;
-          return null;
-        },
-      );
-      mockMetadataCache.getFileCache = jest.fn(() => ({
-        frontmatter: {
-          exo__Instance_class: "[[ems__Area]]",
-          exo__Asset_uid: "test-123",
-        },
-      }));
-
-      const settings: ExocortexSettings = {
-        ...DEFAULT_SETTINGS,
-        showPropertiesSection: true,
-      };
-      renderer = new UniversalLayoutRenderer(mockApp, settings, mockPlugin, mockVaultAdapter);
-
-      const container = document.createElement("div");
-      await renderer.render("", container, {} as any);
-
-      // Wait for React to render
-      await flushPromises();
-
-      const propertiesSection = container.querySelector(
-        ".exocortex-properties-section",
-      );
-      expect(propertiesSection).toBeTruthy();
-    });
-  });
-
   describe("Layout Sections Order", () => {
-    it("should render sections in correct order: Properties -> Buttons -> Relations", async () => {
+    it("should render sections in correct order: Buttons -> Relations", async () => {
       const settings: ExocortexSettings = {
         ...DEFAULT_SETTINGS,
-        showPropertiesSection: true,
       };
       renderer = new UniversalLayoutRenderer(mockApp, settings, mockPlugin, mockVaultAdapter);
 
@@ -229,13 +157,8 @@ describe("Layout Settings and Structure", () => {
       const buttonsIndex = sectionClasses.findIndex(
         (c) => c === "exocortex-buttons-section",
       );
-      const propertiesIndex = sectionClasses.findIndex(
-        (c) => c === "exocortex-properties-section",
-      );
 
-      if (buttonsIndex !== -1 && propertiesIndex !== -1) {
-        expect(propertiesIndex).toBeLessThan(buttonsIndex);
-      }
+      expect(buttonsIndex).toBeGreaterThanOrEqual(0);
     });
   });
 });

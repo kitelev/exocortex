@@ -24,6 +24,6 @@ export { VoteOnEffortCommand } from "./VoteOnEffortCommand";
 export { CopyLabelToAliasesCommand } from "./CopyLabelToAliasesCommand";
 export { AddSupervisionCommand } from "./AddSupervisionCommand";
 export { ReloadLayoutCommand } from "./ReloadLayoutCommand";
-export { TogglePropertiesVisibilityCommand } from "./TogglePropertiesVisibilityCommand";
+
 export { ToggleLayoutVisibilityCommand } from "./ToggleLayoutVisibilityCommand";
 export { ToggleArchivedAssetsCommand } from "./ToggleArchivedAssetsCommand";

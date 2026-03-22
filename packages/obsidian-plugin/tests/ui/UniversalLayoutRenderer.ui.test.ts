@@ -139,7 +139,7 @@ describe("UniversalLayoutRenderer UI Integration", () => {
 
     renderer = new UniversalLayoutRenderer(
       mockApp,
-      { ...DEFAULT_SETTINGS, showPropertiesSection: true },
+      { ...DEFAULT_SETTINGS },
       mockPlugin,
       mockVaultAdapter,
     );
@@ -189,10 +189,10 @@ describe("UniversalLayoutRenderer UI Integration", () => {
       // Wait for React to render
       await waitForReact();
 
-      // Verify DOM structure - should have both properties and relations sections
+      // Verify DOM structure - properties section removed, relations section should exist
       expect(
         domContainer.querySelector(".exocortex-properties-section"),
-      ).toBeTruthy();
+      ).toBeFalsy();
       expect(
         domContainer.querySelector(".exocortex-assets-relations"),
       ).toBeTruthy();
@@ -206,12 +206,6 @@ describe("UniversalLayoutRenderer UI Integration", () => {
         ".exocortex-relations-table",
       );
       expect(relationsTable).toBeTruthy();
-
-      // Verify properties table rendered
-      const propertiesTable = domContainer.querySelector(
-        ".exocortex-properties-table",
-      );
-      expect(propertiesTable).toBeTruthy();
 
       // Verify relations table headers
       const headers = relationsTable.querySelectorAll("th");
@@ -357,7 +351,7 @@ describe("UniversalLayoutRenderer UI Integration", () => {
       await waitForReact();
 
       // With no frontmatter and no relations, nothing should be rendered
-      // Properties table should NOT appear (no frontmatter)
+      // Properties section has been removed
       expect(
         domContainer.querySelector(".exocortex-properties-section"),
       ).toBeFalsy();
@@ -526,7 +520,7 @@ describe("UniversalLayoutRenderer UI Integration", () => {
       expect(button).toBeFalsy();
     });
 
-    it("should position Create Task button below properties table", async () => {
+    it("should render Create Task button in buttons section", async () => {
       const currentFile = new TFile("area.md");
 
       (mockApp.metadataCache.getFileCache as jest.Mock).mockReturnValue({
@@ -545,18 +539,13 @@ describe("UniversalLayoutRenderer UI Integration", () => {
 
       await waitForReact();
 
-      // Verify order: properties section -> buttons section (containing action buttons) -> relations
+      // Verify buttons section exists with Create Task button
       const children = Array.from(domContainer.children);
       const buttonsContainerIndex = children.findIndex((el) =>
         el.classList.contains("exocortex-buttons-section"),
       );
-      const propertiesIndex = children.findIndex((el) =>
-        el.classList.contains("exocortex-properties-section"),
-      );
 
       expect(buttonsContainerIndex).toBeGreaterThanOrEqual(0);
-      expect(propertiesIndex).toBeGreaterThanOrEqual(0);
-      expect(propertiesIndex).toBeLessThan(buttonsContainerIndex);
 
       // Verify Create Task button is inside the action buttons container (inside buttons section)
       const buttonsSection = children[buttonsContainerIndex];
@@ -1188,7 +1177,7 @@ describe("UniversalLayoutRenderer UI Integration", () => {
       expect(button).toBeFalsy();
     });
 
-    it("should position Repair Folder button after Clean button and after properties", async () => {
+    it("should position Repair Folder button after Clean button in buttons section", async () => {
       const currentFile = new TFile("wrong/asset.md");
       (currentFile as any).parent = { path: "wrong" };
 
@@ -1218,18 +1207,13 @@ describe("UniversalLayoutRenderer UI Integration", () => {
 
       await waitForReact();
 
-      // Verify properties section is before buttons section
+      // Verify buttons section exists
       const children = Array.from(domContainer.children);
       const buttonsContainerIndex = children.findIndex((el) =>
         el.classList.contains("exocortex-buttons-section"),
       );
-      const propertiesIndex = children.findIndex((el) =>
-        el.classList.contains("exocortex-properties-section"),
-      );
 
       expect(buttonsContainerIndex).toBeGreaterThanOrEqual(0);
-      expect(propertiesIndex).toBeGreaterThanOrEqual(0);
-      expect(propertiesIndex).toBeLessThan(buttonsContainerIndex);
 
       // Verify both buttons exist inside the buttons section (via action buttons container)
       const buttonsSection = children[buttonsContainerIndex];
@@ -2089,11 +2073,8 @@ describe("UniversalLayoutRenderer UI Integration", () => {
 
       await waitForReact();
 
-      // Verify order: Properties -> Tasks -> Relations
+      // Verify order: Tasks -> Relations (properties section removed)
       const children = Array.from(domContainer.children);
-      const propertiesIndex = children.findIndex((el) =>
-        el.classList.contains("exocortex-properties-section"),
-      );
       const tasksIndex = children.findIndex((el) =>
         el.classList.contains("exocortex-daily-tasks-section"),
       );
@@ -2101,12 +2082,10 @@ describe("UniversalLayoutRenderer UI Integration", () => {
         el.classList.contains("exocortex-assets-relations"),
       );
 
-      expect(propertiesIndex).toBeGreaterThanOrEqual(0);
       expect(tasksIndex).toBeGreaterThanOrEqual(0);
       expect(relationsIndex).toBeGreaterThanOrEqual(0);
 
-      // Tasks should be BETWEEN Properties and Relations
-      expect(tasksIndex).toBeGreaterThan(propertiesIndex);
+      // Tasks should be BEFORE Relations
       expect(tasksIndex).toBeLessThan(relationsIndex);
     });
   });

@@ -45,7 +45,6 @@ describe("ExocortexSettingTab", () => {
     mockPlugin = createMockPlugin({
       settings: {
         layoutVisible: true,
-        showPropertiesSection: true,
         showArchivedAssets: false,
         showLabelsInTabTitles: true,
         displayNameTemplate: "{{exo__Asset_label}}",
@@ -123,9 +122,9 @@ describe("ExocortexSettingTab", () => {
       settingTab.display();
 
       expect(mockContainerEl.empty).toHaveBeenCalled();
-      // 8 toggle settings + 2 headings + 1 default template + 6 per-class templates + 1 reset button = 18
-      // Removed: showLabelsInQuickSwitcher, showLabelsInWikilinkAutocomplete (Issue #2318)
-      expect(MockSetting).toHaveBeenCalledTimes(20);
+      // 7 toggle settings + 2 headings + 1 default template + 6 per-class templates + 1 reset button = 17
+      // Removed: showPropertiesSection (Issue #2321), showLabelsInQuickSwitcher, showLabelsInWikilinkAutocomplete (Issue #2318)
+      expect(MockSetting).toHaveBeenCalledTimes(19);
     });
 
     it("should render layout visibility toggle as first setting", () => {
@@ -198,81 +197,12 @@ describe("ExocortexSettingTab", () => {
       expect(mockPlugin.refreshLayout).toHaveBeenCalled();
     });
 
-    it("should render properties section toggle", () => {
-      settingTab.display();
-
-      const secondSetting = (MockSetting as jest.Mock).mock.results[1].value;
-      expect(secondSetting.setName).toHaveBeenCalledWith("Show properties section");
-      expect(secondSetting.setDesc).toHaveBeenCalledWith(
-        "Display the properties table in the layout"
-      );
-    });
-
-    it("should handle properties section toggle change", async () => {
-      let toggleCallbacks: any[] = [];
-      MockSetting.mockImplementation((containerEl: any) => {
-        const setting = {
-          containerEl,
-          setName: jest.fn().mockReturnThis(),
-          setDesc: jest.fn().mockReturnThis(),
-          setHeading: jest.fn().mockReturnThis(),
-          addDropdown: jest.fn().mockReturnThis(),
-          addToggle: jest.fn().mockImplementation((callback) => {
-            const toggle = {
-              setValue: jest.fn().mockReturnThis(),
-              onChange: jest.fn().mockReturnThis(),
-            };
-            toggleCallbacks.push({ toggle, callback, onChange: null });
-            toggle.onChange.mockImplementation((cb: any) => {
-              toggleCallbacks[toggleCallbacks.length - 1].onChange = cb;
-              return toggle;
-            });
-            callback(toggle);
-            return setting;
-          }),
-          addText: jest.fn().mockImplementation((callback) => {
-            const text = {
-              setPlaceholder: jest.fn().mockReturnThis(),
-              setValue: jest.fn().mockReturnThis(),
-              onChange: jest.fn().mockReturnThis(),
-            };
-            callback(text);
-            return setting;
-          }),
-          addButton: jest.fn().mockImplementation((callback) => {
-            const button = {
-              setButtonText: jest.fn().mockReturnThis(),
-              onClick: jest.fn().mockReturnThis(),
-              setCta: jest.fn().mockReturnThis(),
-            };
-            callback(button);
-            return setting;
-          }),
-        };
-        return setting;
-      });
-
-      settingTab.display();
-
-      // Second setting's toggle (properties section)
-      const propertiesToggle = toggleCallbacks[1];
-      expect(propertiesToggle.toggle.setValue).toHaveBeenCalledWith(true);
-
-      if (propertiesToggle.onChange) {
-        await propertiesToggle.onChange(false);
-      }
-
-      expect(mockPlugin.settings.showPropertiesSection).toBe(false);
-      expect(mockPlugin.saveSettings).toHaveBeenCalled();
-      expect(mockPlugin.refreshLayout).toHaveBeenCalled();
-    });
-
     it("should render archived assets toggle", () => {
       settingTab.display();
 
-      const thirdSetting = (MockSetting as jest.Mock).mock.results[2].value;
-      expect(thirdSetting.setName).toHaveBeenCalledWith("Show archived assets");
-      expect(thirdSetting.setDesc).toHaveBeenCalledWith(
+      const secondSetting = (MockSetting as jest.Mock).mock.results[1].value;
+      expect(secondSetting.setName).toHaveBeenCalledWith("Show archived assets");
+      expect(secondSetting.setDesc).toHaveBeenCalledWith(
         "Display archived assets in relations table with visual distinction"
       );
     });
@@ -323,8 +253,8 @@ describe("ExocortexSettingTab", () => {
 
       settingTab.display();
 
-      // Third setting's toggle (archived assets)
-      const archivedToggle = toggleCallbacks[2];
+      // Second setting's toggle (archived assets — was third before properties removal)
+      const archivedToggle = toggleCallbacks[1];
       expect(archivedToggle.toggle.setValue).toHaveBeenCalledWith(false);
 
       if (archivedToggle.onChange) {

@@ -41,7 +41,7 @@ describe("CommandManager - registration", () => {
         ctx.commandManager.registerAllCommands(ctx.mockPlugin);
       }).not.toThrow();
 
-      expect(ctx.mockPlugin.addCommand).toHaveBeenCalledTimes(35);
+      expect(ctx.mockPlugin.addCommand).toHaveBeenCalledTimes(34);
     });
 
     it("should register commands with correct IDs", () => {
@@ -77,7 +77,6 @@ describe("CommandManager - registration", () => {
       expect(registeredCommandIds).toContain("copy-label-to-aliases");
       expect(registeredCommandIds).toContain("reload-layout");
       expect(registeredCommandIds).toContain("add-supervision");
-      expect(registeredCommandIds).toContain("toggle-properties-visibility");
       expect(registeredCommandIds).toContain("toggle-layout-visibility");
       expect(registeredCommandIds).toContain(
         "toggle-archived-assets-visibility",
@@ -118,7 +117,6 @@ describe("CommandManager - registration", () => {
       expect(registeredNames).toContain("Copy label to aliases");
       expect(registeredNames).toContain("Reload layout");
       expect(registeredNames).toContain("Add supervision");
-      expect(registeredNames).toContain("Toggle properties visibility");
       expect(registeredNames).toContain("Toggle layout visibility");
       expect(registeredNames).toContain("Toggle archived assets visibility");
       expect(registeredNames).toContain("open sparql query builder");
