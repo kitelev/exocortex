@@ -62,7 +62,6 @@ export interface ExocortexPluginInterface extends Plugin {
     showPropertiesSection?: boolean;
     layoutVisible?: boolean;
     showArchivedAssets?: boolean;
-    activeFocusArea?: string | null;
     showEffortArea?: boolean;
     showEffortVotes?: boolean;
   };

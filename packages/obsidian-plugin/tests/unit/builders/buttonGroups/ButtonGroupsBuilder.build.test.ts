@@ -290,62 +290,6 @@ describe("ButtonGroupsBuilder - build", () => {
     expect(voteButton?.label).toBe("Vote");
   });
 
-  it("should show 'Set Active Focus' when no active focus set", async () => {
-    ctx.mockSettings.activeFocusArea = null;
-    const mockFile = {
-      path: "test.md",
-      parent: { path: "Areas" },
-      basename: "TestArea",
-    } as TFile;
-    const metadata = { exo__Instance_class: "[[ems__Area]]" };
-
-    ctx.mockMetadataExtractor.extractMetadata.mockReturnValue(metadata);
-    ctx.mockMetadataExtractor.extractInstanceClass.mockReturnValue(
-      "[[ems__Area]]",
-    );
-    ctx.mockMetadataExtractor.extractStatus.mockReturnValue(null);
-    ctx.mockMetadataExtractor.extractIsArchived.mockReturnValue(false);
-    ctx.mockFolderRepairService.getExpectedFolder.mockResolvedValue(
-      "Areas/TestArea",
-    );
-
-    const groups = await ctx.builder.build(mockFile);
-
-    const planningGroup = groups.find((g) => g.id === "planning");
-    const focusButton = planningGroup?.buttons.find(
-      (b) => b.id === "set-active-focus",
-    );
-    expect(focusButton?.label).toBe("Set Active Focus");
-  });
-
-  it("should show 'Clear Active Focus' when this area is active focus", async () => {
-    ctx.mockSettings.activeFocusArea = "TestArea";
-    const mockFile = {
-      path: "test.md",
-      parent: { path: "Areas" },
-      basename: "TestArea",
-    } as TFile;
-    const metadata = { exo__Instance_class: "[[ems__Area]]" };
-
-    ctx.mockMetadataExtractor.extractMetadata.mockReturnValue(metadata);
-    ctx.mockMetadataExtractor.extractInstanceClass.mockReturnValue(
-      "[[ems__Area]]",
-    );
-    ctx.mockMetadataExtractor.extractStatus.mockReturnValue(null);
-    ctx.mockMetadataExtractor.extractIsArchived.mockReturnValue(false);
-    ctx.mockFolderRepairService.getExpectedFolder.mockResolvedValue(
-      "Areas/TestArea",
-    );
-
-    const groups = await ctx.builder.build(mockFile);
-
-    const planningGroup = groups.find((g) => g.id === "planning");
-    const focusButton = planningGroup?.buttons.find(
-      (b) => b.id === "set-active-focus",
-    );
-    expect(focusButton?.label).toBe("Clear Active Focus");
-  });
-
   it("should handle array of instance classes", async () => {
     const mockFile = {
       path: "test.md",

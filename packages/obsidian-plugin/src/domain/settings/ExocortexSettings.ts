@@ -1,37 +1,3 @@
-import type { EmbeddingProvider } from "exocortex";
-
-/**
- * Semantic search settings configuration
- */
-export interface SemanticSearchSettings {
-  /** Whether semantic search is enabled */
-  enabled: boolean;
-  /** Embedding provider to use */
-  provider: EmbeddingProvider;
-  /** API key for the embedding provider (encrypted/stored separately) */
-  apiKey?: string;
-  /** Model to use for embeddings */
-  model: string;
-  /** Whether to automatically embed new/changed files */
-  autoEmbed: boolean;
-  /** Minimum similarity threshold for search results (0-1) */
-  minSimilarity: number;
-  /** Maximum number of search results */
-  maxResults: number;
-}
-
-/**
- * Default semantic search settings
- */
-export const DEFAULT_SEMANTIC_SEARCH_SETTINGS: SemanticSearchSettings = {
-  enabled: false,
-  provider: "openai",
-  model: "text-embedding-3-small",
-  autoEmbed: true,
-  minSimilarity: 0.7,
-  maxResults: 10,
-};
-
 /**
  * Per-class display name template configuration
  */
@@ -71,7 +37,6 @@ export interface ExocortexSettings {
   showPropertiesSection: boolean;
   layoutVisible: boolean;
   showArchivedAssets: boolean;
-  activeFocusArea: string | null;
   showEffortArea: boolean;
   showEffortVotes: boolean;
   showFullDateInEffortTimes: boolean;
@@ -85,17 +50,11 @@ export interface ExocortexSettings {
   showLabelsInGraphView: boolean;
   /** Display wikilinks by exo__Asset_label in live preview mode (edit mode) */
   showLabelsInLivePreview: boolean;
-  /** Show asset labels in Quick Switcher (Ctrl+O / Cmd+O) instead of file basenames */
-  showLabelsInQuickSwitcher: boolean;
-  /** Show asset labels in wikilink autocomplete ([[ suggestions) instead of file basenames */
-  showLabelsInWikilinkAutocomplete: boolean;
   /** @deprecated Use displayNameSettings.defaultTemplate instead */
   displayNameTemplate: string;
   sortByDisplayName: boolean;
   /** Per-class display name template settings */
   displayNameSettings: DisplayNameSettings;
-  /** Semantic search settings */
-  semanticSearchSettings: SemanticSearchSettings;
   /**
    * Auto-adjust plannedEndTimestamp when plannedStartTimestamp changes.
    * Disabled by default to prevent double-shift issues with Obsidian Sync.
@@ -109,7 +68,6 @@ export const DEFAULT_SETTINGS: ExocortexSettings = {
   showPropertiesSection: true,
   layoutVisible: true,
   showArchivedAssets: false,
-  activeFocusArea: null,
   showEffortArea: false,
   showEffortVotes: false,
   showFullDateInEffortTimes: false,
@@ -119,11 +77,8 @@ export const DEFAULT_SETTINGS: ExocortexSettings = {
   showLabelsInBody: true,
   showLabelsInGraphView: true,
   showLabelsInLivePreview: true,
-  showLabelsInQuickSwitcher: true,
-  showLabelsInWikilinkAutocomplete: true,
   displayNameTemplate: "{{exo__Asset_label}} ({{exo__Instance_class}})",
   sortByDisplayName: false,
   displayNameSettings: DEFAULT_DISPLAY_NAME_SETTINGS,
-  semanticSearchSettings: DEFAULT_SEMANTIC_SEARCH_SETTINGS,
   autoAdjustPlannedEndTimestamp: false,
 };

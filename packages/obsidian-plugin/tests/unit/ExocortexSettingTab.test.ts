@@ -123,11 +123,9 @@ describe("ExocortexSettingTab", () => {
       settingTab.display();
 
       expect(mockContainerEl.empty).toHaveBeenCalled();
-      // 10 original settings (removed showLabelsInFileExplorer, ontology dropdown, showDailyNoteProjects, useDynamicPropertyFields; kept autoAdjustPlannedEndTimestamp Issue #2142) + 2 headings + 1 default template + 6 per-class templates + 1 reset button = 20
-      // Removed: "Status emoji mapping" heading + 5 status emoji settings = 6 fewer
-      // Removed: 3 webhook settings (heading, toggle, add button) = 3 fewer (Issue #2164)
-      // Added: 2 new settings (showLabelsInQuickSwitcher, showLabelsInWikilinkAutocomplete) = 2 more (Issue #2166)
-      expect(MockSetting).toHaveBeenCalledTimes(22);
+      // 8 toggle settings + 2 headings + 1 default template + 6 per-class templates + 1 reset button = 18
+      // Removed: showLabelsInQuickSwitcher, showLabelsInWikilinkAutocomplete (Issue #2318)
+      expect(MockSetting).toHaveBeenCalledTimes(20);
     });
 
     it("should render layout visibility toggle as first setting", () => {

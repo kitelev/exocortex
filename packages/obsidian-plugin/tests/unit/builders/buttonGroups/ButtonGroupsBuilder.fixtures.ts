@@ -56,7 +56,6 @@ export function setupButtonGroupsBuilderTest(): ButtonGroupsBuilderTestContext {
   };
 
   const mockSettings = {
-    activeFocusArea: null,
     showEffortArea: true,
     showEffortVotes: true,
   } as ExocortexSettings;

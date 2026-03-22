@@ -201,8 +201,8 @@ describe("ExocortexPlugin", () => {
         "sparql",
         expect.any(Function)
       );
-      // 12 original events - 2 webhook events (file create, file delete) = 10 (Issue #2164)
-      expect(plugin.registerEvent).toHaveBeenCalledTimes(10);
+      // 10 - 4 semantic search file events (create, modify, delete, rename) = 6 (Issue #2318)
+      expect(plugin.registerEvent).toHaveBeenCalledTimes(6);
       expect(mockLogger.info).toHaveBeenCalledWith("Exocortex Plugin loaded successfully");
     });
 
