@@ -34,7 +34,6 @@ export const DEFAULT_DISPLAY_NAME_SETTINGS: DisplayNameSettings = {
 };
 
 export interface ExocortexSettings {
-  showPropertiesSection: boolean;
   layoutVisible: boolean;
   showArchivedAssets: boolean;
   showEffortArea: boolean;
@@ -65,7 +64,6 @@ export interface ExocortexSettings {
 }
 
 export const DEFAULT_SETTINGS: ExocortexSettings = {
-  showPropertiesSection: true,
   layoutVisible: true,
   showArchivedAssets: false,
   showEffortArea: false,

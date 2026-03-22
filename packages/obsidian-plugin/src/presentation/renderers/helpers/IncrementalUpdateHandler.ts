@@ -6,7 +6,6 @@ import { ReactRenderer } from '@plugin/presentation/utils/ReactRenderer';
 import { ActionButtonsGroup } from '@plugin/presentation/components/ActionButtonsGroup';
 import { ButtonGroupsBuilder } from '@plugin/presentation/builders/ButtonGroupsBuilder';
 import { DailyTasksRenderer } from '@plugin/presentation/renderers/DailyTasksRenderer';
-import { PropertiesRenderer } from '@plugin/presentation/renderers/layout/PropertiesRenderer';
 import { AreaTreeRenderer } from '@plugin/presentation/renderers/layout/AreaTreeRenderer';
 import { RelationsRenderer, UniversalLayoutConfig } from '@plugin/presentation/renderers/layout/RelationsRenderer';
 import { LayoutSection } from '@plugin/application/services/PropertyDependencyResolver';
@@ -15,7 +14,6 @@ import { SectionStateManager } from "./SectionStateManager";
 type RenderHeaderFn = (container: HTMLElement, sectionId: string, title: string) => void;
 
 interface RendererDependencies {
-  propertiesRenderer: PropertiesRenderer;
   buttonGroupsBuilder: ButtonGroupsBuilder;
   dailyTasksRenderer: DailyTasksRenderer;
   areaTreeRenderer: AreaTreeRenderer;
@@ -46,8 +44,7 @@ interface UpdateRequest {
  * - Prevents DOM corruption from concurrent modifications
  */
 export class IncrementalUpdateHandler {
-  private static readonly SECTION_SELECTORS: Record<LayoutSection, string> = {
-    [LayoutSection.PROPERTIES]: ".exocortex-properties-section",
+  private static readonly SECTION_SELECTORS: Partial<Record<LayoutSection, string>> = {
     [LayoutSection.BUTTONS]: ".exocortex-buttons-section",
     [LayoutSection.DAILY_TASKS]: ".exocortex-daily-tasks-section",
     [LayoutSection.AREA_TREE]: ".exocortex-area-tree-section",
@@ -153,14 +150,12 @@ export class IncrementalUpdateHandler {
     renderHeader: RenderHeaderFn,
   ): Promise<void> {
     const selector = IncrementalUpdateHandler.SECTION_SELECTORS[section];
+    if (!selector) return;
     const containerElement = rootContainer.querySelector(selector);
     if (!(containerElement instanceof HTMLElement)) return;
     const container = containerElement;
 
     switch (section) {
-      case LayoutSection.PROPERTIES:
-        await this.updateProperties(rootContainer, container, file, renderHeader);
-        break;
       case LayoutSection.BUTTONS:
         await this.updateButtons(rootContainer, container, file);
         break;
@@ -170,23 +165,6 @@ export class IncrementalUpdateHandler {
         await this.updateRelationSection(rootContainer, container, file, section, config, renderHeader);
         break;
     }
-  }
-
-  private async updateProperties(
-    rootContainer: HTMLElement,
-    container: HTMLElement,
-    file: TFile,
-    renderHeader: RenderHeaderFn,
-  ): Promise<void> {
-    container.empty();
-    const backlinks = this.deps.backlinksCacheManager.getBacklinks(file.path);
-    await this.deps.propertiesRenderer.render(
-      container.parentElement || rootContainer,
-      file,
-      { hideAliases: backlinks && backlinks.size > 0 },
-      renderHeader,
-      this.deps.sectionStateManager.isCollapsed("properties"),
-    );
   }
 
   private async updateButtons(

@@ -72,7 +72,7 @@ jest.mock("../../../src/application/commands/VoteOnEffortCommand");
 jest.mock("../../../src/application/commands/CopyLabelToAliasesCommand");
 jest.mock("../../../src/application/commands/AddSupervisionCommand");
 jest.mock("../../../src/application/commands/ReloadLayoutCommand");
-jest.mock("../../../src/application/commands/TogglePropertiesVisibilityCommand");
+
 jest.mock("../../../src/application/commands/ToggleLayoutVisibilityCommand");
 jest.mock("../../../src/application/commands/ToggleArchivedAssetsCommand");
 jest.mock("../../../src/application/commands/ConvertTaskToProjectCommand");
@@ -195,7 +195,7 @@ describe("CommandRegistry", () => {
       const commands = registry.getAllCommands();
 
       // 36 commands are registered (including CopyFleetingNoteLabelCommand)
-      expect(commands.length).toBe(35);
+      expect(commands.length).toBe(34);
     });
 
     it("should return same array on multiple calls", () => {

@@ -109,7 +109,6 @@ export const setupCommandManagerTest = (): CommandManagerTestContext => {
       registeredCommands.set(command.id, command);
     }),
     settings: {
-      showPropertiesSection: true,
       layoutVisible: true,
       showArchivedAssets: false,
     },

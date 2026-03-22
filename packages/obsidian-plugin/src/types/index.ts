@@ -59,7 +59,6 @@ export interface CommandVisibilityContext {
  */
 export interface ExocortexPluginInterface extends Plugin {
   settings: Record<string, unknown> & {
-    showPropertiesSection?: boolean;
     layoutVisible?: boolean;
     showArchivedAssets?: boolean;
     showEffortArea?: boolean;

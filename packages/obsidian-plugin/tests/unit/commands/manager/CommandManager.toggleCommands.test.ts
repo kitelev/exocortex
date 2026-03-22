@@ -55,59 +55,6 @@ describe("CommandManager - toggle commands", () => {
     });
   });
 
-  describe("Toggle Properties Visibility Command", () => {
-    beforeEach(() => {
-      ctx.commandManager.registerAllCommands(ctx.mockPlugin);
-    });
-
-    it("should be always available", () => {
-      const command = ctx.registeredCommands.get("toggle-properties-visibility");
-      expect(command).toBeDefined();
-      expect(typeof command.callback).toBe("function");
-    });
-
-    it("should toggle properties visibility when executed", async () => {
-      const command = ctx.registeredCommands.get("toggle-properties-visibility");
-
-      expect(ctx.mockPlugin.settings.showPropertiesSection).toBe(true);
-      await command.callback();
-      expect(ctx.mockPlugin.settings.showPropertiesSection).toBe(false);
-
-      await command.callback();
-      expect(ctx.mockPlugin.settings.showPropertiesSection).toBe(true);
-    });
-
-    it("should save settings when toggled", async () => {
-      const command = ctx.registeredCommands.get("toggle-properties-visibility");
-      await command.callback();
-
-      expect(ctx.mockPlugin.saveSettings).toHaveBeenCalled();
-    });
-
-    it("should refresh layout when toggled", async () => {
-      const command = ctx.registeredCommands.get("toggle-properties-visibility");
-      await command.callback();
-
-      expect(ctx.mockPlugin.refreshLayout).toHaveBeenCalled();
-    });
-
-    it("should show notice when toggled to shown", async () => {
-      ctx.mockPlugin.settings.showPropertiesSection = false;
-      const command = ctx.registeredCommands.get("toggle-properties-visibility");
-      await command.callback();
-
-      expect(Notice).toHaveBeenCalledWith("Properties section shown");
-    });
-
-    it("should show notice when toggled to hidden", async () => {
-      ctx.mockPlugin.settings.showPropertiesSection = true;
-      const command = ctx.registeredCommands.get("toggle-properties-visibility");
-      await command.callback();
-
-      expect(Notice).toHaveBeenCalledWith("Properties section hidden");
-    });
-  });
-
   describe("Toggle Layout Visibility Command", () => {
     beforeEach(() => {
       ctx.commandManager.registerAllCommands(ctx.mockPlugin);

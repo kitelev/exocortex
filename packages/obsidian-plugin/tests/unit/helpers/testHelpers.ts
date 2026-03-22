@@ -116,7 +116,6 @@ export function createMockPlugin(overrides?: any): any {
     settings: {
       currentOntology: null,
       showLayoutSection: true,
-      showPropertiesSection: true,
       showArchivedAssets: false,
       votesColumnVisible: true,
     },

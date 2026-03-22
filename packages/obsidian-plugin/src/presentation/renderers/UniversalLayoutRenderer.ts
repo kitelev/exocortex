@@ -15,7 +15,7 @@ import { BacklinksCacheManager } from '@plugin/adapters/caching/BacklinksCacheMa
 import { EventListenerManager } from '@plugin/adapters/events/EventListenerManager';
 import { ButtonGroupsBuilder } from '@plugin/presentation/builders/ButtonGroupsBuilder';
 import { DailyTasksRenderer } from "./DailyTasksRenderer";
-import { PropertiesRenderer } from "./layout/PropertiesRenderer";
+
 import { AreaTreeRenderer } from "./layout/AreaTreeRenderer";
 import { RelationsRenderer, UniversalLayoutConfig } from "./layout/RelationsRenderer";
 import { AssetMetadataService } from "./layout/helpers/AssetMetadataService";
@@ -34,7 +34,6 @@ import { LRUCache } from '@plugin/infrastructure/cache';
  * Renders the UniversalLayout view with properties, buttons, daily sections, and relations.
  *
  * Uses specialized renderers for each section:
- * - PropertiesRenderer: Asset properties
  * - ButtonGroupsBuilder: Action buttons
  * - DailyTasksRenderer: Daily note tasks section
  * - AreaTreeRenderer/RelationsRenderer: Asset relations
@@ -53,7 +52,6 @@ export class UniversalLayoutRenderer {
   private dailyTasksRenderer!: DailyTasksRenderer;
   private vaultAdapter: IVaultAdapter;
   private metadataService: AssetMetadataService;
-  private propertiesRenderer!: PropertiesRenderer;
   private areaTreeRenderer!: AreaTreeRenderer;
   private relationsRenderer!: RelationsRenderer;
   private sectionStateManager: SectionStateManager;
@@ -110,9 +108,6 @@ export class UniversalLayoutRenderer {
   private initializeRenderers(): void {
     const services = this.resolveServices();
 
-    this.propertiesRenderer = new PropertiesRenderer(
-      this.app, this.reactRenderer, this.metadataExtractor, this.metadataService);
-
     this.areaTreeRenderer = new AreaTreeRenderer(
       this.app, this.reactRenderer, this.metadataExtractor,
       this.vaultAdapter, this.metadataService, this.logger);
@@ -149,7 +144,6 @@ export class UniversalLayoutRenderer {
       this.metadataService, this.vaultAdapter);
 
     this.incrementalUpdateHandler = new IncrementalUpdateHandler({
-      propertiesRenderer: this.propertiesRenderer,
       buttonGroupsBuilder: this.buttonGroupsBuilder,
       dailyTasksRenderer: this.dailyTasksRenderer,
       areaTreeRenderer: this.areaTreeRenderer,
@@ -235,15 +229,8 @@ export class UniversalLayoutRenderer {
 
       this.dailyNavRenderer.render(el, currentFile);
 
-      const backlinks = this.backlinksCacheManager.getBacklinks(currentFile.path);
-      const hasRelations = backlinks && backlinks.size > 0;
       const renderHeader = (c: HTMLElement, id: string, t: string) =>
         this.sectionStateManager.renderHeader(c, id, t, this.eventListenerManager);
-
-      if (this.settings.showPropertiesSection) {
-        await this.propertiesRenderer.render(el, currentFile, { hideAliases: hasRelations },
-          renderHeader, this.sectionStateManager.isCollapsed("properties"));
-      }
 
       const buttonGroups = await this.buttonGroupsBuilder.build(currentFile);
       if (buttonGroups.length > 0) {
