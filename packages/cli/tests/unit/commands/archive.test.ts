@@ -2,12 +2,13 @@ import { jest } from "@jest/globals";
 import { Command } from "commander";
 
 /**
- * Issue #2306: Tests for archive CLI command registration
+ * Issue #2306 + #2311: Tests for archive CLI command registration
  *
  * Acceptance criteria:
  * - Command is registered with correct name and description
- * - Required options: --vault, --archive-vault, --class, --year
- * - Optional options: --dry-run, --no-referenced, --json
+ * - Required options: --vault, --archive-vault
+ * - Optional options: --class, --year, --dry-run, --no-referenced, --json, --verify
+ * - --class and --year are validated at runtime (required for archive, not for verify)
  */
 describe("Issue #2306: archive command", () => {
   let archiveCommandFn: () => Command;
@@ -46,22 +47,20 @@ describe("Issue #2306: archive command", () => {
     expect(option!.mandatory).toBe(true);
   });
 
-  it("should have required option --class", () => {
+  it("should have option --class (validated at runtime)", () => {
     const cmd = archiveCommandFn();
     const option = cmd.options.find(
       (opt) => opt.long === "--class",
     );
     expect(option).toBeDefined();
-    expect(option!.mandatory).toBe(true);
   });
 
-  it("should have required option --year", () => {
+  it("should have option --year (validated at runtime)", () => {
     const cmd = archiveCommandFn();
     const option = cmd.options.find(
       (opt) => opt.long === "--year",
     );
     expect(option).toBeDefined();
-    expect(option!.mandatory).toBe(true);
   });
 
   it("should have optional --dry-run flag", () => {
@@ -79,5 +78,14 @@ describe("Issue #2306: archive command", () => {
       (opt) => opt.long === "--json",
     );
     expect(option).toBeDefined();
+  });
+
+  it("should have optional --verify flag", () => {
+    const cmd = archiveCommandFn();
+    const option = cmd.options.find(
+      (opt) => opt.long === "--verify",
+    );
+    expect(option).toBeDefined();
+    expect(option!.mandatory).toBeFalsy();
   });
 });
