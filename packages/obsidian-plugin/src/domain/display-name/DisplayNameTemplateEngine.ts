@@ -17,6 +17,8 @@
  * - "[{{exo__Instance_class}}] {{exo__Asset_label}}" - Class prefix
  * - "{{_basename}} - {{exo__Asset_label}}" - Filename with label
  */
+export type MetadataResolver = (wikilinkTarget: string) => Record<string, unknown> | null;
+
 export class DisplayNameTemplateEngine {
   private static readonly PLACEHOLDER_PATTERN = /\{\{([^}]+)\}\}/g;
   private static readonly WIKILINK_PATTERN = /^\[\[|\]\]$/g;
@@ -34,7 +36,8 @@ export class DisplayNameTemplateEngine {
   render(
     metadata: Record<string, unknown>,
     basename: string,
-    createdDate?: Date
+    createdDate?: Date,
+    metadataResolver?: MetadataResolver
   ): string | null {
     if (!this.template || this.template.trim() === "") {
       return null;
@@ -44,7 +47,7 @@ export class DisplayNameTemplateEngine {
       DisplayNameTemplateEngine.PLACEHOLDER_PATTERN,
       (_, key: string) => {
         const trimmedKey = key.trim();
-        return this.resolveValue(trimmedKey, metadata, basename, createdDate);
+        return this.resolveValue(trimmedKey, metadata, basename, createdDate, metadataResolver);
       }
     );
 
@@ -111,7 +114,8 @@ export class DisplayNameTemplateEngine {
     key: string,
     metadata: Record<string, unknown>,
     basename: string,
-    createdDate?: Date
+    createdDate?: Date,
+    metadataResolver?: MetadataResolver
   ): string {
     // Handle special variables
     if (key === "_basename") {
@@ -125,15 +129,19 @@ export class DisplayNameTemplateEngine {
       return "";
     }
 
-    // Handle dot notation for nested fields
-    const value = this.getNestedValue(metadata, key);
+    // Handle dot notation for nested fields (with cross-asset resolution)
+    const value = this.getNestedValue(metadata, key, metadataResolver);
     return this.formatValue(value);
   }
 
   /**
    * Get nested value from object using dot notation
    */
-  private getNestedValue(obj: Record<string, unknown>, path: string): unknown {
+  private getNestedValue(
+    obj: Record<string, unknown>,
+    path: string,
+    metadataResolver?: MetadataResolver
+  ): unknown {
     const parts = path.split(".");
     let current: unknown = obj;
 
@@ -143,6 +151,13 @@ export class DisplayNameTemplateEngine {
       }
 
       if (typeof current !== "object") {
+        if (typeof current === "string" && metadataResolver && this.isWikilink(current)) {
+          const resolved = metadataResolver(current);
+          if (resolved) {
+            current = (resolved as Record<string, unknown>)[part];
+            continue;
+          }
+        }
         return undefined;
       }
 
@@ -150,6 +165,10 @@ export class DisplayNameTemplateEngine {
     }
 
     return current;
+  }
+
+  private isWikilink(value: string): boolean {
+    return value.startsWith("[[") && value.endsWith("]]");
   }
 
   /**

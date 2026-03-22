@@ -1,6 +1,7 @@
 import { TFile, WorkspaceLeaf, Plugin, CachedMetadata, MarkdownView } from "obsidian";
 import { DisplayNameResolver } from "@plugin/domain/display-name/DisplayNameResolver";
 import { DEFAULT_DISPLAY_NAME_TEMPLATE } from "@plugin/domain/display-name/DisplayNameTemplateEngine";
+import type { PrintNameRuleService } from "@plugin/domain/display-name/PrintNameRuleService";
 import type { ExocortexSettings, DisplayNameSettings } from "@plugin/domain/settings/ExocortexSettings";
 
 /**
@@ -19,6 +20,7 @@ import type { ExocortexSettings, DisplayNameSettings } from "@plugin/domain/sett
 // Plugin interface to access settings
 interface PluginWithSettings extends Plugin {
   settings: ExocortexSettings;
+  printNameRuleService?: PrintNameRuleService;
 }
 
 export class TabTitlePatch {
@@ -56,7 +58,9 @@ export class TabTitlePatch {
    * Create a DisplayNameResolver with current settings
    */
   private createResolver(): DisplayNameResolver {
-    return new DisplayNameResolver(this.getDisplayNameSettings());
+    const ruleService = this.plugin.printNameRuleService ?? null;
+    const metadataResolver = ruleService?.createMetadataResolver() ?? null;
+    return new DisplayNameResolver(this.getDisplayNameSettings(), ruleService, metadataResolver);
   }
 
   /**

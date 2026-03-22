@@ -182,6 +182,100 @@ describe("DisplayNameResolver", () => {
     });
   });
 
+  describe("with PrintNameRuleService", () => {
+    it("should use dynamic rule template over settings template", () => {
+      const mockRuleService = {
+        getTemplateForClass: jest.fn().mockReturnValue({
+          template: "{{exo__Asset_label}} (DynamicRule)",
+          priority: 100,
+        }),
+        createMetadataResolver: jest.fn().mockReturnValue(null),
+      };
+
+      const resolver = new DisplayNameResolver(
+        defaultSettings,
+        mockRuleService as any,
+      );
+
+      const result = resolver.resolve({
+        metadata: {
+          exo__Asset_label: "My Task",
+          exo__Instance_class: "ems__Task",
+        },
+        basename: "my-task",
+      });
+
+      expect(result).toBe("My Task (DynamicRule)");
+      expect(mockRuleService.getTemplateForClass).toHaveBeenCalledWith("ems__Task");
+    });
+
+    it("should fall back to settings when no dynamic rule exists", () => {
+      const mockRuleService = {
+        getTemplateForClass: jest.fn().mockReturnValue(null),
+        createMetadataResolver: jest.fn().mockReturnValue(null),
+      };
+
+      const resolver = new DisplayNameResolver(
+        defaultSettings,
+        mockRuleService as any,
+      );
+
+      const result = resolver.resolve({
+        metadata: {
+          exo__Asset_label: "Morning routine",
+          exo__Instance_class: "ems__TaskPrototype",
+        },
+        basename: "morning-routine",
+      });
+
+      expect(result).toBe("Morning routine (TaskPrototype)");
+    });
+
+    it("should work without rule service (backwards compatible)", () => {
+      const resolver = new DisplayNameResolver(defaultSettings);
+
+      const result = resolver.resolve({
+        metadata: {
+          exo__Asset_label: "Fix bug",
+          exo__Instance_class: "ems__Task",
+        },
+        basename: "fix-bug",
+      });
+
+      expect(result).toBe("Fix bug");
+    });
+
+    it("should pass metadata resolver to template engine for cross-asset resolution", () => {
+      const mockMetadataResolver = jest.fn().mockReturnValue({
+        exo__Asset_label: "Parent Project",
+      });
+      const mockRuleService = {
+        getTemplateForClass: jest.fn().mockReturnValue({
+          template: "{{exo__Asset_label}} / {{ems__Effort_project.exo__Asset_label}}",
+          priority: 50,
+        }),
+        createMetadataResolver: jest.fn().mockReturnValue(mockMetadataResolver),
+      };
+
+      const resolver = new DisplayNameResolver(
+        defaultSettings,
+        mockRuleService as any,
+        mockMetadataResolver,
+      );
+
+      const result = resolver.resolve({
+        metadata: {
+          exo__Asset_label: "Sub Task",
+          exo__Instance_class: "ems__Task",
+          ems__Effort_project: "[[project-uuid]]",
+        },
+        basename: "sub-task",
+      });
+
+      expect(result).toBe("Sub Task / Parent Project");
+    });
+  });
+
   describe("DEFAULT_DISPLAY_NAME_SETTINGS", () => {
     it("should have default template with class suffix for all asset types", () => {
       // Default template now includes class suffix for consistent display across all asset types

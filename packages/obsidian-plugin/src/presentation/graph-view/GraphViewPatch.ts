@@ -1,6 +1,7 @@
 import { TFile, WorkspaceLeaf, Plugin, CachedMetadata } from "obsidian";
 import { DisplayNameResolver } from "@plugin/domain/display-name/DisplayNameResolver";
 import { DEFAULT_DISPLAY_NAME_TEMPLATE } from "@plugin/domain/display-name/DisplayNameTemplateEngine";
+import type { PrintNameRuleService } from "@plugin/domain/display-name/PrintNameRuleService";
 import type { ExocortexSettings, DisplayNameSettings } from "@plugin/domain/settings/ExocortexSettings";
 import { FunctionReplacer } from "@plugin/infrastructure/utils/FunctionReplacer";
 
@@ -31,6 +32,7 @@ import { FunctionReplacer } from "@plugin/infrastructure/utils/FunctionReplacer"
 // Plugin interface to access settings
 interface PluginWithSettings extends Plugin {
   settings: ExocortexSettings;
+  printNameRuleService?: PrintNameRuleService;
 }
 
 // Obsidian internal types for graph nodes (not exposed in public API)
@@ -100,7 +102,9 @@ export class GraphViewPatch {
    * Create a DisplayNameResolver with current settings
    */
   private createResolver(): DisplayNameResolver {
-    return new DisplayNameResolver(this.getDisplayNameSettings());
+    const ruleService = this.plugin.printNameRuleService ?? null;
+    const metadataResolver = ruleService?.createMetadataResolver() ?? null;
+    return new DisplayNameResolver(this.getDisplayNameSettings(), ruleService, metadataResolver);
   }
 
   /**
