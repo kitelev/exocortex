@@ -5,6 +5,7 @@ import { NodeFsAdapter } from "../adapters/NodeFsAdapter.js";
 import { ClassResolverService } from "../services/ClassResolverService.js";
 import { ArchiveService } from "../services/ArchiveService.js";
 import { ArchiveVerifyService } from "../services/ArchiveVerifyService.js";
+import { ArchiveCascadeService } from "../services/ArchiveCascadeService.js";
 import { ErrorHandler } from "../utils/ErrorHandler.js";
 import { VaultNotFoundError } from "../utils/errors/index.js";
 
@@ -20,6 +21,7 @@ interface ArchiveCommandOptions {
   noReferenced?: boolean;
   json?: boolean;
   verify?: boolean;
+  cascade?: boolean;
 }
 
 /**
@@ -52,6 +54,16 @@ interface ArchiveCommandOptions {
  * exocortex archive --verify \
  *   --vault /path/to/active-vault \
  *   --archive-vault /path/to/archive-vault
+ *
+ * # Cascade archive: iteratively resolve archived-to-archived chains
+ * exocortex archive --cascade \
+ *   --vault /path/to/active-vault \
+ *   --archive-vault /path/to/archive-vault
+ *
+ * # Cascade dry run
+ * exocortex archive --cascade --dry-run \
+ *   --vault /path/to/active-vault \
+ *   --archive-vault /path/to/archive-vault
  * ```
  */
 export function archiveCommand(): Command {
@@ -80,6 +92,11 @@ export function archiveCommand(): Command {
       "Verify archive integrity instead of archiving (read-only)",
       false,
     )
+    .option(
+      "--cascade",
+      "Iteratively resolve archived-to-archived chains (no --class/--year needed)",
+      false,
+    )
     .action(async (options: ArchiveCommandOptions) => {
       try {
         // Validate vault paths
@@ -103,6 +120,39 @@ export function archiveCommand(): Command {
 
           process.stdout.write(JSON.stringify(result, null, 2) + "\n");
           process.exit(result.ok ? 0 : 1);
+        }
+
+        // Branch: cascade mode
+        if (options.cascade) {
+          const activeFs = new NodeFsAdapter(vaultPath);
+          const archiveFs = new NodeFsAdapter(archiveVaultPath);
+          const cascadeService = new ArchiveCascadeService(
+            activeFs,
+            archiveFs,
+          );
+
+          const result = await cascadeService.cascade({
+            vaultPath,
+            archiveVaultPath,
+            dryRun: options.dryRun || false,
+          });
+
+          if (options.dryRun) {
+            process.stderr.write("--- CASCADE DRY RUN PREVIEW ---\n");
+            process.stderr.write(
+              `Would move: ${result.total_moved} assets\n`,
+            );
+            process.stderr.write(
+              `Iterations: ${result.iterations}\n`,
+            );
+            process.stderr.write(
+              `Still blocked: ${result.still_blocked} assets\n`,
+            );
+            process.stderr.write("--- END PREVIEW ---\n");
+          }
+
+          process.stdout.write(JSON.stringify(result, null, 2) + "\n");
+          process.exit(0);
         }
 
         // Archive mode: validate required options

@@ -2,13 +2,13 @@ import { jest } from "@jest/globals";
 import { Command } from "commander";
 
 /**
- * Issue #2306 + #2311: Tests for archive CLI command registration
+ * Issue #2306 + #2311 + #2314: Tests for archive CLI command registration
  *
  * Acceptance criteria:
  * - Command is registered with correct name and description
  * - Required options: --vault, --archive-vault
- * - Optional options: --class, --year, --dry-run, --no-referenced, --json, --verify
- * - --class and --year are validated at runtime (required for archive, not for verify)
+ * - Optional options: --class, --year, --dry-run, --no-referenced, --json, --verify, --cascade
+ * - --class and --year are validated at runtime (required for archive, not for verify/cascade)
  */
 describe("Issue #2306: archive command", () => {
   let archiveCommandFn: () => Command;
@@ -84,6 +84,15 @@ describe("Issue #2306: archive command", () => {
     const cmd = archiveCommandFn();
     const option = cmd.options.find(
       (opt) => opt.long === "--verify",
+    );
+    expect(option).toBeDefined();
+    expect(option!.mandatory).toBeFalsy();
+  });
+
+  it("should have optional --cascade flag", () => {
+    const cmd = archiveCommandFn();
+    const option = cmd.options.find(
+      (opt) => opt.long === "--cascade",
     );
     expect(option).toBeDefined();
     expect(option!.mandatory).toBeFalsy();
