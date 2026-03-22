@@ -346,6 +346,149 @@ describe("AnalyticsService", () => {
     });
   });
 
+  describe("calculateDurationStats - edge cases", () => {
+    it("should handle efforts missing endTimestamp", () => {
+      const efforts = [
+        {
+          path: "/test/1.md",
+          label: "Test 1",
+          status: null,
+          startTimestamp: new Date("2025-01-01T10:00:00"),
+          endTimestamp: null, // no end timestamp
+          prototypeUri: null,
+          instanceClass: null,
+        },
+      ];
+      const stats = analyticsService.calculateDurationStats(efforts);
+      expect(stats.count).toBe(0);
+    });
+
+    it("should handle efforts missing startTimestamp", () => {
+      const efforts = [
+        {
+          path: "/test/1.md",
+          label: "Test 1",
+          status: null,
+          startTimestamp: null,
+          endTimestamp: new Date("2025-01-01T10:00:00"),
+          prototypeUri: null,
+          instanceClass: null,
+        },
+      ];
+      const stats = analyticsService.calculateDurationStats(efforts);
+      expect(stats.count).toBe(0);
+    });
+
+    it("should filter out negative duration efforts", () => {
+      const efforts = [
+        {
+          path: "/test/1.md",
+          label: "Test 1",
+          status: null,
+          startTimestamp: new Date("2025-01-02T10:00:00"),
+          endTimestamp: new Date("2025-01-01T10:00:00"), // end before start
+          prototypeUri: null,
+          instanceClass: null,
+        },
+      ];
+      const stats = analyticsService.calculateDurationStats(efforts);
+      expect(stats.count).toBe(0);
+    });
+  });
+
+  describe("calculateDailyAggregates - edge cases", () => {
+    it("should handle efforts without startTimestamp", () => {
+      const efforts = [
+        {
+          path: "/test/1.md",
+          label: "Test 1",
+          status: null,
+          startTimestamp: null,
+          endTimestamp: null,
+          prototypeUri: null,
+          instanceClass: null,
+        },
+      ];
+      const aggregates = analyticsService.calculateDailyAggregates(efforts);
+      expect(aggregates).toHaveLength(0);
+    });
+
+    it("should handle efforts without endTimestamp (count only, no duration)", () => {
+      const efforts = [
+        {
+          path: "/test/1.md",
+          label: "Test 1",
+          status: null,
+          startTimestamp: new Date("2025-01-01T10:00:00"),
+          endTimestamp: null,
+          prototypeUri: null,
+          instanceClass: null,
+        },
+      ];
+      const aggregates = analyticsService.calculateDailyAggregates(efforts);
+      expect(aggregates).toHaveLength(1);
+      expect(aggregates[0].count).toBe(1);
+      expect(aggregates[0].totalMinutes).toBe(0);
+    });
+  });
+
+  describe("calculateHourlyDistribution - edge cases", () => {
+    it("should handle empty efforts", () => {
+      const distribution = analyticsService.calculateHourlyDistribution([]);
+      expect(distribution).toHaveLength(24);
+      distribution.forEach((d) => {
+        expect(d.count).toBe(0);
+        expect(d.percentage).toBe(0);
+      });
+    });
+
+    it("should handle efforts without startTimestamp", () => {
+      const efforts = [
+        {
+          path: "/test/1.md",
+          label: "Test 1",
+          status: null,
+          startTimestamp: null,
+          endTimestamp: null,
+          prototypeUri: null,
+          instanceClass: null,
+        },
+      ];
+      const distribution = analyticsService.calculateHourlyDistribution(efforts);
+      expect(distribution).toHaveLength(24);
+      const totalCount = distribution.reduce((sum, d) => sum + d.count, 0);
+      expect(totalCount).toBe(0);
+    });
+  });
+
+  describe("calculateWeekdayDistribution - edge cases", () => {
+    it("should handle empty efforts", () => {
+      const distribution = analyticsService.calculateWeekdayDistribution([]);
+      expect(distribution).toHaveLength(7);
+      distribution.forEach((d) => {
+        expect(d.count).toBe(0);
+        expect(d.percentage).toBe(0);
+      });
+    });
+
+    it("should handle efforts without startTimestamp", () => {
+      const efforts = [
+        {
+          path: "/test/1.md",
+          label: "Test 1",
+          status: null,
+          startTimestamp: null,
+          endTimestamp: null,
+          prototypeUri: null,
+          instanceClass: null,
+        },
+      ];
+      const distribution = analyticsService.calculateWeekdayDistribution(efforts);
+      const totalCount = distribution.reduce((sum, d) => sum + d.count, 0);
+      expect(totalCount).toBe(0);
+    });
+  });
+
   describe("getEffortsInPeriod", () => {
     it("should filter efforts by time period", async () => {
       const file1 = createMockFile("/test/task1.md");
@@ -422,6 +565,430 @@ describe("AnalyticsService", () => {
 
       expect(efforts).toHaveLength(1);
       expect(efforts[0].label).toBe("Поспать 2025-01-15");
+    });
+
+    it("should filter by prototypeUri", async () => {
+      const file1 = createMockFile("/test/task1.md");
+
+      mockVault.getAllFiles.mockReturnValue([file1]);
+      mockVault.read.mockResolvedValueOnce(
+        createEffortContent({
+          label: "Task 1",
+          startTimestamp: "2025-01-15T10:00:00",
+          prototypeUri: "some-proto",
+        })
+      );
+
+      const period = {
+        startDate: new Date("2025-01-10T00:00:00"),
+        endDate: new Date("2025-01-20T23:59:59"),
+      };
+
+      const efforts = await analyticsService.getEffortsInPeriod(period, {
+        prototypeUri: "wrong-proto",
+      });
+      expect(efforts).toHaveLength(0);
+    });
+
+    it("should filter by status", async () => {
+      const file1 = createMockFile("/test/task1.md");
+
+      mockVault.getAllFiles.mockReturnValue([file1]);
+      mockVault.read.mockResolvedValueOnce(
+        createEffortContent({
+          label: "Task 1",
+          startTimestamp: "2025-01-15T10:00:00",
+          status: "ems__EffortStatusDone",
+        })
+      );
+
+      const period = {
+        startDate: new Date("2025-01-10T00:00:00"),
+        endDate: new Date("2025-01-20T23:59:59"),
+      };
+
+      const efforts = await analyticsService.getEffortsInPeriod(period, {
+        status: ["ems__EffortStatusBacklog"],
+      });
+      expect(efforts).toHaveLength(0);
+    });
+
+    it("should skip files without start timestamp", async () => {
+      const file1 = createMockFile("/test/task1.md");
+
+      mockVault.getAllFiles.mockReturnValue([file1]);
+      mockVault.read.mockResolvedValueOnce(
+        createEffortContent({
+          label: "Task without timestamp",
+        })
+      );
+
+      const period = {
+        startDate: new Date("2025-01-10T00:00:00"),
+        endDate: new Date("2025-01-20T23:59:59"),
+      };
+
+      const efforts = await analyticsService.getEffortsInPeriod(period);
+      expect(efforts).toHaveLength(0);
+    });
+
+    it("should skip files outside the period (after end)", async () => {
+      const file1 = createMockFile("/test/task1.md");
+
+      mockVault.getAllFiles.mockReturnValue([file1]);
+      mockVault.read.mockResolvedValueOnce(
+        createEffortContent({
+          label: "Future task",
+          startTimestamp: "2025-02-01T10:00:00",
+        })
+      );
+
+      const period = {
+        startDate: new Date("2025-01-10T00:00:00"),
+        endDate: new Date("2025-01-20T23:59:59"),
+      };
+
+      const efforts = await analyticsService.getEffortsInPeriod(period);
+      expect(efforts).toHaveLength(0);
+    });
+
+    it("should skip non-md files", async () => {
+      const file1 = createMockFile("/test/image.png");
+
+      mockVault.getAllFiles.mockReturnValue([file1]);
+
+      const period = {
+        startDate: new Date("2025-01-10T00:00:00"),
+        endDate: new Date("2025-01-20T23:59:59"),
+      };
+
+      const efforts = await analyticsService.getEffortsInPeriod(period);
+      expect(efforts).toHaveLength(0);
+    });
+
+    it("should handle files that throw errors gracefully", async () => {
+      const file1 = createMockFile("/test/task1.md");
+      const file2 = createMockFile("/test/task2.md");
+
+      mockVault.getAllFiles.mockReturnValue([file1, file2]);
+      mockVault.read
+        .mockRejectedValueOnce(new Error("read error"))
+        .mockResolvedValueOnce(
+          createEffortContent({
+            label: "Task 2",
+            startTimestamp: "2025-01-15T10:00:00",
+          })
+        );
+
+      const period = {
+        startDate: new Date("2025-01-10T00:00:00"),
+        endDate: new Date("2025-01-20T23:59:59"),
+      };
+
+      const efforts = await analyticsService.getEffortsInPeriod(period);
+      expect(efforts).toHaveLength(1);
+    });
+
+    it("should skip files without frontmatter", async () => {
+      const file1 = createMockFile("/test/plain.md");
+
+      mockVault.getAllFiles.mockReturnValue([file1]);
+      mockVault.read.mockResolvedValueOnce("Just plain text without frontmatter");
+
+      const period = {
+        startDate: new Date("2025-01-10T00:00:00"),
+        endDate: new Date("2025-01-20T23:59:59"),
+      };
+
+      const efforts = await analyticsService.getEffortsInPeriod(period);
+      expect(efforts).toHaveLength(0);
+    });
+
+    it("should skip files without label", async () => {
+      const file1 = createMockFile("/test/nolabel.md");
+
+      mockVault.getAllFiles.mockReturnValue([file1]);
+      mockVault.read.mockResolvedValueOnce("---\nsome_property: value\n---\n");
+
+      const period = {
+        startDate: new Date("2025-01-10T00:00:00"),
+        endDate: new Date("2025-01-20T23:59:59"),
+      };
+
+      const efforts = await analyticsService.getEffortsInPeriod(period);
+      expect(efforts).toHaveLength(0);
+    });
+  });
+
+  describe("extractInstanceClass", () => {
+    it("should extract array instance class", async () => {
+      const file1 = createMockFile("/test/task1.md");
+
+      mockVault.getAllFiles.mockReturnValue([file1]);
+      mockVault.read.mockResolvedValueOnce([
+        "---",
+        'exo__Asset_label: "Task with multi-class"',
+        "ems__Effort_startTimestamp: 2025-01-15T10:00:00",
+        "exo__Instance_class:",
+        "  - ems__Task",
+        "  - ems__Effort",
+        "---",
+        "",
+      ].join("\n"));
+
+      const period = {
+        startDate: new Date("2025-01-10T00:00:00"),
+        endDate: new Date("2025-01-20T23:59:59"),
+      };
+
+      const efforts = await analyticsService.getEffortsInPeriod(period);
+      expect(efforts).toHaveLength(1);
+      expect(Array.isArray(efforts[0].instanceClass)).toBe(true);
+    });
+  });
+
+  describe("analyzeSleep", () => {
+    it("should analyze sleep patterns", async () => {
+      const file1 = createMockFile("/test/sleep1.md");
+      const file2 = createMockFile("/test/sleep2.md");
+
+      mockVault.getAllFiles.mockReturnValue([file1, file2]);
+      mockVault.read
+        .mockResolvedValueOnce(
+          createEffortContent({
+            label: "Поспать 2025-01-15",
+            startTimestamp: "2025-01-15T23:00:00",
+            endTimestamp: "2025-01-16T07:00:00",
+          })
+        )
+        .mockResolvedValueOnce(
+          createEffortContent({
+            label: "Поспать 2025-01-16",
+            startTimestamp: "2025-01-16T23:30:00",
+            endTimestamp: "2025-01-17T07:30:00",
+          })
+        );
+
+      const period = {
+        startDate: new Date("2025-01-10T00:00:00"),
+        endDate: new Date("2025-01-20T23:59:59"),
+      };
+
+      const analysis = await analyticsService.analyzeSleep(period);
+      expect(analysis.stats.count).toBe(2);
+      expect(analysis.dailyData.length).toBeGreaterThan(0);
+      expect(analysis.averageBedtime).toBeTruthy();
+      expect(analysis.averageWakeTime).toBeTruthy();
+    });
+
+    it("should handle sleep with bedtime after midnight", async () => {
+      const file1 = createMockFile("/test/sleep1.md");
+
+      mockVault.getAllFiles.mockReturnValue([file1]);
+      mockVault.read.mockResolvedValueOnce(
+        createEffortContent({
+          label: "Поспать 2025-01-15",
+          startTimestamp: "2025-01-16T02:00:00", // 2 AM (after midnight)
+          endTimestamp: "2025-01-16T09:00:00",
+        })
+      );
+
+      const period = {
+        startDate: new Date("2025-01-10T00:00:00"),
+        endDate: new Date("2025-01-20T23:59:59"),
+      };
+
+      const analysis = await analyticsService.analyzeSleep(period);
+      expect(analysis.stats.count).toBe(1);
+    });
+
+    it("should handle empty sleep data", async () => {
+      mockVault.getAllFiles.mockReturnValue([]);
+
+      const period = {
+        startDate: new Date("2025-01-10T00:00:00"),
+        endDate: new Date("2025-01-20T23:59:59"),
+      };
+
+      const analysis = await analyticsService.analyzeSleep(period);
+      expect(analysis.stats.count).toBe(0);
+      expect(analysis.averageBedtime).toBe("00:00");
+      expect(analysis.averageWakeTime).toBe("00:00");
+      expect(analysis.bedtimeVariabilityMinutes).toBe(0);
+      expect(analysis.wakeTimeVariabilityMinutes).toBe(0);
+    });
+
+    it("should handle single sleep entry (no variability)", async () => {
+      const file1 = createMockFile("/test/sleep1.md");
+
+      mockVault.getAllFiles.mockReturnValue([file1]);
+      mockVault.read.mockResolvedValueOnce(
+        createEffortContent({
+          label: "Поспать 2025-01-15",
+          startTimestamp: "2025-01-15T23:00:00",
+          endTimestamp: "2025-01-16T07:00:00",
+        })
+      );
+
+      const period = {
+        startDate: new Date("2025-01-10T00:00:00"),
+        endDate: new Date("2025-01-20T23:59:59"),
+      };
+
+      const analysis = await analyticsService.analyzeSleep(period);
+      expect(analysis.bedtimeVariabilityMinutes).toBe(0);
+      expect(analysis.wakeTimeVariabilityMinutes).toBe(0);
+    });
+  });
+
+  describe("analyzeTaskCompletion", () => {
+    it("should analyze task completion", async () => {
+      const file1 = createMockFile("/test/task1.md");
+      const file2 = createMockFile("/test/task2.md");
+      const file3 = createMockFile("/test/task3.md");
+
+      mockVault.getAllFiles.mockReturnValue([file1, file2, file3]);
+      mockVault.read
+        .mockResolvedValueOnce(
+          createEffortContent({
+            label: "Done task",
+            startTimestamp: "2025-01-15T10:00:00",
+            endTimestamp: "2025-01-15T11:00:00",
+            status: "ems__EffortStatusDone",
+            instanceClass: "ems__Task",
+          })
+        )
+        .mockResolvedValueOnce(
+          createEffortContent({
+            label: "Trashed task",
+            startTimestamp: "2025-01-16T10:00:00",
+            status: "ems__EffortStatusTrashed",
+            instanceClass: "ems__Task",
+          })
+        )
+        .mockResolvedValueOnce(
+          createEffortContent({
+            label: "Active task",
+            startTimestamp: "2025-01-17T10:00:00",
+            status: "ems__EffortStatusDoing",
+            instanceClass: "ems__Task",
+          })
+        );
+
+      const period = {
+        startDate: new Date("2025-01-10T00:00:00"),
+        endDate: new Date("2025-01-20T23:59:59"),
+      };
+
+      const analysis = await analyticsService.analyzeTaskCompletion(period);
+      expect(analysis.totalTasks).toBe(3);
+      expect(analysis.completedTasks).toBe(1);
+      expect(analysis.trashedTasks).toBe(1);
+      expect(analysis.completionRate).toBeGreaterThan(0);
+    });
+
+    it("should handle no tasks", async () => {
+      mockVault.getAllFiles.mockReturnValue([]);
+
+      const period = {
+        startDate: new Date("2025-01-10T00:00:00"),
+        endDate: new Date("2025-01-20T23:59:59"),
+      };
+
+      const analysis = await analyticsService.analyzeTaskCompletion(period);
+      expect(analysis.totalTasks).toBe(0);
+      expect(analysis.completionRate).toBe(0);
+      expect(analysis.averageCompletionTimeMinutes).toBe(0);
+    });
+  });
+
+  describe("analyzeActivityFrequency", () => {
+    it("should analyze activity frequency", async () => {
+      const file1 = createMockFile("/test/meeting1.md");
+
+      mockVault.getAllFiles.mockReturnValue([file1]);
+      mockVault.read.mockResolvedValueOnce(
+        createEffortContent({
+          label: "Meeting with team",
+          startTimestamp: "2025-01-15T10:00:00",
+          endTimestamp: "2025-01-15T11:00:00",
+        })
+      );
+
+      const period = {
+        startDate: new Date("2025-01-10T00:00:00"),
+        endDate: new Date("2025-01-20T23:59:59"),
+      };
+
+      const analysis = await analyticsService.analyzeActivityFrequency("Meeting", period);
+      expect(analysis.activityLabel).toBe("Meeting");
+      expect(analysis.stats.count).toBe(1);
+      expect(analysis.hourlyDistribution).toHaveLength(24);
+      expect(analysis.weekdayDistribution).toHaveLength(7);
+    });
+  });
+
+  describe("getActivitySummary", () => {
+    it("should group activities by label prefix", async () => {
+      const file1 = createMockFile("/test/meeting1.md");
+      const file2 = createMockFile("/test/meeting2.md");
+      const file3 = createMockFile("/test/code1.md");
+
+      mockVault.getAllFiles.mockReturnValue([file1, file2, file3]);
+      mockVault.read
+        .mockResolvedValueOnce(
+          createEffortContent({
+            label: "Meeting with team",
+            startTimestamp: "2025-01-15T10:00:00",
+            endTimestamp: "2025-01-15T11:00:00",
+          })
+        )
+        .mockResolvedValueOnce(
+          createEffortContent({
+            label: "Meeting with client",
+            startTimestamp: "2025-01-16T14:00:00",
+            endTimestamp: "2025-01-16T15:00:00",
+          })
+        )
+        .mockResolvedValueOnce(
+          createEffortContent({
+            label: "Code review",
+            startTimestamp: "2025-01-17T09:00:00",
+            endTimestamp: "2025-01-17T10:00:00",
+          })
+        );
+
+      const period = {
+        startDate: new Date("2025-01-10T00:00:00"),
+        endDate: new Date("2025-01-20T23:59:59"),
+      };
+
+      const summary = await analyticsService.getActivitySummary(period);
+      expect(summary.has("Meeting")).toBe(true);
+      expect(summary.has("Code")).toBe(true);
+      expect(summary.get("Meeting")!.count).toBe(2);
+    });
+  });
+
+  describe("parseTimestamp", () => {
+    it("should handle invalid timestamp string", async () => {
+      const file1 = createMockFile("/test/task1.md");
+
+      mockVault.getAllFiles.mockReturnValue([file1]);
+      mockVault.read.mockResolvedValueOnce([
+        "---",
+        'exo__Asset_label: "Task"',
+        "ems__Effort_startTimestamp: not-a-date",
+        "---",
+      ].join("\n"));
+
+      const period = {
+        startDate: new Date("2025-01-10T00:00:00"),
+        endDate: new Date("2025-01-20T23:59:59"),
+      };
+
+      const efforts = await analyticsService.getEffortsInPeriod(period);
+      expect(efforts).toHaveLength(0); // no valid start timestamp
     });
   });
 });
