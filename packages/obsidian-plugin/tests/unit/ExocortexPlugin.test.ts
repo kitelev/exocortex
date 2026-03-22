@@ -108,6 +108,7 @@ describe("ExocortexPlugin", () => {
     mockVault = {
       on: jest.fn().mockReturnValue({ unsubscribe: jest.fn() }),
       getName: jest.fn().mockReturnValue("Test Vault"),
+      getMarkdownFiles: jest.fn().mockReturnValue([]),
     };
 
     // Setup mock app
@@ -201,8 +202,8 @@ describe("ExocortexPlugin", () => {
         "sparql",
         expect.any(Function)
       );
-      // 10 - 4 semantic search file events (create, modify, delete, rename) = 6 (Issue #2318)
-      expect(plugin.registerEvent).toHaveBeenCalledTimes(6);
+      // 10 - 4 semantic search file events (create, modify, delete, rename) = 6 + 1 PrintNameRuleService refresh = 7
+      expect(plugin.registerEvent).toHaveBeenCalledTimes(7);
       expect(mockLogger.info).toHaveBeenCalledWith("Exocortex Plugin loaded successfully");
     });
 
@@ -1126,13 +1127,10 @@ describe("ExocortexPlugin", () => {
       // Arrange
       const mockFile = { path: "test.md" } as TFile;
 
-      // Find all changed handlers - the plugin's handler is the one that triggers handleMetadataChange
-      // which in turn calls taskTrackingService.handleFileChange
       const changedCalls = mockMetadataCache.on.mock.calls.filter(
-        call => call[0] === "changed"
+        (call: unknown[]) => call[0] === "changed"
       );
-      // The plugin's changed handler is the second one (ExocortexAPI registers first)
-      const changedHandler = changedCalls.length > 1 ? changedCalls[1]?.[1] : changedCalls[0]?.[1];
+      const changedHandler = changedCalls[changedCalls.length - 1]?.[1];
 
       mockMetadataCache.getFileCache.mockReturnValue({
         frontmatter: { test: "data" },

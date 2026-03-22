@@ -34,6 +34,7 @@ import { PropertiesLinkPatch } from "./presentation/properties/PropertiesLinkPat
 import { PropertiesUidCopyPatch } from "./presentation/properties/PropertiesUidCopyPatch";
 import { BodyLinkPatch } from "./presentation/body/BodyLinkPatch";
 import { GraphViewPatch } from "./presentation/graph-view/GraphViewPatch";
+import { PrintNameRuleService } from "./domain/display-name/PrintNameRuleService";
 
 /**
  * Exocortex Plugin - Automatic layout rendering
@@ -61,6 +62,7 @@ export default class ExocortexPlugin extends Plugin {
    */
   api!: ExocortexAPI;
   settings!: ExocortexSettings;
+  printNameRuleService!: PrintNameRuleService;
   private timerManager!: TimerManager;
   // MutationObserver to detect when layout is removed by Obsidian re-renders (e.g., when processing embeds)
   private layoutPersistenceObserver: MutationObserver | null = null;
@@ -82,6 +84,15 @@ export default class ExocortexPlugin extends Plugin {
       this.timerManager = new TimerManager();
 
       await this.loadSettings();
+
+      this.printNameRuleService = new PrintNameRuleService(this.app);
+      this.printNameRuleService.initialize();
+
+      this.registerEvent(
+        this.app.metadataCache.on("changed", () => {
+          this.printNameRuleService.refresh();
+        })
+      );
 
       this.vaultAdapter = new ObsidianVaultAdapter(
         this.app.vault,

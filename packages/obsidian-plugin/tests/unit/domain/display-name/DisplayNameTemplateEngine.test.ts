@@ -482,4 +482,72 @@ describe("DisplayNameTemplateEngine", () => {
       expect(result).toBe("function() {}");
     });
   });
+
+  describe("cross-asset resolution via metadataResolver", () => {
+    it("should resolve wikilink property to related asset metadata", () => {
+      const resolver = jest.fn().mockReturnValue({
+        exo__Asset_label: "Parent Project",
+        exo__Instance_class: "ems__Project",
+      });
+
+      const engine = new DisplayNameTemplateEngine(
+        "{{exo__Asset_label}} / {{ems__Effort_project.exo__Asset_label}}"
+      );
+      const result = engine.render(
+        {
+          exo__Asset_label: "My Task",
+          ems__Effort_project: "[[project-uuid]]",
+        },
+        "my-task",
+        undefined,
+        resolver,
+      );
+
+      expect(result).toBe("My Task / Parent Project");
+      expect(resolver).toHaveBeenCalledWith("[[project-uuid]]");
+    });
+
+    it("should return empty string when wikilink target not found", () => {
+      const resolver = jest.fn().mockReturnValue(null);
+
+      const engine = new DisplayNameTemplateEngine(
+        "{{exo__Asset_label}} ({{ems__Effort_project.exo__Asset_label}})"
+      );
+      const result = engine.render(
+        {
+          exo__Asset_label: "My Task",
+          ems__Effort_project: "[[nonexistent]]",
+        },
+        "my-task",
+        undefined,
+        resolver,
+      );
+
+      expect(result).toBe("My Task");
+    });
+
+    it("should work without metadataResolver (backwards compatible)", () => {
+      const engine = new DisplayNameTemplateEngine(
+        "{{exo__Asset_label}} ({{ems__Effort_project.exo__Asset_label}})"
+      );
+      const result = engine.render(
+        {
+          exo__Asset_label: "My Task",
+          ems__Effort_project: "[[project-uuid]]",
+        },
+        "my-task",
+      );
+
+      expect(result).toBe("My Task");
+    });
+
+    it("should handle non-wikilink dot notation normally", () => {
+      const engine = new DisplayNameTemplateEngine("{{custom.priority}}");
+      const result = engine.render(
+        { custom: { priority: "high" } },
+        "my-file",
+      );
+      expect(result).toBe("high");
+    });
+  });
 });
