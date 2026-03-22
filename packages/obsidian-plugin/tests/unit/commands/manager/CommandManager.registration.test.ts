@@ -41,7 +41,7 @@ describe("CommandManager - registration", () => {
         ctx.commandManager.registerAllCommands(ctx.mockPlugin);
       }).not.toThrow();
 
-      expect(ctx.mockPlugin.addCommand).toHaveBeenCalledTimes(36);
+      expect(ctx.mockPlugin.addCommand).toHaveBeenCalledTimes(35);
     });
 
     it("should register commands with correct IDs", () => {
@@ -82,7 +82,6 @@ describe("CommandManager - registration", () => {
       expect(registeredCommandIds).toContain(
         "toggle-archived-assets-visibility",
       );
-      expect(registeredCommandIds).toContain("set-focus-area");
       expect(registeredCommandIds).toContain("open-sparql-query-builder");
     });
 

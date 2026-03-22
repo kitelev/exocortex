@@ -100,22 +100,6 @@ export class DailyTasksRenderer {
       return;
     }
 
-    if (this.settings.activeFocusArea) {
-      const indicatorContainer = contentContainer.createDiv({
-        cls: "exocortex-active-focus-indicator",
-      });
-      indicatorContainer.style.cssText = `
-        padding: 8px 12px;
-        margin-bottom: 12px;
-        background-color: var(--background-modifier-info);
-        border-radius: 4px;
-        font-size: 0.9em;
-      `;
-      indicatorContainer.createSpan({
-        text: `🎯 Active Focus: ${this.settings.activeFocusArea}`,
-      });
-    }
-
     const tableContainer = contentContainer.createDiv({
       cls: "exocortex-daily-tasks-table-container",
     });
@@ -270,37 +254,9 @@ export class DailyTasksRenderer {
         });
       }
 
-      let filteredTasks = tasks;
+      tasks.sort((a, b) => EffortSortingHelpers.sortByStartTime(a, b));
 
-      if (this.settings.activeFocusArea) {
-        const activeFocusArea = this.settings.activeFocusArea;
-        const childAreas = this.getChildAreas(activeFocusArea);
-        const relevantAreas = new Set([
-          activeFocusArea,
-          ...Array.from(childAreas),
-        ]);
-
-        filteredTasks = tasks.filter((task) => {
-          const taskMetadata = task.metadata;
-
-          const resolvedArea = this.metadataService.getEffortArea(taskMetadata);
-          if (resolvedArea) {
-            const resolvedAreaStr = String(resolvedArea).replace(
-              /^\[\[|\]\]$/g,
-              "",
-            );
-            if (relevantAreas.has(resolvedAreaStr)) {
-              return true;
-            }
-          }
-
-          return false;
-        });
-      }
-
-      filteredTasks.sort((a, b) => EffortSortingHelpers.sortByStartTime(a, b));
-
-      return filteredTasks;
+      return tasks;
     } catch (error) {
       this.logger.error("Failed to get daily tasks", { error });
       return [];
@@ -357,37 +313,5 @@ export class DailyTasksRenderer {
 
     const prototypeMetadata = this.metadataExtractor.extractMetadata(prototypeFile);
     return prototypeMetadata.exo__Instance_class || null;
-  }
-
-  private getChildAreas(
-    areaName: string,
-    visited: Set<string> = new Set(),
-  ): Set<string> {
-    const childAreas = new Set<string>();
-
-    if (visited.has(areaName)) {
-      return childAreas;
-    }
-    visited.add(areaName);
-
-    const allFiles = this.vaultAdapter.getAllFiles();
-
-    for (const file of allFiles) {
-      const metadata = this.metadataExtractor.extractMetadata(file);
-
-      const areaParent = metadata.ems__Area_parent;
-      if (!areaParent) continue;
-
-      const areaParentStr = String(areaParent).replace(/^\[\[|\]\]$/g, "");
-
-      if (areaParentStr === areaName) {
-        childAreas.add(file.basename);
-
-        const nestedChildren = this.getChildAreas(file.basename, visited);
-        nestedChildren.forEach((child) => childAreas.add(child));
-      }
-    }
-
-    return childAreas;
   }
 }

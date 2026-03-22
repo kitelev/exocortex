@@ -1,1 +1,0 @@
-export { SemanticSearchManager } from "./SemanticSearchManager";

@@ -193,7 +193,6 @@ export function createMockPlugin(overrides?: Partial<{
       votesColumnVisible: true,
       showEffortArea: true,
       showEffortVotes: true,
-      activeFocusArea: null,
       ...overrides?.settings,
     },
     saveSettings: jest.fn().mockResolvedValue(undefined),
@@ -334,7 +333,6 @@ export interface MockSettings {
   votesColumnVisible: boolean;
   showEffortArea: boolean;
   showEffortVotes: boolean;
-  activeFocusArea: string | null;
 }
 
 export interface MockPlugin {

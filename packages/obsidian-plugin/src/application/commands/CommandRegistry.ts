@@ -57,7 +57,6 @@ import { ToggleLayoutVisibilityCommand } from "./ToggleLayoutVisibilityCommand";
 import { ToggleArchivedAssetsCommand } from "./ToggleArchivedAssetsCommand";
 import { ConvertTaskToProjectCommand } from "./ConvertTaskToProjectCommand";
 import { ConvertProjectToTaskCommand } from "./ConvertProjectToTaskCommand";
-import { SetFocusAreaCommand } from "./SetFocusAreaCommand";
 import { OpenQueryBuilderCommand } from "./OpenQueryBuilderCommand";
 import { EditPropertiesCommand } from "./EditPropertiesCommand";
 import { CreateAssetCommand } from "./CreateAssetCommand";
@@ -136,7 +135,6 @@ export class CommandRegistry {
       new ToggleArchivedAssetsCommand(plugin),
       new ConvertTaskToProjectCommand(assetConversionService),
       new ConvertProjectToTaskCommand(assetConversionService),
-      new SetFocusAreaCommand(app, plugin),
       new OpenQueryBuilderCommand(app, plugin),
       new EditPropertiesCommand(app, plugin),
       new CreateAssetCommand(app, genericAssetCreationService, this.vaultAdapter, classDiscoveryService, ontologySchemaService),

@@ -6,17 +6,15 @@ import {
   canShiftDayBackward,
   canShiftDayForward,
   canVoteOnEffort,
-  canSetActiveFocus,
   CommandVisibilityContext,
 } from "exocortex";
 import { ILogger } from '@plugin/adapters/logging/ILogger';
-import { ExocortexSettings } from '@plugin/domain/settings/ExocortexSettings';
 import {
   IButtonGroupBuilder,
   ButtonBuilderContext,
   ButtonBuilderServices,
 } from "./ButtonBuilderTypes";
-import { ExocortexPluginInterface, MetadataRecord } from '@plugin/types';
+import { MetadataRecord } from '@plugin/types';
 
 /**
  * Builds planning-related buttons (Plan on Today, Vote, Set Active Focus, etc.)
@@ -33,46 +31,15 @@ export class PlanningButtonGroupBuilder implements IButtonGroupBuilder {
   }
 
   build(context: ButtonBuilderContext): ActionButton[] {
-    const { settings, plugin, file, metadata, visibilityContext, logger, refresh } = context;
+    const { file, metadata, visibilityContext, logger, refresh } = context;
 
     return [
-      this.setActiveFocusButton(settings, plugin, file, visibilityContext, logger, refresh),
       this.planOnTodayButton(file, visibilityContext, logger, refresh),
       this.planForEveningButton(file, visibilityContext, logger, refresh),
       this.shiftDayBackwardButton(file, visibilityContext, logger, refresh),
       this.shiftDayForwardButton(file, visibilityContext, logger, refresh),
       this.voteOnEffortButton(file, metadata, visibilityContext, logger, refresh),
     ];
-  }
-
-  private setActiveFocusButton(
-    settings: ExocortexSettings,
-    plugin: ExocortexPluginInterface,
-    file: TFile,
-    context: CommandVisibilityContext,
-    logger: ILogger,
-    refresh: () => Promise<void>,
-  ): ActionButton {
-    return {
-      id: "set-active-focus",
-      label:
-        settings.activeFocusArea === file.basename
-          ? "Clear Active Focus"
-          : "Set Active Focus",
-      variant: "warning",
-      visible: canSetActiveFocus(context),
-      onClick: async () => {
-        if (settings.activeFocusArea === file.basename) {
-          settings.activeFocusArea = null;
-        } else {
-          settings.activeFocusArea = file.basename;
-        }
-        await plugin.saveSettings();
-        await new Promise((resolve) => setTimeout(resolve, 100));
-        await refresh();
-        logger.info(`Active focus area set to: ${settings.activeFocusArea}`);
-      },
-    };
   }
 
   private planOnTodayButton(

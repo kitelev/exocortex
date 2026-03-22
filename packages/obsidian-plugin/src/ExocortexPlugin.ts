@@ -16,9 +16,7 @@ import {
   DEFAULT_SETTINGS,
 } from "./domain/settings/ExocortexSettings";
 import { ExocortexSettingTab } from "./presentation/settings/ExocortexSettingTab";
-import { TaskStatusService, LoggingService } from "exocortex";
-import { SemanticSearchManager } from "./infrastructure/semantic-search";
-import { SemanticSearchModal } from "./presentation/modals/SemanticSearchModal";
+import { TaskStatusService } from "exocortex";
 import { ObsidianVaultAdapter } from "./adapters/ObsidianVaultAdapter";
 import { TaskTrackingService } from "./application/services/TaskTrackingService";
 import { AliasSyncService } from "./application/services/AliasSyncService";
@@ -36,8 +34,6 @@ import { TabTitlePatch } from "./presentation/tab-titles/TabTitlePatch";
 import { PropertiesLinkPatch } from "./presentation/properties/PropertiesLinkPatch";
 import { BodyLinkPatch } from "./presentation/body/BodyLinkPatch";
 import { GraphViewPatch } from "./presentation/graph-view/GraphViewPatch";
-import { ExocortexQuickSwitcher } from "./presentation/quick-switcher/ExocortexQuickSwitcher";
-import { WikilinkLabelSuggest } from "./presentation/wikilink-suggest/WikilinkLabelSuggest";
 
 /**
  * Exocortex Plugin - Automatic layout rendering
@@ -73,8 +69,6 @@ export default class ExocortexPlugin extends Plugin {
   private propertiesLinkPatch!: PropertiesLinkPatch;
   private bodyLinkPatch!: BodyLinkPatch;
   private graphViewPatch!: GraphViewPatch;
-  private semanticSearchManager!: SemanticSearchManager;
-  private wikilinkLabelSuggest: WikilinkLabelSuggest | null = null;
 
   override async onload(): Promise<void> {
     try {
@@ -254,98 +248,6 @@ export default class ExocortexPlugin extends Plugin {
         }, 500);
       }
 
-      // Initialize Wikilink autocomplete with labels
-      // Always register it - it checks settings internally to enable/disable
-      this.wikilinkLabelSuggest = new WikilinkLabelSuggest(
-        this,
-        this.settings.displayNameSettings
-      );
-      this.registerEditorSuggest(this.wikilinkLabelSuggest);
-
-      // Register Quick Switcher command (always available, respects settings when opened)
-      this.addCommand({
-        id: "open-quick-switcher-with-labels",
-        name: "Open quick switcher (with asset labels)",
-        callback: () => {
-          new ExocortexQuickSwitcher(
-            this.app,
-            this.settings.displayNameSettings
-          ).open();
-        },
-      });
-
-      // Initialize Semantic Search
-      this.semanticSearchManager = new SemanticSearchManager(
-        this.app,
-        this.settings.semanticSearchSettings
-      );
-      await this.initializeSemanticSearch();
-
-      // Register semantic search commands
-      this.addCommand({
-        id: "semantic-search",
-        name: "Semantic search",
-        callback: () => {
-          new SemanticSearchModal(
-            this.app,
-            this.semanticSearchManager,
-            this.app.workspace.getActiveFile()
-          ).open();
-        },
-      });
-
-      this.addCommand({
-        id: "find-similar-notes",
-        name: "Find similar notes",
-        checkCallback: (checking: boolean) => {
-          const file = this.app.workspace.getActiveFile();
-          if (!file) {
-            return false;
-          }
-          if (!checking) {
-            new SemanticSearchModal(
-              this.app,
-              this.semanticSearchManager,
-              file
-            ).open();
-          }
-          return true;
-        },
-      });
-
-      this.addCommand({
-        id: "index-all-notes",
-        name: "Index all notes for semantic search",
-        callback: async () => {
-          if (!this.semanticSearchManager.isConfigured()) {
-            new Notice("Semantic search is not configured. Please add your API key in settings.");
-            return;
-          }
-          new Notice("Starting semantic search indexing...");
-          try {
-            const result = await this.semanticSearchManager.indexAll((status) => {
-              if (status.progress % 10 === 0) {
-                new Notice(`Indexing: ${status.progress}%`, 1000);
-              }
-            });
-            new Notice(
-              `Indexing complete: ${result.indexed} indexed, ${result.failed} failed${result.aborted ? " (aborted)" : ""}`
-            );
-          } catch (error) {
-            new Notice(`Indexing failed: ${error instanceof Error ? error.message : "Unknown error"}`);
-          }
-        },
-      });
-
-      this.addCommand({
-        id: "clear-semantic-index",
-        name: "Clear semantic search index",
-        callback: async () => {
-          await this.semanticSearchManager.clearIndex();
-          new Notice("Semantic search index cleared");
-        },
-      });
-
       this.logger.info("Exocortex Plugin loaded successfully");
     } catch (error) {
       this.logger?.error("Failed to load Exocortex Plugin", error as Error);
@@ -419,11 +321,6 @@ export default class ExocortexPlugin extends Plugin {
     // Cleanup Graph View patch
     if (this.graphViewPatch) {
       this.graphViewPatch.cleanup();
-    }
-
-    // Cleanup Semantic Search manager
-    if (this.semanticSearchManager) {
-      this.semanticSearchManager.cleanup();
     }
 
     this.logger?.info("Exocortex Plugin unloaded");
@@ -526,31 +423,6 @@ export default class ExocortexPlugin extends Plugin {
   }
 
   /**
-   * Toggle Quick Switcher labels on/off
-   * Called from settings when the showLabelsInQuickSwitcher toggle changes
-   * Note: Quick Switcher respects the setting when opened via command
-   */
-  toggleQuickSwitcherLabels(_enabled: boolean): void {
-    // Quick Switcher is created on-demand when opened via command,
-    // so we just need to save the setting (already done in settings tab)
-    // The modal will read the current setting when instantiated
-  }
-
-  /**
-   * Toggle Wikilink autocomplete labels on/off
-   * Called from settings when the showLabelsInWikilinkAutocomplete toggle changes
-   * Note: WikilinkLabelSuggest checks settings internally, so this is just for saving
-   */
-  toggleWikilinkAutocompleteLabels(_enabled: boolean): void {
-    // WikilinkLabelSuggest checks settings.showLabelsInWikilinkAutocomplete internally
-    // in onTrigger(), so we just need to save the setting (already done in settings tab)
-    // Update the resolver settings if needed
-    if (this.wikilinkLabelSuggest) {
-      this.wikilinkLabelSuggest.updateSettings(this.settings.displayNameSettings);
-    }
-  }
-
-  /**
    * Apply display name template changes
    * Called from settings when the displayNameTemplate changes
    * Triggers re-evaluation of tab titles, file explorer labels, properties links, and body links
@@ -579,78 +451,6 @@ export default class ExocortexPlugin extends Plugin {
       this.graphViewPatch.disable();
       this.graphViewPatch.enable();
     }
-  }
-
-  /**
-   * Initialize Semantic Search
-   */
-  private async initializeSemanticSearch(): Promise<void> {
-    try {
-      await this.semanticSearchManager.initialize();
-
-      // Register file event handlers for auto-embedding
-      if (this.settings.semanticSearchSettings.autoEmbed) {
-        this.registerEvent(
-          this.app.vault.on("create", (file) => {
-            void this.semanticSearchManager.handleFileCreate(file);
-          }),
-        );
-
-        this.registerEvent(
-          this.app.vault.on("modify", (file) => {
-            if (file instanceof TFile) {
-              void this.semanticSearchManager.handleFileModify(file);
-            }
-          }),
-        );
-
-        this.registerEvent(
-          this.app.vault.on("delete", (file) => {
-            this.semanticSearchManager.handleFileDelete(file);
-          }),
-        );
-
-        this.registerEvent(
-          this.app.vault.on("rename", (file, oldPath) => {
-            void this.semanticSearchManager.handleFileRename(file, oldPath);
-          }),
-        );
-      }
-
-      LoggingService.debug("SemanticSearch initialized");
-    } catch (error) {
-      LoggingService.warn(
-        `Failed to initialize SemanticSearch: ${error instanceof Error ? error.message : "Unknown error"}`
-      );
-    }
-  }
-
-  /**
-   * Toggle semantic search on/off
-   */
-  toggleSemanticSearch(enabled: boolean): void {
-    this.settings.semanticSearchSettings.enabled = enabled;
-    if (enabled) {
-      void this.semanticSearchManager.initialize();
-    } else {
-      this.semanticSearchManager.cleanup();
-    }
-  }
-
-  /**
-   * Update semantic search settings
-   */
-  updateSemanticSearchSettings(): void {
-    this.semanticSearchManager.updateSettings(
-      this.settings.semanticSearchSettings
-    );
-  }
-
-  /**
-   * Get semantic search manager (for settings tab)
-   */
-  getSemanticSearchManager(): SemanticSearchManager {
-    return this.semanticSearchManager;
   }
 
   private autoRenderLayout(): void {

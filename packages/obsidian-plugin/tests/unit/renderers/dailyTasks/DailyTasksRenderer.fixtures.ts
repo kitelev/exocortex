@@ -71,7 +71,6 @@ export const setupDailyTasksRendererTest = (): DailyTasksRendererTestContext => 
   };
 
   const mockSettings = {
-    activeFocusArea: null,
     showEffortArea: true,
     showEffortVotes: true,
     showTimeEstimate: false,
