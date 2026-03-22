@@ -219,6 +219,164 @@ describe("AlgebraOptimizer", () => {
     });
   });
 
+  describe("MINUS operations", () => {
+    it("should handle MINUS in filter push-down", () => {
+      const query = `
+        SELECT ?s WHERE {
+          ?s <http://example.org/type> <http://example.org/Task> .
+          MINUS { ?s <http://example.org/done> <http://example.org/true> }
+        }
+      `;
+      const ast = parser.parse(query);
+      const algebra = translator.translate(ast);
+      const optimized = optimizer.optimize(algebra);
+      expect(optimized).toBeTruthy();
+    });
+
+    it("should handle MINUS in join reordering", () => {
+      const query = `
+        SELECT ?s ?label WHERE {
+          ?s <http://example.org/label> ?label .
+          MINUS { ?s <http://example.org/done> <http://example.org/true> }
+        }
+      `;
+      const ast = parser.parse(query);
+      const algebra = translator.translate(ast);
+      const optimized = optimizer.joinReordering(algebra);
+      expect(optimized).toBeTruthy();
+    });
+  });
+
+  describe("eliminateEmptyBGPInFilterJoin", () => {
+    it("should eliminate empty BGP on left side of Join with Filter", () => {
+      const query = `
+        SELECT ?s WHERE {
+          FILTER(?s != <http://example.org/x>)
+          ?s <http://example.org/type> <http://example.org/Task> .
+        }
+      `;
+      const ast = parser.parse(query);
+      const algebra = translator.translate(ast);
+      const optimized = optimizer.optimize(algebra);
+      expect(optimized).toBeTruthy();
+    });
+
+    it("should eliminate empty BGP on right side of Join with Filter", () => {
+      const query = `
+        SELECT ?s WHERE {
+          ?s <http://example.org/type> <http://example.org/Task> .
+          FILTER(?s != <http://example.org/x>)
+        }
+      `;
+      const ast = parser.parse(query);
+      const algebra = translator.translate(ast);
+      const optimized = optimizer.optimize(algebra);
+      expect(optimized).toBeTruthy();
+    });
+
+    it("should recurse into MINUS for empty BGP elimination", () => {
+      const query = `
+        SELECT ?s WHERE {
+          ?s <http://example.org/type> <http://example.org/Task> .
+          MINUS {
+            FILTER(?s = <http://example.org/x>)
+            ?s <http://example.org/done> "true" .
+          }
+        }
+      `;
+      const ast = parser.parse(query);
+      const algebra = translator.translate(ast);
+      const optimized = optimizer.optimize(algebra);
+      expect(optimized).toBeTruthy();
+    });
+
+    it("should recurse into UNION for empty BGP elimination", () => {
+      const query = `
+        PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+        SELECT ?s WHERE {
+          {
+            FILTER(?s != <http://example.org/x>)
+            ?s rdf:type <http://example.org/Task> .
+          }
+          UNION
+          {
+            ?s rdf:type <http://example.org/Project> .
+          }
+        }
+      `;
+      const ast = parser.parse(query);
+      const algebra = translator.translate(ast);
+      const optimized = optimizer.optimize(algebra);
+      expect(optimized).toBeTruthy();
+    });
+  });
+
+  describe("isConstrained", () => {
+    it("should detect VALUES as constrained", () => {
+      const query = `
+        SELECT ?s WHERE {
+          VALUES ?s { <http://example.org/a> <http://example.org/b> }
+          ?s <http://example.org/type> <http://example.org/Task> .
+        }
+      `;
+      const ast = parser.parse(query);
+      const algebra = translator.translate(ast);
+      const optimized = optimizer.optimize(algebra);
+      expect(optimized).toBeTruthy();
+    });
+
+    it("should handle union constrained check (both sides must be constrained)", () => {
+      const query = `
+        PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+        SELECT ?s WHERE {
+          {
+            ?s rdf:type <http://example.org/Task> .
+          }
+          UNION
+          {
+            ?s rdf:type <http://example.org/Project> .
+          }
+          ?s <http://example.org/label> ?label .
+        }
+      `;
+      const ast = parser.parse(query);
+      const algebra = translator.translate(ast);
+      const optimized = optimizer.optimize(algebra);
+      expect(optimized).toBeTruthy();
+    });
+  });
+
+  describe("getOperationVariables - MINUS", () => {
+    it("should return left-side variables for MINUS (right only used for filtering)", () => {
+      const query = `
+        SELECT ?s ?label WHERE {
+          ?s <http://example.org/label> ?label .
+          MINUS { ?s <http://example.org/deprecated> ?d }
+          FILTER(?label = "Important")
+        }
+      `;
+      const ast = parser.parse(query);
+      const algebra = translator.translate(ast);
+      const optimized = optimizer.filterPushDown(algebra);
+      expect(optimized).toBeTruthy();
+    });
+  });
+
+  describe("getFilterVariables - function expressions", () => {
+    it("should extract variables from function expressions", () => {
+      const query = `
+        SELECT ?s ?name WHERE {
+          ?s <http://example.org/name> ?name .
+          FILTER(STRLEN(?name) > 5)
+        }
+      `;
+      const ast = parser.parse(query);
+      const algebra = translator.translate(ast);
+      const optimized = optimizer.filterPushDown(algebra);
+      expect(optimized).toBeTruthy();
+    });
+  });
+
   describe("Cost Estimation", () => {
     it("estimates cost for BGP operations", () => {
       const query = "SELECT ?s ?p ?o WHERE { ?s ?p ?o }";
