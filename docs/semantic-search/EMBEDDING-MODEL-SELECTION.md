@@ -1,3 +1,5 @@
+> **Status: Not Implemented** — This feature was designed but not yet implemented. Documentation kept for future reference.
+
 # Embedding Model Selection for Semantic Search
 
 This document provides a comprehensive analysis of embedding models for Exocortex's semantic search functionality, including performance benchmarks, privacy considerations, and our final recommendation.

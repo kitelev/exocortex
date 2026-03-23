@@ -1,3 +1,5 @@
+> **Status: Not Implemented** — This feature was designed but not yet implemented. Documentation kept for future reference.
+
 # Embedding Quality Benchmark Framework
 
 This document defines the methodology for evaluating embedding model quality in Exocortex's semantic search system.

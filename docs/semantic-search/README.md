@@ -1,3 +1,5 @@
+> **Status: Not Implemented** — This feature was designed but not yet implemented. Documentation kept for future reference.
+
 # Semantic Search Documentation
 
 This directory contains documentation for Exocortex's semantic search functionality.
