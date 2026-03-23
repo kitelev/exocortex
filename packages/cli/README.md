@@ -495,7 +495,7 @@ npx @kitelev/exocortex-cli archive --dry-run \
 - `--class <names>` - Comma-separated class short names or UUIDs (e.g. `ems__Task,ems__Meeting`) **[required for archive mode]**
 - `--year <year>` - Filter by resolution/end timestamp year (e.g. `2025`) **[required for archive mode]**
 - `--dry-run` - Preview without writing files
-- `--no-referenced` - Skip assets referenced by non-archived (default: true)
+- `--no-referenced` - Skip assets that are still referenced by active (non-archived) files **(default behavior)**. Pass `--referenced` to include them anyway.
 - `--json` - Output in JSON format (default: true)
 
 **What archive does:**
@@ -571,7 +571,12 @@ npx @kitelev/exocortex-cli unarchive --dry-run \
 **Output (JSON to stdout):**
 
 ```json
-{"success":true,"uuid":"ca0d0001-...","movedTo":"03 Knowledge/inbox/ca0d0001-....md","isDefinedBy":"[[!ems|EMS Ontology]]"}
+{
+  "success": true,
+  "uuid": "ca0d0001-...",
+  "movedTo": "03 Knowledge/inbox/ca0d0001-....md",
+  "isDefinedBy": "[[!ems|EMS Ontology]]"
+}
 ```
 
 ## Architecture
