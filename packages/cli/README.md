@@ -9,6 +9,7 @@ Command-line interface for Exocortex knowledge management system. Manage tasks, 
 This CLI follows [Semantic Versioning](https://semver.org/). The commands documented below are considered **stable** and covered by versioning guarantees.
 
 **Documentation:**
+
 - [CLI API Reference](docs/CLI_API_REFERENCE.md) - Formal command signatures and options
 - [Versioning Policy](VERSIONING.md) - What constitutes breaking changes
 - [SPARQL Guide](docs/SPARQL_GUIDE.md) - Complete query reference
@@ -16,6 +17,7 @@ This CLI follows [Semantic Versioning](https://semver.org/). The commands docume
 - [Ontology Reference](docs/ONTOLOGY_REFERENCE.md) - Available predicates
 
 **For MCP Integration:**
+
 - Pin to `^0.1.0` for stable API access
 - Use exit codes for status (not console messages)
 - Use `--format json` for machine-readable output
@@ -47,6 +49,7 @@ exocortex sparql query "SELECT ?s ?p ?o WHERE { ?s ?p ?o } LIMIT 10" --vault ~/v
 ```
 
 **Options:**
+
 - `<query>` - SPARQL query string or path to .sparql file **[required]**
 - `--vault <path>` - Path to Obsidian vault (default: current directory)
 - `--format <type>` - Output format: `table` (default), `json`, `csv`
@@ -103,6 +106,79 @@ exocortex sparql query "SELECT ?task WHERE { ?task exo:Instance_class ems:Task }
 └────────────────────────────────────────────────────────────┘
 ```
 
+### Universal Asset Creation
+
+Create any vault asset with a single command. Auto-generates UUID, timestamp, frontmatter, resolves class names, and validates wikilinks.
+
+```bash
+# Create a permanent note
+exocortex create --class ztlk__PermanentNote --label "My Note" --vault ~/vault
+
+# With custom properties
+exocortex create --class ztlk__PermanentNote \
+  --label "My Note" \
+  --property "ztlk__Note_developedFrom=[[uuid|Source Note]]" \
+  --vault ~/vault
+
+# With body content
+exocortex create --class ztlk__PermanentNote \
+  --label "My Note" \
+  --body "# Content\n\nBody text here." \
+  --vault ~/vault
+
+# Body from file
+exocortex create --class ztlk__PermanentNote \
+  --label "My Note" \
+  --body-file /tmp/content.md \
+  --vault ~/vault
+
+# Body from stdin
+echo "# Content" | exocortex create --class ztlk__PermanentNote \
+  --label "My Note" \
+  --body - \
+  --vault ~/vault
+
+# Dry run (preview without writing)
+exocortex create --class ztlk__PermanentNote --label "Test" --dry-run --vault ~/vault
+
+# With aliases
+exocortex create --class ztlk__PermanentNote \
+  --label "My Note" \
+  --aliases "Alias 1" "Alias 2" \
+  --vault ~/vault
+
+# Skip wikilink validation
+exocortex create --class ztlk__PermanentNote \
+  --label "My Note" \
+  --property "prop=[[uuid|Label]]" \
+  --skip-wikilink-validation \
+  --vault ~/vault
+```
+
+**Options:**
+
+- `--class <name>` - Class short name (e.g. `ztlk__PermanentNote`) or UUID **[required]**
+- `--label <text>` - Human-readable label **[required]**
+- `--vault <path>` - Path to Obsidian vault (default: current directory)
+- `--aliases <names...>` - Additional aliases
+- `--property <key=value>` - Property key-value pairs (repeatable)
+- `--body <text>` - Markdown body content (use `-` for stdin)
+- `--body-file <path>` - Read body from file
+- `--dry-run` - Preview frontmatter without writing
+- `--created-by <uuid>` - Creator UUID (default: ExoAssistant)
+- `--timezone <tz>` - Timezone for timestamps (default: Asia/Almaty)
+- `--skip-wikilink-validation` - Skip wikilink existence checks
+
+**Output (JSON to stdout):**
+
+```json
+{
+  "uuid": "generated-uuid",
+  "path": "01 Inbox/generated-uuid.md",
+  "label": "My Note"
+}
+```
+
 ### Command Execution
 
 Execute plugin commands on single assets. All commands follow the pattern:
@@ -112,6 +188,7 @@ exocortex command <command-name> <filepath> [options]
 ```
 
 **Common Options:**
+
 - `--vault <path>` - Path to Obsidian vault (default: current directory)
 - `--dry-run` - Preview changes without modifying files
 
@@ -270,6 +347,7 @@ exocortex batch --file operations.json --vault ~/vault --format json
 ```
 
 **Batch Options:**
+
 - `--input <json>` - JSON array of operations to execute
 - `--file <path>` - Path to JSON file containing operations
 - `--atomic` - All-or-nothing execution (rollback on any failure)
@@ -278,11 +356,13 @@ exocortex batch --file operations.json --vault ~/vault --format json
 - `--vault <path>` - Path to Obsidian vault (default: current directory)
 
 **Operation Format:**
+
 ```json
 {
-  "command": "start",           // Command name (required)
-  "filepath": "tasks/task.md",  // File path (required)
-  "options": {                  // Optional command parameters
+  "command": "start", // Command name (required)
+  "filepath": "tasks/task.md", // File path (required)
+  "options": {
+    // Optional command parameters
     "label": "New Label",
     "date": "2025-12-15"
   }
@@ -290,6 +370,7 @@ exocortex batch --file operations.json --vault ~/vault --format json
 ```
 
 **Supported Commands:**
+
 - `start` - Start task (ToDo → Doing)
 - `complete` - Complete task (Doing → Done)
 - `trash` - Trash task
@@ -302,11 +383,13 @@ exocortex batch --file operations.json --vault ~/vault --format json
 - `set-deadline` - Set deadline (requires `options.date`)
 
 **Performance Benefits:**
+
 - Single process execution (no repeated Node.js startup overhead)
 - Vault loaded once for all operations
 - Batch of 10 operations is ~10x faster than 10 separate CLI calls
 
 **MCP Integration Example:**
+
 ```json
 {
   "success": true,
@@ -316,9 +399,24 @@ exocortex batch --file operations.json --vault ~/vault --format json
     "succeeded": 3,
     "failed": 0,
     "results": [
-      {"success": true, "command": "start", "filepath": "task1.md", "action": "Started task"},
-      {"success": true, "command": "complete", "filepath": "task2.md", "action": "Completed task"},
-      {"success": true, "command": "trash", "filepath": "task3.md", "action": "Trashed task"}
+      {
+        "success": true,
+        "command": "start",
+        "filepath": "task1.md",
+        "action": "Started task"
+      },
+      {
+        "success": true,
+        "command": "complete",
+        "filepath": "task2.md",
+        "action": "Completed task"
+      },
+      {
+        "success": true,
+        "command": "trash",
+        "filepath": "task3.md",
+        "action": "Trashed task"
+      }
     ],
     "durationMs": 45,
     "atomic": false
@@ -421,9 +519,11 @@ ems__Effort_status: "[[ems__EffortStatusDraft]]"
 ### Implemented Commands
 
 **SPARQL Query:**
+
 - `exocortex sparql query` - Execute SPARQL queries against vault
 
 **Status Transitions:**
+
 - `exocortex command start` - Start effort (ToDo → Doing)
 - `exocortex command complete` - Complete effort (Doing → Done)
 - `exocortex command trash` - Trash effort
@@ -432,19 +532,26 @@ ems__Effort_status: "[[ems__EffortStatusDraft]]"
 - `exocortex command move-to-analysis` - Move to Analysis
 - `exocortex command move-to-todo` - Move to ToDo
 
-**Asset Creation:**
+**Universal Asset Creation:**
+
+- `exocortex create` - Create any asset with auto UUID, frontmatter, and wikilink validation
+
+**Asset Creation (legacy):**
+
 - `exocortex command create-task` - Create new task
 - `exocortex command create-meeting` - Create new meeting
 - `exocortex command create-project` - Create new project
 - `exocortex command create-area` - Create new area
 
 **Property Mutations:**
+
 - `exocortex command rename-to-uid` - Rename file to match UID
 - `exocortex command update-label` - Update asset label
 - `exocortex command schedule` - Set planned start date
 - `exocortex command set-deadline` - Set planned end date
 
 **Batch Operations:**
+
 - `exocortex batch` - Execute multiple operations in single invocation
 
 ### Planned Commands
