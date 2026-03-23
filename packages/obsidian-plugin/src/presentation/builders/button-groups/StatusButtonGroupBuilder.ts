@@ -9,7 +9,13 @@ import {
   canMarkDone,
   canRollbackStatus,
   CommandVisibilityContext,
+  WorkflowEngine,
+  WorkflowResolver,
+  VisibilityGenerator,
+  EffortStatus,
+  AssetClass,
 } from "exocortex";
+import { InMemoryTripleStore } from "exocortex";
 import { ILogger } from '@plugin/adapters/logging/ILogger';
 import {
   IButtonGroupBuilder,
@@ -32,9 +38,9 @@ export class StatusButtonGroupBuilder implements IButtonGroupBuilder {
   }
 
   build(context: ButtonBuilderContext): ActionButton[] {
-    const { file, visibilityContext, logger, refresh } = context;
+    const { file, visibilityContext, logger, refresh, metadata } = context;
 
-    return [
+    const standardButtons = [
       this.setDraftStatusButton(file, visibilityContext, logger, refresh),
       this.moveToBacklogButton(file, visibilityContext, logger, refresh),
       this.moveToAnalysisButton(file, visibilityContext, logger, refresh),
@@ -43,6 +49,63 @@ export class StatusButtonGroupBuilder implements IButtonGroupBuilder {
       this.markDoneButton(file, visibilityContext, logger, refresh),
       this.rollbackStatusButton(file, visibilityContext, logger, refresh),
     ];
+
+    const hasVisibleStandard = standardButtons.some((b) => b.visible);
+    if (hasVisibleStandard) {
+      return standardButtons;
+    }
+
+    const workflowButtons = this.buildWorkflowButtons(file, metadata, logger, refresh);
+    if (workflowButtons.length > 0) {
+      return workflowButtons;
+    }
+
+    return standardButtons;
+  }
+
+  private buildWorkflowButtons(
+    file: TFile,
+    metadata: Record<string, unknown>,
+    logger: ILogger,
+    refresh: () => Promise<void>,
+  ): ActionButton[] {
+    const statusRaw = metadata["ems__Effort_status"] as string | undefined;
+    if (!statusRaw) return [];
+
+    const normalized = statusRaw.replace(/["'[\]]/g, "").trim();
+    const currentStatus = Object.values(EffortStatus).find((s) => s === normalized);
+    if (!currentStatus) return [];
+
+    const resolver = new WorkflowResolver(new InMemoryTripleStore());
+    const instanceClassRaw = metadata["exo__Instance_class"];
+    const isTask = Array.isArray(instanceClassRaw)
+      ? instanceClassRaw.some((c: string) => String(c).includes("ems__Task") || String(c).includes("ems__Meeting"))
+      : typeof instanceClassRaw === "string" && (instanceClassRaw.includes("ems__Task") || instanceClassRaw.includes("ems__Meeting"));
+
+    const assetClass = isTask ? AssetClass.TASK : AssetClass.PROJECT;
+    const definition = resolver.getHardcodedFallback(assetClass);
+    const engine = new WorkflowEngine(definition);
+    const generator = new VisibilityGenerator(engine);
+
+    const commands = generator.getVisibleCommands(currentStatus);
+    return commands.map((cmd) => ({
+      id: cmd.commandId,
+      label: cmd.label,
+      variant: cmd.isRollback ? "warning" as const : "secondary" as const,
+      visible: true,
+      onClick: async () => {
+        const wrappedStatus = `"[[${cmd.targetStatus}]]"`;
+        const content = await file.vault.read(file);
+        const updatedContent = content.replace(
+          /ems__Effort_status:\s*"?\[\[[^\]]*\]\]"?/,
+          `ems__Effort_status: ${wrappedStatus}`,
+        );
+        await file.vault.modify(file, updatedContent);
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        await refresh();
+        logger.info(`Workflow transition: ${cmd.label} → ${cmd.targetStatus} on ${file.path}`);
+      },
+    }));
   }
 
   private setDraftStatusButton(
