@@ -498,6 +498,11 @@ npx @kitelev/exocortex-cli archive --dry-run \
 - `--no-referenced` - Skip assets that are still referenced by active (non-archived) files **(default behavior)**. Pass `--referenced` to include them anyway.
 - `--json` - Output in JSON format (default: true)
 
+**Exit codes:**
+
+- `0` — Success (assets archived or dry-run preview completed)
+- `1` — Error (invalid options, vault not found, missing required flags)
+
 **What archive does:**
 
 1. Scans active vault for assets matching class + year with `archived: true` in frontmatter
@@ -560,6 +565,11 @@ npx @kitelev/exocortex-cli unarchive --dry-run \
 - `--vault <path>` - Path to the active vault **[required]**
 - `--archive-vault <path>` - Path to the archive vault **[required]**
 - `--dry-run` - Preview without writing files
+
+**Exit codes:**
+
+- `0` — Success (asset restored or dry-run preview completed)
+- `1` — Error (UUID not found in archive vault, invalid UUID format, vault not found)
 
 **What unarchive does:**
 
