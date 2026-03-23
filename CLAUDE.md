@@ -1808,7 +1808,7 @@ pkill -9 node
 
 ## 📊 Lessons from Production Issues (Dec 2025)
 
-> This section contains distilled learnings from 50+ completed GitHub Issues. These patterns reduce debugging time and prevent common errors.
+> This section contains distilled learnings from 1250+ completed GitHub Issues. These patterns reduce debugging time and prevent common errors.
 
 ### Memory Leak Prevention Pattern
 
