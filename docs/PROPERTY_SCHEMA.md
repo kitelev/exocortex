@@ -631,6 +631,313 @@ ems__Effort_workflow: "[[wf-kanban-uid|Kanban Workflow]]"
 
 ---
 
+### ems\_\_Workflow_targetClass
+
+**Target asset class for this workflow**
+
+| Attribute    | Value                                              |
+| ------------ | -------------------------------------------------- |
+| **Type**     | String (WikiLink)                                  |
+| **Required** | Yes (for ems\_\_Workflow assets)                   |
+| **Format**   | `"[[ems__Task]]"` or `"[[ems__Project]]"`          |
+| **Purpose**  | Specify which asset class this workflow applies to |
+| **Mutable**  | Rarely                                             |
+
+**Example**:
+
+```yaml
+ems__Workflow_targetClass: "[[ems__Task]]"
+```
+
+---
+
+### ems\_\_Workflow_initialState
+
+**Starting status for new assets using this workflow**
+
+| Attribute    | Value                                   |
+| ------------ | --------------------------------------- |
+| **Type**     | String (WikiLink)                       |
+| **Required** | Yes (for ems\_\_Workflow assets)        |
+| **Format**   | `"[[ems__EffortStatus{Value}]]"`        |
+| **Purpose**  | Define which status new assets start in |
+| **Default**  | `ems__EffortStatusDraft`                |
+
+**Example**:
+
+```yaml
+ems__Workflow_initialState: "[[ems__EffortStatusDraft]]"
+```
+
+---
+
+### ems\_\_Workflow_terminalStates
+
+**Statuses that end the workflow**
+
+| Attribute    | Value                                   |
+| ------------ | --------------------------------------- |
+| **Type**     | Array of WikiLinks                      |
+| **Required** | Yes (for ems\_\_Workflow assets)        |
+| **Format**   | `["[[ems__EffortStatus{Value}]]"]`      |
+| **Purpose**  | Define which statuses end the lifecycle |
+| **Default**  | `[Done, Trashed]`                       |
+
+**Example**:
+
+```yaml
+ems__Workflow_terminalStates:
+  - "[[ems__EffortStatusDone]]"
+  - "[[ems__EffortStatusTrashed]]"
+```
+
+---
+
+### ems\_\_Workflow_isDefault
+
+**Whether this is the default workflow for the target class**
+
+| Attribute    | Value                            |
+| ------------ | -------------------------------- |
+| **Type**     | Boolean                          |
+| **Required** | Yes (for ems\_\_Workflow assets) |
+| **Format**   | `true` or `false`                |
+| **Purpose**  | Mark as class default workflow   |
+
+**Example**:
+
+```yaml
+ems__Workflow_isDefault: true
+```
+
+---
+
+### ems\_\_WorkflowState_workflow
+
+**Parent workflow reference**
+
+| Attribute    | Value                                 |
+| ------------ | ------------------------------------- |
+| **Type**     | String (WikiLink)                     |
+| **Required** | Yes (for ems\_\_WorkflowState assets) |
+| **Format**   | `"[[workflow-uid\|Workflow Name]]"`   |
+| **Purpose**  | Link state to its parent workflow     |
+
+**Example**:
+
+```yaml
+ems__WorkflowState_workflow: "[[a1b2c3d4-uid|My Workflow]]"
+```
+
+---
+
+### ems\_\_WorkflowState_status
+
+**EffortStatus this state represents**
+
+| Attribute    | Value                                 |
+| ------------ | ------------------------------------- |
+| **Type**     | String (WikiLink)                     |
+| **Required** | Yes (for ems\_\_WorkflowState assets) |
+| **Format**   | `"[[ems__EffortStatus{Value}]]"`      |
+| **Purpose**  | Map state to a valid EffortStatus     |
+
+**Example**:
+
+```yaml
+ems__WorkflowState_status: "[[ems__EffortStatusDoing]]"
+```
+
+---
+
+### ems\_\_WorkflowState_order
+
+**Display order within the workflow**
+
+| Attribute    | Value                                 |
+| ------------ | ------------------------------------- |
+| **Type**     | Number (integer)                      |
+| **Required** | Yes (for ems\_\_WorkflowState assets) |
+| **Format**   | Positive integer                      |
+| **Purpose**  | Define state order (lower = earlier)  |
+
+**Example**:
+
+```yaml
+ems__WorkflowState_order: 3
+```
+
+---
+
+### ems\_\_WorkflowState_optional
+
+**Whether this state can be skipped**
+
+| Attribute    | Value                          |
+| ------------ | ------------------------------ |
+| **Type**     | Boolean                        |
+| **Required** | No (default: `false`)          |
+| **Purpose**  | Allow users to skip this state |
+
+**Example**:
+
+```yaml
+ems__WorkflowState_optional: true
+```
+
+---
+
+### ems\_\_WorkflowState_timestampOnEnter
+
+**Timestamp properties to set when entering this state**
+
+| Attribute    | Value                                               |
+| ------------ | --------------------------------------------------- |
+| **Type**     | Array of Strings                                    |
+| **Required** | No                                                  |
+| **Format**   | Property names (e.g., `ems__Effort_startTimestamp`) |
+| **Purpose**  | Automatically record timestamps on state entry      |
+
+**Example**:
+
+```yaml
+ems__WorkflowState_timestampOnEnter:
+  - ems__Effort_startTimestamp
+```
+
+---
+
+### ems\_\_WorkflowState_badgeColor
+
+**CSS color for badge display**
+
+| Attribute    | Value                                  |
+| ------------ | -------------------------------------- |
+| **Type**     | String                                 |
+| **Required** | No                                     |
+| **Format**   | Any valid CSS color (`#ff0000`, `red`) |
+| **Purpose**  | Customize state badge appearance       |
+
+**Example**:
+
+```yaml
+ems__WorkflowState_badgeColor: "#4CAF50"
+```
+
+---
+
+### ems\_\_WorkflowTransition_workflow
+
+**Parent workflow reference for this transition**
+
+| Attribute    | Value                                      |
+| ------------ | ------------------------------------------ |
+| **Type**     | String (WikiLink)                          |
+| **Required** | Yes (for ems\_\_WorkflowTransition assets) |
+| **Format**   | `"[[workflow-uid\|Workflow Name]]"`        |
+| **Purpose**  | Link transition to its parent workflow     |
+
+**Example**:
+
+```yaml
+ems__WorkflowTransition_workflow: "[[a1b2c3d4-uid|My Workflow]]"
+```
+
+---
+
+### ems\_\_WorkflowTransition_from
+
+**Source status of this transition**
+
+| Attribute    | Value                                           |
+| ------------ | ----------------------------------------------- |
+| **Type**     | String (WikiLink)                               |
+| **Required** | Yes (for ems\_\_WorkflowTransition assets)      |
+| **Format**   | `"[[ems__EffortStatus{Value}]]"`                |
+| **Purpose**  | Define which status this transition starts from |
+
+**Example**:
+
+```yaml
+ems__WorkflowTransition_from: "[[ems__EffortStatusDraft]]"
+```
+
+---
+
+### ems\_\_WorkflowTransition_to
+
+**Target status of this transition**
+
+| Attribute    | Value                                        |
+| ------------ | -------------------------------------------- |
+| **Type**     | String (WikiLink)                            |
+| **Required** | Yes (for ems\_\_WorkflowTransition assets)   |
+| **Format**   | `"[[ems__EffortStatus{Value}]]"`             |
+| **Purpose**  | Define which status this transition leads to |
+
+**Example**:
+
+```yaml
+ems__WorkflowTransition_to: "[[ems__EffortStatusDoing]]"
+```
+
+---
+
+### ems\_\_WorkflowTransition_label
+
+**Button label text for this transition**
+
+| Attribute    | Value                                       |
+| ------------ | ------------------------------------------- |
+| **Type**     | String                                      |
+| **Required** | No (default: `"from → to"`)                 |
+| **Purpose**  | Human-readable label for transition buttons |
+
+**Example**:
+
+```yaml
+ems__WorkflowTransition_label: "▶ Start"
+```
+
+---
+
+### ems\_\_WorkflowTransition_icon
+
+**Lucide icon name for the transition button**
+
+| Attribute    | Value                                    |
+| ------------ | ---------------------------------------- |
+| **Type**     | String                                   |
+| **Required** | No                                       |
+| **Format**   | Lucide icon name (e.g., `play`, `check`) |
+| **Purpose**  | Visual icon for transition buttons       |
+
+**Example**:
+
+```yaml
+ems__WorkflowTransition_icon: play
+```
+
+---
+
+### ems\_\_WorkflowTransition_isRollback
+
+**Whether this is a rollback (undo) transition**
+
+| Attribute    | Value                                         |
+| ------------ | --------------------------------------------- |
+| **Type**     | Boolean                                       |
+| **Required** | No (default: `false`)                         |
+| **Purpose**  | Mark transition as rollback for UI separation |
+
+**Example**:
+
+```yaml
+ems__WorkflowTransition_isRollback: true
+```
+
+---
+
 ## 🧠 Information Management Properties (ims\_\_ prefix)
 
 Properties for **concepts** and knowledge management.
