@@ -224,14 +224,65 @@ const frontmatterService = new FrontmatterService();
  */
 function scanWorkflows(vaultPath: string): WorkflowFileInfo[] {
   const workflows: WorkflowFileInfo[] = [];
-  scanDirectory(vaultPath, vaultPath, workflows);
+  const allFiles: Array<{ filePath: string; fm: Record<string, any> }> = [];
+  collectParsedFiles(vaultPath, allFiles);
+
+  for (const { filePath, fm } of allFiles) {
+    const instanceClass = fm["exo__Instance_class"];
+    if (!instanceClass) continue;
+
+    const isWorkflow = Array.isArray(instanceClass)
+      ? instanceClass.some((c: string) => c.includes("ems__Workflow") && !c.includes("WorkflowState") && !c.includes("WorkflowTransition"))
+      : typeof instanceClass === "string" && instanceClass.includes("ems__Workflow") && !instanceClass.includes("WorkflowState") && !instanceClass.includes("WorkflowTransition");
+
+    if (!isWorkflow) continue;
+
+    const uid = fm["exo__Asset_uid"] ?? "";
+    const label = fm["exo__Asset_label"] ?? extractLabelFromFilename(filePath);
+    const targetClass = normalizeWikilink(fm["ems__Workflow_targetClass"] ?? "ems__Task");
+    const isDefault = fm["ems__Workflow_isDefault"] === true || fm["ems__Workflow_isDefault"] === "true";
+
+    // Count linked states and transitions by scanning all parsed files
+    let stateCount = 0;
+    let transitionCount = 0;
+    for (const { fm: otherFm } of allFiles) {
+      const otherClass = otherFm["exo__Instance_class"];
+      const otherWorkflowRef = normalizeWikilink(
+        otherFm["ems__WorkflowState_workflow"] ?? otherFm["ems__WorkflowTransition_workflow"] ?? ""
+      );
+      const referencesThisWorkflow = otherWorkflowRef.includes(uid);
+
+      if (!referencesThisWorkflow) continue;
+
+      const isState = Array.isArray(otherClass)
+        ? otherClass.some((c: string) => c.includes("ems__WorkflowState"))
+        : typeof otherClass === "string" && otherClass.includes("ems__WorkflowState");
+
+      const isTransition = Array.isArray(otherClass)
+        ? otherClass.some((c: string) => c.includes("ems__WorkflowTransition"))
+        : typeof otherClass === "string" && otherClass.includes("ems__WorkflowTransition");
+
+      if (isState) stateCount++;
+      if (isTransition) transitionCount++;
+    }
+
+    workflows.push({
+      filePath,
+      uid,
+      label,
+      targetClass,
+      isDefault,
+      stateCount,
+      transitionCount,
+    });
+  }
+
   return workflows;
 }
 
-function scanDirectory(
+function collectParsedFiles(
   dir: string,
-  vaultRoot: string,
-  results: WorkflowFileInfo[],
+  results: Array<{ filePath: string; fm: Record<string, any> }>,
 ): void {
   let entries;
   try {
@@ -242,59 +293,20 @@ function scanDirectory(
 
   for (const entry of entries) {
     const fullPath = join(dir, entry.name);
-
     if (entry.isDirectory()) {
-      // Skip hidden directories and node_modules
       if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
-      scanDirectory(fullPath, vaultRoot, results);
+      collectParsedFiles(fullPath, results);
     } else if (entry.name.endsWith(".md")) {
-      const info = tryParseWorkflowFile(fullPath);
-      if (info) {
-        results.push(info);
+      try {
+        const content = readFileSync(fullPath, "utf-8");
+        const parsed = frontmatterService.parse(content);
+        if (parsed.exists) {
+          results.push({ filePath: fullPath, fm: parseYamlFrontmatter(parsed.content) });
+        }
+      } catch {
+        // skip unparseable files
       }
     }
-  }
-}
-
-function tryParseWorkflowFile(filePath: string): WorkflowFileInfo | null {
-  try {
-    const content = readFileSync(filePath, "utf-8");
-    const parsed = frontmatterService.parse(content);
-    if (!parsed.exists) return null;
-
-    const fm = parseYamlFrontmatter(parsed.content);
-    const instanceClass = fm["exo__Instance_class"];
-
-    if (!instanceClass) return null;
-
-    // Check if it's a workflow - can be string or array
-    const isWorkflow = Array.isArray(instanceClass)
-      ? instanceClass.some((c: string) => c.includes("ems__Workflow") && !c.includes("WorkflowState") && !c.includes("WorkflowTransition"))
-      : typeof instanceClass === "string" && instanceClass.includes("ems__Workflow") && !instanceClass.includes("WorkflowState") && !instanceClass.includes("WorkflowTransition");
-
-    if (!isWorkflow) return null;
-
-    const uid = fm["exo__Asset_uid"] ?? "";
-    const label = fm["exo__Asset_label"] ?? extractLabelFromFilename(filePath);
-    const targetClass = normalizeWikilink(fm["ems__Workflow_targetClass"] ?? "ems__Task");
-    const isDefault = fm["ems__Workflow_isDefault"] === true || fm["ems__Workflow_isDefault"] === "true";
-
-    // Count states and transitions by scanning files that reference this workflow
-    // For simplicity, count from the YAML list properties if they exist
-    const states = Array.isArray(fm["ems__Workflow_states"]) ? fm["ems__Workflow_states"].length : 0;
-    const transitions = Array.isArray(fm["ems__Workflow_transitions"]) ? fm["ems__Workflow_transitions"].length : 0;
-
-    return {
-      filePath,
-      uid,
-      label,
-      targetClass,
-      isDefault,
-      stateCount: states,
-      transitionCount: transitions,
-    };
-  } catch {
-    return null;
   }
 }
 
