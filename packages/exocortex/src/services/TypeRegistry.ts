@@ -3,6 +3,7 @@
  * Provides type lookup, inheritance resolution, and style merging.
  */
 
+import { injectable } from "tsyringe";
 import type { ITripleStore } from "../interfaces/ITripleStore";
 import { IRI } from "../domain/models/rdf/IRI";
 import { BlankNode } from "../domain/models/rdf/BlankNode";
@@ -55,6 +56,7 @@ export interface TypeRegistryConfig {
 /**
  * Registry for managing graph type definitions.
  */
+@injectable()
 export class TypeRegistry {
   private readonly tripleStore: ITripleStore | null;
   private readonly config: Required<TypeRegistryConfig>;
@@ -163,7 +165,9 @@ export class TypeRegistry {
     const queue: Array<{ uri: string; currentDepth: number }> = [{ uri: typeUri, currentDepth: 0 }];
 
     while (queue.length > 0) {
-      const { uri, currentDepth } = queue.shift()!;
+      const item = queue.shift();
+      if (!item) break;
+      const { uri, currentDepth } = item;
 
       if (visited.has(uri)) continue;
       visited.add(uri);
@@ -413,7 +417,8 @@ export class TypeRegistry {
         const label = def?.label ?? extractLocalName(groupId);
         groups.set(groupId, { nodeIds: new Set(), label });
       }
-      groups.get(groupId)!.nodeIds.add(node.id);
+      const group = groups.get(groupId);
+      if (group) group.nodeIds.add(node.id);
     }
 
     // Limit groups if needed
@@ -769,7 +774,8 @@ export class TypeRegistry {
 
     const rootTypes: string[] = [];
     for (const uri of this.nodeTypes.keys()) {
-      if (!this.typeHierarchy.has(uri) || this.typeHierarchy.get(uri)!.length === 0) {
+      const parents = this.typeHierarchy.get(uri);
+      if (!parents || parents.length === 0) {
         // Also check if this type is a parent of something (otherwise it's just a leaf)
         if (allParents.has(uri)) {
           rootTypes.push(uri);

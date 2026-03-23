@@ -1,4 +1,5 @@
-import { ITripleStore } from "../interfaces/ITripleStore";
+import { injectable } from "tsyringe";
+import type { ITripleStore } from "../interfaces/ITripleStore";
 import { Triple, Subject, Object as RDFObject } from "../domain/models/rdf/Triple";
 import { IRI } from "../domain/models/rdf/IRI";
 import { Literal } from "../domain/models/rdf/Literal";
@@ -60,6 +61,7 @@ const PREDICATES = {
  *
  * Performance target: load 1K nodes in <100ms
  */
+@injectable()
 export class GraphQueryService {
   private readonly tripleStore: ITripleStore;
   private readonly config: Required<GraphQueryServiceConfig>;
@@ -145,7 +147,9 @@ export class GraphQueryService {
     const nodes: GraphNode[] = [];
 
     while (nodeQueue.length > 0 && nodes.length < limit) {
-      const { id, currentDepth } = nodeQueue.shift()!;
+      const item = nodeQueue.shift();
+      if (!item) break;
+      const { id, currentDepth } = item;
 
       if (visited.has(id)) continue;
       visited.add(id);
@@ -301,10 +305,10 @@ export class GraphQueryService {
 
       for (const triple of outgoingTriples) {
         const edge = this.tripleToEdge(node.id, triple, nodeIds);
-        if (edge && !seenEdges.has(edge.id!)) {
+        if (edge && edge.id && !seenEdges.has(edge.id)) {
           // Filter by edge type if specified
           if (!options.edgeTypes || options.edgeTypes.includes(edge.type)) {
-            seenEdges.add(edge.id!);
+            seenEdges.add(edge.id);
             edges.push(edge);
           }
         }

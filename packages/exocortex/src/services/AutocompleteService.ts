@@ -1,3 +1,4 @@
+import { injectable } from "tsyringe";
 import type { ITripleStore } from "../interfaces/ITripleStore";
 import { Namespace } from "../domain/models/rdf/Namespace";
 import { IRI } from "../domain/models/rdf/IRI";
@@ -69,6 +70,7 @@ export const DEFAULT_AUTOCOMPLETE_CONFIG: Required<AutocompleteConfig> = {
  * );
  * ```
  */
+@injectable()
 export class AutocompleteService {
   private config: Required<AutocompleteConfig>;
 
