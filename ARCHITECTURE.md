@@ -16,9 +16,10 @@
 6. [Data Flow](#data-flow)
 7. [Property Schema](#property-schema)
 8. [Design Patterns](#design-patterns)
-9. [Error Handling](#error-handling)
-10. [Current Limitations](#current-limitations)
-11. [Future Architecture](#future-architecture)
+9. [Archgate — Executable ADR Governance](#archgate--executable-adr-governance)
+10. [Error Handling](#error-handling)
+11. [Current Limitations](#current-limitations)
+12. [Future Architecture](#future-architecture)
 
 ---
 
@@ -1046,6 +1047,78 @@ const service = new TaskCreationService(this.app.vault);
 6. **No Timestamp**: ToDo doesn't trigger timestamps
 7. **Save**: `Vault.modify(file, updatedContent)`
 8. **Result**: Status updated, layout re-renders
+
+---
+
+## 🛡️ Archgate — Executable ADR Governance
+
+Exocortex enforces its architectural decisions automatically via [Archgate](https://github.com/nicholasgriffintn/archgate), a tool that turns ADRs into executable CI checks. Every pull request is validated against the project's recorded architectural constraints.
+
+### How It Works
+
+1. **ADR Markdown** files in `docs/adr/` document each architectural decision (context, decision, consequences).
+2. **Archgate rule specs** in `.archgate/adrs/` mirror those ADRs and optionally pair a `.rules.ts` file containing automated checks.
+3. The **`archgate check --ci`** command runs in the CI pipeline (`archgate` job in `.github/workflows/ci.yml`) and fails the build on any violation.
+
+### Rule Tiers
+
+| Tier | Prefix | Purpose | Automated | Examples |
+|------|--------|---------|-----------|----------|
+| **Tier 1 — Critical Constraints** | `ARCH-*`, `SEC-*` | Layer boundaries, security invariants | Yes (`.rules.ts`) | `ARCH-008` (Clean Architecture layer deps), `SEC-001` (no `Math.random`, no MD5/SHA1) |
+| **Tier 2 — Quality & Consistency** | `QUAL-*` | Code style, DI conventions | Yes (`.rules.ts`) | `QUAL-001` (injectable services, no console in core) |
+| **Documentation-only** | `ARCH-*` (`rules: false`) | Record decisions without automated enforcement | No | `ARCH-001` (UUID filenames) |
+
+Rules with `rules: true` in their frontmatter have a sibling `.rules.ts` that Archgate executes. Rules with `rules: false` serve as reference documentation only.
+
+### Directory Layout
+
+```
+.archgate/
+├── adrs/
+│   ├── ARCH-001-uuid-filenames.md            # docs-only (rules: false)
+│   ├── ARCH-002-property-naming.md           # has rules
+│   ├── ARCH-002-property-naming.rules.ts
+│   ├── ARCH-008-clean-architecture.md        # has rules
+│   ├── ARCH-008-clean-architecture.rules.ts
+│   ├── QUAL-001-code-quality.md              # has rules
+│   ├── QUAL-001-code-quality.rules.ts
+│   ├── SEC-001-cryptographic-security.md     # has rules
+│   └── SEC-001-cryptographic-security.rules.ts
+└── lint/
+    └── README.md                             # linter plugin conventions
+```
+
+### CI Integration
+
+The `archgate` job runs on every PR alongside unit and E2E tests:
+
+```yaml
+archgate:
+  runs-on: ubuntu-latest
+  timeout-minutes: 2
+  steps:
+    - uses: actions/checkout@v6
+    - uses: actions/cache@v4
+      with:
+        path: ~/.archgate
+        key: archgate-${{ runner.os }}
+    - run: npm install -g archgate
+    - run: archgate check --ci
+```
+
+### Adding a New Rule
+
+1. **Write (or update) an ADR** in `docs/adr/` following the existing template.
+2. **Create the Archgate spec** in `.archgate/adrs/<ID>-<slug>.md` with frontmatter (`id`, `title`, `domain`, `rules`, `files`).
+3. **If automatable**, add a sibling `.rules.ts` that exports a `rules` object with `check(ctx)` functions. Archgate passes a context with `glob()`, `grep()`, and `report.violation()` helpers.
+4. **Verify locally**: `npx archgate check` (or `archgate check` if installed globally).
+5. **Push** — the CI `archgate` job validates the new rule automatically.
+
+### Related Directories
+
+- **Full ADR documents**: [`docs/adr/`](docs/adr/) (10 ADRs, from UUID filenames to testing strategy)
+- **Archgate rule specs + scripts**: [`.archgate/adrs/`](.archgate/adrs/)
+- **Linter plugin conventions**: [`.archgate/lint/`](.archgate/lint/)
 
 ---
 
