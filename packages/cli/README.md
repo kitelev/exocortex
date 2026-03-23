@@ -317,8 +317,37 @@ exocortex command start "tasks/feature.md" --vault ~/vault
 # 4. Complete when done
 exocortex command complete "tasks/feature.md" --vault ~/vault
 
-# 5. Archive for cleanup
+# 5. Mark as archived
 exocortex command archive "tasks/feature.md" --vault ~/vault
+```
+
+### Archive Lifecycle
+
+```bash
+# 1. Mark completed tasks as archived (sets archived: true)
+exocortex command archive "tasks/old-task.md" --vault ~/vault
+
+# 2. Bulk move archived tasks to archive vault
+npx @kitelev/exocortex-cli archive \
+  --vault ~/vault \
+  --archive-vault ~/vault-archive \
+  --class ems__Task --year 2025
+
+# 3. Resolve dependency chains
+npx @kitelev/exocortex-cli archive --cascade \
+  --vault ~/vault \
+  --archive-vault ~/vault-archive
+
+# 4. Verify integrity
+npx @kitelev/exocortex-cli archive --verify \
+  --vault ~/vault \
+  --archive-vault ~/vault-archive
+
+# 5. Restore if needed
+npx @kitelev/exocortex-cli unarchive \
+  --uuid <asset-uuid> \
+  --vault ~/vault \
+  --archive-vault ~/vault-archive
 ```
 
 ### Batch Operations
@@ -428,6 +457,123 @@ exocortex batch --file operations.json --vault ~/vault --format json
 }
 ```
 
+### Archive Management
+
+Manage the lifecycle of assets between active and archive vaults. The archive system ensures zero broken links by checking references before moving files.
+
+#### Archive Assets
+
+Move completed/archived assets from active vault to a separate archive vault:
+
+```bash
+# Archive all ems__Task from 2025
+npx @kitelev/exocortex-cli archive \
+  --vault ~/vault \
+  --archive-vault ~/vault-archive \
+  --class ems__Task \
+  --year 2025
+
+# Archive multiple classes
+npx @kitelev/exocortex-cli archive \
+  --vault ~/vault \
+  --archive-vault ~/vault-archive \
+  --class ems__Task,ems__Meeting \
+  --year 2025
+
+# Dry run — preview without moving files
+npx @kitelev/exocortex-cli archive --dry-run \
+  --vault ~/vault \
+  --archive-vault ~/vault-archive \
+  --class ems__Task \
+  --year 2025
+```
+
+**Archive Options:**
+
+- `--vault <path>` - Path to the active vault **[required]**
+- `--archive-vault <path>` - Path to the archive vault **[required]**
+- `--class <names>` - Comma-separated class short names or UUIDs (e.g. `ems__Task,ems__Meeting`) **[required for archive mode]**
+- `--year <year>` - Filter by resolution/end timestamp year (e.g. `2025`) **[required for archive mode]**
+- `--dry-run` - Preview without writing files
+- `--no-referenced` - Skip assets referenced by non-archived (default: true)
+- `--json` - Output in JSON format (default: true)
+
+**What archive does:**
+
+1. Scans active vault for assets matching class + year with `archived: true` in frontmatter
+2. Checks cross-references — blocks assets still referenced by active (non-archived) files
+3. Creates archive ontology files (e.g. `!ems_archive.md`) if needed
+4. Updates `exo__Asset_isDefinedBy` to point to archive ontology
+5. Moves files to archive vault, deletes from active vault
+
+#### Verify Archive Integrity
+
+Check for broken cross-vault links and missing ontologies (read-only):
+
+```bash
+npx @kitelev/exocortex-cli archive --verify \
+  --vault ~/vault \
+  --archive-vault ~/vault-archive
+```
+
+Returns exit code 0 if healthy, 1 if issues found. JSON output includes `broken_links`, `missing_ontologies`, and vault `stats`.
+
+#### Cascade Archive
+
+Iteratively resolve archived-to-archived dependency chains. Useful after bulk archival when some assets were blocked because they referenced other archived assets:
+
+```bash
+# Cascade resolve (moves all unblocked archived assets)
+npx @kitelev/exocortex-cli archive --cascade \
+  --vault ~/vault \
+  --archive-vault ~/vault-archive
+
+# Preview cascade
+npx @kitelev/exocortex-cli archive --cascade --dry-run \
+  --vault ~/vault \
+  --archive-vault ~/vault-archive
+```
+
+No `--class` or `--year` needed — cascade processes all eligible archived assets.
+
+#### Unarchive (Restore) Assets
+
+Restore a single asset from archive vault back to active vault:
+
+```bash
+# Restore asset by UUID
+npx @kitelev/exocortex-cli unarchive \
+  --uuid ca0d0001-1111-2222-3333-444455556666 \
+  --vault ~/vault \
+  --archive-vault ~/vault-archive
+
+# Dry run — preview without restoring
+npx @kitelev/exocortex-cli unarchive --dry-run \
+  --uuid ca0d0001-1111-2222-3333-444455556666 \
+  --vault ~/vault \
+  --archive-vault ~/vault-archive
+```
+
+**Unarchive Options:**
+
+- `--uuid <uuid>` - UUID of the asset to restore **[required]**
+- `--vault <path>` - Path to the active vault **[required]**
+- `--archive-vault <path>` - Path to the archive vault **[required]**
+- `--dry-run` - Preview without writing files
+
+**What unarchive does:**
+
+1. Finds asset by UUID in archive vault (direct filename match, then frontmatter scan)
+2. Updates `exo__Asset_isDefinedBy` from archive ontology back to active ontology
+3. Moves file to `<active-vault>/03 Knowledge/inbox/`
+4. Preserves `archived: true` in frontmatter (user decides whether to remove it)
+
+**Output (JSON to stdout):**
+
+```json
+{"success":true,"uuid":"ca0d0001-...","movedTo":"03 Knowledge/inbox/ca0d0001-....md","isDefinedBy":"[[!ems|EMS Ontology]]"}
+```
+
 ## Architecture
 
 The CLI uses `exocortex` for business logic and implements a Node.js file system adapter:
@@ -460,6 +606,7 @@ exocortex-cli/
 - **Status Management** - Update task status through workflow
 - **Planning** - Assign tasks to specific days
 - **Frontmatter Support** - Full YAML frontmatter parsing and manipulation
+- **Archive Management** - Bulk archive/unarchive assets between vaults with integrity verification
 - **Progress Indicators** - Spinners and colored output for better UX
 
 ## Development
@@ -553,6 +700,11 @@ ems__Effort_status: "[[ems__EffortStatusDraft]]"
 **Batch Operations:**
 
 - `exocortex batch` - Execute multiple operations in single invocation
+
+**Archive Management:**
+
+- `exocortex archive` - Bulk archive assets by class and year (with `--dry-run`, `--verify`, `--cascade`)
+- `exocortex unarchive` - Restore single asset from archive vault by UUID (with `--dry-run`)
 
 ### Planned Commands
 
