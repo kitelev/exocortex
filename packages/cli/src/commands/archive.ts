@@ -6,6 +6,7 @@ import { ClassResolverService } from "../services/ClassResolverService.js";
 import { ArchiveService } from "../services/ArchiveService.js";
 import { ArchiveVerifyService } from "../services/ArchiveVerifyService.js";
 import { ArchiveCascadeService } from "../services/ArchiveCascadeService.js";
+import { ArchiveStatsService } from "../services/ArchiveStatsService.js";
 import { ErrorHandler } from "../utils/ErrorHandler.js";
 import { VaultNotFoundError } from "../utils/errors/index.js";
 
@@ -22,6 +23,7 @@ interface ArchiveCommandOptions {
   json?: boolean;
   verify?: boolean;
   cascade?: boolean;
+  stats?: boolean;
 }
 
 /**
@@ -97,6 +99,11 @@ export function archiveCommand(): Command {
       "Iteratively resolve archived-to-archived chains (no --class/--year needed)",
       false,
     )
+    .option(
+      "--stats",
+      "Print archive vault statistics by class and year (read-only)",
+      false,
+    )
     .action(async (options: ArchiveCommandOptions) => {
       try {
         // Validate vault paths
@@ -108,6 +115,18 @@ export function archiveCommand(): Command {
         const archiveVaultPath = resolve(options.archiveVault);
         if (!existsSync(archiveVaultPath)) {
           throw new VaultNotFoundError(archiveVaultPath);
+        }
+
+        // Branch: stats mode
+        if (options.stats) {
+          const archiveFs = new NodeFsAdapter(archiveVaultPath);
+          const statsService = new ArchiveStatsService(archiveFs);
+
+          const result = await statsService.collect();
+
+          process.stderr.write(formatStatsSummary(result));
+          process.stdout.write(JSON.stringify(result) + "\n");
+          process.exit(0);
         }
 
         // Branch: verify mode
@@ -242,4 +261,34 @@ export function archiveCommand(): Command {
         ErrorHandler.handle(error as Error);
       }
     });
+}
+
+/**
+ * Format archive stats as a human-readable summary for stderr.
+ */
+function formatStatsSummary(stats: import("../services/ArchiveStatsService.js").ArchiveStats): string {
+  const lines: string[] = ["--- ARCHIVE STATS ---"];
+
+  lines.push(`Total assets: ${stats.total}`);
+
+  if (Object.keys(stats.by_class).length > 0) {
+    lines.push("");
+    lines.push("By class:");
+    const sorted = Object.entries(stats.by_class).sort((a, b) => b[1] - a[1]);
+    for (const [cls, count] of sorted) {
+      lines.push(`  ${cls}: ${count}`);
+    }
+  }
+
+  if (Object.keys(stats.by_year).length > 0) {
+    lines.push("");
+    lines.push("By year:");
+    const sorted = Object.entries(stats.by_year).sort((a, b) => a[0].localeCompare(b[0]));
+    for (const [year, count] of sorted) {
+      lines.push(`  ${year}: ${count}`);
+    }
+  }
+
+  lines.push("--- END STATS ---");
+  return lines.join("\n") + "\n";
 }
