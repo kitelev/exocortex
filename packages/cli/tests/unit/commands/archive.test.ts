@@ -98,3 +98,83 @@ describe("Issue #2306: archive command", () => {
     expect(option!.mandatory).toBeFalsy();
   });
 });
+
+/**
+ * Issue #2345: Additional tests for archive command option details
+ *
+ * Validates option count, defaults, mandatory flags, and description.
+ */
+describe("Issue #2345: archive command dispatch branch tests", () => {
+  let archiveCommandFn: () => Command;
+
+  beforeAll(async () => {
+    const mod = await import("../../../src/commands/archive.js");
+    archiveCommandFn = mod.archiveCommand;
+  });
+
+  it("should have --stats option registered", () => {
+    const cmd = archiveCommandFn();
+    const option = cmd.options.find(
+      (opt) => opt.long === "--stats",
+    );
+    expect(option).toBeDefined();
+  });
+
+  it("should register exactly 10 options total", () => {
+    const cmd = archiveCommandFn();
+    expect(cmd.options).toHaveLength(10);
+  });
+
+  it("should have --stats as non-mandatory option", () => {
+    const cmd = archiveCommandFn();
+    const option = cmd.options.find(
+      (opt) => opt.long === "--stats",
+    );
+    expect(option).toBeDefined();
+    expect(option!.mandatory).toBeFalsy();
+  });
+
+  it("should have --stats default value of false", () => {
+    const cmd = archiveCommandFn();
+    const option = cmd.options.find(
+      (opt) => opt.long === "--stats",
+    );
+    expect(option).toBeDefined();
+    expect(option!.defaultValue).toBe(false);
+  });
+
+  it("should mark --vault and --archive-vault as mandatory", () => {
+    const cmd = archiveCommandFn();
+    const mandatoryOptions = cmd.options.filter(
+      (opt) => opt.mandatory === true,
+    );
+    expect(mandatoryOptions).toHaveLength(2);
+    const mandatoryNames = mandatoryOptions.map((opt) => opt.long);
+    expect(mandatoryNames).toContain("--vault");
+    expect(mandatoryNames).toContain("--archive-vault");
+  });
+
+  it("should have --no-referenced option registered", () => {
+    const cmd = archiveCommandFn();
+    const option = cmd.options.find(
+      (opt) => opt.long === "--no-referenced",
+    );
+    expect(option).toBeDefined();
+    expect(option!.mandatory).toBeFalsy();
+  });
+
+  it("should have --json default value of true", () => {
+    const cmd = archiveCommandFn();
+    const option = cmd.options.find(
+      (opt) => opt.long === "--json",
+    );
+    expect(option).toBeDefined();
+    expect(option!.defaultValue).toBe(true);
+  });
+
+  it("should have a description mentioning 'archive'", () => {
+    const cmd = archiveCommandFn();
+    const description = cmd.description().toLowerCase();
+    expect(description).toContain("archive");
+  });
+});
