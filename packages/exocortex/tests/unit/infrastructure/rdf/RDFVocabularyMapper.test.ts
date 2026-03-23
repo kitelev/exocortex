@@ -28,13 +28,29 @@ describe("RDFVocabularyMapper", () => {
     it("should generate triples for all ExoRDF classes", () => {
       const triples = mapper.generateClassHierarchyTriples();
 
-      const classNames = ["Task", "Project", "Area", "Asset"];
+      const classNames = ["Task", "Project", "Area", "Asset", "Workflow", "WorkflowState", "WorkflowTransition"];
 
       for (const className of classNames) {
         const classTriple = triples.find((t) =>
           (t.subject as IRI).value.includes(className),
         );
         expect(classTriple).toBeDefined();
+      }
+    });
+
+    it("should map workflow classes as subClassOf exo:Asset", () => {
+      const triples = mapper.generateClassHierarchyTriples();
+
+      const workflowClasses = ["Workflow", "WorkflowState", "WorkflowTransition"];
+
+      for (const className of workflowClasses) {
+        const triple = triples.find(
+          (t) =>
+            (t.subject as IRI).value === `https://exocortex.my/ontology/ems#${className}` &&
+            (t.predicate as IRI).value === "http://www.w3.org/2000/01/rdf-schema#subClassOf" &&
+            (t.object as IRI).value === "https://exocortex.my/ontology/exo#Asset",
+        );
+        expect(triple).toBeDefined();
       }
     });
 
