@@ -83,6 +83,26 @@ jobs:
         run: npm run lint
         continue-on-error: true
 
+  archgate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Cache Archgate
+        uses: actions/cache@v4
+        with:
+          path: ~/.archgate
+          key: archgate-${{ runner.os }}
+
+      - name: Install Archgate
+        run: npm install -g archgate
+
+      - name: Run ADR compliance checks
+        run: archgate check --ci
+
   test-unit:
     runs-on: ubuntu-latest
     timeout-minutes: 7

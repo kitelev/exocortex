@@ -17,5 +17,13 @@ npx lint-staged || exit 1
 echo "📊 Checking BDD coverage..."
 npm run bdd:check || exit 1
 
+# Run Archgate ADR compliance checks on staged files
+if command -v archgate &> /dev/null; then
+  echo "🏛️  Running Archgate ADR compliance checks..."
+  archgate check --staged || exit 1
+else
+  echo "⏭️  Skipping Archgate checks (archgate not installed)"
+fi
+
 echo "✅ All pre-commit checks passed!"
 echo "   Note: Full test suite (unit + UI + component + E2E) runs in CI"
