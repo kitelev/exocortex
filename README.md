@@ -259,7 +259,7 @@ Exocortex is a **monorepo** with five packages sharing Clean Architecture core:
 | **@exocortex/obsidian-plugin** | Private | Interactive UI: 24+ components, 6 renderers, 34+ commands, 11 modals |
 | **@kitelev/exocortex-cli** | `@kitelev/exocortex-cli` | CLI for automation, archive/unarchive, SPARQL queries, AI agent integration |
 | **@exocortex/test-utils** | Private | Shared test utilities, mock factories, flaky test reporter |
-| **physics-wasm** | Private | WebAssembly force simulation for 3D graph visualization |
+| **physics-wasm** | Private | WebAssembly force simulation (experimental, not currently integrated) |
 
 ---
 
@@ -295,20 +295,9 @@ exocortex-cli command complete "tasks/my-task.md" --vault ~/vault
 
 ### Option 3: Core Library
 
-Best for: Building custom applications.
+Best for: Building custom applications on top of Exocortex domain models.
 
-```typescript
-import { SparqlService, NodeFsAdapter } from 'exocortex';
-
-const sparql = new SparqlService(new NodeFsAdapter('/path/to/vault'));
-const results = await sparql.query(`
-  SELECT ?concept ?definition
-  WHERE {
-    ?concept exo:Instance_class ims:Concept .
-    ?concept ims:Concept_definition ?definition .
-  }
-`);
-```
+> **Note**: The core library (`exocortex`) provides domain models, SPARQL engine internals, and service interfaces. For query execution, use the CLI package (`@kitelev/exocortex-cli`) which provides a complete runtime.
 
 ---
 
@@ -445,11 +434,10 @@ See **[SPARQL 1.2 Features](./docs/sparql/SPARQL-1.2-Features.md)** for complete
 - **[SPARQL 1.2 Features](./docs/sparql/SPARQL-1.2-Features.md)** — LATERAL, PREFIX*, directionality, and more
 - **[SPARQL 1.2 Migration](./docs/sparql/SPARQL-1.2-Migration.md)** — Upgrading from SPARQL 1.1
 
-### Graph View & Visualization
-- **[Graph View Overview](./docs/graph-view/README.md)** — Introduction to 2D and 3D graph visualization
-- **[3D Visualization Guide](./docs/graph-view/guides/3d-visualization.md)** — WebGL-powered 3D graph exploration
-- **[Configuration Reference](./docs/graph-view/guides/configuration.md)** — All configuration options for graph views
-- **[Inference & Reasoning Guide](./docs/graph-view/guides/inference.md)** — RDFS/OWL inference, neighborhood exploration
+### Graph View
+- **[Graph View Overview](./docs/graph-view/README.md)** — Label patching for Obsidian's built-in graph view
+- **[Configuration Reference](./docs/graph-view/guides/configuration.md)** — Configuration options for graph label display
+- **[Inference & Reasoning Guide](./docs/graph-view/guides/inference.md)** — RDFS inference and neighborhood exploration
 
 ### Layout Code Blocks
 
