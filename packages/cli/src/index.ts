@@ -16,6 +16,7 @@ import { validateCommand } from "./commands/validate.js";
 import { classesCommand } from "./commands/classes.js";
 import { createCommand } from "./commands/create.js";
 import { archiveCommand } from "./commands/archive.js";
+import { unarchiveCommand } from "./commands/unarchive.js";
 
 // Version injected at build time by esbuild (see esbuild.config.mjs)
 declare const __CLI_VERSION__: string;
@@ -46,5 +47,6 @@ program.addCommand(validateCommand());
 program.addCommand(classesCommand());
 program.addCommand(createCommand());
 program.addCommand(archiveCommand());
+program.addCommand(unarchiveCommand());
 
 program.parse();
