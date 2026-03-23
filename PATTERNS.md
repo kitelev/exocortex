@@ -501,21 +501,21 @@ If yes to any → prioritize sequential implementation for maximum efficiency.
 
 ### Key Architecture Knowledge
 
-**PropertyPathExecutor** (`packages/core/src/infrastructure/sparql/executors/`):
+**PropertyPathExecutor** (`packages/exocortex/src/infrastructure/sparql/executors/`):
 - Handles SPARQL property path operators: `+` (OneOrMore), `*` (ZeroOrMore), `?` (ZeroOrOne), `^` (Inverse), `/` (Sequence), `|` (Alternative)
 - **MAX_DEPTH = 100**: Prevents infinite loops in recursive paths
 - Edge cases to test: empty graphs, failing paths, depth limits
 
-**QueryPlanCache** (`packages/core/src/infrastructure/sparql/cache/`):
+**QueryPlanCache** (`packages/exocortex/src/infrastructure/sparql/cache/`):
 - LRU eviction with configurable size
 - **Whitespace normalization**: Cache keys are trimmed and whitespace-collapsed
 - Edge cases to test: cache size of 1, whitespace-only queries, LRU order after updates
 
-**FilterExecutor** (`packages/core/src/infrastructure/sparql/executors/`):
+**FilterExecutor** (`packages/exocortex/src/infrastructure/sparql/executors/`):
 - Handles EXISTS/NOT EXISTS via `ExistsEvaluator` callback pattern
 - Delegates EXISTS subquery evaluation to callback, doesn't execute directly
 
-**AlgebraTranslator** (`packages/core/src/infrastructure/sparql/algebra/`):
+**AlgebraTranslator** (`packages/exocortex/src/infrastructure/sparql/algebra/`):
 - Handles BIND expressions and Subqueries
 - No separate executor needed - translated during algebra generation
 
@@ -547,7 +547,7 @@ describe("Edge Cases", () => {
 ### File Locations for SPARQL Tests
 
 ```
-packages/core/tests/unit/infrastructure/sparql/
+packages/exocortex/tests/unit/infrastructure/sparql/
 ├── executors/
 │   ├── BGPExecutor.test.ts           # Basic Graph Pattern
 │   ├── FilterExecutor.test.ts        # FILTER, EXISTS/NOT EXISTS
@@ -563,13 +563,13 @@ packages/core/tests/unit/infrastructure/sparql/
 
 ```bash
 # 1. Find implementation constants
-grep -r "MAX_DEPTH\|LIMIT\|SIZE" packages/core/src/infrastructure/sparql/
+grep -r "MAX_DEPTH\|LIMIT\|SIZE" packages/exocortex/src/infrastructure/sparql/
 
 # 2. Check existing edge case coverage
-grep -r "Edge Case\|should handle\|should respect" packages/core/tests/unit/infrastructure/sparql/
+grep -r "Edge Case\|should handle\|should respect" packages/exocortex/tests/unit/infrastructure/sparql/
 
 # 3. Identify untested scenarios
-npm run test:coverage -- --collectCoverageFrom="packages/core/src/infrastructure/sparql/**"
+npm run test:coverage -- --collectCoverageFrom="packages/exocortex/src/infrastructure/sparql/**"
 ```
 
 ### Reference
@@ -766,7 +766,7 @@ CommandVisibility.test.ts       (1200 LOC - partial tests remain)
 ### 1. Always export from main package index (primary API)
 
 ```typescript
-// packages/core/src/index.ts
+// packages/exocortex/src/index.ts
 export * from "./domain/errors";
 export * from "./application/errors";
 ```
@@ -776,7 +776,7 @@ export * from "./application/errors";
 ### 2. Optionally add subpath exports (optimization)
 
 ```json
-// packages/core/package.json
+// packages/exocortex/package.json
 {
   "exports": {
     ".": {
@@ -875,7 +875,7 @@ import { ErrorCode } from "./ErrorCode";
 
 **Structure:**
 ```
-packages/core/tests/
+packages/exocortex/tests/
 ├── unit/infrastructure/sparql/
 │   ├── executors/           # BGP, Filter, PropertyPath
 │   ├── functions/           # Built-in functions (TRIPLE, isTRIPLE, etc.)
@@ -1952,45 +1952,21 @@ Phase 5: Semantic (Issues #1178-1183)
 ### File Organization Pattern
 
 ```
-packages/obsidian-plugin/src/presentation/renderers/graph/
-├── Core
-│   ├── types.ts                 # GraphNode, GraphEdge interfaces
-│   ├── index.ts                 # Exports
-│   └── GraphLayoutRenderer.tsx  # Main React component
+packages/obsidian-plugin/src/presentation/graph-view/
+├── GraphViewPatch.ts            # Main graph view patch (Obsidian monkey-patching)
 │
-├── Physics
-│   ├── ForceSimulation.ts       # Main simulation loop
-│   ├── BarnesHutForce.ts        # N-body optimization
-│   ├── Quadtree.ts              # Spatial indexing
-│   ├── HierarchicalLayout.ts    # Tree layout
-│   ├── RadialLayout.ts          # Circular layout
-│   └── TemporalLayout.ts        # Time-based layout
+# Domain models in packages/exocortex/:
+packages/exocortex/src/domain/models/
+├── GraphNode.ts                 # GraphNode interface
+├── GraphEdge.ts                 # GraphEdge interface
+├── GraphTypes.ts                # Type definitions
 │
-├── Rendering
-│   ├── PixiGraphRenderer.ts     # WebGL renderer
-│   ├── NodeRenderer.ts          # Node drawing
-│   ├── EdgeRenderer.ts          # Edge/curve drawing
-│   ├── LabelRenderer.ts         # Text sprites
-│   ├── IncrementalRenderer.ts   # Dirty checking
-│   └── VisibilityCuller.ts      # Off-screen culling
+packages/exocortex/src/services/
+├── GraphQueryService.ts         # Triple store integration
 │
-├── Interaction
-│   ├── SelectionManager.ts      # Node selection
-│   ├── HoverManager.ts          # Hover states
-│   ├── ContextMenuManager.ts    # Right-click menus
-│   ├── KeyboardManager.ts       # Keyboard shortcuts
-│   ├── ViewportController.ts    # Pan/zoom
-│   └── NavigationManager.ts     # Focus navigation
-│
-├── Semantic
-│   ├── CommunityDetection.ts    # Louvain algorithm
-│   ├── cluster/                 # Clustering components
-│   ├── search/                  # Search panel
-│   ├── filter/                  # Type filtering
-│   └── pathfinding/             # Path finding
-│
-└── Tests (mirror structure)
-    └── packages/obsidian-plugin/tests/unit/presentation/renderers/graph/
+# Tests:
+packages/obsidian-plugin/tests/unit/presentation/graph-view/
+├── GraphViewPatch.test.ts
 ```
 
 ### Performance Targets Achieved
@@ -3859,7 +3835,7 @@ function updateNodeProperty(node: PhysicsNode, prop: string, value: number) {
 
 ### Symptoms
 
-- All tests complete successfully (225 test suites, 5000+ tests pass)
+- All tests complete successfully (11,400+ tests across all packages)
 - Jest does not exit naturally after test completion
 - `--forceExit` flag has no effect
 - `--detectOpenHandles` doesn't identify the issue
@@ -9747,3 +9723,161 @@ Use this pattern when implementing:
 3. "Are there grouped/aggregated views that need this feature?"
 
 **Reference**: Issues #2236 + #2238 - Dynamic Time Column (112 combined steps, February 2026)
+
+---
+
+## Archive/Unarchive CLI Pattern
+
+**When to use**: Implementing vault archival and restoration commands with cross-vault operations
+
+### Architecture
+
+```
+Command (archive.ts / unarchive.ts)
+  └── ArchiveExecutor.ts          # Orchestrates archive workflow
+        ├── ArchiveService.ts       # Core move logic (active → archive vault)
+        ├── ArchiveCascadeService.ts # Iterative chain resolution
+        ├── ArchiveVerifyService.ts  # Integrity checks (broken links, missing ontologies)
+        ├── ArchiveStatsService.ts   # Vault statistics (asset counts, classes)
+        └── UnarchiveService.ts     # Reverse operation (archive → active vault)
+```
+
+### CLI Flags
+
+```bash
+# Basic archive: move Done assets to archive vault
+exocortex archive --vault /active --archive-vault /archive --class ems__Task --year 2025
+
+# Cascade: resolve archived-to-archived reference chains
+exocortex archive --cascade --vault /active --archive-vault /archive
+
+# Verify: check cross-vault integrity (no broken links)
+exocortex archive --verify --vault /active --archive-vault /archive
+
+# Stats: show asset counts and class distribution
+exocortex archive --stats --vault /active --archive-vault /archive
+
+# Skip referenced: archive even if referenced by active assets
+exocortex archive --no-referenced --vault /active --archive-vault /archive
+
+# Unarchive: restore single asset by UUID
+exocortex unarchive --uuid <UUID> --vault /active --archive-vault /archive
+
+# All flags support --dry-run for preview without changes
+```
+
+### Key Files
+
+- `packages/cli/src/commands/archive.ts` - Command definition with flags
+- `packages/cli/src/commands/unarchive.ts` - Reverse command
+- `packages/cli/src/executors/ArchiveExecutor.ts` - Orchestration
+- `packages/cli/src/services/Archive*.ts` - Service layer (5 services)
+
+### Key Design Decisions
+
+1. **Two-vault model**: Active vault (daily work) + archive vault (cold storage), never mix
+2. **Reference safety**: Default behavior skips assets referenced by non-archived assets
+3. **Cascade resolution**: `--cascade` iteratively moves assets whose only references are already archived
+4. **Ontology rewrite**: `exo__Asset_isDefinedBy` updated from active to archive ontology on move
+
+**Reference**: PRs #2331-#2356 - Archive/Unarchive CLI Feature (March 2026)
+
+---
+
+## PrintNameRule Pattern
+
+**When to use**: Implementing dynamic display names driven by ontology-level `exoob__PrintNameRule` assets
+
+### Pattern Description
+
+`PrintNameRuleService` scans the vault for `exoob__PrintNameRule` assets and resolves display name templates per class. Templates use `{{property}}` placeholders that expand to frontmatter values at render time.
+
+### Key Interface
+
+```typescript
+interface PrintNameRule {
+  className: string;   // e.g. "ems__Task"
+  template: string;    // e.g. "{{exo__Asset_label}} ({{ems__Effort_status}})"
+  priority: number;    // Higher priority wins
+  sourceFile: string;  // Vault file that defines the rule
+}
+```
+
+### How It Works
+
+1. **Scan**: `initialize()` reads all vault files for `exoob__PrintNameRule` instances
+2. **Lookup**: `getTemplateForClass(className)` returns the highest-priority template
+3. **Inheritance**: If no direct rule, walks `exo__Class_superClass` chain
+4. **Resolve**: `createMetadataResolver()` expands `[[wikilinks]]` to frontmatter metadata
+
+### Key File
+
+- `packages/obsidian-plugin/src/domain/display-name/PrintNameRuleService.ts`
+
+### Usage in Display Name Resolution
+
+```typescript
+const service = new PrintNameRuleService(app);
+service.initialize();
+
+const rule = service.getTemplateForClass("ems__Task");
+if (rule) {
+  // rule.template = "{{exo__Asset_label}} [{{ems__Effort_status}}]"
+  // Expand placeholders with actual metadata values
+}
+```
+
+**Reference**: PR #2330 - PrintNameRule Dynamic Display Names (March 2026)
+
+---
+
+## Cross-Vault SPARQL Pattern
+
+**When to use**: Querying across multiple Obsidian vaults (e.g., active + archive) in a single SPARQL query
+
+### CLI Usage
+
+```bash
+# Query active vault only (default)
+exocortex-cli sparql query --vault /path/to/active "SELECT ?s WHERE { ?s a ems:Task }"
+
+# Query active + archive vault together
+exocortex-cli sparql query \
+  --vault /path/to/active \
+  --also /path/to/archive \
+  "SELECT ?s ?label WHERE { ?s exo:Asset_label ?label }"
+
+# Multiple --also flags for 3+ vaults
+exocortex-cli sparql query \
+  --vault /main \
+  --also /archive-2024 \
+  --also /archive-2025 \
+  "SELECT (COUNT(*) AS ?total) WHERE { ?s a ems:Task }"
+```
+
+### Implementation
+
+The `--also` flag is repeatable. Each additional vault is converted to RDF triples and merged into the same in-memory triple store before query execution.
+
+```typescript
+// In sparql-query.ts:
+const alsoVaults = options.also || [];
+for (const alsoPath of alsoVaults) {
+  const alsoAdapter = new FileSystemVaultAdapter(resolvedPath);
+  const alsoTriples = await new NoteToRDFConverter(alsoAdapter).convertVault();
+  triples = triples.concat(alsoTriples);
+}
+```
+
+### Key Considerations
+
+- **Namespace conflicts**: Both vaults must use compatible ontologies (same `exo__Ontology_url`)
+- **Performance**: Each `--also` vault adds conversion time; use `--timeout` for large vaults
+- **Duplicate detection**: Assets with same UUID in multiple vaults appear once per vault in results
+- **Use case**: Analytics spanning archived and active data (e.g., yearly productivity reports)
+
+### Key File
+
+- `packages/cli/src/commands/sparql-query.ts` (lines 221-233: flag definition; lines 357-374: vault loading)
+
+**Reference**: PR #2332 - Cross-Vault SPARQL Query Support (March 2026)
