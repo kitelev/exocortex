@@ -40,6 +40,7 @@ class WikilinkLabelWidget extends WidgetType {
   constructor(
     private readonly label: string,
     private readonly targetPath: string,
+    private readonly app: App,
   ) {
     super();
   }
@@ -50,6 +51,14 @@ class WikilinkLabelWidget extends WidgetType {
     span.textContent = this.label;
     span.setAttribute("data-target-path", this.targetPath);
     span.setAttribute("aria-label", `Link: ${this.targetPath}`);
+
+    span.addEventListener("mousedown", (e: MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const newLeaf = e.metaKey || e.ctrlKey;
+      this.app.workspace.openLinkText(this.targetPath, "", newLeaf);
+    });
+
     return span;
   }
 
@@ -63,8 +72,8 @@ class WikilinkLabelWidget extends WidgetType {
     );
   }
 
-  override ignoreEvent(): boolean {
-    return false;
+  override ignoreEvent(event: Event): boolean {
+    return event.type === "mousedown";
   }
 }
 
@@ -88,17 +97,19 @@ class WikilinkLabelWidget extends WidgetType {
  */
 export class WikilinkLabelViewPlugin {
   decorations: DecorationSet;
+  private app: App;
   private metadataCache: MetadataCache;
   private settings: ExocortexSettings;
   private printNameRuleService: PrintNameRuleService | null;
 
   constructor(
     view: EditorView,
-    _app: App,
+    app: App,
     metadataCache: MetadataCache,
     settings: ExocortexSettings,
     printNameRuleService?: PrintNameRuleService | null,
   ) {
+    this.app = app;
     this.metadataCache = metadataCache;
     this.settings = settings;
     this.printNameRuleService = printNameRuleService ?? null;
@@ -151,7 +162,7 @@ export class WikilinkLabelViewPlugin {
 
       // Only create decoration if we found a label different from the target
       if (label && label !== wikilink.targetPath) {
-        const widget = new WikilinkLabelWidget(label, wikilink.targetPath);
+        const widget = new WikilinkLabelWidget(label, wikilink.targetPath, this.app);
 
         const decoration = Decoration.replace({
           widget,
