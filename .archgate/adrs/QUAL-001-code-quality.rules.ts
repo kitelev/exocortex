@@ -69,6 +69,10 @@ export default {
             /console\.(log|warn|error|info|debug)\(/,
           );
           for (const hit of hits) {
+            // Skip console calls inside JSDoc/comment blocks (code examples)
+            const trimmed = hit.content.trim();
+            if (trimmed.startsWith("*") || trimmed.startsWith("//")) continue;
+
             ctx.report.warning({
               message: "Core service uses console.* instead of ILogger",
               file: hit.file,
