@@ -1,5 +1,7 @@
 # Graph View Documentation
 
+> **Note**: The 3D visualization feature was prototyped (Dec 2025) but has been removed from the current codebase. The Graph View module currently provides label patching for Obsidian's built-in 2D graph.
+
 Interactive visualization of your knowledge graph with support for both 2D and 3D rendering.
 
 ## Overview
