@@ -2,9 +2,13 @@
   "permissions": {
     "allow": [
       "Read(//Users/kitelev/Documents/exocortex-development/exocortex-cleanup/**)",
-      "Bash(gh:*)"
+      "Bash(gh:*)",
+      "Skill(archgate:architect)",
+      "Skill(archgate:quality-manager)",
+      "Skill(archgate:adr-author)"
     ],
     "deny": [],
     "ask": []
-  }
+  },
+  "agent": "archgate:developer"
 }
