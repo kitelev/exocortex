@@ -19,9 +19,13 @@ export default {
           "packages/exocortex/src/services/*.ts",
         );
 
+        // Static utility classes that intentionally don't use DI
+        const DI_EXCLUDED = ["LoggingService.ts"];
+
         for (const file of serviceFiles) {
-          // Skip index/barrel files
+          // Skip index/barrel files and intentionally non-DI classes
           if (file.endsWith("index.ts")) continue;
+          if (DI_EXCLUDED.some((exc) => file.endsWith(exc))) continue;
 
           const content = await ctx.readFile(file);
 
