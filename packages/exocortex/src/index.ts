@@ -36,6 +36,13 @@ export {
 export { ClassCreationService } from "./services/ClassCreationService";
 export { ConceptCreationService } from "./services/ConceptCreationService";
 export { EffortStatusWorkflow } from "./services/EffortStatusWorkflow";
+export { WorkflowEngine } from "./services/WorkflowEngine";
+export type { WorkflowValidationResult } from "./services/WorkflowEngine";
+export type {
+  WorkflowDefinition,
+  WorkflowStateDefinition,
+  WorkflowTransitionDefinition,
+} from "./domain/models/WorkflowDefinition";
 export { EffortVotingService } from "./services/EffortVotingService";
 export { FolderRepairService } from "./services/FolderRepairService";
 export { LabelToAliasService } from "./services/LabelToAliasService";
