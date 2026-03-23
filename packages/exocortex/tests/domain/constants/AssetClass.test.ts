@@ -69,8 +69,20 @@ describe("AssetClass", () => {
     expect(AssetClass.CLASS).toBe("exo__Class");
   });
 
-  it("should have exactly 19 constants", () => {
+  it("should have WORKFLOW constant", () => {
+    expect(AssetClass.WORKFLOW).toBe("ems__Workflow");
+  });
+
+  it("should have WORKFLOW_STATE constant", () => {
+    expect(AssetClass.WORKFLOW_STATE).toBe("ems__WorkflowState");
+  });
+
+  it("should have WORKFLOW_TRANSITION constant", () => {
+    expect(AssetClass.WORKFLOW_TRANSITION).toBe("ems__WorkflowTransition");
+  });
+
+  it("should have exactly 22 constants", () => {
     const values = Object.values(AssetClass);
-    expect(values).toHaveLength(19);
+    expect(values).toHaveLength(22);
   });
 });

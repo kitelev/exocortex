@@ -67,6 +67,31 @@ export class RDFVocabularyMapper {
       ),
     );
 
+    // Issue #2358: Workflow ontology class hierarchy
+    triples.push(
+      new Triple(
+        Namespace.EMS.term("Workflow"),
+        Namespace.RDFS.term("subClassOf"),
+        Namespace.EXO.term("Asset"),
+      ),
+    );
+
+    triples.push(
+      new Triple(
+        Namespace.EMS.term("WorkflowState"),
+        Namespace.RDFS.term("subClassOf"),
+        Namespace.EXO.term("Asset"),
+      ),
+    );
+
+    triples.push(
+      new Triple(
+        Namespace.EMS.term("WorkflowTransition"),
+        Namespace.RDFS.term("subClassOf"),
+        Namespace.EXO.term("Asset"),
+      ),
+    );
+
     return triples;
   }
 
