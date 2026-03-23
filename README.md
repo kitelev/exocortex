@@ -48,7 +48,7 @@ Exocortex is an instrument for becoming **Übermensch** (Nietzsche):
 | Files and folders | **Semantic graph of knowledge** |
 | Tags and links | **Ontology-driven relationships** |
 | Full-text search | **SPARQL semantic queries** |
-| AI chatbot | **Cognitive partner** working with your knowledge graph |
+| AI chatbot | **SPARQL semantic queries** over your knowledge graph |
 | Data storage | **Domain model of consciousness** |
 
 ### Exocortex vs Generative AI
@@ -98,7 +98,7 @@ DCC = **ExoAPI** — semantic contract between exocortexes.
 
 | Module | Purpose |
 |--------|---------|
-| **IMS** (Information Management) | Knowledge, concepts, relationships. Classes: `Simulacrum`, `Concept`, `Note`, `Person` |
+| **IMS** (Information Management) | Knowledge, concepts, relationships. Classes: `Concept`, `Note`, `Person` |
 | **EMS** (Effort Management) | Tasks, projects, time. Classes: `Task`, `Project`, `Meeting` |
 | **ZTLK** (Zettelkasten) | Atomic notes methodology |
 
@@ -127,7 +127,7 @@ The Exocortex project encompasses a comprehensive vision for cognitive augmentat
 | 2 | **DCC (Direct Conceptual Communication)** | Communication without worldview conversion — semantic contract between exocortexes |
 | 3 | **ExoBlockchain** | Immutable knowledge provenance tracking — who, when, and how created each fact |
 | 4 | **ExoEcoSystem** | Federation of exocortexes forming collective intelligence network |
-| 5 | **Modular Ontology System** | IMS (concepts), EMS (tasks), ZTLK (notes), PTMS (personality), Observation (world tracking) |
+| 5 | **Modular Ontology System** | IMS (concepts), EMS (tasks), ZTLK (notes). *Planned: PTMS (personality), Observation (world tracking)* |
 | 6 | **Simulacrum** | Digital representation of external entities (people, companies) for modeling interactions |
 | 7 | **ExoLang** | Domain-specific language for knowledge operations and transformations |
 | 8 | **Inference Engine** | Logical reasoning over knowledge graph — deriving new facts from existing |
