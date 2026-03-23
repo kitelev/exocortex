@@ -6,8 +6,8 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![CI](https://github.com/kitelev/exocortex/actions/workflows/ci.yml/badge.svg)](https://github.com/kitelev/exocortex/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-5700%2B-success)](https://github.com/kitelev/exocortex/actions)
-[![Coverage](https://img.shields.io/badge/coverage-80%25-brightgreen)](https://github.com/kitelev/exocortex/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/tests-11400%2B-success)](https://github.com/kitelev/exocortex/actions)
+[![Coverage](https://img.shields.io/badge/coverage-core%2095%25%20%7C%20plugin%2076%25%20%7C%20cli%2065%25-brightgreen)](https://github.com/kitelev/exocortex/actions/workflows/ci.yml)
 [![SPARQL 1.2](https://img.shields.io/badge/SPARQL-1.2-blue)](./docs/sparql/SPARQL-1.2-Features.md)
 
 ---
@@ -195,7 +195,7 @@ The project adheres to core ethical principles:
 
 ## Architecture
 
-Exocortex is a **monorepo** with four packages sharing Clean Architecture core:
+Exocortex is a **monorepo** with five packages sharing Clean Architecture core:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -255,10 +255,11 @@ Exocortex is a **monorepo** with four packages sharing Clean Architecture core:
 
 | Package | npm | Purpose |
 |---------|-----|---------|
-| **exocortex** | Private | Core business logic, domain models, SPARQL engine |
-| **@exocortex/obsidian-plugin** | Private | Interactive UI for visual knowledge management |
-| **@kitelev/exocortex-cli** | `@kitelev/exocortex-cli` | CLI for automation and AI agent integration |
-| **@exocortex/test-utils** | Private | Shared test utilities and mock factories |
+| **exocortex** | Private | Core business logic, domain models, SPARQL engine, 35+ services |
+| **@exocortex/obsidian-plugin** | Private | Interactive UI: 24+ components, 6 renderers, 34+ commands, 11 modals |
+| **@kitelev/exocortex-cli** | `@kitelev/exocortex-cli` | CLI for automation, archive/unarchive, SPARQL queries, AI agent integration |
+| **@exocortex/test-utils** | Private | Shared test utilities, mock factories, flaky test reporter |
+| **physics-wasm** | Private | WebAssembly force simulation for 3D graph visualization |
 
 ---
 
@@ -428,7 +429,7 @@ See **[SPARQL 1.2 Features](./docs/sparql/SPARQL-1.2-Features.md)** for complete
 ### By Interface
 
 **Obsidian Plugin:**
-- **[Command Reference](./docs/Command-Reference.md)** — All 32 commands documented
+- **[Command Reference](./docs/Command-Reference.md)** — All 34+ commands documented
 
 **CLI:**
 - **[CLI Command Reference](./docs/cli/Command-Reference.md)** — Complete syntax
@@ -486,7 +487,7 @@ This project is developed primarily by AI agents (Claude Code, GitHub Copilot) f
 | Document | Purpose |
 |----------|---------|
 | **[CLAUDE.md](./CLAUDE.md)** | AI agent guidelines, worktree rules |
-| **[AI Development Patterns](./docs/AI-DEVELOPMENT-PATTERNS.md)** | Lessons from 96+ completed issues |
+| **[AI Development Patterns](./docs/AI-DEVELOPMENT-PATTERNS.md)** | Lessons from 1250+ completed issues |
 | **[Architecture Guide](./ARCHITECTURE.md)** | Clean Architecture patterns |
 | **[Architecture Decision Records](./docs/adr/)** | Key architectural decisions (ADRs) |
 

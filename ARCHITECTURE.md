@@ -1,7 +1,7 @@
 # Exocortex Architecture
 
-**Version**: 15.0.1
-**Last Updated**: 2026-02-19
+**Version**: 15.43.3
+**Last Updated**: 2026-03-23
 **Status**: Monorepo v15.x (Clean Architecture)
 
 ---
@@ -59,9 +59,9 @@ Package Manager: npm
 ```yaml
 Unit Tests: Jest 30.2.0 + ts-jest
 UI Tests: jest-environment-obsidian 0.0.1
-Component Tests: Playwright CT 1.56.1
-E2E Tests: Playwright 1.56.1 (Docker)
-Coverage: Jest coverage (current: 80%, target: 95%)
+Component Tests: Playwright CT 1.57.0
+E2E Tests: Playwright 1.57.0 (Docker)
+Coverage: Jest coverage (core: 95%, plugin: 75.5%, cli: 65%)
 BDD: Gherkin features (current: 80% coverage)
 ```
 
@@ -94,9 +94,11 @@ Exocortex is organized as a **monorepo** with multiple npm workspaces:
 
 ```
 /packages
-  /core                       - exocortex (storage-agnostic business logic)
+  /exocortex                  - exocortex (storage-agnostic business logic)
   /obsidian-plugin            - @exocortex/obsidian-plugin (Obsidian UI integration)
-  /cli                        - @exocortex/cli (command-line automation tool)
+  /cli                        - @kitelev/exocortex-cli (command-line automation tool)
+  /test-utils                 - @exocortex/test-utils (shared test utilities and mock factories)
+  /physics-wasm               - physics-wasm (WebAssembly force simulation for graph view)
 ```
 
 **Benefits:**
@@ -136,8 +138,8 @@ Exocortex follows **Clean Architecture** principles with clear separation of con
 **Location**: `packages/exocortex/src/application/services/`
 
 **Components**:
-- `CommandManager` - Facade for all 32 commands
-- 14 specialized services (TaskCreationService, ProjectCreationService, etc.)
+- `CommandManager` - Facade for all 34+ commands
+- 35+ specialized services (TaskCreation, ProjectCreation, NLToSPARQL, Analytics, TrendDetection, CriticalityZone, SessionEvent, etc.)
 
 **Dependencies**: Domain layer, IFileSystemAdapter interface
 
@@ -175,10 +177,10 @@ Exocortex follows **Clean Architecture** principles with clear separation of con
 **Location**: `packages/obsidian-plugin/src/presentation/`
 
 **Components**:
-- **Components**: React components (13 total)
-- **Renderers**: Layout renderers (3 total)
-- **Builders**: UI builders (`ButtonGroupsBuilder`)
-- **Modals**: Input dialogs (6 total)
+- **Components**: React components (24+ total, including ActionButtons, ArchiveTask, AreaHierarchyTree, PropertyEditor, SPARQL)
+- **Renderers**: Layout renderers (6 total — DailyTasks, TableLayout, Universal, Calendar, Kanban, AreaTree)
+- **Builders**: UI builders (`ButtonGroupsBuilder`, `CriticalityZoneButtonGroupBuilder`)
+- **Modals**: Input dialogs (11 total, including SPARQLQueryBuilder, PropertyEditor, TrashReason)
 
 **Dependencies**: Obsidian API (App, Modal), React, exocortex
 

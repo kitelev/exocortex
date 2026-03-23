@@ -569,7 +569,7 @@ git commit --amend --no-edit
 git push --force-with-lease origin feature/my-feature
 
 # MANDATORY: Wait for merge
-gh pr merge --auto --rebase
+gh pr merge --auto --squash  # Use --squash (--rebase not allowed in this repo)
 
 # MANDATORY: Verify release created
 gh release list --limit 1
@@ -810,7 +810,7 @@ gh release view v13.9.0 --json body
 - BDD coverage (RULE 6)
 - Code style (RULE 7)
 - Monorepo structure (packages/exocortex, packages/obsidian-plugin, packages/cli)
-- Quality metrics (803 unit tests across all packages)
+- Quality metrics (11,400+ tests across all packages: 5,777 core + 4,566 plugin + 1,146 CLI)
 - Troubleshooting
 
 ### Multi-Agent Coordination
