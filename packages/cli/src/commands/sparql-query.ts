@@ -38,6 +38,7 @@ import { injectExocortexPrefixes, transformShorthandNotation, filterOntologyPref
 
 export interface SparqlQueryOptions {
   vault: string;
+  also?: string[];
   format: "table" | "json" | "csv" | "ntriples";
   output?: OutputFormat;
   explain?: boolean;
@@ -216,11 +217,20 @@ export async function executeWithTimeout<T>(
   return Promise.race([queryPromise, timeoutPromise]);
 }
 
+/**
+ * Commander.js accumulator for repeatable --also flag.
+ * Each --also <path> adds a vault path to the array.
+ */
+function collectAlso(value: string, previous: string[]): string[] {
+  return previous.concat([value]);
+}
+
 export function sparqlQueryCommand(): Command {
   return new Command("query")
     .description("Execute SPARQL query against Obsidian vault")
     .argument("[query]", "SPARQL query string or path to .sparql file (optional if --template is used)")
     .option("--vault <path>", "Path to Obsidian vault", process.cwd())
+    .option("--also <path>", "Additional vault to include in query (repeatable)", collectAlso, [])
     .option("--format <type>", "Output format: table|json|csv|ntriples", "table")
     .option("--output <type>", "Response format: text|json (for MCP tools)", "text")
     .option("--timeout <duration>", "Query timeout (e.g., 30s, 5000ms)", "30s")
@@ -344,13 +354,33 @@ export function sparqlQueryCommand(): Command {
           triples = await converter.convertVault();
         }
 
+        // Load additional vaults if --also specified
+        const alsoVaults = options.also || [];
+        for (const alsoPath of alsoVaults) {
+          const resolvedAlsoPath = resolve(alsoPath);
+          if (!existsSync(resolvedAlsoPath)) {
+            throw new VaultNotFoundError(resolvedAlsoPath);
+          }
+          if (outputFormat === "text") {
+            console.log(`📦 Loading additional vault: ${resolvedAlsoPath}...`);
+          }
+          const alsoAdapter = new FileSystemVaultAdapter(resolvedAlsoPath);
+          const alsoConverter = new NoteToRDFConverter(alsoAdapter);
+          const alsoTriples = await alsoConverter.convertVault();
+          triples = triples.concat(alsoTriples);
+          if (outputFormat === "text") {
+            console.log(`   ➕ Added ${alsoTriples.length} triples from ${resolvedAlsoPath}`);
+          }
+        }
+
         const tripleStore = new InMemoryTripleStore();
         await tripleStore.addAll(triples);
 
         const loadDuration = Date.now() - loadStartTime;
         if (outputFormat === "text") {
           const cacheStatus = cacheHit ? " (from cache)" : "";
-          console.log(`✅ Loaded ${triples.length} triples in ${loadDuration}ms${cacheStatus}\n`);
+          const alsoStatus = alsoVaults.length > 0 ? ` (${alsoVaults.length + 1} vaults)` : "";
+          console.log(`✅ Loaded ${triples.length} triples in ${loadDuration}ms${cacheStatus}${alsoStatus}\n`);
           console.log(`🔍 Parsing SPARQL query...`);
         }
 
@@ -365,6 +395,15 @@ export function sparqlQueryCommand(): Command {
         // Scan vault for namespace directories and auto-register prefixes
         // Filter out ontology prefixes to avoid collision (exo/, ems/ dirs vs ontology IRIs)
         const vaultPrefixes = filterOntologyPrefixes(scanVaultNamespaces(vaultPath));
+        // Also scan additional vaults for namespace directories
+        for (const alsoPath of alsoVaults) {
+          const alsoPrefixes = filterOntologyPrefixes(scanVaultNamespaces(resolve(alsoPath)));
+          for (const [prefix, uri] of alsoPrefixes) {
+            if (!vaultPrefixes.has(prefix)) {
+              vaultPrefixes.set(prefix, uri);
+            }
+          }
+        }
         if (vaultPrefixes.size > 0) {
           parser.setVaultPrefixes(vaultPrefixes);
         }
