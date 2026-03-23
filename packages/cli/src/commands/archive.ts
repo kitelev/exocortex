@@ -20,7 +20,6 @@ interface ArchiveCommandOptions {
   year?: string;
   dryRun?: boolean;
   noReferenced?: boolean;
-  json?: boolean;
   verify?: boolean;
   cascade?: boolean;
   stats?: boolean;
@@ -88,7 +87,6 @@ export function archiveCommand(): Command {
       "--no-referenced",
       "Skip assets referenced by non-archived (default: true)",
     )
-    .option("--json", "Output in JSON format (default: true)", true)
     .option(
       "--verify",
       "Verify archive integrity instead of archiving (read-only)",

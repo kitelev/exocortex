@@ -7,7 +7,7 @@ import { Command } from "commander";
  * Acceptance criteria:
  * - Command is registered with correct name and description
  * - Required options: --vault, --archive-vault
- * - Optional options: --class, --year, --dry-run, --no-referenced, --json, --verify, --cascade
+ * - Optional options: --class, --year, --dry-run, --no-referenced, --verify, --cascade
  * - --class and --year are validated at runtime (required for archive, not for verify/cascade)
  */
 describe("Issue #2306: archive command", () => {
@@ -72,14 +72,6 @@ describe("Issue #2306: archive command", () => {
     expect(option!.mandatory).toBeFalsy();
   });
 
-  it("should have optional --json flag", () => {
-    const cmd = archiveCommandFn();
-    const option = cmd.options.find(
-      (opt) => opt.long === "--json",
-    );
-    expect(option).toBeDefined();
-  });
-
   it("should have optional --verify flag", () => {
     const cmd = archiveCommandFn();
     const option = cmd.options.find(
@@ -120,9 +112,9 @@ describe("Issue #2345: archive command dispatch branch tests", () => {
     expect(option).toBeDefined();
   });
 
-  it("should register exactly 10 options total", () => {
+  it("should register exactly 9 options total", () => {
     const cmd = archiveCommandFn();
-    expect(cmd.options).toHaveLength(10);
+    expect(cmd.options).toHaveLength(9);
   });
 
   it("should have --stats as non-mandatory option", () => {
@@ -161,15 +153,6 @@ describe("Issue #2345: archive command dispatch branch tests", () => {
     );
     expect(option).toBeDefined();
     expect(option!.mandatory).toBeFalsy();
-  });
-
-  it("should have --json default value of true", () => {
-    const cmd = archiveCommandFn();
-    const option = cmd.options.find(
-      (opt) => opt.long === "--json",
-    );
-    expect(option).toBeDefined();
-    expect(option!.defaultValue).toBe(true);
   });
 
   it("should have a description mentioning 'archive'", () => {
