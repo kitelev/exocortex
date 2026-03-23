@@ -67,7 +67,7 @@ export class URIConstructionService {
   private async resolveOntologyURL(asset: AssetMetadata): Promise<string> {
     const isDefinedBy = asset.frontmatter?.exo__Asset_isDefinedBy;
 
-    if (!isDefinedBy) {
+    if (!isDefinedBy || typeof isDefinedBy !== "string") {
       return this.defaultOntologyURL;
     }
 
@@ -94,7 +94,8 @@ export class URIConstructionService {
   }
 
   private extractUID(asset: AssetMetadata): string | null {
-    return asset.frontmatter?.exo__Asset_uid || null;
+    const uid = asset.frontmatter?.exo__Asset_uid;
+    return typeof uid === "string" ? uid : null;
   }
 
   private extractWikiLink(wikiLink: string): string {
