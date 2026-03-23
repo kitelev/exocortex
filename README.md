@@ -205,7 +205,7 @@ Exocortex is a **monorepo** with five packages sharing Clean Architecture core:
 │   ┌──────────────────┐    ┌──────────────────┐    ┌──────────────────┐ │
 │   │  Obsidian Plugin │    │       CLI        │    │   Your App       │ │
 │   │  (@exocortex/    │    │  (@kitelev/      │    │   (REST API      │ │
-│   │  obsidian-plugin)│    │  exocortex-cli)  │    │   coming soon)   │ │
+│   │  obsidian-plugin)│    │  exocortex-cli)  │    │   planned)       │ │
 │   └────────┬─────────┘    └────────┬─────────┘    └────────┬─────────┘ │
 │            │                       │                        │           │
 │            └───────────────────────┼────────────────────────┘           │
@@ -216,7 +216,7 @@ Exocortex is a **monorepo** with five packages sharing Clean Architecture core:
 │                       │                         │                       │
 │                       │  • Domain models        │                       │
 │                       │  • SPARQL engine        │                       │
-│                       │  • Inference rules      │                       │
+│                       │  • RDFS inference       │                       │
 │                       │  • Storage adapters     │                       │
 │                       └─────────────────────────┘                       │
 │                                                                         │
@@ -245,8 +245,8 @@ Exocortex is a **monorepo** with five packages sharing Clean Architecture core:
 ├─────────────────────────────────────────────────────────────────────────┤
 │                      Infrastructure Layer                               │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────┐                 │
-│  │   Markdown  │  │    SPARQL   │  │   N-Triples     │                 │
-│  │   Parser    │  │   Engine    │  │   Storage       │                 │
+│  │   Markdown  │  │    SPARQL   │  │   RDF           │                 │
+│  │   Parser    │  │   Engine    │  │   Serializers   │                 │
 │  └─────────────┘  └─────────────┘  └─────────────────┘                 │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
