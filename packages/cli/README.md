@@ -498,6 +498,11 @@ npx @kitelev/exocortex-cli archive --dry-run \
 - `--no-referenced` - Skip assets referenced by non-archived (default: true)
 - `--json` - Output in JSON format (default: true)
 
+**Exit codes:**
+
+- `0` — Success (assets archived or dry-run preview completed)
+- `1` — Error (invalid options, vault not found, missing required flags)
+
 **What archive does:**
 
 1. Scans active vault for assets matching class + year with `archived: true` in frontmatter
@@ -561,6 +566,11 @@ npx @kitelev/exocortex-cli unarchive --dry-run \
 - `--archive-vault <path>` - Path to the archive vault **[required]**
 - `--dry-run` - Preview without writing files
 
+**Exit codes:**
+
+- `0` — Success (asset restored or dry-run preview completed)
+- `1` — Error (UUID not found in archive vault, invalid UUID format, vault not found)
+
 **What unarchive does:**
 
 1. Finds asset by UUID in archive vault (direct filename match, then frontmatter scan)
@@ -571,7 +581,12 @@ npx @kitelev/exocortex-cli unarchive --dry-run \
 **Output (JSON to stdout):**
 
 ```json
-{"success":true,"uuid":"ca0d0001-...","movedTo":"03 Knowledge/inbox/ca0d0001-....md","isDefinedBy":"[[!ems|EMS Ontology]]"}
+{
+  "success": true,
+  "uuid": "ca0d0001-...",
+  "movedTo": "03 Knowledge/inbox/ca0d0001-....md",
+  "isDefinedBy": "[[!ems|EMS Ontology]]"
+}
 ```
 
 ## Architecture
