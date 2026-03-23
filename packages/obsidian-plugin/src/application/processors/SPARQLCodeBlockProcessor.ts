@@ -379,7 +379,7 @@ export class SPARQLCodeBlockProcessor {
         this.plugin.app.metadataCache,
         this.plugin.app
       );
-      const converter = new NoteToRDFConverter(vaultAdapter);
+      const converter = new NoteToRDFConverter(vaultAdapter, LoggerFactory.create("NoteToRDFConverter"));
       const triples = await converter.convertVault();
 
       this.tripleStore = new InMemoryTripleStore();

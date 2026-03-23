@@ -1,5 +1,6 @@
 import { injectable, inject } from "tsyringe";
 import type { IVaultAdapter, IFile } from "../interfaces/IVaultAdapter";
+import type { ILogger } from "../interfaces/ILogger";
 import { Triple } from "../domain/models/rdf/Triple";
 import { IRI } from "../domain/models/rdf/IRI";
 import { Literal } from "../domain/models/rdf/Literal";
@@ -39,6 +40,7 @@ export class NoteToRDFConverter {
 
   constructor(
     @inject(DI_TOKENS.IVaultAdapter) private readonly vault: IVaultAdapter,
+    @inject(DI_TOKENS.ILogger) private readonly logger: ILogger,
   ) {
     this.vocabularyMapper = new RDFVocabularyMapper();
   }
@@ -499,8 +501,7 @@ export class NoteToRDFConverter {
         });
 
         // Issue #684: Skip files with invalid IRIs instead of crashing
-        console.warn(`⚠️ Skipping file with invalid IRI: ${file.path}`);
-        console.warn(`   Reason: ${reason}`);
+        this.logger.warn(`Skipping file with invalid IRI: ${file.path}`, { reason });
       }
     }
 
@@ -608,7 +609,7 @@ export class NoteToRDFConverter {
    * @returns Array of RDF objects (IRI or Literal). UUID wikilinks return [IRI, Literal].
    */
   private async valueToRDFObject(
-    value: any,
+    value: unknown,
     sourceFile: IFile
   ): Promise<(IRI | Literal)[]> {
     if (typeof value === "string") {
@@ -734,7 +735,7 @@ export class NoteToRDFConverter {
    * valueToClassURI("[[SomeNote]]")   // → Literal("[[SomeNote]]") (not a class reference)
    * ```
    */
-  private valueToClassURI(value: any): IRI | Literal {
+  private valueToClassURI(value: unknown): IRI | Literal {
     if (typeof value !== "string") {
       return new Literal(String(value));
     }

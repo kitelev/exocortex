@@ -1,5 +1,6 @@
 import { injectable } from "tsyringe";
 import type { ITripleStore } from "../interfaces/ITripleStore";
+import type { ILogger } from "../interfaces/ILogger";
 import { Triple, Subject, Object as RDFObject } from "../domain/models/rdf/Triple";
 import { IRI } from "../domain/models/rdf/IRI";
 import { Literal } from "../domain/models/rdf/Literal";
@@ -68,9 +69,11 @@ export class GraphQueryService {
   private readonly subscribers: Set<GraphChangeCallback> = new Set();
   private nodeCache: Map<string, GraphNodeData> = new Map();
   private lastCacheUpdate: number = 0;
+  private readonly logger?: ILogger;
 
-  constructor(tripleStore: ITripleStore, config: GraphQueryServiceConfig = {}) {
+  constructor(tripleStore: ITripleStore, config: GraphQueryServiceConfig = {}, logger?: ILogger) {
     this.tripleStore = tripleStore;
+    this.logger = logger;
     this.config = {
       defaultLimit: config.defaultLimit ?? 100,
       maxLimit: config.maxLimit ?? 10000,
@@ -94,7 +97,7 @@ export class GraphQueryService {
 
     const loadTime = Date.now() - startTime;
     if (loadTime > 100 && nodes.length > 0) {
-      console.debug(`GraphQueryService: loaded ${nodes.length} nodes in ${loadTime}ms (${(loadTime / nodes.length).toFixed(2)}ms/node)`);
+      this.logger?.debug(`GraphQueryService: loaded ${nodes.length} nodes in ${loadTime}ms (${(loadTime / nodes.length).toFixed(2)}ms/node)`);
     }
 
     return {
@@ -224,7 +227,7 @@ export class GraphQueryService {
       try {
         callback(event);
       } catch (error) {
-        console.error("GraphQueryService: error in subscriber callback", error);
+        this.logger?.error("GraphQueryService: error in subscriber callback", error instanceof Error ? error : new Error(String(error)));
       }
     }
     // Invalidate cache on changes

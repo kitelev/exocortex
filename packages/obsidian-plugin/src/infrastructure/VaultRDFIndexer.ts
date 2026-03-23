@@ -33,7 +33,7 @@ export class VaultRDFIndexer {
       app.metadataCache,
       app
     );
-    this.converter = new NoteToRDFConverter(this.vaultAdapter);
+    this.converter = new NoteToRDFConverter(this.vaultAdapter, logger || LoggerFactory.create("NoteToRDFConverter"));
 
     const defaultLogger = LoggerFactory.create("VaultRDFIndexer");
     this.logger = logger || {

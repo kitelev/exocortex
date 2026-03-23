@@ -1,5 +1,6 @@
 import { injectable, inject } from "tsyringe";
 import type { IFileSystemAdapter } from "../interfaces/IFileSystemAdapter";
+import type { ILogger } from "../interfaces/ILogger";
 import { DI_TOKENS } from "../interfaces/tokens";
 
 export interface URIConstructionOptions {
@@ -9,7 +10,7 @@ export interface URIConstructionOptions {
 
 export interface AssetMetadata {
   path: string;
-  frontmatter?: Record<string, any>;
+  frontmatter?: Record<string, unknown>;
 }
 
 @injectable()
@@ -19,6 +20,7 @@ export class URIConstructionService {
 
   constructor(
     @inject(DI_TOKENS.IFileSystemAdapter) private readonly fileSystem: IFileSystemAdapter,
+    @inject(DI_TOKENS.ILogger) private readonly logger: ILogger,
   ) {}
 
   configure(options?: URIConstructionOptions): void {
@@ -36,9 +38,7 @@ export class URIConstructionService {
       if (this.strictValidation) {
         throw new Error(`Asset missing exo__Asset_uid: ${asset.path}`);
       }
-      console.warn(
-        `Asset ${asset.path} missing UID, using filename fallback`,
-      );
+      this.logger.warn(`Asset ${asset.path} missing UID, using filename fallback`);
       return this.constructFallbackURI(asset);
     }
 
@@ -82,9 +82,7 @@ export class URIConstructionService {
     }
 
     if (!fileExists) {
-      console.warn(
-        `Ontology file not found: ${ontologyPath}, using default`,
-      );
+      this.logger.warn(`Ontology file not found: ${ontologyPath}, using default`);
       return this.defaultOntologyURL;
     }
 
