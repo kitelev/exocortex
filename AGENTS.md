@@ -511,7 +511,7 @@ npm run test:all
 ```
 
 This runs:
-- Unit tests (803 tests across all packages)
+- Unit tests (11,400+ tests across all packages: 5,777 core + 4,566 plugin + 1,146 CLI)
 - E2E tests
 - Type checking
 - Linting
@@ -692,7 +692,7 @@ refactor: simplify RDF store queries
 
 5. **Wait for Merge**:
    ```bash
-   gh pr merge --auto --rebase
+   gh pr merge --auto --squash  # Use --squash (--rebase not allowed in this repo)
    ```
 
 6. **Verify Release Created**:
