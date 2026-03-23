@@ -25,6 +25,7 @@
 ### The Path to Übermensch
 
 Exocortex is an instrument for becoming **Übermensch** (Nietzsche):
+
 - Overcoming reactive behavior through **conceptual awareness**
 - **Super-individualism** — the ability to create your own values
 - Striving for infinite self-improvement
@@ -43,17 +44,18 @@ Exocortex is an instrument for becoming **Übermensch** (Nietzsche):
 
 ### What Sets Exocortex Apart
 
-| Traditional Tools | Exocortex |
-|-------------------|-----------|
-| Files and folders | **Semantic graph of knowledge** |
-| Tags and links | **Ontology-driven relationships** |
-| Full-text search | **SPARQL semantic queries** |
-| AI chatbot | **SPARQL semantic queries** over your knowledge graph |
-| Data storage | **Domain model of consciousness** |
+| Traditional Tools | Exocortex                                             |
+| ----------------- | ----------------------------------------------------- |
+| Files and folders | **Semantic graph of knowledge**                       |
+| Tags and links    | **Ontology-driven relationships**                     |
+| Full-text search  | **SPARQL semantic queries**                           |
+| AI chatbot        | **SPARQL semantic queries** over your knowledge graph |
+| Data storage      | **Domain model of consciousness**                     |
 
 ### Exocortex vs Generative AI
 
 **Key difference: Exocortex cannot hallucinate!**
+
 - AI hallucinates (generates non-existent information)
 - Exocortex operates **only with verified data** from knowledge graph
 - AI is a tool of exocortex, but not a replacement for its function of **reliable knowledge storage**
@@ -75,7 +77,6 @@ exo__Asset_relates:
   - "[[PKM]]"
   - "[[Semantic Web]]"
 ---
-
 Knowledge content in Markdown...
 ```
 
@@ -88,6 +89,7 @@ Knowledge content in Markdown...
 **Problem**: Conceptual miscommunication — people use the same words but mean different things.
 
 **Solution**: Each concept has:
+
 - Formal definition (`ims__Concept_definition`)
 - Relationships with other concepts (`ims__Concept_broader`, `ims__Concept_related`)
 - Mapping between different users' ontologies
@@ -96,99 +98,44 @@ DCC = **ExoAPI** — semantic contract between exocortexes.
 
 ### Modular Ontologies
 
-| Module | Purpose |
-|--------|---------|
+| Module                           | Purpose                                                                  |
+| -------------------------------- | ------------------------------------------------------------------------ |
 | **IMS** (Information Management) | Knowledge, concepts, relationships. Classes: `Concept`, `Note`, `Person` |
-| **EMS** (Effort Management) | Tasks, projects, time. Classes: `Task`, `Project`, `Meeting` |
-| **ZTLK** (Zettelkasten) | Atomic notes methodology |
+| **EMS** (Effort Management)      | Tasks, projects, time. Classes: `Task`, `Project`, `Meeting`             |
+| **ZTLK** (Zettelkasten)          | Atomic notes methodology                                                 |
 
 ### STIR Model — Knowledge Coordinates
 
 **STIR** (Space, Time, Importance, Relatedness) — universal model for information organization:
 
-| Parameter | Question | Application |
-|-----------|----------|-------------|
-| **Space** | Where? | Spatial localization, context, domain |
-| **Time** | When? | Temporal relevance, deadlines, validity period |
-| **Importance** | How important? | Priority, impact on goals |
-| **Relatedness** | What is it related to? | Connections, dependencies, cluster membership |
+| Parameter       | Question               | Application                                    |
+| --------------- | ---------------------- | ---------------------------------------------- |
+| **Space**       | Where?                 | Spatial localization, context, domain          |
+| **Time**        | When?                  | Temporal relevance, deadlines, validity period |
+| **Importance**  | How important?         | Priority, impact on goals                      |
+| **Relatedness** | What is it related to? | Connections, dependencies, cluster membership  |
 
 ---
 
-## 42 Unique IT Ideas
+## Vision
 
-The Exocortex project encompasses a comprehensive vision for cognitive augmentation. Here are the core concepts that make this system unique:
+Exocortex encompasses 42 unique ideas for cognitive augmentation — from implemented features like the Asset knowledge model and SPARQL engine to visionary concepts like ExoEcoSystem (federated knowledge networks) and ExoProphet (prediction engine).
 
-### Core Architecture (1-10)
+**[See full vision document →](./VISION.md)** with implementation status for all 42 ideas.
 
-| # | Idea | Description |
-|---|------|-------------|
-| 1 | **Asset as Knowledge Quantum** | Atomic unit of knowledge with UUID, class, label, and semantic relationships |
-| 2 | **DCC (Direct Conceptual Communication)** | Communication without worldview conversion — semantic contract between exocortexes |
-| 3 | **ExoBlockchain** | Immutable knowledge provenance tracking — who, when, and how created each fact |
-| 4 | **ExoEcoSystem** | Federation of exocortexes forming collective intelligence network |
-| 5 | **Modular Ontology System** | IMS (concepts), EMS (tasks), ZTLK (notes). *Planned: PTMS (personality), Observation (world tracking)* |
-| 6 | **Simulacrum** | Digital representation of external entities (people, companies) for modeling interactions |
-| 7 | **ExoLang** | Domain-specific language for knowledge operations and transformations |
-| 8 | **Inference Engine** | Logical reasoning over knowledge graph — deriving new facts from existing |
-| 9 | **BOM (Brain Object Model)** | Inspired by DOM — programmatic access to consciousness structure |
-| 10 | **Ontological Relativity** | Each user has their own ontology, mapped to others through DCC |
+### Implemented Highlights
 
-### Semantic Layer (11-20)
-
-| # | Idea | Description |
-|---|------|-------------|
-| 11 | **ExoRDF** | Extended RDF with temporal and provenance dimensions |
-| 12 | **ExoProphet** | Prediction engine based on personal patterns and knowledge graph |
-| 13 | **Braindance + IoT** | Integration with wearables (HR, glucose, location) for context enrichment |
-| 14 | **Action Tracking** | Every action becomes data — browsing, reading, communication patterns |
-| 15 | **"Not AI" Principle** | Exocortex stores verified facts; AI generates but cannot be trusted alone |
-| 16 | **ExoTag** | Semantic tags with inheritance and property propagation |
-| 17 | **Life Integration** | System becomes invisible layer over life, not separate application |
-| 18 | **Local-First Architecture** | Data stays on device, cloud is optional synchronization |
-| 19 | **IExE (Inference x Exocortex)** | Intelligence-enhanced reasoning combining human and machine cognition |
-| 20 | **ExoProtocol** | Communication standard between exocortex instances |
-
-### Process & Methodology (21-30)
-
-| # | Idea | Description |
-|---|------|-------------|
-| 21 | **Echoization** | Every external information piece gets internal representation with personal context |
-| 22 | **ExoAdapter** | Integration layer for external services (calendars, email, social) |
-| 23 | **Dynamic Naming** | Assets can have multiple names based on context and audience |
-| 24 | **Human as Execution Organ** | Exocortex plans, human executes — partnership model |
-| 25 | **Knowledge Monetization** | Verified knowledge as tradeable asset in ExoEcoSystem |
-| 26 | **Trigger System** | Automated reactions to patterns in knowledge graph changes |
-| 27 | **No Permanent Self** | Identity is emergent property of knowledge graph, not fixed entity |
-| 28 | **Breadcrumbs** | Automatic trail of attention and reasoning for later reconstruction |
-| 29 | **GTD Integration** | Getting Things Done methodology as native workflow |
-| 30 | **ExoLayout** | Flexible views over knowledge graph for different cognitive tasks |
-
-### Advanced Concepts (31-42)
-
-| # | Idea | Description |
-|---|------|-------------|
-| 31 | **Property Polymorphism** | Same property behaves differently based on subject class |
-| 32 | **Life Streams** | Parallel timelines of different life aspects (work, health, learning) |
-| 33 | **Human Consciousness Schema** | Formal model of consciousness structure (perception, memory, will) |
-| 34 | **Meta-Position** | Ability to observe your own cognitive processes through the system |
-| 35 | **7 Levels of Abstraction** | From raw data to wisdom, with explicit transformations |
-| 36 | **ExoFocus** | Attention management based on goals and current context |
-| 37 | **Cognitive Load Balancing** | Automatic task distribution based on mental energy patterns |
-| 38 | **Knowledge Decay Model** | Tracking and refreshing knowledge that becomes stale |
-| 39 | **Semantic Versioning of Beliefs** | Tracking how your understanding evolves over time |
-| 40 | **ExoMirror** | Reflection interface showing patterns in your cognition |
-| 41 | **Collective Wisdom Extraction** | Aggregating insights from ExoEcoSystem while preserving privacy |
-| 42 | **Consciousness Continuity** | Exocortex as vehicle for cognitive persistence beyond biological limits |
+- **Asset as Knowledge Quantum** — Atomic unit with UUID, class, semantic relationships
+- **Modular Ontologies** — IMS (concepts), EMS (tasks), ZTLK (notes)
+- **ExoLayout** — Flexible views over knowledge graph
+- **Local-First Architecture** — Data stays on device
 
 ### Ethics & Principles
 
 The project adheres to core ethical principles:
 
-- **Human Primacy** — Technology serves human flourishing, not replaces humanity
-- **Privacy by Design** — Personal knowledge remains under user control
-- **Transparency** — All inferences and recommendations are explainable
-- **Non-Manipulation** — System informs, never manipulates
+- **Human Primacy** — Technology serves human flourishing
+- **Privacy by Design** — Personal knowledge under user control
 - **Open Standards** — Based on W3C Semantic Web standards (RDF, SPARQL, OWL)
 
 ---
@@ -253,13 +200,13 @@ Exocortex is a **monorepo** with five packages sharing Clean Architecture core:
 
 ### Packages
 
-| Package | npm | Purpose |
-|---------|-----|---------|
-| **exocortex** | Private | Core business logic, domain models, SPARQL engine, 35+ services |
-| **@exocortex/obsidian-plugin** | Private | Interactive UI: 24+ components, 6 renderers, 34+ commands, 11 modals |
-| **@kitelev/exocortex-cli** | `@kitelev/exocortex-cli` | CLI for automation, archive/unarchive, SPARQL queries, AI agent integration |
-| **@exocortex/test-utils** | Private | Shared test utilities, mock factories, flaky test reporter |
-| **physics-wasm** | Private | WebAssembly force simulation (experimental, not currently integrated) |
+| Package                        | npm                      | Purpose                                                                     |
+| ------------------------------ | ------------------------ | --------------------------------------------------------------------------- |
+| **exocortex**                  | Private                  | Core business logic, domain models, SPARQL engine, 35+ services             |
+| **@exocortex/obsidian-plugin** | Private                  | Interactive UI: 24+ components, 6 renderers, 34+ commands, 11 modals        |
+| **@kitelev/exocortex-cli**     | `@kitelev/exocortex-cli` | CLI for automation, archive/unarchive, SPARQL queries, AI agent integration |
+| **@exocortex/test-utils**      | Private                  | Shared test utilities, mock factories, flaky test reporter                  |
+| **physics-wasm**               | Private                  | WebAssembly force simulation (experimental, not currently integrated)       |
 
 ---
 
@@ -363,12 +310,12 @@ ExoEcoSystem = Exocortex-as-agent
 
 **Key Principles:**
 
-| Principle | Description |
-|-----------|-------------|
-| **Decentralization** | Each node (exocortex) is autonomous |
-| **Meaning Federation** | Personal ontologies aligned through mapping |
-| **Mesh Reasoning** | Distributed logical inference between nodes |
-| **Respect for Subjectivity** | Everyone defines their own access rules |
+| Principle                    | Description                                 |
+| ---------------------------- | ------------------------------------------- |
+| **Decentralization**         | Each node (exocortex) is autonomous         |
+| **Meaning Federation**       | Personal ontologies aligned through mapping |
+| **Mesh Reasoning**           | Distributed logical inference between nodes |
+| **Respect for Subjectivity** | Everyone defines their own access rules     |
 
 ### AI-Native System (2027 Vision)
 
@@ -397,14 +344,14 @@ On **collective level** — multiple exocortexes form **noosphere**.
 
 Exocortex implements key SPARQL 1.2 features:
 
-| Feature | Description |
-|---------|-------------|
-| **LATERAL Joins** | Correlated subqueries for "top N per group" patterns |
-| **PREFIX*** | Auto-import prefixes from well-known vocabularies |
-| **DESCRIBE Options** | DEPTH and SYMMETRIC control for DESCRIBE queries |
-| **Directional Language Tags** | RTL/LTR text direction support (`@ar--rtl`) |
-| **DateTime Arithmetic** | Native date/time subtraction and duration operations |
-| **NORMALIZE/FOLD** | Unicode normalization and case folding |
+| Feature                       | Description                                          |
+| ----------------------------- | ---------------------------------------------------- |
+| **LATERAL Joins**             | Correlated subqueries for "top N per group" patterns |
+| **PREFIX\***                  | Auto-import prefixes from well-known vocabularies    |
+| **DESCRIBE Options**          | DEPTH and SYMMETRIC control for DESCRIBE queries     |
+| **Directional Language Tags** | RTL/LTR text direction support (`@ar--rtl`)          |
+| **DateTime Arithmetic**       | Native date/time subtraction and duration operations |
+| **NORMALIZE/FOLD**            | Unicode normalization and case folding               |
 
 See **[SPARQL 1.2 Features](./docs/sparql/SPARQL-1.2-Features.md)** for complete documentation.
 
@@ -413,28 +360,34 @@ See **[SPARQL 1.2 Features](./docs/sparql/SPARQL-1.2-Features.md)** for complete
 ## Documentation
 
 ### Getting Started
+
 - **[Installation Guide](./docs/Getting-Started.md)** — Step-by-step setup
 
 ### By Interface
 
 **Obsidian Plugin:**
+
 - **[Command Reference](./docs/Command-Reference.md)** — All 34+ commands documented
 
 **CLI:**
+
 - **[CLI Command Reference](./docs/cli/Command-Reference.md)** — Complete syntax
 - **[Scripting Patterns](./docs/cli/Scripting-Patterns.md)** — Automation examples
 
 **Core Library:**
+
 - **[Core API Reference](./docs/api/Core-API.md)** — TypeScript API
 - **[Architecture Guide](./ARCHITECTURE.md)** — Clean Architecture patterns
 
 ### SPARQL & Semantic Queries
+
 - **[SPARQL User Guide](./docs/sparql/User-Guide.md)** — Tutorial from basics to advanced
 - **[Query Examples](./docs/sparql/Query-Examples.md)** — 30+ ready-to-use patterns
-- **[SPARQL 1.2 Features](./docs/sparql/SPARQL-1.2-Features.md)** — LATERAL, PREFIX*, directionality, and more
+- **[SPARQL 1.2 Features](./docs/sparql/SPARQL-1.2-Features.md)** — LATERAL, PREFIX\*, directionality, and more
 - **[SPARQL 1.2 Migration](./docs/sparql/SPARQL-1.2-Migration.md)** — Upgrading from SPARQL 1.1
 
 ### Graph View
+
 - **[Graph View Overview](./docs/graph-view/README.md)** — Label patching for Obsidian's built-in graph view
 - **[Configuration Reference](./docs/graph-view/guides/configuration.md)** — Configuration options for graph label display
 - **[Inference & Reasoning Guide](./docs/graph-view/guides/inference.md)** — RDFS inference and neighborhood exploration
@@ -443,13 +396,14 @@ See **[SPARQL 1.2 Features](./docs/sparql/SPARQL-1.2-Features.md)** for complete
 
 Embed Layout definitions directly in your notes using the `exo-layout` code block:
 
-~~~markdown
+````markdown
 ```exo-layout
 [[emslayout__UpcomingTasksLayout]]
 ```
-~~~
+````
 
 Features:
+
 - **Wikilink syntax** — Reference any Layout note with `[[LayoutName]]`
 - **Loading state** — Visual feedback while fetching data
 - **Error handling** — Clear error messages when Layout fails to load
@@ -472,12 +426,12 @@ This project is developed primarily by AI agents (Claude Code, GitHub Copilot) f
 
 ### AI Development Resources
 
-| Document | Purpose |
-|----------|---------|
-| **[CLAUDE.md](./CLAUDE.md)** | AI agent guidelines, worktree rules |
+| Document                                                         | Purpose                             |
+| ---------------------------------------------------------------- | ----------------------------------- |
+| **[CLAUDE.md](./CLAUDE.md)**                                     | AI agent guidelines, worktree rules |
 | **[AI Development Patterns](./docs/AI-DEVELOPMENT-PATTERNS.md)** | Lessons from 1250+ completed issues |
-| **[Architecture Guide](./ARCHITECTURE.md)** | Clean Architecture patterns |
-| **[Architecture Decision Records](./docs/adr/)** | Key architectural decisions (ADRs) |
+| **[Architecture Guide](./ARCHITECTURE.md)**                      | Clean Architecture patterns         |
+| **[Architecture Decision Records](./docs/adr/)**                 | Key architectural decisions (ADRs)  |
 
 ---
 
