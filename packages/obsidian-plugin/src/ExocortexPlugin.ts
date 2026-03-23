@@ -139,12 +139,13 @@ export default class ExocortexPlugin extends Plugin {
       );
 
       // Register wikilink label extension for Live Preview mode
-      // Displays wikilinks by exo__Asset_label instead of raw UUID
+      // Displays wikilinks using DisplayNameResolver + PrintNameRule templates
       this.registerEditorExtension(
         createWikilinkLabelExtension(
           this.app,
           this.app.metadataCache,
           this.settings,
+          this.printNameRuleService,
         ),
       );
 

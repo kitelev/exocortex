@@ -10,6 +10,8 @@ import { RangeSetBuilder, Extension } from "@codemirror/state";
 import { TFile } from "obsidian";
 import type { App, MetadataCache } from "obsidian";
 import type { ExocortexSettings } from "@plugin/domain/settings/ExocortexSettings";
+import { DisplayNameResolver } from "@plugin/domain/display-name/DisplayNameResolver";
+import type { PrintNameRuleService } from "@plugin/domain/display-name/PrintNameRuleService";
 
 /**
  * Represents a parsed wikilink with its position and extracted components.
@@ -88,15 +90,18 @@ export class WikilinkLabelViewPlugin {
   decorations: DecorationSet;
   private metadataCache: MetadataCache;
   private settings: ExocortexSettings;
+  private printNameRuleService: PrintNameRuleService | null;
 
   constructor(
     view: EditorView,
-    _app: App,  // App passed for API consistency with other extensions
+    _app: App,
     metadataCache: MetadataCache,
     settings: ExocortexSettings,
+    printNameRuleService?: PrintNameRuleService | null,
   ) {
     this.metadataCache = metadataCache;
     this.settings = settings;
+    this.printNameRuleService = printNameRuleService ?? null;
     this.decorations = this.buildDecorations(view);
   }
 
@@ -132,11 +137,7 @@ export class WikilinkLabelViewPlugin {
         continue;
       }
 
-      // Resolve the label for this target
-      const baseLabel = WikilinkLabelViewPlugin.resolveLabel(
-        this.metadataCache,
-        wikilink.targetPath,
-      );
+      const baseLabel = this.resolveDisplayName(wikilink.targetPath);
 
       // Build display text with block or heading reference suffix
       let label = baseLabel;
@@ -162,6 +163,52 @@ export class WikilinkLabelViewPlugin {
     }
 
     return builder.finish();
+  }
+
+  private resolveDisplayName(targetPath: string): string | null {
+    let file = this.metadataCache.getFirstLinkpathDest(targetPath, "");
+    if (!file && !targetPath.endsWith(".md")) {
+      file = this.metadataCache.getFirstLinkpathDest(targetPath + ".md", "");
+    }
+    if (!(file instanceof TFile)) return null;
+
+    const cache = this.metadataCache.getFileCache(file);
+    const frontmatter = cache?.frontmatter;
+    if (!frontmatter) return null;
+
+    const metadata = { ...frontmatter };
+
+    if (!metadata.exo__Asset_label) {
+      const prototypeRef = metadata.exo__Asset_prototype;
+      if (prototypeRef && typeof prototypeRef === "string") {
+        const prototypePath = prototypeRef.replace(/^\[\[|\]\]$/g, "").replace(/^"|"$/g, "").trim();
+        if (prototypePath) {
+          let protoFile = this.metadataCache.getFirstLinkpathDest(prototypePath, "");
+          if (!protoFile && !prototypePath.endsWith(".md")) {
+            protoFile = this.metadataCache.getFirstLinkpathDest(prototypePath + ".md", "");
+          }
+          if (protoFile instanceof TFile) {
+            const protoCache = this.metadataCache.getFileCache(protoFile);
+            if (protoCache?.frontmatter?.exo__Asset_label) {
+              metadata.exo__Asset_label = protoCache.frontmatter.exo__Asset_label;
+            }
+          }
+        }
+      }
+    }
+
+    if (this.printNameRuleService) {
+      const displaySettings = this.settings.displayNameSettings || {
+        defaultTemplate: "{{exo__Asset_label}}",
+        classTemplates: {},
+      };
+      const metadataResolver = this.printNameRuleService.createMetadataResolver();
+      const resolver = new DisplayNameResolver(displaySettings, this.printNameRuleService, metadataResolver);
+      const createdDate = file.stat?.ctime ? new Date(file.stat.ctime) : undefined;
+      return resolver.resolve({ metadata, basename: file.basename, createdDate });
+    }
+
+    return WikilinkLabelViewPlugin.resolveLabel(this.metadataCache, targetPath);
   }
 
   /**
@@ -350,9 +397,10 @@ export function createWikilinkLabelExtension(
   app: App,
   metadataCache: MetadataCache,
   settings: ExocortexSettings,
+  printNameRuleService?: PrintNameRuleService | null,
 ): Extension {
   return ViewPlugin.define(
-    (view) => new WikilinkLabelViewPlugin(view, app, metadataCache, settings),
+    (view) => new WikilinkLabelViewPlugin(view, app, metadataCache, settings, printNameRuleService),
     {
       decorations: (plugin) => plugin.decorations,
     },

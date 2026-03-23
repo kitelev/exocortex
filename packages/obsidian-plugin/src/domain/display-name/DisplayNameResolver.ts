@@ -68,10 +68,14 @@ export class DisplayNameResolver {
   private cleanClassValue(value: unknown): string | null {
     if (typeof value !== "string") return null;
 
-    const cleaned = value
+    let cleaned = value
       .replace(/^\[\[|\]\]$/g, "")
       .replace(/^"|"$/g, "")
       .trim();
+
+    if (cleaned.includes("|")) {
+      cleaned = cleaned.split("|").pop()!.trim();
+    }
 
     return cleaned || null;
   }

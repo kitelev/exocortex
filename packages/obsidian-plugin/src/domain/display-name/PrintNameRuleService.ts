@@ -158,10 +158,16 @@ export class PrintNameRuleService {
 
     if (typeof value !== "string") return null;
 
-    return value
+    let cleaned = value
       .replace(/^\[\[|\]\]$/g, "")
       .replace(/^"|"$/g, "")
-      .trim() || null;
+      .trim();
+
+    if (cleaned.includes("|")) {
+      cleaned = cleaned.split("|").pop()!.trim();
+    }
+
+    return cleaned || null;
   }
 
   getRulesCount(): number {
