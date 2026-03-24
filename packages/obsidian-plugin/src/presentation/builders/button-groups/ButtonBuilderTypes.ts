@@ -15,6 +15,7 @@ import { RenameToUidService } from "exocortex";
 import { EffortVotingService } from "exocortex";
 import { LabelToAliasService } from "exocortex";
 import { AssetConversionService } from "exocortex";
+import type { ITripleStore } from "exocortex";
 import { ObsidianApp, ExocortexPluginInterface, MetadataRecord } from '@plugin/types';
 
 /**
@@ -49,6 +50,7 @@ export interface ButtonBuilderServices {
   effortVotingService: EffortVotingService;
   labelToAliasService: LabelToAliasService;
   assetConversionService: AssetConversionService;
+  tripleStore?: ITripleStore;
 }
 
 /**

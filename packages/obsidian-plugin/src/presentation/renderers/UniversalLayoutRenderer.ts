@@ -116,6 +116,8 @@ export class UniversalLayoutRenderer {
       this.app, this.settings, this.reactRenderer, this.backlinksCacheManager,
       this.metadataService, this.plugin, () => this.refresh(), this.vaultAdapter);
 
+    const tripleStore = this.resolveTripleStore();
+
     this.buttonGroupsBuilder = new ButtonGroupsBuilder({
       app: this.app,
       settings: this.settings,
@@ -133,6 +135,7 @@ export class UniversalLayoutRenderer {
       labelToAliasService: services.labelToAlias,
       assetConversionService: services.assetConversion,
       criticalityZoneService: services.criticalityZone,
+      tripleStore,
       metadataExtractor: this.metadataExtractor,
       logger: this.logger,
       refresh: () => this.refresh(),
@@ -153,6 +156,17 @@ export class UniversalLayoutRenderer {
       sectionStateManager: this.sectionStateManager,
       eventListenerManager: this.eventListenerManager,
     });
+  }
+
+  private resolveTripleStore() {
+    const pluginAny = this.plugin as unknown as Record<string, unknown>;
+    if (
+      pluginAny.sparql &&
+      typeof (pluginAny.sparql as Record<string, unknown>).getTripleStore === "function"
+    ) {
+      return (pluginAny.sparql as { getTripleStore(): import("exocortex").ITripleStore }).getTripleStore();
+    }
+    return undefined;
   }
 
   private resolveServices() {
