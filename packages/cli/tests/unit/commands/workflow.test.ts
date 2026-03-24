@@ -175,6 +175,174 @@ describe("Issue #2365: workflow command", () => {
         expect.stringContaining('"totalWorkflows"')
       );
     });
+
+    it("should count linked states and transitions for a workflow", async () => {
+      const workflowUid = "wf-uid-001";
+      const files = [
+        { name: "workflow.md", isDirectory: () => false },
+        { name: "state1.md", isDirectory: () => false },
+        { name: "state2.md", isDirectory: () => false },
+        { name: "transition1.md", isDirectory: () => false },
+      ];
+
+      mockReaddirSync.mockImplementation((dir, opts) => {
+        if (dir.includes("test-vault")) return files;
+        return [];
+      });
+
+      const fileContents = {
+        "workflow.md": [
+          "---",
+          "exo__Instance_class: ems__Workflow",
+          `exo__Asset_uid: ${workflowUid}`,
+          "exo__Asset_label: Counted Workflow",
+          "ems__Workflow_targetClass: ems__Task",
+          "ems__Workflow_isDefault: false",
+          "---",
+        ].join("\n"),
+        "state1.md": [
+          "---",
+          "exo__Instance_class: ems__WorkflowState",
+          `ems__WorkflowState_workflow: \"[[${workflowUid}]]\"`,
+          "---",
+        ].join("\n"),
+        "state2.md": [
+          "---",
+          "exo__Instance_class: ems__WorkflowState",
+          `ems__WorkflowState_workflow: \"[[${workflowUid}]]\"`,
+          "---",
+        ].join("\n"),
+        "transition1.md": [
+          "---",
+          "exo__Instance_class: ems__WorkflowTransition",
+          `ems__WorkflowTransition_workflow: \"[[${workflowUid}]]\"`,
+          "---",
+        ].join("\n"),
+      };
+
+      mockReadFileSync.mockImplementation((filePath) => {
+        for (const [name, content] of Object.entries(fileContents)) {
+          if (filePath.endsWith(name)) return content;
+        }
+        return "";
+      });
+
+      const cmd = workflowCommand();
+      const listCmd = cmd.commands.find((c) => c.name() === "list");
+
+      await listCmd.parseAsync(["node", "test", "--vault", "/tmp/test-vault", "--output", "json"], { from: "node" });
+
+      const jsonOutput = consoleLogSpy.mock.calls.find((call) =>
+        call[0]?.includes?.("stateCount")
+      );
+      expect(jsonOutput).toBeDefined();
+      const parsed = JSON.parse(jsonOutput[0]);
+      expect(parsed.data.workflows[0].stateCount).toBe(2);
+      expect(parsed.data.workflows[0].transitionCount).toBe(1);
+    });
+
+    it("should show 0 counts when workflow has no linked states or transitions", async () => {
+      mockReaddirSync.mockImplementation((dir, opts) => {
+        if (dir.includes("test-vault")) {
+          return [{ name: "lonely-workflow.md", isDirectory: () => false }];
+        }
+        return [];
+      });
+
+      mockReadFileSync.mockReturnValue(
+        "---\nexo__Instance_class: ems__Workflow\nexo__Asset_uid: lonely-uid\nexo__Asset_label: Lonely Workflow\nems__Workflow_targetClass: ems__Task\nems__Workflow_isDefault: false\n---\n"
+      );
+
+      const cmd = workflowCommand();
+      const listCmd = cmd.commands.find((c) => c.name() === "list");
+
+      await listCmd.parseAsync(["node", "test", "--vault", "/tmp/test-vault", "--output", "json"], { from: "node" });
+
+      const jsonOutput = consoleLogSpy.mock.calls.find((call) =>
+        call[0]?.includes?.("stateCount")
+      );
+      expect(jsonOutput).toBeDefined();
+      const parsed = JSON.parse(jsonOutput[0]);
+      expect(parsed.data.workflows[0].stateCount).toBe(0);
+      expect(parsed.data.workflows[0].transitionCount).toBe(0);
+    });
+
+    it("should not count state referencing a different workflow UID", async () => {
+      const workflowUid = "wf-uid-target";
+      const otherUid = "wf-uid-other";
+
+      mockReaddirSync.mockImplementation((dir, opts) => {
+        if (dir.includes("test-vault")) {
+          return [
+            { name: "workflow.md", isDirectory: () => false },
+            { name: "state-wrong-ref.md", isDirectory: () => false },
+          ];
+        }
+        return [];
+      });
+
+      const fileContents = {
+        "workflow.md": [
+          "---",
+          "exo__Instance_class: ems__Workflow",
+          `exo__Asset_uid: ${workflowUid}`,
+          "exo__Asset_label: Target Workflow",
+          "ems__Workflow_targetClass: ems__Task",
+          "ems__Workflow_isDefault: false",
+          "---",
+        ].join("\n"),
+        "state-wrong-ref.md": [
+          "---",
+          "exo__Instance_class: ems__WorkflowState",
+          `ems__WorkflowState_workflow: \"[[${otherUid}]]\"`,
+          "---",
+        ].join("\n"),
+      };
+
+      mockReadFileSync.mockImplementation((filePath) => {
+        for (const [name, content] of Object.entries(fileContents)) {
+          if (filePath.endsWith(name)) return content;
+        }
+        return "";
+      });
+
+      const cmd = workflowCommand();
+      const listCmd = cmd.commands.find((c) => c.name() === "list");
+
+      await listCmd.parseAsync(["node", "test", "--vault", "/tmp/test-vault", "--output", "json"], { from: "node" });
+
+      const jsonOutput = consoleLogSpy.mock.calls.find((call) =>
+        call[0]?.includes?.("stateCount")
+      );
+      expect(jsonOutput).toBeDefined();
+      const parsed = JSON.parse(jsonOutput[0]);
+      expect(parsed.data.workflows[0].stateCount).toBe(0);
+    });
+
+    it("should default targetClass to ems__Task when ems__Workflow_targetClass is absent", async () => {
+      mockReaddirSync.mockImplementation((dir, opts) => {
+        if (dir.includes("test-vault")) {
+          return [{ name: "no-target.md", isDirectory: () => false }];
+        }
+        return [];
+      });
+
+      mockReadFileSync.mockReturnValue(
+        "---\nexo__Instance_class: ems__Workflow\nexo__Asset_uid: no-target-uid\nexo__Asset_label: No Target Workflow\nems__Workflow_isDefault: false\n---\n"
+      );
+
+      const cmd = workflowCommand();
+      const listCmd = cmd.commands.find((c) => c.name() === "list");
+
+      await listCmd.parseAsync(["node", "test", "--vault", "/tmp/test-vault", "--output", "json"], { from: "node" });
+
+      const jsonOutput = consoleLogSpy.mock.calls.find((call) =>
+        call[0]?.includes?.("targetClass")
+      );
+      expect(jsonOutput).toBeDefined();
+      const parsed = JSON.parse(jsonOutput[0]);
+      expect(parsed.data.workflows[0].targetClass).toBe("ems__Task");
+    });
   });
 
   describe("show execution", () => {
