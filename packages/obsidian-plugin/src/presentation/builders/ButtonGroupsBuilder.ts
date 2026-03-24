@@ -20,6 +20,7 @@ import {
   MetadataExtractor,
   CriticalityZoneService,
 } from "exocortex";
+import type { ITripleStore } from "exocortex";
 import {
   ButtonBuilderContext,
   ButtonBuilderServices,
@@ -74,6 +75,8 @@ export interface ButtonGroupsBuilderConfig {
   metadataExtractor: MetadataExtractor;
   /** Logger instance */
   logger: ILogger;
+  /** Triple store for workflow resolution (optional, falls back to empty store) */
+  tripleStore?: ITripleStore;
   /** Callback to refresh the view */
   refresh: () => Promise<void>;
 }
@@ -115,6 +118,7 @@ export class ButtonGroupsBuilder {
       labelToAliasService,
       assetConversionService,
       criticalityZoneService,
+      tripleStore,
       metadataExtractor,
       logger,
       refresh,
@@ -142,6 +146,7 @@ export class ButtonGroupsBuilder {
       effortVotingService,
       labelToAliasService,
       assetConversionService,
+      tripleStore,
     };
 
     // Initialize specialized builders

@@ -199,22 +199,20 @@ describe("WorkflowResolver — per-project workflow override (ems__Effort_workfl
     expect(workflow.isDefault).toBe(false);
   });
 
-  it("should return a degraded workflow when ems__Effort_workflow points to non-existent workflow subject", async () => {
-    // When the workflow IRI exists as a reference but has no triples in the store,
-    // loadWorkflowBySubject still constructs a minimal WorkflowDefinition with defaults.
-    // This is by design: the IRI is valid, it just has no states/transitions loaded.
+  it("should fall back to class default when ems__Effort_workflow points to non-existent workflow subject", async () => {
+    // When the workflow IRI exists as a reference but has no states/transitions in the store,
+    // loadWorkflowBySubject returns null, causing resolveForAsset to fall back to
+    // the class default (hardcoded fallback).
     const assetSubject = new IRI("obsidian://vault/my-project.md");
     const nonExistentWorkflow = new IRI("obsidian://vault/does-not-exist.md");
     await setAssetWorkflow(store, assetSubject, nonExistentWorkflow);
 
     const workflow = await resolver.resolveForAsset(assetSubject, AssetClass.PROJECT);
 
-    // Uses the IRI value as id (no uid triple found), and "Unknown Workflow" as name
-    expect(workflow.id).toBe("obsidian://vault/does-not-exist.md");
-    expect(workflow.name).toBe("Unknown Workflow");
-    expect(workflow.states).toHaveLength(0);
-    expect(workflow.transitions).toHaveLength(0);
-    // Terminal states default to [DONE, TRASHED] when none specified
+    expect(workflow.id).toBe("hardcoded-project-default");
+    expect(workflow.name).toContain("hardcoded");
+    expect(workflow.states.length).toBeGreaterThan(0);
+    expect(workflow.transitions.length).toBeGreaterThan(0);
     expect(workflow.terminalStates).toContain(EffortStatus.DONE);
     expect(workflow.terminalStates).toContain(EffortStatus.TRASHED);
   });

@@ -198,6 +198,10 @@ export class WorkflowResolver {
     // Load transitions
     const transitions = await this.loadTransitions(workflowSubject);
 
+    if (states.length === 0 && transitions.length === 0) {
+      return null;
+    }
+
     return {
       id,
       name,

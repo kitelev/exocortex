@@ -76,7 +76,8 @@ export class StatusButtonGroupBuilder implements IButtonGroupBuilder {
     const currentStatus = Object.values(EffortStatus).find((s) => s === normalized);
     if (!currentStatus) return [];
 
-    const resolver = new WorkflowResolver(new InMemoryTripleStore());
+    const store = this.services.tripleStore ?? new InMemoryTripleStore();
+    const resolver = new WorkflowResolver(store);
     const instanceClassRaw = metadata["exo__Instance_class"];
     const isTask = Array.isArray(instanceClassRaw)
       ? instanceClassRaw.some((c: string) => String(c).includes("ems__Task") || String(c).includes("ems__Meeting"))
