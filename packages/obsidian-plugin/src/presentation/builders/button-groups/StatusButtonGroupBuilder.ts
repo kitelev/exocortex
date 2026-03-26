@@ -96,12 +96,32 @@ export class StatusButtonGroupBuilder implements IButtonGroupBuilder {
       visible: true,
       onClick: async () => {
         const wrappedStatus = `"[[${cmd.targetStatus}]]"`;
-        const content = await file.vault.read(file);
-        const updatedContent = content.replace(
+        let content = await file.vault.read(file);
+        content = content.replace(
           /ems__Effort_status:\s*"?\[\[[^\]]*\]\]"?/,
           `ems__Effort_status: ${wrappedStatus}`,
         );
-        await file.vault.modify(file, updatedContent);
+
+        const targetState = definition.states.find(
+          (s: { status: string }) => s.status === cmd.targetStatus,
+        );
+        if (targetState && targetState.timestampOnEnter.length > 0) {
+          const now = new Date();
+          const ts = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}T${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}:${String(now.getSeconds()).padStart(2, "0")}`;
+          for (const prop of targetState.timestampOnEnter) {
+            const propRegex = new RegExp(`${prop}:\\s*.*`);
+            if (propRegex.test(content)) {
+              content = content.replace(propRegex, `${prop}: ${ts}`);
+            } else {
+              content = content.replace(
+                /ems__Effort_status:/,
+                `${prop}: ${ts}\nems__Effort_status:`,
+              );
+            }
+          }
+        }
+
+        await file.vault.modify(file, content);
         await new Promise((resolve) => setTimeout(resolve, 100));
         await refresh();
         logger.info(`Workflow transition: ${cmd.label} → ${cmd.targetStatus} on ${file.path}`);
