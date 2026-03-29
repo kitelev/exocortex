@@ -38,11 +38,11 @@ export class StatusButtonGroupBuilder implements IButtonGroupBuilder {
   }
 
   async build(context: ButtonBuilderContext): Promise<ActionButton[]> {
-    const { file, visibilityContext, logger, refresh, metadata } = context;
+    const { file, visibilityContext, logger, refresh, metadata, plugin } = context;
 
     // For custom (non-standard) asset classes, use workflow-driven buttons directly
     if (this.isCustomAssetClass(metadata)) {
-      const workflowButtons = await this.buildWorkflowButtons(file, metadata, logger, refresh);
+      const workflowButtons = await this.buildWorkflowButtons(file, metadata, logger, refresh, plugin);
       if (workflowButtons.length > 0) {
         return workflowButtons;
       }
@@ -79,6 +79,7 @@ export class StatusButtonGroupBuilder implements IButtonGroupBuilder {
     metadata: Record<string, unknown>,
     logger: ILogger,
     refresh: () => Promise<void>,
+    plugin?: { getSPARQLApi?: () => { getTripleStore(): import("exocortex").ITripleStore } | null },
   ): Promise<ActionButton[]> {
     const statusRaw = metadata["ems__Effort_status"] as string | undefined;
     if (!statusRaw) return [];
@@ -87,7 +88,22 @@ export class StatusButtonGroupBuilder implements IButtonGroupBuilder {
     const currentStatus = Object.values(EffortStatus).find((s) => s === normalized);
     if (!currentStatus) return [];
 
-    const store = this.services.tripleStore ?? new InMemoryTripleStore();
+    // Get live triple store from plugin's SPARQL API
+    // Trigger initialization with a minimal query if needed
+    let store: import("exocortex").ITripleStore | undefined;
+    try {
+      const sparqlApi = (plugin as unknown as Record<string, unknown>)?.sparql as
+        { query(q: string): Promise<unknown>; getTripleStore(): import("exocortex").ITripleStore } | undefined;
+      if (sparqlApi) {
+        await sparqlApi.query("ASK { ?s ?p ?o }");
+        store = sparqlApi.getTripleStore();
+      }
+    } catch {
+      // SPARQL init failed — fall through to empty store
+    }
+    if (!store) {
+      store = new InMemoryTripleStore();
+    }
     const resolver = new WorkflowResolver(store);
     const instanceClassRaw = metadata["exo__Instance_class"];
 
