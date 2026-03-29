@@ -40,7 +40,16 @@ export class StatusButtonGroupBuilder implements IButtonGroupBuilder {
   async build(context: ButtonBuilderContext): Promise<ActionButton[]> {
     const { file, visibilityContext, logger, refresh, metadata } = context;
 
-    const standardButtons = [
+    // For custom (non-standard) asset classes, use workflow-driven buttons directly
+    if (this.isCustomAssetClass(metadata)) {
+      const workflowButtons = await this.buildWorkflowButtons(file, metadata, logger, refresh);
+      if (workflowButtons.length > 0) {
+        return workflowButtons;
+      }
+    }
+
+    // Standard classes: use hardcoded visibility rules
+    return [
       this.setDraftStatusButton(file, visibilityContext, logger, refresh),
       this.moveToBacklogButton(file, visibilityContext, logger, refresh),
       this.moveToAnalysisButton(file, visibilityContext, logger, refresh),
@@ -49,18 +58,20 @@ export class StatusButtonGroupBuilder implements IButtonGroupBuilder {
       this.markDoneButton(file, visibilityContext, logger, refresh),
       this.rollbackStatusButton(file, visibilityContext, logger, refresh),
     ];
+  }
 
-    const hasVisibleStandard = standardButtons.some((b) => b.visible);
-    if (hasVisibleStandard) {
-      return standardButtons;
-    }
-
-    const workflowButtons = await this.buildWorkflowButtons(file, metadata, logger, refresh);
-    if (workflowButtons.length > 0) {
-      return workflowButtons;
-    }
-
-    return standardButtons;
+  private isCustomAssetClass(metadata: Record<string, unknown>): boolean {
+    const STANDARD_CLASSES = [
+      "ems__Task", "ems__Project", "ems__Meeting",
+      "ems__Area", "ems__Initiative",
+    ];
+    const instanceClassRaw = metadata["exo__Instance_class"];
+    const classes = Array.isArray(instanceClassRaw)
+      ? instanceClassRaw.map((c: unknown) => String(c).replace(/["'[\]]/g, "").trim())
+      : typeof instanceClassRaw === "string"
+        ? [instanceClassRaw.replace(/["'[\]]/g, "").trim()]
+        : [];
+    return classes.length > 0 && !classes.some((c) => STANDARD_CLASSES.includes(c));
   }
 
   private async buildWorkflowButtons(
