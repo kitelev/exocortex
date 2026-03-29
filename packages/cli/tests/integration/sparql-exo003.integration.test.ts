@@ -15,9 +15,15 @@ import { spawn, ChildProcess } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
-
-// Get CLI dist path relative to test file location
-const CLI_DIST_PATH = path.resolve(process.cwd(), "packages/cli/dist/index.js");
+// Get CLI dist path - resolve from repo root by finding packages/cli/dist
+const CLI_DIST_PATH = (() => {
+  // Try direct path from cwd (when cwd is packages/cli/)
+  const fromCwd = path.resolve(process.cwd(), "dist/index.js");
+  if (fs.existsSync(fromCwd)) return fromCwd;
+  // Try from repo root (when cwd is monorepo root)
+  const fromRoot = path.resolve(process.cwd(), "packages/cli/dist/index.js");
+  return fromRoot;
+})();
 
 // Skip in CI if needed
 const isCI = process.env.CI === "true";
@@ -167,7 +173,7 @@ describeOrSkip("SPARQL queries on Exo 0.0.3 format (Issue #1367)", () => {
 
       // Query for owl:sameAs triples
       const result = await runCLI([
-        "query",
+        "sparql", "query",
         "SELECT ?s ?o WHERE { ?s <http://www.w3.org/2002/07/owl#sameAs> ?o } LIMIT 10",
         "--vault", tempDir,
         "--format", "json",
@@ -182,9 +188,11 @@ describeOrSkip("SPARQL queries on Exo 0.0.3 format (Issue #1367)", () => {
 
       // Verify that the anchor URI appears in results
       const bindings = response.data.bindings;
-      const hasAnchorUri = bindings.some((b: Record<string, { value: string }>) =>
-        b.s?.value?.includes("ems#Task") || b.o?.value?.includes("ems#Task")
-      );
+      const hasAnchorUri = bindings.some((b: Record<string, string>) => {
+        const s = typeof b.s === "object" ? (b.s as any).value : b.s;
+        const o = typeof b.o === "object" ? (b.o as any).value : b.o;
+        return s?.includes("ems#Task") || o?.includes("ems#Task");
+      });
       expect(hasAnchorUri).toBe(true);
     }, 60000);
   });
@@ -207,7 +215,7 @@ describeOrSkip("SPARQL queries on Exo 0.0.3 format (Issue #1367)", () => {
 
       // Query for the statement triple
       const result = await runCLI([
-        "query",
+        "sparql", "query",
         "SELECT ?s ?p ?o WHERE { ?s ?p ?o . FILTER(CONTAINS(STR(?s), 'task-1')) } LIMIT 10",
         "--vault", tempDir,
         "--format", "json",
@@ -233,7 +241,7 @@ describeOrSkip("SPARQL queries on Exo 0.0.3 format (Issue #1367)", () => {
       );
 
       const result = await runCLI([
-        "query",
+        "sparql", "query",
         "SELECT ?s ?p ?o WHERE { ?s ?p ?o . FILTER(CONTAINS(STR(?s), 'resource/1')) } LIMIT 10",
         "--vault", tempDir,
         "--format", "json",
@@ -265,7 +273,7 @@ describeOrSkip("SPARQL queries on Exo 0.0.3 format (Issue #1367)", () => {
       );
 
       const result = await runCLI([
-        "query",
+        "sparql", "query",
         "SELECT ?s ?o WHERE { ?s <https://exocortex.my/ontology/exo#Asset_label> ?o } LIMIT 10",
         "--vault", tempDir,
         "--format", "json",
@@ -288,7 +296,7 @@ describeOrSkip("SPARQL queries on Exo 0.0.3 format (Issue #1367)", () => {
 
       // Should not error when loading namespace files
       const result = await runCLI([
-        "query",
+        "sparql", "query",
         "SELECT ?s ?p ?o WHERE { ?s ?p ?o } LIMIT 1",
         "--vault", tempDir,
         "--format", "json",
@@ -316,7 +324,7 @@ describeOrSkip("SPARQL queries on Exo 0.0.3 format (Issue #1367)", () => {
 
       // Query for Asset_label (from legacy)
       const labelResult = await runCLI([
-        "query",
+        "sparql", "query",
         "SELECT ?s ?label WHERE { ?s <https://exocortex.my/ontology/exo#Asset_label> ?label } LIMIT 10",
         "--vault", tempDir,
         "--format", "json",
@@ -330,7 +338,7 @@ describeOrSkip("SPARQL queries on Exo 0.0.3 format (Issue #1367)", () => {
 
       // Query for owl:sameAs (from Exo003)
       const sameAsResult = await runCLI([
-        "query",
+        "sparql", "query",
         "SELECT ?s ?o WHERE { ?s <http://www.w3.org/2002/07/owl#sameAs> ?o } LIMIT 10",
         "--vault", tempDir,
         "--format", "json",
@@ -354,7 +362,7 @@ describeOrSkip("SPARQL queries on Exo 0.0.3 format (Issue #1367)", () => {
 
       // Count all triples
       const result = await runCLI([
-        "query",
+        "sparql", "query",
         "SELECT (COUNT(*) AS ?count) WHERE { ?s ?p ?o }",
         "--vault", tempDir,
         "--format", "json",
@@ -367,13 +375,13 @@ describeOrSkip("SPARQL queries on Exo 0.0.3 format (Issue #1367)", () => {
       expect(response.success).toBe(true);
       expect(response.data.count).toBe(1);
 
-      // Should have triples from both legacy (Asset_label + Asset_fileName) and Exo003 (owl:sameAs)
-      const countBinding = response.data.bindings[0];
-      const tripleCount = parseInt(countBinding.count?.value || "0", 10);
+      // Should have triples from both legacy and Exo003 files
+      // Use meta.triplesScanned as reliable count (avoids typed literal parsing)
+      const triplesScanned = response.meta?.triplesScanned;
       // Legacy: 2 files * (Asset_label + Asset_fileName) = 4 triples
       // Exo003: 2 anchors * 2 owl:sameAs = 4 triples
       // Total: 8+ triples
-      expect(tripleCount).toBeGreaterThanOrEqual(8);
+      expect(triplesScanned).toBeGreaterThanOrEqual(8);
     }, 60000);
   });
 
@@ -388,7 +396,7 @@ metadata: anchor
 
       // Should still work without crashing
       const result = await runCLI([
-        "query",
+        "sparql", "query",
         "SELECT ?s ?p ?o WHERE { ?s ?p ?o } LIMIT 1",
         "--vault", tempDir,
         "--format", "json",
@@ -413,7 +421,7 @@ metadata: anchor
 
       // Should handle gracefully (may produce literals for unresolvable links)
       const result = await runCLI([
-        "query",
+        "sparql", "query",
         "SELECT ?s ?p ?o WHERE { ?s ?p ?o } LIMIT 10",
         "--vault", tempDir,
         "--format", "json",
@@ -442,7 +450,7 @@ metadata: anchor
       );
 
       const result = await runCLI([
-        "query",
+        "sparql", "query",
         "CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o . FILTER(CONTAINS(STR(?s), 'example.org')) }",
         "--vault", tempDir,
         "--format", "ntriples",
