@@ -3,9 +3,15 @@ import { spawn, ChildProcess } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
-
-// Get CLI dist path relative to test file location
-const CLI_DIST_PATH = path.resolve(process.cwd(), "packages/cli/dist/index.js");
+// Get CLI dist path - resolve from repo root by finding packages/cli/dist
+const CLI_DIST_PATH = (() => {
+  // Try direct path from cwd (when cwd is packages/cli/)
+  const fromCwd = path.resolve(process.cwd(), "dist/index.js");
+  if (fs.existsSync(fromCwd)) return fromCwd;
+  // Try from repo root (when cwd is monorepo root)
+  const fromRoot = path.resolve(process.cwd(), "packages/cli/dist/index.js");
+  return fromRoot;
+})();
 
 // Skip in CI - file watcher events are timing-dependent and flaky in CI environments
 const isCI = process.env.CI === "true";

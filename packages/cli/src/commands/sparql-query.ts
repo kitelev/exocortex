@@ -207,11 +207,16 @@ export async function executeWithTimeout<T>(
   timeoutMs: number,
   startTime: number = Date.now(),
 ): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
   const timeoutPromise = new Promise<never>((_, reject) => {
-    setTimeout(() => {
+    timer = setTimeout(() => {
       const elapsedMs = Date.now() - startTime;
       reject(new QueryTimeoutError(timeoutMs, elapsedMs));
     }, timeoutMs);
+    // Allow process to exit even if timer is still pending
+    if (timer && typeof timer === "object" && "unref" in timer) {
+      timer.unref();
+    }
   });
 
   return Promise.race([queryPromise, timeoutPromise]);
