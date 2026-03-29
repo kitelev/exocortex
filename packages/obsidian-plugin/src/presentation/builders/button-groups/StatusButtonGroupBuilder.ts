@@ -88,8 +88,6 @@ export class StatusButtonGroupBuilder implements IButtonGroupBuilder {
     const currentStatus = Object.values(EffortStatus).find((s) => s === normalized);
     if (!currentStatus) return [];
 
-    // Get live triple store from plugin's SPARQL API
-    // Trigger initialization with a minimal query if needed
     let store: import("exocortex").ITripleStore | undefined;
     try {
       const sparqlApi = (plugin as unknown as Record<string, unknown>)?.sparql as
@@ -97,9 +95,12 @@ export class StatusButtonGroupBuilder implements IButtonGroupBuilder {
       if (sparqlApi) {
         await sparqlApi.query("ASK { ?s ?p ?o }");
         store = sparqlApi.getTripleStore();
+        console.debug("[Exocortex Workflow] Triple store loaded, count:", await store.count());
+      } else {
+        console.debug("[Exocortex Workflow] No SPARQL API available");
       }
-    } catch {
-      // SPARQL init failed — fall through to empty store
+    } catch (err) {
+      console.warn("[Exocortex Workflow] SPARQL init failed:", err);
     }
     if (!store) {
       store = new InMemoryTripleStore();
@@ -111,27 +112,24 @@ export class StatusButtonGroupBuilder implements IButtonGroupBuilder {
       ? (instanceClassRaw[0] as string ?? "")
       : (typeof instanceClassRaw === "string" ? instanceClassRaw : "");
     const normalizedClass = rawClass.replace(/["'[\]]/g, "").trim() as AssetClass;
-
-    const isKnownTask = normalizedClass === AssetClass.TASK || normalizedClass === AssetClass.MEETING;
-    const isKnownProject = normalizedClass === AssetClass.PROJECT;
-    const fallbackClass = isKnownTask ? AssetClass.TASK : AssetClass.PROJECT;
+    console.debug("[Exocortex Workflow] Asset class:", normalizedClass);
 
     let definition;
-    if (!isKnownTask && !isKnownProject) {
-      try {
-        const storeCount = await store.count();
-        if (storeCount > 0) {
-          definition = await resolver.resolveForClass(normalizedClass);
-          if (definition.states.length === 0 && definition.transitions.length === 0) {
-            definition = null;
-          }
-        }
-      } catch {
-        // Fall through to hardcoded
+    try {
+      definition = await resolver.resolveForClass(normalizedClass);
+      console.debug("[Exocortex Workflow] Resolved:", definition.name, "states:", definition.states.length, "transitions:", definition.transitions.length);
+      if (definition.states.length === 0 && definition.transitions.length === 0) {
+        console.debug("[Exocortex Workflow] Empty definition, falling back to hardcoded");
+        definition = null;
       }
+    } catch (err) {
+      console.warn("[Exocortex Workflow] resolveForClass failed:", err);
     }
     if (!definition) {
+      const isTask = normalizedClass === AssetClass.TASK || normalizedClass === AssetClass.MEETING;
+      const fallbackClass = isTask ? AssetClass.TASK : AssetClass.PROJECT;
       definition = resolver.getHardcodedFallback(fallbackClass);
+      console.debug("[Exocortex Workflow] Using hardcoded fallback:", definition.name);
     }
     const engine = new WorkflowEngine(definition);
     const generator = new VisibilityGenerator(engine);
