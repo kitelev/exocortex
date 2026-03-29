@@ -205,7 +205,7 @@ export class ButtonGroupsBuilder {
     // Build groups from all builders, filtering out empty ones
     const groups: ButtonGroup[] = [];
     for (const builder of this.builders) {
-      const group = createButtonGroupIfVisible(builder, context);
+      const group = await createButtonGroupIfVisible(builder, context);
       if (group) {
         groups.push(group);
       }

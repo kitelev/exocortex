@@ -14,8 +14,8 @@ import {
   VisibilityGenerator,
   EffortStatus,
   AssetClass,
+  InMemoryTripleStore,
 } from "exocortex";
-import { InMemoryTripleStore } from "exocortex";
 import { ILogger } from '@plugin/adapters/logging/ILogger';
 import {
   IButtonGroupBuilder,
@@ -37,7 +37,7 @@ export class StatusButtonGroupBuilder implements IButtonGroupBuilder {
     return "Status";
   }
 
-  build(context: ButtonBuilderContext): ActionButton[] {
+  async build(context: ButtonBuilderContext): Promise<ActionButton[]> {
     const { file, visibilityContext, logger, refresh, metadata } = context;
 
     const standardButtons = [
@@ -55,7 +55,7 @@ export class StatusButtonGroupBuilder implements IButtonGroupBuilder {
       return standardButtons;
     }
 
-    const workflowButtons = this.buildWorkflowButtons(file, metadata, logger, refresh);
+    const workflowButtons = await this.buildWorkflowButtons(file, metadata, logger, refresh);
     if (workflowButtons.length > 0) {
       return workflowButtons;
     }
@@ -63,12 +63,12 @@ export class StatusButtonGroupBuilder implements IButtonGroupBuilder {
     return standardButtons;
   }
 
-  private buildWorkflowButtons(
+  private async buildWorkflowButtons(
     file: TFile,
     metadata: Record<string, unknown>,
     logger: ILogger,
     refresh: () => Promise<void>,
-  ): ActionButton[] {
+  ): Promise<ActionButton[]> {
     const statusRaw = metadata["ems__Effort_status"] as string | undefined;
     if (!statusRaw) return [];
 
@@ -79,12 +79,33 @@ export class StatusButtonGroupBuilder implements IButtonGroupBuilder {
     const store = this.services.tripleStore ?? new InMemoryTripleStore();
     const resolver = new WorkflowResolver(store);
     const instanceClassRaw = metadata["exo__Instance_class"];
-    const isTask = Array.isArray(instanceClassRaw)
-      ? instanceClassRaw.some((c: string) => String(c).includes("ems__Task") || String(c).includes("ems__Meeting"))
-      : typeof instanceClassRaw === "string" && (instanceClassRaw.includes("ems__Task") || instanceClassRaw.includes("ems__Meeting"));
 
-    const assetClass = isTask ? AssetClass.TASK : AssetClass.PROJECT;
-    const definition = resolver.getHardcodedFallback(assetClass);
+    const rawClass = Array.isArray(instanceClassRaw)
+      ? (instanceClassRaw[0] as string ?? "")
+      : (typeof instanceClassRaw === "string" ? instanceClassRaw : "");
+    const normalizedClass = rawClass.replace(/["'[\]]/g, "").trim() as AssetClass;
+
+    const isKnownTask = normalizedClass === AssetClass.TASK || normalizedClass === AssetClass.MEETING;
+    const isKnownProject = normalizedClass === AssetClass.PROJECT;
+    const fallbackClass = isKnownTask ? AssetClass.TASK : AssetClass.PROJECT;
+
+    let definition;
+    if (!isKnownTask && !isKnownProject) {
+      try {
+        const storeCount = await store.count();
+        if (storeCount > 0) {
+          definition = await resolver.resolveForClass(normalizedClass);
+          if (definition.states.length === 0 && definition.transitions.length === 0) {
+            definition = null;
+          }
+        }
+      } catch {
+        // Fall through to hardcoded
+      }
+    }
+    if (!definition) {
+      definition = resolver.getHardcodedFallback(fallbackClass);
+    }
     const engine = new WorkflowEngine(definition);
     const generator = new VisibilityGenerator(engine);
 
