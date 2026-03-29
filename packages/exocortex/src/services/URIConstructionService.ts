@@ -2,6 +2,7 @@ import { injectable, inject } from "tsyringe";
 import type { IFileSystemAdapter } from "../interfaces/IFileSystemAdapter";
 import type { ILogger } from "../interfaces/ILogger";
 import { DI_TOKENS } from "../interfaces/tokens";
+import { NullLogger } from "../infrastructure/NullLogger";
 
 export interface URIConstructionOptions {
   defaultOntologyURL?: string;
@@ -20,7 +21,7 @@ export class URIConstructionService {
 
   constructor(
     @inject(DI_TOKENS.IFileSystemAdapter) private readonly fileSystem: IFileSystemAdapter,
-    @inject(DI_TOKENS.ILogger) private readonly logger: ILogger,
+    @inject(DI_TOKENS.ILogger) private readonly logger: ILogger = NullLogger,
   ) {}
 
   configure(options?: URIConstructionOptions): void {

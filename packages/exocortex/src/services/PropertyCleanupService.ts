@@ -2,6 +2,7 @@ import { injectable, inject } from "tsyringe";
 import type { IVaultAdapter, IFile } from "../interfaces/IVaultAdapter";
 import type { ILogger } from "../interfaces/ILogger";
 import { DI_TOKENS } from "../interfaces/tokens";
+import { NullLogger } from "../infrastructure/NullLogger";
 
 /**
  * Service for cleaning empty properties from file frontmatter
@@ -10,7 +11,7 @@ import { DI_TOKENS } from "../interfaces/tokens";
 export class PropertyCleanupService {
   constructor(
     @inject(DI_TOKENS.IVaultAdapter) private vault: IVaultAdapter,
-    @inject(DI_TOKENS.ILogger) private logger: ILogger
+    @inject(DI_TOKENS.ILogger) private logger: ILogger = NullLogger
   ) {
     this.logger.debug("PropertyCleanupService initialized");
   }

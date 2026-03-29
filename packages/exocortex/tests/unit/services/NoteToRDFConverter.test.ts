@@ -1,11 +1,21 @@
 import "reflect-metadata";
 import { NoteToRDFConverter } from "../../../src/services/NoteToRDFConverter";
 import { IVaultAdapter, IFile, IFrontmatter } from "../../../src/interfaces/IVaultAdapter";
+import type { ILogger } from "../../../src/interfaces/ILogger";
 import { IRI } from "../../../src/domain/models/rdf/IRI";
 import { Literal } from "../../../src/domain/models/rdf/Literal";
 import { BlankNode } from "../../../src/domain/models/rdf/BlankNode";
 import { Namespace } from "../../../src/domain/models/rdf/Namespace";
 import { Exo003MetadataType } from "../../../src/domain/models/exo003";
+
+function createMockLogger(): jest.Mocked<ILogger> {
+  return {
+    debug: jest.fn(),
+    info: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+  };
+}
 
 describe("NoteToRDFConverter", () => {
   let converter: NoteToRDFConverter;
@@ -1140,23 +1150,19 @@ describe("NoteToRDFConverter", () => {
           throw new Error("Test error: Invalid frontmatter");
         });
 
-        // Spy on console.warn
-        const warnSpy = jest.spyOn(console, "warn").mockImplementation();
+        const mockLogger = createMockLogger();
+        const converterWithLogger = new NoteToRDFConverter(mockVault, mockLogger);
 
-        const triples = await converter.convertVault();
+        const triples = await converterWithLogger.convertVault();
 
         // Should return empty array (file was skipped)
         expect(triples).toEqual([]);
 
-        // Should have called console.warn with skip message
-        expect(warnSpy).toHaveBeenCalledWith(
-          expect.stringContaining("Skipping file with invalid IRI")
+        // Should have called logger.warn with skip message
+        expect(mockLogger.warn).toHaveBeenCalledWith(
+          expect.stringContaining("Skipping file with invalid IRI"),
+          expect.anything()
         );
-        expect(warnSpy).toHaveBeenCalledWith(
-          expect.stringContaining("Test error: Invalid frontmatter")
-        );
-
-        warnSpy.mockRestore();
       });
 
       it("should continue processing after skipping problematic file", async () => {
@@ -1190,9 +1196,10 @@ describe("NoteToRDFConverter", () => {
           return null;
         });
 
-        const warnSpy = jest.spyOn(console, "warn").mockImplementation();
+        const mockLogger = createMockLogger();
+        const converterWithLogger = new NoteToRDFConverter(mockVault, mockLogger);
 
-        const triples = await converter.convertVault();
+        const triples = await converterWithLogger.convertVault();
 
         // Should have triples from valid files only
         const labelTriples = triples.filter((t) =>
@@ -1205,11 +1212,10 @@ describe("NoteToRDFConverter", () => {
         expect(labels).toContain("Note 2");
 
         // Should have warned about problematic file
-        expect(warnSpy).toHaveBeenCalledWith(
-          expect.stringContaining("problematic.md")
+        expect(mockLogger.warn).toHaveBeenCalledWith(
+          expect.stringContaining("problematic.md"),
+          expect.anything()
         );
-
-        warnSpy.mockRestore();
       });
 
       it("should not crash when all files are problematic", async () => {
@@ -1232,15 +1238,14 @@ describe("NoteToRDFConverter", () => {
           throw new Error("All files are problematic");
         });
 
-        const warnSpy = jest.spyOn(console, "warn").mockImplementation();
+        const mockLogger = createMockLogger();
+        const converterWithLogger = new NoteToRDFConverter(mockVault, mockLogger);
 
         // Should NOT throw - instead returns empty array
-        const triples = await converter.convertVault();
+        const triples = await converterWithLogger.convertVault();
 
         expect(triples).toEqual([]);
-        expect(warnSpy).toHaveBeenCalledTimes(4); // 2 files × 2 warnings each
-
-        warnSpy.mockRestore();
+        expect(mockLogger.warn).toHaveBeenCalledTimes(2); // 2 files × 1 warn each
       });
     });
   });
