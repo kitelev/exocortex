@@ -57,7 +57,7 @@ export interface ButtonBuilderServices {
  * Interface for button group builders
  */
 export interface IButtonGroupBuilder {
-  build(context: ButtonBuilderContext): ActionButton[];
+  build(context: ButtonBuilderContext): ActionButton[] | Promise<ActionButton[]>;
   getGroupId(): string;
   getGroupTitle(): string;
 }
@@ -65,11 +65,11 @@ export interface IButtonGroupBuilder {
 /**
  * Helper to create button group if it has visible buttons
  */
-export function createButtonGroupIfVisible(
+export async function createButtonGroupIfVisible(
   builder: IButtonGroupBuilder,
   context: ButtonBuilderContext,
-): ButtonGroup | null {
-  const buttons = builder.build(context);
+): Promise<ButtonGroup | null> {
+  const buttons = await builder.build(context);
   if (buttons.some((btn) => btn.visible)) {
     return {
       id: builder.getGroupId(),

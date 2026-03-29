@@ -125,13 +125,13 @@ describe("StatusButtonGroupBuilder - workflow fallback", () => {
   });
 
   describe("standard classes use hardcoded buttons (no fallback)", () => {
-    it("ems__Task with Backlog status returns standard buttons with Start Effort visible", () => {
+    it("ems__Task with Backlog status returns standard buttons with Start Effort visible", async () => {
       const context = createContext({
         instanceClass: "ems__Task",
         currentStatus: `[[${EffortStatus.BACKLOG}]]`,
       });
 
-      const buttons = builder.build(context);
+      const buttons = await builder.build(context);
 
       const startEffort = buttons.find((b) => b.id === "start-effort");
       expect(startEffort).toBeDefined();
@@ -145,13 +145,13 @@ describe("StatusButtonGroupBuilder - workflow fallback", () => {
       expect(workflowIds).toHaveLength(0);
     });
 
-    it("ems__Project with ToDo status returns standard buttons with Start Effort visible", () => {
+    it("ems__Project with ToDo status returns standard buttons with Start Effort visible", async () => {
       const context = createContext({
         instanceClass: "ems__Project",
         currentStatus: `[[${EffortStatus.TODO}]]`,
       });
 
-      const buttons = builder.build(context);
+      const buttons = await builder.build(context);
 
       const startEffort = buttons.find((b) => b.id === "start-effort");
       expect(startEffort).toBeDefined();
@@ -161,39 +161,39 @@ describe("StatusButtonGroupBuilder - workflow fallback", () => {
       expect(workflowIds).toHaveLength(0);
     });
 
-    it("ems__Task with Draft status returns Move to Backlog button visible", () => {
+    it("ems__Task with Draft status returns Move to Backlog button visible", async () => {
       const context = createContext({
         instanceClass: "ems__Task",
         currentStatus: `[[${EffortStatus.DRAFT}]]`,
       });
 
-      const buttons = builder.build(context);
+      const buttons = await builder.build(context);
 
       const moveToBacklog = buttons.find((b) => b.id === "move-to-backlog");
       expect(moveToBacklog).toBeDefined();
       expect(moveToBacklog?.visible).toBe(true);
     });
 
-    it("ems__Task with Doing status returns Mark Done button visible", () => {
+    it("ems__Task with Doing status returns Mark Done button visible", async () => {
       const context = createContext({
         instanceClass: "ems__Task",
         currentStatus: `[[${EffortStatus.DOING}]]`,
       });
 
-      const buttons = builder.build(context);
+      const buttons = await builder.build(context);
 
       const markDone = buttons.find((b) => b.id === "mark-done");
       expect(markDone).toBeDefined();
       expect(markDone?.visible).toBe(true);
     });
 
-    it("ems__Task with no status returns Set Draft button visible", () => {
+    it("ems__Task with no status returns Set Draft button visible", async () => {
       const context = createContext({
         instanceClass: "ems__Task",
         currentStatus: null,
       });
 
-      const buttons = builder.build(context);
+      const buttons = await builder.build(context);
 
       const setDraft = buttons.find((b) => b.id === "set-draft-status");
       expect(setDraft).toBeDefined();
@@ -202,7 +202,7 @@ describe("StatusButtonGroupBuilder - workflow fallback", () => {
   });
 
   describe("custom class triggers workflow fallback", () => {
-    it("ems__SimpleTask with Backlog status generates workflow buttons", () => {
+    it("ems__SimpleTask with Backlog status generates workflow buttons", async () => {
       const context = createContext({
         instanceClass: "ems__SimpleTask",
         currentStatus: null,
@@ -212,13 +212,13 @@ describe("StatusButtonGroupBuilder - workflow fallback", () => {
         },
       });
 
-      const buttons = builder.build(context);
+      const buttons = await builder.build(context);
 
       const workflowButtons = buttons.filter((b) => b.id.startsWith("workflow-"));
       expect(workflowButtons.length).toBeGreaterThan(0);
     });
 
-    it("workflow buttons include both forward and rollback transitions", () => {
+    it("workflow buttons include both forward and rollback transitions", async () => {
       const context = createContext({
         instanceClass: "ems__SimpleTask",
         currentStatus: null,
@@ -228,7 +228,7 @@ describe("StatusButtonGroupBuilder - workflow fallback", () => {
         },
       });
 
-      const buttons = builder.build(context);
+      const buttons = await builder.build(context);
 
       const forwardButtons = buttons.filter(
         (b) => b.id.startsWith("workflow-") && b.variant === "secondary",
@@ -241,7 +241,7 @@ describe("StatusButtonGroupBuilder - workflow fallback", () => {
       expect(rollbackButtons.length).toBeGreaterThan(0);
     });
 
-    it("workflow button labels come from VisibilityGenerator", () => {
+    it("workflow button labels come from VisibilityGenerator", async () => {
       const context = createContext({
         instanceClass: "ems__SimpleTask",
         currentStatus: null,
@@ -251,7 +251,7 @@ describe("StatusButtonGroupBuilder - workflow fallback", () => {
         },
       });
 
-      const buttons = builder.build(context);
+      const buttons = await builder.build(context);
       const workflowButtons = buttons.filter((b) => b.id.startsWith("workflow-"));
 
       for (const btn of workflowButtons) {
@@ -261,7 +261,7 @@ describe("StatusButtonGroupBuilder - workflow fallback", () => {
       }
     });
 
-    it("workflow button count matches task fallback transitions from Backlog", () => {
+    it("workflow button count matches task fallback transitions from Backlog", async () => {
       const context = createContext({
         instanceClass: "ems__SimpleTask",
         currentStatus: null,
@@ -271,7 +271,7 @@ describe("StatusButtonGroupBuilder - workflow fallback", () => {
         },
       });
 
-      const buttons = builder.build(context);
+      const buttons = await builder.build(context);
       const workflowButtons = buttons.filter((b) => b.id.startsWith("workflow-"));
 
       expect(workflowButtons).toHaveLength(2);
@@ -279,7 +279,7 @@ describe("StatusButtonGroupBuilder - workflow fallback", () => {
   });
 
   describe("edge cases", () => {
-    it("asset without ems__Effort_status returns no workflow buttons", () => {
+    it("asset without ems__Effort_status returns no workflow buttons", async () => {
       const context = createContext({
         instanceClass: "ems__SimpleTask",
         currentStatus: null,
@@ -288,12 +288,12 @@ describe("StatusButtonGroupBuilder - workflow fallback", () => {
         },
       });
 
-      const buttons = builder.build(context);
+      const buttons = await builder.build(context);
       const workflowButtons = buttons.filter((b) => b.id.startsWith("workflow-"));
       expect(workflowButtons).toHaveLength(0);
     });
 
-    it("asset with unknown status string returns no workflow buttons", () => {
+    it("asset with unknown status string returns no workflow buttons", async () => {
       const context = createContext({
         instanceClass: "ems__SimpleTask",
         currentStatus: null,
@@ -303,12 +303,12 @@ describe("StatusButtonGroupBuilder - workflow fallback", () => {
         },
       });
 
-      const buttons = builder.build(context);
+      const buttons = await builder.build(context);
       const workflowButtons = buttons.filter((b) => b.id.startsWith("workflow-"));
       expect(workflowButtons).toHaveLength(0);
     });
 
-    it("custom class with Done status returns no forward buttons (terminal)", () => {
+    it("custom class with Done status returns no forward buttons (terminal)", async () => {
       const context = createContext({
         instanceClass: "ems__SimpleTask",
         currentStatus: null,
@@ -318,14 +318,14 @@ describe("StatusButtonGroupBuilder - workflow fallback", () => {
         },
       });
 
-      const buttons = builder.build(context);
+      const buttons = await builder.build(context);
       const forwardButtons = buttons.filter(
         (b) => b.id.startsWith("workflow-") && b.variant === "secondary",
       );
       expect(forwardButtons).toHaveLength(0);
     });
 
-    it("custom class with Done status still has rollback button", () => {
+    it("custom class with Done status still has rollback button", async () => {
       const context = createContext({
         instanceClass: "ems__SimpleTask",
         currentStatus: null,
@@ -335,7 +335,7 @@ describe("StatusButtonGroupBuilder - workflow fallback", () => {
         },
       });
 
-      const buttons = builder.build(context);
+      const buttons = await builder.build(context);
       const rollbackButtons = buttons.filter(
         (b) => b.id.startsWith("workflow-") && b.variant === "warning",
       );
@@ -344,7 +344,7 @@ describe("StatusButtonGroupBuilder - workflow fallback", () => {
   });
 
   describe("button properties", () => {
-    it("forward buttons have variant secondary", () => {
+    it("forward buttons have variant secondary", async () => {
       const context = createContext({
         instanceClass: "ems__SimpleTask",
         currentStatus: null,
@@ -354,7 +354,7 @@ describe("StatusButtonGroupBuilder - workflow fallback", () => {
         },
       });
 
-      const buttons = builder.build(context);
+      const buttons = await builder.build(context);
       const forwardButtons = buttons.filter(
         (b) => b.id.startsWith("workflow-") && !b.id.includes("rollback"),
       );
@@ -366,7 +366,7 @@ describe("StatusButtonGroupBuilder - workflow fallback", () => {
       }
     });
 
-    it("rollback buttons have variant warning", () => {
+    it("rollback buttons have variant warning", async () => {
       const context = createContext({
         instanceClass: "ems__SimpleTask",
         currentStatus: null,
@@ -376,7 +376,7 @@ describe("StatusButtonGroupBuilder - workflow fallback", () => {
         },
       });
 
-      const buttons = builder.build(context);
+      const buttons = await builder.build(context);
       const rollbackButtons = buttons.filter(
         (b) => b.id.startsWith("workflow-") && b.variant === "warning",
       );
@@ -386,7 +386,7 @@ describe("StatusButtonGroupBuilder - workflow fallback", () => {
       }
     });
 
-    it("all workflow buttons have visible=true", () => {
+    it("all workflow buttons have visible=true", async () => {
       const context = createContext({
         instanceClass: "ems__SimpleTask",
         currentStatus: null,
@@ -396,7 +396,7 @@ describe("StatusButtonGroupBuilder - workflow fallback", () => {
         },
       });
 
-      const buttons = builder.build(context);
+      const buttons = await builder.build(context);
       const workflowButtons = buttons.filter((b) => b.id.startsWith("workflow-"));
 
       for (const btn of workflowButtons) {
@@ -404,7 +404,7 @@ describe("StatusButtonGroupBuilder - workflow fallback", () => {
       }
     });
 
-    it("all workflow buttons have onClick function", () => {
+    it("all workflow buttons have onClick function", async () => {
       const context = createContext({
         instanceClass: "ems__SimpleTask",
         currentStatus: null,
@@ -414,7 +414,7 @@ describe("StatusButtonGroupBuilder - workflow fallback", () => {
         },
       });
 
-      const buttons = builder.build(context);
+      const buttons = await builder.build(context);
       const workflowButtons = buttons.filter((b) => b.id.startsWith("workflow-"));
 
       for (const btn of workflowButtons) {
