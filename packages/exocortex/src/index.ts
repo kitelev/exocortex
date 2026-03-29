@@ -165,6 +165,7 @@ export {
   type RDFStreamOptions,
   type RDFDeserializeOptions,
 } from "./infrastructure/rdf/RDFSerializer";
+export { NullLogger } from "./infrastructure/NullLogger";
 export { InMemoryTripleStore } from "./infrastructure/rdf/InMemoryTripleStore";
 export { RDFVocabularyMapper } from "./infrastructure/rdf/RDFVocabularyMapper";
 export { RDFSInferenceEngine } from "./infrastructure/rdf/RDFSInferenceEngine";

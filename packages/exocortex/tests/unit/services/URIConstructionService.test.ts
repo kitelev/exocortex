@@ -1,5 +1,15 @@
 import { URIConstructionService } from "../../../src/services/URIConstructionService";
 import { IFileSystemAdapter } from "../../../src/interfaces/IFileSystemAdapter";
+import type { ILogger } from "../../../src/interfaces/ILogger";
+
+function createMockLogger(): jest.Mocked<ILogger> {
+  return {
+    debug: jest.fn(),
+    info: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+  };
+}
 
 describe("URIConstructionService", () => {
   let service: URIConstructionService;
@@ -64,7 +74,8 @@ describe("URIConstructionService", () => {
     });
 
     it("should use fallback for missing UID in non-strict mode", async () => {
-      const serviceNonStrict = new URIConstructionService(mockFileSystem);
+      const mockLogger = createMockLogger();
+      const serviceNonStrict = new URIConstructionService(mockFileSystem, mockLogger);
       serviceNonStrict.configure({ strictValidation: false });
 
       const asset = {
@@ -72,16 +83,12 @@ describe("URIConstructionService", () => {
         frontmatter: {},
       };
 
-      const consoleSpy = jest.spyOn(console, "warn").mockImplementation();
-
       const uri = await serviceNonStrict.constructAssetURI(asset);
 
       expect(uri).toContain("review-pr");
-      expect(consoleSpy).toHaveBeenCalledWith(
+      expect(mockLogger.warn).toHaveBeenCalledWith(
         expect.stringContaining("missing UID"),
       );
-
-      consoleSpy.mockRestore();
     });
 
     it("should use default ontology URL when isDefinedBy missing", async () => {
@@ -170,6 +177,9 @@ describe("URIConstructionService", () => {
     });
 
     it("should use default URL when ontology file not found", async () => {
+      const mockLogger = createMockLogger();
+      const serviceWithLogger = new URIConstructionService(mockFileSystem, mockLogger);
+
       const asset = {
         path: "Tasks/review-pr.md",
         frontmatter: {
@@ -180,18 +190,14 @@ describe("URIConstructionService", () => {
 
       mockFileSystem.fileExists.mockResolvedValue(false);
 
-      const consoleSpy = jest.spyOn(console, "warn").mockImplementation();
-
-      const uri = await service.constructAssetURI(asset);
+      const uri = await serviceWithLogger.constructAssetURI(asset);
 
       expect(uri).toBe(
         "https://exocortex.my/default/550e8400-e29b-41d4-a716-446655440000",
       );
-      expect(consoleSpy).toHaveBeenCalledWith(
+      expect(mockLogger.warn).toHaveBeenCalledWith(
         expect.stringContaining("Ontology file not found"),
       );
-
-      consoleSpy.mockRestore();
     });
 
     it("should use default URL when ontology URL missing", async () => {
