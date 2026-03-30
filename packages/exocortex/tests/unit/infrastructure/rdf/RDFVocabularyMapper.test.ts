@@ -260,6 +260,66 @@ describe("RDFVocabularyMapper", () => {
     });
   });
 
+  describe("exocmd class hierarchy (RFC-009, Issue #2427)", () => {
+    it("should map exocmd classes as subClassOf exo:Asset", () => {
+      const triples = mapper.generateClassHierarchyTriples();
+
+      const exocmdClasses = ["Command", "Precondition", "Grounding", "CommandBinding"];
+
+      for (const className of exocmdClasses) {
+        const triple = triples.find(
+          (t) =>
+            (t.subject as IRI).value === `https://exocortex.my/ontology/exocmd#${className}` &&
+            (t.predicate as IRI).value === "http://www.w3.org/2000/01/rdf-schema#subClassOf" &&
+            (t.object as IRI).value === "https://exocortex.my/ontology/exo#Asset",
+        );
+        expect(triple).toBeDefined();
+      }
+    });
+  });
+
+  describe("exocmd namespace in generateMappedTriple (RFC-009)", () => {
+    it("should resolve exocmd__ class references to EXOCMD namespace IRI", () => {
+      const subjectIRI = new IRI("https://exocortex.my/ontology/test/asset-1");
+
+      const triple = mapper.generateMappedTriple(
+        subjectIRI,
+        "exo__Instance_class",
+        "exocmd__Command",
+      );
+
+      expect(triple).toBeDefined();
+      expect((triple!.object as IRI).value).toBe(
+        "https://exocortex.my/ontology/exocmd#Command",
+      );
+    });
+
+    it("should resolve exocmd__Precondition to EXOCMD namespace", () => {
+      const subjectIRI = new IRI("https://exocortex.my/ontology/test/asset-2");
+
+      const triple = mapper.generateMappedTriple(
+        subjectIRI,
+        "exo__Instance_class",
+        "exocmd__Precondition",
+      );
+
+      expect(triple).toBeDefined();
+      expect((triple!.object as IRI).value).toBe(
+        "https://exocortex.my/ontology/exocmd#Precondition",
+      );
+    });
+
+    it("should still resolve ems__ and exo__ prefixes correctly", () => {
+      const subjectIRI = new IRI("https://exocortex.my/ontology/test/asset-3");
+
+      const emsTriple = mapper.generateMappedTriple(subjectIRI, "exo__Instance_class", "ems__Task");
+      expect((emsTriple!.object as IRI).value).toBe("https://exocortex.my/ontology/ems#Task");
+
+      const exoTriple = mapper.generateMappedTriple(subjectIRI, "exo__Instance_class", "exo__Asset");
+      expect((exoTriple!.object as IRI).value).toBe("https://exocortex.my/ontology/exo#Asset");
+    });
+  });
+
   describe("hasMappingFor", () => {
     it("should return true for mapped properties", () => {
       expect(mapper.hasMappingFor("exo__Instance_class")).toBe(true);

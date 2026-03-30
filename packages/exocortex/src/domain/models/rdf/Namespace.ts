@@ -59,4 +59,6 @@ export class Namespace {
   static readonly EXO = new Namespace("exo", "https://exocortex.my/ontology/exo#");
 
   static readonly EMS = new Namespace("ems", "https://exocortex.my/ontology/ems#");
+
+  static readonly EXOCMD = new Namespace("exocmd", "https://exocortex.my/ontology/exocmd#");
 }
