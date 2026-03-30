@@ -1,3 +1,4 @@
+import { injectable } from "tsyringe";
 import { EffortStatus } from "../domain/constants/EffortStatus";
 import type {
   WorkflowDefinition,
@@ -20,6 +21,7 @@ export interface WorkflowValidationResult {
  *
  * Issue #2360
  */
+@injectable()
 export class WorkflowEngine {
   constructor(private readonly definition: WorkflowDefinition) {}
 

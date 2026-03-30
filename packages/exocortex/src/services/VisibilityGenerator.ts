@@ -1,3 +1,4 @@
+import { injectable } from "tsyringe";
 import { WorkflowEngine } from "./WorkflowEngine";
 import { EffortStatus } from "../domain/constants/EffortStatus";
 import type { WorkflowTransitionDefinition } from "../domain/models/WorkflowDefinition";
@@ -10,6 +11,7 @@ export interface VisibleCommand {
   readonly isRollback: boolean;
 }
 
+@injectable()
 export class VisibilityGenerator {
   constructor(private readonly engine: WorkflowEngine) {}
 

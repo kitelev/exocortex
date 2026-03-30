@@ -1,3 +1,4 @@
+import { injectable } from "tsyringe";
 import type { ITripleStore } from "../interfaces/ITripleStore";
 import type { Triple, Object as RDFObject } from "../domain/models/rdf/Triple";
 import { IRI } from "../domain/models/rdf/IRI";
@@ -21,6 +22,7 @@ import type {
  *
  * Issue #2359
  */
+@injectable()
 export class WorkflowResolver {
   private readonly cache = new Map<string, WorkflowDefinition>();
 

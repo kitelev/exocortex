@@ -1,3 +1,4 @@
+import { injectable } from "tsyringe";
 import type { WorkflowDefinition } from "../domain/models/WorkflowDefinition";
 import { EffortStatus } from "../domain/constants/EffortStatus";
 
@@ -19,6 +20,7 @@ export interface KanbanColumn {
  *
  * Issue #2367
  */
+@injectable()
 export class KanbanColumnProvider {
   /**
    * Generate ordered columns from a WorkflowDefinition.
