@@ -92,6 +92,39 @@ export class RDFVocabularyMapper {
       ),
     );
 
+    // RFC-009: Dynamic Command System class hierarchy (Issue #2427)
+    triples.push(
+      new Triple(
+        Namespace.EXOCMD.term("Command"),
+        Namespace.RDFS.term("subClassOf"),
+        Namespace.EXO.term("Asset"),
+      ),
+    );
+
+    triples.push(
+      new Triple(
+        Namespace.EXOCMD.term("Precondition"),
+        Namespace.RDFS.term("subClassOf"),
+        Namespace.EXO.term("Asset"),
+      ),
+    );
+
+    triples.push(
+      new Triple(
+        Namespace.EXOCMD.term("Grounding"),
+        Namespace.RDFS.term("subClassOf"),
+        Namespace.EXO.term("Asset"),
+      ),
+    );
+
+    triples.push(
+      new Triple(
+        Namespace.EXOCMD.term("CommandBinding"),
+        Namespace.RDFS.term("subClassOf"),
+        Namespace.EXO.term("Asset"),
+      ),
+    );
+
     return triples;
   }
 
@@ -163,10 +196,15 @@ export class RDFVocabularyMapper {
     if (value instanceof IRI) {
       objectIRI = value;
     } else {
-      const classMatch = value.match(/^(ems|exo)__(.+)$/);
+      const classMatch = value.match(/^(ems|exo|exocmd)__(.+)$/);
       if (classMatch) {
         const [, nsPrefix, className] = classMatch;
-        const namespace = nsPrefix === "ems" ? Namespace.EMS : Namespace.EXO;
+        const namespace =
+          nsPrefix === "ems"
+            ? Namespace.EMS
+            : nsPrefix === "exocmd"
+              ? Namespace.EXOCMD
+              : Namespace.EXO;
         objectIRI = namespace.term(className);
       } else {
         objectIRI = new IRI(value);

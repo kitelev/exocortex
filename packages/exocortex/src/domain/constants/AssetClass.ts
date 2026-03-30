@@ -26,4 +26,12 @@ export enum AssetClass {
   WORKFLOW_STATE = "ems__WorkflowState",
   /** Transition between workflow states (Issue #2358) */
   WORKFLOW_TRANSITION = "ems__WorkflowTransition",
+  /** Dynamic command definition (RFC-009, Issue #2427) */
+  COMMAND = "exocmd__Command",
+  /** Precondition for command visibility (RFC-009, Issue #2427) */
+  PRECONDITION = "exocmd__Precondition",
+  /** Grounding action for command execution (RFC-009, Issue #2427) */
+  GROUNDING = "exocmd__Grounding",
+  /** Binding of command to asset context (RFC-009, Issue #2427) */
+  COMMAND_BINDING = "exocmd__CommandBinding",
 }

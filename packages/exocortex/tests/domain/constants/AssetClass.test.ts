@@ -81,8 +81,24 @@ describe("AssetClass", () => {
     expect(AssetClass.WORKFLOW_TRANSITION).toBe("ems__WorkflowTransition");
   });
 
-  it("should have exactly 22 constants", () => {
+  it("should have COMMAND constant (RFC-009)", () => {
+    expect(AssetClass.COMMAND).toBe("exocmd__Command");
+  });
+
+  it("should have PRECONDITION constant (RFC-009)", () => {
+    expect(AssetClass.PRECONDITION).toBe("exocmd__Precondition");
+  });
+
+  it("should have GROUNDING constant (RFC-009)", () => {
+    expect(AssetClass.GROUNDING).toBe("exocmd__Grounding");
+  });
+
+  it("should have COMMAND_BINDING constant (RFC-009)", () => {
+    expect(AssetClass.COMMAND_BINDING).toBe("exocmd__CommandBinding");
+  });
+
+  it("should have exactly 26 constants", () => {
     const values = Object.values(AssetClass);
-    expect(values).toHaveLength(22);
+    expect(values).toHaveLength(26);
   });
 });

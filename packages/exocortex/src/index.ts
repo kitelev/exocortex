@@ -1,6 +1,25 @@
 // Domain exports
 export * from "./domain/constants/AssetClass";
 export * from "./domain/constants/EffortStatus";
+export { GroundingType } from "./domain/constants/GroundingType";
+export {
+  CommandProperty,
+  PreconditionProperty,
+  GroundingProperty,
+  CommandBindingProperty,
+} from "./domain/constants/CommandProperty";
+export type {
+  CommandDefinition,
+  PreconditionDefinition,
+  GroundingDefinition,
+  CommandBindingDefinition,
+} from "./domain/models/CommandDefinition";
+export {
+  isCommandFrontmatter,
+  isPreconditionFrontmatter,
+  isGroundingFrontmatter,
+  isCommandBindingFrontmatter,
+} from "./domain/models/CommandDefinition";
 export * from "./domain/models/GraphNode";
 export * from "./domain/models/GraphData";
 export * from "./domain/models/GraphEdge";
