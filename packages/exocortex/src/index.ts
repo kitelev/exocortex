@@ -44,6 +44,7 @@ export {
 } from "./domain/types/PropertyDefinition";
 
 // Services exports
+export { CommandResolver, type ResolvedCommand } from "./services/CommandResolver";
 export { TaskCreationService } from "./services/TaskCreationService";
 export { ProjectCreationService } from "./services/ProjectCreationService";
 export { TaskStatusService } from "./services/TaskStatusService";

@@ -1,0 +1,577 @@
+import { CommandResolver } from "../../../src/services/CommandResolver";
+import { InMemoryTripleStore } from "../../../src/infrastructure/rdf/InMemoryTripleStore";
+import { Triple } from "../../../src/domain/models/rdf/Triple";
+import { IRI } from "../../../src/domain/models/rdf/IRI";
+import { Literal } from "../../../src/domain/models/rdf/Literal";
+import { Namespace } from "../../../src/domain/models/rdf/Namespace";
+
+// -- Test helpers --
+
+async function addCommandAsset(
+  store: InMemoryTripleStore,
+  opts: {
+    uid: string;
+    label: string;
+    icon?: string;
+    preconditionRef?: string;
+    groundingRef: string;
+    confirmMessage?: string;
+    successMessage?: string;
+    category?: string;
+  },
+): Promise<IRI> {
+  const subject = new IRI(`obsidian://vault/${opts.uid}.md`);
+
+  const triples: Triple[] = [
+    new Triple(subject, Namespace.RDF.term("type"), Namespace.EXOCMD.term("Command")),
+    new Triple(subject, Namespace.EXO.term("Asset_uid"), new Literal(opts.uid)),
+    new Triple(subject, Namespace.EXO.term("Asset_label"), new Literal(opts.label)),
+    new Triple(subject, Namespace.EXOCMD.term("Command_grounding"), new IRI(`obsidian://vault/${opts.groundingRef}.md`)),
+  ];
+
+  if (opts.icon) {
+    triples.push(new Triple(subject, Namespace.EXOCMD.term("Command_icon"), new Literal(opts.icon)));
+  }
+  if (opts.preconditionRef) {
+    triples.push(new Triple(subject, Namespace.EXOCMD.term("Command_precondition"), new IRI(`obsidian://vault/${opts.preconditionRef}.md`)));
+  }
+  if (opts.confirmMessage) {
+    triples.push(new Triple(subject, Namespace.EXOCMD.term("Command_confirmMessage"), new Literal(opts.confirmMessage)));
+  }
+  if (opts.successMessage) {
+    triples.push(new Triple(subject, Namespace.EXOCMD.term("Command_successMessage"), new Literal(opts.successMessage)));
+  }
+  if (opts.category) {
+    triples.push(new Triple(subject, Namespace.EXOCMD.term("Command_category"), new Literal(opts.category)));
+  }
+
+  await store.addAll(triples);
+  return subject;
+}
+
+async function addPreconditionAsset(
+  store: InMemoryTripleStore,
+  opts: { uid: string; label: string; sparqlAsk: string },
+): Promise<IRI> {
+  const subject = new IRI(`obsidian://vault/${opts.uid}.md`);
+
+  await store.addAll([
+    new Triple(subject, Namespace.RDF.term("type"), Namespace.EXOCMD.term("Precondition")),
+    new Triple(subject, Namespace.EXO.term("Asset_uid"), new Literal(opts.uid)),
+    new Triple(subject, Namespace.EXO.term("Asset_label"), new Literal(opts.label)),
+    new Triple(subject, Namespace.EXOCMD.term("Precondition_sparqlAsk"), new Literal(opts.sparqlAsk)),
+  ]);
+  return subject;
+}
+
+async function addGroundingAsset(
+  store: InMemoryTripleStore,
+  opts: {
+    uid: string;
+    label: string;
+    type: string;
+    targetProperty?: string;
+    targetValue?: string;
+    sparqlUpdate?: string;
+    stepRefs?: string[];
+  },
+): Promise<IRI> {
+  const subject = new IRI(`obsidian://vault/${opts.uid}.md`);
+
+  const triples: Triple[] = [
+    new Triple(subject, Namespace.RDF.term("type"), Namespace.EXOCMD.term("Grounding")),
+    new Triple(subject, Namespace.EXO.term("Asset_uid"), new Literal(opts.uid)),
+    new Triple(subject, Namespace.EXO.term("Asset_label"), new Literal(opts.label)),
+    new Triple(subject, Namespace.EXOCMD.term("Grounding_type"), new Literal(opts.type)),
+  ];
+
+  if (opts.targetProperty) {
+    triples.push(new Triple(subject, Namespace.EXOCMD.term("Grounding_targetProperty"), new Literal(opts.targetProperty)));
+  }
+  if (opts.targetValue) {
+    triples.push(new Triple(subject, Namespace.EXOCMD.term("Grounding_targetValue"), new Literal(opts.targetValue)));
+  }
+  if (opts.sparqlUpdate) {
+    triples.push(new Triple(subject, Namespace.EXOCMD.term("Grounding_sparqlUpdate"), new Literal(opts.sparqlUpdate)));
+  }
+  if (opts.stepRefs) {
+    for (const ref of opts.stepRefs) {
+      triples.push(new Triple(subject, Namespace.EXOCMD.term("Grounding_steps"), new IRI(`obsidian://vault/${ref}.md`)));
+    }
+  }
+
+  await store.addAll(triples);
+  return subject;
+}
+
+async function addBindingAsset(
+  store: InMemoryTripleStore,
+  opts: {
+    uid: string;
+    label: string;
+    commandRef: string;
+    targetClass?: string;
+    targetPrototype?: string;
+    targetAsset?: string;
+    position?: string;
+    order?: number;
+    group?: string;
+  },
+): Promise<IRI> {
+  const subject = new IRI(`obsidian://vault/${opts.uid}.md`);
+
+  const triples: Triple[] = [
+    new Triple(subject, Namespace.RDF.term("type"), Namespace.EXOCMD.term("CommandBinding")),
+    new Triple(subject, Namespace.EXO.term("Asset_uid"), new Literal(opts.uid)),
+    new Triple(subject, Namespace.EXO.term("Asset_label"), new Literal(opts.label)),
+    new Triple(subject, Namespace.EXOCMD.term("CommandBinding_command"), new IRI(`obsidian://vault/${opts.commandRef}.md`)),
+  ];
+
+  if (opts.targetClass) {
+    triples.push(new Triple(subject, Namespace.EXOCMD.term("CommandBinding_targetClass"), new Literal(opts.targetClass)));
+  }
+  if (opts.targetPrototype) {
+    triples.push(new Triple(subject, Namespace.EXOCMD.term("CommandBinding_targetPrototype"), new Literal(opts.targetPrototype)));
+  }
+  if (opts.targetAsset) {
+    triples.push(new Triple(subject, Namespace.EXOCMD.term("CommandBinding_targetAsset"), new Literal(opts.targetAsset)));
+  }
+  if (opts.position) {
+    triples.push(new Triple(subject, Namespace.EXOCMD.term("CommandBinding_position"), new Literal(opts.position)));
+  }
+  if (opts.order !== undefined) {
+    triples.push(new Triple(subject, Namespace.EXOCMD.term("CommandBinding_order"), new Literal(String(opts.order))));
+  }
+  if (opts.group) {
+    triples.push(new Triple(subject, Namespace.EXOCMD.term("CommandBinding_group"), new Literal(opts.group)));
+  }
+
+  await store.addAll(triples);
+  return subject;
+}
+
+// -- Tests --
+
+describe("CommandResolver", () => {
+  let store: InMemoryTripleStore;
+  let resolver: CommandResolver;
+
+  beforeEach(() => {
+    store = new InMemoryTripleStore();
+    resolver = new CommandResolver(store);
+  });
+
+  describe("loadCommand", () => {
+    it("should load a command with all properties", async () => {
+      await addPreconditionAsset(store, {
+        uid: "pre-has-start",
+        label: "Has startTimestamp",
+        sparqlAsk: "ASK { $target ems:Effort_startTimestamp ?ts }",
+      });
+
+      await addGroundingAsset(store, {
+        uid: "gnd-remove-start",
+        label: "Delete startTimestamp",
+        type: "property_delete",
+        targetProperty: "ems__Effort_startTimestamp",
+      });
+
+      await addCommandAsset(store, {
+        uid: "cmd-remove-start",
+        label: "Remove start timestamp",
+        icon: "clock-x",
+        preconditionRef: "pre-has-start",
+        groundingRef: "gnd-remove-start",
+        confirmMessage: "Delete start timestamp?",
+        successMessage: "Deleted",
+        category: "maintenance",
+      });
+
+      const cmd = await resolver.loadCommand("cmd-remove-start");
+
+      expect(cmd).not.toBeNull();
+      expect(cmd!.id).toBe("cmd-remove-start");
+      expect(cmd!.name).toBe("Remove start timestamp");
+      expect(cmd!.icon).toBe("clock-x");
+      expect(cmd!.confirmMessage).toBe("Delete start timestamp?");
+      expect(cmd!.successMessage).toBe("Deleted");
+      expect(cmd!.category).toBe("maintenance");
+    });
+
+    it("should load linked precondition transitively", async () => {
+      await addPreconditionAsset(store, {
+        uid: "pre-has-start",
+        label: "Has start",
+        sparqlAsk: "ASK { $target ems:Effort_startTimestamp ?ts }",
+      });
+
+      await addGroundingAsset(store, {
+        uid: "gnd-remove",
+        label: "Remove",
+        type: "property_delete",
+        targetProperty: "ems__Effort_startTimestamp",
+      });
+
+      await addCommandAsset(store, {
+        uid: "cmd-test",
+        label: "Test",
+        preconditionRef: "pre-has-start",
+        groundingRef: "gnd-remove",
+      });
+
+      const cmd = await resolver.loadCommand("cmd-test");
+
+      expect(cmd!.precondition).toBeDefined();
+      expect(cmd!.precondition!.id).toBe("pre-has-start");
+      expect(cmd!.precondition!.sparqlAsk).toContain("ASK");
+    });
+
+    it("should load linked grounding transitively", async () => {
+      await addGroundingAsset(store, {
+        uid: "gnd-set-status",
+        label: "Set status",
+        type: "property_set",
+        targetProperty: "ems__Effort_status",
+        targetValue: "ems__EffortStatusDoing",
+      });
+
+      await addCommandAsset(store, {
+        uid: "cmd-start",
+        label: "Start",
+        groundingRef: "gnd-set-status",
+      });
+
+      const cmd = await resolver.loadCommand("cmd-start");
+
+      expect(cmd!.grounding).toBeDefined();
+      expect(cmd!.grounding.type).toBe("property_set");
+      expect(cmd!.grounding.targetProperty).toBe("ems__Effort_status");
+    });
+
+    it("should return null for missing UID", async () => {
+      const cmd = await resolver.loadCommand("non-existent");
+      expect(cmd).toBeNull();
+    });
+
+    it("should return null if grounding is missing", async () => {
+      // Command without grounding reference
+      const subject = new IRI("obsidian://vault/cmd-no-grounding.md");
+      await store.addAll([
+        new Triple(subject, Namespace.RDF.term("type"), Namespace.EXOCMD.term("Command")),
+        new Triple(subject, Namespace.EXO.term("Asset_uid"), new Literal("cmd-no-grounding")),
+        new Triple(subject, Namespace.EXO.term("Asset_label"), new Literal("No grounding")),
+      ]);
+
+      const cmd = await resolver.loadCommand("cmd-no-grounding");
+      expect(cmd).toBeNull();
+    });
+
+    it("should handle command without precondition gracefully", async () => {
+      await addGroundingAsset(store, {
+        uid: "gnd-simple",
+        label: "Simple",
+        type: "property_delete",
+        targetProperty: "ems__Effort_startTimestamp",
+      });
+
+      await addCommandAsset(store, {
+        uid: "cmd-no-pre",
+        label: "No precondition",
+        groundingRef: "gnd-simple",
+      });
+
+      const cmd = await resolver.loadCommand("cmd-no-pre");
+
+      expect(cmd).not.toBeNull();
+      expect(cmd!.precondition).toBeUndefined();
+    });
+
+    it("should load composite grounding with steps", async () => {
+      await addGroundingAsset(store, {
+        uid: "gnd-step1",
+        label: "Set status",
+        type: "property_set",
+        targetProperty: "ems__Effort_status",
+        targetValue: "ems__EffortStatusDoing",
+      });
+
+      await addGroundingAsset(store, {
+        uid: "gnd-step2",
+        label: "Set start",
+        type: "property_set",
+        targetProperty: "ems__Effort_startTimestamp",
+        targetValue: "$now",
+      });
+
+      await addGroundingAsset(store, {
+        uid: "gnd-composite",
+        label: "Start effort",
+        type: "composite",
+        stepRefs: ["gnd-step1", "gnd-step2"],
+      });
+
+      await addCommandAsset(store, {
+        uid: "cmd-start-effort",
+        label: "Start effort",
+        groundingRef: "gnd-composite",
+      });
+
+      const cmd = await resolver.loadCommand("cmd-start-effort");
+
+      expect(cmd!.grounding.type).toBe("composite");
+      expect(cmd!.grounding.steps).toHaveLength(2);
+      expect(cmd!.grounding.steps![0].type).toBe("property_set");
+      expect(cmd!.grounding.steps![1].targetProperty).toBe("ems__Effort_startTimestamp");
+    });
+  });
+
+  describe("findBindings", () => {
+    beforeEach(async () => {
+      await addGroundingAsset(store, { uid: "gnd-1", label: "G1", type: "property_delete", targetProperty: "test" });
+      await addCommandAsset(store, { uid: "cmd-1", label: "C1", groundingRef: "gnd-1" });
+    });
+
+    it("should find bindings by targetClass", async () => {
+      await addBindingAsset(store, {
+        uid: "bind-1",
+        label: "For tasks",
+        commandRef: "cmd-1",
+        targetClass: "ems__Task",
+      });
+
+      const bindings = await resolver.findBindings("ems__Task");
+
+      expect(bindings).toHaveLength(1);
+      expect(bindings[0].targetClass).toBe("ems__Task");
+    });
+
+    it("should find bindings by targetPrototype", async () => {
+      await addBindingAsset(store, {
+        uid: "bind-proto",
+        label: "For prototype",
+        commandRef: "cmd-1",
+        targetPrototype: "proto-uid-123",
+      });
+
+      const bindings = await resolver.findBindings(undefined, "proto-uid-123");
+
+      expect(bindings).toHaveLength(1);
+      expect(bindings[0].targetPrototype).toBe("proto-uid-123");
+    });
+
+    it("should find bindings by targetAsset", async () => {
+      await addBindingAsset(store, {
+        uid: "bind-asset",
+        label: "For specific asset",
+        commandRef: "cmd-1",
+        targetAsset: "asset-uid-456",
+      });
+
+      const bindings = await resolver.findBindings(undefined, undefined, "asset-uid-456");
+
+      expect(bindings).toHaveLength(1);
+    });
+
+    it("should return empty array when no bindings match", async () => {
+      await addBindingAsset(store, {
+        uid: "bind-project",
+        label: "For projects",
+        commandRef: "cmd-1",
+        targetClass: "ems__Project",
+      });
+
+      const bindings = await resolver.findBindings("ems__Task");
+
+      expect(bindings).toHaveLength(0);
+    });
+
+    it("should skip bindings without any target", async () => {
+      // Manually add a binding without targetClass/targetPrototype/targetAsset
+      const subject = new IRI("obsidian://vault/bind-no-target.md");
+      await store.addAll([
+        new Triple(subject, Namespace.RDF.term("type"), Namespace.EXOCMD.term("CommandBinding")),
+        new Triple(subject, Namespace.EXO.term("Asset_uid"), new Literal("bind-no-target")),
+        new Triple(subject, Namespace.EXO.term("Asset_label"), new Literal("No target")),
+        new Triple(subject, Namespace.EXOCMD.term("CommandBinding_command"), new IRI("obsidian://vault/cmd-1.md")),
+      ]);
+
+      const bindings = await resolver.findBindings("ems__Task");
+
+      expect(bindings).toHaveLength(0);
+    });
+  });
+
+  describe("resolveForAsset", () => {
+    it("should resolve commands for a given asset class", async () => {
+      await addGroundingAsset(store, { uid: "gnd-1", label: "G1", type: "property_delete", targetProperty: "test" });
+      await addCommandAsset(store, { uid: "cmd-1", label: "Command 1", groundingRef: "gnd-1" });
+      await addBindingAsset(store, { uid: "bind-1", label: "B1", commandRef: "cmd-1", targetClass: "ems__Task" });
+
+      const resolved = await resolver.resolveForAsset("asset-123", "ems__Task");
+
+      expect(resolved).toHaveLength(1);
+      expect(resolved[0].command.name).toBe("Command 1");
+      expect(resolved[0].binding.targetClass).toBe("ems__Task");
+    });
+
+    it("should return empty array when no bindings match", async () => {
+      const resolved = await resolver.resolveForAsset("asset-123", "ems__Task");
+
+      expect(resolved).toHaveLength(0);
+    });
+
+    it("should sort by binding priority: targetAsset > targetPrototype > targetClass", async () => {
+      await addGroundingAsset(store, { uid: "gnd-1", label: "G1", type: "property_delete", targetProperty: "p" });
+      await addCommandAsset(store, { uid: "cmd-class", label: "Class cmd", groundingRef: "gnd-1" });
+      await addCommandAsset(store, { uid: "cmd-proto", label: "Proto cmd", groundingRef: "gnd-1" });
+      await addCommandAsset(store, { uid: "cmd-asset", label: "Asset cmd", groundingRef: "gnd-1" });
+
+      await addBindingAsset(store, { uid: "bind-class", label: "BC", commandRef: "cmd-class", targetClass: "ems__Task" });
+      await addBindingAsset(store, { uid: "bind-proto", label: "BP", commandRef: "cmd-proto", targetPrototype: "proto-1" });
+      await addBindingAsset(store, { uid: "bind-asset", label: "BA", commandRef: "cmd-asset", targetAsset: "asset-1" });
+
+      const resolved = await resolver.resolveForAsset("asset-1", "ems__Task", "proto-1");
+
+      expect(resolved).toHaveLength(3);
+      expect(resolved[0].command.name).toBe("Asset cmd");     // priority 0
+      expect(resolved[1].command.name).toBe("Proto cmd");     // priority 1
+      expect(resolved[2].command.name).toBe("Class cmd");     // priority 2
+    });
+
+    it("should sort by order within same priority", async () => {
+      await addGroundingAsset(store, { uid: "gnd-1", label: "G", type: "property_delete", targetProperty: "p" });
+      await addCommandAsset(store, { uid: "cmd-a", label: "A", groundingRef: "gnd-1" });
+      await addCommandAsset(store, { uid: "cmd-b", label: "B", groundingRef: "gnd-1" });
+
+      await addBindingAsset(store, { uid: "bind-a", label: "BA", commandRef: "cmd-a", targetClass: "ems__Task", order: 200 });
+      await addBindingAsset(store, { uid: "bind-b", label: "BB", commandRef: "cmd-b", targetClass: "ems__Task", order: 50 });
+
+      const resolved = await resolver.resolveForAsset("asset-1", "ems__Task");
+
+      expect(resolved[0].command.name).toBe("B"); // order 50
+      expect(resolved[1].command.name).toBe("A"); // order 200
+    });
+
+    it("should skip bindings referencing non-existent commands", async () => {
+      await addBindingAsset(store, {
+        uid: "bind-broken",
+        label: "Broken",
+        commandRef: "cmd-does-not-exist",
+        targetClass: "ems__Task",
+      });
+
+      const resolved = await resolver.resolveForAsset("asset-1", "ems__Task");
+
+      expect(resolved).toHaveLength(0);
+    });
+  });
+
+  describe("cache", () => {
+    it("should return cached results on second call", async () => {
+      await addGroundingAsset(store, { uid: "gnd-1", label: "G", type: "property_delete", targetProperty: "p" });
+      await addCommandAsset(store, { uid: "cmd-1", label: "C1", groundingRef: "gnd-1" });
+      await addBindingAsset(store, { uid: "bind-1", label: "B1", commandRef: "cmd-1", targetClass: "ems__Task" });
+
+      const matchSpy = jest.spyOn(store, "match");
+
+      const first = await resolver.resolveForAsset("asset-1", "ems__Task");
+      const callCountAfterFirst = matchSpy.mock.calls.length;
+
+      const second = await resolver.resolveForAsset("asset-1", "ems__Task");
+
+      // Second call should not trigger additional match() calls
+      const callCountAfterSecond = matchSpy.mock.calls.length;
+      expect(callCountAfterSecond).toBe(callCountAfterFirst);
+      expect(second).toEqual(first);
+    });
+
+    it("should clear cache on invalidateCache()", async () => {
+      await addGroundingAsset(store, { uid: "gnd-1", label: "G", type: "property_delete", targetProperty: "p" });
+      await addCommandAsset(store, { uid: "cmd-1", label: "C1", groundingRef: "gnd-1" });
+      await addBindingAsset(store, { uid: "bind-1", label: "B1", commandRef: "cmd-1", targetClass: "ems__Task" });
+
+      // First call populates cache
+      await resolver.resolveForAsset("asset-1", "ems__Task");
+
+      // Clear cache
+      resolver.invalidateCache();
+
+      const matchSpy = jest.spyOn(store, "match");
+
+      // Next call should re-query the store
+      await resolver.resolveForAsset("asset-1", "ems__Task");
+
+      expect(matchSpy.mock.calls.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe("edge cases", () => {
+    it("should handle invalid grounding type gracefully", async () => {
+      await addGroundingAsset(store, {
+        uid: "gnd-invalid",
+        label: "Invalid type",
+        type: "unknown_type",
+      });
+
+      await addCommandAsset(store, {
+        uid: "cmd-invalid",
+        label: "Invalid",
+        groundingRef: "gnd-invalid",
+      });
+
+      const cmd = await resolver.loadCommand("cmd-invalid");
+      expect(cmd).toBeNull(); // Invalid grounding type → null command
+    });
+
+    it("should handle precondition with missing sparqlAsk", async () => {
+      // Precondition without sparqlAsk
+      const preSubject = new IRI("obsidian://vault/pre-no-ask.md");
+      await store.addAll([
+        new Triple(preSubject, Namespace.RDF.term("type"), Namespace.EXOCMD.term("Precondition")),
+        new Triple(preSubject, Namespace.EXO.term("Asset_uid"), new Literal("pre-no-ask")),
+        new Triple(preSubject, Namespace.EXO.term("Asset_label"), new Literal("No ASK")),
+        // Missing sparqlAsk property
+      ]);
+
+      await addGroundingAsset(store, { uid: "gnd-1", label: "G", type: "property_delete", targetProperty: "p" });
+      await addCommandAsset(store, { uid: "cmd-bad-pre", label: "Bad pre", preconditionRef: "pre-no-ask", groundingRef: "gnd-1" });
+
+      const cmd = await resolver.loadCommand("cmd-bad-pre");
+
+      // Command should still load, but without precondition
+      expect(cmd).not.toBeNull();
+      expect(cmd!.precondition).toBeUndefined();
+    });
+
+    it("should handle multiple bindings for same command", async () => {
+      await addGroundingAsset(store, { uid: "gnd-1", label: "G", type: "property_delete", targetProperty: "p" });
+      await addCommandAsset(store, { uid: "cmd-shared", label: "Shared", groundingRef: "gnd-1" });
+
+      // Same command bound to both Task and Project
+      await addBindingAsset(store, { uid: "bind-task", label: "BT", commandRef: "cmd-shared", targetClass: "ems__Task" });
+      await addBindingAsset(store, { uid: "bind-proj", label: "BP", commandRef: "cmd-shared", targetClass: "ems__Project" });
+
+      const taskCmds = await resolver.resolveForAsset("t-1", "ems__Task");
+      const projCmds = await resolver.resolveForAsset("p-1", "ems__Project");
+
+      expect(taskCmds).toHaveLength(1);
+      expect(projCmds).toHaveLength(1);
+      expect(taskCmds[0].command.id).toBe("cmd-shared");
+      expect(projCmds[0].command.id).toBe("cmd-shared");
+    });
+
+    it("should use default order 100 when order not specified", async () => {
+      await addGroundingAsset(store, { uid: "gnd-1", label: "G", type: "property_delete", targetProperty: "p" });
+      await addCommandAsset(store, { uid: "cmd-a", label: "A", groundingRef: "gnd-1" });
+      await addCommandAsset(store, { uid: "cmd-b", label: "B", groundingRef: "gnd-1" });
+
+      await addBindingAsset(store, { uid: "bind-a", label: "BA", commandRef: "cmd-a", targetClass: "ems__Task" }); // no order → 100
+      await addBindingAsset(store, { uid: "bind-b", label: "BB", commandRef: "cmd-b", targetClass: "ems__Task", order: 50 });
+
+      const resolved = await resolver.resolveForAsset("asset-1", "ems__Task");
+
+      expect(resolved[0].command.name).toBe("B"); // order 50
+      expect(resolved[1].command.name).toBe("A"); // order 100 (default)
+    });
+  });
+});
