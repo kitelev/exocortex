@@ -45,6 +45,11 @@ export {
 
 // Services exports
 export { CommandResolver, type ResolvedCommand } from "./services/CommandResolver";
+export {
+  PreconditionEvaluator,
+  type EvalContext,
+  type HostFunction,
+} from "./services/PreconditionEvaluator";
 export { TaskCreationService } from "./services/TaskCreationService";
 export { ProjectCreationService } from "./services/ProjectCreationService";
 export { TaskStatusService } from "./services/TaskStatusService";
