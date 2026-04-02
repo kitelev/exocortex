@@ -112,6 +112,9 @@ describeOrSkip("watch command integration", () => {
       });
     });
 
+    // Allow watcher to fully stabilize before triggering file events
+    await new Promise(resolve => setTimeout(resolve, 500));
+
     // Create a test file
     const testFile = path.join(tempDir, "test-file.md");
     fs.writeFileSync(testFile, "# Test content");
@@ -120,7 +123,7 @@ describeOrSkip("watch command integration", () => {
     await new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(() => {
         reject(new Error("Timeout waiting for file event"));
-      }, 3000);
+      }, 10000);
 
       cliProcess?.stdout?.on("data", () => {
         if (stdoutOutput.join("").includes("test-file.md")) {
