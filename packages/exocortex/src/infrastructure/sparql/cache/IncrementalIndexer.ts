@@ -1,3 +1,5 @@
+import { LoggingService } from "../../../services/LoggingService";
+
 /**
  * IncrementalIndexer - Tracks file modification times for smart cache invalidation
  *
@@ -214,7 +216,7 @@ export class IncrementalIndexer {
         try {
           callback(changesToInvalidate);
         } catch (error) {
-          console.error("IncrementalIndexer: Error in invalidation callback:", error);
+          LoggingService.error("IncrementalIndexer: Error in invalidation callback", error instanceof Error ? error : new Error(String(error)));
         }
       }
     }

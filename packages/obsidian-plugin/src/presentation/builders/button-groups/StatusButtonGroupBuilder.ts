@@ -42,10 +42,8 @@ export class StatusButtonGroupBuilder implements IButtonGroupBuilder {
 
     // For custom (non-standard) asset classes, use workflow-driven buttons directly
     const isCustom = this.isCustomAssetClass(metadata);
-    console.debug("[Exocortex Workflow] build() called, isCustom:", isCustom, "class:", metadata["exo__Instance_class"]);
     if (isCustom) {
       const workflowButtons = await this.buildWorkflowButtons(file, metadata, logger, refresh);
-      console.debug("[Exocortex Workflow] workflowButtons:", workflowButtons.length);
       if (workflowButtons.length > 0) {
         return workflowButtons;
       }
@@ -84,19 +82,13 @@ export class StatusButtonGroupBuilder implements IButtonGroupBuilder {
     refresh: () => Promise<void>,
   ): Promise<ActionButton[]> {
     const statusRaw = metadata["ems__Effort_status"] as string | undefined;
-    console.debug("[Exocortex Workflow] buildWorkflowButtons statusRaw:", statusRaw);
     if (!statusRaw) return [];
 
     const normalized = statusRaw.replace(/["'[\]]/g, "").trim();
     const currentStatus = Object.values(EffortStatus).find((s) => s === normalized);
-    console.debug("[Exocortex Workflow] normalized:", normalized, "currentStatus:", currentStatus);
     if (!currentStatus) return [];
 
-    const hasTripleStore = !!this.services.tripleStore;
-    console.debug("[Exocortex Workflow] hasTripleStore:", hasTripleStore);
     const store = this.services.tripleStore ?? new InMemoryTripleStore();
-    const storeCount = await store.count();
-    console.debug("[Exocortex Workflow] storeCount:", storeCount);
     const resolver = new WorkflowResolver(store);
     const instanceClassRaw = metadata["exo__Instance_class"];
 
