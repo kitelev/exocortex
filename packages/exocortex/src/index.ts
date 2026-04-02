@@ -73,6 +73,7 @@ export type { WorkflowValidationResult } from "./services/WorkflowEngine";
 export { WorkflowResolver } from "./services/WorkflowResolver";
 export { VisibilityGenerator } from "./services/VisibilityGenerator";
 export type { VisibleCommand } from "./services/VisibilityGenerator";
+export { WorkflowCommandAdapter } from "./services/WorkflowCommandAdapter";
 export type {
   WorkflowDefinition,
   WorkflowStateDefinition,
