@@ -18,6 +18,7 @@ import { createCommand } from "./commands/create.js";
 import { archiveCommand } from "./commands/archive.js";
 import { unarchiveCommand } from "./commands/unarchive.js";
 import { workflowCommand } from "./commands/workflow.js";
+import { dynamicCommandCommand } from "./commands/dynamic-command.js";
 
 // Version injected at build time by esbuild (see esbuild.config.mjs)
 declare const __CLI_VERSION__: string;
@@ -50,5 +51,6 @@ program.addCommand(createCommand());
 program.addCommand(archiveCommand());
 program.addCommand(unarchiveCommand());
 program.addCommand(workflowCommand());
+program.addCommand(dynamicCommandCommand());
 
 program.parse();
