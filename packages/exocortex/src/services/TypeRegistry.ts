@@ -8,6 +8,7 @@ import type { ITripleStore } from "../interfaces/ITripleStore";
 import { IRI } from "../domain/models/rdf/IRI";
 import { BlankNode } from "../domain/models/rdf/BlankNode";
 import { Literal } from "../domain/models/rdf/Literal";
+import { LoggingService } from "./LoggingService";
 import type { Subject, Object as RDFObject } from "../domain/models/rdf/Triple";
 import {
   NodeTypeDefinition,
@@ -791,7 +792,7 @@ export class TypeRegistry {
       try {
         callback(event);
       } catch (error) {
-        console.error("TypeRegistry: error in subscriber callback", error);
+        LoggingService.error("TypeRegistry: error in subscriber callback", error instanceof Error ? error : new Error(String(error)));
       }
     }
   }

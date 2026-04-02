@@ -7,6 +7,7 @@ import {
   NetworkError,
   ValidationError,
 } from "../../../../src/domain/errors/index";
+import { LoggingService } from "../../../../src/services/LoggingService";
 
 describe("ApplicationErrorHandler", () => {
   let handler: ApplicationErrorHandler;
@@ -205,20 +206,20 @@ describe("ApplicationErrorHandler", () => {
       };
       handler.registerTelemetryHook(badHook);
 
-      const consoleErrorSpy = jest
-        .spyOn(console, "error")
+      const loggingErrorSpy = jest
+        .spyOn(LoggingService, "error")
         .mockImplementation(() => {});
 
       const error = new ValidationError("Test");
       const result = handler.handle(error);
 
       expect(result).toBeDefined();
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        "Error in telemetry hook:",
+      expect(loggingErrorSpy).toHaveBeenCalledWith(
+        "Error in telemetry hook",
         expect.any(Error),
       );
 
-      consoleErrorSpy.mockRestore();
+      loggingErrorSpy.mockRestore();
     });
 
     it("should merge context from executeWithRetry", async () => {

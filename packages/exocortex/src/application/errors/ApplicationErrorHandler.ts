@@ -2,6 +2,7 @@ import type { ILogger } from "../../interfaces/ILogger";
 import type { INotificationService } from "../../interfaces/INotificationService";
 import { ApplicationError } from "../../domain/errors/ApplicationError";
 import { ErrorCode } from "../../domain/errors/ErrorCode";
+import { LoggingService } from "../../services/LoggingService";
 
 /**
  * Telemetry hook for monitoring errors
@@ -102,7 +103,7 @@ export class ApplicationErrorHandler {
       }
     }
 
-    throw lastError!;
+    throw lastError as ApplicationError;
   }
 
   /**
@@ -192,7 +193,7 @@ export class ApplicationErrorHandler {
           hookMethod.apply(hook, args);
         }
       } catch (error) {
-        console.error("Error in telemetry hook:", error);
+        LoggingService.error("Error in telemetry hook", error instanceof Error ? error : new Error(String(error)));
       }
     }
   }

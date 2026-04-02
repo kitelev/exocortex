@@ -4,6 +4,7 @@ import type { IFileSystemWriter } from "../interfaces/IFileSystemAdapter";
 import type { GroundingDefinition } from "../domain/models/CommandDefinition";
 import { GroundingType } from "../domain/constants/GroundingType";
 import { FrontmatterService } from "../utilities/FrontmatterService";
+import { LoggingService } from "./LoggingService";
 
 /**
  * Result of executing a grounding action.
@@ -321,9 +322,9 @@ export class GroundingExecutor {
       await this.fileWriter.updateFile(filePath, originalContent);
     } catch (rollbackError) {
       // Log rollback failure but do not throw — prevents masking the original error
-      console.error(
-        `[GroundingExecutor] Rollback failed for ${filePath}:`,
-        rollbackError,
+      LoggingService.error(
+        `[GroundingExecutor] Rollback failed for ${filePath}`,
+        rollbackError instanceof Error ? rollbackError : new Error(String(rollbackError)),
       );
     }
   }
