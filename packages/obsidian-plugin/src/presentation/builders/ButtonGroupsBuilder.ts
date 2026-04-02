@@ -19,6 +19,9 @@ import {
   AssetConversionService,
   MetadataExtractor,
   CriticalityZoneService,
+  CommandResolver,
+  PreconditionEvaluator,
+  GroundingExecutor,
 } from "exocortex";
 import type { ITripleStore } from "exocortex";
 import {
@@ -31,6 +34,7 @@ import {
   PlanningButtonGroupBuilder,
   MaintenanceButtonGroupBuilder,
   CriticalityZoneButtonGroupBuilder,
+  DynamicCommandButtonGroupBuilder,
 } from "./button-groups";
 import { ObsidianApp, ExocortexPluginInterface } from '@plugin/types';
 
@@ -71,6 +75,12 @@ export interface ButtonGroupsBuilderConfig {
   assetConversionService: AssetConversionService;
   /** Service for setting criticality zones */
   criticalityZoneService: CriticalityZoneService;
+  /** Resolver for dynamic commands from vault assets */
+  commandResolver?: CommandResolver;
+  /** Evaluator for command preconditions */
+  preconditionEvaluator?: PreconditionEvaluator;
+  /** Executor for grounding actions */
+  groundingExecutor?: GroundingExecutor;
   /** Extractor for file metadata */
   metadataExtractor: MetadataExtractor;
   /** Logger instance */
@@ -118,6 +128,9 @@ export class ButtonGroupsBuilder {
       labelToAliasService,
       assetConversionService,
       criticalityZoneService,
+      commandResolver,
+      preconditionEvaluator,
+      groundingExecutor,
       tripleStore,
       metadataExtractor,
       logger,
@@ -149,7 +162,7 @@ export class ButtonGroupsBuilder {
       tripleStore,
     };
 
-    // Initialize specialized builders
+    // Initialize specialized builders (hardcoded first, then dynamic)
     this.builders = [
       new CreationButtonGroupBuilder(this.services),
       new StatusButtonGroupBuilder(this.services),
@@ -157,6 +170,16 @@ export class ButtonGroupsBuilder {
       new CriticalityZoneButtonGroupBuilder({ criticalityZoneService }),
       new MaintenanceButtonGroupBuilder(this.services),
     ];
+
+    if (commandResolver && preconditionEvaluator && groundingExecutor) {
+      this.builders.push(
+        new DynamicCommandButtonGroupBuilder({
+          commandResolver,
+          preconditionEvaluator,
+          groundingExecutor,
+        }),
+      );
+    }
   }
 
   /**

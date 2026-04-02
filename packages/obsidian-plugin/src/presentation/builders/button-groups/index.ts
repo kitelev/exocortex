@@ -6,3 +6,5 @@ export { PlanningButtonGroupBuilder } from "./PlanningButtonGroupBuilder";
 export { MaintenanceButtonGroupBuilder } from "./MaintenanceButtonGroupBuilder";
 export { CriticalityZoneButtonGroupBuilder } from "./CriticalityZoneButtonGroupBuilder";
 export type { CriticalityZoneButtonBuilderServices } from "./CriticalityZoneButtonGroupBuilder";
+export { DynamicCommandButtonGroupBuilder } from "./DynamicCommandButtonGroupBuilder";
+export type { DynamicCommandBuilderConfig } from "./DynamicCommandButtonGroupBuilder";
