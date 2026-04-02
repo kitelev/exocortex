@@ -50,6 +50,13 @@ export {
   type EvalContext,
   type HostFunction,
 } from "./services/PreconditionEvaluator";
+export {
+  GroundingExecutor,
+  ServiceRegistry,
+  type ExecutionResult,
+  type UserInput,
+  type IGroundingService,
+} from "./services/GroundingExecutor";
 export { TaskCreationService } from "./services/TaskCreationService";
 export { ProjectCreationService } from "./services/ProjectCreationService";
 export { TaskStatusService } from "./services/TaskStatusService";
