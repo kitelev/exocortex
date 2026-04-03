@@ -395,7 +395,7 @@ export class FilterContainsOptimizer {
       const funcName =
         typeof funcExpr.function === "string"
           ? funcExpr.function.toLowerCase()
-          : (funcExpr.function as any)?.value?.toLowerCase() ?? "";
+          : ((funcExpr.function as { value?: string })?.value?.toLowerCase() ?? "");
 
       if (funcName === "contains" && funcExpr.args.length === 2) {
         return this.analyzeContainsArgs(funcExpr.args[0], funcExpr.args[1], expr);
@@ -403,8 +403,8 @@ export class FilterContainsOptimizer {
     }
 
     // Handle logical AND - check each operand
-    if (expr.type === "logical" && (expr as any).operator === "&&") {
-      for (const operand of (expr as any).operands) {
+    if (expr.type === "logical" && (expr as import("../algebra/AlgebraOperation").LogicalExpression).operator === "&&") {
+      for (const operand of (expr as import("../algebra/AlgebraOperation").LogicalExpression).operands) {
         const pattern = this.detectContainsUUIDPattern(operand);
         if (pattern) {
           return pattern;
@@ -428,7 +428,7 @@ export class FilterContainsOptimizer {
       const strFuncName =
         typeof strFunc.function === "string"
           ? strFunc.function.toLowerCase()
-          : (strFunc.function as any)?.value?.toLowerCase() ?? "";
+          : ((strFunc.function as { value?: string })?.value?.toLowerCase() ?? "");
 
       if (strFuncName === "str" && strFunc.args.length === 1) {
         const varArg = strFunc.args[0];

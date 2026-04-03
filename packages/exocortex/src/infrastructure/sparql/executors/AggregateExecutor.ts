@@ -1,6 +1,5 @@
-import type { GroupOperation, AggregateExpression, Expression, CustomAggregation, StandardAggregation, VariableExpression, LiteralExpression } from "../algebra/AlgebraOperation";
+import type { GroupOperation, AggregateExpression, Expression, CustomAggregation, StandardAggregation } from "../algebra/AlgebraOperation";
 import type { SolutionMapping } from "../SolutionMapping";
-import type { AggregateValue } from "../types";
 import { Literal } from "../../../domain/models/rdf/Literal";
 import { IRI } from "../../../domain/models/rdf/IRI";
 import { FilterExecutor } from "./FilterExecutor";
@@ -39,7 +38,7 @@ export class AggregateExecutor {
     const results: SolutionMapping[] = [];
 
     for (const [_groupKey, groupSolutions] of groups.entries()) {
-      const resultBindings: Map<string, any> = new Map();
+      const resultBindings: Map<string, unknown> = new Map();
 
       for (const varName of operation.variables) {
         if (groupSolutions.length > 0) {
@@ -239,7 +238,7 @@ export class AggregateExecutor {
       if (expr.expression) {
         const evaluated = this.evaluateExpression(expr.expression, solution);
         if (evaluated !== undefined) {
-          value = evaluated;
+          value = evaluated as Term;
         }
       } else {
         // COUNT(*) style - pass a marker value
@@ -255,12 +254,12 @@ export class AggregateExecutor {
     return aggregate.finalize(state);
   }
 
-  private extractValues(expr: AggregateExpression, solutions: SolutionMapping[]): AggregateValue[] {
+  private extractValues(expr: AggregateExpression, solutions: SolutionMapping[]): unknown[] {
     if (!expr.expression) {
       return solutions.map(() => 1);
     }
 
-    const values: AggregateValue[] = [];
+    const values: unknown[] = [];
     for (const solution of solutions) {
       const value = this.evaluateExpression(expr.expression, solution);
       if (value !== undefined && value !== null) {
@@ -281,11 +280,10 @@ export class AggregateExecutor {
    * - Function calls: AVG(HOURS(?end) - HOURS(?start))
    * - Nested expressions: SUM((?end - ?start) / 60000)
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Returns flexible types consumed by aggregate computations
-  private evaluateExpression(expr: Expression, solution: SolutionMapping): any {
+  private evaluateExpression(expr: Expression, solution: SolutionMapping): unknown {
     // For variable expressions, we need special handling to extract values properly
     if (expr.type === "variable") {
-      const term = solution.get((expr as VariableExpression).name);
+      const term = solution.get((expr as import("../algebra/AlgebraOperation").VariableExpression).name);
       if (term === undefined || term === null) return undefined;
 
       // Handle raw primitive values (from BIND computations)
@@ -310,7 +308,7 @@ export class AggregateExecutor {
 
     // For literal expressions, return the value directly
     if (expr.type === "literal") {
-      return (expr as LiteralExpression).value;
+      return (expr as import("../algebra/AlgebraOperation").LiteralExpression).value;
     }
 
     // For all other expression types (arithmetic, function, comparison, etc.),
@@ -324,25 +322,25 @@ export class AggregateExecutor {
     }
   }
 
-  private computeCount(values: AggregateValue[], distinct: boolean): number {
+  private computeCount(values: unknown[], distinct: boolean): number {
     if (distinct) {
       return new Set(values.map((v) => String(v))).size;
     }
     return values.length;
   }
 
-  private computeSum(values: AggregateValue[]): number {
+  private computeSum(values: unknown[]): number {
     const nums = values.map((v) => parseFloat(String(v))).filter((n) => !isNaN(n));
     return nums.reduce((acc, n) => acc + n, 0);
   }
 
-  private computeAvg(values: AggregateValue[]): number {
+  private computeAvg(values: unknown[]): number {
     const nums = values.map((v) => parseFloat(String(v))).filter((n) => !isNaN(n));
     if (nums.length === 0) return 0;
     return nums.reduce((acc, n) => acc + n, 0) / nums.length;
   }
 
-  private computeMin(values: AggregateValue[]): AggregateValue | undefined {
+  private computeMin(values: unknown[]): unknown {
     if (values.length === 0) return undefined;
 
     const nums = values.map((v) => parseFloat(String(v))).filter((n) => !isNaN(n));
@@ -354,7 +352,7 @@ export class AggregateExecutor {
     return strs.reduce((min, s) => (s < min ? s : min), strs[0]);
   }
 
-  private computeMax(values: AggregateValue[]): AggregateValue | undefined {
+  private computeMax(values: unknown[]): unknown {
     if (values.length === 0) return undefined;
 
     const nums = values.map((v) => parseFloat(String(v))).filter((n) => !isNaN(n));
@@ -366,7 +364,7 @@ export class AggregateExecutor {
     return strs.reduce((max, s) => (s > max ? s : max), strs[0]);
   }
 
-  private computeGroupConcat(values: AggregateValue[], separator: string, distinct: boolean): string {
+  private computeGroupConcat(values: unknown[], separator: string, distinct: boolean): string {
     let strs = values.map((v) => String(v));
 
     if (distinct) {
@@ -381,7 +379,7 @@ export class AggregateExecutor {
    * Returns an arbitrary value from the group.
    * Per spec, this returns any value - we choose the first non-null value.
    */
-  private computeSample(values: AggregateValue[], distinct: boolean): AggregateValue | undefined {
+  private computeSample(values: unknown[], distinct: boolean): unknown {
     if (values.length === 0) return undefined;
 
     if (distinct) {

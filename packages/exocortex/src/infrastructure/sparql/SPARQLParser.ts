@@ -444,14 +444,13 @@ export class SPARQLParser {
     return "updateType" in operation && operation.updateType === "delete";
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Validates raw parsed output before type narrowing
-  private validateQuery(query: any): void {
+  private validateQuery(query: sparqljs.SparqlQuery): void {
     if (!query || typeof query !== "object") {
       throw new SPARQLParseError("Invalid query: not an object");
     }
 
     if (query.type !== "query" && query.type !== "update") {
-      throw new SPARQLParseError(`Invalid type: expected "query" or "update", got "${query.type}"`);
+      throw new SPARQLParseError(`Invalid type: expected "query" or "update", got "${(query as { type: string }).type}"`);
     }
 
     if (query.type === "query") {

@@ -98,6 +98,6 @@ export class ValuesExecutor {
         term.direction
       );
     }
-    throw new ValuesExecutorError(`Unknown term type: ${(term as any).type}`);
+    throw new ValuesExecutorError(`Unknown term type: ${(term as { type: string }).type}`);
   }
 }

@@ -89,7 +89,7 @@ export class UpdateExecutor {
         case "deletewhere":
           throw new UpdateExecutorError("DELETE WHERE not yet implemented");
         default:
-          throw new UpdateExecutorError(`Unknown update type: ${(operation as any).updateType}`);
+          throw new UpdateExecutorError(`Unknown update type: ${(operation as { updateType: string }).updateType}`);
       }
     }
 
@@ -105,7 +105,7 @@ export class UpdateExecutor {
         case "add":
           throw new UpdateExecutorError(`${operation.type.toUpperCase()} operation not yet implemented`);
         default:
-          throw new UpdateExecutorError(`Unknown operation type: ${(operation as any).type}`);
+          throw new UpdateExecutorError(`Unknown operation type: ${(operation as { type: string }).type}`);
       }
     }
 

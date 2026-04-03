@@ -21,11 +21,6 @@ import type {
   AskOperation,
   ServiceOperation,
   GraphOperation,
-  Expression,
-  VariableExpression,
-  LiteralExpression,
-  Triple as AlgebraTriple,
-  TripleElement,
 } from "../algebra/AlgebraOperation";
 import type { SolutionMapping } from "../SolutionMapping";
 import type { Triple } from "../../../domain/models/rdf/Triple";
@@ -215,7 +210,7 @@ export class QueryExecutor {
         break;
 
       default:
-        throw new QueryExecutorError(`Unknown operation type: ${(operation as any).type}`);
+        throw new QueryExecutorError(`Unknown operation type: ${(operation as { type: string }).type}`);
     }
   }
 
@@ -465,7 +460,7 @@ export class QueryExecutor {
       for (const result of results) {
         // All HAVING conditions must be true
         const passesHaving = operation.having.every((expr) => {
-          const value = this.filterExecutor.evaluateExpression(expr as any, result);
+          const value = this.filterExecutor.evaluateExpression(expr, result);
           return value === true;
         });
         if (passesHaving) {
@@ -484,7 +479,7 @@ export class QueryExecutor {
       const clone = solution.clone();
       const value = this.evaluateExtendExpression(operation.expression, solution);
       if (value !== undefined) {
-        clone.set(operation.variable, value as any);
+        clone.set(operation.variable, value as Parameters<SolutionMapping["set"]>[1]);
       }
       yield clone;
     }
@@ -580,46 +575,44 @@ export class QueryExecutor {
    */
   private substituteInOperation(op: AlgebraOperation, bindings: SolutionMapping): AlgebraOperation {
     if (!op || typeof op !== 'object') {
+      return op as AlgebraOperation;
+    }
+
+    // Use a mutable record view for generic property access across all operation types
+    const opRecord = op as unknown as Record<string, unknown>;
+
+    // Handle triple patterns in BGP
+    if (op.type === 'bgp' && op.triples) {
+      op.triples = op.triples.map((triple) => this.substituteInTriple(triple as unknown as Record<string, unknown>, bindings) as typeof triple);
       return op;
     }
 
-    // Use structural access for duck-typed operation traversal
-    const operation = op as AlgebraOperation & Record<string, unknown>;
-
-    // Handle triple patterns in BGP
-    if (operation.type === 'bgp' && operation.triples) {
-      (operation as unknown as { triples: AlgebraTriple[] }).triples = (operation as unknown as { triples: AlgebraTriple[] }).triples.map(
-        (triple) => this.substituteInTriple(triple, bindings)
-      );
-      return operation;
-    }
-
     // Recursively process nested operations
-    if (operation.input) {
-      (operation as Record<string, unknown>).input = this.substituteInOperation(operation.input as AlgebraOperation, bindings);
+    if (opRecord.input) {
+      opRecord.input = this.substituteInOperation(opRecord.input as AlgebraOperation, bindings);
     }
-    if (operation.left) {
-      (operation as Record<string, unknown>).left = this.substituteInOperation(operation.left as AlgebraOperation, bindings);
+    if (opRecord.left) {
+      opRecord.left = this.substituteInOperation(opRecord.left as AlgebraOperation, bindings);
     }
-    if (operation.right) {
-      (operation as Record<string, unknown>).right = this.substituteInOperation(operation.right as AlgebraOperation, bindings);
+    if (opRecord.right) {
+      opRecord.right = this.substituteInOperation(opRecord.right as AlgebraOperation, bindings);
     }
-    if (operation.pattern) {
-      (operation as Record<string, unknown>).pattern = this.substituteInOperation(operation.pattern as AlgebraOperation, bindings);
+    if (opRecord.pattern) {
+      opRecord.pattern = this.substituteInOperation(opRecord.pattern as AlgebraOperation, bindings);
     }
-    if (operation.query) {
-      (operation as Record<string, unknown>).query = this.substituteInOperation(operation.query as AlgebraOperation, bindings);
+    if (opRecord.query) {
+      opRecord.query = this.substituteInOperation(opRecord.query as AlgebraOperation, bindings);
     }
-    if (operation.where) {
-      (operation as Record<string, unknown>).where = this.substituteInOperation(operation.where as AlgebraOperation, bindings);
+    if (opRecord.where) {
+      opRecord.where = this.substituteInOperation(opRecord.where as AlgebraOperation, bindings);
     }
 
     // Substitute variables in filter expressions (handles EXISTS/NOT EXISTS patterns)
-    if (operation.expression) {
-      this.substituteInExpression(operation.expression as Expression, bindings);
+    if (opRecord.expression) {
+      this.substituteInExpression(opRecord.expression as Record<string, unknown>, bindings);
     }
 
-    return operation;
+    return op;
   }
 
   /**
@@ -627,35 +620,32 @@ export class QueryExecutor {
    * Primarily needed to handle EXISTS/NOT EXISTS patterns which contain
    * AlgebraOperations that need variable substitution for bind join correctness.
    */
-  private substituteInExpression(expr: Expression, bindings: SolutionMapping): void {
+  private substituteInExpression(expr: Record<string, unknown>, bindings: SolutionMapping): void {
     if (!expr || typeof expr !== 'object') return;
 
-    // Use structural access for duck-typed expression traversal
-    const e = expr as Expression & Record<string, unknown>;
-
     // Handle EXISTS/NOT EXISTS patterns
-    if (e.type === 'exists' && e.pattern) {
-      (e as Record<string, unknown>).pattern = this.substituteInOperation(e.pattern as AlgebraOperation, bindings);
+    if (expr.type === 'exists' && expr.pattern) {
+      expr.pattern = this.substituteInOperation(expr.pattern as AlgebraOperation, bindings);
     }
 
     // Recurse into sub-expressions
-    if (e.left) this.substituteInExpression(e.left as Expression, bindings);
-    if (e.right) this.substituteInExpression(e.right as Expression, bindings);
-    if (e.operands) {
-      for (const op of e.operands as Expression[]) {
+    if (expr.left) this.substituteInExpression(expr.left as Record<string, unknown>, bindings);
+    if (expr.right) this.substituteInExpression(expr.right as Record<string, unknown>, bindings);
+    if (expr.operands) {
+      for (const op of expr.operands as Record<string, unknown>[]) {
         this.substituteInExpression(op, bindings);
       }
     }
-    if (e.args) {
-      for (const arg of e.args as Expression[]) {
+    if (expr.args) {
+      for (const arg of expr.args as Record<string, unknown>[]) {
         this.substituteInExpression(arg, bindings);
       }
     }
-    if (e.expression) {
-      this.substituteInExpression(e.expression as Expression, bindings);
+    if (expr.expression) {
+      this.substituteInExpression(expr.expression as Record<string, unknown>, bindings);
     }
-    if (e.list) {
-      for (const item of e.list as Expression[]) {
+    if (expr.list) {
+      for (const item of expr.list as Record<string, unknown>[]) {
         this.substituteInExpression(item, bindings);
       }
     }
@@ -664,33 +654,33 @@ export class QueryExecutor {
   /**
    * Substitute variables in a triple pattern with values from bindings.
    */
-  private substituteInTriple(triple: AlgebraTriple, bindings: SolutionMapping): AlgebraTriple {
+  private substituteInTriple(triple: Record<string, unknown>, bindings: SolutionMapping): unknown {
     return {
-      subject: this.substituteInTripleElement(triple.subject, bindings),
+      subject: this.substituteInTripleElement(triple.subject as Record<string, unknown>, bindings),
       predicate: triple.predicate, // Predicate paths are not substituted
-      object: this.substituteInTripleElement(triple.object, bindings),
+      object: this.substituteInTripleElement(triple.object as Record<string, unknown>, bindings),
     };
   }
 
   /**
    * Substitute a variable in a triple element if it has a binding.
    */
-  private substituteInTripleElement(element: TripleElement, bindings: SolutionMapping): TripleElement {
+  private substituteInTripleElement(element: Record<string, unknown>, bindings: SolutionMapping): unknown {
     if (element && element.type === 'variable') {
-      const value = bindings.get(element.value);
+      const value = bindings.get(element.value as string);
       if (value != null) {
+        const valueRecord = value as unknown as Record<string, unknown>;
         // Convert RDF term to algebra representation
-        const termLike = value as { value?: string; termType?: string; datatype?: { value: string }; language?: string; _datatype?: { value: string }; _language?: string };
-        if (value instanceof IRI || termLike.termType === 'NamedNode') {
-          return { type: 'iri', value: termLike.value! };
+        if (value instanceof IRI || valueRecord.termType === 'NamedNode') {
+          return { type: 'iri', value: (value as { value: string }).value };
         }
         // Handle Literal
-        if (termLike.termType === 'Literal' || typeof termLike.value === 'string') {
+        if (valueRecord.termType === 'Literal' || typeof valueRecord.value === 'string') {
           return {
             type: 'literal',
-            value: termLike.value!,
-            datatype: termLike.datatype?.value ?? termLike._datatype?.value,
-            language: termLike.language ?? termLike._language,
+            value: valueRecord.value,
+            datatype: (valueRecord.datatype as Record<string, unknown>)?.value ?? (valueRecord._datatype as Record<string, unknown>)?.value,
+            language: valueRecord.language ?? valueRecord._language,
           };
         }
       }
@@ -797,22 +787,24 @@ export class QueryExecutor {
     // Use FilterExecutor's evaluateExpression for all other expression types
     // This handles: variable, literal, function (REPLACE, STR, etc.), comparison, logical
     try {
-      return this.filterExecutor.evaluateExpression(expr as any, solution);
+      return this.filterExecutor.evaluateExpression(expr, solution);
     } catch {
       return undefined;
     }
   }
 
-  private getExpressionValue(expr: Expression, solution: SolutionMapping): unknown {
+  private getExpressionValue(expr: import("../algebra/AlgebraOperation").Expression, solution: SolutionMapping): unknown {
     if (expr.type === "variable") {
-      const term = solution.get((expr as VariableExpression).name);
+      const term = solution.get(expr.name);
       if (term) {
-        const termObj = term as { value?: string; id?: string };
-        return termObj.value ?? termObj.id ?? String(term);
+        return (term as { value?: string; id?: string }).value ?? (term as { value?: string; id?: string }).id ?? String(term);
       }
       return undefined;
     }
-    return (expr as LiteralExpression).value;
+    if (expr.type === "literal") {
+      return expr.value;
+    }
+    return undefined;
   }
 
   /**
@@ -827,16 +819,14 @@ export class QueryExecutor {
 
   private collectVarsFromOperation(operation: unknown, vars: Set<string>): void {
     if (!operation || typeof operation !== 'object') return;
-
-    // Use structural access for duck-typed traversal
     const op = operation as Record<string, unknown>;
 
     // Collect from BGP triple patterns
     if (op.type === 'bgp' && op.triples) {
-      for (const triple of op.triples as AlgebraTriple[]) {
+      for (const triple of op.triples as Record<string, unknown>[]) {
         this.collectVarsFromElement(triple.subject, vars);
-        if (triple.predicate && "type" in triple.predicate && triple.predicate.type !== 'path') {
-          this.collectVarsFromElement(triple.predicate as TripleElement, vars);
+        if ((triple.predicate as Record<string, unknown>)?.type !== 'path') {
+          this.collectVarsFromElement(triple.predicate, vars);
         }
         this.collectVarsFromElement(triple.object, vars);
       }
@@ -851,7 +841,7 @@ export class QueryExecutor {
 
     // Collect from filter expressions
     if (op.expression) {
-      this.collectVarsFromExpressionTree(op.expression as Expression, vars);
+      this.collectVarsFromExpressionTree(op.expression, vars);
     }
 
     // Collect from extend variable
@@ -868,49 +858,47 @@ export class QueryExecutor {
     if (op.where) this.collectVarsFromOperation(op.where, vars);
   }
 
-  private collectVarsFromElement(element: TripleElement, vars: Set<string>): void {
-    if (!element) return;
-    if (element.type === 'variable') {
-      vars.add(element.value);
+  private collectVarsFromElement(element: unknown, vars: Set<string>): void {
+    if (!element || typeof element !== 'object') return;
+    const el = element as Record<string, unknown>;
+    if (el.type === 'variable') {
+      vars.add(el.value as string);
     }
     // Handle quoted triples
-    if (element.type === 'quoted') {
-      this.collectVarsFromElement(element.subject, vars);
-      this.collectVarsFromElement(element.predicate as TripleElement, vars);
-      this.collectVarsFromElement(element.object, vars);
+    if (el.type === 'quoted') {
+      this.collectVarsFromElement(el.subject, vars);
+      this.collectVarsFromElement(el.predicate, vars);
+      this.collectVarsFromElement(el.object, vars);
     }
   }
 
-  private collectVarsFromExpressionTree(expr: Expression, vars: Set<string>): void {
+  private collectVarsFromExpressionTree(expr: unknown, vars: Set<string>): void {
     if (!expr || typeof expr !== 'object') return;
-
-    // Use structural access for duck-typed expression traversal
-    const e = expr as Expression & Record<string, unknown>;
-
-    if (e.type === 'variable' && "name" in e) {
-      vars.add((e as VariableExpression).name);
+    const e = expr as Record<string, unknown>;
+    if (e.type === 'variable' && e.name) {
+      vars.add(e.name as string);
     }
     // Handle EXISTS patterns
     if (e.type === 'exists' && e.pattern) {
       this.collectVarsFromOperation(e.pattern, vars);
     }
-    if (e.left) this.collectVarsFromExpressionTree(e.left as Expression, vars);
-    if (e.right) this.collectVarsFromExpressionTree(e.right as Expression, vars);
+    if (e.left) this.collectVarsFromExpressionTree(e.left, vars);
+    if (e.right) this.collectVarsFromExpressionTree(e.right, vars);
     if (e.operands) {
-      for (const op of e.operands as Expression[]) {
+      for (const op of e.operands as unknown[]) {
         this.collectVarsFromExpressionTree(op, vars);
       }
     }
     if (e.args) {
-      for (const arg of e.args as Expression[]) {
+      for (const arg of e.args as unknown[]) {
         this.collectVarsFromExpressionTree(arg, vars);
       }
     }
     if (e.expression) {
-      this.collectVarsFromExpressionTree(e.expression as Expression, vars);
+      this.collectVarsFromExpressionTree(e.expression, vars);
     }
     if (e.list) {
-      for (const item of e.list as Expression[]) {
+      for (const item of e.list as unknown[]) {
         this.collectVarsFromExpressionTree(item, vars);
       }
     }

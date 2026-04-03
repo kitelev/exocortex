@@ -585,7 +585,7 @@ export class AlgebraOptimizer {
 
     if (operation.type === "values") {
       // VALUES constrains to a small set of concrete bindings
-      const bindings = (operation as any).bindings;
+      const bindings = (operation as import("./AlgebraOperation").ValuesOperation).bindings;
       return Array.isArray(bindings) ? bindings.length * 5 : 10;
     }
 

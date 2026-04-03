@@ -112,7 +112,7 @@ export class SPARQLGenerator {
       }
 
       default:
-        throw new SPARQLGeneratorError(`Unsupported operation type for SPARQL generation: ${(operation as any).type}`);
+        throw new SPARQLGeneratorError(`Unsupported operation type for SPARQL generation: ${(operation as { type: string }).type}`);
     }
   }
 
@@ -206,7 +206,7 @@ export class SPARQLGenerator {
         return `_:${element.value}`;
 
       default:
-        throw new SPARQLGeneratorError(`Unknown element type: ${(element as any).type}`);
+        throw new SPARQLGeneratorError(`Unknown element type: ${(element as { type: string }).type}`);
     }
   }
 
@@ -319,7 +319,7 @@ export class SPARQLGenerator {
       }
 
       default:
-        throw new SPARQLGeneratorError(`Unknown expression type: ${(expr as any).type}`);
+        throw new SPARQLGeneratorError(`Unknown expression type: ${(expr as { type: string }).type}`);
     }
   }
 

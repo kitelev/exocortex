@@ -50,13 +50,13 @@ export class AlgebraSerializer {
         return `${prefix}Group ${groupVars}${aggs ? ` [${aggs}]` : ""}(\n${this.toString(operation.input, indent + 1)}\n${prefix})`;
 
       case "extend":
-        return `${prefix}Extend (?${operation.variable} = ${this.expressionToString(operation.expression as any)})(\n${this.toString(operation.input, indent + 1)}\n${prefix})`;
+        return `${prefix}Extend (?${operation.variable} = ${this.expressionToString(operation.expression as Expression)})(\n${this.toString(operation.input, indent + 1)}\n${prefix})`;
 
       case "subquery":
         return `${prefix}Subquery(\n${this.toString(operation.query, indent + 1)}\n${prefix})`;
 
       default:
-        return `${prefix}Unknown(${(operation as any).type})`;
+        return `${prefix}Unknown(${(operation as { type: string }).type})`;
     }
   }
 

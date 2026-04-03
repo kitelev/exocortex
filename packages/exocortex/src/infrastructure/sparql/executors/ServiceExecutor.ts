@@ -245,7 +245,7 @@ export class ServiceExecutor {
         return new BlankNode(term.value);
 
       default:
-        throw new ServiceExecutorError(`Unknown RDF term type: ${(term as any).type}`);
+        throw new ServiceExecutorError(`Unknown RDF term type: ${(term as { type: string }).type}`);
     }
   }
 
