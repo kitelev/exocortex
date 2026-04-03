@@ -1,6 +1,3 @@
-/* eslint-disable import/no-nodejs-modules */
-import { createHash } from "crypto";
-
 export class HashFunctions {
 
   /**
@@ -18,7 +15,9 @@ export class HashFunctions {
    */
   static md5(str: string): string {
     // codeql[js/weak-cryptographic-algorithm] SPARQL 1.1 spec-mandated function
-    return createHash("md5").update(str).digest("hex"); // nosec - SPARQL spec compliance
+    // eslint-disable-next-line @typescript-eslint/no-require-imports, import/no-nodejs-modules
+    const crypto = require("crypto");
+    return crypto.createHash("md5").update(str).digest("hex"); // nosec - SPARQL spec compliance
   }
 
   /**
@@ -36,7 +35,9 @@ export class HashFunctions {
    */
   static sha1(str: string): string {
     // codeql[js/weak-cryptographic-algorithm] SPARQL 1.1 spec-mandated function
-    return createHash("sha1").update(str).digest("hex"); // nosec - SPARQL spec compliance
+    // eslint-disable-next-line @typescript-eslint/no-require-imports, import/no-nodejs-modules
+    const crypto = require("crypto");
+    return crypto.createHash("sha1").update(str).digest("hex"); // nosec - SPARQL spec compliance
   }
 
   /**
@@ -49,7 +50,9 @@ export class HashFunctions {
    * Example: SHA256("test") = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
    */
   static sha256(str: string): string {
-    return createHash("sha256").update(str).digest("hex");
+    // eslint-disable-next-line @typescript-eslint/no-require-imports, import/no-nodejs-modules
+    const crypto = require("crypto");
+    return crypto.createHash("sha256").update(str).digest("hex");
   }
 
   /**
@@ -60,7 +63,9 @@ export class HashFunctions {
    * @returns Lowercase hex string of SHA384 hash
    */
   static sha384(str: string): string {
-    return createHash("sha384").update(str).digest("hex");
+    // eslint-disable-next-line @typescript-eslint/no-require-imports, import/no-nodejs-modules
+    const crypto = require("crypto");
+    return crypto.createHash("sha384").update(str).digest("hex");
   }
 
   /**
@@ -71,6 +76,8 @@ export class HashFunctions {
    * @returns Lowercase hex string of SHA512 hash
    */
   static sha512(str: string): string {
-    return createHash("sha512").update(str).digest("hex");
+    // eslint-disable-next-line @typescript-eslint/no-require-imports, import/no-nodejs-modules
+    const crypto = require("crypto");
+    return crypto.createHash("sha512").update(str).digest("hex");
   }
 }
