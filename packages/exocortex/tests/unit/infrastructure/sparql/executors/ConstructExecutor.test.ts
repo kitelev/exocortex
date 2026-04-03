@@ -90,6 +90,97 @@ describe("ConstructExecutor", () => {
     expect(triples).toHaveLength(0);
   });
 
+  it("should handle template with property path in predicate and throw", async () => {
+    const template: AlgebraTriple[] = [
+      {
+        subject: { type: "variable", value: "s" },
+        predicate: { type: "path", pathType: "/", items: [] } as any,
+        object: { type: "variable", value: "o" },
+      },
+    ];
+
+    const solution = new SolutionMapping();
+    solution.set("s", new IRI("http://example.org/s"));
+    solution.set("o", new IRI("http://example.org/o"));
+
+    const triples = await executor.execute(template, [solution]);
+    // Property paths in CONSTRUCT template should cause error, skip triple
+    expect(triples).toHaveLength(0);
+  });
+
+  it("should handle template with blank node subject", async () => {
+    const template: AlgebraTriple[] = [
+      {
+        subject: { type: "blank", value: "b0" },
+        predicate: { type: "iri", value: "http://example.org/p" },
+        object: { type: "literal", value: "val" },
+      },
+    ];
+
+    const solution = new SolutionMapping();
+    const triples = await executor.execute(template, [solution]);
+    expect(triples).toHaveLength(1);
+    expect(triples[0].subject).toBeInstanceOf(BlankNode);
+  });
+
+  it("should handle template with literal datatype in object", async () => {
+    const template: AlgebraTriple[] = [
+      {
+        subject: { type: "iri", value: "http://example.org/s" },
+        predicate: { type: "iri", value: "http://example.org/age" },
+        object: {
+          type: "literal",
+          value: "42",
+          datatype: "http://www.w3.org/2001/XMLSchema#integer",
+        },
+      },
+    ];
+
+    const solution = new SolutionMapping();
+    const triples = await executor.execute(template, [solution]);
+    expect(triples).toHaveLength(1);
+    expect(triples[0].object).toBeInstanceOf(Literal);
+  });
+
+  it("should handle template with literal language in object", async () => {
+    const template: AlgebraTriple[] = [
+      {
+        subject: { type: "iri", value: "http://example.org/s" },
+        predicate: { type: "iri", value: "http://example.org/label" },
+        object: {
+          type: "literal",
+          value: "Hello",
+          language: "en",
+        },
+      },
+    ];
+
+    const solution = new SolutionMapping();
+    const triples = await executor.execute(template, [solution]);
+    expect(triples).toHaveLength(1);
+  });
+
+  it("should handle empty solutions array", async () => {
+    const template: AlgebraTriple[] = [
+      {
+        subject: { type: "iri", value: "http://example.org/s" },
+        predicate: { type: "iri", value: "http://example.org/p" },
+        object: { type: "iri", value: "http://example.org/o" },
+      },
+    ];
+
+    const triples = await executor.execute(template, []);
+    expect(triples).toHaveLength(0);
+  });
+
+  it("should handle empty template", async () => {
+    const solution = new SolutionMapping();
+    solution.set("x", new IRI("http://example.org/x"));
+
+    const triples = await executor.execute([], [solution]);
+    expect(triples).toHaveLength(0);
+  });
+
   describe("RDF-Star CONSTRUCT with Quoted Triples", () => {
     it("should construct triples with quoted triple in subject position", async () => {
       // CONSTRUCT { <<( ?person :hasName ?name )>> :source :Database . }

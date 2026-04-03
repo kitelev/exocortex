@@ -110,6 +110,67 @@ describe("GraphData utilities", () => {
       expect(merged.nodes).toHaveLength(2);
       expect(merged.edges).toHaveLength(1);
     });
+
+    it("should handle undefined version in base", () => {
+      const base: GraphData = {
+        nodes: [{ id: "n1", path: "n1.md", title: "N1", label: "N1", isArchived: false }],
+        edges: [],
+      };
+      const update: GraphData = {
+        nodes: [],
+        edges: [],
+        version: 5,
+      };
+      const merged = mergeGraphData(base, update);
+      expect(merged.version).toBe(6); // max(0, 5) + 1
+    });
+
+    it("should handle undefined version in update", () => {
+      const base: GraphData = {
+        nodes: [],
+        edges: [],
+        version: 3,
+      };
+      const update: GraphData = {
+        nodes: [],
+        edges: [],
+      };
+      const merged = mergeGraphData(base, update);
+      expect(merged.version).toBe(4); // max(3, 0) + 1
+    });
+
+    it("should handle both undefined versions", () => {
+      const base: GraphData = { nodes: [], edges: [] };
+      const update: GraphData = { nodes: [], edges: [] };
+      const merged = mergeGraphData(base, update);
+      expect(merged.version).toBe(1); // max(0, 0) + 1
+    });
+
+    it("should deduplicate edges from base and update", () => {
+      const base: GraphData = {
+        nodes: [],
+        edges: [{ source: "a", target: "b", type: "forward-link" }],
+      };
+      const update: GraphData = {
+        nodes: [],
+        edges: [{ source: "a", target: "b", type: "forward-link" }],
+      };
+      const merged = mergeGraphData(base, update);
+      expect(merged.edges).toHaveLength(1);
+    });
+
+    it("should keep edges with different types between same nodes", () => {
+      const base: GraphData = {
+        nodes: [],
+        edges: [{ source: "a", target: "b", type: "forward-link" }],
+      };
+      const update: GraphData = {
+        nodes: [],
+        edges: [{ source: "a", target: "b", type: "backlink" }],
+      };
+      const merged = mergeGraphData(base, update);
+      expect(merged.edges).toHaveLength(2);
+    });
   });
 });
 
