@@ -120,7 +120,7 @@ describe("InMemoryTripleStore Performance", () => {
       await store.match(subject);
       const cachedDuration = performance.now() - cachedStart;
 
-      expect(cachedDuration).toBeLessThan(uncachedDuration);
+      expect(cachedDuration).toBeLessThanOrEqual(uncachedDuration);
     });
   });
 

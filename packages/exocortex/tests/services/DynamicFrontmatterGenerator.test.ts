@@ -6,7 +6,7 @@ describe("DynamicFrontmatterGenerator", () => {
   beforeEach(() => {
     generator = new DynamicFrontmatterGenerator();
     jest.useFakeTimers();
-    jest.setSystemTime(new Date("2025-12-07T10:30:00"));
+    jest.setSystemTime(new Date("2025-12-07T10:30:00").getTime());
   });
 
   afterEach(() => {
