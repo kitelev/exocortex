@@ -1,79 +1,52 @@
-import { App, TFile, Notice } from "obsidian";
-import { ICommand } from "./ICommand";
+import { App, TFile } from "obsidian";
 import {
   CommandVisibilityContext,
   canCreateProject,
   ProjectCreationService,
-  LoggingService,
+  type IFile,
 } from "exocortex";
-import { LabelInputModal, type LabelInputModalResult } from '@plugin/presentation/modals/LabelInputModal';
+import type { LabelInputModalResult } from '@plugin/presentation/modals/LabelInputModal';
 import { ObsidianVaultAdapter } from '@plugin/adapters/ObsidianVaultAdapter';
+import { BaseContextAssetCreationCommand } from "./base/BaseContextAssetCreationCommand";
 
-export class CreateProjectCommand implements ICommand {
-  id = "create-project";
-  name = "Create project";
+export class CreateProjectCommand extends BaseContextAssetCreationCommand {
+  readonly id = "create-project";
+  readonly name = "Create project";
 
   constructor(
-    private app: App,
+    app: App,
     private projectCreationService: ProjectCreationService,
-    private vaultAdapter: ObsidianVaultAdapter,
-  ) {}
+    vaultAdapter: ObsidianVaultAdapter,
+  ) {
+    super(app, vaultAdapter);
+  }
 
-  checkCallback = (checking: boolean, file: TFile, context: CommandVisibilityContext | null): boolean => {
-    if (!context || !canCreateProject(context)) return false;
+  protected canCreate(context: CommandVisibilityContext): boolean {
+    return canCreateProject(context);
+  }
 
-    if (!checking) {
-      void (async () => {
-        try {
-          await this.execute(file, context);
-        } catch (error) {
-          new Notice(`Failed to create project: ${error instanceof Error ? error.message : String(error)}`);
-          LoggingService.error("Create project error", error instanceof Error ? error : undefined);
-        }
-      })();
-    }
+  protected getAssetTypeName(): string {
+    return "Project";
+  }
 
-    return true;
-  };
+  protected getErrorLogPrefix(): string {
+    return "Create project error";
+  }
 
-  private async execute(file: TFile, _context: CommandVisibilityContext): Promise<void> {
-    const result = await new Promise<LabelInputModalResult>((resolve) => {
-      new LabelInputModal(this.app, resolve).open();
-    });
-
-    if (result.label === null) {
-      return;
-    }
-
-    const cache = this.app.metadataCache.getFileCache(file);
-    const metadata = cache?.frontmatter || {};
+  protected async createAsset(
+    file: TFile,
+    metadata: Record<string, unknown>,
+    _context: CommandVisibilityContext,
+    modalResult: LabelInputModalResult,
+  ): Promise<IFile> {
     const instanceClass = metadata.exo__Instance_class;
-
     const sourceClass = Array.isArray(instanceClass) ? instanceClass[0] : instanceClass;
 
-    const createdFile = await this.projectCreationService.createProject(
+    return this.projectCreationService.createProject(
       file,
       metadata,
       sourceClass,
-      result.label,
+      modalResult.label as string,
     );
-
-    const leaf = result.openInNewTab
-      ? this.app.workspace.getLeaf("tab")
-      : this.app.workspace.getLeaf(false);
-    const tfile = this.vaultAdapter.toTFile(createdFile);
-    await leaf.openFile(tfile);
-
-    this.app.workspace.setActiveLeaf(leaf, { focus: true });
-
-    const maxAttempts = 20;
-    for (let i = 0; i < maxAttempts; i++) {
-      if (this.app.workspace.getActiveFile()?.path === tfile.path) {
-        break;
-      }
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    }
-
-    new Notice(`Project created: ${createdFile.basename}`);
   }
 }

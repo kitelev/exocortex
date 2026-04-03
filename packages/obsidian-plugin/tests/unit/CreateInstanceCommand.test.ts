@@ -1,4 +1,4 @@
-import { flushPromises } from "./helpers/testHelpers";
+import { flushPromises, waitForCondition } from "./helpers/testHelpers";
 import { CreateInstanceCommand } from "../../src/application/commands/CreateInstanceCommand";
 import { App, TFile, Notice, WorkspaceLeaf } from "obsidian";
 import {
@@ -273,7 +273,7 @@ describe("CreateInstanceCommand", () => {
       );
     });
 
-    it("should wait for file to become active using event listener", async () => {
+    it("should wait for file to become active via polling", async () => {
       mockCanCreateInstance.mockReturnValue(true);
       const createdFile = { basename: "new-instance", path: "new-instance.md" };
       mockTaskCreationService.createTask.mockResolvedValue(createdFile as any);
@@ -284,29 +284,23 @@ describe("CreateInstanceCommand", () => {
         }),
       }));
 
-      // File not immediately active
-      mockApp.workspace.getActiveFile = jest.fn().mockReturnValue(null);
-
-      // Mock workspace.on to capture the event handler and call it
-      let fileOpenHandler: ((file: TFile | null) => void) | null = null;
-      (mockApp.workspace.on as jest.Mock).mockImplementation((event: string, handler: (file: TFile | null) => void) => {
-        if (event === "file-open") {
-          fileOpenHandler = handler;
-          // Simulate the file-open event firing after a short delay
-          setTimeout(() => handler(mockTFile), 50);
-        }
-        return { id: "mock-event-ref" };
+      // File becomes active after 3 polling attempts
+      let attempts = 0;
+      mockApp.workspace.getActiveFile = jest.fn(() => {
+        attempts++;
+        return attempts >= 3 ? mockTFile : null;
       });
 
       const result = command.checkCallback(false, mockFile, mockContext);
       expect(result).toBe(true);
 
-      // Wait for async execution
-      await flushPromises();
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      // Wait for polling to complete
+      await waitForCondition(
+        () => (Notice as jest.Mock).mock.calls.some(call => call[0] === "Instance created: new-instance"),
+        { timeout: 3000 }
+      );
 
-      expect(mockApp.workspace.on).toHaveBeenCalledWith("file-open", expect.any(Function));
-      expect(mockApp.workspace.offref).toHaveBeenCalled();
+      expect((mockApp.workspace.getActiveFile as jest.Mock).mock.calls.length).toBeGreaterThanOrEqual(3);
       expect(Notice).toHaveBeenCalledWith("Instance created: new-instance");
     });
 

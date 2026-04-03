@@ -1,91 +1,56 @@
-import { App, TFile, Notice } from "obsidian";
-import { ICommand } from "./ICommand";
+import { App, TFile } from "obsidian";
 import {
   CommandVisibilityContext,
   canCreateTask,
   TaskCreationService,
   WikiLinkHelpers,
-  LoggingService,
+  type IFile,
 } from "exocortex";
-import { LabelInputModal, type LabelInputModalResult } from '@plugin/presentation/modals/LabelInputModal';
+import type { LabelInputModalResult } from '@plugin/presentation/modals/LabelInputModal';
 import { ObsidianVaultAdapter } from '@plugin/adapters/ObsidianVaultAdapter';
+import { BaseContextAssetCreationCommand } from "./base/BaseContextAssetCreationCommand";
 
-export class CreateTaskCommand implements ICommand {
-  id = "create-task";
-  name = "Create task";
+export class CreateTaskCommand extends BaseContextAssetCreationCommand {
+  readonly id = "create-task";
+  readonly name = "Create task";
 
   constructor(
-    private app: App,
+    app: App,
     private taskCreationService: TaskCreationService,
-    private vaultAdapter: ObsidianVaultAdapter,
-  ) {}
+    vaultAdapter: ObsidianVaultAdapter,
+  ) {
+    super(app, vaultAdapter);
+  }
 
-  checkCallback = (checking: boolean, file: TFile, context: CommandVisibilityContext | null): boolean => {
-    if (!context || !canCreateTask(context)) return false;
+  protected canCreate(context: CommandVisibilityContext): boolean {
+    return canCreateTask(context);
+  }
 
-    if (!checking) {
-      void (async () => {
-        try {
-          await this.execute(file, context);
-        } catch (error) {
-          new Notice(`Failed to create task: ${error instanceof Error ? error.message : String(error)}`);
-          LoggingService.error("Create task error", error instanceof Error ? error : undefined);
-        }
-      })();
-    }
+  protected getAssetTypeName(): string {
+    return "Task";
+  }
 
-    return true;
-  };
+  protected getErrorLogPrefix(): string {
+    return "Create task error";
+  }
 
-  private async execute(file: TFile, context: CommandVisibilityContext): Promise<void> {
-    const result = await this.showModal();
-
-    if (result.label === null) {
-      return;
-    }
-
-    const cache = this.app.metadataCache.getFileCache(file);
-    const metadata = cache?.frontmatter || {};
-
+  protected async createAsset(
+    file: TFile,
+    metadata: Record<string, unknown>,
+    context: CommandVisibilityContext,
+    modalResult: LabelInputModalResult,
+  ): Promise<IFile> {
     const instanceClass = context.instanceClass;
     const classes = Array.isArray(instanceClass) ? instanceClass : [instanceClass];
     const firstClass = classes[0] || "";
     const sourceClass = WikiLinkHelpers.normalize(firstClass);
 
-    const createdFile = await this.taskCreationService.createTask(
+    return this.taskCreationService.createTask(
       file,
       metadata,
       sourceClass,
-      result.label,
-      result.taskSize,
+      modalResult.label as string,
+      modalResult.taskSize,
     );
-
-    const leaf = result.openInNewTab
-      ? this.app.workspace.getLeaf("tab")
-      : this.app.workspace.getLeaf(false);
-    const tfile = this.vaultAdapter.toTFile(createdFile);
-    await leaf.openFile(tfile);
-
-    this.app.workspace.setActiveLeaf(leaf, { focus: true });
-
-    const maxAttempts = 20;
-    for (let i = 0; i < maxAttempts; i++) {
-      if (this.app.workspace.getActiveFile()?.path === tfile.path) {
-        break;
-      }
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    }
-
-    new Notice(`Task created: ${createdFile.basename}`);
-  }
-
-  /**
-   * Shows the label input modal for creating a new task.
-   * @returns Promise resolving to the modal result
-   */
-  private showModal(): Promise<LabelInputModalResult> {
-    return new Promise<LabelInputModalResult>((resolve) => {
-      new LabelInputModal(this.app, resolve).open();
-    });
   }
 }
