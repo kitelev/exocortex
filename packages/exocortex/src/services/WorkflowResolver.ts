@@ -11,6 +11,10 @@ import type {
   WorkflowStateDefinition,
   WorkflowTransitionDefinition,
 } from "../domain/models/WorkflowDefinition";
+import {
+  PROJECT_DEFAULT_WORKFLOW,
+  TASK_DEFAULT_WORKFLOW,
+} from "../domain/defaults/DefaultWorkflows";
 
 /**
  * Resolves WorkflowDefinitions from vault assets stored in an ITripleStore.
@@ -466,71 +470,13 @@ export class WorkflowResolver {
   /**
    * Returns the hardcoded fallback workflow for backward compatibility
    * when no workflow assets exist in the vault.
+   *
+   * Delegates to DefaultWorkflows single source of truth (Issue #2463).
    */
   getHardcodedFallback(assetClass: AssetClass): WorkflowDefinition {
     if (assetClass === AssetClass.PROJECT) {
-      return this.getProjectFallback();
+      return { ...PROJECT_DEFAULT_WORKFLOW };
     }
-    return this.getTaskFallback();
-  }
-
-  private getProjectFallback(): WorkflowDefinition {
-    return {
-      id: "hardcoded-project-default",
-      name: "Project Default (hardcoded)",
-      targetClass: AssetClass.PROJECT,
-      initialState: EffortStatus.DRAFT,
-      terminalStates: [EffortStatus.DONE, EffortStatus.TRASHED],
-      isDefault: true,
-      states: [
-        { status: EffortStatus.DRAFT, order: 1, optional: false, timestampOnEnter: [] },
-        { status: EffortStatus.BACKLOG, order: 2, optional: false, timestampOnEnter: [] },
-        { status: EffortStatus.ANALYSIS, order: 3, optional: true, timestampOnEnter: [] },
-        { status: EffortStatus.TODO, order: 4, optional: true, timestampOnEnter: [] },
-        { status: EffortStatus.DOING, order: 5, optional: false, timestampOnEnter: ["ems__Effort_startTimestamp"] },
-        { status: EffortStatus.DONE, order: 6, optional: false, timestampOnEnter: ["ems__Effort_endTimestamp", "ems__Effort_resolutionTimestamp"] },
-        { status: EffortStatus.TRASHED, order: 7, optional: false, timestampOnEnter: ["ems__Effort_resolutionTimestamp"] },
-      ],
-      transitions: [
-        { from: EffortStatus.DRAFT, to: EffortStatus.BACKLOG, label: "→ Backlog", isRollback: false },
-        { from: EffortStatus.BACKLOG, to: EffortStatus.ANALYSIS, label: "→ Analysis", isRollback: false },
-        { from: EffortStatus.ANALYSIS, to: EffortStatus.TODO, label: "→ ToDo", isRollback: false },
-        { from: EffortStatus.TODO, to: EffortStatus.DOING, label: "▶ Start", isRollback: false },
-        { from: EffortStatus.DOING, to: EffortStatus.DONE, label: "✓ Done", isRollback: false },
-        // Rollbacks
-        { from: EffortStatus.BACKLOG, to: EffortStatus.DRAFT, label: "← Draft", isRollback: true },
-        { from: EffortStatus.ANALYSIS, to: EffortStatus.BACKLOG, label: "← Backlog", isRollback: true },
-        { from: EffortStatus.TODO, to: EffortStatus.ANALYSIS, label: "← Analysis", isRollback: true },
-        { from: EffortStatus.DOING, to: EffortStatus.TODO, label: "← ToDo", isRollback: true },
-        { from: EffortStatus.DONE, to: EffortStatus.DOING, label: "← Doing", isRollback: true },
-      ],
-    };
-  }
-
-  private getTaskFallback(): WorkflowDefinition {
-    return {
-      id: "hardcoded-task-default",
-      name: "Task Default (hardcoded)",
-      targetClass: AssetClass.TASK,
-      initialState: EffortStatus.DRAFT,
-      terminalStates: [EffortStatus.DONE, EffortStatus.TRASHED],
-      isDefault: true,
-      states: [
-        { status: EffortStatus.DRAFT, order: 1, optional: false, timestampOnEnter: [] },
-        { status: EffortStatus.BACKLOG, order: 2, optional: false, timestampOnEnter: [] },
-        { status: EffortStatus.DOING, order: 3, optional: false, timestampOnEnter: ["ems__Effort_startTimestamp"] },
-        { status: EffortStatus.DONE, order: 4, optional: false, timestampOnEnter: ["ems__Effort_endTimestamp", "ems__Effort_resolutionTimestamp"] },
-        { status: EffortStatus.TRASHED, order: 5, optional: false, timestampOnEnter: ["ems__Effort_resolutionTimestamp"] },
-      ],
-      transitions: [
-        { from: EffortStatus.DRAFT, to: EffortStatus.BACKLOG, label: "→ Backlog", isRollback: false },
-        { from: EffortStatus.BACKLOG, to: EffortStatus.DOING, label: "▶ Start", isRollback: false },
-        { from: EffortStatus.DOING, to: EffortStatus.DONE, label: "✓ Done", isRollback: false },
-        // Rollbacks
-        { from: EffortStatus.BACKLOG, to: EffortStatus.DRAFT, label: "← Draft", isRollback: true },
-        { from: EffortStatus.DOING, to: EffortStatus.BACKLOG, label: "← Backlog", isRollback: true },
-        { from: EffortStatus.DONE, to: EffortStatus.DOING, label: "← Doing", isRollback: true },
-      ],
-    };
+    return { ...TASK_DEFAULT_WORKFLOW };
   }
 }

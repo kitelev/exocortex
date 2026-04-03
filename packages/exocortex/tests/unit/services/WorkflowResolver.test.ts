@@ -216,7 +216,7 @@ describe("WorkflowResolver", () => {
     it("should return hardcoded fallback when no workflow assets exist", async () => {
       const workflow = await resolver.resolveForClass(AssetClass.PROJECT);
 
-      expect(workflow.id).toBe("hardcoded-project-default");
+      expect(workflow.id).toBe("a1b2c3d4-1111-4000-a000-000000000001");
       expect(workflow.targetClass).toBe(AssetClass.PROJECT);
     });
 
@@ -297,7 +297,7 @@ describe("WorkflowResolver", () => {
       });
 
       const workflow = await resolver.resolveForClass(AssetClass.PROJECT);
-      expect(workflow.id).toBe("hardcoded-project-default"); // Falls back
+      expect(workflow.id).toBe("a1b2c3d4-1111-4000-a000-000000000001"); // Falls back
     });
   });
 
@@ -352,7 +352,7 @@ describe("WorkflowResolver", () => {
         AssetClass.PROJECT,
       );
 
-      expect(workflow.id).toBe("hardcoded-project-default");
+      expect(workflow.id).toBe("a1b2c3d4-1111-4000-a000-000000000001");
     });
   });
 

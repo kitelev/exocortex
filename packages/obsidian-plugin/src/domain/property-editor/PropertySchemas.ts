@@ -20,14 +20,18 @@ export interface PropertySchemaDefinition {
   readOnly?: boolean;
 }
 
+/**
+ * Effort status values — self-contained to avoid barrel imports that pull tsyringe.
+ * UIDs match EffortStatus enum in core package.
+ */
 export const EFFORT_STATUS_VALUES = [
-  { value: "[[ems__EffortStatusDraft]]", label: "Draft" },
-  { value: "[[ems__EffortStatusBacklog]]", label: "Backlog" },
-  { value: "[[ems__EffortStatusAnalysis]]", label: "Analysis" },
-  { value: "[[ems__EffortStatusToDo]]", label: "To Do" },
-  { value: "[[ems__EffortStatusDoing]]", label: "Doing" },
-  { value: "[[ems__EffortStatusDone]]", label: "Done" },
-  { value: "[[ems__EffortStatusTrashed]]", label: "Trashed" },
+  { value: "[[ems__EffortStatusBacklog]]", wikilink: "[[ems__EffortStatusBacklog|Backlog]]", label: "Backlog" },
+  { value: "[[ems__EffortStatusAnalysis]]", wikilink: "[[ems__EffortStatusAnalysis|Analysis]]", label: "Analysis" },
+  { value: "[[ems__EffortStatusToDo]]", wikilink: "[[ems__EffortStatusToDo|To Do]]", label: "To Do" },
+  { value: "[[ems__EffortStatusDoing]]", wikilink: "[[ems__EffortStatusDoing|Doing]]", label: "Doing" },
+  { value: "[[ems__EffortStatusDone]]", wikilink: "[[ems__EffortStatusDone|Done]]", label: "Done" },
+  { value: "[[ems__EffortStatusTrashed]]", wikilink: "[[ems__EffortStatusTrashed|Trashed]]", label: "Trashed" },
+  { value: "[[ems__EffortStatusDraft]]", wikilink: "[[ems__EffortStatusDraft|Draft]]", label: "Draft" },
 ];
 
 export const TASK_SIZE_VALUES = [
@@ -192,37 +196,14 @@ export function getPropertyByName(
 
 /**
  * Converts an effort status URI to a human-readable label.
- * Handles various input formats: raw URI, wiki-link wrapped, or already a label.
- *
- * @param statusValue - The status value (e.g., "ems__EffortStatusDoing", "[[ems__EffortStatusDoing]]", "Doing")
- * @returns The human-readable label (e.g., "Doing") or the original value if not found
  */
-export function getStatusLabel(statusValue: string | null | undefined): string {
-  if (!statusValue) return "-";
-
-  const statusStr = String(statusValue);
-
-  // Try to find a matching status value in the list
-  for (const status of EFFORT_STATUS_VALUES) {
-    // Match against full wiki-link format: [[ems__EffortStatusDoing]]
-    if (status.value === statusStr) {
-      return status.label;
-    }
-    // Match against wiki-link wrapped: [[ems__EffortStatusDoing]]
-    if (status.value === `[[${statusStr}]]`) {
-      return status.label;
-    }
-    // Match against raw URI: ems__EffortStatusDoing
-    const rawUri = status.value.replace(/^\[\[|\]\]$/g, "");
-    if (rawUri === statusStr) {
-      return status.label;
-    }
-    // Match against label itself (already human-readable)
-    if (status.label.toLowerCase() === statusStr.toLowerCase()) {
-      return status.label;
-    }
-  }
-
-  // If no match found, return the original value (might be a custom status)
-  return statusStr;
+export function getStatusLabel(statusUri: string | null | undefined): string {
+  if (!statusUri || statusUri.trim() === "") return "-";
+  const normalized = statusUri.replace(/[[\]"']/g, "").trim().toLowerCase();
+  const match = EFFORT_STATUS_VALUES.find(
+    (v) =>
+      v.value.replace(/[[\]]/g, "").toLowerCase() === normalized ||
+      v.label.toLowerCase() === normalized,
+  );
+  return match?.label ?? statusUri;
 }

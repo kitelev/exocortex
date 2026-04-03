@@ -209,8 +209,8 @@ describe("WorkflowResolver — per-project workflow override (ems__Effort_workfl
 
     const workflow = await resolver.resolveForAsset(assetSubject, AssetClass.PROJECT);
 
-    expect(workflow.id).toBe("hardcoded-project-default");
-    expect(workflow.name).toContain("hardcoded");
+    expect(workflow.id).toBe("a1b2c3d4-1111-4000-a000-000000000001");
+    expect(workflow.name).toContain("Project Default");
     expect(workflow.states.length).toBeGreaterThan(0);
     expect(workflow.transitions.length).toBeGreaterThan(0);
     expect(workflow.terminalStates).toContain(EffortStatus.DONE);
@@ -222,7 +222,7 @@ describe("WorkflowResolver — per-project workflow override (ems__Effort_workfl
 
     const workflow = await resolver.resolveForAsset(assetSubject, AssetClass.PROJECT);
 
-    expect(workflow.id).toBe("hardcoded-project-default");
+    expect(workflow.id).toBe("a1b2c3d4-1111-4000-a000-000000000001");
   });
 
   it("should fall back to class default workflow from store (not hardcoded) when available", async () => {
@@ -275,7 +275,7 @@ describe("WorkflowResolver — per-project workflow override (ems__Effort_workfl
     // Resolve for another asset without override — should get class default, not the cached override
     const plainAsset = new IRI("obsidian://vault/plain-task.md");
     const defaultWorkflow = await resolver.resolveForAsset(plainAsset, AssetClass.TASK);
-    expect(defaultWorkflow.id).toBe("hardcoded-task-default");
+    expect(defaultWorkflow.id).toBe("a1b2c3d4-2222-4000-a000-000000000002");
   });
 
   it("should resolve different workflows for multiple assets with different overrides", async () => {
@@ -402,7 +402,7 @@ describe("WorkflowResolver — per-project workflow override (ems__Effort_workfl
     const workflow = await resolver.resolveForAsset(assetSubject, AssetClass.TASK);
 
     // Should fall back to hardcoded default since Literal values are not valid workflow refs
-    expect(workflow.id).toBe("hardcoded-task-default");
+    expect(workflow.id).toBe("a1b2c3d4-2222-4000-a000-000000000002");
   });
 
   it("should use asset override even when a class default exists in the store", async () => {

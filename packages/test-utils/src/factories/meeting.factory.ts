@@ -20,6 +20,13 @@ import type {
   FileInfo,
   Metadata,
 } from "../types";
+import {
+  STATUS_MAP,
+  normalizeStatus,
+  isDoneStatus,
+  isTrashedStatus,
+  isDoingStatus,
+} from "../helpers/status.helpers";
 
 let meetingCounter = 0;
 
@@ -28,50 +35,6 @@ let meetingCounter = 0;
  */
 export function resetMeetingCounter(): void {
   meetingCounter = 0;
-}
-
-/**
- * Map human-readable status names to wikilink format.
- */
-const STATUS_MAP: Record<EffortStatusName, EffortStatus> = {
-  Draft: "ems__EffortStatusDraft",
-  Backlog: "ems__EffortStatusBacklog",
-  Analysis: "ems__EffortStatusAnalysis",
-  "To Do": "ems__EffortStatusToDo",
-  Doing: "ems__EffortStatusDoing",
-  Done: "ems__EffortStatusDone",
-  Trashed: "ems__EffortStatusTrashed",
-};
-
-/**
- * Normalize status to the ems__ format.
- */
-function normalizeStatus(status: EffortStatus | EffortStatusName): EffortStatus {
-  if (status.startsWith("ems__")) {
-    return status as EffortStatus;
-  }
-  return STATUS_MAP[status as EffortStatusName] || "ems__EffortStatusDraft";
-}
-
-/**
- * Check if a status indicates "done" state.
- */
-function isDoneStatus(status: EffortStatus): boolean {
-  return status === "ems__EffortStatusDone";
-}
-
-/**
- * Check if a status indicates "trashed" state.
- */
-function isTrashedStatus(status: EffortStatus): boolean {
-  return status === "ems__EffortStatusTrashed";
-}
-
-/**
- * Check if a status indicates "doing" state.
- */
-function isDoingStatus(status: EffortStatus): boolean {
-  return status === "ems__EffortStatusDoing";
 }
 
 /**

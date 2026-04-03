@@ -1,20 +1,8 @@
 import { Setting } from "obsidian";
 import type { StatusSelectPropertyFieldProps, ValidationResult } from "./types";
 import { WikilinkLabelResolver } from "@plugin/presentation/utils/WikilinkLabelResolver";
-
-/**
- * Status options for effort status select.
- * Values are in wikilink format for storage in frontmatter.
- */
-export const EFFORT_STATUS_OPTIONS = [
-  { value: "[[ems__EffortStatusDraft]]", label: "Draft" },
-  { value: "[[ems__EffortStatusBacklog]]", label: "Backlog" },
-  { value: "[[ems__EffortStatusAnalysis]]", label: "Analysis" },
-  { value: "[[ems__EffortStatusToDo]]", label: "To Do" },
-  { value: "[[ems__EffortStatusDoing]]", label: "Doing" },
-  { value: "[[ems__EffortStatusDone]]", label: "Done" },
-  { value: "[[ems__EffortStatusTrashed]]", label: "Trashed" },
-];
+import { EFFORT_STATUS_OPTIONS } from "exocortex";
+export { EFFORT_STATUS_OPTIONS };
 
 /**
  * Status select property field renderer.
