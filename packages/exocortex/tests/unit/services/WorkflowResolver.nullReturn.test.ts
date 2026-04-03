@@ -31,8 +31,8 @@ describe("WorkflowResolver - null return for empty workflow data", () => {
 
       const result = await resolver.resolveForClass(AssetClass.TASK);
 
-      expect(result.id).toBe("hardcoded-task-default");
-      expect(result.name).toContain("hardcoded");
+      expect(result.id).toBe("a1b2c3d4-2222-4000-a000-000000000002");
+      expect(result.name).toContain("Task Default");
     });
   });
 
@@ -52,7 +52,7 @@ describe("WorkflowResolver - null return for empty workflow data", () => {
 
       const result = await resolver.resolveForAsset(assetIRI, AssetClass.TASK);
 
-      expect(result.id).toBe("hardcoded-task-default");
+      expect(result.id).toBe("a1b2c3d4-2222-4000-a000-000000000002");
     });
   });
 

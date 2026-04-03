@@ -20,15 +20,13 @@ export interface PropertySchemaDefinition {
   readOnly?: boolean;
 }
 
-export const EFFORT_STATUS_VALUES = [
-  { value: "[[ems__EffortStatusDraft]]", label: "Draft" },
-  { value: "[[ems__EffortStatusBacklog]]", label: "Backlog" },
-  { value: "[[ems__EffortStatusAnalysis]]", label: "Analysis" },
-  { value: "[[ems__EffortStatusToDo]]", label: "To Do" },
-  { value: "[[ems__EffortStatusDoing]]", label: "Doing" },
-  { value: "[[ems__EffortStatusDone]]", label: "Done" },
-  { value: "[[ems__EffortStatusTrashed]]", label: "Trashed" },
-];
+import { EFFORT_STATUS_OPTIONS as CORE_STATUS_OPTIONS } from "exocortex";
+
+/**
+ * Effort status values derived from the core EFFORT_STATUS_OPTIONS (single source of truth).
+ * Issue #2463
+ */
+export const EFFORT_STATUS_VALUES = CORE_STATUS_OPTIONS;
 
 export const TASK_SIZE_VALUES = [
   { value: "[[ems__TaskSize_XXS]]", label: "XXS" },
@@ -192,37 +190,8 @@ export function getPropertyByName(
 
 /**
  * Converts an effort status URI to a human-readable label.
- * Handles various input formats: raw URI, wiki-link wrapped, or already a label.
+ * Delegates to core getEffortStatusLabel (single source of truth, Issue #2463).
  *
- * @param statusValue - The status value (e.g., "ems__EffortStatusDoing", "[[ems__EffortStatusDoing]]", "Doing")
- * @returns The human-readable label (e.g., "Doing") or the original value if not found
+ * Preserves case-insensitive label matching for backward compatibility.
  */
-export function getStatusLabel(statusValue: string | null | undefined): string {
-  if (!statusValue) return "-";
-
-  const statusStr = String(statusValue);
-
-  // Try to find a matching status value in the list
-  for (const status of EFFORT_STATUS_VALUES) {
-    // Match against full wiki-link format: [[ems__EffortStatusDoing]]
-    if (status.value === statusStr) {
-      return status.label;
-    }
-    // Match against wiki-link wrapped: [[ems__EffortStatusDoing]]
-    if (status.value === `[[${statusStr}]]`) {
-      return status.label;
-    }
-    // Match against raw URI: ems__EffortStatusDoing
-    const rawUri = status.value.replace(/^\[\[|\]\]$/g, "");
-    if (rawUri === statusStr) {
-      return status.label;
-    }
-    // Match against label itself (already human-readable)
-    if (status.label.toLowerCase() === statusStr.toLowerCase()) {
-      return status.label;
-    }
-  }
-
-  // If no match found, return the original value (might be a custom status)
-  return statusStr;
-}
+export { getEffortStatusLabel as getStatusLabel } from "exocortex";
