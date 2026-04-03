@@ -1,5 +1,4 @@
-import type { FilterOperation, Expression, AlgebraOperation, ExistsExpression, ArithmeticExpression, InExpression, ComparisonExpression, LogicalExpression, VariableExpression, LiteralExpression } from "../algebra/AlgebraOperation";
-import type { ExpressionResult } from "../types";
+import type { FilterOperation, Expression, AlgebraOperation, ExistsExpression, ArithmeticExpression, InExpression } from "../algebra/AlgebraOperation";
 import type { SolutionMapping } from "../SolutionMapping";
 import type { ITripleStore } from "../../../interfaces/ITripleStore";
 import { BuiltInFunctions } from "../filters/BuiltInFunctions";
@@ -13,6 +12,20 @@ export class FilterExecutorError extends Error {
     this.name = "FilterExecutorError";
   }
 }
+
+/**
+ * Result type for SPARQL expression evaluation.
+ * Represents the possible runtime values produced by evaluating SPARQL expressions:
+ * - IRI/Literal/BlankNode: RDF term references
+ * - boolean/number/string: Native JS values from comparisons, arithmetic, etc.
+ * - undefined: Unbound variable or null result
+ *
+ * This uses `any` intentionally because expression evaluation crosses type boundaries
+ * between RDF terms, native JS values, and domain objects. The dynamic nature of
+ * SPARQL expression evaluation makes strict typing impractical at this boundary.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type ExpressionResult = any;
 
 /**
  * Callback type for evaluating EXISTS patterns.
@@ -76,13 +89,14 @@ export class FilterExecutor {
     }
 
     if (expr.type === "logical") {
-      return (expr as any).operands.some((op: Expression) => this.expressionContainsExists(op));
+      return (expr as import("../algebra/AlgebraOperation").LogicalExpression).operands.some((op: Expression) => this.expressionContainsExists(op));
     }
 
     if (expr.type === "comparison") {
+      const compExpr = expr as import("../algebra/AlgebraOperation").ComparisonExpression;
       return (
-        this.expressionContainsExists((expr as any).left) ||
-        this.expressionContainsExists((expr as any).right)
+        this.expressionContainsExists(compExpr.left) ||
+        this.expressionContainsExists(compExpr.right)
       );
     }
 
@@ -118,29 +132,28 @@ export class FilterExecutor {
    * Public to allow reuse in QueryExecutor for BIND evaluation.
    * Note: EXISTS expressions require async evaluation - use evaluateExpressionAsync for those.
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Public API used by BuiltInFunctions with flexible types
-  evaluateExpression(expr: Expression, solution: SolutionMapping): any {
+  evaluateExpression(expr: Expression, solution: SolutionMapping): ExpressionResult {
     // Handle sparqljs native format (termType) - used by raw parsed expressions
-    const rawExpr = expr as unknown as { termType?: string; value?: string };
-    if (rawExpr.termType) {
-      switch (rawExpr.termType) {
+    const exprRecord = expr as unknown as Record<string, unknown>;
+    if ("termType" in expr) {
+      switch (exprRecord.termType) {
         case "Variable":
-          return solution.get(rawExpr.value!) as ExpressionResult;
+          return solution.get(exprRecord.value as string);
         case "Literal":
-          return rawExpr.value;
+          return exprRecord.value as string;
         case "NamedNode":
-          return rawExpr.value;
+          return exprRecord.value as string;
         default:
-          throw new FilterExecutorError(`Unsupported termType: ${rawExpr.termType}`);
+          throw new FilterExecutorError(`Unsupported termType: ${String(exprRecord.termType)}`);
       }
     }
 
     switch (expr.type) {
       case "comparison":
-        return this.evaluateComparison(expr as ComparisonExpression, solution);
+        return this.evaluateComparison(expr, solution);
 
       case "logical":
-        return this.evaluateLogical(expr as LogicalExpression, solution);
+        return this.evaluateLogical(expr, solution);
 
       case "arithmetic":
         return this.evaluateArithmetic(expr as ArithmeticExpression, solution);
@@ -150,10 +163,10 @@ export class FilterExecutor {
         return this.evaluateFunction(expr, solution);
 
       case "variable":
-        return solution.get((expr as VariableExpression).name) as ExpressionResult;
+        return solution.get(expr.name);
 
       case "literal":
-        return (expr as LiteralExpression).value;
+        return expr.value;
 
       case "in":
         return this.evaluateIn(expr as InExpression, solution);
@@ -165,7 +178,7 @@ export class FilterExecutor {
         );
 
       default:
-        throw new FilterExecutorError(`Unsupported expression type: ${(expr as Expression).type}`);
+        throw new FilterExecutorError(`Unsupported expression type: ${(expr as { type: string }).type}`);
     }
   }
 
@@ -173,8 +186,7 @@ export class FilterExecutor {
    * Evaluate a SPARQL expression asynchronously.
    * Required for EXISTS/NOT EXISTS which need to execute subqueries.
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Public API consumed by QueryExecutor with flexible types
-  async evaluateExpressionAsync(expr: Expression, solution: SolutionMapping): Promise<any> {
+  async evaluateExpressionAsync(expr: Expression, solution: SolutionMapping): Promise<ExpressionResult> {
     if (expr.type === "exists") {
       return this.evaluateExists(expr as ExistsExpression, solution);
     }
@@ -206,7 +218,7 @@ export class FilterExecutor {
   /**
    * Evaluate logical expression asynchronously to handle nested EXISTS.
    */
-  private async evaluateLogicalAsync(expr: LogicalExpression, solution: SolutionMapping): Promise<boolean> {
+  private async evaluateLogicalAsync(expr: import("../algebra/AlgebraOperation").LogicalExpression, solution: SolutionMapping): Promise<boolean> {
     if (expr.operator === "!") {
       const operand = await this.evaluateExpressionAsync(expr.operands[0], solution);
       return BuiltInFunctions.logicalNot(operand as boolean);
@@ -229,14 +241,14 @@ export class FilterExecutor {
     throw new FilterExecutorError(`Unknown logical operator: ${expr.operator}`);
   }
 
-  private evaluateComparison(expr: ComparisonExpression, solution: SolutionMapping): boolean {
+  private evaluateComparison(expr: import("../algebra/AlgebraOperation").ComparisonExpression, solution: SolutionMapping): boolean {
     const left = this.evaluateExpression(expr.left, solution);
     const right = this.evaluateExpression(expr.right, solution);
 
     return BuiltInFunctions.compare(left, right, expr.operator);
   }
 
-  private evaluateLogical(expr: LogicalExpression, solution: SolutionMapping): boolean {
+  private evaluateLogical(expr: import("../algebra/AlgebraOperation").LogicalExpression, solution: SolutionMapping): boolean {
     if (expr.operator === "!") {
       const operand = this.evaluateExpression(expr.operands[0], solution);
       return BuiltInFunctions.logicalNot(operand as boolean);
@@ -420,7 +432,7 @@ export class FilterExecutor {
   /**
    * Check if a value is an xsd:dayTimeDuration.
    */
-  private isDayTimeDurationValue(value: unknown): boolean {
+  private isDayTimeDurationValue(value: ExpressionResult): boolean {
     if (value instanceof Literal) {
       const datatypeValue = value.datatype?.value || "";
       return datatypeValue === "http://www.w3.org/2001/XMLSchema#dayTimeDuration";
@@ -431,7 +443,7 @@ export class FilterExecutor {
   /**
    * Check if a value is an xsd:yearMonthDuration.
    */
-  private isYearMonthDurationValue(value: unknown): boolean {
+  private isYearMonthDurationValue(value: ExpressionResult): boolean {
     if (value instanceof Literal) {
       const datatypeValue = value.datatype?.value || "";
       return datatypeValue === "http://www.w3.org/2001/XMLSchema#yearMonthDuration";
@@ -632,7 +644,7 @@ export class FilterExecutor {
 
       case "byuuid":
         // Exocortex extension function - requires instance state (tripleStore, uuidCache)
-        return { value: this.evaluateByUUID({ args }, solution) };
+        return { value: this.evaluateByUUID({ type: "function", function: "byuuid", args } as import("../algebra/AlgebraOperation").FunctionCallExpression, solution) };
 
       default:
         return undefined;
@@ -640,9 +652,9 @@ export class FilterExecutor {
   }
 
   private getTermFromExpression(expr: Expression, solution: SolutionMapping): unknown {
-    const anyExpr = expr as { type: string; name?: string };
-    if (anyExpr.type === "variable" && anyExpr.name) {
-      return solution.get(anyExpr.name);
+    const varExpr = expr as { type: string; name?: string };
+    if (varExpr.type === "variable" && varExpr.name) {
+      return solution.get(varExpr.name);
     }
     return undefined;
   }
@@ -651,7 +663,7 @@ export class FilterExecutor {
    * Extract raw string value from expression result.
    * Handles Literal/IRI objects properly (using .value instead of toString()).
    */
-  private getStringValue(value: unknown): string {
+  private getStringValue(value: ExpressionResult): string {
     if (value === null || value === undefined) {
       return "";
     }
@@ -729,7 +741,7 @@ export class FilterExecutor {
    * @param solution - Current solution mapping
    * @returns IRI if UUID found, undefined if not found (results in unbound/error)
    */
-  private evaluateByUUID(expr: { args: Expression[] }, solution: SolutionMapping): IRI | undefined {
+  private evaluateByUUID(expr: import("../algebra/AlgebraOperation").FunctionCallExpression, solution: SolutionMapping): IRI | undefined {
     if (!expr.args || expr.args.length !== 1) {
       throw new FilterExecutorError("exo:byUUID requires exactly 1 argument (UUID string)");
     }

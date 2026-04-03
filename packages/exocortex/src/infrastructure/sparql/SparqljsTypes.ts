@@ -22,10 +22,12 @@ export type {
   FunctionCallExpression,
   AggregateExpression as SparqljsAggregateExpression,
   Variable,
+  VariableExpression,
   VariableTerm,
   IriTerm,
   LiteralTerm,
   BlankTerm,
+  QuadTerm,
   Grouping,
   Ordering,
   BgpPattern,
@@ -41,7 +43,36 @@ export type {
   PropertyPath,
   Term,
   ValuePatternRow,
+  Wildcard,
+  Update,
+  UpdateOperation,
 } from "sparqljs";
+
+/**
+ * Sparqljs parsed query pattern — the union of all pattern types that appear in WHERE clauses.
+ * This is the runtime type of elements in `query.where[]`.
+ */
+export type SparqljsPattern = sparqljs.Pattern;
+
+/**
+ * Sparqljs expression — the union of all expression types (operations, functions, terms).
+ */
+export type SparqljsExpression = sparqljs.Expression;
+
+/**
+ * Sparqljs triple as parsed by the sparqljs parser.
+ */
+export type SparqljsTriple = sparqljs.Triple;
+
+/**
+ * Sparqljs term — union of all RDF term types from sparqljs AST.
+ */
+export type SparqljsTerm = sparqljs.Term;
+
+/**
+ * Sparqljs property path — either a NegatedPropertySet or path expression.
+ */
+export type SparqljsPropertyPath = sparqljs.PropertyPath;
 
 /**
  * Union type for SELECT variable items (can be a term or an expression).

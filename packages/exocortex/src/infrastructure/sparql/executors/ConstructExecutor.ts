@@ -83,7 +83,7 @@ export class ConstructExecutor {
       return this.instantiateQuotedTriple(element, solution);
     }
 
-    throw new Error(`Unknown element type: ${(element as any).type}`);
+    throw new Error(`Unknown element type: ${(element as { type: string }).type}`);
   }
 
   /**

@@ -117,7 +117,7 @@ export class LateralTransformer {
     // Direct subquery check
     if (pattern.type === "query" && pattern.queryType === "SELECT") {
       if (pattern.variables && Array.isArray(pattern.variables)) {
-        for (const v of pattern.variables) {
+        for (const v of pattern.variables as Record<string, unknown>[]) {
           if (v.termType === "Variable" && v.value === LateralTransformer.LATERAL_MARKER) {
             return true;
           }

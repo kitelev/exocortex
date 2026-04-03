@@ -65,7 +65,7 @@ export class GraphExecutor {
       // Variable graph name: iterate over all named graphs
       yield* this.executeWithGraphVariable(operation, graphName, executePattern, currentSolution);
     } else {
-      throw new GraphExecutorError(`Invalid graph name type: ${(graphName as any).type}`);
+      throw new GraphExecutorError(`Invalid graph name type: ${(graphName as { type: string }).type}`);
     }
   }
 
