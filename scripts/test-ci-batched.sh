@@ -12,8 +12,8 @@ if [ "$CI" = "true" ]; then
     npx jest --clearCache || true
 fi
 
-# Set memory limits
-export NODE_OPTIONS="--max-old-space-size=4096"
+# Set memory limits and ESM support for CLI tests (jest workers inherit NODE_OPTIONS)
+export NODE_OPTIONS="--max-old-space-size=4096 --experimental-vm-modules"
 
 # Run obsidian-plugin tests (with coverage if COVERAGE=true)
 echo "📦 Running obsidian-plugin tests..."
