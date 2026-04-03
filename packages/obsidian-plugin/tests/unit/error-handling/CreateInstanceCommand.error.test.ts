@@ -492,9 +492,6 @@ describe("CreateInstanceCommand Error Handling", () => {
         differentFile
       );
 
-      // Event listener is registered but never fires for the right file
-      (mockApp.workspace.on as jest.Mock).mockReturnValue({ id: "mock-event-ref" });
-
       (LabelInputModal as jest.Mock).mockImplementation((app, callback) => ({
         open: jest.fn(() => {
           setTimeout(() => callback({ label: "Test", taskSize: "small" }), 0);
@@ -504,12 +501,11 @@ describe("CreateInstanceCommand Error Handling", () => {
       command.checkCallback(false, mockFile, mockContext);
       await flushPromises();
 
-      // Wait for timeout to complete (default 2000ms)
-      await new Promise((resolve) => setTimeout(resolve, 2100));
+      // Wait for polling timeout to complete (20 attempts * 100ms = 2 seconds)
+      await new Promise((resolve) => setTimeout(resolve, 2500));
 
       // Should still show success notice even if file didn't become active
       expect(Notice).toHaveBeenCalledWith("Instance created: new-instance");
-      expect(mockApp.workspace.offref).toHaveBeenCalled();
     });
 
     it("should handle getActiveFile returning null consistently", async () => {
@@ -518,8 +514,6 @@ describe("CreateInstanceCommand Error Handling", () => {
       mockTaskCreationService.createTask.mockResolvedValue(createdFile as any);
 
       (mockApp.workspace.getActiveFile as jest.Mock).mockReturnValue(null);
-      // Event listener is registered but never fires
-      (mockApp.workspace.on as jest.Mock).mockReturnValue({ id: "mock-event-ref" });
 
       (LabelInputModal as jest.Mock).mockImplementation((app, callback) => ({
         open: jest.fn(() => {
@@ -530,11 +524,12 @@ describe("CreateInstanceCommand Error Handling", () => {
       command.checkCallback(false, mockFile, mockContext);
       await flushPromises();
 
-      // Wait for timeout to complete (default 2000ms)
-      await new Promise((resolve) => setTimeout(resolve, 2100));
+      // Wait for polling timeout to complete (20 attempts * 100ms = 2 seconds)
+      await new Promise((resolve) => setTimeout(resolve, 2500));
 
       expect(Notice).toHaveBeenCalledWith("Instance created: new-instance");
-      expect(mockApp.workspace.on).toHaveBeenCalledWith("file-open", expect.any(Function));
+      // Polling-based approach calls getActiveFile repeatedly
+      expect(mockApp.workspace.getActiveFile).toHaveBeenCalled();
     });
   });
 
