@@ -444,6 +444,7 @@ export class SPARQLParser {
     return "updateType" in operation && operation.updateType === "delete";
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Validates raw parsed output before type narrowing
   private validateQuery(query: any): void {
     if (!query || typeof query !== "object") {
       throw new SPARQLParseError("Invalid query: not an object");

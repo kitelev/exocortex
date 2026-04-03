@@ -148,13 +148,14 @@ export class DescribeExecutor {
   /**
    * Check if a term is an IRI (named node).
    */
-  private isIRI(term: any): boolean {
+  private isIRI(term: unknown): boolean {
     if (!term) return false;
     // Check various IRI indicators
+    if (term instanceof IRI) return true;
+    const termObj = term as { termType?: string; value?: string };
     return (
-      term instanceof IRI ||
-      term.termType === "NamedNode" ||
-      (typeof term.value === "string" && term.value.startsWith("http"))
+      termObj.termType === "NamedNode" ||
+      (typeof termObj.value === "string" && termObj.value.startsWith("http"))
     );
   }
 
