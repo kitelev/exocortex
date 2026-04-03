@@ -20,13 +20,19 @@ export interface PropertySchemaDefinition {
   readOnly?: boolean;
 }
 
-import { EFFORT_STATUS_OPTIONS as CORE_STATUS_OPTIONS } from "exocortex";
-
 /**
- * Effort status values derived from the core EFFORT_STATUS_OPTIONS (single source of truth).
- * Issue #2463
+ * Effort status values — self-contained to avoid barrel imports that pull tsyringe.
+ * UIDs match EffortStatus enum in core package.
  */
-export const EFFORT_STATUS_VALUES = CORE_STATUS_OPTIONS;
+export const EFFORT_STATUS_VALUES = [
+  { value: "[[ems__EffortStatusBacklog]]", wikilink: "[[ems__EffortStatusBacklog|Backlog]]", label: "Backlog" },
+  { value: "[[ems__EffortStatusAnalysis]]", wikilink: "[[ems__EffortStatusAnalysis|Analysis]]", label: "Analysis" },
+  { value: "[[ems__EffortStatusToDo]]", wikilink: "[[ems__EffortStatusToDo|To Do]]", label: "To Do" },
+  { value: "[[ems__EffortStatusDoing]]", wikilink: "[[ems__EffortStatusDoing|Doing]]", label: "Doing" },
+  { value: "[[ems__EffortStatusDone]]", wikilink: "[[ems__EffortStatusDone|Done]]", label: "Done" },
+  { value: "[[ems__EffortStatusTrashed]]", wikilink: "[[ems__EffortStatusTrashed|Trashed]]", label: "Trashed" },
+  { value: "[[ems__EffortStatusDraft]]", wikilink: "[[ems__EffortStatusDraft|Draft]]", label: "Draft" },
+];
 
 export const TASK_SIZE_VALUES = [
   { value: "[[ems__TaskSize_XXS]]", label: "XXS" },
@@ -190,8 +196,14 @@ export function getPropertyByName(
 
 /**
  * Converts an effort status URI to a human-readable label.
- * Delegates to core getEffortStatusLabel (single source of truth, Issue #2463).
- *
- * Preserves case-insensitive label matching for backward compatibility.
  */
-export { getEffortStatusLabel as getStatusLabel } from "exocortex";
+export function getStatusLabel(statusUri: string | null | undefined): string {
+  if (!statusUri || statusUri.trim() === "") return "-";
+  const normalized = statusUri.replace(/[[\]"']/g, "").trim().toLowerCase();
+  const match = EFFORT_STATUS_VALUES.find(
+    (v) =>
+      v.value.replace(/[[\]]/g, "").toLowerCase() === normalized ||
+      v.label.toLowerCase() === normalized,
+  );
+  return match?.label ?? statusUri;
+}
