@@ -1,0 +1,294 @@
+import type { DailyTask, WikiLink } from './types';
+
+/**
+ * Calculate duration in minutes from timestamps when explicit timeEstimateMinutes is missing.
+ * Issue #2236: Dynamic time calculation for Time column in DailyNote Tasks table.
+ *
+ * Priority order:
+ * 1. Calculate from actual timestamps (startTimestamp -> endTimestamp)
+ * 2. Calculate from planned timestamps (plannedStartTimestamp -> plannedEndTimestamp)
+ * 3. Return null if no valid timestamp pair
+ *
+ * @param metadata - Task metadata containing timestamp fields
+ * @returns Duration in minutes, or null if no valid timestamps
+ */
+export const calculateTimeFromTimestamps = (
+  metadata: Record<string, unknown>
+): number | null => {
+  // Priority 1: Actual timestamps (fact > plan)
+  const startActual = metadata.ems__Effort_startTimestamp;
+  const endActual = metadata.ems__Effort_endTimestamp;
+
+  if (startActual != null && endActual != null) {
+    const start = new Date(startActual as string | number).getTime();
+    const end = new Date(endActual as string | number).getTime();
+    if (!isNaN(start) && !isNaN(end) && end >= start) {
+      return Math.round((end - start) / (1000 * 60));
+    }
+  }
+
+  // Priority 2: Planned timestamps
+  const startPlanned = metadata.ems__Effort_plannedStartTimestamp;
+  const endPlanned = metadata.ems__Effort_plannedEndTimestamp;
+
+  if (startPlanned != null && endPlanned != null) {
+    const start = new Date(startPlanned as string | number).getTime();
+    const end = new Date(endPlanned as string | number).getTime();
+    if (!isNaN(start) && !isNaN(end) && end >= start) {
+      return Math.round((end - start) / (1000 * 60));
+    }
+  }
+
+  return null;
+};
+
+/**
+ * Detect if two time periods overlap.
+ * Uses strict inequality (< not <=) so touching periods (end1 === start2) are not considered overlapping.
+ */
+export const periodsOverlap = (
+  start1: number,
+  end1: number,
+  start2: number,
+  end2: number,
+): boolean => {
+  return start1 < end2 && start2 < end1;
+};
+
+/**
+ * Check if a class list contains ems__Context class.
+ * Handles both string and array formats.
+ */
+const classListHasContext = (classes: unknown): boolean => {
+  if (classes == null) {
+    return false;
+  }
+
+  if (Array.isArray(classes)) {
+    return classes.some((c: unknown) =>
+      typeof c === 'string' && c.includes('ems__Context')
+    );
+  }
+
+  if (typeof classes === 'string') {
+    return classes.includes('ems__Context');
+  }
+
+  return false;
+};
+
+/**
+ * Check if a task is a context task (has ems__Context class).
+ * Context tasks describe WHERE or HOW other tasks are executed, not WHAT is being done.
+ * They should be excluded from overlap detection to avoid false-positive scheduling conflicts.
+ */
+export const isContextTask = (metadata: Record<string, unknown>): boolean => {
+  if (classListHasContext(metadata.exo__Instance_class)) {
+    return true;
+  }
+
+  if (classListHasContext(metadata._prototypeClasses)) {
+    return true;
+  }
+
+  return false;
+};
+
+export const parseWikiLink = (value: string): WikiLink => {
+  const content = value.replace(/^\[\[|\]\]$/g, "");
+  const pipeIndex = content.indexOf("|");
+
+  if (pipeIndex !== -1) {
+    return {
+      target: content.substring(0, pipeIndex).trim(),
+      alias: content.substring(pipeIndex + 1).trim(),
+    };
+  }
+
+  return {
+    target: content.trim(),
+  };
+};
+
+/**
+ * Formats time estimate in minutes to a human-readable string.
+ * Examples: 90 -> "1h 30m", 45 -> "45m", 120 -> "2h", 0 -> "-", null -> "-"
+ */
+export const formatTimeEstimate = (minutes: number | null | undefined): string => {
+  if (minutes == null || minutes <= 0) return "-";
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  if (hours === 0) return `${mins}m`;
+  if (mins === 0) return `${hours}h`;
+  return `${hours}h ${mins}m`;
+};
+
+export const getDisplayName = (
+  task: DailyTask,
+  getAssetLabel?: (path: string) => string | null,
+): string => {
+  const blockerIcon = task.isBlocked ? "\uD83D\uDEA9 " : "";
+  const icon =
+    task.isDone && task.isMeeting
+      ? "\u2705 \uD83D\uDC65 "
+      : task.isDone
+        ? "\u2705 "
+        : task.isTrashed
+          ? "\u274C "
+          : task.isDoing
+            ? "\uD83D\uDD04 "
+            : task.isMeeting
+              ? "\uD83D\uDC65 "
+              : "";
+
+  let displayText = task.label || task.title;
+
+  if (typeof getAssetLabel === "function") {
+    const customLabel = getAssetLabel(task.path);
+    if (
+      customLabel !== null &&
+      customLabel !== undefined &&
+      customLabel !== ""
+    ) {
+      displayText = customLabel;
+    }
+  }
+
+  return blockerIcon + icon + displayText;
+};
+
+export const getEffortAreaDisplayText = (
+  task: DailyTask,
+  getEffortArea?: (metadata: Record<string, unknown>) => string | null,
+): string => {
+  let effortArea: unknown = null;
+
+  if (getEffortArea) {
+    effortArea = getEffortArea(task.metadata);
+  }
+
+  if (!effortArea) {
+    effortArea = task.metadata.ems__Effort_area;
+  }
+
+  if (!effortArea) return "";
+
+  const effortAreaStr = String(effortArea);
+
+  if (/\[\[.*?\]\]/.test(effortAreaStr)) {
+    const parsed = parseWikiLink(effortAreaStr);
+    return (parsed.alias || parsed.target).toLowerCase();
+  } else if (effortAreaStr.includes("|")) {
+    const parts = effortAreaStr.split("|");
+    const alias = parts[1]?.trim() || parts[0].trim();
+    return alias.toLowerCase();
+  } else {
+    return effortAreaStr.trim().toLowerCase();
+  }
+};
+
+export const formatTimeDisplay = (
+  timestamp: string | number | null | undefined,
+  fallbackFormatted: string,
+  showFullDateInEffortTimes: boolean,
+): string => {
+  if (!timestamp) return fallbackFormatted || "-";
+
+  const date = new Date(timestamp);
+  if (isNaN(date.getTime())) return fallbackFormatted || "-";
+
+  if (showFullDateInEffortTimes) {
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    const hours = String(date.getHours()).padStart(2, "0");
+    const minutes = String(date.getMinutes()).padStart(2, "0");
+    return `${month}-${day} ${hours}:${minutes}`;
+  } else {
+    return fallbackFormatted || "-";
+  }
+};
+
+/**
+ * Creates an empty time slot entry.
+ */
+export const createEmptySlot = (
+  startTimestamp: number,
+  endTimestamp: number,
+  index: number,
+): DailyTask => {
+  const formatTime = (ts: number): string => {
+    const date = new Date(ts);
+    const hours = String(date.getHours()).padStart(2, "0");
+    const minutes = String(date.getMinutes()).padStart(2, "0");
+    return `${hours}:${minutes}`;
+  };
+
+  return {
+    file: { path: `empty-slot-${index}`, basename: `empty-slot-${index}` },
+    path: `empty-slot-${index}`,
+    title: "-",
+    label: "-",
+    startTime: formatTime(startTimestamp),
+    endTime: formatTime(endTimestamp),
+    startTimestamp,
+    endTimestamp,
+    status: "-",
+    metadata: {
+      ems__Effort_startTimestamp: startTimestamp,
+      ems__Effort_endTimestamp: endTimestamp,
+    },
+    isDone: false,
+    isTrashed: false,
+    isDoing: false,
+    isMeeting: false,
+    isBlocked: false,
+    isEmptySlot: true,
+  };
+};
+
+/**
+ * Calculates empty time slots between tasks.
+ * Only considers tasks that have both start and end timestamps.
+ * Minimum gap size is 5 minutes.
+ */
+export const calculateEmptySlots = (taskList: DailyTask[]): DailyTask[] => {
+  type TaskWithTimestamps = DailyTask & {
+    startTimestamp: string | number;
+    endTimestamp: string | number;
+  };
+
+  const hasValidTimestamps = (t: DailyTask): t is TaskWithTimestamps =>
+    !t.isEmptySlot && t.startTimestamp !== null && t.endTimestamp !== null;
+
+  const tasksWithTime = taskList
+    .filter(hasValidTimestamps)
+    .map((t) => ({
+      task: t,
+      start: new Date(t.startTimestamp).getTime(),
+      end: new Date(t.endTimestamp).getTime(),
+    }))
+    .sort((a, b) => a.start - b.start);
+
+  if (tasksWithTime.length === 0) {
+    return taskList;
+  }
+
+  const emptySlots: DailyTask[] = [];
+  const MIN_GAP_MS = 5 * 60 * 1000;
+
+  for (let i = 0; i < tasksWithTime.length - 1; i++) {
+    const currentEnd = tasksWithTime[i].end;
+    const nextStart = tasksWithTime[i + 1].start;
+
+    if (nextStart - currentEnd >= MIN_GAP_MS) {
+      emptySlots.push(createEmptySlot(currentEnd, nextStart, i));
+    }
+  }
+
+  const result = [...taskList, ...emptySlots];
+  return result.sort((a, b) => {
+    const aStart = a.startTimestamp ? new Date(a.startTimestamp).getTime() : 0;
+    const bStart = b.startTimestamp ? new Date(b.startTimestamp).getTime() : 0;
+    return aStart - bStart;
+  });
+};
