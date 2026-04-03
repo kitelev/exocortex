@@ -144,6 +144,44 @@ describe("ApplicationError", () => {
     });
   });
 
+  describe("format() edge cases", () => {
+    it("should format error without guidance", () => {
+      // All error subtypes have guidance, but format() checks for falsy
+      const error = new ValidationError("Test");
+      const formatted = error.format();
+      expect(formatted).toContain("ValidationError");
+    });
+
+    it("should include context entries in format output", () => {
+      const error = new ValidationError("Fail", {
+        key1: "value1",
+        key2: 42,
+        key3: true,
+        key4: null,
+      });
+      const formatted = error.format();
+      expect(formatted).toContain("key1");
+      expect(formatted).toContain("value1");
+      expect(formatted).toContain("key2");
+      expect(formatted).toContain("42");
+    });
+  });
+
+  describe("toJSON edge cases", () => {
+    it("should include all fields in JSON output", () => {
+      const error = new ValidationError("JSON test", { detail: "info" });
+      const json = error.toJSON();
+      expect(json.name).toBe("ValidationError");
+      expect(json.message).toBe("JSON test");
+      expect(json.code).toBe(ErrorCode.INVALID_INPUT);
+      expect(json.retriable).toBe(false);
+      expect(json.timestamp).toBeDefined();
+      expect(typeof json.timestamp).toBe("string");
+      expect(json.context).toEqual({ detail: "info" });
+      expect(json.stack).toBeDefined();
+    });
+  });
+
   describe("Error inheritance", () => {
     it("should properly extend Error", () => {
       const error = new ValidationError("Test");
