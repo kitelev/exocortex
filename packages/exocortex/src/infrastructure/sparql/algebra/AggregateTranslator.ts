@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- sparqljs AST is untyped */
 import { AlgebraTranslatorError } from "./AlgebraTranslatorError";
 import type {
   ArithmeticExpression,
@@ -27,10 +28,10 @@ export class AggregateTranslator {
    */
   private aggregateCounter = 0;
 
-  private readonly translateExpressionFn: (expr: unknown) => Expression;
+  private readonly translateExpressionFn: (expr: any) => Expression;
 
   constructor(deps: {
-    translateExpression: (expr: unknown) => Expression;
+    translateExpression: (expr: any) => Expression;
   }) {
     this.translateExpressionFn = deps.translateExpression;
   }
@@ -52,8 +53,8 @@ export class AggregateTranslator {
    * transform the containing expression to reference these variables.
    */
   extractAggregatesWithMapping(
-    variables: unknown[],
-    aggregateVarMap: Map<unknown, string>
+    variables: any[],
+    aggregateVarMap: Map<any, string>
   ): AggregateBinding[] {
     if (!variables) return [];
 
@@ -78,12 +79,12 @@ export class AggregateTranslator {
     return aggregates;
   }
 
-  extractGroupVariables(group: unknown[] | undefined): string[] {
+  extractGroupVariables(group: any[] | undefined): string[] {
     if (!group) return [];
 
     return group
-      .filter((g: unknown) => g.expression && g.expression.termType === "Variable")
-      .map((g: unknown) => g.expression.value);
+      .filter((g: any) => g.expression && g.expression.termType === "Variable")
+      .map((g: any) => g.expression.value);
   }
 
   /**
@@ -96,9 +97,9 @@ export class AggregateTranslator {
    * 3. Transform the HAVING expression to reference the computed aggregate variables
    */
   extractHavingExpressions(
-    having: unknown[] | undefined,
+    having: any[] | undefined,
     aggregates: AggregateBinding[],
-    aggregateVarMap: Map<unknown, string>
+    aggregateVarMap: Map<any, string>
   ): Expression[] {
     if (!having || having.length === 0) return [];
 
@@ -122,8 +123,8 @@ export class AggregateTranslator {
    * translated expression "?__agg0 / ?__agg1".
    */
   transformExpressionWithAggregateVars(
-    expr: unknown,
-    aggregateVarMap: Map<unknown, string>
+    expr: any,
+    aggregateVarMap: Map<any, string>
   ): Expression {
     // Check if this exact expression object has a variable mapping
     const mappedVar = aggregateVarMap.get(expr);
@@ -136,7 +137,7 @@ export class AggregateTranslator {
 
     // For operations, recursively transform arguments
     if (expr.type === "operation" && expr.args) {
-      const transformedArgs = expr.args.map((arg: unknown) =>
+      const transformedArgs = expr.args.map((arg: any) =>
         this.transformExpressionWithAggregateVars(arg, aggregateVarMap)
       );
 
@@ -182,7 +183,7 @@ export class AggregateTranslator {
     return this.translateExpressionFn(expr);
   }
 
-  translateOrderComparator(order: unknown): OrderComparator {
+  translateOrderComparator(order: any): OrderComparator {
     return {
       expression: this.translateExpressionFn(order.expression),
       descending: order.descending || false,
@@ -194,7 +195,7 @@ export class AggregateTranslator {
    *
    * Handles both standard SPARQL 1.1 aggregates and SPARQL 1.2 custom aggregates.
    */
-  private translateAggregateExpression(expr: unknown): AggregateExpression {
+  private translateAggregateExpression(expr: any): AggregateExpression {
     const aggregation = expr.aggregation;
 
     if (typeof aggregation === "string") {
@@ -253,9 +254,9 @@ export class AggregateTranslator {
    * Recursively collect all aggregate expressions nested within an expression tree.
    */
   private collectNestedAggregates(
-    expr: unknown,
+    expr: any,
     aggregates: AggregateBinding[],
-    aggregateVarMap: Map<unknown, string>
+    aggregateVarMap: Map<any, string>
   ): void {
     if (!expr) return;
 

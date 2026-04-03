@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- sparqljs AST is untyped */
 import { AlgebraTranslatorError } from "./AlgebraTranslatorError";
 import type {
   AlgebraOperation,
@@ -26,21 +27,21 @@ export class ExpressionTranslator {
    * Callback to delegate pattern translation (BGP, group, etc.)
    * back to the pattern layer. This avoids a circular dependency.
    */
-  private readonly translateWhereFn: (patterns: unknown[]) => AlgebraOperation;
-  private readonly translateBGPFn: (pattern: unknown) => AlgebraOperation;
-  private readonly translatePatternFn: (pattern: unknown) => AlgebraOperation;
+  private readonly translateWhereFn: (patterns: any[]) => AlgebraOperation;
+  private readonly translateBGPFn: (pattern: any) => AlgebraOperation;
+  private readonly translatePatternFn: (pattern: any) => AlgebraOperation;
 
   constructor(deps: {
-    translateWhere: (patterns: unknown[]) => AlgebraOperation;
-    translateBGP: (pattern: unknown) => AlgebraOperation;
-    translatePattern: (pattern: unknown) => AlgebraOperation;
+    translateWhere: (patterns: any[]) => AlgebraOperation;
+    translateBGP: (pattern: any) => AlgebraOperation;
+    translatePattern: (pattern: any) => AlgebraOperation;
   }) {
     this.translateWhereFn = deps.translateWhere;
     this.translateBGPFn = deps.translateBGP;
     this.translatePatternFn = deps.translatePattern;
   }
 
-  translateExpression(expr: unknown): Expression {
+  translateExpression(expr: any): Expression {
     if (!expr) {
       throw new AlgebraTranslatorError("Expression cannot be null or undefined");
     }
@@ -54,7 +55,7 @@ export class ExpressionTranslator {
       return {
         type: "functionCall",
         function: expr.function,
-        args: expr.args.map((a: unknown) => this.translateExpression(a)),
+        args: expr.args.map((a: any) => this.translateExpression(a)),
       };
     }
 
@@ -67,7 +68,7 @@ export class ExpressionTranslator {
     throw new AlgebraTranslatorError(`Unsupported expression structure: ${JSON.stringify(expr)}`);
   }
 
-  translateFilter(pattern: unknown): FilterOperation {
+  translateFilter(pattern: any): FilterOperation {
     if (!pattern.expression) {
       throw new AlgebraTranslatorError("Filter pattern must have expression");
     }
@@ -83,7 +84,7 @@ export class ExpressionTranslator {
     };
   }
 
-  private translateOperationExpression(expr: unknown): Expression {
+  private translateOperationExpression(expr: any): Expression {
     const comparisonOps = ["=", "!=", "<", ">", "<=", ">="];
     const logicalOps = ["&&", "||", "!"];
     const arithmeticOps = ["+", "-", "*", "/"];
@@ -101,7 +102,7 @@ export class ExpressionTranslator {
       return {
         type: "logical",
         operator: expr.operator,
-        operands: expr.args.map((a: unknown) => this.translateExpression(a)),
+        operands: expr.args.map((a: any) => this.translateExpression(a)),
       };
     }
 
@@ -128,7 +129,7 @@ export class ExpressionTranslator {
     return {
       type: "function",
       function: expr.operator,
-      args: expr.args.map((a: unknown) => this.translateExpression(a)),
+      args: expr.args.map((a: any) => this.translateExpression(a)),
     };
   }
 
@@ -137,7 +138,7 @@ export class ExpressionTranslator {
    * sparqljs AST: { type: "operation", operator: "exists"|"notexists", args: [pattern] }
    * The pattern is a graph pattern (BGP, group, etc.) that needs to be evaluated.
    */
-  private translateExistsExpression(expr: unknown): ExistsExpression {
+  private translateExistsExpression(expr: any): ExistsExpression {
     if (!expr.args || expr.args.length !== 1) {
       throw new AlgebraTranslatorError("EXISTS/NOT EXISTS must have exactly one pattern argument");
     }
@@ -175,7 +176,7 @@ export class ExpressionTranslator {
    * - expr IN (val1, val2, ...) returns true if expr = val_i for any value
    * - expr NOT IN (val1, val2, ...) returns true if expr != val_i for all values
    */
-  private translateInExpression(expr: unknown): InExpression {
+  private translateInExpression(expr: any): InExpression {
     if (!expr.args || expr.args.length !== 2) {
       throw new AlgebraTranslatorError("IN/NOT IN must have exactly 2 arguments (expression and list)");
     }
@@ -190,12 +191,12 @@ export class ExpressionTranslator {
     return {
       type: "in",
       expression: this.translateExpression(testExpr),
-      list: listArg.map((item: unknown) => this.translateExpression(item)),
+      list: listArg.map((item: any) => this.translateExpression(item)),
       negated: expr.operator === "notin",
     };
   }
 
-  translateTermExpression(term: unknown): Expression {
+  translateTermExpression(term: any): Expression {
     if (term.termType === "Variable") {
       return {
         type: "variable",
