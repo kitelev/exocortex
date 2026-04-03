@@ -25,7 +25,8 @@ function getMap(target: object): Map<string | symbol, unknown> {
 }
 
 if (typeof Reflect === "undefined") {
-  (globalThis as unknown).Reflect = {};
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (globalThis as Record<string, any>).Reflect = {};
 }
 
 if (!Reflect.getMetadata) {
