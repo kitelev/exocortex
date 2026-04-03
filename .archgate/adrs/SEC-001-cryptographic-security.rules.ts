@@ -3,6 +3,7 @@
 // Files excluded from security checks (SPARQL 1.1 spec compliance, graph positioning)
 const EXCLUDED_PATTERNS = [
   "sparql/filters/BuiltInFunctions.ts", // SPARQL RAND(), MD5(), SHA1() — W3C spec-mandated
+  "sparql/filters/functions/", // Decomposed SPARQL function modules — same W3C spec compliance
   "memory/CompactGraphStore.ts", // Random initial positions for graph node layout
 ];
 
