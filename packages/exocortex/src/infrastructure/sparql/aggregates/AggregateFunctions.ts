@@ -142,7 +142,7 @@ export class AggregateFunctions {
     return parseFloat(literal.value);
   }
 
-  private static toComparable(value: any): number | string {
+  private static toComparable(value: unknown): number | string {
     if (value instanceof Literal) {
       const num = this.toNumber(value);
       if (!isNaN(num)) {

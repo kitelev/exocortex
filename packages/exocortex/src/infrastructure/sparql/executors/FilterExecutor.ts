@@ -1,4 +1,5 @@
-import type { FilterOperation, Expression, AlgebraOperation, ExistsExpression, ArithmeticExpression, InExpression } from "../algebra/AlgebraOperation";
+import type { FilterOperation, Expression, AlgebraOperation, ExistsExpression, ArithmeticExpression, InExpression, ComparisonExpression, LogicalExpression, VariableExpression, LiteralExpression } from "../algebra/AlgebraOperation";
+import type { ExpressionResult } from "../types";
 import type { SolutionMapping } from "../SolutionMapping";
 import type { ITripleStore } from "../../../interfaces/ITripleStore";
 import { BuiltInFunctions } from "../filters/BuiltInFunctions";
@@ -117,28 +118,29 @@ export class FilterExecutor {
    * Public to allow reuse in QueryExecutor for BIND evaluation.
    * Note: EXISTS expressions require async evaluation - use evaluateExpressionAsync for those.
    */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Public API used by BuiltInFunctions with flexible types
   evaluateExpression(expr: Expression, solution: SolutionMapping): any {
     // Handle sparqljs native format (termType) - used by raw parsed expressions
-    const anyExpr = expr as any;
-    if (anyExpr.termType) {
-      switch (anyExpr.termType) {
+    const rawExpr = expr as unknown as { termType?: string; value?: string };
+    if (rawExpr.termType) {
+      switch (rawExpr.termType) {
         case "Variable":
-          return solution.get(anyExpr.value);
+          return solution.get(rawExpr.value!) as ExpressionResult;
         case "Literal":
-          return anyExpr.value;
+          return rawExpr.value;
         case "NamedNode":
-          return anyExpr.value;
+          return rawExpr.value;
         default:
-          throw new FilterExecutorError(`Unsupported termType: ${anyExpr.termType}`);
+          throw new FilterExecutorError(`Unsupported termType: ${rawExpr.termType}`);
       }
     }
 
     switch (expr.type) {
       case "comparison":
-        return this.evaluateComparison(expr, solution);
+        return this.evaluateComparison(expr as ComparisonExpression, solution);
 
       case "logical":
-        return this.evaluateLogical(expr, solution);
+        return this.evaluateLogical(expr as LogicalExpression, solution);
 
       case "arithmetic":
         return this.evaluateArithmetic(expr as ArithmeticExpression, solution);
@@ -148,10 +150,10 @@ export class FilterExecutor {
         return this.evaluateFunction(expr, solution);
 
       case "variable":
-        return solution.get((expr as any).name);
+        return solution.get((expr as VariableExpression).name) as ExpressionResult;
 
       case "literal":
-        return (expr as any).value;
+        return (expr as LiteralExpression).value;
 
       case "in":
         return this.evaluateIn(expr as InExpression, solution);
@@ -163,7 +165,7 @@ export class FilterExecutor {
         );
 
       default:
-        throw new FilterExecutorError(`Unsupported expression type: ${(expr as any).type}, expr.termType=${anyExpr.termType}`);
+        throw new FilterExecutorError(`Unsupported expression type: ${(expr as Expression).type}`);
     }
   }
 
@@ -171,6 +173,7 @@ export class FilterExecutor {
    * Evaluate a SPARQL expression asynchronously.
    * Required for EXISTS/NOT EXISTS which need to execute subqueries.
    */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Public API consumed by QueryExecutor with flexible types
   async evaluateExpressionAsync(expr: Expression, solution: SolutionMapping): Promise<any> {
     if (expr.type === "exists") {
       return this.evaluateExists(expr as ExistsExpression, solution);
@@ -203,7 +206,7 @@ export class FilterExecutor {
   /**
    * Evaluate logical expression asynchronously to handle nested EXISTS.
    */
-  private async evaluateLogicalAsync(expr: any, solution: SolutionMapping): Promise<boolean> {
+  private async evaluateLogicalAsync(expr: LogicalExpression, solution: SolutionMapping): Promise<boolean> {
     if (expr.operator === "!") {
       const operand = await this.evaluateExpressionAsync(expr.operands[0], solution);
       return BuiltInFunctions.logicalNot(operand as boolean);
@@ -226,14 +229,14 @@ export class FilterExecutor {
     throw new FilterExecutorError(`Unknown logical operator: ${expr.operator}`);
   }
 
-  private evaluateComparison(expr: any, solution: SolutionMapping): boolean {
+  private evaluateComparison(expr: ComparisonExpression, solution: SolutionMapping): boolean {
     const left = this.evaluateExpression(expr.left, solution);
     const right = this.evaluateExpression(expr.right, solution);
 
     return BuiltInFunctions.compare(left, right, expr.operator);
   }
 
-  private evaluateLogical(expr: any, solution: SolutionMapping): boolean {
+  private evaluateLogical(expr: LogicalExpression, solution: SolutionMapping): boolean {
     if (expr.operator === "!") {
       const operand = this.evaluateExpression(expr.operands[0], solution);
       return BuiltInFunctions.logicalNot(operand as boolean);
@@ -417,7 +420,7 @@ export class FilterExecutor {
   /**
    * Check if a value is an xsd:dayTimeDuration.
    */
-  private isDayTimeDurationValue(value: any): boolean {
+  private isDayTimeDurationValue(value: unknown): boolean {
     if (value instanceof Literal) {
       const datatypeValue = value.datatype?.value || "";
       return datatypeValue === "http://www.w3.org/2001/XMLSchema#dayTimeDuration";
@@ -428,7 +431,7 @@ export class FilterExecutor {
   /**
    * Check if a value is an xsd:yearMonthDuration.
    */
-  private isYearMonthDurationValue(value: any): boolean {
+  private isYearMonthDurationValue(value: unknown): boolean {
     if (value instanceof Literal) {
       const datatypeValue = value.datatype?.value || "";
       return datatypeValue === "http://www.w3.org/2001/XMLSchema#yearMonthDuration";
@@ -440,7 +443,7 @@ export class FilterExecutor {
    * Convert a value to a numeric type.
    * Handles: number, Literal with numeric datatype, string representation.
    */
-  private toNumericValue(value: any): number {
+  private toNumericValue(value: ExpressionResult): number {
     if (typeof value === "number") {
       return value;
     }
@@ -487,7 +490,7 @@ export class FilterExecutor {
   /**
    * Check if a value represents an xsd:dateTime or xsd:date.
    */
-  private isDateTimeValue(value: any): boolean {
+  private isDateTimeValue(value: ExpressionResult): boolean {
     if (value instanceof Literal) {
       const datatypeValue = value.datatype?.value || "";
       if (datatypeValue.includes("#dateTime") || datatypeValue.includes("#date")) {
@@ -508,7 +511,7 @@ export class FilterExecutor {
    * Check if a value represents a pure xsd:date (not xsd:dateTime).
    * Used to distinguish date-only subtraction from dateTime subtraction.
    */
-  private isDateValue(value: any): boolean {
+  private isDateValue(value: ExpressionResult): boolean {
     if (value instanceof Literal) {
       const datatypeValue = value.datatype?.value || "";
       // Only match xsd:date, NOT xsd:dateTime
@@ -521,7 +524,7 @@ export class FilterExecutor {
    * Check if a value represents an xsd:time.
    * Used for time subtraction (time - time = dayTimeDuration).
    */
-  private isTimeValue(value: any): boolean {
+  private isTimeValue(value: ExpressionResult): boolean {
     if (value instanceof Literal) {
       const datatypeValue = value.datatype?.value || "";
       return datatypeValue === "http://www.w3.org/2001/XMLSchema#time";
@@ -629,7 +632,7 @@ export class FilterExecutor {
 
       case "byuuid":
         // Exocortex extension function - requires instance state (tripleStore, uuidCache)
-        return { value: this.evaluateByUUID({ args } as unknown, solution) };
+        return { value: this.evaluateByUUID({ args }, solution) };
 
       default:
         return undefined;
@@ -648,7 +651,7 @@ export class FilterExecutor {
    * Extract raw string value from expression result.
    * Handles Literal/IRI objects properly (using .value instead of toString()).
    */
-  private getStringValue(value: any): string {
+  private getStringValue(value: unknown): string {
     if (value === null || value === undefined) {
       return "";
     }
@@ -669,7 +672,7 @@ export class FilterExecutor {
    * - Literal with numeric datatype → parse as numeric, apply numeric rules
    * - Other → truthy coercion
    */
-  private toBoolean(value: any): boolean {
+  private toBoolean(value: ExpressionResult): boolean {
     if (typeof value === "boolean") {
       return value;
     }
@@ -726,7 +729,7 @@ export class FilterExecutor {
    * @param solution - Current solution mapping
    * @returns IRI if UUID found, undefined if not found (results in unbound/error)
    */
-  private evaluateByUUID(expr: any, solution: SolutionMapping): IRI | undefined {
+  private evaluateByUUID(expr: { args: Expression[] }, solution: SolutionMapping): IRI | undefined {
     if (!expr.args || expr.args.length !== 1) {
       throw new FilterExecutorError("exo:byUUID requires exactly 1 argument (UUID string)");
     }

@@ -97,15 +97,15 @@ export class LateralTransformer {
    * @param pattern - A pattern from sparqljs AST
    * @returns true if the pattern represents a lateral join
    */
-  static isLateralJoin(pattern: any): boolean {
+  static isLateralJoin(pattern: Record<string, unknown>): boolean {
     // After transformation, lateral joins are subqueries with a special variable
     // or annotation that we can detect
     if (pattern.type === "group" && pattern.patterns) {
-      for (const p of pattern.patterns) {
+      for (const p of pattern.patterns as Record<string, unknown>[]) {
         if (p.type === "query" && p.queryType === "SELECT") {
           // Check if there's a lateral marker in the subquery variables
           if (p.variables && Array.isArray(p.variables)) {
-            for (const v of p.variables) {
+            for (const v of p.variables as Record<string, unknown>[]) {
               if (v.termType === "Variable" && v.value === LateralTransformer.LATERAL_MARKER) {
                 return true;
               }
