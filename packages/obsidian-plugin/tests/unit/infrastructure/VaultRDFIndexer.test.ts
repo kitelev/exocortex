@@ -1,6 +1,6 @@
 import { VaultRDFIndexer } from "../../../src/infrastructure/VaultRDFIndexer";
 import type { App, TFile, EventRef } from "obsidian";
-import { InMemoryTripleStore, NoteToRDFConverter, ApplicationErrorHandler } from "exocortex";
+import { InMemoryTripleStore, NoteToRDFConverter, ApplicationErrorHandler, IRI } from "exocortex";
 import { ObsidianVaultAdapter } from "../../../src/adapters/ObsidianVaultAdapter";
 
 jest.mock("exocortex");
@@ -196,6 +196,49 @@ describe("VaultRDFIndexer", () => {
       indexer.dispose();
 
       expect(mockApp.vault.offref).toHaveBeenCalledTimes(eventRefCount);
+    });
+  });
+
+  describe("Issue #2488: IRI encoding consistency", () => {
+    let iriConstructorCalls: string[];
+
+    beforeEach(async () => {
+      iriConstructorCalls = [];
+      (IRI as unknown as jest.Mock).mockImplementation((value: string) => {
+        iriConstructorCalls.push(value);
+        return { value };
+      });
+      await indexer.initialize();
+    });
+
+    it("should use encodeURI for subdirectory file paths in removeFileTriples (modify scenario)", async () => {
+      const subdirPath = "My Folder/My Note.md";
+      const mockFile = { path: subdirPath, extension: "md" } as TFile;
+
+      mockTripleStore.match.mockResolvedValue([]);
+      mockConverter.convertNote.mockResolvedValue([]);
+
+      await indexer.updateFile(mockFile);
+
+      const removeIRI = iriConstructorCalls.find(v => v.includes("My%20Folder"));
+      expect(removeIRI).toBeDefined();
+      expect(removeIRI).toBe(`obsidian://vault/My%20Folder/My%20Note.md`);
+      expect(removeIRI).not.toContain("My%20Folder%2FMy%20Note.md");
+    });
+
+    it("should use encodeURI for subdirectory file paths in removeFileTriples (delete scenario)", async () => {
+      const subdirPath = "03 Knowledge/kitelev/some-note.md";
+      const mockFile = { path: subdirPath } as TFile;
+
+      mockTripleStore.match.mockResolvedValue([{ subject: {}, predicate: {}, object: {} }]);
+      mockTripleStore.removeAll.mockResolvedValue(1);
+
+      await indexer.removeFile(mockFile);
+
+      const removeIRI = iriConstructorCalls.find(v => v.includes("03%20Knowledge"));
+      expect(removeIRI).toBeDefined();
+      expect(removeIRI).toBe(`obsidian://vault/03%20Knowledge/kitelev/some-note.md`);
+      expect(removeIRI).not.toContain("%2F");
     });
   });
 });
