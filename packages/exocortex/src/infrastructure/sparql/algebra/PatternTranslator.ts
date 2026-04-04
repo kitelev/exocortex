@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any -- sparqljs AST is untyped */
+ 
 import { LateralTransformer } from "../LateralTransformer";
 import { AlgebraTranslatorError } from "./AlgebraTranslatorError";
 import type {
@@ -11,51 +11,54 @@ import type {
   ValuesOperation,
   ValuesBinding,
   ExtendOperation,
+  SubqueryOperation,
   ServiceOperation,
   GraphOperation,
-  SubqueryOperation,
-  Triple,
-  TripleElement,
   Expression,
-  PropertyPath,
   IRI,
   Literal,
   Variable,
-  QuotedTriple,
 } from "./AlgebraOperation";
 import type { SelectQuery } from "../SPARQLParser";
+import type {
+  SparqljsPattern,
+  SparqljsExpression,
+  ValuePatternRow,
+} from "../SparqljsTypes";
+import { isVariableTerm } from "../SparqljsTypes";
 
 /** Direction mappings from directional language tags */
 export type DirectionMappings = Map<string, "ltr" | "rtl">;
 
 /**
  * Translates SPARQL graph patterns (BGP, UNION, OPTIONAL, MINUS, VALUES,
- * GRAPH, SERVICE, LATERAL) and triple elements from sparqljs AST.
+ * GRAPH, SERVICE, LATERAL) from sparqljs AST.
  */
 export class PatternTranslator {
   private directionMappings: DirectionMappings = new Map();
 
-  private readonly translateExpressionFn: (expr: any) => Expression;
+  private readonly translateExpressionFn: (expr: SparqljsExpression) => Expression;
   private readonly translateSelectFn: (query: SelectQuery) => AlgebraOperation;
-
+  private readonly translateBGPFn: (pattern: SparqljsPattern) => AlgebraOperation;
   constructor(deps: {
-    translateExpression: (expr: any) => Expression;
+    translateExpression: (expr: SparqljsExpression) => Expression;
     translateSelect: (query: SelectQuery) => AlgebraOperation;
+    translateBGP: (pattern: SparqljsPattern) => AlgebraOperation;
   }) {
     this.translateExpressionFn = deps.translateExpression;
     this.translateSelectFn = deps.translateSelect;
+    this.translateBGPFn = deps.translateBGP;
   }
 
   setDirectionMappings(mappings: DirectionMappings): void {
     this.directionMappings = mappings;
   }
 
-  translateWhere(patterns: any[]): AlgebraOperation {
+  translateWhere(patterns: SparqljsPattern[]): AlgebraOperation {
     if (patterns.length === 0) {
       throw new AlgebraTranslatorError("Empty WHERE clause");
     }
 
-    // Separate FILTER and BIND from other patterns (they apply to results, not joined)
     const filterPatterns = patterns.filter((p) => p.type === "filter");
     const bindPatterns = patterns.filter((p) => p.type === "bind");
     const otherPatterns = patterns.filter((p) => p.type !== "filter" && p.type !== "bind");
@@ -65,29 +68,25 @@ export class PatternTranslator {
     if (otherPatterns.length === 0) {
       result = { type: "bgp", triples: [] } as BGPOperation;
     } else if (otherPatterns.length === 1) {
-      // Issue #2208: OPTIONAL at the start uses empty BGP as left
       if (otherPatterns[0].type === "optional") {
+        const optExpr = (otherPatterns[0] as unknown as Record<string, unknown>).expression as SparqljsExpression | undefined;
         result = {
           type: "leftjoin",
           left: { type: "bgp", triples: [] } as BGPOperation,
           right: this.translateWhere(otherPatterns[0].patterns),
-          expression: otherPatterns[0].expression
-            ? this.translateExpressionFn(otherPatterns[0].expression)
-            : undefined,
+          expression: optExpr ? this.translateExpressionFn(optExpr) : undefined,
         } as LeftJoinOperation;
       } else {
         result = this.translatePattern(otherPatterns[0]);
       }
     } else {
-      // Handle first pattern specially if it's OPTIONAL (use empty BGP as left)
       if (otherPatterns[0].type === "optional") {
+        const optExpr = (otherPatterns[0] as unknown as Record<string, unknown>).expression as SparqljsExpression | undefined;
         result = {
           type: "leftjoin",
           left: { type: "bgp", triples: [] } as BGPOperation,
           right: this.translateWhere(otherPatterns[0].patterns),
-          expression: otherPatterns[0].expression
-            ? this.translateExpressionFn(otherPatterns[0].expression)
-            : undefined,
+          expression: optExpr ? this.translateExpressionFn(optExpr) : undefined,
         } as LeftJoinOperation;
       } else {
         result = this.translatePattern(otherPatterns[0]);
@@ -107,32 +106,24 @@ export class PatternTranslator {
             right: innerQuery,
           } as LateralJoinOperation;
         } else if (rightPattern.type === "optional") {
+          const rightOptExpr = (rightPattern as unknown as Record<string, unknown>).expression as SparqljsExpression | undefined;
           result = {
             type: "leftjoin",
             left: result,
             right: this.translateWhere(rightPattern.patterns),
-            expression: rightPattern.expression
-              ? this.translateExpressionFn(rightPattern.expression)
-              : undefined,
+            expression: rightOptExpr ? this.translateExpressionFn(rightOptExpr) : undefined,
           } as LeftJoinOperation;
         } else {
-          // Regular join
           const right = this.translatePattern(rightPattern);
-          result = {
-            type: "join",
-            left: result,
-            right,
-          };
+          result = { type: "join", left: result, right };
         }
       }
     }
 
-    // Apply BIND operations (they extend solutions with computed values)
     for (const bindPattern of bindPatterns) {
       result = this.translateBind(bindPattern, result);
     }
 
-    // Then, wrap with FILTER operations (they apply to the combined result)
     for (const filterPattern of filterPatterns) {
       result = {
         type: "filter",
@@ -144,14 +135,14 @@ export class PatternTranslator {
     return result;
   }
 
-  translatePattern(pattern: any): AlgebraOperation {
+  translatePattern(pattern: SparqljsPattern): AlgebraOperation {
     if (!pattern || !pattern.type) {
       throw new AlgebraTranslatorError("Invalid pattern: missing type");
     }
 
     switch (pattern.type) {
       case "bgp":
-        return this.translateBGP(pattern);
+        return this.translateBGPFn(pattern);
       case "filter":
         return this.translateFilter(pattern);
       case "optional":
@@ -175,165 +166,42 @@ export class PatternTranslator {
     }
   }
 
-  translateBGP(pattern: any): BGPOperation {
-    if (!pattern.triples || !Array.isArray(pattern.triples)) {
-      throw new AlgebraTranslatorError("BGP pattern must have triples array");
-    }
-
-    return {
-      type: "bgp",
-      triples: pattern.triples.map((t: any) => this.translateTriple(t)),
-    };
-  }
-
-  translateTriple(triple: any): Triple {
-    if (!triple.subject || !triple.predicate || !triple.object) {
-      throw new AlgebraTranslatorError("Triple must have subject, predicate, and object");
-    }
-
-    return {
-      subject: this.translateTripleElement(triple.subject),
-      predicate: this.translatePredicate(triple.predicate),
-      object: this.translateTripleElement(triple.object),
-    };
-  }
-
-  /** Translate CONSTRUCT template triples from sparqljs AST format. */
-  translateConstructTemplate(template: any[]): Triple[] {
-    if (!template || !Array.isArray(template)) {
-      return [];
-    }
-
-    return template.map((t: any) => this.translateTriple(t));
-  }
-
-  /** Translate a predicate (simple IRI/Variable or property path). */
-  private translatePredicate(predicate: any): TripleElement | PropertyPath {
-    if (predicate.type === "path") return this.translatePropertyPath(predicate);
-    return this.translateTripleElement(predicate);
-  }
-
-  /** Translate a property path expression from sparqljs AST. */
-  private translatePropertyPath(path: any): PropertyPath {
-    if (!path.pathType) {
-      throw new AlgebraTranslatorError("Property path must have pathType");
-    }
-    if (!path.items || !Array.isArray(path.items)) {
-      throw new AlgebraTranslatorError("Property path must have items array");
-    }
-
-    const items = path.items.map((item: any) => this.translatePathItem(item));
-    const singleItemTypes = ["^", "+", "*", "?"];
-    const singleItemLabels: Record<string, string> = {
-      "^": "Inverse", "+": "OneOrMore", "*": "ZeroOrMore", "?": "ZeroOrOne",
-    };
-
-    if (path.pathType === "/" || path.pathType === "|") {
-      return { type: "path", pathType: path.pathType, items };
-    }
-    if (singleItemTypes.includes(path.pathType)) {
-      if (items.length !== 1) {
-        throw new AlgebraTranslatorError(`${singleItemLabels[path.pathType]} path must have exactly one item`);
-      }
-      return { type: "path", pathType: path.pathType, items: [items[0]] };
-    }
-    throw new AlgebraTranslatorError(`Unsupported property path type: ${path.pathType}`);
-  }
-
-  /** Translate a single item in a property path (IRI or nested path). */
-  private translatePathItem(item: any): IRI | PropertyPath {
-    if (item.type === "path") return this.translatePropertyPath(item);
-    if (item.termType === "NamedNode") return { type: "iri", value: item.value };
-    throw new AlgebraTranslatorError(`Unsupported path item type: ${item.type || item.termType}`);
-  }
-
-  translateTripleElement(element: any): TripleElement {
-    if (!element || !element.termType) {
-      throw new AlgebraTranslatorError("Triple element must have termType");
-    }
-    switch (element.termType) {
-      case "Variable":
-        return { type: "variable", value: element.value };
-      case "NamedNode":
-        return { type: "iri", value: element.value };
-      case "Literal": {
-        const literal: Literal = {
-          type: "literal", value: element.value,
-          datatype: element.datatype?.value, language: element.language,
-        };
-        if (element.language) {
-          const direction = this.directionMappings.get(element.language.toLowerCase());
-          if (direction) { literal.direction = direction; }
-        }
-        return literal;
-      }
-      case "BlankNode":
-        return { type: "blank", value: element.value };
-      case "Quad":
-        return this.translateQuotedTriple(element);
-      default:
-        throw new AlgebraTranslatorError(`Unsupported term type: ${element.termType}`);
-    }
-  }
-
-  /** Translate a quoted triple (RDF-Star) from sparqljs Quad format. */
-  private translateQuotedTriple(element: any): QuotedTriple {
-    if (!element.subject || !element.predicate || !element.object) {
-      throw new AlgebraTranslatorError("Quoted triple must have subject, predicate, and object");
-    }
-    return {
-      type: "quoted",
-      subject: this.translateTripleElement(element.subject),
-      predicate: this.translateQuotedTriplePredicate(element.predicate),
-      object: this.translateTripleElement(element.object),
-    };
-  }
-
-  /** Translate predicate in a quoted triple (only IRI or Variable allowed). */
-  private translateQuotedTriplePredicate(predicate: any): IRI | Variable {
-    if (!predicate || !predicate.termType) {
-      throw new AlgebraTranslatorError("Quoted triple predicate must have termType");
-    }
-    if (predicate.termType === "Variable") return { type: "variable", value: predicate.value };
-    if (predicate.termType === "NamedNode") return { type: "iri", value: predicate.value };
-    throw new AlgebraTranslatorError(
-      `Quoted triple predicate must be IRI or Variable, got: ${predicate.termType}`
-    );
-  }
-
-  private translateFilter(pattern: any): AlgebraOperation {
+  private translateFilter(pattern: import("sparqljs").FilterPattern): AlgebraOperation {
     if (!pattern.expression) {
       throw new AlgebraTranslatorError("Filter pattern must have expression");
     }
-    const input: AlgebraOperation = pattern.patterns
-      ? this.translateWhere(pattern.patterns)
-      : ({ type: "bgp", triples: [] } as BGPOperation);
-    return { type: "filter", expression: this.translateExpressionFn(pattern.expression), input };
+    const input: AlgebraOperation = ({ type: "bgp", triples: [] } as BGPOperation);
+    return {
+      type: "filter",
+      expression: this.translateExpressionFn(pattern.expression),
+      input,
+    };
   }
 
-  private translateOptional(pattern: any): LeftJoinOperation {
+  private translateOptional(pattern: import("sparqljs").OptionalPattern): LeftJoinOperation {
     if (!pattern.patterns || pattern.patterns.length === 0) {
       throw new AlgebraTranslatorError("OPTIONAL pattern must have patterns");
     }
-    return { type: "leftjoin", left: { type: "bgp", triples: [] },
+
+    const optExpr = (pattern as unknown as Record<string, unknown>).expression as SparqljsExpression | undefined;
+
+    return {
+      type: "leftjoin",
+      left: { type: "bgp", triples: [] },
       right: this.translateWhere(pattern.patterns),
-      expression: pattern.expression ? this.translateExpressionFn(pattern.expression) : undefined };
+      expression: optExpr ? this.translateExpressionFn(optExpr) : undefined,
+    };
   }
 
-  /** Translate n-ary UNION into left-associative binary union tree. */
-  private translateUnion(pattern: any): UnionOperation {
+  private translateUnion(pattern: import("sparqljs").UnionPattern): UnionOperation {
     if (!pattern.patterns || pattern.patterns.length < 2) {
       throw new AlgebraTranslatorError("UNION pattern must have at least 2 patterns");
     }
 
-    const translateBranch = (branch: any): AlgebraOperation => {
-      if (branch.type === "graph") {
-        return this.translateGraph(branch);
-      }
-      if (branch.type === "service") {
-        return this.translateService(branch);
-      }
-      if (branch.patterns && Array.isArray(branch.patterns)) {
+    const translateBranch = (branch: SparqljsPattern): AlgebraOperation => {
+      if (branch.type === "graph") return this.translateGraph(branch);
+      if (branch.type === "service") return this.translateService(branch);
+      if ("patterns" in branch && branch.patterns && Array.isArray(branch.patterns)) {
         return this.translateWhere(branch.patterns);
       }
       return this.translateWhere([branch]);
@@ -356,80 +224,109 @@ export class PatternTranslator {
     return result;
   }
 
-  private translateMinus(pattern: any): MinusOperation {
+  private translateMinus(pattern: import("sparqljs").MinusPattern): MinusOperation {
     if (!pattern.patterns || pattern.patterns.length === 0) {
       throw new AlgebraTranslatorError("MINUS pattern must have patterns");
     }
-    return { type: "minus", left: { type: "bgp", triples: [] },
-      right: this.translateWhere(pattern.patterns) };
-  }
 
-  private translateValues(pattern: any): ValuesOperation {
-    if (!pattern.values || !Array.isArray(pattern.values)) {
-      throw new AlgebraTranslatorError("VALUES pattern must have values array");
-    }
-    const variables: Set<string> = new Set();
-    for (const binding of pattern.values) {
-      for (const key of Object.keys(binding)) {
-        variables.add(key.startsWith("?") ? key.slice(1) : key);
-      }
-    }
     return {
-      type: "values",
-      variables: Array.from(variables),
-      bindings: pattern.values.map((b: any) => this.translateValuesBinding(b)),
+      type: "minus",
+      left: { type: "bgp", triples: [] },
+      right: this.translateWhere(pattern.patterns),
     };
   }
 
-  private translateValuesBinding(sparqljsBinding: any): ValuesBinding {
+  private translateValues(pattern: import("sparqljs").ValuesPattern): ValuesOperation {
+    if (!pattern.values || !Array.isArray(pattern.values)) {
+      throw new AlgebraTranslatorError("VALUES pattern must have values array");
+    }
+
+    const variables: Set<string> = new Set();
+    for (const binding of pattern.values) {
+      for (const key of Object.keys(binding)) {
+        const varName = key.startsWith("?") ? key.slice(1) : key;
+        variables.add(varName);
+      }
+    }
+
+    const bindings: ValuesBinding[] = pattern.values.map((sparqljsBinding: ValuePatternRow) =>
+      this.translateValuesBinding(sparqljsBinding)
+    );
+
+    return {
+      type: "values",
+      variables: Array.from(variables),
+      bindings,
+    };
+  }
+
+  private translateValuesBinding(sparqljsBinding: ValuePatternRow): ValuesBinding {
     const binding: ValuesBinding = {};
+
     for (const [key, term] of Object.entries(sparqljsBinding)) {
       const varName = key.startsWith("?") ? key.slice(1) : key;
-      const tv = term as any;
-      if (!tv) continue;
-      if (tv.termType === "NamedNode") {
-        binding[varName] = { type: "iri", value: tv.value } as IRI;
-      } else if (tv.termType === "Literal") {
+      const termValue = term;
+
+      if (!termValue) continue;
+
+      if (termValue.termType === "NamedNode") {
+        binding[varName] = { type: "iri", value: termValue.value } as IRI;
+      } else if (termValue.termType === "Literal") {
+        const litTerm = termValue as import("sparqljs").LiteralTerm;
         const literal: Literal = {
-          type: "literal", value: tv.value,
-          datatype: tv.datatype?.value, language: tv.language || undefined,
+          type: "literal",
+          value: litTerm.value,
+          datatype: litTerm.datatype?.value,
+          language: litTerm.language || undefined,
         };
-        if (tv.language) {
-          const direction = this.directionMappings.get(tv.language.toLowerCase());
-          if (direction) { literal.direction = direction; }
+        if (litTerm.language) {
+          const direction = this.directionMappings.get(litTerm.language.toLowerCase());
+          if (direction) {
+            literal.direction = direction;
+          }
         }
         binding[varName] = literal;
       } else {
-        throw new AlgebraTranslatorError(`Unsupported VALUES term type: ${tv.termType}`);
+        throw new AlgebraTranslatorError(`Unsupported VALUES term type: ${termValue.termType}`);
       }
     }
+
     return binding;
   }
 
-  private translateBind(pattern: any, input: AlgebraOperation): ExtendOperation {
+  private translateBind(pattern: import("sparqljs").BindPattern, input: AlgebraOperation): ExtendOperation {
     if (!pattern.variable || !pattern.expression) {
       throw new AlgebraTranslatorError("BIND pattern must have variable and expression");
     }
-    return { type: "extend", variable: pattern.variable.value,
-      expression: this.translateExpressionFn(pattern.expression), input };
+
+    return {
+      type: "extend",
+      variable: pattern.variable.value,
+      expression: this.translateExpressionFn(pattern.expression),
+      input,
+    };
   }
 
-  private translateSubquery(pattern: any): SubqueryOperation {
+  private translateSubquery(pattern: SelectQuery): SubqueryOperation {
     if (pattern.queryType !== "SELECT") {
-      throw new AlgebraTranslatorError(`Only SELECT subqueries are supported, got: ${pattern.queryType}`);
+      throw new AlgebraTranslatorError(`Only SELECT subqueries are supported, got: ${String((pattern as { queryType: string }).queryType)}`);
     }
-    return { type: "subquery",
-      query: this.translateSelectFn(this.removeLateralMarker(pattern) as SelectQuery) };
+
+    const cleanedPattern = this.removeLateralMarker(pattern);
+    const innerQuery = this.translateSelectFn(cleanedPattern as SelectQuery);
+
+    return { type: "subquery", query: innerQuery };
   }
 
-  /** Translate SERVICE pattern for federated queries. */
-  translateService(pattern: any): ServiceOperation {
+  translateService(pattern: import("sparqljs").ServicePattern): ServiceOperation {
     if (!pattern.name || pattern.name.termType !== "NamedNode") {
       throw new AlgebraTranslatorError("SERVICE pattern must have a NamedNode endpoint");
     }
+
     if (!pattern.patterns || !Array.isArray(pattern.patterns)) {
       throw new AlgebraTranslatorError("SERVICE pattern must have patterns array");
     }
+
     return {
       type: "service",
       endpoint: pattern.name.value,
@@ -438,11 +335,11 @@ export class PatternTranslator {
     };
   }
 
-  /** Translate GRAPH pattern for named graph queries. */
-  translateGraph(pattern: any): GraphOperation {
+  translateGraph(pattern: import("sparqljs").GraphPattern): GraphOperation {
     if (!pattern.name) {
       throw new AlgebraTranslatorError("GRAPH pattern must have a name (IRI or variable)");
     }
+
     if (!pattern.patterns || !Array.isArray(pattern.patterns)) {
       throw new AlgebraTranslatorError("GRAPH pattern must have patterns array");
     }
@@ -454,7 +351,7 @@ export class PatternTranslator {
       name = { type: "variable", value: pattern.name.value };
     } else {
       throw new AlgebraTranslatorError(
-        `GRAPH pattern name must be NamedNode or Variable, got: ${pattern.name.termType}`
+        `GRAPH pattern name must be NamedNode or Variable, got: ${(pattern.name as { termType: string }).termType}`
       );
     }
 
@@ -463,34 +360,45 @@ export class PatternTranslator {
 
   // --- Lateral join helpers ---
 
-  private isLateralPattern(pattern: any): boolean {
+  private isLateralPattern(pattern: SparqljsPattern): boolean {
     if (pattern.type === "query" && this.isLateralSubquery(pattern)) return true;
     if (pattern.type === "group" && pattern.patterns?.length === 1) {
-      if (pattern.patterns[0].type === "query" && this.isLateralSubquery(pattern.patterns[0])) return true;
+      const inner = pattern.patterns[0];
+      if (inner.type === "query" && this.isLateralSubquery(inner)) return true;
     }
     return false;
   }
 
-  private extractLateralSubquery(pattern: any): any {
+  private extractLateralSubquery(pattern: SparqljsPattern): SparqljsPattern {
     if (pattern.type === "query") return pattern;
     if (pattern.type === "group" && pattern.patterns?.length === 1) return pattern.patterns[0];
     throw new AlgebraTranslatorError("Invalid lateral pattern structure");
   }
 
-  private isLateralSubquery(pattern: any): boolean {
-    if (pattern.queryType !== "SELECT" || !pattern.variables) return false;
-    return pattern.variables.some(
-      (v: any) => v.termType === "Variable" && v.value === LateralTransformer.LATERAL_MARKER
+  private isLateralSubquery(pattern: SparqljsPattern): boolean {
+    if (!("queryType" in pattern) || pattern.queryType !== "SELECT" || !("variables" in pattern) || !pattern.variables) {
+      return false;
+    }
+
+    const selectPattern = pattern as SelectQuery;
+    const vars = selectPattern.variables as Array<import("../SparqljsTypes").Variable | import("sparqljs").Wildcard>;
+    return vars.some(
+      (v) => isVariableTerm(v) && v.value === LateralTransformer.LATERAL_MARKER
     );
   }
 
-  private removeLateralMarker(pattern: any): any {
-    if (!pattern.variables) return pattern;
+  private removeLateralMarker(pattern: SparqljsPattern): SparqljsPattern {
+    if (!("variables" in pattern) || !pattern.variables) {
+      return pattern;
+    }
+
+    const selectPattern = pattern as SelectQuery;
+    const vars = selectPattern.variables as Array<import("../SparqljsTypes").Variable | import("sparqljs").Wildcard>;
     return {
-      ...pattern,
-      variables: pattern.variables.filter(
-        (v: any) => !(v.termType === "Variable" && v.value === LateralTransformer.LATERAL_MARKER)
-      ),
+      ...selectPattern,
+      variables: vars.filter(
+        (v) => !(isVariableTerm(v) && v.value === LateralTransformer.LATERAL_MARKER)
+      ) as SelectQuery["variables"],
     };
   }
 }
