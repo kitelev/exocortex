@@ -3,6 +3,7 @@ import {
   InMemoryTripleStore,
   NoteToRDFConverter,
   ApplicationErrorHandler,
+  RDFSInferenceEngine,
   NetworkError,
   ServiceError,
   type ILogger,
@@ -69,6 +70,7 @@ export class VaultRDFIndexer {
         { context: "VaultRDFIndexer.initialize", operation: "convertVault" }
       );
       await this.tripleStore.addAll(triples);
+      await this.runInference();
 
       this.registerEventListeners();
 
@@ -169,6 +171,7 @@ export class VaultRDFIndexer {
         await this.removeFileTriples(file.path);
         const triples = await this.converter.convertNote(file as IFile);
         await this.tripleStore.addAll(triples);
+        await this.runInference();
       },
       { context: "VaultRDFIndexer.updateFile", filePath: file.path }
     );
@@ -203,9 +206,15 @@ export class VaultRDFIndexer {
         await this.tripleStore.clear();
         const triples = await this.converter.convertVault();
         await this.tripleStore.addAll(triples);
+        await this.runInference();
       },
       { context: "VaultRDFIndexer.refresh", operation: "refresh" }
     );
+  }
+
+  private async runInference(): Promise<void> {
+    const engine = new RDFSInferenceEngine();
+    await engine.materialize(this.tripleStore);
   }
 
   getTripleStore(): InMemoryTripleStore {
