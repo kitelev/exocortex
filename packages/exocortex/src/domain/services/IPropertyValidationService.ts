@@ -5,5 +5,5 @@ export interface ValidationResult {
 
 export interface IPropertyValidationService {
   validatePropertyDomain(propertyName: string, assetClass: string): Promise<ValidationResult>;
-  validatePropertyRange(propertyName: string, propertyValue: any): Promise<ValidationResult>;
+  validatePropertyRange(propertyName: string, propertyValue: unknown): Promise<ValidationResult>;
 }

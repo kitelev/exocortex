@@ -25,8 +25,8 @@ export interface IFileSystemWriter {
  * Following Interface Segregation Principle (ISP).
  */
 export interface IFileSystemMetadataProvider {
-  getFileMetadata(path: string): Promise<Record<string, any>>;
-  findFilesByMetadata(query: Record<string, any>): Promise<string[]>;
+  getFileMetadata(path: string): Promise<Record<string, unknown>>;
+  findFilesByMetadata(query: Record<string, unknown>): Promise<string[]>;
   findFileByUID(uid: string): Promise<string | null>;
 }
 

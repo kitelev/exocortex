@@ -9,7 +9,7 @@ export interface AssetRelation {
   title: string;
   propertyName?: string;
   isArchived?: boolean;
-  metadata: Record<string, any>;
+  metadata: Record<string, unknown>;
 }
 
 @injectable()
@@ -39,18 +39,18 @@ export class AreaHierarchyBuilder {
     return this.buildTree(currentAreaPath, allAreas, visited, 0);
   }
 
-  private isFile(file: any): file is IFile {
+  private isFile(file: unknown): file is IFile {
     return (
-      file && typeof file === "object" && "basename" in file && "path" in file
+      !!file && typeof file === "object" && "basename" in file && "path" in file
     );
   }
 
-  private extractInstanceClass(metadata: Record<string, any>): string {
+  private extractInstanceClass(metadata: Record<string, unknown>): string {
     const instanceClass = metadata.exo__Instance_class || "";
     if (Array.isArray(instanceClass)) {
-      return this.cleanWikiLink(instanceClass[0] || "");
+      return this.cleanWikiLink(String(instanceClass[0] || ""));
     }
-    return this.cleanWikiLink(instanceClass);
+    return this.cleanWikiLink(String(instanceClass));
   }
 
   private cleanWikiLink(value: string): string {
@@ -73,7 +73,7 @@ export class AreaHierarchyBuilder {
         areas.set(file.path, {
           path: file.path,
           title: file.basename,
-          label: metadata.exo__Asset_label || undefined,
+          label: (metadata.exo__Asset_label as string | undefined) || undefined,
           isArchived: this.isArchived(metadata),
           depth: 0,
           parentPath: parentPath || undefined,
@@ -91,7 +91,7 @@ export class AreaHierarchyBuilder {
     return areas;
   }
 
-  private extractParentPath(metadata: Record<string, any>): string | null {
+  private extractParentPath(metadata: Record<string, unknown>): string | null {
     const parentProperty = metadata.ems__Area_parent;
     if (!parentProperty) {
       return null;
@@ -102,10 +102,10 @@ export class AreaHierarchyBuilder {
       return this.cleanWikiLink(firstParent);
     }
 
-    return this.cleanWikiLink(parentProperty);
+    return this.cleanWikiLink(String(parentProperty));
   }
 
-  private isArchived(metadata: Record<string, any>): boolean {
+  private isArchived(metadata: Record<string, unknown>): boolean {
     const archivedProp = metadata.exo__Asset_archived;
     if (archivedProp === true || archivedProp === "true") {
       return true;

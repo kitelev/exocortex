@@ -17,7 +17,7 @@ export class FolderRepairService {
    */
   async getExpectedFolder(
     file: IFile,
-    metadata: Record<string, any>,
+    metadata: Record<string, unknown>,
   ): Promise<string | null> {
     const isDefinedBy = metadata?.exo__Asset_isDefinedBy;
 
@@ -79,7 +79,7 @@ export class FolderRepairService {
    * - "[[Reference]]" -> Reference
    * - Reference -> Reference
    */
-  private extractReference(value: any): string | null {
+  private extractReference(value: unknown): string | null {
     if (typeof value !== "string") {
       return null;
     }

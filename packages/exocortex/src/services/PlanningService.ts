@@ -31,7 +31,7 @@ export class PlanningService {
     await this.vault.modify(file, updated);
   }
 
-  private isFile(file: any): file is IFile {
-    return "basename" in file;
+  private isFile(file: unknown): file is IFile {
+    return typeof file === "object" && file !== null && "basename" in file;
   }
 }

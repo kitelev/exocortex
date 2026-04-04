@@ -18,7 +18,7 @@ export class TaskCreationService {
 
   async createTask(
     sourceFile: IVaultAdapterModule.IFile,
-    sourceMetadata: Record<string, any>,
+    sourceMetadata: Record<string, unknown>,
     sourceClass: string,
     label?: string,
     taskSize?: string | null,
@@ -64,7 +64,7 @@ export class TaskCreationService {
 
   async createRelatedTask(
     sourceFile: IVaultAdapterModule.IFile,
-    sourceMetadata: Record<string, any>,
+    sourceMetadata: Record<string, unknown>,
     label?: string,
     taskSize?: string | null,
   ): Promise<IVaultAdapterModule.IFile> {
@@ -93,14 +93,14 @@ export class TaskCreationService {
   }
 
   generateTaskFrontmatter(
-    sourceMetadata: Record<string, any>,
+    sourceMetadata: Record<string, unknown>,
     sourceName: string,
     sourceClass: string,
     label?: string,
     uid?: string,
     taskSize?: string | null,
     plannedStartTimestamp?: string,
-  ): Record<string, any> {
+  ): Record<string, unknown> {
     return this.frontmatterGenerator.generateTaskFrontmatter(
       sourceMetadata,
       sourceName,
@@ -115,12 +115,12 @@ export class TaskCreationService {
   // Used only by unit tests via (service as any).generateRelatedTaskFrontmatter
   // @ts-ignore - Used by tests through type casting
   private generateRelatedTaskFrontmatter(
-    sourceMetadata: Record<string, any>,
+    sourceMetadata: Record<string, unknown>,
     sourceName: string,
     label?: string,
     uid?: string,
     taskSize?: string | null,
-  ): Record<string, any> {
+  ): Record<string, unknown> {
     return this.frontmatterGenerator.generateRelatedTaskFrontmatter(
       sourceMetadata,
       sourceName,

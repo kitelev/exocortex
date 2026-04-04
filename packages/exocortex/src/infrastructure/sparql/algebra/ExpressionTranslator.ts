@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any -- sparqljs AST is untyped */
+
 import { AlgebraTranslatorError } from "./AlgebraTranslatorError";
 import type {
   AlgebraOperation,
@@ -9,6 +9,13 @@ import type {
   ArithmeticExpression,
   Expression,
 } from "./AlgebraOperation";
+import type {
+  SparqljsPattern,
+  SparqljsExpression,
+  SparqljsTerm,
+  OperationExpression,
+  FilterPattern,
+} from "../SparqljsTypes";
 
 /**
  * Translates SPARQL expressions, filters, and function calls
@@ -23,59 +30,56 @@ import type {
  * - Filter patterns
  */
 export class ExpressionTranslator {
-  /**
-   * Callback to delegate pattern translation (BGP, group, etc.)
-   * back to the pattern layer. This avoids a circular dependency.
-   */
-  private readonly translateWhereFn: (patterns: any[]) => AlgebraOperation;
-  private readonly translateBGPFn: (pattern: any) => AlgebraOperation;
-  private readonly translatePatternFn: (pattern: any) => AlgebraOperation;
+  private readonly translateWhereFn: (patterns: SparqljsPattern[]) => AlgebraOperation;
+  private readonly translateBGPFn: (pattern: SparqljsPattern) => AlgebraOperation;
+  private readonly translatePatternFn: (pattern: SparqljsPattern) => AlgebraOperation;
 
   constructor(deps: {
-    translateWhere: (patterns: any[]) => AlgebraOperation;
-    translateBGP: (pattern: any) => AlgebraOperation;
-    translatePattern: (pattern: any) => AlgebraOperation;
+    translateWhere: (patterns: SparqljsPattern[]) => AlgebraOperation;
+    translateBGP: (pattern: SparqljsPattern) => AlgebraOperation;
+    translatePattern: (pattern: SparqljsPattern) => AlgebraOperation;
   }) {
     this.translateWhereFn = deps.translateWhere;
     this.translateBGPFn = deps.translateBGP;
     this.translatePatternFn = deps.translatePattern;
   }
 
-  translateExpression(expr: any): Expression {
+  translateExpression(expr: SparqljsExpression): Expression {
     if (!expr) {
       throw new AlgebraTranslatorError("Expression cannot be null or undefined");
     }
 
     // Handle expressions with 'type' property (operations, function calls)
-    if (expr.type === "operation") {
-      return this.translateOperationExpression(expr);
+    if ("type" in expr && expr.type === "operation") {
+      return this.translateOperationExpression(expr as OperationExpression);
     }
 
-    if (expr.type === "functioncall" || expr.type === "functionCall") {
+    // sparqljs uses both "functionCall" and "functioncall" at runtime
+    const exprType = "type" in expr ? (expr as { type: string }).type : undefined;
+    if (exprType === "functioncall" || exprType === "functionCall") {
+      const funcExpr = expr as import("sparqljs").FunctionCallExpression;
       return {
         type: "functionCall",
-        function: expr.function,
-        args: expr.args.map((a: any) => this.translateExpression(a)),
+        function: funcExpr.function,
+        args: funcExpr.args.map((a: SparqljsExpression) => this.translateExpression(a)),
       };
     }
 
     // Handle terms with 'termType' property (variables, literals, IRIs)
-    if (expr.termType) {
-      return this.translateTermExpression(expr);
+    if ("termType" in expr) {
+      return this.translateTermExpression(expr as SparqljsTerm);
     }
 
     // If neither type nor termType, throw error
     throw new AlgebraTranslatorError(`Unsupported expression structure: ${JSON.stringify(expr)}`);
   }
 
-  translateFilter(pattern: any): FilterOperation {
+  translateFilter(pattern: FilterPattern): FilterOperation {
     if (!pattern.expression) {
       throw new AlgebraTranslatorError("Filter pattern must have expression");
     }
 
-    const input: AlgebraOperation = pattern.patterns
-      ? this.translateWhereFn(pattern.patterns)
-      : ({ type: "bgp", triples: [] } as BGPOperation);
+    const input: AlgebraOperation = ({ type: "bgp", triples: [] } as BGPOperation);
 
     return {
       type: "filter",
@@ -84,35 +88,60 @@ export class ExpressionTranslator {
     };
   }
 
-  private translateOperationExpression(expr: any): Expression {
+  translateTermExpression(term: SparqljsTerm): Expression {
+    if (term.termType === "Variable") {
+      return { type: "variable", name: term.value };
+    }
+
+    if (term.termType === "Literal") {
+      let value: string | number | boolean = term.value;
+      if (term.datatype) {
+        if (term.datatype.value.includes("#integer") || term.datatype.value.includes("#decimal")) {
+          value = parseFloat(term.value);
+        } else if (term.datatype.value.includes("#boolean")) {
+          value = term.value === "true";
+        }
+      }
+
+      return { type: "literal", value, datatype: term.datatype?.value };
+    }
+
+    return { type: "literal", value: String(term.value || term) };
+  }
+
+  private translateOperationExpression(expr: OperationExpression): Expression {
     const comparisonOps = ["=", "!=", "<", ">", "<=", ">="];
     const logicalOps = ["&&", "||", "!"];
     const arithmeticOps = ["+", "-", "*", "/"];
 
+    // Filter to only expression args (not pattern args used in EXISTS)
+    const exprArgs = expr.args.filter((a): a is SparqljsExpression =>
+      !("patterns" in a) || "termType" in a
+    );
+
     if (comparisonOps.includes(expr.operator)) {
       return {
         type: "comparison",
-        operator: expr.operator,
-        left: this.translateExpression(expr.args[0]),
-        right: this.translateExpression(expr.args[1]),
+        operator: expr.operator as "=" | "!=" | "<" | ">" | "<=" | ">=",
+        left: this.translateExpression(exprArgs[0]),
+        right: this.translateExpression(exprArgs[1]),
       };
     }
 
     if (logicalOps.includes(expr.operator)) {
       return {
         type: "logical",
-        operator: expr.operator,
-        operands: expr.args.map((a: any) => this.translateExpression(a)),
+        operator: expr.operator as "&&" | "||" | "!",
+        operands: exprArgs.map((a: SparqljsExpression) => this.translateExpression(a)),
       };
     }
 
-    // Handle arithmetic operators (+, -, *, /)
     if (arithmeticOps.includes(expr.operator)) {
       return {
         type: "arithmetic",
         operator: expr.operator as ArithmeticExpression["operator"],
-        left: this.translateExpression(expr.args[0]),
-        right: this.translateExpression(expr.args[1]),
+        left: this.translateExpression(exprArgs[0]),
+        right: this.translateExpression(exprArgs[1]),
       };
     }
 
@@ -129,30 +158,26 @@ export class ExpressionTranslator {
     return {
       type: "function",
       function: expr.operator,
-      args: expr.args.map((a: any) => this.translateExpression(a)),
+      args: exprArgs.map((a: SparqljsExpression) => this.translateExpression(a)),
     };
   }
 
   /**
    * Translate EXISTS or NOT EXISTS expression.
-   * sparqljs AST: { type: "operation", operator: "exists"|"notexists", args: [pattern] }
-   * The pattern is a graph pattern (BGP, group, etc.) that needs to be evaluated.
    */
-  private translateExistsExpression(expr: any): ExistsExpression {
+  private translateExistsExpression(expr: OperationExpression): ExistsExpression {
     if (!expr.args || expr.args.length !== 1) {
       throw new AlgebraTranslatorError("EXISTS/NOT EXISTS must have exactly one pattern argument");
     }
 
-    const patternArg = expr.args[0];
+    const patternArg = expr.args[0] as SparqljsPattern;
     let pattern: AlgebraOperation;
 
-    // Handle group pattern (most common for EXISTS)
-    if (patternArg.type === "group" && patternArg.patterns) {
+    if (patternArg.type === "group" && "patterns" in patternArg && patternArg.patterns) {
       pattern = this.translateWhereFn(patternArg.patterns);
     } else if (patternArg.type === "bgp") {
       pattern = this.translateBGPFn(patternArg);
     } else {
-      // Try to translate as a generic pattern
       pattern = this.translatePatternFn(patternArg);
     }
 
@@ -165,23 +190,13 @@ export class ExpressionTranslator {
 
   /**
    * Translate IN or NOT IN expression.
-   * sparqljs AST format:
-   * {
-   *   type: "operation",
-   *   operator: "in" | "notin",
-   *   args: [expression, [value1, value2, ...]]
-   * }
-   *
-   * SPARQL 1.1 Section 17.4.1.5:
-   * - expr IN (val1, val2, ...) returns true if expr = val_i for any value
-   * - expr NOT IN (val1, val2, ...) returns true if expr != val_i for all values
    */
-  private translateInExpression(expr: any): InExpression {
+  private translateInExpression(expr: OperationExpression): InExpression {
     if (!expr.args || expr.args.length !== 2) {
       throw new AlgebraTranslatorError("IN/NOT IN must have exactly 2 arguments (expression and list)");
     }
 
-    const testExpr = expr.args[0];
+    const testExpr = expr.args[0] as SparqljsExpression;
     const listArg = expr.args[1];
 
     if (!Array.isArray(listArg)) {
@@ -191,39 +206,8 @@ export class ExpressionTranslator {
     return {
       type: "in",
       expression: this.translateExpression(testExpr),
-      list: listArg.map((item: any) => this.translateExpression(item)),
+      list: listArg.map((item: SparqljsExpression) => this.translateExpression(item)),
       negated: expr.operator === "notin",
-    };
-  }
-
-  translateTermExpression(term: any): Expression {
-    if (term.termType === "Variable") {
-      return {
-        type: "variable",
-        name: term.value,
-      };
-    }
-
-    if (term.termType === "Literal") {
-      let value: string | number | boolean = term.value;
-      if (term.datatype) {
-        if (term.datatype.value.includes("#integer") || term.datatype.value.includes("#decimal")) {
-          value = parseFloat(term.value);
-        } else if (term.datatype.value.includes("#boolean")) {
-          value = term.value === "true";
-        }
-      }
-
-      return {
-        type: "literal",
-        value,
-        datatype: term.datatype?.value,
-      };
-    }
-
-    return {
-      type: "literal",
-      value: String(term.value || term),
     };
   }
 }

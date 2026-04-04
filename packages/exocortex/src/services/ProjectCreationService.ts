@@ -26,7 +26,7 @@ export class ProjectCreationService {
 
   async createProject(
     sourceFile: IFile,
-    sourceMetadata: Record<string, any>,
+    sourceMetadata: Record<string, unknown>,
     sourceClass: string,
     label?: string,
   ): Promise<IFile> {
@@ -50,12 +50,12 @@ export class ProjectCreationService {
   }
 
   generateProjectFrontmatter(
-    sourceMetadata: Record<string, any>,
+    sourceMetadata: Record<string, unknown>,
     sourceName: string,
     sourceClass: string,
     label?: string,
     uid?: string,
-  ): Record<string, any> {
+  ): Record<string, unknown> {
     const now = new Date();
     const timestamp = DateFormatter.toLocalTimestamp(now);
 
@@ -66,7 +66,7 @@ export class ProjectCreationService {
     const effortProperty =
       EFFORT_PROPERTY_MAP[cleanSourceClass] || "ems__Effort_area";
 
-    const frontmatter: Record<string, any> = {};
+    const frontmatter: Record<string, unknown> = {};
     frontmatter["exo__Asset_isDefinedBy"] =
       MetadataHelpers.ensureQuoted(isDefinedBy);
     frontmatter["exo__Asset_uid"] = uid || uuidv4();

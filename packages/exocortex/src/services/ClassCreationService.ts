@@ -14,7 +14,7 @@ export class ClassCreationService {
   async createSubclass(
     parentFile: IFile,
     label: string,
-    parentMetadata: Record<string, any>,
+    parentMetadata: Record<string, unknown>,
   ): Promise<IFile> {
     const uid = uuidv4();
     const fileName = this.generateFileName(label);
@@ -60,12 +60,12 @@ export class ClassCreationService {
     parentClassName: string,
     label: string,
     uid: string,
-    parentMetadata: Record<string, any>,
-  ): Record<string, any> {
+    parentMetadata: Record<string, unknown>,
+  ): Record<string, unknown> {
     const now = new Date();
     const timestamp = DateFormatter.toLocalTimestamp(now);
 
-    const frontmatter: Record<string, any> = {};
+    const frontmatter: Record<string, unknown> = {};
     frontmatter["exo__Asset_uid"] = uid;
     frontmatter["exo__Asset_label"] = label;
     frontmatter["exo__Asset_createdAt"] = timestamp;

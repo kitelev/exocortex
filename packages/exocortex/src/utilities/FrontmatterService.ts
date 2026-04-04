@@ -124,7 +124,7 @@ export class FrontmatterService {
    * // result3 === '---\nstatus: draft\n---\nBody content'
    * ```
    */
-  updateProperty(content: string, property: string, value: any): string {
+  updateProperty(content: string, property: string, value: unknown): string {
     const parsed = this.parse(content);
 
     // No frontmatter exists - create new block
@@ -169,7 +169,7 @@ export class FrontmatterService {
    * @param value - Property value
    * @returns Updated content
    */
-  addProperty(content: string, property: string, value: any): string {
+  addProperty(content: string, property: string, value: unknown): string {
     return this.updateProperty(content, property, value);
   }
 
@@ -248,7 +248,7 @@ export class FrontmatterService {
    * // result === '---\nstatus: draft\npriority: high\n---\nBody content'
    * ```
    */
-  createFrontmatter(content: string, properties: Record<string, any>): string {
+  createFrontmatter(content: string, properties: Record<string, unknown>): string {
     const frontmatterLines = Object.entries(properties).map(
       ([key, value]) => `${key}: ${value}`,
     );

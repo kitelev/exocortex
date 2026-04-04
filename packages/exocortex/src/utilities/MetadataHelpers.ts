@@ -1,6 +1,6 @@
 export class MetadataHelpers {
   static findAllReferencingProperties(
-    metadata: Record<string, any>,
+    metadata: Record<string, unknown>,
     currentFileName: string,
   ): string[] {
     const properties: string[] = [];
@@ -13,7 +13,7 @@ export class MetadataHelpers {
   }
 
   static findReferencingProperty(
-    metadata: Record<string, any>,
+    metadata: Record<string, unknown>,
     currentFileName: string,
   ): string | undefined {
     for (const [key, value] of Object.entries(metadata)) {
@@ -38,7 +38,7 @@ export class MetadataHelpers {
    * containsReference("[[folder/Project]]", "Project.md") // true
    * containsReference("Project", "Project.md") // false (plain text, not a wiki-link)
    */
-  static containsReference(value: any, fileName: string): boolean {
+  static containsReference(value: unknown, fileName: string): boolean {
     if (!value) return false;
 
     const cleanName = fileName.replace(/\.md$/, "");
@@ -70,7 +70,7 @@ export class MetadataHelpers {
     return false;
   }
 
-  static isAssetArchived(metadata: Record<string, any>): boolean {
+  static isAssetArchived(metadata: Record<string, unknown>): boolean {
     // Check exo__Asset_isArchived field with full truthy value support
     const exoArchivedValue = metadata?.exo__Asset_isArchived;
     if (exoArchivedValue !== undefined && exoArchivedValue !== null) {
@@ -119,10 +119,10 @@ export class MetadataHelpers {
       created: number;
       modified: number;
       path: string;
-      metadata?: Record<string, any>;
+      metadata?: Record<string, unknown>;
     },
     propertyName: string,
-  ): any {
+  ): string | number | unknown {
     if (propertyName === "Name") return relation.title;
     if (propertyName === "title") return relation.title;
     if (propertyName === "created") return relation.created;
@@ -138,7 +138,7 @@ export class MetadataHelpers {
   }
 
   static buildFileContent(
-    frontmatter: Record<string, any>,
+    frontmatter: Record<string, unknown>,
     bodyContent?: string,
   ): string {
     const frontmatterLines = Object.entries(frontmatter)

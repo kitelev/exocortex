@@ -37,13 +37,13 @@ export class FleetingNoteCreationService {
     return createdFile;
   }
 
-  private generateFrontmatter(uid: string, label: string): Record<string, any> {
+  private generateFrontmatter(uid: string, label: string): Record<string, unknown> {
     const now = new Date();
     const timestamp = DateFormatter.toLocalTimestamp(now);
 
     const trimmedLabel = label.trim();
 
-    const frontmatter: Record<string, any> = {
+    const frontmatter: Record<string, unknown> = {
       exo__Asset_isDefinedBy: '"[[!kitelev]]"',
       exo__Asset_uid: uid,
       exo__Asset_createdAt: timestamp,

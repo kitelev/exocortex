@@ -5,35 +5,35 @@ import { MetadataHelpers } from "./MetadataHelpers";
 export class MetadataExtractor {
   constructor(private vault: IVaultAdapter) {}
 
-  extractMetadata(file: IFile | null): Record<string, any> {
+  extractMetadata(file: IFile | null): Record<string, unknown> {
     if (!file) return {};
 
     return this.vault.getFrontmatter(file) || {};
   }
 
   extractInstanceClass(
-    metadata: Record<string, any>,
+    metadata: Record<string, unknown>,
   ): string | string[] | null {
-    return metadata.exo__Instance_class || null;
+    return (metadata.exo__Instance_class as string | string[] | undefined) || null;
   }
 
-  extractStatus(metadata: Record<string, any>): string | string[] | null {
-    return metadata.ems__Effort_status || null;
+  extractStatus(metadata: Record<string, unknown>): string | string[] | null {
+    return (metadata.ems__Effort_status as string | string[] | undefined) || null;
   }
 
-  extractIsArchived(metadata: Record<string, any>): boolean {
+  extractIsArchived(metadata: Record<string, unknown>): boolean {
     return MetadataHelpers.isAssetArchived(metadata);
   }
 
-  static extractIsDefinedBy(sourceMetadata: Record<string, any>): string {
-    let isDefinedBy = sourceMetadata.exo__Asset_isDefinedBy || '""';
+  static extractIsDefinedBy(sourceMetadata: Record<string, unknown>): string {
+    let isDefinedBy: unknown = sourceMetadata.exo__Asset_isDefinedBy || '""';
     if (Array.isArray(isDefinedBy)) {
       isDefinedBy = isDefinedBy[0] || '""';
     }
-    return isDefinedBy;
+    return String(isDefinedBy);
   }
 
-  extractExpectedFolder(metadata: Record<string, any>): string | null {
+  extractExpectedFolder(metadata: Record<string, unknown>): string | null {
     const isDefinedBy = metadata.exo__Asset_isDefinedBy;
     if (!isDefinedBy) return null;
 
@@ -68,7 +68,7 @@ export class MetadataExtractor {
     };
   }
 
-  extractCache(file: IFile | null): any | null {
+  extractCache(file: IFile | null): Record<string, unknown> | null {
     if (!file) return null;
     return this.vault.getFrontmatter(file);
   }
