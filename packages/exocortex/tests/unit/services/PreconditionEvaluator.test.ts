@@ -172,6 +172,82 @@ describe("PreconditionEvaluator", () => {
     });
   });
 
+  describe("Issue #2495: EvalContext with fileBasename and currentFolder", () => {
+    it("should pass fileBasename and currentFolder to host function via context", async () => {
+      let receivedContext: import("../../../src/services/PreconditionEvaluator").EvalContext | undefined;
+
+      evaluator.registerHostFunction("checkFile", (ctx) => {
+        receivedContext = ctx;
+        return true;
+      });
+
+      const precondition = {
+        id: "pre-check-file",
+        label: "Check file",
+        hostFunction: "checkFile",
+      };
+
+      const context = {
+        targetIRI: ASSET_IRI,
+        fileBasename: "my-task.md",
+        currentFolder: "03 Knowledge/projects",
+      };
+
+      await evaluator.evaluate(precondition, ASSET_IRI, context);
+
+      expect(receivedContext).toBeDefined();
+      expect(receivedContext!.targetIRI).toBe(ASSET_IRI);
+      expect(receivedContext!.fileBasename).toBe("my-task.md");
+      expect(receivedContext!.currentFolder).toBe("03 Knowledge/projects");
+    });
+
+    it("should work when fileBasename and currentFolder are omitted", async () => {
+      let receivedContext: import("../../../src/services/PreconditionEvaluator").EvalContext | undefined;
+
+      evaluator.registerHostFunction("checkMinimal", (ctx) => {
+        receivedContext = ctx;
+        return true;
+      });
+
+      const precondition = {
+        id: "pre-minimal",
+        label: "Minimal check",
+        hostFunction: "checkMinimal",
+      };
+
+      await evaluator.evaluate(precondition, ASSET_IRI);
+
+      expect(receivedContext).toBeDefined();
+      expect(receivedContext!.targetIRI).toBe(ASSET_IRI);
+      expect(receivedContext!.fileBasename).toBeUndefined();
+      expect(receivedContext!.currentFolder).toBeUndefined();
+    });
+
+    it("should return host function result for hostFunction precondition", async () => {
+      evaluator.registerHostFunction("alwaysFalse", () => false);
+
+      const precondition = {
+        id: "pre-false",
+        label: "Always false",
+        hostFunction: "alwaysFalse",
+      };
+
+      const result = await evaluator.evaluate(precondition, ASSET_IRI);
+      expect(result).toBe(false);
+    });
+
+    it("should return true when hostFunction is not registered", async () => {
+      const precondition = {
+        id: "pre-unknown",
+        label: "Unknown function",
+        hostFunction: "nonExistentFn",
+      };
+
+      const result = await evaluator.evaluate(precondition, ASSET_IRI);
+      expect(result).toBe(true);
+    });
+  });
+
   describe("precondition with sparqlAsk returning true for complex query", () => {
     it("should handle multi-pattern ASK query", async () => {
       const subject = new IRI(ASSET_IRI);

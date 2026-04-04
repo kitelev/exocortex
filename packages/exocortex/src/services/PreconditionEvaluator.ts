@@ -11,6 +11,8 @@ import type { AskOperation } from "../infrastructure/sparql/algebra/AlgebraOpera
  */
 export interface EvalContext {
   readonly targetIRI: string;
+  readonly fileBasename?: string;
+  readonly currentFolder?: string;
   readonly [key: string]: unknown;
 }
 
@@ -56,7 +58,7 @@ export class PreconditionEvaluator {
   async evaluate(
     precondition: PreconditionDefinition | undefined,
     targetIRI: string,
-    _context?: EvalContext,
+    context?: EvalContext,
   ): Promise<boolean> {
     // No precondition = always available
     if (!precondition) return true;
@@ -64,6 +66,15 @@ export class PreconditionEvaluator {
     // SPARQL ASK evaluation
     if (precondition.sparqlAsk) {
       return this.evaluateSparqlAsk(precondition.sparqlAsk, targetIRI);
+    }
+
+    // Host function evaluation
+    if (precondition.hostFunction) {
+      return this.evaluateHostFunction(
+        precondition.hostFunction,
+        targetIRI,
+        context,
+      );
     }
 
     return true;
@@ -106,6 +117,21 @@ export class PreconditionEvaluator {
       return null;
     }
     return algebra as AskOperation;
+  }
+
+  private evaluateHostFunction(
+    name: string,
+    targetIRI: string,
+    context?: EvalContext,
+  ): boolean {
+    const fn = this.hostFunctions.get(name);
+    if (!fn) return true;
+
+    const evalContext: EvalContext = context
+      ? { ...context, targetIRI }
+      : { targetIRI };
+
+    return fn(evalContext);
   }
 
   private async evaluateSparqlAsk(
