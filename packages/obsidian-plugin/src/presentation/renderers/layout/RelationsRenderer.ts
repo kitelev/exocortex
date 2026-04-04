@@ -60,7 +60,7 @@ export class RelationsRenderer {
 
         if (referencingProperties.length > 0) {
           for (const propertyName of referencingProperties) {
-            const displayLabel = enrichedMetadata.exo__Asset_label || iFile.basename;
+            const displayLabel = (enrichedMetadata.exo__Asset_label as string) || iFile.basename;
             const relation: AssetRelation = {
               file: { path: sourcePath, basename: iFile.basename },
               path: sourcePath,
@@ -76,7 +76,7 @@ export class RelationsRenderer {
             relations.push(relation);
           }
         } else {
-          const displayLabel = enrichedMetadata.exo__Asset_label || iFile.basename;
+          const displayLabel = (enrichedMetadata.exo__Asset_label as string) || iFile.basename;
           const relation: AssetRelation = {
             file: { path: sourcePath, basename: iFile.basename },
             path: sourcePath,
@@ -97,8 +97,8 @@ export class RelationsRenderer {
     if (config.sortBy) {
       const sortBy = config.sortBy;
       relations.sort((a, b) => {
-        const aVal = MetadataHelpers.getPropertyValue(a, sortBy);
-        const bVal = MetadataHelpers.getPropertyValue(b, sortBy);
+        const aVal = MetadataHelpers.getPropertyValue(a, sortBy) as string | number;
+        const bVal = MetadataHelpers.getPropertyValue(b, sortBy) as string | number;
         const order = config.sortOrder === "desc" ? -1 : 1;
         return aVal > bVal ? order : -order;
       });

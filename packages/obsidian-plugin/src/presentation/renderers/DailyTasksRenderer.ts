@@ -210,9 +210,9 @@ export class DailyTasksRenderer {
         };
 
         const startTime =
-          formatTime(startTimestamp) || formatTime(plannedStartTimestamp);
+          formatTime(startTimestamp as string | number | null | undefined) || formatTime(plannedStartTimestamp as string | number | null | undefined);
         const endTime =
-          formatTime(endTimestamp) || formatTime(plannedEndTimestamp);
+          formatTime(endTimestamp as string | number | null | undefined) || formatTime(plannedEndTimestamp as string | number | null | undefined);
 
         const isDone = effortStatusStr === EffortStatus.DONE;
         const isTrashed = effortStatusStr === EffortStatus.TRASHED;
@@ -221,7 +221,7 @@ export class DailyTasksRenderer {
           String(c).includes(AssetClass.MEETING),
         );
 
-        const label = metadata.exo__Asset_label || file.basename;
+        const label = (metadata.exo__Asset_label as string) || file.basename;
 
         const isBlocked = BlockerHelpers.isEffortBlocked(this.app, metadata);
 
@@ -242,8 +242,8 @@ export class DailyTasksRenderer {
           label,
           startTime,
           endTime,
-          startTimestamp: startTimestamp || plannedStartTimestamp || null,
-          endTimestamp: endTimestamp || plannedEndTimestamp || null,
+          startTimestamp: (startTimestamp || plannedStartTimestamp || null) as string | number | null,
+          endTimestamp: (endTimestamp || plannedEndTimestamp || null) as string | number | null,
           status: getStatusLabel(effortStatusStr),
           metadata: enrichedMetadata,
           isDone,
