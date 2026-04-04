@@ -1499,4 +1499,49 @@ describe("ExocortexPlugin", () => {
       );
     });
   });
+
+  describe("RFC-009 service wiring", () => {
+    it("should construct CommandResolver with tripleStore after onload", async () => {
+      // Act
+      await plugin.onload();
+
+      // Assert
+      expect(plugin.commandResolver).toBeDefined();
+    });
+
+    it("should construct PreconditionEvaluator with tripleStore after onload", async () => {
+      // Act
+      await plugin.onload();
+
+      // Assert
+      expect(plugin.preconditionEvaluator).toBeDefined();
+    });
+
+    it("should construct GroundingExecutor with ObsidianFileSystemAdapter and ServiceRegistry after onload", async () => {
+      // Act
+      await plugin.onload();
+
+      // Assert
+      expect(plugin.groundingExecutor).toBeDefined();
+    });
+
+    it("should create ServiceRegistry instance after onload", async () => {
+      // Act
+      await plugin.onload();
+
+      // Assert
+      expect(plugin.serviceRegistry).toBeDefined();
+    });
+
+    it("should make all three RFC-009 services accessible from plugin instance", async () => {
+      // Act
+      await plugin.onload();
+
+      // Assert
+      expect(plugin.commandResolver).toBeDefined();
+      expect(plugin.preconditionEvaluator).toBeDefined();
+      expect(plugin.groundingExecutor).toBeDefined();
+      expect(plugin.serviceRegistry).toBeDefined();
+    });
+  });
 });

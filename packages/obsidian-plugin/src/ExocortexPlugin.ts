@@ -16,7 +16,13 @@ import {
   DEFAULT_SETTINGS,
 } from "./domain/settings/ExocortexSettings";
 import { ExocortexSettingTab } from "./presentation/settings/ExocortexSettingTab";
-import { TaskStatusService } from "exocortex";
+import {
+  TaskStatusService,
+  CommandResolver,
+  PreconditionEvaluator,
+  GroundingExecutor,
+  ServiceRegistry,
+} from "exocortex";
 import { ObsidianVaultAdapter } from "./adapters/ObsidianVaultAdapter";
 import { TaskTrackingService } from "./application/services/TaskTrackingService";
 import { AliasSyncService } from "./application/services/AliasSyncService";
@@ -35,6 +41,7 @@ import { PropertiesUidCopyPatch } from "./presentation/properties/PropertiesUidC
 import { BodyLinkPatch } from "./presentation/body/BodyLinkPatch";
 import { GraphViewPatch } from "./presentation/graph-view/GraphViewPatch";
 import { PrintNameRuleService } from "./domain/display-name/PrintNameRuleService";
+import { ObsidianFileSystemAdapter } from "./adapters/ObsidianFileSystemAdapter";
 
 /**
  * Exocortex Plugin - Automatic layout rendering
@@ -63,6 +70,10 @@ export default class ExocortexPlugin extends Plugin {
   api!: ExocortexAPI;
   settings!: ExocortexSettings;
   printNameRuleService!: PrintNameRuleService;
+  commandResolver!: CommandResolver;
+  preconditionEvaluator!: PreconditionEvaluator;
+  groundingExecutor!: GroundingExecutor;
+  serviceRegistry!: ServiceRegistry;
   private timerManager!: TimerManager;
   // MutationObserver to detect when layout is removed by Obsidian re-renders (e.g., when processing embeds)
   private layoutPersistenceObserver: MutationObserver | null = null;
@@ -127,6 +138,15 @@ export default class ExocortexPlugin extends Plugin {
       this.layoutProcessor = new LayoutCodeBlockProcessor(this);
       this.sparql = new SPARQLApi(this);
       this.api = new ExocortexAPI(this);
+
+      // RFC-009: Wire Dynamic Command System services
+      // Construct manually (not via tsyringe) because they need the live triple store
+      const tripleStore = this.sparql.getTripleStore();
+      this.commandResolver = new CommandResolver(tripleStore);
+      this.preconditionEvaluator = new PreconditionEvaluator(tripleStore);
+      this.serviceRegistry = new ServiceRegistry();
+      const obsidianFs = new ObsidianFileSystemAdapter(this.app.vault);
+      this.groundingExecutor = new GroundingExecutor(obsidianFs, obsidianFs, this.serviceRegistry);
 
       // Register the alias icon editor extension for Live Preview mode
       this.registerEditorExtension(
