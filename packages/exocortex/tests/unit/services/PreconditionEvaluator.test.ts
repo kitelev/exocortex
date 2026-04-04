@@ -236,4 +236,128 @@ describe("PreconditionEvaluator", () => {
       expect(result).toBe(false);
     });
   });
+
+  describe("Issue #2496: compiled SPARQL ASK cache", () => {
+    const ASK_QUERY = `
+      PREFIX ems: <https://exocortex.my/ontology/ems#>
+      ASK { $target ems:Effort_startTimestamp ?ts }
+    `;
+
+    beforeEach(async () => {
+      const subject = new IRI(ASSET_IRI);
+      await store.add(
+        new Triple(
+          subject,
+          Namespace.EMS.term("Effort_startTimestamp"),
+          new Literal("2026-03-30T10:00:00"),
+        ),
+      );
+    });
+
+    it("should cache parsed algebra and skip parse on second call", async () => {
+      const SPARQLParserModule = await import("../../../src/infrastructure/sparql/SPARQLParser");
+      const parseSpy = jest.spyOn(SPARQLParserModule.SPARQLParser.prototype, "parse");
+
+      const precondition = {
+        id: "pre-cached",
+        label: "Cached ASK",
+        sparqlAsk: ASK_QUERY,
+      };
+
+      const result1 = await evaluator.evaluate(precondition, ASSET_IRI);
+      expect(result1).toBe(true);
+      expect(parseSpy).toHaveBeenCalledTimes(1);
+
+      const result2 = await evaluator.evaluate(precondition, ASSET_IRI);
+      expect(result2).toBe(true);
+      expect(parseSpy).toHaveBeenCalledTimes(1);
+
+      parseSpy.mockRestore();
+    });
+
+    it("should invalidate cache when invalidateCache is called", async () => {
+      const SPARQLParserModule = await import("../../../src/infrastructure/sparql/SPARQLParser");
+      const parseSpy = jest.spyOn(SPARQLParserModule.SPARQLParser.prototype, "parse");
+
+      const precondition = {
+        id: "pre-inv",
+        label: "Invalidatable",
+        sparqlAsk: ASK_QUERY,
+      };
+
+      await evaluator.evaluate(precondition, ASSET_IRI);
+      expect(parseSpy).toHaveBeenCalledTimes(1);
+
+      evaluator.invalidateCache();
+
+      await evaluator.evaluate(precondition, ASSET_IRI);
+      expect(parseSpy).toHaveBeenCalledTimes(2);
+
+      parseSpy.mockRestore();
+    });
+
+    it("should work correctly with different targetIRIs on same query", async () => {
+      const OTHER_IRI = "https://exocortex.my/ontology/ems/other-asset-456";
+      const otherSubject = new IRI(OTHER_IRI);
+      await store.add(
+        new Triple(
+          otherSubject,
+          Namespace.EMS.term("Effort_startTimestamp"),
+          new Literal("2026-04-01T09:00:00"),
+        ),
+      );
+
+      const precondition = {
+        id: "pre-multi",
+        label: "Multi-target",
+        sparqlAsk: ASK_QUERY,
+      };
+
+      const result1 = await evaluator.evaluate(precondition, ASSET_IRI);
+      expect(result1).toBe(true);
+
+      const result2 = await evaluator.evaluate(precondition, OTHER_IRI);
+      expect(result2).toBe(true);
+    });
+
+    it("benchmark: 27 cached ASK queries should complete in < 50ms on 10K triples", async () => {
+      const TRIPLE_COUNT = 10000;
+      const QUERY_COUNT = 27;
+
+      for (let i = 0; i < TRIPLE_COUNT; i++) {
+        const iri = new IRI(`https://exocortex.my/ontology/ems/asset-${i}`);
+        await store.add(
+          new Triple(
+            iri,
+            Namespace.EMS.term("Effort_startTimestamp"),
+            new Literal(`2026-01-01T${String(i % 24).padStart(2, "0")}:00:00`),
+          ),
+        );
+      }
+
+      const queries: { id: string; label: string; sparqlAsk: string }[] = [];
+      for (let i = 0; i < QUERY_COUNT; i++) {
+        queries.push({
+          id: `bench-${i}`,
+          label: `Benchmark ${i}`,
+          sparqlAsk: `
+            PREFIX ems: <https://exocortex.my/ontology/ems#>
+            ASK { $target ems:Effort_startTimestamp ?ts }
+          `,
+        });
+      }
+
+      for (const q of queries) {
+        await evaluator.evaluate(q, ASSET_IRI);
+      }
+
+      const start = performance.now();
+      for (const q of queries) {
+        await evaluator.evaluate(q, ASSET_IRI);
+      }
+      const elapsed = performance.now() - start;
+
+      expect(elapsed).toBeLessThan(50);
+    });
+  });
 });
