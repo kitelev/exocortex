@@ -39,6 +39,7 @@ export type HostFunction = (context: EvalContext) => boolean;
 export class PreconditionEvaluator {
   private readonly hostFunctions = new Map<string, HostFunction>();
   private readonly tripleStore: ITripleStore;
+  private readonly askCache = new Map<string, AskOperation>();
 
   constructor(tripleStore: ITripleStore) {
     this.tripleStore = tripleStore;
@@ -82,34 +83,55 @@ export class PreconditionEvaluator {
     return this.hostFunctions.has(name);
   }
 
+  invalidateCache(): void {
+    this.askCache.clear();
+  }
+
   // -- Private --
+
+  private static readonly SENTINEL_IRI = "urn:exocortex:cache-sentinel:target";
+
+  private compileAsk(sparqlAsk: string): AskOperation | null {
+    const processedQuery = this.substituteVariables(
+      sparqlAsk,
+      PreconditionEvaluator.SENTINEL_IRI,
+    );
+    const parser = new SPARQLParser();
+    const parsed = parser.parse(processedQuery);
+    const translator = new AlgebraTranslator();
+    const algebra = translator.translate(parsed);
+
+    const executor = new QueryExecutor(this.tripleStore);
+    if (!executor.isAskQuery(algebra)) {
+      return null;
+    }
+    return algebra as AskOperation;
+  }
 
   private async evaluateSparqlAsk(
     sparqlAsk: string,
     targetIRI: string,
   ): Promise<boolean> {
     try {
-      // Step 1: Variable substitution (text preprocessing BEFORE parser)
-      const processedQuery = this.substituteVariables(sparqlAsk, targetIRI);
+      let compiled = this.askCache.get(sparqlAsk);
 
-      // Step 2: Parse SPARQL ASK query
-      const parser = new SPARQLParser();
-      const parsed = parser.parse(processedQuery);
-
-      // Step 3: Translate to algebra
-      const translator = new AlgebraTranslator();
-      const algebra = translator.translate(parsed);
-
-      // Step 4: Verify it's an ASK operation
-      const executor = new QueryExecutor(this.tripleStore);
-      if (!executor.isAskQuery(algebra)) {
-        return false;
+      if (compiled === undefined) {
+        const result = this.compileAsk(sparqlAsk);
+        if (!result) return false;
+        compiled = result;
+        this.askCache.set(sparqlAsk, compiled);
       }
 
-      // Step 5: Execute ASK
-      return await executor.executeAsk(algebra as AskOperation);
+      const instantiated = JSON.parse(
+        JSON.stringify(compiled).replaceAll(
+          PreconditionEvaluator.SENTINEL_IRI,
+          targetIRI,
+        ),
+      ) as AskOperation;
+
+      const executor = new QueryExecutor(this.tripleStore);
+      return await executor.executeAsk(instantiated);
     } catch {
-      // Fail closed: SPARQL errors → command not available
       return false;
     }
   }
