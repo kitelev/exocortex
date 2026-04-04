@@ -192,7 +192,7 @@ export class VaultRDFIndexer {
   }
 
   private async removeFileTriples(filePath: string): Promise<void> {
-    const fileIRI = new IRI(`obsidian://vault/${encodeURIComponent(filePath)}`);
+    const fileIRI = new IRI(`obsidian://vault/${encodeURI(filePath)}`);
     const triples = await this.tripleStore.match(fileIRI);
     await this.tripleStore.removeAll(triples);
   }
