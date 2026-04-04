@@ -625,11 +625,15 @@ export class NoteToRDFConverter {
         if (targetFile) {
           const fileIRI = this.notePathToIRI(targetFile.path);
 
-          // Issue #2102: If wikilink is a UUID, store both IRI and Literal
+          // Issue #2102/#2489: If wikilink is a UUID, store both IRI and Literal
           // This enables SPARQL queries like:
           // ?s exo:Asset_prototype "e3347bcf-bb50-4fb7-9064-14266469384b"
-          if (this.isUUID(wikilink)) {
-            const uuidLiteral = new Literal(wikilink);
+          // Strip display name (e.g. "uuid|Display Name" → "uuid") before UUID check
+          const linkpath = wikilink.includes("|")
+            ? wikilink.split("|")[0]
+            : wikilink;
+          if (this.isUUID(linkpath)) {
+            const uuidLiteral = new Literal(linkpath);
             return [fileIRI, uuidLiteral];
           }
 
