@@ -1,6 +1,6 @@
 import { VaultRDFIndexer } from "../../../src/infrastructure/VaultRDFIndexer";
 import type { App, TFile, EventRef } from "obsidian";
-import { InMemoryTripleStore, NoteToRDFConverter, ApplicationErrorHandler, IRI } from "exocortex";
+import { InMemoryTripleStore, NoteToRDFConverter, ApplicationErrorHandler, IRI, RDFSInferenceEngine } from "exocortex";
 import { ObsidianVaultAdapter } from "../../../src/adapters/ObsidianVaultAdapter";
 
 jest.mock("exocortex");
@@ -239,6 +239,44 @@ describe("VaultRDFIndexer", () => {
       expect(removeIRI).toBeDefined();
       expect(removeIRI).toBe(`obsidian://vault/03%20Knowledge/kitelev/some-note.md`);
       expect(removeIRI).not.toContain("%2F");
+    });
+  });
+
+  describe("Issue #2490: RDFS inference materialization", () => {
+    let mockMaterialize: jest.Mock;
+
+    beforeEach(() => {
+      mockMaterialize = jest.fn().mockResolvedValue(0);
+      (RDFSInferenceEngine as jest.MockedClass<typeof RDFSInferenceEngine>).mockImplementation(() => ({
+        materialize: mockMaterialize,
+      } as any));
+    });
+
+    it("should run RDFS inference after initialize addAll", async () => {
+      await indexer.initialize();
+
+      expect(mockMaterialize).toHaveBeenCalledWith(mockTripleStore);
+    });
+
+    it("should run RDFS inference after updateFile re-converts a note", async () => {
+      await indexer.initialize();
+      mockMaterialize.mockClear();
+
+      const mockFile = { path: "test.md", extension: "md" } as TFile;
+      mockConverter.convertNote.mockResolvedValue([]);
+
+      await indexer.updateFile(mockFile);
+
+      expect(mockMaterialize).toHaveBeenCalledWith(mockTripleStore);
+    });
+
+    it("should run RDFS inference after refresh addAll", async () => {
+      await indexer.initialize();
+      mockMaterialize.mockClear();
+
+      await indexer.refresh();
+
+      expect(mockMaterialize).toHaveBeenCalledWith(mockTripleStore);
     });
   });
 });
