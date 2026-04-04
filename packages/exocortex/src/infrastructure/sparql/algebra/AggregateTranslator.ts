@@ -1,3 +1,4 @@
+
 import { AlgebraTranslatorError } from "./AlgebraTranslatorError";
 import type {
   ArithmeticExpression,
@@ -9,12 +10,12 @@ import type {
 import type {
   SparqljsExpression,
   SparqljsAggregateExpression,
-  SparqljsOperationExpression,
-  SparqljsSelectExpression,
-  SparqljsSelectVariable,
-  SparqljsGrouping,
-  SparqljsOrdering,
-} from "../types";
+  OperationExpression,
+  Grouping,
+  Ordering,
+  Variable as SparqljsVariable,
+} from "../SparqljsTypes";
+import { isVariableExpression } from "../SparqljsTypes";
 
 /**
  * Translates SPARQL aggregate-related constructs from the sparqljs AST
@@ -32,7 +33,6 @@ import type {
 export class AggregateTranslator {
   /**
    * Counter for generating unique aggregate variable names.
-   * Used when aggregates are nested inside arithmetic expressions.
    */
   private aggregateCounter = 0;
 
@@ -44,24 +44,16 @@ export class AggregateTranslator {
     this.translateExpressionFn = deps.translateExpression;
   }
 
-  /**
-   * Reset the aggregate counter for each query translation.
-   */
+  /** Reset the aggregate counter for each query translation. */
   resetCounter(): void {
     this.aggregateCounter = 0;
   }
 
   /**
    * Extract all aggregate bindings from SELECT variables with mapping.
-   * This handles both simple aggregates like (SUM(?x) AS ?total) and
-   * complex expressions with aggregates like (SUM(?x) / COUNT(?x) AS ?avg).
-   *
-   * The aggregateVarMap is populated with mappings from the original aggregate
-   * expression objects to their assigned variable names, so that later we can
-   * transform the containing expression to reference these variables.
    */
   extractAggregatesWithMapping(
-    variables: SparqljsSelectVariable[],
+    variables: SparqljsVariable[],
     aggregateVarMap: Map<SparqljsExpression, string>
   ): AggregateBinding[] {
     if (!variables) return [];
@@ -69,44 +61,32 @@ export class AggregateTranslator {
     const aggregates: AggregateBinding[] = [];
 
     for (const v of variables) {
-      if (!("expression" in v) || !v.expression || !v.variable) continue;
-      const selectExpr = v as SparqljsSelectExpression;
+      if (!isVariableExpression(v)) continue;
 
-      if ("type" in selectExpr.expression && selectExpr.expression.type === "aggregate") {
-        // Simple case: (SUM(?x) AS ?total)
+      if ("type" in v.expression && v.expression.type === "aggregate") {
         aggregates.push({
-          variable: selectExpr.variable.value,
-          expression: this.translateAggregateExpression(selectExpr.expression as SparqljsAggregateExpression),
+          variable: v.variable.value,
+          expression: this.translateAggregateExpression(v.expression as SparqljsAggregateExpression),
         });
-        aggregateVarMap.set(selectExpr.expression, selectExpr.variable.value);
+        aggregateVarMap.set(v.expression, v.variable.value);
       } else {
-        // Complex case: expression contains aggregates (e.g., SUM(?x) / COUNT(?x))
-        this.collectNestedAggregates(selectExpr.expression, aggregates, aggregateVarMap);
+        this.collectNestedAggregates(v.expression, aggregates, aggregateVarMap);
       }
     }
 
     return aggregates;
   }
 
-  extractGroupVariables(group: SparqljsGrouping[] | undefined): string[] {
+  extractGroupVariables(group: Grouping[] | undefined): string[] {
     if (!group) return [];
 
     return group
-      .filter((g) => "termType" in g.expression && g.expression.termType === "Variable")
-      .map((g) => {
-        const expr = g.expression as { value: string };
-        return expr.value;
-      });
+      .filter((g: Grouping) => g.expression && "termType" in g.expression && g.expression.termType === "Variable")
+      .map((g: Grouping) => (g.expression as { value: string }).value);
   }
 
   /**
    * Extract and translate HAVING expressions.
-   *
-   * HAVING expressions can contain aggregate functions that may or may not
-   * appear in the SELECT clause. We need to:
-   * 1. Find any aggregate functions in HAVING
-   * 2. Create bindings for them (if not already in aggregates list)
-   * 3. Transform the HAVING expression to reference the computed aggregate variables
    */
   extractHavingExpressions(
     having: SparqljsExpression[] | undefined,
@@ -115,12 +95,10 @@ export class AggregateTranslator {
   ): Expression[] {
     if (!having || having.length === 0) return [];
 
-    // First, collect any aggregates in HAVING that aren't already tracked
     for (const expr of having) {
       this.collectNestedAggregates(expr, aggregates, aggregateVarMap);
     }
 
-    // Then transform HAVING expressions to reference aggregate variable bindings
     return having.map((expr) =>
       this.transformExpressionWithAggregateVars(expr, aggregateVarMap)
     );
@@ -129,30 +107,23 @@ export class AggregateTranslator {
   /**
    * Transform an expression by replacing aggregate sub-expressions with
    * variable references to their pre-computed values.
-   *
-   * For example, given the expression "SUM(?x) / COUNT(?x)" and a mapping
-   * { SUM(?x) -> "__agg0", COUNT(?x) -> "__agg1" }, this returns the
-   * translated expression "?__agg0 / ?__agg1".
    */
   transformExpressionWithAggregateVars(
     expr: SparqljsExpression,
     aggregateVarMap: Map<SparqljsExpression, string>
   ): Expression {
-    // Check if this exact expression object has a variable mapping
     const mappedVar = aggregateVarMap.get(expr);
     if (mappedVar !== undefined) {
-      return {
-        type: "variable",
-        name: mappedVar,
-      };
+      return { type: "variable", name: mappedVar };
     }
 
-    // For operations, recursively transform arguments
-    if ("type" in expr && expr.type === "operation") {
-      const opExpr = expr as SparqljsOperationExpression;
-      const transformedArgs = opExpr.args.map((arg) =>
-        this.transformExpressionWithAggregateVars(arg, aggregateVarMap)
-      );
+    if ("type" in expr && expr.type === "operation" && "args" in expr) {
+      const opExpr = expr as OperationExpression;
+      const transformedArgs = opExpr.args
+        .filter((arg): arg is SparqljsExpression => !Array.isArray(arg) && !("patterns" in arg))
+        .map((arg: SparqljsExpression) =>
+          this.transformExpressionWithAggregateVars(arg, aggregateVarMap)
+        );
 
       const comparisonOps = ["=", "!=", "<", ">", "<=", ">="];
       const logicalOps = ["&&", "||", "!"];
@@ -184,7 +155,6 @@ export class AggregateTranslator {
         };
       }
 
-      // Function call
       return {
         type: "function",
         function: opExpr.operator,
@@ -192,11 +162,10 @@ export class AggregateTranslator {
       };
     }
 
-    // For other expression types, use the standard translation
     return this.translateExpressionFn(expr);
   }
 
-  translateOrderComparator(order: SparqljsOrdering): OrderComparator {
+  translateOrderComparator(order: Ordering): OrderComparator {
     return {
       expression: this.translateExpressionFn(order.expression),
       descending: order.descending || false,
@@ -205,11 +174,15 @@ export class AggregateTranslator {
 
   /**
    * Translate an aggregate expression from sparqljs to our algebra format.
-   *
-   * Handles both standard SPARQL 1.1 aggregates and SPARQL 1.2 custom aggregates.
    */
-  private translateAggregateExpression(expr: SparqljsAggregateExpression): AggregateExpression {
+  translateAggregateExpression(expr: SparqljsAggregateExpression): AggregateExpression {
     const aggregation = expr.aggregation;
+
+    const translateInnerExpr = (): Expression | undefined => {
+      if (!expr.expression) return undefined;
+      if ("termType" in expr.expression && expr.expression.termType === "Wildcard") return undefined;
+      return this.translateExpressionFn(expr.expression as SparqljsExpression);
+    };
 
     if (typeof aggregation === "string") {
       const lowerAgg = aggregation.toLowerCase();
@@ -219,40 +192,40 @@ export class AggregateTranslator {
         return {
           type: "aggregate",
           aggregation: lowerAgg as AggregateExpression["aggregation"],
-          expression: expr.expression ? this.translateExpressionFn(expr.expression) : undefined,
+          expression: translateInnerExpr(),
           distinct: expr.distinct || false,
           separator: expr.separator,
         };
       }
 
-      // String but not a standard aggregation - treat as custom aggregate IRI
       return {
         type: "aggregate",
         aggregation: { type: "custom", iri: aggregation },
-        expression: expr.expression ? this.translateExpressionFn(expr.expression) : undefined,
+        expression: translateInnerExpr(),
         distinct: expr.distinct || false,
         separator: expr.separator,
       };
     }
 
-    // Custom aggregate as IRI object (NamedNode from sparqljs)
-    if (aggregation && typeof aggregation === "object") {
+    const aggObj = aggregation as unknown;
+    if (aggObj && typeof aggObj === "object") {
       let iri: string;
+      const aggRecord = aggObj as Record<string, unknown>;
 
-      if (aggregation.termType === "NamedNode" && aggregation.value) {
-        iri = aggregation.value;
-      } else if ("value" in aggregation) {
-        iri = String(aggregation.value);
+      if (aggRecord.termType === "NamedNode" && typeof aggRecord.value === "string") {
+        iri = aggRecord.value;
+      } else if ("value" in aggRecord) {
+        iri = String(aggRecord.value);
       } else {
         throw new AlgebraTranslatorError(
-          `Invalid custom aggregate: expected IRI but got ${JSON.stringify(aggregation)}`
+          `Invalid custom aggregate: expected IRI but got ${JSON.stringify(aggObj)}`
         );
       }
 
       return {
         type: "aggregate",
         aggregation: { type: "custom", iri },
-        expression: expr.expression ? this.translateExpressionFn(expr.expression) : undefined,
+        expression: translateInnerExpr(),
         distinct: expr.distinct || false,
         separator: expr.separator,
       };
@@ -280,10 +253,14 @@ export class AggregateTranslator {
         expression: this.translateAggregateExpression(expr as SparqljsAggregateExpression),
       });
       aggregateVarMap.set(expr, varName);
-    } else if ("type" in expr && expr.type === "operation") {
-      const opExpr = expr as SparqljsOperationExpression;
+    } else if ("type" in expr && expr.type === "operation" && "args" in expr) {
+      const opExpr = expr as OperationExpression;
       for (const arg of opExpr.args) {
-        this.collectNestedAggregates(arg, aggregates, aggregateVarMap);
+        if (!Array.isArray(arg) && "type" in arg && !("patterns" in arg)) {
+          this.collectNestedAggregates(arg as SparqljsExpression, aggregates, aggregateVarMap);
+        } else if ("termType" in arg) {
+          this.collectNestedAggregates(arg as SparqljsExpression, aggregates, aggregateVarMap);
+        }
       }
     }
   }
