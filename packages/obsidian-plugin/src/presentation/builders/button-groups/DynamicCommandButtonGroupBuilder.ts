@@ -6,6 +6,7 @@ import type {
   PreconditionEvaluator,
   GroundingExecutor,
   UserInput,
+  EvalContext,
 } from "exocortex";
 import { ILogger } from '@plugin/adapters/logging/ILogger';
 import {
@@ -85,12 +86,19 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
 
     if (resolved.length === 0) return [];
 
+    const evalContext: EvalContext = {
+      targetIRI: subjectIRI,
+      fileBasename: file.basename,
+      currentFolder: file.parent?.path,
+    };
+
     const availabilityChecks = await Promise.all(
       resolved.map(async (rc) => {
         try {
           const available = await this.config.preconditionEvaluator.evaluate(
             rc.command.precondition,
             subjectIRI,
+            evalContext,
           );
           return { rc, available };
         } catch {

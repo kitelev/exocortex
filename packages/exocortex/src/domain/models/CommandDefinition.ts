@@ -41,8 +41,10 @@ export interface PreconditionDefinition {
   readonly id: string;
   /** Human-readable description (e.g., "Asset has startTimestamp") */
   readonly label: string;
-  /** SPARQL ASK query */
-  readonly sparqlAsk: string;
+  /** SPARQL ASK query (evaluated against triple store) */
+  readonly sparqlAsk?: string;
+  /** Host function name (evaluated via registered TypeScript function) */
+  readonly hostFunction?: string;
 }
 
 /**
