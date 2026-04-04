@@ -115,6 +115,7 @@ export default class ExocortexPlugin extends Plugin {
         this.settings,
         this,
         this.vaultAdapter,
+        this.resolveRfc009Services(),
       );
       this.taskStatusService = container.resolve(TaskStatusService);
       this.taskTrackingService = new TaskTrackingService(
@@ -817,6 +818,18 @@ export default class ExocortexPlugin extends Plugin {
         `Failed to handle metadata change for ${file.path}`,
         error as Error,
       );
+    }
+  }
+
+  private resolveRfc009Services() {
+    try {
+      return {
+        commandResolver: container.resolve(CommandResolver),
+        preconditionEvaluator: container.resolve(PreconditionEvaluator),
+        groundingExecutor: container.resolve(GroundingExecutor),
+      };
+    } catch {
+      return undefined;
     }
   }
 

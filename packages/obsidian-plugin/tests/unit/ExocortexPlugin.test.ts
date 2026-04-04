@@ -191,7 +191,11 @@ describe("ExocortexPlugin", () => {
       expect(mockLogger.info).toHaveBeenCalledWith("Loading Exocortex Plugin");
       expect(plugin.loadData).toHaveBeenCalled();
       expect(ObsidianVaultAdapter).toHaveBeenCalledWith(mockVault, mockMetadataCache, mockApp);
-      expect(UniversalLayoutRenderer).toHaveBeenCalledWith(mockApp, plugin.settings, plugin, plugin.vaultAdapter);
+      const rendererCall = (UniversalLayoutRenderer as jest.Mock).mock.calls[0];
+      expect(rendererCall[0]).toBe(mockApp);
+      expect(rendererCall[1]).toEqual(plugin.settings);
+      expect(rendererCall[2]).toBe(plugin);
+      expect(rendererCall[3]).toBe(plugin.vaultAdapter);
       // TaskStatusService is now resolved from DI container, not instantiated directly
       expect(TaskTrackingService).toHaveBeenCalledWith(mockApp, mockVault, mockMetadataCache);
       expect(SPARQLCodeBlockProcessor).toHaveBeenCalledWith(plugin);

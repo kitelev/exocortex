@@ -11,6 +11,7 @@ import { ProjectCreationService, AreaCreationService, ClassCreationService } fro
 import { ConceptCreationService, TaskStatusService, PropertyCleanupService } from "exocortex";
 import { FolderRepairService, RenameToUidService, EffortVotingService } from "exocortex";
 import { LabelToAliasService, AssetConversionService, CriticalityZoneService } from "exocortex";
+import { CommandResolver, PreconditionEvaluator, GroundingExecutor } from "exocortex";
 import { BacklinksCacheManager } from '@plugin/adapters/caching/BacklinksCacheManager';
 import { EventListenerManager } from '@plugin/adapters/events/EventListenerManager';
 import { ButtonGroupsBuilder } from '@plugin/presentation/builders/ButtonGroupsBuilder';
@@ -58,6 +59,10 @@ export class UniversalLayoutRenderer {
   private dailyNavRenderer: DailyNavigationRenderer;
   private incrementalUpdateHandler!: IncrementalUpdateHandler;
 
+  private commandResolver?: CommandResolver;
+  private preconditionEvaluator?: PreconditionEvaluator;
+  private groundingExecutor?: GroundingExecutor;
+
   private dependencyResolver: PropertyDependencyResolver;
   private deltaDetector: FrontmatterDeltaDetector;
   // Use LRU cache with max 500 entries and 5-minute TTL to prevent unbounded growth
@@ -70,11 +75,24 @@ export class UniversalLayoutRenderer {
   private currentFilePath: string | null = null;
   private currentConfig: UniversalLayoutConfig = {};
 
-  constructor(app: ObsidianApp, settings: ExocortexSettings, plugin: ExocortexPluginInterface, vaultAdapter: IVaultAdapter) {
+  constructor(
+    app: ObsidianApp,
+    settings: ExocortexSettings,
+    plugin: ExocortexPluginInterface,
+    vaultAdapter: IVaultAdapter,
+    rfc009Services?: {
+      commandResolver?: CommandResolver;
+      preconditionEvaluator?: PreconditionEvaluator;
+      groundingExecutor?: GroundingExecutor;
+    },
+  ) {
     this.app = app;
     this.settings = settings;
     this.plugin = plugin;
     this.vaultAdapter = vaultAdapter;
+    this.commandResolver = rfc009Services?.commandResolver;
+    this.preconditionEvaluator = rfc009Services?.preconditionEvaluator;
+    this.groundingExecutor = rfc009Services?.groundingExecutor;
     this.logger = LoggerFactory.create("UniversalLayoutRenderer");
 
     // Create ReactRenderer with ErrorBoundary enabled for graceful error handling.
@@ -135,6 +153,9 @@ export class UniversalLayoutRenderer {
       labelToAliasService: services.labelToAlias,
       assetConversionService: services.assetConversion,
       criticalityZoneService: services.criticalityZone,
+      commandResolver: this.commandResolver,
+      preconditionEvaluator: this.preconditionEvaluator,
+      groundingExecutor: this.groundingExecutor,
       tripleStore,
       metadataExtractor: this.metadataExtractor,
       logger: this.logger,
