@@ -25,7 +25,7 @@ export class SupervisionCreationService {
     return createdFile;
   }
 
-  generateFrontmatter(uid: string): Record<string, any> {
+  generateFrontmatter(uid: string): Record<string, unknown> {
     const now = new Date();
     const timestamp = DateFormatter.toLocalTimestamp(now);
 
@@ -58,7 +58,7 @@ export class SupervisionCreationService {
   }
 
   private buildFileContent(
-    frontmatter: Record<string, any>,
+    frontmatter: Record<string, unknown>,
     body: string,
   ): string {
     const frontmatterLines = Object.entries(frontmatter)

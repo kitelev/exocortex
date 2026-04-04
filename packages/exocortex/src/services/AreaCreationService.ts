@@ -15,7 +15,7 @@ export class AreaCreationService {
 
   async createChildArea(
     sourceFile: IFile,
-    sourceMetadata: Record<string, any>,
+    sourceMetadata: Record<string, unknown>,
     label?: string,
   ): Promise<IFile> {
     const uid = uuidv4();
@@ -37,17 +37,17 @@ export class AreaCreationService {
   }
 
   generateChildAreaFrontmatter(
-    sourceMetadata: Record<string, any>,
+    sourceMetadata: Record<string, unknown>,
     sourceName: string,
     label?: string,
     uid?: string,
-  ): Record<string, any> {
+  ): Record<string, unknown> {
     const now = new Date();
     const timestamp = DateFormatter.toLocalTimestamp(now);
 
     const isDefinedBy = MetadataExtractor.extractIsDefinedBy(sourceMetadata);
 
-    const frontmatter: Record<string, any> = {};
+    const frontmatter: Record<string, unknown> = {};
     frontmatter["exo__Asset_isDefinedBy"] =
       MetadataHelpers.ensureQuoted(isDefinedBy);
     frontmatter["exo__Asset_uid"] = uid || uuidv4();

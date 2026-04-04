@@ -89,7 +89,7 @@ export class URIConstructionService {
 
     const ontologyMetadata =
       await this.fileSystem.getFileMetadata(ontologyFilePath);
-    const ontologyURL = ontologyMetadata?.exo__Ontology_url;
+    const ontologyURL = ontologyMetadata?.exo__Ontology_url as string | undefined;
 
     return ontologyURL || this.defaultOntologyURL;
   }

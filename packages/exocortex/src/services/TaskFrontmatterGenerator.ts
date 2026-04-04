@@ -28,14 +28,14 @@ const INSTANCE_CLASS_MAP: Record<string, string> = {
 @injectable()
 export class TaskFrontmatterGenerator {
   generateTaskFrontmatter(
-    sourceMetadata: Record<string, any>,
+    sourceMetadata: Record<string, unknown>,
     sourceName: string,
     sourceClass: string,
     label?: string,
     uid?: string,
     taskSize?: string | null,
     plannedStartTimestamp?: string,
-  ): Record<string, any> {
+  ): Record<string, unknown> {
     const now = new Date();
     const timestamp = DateFormatter.toLocalTimestamp(now);
 
@@ -46,7 +46,7 @@ export class TaskFrontmatterGenerator {
     const instanceClass =
       INSTANCE_CLASS_MAP[cleanSourceClass] || AssetClass.TASK;
 
-    const frontmatter: Record<string, any> = {};
+    const frontmatter: Record<string, unknown> = {};
     frontmatter["exo__Asset_isDefinedBy"] =
       MetadataHelpers.ensureQuoted(isDefinedBy);
     frontmatter["exo__Asset_uid"] = uid || uuidv4();
@@ -90,18 +90,18 @@ export class TaskFrontmatterGenerator {
   }
 
   generateRelatedTaskFrontmatter(
-    sourceMetadata: Record<string, any>,
+    sourceMetadata: Record<string, unknown>,
     sourceName: string,
     label?: string,
     uid?: string,
     taskSize?: string | null,
-  ): Record<string, any> {
+  ): Record<string, unknown> {
     const now = new Date();
     const timestamp = DateFormatter.toLocalTimestamp(now);
 
     const isDefinedBy = MetadataExtractor.extractIsDefinedBy(sourceMetadata);
 
-    const frontmatter: Record<string, any> = {};
+    const frontmatter: Record<string, unknown> = {};
     frontmatter["exo__Asset_isDefinedBy"] =
       MetadataHelpers.ensureQuoted(isDefinedBy);
     frontmatter["exo__Asset_uid"] = uid || uuidv4();

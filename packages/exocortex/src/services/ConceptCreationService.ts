@@ -48,11 +48,11 @@ export class ConceptCreationService {
     definition: string,
     aliases: string[],
     uid: string,
-  ): Record<string, any> {
+  ): Record<string, unknown> {
     const now = new Date();
     const timestamp = DateFormatter.toLocalTimestamp(now);
 
-    const frontmatter: Record<string, any> = {};
+    const frontmatter: Record<string, unknown> = {};
     frontmatter["exo__Asset_isDefinedBy"] = '"[[!concepts]]"';
     frontmatter["exo__Asset_uid"] = uid;
     frontmatter["exo__Asset_createdAt"] = timestamp;

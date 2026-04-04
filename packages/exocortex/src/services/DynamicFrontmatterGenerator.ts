@@ -3,6 +3,11 @@ import { v4 as uuidv4 } from "uuid";
 import { DateFormatter } from "../utilities/DateFormatter";
 
 /**
+ * Represents values that can appear in frontmatter: primitives, dates, or arrays.
+ */
+export type FrontmatterValue = string | number | boolean | Date | null | undefined;
+
+/**
  * Legacy property field type for backwards compatibility.
  * @deprecated Use PropertyFieldType enum from domain/types instead.
  */
@@ -70,11 +75,11 @@ export class DynamicFrontmatterGenerator {
    * @param values - Record of property names to their values
    * @param properties - Array of property definitions with type information
    * @param options - Optional configuration for frontmatter generation
-   * @returns Record<string, any> - Frontmatter object ready for YAML serialization
+   * @returns Frontmatter object ready for YAML serialization
    */
   generate(
     className: string,
-    values: Record<string, any>,
+    values: Record<string, unknown>,
     properties: FrontmatterPropertyDefinition[],
     options?: {
       /** Custom UID to use instead of generating a new one */
@@ -84,8 +89,8 @@ export class DynamicFrontmatterGenerator {
       /** isDefinedBy value for ontology reference */
       isDefinedBy?: string;
     },
-  ): Record<string, any> {
-    const frontmatter: Record<string, any> = {};
+  ): Record<string, unknown> {
+    const frontmatter: Record<string, unknown> = {};
     const now = new Date();
 
     // Set required system properties
@@ -123,7 +128,7 @@ export class DynamicFrontmatterGenerator {
       }
 
       const propertyType = propertyTypeMap.get(propertyName);
-      frontmatter[propertyName] = this.formatValue(value, propertyType);
+      frontmatter[propertyName] = this.formatValue(value as FrontmatterValue, propertyType);
     }
 
     // Handle aliases if label is provided
@@ -144,7 +149,7 @@ export class DynamicFrontmatterGenerator {
    * @param type - The property type (optional, defaults to text)
    * @returns Formatted value for YAML frontmatter
    */
-  formatValue(value: any, type?: LegacyPropertyFieldType): any {
+  formatValue(value: FrontmatterValue, type?: LegacyPropertyFieldType): string | number | boolean | null {
     // Handle empty/null values
     if (value === null || value === undefined) {
       return null;
@@ -186,7 +191,7 @@ export class DynamicFrontmatterGenerator {
    * Format a text value as a string.
    * Numbers and booleans are converted to strings for text fields.
    */
-  private formatText(value: any): string {
+  private formatText(value: FrontmatterValue): string {
     if (typeof value === "string") {
       return value;
     }
@@ -200,7 +205,7 @@ export class DynamicFrontmatterGenerator {
    * @param value - The value to format as wikilink
    * @returns Quoted wikilink string
    */
-  private formatWikilink(value: any): string {
+  private formatWikilink(value: FrontmatterValue): string {
     const strValue = String(value);
 
     // Already in quoted wikilink format
@@ -221,7 +226,7 @@ export class DynamicFrontmatterGenerator {
    * Format a value as a number.
    * Parses strings to numbers, returns 0 for invalid values.
    */
-  private formatNumber(value: any): number {
+  private formatNumber(value: FrontmatterValue): number {
     if (typeof value === "number") {
       return value;
     }
@@ -233,7 +238,7 @@ export class DynamicFrontmatterGenerator {
    * Format a value as a boolean.
    * Handles various truthy/falsy representations.
    */
-  private formatBoolean(value: any): boolean {
+  private formatBoolean(value: FrontmatterValue): boolean {
     if (typeof value === "boolean") {
       return value;
     }
@@ -254,7 +259,7 @@ export class DynamicFrontmatterGenerator {
    * @param value - Date, string, or number to format
    * @returns ISO 8601 timestamp string (YYYY-MM-DDTHH:mm:ss)
    */
-  private formatTimestamp(value: any): string {
+  private formatTimestamp(value: FrontmatterValue): string {
     if (value instanceof Date) {
       return DateFormatter.toLocalTimestamp(value);
     }
@@ -289,7 +294,7 @@ export class DynamicFrontmatterGenerator {
   /**
    * Format a value with inferred type when no type is specified.
    */
-  private formatInferredValue(value: any): any {
+  private formatInferredValue(value: FrontmatterValue): string | number | boolean {
     if (typeof value === "boolean") {
       return value;
     }
@@ -331,7 +336,7 @@ export class DynamicFrontmatterGenerator {
    */
   generateYAML(
     className: string,
-    values: Record<string, any>,
+    values: Record<string, unknown>,
     properties: FrontmatterPropertyDefinition[],
     options?: {
       uid?: string;
@@ -349,7 +354,7 @@ export class DynamicFrontmatterGenerator {
    * @param frontmatter - The frontmatter object
    * @returns YAML string with --- delimiters
    */
-  private toYAML(frontmatter: Record<string, any>): string {
+  private toYAML(frontmatter: Record<string, unknown>): string {
     const lines = Object.entries(frontmatter).map(([key, value]) => {
       if (Array.isArray(value)) {
         const arrayItems = value.map((item) => `  - ${item}`).join("\n");

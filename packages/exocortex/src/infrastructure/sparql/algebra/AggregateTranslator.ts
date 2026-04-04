@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any -- sparqljs AST is untyped */
 import { AlgebraTranslatorError } from "./AlgebraTranslatorError";
 import type {
   ArithmeticExpression,
@@ -7,6 +6,15 @@ import type {
   AggregateBinding,
   AggregateExpression,
 } from "./AlgebraOperation";
+import type {
+  SparqljsExpression,
+  SparqljsAggregateExpression,
+  SparqljsOperationExpression,
+  SparqljsSelectExpression,
+  SparqljsSelectVariable,
+  SparqljsGrouping,
+  SparqljsOrdering,
+} from "../types";
 
 /**
  * Translates SPARQL aggregate-related constructs from the sparqljs AST
@@ -28,10 +36,10 @@ export class AggregateTranslator {
    */
   private aggregateCounter = 0;
 
-  private readonly translateExpressionFn: (expr: any) => Expression;
+  private readonly translateExpressionFn: (expr: SparqljsExpression) => Expression;
 
   constructor(deps: {
-    translateExpression: (expr: any) => Expression;
+    translateExpression: (expr: SparqljsExpression) => Expression;
   }) {
     this.translateExpressionFn = deps.translateExpression;
   }
@@ -53,38 +61,42 @@ export class AggregateTranslator {
    * transform the containing expression to reference these variables.
    */
   extractAggregatesWithMapping(
-    variables: any[],
-    aggregateVarMap: Map<any, string>
+    variables: SparqljsSelectVariable[],
+    aggregateVarMap: Map<SparqljsExpression, string>
   ): AggregateBinding[] {
     if (!variables) return [];
 
     const aggregates: AggregateBinding[] = [];
 
     for (const v of variables) {
-      if (!v.expression || !v.variable) continue;
+      if (!("expression" in v) || !v.expression || !v.variable) continue;
+      const selectExpr = v as SparqljsSelectExpression;
 
-      if (v.expression.type === "aggregate") {
+      if ("type" in selectExpr.expression && selectExpr.expression.type === "aggregate") {
         // Simple case: (SUM(?x) AS ?total)
         aggregates.push({
-          variable: v.variable.value,
-          expression: this.translateAggregateExpression(v.expression),
+          variable: selectExpr.variable.value,
+          expression: this.translateAggregateExpression(selectExpr.expression as SparqljsAggregateExpression),
         });
-        aggregateVarMap.set(v.expression, v.variable.value);
+        aggregateVarMap.set(selectExpr.expression, selectExpr.variable.value);
       } else {
         // Complex case: expression contains aggregates (e.g., SUM(?x) / COUNT(?x))
-        this.collectNestedAggregates(v.expression, aggregates, aggregateVarMap);
+        this.collectNestedAggregates(selectExpr.expression, aggregates, aggregateVarMap);
       }
     }
 
     return aggregates;
   }
 
-  extractGroupVariables(group: any[] | undefined): string[] {
+  extractGroupVariables(group: SparqljsGrouping[] | undefined): string[] {
     if (!group) return [];
 
     return group
-      .filter((g: any) => g.expression && g.expression.termType === "Variable")
-      .map((g: any) => g.expression.value);
+      .filter((g) => "termType" in g.expression && g.expression.termType === "Variable")
+      .map((g) => {
+        const expr = g.expression as { value: string };
+        return expr.value;
+      });
   }
 
   /**
@@ -97,9 +109,9 @@ export class AggregateTranslator {
    * 3. Transform the HAVING expression to reference the computed aggregate variables
    */
   extractHavingExpressions(
-    having: any[] | undefined,
+    having: SparqljsExpression[] | undefined,
     aggregates: AggregateBinding[],
-    aggregateVarMap: Map<any, string>
+    aggregateVarMap: Map<SparqljsExpression, string>
   ): Expression[] {
     if (!having || having.length === 0) return [];
 
@@ -123,8 +135,8 @@ export class AggregateTranslator {
    * translated expression "?__agg0 / ?__agg1".
    */
   transformExpressionWithAggregateVars(
-    expr: any,
-    aggregateVarMap: Map<any, string>
+    expr: SparqljsExpression,
+    aggregateVarMap: Map<SparqljsExpression, string>
   ): Expression {
     // Check if this exact expression object has a variable mapping
     const mappedVar = aggregateVarMap.get(expr);
@@ -136,8 +148,9 @@ export class AggregateTranslator {
     }
 
     // For operations, recursively transform arguments
-    if (expr.type === "operation" && expr.args) {
-      const transformedArgs = expr.args.map((arg: any) =>
+    if ("type" in expr && expr.type === "operation") {
+      const opExpr = expr as SparqljsOperationExpression;
+      const transformedArgs = opExpr.args.map((arg) =>
         this.transformExpressionWithAggregateVars(arg, aggregateVarMap)
       );
 
@@ -145,27 +158,27 @@ export class AggregateTranslator {
       const logicalOps = ["&&", "||", "!"];
       const arithmeticOps = ["+", "-", "*", "/"];
 
-      if (comparisonOps.includes(expr.operator)) {
+      if (comparisonOps.includes(opExpr.operator)) {
         return {
           type: "comparison",
-          operator: expr.operator,
+          operator: opExpr.operator as "=" | "!=" | "<" | ">" | "<=" | ">=",
           left: transformedArgs[0],
           right: transformedArgs[1],
         };
       }
 
-      if (logicalOps.includes(expr.operator)) {
+      if (logicalOps.includes(opExpr.operator)) {
         return {
           type: "logical",
-          operator: expr.operator,
+          operator: opExpr.operator as "&&" | "||" | "!",
           operands: transformedArgs,
         };
       }
 
-      if (arithmeticOps.includes(expr.operator)) {
+      if (arithmeticOps.includes(opExpr.operator)) {
         return {
           type: "arithmetic",
-          operator: expr.operator as ArithmeticExpression["operator"],
+          operator: opExpr.operator as ArithmeticExpression["operator"],
           left: transformedArgs[0],
           right: transformedArgs[1],
         };
@@ -174,7 +187,7 @@ export class AggregateTranslator {
       // Function call
       return {
         type: "function",
-        function: expr.operator,
+        function: opExpr.operator,
         args: transformedArgs,
       };
     }
@@ -183,7 +196,7 @@ export class AggregateTranslator {
     return this.translateExpressionFn(expr);
   }
 
-  translateOrderComparator(order: any): OrderComparator {
+  translateOrderComparator(order: SparqljsOrdering): OrderComparator {
     return {
       expression: this.translateExpressionFn(order.expression),
       descending: order.descending || false,
@@ -195,7 +208,7 @@ export class AggregateTranslator {
    *
    * Handles both standard SPARQL 1.1 aggregates and SPARQL 1.2 custom aggregates.
    */
-  private translateAggregateExpression(expr: any): AggregateExpression {
+  private translateAggregateExpression(expr: SparqljsAggregateExpression): AggregateExpression {
     const aggregation = expr.aggregation;
 
     if (typeof aggregation === "string") {
@@ -254,21 +267,22 @@ export class AggregateTranslator {
    * Recursively collect all aggregate expressions nested within an expression tree.
    */
   private collectNestedAggregates(
-    expr: any,
+    expr: SparqljsExpression,
     aggregates: AggregateBinding[],
-    aggregateVarMap: Map<any, string>
+    aggregateVarMap: Map<SparqljsExpression, string>
   ): void {
     if (!expr) return;
 
-    if (expr.type === "aggregate") {
+    if ("type" in expr && expr.type === "aggregate") {
       const varName = `__agg${this.aggregateCounter++}`;
       aggregates.push({
         variable: varName,
-        expression: this.translateAggregateExpression(expr),
+        expression: this.translateAggregateExpression(expr as SparqljsAggregateExpression),
       });
       aggregateVarMap.set(expr, varName);
-    } else if (expr.type === "operation" && expr.args) {
-      for (const arg of expr.args) {
+    } else if ("type" in expr && expr.type === "operation") {
+      const opExpr = expr as SparqljsOperationExpression;
+      for (const arg of opExpr.args) {
         this.collectNestedAggregates(arg, aggregates, aggregateVarMap);
       }
     }

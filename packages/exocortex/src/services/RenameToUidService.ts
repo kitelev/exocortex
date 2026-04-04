@@ -8,7 +8,7 @@ export class RenameToUidService {
     @inject(DI_TOKENS.IVaultAdapter) private vault: IVaultAdapter,
   ) {}
 
-  async renameToUid(file: IFile, metadata: Record<string, any>): Promise<void> {
+  async renameToUid(file: IFile, metadata: Record<string, unknown>): Promise<void> {
     const uid = metadata.exo__Asset_uid;
 
     if (!uid) {
@@ -22,7 +22,7 @@ export class RenameToUidService {
       throw new Error("File is already named according to UID");
     }
 
-    const currentLabel = metadata.exo__Asset_label;
+    const currentLabel = metadata.exo__Asset_label as string | undefined;
     const needsLabelUpdate = !currentLabel || currentLabel.trim() === "";
 
     if (needsLabelUpdate) {
@@ -145,7 +145,7 @@ export class RenameToUidService {
     );
   }
 
-  private isAssetArchived(metadata: Record<string, any>): boolean {
+  private isAssetArchived(metadata: Record<string, unknown>): boolean {
     if (metadata?.exo__Asset_isArchived === true) {
       return true;
     }

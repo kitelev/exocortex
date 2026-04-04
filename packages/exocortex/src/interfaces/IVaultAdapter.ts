@@ -17,7 +17,7 @@ export interface IFolder {
 }
 
 export interface IFrontmatter {
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 /**
