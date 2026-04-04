@@ -2626,6 +2626,149 @@ It can contain **markdown** formatting.
         expect(prototypeTriples.length).toBe(1);
         expect(prototypeTriples[0].object).toBeInstanceOf(Literal);
       });
+
+      // Issue #2489: Verify dual storage with display name wikilink syntax
+      it("should produce both IRI and Literal for [[uuid|Display Name]] syntax", async () => {
+        const uuid = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
+        const displayName = "My Prototype Template";
+        const targetFile: IFile = {
+          path: `03 Knowledge/prototypes/${uuid}.md`,
+          basename: uuid,
+          name: `${uuid}.md`,
+          parent: null,
+        };
+
+        mockVault.getFirstLinkpathDest.mockReturnValue(targetFile);
+
+        const frontmatter: IFrontmatter = {
+          exo__Asset_prototype: `[[${uuid}|${displayName}]]`,
+        };
+
+        mockVault.getFrontmatter.mockReturnValue(frontmatter);
+        mockVault.read.mockResolvedValue("---\nsome: yaml\n---\n");
+
+        const triples = await converter.convertNote(file);
+
+        const prototypeTriples = triples.filter((t) =>
+          (t.predicate as IRI).value.includes("Asset_prototype")
+        );
+
+        // Display name syntax should still produce dual storage (IRI + UUID Literal)
+        expect(prototypeTriples.length).toBe(2);
+
+        const iriTriple = prototypeTriples.find((t) => t.object instanceof IRI);
+        expect(iriTriple).toBeDefined();
+        expect((iriTriple!.object as IRI).value).toContain(uuid);
+
+        const literalTriple = prototypeTriples.find((t) => t.object instanceof Literal);
+        expect(literalTriple).toBeDefined();
+        // UUID should be stored as pure UUID (no display name, no pipes)
+        expect((literalTriple!.object as Literal).value).toBe(uuid);
+        expect((literalTriple!.object as Literal).value).not.toContain("|");
+        expect((literalTriple!.object as Literal).value).not.toContain(displayName);
+      });
+
+      // Issue #2489: SPARQL query by UUID literal should find instance
+      it("should enable SPARQL query by UUID literal to find the instance", async () => {
+        const uuid = "b2c3d4e5-f6a7-8901-bcde-f12345678901";
+        const targetFile: IFile = {
+          path: `03 Knowledge/prototypes/${uuid}.md`,
+          basename: uuid,
+          name: `${uuid}.md`,
+          parent: null,
+        };
+
+        mockVault.getFirstLinkpathDest.mockReturnValue(targetFile);
+
+        const frontmatter: IFrontmatter = {
+          exo__Asset_prototype: `[[${uuid}]]`,
+          exo__Asset_label: "Task Instance From Prototype",
+        };
+
+        mockVault.getFrontmatter.mockReturnValue(frontmatter);
+        mockVault.read.mockResolvedValue("---\nsome: yaml\n---\n");
+
+        const triples = await converter.convertNote(file);
+
+        // Verify that a Literal triple with the UUID value exists
+        const literalTriple = triples.find(
+          (t) =>
+            (t.predicate as IRI).value.includes("Asset_prototype") &&
+            t.object instanceof Literal &&
+            (t.object as Literal).value === uuid
+        );
+
+        expect(literalTriple).toBeDefined();
+
+        // This Literal triple is what enables SPARQL queries like:
+        // SELECT ?s WHERE { ?s exo:Asset_prototype "b2c3d4e5-f6a7-8901-bcde-f12345678901" }
+        // Without it, only IRI-based queries would work.
+        expect((literalTriple!.object as Literal).value).toBe(uuid);
+      });
+
+      // Issue #2489: Display name syntax with SPARQL query
+      it("should enable SPARQL query by UUID literal for [[uuid|Name]] syntax", async () => {
+        const uuid = "c3d4e5f6-a7b8-9012-cdef-123456789012";
+        const displayName = "Weekly Review Template";
+        const targetFile: IFile = {
+          path: `03 Knowledge/prototypes/${uuid}.md`,
+          basename: uuid,
+          name: `${uuid}.md`,
+          parent: null,
+        };
+
+        mockVault.getFirstLinkpathDest.mockReturnValue(targetFile);
+
+        const frontmatter: IFrontmatter = {
+          exo__Asset_prototype: `[[${uuid}|${displayName}]]`,
+          exo__Asset_label: "My Weekly Review",
+        };
+
+        mockVault.getFrontmatter.mockReturnValue(frontmatter);
+        mockVault.read.mockResolvedValue("---\nsome: yaml\n---\n");
+
+        const triples = await converter.convertNote(file);
+
+        // Must produce a UUID literal triple even with display name syntax
+        const literalTriple = triples.find(
+          (t) =>
+            (t.predicate as IRI).value.includes("Asset_prototype") &&
+            t.object instanceof Literal &&
+            (t.object as Literal).value === uuid
+        );
+
+        expect(literalTriple).toBeDefined();
+        expect((literalTriple!.object as Literal).value).toBe(uuid);
+      });
+
+      // Issue #2489: Edge case — non-UUID wikilink with display name should NOT produce dual storage
+      it("should not produce dual storage for non-UUID wikilink with display name", async () => {
+        const targetFile: IFile = {
+          path: "Projects/My Project.md",
+          basename: "My Project",
+          name: "My Project.md",
+          parent: null,
+        };
+
+        mockVault.getFirstLinkpathDest.mockReturnValue(targetFile);
+
+        const frontmatter: IFrontmatter = {
+          ems__Effort_parent: "[[My Project|Current Project]]",
+        };
+
+        mockVault.getFrontmatter.mockReturnValue(frontmatter);
+        mockVault.read.mockResolvedValue("---\nsome: yaml\n---\n");
+
+        const triples = await converter.convertNote(file);
+
+        const parentTriples = triples.filter((t) =>
+          (t.predicate as IRI).value.includes("Effort_parent")
+        );
+
+        // Non-UUID wikilink should only produce IRI, no Literal dual storage
+        expect(parentTriples.length).toBe(1);
+        expect(parentTriples[0].object).toBeInstanceOf(IRI);
+      });
     });
   });
 });
