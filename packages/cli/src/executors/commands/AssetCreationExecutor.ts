@@ -140,7 +140,7 @@ export class AssetCreationExecutor extends BaseCommandExecutor {
 
     // Add optional prototype reference
     if (options.prototype) {
-      frontmatter["ems__Effort_prototype"] = `"[[${options.prototype}]]"`;
+      frontmatter["exo__Asset_prototype"] = `"[[${options.prototype}]]"`;
     }
 
     // Add optional area reference
