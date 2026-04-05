@@ -61,6 +61,23 @@ jest.unstable_mockModule("exocortex", () => ({
   },
 }));
 
+// Mock CliServiceRegistryPopulator
+jest.unstable_mockModule("../../../src/services/CliServiceRegistryPopulator.js", () => ({
+  populateCliServiceRegistry: jest.fn(),
+  CLI_STUB_SERVICE_IDS: [
+    "updateProperty",
+    "removeProperty",
+    "setStatus",
+    "createAsset",
+    "openFile",
+    "sparqlSelect",
+    "getActiveFileIRI",
+    "getActiveFilePath",
+    "trashFile",
+    "duplicateFile",
+  ],
+}));
+
 // Mock adapters
 jest.unstable_mockModule("../../../src/adapters/FileSystemVaultAdapter.js", () => ({
   FileSystemVaultAdapter: jest.fn(() => ({
@@ -353,6 +370,147 @@ describe("dynamic-command CLI", () => {
 
       const output = consoleSpy.mock.calls.map((c: any) => c[0]).join("\n");
       expect(output).toContain("valid");
+
+      consoleSpy.mockRestore();
+    });
+
+    it("should report unknown service in service_call grounding", async () => {
+      const commandFm = [
+        "exo__Instance_class: exocmd__Command",
+        "exo__Asset_uid: cmd-svc",
+        "exo__Asset_label: Service Command",
+        "exocmd__Command_grounding: [[gnd-svc]]",
+      ].join("\n");
+
+      const groundingFm = [
+        "exo__Instance_class: exocmd__Grounding",
+        "exo__Asset_uid: gnd-svc",
+        "exo__Asset_label: Call Unknown",
+        "exocmd__Grounding_type: service_call",
+        "exocmd__Grounding_targetProperty: nonExistentService",
+      ].join("\n");
+
+      mockReaddirSync.mockImplementation((dir: string) => {
+        if (dir.endsWith("/vault")) {
+          return [
+            { name: "cmd-svc.md", isDirectory: () => false },
+            { name: "gnd-svc.md", isDirectory: () => false },
+          ];
+        }
+        return [];
+      });
+
+      mockReadFileSync.mockImplementation((path: string) => {
+        if (path.endsWith("cmd-svc.md")) return `---\n${commandFm}\n---\n`;
+        if (path.endsWith("gnd-svc.md")) return `---\n${groundingFm}\n---\n`;
+        return "";
+      });
+
+      const consoleSpy = jest.spyOn(console, "log").mockImplementation(() => {});
+
+      const cmd = dynamicCommandCommand();
+      const valCmd = cmd.commands.find((c: any) => c.name() === "validate");
+      await valCmd.parseAsync(["--vault", "/vault"], { from: "user" });
+
+      const output = consoleSpy.mock.calls.map((c: any) => c[0]).join("\n");
+      expect(output).toContain("unknown service");
+      expect(output).toContain("nonExistentService");
+
+      consoleSpy.mockRestore();
+    });
+
+    it("should accept valid service_call with known service", async () => {
+      const commandFm = [
+        "exo__Instance_class: exocmd__Command",
+        "exo__Asset_uid: cmd-ok",
+        "exo__Asset_label: Valid Service Cmd",
+        "exocmd__Command_grounding: [[gnd-ok]]",
+      ].join("\n");
+
+      const groundingFm = [
+        "exo__Instance_class: exocmd__Grounding",
+        "exo__Asset_uid: gnd-ok",
+        "exo__Asset_label: Call setStatus",
+        "exocmd__Grounding_type: service_call",
+        "exocmd__Grounding_targetProperty: setStatus",
+      ].join("\n");
+
+      const bindingFm = [
+        "exo__Instance_class: exocmd__CommandBinding",
+        "exo__Asset_uid: bind-ok",
+        "exocmd__CommandBinding_command: [[cmd-ok]]",
+      ].join("\n");
+
+      mockReaddirSync.mockImplementation((dir: string) => {
+        if (dir.endsWith("/vault")) {
+          return [
+            { name: "cmd-ok.md", isDirectory: () => false },
+            { name: "gnd-ok.md", isDirectory: () => false },
+            { name: "bind-ok.md", isDirectory: () => false },
+          ];
+        }
+        return [];
+      });
+
+      mockReadFileSync.mockImplementation((path: string) => {
+        if (path.endsWith("cmd-ok.md")) return `---\n${commandFm}\n---\n`;
+        if (path.endsWith("gnd-ok.md")) return `---\n${groundingFm}\n---\n`;
+        if (path.endsWith("bind-ok.md")) return `---\n${bindingFm}\n---\n`;
+        return "";
+      });
+
+      const consoleSpy = jest.spyOn(console, "log").mockImplementation(() => {});
+
+      const cmd = dynamicCommandCommand();
+      const valCmd = cmd.commands.find((c: any) => c.name() === "validate");
+      await valCmd.parseAsync(["--vault", "/vault"], { from: "user" });
+
+      const output = consoleSpy.mock.calls.map((c: any) => c[0]).join("\n");
+      expect(output).toContain("valid");
+      expect(output).not.toContain("unknown service");
+
+      consoleSpy.mockRestore();
+    });
+
+    it("should report missing serviceId in service_call grounding", async () => {
+      const commandFm = [
+        "exo__Instance_class: exocmd__Command",
+        "exo__Asset_uid: cmd-no-svc",
+        "exo__Asset_label: No Service ID",
+        "exocmd__Command_grounding: [[gnd-no-svc]]",
+      ].join("\n");
+
+      const groundingFm = [
+        "exo__Instance_class: exocmd__Grounding",
+        "exo__Asset_uid: gnd-no-svc",
+        "exo__Asset_label: Empty Service Call",
+        "exocmd__Grounding_type: service_call",
+      ].join("\n");
+
+      mockReaddirSync.mockImplementation((dir: string) => {
+        if (dir.endsWith("/vault")) {
+          return [
+            { name: "cmd-no-svc.md", isDirectory: () => false },
+            { name: "gnd-no-svc.md", isDirectory: () => false },
+          ];
+        }
+        return [];
+      });
+
+      mockReadFileSync.mockImplementation((path: string) => {
+        if (path.endsWith("cmd-no-svc.md")) return `---\n${commandFm}\n---\n`;
+        if (path.endsWith("gnd-no-svc.md")) return `---\n${groundingFm}\n---\n`;
+        return "";
+      });
+
+      const consoleSpy = jest.spyOn(console, "log").mockImplementation(() => {});
+
+      const cmd = dynamicCommandCommand();
+      const valCmd = cmd.commands.find((c: any) => c.name() === "validate");
+      await valCmd.parseAsync(["--vault", "/vault"], { from: "user" });
+
+      const output = consoleSpy.mock.calls.map((c: any) => c[0]).join("\n");
+      expect(output).toContain("missing targetProperty (serviceId)");
 
       consoleSpy.mockRestore();
     });

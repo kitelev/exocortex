@@ -19,6 +19,7 @@ import { ResponseBuilder } from "../responses/index.js";
 import { ExitCodes } from "../utils/ExitCodes.js";
 import { FileSystemVaultAdapter } from "../adapters/FileSystemVaultAdapter.js";
 import { NodeFsAdapter } from "../adapters/NodeFsAdapter.js";
+import { populateCliServiceRegistry, CLI_STUB_SERVICE_IDS } from "../services/CliServiceRegistryPopulator.js";
 
 export interface DynCommandOptions {
   vault: string;
@@ -327,6 +328,7 @@ export function dynamicCommandCommand(): Command {
 
         // Execute grounding
         const serviceRegistry = new ServiceRegistry();
+        populateCliServiceRegistry(serviceRegistry);
         const nodeFsAdapter = new NodeFsAdapter(vaultPath);
         const groundingExecutor = new GroundingExecutor(
           nodeFsAdapter,
@@ -560,6 +562,21 @@ function validateCommands(vaultPath: string): ValidationIssue[] {
           // property_set requires targetValue
           if (gType === GroundingType.PROPERTY_SET && !gfm["exocmd__Grounding_targetValue"]) {
             commandIssues.push(`Grounding "${groundingUid}" (property_set) missing targetValue`);
+          }
+
+          // service_call: targetProperty holds the serviceId — must be a known service
+          if (gType === GroundingType.SERVICE_CALL) {
+            const serviceId = gfm["exocmd__Grounding_targetProperty"];
+            if (!serviceId) {
+              commandIssues.push(`Grounding "${groundingUid}" (service_call) missing targetProperty (serviceId)`);
+            } else {
+              const knownIds: readonly string[] = CLI_STUB_SERVICE_IDS;
+              if (!knownIds.includes(String(serviceId))) {
+                commandIssues.push(
+                  `Grounding "${groundingUid}" references unknown service "${serviceId}". Known services: ${knownIds.join(", ")}`,
+                );
+              }
+            }
           }
         }
       }
