@@ -20,11 +20,12 @@ import { flushPromises } from "./helpers/testHelpers";
 import { CreateInstanceCommand } from "../../src/application/commands/CreateInstanceCommand";
 import { App, TFile, Notice, WorkspaceLeaf, TFolder, Vault, MetadataCache, FileManager, Plugin } from "obsidian";
 import {
-  TaskCreationService,
+  GenericAssetCreationService,
   CommandVisibilityContext,
   LoggingService,
   IFile,
   IVaultContext,
+  type InstantiationRuleResolver,
 } from "exocortex";
 import { showLabelInputModal } from "../../src/presentation/modals/modalSchemas";
 import { ObsidianVaultAdapter } from "../../src/adapters/ObsidianVaultAdapter";
@@ -64,7 +65,8 @@ describe("Error Handling - Negative Tests", () => {
   describe("1. CreateInstanceCommand - toTFile conversion failure", () => {
     let command: CreateInstanceCommand;
     let mockApp: jest.Mocked<App>;
-    let mockTaskCreationService: jest.Mocked<TaskCreationService>;
+    let mockRuleResolver: jest.Mocked<InstantiationRuleResolver>;
+    let mockGenericAssetCreationService: jest.Mocked<GenericAssetCreationService>;
     let mockVaultAdapter: jest.Mocked<ObsidianVaultAdapter>;
     let mockFile: jest.Mocked<TFile>;
     let mockContext: CommandVisibilityContext;
@@ -93,9 +95,14 @@ describe("Error Handling - Negative Tests", () => {
         },
       } as unknown as jest.Mocked<App>;
 
-      mockTaskCreationService = {
-        createTask: jest.fn(),
-      } as unknown as jest.Mocked<TaskCreationService>;
+      mockRuleResolver = {
+        getRule: jest.fn().mockResolvedValue(null),
+        invalidateCache: jest.fn(),
+      } as unknown as jest.Mocked<InstantiationRuleResolver>;
+
+      mockGenericAssetCreationService = {
+        createAsset: jest.fn(),
+      } as unknown as jest.Mocked<GenericAssetCreationService>;
 
       // Return null from toTFile to trigger error
       mockVaultAdapter = {
@@ -105,7 +112,9 @@ describe("Error Handling - Negative Tests", () => {
       mockFile = {
         path: "test-file.md",
         basename: "test-file",
-      } as jest.Mocked<TFile>;
+        name: "test-file.md",
+        parent: { path: "parent-folder", name: "parent-folder" },
+      } as unknown as jest.Mocked<TFile>;
 
       mockContext = {
         instanceClass: "Task",
@@ -114,7 +123,7 @@ describe("Error Handling - Negative Tests", () => {
         isDraft: false,
       };
 
-      command = new CreateInstanceCommand(mockApp, mockTaskCreationService, mockVaultAdapter);
+      command = new CreateInstanceCommand(mockApp, mockRuleResolver, mockGenericAssetCreationService, mockVaultAdapter);
     });
 
     it("should show error notice when toTFile returns null", async () => {
@@ -122,9 +131,9 @@ describe("Error Handling - Negative Tests", () => {
       mockCanCreateInstance.mockReturnValue(true);
 
       const createdFile = { basename: "new-instance", path: "new-instance.md" };
-      mockTaskCreationService.createTask.mockResolvedValue(createdFile as any);
+      mockGenericAssetCreationService.createAsset.mockResolvedValue(createdFile as any);
 
-      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: "small", openInNewTab: false });
+      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: null, openInNewTab: false });
 
       command.checkCallback(false, mockFile, mockContext);
 

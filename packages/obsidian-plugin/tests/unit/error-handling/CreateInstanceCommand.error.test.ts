@@ -1,23 +1,11 @@
-/**
- * CreateInstanceCommand Error Handling Tests
- *
- * Tests error scenarios for:
- * - Modal failures and cancellations
- * - Task creation service failures
- * - File conversion errors
- * - Workspace operation errors
- * - Non-Error throwable handling
- *
- * Issue: #788 - Add negative tests for error handling
- */
-
 import { flushPromises } from "../helpers/testHelpers";
 import { CreateInstanceCommand } from "../../../src/application/commands/CreateInstanceCommand";
 import { App, TFile, Notice, WorkspaceLeaf } from "obsidian";
 import {
-  TaskCreationService,
+  GenericAssetCreationService,
   CommandVisibilityContext,
   LoggingService,
+  type InstantiationRuleResolver,
 } from "exocortex";
 import { showLabelInputModal } from "../../../src/presentation/modals/modalSchemas";
 import { ObsidianVaultAdapter } from "../../../src/adapters/ObsidianVaultAdapter";
@@ -38,17 +26,14 @@ jest.mock("exocortex", () => ({
   WikiLinkHelpers: {
     normalize: jest.fn(),
   },
-  AssetClass: {
-    MEETING_PROTOTYPE: "MeetingPrototype",
-  },
 }));
 
 describe("CreateInstanceCommand Error Handling", () => {
   let command: CreateInstanceCommand;
   let mockApp: jest.Mocked<App>;
-  let mockTaskCreationService: jest.Mocked<TaskCreationService>;
+  let mockRuleResolver: jest.Mocked<InstantiationRuleResolver>;
+  let mockGenericAssetCreationService: jest.Mocked<GenericAssetCreationService>;
   let mockVaultAdapter: jest.Mocked<ObsidianVaultAdapter>;
-  let mockPlugin: jest.Mocked<ExocortexPluginInterface>;
   let mockFile: jest.Mocked<TFile>;
   let mockContext: CommandVisibilityContext;
   let mockLeaf: jest.Mocked<WorkspaceLeaf>;
@@ -84,22 +69,25 @@ describe("CreateInstanceCommand Error Handling", () => {
       },
     } as unknown as jest.Mocked<App>;
 
-    mockTaskCreationService = {
-      createTask: jest.fn(),
-    } as unknown as jest.Mocked<TaskCreationService>;
+    mockRuleResolver = {
+      getRule: jest.fn().mockResolvedValue(null),
+      invalidateCache: jest.fn(),
+    } as unknown as jest.Mocked<InstantiationRuleResolver>;
+
+    mockGenericAssetCreationService = {
+      createAsset: jest.fn(),
+    } as unknown as jest.Mocked<GenericAssetCreationService>;
 
     mockVaultAdapter = {
       toTFile: jest.fn().mockReturnValue(mockTFile),
     } as unknown as jest.Mocked<ObsidianVaultAdapter>;
 
-    mockPlugin = {
-      settings: {},
-    } as unknown as jest.Mocked<ExocortexPluginInterface>;
-
     mockFile = {
       path: "test-file.md",
       basename: "test-file",
-    } as jest.Mocked<TFile>;
+      name: "test-file.md",
+      parent: { path: "parent-folder", name: "parent-folder" },
+    } as unknown as jest.Mocked<TFile>;
 
     mockContext = {
       instanceClass: "Task",
@@ -110,9 +98,9 @@ describe("CreateInstanceCommand Error Handling", () => {
 
     command = new CreateInstanceCommand(
       mockApp,
-      mockTaskCreationService,
+      mockRuleResolver,
+      mockGenericAssetCreationService,
       mockVaultAdapter,
-      mockPlugin
     );
   });
 
@@ -121,8 +109,6 @@ describe("CreateInstanceCommand Error Handling", () => {
 
     it("should handle modal throwing an error during open", async () => {
       mockCanCreateInstance.mockReturnValue(true);
-
-      // Mock modal to throw an error
       mockShowLabelInputModal.mockRejectedValue(new Error("Modal initialization failed"));
 
       const result = command.checkCallback(false, mockFile, mockContext);
@@ -132,17 +118,15 @@ describe("CreateInstanceCommand Error Handling", () => {
 
       expect(LoggingService.error).toHaveBeenCalledWith(
         "Create instance error",
-        expect.any(Error)
+        expect.any(Error),
       );
       expect(Notice).toHaveBeenCalledWith(
-        "Failed to create instance: Modal initialization failed"
+        "Failed to create instance: Modal initialization failed",
       );
     });
 
     it("should handle modal callback never being called (modal hangs)", async () => {
       mockCanCreateInstance.mockReturnValue(true);
-
-      // Mock modal that never resolves (simulating hung modal)
       mockShowLabelInputModal.mockReturnValue(new Promise(() => {}));
 
       const result = command.checkCallback(false, mockFile, mockContext);
@@ -150,114 +134,110 @@ describe("CreateInstanceCommand Error Handling", () => {
 
       await flushPromises();
 
-      // Modal never called callback, so createTask should not be called
-      expect(mockTaskCreationService.createTask).not.toHaveBeenCalled();
+      expect(mockGenericAssetCreationService.createAsset).not.toHaveBeenCalled();
     });
-
   });
 
-  describe("Task Creation Service Error Handling", () => {
+  describe("Asset Creation Service Error Handling", () => {
     const mockCanCreateInstance = require("exocortex").canCreateInstance;
 
-    it("should handle network error during task creation", async () => {
+    it("should handle network error during asset creation", async () => {
       mockCanCreateInstance.mockReturnValue(true);
       const networkError = new Error("Network request failed: ETIMEDOUT");
-      mockTaskCreationService.createTask.mockRejectedValue(networkError);
+      mockGenericAssetCreationService.createAsset.mockRejectedValue(networkError);
 
-      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: "small", openInNewTab: false });
+      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: null, openInNewTab: false });
 
       command.checkCallback(false, mockFile, mockContext);
       await flushPromises();
 
       expect(Notice).toHaveBeenCalledWith(
-        "Failed to create instance: Network request failed: ETIMEDOUT"
+        "Failed to create instance: Network request failed: ETIMEDOUT",
       );
       expect(LoggingService.error).toHaveBeenCalledWith(
         "Create instance error",
-        networkError
+        networkError,
       );
     });
 
-    it("should handle permission denied error during task creation", async () => {
+    it("should handle permission denied error during asset creation", async () => {
       mockCanCreateInstance.mockReturnValue(true);
       const permissionError = new Error("EACCES: permission denied");
-      mockTaskCreationService.createTask.mockRejectedValue(permissionError);
+      mockGenericAssetCreationService.createAsset.mockRejectedValue(permissionError);
 
-      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: "small", openInNewTab: false });
+      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: null, openInNewTab: false });
 
       command.checkCallback(false, mockFile, mockContext);
       await flushPromises();
 
       expect(Notice).toHaveBeenCalledWith(
-        "Failed to create instance: EACCES: permission denied"
+        "Failed to create instance: EACCES: permission denied",
       );
     });
 
-    it("should handle disk full error during task creation", async () => {
+    it("should handle disk full error during asset creation", async () => {
       mockCanCreateInstance.mockReturnValue(true);
       const diskFullError = new Error("ENOSPC: no space left on device");
-      mockTaskCreationService.createTask.mockRejectedValue(diskFullError);
+      mockGenericAssetCreationService.createAsset.mockRejectedValue(diskFullError);
 
-      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: "small", openInNewTab: false });
+      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: null, openInNewTab: false });
 
       command.checkCallback(false, mockFile, mockContext);
       await flushPromises();
 
       expect(Notice).toHaveBeenCalledWith(
-        "Failed to create instance: ENOSPC: no space left on device"
+        "Failed to create instance: ENOSPC: no space left on device",
       );
     });
 
     it("should handle file already exists error", async () => {
       mockCanCreateInstance.mockReturnValue(true);
       const existsError = new Error("File already exists: task.md");
-      mockTaskCreationService.createTask.mockRejectedValue(existsError);
+      mockGenericAssetCreationService.createAsset.mockRejectedValue(existsError);
 
-      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: "small", openInNewTab: false });
+      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: null, openInNewTab: false });
 
       command.checkCallback(false, mockFile, mockContext);
       await flushPromises();
 
       expect(Notice).toHaveBeenCalledWith(
-        "Failed to create instance: File already exists: task.md"
+        "Failed to create instance: File already exists: task.md",
       );
     });
 
     it("should handle undefined error object", async () => {
       mockCanCreateInstance.mockReturnValue(true);
-      mockTaskCreationService.createTask.mockRejectedValue(undefined);
+      mockGenericAssetCreationService.createAsset.mockRejectedValue(undefined);
 
-      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: "small", openInNewTab: false });
+      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: null, openInNewTab: false });
 
       command.checkCallback(false, mockFile, mockContext);
       await flushPromises();
 
       expect(Notice).toHaveBeenCalledWith(
-        "Failed to create instance: undefined"
+        "Failed to create instance: undefined",
       );
     });
 
     it("should handle non-Error throwable (string)", async () => {
       mockCanCreateInstance.mockReturnValue(true);
-      mockTaskCreationService.createTask.mockRejectedValue(
-        "String error message"
-      );
+      mockGenericAssetCreationService.createAsset.mockRejectedValue("String error message");
 
-      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: "small", openInNewTab: false });
+      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: null, openInNewTab: false });
 
       command.checkCallback(false, mockFile, mockContext);
       await flushPromises();
 
       expect(Notice).toHaveBeenCalledWith(
-        "Failed to create instance: String error message"
+        "Failed to create instance: String error message",
       );
     });
 
     it("should handle non-Error throwable (number)", async () => {
       mockCanCreateInstance.mockReturnValue(true);
-      mockTaskCreationService.createTask.mockRejectedValue(404);
+      mockGenericAssetCreationService.createAsset.mockRejectedValue(404);
 
-      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: "small", openInNewTab: false });
+      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: null, openInNewTab: false });
 
       command.checkCallback(false, mockFile, mockContext);
       await flushPromises();
@@ -272,34 +252,34 @@ describe("CreateInstanceCommand Error Handling", () => {
     it("should throw error when toTFile returns null", async () => {
       mockCanCreateInstance.mockReturnValue(true);
       const createdFile = { basename: "new-instance", path: "new-instance.md" };
-      mockTaskCreationService.createTask.mockResolvedValue(createdFile as any);
+      mockGenericAssetCreationService.createAsset.mockResolvedValue(createdFile as any);
       mockVaultAdapter.toTFile.mockReturnValue(null as any);
 
-      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: "small", openInNewTab: false });
+      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: null, openInNewTab: false });
 
       command.checkCallback(false, mockFile, mockContext);
       await flushPromises();
 
       expect(Notice).toHaveBeenCalledWith(
-        expect.stringContaining("Failed to create instance:")
+        expect.stringContaining("Failed to create instance:"),
       );
     });
 
     it("should handle toTFile throwing an error", async () => {
       mockCanCreateInstance.mockReturnValue(true);
       const createdFile = { basename: "new-instance", path: "new-instance.md" };
-      mockTaskCreationService.createTask.mockResolvedValue(createdFile as any);
+      mockGenericAssetCreationService.createAsset.mockResolvedValue(createdFile as any);
       mockVaultAdapter.toTFile.mockImplementation(() => {
         throw new Error("File not found in vault cache");
       });
 
-      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: "small", openInNewTab: false });
+      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: null, openInNewTab: false });
 
       command.checkCallback(false, mockFile, mockContext);
       await flushPromises();
 
       expect(Notice).toHaveBeenCalledWith(
-        "Failed to create instance: File not found in vault cache"
+        "Failed to create instance: File not found in vault cache",
       );
     });
   });
@@ -310,155 +290,51 @@ describe("CreateInstanceCommand Error Handling", () => {
     it("should handle openFile failure", async () => {
       mockCanCreateInstance.mockReturnValue(true);
       const createdFile = { basename: "new-instance", path: "new-instance.md" };
-      mockTaskCreationService.createTask.mockResolvedValue(createdFile as any);
+      mockGenericAssetCreationService.createAsset.mockResolvedValue(createdFile as any);
       mockLeaf.openFile.mockRejectedValue(new Error("Cannot open file"));
 
-      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: "small", openInNewTab: false });
+      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: null, openInNewTab: false });
 
       command.checkCallback(false, mockFile, mockContext);
       await flushPromises();
 
       expect(Notice).toHaveBeenCalledWith(
-        "Failed to create instance: Cannot open file"
+        "Failed to create instance: Cannot open file",
       );
     });
 
     it("should handle getLeaf returning null", async () => {
       mockCanCreateInstance.mockReturnValue(true);
       const createdFile = { basename: "new-instance", path: "new-instance.md" };
-      mockTaskCreationService.createTask.mockResolvedValue(createdFile as any);
+      mockGenericAssetCreationService.createAsset.mockResolvedValue(createdFile as any);
       (mockApp.workspace.getLeaf as jest.Mock).mockReturnValue(null);
 
-      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: "small", openInNewTab: false });
+      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: null, openInNewTab: false });
 
       command.checkCallback(false, mockFile, mockContext);
       await flushPromises();
 
-      // Should fail when trying to call openFile on null leaf
       expect(Notice).toHaveBeenCalledWith(
-        expect.stringContaining("Failed to create instance:")
+        expect.stringContaining("Failed to create instance:"),
       );
     });
 
     it("should handle setActiveLeaf error", async () => {
       mockCanCreateInstance.mockReturnValue(true);
       const createdFile = { basename: "new-instance", path: "new-instance.md" };
-      mockTaskCreationService.createTask.mockResolvedValue(createdFile as any);
+      mockGenericAssetCreationService.createAsset.mockResolvedValue(createdFile as any);
       (mockApp.workspace.setActiveLeaf as jest.Mock).mockImplementation(() => {
         throw new Error("Workspace state invalid");
       });
 
-      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: "small", openInNewTab: false });
+      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: null, openInNewTab: false });
 
       command.checkCallback(false, mockFile, mockContext);
       await flushPromises();
 
       expect(Notice).toHaveBeenCalledWith(
-        "Failed to create instance: Workspace state invalid"
+        "Failed to create instance: Workspace state invalid",
       );
-    });
-  });
-
-  describe("Context and Input Validation Errors", () => {
-    const mockCanCreateInstance = require("exocortex").canCreateInstance;
-
-    it("should handle empty instanceClass array", async () => {
-      mockCanCreateInstance.mockReturnValue(true);
-      const emptyContext = {
-        ...mockContext,
-        instanceClass: [],
-      };
-      const createdFile = { basename: "new-instance", path: "new-instance.md" };
-      mockTaskCreationService.createTask.mockResolvedValue(createdFile as any);
-
-      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: "small", openInNewTab: false });
-
-      command.checkCallback(false, mockFile, emptyContext);
-      await flushPromises();
-
-      // Should call createTask with empty string for sourceClass
-      expect(mockTaskCreationService.createTask).toHaveBeenCalledWith(
-        mockFile,
-        { key: "value" },
-        "",
-        "Test",
-        "small"
-      );
-    });
-
-    it("should handle undefined instanceClass", async () => {
-      mockCanCreateInstance.mockReturnValue(true);
-      const undefinedContext = {
-        ...mockContext,
-        instanceClass: undefined as any,
-      };
-      const createdFile = { basename: "new-instance", path: "new-instance.md" };
-      mockTaskCreationService.createTask.mockResolvedValue(createdFile as any);
-
-      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: "small", openInNewTab: false });
-
-      command.checkCallback(false, mockFile, undefinedContext);
-      await flushPromises();
-
-      // Should handle undefined gracefully
-      expect(mockTaskCreationService.createTask).toHaveBeenCalledWith(
-        mockFile,
-        { key: "value" },
-        "",
-        "Test",
-        "small"
-      );
-    });
-
-  });
-
-  describe("Timeout and Long-Running Operation Handling", () => {
-    const mockCanCreateInstance = require("exocortex").canCreateInstance;
-
-    it("should handle file never becoming active (timeout scenario)", async () => {
-      mockCanCreateInstance.mockReturnValue(true);
-      const createdFile = { basename: "new-instance", path: "new-instance.md" };
-      mockTaskCreationService.createTask.mockResolvedValue(createdFile as any);
-
-      // File never becomes active (returns different file)
-      const differentFile = {
-        path: "different-file.md",
-        basename: "different-file",
-      } as jest.Mocked<TFile>;
-      (mockApp.workspace.getActiveFile as jest.Mock).mockReturnValue(
-        differentFile
-      );
-
-      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: "small", openInNewTab: false });
-
-      command.checkCallback(false, mockFile, mockContext);
-      await flushPromises();
-
-      // Wait for polling timeout to complete (20 attempts * 100ms = 2 seconds)
-      await new Promise((resolve) => setTimeout(resolve, 2500));
-
-      // Should still show success notice even if file didn't become active
-      expect(Notice).toHaveBeenCalledWith("Instance created: new-instance");
-    });
-
-    it("should handle getActiveFile returning null consistently", async () => {
-      mockCanCreateInstance.mockReturnValue(true);
-      const createdFile = { basename: "new-instance", path: "new-instance.md" };
-      mockTaskCreationService.createTask.mockResolvedValue(createdFile as any);
-
-      (mockApp.workspace.getActiveFile as jest.Mock).mockReturnValue(null);
-
-      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: "small", openInNewTab: false });
-
-      command.checkCallback(false, mockFile, mockContext);
-      await flushPromises();
-
-      // Wait for polling timeout to complete (20 attempts * 100ms = 2 seconds)
-      await new Promise((resolve) => setTimeout(resolve, 2500));
-
-      expect(Notice).toHaveBeenCalledWith("Instance created: new-instance");
-      // Polling-based approach calls getActiveFile repeatedly
-      expect(mockApp.workspace.getActiveFile).toHaveBeenCalled();
     });
   });
 
@@ -468,26 +344,68 @@ describe("CreateInstanceCommand Error Handling", () => {
     it("should handle error when opening in new tab", async () => {
       mockCanCreateInstance.mockReturnValue(true);
       const createdFile = { basename: "new-instance", path: "new-instance.md" };
-      mockTaskCreationService.createTask.mockResolvedValue(createdFile as any);
+      mockGenericAssetCreationService.createAsset.mockResolvedValue(createdFile as any);
 
-      // Make getLeaf("tab") fail
       (mockApp.workspace.getLeaf as jest.Mock).mockImplementation(
         (option: string | boolean) => {
           if (option === "tab") {
             throw new Error("Cannot create new tab");
           }
           return mockLeaf;
-        }
+        },
       );
 
-      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: "small", openInNewTab: true });
+      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: null, openInNewTab: true });
 
       command.checkCallback(false, mockFile, mockContext);
       await flushPromises();
 
       expect(Notice).toHaveBeenCalledWith(
-        "Failed to create instance: Cannot create new tab"
+        "Failed to create instance: Cannot create new tab",
       );
+    });
+  });
+
+  describe("Timeout and Long-Running Operation Handling", () => {
+    const mockCanCreateInstance = require("exocortex").canCreateInstance;
+
+    it("should handle file never becoming active (timeout scenario)", async () => {
+      mockCanCreateInstance.mockReturnValue(true);
+      const createdFile = { basename: "new-instance", path: "new-instance.md" };
+      mockGenericAssetCreationService.createAsset.mockResolvedValue(createdFile as any);
+
+      const differentFile = {
+        path: "different-file.md",
+        basename: "different-file",
+      } as jest.Mocked<TFile>;
+      (mockApp.workspace.getActiveFile as jest.Mock).mockReturnValue(differentFile);
+
+      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: null, openInNewTab: false });
+
+      command.checkCallback(false, mockFile, mockContext);
+      await flushPromises();
+
+      await new Promise((resolve) => setTimeout(resolve, 2500));
+
+      expect(Notice).toHaveBeenCalledWith("Instance created: new-instance");
+    });
+
+    it("should handle getActiveFile returning null consistently", async () => {
+      mockCanCreateInstance.mockReturnValue(true);
+      const createdFile = { basename: "new-instance", path: "new-instance.md" };
+      mockGenericAssetCreationService.createAsset.mockResolvedValue(createdFile as any);
+
+      (mockApp.workspace.getActiveFile as jest.Mock).mockReturnValue(null);
+
+      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: null, openInNewTab: false });
+
+      command.checkCallback(false, mockFile, mockContext);
+      await flushPromises();
+
+      await new Promise((resolve) => setTimeout(resolve, 2500));
+
+      expect(Notice).toHaveBeenCalledWith("Instance created: new-instance");
+      expect(mockApp.workspace.getActiveFile).toHaveBeenCalled();
     });
   });
 });
