@@ -13,8 +13,7 @@ import { CommandHelpers } from "../helpers/CommandHelpers";
  * Base class for asset creation commands that operate within a file context.
  *
  * Implements the Template Method pattern to eliminate duplicated boilerplate
- * across CreateTaskCommand, CreateProjectCommand, CreateAreaCommand,
- * CreateRelatedTaskCommand, and CreateInstanceCommand.
+ * across CreateInstanceCommand and other context-aware creation commands.
  *
  * Subclasses override:
  * - canCreate(): visibility check for the command
