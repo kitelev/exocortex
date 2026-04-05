@@ -1,9 +1,9 @@
 import { injectable } from "tsyringe";
 import type { ITripleStore } from "../interfaces/ITripleStore";
 import type { PreconditionDefinition } from "../domain/models/CommandDefinition";
-import { SPARQLParser } from "../infrastructure/sparql/SPARQLParser";
-import { AlgebraTranslator } from "../infrastructure/sparql/algebra/AlgebraTranslator";
-import { QueryExecutor } from "../infrastructure/sparql/executors/QueryExecutor";
+import { ExoQLParser } from "../infrastructure/sparql/SPARQLParser";
+import { ExoQLAlgebraTranslator } from "../infrastructure/sparql/algebra/AlgebraTranslator";
+import { ExoQLQueryExecutor } from "../infrastructure/sparql/executors/QueryExecutor";
 import type { AskOperation } from "../infrastructure/sparql/algebra/AlgebraOperation";
 
 /**
@@ -107,12 +107,12 @@ export class PreconditionEvaluator {
       sparqlAsk,
       PreconditionEvaluator.SENTINEL_IRI,
     );
-    const parser = new SPARQLParser();
+    const parser = new ExoQLParser();
     const parsed = parser.parse(processedQuery);
-    const translator = new AlgebraTranslator();
+    const translator = new ExoQLAlgebraTranslator();
     const algebra = translator.translate(parsed);
 
-    const executor = new QueryExecutor(this.tripleStore);
+    const executor = new ExoQLQueryExecutor(this.tripleStore);
     if (!executor.isAskQuery(algebra)) {
       return null;
     }
@@ -155,7 +155,7 @@ export class PreconditionEvaluator {
         ),
       ) as AskOperation;
 
-      const executor = new QueryExecutor(this.tripleStore);
+      const executor = new ExoQLQueryExecutor(this.tripleStore);
       return await executor.executeAsk(instantiated);
     } catch {
       return false;

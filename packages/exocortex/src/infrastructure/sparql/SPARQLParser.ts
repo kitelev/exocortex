@@ -70,7 +70,7 @@ export interface SPARQLParserOptions {
   vocabularyResolver?: VocabularyResolver;
 }
 
-export class SPARQLParser {
+export class ExoQLParser {
   private readonly parser: InstanceType<typeof sparqljs.Parser>;
   private readonly generator: InstanceType<typeof sparqljs.Generator>;
   private readonly caseWhenTransformer: CaseWhenTransformer;
@@ -463,3 +463,6 @@ export class SPARQLParser {
     }
   }
 }
+
+/** @deprecated Use ExoQLParser instead. Will be removed in a future release. */
+export { ExoQLParser as SPARQLParser };

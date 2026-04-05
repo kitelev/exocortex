@@ -1,9 +1,9 @@
 import type { ITripleStore } from "../interfaces/ITripleStore";
 import type { Triple, Subject, Predicate, Object as RDFObject } from "../domain/models/rdf/Triple";
-import { SPARQLParser } from "../infrastructure/sparql/SPARQLParser";
-import { AlgebraTranslator } from "../infrastructure/sparql/algebra/AlgebraTranslator";
+import { ExoQLParser } from "../infrastructure/sparql/SPARQLParser";
+import { ExoQLAlgebraTranslator } from "../infrastructure/sparql/algebra/AlgebraTranslator";
 import {
-  QueryExecutor,
+  ExoQLQueryExecutor,
   type QueryExecutorConfig,
 } from "../infrastructure/sparql/executors/QueryExecutor";
 import type { SolutionMapping } from "../infrastructure/sparql/SolutionMapping";
@@ -17,7 +17,7 @@ import { Literal } from "../domain/models/rdf/Literal";
 /**
  * ExoQL  public facade for executing SPARQL queries against a triple store.
  *
- * Thin wrapper over the internal SPARQLParser  AlgebraTranslator  QueryExecutor
+ * Thin wrapper over the internal ExoQLParser → ExoQLAlgebraTranslator → ExoQLQueryExecutor
  * pipeline, providing a concise three-method API:
  *
  * - `query(sparql, store)`      SELECT  SolutionMapping[]
@@ -175,11 +175,11 @@ export class ExoQL {
     store: ITripleStore,
     config?: QueryExecutorConfig,
   ) {
-    const parser = new SPARQLParser();
-    const translator = new AlgebraTranslator();
+    const parser = new ExoQLParser();
+    const translator = new ExoQLAlgebraTranslator();
     const ast = parser.parse(sparql);
     const algebra = translator.translate(ast);
-    const executor = new QueryExecutor(store, config);
+    const executor = new ExoQLQueryExecutor(store, config);
     return { algebra, executor };
   }
 }

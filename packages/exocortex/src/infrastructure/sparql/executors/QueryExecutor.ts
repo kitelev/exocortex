@@ -59,7 +59,7 @@ export interface QueryExecutorConfig {
   serviceConfig?: ServiceExecutorConfig;
 }
 
-export class QueryExecutor {
+export class ExoQLQueryExecutor {
   private readonly tripleStore: ITripleStore;
   private readonly bgpExecutor: BGPExecutor;
   private readonly filterExecutor: FilterExecutor;
@@ -720,7 +720,7 @@ export class QueryExecutor {
   private async *executeGraph(operation: GraphOperation): AsyncIterableIterator<SolutionMapping> {
     // Create a pattern executor that respects graph context
     const executePatternInGraph = async function* (
-      this: QueryExecutor,
+      this: ExoQLQueryExecutor,
       pattern: AlgebraOperation,
       graphContext?: IRI
     ): AsyncIterableIterator<SolutionMapping> {
@@ -969,3 +969,6 @@ export class QueryExecutor {
     return false; // No solutions found
   }
 }
+
+/** @deprecated Use ExoQLQueryExecutor instead. Will be removed in a future release. */
+export { ExoQLQueryExecutor as QueryExecutor };

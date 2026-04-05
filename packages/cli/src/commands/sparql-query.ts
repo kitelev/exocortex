@@ -3,12 +3,12 @@ import { readFileSync, existsSync } from "fs";
 import { resolve } from "path";
 import {
   InMemoryTripleStore,
-  SPARQLParser,
+  ExoQLParser,
   SPARQLParseError,
-  AlgebraTranslator,
+  ExoQLAlgebraTranslator,
   AlgebraOptimizer,
   AlgebraSerializer,
-  QueryExecutor,
+  ExoQLQueryExecutor,
   NoteToRDFConverter,
   Triple,
   UpdateExecutor,
@@ -389,7 +389,7 @@ export function sparqlQueryCommand(): Command {
           console.log(`🔍 Parsing SPARQL query...`);
         }
 
-        const parser = new SPARQLParser();
+        const parser = new ExoQLParser();
 
         // Transform shorthand notation: <exo__Property> → exo:Property
         queryString = transformShorthandNotation(queryString);
@@ -463,7 +463,7 @@ export function sparqlQueryCommand(): Command {
         if (outputFormat === "text") {
           console.log(`🔄 Translating to algebra...`);
         }
-        const translator = new AlgebraTranslator();
+        const translator = new ExoQLAlgebraTranslator();
         let algebra = translator.translate(ast);
 
         // Optimization is only applicable to non-CONSTRUCT queries
@@ -497,7 +497,7 @@ export function sparqlQueryCommand(): Command {
         }
 
         const execStartTime = Date.now();
-        const executor = new QueryExecutor(tripleStore);
+        const executor = new ExoQLQueryExecutor(tripleStore);
 
         // Set query timeout if the executor supports it
         if (typeof executor.setTimeout === "function") {
@@ -757,7 +757,7 @@ async function executeDryRun(
   }
 
   // Simple validation without full analysis
-  const parser = new SPARQLParser();
+  const parser = new ExoQLParser();
 
   try {
     // Parse query to validate syntax
@@ -766,7 +766,7 @@ async function executeDryRun(
     // UPDATE queries don't go through algebra translation
     if (ast.type !== "update") {
       // Translate to algebra (validates query structure)
-      const translator = new AlgebraTranslator();
+      const translator = new ExoQLAlgebraTranslator();
       let algebra = translator.translate(ast);
 
       // Optimize if requested (validates optimization rules)

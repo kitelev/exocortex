@@ -5,10 +5,10 @@ import {
   InMemoryTripleStore,
   NoteToRDFConverter,
   NLToSPARQLService,
-  SPARQLParser,
-  AlgebraTranslator,
+  ExoQLParser,
+  ExoQLAlgebraTranslator,
   AlgebraOptimizer,
-  QueryExecutor,
+  ExoQLQueryExecutor,
 } from "exocortex";
 import { FileSystemVaultAdapter } from "../adapters/FileSystemVaultAdapter.js";
 import { injectExocortexPrefixes, transformShorthandNotation, filterOntologyPrefixes } from "../utils/QueryPrefixInjector.js";
@@ -139,21 +139,21 @@ export function askCommand(): Command {
         sparqlQuery = transformShorthandNotation(sparqlQuery);
         sparqlQuery = injectExocortexPrefixes(sparqlQuery);
 
-        const parser = new SPARQLParser();
+        const parser = new ExoQLParser();
         const vaultPrefixes = filterOntologyPrefixes(scanVaultNamespaces(vaultPath));
         if (vaultPrefixes.size > 0) {
           parser.setVaultPrefixes(vaultPrefixes);
         }
         const ast = parser.parse(sparqlQuery);
 
-        const translator = new AlgebraTranslator();
+        const translator = new ExoQLAlgebraTranslator();
         let algebra = translator.translate(ast);
 
         const optimizer = new AlgebraOptimizer();
         algebra = optimizer.optimize(algebra);
 
         const execStartTime = Date.now();
-        const executor = new QueryExecutor(tripleStore);
+        const executor = new ExoQLQueryExecutor(tripleStore);
         const results = await executor.executeAll(algebra);
         const execDuration = Date.now() - execStartTime;
         const totalDuration = Date.now() - startTime;

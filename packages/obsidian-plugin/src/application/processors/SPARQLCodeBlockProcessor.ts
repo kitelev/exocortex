@@ -2,9 +2,9 @@ import React from "react";
 import { MarkdownPostProcessorContext, EventRef, Notice, MarkdownRenderChild } from "obsidian";
 import {
   InMemoryTripleStore,
-  SPARQLParser,
+  ExoQLParser,
   SPARQLParseError,
-  AlgebraTranslator,
+  ExoQLAlgebraTranslator,
   AlgebraOptimizer,
   BGPExecutor,
   ConstructExecutor,
@@ -405,10 +405,10 @@ export class SPARQLCodeBlockProcessor {
       throw new Error("Triple store not initialized");
     }
 
-    const parser = new SPARQLParser();
+    const parser = new ExoQLParser();
     const ast: SPARQLQuery = parser.parse(queryString);
 
-    const translator = new AlgebraTranslator();
+    const translator = new ExoQLAlgebraTranslator();
     let algebra = translator.translate(ast);
 
     const optimizer = new AlgebraOptimizer();

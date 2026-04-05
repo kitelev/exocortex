@@ -14,10 +14,17 @@ const mockParseError = class SPARQLParseError extends Error {
 };
 
 jest.unstable_mockModule("exocortex", () => ({
+  ExoQLParser: jest.fn(() => ({
+    parse: mockParseFn,
+  })),
   SPARQLParser: jest.fn(() => ({
     parse: mockParseFn,
   })),
   SPARQLParseError: mockParseError,
+  ExoQLAlgebraTranslator: jest.fn(() => ({
+    translate: jest.fn().mockReturnValue({ type: "bgp", patterns: [] }),
+  })),
+
   AlgebraTranslator: jest.fn(() => ({
     translate: jest.fn().mockReturnValue({ type: "bgp", patterns: [] }),
   })),

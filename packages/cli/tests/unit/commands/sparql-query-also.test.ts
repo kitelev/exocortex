@@ -26,6 +26,10 @@ jest.unstable_mockModule("../../../src/formatters/TriplesFormatter.js", () => ({
 
 jest.unstable_mockModule("exocortex", () => ({
   InMemoryTripleStore: jest.fn(() => ({ addAll: mockAddAll })),
+  ExoQLParser: jest.fn(() => ({
+    parse: jest.fn().mockReturnValue({ type: "query", queryType: "SELECT" }),
+  })),
+
   SPARQLParser: jest.fn(() => ({
     parse: jest.fn().mockReturnValue({ type: "query" }),
     setVaultPrefixes: jest.fn(),
@@ -33,6 +37,10 @@ jest.unstable_mockModule("exocortex", () => ({
   SPARQLParseError: class extends Error {
     constructor(m: string) { super(m); this.name = "SPARQLParseError"; }
   },
+  ExoQLAlgebraTranslator: jest.fn(() => ({
+    translate: jest.fn().mockReturnValue({ type: "bgp", patterns: [] }),
+  })),
+
   AlgebraTranslator: jest.fn(() => ({
     translate: jest.fn().mockReturnValue({ type: "bgp", patterns: [] }),
   })),
@@ -42,6 +50,10 @@ jest.unstable_mockModule("exocortex", () => ({
   AlgebraSerializer: jest.fn(() => ({
     toString: jest.fn().mockReturnValue("BGP()"),
   })),
+  ExoQLQueryExecutor: jest.fn(() => ({
+    executeAll: jest.fn().mockResolvedValue([]),
+  })),
+
   QueryExecutor: jest.fn(() => ({
     executeAll: jest.fn().mockResolvedValue([]),
     isConstructQuery: jest.fn().mockReturnValue(false),

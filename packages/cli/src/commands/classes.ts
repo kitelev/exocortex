@@ -3,10 +3,10 @@ import { existsSync } from "fs";
 import { resolve } from "path";
 import {
   InMemoryTripleStore,
-  SPARQLParser,
-  AlgebraTranslator,
+  ExoQLParser,
+  ExoQLAlgebraTranslator,
   AlgebraOptimizer,
-  QueryExecutor,
+  ExoQLQueryExecutor,
   NoteToRDFConverter,
   Triple,
   IRI,
@@ -119,14 +119,14 @@ async function listAllClasses(
     ORDER BY DESC(?count)
   `;
 
-  const parser = new SPARQLParser();
+  const parser = new ExoQLParser();
   const ast = parser.parse(query);
-  const translator = new AlgebraTranslator();
+  const translator = new ExoQLAlgebraTranslator();
   let algebra = translator.translate(ast);
   const optimizer = new AlgebraOptimizer();
   algebra = optimizer.optimize(algebra);
 
-  const executor = new QueryExecutor(tripleStore);
+  const executor = new ExoQLQueryExecutor(tripleStore);
   const results = await executor.executeAll(algebra);
 
   const classes: { name: string; count: number }[] = results.map((result) => {
@@ -182,14 +182,14 @@ async function showClassDetails(
     }
   `;
 
-  const parser = new SPARQLParser();
+  const parser = new ExoQLParser();
   let ast = parser.parse(countQuery);
-  let translator = new AlgebraTranslator();
+  let translator = new ExoQLAlgebraTranslator();
   let algebra = translator.translate(ast);
   let optimizer = new AlgebraOptimizer();
   algebra = optimizer.optimize(algebra);
 
-  const executor = new QueryExecutor(tripleStore);
+  const executor = new ExoQLQueryExecutor(tripleStore);
   const countResults = await executor.executeAll(algebra);
   const instanceCount = countResults.length > 0
     ? parseInt(countResults[0].get("count")?.toString() || "0", 10)
@@ -210,7 +210,7 @@ async function showClassDetails(
   `;
 
   ast = parser.parse(propsQuery);
-  translator = new AlgebraTranslator();
+  translator = new ExoQLAlgebraTranslator();
   algebra = translator.translate(ast);
   optimizer = new AlgebraOptimizer();
   algebra = optimizer.optimize(algebra);

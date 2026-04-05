@@ -4,9 +4,9 @@ import { IRI } from "../domain/models/rdf/IRI";
 import { Literal } from "../domain/models/rdf/Literal";
 import { Namespace } from "../domain/models/rdf/Namespace";
 import { GroundingType } from "../domain/constants/GroundingType";
-import { SPARQLParser } from "../infrastructure/sparql/SPARQLParser";
-import { AlgebraTranslator } from "../infrastructure/sparql/algebra/AlgebraTranslator";
-import { QueryExecutor } from "../infrastructure/sparql/executors/QueryExecutor";
+import { ExoQLParser } from "../infrastructure/sparql/SPARQLParser";
+import { ExoQLAlgebraTranslator } from "../infrastructure/sparql/algebra/AlgebraTranslator";
+import { ExoQLQueryExecutor } from "../infrastructure/sparql/executors/QueryExecutor";
 import type {
   CommandDefinition,
   PreconditionDefinition,
@@ -251,11 +251,11 @@ export class CommandResolver {
   ): Promise<string> {
     try {
       const query = sparqlBody.replace(/\$target/g, `<${targetIRI}>`);
-      const parser = new SPARQLParser();
+      const parser = new ExoQLParser();
       const parsed = parser.parse(query);
-      const translator = new AlgebraTranslator();
+      const translator = new ExoQLAlgebraTranslator();
       const algebra = translator.translate(parsed);
-      const executor = new QueryExecutor(this.tripleStore);
+      const executor = new ExoQLQueryExecutor(this.tripleStore);
       const solutions = await executor.executeAll(algebra);
 
       if (solutions.length === 0) return "";

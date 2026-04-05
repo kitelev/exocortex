@@ -1,7 +1,7 @@
 import {
-  SPARQLParser,
+  ExoQLParser,
   SPARQLParseError,
-  AlgebraTranslator,
+  ExoQLAlgebraTranslator,
   AlgebraOptimizer,
   AlgebraSerializer,
 } from "exocortex";
@@ -68,14 +68,14 @@ export interface QueryAnalyzerOptions {
  * Provides helpful error messages with suggestions for syntax errors.
  */
 export class QueryAnalyzer {
-  private readonly parser: SPARQLParser;
-  private readonly translator: AlgebraTranslator;
+  private readonly parser: ExoQLParser;
+  private readonly translator: ExoQLAlgebraTranslator;
   private readonly optimizer: AlgebraOptimizer;
   private readonly serializer: AlgebraSerializer;
 
   constructor() {
-    this.parser = new SPARQLParser();
-    this.translator = new AlgebraTranslator();
+    this.parser = new ExoQLParser();
+    this.translator = new ExoQLAlgebraTranslator();
     this.optimizer = new AlgebraOptimizer();
     this.serializer = new AlgebraSerializer();
   }

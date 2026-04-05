@@ -24,6 +24,9 @@ jest.unstable_mockModule("exocortex", () => ({
   InMemoryTripleStore: jest.fn(() => ({
     addAll: jest.fn(),
   })),
+  ExoQLParser: jest.fn(() => ({
+    parse: mockParseFn,
+  })),
   SPARQLParser: jest.fn(() => ({
     parse: mockParseFn,
   })),
@@ -37,6 +40,10 @@ jest.unstable_mockModule("exocortex", () => ({
       this.column = column;
     }
   },
+  ExoQLAlgebraTranslator: jest.fn(() => ({
+    translate: jest.fn().mockReturnValue({ type: "bgp", patterns: [] }),
+  })),
+
   AlgebraTranslator: jest.fn(() => ({
     translate: jest.fn().mockReturnValue({ type: "bgp", patterns: [] }),
   })),
@@ -46,6 +53,10 @@ jest.unstable_mockModule("exocortex", () => ({
   AlgebraSerializer: jest.fn(() => ({
     toString: jest.fn().mockReturnValue("BGP()"),
   })),
+  ExoQLQueryExecutor: jest.fn(() => ({
+    executeAll: jest.fn().mockResolvedValue([]),
+  })),
+
   QueryExecutor: jest.fn(() => ({
     executeAll: jest.fn().mockResolvedValue([]),
     isConstructQuery: jest.fn().mockReturnValue(false),
