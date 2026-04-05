@@ -5,35 +5,16 @@ import { ButtonGroup } from '@plugin/presentation/components/ActionButtonsGroup'
 import {
   CommandVisibilityContext,
   WikiLinkHelpers,
-  TaskCreationService,
-  ProjectCreationService,
-  AreaCreationService,
-  ClassCreationService,
-  ConceptCreationService,
-  TaskStatusService,
-  PropertyCleanupService,
-  FolderRepairService,
-  RenameToUidService,
-  EffortVotingService,
-  LabelToAliasService,
-  AssetConversionService,
   MetadataExtractor,
-  CriticalityZoneService,
   CommandResolver,
   PreconditionEvaluator,
   GroundingExecutor,
+  FolderRepairService,
 } from "exocortex";
-import type { ITripleStore } from "exocortex";
 import {
   ButtonBuilderContext,
-  ButtonBuilderServices,
   IButtonGroupBuilder,
   createButtonGroupIfVisible,
-  CreationButtonGroupBuilder,
-  StatusButtonGroupBuilder,
-  PlanningButtonGroupBuilder,
-  MaintenanceButtonGroupBuilder,
-  CriticalityZoneButtonGroupBuilder,
   DynamicCommandButtonGroupBuilder,
 } from "./button-groups";
 import { ObsidianApp, ExocortexPluginInterface } from '@plugin/types';
@@ -49,44 +30,18 @@ export interface ButtonGroupsBuilderConfig {
   settings: ExocortexSettings;
   /** Plugin instance for save operations */
   plugin: ExocortexPluginInterface;
-  /** Service for creating tasks */
-  taskCreationService: TaskCreationService;
-  /** Service for creating projects */
-  projectCreationService: ProjectCreationService;
-  /** Service for creating areas */
-  areaCreationService: AreaCreationService;
-  /** Service for creating classes */
-  classCreationService: ClassCreationService;
-  /** Service for creating concepts */
-  conceptCreationService: ConceptCreationService;
-  /** Service for task status operations */
-  taskStatusService: TaskStatusService;
-  /** Service for cleaning up properties */
-  propertyCleanupService: PropertyCleanupService;
-  /** Service for repairing folder locations */
-  folderRepairService: FolderRepairService;
-  /** Service for renaming files to UID */
-  renameToUidService: RenameToUidService;
-  /** Service for voting on efforts */
-  effortVotingService: EffortVotingService;
-  /** Service for copying label to aliases */
-  labelToAliasService: LabelToAliasService;
-  /** Service for converting between task and project */
-  assetConversionService: AssetConversionService;
-  /** Service for setting criticality zones */
-  criticalityZoneService: CriticalityZoneService;
   /** Resolver for dynamic commands from vault assets */
   commandResolver?: CommandResolver;
   /** Evaluator for command preconditions */
   preconditionEvaluator?: PreconditionEvaluator;
   /** Executor for grounding actions */
   groundingExecutor?: GroundingExecutor;
+  /** Service for repairing folder locations (used for visibility context) */
+  folderRepairService: FolderRepairService;
   /** Extractor for file metadata */
   metadataExtractor: MetadataExtractor;
   /** Logger instance */
   logger: ILogger;
-  /** Triple store for workflow resolution (optional, falls back to empty store) */
-  tripleStore?: ITripleStore;
   /** Callback to refresh the view */
   refresh: () => Promise<void>;
 }
@@ -94,20 +49,17 @@ export interface ButtonGroupsBuilderConfig {
 /**
  * Orchestrator for building button groups.
  *
- * Delegates to specialized button group builders:
- * - CreationButtonGroupBuilder: Create Task, Create Project, etc.
- * - StatusButtonGroupBuilder: Set Draft, Move to Backlog, etc.
- * - PlanningButtonGroupBuilder: Plan on Today, Vote, etc.
- * - MaintenanceButtonGroupBuilder: Trash, Archive, Clean Properties, etc.
+ * All button groups are now served from vault command assets
+ * via the universal DynamicCommandButtonGroupBuilder (RFC-009).
  */
 export class ButtonGroupsBuilder {
   private app: ObsidianApp;
   private settings: ExocortexSettings;
   private plugin: ExocortexPluginInterface;
+  private folderRepairService: FolderRepairService;
   private metadataExtractor: MetadataExtractor;
   private logger: ILogger;
   private refresh: () => Promise<void>;
-  private services: ButtonBuilderServices;
   private builders: IButtonGroupBuilder[];
 
   constructor(config: ButtonGroupsBuilderConfig) {
@@ -115,23 +67,10 @@ export class ButtonGroupsBuilder {
       app,
       settings,
       plugin,
-      taskCreationService,
-      projectCreationService,
-      areaCreationService,
-      classCreationService,
-      conceptCreationService,
-      taskStatusService,
-      propertyCleanupService,
-      folderRepairService,
-      renameToUidService,
-      effortVotingService,
-      labelToAliasService,
-      assetConversionService,
-      criticalityZoneService,
       commandResolver,
       preconditionEvaluator,
       groundingExecutor,
-      tripleStore,
+      folderRepairService,
       metadataExtractor,
       logger,
       refresh,
@@ -140,36 +79,12 @@ export class ButtonGroupsBuilder {
     this.app = app;
     this.settings = settings;
     this.plugin = plugin;
+    this.folderRepairService = folderRepairService;
     this.metadataExtractor = metadataExtractor;
     this.logger = logger;
     this.refresh = refresh;
 
-    // Aggregate services for button builders
-    this.services = {
-      app,
-      taskCreationService,
-      projectCreationService,
-      areaCreationService,
-      classCreationService,
-      conceptCreationService,
-      taskStatusService,
-      propertyCleanupService,
-      folderRepairService,
-      renameToUidService,
-      effortVotingService,
-      labelToAliasService,
-      assetConversionService,
-      tripleStore,
-    };
-
-    // Initialize specialized builders (hardcoded first, then dynamic)
-    this.builders = [
-      new CreationButtonGroupBuilder(this.services),
-      new StatusButtonGroupBuilder(this.services),
-      new PlanningButtonGroupBuilder(this.services),
-      new CriticalityZoneButtonGroupBuilder({ criticalityZoneService }),
-      new MaintenanceButtonGroupBuilder(this.services),
-    ];
+    this.builders = [];
 
     if (commandResolver && preconditionEvaluator && groundingExecutor) {
       this.builders.push(
@@ -194,7 +109,7 @@ export class ButtonGroupsBuilder {
     const currentStatus = this.metadataExtractor.extractStatus(metadata);
     const isArchived = this.metadataExtractor.extractIsArchived(metadata);
     const currentFolder = file.parent?.path || "";
-    const expectedFolder = await this.services.folderRepairService.getExpectedFolder(
+    const expectedFolder = await this.folderRepairService.getExpectedFolder(
       file,
       metadata,
     );
