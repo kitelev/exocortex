@@ -3,12 +3,9 @@ import { container, DependencyContainer } from "tsyringe";
 import { DI_TOKENS } from "../interfaces/tokens";
 
 // Import all services
-import { TaskCreationService } from "../services/TaskCreationService";
-import { TaskFrontmatterGenerator } from "../services/TaskFrontmatterGenerator";
 import { DynamicFrontmatterGenerator } from "../services/DynamicFrontmatterGenerator";
 import { AlgorithmExtractor } from "../services/AlgorithmExtractor";
 import { PropertyCleanupService } from "../services/PropertyCleanupService";
-import { ProjectCreationService } from "../services/ProjectCreationService";
 import { AreaCreationService } from "../services/AreaCreationService";
 import { TaskStatusService } from "../services/TaskStatusService";
 import { EffortStatusWorkflow } from "../services/EffortStatusWorkflow";
@@ -43,10 +40,6 @@ export function registerCoreServices(
 
   // Frontmatter services (no dependencies)
   targetContainer.registerSingleton(
-    DI_TOKENS.TaskFrontmatterGenerator,
-    TaskFrontmatterGenerator,
-  );
-  targetContainer.registerSingleton(
     DI_TOKENS.DynamicFrontmatterGenerator,
     DynamicFrontmatterGenerator,
   );
@@ -72,14 +65,6 @@ export function registerCoreServices(
   );
 
   // Creation services (depend on IVaultAdapter)
-  targetContainer.registerSingleton(
-    DI_TOKENS.TaskCreationService,
-    TaskCreationService,
-  );
-  targetContainer.registerSingleton(
-    DI_TOKENS.ProjectCreationService,
-    ProjectCreationService,
-  );
   targetContainer.registerSingleton(
     DI_TOKENS.AreaCreationService,
     AreaCreationService,

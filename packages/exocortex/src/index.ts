@@ -68,8 +68,6 @@ export {
   type UserInput,
   type IGroundingService,
 } from "./services/GroundingExecutor";
-export { TaskCreationService } from "./services/TaskCreationService";
-export { ProjectCreationService } from "./services/ProjectCreationService";
 export { TaskStatusService } from "./services/TaskStatusService";
 export { AreaCreationService } from "./services/AreaCreationService";
 export {
@@ -101,7 +99,6 @@ export { RenameToUidService } from "./services/RenameToUidService";
 export { StatusTimestampService } from "./services/StatusTimestampService";
 export { SupervisionCreationService } from "./services/SupervisionCreationService";
 export { FleetingNoteCreationService } from "./services/FleetingNoteCreationService";
-export { TaskFrontmatterGenerator } from "./services/TaskFrontmatterGenerator";
 export {
   DynamicFrontmatterGenerator,
   type FrontmatterPropertyDefinition,

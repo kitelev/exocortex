@@ -6,9 +6,6 @@ import { TFile, Notice } from "obsidian";
 import {
   DI_TOKENS,
   IVaultAdapter,
-  TaskFrontmatterGenerator,
-  AlgorithmExtractor,
-  TaskCreationService,
 } from "exocortex";
 
 jest.mock("obsidian", () => ({
@@ -89,11 +86,6 @@ export const setupCommandManagerTest = (): CommandManagerTestContext => {
   };
 
   container.registerInstance<IVaultAdapter>(DI_TOKENS.IVaultAdapter, mockVault);
-  container.register(TaskFrontmatterGenerator, {
-    useClass: TaskFrontmatterGenerator,
-  });
-  container.register(AlgorithmExtractor, { useClass: AlgorithmExtractor });
-  container.register(TaskCreationService, { useClass: TaskCreationService });
 
   const commandManager = new CommandManager(mockApp);
 

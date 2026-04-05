@@ -1,10 +1,7 @@
 export type { ICommand } from "./ICommand";
 export { CommandRegistry } from "./CommandRegistry";
 export { BaseContextAssetCreationCommand } from "./base/BaseContextAssetCreationCommand";
-export { CreateTaskCommand } from "./CreateTaskCommand";
-export { CreateProjectCommand } from "./CreateProjectCommand";
 export { CreateInstanceCommand } from "./CreateInstanceCommand";
-export { CreateRelatedTaskCommand } from "./CreateRelatedTaskCommand";
 export { SetDraftStatusCommand } from "./SetDraftStatusCommand";
 export { MoveToBacklogCommand } from "./MoveToBacklogCommand";
 export { MoveToAnalysisCommand } from "./MoveToAnalysisCommand";

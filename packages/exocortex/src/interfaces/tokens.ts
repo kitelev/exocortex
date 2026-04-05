@@ -27,8 +27,6 @@ export const DI_TOKENS = {
   INotificationService: Symbol.for("INotificationService"),
 
   // Creation services
-  TaskCreationService: Symbol.for("TaskCreationService"),
-  ProjectCreationService: Symbol.for("ProjectCreationService"),
   AreaCreationService: Symbol.for("AreaCreationService"),
   ClassCreationService: Symbol.for("ClassCreationService"),
   ConceptCreationService: Symbol.for("ConceptCreationService"),
@@ -37,7 +35,6 @@ export const DI_TOKENS = {
   GenericAssetCreationService: Symbol.for("GenericAssetCreationService"),
 
   // Frontmatter services
-  TaskFrontmatterGenerator: Symbol.for("TaskFrontmatterGenerator"),
   DynamicFrontmatterGenerator: Symbol.for("DynamicFrontmatterGenerator"),
   AlgorithmExtractor: Symbol.for("AlgorithmExtractor"),
 
