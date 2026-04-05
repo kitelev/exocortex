@@ -1,6 +1,6 @@
 import { VaultRDFIndexer } from "../../../src/infrastructure/VaultRDFIndexer";
 import type { App, TFile, EventRef } from "obsidian";
-import { InMemoryTripleStore, NoteToRDFConverter, ApplicationErrorHandler, IRI, RDFSInferenceEngine } from "exocortex";
+import { InMemoryTripleStore, NoteToRDFConverter, ApplicationErrorHandler, IRI, RDFSInferenceEngine, NonInheritablePropertyRegistry, PrototypeChainMaterializer, INFERRED_GRAPH } from "exocortex";
 import { ObsidianVaultAdapter } from "../../../src/adapters/ObsidianVaultAdapter";
 
 jest.mock("exocortex");
@@ -46,6 +46,7 @@ describe("VaultRDFIndexer", () => {
     mockTripleStore = {
       addAll: jest.fn().mockResolvedValue(undefined),
       clear: jest.fn().mockResolvedValue(undefined),
+      clearGraph: jest.fn().mockResolvedValue(undefined),
       match: jest.fn().mockResolvedValue([]),
       removeAll: jest.fn().mockResolvedValue(0),
     } as any;
@@ -239,6 +240,86 @@ describe("VaultRDFIndexer", () => {
       expect(removeIRI).toBeDefined();
       expect(removeIRI).toBe(`obsidian://vault/03%20Knowledge/kitelev/some-note.md`);
       expect(removeIRI).not.toContain("%2F");
+    });
+  });
+
+  describe("Issue #2503: PrototypeChainMaterializer integration", () => {
+    let mockRdfsMaterialize: jest.Mock;
+    let mockRegistryInitialize: jest.Mock;
+    let mockPrototypeMaterialize: jest.Mock;
+
+    beforeEach(() => {
+      mockRdfsMaterialize = jest.fn().mockResolvedValue(0);
+      (RDFSInferenceEngine as jest.MockedClass<typeof RDFSInferenceEngine>).mockImplementation(() => ({
+        materialize: mockRdfsMaterialize,
+      } as any));
+
+      mockRegistryInitialize = jest.fn().mockResolvedValue(undefined);
+      (NonInheritablePropertyRegistry as jest.MockedClass<typeof NonInheritablePropertyRegistry>).mockImplementation(() => ({
+        initialize: mockRegistryInitialize,
+      } as any));
+
+      mockPrototypeMaterialize = jest.fn().mockResolvedValue(0);
+      (PrototypeChainMaterializer as jest.MockedClass<typeof PrototypeChainMaterializer>).mockImplementation(() => ({
+        materialize: mockPrototypeMaterialize,
+      } as any));
+    });
+
+    it("should run PrototypeChainMaterializer after RDFSInferenceEngine on initialize", async () => {
+      const callOrder: string[] = [];
+      mockRdfsMaterialize.mockImplementation(async () => { callOrder.push("rdfs"); return 0; });
+      mockRegistryInitialize.mockImplementation(async () => { callOrder.push("registry"); });
+      mockPrototypeMaterialize.mockImplementation(async () => { callOrder.push("prototype"); return 0; });
+
+      await indexer.initialize();
+
+      expect(callOrder).toEqual(["rdfs", "registry", "prototype"]);
+      expect(mockRegistryInitialize).toHaveBeenCalledWith(mockTripleStore);
+      expect(mockPrototypeMaterialize).toHaveBeenCalledWith(mockTripleStore);
+    });
+
+    it("should clear inferred graph before re-materialization on updateFile", async () => {
+      await indexer.initialize();
+      mockTripleStore.clearGraph.mockClear();
+      mockRdfsMaterialize.mockClear();
+      mockPrototypeMaterialize.mockClear();
+
+      const mockFile = { path: "test.md", extension: "md" } as TFile;
+      mockConverter.convertNote.mockResolvedValue([]);
+
+      await indexer.updateFile(mockFile);
+
+      expect(mockTripleStore.clearGraph).toHaveBeenCalledWith(INFERRED_GRAPH);
+      expect(mockRdfsMaterialize).toHaveBeenCalledWith(mockTripleStore);
+      expect(mockPrototypeMaterialize).toHaveBeenCalledWith(mockTripleStore);
+    });
+
+    it("should clear inferred graph before re-materialization on refresh", async () => {
+      await indexer.initialize();
+      mockTripleStore.clearGraph.mockClear();
+      mockRdfsMaterialize.mockClear();
+      mockPrototypeMaterialize.mockClear();
+
+      await indexer.refresh();
+
+      expect(mockTripleStore.clearGraph).toHaveBeenCalledWith(INFERRED_GRAPH);
+      expect(mockRdfsMaterialize).toHaveBeenCalledWith(mockTripleStore);
+      expect(mockPrototypeMaterialize).toHaveBeenCalledWith(mockTripleStore);
+    });
+
+    it("should clear inferred graph before RDFS inference runs", async () => {
+      const callOrder: string[] = [];
+      mockTripleStore.clearGraph.mockImplementation(async () => { callOrder.push("clearGraph"); });
+      mockRdfsMaterialize.mockImplementation(async () => { callOrder.push("rdfs"); return 0; });
+      mockRegistryInitialize.mockImplementation(async () => { callOrder.push("registry"); });
+      mockPrototypeMaterialize.mockImplementation(async () => { callOrder.push("prototype"); return 0; });
+
+      await indexer.initialize();
+
+      expect(callOrder[0]).toBe("clearGraph");
+      expect(callOrder[1]).toBe("rdfs");
+      expect(callOrder[2]).toBe("registry");
+      expect(callOrder[3]).toBe("prototype");
     });
   });
 

@@ -4,6 +4,9 @@ import {
   NoteToRDFConverter,
   ApplicationErrorHandler,
   RDFSInferenceEngine,
+  NonInheritablePropertyRegistry,
+  PrototypeChainMaterializer,
+  INFERRED_GRAPH,
   NetworkError,
   ServiceError,
   type ILogger,
@@ -213,8 +216,17 @@ export class VaultRDFIndexer {
   }
 
   private async runInference(): Promise<void> {
+    if (this.tripleStore.clearGraph) {
+      await this.tripleStore.clearGraph(INFERRED_GRAPH);
+    }
+
     const engine = new RDFSInferenceEngine();
     await engine.materialize(this.tripleStore);
+
+    const registry = new NonInheritablePropertyRegistry();
+    await registry.initialize(this.tripleStore);
+    const materializer = new PrototypeChainMaterializer(registry);
+    await materializer.materialize(this.tripleStore);
   }
 
   getTripleStore(): InMemoryTripleStore {
