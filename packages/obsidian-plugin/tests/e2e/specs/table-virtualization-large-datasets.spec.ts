@@ -33,7 +33,7 @@ test.describe("Table Virtualization for Large Datasets", () => {
     await launcher.waitForModalsToClose(10000);
 
     // Wait for the layout to render
-    await launcher.waitForElement(".exocortex-buttons-section", 30000);
+    await launcher.waitForElement(".exocortex-layout-rendered", 30000);
 
     // Check if any virtualized table exists
     const virtualContainer = window.locator(".exocortex-virtual-scroll-container");
@@ -70,7 +70,7 @@ test.describe("Table Virtualization for Large Datasets", () => {
 
     const window = await launcher.getWindow();
     await launcher.waitForModalsToClose(10000);
-    await launcher.waitForElement(".exocortex-buttons-section", 30000);
+    await launcher.waitForElement(".exocortex-layout-rendered", 30000);
 
     const virtualContainer = window.locator(".exocortex-virtual-scroll-container");
     const hasVirtualization = await virtualContainer.isVisible({ timeout: 3000 }).catch(() => false);
@@ -92,7 +92,7 @@ test.describe("Table Virtualization for Large Datasets", () => {
 
     const window = await launcher.getWindow();
     await launcher.waitForModalsToClose(10000);
-    await launcher.waitForElement(".exocortex-buttons-section", 30000);
+    await launcher.waitForElement(".exocortex-layout-rendered", 30000);
 
     // Look for regular (non-virtualized) relations table
     const relationsTable = window.locator(".exocortex-relations-table").first();
@@ -118,7 +118,7 @@ test.describe("Table Virtualization for Large Datasets", () => {
 
     const window = await launcher.getWindow();
     await launcher.waitForModalsToClose(10000);
-    await launcher.waitForElement(".exocortex-buttons-section", 30000);
+    await launcher.waitForElement(".exocortex-layout-rendered", 30000);
 
     const virtualContainer = window.locator(".exocortex-virtual-scroll-container");
     const hasVirtualization = await virtualContainer.isVisible({ timeout: 3000 }).catch(() => false);
@@ -148,7 +148,7 @@ test.describe("Table Virtualization for Large Datasets", () => {
 
     const window = await launcher.getWindow();
     await launcher.waitForModalsToClose(10000);
-    await launcher.waitForElement(".exocortex-buttons-section", 30000);
+    await launcher.waitForElement(".exocortex-layout-rendered", 30000);
 
     const virtualizedContainer = window.locator(".exocortex-relations-virtualized, .exocortex-virtualized");
     const hasVirtualization = await virtualizedContainer.isVisible({ timeout: 3000 }).catch(() => false);
@@ -173,7 +173,7 @@ test.describe("Table Virtualization for Large Datasets", () => {
 
     const window = await launcher.getWindow();
     await launcher.waitForModalsToClose(10000);
-    await launcher.waitForElement(".exocortex-buttons-section", 30000);
+    await launcher.waitForElement(".exocortex-layout-rendered", 30000);
 
     // Check all virtualized tables on the page
     const virtualContainers = window.locator(".exocortex-virtual-scroll-container");

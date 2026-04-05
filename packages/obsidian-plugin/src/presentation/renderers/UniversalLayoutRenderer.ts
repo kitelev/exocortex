@@ -242,6 +242,7 @@ export class UniversalLayoutRenderer {
       this.currentConfig = config;
       this.metadataCache.set(currentFile.path, this.metadataExtractor.extractMetadata(currentFile));
 
+      el.addClass("exocortex-layout-rendered");
       this.logger.info(`Rendered UniversalLayout with ${relations.length} asset relations`);
     } catch (error) {
       this.logger.error("Failed to render UniversalLayout", { error });
