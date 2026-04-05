@@ -128,6 +128,84 @@ describe("PreconditionEvaluator", () => {
       // After first substitution, no more $target to replace
       expect(first).toBe(second);
     });
+
+    it("should replace $yesterday with xsd:date literal", () => {
+      const query = "ASK { ?s ems:date $yesterday }";
+      const result = evaluator.substituteVariables(query, ASSET_IRI);
+
+      expect(result).not.toContain("$yesterday");
+      expect(result).toMatch(/"[0-9]{4}-[0-9]{2}-[0-9]{2}"\^\^xsd:date/);
+    });
+
+    it("should replace $thisWeekStart with Monday date", () => {
+      const query = "ASK { ?s ems:date $thisWeekStart }";
+      const result = evaluator.substituteVariables(query, ASSET_IRI);
+
+      expect(result).not.toContain("$thisWeekStart");
+      expect(result).toMatch(/"[0-9]{4}-[0-9]{2}-[0-9]{2}"\^\^xsd:date/);
+
+      // Extract the date and verify it's a Monday
+      const match = result.match(/"(\d{4}-\d{2}-\d{2})"/);
+      if (match) {
+        const day = new Date(match[1]).getUTCDay();
+        expect(day).toBe(1); // Monday
+      }
+    });
+
+    it("should replace $lastWeekStart with previous Monday date", () => {
+      const query = "ASK { ?s ems:date $lastWeekStart }";
+      const result = evaluator.substituteVariables(query, ASSET_IRI);
+
+      expect(result).not.toContain("$lastWeekStart");
+      expect(result).toMatch(/"[0-9]{4}-[0-9]{2}-[0-9]{2}"\^\^xsd:date/);
+
+      // Extract and verify it's a Monday, 7 days before thisWeekStart
+      const thisWeekResult = evaluator.substituteVariables("$thisWeekStart", ASSET_IRI);
+      const lastWeekResult = evaluator.substituteVariables("$lastWeekStart", ASSET_IRI);
+
+      const thisMatch = thisWeekResult.match(/"(\d{4}-\d{2}-\d{2})"/);
+      const lastMatch = lastWeekResult.match(/"(\d{4}-\d{2}-\d{2})"/);
+      if (thisMatch && lastMatch) {
+        const diff = new Date(thisMatch[1]).getTime() - new Date(lastMatch[1]).getTime();
+        expect(diff).toBe(7 * 24 * 60 * 60 * 1000); // exactly 7 days
+      }
+    });
+
+    it("should replace $thisMonthStart with 1st of current month", () => {
+      const query = "ASK { ?s ems:date $thisMonthStart }";
+      const result = evaluator.substituteVariables(query, ASSET_IRI);
+
+      expect(result).not.toContain("$thisMonthStart");
+      expect(result).toMatch(/"[0-9]{4}-[0-9]{2}-01"\^\^xsd:date/);
+    });
+
+    it("should replace $lastMonthStart with 1st of previous month", () => {
+      const query = "ASK { ?s ems:date $lastMonthStart }";
+      const result = evaluator.substituteVariables(query, ASSET_IRI);
+
+      expect(result).not.toContain("$lastMonthStart");
+      expect(result).toMatch(/"[0-9]{4}-[0-9]{2}-01"\^\^xsd:date/);
+    });
+
+    it("should replace $thisYearStart with Jan 1st", () => {
+      const query = "ASK { ?s ems:date $thisYearStart }";
+      const result = evaluator.substituteVariables(query, ASSET_IRI);
+
+      expect(result).not.toContain("$thisYearStart");
+      expect(result).toMatch(/"[0-9]{4}-01-01"\^\^xsd:date/);
+    });
+
+    it("should handle all temporal variables in single query", () => {
+      const query = "FILTER($yesterday && $thisWeekStart && $lastWeekStart && $thisMonthStart && $lastMonthStart && $thisYearStart)";
+      const result = evaluator.substituteVariables(query, ASSET_IRI);
+
+      expect(result).not.toContain("$yesterday");
+      expect(result).not.toContain("$thisWeekStart");
+      expect(result).not.toContain("$lastWeekStart");
+      expect(result).not.toContain("$thisMonthStart");
+      expect(result).not.toContain("$lastMonthStart");
+      expect(result).not.toContain("$thisYearStart");
+    });
   });
 
   describe("SPARQL ASK with $target substitution", () => {
