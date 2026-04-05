@@ -1,7 +1,7 @@
 import { App, TFile } from "obsidian";
 import {
-  SPARQLParser,
-  AlgebraTranslator,
+  ExoQLParser,
+  ExoQLAlgebraTranslator,
   AlgebraOptimizer,
   BGPExecutor,
   type SPARQLQuery,
@@ -19,8 +19,8 @@ import { LoggerFactory } from '@plugin/adapters/logging/LoggerFactory';
 
 export class SPARQLQueryService {
   private indexer: VaultRDFIndexer;
-  private parser: SPARQLParser;
-  private translator: AlgebraTranslator;
+  private parser: ExoQLParser;
+  private translator: ExoQLAlgebraTranslator;
   private optimizer: AlgebraOptimizer;
   private executor: BGPExecutor | null = null;
   private isInitialized = false;
@@ -55,8 +55,8 @@ export class SPARQLQueryService {
     );
 
     this.indexer = new VaultRDFIndexer(app, this.logger, notifier);
-    this.parser = new SPARQLParser();
-    this.translator = new AlgebraTranslator();
+    this.parser = new ExoQLParser();
+    this.translator = new ExoQLAlgebraTranslator();
     this.optimizer = new AlgebraOptimizer();
   }
 

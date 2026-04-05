@@ -226,9 +226,9 @@ export { SourceAnnotator, SOURCE_VARIABLE, type TripleSource } from "./services/
 export { NoteToRDFConverter } from "./services/NoteToRDFConverter";
 
 // SPARQL Engine exports
-export { SPARQLParser, SPARQLParseError, type SPARQLQuery, type SelectQuery, type ConstructQuery, type Update, type UpdateOperation, type ExtendedDescribeQuery, type ParseResult } from "./infrastructure/sparql/SPARQLParser";
+export { ExoQLParser, SPARQLParser, SPARQLParseError, type SPARQLQuery, type SelectQuery, type ConstructQuery, type Update, type UpdateOperation, type ExtendedDescribeQuery, type ParseResult } from "./infrastructure/sparql/SPARQLParser";
 export { DescribeOptionsTransformer, DescribeOptionsTransformerError, type DescribeOptions, type DescribeTransformResult } from "./infrastructure/sparql/DescribeOptionsTransformer";
-export { AlgebraTranslator } from "./infrastructure/sparql/algebra/AlgebraTranslator";
+export { ExoQLAlgebraTranslator, AlgebraTranslator } from "./infrastructure/sparql/algebra/AlgebraTranslator";
 export { AlgebraOptimizer } from "./infrastructure/sparql/algebra/AlgebraOptimizer";
 export { AlgebraSerializer } from "./infrastructure/sparql/algebra/AlgebraSerializer";
 export type {
@@ -244,7 +244,7 @@ export { OptionalExecutor } from "./infrastructure/sparql/executors/OptionalExec
 export { UnionExecutor } from "./infrastructure/sparql/executors/UnionExecutor";
 export { ConstructExecutor } from "./infrastructure/sparql/executors/ConstructExecutor";
 export { DescribeExecutor, type DescribeExecutorOptions } from "./infrastructure/sparql/executors/DescribeExecutor";
-export { QueryExecutor } from "./infrastructure/sparql/executors/QueryExecutor";
+export { ExoQLQueryExecutor, QueryExecutor } from "./infrastructure/sparql/executors/QueryExecutor";
 export { UpdateExecutor, UpdateExecutorError, type UpdateResult } from "./infrastructure/sparql/executors/UpdateExecutor";
 export { SolutionMapping } from "./infrastructure/sparql/SolutionMapping";
 export { BuiltInFunctions } from "./infrastructure/sparql/filters/BuiltInFunctions";

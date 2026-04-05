@@ -32,7 +32,7 @@ export type DirectionMappings = Map<string, "ltr" | "rtl">;
  *
  * Public API is unchanged: callers use `translate()` and `setDirectionMappings()`.
  */
-export class AlgebraTranslator {
+export class ExoQLAlgebraTranslator {
   private readonly tripleTranslator: TripleTranslator;
   private readonly expressionTranslator: ExpressionTranslator;
   private readonly patternTranslator: PatternTranslator;
@@ -241,3 +241,6 @@ export class AlgebraTranslator {
     };
   }
 }
+
+/** @deprecated Use ExoQLAlgebraTranslator instead. Will be removed in a future release. */
+export { ExoQLAlgebraTranslator as AlgebraTranslator };

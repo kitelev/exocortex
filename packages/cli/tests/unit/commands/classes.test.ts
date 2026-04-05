@@ -10,15 +10,27 @@ jest.unstable_mockModule("exocortex", () => ({
   NoteToRDFConverter: jest.fn(() => ({
     convertVault: jest.fn().mockResolvedValue([]),
   })),
+  ExoQLParser: jest.fn(() => ({
+    parse: jest.fn().mockReturnValue({ type: "query", queryType: "SELECT" }),
+  })),
+
   SPARQLParser: jest.fn(() => ({
     parse: jest.fn().mockReturnValue({ type: "query" }),
   })),
+  ExoQLAlgebraTranslator: jest.fn(() => ({
+    translate: jest.fn().mockReturnValue({ type: "bgp", patterns: [] }),
+  })),
+
   AlgebraTranslator: jest.fn(() => ({
     translate: jest.fn().mockReturnValue({ type: "bgp", patterns: [] }),
   })),
   AlgebraOptimizer: jest.fn(() => ({
     optimize: jest.fn().mockReturnValue({ type: "bgp", patterns: [] }),
   })),
+  ExoQLQueryExecutor: jest.fn(() => ({
+    executeAll: jest.fn().mockResolvedValue([]),
+  })),
+
   QueryExecutor: jest.fn(() => ({
     executeAll: jest.fn().mockResolvedValue([]),
     isConstructQuery: jest.fn().mockReturnValue(false),
