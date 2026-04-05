@@ -10,6 +10,20 @@ import { NonInheritablePropertyRegistry } from "./NonInheritablePropertyRegistry
 export const INFERRED_GRAPH = new IRI("https://exocortex.my/ontology/exo#inferred");
 
 /**
+ * Base IRI for per-depth named graphs.
+ * Depth-specific graphs: exo:inferred/1, exo:inferred/2, etc.
+ */
+const INFERRED_DEPTH_BASE = "https://exocortex.my/ontology/exo#inferred/";
+
+/**
+ * Get the named graph IRI for a specific inheritance depth.
+ * Depth 1 = direct prototype, depth 2 = grandparent, etc.
+ */
+export function inferredGraphForDepth(depth: number): IRI {
+  return new IRI(`${INFERRED_DEPTH_BASE}${depth}`);
+}
+
+/**
  * Maximum depth for prototype chain traversal.
  * Protects against unbounded chains and excessive memory usage.
  */
@@ -104,9 +118,23 @@ export class PrototypeChainMaterializer {
       }
 
       // Walk chain near→far: closest prototype wins
-      for (const protoIRIStr of chain) {
+      for (let depthIdx = 0; depthIdx < chain.length; depthIdx++) {
+        const protoIRIStr = chain[depthIdx];
+        const depth = depthIdx + 1; // 1-based: depth 1 = direct prototype
         const proto = new IRI(protoIRIStr);
         const protoTriples = await store.match(proto, undefined, undefined);
+
+        // Determine which predicates the prototype itself inherited (materialized)
+        // so we skip them — they'll be picked up at the correct depth level
+        const protoInheritedPredicates = new Set<string>();
+        if (store.matchInGraph) {
+          const protoInferred = await store.matchInGraph(
+            proto, undefined, undefined, INFERRED_GRAPH,
+          );
+          for (const t of protoInferred) {
+            protoInheritedPredicates.add(t.predicate.value);
+          }
+        }
 
         for (const protoTriple of protoTriples) {
           const predicateValue = protoTriple.predicate.value;
@@ -121,6 +149,12 @@ export class PrototypeChainMaterializer {
             continue;
           }
 
+          // Skip properties that the prototype itself inherited (materialized)
+          // They'll be handled at the correct depth from their original source
+          if (protoInheritedPredicates.has(predicateValue)) {
+            continue;
+          }
+
           // Materialize: create triple with instance as subject
           const materializedTriple = new Triple(
             instance,
@@ -131,9 +165,10 @@ export class PrototypeChainMaterializer {
           // Add to default graph (for match() visibility)
           await store.add(materializedTriple);
 
-          // Add to named graph (for own/inherited distinction)
+          // Add to named graphs (for own/inherited distinction + depth annotation)
           if (store.addToGraph) {
             await store.addToGraph(materializedTriple, INFERRED_GRAPH);
+            await store.addToGraph(materializedTriple, inferredGraphForDepth(depth));
           }
 
           seenPredicates.add(predicateValue);

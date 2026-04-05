@@ -3,7 +3,7 @@ import type { Subject, Predicate, Object as RDFObject } from "../domain/models/r
 import { Literal } from "../domain/models/rdf/Literal";
 import { IRI } from "../domain/models/rdf/IRI";
 import { SolutionMapping } from "../infrastructure/sparql/SolutionMapping";
-import { INFERRED_GRAPH } from "./PrototypeChainMaterializer";
+import { INFERRED_GRAPH, inferredGraphForDepth, MAX_PROTOTYPE_DEPTH } from "./PrototypeChainMaterializer";
 
 /**
  * Source type for triple provenance: own (asserted directly) or inherited (materialized from prototype).
@@ -14,6 +14,12 @@ export type TripleSource = "own" | "inherited";
  * The variable name used to annotate solution mappings with source information.
  */
 export const SOURCE_VARIABLE = "_source";
+
+/**
+ * The variable name used to annotate solution mappings with inheritance depth.
+ * 0 = own, 1 = direct prototype, 2 = grandparent prototype, etc.
+ */
+export const DEPTH_VARIABLE = "_depth";
 
 /**
  * Annotates SPARQL query results with own/inherited provenance.
@@ -139,6 +145,43 @@ export class SourceAnnotator {
     );
 
     return inferredMatches.length > 0 ? "inherited" : "own";
+  }
+
+  /**
+   * Determine the inheritance depth for a specific triple.
+   *
+   * Returns 0 for own triples, 1 for direct prototype, 2 for grandparent, etc.
+   * Checks per-depth named graphs (exo:inferred/1, exo:inferred/2, ...).
+   *
+   * @param subject - The triple's subject
+   * @param predicate - The triple's predicate
+   * @param object - The triple's object
+   * @returns Inheritance depth (0 = own)
+   */
+  async getInheritanceDepth(
+    subject: Subject,
+    predicate: Predicate,
+    object: RDFObject,
+  ): Promise<number> {
+    if (!this.tripleStore.matchInGraph) {
+      return 0;
+    }
+
+    // Check per-depth graphs: exo:inferred/1, exo:inferred/2, ...
+    for (let depth = 1; depth <= MAX_PROTOTYPE_DEPTH; depth++) {
+      const depthGraph = inferredGraphForDepth(depth);
+      const matches = await this.tripleStore.matchInGraph(
+        subject,
+        predicate,
+        object,
+        depthGraph,
+      );
+      if (matches.length > 0) {
+        return depth;
+      }
+    }
+
+    return 0; // own
   }
 
   /**
