@@ -117,35 +117,6 @@ export class AssetMetadataService {
       }
     }
 
-    const prototypeRef = metadata.exo__Asset_prototype;
-    const prototypePath = this.extractFirstValue(prototypeRef);
-
-    if (prototypePath && !visited.has(prototypePath)) {
-      visited.add(prototypePath);
-      let prototypeFile = this.app.metadataCache.getFirstLinkpathDest(
-        prototypePath,
-        "",
-      );
-
-      if (!prototypeFile && !prototypePath.endsWith(".md")) {
-        prototypeFile = this.app.metadataCache.getFirstLinkpathDest(
-          prototypePath + ".md",
-          "",
-        );
-      }
-
-      if (prototypeFile instanceof TFile) {
-        const prototypeCache =
-          this.app.metadataCache.getFileCache(prototypeFile);
-        const prototypeMetadata = prototypeCache?.frontmatter || {};
-
-        const resolvedArea = this.getEffortArea(prototypeMetadata, visited);
-        if (resolvedArea) {
-          return resolvedArea;
-        }
-      }
-    }
-
     return null;
   }
 
