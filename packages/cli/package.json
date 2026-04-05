@@ -1,6 +1,6 @@
 {
   "name": "@kitelev/exocortex-cli",
-  "version": "0.1.0",
+  "version": "15.55.5",
   "description": "CLI tool for Exocortex knowledge management system - SPARQL queries, task management, and more",
   "main": "dist/index.js",
   "bin": {
