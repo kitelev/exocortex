@@ -8,7 +8,7 @@ import {
   DateFormatter,
   type IFile,
 } from "exocortex";
-import { LabelInputModal, type LabelInputModalResult } from '@plugin/presentation/modals/LabelInputModal';
+import { showLabelInputModal, type LabelInputModalResult } from '@plugin/presentation/modals/modalSchemas';
 import { ObsidianVaultAdapter } from '@plugin/adapters/ObsidianVaultAdapter';
 import { BaseContextAssetCreationCommand } from "./base/BaseContextAssetCreationCommand";
 
@@ -51,9 +51,7 @@ export class CreateInstanceCommand extends BaseContextAssetCreationCommand {
     const baseLabel = String(metadata.exo__Asset_label || file.basename);
     const defaultLabel = `${baseLabel} ${DateFormatter.toDateString(new Date())}`;
 
-    return new Promise<LabelInputModalResult>((resolve) => {
-      new LabelInputModal(this.app, resolve, defaultLabel, showTaskSize).open();
-    });
+    return showLabelInputModal(this.app, defaultLabel, showTaskSize);
   }
 
   protected async createAsset(

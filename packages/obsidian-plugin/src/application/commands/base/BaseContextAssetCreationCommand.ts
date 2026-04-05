@@ -5,7 +5,7 @@ import {
   LoggingService,
   type IFile,
 } from "exocortex";
-import { LabelInputModal, type LabelInputModalResult } from '@plugin/presentation/modals/LabelInputModal';
+import { showLabelInputModal, type LabelInputModalResult } from '@plugin/presentation/modals/modalSchemas';
 import { ObsidianVaultAdapter } from '@plugin/adapters/ObsidianVaultAdapter';
 import { CommandHelpers } from "../helpers/CommandHelpers";
 
@@ -69,9 +69,7 @@ export abstract class BaseContextAssetCreationCommand implements ICommand {
     _context: CommandVisibilityContext,
     _metadata: Record<string, unknown>,
   ): Promise<LabelInputModalResult> {
-    return new Promise<LabelInputModalResult>((resolve) => {
-      new LabelInputModal(this.app, resolve).open();
-    });
+    return showLabelInputModal(this.app);
   }
 
   private async execute(file: TFile, context: CommandVisibilityContext): Promise<void> {

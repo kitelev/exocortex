@@ -4,7 +4,7 @@ import {
   FleetingNoteCreationService,
   LoggingService,
 } from "exocortex";
-import { FleetingNoteModal } from "../../src/presentation/modals/FleetingNoteModal";
+import { showFleetingNoteModal } from "../../src/presentation/modals/modalSchemas";
 import { ObsidianVaultAdapter } from "../../src/adapters/ObsidianVaultAdapter";
 import { CommandHelpers } from "../../src/application/commands/helpers/CommandHelpers";
 
@@ -13,7 +13,7 @@ jest.mock("obsidian", () => ({
   Notice: jest.fn(),
 }));
 
-jest.mock("../../src/presentation/modals/FleetingNoteModal");
+jest.mock("../../src/presentation/modals/modalSchemas");
 
 jest.mock("exocortex", () => ({
   ...jest.requireActual("exocortex"),
@@ -21,6 +21,8 @@ jest.mock("exocortex", () => ({
     error: jest.fn(),
   },
 }));
+
+const mockShowFleetingNoteModal = showFleetingNoteModal as jest.MockedFunction<typeof showFleetingNoteModal>;
 
 describe("CreateFleetingNoteCommand", () => {
   let command: CreateFleetingNoteCommand;
@@ -79,15 +81,11 @@ describe("CreateFleetingNoteCommand", () => {
       createdFile as any,
     );
 
-    (FleetingNoteModal as jest.Mock).mockImplementation((app, callback) => ({
-      open: jest.fn(() => {
-        callback({ label: "Test note" });
-      }),
-    }));
+    mockShowFleetingNoteModal.mockResolvedValue({ label: "Test note" });
 
     await command.callback();
 
-    expect(FleetingNoteModal).toHaveBeenCalledWith(mockApp, expect.any(Function));
+    expect(mockShowFleetingNoteModal).toHaveBeenCalledWith(mockApp);
     expect(mockFleetingNoteCreationService.createFleetingNote).toHaveBeenCalledWith("Test note");
     expect(mockVaultAdapter.toTFile).toHaveBeenCalledWith(createdFile);
     expect(openFileSpy).toHaveBeenCalledWith(mockApp, mockTFile);
@@ -95,11 +93,7 @@ describe("CreateFleetingNoteCommand", () => {
   });
 
   it("does nothing when modal is cancelled", async () => {
-    (FleetingNoteModal as jest.Mock).mockImplementation((app, callback) => ({
-      open: jest.fn(() => {
-        callback({ label: null });
-      }),
-    }));
+    mockShowFleetingNoteModal.mockResolvedValue({ label: null });
 
     await command.callback();
 
@@ -112,11 +106,7 @@ describe("CreateFleetingNoteCommand", () => {
     const error = new Error("Vault failure");
     mockFleetingNoteCreationService.createFleetingNote.mockRejectedValue(error);
 
-    (FleetingNoteModal as jest.Mock).mockImplementation((app, callback) => ({
-      open: jest.fn(() => {
-        callback({ label: "Test note" });
-      }),
-    }));
+    mockShowFleetingNoteModal.mockResolvedValue({ label: "Test note" });
 
     await command.callback();
 

@@ -1,6 +1,6 @@
 import { TFile } from "obsidian";
 import { ILogger } from '@plugin/adapters/logging/ILogger';
-import { LabelInputModal, type LabelInputModalResult } from '@plugin/presentation/modals/LabelInputModal';
+import { showLabelInputModal, type LabelInputModalResult } from '@plugin/presentation/modals/modalSchemas';
 import { ObsidianApp } from '@plugin/types';
 
 export interface FileCreationResult {
@@ -41,7 +41,5 @@ export async function promptForLabel(
   defaultValue: string = "",
   showTaskSize: boolean = true,
 ): Promise<LabelInputModalResult> {
-  return new Promise<LabelInputModalResult>((resolve) => {
-    new LabelInputModal(app, resolve, defaultValue, showTaskSize).open();
-  });
+  return showLabelInputModal(app, defaultValue, showTaskSize);
 }

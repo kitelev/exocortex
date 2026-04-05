@@ -26,7 +26,7 @@ import {
   IFile,
   IVaultContext,
 } from "exocortex";
-import { LabelInputModal } from "../../src/presentation/modals/LabelInputModal";
+import { showLabelInputModal } from "../../src/presentation/modals/modalSchemas";
 import { ObsidianVaultAdapter } from "../../src/adapters/ObsidianVaultAdapter";
 import { ExocortexPluginInterface } from "../../src/types";
 import { SingleVaultManager } from "../../src/infrastructure/vault/SingleVaultManager";
@@ -42,7 +42,9 @@ jest.mock("obsidian", () => ({
   ...jest.requireActual("obsidian"),
   Notice: jest.fn(),
 }));
-jest.mock("../../src/presentation/modals/LabelInputModal");
+jest.mock("../../src/presentation/modals/modalSchemas");
+
+const mockShowLabelInputModal = showLabelInputModal as jest.MockedFunction<typeof showLabelInputModal>;
 jest.mock("../../src/application/services/SPARQLQueryService");
 jest.mock("exocortex", () => ({
   ...jest.requireActual("exocortex"),
@@ -122,11 +124,7 @@ describe("Error Handling - Negative Tests", () => {
       const createdFile = { basename: "new-instance", path: "new-instance.md" };
       mockTaskCreationService.createTask.mockResolvedValue(createdFile as any);
 
-      (LabelInputModal as jest.Mock).mockImplementation((app, callback) => ({
-        open: jest.fn(() => {
-          setTimeout(() => callback({ label: "Test", taskSize: "small" }), 0);
-        }),
-      }));
+      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: "small", openInNewTab: false });
 
       command.checkCallback(false, mockFile, mockContext);
 

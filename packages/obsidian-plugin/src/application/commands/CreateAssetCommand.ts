@@ -6,9 +6,9 @@ import {
   type AssetPropertyDefinition,
 } from "exocortex";
 import {
-  ClassSelectionModal,
+  showClassSelectionModal,
   type ClassSelectionModalResult,
-} from '@plugin/presentation/modals/ClassSelectionModal';
+} from '@plugin/presentation/modals/modalSchemas';
 import {
   DynamicAssetCreationModal,
   type DynamicAssetCreationResult,
@@ -116,7 +116,7 @@ export class CreateAssetCommand implements ICommand {
   /**
    * Show the class selection modal.
    */
-  private async showClassSelectionModal(): Promise<ClassSelectionModalResult> {
+  private async showClassSelectionModal(): Promise<ClassSelectionModalResult<DiscoveredClass>> {
     // Discover available classes
     let classes: DiscoveredClass[];
 
@@ -127,13 +127,7 @@ export class CreateAssetCommand implements ICommand {
       classes = this.classDiscoveryService.getDefaultClasses();
     }
 
-    return new Promise<ClassSelectionModalResult>((resolve) => {
-      new ClassSelectionModal(
-        this.app,
-        classes,
-        resolve,
-      ).open();
-    });
+    return showClassSelectionModal(this.app, classes);
   }
 
   /**

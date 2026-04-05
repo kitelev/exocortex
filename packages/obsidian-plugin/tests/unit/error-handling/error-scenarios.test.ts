@@ -28,7 +28,7 @@ import {
   LoggingService,
   IFile,
 } from "exocortex";
-import { LabelInputModal } from "../../../src/presentation/modals/LabelInputModal";
+import { showLabelInputModal } from "../../../src/presentation/modals/modalSchemas";
 import type ExocortexPlugin from "../../../src/ExocortexPlugin";
 
 // Mocks
@@ -36,7 +36,9 @@ jest.mock("obsidian", () => ({
   ...jest.requireActual("obsidian"),
   Notice: jest.fn(),
 }));
-jest.mock("../../../src/presentation/modals/LabelInputModal");
+jest.mock("../../../src/presentation/modals/modalSchemas");
+
+const mockShowLabelInputModal = showLabelInputModal as jest.MockedFunction<typeof showLabelInputModal>;
 jest.mock("exocortex", () => ({
   ...jest.requireActual("exocortex"),
   canCreateInstance: jest.fn(),
@@ -115,11 +117,7 @@ describe("CreateInstanceCommand Error Handling", () => {
       // toTFile returns null - simulating file conversion failure
       mockVaultAdapter.toTFile.mockReturnValue(null as any);
 
-      (LabelInputModal as jest.Mock).mockImplementation((app, callback) => ({
-        open: jest.fn(() => {
-          setTimeout(() => callback({ label: "Test Instance", taskSize: "medium" }), 0);
-        }),
-      }));
+      mockShowLabelInputModal.mockResolvedValue({ label: "Test Instance", taskSize: "medium", openInNewTab: false });
 
       const result = command.checkCallback(false, mockFile, mockContext);
       expect(result).toBe(true);
@@ -140,11 +138,7 @@ describe("CreateInstanceCommand Error Handling", () => {
       mockTaskCreationService.createTask.mockResolvedValue(createdFile as any);
       mockVaultAdapter.toTFile.mockReturnValue(null as any);
 
-      (LabelInputModal as jest.Mock).mockImplementation((app, callback) => ({
-        open: jest.fn(() => {
-          setTimeout(() => callback({ label: "Test", taskSize: "small" }), 0);
-        }),
-      }));
+      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: "small", openInNewTab: false });
 
       command.checkCallback(false, mockFile, mockContext);
       await flushPromises();
@@ -160,11 +154,7 @@ describe("CreateInstanceCommand Error Handling", () => {
       const permissionError = new Error("Permission denied: Cannot write to directory");
       mockTaskCreationService.createTask.mockRejectedValue(permissionError);
 
-      (LabelInputModal as jest.Mock).mockImplementation((app, callback) => ({
-        open: jest.fn(() => {
-          setTimeout(() => callback({ label: "Test", taskSize: "small" }), 0);
-        }),
-      }));
+      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: "small", openInNewTab: false });
 
       command.checkCallback(false, mockFile, mockContext);
       await flushPromises();
@@ -177,11 +167,7 @@ describe("CreateInstanceCommand Error Handling", () => {
       const existsError = new Error("File already exists: task-name.md");
       mockTaskCreationService.createTask.mockRejectedValue(existsError);
 
-      (LabelInputModal as jest.Mock).mockImplementation((app, callback) => ({
-        open: jest.fn(() => {
-          setTimeout(() => callback({ label: "Test", taskSize: "small" }), 0);
-        }),
-      }));
+      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: "small", openInNewTab: false });
 
       command.checkCallback(false, mockFile, mockContext);
       await flushPromises();
@@ -192,11 +178,7 @@ describe("CreateInstanceCommand Error Handling", () => {
     it("should handle non-Error thrown values", async () => {
       mockTaskCreationService.createTask.mockRejectedValue("String error message");
 
-      (LabelInputModal as jest.Mock).mockImplementation((app, callback) => ({
-        open: jest.fn(() => {
-          setTimeout(() => callback({ label: "Test", taskSize: "small" }), 0);
-        }),
-      }));
+      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: "small", openInNewTab: false });
 
       command.checkCallback(false, mockFile, mockContext);
       await flushPromises();
@@ -214,11 +196,7 @@ describe("CreateInstanceCommand Error Handling", () => {
       mockVaultAdapter.toTFile.mockReturnValue(mockTFile);
       mockLeaf.openFile.mockRejectedValue(new Error("Failed to open file"));
 
-      (LabelInputModal as jest.Mock).mockImplementation((app, callback) => ({
-        open: jest.fn(() => {
-          setTimeout(() => callback({ label: "Test", taskSize: "small" }), 0);
-        }),
-      }));
+      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: "small", openInNewTab: false });
 
       command.checkCallback(false, mockFile, mockContext);
       await flushPromises();

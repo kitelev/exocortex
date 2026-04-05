@@ -5,7 +5,7 @@ import {
   CommandVisibilityContext,
   LoggingService,
 } from "exocortex";
-import { LabelInputModal } from "../../src/presentation/modals/LabelInputModal";
+import { showLabelInputModal } from "../../src/presentation/modals/modalSchemas";
 import { ObsidianVaultAdapter } from "../../src/adapters/ObsidianVaultAdapter";
 import { flushPromises, waitForCondition } from "./helpers/testHelpers";
 
@@ -13,7 +13,9 @@ jest.mock("obsidian", () => ({
   ...jest.requireActual("obsidian"),
   Notice: jest.fn(),
 }));
-jest.mock("../../src/presentation/modals/LabelInputModal");
+jest.mock("../../src/presentation/modals/modalSchemas");
+
+const mockShowLabelInputModal = showLabelInputModal as jest.MockedFunction<typeof showLabelInputModal>;
 jest.mock("exocortex", () => ({
   ...jest.requireActual("exocortex"),
   canCreateProject: jest.fn(),
@@ -123,21 +125,14 @@ describe("CreateProjectCommand", () => {
       mockProjectCreationService.createProject.mockResolvedValue(createdFile as any);
 
       // Mock modal to return label
-      (LabelInputModal as jest.Mock).mockImplementation((app, callback) => ({
-        open: jest.fn(() => {
-          setTimeout(() => callback({ label: "Test Project", taskSize: null }), 0);
-        }),
-      }));
+      mockShowLabelInputModal.mockResolvedValue({ label: "Test Project", taskSize: null, openInNewTab: false });
 
       const result = command.checkCallback(false, mockFile, mockContext);
       expect(result).toBe(true);
 
       await flushPromises();
 
-      expect(LabelInputModal).toHaveBeenCalledWith(
-        mockApp,
-        expect.any(Function)
-      );
+      expect(mockShowLabelInputModal).toHaveBeenCalledWith(mockApp);
       expect(mockProjectCreationService.createProject).toHaveBeenCalledWith(
         mockFile,
         { exo__Instance_class: "ProjectClass" },
@@ -154,18 +149,14 @@ describe("CreateProjectCommand", () => {
       mockCanCreateProject.mockReturnValue(true);
 
       // Mock modal to return null (cancelled)
-      (LabelInputModal as jest.Mock).mockImplementation((app, callback) => ({
-        open: jest.fn(() => {
-          setTimeout(() => callback({ label: null, taskSize: null }), 0);
-        }),
-      }));
+      mockShowLabelInputModal.mockResolvedValue({ label: null, taskSize: null, openInNewTab: false });
 
       const result = command.checkCallback(false, mockFile, mockContext);
       expect(result).toBe(true);
 
       await flushPromises();
 
-      expect(LabelInputModal).toHaveBeenCalled();
+      expect(mockShowLabelInputModal).toHaveBeenCalled();
       expect(mockProjectCreationService.createProject).not.toHaveBeenCalled();
       expect(Notice).not.toHaveBeenCalled();
     });
@@ -175,11 +166,7 @@ describe("CreateProjectCommand", () => {
       const error = new Error("Failed to create project");
       mockProjectCreationService.createProject.mockRejectedValue(error);
 
-      (LabelInputModal as jest.Mock).mockImplementation((app, callback) => ({
-        open: jest.fn(() => {
-          setTimeout(() => callback({ label: "Test Project", taskSize: null }), 0);
-        }),
-      }));
+      mockShowLabelInputModal.mockResolvedValue({ label: "Test Project", taskSize: null, openInNewTab: false });
 
       const result = command.checkCallback(false, mockFile, mockContext);
       expect(result).toBe(true);
@@ -200,11 +187,7 @@ describe("CreateProjectCommand", () => {
         frontmatter: { exo__Instance_class: ["ProjectClass", "OtherClass"] },
       });
 
-      (LabelInputModal as jest.Mock).mockImplementation((app, callback) => ({
-        open: jest.fn(() => {
-          setTimeout(() => callback({ label: "My Project", taskSize: null }), 0);
-        }),
-      }));
+      mockShowLabelInputModal.mockResolvedValue({ label: "My Project", taskSize: null, openInNewTab: false });
 
       const result = command.checkCallback(false, mockFile, mockContext);
       expect(result).toBe(true);
@@ -229,11 +212,7 @@ describe("CreateProjectCommand", () => {
         frontmatter: { otherProp: "value" },
       });
 
-      (LabelInputModal as jest.Mock).mockImplementation((app, callback) => ({
-        open: jest.fn(() => {
-          setTimeout(() => callback({ label: "Test", taskSize: null }), 0);
-        }),
-      }));
+      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: null, openInNewTab: false });
 
       const result = command.checkCallback(false, mockFile, mockContext);
       expect(result).toBe(true);
@@ -254,11 +233,7 @@ describe("CreateProjectCommand", () => {
       const createdFile = { basename: "new-project", path: "new-project.md" };
       mockProjectCreationService.createProject.mockResolvedValue(createdFile as any);
 
-      (LabelInputModal as jest.Mock).mockImplementation((app, callback) => ({
-        open: jest.fn(() => {
-          setTimeout(() => callback({ label: "Test", taskSize: null }), 0);
-        }),
-      }));
+      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: null, openInNewTab: false });
 
       // Simulate file becoming active after 3 attempts
       let attempts = 0;
@@ -282,11 +257,7 @@ describe("CreateProjectCommand", () => {
       const createdFile = { basename: "new-project", path: "new-project.md" };
       mockProjectCreationService.createProject.mockResolvedValue(createdFile as any);
 
-      (LabelInputModal as jest.Mock).mockImplementation((app, callback) => ({
-        open: jest.fn(() => {
-          setTimeout(() => callback({ label: "Test", taskSize: null }), 0);
-        }),
-      }));
+      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: null, openInNewTab: false });
 
       const result = command.checkCallback(false, mockFile, mockContext);
       expect(result).toBe(true);
@@ -308,11 +279,7 @@ describe("CreateProjectCommand", () => {
       const createdFile = { basename: "new-project", path: "new-project.md" };
       mockProjectCreationService.createProject.mockResolvedValue(createdFile as any);
 
-      (LabelInputModal as jest.Mock).mockImplementation((app, callback) => ({
-        open: jest.fn(() => {
-          setTimeout(() => callback({ label: "Test", taskSize: null }), 0);
-        }),
-      }));
+      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: null, openInNewTab: false });
 
       const result = command.checkCallback(false, mockFile, mockContext);
       expect(result).toBe(true);
@@ -333,11 +300,7 @@ describe("CreateProjectCommand", () => {
       const createdFile = { basename: "new-project", path: "new-project.md" };
       mockProjectCreationService.createProject.mockResolvedValue(createdFile as any);
 
-      (LabelInputModal as jest.Mock).mockImplementation((app, callback) => ({
-        open: jest.fn(() => {
-          setTimeout(() => callback({ label: "Test", taskSize: null }), 0);
-        }),
-      }));
+      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: null, openInNewTab: false });
 
       // File never becomes active
       mockApp.workspace.getActiveFile = jest.fn().mockReturnValue(null);
