@@ -131,11 +131,13 @@ describe("DynamicCommandButtonGroupBuilder", () => {
   });
 
   describe("build", () => {
-    it("should return empty array when no Asset UID in metadata", async () => {
+    it("should use file path as fallback when no Asset UID in metadata", async () => {
+      mockResolveForAsset.mockResolvedValue([]);
       const context = createContext({ exo__Asset_uid: undefined });
       const result = await builder.build(context);
       expect(result).toEqual([]);
-      expect(mockResolveForAsset).not.toHaveBeenCalled();
+      // Falls back to file.path as subject IRI
+      expect(mockResolveForAsset).toHaveBeenCalledWith("test/file.md", "ems__Task", undefined);
     });
 
     it("should return empty array when no instance class in metadata", async () => {

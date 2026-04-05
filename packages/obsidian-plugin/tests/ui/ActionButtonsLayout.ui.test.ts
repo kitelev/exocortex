@@ -2,13 +2,42 @@ import "reflect-metadata";
 import { container } from "tsyringe";
 import { TFile, Vault, MetadataCache } from "obsidian";
 import { UniversalLayoutRenderer } from "../../src/presentation/renderers/UniversalLayoutRenderer";
-import { DEFAULT_SETTINGS } from "../../src/domain/settings/ExocortexSettings";
+import { DEFAULT_SETTINGS, ExocortexSettings } from "../../src/domain/settings/ExocortexSettings";
 import { flushPromises } from "../unit/helpers/testHelpers";
 import {
   DI_TOKENS,
   registerCoreServices,
   resetContainer,
+  GroundingType,
 } from "exocortex";
+import type { ResolvedCommand } from "exocortex";
+
+function createMockRFC009Services() {
+  const makeCommand = (id: string, name: string): ResolvedCommand => ({
+    command: {
+      id,
+      name,
+      grounding: { id: `g-${id}`, label: name, type: GroundingType.PROPERTY_SET },
+    },
+    binding: { id: `b-${id}`, label: name, commandRef: id, targetClass: "any" },
+  });
+
+  return {
+    commandResolver: {
+      resolveForAsset: jest.fn().mockImplementation(
+        () => Promise.resolve([makeCommand("test-cmd", "Test Action")]),
+      ),
+      invalidateCache: jest.fn(),
+    },
+    preconditionEvaluator: {
+      evaluate: jest.fn().mockResolvedValue(true),
+      registerHostFunction: jest.fn(),
+    },
+    groundingExecutor: {
+      execute: jest.fn().mockResolvedValue({ success: true }),
+    },
+  };
+}
 
 describe("Layout Settings and Structure", () => {
   let renderer: UniversalLayoutRenderer;
@@ -118,7 +147,8 @@ describe("Layout Settings and Structure", () => {
     };
 
     const settings: ExocortexSettings = { ...DEFAULT_SETTINGS };
-    renderer = new UniversalLayoutRenderer(mockApp, settings, mockPlugin, mockVaultAdapter);
+    const rfc009Services = createMockRFC009Services();
+    renderer = new UniversalLayoutRenderer(mockApp, settings, mockPlugin, mockVaultAdapter, rfc009Services);
   });
 
   afterEach(() => {
@@ -130,7 +160,8 @@ describe("Layout Settings and Structure", () => {
       const settings: ExocortexSettings = {
         ...DEFAULT_SETTINGS,
       };
-      renderer = new UniversalLayoutRenderer(mockApp, settings, mockPlugin, mockVaultAdapter);
+      const rfc009Services = createMockRFC009Services();
+      renderer = new UniversalLayoutRenderer(mockApp, settings, mockPlugin, mockVaultAdapter, rfc009Services);
 
       const mockFile = {
         path: "test-area.md",
@@ -142,7 +173,7 @@ describe("Layout Settings and Structure", () => {
       mockMetadataCache.getFileCache = jest.fn(() => ({
         frontmatter: {
           exo__Instance_class: "[[ems__Area]]",
-          exo__Asset_uid: "test-123",
+          exo__Asset_uid: "test-area-uid",
         },
       }));
 

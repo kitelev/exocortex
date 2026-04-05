@@ -49,8 +49,7 @@ describe("Commands Index Exports", () => {
     });
   });
 
-  it("should export exactly 27 command classes and 1 registry", () => {
-    // Filter out type exports (which don't appear at runtime)
+  it("should export command classes and registry", () => {
     const exports = Object.keys(commandsIndex);
     const commandClasses = exports.filter((key) => key.endsWith("Command"));
     const registryClasses = exports.filter((key) => key.endsWith("Registry"));

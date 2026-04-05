@@ -64,7 +64,7 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
   async build(context: ButtonBuilderContext): Promise<ActionButton[]> {
     const { file, metadata, logger, refresh } = context;
 
-    const subjectIRI = this.extractSubjectIRI(metadata);
+    const subjectIRI = this.extractSubjectIRI(metadata) ?? file.path;
     if (!subjectIRI) return [];
 
     const assetClass = this.extractAssetClass(metadata);
@@ -80,7 +80,7 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
         prototypeIRI,
       );
     } catch (error) {
-      logger.info(`[DynamicCommands] Failed to resolve commands: ${error}`);
+      logger.info(`[DynamicCommands] Failed to resolve commands: ${String(error)}`);
       return [];
     }
 
@@ -194,6 +194,7 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
 
   private async showConfirmation(message: string): Promise<boolean> {
     return new Promise((resolve) => {
+      // eslint-disable-next-line no-alert -- simple confirmation until a proper Obsidian modal is implemented
       const confirmed = window.confirm(message);
       resolve(confirmed);
     });
@@ -213,6 +214,7 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
     );
   }
 
+  /* eslint-disable obsidianmd/no-static-styles-assignment */
   private async showInputModal(
     schema: InputSchemaField[],
   ): Promise<UserInput | null> {
@@ -291,6 +293,7 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
       document.body.appendChild(container);
     });
   }
+  /* eslint-enable obsidianmd/no-static-styles-assignment */
 
   private extractSubjectIRI(metadata: Record<string, unknown>): string | undefined {
     const uid = metadata["exo__Asset_uid"];
