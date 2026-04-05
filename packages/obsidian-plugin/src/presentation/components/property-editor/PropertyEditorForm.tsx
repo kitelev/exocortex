@@ -1,6 +1,6 @@
-import React, { useState, useCallback, useMemo } from "react";
+import React, { useState, useCallback, useMemo, useEffect } from "react";
 import type { PropertySchemaDefinition } from '@plugin/domain/property-editor/PropertySchemas';
-import { getPropertySchemaForClass } from '@plugin/domain/property-editor/PropertySchemas';
+import { getPropertySchemaForClass, getPropertySchemaForClassSync } from '@plugin/domain/property-editor/PropertySchemas';
 import {
   TextField,
   SelectField,
@@ -28,10 +28,19 @@ export const PropertyEditorForm: React.FC<PropertyEditorFormProps> = ({
   onSave,
   onCancel,
 }) => {
-  const schema = useMemo(
-    () => getPropertySchemaForClass(instanceClass),
-    [instanceClass],
+  const [schema, setSchema] = useState<PropertySchemaDefinition[]>(
+    () => getPropertySchemaForClassSync(instanceClass),
   );
+
+  useEffect(() => {
+    let cancelled = false;
+    getPropertySchemaForClass(instanceClass).then((resolved) => {
+      if (!cancelled) {
+        setSchema(resolved);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [instanceClass]);
 
   const [formData, setFormData] = useState<Record<string, unknown>>(() => ({
     ...frontmatter,

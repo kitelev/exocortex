@@ -1,13 +1,90 @@
 import {
-  PROPERTY_SCHEMAS,
   EFFORT_STATUS_VALUES,
   TASK_SIZE_VALUES,
   getPropertySchemaForClass,
+  getPropertySchemaForClassSync,
   getEditableProperties,
   getPropertyByName,
   getStatusLabel,
+  initPropertySchemaService,
   type PropertySchemaDefinition,
 } from "../../../src/domain/property-editor/PropertySchemas";
+import { PropertySchemaService } from "../../../src/domain/property-editor/PropertySchemaService";
+import type { PropertySchemaResolver, PropertySchema } from "exocortex";
+
+function createMockResolver(
+  schemas: Map<string, PropertySchema>,
+): PropertySchemaResolver {
+  return {
+    getSchema: jest.fn(async (iri: string) => schemas.get(iri) ?? null),
+    getAllSchemas: jest.fn(async () => new Map(schemas)),
+    invalidateCache: jest.fn(),
+  } as unknown as PropertySchemaResolver;
+}
+
+function buildTestSchemas(): Map<string, PropertySchema> {
+  const schemas = new Map<string, PropertySchema>();
+
+  schemas.set("exo__Asset_label", {
+    type: "text" as any,
+    label: "Label",
+    validation: { required: true },
+  });
+  schemas.set("exo__Asset_uid", {
+    type: "text" as any,
+    label: "UID",
+    validation: { required: true },
+  });
+  schemas.set("exo__Asset_createdAt", {
+    type: "timestamp" as any,
+    label: "Created at",
+    validation: { required: true },
+  });
+  schemas.set("exo__Asset_isArchived", {
+    type: "boolean" as any,
+    label: "Archived",
+  });
+  schemas.set("ems__Effort_status", {
+    type: "status-select" as any,
+    label: "Status",
+    validation: { required: true },
+  });
+  schemas.set("ems__Effort_area", {
+    type: "wikilink" as any,
+    label: "Area",
+  });
+  schemas.set("ems__Effort_parent", {
+    type: "wikilink" as any,
+    label: "Parent",
+  });
+  schemas.set("ems__Effort_votes", {
+    type: "number" as any,
+    label: "Votes",
+    validation: { minValue: 0 },
+  });
+  schemas.set("ems__Effort_day", {
+    type: "wikilink" as any,
+    label: "Planned day",
+  });
+  schemas.set("ems__Effort_startTimestamp", {
+    type: "timestamp" as any,
+    label: "Started at",
+  });
+  schemas.set("ems__Effort_endTimestamp", {
+    type: "timestamp" as any,
+    label: "Ended at",
+  });
+  schemas.set("ems__Task_size", {
+    type: "size-select" as any,
+    label: "Size",
+  });
+  schemas.set("ems__Area_parent", {
+    type: "wikilink" as any,
+    label: "Parent area",
+  });
+
+  return schemas;
+}
 
 describe("PropertySchemas", () => {
   describe("EFFORT_STATUS_VALUES", () => {
@@ -50,55 +127,54 @@ describe("PropertySchemas", () => {
     });
   });
 
-  describe("PROPERTY_SCHEMAS", () => {
-    it("should have schemas for all expected asset classes", () => {
-      const expectedClasses = [
-        "ems__Task",
-        "ems__Meeting",
-        "ems__Project",
-        "ems__Initiative",
-        "ems__Area",
-        "ims__Concept",
-      ];
-
-      for (const className of expectedClasses) {
-        expect(PROPERTY_SCHEMAS[className]).toBeDefined();
-        expect(PROPERTY_SCHEMAS[className].length).toBeGreaterThan(0);
-      }
+  describe("getPropertySchemaForClass (async with resolver)", () => {
+    beforeEach(() => {
+      const schemas = buildTestSchemas();
+      const resolver = createMockResolver(schemas);
+      initPropertySchemaService(resolver);
     });
 
-    it("should have common properties in all schemas", () => {
-      const commonProperties = [
-        "exo__Asset_label",
-        "exo__Asset_uid",
-        "exo__Asset_createdAt",
-        "exo__Asset_isArchived",
-      ];
-
-      for (const [, schema] of Object.entries(PROPERTY_SCHEMAS)) {
-        for (const propName of commonProperties) {
-          const prop = schema.find((p) => p.name === propName);
-          expect(prop).toBeDefined();
-        }
-      }
+    it("should return schema for known class (ems__Task)", async () => {
+      const schema = await getPropertySchemaForClass("ems__Task");
+      expect(schema.length).toBeGreaterThan(0);
+      expect(schema.some((p) => p.name === "exo__Asset_label")).toBe(true);
+      expect(schema.some((p) => p.name === "ems__Effort_status")).toBe(true);
+      expect(schema.some((p) => p.name === "ems__Task_size")).toBe(true);
     });
 
-    it("should have effort properties in effort-based classes", () => {
-      const effortClasses = [
-        "ems__Task",
-        "ems__Meeting",
-        "ems__Project",
-        "ems__Initiative",
-      ];
-      const effortProperties = [
-        "ems__Effort_status",
-        "ems__Effort_area",
-        "ems__Effort_parent",
-        "ems__Effort_votes",
-      ];
+    it("should strip wikilink brackets from class name", async () => {
+      const schema = await getPropertySchemaForClass("[[ems__Task]]");
+      expect(schema.some((p) => p.name === "exo__Asset_label")).toBe(true);
+      expect(schema.some((p) => p.name === "ems__Task_size")).toBe(true);
+    });
+
+    it("should return fallback properties for unknown class when resolver has no matching properties", async () => {
+      const emptyResolver = createMockResolver(new Map());
+      initPropertySchemaService(emptyResolver);
+      const schema = await getPropertySchemaForClass("unknown__Class");
+      expect(schema.length).toBe(4);
+      expect(schema.some((p) => p.name === "exo__Asset_label")).toBe(true);
+      expect(schema.some((p) => p.name === "exo__Asset_uid")).toBe(true);
+    });
+
+    it("should return schema for Area class without Effort properties", async () => {
+      const schema = await getPropertySchemaForClass("ems__Area");
+      expect(schema.some((p) => p.name === "ems__Area_parent")).toBe(true);
+      expect(schema.some((p) => p.name === "ems__Effort_status")).toBe(false);
+    });
+
+    it("should return schema for Concept class with only Asset properties", async () => {
+      const schema = await getPropertySchemaForClass("ims__Concept");
+      expect(schema.some((p) => p.name === "exo__Asset_label")).toBe(true);
+      expect(schema.some((p) => p.name === "ems__Effort_status")).toBe(false);
+    });
+
+    it("should have effort properties in effort-based classes", async () => {
+      const effortClasses = ["ems__Task", "ems__Meeting", "ems__Project", "ems__Initiative"];
+      const effortProperties = ["ems__Effort_status", "ems__Effort_area", "ems__Effort_parent", "ems__Effort_votes"];
 
       for (const className of effortClasses) {
-        const schema = PROPERTY_SCHEMAS[className];
+        const schema = await getPropertySchemaForClass(className);
         for (const propName of effortProperties) {
           const prop = schema.find((p) => p.name === propName);
           expect(prop).toBeDefined();
@@ -106,132 +182,100 @@ describe("PropertySchemas", () => {
       }
     });
 
-    it("should have task-specific properties only for tasks and meetings", () => {
+    it("should have task-specific properties only for tasks and meetings", async () => {
       const taskClasses = ["ems__Task", "ems__Meeting"];
-      const nonTaskClasses = [
-        "ems__Project",
-        "ems__Initiative",
-        "ems__Area",
-        "ims__Concept",
-      ];
 
       for (const className of taskClasses) {
-        const prop = PROPERTY_SCHEMAS[className].find(
-          (p) => p.name === "ems__Task_size",
-        );
+        const schema = await getPropertySchemaForClass(className);
+        const prop = schema.find((p) => p.name === "ems__Task_size");
         expect(prop).toBeDefined();
       }
 
+      const nonTaskClasses = ["ems__Project", "ems__Initiative", "ems__Area", "ims__Concept"];
       for (const className of nonTaskClasses) {
-        const prop = PROPERTY_SCHEMAS[className].find(
-          (p) => p.name === "ems__Task_size",
-        );
-        expect(prop).toBeUndefined();
-      }
-    });
-
-    it("should have area-specific properties only for areas", () => {
-      const areaProp = PROPERTY_SCHEMAS["ems__Area"].find(
-        (p) => p.name === "ems__Area_parent",
-      );
-      expect(areaProp).toBeDefined();
-
-      const nonAreaClasses = [
-        "ems__Task",
-        "ems__Meeting",
-        "ems__Project",
-        "ims__Concept",
-      ];
-      for (const className of nonAreaClasses) {
-        const prop = PROPERTY_SCHEMAS[className].find(
-          (p) => p.name === "ems__Area_parent",
-        );
+        const schema = await getPropertySchemaForClass(className);
+        const prop = schema.find((p) => p.name === "ems__Task_size");
         expect(prop).toBeUndefined();
       }
     });
   });
 
-  describe("getPropertySchemaForClass", () => {
-    it("should return schema for known class", () => {
-      const schema = getPropertySchemaForClass("ems__Task");
-      expect(schema.length).toBeGreaterThan(0);
-      expect(schema.some((p) => p.name === "exo__Asset_label")).toBe(true);
-      expect(schema.some((p) => p.name === "ems__Effort_status")).toBe(true);
-      expect(schema.some((p) => p.name === "ems__Task_size")).toBe(true);
-    });
-
-    it("should strip wikilink brackets from class name", () => {
-      const schema = getPropertySchemaForClass("[[ems__Task]]");
-      expect(schema).toEqual(PROPERTY_SCHEMAS["ems__Task"]);
-    });
-
-    it("should return common properties for unknown class", () => {
-      const schema = getPropertySchemaForClass("unknown__Class");
+  describe("getPropertySchemaForClassSync", () => {
+    it("should return fallback properties", () => {
+      const schema = getPropertySchemaForClassSync("ems__Task");
       expect(schema.length).toBe(4);
       expect(schema.some((p) => p.name === "exo__Asset_label")).toBe(true);
-      expect(schema.some((p) => p.name === "exo__Asset_uid")).toBe(true);
-    });
-
-    it("should return schema for Area class", () => {
-      const schema = getPropertySchemaForClass("ems__Area");
-      expect(schema.some((p) => p.name === "ems__Area_parent")).toBe(true);
-      expect(schema.some((p) => p.name === "ems__Effort_status")).toBe(false);
-    });
-
-    it("should return schema for Concept class", () => {
-      const schema = getPropertySchemaForClass("ims__Concept");
-      expect(schema.some((p) => p.name === "exo__Asset_label")).toBe(true);
-      expect(schema.some((p) => p.name === "ems__Effort_status")).toBe(false);
     });
   });
 
   describe("getEditableProperties", () => {
-    it("should filter out read-only properties", () => {
-      const editable = getEditableProperties("ems__Task");
+    it("should filter out read-only properties", async () => {
+      const schemas = buildTestSchemas();
+      const resolver = createMockResolver(schemas);
+      initPropertySchemaService(resolver);
+
+      const schema = await getPropertySchemaForClass("ems__Task");
+      const editable = getEditableProperties(schema);
       const readOnlyProps = editable.filter((p) => p.readOnly === true);
       expect(readOnlyProps).toHaveLength(0);
     });
 
-    it("should not include uid property", () => {
-      const editable = getEditableProperties("ems__Task");
+    it("should not include uid property", async () => {
+      const schemas = buildTestSchemas();
+      const resolver = createMockResolver(schemas);
+      initPropertySchemaService(resolver);
+
+      const schema = await getPropertySchemaForClass("ems__Task");
+      const editable = getEditableProperties(schema);
       expect(editable.some((p) => p.name === "exo__Asset_uid")).toBe(false);
     });
 
-    it("should not include createdAt property", () => {
-      const editable = getEditableProperties("ems__Task");
-      expect(editable.some((p) => p.name === "exo__Asset_createdAt")).toBe(
-        false,
-      );
+    it("should not include createdAt property", async () => {
+      const schemas = buildTestSchemas();
+      const resolver = createMockResolver(schemas);
+      initPropertySchemaService(resolver);
+
+      const schema = await getPropertySchemaForClass("ems__Task");
+      const editable = getEditableProperties(schema);
+      expect(editable.some((p) => p.name === "exo__Asset_createdAt")).toBe(false);
     });
 
-    it("should not include timestamp properties", () => {
-      const editable = getEditableProperties("ems__Task");
-      expect(
-        editable.some((p) => p.name === "ems__Effort_startTimestamp"),
-      ).toBe(false);
-      expect(editable.some((p) => p.name === "ems__Effort_endTimestamp")).toBe(
-        false,
-      );
+    it("should not include timestamp properties", async () => {
+      const schemas = buildTestSchemas();
+      const resolver = createMockResolver(schemas);
+      initPropertySchemaService(resolver);
+
+      const schema = await getPropertySchemaForClass("ems__Task");
+      const editable = getEditableProperties(schema);
+      expect(editable.some((p) => p.name === "ems__Effort_startTimestamp")).toBe(false);
+      expect(editable.some((p) => p.name === "ems__Effort_endTimestamp")).toBe(false);
     });
 
-    it("should include editable properties", () => {
-      const editable = getEditableProperties("ems__Task");
+    it("should include editable properties", async () => {
+      const schemas = buildTestSchemas();
+      const resolver = createMockResolver(schemas);
+      initPropertySchemaService(resolver);
+
+      const schema = await getPropertySchemaForClass("ems__Task");
+      const editable = getEditableProperties(schema);
       expect(editable.some((p) => p.name === "exo__Asset_label")).toBe(true);
       expect(editable.some((p) => p.name === "ems__Effort_status")).toBe(true);
-      expect(editable.some((p) => p.name === "exo__Asset_isArchived")).toBe(
-        true,
-      );
-    });
-
-    it("should work with wikilink-formatted class names", () => {
-      const editable = getEditableProperties("[[ems__Task]]");
-      expect(editable.some((p) => p.name === "exo__Asset_label")).toBe(true);
+      expect(editable.some((p) => p.name === "exo__Asset_isArchived")).toBe(true);
     });
   });
 
   describe("getPropertyByName", () => {
+    let taskSchema: PropertySchemaDefinition[];
+
+    beforeEach(async () => {
+      const schemas = buildTestSchemas();
+      const resolver = createMockResolver(schemas);
+      initPropertySchemaService(resolver);
+      taskSchema = await getPropertySchemaForClass("ems__Task");
+    });
+
     it("should find property by name", () => {
-      const prop = getPropertyByName("ems__Task", "exo__Asset_label");
+      const prop = getPropertyByName(taskSchema, "exo__Asset_label");
       expect(prop).toBeDefined();
       expect(prop?.label).toBe("Label");
       expect(prop?.type).toBe("text");
@@ -239,75 +283,107 @@ describe("PropertySchemas", () => {
     });
 
     it("should return undefined for non-existent property", () => {
-      const prop = getPropertyByName("ems__Task", "non_existent_property");
+      const prop = getPropertyByName(taskSchema, "non_existent_property");
       expect(prop).toBeUndefined();
     });
 
     it("should find effort status property", () => {
-      const prop = getPropertyByName("ems__Task", "ems__Effort_status");
+      const prop = getPropertyByName(taskSchema, "ems__Effort_status");
       expect(prop).toBeDefined();
       expect(prop?.type).toBe("status-select");
     });
 
     it("should find task size property", () => {
-      const prop = getPropertyByName("ems__Task", "ems__Task_size");
+      const prop = getPropertyByName(taskSchema, "ems__Task_size");
       expect(prop).toBeDefined();
       expect(prop?.type).toBe("size-select");
     });
 
-    it("should not find task-specific property in area class", () => {
-      const prop = getPropertyByName("ems__Area", "ems__Task_size");
+    it("should not find task-specific property in area schema", async () => {
+      const areaSchema = await getPropertySchemaForClass("ems__Area");
+      const prop = getPropertyByName(areaSchema, "ems__Task_size");
       expect(prop).toBeUndefined();
-    });
-
-    it("should work with wikilink-formatted class names", () => {
-      const prop = getPropertyByName("[[ems__Task]]", "exo__Asset_label");
-      expect(prop).toBeDefined();
     });
   });
 
   describe("property schema structure", () => {
-    it("should have valid field types", () => {
-      const validTypes = [
-        "text",
-        "status-select",
-        "size-select",
-        "wikilink",
-        "number",
-        "boolean",
-        "timestamp",
-      ];
+    it("should have valid field types from resolver", async () => {
+      const schemas = buildTestSchemas();
+      const resolver = createMockResolver(schemas);
+      initPropertySchemaService(resolver);
 
-      for (const [, schema] of Object.entries(PROPERTY_SCHEMAS)) {
-        for (const prop of schema) {
-          expect(validTypes).toContain(prop.type);
-        }
+      const validTypes = ["text", "status-select", "size-select", "wikilink", "number", "boolean", "timestamp"];
+      const schema = await getPropertySchemaForClass("ems__Task");
+      for (const prop of schema) {
+        expect(validTypes).toContain(prop.type);
       }
     });
 
-    it("should have labels for all properties", () => {
-      for (const [, schema] of Object.entries(PROPERTY_SCHEMAS)) {
-        for (const prop of schema) {
-          expect(prop.label).toBeDefined();
-          expect(prop.label.length).toBeGreaterThan(0);
-        }
+    it("should have labels for all properties", async () => {
+      const schemas = buildTestSchemas();
+      const resolver = createMockResolver(schemas);
+      initPropertySchemaService(resolver);
+
+      const schema = await getPropertySchemaForClass("ems__Task");
+      for (const prop of schema) {
+        expect(prop.label).toBeDefined();
+        expect(prop.label.length).toBeGreaterThan(0);
       }
     });
 
-    it("should have filters for wikilink properties", () => {
-      for (const [, schema] of Object.entries(PROPERTY_SCHEMAS)) {
-        const wikilinks = schema.filter((p) => p.type === "wikilink");
-        for (const prop of wikilinks) {
-          expect(prop.filter).toBeDefined();
-          expect(prop.filter?.length).toBeGreaterThan(0);
-        }
-      }
-    });
+    it("should have min value for votes property", async () => {
+      const schemas = buildTestSchemas();
+      const resolver = createMockResolver(schemas);
+      initPropertySchemaService(resolver);
 
-    it("should have min value for number properties where appropriate", () => {
-      const votesProperty = getPropertyByName("ems__Task", "ems__Effort_votes");
+      const schema = await getPropertySchemaForClass("ems__Task");
+      const votesProperty = getPropertyByName(schema, "ems__Effort_votes");
       expect(votesProperty?.type).toBe("number");
       expect(votesProperty?.min).toBe(0);
+    });
+  });
+
+  describe("PropertySchemaService", () => {
+    it("should convert core PropertySchema to PropertySchemaDefinition", async () => {
+      const schemas = buildTestSchemas();
+      const resolver = createMockResolver(schemas);
+      const service = new PropertySchemaService(resolver);
+
+      const result = await service.getSchema("exo__Asset_label");
+      expect(result).toBeDefined();
+      expect(result?.name).toBe("exo__Asset_label");
+      expect(result?.type).toBe("text");
+      expect(result?.label).toBe("Label");
+      expect(result?.required).toBe(true);
+    });
+
+    it("should return null for unknown property", async () => {
+      const resolver = createMockResolver(new Map());
+      const service = new PropertySchemaService(resolver);
+
+      const result = await service.getSchema("unknown__Property");
+      expect(result).toBeNull();
+    });
+
+    it("should mark read-only properties correctly", async () => {
+      const schemas = buildTestSchemas();
+      const resolver = createMockResolver(schemas);
+      const service = new PropertySchemaService(resolver);
+
+      const taskSchema = await service.getPropertySchemaForClass("ems__Task");
+      const uid = taskSchema.find((p) => p.name === "exo__Asset_uid");
+      expect(uid?.readOnly).toBe(true);
+
+      const startTs = taskSchema.find((p) => p.name === "ems__Effort_startTimestamp");
+      expect(startTs?.readOnly).toBe(true);
+    });
+
+    it("should return empty array when resolver returns no schemas", async () => {
+      const resolver = createMockResolver(new Map());
+      const service = new PropertySchemaService(resolver);
+
+      const result = await service.getPropertySchemaForClass("ems__Task");
+      expect(result).toEqual([]);
     });
   });
 
