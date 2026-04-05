@@ -5,20 +5,8 @@ import {
 import { TFile } from "obsidian";
 import { ExocortexSettings } from "../../../../src/domain/settings/ExocortexSettings";
 import {
-  TaskCreationService,
-  ProjectCreationService,
-  AreaCreationService,
-  ClassCreationService,
-  ConceptCreationService,
-  TaskStatusService,
-  PropertyCleanupService,
   FolderRepairService,
-  RenameToUidService,
-  EffortVotingService,
-  LabelToAliasService,
-  AssetConversionService,
   MetadataExtractor,
-  CriticalityZoneService,
   CommandResolver,
   PreconditionEvaluator,
   GroundingExecutor,
@@ -37,19 +25,7 @@ function createMinimalConfig(
     app: mockApp,
     settings: {} as ExocortexSettings,
     plugin: { saveSettings: jest.fn() } as any,
-    taskCreationService: { createTask: jest.fn() } as any,
-    projectCreationService: { createProject: jest.fn() } as any,
-    areaCreationService: { createChildArea: jest.fn() } as any,
-    classCreationService: { createSubclass: jest.fn() } as any,
-    conceptCreationService: { createNarrowerConcept: jest.fn() } as any,
-    taskStatusService: {} as any,
-    propertyCleanupService: { cleanEmptyProperties: jest.fn() } as any,
     folderRepairService: { getExpectedFolder: jest.fn(), repairFolder: jest.fn() } as any,
-    renameToUidService: { renameToUid: jest.fn() } as any,
-    effortVotingService: { incrementEffortVotes: jest.fn() } as any,
-    labelToAliasService: { copyLabelToAliases: jest.fn() } as any,
-    assetConversionService: { convertTaskToProject: jest.fn() } as any,
-    criticalityZoneService: { setZoneToday: jest.fn() } as any,
     metadataExtractor: {
       extractMetadata: jest.fn(),
       extractInstanceClass: jest.fn(),
@@ -86,8 +62,8 @@ describe("ButtonGroupsBuilder - dynamic commands (RFC-009)", () => {
       resolveForAsset: jest.fn().mockResolvedValue([
         {
           command: {
-            commandIRI: "urn:cmd:test",
-            label: "Test Command",
+            id: "test-cmd",
+            name: "Test Command",
             precondition: { type: "always_true" },
             grounding: { type: "set_frontmatter_value", property: "status", value: "done" },
           },

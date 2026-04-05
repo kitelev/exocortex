@@ -6,11 +6,8 @@ import React from "react";
 import { ReactRenderer } from '@plugin/presentation/utils/ReactRenderer';
 import { ExocortexSettings } from '@plugin/domain/settings/ExocortexSettings';
 import { ActionButtonsGroup } from '@plugin/presentation/components/ActionButtonsGroup';
-import { TaskCreationService, IVaultAdapter, MetadataExtractor } from "exocortex";
-import { ProjectCreationService, AreaCreationService, ClassCreationService } from "exocortex";
-import { ConceptCreationService, TaskStatusService, PropertyCleanupService } from "exocortex";
-import { FolderRepairService, RenameToUidService, EffortVotingService } from "exocortex";
-import { LabelToAliasService, AssetConversionService, CriticalityZoneService } from "exocortex";
+import { IVaultAdapter, MetadataExtractor } from "exocortex";
+import { FolderRepairService } from "exocortex";
 import { CommandResolver, PreconditionEvaluator, GroundingExecutor } from "exocortex";
 import { BacklinksCacheManager } from '@plugin/adapters/caching/BacklinksCacheManager';
 import { EventListenerManager } from '@plugin/adapters/events/EventListenerManager';
@@ -134,29 +131,14 @@ export class UniversalLayoutRenderer {
       this.app, this.settings, this.reactRenderer, this.backlinksCacheManager,
       this.metadataService, this.plugin, () => this.refresh(), this.vaultAdapter);
 
-    const tripleStore = this.resolveTripleStore();
-
     this.buttonGroupsBuilder = new ButtonGroupsBuilder({
       app: this.app,
       settings: this.settings,
       plugin: this.plugin,
-      taskCreationService: services.taskCreation,
-      projectCreationService: services.projectCreation,
-      areaCreationService: services.areaCreation,
-      classCreationService: services.classCreation,
-      conceptCreationService: services.conceptCreation,
-      taskStatusService: services.taskStatus,
-      propertyCleanupService: services.propertyCleanup,
-      folderRepairService: services.folderRepair,
-      renameToUidService: services.renameToUid,
-      effortVotingService: services.effortVoting,
-      labelToAliasService: services.labelToAlias,
-      assetConversionService: services.assetConversion,
-      criticalityZoneService: services.criticalityZone,
       commandResolver: this.commandResolver,
       preconditionEvaluator: this.preconditionEvaluator,
       groundingExecutor: this.groundingExecutor,
-      tripleStore,
+      folderRepairService: services.folderRepair,
       metadataExtractor: this.metadataExtractor,
       logger: this.logger,
       refresh: () => this.refresh(),
@@ -179,32 +161,9 @@ export class UniversalLayoutRenderer {
     });
   }
 
-  private resolveTripleStore() {
-    const pluginAny = this.plugin as unknown as Record<string, unknown>;
-    if (
-      pluginAny.sparql &&
-      typeof (pluginAny.sparql as Record<string, unknown>).getTripleStore === "function"
-    ) {
-      return (pluginAny.sparql as { getTripleStore(): import("exocortex").ITripleStore }).getTripleStore();
-    }
-    return undefined;
-  }
-
   private resolveServices() {
     return {
-      taskCreation: container.resolve(TaskCreationService),
-      projectCreation: container.resolve(ProjectCreationService),
-      areaCreation: container.resolve(AreaCreationService),
-      classCreation: container.resolve(ClassCreationService),
-      conceptCreation: container.resolve(ConceptCreationService),
-      taskStatus: container.resolve(TaskStatusService),
-      propertyCleanup: container.resolve(PropertyCleanupService),
       folderRepair: container.resolve(FolderRepairService),
-      renameToUid: container.resolve(RenameToUidService),
-      effortVoting: container.resolve(EffortVotingService),
-      labelToAlias: container.resolve(LabelToAliasService),
-      assetConversion: container.resolve(AssetConversionService),
-      criticalityZone: container.resolve(CriticalityZoneService),
     };
   }
 

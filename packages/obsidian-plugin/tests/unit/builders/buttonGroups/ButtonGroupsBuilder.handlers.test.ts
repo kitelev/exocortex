@@ -4,14 +4,14 @@ import {
   TFile,
 } from "./ButtonGroupsBuilder.fixtures";
 
-describe("ButtonGroupsBuilder - onClick handlers", () => {
+describe("ButtonGroupsBuilder - onClick handlers (dynamic commands)", () => {
   let ctx: ButtonGroupsBuilderTestContext;
 
   beforeEach(() => {
     ctx = setupButtonGroupsBuilderTest();
   });
 
-  it("should call taskStatusService.setDraftStatus when Set Draft Status button clicked", async () => {
+  it("should execute grounding when dynamic command button clicked", async () => {
     const mockFile = {
       path: "test.md",
       parent: { path: "Tasks" },
@@ -19,35 +19,47 @@ describe("ButtonGroupsBuilder - onClick handlers", () => {
     } as TFile;
     const metadata = {
       exo__Instance_class: "[[ems__Task]]",
-      ems__Effort_status: null,
+      exo__Asset_uid: "urn:uuid:12345",
     };
 
     ctx.mockMetadataExtractor.extractMetadata.mockReturnValue(metadata);
-    ctx.mockMetadataExtractor.extractInstanceClass.mockReturnValue(
-      "[[ems__Task]]",
-    );
+    ctx.mockMetadataExtractor.extractInstanceClass.mockReturnValue("[[ems__Task]]");
     ctx.mockMetadataExtractor.extractStatus.mockReturnValue(null);
     ctx.mockMetadataExtractor.extractIsArchived.mockReturnValue(false);
     ctx.mockFolderRepairService.getExpectedFolder.mockResolvedValue("Tasks");
+    ctx.mockCommandResolver.resolveForAsset.mockResolvedValue([
+      {
+        command: {
+          id: "cmd-1",
+          name: "Start Effort",
+          precondition: { type: "always_true" },
+          grounding: { type: "set_frontmatter_value", property: "status", value: "doing" },
+        },
+        binding: { order: 0, group: "primary" },
+      },
+    ]);
+    ctx.mockPreconditionEvaluator.evaluate.mockResolvedValue(true);
+    ctx.mockGroundingExecutor.execute.mockResolvedValue({ success: true });
 
     const groups = await ctx.builder.build(mockFile);
-    const statusGroup = groups.find((g) => g.id === "status");
-    const draftButton = statusGroup?.buttons.find(
-      (b) => b.id === "set-draft-status",
-    );
+    const dynamicGroup = groups.find((g) => g.id === "dynamic-commands");
+    const button = dynamicGroup?.buttons[0];
 
-    expect(draftButton).toBeDefined();
-    if (draftButton?.onClick) {
-      await draftButton.onClick();
+    expect(button).toBeDefined();
+    if (button?.onClick) {
+      await button.onClick();
     }
 
-    expect(ctx.mockTaskStatusService.setDraftStatus).toHaveBeenCalledWith(
-      mockFile,
+    expect(ctx.mockGroundingExecutor.execute).toHaveBeenCalledWith(
+      { type: "set_frontmatter_value", property: "status", value: "doing" },
+      "urn:uuid:12345",
+      "test.md",
+      undefined,
     );
     expect(ctx.mockRefresh).toHaveBeenCalled();
   });
 
-  it("should call taskStatusService.moveToBacklog when Move to Backlog button clicked", async () => {
+  it("should call refresh after successful command execution", async () => {
     const mockFile = {
       path: "test.md",
       parent: { path: "Tasks" },
@@ -55,327 +67,85 @@ describe("ButtonGroupsBuilder - onClick handlers", () => {
     } as TFile;
     const metadata = {
       exo__Instance_class: "[[ems__Task]]",
-      ems__Effort_status: "[[ems__EffortStatusDraft]]",
+      exo__Asset_uid: "urn:uuid:12345",
     };
 
     ctx.mockMetadataExtractor.extractMetadata.mockReturnValue(metadata);
-    ctx.mockMetadataExtractor.extractInstanceClass.mockReturnValue(
-      "[[ems__Task]]",
-    );
-    ctx.mockMetadataExtractor.extractStatus.mockReturnValue(
-      "[[ems__EffortStatusDraft]]",
-    );
-    ctx.mockMetadataExtractor.extractIsArchived.mockReturnValue(false);
-    ctx.mockFolderRepairService.getExpectedFolder.mockResolvedValue("Tasks");
-
-    const groups = await ctx.builder.build(mockFile);
-    const statusGroup = groups.find((g) => g.id === "status");
-    const backlogButton = statusGroup?.buttons.find(
-      (b) => b.id === "move-to-backlog",
-    );
-
-    expect(backlogButton).toBeDefined();
-    if (backlogButton?.onClick) {
-      await backlogButton.onClick();
-    }
-
-    expect(ctx.mockTaskStatusService.moveToBacklog).toHaveBeenCalledWith(
-      mockFile,
-    );
-    expect(ctx.mockRefresh).toHaveBeenCalled();
-  });
-
-  it("should call taskStatusService.moveToAnalysis when Move to Analysis button clicked", async () => {
-    const mockFile = {
-      path: "test.md",
-      parent: { path: "Tasks" },
-      basename: "TestTask",
-    } as TFile;
-    const metadata = {
-      exo__Instance_class: "[[ems__Task]]",
-      ems__Effort_status: "[[ems__EffortStatusBacklog]]",
-    };
-
-    ctx.mockMetadataExtractor.extractMetadata.mockReturnValue(metadata);
-    ctx.mockMetadataExtractor.extractInstanceClass.mockReturnValue(
-      "[[ems__Task]]",
-    );
-    ctx.mockMetadataExtractor.extractStatus.mockReturnValue(
-      "[[ems__EffortStatusBacklog]]",
-    );
-    ctx.mockMetadataExtractor.extractIsArchived.mockReturnValue(false);
-    ctx.mockFolderRepairService.getExpectedFolder.mockResolvedValue("Tasks");
-
-    const groups = await ctx.builder.build(mockFile);
-    const statusGroup = groups.find((g) => g.id === "status");
-    const analysisButton = statusGroup?.buttons.find(
-      (b) => b.id === "move-to-analysis",
-    );
-
-    expect(analysisButton).toBeDefined();
-    if (analysisButton?.onClick) {
-      await analysisButton.onClick();
-    }
-
-    expect(ctx.mockTaskStatusService.moveToAnalysis).toHaveBeenCalledWith(
-      mockFile,
-    );
-    expect(ctx.mockRefresh).toHaveBeenCalled();
-  });
-
-  it("should call taskStatusService.moveToToDo when Move to ToDo button clicked", async () => {
-    const mockFile = {
-      path: "test.md",
-      parent: { path: "Tasks" },
-      basename: "TestTask",
-    } as TFile;
-    const metadata = {
-      exo__Instance_class: "[[ems__Task]]",
-      ems__Effort_status: "[[ems__EffortStatusAnalysis]]",
-    };
-
-    ctx.mockMetadataExtractor.extractMetadata.mockReturnValue(metadata);
-    ctx.mockMetadataExtractor.extractInstanceClass.mockReturnValue(
-      "[[ems__Task]]",
-    );
-    ctx.mockMetadataExtractor.extractStatus.mockReturnValue(
-      "[[ems__EffortStatusAnalysis]]",
-    );
-    ctx.mockMetadataExtractor.extractIsArchived.mockReturnValue(false);
-    ctx.mockFolderRepairService.getExpectedFolder.mockResolvedValue("Tasks");
-
-    const groups = await ctx.builder.build(mockFile);
-    const statusGroup = groups.find((g) => g.id === "status");
-    const todoButton = statusGroup?.buttons.find(
-      (b) => b.id === "move-to-todo",
-    );
-
-    expect(todoButton).toBeDefined();
-    if (todoButton?.onClick) {
-      await todoButton.onClick();
-    }
-
-    expect(ctx.mockTaskStatusService.moveToToDo).toHaveBeenCalledWith(mockFile);
-    expect(ctx.mockRefresh).toHaveBeenCalled();
-  });
-
-  it("should call taskStatusService.startEffort when Start Effort button clicked", async () => {
-    const mockFile = {
-      path: "test.md",
-      parent: { path: "Tasks" },
-      basename: "TestTask",
-    } as TFile;
-    const metadata = {
-      exo__Instance_class: "[[ems__Task]]",
-      ems__Effort_status: "[[ems__EffortStatusToDo]]",
-    };
-
-    ctx.mockMetadataExtractor.extractMetadata.mockReturnValue(metadata);
-    ctx.mockMetadataExtractor.extractInstanceClass.mockReturnValue(
-      "[[ems__Task]]",
-    );
-    ctx.mockMetadataExtractor.extractStatus.mockReturnValue(
-      "[[ems__EffortStatusToDo]]",
-    );
-    ctx.mockMetadataExtractor.extractIsArchived.mockReturnValue(false);
-    ctx.mockFolderRepairService.getExpectedFolder.mockResolvedValue("Tasks");
-
-    const groups = await ctx.builder.build(mockFile);
-    const statusGroup = groups.find((g) => g.id === "status");
-    const startButton = statusGroup?.buttons.find(
-      (b) => b.id === "start-effort",
-    );
-
-    expect(startButton).toBeDefined();
-    if (startButton?.onClick) {
-      await startButton.onClick();
-    }
-
-    expect(ctx.mockTaskStatusService.startEffort).toHaveBeenCalledWith(mockFile);
-    expect(ctx.mockRefresh).toHaveBeenCalled();
-  });
-
-  it("should call taskStatusService.markTaskAsDone when Mark Done button clicked", async () => {
-    const mockFile = {
-      path: "test.md",
-      parent: { path: "Tasks" },
-      basename: "TestTask",
-    } as TFile;
-    const metadata = {
-      exo__Instance_class: "[[ems__Task]]",
-      ems__Effort_status: "[[ems__EffortStatusInProgress]]",
-    };
-
-    ctx.mockMetadataExtractor.extractMetadata.mockReturnValue(metadata);
-    ctx.mockMetadataExtractor.extractInstanceClass.mockReturnValue(
-      "[[ems__Task]]",
-    );
-    ctx.mockMetadataExtractor.extractStatus.mockReturnValue(
-      "[[ems__EffortStatusInProgress]]",
-    );
-    ctx.mockMetadataExtractor.extractIsArchived.mockReturnValue(false);
-    ctx.mockFolderRepairService.getExpectedFolder.mockResolvedValue("Tasks");
-
-    const groups = await ctx.builder.build(mockFile);
-    const statusGroup = groups.find((g) => g.id === "status");
-    const doneButton = statusGroup?.buttons.find((b) => b.id === "mark-done");
-
-    expect(doneButton).toBeDefined();
-    if (doneButton?.onClick) {
-      await doneButton.onClick();
-    }
-
-    expect(ctx.mockTaskStatusService.markTaskAsDone).toHaveBeenCalledWith(
-      mockFile,
-    );
-    expect(ctx.mockRefresh).toHaveBeenCalled();
-  });
-
-  it("should call taskStatusService.rollbackStatus when Rollback Status button clicked", async () => {
-    const mockFile = {
-      path: "test.md",
-      parent: { path: "Tasks" },
-      basename: "TestTask",
-    } as TFile;
-    const metadata = {
-      exo__Instance_class: "[[ems__Task]]",
-      ems__Effort_status: "[[ems__EffortStatusBacklog]]",
-      ems__Effort_statusHistory: [
-        "2024-01-01T00:00:00 → [[ems__EffortStatusBacklog]]",
-      ],
-    };
-
-    ctx.mockMetadataExtractor.extractMetadata.mockReturnValue(metadata);
-    ctx.mockMetadataExtractor.extractInstanceClass.mockReturnValue(
-      "[[ems__Task]]",
-    );
-    ctx.mockMetadataExtractor.extractStatus.mockReturnValue(
-      "[[ems__EffortStatusBacklog]]",
-    );
-    ctx.mockMetadataExtractor.extractIsArchived.mockReturnValue(false);
-    ctx.mockFolderRepairService.getExpectedFolder.mockResolvedValue("Tasks");
-
-    const groups = await ctx.builder.build(mockFile);
-    const statusGroup = groups.find((g) => g.id === "status");
-    const rollbackButton = statusGroup?.buttons.find(
-      (b) => b.id === "rollback-status",
-    );
-
-    expect(rollbackButton).toBeDefined();
-    if (rollbackButton?.onClick) {
-      await rollbackButton.onClick();
-    }
-
-    expect(ctx.mockTaskStatusService.rollbackStatus).toHaveBeenCalledWith(
-      mockFile,
-    );
-    expect(ctx.mockRefresh).toHaveBeenCalled();
-  });
-
-  it("should call taskStatusService.trashEffort when Trash button clicked", async () => {
-    const mockFile = {
-      path: "test.md",
-      parent: { path: "Tasks" },
-      basename: "TestTask",
-    } as TFile;
-    const metadata = {
-      exo__Instance_class: "[[ems__Task]]",
-      ems__Effort_status: "[[ems__EffortStatusBacklog]]",
-    };
-
-    ctx.mockMetadataExtractor.extractMetadata.mockReturnValue(metadata);
-    ctx.mockMetadataExtractor.extractInstanceClass.mockReturnValue(
-      "[[ems__Task]]",
-    );
-    ctx.mockMetadataExtractor.extractStatus.mockReturnValue(
-      "[[ems__EffortStatusBacklog]]",
-    );
-    ctx.mockMetadataExtractor.extractIsArchived.mockReturnValue(false);
-    ctx.mockFolderRepairService.getExpectedFolder.mockResolvedValue("Tasks");
-
-    const groups = await ctx.builder.build(mockFile);
-    const maintenanceGroup = groups.find((g) => g.id === "maintenance");
-    const trashButton = maintenanceGroup?.buttons.find(
-      (b) => b.id === "trash",
-    );
-
-    expect(trashButton).toBeDefined();
-    if (trashButton?.onClick) {
-      await trashButton.onClick();
-    }
-
-    expect(ctx.mockTaskStatusService.trashEffort).toHaveBeenCalledWith(mockFile);
-    expect(ctx.mockRefresh).toHaveBeenCalled();
-  });
-
-  it("should call taskStatusService.archiveTask when Archive button clicked", async () => {
-    const mockFile = {
-      path: "test.md",
-      parent: { path: "Tasks" },
-      basename: "TestTask",
-    } as TFile;
-    const metadata = {
-      exo__Instance_class: "[[ems__Task]]",
-      ems__Effort_status: "[[ems__EffortStatusDone]]",
-    };
-
-    ctx.mockMetadataExtractor.extractMetadata.mockReturnValue(metadata);
-    ctx.mockMetadataExtractor.extractInstanceClass.mockReturnValue(
-      "[[ems__Task]]",
-    );
-    ctx.mockMetadataExtractor.extractStatus.mockReturnValue(
-      "[[ems__EffortStatusDone]]",
-    );
-    ctx.mockMetadataExtractor.extractIsArchived.mockReturnValue(false);
-    ctx.mockFolderRepairService.getExpectedFolder.mockResolvedValue("Tasks");
-
-    const groups = await ctx.builder.build(mockFile);
-    const maintenanceGroup = groups.find((g) => g.id === "maintenance");
-    const archiveButton = maintenanceGroup?.buttons.find(
-      (b) => b.id === "archive",
-    );
-
-    expect(archiveButton).toBeDefined();
-    if (archiveButton?.onClick) {
-      await archiveButton.onClick();
-    }
-
-    expect(ctx.mockTaskStatusService.archiveTask).toHaveBeenCalledWith(mockFile);
-    expect(ctx.mockRefresh).toHaveBeenCalled();
-  });
-
-  it("should call propertyCleanupService.cleanEmptyProperties when Clean Properties button clicked", async () => {
-    const mockFile = {
-      path: "test.md",
-      parent: { path: "Tasks" },
-      basename: "TestTask",
-    } as TFile;
-    const metadata = {
-      exo__Instance_class: "[[ems__Task]]",
-    };
-
-    ctx.mockMetadataExtractor.extractMetadata.mockReturnValue(metadata);
-    ctx.mockMetadataExtractor.extractInstanceClass.mockReturnValue(
-      "[[ems__Task]]",
-    );
+    ctx.mockMetadataExtractor.extractInstanceClass.mockReturnValue("[[ems__Task]]");
     ctx.mockMetadataExtractor.extractStatus.mockReturnValue(null);
     ctx.mockMetadataExtractor.extractIsArchived.mockReturnValue(false);
     ctx.mockFolderRepairService.getExpectedFolder.mockResolvedValue("Tasks");
+    ctx.mockCommandResolver.resolveForAsset.mockResolvedValue([
+      {
+        command: {
+          id: "cmd-1",
+          name: "Mark Done",
+          precondition: { type: "always_true" },
+          grounding: { type: "set_frontmatter_value", property: "status", value: "done" },
+        },
+        binding: { order: 0, group: "success" },
+      },
+    ]);
+    ctx.mockPreconditionEvaluator.evaluate.mockResolvedValue(true);
+    ctx.mockGroundingExecutor.execute.mockResolvedValue({ success: true });
 
     const groups = await ctx.builder.build(mockFile);
-    const maintenanceGroup = groups.find((g) => g.id === "maintenance");
-    const cleanButton = maintenanceGroup?.buttons.find(
-      (b) => b.id === "clean-properties",
-    );
+    const dynamicGroup = groups.find((g) => g.id === "dynamic-commands");
+    const button = dynamicGroup?.buttons[0];
 
-    expect(cleanButton).toBeDefined();
-    if (cleanButton?.onClick) {
-      await cleanButton.onClick();
+    expect(button).toBeDefined();
+    if (button?.onClick) {
+      await button.onClick();
     }
 
-    expect(
-      ctx.mockPropertyCleanupService.cleanEmptyProperties,
-    ).toHaveBeenCalledWith(mockFile);
     expect(ctx.mockRefresh).toHaveBeenCalled();
+    expect(ctx.mockLogger.info).toHaveBeenCalled();
+  });
+
+  it("should log info when command execution fails", async () => {
+    const mockFile = {
+      path: "test.md",
+      parent: { path: "Tasks" },
+      basename: "TestTask",
+    } as TFile;
+    const metadata = {
+      exo__Instance_class: "[[ems__Task]]",
+      exo__Asset_uid: "urn:uuid:12345",
+    };
+
+    ctx.mockMetadataExtractor.extractMetadata.mockReturnValue(metadata);
+    ctx.mockMetadataExtractor.extractInstanceClass.mockReturnValue("[[ems__Task]]");
+    ctx.mockMetadataExtractor.extractStatus.mockReturnValue(null);
+    ctx.mockMetadataExtractor.extractIsArchived.mockReturnValue(false);
+    ctx.mockFolderRepairService.getExpectedFolder.mockResolvedValue("Tasks");
+    ctx.mockCommandResolver.resolveForAsset.mockResolvedValue([
+      {
+        command: {
+          id: "cmd-1",
+          name: "Failing Command",
+          precondition: { type: "always_true" },
+          grounding: { type: "set_frontmatter_value" },
+        },
+        binding: { order: 0 },
+      },
+    ]);
+    ctx.mockPreconditionEvaluator.evaluate.mockResolvedValue(true);
+    ctx.mockGroundingExecutor.execute.mockResolvedValue({
+      success: false,
+      error: "Permission denied",
+    });
+
+    const groups = await ctx.builder.build(mockFile);
+    const dynamicGroup = groups.find((g) => g.id === "dynamic-commands");
+    const button = dynamicGroup?.buttons[0];
+
+    expect(button).toBeDefined();
+    if (button?.onClick) {
+      await button.onClick();
+    }
+
+    expect(ctx.mockLogger.info).toHaveBeenCalledWith(
+      expect.stringContaining("Failed"),
+    );
   });
 });
