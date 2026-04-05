@@ -25,15 +25,37 @@ export interface DynamicCommandBuilderConfig {
 }
 
 /**
- * Schema field definition for input modals.
+ * Option entry for enum fields — supports both simple strings and value/label pairs.
  */
-interface InputSchemaField {
+export interface EnumOption {
+  readonly value: string;
+  readonly label: string;
+}
+
+/**
+ * Schema field definition for input modals.
+ *
+ * Supported types:
+ * - `text`      — single-line text input (default)
+ * - `date`      — date picker (ISO 8601)
+ * - `enum`      — dropdown with static options or dynamic SPARQL-sourced options
+ * - `multiline` — multi-line textarea
+ * - `assetRef`  — asset reference picker with optional SPARQL filter
+ */
+export interface InputSchemaField {
   readonly name: string;
-  readonly type: "string" | "enum";
+  readonly type: "text" | "date" | "enum" | "multiline" | "assetRef";
   readonly label?: string;
   readonly required?: boolean;
-  readonly options?: string[];
   readonly defaultValue?: string;
+  /** Enum options — accepts both simple strings and {value, label} pairs. */
+  readonly options?: ReadonlyArray<string | EnumOption>;
+  /** SPARQL SELECT query returning dynamic enum options (columns: ?value, ?label). */
+  readonly sparqlQuery?: string;
+  /** Number of visible rows for multiline fields (default: 4). */
+  readonly rows?: number;
+  /** SPARQL SELECT query returning candidate asset IRIs for assetRef fields. */
+  readonly filterQuery?: string;
 }
 
 /**
@@ -233,7 +255,7 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
       title.textContent = "Input required";
       modal.appendChild(title);
 
-      const inputs: Map<string, HTMLInputElement | HTMLSelectElement> = new Map();
+      const inputs: Map<string, HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement> = new Map();
 
       for (const field of schema) {
         const label = document.createElement("label");
@@ -246,13 +268,40 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
           select.style.cssText = "width:100%;padding:4px;";
           for (const opt of field.options) {
             const option = document.createElement("option");
-            option.value = opt;
-            option.textContent = opt;
+            if (typeof opt === "string") {
+              option.value = opt;
+              option.textContent = opt;
+            } else {
+              option.value = opt.value;
+              option.textContent = opt.label;
+            }
             select.appendChild(option);
           }
           if (field.defaultValue) select.value = field.defaultValue;
           modal.appendChild(select);
           inputs.set(field.name, select);
+        } else if (field.type === "date") {
+          const input = document.createElement("input");
+          input.type = "date";
+          input.style.cssText = "width:100%;padding:4px;";
+          if (field.defaultValue) input.value = field.defaultValue;
+          modal.appendChild(input);
+          inputs.set(field.name, input);
+        } else if (field.type === "multiline") {
+          const textarea = document.createElement("textarea");
+          textarea.rows = field.rows ?? 4;
+          textarea.style.cssText = "width:100%;padding:4px;resize:vertical;";
+          if (field.defaultValue) textarea.value = field.defaultValue;
+          modal.appendChild(textarea);
+          inputs.set(field.name, textarea);
+        } else if (field.type === "assetRef") {
+          const input = document.createElement("input");
+          input.type = "text";
+          input.placeholder = "Asset reference...";
+          input.style.cssText = "width:100%;padding:4px;";
+          if (field.defaultValue) input.value = field.defaultValue;
+          modal.appendChild(input);
+          inputs.set(field.name, input);
         } else {
           const input = document.createElement("input");
           input.type = "text";
