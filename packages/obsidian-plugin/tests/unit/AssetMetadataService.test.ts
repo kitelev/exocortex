@@ -102,7 +102,18 @@ describe("AssetMetadataService", () => {
       expect(result).toBeNull();
     });
 
-    it("should resolve area from prototype", () => {
+    it("should return materialized area from prototype via triple store", () => {
+      const metadata = {
+        exo__Asset_prototype: "[[prototype-path]]",
+        ems__Effort_area: "materialized-prototype-area",
+      };
+
+      const result = service.getEffortArea(metadata);
+
+      expect(result).toBe("materialized-prototype-area");
+    });
+
+    it("should not traverse prototype for area (materializer handles inheritance)", () => {
       const mockPrototypeFile = new TFile();
       mockApp.metadataCache.getFirstLinkpathDest.mockReturnValue(
         mockPrototypeFile,
@@ -119,7 +130,18 @@ describe("AssetMetadataService", () => {
 
       const result = service.getEffortArea(metadata);
 
-      expect(result).toBe("prototype-area");
+      expect(result).toBeNull();
+      expect(mockApp.metadataCache.getFirstLinkpathDest).not.toHaveBeenCalled();
+    });
+
+    it("should return null when neither instance nor prototype has area", () => {
+      const metadata = {
+        exo__Asset_prototype: "[[prototype-path]]",
+      };
+
+      const result = service.getEffortArea(metadata);
+
+      expect(result).toBeNull();
     });
 
     it("should resolve area from parent effort", () => {
@@ -142,17 +164,13 @@ describe("AssetMetadataService", () => {
       expect(result).toBe("parent-area");
     });
 
-    it("should inherit area from parent when prototype has no area", () => {
-      const mockPrototypeFile = new TFile();
+    it("should resolve area from parent when prototype present but no materialized area", () => {
       const mockParentFile = new TFile();
 
       mockApp.metadataCache.getFirstLinkpathDest.mockImplementation(
         (linkpath: string) => {
           if (linkpath === "parent-effort") {
             return mockParentFile;
-          }
-          if (linkpath === "prototype-path") {
-            return mockPrototypeFile;
           }
           return null;
         },
@@ -163,55 +181,6 @@ describe("AssetMetadataService", () => {
           return {
             frontmatter: {
               ems__Effort_area: "parent-area",
-            },
-          };
-        }
-        if (file === mockPrototypeFile) {
-          return {
-            frontmatter: {},
-          };
-        }
-        return null;
-      });
-
-      const metadata = {
-        exo__Asset_prototype: "[[prototype-path]]",
-        ems__Effort_parent: "[[parent-effort]]",
-      };
-
-      const result = service.getEffortArea(metadata);
-
-      expect(result).toBe("parent-area");
-    });
-
-    it("should prefer parent area over prototype area when both are present", () => {
-      const mockPrototypeFile = new TFile();
-      const mockParentFile = new TFile();
-
-      mockApp.metadataCache.getFirstLinkpathDest.mockImplementation(
-        (linkpath: string) => {
-          if (linkpath === "parent-effort") {
-            return mockParentFile;
-          }
-          if (linkpath === "prototype-path") {
-            return mockPrototypeFile;
-          }
-          return null;
-        },
-      );
-
-      mockApp.metadataCache.getFileCache.mockImplementation((file: TFile) => {
-        if (file === mockParentFile) {
-          return {
-            frontmatter: {
-              ems__Effort_area: "parent-area",
-            },
-          };
-        }
-        if (file === mockPrototypeFile) {
-          return {
-            frontmatter: {
-              ems__Effort_area: "prototype-area",
             },
           };
         }
@@ -256,36 +225,6 @@ describe("AssetMetadataService", () => {
       const result = service.getEffortArea(metadata);
 
       expect(result).toBe("parent-area");
-    });
-
-    it("should resolve prototype area with .md extension fallback", () => {
-      const mockPrototypeFile = new TFile();
-
-      mockApp.metadataCache.getFirstLinkpathDest.mockImplementation(
-        (linkpath: string) => {
-          if (linkpath === "prototype-effort") {
-            return null;
-          }
-          if (linkpath === "prototype-effort.md") {
-            return mockPrototypeFile;
-          }
-          return null;
-        },
-      );
-
-      mockApp.metadataCache.getFileCache.mockReturnValue({
-        frontmatter: {
-          ems__Effort_area: "prototype-area",
-        },
-      });
-
-      const metadata = {
-        exo__Asset_prototype: "[[prototype-effort]]",
-      };
-
-      const result = service.getEffortArea(metadata);
-
-      expect(result).toBe("prototype-area");
     });
 
     it("should not add .md extension if path already ends with .md", () => {
