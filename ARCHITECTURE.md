@@ -1,8 +1,8 @@
 # Exocortex Architecture
 
-**Version**: 15.43.3
-**Last Updated**: 2026-03-23
-**Status**: Monorepo v15.x (Clean Architecture)
+**Version**: 15.44.0
+**Last Updated**: 2026-04-05
+**Status**: Monorepo v15.x (Clean Architecture + Vault-Driven)
 
 ---
 
@@ -14,12 +14,13 @@
 4. [Dependency Injection](#dependency-injection)
 5. [Component Responsibilities](#component-responsibilities)
 6. [Data Flow](#data-flow)
-7. [Property Schema](#property-schema)
-8. [Design Patterns](#design-patterns)
-9. [Archgate — Executable ADR Governance](#archgate--executable-adr-governance)
-10. [Error Handling](#error-handling)
-11. [Current Limitations](#current-limitations)
-12. [Future Architecture](#future-architecture)
+7. [Vault-Driven Architecture (RFC-011 + RFC-012)](#vault-driven-architecture-rfc-011--rfc-012)
+8. [Property Schema](#property-schema)
+9. [Design Patterns](#design-patterns)
+10. [Archgate — Executable ADR Governance](#archgate--executable-adr-governance)
+11. [Error Handling](#error-handling)
+12. [Current Limitations](#current-limitations)
+13. [Current Architecture](#current-architecture)
 
 ---
 
@@ -139,7 +140,10 @@ Exocortex follows **Clean Architecture** principles with clear separation of con
 **Location**: `packages/exocortex/src/application/services/`
 
 **Components**:
-- `CommandManager` - Facade for all 34+ commands
+- `CommandManager` - Facade for commands (static registrations removed; commands now resolved dynamically via `CommandResolver`)
+- `CommandResolver` - Resolves commands from vault `exocmd/` assets with precondition evaluation
+- `GroundingExecutor` - Executes grounding actions from command definitions
+- `PreconditionEvaluator` - Evaluates SPARQL ASK preconditions for command visibility
 - 35+ specialized services (TaskCreation, ProjectCreation, NLToSPARQL, Analytics, TrendDetection, CriticalityZone, SessionEvent, etc.)
 
 **Dependencies**: Domain layer, IFileSystemAdapter interface
@@ -601,7 +605,9 @@ describe("PropertyCleanupService with DI", () => {
 
 | Builder | Purpose | LOC | Type |
 |---------|---------|-----|------|
-| **ButtonGroupsBuilder** | Build action button configurations | 533 | Complex |
+| **DynamicCommandButtonGroupBuilder** | Build action buttons from vault command definitions | ~200 | Vault-Driven |
+
+> **Note**: As of RFC-011/012, the 5 hardcoded `ButtonGroupBuilder` implementations were replaced by a single universal `DynamicCommandButtonGroupBuilder` that reads command definitions from vault `exocmd/` assets.
 
 ### Components (58 Total)
 
@@ -769,6 +775,77 @@ sequenceDiagram
 
 ---
 
+## 🏗️ Vault-Driven Architecture (RFC-011 + RFC-012)
+
+As of v15.44.0, Exocortex transitioned from a hardcoded architecture to a **vault-driven** model where commands, property schemas, prototype chains, and instantiation rules are all defined as vault assets rather than TypeScript code.
+
+### Dynamic Command System
+
+Commands live as vault assets in `exocmd/` with YAML frontmatter defining preconditions, input schemas, and grounding actions.
+
+**Key services:**
+
+| Service | Package | Purpose |
+|---------|---------|---------|
+| `CommandResolver` | exocortex | Resolves available commands from vault `exocmd/` assets; evaluates SPARQL ASK preconditions |
+| `PreconditionEvaluator` | exocortex | Compiled SPARQL ASK cache for fast command visibility checks (27 ASK queries < 50ms) |
+| `GroundingExecutor` | exocortex | Executes grounding actions (`create_instance`, `set_property`, `host_function`) |
+| `DynamicCommandButtonGroupBuilder` | obsidian-plugin | Single universal builder replacing 5 hardcoded ButtonGroupBuilders |
+
+**Flow**: Vault asset (exocmd/) -> CommandResolver -> PreconditionEvaluator -> GroundingExecutor
+
+### Prototype Chain Resolution
+
+Prototypes define default properties that are inherited by instances. The `PrototypeChainMaterializer` resolves full prototype chains and materializes inherited triples into the RDF store.
+
+**Key services:**
+
+| Service | Package | Purpose |
+|---------|---------|---------|
+| `PrototypeChainMaterializer` | exocortex | Walks `exo__Asset_prototype` chains, materializes inherited triples |
+| `NonInheritablePropertyRegistry` | exocortex | Registry of properties that must not be inherited (e.g., `exo__Asset_uid`) |
+
+**Own vs. inherited distinction**: Hybrid named graphs annotate each triple's source. The `OWN()` ExoQL function filters to only own (non-inherited) properties.
+
+### ExoQL (Query Language)
+
+ExoQL is the public API for querying the Exocortex knowledge graph. It wraps SPARQL with Exocortex-specific extensions.
+
+**Key components:**
+
+| Component | Package | Purpose |
+|-----------|---------|---------|
+| `ExoQLParser` | exocortex | Parses ExoQL queries (renamed from SPARQLParser) |
+| `OWN()` function | exocortex | Filter function that returns only own (non-inherited) properties |
+| Source annotation | exocortex | Every triple is annotated with its origin (own, inherited, inferred) |
+| ExoQL code block | obsidian-plugin | `exoql` code block processor alias for queries in vault notes |
+| `exoql` CLI alias | cli | CLI command alias with deprecation warning for old `sparql` command |
+
+**Specification**: See `docs/exoql-specification.md` for the full ExoQL language reference.
+
+### PropertySchemaResolver
+
+Property schemas are now resolved from the triple store at runtime instead of being hardcoded in `PROPERTY_SCHEMAS` maps.
+
+| Service | Package | Purpose |
+|---------|---------|---------|
+| `PropertySchemaResolver` | exocortex | Resolves property schemas (type, label, enum values) from RDF triples |
+| `InstantiationRuleResolver` | exocortex | Resolves instance creation rules (which class, which properties, default values) from vault |
+
+### What Was Removed
+
+| Removed | Replaced By |
+|---------|-------------|
+| 5 hardcoded `ButtonGroupBuilder` classes | 1 universal `DynamicCommandButtonGroupBuilder` |
+| Static command registrations in `CommandRegistry` | Dynamic resolution via `CommandResolver` |
+| Hardcoded `PROPERTY_SCHEMAS` map | `PropertySchemaResolver` (triple store) |
+| Hardcoded `EFFORT_PROPERTY_MAP` | `InstantiationRuleResolver` (vault) |
+| Hardcoded `INSTANCE_CLASS_MAP` | `InstantiationRuleResolver` (vault) |
+| 7 hardcoded label fallback implementations | SPARQL-based label template syntax |
+| 3-tier area fallback in `AssetMetadataService` | Prototype chain inheritance |
+
+---
+
 ## 📋 Property Schema
 
 ### Naming Convention
@@ -893,55 +970,56 @@ if (canCreateTask(context)) {
 
 ### 3. Facade Pattern
 
-**CommandManager is a facade** for all commands:
+**CommandManager is a facade** for command execution, now backed by `CommandResolver` for dynamic resolution:
 
 ```typescript
 export class CommandManager {
+  // Static registrations removed in RFC-011
+  // Commands are now resolved dynamically from vault exocmd/ assets
   registerAllCommands(plugin, reloadCallback) {
-    this.registerCreateTaskCommand(plugin);
-    this.registerVoteOnEffortCommand(plugin);
-    // ... 24 more commands
+    // CommandResolver discovers commands from vault
+    // PreconditionEvaluator checks SPARQL ASK visibility
+    // GroundingExecutor runs the command actions
   }
 }
 ```
 
 **Benefits**:
-- Single entry point for command registration
-- Hides complexity from ExocortexPlugin
+- Single entry point for command execution
+- Commands defined in vault, not code
+- Easy to add/modify commands without code changes
 - Easy to mock for testing
 
 ### 4. Builder Pattern
 
-**ButtonGroupsBuilder constructs UI configurations**:
+**DynamicCommandButtonGroupBuilder constructs UI configurations from vault commands**:
 
 ```typescript
-export class ButtonGroupsBuilder {
+export class DynamicCommandButtonGroupBuilder {
+  // Reads command definitions from vault exocmd/ assets
+  // Uses CommandResolver to get available commands for current context
+  // PreconditionEvaluator determines visibility via SPARQL ASK
   buildButtonGroups(
     file: TFile,
     context: CommandVisibilityContext,
     callbacks: ButtonCallbacks
   ): ButtonGroup[] {
-    const groups: ButtonGroup[] = [];
-
-    if (canCreateTask(context)) {
-      groups.push({
-        id: 'create-task',
-        label: 'Create Task',
-        onClick: callbacks.onCreateTask,
-      });
-    }
-
-    // ... build all buttons based on context
-
-    return groups;
+    // Commands resolved dynamically from vault, not hardcoded
+    const commands = this.commandResolver.resolve(context);
+    return commands.map(cmd => ({
+      id: cmd.id,
+      label: cmd.label,  // Supports SPARQL-based label templates
+      onClick: () => this.groundingExecutor.execute(cmd, context),
+    }));
   }
 }
 ```
 
 **Benefits**:
-- Separates button logic from rendering
-- Testable without DOM
-- Reusable button configurations
+- Single universal builder replaces 5 hardcoded builders
+- Command visibility driven by SPARQL preconditions
+- Labels support dynamic templates
+- New commands added by creating vault assets, not code
 
 ### 5. Observer Pattern
 
@@ -1488,6 +1566,7 @@ graph TB
 | 1.1 | 2025-11-26 | Added Error Handling section (#438) |
 | 1.2 | 2025-11-29 | Documented CommandVisibility domain segregation (#468) |
 | 1.3 | 2026-02-19 | Updated to v15.0.1: tech stack versions, test counts (#2176) |
+| 2.0 | 2026-04-05 | RFC-011/012: vault-driven architecture, prototype chains, ExoQL, removed hardcoded builders (#2583) |
 
 ---
 
