@@ -4,6 +4,9 @@ import { IRI } from "../domain/models/rdf/IRI";
 import { Literal } from "../domain/models/rdf/Literal";
 import { Namespace } from "../domain/models/rdf/Namespace";
 import { GroundingType } from "../domain/constants/GroundingType";
+import { SPARQLParser } from "../infrastructure/sparql/SPARQLParser";
+import { AlgebraTranslator } from "../infrastructure/sparql/algebra/AlgebraTranslator";
+import { QueryExecutor } from "../infrastructure/sparql/executors/QueryExecutor";
 import type {
   CommandDefinition,
   PreconditionDefinition,
@@ -100,6 +103,7 @@ export class CommandResolver {
 
     // Load command properties
     const name = await this.getLiteralValue(subject, Namespace.EXO.term("Asset_label")) ?? "Unknown Command";
+    const labelTemplate = await this.getLiteralValue(subject, Namespace.EXOCMD.term("Command_labelTemplate"));
     const icon = await this.getLiteralValue(subject, Namespace.EXOCMD.term("Command_icon"));
     const confirmMessage = await this.getLiteralValue(subject, Namespace.EXOCMD.term("Command_confirmMessage"));
     const successMessage = await this.getLiteralValue(subject, Namespace.EXOCMD.term("Command_successMessage"));
@@ -115,6 +119,7 @@ export class CommandResolver {
     return {
       id: commandUID,
       name,
+      labelTemplate: labelTemplate ?? undefined,
       icon: icon ?? undefined,
       precondition: precondition ?? undefined,
       grounding,
@@ -168,7 +173,107 @@ export class CommandResolver {
     this.cache.clear();
   }
 
+  /**
+   * Resolve a dynamic label for a command bound to a specific target asset.
+   *
+   * If the command has a `labelTemplate`, each `{...}` placeholder is executed
+   * as a SPARQL SELECT query (with `$target` substituted for the target IRI).
+   * The first binding value of the first result row replaces the placeholder.
+   * On error or empty result, the placeholder is replaced with an empty string.
+   *
+   * If the command has no `labelTemplate`, returns the static `name`.
+   *
+   * @param command - The command definition (may have labelTemplate)
+   * @param targetIRI - IRI of the current asset (substituted for $target)
+   * @returns The resolved label string
+   */
+  async resolveLabel(
+    command: CommandDefinition,
+    targetIRI: string,
+  ): Promise<string> {
+    if (!command.labelTemplate) {
+      return command.name;
+    }
+
+    let result = command.labelTemplate;
+    const placeholders = this.extractPlaceholders(command.labelTemplate);
+
+    for (const { full, body } of placeholders) {
+      const resolved = await this.evaluateSelectSnippet(body, targetIRI);
+      result = result.replace(full, resolved);
+    }
+
+    return result;
+  }
+
   // -- Private helpers --
+
+  /**
+   * Extract top-level `{...}` placeholders from a label template,
+   * correctly handling nested braces in SPARQL WHERE clauses.
+   *
+   * Returns array of { full: "{...}", body: "..." } for each placeholder.
+   */
+  private extractPlaceholders(template: string): Array<{ full: string; body: string }> {
+    const results: Array<{ full: string; body: string }> = [];
+    let i = 0;
+
+    while (i < template.length) {
+      if (template[i] === "{") {
+        let depth = 1;
+        let j = i + 1;
+        while (j < template.length && depth > 0) {
+          if (template[j] === "{") depth++;
+          else if (template[j] === "}") depth--;
+          j++;
+        }
+        if (depth === 0) {
+          const full = template.slice(i, j);
+          const body = template.slice(i + 1, j - 1);
+          results.push({ full, body });
+        }
+        i = j;
+      } else {
+        i++;
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * Execute a SPARQL SELECT snippet and return the first binding value
+   * of the first result row, or empty string on failure / no results.
+   */
+  private async evaluateSelectSnippet(
+    sparqlBody: string,
+    targetIRI: string,
+  ): Promise<string> {
+    try {
+      const query = sparqlBody.replace(/\$target/g, `<${targetIRI}>`);
+      const parser = new SPARQLParser();
+      const parsed = parser.parse(query);
+      const translator = new AlgebraTranslator();
+      const algebra = translator.translate(parsed);
+      const executor = new QueryExecutor(this.tripleStore);
+      const solutions = await executor.executeAll(algebra);
+
+      if (solutions.length === 0) return "";
+
+      // Return the first binding value of the first solution
+      const firstSolution = solutions[0];
+      const vars = firstSolution.variables();
+      if (vars.length === 0) return "";
+
+      const value = firstSolution.get(vars[0]);
+      if (!value) return "";
+      if (value instanceof Literal) return value.value;
+      if (value instanceof IRI) return value.value;
+      return String(value);
+    } catch {
+      return "";
+    }
+  }
 
   private async loadBindingDefinition(subject: IRI): Promise<CommandBindingDefinition | null> {
     const uid = await this.getLiteralValue(subject, Namespace.EXO.term("Asset_uid"));

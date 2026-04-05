@@ -12,6 +12,7 @@ async function addCommandAsset(
   opts: {
     uid: string;
     label: string;
+    labelTemplate?: string;
     icon?: string;
     preconditionRef?: string;
     groundingRef: string;
@@ -29,6 +30,9 @@ async function addCommandAsset(
     new Triple(subject, Namespace.EXOCMD.term("Command_grounding"), new IRI(`obsidian://vault/${opts.groundingRef}.md`)),
   ];
 
+  if (opts.labelTemplate) {
+    triples.push(new Triple(subject, Namespace.EXOCMD.term("Command_labelTemplate"), new Literal(opts.labelTemplate)));
+  }
   if (opts.icon) {
     triples.push(new Triple(subject, Namespace.EXOCMD.term("Command_icon"), new Literal(opts.icon)));
   }
@@ -572,6 +576,108 @@ describe("CommandResolver", () => {
 
       expect(resolved[0].command.name).toBe("B"); // order 50
       expect(resolved[1].command.name).toBe("A"); // order 100 (default)
+    });
+  });
+
+  describe("resolveLabel", () => {
+    it("should return static name when no labelTemplate is set", async () => {
+      await addGroundingAsset(store, { uid: "gnd-1", label: "G", type: "property_delete", targetProperty: "p" });
+      await addCommandAsset(store, { uid: "cmd-static", label: "Static Label", groundingRef: "gnd-1" });
+
+      const cmd = await resolver.loadCommand("cmd-static");
+      expect(cmd).not.toBeNull();
+
+      const label = await resolver.resolveLabel(cmd!, "urn:test:asset-1");
+      expect(label).toBe("Static Label");
+    });
+
+    it("should return template as-is when template has no placeholders", async () => {
+      await addGroundingAsset(store, { uid: "gnd-2", label: "G", type: "property_delete", targetProperty: "p" });
+      await addCommandAsset(store, {
+        uid: "cmd-no-placeholder",
+        label: "Fallback",
+        labelTemplate: "Plain text label",
+        groundingRef: "gnd-2",
+      });
+
+      const cmd = await resolver.loadCommand("cmd-no-placeholder");
+      expect(cmd).not.toBeNull();
+
+      const label = await resolver.resolveLabel(cmd!, "urn:test:asset-1");
+      expect(label).toBe("Plain text label");
+    });
+
+    it("should substitute SPARQL placeholder with query result", async () => {
+      // Set up vote triples for the target asset
+      const targetIRI = "obsidian://vault/task-42.md";
+      const targetSubject = new IRI(targetIRI);
+
+      await store.addAll([
+        new Triple(targetSubject, Namespace.EXO.term("vote"), new Literal("user-a")),
+        new Triple(targetSubject, Namespace.EXO.term("vote"), new Literal("user-b")),
+        new Triple(targetSubject, Namespace.EXO.term("vote"), new Literal("user-c")),
+      ]);
+
+      await addGroundingAsset(store, { uid: "gnd-3", label: "G", type: "property_delete", targetProperty: "p" });
+      await addCommandAsset(store, {
+        uid: "cmd-vote",
+        label: "Vote",
+        labelTemplate: "Vote ({SELECT (COUNT(?v) AS ?n) WHERE { $target <https://exocortex.my/ontology/exo#vote> ?v }})",
+        groundingRef: "gnd-3",
+      });
+
+      const cmd = await resolver.loadCommand("cmd-vote");
+      expect(cmd).not.toBeNull();
+
+      const label = await resolver.resolveLabel(cmd!, targetIRI);
+      expect(label).toBe("Vote (3)");
+    });
+
+    it("should replace placeholder with empty string when query returns no results", async () => {
+      await addGroundingAsset(store, { uid: "gnd-4", label: "G", type: "property_delete", targetProperty: "p" });
+      await addCommandAsset(store, {
+        uid: "cmd-empty",
+        label: "Items",
+        labelTemplate: "Items ({SELECT (COUNT(?x) AS ?n) WHERE { $target <https://exocortex.my/ontology/exo#item> ?x }})",
+        groundingRef: "gnd-4",
+      });
+
+      const cmd = await resolver.loadCommand("cmd-empty");
+      expect(cmd).not.toBeNull();
+
+      // No item triples in store → COUNT returns 0
+      const label = await resolver.resolveLabel(cmd!, "urn:test:no-items");
+      expect(label).toBe("Items (0)");
+    });
+
+    it("should replace placeholder with empty string on invalid SPARQL", async () => {
+      await addGroundingAsset(store, { uid: "gnd-5", label: "G", type: "property_delete", targetProperty: "p" });
+      await addCommandAsset(store, {
+        uid: "cmd-bad-sparql",
+        label: "Bad",
+        labelTemplate: "Status ({INVALID SPARQL HERE})",
+        groundingRef: "gnd-5",
+      });
+
+      const cmd = await resolver.loadCommand("cmd-bad-sparql");
+      expect(cmd).not.toBeNull();
+
+      const label = await resolver.resolveLabel(cmd!, "urn:test:asset");
+      expect(label).toBe("Status ()");
+    });
+
+    it("should load labelTemplate from triple store", async () => {
+      await addGroundingAsset(store, { uid: "gnd-6", label: "G", type: "property_delete", targetProperty: "p" });
+      await addCommandAsset(store, {
+        uid: "cmd-with-tpl",
+        label: "Fallback Name",
+        labelTemplate: "Dynamic ({SELECT ?x WHERE { ?s ?p ?o }})",
+        groundingRef: "gnd-6",
+      });
+
+      const cmd = await resolver.loadCommand("cmd-with-tpl");
+      expect(cmd).not.toBeNull();
+      expect(cmd!.labelTemplate).toBe("Dynamic ({SELECT ?x WHERE { ?s ?p ?o }})");
     });
   });
 });
