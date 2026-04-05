@@ -42,6 +42,7 @@ import { BodyLinkPatch } from "./presentation/body/BodyLinkPatch";
 import { GraphViewPatch } from "./presentation/graph-view/GraphViewPatch";
 import { PrintNameRuleService } from "./domain/display-name/PrintNameRuleService";
 import { ObsidianFileSystemAdapter } from "./adapters/ObsidianFileSystemAdapter";
+import { populateServiceRegistry } from "./infrastructure/services/ServiceRegistryPopulator";
 
 /**
  * Exocortex Plugin - Automatic layout rendering
@@ -148,6 +149,12 @@ export default class ExocortexPlugin extends Plugin {
       this.serviceRegistry = new ServiceRegistry();
       const obsidianFs = new ObsidianFileSystemAdapter(this.app.vault);
       this.groundingExecutor = new GroundingExecutor(obsidianFs, obsidianFs, this.serviceRegistry);
+
+      populateServiceRegistry(this.serviceRegistry, {
+        app: this.app,
+        fileSystemAdapter: obsidianFs,
+        sparqlApi: this.sparql,
+      });
 
       // Register the alias icon editor extension for Live Preview mode
       this.registerEditorExtension(
