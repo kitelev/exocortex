@@ -163,6 +163,11 @@ export class PreconditionEvaluator {
   }
 
   /**
+   * Asia/Almaty UTC offset in milliseconds (UTC+5, no DST).
+   */
+  private static readonly ALMATY_OFFSET_MS = 5 * 60 * 60 * 1000;
+
+  /**
    * Substitute custom variables in SPARQL query string.
    * This is TEXT replacement, NOT SPARQL variable binding.
    *
@@ -170,14 +175,58 @@ export class PreconditionEvaluator {
    * - $target → <targetIRI> (wrapped in angle brackets)
    * - $now → "2026-03-31T10:00:00.000Z"^^xsd:dateTime
    * - $today → "2026-03-31"^^xsd:date
+   * - $yesterday → "2026-03-30"^^xsd:date (Asia/Almaty)
+   * - $thisWeekStart → "2026-03-30"^^xsd:date (Monday, Asia/Almaty)
+   * - $lastWeekStart → "2026-03-23"^^xsd:date (prev Monday, Asia/Almaty)
+   * - $thisMonthStart → "2026-03-01"^^xsd:date (Asia/Almaty)
+   * - $lastMonthStart → "2026-02-01"^^xsd:date (Asia/Almaty)
+   * - $thisYearStart → "2026-01-01"^^xsd:date (Asia/Almaty)
    */
   substituteVariables(query: string, targetIRI: string): string {
     const now = new Date().toISOString();
     const today = now.slice(0, 10);
 
+    // Compute Almaty-local date components
+    const utcNow = new Date();
+    const almatyNow = new Date(utcNow.getTime() + PreconditionEvaluator.ALMATY_OFFSET_MS);
+    const almatyYear = almatyNow.getUTCFullYear();
+    const almatyMonth = almatyNow.getUTCMonth(); // 0-based
+    const almatyDate = almatyNow.getUTCDate();
+    const almatyDay = almatyNow.getUTCDay(); // 0=Sun
+
+    // $yesterday
+    const yesterday = new Date(Date.UTC(almatyYear, almatyMonth, almatyDate - 1));
+    const yesterdayStr = yesterday.toISOString().slice(0, 10);
+
+    // $thisWeekStart (Monday of current week)
+    const daysFromMonday = (almatyDay + 6) % 7; // Mon=0, Tue=1, ..., Sun=6
+    const thisWeekStart = new Date(Date.UTC(almatyYear, almatyMonth, almatyDate - daysFromMonday));
+    const thisWeekStartStr = thisWeekStart.toISOString().slice(0, 10);
+
+    // $lastWeekStart (Monday of previous week)
+    const lastWeekStart = new Date(thisWeekStart.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const lastWeekStartStr = lastWeekStart.toISOString().slice(0, 10);
+
+    // $thisMonthStart
+    const thisMonthStartStr = `${almatyYear}-${String(almatyMonth + 1).padStart(2, "0")}-01`;
+
+    // $lastMonthStart
+    const lastMonthIdx = almatyMonth === 0 ? 11 : almatyMonth - 1;
+    const lastMonthYear = almatyMonth === 0 ? almatyYear - 1 : almatyYear;
+    const lastMonthStartStr = `${lastMonthYear}-${String(lastMonthIdx + 1).padStart(2, "0")}-01`;
+
+    // $thisYearStart
+    const thisYearStartStr = `${almatyYear}-01-01`;
+
     return query
       .replace(/\$target/g, `<${targetIRI}>`)
       .replace(/\$now/g, `"${now}"^^xsd:dateTime`)
+      .replace(/\$yesterday/g, `"${yesterdayStr}"^^xsd:date`)
+      .replace(/\$thisWeekStart/g, `"${thisWeekStartStr}"^^xsd:date`)
+      .replace(/\$lastWeekStart/g, `"${lastWeekStartStr}"^^xsd:date`)
+      .replace(/\$thisMonthStart/g, `"${thisMonthStartStr}"^^xsd:date`)
+      .replace(/\$lastMonthStart/g, `"${lastMonthStartStr}"^^xsd:date`)
+      .replace(/\$thisYearStart/g, `"${thisYearStartStr}"^^xsd:date`)
       .replace(/\$today/g, `"${today}"^^xsd:date`);
   }
 }
