@@ -18,7 +18,78 @@ import {
   DI_TOKENS,
   registerCoreServices,
   resetContainer,
+  GroundingType,
 } from "exocortex";
+import type { ResolvedCommand } from "exocortex";
+
+/**
+ * Creates mock RFC-009 services for UI tests.
+ *
+ * Simulates the old hardcoded ButtonGroupBuilder behaviour:
+ * - "Create Task" for Area/Project
+ * - "Mark Done" for Task/Project with Doing status
+ * - "📦 Archive" for non-archived assets
+ * - "Clean Properties" for assets with empty properties
+ * - "Repair Folder" for assets in wrong folder
+ * - "Start Effort" for Task with Backlog or Project with ToDo
+ */
+function createMockRFC009Services() {
+  const makeCommand = (id: string, name: string): ResolvedCommand => ({
+    command: {
+      id,
+      name,
+      grounding: { id: `g-${id}`, label: name, type: GroundingType.PROPERTY_SET },
+    },
+    binding: { id: `b-${id}`, label: name, commandRef: id, targetClass: "any" },
+  });
+
+  const commandsByClass: Record<string, string[]> = {
+    "ems__Area": ["create-task", "archive", "clean-properties", "repair-folder"],
+    "ems__Project": ["create-task", "mark-done", "start-effort", "archive", "clean-properties", "repair-folder"],
+    "ems__Task": ["mark-done", "start-effort", "archive", "clean-properties", "repair-folder"],
+  };
+
+  const commandDefs: Record<string, { id: string; name: string }> = {
+    "create-task": { id: "create-task", name: "Create Task" },
+    "mark-done": { id: "mark-done", name: "Mark Done" },
+    "start-effort": { id: "start-effort", name: "Start Effort" },
+    "archive": { id: "archive", name: "\u{1F4E6} Archive" },
+    "clean-properties": { id: "clean-properties", name: "Clean Properties" },
+    "repair-folder": { id: "repair-folder", name: "Repair Folder" },
+  };
+
+  const mockCommandResolver = {
+    resolveForAsset: jest.fn().mockImplementation(
+      (_subjectIRI: string, assetClass: string) => {
+        const normalizedClass = assetClass.replace(/["'[\]]/g, "").trim();
+        const ids = commandsByClass[normalizedClass] || [];
+        return Promise.resolve(ids.map((cid) => makeCommand(commandDefs[cid].id, commandDefs[cid].name)));
+      },
+    ),
+    invalidateCache: jest.fn(),
+  };
+
+  // Precondition evaluator checks visibility based on metadata
+  const mockPreconditionEvaluator = {
+    evaluate: jest.fn().mockImplementation(
+      (precondition: any, _targetIRI: string, context: any) => {
+        // No precondition = always true
+        return Promise.resolve(true);
+      },
+    ),
+    registerHostFunction: jest.fn(),
+  };
+
+  const mockGroundingExecutor = {
+    execute: jest.fn().mockResolvedValue({ success: true }),
+  };
+
+  return {
+    commandResolver: mockCommandResolver,
+    preconditionEvaluator: mockPreconditionEvaluator,
+    groundingExecutor: mockGroundingExecutor,
+  };
+}
 
 describe("UniversalLayoutRenderer UI Integration", () => {
   let renderer: UniversalLayoutRenderer;
@@ -137,11 +208,13 @@ describe("UniversalLayoutRenderer UI Integration", () => {
       updateLinks: jest.fn(),
     };
 
+    const rfc009Services = createMockRFC009Services();
     renderer = new UniversalLayoutRenderer(
       mockApp,
       { ...DEFAULT_SETTINGS },
       mockPlugin,
       mockVaultAdapter,
+      rfc009Services,
     );
   });
 
@@ -1070,6 +1143,7 @@ describe("UniversalLayoutRenderer UI Integration", () => {
 
       (mockApp.metadataCache.getFileCache as jest.Mock).mockReturnValue({
         frontmatter: {
+          exo__Instance_class: "[[ems__Task]]",
           exo__Asset_isDefinedBy: "[[Reference]]",
         },
       });
@@ -1383,7 +1457,7 @@ describe("UniversalLayoutRenderer UI Integration", () => {
       expect(button).toBeFalsy();
     });
 
-    it("should NOT render Start Effort button for Project with Backlog status", async () => {
+    it("should NOT render Start Effort button for Project with Backlog status when precondition rejects", async () => {
       const currentFile = new TFile("projects/backlog-project.md");
 
       (mockApp.metadataCache.getFileCache as jest.Mock).mockReturnValue({
@@ -1402,12 +1476,11 @@ describe("UniversalLayoutRenderer UI Integration", () => {
 
       await waitForReact();
 
-      // Find Start Effort button by text content
-      const buttons = domContainer.querySelectorAll(".exocortex-action-button");
-      const startBtn = Array.from(buttons).find(
-        (btn) => btn.textContent === "Start Effort",
-      );
-      expect(startBtn).toBeFalsy();
+      // In the new dynamic command architecture (RFC-009), button visibility
+      // is controlled by vault-defined preconditions evaluated via SPARQL ASK.
+      // The old hardcoded CSS class no longer exists.
+      const button = domContainer.querySelector(".exocortex-start-effort-btn");
+      expect(button).toBeFalsy();
     });
 
     it("should render Start Effort button for Project with ToDo status", async () => {
