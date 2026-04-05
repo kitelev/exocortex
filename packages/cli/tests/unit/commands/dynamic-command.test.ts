@@ -374,7 +374,7 @@ describe("dynamic-command CLI", () => {
       consoleSpy.mockRestore();
     });
 
-    it("should report unknown service in service_call grounding", async () => {
+    it("should accept service_call with serviceId from dedicated property", async () => {
       const commandFm = [
         "exo__Instance_class: exocmd__Command",
         "exo__Asset_uid: cmd-svc",
@@ -385,9 +385,15 @@ describe("dynamic-command CLI", () => {
       const groundingFm = [
         "exo__Instance_class: exocmd__Grounding",
         "exo__Asset_uid: gnd-svc",
-        "exo__Asset_label: Call Unknown",
+        "exo__Asset_label: Call Plugin Service",
         "exocmd__Grounding_type: service_call",
-        "exocmd__Grounding_targetProperty: nonExistentService",
+        "exocmd__Grounding_serviceId: cleanProperties",
+      ].join("\n");
+
+      const bindingFm = [
+        "exo__Instance_class: exocmd__CommandBinding",
+        "exo__Asset_uid: bind-svc",
+        "exocmd__CommandBinding_command: [[cmd-svc]]",
       ].join("\n");
 
       mockReaddirSync.mockImplementation((dir: string) => {
@@ -395,6 +401,7 @@ describe("dynamic-command CLI", () => {
           return [
             { name: "cmd-svc.md", isDirectory: () => false },
             { name: "gnd-svc.md", isDirectory: () => false },
+            { name: "bind-svc.md", isDirectory: () => false },
           ];
         }
         return [];
@@ -403,6 +410,7 @@ describe("dynamic-command CLI", () => {
       mockReadFileSync.mockImplementation((path: string) => {
         if (path.endsWith("cmd-svc.md")) return `---\n${commandFm}\n---\n`;
         if (path.endsWith("gnd-svc.md")) return `---\n${groundingFm}\n---\n`;
+        if (path.endsWith("bind-svc.md")) return `---\n${bindingFm}\n---\n`;
         return "";
       });
 
@@ -413,8 +421,8 @@ describe("dynamic-command CLI", () => {
       await valCmd.parseAsync(["--vault", "/vault"], { from: "user" });
 
       const output = consoleSpy.mock.calls.map((c: any) => c[0]).join("\n");
-      expect(output).toContain("unknown service");
-      expect(output).toContain("nonExistentService");
+      expect(output).toContain("valid");
+      expect(output).not.toContain("missing serviceId");
 
       consoleSpy.mockRestore();
     });
@@ -510,7 +518,7 @@ describe("dynamic-command CLI", () => {
       await valCmd.parseAsync(["--vault", "/vault"], { from: "user" });
 
       const output = consoleSpy.mock.calls.map((c: any) => c[0]).join("\n");
-      expect(output).toContain("missing targetProperty (serviceId)");
+      expect(output).toContain("missing serviceId and targetProperty");
 
       consoleSpy.mockRestore();
     });
