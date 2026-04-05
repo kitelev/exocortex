@@ -205,33 +205,18 @@ describe("GraphViewPatch", () => {
       expect(mockNode.getDisplayText()).toBe("Test Label");
     });
 
-    it("should fallback to prototype label", () => {
+    it("should display materialized label inherited from prototype", () => {
       const mockFile = new TFile();
-      const mockPrototypeFile = new TFile();
       Object.defineProperty(mockFile, "extension", { value: "md" });
       Object.defineProperty(mockFile, "basename", { value: "test-file" });
-      Object.defineProperty(mockPrototypeFile, "extension", { value: "md" });
       mockApp.vault.getAbstractFileByPath.mockReturnValue(mockFile);
 
-      // Use mockImplementation to handle multiple calls with different returns
-      mockApp.metadataCache.getFileCache.mockImplementation((file: TFile) => {
-        if (file === mockFile) {
-          return {
-            frontmatter: {
-              exo__Asset_prototype: "[[prototype-path]]",
-            },
-          };
-        }
-        if (file === mockPrototypeFile) {
-          return {
-            frontmatter: {
-              exo__Asset_label: "Prototype Label",
-            },
-          };
-        }
-        return null;
+      mockApp.metadataCache.getFileCache.mockReturnValue({
+        frontmatter: {
+          exo__Asset_prototype: "[[prototype-path]]",
+          exo__Asset_label: "Prototype Label",
+        },
       });
-      mockApp.metadataCache.getFirstLinkpathDest.mockReturnValue(mockPrototypeFile);
 
       patch.enable();
 

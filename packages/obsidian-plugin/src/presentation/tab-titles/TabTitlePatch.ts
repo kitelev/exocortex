@@ -208,46 +208,6 @@ export class TabTitlePatch {
       return label.trim();
     }
 
-    // Fallback: try prototype label if available
-    const prototypeRef = frontmatter.exo__Asset_prototype;
-    if (prototypeRef) {
-      const prototypePath =
-        typeof prototypeRef === "string"
-          ? prototypeRef.replace(/^\[\[|\]\]$/g, "").replace(/^"|"$/g, "").trim()
-          : null;
-
-      if (prototypePath) {
-        let prototypeFile = this.app.metadataCache.getFirstLinkpathDest(
-          prototypePath,
-          ""
-        );
-
-        // Try with .md extension if not found
-        if (!prototypeFile && !prototypePath.endsWith(".md")) {
-          prototypeFile = this.app.metadataCache.getFirstLinkpathDest(
-            prototypePath + ".md",
-            ""
-          );
-        }
-
-        if (prototypeFile instanceof TFile) {
-          const prototypeCache = this.app.metadataCache.getFileCache(prototypeFile);
-          const prototypeMetadata = prototypeCache?.frontmatter;
-
-          if (prototypeMetadata) {
-            const prototypeLabel = prototypeMetadata.exo__Asset_label;
-            if (
-              prototypeLabel &&
-              typeof prototypeLabel === "string" &&
-              prototypeLabel.trim() !== ""
-            ) {
-              return prototypeLabel.trim();
-            }
-          }
-        }
-      }
-    }
-
     return null;
   }
 
@@ -258,43 +218,7 @@ export class TabTitlePatch {
     frontmatter: Record<string, unknown>,
     _file: TFile
   ): Record<string, unknown> {
-    const metadata = { ...frontmatter };
-
-    // If label is missing, try to get from prototype
-    if (!metadata.exo__Asset_label) {
-      const prototypeRef = metadata.exo__Asset_prototype;
-      if (prototypeRef) {
-        const prototypePath =
-          typeof prototypeRef === "string"
-            ? prototypeRef.replace(/^\[\[|\]\]$/g, "").replace(/^"|"$/g, "").trim()
-            : null;
-
-        if (prototypePath) {
-          let prototypeFile = this.app.metadataCache.getFirstLinkpathDest(
-            prototypePath,
-            ""
-          );
-
-          if (!prototypeFile && !prototypePath.endsWith(".md")) {
-            prototypeFile = this.app.metadataCache.getFirstLinkpathDest(
-              prototypePath + ".md",
-              ""
-            );
-          }
-
-          if (prototypeFile instanceof TFile) {
-            const prototypeCache = this.app.metadataCache.getFileCache(prototypeFile);
-            const prototypeMetadata = prototypeCache?.frontmatter;
-
-            if (prototypeMetadata?.exo__Asset_label) {
-              metadata.exo__Asset_label = prototypeMetadata.exo__Asset_label;
-            }
-          }
-        }
-      }
-    }
-
-    return metadata;
+    return { ...frontmatter };
   }
 
   /**

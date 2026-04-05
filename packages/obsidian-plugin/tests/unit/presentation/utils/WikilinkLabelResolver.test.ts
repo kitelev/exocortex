@@ -109,18 +109,27 @@ describe("WikilinkLabelResolver", () => {
       expect(resolver.getAssetLabel("test-file")).toBeNull();
     });
 
-    it("returns label from prototype when direct label not found", () => {
+    it("returns materialized label inherited from prototype", () => {
       const mockApp = createMockApp({
         "task-instance": {
           exo__Asset_prototype: "[[task-prototype]]",
-        },
-        "task-prototype": {
           exo__Asset_label: "Task Template",
         },
       });
 
       const resolver = new WikilinkLabelResolver(mockApp);
       expect(resolver.getAssetLabel("task-instance")).toBe("Task Template");
+    });
+
+    it("returns null when instance has no label (even with prototype)", () => {
+      const mockApp = createMockApp({
+        "task-instance": {
+          exo__Asset_prototype: "[[task-prototype]]",
+        },
+      });
+
+      const resolver = new WikilinkLabelResolver(mockApp);
+      expect(resolver.getAssetLabel("task-instance")).toBeNull();
     });
   });
 

@@ -200,32 +200,23 @@ describe("BodyLinkPatch", () => {
       );
     });
 
-    it("should fallback to prototype label when asset has no label", () => {
+    it("should display materialized label inherited from prototype", () => {
       const mockFile = new TFile();
-      const mockPrototypeFile = new TFile();
       Object.defineProperty(mockFile, "extension", { value: "md" });
       Object.defineProperty(mockFile, "basename", { value: "test-file" });
       Object.defineProperty(mockFile, "stat", {
         value: { ctime: Date.now() },
       });
-      Object.defineProperty(mockPrototypeFile, "extension", { value: "md" });
 
-      mockApp.metadataCache.getFirstLinkpathDest
-        .mockReturnValueOnce(mockFile) // First call: resolve link path
-        .mockReturnValueOnce(mockPrototypeFile); // Second call: resolve prototype
+      mockApp.metadataCache.getFirstLinkpathDest.mockReturnValue(mockFile);
 
-      mockApp.metadataCache.getFileCache
-        .mockReturnValueOnce({
-          frontmatter: {
-            exo__Asset_prototype: "[[prototype-path]]",
-            exo__Instance_class: "ems__Task",
-          },
-        })
-        .mockReturnValueOnce({
-          frontmatter: {
-            exo__Asset_label: "Prototype Label",
-          },
-        });
+      mockApp.metadataCache.getFileCache.mockReturnValue({
+        frontmatter: {
+          exo__Asset_prototype: "[[prototype-path]]",
+          exo__Asset_label: "Prototype Label",
+          exo__Instance_class: "ems__Task",
+        },
+      });
 
       patch.enable();
 
