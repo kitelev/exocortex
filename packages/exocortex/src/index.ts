@@ -213,6 +213,7 @@ export { NullLogger } from "./infrastructure/NullLogger";
 export { InMemoryTripleStore } from "./infrastructure/rdf/InMemoryTripleStore";
 export { RDFVocabularyMapper } from "./infrastructure/rdf/RDFVocabularyMapper";
 export { RDFSInferenceEngine } from "./infrastructure/rdf/RDFSInferenceEngine";
+export { NonInheritablePropertyRegistry } from "./services/NonInheritablePropertyRegistry";
 export { NoteToRDFConverter } from "./services/NoteToRDFConverter";
 
 // SPARQL Engine exports
