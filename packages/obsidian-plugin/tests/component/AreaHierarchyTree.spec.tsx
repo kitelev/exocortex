@@ -324,23 +324,6 @@ test.describe("AreaHierarchyTree Component", () => {
     await expect(classLinks.first()).toHaveText("ems__Area");
   });
 
-  test.skip("should use custom label from getAssetLabel", async ({ mount }) => {
-    const component = await mount(
-      <AreaHierarchyTree
-        tree={mockTreeSingleNode}
-        currentAreaPath="areas/root.md"
-        getAssetLabel={(path) => {
-          if (path === "areas/root.md") return "Custom Label";
-          return null;
-        }}
-      />,
-    );
-
-    await expect(
-      component.locator("td:nth-child(1) .internal-link"),
-    ).toContainText("Custom Label");
-  });
-
   test("should display collapse/expand toggle for nodes with children", async ({
     mount,
   }) => {
