@@ -565,3 +565,68 @@ functionHandlers.set("triple", (args, ctx) => {
 
 // COALESCE and IF are NOT in this registry because they need lazy evaluation
 // (evaluating arguments only when needed). They remain in FilterExecutor.
+
+// =============================================================================
+// RFC-013 Temporal Functions
+// =============================================================================
+
+// DAYS_BETWEEN(a, b) → integer: days between two dateTimes
+functionHandlers.set("days_between", (args, ctx) => {
+  const date1 = ctx.getStringValue(ctx.evaluateExpression(args[0], ctx.solution));
+  const date2 = ctx.getStringValue(ctx.evaluateExpression(args[1], ctx.solution));
+  const d1 = new Date(date1);
+  const d2 = new Date(date2);
+  return Math.floor((d2.getTime() - d1.getTime()) / (24 * 60 * 60 * 1000));
+});
+
+// MINUTES_BETWEEN(a, b) → integer: minutes between two dateTimes
+functionHandlers.set("minutes_between", (args, ctx) => {
+  const date1 = ctx.getStringValue(ctx.evaluateExpression(args[0], ctx.solution));
+  const date2 = ctx.getStringValue(ctx.evaluateExpression(args[1], ctx.solution));
+  const d1 = new Date(date1);
+  const d2 = new Date(date2);
+  return Math.floor((d2.getTime() - d1.getTime()) / (60 * 1000));
+});
+
+// HOURS_BETWEEN(a, b) → decimal: hours between two dateTimes
+functionHandlers.set("hours_between", (args, ctx) => {
+  const date1 = ctx.getStringValue(ctx.evaluateExpression(args[0], ctx.solution));
+  const date2 = ctx.getStringValue(ctx.evaluateExpression(args[1], ctx.solution));
+  const d1 = new Date(date1);
+  const d2 = new Date(date2);
+  return (d2.getTime() - d1.getTime()) / (60 * 60 * 1000);
+});
+
+// AGE_DAYS(dateTime) → integer: days from dateTime to NOW()
+functionHandlers.set("age_days", (args, ctx) => {
+  const dateStr = ctx.getStringValue(ctx.evaluateExpression(args[0], ctx.solution));
+  const d = new Date(dateStr);
+  const now = new Date();
+  return Math.floor((now.getTime() - d.getTime()) / (24 * 60 * 60 * 1000));
+});
+
+// WEEK_NUMBER(dateTime) → integer: ISO week number
+functionHandlers.set("week_number", (args, ctx) => {
+  const dateStr = ctx.getStringValue(ctx.evaluateExpression(args[0], ctx.solution));
+  const d = new Date(dateStr);
+  // ISO 8601 week number calculation
+  const tmp = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  tmp.setUTCDate(tmp.getUTCDate() + 4 - (tmp.getUTCDay() || 7));
+  const yearStart = new Date(Date.UTC(tmp.getUTCFullYear(), 0, 1));
+  return Math.ceil(((tmp.getTime() - yearStart.getTime()) / (24 * 60 * 60 * 1000) + 1) / 7);
+});
+
+// FORMAT_DATE(dateTime, pattern) → string: format date with pattern
+// Supported patterns: YYYY, MM, DD, HH, mm, ss
+functionHandlers.set("format_date", (args, ctx) => {
+  const dateStr = ctx.getStringValue(ctx.evaluateExpression(args[0], ctx.solution));
+  const pattern = ctx.getStringValue(ctx.evaluateExpression(args[1], ctx.solution));
+  const d = new Date(dateStr);
+  return pattern
+    .replace("YYYY", String(d.getFullYear()))
+    .replace("MM", String(d.getMonth() + 1).padStart(2, "0"))
+    .replace("DD", String(d.getDate()).padStart(2, "0"))
+    .replace("HH", String(d.getHours()).padStart(2, "0"))
+    .replace("mm", String(d.getMinutes()).padStart(2, "0"))
+    .replace("ss", String(d.getSeconds()).padStart(2, "0"));
+});
