@@ -388,6 +388,9 @@ export type {
   LoaderState,
 } from "./infrastructure/memory";
 
+// ExoQL public API
+export { ExoQL, ExoQLError } from "./exoql";
+
 // Error exports
 export * from "./domain/errors";
 export * from "./application/errors";
