@@ -189,25 +189,6 @@ export class WikilinkLabelViewPlugin {
 
     const metadata = { ...frontmatter };
 
-    if (!metadata.exo__Asset_label) {
-      const prototypeRef = metadata.exo__Asset_prototype;
-      if (prototypeRef && typeof prototypeRef === "string") {
-        const prototypePath = prototypeRef.replace(/^\[\[|\]\]$/g, "").replace(/^"|"$/g, "").trim();
-        if (prototypePath) {
-          let protoFile = this.metadataCache.getFirstLinkpathDest(prototypePath, "");
-          if (!protoFile && !prototypePath.endsWith(".md")) {
-            protoFile = this.metadataCache.getFirstLinkpathDest(prototypePath + ".md", "");
-          }
-          if (protoFile instanceof TFile) {
-            const protoCache = this.metadataCache.getFileCache(protoFile);
-            if (protoCache?.frontmatter?.exo__Asset_label) {
-              metadata.exo__Asset_label = protoCache.frontmatter.exo__Asset_label;
-            }
-          }
-        }
-      }
-    }
-
     if (this.printNameRuleService) {
       const displaySettings = this.settings.displayNameSettings || {
         defaultTemplate: "{{exo__Asset_label}}",
@@ -353,43 +334,6 @@ export class WikilinkLabelViewPlugin {
     const label = metadata.exo__Asset_label;
     if (label && typeof label === "string" && label.trim() !== "") {
       return label;
-    }
-
-    // Try to get label from prototype
-    const prototypeRef = metadata.exo__Asset_prototype;
-    if (prototypeRef) {
-      const prototypePath =
-        typeof prototypeRef === "string"
-          ? prototypeRef.replace(/^\[\[|\]\]$/g, "").trim()
-          : null;
-
-      if (prototypePath) {
-        let prototypeFile = metadataCache.getFirstLinkpathDest(
-          prototypePath,
-          "",
-        );
-
-        if (!prototypeFile && !prototypePath.endsWith(".md")) {
-          prototypeFile = metadataCache.getFirstLinkpathDest(
-            prototypePath + ".md",
-            "",
-          );
-        }
-
-        if (prototypeFile instanceof TFile) {
-          const prototypeCache = metadataCache.getFileCache(prototypeFile);
-          const prototypeMetadata = prototypeCache?.frontmatter;
-          const prototypeLabel = prototypeMetadata?.exo__Asset_label;
-
-          if (
-            prototypeLabel &&
-            typeof prototypeLabel === "string" &&
-            prototypeLabel.trim() !== ""
-          ) {
-            return prototypeLabel;
-          }
-        }
-      }
     }
 
     return null;

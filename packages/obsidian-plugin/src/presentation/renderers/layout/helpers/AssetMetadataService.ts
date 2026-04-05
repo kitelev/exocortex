@@ -24,35 +24,6 @@ export class AssetMetadataService {
       return label;
     }
 
-    const prototypeRef = metadata.exo__Asset_prototype;
-    if (prototypeRef) {
-      const prototypePath =
-        typeof prototypeRef === "string"
-          ? prototypeRef.replace(/^\[\[|\]\]$/g, "").trim()
-          : null;
-
-      if (prototypePath) {
-        const prototypeFile = this.app.metadataCache.getFirstLinkpathDest(
-          prototypePath,
-          "",
-        );
-        if (prototypeFile instanceof TFile) {
-          const prototypeCache =
-            this.app.metadataCache.getFileCache(prototypeFile);
-          const prototypeMetadata = prototypeCache?.frontmatter || {};
-          const prototypeLabel = prototypeMetadata.exo__Asset_label;
-
-          if (
-            prototypeLabel &&
-            typeof prototypeLabel === "string" &&
-            prototypeLabel.trim() !== ""
-          ) {
-            return prototypeLabel;
-          }
-        }
-      }
-    }
-
     return null;
   }
 

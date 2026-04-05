@@ -148,26 +148,18 @@ describe("TabTitlePatch", () => {
       expect(mockWorkspaceLeaf.getDisplayText()).toBe("Test Label");
     });
 
-    it("should fallback to prototype label", () => {
+    it("should display materialized label inherited from prototype", () => {
       const mockFile = new TFile();
-      const mockPrototypeFile = new TFile();
       Object.defineProperty(mockFile, "extension", { value: "md" });
       Object.defineProperty(mockFile, "basename", { value: "test-file" });
-      Object.defineProperty(mockPrototypeFile, "extension", { value: "md" });
       mockMarkdownView.file = mockFile;
 
-      mockApp.metadataCache.getFileCache
-        .mockReturnValueOnce({
-          frontmatter: {
-            exo__Asset_prototype: "[[prototype-path]]",
-          },
-        })
-        .mockReturnValueOnce({
-          frontmatter: {
-            exo__Asset_label: "Prototype Label",
-          },
-        });
-      mockApp.metadataCache.getFirstLinkpathDest.mockReturnValue(mockPrototypeFile);
+      mockApp.metadataCache.getFileCache.mockReturnValue({
+        frontmatter: {
+          exo__Asset_prototype: "[[prototype-path]]",
+          exo__Asset_label: "Prototype Label",
+        },
+      });
 
       patch.enable();
 

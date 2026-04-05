@@ -38,27 +38,33 @@ describe("AssetMetadataService", () => {
       expect(result).toBeNull();
     });
 
-    it("should fallback to prototype label", () => {
+    it("should return materialized label from prototype (via PrototypeChainMaterializer)", () => {
       const mockFile = new TFile();
-      const mockPrototypeFile = new TFile();
-      mockApp.metadataCache.getFirstLinkpathDest
-        .mockReturnValueOnce(mockFile)
-        .mockReturnValueOnce(mockPrototypeFile);
-      mockApp.metadataCache.getFileCache
-        .mockReturnValueOnce({
-          frontmatter: {
-            exo__Asset_prototype: "[[prototype-path]]",
-          },
-        })
-        .mockReturnValueOnce({
-          frontmatter: {
-            exo__Asset_label: "Prototype Label",
-          },
-        });
+      mockApp.metadataCache.getFirstLinkpathDest.mockReturnValue(mockFile);
+      mockApp.metadataCache.getFileCache.mockReturnValue({
+        frontmatter: {
+          exo__Asset_prototype: "[[prototype-path]]",
+          exo__Asset_label: "Prototype Label",
+        },
+      });
 
       const result = service.getAssetLabel("test-path");
 
       expect(result).toBe("Prototype Label");
+    });
+
+    it("should return null when instance has no label and no materialized label", () => {
+      const mockFile = new TFile();
+      mockApp.metadataCache.getFirstLinkpathDest.mockReturnValue(mockFile);
+      mockApp.metadataCache.getFileCache.mockReturnValue({
+        frontmatter: {
+          exo__Asset_prototype: "[[prototype-path]]",
+        },
+      });
+
+      const result = service.getAssetLabel("test-path");
+
+      expect(result).toBeNull();
     });
   });
 

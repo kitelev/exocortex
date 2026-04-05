@@ -1540,21 +1540,19 @@ describe("UniversalLayoutRenderer UI Integration", () => {
     });
   });
 
-  describe("Prototype Label Fallback", () => {
-    it("should display prototype label when asset has exo__Asset_prototype", async () => {
+  describe("Materialized Prototype Label", () => {
+    it("should display materialized label from prototype on instance", async () => {
       const currentFile = new TFile("current.md");
 
       const taskFile = new TFile("tasks/Task-123.md");
       (taskFile as any).stat = { ctime: Date.now(), mtime: Date.now() };
-
-      const prototypeFile = new TFile("prototypes/TaskPrototype.md");
 
       // Mock workspace and vault
       (mockApp.workspace.getActiveFile as jest.Mock).mockReturnValue(
         currentFile,
       );
 
-      // Mock cache for current file
+      // Mock cache for current file - label is materialized on instance by PrototypeChainMaterializer
       (mockApp.metadataCache.getFileCache as jest.Mock).mockImplementation(
         (file: TFile) => {
           if (file.path === "current.md") {
@@ -1565,13 +1563,6 @@ describe("UniversalLayoutRenderer UI Integration", () => {
               frontmatter: {
                 exo__Instance_class: "ems__Task",
                 exo__Asset_prototype: "[[TaskPrototype]]",
-                // No exo__Asset_label on task itself
-              },
-            };
-          }
-          if (file.path === "prototypes/TaskPrototype.md") {
-            return {
-              frontmatter: {
                 exo__Asset_label: "Marketing Campaign Template",
               },
             };
@@ -1585,20 +1576,16 @@ describe("UniversalLayoutRenderer UI Integration", () => {
         (path: string) => {
           if (path === "current.md") return currentFile;
           if (path === "tasks/Task-123.md") return taskFile;
-          if (path === "TaskPrototype.md") return prototypeFile;
-          if (path === "prototypes/TaskPrototype.md") return prototypeFile;
           return null;
         },
       );
 
-      // Mock metadataCache.getFirstLinkpathDest (used by new label resolution logic)
+      // Mock metadataCache.getFirstLinkpathDest
       (
         mockApp.metadataCache.getFirstLinkpathDest as jest.Mock
       ).mockImplementation((path: string) => {
         if (path === "tasks/Task-123.md" || path === "tasks/Task-123")
           return taskFile;
-        if (path === "TaskPrototype" || path === "TaskPrototype.md")
-          return prototypeFile;
         return null;
       });
 
@@ -1611,16 +1598,16 @@ describe("UniversalLayoutRenderer UI Integration", () => {
       await renderer.render("", domContainer, {} as MarkdownPostProcessorContext);
       await waitForReact();
 
-      // Check that prototype label is displayed (not filename)
+      // Check that materialized label is displayed (not filename)
       const assetLinks = domContainer.querySelectorAll("a.internal-link");
-      let foundPrototypeLabel = false;
+      let foundMaterializedLabel = false;
       assetLinks.forEach((link) => {
         if (link.textContent === "Marketing Campaign Template") {
-          foundPrototypeLabel = true;
+          foundMaterializedLabel = true;
         }
       });
 
-      expect(foundPrototypeLabel).toBe(true);
+      expect(foundMaterializedLabel).toBe(true);
     });
   });
 
