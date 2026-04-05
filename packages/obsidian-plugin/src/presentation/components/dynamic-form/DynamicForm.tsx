@@ -8,6 +8,7 @@ export interface DynamicFormProps {
   readonly schema: InputSchemaField[];
   readonly onSubmit: (values: Record<string, string>) => void;
   readonly onCancel: () => void;
+  readonly submitLabel?: string;
 }
 
 interface FieldError {
@@ -23,6 +24,7 @@ export const DynamicForm: React.FC<DynamicFormProps> = ({
   schema,
   onSubmit,
   onCancel,
+  submitLabel,
 }) => {
   const initialValues = useMemo(() => {
     const values: Record<string, string> = {};
@@ -82,7 +84,7 @@ export const DynamicForm: React.FC<DynamicFormProps> = ({
       ))}
       <div className="modal-button-container">
         <button className="mod-cta" onClick={handleSubmit}>
-          OK
+          {submitLabel ?? "OK"}
         </button>
         <button onClick={onCancel}>Cancel</button>
       </div>

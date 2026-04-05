@@ -5,7 +5,7 @@ import {
   CommandVisibilityContext,
   LoggingService,
 } from "exocortex";
-import { LabelInputModal } from "../../src/presentation/modals/LabelInputModal";
+import { showLabelInputModal } from "../../src/presentation/modals/modalSchemas";
 import { ObsidianVaultAdapter } from "../../src/adapters/ObsidianVaultAdapter";
 import { flushPromises, waitForCondition } from "./helpers/testHelpers";
 
@@ -13,7 +13,9 @@ jest.mock("obsidian", () => ({
   ...jest.requireActual("obsidian"),
   Notice: jest.fn(),
 }));
-jest.mock("../../src/presentation/modals/LabelInputModal");
+jest.mock("../../src/presentation/modals/modalSchemas");
+
+const mockShowLabelInputModal = showLabelInputModal as jest.MockedFunction<typeof showLabelInputModal>;
 jest.mock("exocortex", () => ({
   ...jest.requireActual("exocortex"),
   canCreateChildArea: jest.fn(),
@@ -123,21 +125,14 @@ describe("CreateAreaCommand", () => {
       mockAreaCreationService.createChildArea.mockResolvedValue(createdFile as any);
 
       // Mock modal to return label
-      (LabelInputModal as jest.Mock).mockImplementation((app, callback) => ({
-        open: jest.fn(() => {
-          setTimeout(() => callback({ label: "Test Area", taskSize: null }), 0);
-        }),
-      }));
+      mockShowLabelInputModal.mockResolvedValue({ label: "Test Area", taskSize: null, openInNewTab: false });
 
       const result = command.checkCallback(false, mockFile, mockContext);
       expect(result).toBe(true);
 
       await flushPromises();
 
-      expect(LabelInputModal).toHaveBeenCalledWith(
-        mockApp,
-        expect.any(Function)
-      );
+      expect(mockShowLabelInputModal).toHaveBeenCalledWith(mockApp);
       expect(mockAreaCreationService.createChildArea).toHaveBeenCalledWith(
         mockFile,
         { exo__Instance_class: "ems__Area" },
@@ -153,18 +148,14 @@ describe("CreateAreaCommand", () => {
       mockCanCreateChildArea.mockReturnValue(true);
 
       // Mock modal to return null (cancelled)
-      (LabelInputModal as jest.Mock).mockImplementation((app, callback) => ({
-        open: jest.fn(() => {
-          setTimeout(() => callback({ label: null, taskSize: null }), 0);
-        }),
-      }));
+      mockShowLabelInputModal.mockResolvedValue({ label: null, taskSize: null, openInNewTab: false });
 
       const result = command.checkCallback(false, mockFile, mockContext);
       expect(result).toBe(true);
 
       await flushPromises();
 
-      expect(LabelInputModal).toHaveBeenCalled();
+      expect(mockShowLabelInputModal).toHaveBeenCalled();
       expect(mockAreaCreationService.createChildArea).not.toHaveBeenCalled();
       expect(Notice).not.toHaveBeenCalled();
     });
@@ -174,11 +165,7 @@ describe("CreateAreaCommand", () => {
       const error = new Error("Failed to create area");
       mockAreaCreationService.createChildArea.mockRejectedValue(error);
 
-      (LabelInputModal as jest.Mock).mockImplementation((app, callback) => ({
-        open: jest.fn(() => {
-          setTimeout(() => callback({ label: "Test Area", taskSize: null }), 0);
-        }),
-      }));
+      mockShowLabelInputModal.mockResolvedValue({ label: "Test Area", taskSize: null, openInNewTab: false });
 
       const result = command.checkCallback(false, mockFile, mockContext);
       expect(result).toBe(true);
@@ -195,11 +182,7 @@ describe("CreateAreaCommand", () => {
       const createdFile = { basename: "new-area", path: "new-area.md" };
       mockAreaCreationService.createChildArea.mockResolvedValue(createdFile as any);
 
-      (LabelInputModal as jest.Mock).mockImplementation((app, callback) => ({
-        open: jest.fn(() => {
-          setTimeout(() => callback({ label: "Test", taskSize: null }), 0);
-        }),
-      }));
+      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: null, openInNewTab: false });
 
       // Simulate file becoming active after 3 attempts
       let attempts = 0;
@@ -223,11 +206,7 @@ describe("CreateAreaCommand", () => {
       const createdFile = { basename: "new-area", path: "new-area.md" };
       mockAreaCreationService.createChildArea.mockResolvedValue(createdFile as any);
 
-      (LabelInputModal as jest.Mock).mockImplementation((app, callback) => ({
-        open: jest.fn(() => {
-          setTimeout(() => callback({ label: "Test", taskSize: null }), 0);
-        }),
-      }));
+      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: null, openInNewTab: false });
 
       const result = command.checkCallback(false, mockFile, mockContext);
       expect(result).toBe(true);
@@ -248,11 +227,7 @@ describe("CreateAreaCommand", () => {
       const createdFile = { basename: "new-area", path: "new-area.md" };
       mockAreaCreationService.createChildArea.mockResolvedValue(createdFile as any);
 
-      (LabelInputModal as jest.Mock).mockImplementation((app, callback) => ({
-        open: jest.fn(() => {
-          setTimeout(() => callback({ label: "Test", taskSize: null }), 0);
-        }),
-      }));
+      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: null, openInNewTab: false });
 
       const result = command.checkCallback(false, mockFile, mockContext);
       expect(result).toBe(true);
@@ -272,11 +247,7 @@ describe("CreateAreaCommand", () => {
       const createdFile = { basename: "new-area", path: "new-area.md" };
       mockAreaCreationService.createChildArea.mockResolvedValue(createdFile as any);
 
-      (LabelInputModal as jest.Mock).mockImplementation((app, callback) => ({
-        open: jest.fn(() => {
-          setTimeout(() => callback({ label: "Test", taskSize: null }), 0);
-        }),
-      }));
+      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: null, openInNewTab: false });
 
       // File never becomes active
       mockApp.workspace.getActiveFile = jest.fn().mockReturnValue(null);
@@ -301,11 +272,7 @@ describe("CreateAreaCommand", () => {
       mockAreaCreationService.createChildArea.mockResolvedValue(createdFile as any);
 
       // Mock modal to return label with openInNewTab true
-      (LabelInputModal as jest.Mock).mockImplementation((app, callback) => ({
-        open: jest.fn(() => {
-          setTimeout(() => callback({ label: "Test Area", openInNewTab: true, taskSize: null }), 0);
-        }),
-      }));
+      mockShowLabelInputModal.mockResolvedValue({ label: "Test Area", openInNewTab: true, taskSize: null });
 
       const result = command.checkCallback(false, mockFile, mockContext);
       expect(result).toBe(true);
@@ -322,11 +289,7 @@ describe("CreateAreaCommand", () => {
       mockAreaCreationService.createChildArea.mockResolvedValue(createdFile as any);
 
       // Mock modal to return label with openInNewTab false
-      (LabelInputModal as jest.Mock).mockImplementation((app, callback) => ({
-        open: jest.fn(() => {
-          setTimeout(() => callback({ label: "Test Area", openInNewTab: false, taskSize: null }), 0);
-        }),
-      }));
+      mockShowLabelInputModal.mockResolvedValue({ label: "Test Area", openInNewTab: false, taskSize: null });
 
       const result = command.checkCallback(false, mockFile, mockContext);
       expect(result).toBe(true);

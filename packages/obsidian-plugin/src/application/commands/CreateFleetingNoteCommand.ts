@@ -4,7 +4,7 @@ import {
   LoggingService,
 } from "exocortex";
 import { ICommand } from "./ICommand";
-import { FleetingNoteModal, FleetingNoteModalResult } from '@plugin/presentation/modals/FleetingNoteModal';
+import { showFleetingNoteModal } from '@plugin/presentation/modals/modalSchemas';
 import { ObsidianVaultAdapter } from '@plugin/adapters/ObsidianVaultAdapter';
 import { CommandHelpers } from "./helpers/CommandHelpers";
 
@@ -20,9 +20,7 @@ export class CreateFleetingNoteCommand implements ICommand {
 
   callback = async (): Promise<void> => {
     try {
-      const result = await new Promise<FleetingNoteModalResult>((resolve) => {
-        new FleetingNoteModal(this.app, resolve).open();
-      });
+      const result = await showFleetingNoteModal(this.app);
 
       if (result.label === null) {
         return;

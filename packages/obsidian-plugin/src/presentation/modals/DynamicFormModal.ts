@@ -7,14 +7,21 @@ import { ErrorBoundary } from "@plugin/presentation/components/ErrorBoundary";
 
 export type UserInput = Record<string, string>;
 
+export interface DynamicFormModalOptions {
+  readonly title?: string;
+  readonly submitLabel?: string;
+}
+
 export class DynamicFormModal extends Modal {
   private readonly schema: InputSchemaField[];
+  private readonly options: DynamicFormModalOptions;
   private readonly reactRenderer: ReactRenderer;
   private resolvePromise: ((value: UserInput | null) => void) | null = null;
 
-  constructor(app: App, schema: InputSchemaField[]) {
+  constructor(app: App, schema: InputSchemaField[], options?: DynamicFormModalOptions) {
     super(app);
     this.schema = schema;
+    this.options = options ?? {};
     this.reactRenderer = new ReactRenderer();
   }
 
@@ -24,7 +31,7 @@ export class DynamicFormModal extends Modal {
     contentEl.addClass("dynamic-form-modal");
 
     const titleEl = contentEl.createEl("h3", { cls: "dynamic-form-modal-title" });
-    titleEl.textContent = "Input required";
+    titleEl.textContent = this.options.title ?? "Input required";
 
     const container = contentEl.createEl("div", { cls: "dynamic-form-container" });
 
@@ -35,6 +42,7 @@ export class DynamicFormModal extends Modal {
         {
           children: React.createElement(DynamicForm, {
             schema: this.schema,
+            submitLabel: this.options.submitLabel,
             onSubmit: (values: UserInput) => {
               this.resolvePromise?.(values);
               this.resolvePromise = null;

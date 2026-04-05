@@ -16,46 +16,12 @@ jest.mock("obsidian", () => ({
   Notice: jest.fn(),
 }));
 
-export let mockLabelInputModalCallback: ((result: any) => void) | null = null;
-export let mockSupervisionInputModalCallback: ((result: any) => void) | null =
-  null;
-export let mockTrashReasonModalCallback: ((result: any) => void) | null = null;
-
-jest.mock("../../../../src/presentation/modals/LabelInputModal", () => ({
-  LabelInputModal: jest.fn().mockImplementation((app, onSubmit) => {
-    mockLabelInputModalCallback = onSubmit;
-    return {
-      open: jest.fn(),
-    };
-  }),
-}));
-
-jest.mock("../../../../src/presentation/modals/SupervisionInputModal", () => ({
-  SupervisionInputModal: jest.fn().mockImplementation((app, onSubmit) => {
-    mockSupervisionInputModalCallback = onSubmit;
-    return {
-      open: jest.fn(),
-    };
-  }),
-}));
-
-// Mock TrashReasonModal - stores callback so tests can trigger it
-jest.mock("../../../../src/presentation/modals/TrashReasonModal", () => ({
-  TrashReasonModal: jest.fn().mockImplementation((app, onSubmit) => {
-    mockTrashReasonModalCallback = onSubmit;
-    return {
-      open: jest.fn(),
-    };
-  }),
-}));
-
-// Mock ClassSelectionModal
-jest.mock("../../../../src/presentation/modals/ClassSelectionModal", () => ({
-  ClassSelectionModal: jest.fn().mockImplementation((app, classes, onSubmit) => {
-    return {
-      open: jest.fn(),
-    };
-  }),
+jest.mock("../../../../src/presentation/modals/modalSchemas", () => ({
+  showLabelInputModal: jest.fn().mockReturnValue(new Promise(() => {})),
+  showSupervisionModal: jest.fn().mockReturnValue(new Promise(() => {})),
+  showTrashReasonModal: jest.fn().mockReturnValue(new Promise(() => {})),
+  showClassSelectionModal: jest.fn().mockReturnValue(new Promise(() => {})),
+  showFleetingNoteModal: jest.fn().mockReturnValue(new Promise(() => {})),
 }));
 
 export interface CommandManagerTestContext {

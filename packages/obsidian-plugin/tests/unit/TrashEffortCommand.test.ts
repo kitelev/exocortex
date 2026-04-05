@@ -2,7 +2,8 @@ import { flushPromises } from "./helpers/testHelpers";
 import { TrashEffortCommand } from "../../src/application/commands/TrashEffortCommand";
 import { App, TFile, Notice } from "obsidian";
 import { TaskStatusService, CommandVisibilityContext, LoggingService } from "exocortex";
-import { TrashReasonModal, TrashReasonModalResult } from "../../src/presentation/modals/TrashReasonModal";
+import { showTrashReasonModal } from "../../src/presentation/modals/modalSchemas";
+import type { TrashReasonModalResult } from "../../src/presentation/modals/modalSchemas";
 
 jest.mock("obsidian", () => ({
   ...jest.requireActual("obsidian"),
@@ -15,17 +16,9 @@ jest.mock("exocortex", () => ({
     error: jest.fn(),
   },
 }));
-jest.mock("../../src/presentation/modals/TrashReasonModal");
+jest.mock("../../src/presentation/modals/modalSchemas");
 
-// Helper to mock modal result
-let mockModalResult: TrashReasonModalResult = { confirmed: true, reason: null };
-const MockedTrashReasonModal = TrashReasonModal as jest.MockedClass<typeof TrashReasonModal>;
-
-beforeEach(() => {
-  MockedTrashReasonModal.mockImplementation((_app, onSubmit) => ({
-    open: () => onSubmit(mockModalResult),
-  } as unknown as TrashReasonModal));
-});
+const mockShowTrashReasonModal = showTrashReasonModal as jest.MockedFunction<typeof showTrashReasonModal>;
 
 describe("TrashEffortCommand", () => {
   let command: TrashEffortCommand;
@@ -37,24 +30,19 @@ describe("TrashEffortCommand", () => {
   beforeEach(() => {
     jest.clearAllMocks();
 
-    // Reset modal result to default (confirmed, no reason)
-    mockModalResult = { confirmed: true, reason: null };
+    mockShowTrashReasonModal.mockResolvedValue({ confirmed: true, reason: null });
 
-    // Create mock app
     mockApp = {} as jest.Mocked<App>;
 
-    // Create mock task status service
     mockTaskStatusService = {
       trashEffort: jest.fn(),
     } as unknown as jest.Mocked<TaskStatusService>;
 
-    // Create mock file
     mockFile = {
       path: "test-effort.md",
       basename: "test-effort",
     } as jest.Mocked<TFile>;
 
-    // Create mock context
     mockContext = {
       instanceClass: "Effort",
       status: "Cancelled",
@@ -62,7 +50,6 @@ describe("TrashEffortCommand", () => {
       isDraft: false,
     };
 
-    // Create command instance
     command = new TrashEffortCommand(mockApp, mockTaskStatusService);
   });
 
@@ -103,16 +90,15 @@ describe("TrashEffortCommand", () => {
       const result = command.checkCallback(false, mockFile, mockContext);
       expect(result).toBe(true);
 
-      // Wait for async execution
       await flushPromises();
 
-      expect(TrashReasonModal).toHaveBeenCalledWith(mockApp, expect.any(Function));
+      expect(mockShowTrashReasonModal).toHaveBeenCalledWith(mockApp);
       expect(mockTaskStatusService.trashEffort).toHaveBeenCalledWith(mockFile, null);
       expect(Notice).toHaveBeenCalledWith("Trashed: test-effort");
     });
 
     it("should pass reason to trashEffort when user provides reason", async () => {
-      mockModalResult = { confirmed: true, reason: "No longer needed" };
+      mockShowTrashReasonModal.mockResolvedValue({ confirmed: true, reason: "No longer needed" });
       mockCanTrashEffort.mockReturnValue(true);
       mockTaskStatusService.trashEffort.mockResolvedValue();
 
@@ -126,7 +112,7 @@ describe("TrashEffortCommand", () => {
     });
 
     it("should not execute when user cancels modal", async () => {
-      mockModalResult = { confirmed: false, reason: null };
+      mockShowTrashReasonModal.mockResolvedValue({ confirmed: false, reason: null });
       mockCanTrashEffort.mockReturnValue(true);
       mockTaskStatusService.trashEffort.mockResolvedValue();
 
@@ -135,7 +121,7 @@ describe("TrashEffortCommand", () => {
 
       await flushPromises();
 
-      expect(TrashReasonModal).toHaveBeenCalledWith(mockApp, expect.any(Function));
+      expect(mockShowTrashReasonModal).toHaveBeenCalledWith(mockApp);
       expect(mockTaskStatusService.trashEffort).not.toHaveBeenCalled();
       expect(Notice).not.toHaveBeenCalled();
     });
@@ -148,7 +134,6 @@ describe("TrashEffortCommand", () => {
       const result = command.checkCallback(false, mockFile, mockContext);
       expect(result).toBe(true);
 
-      // Wait for async execution
       await flushPromises();
 
       expect(mockTaskStatusService.trashEffort).toHaveBeenCalledWith(mockFile, null);
@@ -175,7 +160,6 @@ describe("TrashEffortCommand", () => {
       const result = command.checkCallback(false, specialFile, mockContext);
       expect(result).toBe(true);
 
-      // Wait for async execution
       await flushPromises();
 
       expect(mockTaskStatusService.trashEffort).toHaveBeenCalledWith(specialFile, null);
@@ -190,7 +174,6 @@ describe("TrashEffortCommand", () => {
       const result = command.checkCallback(false, mockFile, mockContext);
       expect(result).toBe(true);
 
-      // Wait for async execution
       await flushPromises();
 
       expect(mockTaskStatusService.trashEffort).toHaveBeenCalledWith(mockFile, null);

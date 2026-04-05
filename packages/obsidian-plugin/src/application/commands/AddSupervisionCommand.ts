@@ -1,7 +1,7 @@
 import { App, Notice } from "obsidian";
 import { ICommand } from "./ICommand";
 import { SupervisionCreationService, LoggingService } from "exocortex";
-import { SupervisionInputModal, SupervisionFormData } from '@plugin/presentation/modals/SupervisionInputModal';
+import { showSupervisionModal } from '@plugin/presentation/modals/modalSchemas';
 import { ObsidianVaultAdapter } from '@plugin/adapters/ObsidianVaultAdapter';
 import { CommandHelpers } from "./helpers/CommandHelpers";
 
@@ -17,9 +17,7 @@ export class AddSupervisionCommand implements ICommand {
 
   callback = async (): Promise<void> => {
     try {
-      const formData = await new Promise<SupervisionFormData | null>((resolve) => {
-        new SupervisionInputModal(this.app, resolve).open();
-      });
+      const formData = await showSupervisionModal(this.app);
 
       if (formData === null) {
         return;

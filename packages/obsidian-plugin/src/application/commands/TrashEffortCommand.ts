@@ -7,9 +7,9 @@ import {
   LoggingService,
 } from "exocortex";
 import {
-  TrashReasonModal,
+  showTrashReasonModal,
   type TrashReasonModalResult,
-} from "@plugin/presentation/modals/TrashReasonModal";
+} from "@plugin/presentation/modals/modalSchemas";
 
 export class TrashEffortCommand implements ICommand {
   id = "trash-effort";
@@ -49,8 +49,6 @@ export class TrashEffortCommand implements ICommand {
   }
 
   private showModal(): Promise<TrashReasonModalResult> {
-    return new Promise<TrashReasonModalResult>((resolve) => {
-      new TrashReasonModal(this.app, resolve).open();
-    });
+    return showTrashReasonModal(this.app);
   }
 }

@@ -1,5 +1,5 @@
 import { App, Modal, Setting } from "obsidian";
-import type { LabelInputModalResult } from "./LabelInputModal";
+import type { LabelInputModalResult } from "./modalSchemas";
 import type {
   OntologySchemaService,
   OntologyPropertyDefinition,

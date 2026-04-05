@@ -5,7 +5,7 @@ import {
   TaskCreationService,
   type IFile,
 } from "exocortex";
-import type { LabelInputModalResult } from '@plugin/presentation/modals/LabelInputModal';
+import type { LabelInputModalResult } from '@plugin/presentation/modals/modalSchemas';
 import { ObsidianVaultAdapter } from '@plugin/adapters/ObsidianVaultAdapter';
 import { BaseContextAssetCreationCommand } from "./base/BaseContextAssetCreationCommand";
 
