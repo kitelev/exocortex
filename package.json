@@ -99,7 +99,7 @@
     "typescript-eslint": "^8.49.0"
   },
   "lint-staged": {
-    "packages/*/src/**/*.{ts,tsx}": [
+    "packages/!(cli)/src/**/*.{ts,tsx}": [
       "eslint --fix --max-warnings=0",
       "jest --bail --passWithNoTests --findRelatedTests --config packages/obsidian-plugin/jest.config.js"
     ],

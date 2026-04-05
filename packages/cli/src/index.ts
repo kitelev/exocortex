@@ -23,34 +23,62 @@ import { dynamicCommandCommand } from "./commands/dynamic-command.js";
 // Version injected at build time by esbuild (see esbuild.config.mjs)
 declare const __CLI_VERSION__: string;
 
-const program = new Command();
+/**
+ * Attach query subcommands (query, index, templates) to a parent command.
+ */
+function addQuerySubcommands(parent: Command): void {
+  parent.addCommand(sparqlQueryCommand());
+  parent.addCommand(sparqlIndexCommand());
+  parent.addCommand(sparqlTemplatesCommand());
+}
 
-program
-  .name("exocortex")
-  .description("CLI tool for Exocortex knowledge management system")
-  .version(__CLI_VERSION__);
+/**
+ * Create the CLI program with all commands registered.
+ * Exported for testing.
+ */
+export function createProgram(version?: string): Command {
+  const program = new Command();
 
-const sparqlCommand = program
-  .command("sparql")
-  .description("SPARQL query execution and cache management");
+  program
+    .name("exocortex")
+    .description("CLI tool for Exocortex knowledge management system")
+    .version(version ?? __CLI_VERSION__);
 
-sparqlCommand.addCommand(sparqlQueryCommand());
-sparqlCommand.addCommand(sparqlIndexCommand());
-sparqlCommand.addCommand(sparqlTemplatesCommand());
+  // Primary command: exoql
+  const exoqlCommand = program
+    .command("exoql")
+    .description("ExoQL query execution and cache management");
 
-program.addCommand(commandCommand());
-program.addCommand(watchCommand());
-program.addCommand(batchCommand());
-program.addCommand(batchRepairCommand());
-program.addCommand(resolveCommand());
-program.addCommand(askCommand());
-program.addCommand(dailyReviewCommand());
-program.addCommand(validateCommand());
-program.addCommand(classesCommand());
-program.addCommand(createCommand());
-program.addCommand(archiveCommand());
-program.addCommand(unarchiveCommand());
-program.addCommand(workflowCommand());
-program.addCommand(dynamicCommandCommand());
+  addQuerySubcommands(exoqlCommand);
 
-program.parse();
+  // Deprecated alias: sparql → exoql (prints deprecation warning)
+  const sparqlCommand = program
+    .command("sparql")
+    .description("(deprecated) Use 'exoql' instead");
+
+  addQuerySubcommands(sparqlCommand);
+
+  // Hook fires before any sparql subcommand action runs
+  sparqlCommand.hook("preAction", () => {
+    console.error('⚠️  "sparql" is deprecated. Use "exoql" instead.');
+  });
+
+  program.addCommand(commandCommand());
+  program.addCommand(watchCommand());
+  program.addCommand(batchCommand());
+  program.addCommand(batchRepairCommand());
+  program.addCommand(resolveCommand());
+  program.addCommand(askCommand());
+  program.addCommand(dailyReviewCommand());
+  program.addCommand(validateCommand());
+  program.addCommand(classesCommand());
+  program.addCommand(createCommand());
+  program.addCommand(archiveCommand());
+  program.addCommand(unarchiveCommand());
+  program.addCommand(workflowCommand());
+  program.addCommand(dynamicCommandCommand());
+
+  return program;
+}
+
+createProgram().parse();
