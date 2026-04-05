@@ -11,6 +11,17 @@ export interface CommandDefinition {
   readonly id: string;
   /** Human-readable label (e.g., "Remove start timestamp") */
   readonly name: string;
+  /**
+   * SPARQL-based label template with `{sparql}` placeholders.
+   * Each `{...}` block is executed as a SPARQL SELECT query;
+   * the first binding of the first result row replaces the placeholder.
+   *
+   * Example: `"Vote ({SELECT (COUNT(?v) AS ?n) WHERE { $target exo:vote ?v }})"` → `"Vote (3)"`
+   *
+   * Variable substitution (same as PreconditionEvaluator):
+   * - `$target` → `<targetIRI>`
+   */
+  readonly labelTemplate?: string;
   /** Lucide icon name (e.g., "clock-x") */
   readonly icon?: string;
   /** Precondition that determines when the command is available */
