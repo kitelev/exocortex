@@ -214,26 +214,6 @@ test.describe("DailyTasksTable", () => {
     expect(clickedPath).toBe("ems__EffortStatusInProgress");
   });
 
-  // NOTE: Skipped due to Playwright CT limitation with function props
-  // Function props don't serialize correctly across browser/Node boundary
-  // Feature is verified working in UI integration tests (UniversalLayoutRenderer.ui.test.ts)
-  test.skip("should use getAssetLabel to resolve task names", async ({
-    mount,
-  }) => {
-    const component = await mount(
-      <DailyTasksTable
-        tasks={mockTasks}
-        getAssetLabel={(path) => {
-          if (path === "task1.md") return "Custom Label for Task 1";
-          return null;
-        }}
-      />,
-    );
-
-    const taskLink = component.locator('tr[data-path="task1.md"] .task-name a');
-    await expect(taskLink).toContainText("Custom Label for Task 1");
-  });
-
   test("should render empty table when no tasks", async ({ mount }) => {
     const component = await mount(<DailyTasksTable tasks={[]} />);
 
