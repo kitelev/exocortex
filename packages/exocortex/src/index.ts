@@ -390,7 +390,7 @@ export type {
 } from "./infrastructure/memory";
 
 // ExoQL public API
-export { ExoQL, ExoQLError } from "./exoql";
+export { ExoQL, ExoQLError, type OwnFilterConfig } from "./exoql";
 
 // Error exports
 export * from "./domain/errors";
