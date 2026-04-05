@@ -43,18 +43,6 @@ describe("CommandManager - toggle commands", () => {
     });
   });
 
-  describe("Add Supervision Command", () => {
-    beforeEach(() => {
-      ctx.commandManager.registerAllCommands(ctx.mockPlugin);
-    });
-
-    it("should be always available", () => {
-      const command = ctx.registeredCommands.get("add-supervision");
-      expect(command).toBeDefined();
-      expect(typeof command.callback).toBe("function");
-    });
-  });
-
   describe("Toggle Layout Visibility Command", () => {
     beforeEach(() => {
       ctx.commandManager.registerAllCommands(ctx.mockPlugin);

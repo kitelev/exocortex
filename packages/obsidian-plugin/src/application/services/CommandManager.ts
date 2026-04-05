@@ -1,9 +1,29 @@
 import { App, TFile } from "obsidian";
+import { container } from "tsyringe";
 import { ExocortexPluginInterface } from '@plugin/types';
 import { CommandRegistry } from '@plugin/application/commands/CommandRegistry';
-import { MetadataExtractor } from "exocortex";
+import {
+  MetadataExtractor,
+  CommandVisibilityContext,
+  WikiLinkHelpers,
+  FleetingNoteCreationService,
+  GenericAssetCreationService,
+  DI_TOKENS,
+  registerCoreServices,
+} from "exocortex";
 import { ObsidianVaultAdapter } from '@plugin/adapters/ObsidianVaultAdapter';
-import { CommandVisibilityContext, WikiLinkHelpers } from "exocortex";
+import { LoggerFactory } from '@plugin/adapters/logging/LoggerFactory';
+import { SPARQLQueryService } from '@plugin/application/services/SPARQLQueryService';
+import { OntologySchemaService } from '@plugin/application/services/OntologySchemaService';
+import { ClassDiscoveryService } from '@plugin/application/services/ClassDiscoveryService';
+
+import { ReloadLayoutCommand } from '@plugin/application/commands/ReloadLayoutCommand';
+import { ToggleLayoutVisibilityCommand } from '@plugin/application/commands/ToggleLayoutVisibilityCommand';
+import { ToggleArchivedAssetsCommand } from '@plugin/application/commands/ToggleArchivedAssetsCommand';
+import { OpenQueryBuilderCommand } from '@plugin/application/commands/OpenQueryBuilderCommand';
+import { EditPropertiesCommand } from '@plugin/application/commands/EditPropertiesCommand';
+import { CreateAssetCommand } from '@plugin/application/commands/CreateAssetCommand';
+import { CreateFleetingNoteCommand } from '@plugin/application/commands/CreateFleetingNoteCommand';
 
 export class CommandManager {
   private commandRegistry: CommandRegistry | null = null;
@@ -17,15 +37,35 @@ export class CommandManager {
       app,
     );
     this.metadataExtractor = new MetadataExtractor(this.vaultAdapter);
-    // CommandRegistry is lazily initialized in registerAllCommands()
-    // to avoid needing a placeholder plugin instance
   }
 
   registerAllCommands(
     plugin: ExocortexPluginInterface,
     reloadLayoutCallback?: () => void,
   ): void {
-    this.commandRegistry = new CommandRegistry(this.app, plugin, reloadLayoutCallback);
+    const logger = LoggerFactory.create("CommandManager");
+
+    container.register(DI_TOKENS.IVaultAdapter, { useValue: this.vaultAdapter });
+    container.register(DI_TOKENS.ILogger, { useValue: logger });
+    registerCoreServices();
+
+    const fleetingNoteCreationService = container.resolve(FleetingNoteCreationService);
+    const genericAssetCreationService = container.resolve(GenericAssetCreationService);
+    const sparqlQueryService = new SPARQLQueryService(this.app, logger);
+    const ontologySchemaService = new OntologySchemaService(sparqlQueryService);
+    const classDiscoveryService = new ClassDiscoveryService(sparqlQueryService);
+
+    const globalCommands = [
+      new ReloadLayoutCommand(reloadLayoutCallback),
+      new ToggleLayoutVisibilityCommand(plugin),
+      new ToggleArchivedAssetsCommand(plugin),
+      new OpenQueryBuilderCommand(this.app, plugin),
+      new EditPropertiesCommand(this.app, plugin),
+      new CreateAssetCommand(this.app, genericAssetCreationService, this.vaultAdapter, classDiscoveryService, ontologySchemaService),
+      new CreateFleetingNoteCommand(this.app, fleetingNoteCreationService, this.vaultAdapter),
+    ];
+
+    this.commandRegistry = new CommandRegistry(globalCommands);
 
     const commands = this.commandRegistry.getAllCommands();
 
@@ -63,10 +103,6 @@ export class CommandManager {
     };
   }
 
-  /**
-   * Check if any of the asset's instance classes is a prototype (Issue #2261).
-   * Resolves UUID-based class references by looking up the class file's metadata.
-   */
   private resolveClassIsPrototype(instanceClass: string | string[] | null): boolean {
     if (!instanceClass) return false;
     if (!this.app.metadataCache?.getFirstLinkpathDest) return false;
