@@ -22,10 +22,12 @@ jest.unstable_mockModule("../../../src/cache/CacheManager.js", () => ({
   })),
 }));
 
-// Mock exocortex RDFS inference
+// Mock exocortex RDFS inference + prototype chain
 const mockAddAll = jest.fn();
 const mockMatch = jest.fn();
 const mockMaterialize = jest.fn();
+const mockRegistryInitialize = jest.fn();
+const mockProtoMaterialize = jest.fn();
 
 jest.unstable_mockModule("exocortex", () => ({
   InMemoryTripleStore: jest.fn(() => ({
@@ -34,6 +36,12 @@ jest.unstable_mockModule("exocortex", () => ({
   })),
   RDFSInferenceEngine: jest.fn(() => ({
     materialize: mockMaterialize,
+  })),
+  NonInheritablePropertyRegistry: jest.fn(() => ({
+    initialize: mockRegistryInitialize,
+  })),
+  PrototypeChainMaterializer: jest.fn(() => ({
+    materialize: mockProtoMaterialize,
   })),
 }));
 
@@ -78,6 +86,8 @@ describe("sparqlIndexCommand", () => {
     mockAddAll.mockResolvedValue(undefined);
     mockMatch.mockResolvedValue([]);
     mockMaterialize.mockResolvedValue(0);
+    mockRegistryInitialize.mockResolvedValue(undefined);
+    mockProtoMaterialize.mockResolvedValue(0);
   });
 
   afterEach(async () => {
@@ -150,6 +160,64 @@ describe("sparqlIndexCommand", () => {
 
       expect(mockInvalidate).toHaveBeenCalled();
       expect(mockBuildCacheWithValidation).toHaveBeenCalled();
+    });
+  });
+
+  describe("prototype chain materialization", () => {
+    it("should run PrototypeChainMaterializer after RDFS inference", async () => {
+      const cmd = sparqlIndexCommand();
+      await cmd.parseAsync([
+        "node", "test",
+        "--vault", vaultPath,
+      ]);
+
+      expect(mockRegistryInitialize).toHaveBeenCalled();
+      expect(mockProtoMaterialize).toHaveBeenCalled();
+    });
+
+    it("should save triples when prototype chain materializes new triples", async () => {
+      mockProtoMaterialize.mockResolvedValue(5);
+      mockMatch.mockResolvedValue([{ subject: "s", predicate: "p", object: "o" }]);
+
+      const cmd = sparqlIndexCommand();
+      await cmd.parseAsync([
+        "node", "test",
+        "--vault", vaultPath,
+      ]);
+
+      expect(mockSaveTriples).toHaveBeenCalled();
+      expect(consoleLogSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Materialized 5 inferred triples")
+      );
+    });
+
+    it("should combine RDFS and prototype chain inferred counts", async () => {
+      mockMaterialize.mockResolvedValue(10);
+      mockProtoMaterialize.mockResolvedValue(3);
+      mockMatch.mockResolvedValue([]);
+
+      const cmd = sparqlIndexCommand();
+      await cmd.parseAsync([
+        "node", "test",
+        "--vault", vaultPath,
+      ]);
+
+      expect(mockSaveTriples).toHaveBeenCalled();
+      expect(consoleLogSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Materialized 13 inferred triples")
+      );
+    });
+
+    it("should not run prototype chain when --no-inference is set", async () => {
+      const cmd = sparqlIndexCommand();
+      await cmd.parseAsync([
+        "node", "test",
+        "--vault", vaultPath,
+        "--no-inference",
+      ]);
+
+      expect(mockRegistryInitialize).not.toHaveBeenCalled();
+      expect(mockProtoMaterialize).not.toHaveBeenCalled();
     });
   });
 
