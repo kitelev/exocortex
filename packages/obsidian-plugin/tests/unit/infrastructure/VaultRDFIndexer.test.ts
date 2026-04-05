@@ -1,6 +1,6 @@
 import { VaultRDFIndexer } from "../../../src/infrastructure/VaultRDFIndexer";
 import type { App, TFile, EventRef } from "obsidian";
-import { InMemoryTripleStore, NoteToRDFConverter, ApplicationErrorHandler, IRI, RDFSInferenceEngine, NonInheritablePropertyRegistry, PrototypeChainMaterializer, INFERRED_GRAPH } from "exocortex";
+import { InMemoryTripleStore, NoteToRDFConverter, ApplicationErrorHandler, IRI, RDFSInferenceEngine, NonInheritablePropertyRegistry, PrototypeChainMaterializer, INFERRED_GRAPH, Namespace } from "exocortex";
 import { ObsidianVaultAdapter } from "../../../src/adapters/ObsidianVaultAdapter";
 
 jest.mock("exocortex");
@@ -61,6 +61,9 @@ describe("VaultRDFIndexer", () => {
     (InMemoryTripleStore as jest.MockedClass<typeof InMemoryTripleStore>).mockImplementation(() => mockTripleStore);
     (NoteToRDFConverter as jest.MockedClass<typeof NoteToRDFConverter>).mockImplementation(() => mockConverter);
     (ObsidianVaultAdapter as jest.MockedClass<typeof ObsidianVaultAdapter>).mockImplementation(() => mockVaultAdapter);
+
+    const mockPrototypePredicate = { value: "https://exocortex.my/ontology/exo#Asset_prototype" };
+    (Namespace as any).EXO = { term: jest.fn().mockReturnValue(mockPrototypePredicate) };
 
     indexer = new VaultRDFIndexer(mockApp);
   });
@@ -278,7 +281,7 @@ describe("VaultRDFIndexer", () => {
       expect(mockPrototypeMaterialize).toHaveBeenCalledWith(mockTripleStore);
     });
 
-    it("should clear inferred graph before re-materialization on updateFile", async () => {
+    it("should clear inferred graph before re-materialization on updateFile when file is prototype", async () => {
       await indexer.initialize();
       mockTripleStore.clearGraph.mockClear();
       mockRdfsMaterialize.mockClear();
@@ -286,6 +289,7 @@ describe("VaultRDFIndexer", () => {
 
       const mockFile = { path: "test.md", extension: "md" } as TFile;
       mockConverter.convertNote.mockResolvedValue([]);
+      mockTripleStore.match.mockResolvedValueOnce([{ subject: {}, predicate: {}, object: {} }]);
 
       await indexer.updateFile(mockFile);
 
@@ -323,6 +327,95 @@ describe("VaultRDFIndexer", () => {
     });
   });
 
+  describe("Issue #2504: prototype change cascades to instances", () => {
+    let mockRdfsMaterialize: jest.Mock;
+    let mockRegistryInitialize: jest.Mock;
+    let mockPrototypeMaterialize: jest.Mock;
+
+    beforeEach(() => {
+      mockRdfsMaterialize = jest.fn().mockResolvedValue(0);
+      (RDFSInferenceEngine as jest.MockedClass<typeof RDFSInferenceEngine>).mockImplementation(() => ({
+        materialize: mockRdfsMaterialize,
+      } as any));
+
+      mockRegistryInitialize = jest.fn().mockResolvedValue(undefined);
+      (NonInheritablePropertyRegistry as jest.MockedClass<typeof NonInheritablePropertyRegistry>).mockImplementation(() => ({
+        initialize: mockRegistryInitialize,
+      } as any));
+
+      mockPrototypeMaterialize = jest.fn().mockResolvedValue(0);
+      (PrototypeChainMaterializer as jest.MockedClass<typeof PrototypeChainMaterializer>).mockImplementation(() => ({
+        materialize: mockPrototypeMaterialize,
+      } as any));
+    });
+
+    it("should trigger full re-materialization when updating a prototype file", async () => {
+      await indexer.initialize();
+      mockTripleStore.clearGraph.mockClear();
+      mockRdfsMaterialize.mockClear();
+      mockRegistryInitialize.mockClear();
+      mockPrototypeMaterialize.mockClear();
+
+      const mockFile = { path: "prototype.md", extension: "md" } as TFile;
+      mockConverter.convertNote.mockResolvedValue([]);
+      mockTripleStore.match.mockResolvedValueOnce([{ subject: {}, predicate: {}, object: {} }]);
+
+      await indexer.updateFile(mockFile);
+
+      expect(mockTripleStore.clearGraph).toHaveBeenCalledWith(INFERRED_GRAPH);
+      expect(mockRdfsMaterialize).toHaveBeenCalledWith(mockTripleStore);
+      expect(mockPrototypeMaterialize).toHaveBeenCalledWith(mockTripleStore);
+    });
+
+    it("should NOT trigger re-materialization when updating a non-prototype file", async () => {
+      await indexer.initialize();
+      mockTripleStore.clearGraph.mockClear();
+      mockRdfsMaterialize.mockClear();
+      mockRegistryInitialize.mockClear();
+      mockPrototypeMaterialize.mockClear();
+
+      const mockFile = { path: "regular.md", extension: "md" } as TFile;
+      mockConverter.convertNote.mockResolvedValue([]);
+      mockTripleStore.match.mockResolvedValue([]);
+
+      await indexer.updateFile(mockFile);
+
+      expect(mockTripleStore.clearGraph).not.toHaveBeenCalled();
+      expect(mockRdfsMaterialize).not.toHaveBeenCalled();
+      expect(mockPrototypeMaterialize).not.toHaveBeenCalled();
+    });
+
+    it("should check for instances using Asset_prototype predicate", async () => {
+      await indexer.initialize();
+
+      const mockFile = { path: "test.md", extension: "md" } as TFile;
+      mockConverter.convertNote.mockResolvedValue([]);
+      mockTripleStore.match.mockResolvedValue([]);
+
+      await indexer.updateFile(mockFile);
+
+      expect((Namespace as any).EXO.term).toHaveBeenCalledWith("Asset_prototype");
+      expect(mockTripleStore.match).toHaveBeenCalledWith(
+        undefined,
+        expect.objectContaining({ value: "https://exocortex.my/ontology/exo#Asset_prototype" }),
+        expect.anything()
+      );
+    });
+
+    it("should still run inference on refresh regardless of prototype status", async () => {
+      await indexer.initialize();
+      mockTripleStore.clearGraph.mockClear();
+      mockRdfsMaterialize.mockClear();
+      mockPrototypeMaterialize.mockClear();
+
+      await indexer.refresh();
+
+      expect(mockTripleStore.clearGraph).toHaveBeenCalledWith(INFERRED_GRAPH);
+      expect(mockRdfsMaterialize).toHaveBeenCalledWith(mockTripleStore);
+      expect(mockPrototypeMaterialize).toHaveBeenCalledWith(mockTripleStore);
+    });
+  });
+
   describe("Issue #2490: RDFS inference materialization", () => {
     let mockMaterialize: jest.Mock;
 
@@ -339,12 +432,13 @@ describe("VaultRDFIndexer", () => {
       expect(mockMaterialize).toHaveBeenCalledWith(mockTripleStore);
     });
 
-    it("should run RDFS inference after updateFile re-converts a note", async () => {
+    it("should run RDFS inference after updateFile re-converts a prototype note", async () => {
       await indexer.initialize();
       mockMaterialize.mockClear();
 
       const mockFile = { path: "test.md", extension: "md" } as TFile;
       mockConverter.convertNote.mockResolvedValue([]);
+      mockTripleStore.match.mockResolvedValueOnce([{ subject: {}, predicate: {}, object: {} }]);
 
       await indexer.updateFile(mockFile);
 

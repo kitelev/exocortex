@@ -7,6 +7,7 @@ import {
   NonInheritablePropertyRegistry,
   PrototypeChainMaterializer,
   INFERRED_GRAPH,
+  Namespace,
   NetworkError,
   ServiceError,
   type ILogger,
@@ -171,13 +172,25 @@ export class VaultRDFIndexer {
 
     await this.errorHandler.executeWithRetry(
       async () => {
+        const fileIRI = new IRI(`obsidian://vault/${encodeURI(file.path)}`);
+        const isPrototype = await this.hasInstances(fileIRI);
+
         await this.removeFileTriples(file.path);
         const triples = await this.converter.convertNote(file as IFile);
         await this.tripleStore.addAll(triples);
-        await this.runInference();
+
+        if (isPrototype) {
+          await this.runInference();
+        }
       },
       { context: "VaultRDFIndexer.updateFile", filePath: file.path }
     );
+  }
+
+  private async hasInstances(fileIRI: IRI): Promise<boolean> {
+    const prototypePredicate = Namespace.EXO.term("Asset_prototype");
+    const instances = await this.tripleStore.match(undefined, prototypePredicate, fileIRI);
+    return instances.length > 0;
   }
 
   async removeFile(file: TFile): Promise<void> {
