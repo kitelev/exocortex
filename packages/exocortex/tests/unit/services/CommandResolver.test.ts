@@ -55,16 +55,24 @@ async function addCommandAsset(
 
 async function addPreconditionAsset(
   store: InMemoryTripleStore,
-  opts: { uid: string; label: string; sparqlAsk: string },
+  opts: { uid: string; label: string; sparqlAsk?: string; hostFunction?: string },
 ): Promise<IRI> {
   const subject = new IRI(`obsidian://vault/${opts.uid}.md`);
 
-  await store.addAll([
+  const triples: Triple[] = [
     new Triple(subject, Namespace.RDF.term("type"), Namespace.EXOCMD.term("Precondition")),
     new Triple(subject, Namespace.EXO.term("Asset_uid"), new Literal(opts.uid)),
     new Triple(subject, Namespace.EXO.term("Asset_label"), new Literal(opts.label)),
-    new Triple(subject, Namespace.EXOCMD.term("Precondition_sparqlAsk"), new Literal(opts.sparqlAsk)),
-  ]);
+  ];
+
+  if (opts.sparqlAsk) {
+    triples.push(new Triple(subject, Namespace.EXOCMD.term("Precondition_sparqlAsk"), new Literal(opts.sparqlAsk)));
+  }
+  if (opts.hostFunction) {
+    triples.push(new Triple(subject, Namespace.EXOCMD.term("Precondition_hostFunction"), new Literal(opts.hostFunction)));
+  }
+
+  await store.addAll(triples);
   return subject;
 }
 
@@ -268,6 +276,66 @@ describe("CommandResolver", () => {
 
       const cmd = await resolver.loadCommand("cmd-no-grounding");
       expect(cmd).toBeNull();
+    });
+
+    it("should load precondition with hostFunction instead of sparqlAsk", async () => {
+      await addPreconditionAsset(store, {
+        uid: "pre-host-fn",
+        label: "Has obsolete properties",
+        hostFunction: "hasObsoleteProperties",
+      });
+
+      await addGroundingAsset(store, {
+        uid: "gnd-clean",
+        label: "Clean properties",
+        type: "property_delete",
+        targetProperty: "deprecated_prop",
+      });
+
+      await addCommandAsset(store, {
+        uid: "cmd-clean",
+        label: "Clean Properties",
+        preconditionRef: "pre-host-fn",
+        groundingRef: "gnd-clean",
+      });
+
+      const cmd = await resolver.loadCommand("cmd-clean");
+
+      expect(cmd).not.toBeNull();
+      expect(cmd!.precondition).toBeDefined();
+      expect(cmd!.precondition!.id).toBe("pre-host-fn");
+      expect(cmd!.precondition!.hostFunction).toBe("hasObsoleteProperties");
+      expect(cmd!.precondition!.sparqlAsk).toBeUndefined();
+    });
+
+    it("should load precondition with both sparqlAsk and hostFunction", async () => {
+      await addPreconditionAsset(store, {
+        uid: "pre-both",
+        label: "Dual precondition",
+        sparqlAsk: "ASK { $target ?p ?o }",
+        hostFunction: "customCheck",
+      });
+
+      await addGroundingAsset(store, {
+        uid: "gnd-dual",
+        label: "Dual",
+        type: "property_delete",
+        targetProperty: "some_prop",
+      });
+
+      await addCommandAsset(store, {
+        uid: "cmd-dual",
+        label: "Dual Command",
+        preconditionRef: "pre-both",
+        groundingRef: "gnd-dual",
+      });
+
+      const cmd = await resolver.loadCommand("cmd-dual");
+
+      expect(cmd).not.toBeNull();
+      expect(cmd!.precondition).toBeDefined();
+      expect(cmd!.precondition!.sparqlAsk).toBe("ASK { $target ?p ?o }");
+      expect(cmd!.precondition!.hostFunction).toBe("customCheck");
     });
 
     it("should handle command without precondition gracefully", async () => {

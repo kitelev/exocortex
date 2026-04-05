@@ -564,18 +564,11 @@ function validateCommands(vaultPath: string): ValidationIssue[] {
             commandIssues.push(`Grounding "${groundingUid}" (property_set) missing targetValue`);
           }
 
-          // service_call: targetProperty holds the serviceId — must be a known service
+          // service_call: serviceId from dedicated property or fallback to targetProperty
           if (gType === GroundingType.SERVICE_CALL) {
-            const serviceId = gfm["exocmd__Grounding_targetProperty"];
+            const serviceId = gfm["exocmd__Grounding_serviceId"] ?? gfm["exocmd__Grounding_targetProperty"];
             if (!serviceId) {
-              commandIssues.push(`Grounding "${groundingUid}" (service_call) missing targetProperty (serviceId)`);
-            } else {
-              const knownIds: readonly string[] = CLI_STUB_SERVICE_IDS;
-              if (!knownIds.includes(String(serviceId))) {
-                commandIssues.push(
-                  `Grounding "${groundingUid}" references unknown service "${serviceId}". Known services: ${knownIds.join(", ")}`,
-                );
-              }
+              commandIssues.push(`Grounding "${groundingUid}" (service_call) missing serviceId and targetProperty`);
             }
           }
         }
@@ -592,10 +585,11 @@ function validateCommands(vaultPath: string): ValidationIssue[] {
       } else if (!hasClass(preconditionFile.fm, "exocmd__Precondition")) {
         commandIssues.push(`Precondition reference "${preconditionUid}" is not an exocmd__Precondition asset`);
       } else {
-        // Validate SPARQL ASK
+        // Validate precondition has either sparqlAsk or hostFunction
         const sparqlAsk = preconditionFile.fm["exocmd__Precondition_sparqlAsk"];
-        if (!sparqlAsk) {
-          commandIssues.push(`Precondition "${preconditionUid}" missing sparqlAsk`);
+        const hostFunction = preconditionFile.fm["exocmd__Precondition_hostFunction"];
+        if (!sparqlAsk && !hostFunction) {
+          commandIssues.push(`Precondition "${preconditionUid}" missing both sparqlAsk and hostFunction`);
         }
       }
     }
@@ -743,7 +737,10 @@ function hasClass(fm: Record<string, any>, className: string): boolean {
 
 function normalizeWikilink(value: string): string {
   if (typeof value !== "string") return "";
-  return value.replace(/["'[\]]/g, "").trim();
+  // Remove quotes and brackets, then strip "|Label" suffix (wikilink alias)
+  const stripped = value.replace(/["'[\]]/g, "").trim();
+  const pipeIdx = stripped.indexOf("|");
+  return pipeIdx >= 0 ? stripped.substring(0, pipeIdx).trim() : stripped;
 }
 
 function extractLabelFromFilename(filePath: string): string {

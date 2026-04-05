@@ -385,10 +385,19 @@ export class CommandResolver {
     const uid = await this.getLiteralValue(preconditionSubject, Namespace.EXO.term("Asset_uid"));
     const label = await this.getLiteralValue(preconditionSubject, Namespace.EXO.term("Asset_label")) ?? "";
     const sparqlAsk = await this.getLiteralValue(preconditionSubject, Namespace.EXOCMD.term("Precondition_sparqlAsk"));
+    const hostFunction = await this.getLiteralValue(preconditionSubject, Namespace.EXOCMD.term("Precondition_hostFunction"));
 
-    if (!uid || !sparqlAsk) return null;
+    if (!uid) return null;
 
-    return { id: uid, label, sparqlAsk };
+    // A precondition must have either sparqlAsk or hostFunction
+    if (!sparqlAsk && !hostFunction) return null;
+
+    return {
+      id: uid,
+      label,
+      ...(sparqlAsk && { sparqlAsk }),
+      ...(hostFunction && { hostFunction }),
+    };
   }
 
   private async loadLinkedGrounding(
