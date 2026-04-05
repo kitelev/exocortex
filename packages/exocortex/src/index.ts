@@ -106,6 +106,13 @@ export {
 } from "./services/DynamicFrontmatterGenerator";
 export { AlgorithmExtractor } from "./services/AlgorithmExtractor";
 export { PlanningService } from "./services/PlanningService";
+export {
+  PropertySchemaResolver,
+  type PropertySchema,
+  type PropertySchemaOption,
+  type PropertySchemaValidation,
+  type ISPARQLQueryable,
+} from "./services/PropertySchemaResolver";
 export { AssetConversionService } from "./services/AssetConversionService";
 export { SessionEventService } from "./services/SessionEventService";
 export { URIConstructionService } from "./services/URIConstructionService";
