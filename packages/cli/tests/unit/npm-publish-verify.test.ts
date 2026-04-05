@@ -1,13 +1,17 @@
 import { describe, it, expect } from "@jest/globals";
 import fs from "fs";
 import path from "path";
+import { fileURLToPath } from "url";
+
+const testDir = path.dirname(fileURLToPath(import.meta.url));
+const cliRoot = path.resolve(testDir, "../..");
+const monorepoRoot = path.resolve(cliRoot, "../..");
 
 describe("CLI npm publish verification (#2601)", () => {
-  const cliRoot = path.resolve(__dirname, "../..");
   const cliPkgPath = path.join(cliRoot, "package.json");
   const workflowPath = path.resolve(
-    cliRoot,
-    "../../.github/workflows/npm-publish-cli.yml",
+    monorepoRoot,
+    ".github/workflows/npm-publish-cli.yml",
   );
 
   let pkg: Record<string, unknown>;
