@@ -1,5 +1,5 @@
-import { SourceAnnotator, SOURCE_VARIABLE } from "../../../src/services/SourceAnnotator";
-import { INFERRED_GRAPH } from "../../../src/services/PrototypeChainMaterializer";
+import { SourceAnnotator, SOURCE_VARIABLE, DEPTH_VARIABLE } from "../../../src/services/SourceAnnotator";
+import { INFERRED_GRAPH, inferredGraphForDepth } from "../../../src/services/PrototypeChainMaterializer";
 import { PrototypeChainMaterializer } from "../../../src/services/PrototypeChainMaterializer";
 import { NonInheritablePropertyRegistry } from "../../../src/services/NonInheritablePropertyRegistry";
 import { InMemoryTripleStore } from "../../../src/infrastructure/rdf/InMemoryTripleStore";
@@ -333,6 +333,130 @@ describe("SourceAnnotator", () => {
       const results = await annotator.annotate([solution], "s", "p", "o");
 
       expect((results[0].get(SOURCE_VARIABLE) as Literal).value).toBe("own");
+    });
+  });
+
+  describe("getInheritanceDepth", () => {
+    it("should return 0 for own triples (not in any inferred graph)", async () => {
+      await store.add(new Triple(breakfastInstance, effortArea, healthArea));
+
+      const depth = await annotator.getInheritanceDepth(
+        breakfastInstance,
+        effortArea,
+        healthArea,
+      );
+
+      expect(depth).toBe(0);
+    });
+
+    it("should return 1 for depth-1 inherited triples", async () => {
+      const triple = new Triple(breakfastInstance, effortArea, healthArea);
+      await store.add(triple);
+      await store.addToGraph(triple, INFERRED_GRAPH);
+      await store.addToGraph(triple, inferredGraphForDepth(1));
+
+      const depth = await annotator.getInheritanceDepth(
+        breakfastInstance,
+        effortArea,
+        healthArea,
+      );
+
+      expect(depth).toBe(1);
+    });
+
+    it("should return 2 for depth-2 inherited triples", async () => {
+      const triple = new Triple(breakfastInstance, effortArea, healthArea);
+      await store.add(triple);
+      await store.addToGraph(triple, INFERRED_GRAPH);
+      await store.addToGraph(triple, inferredGraphForDepth(2));
+
+      const depth = await annotator.getInheritanceDepth(
+        breakfastInstance,
+        effortArea,
+        healthArea,
+      );
+
+      expect(depth).toBe(2);
+    });
+
+    it("should work with PrototypeChainMaterializer depth-1", async () => {
+      const registry = new NonInheritablePropertyRegistry();
+      const registryStore = new InMemoryTripleStore();
+      const nonInheritableClassIRI = new IRI("obsidian://vault/exo__NonInheritableProperty.md");
+      await registryStore.add(
+        new Triple(nonInheritableClassIRI, assetLabel, new Literal("exo__NonInheritableProperty")),
+      );
+      for (const propLabel of ["exo__Asset_uid", "exo__Asset_label", "exo__Asset_prototype"]) {
+        const defIRI = new IRI(`obsidian://vault/${propLabel}.md`);
+        await registryStore.add(new Triple(defIRI, Namespace.EXO.term("Instance_class"), nonInheritableClassIRI));
+        await registryStore.add(new Triple(defIRI, assetLabel, new Literal(propLabel)));
+      }
+      await registry.initialize(registryStore);
+
+      // Setup: breakfastInstance → breakfastProto (depth 1)
+      await store.add(new Triple(breakfastProto, effortArea, healthArea));
+      await store.add(new Triple(breakfastInstance, Namespace.EXO.term("Asset_prototype"), breakfastProto));
+
+      const materializer = new PrototypeChainMaterializer(registry);
+      await materializer.materialize(store);
+
+      const depth = await annotator.getInheritanceDepth(
+        breakfastInstance,
+        effortArea,
+        healthArea,
+      );
+
+      expect(depth).toBe(1);
+    });
+
+    it("should work with PrototypeChainMaterializer depth-2", async () => {
+      const registry = new NonInheritablePropertyRegistry();
+      const registryStore = new InMemoryTripleStore();
+      const nonInheritableClassIRI = new IRI("obsidian://vault/exo__NonInheritableProperty.md");
+      await registryStore.add(
+        new Triple(nonInheritableClassIRI, assetLabel, new Literal("exo__NonInheritableProperty")),
+      );
+      for (const propLabel of ["exo__Asset_uid", "exo__Asset_label", "exo__Asset_prototype"]) {
+        const defIRI = new IRI(`obsidian://vault/${propLabel}.md`);
+        await registryStore.add(new Triple(defIRI, Namespace.EXO.term("Instance_class"), nonInheritableClassIRI));
+        await registryStore.add(new Triple(defIRI, assetLabel, new Literal(propLabel)));
+      }
+      await registry.initialize(registryStore);
+
+      // Setup: breakfastInstance → breakfastProto → morningProto (depth 2)
+      const morningProto = new IRI("obsidian://vault/MorningRoutine.md");
+      const effortParent = Namespace.EMS.term("Effort_parent");
+      const routineParent = new IRI("obsidian://vault/Routine.md");
+
+      await store.add(new Triple(breakfastProto, effortArea, healthArea));
+      await store.add(new Triple(breakfastProto, Namespace.EXO.term("Asset_prototype"), morningProto));
+      await store.add(new Triple(morningProto, effortParent, routineParent));
+      await store.add(new Triple(breakfastInstance, Namespace.EXO.term("Asset_prototype"), breakfastProto));
+
+      const materializer = new PrototypeChainMaterializer(registry);
+      await materializer.materialize(store);
+
+      // area from depth-1 (breakfastProto)
+      const areaDepth = await annotator.getInheritanceDepth(
+        breakfastInstance,
+        effortArea,
+        healthArea,
+      );
+      expect(areaDepth).toBe(1);
+
+      // parent from depth-2 (morningProto)
+      const parentDepth = await annotator.getInheritanceDepth(
+        breakfastInstance,
+        effortParent,
+        routineParent,
+      );
+      expect(parentDepth).toBe(2);
+    });
+  });
+
+  describe("DEPTH_VARIABLE constant", () => {
+    it("should be exported and equal to '_depth'", () => {
+      expect(DEPTH_VARIABLE).toBe("_depth");
     });
   });
 
