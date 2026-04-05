@@ -206,6 +206,10 @@ describe("ExocortexPlugin", () => {
         "sparql",
         expect.any(Function)
       );
+      expect(plugin.registerMarkdownCodeBlockProcessor).toHaveBeenCalledWith(
+        "exoql",
+        expect.any(Function)
+      );
       // 10 - 4 semantic search file events (create, modify, delete, rename) = 6 + 1 PrintNameRuleService refresh = 7
       expect(plugin.registerEvent).toHaveBeenCalledTimes(7);
       expect(mockLogger.info).toHaveBeenCalledWith("Exocortex Plugin loaded successfully");
@@ -1233,6 +1237,34 @@ describe("ExocortexPlugin", () => {
       const processorFn = processorCall[1];
 
       // Test that it calls the SPARQL processor
+      const source = "SELECT * WHERE { ?s ?p ?o }";
+      const el = document.createElement("div");
+      const ctx = {} as any;
+
+      // Act
+      processorFn(source, el, ctx);
+
+      // Assert
+      expect(mockSparqlProcessor.process).toHaveBeenCalledWith(source, el, ctx);
+    });
+
+    it("should register exoql code block processor as alias for SPARQL", async () => {
+      // Arrange
+      await plugin.onload();
+
+      // Assert
+      expect(plugin.registerMarkdownCodeBlockProcessor).toHaveBeenCalledWith(
+        "exoql",
+        expect.any(Function)
+      );
+
+      // Find the exoql processor call
+      const calls = (plugin.registerMarkdownCodeBlockProcessor as jest.Mock).mock.calls;
+      const exoqlCall = calls.find((c: any[]) => c[0] === "exoql");
+      expect(exoqlCall).toBeDefined();
+      const processorFn = exoqlCall![1];
+
+      // Test that it calls the same SPARQL processor
       const source = "SELECT * WHERE { ?s ?p ?o }";
       const el = document.createElement("div");
       const ctx = {} as any;

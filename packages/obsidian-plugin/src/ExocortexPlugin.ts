@@ -191,6 +191,11 @@ export default class ExocortexPlugin extends Plugin {
       );
 
       this.registerMarkdownCodeBlockProcessor(
+        "exoql",
+        (source, el, ctx) => this.sparqlProcessor.process(source, el, ctx)
+      );
+
+      this.registerMarkdownCodeBlockProcessor(
         "exo-layout",
         (source, el, ctx) => this.layoutProcessor.process(source, el, ctx)
       );
