@@ -1,4 +1,4 @@
-import { Notice } from "obsidian";
+import { App, Notice } from "obsidian";
 import { ActionButton } from '@plugin/presentation/components/ActionButtonsGroup';
 import type {
   CommandResolver,
@@ -13,6 +13,7 @@ import {
   IButtonGroupBuilder,
   ButtonBuilderContext,
 } from "./ButtonBuilderTypes";
+import { DynamicFormModal } from "@plugin/presentation/modals/DynamicFormModal";
 
 /**
  * Configuration for DynamicCommandButtonGroupBuilder.
@@ -84,7 +85,7 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
   }
 
   async build(context: ButtonBuilderContext): Promise<ActionButton[]> {
-    const { file, metadata, logger, refresh } = context;
+    const { app, file, metadata, logger, refresh } = context;
 
     const subjectIRI = this.extractSubjectIRI(metadata) ?? file.path;
     if (!subjectIRI) return [];
@@ -135,7 +136,7 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
     if (visibleCommands.length === 0) return [];
 
     return visibleCommands.map(({ rc }) =>
-      this.createButton(rc, subjectIRI, file.path, logger, refresh),
+      this.createButton(rc, subjectIRI, file.path, app as App, logger, refresh),
     );
   }
 
@@ -143,6 +144,7 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
     rc: ResolvedCommand,
     targetIRI: string,
     filePath: string,
+    app: App,
     logger: ILogger,
     refresh: () => Promise<void>,
   ): ActionButton {
@@ -155,7 +157,7 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
       variant,
       visible: true,
       onClick: async () => {
-        await this.handleClick(rc, targetIRI, filePath, logger, refresh);
+        await this.handleClick(rc, targetIRI, filePath, app, logger, refresh);
       },
     };
   }
@@ -164,6 +166,7 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
     rc: ResolvedCommand,
     targetIRI: string,
     filePath: string,
+    app: App,
     logger: ILogger,
     refresh: () => Promise<void>,
   ): Promise<void> {
@@ -177,7 +180,8 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
     let userInput: UserInput | undefined;
     const inputSchema = this.extractInputSchema(rc);
     if (inputSchema && inputSchema.length > 0) {
-      const collected = await this.showInputModal(inputSchema);
+      const modal = new DynamicFormModal(app, inputSchema);
+      const collected = await modal.waitForResult();
       if (collected === null) return;
       userInput = collected;
     }
@@ -235,114 +239,6 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
         typeof (field as Record<string, unknown>)["type"] === "string",
     );
   }
-
-  /* eslint-disable obsidianmd/no-static-styles-assignment */
-  private async showInputModal(
-    schema: InputSchemaField[],
-  ): Promise<UserInput | null> {
-    return new Promise((resolve) => {
-      const container = document.createElement("div");
-      container.className = "exocortex-input-modal-overlay";
-      container.style.cssText =
-        "position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;";
-
-      const modal = document.createElement("div");
-      modal.className = "exocortex-input-modal";
-      modal.style.cssText =
-        "background:var(--background-primary);padding:20px;border-radius:8px;min-width:300px;max-width:500px;";
-
-      const title = document.createElement("h3");
-      title.textContent = "Input required";
-      modal.appendChild(title);
-
-      const inputs: Map<string, HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement> = new Map();
-
-      for (const field of schema) {
-        const label = document.createElement("label");
-        label.style.cssText = "display:block;margin:8px 0 4px;";
-        label.textContent = field.label ?? field.name;
-        modal.appendChild(label);
-
-        if (field.type === "enum" && field.options) {
-          const select = document.createElement("select");
-          select.style.cssText = "width:100%;padding:4px;";
-          for (const opt of field.options) {
-            const option = document.createElement("option");
-            if (typeof opt === "string") {
-              option.value = opt;
-              option.textContent = opt;
-            } else {
-              option.value = opt.value;
-              option.textContent = opt.label;
-            }
-            select.appendChild(option);
-          }
-          if (field.defaultValue) select.value = field.defaultValue;
-          modal.appendChild(select);
-          inputs.set(field.name, select);
-        } else if (field.type === "date") {
-          const input = document.createElement("input");
-          input.type = "date";
-          input.style.cssText = "width:100%;padding:4px;";
-          if (field.defaultValue) input.value = field.defaultValue;
-          modal.appendChild(input);
-          inputs.set(field.name, input);
-        } else if (field.type === "multiline") {
-          const textarea = document.createElement("textarea");
-          textarea.rows = field.rows ?? 4;
-          textarea.style.cssText = "width:100%;padding:4px;resize:vertical;";
-          if (field.defaultValue) textarea.value = field.defaultValue;
-          modal.appendChild(textarea);
-          inputs.set(field.name, textarea);
-        } else if (field.type === "assetRef") {
-          const input = document.createElement("input");
-          input.type = "text";
-          input.placeholder = "Asset reference...";
-          input.style.cssText = "width:100%;padding:4px;";
-          if (field.defaultValue) input.value = field.defaultValue;
-          modal.appendChild(input);
-          inputs.set(field.name, input);
-        } else {
-          const input = document.createElement("input");
-          input.type = "text";
-          input.style.cssText = "width:100%;padding:4px;";
-          if (field.defaultValue) input.value = field.defaultValue;
-          modal.appendChild(input);
-          inputs.set(field.name, input);
-        }
-      }
-
-      const buttonContainer = document.createElement("div");
-      buttonContainer.style.cssText =
-        "display:flex;justify-content:flex-end;gap:8px;margin-top:16px;";
-
-      const cancelBtn = document.createElement("button");
-      cancelBtn.textContent = "Cancel";
-      cancelBtn.addEventListener("click", () => {
-        container.remove();
-        resolve(null);
-      });
-      buttonContainer.appendChild(cancelBtn);
-
-      const okBtn = document.createElement("button");
-      okBtn.textContent = "OK";
-      okBtn.className = "mod-cta";
-      okBtn.addEventListener("click", () => {
-        const result: UserInput = {};
-        for (const [name, el] of inputs) {
-          result[name] = el.value;
-        }
-        container.remove();
-        resolve(result);
-      });
-      buttonContainer.appendChild(okBtn);
-
-      modal.appendChild(buttonContainer);
-      container.appendChild(modal);
-      document.body.appendChild(container);
-    });
-  }
-  /* eslint-enable obsidianmd/no-static-styles-assignment */
 
   private extractSubjectIRI(metadata: Record<string, unknown>): string | undefined {
     const uid = metadata["exo__Asset_uid"];
