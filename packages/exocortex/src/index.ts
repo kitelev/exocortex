@@ -215,6 +215,7 @@ export { RDFVocabularyMapper } from "./infrastructure/rdf/RDFVocabularyMapper";
 export { RDFSInferenceEngine } from "./infrastructure/rdf/RDFSInferenceEngine";
 export { NonInheritablePropertyRegistry } from "./services/NonInheritablePropertyRegistry";
 export { PrototypeChainMaterializer, INFERRED_GRAPH } from "./services/PrototypeChainMaterializer";
+export { SourceAnnotator, SOURCE_VARIABLE, type TripleSource } from "./services/SourceAnnotator";
 export { NoteToRDFConverter } from "./services/NoteToRDFConverter";
 
 // SPARQL Engine exports
