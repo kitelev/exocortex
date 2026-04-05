@@ -2,11 +2,12 @@ import { flushPromises, waitForCondition } from "./helpers/testHelpers";
 import { CreateInstanceCommand } from "../../src/application/commands/CreateInstanceCommand";
 import { App, TFile, Notice, WorkspaceLeaf } from "obsidian";
 import {
-  TaskCreationService,
+  GenericAssetCreationService,
   CommandVisibilityContext,
   LoggingService,
-  AssetClass,
-  DateFormatter
+  DateFormatter,
+  type InstantiationRuleResolver,
+  type InstantiationRule,
 } from "exocortex";
 import { showLabelInputModal } from "../../src/presentation/modals/modalSchemas";
 import { ObsidianVaultAdapter } from "../../src/adapters/ObsidianVaultAdapter";
@@ -27,15 +28,13 @@ jest.mock("exocortex", () => ({
   WikiLinkHelpers: {
     normalize: jest.fn(),
   },
-  AssetClass: {
-    MEETING_PROTOTYPE: "MeetingPrototype",
-  },
 }));
 
 describe("CreateInstanceCommand", () => {
   let command: CreateInstanceCommand;
   let mockApp: jest.Mocked<App>;
-  let mockTaskCreationService: jest.Mocked<TaskCreationService>;
+  let mockRuleResolver: jest.Mocked<InstantiationRuleResolver>;
+  let mockGenericAssetCreationService: jest.Mocked<GenericAssetCreationService>;
   let mockVaultAdapter: jest.Mocked<ObsidianVaultAdapter>;
   let mockFile: jest.Mocked<TFile>;
   let mockContext: CommandVisibilityContext;
@@ -45,22 +44,18 @@ describe("CreateInstanceCommand", () => {
   beforeEach(() => {
     jest.clearAllMocks();
 
-    // Setup WikiLinkHelpers mock
     const { WikiLinkHelpers } = require("exocortex");
     WikiLinkHelpers.normalize.mockImplementation((str: string) => str);
 
-    // Create mock leaf
     mockLeaf = {
       openFile: jest.fn(),
     } as unknown as jest.Mocked<WorkspaceLeaf>;
 
-    // Create mock TFile for created file
     mockTFile = {
       path: "new-instance.md",
       basename: "new-instance",
     } as jest.Mocked<TFile>;
 
-    // Create mock app
     mockApp = {
       workspace: {
         getLeaf: jest.fn().mockReturnValue(mockLeaf),
@@ -76,22 +71,26 @@ describe("CreateInstanceCommand", () => {
       },
     } as unknown as jest.Mocked<App>;
 
-    // Create mock services
-    mockTaskCreationService = {
-      createTask: jest.fn(),
-    } as unknown as jest.Mocked<TaskCreationService>;
+    mockRuleResolver = {
+      getRule: jest.fn().mockResolvedValue(null),
+      invalidateCache: jest.fn(),
+    } as unknown as jest.Mocked<InstantiationRuleResolver>;
+
+    mockGenericAssetCreationService = {
+      createAsset: jest.fn(),
+    } as unknown as jest.Mocked<GenericAssetCreationService>;
 
     mockVaultAdapter = {
       toTFile: jest.fn().mockReturnValue(mockTFile),
     } as unknown as jest.Mocked<ObsidianVaultAdapter>;
 
-    // Create mock file
     mockFile = {
       path: "test-file.md",
       basename: "test-file",
-    } as jest.Mocked<TFile>;
+      name: "test-file.md",
+      parent: { path: "parent-folder", name: "parent-folder" },
+    } as unknown as jest.Mocked<TFile>;
 
-    // Create mock context
     mockContext = {
       instanceClass: "Task",
       status: "Active",
@@ -99,8 +98,12 @@ describe("CreateInstanceCommand", () => {
       isDraft: false,
     };
 
-    // Create command instance
-    command = new CreateInstanceCommand(mockApp, mockTaskCreationService, mockVaultAdapter);
+    command = new CreateInstanceCommand(
+      mockApp,
+      mockRuleResolver,
+      mockGenericAssetCreationService,
+      mockVaultAdapter,
+    );
   });
 
   describe("id and name", () => {
@@ -116,213 +119,390 @@ describe("CreateInstanceCommand", () => {
     it("should return false when context is null", () => {
       const result = command.checkCallback(true, mockFile, null);
       expect(result).toBe(false);
-      expect(mockTaskCreationService.createTask).not.toHaveBeenCalled();
+      expect(mockGenericAssetCreationService.createAsset).not.toHaveBeenCalled();
     });
 
     it("should return false when canCreateInstance returns false", () => {
       mockCanCreateInstance.mockReturnValue(false);
       const result = command.checkCallback(true, mockFile, mockContext);
       expect(result).toBe(false);
-      expect(mockTaskCreationService.createTask).not.toHaveBeenCalled();
+      expect(mockGenericAssetCreationService.createAsset).not.toHaveBeenCalled();
     });
 
     it("should return true when canCreateInstance returns true and checking is true", () => {
       mockCanCreateInstance.mockReturnValue(true);
       const result = command.checkCallback(true, mockFile, mockContext);
       expect(result).toBe(true);
-      expect(mockTaskCreationService.createTask).not.toHaveBeenCalled();
-    });
-
-    it("should execute command when checking is false and canCreateInstance returns true", async () => {
-      mockCanCreateInstance.mockReturnValue(true);
-      const createdFile = { basename: "new-instance", path: "new-instance.md" };
-      mockTaskCreationService.createTask.mockResolvedValue(createdFile as any);
-
-      // Mock modal to return label and task size
-      mockShowLabelInputModal.mockResolvedValue({ label: "Test Instance", taskSize: "medium", openInNewTab: false });
-
-      const result = command.checkCallback(false, mockFile, mockContext);
-      expect(result).toBe(true);
-
-      // Wait for async execution
-      await flushPromises();
-
-      expect(mockShowLabelInputModal).toHaveBeenCalledWith(mockApp,
-        `test-file ${DateFormatter.toDateString(new Date())}`,
-        true
-      );
-      expect(mockTaskCreationService.createTask).toHaveBeenCalledWith(
-        mockFile,
-        { key: "value" },
-        "Task",
-        "Test Instance",
-        "medium"
-      );
-      expect(mockVaultAdapter.toTFile).toHaveBeenCalledWith(createdFile);
-      expect(mockLeaf.openFile).toHaveBeenCalledWith(mockTFile);
-      expect(mockApp.workspace.setActiveLeaf).toHaveBeenCalledWith(mockLeaf, { focus: true });
-      expect(Notice).toHaveBeenCalledWith("Instance created: new-instance");
+      expect(mockGenericAssetCreationService.createAsset).not.toHaveBeenCalled();
     });
 
     it("should handle modal cancellation", async () => {
       mockCanCreateInstance.mockReturnValue(true);
-
-      // Mock modal to return null (cancelled)
       mockShowLabelInputModal.mockResolvedValue({ label: null, taskSize: null, openInNewTab: false });
 
       const result = command.checkCallback(false, mockFile, mockContext);
       expect(result).toBe(true);
 
-      // Wait for async execution
       await flushPromises();
 
       expect(mockShowLabelInputModal).toHaveBeenCalled();
-      expect(mockTaskCreationService.createTask).not.toHaveBeenCalled();
+      expect(mockGenericAssetCreationService.createAsset).not.toHaveBeenCalled();
       expect(Notice).not.toHaveBeenCalled();
     });
+  });
+
+  describe("rule-based creation", () => {
+    const mockCanCreateInstance = require("exocortex").canCreateInstance;
+
+    it("should create asset using resolved InstantiationRule", async () => {
+      mockCanCreateInstance.mockReturnValue(true);
+      const rule: InstantiationRule = {
+        prototypeUID: "proto-uid-123",
+        defaultFolder: "02 Areas/tasks",
+        propertySetRules: [
+          { property: "ems__Effort_status", value: "753a44d5-846c-4b82-9196-4fd9a4d48777", valueType: "wikilink" },
+        ],
+      };
+      mockRuleResolver.getRule.mockResolvedValue(rule);
+      const createdFile = { basename: "new-instance", path: "02 Areas/tasks/new-instance.md" };
+      mockGenericAssetCreationService.createAsset.mockResolvedValue(createdFile as any);
+
+      mockShowLabelInputModal.mockResolvedValue({ label: "My Task", taskSize: null, openInNewTab: false });
+
+      command.checkCallback(false, mockFile, mockContext);
+      await flushPromises();
+
+      expect(mockRuleResolver.getRule).toHaveBeenCalledWith("Task");
+      expect(mockGenericAssetCreationService.createAsset).toHaveBeenCalledWith(
+        expect.objectContaining({
+          className: "Task",
+          label: "My Task",
+          folderPath: "02 Areas/tasks",
+          propertyValues: expect.objectContaining({
+            "exo__Asset_prototype": '"[[proto-uid-123]]"',
+            "ems__Effort_status": '"[[753a44d5-846c-4b82-9196-4fd9a4d48777]]"',
+          }),
+        }),
+      );
+      expect(Notice).toHaveBeenCalledWith("Instance created: new-instance");
+    });
+
+    it("should include taskSize in propertyValues when provided", async () => {
+      mockCanCreateInstance.mockReturnValue(true);
+      const rule: InstantiationRule = {
+        prototypeUID: "proto-uid-123",
+        defaultFolder: "tasks",
+        propertySetRules: [],
+      };
+      mockRuleResolver.getRule.mockResolvedValue(rule);
+      const createdFile = { basename: "new-instance", path: "tasks/new-instance.md" };
+      mockGenericAssetCreationService.createAsset.mockResolvedValue(createdFile as any);
+
+      mockShowLabelInputModal.mockResolvedValue({ label: "My Task", taskSize: '"[[ems__TaskSize_S]]"', openInNewTab: false });
+
+      command.checkCallback(false, mockFile, mockContext);
+      await flushPromises();
+
+      expect(mockGenericAssetCreationService.createAsset).toHaveBeenCalledWith(
+        expect.objectContaining({
+          propertyValues: expect.objectContaining({
+            "ems__Effort_taskSize": '"[[ems__TaskSize_S]]"',
+          }),
+        }),
+      );
+    });
+
+    it("should handle rule with multiple propertySetRules", async () => {
+      mockCanCreateInstance.mockReturnValue(true);
+      const rule: InstantiationRule = {
+        prototypeUID: "proto-uid",
+        defaultFolder: "tasks",
+        propertySetRules: [
+          { property: "ems__Effort_status", value: "backlog-uid", valueType: "wikilink" },
+          { property: "exo__Asset_isDefinedBy", value: "ontology-uid", valueType: "wikilink" },
+          { property: "ems__Effort_priority", value: "3", valueType: "literal" },
+        ],
+      };
+      mockRuleResolver.getRule.mockResolvedValue(rule);
+      const createdFile = { basename: "new-instance", path: "tasks/new-instance.md" };
+      mockGenericAssetCreationService.createAsset.mockResolvedValue(createdFile as any);
+
+      mockShowLabelInputModal.mockResolvedValue({ label: "Task", taskSize: null, openInNewTab: false });
+
+      command.checkCallback(false, mockFile, mockContext);
+      await flushPromises();
+
+      expect(mockGenericAssetCreationService.createAsset).toHaveBeenCalledWith(
+        expect.objectContaining({
+          propertyValues: expect.objectContaining({
+            "ems__Effort_status": '"[[backlog-uid]]"',
+            "exo__Asset_isDefinedBy": '"[[ontology-uid]]"',
+            "ems__Effort_priority": "3",
+          }),
+        }),
+      );
+    });
+
+    it("should handle rule with null prototypeUID", async () => {
+      mockCanCreateInstance.mockReturnValue(true);
+      const rule: InstantiationRule = {
+        prototypeUID: null,
+        defaultFolder: "tasks",
+        propertySetRules: [],
+      };
+      mockRuleResolver.getRule.mockResolvedValue(rule);
+      const createdFile = { basename: "new-instance", path: "tasks/new-instance.md" };
+      mockGenericAssetCreationService.createAsset.mockResolvedValue(createdFile as any);
+
+      mockShowLabelInputModal.mockResolvedValue({ label: "Task", taskSize: null, openInNewTab: false });
+
+      command.checkCallback(false, mockFile, mockContext);
+      await flushPromises();
+
+      const callArgs = mockGenericAssetCreationService.createAsset.mock.calls[0][0];
+      expect(callArgs.propertyValues).not.toHaveProperty("exo__Asset_prototype");
+    });
+
+    it("should fall back to parent folder when rule has null defaultFolder", async () => {
+      mockCanCreateInstance.mockReturnValue(true);
+      const rule: InstantiationRule = {
+        prototypeUID: "proto-uid",
+        defaultFolder: null,
+        propertySetRules: [],
+      };
+      mockRuleResolver.getRule.mockResolvedValue(rule);
+      const createdFile = { basename: "new-instance", path: "parent-folder/new-instance.md" };
+      mockGenericAssetCreationService.createAsset.mockResolvedValue(createdFile as any);
+
+      mockShowLabelInputModal.mockResolvedValue({ label: "Task", taskSize: null, openInNewTab: false });
+
+      command.checkCallback(false, mockFile, mockContext);
+      await flushPromises();
+
+      expect(mockGenericAssetCreationService.createAsset).toHaveBeenCalledWith(
+        expect.objectContaining({
+          folderPath: "parent-folder",
+        }),
+      );
+    });
+  });
+
+  describe("fallback creation (no rule found)", () => {
+    const mockCanCreateInstance = require("exocortex").canCreateInstance;
+
+    it("should use generic fallback when no rule exists", async () => {
+      mockCanCreateInstance.mockReturnValue(true);
+      mockRuleResolver.getRule.mockResolvedValue(null);
+      const createdFile = { basename: "new-instance", path: "parent-folder/new-instance.md" };
+      mockGenericAssetCreationService.createAsset.mockResolvedValue(createdFile as any);
+
+      mockShowLabelInputModal.mockResolvedValue({ label: "Test Instance", taskSize: '"[[ems__TaskSize_M]]"', openInNewTab: false });
+
+      command.checkCallback(false, mockFile, mockContext);
+      await flushPromises();
+
+      expect(mockRuleResolver.getRule).toHaveBeenCalledWith("Task");
+      expect(mockGenericAssetCreationService.createAsset).toHaveBeenCalledWith(
+        expect.objectContaining({
+          className: "Task",
+          label: "Test Instance",
+          folderPath: "parent-folder",
+          propertyValues: expect.objectContaining({
+            "ems__Effort_taskSize": '"[[ems__TaskSize_M]]"',
+          }),
+        }),
+      );
+      expect(Notice).toHaveBeenCalledWith("Instance created: new-instance");
+    });
+
+    it("should handle fallback with empty label", async () => {
+      mockCanCreateInstance.mockReturnValue(true);
+      mockRuleResolver.getRule.mockResolvedValue(null);
+      const createdFile = { basename: "new-instance", path: "parent-folder/new-instance.md" };
+      mockGenericAssetCreationService.createAsset.mockResolvedValue(createdFile as any);
+
+      mockShowLabelInputModal.mockResolvedValue({ label: "", taskSize: null, openInNewTab: false });
+
+      command.checkCallback(false, mockFile, mockContext);
+      await flushPromises();
+
+      expect(mockGenericAssetCreationService.createAsset).toHaveBeenCalledWith(
+        expect.objectContaining({
+          label: undefined,
+        }),
+      );
+    });
+  });
+
+  describe("error handling", () => {
+    const mockCanCreateInstance = require("exocortex").canCreateInstance;
 
     it("should handle service error and show error notice", async () => {
       mockCanCreateInstance.mockReturnValue(true);
-      const error = new Error("Failed to create task");
-      mockTaskCreationService.createTask.mockRejectedValue(error);
+      const error = new Error("Failed to create asset");
+      mockGenericAssetCreationService.createAsset.mockRejectedValue(error);
 
-      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: "small", openInNewTab: false });
+      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: null, openInNewTab: false });
 
       const result = command.checkCallback(false, mockFile, mockContext);
       expect(result).toBe(true);
 
-      // Wait for async execution
       await flushPromises();
 
-      expect(mockTaskCreationService.createTask).toHaveBeenCalled();
+      expect(mockGenericAssetCreationService.createAsset).toHaveBeenCalled();
       expect(LoggingService.error).toHaveBeenCalledWith("Create instance error", error);
-      expect(Notice).toHaveBeenCalledWith("Failed to create instance: Failed to create task");
+      expect(Notice).toHaveBeenCalledWith("Failed to create instance: Failed to create asset");
     });
 
-    it("should handle array instanceClass", async () => {
+    it("should handle ruleResolver error gracefully", async () => {
+      mockCanCreateInstance.mockReturnValue(true);
+      mockRuleResolver.getRule.mockRejectedValue(new Error("Triple store unavailable"));
+
+      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: null, openInNewTab: false });
+
+      command.checkCallback(false, mockFile, mockContext);
+      await flushPromises();
+
+      expect(Notice).toHaveBeenCalledWith("Failed to create instance: Triple store unavailable");
+    });
+  });
+
+  describe("array instanceClass", () => {
+    const mockCanCreateInstance = require("exocortex").canCreateInstance;
+
+    it("should handle array instanceClass and use first element", async () => {
       mockCanCreateInstance.mockReturnValue(true);
       const arrayContext = {
         ...mockContext,
         instanceClass: ["Task", "Project"],
       };
-      const createdFile = { basename: "new-task", path: "new-task.md" };
-      mockTaskCreationService.createTask.mockResolvedValue(createdFile as any);
+      mockRuleResolver.getRule.mockResolvedValue(null);
+      const createdFile = { basename: "new-task", path: "parent-folder/new-task.md" };
+      mockGenericAssetCreationService.createAsset.mockResolvedValue(createdFile as any);
 
-      mockShowLabelInputModal.mockResolvedValue({ label: "My Task", taskSize: "large", openInNewTab: false });
+      mockShowLabelInputModal.mockResolvedValue({ label: "My Task", taskSize: null, openInNewTab: false });
 
-      const result = command.checkCallback(false, mockFile, arrayContext);
-      expect(result).toBe(true);
-
-      // Wait for async execution
+      command.checkCallback(false, mockFile, arrayContext);
       await flushPromises();
 
-      expect(mockTaskCreationService.createTask).toHaveBeenCalledWith(
-        mockFile,
-        { key: "value" },
-        "Task", // First class in array
-        "My Task",
-        "large"
+      expect(mockRuleResolver.getRule).toHaveBeenCalledWith("Task");
+      expect(mockGenericAssetCreationService.createAsset).toHaveBeenCalledWith(
+        expect.objectContaining({ className: "Task" }),
       );
       expect(Notice).toHaveBeenCalledWith("Instance created: new-task");
     });
 
-    it("should not show task size for MeetingPrototype", async () => {
+    it("should handle empty instanceClass array", async () => {
       mockCanCreateInstance.mockReturnValue(true);
-      const meetingContext = {
-        ...mockContext,
-        instanceClass: AssetClass.MEETING_PROTOTYPE,
-      };
-      const createdFile = { basename: "new-meeting", path: "new-meeting.md" };
-      mockTaskCreationService.createTask.mockResolvedValue(createdFile as any);
+      const emptyContext = { ...mockContext, instanceClass: [] };
+      mockRuleResolver.getRule.mockResolvedValue(null);
+      const createdFile = { basename: "new-instance", path: "parent-folder/new-instance.md" };
+      mockGenericAssetCreationService.createAsset.mockResolvedValue(createdFile as any);
 
-      mockShowLabelInputModal.mockResolvedValue({ label: "Meeting", taskSize: null, openInNewTab: false });
+      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: null, openInNewTab: false });
 
-      const result = command.checkCallback(false, mockFile, meetingContext);
-      expect(result).toBe(true);
-
-      // Wait for async execution
+      command.checkCallback(false, mockFile, emptyContext);
       await flushPromises();
 
-      expect(mockShowLabelInputModal).toHaveBeenCalledWith(mockApp,
-        `test-file ${DateFormatter.toDateString(new Date())}`,
-        false // showTaskSize should be false for MeetingPrototype
+      expect(mockRuleResolver.getRule).toHaveBeenCalledWith("");
+      expect(mockGenericAssetCreationService.createAsset).toHaveBeenCalledWith(
+        expect.objectContaining({ className: "" }),
+      );
+    });
+  });
+
+  describe("modal defaults", () => {
+    const mockCanCreateInstance = require("exocortex").canCreateInstance;
+
+    it("should pass default label based on file label and date", async () => {
+      mockCanCreateInstance.mockReturnValue(true);
+      mockApp.metadataCache.getFileCache = jest.fn().mockReturnValue({
+        frontmatter: { exo__Asset_label: "My Prototype" },
+      });
+      mockRuleResolver.getRule.mockResolvedValue(null);
+      const createdFile = { basename: "new-instance", path: "new-instance.md" };
+      mockGenericAssetCreationService.createAsset.mockResolvedValue(createdFile as any);
+
+      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: null, openInNewTab: false });
+
+      command.checkCallback(false, mockFile, mockContext);
+      await flushPromises();
+
+      expect(mockShowLabelInputModal).toHaveBeenCalledWith(
+        mockApp,
+        `My Prototype ${DateFormatter.toDateString(new Date())}`,
+        true,
       );
     });
 
+    it("should use file basename when no label in metadata", async () => {
+      mockCanCreateInstance.mockReturnValue(true);
+      mockApp.metadataCache.getFileCache = jest.fn().mockReturnValue({
+        frontmatter: {},
+      });
+      mockRuleResolver.getRule.mockResolvedValue(null);
+      const createdFile = { basename: "new-instance", path: "new-instance.md" };
+      mockGenericAssetCreationService.createAsset.mockResolvedValue(createdFile as any);
+
+      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: null, openInNewTab: false });
+
+      command.checkCallback(false, mockFile, mockContext);
+      await flushPromises();
+
+      expect(mockShowLabelInputModal).toHaveBeenCalledWith(
+        mockApp,
+        `test-file ${DateFormatter.toDateString(new Date())}`,
+        true,
+      );
+    });
+  });
+
+  describe("file activation wait", () => {
+    const mockCanCreateInstance = require("exocortex").canCreateInstance;
+
     it("should wait for file to become active via polling", async () => {
       mockCanCreateInstance.mockReturnValue(true);
+      mockRuleResolver.getRule.mockResolvedValue(null);
       const createdFile = { basename: "new-instance", path: "new-instance.md" };
-      mockTaskCreationService.createTask.mockResolvedValue(createdFile as any);
+      mockGenericAssetCreationService.createAsset.mockResolvedValue(createdFile as any);
 
-      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: "small", openInNewTab: false });
+      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: null, openInNewTab: false });
 
-      // File becomes active after 3 polling attempts
       let attempts = 0;
       mockApp.workspace.getActiveFile = jest.fn(() => {
         attempts++;
         return attempts >= 3 ? mockTFile : null;
       });
 
-      const result = command.checkCallback(false, mockFile, mockContext);
-      expect(result).toBe(true);
+      command.checkCallback(false, mockFile, mockContext);
 
-      // Wait for polling to complete
       await waitForCondition(
         () => (Notice as jest.Mock).mock.calls.some(call => call[0] === "Instance created: new-instance"),
-        { timeout: 3000 }
+        { timeout: 3000 },
       );
 
       expect((mockApp.workspace.getActiveFile as jest.Mock).mock.calls.length).toBeGreaterThanOrEqual(3);
       expect(Notice).toHaveBeenCalledWith("Instance created: new-instance");
     });
+  });
 
-    it("should handle missing frontmatter metadata", async () => {
-      mockCanCreateInstance.mockReturnValue(true);
-      mockApp.metadataCache.getFileCache = jest.fn().mockReturnValue({});
-      const createdFile = { basename: "new-instance", path: "new-instance.md" };
-      mockTaskCreationService.createTask.mockResolvedValue(createdFile as any);
-
-      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: "medium", openInNewTab: false });
-
-      const result = command.checkCallback(false, mockFile, mockContext);
-      expect(result).toBe(true);
-
-      // Wait for async execution
-      await flushPromises();
-
-      expect(mockTaskCreationService.createTask).toHaveBeenCalledWith(
-        mockFile,
-        {}, // Empty metadata
-        "Task", // sourceClass still comes from context.instanceClass
-        "Test",
-        "medium"
-      );
-      expect(Notice).toHaveBeenCalledWith("Instance created: new-instance");
-    });
+  describe("null metadata handling", () => {
+    const mockCanCreateInstance = require("exocortex").canCreateInstance;
 
     it("should handle null cache from metadataCache", async () => {
       mockCanCreateInstance.mockReturnValue(true);
       mockApp.metadataCache.getFileCache = jest.fn().mockReturnValue(null);
+      mockRuleResolver.getRule.mockResolvedValue(null);
       const createdFile = { basename: "new-instance", path: "new-instance.md" };
-      mockTaskCreationService.createTask.mockResolvedValue(createdFile as any);
+      mockGenericAssetCreationService.createAsset.mockResolvedValue(createdFile as any);
 
-      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: "small", openInNewTab: false });
+      mockShowLabelInputModal.mockResolvedValue({ label: "Test", taskSize: null, openInNewTab: false });
 
-      const result = command.checkCallback(false, mockFile, mockContext);
-      expect(result).toBe(true);
-
-      // Wait for async execution
+      command.checkCallback(false, mockFile, mockContext);
       await flushPromises();
 
-      expect(mockTaskCreationService.createTask).toHaveBeenCalledWith(
-        mockFile,
-        {}, // Empty metadata
-        "Task", // sourceClass still comes from context.instanceClass
-        "Test",
-        "small"
-      );
+      expect(mockGenericAssetCreationService.createAsset).toHaveBeenCalled();
       expect(Notice).toHaveBeenCalledWith("Instance created: new-instance");
     });
-
   });
 });
