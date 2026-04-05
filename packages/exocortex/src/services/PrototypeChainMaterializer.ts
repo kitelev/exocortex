@@ -1,5 +1,5 @@
 import { ITripleStore } from "../interfaces/ITripleStore";
-import { Triple, type Subject } from "../domain/models/rdf/Triple";
+import { Triple } from "../domain/models/rdf/Triple";
 import { IRI } from "../domain/models/rdf/IRI";
 import { NonInheritablePropertyRegistry } from "./NonInheritablePropertyRegistry";
 
@@ -10,10 +10,20 @@ import { NonInheritablePropertyRegistry } from "./NonInheritablePropertyRegistry
 export const INFERRED_GRAPH = new IRI("https://exocortex.my/ontology/exo#inferred");
 
 /**
- * Single-hop prototype chain materializer.
+ * Maximum depth for prototype chain traversal.
+ * Protects against unbounded chains and excessive memory usage.
+ */
+export const MAX_PROTOTYPE_DEPTH = 10;
+
+/**
+ * Multi-hop prototype chain materializer.
  *
- * For each instance with an exo__Asset_prototype link, copies all inheritable
- * properties from the prototype that the instance doesn't already own.
+ * For each instance with an exo__Asset_prototype link, resolves the full
+ * prototype chain via BFS traversal (up to MAX_PROTOTYPE_DEPTH) and copies
+ * all inheritable properties that the instance doesn't already own.
+ *
+ * Closest prototype wins: if proto1 and proto2 both define `area`,
+ * the value from proto1 (nearer) is used.
  *
  * Materialized triples are added to both the default graph (for match() visibility)
  * and the `exo:inferred` named graph (for own/inherited distinction).
@@ -28,7 +38,7 @@ export class PrototypeChainMaterializer {
   }
 
   /**
-   * Materialize inherited properties from prototypes into instances.
+   * Materialize inherited properties from the full prototype chain into instances.
    *
    * @param store - The triple store to read from and write materialized triples into
    * @returns Number of new materialized triples added
@@ -45,7 +55,7 @@ export class PrototypeChainMaterializer {
       return 0;
     }
 
-    // Find all instance → prototype links
+    // Find all subject → prototype links
     const prototypeTriples = await store.match(
       undefined,
       prototypePredicate,
@@ -56,80 +66,127 @@ export class PrototypeChainMaterializer {
       return 0;
     }
 
-    // Build map: instance → prototype (single-hop only)
-    // Cycle detection: skip if instance equals prototype
-    const instanceToPrototype = new Map<string, { instance: Subject; prototype: Subject }>();
+    // Build prototype graph: subject IRI string → prototype IRI
+    // Self-cycle detection: skip if subject equals prototype
+    const protoGraph = new Map<string, IRI>();
     for (const triple of prototypeTriples) {
       if (triple.subject instanceof IRI && triple.object instanceof IRI) {
-        const instanceIRI = triple.subject.value;
+        const subjectIRI = triple.subject.value;
         const prototypeIRI = triple.object.value;
 
-        // Cycle detection
-        if (instanceIRI === prototypeIRI) {
-          continue;
+        if (subjectIRI !== prototypeIRI) {
+          protoGraph.set(subjectIRI, triple.object as IRI);
         }
-
-        instanceToPrototype.set(instanceIRI, {
-          instance: triple.subject,
-          prototype: triple.object as IRI,
-        });
       }
     }
 
-    if (instanceToPrototype.size === 0) {
+    if (protoGraph.size === 0) {
       return 0;
     }
 
     let materializedCount = 0;
 
-    for (const { instance, prototype } of instanceToPrototype.values()) {
-      // Get all triples of the prototype
-      const prototypeTriples = await store.match(prototype, undefined, undefined);
+    for (const [instanceIRI] of protoGraph) {
+      const instance = new IRI(instanceIRI);
 
-      if (prototypeTriples.length === 0) {
+      // Resolve full prototype chain via BFS: [proto1, proto2, ..., protoN] near→far
+      const chain = this.resolveChain(instanceIRI, protoGraph);
+
+      if (chain.length === 0) {
         continue;
       }
 
       // Get predicates the instance already owns
       const ownTriples = await store.match(instance, undefined, undefined);
-      const ownPredicates = new Set<string>();
+      const seenPredicates = new Set<string>();
       for (const t of ownTriples) {
-        ownPredicates.add(t.predicate.value);
+        seenPredicates.add(t.predicate.value);
       }
 
-      // Materialize inheritable properties
-      for (const protoTriple of prototypeTriples) {
-        const predicateIRI = protoTriple.predicate.value;
+      // Walk chain near→far: closest prototype wins
+      for (const protoIRIStr of chain) {
+        const proto = new IRI(protoIRIStr);
+        const protoTriples = await store.match(proto, undefined, undefined);
 
-        // Skip non-inheritable properties
-        if (this.registry.isNonInheritable(predicateIRI)) {
-          continue;
+        for (const protoTriple of protoTriples) {
+          const predicateValue = protoTriple.predicate.value;
+
+          // Skip non-inheritable properties
+          if (this.registry.isNonInheritable(predicateValue)) {
+            continue;
+          }
+
+          // Skip if already seen (own or from closer prototype)
+          if (seenPredicates.has(predicateValue)) {
+            continue;
+          }
+
+          // Materialize: create triple with instance as subject
+          const materializedTriple = new Triple(
+            instance,
+            protoTriple.predicate,
+            protoTriple.object,
+          );
+
+          // Add to default graph (for match() visibility)
+          await store.add(materializedTriple);
+
+          // Add to named graph (for own/inherited distinction)
+          if (store.addToGraph) {
+            await store.addToGraph(materializedTriple, INFERRED_GRAPH);
+          }
+
+          seenPredicates.add(predicateValue);
+          materializedCount++;
         }
-
-        // Skip if instance already has this property (own takes priority)
-        if (ownPredicates.has(predicateIRI)) {
-          continue;
-        }
-
-        // Materialize: create triple with instance as subject
-        const materializedTriple = new Triple(
-          instance,
-          protoTriple.predicate,
-          protoTriple.object,
-        );
-
-        // Add to default graph (for match() visibility)
-        await store.add(materializedTriple);
-
-        // Add to named graph (for own/inherited distinction)
-        if (store.addToGraph) {
-          await store.addToGraph(materializedTriple, INFERRED_GRAPH);
-        }
-
-        materializedCount++;
       }
     }
 
     return materializedCount;
+  }
+
+  /**
+   * BFS traversal to resolve the full prototype chain for a given instance.
+   * Returns ordered array of prototype IRIs from nearest to farthest.
+   *
+   * Uses a BFS queue with visited set for cycle detection and
+   * MAX_PROTOTYPE_DEPTH limit to prevent unbounded traversal.
+   *
+   * @param instanceIRI - Starting instance IRI string
+   * @param protoGraph - Map of subject IRI string → prototype IRI
+   * @returns Array of prototype IRI strings, ordered near→far
+   */
+  private resolveChain(
+    instanceIRI: string,
+    protoGraph: Map<string, IRI>,
+  ): string[] {
+    const chain: string[] = [];
+    const visited = new Set<string>();
+    visited.add(instanceIRI);
+
+    const queue: string[] = [];
+    const directProto = protoGraph.get(instanceIRI);
+    if (directProto) {
+      queue.push(directProto.value);
+    }
+
+    while (queue.length > 0 && chain.length < MAX_PROTOTYPE_DEPTH) {
+      const current = queue.shift();
+      if (current === undefined) break;
+
+      if (visited.has(current)) {
+        continue;
+      }
+
+      visited.add(current);
+      chain.push(current);
+
+      const nextProto = protoGraph.get(current);
+      if (nextProto && !visited.has(nextProto.value)) {
+        queue.push(nextProto.value);
+      }
+    }
+
+    return chain;
   }
 }
