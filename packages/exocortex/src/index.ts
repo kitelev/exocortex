@@ -112,6 +112,7 @@ export {
   type PropertySchemaValidation,
   type ISPARQLQueryable,
 } from "./services/PropertySchemaResolver";
+export { ClassHierarchyResolver } from "./services/ClassHierarchyResolver";
 export {
   EnumValueResolver,
   type EnumValue,

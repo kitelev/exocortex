@@ -187,13 +187,13 @@ Monorepo with five packages sharing Clean Architecture core:
 
 ### Packages
 
-| Package                        | npm                       | Purpose                                                                     |
-| ------------------------------ | ------------------------- | --------------------------------------------------------------------------- |
-| **exocortex**                  | Private                   | Core business logic, domain models, SPARQL engine, 35+ services             |
-| **@exocortex/obsidian-plugin** | Private                   | Interactive UI: 24+ components, 6 renderers, 34+ commands, 11 modals        |
-| **@kitelev/exocortex-cli**     | `@kitelev/exocortex-cli`  | CLI for automation, archive/unarchive, SPARQL queries, AI agent integration |
-| **@exocortex/test-utils**      | Private                   | Shared test utilities, mock factories, flaky test reporter                  |
-| **physics-wasm**               | Private                   | WebAssembly force simulation for 3D graph visualization                     |
+| Package                        | npm                      | Purpose                                                                     |
+| ------------------------------ | ------------------------ | --------------------------------------------------------------------------- |
+| **exocortex**                  | Private                  | Core business logic, domain models, SPARQL engine, 35+ services             |
+| **@exocortex/obsidian-plugin** | Private                  | Interactive UI: 24+ components, 6 renderers, 34+ commands, 11 modals        |
+| **@kitelev/exocortex-cli**     | `@kitelev/exocortex-cli` | CLI for automation, archive/unarchive, SPARQL queries, AI agent integration |
+| **@exocortex/test-utils**      | Private                  | Shared test utilities, mock factories, flaky test reporter                  |
+| **physics-wasm**               | Private                  | WebAssembly force simulation for 3D graph visualization                     |
 
 ### Technical Standards
 
