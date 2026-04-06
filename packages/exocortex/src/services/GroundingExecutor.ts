@@ -141,10 +141,7 @@ export class GroundingExecutor {
           );
 
         case GroundingType.CREATE_INSTANCE:
-          return {
-            success: false,
-            error: "create_instance grounding not yet implemented. See RFC-016 Issue #2643.",
-          };
+          return await this.executeCreateInstance(grounding, userInput);
 
         case GroundingType.SPARQL_UPDATE:
           return {
@@ -298,6 +295,38 @@ export class GroundingExecutor {
     }
 
     await service.execute(targetIRI, userInput);
+    return { success: true };
+  }
+
+  private async executeCreateInstance(
+    grounding: GroundingDefinition,
+    userInput?: UserInput,
+  ): Promise<ExecutionResult> {
+    if (!grounding.targetFolder) {
+      return { success: false, error: "create_instance requires targetFolder" };
+    }
+
+    const uid = globalThis.crypto.randomUUID();
+    const label = (userInput?.label as string) ?? "Untitled";
+
+    const properties: Record<string, unknown> = {
+      exo__Asset_uid: uid,
+      exo__Asset_label: label,
+    };
+
+    if (grounding.targetClass) {
+      properties.exo__Instance_class = `"[[${grounding.targetClass}]]"`;
+    }
+
+    if (grounding.targetPrototype) {
+      properties.exo__Asset_prototype = `"[[${grounding.targetPrototype}]]"`;
+    }
+
+    const content = this.frontmatterService.createFrontmatter("", properties);
+    const filePath = `${grounding.targetFolder}/${uid}.md`;
+
+    await this.fileWriter.createFile(filePath, content);
+
     return { success: true };
   }
 
