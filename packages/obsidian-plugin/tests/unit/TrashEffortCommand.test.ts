@@ -22,6 +22,7 @@ const mockShowTrashReasonModal = showTrashReasonModal as jest.MockedFunction<typ
 
 describe("TrashEffortCommand", () => {
   let command: TrashEffortCommand;
+  let mockNotifier: any;
   let mockApp: jest.Mocked<App>;
   let mockTaskStatusService: jest.Mocked<TaskStatusService>;
   let mockFile: jest.Mocked<TFile>;
@@ -50,7 +51,8 @@ describe("TrashEffortCommand", () => {
       isDraft: false,
     };
 
-    command = new TrashEffortCommand(mockApp, mockTaskStatusService);
+    mockNotifier = { info: jest.fn(), success: jest.fn(), error: jest.fn(), warn: jest.fn(), confirm: jest.fn() };
+    command = new TrashEffortCommand(mockApp, mockTaskStatusService, mockNotifier);
   });
 
   describe("id and name", () => {
@@ -94,7 +96,7 @@ describe("TrashEffortCommand", () => {
 
       expect(mockShowTrashReasonModal).toHaveBeenCalledWith(mockApp);
       expect(mockTaskStatusService.trashEffort).toHaveBeenCalledWith(mockFile, null);
-      expect(Notice).toHaveBeenCalledWith("Trashed: test-effort");
+      expect(mockNotifier.success).toHaveBeenCalledWith("Trashed: test-effort");
     });
 
     it("should pass reason to trashEffort when user provides reason", async () => {
@@ -108,7 +110,7 @@ describe("TrashEffortCommand", () => {
       await flushPromises();
 
       expect(mockTaskStatusService.trashEffort).toHaveBeenCalledWith(mockFile, "No longer needed");
-      expect(Notice).toHaveBeenCalledWith("Trashed: test-effort");
+      expect(mockNotifier.success).toHaveBeenCalledWith("Trashed: test-effort");
     });
 
     it("should not execute when user cancels modal", async () => {
@@ -123,7 +125,7 @@ describe("TrashEffortCommand", () => {
 
       expect(mockShowTrashReasonModal).toHaveBeenCalledWith(mockApp);
       expect(mockTaskStatusService.trashEffort).not.toHaveBeenCalled();
-      expect(Notice).not.toHaveBeenCalled();
+      expect(mockNotifier.success).not.toHaveBeenCalled();
     });
 
     it("should handle errors and show notice", async () => {
@@ -138,7 +140,7 @@ describe("TrashEffortCommand", () => {
 
       expect(mockTaskStatusService.trashEffort).toHaveBeenCalledWith(mockFile, null);
       expect(LoggingService.error).toHaveBeenCalledWith("Trash effort error", error);
-      expect(Notice).toHaveBeenCalledWith("Failed to trash effort: Failed to move to trash");
+      expect(mockNotifier.error).toHaveBeenCalledWith("Failed to trash effort: Failed to move to trash");
     });
 
     it("should handle already trashed effort", () => {
@@ -163,7 +165,7 @@ describe("TrashEffortCommand", () => {
       await flushPromises();
 
       expect(mockTaskStatusService.trashEffort).toHaveBeenCalledWith(specialFile, null);
-      expect(Notice).toHaveBeenCalledWith("Trashed: [URGENT] Important Effort");
+      expect(mockNotifier.success).toHaveBeenCalledWith("Trashed: [URGENT] Important Effort");
     });
 
     it("should handle permission denied errors", async () => {
@@ -178,7 +180,7 @@ describe("TrashEffortCommand", () => {
 
       expect(mockTaskStatusService.trashEffort).toHaveBeenCalledWith(mockFile, null);
       expect(LoggingService.error).toHaveBeenCalledWith("Trash effort error", permError);
-      expect(Notice).toHaveBeenCalledWith("Failed to trash effort: Permission denied: cannot delete file");
+      expect(mockNotifier.error).toHaveBeenCalledWith("Failed to trash effort: Permission denied: cannot delete file");
     });
 
     it("should handle non-Effort context", () => {

@@ -1,17 +1,21 @@
-import { TFile, Notice } from "obsidian";
+import type { TFile } from "obsidian";
 import { ICommand } from "./ICommand";
 import {
   CommandVisibilityContext,
   canShiftDayForward,
   TaskStatusService,
   LoggingService,
+  type INotificationService,
 } from "exocortex";
 
 export class ShiftDayForwardCommand implements ICommand {
   id = "shift-day-forward";
   name = "Shift day forward";
 
-  constructor(private taskStatusService: TaskStatusService) {}
+  constructor(
+    private taskStatusService: TaskStatusService,
+    private notifier: INotificationService,
+  ) {}
 
   checkCallback = (checking: boolean, file: TFile, context: CommandVisibilityContext | null): boolean => {
     if (!context || !canShiftDayForward(context)) return false;
@@ -21,7 +25,7 @@ export class ShiftDayForwardCommand implements ICommand {
         try {
           await this.execute(file);
         } catch (error) {
-          new Notice(`Failed to shift day forward: ${error instanceof Error ? error.message : String(error)}`);
+          this.notifier.error(`Failed to shift day forward: ${error instanceof Error ? error.message : String(error)}`);
           LoggingService.error("Shift day forward error", error instanceof Error ? error : undefined);
         }
       })();
@@ -32,6 +36,6 @@ export class ShiftDayForwardCommand implements ICommand {
 
   private async execute(file: TFile): Promise<void> {
     await this.taskStatusService.shiftDayForward(file);
-    new Notice(`Day shifted forward: ${file.basename}`);
+    this.notifier.success(`Day shifted forward: ${file.basename}`);
   }
 }

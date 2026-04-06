@@ -30,7 +30,7 @@ describe("CommandManager - toggle commands", () => {
       command.callback();
 
       expect(mockCallback).toHaveBeenCalled();
-      expect(Notice).toHaveBeenCalledWith("Layout reloaded");
+      expect(Notice).toHaveBeenCalledWith("✓ Layout reloaded", expect.any(Number));
     });
 
     it("should show failure notice when callback not set", () => {
@@ -39,7 +39,7 @@ describe("CommandManager - toggle commands", () => {
       const command = ctx.registeredCommands.get("reload-layout");
       command.callback();
 
-      expect(Notice).toHaveBeenCalledWith("Failed to reload layout");
+      expect(Notice).toHaveBeenCalledWith("✗ Failed to reload layout", expect.any(Number));
     });
   });
 
@@ -84,7 +84,7 @@ describe("CommandManager - toggle commands", () => {
       const command = ctx.registeredCommands.get("toggle-layout-visibility");
       await command.callback();
 
-      expect(Notice).toHaveBeenCalledWith("Layout shown");
+      expect(Notice).toHaveBeenCalledWith("Layout shown", expect.any(Number));
     });
 
     it("should show notice when toggled to hidden", async () => {
@@ -92,7 +92,7 @@ describe("CommandManager - toggle commands", () => {
       const command = ctx.registeredCommands.get("toggle-layout-visibility");
       await command.callback();
 
-      expect(Notice).toHaveBeenCalledWith("Layout hidden");
+      expect(Notice).toHaveBeenCalledWith("Layout hidden", expect.any(Number));
     });
   });
 
@@ -147,7 +147,7 @@ describe("CommandManager - toggle commands", () => {
       );
       await command.callback();
 
-      expect(Notice).toHaveBeenCalledWith("Archived assets shown");
+      expect(Notice).toHaveBeenCalledWith("Archived assets shown", expect.any(Number));
     });
 
     it("should show notice when toggled to hidden", async () => {
@@ -157,7 +157,7 @@ describe("CommandManager - toggle commands", () => {
       );
       await command.callback();
 
-      expect(Notice).toHaveBeenCalledWith("Archived assets hidden");
+      expect(Notice).toHaveBeenCalledWith("Archived assets hidden", expect.any(Number));
     });
   });
 });

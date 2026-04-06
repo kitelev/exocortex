@@ -1,17 +1,21 @@
-import { TFile, Notice } from "obsidian";
+import type { TFile } from "obsidian";
 import { ICommand } from "./ICommand";
 import {
   CommandVisibilityContext,
   canPlanOnToday,
   TaskStatusService,
   LoggingService,
+  type INotificationService,
 } from "exocortex";
 
 export class PlanOnTodayCommand implements ICommand {
   id = "plan-on-today";
   name = "Plan on today";
 
-  constructor(private taskStatusService: TaskStatusService) {}
+  constructor(
+    private taskStatusService: TaskStatusService,
+    private notifier: INotificationService,
+  ) {}
 
   checkCallback = (checking: boolean, file: TFile, context: CommandVisibilityContext | null): boolean => {
     if (!context || !canPlanOnToday(context)) return false;
@@ -21,7 +25,7 @@ export class PlanOnTodayCommand implements ICommand {
         try {
           await this.execute(file);
         } catch (error) {
-          new Notice(`Failed to plan on today: ${error instanceof Error ? error.message : String(error)}`);
+          this.notifier.error(`Failed to plan on today: ${error instanceof Error ? error.message : String(error)}`);
           LoggingService.error("Plan on today error", error instanceof Error ? error : undefined);
         }
       })();
@@ -32,6 +36,6 @@ export class PlanOnTodayCommand implements ICommand {
 
   private async execute(file: TFile): Promise<void> {
     await this.taskStatusService.planOnToday(file);
-    new Notice(`Planned on today: ${file.basename}`);
+    this.notifier.success(`Planned on today: ${file.basename}`);
   }
 }

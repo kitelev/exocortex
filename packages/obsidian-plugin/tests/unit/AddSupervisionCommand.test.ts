@@ -21,6 +21,7 @@ const mockShowSupervisionModal = showSupervisionModal as jest.MockedFunction<typ
 
 describe("AddSupervisionCommand", () => {
   let command: AddSupervisionCommand;
+  let mockNotifier: any;
   let mockApp: jest.Mocked<App>;
   let mockSupervisionCreationService: jest.Mocked<SupervisionCreationService>;
   let mockVaultAdapter: jest.Mocked<ObsidianVaultAdapter>;
@@ -51,7 +52,8 @@ describe("AddSupervisionCommand", () => {
       .spyOn(CommandHelpers, "openFileInNewTab")
       .mockResolvedValue(undefined);
 
-    command = new AddSupervisionCommand(mockApp, mockSupervisionCreationService, mockVaultAdapter);
+    mockNotifier = { info: jest.fn(), success: jest.fn(), error: jest.fn(), warn: jest.fn(), confirm: jest.fn() };
+    command = new AddSupervisionCommand(mockApp, mockSupervisionCreationService, mockVaultAdapter, mockNotifier);
   });
 
   afterEach(() => {
@@ -87,7 +89,7 @@ describe("AddSupervisionCommand", () => {
       expect(mockSupervisionCreationService.createSupervision).toHaveBeenCalledWith(formData);
       expect(mockVaultAdapter.toTFile).toHaveBeenCalledWith(createdFile);
       expect(openFileSpy).toHaveBeenCalledWith(mockApp, mockTFile);
-      expect(Notice).toHaveBeenCalledWith("Supervision created: test-supervision");
+      expect(mockNotifier.success).toHaveBeenCalledWith("Supervision created: test-supervision");
     });
 
     it("should handle modal cancellation", async () => {
@@ -97,7 +99,7 @@ describe("AddSupervisionCommand", () => {
 
       expect(mockShowSupervisionModal).toHaveBeenCalled();
       expect(mockSupervisionCreationService.createSupervision).not.toHaveBeenCalled();
-      expect(Notice).not.toHaveBeenCalled();
+      expect(mockNotifier.success).not.toHaveBeenCalled();
     });
 
     it("should handle service error and show error notice", async () => {
@@ -119,7 +121,7 @@ describe("AddSupervisionCommand", () => {
 
       expect(mockSupervisionCreationService.createSupervision).toHaveBeenCalledWith(formData);
       expect(LoggingService.error).toHaveBeenCalledWith("Add supervision error", error);
-      expect(Notice).toHaveBeenCalledWith("Failed to create supervision: Failed to create file");
+      expect(mockNotifier.error).toHaveBeenCalledWith("Failed to create supervision: Failed to create file");
     });
   });
 });

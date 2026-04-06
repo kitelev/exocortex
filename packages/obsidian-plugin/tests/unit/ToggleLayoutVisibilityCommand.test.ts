@@ -9,6 +9,7 @@ jest.mock("obsidian", () => ({
 
 describe("ToggleLayoutVisibilityCommand", () => {
   let command: ToggleLayoutVisibilityCommand;
+  let mockNotifier: any;
   let mockPlugin: jest.Mocked<ExocortexPluginInterface>;
 
   beforeEach(() => {
@@ -24,7 +25,8 @@ describe("ToggleLayoutVisibilityCommand", () => {
     } as unknown as jest.Mocked<ExocortexPluginInterface>;
 
     // Create command instance
-    command = new ToggleLayoutVisibilityCommand(mockPlugin);
+    mockNotifier = { info: jest.fn(), success: jest.fn(), error: jest.fn(), warn: jest.fn(), confirm: jest.fn() };
+    command = new ToggleLayoutVisibilityCommand(mockPlugin, mockNotifier);
   });
 
   describe("id and name", () => {
@@ -44,7 +46,7 @@ describe("ToggleLayoutVisibilityCommand", () => {
       expect(mockPlugin.settings.layoutVisible).toBe(true);
       expect(mockPlugin.saveSettings).toHaveBeenCalled();
       expect(mockPlugin.refreshLayout).toHaveBeenCalled();
-      expect(Notice).toHaveBeenCalledWith("Layout shown");
+      expect(mockNotifier.info).toHaveBeenCalledWith("Layout shown");
     });
 
     it("should toggle layoutVisible from true to false", async () => {
@@ -56,7 +58,7 @@ describe("ToggleLayoutVisibilityCommand", () => {
       expect(mockPlugin.settings.layoutVisible).toBe(false);
       expect(mockPlugin.saveSettings).toHaveBeenCalled();
       expect(mockPlugin.refreshLayout).toHaveBeenCalled();
-      expect(Notice).toHaveBeenCalledWith("Layout hidden");
+      expect(mockNotifier.info).toHaveBeenCalledWith("Layout hidden");
     });
 
     it("should handle multiple toggles correctly", async () => {
@@ -66,17 +68,17 @@ describe("ToggleLayoutVisibilityCommand", () => {
       // First toggle (false -> true)
       await command.callback();
       expect(mockPlugin.settings.layoutVisible).toBe(true);
-      expect(Notice).toHaveBeenNthCalledWith(1, "Layout shown");
+      expect(mockNotifier.info).toHaveBeenNthCalledWith(1, "Layout shown");
 
       // Second toggle (true -> false)
       await command.callback();
       expect(mockPlugin.settings.layoutVisible).toBe(false);
-      expect(Notice).toHaveBeenNthCalledWith(2, "Layout hidden");
+      expect(mockNotifier.info).toHaveBeenNthCalledWith(2, "Layout hidden");
 
       // Third toggle (false -> true)
       await command.callback();
       expect(mockPlugin.settings.layoutVisible).toBe(true);
-      expect(Notice).toHaveBeenNthCalledWith(3, "Layout shown");
+      expect(mockNotifier.info).toHaveBeenNthCalledWith(3, "Layout shown");
 
       expect(mockPlugin.saveSettings).toHaveBeenCalledTimes(3);
       expect(mockPlugin.refreshLayout).toHaveBeenCalledTimes(3);
@@ -105,7 +107,7 @@ describe("ToggleLayoutVisibilityCommand", () => {
 
       expect(mockPlugin.settings.layoutVisible).toBe(false);
       expect(mockPlugin.saveSettings).toHaveBeenCalled();
-      expect(Notice).toHaveBeenCalledWith("Layout hidden");
+      expect(mockNotifier.info).toHaveBeenCalledWith("Layout hidden");
       // Should not throw even if refreshLayout is undefined
     });
 
@@ -125,12 +127,12 @@ describe("ToggleLayoutVisibilityCommand", () => {
       mockPlugin.saveSettings.mockResolvedValue();
 
       // First command instance
-      const command1 = new ToggleLayoutVisibilityCommand(mockPlugin);
+      const command1 = new ToggleLayoutVisibilityCommand(mockPlugin, mockNotifier);
       await command1.callback();
       expect(mockPlugin.settings.layoutVisible).toBe(false);
 
       // Second command instance should see the updated state
-      const command2 = new ToggleLayoutVisibilityCommand(mockPlugin);
+      const command2 = new ToggleLayoutVisibilityCommand(mockPlugin, mockNotifier);
       await command2.callback();
       expect(mockPlugin.settings.layoutVisible).toBe(true);
     });

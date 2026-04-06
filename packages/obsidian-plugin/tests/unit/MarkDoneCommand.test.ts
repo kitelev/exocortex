@@ -20,6 +20,7 @@ describe("MarkDoneCommand", () => {
   let mockTaskStatusService: jest.Mocked<TaskStatusService>;
   let mockFile: jest.Mocked<TFile>;
   let mockContext: CommandVisibilityContext;
+  let mockNotifier: { info: jest.Mock; success: jest.Mock; error: jest.Mock; warn: jest.Mock; confirm: jest.Mock };
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -44,7 +45,8 @@ describe("MarkDoneCommand", () => {
     };
 
     // Create command instance
-    command = new MarkDoneCommand(mockTaskStatusService);
+    mockNotifier = { info: jest.fn(), success: jest.fn(), error: jest.fn(), warn: jest.fn(), confirm: jest.fn() };
+    command = new MarkDoneCommand(mockTaskStatusService, mockNotifier);
   });
 
   describe("id and name", () => {
@@ -88,7 +90,7 @@ describe("MarkDoneCommand", () => {
       await flushPromises();
 
       expect(mockTaskStatusService.markTaskAsDone).toHaveBeenCalledWith(mockFile);
-      expect(Notice).toHaveBeenCalledWith("Marked as done: test-task");
+      expect(mockNotifier.success).toHaveBeenCalledWith("Marked as done: test-task");
     });
 
     it("should handle errors and show notice", async () => {
@@ -104,7 +106,7 @@ describe("MarkDoneCommand", () => {
 
       expect(mockTaskStatusService.markTaskAsDone).toHaveBeenCalledWith(mockFile);
       expect(LoggingService.error).toHaveBeenCalledWith("Mark done error", error);
-      expect(Notice).toHaveBeenCalledWith("Failed to mark as done: Failed to mark done");
+      expect(mockNotifier.error).toHaveBeenCalledWith("Failed to mark as done: Failed to mark done");
     });
 
     it("should handle different context statuses", () => {
@@ -143,7 +145,7 @@ describe("MarkDoneCommand", () => {
       await flushPromises();
 
       expect(mockTaskStatusService.markTaskAsDone).toHaveBeenCalledWith(specialFile);
-      expect(Notice).toHaveBeenCalledWith("Marked as done: task-with-special-chars!@#$");
+      expect(mockNotifier.success).toHaveBeenCalledWith("Marked as done: task-with-special-chars!@#$");
     });
 
     it("should handle concurrent executions", async () => {
@@ -163,15 +165,15 @@ describe("MarkDoneCommand", () => {
       command.checkCallback(false, file3, mockContext);
 
       // Wait for all async executions
-      await waitForCondition(() => (Notice as jest.Mock).mock.calls.length >= 3);
+      await waitForCondition(() => mockNotifier.success.mock.calls.length >= 3);
 
       expect(mockTaskStatusService.markTaskAsDone).toHaveBeenCalledTimes(3);
       expect(mockTaskStatusService.markTaskAsDone).toHaveBeenCalledWith(file1);
       expect(mockTaskStatusService.markTaskAsDone).toHaveBeenCalledWith(file2);
       expect(mockTaskStatusService.markTaskAsDone).toHaveBeenCalledWith(file3);
-      expect(Notice).toHaveBeenCalledWith("Marked as done: task1");
-      expect(Notice).toHaveBeenCalledWith("Marked as done: task2");
-      expect(Notice).toHaveBeenCalledWith("Marked as done: task3");
+      expect(mockNotifier.success).toHaveBeenCalledWith("Marked as done: task1");
+      expect(mockNotifier.success).toHaveBeenCalledWith("Marked as done: task2");
+      expect(mockNotifier.success).toHaveBeenCalledWith("Marked as done: task3");
     });
 
     it("should handle service returning undefined", async () => {
@@ -185,7 +187,7 @@ describe("MarkDoneCommand", () => {
       await flushPromises();
 
       expect(mockTaskStatusService.markTaskAsDone).toHaveBeenCalledWith(mockFile);
-      expect(Notice).toHaveBeenCalledWith("Marked as done: test-task");
+      expect(mockNotifier.success).toHaveBeenCalledWith("Marked as done: test-task");
       expect(LoggingService.error).not.toHaveBeenCalled();
     });
 
@@ -204,7 +206,7 @@ describe("MarkDoneCommand", () => {
       // Since error is not an Error instance, undefined is passed to LoggingService.error
       expect(LoggingService.error).toHaveBeenCalledWith("Mark done error", undefined);
       // Since error is not an Error instance, String(error) is used which calls toString()
-      expect(Notice).toHaveBeenCalledWith("Failed to mark as done: Custom error");
+      expect(mockNotifier.error).toHaveBeenCalledWith("Failed to mark as done: Custom error");
     });
   });
 });

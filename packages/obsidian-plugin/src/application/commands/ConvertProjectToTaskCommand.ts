@@ -1,10 +1,11 @@
-import { TFile, Notice } from "obsidian";
+import type { TFile } from "obsidian";
 import { ICommand } from "./ICommand";
 import {
   CommandVisibilityContext,
   canConvertProjectToTask,
   AssetConversionService,
   LoggingService,
+  type INotificationService,
 } from "exocortex";
 
 export class ConvertProjectToTaskCommand implements ICommand {
@@ -13,6 +14,7 @@ export class ConvertProjectToTaskCommand implements ICommand {
 
   constructor(
     private conversionService: AssetConversionService,
+    private notifier: INotificationService,
   ) {}
 
   checkCallback = (
@@ -27,7 +29,7 @@ export class ConvertProjectToTaskCommand implements ICommand {
         try {
           await this.execute(file);
         } catch (error) {
-          new Notice(`Failed to convert Project to Task: ${error instanceof Error ? error.message : String(error)}`);
+          this.notifier.error(`Failed to convert Project to Task: ${error instanceof Error ? error.message : String(error)}`);
           LoggingService.error("Convert Project to Task error", error instanceof Error ? error : undefined);
         }
       })();
@@ -38,6 +40,6 @@ export class ConvertProjectToTaskCommand implements ICommand {
 
   private async execute(file: TFile): Promise<void> {
     await this.conversionService.convertProjectToTask(file);
-    new Notice(`Converted to Task: ${file.basename}`);
+    this.notifier.success(`Converted to Task: ${file.basename}`);
   }
 }

@@ -33,6 +33,7 @@ import type { CommandVisibilityContext } from "exocortex";
 
 describe("EditPropertiesCommand", () => {
   let command: EditPropertiesCommand;
+  let mockNotifier: any;
   let mockApp: App;
   let mockPlugin: ExocortexPluginInterface;
   let mockFile: TFile;
@@ -60,7 +61,8 @@ describe("EditPropertiesCommand", () => {
 
     mockContext = null;
 
-    command = new EditPropertiesCommand(mockApp, mockPlugin);
+    mockNotifier = { info: jest.fn(), success: jest.fn(), error: jest.fn(), warn: jest.fn(), confirm: jest.fn() };
+    command = new EditPropertiesCommand(mockApp, mockPlugin, mockNotifier);
   });
 
   describe("properties", () => {
@@ -137,7 +139,7 @@ describe("EditPropertiesCommand", () => {
 
       command.checkCallback(false, mockFile, mockContext);
 
-      expect(Notice).toHaveBeenCalledWith(
+      expect(mockNotifier.info).toHaveBeenCalledWith(
         "This file has no frontmatter properties to edit"
       );
       expect(PropertyEditorModal).not.toHaveBeenCalled();
@@ -148,7 +150,7 @@ describe("EditPropertiesCommand", () => {
 
       command.checkCallback(false, mockFile, mockContext);
 
-      expect(Notice).toHaveBeenCalledWith(
+      expect(mockNotifier.info).toHaveBeenCalledWith(
         "This file has no frontmatter properties to edit"
       );
     });

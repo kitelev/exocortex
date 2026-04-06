@@ -1,4 +1,4 @@
-import { App, TFile } from "obsidian";
+import type { App, TFile } from "obsidian";
 import { container } from "tsyringe";
 import { ExocortexPluginInterface } from '@plugin/types';
 import { CommandRegistry } from '@plugin/application/commands/CommandRegistry';
@@ -10,9 +10,11 @@ import {
   GenericAssetCreationService,
   DI_TOKENS,
   registerCoreServices,
+  type INotificationService,
 } from "exocortex";
 import { ObsidianVaultAdapter } from '@plugin/adapters/ObsidianVaultAdapter';
 import { LoggerFactory } from '@plugin/adapters/logging/LoggerFactory';
+import { ObsidianNotificationService } from '@plugin/infrastructure/di/ObsidianNotificationService';
 import { SPARQLQueryService } from '@plugin/application/services/SPARQLQueryService';
 import { OntologySchemaService } from '@plugin/application/services/OntologySchemaService';
 import { ClassDiscoveryService } from '@plugin/application/services/ClassDiscoveryService';
@@ -49,6 +51,8 @@ export class CommandManager {
     container.register(DI_TOKENS.ILogger, { useValue: logger });
     registerCoreServices();
 
+    const notifier: INotificationService = new ObsidianNotificationService();
+
     const fleetingNoteCreationService = container.resolve(FleetingNoteCreationService);
     const genericAssetCreationService = container.resolve(GenericAssetCreationService);
     const sparqlQueryService = new SPARQLQueryService(this.app, logger);
@@ -56,13 +60,13 @@ export class CommandManager {
     const classDiscoveryService = new ClassDiscoveryService(sparqlQueryService);
 
     const globalCommands = [
-      new ReloadLayoutCommand(reloadLayoutCallback),
-      new ToggleLayoutVisibilityCommand(plugin),
-      new ToggleArchivedAssetsCommand(plugin),
+      new ReloadLayoutCommand(reloadLayoutCallback, notifier),
+      new ToggleLayoutVisibilityCommand(plugin, notifier),
+      new ToggleArchivedAssetsCommand(plugin, notifier),
       new OpenQueryBuilderCommand(this.app, plugin),
-      new EditPropertiesCommand(this.app, plugin),
-      new CreateAssetCommand(this.app, genericAssetCreationService, this.vaultAdapter, classDiscoveryService, ontologySchemaService),
-      new CreateFleetingNoteCommand(this.app, fleetingNoteCreationService, this.vaultAdapter),
+      new EditPropertiesCommand(this.app, plugin, notifier),
+      new CreateAssetCommand(this.app, genericAssetCreationService, this.vaultAdapter, classDiscoveryService, notifier, ontologySchemaService),
+      new CreateFleetingNoteCommand(this.app, fleetingNoteCreationService, this.vaultAdapter, notifier),
     ];
 
     this.commandRegistry = new CommandRegistry(globalCommands);

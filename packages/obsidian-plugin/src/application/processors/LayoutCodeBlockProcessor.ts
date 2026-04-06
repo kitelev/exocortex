@@ -17,11 +17,8 @@
  */
 
 import React from "react";
-import {
-  MarkdownPostProcessorContext,
-  MarkdownRenderChild,
-  type EventRef,
-} from "obsidian";
+import type { MarkdownPostProcessorContext, EventRef } from "obsidian";
+import { MarkdownRenderChild } from "obsidian";
 import type ExocortexPlugin from "@plugin/ExocortexPlugin";
 import { LayoutService } from "../layout";
 import type { LayoutRenderResult } from "../layout";

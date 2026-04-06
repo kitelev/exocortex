@@ -1,4 +1,4 @@
-import { TFile, MetadataCache, App } from "obsidian";
+import type { TFile, MetadataCache, App } from "obsidian";
 import {
   ApplicationErrorHandler,
   NetworkError,

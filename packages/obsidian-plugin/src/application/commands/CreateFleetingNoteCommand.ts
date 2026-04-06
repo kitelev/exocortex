@@ -1,7 +1,8 @@
-import { App, Notice } from "obsidian";
+import type { App } from "obsidian";
 import {
   FleetingNoteCreationService,
   LoggingService,
+  type INotificationService,
 } from "exocortex";
 import { ICommand } from "./ICommand";
 import { showFleetingNoteModal } from '@plugin/presentation/modals/modalSchemas';
@@ -16,6 +17,7 @@ export class CreateFleetingNoteCommand implements ICommand {
     private app: App,
     private fleetingNoteCreationService: FleetingNoteCreationService,
     private vaultAdapter: ObsidianVaultAdapter,
+    private notifier: INotificationService,
   ) {}
 
   callback = async (): Promise<void> => {
@@ -33,10 +35,10 @@ export class CreateFleetingNoteCommand implements ICommand {
       const tfile = this.vaultAdapter.toTFile(createdFile);
       await CommandHelpers.openFileInNewTab(this.app, tfile);
 
-      new Notice(`Fleeting note created: ${createdFile.basename}`);
+      this.notifier.success(`Fleeting note created: ${createdFile.basename}`);
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      new Notice(`Failed to create fleeting note: ${errorMessage}`);
+      this.notifier.error(`Failed to create fleeting note: ${errorMessage}`);
       LoggingService.error("Create fleeting note error", error instanceof Error ? error : new Error(String(error)));
     }
   };

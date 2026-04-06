@@ -20,6 +20,7 @@ describe("ArchiveTaskCommand", () => {
   let mockTaskStatusService: jest.Mocked<TaskStatusService>;
   let mockFile: jest.Mocked<TFile>;
   let mockContext: CommandVisibilityContext;
+  let mockNotifier: { info: jest.Mock; success: jest.Mock; error: jest.Mock; warn: jest.Mock; confirm: jest.Mock };
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -44,7 +45,8 @@ describe("ArchiveTaskCommand", () => {
     };
 
     // Create command instance
-    command = new ArchiveTaskCommand(mockTaskStatusService);
+    mockNotifier = { info: jest.fn(), success: jest.fn(), error: jest.fn(), warn: jest.fn(), confirm: jest.fn() };
+    command = new ArchiveTaskCommand(mockTaskStatusService, mockNotifier);
   });
 
   describe("id and name", () => {
@@ -88,7 +90,7 @@ describe("ArchiveTaskCommand", () => {
       await flushPromises();
 
       expect(mockTaskStatusService.archiveTask).toHaveBeenCalledWith(mockFile);
-      expect(Notice).toHaveBeenCalledWith("Archived: test-task");
+      expect(mockNotifier.success).toHaveBeenCalledWith("Archived: test-task");
     });
 
     it("should handle errors and show notice", async () => {
@@ -104,7 +106,7 @@ describe("ArchiveTaskCommand", () => {
 
       expect(mockTaskStatusService.archiveTask).toHaveBeenCalledWith(mockFile);
       expect(LoggingService.error).toHaveBeenCalledWith("Archive task error", error);
-      expect(Notice).toHaveBeenCalledWith("Failed to archive task: Failed to archive");
+      expect(mockNotifier.error).toHaveBeenCalledWith("Failed to archive task: Failed to archive");
     });
 
     it("should handle already archived context", () => {
@@ -130,7 +132,7 @@ describe("ArchiveTaskCommand", () => {
       await flushPromises();
 
       expect(mockTaskStatusService.archiveTask).toHaveBeenCalledWith(longFile);
-      expect(Notice).toHaveBeenCalledWith(
+      expect(mockNotifier.success).toHaveBeenCalledWith(
         "Archived: very-long-task-name-that-exceeds-normal-length-expectations"
       );
     });
@@ -173,7 +175,7 @@ describe("ArchiveTaskCommand", () => {
       // Since error is not an Error instance, undefined is passed to LoggingService.error
       expect(LoggingService.error).toHaveBeenCalledWith("Archive task error", undefined);
       // Since error is not an Error instance, String(error) is used which calls toString()
-      expect(Notice).toHaveBeenCalledWith("Failed to archive task: Custom error string");
+      expect(mockNotifier.error).toHaveBeenCalledWith("Failed to archive task: Custom error string");
     });
 
     it("should handle multiple concurrent archive operations", async () => {
@@ -193,12 +195,12 @@ describe("ArchiveTaskCommand", () => {
       files.forEach(file => command.checkCallback(false, file, mockContext));
 
       // Wait for all async executions
-      await waitForCondition(() => (Notice as jest.Mock).mock.calls.length >= 3);
+      await waitForCondition(() => mockNotifier.success.mock.calls.length >= 3);
 
       expect(mockTaskStatusService.archiveTask).toHaveBeenCalledTimes(3);
       files.forEach((file, index) => {
         expect(mockTaskStatusService.archiveTask).toHaveBeenNthCalledWith(index + 1, file);
-        expect(Notice).toHaveBeenCalledWith(`Archived: ${file.basename}`);
+        expect(mockNotifier.success).toHaveBeenCalledWith(`Archived: ${file.basename}`);
       });
     });
   });

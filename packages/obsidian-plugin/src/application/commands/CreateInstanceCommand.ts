@@ -1,4 +1,4 @@
-import { App, TFile } from "obsidian";
+import type { App, TFile } from "obsidian";
 import {
   CommandVisibilityContext,
   canCreateInstance,
@@ -8,6 +8,7 @@ import {
   type InstantiationRule,
   type InstantiationRuleResolver,
   type IFile,
+  type INotificationService,
 } from "exocortex";
 import { showLabelInputModal, type LabelInputModalResult } from '@plugin/presentation/modals/modalSchemas';
 import { ObsidianVaultAdapter } from '@plugin/adapters/ObsidianVaultAdapter';
@@ -24,8 +25,9 @@ export class CreateInstanceCommand extends BaseContextAssetCreationCommand {
     private readonly ruleResolver: InstantiationRuleResolver,
     private readonly genericAssetCreationService: GenericAssetCreationService,
     vaultAdapter: ObsidianVaultAdapter,
+    notifier: INotificationService,
   ) {
-    super(app, vaultAdapter);
+    super(app, vaultAdapter, notifier);
   }
 
   protected canCreate(context: CommandVisibilityContext): boolean {

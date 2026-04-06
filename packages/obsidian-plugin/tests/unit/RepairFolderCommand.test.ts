@@ -16,6 +16,7 @@ jest.mock("exocortex", () => ({
 
 describe("RepairFolderCommand", () => {
   let command: RepairFolderCommand;
+  let mockNotifier: any;
   let mockApp: jest.Mocked<App>;
   let mockFolderRepairService: jest.Mocked<FolderRepairService>;
   let mockFile: jest.Mocked<TFile>;
@@ -46,7 +47,8 @@ describe("RepairFolderCommand", () => {
     } as jest.Mocked<TFile>;
 
     // Create command instance
-    command = new RepairFolderCommand(mockApp, mockFolderRepairService);
+    mockNotifier = { info: jest.fn(), success: jest.fn(), error: jest.fn(), warn: jest.fn(), confirm: jest.fn() };
+    command = new RepairFolderCommand(mockApp, mockFolderRepairService, mockNotifier);
   });
 
   describe("id and name", () => {
@@ -111,7 +113,7 @@ describe("RepairFolderCommand", () => {
         { exo__Asset_isDefinedBy: "Asset" }
       );
       expect(mockFolderRepairService.repairFolder).toHaveBeenCalledWith(mockFile, "expected/folder");
-      expect(Notice).toHaveBeenCalledWith("Moved to expected/folder");
+      expect(mockNotifier.success).toHaveBeenCalledWith("Moved to expected/folder");
     });
 
     it("should show notice when no expected folder found", async () => {
@@ -128,7 +130,7 @@ describe("RepairFolderCommand", () => {
 
       expect(mockFolderRepairService.getExpectedFolder).toHaveBeenCalled();
       expect(mockFolderRepairService.repairFolder).not.toHaveBeenCalled();
-      expect(Notice).toHaveBeenCalledWith("No expected folder found");
+      expect(mockNotifier.warn).toHaveBeenCalledWith("No expected folder found");
     });
 
     it("should show notice when asset is already in correct folder", async () => {
@@ -145,7 +147,7 @@ describe("RepairFolderCommand", () => {
 
       expect(mockFolderRepairService.getExpectedFolder).toHaveBeenCalled();
       expect(mockFolderRepairService.repairFolder).not.toHaveBeenCalled();
-      expect(Notice).toHaveBeenCalledWith("Asset is already in correct folder");
+      expect(mockNotifier.info).toHaveBeenCalledWith("Asset is already in correct folder");
     });
 
     it("should handle file with no parent folder", async () => {
@@ -168,7 +170,7 @@ describe("RepairFolderCommand", () => {
       await flushPromises();
 
       expect(mockFolderRepairService.repairFolder).toHaveBeenCalledWith(rootFile, "expected/folder");
-      expect(Notice).toHaveBeenCalledWith("Moved to expected/folder");
+      expect(mockNotifier.success).toHaveBeenCalledWith("Moved to expected/folder");
     });
 
     it("should handle errors and show error notice", async () => {
@@ -185,7 +187,7 @@ describe("RepairFolderCommand", () => {
       await flushPromises();
 
       expect(LoggingService.error).toHaveBeenCalledWith("Repair folder error", error);
-      expect(Notice).toHaveBeenCalledWith("Failed to repair folder: Failed to repair");
+      expect(mockNotifier.error).toHaveBeenCalledWith("Failed to repair folder: Failed to repair");
     });
 
     it("should handle repair folder service errors", async () => {
@@ -203,7 +205,7 @@ describe("RepairFolderCommand", () => {
       await flushPromises();
 
       expect(LoggingService.error).toHaveBeenCalledWith("Repair folder error", error);
-      expect(Notice).toHaveBeenCalledWith("Failed to repair folder: Move failed");
+      expect(mockNotifier.error).toHaveBeenCalledWith("Failed to repair folder: Move failed");
     });
 
     it("should handle empty expected folder path", async () => {
@@ -220,7 +222,7 @@ describe("RepairFolderCommand", () => {
 
       expect(mockFolderRepairService.getExpectedFolder).toHaveBeenCalled();
       expect(mockFolderRepairService.repairFolder).not.toHaveBeenCalled();
-      expect(Notice).toHaveBeenCalledWith("No expected folder found");
+      expect(mockNotifier.warn).toHaveBeenCalledWith("No expected folder found");
     });
 
     it("should handle complex metadata", async () => {
@@ -248,7 +250,7 @@ describe("RepairFolderCommand", () => {
         complexMetadata
       );
       expect(mockFolderRepairService.repairFolder).toHaveBeenCalledWith(mockFile, "complex/expected/folder");
-      expect(Notice).toHaveBeenCalledWith("Moved to complex/expected/folder");
+      expect(mockNotifier.success).toHaveBeenCalledWith("Moved to complex/expected/folder");
     });
 
     it("should handle permission denied error", async () => {
@@ -266,7 +268,7 @@ describe("RepairFolderCommand", () => {
       await flushPromises();
 
       expect(LoggingService.error).toHaveBeenCalledWith("Repair folder error", permError);
-      expect(Notice).toHaveBeenCalledWith("Failed to repair folder: Permission denied: cannot move file");
+      expect(mockNotifier.error).toHaveBeenCalledWith("Failed to repair folder: Permission denied: cannot move file");
     });
   });
 });

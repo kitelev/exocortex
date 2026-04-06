@@ -20,6 +20,7 @@ describe("SetDraftStatusCommand", () => {
   let mockTaskStatusService: jest.Mocked<TaskStatusService>;
   let mockFile: jest.Mocked<TFile>;
   let mockContext: CommandVisibilityContext;
+  let mockNotifier: { info: jest.Mock; success: jest.Mock; error: jest.Mock; warn: jest.Mock; confirm: jest.Mock };
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -44,7 +45,8 @@ describe("SetDraftStatusCommand", () => {
     };
 
     // Create command instance
-    command = new SetDraftStatusCommand(mockTaskStatusService);
+    mockNotifier = { info: jest.fn(), success: jest.fn(), error: jest.fn(), warn: jest.fn(), confirm: jest.fn() };
+    command = new SetDraftStatusCommand(mockTaskStatusService, mockNotifier);
   });
 
   describe("id and name", () => {
@@ -87,7 +89,7 @@ describe("SetDraftStatusCommand", () => {
       await flushPromises();
 
       expect(mockTaskStatusService.setDraftStatus).toHaveBeenCalledWith(mockFile);
-      expect(Notice).toHaveBeenCalledWith("Set Draft status: test-draft");
+      expect(mockNotifier.success).toHaveBeenCalledWith("Set Draft status: test-draft");
     });
 
     it("should handle errors and show notice", async () => {
@@ -102,7 +104,7 @@ describe("SetDraftStatusCommand", () => {
 
       expect(mockTaskStatusService.setDraftStatus).toHaveBeenCalledWith(mockFile);
       expect(LoggingService.error).toHaveBeenCalledWith("Set draft status error", error);
-      expect(Notice).toHaveBeenCalledWith("Failed to set draft status: Failed to set draft");
+      expect(mockNotifier.error).toHaveBeenCalledWith("Failed to set draft status: Failed to set draft");
     });
 
     it("should handle already draft context", () => {
@@ -127,7 +129,7 @@ describe("SetDraftStatusCommand", () => {
       await flushPromises();
 
       expect(mockTaskStatusService.setDraftStatus).toHaveBeenCalledWith(spaceFile);
-      expect(Notice).toHaveBeenCalledWith("Set Draft status: my draft task");
+      expect(mockNotifier.success).toHaveBeenCalledWith("Set Draft status: my draft task");
     });
 
     it("should handle network errors", async () => {
@@ -143,7 +145,7 @@ describe("SetDraftStatusCommand", () => {
 
       expect(mockTaskStatusService.setDraftStatus).toHaveBeenCalledWith(mockFile);
       expect(LoggingService.error).toHaveBeenCalledWith("Set draft status error", networkError);
-      expect(Notice).toHaveBeenCalledWith("Failed to set draft status: Network timeout");
+      expect(mockNotifier.error).toHaveBeenCalledWith("Failed to set draft status: Network timeout");
     });
   });
 });

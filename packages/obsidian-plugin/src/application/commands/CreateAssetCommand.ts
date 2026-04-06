@@ -1,9 +1,10 @@
-import { App, Notice } from "obsidian";
+import type { App } from "obsidian";
 import { ICommand } from "./ICommand";
 import {
   GenericAssetCreationService,
   LoggingService,
   type AssetPropertyDefinition,
+  type INotificationService,
 } from "exocortex";
 import {
   showClassSelectionModal,
@@ -54,6 +55,7 @@ export class CreateAssetCommand implements ICommand {
     private genericAssetCreationService: GenericAssetCreationService,
     private vaultAdapter: ObsidianVaultAdapter,
     private classDiscoveryService: ClassDiscoveryService,
+    private notifier: INotificationService,
     private schemaService?: OntologySchemaService,
   ) {}
 
@@ -106,9 +108,9 @@ export class CreateAssetCommand implements ICommand {
       await leaf.openFile(tfile);
       this.app.workspace.setActiveLeaf(leaf, { focus: true });
 
-      new Notice(`${selectedClass.label} created: ${createdFile.basename}`);
+      this.notifier.success(`${selectedClass.label} created: ${createdFile.basename}`);
     } catch (error) {
-      new Notice(`Failed to create asset: ${error instanceof Error ? error.message : String(error)}`);
+      this.notifier.error(`Failed to create asset: ${error instanceof Error ? error.message : String(error)}`);
       LoggingService.error("Create asset error", error instanceof Error ? error : undefined);
     }
   };

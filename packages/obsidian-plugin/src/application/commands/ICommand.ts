@@ -1,4 +1,4 @@
-import { TFile } from "obsidian";
+import type { TFile } from "obsidian";
 import { CommandVisibilityContext } from "exocortex";
 
 export interface ICommand {

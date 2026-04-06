@@ -1,9 +1,10 @@
-import { TFile, Notice, App } from "obsidian";
+import type { TFile, App } from "obsidian";
 import { ICommand } from "./ICommand";
 import {
   CommandVisibilityContext,
   canCopyFleetingNoteLabel,
   LoggingService,
+  type INotificationService,
 } from "exocortex";
 
 /**
@@ -18,7 +19,10 @@ export class CopyFleetingNoteLabelCommand implements ICommand {
   id = "copy-fleeting-note-label";
   name = "Copy Label";
 
-  constructor(private app: App) {}
+  constructor(
+    private app: App,
+    private notifier: INotificationService,
+  ) {}
 
   checkCallback = (checking: boolean, file: TFile, context: CommandVisibilityContext | null): boolean => {
     if (!context || !canCopyFleetingNoteLabel(context)) return false;
@@ -28,7 +32,7 @@ export class CopyFleetingNoteLabelCommand implements ICommand {
         try {
           await this.execute(file);
         } catch (error) {
-          new Notice(`Failed to copy label: ${error instanceof Error ? error.message : String(error)}`);
+          this.notifier.error(`Failed to copy label: ${error instanceof Error ? error.message : String(error)}`);
           LoggingService.error("Copy fleeting note label error", error instanceof Error ? error : undefined);
         }
       })();
@@ -42,12 +46,12 @@ export class CopyFleetingNoteLabelCommand implements ICommand {
     const label = this.extractLabelFromContent(content);
 
     if (!label) {
-      new Notice("Label is empty");
+      this.notifier.warn("Label is empty");
       return;
     }
 
     await navigator.clipboard.writeText(label);
-    new Notice("Label copied to clipboard");
+    this.notifier.success("Label copied to clipboard");
   }
 
   /**

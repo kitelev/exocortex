@@ -1,8 +1,8 @@
-import { App, TFile, Notice } from "obsidian";
+import type { App, TFile } from "obsidian";
 import { ICommand } from "./ICommand";
 import { ExocortexPluginInterface } from '@plugin/types';
 import { PropertyEditorModal } from '@plugin/presentation/modals/PropertyEditorModal';
-import type { CommandVisibilityContext } from "exocortex";
+import type { CommandVisibilityContext, INotificationService } from "exocortex";
 
 export class EditPropertiesCommand implements ICommand {
   id = "edit-properties";
@@ -11,6 +11,7 @@ export class EditPropertiesCommand implements ICommand {
   constructor(
     private app: App,
     private plugin: ExocortexPluginInterface,
+    private notifier: INotificationService,
   ) {}
 
   checkCallback = (
@@ -34,7 +35,7 @@ export class EditPropertiesCommand implements ICommand {
       );
       modal.open();
     } else {
-      new Notice("This file has no frontmatter properties to edit");
+      this.notifier.info("This file has no frontmatter properties to edit");
     }
   };
 }

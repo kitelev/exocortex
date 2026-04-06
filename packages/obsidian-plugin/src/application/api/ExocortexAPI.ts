@@ -1,4 +1,5 @@
-import { TFile, EventRef } from "obsidian";
+import { TFile } from "obsidian";
+import type { EventRef } from "obsidian";
 import type ExocortexPlugin from '@plugin/ExocortexPlugin';
 import { AssetMetadataService } from '@plugin/presentation/renderers/layout/helpers/AssetMetadataService';
 import { BacklinksCacheManager } from '@plugin/adapters/caching/BacklinksCacheManager';

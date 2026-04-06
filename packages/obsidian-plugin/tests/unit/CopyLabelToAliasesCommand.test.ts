@@ -20,6 +20,7 @@ describe("CopyLabelToAliasesCommand", () => {
   let mockLabelToAliasService: jest.Mocked<LabelToAliasService>;
   let mockFile: jest.Mocked<TFile>;
   let mockContext: CommandVisibilityContext;
+  let mockNotifier: { info: jest.Mock; success: jest.Mock; error: jest.Mock; warn: jest.Mock; confirm: jest.Mock };
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -44,7 +45,8 @@ describe("CopyLabelToAliasesCommand", () => {
     };
 
     // Create command instance
-    command = new CopyLabelToAliasesCommand(mockLabelToAliasService);
+    mockNotifier = { info: jest.fn(), success: jest.fn(), error: jest.fn(), warn: jest.fn(), confirm: jest.fn() };
+    command = new CopyLabelToAliasesCommand(mockLabelToAliasService, mockNotifier);
   });
 
   describe("id and name", () => {
@@ -88,7 +90,7 @@ describe("CopyLabelToAliasesCommand", () => {
       await flushPromises();
 
       expect(mockLabelToAliasService.copyLabelToAliases).toHaveBeenCalledWith(mockFile);
-      expect(Notice).toHaveBeenCalledWith("Label copied to aliases");
+      expect(mockNotifier.success).toHaveBeenCalledWith("Label copied to aliases");
     });
 
     it("should handle errors and show notice", async () => {
@@ -104,7 +106,7 @@ describe("CopyLabelToAliasesCommand", () => {
 
       expect(mockLabelToAliasService.copyLabelToAliases).toHaveBeenCalledWith(mockFile);
       expect(LoggingService.error).toHaveBeenCalledWith("Copy label to aliases error", error);
-      expect(Notice).toHaveBeenCalledWith("Failed to copy label: Failed to copy");
+      expect(mockNotifier.error).toHaveBeenCalledWith("Failed to copy label: Failed to copy");
     });
 
     it("should handle files with special characters", async () => {
@@ -123,7 +125,7 @@ describe("CopyLabelToAliasesCommand", () => {
       await flushPromises();
 
       expect(mockLabelToAliasService.copyLabelToAliases).toHaveBeenCalledWith(specialFile);
-      expect(Notice).toHaveBeenCalledWith("Label copied to aliases");
+      expect(mockNotifier.success).toHaveBeenCalledWith("Label copied to aliases");
     });
 
     it("should handle file system errors", async () => {
@@ -139,7 +141,7 @@ describe("CopyLabelToAliasesCommand", () => {
 
       expect(mockLabelToAliasService.copyLabelToAliases).toHaveBeenCalledWith(mockFile);
       expect(LoggingService.error).toHaveBeenCalledWith("Copy label to aliases error", fsError);
-      expect(Notice).toHaveBeenCalledWith("Failed to copy label: File locked");
+      expect(mockNotifier.error).toHaveBeenCalledWith("Failed to copy label: File locked");
     });
 
     it("should handle permission denied error", async () => {
@@ -155,7 +157,7 @@ describe("CopyLabelToAliasesCommand", () => {
 
       expect(mockLabelToAliasService.copyLabelToAliases).toHaveBeenCalledWith(mockFile);
       expect(LoggingService.error).toHaveBeenCalledWith("Copy label to aliases error", permError);
-      expect(Notice).toHaveBeenCalledWith("Failed to copy label: Permission denied: cannot write to file");
+      expect(mockNotifier.error).toHaveBeenCalledWith("Failed to copy label: Permission denied: cannot write to file");
     });
 
     it("should handle multiple concurrent copy operations", async () => {
@@ -178,8 +180,8 @@ describe("CopyLabelToAliasesCommand", () => {
       files.forEach((file, index) => {
         expect(mockLabelToAliasService.copyLabelToAliases).toHaveBeenNthCalledWith(index + 1, file);
       });
-      expect(Notice).toHaveBeenCalledTimes(3);
-      expect(Notice).toHaveBeenCalledWith("Label copied to aliases");
+      expect(mockNotifier.success).toHaveBeenCalledTimes(3);
+      expect(mockNotifier.success).toHaveBeenCalledWith("Label copied to aliases");
     });
   });
 });

@@ -40,6 +40,7 @@ describe("CreateInstanceCommand", () => {
   let mockContext: CommandVisibilityContext;
   let mockLeaf: jest.Mocked<WorkspaceLeaf>;
   let mockTFile: jest.Mocked<TFile>;
+  let mockNotifier: { info: jest.Mock; success: jest.Mock; error: jest.Mock; warn: jest.Mock; confirm: jest.Mock };
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -98,11 +99,13 @@ describe("CreateInstanceCommand", () => {
       isDraft: false,
     };
 
+    mockNotifier = { info: jest.fn(), success: jest.fn(), error: jest.fn(), warn: jest.fn(), confirm: jest.fn() };
     command = new CreateInstanceCommand(
       mockApp,
       mockRuleResolver,
       mockGenericAssetCreationService,
       mockVaultAdapter,
+      mockNotifier,
     );
   });
 
@@ -147,7 +150,7 @@ describe("CreateInstanceCommand", () => {
 
       expect(mockShowLabelInputModal).toHaveBeenCalled();
       expect(mockGenericAssetCreationService.createAsset).not.toHaveBeenCalled();
-      expect(Notice).not.toHaveBeenCalled();
+      expect(mockNotifier.success).not.toHaveBeenCalled();
     });
   });
 
@@ -184,7 +187,7 @@ describe("CreateInstanceCommand", () => {
           }),
         }),
       );
-      expect(Notice).toHaveBeenCalledWith("Instance created: new-instance");
+      expect(mockNotifier.success).toHaveBeenCalledWith("Instance created: new-instance");
     });
 
     it("should include taskSize in propertyValues when provided", async () => {
@@ -312,7 +315,7 @@ describe("CreateInstanceCommand", () => {
           }),
         }),
       );
-      expect(Notice).toHaveBeenCalledWith("Instance created: new-instance");
+      expect(mockNotifier.success).toHaveBeenCalledWith("Instance created: new-instance");
     });
 
     it("should handle fallback with empty label", async () => {
@@ -351,7 +354,7 @@ describe("CreateInstanceCommand", () => {
 
       expect(mockGenericAssetCreationService.createAsset).toHaveBeenCalled();
       expect(LoggingService.error).toHaveBeenCalledWith("Create instance error", error);
-      expect(Notice).toHaveBeenCalledWith("Failed to create instance: Failed to create asset");
+      expect(mockNotifier.error).toHaveBeenCalledWith("Failed to create instance: Failed to create asset");
     });
 
     it("should handle ruleResolver error gracefully", async () => {
@@ -363,7 +366,7 @@ describe("CreateInstanceCommand", () => {
       command.checkCallback(false, mockFile, mockContext);
       await flushPromises();
 
-      expect(Notice).toHaveBeenCalledWith("Failed to create instance: Triple store unavailable");
+      expect(mockNotifier.error).toHaveBeenCalledWith("Failed to create instance: Triple store unavailable");
     });
   });
 
@@ -389,7 +392,7 @@ describe("CreateInstanceCommand", () => {
       expect(mockGenericAssetCreationService.createAsset).toHaveBeenCalledWith(
         expect.objectContaining({ className: "Task" }),
       );
-      expect(Notice).toHaveBeenCalledWith("Instance created: new-task");
+      expect(mockNotifier.success).toHaveBeenCalledWith("Instance created: new-task");
     });
 
     it("should handle empty instanceClass array", async () => {
@@ -477,12 +480,12 @@ describe("CreateInstanceCommand", () => {
       command.checkCallback(false, mockFile, mockContext);
 
       await waitForCondition(
-        () => (Notice as jest.Mock).mock.calls.some(call => call[0] === "Instance created: new-instance"),
+        () => mockNotifier.success.mock.calls.some((call: string[]) => call[0] === "Instance created: new-instance"),
         { timeout: 3000 },
       );
 
       expect((mockApp.workspace.getActiveFile as jest.Mock).mock.calls.length).toBeGreaterThanOrEqual(3);
-      expect(Notice).toHaveBeenCalledWith("Instance created: new-instance");
+      expect(mockNotifier.success).toHaveBeenCalledWith("Instance created: new-instance");
     });
   });
 
@@ -502,7 +505,7 @@ describe("CreateInstanceCommand", () => {
       await flushPromises();
 
       expect(mockGenericAssetCreationService.createAsset).toHaveBeenCalled();
-      expect(Notice).toHaveBeenCalledWith("Instance created: new-instance");
+      expect(mockNotifier.success).toHaveBeenCalledWith("Instance created: new-instance");
     });
   });
 });

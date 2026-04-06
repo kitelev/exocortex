@@ -1,5 +1,6 @@
 import React from "react";
-import { MarkdownPostProcessorContext, EventRef, Notice, MarkdownRenderChild } from "obsidian";
+import type { MarkdownPostProcessorContext, EventRef } from "obsidian";
+import { MarkdownRenderChild } from "obsidian";
 import {
   InMemoryTripleStore,
   ExoQLParser,
@@ -15,6 +16,7 @@ import {
   type AlgebraOperation,
   type ConstructOperation,
   type AlgebraTriple,
+  type INotificationService,
 } from "exocortex";
 import type ExocortexPlugin from '@plugin/ExocortexPlugin';
 import { ObsidianVaultAdapter } from '@plugin/adapters/ObsidianVaultAdapter';
@@ -84,9 +86,11 @@ export class SPARQLCodeBlockProcessor {
   private readonly CLEANUP_INTERVAL_MS = 60 * 1000;
   private cleanupIntervalId: ReturnType<typeof setInterval> | null = null;
   private readonly logger = LoggerFactory.create("SPARQLCodeBlockProcessor");
+  private readonly notifier: INotificationService;
 
-  constructor(plugin: ExocortexPlugin) {
+  constructor(plugin: ExocortexPlugin, notifier: INotificationService) {
     this.plugin = plugin;
+    this.notifier = notifier;
     this.startCleanupInterval();
   }
 
@@ -213,7 +217,7 @@ export class SPARQLCodeBlockProcessor {
         error: errorObj,
         context: { queryPreview: source.substring(0, 100) },
       });
-      new Notice(`SPARQL query error: ${errorObj.message}`, 5000);
+      this.notifier.error(`SPARQL query error: ${errorObj.message}`);
 
       container.innerHTML = "";
       this.renderError(errorObj, container, source);
@@ -262,7 +266,7 @@ export class SPARQLCodeBlockProcessor {
         error: errorObj,
         context: { queryPreview: source.substring(0, 100) },
       });
-      new Notice(`SPARQL query refresh error: ${errorObj.message}`, 5000);
+      this.notifier.error(`SPARQL query refresh error: ${errorObj.message}`);
 
       container.innerHTML = "";
       this.renderError(errorObj, container, source);
@@ -393,7 +397,7 @@ export class SPARQLCodeBlockProcessor {
         errorCode: ErrorCodes.STORE_INITIALIZATION,
         error: errorObj,
       });
-      new Notice(`Failed to load triple store: ${errorObj.message}`, 5000);
+      this.notifier.error(`Failed to load triple store: ${errorObj.message}`);
       throw errorObj;
     } finally {
       this.isLoading = false;

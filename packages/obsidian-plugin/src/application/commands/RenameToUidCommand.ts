@@ -1,17 +1,21 @@
-import { TFile, Notice } from "obsidian";
+import type { TFile } from "obsidian";
 import { ICommand } from "./ICommand";
 import {
   CommandVisibilityContext,
   canRenameToUid,
   RenameToUidService,
   LoggingService,
+  type INotificationService,
 } from "exocortex";
 
 export class RenameToUidCommand implements ICommand {
   id = "rename-to-uid";
   name = "Rename to uid";
 
-  constructor(private renameToUidService: RenameToUidService) {}
+  constructor(
+    private renameToUidService: RenameToUidService,
+    private notifier: INotificationService,
+  ) {}
 
   checkCallback = (checking: boolean, file: TFile, context: CommandVisibilityContext | null): boolean => {
     if (!context || !canRenameToUid(context, file.basename)) return false;
@@ -21,7 +25,7 @@ export class RenameToUidCommand implements ICommand {
         try {
           await this.execute(file, context.metadata);
         } catch (error) {
-          new Notice(`Failed to rename: ${error instanceof Error ? error.message : String(error)}`);
+          this.notifier.error(`Failed to rename: ${error instanceof Error ? error.message : String(error)}`);
           LoggingService.error("Rename to UID error", error instanceof Error ? error : undefined);
         }
       })();
@@ -36,6 +40,6 @@ export class RenameToUidCommand implements ICommand {
 
     await this.renameToUidService.renameToUid(file, metadata);
 
-    new Notice(`Renamed "${oldName}" to "${uid}"`);
+    this.notifier.success(`Renamed "${oldName}" to "${uid}"`);
   }
 }
