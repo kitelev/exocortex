@@ -303,7 +303,7 @@ Build knowledge domains:
 
 ### 4. Command Reference
 Discover all 32 commands:
-- [Command Reference](Command-Reference.md)
+- [Plugin Commands](Plugin-Commands.md)
 
 ### 5. Advanced Features
 - [SPARQL Queries](sparql/User-Guide.md)

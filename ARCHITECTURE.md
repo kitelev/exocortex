@@ -1549,7 +1549,6 @@ graph TB
 ## 📚 Additional Resources
 
 - [PROPERTY_SCHEMA.md](docs/PROPERTY_SCHEMA.md) - Complete property reference
-- [API_CONTRACTS.md](docs/API_CONTRACTS.md) - Service interfaces and contracts
 - [Diagrams](docs/diagrams/) - Architecture and flow diagrams
 - [ADRs](docs/adr/) - Architecture decision records
 - [CLAUDE.md](CLAUDE.md) - Development guidelines

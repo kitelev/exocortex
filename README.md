@@ -227,7 +227,7 @@ See **[SPARQL 1.2 Features](./docs/sparql/SPARQL-1.2-Features.md)** for complete
 
 **Obsidian Plugin:**
 
-- **[Command Reference](./docs/Command-Reference.md)** — All 34+ commands documented
+- **[Plugin Commands](./docs/Plugin-Commands.md)** — All 34+ commands documented
 
 **CLI:**
 

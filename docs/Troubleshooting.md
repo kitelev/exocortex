@@ -233,5 +233,5 @@ But [[uuid-here]] in text shows label correctly ✅
 
 **See also:**
 - [Getting Started Guide](Getting-Started.md)
-- [Command Reference](Command-Reference.md)
+- [Plugin Commands](Plugin-Commands.md)
 - [SPARQL Troubleshooting](sparql/User-Guide.md#troubleshooting)
