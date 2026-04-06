@@ -45,13 +45,7 @@ function coreSchemaToDefinition(
     definition.max = schema.validation.maxValue;
   }
 
-  const readOnlyProperties = new Set([
-    "exo__Asset_uid",
-    "exo__Asset_createdAt",
-    "ems__Effort_startTimestamp",
-    "ems__Effort_endTimestamp",
-  ]);
-  if (readOnlyProperties.has(propertyIRI)) {
+  if (schema.readOnly) {
     definition.readOnly = true;
   }
 
