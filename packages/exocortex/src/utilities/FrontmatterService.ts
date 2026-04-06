@@ -126,30 +126,31 @@ export class FrontmatterService {
    */
   updateProperty(content: string, property: string, value: unknown): string {
     const parsed = this.parse(content);
+    const serialized = this.serializeValue(property, value);
 
     // No frontmatter exists - create new block
     if (!parsed.exists) {
-      return this.createFrontmatter(content, { [property]: value });
+      return `---\n${serialized}\n---\n${content}`;
     }
 
     // Frontmatter exists - update or add property
     let updatedFrontmatter = parsed.content;
 
-    // Property already exists - replace value
+    // Property already exists - replace value (including multi-line array items)
     if (this.hasProperty(updatedFrontmatter, property)) {
       const propertyRegex = new RegExp(
-        `${this.escapeRegex(property)}:.*$`,
+        `${this.escapeRegex(property)}:.*(?:\n {2}- .*)*`,
         "m",
       );
       updatedFrontmatter = updatedFrontmatter.replace(
         propertyRegex,
-        `${property}: ${value}`,
+        serialized,
       );
     } else {
       // Property doesn't exist - append to frontmatter
       // Add newline separator only if frontmatter is not empty
       const separator = updatedFrontmatter.length > 0 ? "\n" : "";
-      updatedFrontmatter += `${separator}${property}: ${value}`;
+      updatedFrontmatter += `${separator}${serialized}`;
     }
 
     // Replace frontmatter block in original content
@@ -250,7 +251,7 @@ export class FrontmatterService {
    */
   createFrontmatter(content: string, properties: Record<string, unknown>): string {
     const frontmatterLines = Object.entries(properties).map(
-      ([key, value]) => `${key}: ${value}`,
+      ([key, value]) => this.serializeValue(key, value),
     );
 
     const frontmatterBlock = `---\n${frontmatterLines.join("\n")}\n---`;
@@ -297,6 +298,21 @@ export class FrontmatterService {
    * @returns Escaped string safe for use in RegExp
    * @private
    */
+  /**
+   * Serialize a property key-value pair to YAML string.
+   * Arrays are serialized as multi-line YAML lists.
+   */
+  private serializeValue(property: string, value: unknown): string {
+    if (Array.isArray(value)) {
+      if (value.length === 0) {
+        return `${property}:`;
+      }
+      const items = value.map((v) => `  - ${v}`).join("\n");
+      return `${property}:\n${items}`;
+    }
+    return `${property}: ${String(value)}`;
+  }
+
   private escapeRegex(str: string): string {
     return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   }

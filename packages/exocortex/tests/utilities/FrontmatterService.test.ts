@@ -578,4 +578,104 @@ Body`;
       expect(result).toBe(`---\nfoo: bar\ndescription: ${longValue}\n---\nBody`);
     });
   });
+
+  describe("updateProperty with arrays of wikilinks (RFC-016 #2637)", () => {
+    it("should serialize array of wikilinks as YAML list", () => {
+      const content = "---\nfoo: bar\n---\nBody";
+      const newValue = [
+        '"[[uuid1|ems__Task]]"',
+        '"[[uuid2|gtd__NextAction]]"',
+      ];
+
+      const result = service.updateProperty(content, "exo__Instance_class", newValue);
+
+      expect(result).toContain("uuid1");
+      expect(result).toContain("uuid2");
+      expect(result).toContain("ems__Task");
+      expect(result).toContain("gtd__NextAction");
+      // Should be valid YAML list format
+      expect(result).toContain('  - "[[uuid1|ems__Task]]"');
+      expect(result).toContain('  - "[[uuid2|gtd__NextAction]]"');
+    });
+
+    it("should replace existing array property with new array", () => {
+      const content = `---
+exo__Instance_class:
+  - "[[ems__Task]]"
+  - "[[gtd__InboxItem]]"
+foo: bar
+---
+Body`;
+
+      const newValue = [
+        '"[[uuid1|ems__Task]]"',
+        '"[[uuid2|gtd__NextAction]]"',
+      ];
+
+      const result = service.updateProperty(content, "exo__Instance_class", newValue);
+
+      expect(result).toContain("uuid1");
+      expect(result).toContain("uuid2");
+      expect(result).not.toContain("gtd__InboxItem");
+      expect(result).toContain("foo: bar");
+    });
+
+    it("should handle single-element array", () => {
+      const content = "---\nfoo: bar\n---\nBody";
+      const newValue = ['"[[uuid1|ems__Task]]"'];
+
+      const result = service.updateProperty(content, "exo__Instance_class", newValue);
+
+      expect(result).toContain('  - "[[uuid1|ems__Task]]"');
+    });
+
+    it("should handle empty array", () => {
+      const content = "---\nfoo: bar\n---\nBody";
+      const newValue: string[] = [];
+
+      const result = service.updateProperty(content, "exo__Instance_class", newValue);
+
+      // Empty array should produce empty YAML array
+      expect(result).toContain("exo__Instance_class:");
+    });
+
+    it("should produce round-trip parseable YAML for arrays", () => {
+      const content = "---\nfoo: bar\n---\nBody";
+      const newValue = [
+        '"[[uuid1|ems__Task]]"',
+        '"[[uuid2|gtd__NextAction]]"',
+      ];
+
+      const result = service.updateProperty(content, "exo__Instance_class", newValue);
+
+      // Verify the result is parseable - extract frontmatter and check structure
+      const parsed = service.parse(result);
+      expect(parsed.exists).toBe(true);
+      expect(parsed.content).toContain("exo__Instance_class:");
+      expect(parsed.content).toContain('  - "[[uuid1|ems__Task]]"');
+      expect(parsed.content).toContain('  - "[[uuid2|gtd__NextAction]]"');
+    });
+
+    it("should replace existing single-value property with array", () => {
+      const content = '---\nexo__Instance_class: "[[ems__Task]]"\nfoo: bar\n---\nBody';
+      const newValue = [
+        '"[[uuid1|ems__Task]]"',
+        '"[[uuid2|gtd__NextAction]]"',
+      ];
+
+      const result = service.updateProperty(content, "exo__Instance_class", newValue);
+
+      expect(result).toContain('  - "[[uuid1|ems__Task]]"');
+      expect(result).toContain('  - "[[uuid2|gtd__NextAction]]"');
+      expect(result).toContain("foo: bar");
+    });
+
+    it("should not affect non-array updateProperty behavior", () => {
+      // Regression: ensure scalar values still work
+      const content = "---\nfoo: bar\n---\nBody";
+      const result = service.updateProperty(content, "status", '"[[StatusDone]]"');
+
+      expect(result).toBe('---\nfoo: bar\nstatus: "[[StatusDone]]"\n---\nBody');
+    });
+  });
 });
