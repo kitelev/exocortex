@@ -505,4 +505,85 @@ describe("GroundingExecutor", () => {
       expect(result).toBe("plain value");
     });
   });
+
+  // -- create_instance (RFC-016 #2643) --
+
+  describe("create_instance", () => {
+    it("should create file with correct frontmatter", async () => {
+      const grounding = makeGrounding({
+        type: GroundingType.CREATE_INSTANCE,
+        targetClass: "gtd__InboxItem",
+        targetPrototype: "proto-uuid-123",
+        targetFolder: "01 Inbox",
+      });
+      const userInput = { label: "Buy milk" };
+
+      const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH, userInput);
+
+      expect(result.success).toBe(true);
+      expect(writer.createFile).toHaveBeenCalledTimes(1);
+
+      const [path, content] = writer.createFile.mock.calls[0];
+      expect(path).toMatch(/^01 Inbox\/[a-f0-9-]+\.md$/);
+      expect(content).toContain("exo__Asset_uid:");
+      expect(content).toContain("exo__Asset_label: Buy milk");
+      expect(content).toContain("gtd__InboxItem");
+      expect(content).toContain("proto-uuid-123");
+    });
+
+    it("should generate valid UUID in filename", async () => {
+      const grounding = makeGrounding({
+        type: GroundingType.CREATE_INSTANCE,
+        targetClass: "ems__Task",
+        targetFolder: "tasks",
+      });
+
+      await executor.execute(grounding, TARGET_IRI, FILE_PATH, { label: "Test" });
+
+      const [path] = writer.createFile.mock.calls[0];
+      const filename = path.split("/").pop()?.replace(".md", "");
+      expect(filename).toMatch(/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/);
+    });
+
+    it("should fail when targetFolder is missing", async () => {
+      const grounding = makeGrounding({
+        type: GroundingType.CREATE_INSTANCE,
+        targetClass: "ems__Task",
+      });
+
+      const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH, { label: "Test" });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("targetFolder");
+    });
+
+    it("should work without targetPrototype", async () => {
+      const grounding = makeGrounding({
+        type: GroundingType.CREATE_INSTANCE,
+        targetClass: "ems__Task",
+        targetFolder: "01 Inbox",
+      });
+
+      const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH, { label: "No proto" });
+
+      expect(result.success).toBe(true);
+      const [, content] = writer.createFile.mock.calls[0];
+      expect(content).toContain("exo__Asset_label: No proto");
+      expect(content).not.toContain("exo__Asset_prototype");
+    });
+
+    it("should use 'Untitled' as default label when no user input", async () => {
+      const grounding = makeGrounding({
+        type: GroundingType.CREATE_INSTANCE,
+        targetClass: "ems__Task",
+        targetFolder: "01 Inbox",
+      });
+
+      const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
+
+      expect(result.success).toBe(true);
+      const [, content] = writer.createFile.mock.calls[0];
+      expect(content).toContain("exo__Asset_label: Untitled");
+    });
+  });
 });
