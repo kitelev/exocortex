@@ -160,7 +160,7 @@ exocortex-cli assetspace add @kitelev/gtd-jedi@^0.1
 
 ## Architecture
 
-Monorepo with five packages sharing Clean Architecture core:
+Monorepo with four packages sharing Clean Architecture core:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -246,13 +246,6 @@ See **[SPARQL 1.2 Features](./docs/sparql/SPARQL-1.2-Features.md)** for complete
 - **[SPARQL 1.2 Features](./docs/sparql/SPARQL-1.2-Features.md)** — LATERAL, PREFIX\*, directionality, and more
 - **[SPARQL 1.2 Migration](./docs/sparql/SPARQL-1.2-Migration.md)** — Upgrading from SPARQL 1.1
 - **[ExoQL Specification](./docs/ExoQL-Specification.md)** — Full query language specification
-
-### Graph View & Visualization
-
-- **[Graph View Overview](./docs/graph-view/README.md)** — Introduction to 2D and 3D graph visualization
-- **[3D Visualization Guide](./docs/graph-view/guides/3d-visualization.md)** — WebGL-powered 3D graph exploration
-- **[Configuration Reference](./docs/graph-view/guides/configuration.md)** — All configuration options for graph views
-- **[Inference & Reasoning Guide](./docs/graph-view/guides/inference.md)** — RDFS/OWL inference, neighborhood exploration
 
 ---
 

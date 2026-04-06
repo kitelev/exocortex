@@ -95,6 +95,5 @@ const metadata = createMockMetadata({
 
 - **[TESTING.md](../TESTING.md)** - Comprehensive testing guide (recommended)
 - **[TEST_TEMPLATES.md](../TEST_TEMPLATES.md)** - Ready-to-use test templates
-- **[COVERAGE_ANALYSIS.md](../COVERAGE_ANALYSIS.md)** - Coverage analysis report
 - **[Plugin Development Guide](./Plugin-Development-Guide.md)**
 - **[Core API Reference](./api/Core-API.md)**

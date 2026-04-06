@@ -126,10 +126,10 @@ With branch protection enabled, AI agents MUST use this workflow:
 
 ```bash
 # 1. Create feature branch in separate worktree
-git worktree add ../exocortex-feature-name -b feature/description
+git worktree add ../worktrees/exocortex-claude1-feat-feature-name -b feature/description
 
 # 2. Make changes
-cd ../exocortex-feature-name
+cd ../worktrees/exocortex-claude1-feat-feature-name
 # ... code changes ...
 
 # 3. Test locally

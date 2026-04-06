@@ -210,9 +210,9 @@ const profiler = new PerformanceProfiler({
 // In render loop
 profiler.beginFrame();
 
-profiler.beginSection("physics");
-updatePhysics();
-profiler.endSection("physics");
+profiler.beginSection("query");
+executeQuery();
+profiler.endSection("query");
 
 profiler.beginSection("render");
 render();

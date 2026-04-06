@@ -21,8 +21,6 @@ Please provide a comprehensive list of all available agents with their capabilit
 
 3. **Product & Design Agents**
    - product-manager: Product management and roadmap
-   - ux-design-expert: UX/UI design and user experience
-   - ux-researcher-agent: User research and usability testing
    - technical-writer-agent: Documentation and guides
 
 4. **Operations & Quality Agents**
@@ -33,27 +31,18 @@ Please provide a comprehensive list of all available agents with their capabilit
 
 5. **Business & Management Agents**
    - babok-agent: Business analysis
-   - pmbok-agent: Project management
-   - scrum-master-agent: Agile processes
-   - community-manager-agent: Community engagement
+   - product-manager: Project management
 
-6. **Integration & Compliance Agents**
+6. **Integration Agents**
    - integration-agent: Third-party integrations
-   - compliance-agent: Regulatory compliance
-   - ai-integration-architect: AI/LLM integration
 
 7. **System & Meta Agents**
    - orchestrator: Task coordination
    - meta-agent: System optimization
    - agent-factory: Dynamic agent creation
-   - memory-bank-synchronizer: Documentation sync
    - state-persistence-agent: Work state preservation
 
-8. **Data & Analysis Agents**
-   - data-analyst-agent: Data analysis and insights
-   - code-searcher: Codebase search and analysis
-
-9. **Specialized Testing Agents**
+8. **Specialized Testing Agents**
    - obsidian-test-agent: Obsidian plugin testing
    - ui-test-expert: UI test fixing
    - docker-test-agent: Containerized testing

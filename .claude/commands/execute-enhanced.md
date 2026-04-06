@@ -75,11 +75,11 @@ Requirements_Documentation:
 
 #### Stage 1.1: Project Charter Development
 
-**DEPLOY PMBOK-AGENT after requirements approval:**
+**DEPLOY PRODUCT-MANAGER after requirements approval:**
 
 ```yaml
 PMBOK_Project_Planning:
-  agent: pmbok-agent
+  agent: product-manager
   dependencies: [babok-agent-output]
   
   project_charter:
@@ -128,7 +128,7 @@ Resource_Planning:
 ```yaml
 SWEBOK_Engineering:
   agent: swebok-engineer
-  dependencies: [pmbok-agent-output, babok-agent-output]
+  dependencies: [product-manager-output, babok-agent-output]
   
   design_activities:
     - Architecture design from requirements
@@ -221,9 +221,9 @@ async function executeEnhanced(task: string) {
   
   // Phase 1: Project Planning
   console.log("📊 Starting PMBOK Project Planning...");
-  const pmbokAgent = await deployAgent('pmbok-agent');
+  const productManagerAgent = await deployAgent('product-manager');
   
-  const projectPlan = await pmbokAgent.createProjectPlan({
+  const projectPlan = await productManagerAgent.createProjectPlan({
     requirements: requirements,
     includeWBS: true,
     riskAnalysis: true,
@@ -326,7 +326,7 @@ WORK BREAKDOWN STRUCTURE:
 RESOURCE ALLOCATION:
 • architect-agent: Database design
 • swebok-engineer: Service implementation
-• ux-design-expert: Visualization design
+• technical-writer-agent: Documentation
 • qa-engineer: Testing strategy
 • security-agent: Privacy validation
 
