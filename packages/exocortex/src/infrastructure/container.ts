@@ -26,6 +26,7 @@ import { AreaHierarchyBuilder } from "../services/AreaHierarchyBuilder";
 import { URIConstructionService } from "../services/URIConstructionService";
 import { GenericAssetCreationService } from "../services/GenericAssetCreationService";
 import { CriticalityZoneService } from "../services/CriticalityZoneService";
+import { VaultSettings } from "../services/VaultSettings";
 
 /**
  * Register all core services with the DI container.
@@ -47,6 +48,14 @@ export function registerCoreServices(
     DI_TOKENS.AlgorithmExtractor,
     AlgorithmExtractor,
   );
+
+  // Vault settings — register a default instance only if the plugin layer
+  // hasn't already provided a configured one.
+  if (!targetContainer.isRegistered(DI_TOKENS.IVaultSettings)) {
+    targetContainer.register(DI_TOKENS.IVaultSettings, {
+      useValue: new VaultSettings(),
+    });
+  }
 
   // Status workflow (no dependencies)
   targetContainer.registerSingleton(

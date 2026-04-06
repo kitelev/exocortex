@@ -1,17 +1,27 @@
 import {
   SupervisionCreationService,
   type SupervisionFormData,
+  type IVaultSettings,
 } from "exocortex";
+
+function createMockVaultSettings(): IVaultSettings {
+  return {
+    getOwnerIdentity: jest.fn().mockReturnValue('"[[!kitelev]]"'),
+    getDefaultInboxFolder: jest.fn().mockReturnValue("01 Inbox"),
+  };
+}
 
 describe("SupervisionCreationService", () => {
   let service: SupervisionCreationService;
   let mockVault: any;
+  let mockVaultSettings: IVaultSettings;
 
   beforeEach(() => {
     mockVault = {
       create: jest.fn().mockResolvedValue({ path: "01 Inbox/test-uuid.md" }),
     };
-    service = new SupervisionCreationService(mockVault);
+    mockVaultSettings = createMockVaultSettings();
+    service = new SupervisionCreationService(mockVault, mockVaultSettings);
   });
 
   describe("generateFrontmatter", () => {

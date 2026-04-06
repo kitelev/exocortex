@@ -343,6 +343,13 @@ export {
 export type { ILogger } from "./interfaces/ILogger";
 export type { IEventBus } from "./interfaces/IEventBus";
 export type { IConfiguration } from "./interfaces/IConfiguration";
+export type { IVaultSettings } from "./interfaces/IVaultSettings";
+export {
+  VaultSettings,
+  DEFAULT_OWNER_IDENTITY,
+  DEFAULT_INBOX_FOLDER,
+  type VaultSettingsConfig,
+} from "./services/VaultSettings";
 export type { INotificationService } from "./interfaces/INotificationService";
 export { DI_TOKENS, type DIToken } from "./interfaces/tokens";
 

@@ -57,6 +57,9 @@ export const DI_TOKENS = {
   AssetConversionService: Symbol.for("AssetConversionService"),
   NoteToRDFConverter: Symbol.for("NoteToRDFConverter"),
 
+  // Vault settings
+  IVaultSettings: Symbol.for("IVaultSettings"),
+
   // Query services
   AreaHierarchyBuilder: Symbol.for("AreaHierarchyBuilder"),
   URIConstructionService: Symbol.for("URIConstructionService"),
