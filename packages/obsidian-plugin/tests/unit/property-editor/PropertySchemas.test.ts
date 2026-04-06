@@ -1,16 +1,22 @@
 import {
   EFFORT_STATUS_VALUES,
   TASK_SIZE_VALUES,
+  FALLBACK_EFFORT_STATUS_VALUES,
+  FALLBACK_TASK_SIZE_VALUES,
   getPropertySchemaForClass,
   getPropertySchemaForClassSync,
   getEditableProperties,
   getPropertyByName,
   getStatusLabel,
+  getEffortStatusValues,
+  getTaskSizeValues,
+  refreshEnumValues,
   initPropertySchemaService,
+  initEnumResolver,
   type PropertySchemaDefinition,
 } from "../../../src/domain/property-editor/PropertySchemas";
 import { PropertySchemaService } from "../../../src/domain/property-editor/PropertySchemaService";
-import type { PropertySchemaResolver, PropertySchema } from "exocortex";
+import type { PropertySchemaResolver, PropertySchema, EnumValueResolver, EnumValue } from "exocortex";
 
 function createMockResolver(
   schemas: Map<string, PropertySchema>,
@@ -20,6 +26,15 @@ function createMockResolver(
     getAllSchemas: jest.fn(async () => new Map(schemas)),
     invalidateCache: jest.fn(),
   } as unknown as PropertySchemaResolver;
+}
+
+function createMockEnumResolver(
+  values: Map<string, EnumValue[]>,
+): EnumValueResolver {
+  return {
+    resolve: jest.fn(async (enumClass: string) => values.get(enumClass) ?? []),
+    invalidateCache: jest.fn(),
+  } as unknown as EnumValueResolver;
 }
 
 function buildTestSchemas(): Map<string, PropertySchema> {
@@ -87,13 +102,17 @@ function buildTestSchemas(): Map<string, PropertySchema> {
 }
 
 describe("PropertySchemas", () => {
-  describe("EFFORT_STATUS_VALUES", () => {
+  afterEach(() => {
+    initEnumResolver(null as unknown as EnumValueResolver);
+  });
+
+  describe("FALLBACK_EFFORT_STATUS_VALUES", () => {
     it("should have 7 status values", () => {
-      expect(EFFORT_STATUS_VALUES).toHaveLength(7);
+      expect(FALLBACK_EFFORT_STATUS_VALUES).toHaveLength(7);
     });
 
     it("should have all required status values", () => {
-      const labels = EFFORT_STATUS_VALUES.map((s) => s.label);
+      const labels = FALLBACK_EFFORT_STATUS_VALUES.map((s) => s.label);
       expect(labels).toContain("Draft");
       expect(labels).toContain("Backlog");
       expect(labels).toContain("Analysis");
@@ -104,26 +123,144 @@ describe("PropertySchemas", () => {
     });
 
     it("should have wikilink format values", () => {
-      for (const status of EFFORT_STATUS_VALUES) {
+      for (const status of FALLBACK_EFFORT_STATUS_VALUES) {
         expect(status.value).toMatch(/^\[\[ems__EffortStatus\w+\]\]$/);
       }
     });
   });
 
-  describe("TASK_SIZE_VALUES", () => {
+  describe("FALLBACK_TASK_SIZE_VALUES", () => {
     it("should have 6 size values", () => {
-      expect(TASK_SIZE_VALUES).toHaveLength(6);
+      expect(FALLBACK_TASK_SIZE_VALUES).toHaveLength(6);
     });
 
     it("should have all size values in order", () => {
-      const labels = TASK_SIZE_VALUES.map((s) => s.label);
+      const labels = FALLBACK_TASK_SIZE_VALUES.map((s) => s.label);
       expect(labels).toEqual(["XXS", "XS", "S", "M", "L", "XL"]);
     });
 
     it("should have wikilink format values", () => {
-      for (const size of TASK_SIZE_VALUES) {
+      for (const size of FALLBACK_TASK_SIZE_VALUES) {
         expect(size.value).toMatch(/^\[\[ems__TaskSize_\w+\]\]$/);
       }
+    });
+  });
+
+  describe("EFFORT_STATUS_VALUES (mutable, initially equals fallback)", () => {
+    it("should initially contain fallback values", () => {
+      expect(EFFORT_STATUS_VALUES).toHaveLength(7);
+      expect(EFFORT_STATUS_VALUES.map((s) => s.label)).toContain("Doing");
+    });
+  });
+
+  describe("TASK_SIZE_VALUES (mutable, initially equals fallback)", () => {
+    it("should initially contain fallback values", () => {
+      expect(TASK_SIZE_VALUES).toHaveLength(6);
+      expect(TASK_SIZE_VALUES.map((s) => s.label)).toContain("M");
+    });
+  });
+
+  describe("getEffortStatusValues (async)", () => {
+    it("should return fallback when no enum resolver is set", async () => {
+      const values = await getEffortStatusValues();
+      expect(values).toEqual(FALLBACK_EFFORT_STATUS_VALUES);
+    });
+
+    it("should return resolved values when enum resolver returns data", async () => {
+      const resolved: EnumValue[] = [
+        { value: "[[ems__EffortStatusNew]]", label: "New" },
+        { value: "[[ems__EffortStatusActive]]", label: "Active" },
+      ];
+      const enumValues = new Map<string, EnumValue[]>();
+      enumValues.set("ems__EffortStatus", resolved);
+      initEnumResolver(createMockEnumResolver(enumValues));
+
+      const values = await getEffortStatusValues();
+
+      expect(values).toHaveLength(2);
+      expect(values[0].label).toBe("New");
+      expect(values[0].value).toBe("[[ems__EffortStatusNew]]");
+      expect(values[0].wikilink).toBe("[[ems__EffortStatusNew|New]]");
+      expect(values[1].label).toBe("Active");
+    });
+
+    it("should return fallback when enum resolver returns empty", async () => {
+      const enumValues = new Map<string, EnumValue[]>();
+      initEnumResolver(createMockEnumResolver(enumValues));
+
+      const values = await getEffortStatusValues();
+
+      expect(values).toEqual(FALLBACK_EFFORT_STATUS_VALUES);
+    });
+  });
+
+  describe("getTaskSizeValues (async)", () => {
+    it("should return fallback when no enum resolver is set", async () => {
+      const values = await getTaskSizeValues();
+      expect(values).toEqual(FALLBACK_TASK_SIZE_VALUES);
+    });
+
+    it("should return resolved values when enum resolver returns data", async () => {
+      const resolved: EnumValue[] = [
+        { value: "[[ems__TaskSize_Tiny]]", label: "Tiny" },
+        { value: "[[ems__TaskSize_Huge]]", label: "Huge" },
+      ];
+      const enumValues = new Map<string, EnumValue[]>();
+      enumValues.set("ems__TaskSize", resolved);
+      initEnumResolver(createMockEnumResolver(enumValues));
+
+      const values = await getTaskSizeValues();
+
+      expect(values).toHaveLength(2);
+      expect(values[0].label).toBe("Tiny");
+      expect(values[1].label).toBe("Huge");
+    });
+
+    it("should return fallback when enum resolver returns empty", async () => {
+      const enumValues = new Map<string, EnumValue[]>();
+      initEnumResolver(createMockEnumResolver(enumValues));
+
+      const values = await getTaskSizeValues();
+
+      expect(values).toEqual(FALLBACK_TASK_SIZE_VALUES);
+    });
+  });
+
+  describe("refreshEnumValues", () => {
+    it("should do nothing when no enum resolver is set", async () => {
+      await refreshEnumValues();
+      expect(EFFORT_STATUS_VALUES).toHaveLength(7);
+      expect(TASK_SIZE_VALUES).toHaveLength(6);
+    });
+
+    it("should update mutable arrays when resolver returns data", async () => {
+      const statusValues: EnumValue[] = [
+        { value: "[[ems__EffortStatusNew]]", label: "New" },
+      ];
+      const sizeValues: EnumValue[] = [
+        { value: "[[ems__TaskSize_Tiny]]", label: "Tiny" },
+      ];
+      const enumValues = new Map<string, EnumValue[]>();
+      enumValues.set("ems__EffortStatus", statusValues);
+      enumValues.set("ems__TaskSize", sizeValues);
+      initEnumResolver(createMockEnumResolver(enumValues));
+
+      await refreshEnumValues();
+
+      expect(EFFORT_STATUS_VALUES).toHaveLength(1);
+      expect(EFFORT_STATUS_VALUES[0].label).toBe("New");
+      expect(TASK_SIZE_VALUES).toHaveLength(1);
+      expect(TASK_SIZE_VALUES[0].label).toBe("Tiny");
+    });
+
+    it("should reset to fallback when resolver returns empty", async () => {
+      const enumValues = new Map<string, EnumValue[]>();
+      initEnumResolver(createMockEnumResolver(enumValues));
+
+      await refreshEnumValues();
+
+      expect(EFFORT_STATUS_VALUES).toEqual(FALLBACK_EFFORT_STATUS_VALUES);
+      expect(TASK_SIZE_VALUES).toEqual(FALLBACK_TASK_SIZE_VALUES);
     });
   });
 
