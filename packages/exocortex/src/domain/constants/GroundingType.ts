@@ -14,4 +14,6 @@ export enum GroundingType {
   COMPOSITE = "composite",
   /** Delegate to a registered service by ID */
   SERVICE_CALL = "service_call",
+  /** Create a new instance file from a prototype (RFC-016) */
+  CREATE_INSTANCE = "create_instance",
 }

@@ -140,6 +140,12 @@ export class GroundingExecutor {
             userInput,
           );
 
+        case GroundingType.CREATE_INSTANCE:
+          return {
+            success: false,
+            error: "create_instance grounding not yet implemented. See RFC-016 Issue #2643.",
+          };
+
         case GroundingType.SPARQL_UPDATE:
           return {
             success: false,

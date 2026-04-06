@@ -78,6 +78,12 @@ export interface GroundingDefinition {
   readonly sparqlUpdate?: string;
   /** Ordered sub-steps (for composite type) */
   readonly steps?: readonly GroundingDefinition[];
+  /** Class to instantiate (for create_instance, e.g., "gtd__InboxItem") */
+  readonly targetClass?: string;
+  /** Prototype asset IRI or UUID (for create_instance) */
+  readonly targetPrototype?: string;
+  /** Vault-relative folder path (for create_instance, e.g., "01 Inbox") */
+  readonly targetFolder?: string;
 }
 
 /**
