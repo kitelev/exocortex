@@ -1,4 +1,5 @@
 import { injectable } from "tsyringe";
+import { v4 as uuidv4 } from "uuid";
 import type { IFileSystemReader } from "../interfaces/IFileSystemAdapter";
 import type { IFileSystemWriter } from "../interfaces/IFileSystemAdapter";
 import type { GroundingDefinition } from "../domain/models/CommandDefinition";
@@ -141,7 +142,11 @@ export class GroundingExecutor {
           );
 
         case GroundingType.CREATE_INSTANCE:
-          return await this.executeCreateInstance(grounding, userInput);
+          return await this.executeCreateInstance(
+            grounding,
+            targetIRI,
+            userInput,
+          );
 
         case GroundingType.SPARQL_UPDATE:
           return {
@@ -300,26 +305,44 @@ export class GroundingExecutor {
 
   private async executeCreateInstance(
     grounding: GroundingDefinition,
+    targetIRI: string,
     userInput?: UserInput,
   ): Promise<ExecutionResult> {
     if (!grounding.targetFolder) {
       return { success: false, error: "create_instance requires targetFolder" };
     }
 
-    const uid = globalThis.crypto.randomUUID();
+    const uid = uuidv4();
     const label = (userInput?.label as string) ?? "Untitled";
 
     const properties: Record<string, unknown> = {
       exo__Asset_uid: uid,
+      exo__Asset_createdAt: new Date().toISOString(),
       exo__Asset_label: label,
     };
 
+    if (label !== "Untitled") {
+      properties.aliases = [label];
+    }
+
     if (grounding.targetClass) {
-      properties.exo__Instance_class = `"[[${grounding.targetClass}]]"`;
+      properties.exo__Instance_class = [`"[[${grounding.targetClass}]]"`];
     }
 
     if (grounding.targetPrototype) {
       properties.exo__Asset_prototype = `"[[${grounding.targetPrototype}]]"`;
+    }
+
+    if (targetIRI) {
+      properties.exo__Asset_source = `"[[${targetIRI}]]"`;
+    }
+
+    if (userInput) {
+      for (const [key, value] of Object.entries(userInput)) {
+        if (key === "label") continue;
+        if (value === null || value === undefined) continue;
+        properties[key] = value;
+      }
     }
 
     const content = this.frontmatterService.createFrontmatter("", properties);
