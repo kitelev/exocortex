@@ -1,7 +1,7 @@
 /**
  * Vault-level configuration interface for dependency injection.
- * Provides access to vault owner identity and default folder paths,
- * replacing hardcoded values across creation services.
+ * Provides access to vault owner identity, default folder paths, and
+ * class UIDs, replacing hardcoded values across creation services.
  */
 export interface IVaultSettings {
   /**
@@ -15,4 +15,11 @@ export interface IVaultSettings {
    * Example: "01 Inbox"
    */
   getDefaultInboxFolder(): string;
+
+  /**
+   * Returns the UID of the ztlk__FleetingNote class asset.
+   * Used by FleetingNoteCreationService and SupervisionCreationService
+   * to populate exo__Instance_class frontmatter.
+   */
+  getFleetingNoteClassUID(): string;
 }

@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import { VaultSettings, DEFAULT_OWNER_IDENTITY, DEFAULT_INBOX_FOLDER } from "../../../src/services/VaultSettings";
+import { VaultSettings, DEFAULT_OWNER_IDENTITY, DEFAULT_INBOX_FOLDER, DEFAULT_FLEETING_NOTE_CLASS_UID } from "../../../src/services/VaultSettings";
 
 describe("VaultSettings", () => {
   describe("getOwnerIdentity", () => {
@@ -54,12 +54,39 @@ describe("VaultSettings", () => {
     });
   });
 
+  describe("getFleetingNoteClassUID", () => {
+    it("should return configured class UID when provided", () => {
+      const settings = new VaultSettings({ fleetingNoteClassUID: "custom-uid-1234" });
+
+      expect(settings.getFleetingNoteClassUID()).toBe("custom-uid-1234");
+    });
+
+    it("should return default class UID when config has undefined fleetingNoteClassUID", () => {
+      const settings = new VaultSettings({ fleetingNoteClassUID: undefined });
+
+      expect(settings.getFleetingNoteClassUID()).toBe(DEFAULT_FLEETING_NOTE_CLASS_UID);
+    });
+
+    it("should return default class UID when no config is provided", () => {
+      const settings = new VaultSettings();
+
+      expect(settings.getFleetingNoteClassUID()).toBe(DEFAULT_FLEETING_NOTE_CLASS_UID);
+    });
+
+    it("should return default class UID when config is undefined", () => {
+      const settings = new VaultSettings(undefined);
+
+      expect(settings.getFleetingNoteClassUID()).toBe("fca0a931-a01f-48e4-b72a-4af206c94bc7");
+    });
+  });
+
   describe("default values consistency", () => {
     it("should preserve backward-compatible defaults when no configuration given", () => {
       const settings = new VaultSettings();
 
       expect(settings.getOwnerIdentity()).toBe('"[[!kitelev]]"');
       expect(settings.getDefaultInboxFolder()).toBe("01 Inbox");
+      expect(settings.getFleetingNoteClassUID()).toBe("fca0a931-a01f-48e4-b72a-4af206c94bc7");
     });
 
     it("should allow overriding only owner identity while keeping default inbox", () => {
@@ -85,6 +112,18 @@ describe("VaultSettings", () => {
       expect(settings.getOwnerIdentity()).toBe('"[[!team-vault]]"');
       expect(settings.getDefaultInboxFolder()).toBe("Incoming");
     });
+
+    it("should allow overriding all three values simultaneously", () => {
+      const settings = new VaultSettings({
+        ownerIdentity: '"[[!team-vault]]"',
+        defaultInboxFolder: "Incoming",
+        fleetingNoteClassUID: "custom-uid",
+      });
+
+      expect(settings.getOwnerIdentity()).toBe('"[[!team-vault]]"');
+      expect(settings.getDefaultInboxFolder()).toBe("Incoming");
+      expect(settings.getFleetingNoteClassUID()).toBe("custom-uid");
+    });
   });
 
   describe("exported constants", () => {
@@ -94,6 +133,10 @@ describe("VaultSettings", () => {
 
     it("DEFAULT_INBOX_FOLDER should match the hardcoded default", () => {
       expect(DEFAULT_INBOX_FOLDER).toBe("01 Inbox");
+    });
+
+    it("DEFAULT_FLEETING_NOTE_CLASS_UID should match the ztlk__FleetingNote class UID", () => {
+      expect(DEFAULT_FLEETING_NOTE_CLASS_UID).toBe("fca0a931-a01f-48e4-b72a-4af206c94bc7");
     });
   });
 });

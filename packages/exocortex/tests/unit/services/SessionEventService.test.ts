@@ -7,6 +7,7 @@ function createMockVaultSettings(): IVaultSettings {
   return {
     getOwnerIdentity: jest.fn().mockReturnValue('"[[!kitelev]]"'),
     getDefaultInboxFolder: jest.fn().mockReturnValue("01 Inbox"),
+    getFleetingNoteClassUID: jest.fn().mockReturnValue("fca0a931-a01f-48e4-b72a-4af206c94bc7"),
   };
 }
 

@@ -25,10 +25,6 @@ describe("AssetClass", () => {
     expect(AssetClass.TASK_PROTOTYPE).toBe("ems__TaskPrototype");
   });
 
-  it("should have TASK_PROTOTYPE_UID constant", () => {
-    expect(AssetClass.TASK_PROTOTYPE_UID).toBe("75302770-279e-4a59-ba85-09df29725713");
-  });
-
   it("should have MEETING_PROTOTYPE constant", () => {
     expect(AssetClass.MEETING_PROTOTYPE).toBe("ems__MeetingPrototype");
   });
@@ -97,8 +93,8 @@ describe("AssetClass", () => {
     expect(AssetClass.COMMAND_BINDING).toBe("exocmd__CommandBinding");
   });
 
-  it("should have exactly 26 constants", () => {
+  it("should have exactly 24 constants", () => {
     const values = Object.values(AssetClass);
-    expect(values).toHaveLength(26);
+    expect(values).toHaveLength(24);
   });
 });
