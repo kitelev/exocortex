@@ -3,10 +3,12 @@ import type { IVaultSettings } from "../interfaces/IVaultSettings";
 
 export const DEFAULT_OWNER_IDENTITY = '"[[!kitelev]]"';
 export const DEFAULT_INBOX_FOLDER = "01 Inbox";
+export const DEFAULT_FLEETING_NOTE_CLASS_UID = "fca0a931-a01f-48e4-b72a-4af206c94bc7";
 
 export interface VaultSettingsConfig {
   ownerIdentity?: string;
   defaultInboxFolder?: string;
+  fleetingNoteClassUID?: string;
 }
 
 /**
@@ -19,10 +21,12 @@ export interface VaultSettingsConfig {
 export class VaultSettings implements IVaultSettings {
   private readonly ownerIdentity: string;
   private readonly defaultInboxFolder: string;
+  private readonly fleetingNoteClassUID: string;
 
   constructor(config?: VaultSettingsConfig) {
     this.ownerIdentity = config?.ownerIdentity ?? DEFAULT_OWNER_IDENTITY;
     this.defaultInboxFolder = config?.defaultInboxFolder ?? DEFAULT_INBOX_FOLDER;
+    this.fleetingNoteClassUID = config?.fleetingNoteClassUID ?? DEFAULT_FLEETING_NOTE_CLASS_UID;
   }
 
   getOwnerIdentity(): string {
@@ -31,5 +35,9 @@ export class VaultSettings implements IVaultSettings {
 
   getDefaultInboxFolder(): string {
     return this.defaultInboxFolder;
+  }
+
+  getFleetingNoteClassUID(): string {
+    return this.fleetingNoteClassUID;
   }
 }

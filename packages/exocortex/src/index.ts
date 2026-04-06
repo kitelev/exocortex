@@ -353,6 +353,7 @@ export {
   VaultSettings,
   DEFAULT_OWNER_IDENTITY,
   DEFAULT_INBOX_FOLDER,
+  DEFAULT_FLEETING_NOTE_CLASS_UID,
   type VaultSettingsConfig,
 } from "./services/VaultSettings";
 export type { INotificationService } from "./interfaces/INotificationService";

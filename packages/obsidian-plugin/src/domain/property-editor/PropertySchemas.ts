@@ -124,6 +124,13 @@ export async function getTaskSizeValues(): Promise<SizeEnumValue[]> {
 
 export { FALLBACK_EFFORT_STATUS_VALUES, FALLBACK_TASK_SIZE_VALUES };
 
+/**
+ * @internal — fallback only, prefer PropertySchemaResolver.
+ *
+ * Used when PropertySchemaService is unavailable (e.g. before the
+ * triple store has loaded). Contains only the minimal set of universal
+ * Asset properties required for basic UI rendering.
+ */
 const FALLBACK_PROPERTIES: PropertySchemaDefinition[] = [
   {
     name: "exo__Asset_label",

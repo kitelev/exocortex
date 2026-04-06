@@ -13,6 +13,7 @@ function createMockVaultSettings(overrides?: Partial<IVaultSettings>): IVaultSet
   return {
     getOwnerIdentity: jest.fn().mockReturnValue('"[[!kitelev]]"'),
     getDefaultInboxFolder: jest.fn().mockReturnValue("01 Inbox"),
+    getFleetingNoteClassUID: jest.fn().mockReturnValue("fca0a931-a01f-48e4-b72a-4af206c94bc7"),
     ...overrides,
   };
 }
@@ -78,6 +79,23 @@ describe("FleetingNoteCreationService", () => {
 
     expect(MetadataHelpers.buildFileContent).toHaveBeenCalledWith(
       expect.objectContaining({ exo__Asset_isDefinedBy: '"[[!custom-user]]"' }),
+    );
+  });
+
+  it("uses configured fleeting note class UID from VaultSettings", async () => {
+    const customUID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+    const customSettings = createMockVaultSettings({
+      getFleetingNoteClassUID: jest.fn().mockReturnValue(customUID),
+    });
+    const customService = new FleetingNoteCreationService(mockVault, customSettings);
+
+    const createdFile = { path: "01 Inbox/test-uuid-123.md", basename: "test-uuid-123", name: "test-uuid-123.md" } as IFile;
+    mockVault.create.mockResolvedValue(createdFile);
+
+    await customService.createFleetingNote("Label");
+
+    expect(MetadataHelpers.buildFileContent).toHaveBeenCalledWith(
+      expect.objectContaining({ exo__Instance_class: [`"[[${customUID}]]"`] }),
     );
   });
 
