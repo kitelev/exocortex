@@ -1,6 +1,7 @@
 import type {
   PropertySchemaResolver,
   PropertySchema,
+  ClassHierarchyResolver,
 } from "exocortex";
 import type { PropertySchemaDefinition, PropertyFieldType } from "./PropertySchemas";
 
@@ -58,7 +59,14 @@ function coreSchemaToDefinition(
 }
 
 export class PropertySchemaService {
-  constructor(private readonly resolver: PropertySchemaResolver) {}
+  private readonly hierarchyResolver: ClassHierarchyResolver | null;
+
+  constructor(
+    private readonly resolver: PropertySchemaResolver,
+    hierarchyResolver?: ClassHierarchyResolver,
+  ) {
+    this.hierarchyResolver = hierarchyResolver ?? null;
+  }
 
   async getPropertySchemaForClass(
     instanceClass: string,
@@ -70,7 +78,7 @@ export class PropertySchemaService {
       return [];
     }
 
-    const classProperties = this.getPropertyNamesForClass(cleanClass, allSchemas);
+    const classProperties = await this.getPropertyNamesForClass(cleanClass, allSchemas);
     const definitions: PropertySchemaDefinition[] = [];
 
     for (const propIRI of classProperties) {
@@ -93,13 +101,13 @@ export class PropertySchemaService {
     return coreSchemaToDefinition(propertyIRI, schema);
   }
 
-  private getPropertyNamesForClass(
+  private async getPropertyNamesForClass(
     className: string,
     allSchemas: Map<string, PropertySchema>,
-  ): string[] {
+  ): Promise<string[]> {
     const properties: string[] = [];
 
-    const classHierarchy = this.resolveClassHierarchy(className);
+    const classHierarchy = await this.resolveClassHierarchy(className);
 
     for (const [propIRI] of allSchemas) {
       const propPrefix = this.getPropertyClassPrefix(propIRI);
@@ -111,26 +119,16 @@ export class PropertySchemaService {
     return properties;
   }
 
-  private resolveClassHierarchy(className: string): string[] {
-    const hierarchy: string[] = [className];
-
-    const inheritanceMap: Record<string, string[]> = {
-      ems__Task: ["ems__Effort", "exo__Asset"],
-      ems__Meeting: ["ems__Task", "ems__Effort", "exo__Asset"],
-      ems__Project: ["ems__Effort", "exo__Asset"],
-      ems__Initiative: ["ems__Effort", "exo__Asset"],
-      ems__Area: ["exo__Asset"],
-      ims__Concept: ["exo__Asset"],
-    };
-
-    const parents = inheritanceMap[className];
-    if (parents) {
-      hierarchy.push(...parents);
-    } else {
-      hierarchy.push("exo__Asset");
+  private async resolveClassHierarchy(className: string): Promise<string[]> {
+    if (this.hierarchyResolver) {
+      const resolved = await this.hierarchyResolver.resolve(className);
+      if (resolved.length > 1) {
+        return resolved;
+      }
+      return [className, "exo__Asset"];
     }
 
-    return hierarchy;
+    return [className, "exo__Asset"];
   }
 
   private getPropertyClassPrefix(propertyIRI: string): string | null {

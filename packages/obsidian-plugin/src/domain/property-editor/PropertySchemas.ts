@@ -1,4 +1,4 @@
-import type { PropertySchemaResolver } from "exocortex";
+import type { PropertySchemaResolver, ClassHierarchyResolver } from "exocortex";
 import { PropertySchemaService } from "./PropertySchemaService";
 
 export type PropertyFieldType =
@@ -73,8 +73,11 @@ const FALLBACK_PROPERTIES: PropertySchemaDefinition[] = [
 
 let _schemaService: PropertySchemaService | null = null;
 
-export function initPropertySchemaService(resolver: PropertySchemaResolver): void {
-  _schemaService = new PropertySchemaService(resolver);
+export function initPropertySchemaService(
+  resolver: PropertySchemaResolver,
+  hierarchyResolver?: ClassHierarchyResolver,
+): void {
+  _schemaService = new PropertySchemaService(resolver, hierarchyResolver);
 }
 
 export function getPropertySchemaService(): PropertySchemaService | null {
