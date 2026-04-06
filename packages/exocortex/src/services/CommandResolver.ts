@@ -446,6 +446,9 @@ export class CommandResolver {
     const targetProperty = await this.getLiteralValue(subject, Namespace.EXOCMD.term("Grounding_targetProperty"));
     const targetValue = await this.getLiteralValue(subject, Namespace.EXOCMD.term("Grounding_targetValue"));
     const sparqlUpdate = await this.getLiteralValue(subject, Namespace.EXOCMD.term("Grounding_sparqlUpdate"));
+    const targetClass = await this.getLiteralValue(subject, Namespace.EXOCMD.term("Grounding_targetClass"));
+    const targetPrototype = await this.getLiteralValue(subject, Namespace.EXOCMD.term("Grounding_targetPrototype"));
+    const targetFolder = await this.getLiteralValue(subject, Namespace.EXOCMD.term("Grounding_targetFolder"));
 
     // Load composite steps if applicable
     let steps: GroundingDefinition[] | undefined;
@@ -461,6 +464,9 @@ export class CommandResolver {
       targetValue: targetValue ?? undefined,
       sparqlUpdate: sparqlUpdate ?? undefined,
       steps,
+      targetClass: targetClass ?? undefined,
+      targetPrototype: targetPrototype ?? undefined,
+      targetFolder: targetFolder ?? undefined,
     };
   }
 
