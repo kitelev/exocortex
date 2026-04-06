@@ -42,7 +42,10 @@ Best for: Automation, AI agents, batch operations.
 npm install -g @kitelev/exocortex-cli
 
 # Query your knowledge graph
-exocortex-cli sparql query "SELECT ?task ?label WHERE {
+exocortex-cli sparql query "
+PREFIX exo: <https://exocortex.my/ontology/exo#>
+PREFIX ems: <https://exocortex.my/ontology/ems#>
+SELECT ?task ?label WHERE {
   ?task exo:Instance_class ems:Task .
   ?task exo:Asset_label ?label
 }" --vault ~/vault
@@ -60,6 +63,8 @@ import { SparqlService, NodeFsAdapter } from "exocortex";
 
 const sparql = new SparqlService(new NodeFsAdapter("/path/to/vault"));
 const results = await sparql.query(`
+  PREFIX exo: <https://exocortex.my/ontology/exo#>
+  PREFIX ims: <https://exocortex.my/ontology/ims#>
   SELECT ?concept ?definition
   WHERE {
     ?concept exo:Instance_class ims:Concept .
@@ -96,6 +101,8 @@ Ask complex questions about your knowledge:
 
 ```sparql
 # Find all tasks related to a specific concept
+PREFIX exo: <https://exocortex.my/ontology/exo#>
+PREFIX ems: <https://exocortex.my/ontology/ems#>
 SELECT ?task ?label WHERE {
   ?task exo:Instance_class ems:Task .
   ?task exo:Asset_label ?label .
