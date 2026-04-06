@@ -506,7 +506,7 @@ describe("GroundingExecutor", () => {
     });
   });
 
-  // -- create_instance (RFC-016 #2643) --
+  // -- create_instance (RFC-016 #2643, #2645) --
 
   describe("create_instance", () => {
     it("should create file with correct frontmatter", async () => {
@@ -586,6 +586,122 @@ describe("GroundingExecutor", () => {
       expect(content).toContain("exo__Asset_label: Untitled");
     });
 
+    it("should include exo__Asset_createdAt timestamp", async () => {
+      const grounding = makeGrounding({
+        type: GroundingType.CREATE_INSTANCE,
+        targetClass: "ems__Task",
+        targetFolder: "01 Inbox",
+      });
+
+      const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
+
+      expect(result.success).toBe(true);
+      const [, content] = writer.createFile.mock.calls[0];
+      expect(content).toMatch(/exo__Asset_createdAt: \d{4}-\d{2}-\d{2}T/);
+    });
+
+    it("should include exo__Instance_class as YAML array", async () => {
+      const grounding = makeGrounding({
+        type: GroundingType.CREATE_INSTANCE,
+        targetClass: "ems__Task",
+        targetFolder: "01 Inbox",
+      });
+
+      const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
+
+      expect(result.success).toBe(true);
+      const [, content] = writer.createFile.mock.calls[0];
+      expect(content).toContain('exo__Instance_class:\n  - "[[ems__Task]]"');
+    });
+
+    it("should include exo__Asset_source linking to target asset", async () => {
+      const grounding = makeGrounding({
+        type: GroundingType.CREATE_INSTANCE,
+        targetClass: "ems__Task",
+        targetFolder: "01 Inbox",
+      });
+
+      const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
+
+      expect(result.success).toBe(true);
+      const [, content] = writer.createFile.mock.calls[0];
+      expect(content).toContain(`"[[${TARGET_IRI}]]"`);
+    });
+
+    it("should add aliases when label is provided", async () => {
+      const grounding = makeGrounding({
+        type: GroundingType.CREATE_INSTANCE,
+        targetClass: "ems__Task",
+        targetFolder: "01 Inbox",
+      });
+
+      const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH, { label: "My task" });
+
+      expect(result.success).toBe(true);
+      const [, content] = writer.createFile.mock.calls[0];
+      expect(content).toContain("aliases:\n  - My task");
+    });
+
+    it("should not add aliases for default 'Untitled' label", async () => {
+      const grounding = makeGrounding({
+        type: GroundingType.CREATE_INSTANCE,
+        targetClass: "ems__Task",
+        targetFolder: "01 Inbox",
+      });
+
+      const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
+
+      expect(result.success).toBe(true);
+      const [, content] = writer.createFile.mock.calls[0];
+      expect(content).not.toContain("aliases:");
+    });
+
+    it("should pass additional userInput fields to frontmatter", async () => {
+      const grounding = makeGrounding({
+        type: GroundingType.CREATE_INSTANCE,
+        targetClass: "ems__Task",
+        targetFolder: "01 Inbox",
+      });
+
+      const userInput = { label: "Task", ems__Effort_status: '"[[Backlog]]"' };
+      const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH, userInput);
+
+      expect(result.success).toBe(true);
+      const [, content] = writer.createFile.mock.calls[0];
+      expect(content).toContain('ems__Effort_status: "[[Backlog]]"');
+    });
+
+    it("should skip null/undefined userInput values", async () => {
+      const grounding = makeGrounding({
+        type: GroundingType.CREATE_INSTANCE,
+        targetClass: "ems__Task",
+        targetFolder: "01 Inbox",
+      });
+
+      const userInput = { label: "Task", nullProp: null, undefProp: undefined };
+      const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH, userInput);
+
+      expect(result.success).toBe(true);
+      const [, content] = writer.createFile.mock.calls[0];
+      expect(content).not.toContain("nullProp");
+      expect(content).not.toContain("undefProp");
+    });
+
+    it("should handle file system errors gracefully", async () => {
+      writer.createFile.mockRejectedValue(new Error("Disk full"));
+
+      const grounding = makeGrounding({
+        type: GroundingType.CREATE_INSTANCE,
+        targetClass: "ems__Task",
+        targetFolder: "01 Inbox",
+      });
+
+      const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("Disk full");
+    });
+
     // Integration test: full frontmatter verification (RFC-016 #2644)
     it("should create file with complete and correct frontmatter structure", async () => {
       const grounding = makeGrounding({
@@ -608,9 +724,11 @@ describe("GroundingExecutor", () => {
       // Verify frontmatter has all required fields
       expect(content).toMatch(/^---\n/);
       expect(content).toContain("exo__Asset_uid:");
+      expect(content).toContain("exo__Asset_createdAt:");
       expect(content).toContain("exo__Asset_label: Купить молоко");
       expect(content).toContain("gtd__InboxItem");
       expect(content).toContain("proto-daily-review-uuid");
+      expect(content).toContain(`"[[${TARGET_IRI}]]"`);
 
       // Verify UUID in path matches UUID in frontmatter
       const pathUuid = path.split("/").pop()?.replace(".md", "");
