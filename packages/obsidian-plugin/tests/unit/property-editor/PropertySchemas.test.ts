@@ -404,6 +404,136 @@ describe("PropertySchemas", () => {
       const result = await service.getPropertySchemaForClass("ems__Task");
       expect(result).toEqual([]);
     });
+
+    it("should propagate readOnly: true from PropertySchema to PropertySchemaDefinition", async () => {
+      const schemas = new Map<string, PropertySchema>();
+      schemas.set("exo__Asset_label", {
+        type: "text" as any,
+        label: "Label",
+        readOnly: true,
+      });
+      const resolver = createMockResolver(schemas);
+      const service = new PropertySchemaService(resolver);
+
+      const result = await service.getSchema("exo__Asset_label");
+      expect(result).toBeDefined();
+      expect(result!.readOnly).toBe(true);
+    });
+
+    it("should not set readOnly when schema.readOnly is false", async () => {
+      const schemas = new Map<string, PropertySchema>();
+      schemas.set("exo__Asset_label", {
+        type: "text" as any,
+        label: "Label",
+        readOnly: false,
+      });
+      const resolver = createMockResolver(schemas);
+      const service = new PropertySchemaService(resolver);
+
+      const result = await service.getSchema("exo__Asset_label");
+      expect(result).toBeDefined();
+      expect(result!.readOnly).toBeUndefined();
+    });
+
+    it("should not set readOnly for non-legacy property when schema.readOnly is undefined", async () => {
+      const schemas = new Map<string, PropertySchema>();
+      schemas.set("exo__Asset_label", {
+        type: "text" as any,
+        label: "Label",
+      });
+      const resolver = createMockResolver(schemas);
+      const service = new PropertySchemaService(resolver);
+
+      const result = await service.getSchema("exo__Asset_label");
+      expect(result).toBeDefined();
+      expect(result!.readOnly).toBeUndefined();
+    });
+
+    it("should apply legacy fallback for exo__Asset_uid when schema.readOnly is undefined", async () => {
+      const schemas = new Map<string, PropertySchema>();
+      schemas.set("exo__Asset_uid", {
+        type: "text" as any,
+        label: "UID",
+      });
+      const resolver = createMockResolver(schemas);
+      const service = new PropertySchemaService(resolver);
+
+      const result = await service.getSchema("exo__Asset_uid");
+      expect(result).toBeDefined();
+      expect(result!.readOnly).toBe(true);
+    });
+
+    it("should apply legacy fallback for exo__Asset_createdAt when schema.readOnly is undefined", async () => {
+      const schemas = new Map<string, PropertySchema>();
+      schemas.set("exo__Asset_createdAt", {
+        type: "timestamp" as any,
+        label: "Created at",
+      });
+      const resolver = createMockResolver(schemas);
+      const service = new PropertySchemaService(resolver);
+
+      const result = await service.getSchema("exo__Asset_createdAt");
+      expect(result).toBeDefined();
+      expect(result!.readOnly).toBe(true);
+    });
+
+    it("should apply legacy fallback for ems__Effort_startTimestamp when schema.readOnly is undefined", async () => {
+      const schemas = new Map<string, PropertySchema>();
+      schemas.set("ems__Effort_startTimestamp", {
+        type: "timestamp" as any,
+        label: "Started at",
+      });
+      const resolver = createMockResolver(schemas);
+      const service = new PropertySchemaService(resolver);
+
+      const result = await service.getSchema("ems__Effort_startTimestamp");
+      expect(result).toBeDefined();
+      expect(result!.readOnly).toBe(true);
+    });
+
+    it("should apply legacy fallback for ems__Effort_endTimestamp when schema.readOnly is undefined", async () => {
+      const schemas = new Map<string, PropertySchema>();
+      schemas.set("ems__Effort_endTimestamp", {
+        type: "timestamp" as any,
+        label: "Ended at",
+      });
+      const resolver = createMockResolver(schemas);
+      const service = new PropertySchemaService(resolver);
+
+      const result = await service.getSchema("ems__Effort_endTimestamp");
+      expect(result).toBeDefined();
+      expect(result!.readOnly).toBe(true);
+    });
+
+    it("should override legacy fallback when schema.readOnly is explicitly false", async () => {
+      const schemas = new Map<string, PropertySchema>();
+      schemas.set("exo__Asset_uid", {
+        type: "text" as any,
+        label: "UID",
+        readOnly: false,
+      });
+      const resolver = createMockResolver(schemas);
+      const service = new PropertySchemaService(resolver);
+
+      const result = await service.getSchema("exo__Asset_uid");
+      expect(result).toBeDefined();
+      expect(result!.readOnly).toBeUndefined();
+    });
+
+    it("should use ontology readOnly for non-legacy property", async () => {
+      const schemas = new Map<string, PropertySchema>();
+      schemas.set("ems__Effort_status", {
+        type: "status-select" as any,
+        label: "Status",
+        readOnly: true,
+      });
+      const resolver = createMockResolver(schemas);
+      const service = new PropertySchemaService(resolver);
+
+      const result = await service.getSchema("ems__Effort_status");
+      expect(result).toBeDefined();
+      expect(result!.readOnly).toBe(true);
+    });
   });
 
   describe("getStatusLabel", () => {

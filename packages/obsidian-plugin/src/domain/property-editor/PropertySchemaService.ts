@@ -45,14 +45,18 @@ function coreSchemaToDefinition(
     definition.max = schema.validation.maxValue;
   }
 
-  const readOnlyProperties = new Set([
-    "exo__Asset_uid",
-    "exo__Asset_createdAt",
-    "ems__Effort_startTimestamp",
-    "ems__Effort_endTimestamp",
-  ]);
-  if (readOnlyProperties.has(propertyIRI)) {
+  if (schema.readOnly) {
     definition.readOnly = true;
+  } else if (schema.readOnly === undefined) {
+    const LEGACY_READONLY_PROPERTIES = new Set([
+      "exo__Asset_uid",
+      "exo__Asset_createdAt",
+      "ems__Effort_startTimestamp",
+      "ems__Effort_endTimestamp",
+    ]);
+    if (LEGACY_READONLY_PROPERTIES.has(propertyIRI)) {
+      definition.readOnly = true;
+    }
   }
 
   return definition;
