@@ -16,7 +16,7 @@ import {
   type PropertySchemaDefinition,
 } from "../../../src/domain/property-editor/PropertySchemas";
 import { PropertySchemaService } from "../../../src/domain/property-editor/PropertySchemaService";
-import type { PropertySchemaResolver, PropertySchema, EnumValueResolver, EnumValue } from "exocortex";
+import type { PropertySchemaResolver, PropertySchema, EnumValueResolver, EnumValue, ClassHierarchyResolver } from "exocortex";
 
 function createMockResolver(
   schemas: Map<string, PropertySchema>,
@@ -35,6 +35,24 @@ function createMockEnumResolver(
     resolve: jest.fn(async (enumClass: string) => values.get(enumClass) ?? []),
     invalidateCache: jest.fn(),
   } as unknown as EnumValueResolver;
+}
+
+const TEST_HIERARCHY: Record<string, string[]> = {
+  ems__Task: ["ems__Task", "ems__Effort", "exo__Asset"],
+  ems__Meeting: ["ems__Meeting", "ems__Task", "ems__Effort", "exo__Asset"],
+  ems__Project: ["ems__Project", "ems__Effort", "exo__Asset"],
+  ems__Initiative: ["ems__Initiative", "ems__Effort", "exo__Asset"],
+  ems__Area: ["ems__Area", "exo__Asset"],
+  ims__Concept: ["ims__Concept", "exo__Asset"],
+};
+
+function createMockHierarchyResolver(): ClassHierarchyResolver {
+  return {
+    resolve: jest.fn(async (className: string) => {
+      return TEST_HIERARCHY[className] ?? [className, "exo__Asset"];
+    }),
+    invalidateCache: jest.fn(),
+  } as unknown as ClassHierarchyResolver;
 }
 
 function buildTestSchemas(): Map<string, PropertySchema> {
@@ -268,7 +286,8 @@ describe("PropertySchemas", () => {
     beforeEach(() => {
       const schemas = buildTestSchemas();
       const resolver = createMockResolver(schemas);
-      initPropertySchemaService(resolver);
+      const hierarchyResolver = createMockHierarchyResolver();
+      initPropertySchemaService(resolver, hierarchyResolver);
     });
 
     it("should return schema for known class (ems__Task)", async () => {
@@ -349,7 +368,7 @@ describe("PropertySchemas", () => {
     it("should filter out read-only properties", async () => {
       const schemas = buildTestSchemas();
       const resolver = createMockResolver(schemas);
-      initPropertySchemaService(resolver);
+      initPropertySchemaService(resolver, createMockHierarchyResolver());
 
       const schema = await getPropertySchemaForClass("ems__Task");
       const editable = getEditableProperties(schema);
@@ -360,7 +379,7 @@ describe("PropertySchemas", () => {
     it("should not include uid property", async () => {
       const schemas = buildTestSchemas();
       const resolver = createMockResolver(schemas);
-      initPropertySchemaService(resolver);
+      initPropertySchemaService(resolver, createMockHierarchyResolver());
 
       const schema = await getPropertySchemaForClass("ems__Task");
       const editable = getEditableProperties(schema);
@@ -370,7 +389,7 @@ describe("PropertySchemas", () => {
     it("should not include createdAt property", async () => {
       const schemas = buildTestSchemas();
       const resolver = createMockResolver(schemas);
-      initPropertySchemaService(resolver);
+      initPropertySchemaService(resolver, createMockHierarchyResolver());
 
       const schema = await getPropertySchemaForClass("ems__Task");
       const editable = getEditableProperties(schema);
@@ -380,7 +399,7 @@ describe("PropertySchemas", () => {
     it("should not include timestamp properties", async () => {
       const schemas = buildTestSchemas();
       const resolver = createMockResolver(schemas);
-      initPropertySchemaService(resolver);
+      initPropertySchemaService(resolver, createMockHierarchyResolver());
 
       const schema = await getPropertySchemaForClass("ems__Task");
       const editable = getEditableProperties(schema);
@@ -391,7 +410,7 @@ describe("PropertySchemas", () => {
     it("should include editable properties", async () => {
       const schemas = buildTestSchemas();
       const resolver = createMockResolver(schemas);
-      initPropertySchemaService(resolver);
+      initPropertySchemaService(resolver, createMockHierarchyResolver());
 
       const schema = await getPropertySchemaForClass("ems__Task");
       const editable = getEditableProperties(schema);
@@ -407,7 +426,7 @@ describe("PropertySchemas", () => {
     beforeEach(async () => {
       const schemas = buildTestSchemas();
       const resolver = createMockResolver(schemas);
-      initPropertySchemaService(resolver);
+      initPropertySchemaService(resolver, createMockHierarchyResolver());
       taskSchema = await getPropertySchemaForClass("ems__Task");
     });
 
@@ -447,7 +466,7 @@ describe("PropertySchemas", () => {
     it("should have valid field types from resolver", async () => {
       const schemas = buildTestSchemas();
       const resolver = createMockResolver(schemas);
-      initPropertySchemaService(resolver);
+      initPropertySchemaService(resolver, createMockHierarchyResolver());
 
       const validTypes = ["text", "status-select", "size-select", "wikilink", "number", "boolean", "timestamp"];
       const schema = await getPropertySchemaForClass("ems__Task");
@@ -459,7 +478,7 @@ describe("PropertySchemas", () => {
     it("should have labels for all properties", async () => {
       const schemas = buildTestSchemas();
       const resolver = createMockResolver(schemas);
-      initPropertySchemaService(resolver);
+      initPropertySchemaService(resolver, createMockHierarchyResolver());
 
       const schema = await getPropertySchemaForClass("ems__Task");
       for (const prop of schema) {
@@ -471,7 +490,7 @@ describe("PropertySchemas", () => {
     it("should have min value for votes property", async () => {
       const schemas = buildTestSchemas();
       const resolver = createMockResolver(schemas);
-      initPropertySchemaService(resolver);
+      initPropertySchemaService(resolver, createMockHierarchyResolver());
 
       const schema = await getPropertySchemaForClass("ems__Task");
       const votesProperty = getPropertyByName(schema, "ems__Effort_votes");
@@ -505,7 +524,7 @@ describe("PropertySchemas", () => {
     it("should mark read-only properties correctly", async () => {
       const schemas = buildTestSchemas();
       const resolver = createMockResolver(schemas);
-      const service = new PropertySchemaService(resolver);
+      const service = new PropertySchemaService(resolver, createMockHierarchyResolver());
 
       const taskSchema = await service.getPropertySchemaForClass("ems__Task");
       const uid = taskSchema.find((p) => p.name === "exo__Asset_uid");
