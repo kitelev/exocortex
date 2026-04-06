@@ -2,11 +2,20 @@ import "reflect-metadata";
 import { describe, it, expect, beforeEach, jest } from "@jest/globals";
 import { SupervisionCreationService } from "../../../src/services/SupervisionCreationService";
 import type { IVaultAdapter, IFile } from "../../../src/interfaces/IVaultAdapter";
+import type { IVaultSettings } from "../../../src/interfaces/IVaultSettings";
 import type { SupervisionFormData } from "../../../src/types/SupervisionFormData";
+
+function createMockVaultSettings(): IVaultSettings {
+  return {
+    getOwnerIdentity: jest.fn<() => string>().mockReturnValue('"[[!kitelev]]"'),
+    getDefaultInboxFolder: jest.fn<() => string>().mockReturnValue("01 Inbox"),
+  };
+}
 
 describe("SupervisionCreationService", () => {
   let service: SupervisionCreationService;
   let mockVault: jest.Mocked<IVaultAdapter>;
+  let mockVaultSettings: IVaultSettings;
 
   beforeEach(() => {
     mockVault = {
@@ -15,7 +24,9 @@ describe("SupervisionCreationService", () => {
 
     mockVault.create.mockResolvedValue({ path: "01 Inbox/test.md", basename: "test" } as IFile);
 
-    service = new (SupervisionCreationService as any)(mockVault);
+    mockVaultSettings = createMockVaultSettings();
+
+    service = new (SupervisionCreationService as any)(mockVault, mockVaultSettings);
   });
 
   describe("createSupervision", () => {

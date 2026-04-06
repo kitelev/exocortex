@@ -2,10 +2,19 @@ import "reflect-metadata";
 import { describe, it, expect, beforeEach, jest } from "@jest/globals";
 import { SessionEventService } from "../../../src/services/SessionEventService";
 import type { IVaultAdapter, IFile } from "../../../src/interfaces/IVaultAdapter";
+import type { IVaultSettings } from "../../../src/interfaces/IVaultSettings";
+
+function createMockVaultSettings(): IVaultSettings {
+  return {
+    getOwnerIdentity: jest.fn<() => string>().mockReturnValue('"[[!kitelev]]"'),
+    getDefaultInboxFolder: jest.fn<() => string>().mockReturnValue("01 Inbox"),
+  };
+}
 
 describe("SessionEventService - branch coverage", () => {
   let service: SessionEventService;
   let mockVault: jest.Mocked<IVaultAdapter>;
+  let mockVaultSettings: IVaultSettings;
 
   beforeEach(() => {
     mockVault = {
@@ -18,7 +27,9 @@ describe("SessionEventService - branch coverage", () => {
     mockVault.create.mockResolvedValue({ path: "inbox/test.md" } as IFile);
     mockVault.exists.mockResolvedValue(true);
 
-    service = new (SessionEventService as any)(mockVault);
+    mockVaultSettings = createMockVaultSettings();
+
+    service = new (SessionEventService as any)(mockVault, mockVaultSettings);
   });
 
   describe("createSessionStartEvent", () => {

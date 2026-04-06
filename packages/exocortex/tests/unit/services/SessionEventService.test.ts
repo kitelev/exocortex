@@ -1,10 +1,19 @@
 import { SessionEventService } from "../../../src/services/SessionEventService";
 import { IVaultAdapter, IFile } from "../../../src/interfaces/IVaultAdapter";
+import type { IVaultSettings } from "../../../src/interfaces/IVaultSettings";
 import { AssetClass } from "../../../src/domain/constants/AssetClass";
+
+function createMockVaultSettings(): IVaultSettings {
+  return {
+    getOwnerIdentity: jest.fn().mockReturnValue('"[[!kitelev]]"'),
+    getDefaultInboxFolder: jest.fn().mockReturnValue("01 Inbox"),
+  };
+}
 
 describe("SessionEventService", () => {
   let service: SessionEventService;
   let mockVault: jest.Mocked<IVaultAdapter>;
+  let mockVaultSettings: IVaultSettings;
 
   beforeEach(() => {
     mockVault = {
@@ -30,7 +39,9 @@ describe("SessionEventService", () => {
 
     mockVault.exists.mockResolvedValue(true);
 
-    service = new SessionEventService(mockVault);
+    mockVaultSettings = createMockVaultSettings();
+
+    service = new SessionEventService(mockVault, mockVaultSettings);
   });
 
   describe("createSessionStartEvent", () => {

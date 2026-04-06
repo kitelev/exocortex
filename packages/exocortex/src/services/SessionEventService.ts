@@ -1,6 +1,7 @@
 import { injectable, inject } from "tsyringe";
 import { v4 as uuidv4 } from "uuid";
 import type { IVaultAdapter, IFile } from "../interfaces/IVaultAdapter";
+import type { IVaultSettings } from "../interfaces/IVaultSettings";
 import { AssetClass } from "../domain/constants";
 import { DateFormatter } from "../utilities/DateFormatter";
 import { MetadataHelpers } from "../utilities/MetadataHelpers";
@@ -16,6 +17,7 @@ export class SessionEventService {
 
   constructor(
     @inject(DI_TOKENS.IVaultAdapter) private vault: IVaultAdapter,
+    @inject(DI_TOKENS.IVaultSettings) private vaultSettings: IVaultSettings,
   ) {}
 
   /**
@@ -62,12 +64,13 @@ export class SessionEventService {
     eventType: AssetClass,
   ): Promise<IFile> {
     const uid = uuidv4();
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- display-only timestamp, not for SPARQL filtering
     const timestamp = DateFormatter.toLocalTimestamp(new Date());
 
     const frontmatter = {
       exo__Asset_uid: uid,
       exo__Asset_createdAt: timestamp,
-      exo__Asset_isDefinedBy: '"[[!kitelev]]"',
+      exo__Asset_isDefinedBy: this.vaultSettings.getOwnerIdentity(),
       exo__Instance_class: [`"[[${eventType}]]"`],
       ems__SessionEvent_timestamp: timestamp,
       ems__Session_area: `"[[${areaName}]]"`,
