@@ -67,3 +67,16 @@ gh pr merge --auto --squash                         # Wait for 8 CI checks
 ```
 
 **Task is NOT complete until**: CI green + PR merged + Auto Release succeeds + post-mortem written.
+
+## RFC Execution: Audit-First Strategy
+
+Before starting any RFC Phase, audit existing codebase for pre-implemented features:
+
+- RFC-013 found 2 of 4 Phases already implemented (property paths, subqueries)
+- Saved ~60% of planned implementation time
+- Always redirect to test coverage when feature already exists
+- 15 min grepping > hours of redundant implementation
+
+## ESM Packages
+
+`packages/cli` uses ESM (`"type": "module"`). Never use `__dirname` or `require()` — use `import.meta.url` and dynamic `import()`. See PATTERNS.md for the replacement pattern.
