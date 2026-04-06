@@ -24,6 +24,7 @@
 import { InMemoryTripleStore } from "../../../src/infrastructure/rdf/InMemoryTripleStore";
 import { PrototypeChainMaterializer, INFERRED_GRAPH } from "../../../src/services/PrototypeChainMaterializer";
 import { NonInheritablePropertyRegistry } from "../../../src/services/NonInheritablePropertyRegistry";
+import { PropertyCardinalityRegistry } from "../../../src/services/PropertyCardinalityRegistry";
 import { Triple } from "../../../src/domain/models/rdf/Triple";
 import { IRI } from "../../../src/domain/models/rdf/IRI";
 import { Literal } from "../../../src/domain/models/rdf/Literal";
@@ -723,6 +724,185 @@ describe("Smoke: Prototype Chain Materialization", () => {
       const elapsed = performance.now() - start;
 
       expect(elapsed).toBeLessThan(10);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Multi-valued property merge integration (RFC-016 #2640)
+  // -------------------------------------------------------------------------
+
+  describe("Multi-valued Instance_class merge (RFC-016 #2640)", () => {
+    const gtdReviewClass = new IRI("https://exocortex.my/ontology/gtd#Review");
+    const emsTaskClass = new IRI("https://exocortex.my/ontology/ems#Task");
+    const multipleCardinalityClassIRI = new IRI("obsidian://vault/exo__PropertyCardinalityMultiple.md");
+
+    async function seedCardinalityInfo(s: InMemoryTripleStore): Promise<void> {
+      // Define PropertyCardinalityMultiple class
+      await s.add(new Triple(
+        multipleCardinalityClassIRI,
+        Namespace.EXO.term("Asset_label"),
+        new Literal("exo__PropertyCardinalityMultiple"),
+      ));
+
+      // Mark exo__Instance_class as multi-valued
+      const instanceClassDef = new IRI("obsidian://vault/exo__Instance_class.md");
+      await s.add(new Triple(
+        instanceClassDef,
+        Namespace.EXO.term("Property_cardinality"),
+        multipleCardinalityClassIRI,
+      ));
+      await s.add(new Triple(
+        instanceClassDef,
+        Namespace.EXO.term("Asset_label"),
+        new Literal("exo__Instance_class"),
+      ));
+    }
+
+    it("should append prototype classes to instance with own partial class", async () => {
+      // Prototype: [ems__Task, gtd__Review]
+      const protoIRI = new IRI("obsidian://vault/gtd-task-prototype.md");
+      await store.add(new Triple(protoIRI, Namespace.EXO.term("Instance_class"), emsTaskClass));
+      await store.add(new Triple(protoIRI, Namespace.EXO.term("Instance_class"), gtdReviewClass));
+      await store.add(new Triple(protoIRI, Namespace.EXO.term("Asset_uid"), new Literal("proto-uid")));
+      await store.add(new Triple(protoIRI, Namespace.EXO.term("Asset_label"), new Literal("GTD Task Prototype")));
+
+      // Instance: own [ems__Task], prototype link
+      const instIRI = new IRI("obsidian://vault/my-task.md");
+      await store.add(new Triple(instIRI, Namespace.EXO.term("Instance_class"), emsTaskClass));
+      await store.add(new Triple(instIRI, Namespace.EXO.term("Asset_prototype"), protoIRI));
+      await store.add(new Triple(instIRI, Namespace.EXO.term("Asset_uid"), new Literal("inst-uid")));
+      await store.add(new Triple(instIRI, Namespace.EXO.term("Asset_label"), new Literal("My Task")));
+
+      // Setup registries
+      await seedNonInheritableProperties(store);
+      await seedCardinalityInfo(store);
+      await registry.initialize(store);
+      const cardinalityRegistry = new PropertyCardinalityRegistry();
+      await cardinalityRegistry.initialize(store);
+
+      const mat = new PrototypeChainMaterializer(registry, cardinalityRegistry);
+      await mat.materialize(store);
+
+      // Instance should have BOTH classes
+      const classTriples = await store.match(instIRI, Namespace.EXO.term("Instance_class"), undefined);
+      expect(classTriples.length).toBe(2);
+
+      const classValues = classTriples.map(t => (t.object as IRI).value);
+      expect(classValues).toContain(emsTaskClass.value);
+      expect(classValues).toContain(gtdReviewClass.value);
+    });
+
+    it("should NOT duplicate ems__Task that instance already owns", async () => {
+      const protoIRI = new IRI("obsidian://vault/gtd-proto2.md");
+      await store.add(new Triple(protoIRI, Namespace.EXO.term("Instance_class"), emsTaskClass));
+      await store.add(new Triple(protoIRI, Namespace.EXO.term("Instance_class"), gtdReviewClass));
+
+      const instIRI = new IRI("obsidian://vault/my-task2.md");
+      await store.add(new Triple(instIRI, Namespace.EXO.term("Instance_class"), emsTaskClass));
+      await store.add(new Triple(instIRI, Namespace.EXO.term("Asset_prototype"), protoIRI));
+
+      await seedNonInheritableProperties(store);
+      await seedCardinalityInfo(store);
+      await registry.initialize(store);
+      const cardinalityRegistry = new PropertyCardinalityRegistry();
+      await cardinalityRegistry.initialize(store);
+
+      const mat = new PrototypeChainMaterializer(registry, cardinalityRegistry);
+      await mat.materialize(store);
+
+      // ems__Task should appear exactly once
+      const classTriples = await store.match(instIRI, Namespace.EXO.term("Instance_class"), undefined);
+      const taskCount = classTriples.filter(t => (t.object as IRI).value === emsTaskClass.value).length;
+      expect(taskCount).toBe(1);
+      expect(classTriples.length).toBe(2);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Performance: Multi-valued merge < 10ms for depth-3 (RFC-016 #2641)
+  // -------------------------------------------------------------------------
+
+  describe("Performance: multi-valued merge depth-3 (RFC-016 #2641)", () => {
+    const multipleCardinalityClassIRI = new IRI("obsidian://vault/exo__PropertyCardinalityMultiple.md");
+    const class1 = new IRI("https://exocortex.my/ontology/ems#Task");
+    const class2 = new IRI("https://exocortex.my/ontology/gtd#Review");
+    const class3 = new IRI("https://exocortex.my/ontology/ems#Goal");
+
+    async function buildDepth3MultiValuedStore(): Promise<{
+      store: InMemoryTripleStore;
+      materializer: PrototypeChainMaterializer;
+    }> {
+      const s = new InMemoryTripleStore();
+
+      // Cardinality setup
+      await s.add(new Triple(multipleCardinalityClassIRI, Namespace.EXO.term("Asset_label"), new Literal("exo__PropertyCardinalityMultiple")));
+      const icDef = new IRI("obsidian://vault/exo__Instance_class.md");
+      await s.add(new Triple(icDef, Namespace.EXO.term("Property_cardinality"), multipleCardinalityClassIRI));
+      await s.add(new Triple(icDef, Namespace.EXO.term("Asset_label"), new Literal("exo__Instance_class")));
+
+      // Non-inheritable setup
+      const nipClass = new IRI(NON_INHERITABLE_CLASS_IRI);
+      await s.add(new Triple(nipClass, Namespace.EXO.term("Asset_label"), new Literal("exo__NonInheritableProperty")));
+      for (const label of ["exo__Asset_uid", "exo__Asset_label", "exo__Asset_prototype", "ems__Effort_status"]) {
+        const defIRI = new IRI(`obsidian://vault/nip-${label}.md`);
+        await s.add(new Triple(defIRI, Namespace.EXO.term("Instance_class"), nipClass));
+        await s.add(new Triple(defIRI, Namespace.EXO.term("Asset_label"), new Literal(label)));
+      }
+
+      // Depth-3 chain: grandparent → parent → instance
+      const grandparent = new IRI("obsidian://vault/grandparent.md");
+      const parent = new IRI("obsidian://vault/parent.md");
+      const instance = new IRI("obsidian://vault/instance.md");
+
+      await s.add(new Triple(grandparent, Namespace.EXO.term("Instance_class"), class1));
+      await s.add(new Triple(grandparent, Namespace.EXO.term("Instance_class"), class2));
+      await s.add(new Triple(grandparent, Namespace.EXO.term("Instance_class"), class3));
+
+      await s.add(new Triple(parent, Namespace.EXO.term("Instance_class"), class1));
+      await s.add(new Triple(parent, Namespace.EXO.term("Instance_class"), class2));
+      await s.add(new Triple(parent, Namespace.EXO.term("Asset_prototype"), grandparent));
+
+      await s.add(new Triple(instance, Namespace.EXO.term("Instance_class"), class1));
+      await s.add(new Triple(instance, Namespace.EXO.term("Asset_prototype"), parent));
+
+      // Registries
+      const r = new NonInheritablePropertyRegistry();
+      await r.initialize(s);
+      const cr = new PropertyCardinalityRegistry();
+      await cr.initialize(s);
+
+      return { store: s, materializer: new PrototypeChainMaterializer(r, cr) };
+    }
+
+    it("should materialize depth-3 multi-valued chain in < 10ms", async () => {
+      // Warm-up run
+      const warmup = await buildDepth3MultiValuedStore();
+      await warmup.materializer.materialize(warmup.store);
+
+      // Timed run
+      const { store: timedStore, materializer: timedMat } = await buildDepth3MultiValuedStore();
+
+      const start = performance.now();
+      await timedMat.materialize(timedStore);
+      const elapsed = performance.now() - start;
+
+      expect(elapsed).toBeLessThan(10);
+    });
+
+    it("should produce correct class count after depth-3 merge", async () => {
+      const { store: s, materializer: mat } = await buildDepth3MultiValuedStore();
+      await mat.materialize(s);
+
+      const instanceIRI = new IRI("obsidian://vault/instance.md");
+      const classTriples = await s.match(instanceIRI, Namespace.EXO.term("Instance_class"), undefined);
+
+      // Instance has own [class1], parent has [class1, class2], grandparent has [class1, class2, class3]
+      // Result: instance should have all 3 unique classes
+      const uniqueValues = new Set(classTriples.map(t => (t.object as IRI).value));
+      expect(uniqueValues.size).toBe(3);
+      expect(uniqueValues.has(class1.value)).toBe(true);
+      expect(uniqueValues.has(class2.value)).toBe(true);
+      expect(uniqueValues.has(class3.value)).toBe(true);
     });
   });
 });
