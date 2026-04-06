@@ -112,6 +112,10 @@ export {
   type PropertySchemaValidation,
   type ISPARQLQueryable,
 } from "./services/PropertySchemaResolver";
+export {
+  EnumValueResolver,
+  type EnumValue,
+} from "./services/EnumValueResolver";
 export { AssetConversionService } from "./services/AssetConversionService";
 export { SessionEventService } from "./services/SessionEventService";
 export { URIConstructionService } from "./services/URIConstructionService";
