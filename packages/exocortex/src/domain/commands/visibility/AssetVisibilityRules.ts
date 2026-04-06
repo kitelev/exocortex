@@ -10,6 +10,18 @@ import {
 import { AssetClass } from "../../constants";
 
 /**
+ * Vault-specific UIDs for backward compatibility.
+ * These are resolved dynamically via IVaultSettings for creation services,
+ * but visibility rules still need to match raw UID strings that may appear
+ * in exo__Instance_class frontmatter until full class-name resolution
+ * is implemented at the plugin layer.
+ *
+ * @internal — prefer dynamic resolution via IVaultSettings
+ */
+const KNOWN_TASK_PROTOTYPE_UID = "75302770-279e-4a59-ba85-09df29725713";
+const KNOWN_FLEETING_NOTE_UID = "fca0a931-a01f-48e4-b72a-4af206c94bc7";
+
+/**
  * Asset Visibility Rules
  *
  * Contains visibility logic for general Asset commands.
@@ -40,7 +52,7 @@ export function canCreateInstance(context: CommandVisibilityContext): boolean {
   // Includes both string-based and UID-based identifiers (Issue #2110)
   if (
     hasClass(context.instanceClass, AssetClass.TASK_PROTOTYPE) ||
-    hasClass(context.instanceClass, AssetClass.TASK_PROTOTYPE_UID) ||
+    hasClass(context.instanceClass, KNOWN_TASK_PROTOTYPE_UID) ||
     hasClass(context.instanceClass, AssetClass.MEETING_PROTOTYPE) ||
     hasClass(context.instanceClass, AssetClass.EVENT_PROTOTYPE) ||
     hasClass(context.instanceClass, AssetClass.PROJECT_PROTOTYPE)
@@ -165,6 +177,6 @@ export function canCopyFleetingNoteLabel(
 ): boolean {
   return (
     hasClass(context.instanceClass, AssetClass.FLEETING_NOTE) ||
-    hasClass(context.instanceClass, AssetClass.FLEETING_NOTE_UID)
+    hasClass(context.instanceClass, KNOWN_FLEETING_NOTE_UID)
   );
 }

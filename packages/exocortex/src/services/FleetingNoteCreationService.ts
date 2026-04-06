@@ -48,7 +48,7 @@ export class FleetingNoteCreationService {
       exo__Asset_isDefinedBy: this.vaultSettings.getOwnerIdentity(),
       exo__Asset_uid: uid,
       exo__Asset_createdAt: timestamp,
-      exo__Instance_class: ['"[[fca0a931-a01f-48e4-b72a-4af206c94bc7]]"'],
+      exo__Instance_class: [`"[[${this.vaultSettings.getFleetingNoteClassUID()}]]"`],
       exo__Asset_label: trimmedLabel,
       aliases: [trimmedLabel],
     };

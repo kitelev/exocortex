@@ -5,6 +5,17 @@ import type {
 } from "exocortex";
 import type { PropertySchemaDefinition, PropertyFieldType } from "./PropertySchemas";
 
+/**
+ * Maps ontology property types (from PropertySchemaResolver) to the
+ * UI field types used by the property editor.
+ *
+ * This is an intentional static mapping: the ontology can express types
+ * more granularly (e.g. "datetime", "date", "reference") while the
+ * property editor UI has a fixed set of field renderers. Unknown types
+ * fall back to "text".
+ *
+ * @internal — stable mapping, changes only when new field renderers are added
+ */
 const FIELD_TYPE_MAP: Record<string, PropertyFieldType> = {
   text: "text",
   number: "number",
