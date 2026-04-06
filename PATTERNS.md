@@ -9881,3 +9881,56 @@ for (const alsoPath of alsoVaults) {
 - `packages/cli/src/commands/sparql-query.ts` (lines 221-233: flag definition; lines 357-374: vault loading)
 
 **Reference**: PR #2332 - Cross-Vault SPARQL Query Support (March 2026)
+
+---
+
+## RFC-013 Post-Mortem Patterns (April 2026)
+
+### Pre-Implementation Audit Pattern
+
+Before implementing any RFC Issue, run a 15-minute codebase audit:
+
+1. Search for the feature name in existing code:
+   ```bash
+   grep -r "PropertyPath\|propertyPath" packages/exocortex/src/
+   grep -r "Subquery\|subquery\|SubSelect" packages/exocortex/src/
+   ```
+
+2. Check existing test coverage:
+   ```bash
+   grep -r "property.path\|transitive" packages/exocortex/tests/
+   ```
+
+3. If feature exists: redirect Issue to test coverage + docs instead of reimplementation.
+
+**Real example**: RFC-013 saved ~60% of planned work by discovering property paths and subqueries were already implemented in RFC-011/012.
+
+**Reference**: RFC-013 Post-Mortem (April 2026)
+
+### ESM `__dirname` Replacement
+
+In ESM packages (`"type": "module"`), `__dirname` is not available. Use:
+
+```typescript
+import { fileURLToPath } from "url";
+import { dirname } from "path";
+const __dirname = dirname(fileURLToPath(import.meta.url));
+```
+
+This applies to: `packages/cli` and any ESM test files.
+
+**Reference**: RFC-013 Post-Mortem — PR #2614 CI failure fix
+
+### Depth Annotation in Recursive Materializers
+
+When extending `PrototypeChainMaterializer` or similar BFS materializers:
+
+- **Always distinguish own vs inherited predicates** at each traversal level
+- Use `protoInheritedPredicates` filter to skip materialized triples from deeper ancestors
+- Only predicates defined directly on the current prototype get the current BFS depth
+
+**Symptom of bug**: Depth values in `exo:inferred` triples are wrong for inherited predicates.
+**Root cause**: BFS traversal annotates all triples at current level, including inherited ones.
+**Fix**: Filter `protoInheritedPredicates` before annotation.
+
+**Reference**: RFC-013 Post-Mortem — PR #2607 depth annotation bug
