@@ -382,24 +382,6 @@ describe("GroundingExecutor", () => {
     });
   });
 
-  // -- create_instance --
-
-  describe("create_instance", () => {
-    it("should return not-implemented error", async () => {
-      const grounding = makeGrounding({
-        type: GroundingType.CREATE_INSTANCE,
-        targetClass: "ems__Task",
-        targetPrototype: "proto-uuid-123",
-        targetFolder: "01 Inbox",
-      });
-
-      const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
-
-      expect(result.success).toBe(false);
-      expect(result.error).toContain("not yet implemented");
-    });
-  });
-
   // -- sparql_update --
 
   describe("sparql_update", () => {
@@ -602,6 +584,54 @@ describe("GroundingExecutor", () => {
       expect(result.success).toBe(true);
       const [, content] = writer.createFile.mock.calls[0];
       expect(content).toContain("exo__Asset_label: Untitled");
+    });
+
+    // Integration test: full frontmatter verification (RFC-016 #2644)
+    it("should create file with complete and correct frontmatter structure", async () => {
+      const grounding = makeGrounding({
+        type: GroundingType.CREATE_INSTANCE,
+        targetClass: "gtd__InboxItem",
+        targetPrototype: "proto-daily-review-uuid",
+        targetFolder: "01 Inbox",
+      });
+      const userInput = { label: "Купить молоко" };
+
+      const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH, userInput);
+
+      expect(result.success).toBe(true);
+      const [path, content] = writer.createFile.mock.calls[0];
+
+      // Verify file path structure
+      expect(path).toMatch(/^01 Inbox\//);
+      expect(path).toMatch(/\.md$/);
+
+      // Verify frontmatter has all required fields
+      expect(content).toMatch(/^---\n/);
+      expect(content).toContain("exo__Asset_uid:");
+      expect(content).toContain("exo__Asset_label: Купить молоко");
+      expect(content).toContain("gtd__InboxItem");
+      expect(content).toContain("proto-daily-review-uuid");
+
+      // Verify UUID in path matches UUID in frontmatter
+      const pathUuid = path.split("/").pop()?.replace(".md", "");
+      expect(content).toContain(`exo__Asset_uid: ${pathUuid}`);
+    });
+
+    // Plugin adapter test: vault-relative path (RFC-016 #2645)
+    it("should pass vault-relative path to createFile (plugin adapter compatibility)", async () => {
+      const grounding = makeGrounding({
+        type: GroundingType.CREATE_INSTANCE,
+        targetClass: "ems__Task",
+        targetPrototype: "my-prototype-uid",
+        targetFolder: "03 Knowledge/inbox",
+      });
+
+      await executor.execute(grounding, TARGET_IRI, FILE_PATH, { label: "Test" });
+
+      const [path] = writer.createFile.mock.calls[0];
+      // Path should be vault-relative (no leading /)
+      expect(path).not.toMatch(/^\//);
+      expect(path).toMatch(/^03 Knowledge\/inbox\//);
     });
   });
 });
