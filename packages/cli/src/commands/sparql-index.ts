@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import { existsSync } from "fs";
 import { resolve } from "path";
-import { InMemoryTripleStore, RDFSInferenceEngine, NonInheritablePropertyRegistry, PrototypeChainMaterializer } from "exocortex";
+import { InMemoryTripleStore, RDFSInferenceEngine, NonInheritablePropertyRegistry, PropertyCardinalityRegistry, PrototypeChainMaterializer } from "exocortex";
 import { CacheManager } from "../cache/CacheManager.js";
 import { ErrorHandler, type OutputFormat } from "../utils/ErrorHandler.js";
 import { VaultNotFoundError } from "../utils/errors/index.js";
@@ -83,7 +83,9 @@ export function sparqlIndexCommand(): Command {
           // Prototype chain materialization (after RDFS inference)
           const registry = new NonInheritablePropertyRegistry();
           await registry.initialize(tripleStore);
-          const protoMaterializer = new PrototypeChainMaterializer(registry);
+          const cardinalityRegistry = new PropertyCardinalityRegistry();
+          await cardinalityRegistry.initialize(tripleStore);
+          const protoMaterializer = new PrototypeChainMaterializer(registry, cardinalityRegistry);
           const protoInferredCount = await protoMaterializer.materialize(tripleStore);
           inferredCount += protoInferredCount;
 
