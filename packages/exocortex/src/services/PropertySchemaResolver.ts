@@ -8,6 +8,7 @@ export interface PropertySchema {
   label: string;
   options?: PropertySchemaOption[];
   validation?: PropertySchemaValidation;
+  readOnly?: boolean;
 }
 
 export interface PropertySchemaOption {
@@ -103,7 +104,7 @@ export class PropertySchemaResolver {
       PREFIX exo: <https://exocortex.my/ontology/exo#>
       PREFIX ems: <https://exocortex.my/ontology/ems#>
 
-      SELECT ?type ?label ?rangeType ?description ?required ?minValue ?maxValue ?maxLength ?pattern ?optionValue ?optionLabel WHERE {
+      SELECT ?type ?label ?rangeType ?description ?required ?minValue ?maxValue ?maxLength ?pattern ?readOnly ?optionValue ?optionLabel WHERE {
         <${fullIRI}> rdfs:range ?rangeType .
         OPTIONAL { <${fullIRI}> rdfs:label ?label . }
         OPTIONAL { <${fullIRI}> rdfs:comment ?description . }
@@ -112,6 +113,7 @@ export class PropertySchemaResolver {
         OPTIONAL { <${fullIRI}> exo:schema_maxValue ?maxValue . }
         OPTIONAL { <${fullIRI}> exo:schema_maxLength ?maxLength . }
         OPTIONAL { <${fullIRI}> exo:schema_pattern ?pattern . }
+        OPTIONAL { <${fullIRI}> exo:schema_readOnly ?readOnly . }
         OPTIONAL {
           ?rangeType owl:oneOf ?list .
           ?list rdfs:member ?optionValue .
@@ -136,7 +138,7 @@ export class PropertySchemaResolver {
       PREFIX exo: <https://exocortex.my/ontology/exo#>
       PREFIX ems: <https://exocortex.my/ontology/ems#>
 
-      SELECT ?property ?rangeType ?label ?description ?required ?minValue ?maxValue ?maxLength ?pattern ?optionValue ?optionLabel WHERE {
+      SELECT ?property ?rangeType ?label ?description ?required ?minValue ?maxValue ?maxLength ?pattern ?readOnly ?optionValue ?optionLabel WHERE {
         ?property rdf:type owl:DatatypeProperty .
         OPTIONAL { ?property rdfs:range ?rangeType . }
         OPTIONAL { ?property rdfs:label ?label . }
@@ -146,6 +148,7 @@ export class PropertySchemaResolver {
         OPTIONAL { ?property exo:schema_maxValue ?maxValue . }
         OPTIONAL { ?property exo:schema_maxLength ?maxLength . }
         OPTIONAL { ?property exo:schema_pattern ?pattern . }
+        OPTIONAL { ?property exo:schema_readOnly ?readOnly . }
         OPTIONAL {
           ?rangeType owl:oneOf ?list .
           ?list rdfs:member ?optionValue .
@@ -196,6 +199,8 @@ export class PropertySchemaResolver {
 
     const validation = this.extractValidation(first);
 
+    const readOnly = this.getBindingValue(first, "readOnly");
+
     const schema: PropertySchema = {
       type: fieldType,
       label,
@@ -207,6 +212,10 @@ export class PropertySchemaResolver {
 
     if (validation) {
       schema.validation = validation;
+    }
+
+    if (readOnly === "true") {
+      schema.readOnly = true;
     }
 
     return schema;
