@@ -29,7 +29,7 @@ argument-hint: [task description]
 
 ##### 0.2: PMBOK Project Planning
 
-**After requirements approval, deploy pmbok-agent:**
+**After requirements approval, deploy product-manager:**
 
 1. **Create project charter** from requirements
 2. **Develop Work Breakdown Structure (WBS)**
@@ -198,9 +198,9 @@ System_Priority_Configuration:
 │ Stage 1: Task Analysis    [██████████] 100% ✅         │
 │ Stage 2: Agent Deploy     [████████▒▒] 80%  🔄         │
 │   ├─ architect-agent      [██████████] 100% ✅         │
-│   ├─ implementer-agent    [██████▒▒▒▒] 60%  🔄         │
-│   ├─ qa-agent            [▒▒▒▒▒▒▒▒▒▒] 0%   ⏳         │
-│   └─ devops-agent        [▒▒▒▒▒▒▒▒▒▒] 0%   ⏳         │
+│   ├─ swebok-engineer    [██████▒▒▒▒] 60%  🔄         │
+│   ├─ qa-engineer            [▒▒▒▒▒▒▒▒▒▒] 0%   ⏳         │
+│   └─ devops-engineer        [▒▒▒▒▒▒▒▒▒▒] 0%   ⏳         │
 │ Stage 3: Quality Gate     [▒▒▒▒▒▒▒▒▒▒] 0%   ⏳         │
 │ Stage 4: Release Prep     [▒▒▒▒▒▒▒▒▒▒] 0%   ⏳         │
 │ Stage 5: CI/CD Pipeline   [▒▒▒▒▒▒▒▒▒▒] 0%   ⏳         │
@@ -275,13 +275,13 @@ Requirements_First_Pipeline:
       - Define acceptance criteria
       - Get user confirmation
     
-    pmbok_agent:
+    product-manager:
       - Create project charter
       - Develop WBS from requirements
       - Risk assessment and planning
       - Resource allocation strategy
     
-    swebok_engineer:
+    swebok-engineer:
       - Technical design from requirements
       - Architecture decision records
       - Implementation patterns selection

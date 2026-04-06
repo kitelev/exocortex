@@ -492,7 +492,7 @@ Pure business logic, storage-agnostic utilities.
 
 **Configuration**: `packages/exocortex/jest.config.js`
 
-**Coverage Threshold**: 95% (branches, functions, lines, statements)
+**Coverage Threshold**: statements 75.5%, branches 63% (enforced by CI)
 
 ```bash
 # Run core tests
@@ -1062,8 +1062,6 @@ await page.evaluate(() => console.log("Debug from browser"));
 ### Internal References
 
 - [TEST_TEMPLATES.md](./TEST_TEMPLATES.md) - Ready-to-use test code templates
-- [COVERAGE_ANALYSIS.md](./COVERAGE_ANALYSIS.md) - Detailed coverage analysis
-- [COVERAGE_QUICK_REFERENCE.md](./COVERAGE_QUICK_REFERENCE.md) - Quick coverage summary
 - [packages/obsidian-plugin/docs/TESTING.md](./packages/obsidian-plugin/docs/TESTING.md) - Plugin-specific testing patterns
 
 ### Code Examples

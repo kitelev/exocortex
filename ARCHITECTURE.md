@@ -100,7 +100,6 @@ Exocortex is organized as a **monorepo** with multiple npm workspaces:
   /obsidian-plugin            - @exocortex/obsidian-plugin (Obsidian UI integration)
   /cli                        - @kitelev/exocortex-cli (command-line automation tool)
   /test-utils                 - @exocortex/test-utils (shared test utilities and mock factories)
-  /physics-wasm               - physics-wasm (WebAssembly force simulation for graph view)
 ```
 
 **Benefits:**
@@ -1550,7 +1549,6 @@ graph TB
 ## 📚 Additional Resources
 
 - [PROPERTY_SCHEMA.md](docs/PROPERTY_SCHEMA.md) - Complete property reference
-- [API_CONTRACTS.md](docs/API_CONTRACTS.md) - Service interfaces and contracts
 - [Diagrams](docs/diagrams/) - Architecture and flow diagrams
 - [ADRs](docs/adr/) - Architecture decision records
 - [CLAUDE.md](CLAUDE.md) - Development guidelines

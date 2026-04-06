@@ -46,7 +46,7 @@ This phase is **MANDATORY** and **BLOCKING** - no code can be written without co
 
 ```yaml
 Senior_BDD_Specialist:
-  agent: bdd-requirements-agent
+  agent: qa-engineer
   experience_level: senior_20_years
   certifications: [ISTQB-ATAE, CBAP, Cucumber-Certified]
   
@@ -471,7 +471,7 @@ Senior_Business_Analyst:
 
 ```yaml
 Senior_Project_Manager:
-  agent: pmbok-agent
+  agent: product-manager
   experience_level: senior_20_years
   certifications: [PMP, PgMP, PMI-ACP, PRINCE2]
   
@@ -780,7 +780,7 @@ Senior_Service_Manager:
 
 ```yaml
 Senior_UX_Designer:
-  agent: ux-design-expert
+  agent: product-manager
   experience_level: senior_20_years
   certifications: [HFI-CUA, UXC, Google-UX]
   
@@ -828,7 +828,7 @@ Senior_UX_Designer:
 
 ```yaml
 Senior_Data_Architect:
-  agent: data-analyst-agent
+  agent: semantic-vault-analyzer
   experience_level: senior_20_years
   certifications: [CDMP, DGSP, TOGAF-Data]
   
@@ -861,7 +861,7 @@ Senior_Data_Architect:
 
 ```yaml
 Senior_Agile_Coach:
-  agent: scrum-master-agent
+  agent: product-manager
   experience_level: senior_20_years
   certifications: [SAFe-SPC, CST, CEC, ICE-AC]
   
@@ -899,15 +899,15 @@ Enterprise_Team_Orchestration:
   agent: parallel-execution-orchestrator
   team_composition:
     - babok-agent: "Senior BA (20+ years)"
-    - pmbok-agent: "Senior PM (20+ years)"
+    - product-manager: "Senior PM (20+ years)"
     - swebok-engineer: "Senior SWE (20+ years)"
     - qa-engineer: "Senior QA (20+ years)"
     - architect-agent: "Senior Architect (20+ years)"
     - security-agent: "Senior Security (20+ years)"
     - devops-engineer: "Senior DevOps (20+ years)"
-    - ux-design-expert: "Senior UX (20+ years)"
-    - data-analyst-agent: "Senior Data Architect (20+ years)"
-    - scrum-master-agent: "Senior Agile Coach (20+ years)"
+    - product-manager: "Senior UX (20+ years)"
+    - semantic-vault-analyzer: "Senior Data Architect (20+ years)"
+    - product-manager: "Senior Agile Coach (20+ years)"
   
   execution_strategy:
     communication_protocol:
@@ -948,7 +948,7 @@ async function executeEnterprise(task: string) {
   console.log("\n🎯 PHASE 0: MANDATORY BDD EXECUTABLE SPECIFICATIONS");
   console.log("🚨 CRITICAL: No code can be written without BDD scenarios first!");
   
-  const bddSpecialist = await deployAgent('bdd-requirements-agent', {
+  const bddSpecialist = await deployAgent('qa-engineer', {
     mode: 'senior-enterprise',
     experience: '20+ years',
     certifications: ['ISTQB-ATAE', 'CBAP', 'Cucumber-Certified'],
@@ -1022,7 +1022,7 @@ async function executeEnterprise(task: string) {
 
   // Phase 2: Project Planning
   console.log("\n📈 PHASE 2: PROJECT MANAGEMENT");
-  const pm = await deployAgent('pmbok-agent', {
+  const pm = await deployAgent('product-manager', {
     mode: 'senior-enterprise',
     frameworks: ['PMBOK', 'PRINCE2', 'Agile']
   });
@@ -1044,9 +1044,9 @@ async function executeEnterprise(task: string) {
     { agent: 'architect-agent', task: 'Define architecture and governance' },
     { agent: 'qa-engineer', task: 'Develop test strategy and cases' },
     { agent: 'security-agent', task: 'Perform security assessment' },
-    { agent: 'ux-design-expert', task: 'Design user experience' },
+    { agent: 'product-manager', task: 'Design user experience' },
     { agent: 'devops-engineer', task: 'Setup CI/CD and deployment' },
-    { agent: 'data-analyst-agent', task: 'Define data architecture' }
+    { agent: 'semantic-vault-analyzer', task: 'Define data architecture' }
   ]);
 
   // Phase 4: Quality Gates

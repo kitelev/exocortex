@@ -383,6 +383,6 @@ Validation checks:
 ## Related Documentation
 
 - [Property Schema Reference](./PROPERTY_SCHEMA.md) -- All frontmatter properties
-- [Command Reference](./Command-Reference.md) -- Obsidian plugin commands
+- [Plugin Commands](./Plugin-Commands.md) -- Obsidian plugin commands
 - [CLI Command Reference](./cli/Command-Reference.md) -- CLI syntax
 - [Architecture Guide](../ARCHITECTURE.md) -- System architecture

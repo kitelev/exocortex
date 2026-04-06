@@ -108,7 +108,7 @@ export class TaskCreationService {
 
 ### Mitigations
 
-1. **API_CONTRACTS.md**: Documents which functions are pure (✅ PURE marker)
+1. **Source code**: Pure functions are separated into utility classes
 2. **Tests**: Pure functions have 100% coverage (easy to achieve)
 3. **Naming**: Pure utility classes clearly separated
 4. **Issue #122**: Will formalize this with IFileSystemAdapter
@@ -173,7 +173,7 @@ test('createTask creates file', async () => {
 
 - **Issue #122**: Will extract all pure functions to `exocortex`
 - **Issue #123**: Pure functions achieve 100% coverage easily
-- **API_CONTRACTS.md**: Documents which functions are pure
+- Pure functions are separated into utility classes in `packages/exocortex/src/utilities/`
 
 ## Future
 

@@ -1317,7 +1317,6 @@ aliases:
 ## 🔗 Related Documentation
 
 - [ARCHITECTURE.md](../ARCHITECTURE.md) - System architecture overview
-- [API_CONTRACTS.md](API_CONTRACTS.md) - Service interfaces
 - [CommandVisibility.ts](../src/domain/commands/CommandVisibility.ts) - Visibility rules source
 
 ---

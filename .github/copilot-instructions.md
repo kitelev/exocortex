@@ -23,7 +23,7 @@ Before making changes, always consult:
 
 ```
 packages/
-├── core/                 # exocortex - Storage-agnostic business logic
+├── exocortex/            # @exocortex/core - Storage-agnostic business logic
 ├── obsidian-plugin/      # @exocortex/obsidian-plugin - Obsidian UI integration
 └── cli/                  # @exocortex/cli - Command-line automation tool
 ```
@@ -100,7 +100,7 @@ npm run bdd:check       # Enforce ≥80% BDD coverage (CI requirement)
 ### Coverage Thresholds (Enforced in CI)
 - Global coverage: ≥55-64% (branches: 55%, functions: 60%, lines: 64%, statements: 63%)
 - Domain layer: ≥78-80% (higher standards for business logic; **aspirational, currently disabled in CI – see [issue #197](https://github.com/kitelev/exocortex/issues/197)**)
-- Long-term aspirational targets (not currently enforced): 70% global / 85% domain (current enforced targets are lower; see above and COVERAGE_QUICK_REFERENCE.md)
+- Long-term aspirational targets (not currently enforced): 70% global / 85% domain (current enforced targets are lower; see above)
 
 ### Test Types
 1. **Unit Tests**: Business logic, services, utilities (jest + ts-jest)
@@ -193,6 +193,9 @@ Target benchmarks:
 **DO NOT manually bump versions or create releases.** Coordinate with maintainers for release automation.
 
 ## Workflow Guidelines
+
+> **Worktree Rule**: All changes must be made in git worktrees under `worktrees/`, never in the main repository directly.
+> See `AGENTS.md` for full worktree workflow details and naming conventions.
 
 1. **Plan deliberately** - Understand requirements and architecture before coding
 2. **Work incrementally** - Make focused, minimal changes

@@ -22,8 +22,7 @@
 packages/
 ├── exocortex/          # @exocortex/core — domain models, RDF, SPARQL, services
 ├── obsidian-plugin/    # Obsidian plugin — UI, renderers, commands
-├── cli/                # @kitelev/exocortex-cli — CLI tooling
-└── physics-wasm/       # WASM physics engine for graph view
+└── cli/                # @kitelev/exocortex-cli — CLI tooling
 ```
 
 ## Architecture (Clean Architecture)

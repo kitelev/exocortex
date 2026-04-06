@@ -411,7 +411,7 @@ Essential topics covered there:
 - Code style (RULE 7)
 - Monorepo structure (packages/exocortex, packages/obsidian-plugin, packages/cli)
 - Architecture patterns
-- Quality metrics (803 unit tests across all packages)
+- Quality metrics (11,400+ tests across all packages)
 - Troubleshooting
 
 ## ⚡ Quick Start

@@ -160,7 +160,7 @@ exocortex-cli assetspace add @kitelev/gtd-jedi@^0.1
 
 ## Architecture
 
-Monorepo with five packages sharing Clean Architecture core:
+Monorepo with four packages sharing Clean Architecture core:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -187,13 +187,12 @@ Monorepo with five packages sharing Clean Architecture core:
 
 ### Packages
 
-| Package                        | npm                      | Purpose                                                                     |
-| ------------------------------ | ------------------------ | --------------------------------------------------------------------------- |
-| **exocortex**                  | Private                  | Core business logic, domain models, SPARQL engine, 35+ services             |
-| **@exocortex/obsidian-plugin** | Private                  | Interactive UI: 24+ components, 6 renderers, 34+ commands, 11 modals        |
-| **@kitelev/exocortex-cli**     | `@kitelev/exocortex-cli` | CLI for automation, archive/unarchive, SPARQL queries, AI agent integration |
-| **@exocortex/test-utils**      | Private                  | Shared test utilities, mock factories, flaky test reporter                  |
-| **physics-wasm**               | Private                  | WebAssembly force simulation for 3D graph visualization                     |
+| Package                        | npm                       | Purpose                                                                     |
+| ------------------------------ | ------------------------- | --------------------------------------------------------------------------- |
+| **exocortex**                  | Private                   | Core business logic, domain models, SPARQL engine, 35+ services             |
+| **@exocortex/obsidian-plugin** | Private                   | Interactive UI: 24+ components, 6 renderers, 34+ commands, 11 modals        |
+| **@kitelev/exocortex-cli**     | `@kitelev/exocortex-cli`  | CLI for automation, archive/unarchive, SPARQL queries, AI agent integration |
+| **@exocortex/test-utils**      | Private                   | Shared test utilities, mock factories, flaky test reporter                  |
 
 ### Technical Standards
 
@@ -228,7 +227,7 @@ See **[SPARQL 1.2 Features](./docs/sparql/SPARQL-1.2-Features.md)** for complete
 
 **Obsidian Plugin:**
 
-- **[Command Reference](./docs/Command-Reference.md)** — All 34+ commands documented
+- **[Plugin Commands](./docs/Plugin-Commands.md)** — All 34+ commands documented
 
 **CLI:**
 
@@ -247,13 +246,6 @@ See **[SPARQL 1.2 Features](./docs/sparql/SPARQL-1.2-Features.md)** for complete
 - **[SPARQL 1.2 Features](./docs/sparql/SPARQL-1.2-Features.md)** — LATERAL, PREFIX\*, directionality, and more
 - **[SPARQL 1.2 Migration](./docs/sparql/SPARQL-1.2-Migration.md)** — Upgrading from SPARQL 1.1
 - **[ExoQL Specification](./docs/ExoQL-Specification.md)** — Full query language specification
-
-### Graph View & Visualization
-
-- **[Graph View Overview](./docs/graph-view/README.md)** — Introduction to 2D and 3D graph visualization
-- **[3D Visualization Guide](./docs/graph-view/guides/3d-visualization.md)** — WebGL-powered 3D graph exploration
-- **[Configuration Reference](./docs/graph-view/guides/configuration.md)** — All configuration options for graph views
-- **[Inference & Reasoning Guide](./docs/graph-view/guides/inference.md)** — RDFS/OWL inference, neighborhood exploration
 
 ---
 
