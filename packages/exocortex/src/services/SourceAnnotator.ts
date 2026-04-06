@@ -1,3 +1,4 @@
+import { injectable } from "tsyringe";
 import type { ITripleStore } from "../interfaces/ITripleStore";
 import type { Subject, Predicate, Object as RDFObject } from "../domain/models/rdf/Triple";
 import { Literal } from "../domain/models/rdf/Literal";
@@ -39,6 +40,7 @@ export const DEPTH_VARIABLE = "_depth";
  * Designed for ExoQL results where users need to distinguish between
  * properties defined on an asset vs inherited from its prototype.
  */
+@injectable()
 export class SourceAnnotator {
   constructor(private readonly tripleStore: ITripleStore) {}
 
