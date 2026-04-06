@@ -1,8 +1,6 @@
 # Exocortex
 
-> "Экзокортекс — это как я хочу мыслить — не в ловушке линейных документов или иерархических папок, а в живой паутине смыслов, растущей вместе со мной."
-
-**A cognitive infrastructure that augments human intelligence through semantic knowledge organization, ontology-driven reasoning, and AI integration.**
+**A semantic knowledge management system built on RDF, SPARQL, and ontology-driven architecture. Runs as an Obsidian plugin, CLI tool, or TypeScript library.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![CI](https://github.com/kitelev/exocortex/actions/workflows/ci.yml/badge.svg)](https://github.com/kitelev/exocortex/actions/workflows/ci.yml)
@@ -12,256 +10,14 @@
 
 ---
 
-## Vision
+## What It Does
 
-**Exocortex** is not just a knowledge management tool — it's **a companion to consciousness**. A system designed to:
-
-- Transform chaotic information flow into a **coherent worldview** supporting decision-making
-- Help people **live more consciously** through structured management of knowledge and goals
-- Augment human cognition without replacing it — **a companion, not a crutch**
-
-> "Life is the goal. Awareness is the methodology. Exocortex is the instrument."
-
-### The Path to Übermensch
-
-Exocortex is an instrument for becoming **Übermensch** (Nietzsche):
-
-- Overcoming reactive behavior through **conceptual awareness**
-- **Super-individualism** — the ability to create your own values
-- Striving for infinite self-improvement
-- Human as a **transitional stage** between animal and superhuman
-
----
-
-## Philosophy
-
-### Core Principles
-
-1. **Awareness as Methodology** — The system increases awareness, not replaces thinking
-2. **Exocortex as Spirit Manifestation** — Not just a utility, but a way to materialize your inner world
-3. **Ontological Precision** — Knowledge structured through formal ontologies
-4. **Information-Centrism** — Information as the foundation of reality
-
-### What Sets Exocortex Apart
-
-| Traditional Tools | Exocortex                                               |
-| ----------------- | ------------------------------------------------------- |
-| Files and folders | **Semantic graph of knowledge**                         |
-| Tags and links    | **Ontology-driven relationships**                       |
-| Full-text search  | **SPARQL semantic queries**                             |
-| AI chatbot        | **Cognitive partner** working with your knowledge graph |
-| Data storage      | **Domain model of consciousness**                       |
-
-### Exocortex vs Generative AI
-
-**Key difference: Exocortex cannot hallucinate!**
-
-- AI hallucinates (generates non-existent information)
-- Exocortex operates **only with verified data** from knowledge graph
-- AI is a tool of exocortex, but not a replacement for its function of **reliable knowledge storage**
-
----
-
-## Unique Concepts
-
-### Asset — The Quantum of Knowledge
-
-**Asset** is the atomic unit of knowledge, like a quantum in physics:
-
-```yaml
----
-exo__Asset_uid: 965fd5c2-808e-4c7e-8242-e2e5d85bd996
-exo__Instance_class: ims__Concept
-exo__Asset_label: "Exocortex"
-exo__Asset_relates:
-  - "[[PKM]]"
-  - "[[Semantic Web]]"
----
-Knowledge content in Markdown...
-```
-
-**Key Insight**: Knowledge is an **emergent property** of the asset graph. Individual assets are just information. When connected through relationships, **knowledge emerges** — like life emerges from molecules.
-
-### DCC — Direct Conceptual Communication
-
-**DCC** is Exocortex's killer feature — communication **without conversion between different worldviews**.
-
-**Problem**: Conceptual miscommunication — people use the same words but mean different things.
-
-**Solution**: Each concept has:
-
-- Formal definition (`ims__Concept_definition`)
-- Relationships with other concepts (`ims__Concept_broader`, `ims__Concept_related`)
-- Mapping between different users' ontologies
-
-DCC = **ExoAPI** — semantic contract between exocortexes.
-
-### Modular Ontologies
-
-| Module                           | Purpose                                                                                |
-| -------------------------------- | -------------------------------------------------------------------------------------- |
-| **IMS** (Information Management) | Knowledge, concepts, relationships. Classes: `Simulacrum`, `Concept`, `Note`, `Person` |
-| **EMS** (Effort Management)      | Tasks, projects, time. Classes: `Task`, `Project`, `Meeting`                           |
-| **ZTLK** (Zettelkasten)          | Atomic notes methodology                                                               |
-
-### STIR Model — Knowledge Coordinates
-
-**STIR** (Space, Time, Importance, Relatedness) — universal model for information organization:
-
-| Parameter       | Question               | Application                                    |
-| --------------- | ---------------------- | ---------------------------------------------- |
-| **Space**       | Where?                 | Spatial localization, context, domain          |
-| **Time**        | When?                  | Temporal relevance, deadlines, validity period |
-| **Importance**  | How important?         | Priority, impact on goals                      |
-| **Relatedness** | What is it related to? | Connections, dependencies, cluster membership  |
-
----
-
-## 42 Unique IT Ideas
-
-The Exocortex project encompasses a comprehensive vision for cognitive augmentation. Here are the core concepts that make this system unique:
-
-### Core Architecture (1-10)
-
-| #   | Idea                                      | Description                                                                                 |
-| --- | ----------------------------------------- | ------------------------------------------------------------------------------------------- |
-| 1   | **Asset as Knowledge Quantum**            | Atomic unit of knowledge with UUID, class, label, and semantic relationships                |
-| 2   | **DCC (Direct Conceptual Communication)** | Communication without worldview conversion — semantic contract between exocortexes          |
-| 3   | **ExoBlockchain**                         | Immutable knowledge provenance tracking — who, when, and how created each fact              |
-| 4   | **ExoEcoSystem**                          | Federation of exocortexes forming collective intelligence network                           |
-| 5   | **Modular Ontology System**               | IMS (concepts), EMS (tasks), ZTLK (notes), PTMS (personality), Observation (world tracking) |
-| 6   | **Simulacrum**                            | Digital representation of external entities (people, companies) for modeling interactions   |
-| 7   | **ExoLang**                               | Domain-specific language for knowledge operations and transformations                       |
-| 8   | **Inference Engine**                      | Logical reasoning over knowledge graph — deriving new facts from existing                   |
-| 9   | **BOM (Brain Object Model)**              | Inspired by DOM — programmatic access to consciousness structure                            |
-| 10  | **Ontological Relativity**                | Each user has their own ontology, mapped to others through DCC                              |
-
-### Semantic Layer (11-20)
-
-| #   | Idea                             | Description                                                               |
-| --- | -------------------------------- | ------------------------------------------------------------------------- |
-| 11  | **ExoRDF**                       | Extended RDF with temporal and provenance dimensions                      |
-| 12  | **ExoProphet**                   | Prediction engine based on personal patterns and knowledge graph          |
-| 13  | **Braindance + IoT**             | Integration with wearables (HR, glucose, location) for context enrichment |
-| 14  | **Action Tracking**              | Every action becomes data — browsing, reading, communication patterns     |
-| 15  | **"Not AI" Principle**           | Exocortex stores verified facts; AI generates but cannot be trusted alone |
-| 16  | **ExoTag**                       | Semantic tags with inheritance and property propagation                   |
-| 17  | **Life Integration**             | System becomes invisible layer over life, not separate application        |
-| 18  | **Local-First Architecture**     | Data stays on device, cloud is optional synchronization                   |
-| 19  | **IExE (Inference x Exocortex)** | Intelligence-enhanced reasoning combining human and machine cognition     |
-| 20  | **ExoProtocol**                  | Communication standard between exocortex instances                        |
-
-### Process & Methodology (21-30)
-
-| #   | Idea                         | Description                                                                         |
-| --- | ---------------------------- | ----------------------------------------------------------------------------------- |
-| 21  | **Echoization**              | Every external information piece gets internal representation with personal context |
-| 22  | **ExoAdapter**               | Integration layer for external services (calendars, email, social)                  |
-| 23  | **Dynamic Naming**           | Assets can have multiple names based on context and audience                        |
-| 24  | **Human as Execution Organ** | Exocortex plans, human executes — partnership model                                 |
-| 25  | **Knowledge Monetization**   | Verified knowledge as tradeable asset in ExoEcoSystem                               |
-| 26  | **Trigger System**           | Automated reactions to patterns in knowledge graph changes                          |
-| 27  | **No Permanent Self**        | Identity is emergent property of knowledge graph, not fixed entity                  |
-| 28  | **Breadcrumbs**              | Automatic trail of attention and reasoning for later reconstruction                 |
-| 29  | **GTD Integration**          | Getting Things Done methodology as native workflow                                  |
-| 30  | **ExoLayout**                | Flexible views over knowledge graph for different cognitive tasks                   |
-
-### Advanced Concepts (31-42)
-
-| #   | Idea                               | Description                                                             |
-| --- | ---------------------------------- | ----------------------------------------------------------------------- |
-| 31  | **Property Polymorphism**          | Same property behaves differently based on subject class                |
-| 32  | **Life Streams**                   | Parallel timelines of different life aspects (work, health, learning)   |
-| 33  | **Human Consciousness Schema**     | Formal model of consciousness structure (perception, memory, will)      |
-| 34  | **Meta-Position**                  | Ability to observe your own cognitive processes through the system      |
-| 35  | **7 Levels of Abstraction**        | From raw data to wisdom, with explicit transformations                  |
-| 36  | **ExoFocus**                       | Attention management based on goals and current context                 |
-| 37  | **Cognitive Load Balancing**       | Automatic task distribution based on mental energy patterns             |
-| 38  | **Knowledge Decay Model**          | Tracking and refreshing knowledge that becomes stale                    |
-| 39  | **Semantic Versioning of Beliefs** | Tracking how your understanding evolves over time                       |
-| 40  | **ExoMirror**                      | Reflection interface showing patterns in your cognition                 |
-| 41  | **Collective Wisdom Extraction**   | Aggregating insights from ExoEcoSystem while preserving privacy         |
-| 42  | **Consciousness Continuity**       | Exocortex as vehicle for cognitive persistence beyond biological limits |
-
-### Ethics & Principles
-
-The project adheres to core ethical principles:
-
-- **Human Primacy** — Technology serves human flourishing, not replaces humanity
-- **Privacy by Design** — Personal knowledge remains under user control
-- **Transparency** — All inferences and recommendations are explainable
-- **Non-Manipulation** — System informs, never manipulates
-- **Open Standards** — Based on W3C Semantic Web standards (RDF, SPARQL, OWL)
-
----
-
-## Architecture
-
-Exocortex is a **monorepo** with five packages sharing Clean Architecture core:
-
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                           Exocortex System                              │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│   ┌──────────────────┐    ┌──────────────────┐    ┌──────────────────┐ │
-│   │  Obsidian Plugin │    │       CLI        │    │   Your App       │ │
-│   │  (@exocortex/    │    │  (@kitelev/      │    │   (REST API      │ │
-│   │  obsidian-plugin)│    │  exocortex-cli)  │    │   coming soon)   │ │
-│   └────────┬─────────┘    └────────┬─────────┘    └────────┬─────────┘ │
-│            │                       │                        │           │
-│            └───────────────────────┼────────────────────────┘           │
-│                                    │                                    │
-│                       ┌────────────▼────────────┐                       │
-│                       │       Core Library      │                       │
-│                       │       (exocortex)       │                       │
-│                       │                         │                       │
-│                       │  • Domain models        │                       │
-│                       │  • SPARQL engine        │                       │
-│                       │  • Inference rules      │                       │
-│                       │  • Storage adapters     │                       │
-│                       └─────────────────────────┘                       │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
-```
-
-### Clean Architecture Layers
-
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         Adapters Layer                                  │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────┐                 │
-│  │   Obsidian  │  │     CLI     │  │  REST API       │                 │
-│  │   Plugin    │  │  Interface  │  │  (planned)      │                 │
-│  └─────────────┘  └─────────────┘  └─────────────────┘                 │
-├─────────────────────────────────────────────────────────────────────────┤
-│                       Application Layer                                 │
-│  ┌─────────────────────────────────────────────────────────────────┐   │
-│  │           Use Cases / Commands / Queries                        │   │
-│  └─────────────────────────────────────────────────────────────────┘   │
-├─────────────────────────────────────────────────────────────────────────┤
-│                         Domain Layer                                    │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌─────────┐               │
-│  │   IMS    │  │   EMS    │  │   ZTLK   │  │   ...   │               │
-│  └──────────┘  └──────────┘  └──────────┘  └─────────┘               │
-├─────────────────────────────────────────────────────────────────────────┤
-│                      Infrastructure Layer                               │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────┐                 │
-│  │   Markdown  │  │    SPARQL   │  │   N-Triples     │                 │
-│  │   Parser    │  │   Engine    │  │   Storage       │                 │
-│  └─────────────┘  └─────────────┘  └─────────────────┘                 │
-└─────────────────────────────────────────────────────────────────────────┘
-```
-
-### Packages
-
-| Package                        | npm                      | Purpose                                                                     |
-| ------------------------------ | ------------------------ | --------------------------------------------------------------------------- |
-| **exocortex**                  | Private                  | Core business logic, domain models, SPARQL engine, 35+ services             |
-| **@exocortex/obsidian-plugin** | Private                  | Interactive UI: 24+ components, 6 renderers, 34+ commands, 11 modals        |
-| **@kitelev/exocortex-cli**     | `@kitelev/exocortex-cli` | CLI for automation, archive/unarchive, SPARQL queries, AI agent integration |
-| **@exocortex/test-utils**      | Private                  | Shared test utilities, mock factories, flaky test reporter                  |
-| **physics-wasm**               | Private                  | WebAssembly force simulation for 3D graph visualization                     |
+- **Semantic knowledge graph** — every piece of knowledge is an Asset with UUID, class, properties, and relationships stored as RDF triples
+- **SPARQL queries** — ask complex questions across your entire knowledge base
+- **Modular ontologies** — IMS (concepts, notes, people), EMS (tasks, projects, meetings), ZTLK (zettelkasten)
+- **Vault-driven architecture** — commands, workflows, property schemas, and prototype chains defined as vault assets, not hardcoded
+- **Ontology plugins** — extend the system with installable ontology packages (e.g. [GTD + Jedi Techniques](https://github.com/kitelev/gtd-jedi))
+- **Local-first** — all data stays on your device, no cloud required
 
 ---
 
@@ -286,7 +42,10 @@ Best for: Automation, AI agents, batch operations.
 npm install -g @kitelev/exocortex-cli
 
 # Query your knowledge graph
-exocortex-cli sparql query "SELECT ?task ?label WHERE {
+exocortex-cli sparql query "
+PREFIX exo: <https://exocortex.my/ontology/exo#>
+PREFIX ems: <https://exocortex.my/ontology/ems#>
+SELECT ?task ?label WHERE {
   ?task exo:Instance_class ems:Task .
   ?task exo:Asset_label ?label
 }" --vault ~/vault
@@ -304,6 +63,8 @@ import { SparqlService, NodeFsAdapter } from "exocortex";
 
 const sparql = new SparqlService(new NodeFsAdapter("/path/to/vault"));
 const results = await sparql.query(`
+  PREFIX exo: <https://exocortex.my/ontology/exo#>
+  PREFIX ims: <https://exocortex.my/ontology/ims#>
   SELECT ?concept ?definition
   WHERE {
     ?concept exo:Instance_class ims:Concept .
@@ -316,12 +77,32 @@ const results = await sparql.query(`
 
 ## Key Features
 
-### Semantic Query System (SPARQL)
+### Asset — The Unit of Knowledge
+
+Every piece of knowledge is a Markdown file with YAML frontmatter:
+
+```yaml
+---
+exo__Asset_uid: 965fd5c2-808e-4c7e-8242-e2e5d85bd996
+exo__Instance_class: ims__Concept
+exo__Asset_label: "Exocortex"
+exo__Asset_relates:
+  - "[[PKM]]"
+  - "[[Semantic Web]]"
+---
+Knowledge content in Markdown...
+```
+
+Assets are connected through typed relationships. Individual assets are information; connected assets become knowledge.
+
+### SPARQL Queries
 
 Ask complex questions about your knowledge:
 
 ```sparql
 # Find all tasks related to a specific concept
+PREFIX exo: <https://exocortex.my/ontology/exo#>
+PREFIX ems: <https://exocortex.my/ontology/ems#>
 SELECT ?task ?label WHERE {
   ?task exo:Instance_class ems:Task .
   ?task exo:Asset_label ?label .
@@ -340,89 +121,89 @@ Draft → Backlog → Analysis → ToDo → Doing → Done
                   Trashed
 ```
 
-### Knowledge Hierarchy
-
-Organize knowledge domains hierarchically:
-
-```
-▼ Work
-  ▼ Engineering
-    → Backend
-    → Frontend
-  ▶ Design
-▼ Personal
-  ▶ Health
-  ▶ Finance
-```
-
 ### Workflow Customization
 
-Define custom status lifecycles for your tasks and projects. Skip unnecessary steps, add new statuses, or create per-project workflow overrides -- all using regular vault assets:
+Define custom status lifecycles for your tasks and projects — all using regular vault assets:
 
 ```bash
-# List defined workflows
 exocortex-cli workflow list --vault ~/vault
-
-# Validate a workflow definition
 exocortex-cli workflow validate <uid> --vault ~/vault
 ```
 
-See **[Workflow Customization Guide](./docs/WORKFLOW_CUSTOMIZATION.md)** for step-by-step instructions and examples.
+See **[Workflow Customization Guide](./docs/WORKFLOW_CUSTOMIZATION.md)** for details.
 
 ### Ontology-Driven Forms
 
 Create assets with forms generated from your RDF ontology — fields appear based on `rdfs:domain`, types detected from `rdfs:range`.
 
----
+### Layout Code Blocks
 
-## Future Vision
+Embed Layout definitions directly in your notes:
 
-### ExoEcoSystem — Federation of Minds
-
-Long-term vision: **cognitive ecosystem** uniting multiple exocortexes into a semantically coherent, federated network:
-
+````markdown
+```exo-layout
+[[emslayout__UpcomingTasksLayout]]
 ```
-ExoEcoSystem = Exocortex-as-agent
-             + Interoperability Layer (DCC)
-             + Shared Ontologies
-             + Federated Reasoning
+````
+
+Features: wikilink syntax, loading state, error handling, auto-refresh, interactive sortable tables with inline editing.
+
+### Ontology Plugins
+
+Install community ontology packages to extend your knowledge graph:
+
+```bash
+exocortex-cli assetspace add @kitelev/gtd-jedi@^0.1
 ```
-
-**Key Principles:**
-
-| Principle                    | Description                                 |
-| ---------------------------- | ------------------------------------------- |
-| **Decentralization**         | Each node (exocortex) is autonomous         |
-| **Meaning Federation**       | Personal ontologies aligned through mapping |
-| **Mesh Reasoning**           | Distributed logical inference between nodes |
-| **Respect for Subjectivity** | Everyone defines their own access rules     |
-
-### AI-Native System (2027 Vision)
-
-- Semantic knowledge graph will be **self-organizing** through AI analysis
-- System will **anticipate user needs**
-- Claude/GPT not as chatbot, but as **cognitive partner** working with your graph
-
-### Noosphere
-
-On **individual level** — exocortex is a consciousness agent.
-On **collective level** — multiple exocortexes form **noosphere**.
-
-> "Exocortex will fully assume consciousness responsibilities when it possesses a worldview of equal or greater precision."
 
 ---
 
-## Technical Standards
+## Architecture
 
-- **Clean Architecture** — clear layer separation
+Monorepo with five packages sharing Clean Architecture core:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      Exocortex System                        │
+├─────────────────────────────────────────────────────────────┤
+│                                                               │
+│   ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
+│   │   Obsidian   │  │     CLI      │  │  Core Library │      │
+│   │   Plugin     │  │              │  │  (TypeScript) │      │
+│   └──────┬───────┘  └──────┬───────┘  └──────┬───────┘      │
+│          └─────────────────┼─────────────────┘               │
+│                            │                                  │
+│               ┌────────────▼────────────┐                     │
+│               │     @exocortex/core     │                     │
+│               │                         │                     │
+│               │  • Domain models        │                     │
+│               │  • SPARQL engine        │                     │
+│               │  • Inference rules      │                     │
+│               │  • Storage adapters     │                     │
+│               └─────────────────────────┘                     │
+│                                                               │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Packages
+
+| Package                        | npm                      | Purpose                                                                     |
+| ------------------------------ | ------------------------ | --------------------------------------------------------------------------- |
+| **exocortex**                  | Private                  | Core business logic, domain models, SPARQL engine, 35+ services             |
+| **@exocortex/obsidian-plugin** | Private                  | Interactive UI: 24+ components, 6 renderers, 34+ commands, 11 modals        |
+| **@kitelev/exocortex-cli**     | `@kitelev/exocortex-cli` | CLI for automation, archive/unarchive, SPARQL queries, AI agent integration |
+| **@exocortex/test-utils**      | Private                  | Shared test utilities, mock factories, flaky test reporter                  |
+| **physics-wasm**               | Private                  | WebAssembly force simulation for 3D graph visualization                     |
+
+### Technical Standards
+
+- **Clean Architecture** — clear layer separation (presentation, application, domain, infrastructure)
 - **SOLID Principles** — especially Single Responsibility
 - **Domain-Driven Design** — knowledge domain as system center
 - **Semantic Web** — RDF, SPARQL 1.2, OWL, RDF-Star
 - **Local-first** — your data stays local, cloud is optional
 
 ### SPARQL 1.2 Support
-
-Exocortex implements key SPARQL 1.2 features:
 
 | Feature                       | Description                                          |
 | ----------------------------- | ---------------------------------------------------- |
@@ -465,6 +246,7 @@ See **[SPARQL 1.2 Features](./docs/sparql/SPARQL-1.2-Features.md)** for complete
 - **[Query Examples](./docs/sparql/Query-Examples.md)** — 30+ ready-to-use patterns
 - **[SPARQL 1.2 Features](./docs/sparql/SPARQL-1.2-Features.md)** — LATERAL, PREFIX\*, directionality, and more
 - **[SPARQL 1.2 Migration](./docs/sparql/SPARQL-1.2-Migration.md)** — Upgrading from SPARQL 1.1
+- **[ExoQL Specification](./docs/ExoQL-Specification.md)** — Full query language specification
 
 ### Graph View & Visualization
 
@@ -472,24 +254,6 @@ See **[SPARQL 1.2 Features](./docs/sparql/SPARQL-1.2-Features.md)** for complete
 - **[3D Visualization Guide](./docs/graph-view/guides/3d-visualization.md)** — WebGL-powered 3D graph exploration
 - **[Configuration Reference](./docs/graph-view/guides/configuration.md)** — All configuration options for graph views
 - **[Inference & Reasoning Guide](./docs/graph-view/guides/inference.md)** — RDFS/OWL inference, neighborhood exploration
-
-### Layout Code Blocks
-
-Embed Layout definitions directly in your notes using the `exo-layout` code block:
-
-````markdown
-```exo-layout
-[[emslayout__UpcomingTasksLayout]]
-```
-````
-
-Features:
-
-- **Wikilink syntax** — Reference any Layout note with `[[LayoutName]]`
-- **Loading state** — Visual feedback while fetching data
-- **Error handling** — Clear error messages when Layout fails to load
-- **Auto-refresh** — Layout updates automatically when vault files change
-- **Interactive tables** — Sortable columns and inline editing
 
 ---
 
@@ -516,10 +280,12 @@ This project is developed primarily by AI agents (Claude Code, GitHub Copilot) f
 
 ---
 
-## License
+## Vision
 
-MIT License — see [LICENSE](./LICENSE)
+For the full philosophical vision, long-term roadmap, and 42 unique IT ideas behind the project, see **[VISION.md](./VISION.md)**.
 
 ---
 
-**Exocortex** — Your external brain for the semantic age.
+## License
+
+MIT License — see [LICENSE](./LICENSE)

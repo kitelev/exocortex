@@ -1,8 +1,79 @@
-# Exocortex Vision — 42 Unique IT Ideas
+# Exocortex — Vision
 
-> This document describes the full vision for Exocortex. Most ideas are conceptual and not yet implemented. See [README.md](./README.md) for current features.
+> This document describes the philosophy and full vision for Exocortex. Most ideas are conceptual and not yet implemented. See [README.md](./README.md) for current features.
 
-## Implementation Status
+> "Экзокортекс — это как я хочу мыслить — не в ловушке линейных документов или иерархических папок, а в живой паутине смыслов, растущей вместе со мной."
+
+**Exocortex** is not just a knowledge management tool — it's **a companion to consciousness**. A system designed to:
+
+- Transform chaotic information flow into a **coherent worldview** supporting decision-making
+- Help people **live more consciously** through structured management of knowledge and goals
+- Augment human cognition without replacing it — **a companion, not a crutch**
+
+> "Life is the goal. Awareness is the methodology. Exocortex is the instrument."
+
+### The Path to Übermensch
+
+Exocortex is an instrument for becoming **Übermensch** (Nietzsche):
+
+- Overcoming reactive behavior through **conceptual awareness**
+- **Super-individualism** — the ability to create your own values
+- Striving for infinite self-improvement
+- Human as a **transitional stage** between animal and superhuman
+
+---
+
+## Philosophy
+
+### Core Principles
+
+1. **Awareness as Methodology** — The system increases awareness, not replaces thinking
+2. **Exocortex as Spirit Manifestation** — Not just a utility, but a way to materialize your inner world
+3. **Ontological Precision** — Knowledge structured through formal ontologies
+4. **Information-Centrism** — Information as the foundation of reality
+
+### Exocortex vs Generative AI
+
+**Key difference: Exocortex cannot hallucinate!**
+
+- AI hallucinates (generates non-existent information)
+- Exocortex operates **only with verified data** from knowledge graph
+- AI is a tool of exocortex, but not a replacement for its function of **reliable knowledge storage**
+
+---
+
+## Unique Concepts
+
+### DCC — Direct Conceptual Communication
+
+**DCC** is Exocortex's killer feature — communication **without conversion between different worldviews**.
+
+**Problem**: Conceptual miscommunication — people use the same words but mean different things.
+
+**Solution**: Each concept has:
+
+- Formal definition (`ims__Concept_definition`)
+- Relationships with other concepts (`ims__Concept_broader`, `ims__Concept_related`)
+- Mapping between different users' ontologies
+
+DCC = **ExoAPI** — semantic contract between exocortexes.
+
+### STIR Model — Knowledge Coordinates
+
+**STIR** (Space, Time, Importance, Relatedness) — universal model for information organization:
+
+| Parameter       | Question               | Application                                    |
+| --------------- | ---------------------- | ---------------------------------------------- |
+| **Space**       | Where?                 | Spatial localization, context, domain          |
+| **Time**        | When?                  | Temporal relevance, deadlines, validity period |
+| **Importance**  | How important?         | Priority, impact on goals                      |
+| **Relatedness** | What is it related to? | Connections, dependencies, cluster membership  |
+
+---
+
+## 42 Unique IT Ideas
+
+### Implementation Status
 
 | Status         | Meaning                                           |
 | -------------- | ------------------------------------------------- |
@@ -11,7 +82,7 @@
 | 📋 Planned     | Designed but not implemented                      |
 | 💡 Conceptual  | Vision-stage idea                                 |
 
-## Core Architecture (1-10)
+### Core Architecture (1-10)
 
 | #   | Idea                                      | Description                                                                                            | Status         |
 | --- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------ | -------------- |
@@ -26,7 +97,7 @@
 | 9   | **BOM (Brain Object Model)**              | Inspired by DOM — programmatic access to consciousness structure                                       | 💡 Conceptual  |
 | 10  | **Ontological Relativity**                | Each user has their own ontology, mapped to others through DCC                                         | 💡 Conceptual  |
 
-## Semantic Layer (11-20)
+### Semantic Layer (11-20)
 
 | #   | Idea                             | Description                                                               | Status         |
 | --- | -------------------------------- | ------------------------------------------------------------------------- | -------------- |
@@ -41,7 +112,7 @@
 | 19  | **IExE (Inference x Exocortex)** | Intelligence-enhanced reasoning combining human and machine cognition     | 💡 Conceptual  |
 | 20  | **ExoProtocol**                  | Communication standard between exocortex instances                        | 💡 Conceptual  |
 
-## Process & Methodology (21-30)
+### Process & Methodology (21-30)
 
 | #   | Idea                         | Description                                                                         | Status         |
 | --- | ---------------------------- | ----------------------------------------------------------------------------------- | -------------- |
@@ -53,10 +124,10 @@
 | 26  | **Trigger System**           | Automated reactions to patterns in knowledge graph changes                          | 💡 Conceptual  |
 | 27  | **No Permanent Self**        | Identity is emergent property of knowledge graph, not fixed entity                  | 💡 Conceptual  |
 | 28  | **Breadcrumbs**              | Automatic trail of attention and reasoning for later reconstruction                 | 💡 Conceptual  |
-| 29  | **GTD Integration**          | Getting Things Done methodology as native workflow                                  | 💡 Conceptual  |
+| 29  | **GTD Integration**          | Getting Things Done methodology as native workflow                                  | ✅ Implemented |
 | 30  | **ExoLayout**                | Flexible views over knowledge graph for different cognitive tasks                   | ✅ Implemented |
 
-## Advanced Concepts (31-42)
+### Advanced Concepts (31-42)
 
 | #   | Idea                               | Description                                                             | Status        |
 | --- | ---------------------------------- | ----------------------------------------------------------------------- | ------------- |
@@ -73,9 +144,44 @@
 | 41  | **Collective Wisdom Extraction**   | Aggregating insights from ExoEcoSystem while preserving privacy         | 💡 Conceptual |
 | 42  | **Consciousness Continuity**       | Exocortex as vehicle for cognitive persistence beyond biological limits | 💡 Conceptual |
 
-## Ethics & Principles
+---
 
-The project adheres to core ethical principles:
+## ExoEcoSystem — Federation of Minds
+
+Long-term vision: **cognitive ecosystem** uniting multiple exocortexes into a semantically coherent, federated network:
+
+```
+ExoEcoSystem = Exocortex-as-agent
+             + Interoperability Layer (DCC)
+             + Shared Ontologies
+             + Federated Reasoning
+```
+
+**Key Principles:**
+
+| Principle                    | Description                                 |
+| ---------------------------- | ------------------------------------------- |
+| **Decentralization**         | Each node (exocortex) is autonomous         |
+| **Meaning Federation**       | Personal ontologies aligned through mapping |
+| **Mesh Reasoning**           | Distributed logical inference between nodes |
+| **Respect for Subjectivity** | Everyone defines their own access rules     |
+
+### AI-Native System
+
+- Semantic knowledge graph will be **self-organizing** through AI analysis
+- System will **anticipate user needs**
+- Claude/GPT not as chatbot, but as **cognitive partner** working with your graph
+
+### Noosphere
+
+On **individual level** — exocortex is a consciousness agent.
+On **collective level** — multiple exocortexes form **noosphere**.
+
+> "Exocortex will fully assume consciousness responsibilities when it possesses a worldview of equal or greater precision."
+
+---
+
+## Ethics & Principles
 
 - **Human Primacy** — Technology serves human flourishing, not replaces humanity
 - **Privacy by Design** — Personal knowledge remains under user control

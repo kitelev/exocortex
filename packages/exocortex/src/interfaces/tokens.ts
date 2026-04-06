@@ -63,6 +63,7 @@ export const DI_TOKENS = {
   // Query services
   AreaHierarchyBuilder: Symbol.for("AreaHierarchyBuilder"),
   URIConstructionService: Symbol.for("URIConstructionService"),
+  ClassHierarchyResolver: Symbol.for("ClassHierarchyResolver"),
 
 } as const;
 
