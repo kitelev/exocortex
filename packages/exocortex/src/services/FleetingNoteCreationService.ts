@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from "uuid";
 import { DateFormatter } from "../utilities/DateFormatter";
 import { MetadataHelpers } from "../utilities/MetadataHelpers";
 import type { IVaultAdapter, IFile } from "../interfaces/IVaultAdapter";
+import type { IVaultSettings } from "../interfaces/IVaultSettings";
 import { DI_TOKENS } from "../interfaces/tokens";
 
 /**
@@ -12,10 +13,9 @@ import { DI_TOKENS } from "../interfaces/tokens";
  */
 @injectable()
 export class FleetingNoteCreationService {
-  private static readonly INBOX_FOLDER = "01 Inbox";
-
   constructor(
     @inject(DI_TOKENS.IVaultAdapter) private vault: IVaultAdapter,
+    @inject(DI_TOKENS.IVaultSettings) private vaultSettings: IVaultSettings,
   ) {}
 
   /**
@@ -30,7 +30,7 @@ export class FleetingNoteCreationService {
     const frontmatter = this.generateFrontmatter(uid, label);
     const fileContent = MetadataHelpers.buildFileContent(frontmatter);
 
-    const filePath = `${FleetingNoteCreationService.INBOX_FOLDER}/${fileName}`;
+    const filePath = `${this.vaultSettings.getDefaultInboxFolder()}/${fileName}`;
 
     const createdFile = await this.vault.create(filePath, fileContent);
 
@@ -39,12 +39,13 @@ export class FleetingNoteCreationService {
 
   private generateFrontmatter(uid: string, label: string): Record<string, unknown> {
     const now = new Date();
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- display-only timestamp, not for SPARQL filtering
     const timestamp = DateFormatter.toLocalTimestamp(now);
 
     const trimmedLabel = label.trim();
 
     const frontmatter: Record<string, unknown> = {
-      exo__Asset_isDefinedBy: '"[[!kitelev]]"',
+      exo__Asset_isDefinedBy: this.vaultSettings.getOwnerIdentity(),
       exo__Asset_uid: uid,
       exo__Asset_createdAt: timestamp,
       exo__Instance_class: ['"[[fca0a931-a01f-48e4-b72a-4af206c94bc7]]"'],
