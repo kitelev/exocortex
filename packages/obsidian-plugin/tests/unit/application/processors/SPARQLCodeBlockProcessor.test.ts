@@ -22,7 +22,7 @@ describe("SPARQLCodeBlockProcessor", () => {
 
     mockEl = document.createElement("div");
 
-    processor = new SPARQLCodeBlockProcessor(mockPlugin);
+    processor = new SPARQLCodeBlockProcessor(mockPlugin, { info: jest.fn(), success: jest.fn(), error: jest.fn(), warn: jest.fn(), confirm: jest.fn() } as any);
   });
 
   afterEach(() => {
@@ -522,7 +522,7 @@ describe("SPARQLCodeBlockProcessor", () => {
       const clearIntervalSpy = jest.spyOn(global, "clearInterval");
 
       // The constructor starts the interval
-      const newProcessor = new SPARQLCodeBlockProcessor(mockPlugin);
+      const newProcessor = new SPARQLCodeBlockProcessor(mockPlugin, { info: jest.fn(), success: jest.fn(), error: jest.fn(), warn: jest.fn(), confirm: jest.fn() } as any);
       const intervalId = (newProcessor as any).cleanupIntervalId;
 
       expect(intervalId).not.toBeNull();
@@ -537,7 +537,7 @@ describe("SPARQLCodeBlockProcessor", () => {
     });
 
     it("should run periodic cleanup at specified interval", () => {
-      const newProcessor = new SPARQLCodeBlockProcessor(mockPlugin);
+      const newProcessor = new SPARQLCodeBlockProcessor(mockPlugin, { info: jest.fn(), success: jest.fn(), error: jest.fn(), warn: jest.fn(), confirm: jest.fn() } as any);
       const cleanupSpy = jest.spyOn(newProcessor as any, "cleanupStaleQueries");
 
       // Fast forward by cleanup interval

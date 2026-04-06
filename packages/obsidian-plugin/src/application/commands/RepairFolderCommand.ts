@@ -1,6 +1,6 @@
-import { App, TFile, Notice } from "obsidian";
+import type { App, TFile } from "obsidian";
 import { ICommand } from "./ICommand";
-import { FolderRepairService, LoggingService } from "exocortex";
+import { FolderRepairService, LoggingService, type INotificationService } from "exocortex";
 
 export class RepairFolderCommand implements ICommand {
   id = "repair-folder";
@@ -9,6 +9,7 @@ export class RepairFolderCommand implements ICommand {
   constructor(
     private app: App,
     private folderRepairService: FolderRepairService,
+    private notifier: INotificationService,
   ) {}
 
   checkCallback = (checking: boolean, file: TFile): boolean => {
@@ -22,7 +23,7 @@ export class RepairFolderCommand implements ICommand {
         try {
           await this.execute(file, metadata);
         } catch (error) {
-          new Notice(`Failed to repair folder: ${error instanceof Error ? error.message : String(error)}`);
+          this.notifier.error(`Failed to repair folder: ${error instanceof Error ? error.message : String(error)}`);
           LoggingService.error("Repair folder error", error instanceof Error ? error : undefined);
         }
       })();
@@ -35,17 +36,17 @@ export class RepairFolderCommand implements ICommand {
     const expectedFolder = await this.folderRepairService.getExpectedFolder(file, metadata);
 
     if (!expectedFolder) {
-      new Notice("No expected folder found");
+      this.notifier.warn("No expected folder found");
       return;
     }
 
     const currentFolder = file.parent?.path || "";
     if (currentFolder === expectedFolder) {
-      new Notice("Asset is already in correct folder");
+      this.notifier.info("Asset is already in correct folder");
       return;
     }
 
     await this.folderRepairService.repairFolder(file, expectedFolder);
-    new Notice(`Moved to ${expectedFolder}`);
+    this.notifier.success(`Moved to ${expectedFolder}`);
   }
 }

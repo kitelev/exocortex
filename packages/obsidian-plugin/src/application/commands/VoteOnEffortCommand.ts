@@ -1,17 +1,21 @@
-import { TFile, Notice } from "obsidian";
+import type { TFile } from "obsidian";
 import { ICommand } from "./ICommand";
 import {
   CommandVisibilityContext,
   canVoteOnEffort,
   EffortVotingService,
   LoggingService,
+  type INotificationService,
 } from "exocortex";
 
 export class VoteOnEffortCommand implements ICommand {
   id = "vote-on-effort";
   name = "Vote on effort";
 
-  constructor(private effortVotingService: EffortVotingService) {}
+  constructor(
+    private effortVotingService: EffortVotingService,
+    private notifier: INotificationService,
+  ) {}
 
   checkCallback = (checking: boolean, file: TFile, context: CommandVisibilityContext | null): boolean => {
     if (!context || !canVoteOnEffort(context)) return false;
@@ -21,7 +25,7 @@ export class VoteOnEffortCommand implements ICommand {
         try {
           await this.execute(file);
         } catch (error) {
-          new Notice(`Failed to vote: ${error instanceof Error ? error.message : String(error)}`);
+          this.notifier.error(`Failed to vote: ${error instanceof Error ? error.message : String(error)}`);
           LoggingService.error("Vote on effort error", error instanceof Error ? error : undefined);
         }
       })();
@@ -32,6 +36,6 @@ export class VoteOnEffortCommand implements ICommand {
 
   private async execute(file: TFile): Promise<void> {
     const newVoteCount = await this.effortVotingService.incrementEffortVotes(file);
-    new Notice(`Voted! New vote count: ${newVoteCount}`);
+    this.notifier.success(`Voted! New vote count: ${newVoteCount}`);
   }
 }

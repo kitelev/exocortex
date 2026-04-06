@@ -1,10 +1,12 @@
-import { App, TFile, Notice } from "obsidian";
+import type { TFile } from "obsidian";
+import type { App } from "obsidian";
 import { ICommand } from "./ICommand";
 import {
   CommandVisibilityContext,
   canTrashEffort,
   TaskStatusService,
   LoggingService,
+  type INotificationService,
 } from "exocortex";
 import {
   showTrashReasonModal,
@@ -18,6 +20,7 @@ export class TrashEffortCommand implements ICommand {
   constructor(
     private app: App,
     private taskStatusService: TaskStatusService,
+    private notifier: INotificationService,
   ) {}
 
   checkCallback = (checking: boolean, file: TFile, context: CommandVisibilityContext | null): boolean => {
@@ -28,7 +31,7 @@ export class TrashEffortCommand implements ICommand {
         try {
           await this.execute(file);
         } catch (error) {
-          new Notice(`Failed to trash effort: ${error instanceof Error ? error.message : String(error)}`);
+          this.notifier.error(`Failed to trash effort: ${error instanceof Error ? error.message : String(error)}`);
           LoggingService.error("Trash effort error", error instanceof Error ? error : undefined);
         }
       })();
@@ -45,7 +48,7 @@ export class TrashEffortCommand implements ICommand {
     }
 
     await this.taskStatusService.trashEffort(file, result.reason);
-    new Notice(`Trashed: ${file.basename}`);
+    this.notifier.success(`Trashed: ${file.basename}`);
   }
 
   private showModal(): Promise<TrashReasonModalResult> {

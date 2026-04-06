@@ -20,6 +20,7 @@ describe("CleanPropertiesCommand", () => {
   let mockPropertyCleanupService: jest.Mocked<PropertyCleanupService>;
   let mockFile: jest.Mocked<TFile>;
   let mockContext: CommandVisibilityContext;
+  let mockNotifier: { info: jest.Mock; success: jest.Mock; error: jest.Mock; warn: jest.Mock; confirm: jest.Mock };
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -44,7 +45,8 @@ describe("CleanPropertiesCommand", () => {
     };
 
     // Create command instance
-    command = new CleanPropertiesCommand(mockPropertyCleanupService);
+    mockNotifier = { info: jest.fn(), success: jest.fn(), error: jest.fn(), warn: jest.fn(), confirm: jest.fn() };
+    command = new CleanPropertiesCommand(mockPropertyCleanupService, mockNotifier);
   });
 
   describe("id and name", () => {
@@ -88,7 +90,7 @@ describe("CleanPropertiesCommand", () => {
       await flushPromises();
 
       expect(mockPropertyCleanupService.cleanEmptyProperties).toHaveBeenCalledWith(mockFile);
-      expect(Notice).toHaveBeenCalledWith("Cleaned empty properties: test-file");
+      expect(mockNotifier.success).toHaveBeenCalledWith("Cleaned empty properties: test-file");
     });
 
     it("should handle errors and show notice", async () => {
@@ -104,7 +106,7 @@ describe("CleanPropertiesCommand", () => {
 
       expect(mockPropertyCleanupService.cleanEmptyProperties).toHaveBeenCalledWith(mockFile);
       expect(LoggingService.error).toHaveBeenCalledWith("Clean properties error", error);
-      expect(Notice).toHaveBeenCalledWith("Failed to clean properties: Failed to clean");
+      expect(mockNotifier.error).toHaveBeenCalledWith("Failed to clean properties: Failed to clean");
     });
 
     it("should handle files with special characters", async () => {
@@ -123,7 +125,7 @@ describe("CleanPropertiesCommand", () => {
       await flushPromises();
 
       expect(mockPropertyCleanupService.cleanEmptyProperties).toHaveBeenCalledWith(specialFile);
-      expect(Notice).toHaveBeenCalledWith("Cleaned empty properties: [IMPORTANT] File (2024)");
+      expect(mockNotifier.success).toHaveBeenCalledWith("Cleaned empty properties: [IMPORTANT] File (2024)");
     });
 
     it("should handle file system errors", async () => {
@@ -139,7 +141,7 @@ describe("CleanPropertiesCommand", () => {
 
       expect(mockPropertyCleanupService.cleanEmptyProperties).toHaveBeenCalledWith(mockFile);
       expect(LoggingService.error).toHaveBeenCalledWith("Clean properties error", fsError);
-      expect(Notice).toHaveBeenCalledWith("Failed to clean properties: File locked");
+      expect(mockNotifier.error).toHaveBeenCalledWith("Failed to clean properties: File locked");
     });
 
     it("should handle archived context", () => {
@@ -168,7 +170,7 @@ describe("CleanPropertiesCommand", () => {
       expect(mockPropertyCleanupService.cleanEmptyProperties).toHaveBeenCalledTimes(3);
       files.forEach((file, index) => {
         expect(mockPropertyCleanupService.cleanEmptyProperties).toHaveBeenNthCalledWith(index + 1, file);
-        expect(Notice).toHaveBeenCalledWith(`Cleaned empty properties: ${file.basename}`);
+        expect(mockNotifier.success).toHaveBeenCalledWith(`Cleaned empty properties: ${file.basename}`);
       });
     });
   });

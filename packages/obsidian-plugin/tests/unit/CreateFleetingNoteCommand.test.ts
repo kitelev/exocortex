@@ -26,6 +26,7 @@ const mockShowFleetingNoteModal = showFleetingNoteModal as jest.MockedFunction<t
 
 describe("CreateFleetingNoteCommand", () => {
   let command: CreateFleetingNoteCommand;
+  let mockNotifier: any;
   let mockApp: jest.Mocked<App>;
   let mockFleetingNoteCreationService: jest.Mocked<FleetingNoteCreationService>;
   let mockVaultAdapter: jest.Mocked<ObsidianVaultAdapter>;
@@ -56,10 +57,12 @@ describe("CreateFleetingNoteCommand", () => {
       .spyOn(CommandHelpers, "openFileInNewTab")
       .mockResolvedValue(undefined);
 
+    mockNotifier = { info: jest.fn(), success: jest.fn(), error: jest.fn(), warn: jest.fn(), confirm: jest.fn() };
     command = new CreateFleetingNoteCommand(
       mockApp,
       mockFleetingNoteCreationService,
       mockVaultAdapter,
+      mockNotifier,
     );
   });
 
@@ -89,7 +92,7 @@ describe("CreateFleetingNoteCommand", () => {
     expect(mockFleetingNoteCreationService.createFleetingNote).toHaveBeenCalledWith("Test note");
     expect(mockVaultAdapter.toTFile).toHaveBeenCalledWith(createdFile);
     expect(openFileSpy).toHaveBeenCalledWith(mockApp, mockTFile);
-    expect(Notice).toHaveBeenCalledWith("Fleeting note created: test");
+    expect(mockNotifier.success).toHaveBeenCalledWith("Fleeting note created: test");
   });
 
   it("does nothing when modal is cancelled", async () => {
@@ -99,7 +102,7 @@ describe("CreateFleetingNoteCommand", () => {
 
     expect(mockFleetingNoteCreationService.createFleetingNote).not.toHaveBeenCalled();
     expect(openFileSpy).not.toHaveBeenCalled();
-    expect(Notice).not.toHaveBeenCalled();
+    expect(mockNotifier.success).not.toHaveBeenCalled();
   });
 
   it("handles service errors gracefully", async () => {
@@ -111,6 +114,6 @@ describe("CreateFleetingNoteCommand", () => {
     await command.callback();
 
     expect(LoggingService.error).toHaveBeenCalledWith("Create fleeting note error", error);
-    expect(Notice).toHaveBeenCalledWith("Failed to create fleeting note: Vault failure");
+    expect(mockNotifier.error).toHaveBeenCalledWith("Failed to create fleeting note: Vault failure");
   });
 });

@@ -1,4 +1,5 @@
-import { App, MetadataCache, TFile, Vault, Platform } from "obsidian";
+import type { App, MetadataCache, TFile, Vault } from "obsidian";
+import { Platform } from "obsidian";
 import { v4 as uuidv4 } from "uuid";
 import { ILogger } from '@plugin/adapters/logging/ILogger';
 import { LoggerFactory } from '@plugin/adapters/logging/LoggerFactory';

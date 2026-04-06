@@ -13,7 +13,8 @@
  * @since 1.0.0
  */
 
-import { TFile, type App } from "obsidian";
+import { TFile } from "obsidian";
+import type { App } from "obsidian";
 import type {
   IVaultAdapter,
   IFile,

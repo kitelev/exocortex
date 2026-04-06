@@ -25,8 +25,10 @@ describe("ConvertProjectToTaskCommand", () => {
       parent: null,
     } as TFile;
 
+    const mockNotifier = { info: jest.fn(), success: jest.fn(), error: jest.fn(), warn: jest.fn(), confirm: jest.fn() };
     command = new ConvertProjectToTaskCommand(
       mockConversionService,
+      mockNotifier,
     );
   });
 

@@ -59,7 +59,14 @@ describe("SPARQLCodeBlockProcessor Error Handling", () => {
 
     mockEl = document.createElement("div");
 
-    processor = new SPARQLCodeBlockProcessor(mockPlugin);
+    const mockNotifier = {
+      info: jest.fn(),
+      success: jest.fn(),
+      error: jest.fn((msg: string) => { mockNotice(msg, 5000); }),
+      warn: jest.fn(),
+      confirm: jest.fn(),
+    };
+    processor = new SPARQLCodeBlockProcessor(mockPlugin, mockNotifier as any);
   });
 
   describe("Invalid Query Syntax Errors", () => {

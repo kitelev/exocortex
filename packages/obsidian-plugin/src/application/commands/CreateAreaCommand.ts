@@ -1,9 +1,10 @@
-import { App, TFile } from "obsidian";
+import type { App, TFile } from "obsidian";
 import {
   CommandVisibilityContext,
   canCreateChildArea,
   AreaCreationService,
   type IFile,
+  type INotificationService,
 } from "exocortex";
 import type { LabelInputModalResult } from '@plugin/presentation/modals/modalSchemas';
 import { ObsidianVaultAdapter } from '@plugin/adapters/ObsidianVaultAdapter';
@@ -17,8 +18,9 @@ export class CreateAreaCommand extends BaseContextAssetCreationCommand {
     app: App,
     private areaCreationService: AreaCreationService,
     vaultAdapter: ObsidianVaultAdapter,
+    notifier: INotificationService,
   ) {
-    super(app, vaultAdapter);
+    super(app, vaultAdapter, notifier);
   }
 
   protected canCreate(context: CommandVisibilityContext): boolean {

@@ -198,7 +198,7 @@ describe("ExocortexPlugin", () => {
       expect(rendererCall[3]).toBe(plugin.vaultAdapter);
       // TaskStatusService is now resolved from DI container, not instantiated directly
       expect(TaskTrackingService).toHaveBeenCalledWith(mockApp, mockVault, mockMetadataCache);
-      expect(SPARQLCodeBlockProcessor).toHaveBeenCalledWith(plugin);
+      expect(SPARQLCodeBlockProcessor).toHaveBeenCalledWith(plugin, expect.any(Object));
       expect(CommandManager).toHaveBeenCalledWith(mockApp);
       expect(mockCommandManager.registerAllCommands).toHaveBeenCalled();
       expect(plugin.addSettingTab).toHaveBeenCalled();

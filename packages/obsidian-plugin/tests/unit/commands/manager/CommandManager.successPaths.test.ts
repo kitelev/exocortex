@@ -24,7 +24,7 @@ describe("CommandManager - success paths (global commands)", () => {
       command.callback();
 
       expect(mockCallback).toHaveBeenCalled();
-      expect(Notice).toHaveBeenCalledWith("Layout reloaded");
+      expect(Notice).toHaveBeenCalledWith("✓ Layout reloaded", expect.any(Number));
     });
 
     it("should execute toggle-layout-visibility successfully", async () => {

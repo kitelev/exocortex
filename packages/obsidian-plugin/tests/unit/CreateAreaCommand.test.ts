@@ -26,6 +26,7 @@ jest.mock("exocortex", () => ({
 
 describe("CreateAreaCommand", () => {
   let command: CreateAreaCommand;
+  let mockNotifier: any;
   let mockApp: jest.Mocked<App>;
   let mockAreaCreationService: jest.Mocked<AreaCreationService>;
   let mockVaultAdapter: jest.Mocked<ObsidianVaultAdapter>;
@@ -86,7 +87,8 @@ describe("CreateAreaCommand", () => {
     };
 
     // Create command instance
-    command = new CreateAreaCommand(mockApp, mockAreaCreationService, mockVaultAdapter);
+    mockNotifier = { info: jest.fn(), success: jest.fn(), error: jest.fn(), warn: jest.fn(), confirm: jest.fn() };
+    command = new CreateAreaCommand(mockApp, mockAreaCreationService, mockVaultAdapter, mockNotifier);
   });
 
   describe("id and name", () => {
@@ -141,7 +143,7 @@ describe("CreateAreaCommand", () => {
       expect(mockVaultAdapter.toTFile).toHaveBeenCalledWith(createdFile);
       expect(mockLeaf.openFile).toHaveBeenCalledWith(mockTFile);
       expect(mockApp.workspace.setActiveLeaf).toHaveBeenCalledWith(mockLeaf, { focus: true });
-      expect(Notice).toHaveBeenCalledWith("Area created: new-area");
+      expect(mockNotifier.success).toHaveBeenCalledWith("Area created: new-area");
     });
 
     it("should handle modal cancellation", async () => {
@@ -157,7 +159,7 @@ describe("CreateAreaCommand", () => {
 
       expect(mockShowLabelInputModal).toHaveBeenCalled();
       expect(mockAreaCreationService.createChildArea).not.toHaveBeenCalled();
-      expect(Notice).not.toHaveBeenCalled();
+      expect(mockNotifier.success).not.toHaveBeenCalled();
     });
 
     it("should handle service error and show error notice", async () => {
@@ -174,7 +176,7 @@ describe("CreateAreaCommand", () => {
 
       expect(mockAreaCreationService.createChildArea).toHaveBeenCalled();
       expect(LoggingService.error).toHaveBeenCalledWith("Create area error", error);
-      expect(Notice).toHaveBeenCalledWith("Failed to create area: Failed to create area");
+      expect(mockNotifier.error).toHaveBeenCalledWith("Failed to create area: Failed to create area");
     });
 
     it("should wait for file to become active", async () => {
@@ -197,7 +199,7 @@ describe("CreateAreaCommand", () => {
       await waitForCondition(() => (mockApp.workspace.getActiveFile as jest.Mock).mock.calls.length >= 3);
 
       expect(mockApp.workspace.getActiveFile).toHaveBeenCalledTimes(3);
-      expect(Notice).toHaveBeenCalledWith("Area created: new-area");
+      expect(mockNotifier.success).toHaveBeenCalledWith("Area created: new-area");
     });
 
     it("should handle missing frontmatter metadata", async () => {
@@ -218,7 +220,7 @@ describe("CreateAreaCommand", () => {
         {}, // Empty metadata
         "Test"
       );
-      expect(Notice).toHaveBeenCalledWith("Area created: new-area");
+      expect(mockNotifier.success).toHaveBeenCalledWith("Area created: new-area");
     });
 
     it("should handle null cache from metadataCache", async () => {
@@ -239,7 +241,7 @@ describe("CreateAreaCommand", () => {
         {}, // Empty metadata
         "Test"
       );
-      expect(Notice).toHaveBeenCalledWith("Area created: new-area");
+      expect(mockNotifier.success).toHaveBeenCalledWith("Area created: new-area");
     });
 
     it("should timeout after max attempts waiting for file", async () => {
@@ -257,13 +259,13 @@ describe("CreateAreaCommand", () => {
 
       // Wait for polling loop to complete (20 attempts × 100ms = 2000ms + buffer)
       await waitForCondition(
-        () => (Notice as jest.Mock).mock.calls.length > 0,
+        () => mockNotifier.success.mock.calls.length > 0,
         { timeout: 5000, interval: 100 }
       );
 
       // Should still complete successfully even if file doesn't become active
       expect(mockApp.workspace.getActiveFile).toHaveBeenCalledTimes(20); // max attempts
-      expect(Notice).toHaveBeenCalledWith("Area created: new-area");
+      expect(mockNotifier.success).toHaveBeenCalledWith("Area created: new-area");
     });
 
     it("should open file in new tab when openInNewTab is true", async () => {
@@ -280,7 +282,7 @@ describe("CreateAreaCommand", () => {
       await flushPromises();
 
       expect(mockApp.workspace.getLeaf).toHaveBeenCalledWith("tab");
-      expect(Notice).toHaveBeenCalledWith("Area created: new-area");
+      expect(mockNotifier.success).toHaveBeenCalledWith("Area created: new-area");
     });
 
     it("should open file in current tab when openInNewTab is false", async () => {
@@ -297,7 +299,7 @@ describe("CreateAreaCommand", () => {
       await flushPromises();
 
       expect(mockApp.workspace.getLeaf).toHaveBeenCalledWith(false);
-      expect(Notice).toHaveBeenCalledWith("Area created: new-area");
+      expect(mockNotifier.success).toHaveBeenCalledWith("Area created: new-area");
     });
   });
 });

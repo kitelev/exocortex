@@ -20,6 +20,7 @@ describe("MoveToToDoCommand", () => {
   let mockTaskStatusService: jest.Mocked<TaskStatusService>;
   let mockFile: jest.Mocked<TFile>;
   let mockContext: CommandVisibilityContext;
+  let mockNotifier: { info: jest.Mock; success: jest.Mock; error: jest.Mock; warn: jest.Mock; confirm: jest.Mock };
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -44,7 +45,8 @@ describe("MoveToToDoCommand", () => {
     };
 
     // Create command instance
-    command = new MoveToToDoCommand(mockTaskStatusService);
+    mockNotifier = { info: jest.fn(), success: jest.fn(), error: jest.fn(), warn: jest.fn(), confirm: jest.fn() };
+    command = new MoveToToDoCommand(mockTaskStatusService, mockNotifier);
   });
 
   describe("id and name", () => {
@@ -88,7 +90,7 @@ describe("MoveToToDoCommand", () => {
       await flushPromises();
 
       expect(mockTaskStatusService.moveToToDo).toHaveBeenCalledWith(mockFile);
-      expect(Notice).toHaveBeenCalledWith("Moved to ToDo: test-task");
+      expect(mockNotifier.success).toHaveBeenCalledWith("Moved to ToDo: test-task");
     });
 
     it("should handle errors and show notice", async () => {
@@ -104,7 +106,7 @@ describe("MoveToToDoCommand", () => {
 
       expect(mockTaskStatusService.moveToToDo).toHaveBeenCalledWith(mockFile);
       expect(LoggingService.error).toHaveBeenCalledWith("Move to todo error", error);
-      expect(Notice).toHaveBeenCalledWith("Failed to move to todo: Failed to move to todo");
+      expect(mockNotifier.error).toHaveBeenCalledWith("Failed to move to todo: Failed to move to todo");
     });
 
     it("should handle ToDo status context", () => {
@@ -130,7 +132,7 @@ describe("MoveToToDoCommand", () => {
       await flushPromises();
 
       expect(mockTaskStatusService.moveToToDo).toHaveBeenCalledWith(numberedFile);
-      expect(Notice).toHaveBeenCalledWith("Moved to ToDo: task-123");
+      expect(mockNotifier.success).toHaveBeenCalledWith("Moved to ToDo: task-123");
     });
 
     it("should handle permission errors", async () => {
@@ -146,7 +148,7 @@ describe("MoveToToDoCommand", () => {
 
       expect(mockTaskStatusService.moveToToDo).toHaveBeenCalledWith(mockFile);
       expect(LoggingService.error).toHaveBeenCalledWith("Move to todo error", permissionError);
-      expect(Notice).toHaveBeenCalledWith("Failed to move to todo: Permission denied");
+      expect(mockNotifier.error).toHaveBeenCalledWith("Failed to move to todo: Permission denied");
     });
   });
 });

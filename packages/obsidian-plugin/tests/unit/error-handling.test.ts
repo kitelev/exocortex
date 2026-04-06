@@ -63,6 +63,7 @@ jest.mock("exocortex", () => ({
 
 describe("Error Handling - Negative Tests", () => {
   describe("1. CreateInstanceCommand - toTFile conversion failure", () => {
+  let mockNotifier: any;
     let command: CreateInstanceCommand;
     let mockApp: jest.Mocked<App>;
     let mockRuleResolver: jest.Mocked<InstantiationRuleResolver>;
@@ -123,7 +124,8 @@ describe("Error Handling - Negative Tests", () => {
         isDraft: false,
       };
 
-      command = new CreateInstanceCommand(mockApp, mockRuleResolver, mockGenericAssetCreationService, mockVaultAdapter);
+      mockNotifier = { info: jest.fn(), success: jest.fn(), error: jest.fn(), warn: jest.fn(), confirm: jest.fn() };
+      command = new CreateInstanceCommand(mockApp, mockRuleResolver, mockGenericAssetCreationService, mockVaultAdapter, mockNotifier);
     });
 
     it("should show error notice when toTFile returns null", async () => {
@@ -141,7 +143,7 @@ describe("Error Handling - Negative Tests", () => {
 
       expect(mockVaultAdapter.toTFile).toHaveBeenCalledWith(createdFile);
       expect(LoggingService.error).toHaveBeenCalledWith("Create instance error", expect.any(Error));
-      expect(Notice).toHaveBeenCalledWith(
+      expect(mockNotifier.error).toHaveBeenCalledWith(
         expect.stringContaining("Failed to create instance")
       );
     });

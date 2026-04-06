@@ -39,6 +39,7 @@ describe("CreateInstanceCommand Error Handling", () => {
   let mockLeaf: jest.Mocked<WorkspaceLeaf>;
   let mockTFile: jest.Mocked<TFile>;
 
+  let mockNotifier: any;
   beforeEach(() => {
     jest.clearAllMocks();
 
@@ -96,11 +97,13 @@ describe("CreateInstanceCommand Error Handling", () => {
       isDraft: false,
     };
 
+    mockNotifier = { info: jest.fn(), success: jest.fn(), error: jest.fn(), warn: jest.fn(), confirm: jest.fn() };
     command = new CreateInstanceCommand(
       mockApp,
       mockRuleResolver,
       mockGenericAssetCreationService,
       mockVaultAdapter,
+      mockNotifier,
     );
   });
 
@@ -120,7 +123,7 @@ describe("CreateInstanceCommand Error Handling", () => {
         "Create instance error",
         expect.any(Error),
       );
-      expect(Notice).toHaveBeenCalledWith(
+      expect(mockNotifier.error).toHaveBeenCalledWith(
         "Failed to create instance: Modal initialization failed",
       );
     });
@@ -151,7 +154,7 @@ describe("CreateInstanceCommand Error Handling", () => {
       command.checkCallback(false, mockFile, mockContext);
       await flushPromises();
 
-      expect(Notice).toHaveBeenCalledWith(
+      expect(mockNotifier.error).toHaveBeenCalledWith(
         "Failed to create instance: Network request failed: ETIMEDOUT",
       );
       expect(LoggingService.error).toHaveBeenCalledWith(
@@ -170,7 +173,7 @@ describe("CreateInstanceCommand Error Handling", () => {
       command.checkCallback(false, mockFile, mockContext);
       await flushPromises();
 
-      expect(Notice).toHaveBeenCalledWith(
+      expect(mockNotifier.error).toHaveBeenCalledWith(
         "Failed to create instance: EACCES: permission denied",
       );
     });
@@ -185,7 +188,7 @@ describe("CreateInstanceCommand Error Handling", () => {
       command.checkCallback(false, mockFile, mockContext);
       await flushPromises();
 
-      expect(Notice).toHaveBeenCalledWith(
+      expect(mockNotifier.error).toHaveBeenCalledWith(
         "Failed to create instance: ENOSPC: no space left on device",
       );
     });
@@ -200,7 +203,7 @@ describe("CreateInstanceCommand Error Handling", () => {
       command.checkCallback(false, mockFile, mockContext);
       await flushPromises();
 
-      expect(Notice).toHaveBeenCalledWith(
+      expect(mockNotifier.error).toHaveBeenCalledWith(
         "Failed to create instance: File already exists: task.md",
       );
     });
@@ -214,7 +217,7 @@ describe("CreateInstanceCommand Error Handling", () => {
       command.checkCallback(false, mockFile, mockContext);
       await flushPromises();
 
-      expect(Notice).toHaveBeenCalledWith(
+      expect(mockNotifier.error).toHaveBeenCalledWith(
         "Failed to create instance: undefined",
       );
     });
@@ -228,7 +231,7 @@ describe("CreateInstanceCommand Error Handling", () => {
       command.checkCallback(false, mockFile, mockContext);
       await flushPromises();
 
-      expect(Notice).toHaveBeenCalledWith(
+      expect(mockNotifier.error).toHaveBeenCalledWith(
         "Failed to create instance: String error message",
       );
     });
@@ -242,7 +245,7 @@ describe("CreateInstanceCommand Error Handling", () => {
       command.checkCallback(false, mockFile, mockContext);
       await flushPromises();
 
-      expect(Notice).toHaveBeenCalledWith("Failed to create instance: 404");
+      expect(mockNotifier.error).toHaveBeenCalledWith("Failed to create instance: 404");
     });
   });
 
@@ -260,7 +263,7 @@ describe("CreateInstanceCommand Error Handling", () => {
       command.checkCallback(false, mockFile, mockContext);
       await flushPromises();
 
-      expect(Notice).toHaveBeenCalledWith(
+      expect(mockNotifier.error).toHaveBeenCalledWith(
         expect.stringContaining("Failed to create instance:"),
       );
     });
@@ -278,7 +281,7 @@ describe("CreateInstanceCommand Error Handling", () => {
       command.checkCallback(false, mockFile, mockContext);
       await flushPromises();
 
-      expect(Notice).toHaveBeenCalledWith(
+      expect(mockNotifier.error).toHaveBeenCalledWith(
         "Failed to create instance: File not found in vault cache",
       );
     });
@@ -298,7 +301,7 @@ describe("CreateInstanceCommand Error Handling", () => {
       command.checkCallback(false, mockFile, mockContext);
       await flushPromises();
 
-      expect(Notice).toHaveBeenCalledWith(
+      expect(mockNotifier.error).toHaveBeenCalledWith(
         "Failed to create instance: Cannot open file",
       );
     });
@@ -314,7 +317,7 @@ describe("CreateInstanceCommand Error Handling", () => {
       command.checkCallback(false, mockFile, mockContext);
       await flushPromises();
 
-      expect(Notice).toHaveBeenCalledWith(
+      expect(mockNotifier.error).toHaveBeenCalledWith(
         expect.stringContaining("Failed to create instance:"),
       );
     });
@@ -332,7 +335,7 @@ describe("CreateInstanceCommand Error Handling", () => {
       command.checkCallback(false, mockFile, mockContext);
       await flushPromises();
 
-      expect(Notice).toHaveBeenCalledWith(
+      expect(mockNotifier.error).toHaveBeenCalledWith(
         "Failed to create instance: Workspace state invalid",
       );
     });
@@ -360,7 +363,7 @@ describe("CreateInstanceCommand Error Handling", () => {
       command.checkCallback(false, mockFile, mockContext);
       await flushPromises();
 
-      expect(Notice).toHaveBeenCalledWith(
+      expect(mockNotifier.error).toHaveBeenCalledWith(
         "Failed to create instance: Cannot create new tab",
       );
     });
@@ -387,7 +390,7 @@ describe("CreateInstanceCommand Error Handling", () => {
 
       await new Promise((resolve) => setTimeout(resolve, 2500));
 
-      expect(Notice).toHaveBeenCalledWith("Instance created: new-instance");
+      expect(mockNotifier.success).toHaveBeenCalledWith("Instance created: new-instance");
     });
 
     it("should handle getActiveFile returning null consistently", async () => {
@@ -404,7 +407,7 @@ describe("CreateInstanceCommand Error Handling", () => {
 
       await new Promise((resolve) => setTimeout(resolve, 2500));
 
-      expect(Notice).toHaveBeenCalledWith("Instance created: new-instance");
+      expect(mockNotifier.success).toHaveBeenCalledWith("Instance created: new-instance");
       expect(mockApp.workspace.getActiveFile).toHaveBeenCalled();
     });
   });

@@ -16,6 +16,7 @@ describe("EditPropertiesCommand", () => {
   let mockApp: App;
   let mockPlugin: any;
   let command: EditPropertiesCommand;
+  let mockNotifier: { info: jest.Mock; success: jest.Mock; error: jest.Mock; warn: jest.Mock; confirm: jest.Mock };
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -30,7 +31,8 @@ describe("EditPropertiesCommand", () => {
       refreshLayout: jest.fn(),
     };
 
-    command = new EditPropertiesCommand(mockApp, mockPlugin);
+    mockNotifier = { info: jest.fn(), success: jest.fn(), error: jest.fn(), warn: jest.fn(), confirm: jest.fn() };
+    command = new EditPropertiesCommand(mockApp, mockPlugin, mockNotifier);
   });
 
   describe("command properties", () => {
@@ -114,7 +116,7 @@ describe("EditPropertiesCommand", () => {
 
       command.checkCallback(false, mockFile, null);
 
-      expect(Notice).toHaveBeenCalledWith(
+      expect(mockNotifier.info).toHaveBeenCalledWith(
         "This file has no frontmatter properties to edit",
       );
     });
@@ -128,7 +130,7 @@ describe("EditPropertiesCommand", () => {
 
       command.checkCallback(false, mockFile, null);
 
-      expect(Notice).toHaveBeenCalledWith(
+      expect(mockNotifier.info).toHaveBeenCalledWith(
         "This file has no frontmatter properties to edit",
       );
     });

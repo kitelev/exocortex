@@ -9,6 +9,7 @@ jest.mock("obsidian", () => ({
 
 describe("ToggleArchivedAssetsCommand", () => {
   let command: ToggleArchivedAssetsCommand;
+  let mockNotifier: any;
   let mockPlugin: jest.Mocked<ExocortexPluginInterface>;
 
   beforeEach(() => {
@@ -24,7 +25,8 @@ describe("ToggleArchivedAssetsCommand", () => {
     } as unknown as jest.Mocked<ExocortexPluginInterface>;
 
     // Create command instance
-    command = new ToggleArchivedAssetsCommand(mockPlugin);
+    mockNotifier = { info: jest.fn(), success: jest.fn(), error: jest.fn(), warn: jest.fn(), confirm: jest.fn() };
+    command = new ToggleArchivedAssetsCommand(mockPlugin, mockNotifier);
   });
 
   describe("id and name", () => {
@@ -44,7 +46,7 @@ describe("ToggleArchivedAssetsCommand", () => {
       expect(mockPlugin.settings.showArchivedAssets).toBe(true);
       expect(mockPlugin.saveSettings).toHaveBeenCalled();
       expect(mockPlugin.refreshLayout).toHaveBeenCalled();
-      expect(Notice).toHaveBeenCalledWith("Archived assets shown");
+      expect(mockNotifier.info).toHaveBeenCalledWith("Archived assets shown");
     });
 
     it("should toggle showArchivedAssets from true to false", async () => {
@@ -56,7 +58,7 @@ describe("ToggleArchivedAssetsCommand", () => {
       expect(mockPlugin.settings.showArchivedAssets).toBe(false);
       expect(mockPlugin.saveSettings).toHaveBeenCalled();
       expect(mockPlugin.refreshLayout).toHaveBeenCalled();
-      expect(Notice).toHaveBeenCalledWith("Archived assets hidden");
+      expect(mockNotifier.info).toHaveBeenCalledWith("Archived assets hidden");
     });
 
     it("should handle multiple toggles correctly", async () => {
@@ -66,17 +68,17 @@ describe("ToggleArchivedAssetsCommand", () => {
       // First toggle (false -> true)
       await command.callback();
       expect(mockPlugin.settings.showArchivedAssets).toBe(true);
-      expect(Notice).toHaveBeenNthCalledWith(1, "Archived assets shown");
+      expect(mockNotifier.info).toHaveBeenNthCalledWith(1, "Archived assets shown");
 
       // Second toggle (true -> false)
       await command.callback();
       expect(mockPlugin.settings.showArchivedAssets).toBe(false);
-      expect(Notice).toHaveBeenNthCalledWith(2, "Archived assets hidden");
+      expect(mockNotifier.info).toHaveBeenNthCalledWith(2, "Archived assets hidden");
 
       // Third toggle (false -> true)
       await command.callback();
       expect(mockPlugin.settings.showArchivedAssets).toBe(true);
-      expect(Notice).toHaveBeenNthCalledWith(3, "Archived assets shown");
+      expect(mockNotifier.info).toHaveBeenNthCalledWith(3, "Archived assets shown");
 
       expect(mockPlugin.saveSettings).toHaveBeenCalledTimes(3);
       expect(mockPlugin.refreshLayout).toHaveBeenCalledTimes(3);
@@ -105,7 +107,7 @@ describe("ToggleArchivedAssetsCommand", () => {
 
       expect(mockPlugin.settings.showArchivedAssets).toBe(true);
       expect(mockPlugin.saveSettings).toHaveBeenCalled();
-      expect(Notice).toHaveBeenCalledWith("Archived assets shown");
+      expect(mockNotifier.info).toHaveBeenCalledWith("Archived assets shown");
       // Should not throw even if refreshLayout is undefined
     });
 
@@ -114,12 +116,12 @@ describe("ToggleArchivedAssetsCommand", () => {
       mockPlugin.saveSettings.mockResolvedValue();
 
       // First command instance
-      const command1 = new ToggleArchivedAssetsCommand(mockPlugin);
+      const command1 = new ToggleArchivedAssetsCommand(mockPlugin, mockNotifier);
       await command1.callback();
       expect(mockPlugin.settings.showArchivedAssets).toBe(true);
 
       // Second command instance should see the updated state
-      const command2 = new ToggleArchivedAssetsCommand(mockPlugin);
+      const command2 = new ToggleArchivedAssetsCommand(mockPlugin, mockNotifier);
       await command2.callback();
       expect(mockPlugin.settings.showArchivedAssets).toBe(false);
     });
@@ -144,7 +146,7 @@ describe("ToggleArchivedAssetsCommand", () => {
 
       expect(mockPlugin.settings.showArchivedAssets).toBe(true);
       expect(mockPlugin.saveSettings).toHaveBeenCalled();
-      expect(Notice).toHaveBeenCalledWith("Archived assets shown");
+      expect(mockNotifier.info).toHaveBeenCalledWith("Archived assets shown");
     });
   });
 });

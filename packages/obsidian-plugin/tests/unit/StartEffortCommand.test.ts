@@ -20,6 +20,7 @@ describe("StartEffortCommand", () => {
   let mockTaskStatusService: jest.Mocked<TaskStatusService>;
   let mockFile: jest.Mocked<TFile>;
   let mockContext: CommandVisibilityContext;
+  let mockNotifier: { info: jest.Mock; success: jest.Mock; error: jest.Mock; warn: jest.Mock; confirm: jest.Mock };
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -44,7 +45,8 @@ describe("StartEffortCommand", () => {
     };
 
     // Create command instance
-    command = new StartEffortCommand(mockTaskStatusService);
+    mockNotifier = { info: jest.fn(), success: jest.fn(), error: jest.fn(), warn: jest.fn(), confirm: jest.fn() };
+    command = new StartEffortCommand(mockTaskStatusService, mockNotifier);
   });
 
   describe("id and name", () => {
@@ -88,7 +90,7 @@ describe("StartEffortCommand", () => {
       await flushPromises();
 
       expect(mockTaskStatusService.startEffort).toHaveBeenCalledWith(mockFile);
-      expect(Notice).toHaveBeenCalledWith("Started effort: test-effort");
+      expect(mockNotifier.success).toHaveBeenCalledWith("Started effort: test-effort");
     });
 
     it("should handle errors and show notice", async () => {
@@ -104,7 +106,7 @@ describe("StartEffortCommand", () => {
 
       expect(mockTaskStatusService.startEffort).toHaveBeenCalledWith(mockFile);
       expect(LoggingService.error).toHaveBeenCalledWith("Start effort error", error);
-      expect(Notice).toHaveBeenCalledWith("Failed to start effort: Failed to start");
+      expect(mockNotifier.error).toHaveBeenCalledWith("Failed to start effort: Failed to start");
     });
 
     it("should handle already started effort", () => {
@@ -130,7 +132,7 @@ describe("StartEffortCommand", () => {
       await flushPromises();
 
       expect(mockTaskStatusService.startEffort).toHaveBeenCalledWith(unicodeFile);
-      expect(Notice).toHaveBeenCalledWith("Started effort: 努力-测试");
+      expect(mockNotifier.success).toHaveBeenCalledWith("Started effort: 努力-测试");
     });
   });
 });

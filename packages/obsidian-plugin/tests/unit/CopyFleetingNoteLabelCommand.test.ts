@@ -17,6 +17,7 @@ jest.mock("exocortex", () => ({
 
 describe("CopyFleetingNoteLabelCommand", () => {
   let command: CopyFleetingNoteLabelCommand;
+  let mockNotifier: any;
   let mockApp: jest.Mocked<App>;
   let mockFile: jest.Mocked<TFile>;
   let mockContext: CommandVisibilityContext;
@@ -61,7 +62,8 @@ describe("CopyFleetingNoteLabelCommand", () => {
     });
 
     // Create command instance
-    command = new CopyFleetingNoteLabelCommand(mockApp);
+    mockNotifier = { info: jest.fn(), success: jest.fn(), error: jest.fn(), warn: jest.fn(), confirm: jest.fn() };
+    command = new CopyFleetingNoteLabelCommand(mockApp, mockNotifier);
   });
 
   afterEach(() => {
@@ -112,7 +114,7 @@ describe("CopyFleetingNoteLabelCommand", () => {
 
       expect(mockApp.vault.read).toHaveBeenCalledWith(mockFile);
       expect(navigator.clipboard.writeText).toHaveBeenCalledWith("This is the label to copy");
-      expect(Notice).toHaveBeenCalledWith("Label copied to clipboard");
+      expect(mockNotifier.success).toHaveBeenCalledWith("Label copied to clipboard");
     });
 
     it("should trim whitespace from first line", async () => {
@@ -125,7 +127,7 @@ describe("CopyFleetingNoteLabelCommand", () => {
       await flushPromises();
 
       expect(navigator.clipboard.writeText).toHaveBeenCalledWith("Label with spaces");
-      expect(Notice).toHaveBeenCalledWith("Label copied to clipboard");
+      expect(mockNotifier.success).toHaveBeenCalledWith("Label copied to clipboard");
     });
 
     it("should skip empty lines after frontmatter to find first content line", async () => {
@@ -138,7 +140,7 @@ describe("CopyFleetingNoteLabelCommand", () => {
       await flushPromises();
 
       expect(navigator.clipboard.writeText).toHaveBeenCalledWith("Actual label");
-      expect(Notice).toHaveBeenCalledWith("Label copied to clipboard");
+      expect(mockNotifier.success).toHaveBeenCalledWith("Label copied to clipboard");
     });
 
     it("should show notice when label is empty", async () => {
@@ -151,7 +153,7 @@ describe("CopyFleetingNoteLabelCommand", () => {
       await flushPromises();
 
       expect(navigator.clipboard.writeText).not.toHaveBeenCalled();
-      expect(Notice).toHaveBeenCalledWith("Label is empty");
+      expect(mockNotifier.warn).toHaveBeenCalledWith("Label is empty");
     });
 
     it("should show notice when file has only whitespace after frontmatter", async () => {
@@ -164,7 +166,7 @@ describe("CopyFleetingNoteLabelCommand", () => {
       await flushPromises();
 
       expect(navigator.clipboard.writeText).not.toHaveBeenCalled();
-      expect(Notice).toHaveBeenCalledWith("Label is empty");
+      expect(mockNotifier.warn).toHaveBeenCalledWith("Label is empty");
     });
 
     it("should handle errors and show notice", async () => {
@@ -179,7 +181,7 @@ describe("CopyFleetingNoteLabelCommand", () => {
       await flushPromises();
 
       expect(LoggingService.error).toHaveBeenCalledWith("Copy fleeting note label error", error);
-      expect(Notice).toHaveBeenCalledWith("Failed to copy label: Failed to read file");
+      expect(mockNotifier.error).toHaveBeenCalledWith("Failed to copy label: Failed to read file");
     });
 
     it("should handle clipboard write errors", async () => {
@@ -195,7 +197,7 @@ describe("CopyFleetingNoteLabelCommand", () => {
       await flushPromises();
 
       expect(LoggingService.error).toHaveBeenCalledWith("Copy fleeting note label error", clipboardError);
-      expect(Notice).toHaveBeenCalledWith("Failed to copy label: Clipboard access denied");
+      expect(mockNotifier.error).toHaveBeenCalledWith("Failed to copy label: Clipboard access denied");
     });
 
     it("should handle file without frontmatter", async () => {
@@ -209,7 +211,7 @@ describe("CopyFleetingNoteLabelCommand", () => {
 
       // When no frontmatter, the first line is the label
       expect(navigator.clipboard.writeText).toHaveBeenCalledWith("Just a plain file");
-      expect(Notice).toHaveBeenCalledWith("Label copied to clipboard");
+      expect(mockNotifier.success).toHaveBeenCalledWith("Label copied to clipboard");
     });
 
     it("should handle file with only frontmatter", async () => {
@@ -222,7 +224,7 @@ describe("CopyFleetingNoteLabelCommand", () => {
       await flushPromises();
 
       expect(navigator.clipboard.writeText).not.toHaveBeenCalled();
-      expect(Notice).toHaveBeenCalledWith("Label is empty");
+      expect(mockNotifier.warn).toHaveBeenCalledWith("Label is empty");
     });
   });
 });

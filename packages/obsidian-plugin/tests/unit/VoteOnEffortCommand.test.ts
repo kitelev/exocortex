@@ -20,6 +20,7 @@ describe("VoteOnEffortCommand", () => {
   let mockEffortVotingService: jest.Mocked<EffortVotingService>;
   let mockFile: jest.Mocked<TFile>;
   let mockContext: CommandVisibilityContext;
+  let mockNotifier: { info: jest.Mock; success: jest.Mock; error: jest.Mock; warn: jest.Mock; confirm: jest.Mock };
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -44,7 +45,8 @@ describe("VoteOnEffortCommand", () => {
     };
 
     // Create command instance
-    command = new VoteOnEffortCommand(mockEffortVotingService);
+    mockNotifier = { info: jest.fn(), success: jest.fn(), error: jest.fn(), warn: jest.fn(), confirm: jest.fn() };
+    command = new VoteOnEffortCommand(mockEffortVotingService, mockNotifier);
   });
 
   describe("id and name", () => {
@@ -87,7 +89,7 @@ describe("VoteOnEffortCommand", () => {
       await flushPromises();
 
       expect(mockEffortVotingService.incrementEffortVotes).toHaveBeenCalledWith(mockFile);
-      expect(Notice).toHaveBeenCalledWith("Voted! New vote count: 5");
+      expect(mockNotifier.success).toHaveBeenCalledWith("Voted! New vote count: 5");
     });
 
     it("should handle first vote correctly", async () => {
@@ -100,7 +102,7 @@ describe("VoteOnEffortCommand", () => {
       await flushPromises();
 
       expect(mockEffortVotingService.incrementEffortVotes).toHaveBeenCalledWith(mockFile);
-      expect(Notice).toHaveBeenCalledWith("Voted! New vote count: 1");
+      expect(mockNotifier.success).toHaveBeenCalledWith("Voted! New vote count: 1");
     });
 
     it("should handle large vote counts", async () => {
@@ -113,7 +115,7 @@ describe("VoteOnEffortCommand", () => {
       await flushPromises();
 
       expect(mockEffortVotingService.incrementEffortVotes).toHaveBeenCalledWith(mockFile);
-      expect(Notice).toHaveBeenCalledWith("Voted! New vote count: 9999");
+      expect(mockNotifier.success).toHaveBeenCalledWith("Voted! New vote count: 9999");
     });
 
     it("should handle errors and show notice", async () => {
@@ -128,7 +130,7 @@ describe("VoteOnEffortCommand", () => {
 
       expect(mockEffortVotingService.incrementEffortVotes).toHaveBeenCalledWith(mockFile);
       expect(LoggingService.error).toHaveBeenCalledWith("Vote on effort error", error);
-      expect(Notice).toHaveBeenCalledWith("Failed to vote: Failed to record vote");
+      expect(mockNotifier.error).toHaveBeenCalledWith("Failed to vote: Failed to record vote");
     });
 
     it("should handle concurrent votes", async () => {
@@ -147,8 +149,8 @@ describe("VoteOnEffortCommand", () => {
       await flushPromises();
 
       expect(mockEffortVotingService.incrementEffortVotes).toHaveBeenCalledTimes(3);
-      expect(Notice).toHaveBeenCalledTimes(3);
-      expect(Notice).toHaveBeenCalledWith("Voted! New vote count: 10");
+      expect(mockNotifier.success).toHaveBeenCalledTimes(3);
+      expect(mockNotifier.success).toHaveBeenCalledWith("Voted! New vote count: 10");
     });
 
     it("should handle file system errors", async () => {
@@ -163,7 +165,7 @@ describe("VoteOnEffortCommand", () => {
 
       expect(mockEffortVotingService.incrementEffortVotes).toHaveBeenCalledWith(mockFile);
       expect(LoggingService.error).toHaveBeenCalledWith("Vote on effort error", fsError);
-      expect(Notice).toHaveBeenCalledWith("Failed to vote: File is read-only");
+      expect(mockNotifier.error).toHaveBeenCalledWith("Failed to vote: File is read-only");
     });
 
     it("should handle non-Effort context", () => {

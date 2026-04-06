@@ -18,7 +18,7 @@ describe("CommandManager - error handling (global commands)", () => {
       const command = ctx.registeredCommands.get("reload-layout");
       command.callback();
 
-      expect(Notice).toHaveBeenCalledWith("Failed to reload layout");
+      expect(Notice).toHaveBeenCalledWith("✗ Failed to reload layout", expect.any(Number));
     });
   });
 

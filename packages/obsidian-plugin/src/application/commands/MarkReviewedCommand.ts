@@ -1,17 +1,21 @@
-import { TFile, Notice } from "obsidian";
+import type { TFile } from "obsidian";
 import { ICommand } from "./ICommand";
 import {
   CommandVisibilityContext,
   canMarkReviewed,
   TaskStatusService,
   LoggingService,
+  type INotificationService,
 } from "exocortex";
 
 export class MarkReviewedCommand implements ICommand {
   id = "mark-reviewed";
   name = "Mark as reviewed";
 
-  constructor(private taskStatusService: TaskStatusService) {}
+  constructor(
+    private taskStatusService: TaskStatusService,
+    private notifier: INotificationService,
+  ) {}
 
   checkCallback = (checking: boolean, file: TFile, context: CommandVisibilityContext | null): boolean => {
     if (!context || !canMarkReviewed(context)) return false;
@@ -21,7 +25,7 @@ export class MarkReviewedCommand implements ICommand {
         try {
           await this.execute(file);
         } catch (error) {
-          new Notice(`Failed to mark as reviewed: ${error instanceof Error ? error.message : String(error)}`);
+          this.notifier.error(`Failed to mark as reviewed: ${error instanceof Error ? error.message : String(error)}`);
           LoggingService.error("Mark reviewed error", error instanceof Error ? error : undefined);
         }
       })();
@@ -32,6 +36,6 @@ export class MarkReviewedCommand implements ICommand {
 
   private async execute(file: TFile): Promise<void> {
     await this.taskStatusService.markAsReviewed(file);
-    new Notice(`Marked as reviewed: ${file.basename}`);
+    this.notifier.success(`Marked as reviewed: ${file.basename}`);
   }
 }

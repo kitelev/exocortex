@@ -1,18 +1,21 @@
-import { Notice } from "obsidian";
 import { ICommand } from "./ICommand";
+import type { INotificationService } from "exocortex";
 
 export class ReloadLayoutCommand implements ICommand {
   id = "reload-layout";
   name = "Reload layout";
 
-  constructor(private reloadLayoutCallback?: () => void) {}
+  constructor(
+    private reloadLayoutCallback: (() => void) | undefined,
+    private notifier: INotificationService,
+  ) {}
 
   callback = (): void => {
     if (this.reloadLayoutCallback) {
       this.reloadLayoutCallback();
-      new Notice("Layout reloaded");
+      this.notifier.success("Layout reloaded");
     } else {
-      new Notice("Failed to reload layout");
+      this.notifier.error("Failed to reload layout");
     }
   };
 }

@@ -1,29 +1,15 @@
-import { App, TFile, Notice } from "obsidian";
+import type { App, TFile } from "obsidian";
 import { ICommand } from "../ICommand";
 import {
   CommandVisibilityContext,
   LoggingService,
   type IFile,
+  type INotificationService,
 } from "exocortex";
 import { showLabelInputModal, type LabelInputModalResult } from '@plugin/presentation/modals/modalSchemas';
 import { ObsidianVaultAdapter } from '@plugin/adapters/ObsidianVaultAdapter';
 import { CommandHelpers } from "../helpers/CommandHelpers";
 
-/**
- * Base class for asset creation commands that operate within a file context.
- *
- * Implements the Template Method pattern to eliminate duplicated boilerplate
- * across CreateInstanceCommand and other context-aware creation commands.
- *
- * Subclasses override:
- * - canCreate(): visibility check for the command
- * - getAssetTypeName(): human-readable name for notices
- * - getErrorLogPrefix(): prefix for error logging
- * - createAsset(): the actual creation service call
- *
- * Optionally override:
- * - showModal(): to customize the modal (e.g., default label, hide task size)
- */
 export abstract class BaseContextAssetCreationCommand implements ICommand {
   abstract readonly id: string;
   abstract readonly name: string;
@@ -31,6 +17,7 @@ export abstract class BaseContextAssetCreationCommand implements ICommand {
   constructor(
     protected readonly app: App,
     protected readonly vaultAdapter: ObsidianVaultAdapter,
+    protected readonly notifier: INotificationService,
   ) {}
 
   checkCallback = (checking: boolean, file: TFile, context: CommandVisibilityContext | null): boolean => {
@@ -41,7 +28,7 @@ export abstract class BaseContextAssetCreationCommand implements ICommand {
         try {
           await this.execute(file, context);
         } catch (error) {
-          new Notice(`Failed to create ${this.getAssetTypeName().toLowerCase()}: ${error instanceof Error ? error.message : String(error)}`);
+          this.notifier.error(`Failed to create ${this.getAssetTypeName().toLowerCase()}: ${error instanceof Error ? error.message : String(error)}`);
           LoggingService.error(this.getErrorLogPrefix(), error instanceof Error ? error : undefined);
         }
       })();
@@ -96,6 +83,6 @@ export abstract class BaseContextAssetCreationCommand implements ICommand {
 
     await CommandHelpers.waitForFileActivation(this.app, tfile.path);
 
-    new Notice(`${this.getAssetTypeName()} created: ${createdFile.basename}`);
+    this.notifier.success(`${this.getAssetTypeName()} created: ${createdFile.basename}`);
   }
 }

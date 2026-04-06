@@ -1,4 +1,4 @@
-import { App, TFile } from "obsidian";
+import type { App, TFile } from "obsidian";
 import { ILogger } from '@plugin/adapters/logging/ILogger';
 import { LoggerFactory } from '@plugin/adapters/logging/LoggerFactory';
 import {

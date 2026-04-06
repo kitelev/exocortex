@@ -1,4 +1,4 @@
-import { TFile } from "obsidian";
+import type { TFile } from "obsidian";
 import { ObsidianApp } from '@plugin/types';
 
 /**

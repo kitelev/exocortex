@@ -20,6 +20,7 @@ describe("PlanOnTodayCommand", () => {
   let mockTaskStatusService: jest.Mocked<TaskStatusService>;
   let mockFile: jest.Mocked<TFile>;
   let mockContext: CommandVisibilityContext;
+  let mockNotifier: { info: jest.Mock; success: jest.Mock; error: jest.Mock; warn: jest.Mock; confirm: jest.Mock };
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -44,7 +45,8 @@ describe("PlanOnTodayCommand", () => {
     };
 
     // Create command instance
-    command = new PlanOnTodayCommand(mockTaskStatusService);
+    mockNotifier = { info: jest.fn(), success: jest.fn(), error: jest.fn(), warn: jest.fn(), confirm: jest.fn() };
+    command = new PlanOnTodayCommand(mockTaskStatusService, mockNotifier);
   });
 
   describe("id and name", () => {
@@ -88,7 +90,7 @@ describe("PlanOnTodayCommand", () => {
       await flushPromises();
 
       expect(mockTaskStatusService.planOnToday).toHaveBeenCalledWith(mockFile);
-      expect(Notice).toHaveBeenCalledWith("Planned on today: test-file");
+      expect(mockNotifier.success).toHaveBeenCalledWith("Planned on today: test-file");
     });
 
     it("should handle errors and show notice", async () => {
@@ -104,7 +106,7 @@ describe("PlanOnTodayCommand", () => {
 
       expect(mockTaskStatusService.planOnToday).toHaveBeenCalledWith(mockFile);
       expect(LoggingService.error).toHaveBeenCalledWith("Plan on today error", error);
-      expect(Notice).toHaveBeenCalledWith("Failed to plan on today: Failed to plan");
+      expect(mockNotifier.error).toHaveBeenCalledWith("Failed to plan on today: Failed to plan");
     });
 
     it("should handle files with special characters", async () => {
@@ -123,7 +125,7 @@ describe("PlanOnTodayCommand", () => {
       await flushPromises();
 
       expect(mockTaskStatusService.planOnToday).toHaveBeenCalledWith(specialFile);
-      expect(Notice).toHaveBeenCalledWith("Planned on today: [TODAY] Task (2024)");
+      expect(mockNotifier.success).toHaveBeenCalledWith("Planned on today: [TODAY] Task (2024)");
     });
 
     it("should handle file system errors", async () => {
@@ -139,7 +141,7 @@ describe("PlanOnTodayCommand", () => {
 
       expect(mockTaskStatusService.planOnToday).toHaveBeenCalledWith(mockFile);
       expect(LoggingService.error).toHaveBeenCalledWith("Plan on today error", fsError);
-      expect(Notice).toHaveBeenCalledWith("Failed to plan on today: File locked");
+      expect(mockNotifier.error).toHaveBeenCalledWith("Failed to plan on today: File locked");
     });
 
     it("should handle permission denied error", async () => {
@@ -155,7 +157,7 @@ describe("PlanOnTodayCommand", () => {
 
       expect(mockTaskStatusService.planOnToday).toHaveBeenCalledWith(mockFile);
       expect(LoggingService.error).toHaveBeenCalledWith("Plan on today error", permError);
-      expect(Notice).toHaveBeenCalledWith("Failed to plan on today: Permission denied: cannot write to file");
+      expect(mockNotifier.error).toHaveBeenCalledWith("Failed to plan on today: Permission denied: cannot write to file");
     });
 
     it("should handle multiple concurrent planning operations", async () => {
@@ -177,7 +179,7 @@ describe("PlanOnTodayCommand", () => {
       expect(mockTaskStatusService.planOnToday).toHaveBeenCalledTimes(3);
       files.forEach((file, index) => {
         expect(mockTaskStatusService.planOnToday).toHaveBeenNthCalledWith(index + 1, file);
-        expect(Notice).toHaveBeenCalledWith(`Planned on today: ${file.basename}`);
+        expect(mockNotifier.success).toHaveBeenCalledWith(`Planned on today: ${file.basename}`);
       });
     });
 
@@ -194,7 +196,7 @@ describe("PlanOnTodayCommand", () => {
 
       expect(mockTaskStatusService.planOnToday).toHaveBeenCalledWith(mockFile);
       expect(LoggingService.error).toHaveBeenCalledWith("Plan on today error", alreadyPlannedError);
-      expect(Notice).toHaveBeenCalledWith("Failed to plan on today: Task already planned for today");
+      expect(mockNotifier.error).toHaveBeenCalledWith("Failed to plan on today: Task already planned for today");
     });
   });
 });

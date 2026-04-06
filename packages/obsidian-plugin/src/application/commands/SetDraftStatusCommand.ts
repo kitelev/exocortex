@@ -1,17 +1,21 @@
-import { TFile, Notice } from "obsidian";
+import type { TFile } from "obsidian";
 import { ICommand } from "./ICommand";
 import {
   CommandVisibilityContext,
   canSetDraftStatus,
   TaskStatusService,
   LoggingService,
+  type INotificationService,
 } from "exocortex";
 
 export class SetDraftStatusCommand implements ICommand {
   id = "set-draft-status";
   name = "Set draft status";
 
-  constructor(private taskStatusService: TaskStatusService) {}
+  constructor(
+    private taskStatusService: TaskStatusService,
+    private notifier: INotificationService,
+  ) {}
 
   checkCallback = (checking: boolean, file: TFile, context: CommandVisibilityContext | null): boolean => {
     if (!context || !canSetDraftStatus(context)) return false;
@@ -21,7 +25,7 @@ export class SetDraftStatusCommand implements ICommand {
         try {
           await this.execute(file);
         } catch (error) {
-          new Notice(`Failed to set draft status: ${error instanceof Error ? error.message : String(error)}`);
+          this.notifier.error(`Failed to set draft status: ${error instanceof Error ? error.message : String(error)}`);
           LoggingService.error("Set draft status error", error instanceof Error ? error : undefined);
         }
       })();
@@ -32,6 +36,6 @@ export class SetDraftStatusCommand implements ICommand {
 
   private async execute(file: TFile): Promise<void> {
     await this.taskStatusService.setDraftStatus(file);
-    new Notice(`Set Draft status: ${file.basename}`);
+    this.notifier.success(`Set Draft status: ${file.basename}`);
   }
 }

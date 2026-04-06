@@ -32,6 +32,7 @@ import { LayoutCodeBlockProcessor } from "./application/processors/LayoutCodeBlo
 import { SPARQLApi } from "./application/api/SPARQLApi";
 import { ExocortexAPI } from "./application/api/ExocortexAPI";
 import { PluginContainer } from "./infrastructure/di/PluginContainer";
+import { ObsidianNotificationService } from "./infrastructure/di/ObsidianNotificationService";
 import { createAliasIconExtension, createWikilinkLabelExtension } from "./presentation/editor-extensions";
 import { TimerManager } from "./infrastructure/timer";
 import { LRUCache } from "./infrastructure/cache";
@@ -136,7 +137,8 @@ export default class ExocortexPlugin extends Plugin {
         maxEntries: 1000,
         ttl: 5 * 60 * 1000, // 5 minutes
       });
-      this.sparqlProcessor = new SPARQLCodeBlockProcessor(this);
+      const notifier = new ObsidianNotificationService();
+      this.sparqlProcessor = new SPARQLCodeBlockProcessor(this, notifier);
       this.layoutProcessor = new LayoutCodeBlockProcessor(this);
       this.sparql = new SPARQLApi(this);
       this.api = new ExocortexAPI(this);

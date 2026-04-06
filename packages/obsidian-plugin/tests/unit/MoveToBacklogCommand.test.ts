@@ -20,6 +20,7 @@ describe("MoveToBacklogCommand", () => {
   let mockTaskStatusService: jest.Mocked<TaskStatusService>;
   let mockFile: jest.Mocked<TFile>;
   let mockContext: CommandVisibilityContext;
+  let mockNotifier: { info: jest.Mock; success: jest.Mock; error: jest.Mock; warn: jest.Mock; confirm: jest.Mock };
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -44,7 +45,8 @@ describe("MoveToBacklogCommand", () => {
     };
 
     // Create command instance
-    command = new MoveToBacklogCommand(mockTaskStatusService);
+    mockNotifier = { info: jest.fn(), success: jest.fn(), error: jest.fn(), warn: jest.fn(), confirm: jest.fn() };
+    command = new MoveToBacklogCommand(mockTaskStatusService, mockNotifier);
   });
 
   describe("id and name", () => {
@@ -88,7 +90,7 @@ describe("MoveToBacklogCommand", () => {
       await flushPromises();
 
       expect(mockTaskStatusService.moveToBacklog).toHaveBeenCalledWith(mockFile);
-      expect(Notice).toHaveBeenCalledWith("Moved to Backlog: test-task");
+      expect(mockNotifier.success).toHaveBeenCalledWith("Moved to Backlog: test-task");
     });
 
     it("should handle errors and show notice", async () => {
@@ -104,7 +106,7 @@ describe("MoveToBacklogCommand", () => {
 
       expect(mockTaskStatusService.moveToBacklog).toHaveBeenCalledWith(mockFile);
       expect(LoggingService.error).toHaveBeenCalledWith("Move to backlog error", error);
-      expect(Notice).toHaveBeenCalledWith("Failed to move to backlog: Failed to move");
+      expect(mockNotifier.error).toHaveBeenCalledWith("Failed to move to backlog: Failed to move");
     });
 
     it("should handle Backlog status context", () => {
@@ -130,7 +132,7 @@ describe("MoveToBacklogCommand", () => {
       await flushPromises();
 
       expect(mockTaskStatusService.moveToBacklog).toHaveBeenCalledWith(dashedFile);
-      expect(Notice).toHaveBeenCalledWith("Moved to Backlog: my-important-task");
+      expect(mockNotifier.success).toHaveBeenCalledWith("Moved to Backlog: my-important-task");
     });
   });
 });

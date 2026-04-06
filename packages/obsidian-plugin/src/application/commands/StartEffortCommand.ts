@@ -1,17 +1,21 @@
-import { TFile, Notice } from "obsidian";
+import type { TFile } from "obsidian";
 import { ICommand } from "./ICommand";
 import {
   CommandVisibilityContext,
   canStartEffort,
   TaskStatusService,
   LoggingService,
+  type INotificationService,
 } from "exocortex";
 
 export class StartEffortCommand implements ICommand {
   id = "start-effort";
   name = "Start effort";
 
-  constructor(private taskStatusService: TaskStatusService) {}
+  constructor(
+    private taskStatusService: TaskStatusService,
+    private notifier: INotificationService,
+  ) {}
 
   checkCallback = (checking: boolean, file: TFile, context: CommandVisibilityContext | null): boolean => {
     if (!context || !canStartEffort(context)) return false;
@@ -21,7 +25,7 @@ export class StartEffortCommand implements ICommand {
         try {
           await this.execute(file);
         } catch (error) {
-          new Notice(`Failed to start effort: ${error instanceof Error ? error.message : String(error)}`);
+          this.notifier.error(`Failed to start effort: ${error instanceof Error ? error.message : String(error)}`);
           LoggingService.error("Start effort error", error instanceof Error ? error : undefined);
         }
       })();
@@ -32,6 +36,6 @@ export class StartEffortCommand implements ICommand {
 
   private async execute(file: TFile): Promise<void> {
     await this.taskStatusService.startEffort(file);
-    new Notice(`Started effort: ${file.basename}`);
+    this.notifier.success(`Started effort: ${file.basename}`);
   }
 }

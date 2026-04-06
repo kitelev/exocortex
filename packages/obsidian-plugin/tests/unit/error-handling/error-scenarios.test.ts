@@ -57,6 +57,7 @@ jest.mock("../../../src/application/services/SPARQLQueryService");
  */
 describe("CreateInstanceCommand Error Handling", () => {
   let command: CreateInstanceCommand;
+  let mockNotifier: any;
   let mockApp: jest.Mocked<App>;
   let mockRuleResolver: jest.Mocked<InstantiationRuleResolver>;
   let mockGenericAssetCreationService: jest.Mocked<GenericAssetCreationService>;
@@ -115,7 +116,8 @@ describe("CreateInstanceCommand Error Handling", () => {
       isDraft: false,
     };
 
-    command = new CreateInstanceCommand(mockApp, mockRuleResolver, mockGenericAssetCreationService, mockVaultAdapter);
+    mockNotifier = { info: jest.fn(), success: jest.fn(), error: jest.fn(), warn: jest.fn(), confirm: jest.fn() };
+      command = new CreateInstanceCommand(mockApp, mockRuleResolver, mockGenericAssetCreationService, mockVaultAdapter, mockNotifier);
   });
 
   describe("Scenario 1: toTFile returns null (file conversion failure)", () => {
@@ -137,7 +139,7 @@ describe("CreateInstanceCommand Error Handling", () => {
         "Create instance error",
         expect.any(Error)
       );
-      expect(Notice).toHaveBeenCalledWith(
+      expect(mockNotifier.error).toHaveBeenCalledWith(
         expect.stringContaining("Failed to create instance:")
       );
     });
@@ -152,7 +154,7 @@ describe("CreateInstanceCommand Error Handling", () => {
       command.checkCallback(false, mockFile, mockContext);
       await flushPromises();
 
-      expect(Notice).toHaveBeenCalledWith(
+      expect(mockNotifier.error).toHaveBeenCalledWith(
         expect.stringContaining("path/to/new-instance.md")
       );
     });
@@ -169,7 +171,7 @@ describe("CreateInstanceCommand Error Handling", () => {
       await flushPromises();
 
       expect(LoggingService.error).toHaveBeenCalledWith("Create instance error", permissionError);
-      expect(Notice).toHaveBeenCalledWith("Failed to create instance: Permission denied: Cannot write to directory");
+      expect(mockNotifier.error).toHaveBeenCalledWith("Failed to create instance: Permission denied: Cannot write to directory");
     });
 
     it("should handle file already exists error", async () => {
@@ -181,7 +183,7 @@ describe("CreateInstanceCommand Error Handling", () => {
       command.checkCallback(false, mockFile, mockContext);
       await flushPromises();
 
-      expect(Notice).toHaveBeenCalledWith("Failed to create instance: File already exists: task-name.md");
+      expect(mockNotifier.error).toHaveBeenCalledWith("Failed to create instance: File already exists: task-name.md");
     });
 
     it("should handle non-Error thrown values", async () => {
@@ -192,7 +194,7 @@ describe("CreateInstanceCommand Error Handling", () => {
       command.checkCallback(false, mockFile, mockContext);
       await flushPromises();
 
-      expect(Notice).toHaveBeenCalledWith("Failed to create instance: String error message");
+      expect(mockNotifier.error).toHaveBeenCalledWith("Failed to create instance: String error message");
     });
   });
 
@@ -233,7 +235,7 @@ describe("SPARQLCodeBlockProcessor Error Handling", () => {
       } as App,
     } as ExocortexPlugin;
 
-    processor = new SPARQLCodeBlockProcessor(mockPlugin);
+    processor = new SPARQLCodeBlockProcessor(mockPlugin, { info: jest.fn(), success: jest.fn(), error: jest.fn(), warn: jest.fn(), confirm: jest.fn() } as any);
   });
 
   afterEach(() => {

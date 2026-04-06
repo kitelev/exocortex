@@ -20,6 +20,7 @@ describe("MoveToAnalysisCommand", () => {
   let mockTaskStatusService: jest.Mocked<TaskStatusService>;
   let mockFile: jest.Mocked<TFile>;
   let mockContext: CommandVisibilityContext;
+  let mockNotifier: { info: jest.Mock; success: jest.Mock; error: jest.Mock; warn: jest.Mock; confirm: jest.Mock };
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -44,7 +45,8 @@ describe("MoveToAnalysisCommand", () => {
     };
 
     // Create command instance
-    command = new MoveToAnalysisCommand(mockTaskStatusService);
+    mockNotifier = { info: jest.fn(), success: jest.fn(), error: jest.fn(), warn: jest.fn(), confirm: jest.fn() };
+    command = new MoveToAnalysisCommand(mockTaskStatusService, mockNotifier);
   });
 
   describe("id and name", () => {
@@ -88,7 +90,7 @@ describe("MoveToAnalysisCommand", () => {
       await flushPromises();
 
       expect(mockTaskStatusService.moveToAnalysis).toHaveBeenCalledWith(mockFile);
-      expect(Notice).toHaveBeenCalledWith("Moved to Analysis: test-task");
+      expect(mockNotifier.success).toHaveBeenCalledWith("Moved to Analysis: test-task");
     });
 
     it("should handle errors and show notice", async () => {
@@ -104,7 +106,7 @@ describe("MoveToAnalysisCommand", () => {
 
       expect(mockTaskStatusService.moveToAnalysis).toHaveBeenCalledWith(mockFile);
       expect(LoggingService.error).toHaveBeenCalledWith("Move to analysis error", error);
-      expect(Notice).toHaveBeenCalledWith("Failed to move to analysis: Failed to move to analysis");
+      expect(mockNotifier.error).toHaveBeenCalledWith("Failed to move to analysis: Failed to move to analysis");
     });
 
     it("should handle Analysis status context", () => {
@@ -130,7 +132,7 @@ describe("MoveToAnalysisCommand", () => {
       await flushPromises();
 
       expect(mockTaskStatusService.moveToAnalysis).toHaveBeenCalledWith(underscoreFile);
-      expect(Notice).toHaveBeenCalledWith("Moved to Analysis: important_analysis_task");
+      expect(mockNotifier.success).toHaveBeenCalledWith("Moved to Analysis: important_analysis_task");
     });
 
     it("should handle database errors", async () => {
@@ -146,7 +148,7 @@ describe("MoveToAnalysisCommand", () => {
 
       expect(mockTaskStatusService.moveToAnalysis).toHaveBeenCalledWith(mockFile);
       expect(LoggingService.error).toHaveBeenCalledWith("Move to analysis error", dbError);
-      expect(Notice).toHaveBeenCalledWith("Failed to move to analysis: Database connection failed");
+      expect(mockNotifier.error).toHaveBeenCalledWith("Failed to move to analysis: Database connection failed");
     });
 
     it("should handle archived context", () => {

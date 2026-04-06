@@ -20,6 +20,7 @@ describe("MarkReviewedCommand", () => {
   let mockTaskStatusService: jest.Mocked<TaskStatusService>;
   let mockFile: jest.Mocked<TFile>;
   let mockContext: CommandVisibilityContext;
+  let mockNotifier: { info: jest.Mock; success: jest.Mock; error: jest.Mock; warn: jest.Mock; confirm: jest.Mock };
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -44,7 +45,8 @@ describe("MarkReviewedCommand", () => {
     };
 
     // Create command instance
-    command = new MarkReviewedCommand(mockTaskStatusService);
+    mockNotifier = { info: jest.fn(), success: jest.fn(), error: jest.fn(), warn: jest.fn(), confirm: jest.fn() };
+    command = new MarkReviewedCommand(mockTaskStatusService, mockNotifier);
   });
 
   describe("id and name", () => {
@@ -88,7 +90,7 @@ describe("MarkReviewedCommand", () => {
       await flushPromises();
 
       expect(mockTaskStatusService.markAsReviewed).toHaveBeenCalledWith(mockFile);
-      expect(Notice).toHaveBeenCalledWith("Marked as reviewed: test-task");
+      expect(mockNotifier.success).toHaveBeenCalledWith("Marked as reviewed: test-task");
     });
 
     it("should handle errors and show notice", async () => {
@@ -104,7 +106,7 @@ describe("MarkReviewedCommand", () => {
 
       expect(mockTaskStatusService.markAsReviewed).toHaveBeenCalledWith(mockFile);
       expect(LoggingService.error).toHaveBeenCalledWith("Mark reviewed error", error);
-      expect(Notice).toHaveBeenCalledWith("Failed to mark as reviewed: Failed to mark reviewed");
+      expect(mockNotifier.error).toHaveBeenCalledWith("Failed to mark as reviewed: Failed to mark reviewed");
     });
 
     it("should work with Project class", () => {
@@ -131,7 +133,7 @@ describe("MarkReviewedCommand", () => {
       await flushPromises();
 
       expect(mockTaskStatusService.markAsReviewed).toHaveBeenCalledWith(specialFile);
-      expect(Notice).toHaveBeenCalledWith("Marked as reviewed: task-with-special-chars!@#$");
+      expect(mockNotifier.success).toHaveBeenCalledWith("Marked as reviewed: task-with-special-chars!@#$");
     });
 
     it("should handle concurrent executions", async () => {
@@ -151,15 +153,15 @@ describe("MarkReviewedCommand", () => {
       command.checkCallback(false, file3, mockContext);
 
       // Wait for all async executions
-      await waitForCondition(() => (Notice as jest.Mock).mock.calls.length >= 3);
+      await waitForCondition(() => mockNotifier.success.mock.calls.length >= 3);
 
       expect(mockTaskStatusService.markAsReviewed).toHaveBeenCalledTimes(3);
       expect(mockTaskStatusService.markAsReviewed).toHaveBeenCalledWith(file1);
       expect(mockTaskStatusService.markAsReviewed).toHaveBeenCalledWith(file2);
       expect(mockTaskStatusService.markAsReviewed).toHaveBeenCalledWith(file3);
-      expect(Notice).toHaveBeenCalledWith("Marked as reviewed: task1");
-      expect(Notice).toHaveBeenCalledWith("Marked as reviewed: task2");
-      expect(Notice).toHaveBeenCalledWith("Marked as reviewed: task3");
+      expect(mockNotifier.success).toHaveBeenCalledWith("Marked as reviewed: task1");
+      expect(mockNotifier.success).toHaveBeenCalledWith("Marked as reviewed: task2");
+      expect(mockNotifier.success).toHaveBeenCalledWith("Marked as reviewed: task3");
     });
 
     it("should handle service returning undefined", async () => {
@@ -173,7 +175,7 @@ describe("MarkReviewedCommand", () => {
       await flushPromises();
 
       expect(mockTaskStatusService.markAsReviewed).toHaveBeenCalledWith(mockFile);
-      expect(Notice).toHaveBeenCalledWith("Marked as reviewed: test-task");
+      expect(mockNotifier.success).toHaveBeenCalledWith("Marked as reviewed: test-task");
       expect(LoggingService.error).not.toHaveBeenCalled();
     });
 
@@ -192,7 +194,7 @@ describe("MarkReviewedCommand", () => {
       // Since error is not an Error instance, undefined is passed to LoggingService.error
       expect(LoggingService.error).toHaveBeenCalledWith("Mark reviewed error", undefined);
       // Since error is not an Error instance, String(error) is used which calls toString()
-      expect(Notice).toHaveBeenCalledWith("Failed to mark as reviewed: Custom error");
+      expect(mockNotifier.error).toHaveBeenCalledWith("Failed to mark as reviewed: Custom error");
     });
   });
 });
