@@ -140,6 +140,35 @@ describe("CommandDefinition", () => {
 
       expect(gnd.type).toBe(GroundingType.SERVICE_CALL);
     });
+
+    it("should represent create_instance grounding with all optional fields", () => {
+      const gnd = {
+        id: "gnd-create-task",
+        label: "Create new task from prototype",
+        type: GroundingType.CREATE_INSTANCE,
+        targetClass: "ems__Task",
+        targetPrototype: "a717a21b-a960-4795-9caa-04aeaba730ee",
+        targetFolder: "01 Inbox",
+      };
+
+      expect(gnd.type).toBe(GroundingType.CREATE_INSTANCE);
+      expect(gnd.targetClass).toBe("ems__Task");
+      expect(gnd.targetPrototype).toBe("a717a21b-a960-4795-9caa-04aeaba730ee");
+      expect(gnd.targetFolder).toBe("01 Inbox");
+    });
+
+    it("should represent create_instance grounding with minimal fields", () => {
+      const gnd = {
+        id: "gnd-create-minimal",
+        label: "Create instance",
+        type: GroundingType.CREATE_INSTANCE,
+      };
+
+      expect(gnd.type).toBe(GroundingType.CREATE_INSTANCE);
+      expect(gnd.targetClass).toBeUndefined();
+      expect(gnd.targetPrototype).toBeUndefined();
+      expect(gnd.targetFolder).toBeUndefined();
+    });
   });
 
   describe("CommandBindingDefinition", () => {
