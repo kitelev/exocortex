@@ -66,11 +66,13 @@ function buildTestSchemas(): Map<string, PropertySchema> {
   schemas.set("exo__Asset_uid", {
     type: "text" as any,
     label: "UID",
+    readOnly: true,
     validation: { required: true },
   });
   schemas.set("exo__Asset_createdAt", {
     type: "timestamp" as any,
     label: "Created at",
+    readOnly: true,
     validation: { required: true },
   });
   schemas.set("exo__Asset_isArchived", {
@@ -102,10 +104,12 @@ function buildTestSchemas(): Map<string, PropertySchema> {
   schemas.set("ems__Effort_startTimestamp", {
     type: "timestamp" as any,
     label: "Started at",
+    readOnly: true,
   });
   schemas.set("ems__Effort_endTimestamp", {
     type: "timestamp" as any,
     label: "Ended at",
+    readOnly: true,
   });
   schemas.set("ems__Task_size", {
     type: "size-select" as any,
@@ -405,6 +409,31 @@ describe("PropertySchemas", () => {
       const editable = getEditableProperties(schema);
       expect(editable.some((p) => p.name === "ems__Effort_startTimestamp")).toBe(false);
       expect(editable.some((p) => p.name === "ems__Effort_endTimestamp")).toBe(false);
+    });
+
+    it("should propagate readOnly from core schema, not hardcoded list", async () => {
+      const schemas = buildTestSchemas();
+      schemas.set("ems__Effort_day", {
+        type: "wikilink" as any,
+        label: "Planned day",
+        readOnly: true,
+      });
+      const resolver = createMockResolver(schemas);
+      initPropertySchemaService(resolver, createMockHierarchyResolver());
+
+      const schema = await getPropertySchemaForClass("ems__Task");
+      const day = schema.find((p) => p.name === "ems__Effort_day");
+      expect(day?.readOnly).toBe(true);
+    });
+
+    it("should not mark property as readOnly when core schema has no readOnly flag", async () => {
+      const schemas = buildTestSchemas();
+      const resolver = createMockResolver(schemas);
+      initPropertySchemaService(resolver, createMockHierarchyResolver());
+
+      const schema = await getPropertySchemaForClass("ems__Task");
+      const status = schema.find((p) => p.name === "ems__Effort_status");
+      expect(status?.readOnly).toBeUndefined();
     });
 
     it("should include editable properties", async () => {

@@ -279,6 +279,50 @@ describe("PropertySchemaResolver", () => {
       });
     });
 
+    it("should set readOnly flag when ontology marks property as readOnly", async () => {
+      mockSparqlService.query.mockResolvedValue([
+        new Map<string, unknown>([
+          ["rangeType", "http://www.w3.org/2001/XMLSchema#string"],
+          ["label", "UID"],
+          ["readOnly", "true"],
+        ]),
+      ]);
+
+      const schema = await resolver.getSchema("exo__Asset_uid");
+
+      expect(schema).not.toBeNull();
+      expect(schema!.readOnly).toBe(true);
+    });
+
+    it("should not set readOnly flag when ontology does not mark property", async () => {
+      mockSparqlService.query.mockResolvedValue([
+        new Map<string, unknown>([
+          ["rangeType", "http://www.w3.org/2001/XMLSchema#string"],
+          ["label", "Label"],
+        ]),
+      ]);
+
+      const schema = await resolver.getSchema("exo__Asset_label");
+
+      expect(schema).not.toBeNull();
+      expect(schema!.readOnly).toBeUndefined();
+    });
+
+    it("should not set readOnly when value is 'false'", async () => {
+      mockSparqlService.query.mockResolvedValue([
+        new Map<string, unknown>([
+          ["rangeType", "http://www.w3.org/2001/XMLSchema#string"],
+          ["label", "Name"],
+          ["readOnly", "false"],
+        ]),
+      ]);
+
+      const schema = await resolver.getSchema("exo__Asset_name");
+
+      expect(schema).not.toBeNull();
+      expect(schema!.readOnly).toBeUndefined();
+    });
+
     it("should default to Text type when rangeType missing", async () => {
       mockSparqlService.query.mockResolvedValue([
         new Map<string, unknown>([
@@ -312,6 +356,27 @@ describe("PropertySchemaResolver", () => {
       expect(schemas.size).toBe(2);
       expect(schemas.get("exo__Asset_label")!.type).toBe(PropertyFieldType.Text);
       expect(schemas.get("ems__Effort_votes")!.type).toBe(PropertyFieldType.Number);
+    });
+
+    it("should preserve readOnly flag in getAllSchemas results", async () => {
+      mockSparqlService.query.mockResolvedValue([
+        new Map<string, unknown>([
+          ["property", "https://exocortex.my/ontology/exo#Asset_uid"],
+          ["rangeType", "http://www.w3.org/2001/XMLSchema#string"],
+          ["label", "UID"],
+          ["readOnly", "true"],
+        ]),
+        new Map<string, unknown>([
+          ["property", "https://exocortex.my/ontology/exo#Asset_label"],
+          ["rangeType", "http://www.w3.org/2001/XMLSchema#string"],
+          ["label", "Label"],
+        ]),
+      ]);
+
+      const schemas = await resolver.getAllSchemas();
+
+      expect(schemas.get("exo__Asset_uid")!.readOnly).toBe(true);
+      expect(schemas.get("exo__Asset_label")!.readOnly).toBeUndefined();
     });
 
     it("should cache all schemas after first load", async () => {
@@ -414,6 +479,16 @@ describe("PropertySchemaResolver", () => {
 
       expect(mockSparqlService.query).toHaveBeenCalledWith(
         expect.stringContaining("<https://exocortex.my/ontology/ems#Effort_status>"),
+      );
+    });
+
+    it("should include schema_readOnly in single-property query", async () => {
+      mockSparqlService.query.mockResolvedValue([]);
+
+      await resolver.getSchema("exo__Asset_uid");
+
+      expect(mockSparqlService.query).toHaveBeenCalledWith(
+        expect.stringContaining("exo:schema_readOnly"),
       );
     });
 
