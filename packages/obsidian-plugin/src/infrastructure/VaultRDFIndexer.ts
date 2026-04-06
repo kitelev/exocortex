@@ -5,6 +5,7 @@ import {
   ApplicationErrorHandler,
   RDFSInferenceEngine,
   NonInheritablePropertyRegistry,
+  PropertyCardinalityRegistry,
   PrototypeChainMaterializer,
   INFERRED_GRAPH,
   Namespace,
@@ -238,7 +239,9 @@ export class VaultRDFIndexer {
 
     const registry = new NonInheritablePropertyRegistry();
     await registry.initialize(this.tripleStore);
-    const materializer = new PrototypeChainMaterializer(registry);
+    const cardinalityRegistry = new PropertyCardinalityRegistry();
+    await cardinalityRegistry.initialize(this.tripleStore);
+    const materializer = new PrototypeChainMaterializer(registry, cardinalityRegistry);
     await materializer.materialize(this.tripleStore);
   }
 

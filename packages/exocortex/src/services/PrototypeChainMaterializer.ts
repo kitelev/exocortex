@@ -3,6 +3,7 @@ import { ITripleStore } from "../interfaces/ITripleStore";
 import { Triple } from "../domain/models/rdf/Triple";
 import { IRI } from "../domain/models/rdf/IRI";
 import { NonInheritablePropertyRegistry } from "./NonInheritablePropertyRegistry";
+import { PropertyCardinalityRegistry } from "./PropertyCardinalityRegistry";
 
 /**
  * Named graph IRI for materialized (inherited) triples.
@@ -48,9 +49,14 @@ export const MAX_PROTOTYPE_DEPTH = 10;
 @injectable()
 export class PrototypeChainMaterializer {
   private readonly registry: NonInheritablePropertyRegistry;
+  private readonly cardinalityRegistry: PropertyCardinalityRegistry | null;
 
-  constructor(registry: NonInheritablePropertyRegistry) {
+  constructor(
+    registry: NonInheritablePropertyRegistry,
+    cardinalityRegistry?: PropertyCardinalityRegistry,
+  ) {
     this.registry = registry;
+    this.cardinalityRegistry = cardinalityRegistry ?? null;
   }
 
   /**
@@ -115,8 +121,20 @@ export class PrototypeChainMaterializer {
       // Get predicates the instance already owns
       const ownTriples = await store.match(instance, undefined, undefined);
       const seenPredicates = new Set<string>();
+      // Track seen values for multi-valued predicates to avoid duplicates
+      const seenValues = new Map<string, Set<string>>();
       for (const t of ownTriples) {
         seenPredicates.add(t.predicate.value);
+        // For multi-valued predicates, track individual values
+        if (this.isMultiValued(t.predicate.value)) {
+          const objectValue = t.object instanceof IRI ? t.object.value : String(t.object);
+          let valueSet = seenValues.get(t.predicate.value);
+          if (!valueSet) {
+            valueSet = new Set();
+            seenValues.set(t.predicate.value, valueSet);
+          }
+          valueSet.add(objectValue);
+        }
       }
 
       // Walk chain near→far: closest prototype wins
@@ -146,14 +164,48 @@ export class PrototypeChainMaterializer {
             continue;
           }
 
-          // Skip if already seen (own or from closer prototype)
-          if (seenPredicates.has(predicateValue)) {
-            continue;
-          }
-
           // Skip properties that the prototype itself inherited (materialized)
           // They'll be handled at the correct depth from their original source
           if (protoInheritedPredicates.has(predicateValue)) {
+            continue;
+          }
+
+          // Multi-valued predicate: APPEND instead of skip
+          if (seenPredicates.has(predicateValue) && this.isMultiValued(predicateValue)) {
+            const objectValue = protoTriple.object instanceof IRI
+              ? protoTriple.object.value
+              : String(protoTriple.object);
+
+            // Skip duplicate values
+            const valueset = seenValues.get(predicateValue);
+            if (valueset?.has(objectValue)) {
+              continue;
+            }
+
+            // Append new value
+            let appendSet = seenValues.get(predicateValue);
+            if (!appendSet) {
+              appendSet = new Set();
+              seenValues.set(predicateValue, appendSet);
+            }
+            appendSet.add(objectValue);
+
+            const materializedTriple = new Triple(
+              instance,
+              protoTriple.predicate,
+              protoTriple.object,
+            );
+            await store.add(materializedTriple);
+            if (store.addToGraph) {
+              await store.addToGraph(materializedTriple, INFERRED_GRAPH);
+              await store.addToGraph(materializedTriple, inferredGraphForDepth(depth));
+            }
+            materializedCount++;
+            continue;
+          }
+
+          // Single-valued: skip if already seen (own or from closer prototype)
+          if (seenPredicates.has(predicateValue)) {
             continue;
           }
 
@@ -180,6 +232,17 @@ export class PrototypeChainMaterializer {
     }
 
     return materializedCount;
+  }
+
+  /**
+   * Check if a predicate is multi-valued via the cardinality registry.
+   * Returns false if no registry is configured (backward-compatible default).
+   */
+  private isMultiValued(predicateIRI: string): boolean {
+    if (!this.cardinalityRegistry) {
+      return false;
+    }
+    return this.cardinalityRegistry.isMultiValued(predicateIRI);
   }
 
   /**

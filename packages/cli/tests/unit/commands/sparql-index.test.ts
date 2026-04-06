@@ -29,6 +29,8 @@ const mockMaterialize = jest.fn();
 const mockRegistryInitialize = jest.fn();
 const mockProtoMaterialize = jest.fn();
 
+const mockCardinalityRegistryInitialize = jest.fn();
+
 jest.unstable_mockModule("exocortex", () => ({
   InMemoryTripleStore: jest.fn(() => ({
     addAll: mockAddAll,
@@ -39,6 +41,9 @@ jest.unstable_mockModule("exocortex", () => ({
   })),
   NonInheritablePropertyRegistry: jest.fn(() => ({
     initialize: mockRegistryInitialize,
+  })),
+  PropertyCardinalityRegistry: jest.fn(() => ({
+    initialize: mockCardinalityRegistryInitialize,
   })),
   PrototypeChainMaterializer: jest.fn(() => ({
     materialize: mockProtoMaterialize,

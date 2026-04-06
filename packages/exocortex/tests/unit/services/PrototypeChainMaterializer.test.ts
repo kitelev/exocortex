@@ -1,5 +1,6 @@
 import { PrototypeChainMaterializer, INFERRED_GRAPH, MAX_PROTOTYPE_DEPTH } from "../../../src/services/PrototypeChainMaterializer";
 import { NonInheritablePropertyRegistry } from "../../../src/services/NonInheritablePropertyRegistry";
+import { PropertyCardinalityRegistry } from "../../../src/services/PropertyCardinalityRegistry";
 import { InMemoryTripleStore } from "../../../src/infrastructure/rdf/InMemoryTripleStore";
 import { Triple } from "../../../src/domain/models/rdf/Triple";
 import { IRI } from "../../../src/domain/models/rdf/IRI";
@@ -455,117 +456,152 @@ describe("PrototypeChainMaterializer", () => {
     const gtdReviewClass = new IRI("https://exocortex.my/ontology/gtd#Review");
 
     it("should inherit single Instance_class value when instance has NO own Instance_class", async () => {
-      // Prototype has one class: ems__Task
       await store.add(new Triple(breakfastProto, instanceClass, taskClass));
       await store.add(new Triple(breakfastProto, effortArea, healthArea));
-
-      // Instance links to prototype, has NO own Instance_class
       await store.add(new Triple(breakfastInstance, prototype, breakfastProto));
 
       const count = await materializer.materialize(store);
 
-      // Instance_class is inheritable → class should be inherited
       const classTriples = await store.match(breakfastInstance, instanceClass, undefined);
       expect(classTriples.length).toBe(1);
       expect((classTriples[0].object as IRI).value).toBe(taskClass.value);
 
-      // Area should also be inherited
       const areaTriples = await store.match(breakfastInstance, effortArea, undefined);
       expect(areaTriples.length).toBe(1);
     });
 
-    // TODO: Phase 2 (RFC-016 #2639) will fix multi-valued merge.
-    // Currently, seenPredicates marks the predicate as "done" after the first
-    // inherited triple, so only 1 of N values from the same predicate is inherited.
-    it.skip("should inherit ALL Instance_class values when prototype has multiple classes (Phase 2 — #2639)", async () => {
-      // Prototype has two classes: ems__Task and gtd__Review
+    it("should skip multi-valued merge when no cardinality registry provided (backward compat)", async () => {
+      // Without cardinality registry: old behavior — only first value inherited
       await store.add(new Triple(breakfastProto, instanceClass, taskClass));
       await store.add(new Triple(breakfastProto, instanceClass, gtdReviewClass));
-
-      // Instance has NO own Instance_class
       await store.add(new Triple(breakfastInstance, prototype, breakfastProto));
 
       await materializer.materialize(store);
 
-      // After Phase 2: instance should have BOTH classes
-      const classTriples = await store.match(breakfastInstance, instanceClass, undefined);
-      expect(classTriples.length).toBe(2);
-
-      const classValues = classTriples.map(t => (t.object as IRI).value);
-      expect(classValues).toContain(taskClass.value);
-      expect(classValues).toContain(gtdReviewClass.value);
-    });
-
-    // TODO: Phase 2 (RFC-016 #2639) will fix this.
-    // Currently, if instance has ANY own value for a predicate, the entire
-    // predicate is skipped during inheritance — even for multi-valued properties.
-    it.skip("should append inherited Instance_class values when instance has OWN partial class (Phase 2 — #2639)", async () => {
-      // Prototype has two classes: ems__Task and gtd__Review
-      await store.add(new Triple(breakfastProto, instanceClass, taskClass));
-      await store.add(new Triple(breakfastProto, instanceClass, gtdReviewClass));
-
-      // Instance has OWN Instance_class: [ems__Task] only
-      await store.add(new Triple(breakfastInstance, prototype, breakfastProto));
-      await store.add(new Triple(breakfastInstance, instanceClass, taskClass));
-
-      await materializer.materialize(store);
-
-      // After Phase 2: instance should have BOTH ems__Task (own) AND gtd__Review (inherited)
-      const classTriples = await store.match(breakfastInstance, instanceClass, undefined);
-      expect(classTriples.length).toBe(2);
-
-      const classValues = classTriples.map(t => (t.object as IRI).value);
-      expect(classValues).toContain(taskClass.value);
-      expect(classValues).toContain(gtdReviewClass.value);
-    });
-
-    it("should verify current skip: only first of multiple prototype classes is inherited", async () => {
-      // Documents CURRENT behavior — seenPredicates marks predicate after first triple
-      await store.add(new Triple(breakfastProto, instanceClass, taskClass));
-      await store.add(new Triple(breakfastProto, instanceClass, gtdReviewClass));
-
-      await store.add(new Triple(breakfastInstance, prototype, breakfastProto));
-
-      await materializer.materialize(store);
-
-      // Current: only 1 class inherited (first one processed), second is skipped
       const classTriples = await store.match(breakfastInstance, instanceClass, undefined);
       expect(classTriples.length).toBe(1);
     });
 
-    it("should verify current skip: own Instance_class blocks ALL prototype classes", async () => {
-      // Documents CURRENT behavior — own predicate blocks all inheritance
+    it("should skip own Instance_class blocking when no cardinality registry provided", async () => {
       await store.add(new Triple(breakfastProto, instanceClass, taskClass));
       await store.add(new Triple(breakfastProto, instanceClass, gtdReviewClass));
-
       await store.add(new Triple(breakfastInstance, prototype, breakfastProto));
       await store.add(new Triple(breakfastInstance, instanceClass, taskClass));
 
       await materializer.materialize(store);
 
-      // Current: seenPredicates has Instance_class from own → ALL inherited skipped
       const classTriples = await store.match(breakfastInstance, instanceClass, undefined);
       expect(classTriples.length).toBe(1);
       expect((classTriples[0].object as IRI).value).toBe(taskClass.value);
     });
 
     it("should inherit Instance_class through depth-2 chain when instance has no own class", async () => {
-      // Chain: breakfastInstance → breakfastProto → morningProto
       await store.add(new Triple(breakfastInstance, prototype, breakfastProto));
       await store.add(new Triple(breakfastProto, prototype, morningProto));
-
-      // morningProto (grandparent) has single Instance_class
       await store.add(new Triple(morningProto, instanceClass, gtdReviewClass));
-
-      // breakfastProto (parent) has area
       await store.add(new Triple(breakfastProto, effortArea, healthArea));
 
-      const count = await materializer.materialize(store);
+      await materializer.materialize(store);
 
-      // Instance should inherit Instance_class from grandparent (single value passes)
       const classTriples = await store.match(breakfastInstance, instanceClass, undefined);
       expect(classTriples.length).toBe(1);
       expect((classTriples[0].object as IRI).value).toBe(gtdReviewClass.value);
+    });
+  });
+
+  describe("multi-valued property merge (RFC-016 #2639)", () => {
+    const gtdReviewClass = new IRI("https://exocortex.my/ontology/gtd#Review");
+    const propertyCardinality = Namespace.EXO.term("Property_cardinality");
+    const multipleCardinalityClassIRI = new IRI("obsidian://vault/exo__PropertyCardinalityMultiple.md");
+
+    let materializerWithCardinality: PrototypeChainMaterializer;
+
+    async function setupCardinalityRegistry(): Promise<PropertyCardinalityRegistry> {
+      const cardStore = new InMemoryTripleStore();
+
+      // Define PropertyCardinalityMultiple class
+      await cardStore.add(
+        new Triple(multipleCardinalityClassIRI, assetLabel, new Literal("exo__PropertyCardinalityMultiple")),
+      );
+
+      // Mark exo__Instance_class as multi-valued
+      const instanceClassDef = new IRI("obsidian://vault/exo__Instance_class.md");
+      await cardStore.add(
+        new Triple(instanceClassDef, propertyCardinality, multipleCardinalityClassIRI),
+      );
+      await cardStore.add(
+        new Triple(instanceClassDef, assetLabel, new Literal("exo__Instance_class")),
+      );
+
+      const cardRegistry = new PropertyCardinalityRegistry();
+      await cardRegistry.initialize(cardStore);
+      return cardRegistry;
+    }
+
+    beforeEach(async () => {
+      const cardRegistry = await setupCardinalityRegistry();
+      materializerWithCardinality = new PrototypeChainMaterializer(registry, cardRegistry);
+    });
+
+    it("should inherit ALL Instance_class values when prototype has multiple classes", async () => {
+      await store.add(new Triple(breakfastProto, instanceClass, taskClass));
+      await store.add(new Triple(breakfastProto, instanceClass, gtdReviewClass));
+      await store.add(new Triple(breakfastInstance, prototype, breakfastProto));
+
+      await materializerWithCardinality.materialize(store);
+
+      const classTriples = await store.match(breakfastInstance, instanceClass, undefined);
+      expect(classTriples.length).toBe(2);
+
+      const classValues = classTriples.map(t => (t.object as IRI).value);
+      expect(classValues).toContain(taskClass.value);
+      expect(classValues).toContain(gtdReviewClass.value);
+    });
+
+    it("should append inherited Instance_class values when instance has OWN partial class", async () => {
+      await store.add(new Triple(breakfastProto, instanceClass, taskClass));
+      await store.add(new Triple(breakfastProto, instanceClass, gtdReviewClass));
+      await store.add(new Triple(breakfastInstance, prototype, breakfastProto));
+      await store.add(new Triple(breakfastInstance, instanceClass, taskClass));
+
+      await materializerWithCardinality.materialize(store);
+
+      const classTriples = await store.match(breakfastInstance, instanceClass, undefined);
+      expect(classTriples.length).toBe(2);
+
+      const classValues = classTriples.map(t => (t.object as IRI).value);
+      expect(classValues).toContain(taskClass.value);
+      expect(classValues).toContain(gtdReviewClass.value);
+    });
+
+    it("should NOT duplicate values already owned by instance", async () => {
+      // Prototype has [ems__Task, gtd__Review], instance has [ems__Task]
+      await store.add(new Triple(breakfastProto, instanceClass, taskClass));
+      await store.add(new Triple(breakfastProto, instanceClass, gtdReviewClass));
+      await store.add(new Triple(breakfastInstance, prototype, breakfastProto));
+      await store.add(new Triple(breakfastInstance, instanceClass, taskClass));
+
+      await materializerWithCardinality.materialize(store);
+
+      // ems__Task should appear exactly once (own), gtd__Review once (inherited)
+      const classTriples = await store.match(breakfastInstance, instanceClass, undefined);
+      const taskValues = classTriples.filter(t => (t.object as IRI).value === taskClass.value);
+      expect(taskValues.length).toBe(1);
+    });
+
+    it("should preserve single-valued skip for non-multi-valued properties", async () => {
+      // effortArea is NOT multi-valued, should still use skip semantics
+      await store.add(new Triple(breakfastProto, effortArea, healthArea));
+      const vacationArea = new IRI("obsidian://vault/Vacation.md");
+      await store.add(new Triple(breakfastInstance, prototype, breakfastProto));
+      await store.add(new Triple(breakfastInstance, effortArea, vacationArea));
+
+      await materializerWithCardinality.materialize(store);
+
+      // Own value preserved, prototype value skipped
+      const areaTriples = await store.match(breakfastInstance, effortArea, undefined);
+      expect(areaTriples.length).toBe(1);
+      expect(areaTriples[0].object).toEqual(vacationArea);
     });
   });
 });
