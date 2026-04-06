@@ -58,6 +58,7 @@ jest.unstable_mockModule("exocortex", () => ({
     PROPERTY_SET: "property_set",
     COMPOSITE: "composite",
     SERVICE_CALL: "service_call",
+    CREATE_INSTANCE: "create_instance",
   },
 }));
 

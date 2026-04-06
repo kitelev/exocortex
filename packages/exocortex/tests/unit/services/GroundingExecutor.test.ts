@@ -382,6 +382,24 @@ describe("GroundingExecutor", () => {
     });
   });
 
+  // -- create_instance --
+
+  describe("create_instance", () => {
+    it("should return not-implemented error", async () => {
+      const grounding = makeGrounding({
+        type: GroundingType.CREATE_INSTANCE,
+        targetClass: "ems__Task",
+        targetPrototype: "proto-uuid-123",
+        targetFolder: "01 Inbox",
+      });
+
+      const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("not yet implemented");
+    });
+  });
+
   // -- sparql_update --
 
   describe("sparql_update", () => {

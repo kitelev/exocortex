@@ -8,17 +8,18 @@ import {
 import { AssetClass } from "../../../../src/domain/constants/AssetClass";
 
 describe("GroundingType", () => {
-  it("should have all 5 RFC types", () => {
+  it("should have all 6 grounding types", () => {
     expect(GroundingType.SPARQL_UPDATE).toBe("sparql_update");
     expect(GroundingType.PROPERTY_DELETE).toBe("property_delete");
     expect(GroundingType.PROPERTY_SET).toBe("property_set");
     expect(GroundingType.COMPOSITE).toBe("composite");
     expect(GroundingType.SERVICE_CALL).toBe("service_call");
+    expect(GroundingType.CREATE_INSTANCE).toBe("create_instance");
   });
 
-  it("should have exactly 5 values", () => {
+  it("should have exactly 6 values", () => {
     const values = Object.values(GroundingType);
-    expect(values).toHaveLength(5);
+    expect(values).toHaveLength(6);
   });
 });
 
