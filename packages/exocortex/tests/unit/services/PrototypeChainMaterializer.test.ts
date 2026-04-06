@@ -450,4 +450,122 @@ describe("PrototypeChainMaterializer", () => {
       expect(MAX_PROTOTYPE_DEPTH).toBe(10);
     });
   });
+
+  describe("exo__Instance_class inheritance (RFC-016 #2638)", () => {
+    const gtdReviewClass = new IRI("https://exocortex.my/ontology/gtd#Review");
+
+    it("should inherit single Instance_class value when instance has NO own Instance_class", async () => {
+      // Prototype has one class: ems__Task
+      await store.add(new Triple(breakfastProto, instanceClass, taskClass));
+      await store.add(new Triple(breakfastProto, effortArea, healthArea));
+
+      // Instance links to prototype, has NO own Instance_class
+      await store.add(new Triple(breakfastInstance, prototype, breakfastProto));
+
+      const count = await materializer.materialize(store);
+
+      // Instance_class is inheritable → class should be inherited
+      const classTriples = await store.match(breakfastInstance, instanceClass, undefined);
+      expect(classTriples.length).toBe(1);
+      expect((classTriples[0].object as IRI).value).toBe(taskClass.value);
+
+      // Area should also be inherited
+      const areaTriples = await store.match(breakfastInstance, effortArea, undefined);
+      expect(areaTriples.length).toBe(1);
+    });
+
+    // TODO: Phase 2 (RFC-016 #2639) will fix multi-valued merge.
+    // Currently, seenPredicates marks the predicate as "done" after the first
+    // inherited triple, so only 1 of N values from the same predicate is inherited.
+    it.skip("should inherit ALL Instance_class values when prototype has multiple classes (Phase 2 — #2639)", async () => {
+      // Prototype has two classes: ems__Task and gtd__Review
+      await store.add(new Triple(breakfastProto, instanceClass, taskClass));
+      await store.add(new Triple(breakfastProto, instanceClass, gtdReviewClass));
+
+      // Instance has NO own Instance_class
+      await store.add(new Triple(breakfastInstance, prototype, breakfastProto));
+
+      await materializer.materialize(store);
+
+      // After Phase 2: instance should have BOTH classes
+      const classTriples = await store.match(breakfastInstance, instanceClass, undefined);
+      expect(classTriples.length).toBe(2);
+
+      const classValues = classTriples.map(t => (t.object as IRI).value);
+      expect(classValues).toContain(taskClass.value);
+      expect(classValues).toContain(gtdReviewClass.value);
+    });
+
+    // TODO: Phase 2 (RFC-016 #2639) will fix this.
+    // Currently, if instance has ANY own value for a predicate, the entire
+    // predicate is skipped during inheritance — even for multi-valued properties.
+    it.skip("should append inherited Instance_class values when instance has OWN partial class (Phase 2 — #2639)", async () => {
+      // Prototype has two classes: ems__Task and gtd__Review
+      await store.add(new Triple(breakfastProto, instanceClass, taskClass));
+      await store.add(new Triple(breakfastProto, instanceClass, gtdReviewClass));
+
+      // Instance has OWN Instance_class: [ems__Task] only
+      await store.add(new Triple(breakfastInstance, prototype, breakfastProto));
+      await store.add(new Triple(breakfastInstance, instanceClass, taskClass));
+
+      await materializer.materialize(store);
+
+      // After Phase 2: instance should have BOTH ems__Task (own) AND gtd__Review (inherited)
+      const classTriples = await store.match(breakfastInstance, instanceClass, undefined);
+      expect(classTriples.length).toBe(2);
+
+      const classValues = classTriples.map(t => (t.object as IRI).value);
+      expect(classValues).toContain(taskClass.value);
+      expect(classValues).toContain(gtdReviewClass.value);
+    });
+
+    it("should verify current skip: only first of multiple prototype classes is inherited", async () => {
+      // Documents CURRENT behavior — seenPredicates marks predicate after first triple
+      await store.add(new Triple(breakfastProto, instanceClass, taskClass));
+      await store.add(new Triple(breakfastProto, instanceClass, gtdReviewClass));
+
+      await store.add(new Triple(breakfastInstance, prototype, breakfastProto));
+
+      await materializer.materialize(store);
+
+      // Current: only 1 class inherited (first one processed), second is skipped
+      const classTriples = await store.match(breakfastInstance, instanceClass, undefined);
+      expect(classTriples.length).toBe(1);
+    });
+
+    it("should verify current skip: own Instance_class blocks ALL prototype classes", async () => {
+      // Documents CURRENT behavior — own predicate blocks all inheritance
+      await store.add(new Triple(breakfastProto, instanceClass, taskClass));
+      await store.add(new Triple(breakfastProto, instanceClass, gtdReviewClass));
+
+      await store.add(new Triple(breakfastInstance, prototype, breakfastProto));
+      await store.add(new Triple(breakfastInstance, instanceClass, taskClass));
+
+      await materializer.materialize(store);
+
+      // Current: seenPredicates has Instance_class from own → ALL inherited skipped
+      const classTriples = await store.match(breakfastInstance, instanceClass, undefined);
+      expect(classTriples.length).toBe(1);
+      expect((classTriples[0].object as IRI).value).toBe(taskClass.value);
+    });
+
+    it("should inherit Instance_class through depth-2 chain when instance has no own class", async () => {
+      // Chain: breakfastInstance → breakfastProto → morningProto
+      await store.add(new Triple(breakfastInstance, prototype, breakfastProto));
+      await store.add(new Triple(breakfastProto, prototype, morningProto));
+
+      // morningProto (grandparent) has single Instance_class
+      await store.add(new Triple(morningProto, instanceClass, gtdReviewClass));
+
+      // breakfastProto (parent) has area
+      await store.add(new Triple(breakfastProto, effortArea, healthArea));
+
+      const count = await materializer.materialize(store);
+
+      // Instance should inherit Instance_class from grandparent (single value passes)
+      const classTriples = await store.match(breakfastInstance, instanceClass, undefined);
+      expect(classTriples.length).toBe(1);
+      expect((classTriples[0].object as IRI).value).toBe(gtdReviewClass.value);
+    });
+  });
 });
