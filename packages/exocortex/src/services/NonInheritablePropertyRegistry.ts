@@ -1,3 +1,4 @@
+import { injectable } from "tsyringe";
 import { ITripleStore } from "../interfaces/ITripleStore";
 import { IRI } from "../domain/models/rdf/IRI";
 import { Literal } from "../domain/models/rdf/Literal";
@@ -11,6 +12,7 @@ import { Namespace } from "../domain/models/rdf/Namespace";
  *
  * Used by PrototypeChainMaterializer to skip excluded properties during inheritance.
  */
+@injectable()
 export class NonInheritablePropertyRegistry {
   private readonly nonInheritableIRIs: Set<string> = new Set();
   private initialized = false;

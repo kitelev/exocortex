@@ -1,3 +1,4 @@
+import { injectable } from "tsyringe";
 import { ITripleStore } from "../interfaces/ITripleStore";
 import { Triple } from "../domain/models/rdf/Triple";
 import { IRI } from "../domain/models/rdf/IRI";
@@ -44,6 +45,7 @@ export const MAX_PROTOTYPE_DEPTH = 10;
  *
  * Follows the RDFSInferenceEngine pattern: post-index pass over the triple store.
  */
+@injectable()
 export class PrototypeChainMaterializer {
   private readonly registry: NonInheritablePropertyRegistry;
 

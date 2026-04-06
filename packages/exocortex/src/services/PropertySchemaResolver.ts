@@ -1,3 +1,4 @@
+import { injectable } from "tsyringe";
 import type { ILogger } from "../interfaces/ILogger";
 import { PropertyFieldType, rangeToFieldType } from "../domain/types/PropertyFieldType";
 import { extractPropertyLabel } from "../domain/types/PropertyDefinition";
@@ -40,6 +41,7 @@ export interface ISPARQLQueryable {
   query(sparql: string): Promise<Map<string, unknown>[]>;
 }
 
+@injectable()
 export class PropertySchemaResolver {
   private cache = new Map<string, PropertySchema>();
   private allSchemasLoaded = false;
