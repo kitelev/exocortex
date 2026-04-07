@@ -119,6 +119,11 @@ export default class ExocortexPlugin extends Plugin {
       this.sparql = new SPARQLApi(this);
       this.api = new ExocortexAPI(this);
 
+      // Eagerly initialize triple store so it's populated before first layout render.
+      // SPARQLQueryService uses lazy init (on first query), but dynamic command buttons
+      // need the triple store pre-populated with vault RDF data.
+      await this.sparql.query("ASK { ?s ?p ?o }").catch(() => {});
+
       // RFC-009: Wire Dynamic Command System services BEFORE renderer
       // Construct manually (not via tsyringe) because they need the live triple store
       const tripleStore = this.sparql.getTripleStore();

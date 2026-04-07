@@ -42,13 +42,7 @@ test.describe("Dynamic Command Button Rendering & Functionality", () => {
     fs.writeFileSync(FIXTURE_PATH, fixtureOriginal, "utf-8");
   });
 
-  // FIXME: Triple store is empty at first render. VaultRDFIndexer populates it
-  // asynchronously, but UniversalLayoutRenderer renders the layout (and buttons)
-  // before indexing completes. No re-render signal exists when indexing finishes.
-  // The DI wiring is now correct (services passed directly), but CommandResolver
-  // finds no CommandBinding triples because the triple store hasn't been populated yet.
-  // Needs: triple store "ready" event → layout re-render, or deferred button build.
-  test.fixme("renders button from RDF config and executes grounding on click", async () => {
+  test("renders button from RDF config and executes grounding on click", async () => {
     const page = await launcher.getWindow();
 
     // ── Step 1: Wait for plugin to load ──
