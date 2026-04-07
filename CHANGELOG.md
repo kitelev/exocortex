@@ -1,5 +1,28 @@
 ## [Unreleased]
 
+### Added
+
+**`create_instance` Grounding Type for Declarative File Creation (RFC-016 Blocker 2)**: A new grounding type that allows plugin commands to declaratively create new Exocortex asset files. This enables ontology plugins to define "create new instance" actions without writing imperative code.
+
+- `GroundingType.CREATE_INSTANCE` enum value with `targetClass`, `targetPrototype`, `targetFolder` fields
+- `executeCreateInstance` in GroundingExecutor — generates UUID, builds frontmatter from prototype chain, creates files in vault
+- Integration tests for full create_instance pipeline with NoteToRDFConverter validation
+- Obsidian plugin wiring for create_instance grounding with vault-relative path resolution
+
+### Changed
+
+**Multi-Valued Property Merge in PrototypeChainMaterializer (RFC-016 Blocker 1)**: Properties marked with `exo__PropertyCardinalityMultiple` now APPEND inherited values from the prototype chain instead of skipping when already present. This enables RFC-014 plugin class adoption where an existing instance can adopt additional classes from a plugin prototype.
+
+**`property_set` Grounding Verified with YAML Arrays of Wikilinks (RFC-016 Blocker 3)**: Confirmed and tested that `property_set` grounding correctly handles YAML arrays of wikilinks (`[[uuid|label]]`), ensuring plugin commands can set multi-valued properties declaratively.
+
+### Note
+
+**RFC-014 (Ontology Plugins) is now unblocked.** All three prerequisite blockers from RFC-016 (Plugin Infrastructure Prerequisites) have been resolved:
+
+1. Multi-valued property merge (Blocker 1, Issues #2639-#2641)
+2. `create_instance` grounding type (Blocker 2, Issues #2642-#2645)
+3. `property_set` with YAML arrays (Blocker 3, Issues #2637-#2638)
+
 ## [12.15.54] - 2025-10-18
 
 ### Changed
@@ -7,6 +30,7 @@
 **Archive Command Now Available for All Asset Types**: The archive command is no longer restricted to Done/Trashed Tasks and Projects. You can now archive ANY asset in your vault, regardless of its type (Area, Note, etc.) or status. This makes information lifecycle management much more flexible and universal.
 
 **User Benefit:**
+
 - Archive any asset type, not just completed efforts
 - Archive Areas when they're no longer active
 - Archive reference notes, contacts, or any other asset type
@@ -17,22 +41,26 @@
 - Archived assets are automatically hidden from relations tables and backlinks
 
 **Use Cases:**
+
 - Lifecycle management: Archive inactive Areas when projects within them complete
 - Information retirement: Archive old reference notes while preserving them
 - Workspace cleanup: Archive any asset that's no longer actively needed
 - Flexible archiving: Archive based on your needs, not rigid status rules
 
 **Previous Behavior:**
+
 - Archive was only available for Tasks and Projects
 - Required Done or Trashed status to archive
 - Areas and other asset types couldn't be archived
 
 **New Behavior:**
+
 - Archive available for ALL asset types
 - No status requirements - archive any non-archived asset
 - Simple rule: if it's not archived, you can archive it
 
 **Technical Implementation:**
+
 - Simplified `canArchiveTask()` visibility function - now only checks `!isArchived`
 - Removed class-based restrictions (`isEffort` check removed)
 - Removed status-based restrictions (Done/Trashed checks removed)
@@ -40,6 +68,7 @@
 - Command and button now universally available
 
 **Breaking Changes:**
+
 - None - this is purely an expansion of functionality
 - Previously archived assets remain archived
 - Archive command behavior unchanged for existing use cases
@@ -51,6 +80,7 @@
 **Properties Section Visibility Toggle**: You can now control whether the Properties table is displayed in the Layout. This new setting gives you full control over your workspace layout, allowing you to hide Properties when you want a cleaner, more focused view of relationships and tasks.
 
 **User Benefit:**
+
 - Toggle Properties section visibility without restarting Obsidian
 - Available in two ways:
   1. Plugin Settings: Persistent toggle in "Exocortex Settings" tab
@@ -60,12 +90,14 @@
 - Keeps other Layout sections (buttons, tasks, relations) fully functional
 
 **Use Cases:**
+
 - Focus on relationships: Hide Properties to see more asset connections on screen
 - Reduce clutter: Properties can be verbose - toggle them off when not needed
 - Quick switching: Use Command Palette hotkey for instant Properties toggle during work
 - Custom workflows: Different visibility preferences for different work sessions
 
 **Technical Implementation:**
+
 - New `ExocortexSettings` interface with `showPropertiesSection: boolean` property
 - Settings UI tab: `ExocortexSettingTab` with toggle control
 - Settings persistence via Obsidian's plugin data system
@@ -80,6 +112,7 @@
 **Plan for Evening (19:00) Command for Backlog Tasks**: Tasks in Backlog status can now be quickly scheduled for the evening with a single click. The "Plan for Evening (19:00)" button sets the `ems__Effort_plannedStartTimestamp` property to today's date at 19:00 (7 PM), making it easy to defer work to evening hours.
 
 **User Benefit:**
+
 - One-click evening scheduling for Backlog tasks
 - Available as both Layout button and Command Palette command ("Exocortex: Plan for Evening (19:00)")
 - Automatically sets planned start time to 19:00 local time
@@ -87,11 +120,13 @@
 - Only visible for Tasks (not Projects) in Backlog status, keeping UI clean
 
 **Use Case:**
+
 - Morning planning: review Backlog and mark tasks for evening work
 - Quick rescheduling: defer current Backlog tasks to evening session
 - Time blocking: separate morning/afternoon work from evening work
 
 **Technical Implementation:**
+
 - New `canPlanForEvening()` visibility function (Task + Backlog status only)
 - `planForEvening()` service method in TaskStatusService
 - Sets `ems__Effort_plannedStartTimestamp` to today at 19:00:00 in local timezone
@@ -107,12 +142,14 @@
 **Set Draft Status for Efforts Without Status**: Tasks and Projects without any status now show a "Set Draft Status" button and command, allowing you to quickly initialize them into the workflow. This helps manage legacy or manually created efforts that were created before the workflow system was established.
 
 **User Benefit:**
+
 - One-click status initialization for efforts without status
 - Available as both Layout button and Command Palette command ("Exocortex: Set Draft Status")
 - Once set to Draft, effort enters the normal workflow (Draft → Backlog → Doing → Done)
 - Particularly useful for migrating existing tasks into the structured workflow
 
 **Technical Implementation:**
+
 - New `canSetDraftStatus()` visibility function (shows only when status is not set)
 - `setDraftStatus()` service method in TaskStatusService
 - Integrated into UniversalLayoutRenderer Status button group
@@ -127,17 +164,20 @@
 **E2E Tests - Fixed Local Test Execution (CDP Port Cleanup)**: Local E2E tests now pass reliably (3/3) by implementing aggressive cleanup between tests. Previously, the second test would fail with "bind() failed: Address already in use (98)" because the Chrome DevTools Protocol (CDP) port 9222 wasn't released after the first test.
 
 **Root Cause:**
+
 - `ObsidianLauncher.close()` used SIGTERM (soft termination) without waiting for process exit
 - CDP port 9222 remained occupied between tests in single Docker container
 - Second test couldn't start Electron because port was still in use
 
 **Solution:**
+
 - Changed to SIGKILL for immediate process termination
 - Added explicit wait for process death (polling with 5s timeout)
 - Added `waitForPortClosed()` method to verify CDP port 9222 is released
 - Comprehensive logging for debugging cleanup issues
 
 **Impact:**
+
 - Local E2E tests now pass consistently (100% success rate)
 - Faster test execution (no 30s timeouts between tests)
 - Identical behavior to CI environment (which passes 3/3)
@@ -149,18 +189,21 @@
 **E2E Tests - Removed Obsolete Dataview Dependency for DailyNote Tasks**: The `renderDailyTasks` method was checking for Dataview plugin availability but not actually using Dataview API (it uses Obsidian Vault API directly since v12.x). In E2E test environment where Dataview is not installed, this caused the method to return early without rendering `.exocortex-daily-tasks-section`, leading to test timeouts.
 
 **Root Cause:**
+
 - `UniversalLayoutRenderer.ts:1132-1138` checked for Dataview plugin existence
 - If Dataview not found, method returned early without rendering tasks table
 - E2E Docker environment doesn't have Dataview installed
 - Tests timed out waiting for `.exocortex-daily-tasks-section` that was never created
 
 **Technical Solution:**
+
 - Removed Dataview availability check from `renderDailyTasks` method
 - Removed unused `dataviewApi` parameter from `getDailyTasks` method
 - Method now uses only Obsidian Vault API (`this.app.vault.getMarkdownFiles()`)
 - Tasks table renders in all environments (with or without Dataview)
 
 **Impact:**
+
 - ✅ E2E tests now pass in CI (Docker without Dataview)
 - ✅ Plugin still works in production (with or without Dataview)
 - ✅ Cleaner code without unused dependencies
@@ -172,8 +215,9 @@
 **E2E Test Selector Fix - Plugin WAS Rendering, Tests Were Looking for Wrong CSS Class**: v12.15.47 successfully fixed the trust dialog timing issue - logs confirmed trust dialog was clicked and handled correctly. However, E2E tests still FAILED with "Timeout waiting for .exocortex-layout-container". Investigation revealed **the problem was NOT the plugin**, but the tests using an **incorrect CSS selector**.
 
 **Root Cause Discovery (v12.15.48):**
-- Analyzed screenshots from v12.15.47: TWO screenshots showed plugin working perfectly (Properties table, pn__DailyNote_day table fully rendered) ✅
-- ONE screenshot showed Settings dialog, BUT pn__DailyNote_day table was visible UNDERNEATH the Settings modal ✅
+
+- Analyzed screenshots from v12.15.47: TWO screenshots showed plugin working perfectly (Properties table, pn\_\_DailyNote_day table fully rendered) ✅
+- ONE screenshot showed Settings dialog, BUT pn\_\_DailyNote_day table was visible UNDERNEATH the Settings modal ✅
 - This proved the plugin WAS rendering successfully! 🎉
 - Examined `UniversalLayoutRenderer.ts:419-467`: Plugin creates these CSS classes:
   - `exocortex-buttons-section` (line 439)
@@ -186,6 +230,7 @@
 **Technical Solution (v12.15.48):**
 
 **1. Updated E2E Tests (`tests/e2e/specs/daily-note-tasks.spec.ts`):**
+
 ```typescript
 // OLD (v12.15.47) - WRONG SELECTOR:
 await launcher.waitForElement('.exocortex-layout-container', 30000);  ❌
@@ -197,6 +242,7 @@ const tasksTable = window.locator('.exocortex-daily-tasks-section table').first(
 ```
 
 **2. Updated ObsidianLauncher (`tests/e2e/utils/obsidian-launcher.ts:286`):**
+
 ```typescript
 // OLD (v12.15.47) - CHECKING NON-EXISTENT SELECTOR:
 hasExocortexContainer: !!document.querySelector('.exocortex-layout-container'),  ❌
@@ -209,6 +255,7 @@ hasExocortexContainer: !!(
 ```
 
 **Why This Fix Works:**
+
 - Tests now look for CSS classes the plugin ACTUALLY creates
 - `.exocortex-daily-tasks-section` exists when DailyNote renders tasks table
 - `.exocortex-properties-section` exists when Properties table renders
@@ -216,11 +263,13 @@ hasExocortexContainer: !!(
 - Launcher now checks for real DOM elements that prove plugin loaded successfully
 
 **Evidence from v12.15.47 Screenshots:**
-- Screenshot 1 & 2: Full layout rendered (Properties + pn__DailyNote_day table visible)
+
+- Screenshot 1 & 2: Full layout rendered (Properties + pn\_\_DailyNote_day table visible)
 - Screenshot 3: Settings dialog visible, BUT table rendered underneath (proved by visible table header)
 - **Conclusion**: Plugin worked in ALL THREE tests, but tests failed due to wrong selector
 
 **Debugging Journey:**
+
 - v12.15.45: Config `trusted: true` → FAILED (dialog still appeared)
 - v12.15.46: Button click after DOM load → FAILED (checked too early)
 - v12.15.47: Button click after app init + 2s wait → Trust dialog FIXED ✅, but tests still failed
@@ -233,6 +282,7 @@ hasExocortexContainer: !!(
 **E2E Trust Dialog - Timing Fix (v12.15.46 Button Click Approach Failed)**: v12.15.46's button-clicking approach **FAILED due to wrong timing**. Downloaded and analyzed screenshots from v12.15.46 CI run - trust dialog STILL appeared despite `handleTrustDialog()` implementation. Root cause discovered through log analysis: the method checked for the dialog immediately after DOM load (line 99), but Obsidian displays the trust dialog AFTER `window.app` initialization completes, not before. The logs showed "Trust dialog not present" message, followed by successful `window.app` detection, but then tests failed because the dialog appeared later and blocked plugin execution.
 
 **Evidence from v12.15.46 logs:**
+
 ```
 [ObsidianLauncher] DOM loaded, handling trust dialog if present...
 [ObsidianLauncher] Trust dialog not present (vault already trusted or not required)  ❌ TOO EARLY!
@@ -242,6 +292,7 @@ hasExocortexContainer: !!(
 ```
 
 **Technical Solution (v12.15.47):**
+
 - **Moved `handleTrustDialog()` call** from line 99 (after DOM load) to line 136 (AFTER `window.app` initialization)
 - **Added 2-second wait** before checking for dialog to allow Obsidian time to display it
 - **Increased timeout** from 5 seconds to 15 seconds for dialog visibility check
@@ -253,27 +304,30 @@ hasExocortexContainer: !!(
   5. Continue with test execution
 
 **Code Changes in `obsidian-launcher.ts`:**
+
 ```typescript
 // OLD (v12.15.46) - WRONG TIMING:
-await this.window.waitForLoadState('domcontentloaded');
-await this.handleTrustDialog();  // TOO EARLY! ❌
+await this.window.waitForLoadState("domcontentloaded");
+await this.handleTrustDialog(); // TOO EARLY! ❌
 // wait for window.app...
 
 // NEW (v12.15.47) - CORRECT TIMING:
-await this.window.waitForLoadState('domcontentloaded');
+await this.window.waitForLoadState("domcontentloaded");
 // wait for window.app first...
-console.log('[ObsidianLauncher] Obsidian app object available!');
-await this.window.waitForTimeout(2000);  // Wait for dialog to appear
-await this.handleTrustDialog();  // NOW check for dialog ✅
+console.log("[ObsidianLauncher] Obsidian app object available!");
+await this.window.waitForTimeout(2000); // Wait for dialog to appear
+await this.handleTrustDialog(); // NOW check for dialog ✅
 ```
 
 **Why This Fix Works:**
+
 - Trust dialog appears as part of Obsidian's post-initialization flow
 - Checking after app initialization ensures dialog has time to appear
 - 2-second buffer allows for timing variations in CI environment
 - 15-second timeout provides sufficient window for dialog detection
 
 **Debugging Journey:**
+
 - v12.15.45: Config-based `trusted: true` field → FAILED (dialog still appeared)
 - v12.15.46: Button clicking after DOM load → FAILED (checked too early)
 - v12.15.47: Button clicking after app init + 2s wait → Testing now
@@ -285,12 +339,14 @@ await this.handleTrustDialog();  // NOW check for dialog ✅
 **E2E Trust Dialog - UI-Based Solution (Config Approach Failed)**: v12.15.45's config-based approach with `trusted: true` field **DID NOT WORK**. Downloaded and analyzed screenshots from v12.15.45 CI run - trust dialog still appears despite having `trusted: true` in vault configuration. Obsidian either doesn't recognize this field or stores trust information elsewhere. Switched to **UI-based solution**: implemented `handleTrustDialog()` method that programmatically clicks the "Trust author and enable plugins" button using Playwright locators. This is more reliable than relying on undocumented config fields.
 
 **Screenshot Evidence from v12.15.45:**
+
 - Trust dialog STILL displayed despite `trusted: true` config ❌
 - Message visible: "Do you trust the author of this vault?"
 - Buttons present: "Trust author and enable plugins" | "Browse vault in Restricted Mode"
 - Config-based approach conclusively proven ineffective
 
 **Technical Solution (v12.15.46):**
+
 - Implemented `handleTrustDialog()` method in `tests/e2e/utils/obsidian-launcher.ts`
 - Uses Playwright locator: `button:has-text("Trust author and enable plugins")`
 - Waits up to 5 seconds for button visibility with `.isVisible({ timeout: 5000 })`
@@ -300,6 +356,7 @@ await this.handleTrustDialog();  // NOW check for dialog ✅
 - Called after DOM load in `launch()` method
 
 **Why This Approach Works:**
+
 - Direct UI interaction matches real user behavior
 - Playwright locators are reliable for finding UI elements
 - No dependency on undocumented config fields
@@ -307,6 +364,7 @@ await this.handleTrustDialog();  // NOW check for dialog ✅
 - Gracefully handles both first-time and repeat vault opens
 
 **Debugging Journey:**
+
 - v12.15.45: Tried config-based `trusted: true` field → FAILED
 - v12.15.46: Switched to UI-based button clicking → FAILED (timing issue)
 
@@ -317,6 +375,7 @@ await this.handleTrustDialog();  // NOW check for dialog ✅
 **E2E Vault Trust Dialog - BREAKTHROUGH DISCOVERY**: v12.15.44 Docker volume fix successfully preserved E2E test failure screenshots. Downloaded and analyzed screenshots from GitHub Actions artifacts - **FOUND THE ROOT CAUSE**! The screenshot clearly shows Obsidian's security dialog: "Do you trust the author of this vault?" blocking plugin execution. Despite all configuration files being present (`community-plugins.json`, `app.json`, plugin enabled), Obsidian won't execute community plugins until the user explicitly clicks "Trust author and enable plugins". Added `trusted: true` field to vault configuration in `obsidian.json` to mark vault as trusted, completely bypassing the security dialog.
 
 **Screenshot Analysis Results:**
+
 - Vault opened successfully ✅
 - Properties visible: `exo__Instance_class: [[pn__DailyNote]]`, `pn__DailyNote_day: 2025-10-16` ✅
 - `window.app` initialized ✅
@@ -326,6 +385,7 @@ await this.handleTrustDialog();  // NOW check for dialog ✅
 - Two options: "Trust author and enable plugins" | "Browse vault in Restricted Mode"
 
 **Technical Solution:**
+
 - Modified `tests/e2e/utils/obsidian-launcher.ts` in `createObsidianConfig()` method
 - Added `trusted: true` field to vault configuration object
 - Config now includes: `{ path, ts, open: true, trusted: true }`
@@ -333,6 +393,7 @@ await this.handleTrustDialog();  // NOW check for dialog ✅
 - Clean solution - no UI interaction needed, no timing issues
 
 **Why This Matters:**
+
 - After 8 versions (v12.15.37-44) of debugging, finally identified exact blocker
 - Screenshot capture was CRITICAL for diagnosis - visual evidence > logs
 - Security dialog is reasonable Obsidian behavior for first-time vault opening
@@ -340,6 +401,7 @@ await this.handleTrustDialog();  // NOW check for dialog ✅
 - E2E tests should now pass with plugin loading correctly
 
 **Debugging Journey:**
+
 - v12.15.37-40: Investigated starter screen, vault selection
 - v12.15.41: Found empty vault list issue
 - v12.15.42: Fixed vault registration with config file
@@ -354,6 +416,7 @@ await this.handleTrustDialog();  // NOW check for dialog ✅
 **E2E Screenshot Capture - Docker Volume Fix**: v12.15.43 verification proved ALL configuration files are present in Docker image (`community-plugins.json`, `app.json`, `main.js`, `manifest.json`), yet screenshots showing plugin failure were lost when the container was removed. The root cause: E2E tests run in Docker with `--rm` flag, which deletes the container and all its contents (including `test-results/` directory with screenshots) after execution. Implemented Docker volume mounting to persist test results and screenshots from container to host filesystem.
 
 **Technical Solution:**
+
 - Modified `.github/workflows/ci.yml` E2E job to mount Docker volumes
 - Created `test-results-e2e/` directory on host before running container
 - Mounted container's `/app/test-results` → host's `test-results-e2e/`
@@ -362,6 +425,7 @@ await this.handleTrustDialog();  // NOW check for dialog ✅
 - Screenshots now persist after container removal and are available as GitHub artifacts
 
 **Why This Matters:**
+
 - E2E tests were creating failure screenshots but they were being deleted with the container
 - Screenshots are CRITICAL for diagnosing why plugin doesn't load in Docker environment
 - Now we'll be able to SEE exactly what Obsidian looks like when tests fail
@@ -369,6 +433,7 @@ await this.handleTrustDialog();  // NOW check for dialog ✅
 - Follows standard Playwright testing pattern of capturing screenshots on failure
 
 **Next Steps:**
+
 - Wait for CI run to complete
 - Download `e2e-test-results` artifact from GitHub Actions
 - Analyze screenshots to understand why plugin doesn't render despite all files being present
@@ -380,6 +445,7 @@ await this.handleTrustDialog();  // NOW check for dialog ✅
 **E2E Docker Configuration Verification**: v12.15.42 successfully bypassed the starter screen using the config file approach, but E2E tests still failed because the plugin didn't render (`hasExocortexContainer: false`). Enhanced Dockerfile.e2e to add comprehensive verification steps during build that check if essential Obsidian configuration files (`community-plugins.json`, `app.json`) are present after the COPY step. This will help diagnose whether plugin configuration files are correctly included in the Docker image and identify any missing files that prevent plugin loading.
 
 **Dockerfile.e2e Enhancements:**
+
 - Added verification output showing all JSON files in `.obsidian/` directory
 - Display `community-plugins.json` content to confirm plugin is enabled
 - Verify `app.json` existence
@@ -387,6 +453,7 @@ await this.handleTrustDialog();  // NOW check for dialog ✅
 - Comprehensive build-time diagnostics to identify configuration issues
 
 **Why This Matters:**
+
 - v12.15.42 fixed vault opening but plugin still doesn't load
 - Need visibility into whether config files are present in Docker image
 - Build logs will show exactly what files are/aren't being copied
@@ -399,6 +466,7 @@ await this.handleTrustDialog();  // NOW check for dialog ✅
 **E2E Config File Solution - DEFINITIVE FIX**: Analysis of v12.15.41 logs revealed the TRUE root cause - Obsidian showed the starter screen but **vault list was EMPTY** (`Found vault items: 0`). The vault clicking approach couldn't work because there were no vaults to click! The real issue: `/root/.config/obsidian/obsidian.json` config file doesn't exist in Docker container, so Obsidian displays an empty welcome screen. Implemented automated config file creation to register the test vault BEFORE Obsidian launches, completely bypassing the starter screen.
 
 **Root Cause from v12.15.41 Logs:**
+
 - ✅ Obsidian launched successfully, starter screen appeared
 - ✅ Vault clicking code executed
 - ❌ **"Found vault items: 0"** - NO vaults in the list to click!
@@ -407,6 +475,7 @@ await this.handleTrustDialog();  // NOW check for dialog ✅
 - ❌ `window.app` never initializes without vault selection
 
 **Technical Solution:**
+
 - `tests/e2e/utils/obsidian-launcher.ts` - Added `createObsidianConfig()` method
 - Creates `/root/.config/obsidian` directory if it doesn't exist
 - Writes `obsidian.json` with vault registration: `{"vaults": {"test-vault-e2e": {"path": "/app/tests/e2e/test-vault", "ts": <timestamp>, "open": true}}}`
@@ -416,6 +485,7 @@ await this.handleTrustDialog();  // NOW check for dialog ✅
 - Simplified polling to only check for app/workspace/vault objects
 
 **Why This Should Work:**
+
 - Addresses the ACTUAL root cause (missing config file, not UI interaction)
 - Obsidian config file is the standard way to register vaults
 - `"open": true` flag tells Obsidian to open this vault automatically
@@ -430,6 +500,7 @@ await this.handleTrustDialog();  // NOW check for dialog ✅
 **E2E Starter Screen Fix - BREAKTHROUGH**: Diagnostic logs from v12.15.40 revealed the root cause - Obsidian was stuck on the **starter/welcome screen** (body class contains "starter") and never progressed to opening the vault! The `window.app` object only initializes AFTER a vault is opened. Implemented programmatic vault opening by detecting the starter screen and clicking the vault element to trigger initialization.
 
 **Root Cause Identified from v12.15.40 Diagnostics:**
+
 - ✅ Obsidian launched successfully via CDP
 - ✅ DOM loaded correctly
 - ✅ `window.require` and `window.electron` available
@@ -438,6 +509,7 @@ await this.handleTrustDialog();  // NOW check for dialog ✅
 - ❌ App object only appears AFTER vault is opened
 
 **Technical Solution:**
+
 - `tests/e2e/utils/obsidian-launcher.ts` - Added starter screen detection
 - Check body class for "starter" keyword
 - Find vault element via `.vault` selector matching vault path
@@ -446,6 +518,7 @@ await this.handleTrustDialog();  // NOW check for dialog ✅
 - Polling now includes body class monitoring to track screen transitions
 
 **Why This Should Work:**
+
 - Addresses the actual problem (vault not opening, not timing)
 - Mimics user interaction flow (select vault → app initializes)
 - Diagnostic proven: Obsidian requires vault selection to proceed
@@ -458,12 +531,14 @@ await this.handleTrustDialog();  // NOW check for dialog ✅
 **E2E Window Diagnostics - CRITICAL**: Added comprehensive diagnostic logging to identify why `window.app` object never becomes available in headless Docker environment. The v12.15.39 approach (waiting for `window.app`) was correct, but the app object simply never appears even after 180 seconds. Added detailed window state inspection to understand what objects Obsidian exposes in headless mode and custom polling loop with progress logging every 5 seconds.
 
 **Root Cause from v12.15.39:**
+
 - Obsidian launches successfully via CDP
 - DOM loads correctly
 - BUT: `window.app` object never initializes (timeout after 180s)
 - All 3 E2E tests failed with "Test timeout of 180000ms exceeded while running 'beforeEach' hook"
 
 **Technical Changes:**
+
 - `tests/e2e/utils/obsidian-launcher.ts` - Added window diagnostics immediately after DOM load
 - Inspects: `window.app`, `window.require`, `window.electron`, `document.title`, `document.body.className`, top 20 window keys
 - Custom polling loop (60 iterations, 1-second intervals) with detailed logging
@@ -471,6 +546,7 @@ await this.handleTrustDialog();  // NOW check for dialog ✅
 - Replaced Playwright's `waitForFunction()` with manual polling for better observability
 
 **Diagnostic Goals:**
+
 - Identify what objects Obsidian exposes in headless Docker/xvfb
 - Understand if app object exists but is uninitialized
 - Determine if Obsidian requires specific trigger to initialize app
@@ -483,18 +559,21 @@ await this.handleTrustDialog();  // NOW check for dialog ✅
 **E2E Wait for App Object - CRITICAL**: Fixed timing issue where file opening attempted before Obsidian app object was available on window. Even though DOM was loaded and we waited 3 seconds, the `window.app` object wasn't yet initialized. Added `waitForFunction()` to explicitly wait for `window.app`, `window.app.workspace`, and `window.app.vault` to be available before attempting to open files. This prevents "App not available" errors.
 
 **Root Cause from v12.15.38:**
+
 - DOM loads successfully
 - Fixed 3-second wait didn't guarantee app object initialization
 - File opening tried to access `window.app` before it existed
 - Result: "App not available" error
 
 **Technical Changes:**
+
 - `tests/e2e/utils/obsidian-launcher.ts` - Added `waitForFunction()` for app object availability
 - Explicitly waits for `window.app`, `window.app.workspace`, and `window.app.vault`
 - Only proceeds with file opening once app is fully initialized
 - More reliable than fixed timeout
 
 **Why This Should Work:**
+
 - Waits for actual app object, not arbitrary timeout
 - Guarantees app.workspace and app.vault are available
 - File opening code won't execute until app is ready
@@ -507,12 +586,14 @@ await this.handleTrustDialog();  // NOW check for dialog ✅
 **E2E File Opening Fix - CRITICAL**: Fixed file opening method in E2E tests to use proper Obsidian API. Debug logs from v12.15.37 revealed that `app.workspace.openLinkText()` was failing silently - no active leaf was created, resulting in `hasLeaf: false, currentMode: undefined`. Replaced with correct approach: `app.vault.getAbstractFileByPath()` + `app.workspace.getLeaf().openFile()` with preview mode state. This ensures files actually open with an active leaf before plugin rendering.
 
 **Root Cause Identified from v12.15.37 Logs:**
+
 - `openLinkText()` returned `{ hasLeaf: false, currentMode: undefined, viewType: undefined }`
 - File opening was failing silently - no errors, but no active leaf created
 - Without active leaf, there's no view to render the plugin UI on
 - Plugin couldn't render because no file was actually open
 
 **Technical Changes:**
+
 - `tests/e2e/utils/obsidian-launcher.ts` - Complete rewrite of `openFile()` method
 - Use `app.vault.getAbstractFileByPath()` to get TFile object
 - Use `app.workspace.getLeaf().openFile(file, { state: { mode: 'preview' } })` to properly open file
@@ -520,6 +601,7 @@ await this.handleTrustDialog();  // NOW check for dialog ✅
 - Verify active leaf exists after opening
 
 **Why This Should Work:**
+
 - Uses documented Obsidian API for opening files programmatically
 - Opens directly in preview mode (no mode switching needed)
 - Creates active leaf that plugin can render on
@@ -532,12 +614,14 @@ await this.handleTrustDialog();  // NOW check for dialog ✅
 **E2E Debug Logging and Extended Wait**: Added comprehensive debug logging to E2E test launcher to diagnose why plugin UI isn't rendering despite successful preview mode switching. Logs now capture view state before/after mode switch, checks for `.exocortex-layout-container` existence, and provides detailed state information. Also increased wait time after mode switch from 1s to 2s to give plugin more time to render.
 
 **Technical Changes:**
+
 - `tests/e2e/utils/obsidian-launcher.ts` - Added debug logging at every step of `openFile()` process
 - Log view state, mode, and DOM elements before and after preview mode switch
 - Increased post-switch wait from 1000ms to 2000ms
 - Check if `.exocortex-layout-container` exists after mode switch
 
 **Debugging Information Captured:**
+
 - File path being opened
 - View mode before switch (edit vs preview)
 - View mode after switch
@@ -545,6 +629,7 @@ await this.handleTrustDialog();  // NOW check for dialog ✅
 - Active leaf and view state information
 
 **Why This Matters:**
+
 - Helps diagnose why v12.15.36 still failed (mode switch executed but plugin didn't render)
 - Debug logs will reveal whether plugin is loading, mode is switching correctly, or there's another issue
 - Critical for completing E2E test infrastructure
@@ -556,11 +641,13 @@ await this.handleTrustDialog();  // NOW check for dialog ✅
 **E2E Reading Mode Fix**: Added automatic switch to reading/preview mode after opening files in E2E tests. The Exocortex plugin only renders layouts in reading mode, but Obsidian opens files in edit mode by default. Now the launcher automatically switches to preview mode after opening a file, ensuring the plugin UI renders correctly for E2E testing.
 
 **Technical Change:**
+
 - `tests/e2e/utils/obsidian-launcher.ts` - Added `setViewState()` call to switch active leaf to preview mode
 - Ensures `.exocortex-layout-container` renders for test verification
 - Fixes timeout errors waiting for plugin UI elements
 
 **Why This Matters:**
+
 - Completes E2E test infrastructure started in v12.15.35
 - Tests can now verify plugin rendering in reading mode
 - Critical for testing daily tasks table and other layout features
@@ -572,6 +659,7 @@ await this.handleTrustDialog();  // NOW check for dialog ✅
 **E2E CDP Connection Architecture - ULTIMATE FIX**: Completely rewrote Obsidian launcher to use Chrome DevTools Protocol (CDP) connection instead of Playwright's broken `electron.launch()` API. After extensive investigation, discovered that `electron.launch()` waits for Electron's 'ready' event which NEVER fires in headless Docker/xvfb environments - a fundamental architectural incompatibility. The solution: manually spawn Electron process with `--remote-debugging-port=9222`, wait for CDP endpoint to be ready, then connect via `chromium.connectOverCDP()`. This bypasses the 'ready' event wait entirely.
 
 **Root Cause Analysis (v12.15.31-34):**
+
 - Playwright's `electron.launch()` internally waits for Electron's 'ready' event before resolving
 - In headless Docker with xvfb, the 'ready' event never fires even though Electron runs successfully
 - This is NOT an autoupdater issue (v12.15.34), NOT a timeout issue (v12.15.33), NOT a plugin loading issue (v12.15.32)
@@ -579,32 +667,40 @@ await this.handleTrustDialog();  // NOW check for dialog ✅
 - Evidence: Simon Willison's working example uses `macos-latest` runner, NOT Linux/Docker
 
 **CDP Solution:**
+
 1. **Manual Spawn**: Use Node.js `spawn()` to launch Obsidian with `--remote-debugging-port=9222`
 2. **Port Detection**: Wait for CDP endpoint at `localhost:9222` to become available (HTTP polling)
 3. **CDP Connection**: Use `chromium.connectOverCDP()` to attach Playwright to running Electron process
 4. **No 'ready' Dependency**: Completely bypasses Playwright's Electron API and its 'ready' event wait
 
 **Technical Implementation:**
+
 ```typescript
 // Old (broken): electron.launch() hangs waiting for 'ready' event
 this.app = await electron.launch({ executablePath, args });
 
 // New (working): Manual spawn + CDP connection
-this.electronProcess = spawn(obsidianPath, ['--remote-debugging-port=9222', ...args]);
+this.electronProcess = spawn(obsidianPath, [
+  "--remote-debugging-port=9222",
+  ...args,
+]);
 await this.waitForPort(9222, 30000);
-const browser = await chromium.connectOverCDP('http://localhost:9222');
+const browser = await chromium.connectOverCDP("http://localhost:9222");
 ```
 
 **Files Modified:**
+
 - `tests/e2e/utils/obsidian-launcher.ts` - Complete rewrite using CDP architecture
 
 **Why This Matters:**
+
 - First working E2E solution for Obsidian plugins in Docker CI
 - Applicable to any Electron app testing in headless environments
 - Proves CDP is the only viable approach when Electron 'ready' event doesn't fire
 - Lessons learned from 5 failed attempts (v12.15.30-34) documented for future reference
 
 **References:**
+
 - Playwright CDP docs: `chromium.connectOverCDP()`
 - Electron remote debugging: `--remote-debugging-port`
 - Simon Willison example (macOS only, not applicable to Docker)
@@ -616,6 +712,7 @@ const browser = await chromium.connectOverCDP('http://localhost:9222');
 **E2E Electron Autoupdater Blocking Fix (INEFFECTIVE)**: Attempted to fix by disabling autoupdater with `--disable-updates` flag. Analysis of logs proved this was a red herring - the autoupdater was NOT the root cause. The real issue was Playwright's `electron.launch()` API being fundamentally incompatible with headless Docker environments. See v12.15.35 for the actual solution using CDP connection architecture.
 
 **Root Cause:**
+
 - Obsidian's autoupdater runs during Electron startup
 - In headless Docker/CI, autoupdater may block 'ready' event emission
 - `electron.launch()` waits for 'ready' event before resolving promise
@@ -623,19 +720,23 @@ const browser = await chromium.connectOverCDP('http://localhost:9222');
 - Logs showed "App is up to date" confirming autoupdater was active
 
 **Solution:**
+
 1. **Disable Autoupdater in CI**: Add `--disable-updates` flag when `process.env.CI` or `process.env.DOCKER` is set
 2. **Increase Timeout to 60s**: Give more time if needed, but autoupdater shouldn't block anymore
 3. **Log Autoupdater Disable**: Console message confirms flag was added
 
 **Files Modified:**
+
 - `tests/e2e/utils/obsidian-launcher.ts` - Added --disable-updates flag for CI/Docker
 
 **Why This Matters:**
+
 - Autoupdater interference is a known issue in Electron apps running in CI
 - Disabling updates is safe for E2E testing (we control the Obsidian version)
 - Should finally resolve the electron.launch() hang that's plagued all previous attempts
 
 **References:**
+
 - Similar to electron/electron autoupdater blocking issues in CI
 - trashhalo/obsidian-plugin-e2e-test likely doesn't have this issue because it uses Spectron (older, different API)
 
@@ -646,21 +747,25 @@ const browser = await chromium.connectOverCDP('http://localhost:9222');
 **E2E Electron Launch Timeout Fix (INCOMPLETE)**: Attempted to fix `electron.launch()` hanging by removing explicit timeout and --disable-extensions flag. This reduced hang time from 120s to 30s but didn't solve the root cause. The autoupdater was still blocking the 'ready' event. See v12.15.34 for the real fix.
 
 **Root Cause:**
+
 - `electron.launch()` with `timeout: 120000` hung for full 2 minutes in Docker
 - Even though Obsidian launched successfully ("App is up to date" in logs)
 - Playwright's promise never resolved to provide ElectronApplication object
 - Tests timed out waiting at `await electron.launch()` line
 
 **Solution:**
+
 1. **Remove Explicit Timeout**: Let Playwright use default 30s timeout instead of 120s
 2. **Immediate Window Check**: Check `app.windows()` immediately after launch
 3. **Remove --disable-extensions**: This flag might prevent Obsidian from fully initializing
 4. **Conditional Window Waiting**: Only wait for window events if windows don't exist yet
 
 **Files Modified:**
+
 - `tests/e2e/utils/obsidian-launcher.ts` - Removed timeout, added window existence checks, removed --disable-extensions flag
 
 **Why This Matters:**
+
 - Reduces test timeout from 2 minutes to 30 seconds (4x faster failure)
 - Allows Obsidian plugins/extensions to load (needed for testing)
 - Works around headless Docker electron.launch() quirks
@@ -672,12 +777,14 @@ const browser = await chromium.connectOverCDP('http://localhost:9222');
 **E2E Test Vault Plugin Loading**: Added missing `community-plugins.json` file to test vault configuration. Without this file, Obsidian doesn't load community plugins even if they're present in `.obsidian/plugins/` folder. This was causing E2E tests to timeout waiting for plugin UI elements that never appeared because the plugin wasn't loaded.
 
 **Why community-plugins.json is critical:**
+
 - **Plugin Activation**: Obsidian requires this file to know which community plugins to load
 - **JSON Format**: Simple array of plugin IDs: `["exocortex"]`
 - **Location**: Must be in `.obsidian/community-plugins.json`
 - **Without It**: Plugins exist but never execute, tests timeout waiting for UI
 
 **Files Modified:**
+
 - `tests/e2e/test-vault/.obsidian/community-plugins.json` - Created with exocortex plugin enabled
 
 **Combined with v12.15.31 Fix:**
@@ -690,21 +797,24 @@ Now E2E tests should both detect windows correctly (trashhalo pattern) AND have 
 **E2E CRITICAL FIX: Use Second Window (trashhalo Pattern) for Obsidian Multi-Window Startup**: Solved firstWindow() timeout! Research into trashhalo/obsidian-plugin-e2e-test repository revealed the REAL issue: Obsidian creates MULTIPLE windows on startup (splash screen + main window), and `firstWindow()` waits for first window creation event which might be a splash screen that closes. Solution: Wait for TWO window events using `waitForEvent('window')` and select the SECOND window (index 1) like trashhalo's `client.windowByIndex(1)` pattern.
 
 **Why second window approach is the solution:**
+
 - **Multi-Window Startup**: Obsidian creates splash screen (window 0) + main window (window 1) on launch
 - **firstWindow() Limitation**: Waits for first window event, gets stuck on splash screen lifecycle
 - **trashhalo Pattern**: Proven working pattern using `windowByIndex(1)` to select main window
 - **Fallback Safety**: Uses `windows.length > 1 ? windows[1] : windows[0]` for compatibility
 
 **Files Modified:**
+
 - `tests/e2e/utils/obsidian-launcher.ts` - Replaced `firstWindow()` with multi-window detection pattern
 
 **Implementation:**
+
 ```typescript
 // Wait for first window (likely splash screen)
-await this.app.waitForEvent('window');
+await this.app.waitForEvent("window");
 
 // Wait for second window (main Obsidian window)
-await this.app.waitForEvent('window');
+await this.app.waitForEvent("window");
 
 // Get all windows and select the second one
 const windows = this.app.windows();
@@ -712,6 +822,7 @@ this.window = windows.length > 1 ? windows[1] : windows[0];
 ```
 
 **Reference:**
+
 - https://github.com/trashhalo/obsidian-plugin-e2e-test (working Obsidian E2E test example)
 - https://github.com/microsoft/playwright/issues/21117 (firstWindow() timeout issues)
 
@@ -722,18 +833,21 @@ this.window = windows.length > 1 ? windows[1] : windows[0];
 **E2E ACTUAL ROOT CAUSE: docker run --init for xvfb-run Signal Handling**: After 13 minutes of COMPLETE SILENCE in logs (no output at all), discovered the REAL problem! StackOverflow (xvfb-run hangs in container) reveals: "Using xvfb-run as main process for a container breaks its internal signal handling" - xvfb-run waits for SIGUSR1 from Xvfb but never receives it! Solution: Add `--init` flag to `docker run` to provide proper init process (tini) for signal handling.
 
 **Why docker run --init is critical:**
+
 - **Signal Handling Fix**: xvfb-run requires proper init process to receive SIGUSR1 from Xvfb
 - **Silent Hang Without It**: xvfb-run just hangs forever with zero output when run as PID 1
 - **StackOverflow Confirmed**: Multiple reports of same issue, all solved with --init flag
 - **Works with xvfb-run --auto-servernum**: Combined with Playwright's recommendation
 
 **Files Modified:**
+
 - `.github/workflows/ci.yml` - Changed `docker run --rm` to `docker run --init --rm`
 
 **Technical Detail:**
 xvfb-run script contains `wait` for Xvfb to signal readiness via SIGUSR1. When xvfb-run runs as PID 1 (container main process), Linux kernel doesn't deliver signals properly. Docker's `--init` flag adds tini as PID 1, which properly forwards signals to child processes.
 
 **Reference:**
+
 - https://stackoverflow.com/questions/50634819/xvfb-run-hangs-in-container
 
 ## [12.15.29] - 2025-10-18
@@ -743,18 +857,21 @@ xvfb-run script contains `wait` for Xvfb to signal readiness via SIGUSR1. When x
 **E2E CORRECT SOLUTION: xvfb-run --auto-servernum (Playwright Team Recommendation)**: Internet research revealed the root issue! GitHub issue #8198 shows the correct solution is `xvfb-run --auto-servernum` - NOT manual Xvfb setup! The previous approaches (manual Xvfb, fluxbox) were unnecessary complexity. The Playwright team explicitly recommends using `xvfb-run --auto-servernum` for Electron tests in Docker.
 
 **Why xvfb-run --auto-servernum is the solution:**
+
 - **Automatic Display Management**: `--auto-servernum` handles X display server lifecycle automatically
 - **No Manual Configuration**: Eliminates sleep delays, PID tracking, and manual ready checks
 - **Playwright Team Endorsed**: Official recommendation from microsoft/playwright#8198
 - **Industry Standard**: Used in all successful Electron E2E setups (Dangl.Blog, others)
 
 **Files Modified:**
+
 - `docker-entrypoint-e2e.sh` - Replaced manual Xvfb + fluxbox with simple `xvfb-run --auto-servernum`
 
 **Key Insight:**
 The problem wasn't Ozone flags, window managers, or X server initialization timing. It was simply not using the `--auto-servernum` flag with xvfb-run, which causes Xvfb to automatically find an available display number and manage the server lifecycle.
 
 **Reference:**
+
 - https://github.com/microsoft/playwright/issues/8198#issuecomment-986736585
 - https://blog.dangl.me/archive/running-fully-automated-e2e-tests-in-electron-in-a-docker-container-with-playwright/
 
@@ -765,15 +882,18 @@ The problem wasn't Ozone flags, window managers, or X server initialization timi
 **E2E WINDOW MANAGER ADDED: Fluxbox for Electron Window Creation**: Removing Ozone flags didn't fix the issue - Obsidian still initializes but doesn't create windows. Analysis: Electron applications need a window manager to create windows in X server environments. Added `fluxbox` lightweight window manager that starts after Xvfb is ready. This is standard practice for GUI automation in Docker (Selenium, Cypress, Playwright all use WMs in headless mode).
 
 **Why window manager is critical:**
+
 - **X Server Alone Not Enough**: Xvfb provides display server but apps need WM to create windows
 - **Electron Requirement**: Electron apps wait for window manager before creating windows
 - **Standard Pattern**: All successful Electron E2E setups use WM (fluxbox/openbox/xfce)
 
 **Files Modified:**
+
 - `Dockerfile.e2e` - Added `fluxbox` package
 - `docker-entrypoint-e2e.sh` - Start fluxbox after Xvfb initialization
 
 **Expected Outcome:**
+
 - Xvfb provides display :99
 - Fluxbox manages windows on :99
 - Obsidian creates window through fluxbox
@@ -787,21 +907,25 @@ The problem wasn't Ozone flags, window managers, or X server initialization timi
 **E2E ROOT CAUSE FOUND: Removed Ozone Headless Flags**: Debug logs revealed Obsidian FULLY initializes ("App is up to date") but then 2 minutes of silence! The problem: `--ozone-platform=headless` prevents window creation. Playwright's `electron.launch()` hangs waiting for window creation event that never fires because Obsidian runs but doesn't create a window in Ozone headless mode. Removed `--enable-features=UseOzonePlatform` and `--ozone-platform=headless`. Obsidian will now create windows using standard Xvfb display.
 
 **Why this matters:**
+
 - **ROOT CAUSE IDENTIFIED**: Ozone headless mode prevents window creation
 - **Obsidian Works**: App fully initializes, checks updates, but no window appears
 - **Playwright Waits Forever**: electron.launch() waits for window creation event
 - **Solution**: Use X server (Xvfb) for windowing instead of Ozone headless
 
 **Technical Details:**
+
 - Removed `--enable-features=UseOzonePlatform`
 - Removed `--ozone-platform=headless`
 - Electron will create windows on X server (DISPLAY=:99) instead of Ozone
 - Obsidian can now create visible windows that Playwright can detect
 
 **Files Modified:**
+
 - `tests/e2e/utils/obsidian-launcher.ts` - Removed Ozone flags
 
 **Debug Logs Analysis (from v12.15.26):**
+
 ```
 <launched> pid=49
 Loading main app package /opt/obsidian/resources/obsidian.asar
@@ -814,12 +938,14 @@ App is up to date.
 ```
 
 **Root Cause:**
+
 - Obsidian initializes completely
 - But `--ozone-platform=headless` prevents window creation
 - Playwright waits forever for `firstWindow()` event
 - Timeout kills the process after 120 seconds
 
 **Expected Outcome:**
+
 - Obsidian will create window on Xvfb display
 - Playwright will detect window creation
 - electron.launch() will complete
@@ -829,31 +955,36 @@ App is up to date.
 
 ### Fixed
 
-**E2E Debug Logging: Playwright + Electron Diagnostics**: electron.launch() hangs for exactly 120s (its timeout) but try/catch doesn't capture the error. Added DEBUG=pw:browser* for Playwright browser debug output and ELECTRON_ENABLE_LOGGING=1 for Electron internals logging. Increased CI timeout from 5 to 15 minutes to allow full diagnostic output collection. This will show us WHY Electron hangs inside launch().
+**E2E Debug Logging: Playwright + Electron Diagnostics**: electron.launch() hangs for exactly 120s (its timeout) but try/catch doesn't capture the error. Added DEBUG=pw:browser\* for Playwright browser debug output and ELECTRON_ENABLE_LOGGING=1 for Electron internals logging. Increased CI timeout from 5 to 15 minutes to allow full diagnostic output collection. This will show us WHY Electron hangs inside launch().
 
 **Why this matters:**
+
 - **Root Cause Discovery**: Debug logs will show internal Playwright + Electron communication
 - **Exact Hang Point**: Will see where in electron.launch() it hangs
 - **More Time**: 15 minute CI timeout ensures we see full debug output
 - **Electron Internals**: ELECTRON_ENABLE_LOGGING shows Chromium/Electron startup issues
 
 **Technical Details:**
+
 - Added `export DEBUG=pw:browser*` to docker-entrypoint-e2e.sh
 - Added `export ELECTRON_ENABLE_LOGGING=1` to docker-entrypoint-e2e.sh
 - Increased CI timeout from 5 minutes to 15 minutes
 - These environment variables will show detailed browser/Electron launch process
 
 **Files Modified:**
+
 - `docker-entrypoint-e2e.sh` - Added DEBUG and ELECTRON_ENABLE_LOGGING
 - `.github/workflows/ci.yml` - Timeout 5min → 15min
 
 **Current Status (from v12.15.25):**
+
 - electron.launch() hangs for exactly 120 seconds (its timeout)
 - Try/catch block doesn't capture this timeout error
 - No error messages at all - just silent hang then timeout
 - Need to see WHAT is happening inside electron.launch()
 
 **Expected Outcome:**
+
 - Playwright debug output will show browser launch steps
 - Electron logging will show Chromium initialization
 - We'll see exactly where it hangs and why
@@ -865,6 +996,7 @@ App is up to date.
 **E2E Breakthrough: Increased Timeout + Advanced Electron Headless Flags**: Major progress - X server now starts successfully, Playwright executes, and Electron begins launching! Tests were timing out at 60s during electron.launch(). Increased Playwright test timeout to 180s (3 minutes) to allow Electron more time. Added advanced headless flags including Ozone platform, SwiftShader GL, and VizDisplayCompositor disable. Added detailed try/catch logging around electron.launch() to track exact failure point.
 
 **Why this matters:**
+
 - **Major Breakthrough**: X server ready in 2 attempts, npm/Playwright executing, Electron launching
 - **Narrowed Problem**: Issue is now ONLY at electron.launch() hang, not infrastructure
 - **More Time**: 180s timeout gives Electron enough time to initialize in Docker
@@ -872,6 +1004,7 @@ App is up to date.
 - **Advanced Headless**: Ozone headless platform + SwiftShader for software rendering
 
 **Technical Details:**
+
 - Increased `timeout: 180000` in playwright-e2e.config.ts (was 60000ms)
 - Added `--ozone-platform=headless` for proper headless display
 - Added `--use-gl=swiftshader` for software GL rendering
@@ -882,16 +1015,19 @@ App is up to date.
 - Added console.log before electron.launch() to track execution
 
 **Files Modified:**
+
 - `playwright-e2e.config.ts` - Timeout 60s → 180s
 - `tests/e2e/utils/obsidian-launcher.ts` - Added 5 new Electron flags + error handling
 
 **Progress from v12.15.24:**
+
 - ✅ X server starts successfully (ready after 2 attempts)
 - ✅ npm and Playwright execute
 - ✅ Electron begins launching
 - ❌ electron.launch() hangs after ~60 seconds (now has 180s to complete)
 
 **Expected Outcome:**
+
 - Electron will have 3 full minutes to launch instead of 1 minute
 - Advanced headless flags should help Electron initialize properly
 - If still fails, try/catch will show exact error message
@@ -903,12 +1039,14 @@ App is up to date.
 **E2E Docker: Explicit X Server Ready Check Instead of xvfb-run**: Switched from xvfb-run wrapper (which hung silently) to explicit Xvfb background process with xdpyinfo ready-check loop. Previous iteration revealed xvfb-run hangs immediately with NO output despite verbose flags, suggesting xvfb-run itself is waiting for something. New approach starts Xvfb in background, explicitly polls with xdpyinfo for up to 15 seconds, confirms X server is ready, then launches tests. Added x11-utils package for xdpyinfo.
 
 **Why this matters:**
+
 - **No Silent Hangs**: xdpyinfo will fail explicitly if X server doesn't start
 - **Visible Progress**: Diagnostic output at every step (starting, waiting, ready, launching)
 - **Deterministic**: Explicit ready-check instead of hoping xvfb-run works
 - **Timeout Protection**: 15-second max wait before failing
 
 **Technical Details:**
+
 - Reverted from `xvfb-run` wrapper to background `Xvfb` process
 - Added `x11-utils` package to Dockerfile (provides `xdpyinfo`)
 - Added explicit ready-check loop: `for i in {1..30}; do xdpyinfo -display $DISPLAY; done`
@@ -918,15 +1056,18 @@ App is up to date.
 - Keep `set -ex` for command tracing
 
 **Files Modified:**
+
 - `docker-entrypoint-e2e.sh` - Switched to background Xvfb + xdpyinfo ready-check
 - `Dockerfile.e2e` - Added x11-utils package, restored ENV DISPLAY=:99
 
 **Root Cause from v12.15.23:**
+
 - `xvfb-run` hung silently despite `-e /dev/stderr` and verbose flags
 - No output from xvfb-run, npm, or Playwright for 3 minutes until timeout
 - Suggests xvfb-run itself is waiting for something (display lock?)
 
 **Expected Outcome:**
+
 - Will see explicit "Starting Xvfb", "Attempt 1", "X server is ready", "Launching tests"
 - If X server fails, will see "ERROR: X server failed to start after 15 seconds"
 - Tests will only launch after X server is confirmed ready
@@ -938,11 +1079,13 @@ App is up to date.
 **E2E Docker Verbose Output and Faster CI Iteration**: Enhanced xvfb-run wrapper with verbose error output and command tracing to diagnose why tests hang silently. Previous iteration showed xvfb-run starts successfully but all Playwright/Electron output is suppressed, causing 7.5-minute silent hang before timeout. Added stderr redirection, command tracing (`set -ex`), and explicit error logging. Reduced CI timeout from 10 to 5 minutes for faster iteration cycles.
 
 **Why this matters:**
+
 - **Visible Debugging**: Can now see actual error messages and command execution trace
 - **Faster Iteration**: 5-minute timeout instead of 10 means faster feedback loop
 - **Root Cause Tracking**: Will identify exactly where Electron/Playwright hangs
 
 **Technical Details:**
+
 - Added `set -ex` to docker-entrypoint-e2e.sh for command tracing
 - Added `-e /dev/stderr` to xvfb-run to redirect errors to stderr
 - Added explicit stderr output (`>&2`) for all diagnostic messages
@@ -950,15 +1093,18 @@ App is up to date.
 - Reduced CI timeout from 10 minutes to 5 minutes for faster iteration
 
 **Files Modified:**
+
 - `docker-entrypoint-e2e.sh` - Added verbose output and command tracing
 - `.github/workflows/ci.yml` - Reduced timeout from 10 to 5 minutes
 
 **Current Issue (from v12.15.22 CI run):**
+
 - Tests start executing but produce no output for 7.5 minutes
 - Despite console.log() in obsidian-launcher.ts, nothing appears in logs
 - Suggests output suppression or early hang before JS execution
 
 **Next Steps:**
+
 - CI will run with verbose output to identify exact failure point
 - Will see xvfb startup, Playwright launch, and Electron execution trace
 
@@ -969,12 +1115,14 @@ App is up to date.
 **E2E Tests Re-enabled with xvfb-run Wrapper Approach**: Switched from background xvfb process to `xvfb-run` wrapper for proper X server initialization. This approach ensures xvfb starts correctly before Playwright attempts to launch Electron. Added comprehensive logging to obsidian-launcher.ts and additional Electron flags for headless mode. E2E tests now enabled in CI on x86_64 runners.
 
 **Why this matters:**
+
 - **Proper X Server Init**: xvfb-run ensures display server is ready before Electron launch
 - **Better Debugging**: Added verbose logging to track launch progress
 - **More Electron Flags**: Additional flags for headless stability
 - **CI Testing**: Will iterate on x86_64 CI runners until tests pass
 
 **Technical Details:**
+
 - Switched docker-entrypoint-e2e.sh to use `xvfb-run --auto-servernum --server-args='-screen 0 1920x1080x24 -ac +extension GLX +render -noreset'`
 - Removed manual xvfb background process and sleep delays
 - Removed ENV DISPLAY from Dockerfile (xvfb-run sets it automatically)
@@ -983,12 +1131,14 @@ App is up to date.
 - Added extra Electron flags: --disable-extensions, --disable-background-timer-throttling, etc.
 
 **Files Modified:**
+
 - `docker-entrypoint-e2e.sh` - Switched to xvfb-run wrapper
 - `Dockerfile.e2e` - Removed ENV DISPLAY=:99
 - `tests/e2e/utils/obsidian-launcher.ts` - Added logging and extra flags
 - `.github/workflows/ci.yml` - Re-enabled e2e-tests job
 
 **Strategy:**
+
 - ARM Mac local testing skipped (emulation too slow)
 - Will iterate on CI x86_64 feedback until tests pass
 - CI timeout set to 10 minutes for first-time Docker builds
@@ -1000,12 +1150,14 @@ App is up to date.
 **E2E Tests Disabled Due to Playwright + Electron + Docker Incompatibility**: Discovered technical limitation where Playwright cannot connect to Obsidian/Electron in Docker environment (both ARM Mac and x86_64 CI runners). Tests timeout during `launcher.launch()` in beforeEach hook. E2E infrastructure is complete and ready, but requires deeper investigation into Playwright/Electron headless compatibility. CI now runs only unit (172), UI (51), and component (166) tests = ~2 minutes.
 
 **Why this matters:**
+
 - **CI Completes Fast**: ~2 minutes (well under 5-minute requirement)
 - **Comprehensive Coverage**: 389 tests still provide strong quality assurance
 - **Infrastructure Ready**: E2E Docker setup complete, just needs Playwright/Electron fix
 - **Manual Testing Available**: `npm run test:e2e:docker` for local manual E2E testing
 
 **Technical Details:**
+
 - E2E tests timeout at `await launcher.launch()` - Playwright cannot connect to Electron
 - Issue affects both ARM Mac (M1/M2/M3) and x86_64 ubuntu-latest CI runners
 - Likely related to Electron's headless mode requirements in Docker with xvfb
@@ -1013,6 +1165,7 @@ App is up to date.
 - E2E job disabled in CI to meet 5-minute requirement and avoid false failures
 
 **Current Test Coverage:**
+
 - Unit tests (172 tests) - Business logic, services, use cases
 - UI integration tests (51 tests) - DOM rendering, React integration, Obsidian API mocks
 - Component tests (166 tests) - Playwright CT for isolated React component testing
@@ -1020,9 +1173,11 @@ App is up to date.
 - Total active: 389 tests ensuring comprehensive quality coverage
 
 **Files Modified:**
+
 - `.github/workflows/ci.yml` - E2E job commented out with technical explanation
 
 **Future Work:**
+
 - Investigate Electron launch options for headless Docker environments
 - Research xvfb configuration for Playwright + Electron compatibility
 - Consider alternative E2E approaches (Obsidian API mocking vs real instance)
@@ -1034,12 +1189,14 @@ App is up to date.
 **E2E CI Timeout Adjusted for Realistic Docker Build Times**: Increased E2E job timeout from 5 to 10 minutes to accommodate first-time Docker builds while maintaining parallel job execution. Jobs run in parallel (not sequential) ensuring `build-and-test` completes in ~2 minutes while E2E runs concurrently. Subsequent E2E runs benefit from GitHub Actions cache and complete in ~3-4 minutes.
 
 **Why this matters:**
+
 - **Parallel Execution**: Both jobs run simultaneously, total CI time = slowest job (~5-6 min for cached E2E)
 - **First Run Realistic**: 10-minute E2E timeout accounts for downloading Obsidian (700MB) + Docker build
 - **Cached Runs Fast**: GHA cache ensures subsequent runs complete in 3-4 minutes (well under timeout)
 - **No Sequential Bottleneck**: Removed `needs:` dependency to keep jobs parallel
 
 **Technical Details:**
+
 - E2E job timeout: 5min → 10min (realistic for first run, ample for cached runs)
 - Jobs remain parallel (no `needs:` dependency between build-and-test and e2e-tests)
 - GitHub Actions cache (`type=gha`) reuses Docker layers across runs
@@ -1047,12 +1204,14 @@ App is up to date.
 - Cached runs: ~5-6 minutes total (E2E Docker build uses cache, completes in ~3-4min)
 
 **Performance:**
+
 - build-and-test job: ~2 minutes (unchanged)
 - e2e-tests job first run: ~8-10 minutes (Docker download + build)
 - e2e-tests job cached: ~3-4 minutes (GitHub Actions cache hit)
 - Total CI time (parallel): MAX(build-and-test, e2e-tests) = ~5-6 minutes after first run
 
 **Files Modified:**
+
 - `.github/workflows/ci.yml` - E2E timeout 5→10min, keep parallel execution
 
 ## [12.15.19] - 2025-10-18
@@ -1062,12 +1221,14 @@ App is up to date.
 **E2E Tests Re-enabled in CI with GitHub Actions Cache**: Re-enabled E2E testing in GitHub Actions CI pipeline with optimized caching strategy. Uses GitHub Actions cache (`type=gha`) instead of local cache for better performance and reliability. E2E tests now run automatically on every push/PR alongside unit, UI, and component tests.
 
 **Why this matters:**
+
 - **Regression Prevention**: E2E tests catch real-world bugs that unit/component tests miss
 - **Automated Quality Gates**: Every release is validated with actual Obsidian instance
 - **Fast Execution**: GitHub Actions cache ensures E2E job completes within 5-minute timeout
 - **CI/CD Protection**: Releases blocked if E2E tests fail
 
 **Technical Details:**
+
 - Re-enabled `e2e-tests` job in `.github/workflows/ci.yml`
 - Switched to GitHub Actions cache: `cache-from: type=gha`, `cache-to: type=gha,mode=max`
 - Removed local cache workaround (no longer needed with GHA cache)
@@ -1076,14 +1237,17 @@ App is up to date.
 - E2E tests run on x86_64 ubuntu-latest runners (not ARM Mac)
 
 **Performance:**
+
 - First run: ~4-5 minutes (downloads Obsidian, caches layers)
 - Subsequent runs: ~2-3 minutes (cached layers reused)
 - Well within 5-minute CI requirement
 
 **Files Modified:**
+
 - `.github/workflows/ci.yml` - Re-enabled e2e-tests job with GHA cache
 
 **Testing Strategy:**
+
 - Unit tests (172 tests) - Fast, isolated logic validation
 - UI integration tests (51 tests) - DOM rendering, React integration
 - Component tests (166 tests) - Playwright CT for React components
@@ -1097,12 +1261,14 @@ App is up to date.
 **E2E Docker Infrastructure Improvements for CI**: Improved E2E testing Docker infrastructure to work reliably on x86_64 CI runners. Switched from AppImage to tar.gz archives for better compatibility, added architecture detection, fixed Electron sandbox flags for Docker/CI environments, and documented ARM Mac limitations. E2E tests are now ready to be re-enabled in CI.
 
 **Why this matters:**
+
 - **CI-Ready**: E2E Docker infrastructure tested and working on x86_64 systems
 - **Better Compatibility**: tar.gz archives instead of AppImage avoid extraction issues
 - **Proper Sandboxing**: Electron flags correctly set for Docker/CI environments
 - **Clear Limitations**: ARM Mac users know E2E tests are designed for CI, not local execution
 
 **Technical Details:**
+
 - Switched Dockerfile from AppImage to tar.gz archives (obsidian-1.9.14.tar.gz / obsidian-1.9.14-arm64.tar.gz)
 - Added architecture detection in Dockerfile: `ARCH=$(uname -m)` to select correct Obsidian build
 - Added Docker environment detection in `obsidian-launcher.ts`: `process.env.DOCKER` triggers `--no-sandbox` flags
@@ -1111,6 +1277,7 @@ App is up to date.
 - Updated `.github/E2E-LOCAL-TESTING.md` with ARM Mac limitations and troubleshooting
 
 **Files Modified:**
+
 - `Dockerfile.e2e` - Switched to tar.gz, added architecture detection
 - `tests/e2e/utils/obsidian-launcher.ts` - Added Docker/CI Electron flags (`--no-sandbox`, `--disable-gpu`, etc.)
 - `playwright-e2e.config.ts` - Fixed HTML reporter with `open: 'never'`
@@ -1119,11 +1286,13 @@ App is up to date.
 - `.github/E2E-LOCAL-TESTING.md` - Documented ARM Mac limitations and x86_64 CI focus
 
 **Platform Support:**
+
 - ✅ x86_64 CI runners (GitHub Actions ubuntu-latest): Full E2E support
 - ⚠️ ARM Mac (M1/M2/M3): Docker builds work, but Playwright has connection timeouts (known limitation)
 - 🎯 E2E tests designed for CI execution on x86_64, not local ARM Mac development
 
 **Next Steps:**
+
 - Re-enable E2E tests in CI with GitHub Actions cache for <5 minute execution time
 
 ## [12.15.17] - 2025-10-18
@@ -1133,22 +1302,26 @@ App is up to date.
 **CI Pipeline Timeout Protection**: Added explicit 5-minute timeout to all CI jobs to prevent infinite hangs. Temporarily disabled E2E tests in CI (can still run locally via Docker) until Docker layer caching is properly optimized. Created comprehensive safety documentation for running E2E tests locally.
 
 **Why this matters:**
+
 - **Faster Failure Detection**: CI now fails fast (5 min max) instead of hanging for 16+ minutes
 - **Cost Savings**: No more wasted compute time on stuck jobs
 - **Clear Error Signals**: Explicit timeouts make debugging easier
 - **Safe Local Testing**: Documentation prevents accidentally running E2E tests on production machines
 
 **Technical Details:**
+
 - Added `timeout-minutes: 5` to both `build-and-test` and `e2e-tests` jobs
 - E2E tests temporarily disabled in CI (first-time Docker build downloads 700MB Obsidian, exceeds timeout)
 - Created `.github/E2E-LOCAL-TESTING.md` with comprehensive safety guide
 - All non-E2E tests (389 tests: unit, UI, component) pass locally in ~8 seconds
 
 **Files Modified:**
+
 - `.github/workflows/ci.yml` - Added timeouts, commented out E2E job
 - `.github/E2E-LOCAL-TESTING.md` - Created safety documentation
 
 **E2E Testing Status:**
+
 - ✅ Local execution: `npm run test:e2e:docker` (safe, isolated)
 - ⏸️ CI execution: Temporarily disabled (will re-enable with better caching)
 - ❌ Direct execution: `npm run test:e2e` - NEVER use (launches local Obsidian)
@@ -1160,12 +1333,14 @@ App is up to date.
 **CI Pipeline Optimized to <5 Minutes**: Dramatically improved GitHub Actions CI/CD performance from 15+ minutes to ~4 minutes through Docker layer caching, multi-stage builds, and parallel job execution. E2E tests now run simultaneously with other tests, and Docker images leverage aggressive caching strategies.
 
 **Why this matters:**
+
 - **Faster Feedback**: Developers get test results in ~4 minutes instead of 15+
 - **Cost Savings**: 70%+ reduction in CI compute time
 - **Better Developer Experience**: Rapid iteration without long wait times
 - **Parallel Execution**: All test suites run simultaneously for maximum efficiency
 
 **Technical Details:**
+
 - Multi-stage Dockerfile: Base image with Obsidian (cached), dependencies layer (cached on package.json), app layer (rebuilt on code changes)
 - Docker Buildx with layer caching: Obsidian download (~700MB) cached across runs
 - Parallel job execution: `build-and-test` and `e2e-tests` run simultaneously (removed dependency)
@@ -1173,11 +1348,13 @@ App is up to date.
 - Cache key includes Dockerfile and package-lock.json for precise invalidation
 
 **Performance Breakdown:**
+
 - Before: 15+ minutes (sequential: 2min tests + 13min Docker build)
 - After: ~4 minutes (parallel: 2-3min tests || 3-4min cached Docker build)
 - Savings: 70%+ faster, ~11 minutes saved per run
 
 **Files Modified:**
+
 - `Dockerfile.e2e` - Multi-stage build (obsidian-base → dependencies → app)
 - `.github/workflows/ci.yml` - Docker Buildx + caching, parallel execution
 
@@ -1188,6 +1365,7 @@ App is up to date.
 **CI E2E Tests Now Run Successfully**: Fixed GitHub Actions CI workflow to properly run E2E tests in Docker. Split the workflow into two jobs - one for component tests (in Playwright container) and one for E2E tests (on ubuntu-latest with Docker). Previously, Docker was unavailable inside the Playwright container, causing E2E test step to fail.
 
 **Technical Details:**
+
 - Split CI into `build-and-test` and `e2e-tests` jobs
 - `e2e-tests` runs on ubuntu-latest (has Docker pre-installed)
 - `e2e-tests` depends on `build-and-test` success
@@ -1200,6 +1378,7 @@ App is up to date.
 **Comprehensive E2E Testing Infrastructure**: Implemented full end-to-end testing with real Obsidian instance to prevent regressions like the recent DailyNote tasks table issue. Uses Playwright + Docker + xvfb for headless testing in CI, ensuring every release is validated with actual user workflows.
 
 **Why this matters:**
+
 - **Regression Prevention**: Real Obsidian instance catches bugs that mocked tests miss (like the Dataview API issue)
 - **Quality Gate in CI**: GitHub Actions now runs E2E tests before every release - if they fail, release is blocked
 - **Docker-Based**: E2E tests run in isolated Docker containers with xvfb, no local Obsidian instance required
@@ -1207,12 +1386,14 @@ App is up to date.
 - **Fast Feedback**: E2E tests run automatically on every push, catching issues immediately
 
 **What you get:**
+
 - **First E2E Test**: Validates DailyNote tasks table displays correct tasks (2 for day, filters out wrong day)
 - **Docker Support**: Run `npm run test:e2e:docker` to test in isolated environment
 - **CI Integration**: E2E tests run in GitHub Actions alongside unit/component tests
 - **Comprehensive Docs**: New TESTING.md guide explains all test types and usage
 
 **Technical Details:**
+
 - Playwright E2E configuration with Electron launcher (`playwright-e2e.config.ts`)
 - ObsidianLauncher utility for managing Obsidian lifecycle in tests
 - Docker image with xvfb, Obsidian 1.5.0 AppImage, and Playwright browsers
@@ -1222,6 +1403,7 @@ App is up to date.
 - All existing tests still passing (100% pass rate)
 
 **Files Created:**
+
 - `Dockerfile.e2e` - Docker image for headless E2E testing
 - `docker-entrypoint-e2e.sh` - xvfb startup script
 - `playwright-e2e.config.ts` - Playwright E2E configuration
@@ -1234,21 +1416,24 @@ App is up to date.
 
 ### Fixed
 
-**DailyNote Tasks Table Now Displays Correctly**: Fixed a critical issue where the tasks table in pn__DailyNote assets would not appear. The plugin was attempting to use Dataview API's `pages()` method which returned empty results. Now uses Obsidian's native Vault API (`getMarkdownFiles()`) to directly fetch and filter tasks, ensuring reliable display of all efforts scheduled for the day.
+**DailyNote Tasks Table Now Displays Correctly**: Fixed a critical issue where the tasks table in pn\_\_DailyNote assets would not appear. The plugin was attempting to use Dataview API's `pages()` method which returned empty results. Now uses Obsidian's native Vault API (`getMarkdownFiles()`) to directly fetch and filter tasks, ensuring reliable display of all efforts scheduled for the day.
 
 **Why this matters:**
+
 - **Reliable Task Display**: Tasks table now consistently appears in all DailyNote files
 - **No Dataview Dependency**: Direct Vault API usage means faster performance and no dependency on Dataview's query methods
 - **Complete Task List**: All 16+ daily tasks are now properly displayed with status, time, and meeting indicators
 - **Automatic Updates**: Table updates in real-time as task metadata changes
 
 **What you see:**
+
 - **Before**: Empty space where tasks table should be, with silent failure
 - **After**: Full tasks table with Name, Start Time, End Time, and Status columns
 - **Filtered by Day**: Only shows tasks where `ems__Effort_day` matches the DailyNote's day
 - **Sorted Properly**: Trashed tasks last, done tasks before active, sorted by time
 
 **Technical Details:**
+
 - Replaced `dataviewApi.pages()` with `this.app.vault.getMarkdownFiles()`
 - Direct metadata access via `metadataCache.getFileCache()` for each file
 - Filters 4433 vault files down to 1048 with `ems__Effort_day`, then to day-specific tasks
@@ -1262,17 +1447,20 @@ App is up to date.
 **Properties Now Display Prototype Labels Instead of UIDs**: Fixed an issue where asset properties that reference files by UID would display the UID filename (like `442f3928-9d64-46d7-ad8a-a054f7b7854c`) instead of the human-readable label. Now properly resolves and displays the `exo__Asset_label` from prototype files.
 
 **Why this matters:**
+
 - **Human-Readable Names**: Properties now show meaningful labels like "Dinner" instead of cryptic UIDs
 - **Prototype Labels Work**: When an asset references a prototype via `exo__Asset_prototype`, the prototype's label is correctly displayed
 - **Consistent Display**: All wiki-link properties now consistently show labels throughout the Properties table
 - **Better UX**: No more confusion about what UID-named files represent
 
 **What you see:**
+
 - **Before**: Property value shows `[[442f3928-9d64-46d7-ad8a-a054f7b7854c]]` (UID)
 - **After**: Property value shows `Dinner` (from `exo__Asset_label`)
 - **Applies to all properties**: Works for `exo__Asset_prototype` and any property that references assets by UID
 
 **Technical Details:**
+
 - Switched from `getAbstractFileByPath()` to `getFirstLinkpathDest()` for file resolution
 - Now correctly resolves files regardless of their location in the vault
 - Maintains fallback chain: own label → prototype label → filename
@@ -1285,23 +1473,27 @@ App is up to date.
 **Effort Relations Now Show Status Column Automatically**: When viewing an Effort asset (Task, Project, etc.), the Relations table for `ems__Effort_parent` now automatically displays a Status column showing the status of each child effort. This makes it easy to see at a glance which child tasks are in progress, done, or backlog without opening each one.
 
 **Why this matters:**
+
 - **Instant Status Overview**: See the status of all child efforts directly in the Relations table - no need to open each task individually
 - **Better Project Management**: When viewing a Project, immediately see which child tasks are in progress, done, or waiting
 - **Automatic Display**: The Status column appears automatically for effort hierarchies - no configuration needed
 - **Consistent Information**: Status values are pulled directly from each effort's `ems__Effort_status` property
 
 **What you see:**
+
 - **Effort Relations Table**: Now includes an `ems__Effort_status` column for the `ems__Effort_parent` group
 - **Child Effort Status**: Each row shows the current status (Draft, Backlog, Doing, Done, Trashed)
 - **Works for All Efforts**: Tasks, Projects, and any other effort types with parent relationships
 
 **Example:**
 When viewing a Project with multiple child Tasks:
+
 - Before: Relations table only showed child task names and instance classes
 - After: Relations table shows names, classes, AND status for each child task
 - You can instantly see: 3 tasks in "Doing", 2 in "Backlog", 1 "Done"
 
 **Technical Details:**
+
 - Added `groupSpecificProperties` support to AssetRelationsTable component
 - UniversalLayoutRenderer automatically adds `ems__Effort_status` for `ems__Effort_parent` relations
 - Leverages existing property rendering system - status values display as clickable links
@@ -1314,21 +1506,25 @@ When viewing a Project with multiple child Tasks:
 **Wiki-Link Aliases Now Work Correctly in Layout Tables**: Links with aliases in format `[[Asset|Custom Name]]` now correctly navigate to the target asset while displaying the custom alias. Previously, clicking such links would attempt to open a non-existent file "Asset|Custom Name", breaking navigation.
 
 **Why this matters:**
+
 - **Proper Link Navigation**: Click on any link with an alias and you'll go to the right place
 - **Clean Display Names**: Show friendly names like "Q4 Planning" while linking to "task-2025-456"
 - **Works Everywhere**: Fixed in all three table types - Asset Relations, Daily Tasks, and Asset Properties
 - **Standard Obsidian Behavior**: Now handles wiki-link syntax exactly like Obsidian does
 
 **What's Fixed:**
+
 - **Asset Relations Tables**: Instance Class column displays and navigates correctly
 - **Daily Tasks Tables**: Status column links work with aliases
 - **Asset Properties Tables**: All property values with aliases now functional
 
 **Example:**
+
 - Before: Clicking `[[task-2025-456|Q4 Planning]]` would try to open "task-2025-456|Q4 Planning" (broken)
 - After: Clicking displays "Q4 Planning" but navigates to "task-2025-456" (correct)
 
 **Technical Details:**
+
 - Updated AssetRelationsTable.tsx, DailyTasksTable.tsx, AssetPropertiesTable.tsx
 - Improved wiki-link regex to correctly parse `[[target|alias]]` format
 - Extracts link target separately from display text
@@ -1341,11 +1537,13 @@ When viewing a Project with multiple child Tasks:
 **Rename to UID Now Auto-Updates Links**: The "Rename to UID" command now properly updates all references to the renamed file throughout your vault. When you rename an asset to match its UID, all wiki-links pointing to that file are automatically updated to reflect the new name, preventing broken links.
 
 **Why this matters:**
+
 - **No More Broken Links**: Previously, renaming a file would break all links from other notes. Now links stay connected automatically.
 - **Seamless Organization**: Rename your assets to their UIDs with confidence - your knowledge graph stays intact.
 - **Standard Obsidian Behavior**: Uses Obsidian's native `fileManager.renameFile()` API, ensuring compatibility with all other plugins and features.
 
 **Example:**
+
 - You have a task named "Buy groceries" with UID `task-2025-123`
 - Other notes link to it as `[[Buy groceries]]`
 - When you click "Rename to UID", the file becomes `task-2025-123.md`
@@ -1353,6 +1551,7 @@ When viewing a Project with multiple child Tasks:
 - Your knowledge graph remains connected ✨
 
 **Technical Details:**
+
 - Switched from `vault.rename()` to `app.fileManager.renameFile()` in RenameToUidService
 - fileManager API handles link updates automatically across the entire vault
 - Updated CommandManager and UniversalLayoutRenderer to pass full App context
@@ -1365,18 +1564,21 @@ When viewing a Project with multiple child Tasks:
 **Beautiful Semantic Button Grouping**: All action buttons in Layout view now display with elegant, creative styling organized into meaningful semantic groups. Buttons are visually grouped by their purpose (Creation, Status, Planning, Maintenance) with color-coded variants and smooth animations for a premium user experience.
 
 **Why this matters:**
+
 - **Faster Navigation**: Instantly find the right action by semantic category
 - **Visual Clarity**: Color-coded buttons (blue for creation, green for completion, orange for planning, red for destructive actions)
 - **Professional Polish**: Gradient separators, hover effects, and responsive design
 - **Better Organization**: Related actions grouped together (e.g., "Shift Day ◀" and "Shift Day ▶" appear together)
 
 **Semantic Groups:**
+
 - **Creation** (Primary blue): Create Task, Create Instance
 - **Status** (Secondary/Green): Move to Backlog, Start Effort, Mark Done
 - **Planning** (Orange): Plan on Today, Shift Day Backward, Shift Day Forward
 - **Maintenance** (Secondary/Red): Trash, Archive, Clean Properties, Repair Folder, Rename to UID
 
 **Technical Implementation:**
+
 - New `ActionButtonsGroup` React component with semantic grouping architecture
 - 5 color-coded button variants: primary, secondary, success, warning, danger
 - Responsive design: horizontal layout on desktop, vertical stack on mobile (<768px)
@@ -1398,6 +1600,7 @@ When viewing a Project with multiple child Tasks:
 - **Visual Polish**: Proper flex layout with 8px gaps and wrap behavior
 
 **Technical Details:**
+
 - Added CSS classes for all button wrappers in horizontal layout section
 - Updated mobile responsive rules to include all button types
 - Ensures consistent flex-shrink behavior across all action buttons
@@ -1406,10 +1609,11 @@ When viewing a Project with multiple child Tasks:
 
 ### Fixed
 
-**Daily Tasks Table Rendering**: Fixed critical bug that prevented the Daily Tasks table from appearing on pn__DailyNote assets. The Dataview API was being called with incorrect syntax (`pages(\`""\`)` instead of `pages()`), causing the query to return no results. Now the Tasks table displays correctly for all daily notes with scheduled tasks.
+**Daily Tasks Table Rendering**: Fixed critical bug that prevented the Daily Tasks table from appearing on pn\_\_DailyNote assets. The Dataview API was being called with incorrect syntax (`pages(\`""\`)`instead of`pages()`), causing the query to return no results. Now the Tasks table displays correctly for all daily notes with scheduled tasks.
 
 **Technical Details:**
-- Fixed Dataview API call from `pages(\`""\`)` to `pages()` for proper all-pages query
+
+- Fixed Dataview API call from `pages(\`""\`)`to`pages()` for proper all-pages query
 - Ensures Tasks table renders between Properties and Relations as designed
 - Maintains graceful fallback when Dataview plugin not installed
 
@@ -1417,7 +1621,7 @@ When viewing a Project with multiple child Tasks:
 
 ### Added
 
-**Daily Tasks Table for pn__DailyNote**: When viewing daily notes (assets with `pn__DailyNote` class), a Tasks table now automatically displays between Properties and Relations sections, showing all tasks scheduled for that day. This provides an at-a-glance view of your daily agenda directly in your daily note.
+**Daily Tasks Table for pn\_\_DailyNote**: When viewing daily notes (assets with `pn__DailyNote` class), a Tasks table now automatically displays between Properties and Relations sections, showing all tasks scheduled for that day. This provides an at-a-glance view of your daily agenda directly in your daily note.
 
 - **Automatic Display**: Tasks table appears only for `pn__DailyNote` assets with `pn__DailyNote_day` property
 - **Task Information**: Shows task name (with label), start time, end time, and status
@@ -1431,6 +1635,7 @@ When viewing a Project with multiple child Tasks:
 - **Graceful Fallback**: If Dataview plugin not installed, table simply doesn't appear (no errors)
 
 **Technical Integration:**
+
 - Integrates with Dataview API to query tasks with `ems__Effort_day` matching the daily note's day
 - Uses existing React component architecture with DailyTasksTable component
 - Positioned strategically between Properties and Relations for optimal workflow
@@ -1452,6 +1657,7 @@ When viewing a Project with multiple child Tasks:
 - Improved user experience with predictable, reliable Layout rendering
 
 **Technical Details:**
+
 - Replaced unreliable `document.querySelectorAll(".markdown-preview-view")` with official `workspace.getActiveViewOfType(MarkdownView)` API
 - Now uses Obsidian's workspace API to guarantee access to the active view's DOM container
 - Increased event handler delay from 100ms to 150ms for improved stability
@@ -1471,6 +1677,7 @@ When viewing a Project with multiple child Tasks:
 - Better user experience: Human-readable labels instead of filenames throughout the interface
 
 **Technical Details:**
+
 - Added `getAssetLabel` prop support to AssetRelationsTable component
 - Implemented `renderPropertyValue()` function for wiki-link label resolution
 - Supports arrays of wiki-links with proper label extraction
@@ -1488,6 +1695,7 @@ When viewing a Project with multiple child Tasks:
 - Improved user experience with meaningful labels instead of technical filenames
 
 **Technical Details:**
+
 - Updated `getAssetLabel()` method in UniversalLayoutRenderer to try adding `.md` extension if file not found initially
 - Ensures proper label resolution for all wiki-link formats (`[[filename]]` and `[[filename.md]]`)
 
@@ -1502,6 +1710,7 @@ When viewing a Project with multiple child Tasks:
 - Improved user experience with consistent, predictable layout behavior
 
 **Technical Details:**
+
 - Updated `UniversalLayoutRenderer` to maintain a reference to the root container
 - Modified `refresh()` method to use saved root container instead of passed element
 - Ensures proper cleanup and re-render cycle without nested duplication
@@ -1510,37 +1719,43 @@ When viewing a Project with multiple child Tasks:
 
 ### New Feature: Shift Effort Dates with One Click
 
-Managing effort dates just got easier! Two new commands allow you to quickly adjust the date of any effort (task or project with ems__Effort_day property) by ±1 day without manually editing properties.
+Managing effort dates just got easier! Two new commands allow you to quickly adjust the date of any effort (task or project with ems\_\_Effort_day property) by ±1 day without manually editing properties.
 
 **What's New:**
+
 - **Shift Day Backward**: Move effort date back by 1 day
 - **Shift Day Forward**: Move effort date forward by 1 day
-- Commands appear only for assets with ems__Effort_day property
+- Commands appear only for assets with ems\_\_Effort_day property
 - Works for Tasks, Projects, and any asset tracking effort dates
 
 **How It Works:**
-1. Open any asset with ems__Effort_day property
+
+1. Open any asset with ems\_\_Effort_day property
 2. Open Command Palette (Ctrl/Cmd+P)
 3. Type "Shift Day" to see both commands
 4. Select Forward or Backward to adjust the date instantly
 
 **User Experience:**
+
 - **Before**: Manually edit frontmatter, change date format, update file
 - **After**: One command execution, date shifts automatically
 
 **Benefits:**
+
 - **Time-saving** - no manual date calculation or formatting
 - **Error-proof** - handles date arithmetic correctly
 - **Workflow-friendly** - reschedule efforts when plans change
 - **Smart visibility** - commands only appear when applicable
 
 **Use Cases:**
+
 - Postpone today's task to tomorrow
 - Move yesterday's incomplete effort to today
 - Adjust effort dates when priorities shift
 - Quickly reschedule planned work
 
 **Technical:**
+
 - Date shifting logic in TaskStatusService
 - Smart command visibility via CommandVisibility domain service
 - Frontmatter updates maintain format and preserve other properties
@@ -1550,9 +1765,10 @@ Managing effort dates just got easier! Two new commands allow you to quickly adj
 
 ### UI Enhancement: Rename to UID Button in Layout
 
-The "Rename to UID" feature now includes a visual button that automatically appears in the Layout view of all assets when the filename doesn't match the exo__Asset_uid property.
+The "Rename to UID" feature now includes a visual button that automatically appears in the Layout view of all assets when the filename doesn't match the exo\_\_Asset_uid property.
 
 **What's New:**
+
 - Visual button appears directly in the note's Layout section
 - No need to open Command Palette for filename normalization
 - Button only shows when filename needs normalization (filename ≠ UID)
@@ -1560,10 +1776,12 @@ The "Rename to UID" feature now includes a visual button that automatically appe
 - Consistent with other Layout action buttons (Archive, Trash, Repair Folder, etc.)
 
 **User Experience:**
+
 - **Before**: Users had to use Command Palette (Ctrl/Cmd+P → "Rename to UID")
 - **After**: Visual button appears automatically in Layout when needed
 
 **Benefits:**
+
 - **Improved discoverability** - users see the option when it's relevant
 - **Faster workflow** - one click instead of multiple steps
 - **Consistent UI** - matches existing Layout button patterns
@@ -1572,6 +1790,7 @@ The "Rename to UID" feature now includes a visual button that automatically appe
 This enhancement makes the UUID-based filename normalization feature introduced in v12.14.0 more accessible and user-friendly.
 
 **Technical:**
+
 - New `RenameToUidButton` React component with icon and styling
 - Integrated `renderRenameToUidButton()` method in `UniversalLayoutRenderer`
 - Button automatically checks filename vs UID and shows/hides accordingly
@@ -1582,37 +1801,39 @@ This enhancement makes the UUID-based filename normalization feature introduced 
 
 ### New Feature: Rename to UID Command
 
-Introduces a new command "Rename to UID" that automatically normalizes asset filenames to match their unique identifier (exo__Asset_uid). This powerful command helps maintain consistency across your vault by standardizing filename conventions.
+Introduces a new command "Rename to UID" that automatically normalizes asset filenames to match their unique identifier (exo\_\_Asset_uid). This powerful command helps maintain consistency across your vault by standardizing filename conventions.
 
 ### What It Does
 
-When you have files with human-readable names like "Task-2025-10-15T14-30-45.md" or "My Project Notes.md", this command converts them to UUID-based naming (e.g., "abc-123-def.md") while intelligently preserving the original name in the exo__Asset_label property for display purposes.
+When you have files with human-readable names like "Task-2025-10-15T14-30-45.md" or "My Project Notes.md", this command converts them to UUID-based naming (e.g., "abc-123-def.md") while intelligently preserving the original name in the exo\_\_Asset_label property for display purposes.
 
 ### Key Features
 
-- **Smart Command Visibility**: Appears in Command Palette only when a file's name doesn't match its exo__Asset_uid
-- **Automatic Label Preservation**: If no exo__Asset_label exists, the command automatically preserves the current filename as the label before renaming
-- **One-Click Normalization**: Renames the file to match the UUID format: {exo__Asset_uid}.md
+- **Smart Command Visibility**: Appears in Command Palette only when a file's name doesn't match its exo\_\_Asset_uid
+- **Automatic Label Preservation**: If no exo\_\_Asset_label exists, the command automatically preserves the current filename as the label before renaming
+- **One-Click Normalization**: Renames the file to match the UUID format: {exo\_\_Asset_uid}.md
 - **Legacy File Support**: Perfect for normalizing older assets created before UUID-based naming was standard
 
 ### Benefits
 
 - **Consistent Asset Identification**: Aligns filenames with semantic asset identification system
 - **Prevents Filename Conflicts**: UUID-based names eliminate collision risks
-- **Preserves Human-Readable Names**: Original filenames remain accessible via exo__Asset_label property
+- **Preserves Human-Readable Names**: Original filenames remain accessible via exo\_\_Asset_label property
 - **Batch Normalization Ready**: Easily normalize your entire vault one file at a time
 
 ### Use Case Example
 
 **Before:**
+
 - Filename: "My Important Project.md"
-- exo__Asset_uid: "abc-123-def-456"
-- exo__Asset_label: (empty)
+- exo\_\_Asset_uid: "abc-123-def-456"
+- exo\_\_Asset_label: (empty)
 
 **After running "Rename to UID":**
+
 - Filename: "abc-123-def-456.md"
-- exo__Asset_uid: "abc-123-def-456"
-- exo__Asset_label: "My Important Project"
+- exo\_\_Asset_uid: "abc-123-def-456"
+- exo\_\_Asset_label: "My Important Project"
 
 ### Technical
 
@@ -2138,7 +2359,7 @@ When you have files with human-readable names like "Task-2025-10-15T14-30-45.md"
 ### Technical
 
 - Added `getTodayDateString()` helper function for date comparison
-- Added `isPlannedForToday()` helper function to check ems__Effort_day value
+- Added `isPlannedForToday()` helper function to check ems\_\_Effort_day value
 - Updated `canPlanOnToday()` to hide button when already planned for today
 - Handles multiple formats: quoted wikilinks, unquoted wikilinks, arrays
 - Added 8 unit tests for date checking logic in CommandVisibility.test.ts
@@ -2186,9 +2407,9 @@ When you have files with human-readable names like "Task-2025-10-15T14-30-45.md"
 
 ### Added
 
-- **Create Instance Button for Task Prototypes**: New "Create Instance" button for ems__TaskPrototype assets
+- **Create Instance Button for Task Prototypes**: New "Create Instance" button for ems\_\_TaskPrototype assets
   - Button appears in layout for TaskPrototype assets (below properties table)
-  - Creates new ems__Task instances linked via `exo__Asset_prototype` property
+  - Creates new ems**Task instances linked via `exo**Asset_prototype` property
   - Available in both UI button and Command Palette ("Exocortex: Create Instance")
   - Created task automatically opens in new tab with focus
   - Follows same pattern as existing "Create Task" functionality for Areas/Projects
@@ -2250,9 +2471,9 @@ When you have files with human-readable names like "Task-2025-10-15T14-30-45.md"
 - **BREAKING: Removed ManualLayout** - Simplified plugin by removing code-block rendering functionality
   - Removed `registerMarkdownCodeBlockProcessor("exocortex")` from plugin initialization
   - Plugin now **always** displays related assets automatically below metadata in reading mode
-  - No more code-block (````exocortex```) support - AutoLayout is now the only rendering mode
+  - No more code-block (``exocortex`) support - AutoLayout is now the only rendering mode
   - Settings removed: "Enable AutoLayout" toggle is gone (AutoLayout is always on)
-  - **Migration**: Remove all ````exocortex``` code-blocks from your notes - they will be ignored
+  - **Migration**: Remove all ``exocortex` code-blocks from your notes - they will be ignored
   - **Benefit**: Simpler, more consistent user experience - no configuration needed
 
 ### User Benefits
@@ -2622,6 +2843,7 @@ When you have files with human-readable names like "Task-2025-10-15T14-30-45.md"
 - **Proper Relationships**: Tasks automatically link to their parent Area or Project with correct property
 
 **Usage Example:**
+
 - Open a Project note → Click "Create Task" → New task with `ems__Effort_parent: "[[Your Project]]"`
 - Open an Area note → Click "Create Task" → New task with `ems__Effort_area: "[[Your Area]]"`
 
@@ -3006,7 +3228,7 @@ When you have files with human-readable names like "Task-2025-10-15T14-30-45.md"
 
 **Major Simplification: Table-Only Mode**
 
-Completely refactored UniversalLayoutRenderer to focus exclusively on table rendering with Name and exo__Instance_class columns. This is a breaking change that removes all alternative layout modes.
+Completely refactored UniversalLayoutRenderer to focus exclusively on table rendering with Name and exo\_\_Instance_class columns. This is a breaking change that removes all alternative layout modes.
 
 ### Removed
 
@@ -3044,6 +3266,7 @@ Completely refactored UniversalLayoutRenderer to focus exclusively on table rend
 ### Migration Guide
 
 **Before (v11.x):**
+
 ```markdown
 \`\`\`exocortex
 layout: cards
@@ -3052,6 +3275,7 @@ limit: 10
 ```
 
 **After (v12.0):**
+
 ```markdown
 \`\`\`exocortex
 sortBy: title
@@ -3059,7 +3283,7 @@ sortOrder: asc
 \`\`\`
 ```
 
-Only table mode is supported. All blocks render as grouped tables with Name and exo__Instance_class columns.
+Only table mode is supported. All blocks render as grouped tables with Name and exo\_\_Instance_class columns.
 
 ## [11.5.6] - 2025-10-04
 
@@ -3342,11 +3566,13 @@ Only table mode is supported. All blocks render as grouped tables with Name and 
 This release improves the development workflow and ensures release quality through automated testing.
 
 #### Added
+
 - **Quality Gates**: Tests now block releases - no release will be created if tests fail
 - **CI/CD Improvements**: Auto-release workflow now depends on successful CI completion
 - **Test Reliability**: Fixed `--expose-gc` flag issue in test script
 
 #### Changed
+
 - Auto-release workflow now triggers only after CI workflow succeeds
 - Tests are enabled in CI with 2-minute timeout
 - Simplified GitHub Actions from 26 workflows to 3 essential ones
@@ -3365,17 +3591,18 @@ These changes ensure that every release is validated by passing tests, maintaini
 
 - perf: improve relation discovery performance and fix race conditions
 
-
 ### Performance Improvements
 
 This release focuses on improving the plugin's internal architecture and performance without changing any visible functionality.
 
 #### Improved
+
 - **Faster Relation Discovery**: Plugin now finds related notes up to 10x faster by using a smart reverse index instead of searching through all notes each time
 - **Better Responsiveness**: Fixed internal race condition that could cause the plugin to refresh layouts multiple times unnecessarily
 - **Cleaner Code Architecture**: Moved logging interfaces to proper domain layer, improving code maintainability
 
 #### Technical Details
+
 - Optimized `collectAllRelations()` and `getAssetRelations()` with reverse index (O(n) → O(1) lookup)
 - Fixed cache race condition in `ObsidianClassLayoutRepository` with promise-based locking
 - Moved `ILogger` interface from infrastructure to domain layer following Clean Architecture principles
@@ -3391,12 +3618,12 @@ These improvements make the plugin more responsive when working with large vault
 
 - chore: clean up project files and remove unnecessary documentation
 
-
 ### Project Cleanup
 
 This release removes all unnecessary files outside the source code to create an even more streamlined plugin package.
 
 #### Removed
+
 - Documentation folder with outdated guides
 - Test setup and configuration files
 - Build metadata files
@@ -3406,6 +3633,7 @@ This release removes all unnecessary files outside the source code to create an 
 - Test helper directories and non-layout tests
 
 #### Results
+
 - Tests directory reduced to 84KB (only layout tests remain)
 - Root directory cleaned of unnecessary documentation
 - Cleaner project structure focused on essential files only
@@ -3418,12 +3646,12 @@ This release removes all unnecessary files outside the source code to create an 
 
 - feat!: simplify plugin to only UniversalLayout and DynamicLayout
 
-
 ### Major Release: Simplified Plugin - UniversalLayout and DynamicLayout Only
 
 This major release strips the plugin down to its core functionality - UniversalLayout and DynamicLayout rendering. All other features have been removed to create a lightweight, focused plugin that does one thing well: display Obsidian notes with flexible layout options.
 
 #### Key Changes
+
 - **Simplified to Core Features**: Plugin now only provides UniversalLayout and DynamicLayout functionality
 - **Removed All Commands and Modals**: No more complex UI interactions, just simple layout rendering
 - **Cleaned Infrastructure**: Removed all unused services, repositories, and domain entities
@@ -3431,11 +3659,13 @@ This major release strips the plugin down to its core functionality - UniversalL
 - **Streamlined Main Plugin**: Direct registration of layout renderers without complex dependency injection
 
 #### What Remains
+
 - **UniversalLayout**: Display all related assets with grouping and sorting options
 - **DynamicLayout**: Configure specific relations to display based on class layouts
 - **Base Relations Renderer**: Shared functionality for both layouts
 
 #### Removed Features
+
 - Asset creation modals and commands
 - Button renderers and command execution
 - Property editing and asset management
@@ -3445,6 +3675,7 @@ This major release strips the plugin down to its core functionality - UniversalL
 - All use cases and application services
 
 #### For Users
+
 Your existing UniversalLayout and DynamicLayout blocks will continue to work exactly as before. The plugin is now faster to load and has a smaller footprint in your vault.
 
 ## [9.2.0] - 2025-09-18
@@ -3455,12 +3686,12 @@ Your existing UniversalLayout and DynamicLayout blocks will continue to work exa
 
 - fix: remove version script that references deleted file
 
-
 ### Codebase Cleanup and Optimization
 
 This release removes unnecessary files and documentation to streamline the plugin codebase while preserving all CLAUDE instruction files and core functionality.
 
 #### Removed
+
 - All Docker-related files and configurations
 - BDD/Cucumber testing infrastructure and feature files
 - Unused configuration files (mobile, mutation testing)
@@ -3469,6 +3700,7 @@ This release removes unnecessary files and documentation to streamline the plugi
 - System files (.DS_Store, duplicate configs)
 
 #### Preserved
+
 - All CLAUDE instruction files in `.claude/` directory
 - Core plugin functionality and source code
 - Essential build and development tools
@@ -3476,6 +3708,7 @@ This release removes unnecessary files and documentation to streamline the plugi
 - GitHub Actions workflows
 
 #### Benefits
+
 - Significantly reduced repository size
 - Cleaner, more focused codebase
 - Faster clone and install times
@@ -3488,6 +3721,7 @@ This release removes unnecessary files and documentation to streamline the plugi
 This release removes all E2E and UI testing infrastructure to streamline the codebase and focus on core functionality.
 
 #### Removed
+
 - Complete E2E test infrastructure including all test files and configurations
 - Playwright and WebDriverIO dependencies and configurations
 - Docker Compose files for E2E testing environments
@@ -3495,6 +3729,7 @@ This release removes all E2E and UI testing infrastructure to streamline the cod
 - Test result directories and screenshots
 
 #### Benefits
+
 - Reduced project complexity and maintenance overhead
 - Faster build times without E2E dependencies
 - Cleaner codebase focused on core functionality
@@ -3507,12 +3742,14 @@ This release removes all E2E and UI testing infrastructure to streamline the cod
 This release rolls back the codebase to the stable v7.11.0 state, removing experimental features and CI/CD changes that were introduced in subsequent versions.
 
 #### Changes
+
 - Reverted to v7.11.0 codebase (commit 2c27076)
 - Removed experimental maintenance commands and status modal
 - Removed experimental CI/CD workflow enhancements
 - Restored stable feature set from v7.11.0
 
 #### Why This Release
+
 This rollback ensures stability and reliability by returning to a well-tested codebase configuration while planning for future improvements.
 
 ## [7.11.0] - 2025-08-31
@@ -3522,6 +3759,7 @@ This rollback ensures stability and reliability by returning to a well-tested co
 This release completes Phase 3 of our comprehensive test coverage improvement initiative, bringing enterprise-grade quality assurance to the Exocortex plugin.
 
 #### Added
+
 - **800+ new test cases** across critical components
 - **Application Service Tests**: Complete coverage for CommandExecutor, BlockRenderingService, and ErrorHandlerService
 - **Presentation Layer Tests**: ButtonRenderer and PropertyRenderer component testing
@@ -3529,18 +3767,21 @@ This release completes Phase 3 of our comprehensive test coverage improvement in
 - **Settings UI Tests**: ExocortexSettingTab coverage improved from 8% to 52%
 
 #### Improved
+
 - **Critical Component Coverage**: ExecuteButtonCommandUseCase (7.69% → 100%)
 - **UI Component Coverage**: RenderClassButtonsUseCase (8.33% → 100%)
 - **Domain Logic Coverage**: ClassView aggregate (6.66% → 100%)
 - **Overall Test Coverage**: Now at 59.47% (Phase 3 progress: +1.85%)
 
 #### Testing Standards
+
 - **ISTQB Compliance**: Enterprise-grade test design techniques
 - **Security Testing**: Command injection prevention and input validation
 - **Performance Testing**: Execution time and resource usage validation
 - **Error Scenarios**: Comprehensive edge case and failure path coverage
 
 #### Technical Excellence
+
 - Clean Architecture validation through comprehensive testing
 - SOLID principles compliance verified
 - Design pattern implementations tested
@@ -3553,36 +3794,42 @@ This release establishes Exocortex as a professionally tested Obsidian plugin wi
 ### 🎯 Major Feature: Comprehensive Test Coverage Excellence - Phase 2
 
 #### What's New
+
 - **Enterprise-Grade Test Coverage**: Achieved 57.58% overall coverage (+3.28% improvement) and 48.69% branch coverage (+3.95% improvement) through systematic testing excellence
 - **700+ New Tests**: Added comprehensive test suites across all architectural layers with 378+ branch coverage tests and 195+ integration workflow tests
 - **Complete Integration Testing**: New integration test suite covering critical user workflows including Asset Creation, Layout Rendering, Mobile Responsiveness, Property Editing, and Query Engine operations
 - **Bulletproof Domain Entities**: Comprehensive testing for all core domain entities (Asset, ButtonCommand, ClassLayout) with full edge case coverage and validation testing
 
 #### Testing Infrastructure Achievements
+
 - **Mobile Testing Suite**: Enhanced mobile testing from 5% to 95% coverage with complete touch interaction and responsive design validation
 - **Query Engine Excellence**: Comprehensive testing across all query engine implementations (Dataview, Datacore, Native) with error handling and performance validation
 - **Domain Layer Mastery**: Complete test coverage for Entity patterns, Value Objects (AssetId, ClassName, PropertyValue), and utility functions
 - **Architectural Validation**: Integration tests ensuring Clean Architecture principles and proper layer separation
 
 #### Developer Experience Revolution
+
 - **Comprehensive Test Documentation**: Detailed integration test summary with coverage matrices and testing best practices
 - **Systematic Quality Assurance**: Every domain entity now has comprehensive test coverage including error conditions, edge cases, and validation scenarios
 - **Professional Testing Standards**: Enterprise-grade testing practices following industry best practices for maintainability and reliability
 - **CI/CD Optimization**: Enhanced continuous integration with better test organization and faster feedback loops
 
 #### User Benefits
+
 - **Rock-Solid Reliability**: Every feature is thoroughly tested to prevent regressions and ensure consistent behavior
 - **Mobile-First Experience**: Comprehensive mobile testing ensures perfect functionality on all devices and screen sizes
 - **Bulletproof Quality**: Systematic testing of all user workflows guarantees smooth operation across all usage scenarios
 - **Professional Grade Plugin**: Enterprise-level quality assurance ensures the plugin meets professional software development standards
 
 #### Technical Excellence
+
 - **Branch Coverage Optimization**: Strategic improvement of conditional logic testing with focus on error handling and edge cases
 - **Integration Workflow Testing**: Complete coverage of multi-component interactions and real-world usage scenarios
 - **Performance Validation**: Testing ensures optimal performance across all devices and usage patterns
 - **Error Resilience**: Comprehensive error condition testing ensures graceful degradation and proper user feedback
 
 #### Coverage Improvements by Component
+
 - **Domain Entities**: Asset, ButtonCommand, ClassLayout - now 90%+ coverage with comprehensive edge case testing
 - **Value Objects**: AssetId, ClassName, PropertyValue - complete validation and error handling coverage
 - **Utility Functions**: AssetRelationUtils, RenderingUtils - full coverage with performance and edge case testing
@@ -3596,30 +3843,35 @@ This release establishes Exocortex as the gold standard for tested Obsidian plug
 ### 🧪 Major Feature: Comprehensive E2E Testing Infrastructure
 
 #### What's New
+
 - **Complete E2E Testing Suite**: Implemented WebdriverIO-based end-to-end testing with native Obsidian integration through `wdio-obsidian-service`
-- **UI Component Testing**: Full test coverage for DynamicLayout, UniversalLayout, and CreateAssetModal components with real user interaction simulation  
+- **UI Component Testing**: Full test coverage for DynamicLayout, UniversalLayout, and CreateAssetModal components with real user interaction simulation
 - **Stability Validation**: 5x consecutive test run validation ensures consistent reliability across all UI features
 - **Docker Testing Environment**: Complete containerized testing setup with `obsidian-remote` for isolated, reproducible test execution
 
 #### Developer Experience Improvements
+
 - **Page Object Pattern**: Maintainable test architecture with structured page objects for workspace manipulation
 - **Test Organization**: Comprehensive test structure with dedicated specs for layout systems and modal interactions
 - **CI/CD Ready**: Full GitHub Actions integration for automated testing in continuous integration pipelines
 - **Quality Assurance**: 100% test suite pass rate with comprehensive coverage of critical UI functionality
 
 #### Technical Enhancements
+
 - **WebdriverIO Configuration**: Advanced test configuration with custom reporters and service integration
 - **Test Vault Structure**: Dedicated test data with sample ontologies, classes, and properties for realistic testing scenarios
 - **Stability Scripts**: Automated validation ensuring tests pass consistently across multiple execution cycles
 - **Performance Monitoring**: Test execution monitoring with timeout handling and error recovery
 
 #### User Benefits
+
 - **Rock-Solid Plugin Stability**: Every UI interaction is thoroughly tested to prevent regressions and ensure reliable operation
 - **Faster Feature Development**: Comprehensive testing infrastructure enables rapid development with confidence in quality
 - **Better Bug Prevention**: E2E tests catch integration issues before they reach users, improving overall plugin reliability
 - **Professional Quality**: Enterprise-grade testing practices ensure the plugin meets professional software standards
 
 #### Testing Coverage
+
 - **DynamicLayout System**: Full interaction testing including layout rendering, property display, and user interactions
 - **UniversalLayout Components**: Complete coverage of universal layout functionality and responsive behavior
 - **CreateAssetModal Workflow**: End-to-end testing of asset creation including class selection, property configuration, and form validation
@@ -3632,18 +3884,21 @@ This release establishes Exocortex as a professionally tested plugin with enterp
 ### 🐛 Fix: Enhanced Class Inheritance and Property Discovery
 
 #### What Was Fixed
+
 - **Modern Property Support**: Enhanced property discovery to prioritize `exo__Class_superClass` over legacy `rdfs__subClassOf` for class inheritance
 - **Improved Domain Matching**: Property domain checking now prioritizes `exo__Property_domain` over legacy `rdfs__domain`
 - **FleetingNote Classes**: Custom classes like `ztlk__FleetingNote` now correctly discover their properties through proper inheritance chains
 - **Array Inheritance**: Added support for array-based superclass definitions in class hierarchies
 
 #### User Benefits
+
 - **Custom Class Properties**: Properties for custom classes like FleetingNote now appear correctly in the CreateAssetModal
 - **Better Inheritance**: Class hierarchies work seamlessly with modern vault structures using `exo__Class_superClass`
 - **Backward Compatibility**: Older vaults using `rdfs__subClassOf` continue to work while modern vaults get priority treatment
 - **Property Discovery**: All class-specific properties are now discovered regardless of file location in the vault
 
 #### Technical Improvements
+
 - **Enhanced GetClassHierarchyUseCase**: Now handles array-based superclass values and prioritizes modern properties
 - **Improved SemanticPropertyDiscoveryService**: Better domain matching with modern property priority
 - **Comprehensive Test Coverage**: Added comprehensive tests for FleetingNote property discovery scenarios
@@ -3656,16 +3911,19 @@ This fix ensures that users working with modern vault structures get the best ex
 ### 🐛 Fix: Enhanced Core Property Filtering in CreateAssetModal
 
 #### What Was Fixed
+
 - **Improved Core Property Filtering**: Enhanced the filtering logic to catch core properties by both name AND label
 - **No More Duplicate Fields**: Core properties like "Unique ID", "Defined By", and "Instance Class" are now completely filtered out
 - **Cleaner Property Section**: Only user-editable properties are shown in the Properties section
 
 #### Technical Details
+
 - Added label-based filtering in addition to name-based filtering
 - Core properties that exist as actual property files in the vault are now properly excluded
-- Filtering catches variations like "Instance Class" vs "exo__Instance_class"
+- Filtering catches variations like "Instance Class" vs "exo\_\_Instance_class"
 
 #### User Benefits
+
 - Cleaner modal interface without confusing duplicate fields
 - Only see properties you can actually edit
 - Core properties are still handled automatically behind the scenes
@@ -3675,16 +3933,19 @@ This fix ensures that users working with modern vault structures get the best ex
 ### 🐛 Bug Fix: Removed Duplicate Core Properties in Asset Creation Modal
 
 #### What Was Fixed
+
 - **Duplicate Fields**: Fixed issue where core properties (Instance Class, Unique ID, Defined By) appeared twice in the CreateAssetModal
 - **Core Property Filtering**: Core properties are now properly excluded from user-editable fields since they are auto-generated
 - **Clean Property Discovery**: Property discovery service no longer adds core properties to the user interface
 
 #### User Experience Improvements
+
 - **Cleaner Interface**: Modal now shows only relevant, class-specific properties that users can actually edit
 - **No Confusion**: Eliminated duplicate Instance Class field that was causing user confusion
 - **Auto-Generated Fields**: Core properties (UUID, timestamps, ontology references) are handled automatically by the system
 
 #### Technical Changes
+
 - **SemanticPropertyDiscoveryService**: Removed `addCoreProperties` method to prevent duplicate core property display
 - **CreateAssetModal**: Added explicit filtering to exclude core properties from user-editable fields
 - **Asset Entity**: Core properties continue to be properly handled in the domain layer during asset creation
@@ -3696,29 +3957,34 @@ This fix ensures the asset creation experience is clean and intuitive, showing u
 ### 🐛 Critical UX Bug Fix: Asset Creation Modal Class Switching
 
 #### What Was Fixed
+
 - **Property Field Updates**: Fixed critical bug where property fields failed to update when users selected different classes in the CreateAssetModal
 - **State Management**: Completely rewrote state management to properly clear and refresh property fields on class changes
 - **Race Conditions**: Eliminated race conditions that occurred during rapid class switching
 
 #### Performance Improvements
+
 - **100ms Response Time**: Class switching now completes within 100ms, providing instant feedback
 - **Debounced Updates**: Added 50ms debounce to prevent excessive updates during rapid switching
 - **Optimized DOM Manipulation**: Improved DOM cleanup ensures no orphaned elements or memory leaks
 - **Async Property Loading**: ObjectProperty dropdowns now load asynchronously without blocking the UI
 
 #### Technical Enhancements
+
 - **Cache Invalidation**: Property cache is properly cleared on each class switch to ensure fresh data
 - **Concurrent Update Prevention**: Added guards to prevent concurrent property updates
 - **Complete State Cleanup**: Modal properly cleans up all state on close, preventing memory leaks
 - **Error Recovery**: Enhanced error handling ensures modal remains functional even if property loading fails
 
 #### Testing & Quality
+
 - **BDD Test Coverage**: Added comprehensive BDD scenarios for all class switching behaviors
 - **Performance Monitoring**: Integrated performance tests to ensure updates stay within 100ms threshold
 - **Cross-Browser Validation**: Tested across Chrome, Firefox, Safari, and Edge for compatibility
 - **Memory Leak Prevention**: Added tests to verify no memory leaks during repeated class switches
 
 #### User Benefits
+
 - **Instant Updates**: Property fields now update immediately when switching between classes
 - **No Lost Data**: Previous property values are properly cleared, preventing accidental data persistence
 - **Smooth Experience**: No UI freezing or lag during class selection changes
@@ -3729,25 +3995,30 @@ This fix ensures the asset creation experience is clean and intuitive, showing u
 ### 🔧 Enhanced Stability & Developer Experience
 
 #### Critical Bug Fixes
+
 - **Fixed Asset Creation Modal**: Property discovery now works correctly in the asset creation modal - you can finally see all available properties when creating new assets
 - **Resolved Property Display Issues**: Properties from your ontology now appear consistently in dropdown menus and form fields
 
-#### Performance Improvements  
+#### Performance Improvements
+
 - **4x Faster Property Discovery**: Optimized property scanning reduces modal loading time from 2 seconds to under 500ms
 - **Improved Memory Usage**: More efficient caching reduces memory footprint during property discovery operations
 - **Better Error Handling**: Enhanced error messages help identify issues faster when property discovery fails
 
 #### Development Infrastructure
+
 - **Enhanced Testing Framework**: New Docker-based testing infrastructure provides more reliable and faster test execution
 - **Improved CI/CD Pipeline**: Fixed ESLint and Prettier integration issues that were causing build failures
 - **Better Test Coverage**: Comprehensive E2E testing ensures modal functionality works correctly across different scenarios
 
 #### Developer Benefits
-- **Faster Development Cycle**: CI/CD improvements reduce build time by 30% 
+
+- **Faster Development Cycle**: CI/CD improvements reduce build time by 30%
 - **More Reliable Tests**: Docker-based testing eliminates environment-specific test failures
 - **Better Code Quality**: Enhanced linting and formatting catch issues earlier in development
 
 #### User Experience
+
 - **Smoother Asset Creation**: Modal now loads property options quickly and reliably
 - **Better Performance**: Reduced loading times when working with large ontologies
 - **More Stable Plugin**: Fewer crashes and better error recovery during asset creation
@@ -3757,12 +4028,14 @@ This fix ensures the asset creation experience is clean and intuitive, showing u
 ### 🎯 Universal Asset Creation with Semantic Property Discovery
 
 #### What's New
+
 - **Universal Creation Button**: Classes now display a "Create [Asset]" button at the top of their layout, making it easy to create new instances directly from class views
 - **Semantic Property Discovery**: Automatically discovers all applicable properties for any class through semantic `exo__Property_domain` relationships - no manual configuration needed
 - **Smart Property Inheritance**: Properties from superclasses are automatically included through `rdfs__subClassOf` hierarchy traversal
 - **ObjectProperty Dropdowns**: Properties with object ranges automatically populate dropdowns with available instances of the target class
 
 #### Key Features
+
 - **Intelligent Form Generation**: Forms are dynamically built based on discovered properties with appropriate input types:
   - ObjectProperty → Dropdown with instances
   - DatatypeProperty → Text, Number, Date, Boolean fields based on range
@@ -3772,18 +4045,21 @@ This fix ensures the asset creation experience is clean and intuitive, showing u
 - **Ontology Auto-Detection**: Automatically selects appropriate ontology based on class prefix
 
 #### Performance & Reliability
+
 - **Sub-500ms Discovery**: Property discovery completes in <500ms even with 5000+ properties in vault
-- **Smart Caching**: Properties are discovered once per modal opening, reducing repeated file scanning  
+- **Smart Caching**: Properties are discovered once per modal opening, reducing repeated file scanning
 - **Circuit Breaker Protection**: Asset creation wrapped in circuit breaker for resilient error handling
 - **Type-Safe Implementation**: Full TypeScript with Result pattern for error handling
 
-#### Developer Experience  
+#### Developer Experience
+
 - **Clean Architecture**: Follows SOLID principles with proper separation of concerns
 - **Comprehensive Testing**: 100% test coverage for new functionality including unit and integration tests
 - **BDD-First Development**: Feature developed using Behavior-Driven Development with Gherkin scenarios
 - **Extensible Design**: Easy to add new property types and input handlers
 
 #### Benefits for Users
+
 - **Zero Configuration**: Works out of the box with any semantic vault structure
 - **Universal Solution**: Not hardcoded for specific classes - works with any ontology
 - **Intuitive UX**: Creation button appears exactly where users expect it - on class views
@@ -3794,22 +4070,26 @@ This fix ensures the asset creation experience is clean and intuitive, showing u
 ### 🚀 Performance & Layout Improvements
 
 #### What's New
+
 - **DynamicLayout defaultLayout Support**: Classes can now specify their preferred layout directly via the `exo__Class_defaultLayout` property
 - **O(1) Layout Resolution**: Direct UUID lookup eliminates file searching for configured classes, providing instant layout loading
 - **Flexible Property Names**: Support for multiple defaultLayout naming conventions including `exo__Class_defaultLayout`, `defaultLayout`, and `ui__defaultLayout`
 
 #### Performance Benefits
+
 - **10x Faster Layout Loading**: Classes with defaultLayout skip file iteration entirely
-- **Optimized Lookup Path**: Direct file access by UUID instead of searching through all vault files  
+- **Optimized Lookup Path**: Direct file access by UUID instead of searching through all vault files
 - **Smart Fallback**: Graceful degradation to traditional search when defaultLayout not found
 
 #### Technical Enhancements
-- **Backward Compatibility**: All existing layout patterns continue working (filename patterns, ui__ClassLayout_for, traditional search)
+
+- **Backward Compatibility**: All existing layout patterns continue working (filename patterns, ui\_\_ClassLayout_for, traditional search)
 - **Enhanced Discovery**: Layout lookup now checks multiple locations including root and Inbox folders
 - **BDD Test Coverage**: Comprehensive Gherkin scenarios ensure enterprise-grade quality
 - **Clean Architecture**: Follows SOLID principles with proper separation of concerns
 
 #### Benefits for Users
+
 - **Instant Layout Loading**: No more delays when opening files with configured layouts
 - **Predictable Performance**: Consistent fast loading regardless of vault size
 - **Zero Breaking Changes**: All existing configurations continue working exactly as before
@@ -3820,11 +4100,13 @@ This fix ensures the asset creation experience is clean and intuitive, showing u
 ### 🔧 Code Refactoring & Bug Fixes
 
 #### What's Improved
+
 - **DRY Principle Applied**: Eliminated 500+ lines of duplicate code by creating shared utilities
 - **Fixed Table Sorting Bug**: Resolved critical issue where sorting would break table rendering
 - **Type Safety Enhanced**: Fixed errors with non-string property values in sorting
 
 #### Key Changes
+
 - **New AssetRelationUtils Class**: Centralized shared functionality for asset relation operations
   - `isAssetArchived`: Checks if an asset is archived with robust type handling
   - `findReferencingProperty`: Finds which property references a target file
@@ -3832,17 +4114,20 @@ This fix ensures the asset creation experience is clean and intuitive, showing u
   - `sortRelations`: Sorts relations with proper type conversion
 
 #### Bug Fixes
+
 - **Table Breaking on Sort**: Fixed issue where clicking sort would make tables disappear
 - **Type Error in Sorting**: Resolved "toLowerCase is not a function" error when sorting arrays or non-string values
-- **Instance Class Handling**: Properly handles arrays and complex values in exo__Instance_class property
+- **Instance Class Handling**: Properly handles arrays and complex values in exo\_\_Instance_class property
 
 #### Technical Improvements
+
 - **Reduced Code Duplication**: UniversalLayoutRenderer and BaseAssetRelationsRenderer now share common utilities
 - **Better Error Handling**: Safe type conversion for all property values during sorting
 - **Improved Performance**: Sorting now updates only table body instead of re-rendering entire group
 - **Cleaner Architecture**: Following SOLID principles with better separation of concerns
 
 #### Benefits for Users
+
 - **Stable Sorting**: Tables no longer break when sorting columns
 - **Reliable Operation**: Fixed crashes when dealing with complex property values
 - **Better Performance**: Faster table updates when sorting large datasets
@@ -3853,19 +4138,22 @@ This fix ensures the asset creation experience is clean and intuitive, showing u
 ### 🎯 Interactive Table Sorting
 
 #### What's New
+
 - **Clickable Column Headers**: Click any column header to sort the table by that column
 - **Visual Sort Indicators**: Arrow indicators (▲ for ascending, ▼ for descending) show the current sort direction
 - **Toggle Sort Direction**: Click the same column again to reverse the sort order
 - **Smart Sorting**: Automatically handles text, numbers, and empty values correctly
 
 #### Features
+
 - **Name Column Sorting**: Sort assets alphabetically by their names
-- **Instance Class Sorting**: Sort by the exo__Instance_class property values
+- **Instance Class Sorting**: Sort by the exo\_\_Instance_class property values
 - **Additional Property Sorting**: Any configured additional columns are also sortable
 - **Persistent Sort State**: Each table group maintains its own sort state during the session
 - **Visual Feedback**: Hover effects and active column highlighting for better user experience
 
 #### Technical Improvements
+
 - Implemented sorting logic in UniversalLayoutRenderer
 - Added sorting support to BaseAssetRelationsRenderer
 - Enhanced CSS with sortable column styles and indicators
@@ -3873,6 +4161,7 @@ This fix ensures the asset creation experience is clean and intuitive, showing u
 - Preserved all existing functionality while adding new features
 
 #### Benefits for Users
+
 - **Better Organization**: Quickly find assets by sorting them in the order you need
 - **Improved Navigation**: Sort large lists to locate specific items faster
 - **Enhanced Usability**: Intuitive click-to-sort interface familiar from other applications
@@ -3883,16 +4172,19 @@ This fix ensures the asset creation experience is clean and intuitive, showing u
 ### 🎯 Updated Table Column Naming Convention
 
 #### What Changed
+
 - **Column Header Update**: The second column in UniversalLayout tables now displays `exo__Instance_class` instead of "Instance Class"
 - **Consistency Improvement**: This change aligns the UI display with the actual property name used in the data model
 - **Multiple Renderer Updates**: Updated all three renderers that display this table: UniversalLayoutRenderer, RefactoredUniversalLayoutRenderer, and BaseAssetRelationsRenderer
 
 #### Benefits for Users
+
 - **Clearer Property Reference**: The column header now exactly matches the property name you use in your notes
 - **Better Consistency**: No more confusion between display names and actual property names
 - **Improved Data Model Transparency**: You can see exactly which property is being displayed
 
 #### Technical Details
+
 - Updated table header text in all relevant renderer components
 - Updated all related tests to match the new column naming
 - Maintained backward compatibility with existing data
@@ -3902,6 +4194,7 @@ This fix ensures the asset creation experience is clean and intuitive, showing u
 ### 🎯 Deep Repository Restructuring
 
 #### Major Improvements
+
 - **Documentation Organization**: Moved all CLAUDE-specific documentation to `.claude/docs/` for better structure
 - **Removed Experimental Code**: Deleted the experimental `turbo/` directory with unused scripts
 - **Cleaner Configuration**: Removed duplicate Cucumber configuration files
@@ -3909,6 +4202,7 @@ This fix ensures the asset creation experience is clean and intuitive, showing u
 - **Better Project Organization**: All auxiliary documentation now properly categorized
 
 #### What Changed
+
 - Moved 7 CLAUDE documentation files from root to `.claude/docs/`
 - Removed experimental `turbo/` directory and its contents
 - Deleted duplicate `cucumber-html-reporter.js` and `cucumber.config.js`
@@ -3921,12 +4215,14 @@ This fix ensures the asset creation experience is clean and intuitive, showing u
 ### 🧹 Repository Cleanup & Maintenance
 
 #### Improvements
+
 - **Cleaner Repository Structure**: Removed temporary files, reports, and outdated documentation
 - **Better Organization**: Cleaned up `.claude/` directory structure for improved navigation
 - **Reduced Clutter**: Removed backup files and validation outputs that were no longer needed
 - **Maintained Stability**: All tests pass and build succeeds after cleanup
 
 #### What Changed
+
 - Removed temporary CLAUDE documentation and report files
 - Cleaned up deleted files from git tracking
 - Removed `.bak` backup files from test directories
@@ -3938,6 +4234,7 @@ This fix ensures the asset creation experience is clean and intuitive, showing u
 ### ⚡ Streamlined Architecture - Major Performance Improvements
 
 #### Breaking Changes
+
 This major release removes experimental features to focus on core functionality and performance:
 
 - **Removed ExoUIRender**: The DataviewJS integration has been removed. Use native Obsidian code blocks with `exocortex` language instead
@@ -3945,17 +4242,20 @@ This major release removes experimental features to focus on core functionality 
 - **Removed Import/Export commands**: RDF import/export functionality has been removed
 
 #### Why These Changes?
+
 - **50% smaller bundle size**: Faster plugin loading and better performance
 - **Improved stability**: Removed complex dependencies that could cause issues
 - **Clearer focus**: Plugin now focuses on its core strength - configurable UI layouts
 - **Better maintainability**: Simplified codebase is easier to enhance and debug
 
 #### Migration Guide
+
 - Replace `dataviewjs` blocks using `ExoUIRender` with `exocortex` code blocks
 - Remove any RDF import/export workflows from your vault
 - SPARQL queries are no longer supported - use Dataview queries instead
 
 #### Performance Improvements
+
 - Plugin loads 2x faster
 - Memory usage reduced by 40%
 - Code blocks render instantly
@@ -3966,9 +4266,11 @@ This major release removes experimental features to focus on core functionality 
 ### 🗄️ Smart Archived Asset Filtering
 
 #### Focus on Active Knowledge
+
 UniversalLayout and DynamicLayout now automatically hide archived assets, allowing you to focus on your active, relevant knowledge without clutter from archived items. This creates a cleaner, more productive workspace.
 
 #### What's New
+
 - **Automatic Filtering**: Assets with `archived: true` are hidden by default
 - **Smart Detection**: Recognizes various formats (`true`, `"true"`, `yes`, `1`)
 - **Clean Interface**: No empty sections or placeholders for archived items
@@ -3976,13 +4278,16 @@ UniversalLayout and DynamicLayout now automatically hide archived assets, allowi
 - **Performance Optimized**: Efficient filtering even with thousands of assets
 
 #### Benefits
+
 - **Reduced Clutter**: See only what matters now, not what's been archived
 - **Better Focus**: Concentrate on active projects and current knowledge
 - **Cleaner Navigation**: Easier to find relevant assets without archived noise
 - **Improved Performance**: Less data to render means faster page loads
 
 #### How It Works
+
 Simply add `archived: true` to any asset's frontmatter to hide it from relation views:
+
 ```yaml
 ---
 archived: true
@@ -3992,6 +4297,7 @@ archived: true
 The asset remains in your vault and searchable, but won't appear in UniversalLayout or DynamicLayout views, keeping your workspace focused and organized.
 
 #### Technical Excellence
+
 - **BDD-First Development**: Complete Gherkin specifications before implementation
 - **Comprehensive Testing**: 21+ test scenarios covering all edge cases
 - **Backward Compatible**: Assets without the property work as before
@@ -4002,9 +4308,11 @@ The asset remains in your vault and searchable, but won't appear in UniversalLay
 ### 🔗 Clickable Instance Class Links in UniversalLayout
 
 #### Navigate Directly to Class Definitions
+
 The `exo__Instance_class` values in UniversalLayout tables are now interactive clickable links, enabling instant navigation to class definitions and dramatically improving your knowledge graph exploration experience.
 
 #### What's New
+
 - **Clickable Links**: All instance class values are now active links to their definitions
 - **Array Support**: Handles multiple class values with comma-separated clickable links
 - **Smart Link Parsing**: Supports `[[Link]]`, `[[Link|Alias]]`, and plain text formats
@@ -4015,12 +4323,14 @@ The `exo__Instance_class` values in UniversalLayout tables are now interactive c
   - Middle click: Opens in new tab
 
 #### Benefits
+
 - **Faster Exploration**: Jump directly from asset lists to class definitions
 - **Better Understanding**: Quickly explore inheritance hierarchies and relationships
 - **Improved Workflow**: Seamlessly navigate your semantic knowledge structure
 - **Enhanced Productivity**: Reduce clicks and time spent searching for class definitions
 
 #### Technical Excellence
+
 - **BDD-First Development**: Complete Gherkin specifications before implementation
 - **Comprehensive Testing**: 16 test scenarios covering all edge cases
 - **Type-Safe Implementation**: Full TypeScript with proper Obsidian API usage
@@ -4031,16 +4341,19 @@ The `exo__Instance_class` values in UniversalLayout tables are now interactive c
 ### 🐛 Fix: Instance Class Column Now Displays in BaseAssetRelationsRenderer
 
 #### Fixed the Missing Second Column
+
 The `exo__Instance_class` column was not displaying because the feature was implemented in the wrong renderer. This update correctly adds the Instance Class column to the BaseAssetRelationsRenderer which is actually used by the RefactoredUniversalLayoutRenderer in production.
 
 #### What Was Fixed
+
 - **BaseAssetRelationsRenderer**: Added Instance Class column to the table header and rows
 - **RefactoredUniversalLayoutRenderer**: Updated table rendering for legacy mode consistency
 - **Proper Renderer**: Changed the correct renderer that's actually used in production
 
 #### Technical Details
+
 - Modified `renderRelationGroup` method in BaseAssetRelationsRenderer
-- Modified `renderRelationRow` method to display exo__Instance_class value
+- Modified `renderRelationRow` method to display exo\_\_Instance_class value
 - Updated `renderTable` method in RefactoredUniversalLayoutRenderer for consistency
 - Added "sortable" CSS class to column headers for future sorting functionality
 
@@ -4049,9 +4362,11 @@ The `exo__Instance_class` column was not displaying because the feature was impl
 ### 🎯 Enhanced UniversalLayout with Instance Class Display
 
 #### Asset Classification at a Glance
+
 The UniversalLayout now displays the `exo__Instance_class` property directly in a second column alongside asset names, making it instantly clear what type each asset represents in your knowledge management system.
 
 #### What's New
+
 - **Two-Column Table Layout**: Asset name in the first column, Instance Class in the second
 - **Automatic Detection**: Displays the `exo__Instance_class` value for all assets that have it
 - **Graceful Fallback**: Shows a dash (-) for assets without an instance class
@@ -4059,15 +4374,18 @@ The UniversalLayout now displays the `exo__Instance_class` property directly in 
 - **Sortable Columns**: Both Name and Instance Class columns support sorting
 
 #### Benefits
+
 - **Faster Navigation**: Instantly see asset types without opening each file
 - **Better Organization**: Group and identify assets by their semantic classification
 - **Improved Workflows**: Make decisions faster with type information readily visible
 - **Enterprise Compliance**: Supports ontology-driven asset management patterns
 
 #### Usage
+
 The feature works automatically - no configuration needed! Simply view any asset with UniversalLayout and you'll see the enhanced two-column display showing both asset names and their instance classes.
 
 #### Technical Excellence
+
 - **BDD-Driven Development**: Complete Gherkin specifications written before implementation
 - **100% Test Coverage**: Comprehensive unit and integration tests
 - **Performance Optimized**: Efficient rendering with minimal overhead
@@ -4078,9 +4396,11 @@ The feature works automatically - no configuration needed! Simply view any asset
 ### 🚀 Comprehensive BDD Test Coverage
 
 #### Enterprise-Grade Testing Infrastructure
+
 The Exocortex plugin now features **complete Behavior-Driven Development (BDD) test coverage** with executable specifications in Gherkin format, providing enterprise-level quality assurance and living documentation.
 
 #### What's New
+
 - **30+ Feature Files**: Comprehensive Gherkin scenarios covering all plugin functionality
 - **1000+ Test Scenarios**: Happy paths, edge cases, error handling, and performance testing
 - **Living Documentation**: BDD scenarios serve as always up-to-date documentation
@@ -4088,6 +4408,7 @@ The Exocortex plugin now features **complete Behavior-Driven Development (BDD) t
 - **CI/CD Pipeline**: Automated BDD test execution on every commit
 
 #### Coverage Areas
+
 - **Semantic/RDF Operations**: Triple management, SPARQL queries, OWL ontologies, graph indexing, reasoning
 - **Mobile Support**: iOS/Android optimization, touch gestures, responsive UI, performance
 - **Business Logic**: Task management, children efforts, backlinks, relations, caching
@@ -4095,6 +4416,7 @@ The Exocortex plugin now features **complete Behavior-Driven Development (BDD) t
 - **UI Components**: Modals, buttons, renderers, layouts, accessibility
 
 #### Developer Benefits
+
 - **Test-First Development**: Write scenarios before code for better design
 - **Executable Specifications**: Requirements that can be verified automatically
 - **Regression Protection**: Comprehensive test suite prevents feature breakage
@@ -4102,6 +4424,7 @@ The Exocortex plugin now features **complete Behavior-Driven Development (BDD) t
 - **Quality Gates**: Multiple validation checkpoints ensure code quality
 
 #### How to Use
+
 ```bash
 # Run all BDD tests
 npm run cucumber:run
@@ -4120,6 +4443,7 @@ npm run cucumber:report
 ```
 
 #### IDE Support
+
 - **VSCode**: Launch configurations for running individual features or scenarios
 - **IntelliJ/WebStorm**: Right-click on feature files to run
 - **Direct Execution**: All tests can be run directly through the IDE
@@ -4131,15 +4455,18 @@ This major release establishes a solid foundation for quality assurance, making 
 ### 📊 Improved UniversalLayout Block Ordering
 
 #### Consistent Display Hierarchy
+
 The **"Untyped Relations" block now always appears last** in UniversalLayout displays, ensuring a clear and predictable hierarchy of information with typed relationships taking visual priority.
 
 #### Benefits for Users
+
 - **Better Organization**: Typed relationships (like "manages", "owns", "reports_to") appear first, making structured connections more prominent
 - **Consistent Experience**: Same ordering across all asset classes and views
 - **Cleaner Navigation**: Important semantic relationships are no longer buried under generic backlinks
 - **Predictable Layout**: Users always know where to find untyped references - at the bottom
 
 #### Visual Hierarchy
+
 1. **Typed Relations First**: All properties that explicitly reference the asset (sorted alphabetically)
 2. **Untyped Relations Last**: Generic backlinks and body references appear at the end
 
@@ -4150,30 +4477,36 @@ This change improves information architecture by emphasizing intentional, semant
 ### 🎯 Simplified UI LayoutBlock - Just List Properties to Display
 
 #### Ultra-Simple Configuration
+
 Configure related asset displays with **just a list of property references** - no complex configuration needed. Simply list which properties you want to see using standard Obsidian wikilink format.
 
 #### How It Works
+
 ```yaml
 ui__LayoutBlock_display_properties:
   - "[[ems__Effort_status]]"
   - "[[ems__Effort_priority]]"
   - "[[ems__Effort_due_date]]"
 ```
+
 That's it! The system automatically handles everything else.
 
 #### Automatic Smart Formatting
+
 - **Status properties** → Colored badges (green/yellow/red/blue)
 - **Date properties** → Locale-formatted dates
 - **User/Owner properties** → Clickable internal links
 - **Other properties** → Clean text display
 
 #### Zero Configuration Benefits
+
 - **No format specifications** - Automatically detected from property names
 - **No column widths** - Auto-sized for content
 - **No complex settings** - Just list what you want to see
 - **Order preserved** - Properties appear in the order you list them
 
 #### Example Result
+
 When viewing a Project, related Efforts appear in a clean table with your chosen properties as columns, automatically formatted based on their type.
 
 ## [5.15.0] - 2025-08-24
@@ -4181,9 +4514,11 @@ When viewing a Project, related Efforts appear in a clean table with your chosen
 ### 🎨 UI LayoutBlock - Advanced Property Display for Related Assets
 
 #### Professional Property Tables
+
 Configure **exactly which properties to display** for related assets with the new `ui__LayoutBlock` feature, enabling rich, informative views of linked content with customizable property columns.
 
 #### Key Capabilities
+
 - **Property Selection**: Choose specific properties to display for each asset class
 - **Multiple Format Types**: Status badges, dates, links, or raw values
 - **Table and List Views**: Professional table layout or compact list display
@@ -4191,6 +4526,7 @@ Configure **exactly which properties to display** for related assets with the ne
 - **Filtering and Limits**: Filter by class and limit result counts
 
 #### Display Formatting
+
 - **Status Badges**: Colored badges for status properties (green/yellow/red/blue)
 - **Date Formatting**: ISO dates converted to locale-friendly format
 - **Clickable Links**: Properties with asset references become navigation links
@@ -4198,7 +4534,9 @@ Configure **exactly which properties to display** for related assets with the ne
 - **Empty Value Handling**: Clean display of missing properties with dash placeholder
 
 #### Example Use Case
+
 When viewing a **Project** asset, see all related **Efforts** in a table showing:
+
 - Status (as colored badge)
 - Priority (as badge)
 - Due Date (formatted)
@@ -4206,6 +4544,7 @@ When viewing a **Project** asset, see all related **Efforts** in a table showing
 - Progress percentage
 
 #### Configuration Structure
+
 ```yaml
 ui__LayoutBlock_blocks:
   - type: "relation-properties"
@@ -4217,6 +4556,7 @@ ui__LayoutBlock_blocks:
 ```
 
 #### Integration Benefits
+
 - **Works with ClassLayout**: Enhances existing layout configurations
 - **Class-Specific**: Different configurations per asset class
 - **Priority System**: Multiple configurations with priority ordering
@@ -4227,9 +4567,11 @@ ui__LayoutBlock_blocks:
 ### 🎯 Simplified Settings Interface - Essential Options Only
 
 #### Streamlined Configuration
+
 Experience **clean and focused plugin settings** with only the essential options you need, removing all outdated and unnecessary configuration sections for a simplified user experience.
 
 #### Minimal Settings Structure
+
 - **Debug Settings Only**: Three essential debug toggles for troubleshooting
 - **Reset Functionality**: Clear reset option with confirmation dialog
 - **No Clutter**: Removed 6 outdated configuration sections
@@ -4237,6 +4579,7 @@ Experience **clean and focused plugin settings** with only the essential options
 - **Essential Focus**: Only the settings that actually matter
 
 #### Removed Legacy Sections
+
 - **❌ Folder Paths**: No longer needed with modern architecture
 - **❌ Query Engine**: Automatic detection makes manual config unnecessary
 - **❌ Cache Settings**: Handled automatically by the system
@@ -4245,12 +4588,14 @@ Experience **clean and focused plugin settings** with only the essential options
 - **❌ Mobile/Platform**: Auto-detected, no manual config needed
 
 #### Clean Debug Options
+
 - **Enable Debug Mode**: Toggle comprehensive debug features
 - **Performance Tracking**: Monitor plugin performance when needed
 - **Console Logging**: Control verbosity of console output
 - **All Disabled by Default**: Zero performance impact unless needed
 
 #### Safe Reset Feature
+
 - **Warning Message**: Clear indication of what will be reset
 - **Confirmation Dialog**: Prevents accidental resets
 - **Visual Feedback**: Success notification after reset
@@ -4265,21 +4610,25 @@ This update dramatically simplifies the plugin settings by removing all outdated
 ### 🔧 Fixed Duplicate Settings Tab - Clean Plugin Configuration
 
 #### Single Settings Tab Display
+
 Experience **clean and organized plugin settings** with the fix that eliminates duplicate "Exocortex" entries in the Obsidian settings panel, ensuring a professional and polished user experience.
 
 #### Root Cause Resolution
+
 - **Duplicate Initialization**: Settings tab was being registered twice during plugin startup
 - **First Registration**: Direct call to `settingsManager.initialize()` in initialization chain
 - **Second Registration**: Called again through `lifecycleRegistry.initializeAll()`
 - **Clean Solution**: Removed redundant initialization call, keeping only the registry-managed one
 
 #### Improved Plugin Lifecycle
+
 - **Consistent Management**: All lifecycle components now initialized through single registry
 - **Early Settings Load**: Settings loaded separately to be available for dependent components
 - **Clean Architecture**: Maintains separation of concerns and single responsibility
 - **No Side Effects**: Settings functionality remains fully intact
 
 #### User Benefits
+
 - **Cleaner UI**: No more confusing duplicate entries in settings panel
 - **Professional Look**: Plugin appears properly integrated with Obsidian
 - **Easier Navigation**: Find plugin settings without confusion
@@ -4294,9 +4643,11 @@ This update fixes a bug where the Exocortex plugin appeared twice in Obsidian's 
 ### 🔗 Fixed Piped Link Relation Grouping - Consistent Asset Organization
 
 #### Perfect Recognition of All Link Formats
+
 Experience **flawless asset relation grouping** where piped links like `[[Target|Alias]]` are correctly recognized and grouped with regular `[[Target]]` links, ensuring all related assets appear in their proper relation categories.
 
 #### Complete Link Format Support
+
 - **Regular Links**: `[[User Interface]]` correctly recognized
 - **Piped Links**: `[[User Interface|UI]]` now properly detected
 - **Path Links**: `[[concepts/User Interface|Custom Text]]` handled perfectly
@@ -4304,18 +4655,21 @@ Experience **flawless asset relation grouping** where piped links like `[[Target
 - **Array Values**: Multiple link formats in arrays all work correctly
 
 #### Fixed Grouping Issues
+
 - **Consistent Property Detection**: Piped and regular links to same target now group together
 - **No More Split Groups**: TUI and GUI with different link formats appear in same group
 - **Proper Categorization**: Assets always appear in correct property group
 - **Eliminated False "Untyped"**: Piped links no longer incorrectly marked as untyped
 
-#### Enhanced User Experience  
+#### Enhanced User Experience
+
 - **Cleaner Organization**: All related assets properly grouped by their actual property
 - **Predictable Behavior**: Same property = same group, regardless of link format
 - **Better Navigation**: Find all related assets in one consistent location
 - **Reduced Confusion**: No more wondering why similar assets appear separately
 
 #### BDD Test Coverage
+
 - **7 Comprehensive Scenarios**: All link format combinations tested
 - **Piped Link Detection**: Validates proper parsing of alias syntax
 - **Group Consistency**: Ensures same property always produces same grouping
@@ -4330,9 +4684,11 @@ This update fixes a critical bug where piped wiki links `[[Target|Alias]]` were 
 ### 🔄 Graceful DynamicLayout Fallback - Seamless UniversalLayout Integration
 
 #### Intelligent Layout Fallback System
+
 Experience **uninterrupted content display** with automatic fallback to UniversalLayout when no specific ClassLayout is defined, ensuring you always see your asset relations without errors or disruptions.
 
 #### Smart Fallback Behavior
+
 - **Informative Messages**: Clear notification showing which class lacks a specific layout
 - **Wikilink Format**: Class names displayed as clickable [[ClassName]] format
 - **Seamless Transition**: Automatic fallback without user intervention
@@ -4340,6 +4696,7 @@ Experience **uninterrupted content display** with automatic fallback to Universa
 - **No Error Messages**: Graceful degradation instead of error states
 
 #### Enhanced User Experience
+
 - **Always Shows Content**: Never see empty screens when ClassLayout is missing
 - **Clear Communication**: Informative message explains what's happening
 - **Progressive Enhancement**: Start with UniversalLayout, customize when needed
@@ -4347,6 +4704,7 @@ Experience **uninterrupted content display** with automatic fallback to Universa
 - **Developer Friendly**: Easy to understand which classes need custom layouts
 
 #### BDD-Driven Development
+
 - **5 Comprehensive Scenarios**: Full coverage of fallback behavior
 - **Message Format Testing**: Ensures proper wikilink formatting
 - **Functionality Preservation**: Verifies UniversalLayout features work correctly
@@ -4362,28 +4720,33 @@ This update transforms DynamicLayout error handling into a smooth fallback exper
 ### 🔍 Enhanced ClassLayout Discovery - Smart Pattern Recognition for Complex Class Names
 
 #### Intelligent Layout Detection for All Class Naming Patterns
+
 Experience **flawless ClassLayout discovery** that correctly identifies layout configurations for any class name pattern, including complex names with double underscores like `exo__Class`, ensuring your custom layouts always work as expected.
 
 #### Comprehensive File Pattern Support
+
 - **ClassLayout - ClassName**: Primary pattern for layout files
 - **Layout - ClassName**: Alternative naming convention
 - **Custom Patterns**: Any file with " - ClassName" pattern
-- **Property-Based**: Direct ui__ClassLayout property support
+- **Property-Based**: Direct ui\_\_ClassLayout property support
 - **Filename Extraction**: Smart parsing of class names from filenames
 
 #### Fixed Discovery Issues
-- **Double Underscore Classes**: Now correctly handles exo__Class and similar patterns
+
+- **Double Underscore Classes**: Now correctly handles exo\_\_Class and similar patterns
 - **Multiple Discovery Methods**: Checks properties and filename patterns
 - **Clean Name Extraction**: Removes wiki links and formatting automatically
 - **Improved Error Messages**: Clearer guidance when ClassLayout not found
 
 #### Enhanced Developer Experience
+
 - **Debug Logging**: Console logs help track ClassLayout discovery process
 - **Better Documentation**: Error messages explain exact file naming requirements
 - **Flexible Configuration**: Multiple ways to specify which class a layout is for
 - **Backward Compatible**: All existing ClassLayout files continue to work
 
 #### BDD Test Coverage
+
 - **13 Comprehensive Scenarios**: Full coverage of discovery patterns
 - **Performance Testing**: Ensures fast discovery even in large vaults
 - **Edge Case Handling**: Special characters, case sensitivity, and more
@@ -4398,9 +4761,11 @@ This update ensures that DynamicLayout correctly discovers ClassLayout configura
 ### 🔗 Standard Link Behavior - Native Navigation with Perfect Plugin Compatibility
 
 #### Seamless Integration with Obsidian's Link System
+
 Experience **true native link behavior** in asset relation tables that works exactly like standard Obsidian links, ensuring perfect compatibility with all your other plugins and preserving familiar keyboard shortcuts.
 
 #### Keyboard Modifier Support
+
 - **Cmd/Ctrl+Click**: Opens links in new tabs without affecting current tab
 - **Shift+Click**: Opens links in split panes for side-by-side viewing
 - **Alt+Click**: Shows context menu with all link options
@@ -4408,18 +4773,21 @@ Experience **true native link behavior** in asset relation tables that works exa
 - **Simple Click**: Opens in current tab as expected
 
 #### Fixed Navigation Issues
+
 - **No More Double Navigation**: Cmd+Click now correctly opens only in new tab
 - **Current Tab Preserved**: Modifier clicks no longer change your current view
 - **Event Handling Fixed**: Proper preventDefault and stopPropagation implementation
 - **Clean Event Flow**: Standard DOM events for plugin compatibility
 
 #### Enhanced User Experience
+
 - **Predictable Behavior**: Links work exactly as they do everywhere else in Obsidian
 - **Plugin Compatibility**: Other link-enhancing plugins can now interact properly
 - **Accessibility Improved**: Keyboard navigation fully supported
 - **Touch Device Support**: Proper handling for mobile and tablet users
 
 #### Developer Benefits
+
 - **Standard Event Emission**: Links emit proper DOM events for interception
 - **No Proprietary Handlers**: Uses native addEventListener for compatibility
 - **Clean Architecture**: Separate handlers for click and auxclick events
@@ -4434,33 +4802,39 @@ This update ensures that links in Exocortex tables behave exactly like standard 
 ### 🎯 BDD-First Development - Executable Specifications for Quality Excellence
 
 #### Mandatory Quality Gates Through Behavior-Driven Development
+
 Transform your development workflow with **mandatory BDD executable specifications** that ensure every code change is preceded by comprehensive behavior definitions, creating a living documentation that validates your plugin's functionality continuously.
 
 #### Enterprise-Grade Development Standards
+
 - **Mandatory BDD Phase**: Every code change now requires executable specifications written first
 - **Blocking Quality Gates**: Development cannot proceed without passing BDD scenarios
 - **Living Documentation**: Feature files serve as both specifications and automated tests
 - **Stakeholder Alignment**: Gherkin syntax enables non-technical stakeholders to understand and validate requirements
 
 #### Comprehensive Test Infrastructure
+
 - **Jest-Cucumber Integration**: Seamless BDD test execution within existing test framework
 - **846 BDD Steps**: Comprehensive coverage across 18 feature files with 63% implementation
 - **Automated Validation**: Pre-commit hooks and CI/CD integration enforce BDD requirements
 - **Real-Time Coverage**: Instant feedback on scenario coverage and missing implementations
 
 #### Developer Experience Enhancements
+
 - **Clear Workflow**: BDD scenarios → Step definitions → Implementation → Validation
 - **Reusable Test Infrastructure**: Leverage existing mocks and test utilities
 - **Parallel Execution**: BDD tests run alongside unit and integration tests
 - **Comprehensive Reporting**: HTML and JSON reports with coverage metrics
 
 #### Quality Assurance Benefits
+
 - **Regression Protection**: Every feature protected by executable specifications
 - **Behavior Validation**: Automated verification that code matches intended behavior
 - **Edge Case Coverage**: Systematic identification and testing of boundary conditions
 - **Continuous Validation**: Every commit validated against BDD specifications
 
 #### Enterprise Command Enhancement
+
 - **11 Senior Specialists**: Added BDD Specialist to enterprise team
 - **Phase 0 Implementation**: Mandatory BDD phase before any code development
 - **5 Validation Gates**: Comprehensive quality checkpoints
@@ -4475,27 +4849,32 @@ This update establishes BDD as the foundation of all plugin development, ensurin
 ### 📊 Table-Based Asset Display - Professional Data Organization at a Glance
 
 #### Clean, Scannable Tables for Better Information Processing
+
 Experience **professional-grade data visualization** with our new table-based asset display that transforms how you view relationships between your knowledge assets, making information scanning and comprehension significantly faster.
 
 #### Streamlined Visual Hierarchy
+
 - **Single-Column Simplicity**: Clear "Name" column header focuses attention on what matters most
 - **Clickable Asset Links**: Every asset name is an interactive link for instant navigation
 - **Hover Highlights**: Visual feedback shows exactly which asset you're focusing on
 - **Clean Borders**: Professional table styling with subtle borders improves readability
 
 #### Enhanced User Experience
+
 - **Faster Scanning**: Table rows are proven to be 40% faster to scan than list items
 - **Better Alignment**: Consistent column structure creates perfect visual alignment
 - **Professional Appearance**: Enterprise-ready table display suitable for business documentation
 - **Reduced Cognitive Load**: Structured layout reduces mental effort required to process relationships
 
 #### Improved Interaction Patterns
+
 - **Predictable Click Targets**: Consistent table cells provide reliable interaction areas
 - **Enhanced Mobile Experience**: Tables adapt better to smaller screens than complex layouts
 - **Keyboard Navigation Ready**: Table structure naturally supports keyboard navigation
 - **Accessibility Improved**: Screen readers handle table data more effectively than div-based lists
 
 #### Technical Excellence
+
 - **Semantic HTML**: Proper table elements improve document structure and SEO
 - **CSS Grid Alternative**: Tables provide built-in responsive behavior without complex CSS
 - **Performance Optimized**: Native browser table rendering is faster than custom layouts
@@ -4510,27 +4889,32 @@ This update transforms your asset relationships into clean, professional tables 
 ### 🏗️ Unified Rendering Architecture - Enhanced Layout Consistency and Performance
 
 #### Seamless Experience Across All Layout Types
+
 Experience **perfect consistency** across UniversalLayout and DynamicLayout with our new unified rendering architecture that ensures every property and relationship displays identically, regardless of which layout engine renders your content.
 
 #### Performance Optimized for Speed and Efficiency
+
 - **4KB Bundle Size Reduction**: From 223.8kb to 219.8kb for faster plugin loading
 - **Consistent Property Display**: Property names now display as-is across all layouts, maintaining semantic clarity
 - **Improved Rendering Speed**: Shared logic eliminates redundant processing and accelerates layout generation
 - **Better Memory Usage**: Optimized code structure reduces memory footprint during intensive operations
 
 #### Developer-Quality User Experience
+
 - **Zero Layout Discrepancies**: UniversalLayout and DynamicLayout now produce identical visual output
 - **Enhanced Reliability**: SOLID principles implementation reduces bugs and improves stability
 - **Future-Proof Architecture**: Clean separation of concerns makes adding new layout features seamless
 - **Maintainable Codebase**: Better code organization ensures faster bug fixes and feature development
 
 #### Behind-the-Scenes Improvements
+
 - **BaseAssetRelationsRenderer**: New shared foundation eliminates code duplication
 - **SOLID Principles**: Better separation of concerns through Single Responsibility and Open-Closed principles
 - **Consistent Error Handling**: Unified approach to validation and error reporting across all layouts
 - **Type Safety**: Enhanced TypeScript implementation prevents runtime errors
 
 #### Knowledge Management Benefits
+
 - **Predictable Interface**: Every layout behaves exactly the same way, reducing learning curve
 - **Visual Consistency**: Property names and relationships appear identical across your entire vault
 - **Improved Workflow**: Seamless switching between layout types without visual jarring
@@ -4545,33 +4929,39 @@ This architectural enhancement ensures your Exocortex experience is faster, more
 ### 🎨 DynamicLayout - Tailored Asset Views That Adapt to Your Needs
 
 #### Customizable Relationship Display Without Complexity
+
 Transform how you view asset relationships with **DynamicLayout** - an intelligent rendering system that shows exactly the information you want, when you want it, without requiring complex configurations.
 
 #### Zero-Friction Personalization
-- **Smart Property Filtering**: Control which relationships appear for each asset class through simple ui__ClassLayout configuration
+
+- **Smart Property Filtering**: Control which relationships appear for each asset class through simple ui\_\_ClassLayout configuration
 - **Ordered Display Control**: Specify the exact order of properties to match your workflow priorities
 - **Instant Configuration**: Add `ui__ClassLayout_relationsToShow` to any class and see immediate results
 - **Universal Fallback**: Gracefully displays helpful guidance when layouts aren't configured yet
 
 #### Enhanced Information Architecture
+
 - **Focused Views**: Eliminate information overload by showing only relevant relationships for each asset type
 - **Professional Organization**: Properties display in your preferred order, creating consistent navigation patterns
 - **Context-Aware Display**: Different asset classes can have completely different relationship views optimized for their purpose
-- **Flexible Control**: Use "all" or "*" to show everything, or specify exact properties for precise control
+- **Flexible Control**: Use "all" or "\*" to show everything, or specify exact properties for precise control
 
 #### User Experience Excellence
+
 - **Immediate Feedback**: Clear error messages guide you toward proper configuration when needed
 - **No Breaking Changes**: Existing layouts continue working exactly as before
 - **Progressive Enhancement**: Start simple with default views, then customize as your needs evolve
 - **Semantic Clarity**: Property names and relationships remain clear and understandable
 
 #### Knowledge Management Benefits
+
 - **Reduced Cognitive Load**: See only the relationships that matter for each context
 - **Improved Discovery**: Important connections are prominent while noise is filtered out
 - **Workflow Optimization**: Arrange information to match how you actually work with different asset types
 - **Scalable Organization**: Perfect for knowledge bases with diverse asset types and relationship patterns
 
 #### Technical Robustness
+
 - **Backward Compatible**: All existing UniversalLayout styling and functionality preserved
 - **Error Resilient**: Graceful handling of missing or invalid configurations
 - **Performance Optimized**: Efficient filtering with no impact on rendering speed
@@ -4586,33 +4976,39 @@ This release gives you the power to create personalized, focused views of your k
 ### 🔗 Smart Asset Relations - Revolutionary Relationship Discovery
 
 #### Intelligent Semantic Connections Without Configuration
+
 The UniversalLayout now **automatically discovers and organizes** all relationships between your assets, providing unprecedented insight into your knowledge network's structure without requiring any setup or configuration.
 
 #### Zero-Configuration Smart Grouping
+
 - **Automatic Property Grouping**: Assets are intelligently organized by HOW they reference the current asset
 - **Semantic Understanding**: The system understands the direction and nature of each relationship
 - **Universal Compatibility**: Works with all existing layouts and asset types immediately
 - **Backward Compatible**: No changes needed to existing configurations
 
 #### Enhanced Relationship Visualization
+
 - **Property-Based Organization**: Related assets grouped by the specific properties that connect them
 - **Directional Clarity**: Clear indication of which assets point TO the current asset vs which it points to
 - **Untyped Relations Section**: Body links and implicit connections shown in dedicated "Untyped Relations" section
 - **Rich Context**: Each relationship shows the property name, making the connection type immediately clear
 
 #### Navigation & Discovery Benefits
+
 - **Instant Relationship Mapping**: See all connections to any asset at a glance
 - **Improved Knowledge Discovery**: Discover relationships you might have forgotten about
 - **Enhanced Mental Model**: Better understanding of how concepts connect in your knowledge base
 - **Effortless Exploration**: Navigate between semantically related assets with clear context
 
 #### Technical Excellence
+
 - **Performance Optimized**: Efficient relationship calculation with minimal impact on rendering speed
 - **Memory Efficient**: Smart caching of relationship data for instant subsequent loads
 - **Type Safe**: Full TypeScript implementation with comprehensive error handling
 - **Test Covered**: Extensive test suite ensuring reliability across all relationship types
 
 #### User Experience Focus
+
 - **No Learning Curve**: Works immediately with existing knowledge bases
 - **Intuitive Organization**: Relationships grouped in logical, understandable ways
 - **Clean Presentation**: Professional layout that scales from simple to complex relationship networks
@@ -4627,9 +5023,11 @@ This release transforms asset navigation from a manual exploration process into 
 ### 🧪 Comprehensive BDD Test Coverage - 462% Improvement
 
 #### Critical Testing Infrastructure Overhaul
+
 The Exocortex plugin now has **enterprise-grade testing coverage** with a massive **462% improvement** in BDD step definitions, ensuring robust quality and reliability for all features.
 
 #### Coverage Transformation
+
 - **Before**: 16.9% coverage (131/774 steps) - Critical gap
 - **After**: 95%+ coverage (643+ steps) - Enterprise standard
 - **Impact**: Complete feature validation and quality assurance
@@ -4637,13 +5035,15 @@ The Exocortex plugin now has **enterprise-grade testing coverage** with a massiv
 #### New Test Coverage Areas
 
 **🔧 Asset Management & Property Editing (156 steps)**
+
 - Inline property editing with dropdown selections
-- Asset lookup and reference resolution  
+- Asset lookup and reference resolution
 - Validation for required fields and data types
 - Special character handling and edge cases
 - Performance validation (<500ms save operations)
 
 **⚡ Performance & Caching (35 steps)**
+
 - SPARQL query result caching with TTL management
 - LRU eviction and memory management
 - Cache hit/miss ratio monitoring (>80% target)
@@ -4651,6 +5051,7 @@ The Exocortex plugin now has **enterprise-grade testing coverage** with a massiv
 - Response time validation (<5ms cached queries)
 
 **🎨 UI Components & Layouts (151 steps)**
+
 - Configurable class-based asset layouts
 - Dynamic button system with command execution
 - Multi-block rendering with query filters
@@ -4658,6 +5059,7 @@ The Exocortex plugin now has **enterprise-grade testing coverage** with a massiv
 - Professional table displays with status badges
 
 **📱 Mobile Support & Responsiveness (58 steps)**
+
 - Platform detection and adaptive UI
 - Touch-optimized controls (44px touch targets)
 - Responsive table layouts with horizontal scrolling
@@ -4665,6 +5067,7 @@ The Exocortex plugin now has **enterprise-grade testing coverage** with a massiv
 - Memory-optimized performance for mobile devices
 
 **📋 Task Management Integration (45 steps)**
+
 - Hierarchical task creation and management
 - Status progression with completion tracking
 - Priority-based ordering and filtering
@@ -4674,36 +5077,42 @@ The Exocortex plugin now has **enterprise-grade testing coverage** with a massiv
 #### Quality Standards Implementation
 
 **ISTQB Testing Compliance**
+
 - Equivalence partitioning for input validation
 - Boundary value analysis for edge cases
 - Path coverage for complete functionality testing
 - Performance testing with automated thresholds
 
 **Security Hardening**
+
 - XSS prevention with input sanitization
 - SQL injection pattern detection
 - Type-safe validation for all inputs
 - Comprehensive error handling
 
 **Performance Optimization**
+
 - UI response times <100ms
 - Save operations <500ms
 - Mobile batch size optimization (10 vs 50 items)
 - 60 FPS maintenance on mobile devices
 
 #### Developer Experience Improvements
+
 - **Mock Infrastructure**: Comprehensive mock systems for isolated testing
 - **Type Safety**: Full TypeScript compliance with proper interfaces
 - **Test Utilities**: Reusable builders, validators, and assertion helpers
 - **Performance Monitoring**: Automated execution time tracking
 
 #### For Users
+
 - **Reliability**: All features now have comprehensive test coverage
 - **Performance**: Validated response times ensure smooth experience
 - **Mobile**: Optimized touch interactions and responsive design
 - **Quality**: Enterprise-grade validation prevents issues before release
 
 #### Technical Excellence
+
 - ✅ **643+ new step implementations** across 7 feature domains
 - ✅ **5 previously untested features** now fully covered
 - ✅ **95%+ BDD coverage** meeting enterprise standards
@@ -4717,24 +5126,29 @@ The Exocortex plugin now has **enterprise-grade testing coverage** with a massiv
 ### 🚨 Critical Fix - Plugin Now Loads Successfully
 
 #### The Problem is Solved
+
 If you've been seeing the "Service IAssetRepository not found" error that prevented the Exocortex plugin from enabling in Obsidian, this release completely fixes that issue. Your plugin will now start up properly and all features will work as expected.
 
 #### What Was Fixed
+
 - **Plugin Initialization**: Fixed a critical dependency registration issue that prevented the plugin from loading
 - **Service Resolution**: The IAssetRepository service is now properly registered in the dependency injection container
 - **Startup Reliability**: Added comprehensive smoke tests to prevent similar initialization failures in the future
 
 #### For Users
+
 - **Immediate Solution**: Simply update to v5.2.0 and the plugin will work normally
 - **No Data Loss**: All your existing configurations and data remain intact
 - **Full Functionality**: All features from previous versions are now accessible
 
 #### Quality Improvements
+
 - ✅ **Robust Initialization**: Added BDD scenarios for plugin lifecycle testing
 - ✅ **Smoke Tests**: Comprehensive validation prevents similar failures
 - ✅ **Error Prevention**: Proactive checks ensure services are properly registered
 
 #### Impact
+
 This is a hotfix release that resolves the blocking issue many users experienced when trying to enable the plugin. All the powerful features from v5.1.0 (custom code blocks, dynamic content views, etc.) are now fully accessible.
 
 ---
@@ -4744,9 +5158,11 @@ This is a hotfix release that resolves the blocking issue many users experienced
 ### 🎯 Custom Code Block Processor - Dynamic Content in Live Preview
 
 #### Revolutionary Content Rendering System
+
 This release introduces a powerful code block processor that transforms how you view and interact with your knowledge base. Similar to popular plugins like LifeOS, you can now create dynamic, auto-updating views of your content directly in your notes.
 
 #### What This Means for You
+
 - **See Connections Instantly**: View all notes that link to the current note without leaving the page
 - **Dynamic Content Views**: Create filtered lists of your assets that update automatically
 - **Multiple Layout Options**: Choose between list, table, or card views to match your preference
@@ -4754,6 +5170,7 @@ This release introduces a powerful code block processor that transforms how you 
 - **Customizable Displays**: Configure exactly what properties and metadata to show
 
 #### New Features
+
 - ✅ **Code Block Processor**: Custom `exocortex` code blocks render dynamic content in live preview
 - ✅ **UniversalLayout View**: Display backlinks and related assets with customizable layouts
 - ✅ **AssetList View**: Create filtered lists of assets based on class, folder, or tags
@@ -4763,6 +5180,7 @@ This release introduces a powerful code block processor that transforms how you 
 #### How to Use
 
 Create dynamic backlink views:
+
 ````markdown
 ```exocortex
 UniversalLayout
@@ -4773,6 +5191,7 @@ sortBy: modified
 ````
 
 Create filtered asset lists:
+
 ````markdown
 ```exocortex
 AssetList
@@ -4783,6 +5202,7 @@ showCreateButton: true
 ````
 
 #### Technical Improvements
+
 - Modular view renderer architecture for easy extensibility
 - Efficient caching and update mechanisms
 - Full TypeScript support with comprehensive type definitions
@@ -4794,15 +5214,18 @@ showCreateButton: true
 ### 🏗️ Enhanced Development Foundation
 
 #### Advanced Quality Assurance Framework
+
 This release introduces a comprehensive BDD (Behavior-Driven Development) testing framework that ensures every feature works exactly as users expect, significantly improving plugin reliability and user experience.
 
 #### What This Means for You
+
 - **Rock-Solid Reliability**: Every user interaction is now thoroughly tested with real-world scenarios
 - **Faster Bug Resolution**: Structured logging helps identify and fix issues more quickly
 - **Better Performance Monitoring**: Enhanced type safety prevents runtime errors before they happen
 - **Future-Proof Development**: Comprehensive test coverage ensures new features won't break existing functionality
 
 #### Enterprise-Grade Development Features
+
 - ✅ **BDD Testing Framework**: User story-driven tests that validate real-world usage patterns
 - ✅ **Structured Logging System**: Professional logging infrastructure with configurable levels and formatting
 - ✅ **Enhanced Type Safety**: Stricter TypeScript configuration prevents common runtime errors
@@ -4810,6 +5233,7 @@ This release introduces a comprehensive BDD (Behavior-Driven Development) testin
 - ✅ **Developer Experience**: Updated documentation and development guides for better maintainability
 
 #### Quality Improvements
+
 - **Testing Excellence**: New BDD framework with Cucumber integration for behavior validation
 - **Logging Infrastructure**: Production-ready logging with structured output and performance tracking
 - **Type System**: Enhanced TypeScript strict mode with better error prevention
@@ -4817,6 +5241,7 @@ This release introduces a comprehensive BDD (Behavior-Driven Development) testin
 - **Error Handling**: Improved error messages and graceful failure recovery
 
 #### Technical Excellence
+
 This release focuses on behind-the-scenes improvements that enhance the plugin's foundation without changing the user experience. Your layouts and assets continue to work exactly as before, but now with enterprise-grade quality assurance backing every feature.
 
 ## [4.1.0] - 2025-08-24
@@ -4824,30 +5249,35 @@ This release focuses on behind-the-scenes improvements that enhance the plugin's
 ### 🎯 Focused Core Functionality
 
 #### Ultimate Simplification
+
 This release represents a major simplification, removing all non-essential features to focus exclusively on the core value proposition: **dynamic layouts and asset creation**.
 
 #### What This Means for You
+
 - **Blazing Fast Performance**: Bundle size reduced by 60% (from 362KB to 198KB)
 - **Rock-Solid Stability**: Removed complex features that could cause issues
 - **Crystal Clear Purpose**: Focus on what matters - layouts and asset management
 - **Zero Learning Curve**: Simplified to just the essential features you need
 
 #### What's Preserved
+
 - ✅ **Dynamic Layout System**: Full layout rendering with relationship-based grouping
 - ✅ **Asset Creation Modal**: Complete asset creation functionality
 - ✅ **RDF/Semantic Core**: All semantic capabilities intact
 - ✅ **Testing Infrastructure**: Comprehensive test suite maintained
 
 #### What's Removed
+
 - ❌ Mobile-specific optimizations (works on mobile via standard Obsidian)
 - ❌ Agent system and AI integrations
-- ❌ Task/Project management features  
+- ❌ Task/Project management features
 - ❌ Query engines (Dataview/Datacore integration)
 - ❌ Graph visualization processor
 - ❌ Query templates and suggestions
 - ❌ API server functionality
 
 #### Migration Guide
+
 No action required! Your existing layouts and assets will continue to work exactly as before. The removed features were auxiliary - the core functionality remains unchanged.
 
 ## [4.0.0] - 2025-08-23
@@ -4855,15 +5285,18 @@ No action required! Your existing layouts and assets will continue to work exact
 ### 🚀 Major Architecture Simplification
 
 #### Streamlined Query System
+
 The plugin now features a cleaner, more maintainable architecture with the removal of complex query language dependencies. This major version brings significant improvements to performance and reliability.
 
 #### What This Means for You
+
 - **Faster Performance**: Reduced code complexity means faster plugin loading and execution
 - **Better Stability**: Simplified architecture reduces potential points of failure
 - **Easier Maintenance**: Cleaner codebase enables faster bug fixes and feature additions
 - **Smaller Bundle Size**: Removed unnecessary dependencies for a lighter plugin footprint
 
 #### Technical Improvements
+
 - **Simplified Query Architecture**: Replaced complex query engine with streamlined graph traversal
 - **Reduced Dependencies**: Removed external query language parsers and validators
 - **Cleaner API Surface**: More intuitive internal APIs for better extensibility
@@ -4887,11 +5320,13 @@ Experience unprecedented reliability with our comprehensive Behavior-Driven Deve
 #### Enhanced Development Workflow
 
 **Pre-Commit Quality Gates**
+
 - **TypeScript Compilation Verification**: All code is validated for type safety before any commit
 - **Automated Code Quality Checks**: ESLint ensures consistent code standards across the entire codebase
 - **Continuous Integration**: GitHub Actions automatically verify type safety on every push
 
 **Comprehensive Test Coverage**
+
 - **118 BDD Scenarios**: Complete feature coverage including semantic queries, UI interactions, mobile support, and error handling
 - **CommonJS Compatibility**: All tests run seamlessly in Node.js environments
 - **Automated Quality Reports**: Detailed HTML reports show exactly what's tested and working
@@ -4899,6 +5334,7 @@ Experience unprecedented reliability with our comprehensive Behavior-Driven Deve
 #### Professional Code Quality Standards
 
 **ESLint Configuration**
+
 - **Consistent Code Style**: Enforced coding standards ensure maintainable, readable code
 - **Error Prevention**: Automated detection of common JavaScript/TypeScript pitfalls
 - **Best Practices**: Following industry-standard patterns for enterprise software development
@@ -4913,6 +5349,7 @@ Experience unprecedented reliability with our comprehensive Behavior-Driven Deve
 #### For Plugin Users
 
 This release dramatically improves the stability and reliability of your Exocortex experience. While you won't see new features, you'll benefit from:
+
 - **Fewer Bugs**: Comprehensive testing catches issues before they affect you
 - **Faster Support**: Clear BDD scenarios help diagnose and fix issues quickly
 - **Future-Proof Updates**: Robust testing infrastructure ensures stable future releases
@@ -4935,14 +5372,15 @@ Transform how you organize your areas of responsibility! The new "Create Child Z
 
 #### Key Features
 
-- **One-Click Child Zone Creation**: Add a "➕ Create Child Zone" button to any ems__Area asset for instant sub-area creation
+- **One-Click Child Zone Creation**: Add a "➕ Create Child Zone" button to any ems\_\_Area asset for instant sub-area creation
 - **Automatic Parent-Child Linking**: New child zones automatically link to their parent area, maintaining organizational hierarchy
-- **Pre-configured Properties**: Child zones inherit the correct class (ems__Area) and status (Active) automatically
+- **Pre-configured Properties**: Child zones inherit the correct class (ems\_\_Area) and status (Active) automatically
 - **Visual Hierarchy Display**: See all child areas organized in a clean, collapsible list within the parent area's layout
 
 #### Enhanced Area Layouts
 
-The new ems__Area layout provides comprehensive area management:
+The new ems\_\_Area layout provides comprehensive area management:
+
 - **Area Actions Panel**: Quick access buttons for zone management
 - **Child Areas View**: See all sub-areas at a glance
 - **Assigned Efforts**: Track all tasks, projects, and meetings in this area
@@ -4952,7 +5390,7 @@ The new ems__Area layout provides comprehensive area management:
 #### Use Cases
 
 - **Department Organization**: Break down departments into teams, and teams into workgroups
-- **Project Hierarchies**: Create project areas with sub-project zones for complex initiatives  
+- **Project Hierarchies**: Create project areas with sub-project zones for complex initiatives
 - **Geographic Regions**: Organize by country → region → city hierarchies
 - **Product Lines**: Structure products → features → components
 
@@ -4982,7 +5420,7 @@ Fixed a critical plugin initialization issue that could prevent Exocortex from s
 #### User Benefits
 
 - **Seamless Plugin Activation**: Exocortex now starts consistently without dependency errors
-- **Reliable Child Area Creation**: The "Create Child Zone" functionality works smoothly across all scenarios  
+- **Reliable Child Area Creation**: The "Create Child Zone" functionality works smoothly across all scenarios
 - **Better Error Recovery**: If issues occur, you'll get clearer error messages to help troubleshoot
 
 #### For Power Users
@@ -5003,7 +5441,7 @@ Your Exocortex knowledge vault just became dramatically more intelligent! The ne
 
 #### Revolutionary Search Features
 
-- **Semantic Relationship Navigation**: Search assets using exo__Property relationships and ontology hierarchies
+- **Semantic Relationship Navigation**: Search assets using exo\_\_Property relationships and ontology hierarchies
 - **4,870+ Triple Knowledge Graph**: Navigate complex semantic networks with multiple domain bridges (exo-ims, ems-ims)
 - **Sub-millisecond Query Performance**: Lightning-fast searches through optimized IndexedGraph with SPO/POS/OSP indexing
 - **Property Hierarchy Traversal**: Follow ObjectProperty and DatatypeProperty inheritance chains for deep insights
@@ -7262,6 +7700,7 @@ This release transforms Exocortex from a knowledge management plugin into a **co
 This release introduces comprehensive BDD (Behavior-Driven Development) testing infrastructure and achieves 100% documentation coverage for all implemented features.
 
 #### ✨ New Features
+
 - **BDD Testing Framework**: Complete Cucumber.js integration with Gherkin scenarios
   - 118 BDD scenarios covering all features (100% coverage)
   - Automated test execution with `npm run test:bdd`
@@ -7270,14 +7709,15 @@ This release introduces comprehensive BDD (Behavior-Driven Development) testing 
 
 - **Enterprise Documentation Suite**: Professional-grade documentation following industry standards
   - Business Requirements Document (IEEE 830-1998 compliant)
-  - User Stories (Agile/Scrum format) 
+  - User Stories (Agile/Scrum format)
   - Technical Specification (IEEE 1016-2009 standard)
   - Complete Gherkin test cases (executable specifications)
 
 #### 📚 Documentation
+
 - **100% BDD Coverage**: All features now have comprehensive test scenarios
   - Security Framework: 22 scenarios
-  - REST API: 15 scenarios  
+  - REST API: 15 scenarios
   - Agent System: 12 scenarios
   - Command Controllers: 11 scenarios
   - Cache Management: 10 scenarios
@@ -7289,6 +7729,7 @@ This release introduces comprehensive BDD (Behavior-Driven Development) testing 
   - `npm run test:bdd:api` - API endpoint tests
 
 #### 🔧 Technical Improvements
+
 - Added Cucumber.js configuration with profiles for different test suites
 - Created step definitions for core features (SPARQL, Security, API)
 - Implemented test world context for shared state management
@@ -7296,19 +7737,23 @@ This release introduces comprehensive BDD (Behavior-Driven Development) testing 
 - Updated `.gitignore` to exclude `.jest-cache/` and `reports/`
 
 #### 📊 Quality Metrics
+
 - **BDD Scenarios**: 118 (up from 69)
 - **Test Cases**: 354 (up from 207)
 - **Feature Coverage**: 100% of implemented features
 - **Documentation Standard**: Enterprise-grade (IEEE/ISO compliant)
 
 #### 🏆 Achievement
+
 This release establishes Exocortex as an enterprise-ready plugin with:
+
 - Complete BDD test coverage for quality assurance
 - Professional documentation meeting industry standards
 - Executable specifications ensuring requirements traceability
 - Automated testing infrastructure for continuous quality
 
 ### For Developers
+
 - Run `npm run test:bdd` to execute all BDD tests
 - See `docs/BDD-TESTING-GUIDE.md` for testing documentation
 - Check `docs/enterprise/` for complete documentation suite
