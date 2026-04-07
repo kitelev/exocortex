@@ -42,22 +42,30 @@ test.describe("Dynamic Command Button Rendering & Functionality", () => {
     fs.writeFileSync(FIXTURE_PATH, fixtureOriginal, "utf-8");
   });
 
-  // FIXME: Triple store is empty at first render. VaultRDFIndexer populates it
-  // asynchronously, but UniversalLayoutRenderer renders the layout (and buttons)
-  // before indexing completes. No re-render signal exists when indexing finishes.
-  // The DI wiring is now correct (services passed directly), but CommandResolver
-  // finds no CommandBinding triples because the triple store hasn't been populated yet.
-  // Needs: triple store "ready" event → layout re-render, or deferred button build.
+  // FIXME(#2670): Button "Remove Start Timestamp" not found in Docker CI.
+  // Triple store is force-initialized via SPARQL query, DI wiring is correct (PR #2669),
+  // but DynamicCommandButtonGroupBuilder still produces no buttons.
+  // Needs CI screenshot analysis to determine what the layout actually renders.
   test.fixme("renders button from RDF config and executes grounding on click", async () => {
     const page = await launcher.getWindow();
 
-    // ── Step 1: Wait for plugin to load ──
+    // ── Step 1: Wait for plugin + force triple store initialization ──
 
     await page.evaluate(async () => {
       const app = (window as any).app;
       for (let i = 0; i < 20; i++) {
-        if (app?.plugins?.plugins?.exocortex) return;
+        if (app?.plugins?.plugins?.exocortex) break;
         await new Promise((r) => setTimeout(r, 500));
+      }
+      const plugin = app?.plugins?.plugins?.exocortex;
+      if (!plugin) return;
+
+      // Force SPARQLQueryService lazy initialization by running a query.
+      // This populates the triple store with vault RDF data so
+      // CommandResolver can find dynamic command bindings.
+      const sparql = plugin.sparql || plugin.getSparqlApi?.();
+      if (sparql?.query) {
+        await sparql.query("ASK { ?s ?p ?o }").catch(() => {});
       }
     });
 
