@@ -112,12 +112,38 @@ export default class ExocortexPlugin extends Plugin {
         this.app.metadataCache,
         this.app,
       );
+
+      const notifier = new ObsidianNotificationService();
+      this.sparqlProcessor = new SPARQLCodeBlockProcessor(this, notifier);
+      this.layoutProcessor = new LayoutCodeBlockProcessor(this);
+      this.sparql = new SPARQLApi(this);
+      this.api = new ExocortexAPI(this);
+
+      // RFC-009: Wire Dynamic Command System services BEFORE renderer
+      // Construct manually (not via tsyringe) because they need the live triple store
+      const tripleStore = this.sparql.getTripleStore();
+      this.commandResolver = new CommandResolver(tripleStore);
+      this.preconditionEvaluator = new PreconditionEvaluator(tripleStore);
+      this.serviceRegistry = new ServiceRegistry();
+      const obsidianFs = new ObsidianFileSystemAdapter(this.app.vault);
+      this.groundingExecutor = new GroundingExecutor(obsidianFs, obsidianFs, this.serviceRegistry);
+
+      populateServiceRegistry(this.serviceRegistry, {
+        app: this.app,
+        fileSystemAdapter: obsidianFs,
+        sparqlApi: this.sparql,
+      });
+
       this.layoutRenderer = new UniversalLayoutRenderer(
         this.app,
         this.settings,
         this,
         this.vaultAdapter,
-        this.resolveRfc009Services(),
+        {
+          commandResolver: this.commandResolver,
+          preconditionEvaluator: this.preconditionEvaluator,
+          groundingExecutor: this.groundingExecutor,
+        },
       );
       this.taskStatusService = container.resolve(TaskStatusService);
       this.taskTrackingService = new TaskTrackingService(
@@ -136,26 +162,6 @@ export default class ExocortexPlugin extends Plugin {
       this.metadataCache = new LRUCache({
         maxEntries: 1000,
         ttl: 5 * 60 * 1000, // 5 minutes
-      });
-      const notifier = new ObsidianNotificationService();
-      this.sparqlProcessor = new SPARQLCodeBlockProcessor(this, notifier);
-      this.layoutProcessor = new LayoutCodeBlockProcessor(this);
-      this.sparql = new SPARQLApi(this);
-      this.api = new ExocortexAPI(this);
-
-      // RFC-009: Wire Dynamic Command System services
-      // Construct manually (not via tsyringe) because they need the live triple store
-      const tripleStore = this.sparql.getTripleStore();
-      this.commandResolver = new CommandResolver(tripleStore);
-      this.preconditionEvaluator = new PreconditionEvaluator(tripleStore);
-      this.serviceRegistry = new ServiceRegistry();
-      const obsidianFs = new ObsidianFileSystemAdapter(this.app.vault);
-      this.groundingExecutor = new GroundingExecutor(obsidianFs, obsidianFs, this.serviceRegistry);
-
-      populateServiceRegistry(this.serviceRegistry, {
-        app: this.app,
-        fileSystemAdapter: obsidianFs,
-        sparqlApi: this.sparql,
       });
 
       // Register the alias icon editor extension for Live Preview mode
@@ -835,17 +841,6 @@ export default class ExocortexPlugin extends Plugin {
     }
   }
 
-  private resolveRfc009Services() {
-    try {
-      return {
-        commandResolver: container.resolve(CommandResolver),
-        preconditionEvaluator: container.resolve(PreconditionEvaluator),
-        groundingExecutor: container.resolve(GroundingExecutor),
-      };
-    } catch {
-      return undefined;
-    }
-  }
 
   private removeAutoRenderedLayouts(): void {
     document

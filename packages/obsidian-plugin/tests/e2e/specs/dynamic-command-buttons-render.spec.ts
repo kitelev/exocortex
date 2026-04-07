@@ -42,11 +42,12 @@ test.describe("Dynamic Command Button Rendering & Functionality", () => {
     fs.writeFileSync(FIXTURE_PATH, fixtureOriginal, "utf-8");
   });
 
-  // FIXME: DI wiring gap — CommandResolver/PreconditionEvaluator/GroundingExecutor
-  // depend on ITripleStore (interface), which is not registered in the DI container.
-  // ExocortexPlugin.resolveRfc009Services() catches the resolution error and returns
-  // undefined, so DynamicCommandButtonGroupBuilder is never instantiated.
-  // Remove .fixme() once DI registration for RFC-009 services is added to container.ts.
+  // FIXME: Triple store is empty at first render. VaultRDFIndexer populates it
+  // asynchronously, but UniversalLayoutRenderer renders the layout (and buttons)
+  // before indexing completes. No re-render signal exists when indexing finishes.
+  // The DI wiring is now correct (services passed directly), but CommandResolver
+  // finds no CommandBinding triples because the triple store hasn't been populated yet.
+  // Needs: triple store "ready" event → layout re-render, or deferred button build.
   test.fixme("renders button from RDF config and executes grounding on click", async () => {
     const page = await launcher.getWindow();
 
