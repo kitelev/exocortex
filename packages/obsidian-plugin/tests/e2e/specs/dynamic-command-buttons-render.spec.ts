@@ -45,13 +45,23 @@ test.describe("Dynamic Command Button Rendering & Functionality", () => {
   test("renders button from RDF config and executes grounding on click", async () => {
     const page = await launcher.getWindow();
 
-    // ── Step 1: Wait for plugin to load ──
+    // ── Step 1: Wait for plugin + force triple store initialization ──
 
     await page.evaluate(async () => {
       const app = (window as any).app;
       for (let i = 0; i < 20; i++) {
-        if (app?.plugins?.plugins?.exocortex) return;
+        if (app?.plugins?.plugins?.exocortex) break;
         await new Promise((r) => setTimeout(r, 500));
+      }
+      const plugin = app?.plugins?.plugins?.exocortex;
+      if (!plugin) return;
+
+      // Force SPARQLQueryService lazy initialization by running a query.
+      // This populates the triple store with vault RDF data so
+      // CommandResolver can find dynamic command bindings.
+      const sparql = plugin.sparql || plugin.getSparqlApi?.();
+      if (sparql?.query) {
+        await sparql.query("ASK { ?s ?p ?o }").catch(() => {});
       }
     });
 
