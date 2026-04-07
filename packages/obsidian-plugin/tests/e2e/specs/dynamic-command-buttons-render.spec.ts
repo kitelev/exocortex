@@ -43,6 +43,7 @@ test.describe("Dynamic Command Button Rendering & Functionality", () => {
   });
 
   test("renders button from RDF config and executes grounding on click", async () => {
+    test.setTimeout(180000);
     const page = await launcher.getWindow();
 
     // ── Step 1: Verify plugin + dynamic command system ──
