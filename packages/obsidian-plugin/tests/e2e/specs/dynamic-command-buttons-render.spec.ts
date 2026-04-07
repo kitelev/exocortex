@@ -42,12 +42,7 @@ test.describe("Dynamic Command Button Rendering & Functionality", () => {
     fs.writeFileSync(FIXTURE_PATH, fixtureOriginal, "utf-8");
   });
 
-  // FIXME: DI wiring gap — CommandResolver/PreconditionEvaluator/GroundingExecutor
-  // depend on ITripleStore (interface), which is not registered in the DI container.
-  // ExocortexPlugin.resolveRfc009Services() catches the resolution error and returns
-  // undefined, so DynamicCommandButtonGroupBuilder is never instantiated.
-  // Remove .fixme() once DI registration for RFC-009 services is added to container.ts.
-  test.fixme("renders button from RDF config and executes grounding on click", async () => {
+  test("renders button from RDF config and executes grounding on click", async () => {
     const page = await launcher.getWindow();
 
     // ── Step 1: Wait for plugin to load ──
