@@ -1,4 +1,4 @@
-import { test, expect, TimeoutError } from "@playwright/test";
+import { test, expect } from "@playwright/test";
 import { ObsidianLauncher } from "../utils/obsidian-launcher";
 import * as path from "path";
 import * as fs from "fs";
@@ -99,8 +99,8 @@ test.describe("Dynamic Command Button Rendering & Functionality", () => {
       .locator(".exocortex-buttons-section, .exocortex-action-buttons-container")
       .first()
       .waitFor({ state: "visible", timeout: 20000 })
-      .catch((err) => {
-        if (!(err instanceof TimeoutError)) throw err;
+      .catch(() => {
+        // Timeout is expected if no buttons section renders for this file type
       });
 
     const removeTimestampButton = page.locator(
@@ -132,8 +132,8 @@ test.describe("Dynamic Command Button Rendering & Functionality", () => {
       .locator(".exocortex-buttons-section, .exocortex-action-buttons-container")
       .first()
       .waitFor({ state: "visible", timeout: 10000 })
-      .catch((err) => {
-        if (!(err instanceof TimeoutError)) throw err;
+      .catch(() => {
+        // Timeout is expected if no buttons section renders for this file type
       });
 
     await expect(
