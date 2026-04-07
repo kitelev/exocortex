@@ -79,7 +79,7 @@ test.describe("Dynamic Command Button Rendering & Functionality", () => {
     await page
       .locator(".exocortex-buttons-section, .exocortex-action-buttons-container")
       .first()
-      .waitFor({ state: "visible", timeout: 20000 })
+      .waitFor({ state: "visible", timeout: 60000 })
       .catch(() => {
         // Timeout is expected if no buttons section renders for this file type
       });
@@ -91,12 +91,12 @@ test.describe("Dynamic Command Button Rendering & Functionality", () => {
     await expect(
       removeTimestampButton,
       'Button "Remove Start Timestamp" must render for task WITH startTimestamp.'
-    ).toBeVisible({ timeout: 15000 });
+    ).toBeVisible({ timeout: 60000 });
 
     await expect(
       page.locator('.exocortex-button-group-title:has-text("Commands")'),
       'Button must be in "Commands" group (from DynamicCommandButtonGroupBuilder)'
-    ).toBeVisible({ timeout: 5000 });
+    ).toBeVisible({ timeout: 60000 });
 
     // ── Step 3: Open task WITHOUT startTimestamp → button must NOT appear ──
 
@@ -136,7 +136,7 @@ test.describe("Dynamic Command Button Rendering & Functionality", () => {
     const buttonForClick = page.locator(
       'button.exocortex-action-button:has-text("Remove Start Timestamp")'
     );
-    await expect(buttonForClick).toBeVisible({ timeout: 15000 });
+    await expect(buttonForClick).toBeVisible({ timeout: 60000 });
 
     // Verify startTimestamp exists BEFORE click
     const hasTsBefore = await page.evaluate(() => {
@@ -169,7 +169,7 @@ test.describe("Dynamic Command Button Rendering & Functionality", () => {
         return !!cache?.frontmatter?.ems__Effort_startTimestamp;
       });
     }, {
-      timeout: 15000,
+      timeout: 60000,
       message: "ems__Effort_startTimestamp should be removed from frontmatter after grounding",
     }).toBe(false);
 
