@@ -79,13 +79,24 @@ test.describe("Dynamic Command Button Rendering & Functionality", () => {
         initError = `INIT ERROR: ${e.message} | cause: ${e.details?.originalError ?? "none"} | STACK: ${(e.stack || "").substring(0, 400)}`;
       }
 
-      // Try direct triple store access
+      // Try direct triple store access (match() is async!)
+      let tsInfo: any = null;
       try {
         const ts = plugin.sparql?.getTripleStore?.();
-        const matchAll = ts?.match?.(undefined, undefined, undefined);
-        tripleStoreSize = Array.isArray(matchAll) ? matchAll.length : -1;
+        const matchAll = await ts?.match?.(undefined, undefined, undefined);
+        const allTriples = Array.isArray(matchAll) ? matchAll : [];
+        tripleStoreSize = allTriples.length;
+        const bindingTriples = allTriples.filter((t: any) =>
+          String(t?.object?.value ?? "").includes("CommandBinding") ||
+          String(t?.predicate?.value ?? "").includes("CommandBinding")
+        );
+        tsInfo = {
+          total: allTriples.length,
+          bindings: bindingTriples.length,
+          samplePreds: [...new Set(allTriples.slice(0, 30).map((t: any) => t?.predicate?.value))].slice(0, 8),
+        };
       } catch (e: any) {
-        queryResult = `TS ERROR: ${e.message}`;
+        tsInfo = `TS ERROR: ${e.message}`;
       }
 
       // Try simplest query
@@ -117,7 +128,7 @@ test.describe("Dynamic Command Button Rendering & Functionality", () => {
 
       return {
         hasSparql, hasResolver, hasGrounding,
-        tripleStoreSize, initError, queryResult, resolverResult,
+        tripleStoreSize, initError, tsInfo, queryResult, resolverResult,
         allButtonsCount: allButtons.length,
         exoButtonsCount: exoButtons.length,
       };
