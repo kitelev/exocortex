@@ -256,6 +256,19 @@ export default class ExocortexPlugin extends Plugin {
         this.timerManager.setTimeout("auto-layout-initial", () => this.autoRenderLayout(), 150);
       }
 
+      // RFC-009: Eagerly initialize triple store after vault is ready.
+      // onLayoutReady fires after Obsidian finishes mounting vault files.
+      // Without this, VaultRDFIndexer.initialize() finds 0 files → 0 triples
+      // → CommandResolver finds no bindings → dynamic buttons don't render.
+      this.app.workspace.onLayoutReady(() => {
+        void this.sparql.query("ASK { ?s ?p ?o }").then(() => {
+          this.commandResolver.invalidateCache();
+          this.autoRenderLayout();
+        }).catch((err) => {
+          this.logger.error("Failed to eagerly initialize triple store", err);
+        });
+      });
+
       // Initialize Tab Title label patch
       this.tabTitlePatch = new TabTitlePatch(this);
       if (this.settings.showLabelsInTabTitles) {
