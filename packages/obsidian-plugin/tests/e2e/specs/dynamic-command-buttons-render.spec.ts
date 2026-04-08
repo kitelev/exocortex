@@ -98,13 +98,18 @@ test.describe("Dynamic Command Button Rendering & Functionality", () => {
           String(t?.predicate?.value ?? "").includes("exocmd") ||
           String(t?.object?.value ?? "").includes("exocmd")
         );
+        const cmdBindingType = rdfTypeTriples.filter((t: any) =>
+          String(t?.object?.value ?? "").includes("CommandBinding")
+        );
+        const allRdfTypes = rdfTypeTriples.map((t: any) => String(t?.object?.value ?? "").split("#").pop()).filter(Boolean);
         tsInfo = {
           total: allTriples.length,
           bindings: bindingTriples.length,
           rdfTypeCount: rdfTypeTriples.length,
+          cmdBindingTypeCount: cmdBindingType.length,
+          allRdfTypeClasses: [...new Set(allRdfTypes)],
+          cmdBindingSample: cmdBindingType.slice(0, 2).map((t: any) => `s=${t?.subject?.value?.slice(-40)} o=${t?.object?.value}`),
           exocmdCount: exocmdTriples.length,
-          rdfTypeSample: rdfTypeTriples.slice(0, 3).map((t: any) => `${t?.subject?.value?.slice(-30)} → ${t?.object?.value?.slice(-30)}`),
-          exocmdSample: exocmdTriples.slice(0, 3).map((t: any) => `${t?.predicate?.value?.slice(-40)} = ${t?.object?.value?.slice(-40)}`),
         };
       } catch (e: any) {
         tsInfo = `TS ERROR: ${e.message}`;
