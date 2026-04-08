@@ -595,6 +595,8 @@ export class CommandResolver {
   }
 
   private normalizeWikilink(value: string): string {
-    return value.replace(/["'[\]]/g, "").trim();
+    const cleaned = value.replace(/["'[\]]/g, "").trim();
+    const pipeIndex = cleaned.indexOf("|");
+    return pipeIndex >= 0 ? cleaned.substring(0, pipeIndex) : cleaned;
   }
 }
