@@ -65,6 +65,48 @@ test.describe("Dynamic Command Button Rendering & Functionality", () => {
       }
     });
 
+    // ── Diagnostic: Check triple store and CommandResolver state ──
+
+    const diag = await page.evaluate(async () => {
+      const app = (window as any).app;
+      const plugin = app?.plugins?.plugins?.exocortex;
+      if (!plugin) return { error: "no plugin" };
+
+      const sparql = plugin.sparql;
+      const store = sparql?.getTripleStore?.();
+      const resolver = plugin.commandResolver;
+
+      // Count triples in store
+      let tripleCount = 0;
+      try {
+        const all = await store?.match?.(undefined, undefined, undefined);
+        tripleCount = all?.length ?? -1;
+      } catch { tripleCount = -2; }
+
+      // Count CommandBinding triples
+      let bindingCount = 0;
+      try {
+        const bindings = await resolver?.findBindings?.("ems__Task");
+        bindingCount = bindings?.length ?? -1;
+      } catch (e: any) { bindingCount = -2; }
+
+      // Check if DynamicCommandButtonGroupBuilder is registered
+      const layoutRenderer = plugin.layoutRenderer;
+      const bgb = layoutRenderer?.buttonGroupsBuilder;
+      const builderNames = bgb?.builders?.map((b: any) => b.constructor?.name) ?? [];
+
+      return {
+        tripleCount,
+        bindingCount,
+        hasDynamicBuilder: builderNames.includes("DynamicCommandButtonGroupBuilder"),
+        builderNames,
+        hasCommandResolver: !!resolver,
+        cacheSize: resolver?.cache?.size ?? -1,
+      };
+    });
+
+    console.log("[E2E DIAGNOSTIC]", JSON.stringify(diag, null, 2));
+
     // ── Step 2: Open task WITH startTimestamp → button MUST appear ──
 
     await launcher.openFile("Tasks/dynamic-cmd-test-with-ts.md");
