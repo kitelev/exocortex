@@ -95,6 +95,11 @@ test.describe("Dynamic Command Button Rendering & Functionality", () => {
       const bgb = layoutRenderer?.buttonGroupsBuilder;
       const builderNames = bgb?.builders?.map((b: any) => b.constructor?.name) ?? [];
 
+      // Check what UniversalLayoutRenderer received
+      const rendererHasCR = !!layoutRenderer?.commandResolver;
+      const rendererHasPE = !!layoutRenderer?.preconditionEvaluator;
+      const rendererHasGE = !!layoutRenderer?.groundingExecutor;
+
       return {
         tripleCount,
         bindingCount,
@@ -102,6 +107,10 @@ test.describe("Dynamic Command Button Rendering & Functionality", () => {
         builderNames,
         hasCommandResolver: !!resolver,
         cacheSize: resolver?.cache?.size ?? -1,
+        rendererHasCR,
+        rendererHasPE,
+        rendererHasGE,
+        storeType: store?.constructor?.name ?? "none",
       };
     });
 
