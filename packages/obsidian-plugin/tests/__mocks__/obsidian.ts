@@ -820,6 +820,10 @@ export class Workspace {
     // Mock event triggering
   }
 
+  onLayoutReady(callback: () => void): void {
+    callback();
+  }
+
   // Helper method for testing
   __setActiveFile(file: TFile | null): void {
     this.activeFile = file;
