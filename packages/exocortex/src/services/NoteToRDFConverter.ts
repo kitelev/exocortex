@@ -133,10 +133,10 @@ export class NoteToRDFConverter {
 
       if (key === "exo__Instance_class") {
         for (const val of values) {
-          const classIRI = this.expandClassValue(val);
-          if (classIRI) {
+          const classNode = this.valueToClassURI(val);
+          if (classNode instanceof IRI) {
             const rdfType = Namespace.RDF.term("type");
-            triples.push(new Triple(subject, rdfType, classIRI));
+            triples.push(new Triple(subject, rdfType, classNode));
           }
         }
       }
