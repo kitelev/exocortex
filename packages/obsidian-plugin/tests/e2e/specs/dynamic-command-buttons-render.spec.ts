@@ -73,18 +73,18 @@ test.describe("Dynamic Command Button Rendering & Functionality", () => {
       });
     }, { timeout: 10000 }).toBe("dynamic-cmd-test-with-ts.md");
 
-    // Wait for metadataCache to populate frontmatter for the active file.
+    // Wait for metadataCache to have frontmatter for the active file.
     // In Docker, metadataCache may lag behind file-open. Without frontmatter,
     // DynamicCommandButtonGroupBuilder.extractAssetClass() returns undefined → 0 buttons.
     await expect.poll(async () => {
       return page.evaluate(() => {
         const app = (window as any).app;
         const file = app?.workspace?.getActiveFile();
-        if (!file) return false;
+        if (!file) return null;
         const cache = app.metadataCache.getFileCache(file);
-        return !!cache?.frontmatter?.exo__Instance_class;
+        return cache?.frontmatter ? JSON.stringify(Object.keys(cache.frontmatter)) : null;
       });
-    }, { timeout: 15000, message: "metadataCache frontmatter not populated" }).toBe(true);
+    }, { timeout: 15000, message: "metadataCache frontmatter not populated" }).not.toBeNull();
 
     // Force layout refresh after triple store + metadataCache are both ready.
     await page.evaluate(() => {

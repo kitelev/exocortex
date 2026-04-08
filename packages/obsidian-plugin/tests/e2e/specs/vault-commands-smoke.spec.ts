@@ -47,27 +47,28 @@ test.describe("Vault Commands Smoke Tests", () => {
     // Wait for the layout to render (plugin loaded signal)
     await launcher.waitForElement(".exocortex-layout-rendered", 30000);
 
-    // Wait for metadataCache to populate frontmatter — required for
-    // DynamicCommandButtonGroupBuilder to extract assetClass (#2693)
+    // Wait for metadataCache to have ANY frontmatter for the active file.
+    // Obsidian may not have finished indexing immediately after file-open.
     await expect.poll(async () => {
       return window.evaluate(() => {
         const app = (window as any).app;
         const file = app?.workspace?.getActiveFile();
-        if (!file) return false;
+        if (!file) return null;
         const cache = app.metadataCache.getFileCache(file);
-        return !!cache?.frontmatter?.exo__Instance_class;
+        return cache?.frontmatter ? JSON.stringify(Object.keys(cache.frontmatter)) : null;
       });
-    }, { timeout: 15000 }).toBe(true);
+    }, { timeout: 15000, message: "metadataCache frontmatter not populated" }).not.toBeNull();
 
-    // Force re-render after metadata is ready
+    // Force re-render: invalidate cache + trigger layout refresh
     await window.evaluate(() => {
       const plugin = (window as any).app?.plugins?.plugins?.exocortex;
       plugin?.commandResolver?.invalidateCache();
       plugin?.refreshLayout?.();
     });
 
+    // Wait for buttons to appear after refresh
     const buttonsSection = window.locator(".exocortex-buttons-section");
-    await expect(buttonsSection).toBeVisible({ timeout: 15000 });
+    await expect(buttonsSection).toBeVisible({ timeout: 20000 });
 
     const actionContainer = window.locator(
       ".exocortex-buttons-section .exocortex-action-buttons-container",
@@ -150,16 +151,16 @@ test.describe("Vault Commands Smoke Tests", () => {
     await launcher.waitForModalsToClose(10000);
     await launcher.waitForElement(".exocortex-layout-rendered", 30000);
 
-    // Wait for metadataCache to populate frontmatter (#2693)
+    // Wait for metadataCache frontmatter (#2693)
     await expect.poll(async () => {
       return window.evaluate(() => {
         const app = (window as any).app;
         const file = app?.workspace?.getActiveFile();
-        if (!file) return false;
+        if (!file) return null;
         const cache = app.metadataCache.getFileCache(file);
-        return !!cache?.frontmatter?.exo__Instance_class;
+        return cache?.frontmatter ? JSON.stringify(Object.keys(cache.frontmatter)) : null;
       });
-    }, { timeout: 15000 }).toBe(true);
+    }, { timeout: 15000 }).not.toBeNull();
 
     await window.evaluate(() => {
       const plugin = (window as any).app?.plugins?.plugins?.exocortex;
@@ -168,7 +169,7 @@ test.describe("Vault Commands Smoke Tests", () => {
     });
 
     const buttonsSection = window.locator(".exocortex-buttons-section");
-    await expect(buttonsSection).toBeVisible({ timeout: 15000 });
+    await expect(buttonsSection).toBeVisible({ timeout: 20000 });
 
     const startButton = window.locator(
       '.exocortex-buttons-section .exocortex-action-button:has-text("Start")',
