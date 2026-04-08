@@ -42,12 +42,7 @@ test.describe("Dynamic Command Button Rendering & Functionality", () => {
     fs.writeFileSync(FIXTURE_PATH, fixtureOriginal, "utf-8");
   });
 
-  // FIXME(#2670): SPARQL query engine fails in Docker CI ("sparql query execution failed").
-  // SPARQLQueryService.initialize() likely fails during VaultRDFIndexer.initialize().
-  // This is a systemic Docker E2E issue — SPARQL does not work in the test environment.
-  // Namespace fix (NAMESPACE_MAP) and DI wiring (PR #2669) are correct.
-  // Triple store object exists but query engine cannot be initialized.
-  test.fixme("renders button from RDF config and executes grounding on click", async () => {
+  test("renders button from RDF config and executes grounding on click", async () => {
     const page = await launcher.getWindow();
 
     // ── Step 1: Wait for plugin + force triple store init + diagnostics ──
@@ -66,23 +61,43 @@ test.describe("Dynamic Command Button Rendering & Functionality", () => {
       const hasGrounding = !!plugin.groundingExecutor;
 
       let tripleStoreSize = -1;
+      let initError: string | null = null;
       let queryResult: string | null = null;
+
+      // Try to force-initialize SPARQL via internal queryService
       try {
-        const sparql = plugin.sparql || plugin.getSPARQLApi?.();
-        if (sparql?.query) {
-          const r = await sparql.query("SELECT (COUNT(*) AS ?c) WHERE { ?s ?p ?o }");
-          queryResult = JSON.stringify(r?.bindings?.[0] ?? r);
-          tripleStoreSize = r?.bindings?.[0]?.c ?? -1;
+        const qs = (plugin.sparql as any)?.queryService;
+        if (qs && !qs.isInitialized) {
+          await qs.initialize();
+          initError = "OK";
+        } else if (qs?.isInitialized) {
+          initError = "already initialized";
+        } else {
+          initError = "no queryService found";
         }
       } catch (e: any) {
-        queryResult = `ERROR: ${e.message} | STACK: ${(e.stack || "").substring(0, 300)}`;
+        initError = `INIT ERROR: ${e.message} | cause: ${e.details?.originalError ?? "none"} | STACK: ${(e.stack || "").substring(0, 400)}`;
       }
 
-      let tsDirectSize = -1;
+      // Try direct triple store access
       try {
         const ts = plugin.sparql?.getTripleStore?.();
-        tsDirectSize = ts?.size ?? ts?.count?.() ?? -1;
-      } catch {}
+        const matchAll = ts?.match?.(undefined, undefined, undefined);
+        tripleStoreSize = Array.isArray(matchAll) ? matchAll.length : -1;
+      } catch (e: any) {
+        queryResult = `TS ERROR: ${e.message}`;
+      }
+
+      // Try simplest query
+      try {
+        const sparql = plugin.sparql;
+        if (sparql?.query) {
+          const r = await sparql.query("ASK { ?s ?p ?o }");
+          queryResult = JSON.stringify(r);
+        }
+      } catch (e: any) {
+        queryResult = `QUERY ERROR: ${e.message}`;
+      }
 
 
       let resolverResult: string | null = null;
@@ -102,7 +117,7 @@ test.describe("Dynamic Command Button Rendering & Functionality", () => {
 
       return {
         hasSparql, hasResolver, hasGrounding,
-        tripleStoreSize, tsDirectSize, queryResult, resolverResult,
+        tripleStoreSize, initError, queryResult, resolverResult,
         allButtonsCount: allButtons.length,
         exoButtonsCount: exoButtons.length,
       };
