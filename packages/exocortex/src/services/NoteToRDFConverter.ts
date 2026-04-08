@@ -766,10 +766,7 @@ export class NoteToRDFConverter {
   }
 
   private isClassReference(value: string): boolean {
-    // Class references cannot contain whitespace or special characters
-    // Valid: "ems__Task", "exo__ObjectProperty"
-    // Invalid: "ems__Effort_blocker сделать массивом" (contains spaces)
-    return (value.startsWith("ems__") || value.startsWith("exo__"))
+    return NoteToRDFConverter.NAMESPACE_MAP.some(([prefix]) => value.startsWith(prefix))
       && !/\s/.test(value);
   }
 
@@ -797,14 +794,10 @@ export class NoteToRDFConverter {
   private expandClassValue(value: string): IRI | null {
     const cleanValue = this.removeQuotes(value);
 
-    if (cleanValue.startsWith("ems__")) {
-      const className = cleanValue.substring(5);
-      return Namespace.EMS.term(className);
-    }
-
-    if (cleanValue.startsWith("exo__")) {
-      const className = cleanValue.substring(5);
-      return Namespace.EXO.term(className);
+    for (const [prefix, ns] of NoteToRDFConverter.NAMESPACE_MAP) {
+      if (cleanValue.startsWith(prefix)) {
+        return ns.term(cleanValue.substring(prefix.length));
+      }
     }
 
     return null;
