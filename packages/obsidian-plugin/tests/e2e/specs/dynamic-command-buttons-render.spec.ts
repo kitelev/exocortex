@@ -42,11 +42,7 @@ test.describe("Dynamic Command Button Rendering & Functionality", () => {
     fs.writeFileSync(FIXTURE_PATH, fixtureOriginal, "utf-8");
   });
 
-  // FIXME(#2688): CommandResolver finds 3 commands (confirmed by diagnostics),
-  // but buttons don't appear in DOM after refreshLayout(). Next: debug
-  // DynamicCommandButtonGroupBuilder.build() — extractSubjectIRI/extractAssetClass
-  // may not work with real Obsidian metadata format in Docker.
-  test.fixme("renders button from RDF config and executes grounding on click", async () => {
+  test("renders button from RDF config and executes grounding on click", async () => {
     const page = await launcher.getWindow();
 
     // ── Step 1: Wait for plugin + force triple store init ──

@@ -726,7 +726,9 @@ export class NoteToRDFConverter {
 
   private extractWikilink(value: string): string | null {
     const match = value.match(/^\[\[([^\]]+)\]\]$/);
-    return match ? match[1] : null;
+    if (!match) return null;
+    const linkpath = match[1];
+    return linkpath.includes("|") ? linkpath.split("|")[0] : linkpath;
   }
 
   /**

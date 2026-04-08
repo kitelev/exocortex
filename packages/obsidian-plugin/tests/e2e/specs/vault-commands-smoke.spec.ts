@@ -53,29 +53,19 @@ test.describe("Vault Commands Smoke Tests", () => {
       .isVisible({ timeout: 10000 })
       .catch(() => false);
 
-    if (buttonsVisible) {
-      // Verify action buttons container exists inside
-      const actionContainer = window.locator(
-        ".exocortex-buttons-section .exocortex-action-buttons-container",
-      );
-      const hasActions = await actionContainer
-        .isVisible({ timeout: 5000 })
-        .catch(() => false);
+    // Buttons section MUST be visible — no soft-skip (#2693)
+    await expect(buttonsSection).toBeVisible({ timeout: 15000 });
 
-      expect(hasActions).toBe(true);
+    const actionContainer = window.locator(
+      ".exocortex-buttons-section .exocortex-action-buttons-container",
+    );
+    await expect(actionContainer).toBeVisible({ timeout: 5000 });
 
-      // Verify at least one button is rendered
-      const buttons = window.locator(
-        ".exocortex-buttons-section .exocortex-action-button",
-      );
-      const buttonCount = await buttons.count();
-      expect(buttonCount).toBeGreaterThan(0);
-    } else {
-      // Plugin may not have resolved commands yet; verify at least
-      // the layout rendered with the exocortex-layout-rendered marker
-      const layoutRendered = window.locator(".exocortex-layout-rendered");
-      expect(await layoutRendered.isVisible()).toBe(true);
-    }
+    const buttons = window.locator(
+      ".exocortex-buttons-section .exocortex-action-button",
+    );
+    const buttonCount = await buttons.count();
+    expect(buttonCount).toBeGreaterThan(0);
   });
 
   test("should hide current status button via precondition filtering", async () => {
@@ -148,28 +138,12 @@ test.describe("Vault Commands Smoke Tests", () => {
     await launcher.waitForElement(".exocortex-layout-rendered", 30000);
 
     const buttonsSection = window.locator(".exocortex-buttons-section");
-    const buttonsVisible = await buttonsSection
-      .isVisible({ timeout: 10000 })
-      .catch(() => false);
+    await expect(buttonsSection).toBeVisible({ timeout: 15000 });
 
-    if (!buttonsVisible) {
-      // Skip gracefully if vault commands didn't load in time
-      test.skip(true, "Buttons section not visible - vault commands may not have loaded");
-      return;
-    }
-
-    // Find the "Start" button
     const startButton = window.locator(
       '.exocortex-buttons-section .exocortex-action-button:has-text("Start")',
     );
-    const startVisible = await startButton
-      .isVisible({ timeout: 5000 })
-      .catch(() => false);
-
-    if (!startVisible) {
-      test.skip(true, "Start button not visible - status commands may not have resolved");
-      return;
-    }
+    await expect(startButton).toBeVisible({ timeout: 10000 });
 
     // Click Start
     await startButton.click();
