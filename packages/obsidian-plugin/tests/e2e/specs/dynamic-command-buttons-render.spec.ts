@@ -73,20 +73,25 @@ test.describe("Dynamic Command Button Rendering & Functionality", () => {
       });
     }, { timeout: 10000 }).toBe("dynamic-cmd-test-with-ts.md");
 
-    // Force layout refresh — triple store populated in Step 1 but layout
-    // may have rendered before init. Re-render picks up dynamic commands.
+    // Wait for metadataCache to populate frontmatter for the active file.
+    // In Docker, metadataCache may lag behind file-open. Without frontmatter,
+    // DynamicCommandButtonGroupBuilder.extractAssetClass() returns undefined → 0 buttons.
+    await expect.poll(async () => {
+      return page.evaluate(() => {
+        const app = (window as any).app;
+        const file = app?.workspace?.getActiveFile();
+        if (!file) return false;
+        const cache = app.metadataCache.getFileCache(file);
+        return !!cache?.frontmatter?.exo__Instance_class;
+      });
+    }, { timeout: 15000, message: "metadataCache frontmatter not populated" }).toBe(true);
+
+    // Force layout refresh after triple store + metadataCache are both ready.
     await page.evaluate(() => {
       const plugin = (window as any).app?.plugins?.plugins?.exocortex;
+      plugin?.commandResolver?.invalidateCache();
       plugin?.refreshLayout?.();
     });
-
-    await page
-      .locator(".exocortex-buttons-section, .exocortex-action-buttons-container")
-      .first()
-      .waitFor({ state: "visible", timeout: 20000 })
-      .catch(() => {
-        // Timeout is expected if no buttons section renders for this file type
-      });
 
     const removeTimestampButton = page.locator(
       'button.exocortex-action-button:has-text("Remove Start Timestamp")'

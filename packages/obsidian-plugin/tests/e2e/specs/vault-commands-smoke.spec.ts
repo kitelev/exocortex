@@ -47,13 +47,26 @@ test.describe("Vault Commands Smoke Tests", () => {
     // Wait for the layout to render (plugin loaded signal)
     await launcher.waitForElement(".exocortex-layout-rendered", 30000);
 
-    // Check that the buttons section exists
-    const buttonsSection = window.locator(".exocortex-buttons-section");
-    const buttonsVisible = await buttonsSection
-      .isVisible({ timeout: 10000 })
-      .catch(() => false);
+    // Wait for metadataCache to populate frontmatter — required for
+    // DynamicCommandButtonGroupBuilder to extract assetClass (#2693)
+    await expect.poll(async () => {
+      return window.evaluate(() => {
+        const app = (window as any).app;
+        const file = app?.workspace?.getActiveFile();
+        if (!file) return false;
+        const cache = app.metadataCache.getFileCache(file);
+        return !!cache?.frontmatter?.exo__Instance_class;
+      });
+    }, { timeout: 15000 }).toBe(true);
 
-    // Buttons section MUST be visible — no soft-skip (#2693)
+    // Force re-render after metadata is ready
+    await window.evaluate(() => {
+      const plugin = (window as any).app?.plugins?.plugins?.exocortex;
+      plugin?.commandResolver?.invalidateCache();
+      plugin?.refreshLayout?.();
+    });
+
+    const buttonsSection = window.locator(".exocortex-buttons-section");
     await expect(buttonsSection).toBeVisible({ timeout: 15000 });
 
     const actionContainer = window.locator(
@@ -136,6 +149,23 @@ test.describe("Vault Commands Smoke Tests", () => {
 
     await launcher.waitForModalsToClose(10000);
     await launcher.waitForElement(".exocortex-layout-rendered", 30000);
+
+    // Wait for metadataCache to populate frontmatter (#2693)
+    await expect.poll(async () => {
+      return window.evaluate(() => {
+        const app = (window as any).app;
+        const file = app?.workspace?.getActiveFile();
+        if (!file) return false;
+        const cache = app.metadataCache.getFileCache(file);
+        return !!cache?.frontmatter?.exo__Instance_class;
+      });
+    }, { timeout: 15000 }).toBe(true);
+
+    await window.evaluate(() => {
+      const plugin = (window as any).app?.plugins?.plugins?.exocortex;
+      plugin?.commandResolver?.invalidateCache();
+      plugin?.refreshLayout?.();
+    });
 
     const buttonsSection = window.locator(".exocortex-buttons-section");
     await expect(buttonsSection).toBeVisible({ timeout: 15000 });
