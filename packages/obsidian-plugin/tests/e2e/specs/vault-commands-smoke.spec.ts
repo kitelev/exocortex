@@ -59,12 +59,35 @@ test.describe("Vault Commands Smoke Tests", () => {
       });
     }, { timeout: 15000, message: "metadataCache frontmatter not populated" }).not.toBeNull();
 
-    // Force re-render: invalidate cache + trigger layout refresh
-    await window.evaluate(() => {
-      const plugin = (window as any).app?.plugins?.plugins?.exocortex;
+    // Diagnose: check what DynamicCommandButtonGroupBuilder sees
+    const diag = await window.evaluate(async () => {
+      const app = (window as any).app;
+      const plugin = app?.plugins?.plugins?.exocortex;
+      if (!plugin) return { error: "no plugin" };
+
+      const file = app.workspace.getActiveFile();
+      if (!file) return { error: "no active file" };
+
+      const cache = app.metadataCache.getFileCache(file);
+      const fm = cache?.frontmatter;
+      const uid = fm?.exo__Asset_uid;
+      const cls = fm?.exo__Instance_class;
+
+      let resolvedCount = -1;
+      try {
+        const cmds = await plugin.commandResolver?.resolveForAsset(
+          uid ?? file.path, Array.isArray(cls) ? cls[0]?.replace(/["'[\]]/g, "").trim() : cls, undefined
+        );
+        resolvedCount = cmds?.length ?? 0;
+      } catch (e: any) { resolvedCount = -2; }
+
       plugin?.commandResolver?.invalidateCache();
       plugin?.refreshLayout?.();
+
+      return { uid, cls: JSON.stringify(cls), resolvedCount, fmKeys: Object.keys(fm || {}) };
     });
+
+    console.log("[DIAG vault-commands-smoke] render buttons:", JSON.stringify(diag));
 
     // Wait for buttons to appear after refresh
     const buttonsSection = window.locator(".exocortex-buttons-section");
