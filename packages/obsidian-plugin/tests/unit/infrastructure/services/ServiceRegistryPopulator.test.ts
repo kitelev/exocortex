@@ -4,8 +4,15 @@ import {
   type ServiceRegistryDeps,
 } from "../../../../src/infrastructure/services/ServiceRegistryPopulator";
 
-function createMockDeps(): ServiceRegistryDeps {
-  return {
+const mockIFile = {
+  path: "folder/test-uid-123.md",
+  basename: "test-uid-123",
+  name: "test-uid-123.md",
+  parent: { path: "folder", name: "folder" },
+};
+
+function createMockDeps(withVaultAdapter = false): ServiceRegistryDeps {
+  const deps: ServiceRegistryDeps = {
     app: {
       vault: {
         getMarkdownFiles: jest.fn().mockReturnValue([
@@ -20,6 +27,8 @@ function createMockDeps(): ServiceRegistryDeps {
           frontmatter: {
             exo__Asset_uid: "test-uid-123",
             exo__Asset_label: "Test Asset",
+            ems__Effort_status: '"[[ems__EffortStatusDoing]]"',
+            ems__Effort_plannedStartTimestamp: "2024-01-15T00:00:00",
           },
         }),
       },
@@ -37,6 +46,26 @@ function createMockDeps(): ServiceRegistryDeps {
       query: jest.fn().mockResolvedValue({ bindings: [], count: 0 }),
     } as any,
   };
+
+  if (withVaultAdapter) {
+    deps.vaultAdapter = {
+      getAbstractFileByPath: jest.fn().mockReturnValue(mockIFile),
+      getFrontmatter: jest.fn().mockReturnValue({
+        exo__Asset_uid: "test-uid-123",
+        exo__Asset_label: "Test Asset",
+        ems__Effort_status: '"[[ems__EffortStatusDoing]]"',
+        ems__Effort_plannedStartTimestamp: "2024-01-15T00:00:00",
+      }),
+      read: jest.fn().mockResolvedValue(
+        "---\nexo__Asset_uid: test-uid-123\nexo__Asset_label: Test Asset\nems__Effort_status: \"[[ems__EffortStatusDoing]]\"\nems__Effort_plannedStartTimestamp: 2024-01-15T00:00:00\n---\nBody"
+      ),
+      modify: jest.fn().mockResolvedValue(undefined),
+      create: jest.fn().mockResolvedValue(mockIFile),
+      createFolder: jest.fn().mockResolvedValue(undefined),
+    } as any;
+  }
+
+  return deps;
 }
 
 describe("ServiceRegistryPopulator", () => {
@@ -69,6 +98,22 @@ describe("ServiceRegistryPopulator", () => {
     ];
     for (const id of expectedIds) {
       expect(registry.has(id)).toBe(true);
+    }
+  });
+
+  it("should not register vault-dependent services when vaultAdapter is absent", () => {
+    const vaultDependentIds = [
+      "rollbackStatus",
+      "planOnToday",
+      "planForEvening",
+      "shiftDay",
+      "incrementVotes",
+      "copyLabelToAliases",
+      "createRelatedTask",
+      "createTaskForDailyNote",
+    ];
+    for (const id of vaultDependentIds) {
+      expect(registry.has(id)).toBe(false);
     }
   });
 
@@ -272,6 +317,173 @@ describe("ServiceRegistryPopulator", () => {
           value: "bar",
         }),
       ).rejects.toThrow("No file found for IRI");
+    });
+  });
+});
+
+describe("ServiceRegistryPopulator (with vaultAdapter)", () => {
+  let registry: ServiceRegistry;
+  let deps: ServiceRegistryDeps;
+
+  beforeEach(() => {
+    registry = new ServiceRegistry();
+    deps = createMockDeps(true);
+    populateServiceRegistry(registry, deps);
+  });
+
+  it("should register vault-dependent services when vaultAdapter is provided", () => {
+    const vaultDependentIds = [
+      "rollbackStatus",
+      "planOnToday",
+      "planForEvening",
+      "shiftDay",
+      "incrementVotes",
+      "copyLabelToAliases",
+      "createRelatedTask",
+      "createTaskForDailyNote",
+    ];
+    for (const id of vaultDependentIds) {
+      expect(registry.has(id)).toBe(true);
+    }
+  });
+
+  describe("rollbackStatus", () => {
+    it("should resolve file and call vault read/modify", async () => {
+      const service = registry.get("rollbackStatus")!;
+      await service.execute("test-uid-123");
+
+      expect(deps.vaultAdapter!.read).toHaveBeenCalledWith(mockIFile);
+      expect(deps.vaultAdapter!.modify).toHaveBeenCalled();
+    });
+
+    it("should throw when IRI cannot be resolved", async () => {
+      (deps.app.metadataCache.getFileCache as jest.Mock).mockReturnValue({
+        frontmatter: { exo__Asset_uid: "different-uid" },
+      });
+      const service = registry.get("rollbackStatus")!;
+      await expect(service.execute("nonexistent-iri")).rejects.toThrow("No file found for IRI");
+    });
+  });
+
+  describe("planOnToday", () => {
+    it("should resolve file and update plannedStartTimestamp", async () => {
+      const service = registry.get("planOnToday")!;
+      await service.execute("test-uid-123");
+
+      expect(deps.vaultAdapter!.read).toHaveBeenCalledWith(mockIFile);
+      expect(deps.vaultAdapter!.modify).toHaveBeenCalledWith(
+        mockIFile,
+        expect.stringContaining("ems__Effort_plannedStartTimestamp"),
+      );
+    });
+  });
+
+  describe("planForEvening", () => {
+    it("should resolve file and update plannedStartTimestamp to 19:00", async () => {
+      const service = registry.get("planForEvening")!;
+      await service.execute("test-uid-123");
+
+      expect(deps.vaultAdapter!.read).toHaveBeenCalledWith(mockIFile);
+      expect(deps.vaultAdapter!.modify).toHaveBeenCalledWith(
+        mockIFile,
+        expect.stringContaining("ems__Effort_plannedStartTimestamp"),
+      );
+    });
+  });
+
+  describe("shiftDay", () => {
+    it("should shift day forward when direction is 'forward'", async () => {
+      const service = registry.get("shiftDay")!;
+      await service.execute("test-uid-123", { direction: "forward" });
+
+      expect(deps.vaultAdapter!.read).toHaveBeenCalledWith(mockIFile);
+      expect(deps.vaultAdapter!.modify).toHaveBeenCalled();
+    });
+
+    it("should shift day backward when direction is 'backward'", async () => {
+      const service = registry.get("shiftDay")!;
+      await service.execute("test-uid-123", { direction: "backward" });
+
+      expect(deps.vaultAdapter!.read).toHaveBeenCalledWith(mockIFile);
+      expect(deps.vaultAdapter!.modify).toHaveBeenCalled();
+    });
+
+    it("should throw when direction is missing", async () => {
+      const service = registry.get("shiftDay")!;
+      await expect(service.execute("test-uid-123", {})).rejects.toThrow(
+        "shiftDay requires userInput.direction",
+      );
+    });
+
+    it("should throw when direction is unknown", async () => {
+      const service = registry.get("shiftDay")!;
+      await expect(
+        service.execute("test-uid-123", { direction: "sideways" }),
+      ).rejects.toThrow('unknown direction "sideways"');
+    });
+  });
+
+  describe("incrementVotes", () => {
+    it("should resolve file and increment ems__Effort_votes", async () => {
+      const service = registry.get("incrementVotes")!;
+      await service.execute("test-uid-123");
+
+      expect(deps.vaultAdapter!.read).toHaveBeenCalledWith(mockIFile);
+      expect(deps.vaultAdapter!.modify).toHaveBeenCalledWith(
+        mockIFile,
+        expect.stringContaining("ems__Effort_votes"),
+      );
+    });
+  });
+
+  describe("copyLabelToAliases", () => {
+    it("should resolve file and add label to aliases", async () => {
+      const service = registry.get("copyLabelToAliases")!;
+      await service.execute("test-uid-123");
+
+      expect(deps.vaultAdapter!.read).toHaveBeenCalledWith(mockIFile);
+      expect(deps.vaultAdapter!.modify).toHaveBeenCalledWith(
+        mockIFile,
+        expect.stringContaining("aliases"),
+      );
+    });
+  });
+
+  describe("createRelatedTask", () => {
+    it("should create a related task with ems__Effort_parent link", async () => {
+      const service = registry.get("createRelatedTask")!;
+      await service.execute("test-uid-123", { label: "Subtask" });
+
+      expect(deps.vaultAdapter!.create).toHaveBeenCalledWith(
+        expect.stringContaining("folder/"),
+        expect.stringContaining("ems__Task"),
+      );
+    });
+
+    it("should throw when label is missing", async () => {
+      const service = registry.get("createRelatedTask")!;
+      await expect(service.execute("test-uid-123", {})).rejects.toThrow(
+        "createRelatedTask requires userInput.label",
+      );
+    });
+  });
+
+  describe("createTaskForDailyNote", () => {
+    it("should create a task with ems__Effort_plannedStartTimestamp", async () => {
+      const service = registry.get("createTaskForDailyNote")!;
+      await service.execute("test-uid-123", { label: "Daily Task" });
+
+      expect(deps.vaultAdapter!.create).toHaveBeenCalledWith(
+        expect.stringContaining("folder/"),
+        expect.stringContaining("ems__Task"),
+      );
+    });
+
+    it("should throw when label is missing", async () => {
+      const service = registry.get("createTaskForDailyNote")!;
+      await expect(service.execute("test-uid-123", {})).rejects.toThrow(
+        "createTaskForDailyNote requires userInput.label",
+      );
     });
   });
 });
