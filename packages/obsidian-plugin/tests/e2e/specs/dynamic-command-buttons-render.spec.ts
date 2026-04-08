@@ -70,19 +70,26 @@ test.describe("Dynamic Command Button Rendering & Functionality", () => {
       try {
         const sparql = plugin.sparql || plugin.getSPARQLApi?.();
         if (sparql?.query) {
-          const r = await sparql.query("SELECT (COUNT(*) AS ?c) WHERE { ?s ?p ?o }");
-          queryResult = JSON.stringify(r?.bindings?.[0] ?? r);
-          tripleStoreSize = r?.bindings?.[0]?.c ?? -1;
+          const r = await sparql.query("ASK { ?s ?p ?o }");
+          queryResult = JSON.stringify(r);
         }
       } catch (e: any) {
-        queryResult = `ERROR: ${e.message} | STACK: ${(e.stack || "").substring(0, 300)}`;
+        queryResult = `ERROR: ${e.message} | STACK: ${(e.stack || "").substring(0, 500)}`;
       }
 
-      let tsDirectSize = -1;
+      let tsDirectInfo: any = null;
       try {
         const ts = plugin.sparql?.getTripleStore?.();
-        tsDirectSize = ts?.size ?? ts?.count?.() ?? -1;
-      } catch {}
+        const matchAll = ts?.match?.(undefined, undefined, undefined);
+        tsDirectInfo = {
+          storeType: typeof ts,
+          storeKeys: ts ? Object.keys(ts).slice(0, 10) : [],
+          matchCount: Array.isArray(matchAll) ? matchAll.length : "not array",
+        };
+        tripleStoreSize = Array.isArray(matchAll) ? matchAll.length : -1;
+      } catch (e: any) {
+        tsDirectInfo = `ERROR: ${e.message}`;
+      }
 
 
       let resolverResult: string | null = null;
@@ -102,7 +109,7 @@ test.describe("Dynamic Command Button Rendering & Functionality", () => {
 
       return {
         hasSparql, hasResolver, hasGrounding,
-        tripleStoreSize, tsDirectSize, queryResult, resolverResult,
+        tripleStoreSize, tsDirectInfo, queryResult, resolverResult,
         allButtonsCount: allButtons.length,
         exoButtonsCount: exoButtons.length,
       };
