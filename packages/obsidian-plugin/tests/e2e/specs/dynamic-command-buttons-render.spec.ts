@@ -42,11 +42,11 @@ test.describe("Dynamic Command Button Rendering & Functionality", () => {
     fs.writeFileSync(FIXTURE_PATH, fixtureOriginal, "utf-8");
   });
 
-  // FIXME(#2670): SPARQL query engine fails in Docker CI ("sparql query execution failed").
-  // SPARQLQueryService.initialize() likely fails during VaultRDFIndexer.initialize().
-  // This is a systemic Docker E2E issue — SPARQL does not work in the test environment.
-  // Namespace fix (NAMESPACE_MAP) and DI wiring (PR #2669) are correct.
-  // Triple store object exists but query engine cannot be initialized.
+  // FIXME(#2670): CommandResolver returns 0 commands despite 3 CommandBinding rdf:type
+  // triples in store. Likely value format mismatch in getLinkedValue/matchesReference:
+  // NoteToRDFConverter stores targetClass as IRI, CommandResolver expects Literal.
+  // Triple store: 317 triples, 37 rdf:type, 3 CommandBinding, 66 exocmd. All correct.
+  // Needs integration test: CommandResolver + real vault-converted triples.
   test.fixme("renders button from RDF config and executes grounding on click", async () => {
     const page = await launcher.getWindow();
 
@@ -66,23 +66,70 @@ test.describe("Dynamic Command Button Rendering & Functionality", () => {
       const hasGrounding = !!plugin.groundingExecutor;
 
       let tripleStoreSize = -1;
+      let initError: string | null = null;
       let queryResult: string | null = null;
+
+      // Try to force-initialize SPARQL via internal queryService
       try {
-        const sparql = plugin.sparql || plugin.getSPARQLApi?.();
-        if (sparql?.query) {
-          const r = await sparql.query("SELECT (COUNT(*) AS ?c) WHERE { ?s ?p ?o }");
-          queryResult = JSON.stringify(r?.bindings?.[0] ?? r);
-          tripleStoreSize = r?.bindings?.[0]?.c ?? -1;
+        const qs = (plugin.sparql as any)?.queryService;
+        if (qs && !qs.isInitialized) {
+          await qs.initialize();
+          initError = "OK";
+        } else if (qs?.isInitialized) {
+          initError = "already initialized";
+        } else {
+          initError = "no queryService found";
         }
       } catch (e: any) {
-        queryResult = `ERROR: ${e.message} | STACK: ${(e.stack || "").substring(0, 300)}`;
+        initError = `INIT ERROR: ${e.message} | cause: ${e.details?.originalError ?? "none"} | STACK: ${(e.stack || "").substring(0, 400)}`;
       }
 
-      let tsDirectSize = -1;
+      // Try direct triple store access (match() is async!)
+      let tsInfo: any = null;
       try {
         const ts = plugin.sparql?.getTripleStore?.();
-        tsDirectSize = ts?.size ?? ts?.count?.() ?? -1;
-      } catch {}
+        const matchAll = await ts?.match?.(undefined, undefined, undefined);
+        const allTriples = Array.isArray(matchAll) ? matchAll : [];
+        tripleStoreSize = allTriples.length;
+        const bindingTriples = allTriples.filter((t: any) =>
+          String(t?.object?.value ?? "").includes("CommandBinding") ||
+          String(t?.predicate?.value ?? "").includes("CommandBinding")
+        );
+        const rdfTypeTriples = allTriples.filter((t: any) =>
+          String(t?.predicate?.value ?? "").includes("rdf-syntax-ns#type") ||
+          String(t?.predicate?.value ?? "").includes("/type")
+        );
+        const exocmdTriples = allTriples.filter((t: any) =>
+          String(t?.predicate?.value ?? "").includes("exocmd") ||
+          String(t?.object?.value ?? "").includes("exocmd")
+        );
+        const cmdBindingType = rdfTypeTriples.filter((t: any) =>
+          String(t?.object?.value ?? "").includes("CommandBinding")
+        );
+        const allRdfTypes = rdfTypeTriples.map((t: any) => String(t?.object?.value ?? "").split("#").pop()).filter(Boolean);
+        tsInfo = {
+          total: allTriples.length,
+          bindings: bindingTriples.length,
+          rdfTypeCount: rdfTypeTriples.length,
+          cmdBindingTypeCount: cmdBindingType.length,
+          allRdfTypeClasses: [...new Set(allRdfTypes)],
+          cmdBindingSample: cmdBindingType.slice(0, 2).map((t: any) => `s=${t?.subject?.value?.slice(-40)} o=${t?.object?.value}`),
+          exocmdCount: exocmdTriples.length,
+        };
+      } catch (e: any) {
+        tsInfo = `TS ERROR: ${e.message}`;
+      }
+
+      // Try simplest query
+      try {
+        const sparql = plugin.sparql;
+        if (sparql?.query) {
+          const r = await sparql.query("ASK { ?s ?p ?o }");
+          queryResult = JSON.stringify(r);
+        }
+      } catch (e: any) {
+        queryResult = `QUERY ERROR: ${e.message}`;
+      }
 
 
       let resolverResult: string | null = null;
@@ -102,7 +149,7 @@ test.describe("Dynamic Command Button Rendering & Functionality", () => {
 
       return {
         hasSparql, hasResolver, hasGrounding,
-        tripleStoreSize, tsDirectSize, queryResult, resolverResult,
+        tripleStoreSize, initError, tsInfo, queryResult, resolverResult,
         allButtonsCount: allButtons.length,
         exoButtonsCount: exoButtons.length,
       };
