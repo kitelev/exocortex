@@ -61,4 +61,29 @@ export class Namespace {
   static readonly EMS = new Namespace("ems", "https://exocortex.my/ontology/ems#");
 
   static readonly EXOCMD = new Namespace("exocmd", "https://exocortex.my/ontology/exocmd#");
+
+  static readonly IMS = new Namespace("ims", "https://exocortex.my/ontology/ims#");
+
+  static readonly ZTLK = new Namespace("ztlk", "https://exocortex.my/ontology/ztlk#");
+
+  static readonly PTMS = new Namespace("ptms", "https://exocortex.my/ontology/ptms#");
+
+  static readonly LIT = new Namespace("lit", "https://exocortex.my/ontology/lit#");
+
+  static readonly INBOX = new Namespace("inbox", "https://exocortex.my/ontology/inbox#");
+
+  private static readonly REGISTRY = new Map<string, Namespace>([
+    ["exo", Namespace.EXO],
+    ["ems", Namespace.EMS],
+    ["exocmd", Namespace.EXOCMD],
+    ["ims", Namespace.IMS],
+    ["ztlk", Namespace.ZTLK],
+    ["ptms", Namespace.PTMS],
+    ["lit", Namespace.LIT],
+    ["inbox", Namespace.INBOX],
+  ]);
+
+  static resolve(prefix: string): Namespace | null {
+    return Namespace.REGISTRY.get(prefix) ?? null;
+  }
 }

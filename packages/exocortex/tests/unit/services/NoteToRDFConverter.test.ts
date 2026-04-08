@@ -2771,4 +2771,299 @@ It can contain **markdown** formatting.
       });
     });
   });
+
+  describe("Dynamic namespace resolution (RFC-018, Issue #2675)", () => {
+    let file: IFile;
+
+    beforeEach(() => {
+      file = {
+        path: "test-note.md",
+        basename: "test-note",
+        name: "test-note.md",
+        parent: null,
+      };
+      mockVault.read.mockResolvedValue("---\nsome: yaml\n---\n");
+    });
+
+    describe("exocmd__ namespace", () => {
+      it("should create rdf:type triple for exocmd__CommandBinding class", async () => {
+        const frontmatter: IFrontmatter = {
+          exo__Instance_class: "exocmd__CommandBinding",
+        };
+        mockVault.getFrontmatter.mockReturnValue(frontmatter);
+
+        const triples = await converter.convertNote(file);
+
+        const rdfTypeTriple = triples.find(
+          (t) =>
+            (t.predicate as IRI).value === "http://www.w3.org/1999/02/22-rdf-syntax-ns#type" &&
+            (t.object as IRI).value === "https://exocortex.my/ontology/exocmd#CommandBinding"
+        );
+        expect(rdfTypeTriple).toBeDefined();
+      });
+
+      it("should convert exocmd__CommandBinding_targetClass property to IRI", async () => {
+        const frontmatter: IFrontmatter = {
+          exocmd__CommandBinding_targetClass: "ems__Task",
+        };
+        mockVault.getFrontmatter.mockReturnValue(frontmatter);
+
+        const triples = await converter.convertNote(file);
+
+        const propTriple = triples.find(
+          (t) =>
+            (t.predicate as IRI).value ===
+            "https://exocortex.my/ontology/exocmd#CommandBinding_targetClass"
+        );
+        expect(propTriple).toBeDefined();
+      });
+    });
+
+    describe("ims__ namespace", () => {
+      it("should convert ims__Concept_broader property to IRI", async () => {
+        const frontmatter: IFrontmatter = {
+          ims__Concept_broader: "Some Concept",
+        };
+        mockVault.getFrontmatter.mockReturnValue(frontmatter);
+
+        const triples = await converter.convertNote(file);
+
+        const propTriple = triples.find(
+          (t) =>
+            (t.predicate as IRI).value ===
+            "https://exocortex.my/ontology/ims#Concept_broader"
+        );
+        expect(propTriple).toBeDefined();
+      });
+
+      it("should create rdf:type triple for ims__Concept class", async () => {
+        const frontmatter: IFrontmatter = {
+          exo__Instance_class: "ims__Concept",
+        };
+        mockVault.getFrontmatter.mockReturnValue(frontmatter);
+
+        const triples = await converter.convertNote(file);
+
+        const rdfTypeTriple = triples.find(
+          (t) =>
+            (t.predicate as IRI).value === "http://www.w3.org/1999/02/22-rdf-syntax-ns#type" &&
+            (t.object as IRI).value === "https://exocortex.my/ontology/ims#Concept"
+        );
+        expect(rdfTypeTriple).toBeDefined();
+      });
+    });
+
+    describe("ztlk__ namespace", () => {
+      it("should convert ztlk__FleetingNote_type property", async () => {
+        const frontmatter: IFrontmatter = {
+          ztlk__FleetingNote_type: "some type",
+        };
+        mockVault.getFrontmatter.mockReturnValue(frontmatter);
+
+        const triples = await converter.convertNote(file);
+
+        const propTriple = triples.find(
+          (t) =>
+            (t.predicate as IRI).value ===
+            "https://exocortex.my/ontology/ztlk#FleetingNote_type"
+        );
+        expect(propTriple).toBeDefined();
+      });
+
+      it("should create rdf:type triple for ztlk__FleetingNote class", async () => {
+        const frontmatter: IFrontmatter = {
+          exo__Instance_class: "ztlk__FleetingNote",
+        };
+        mockVault.getFrontmatter.mockReturnValue(frontmatter);
+
+        const triples = await converter.convertNote(file);
+
+        const rdfTypeTriple = triples.find(
+          (t) =>
+            (t.predicate as IRI).value === "http://www.w3.org/1999/02/22-rdf-syntax-ns#type" &&
+            (t.object as IRI).value === "https://exocortex.my/ontology/ztlk#FleetingNote"
+        );
+        expect(rdfTypeTriple).toBeDefined();
+      });
+    });
+
+    describe("lit__ namespace", () => {
+      it("should convert lit__Conspect_source property", async () => {
+        const frontmatter: IFrontmatter = {
+          lit__Conspect_source: "https://example.com/article",
+        };
+        mockVault.getFrontmatter.mockReturnValue(frontmatter);
+
+        const triples = await converter.convertNote(file);
+
+        const propTriple = triples.find(
+          (t) =>
+            (t.predicate as IRI).value ===
+            "https://exocortex.my/ontology/lit#Conspect_source"
+        );
+        expect(propTriple).toBeDefined();
+      });
+    });
+
+    describe("inbox__ namespace", () => {
+      it("should convert inbox__ExoAssistantKnowledge_domain property", async () => {
+        const frontmatter: IFrontmatter = {
+          inbox__ExoAssistantKnowledge_domain: "software engineering",
+        };
+        mockVault.getFrontmatter.mockReturnValue(frontmatter);
+
+        const triples = await converter.convertNote(file);
+
+        const propTriple = triples.find(
+          (t) =>
+            (t.predicate as IRI).value ===
+            "https://exocortex.my/ontology/inbox#ExoAssistantKnowledge_domain"
+        );
+        expect(propTriple).toBeDefined();
+      });
+    });
+
+    describe("ptms__ namespace", () => {
+      it("should convert ptms__ prefixed property", async () => {
+        const frontmatter: IFrontmatter = {
+          ptms__Pattern_category: "design",
+        };
+        mockVault.getFrontmatter.mockReturnValue(frontmatter);
+
+        const triples = await converter.convertNote(file);
+
+        const propTriple = triples.find(
+          (t) =>
+            (t.predicate as IRI).value ===
+            "https://exocortex.my/ontology/ptms#Pattern_category"
+        );
+        expect(propTriple).toBeDefined();
+      });
+    });
+
+    describe("isClassReference with all namespaces", () => {
+      it("should recognize class references from all registered namespaces", async () => {
+        const prefixes = ["exo", "ems", "exocmd", "ims", "ztlk", "ptms", "lit", "inbox"];
+        for (const prefix of prefixes) {
+          const frontmatter: IFrontmatter = {
+            exo__Instance_class: `${prefix}__SomeClass`,
+          };
+          mockVault.getFrontmatter.mockReturnValue(frontmatter);
+
+          const triples = await converter.convertNote(file);
+
+          const rdfTypeTriple = triples.find(
+            (t) =>
+              (t.predicate as IRI).value === "http://www.w3.org/1999/02/22-rdf-syntax-ns#type" &&
+              (t.object as IRI).value === `https://exocortex.my/ontology/${prefix}#SomeClass`
+          );
+          expect(rdfTypeTriple).toBeDefined();
+        }
+      });
+
+      it("should NOT recognize class reference with unknown namespace", async () => {
+        const frontmatter: IFrontmatter = {
+          exo__Instance_class: "unknown__SomeClass",
+        };
+        mockVault.getFrontmatter.mockReturnValue(frontmatter);
+
+        const triples = await converter.convertNote(file);
+
+        const rdfTypeTriple = triples.find(
+          (t) =>
+            (t.predicate as IRI).value === "http://www.w3.org/1999/02/22-rdf-syntax-ns#type" &&
+            (t.object as IRI).value.includes("unknown")
+        );
+        expect(rdfTypeTriple).toBeUndefined();
+      });
+    });
+
+    describe("expandClassValue with wikilinks", () => {
+      it("should expand [[exocmd__CommandBinding]] wikilink in Instance_class", async () => {
+        const frontmatter: IFrontmatter = {
+          exo__Instance_class: "[[exocmd__CommandBinding]]",
+        };
+        mockVault.getFrontmatter.mockReturnValue(frontmatter);
+
+        const triples = await converter.convertNote(file);
+
+        const rdfTypeTriple = triples.find(
+          (t) =>
+            (t.predicate as IRI).value === "http://www.w3.org/1999/02/22-rdf-syntax-ns#type" &&
+            (t.object as IRI).value === "https://exocortex.my/ontology/exocmd#CommandBinding"
+        );
+        expect(rdfTypeTriple).toBeDefined();
+      });
+
+      it("should expand quoted wikilink '\"[[ims__Concept]]\"' in Instance_class", async () => {
+        const frontmatter: IFrontmatter = {
+          exo__Instance_class: '"[[ims__Concept]]"',
+        };
+        mockVault.getFrontmatter.mockReturnValue(frontmatter);
+
+        const triples = await converter.convertNote(file);
+
+        const rdfTypeTriple = triples.find(
+          (t) =>
+            (t.predicate as IRI).value === "http://www.w3.org/1999/02/22-rdf-syntax-ns#type" &&
+            (t.object as IRI).value === "https://exocortex.my/ontology/ims#Concept"
+        );
+        expect(rdfTypeTriple).toBeDefined();
+      });
+    });
+
+    describe("mixed namespace properties in single note", () => {
+      it("should handle note with properties from multiple namespaces", async () => {
+        const frontmatter: IFrontmatter = {
+          exo__Asset_label: "Test Asset",
+          exo__Instance_class: "exocmd__CommandBinding",
+          exocmd__CommandBinding_targetClass: "ems__Task",
+          ems__Effort_status: "[[some-status]]",
+        };
+        mockVault.getFrontmatter.mockReturnValue(frontmatter);
+        mockVault.getFirstLinkpathDest.mockReturnValue(null);
+
+        const triples = await converter.convertNote(file);
+
+        const predicateIRIs = triples.map((t) => (t.predicate as IRI).value);
+
+        expect(predicateIRIs).toContain("https://exocortex.my/ontology/exo#Asset_label");
+        expect(predicateIRIs).toContain("https://exocortex.my/ontology/exo#Instance_class");
+        expect(predicateIRIs).toContain("https://exocortex.my/ontology/exocmd#CommandBinding_targetClass");
+        expect(predicateIRIs).toContain("https://exocortex.my/ontology/ems#Effort_status");
+      });
+    });
+
+    describe("non-exocortex properties are ignored", () => {
+      it("should skip properties without __ separator", async () => {
+        const frontmatter: IFrontmatter = {
+          title: "My Note",
+          tags: ["a", "b"],
+          exo__Asset_label: "Keep this",
+        };
+        mockVault.getFrontmatter.mockReturnValue(frontmatter);
+
+        const triples = await converter.convertNote(file);
+
+        const predicateIRIs = triples.map((t) => (t.predicate as IRI).value);
+        expect(predicateIRIs).not.toContain(expect.stringContaining("title"));
+        expect(predicateIRIs).not.toContain(expect.stringContaining("tags"));
+        expect(predicateIRIs).toContain("https://exocortex.my/ontology/exo#Asset_label");
+      });
+
+      it("should skip properties with unknown namespace prefix", async () => {
+        const frontmatter: IFrontmatter = {
+          custom__MyProp: "value",
+          exo__Asset_label: "Keep this",
+        };
+        mockVault.getFrontmatter.mockReturnValue(frontmatter);
+
+        const triples = await converter.convertNote(file);
+
+        const predicateIRIs = triples.map((t) => (t.predicate as IRI).value);
+        expect(predicateIRIs).not.toContain(expect.stringContaining("custom"));
+        expect(predicateIRIs).toContain("https://exocortex.my/ontology/exo#Asset_label");
+      });
+    });
+  });
 });

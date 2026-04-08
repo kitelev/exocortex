@@ -582,21 +582,17 @@ export class NoteToRDFConverter {
   }
 
   private isExocortexProperty(key: string): boolean {
-    return key.startsWith("exo__") || key.startsWith("ems__");
+    if (!key.includes("__")) return false;
+    const prefix = key.substring(0, key.indexOf("__"));
+    return Namespace.resolve(prefix) !== null;
   }
 
   private propertyKeyToIRI(key: string): IRI {
-    if (key.startsWith("exo__")) {
-      const localName = key.substring(5);
-      return Namespace.EXO.term(localName);
-    }
-
-    if (key.startsWith("ems__")) {
-      const localName = key.substring(5);
-      return Namespace.EMS.term(localName);
-    }
-
-    throw new Error(`Invalid property key: ${key}`);
+    const idx = key.indexOf("__");
+    if (idx < 0) throw new Error(`Invalid property key: ${key}`);
+    const ns = Namespace.resolve(key.substring(0, idx));
+    if (!ns) throw new Error(`Invalid property key: ${key}`);
+    return ns.term(key.substring(idx + 2));
   }
 
   /**
@@ -760,11 +756,10 @@ export class NoteToRDFConverter {
   }
 
   private isClassReference(value: string): boolean {
-    // Class references cannot contain whitespace or special characters
-    // Valid: "ems__Task", "exo__ObjectProperty"
-    // Invalid: "ems__Effort_blocker сделать массивом" (contains spaces)
-    return (value.startsWith("ems__") || value.startsWith("exo__"))
-      && !/\s/.test(value);
+    if (/\s/.test(value)) return false;
+    const idx = value.indexOf("__");
+    if (idx < 0) return false;
+    return Namespace.resolve(value.substring(0, idx)) !== null;
   }
 
   /**
@@ -789,19 +784,13 @@ export class NoteToRDFConverter {
   }
 
   private expandClassValue(value: string): IRI | null {
-    const cleanValue = this.removeQuotes(value);
-
-    if (cleanValue.startsWith("ems__")) {
-      const className = cleanValue.substring(5);
-      return Namespace.EMS.term(className);
-    }
-
-    if (cleanValue.startsWith("exo__")) {
-      const className = cleanValue.substring(5);
-      return Namespace.EXO.term(className);
-    }
-
-    return null;
+    const unquoted = this.removeQuotes(value);
+    const clean = this.extractWikilink(unquoted) ?? unquoted.trim();
+    const idx = clean.indexOf("__");
+    if (idx < 0) return null;
+    const ns = Namespace.resolve(clean.substring(0, idx));
+    if (!ns) return null;
+    return ns.term(clean.substring(idx + 2));
   }
 
   /**

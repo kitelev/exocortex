@@ -115,4 +115,63 @@ describe("Namespace", () => {
       expect(str.value).toBe("http://www.w3.org/2001/XMLSchema#string");
     });
   });
+
+  describe("additional Exocortex namespaces", () => {
+    it("should provide EXOCMD namespace", () => {
+      expect(Namespace.EXOCMD.prefix).toBe("exocmd");
+      expect(Namespace.EXOCMD.iri.value).toBe("https://exocortex.my/ontology/exocmd#");
+    });
+
+    it("should provide IMS namespace", () => {
+      expect(Namespace.IMS.prefix).toBe("ims");
+      expect(Namespace.IMS.iri.value).toBe("https://exocortex.my/ontology/ims#");
+    });
+
+    it("should provide ZTLK namespace", () => {
+      expect(Namespace.ZTLK.prefix).toBe("ztlk");
+      expect(Namespace.ZTLK.iri.value).toBe("https://exocortex.my/ontology/ztlk#");
+    });
+
+    it("should provide PTMS namespace", () => {
+      expect(Namespace.PTMS.prefix).toBe("ptms");
+      expect(Namespace.PTMS.iri.value).toBe("https://exocortex.my/ontology/ptms#");
+    });
+
+    it("should provide LIT namespace", () => {
+      expect(Namespace.LIT.prefix).toBe("lit");
+      expect(Namespace.LIT.iri.value).toBe("https://exocortex.my/ontology/lit#");
+    });
+
+    it("should provide INBOX namespace", () => {
+      expect(Namespace.INBOX.prefix).toBe("inbox");
+      expect(Namespace.INBOX.iri.value).toBe("https://exocortex.my/ontology/inbox#");
+    });
+  });
+
+  describe("resolve", () => {
+    it.each([
+      ["exo", Namespace.EXO],
+      ["ems", Namespace.EMS],
+      ["exocmd", Namespace.EXOCMD],
+      ["ims", Namespace.IMS],
+      ["ztlk", Namespace.ZTLK],
+      ["ptms", Namespace.PTMS],
+      ["lit", Namespace.LIT],
+      ["inbox", Namespace.INBOX],
+    ])("resolves '%s' to correct namespace", (prefix, expected) => {
+      expect(Namespace.resolve(prefix)).toBe(expected);
+    });
+
+    it("returns null for unknown prefix", () => {
+      expect(Namespace.resolve("unknown")).toBeNull();
+      expect(Namespace.resolve("")).toBeNull();
+    });
+
+    it("does not resolve standard W3C namespaces (rdf, rdfs, owl, xsd)", () => {
+      expect(Namespace.resolve("rdf")).toBeNull();
+      expect(Namespace.resolve("rdfs")).toBeNull();
+      expect(Namespace.resolve("owl")).toBeNull();
+      expect(Namespace.resolve("xsd")).toBeNull();
+    });
+  });
 });
