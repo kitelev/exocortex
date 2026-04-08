@@ -42,32 +42,73 @@ test.describe("Dynamic Command Button Rendering & Functionality", () => {
     fs.writeFileSync(FIXTURE_PATH, fixtureOriginal, "utf-8");
   });
 
-  // FIXME(#2670): Button "Remove Start Timestamp" not found in Docker CI.
-  // Triple store is force-initialized via SPARQL query, DI wiring is correct (PR #2669),
-  // but DynamicCommandButtonGroupBuilder still produces no buttons.
-  // Needs CI screenshot analysis to determine what the layout actually renders.
+  // FIXME(#2670): SPARQL query engine fails in Docker CI ("sparql query execution failed").
+  // SPARQLQueryService.initialize() likely fails during VaultRDFIndexer.initialize().
+  // This is a systemic Docker E2E issue — SPARQL does not work in the test environment.
+  // Namespace fix (NAMESPACE_MAP) and DI wiring (PR #2669) are correct.
+  // Triple store object exists but query engine cannot be initialized.
   test.fixme("renders button from RDF config and executes grounding on click", async () => {
     const page = await launcher.getWindow();
 
-    // ── Step 1: Wait for plugin + force triple store initialization ──
+    // ── Step 1: Wait for plugin + force triple store init + diagnostics ──
 
-    await page.evaluate(async () => {
+    const diag = await page.evaluate(async () => {
       const app = (window as any).app;
       for (let i = 0; i < 20; i++) {
         if (app?.plugins?.plugins?.exocortex) break;
         await new Promise((r) => setTimeout(r, 500));
       }
       const plugin = app?.plugins?.plugins?.exocortex;
-      if (!plugin) return;
+      if (!plugin) return { error: "plugin not loaded" };
 
-      // Force SPARQLQueryService lazy initialization by running a query.
-      // This populates the triple store with vault RDF data so
-      // CommandResolver can find dynamic command bindings.
-      const sparql = plugin.sparql || plugin.getSparqlApi?.();
-      if (sparql?.query) {
-        await sparql.query("ASK { ?s ?p ?o }").catch(() => {});
+      const hasSparql = !!plugin.sparql;
+      const hasResolver = !!plugin.commandResolver;
+      const hasGrounding = !!plugin.groundingExecutor;
+
+      let tripleStoreSize = -1;
+      let queryResult: string | null = null;
+      try {
+        const sparql = plugin.sparql || plugin.getSPARQLApi?.();
+        if (sparql?.query) {
+          const r = await sparql.query("SELECT (COUNT(*) AS ?c) WHERE { ?s ?p ?o }");
+          queryResult = JSON.stringify(r?.bindings?.[0] ?? r);
+          tripleStoreSize = r?.bindings?.[0]?.c ?? -1;
+        }
+      } catch (e: any) {
+        queryResult = `ERROR: ${e.message} | STACK: ${(e.stack || "").substring(0, 300)}`;
       }
+
+      let tsDirectSize = -1;
+      try {
+        const ts = plugin.sparql?.getTripleStore?.();
+        tsDirectSize = ts?.size ?? ts?.count?.() ?? -1;
+      } catch {}
+
+
+      let resolverResult: string | null = null;
+      try {
+        if (plugin.commandResolver?.resolveForAsset) {
+          const cmds = await plugin.commandResolver.resolveForAsset(
+            "e2e-task-with-start-timestamp", "ems__Task", undefined
+          );
+          resolverResult = `found ${cmds.length} commands: ${cmds.map((c: any) => c.command?.name).join(", ")}`;
+        }
+      } catch (e: any) {
+        resolverResult = `ERROR: ${e.message}`;
+      }
+
+      const allButtons = document.querySelectorAll("button");
+      const exoButtons = document.querySelectorAll(".exocortex-action-button");
+
+      return {
+        hasSparql, hasResolver, hasGrounding,
+        tripleStoreSize, tsDirectSize, queryResult, resolverResult,
+        allButtonsCount: allButtons.length,
+        exoButtonsCount: exoButtons.length,
+      };
     });
+
+    console.log("[DIAG] Step 1 results:", JSON.stringify(diag, null, 2));
 
     // ── Step 2: Open task WITH startTimestamp → button MUST appear ──
 

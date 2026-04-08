@@ -581,21 +581,27 @@ export class NoteToRDFConverter {
     return new IRI(`${this.OBSIDIAN_VAULT_SCHEME}${encodedPath}`);
   }
 
+  private static readonly NAMESPACE_MAP: ReadonlyArray<[string, Namespace]> = [
+    ["exo__", Namespace.EXO],
+    ["ems__", Namespace.EMS],
+    ["exocmd__", Namespace.EXOCMD],
+    ["ims__", Namespace.IMS],
+    ["ztlk__", Namespace.ZTLK],
+    ["ptms__", Namespace.PTMS],
+    ["lit__", Namespace.LIT],
+    ["inbox__", Namespace.INBOX],
+  ];
+
   private isExocortexProperty(key: string): boolean {
-    return key.startsWith("exo__") || key.startsWith("ems__");
+    return NoteToRDFConverter.NAMESPACE_MAP.some(([prefix]) => key.startsWith(prefix));
   }
 
   private propertyKeyToIRI(key: string): IRI {
-    if (key.startsWith("exo__")) {
-      const localName = key.substring(5);
-      return Namespace.EXO.term(localName);
+    for (const [prefix, ns] of NoteToRDFConverter.NAMESPACE_MAP) {
+      if (key.startsWith(prefix)) {
+        return ns.term(key.substring(prefix.length));
+      }
     }
-
-    if (key.startsWith("ems__")) {
-      const localName = key.substring(5);
-      return Namespace.EMS.term(localName);
-    }
-
     throw new Error(`Invalid property key: ${key}`);
   }
 
