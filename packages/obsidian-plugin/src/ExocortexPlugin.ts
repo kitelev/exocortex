@@ -261,6 +261,7 @@ export default class ExocortexPlugin extends Plugin {
       // (on first query), but layout renders before any query runs.
       // After the store is populated, re-render layout to show dynamic buttons.
       void this.sparql.query("ASK { ?s ?p ?o }").then(() => {
+        this.commandResolver.invalidateCache();
         this.autoRenderLayout();
       }).catch((err) => {
         this.logger.error("Failed to eagerly initialize triple store", err);
