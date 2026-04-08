@@ -73,13 +73,18 @@ test.describe("Dynamic Command Button Rendering & Functionality", () => {
       });
     }, { timeout: 10000 }).toBe("dynamic-cmd-test-with-ts.md");
 
+    // Force layout refresh — triple store was populated in Step 1,
+    // but layout may have rendered before init completed
+    await page.evaluate(() => {
+      const plugin = (window as any).app?.plugins?.plugins?.exocortex;
+      plugin?.refreshLayout?.();
+    });
+
     await page
       .locator(".exocortex-buttons-section, .exocortex-action-buttons-container")
       .first()
       .waitFor({ state: "visible", timeout: 20000 })
-      .catch(() => {
-        // Timeout is expected if no buttons section renders for this file type
-      });
+      .catch(() => {});
 
     const removeTimestampButton = page.locator(
       'button.exocortex-action-button:has-text("Remove Start Timestamp")'
