@@ -70,8 +70,15 @@ test.describe("Dynamic Command Button Rendering & Functionality", () => {
           tripleStoreSize = r?.bindings?.[0]?.c ?? -1;
         }
       } catch (e: any) {
-        queryResult = `ERROR: ${e.message}`;
+        queryResult = `ERROR: ${e.message} | STACK: ${(e.stack || "").substring(0, 300)}`;
       }
+
+      let tsDirectSize = -1;
+      try {
+        const ts = plugin.sparql?.getTripleStore?.();
+        tsDirectSize = ts?.size ?? ts?.count?.() ?? -1;
+      } catch {}
+
 
       let resolverResult: string | null = null;
       try {
@@ -90,7 +97,7 @@ test.describe("Dynamic Command Button Rendering & Functionality", () => {
 
       return {
         hasSparql, hasResolver, hasGrounding,
-        tripleStoreSize, queryResult, resolverResult,
+        tripleStoreSize, tsDirectSize, queryResult, resolverResult,
         allButtonsCount: allButtons.length,
         exoButtonsCount: exoButtons.length,
       };
