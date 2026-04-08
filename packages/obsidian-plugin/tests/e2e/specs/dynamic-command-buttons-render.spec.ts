@@ -56,12 +56,19 @@ test.describe("Dynamic Command Button Rendering & Functionality", () => {
       const plugin = app?.plugins?.plugins?.exocortex;
       if (!plugin) return;
 
-      // Force SPARQLQueryService lazy initialization by running a query.
-      // This populates the triple store with vault RDF data so
-      // CommandResolver can find dynamic command bindings.
+      // Force SPARQLQueryService initialization and ensure vault files are indexed.
+      // If onload() ran before vault was ready, refresh() re-indexes all files.
       const sparql = plugin.sparql || plugin.getSparqlApi?.();
       if (sparql?.query) {
         await sparql.query("ASK { ?s ?p ?o }").catch(() => {});
+        // Re-index in case first init ran before vault was ready
+        if (sparql.refresh) {
+          await sparql.refresh().catch(() => {});
+        }
+        // Invalidate CommandResolver cache to pick up new triples
+        if (plugin.commandResolver?.invalidateCache) {
+          plugin.commandResolver.invalidateCache();
+        }
       }
     });
 

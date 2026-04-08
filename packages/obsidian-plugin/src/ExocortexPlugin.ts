@@ -256,15 +256,16 @@ export default class ExocortexPlugin extends Plugin {
         this.timerManager.setTimeout("auto-layout-initial", () => this.autoRenderLayout(), 150);
       }
 
-      // RFC-009: Eagerly initialize triple store so dynamic command buttons
-      // can discover CommandBinding triples. SPARQLQueryService uses lazy init
-      // (on first query), but layout renders before any query runs.
-      // After the store is populated, re-render layout to show dynamic buttons.
-      void this.sparql.query("ASK { ?s ?p ?o }").then(() => {
-        this.commandResolver.invalidateCache();
-        this.autoRenderLayout();
-      }).catch((err) => {
-        this.logger.error("Failed to eagerly initialize triple store", err);
+      // RFC-009: Initialize triple store AFTER vault is ready so files exist.
+      // onLayoutReady fires after Obsidian finishes loading vault files.
+      // Without this, VaultRDFIndexer.initialize() finds 0 files → 0 triples.
+      this.app.workspace.onLayoutReady(() => {
+        void this.sparql.query("ASK { ?s ?p ?o }").then(() => {
+          this.commandResolver.invalidateCache();
+          this.autoRenderLayout();
+        }).catch((err) => {
+          this.logger.error("Failed to eagerly initialize triple store", err);
+        });
       });
 
       // Initialize Tab Title label patch

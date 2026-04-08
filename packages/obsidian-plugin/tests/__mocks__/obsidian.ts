@@ -808,6 +808,11 @@ export class Workspace {
     // Mock implementation for opening links
   }
 
+  onLayoutReady(callback: () => void): void {
+    // In tests, workspace is always ready — call immediately
+    callback();
+  }
+
   on(name: string, callback: Function): void {
     // Mock event listener
   }

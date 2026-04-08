@@ -95,6 +95,7 @@ describe("ExocortexPlugin", () => {
       getActiveFile: jest.fn(),
       getLeavesOfType: jest.fn().mockReturnValue([]),
       on: jest.fn().mockReturnValue({ unsubscribe: jest.fn() }),
+      onLayoutReady: jest.fn().mockImplementation((cb: () => void) => cb()),
     };
 
     // Setup mock metadata cache
