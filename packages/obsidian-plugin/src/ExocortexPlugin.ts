@@ -132,6 +132,7 @@ export default class ExocortexPlugin extends Plugin {
         app: this.app,
         fileSystemAdapter: obsidianFs,
         sparqlApi: this.sparql,
+        vaultAdapter: this.vaultAdapter,
       });
 
       this.layoutRenderer = new UniversalLayoutRenderer(

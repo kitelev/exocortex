@@ -2,16 +2,26 @@ import type { App } from "obsidian";
 import {
   ServiceRegistry,
   FrontmatterService,
+  TaskStatusService,
+  EffortVotingService,
+  LabelToAliasService,
+  EffortStatusWorkflow,
+  StatusTimestampService,
+  GenericAssetCreationService,
+  DateFormatter,
   type IGroundingService,
   type UserInput,
+  type IFile,
 } from "exocortex";
 import type { SPARQLApi } from "../../application/api/SPARQLApi";
 import type { ObsidianFileSystemAdapter } from "../../adapters/ObsidianFileSystemAdapter";
+import type { ObsidianVaultAdapter } from "../../adapters/ObsidianVaultAdapter";
 
 export interface ServiceRegistryDeps {
   app: App;
   fileSystemAdapter: ObsidianFileSystemAdapter;
   sparqlApi: SPARQLApi;
+  vaultAdapter?: ObsidianVaultAdapter;
 }
 
 function wrapService(
@@ -24,7 +34,7 @@ export function populateServiceRegistry(
   registry: ServiceRegistry,
   deps: ServiceRegistryDeps,
 ): void {
-  const { app, fileSystemAdapter, sparqlApi } = deps;
+  const { app, fileSystemAdapter, sparqlApi, vaultAdapter } = deps;
   const frontmatterService = new FrontmatterService();
 
   registry.register(
@@ -160,6 +170,115 @@ export function populateServiceRegistry(
       await fileSystemAdapter.createFile(newPath, updated);
     }),
   );
+
+  if (vaultAdapter) {
+    const effortStatusWorkflow = new EffortStatusWorkflow();
+    const statusTimestampService = new StatusTimestampService(vaultAdapter);
+    const taskStatusService = new TaskStatusService(
+      vaultAdapter,
+      effortStatusWorkflow,
+      statusTimestampService,
+    );
+    const effortVotingService = new EffortVotingService(vaultAdapter);
+    const labelToAliasService = new LabelToAliasService(vaultAdapter);
+    const genericAssetCreationService = new GenericAssetCreationService(vaultAdapter);
+
+    registry.register(
+      "rollbackStatus",
+      wrapService(async (targetIRI: string) => {
+        const iFile = resolveIFile(app, targetIRI, vaultAdapter);
+        await taskStatusService.rollbackStatus(iFile);
+      }),
+    );
+
+    registry.register(
+      "planOnToday",
+      wrapService(async (targetIRI: string) => {
+        const iFile = resolveIFile(app, targetIRI, vaultAdapter);
+        await taskStatusService.planOnToday(iFile);
+      }),
+    );
+
+    registry.register(
+      "planForEvening",
+      wrapService(async (targetIRI: string) => {
+        const iFile = resolveIFile(app, targetIRI, vaultAdapter);
+        await taskStatusService.planForEvening(iFile);
+      }),
+    );
+
+    registry.register(
+      "shiftDay",
+      wrapService(async (targetIRI: string, userInput?: UserInput) => {
+        const direction = userInput?.direction as string | undefined;
+        if (!direction) throw new Error("shiftDay requires userInput.direction");
+        const iFile = resolveIFile(app, targetIRI, vaultAdapter);
+        if (direction === "forward") {
+          await taskStatusService.shiftDayForward(iFile);
+        } else if (direction === "backward") {
+          await taskStatusService.shiftDayBackward(iFile);
+        } else {
+          throw new Error(`shiftDay: unknown direction "${direction}". Use "forward" or "backward"`);
+        }
+      }),
+    );
+
+    registry.register(
+      "incrementVotes",
+      wrapService(async (targetIRI: string) => {
+        const iFile = resolveIFile(app, targetIRI, vaultAdapter);
+        await effortVotingService.incrementEffortVotes(iFile);
+      }),
+    );
+
+    registry.register(
+      "copyLabelToAliases",
+      wrapService(async (targetIRI: string) => {
+        const iFile = resolveIFile(app, targetIRI, vaultAdapter);
+        await labelToAliasService.copyLabelToAliases(iFile);
+      }),
+    );
+
+    registry.register(
+      "createRelatedTask",
+      wrapService(async (targetIRI: string, userInput?: UserInput) => {
+        const label = userInput?.label as string | undefined;
+        if (!label) throw new Error("createRelatedTask requires userInput.label");
+        const iFile = resolveIFile(app, targetIRI, vaultAdapter);
+        const frontmatter = vaultAdapter.getFrontmatter(iFile);
+        const folderPath = iFile.parent?.path || "";
+        await genericAssetCreationService.createAsset({
+          className: "ems__Task",
+          label,
+          folderPath,
+          propertyValues: {
+            "ems__Effort_parent": iFile.basename ? `"[[${iFile.basename}]]"` : undefined,
+          },
+          parentFile: iFile,
+          parentMetadata: (frontmatter as Record<string, unknown>) ?? {},
+        });
+      }),
+    );
+
+    registry.register(
+      "createTaskForDailyNote",
+      wrapService(async (targetIRI: string, userInput?: UserInput) => {
+        const label = userInput?.label as string | undefined;
+        if (!label) throw new Error("createTaskForDailyNote requires userInput.label");
+        const iFile = resolveIFile(app, targetIRI, vaultAdapter);
+        const folderPath = iFile.parent?.path || "";
+        const today = DateFormatter.toISOTimestamp(new Date()).substring(0, 10);
+        await genericAssetCreationService.createAsset({
+          className: "ems__Task",
+          label,
+          folderPath,
+          propertyValues: {
+            "ems__Effort_plannedStartTimestamp": today,
+          },
+        });
+      }),
+    );
+  }
 }
 
 function resolveFilePath(app: App, targetIRI: string): string {
@@ -175,4 +294,13 @@ function resolveFilePath(app: App, targetIRI: string): string {
     }
   }
   throw new Error(`No file found for IRI: ${targetIRI}`);
+}
+
+function resolveIFile(app: App, targetIRI: string, vaultAdapter: { getAbstractFileByPath(path: string): IFile | { path: string; name: string } | null }): IFile {
+  const filePath = resolveFilePath(app, targetIRI);
+  const iFileOrFolder = vaultAdapter.getAbstractFileByPath(filePath);
+  if (!iFileOrFolder || !("basename" in iFileOrFolder)) {
+    throw new Error(`Cannot resolve IFile for path: ${filePath}`);
+  }
+  return iFileOrFolder as IFile;
 }
