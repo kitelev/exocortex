@@ -87,11 +87,33 @@ test.describe("Dynamic Command Button Rendering & Functionality", () => {
     }, { timeout: 15000, message: "metadataCache frontmatter not populated" }).not.toBeNull();
 
     // Force layout refresh after triple store + metadataCache are both ready.
-    await page.evaluate(() => {
-      const plugin = (window as any).app?.plugins?.plugins?.exocortex;
+    const layoutDiag = await page.evaluate(() => {
+      const app = (window as any).app;
+      const plugin = app?.plugins?.plugins?.exocortex;
       plugin?.commandResolver?.invalidateCache();
+
+      // Check what autoRenderLayout sees
+      const MarkdownView = (app as any).workspace?.getActiveViewOfType?.constructor;
+      const view = app?.workspace?.activeLeaf?.view;
+      const viewMode = view?.getMode?.();
+      const viewType = view?.getViewType?.();
+      const metadataContainer = view?.containerEl?.querySelector?.(".metadata-container");
+      const previewSection = view?.containerEl?.querySelector?.(".markdown-preview-section");
+      const existingLayout = document.querySelector(".exocortex-auto-layout");
+      const existingButtons = document.querySelector(".exocortex-buttons-section");
+
       plugin?.refreshLayout?.();
+
+      return {
+        viewMode, viewType,
+        hasMetadataContainer: !!metadataContainer,
+        hasPreviewSection: !!previewSection,
+        hasExistingLayout: !!existingLayout,
+        hasExistingButtons: !!existingButtons,
+        layoutVisible: plugin?.settings?.layoutVisible,
+      };
     });
+    console.log("[DIAG] Layout render state:", JSON.stringify(layoutDiag));
 
     const removeTimestampButton = page.locator(
       'button.exocortex-action-button:has-text("Remove Start Timestamp")'
