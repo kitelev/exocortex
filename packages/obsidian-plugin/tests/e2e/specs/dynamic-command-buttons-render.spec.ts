@@ -104,13 +104,34 @@ test.describe("Dynamic Command Button Rendering & Functionality", () => {
 
       plugin?.refreshLayout?.();
 
+      // Check what metadata ButtonGroupsBuilder sees
+      const file = app?.workspace?.getActiveFile();
+      const cache = app?.metadataCache?.getFileCache(file);
+      const fm = cache?.frontmatter || {};
+      const uid = fm.exo__Asset_uid;
+      const cls = fm.exo__Instance_class;
+      // Simulate extractAssetClass logic
+      let extractedClass: string | undefined;
+      if (typeof cls === "string") extractedClass = cls.replace(/["'[\]]/g, "").trim();
+      else if (Array.isArray(cls) && cls.length > 0 && typeof cls[0] === "string") extractedClass = cls[0].replace(/["'[\]]/g, "").trim();
+
+      let resolveResult = "not called";
+      try {
+        if (plugin?.commandResolver?.resolveForAsset && uid && extractedClass) {
+          const cmds = await plugin.commandResolver.resolveForAsset(uid, extractedClass, undefined);
+          resolveResult = `${cmds.length} commands`;
+        } else {
+          resolveResult = `skipped: uid=${uid}, class=${extractedClass}`;
+        }
+      } catch (e: any) { resolveResult = `error: ${e.message}`; }
+
       return {
         viewMode, viewType,
         hasMetadataContainer: !!metadataContainer,
-        hasPreviewSection: !!previewSection,
         hasExistingLayout: !!existingLayout,
         hasExistingButtons: !!existingButtons,
-        layoutVisible: plugin?.settings?.layoutVisible,
+        uid, rawClass: JSON.stringify(cls), extractedClass,
+        resolveResult,
       };
     });
     console.log("[DIAG] Layout render state:", JSON.stringify(layoutDiag));
