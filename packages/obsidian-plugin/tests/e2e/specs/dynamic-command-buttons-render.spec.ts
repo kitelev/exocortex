@@ -86,55 +86,11 @@ test.describe("Dynamic Command Button Rendering & Functionality", () => {
       });
     }, { timeout: 15000, message: "metadataCache frontmatter not populated" }).not.toBeNull();
 
-    // Force layout refresh after triple store + metadataCache are both ready.
-    const layoutDiag = await page.evaluate(async () => {
-      const app = (window as any).app;
-      const plugin = app?.plugins?.plugins?.exocortex;
-      plugin?.commandResolver?.invalidateCache();
-
-      // Check what autoRenderLayout sees
-      const MarkdownView = (app as any).workspace?.getActiveViewOfType?.constructor;
-      const view = app?.workspace?.activeLeaf?.view;
-      const viewMode = view?.getMode?.();
-      const viewType = view?.getViewType?.();
-      const metadataContainer = view?.containerEl?.querySelector?.(".metadata-container");
-      const previewSection = view?.containerEl?.querySelector?.(".markdown-preview-section");
-      const existingLayout = document.querySelector(".exocortex-auto-layout");
-      const existingButtons = document.querySelector(".exocortex-buttons-section");
-
-      plugin?.refreshLayout?.();
-
-      // Check what metadata ButtonGroupsBuilder sees
-      const file = app?.workspace?.getActiveFile();
-      const cache = app?.metadataCache?.getFileCache(file);
-      const fm = cache?.frontmatter || {};
-      const uid = fm.exo__Asset_uid;
-      const cls = fm.exo__Instance_class;
-      // Simulate extractAssetClass logic
-      let extractedClass;
-      if (typeof cls === "string") extractedClass = cls.replace(/["'[\]]/g, "").trim();
-      else if (Array.isArray(cls) && cls.length > 0 && typeof cls[0] === "string") extractedClass = cls[0].replace(/["'[\]]/g, "").trim();
-
-      let resolveResult = "not called";
-      try {
-        if (plugin?.commandResolver?.resolveForAsset && uid && extractedClass) {
-          const cmds = await plugin.commandResolver.resolveForAsset(uid, extractedClass, undefined);
-          resolveResult = `${cmds.length} commands`;
-        } else {
-          resolveResult = `skipped: uid=${uid}, class=${extractedClass}`;
-        }
-      } catch (e) { resolveResult = `error: ${e.message}`; }
-
-      return {
-        viewMode, viewType,
-        hasMetadataContainer: !!metadataContainer,
-        hasExistingLayout: !!existingLayout,
-        hasExistingButtons: !!existingButtons,
-        uid, rawClass: JSON.stringify(cls), extractedClass,
-        resolveResult,
-      };
-    });
-    console.log("[DIAG] Layout render state:", JSON.stringify(layoutDiag));
+    // Re-open file to trigger autoRenderLayout with populated triple store.
+    // onLayoutReady (ExocortexPlugin.ts:264) already does SPARQL init + autoRenderLayout,
+    // but it races with file-open. Opening the file again ensures layout renders
+    // AFTER triple store is populated.
+    await launcher.openFile("Tasks/dynamic-cmd-test-with-ts.md");
 
     const removeTimestampButton = page.locator(
       'button.exocortex-action-button:has-text("Remove Start Timestamp")'
