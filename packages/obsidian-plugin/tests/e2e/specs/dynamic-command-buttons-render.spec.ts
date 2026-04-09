@@ -42,15 +42,11 @@ test.describe("Dynamic Command Button Rendering & Functionality", () => {
     fs.writeFileSync(FIXTURE_PATH, fixtureOriginal, "utf-8");
   });
 
-  // FIXME(#2688): CommandResolver finds 3 commands (CI diagnostics confirmed:
-  // uid="e2e-task-with-start-timestamp", class="ems__Task", resolveResult="3 commands"),
-  // but ButtonGroupsBuilder.build() returns empty array → no buttons in DOM.
-  // Layout renders successfully (.exocortex-auto-layout exists), metadata is correct,
-  // resolver works directly, but the integration through MetadataExtractor →
-  // ButtonGroupsBuilder → DynamicCommandButtonGroupBuilder.build() fails silently.
-  // Next session: add logger output to DynamicCommandButtonGroupBuilder.build()
-  // to see what it returns when called by ButtonGroupsBuilder vs direct evaluate call.
-  test.fixme("renders button from RDF config and executes grounding on click", async () => {
+  // Issue #2695 fix: DynamicCommandButtonGroupBuilder now uses vault file IRI
+  // (obsidian://vault/${path}) as subject IRI instead of frontmatter UID,
+  // matching NoteToRDFConverter's subject format. This allows SPARQL ASK
+  // preconditions to find the file's triples in the store.
+  test("renders button from RDF config and executes grounding on click", async () => {
     const page = await launcher.getWindow();
 
     // ── Step 1: Wait for plugin + force triple store init ──

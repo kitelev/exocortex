@@ -38,18 +38,14 @@ test.describe("Vault Commands Smoke Tests", () => {
     await launcher.close();
   });
 
-  // Investigating #2695: probe DynamicCommandButtonGroupBuilder internal state.
   test("should render vault command buttons on a Task note", async () => {
     await launcher.openFile("Tasks/dynamic-cmd-test-without-ts.md");
     const window = await launcher.getWindow();
 
     await launcher.waitForModalsToClose(10000);
-
-    // Wait for the layout to render (plugin loaded signal)
     await launcher.waitForElement(".exocortex-layout-rendered", 30000);
 
-    // Wait for metadataCache to have ANY frontmatter for the active file.
-    // Obsidian may not have finished indexing immediately after file-open.
+    // Wait for metadataCache frontmatter to populate (#2693)
     await expect.poll(async () => {
       return window.evaluate(() => {
         const app = (window as any).app;
@@ -58,73 +54,18 @@ test.describe("Vault Commands Smoke Tests", () => {
         const cache = app.metadataCache.getFileCache(file);
         return cache?.frontmatter ? JSON.stringify(Object.keys(cache.frontmatter)) : null;
       });
-    }, { timeout: 15000, message: "metadataCache frontmatter not populated" }).not.toBeNull();
+    }, { timeout: 15000 }).not.toBeNull();
 
-    // Diagnose: check what DynamicCommandButtonGroupBuilder sees
-    const diag = await window.evaluate(async () => {
-      const app = (window as any).app;
-      const plugin = app?.plugins?.plugins?.exocortex;
-      if (!plugin) return { error: "no plugin" };
-
-      const file = app.workspace.getActiveFile();
-      if (!file) return { error: "no active file" };
-
-      const cache = app.metadataCache.getFileCache(file);
-      const fm = cache?.frontmatter;
-      const uid = fm?.exo__Asset_uid;
-      const cls = fm?.exo__Instance_class;
-
-      let resolvedCount = -1;
-      try {
-        const cmds = await plugin.commandResolver?.resolveForAsset(
-          uid ?? file.path, Array.isArray(cls) ? cls[0]?.replace(/["'[\]]/g, "").trim() : cls, undefined
-        );
-        resolvedCount = cmds?.length ?? 0;
-      } catch (e: any) { resolvedCount = -2; }
-
-      plugin?.commandResolver?.invalidateCache();
-
-      // Diagnose autoRenderLayout blockers — access view via activeLeaf (avoid require("obsidian"))
-      const view = app.workspace.activeLeaf?.view;
-      const viewMode = view?.getMode?.() ?? "no-view";
-      const viewType = view?.getViewType?.() ?? "no-type";
-      const hasMetadataContainer = !!view?.containerEl?.querySelector(".metadata-container");
-      const layoutVisible = plugin?.settings?.layoutVisible ?? "undefined";
-      const hasLayoutRenderer = !!plugin?.layoutRenderer;
-
+    // Force refresh — preconditions may have been evaluated before triple store
+    // was fully populated on first render
+    await window.evaluate(() => {
+      const plugin = (window as any).app?.plugins?.plugins?.exocortex;
+      plugin?.commandResolver?.invalidateCache?.();
       plugin?.refreshLayout?.();
-
-      // Wait a tick for async render to complete
-      await new Promise((r) => setTimeout(r, 500));
-
-      // Check DOM after refresh
-      const hasButtonsSection = !!document.querySelector(".exocortex-buttons-section");
-      const hasAutoLayout = !!document.querySelector(".exocortex-auto-layout");
-      const hasLayoutRendered = !!document.querySelector(".exocortex-layout-rendered");
-
-      // Read diagnostic state set by DynamicCommandButtonGroupBuilder.build()
-      const buildDiag = (globalThis as any).__exocortexDynCmdDiag ?? null;
-
-      return {
-        uid, cls: JSON.stringify(cls), resolvedCount,
-        fmKeys: Object.keys(fm || {}),
-        viewMode, viewType, hasMetadataContainer, layoutVisible,
-        hasLayoutRenderer, hasButtonsSection, hasAutoLayout, hasLayoutRendered,
-        buildDiag,
-      };
     });
 
-    // Assert buttons section visible — include diagnostics in error message
     const buttonsSection = window.locator(".exocortex-buttons-section");
-    await expect(
-      buttonsSection,
-      `Buttons section must be visible. DIAG: ${JSON.stringify(diag, null, 2)}`,
-    ).toBeVisible({ timeout: 20000 });
-
-    const actionContainer = window.locator(
-      ".exocortex-buttons-section .exocortex-action-buttons-container",
-    );
-    await expect(actionContainer).toBeVisible({ timeout: 5000 });
+    await expect(buttonsSection).toBeVisible({ timeout: 20000 });
 
     const buttons = window.locator(
       ".exocortex-buttons-section .exocortex-action-button",
@@ -194,9 +135,9 @@ test.describe("Vault Commands Smoke Tests", () => {
     }
   });
 
-  // FIXME(#2688): same issue as dynamic-command-buttons-render — buttons section
-  // never appears in DOM even though resolver works. See #2688 for full diagnosis.
-  test.fixme("should change status when clicking status button", async () => {
+  // Issue #2695 fix: vault file IRI as subject makes preconditions resolve
+  // against the actual stored triples (not the frontmatter UID).
+  test("should change status when clicking status button", async () => {
     // Use the Backlog task - click "Start" to transition to Doing
     await launcher.openFile("Tasks/dynamic-cmd-test-without-ts.md");
     const window = await launcher.getWindow();

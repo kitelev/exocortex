@@ -87,31 +87,19 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
   async build(context: ButtonBuilderContext): Promise<ActionButton[]> {
     const { app, file, metadata, logger, refresh } = context;
 
-    const diag: Record<string, unknown> = {
-      filePath: file.path,
-      metadataKeys: Object.keys(metadata),
-      rawUid: metadata["exo__Asset_uid"],
-      rawClass: metadata["exo__Instance_class"],
-    };
-
-    const subjectIRI = this.extractSubjectIRI(metadata) ?? file.path;
-    diag.subjectIRI = subjectIRI;
-    if (!subjectIRI) {
-      diag.exitReason = "no-subjectIRI";
-      (globalThis as Record<string, unknown>).__exocortexDynCmdDiag = diag;
-      return [];
-    }
+    // Subject IRI must match what NoteToRDFConverter uses for vault files:
+    // obsidian://vault/${encodeURI(file.path)} — NOT exo__Asset_uid (Issue #2695).
+    // SPARQL ASK preconditions in CommandResolver/PreconditionEvaluator match
+    // against the file's triple store subject, which is the vault file IRI.
+    // Using the frontmatter UID caused all preconditions to fail because the
+    // SPARQL query `ASK { <uid> ems:Effort_status "..." }` wouldn't find any
+    // triples — the store has `<obsidian://vault/path> ems:Effort_status "..."`.
+    const subjectIRI = `obsidian://vault/${encodeURI(file.path)}`;
 
     const assetClass = this.extractAssetClass(metadata);
-    diag.assetClass = assetClass;
-    if (!assetClass) {
-      diag.exitReason = "no-assetClass";
-      (globalThis as Record<string, unknown>).__exocortexDynCmdDiag = diag;
-      return [];
-    }
+    if (!assetClass) return [];
 
     const prototypeIRI = this.extractPrototypeIRI(metadata);
-    diag.prototypeIRI = prototypeIRI;
 
     let resolved: ResolvedCommand[];
     try {
@@ -122,18 +110,10 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
       );
     } catch (error) {
       logger.info(`[DynamicCommands] Failed to resolve commands: ${String(error)}`);
-      diag.exitReason = "resolve-error";
-      diag.resolveError = String(error);
-      (globalThis as Record<string, unknown>).__exocortexDynCmdDiag = diag;
       return [];
     }
 
-    diag.resolvedCount = resolved.length;
-    if (resolved.length === 0) {
-      diag.exitReason = "zero-resolved";
-      (globalThis as Record<string, unknown>).__exocortexDynCmdDiag = diag;
-      return [];
-    }
+    if (resolved.length === 0) return [];
 
     const evalContext: EvalContext = {
       targetIRI: subjectIRI,
@@ -159,21 +139,7 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
     const visibleCommands = availabilityChecks
       .filter(({ available }) => available);
 
-    diag.visibleCount = visibleCommands.length;
-    diag.availabilityChecks = availabilityChecks.map(({ rc, available }) => ({
-      name: rc.command.name,
-      available,
-    }));
-
-    if (visibleCommands.length === 0) {
-      diag.exitReason = "zero-visible";
-      (globalThis as Record<string, unknown>).__exocortexDynCmdDiag = diag;
-      return [];
-    }
-
-    diag.exitReason = "success";
-    diag.buttonCount = visibleCommands.length;
-    (globalThis as Record<string, unknown>).__exocortexDynCmdDiag = diag;
+    if (visibleCommands.length === 0) return [];
 
     return visibleCommands.map(({ rc }) =>
       this.createButton(rc, subjectIRI, file.path, app as App, logger, refresh),
@@ -278,12 +244,6 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
         typeof (field as Record<string, unknown>)["name"] === "string" &&
         typeof (field as Record<string, unknown>)["type"] === "string",
     );
-  }
-
-  private extractSubjectIRI(metadata: Record<string, unknown>): string | undefined {
-    const uid = metadata["exo__Asset_uid"];
-    if (typeof uid === "string") return uid;
-    return undefined;
   }
 
   private extractAssetClass(metadata: Record<string, unknown>): string | undefined {

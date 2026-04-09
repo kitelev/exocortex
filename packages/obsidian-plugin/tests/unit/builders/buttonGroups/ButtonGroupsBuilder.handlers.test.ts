@@ -52,7 +52,7 @@ describe("ButtonGroupsBuilder - onClick handlers (dynamic commands)", () => {
 
     expect(ctx.mockGroundingExecutor.execute).toHaveBeenCalledWith(
       { type: "set_frontmatter_value", property: "status", value: "doing" },
-      "urn:uuid:12345",
+      "obsidian://vault/test.md",
       "test.md",
       undefined,
     );

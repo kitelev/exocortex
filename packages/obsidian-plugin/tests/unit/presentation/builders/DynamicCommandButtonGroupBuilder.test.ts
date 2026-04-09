@@ -131,13 +131,17 @@ describe("DynamicCommandButtonGroupBuilder", () => {
   });
 
   describe("build", () => {
-    it("should use file path as fallback when no Asset UID in metadata", async () => {
+    it("should use vault IRI regardless of Asset_uid presence (Issue #2695)", async () => {
       mockResolveForAsset.mockResolvedValue([]);
       const context = createContext({ exo__Asset_uid: undefined });
       const result = await builder.build(context);
       expect(result).toEqual([]);
-      // Falls back to file.path as subject IRI
-      expect(mockResolveForAsset).toHaveBeenCalledWith("test/file.md", "ems__Task", undefined);
+      // Subject IRI is always derived from file.path, not metadata uid
+      expect(mockResolveForAsset).toHaveBeenCalledWith(
+        "obsidian://vault/test/file.md",
+        "ems__Task",
+        undefined,
+      );
     });
 
     it("should return empty array when no instance class in metadata", async () => {
@@ -221,8 +225,9 @@ describe("DynamicCommandButtonGroupBuilder", () => {
       });
       await builder.build(context);
 
+      // Subject IRI is now the vault file IRI, not exo__Asset_uid (Issue #2695)
       expect(mockResolveForAsset).toHaveBeenCalledWith(
-        "my-uid",
+        "obsidian://vault/test/file.md",
         "ems__Task",
         "proto-uid",
       );
@@ -236,7 +241,7 @@ describe("DynamicCommandButtonGroupBuilder", () => {
       await builder.build(context);
 
       expect(mockResolveForAsset).toHaveBeenCalledWith(
-        "asset-uid-123",
+        "obsidian://vault/test/file.md",
         "ems__Task",
         undefined,
       );
@@ -250,7 +255,7 @@ describe("DynamicCommandButtonGroupBuilder", () => {
       await builder.build(context);
 
       expect(mockResolveForAsset).toHaveBeenCalledWith(
-        "asset-uid-123",
+        "obsidian://vault/test/file.md",
         "ems__Task",
         undefined,
       );
@@ -268,7 +273,7 @@ describe("DynamicCommandButtonGroupBuilder", () => {
       const result = await builder.build(context);
 
       expect(mockResolveForAsset).toHaveBeenCalledWith(
-        "asset-uid-123",
+        "obsidian://vault/test/file.md",
         "ems__Task",
         undefined,
       );
@@ -294,8 +299,11 @@ describe("DynamicCommandButtonGroupBuilder", () => {
       const result = await builder.build(context);
 
       expect(result).toHaveLength(3);
+      // Subject IRI is vault file IRI (not exo__Asset_uid) — must match
+      // NoteToRDFConverter.notePathToIRI() format so SPARQL ASK preconditions
+      // can find the subject in the triple store (Issue #2695)
       expect(mockResolveForAsset).toHaveBeenCalledWith(
-        "e2e-task-without-start-timestamp",
+        "obsidian://vault/test/file.md",
         "ems__Task",
         undefined,
       );
@@ -344,7 +352,7 @@ describe("DynamicCommandButtonGroupBuilder", () => {
 
       expect(mockExecute).toHaveBeenCalledWith(
         rc.command.grounding,
-        "asset-uid-123",
+        "obsidian://vault/test/file.md",
         "test/file.md",
         undefined,
       );
