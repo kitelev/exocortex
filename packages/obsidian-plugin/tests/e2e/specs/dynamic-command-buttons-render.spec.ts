@@ -42,16 +42,16 @@ test.describe("Dynamic Command Button Rendering & Functionality", () => {
     fs.writeFileSync(FIXTURE_PATH, fixtureOriginal, "utf-8");
   });
 
-  // FIXME(#2688): CommandResolver finds 3 commands (CI diagnostics confirmed:
-  // uid="e2e-task-with-start-timestamp", class="ems__Task", resolveResult="3 commands"),
-  // but ButtonGroupsBuilder.build() returns empty array → no buttons in DOM.
-  // Layout renders successfully (.exocortex-auto-layout exists), metadata is correct,
-  // resolver works directly, but the integration through MetadataExtractor →
-  // ButtonGroupsBuilder → DynamicCommandButtonGroupBuilder.build() fails silently.
-  // Next session: add logger output to DynamicCommandButtonGroupBuilder.build()
-  // to see what it returns when called by ButtonGroupsBuilder vs direct evaluate call.
-  test.fixme("renders button from RDF config and executes grounding on click", async () => {
+  test("renders button from RDF config and executes grounding on click", async () => {
     const page = await launcher.getWindow();
+
+    // Capture console output from renderer process (DynamicCommands diagnostics)
+    page.on("console", (msg) => {
+      const text = msg.text();
+      if (text.includes("[DynamicCommands]") || text.includes("[DIAG]")) {
+        console.log(`[Renderer ${msg.type()}] ${text}`);
+      }
+    });
 
     // ── Step 1: Wait for plugin + force triple store init ──
 
