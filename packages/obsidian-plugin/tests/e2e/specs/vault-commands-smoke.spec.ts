@@ -263,49 +263,26 @@ test.describe("Vault Commands Smoke Tests", () => {
     await launcher.waitForModalsToClose(10000);
     await launcher.waitForElement(".exocortex-layout-rendered", 30000);
 
-    // ExoQL code blocks are processed by SPARQLCodeBlockProcessor
-    // and rendered with the .sparql-code-block class
+    // ExoQL code blocks are processed by SPARQLCodeBlockProcessor and MUST
+    // render .sparql-code-block — fixture exoql-test-page.md contains an exoql
+    // code block, so if processor works this element is guaranteed.
     const codeBlock = window.locator(".sparql-code-block");
-    const isVisible = await codeBlock
-      .isVisible({ timeout: 15000 })
-      .catch(() => false);
+    await expect(codeBlock).toBeVisible({ timeout: 15000 });
 
-    if (isVisible) {
-      // Verify the results container exists
-      const resultsContainer = codeBlock.locator(".sparql-results-container");
-      const hasContainer = await resultsContainer
-        .isVisible({ timeout: 10000 })
-        .catch(() => false);
+    // Results container is always created by the processor (line 165 of
+    // SPARQLCodeBlockProcessor.ts) regardless of query outcome.
+    const resultsContainer = codeBlock.locator(".sparql-results-container");
+    await expect(resultsContainer).toBeVisible({ timeout: 10000 });
 
-      expect(hasContainer).toBe(true);
-
-      // Should show one of: results table, no-results message, error, or loading
-      const hasTable = await codeBlock
-        .locator(".sparql-results-table")
-        .isVisible()
-        .catch(() => false);
-      const hasNoResults = await codeBlock
-        .locator(".sparql-no-results")
-        .isVisible()
-        .catch(() => false);
-      const hasError = await codeBlock
-        .locator(".sparql-error-view")
-        .isVisible()
-        .catch(() => false);
-      const hasLoading = await codeBlock
-        .locator(".sparql-loading")
-        .isVisible()
-        .catch(() => false);
-
-      expect(hasTable || hasNoResults || hasError || hasLoading).toBe(true);
-
-      // If table rendered, verify it has headers
-      if (hasTable) {
-        const headers = codeBlock.locator(".sparql-results-table th");
-        const headerCount = await headers.count();
-        expect(headerCount).toBeGreaterThan(0);
-      }
-    }
+    // Poll for one of the outcome states: table | no-results | error | loading.
+    // This bypasses flakiness where SPARQL takes a moment to execute.
+    await expect.poll(async () => {
+      const hasTable = await codeBlock.locator(".sparql-results-table").count();
+      const hasNoResults = await codeBlock.locator(".sparql-no-results").count();
+      const hasError = await codeBlock.locator(".sparql-error-view").count();
+      const hasLoading = await codeBlock.locator(".sparql-loading").count();
+      return hasTable + hasNoResults + hasError + hasLoading > 0;
+    }, { timeout: 15000 }).toBe(true);
   });
 
   test("should load property editor schemas from resolver", async () => {
