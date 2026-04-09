@@ -111,7 +111,7 @@ test.describe("Dynamic Command Button Rendering & Functionality", () => {
       const uid = fm.exo__Asset_uid;
       const cls = fm.exo__Instance_class;
       // Simulate extractAssetClass logic
-      let extractedClass: string | undefined;
+      let extractedClass;
       if (typeof cls === "string") extractedClass = cls.replace(/["'[\]]/g, "").trim();
       else if (Array.isArray(cls) && cls.length > 0 && typeof cls[0] === "string") extractedClass = cls[0].replace(/["'[\]]/g, "").trim();
 
@@ -123,7 +123,7 @@ test.describe("Dynamic Command Button Rendering & Functionality", () => {
         } else {
           resolveResult = `skipped: uid=${uid}, class=${extractedClass}`;
         }
-      } catch (e: any) { resolveResult = `error: ${e.message}`; }
+      } catch (e) { resolveResult = `error: ${e.message}`; }
 
       return {
         viewMode, viewType,
