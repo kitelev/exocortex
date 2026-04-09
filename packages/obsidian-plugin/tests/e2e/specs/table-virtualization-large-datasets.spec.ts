@@ -40,9 +40,10 @@ test.describe("Table Virtualization for Large Datasets", () => {
     await launcher.waitForModalsToClose(10000);
     await launcher.waitForElement(".exocortex-layout-rendered", 30000);
 
-    // Find a visible virtual table by iterating through all matches.
-    // Multiple groups may exist; some may be hidden (collapsed).
-    // Returns row count from the first visible virtual table found.
+    // Find a visible virtual scroll container with rendered rows.
+    // Multiple groups may exist; some may be hidden (collapsed parents).
+    // Filter by container visibility (not the table inside, which may
+    // have 0 width pre-virtualization-measure cycle).
     const result = await window.evaluate(async () => {
       const containers = document.querySelectorAll(".exocortex-virtual-scroll-container");
       for (const container of Array.from(containers)) {
@@ -50,18 +51,29 @@ test.describe("Table Virtualization for Large Datasets", () => {
         if (rect.width === 0 || rect.height === 0) continue;
         const table = container.querySelector(".exocortex-virtual-table");
         if (!table) continue;
-        const tableRect = table.getBoundingClientRect();
-        if (tableRect.width === 0 || tableRect.height === 0) continue;
         const rows = table.querySelectorAll("tbody tr");
+        if (rows.length === 0) continue;
         return {
+          containerCount: containers.length,
           rowCount: rows.length,
           firstRowText: rows[0]?.textContent?.trim() ?? "",
         };
       }
-      return null;
+      // Return diagnostic info if nothing found
+      return {
+        containerCount: containers.length,
+        rowCount: 0,
+        firstRowText: "",
+        diagnostic: "no visible container with rows found",
+      };
     });
 
     expect(result).not.toBeNull();
+    if ("diagnostic" in result! && result!.diagnostic) {
+      throw new Error(
+        `Virtualization not active. containerCount=${result!.containerCount}. ${result!.diagnostic}`,
+      );
+    }
     expect(result!.rowCount).toBeGreaterThan(0);
     expect(result!.firstRowText.length).toBeGreaterThan(0);
   });
