@@ -106,11 +106,12 @@ test.describe("Vault Commands Smoke Tests", () => {
       };
     });
 
-    console.log("[DIAG vault-commands-smoke] render buttons:", JSON.stringify(diag));
-
-    // Wait for buttons to appear after refresh
+    // Assert buttons section visible — include diagnostics in error message
     const buttonsSection = window.locator(".exocortex-buttons-section");
-    await expect(buttonsSection).toBeVisible({ timeout: 20000 });
+    await expect(
+      buttonsSection,
+      `Buttons section must be visible. DIAG: ${JSON.stringify(diag)}`,
+    ).toBeVisible({ timeout: 20000 });
 
     const actionContainer = window.locator(
       ".exocortex-buttons-section .exocortex-action-buttons-container",
