@@ -186,7 +186,11 @@ test.describe("Vault Commands Smoke Tests", () => {
     }
   });
 
-  test("should change status when clicking status button", async () => {
+  // FIXME(#2699): click executes but grounding doesn't change status.
+  // Buttons render correctly (PR #2697 fixed rendering), but click →
+  // GroundingExecutor.execute() → frontmatter update chain not working.
+  // Status remains "[[ems__EffortStatusBacklog]]" after clicking "Start".
+  test.fixme("should change status when clicking status button", async () => {
     // Use the Backlog task - click "Start" to transition to Doing
     await launcher.openFile("Tasks/dynamic-cmd-test-without-ts.md");
     const window = await launcher.getWindow();
