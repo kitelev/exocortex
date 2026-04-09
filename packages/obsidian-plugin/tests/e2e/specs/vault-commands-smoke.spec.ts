@@ -83,9 +83,8 @@ test.describe("Vault Commands Smoke Tests", () => {
 
       plugin?.commandResolver?.invalidateCache();
 
-      // Diagnose autoRenderLayout blockers
-      const MarkdownView = (window as any).require?.("obsidian")?.MarkdownView;
-      const view = app.workspace.getActiveViewOfType(MarkdownView);
+      // Diagnose autoRenderLayout blockers via activeLeaf (avoid require("obsidian"))
+      const view = app.workspace.activeLeaf?.view;
       const viewMode = view?.getMode?.() ?? "no-view";
       const hasMetadataContainer = !!view?.containerEl?.querySelector(".metadata-container");
       const layoutVisible = plugin?.settings?.layoutVisible ?? "undefined";
