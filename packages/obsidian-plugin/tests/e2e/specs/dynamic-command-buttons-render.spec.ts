@@ -42,19 +42,10 @@ test.describe("Dynamic Command Button Rendering & Functionality", () => {
     fs.writeFileSync(FIXTURE_PATH, fixtureOriginal, "utf-8");
   });
 
-  // FIXME(#2688): CommandResolver finds 3 commands (CI diagnostics confirmed:
-  // uid="e2e-task-with-start-timestamp", class="ems__Task", resolveResult="3 commands"),
-  // but ButtonGroupsBuilder.build() returns empty array → no buttons in DOM.
-  // Layout renders successfully (.exocortex-auto-layout exists), metadata is correct,
-  // resolver works directly, but the integration through MetadataExtractor →
-  // ButtonGroupsBuilder → DynamicCommandButtonGroupBuilder.build() fails silently.
-  // Next session: add logger output to DynamicCommandButtonGroupBuilder.build()
-  // to see what it returns when called by ButtonGroupsBuilder vs direct evaluate call.
-  test.fixme("renders button from RDF config and executes grounding on click", async () => {
+  test("renders button from RDF config and executes grounding on click", async () => {
     const page = await launcher.getWindow();
 
-    // ── Step 1: Wait for plugin + force triple store init ──
-
+    // Wait for plugin to load and force SPARQL query service initialization
     await page.evaluate(async () => {
       const app = (window as any).app;
       for (let i = 0; i < 20; i++) {
@@ -70,8 +61,8 @@ test.describe("Dynamic Command Button Rendering & Functionality", () => {
       }
     });
 
-    // ── Step 2: Open task WITH startTimestamp → button MUST appear ──
-
+    // Open the task file — onLayoutReady in ExocortexPlugin auto-renders layout
+    // with populated triple store, so buttons should appear after file-open.
     await launcher.openFile("Tasks/dynamic-cmd-test-with-ts.md");
 
     await expect.poll(async () => {
@@ -81,9 +72,7 @@ test.describe("Dynamic Command Button Rendering & Functionality", () => {
       });
     }, { timeout: 10000 }).toBe("dynamic-cmd-test-with-ts.md");
 
-    // Wait for metadataCache to have frontmatter for the active file.
-    // In Docker, metadataCache may lag behind file-open. Without frontmatter,
-    // DynamicCommandButtonGroupBuilder.extractAssetClass() returns undefined → 0 buttons.
+    // Wait for metadataCache to populate with frontmatter
     await expect.poll(async () => {
       return page.evaluate(() => {
         const app = (window as any).app;
@@ -94,15 +83,16 @@ test.describe("Dynamic Command Button Rendering & Functionality", () => {
       });
     }, { timeout: 15000, message: "metadataCache frontmatter not populated" }).not.toBeNull();
 
-    // Refresh layout to ensure buttons render with populated triple store.
-    // ExocortexPlugin.refreshLayout() calls autoRenderLayout() which re-renders
-    // the layout with the current state of the triple store.
+    // Trigger layout refresh with populated triple store
     await page.evaluate(() => {
       const plugin = (window as any).app?.plugins?.plugins?.exocortex;
       plugin?.commandResolver?.invalidateCache?.();
       plugin?.refreshLayout?.();
     });
 
+    // Button "Remove Start Timestamp" must render — precondition SPARQL ASK
+    // checks for ems:Effort_startTimestamp triple in triple store, which
+    // exists for this file (task has ems__Effort_startTimestamp: "2026-03-30...")
     const removeTimestampButton = page.locator(
       'button.exocortex-action-button:has-text("Remove Start Timestamp")'
     );

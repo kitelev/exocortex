@@ -73,7 +73,7 @@ function createContext(metadataOverrides?: Record<string, unknown>): ButtonBuild
     plugin: {} as ButtonBuilderContext["plugin"],
     file: { path: "test/file.md", parent: { path: "test" } } as ButtonBuilderContext["file"],
     metadata: {
-      exo__Asset_uid: "asset-uid-123",
+      exo__Asset_uid: "obsidian://vault/test/file.md",
       exo__Instance_class: "ems__Task",
       ...metadataOverrides,
     },
@@ -136,8 +136,8 @@ describe("DynamicCommandButtonGroupBuilder", () => {
       const context = createContext({ exo__Asset_uid: undefined });
       const result = await builder.build(context);
       expect(result).toEqual([]);
-      // Falls back to file.path as subject IRI
-      expect(mockResolveForAsset).toHaveBeenCalledWith("test/file.md", "ems__Task", undefined);
+      // subjectIRI is always constructed from file.path as obsidian://vault/ IRI
+      expect(mockResolveForAsset).toHaveBeenCalledWith("obsidian://vault/test/file.md", "ems__Task", undefined);
     });
 
     it("should return empty array when no instance class in metadata", async () => {
@@ -215,14 +215,14 @@ describe("DynamicCommandButtonGroupBuilder", () => {
     it("should pass correct arguments to CommandResolver", async () => {
       mockResolveForAsset.mockResolvedValue([]);
       const context = createContext({
-        exo__Asset_uid: "my-uid",
+        exo__Asset_uid: "obsidian://vault/test/file.md",
         exo__Instance_class: "ems__Task",
         exo__Asset_prototype: "proto-uid",
       });
       await builder.build(context);
 
       expect(mockResolveForAsset).toHaveBeenCalledWith(
-        "my-uid",
+        "obsidian://vault/test/file.md",
         "ems__Task",
         "proto-uid",
       );
@@ -236,7 +236,7 @@ describe("DynamicCommandButtonGroupBuilder", () => {
       await builder.build(context);
 
       expect(mockResolveForAsset).toHaveBeenCalledWith(
-        "asset-uid-123",
+        "obsidian://vault/test/file.md",
         "ems__Task",
         undefined,
       );
@@ -250,7 +250,7 @@ describe("DynamicCommandButtonGroupBuilder", () => {
       await builder.build(context);
 
       expect(mockResolveForAsset).toHaveBeenCalledWith(
-        "asset-uid-123",
+        "obsidian://vault/test/file.md",
         "ems__Task",
         undefined,
       );
@@ -299,7 +299,7 @@ describe("DynamicCommandButtonGroupBuilder", () => {
 
       expect(mockExecute).toHaveBeenCalledWith(
         rc.command.grounding,
-        "asset-uid-123",
+        "obsidian://vault/test/file.md",
         "test/file.md",
         undefined,
       );

@@ -87,8 +87,12 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
   async build(context: ButtonBuilderContext): Promise<ActionButton[]> {
     const { app, file, metadata, logger, refresh } = context;
 
-    const subjectIRI = this.extractSubjectIRI(metadata) ?? file.path;
-    if (!subjectIRI) return [];
+    // CRITICAL: subjectIRI MUST match triple store subject IRI.
+    // NoteToRDFConverter indexes triples by `obsidian://vault/${encodeURI(file.path)}`,
+    // not by exo__Asset_uid. Using UID here would cause SPARQL $target substitution
+    // in PreconditionEvaluator to create queries that don't match any stored triples,
+    // making all preconditions return false and no buttons to render.
+    const subjectIRI = `obsidian://vault/${encodeURI(file.path)}`;
 
     const assetClass = this.extractAssetClass(metadata);
     if (!assetClass) return [];
@@ -238,12 +242,6 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
         typeof (field as Record<string, unknown>)["name"] === "string" &&
         typeof (field as Record<string, unknown>)["type"] === "string",
     );
-  }
-
-  private extractSubjectIRI(metadata: Record<string, unknown>): string | undefined {
-    const uid = metadata["exo__Asset_uid"];
-    if (typeof uid === "string") return uid;
-    return undefined;
   }
 
   private extractAssetClass(metadata: Record<string, unknown>): string | undefined {
