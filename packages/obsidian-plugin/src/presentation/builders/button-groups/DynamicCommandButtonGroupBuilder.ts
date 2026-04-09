@@ -142,11 +142,15 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
     const availabilityChecks = await Promise.all(
       resolved.map(async (rc) => {
         try {
+          const precType = (rc.command.precondition as { type?: string })?.type ?? "none";
+          const precSparql = (rc.command.precondition as { sparqlAsk?: string })?.sparqlAsk ?? "";
+          diag(`Evaluating precondition for "${rc.command.name}" type=${precType} sparqlAsk=${precSparql.substring(0, 100)}`);
           const available = await this.config.preconditionEvaluator.evaluate(
             rc.command.precondition,
             subjectIRI,
             evalContext,
           );
+          diag(`Precondition for "${rc.command.name}" → ${available}`);
           return { rc, available };
         } catch (err) {
           diag(`Precondition error for ${rc.command.name}: ${String(err)}`);
