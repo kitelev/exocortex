@@ -87,32 +87,17 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
   async build(context: ButtonBuilderContext): Promise<ActionButton[]> {
     const { app, file, metadata, logger, refresh } = context;
 
-    const diag = (msg: string): void => {
-      try {
-        const w = window as unknown as { __EXOCORTEX_DIAG__?: string[] };
-        if (!w.__EXOCORTEX_DIAG__) w.__EXOCORTEX_DIAG__ = [];
-        w.__EXOCORTEX_DIAG__.push(`[Builder] ${msg}`);
-      } catch { /* ignore */ }
-    };
-
-    diag(`build() called for ${file.path}, metadata keys: ${Object.keys(metadata).join(",")}`);
-
     // CRITICAL: subjectIRI MUST match triple store subject IRI.
-    // NoteToRDFConverter indexes by `obsidian://vault/${encodeURI(file.path)}`,
-    // not by exo__Asset_uid. Using UID would cause SPARQL $target substitution
-    // to create queries that don't match any stored triples.
+    // NoteToRDFConverter indexes triples by `obsidian://vault/${encodeURI(file.path)}`,
+    // not by exo__Asset_uid. Using UID here would cause SPARQL $target substitution
+    // in PreconditionEvaluator to create queries that don't match any stored triples,
+    // making all preconditions return false and no buttons to render.
     const subjectIRI = `obsidian://vault/${encodeURI(file.path)}`;
-    diag(`subjectIRI: ${subjectIRI}`);
 
     const assetClass = this.extractAssetClass(metadata);
-    diag(`assetClass: ${assetClass}`);
-    if (!assetClass) {
-      diag("EARLY RETURN: no assetClass");
-      return [];
-    }
+    if (!assetClass) return [];
 
     const prototypeIRI = this.extractPrototypeIRI(metadata);
-    diag(`prototypeIRI: ${prototypeIRI}`);
 
     let resolved: ResolvedCommand[];
     try {
@@ -121,17 +106,12 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
         assetClass,
         prototypeIRI,
       );
-      diag(`resolveForAsset returned ${resolved.length}`);
     } catch (error) {
       logger.info(`[DynamicCommands] Failed to resolve commands: ${String(error)}`);
-      diag(`resolveForAsset THREW: ${String(error)}`);
       return [];
     }
 
-    if (resolved.length === 0) {
-      diag("EARLY RETURN: resolved.length === 0");
-      return [];
-    }
+    if (resolved.length === 0) return [];
 
     const evalContext: EvalContext = {
       targetIRI: subjectIRI,
@@ -142,18 +122,13 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
     const availabilityChecks = await Promise.all(
       resolved.map(async (rc) => {
         try {
-          const precType = (rc.command.precondition as { type?: string })?.type ?? "none";
-          const precSparql = (rc.command.precondition as { sparqlAsk?: string })?.sparqlAsk ?? "";
-          diag(`Evaluating precondition for "${rc.command.name}" type=${precType} sparqlAsk=${precSparql.substring(0, 100)}`);
           const available = await this.config.preconditionEvaluator.evaluate(
             rc.command.precondition,
             subjectIRI,
             evalContext,
           );
-          diag(`Precondition for "${rc.command.name}" → ${available}`);
           return { rc, available };
-        } catch (err) {
-          diag(`Precondition error for ${rc.command.name}: ${String(err)}`);
+        } catch {
           return { rc, available: false };
         }
       }),
@@ -162,19 +137,11 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
     const visibleCommands = availabilityChecks
       .filter(({ available }) => available);
 
-    diag(`availabilityChecks: ${availabilityChecks.length}, visibleCommands: ${visibleCommands.length}`);
-    diag(`visible names: ${visibleCommands.map((v) => v.rc.command.name).join(",")}`);
+    if (visibleCommands.length === 0) return [];
 
-    if (visibleCommands.length === 0) {
-      diag("EARLY RETURN: visibleCommands.length === 0");
-      return [];
-    }
-
-    const buttons = visibleCommands.map(({ rc }) =>
+    return visibleCommands.map(({ rc }) =>
       this.createButton(rc, subjectIRI, file.path, app as App, logger, refresh),
     );
-    diag(`Returning ${buttons.length} buttons`);
-    return buttons;
   }
 
   private createButton(

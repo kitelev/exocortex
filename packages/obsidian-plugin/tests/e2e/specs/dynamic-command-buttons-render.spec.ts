@@ -45,16 +45,7 @@ test.describe("Dynamic Command Button Rendering & Functionality", () => {
   test("renders button from RDF config and executes grounding on click", async () => {
     const page = await launcher.getWindow();
 
-    // Capture console output from renderer process (DynamicCommands diagnostics)
-    page.on("console", (msg) => {
-      const text = msg.text();
-      if (text.includes("[DynamicCommands]") || text.includes("[DIAG]")) {
-        console.log(`[Renderer ${msg.type()}] ${text}`);
-      }
-    });
-
-    // ── Step 1: Wait for plugin + force triple store init ──
-
+    // Wait for plugin to load and force SPARQL query service initialization
     await page.evaluate(async () => {
       const app = (window as any).app;
       for (let i = 0; i < 20; i++) {
@@ -70,8 +61,8 @@ test.describe("Dynamic Command Button Rendering & Functionality", () => {
       }
     });
 
-    // ── Step 2: Open task WITH startTimestamp → button MUST appear ──
-
+    // Open the task file — onLayoutReady in ExocortexPlugin auto-renders layout
+    // with populated triple store, so buttons should appear after file-open.
     await launcher.openFile("Tasks/dynamic-cmd-test-with-ts.md");
 
     await expect.poll(async () => {
@@ -81,9 +72,7 @@ test.describe("Dynamic Command Button Rendering & Functionality", () => {
       });
     }, { timeout: 10000 }).toBe("dynamic-cmd-test-with-ts.md");
 
-    // Wait for metadataCache to have frontmatter for the active file.
-    // In Docker, metadataCache may lag behind file-open. Without frontmatter,
-    // DynamicCommandButtonGroupBuilder.extractAssetClass() returns undefined → 0 buttons.
+    // Wait for metadataCache to populate with frontmatter
     await expect.poll(async () => {
       return page.evaluate(() => {
         const app = (window as any).app;
@@ -94,24 +83,16 @@ test.describe("Dynamic Command Button Rendering & Functionality", () => {
       });
     }, { timeout: 15000, message: "metadataCache frontmatter not populated" }).not.toBeNull();
 
-    // Refresh layout to ensure buttons render with populated triple store.
+    // Trigger layout refresh with populated triple store
     await page.evaluate(() => {
       const plugin = (window as any).app?.plugins?.plugins?.exocortex;
       plugin?.commandResolver?.invalidateCache?.();
-      // Reset diag array before refresh
-      (window as any).__EXOCORTEX_DIAG__ = [];
       plugin?.refreshLayout?.();
     });
 
-    // Give render time to complete
-    await page.waitForTimeout(2000);
-
-    // Read diagnostic array from window
-    const diagLogs = await page.evaluate(() => {
-      return (window as any).__EXOCORTEX_DIAG__ || [];
-    });
-    console.log("[EXOCORTEX_DIAG]", JSON.stringify(diagLogs, null, 2));
-
+    // Button "Remove Start Timestamp" must render — precondition SPARQL ASK
+    // checks for ems:Effort_startTimestamp triple in triple store, which
+    // exists for this file (task has ems__Effort_startTimestamp: "2026-03-30...")
     const removeTimestampButton = page.locator(
       'button.exocortex-action-button:has-text("Remove Start Timestamp")'
     );
