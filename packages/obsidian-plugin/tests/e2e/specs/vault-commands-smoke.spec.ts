@@ -125,71 +125,88 @@ test.describe("Vault Commands Smoke Tests", () => {
   });
 
   test("should hide current status button via precondition filtering", async () => {
-    // Task with status Backlog should show "Start" but NOT show a "Set Backlog" button
-    // (because there is no command to transition TO Backlog — the precondition
-    // for "Start" is status==Backlog, so "Start" appears; "Complete" requires Doing)
+    // Task with status Backlog should NOT show "Complete" (precondition: status==Doing)
+    // Also "Remove Start Timestamp" should NOT appear (task has no startTimestamp)
     await launcher.openFile("Tasks/dynamic-cmd-test-without-ts.md");
     const window = await launcher.getWindow();
 
     await launcher.waitForModalsToClose(10000);
     await launcher.waitForElement(".exocortex-layout-rendered", 30000);
 
+    // Wait for metadataCache frontmatter to populate (#2693)
+    await expect.poll(async () => {
+      return window.evaluate(() => {
+        const app = (window as any).app;
+        const file = app?.workspace?.getActiveFile();
+        if (!file) return null;
+        const cache = app.metadataCache.getFileCache(file);
+        return cache?.frontmatter ? JSON.stringify(Object.keys(cache.frontmatter)) : null;
+      });
+    }, { timeout: 15000 }).not.toBeNull();
+
+    // Force re-render with populated triple store + metadataCache
+    await window.evaluate(() => {
+      const plugin = (window as any).app?.plugins?.plugins?.exocortex;
+      plugin?.commandResolver?.invalidateCache?.();
+      plugin?.refreshLayout?.();
+    });
+
     const buttonsSection = window.locator(".exocortex-buttons-section");
-    const buttonsVisible = await buttonsSection
-      .isVisible({ timeout: 10000 })
-      .catch(() => false);
+    await expect(buttonsSection).toBeVisible({ timeout: 20000 });
 
-    if (buttonsVisible) {
-      // Get all button labels
-      const buttonLabels = await window
-        .locator(".exocortex-buttons-section .exocortex-action-button")
-        .allTextContents();
+    const buttonLabels = await window
+      .locator(".exocortex-buttons-section .exocortex-action-button")
+      .allTextContents();
 
-      // "Complete" command has precondition status==Doing, but this task is Backlog,
-      // so "Complete" should NOT appear. "Start" has precondition status==Backlog, so it SHOULD appear.
-      // Also the existing "Remove Start Timestamp" command should NOT appear
-      // (precondition: has startTimestamp, but this task has none)
-      expect(buttonLabels).not.toContain("Remove Start Timestamp");
+    // "Remove Start Timestamp" must NOT appear (task has no startTimestamp)
+    expect(buttonLabels).not.toContain("Remove Start Timestamp");
 
-      // If Start button appeared, verify it
-      if (buttonLabels.includes("Start")) {
-        expect(buttonLabels).not.toContain("Complete");
-      }
-    }
+    // "Complete" must NOT appear (precondition: status==Doing, task is Backlog)
+    expect(buttonLabels).not.toContain("Complete");
   });
 
   test("should show different commands based on task status", async () => {
-    // Task with status Doing should show "Complete" and "Remove Start Timestamp"
-    // but NOT "Start" (precondition: status==Backlog fails for a Doing task)
+    // Task with status Doing should NOT show "Start"
+    // (precondition: status==Backlog fails for a Doing task)
     await launcher.openFile("Tasks/dynamic-cmd-test-with-ts.md");
     const window = await launcher.getWindow();
 
     await launcher.waitForModalsToClose(10000);
     await launcher.waitForElement(".exocortex-layout-rendered", 30000);
 
+    // Wait for metadataCache frontmatter to populate (#2693)
+    await expect.poll(async () => {
+      return window.evaluate(() => {
+        const app = (window as any).app;
+        const file = app?.workspace?.getActiveFile();
+        if (!file) return null;
+        const cache = app.metadataCache.getFileCache(file);
+        return cache?.frontmatter ? JSON.stringify(Object.keys(cache.frontmatter)) : null;
+      });
+    }, { timeout: 15000 }).not.toBeNull();
+
+    // Force re-render with populated triple store + metadataCache
+    await window.evaluate(() => {
+      const plugin = (window as any).app?.plugins?.plugins?.exocortex;
+      plugin?.commandResolver?.invalidateCache?.();
+      plugin?.refreshLayout?.();
+    });
+
     const buttonsSection = window.locator(".exocortex-buttons-section");
-    const buttonsVisible = await buttonsSection
-      .isVisible({ timeout: 10000 })
-      .catch(() => false);
+    await expect(buttonsSection).toBeVisible({ timeout: 20000 });
 
-    if (buttonsVisible) {
-      const buttonLabels = await window
-        .locator(".exocortex-buttons-section .exocortex-action-button")
-        .allTextContents();
+    const buttonLabels = await window
+      .locator(".exocortex-buttons-section .exocortex-action-button")
+      .allTextContents();
 
-      // "Start" should be hidden (precondition status==Backlog, but task is Doing)
-      expect(buttonLabels).not.toContain("Start");
-
-      // "Complete" may appear (precondition status==Doing matches)
-      // "Remove Start Timestamp" may appear (precondition: has startTimestamp matches)
-    }
+    // "Start" must NOT appear (precondition: status==Backlog, task is Doing)
+    expect(buttonLabels).not.toContain("Start");
   });
 
-  // FIXME(#2699): click executes but grounding doesn't change status.
-  // Buttons render correctly (PR #2697 fixed rendering), but click →
-  // GroundingExecutor.execute() → frontmatter update chain not working.
-  // Status remains "[[ems__EffortStatusBacklog]]" after clicking "Start".
-  test.fixme("should change status when clicking status button", async () => {
+  // Issue #2699 resolved: grounding does update the file on disk,
+  // but app.metadataCache lags behind disk writes in Docker Obsidian.
+  // Reading vault file directly via app.vault.read() bypasses the cache.
+  test("should change status when clicking status button", async () => {
     // Use the Backlog task - click "Start" to transition to Doing
     await launcher.openFile("Tasks/dynamic-cmd-test-without-ts.md");
     const window = await launcher.getWindow();
@@ -208,9 +225,10 @@ test.describe("Vault Commands Smoke Tests", () => {
       });
     }, { timeout: 15000 }).not.toBeNull();
 
+    // Force re-render with populated triple store
     await window.evaluate(() => {
       const plugin = (window as any).app?.plugins?.plugins?.exocortex;
-      plugin?.commandResolver?.invalidateCache();
+      plugin?.commandResolver?.invalidateCache?.();
       plugin?.refreshLayout?.();
     });
 
@@ -225,29 +243,17 @@ test.describe("Vault Commands Smoke Tests", () => {
     // Click Start
     await startButton.click();
 
-    // Wait for the layout to re-render after status change
-    await window.waitForTimeout(2000);
-
-    // Verify the status changed by checking frontmatter
-    const result = await window.evaluate(async () => {
-      const app = (window as any).app;
-      const activeFile = app.workspace.getActiveFile();
-      if (!activeFile) return { success: false, error: "No active file" };
-
-      const metadata = app.metadataCache.getFileCache(activeFile);
-      const frontmatter = metadata?.frontmatter;
-
-      return {
-        success: true,
-        status: frontmatter?.ems__Effort_status,
-      };
-    });
-
-    expect(result.success).toBe(true);
-    // After clicking "Start", status should transition from Backlog to Doing
-    if (result.status) {
-      expect(result.status).toContain("Doing");
-    }
+    // Poll vault file contents directly — grounding writes to disk,
+    // metadataCache may lag behind in Docker. Reading vault bypasses the cache.
+    await expect.poll(async () => {
+      return window.evaluate(async () => {
+        const app = (window as any).app;
+        const activeFile = app.workspace.getActiveFile();
+        if (!activeFile) return null;
+        // vault.read() reads from disk (bypasses metadataCache)
+        return await app.vault.read(activeFile);
+      });
+    }, { timeout: 15000 }).toContain("Doing");
   });
 
   test("should render ExoQL code block with results or loading state", async () => {
