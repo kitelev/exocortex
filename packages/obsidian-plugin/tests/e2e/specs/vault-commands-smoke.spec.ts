@@ -84,10 +84,10 @@ test.describe("Vault Commands Smoke Tests", () => {
 
       plugin?.commandResolver?.invalidateCache();
 
-      // Diagnose autoRenderLayout blockers
-      const MarkdownView = (window as any).require?.("obsidian")?.MarkdownView;
-      const view = app.workspace.getActiveViewOfType(MarkdownView);
+      // Diagnose autoRenderLayout blockers — access view via activeLeaf (avoid require("obsidian"))
+      const view = app.workspace.activeLeaf?.view;
       const viewMode = view?.getMode?.() ?? "no-view";
+      const viewType = view?.getViewType?.() ?? "no-type";
       const hasMetadataContainer = !!view?.containerEl?.querySelector(".metadata-container");
       const layoutVisible = plugin?.settings?.layoutVisible ?? "undefined";
       const hasLayoutRenderer = !!plugin?.layoutRenderer;
@@ -108,7 +108,7 @@ test.describe("Vault Commands Smoke Tests", () => {
       return {
         uid, cls: JSON.stringify(cls), resolvedCount,
         fmKeys: Object.keys(fm || {}),
-        viewMode, hasMetadataContainer, layoutVisible,
+        viewMode, viewType, hasMetadataContainer, layoutVisible,
         hasLayoutRenderer, hasButtonsSection, hasAutoLayout, hasLayoutRendered,
         buildDiag,
       };
