@@ -87,7 +87,7 @@ test.describe("Dynamic Command Button Rendering & Functionality", () => {
     }, { timeout: 15000, message: "metadataCache frontmatter not populated" }).not.toBeNull();
 
     // Force layout refresh after triple store + metadataCache are both ready.
-    const layoutDiag = await page.evaluate(() => {
+    const layoutDiag = await page.evaluate(async () => {
       const app = (window as any).app;
       const plugin = app?.plugins?.plugins?.exocortex;
       plugin?.commandResolver?.invalidateCache();
