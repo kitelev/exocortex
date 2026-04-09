@@ -2769,6 +2769,41 @@ It can contain **markdown** formatting.
         expect(parentTriples.length).toBe(1);
         expect(parentTriples[0].object).toBeInstanceOf(IRI);
       });
+
+      it("should strip alias from wikilink before resolving file (Issue #2693)", async () => {
+        const commandFile: IFile = {
+          path: "03 Knowledge/commands/cmd-remove-start-timestamp.md",
+          basename: "cmd-remove-start-timestamp",
+          name: "cmd-remove-start-timestamp.md",
+          parent: null,
+        };
+
+        mockVault.getFirstLinkpathDest.mockImplementation((linkpath: string) => {
+          if (linkpath === "cmd-remove-start-timestamp") return commandFile;
+          return null;
+        });
+
+        const frontmatter: IFrontmatter = {
+          exocmd__CommandBinding_command: '[[cmd-remove-start-timestamp|Remove Start Timestamp]]',
+        };
+
+        mockVault.getFrontmatter.mockReturnValue(frontmatter);
+        mockVault.read.mockResolvedValue("---\nsome: yaml\n---\n");
+
+        const triples = await converter.convertNote(file);
+
+        expect(mockVault.getFirstLinkpathDest).toHaveBeenCalledWith(
+          "cmd-remove-start-timestamp",
+          expect.any(String),
+        );
+
+        const commandTriples = triples.filter((t) =>
+          (t.predicate as IRI).value.includes("CommandBinding_command")
+        );
+
+        expect(commandTriples.length).toBeGreaterThanOrEqual(1);
+        expect(commandTriples[0].object).toBeInstanceOf(IRI);
+      });
     });
   });
 });
