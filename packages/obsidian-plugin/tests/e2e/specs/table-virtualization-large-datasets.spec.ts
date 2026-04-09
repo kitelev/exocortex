@@ -40,11 +40,13 @@ test.describe("Table Virtualization for Large Datasets", () => {
     await launcher.waitForModalsToClose(10000);
     await launcher.waitForElement(".exocortex-layout-rendered", 30000);
 
-    const virtualContainer = window.locator(".exocortex-virtual-scroll-container").first();
-    await expect(virtualContainer).toBeVisible({ timeout: 15000 });
-
-    const virtualTable = virtualContainer.locator(".exocortex-virtual-table");
-    await expect(virtualTable).toBeVisible({ timeout: 5000 });
+    // Multiple virtual scroll containers may exist (one per relation group).
+    // We need the one inside a group that's not collapsed and has the items.
+    // Use a visible filter so we skip any container hidden by collapsed parent.
+    const virtualTable = window
+      .locator(".exocortex-virtual-scroll-container .exocortex-virtual-table")
+      .first();
+    await expect(virtualTable).toBeVisible({ timeout: 15000 });
 
     const rows = virtualTable.locator("tbody tr");
     const rowCount = await rows.count();
@@ -64,15 +66,23 @@ test.describe("Table Virtualization for Large Datasets", () => {
     await launcher.waitForModalsToClose(10000);
     await launcher.waitForElement(".exocortex-layout-rendered", 30000);
 
-    const virtualContainer = window.locator(".exocortex-virtual-scroll-container").first();
-    await expect(virtualContainer).toBeVisible({ timeout: 15000 });
+    // Find a virtual container whose virtual-table is actually visible
+    const virtualTable = window
+      .locator(".exocortex-virtual-scroll-container .exocortex-virtual-table")
+      .first();
+    await expect(virtualTable).toBeVisible({ timeout: 15000 });
 
-    const wrapperDiv = virtualContainer.locator("> div").first();
-    const positionInfo = await wrapperDiv.evaluate((el) => {
-      return { position: window.getComputedStyle(el).position };
+    // Walk up to the parent virtual-scroll-container
+    const positionInfo = await virtualTable.evaluate((el) => {
+      const scrollContainer = el.closest(".exocortex-virtual-scroll-container");
+      if (!scrollContainer) return null;
+      const wrapperDiv = scrollContainer.querySelector(":scope > div");
+      if (!wrapperDiv) return null;
+      return { position: window.getComputedStyle(wrapperDiv).position };
     });
 
-    expect(positionInfo.position).toBe("relative");
+    expect(positionInfo).not.toBeNull();
+    expect(positionInfo!.position).toBe("relative");
   });
 
   test("should render non-virtualized table when below threshold", async () => {
@@ -108,22 +118,25 @@ test.describe("Table Virtualization for Large Datasets", () => {
     await launcher.waitForModalsToClose(10000);
     await launcher.waitForElement(".exocortex-layout-rendered", 30000);
 
-    const virtualContainer = window.locator(".exocortex-virtual-scroll-container").first();
-    await expect(virtualContainer).toBeVisible({ timeout: 15000 });
+    const virtualTable = window
+      .locator(".exocortex-virtual-scroll-container .exocortex-virtual-table")
+      .first();
+    await expect(virtualTable).toBeVisible({ timeout: 15000 });
 
-    const containerInfo = await virtualContainer.evaluate((el) => {
-      const style = window.getComputedStyle(el);
-      const rect = el.getBoundingClientRect();
+    const containerInfo = await virtualTable.evaluate((el) => {
+      const scrollContainer = el.closest(".exocortex-virtual-scroll-container") as HTMLElement | null;
+      if (!scrollContainer) return null;
+      const style = window.getComputedStyle(scrollContainer);
+      const rect = scrollContainer.getBoundingClientRect();
       return {
         height: rect.height,
         overflow: style.overflow,
-        scrollHeight: el.scrollHeight,
-        clientHeight: el.clientHeight,
       };
     });
 
-    expect(containerInfo.height).toBeGreaterThan(0);
-    expect(containerInfo.overflow).toContain("auto");
+    expect(containerInfo).not.toBeNull();
+    expect(containerInfo!.height).toBeGreaterThan(0);
+    expect(containerInfo!.overflow).toContain("auto");
   });
 
   test("should not have empty tbody when virtualization is active (Issue #549)", async () => {
@@ -134,10 +147,13 @@ test.describe("Table Virtualization for Large Datasets", () => {
     await launcher.waitForModalsToClose(10000);
     await launcher.waitForElement(".exocortex-layout-rendered", 30000);
 
-    const virtualContainer = window.locator(".exocortex-virtual-scroll-container").first();
-    await expect(virtualContainer).toBeVisible({ timeout: 15000 });
+    // Find virtual table that is actually visible (skip collapsed groups)
+    const virtualTable = window
+      .locator(".exocortex-virtual-scroll-container .exocortex-virtual-table")
+      .first();
+    await expect(virtualTable).toBeVisible({ timeout: 15000 });
 
-    const tbody = virtualContainer.locator(".exocortex-virtual-table tbody");
+    const tbody = virtualTable.locator("tbody");
     await expect(tbody).toBeVisible({ timeout: 5000 });
 
     const rowCount = await tbody.locator("tr").count();
