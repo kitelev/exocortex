@@ -256,6 +256,51 @@ describe("DynamicCommandButtonGroupBuilder", () => {
       );
     });
 
+    it("should handle array of wikilinks (real Obsidian YAML format, Issue #2695)", async () => {
+      const rc = createResolvedCommand();
+      mockResolveForAsset.mockResolvedValue([rc]);
+      mockEvaluate.mockResolvedValue(true);
+
+      // Exact format from real vault files: YAML array with wikilinks
+      const context = createContext({
+        exo__Instance_class: ["[[ems__Task]]"],
+      });
+      const result = await builder.build(context);
+
+      expect(mockResolveForAsset).toHaveBeenCalledWith(
+        "asset-uid-123",
+        "ems__Task",
+        undefined,
+      );
+      expect(result).toHaveLength(1);
+    });
+
+    it("should return buttons when commands resolve and preconditions pass (Issue #2695 E2E scenario)", async () => {
+      const cmd1 = createResolvedCommand({ id: "cmd-1", name: "Command 1" });
+      const cmd2 = createResolvedCommand({ id: "cmd-2", name: "Command 2" });
+      const cmd3 = createResolvedCommand({ id: "cmd-3", name: "Command 3" });
+      mockResolveForAsset.mockResolvedValue([cmd1, cmd2, cmd3]);
+      mockEvaluate.mockResolvedValue(true);
+
+      // Exact E2E vault metadata shape (from dynamic-cmd-test-without-ts.md)
+      const context = createContext({
+        exo__Asset_uid: "e2e-task-without-start-timestamp",
+        exo__Asset_label: "Task Without Start Timestamp",
+        exo__Asset_isDefinedBy: "[[!kitelev]]",
+        exo__Instance_class: ["[[ems__Task]]"],
+        ems__Effort_status: "[[ems__EffortStatusBacklog]]",
+      });
+
+      const result = await builder.build(context);
+
+      expect(result).toHaveLength(3);
+      expect(mockResolveForAsset).toHaveBeenCalledWith(
+        "e2e-task-without-start-timestamp",
+        "ems__Task",
+        undefined,
+      );
+    });
+
     it("should resolve variant from binding group", async () => {
       const rc = createResolvedCommand(
         { name: "Danger action" },

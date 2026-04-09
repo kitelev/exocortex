@@ -87,13 +87,31 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
   async build(context: ButtonBuilderContext): Promise<ActionButton[]> {
     const { app, file, metadata, logger, refresh } = context;
 
+    const diag: Record<string, unknown> = {
+      filePath: file.path,
+      metadataKeys: Object.keys(metadata),
+      rawUid: metadata["exo__Asset_uid"],
+      rawClass: metadata["exo__Instance_class"],
+    };
+
     const subjectIRI = this.extractSubjectIRI(metadata) ?? file.path;
-    if (!subjectIRI) return [];
+    diag.subjectIRI = subjectIRI;
+    if (!subjectIRI) {
+      diag.exitReason = "no-subjectIRI";
+      (globalThis as Record<string, unknown>).__exocortexDynCmdDiag = diag;
+      return [];
+    }
 
     const assetClass = this.extractAssetClass(metadata);
-    if (!assetClass) return [];
+    diag.assetClass = assetClass;
+    if (!assetClass) {
+      diag.exitReason = "no-assetClass";
+      (globalThis as Record<string, unknown>).__exocortexDynCmdDiag = diag;
+      return [];
+    }
 
     const prototypeIRI = this.extractPrototypeIRI(metadata);
+    diag.prototypeIRI = prototypeIRI;
 
     let resolved: ResolvedCommand[];
     try {
@@ -104,10 +122,18 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
       );
     } catch (error) {
       logger.info(`[DynamicCommands] Failed to resolve commands: ${String(error)}`);
+      diag.exitReason = "resolve-error";
+      diag.resolveError = String(error);
+      (globalThis as Record<string, unknown>).__exocortexDynCmdDiag = diag;
       return [];
     }
 
-    if (resolved.length === 0) return [];
+    diag.resolvedCount = resolved.length;
+    if (resolved.length === 0) {
+      diag.exitReason = "zero-resolved";
+      (globalThis as Record<string, unknown>).__exocortexDynCmdDiag = diag;
+      return [];
+    }
 
     const evalContext: EvalContext = {
       targetIRI: subjectIRI,
@@ -133,7 +159,21 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
     const visibleCommands = availabilityChecks
       .filter(({ available }) => available);
 
-    if (visibleCommands.length === 0) return [];
+    diag.visibleCount = visibleCommands.length;
+    diag.availabilityChecks = availabilityChecks.map(({ rc, available }) => ({
+      name: rc.command.name,
+      available,
+    }));
+
+    if (visibleCommands.length === 0) {
+      diag.exitReason = "zero-visible";
+      (globalThis as Record<string, unknown>).__exocortexDynCmdDiag = diag;
+      return [];
+    }
+
+    diag.exitReason = "success";
+    diag.buttonCount = visibleCommands.length;
+    (globalThis as Record<string, unknown>).__exocortexDynCmdDiag = diag;
 
     return visibleCommands.map(({ rc }) =>
       this.createButton(rc, subjectIRI, file.path, app as App, logger, refresh),

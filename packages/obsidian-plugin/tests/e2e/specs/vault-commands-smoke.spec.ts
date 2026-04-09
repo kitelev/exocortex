@@ -38,9 +38,8 @@ test.describe("Vault Commands Smoke Tests", () => {
     await launcher.close();
   });
 
-  // FIXME(#2688): buttons section never appears in DOM despite resolver working.
-  // Same blocker as dynamic-command-buttons-render. See #2688 for diagnosis.
-  test.fixme("should render vault command buttons on a Task note", async () => {
+  // Investigating #2695: probe DynamicCommandButtonGroupBuilder internal state.
+  test("should render vault command buttons on a Task note", async () => {
     await launcher.openFile("Tasks/dynamic-cmd-test-without-ts.md");
     const window = await launcher.getWindow();
 
@@ -95,16 +94,23 @@ test.describe("Vault Commands Smoke Tests", () => {
 
       plugin?.refreshLayout?.();
 
+      // Wait a tick for async render to complete
+      await new Promise((r) => setTimeout(r, 500));
+
       // Check DOM after refresh
       const hasButtonsSection = !!document.querySelector(".exocortex-buttons-section");
       const hasAutoLayout = !!document.querySelector(".exocortex-auto-layout");
       const hasLayoutRendered = !!document.querySelector(".exocortex-layout-rendered");
+
+      // Read diagnostic state set by DynamicCommandButtonGroupBuilder.build()
+      const buildDiag = (globalThis as any).__exocortexDynCmdDiag ?? null;
 
       return {
         uid, cls: JSON.stringify(cls), resolvedCount,
         fmKeys: Object.keys(fm || {}),
         viewMode, hasMetadataContainer, layoutVisible,
         hasLayoutRenderer, hasButtonsSection, hasAutoLayout, hasLayoutRendered,
+        buildDiag,
       };
     });
 
@@ -112,7 +118,7 @@ test.describe("Vault Commands Smoke Tests", () => {
     const buttonsSection = window.locator(".exocortex-buttons-section");
     await expect(
       buttonsSection,
-      `Buttons section must be visible. DIAG: ${JSON.stringify(diag)}`,
+      `Buttons section must be visible. DIAG: ${JSON.stringify(diag, null, 2)}`,
     ).toBeVisible({ timeout: 20000 });
 
     const actionContainer = window.locator(
