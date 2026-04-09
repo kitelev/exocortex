@@ -97,12 +97,12 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
 
     diag(`build() called for ${file.path}, metadata keys: ${Object.keys(metadata).join(",")}`);
 
-    const subjectIRI = this.extractSubjectIRI(metadata) ?? file.path;
+    // CRITICAL: subjectIRI MUST match triple store subject IRI.
+    // NoteToRDFConverter indexes by `obsidian://vault/${encodeURI(file.path)}`,
+    // not by exo__Asset_uid. Using UID would cause SPARQL $target substitution
+    // to create queries that don't match any stored triples.
+    const subjectIRI = `obsidian://vault/${encodeURI(file.path)}`;
     diag(`subjectIRI: ${subjectIRI}`);
-    if (!subjectIRI) {
-      diag("EARLY RETURN: no subjectIRI");
-      return [];
-    }
 
     const assetClass = this.extractAssetClass(metadata);
     diag(`assetClass: ${assetClass}`);
@@ -275,12 +275,6 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
         typeof (field as Record<string, unknown>)["name"] === "string" &&
         typeof (field as Record<string, unknown>)["type"] === "string",
     );
-  }
-
-  private extractSubjectIRI(metadata: Record<string, unknown>): string | undefined {
-    const uid = metadata["exo__Asset_uid"];
-    if (typeof uid === "string") return uid;
-    return undefined;
   }
 
   private extractAssetClass(metadata: Record<string, unknown>): string | undefined {
