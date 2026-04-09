@@ -226,8 +226,13 @@ export class UniversalLayoutRenderer {
       const renderHeader = (c: HTMLElement, id: string, t: string) =>
         this.sectionStateManager.renderHeader(c, id, t, this.eventListenerManager);
 
+      const diagArr = ((window as unknown) as { __EXOCORTEX_DIAG__?: string[] }).__EXOCORTEX_DIAG__ ??
+        (((window as unknown) as { __EXOCORTEX_DIAG__: string[] }).__EXOCORTEX_DIAG__ = []);
+      diagArr.push(`[Render] build() about to be called for ${currentFile.path}`);
       const buttonGroups = await this.buttonGroupsBuilder.build(currentFile);
+      diagArr.push(`[Render] build() returned ${buttonGroups.length} groups`);
       if (buttonGroups.length > 0) {
+        diagArr.push(`[Render] creating .exocortex-buttons-section`);
         const buttonsContainer = el.createDiv({ cls: "exocortex-buttons-section" });
         this.reactRenderer.render(buttonsContainer, React.createElement(ActionButtonsGroup, { groups: buttonGroups }));
       }

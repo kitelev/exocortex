@@ -87,25 +87,32 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
   async build(context: ButtonBuilderContext): Promise<ActionButton[]> {
     const { app, file, metadata, logger, refresh } = context;
 
-    console.warn(`[DynamicCommands] build() called for file: ${file.path}`);
-    console.warn(`[DynamicCommands] metadata keys: ${Object.keys(metadata).join(", ")}`);
+    const diag = (msg: string): void => {
+      try {
+        const w = window as unknown as { __EXOCORTEX_DIAG__?: string[] };
+        if (!w.__EXOCORTEX_DIAG__) w.__EXOCORTEX_DIAG__ = [];
+        w.__EXOCORTEX_DIAG__.push(`[Builder] ${msg}`);
+      } catch { /* ignore */ }
+    };
+
+    diag(`build() called for ${file.path}, metadata keys: ${Object.keys(metadata).join(",")}`);
 
     const subjectIRI = this.extractSubjectIRI(metadata) ?? file.path;
-    console.warn(`[DynamicCommands] subjectIRI: ${subjectIRI}`);
+    diag(`subjectIRI: ${subjectIRI}`);
     if (!subjectIRI) {
-      console.warn("[DynamicCommands] EARLY RETURN: no subjectIRI");
+      diag("EARLY RETURN: no subjectIRI");
       return [];
     }
 
     const assetClass = this.extractAssetClass(metadata);
-    console.warn(`[DynamicCommands] assetClass: ${assetClass}`);
+    diag(`assetClass: ${assetClass}`);
     if (!assetClass) {
-      console.warn("[DynamicCommands] EARLY RETURN: no assetClass");
+      diag("EARLY RETURN: no assetClass");
       return [];
     }
 
     const prototypeIRI = this.extractPrototypeIRI(metadata);
-    console.warn(`[DynamicCommands] prototypeIRI: ${prototypeIRI}`);
+    diag(`prototypeIRI: ${prototypeIRI}`);
 
     let resolved: ResolvedCommand[];
     try {
@@ -114,14 +121,15 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
         assetClass,
         prototypeIRI,
       );
-      console.warn(`[DynamicCommands] resolveForAsset returned ${resolved.length} commands`);
+      diag(`resolveForAsset returned ${resolved.length}`);
     } catch (error) {
       logger.info(`[DynamicCommands] Failed to resolve commands: ${String(error)}`);
+      diag(`resolveForAsset THREW: ${String(error)}`);
       return [];
     }
 
     if (resolved.length === 0) {
-      console.warn("[DynamicCommands] EARLY RETURN: resolved.length === 0");
+      diag("EARLY RETURN: resolved.length === 0");
       return [];
     }
 
@@ -141,7 +149,7 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
           );
           return { rc, available };
         } catch (err) {
-          console.warn(`[DynamicCommands] Precondition eval error for ${rc.command.name}: ${String(err)}`);
+          diag(`Precondition error for ${rc.command.name}: ${String(err)}`);
           return { rc, available: false };
         }
       }),
@@ -150,18 +158,18 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
     const visibleCommands = availabilityChecks
       .filter(({ available }) => available);
 
-    console.warn(`[DynamicCommands] availabilityChecks: ${availabilityChecks.length}, visibleCommands: ${visibleCommands.length}`);
-    console.warn(`[DynamicCommands] visible names: ${visibleCommands.map((v) => v.rc.command.name).join(", ")}`);
+    diag(`availabilityChecks: ${availabilityChecks.length}, visibleCommands: ${visibleCommands.length}`);
+    diag(`visible names: ${visibleCommands.map((v) => v.rc.command.name).join(",")}`);
 
     if (visibleCommands.length === 0) {
-      console.warn("[DynamicCommands] EARLY RETURN: visibleCommands.length === 0");
+      diag("EARLY RETURN: visibleCommands.length === 0");
       return [];
     }
 
     const buttons = visibleCommands.map(({ rc }) =>
       this.createButton(rc, subjectIRI, file.path, app as App, logger, refresh),
     );
-    console.warn(`[DynamicCommands] Returning ${buttons.length} buttons`);
+    diag(`Returning ${buttons.length} buttons`);
     return buttons;
   }
 

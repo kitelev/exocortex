@@ -95,13 +95,22 @@ test.describe("Dynamic Command Button Rendering & Functionality", () => {
     }, { timeout: 15000, message: "metadataCache frontmatter not populated" }).not.toBeNull();
 
     // Refresh layout to ensure buttons render with populated triple store.
-    // ExocortexPlugin.refreshLayout() calls autoRenderLayout() which re-renders
-    // the layout with the current state of the triple store.
     await page.evaluate(() => {
       const plugin = (window as any).app?.plugins?.plugins?.exocortex;
       plugin?.commandResolver?.invalidateCache?.();
+      // Reset diag array before refresh
+      (window as any).__EXOCORTEX_DIAG__ = [];
       plugin?.refreshLayout?.();
     });
+
+    // Give render time to complete
+    await page.waitForTimeout(2000);
+
+    // Read diagnostic array from window
+    const diagLogs = await page.evaluate(() => {
+      return (window as any).__EXOCORTEX_DIAG__ || [];
+    });
+    console.log("[EXOCORTEX_DIAG]", JSON.stringify(diagLogs, null, 2));
 
     const removeTimestampButton = page.locator(
       'button.exocortex-action-button:has-text("Remove Start Timestamp")'
