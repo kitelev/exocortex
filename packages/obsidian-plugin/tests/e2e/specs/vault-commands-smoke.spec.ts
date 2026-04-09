@@ -82,9 +82,28 @@ test.describe("Vault Commands Smoke Tests", () => {
       } catch (e: any) { resolvedCount = -2; }
 
       plugin?.commandResolver?.invalidateCache();
+
+      // Diagnose autoRenderLayout blockers
+      const MarkdownView = (window as any).require?.("obsidian")?.MarkdownView;
+      const view = app.workspace.getActiveViewOfType(MarkdownView);
+      const viewMode = view?.getMode?.() ?? "no-view";
+      const hasMetadataContainer = !!view?.containerEl?.querySelector(".metadata-container");
+      const layoutVisible = plugin?.settings?.layoutVisible ?? "undefined";
+      const hasLayoutRenderer = !!plugin?.layoutRenderer;
+
       plugin?.refreshLayout?.();
 
-      return { uid, cls: JSON.stringify(cls), resolvedCount, fmKeys: Object.keys(fm || {}) };
+      // Check DOM after refresh
+      const hasButtonsSection = !!document.querySelector(".exocortex-buttons-section");
+      const hasAutoLayout = !!document.querySelector(".exocortex-auto-layout");
+      const hasLayoutRendered = !!document.querySelector(".exocortex-layout-rendered");
+
+      return {
+        uid, cls: JSON.stringify(cls), resolvedCount,
+        fmKeys: Object.keys(fm || {}),
+        viewMode, hasMetadataContainer, layoutVisible,
+        hasLayoutRenderer, hasButtonsSection, hasAutoLayout, hasLayoutRendered,
+      };
     });
 
     console.log("[DIAG vault-commands-smoke] render buttons:", JSON.stringify(diag));
