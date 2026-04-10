@@ -29,14 +29,14 @@ Archive                                   Archive
 
 ### Status Descriptions
 
-| Status | Purpose | Typical Duration | Next Actions |
-|--------|---------|------------------|--------------|
-| **Draft** | Initial idea, not committed | Hours to days | Move to Backlog or Archive |
-| **Backlog** | Committed work, awaiting analysis | Days to weeks | Move to Analysis |
-| **Analysis** | Being planned and scoped | Hours to days | Move to ToDo |
-| **ToDo** | Ready to start, prioritized | Days to weeks | Plan on specific day, Start Effort |
-| **Doing** | Actively working | Hours to days | Mark Done |
-| **Done** | Completed | Permanent | Archive (optional) |
+| Status       | Purpose                           | Typical Duration | Next Actions                       |
+| ------------ | --------------------------------- | ---------------- | ---------------------------------- |
+| **Draft**    | Initial idea, not committed       | Hours to days    | Move to Backlog or Archive         |
+| **Backlog**  | Committed work, awaiting analysis | Days to weeks    | Move to Analysis                   |
+| **Analysis** | Being planned and scoped          | Hours to days    | Move to ToDo                       |
+| **ToDo**     | Ready to start, prioritized       | Days to weeks    | Plan on specific day, Start Effort |
+| **Doing**    | Actively working                  | Hours to days    | Mark Done                          |
+| **Done**     | Completed                         | Permanent        | Archive (optional)                 |
 
 ---
 
@@ -101,6 +101,7 @@ ems__Effort_status: "[[ems__EffortStatusToDo]]"
 ```
 
 **Use cases for sub-tasks:**
+
 - Breaking large tasks into steps
 - Dependencies between tasks
 - Tracking sub-components
@@ -113,20 +114,21 @@ ems__Effort_status: "[[ems__EffortStatusToDo]]"
 
 Buttons appear contextually based on current status:
 
-| Current Status | Available Buttons |
-|----------------|-------------------|
-| Draft | Set Draft Status, Move to Backlog, Archive |
-| Backlog | Move to Analysis, Archive |
-| Analysis | Move to ToDo, Move to Backlog |
-| ToDo | Start Effort (→ Doing), Move to Analysis |
-| Doing | Mark Done, Move to ToDo |
-| Done | Archive |
+| Current Status | Available Buttons                          |
+| -------------- | ------------------------------------------ |
+| Draft          | Set Draft Status, Move to Backlog, Archive |
+| Backlog        | Move to Analysis, Archive                  |
+| Analysis       | Move to ToDo, Move to Backlog              |
+| ToDo           | Start Effort (→ Doing), Move to Analysis   |
+| Doing          | Mark Done, Move to ToDo                    |
+| Done           | Archive                                    |
 
 **Click button → Status updates automatically → Timestamp recorded**
 
 ### Using Command Palette
 
 Cmd/Ctrl + P → Type status command:
+
 - "Set Draft Status"
 - "Move to Backlog"
 - "Move to Analysis"
@@ -159,6 +161,7 @@ ems__Effort_status_changes:
 ```
 
 **Use timestamps to:**
+
 - Analyze time-in-status
 - Track work duration
 - Generate velocity metrics
@@ -173,8 +176,9 @@ ems__Effort_status_changes:
 2. Click **"Plan on Today"** button
 
 Result:
+
 ```yaml
-ems__Effort_scheduled_start_date: "2025-11-10"
+ems__Effort_plannedStartTimestamp: "2025-11-10"
 ```
 
 Task now appears in `2025-11-10.md` daily note's **Daily Tasks** section.
@@ -184,14 +188,16 @@ Task now appears in `2025-11-10.md` daily note's **Daily Tasks** section.
 1. Click **"Plan for Evening"** button
 
 Result:
+
 ```yaml
-ems__Effort_scheduled_start_date: "2025-11-10"
+ems__Effort_plannedStartTimestamp: "2025-11-10"
 ems__Session_scheduled_start_time: "18:00"
 ```
 
 ### Shifting Days
 
 Use arrow buttons to reschedule:
+
 - **◀ Shift Day Backward**: Moves task to previous day
 - **▶ Shift Day Forward**: Moves task to next day
 
@@ -213,6 +219,7 @@ Use arrow buttons to reschedule:
 2. Click **"Start Effort"** button
 
 Changes:
+
 ```yaml
 ems__Effort_status: "[[ems__EffortStatusDoing]]"
 ems__Effort_started_on: "2025-11-10T09:30:00Z"
@@ -228,10 +235,12 @@ Add progress notes in the task content:
 ## Progress Log
 
 ### 2025-11-10 09:30
+
 - Set up Express router
 - Implemented GET /users
 
 ### 2025-11-10 11:00
+
 - Implemented POST /users
 - Added validation
 ```
@@ -239,12 +248,14 @@ Add progress notes in the task content:
 ### Pausing Work
 
 If you need to pause:
+
 1. Click "Move to ToDo" (returns to ready-to-start state)
 2. Add note in content explaining why paused
 
 ### Switching Tasks
 
 No special action needed:
+
 - Start new task (click "Start Effort" on different task)
 - Both tasks show as "Doing" until completed
 - Use timestamps to track actual work time
@@ -259,6 +270,7 @@ No special action needed:
 2. Click **"Mark Done"** button
 
 Changes:
+
 ```yaml
 ems__Effort_status: "[[ems__EffortStatusDone]]"
 ems__Effort_completed_on: "2025-11-10T14:15:00Z"
@@ -267,6 +279,7 @@ ems__Effort_completed_on: "2025-11-10T14:15:00Z"
 ### Verification Checklist
 
 Before marking done:
+
 - [ ] All acceptance criteria met
 - [ ] Sub-tasks completed (if any)
 - [ ] Documentation updated
@@ -275,6 +288,7 @@ Before marking done:
 ### Post-Completion
 
 After marking done:
+
 - Task still appears in relations
 - Task appears in daily note (if scheduled)
 - Use "Archive" to hide from active views (optional)
@@ -286,6 +300,7 @@ After marking done:
 ### When to Archive
 
 Archive tasks that are:
+
 - Completed and no longer need visibility
 - Cancelled/abandoned efforts
 - Duplicates or mistakes
@@ -296,11 +311,13 @@ Archive tasks that are:
 2. Click **"Archive"** button
 
 Changes:
+
 ```yaml
 exo__Asset_archived: true
 ```
 
 Archived tasks:
+
 - Hidden from daily note by default (toggle with "Show Archived")
 - Hidden from relations (unless explicitly shown)
 - Still searchable in Obsidian
@@ -308,6 +325,7 @@ Archived tasks:
 ### Trashing a Task
 
 For permanent removal:
+
 1. Click **"Trash"** button
 2. Confirm deletion
 3. Task moved to Obsidian trash
@@ -317,6 +335,7 @@ For permanent removal:
 ### Bulk Cleanup
 
 Use "Clean Properties" command to:
+
 - Remove empty properties
 - Format inconsistent values
 - Fix malformed wiki-links
@@ -328,11 +347,13 @@ Use "Clean Properties" command to:
 ### Task Naming
 
 **Good names:**
+
 - "Build /users REST endpoint"
 - "Fix login redirect bug"
 - "Write getting-started documentation"
 
 **Bad names:**
+
 - "Task 1" (not descriptive)
 - "Do the thing" (vague)
 - "Fix bug" (which bug?)
@@ -342,22 +363,26 @@ Use "Clean Properties" command to:
 **Ideal task duration: 2-6 hours**
 
 Too large (>8 hours):
+
 - Break into sub-tasks
 - Convert to project if multi-day
 
 Too small (<30 minutes):
+
 - Combine with related tasks
 - Consider checklist instead
 
 ### Status Discipline
 
 **Do:**
+
 - ✅ Move tasks through statuses consistently
 - ✅ Use buttons/commands (not manual edits)
 - ✅ Keep tasks in appropriate status
 - ✅ Archive completed tasks regularly
 
 **Don't:**
+
 - ❌ Skip Analysis for complex tasks
 - ❌ Leave tasks in "Doing" overnight
 - ❌ Keep hundreds of "Done" tasks unarchived
@@ -366,12 +391,14 @@ Too small (<30 minutes):
 ### Daily Planning
 
 **Morning routine:**
+
 1. Open today's daily note
 2. Review planned tasks
 3. Adjust priorities (vote/re-order)
 4. Start first task
 
 **Evening routine:**
+
 1. Mark completed tasks as "Done"
 2. Reschedule incomplete tasks (◀ / ▶)
 3. Archive finished tasks
@@ -380,11 +407,13 @@ Too small (<30 minutes):
 ### Sub-Task Management
 
 **When to use sub-tasks:**
+
 - Task > 8 hours effort
 - Clear sequential dependencies
 - Different skill sets required
 
 **When NOT to use:**
+
 - Simple checklists (use markdown lists instead)
 - Parallel work (create separate tasks)
 - Micro-management (trust yourself!)
@@ -396,6 +425,7 @@ Too small (<30 minutes):
 ### Pattern 1: Backlog Grooming
 
 Weekly review of backlog:
+
 ```markdown
 1. Open area note
 2. Review all "Backlog" tasks in relations
@@ -407,6 +437,7 @@ Weekly review of backlog:
 ### Pattern 2: Sprint Planning
 
 Plan tasks for week/sprint:
+
 ```markdown
 1. Filter tasks by "ToDo" status
 2. Vote to prioritize
@@ -418,6 +449,7 @@ Plan tasks for week/sprint:
 ### Pattern 3: Blocked Task
 
 Handle dependencies:
+
 ```markdown
 1. Move task to "Analysis"
 2. Add blocking reason in content:
@@ -429,6 +461,7 @@ Handle dependencies:
 ### Pattern 4: Recurring Tasks
 
 For weekly/monthly tasks:
+
 ```markdown
 1. Create template task
 2. Clone task for each occurrence
@@ -442,12 +475,12 @@ For weekly/monthly tasks:
 
 ### Keyboard Shortcuts
 
-| Action | Shortcut |
-|--------|----------|
-| Command palette | Cmd/Ctrl + P |
-| Switch to Reading Mode | Cmd/Ctrl + E |
-| Quick switcher | Cmd/Ctrl + O |
-| Search | Cmd/Ctrl + Shift + F |
+| Action                 | Shortcut             |
+| ---------------------- | -------------------- |
+| Command palette        | Cmd/Ctrl + P         |
+| Switch to Reading Mode | Cmd/Ctrl + E         |
+| Quick switcher         | Cmd/Ctrl + O         |
+| Search                 | Cmd/Ctrl + Shift + F |
 
 ### Status Transitions
 
@@ -461,6 +494,7 @@ Common paths:
 ### Property Quick Copy
 
 Essential task frontmatter:
+
 ```yaml
 ---
 exo__Instance_class:
@@ -469,7 +503,7 @@ exo__Asset_label: [Task Name]
 ems__Effort_area: "[[Area Name]]"
 ems__Effort_project: "[[Project Name]]"
 ems__Effort_status: "[[ems__EffortStatusToDo]]"
-ems__Effort_scheduled_start_date: "YYYY-MM-DD"
+ems__Effort_plannedStartTimestamp: "YYYY-MM-DD"
 ---
 ```
 
@@ -477,12 +511,12 @@ ems__Effort_scheduled_start_date: "YYYY-MM-DD"
 
 ## Troubleshooting
 
-| Problem | Solution |
-|---------|----------|
-| Task not in daily note | Check `ems__Effort_scheduled_start_date` matches daily note's `pn__Day_date` |
-| Buttons don't appear | Verify `exo__Instance_class` contains `"[[ems__Task]]"` |
-| Status won't change | Check for typos in status wiki-link |
-| Task disappeared | Check if accidentally archived (`exo__Asset_archived: true`) |
+| Problem                | Solution                                                                           |
+| ---------------------- | ---------------------------------------------------------------------------------- |
+| Task not in daily note | Check `ems__Effort_plannedStartTimestamp` matches daily note's `pn__DailyNote_day` |
+| Buttons don't appear   | Verify `exo__Instance_class` contains `"[[ems__Task]]"`                            |
+| Status won't change    | Check for typos in status wiki-link                                                |
+| Task disappeared       | Check if accidentally archived (`exo__Asset_archived: true`)                       |
 
 ---
 

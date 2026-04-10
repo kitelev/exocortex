@@ -15,9 +15,8 @@ Daily notes use `pn__DailyNote` class with date property:
 exo__Instance_class:
   - "[[pn__DailyNote]]"
 exo__Asset_label: "2025-11-10"
-pn__Day_date: "2025-11-10"  # ISO format: YYYY-MM-DD
+pn__DailyNote_day: "2025-11-10" # ISO format: YYYY-MM-DD
 ---
-
 # 2025-11-10
 
 Today's focus: [Add notes here]
@@ -35,8 +34,9 @@ Today's focus: [Add notes here]
 2. Click **"Plan on Today"** button
 
 Updates task frontmatter:
+
 ```yaml
-ems__Effort_scheduled_start_date: "2025-11-10"
+ems__Effort_plannedStartTimestamp: "2025-11-10"
 ```
 
 ### Viewing Daily Tasks
@@ -44,6 +44,7 @@ ems__Effort_scheduled_start_date: "2025-11-10"
 Open daily note in Reading Mode:
 
 **Daily Tasks Section shows:**
+
 - All tasks scheduled for this date
 - Grouped by area
 - Sorted by project
@@ -58,6 +59,7 @@ Set focus to show only specific area's tasks:
 3. Daily Tasks section filters to that area only
 
 Clear focus:
+
 1. Click **"Set Focus Area"** again
 2. Select "(No focus)" option
 
@@ -68,12 +70,14 @@ Clear focus:
 ### Using Arrow Buttons
 
 From daily note or task note:
+
 - **◀ Shift Day Backward**: Reschedule to previous day
 - **▶ Shift Day Forward**: Reschedule to next day
 
 ### Bulk Rescheduling
 
 To move multiple tasks:
+
 1. Open each task from daily note
 2. Click shift buttons
 3. Tasks move to new date
@@ -88,7 +92,7 @@ Schedule tasks for specific time:
 2. Task scheduled to today at 18:00
 
 ```yaml
-ems__Effort_scheduled_start_date: "2025-11-10"
+ems__Effort_plannedStartTimestamp: "2025-11-10"
 ems__Session_scheduled_start_time: "18:00"
 ```
 
@@ -133,11 +137,13 @@ ems__Session_scheduled_start_time: "18:00"
 **Healthy daily load: 4-8 tasks**
 
 Too many (>10):
+
 - Overcommitted
 - Reschedule lower priority
 - Break tasks into smaller units
 
 Too few (<3):
+
 - Add more tasks from backlog
 - May need better task breakdown
 
@@ -149,14 +155,17 @@ Add time blocks in daily note content:
 ## Schedule
 
 **Morning (9:00-12:00)**
+
 - [[Build /users endpoint]]
 - [[Write API tests]]
 
 **Afternoon (13:00-17:00)**
+
 - [[Deploy to staging]]
 - [[Code review]]
 
 **Evening (18:00-20:00)**
+
 - [[Update documentation]]
 ```
 
@@ -177,6 +186,7 @@ Daily notes can show/hide archived tasks:
 ### Pattern 1: Weekly Planning
 
 Sunday evening:
+
 ```markdown
 1. Create daily notes for week (Mon-Fri)
 2. Review backlog tasks
@@ -187,6 +197,7 @@ Sunday evening:
 ### Pattern 2: Sprint Planning
 
 Start of sprint:
+
 ```markdown
 1. Create daily notes for sprint duration
 2. Distribute sprint tasks across days
@@ -197,6 +208,7 @@ Start of sprint:
 ### Pattern 3: Time-Specific Work
 
 For appointments/deadlines:
+
 ```markdown
 1. Use "Plan for Evening" for time-specific work
 2. Add time notes in task content:
@@ -215,7 +227,7 @@ For appointments/deadlines:
 exo__Instance_class:
   - "[[pn__DailyNote]]"
 exo__Asset_label: "YYYY-MM-DD"
-pn__Day_date: "YYYY-MM-DD"
+pn__DailyNote_day: "YYYY-MM-DD"
 ---
 
 # YYYY-MM-DD
@@ -229,12 +241,12 @@ pn__Day_date: "YYYY-MM-DD"
 
 ### Common Commands
 
-| Action | Command |
-|--------|---------|
-| Plan task | "Plan on Today" button |
-| Shift forward | ▶ button |
-| Shift backward | ◀ button |
-| Set focus area | "Set Focus Area" button |
+| Action          | Command                         |
+| --------------- | ------------------------------- |
+| Plan task       | "Plan on Today" button          |
+| Shift forward   | ▶ button                        |
+| Shift backward  | ◀ button                        |
+| Set focus area  | "Set Focus Area" button         |
 | Toggle archived | "Toggle Archived Assets" button |
 
 ---

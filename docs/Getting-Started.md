@@ -51,10 +51,11 @@ BRAT will automatically keep the plugin updated with new releases.
 
 The plugin needs ontology files in your vault to enable buttons and commands. Download and extract the Starter Kit:
 
-1. Go to the [latest GitHub Release](https://github.com/kitelev/exocortex/releases/latest)
+1. Go to the [Starter Kit Release](https://github.com/kitelev/exocortex-starter-kit/releases/latest)
 2. Download `exocortex-starter-kit.zip`
 3. Extract the ZIP into your vault (any folder works — the plugin scans the entire vault)
    - Recommended: extract into a folder like `Knowledge/` or at the vault root
+   - The ZIP contains `exocmd/` (command definitions) and `pn/` (DailyNote properties)
 
 The plugin detects new files automatically — no restart needed.
 
@@ -220,7 +221,7 @@ Daily notes show all tasks scheduled for a specific date.
 exo__Instance_class:
   - "[[pn__DailyNote]]"
 exo__Asset_label: "2025-11-10"
-pn__Day_date: "2025-11-10"
+pn__DailyNote_day: "2025-11-10"
 ---
 # 2025-11-10
 
@@ -350,7 +351,7 @@ Discover all commands:
 | `ems__Effort_parent`                | Parent project/task | `"[[Build API Server]]"`                                  |
 | `ems__Effort_status`                | Workflow status     | `"[[ems__EffortStatusToDo]]"`                             |
 | `ems__Effort_plannedStartTimestamp` | Planned start date  | `"2025-11-10"`                                            |
-| `pn__Day_date`                      | Daily note date     | `"2025-11-10"`                                            |
+| `pn__DailyNote_day`                 | Daily note date     | `"2025-11-10"`                                            |
 
 ### Common Commands
 
@@ -365,13 +366,13 @@ Discover all commands:
 
 ### Troubleshooting
 
-| Problem                  | Solution                                                                                |
-| ------------------------ | --------------------------------------------------------------------------------------- |
-| Layout doesn't appear    | Switch to Reading Mode (Ctrl/Cmd + E)                                                   |
-| No buttons visible       | Verify Starter Kit is installed (exocmd/ folder exists in vault)                        |
-| Buttons don't work       | Check console for errors (Ctrl/Cmd + Shift + I)                                         |
-| Wiki-links not resolving | Verify target note exists with correct `exo__Asset_label`                               |
-| Daily tasks not showing  | Check task has `ems__Effort_plannedStartTimestamp` matching daily note's `pn__Day_date` |
+| Problem                  | Solution                                                                                     |
+| ------------------------ | -------------------------------------------------------------------------------------------- |
+| Layout doesn't appear    | Switch to Reading Mode (Ctrl/Cmd + E)                                                        |
+| No buttons visible       | Verify Starter Kit is installed (exocmd/ folder exists in vault)                             |
+| Buttons don't work       | Check console for errors (Ctrl/Cmd + Shift + I)                                              |
+| Wiki-links not resolving | Verify target note exists with correct `exo__Asset_label`                                    |
+| Daily tasks not showing  | Check task has `ems__Effort_plannedStartTimestamp` matching daily note's `pn__DailyNote_day` |
 
 ---
 
