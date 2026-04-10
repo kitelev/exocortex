@@ -21,11 +21,51 @@ export class ObsidianLauncher {
   }
 
   async launch(): Promise<void> {
+    const maxRetries = 3;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        await this.launchAttempt(attempt);
+        return;
+      } catch (error) {
+        console.log(
+          `[ObsidianLauncher] Launch attempt ${attempt}/${maxRetries} failed:`,
+          error,
+        );
+
+        // Clean up the failed attempt before retrying
+        await this.close().catch((closeErr) => {
+          console.log(
+            "[ObsidianLauncher] Cleanup after failed attempt error:",
+            closeErr,
+          );
+        });
+
+        if (attempt === maxRetries) {
+          throw new Error(
+            `Obsidian failed to launch after ${maxRetries} attempts: ${error}`,
+          );
+        }
+
+        // Exponential backoff: 2s, 4s
+        const backoffMs = 2000 * attempt;
+        console.log(
+          `[ObsidianLauncher] Retrying in ${backoffMs}ms...`,
+        );
+        await new Promise((resolve) => setTimeout(resolve, backoffMs));
+      }
+    }
+  }
+
+  private async launchAttempt(attempt: number): Promise<void> {
     const obsidianPath =
       process.env.OBSIDIAN_PATH ||
       "/Applications/Obsidian.app/Contents/MacOS/Obsidian";
 
-    console.log("[ObsidianLauncher] Launching Obsidian from:", obsidianPath);
+    console.log(
+      `[ObsidianLauncher] Launch attempt ${attempt}: Obsidian from:`,
+      obsidianPath,
+    );
     console.log("[ObsidianLauncher] Vault path:", this.vaultPath);
     console.log("[ObsidianLauncher] DOCKER env:", process.env.DOCKER);
     console.log("[ObsidianLauncher] DISPLAY env:", process.env.DISPLAY);
@@ -168,7 +208,7 @@ export class ObsidianLauncher {
   private createObsidianConfig(): void {
     const homeDir = process.env.HOME || os.homedir();
     const configDir =
-      process.env.DOCKER === "true"
+      process.env.DOCKER
         ? "/root/.config/obsidian"
         : path.join(homeDir, ".config", "obsidian");
     const configPath = path.join(configDir, "obsidian.json");
@@ -193,6 +233,17 @@ export class ObsidianLauncher {
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
     console.log("[ObsidianLauncher] Created Obsidian config at:", configPath);
     console.log("[ObsidianLauncher] Registered vault:", this.vaultPath);
+
+    // Pre-create per-vault config file to prevent ENOENT on first launch.
+    // Obsidian reads <vaultId>.json for vault-specific settings at startup.
+    const vaultConfigPath = path.join(configDir, `${vaultId}.json`);
+    if (!fs.existsSync(vaultConfigPath)) {
+      fs.writeFileSync(vaultConfigPath, JSON.stringify({}, null, 2));
+      console.log(
+        "[ObsidianLauncher] Pre-created vault config:",
+        vaultConfigPath,
+      );
+    }
   }
 
   private async handleTrustDialog(): Promise<void> {
@@ -547,14 +598,14 @@ export class ObsidianLauncher {
             }
           }, 100);
 
-          // Timeout after 5 seconds
+          // Timeout after 10 seconds (Docker Obsidian may take longer to terminate)
           setTimeout(() => {
             clearInterval(checkInterval);
             console.log(
               `[ObsidianLauncher] Process ${pid} termination timeout (continuing anyway)`,
             );
             resolve();
-          }, 5000);
+          }, 10000);
         });
       } catch (error) {
         console.log(
