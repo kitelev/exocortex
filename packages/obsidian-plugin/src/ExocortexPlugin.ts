@@ -87,6 +87,7 @@ export default class ExocortexPlugin extends Plugin {
   private propertiesUidCopyPatch!: PropertiesUidCopyPatch;
   private graphViewPatch!: GraphViewPatch;
   private fileLogChannel!: FileLogChannel;
+  private notifier!: ObsidianNotificationService;
 
   override async onload(): Promise<void> {
     try {
@@ -101,7 +102,8 @@ export default class ExocortexPlugin extends Plugin {
 
       await this.loadSettings();
 
-      // Initialize log channel routing from settings
+      // Initialize notification service and log channel routing
+      this.notifier = new ObsidianNotificationService();
       this.fileLogChannel = new FileLogChannel(this.app.vault.adapter);
       this.configureLogChannels();
 
@@ -120,7 +122,7 @@ export default class ExocortexPlugin extends Plugin {
         this.app,
       );
 
-      const notifier = new ObsidianNotificationService();
+      const notifier = this.notifier;
       this.sparqlProcessor = new SPARQLCodeBlockProcessor(this, notifier);
       this.layoutProcessor = new LayoutCodeBlockProcessor(this);
       this.sparql = new SPARQLApi(this);
@@ -418,7 +420,7 @@ export default class ExocortexPlugin extends Plugin {
     Logger.configure({
       channels: this.settings.logChannels,
       fileChannel: hasFileEnabled ? this.fileLogChannel : null,
-      noticeCallback: (msg: string) => new Notice(msg),
+      noticeCallback: (msg: string) => this.notifier.info(msg),
     });
   }
 
