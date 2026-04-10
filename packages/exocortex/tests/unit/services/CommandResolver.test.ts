@@ -260,6 +260,33 @@ describe("CommandResolver", () => {
       expect(cmd!.grounding.targetProperty).toBe("ems__Effort_status");
     });
 
+    it("should reverse-map IRI targetProperty and targetValue to Obsidian names", async () => {
+      // Simulate what happens when the triple store resolves vault references to IRIs
+      const groundingSubject = new IRI(`obsidian://vault/gnd-iri.md`);
+      await store.addAll([
+        new Triple(groundingSubject, Namespace.RDF.term("type"), Namespace.EXOCMD.term("Grounding")),
+        new Triple(groundingSubject, Namespace.EXO.term("Asset_uid"), new Literal("gnd-iri")),
+        new Triple(groundingSubject, Namespace.EXO.term("Asset_label"), new Literal("IRI Grounding")),
+        new Triple(groundingSubject, Namespace.EXOCMD.term("Grounding_type"), new Literal("property_set")),
+        // targetProperty stored as IRI instead of Literal
+        new Triple(groundingSubject, Namespace.EXOCMD.term("Grounding_targetProperty"), Namespace.EMS.term("Effort_status")),
+        // targetValue stored as IRI instead of Literal
+        new Triple(groundingSubject, Namespace.EXOCMD.term("Grounding_targetValue"), Namespace.EMS.term("EffortStatusDoing")),
+      ]);
+
+      await addCommandAsset(store, {
+        uid: "cmd-iri-test",
+        label: "IRI Test",
+        groundingRef: "gnd-iri",
+      });
+
+      const cmd = await resolver.loadCommand("cmd-iri-test");
+
+      expect(cmd!.grounding).toBeDefined();
+      expect(cmd!.grounding.targetProperty).toBe("ems__Effort_status");
+      expect(cmd!.grounding.targetValue).toBe("\"[[ems__EffortStatusDoing]]\"");
+    });
+
     it("should return null for missing UID", async () => {
       const cmd = await resolver.loadCommand("non-existent");
       expect(cmd).toBeNull();
