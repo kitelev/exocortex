@@ -55,11 +55,18 @@ describe("ExocortexSettingTab", () => {
             "ems__TaskPrototype": "{{exo__Asset_label}} (TaskPrototype)",
           },
         },
+        logChannels: {
+          debug: { notice: false, console: true, file: false },
+          info: { notice: false, console: true, file: false },
+          warn: { notice: true, console: true, file: false },
+          error: { notice: true, console: true, file: false },
+        },
       },
       saveSettings: jest.fn().mockResolvedValue(undefined),
       refreshLayout: jest.fn(),
       toggleTabTitleLabels: jest.fn(),
       applyDisplayNameTemplate: jest.fn(),
+      configureLogChannels: jest.fn(),
     });
 
     mockApp = createMockApp();
@@ -120,10 +127,9 @@ describe("ExocortexSettingTab", () => {
       settingTab.display();
 
       expect(mockContainerEl.empty).toHaveBeenCalled();
-      // 6 toggle settings + 2 headings + 1 default template + 6 per-class templates + 1 reset button = 16
-      // Removed: showPropertiesSection (Issue #2321), showLabelsInQuickSwitcher, showLabelsInWikilinkAutocomplete (Issue #2318)
-      // Removed: sortByDisplayName (Issue #2327)
-      expect(MockSetting).toHaveBeenCalledTimes(18);
+      // 9 toggle settings + 3 headings + 1 default template + 6 per-class templates + 1 reset button + 4 log level rows = 23
+      // Log channels section: 1 heading + 4 log level rows = 5
+      expect(MockSetting).toHaveBeenCalledTimes(23);
     });
 
     it("should render layout visibility toggle as first setting", () => {

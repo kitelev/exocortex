@@ -33,6 +33,26 @@ export const DEFAULT_DISPLAY_NAME_SETTINGS: DisplayNameSettings = {
   },
 };
 
+/**
+ * Configuration for which channels a log level should route to.
+ */
+export interface LogChannelConfig {
+  notice: boolean;
+  console: boolean;
+  file: boolean;
+}
+
+export type LogLevel = "debug" | "info" | "warn" | "error";
+
+export type LogChannelsSettings = Record<LogLevel, LogChannelConfig>;
+
+export const DEFAULT_LOG_CHANNELS: LogChannelsSettings = {
+  debug: { notice: false, console: true, file: false },
+  info: { notice: false, console: true, file: false },
+  warn: { notice: true, console: true, file: false },
+  error: { notice: true, console: true, file: false },
+};
+
 export interface ExocortexSettings {
   layoutVisible: boolean;
   showArchivedAssets: boolean;
@@ -59,6 +79,8 @@ export interface ExocortexSettings {
    * @see Issue #2142
    */
   autoAdjustPlannedEndTimestamp: boolean;
+  /** Per-level log channel routing configuration */
+  logChannels: LogChannelsSettings;
   [key: string]: unknown;
 }
 
@@ -77,4 +99,5 @@ export const DEFAULT_SETTINGS: ExocortexSettings = {
   displayNameTemplate: "{{exo__Asset_label}} ({{exo__Instance_class}})",
   displayNameSettings: DEFAULT_DISPLAY_NAME_SETTINGS,
   autoAdjustPlannedEndTimestamp: false,
+  logChannels: DEFAULT_LOG_CHANNELS,
 };

@@ -1,20 +1,27 @@
 /* eslint-disable no-console */
 import type { ILogger, ErrorLogOptions } from "./ILogger";
 import { ErrorMessages } from "./ErrorCodes";
+import type { LogChannelsSettings, LogLevel } from "@plugin/domain/settings/ExocortexSettings";
+import type { FileLogChannel } from "./FileLogChannel";
 
 /**
- * Environment-aware logger that sanitizes stack traces in production.
+ * Callback type for showing Obsidian Notice UI notifications.
+ */
+export type NoticeCallback = (message: string) => void;
+
+/**
+ * Environment-aware logger with configurable channel routing.
  *
- * In production mode:
- * - Shows user-friendly error messages with error codes
- * - Hides stack traces to prevent information leakage
- *
- * In development mode:
- * - Shows full error details including stack traces
- * - Shows additional context for debugging
+ * Each log level can independently route to three channels:
+ * - Console (developer tools)
+ * - Notice (Obsidian UI notification)
+ * - File (exocortex-logs.txt in vault root)
  */
 export class Logger implements ILogger {
   private static isDevelopment: boolean | undefined = undefined;
+  private static channelConfig: LogChannelsSettings | null = null;
+  private static fileChannel: FileLogChannel | null = null;
+  private static noticeCallback: NoticeCallback | null = null;
 
   constructor(private context: string) {}
 
@@ -55,16 +62,67 @@ export class Logger implements ILogger {
     return Logger.checkIsDevelopment();
   }
 
+  /**
+   * Configure channel routing for all Logger instances.
+   * Called once during plugin initialization and whenever settings change.
+   */
+  static configure(options: {
+    channels: LogChannelsSettings;
+    fileChannel?: FileLogChannel | null;
+    noticeCallback?: NoticeCallback | null;
+  }): void {
+    Logger.channelConfig = options.channels;
+    Logger.fileChannel = options.fileChannel ?? null;
+    Logger.noticeCallback = options.noticeCallback ?? null;
+  }
+
+  /**
+   * Reset channel configuration (used in tests and plugin unload).
+   */
+  static resetChannels(): void {
+    Logger.channelConfig = null;
+    Logger.fileChannel = null;
+    Logger.noticeCallback = null;
+  }
+
+  private isChannelEnabled(level: LogLevel, channel: "console" | "notice" | "file"): boolean {
+    if (!Logger.channelConfig) return channel === "console";
+    return Logger.channelConfig[level][channel];
+  }
+
+  private emitNotice(level: LogLevel, message: string): void {
+    if (!this.isChannelEnabled(level, "notice") || !Logger.noticeCallback) return;
+    const prefix = level === "error" ? "✗ " : level === "warn" ? "⚠ " : "";
+    Logger.noticeCallback(`${prefix}${message}`);
+  }
+
+  private emitFile(level: LogLevel, message: string): void {
+    if (!this.isChannelEnabled(level, "file") || !Logger.fileChannel) return;
+    Logger.fileChannel.append(level, this.context, message);
+  }
+
   debug(message: string, ...args: unknown[]): void {
-    console.debug(`[${this.context}] ${message}`, ...args);
+    if (this.isChannelEnabled("debug", "console")) {
+      console.debug(`[${this.context}] ${message}`, ...args);
+    }
+    this.emitNotice("debug", message);
+    this.emitFile("debug", message);
   }
 
   info(message: string, ...args: unknown[]): void {
-    console.info(`[${this.context}] ${message}`, ...args);
+    if (this.isChannelEnabled("info", "console")) {
+      console.info(`[${this.context}] ${message}`, ...args);
+    }
+    this.emitNotice("info", message);
+    this.emitFile("info", message);
   }
 
   warn(message: string, ...args: unknown[]): void {
-    console.warn(`[${this.context}] ${message}`, ...args);
+    if (this.isChannelEnabled("warn", "console")) {
+      console.warn(`[${this.context}] ${message}`, ...args);
+    }
+    this.emitNotice("warn", message);
+    this.emitFile("warn", message);
   }
 
   error(message: string, errorOrOptions?: Error | unknown | ErrorLogOptions): void {
@@ -76,6 +134,10 @@ export class Logger implements ILogger {
     } else {
       this.logSimpleError(message, errorOrOptions, isDev);
     }
+
+    // Notice and file channels always get the top-level message
+    this.emitNotice("error", message);
+    this.emitFile("error", message);
   }
 
   /**
@@ -104,6 +166,8 @@ export class Logger implements ILogger {
    * conditional logging into single console.error calls.
    */
   private logWithOptions(message: string, options: ErrorLogOptions, isDev: boolean): void {
+    if (!this.isChannelEnabled("error", "console")) return;
+
     const { errorCode, error, context } = options;
     const errorCodeStr = errorCode ? ` [${errorCode}]` : "";
 
@@ -157,6 +221,8 @@ export class Logger implements ILogger {
    * Note: Uses helper methods to avoid orphaned expressions after console drops.
    */
   private logSimpleError(message: string, error: unknown, isDev: boolean): void {
+    if (!this.isChannelEnabled("error", "console")) return;
+
     console.error(`[${this.context}] ${message}`);
 
     if (isDev) {
