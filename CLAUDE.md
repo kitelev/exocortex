@@ -36,10 +36,9 @@ infrastructure/  → Obsidian API adapters, file system
 
 ## Quality Metrics
 
-- **11,400+ tests** across packages (core 5,777 + plugin 4,566 + CLI 1,146)
-- **Coverage thresholds**: statements 75.5%, branches 63%
-- **BDD coverage**: 100% required
-- **8 required CI checks**: build, typecheck, test-unit, test-coverage, test-bdd, archgate, e2e-tests, test-component
+- **Tests:** 564 test files, ~11K+ individual test cases (parametrized). Run `npm run test:all` for exact count.
+- **Coverage thresholds**: statements 75.5%, branches 63%, BDD ≥80%
+- **CI checks**: build, typecheck, test-unit, test-coverage, test-bdd, archgate, e2e-tests, test-component
 
 ## TypeScript Tooling
 
