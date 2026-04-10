@@ -10,7 +10,14 @@ describe("ObsidianNotificationService", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    jest.spyOn(console, "debug").mockImplementation();
+    jest.spyOn(console, "error").mockImplementation();
+    jest.spyOn(console, "warn").mockImplementation();
     service = new ObsidianNotificationService();
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
   });
 
   describe("info", () => {
@@ -18,6 +25,12 @@ describe("ObsidianNotificationService", () => {
       service.info("Information message");
 
       expect(Notice).toHaveBeenCalledWith("Information message", 4000);
+    });
+
+    it("should log to console", () => {
+      service.info("Information message");
+
+      expect(console.debug).toHaveBeenCalledWith("[Exocortex] info:", "Information message");
     });
 
     it("should use custom duration when provided", () => {
@@ -40,6 +53,12 @@ describe("ObsidianNotificationService", () => {
       expect(Notice).toHaveBeenCalledWith("✓ Operation completed", 4000);
     });
 
+    it("should log to console", () => {
+      service.success("Operation completed");
+
+      expect(console.debug).toHaveBeenCalledWith("[Exocortex] success:", "Operation completed");
+    });
+
     it("should use custom duration when provided", () => {
       service.success("Operation completed", 3000);
 
@@ -54,6 +73,12 @@ describe("ObsidianNotificationService", () => {
       expect(Notice).toHaveBeenCalledWith("✗ An error occurred", 4000);
     });
 
+    it("should log to console.error", () => {
+      service.error("An error occurred");
+
+      expect(console.error).toHaveBeenCalledWith("[Exocortex] error:", "An error occurred");
+    });
+
     it("should use custom duration when provided", () => {
       service.error("An error occurred", 8000);
 
@@ -66,6 +91,12 @@ describe("ObsidianNotificationService", () => {
       service.warn("Warning message");
 
       expect(Notice).toHaveBeenCalledWith("⚠ Warning message", 4000);
+    });
+
+    it("should log to console.warn", () => {
+      service.warn("Warning message");
+
+      expect(console.warn).toHaveBeenCalledWith("[Exocortex] warn:", "Warning message");
     });
 
     it("should use custom duration when provided", () => {
