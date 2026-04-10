@@ -55,7 +55,7 @@ The plugin needs ontology files in your vault to enable buttons and commands. Do
 2. Download `exocortex-starter-kit.zip`
 3. Extract the ZIP into your vault (any folder works — the plugin scans the entire vault)
    - Recommended: extract into a folder like `Knowledge/` or at the vault root
-   - The ZIP contains `exocmd/` (command definitions) and `pn/` (DailyNote properties)
+   - The ZIP contains `exocmd/` (command definitions), `pn/` (DailyNote properties), `exo/` (core ontology), `ems/` (effort classes and statuses), and `period/` (time periods)
 
 The plugin detects new files automatically — no restart needed.
 
