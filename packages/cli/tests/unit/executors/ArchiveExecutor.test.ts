@@ -77,12 +77,12 @@ describe("ArchiveExecutor", () => {
           if (file === "tasks/archived-task.md") {
             return {
               exo__Asset_isArchived: true,
-              exo__Instance_class: "ems__Task",
+              exo__Instance_class: ["[[ems__Task]]"],
               ems__Effort_resolutionTimestamp: "2025-06-15T10:00:00",
             };
           }
           return {
-            exo__Instance_class: "ems__Task",
+            exo__Instance_class: ["[[ems__Task]]"],
             ems__Effort_status: '"[[ems__EffortStatusDoing]]"',
           };
         },
@@ -122,11 +122,11 @@ describe("ArchiveExecutor", () => {
           if (file === "tasks/archived-task.md") {
             return {
               exo__Asset_isArchived: true,
-              exo__Instance_class: "ems__Task",
+              exo__Instance_class: ["[[ems__Task]]"],
             };
           }
           return {
-            exo__Instance_class: "ems__Project",
+            exo__Instance_class: ["[[ems__Project]]"],
           };
         },
       );
@@ -166,12 +166,12 @@ describe("ArchiveExecutor", () => {
           if (file === "tasks/task1.md") {
             return {
               exo__Asset_isArchived: true,
-              exo__Instance_class: "ems__Task",
+              exo__Instance_class: ["[[ems__Task]]"],
             };
           }
           return {
             exo__Asset_isArchived: true,
-            exo__Instance_class: "ems__Meeting",
+            exo__Instance_class: ["[[ems__Meeting]]"],
           };
         },
       );
@@ -208,13 +208,13 @@ describe("ArchiveExecutor", () => {
           if (file === "tasks/task-2025.md") {
             return {
               exo__Asset_isArchived: true,
-              exo__Instance_class: "ems__Task",
+              exo__Instance_class: ["[[ems__Task]]"],
               ems__Effort_resolutionTimestamp: "2025-06-15T10:00:00",
             };
           }
           return {
             exo__Asset_isArchived: true,
-            exo__Instance_class: "ems__Task",
+            exo__Instance_class: ["[[ems__Task]]"],
             ems__Effort_resolutionTimestamp: "2024-03-10T10:00:00",
           };
         },
@@ -248,7 +248,7 @@ describe("ArchiveExecutor", () => {
 
       mockFsAdapterInstance.getFileMetadata.mockResolvedValue({
         exo__Asset_isArchived: true,
-        exo__Instance_class: "ems__Task",
+        exo__Instance_class: ["[[ems__Task]]"],
       });
 
       mockFsAdapterInstance.readFile.mockResolvedValue(
@@ -276,7 +276,7 @@ describe("ArchiveExecutor", () => {
 
       mockFsAdapterInstance.getFileMetadata.mockResolvedValue({
         exo__Asset_isArchived: true,
-        exo__Instance_class: "ems__Task",
+        exo__Instance_class: ["[[ems__Task]]"],
       });
 
       mockFsAdapterInstance.readFile.mockResolvedValue(
@@ -305,7 +305,7 @@ describe("ArchiveExecutor", () => {
 
       mockFsAdapterInstance.getFileMetadata.mockResolvedValue({
         exo__Asset_isArchived: true,
-        exo__Instance_class: "ems__Task",
+        exo__Instance_class: ["[[ems__Task]]"],
       });
 
       // File references itself
@@ -339,7 +339,7 @@ describe("ArchiveExecutor", () => {
         async () => {
           return {
             exo__Asset_isArchived: true,
-            exo__Instance_class: "ems__Task",
+            exo__Instance_class: ["[[ems__Task]]"],
           };
         },
       );
@@ -375,7 +375,7 @@ describe("ArchiveExecutor", () => {
       ]);
 
       mockFsAdapterInstance.getFileMetadata.mockResolvedValue({
-        exo__Instance_class: "ems__Task",
+        exo__Instance_class: ["[[ems__Task]]"],
         ems__Effort_status: '"[[ems__EffortStatusDoing]]"',
       });
 
@@ -404,7 +404,7 @@ describe("ArchiveExecutor", () => {
 
       mockFsAdapterInstance.getFileMetadata.mockResolvedValue({
         archived: true,
-        exo__Instance_class: "ems__Task",
+        exo__Instance_class: ["[[ems__Task]]"],
       });
 
       mockFsAdapterInstance.readFile.mockResolvedValue(

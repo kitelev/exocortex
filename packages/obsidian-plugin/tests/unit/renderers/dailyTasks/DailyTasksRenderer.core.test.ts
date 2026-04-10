@@ -28,7 +28,7 @@ describe("DailyTasksRenderer - render", () => {
       parent: { path: "Tasks" },
       basename: "TestTask",
     } as TFile;
-    const metadata = { exo__Instance_class: "[[ems__Task]]" };
+    const metadata = { exo__Instance_class: ["[[ems__Task]]"] };
 
     ctx.mockMetadataExtractor.extractMetadata.mockReturnValue(metadata);
     ctx.mockMetadataExtractor.extractInstanceClass.mockReturnValue(
@@ -48,7 +48,7 @@ describe("DailyTasksRenderer - render", () => {
       parent: { path: "DailyNotes" },
       basename: "2025-10-20",
     } as TFile;
-    const metadata = { exo__Instance_class: "[[pn__DailyNote]]" };
+    const metadata = { exo__Instance_class: ["[[pn__DailyNote]]"] };
 
     ctx.mockMetadataExtractor.extractMetadata.mockReturnValue(metadata);
     ctx.mockMetadataExtractor.extractInstanceClass.mockReturnValue(
@@ -71,7 +71,7 @@ describe("DailyTasksRenderer - render", () => {
       basename: "2025-10-20",
     } as TFile;
     const metadata = {
-      exo__Instance_class: "[[pn__DailyNote]]",
+      exo__Instance_class: ["[[pn__DailyNote]]"],
       pn__DailyNote_day: "[[2025-10-20]]",
     };
 
@@ -97,7 +97,7 @@ describe("DailyTasksRenderer - render", () => {
       basename: "2025-10-20",
     } as TFile;
     const metadata = {
-      exo__Instance_class: "[[pn__DailyNote]]",
+      exo__Instance_class: ["[[pn__DailyNote]]"],
       pn__DailyNote_day: "[[2025-10-20]]",
     };
 
@@ -107,7 +107,7 @@ describe("DailyTasksRenderer - render", () => {
     } as TFile;
 
     const taskMetadata = {
-      exo__Instance_class: "[[ems__Task]]",
+      exo__Instance_class: ["[[ems__Task]]"],
       ems__Effort_day: "[[2025-10-20]]",
       ems__Effort_startTimestamp: "2025-10-20T09:00:00",
       ems__Effort_status: "[[ems__EffortStatusBacklog]]",
@@ -144,7 +144,7 @@ describe("DailyTasksRenderer - render", () => {
       basename: "2025-10-20",
     } as TFile;
     const metadata = {
-      exo__Instance_class: "[[pn__DailyNote]]",
+      exo__Instance_class: ["[[pn__DailyNote]]"],
       pn__DailyNote_day: "[[2025-10-20]]",
     };
 
@@ -154,7 +154,7 @@ describe("DailyTasksRenderer - render", () => {
     } as TFile;
 
     const projectMetadata = {
-      exo__Instance_class: "[[ems__Project]]",
+      exo__Instance_class: ["[[ems__Project]]"],
       ems__Effort_day: "[[2025-10-20]]",
       ems__Effort_startTimestamp: "2025-10-20T09:00:00",
       ems__Effort_status: "[[ems__EffortStatusToDo]]",
@@ -186,7 +186,7 @@ describe("DailyTasksRenderer - render", () => {
       basename: "2025-10-20",
     } as TFile;
     const metadata = {
-      exo__Instance_class: "[[pn__DailyNote]]",
+      exo__Instance_class: ["[[pn__DailyNote]]"],
       pn__DailyNote_day: "2025-10-20",
     };
 
@@ -196,7 +196,7 @@ describe("DailyTasksRenderer - render", () => {
     } as TFile;
 
     const taskMetadata = {
-      exo__Instance_class: "[[ems__Task]]",
+      exo__Instance_class: ["[[ems__Task]]"],
       ems__Effort_day: "2025-10-20",
       ems__Effort_startTimestamp: "2025-10-20T09:00:00",
       ems__Effort_status: "[[ems__EffortStatusBacklog]]",
@@ -228,7 +228,7 @@ describe("DailyTasksRenderer - render", () => {
       basename: "2025-10-20",
     } as TFile;
     const metadata = {
-      exo__Instance_class: "pn__DailyNote",
+      exo__Instance_class: ["[[pn__DailyNote]]"],
       pn__DailyNote_day: "[[2025-10-20]]",
     };
 
@@ -275,7 +275,7 @@ describe("DailyTasksRenderer - render", () => {
       basename: "2025-10-20",
     } as TFile;
     const metadata = {
-      exo__Instance_class: "[[pn__DailyNote]]",
+      exo__Instance_class: ["[[pn__DailyNote]]"],
       pn__DailyNote_day: "[[2025-10-20]]",
     };
 
@@ -290,7 +290,7 @@ describe("DailyTasksRenderer - render", () => {
     } as TFile;
 
     const taskMetadata = {
-      exo__Instance_class: "[[ems__Task]]",
+      exo__Instance_class: ["[[ems__Task]]"],
       ems__Effort_day: "[[2025-10-20]]",
       ems__Effort_startTimestamp: "2025-10-20T09:00:00",
       ems__Effort_status: "[[ems__EffortStatusBacklog]]",
@@ -331,7 +331,7 @@ describe("DailyTasksRenderer - render", () => {
       basename: "2025-10-20",
     } as TFile;
     const metadata = {
-      exo__Instance_class: "[[pn__DailyNote]]",
+      exo__Instance_class: ["[[pn__DailyNote]]"],
       pn__DailyNote_day: "[[2025-10-20]]",
     };
 
@@ -346,7 +346,7 @@ describe("DailyTasksRenderer - render", () => {
     } as TFile;
 
     const taskMetadata = {
-      exo__Instance_class: "[[ems__Task]]",
+      exo__Instance_class: ["[[ems__Task]]"],
       ems__Effort_day: "[[2025-10-20]]",
       ems__Effort_startTimestamp: "2025-10-20T09:00:00",
       ems__Effort_status: "[[ems__EffortStatusBacklog]]",
@@ -387,7 +387,7 @@ describe("DailyTasksRenderer - render", () => {
       basename: "2025-10-20",
     } as TFile;
     const metadata = {
-      exo__Instance_class: "[[pn__DailyNote]]",
+      exo__Instance_class: ["[[pn__DailyNote]]"],
       pn__DailyNote_day: "[[2025-10-20]]",
     };
 
@@ -401,7 +401,7 @@ describe("DailyTasksRenderer - render", () => {
     );
 
     const taskMetadata = {
-      exo__Instance_class: "[[ems__Task]]",
+      exo__Instance_class: ["[[ems__Task]]"],
       ems__Effort_day: "[[2025-10-20]]",
       ems__Effort_startTimestamp: "2025-10-20T09:00:00",
       ems__Effort_status: "[[ems__EffortStatusBacklog]]",
@@ -439,7 +439,7 @@ describe("DailyTasksRenderer - render", () => {
       basename: "2025-10-20",
     } as TFile;
     const metadata = {
-      exo__Instance_class: "[[pn__DailyNote]]",
+      exo__Instance_class: ["[[pn__DailyNote]]"],
       pn__DailyNote_day: "[[2025-10-20]]",
     };
 
@@ -467,7 +467,7 @@ describe("DailyTasksRenderer - render", () => {
       basename: "2025-10-20",
     } as TFile;
     const metadata = {
-      exo__Instance_class: "[[pn__DailyNote]]",
+      exo__Instance_class: ["[[pn__DailyNote]]"],
       pn__DailyNote_day: "[[2025-10-20]]",
     };
 
@@ -477,7 +477,7 @@ describe("DailyTasksRenderer - render", () => {
     } as TFile;
 
     const taskMetadata = {
-      exo__Instance_class: "[[ems__Task]]",
+      exo__Instance_class: ["[[ems__Task]]"],
       ems__Effort_day: "[[2025-10-20]]",
       ems__Effort_status: "[[ems__EffortStatusDoing]]",
       ems__Effort_startTimestamp: "2025-10-20T09:00:00.000Z",
@@ -520,7 +520,7 @@ describe("DailyTasksRenderer - timestamp formatting", () => {
       basename: "2025-10-20",
     } as TFile;
     const metadata = {
-      exo__Instance_class: "[[pn__DailyNote]]",
+      exo__Instance_class: ["[[pn__DailyNote]]"],
       pn__DailyNote_day: "[[2025-10-20]]",
     };
 
@@ -530,7 +530,7 @@ describe("DailyTasksRenderer - timestamp formatting", () => {
     } as TFile;
 
     const taskMetadata = {
-      exo__Instance_class: "[[ems__Task]]",
+      exo__Instance_class: ["[[ems__Task]]"],
       ems__Effort_day: "[[2025-10-20]]",
       ems__Effort_status: "[[ems__EffortStatusDoing]]",
       ems__Effort_startTimestamp: "2025-10-20T09:00:00.000Z",
@@ -564,7 +564,7 @@ describe("DailyTasksRenderer - timestamp formatting", () => {
       basename: "2025-10-20",
     } as TFile;
     const metadata = {
-      exo__Instance_class: "[[pn__DailyNote]]",
+      exo__Instance_class: ["[[pn__DailyNote]]"],
       pn__DailyNote_day: "[[2025-10-20]]",
     };
 
@@ -574,7 +574,7 @@ describe("DailyTasksRenderer - timestamp formatting", () => {
     } as TFile;
 
     const taskMetadata = {
-      exo__Instance_class: "[[ems__Task]]",
+      exo__Instance_class: ["[[ems__Task]]"],
       ems__Effort_day: "[[2025-10-20]]",
       ems__Effort_plannedStartTimestamp: "2025-10-20T09:00:00",
       ems__Effort_status: "[[ems__EffortStatusDoing]]",
@@ -609,7 +609,7 @@ describe("DailyTasksRenderer - timestamp formatting", () => {
       basename: "2025-10-20",
     } as TFile;
     const metadata = {
-      exo__Instance_class: "[[pn__DailyNote]]",
+      exo__Instance_class: ["[[pn__DailyNote]]"],
       pn__DailyNote_day: "[[2025-10-20]]",
     };
 
@@ -619,7 +619,7 @@ describe("DailyTasksRenderer - timestamp formatting", () => {
     } as TFile;
 
     const taskMetadata = {
-      exo__Instance_class: "[[ems__Task]]",
+      exo__Instance_class: ["[[ems__Task]]"],
       ems__Effort_day: "[[2025-10-20]]",
       ems__Effort_status: "[[ems__EffortStatusDoing]]",
       ems__Effort_plannedEndTimestamp: "2025-10-20T18:00:00",
@@ -652,7 +652,7 @@ describe("DailyTasksRenderer - timestamp formatting", () => {
       basename: "2025-10-20",
     } as TFile;
     const metadata = {
-      exo__Instance_class: "[[pn__DailyNote]]",
+      exo__Instance_class: ["[[pn__DailyNote]]"],
       pn__DailyNote_day: "[[2025-10-20]]",
     };
 
@@ -662,7 +662,7 @@ describe("DailyTasksRenderer - timestamp formatting", () => {
     } as TFile;
 
     const taskMetadata = {
-      exo__Instance_class: "[[ems__Task]]",
+      exo__Instance_class: ["[[ems__Task]]"],
       ems__Effort_day: "[[2025-10-20]]",
       ems__Effort_startTimestamp: "2025-10-20T09:00:00",
       ems__Effort_status: "[[ems__EffortStatusToDo]]",

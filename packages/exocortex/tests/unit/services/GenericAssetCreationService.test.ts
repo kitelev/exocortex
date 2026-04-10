@@ -406,7 +406,7 @@ describe("GenericAssetCreationService", () => {
       it("should skip system property exo__Instance_class in propertyValues", async () => {
         const config = {
           className: "ems__Task",
-          propertyValues: { exo__Instance_class: "custom_class" },
+          propertyValues: { exo__Instance_class: ["[[custom_class]]"] },
         };
         await service.createAsset(config);
         const content = mockVault.create.mock.calls[0][1];
@@ -862,7 +862,7 @@ describe("GenericAssetCreationService", () => {
           className: "ems__Project",
           parentFile,
           parentMetadata: {
-            exo__Instance_class: "[[ems__Area]]",
+            exo__Instance_class: ["[[ems__Area]]"],
           },
         };
         await service.createAsset(config);
@@ -976,7 +976,7 @@ describe("GenericAssetCreationService", () => {
           className: "ems__Project",
           parentFile,
           parentMetadata: {
-            exo__Instance_class: "ems__Area",
+            exo__Instance_class: ["[[ems__Area]]"],
           },
         };
         await service.createAsset(config);

@@ -47,7 +47,7 @@ describe("Wikilink Resolution (Integration)", () => {
           "[{{exo__Instance_class}}] {{exo__Asset_label}}"
         );
         const metadata = {
-          exo__Instance_class: "ems__Task",
+          exo__Instance_class: ["[[ems__Task]]"],
           exo__Asset_label: "Important Task",
         };
 
@@ -64,7 +64,7 @@ describe("Wikilink Resolution (Integration)", () => {
           "{{exo__Asset_label}} ({{exo__Instance_class}})"
         );
         const metadata = {
-          exo__Instance_class: "ems__Project",
+          exo__Instance_class: ["[[ems__Project]]"],
           exo__Asset_label: "Q1 Sprint",
         };
 
@@ -257,7 +257,7 @@ describe("Wikilink Resolution (Integration)", () => {
         const resolver = new DisplayNameResolver(settings);
         const context = {
           metadata: {
-            exo__Instance_class: "ems__Task",
+            exo__Instance_class: ["[[ems__Task]]"],
             exo__Asset_label: "Task Label",
           },
           basename: "task-123",
@@ -284,7 +284,7 @@ describe("Wikilink Resolution (Integration)", () => {
         const resolver = new DisplayNameResolver(settings);
         const context = {
           metadata: {
-            exo__Instance_class: "ems__Task",
+            exo__Instance_class: ["[[ems__Task]]"],
             exo__Asset_label: "My Task",
           },
           basename: "task-123",
@@ -332,7 +332,7 @@ describe("Wikilink Resolution (Integration)", () => {
         const resolver = new DisplayNameResolver(settings);
         const context = {
           metadata: {
-            exo__Instance_class: "[[ems__Meeting]]",
+            exo__Instance_class: ["[[ems__Meeting]]"],
             exo__Asset_label: "Team Standup",
           },
           basename: "meeting-789",
@@ -388,7 +388,7 @@ describe("Wikilink Resolution (Integration)", () => {
         const resolver = new DisplayNameResolver(settings);
         const context = {
           metadata: {
-            exo__Instance_class: "custom__UnknownClass",
+            exo__Instance_class: ["[[custom__UnknownClass]]"],
             exo__Asset_label: "Unknown Asset",
           },
           basename: "unknown-123",
@@ -410,7 +410,7 @@ describe("Wikilink Resolution (Integration)", () => {
         const resolver = new DisplayNameResolver(settings);
         const context = {
           metadata: {
-            exo__Instance_class: "ems__Task",
+            exo__Instance_class: ["[[ems__Task]]"],
             // No label
           },
           basename: "task-empty",
@@ -514,7 +514,7 @@ describe("Wikilink Resolution (Integration)", () => {
       const resolver = new DisplayNameResolver(settings);
       const context = {
         metadata: {
-          exo__Instance_class: "ems__Project",
+          exo__Instance_class: ["[[ems__Project]]"],
           exo__Asset_label: "Q1 Sprint",
           ems__Project_area: "[[Work]]",
         },
@@ -580,7 +580,7 @@ describe("Wikilink Resolution (Integration)", () => {
       // Arrange: Simulate metadata with many properties
       const metadata: Record<string, unknown> = {
         exo__Asset_label: "Performance Test",
-        exo__Instance_class: "ems__Task",
+        exo__Instance_class: ["[[ems__Task]]"],
       };
 
       // Add 100 extra properties

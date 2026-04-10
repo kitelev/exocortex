@@ -207,7 +207,7 @@ export function createMockPlugin(overrides?: Partial<{
 export function createMockMetadata(overrides?: Metadata): Metadata {
   return {
     exo__Asset_label: "Test Asset",
-    exo__Instance_class: "ems__Task",
+    exo__Instance_class: ["[[ems__Task]]"],
     created: "2024-01-01",
     modified: "2024-01-01",
     ...overrides,

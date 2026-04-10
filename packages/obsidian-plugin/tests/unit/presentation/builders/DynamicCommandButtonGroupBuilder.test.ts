@@ -74,7 +74,7 @@ function createContext(metadataOverrides?: Record<string, unknown>): ButtonBuild
     file: { path: "test/file.md", parent: { path: "test" } } as ButtonBuilderContext["file"],
     metadata: {
       exo__Asset_uid: "obsidian://vault/test/file.md",
-      exo__Instance_class: "ems__Task",
+      exo__Instance_class: ["[[ems__Task]]"],
       ...metadataOverrides,
     },
     instanceClass: "ems__Task",
@@ -216,7 +216,7 @@ describe("DynamicCommandButtonGroupBuilder", () => {
       mockResolveForAsset.mockResolvedValue([]);
       const context = createContext({
         exo__Asset_uid: "obsidian://vault/test/file.md",
-        exo__Instance_class: "ems__Task",
+        exo__Instance_class: ["[[ems__Task]]"],
         exo__Asset_prototype: "proto-uid",
       });
       await builder.build(context);
@@ -245,7 +245,7 @@ describe("DynamicCommandButtonGroupBuilder", () => {
     it("should normalize wikilink brackets from instance class", async () => {
       mockResolveForAsset.mockResolvedValue([]);
       const context = createContext({
-        exo__Instance_class: "[[ems__Task]]",
+        exo__Instance_class: ["[[ems__Task]]"],
       });
       await builder.build(context);
 

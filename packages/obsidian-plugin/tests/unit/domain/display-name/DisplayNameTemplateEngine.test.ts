@@ -71,7 +71,7 @@ describe("DisplayNameTemplateEngine", () => {
       const result = engine.render(
         {
           exo__Asset_label: "Fix Login Bug",
-          exo__Instance_class: "ems__Task",
+          exo__Instance_class: ["[[ems__Task]]"],
         },
         "fix-login-bug"
       );
@@ -290,7 +290,7 @@ describe("DisplayNameTemplateEngine", () => {
   describe("preset rendering", () => {
     const sampleMetadata = {
       exo__Asset_label: "Fix Login Bug",
-      exo__Instance_class: "ems__Task",
+      exo__Instance_class: ["[[ems__Task]]"],
       ems__Effort_status: "🟡 IN_PROGRESS",
     };
 
@@ -420,7 +420,7 @@ describe("DisplayNameTemplateEngine", () => {
         "{{exo__Asset_label}} ({{exo__Instance_class}})"
       );
       const result = engine.render(
-        { exo__Asset_label: "My Task", exo__Instance_class: "ems__Task" },
+        { exo__Asset_label: "My Task", exo__Instance_class: ["[[ems__Task]]"] },
         "my-task"
       );
       expect(result).toBe("My Task (ems__Task)");
@@ -432,7 +432,7 @@ describe("DisplayNameTemplateEngine", () => {
 
       // Test with a custom asset class (not in predefined classTemplates)
       const result = engine.render(
-        { exo__Asset_label: "My Custom Asset", exo__Instance_class: "myapp__CustomClass" },
+        { exo__Asset_label: "My Custom Asset", exo__Instance_class: ["[[myapp__CustomClass]]"] },
         "my-asset"
       );
       expect(result).toBe("My Custom Asset (myapp__CustomClass)");
@@ -487,7 +487,7 @@ describe("DisplayNameTemplateEngine", () => {
     it("should resolve wikilink property to related asset metadata", () => {
       const resolver = jest.fn().mockReturnValue({
         exo__Asset_label: "Parent Project",
-        exo__Instance_class: "ems__Project",
+        exo__Instance_class: ["[[ems__Project]]"],
       });
 
       const engine = new DisplayNameTemplateEngine(

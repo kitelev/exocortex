@@ -46,7 +46,7 @@ describe("MetadataExtractor", () => {
       const expectedMetadata = {
         title: "Test Document",
         status: "draft",
-        exo__Instance_class: "ems__Task",
+        exo__Instance_class: ["[[ems__Task]]"],
       };
       mockVault.getFrontmatter.mockReturnValue(expectedMetadata);
 
@@ -74,7 +74,7 @@ describe("MetadataExtractor", () => {
 
   describe("extractInstanceClass", () => {
     it("should extract single instance class", () => {
-      const metadata = { exo__Instance_class: "ems__Task" };
+      const metadata = { exo__Instance_class: ["[[ems__Task]]"] };
 
       const result = extractor.extractInstanceClass(metadata);
 
@@ -263,7 +263,7 @@ describe("MetadataExtractor", () => {
   describe("extractCommandVisibilityContext", () => {
     it("should extract full context for command visibility", () => {
       const metadata = {
-        exo__Instance_class: "ems__Task",
+        exo__Instance_class: ["[[ems__Task]]"],
         ems__Effort_status: "[[StatusInProgress]]",
         exo__Asset_isArchived: false,
         exo__Asset_isDefinedBy: "[[folder/Parent]]",
@@ -289,7 +289,7 @@ describe("MetadataExtractor", () => {
         name: "test.md",
         parent: null,
       };
-      const metadata = { exo__Instance_class: "ems__Task" };
+      const metadata = { exo__Instance_class: ["[[ems__Task]]"] };
       mockVault.getFrontmatter.mockReturnValue(metadata);
 
       const result = extractor.extractCommandVisibilityContext(rootFile);

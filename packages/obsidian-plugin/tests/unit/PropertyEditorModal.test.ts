@@ -61,7 +61,7 @@ describe("PropertyEditorModal", () => {
     } as TFile;
 
     mockFrontmatter = {
-      exo__Instance_class: "ems__Task",
+      exo__Instance_class: ["[[ems__Task]]"],
       exo__Asset_label: "Test Task",
     };
 

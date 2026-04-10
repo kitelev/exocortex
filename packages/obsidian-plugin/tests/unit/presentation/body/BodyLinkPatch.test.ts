@@ -121,7 +121,7 @@ describe("BodyLinkPatch", () => {
       mockApp.metadataCache.getFileCache.mockReturnValue({
         frontmatter: {
           exo__Asset_label: "Test Label",
-          exo__Instance_class: "ems__Task",
+          exo__Instance_class: ["[[ems__Task]]"],
         },
       });
 
@@ -166,7 +166,7 @@ describe("BodyLinkPatch", () => {
       mockApp.metadataCache.getFileCache.mockReturnValue({
         frontmatter: {
           exo__Asset_label: "Test Label",
-          exo__Instance_class: "ems__Task",
+          exo__Instance_class: ["[[ems__Task]]"],
         },
       });
 
@@ -189,7 +189,7 @@ describe("BodyLinkPatch", () => {
       mockApp.metadataCache.getFileCache.mockReturnValue({
         frontmatter: {
           exo__Asset_label: "Test Label",
-          exo__Instance_class: "ems__Task",
+          exo__Instance_class: ["[[ems__Task]]"],
         },
       });
 
@@ -214,7 +214,7 @@ describe("BodyLinkPatch", () => {
         frontmatter: {
           exo__Asset_prototype: "[[prototype-path]]",
           exo__Asset_label: "Prototype Label",
-          exo__Instance_class: "ems__Task",
+          exo__Instance_class: ["[[ems__Task]]"],
         },
       });
 
@@ -281,7 +281,7 @@ describe("BodyLinkPatch", () => {
       mockApp.metadataCache.getFileCache.mockReturnValue({
         frontmatter: {
           exo__Asset_label: "Test Label",
-          exo__Instance_class: "ems__Task",
+          exo__Instance_class: ["[[ems__Task]]"],
         },
       });
 
@@ -317,7 +317,7 @@ describe("BodyLinkPatch", () => {
       mockApp.metadataCache.getFileCache.mockReturnValue({
         frontmatter: {
           exo__Asset_label: "Test Label",
-          exo__Instance_class: "ems__Task",
+          exo__Instance_class: ["[[ems__Task]]"],
         },
       });
 
@@ -348,7 +348,7 @@ describe("BodyLinkPatch", () => {
       mockApp.metadataCache.getFileCache.mockReturnValue({
         frontmatter: {
           exo__Asset_label: "Test Label",
-          exo__Instance_class: "ems__Task",
+          exo__Instance_class: ["[[ems__Task]]"],
         },
       });
 
@@ -379,7 +379,7 @@ describe("BodyLinkPatch", () => {
       mockApp.metadataCache.getFileCache.mockReturnValue({
         frontmatter: {
           exo__Asset_label: "Test Label",
-          exo__Instance_class: "ems__Task",
+          exo__Instance_class: ["[[ems__Task]]"],
         },
       });
 
@@ -409,7 +409,7 @@ describe("BodyLinkPatch", () => {
       mockApp.metadataCache.getFileCache.mockReturnValue({
         frontmatter: {
           exo__Asset_label: "Auto Label from Metadata",
-          exo__Instance_class: "ems__Task",
+          exo__Instance_class: ["[[ems__Task]]"],
         },
       });
 
@@ -437,7 +437,7 @@ describe("BodyLinkPatch", () => {
       mockApp.metadataCache.getFileCache.mockReturnValue({
         frontmatter: {
           exo__Asset_label: "Task Label",
-          exo__Instance_class: "ems__Task",
+          exo__Instance_class: ["[[ems__Task]]"],
         },
       });
 
@@ -464,7 +464,7 @@ describe("BodyLinkPatch", () => {
       mockApp.metadataCache.getFileCache.mockReturnValue({
         frontmatter: {
           exo__Asset_label: "Some Label",
-          exo__Instance_class: "ems__Task",
+          exo__Instance_class: ["[[ems__Task]]"],
         },
       });
 
@@ -492,7 +492,7 @@ describe("BodyLinkPatch", () => {
       mockApp.metadataCache.getFileCache.mockReturnValue({
         frontmatter: {
           exo__Asset_label: "Initial Label",
-          exo__Instance_class: "ems__Task",
+          exo__Instance_class: ["[[ems__Task]]"],
         },
       });
 
@@ -504,7 +504,7 @@ describe("BodyLinkPatch", () => {
       mockApp.metadataCache.getFileCache.mockReturnValue({
         frontmatter: {
           exo__Asset_label: "Updated Label",
-          exo__Instance_class: "ems__Task",
+          exo__Instance_class: ["[[ems__Task]]"],
         },
       });
 
@@ -558,7 +558,7 @@ describe("BodyLinkPatch", () => {
       mockApp.metadataCache.getFileCache.mockReturnValue({
         frontmatter: {
           exo__Asset_label: "My Document",
-          exo__Instance_class: "ems__Task",
+          exo__Instance_class: ["[[ems__Task]]"],
         },
       });
 
@@ -585,7 +585,7 @@ describe("BodyLinkPatch", () => {
       mockApp.metadataCache.getFileCache.mockReturnValue({
         frontmatter: {
           exo__Asset_label: "My Document",
-          exo__Instance_class: "lit__Article",
+          exo__Instance_class: ["[[lit__Article]]"],
         },
       });
 
@@ -612,7 +612,7 @@ describe("BodyLinkPatch", () => {
       mockApp.metadataCache.getFileCache.mockReturnValue({
         frontmatter: {
           exo__Asset_label: "Document Label",
-          exo__Instance_class: "ems__Task",
+          exo__Instance_class: ["[[ems__Task]]"],
         },
       });
 
@@ -639,7 +639,7 @@ describe("BodyLinkPatch", () => {
       mockApp.metadataCache.getFileCache.mockReturnValue({
         frontmatter: {
           exo__Asset_label: "Test Label",
-          exo__Instance_class: "ems__Task",
+          exo__Instance_class: ["[[ems__Task]]"],
         },
       });
 
@@ -679,7 +679,7 @@ describe("BodyLinkPatch", () => {
       mockApp.metadataCache.getFileCache.mockReturnValue({
         frontmatter: {
           exo__Asset_label: "My Document Label",
-          exo__Instance_class: "ems__Task",
+          exo__Instance_class: ["[[ems__Task]]"],
         },
       });
 
@@ -709,7 +709,7 @@ describe("BodyLinkPatch", () => {
       mockApp.metadataCache.getFileCache.mockReturnValue({
         frontmatter: {
           exo__Asset_label: "My Document Label",
-          exo__Instance_class: "lit__Article",
+          exo__Instance_class: ["[[lit__Article]]"],
         },
       });
 
@@ -741,7 +741,7 @@ describe("BodyLinkPatch", () => {
       mockApp.metadataCache.getFileCache.mockReturnValue({
         frontmatter: {
           exo__Asset_label: "My Document Label",
-          exo__Instance_class: "ems__Task",
+          exo__Instance_class: ["[[ems__Task]]"],
         },
       });
 
@@ -773,7 +773,7 @@ describe("BodyLinkPatch", () => {
       mockApp.metadataCache.getFileCache.mockReturnValue({
         frontmatter: {
           exo__Asset_label: "My Document Label",
-          exo__Instance_class: "ems__Task",
+          exo__Instance_class: ["[[ems__Task]]"],
         },
       });
 
@@ -815,7 +815,7 @@ describe("BodyLinkPatch", () => {
       mockApp.metadataCache.getFileCache.mockReturnValue({
         frontmatter: {
           exo__Asset_label: "ems__Project",
-          exo__Instance_class: "ems__Project",
+          exo__Instance_class: ["[[ems__Project]]"],
         },
       });
 
@@ -895,7 +895,7 @@ describe("BodyLinkPatch", () => {
           return {
             frontmatter: {
               exo__Asset_label: "ems__Project",
-              exo__Instance_class: "ems__Project",
+              exo__Instance_class: ["[[ems__Project]]"],
             },
           };
         }
@@ -903,7 +903,7 @@ describe("BodyLinkPatch", () => {
           return {
             frontmatter: {
               exo__Asset_label: "ems__EffortStatusDoing",
-              exo__Instance_class: "ems__EffortStatus",
+              exo__Instance_class: ["[[ems__EffortStatus]]"],
             },
           };
         }
@@ -967,7 +967,7 @@ describe("BodyLinkPatch", () => {
           return {
             frontmatter: {
               exo__Asset_label: "Paragraph Label",
-              exo__Instance_class: "ems__Task",
+              exo__Instance_class: ["[[ems__Task]]"],
             },
           };
         }
@@ -975,7 +975,7 @@ describe("BodyLinkPatch", () => {
           return {
             frontmatter: {
               exo__Asset_label: "Table Label",
-              exo__Instance_class: "ems__Project",
+              exo__Instance_class: ["[[ems__Project]]"],
             },
           };
         }
@@ -1018,7 +1018,7 @@ describe("BodyLinkPatch", () => {
       mockApp.metadataCache.getFileCache.mockReturnValue({
         frontmatter: {
           exo__Asset_label: "Should Not Appear",
-          exo__Instance_class: "ems__Task",
+          exo__Instance_class: ["[[ems__Task]]"],
         },
       });
 
@@ -1058,7 +1058,7 @@ describe("BodyLinkPatch", () => {
       mockApp.metadataCache.getFileCache.mockReturnValue({
         frontmatter: {
           exo__Asset_label: "Should Not Appear",
-          exo__Instance_class: "ems__Task",
+          exo__Instance_class: ["[[ems__Task]]"],
         },
       });
 
@@ -1080,7 +1080,7 @@ describe("BodyLinkPatch", () => {
       mockApp.metadataCache.getFileCache.mockReturnValue({
         frontmatter: {
           exo__Asset_label: "Dynamic Label",
-          exo__Instance_class: "ems__Task",
+          exo__Instance_class: ["[[ems__Task]]"],
         },
       });
 
@@ -1124,7 +1124,7 @@ describe("BodyLinkPatch", () => {
       mockApp.metadataCache.getFileCache.mockReturnValue({
         frontmatter: {
           exo__Asset_label: "Cell Label",
-          exo__Instance_class: "ems__Project",
+          exo__Instance_class: ["[[ems__Project]]"],
         },
       });
 

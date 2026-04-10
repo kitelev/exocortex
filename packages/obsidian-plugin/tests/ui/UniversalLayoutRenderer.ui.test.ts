@@ -236,7 +236,7 @@ describe("UniversalLayoutRenderer UI Integration", () => {
       // Mock file cache with frontmatter
       (mockApp.metadataCache.getFileCache as jest.Mock).mockReturnValue({
         frontmatter: {
-          exo__Instance_class: "ems__Task",
+          exo__Instance_class: ["[[ems__Task]]"],
           status: "active",
         },
       });
@@ -297,7 +297,7 @@ describe("UniversalLayoutRenderer UI Integration", () => {
 
       (mockApp.metadataCache.getFileCache as jest.Mock).mockReturnValue({
         frontmatter: {
-          exo__Instance_class: "[[ems__Task]]",
+          exo__Instance_class: ["[[ems__Task]]"],
         },
       });
 
@@ -355,14 +355,14 @@ describe("UniversalLayoutRenderer UI Integration", () => {
           if (file?.path === "task1.md") {
             return {
               frontmatter: {
-                exo__Instance_class: "ems__Task",
+                exo__Instance_class: ["[[ems__Task]]"],
                 assignedTo: "[[test]]",
               },
             };
           } else if (file?.path === "task2.md") {
             return {
               frontmatter: {
-                exo__Instance_class: "ems__Project",
+                exo__Instance_class: ["[[ems__Project]]"],
                 owner: "[[test]]",
               },
             };
@@ -519,7 +519,7 @@ describe("UniversalLayoutRenderer UI Integration", () => {
 
       (mockApp.metadataCache.getFileCache as jest.Mock).mockReturnValue({
         frontmatter: {
-          exo__Instance_class: "[[ems__Area]]",
+          exo__Instance_class: ["[[ems__Area]]"],
           exo__Asset_isDefinedBy: "[[Ontology/EMS]]",
         },
       });
@@ -547,7 +547,7 @@ describe("UniversalLayoutRenderer UI Integration", () => {
 
       (mockApp.metadataCache.getFileCache as jest.Mock).mockReturnValue({
         frontmatter: {
-          exo__Instance_class: "[[ems__Project]]",
+          exo__Instance_class: ["[[ems__Project]]"],
           exo__Asset_isDefinedBy: "[[Ontology/EMS]]",
         },
       });
@@ -575,7 +575,7 @@ describe("UniversalLayoutRenderer UI Integration", () => {
 
       (mockApp.metadataCache.getFileCache as jest.Mock).mockReturnValue({
         frontmatter: {
-          exo__Instance_class: "[[ems__Task]]",
+          exo__Instance_class: ["[[ems__Task]]"],
         },
       });
 
@@ -598,7 +598,7 @@ describe("UniversalLayoutRenderer UI Integration", () => {
 
       (mockApp.metadataCache.getFileCache as jest.Mock).mockReturnValue({
         frontmatter: {
-          exo__Instance_class: "[[ems__Area]]",
+          exo__Instance_class: ["[[ems__Area]]"],
           exo__Asset_uid: "area-123",
         },
       });
@@ -638,7 +638,7 @@ describe("UniversalLayoutRenderer UI Integration", () => {
 
       (mockApp.metadataCache.getFileCache as jest.Mock).mockReturnValue({
         frontmatter: {
-          exo__Instance_class: "[[ems__Task]]",
+          exo__Instance_class: ["[[ems__Task]]"],
           ems__Effort_status: "[[ems__EffortStatusDoing]]",
           exo__Asset_isDefinedBy: "[[Ontology/EMS]]",
         },
@@ -666,7 +666,7 @@ describe("UniversalLayoutRenderer UI Integration", () => {
 
       (mockApp.metadataCache.getFileCache as jest.Mock).mockReturnValue({
         frontmatter: {
-          exo__Instance_class: "[[ems__Task]]",
+          exo__Instance_class: ["[[ems__Task]]"],
           ems__Effort_status: "[[ems__EffortStatusBacklog]]",
         },
       });
@@ -689,7 +689,7 @@ describe("UniversalLayoutRenderer UI Integration", () => {
 
       (mockApp.metadataCache.getFileCache as jest.Mock).mockReturnValue({
         frontmatter: {
-          exo__Instance_class: "[[ems__Task]]",
+          exo__Instance_class: ["[[ems__Task]]"],
           ems__Effort_status: "[[ems__EffortStatusDone]]",
         },
       });
@@ -712,7 +712,7 @@ describe("UniversalLayoutRenderer UI Integration", () => {
 
       (mockApp.metadataCache.getFileCache as jest.Mock).mockReturnValue({
         frontmatter: {
-          exo__Instance_class: "[[ems__Project]]",
+          exo__Instance_class: ["[[ems__Project]]"],
           ems__Effort_status: "[[ems__EffortStatusDoing]]",
         },
       });
@@ -739,7 +739,7 @@ describe("UniversalLayoutRenderer UI Integration", () => {
 
       (mockApp.metadataCache.getFileCache as jest.Mock).mockReturnValue({
         frontmatter: {
-          exo__Instance_class: "[[ems__Project]]",
+          exo__Instance_class: ["[[ems__Project]]"],
           ems__Effort_status: "[[ems__EffortStatusBacklog]]",
         },
       });
@@ -762,7 +762,7 @@ describe("UniversalLayoutRenderer UI Integration", () => {
 
       (mockApp.metadataCache.getFileCache as jest.Mock).mockReturnValue({
         frontmatter: {
-          exo__Instance_class: "[[ems__Project]]",
+          exo__Instance_class: ["[[ems__Project]]"],
           ems__Effort_status: "[[ems__EffortStatusDone]]",
         },
       });
@@ -785,7 +785,7 @@ describe("UniversalLayoutRenderer UI Integration", () => {
 
       (mockApp.metadataCache.getFileCache as jest.Mock).mockReturnValue({
         frontmatter: {
-          exo__Instance_class: "[[ems__Area]]",
+          exo__Instance_class: ["[[ems__Area]]"],
         },
       });
 
@@ -809,7 +809,7 @@ describe("UniversalLayoutRenderer UI Integration", () => {
 
       (mockApp.metadataCache.getFileCache as jest.Mock).mockReturnValue({
         frontmatter: {
-          exo__Instance_class: "[[ems__Task]]",
+          exo__Instance_class: ["[[ems__Task]]"],
           ems__Effort_status: "[[ems__EffortStatusDone]]",
           archived: false,
         },
@@ -837,7 +837,7 @@ describe("UniversalLayoutRenderer UI Integration", () => {
 
       (mockApp.metadataCache.getFileCache as jest.Mock).mockReturnValue({
         frontmatter: {
-          exo__Instance_class: "[[ems__Task]]",
+          exo__Instance_class: ["[[ems__Task]]"],
           ems__Effort_status: "[[ems__EffortStatusDone]]",
           archived: true,
         },
@@ -861,7 +861,7 @@ describe("UniversalLayoutRenderer UI Integration", () => {
 
       (mockApp.metadataCache.getFileCache as jest.Mock).mockReturnValue({
         frontmatter: {
-          exo__Instance_class: "[[ems__Task]]",
+          exo__Instance_class: ["[[ems__Task]]"],
           ems__Effort_status: "[[ems__EffortStatusActive]]",
           archived: false,
         },
@@ -888,7 +888,7 @@ describe("UniversalLayoutRenderer UI Integration", () => {
 
       (mockApp.metadataCache.getFileCache as jest.Mock).mockReturnValue({
         frontmatter: {
-          exo__Instance_class: "[[ems__Project]]",
+          exo__Instance_class: ["[[ems__Project]]"],
           ems__Effort_status: "[[ems__EffortStatusDone]]",
           archived: false,
         },
@@ -916,7 +916,7 @@ describe("UniversalLayoutRenderer UI Integration", () => {
 
       (mockApp.metadataCache.getFileCache as jest.Mock).mockReturnValue({
         frontmatter: {
-          exo__Instance_class: "[[ems__Project]]",
+          exo__Instance_class: ["[[ems__Project]]"],
           ems__Effort_status: "[[ems__EffortStatusDone]]",
           archived: true,
         },
@@ -940,7 +940,7 @@ describe("UniversalLayoutRenderer UI Integration", () => {
 
       (mockApp.metadataCache.getFileCache as jest.Mock).mockReturnValue({
         frontmatter: {
-          exo__Instance_class: "[[ems__Project]]",
+          exo__Instance_class: ["[[ems__Project]]"],
           ems__Effort_status: "[[ems__EffortStatusActive]]",
           archived: false,
         },
@@ -967,7 +967,7 @@ describe("UniversalLayoutRenderer UI Integration", () => {
 
       (mockApp.metadataCache.getFileCache as jest.Mock).mockReturnValue({
         frontmatter: {
-          exo__Instance_class: "[[ems__Area]]",
+          exo__Instance_class: ["[[ems__Area]]"],
           archived: false,
         },
       });
@@ -995,7 +995,7 @@ describe("UniversalLayoutRenderer UI Integration", () => {
 
       (mockApp.metadataCache.getFileCache as jest.Mock).mockReturnValue({
         frontmatter: {
-          exo__Instance_class: "[[ems__Area]]",
+          exo__Instance_class: ["[[ems__Area]]"],
           exo__Asset_uid: "area-123",
           emptyProp: "",
           validProp: "value",
@@ -1024,7 +1024,7 @@ describe("UniversalLayoutRenderer UI Integration", () => {
 
       (mockApp.metadataCache.getFileCache as jest.Mock).mockReturnValue({
         frontmatter: {
-          exo__Instance_class: "[[ems__Area]]",
+          exo__Instance_class: ["[[ems__Area]]"],
           exo__Asset_uid: "area-123",
           validProp1: "value1",
           validProp2: "value2",
@@ -1049,7 +1049,7 @@ describe("UniversalLayoutRenderer UI Integration", () => {
 
       (mockApp.metadataCache.getFileCache as jest.Mock).mockReturnValue({
         frontmatter: {
-          exo__Instance_class: "[[ems__Task]]",
+          exo__Instance_class: ["[[ems__Task]]"],
           ems__Effort_status: "[[ems__EffortStatusActive]]",
           emptyProp: null,
         },
@@ -1077,7 +1077,7 @@ describe("UniversalLayoutRenderer UI Integration", () => {
 
       (mockApp.metadataCache.getFileCache as jest.Mock).mockReturnValue({
         frontmatter: {
-          exo__Instance_class: "[[ems__Project]]",
+          exo__Instance_class: ["[[ems__Project]]"],
           ems__Effort_status: "[[ems__EffortStatusDone]]",
           emptyArray: [],
         },
@@ -1105,7 +1105,7 @@ describe("UniversalLayoutRenderer UI Integration", () => {
     it("should work with FileBuilder pattern for test data", () => {
       const [content, metadata] = new FileBuilder()
         .frontmatter({
-          exo__Instance_class: "ems__Task",
+          exo__Instance_class: ["[[ems__Task]]"],
           status: "active",
           priority: "high",
         })
@@ -1119,13 +1119,14 @@ describe("UniversalLayoutRenderer UI Integration", () => {
 
       // Verify content
       expect(content).toContain("---");
-      expect(content).toContain("exo__Instance_class: ems__Task");
+      expect(content).toContain("exo__Instance_class:");
+      expect(content).toContain("[[ems__Task]]");
       expect(content).toContain("## Task Details");
       expect(content).toContain("- First item");
       expect(content).toContain("[[Related Note|alias]]");
 
       // Verify metadata
-      expect(metadata.frontmatter.exo__Instance_class).toBe("ems__Task");
+      expect(metadata.frontmatter.exo__Instance_class).toEqual(["[[ems__Task]]"]);
       expect(metadata.headings).toHaveLength(1);
       expect(metadata.headings[0].heading).toBe("Task Details");
       expect(metadata.links).toHaveLength(1);
@@ -1143,7 +1144,7 @@ describe("UniversalLayoutRenderer UI Integration", () => {
 
       (mockApp.metadataCache.getFileCache as jest.Mock).mockReturnValue({
         frontmatter: {
-          exo__Instance_class: "[[ems__Task]]",
+          exo__Instance_class: ["[[ems__Task]]"],
           exo__Asset_isDefinedBy: "[[Reference]]",
         },
       });
@@ -1207,7 +1208,7 @@ describe("UniversalLayoutRenderer UI Integration", () => {
 
       (mockApp.metadataCache.getFileCache as jest.Mock).mockReturnValue({
         frontmatter: {
-          exo__Instance_class: "[[ems__Task]]",
+          exo__Instance_class: ["[[ems__Task]]"],
         },
       });
 
@@ -1261,7 +1262,7 @@ describe("UniversalLayoutRenderer UI Integration", () => {
       (mockApp.metadataCache.getFileCache as jest.Mock).mockReturnValue({
         frontmatter: {
           exo__Asset_isDefinedBy: "[[Ref]]",
-          exo__Instance_class: "[[ems__Task]]",
+          exo__Instance_class: ["[[ems__Task]]"],
           emptyProp: "", // Add empty property to trigger Clean Properties button
         },
       });
@@ -1315,7 +1316,7 @@ describe("UniversalLayoutRenderer UI Integration", () => {
 
       (mockApp.metadataCache.getFileCache as jest.Mock).mockReturnValue({
         frontmatter: {
-          exo__Instance_class: "[[ems__Area]]",
+          exo__Instance_class: ["[[ems__Area]]"],
           exo__Asset_uid: "test-123",
           exo__Asset_isDefinedBy: "[[some-class]]",
           emptyProp: "",
@@ -1366,7 +1367,7 @@ describe("UniversalLayoutRenderer UI Integration", () => {
 
       (mockApp.metadataCache.getFileCache as jest.Mock).mockReturnValue({
         frontmatter: {
-          exo__Instance_class: "[[ems__Task]]",
+          exo__Instance_class: ["[[ems__Task]]"],
           ems__Effort_status: "[[ems__EffortStatusBacklog]]",
         },
       });
@@ -1393,7 +1394,7 @@ describe("UniversalLayoutRenderer UI Integration", () => {
 
       (mockApp.metadataCache.getFileCache as jest.Mock).mockReturnValue({
         frontmatter: {
-          exo__Instance_class: "[[ems__Task]]",
+          exo__Instance_class: ["[[ems__Task]]"],
           ems__Effort_status: "[[ems__EffortStatusDraft]]",
         },
       });
@@ -1416,7 +1417,7 @@ describe("UniversalLayoutRenderer UI Integration", () => {
 
       (mockApp.metadataCache.getFileCache as jest.Mock).mockReturnValue({
         frontmatter: {
-          exo__Instance_class: "[[ems__Task]]",
+          exo__Instance_class: ["[[ems__Task]]"],
           ems__Effort_status: "[[ems__EffortStatusDoing]]",
         },
       });
@@ -1439,7 +1440,7 @@ describe("UniversalLayoutRenderer UI Integration", () => {
 
       (mockApp.metadataCache.getFileCache as jest.Mock).mockReturnValue({
         frontmatter: {
-          exo__Instance_class: "[[ems__Task]]",
+          exo__Instance_class: ["[[ems__Task]]"],
           ems__Effort_status: "[[ems__EffortStatusDone]]",
         },
       });
@@ -1462,7 +1463,7 @@ describe("UniversalLayoutRenderer UI Integration", () => {
 
       (mockApp.metadataCache.getFileCache as jest.Mock).mockReturnValue({
         frontmatter: {
-          exo__Instance_class: "[[ems__Project]]",
+          exo__Instance_class: ["[[ems__Project]]"],
           ems__Effort_status: "[[ems__EffortStatusBacklog]]",
         },
       });
@@ -1488,7 +1489,7 @@ describe("UniversalLayoutRenderer UI Integration", () => {
 
       (mockApp.metadataCache.getFileCache as jest.Mock).mockReturnValue({
         frontmatter: {
-          exo__Instance_class: "[[ems__Project]]",
+          exo__Instance_class: ["[[ems__Project]]"],
           ems__Effort_status: "[[ems__EffortStatusToDo]]",
         },
       });
@@ -1515,7 +1516,7 @@ describe("UniversalLayoutRenderer UI Integration", () => {
 
       (mockApp.metadataCache.getFileCache as jest.Mock).mockReturnValue({
         frontmatter: {
-          exo__Instance_class: "[[ems__Project]]",
+          exo__Instance_class: ["[[ems__Project]]"],
           ems__Effort_status: "[[ems__EffortStatusDoing]]",
         },
       });
@@ -1538,7 +1539,7 @@ describe("UniversalLayoutRenderer UI Integration", () => {
 
       (mockApp.metadataCache.getFileCache as jest.Mock).mockReturnValue({
         frontmatter: {
-          exo__Instance_class: "[[ems__Project]]",
+          exo__Instance_class: ["[[ems__Project]]"],
           ems__Effort_status: "[[ems__EffortStatusDone]]",
         },
       });
@@ -1561,7 +1562,7 @@ describe("UniversalLayoutRenderer UI Integration", () => {
 
       (mockApp.metadataCache.getFileCache as jest.Mock).mockReturnValue({
         frontmatter: {
-          exo__Instance_class: "[[ems__Area]]",
+          exo__Instance_class: ["[[ems__Area]]"],
         },
       });
 
@@ -1587,7 +1588,7 @@ describe("UniversalLayoutRenderer UI Integration", () => {
       (relatedFile as any).stat = { ctime: Date.now(), mtime: Date.now() };
 
       (mockApp.metadataCache.getFileCache as jest.Mock).mockReturnValue({
-        frontmatter: { exo__Instance_class: "ems__Task" },
+        frontmatter: { exo__Instance_class: ["[[ems__Task]]"] },
       });
 
       mockApp.metadataCache.resolvedLinks = { "task.md": { "test.md": 1 } };
@@ -1629,12 +1630,12 @@ describe("UniversalLayoutRenderer UI Integration", () => {
       (mockApp.metadataCache.getFileCache as jest.Mock).mockImplementation(
         (file: TFile) => {
           if (file.path === "current.md") {
-            return { frontmatter: { exo__Instance_class: "ems__Area" } };
+            return { frontmatter: { exo__Instance_class: ["[[ems__Area]]"] } };
           }
           if (file.path === "tasks/Task-123.md") {
             return {
               frontmatter: {
-                exo__Instance_class: "ems__Task",
+                exo__Instance_class: ["[[ems__Task]]"],
                 exo__Asset_prototype: "[[TaskPrototype]]",
                 exo__Asset_label: "Marketing Campaign Template",
               },
@@ -1701,12 +1702,12 @@ describe("UniversalLayoutRenderer UI Integration", () => {
       (mockApp.metadataCache.getFileCache as jest.Mock).mockImplementation(
         (file: TFile) => {
           if (file.path === "assets/AssetB.md") {
-            return { frontmatter: { exo__Instance_class: "ems__Task" } };
+            return { frontmatter: { exo__Instance_class: ["[[ems__Task]]"] } };
           }
           if (file.path === "assets/AssetA.md") {
             return {
               frontmatter: {
-                exo__Instance_class: "ems__Task",
+                exo__Instance_class: ["[[ems__Task]]"],
                 property1: "[[AssetB]]",
                 property2: "[[AssetB]]",
               },
@@ -1780,7 +1781,7 @@ describe("UniversalLayoutRenderer UI Integration", () => {
           if (file.path === "daily-notes/2025-10-16 Note.md") {
             return {
               frontmatter: {
-                exo__Instance_class: "[[pn__DailyNote]]",
+                exo__Instance_class: ["[[pn__DailyNote]]"],
                 pn__DailyNote_day: "[[2025-10-16]]",
                 some_property: "value",
               },
@@ -1789,7 +1790,7 @@ describe("UniversalLayoutRenderer UI Integration", () => {
           if (file.path === "tasks/task1.md") {
             return {
               frontmatter: {
-                exo__Instance_class: "ems__Task",
+                exo__Instance_class: ["[[ems__Task]]"],
                 exo__Asset_label: "Task 1",
                 ems__Effort_status: "[[ems__EffortStatusDoing]]",
                 ems__Effort_day: "[[2025-10-16]]",
@@ -1861,7 +1862,7 @@ describe("UniversalLayoutRenderer UI Integration", () => {
 
       (mockApp.metadataCache.getFileCache as jest.Mock).mockReturnValue({
         frontmatter: {
-          exo__Instance_class: "[[ems__Task]]",
+          exo__Instance_class: ["[[ems__Task]]"],
         },
       });
 
@@ -1886,7 +1887,7 @@ describe("UniversalLayoutRenderer UI Integration", () => {
 
       (mockApp.metadataCache.getFileCache as jest.Mock).mockReturnValue({
         frontmatter: {
-          exo__Instance_class: "[[pn__DailyNote]]",
+          exo__Instance_class: ["[[pn__DailyNote]]"],
           // Missing pn__DailyNote_day
         },
       });
@@ -1912,7 +1913,7 @@ describe("UniversalLayoutRenderer UI Integration", () => {
 
       (mockApp.metadataCache.getFileCache as jest.Mock).mockReturnValue({
         frontmatter: {
-          exo__Instance_class: "[[pn__DailyNote]]",
+          exo__Instance_class: ["[[pn__DailyNote]]"],
           pn__DailyNote_day: "[[2025-10-16]]",
         },
       });
@@ -1956,7 +1957,7 @@ describe("UniversalLayoutRenderer UI Integration", () => {
           if (file.path === "daily-notes/2025-10-16 Note.md") {
             return {
               frontmatter: {
-                exo__Instance_class: "[[pn__DailyNote]]",
+                exo__Instance_class: ["[[pn__DailyNote]]"],
                 pn__DailyNote_day: "[[2025-10-16]]",
               },
             };
@@ -1964,7 +1965,7 @@ describe("UniversalLayoutRenderer UI Integration", () => {
           if (file.path === "tasks/task1.md") {
             return {
               frontmatter: {
-                exo__Instance_class: "ems__Task",
+                exo__Instance_class: ["[[ems__Task]]"],
                 exo__Asset_label: "Morning standup",
                 ems__Effort_status: "[[ems__EffortStatusDoing]]",
                 ems__Effort_day: "[[2025-10-16]]",
@@ -1975,7 +1976,7 @@ describe("UniversalLayoutRenderer UI Integration", () => {
           if (file.path === "tasks/task2.md") {
             return {
               frontmatter: {
-                exo__Instance_class: "ems__Task",
+                exo__Instance_class: ["[[ems__Task]]"],
                 exo__Asset_label: "Code review",
                 ems__Effort_status: "[[ems__EffortStatusDone]]",
                 ems__Effort_day: "[[2025-10-16]]",
@@ -1987,7 +1988,7 @@ describe("UniversalLayoutRenderer UI Integration", () => {
           if (file.path === "tasks/other.md") {
             return {
               frontmatter: {
-                exo__Instance_class: "ems__Task",
+                exo__Instance_class: ["[[ems__Task]]"],
                 exo__Asset_label: "Different day task",
                 ems__Effort_day: "[[2025-10-17]]", // Different day!
                 ems__Effort_startTimestamp: "2025-10-17T09:00:00",
@@ -2072,7 +2073,7 @@ describe("UniversalLayoutRenderer UI Integration", () => {
           if (file.path === "daily-notes/2025-10-16 Note.md") {
             return {
               frontmatter: {
-                exo__Instance_class: "[[pn__DailyNote]]",
+                exo__Instance_class: ["[[pn__DailyNote]]"],
                 pn__DailyNote_day: "[[2025-10-16]]",
                 some_property: "value",
               },
@@ -2081,7 +2082,7 @@ describe("UniversalLayoutRenderer UI Integration", () => {
           if (file.path === "tasks/task1.md") {
             return {
               frontmatter: {
-                exo__Instance_class: "ems__Task",
+                exo__Instance_class: ["[[ems__Task]]"],
                 ems__Effort_day: "[[2025-10-16]]",
                 ems__Effort_startTimestamp: "2025-10-16T09:00:00",
                 some_reference: "[[2025-10-16 Note]]",

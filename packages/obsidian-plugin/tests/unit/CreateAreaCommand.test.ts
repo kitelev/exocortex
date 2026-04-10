@@ -58,7 +58,7 @@ describe("CreateAreaCommand", () => {
       },
       metadataCache: {
         getFileCache: jest.fn().mockReturnValue({
-          frontmatter: { exo__Instance_class: "ems__Area" },
+          frontmatter: { exo__Instance_class: ["[[ems__Area]]"] },
         }),
       },
     } as unknown as jest.Mocked<App>;
@@ -137,7 +137,7 @@ describe("CreateAreaCommand", () => {
       expect(mockShowLabelInputModal).toHaveBeenCalledWith(mockApp);
       expect(mockAreaCreationService.createChildArea).toHaveBeenCalledWith(
         mockFile,
-        { exo__Instance_class: "ems__Area" },
+        { exo__Instance_class: ["[[ems__Area]]"] },
         "Test Area"
       );
       expect(mockVaultAdapter.toTFile).toHaveBeenCalledWith(createdFile);

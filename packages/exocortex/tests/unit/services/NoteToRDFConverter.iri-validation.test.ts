@@ -56,7 +56,7 @@ describe("Issue #2205: IRI Validation and Error Handling", () => {
       // Valid file returns good frontmatter
       mockVaultAdapter.getFrontmatter.mockImplementation((file) => {
         if (file.path === "valid-file.md") {
-          return { exo__Instance_class: "ems__Task" };
+          return { exo__Instance_class: ["[[ems__Task]]"] };
         }
         // Problematic file will throw during conversion
         throw new Error("Invalid subject: cannot parse frontmatter");
@@ -151,7 +151,7 @@ describe("Issue #2205: IRI Validation and Error Handling", () => {
         if (file.path === "will-fail.md") {
           throw new Error("Conversion error");
         }
-        return { exo__Instance_class: "ems__Task" };
+        return { exo__Instance_class: ["[[ems__Task]]"] };
       });
       mockVaultAdapter.read.mockResolvedValue("# Content");
 
@@ -181,7 +181,7 @@ describe("Issue #2205: IRI Validation and Error Handling", () => {
 
       mockVaultAdapter.getAllFiles.mockReturnValue(validFiles);
       mockVaultAdapter.getFrontmatter.mockReturnValue({
-        exo__Instance_class: "ems__Task",
+        exo__Instance_class: ["[[ems__Task]]"],
       });
       mockVaultAdapter.read.mockResolvedValue("# Content");
 

@@ -17,7 +17,7 @@ test.describe("Responsive Layout CSS Tests", () => {
       isBodyLink: false,
       created: Date.now(),
       modified: Date.now(),
-      metadata: { exo__Instance_class: "ems__Task" },
+      metadata: { exo__Instance_class: ["[[ems__Task]]"] },
     },
   ];
 

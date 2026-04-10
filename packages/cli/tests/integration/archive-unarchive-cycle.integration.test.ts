@@ -80,7 +80,7 @@ describe("Archive → Unarchive full lifecycle", () => {
 
     // Create ontology file in active vault
     const ontologyContent = buildMd({
-      exo__Instance_class: "exo__Ontology",
+      exo__Instance_class: ["[[exo__Ontology]]"],
       exo__Asset_label: "EMS Ontology",
       "exo__Ontology_url": "https://exocortex.my/ontology/ems#",
     });
@@ -91,7 +91,7 @@ describe("Archive → Unarchive full lifecycle", () => {
 
     // Create class definition file (for ClassResolverService)
     const classContent = buildMd({
-      exo__Instance_class: "ims__Class",
+      exo__Instance_class: ["[[ims__Class]]"],
       exo__Asset_uid: TASK_CLASS_UUID,
       exo__Asset_label: "ems__Task",
     });
