@@ -75,7 +75,7 @@ describe("MetadataExtractor", () => {
   describe("extractInstanceClass", () => {
     it("should extract single instance class", () => {
       const metadata = {
-        exo__Instance_class: "ems__Effort",
+        exo__Instance_class: ["[[ems__Effort]]"],
       };
 
       const result = extractor.extractInstanceClass(metadata);
@@ -479,7 +479,7 @@ describe("MetadataExtractor", () => {
 
       const mockCache: CachedMetadata = {
         frontmatter: {
-          exo__Instance_class: "ems__Effort",
+          exo__Instance_class: ["[[ems__Effort]]"],
           ems__Effort_status: "ems__EffortStatusDoing",
           exo__Asset_isArchived: false,
           exo__Asset_isDefinedBy: "[[Areas/Work]]",
@@ -506,7 +506,7 @@ describe("MetadataExtractor", () => {
 
       const mockCache: CachedMetadata = {
         frontmatter: {
-          exo__Instance_class: "ems__Effort",
+          exo__Instance_class: ["[[ems__Effort]]"],
         },
       };
 
@@ -544,7 +544,7 @@ describe("MetadataExtractor", () => {
 
       const mockCache: CachedMetadata = {
         frontmatter: {
-          exo__Instance_class: "ems__Effort",
+          exo__Instance_class: ["[[ems__Effort]]"],
         },
       };
 

@@ -259,17 +259,17 @@ export class ExocortexSettingTab extends PluginSettingTab {
 
     const sampleAssets = [
       {
-        metadata: { exo__Asset_label: "Fix bug", exo__Instance_class: "ems__Task", ems__Effort_status: "DOING" },
+        metadata: { exo__Asset_label: "Fix bug", exo__Instance_class: ["[[ems__Task]]"], ems__Effort_status: "DOING" },
         basename: "fix-bug-123",
         name: "Task",
       },
       {
-        metadata: { exo__Asset_label: "Morning routine", exo__Instance_class: "ems__TaskPrototype" },
+        metadata: { exo__Asset_label: "Morning routine", exo__Instance_class: ["[[ems__TaskPrototype]]"] },
         basename: "morning-routine",
         name: "TaskPrototype",
       },
       {
-        metadata: { exo__Asset_label: "Alpha Project", exo__Instance_class: "ems__Project" },
+        metadata: { exo__Asset_label: "Alpha Project", exo__Instance_class: ["[[ems__Project]]"] },
         basename: "alpha-project",
         name: "Project",
       },

@@ -2353,7 +2353,7 @@ test.describe("Context Task Overlap Exclusion (Issue #2128)", () => {
         endTimestamp: null,
         status: "ems__EffortStatusInProgress",
         metadata: {
-          exo__Instance_class: "[[ems__Context]]",
+          exo__Instance_class: ["[[ems__Context]]"],
           ems__Effort_plannedStartTimestamp: "2025-01-15T10:00:00",
           ems__Effort_plannedEndTimestamp: "2025-01-15T11:00:00",
         },
@@ -2454,7 +2454,7 @@ test.describe("Context Task Overlap Exclusion (Issue #2128)", () => {
         endTimestamp: null,
         status: "ems__EffortStatusInProgress",
         metadata: {
-          exo__Instance_class: "[[ems__Task]]",
+          exo__Instance_class: ["[[ems__Task]]"],
           ems__Effort_plannedStartTimestamp: "2025-01-15T09:00:00",
           ems__Effort_plannedEndTimestamp: "2025-01-15T11:00:00",
         },
@@ -2475,7 +2475,7 @@ test.describe("Context Task Overlap Exclusion (Issue #2128)", () => {
         endTimestamp: null,
         status: "ems__EffortStatusInProgress",
         metadata: {
-          exo__Instance_class: "[[ems__Task]]",
+          exo__Instance_class: ["[[ems__Task]]"],
           ems__Effort_plannedStartTimestamp: "2025-01-15T10:00:00",
           ems__Effort_plannedEndTimestamp: "2025-01-15T12:00:00",
         },
@@ -2514,7 +2514,7 @@ test.describe("Context Task Overlap Exclusion (Issue #2128)", () => {
         endTimestamp: null,
         status: "ems__EffortStatusInProgress",
         metadata: {
-          exo__Instance_class: "[[ems__Context]]",
+          exo__Instance_class: ["[[ems__Context]]"],
           ems__Effort_plannedStartTimestamp: "2025-01-15T10:00:00",
           ems__Effort_plannedEndTimestamp: "2025-01-15T11:00:00",
         },
@@ -2571,7 +2571,7 @@ test.describe("Context Task Overlap Exclusion (Issue #2128)", () => {
         endTimestamp: null,
         status: "ems__EffortStatusInProgress",
         metadata: {
-          exo__Instance_class: "ems__Context",
+          exo__Instance_class: ["[[ems__Context]]"],
           ems__Effort_plannedStartTimestamp: "2025-01-15T10:00:00",
           ems__Effort_plannedEndTimestamp: "2025-01-15T11:00:00",
         },
@@ -2611,7 +2611,7 @@ test.describe("Context Task Overlap Exclusion (Issue #2128)", () => {
         endTimestamp: null,
         status: "ems__EffortStatusInProgress",
         metadata: {
-          exo__Instance_class: "[[ems__Task]]",
+          exo__Instance_class: ["[[ems__Task]]"],
           ems__Effort_plannedStartTimestamp: "2025-01-15T09:00:00",
           ems__Effort_plannedEndTimestamp: "2025-01-15T11:00:00",
         },
@@ -2632,7 +2632,7 @@ test.describe("Context Task Overlap Exclusion (Issue #2128)", () => {
         endTimestamp: null,
         status: "ems__EffortStatusInProgress",
         metadata: {
-          exo__Instance_class: "[[ems__Meeting]]",
+          exo__Instance_class: ["[[ems__Meeting]]"],
           ems__Effort_plannedStartTimestamp: "2025-01-15T10:00:00",
           ems__Effort_plannedEndTimestamp: "2025-01-15T12:00:00",
         },

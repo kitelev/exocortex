@@ -15,7 +15,7 @@ test.describe("AssetRelationsTable Component", () => {
       created: Date.now() - 86400000,
       modified: Date.now(),
       metadata: {
-        exo__Instance_class: "ems__Task",
+        exo__Instance_class: ["[[ems__Task]]"],
         status: "active",
         priority: "high",
       },
@@ -28,7 +28,7 @@ test.describe("AssetRelationsTable Component", () => {
       created: Date.now() - 172800000,
       modified: Date.now() - 86400000,
       metadata: {
-        exo__Instance_class: "[[ems__Project]]",
+        exo__Instance_class: ["[[ems__Project]]"],
         status: "completed",
         priority: "medium",
       },
@@ -281,7 +281,7 @@ test.describe("AssetRelationsTable Component", () => {
         created: Date.now(),
         modified: Date.now(),
         metadata: {
-          exo__Instance_class: "[[ems__Task]]",
+          exo__Instance_class: ["[[ems__Task]]"],
         },
       },
     ];
@@ -338,7 +338,7 @@ test.describe("AssetRelationsTable Component", () => {
         created: Date.now(),
         modified: Date.now(),
         metadata: {
-          exo__Instance_class: "ems__Task",
+          exo__Instance_class: ["[[ems__Task]]"],
           tags: ["[[tag1]]", "[[tag2]]", "[[tag3]]"],
         },
       },
@@ -369,7 +369,7 @@ test.describe("AssetRelationsTable Component", () => {
         created: Date.now(),
         modified: Date.now(),
         metadata: {
-          exo__Instance_class: "ems__Task",
+          exo__Instance_class: ["[[ems__Task]]"],
           exo__Asset_label: "Custom Label 1",
         },
       },
@@ -381,7 +381,7 @@ test.describe("AssetRelationsTable Component", () => {
         created: Date.now(),
         modified: Date.now(),
         metadata: {
-          exo__Instance_class: "ems__Task",
+          exo__Instance_class: ["[[ems__Task]]"],
           exo__Asset_label: "Custom Label 2",
         },
       },
@@ -411,7 +411,7 @@ test.describe("AssetRelationsTable Component", () => {
         isBodyLink: false,
         created: Date.now(),
         modified: Date.now(),
-        metadata: { exo__Instance_class: "ems__Task" },
+        metadata: { exo__Instance_class: ["[[ems__Task]]"] },
       },
     ];
 
@@ -434,7 +434,7 @@ test.describe("AssetRelationsTable Component", () => {
         isBodyLink: false,
         created: Date.now(),
         modified: Date.now(),
-        metadata: { exo__Instance_class: "ems__Task", exo__Asset_label: "" },
+        metadata: { exo__Instance_class: ["[[ems__Task]]"], exo__Asset_label: "" },
       },
     ];
 
@@ -457,7 +457,7 @@ test.describe("AssetRelationsTable Component", () => {
         isBodyLink: false,
         created: Date.now(),
         modified: Date.now(),
-        metadata: { exo__Instance_class: "ems__Task", exo__Asset_label: "   " },
+        metadata: { exo__Instance_class: ["[[ems__Task]]"], exo__Asset_label: "   " },
       },
     ];
 
@@ -484,7 +484,7 @@ test.describe("AssetRelationsTable Component", () => {
         created: Date.now(),
         modified: Date.now(),
         metadata: {
-          exo__Instance_class: "ems__Task",
+          exo__Instance_class: ["[[ems__Task]]"],
           exo__Asset_label: "Prototype Label",
           exo__Asset_prototype: "[[TaskPrototype]]",
         },
@@ -512,7 +512,7 @@ test.describe("AssetRelationsTable Component", () => {
         isBodyLink: false,
         created: Date.now(),
         modified: Date.now(),
-        metadata: { exo__Instance_class: "ems__Task" },
+        metadata: { exo__Instance_class: ["[[ems__Task]]"] },
       },
       {
         path: "assets/AssetA.md",
@@ -521,7 +521,7 @@ test.describe("AssetRelationsTable Component", () => {
         isBodyLink: false,
         created: Date.now(),
         modified: Date.now(),
-        metadata: { exo__Instance_class: "ems__Task" },
+        metadata: { exo__Instance_class: ["[[ems__Task]]"] },
       },
     ];
 
@@ -567,7 +567,7 @@ test.describe("AssetRelationsTable Component", () => {
       modified: Date.now(),
       isBlocked: true,
       metadata: {
-        exo__Instance_class: "ems__Task",
+        exo__Instance_class: ["[[ems__Task]]"],
       },
     };
 
@@ -594,7 +594,7 @@ test.describe("AssetRelationsTable Component", () => {
       modified: Date.now(),
       isBlocked: false,
       metadata: {
-        exo__Instance_class: "ems__Task",
+        exo__Instance_class: ["[[ems__Task]]"],
       },
     };
 
@@ -619,7 +619,7 @@ test.describe("AssetRelationsTable Component", () => {
       modified: Date.now(),
       isBlocked: true,
       metadata: {
-        exo__Instance_class: "ems__Task",
+        exo__Instance_class: ["[[ems__Task]]"],
         exo__Asset_label: "Custom Blocked Label",
       },
     };
@@ -646,7 +646,7 @@ test.describe("AssetRelationsTableWithToggle Component", () => {
       created: Date.now(),
       modified: Date.now(),
       metadata: {
-        exo__Instance_class: "ems__Task",
+        exo__Instance_class: ["[[ems__Task]]"],
         ems__Effort_votes: 5,
       },
     },
@@ -658,7 +658,7 @@ test.describe("AssetRelationsTableWithToggle Component", () => {
       created: Date.now(),
       modified: Date.now(),
       metadata: {
-        exo__Instance_class: "ems__Task",
+        exo__Instance_class: ["[[ems__Task]]"],
         ems__Effort_votes: 3,
       },
     },
@@ -798,7 +798,7 @@ test.describe("AssetRelationsTableWithToggle Component", () => {
         created: Date.now(),
         modified: Date.now(),
         isArchived: false,
-        metadata: { exo__Instance_class: "ems__Task" },
+        metadata: { exo__Instance_class: ["[[ems__Task]]"] },
       },
       {
         path: "tasks/archived-task.md",
@@ -808,7 +808,7 @@ test.describe("AssetRelationsTableWithToggle Component", () => {
         created: Date.now(),
         modified: Date.now(),
         isArchived: true,
-        metadata: { exo__Instance_class: "ems__Task", exo__Asset_isArchived: true },
+        metadata: { exo__Instance_class: ["[[ems__Task]]"], exo__Asset_isArchived: true },
       },
     ];
 
@@ -839,7 +839,7 @@ test.describe("AssetRelationsTableWithToggle Component", () => {
         created: Date.now(),
         modified: Date.now(),
         isArchived: false,
-        metadata: { exo__Instance_class: "ems__Task" },
+        metadata: { exo__Instance_class: ["[[ems__Task]]"] },
       },
       {
         path: "tasks/archived-task.md",
@@ -849,7 +849,7 @@ test.describe("AssetRelationsTableWithToggle Component", () => {
         created: Date.now(),
         modified: Date.now(),
         isArchived: true,
-        metadata: { exo__Instance_class: "ems__Task", exo__Asset_isArchived: true },
+        metadata: { exo__Instance_class: ["[[ems__Task]]"], exo__Asset_isArchived: true },
       },
     ];
 
@@ -1063,7 +1063,7 @@ test.describe("AssetRelationsTable Virtualization", () => {
       created: Date.now() - i * 86400000,
       modified: Date.now() - i * 43200000,
       metadata: {
-        exo__Instance_class: "ems__Task",
+        exo__Instance_class: ["[[ems__Task]]"],
         status: i % 2 === 0 ? "active" : "completed",
         priority: ["high", "medium", "low"][i % 3],
       },

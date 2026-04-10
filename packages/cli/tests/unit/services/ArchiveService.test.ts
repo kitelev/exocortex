@@ -57,7 +57,7 @@ const ACTIVE_ASSET_UUID = "ac100001-1111-2222-3333-444455556666";
 
 // Standard test ontology file
 const ONTOLOGY_CONTENT = buildMd({
-  exo__Instance_class: "exo__Ontology",
+  exo__Instance_class: ["[[exo__Ontology]]"],
   exo__Asset_label: "EMS Ontology",
   exo__Ontology_url: "https://exocortex.my/ontology/ems#",
 });

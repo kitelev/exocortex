@@ -242,7 +242,7 @@ describe("CommandDefinition", () => {
 
       it("should return true for plain string class (no wikilink)", () => {
         const fm = {
-          exo__Instance_class: "exocmd__Command",
+          exo__Instance_class: ["[[exocmd__Command]]"],
         };
 
         expect(isCommandFrontmatter(fm)).toBe(true);

@@ -382,7 +382,7 @@ describe("Exo003Parser", () => {
     it("should return false for non-Exo 0.0.3 frontmatter", () => {
       expect(
         Exo003Parser.isExo003Format({
-          exo__Instance_class: "ems__Task",
+          exo__Instance_class: ["[[ems__Task]]"],
         })
       ).toBe(false);
 

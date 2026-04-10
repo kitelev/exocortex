@@ -135,7 +135,7 @@ describe("ExocortexAPI", () => {
         frontmatter: {
           exo__Asset_label: "My Task",
           exo__Asset_uid: "abc-123",
-          exo__Instance_class: "ems__Task",
+          exo__Instance_class: ["[[ems__Task]]"],
           ems__Effort_status: "DOING",
           exo__Asset_prototype: "[[templates/task-template]]",
           exo__Asset_isArchived: false,
@@ -439,7 +439,7 @@ describe("ExocortexAPI", () => {
     it("should combine multiple filters", () => {
       mockMetadataCache.getFileCache.mockImplementation((file: ObsidianTFile) => ({
         frontmatter: {
-          exo__Instance_class: "ems__Task",
+          exo__Instance_class: ["[[ems__Task]]"],
           ems__Effort_status: file.path.includes("task1") ? "DOING" : "TODO",
         },
       }));

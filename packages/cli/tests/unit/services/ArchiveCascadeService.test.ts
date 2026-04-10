@@ -53,7 +53,7 @@ const UUID_D = "dddd0004-1111-2222-3333-444455556666";
 const UUID_ACTIVE = "ac100001-1111-2222-3333-444455556666";
 
 const ONTOLOGY_CONTENT = buildMd({
-  exo__Instance_class: "exo__Ontology",
+  exo__Instance_class: ["[[exo__Ontology]]"],
   exo__Asset_label: "EMS Ontology",
   exo__Ontology_url: "https://exocortex.my/ontology/ems#",
 });

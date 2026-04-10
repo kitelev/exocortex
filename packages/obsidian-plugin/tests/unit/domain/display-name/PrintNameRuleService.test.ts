@@ -35,7 +35,7 @@ describe("PrintNameRuleService", () => {
         {
           path: "rule1.md",
           frontmatter: {
-            exo__Instance_class: "[[exoob__PrintNameRule]]",
+            exo__Instance_class: ["[[exoob__PrintNameRule]]"],
             exoob__PrintNameRule_class: "[[ems__TaskPrototype]]",
             exoob__PrintNameRule_template: "{{exo__Asset_label}} (TP)",
             exoob__Rule_priority: 100,
@@ -75,7 +75,7 @@ describe("PrintNameRuleService", () => {
         {
           path: "rule1.md",
           frontmatter: {
-            exo__Instance_class: "[[exoob__PrintNameRule]]",
+            exo__Instance_class: ["[[exoob__PrintNameRule]]"],
             exoob__PrintNameRule_class: "[[ems__Task]]",
             exoob__PrintNameRule_template: "{{exo__Asset_label}} (low)",
             exoob__Rule_priority: 10,
@@ -84,7 +84,7 @@ describe("PrintNameRuleService", () => {
         {
           path: "rule2.md",
           frontmatter: {
-            exo__Instance_class: "[[exoob__PrintNameRule]]",
+            exo__Instance_class: ["[[exoob__PrintNameRule]]"],
             exoob__PrintNameRule_class: "[[ems__Task]]",
             exoob__PrintNameRule_template: "{{exo__Asset_label}} (high)",
             exoob__Rule_priority: 100,
@@ -105,7 +105,7 @@ describe("PrintNameRuleService", () => {
         {
           path: "rule1.md",
           frontmatter: {
-            exo__Instance_class: "[[exoob__PrintNameRule]]",
+            exo__Instance_class: ["[[exoob__PrintNameRule]]"],
             exoob__PrintNameRule_class: "[[ems__Task]]",
             exoob__PrintNameRule_template: "{{exo__Asset_label}}",
           },
@@ -126,7 +126,7 @@ describe("PrintNameRuleService", () => {
         {
           path: "effort-class.md",
           frontmatter: {
-            exo__Instance_class: "exo__Class",
+            exo__Instance_class: ["[[exo__Class]]"],
             exo__Asset_label: "ems__Task",
             exo__Class_superClass: "[[ems__Effort]]",
           },
@@ -134,7 +134,7 @@ describe("PrintNameRuleService", () => {
         {
           path: "rule1.md",
           frontmatter: {
-            exo__Instance_class: "[[exoob__PrintNameRule]]",
+            exo__Instance_class: ["[[exoob__PrintNameRule]]"],
             exoob__PrintNameRule_class: "[[ems__Effort]]",
             exoob__PrintNameRule_template: "{{exo__Asset_label}} (Effort)",
             exoob__Rule_priority: 50,
@@ -155,7 +155,7 @@ describe("PrintNameRuleService", () => {
         {
           path: "task-class.md",
           frontmatter: {
-            exo__Instance_class: "exo__Class",
+            exo__Instance_class: ["[[exo__Class]]"],
             exo__Asset_label: "ems__Task",
             exo__Class_superClass: "[[ems__Effort]]",
           },
@@ -163,7 +163,7 @@ describe("PrintNameRuleService", () => {
         {
           path: "effort-rule.md",
           frontmatter: {
-            exo__Instance_class: "[[exoob__PrintNameRule]]",
+            exo__Instance_class: ["[[exoob__PrintNameRule]]"],
             exoob__PrintNameRule_class: "[[ems__Effort]]",
             exoob__PrintNameRule_template: "{{exo__Asset_label}} (Effort)",
             exoob__Rule_priority: 50,
@@ -172,7 +172,7 @@ describe("PrintNameRuleService", () => {
         {
           path: "task-rule.md",
           frontmatter: {
-            exo__Instance_class: "[[exoob__PrintNameRule]]",
+            exo__Instance_class: ["[[exoob__PrintNameRule]]"],
             exoob__PrintNameRule_class: "[[ems__Task]]",
             exoob__PrintNameRule_template: "{{exo__Asset_label}} (Task)",
             exoob__Rule_priority: 10,
@@ -194,7 +194,7 @@ describe("PrintNameRuleService", () => {
         {
           path: "rule1.md",
           frontmatter: {
-            exo__Instance_class: "exoob__PrintNameRule",
+            exo__Instance_class: ["[[exoob__PrintNameRule]]"],
             exoob__PrintNameRule_class: "ems__Task",
             exoob__PrintNameRule_template: "{{exo__Asset_label}}",
             exoob__Rule_priority: 10,
@@ -213,7 +213,7 @@ describe("PrintNameRuleService", () => {
         {
           path: "rule1.md",
           frontmatter: {
-            exo__Instance_class: "[[exoob__PrintNameRule]]",
+            exo__Instance_class: ["[[exoob__PrintNameRule]]"],
             exoob__PrintNameRule_class: "[[ems__Task]]",
             exoob__PrintNameRule_template: "{{exo__Asset_label}}",
             exoob__Rule_priority: 10,
@@ -234,7 +234,7 @@ describe("PrintNameRuleService", () => {
         {
           path: "rule1.md",
           frontmatter: {
-            exo__Instance_class: "[[exoob__PrintNameRule]]",
+            exo__Instance_class: ["[[exoob__PrintNameRule]]"],
             exoob__PrintNameRule_class: "[[ems__Task]]",
             exoob__Rule_priority: 10,
           },
@@ -252,7 +252,7 @@ describe("PrintNameRuleService", () => {
         {
           path: "rule1.md",
           frontmatter: {
-            exo__Instance_class: "[[exoob__PrintNameRule]]",
+            exo__Instance_class: ["[[exoob__PrintNameRule]]"],
             exoob__PrintNameRule_template: "{{exo__Asset_label}}",
             exoob__Rule_priority: 10,
           },
@@ -278,7 +278,7 @@ describe("PrintNameRuleService", () => {
         {
           path: "rule1.md",
           frontmatter: {
-            exo__Instance_class: "[[exoob__PrintNameRule]]",
+            exo__Instance_class: ["[[exoob__PrintNameRule]]"],
             exoob__PrintNameRule_class: "[[ems__Task]]",
             exoob__PrintNameRule_template: "{{exo__Asset_label}}",
             exoob__Rule_priority: 10,
@@ -307,7 +307,7 @@ describe("PrintNameRuleService", () => {
           path: "project.md",
           frontmatter: {
             exo__Asset_label: "My Project",
-            exo__Instance_class: "ems__Project",
+            exo__Instance_class: ["[[ems__Project]]"],
           },
         },
       ]);

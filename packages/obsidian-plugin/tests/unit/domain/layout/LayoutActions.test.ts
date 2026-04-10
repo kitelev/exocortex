@@ -165,7 +165,7 @@ describe("LayoutActions Domain Model", () => {
 
     it("should return true for single string instance class", () => {
       const frontmatter = {
-        exo__Instance_class: "[[exo__LayoutActions]]",
+        exo__Instance_class: ["[[exo__LayoutActions]]"],
       };
 
       expect(isLayoutActionsFrontmatter(frontmatter)).toBe(true);
@@ -195,7 +195,7 @@ describe("LayoutActions Domain Model", () => {
 
     it("should handle class name without wikilink brackets", () => {
       const frontmatter = {
-        exo__Instance_class: "exo__LayoutActions",
+        exo__Instance_class: ["[[exo__LayoutActions]]"],
       };
 
       expect(isLayoutActionsFrontmatter(frontmatter)).toBe(true);

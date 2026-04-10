@@ -37,7 +37,7 @@ describe("AreaHierarchyBuilder", () => {
         stat: { ctime: 0, mtime: 0 },
       });
       mockVaultAdapter.getFrontmatter.mockReturnValue({
-        exo__Instance_class: "ems__Task",
+        exo__Instance_class: ["[[ems__Task]]"],
       });
 
       const result = builder.buildHierarchy(currentAreaPath, []);
@@ -56,7 +56,7 @@ describe("AreaHierarchyBuilder", () => {
       mockVaultAdapter.getAbstractFileByPath.mockReturnValue(rootFile);
       mockVaultAdapter.getAllFiles.mockReturnValue([rootFile]);
       mockVaultAdapter.getFrontmatter.mockReturnValue({
-        exo__Instance_class: "ems__Area",
+        exo__Instance_class: ["[[ems__Area]]"],
         exo__Asset_label: "Root Area",
       });
 
@@ -98,13 +98,13 @@ describe("AreaHierarchyBuilder", () => {
       mockVaultAdapter.getFrontmatter.mockImplementation((file: any) => {
         if (file.path === rootPath) {
           return {
-            exo__Instance_class: "ems__Area",
+            exo__Instance_class: ["[[ems__Area]]"],
             exo__Asset_label: "Root Area",
           };
         }
         if (file.path === childPath) {
           return {
-            exo__Instance_class: "ems__Area",
+            exo__Instance_class: ["[[ems__Area]]"],
             exo__Asset_label: "Child Area",
             ems__Area_parent: "[[root]]",
           };
@@ -117,7 +117,7 @@ describe("AreaHierarchyBuilder", () => {
           path: childPath,
           title: "child",
           metadata: {
-            exo__Instance_class: "ems__Area",
+            exo__Instance_class: ["[[ems__Area]]"],
             exo__Asset_label: "Child Area",
             ems__Area_parent: "[[root]]",
           },
@@ -176,20 +176,20 @@ describe("AreaHierarchyBuilder", () => {
       mockVaultAdapter.getFrontmatter.mockImplementation((file: any) => {
         if (file.path === rootPath) {
           return {
-            exo__Instance_class: "ems__Area",
+            exo__Instance_class: ["[[ems__Area]]"],
             exo__Asset_label: "Root",
           };
         }
         if (file.path === childPath) {
           return {
-            exo__Instance_class: "ems__Area",
+            exo__Instance_class: ["[[ems__Area]]"],
             exo__Asset_label: "Child",
             ems__Area_parent: "[[root]]",
           };
         }
         if (file.path === grandchildPath) {
           return {
-            exo__Instance_class: "ems__Area",
+            exo__Instance_class: ["[[ems__Area]]"],
             exo__Asset_label: "Grandchild",
             ems__Area_parent: "[[child]]",
           };
@@ -202,7 +202,7 @@ describe("AreaHierarchyBuilder", () => {
           path: childPath,
           title: "child",
           metadata: {
-            exo__Instance_class: "ems__Area",
+            exo__Instance_class: ["[[ems__Area]]"],
             exo__Asset_label: "Child",
             ems__Area_parent: "[[root]]",
           },
@@ -212,7 +212,7 @@ describe("AreaHierarchyBuilder", () => {
           path: grandchildPath,
           title: "grandchild",
           metadata: {
-            exo__Instance_class: "ems__Area",
+            exo__Instance_class: ["[[ems__Area]]"],
             exo__Asset_label: "Grandchild",
             ems__Area_parent: "[[child]]",
           },
@@ -256,12 +256,12 @@ describe("AreaHierarchyBuilder", () => {
       mockVaultAdapter.getFrontmatter.mockImplementation((file: any) => {
         if (file.path === rootPath) {
           return {
-            exo__Instance_class: "ems__Area",
+            exo__Instance_class: ["[[ems__Area]]"],
           };
         }
         if (file.path === childPath) {
           return {
-            exo__Instance_class: "ems__Area",
+            exo__Instance_class: ["[[ems__Area]]"],
             exo__Asset_label: "Archived Child",
             ems__Area_parent: "[[root]]",
             exo__Asset_archived: true,
@@ -275,7 +275,7 @@ describe("AreaHierarchyBuilder", () => {
           path: childPath,
           title: "archived-child",
           metadata: {
-            exo__Instance_class: "ems__Area",
+            exo__Instance_class: ["[[ems__Area]]"],
             exo__Asset_label: "Archived Child",
             ems__Area_parent: "[[root]]",
             exo__Asset_archived: true,
@@ -321,13 +321,13 @@ describe("AreaHierarchyBuilder", () => {
       mockVaultAdapter.getFrontmatter.mockImplementation((file: any) => {
         if (file.path === area1Path) {
           return {
-            exo__Instance_class: "ems__Area",
+            exo__Instance_class: ["[[ems__Area]]"],
             ems__Area_parent: "[[area2]]",
           };
         }
         if (file.path === area2Path) {
           return {
-            exo__Instance_class: "ems__Area",
+            exo__Instance_class: ["[[ems__Area]]"],
             ems__Area_parent: "[[area1]]",
           };
         }
@@ -339,7 +339,7 @@ describe("AreaHierarchyBuilder", () => {
           path: area2Path,
           title: "area2",
           metadata: {
-            exo__Instance_class: "ems__Area",
+            exo__Instance_class: ["[[ems__Area]]"],
             ems__Area_parent: "[[area1]]",
           },
           isArchived: false,
@@ -397,26 +397,26 @@ describe("AreaHierarchyBuilder", () => {
       mockVaultAdapter.getFrontmatter.mockImplementation((file: any) => {
         if (file.path === rootPath) {
           return {
-            exo__Instance_class: "ems__Area",
+            exo__Instance_class: ["[[ems__Area]]"],
           };
         }
         if (file.path === child1Path) {
           return {
-            exo__Instance_class: "ems__Area",
+            exo__Instance_class: ["[[ems__Area]]"],
             exo__Asset_label: "Zebra Area",
             ems__Area_parent: "[[root]]",
           };
         }
         if (file.path === child2Path) {
           return {
-            exo__Instance_class: "ems__Area",
+            exo__Instance_class: ["[[ems__Area]]"],
             exo__Asset_label: "Alpha Area",
             ems__Area_parent: "[[root]]",
           };
         }
         if (file.path === child3Path) {
           return {
-            exo__Instance_class: "ems__Area",
+            exo__Instance_class: ["[[ems__Area]]"],
             exo__Asset_label: "Middle Area",
             ems__Area_parent: "[[root]]",
           };
@@ -429,7 +429,7 @@ describe("AreaHierarchyBuilder", () => {
           path: child1Path,
           title: "zebra",
           metadata: {
-            exo__Instance_class: "ems__Area",
+            exo__Instance_class: ["[[ems__Area]]"],
             exo__Asset_label: "Zebra Area",
             ems__Area_parent: "[[root]]",
           },
@@ -439,7 +439,7 @@ describe("AreaHierarchyBuilder", () => {
           path: child2Path,
           title: "alpha",
           metadata: {
-            exo__Instance_class: "ems__Area",
+            exo__Instance_class: ["[[ems__Area]]"],
             exo__Asset_label: "Alpha Area",
             ems__Area_parent: "[[root]]",
           },
@@ -449,7 +449,7 @@ describe("AreaHierarchyBuilder", () => {
           path: child3Path,
           title: "middle",
           metadata: {
-            exo__Instance_class: "ems__Area",
+            exo__Instance_class: ["[[ems__Area]]"],
             exo__Asset_label: "Middle Area",
             ems__Area_parent: "[[root]]",
           },
@@ -495,12 +495,12 @@ describe("AreaHierarchyBuilder", () => {
       mockVaultAdapter.getFrontmatter.mockImplementation((file: any) => {
         if (file.path === rootPath) {
           return {
-            exo__Instance_class: "ems__Area",
+            exo__Instance_class: ["[[ems__Area]]"],
           };
         }
         if (file.path === childPath) {
           return {
-            exo__Instance_class: "ems__Area",
+            exo__Instance_class: ["[[ems__Area]]"],
             exo__Asset_label: "Child Area",
             ems__Area_parent: ["[[root]]"],
           };
@@ -513,7 +513,7 @@ describe("AreaHierarchyBuilder", () => {
           path: childPath,
           title: "child",
           metadata: {
-            exo__Instance_class: "ems__Area",
+            exo__Instance_class: ["[[ems__Area]]"],
             exo__Asset_label: "Child Area",
             ems__Area_parent: ["[[root]]"],
           },
@@ -558,12 +558,12 @@ describe("AreaHierarchyBuilder", () => {
       mockVaultAdapter.getFrontmatter.mockImplementation((file: any) => {
         if (file.path === rootPath) {
           return {
-            exo__Instance_class: "ems__Area",
+            exo__Instance_class: ["[[ems__Area]]"],
           };
         }
         if (file.path === childPath) {
           return {
-            exo__Instance_class: "ems__Area",
+            exo__Instance_class: ["[[ems__Area]]"],
             ems__Area_parent: "[[root]]",
           };
         }
@@ -575,7 +575,7 @@ describe("AreaHierarchyBuilder", () => {
           path: rootPath,
           title: "root",
           metadata: {
-            exo__Instance_class: "ems__Area",
+            exo__Instance_class: ["[[ems__Area]]"],
             exo__Asset_label: "Root Area",
           },
           isArchived: false,

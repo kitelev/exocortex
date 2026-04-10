@@ -17,7 +17,7 @@ describe("DisplayNameResolver", () => {
       const result = resolver.resolve({
         metadata: {
           exo__Asset_label: "Fix bug",
-          exo__Instance_class: "ems__Task",
+          exo__Instance_class: ["[[ems__Task]]"],
         },
         basename: "fix-bug",
       });
@@ -29,7 +29,7 @@ describe("DisplayNameResolver", () => {
       const result = resolver.resolve({
         metadata: {
           exo__Asset_label: "Morning routine",
-          exo__Instance_class: "ems__TaskPrototype",
+          exo__Instance_class: ["[[ems__TaskPrototype]]"],
         },
         basename: "morning-routine",
       });
@@ -41,7 +41,7 @@ describe("DisplayNameResolver", () => {
       const result = resolver.resolve({
         metadata: {
           exo__Asset_label: "Alpha Project",
-          exo__Instance_class: "ems__Project",
+          exo__Instance_class: ["[[ems__Project]]"],
         },
         basename: "alpha-project",
       });
@@ -53,7 +53,7 @@ describe("DisplayNameResolver", () => {
       const result = resolver.resolve({
         metadata: {
           exo__Asset_label: "Some Area",
-          exo__Instance_class: "ems__Area", // No template for Area in test settings
+          exo__Instance_class: ["[[ems__Area]]"], // No template for Area in test settings
         },
         basename: "some-area",
       });
@@ -76,7 +76,7 @@ describe("DisplayNameResolver", () => {
       const result = resolver.resolve({
         metadata: {
           exo__Asset_label: "Review PR",
-          exo__Instance_class: "[[ems__Task]]",
+          exo__Instance_class: ["[[ems__Task]]"],
         },
         basename: "review-pr",
       });
@@ -200,7 +200,7 @@ describe("DisplayNameResolver", () => {
       const result = resolver.resolve({
         metadata: {
           exo__Asset_label: "My Task",
-          exo__Instance_class: "ems__Task",
+          exo__Instance_class: ["[[ems__Task]]"],
         },
         basename: "my-task",
       });
@@ -223,7 +223,7 @@ describe("DisplayNameResolver", () => {
       const result = resolver.resolve({
         metadata: {
           exo__Asset_label: "Morning routine",
-          exo__Instance_class: "ems__TaskPrototype",
+          exo__Instance_class: ["[[ems__TaskPrototype]]"],
         },
         basename: "morning-routine",
       });
@@ -237,7 +237,7 @@ describe("DisplayNameResolver", () => {
       const result = resolver.resolve({
         metadata: {
           exo__Asset_label: "Fix bug",
-          exo__Instance_class: "ems__Task",
+          exo__Instance_class: ["[[ems__Task]]"],
         },
         basename: "fix-bug",
       });
@@ -266,7 +266,7 @@ describe("DisplayNameResolver", () => {
       const result = resolver.resolve({
         metadata: {
           exo__Asset_label: "Sub Task",
-          exo__Instance_class: "ems__Task",
+          exo__Instance_class: ["[[ems__Task]]"],
           ems__Effort_project: "[[project-uuid]]",
         },
         basename: "sub-task",
@@ -299,7 +299,7 @@ describe("DisplayNameResolver", () => {
       const taskResult = resolver.resolve({
         metadata: {
           exo__Asset_label: "Fix bug",
-          exo__Instance_class: "ems__Task",
+          exo__Instance_class: ["[[ems__Task]]"],
         },
         basename: "fix-bug",
       });
@@ -309,7 +309,7 @@ describe("DisplayNameResolver", () => {
       const prototypeResult = resolver.resolve({
         metadata: {
           exo__Asset_label: "Morning routine",
-          exo__Instance_class: "ems__TaskPrototype",
+          exo__Instance_class: ["[[ems__TaskPrototype]]"],
         },
         basename: "morning-routine",
       });
@@ -323,7 +323,7 @@ describe("DisplayNameResolver", () => {
       const customResult = resolver.resolve({
         metadata: {
           exo__Asset_label: "My Custom Asset",
-          exo__Instance_class: "myapp__CustomClass",
+          exo__Instance_class: ["[[myapp__CustomClass]]"],
         },
         basename: "custom-asset",
       });
@@ -350,7 +350,7 @@ describe("DisplayNameResolver", () => {
       // DailyNote uses basename (the date) since it typically has no label
       const dailyNoteResult = resolver.resolve({
         metadata: {
-          exo__Instance_class: "pn__DailyNote",
+          exo__Instance_class: ["[[pn__DailyNote]]"],
         },
         basename: "2025-10-15",
       });

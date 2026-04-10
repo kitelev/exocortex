@@ -20,7 +20,7 @@ describe("DailyTasksRenderer - edge cases and error handling", () => {
       basename: "2025-10-20",
     } as TFile;
     const metadata = {
-      exo__Instance_class: "[[pn__DailyNote]]",
+      exo__Instance_class: ["[[pn__DailyNote]]"],
       pn__DailyNote_day: "[[2025-10-20]]",
     };
 
@@ -35,7 +35,7 @@ describe("DailyTasksRenderer - edge cases and error handling", () => {
     } as TFile;
 
     const taskMetadata = {
-      exo__Instance_class: "[[ems__Task]]",
+      exo__Instance_class: ["[[ems__Task]]"],
       ems__Effort_day: "[[2025-10-20]]",
       ems__Effort_startTimestamp: "2025-10-20T09:00:00",
       ems__Effort_status: "[[ems__EffortStatusBacklog]]",
@@ -76,7 +76,7 @@ describe("DailyTasksRenderer - edge cases and error handling", () => {
       basename: "2025-10-20",
     } as TFile;
     const metadata = {
-      exo__Instance_class: "[[pn__DailyNote]]",
+      exo__Instance_class: ["[[pn__DailyNote]]"],
       pn__DailyNote_day: "[[2025-10-20]]",
     };
 
@@ -86,7 +86,7 @@ describe("DailyTasksRenderer - edge cases and error handling", () => {
     } as TFile;
 
     const taskMetadata = {
-      exo__Instance_class: "[[ems__Task]]",
+      exo__Instance_class: ["[[ems__Task]]"],
       ems__Effort_day: "[[2025-10-20]]",
       ems__Effort_startTimestamp: "2025-10-20T09:00:00",
       ems__Effort_status: "[[ems__EffortStatusBacklog]]",
@@ -120,7 +120,7 @@ describe("DailyTasksRenderer - edge cases and error handling", () => {
       basename: "2025-10-20",
     } as TFile;
     const metadata = {
-      exo__Instance_class: "[[pn__DailyNote]]",
+      exo__Instance_class: ["[[pn__DailyNote]]"],
       pn__DailyNote_day: "[[2025-10-20]]",
     };
 
@@ -130,7 +130,7 @@ describe("DailyTasksRenderer - edge cases and error handling", () => {
     } as TFile;
 
     const taskMetadata = {
-      exo__Instance_class: "ems__Task",
+      exo__Instance_class: ["[[ems__Task]]"],
       ems__Effort_day: "[[2025-10-20]]",
       ems__Effort_startTimestamp: "2025-10-20T09:00:00",
       ems__Effort_status: "ems__EffortStatusBacklog",
@@ -162,7 +162,7 @@ describe("DailyTasksRenderer - edge cases and error handling", () => {
       basename: "2025-10-20",
     } as TFile;
     const metadata = {
-      exo__Instance_class: "[[pn__DailyNote]]",
+      exo__Instance_class: ["[[pn__DailyNote]]"],
       pn__DailyNote_day: "[[2025-10-20]]",
     };
 
@@ -172,7 +172,7 @@ describe("DailyTasksRenderer - edge cases and error handling", () => {
     } as TFile;
 
     const taskMetadata = {
-      exo__Instance_class: "[[ems__Task]]",
+      exo__Instance_class: ["[[ems__Task]]"],
       ems__Effort_day: "[[2025-10-20]]",
       ems__Effort_status: "[[ems__EffortStatusDoing]]",
       ems__Effort_startTimestamp: 1760932800000,
@@ -207,7 +207,7 @@ describe("DailyTasksRenderer - edge cases and error handling", () => {
       basename: "2025-10-20",
     } as TFile;
     const dailyNoteMetadata = {
-      exo__Instance_class: "[[pn__DailyNote]]",
+      exo__Instance_class: ["[[pn__DailyNote]]"],
       pn__DailyNote_day: "[[2025-10-20]]",
     };
 
@@ -223,7 +223,7 @@ describe("DailyTasksRenderer - edge cases and error handling", () => {
 
     // Task has exo__Asset_prototype (correct property used in vault)
     const taskMetadata = {
-      exo__Instance_class: "[[ems__Task]]",
+      exo__Instance_class: ["[[ems__Task]]"],
       ems__Effort_day: "[[2025-10-20]]",
       ems__Effort_startTimestamp: "2025-10-20T09:00:00",
       ems__Effort_status: "[[ems__EffortStatusDoing]]",

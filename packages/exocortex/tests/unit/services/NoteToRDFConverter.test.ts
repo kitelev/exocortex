@@ -54,7 +54,7 @@ describe("NoteToRDFConverter", () => {
 
       const frontmatter: IFrontmatter = {
         exo__Asset_label: "Test Task",
-        exo__Instance_class: "ems__Task",
+        exo__Instance_class: ["[[ems__Task]]"],
       };
 
       mockVault.getFrontmatter.mockReturnValue(frontmatter);
@@ -214,7 +214,7 @@ describe("NoteToRDFConverter", () => {
       };
 
       const frontmatter: IFrontmatter = {
-        exo__Instance_class: "ems__Task",
+        exo__Instance_class: ["[[ems__Task]]"],
       };
 
       mockVault.getFrontmatter.mockReturnValue(frontmatter);
@@ -293,7 +293,7 @@ describe("NoteToRDFConverter", () => {
         };
 
         const frontmatter: IFrontmatter = {
-          exo__Instance_class: "ems__Task",
+          exo__Instance_class: ["[[ems__Task]]"],
         };
 
         mockVault.getFrontmatter.mockReturnValue(frontmatter);
@@ -467,7 +467,7 @@ describe("NoteToRDFConverter", () => {
 
       it("should expand Instance_class wiki-link as namespace URI when file not found", async () => {
         const frontmatter: IFrontmatter = {
-          exo__Instance_class: "[[ems__Task]]",
+          exo__Instance_class: ["[[ems__Task]]"],
         };
 
         mockVault.getFrontmatter.mockReturnValue(frontmatter);
@@ -487,7 +487,7 @@ describe("NoteToRDFConverter", () => {
       // Issue #663: Instance_class should ALWAYS use namespace URIs for proper SPARQL JOINs
       it("should use namespace URI for Instance_class even when file exists (Issue #663)", async () => {
         const frontmatter: IFrontmatter = {
-          exo__Instance_class: "[[ems__Task]]",
+          exo__Instance_class: ["[[ems__Task]]"],
         };
 
         const targetFile: IFile = {
@@ -516,7 +516,7 @@ describe("NoteToRDFConverter", () => {
 
       it("should use namespace URI for Instance_class with bare class name (no wikilink)", async () => {
         const frontmatter: IFrontmatter = {
-          exo__Instance_class: "ems__Task",
+          exo__Instance_class: ["[[ems__Task]]"],
         };
 
         mockVault.getFrontmatter.mockReturnValue(frontmatter);
@@ -649,7 +649,7 @@ describe("NoteToRDFConverter", () => {
       };
 
       const frontmatter: IFrontmatter = {
-        exo__Instance_class: "ems__Class",
+        exo__Instance_class: ["[[ems__Class]]"],
       };
 
       mockVault.getFrontmatter.mockReturnValue(frontmatter);
@@ -1997,7 +1997,7 @@ See [[Note A]], then [[Note A]] again, and [[Note A]] once more.
       it("should fallback to legacy format for non-Exo003 frontmatter", async () => {
         const frontmatter: IFrontmatter = {
           exo__Asset_label: "Legacy Note",
-          exo__Instance_class: "ems__Task",
+          exo__Instance_class: ["[[ems__Task]]"],
         };
 
         mockVault.getFrontmatter.mockReturnValue(frontmatter);

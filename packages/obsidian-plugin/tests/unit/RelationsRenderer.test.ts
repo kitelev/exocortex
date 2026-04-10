@@ -182,7 +182,7 @@ describe("RelationsRenderer", () => {
         sourceFile = createTestTFile("source/file.md");
         sourceMetadata = createMockMetadata({
           exo__Asset_label: "Source Asset",
-          exo__Instance_class: "ems__Task",
+          exo__Instance_class: ["[[ems__Task]]"],
         });
 
         mockBacklinksCacheManager.getBacklinks.mockReturnValue([sourceFile.path]);

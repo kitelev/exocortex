@@ -103,7 +103,7 @@ describe("AreaTreeRenderer", () => {
   describe("render", () => {
     it("should not render when asset is not an Area", async () => {
       const metadata = createMockMetadata({
-        exo__Instance_class: "ems__Task",
+        exo__Instance_class: ["[[ems__Task]]"],
       });
       mockMetadataExtractor.extractMetadata.mockReturnValue(metadata);
       mockMetadataService.extractInstanceClass.mockReturnValue(AssetClass.TASK);
@@ -120,7 +120,7 @@ describe("AreaTreeRenderer", () => {
 
     it("should not render when hierarchy tree is null", async () => {
       const metadata = createMockMetadata({
-        exo__Instance_class: "ems__Area",
+        exo__Instance_class: ["[[ems__Area]]"],
       });
       mockMetadataExtractor.extractMetadata.mockReturnValue(metadata);
       mockMetadataService.extractInstanceClass.mockReturnValue(AssetClass.AREA);
@@ -140,7 +140,7 @@ describe("AreaTreeRenderer", () => {
 
     it("should render area tree when asset is an Area with valid hierarchy", async () => {
       const metadata = createMockMetadata({
-        exo__Instance_class: "ems__Area",
+        exo__Instance_class: ["[[ems__Area]]"],
       });
       mockMetadataExtractor.extractMetadata.mockReturnValue(metadata);
       mockMetadataService.extractInstanceClass.mockReturnValue(AssetClass.AREA);
@@ -214,7 +214,7 @@ describe("AreaTreeRenderer", () => {
 
       beforeEach(async () => {
         const metadata = createMockMetadata({
-          exo__Instance_class: "ems__Area",
+          exo__Instance_class: ["[[ems__Area]]"],
         });
         mockMetadataExtractor.extractMetadata.mockReturnValue(metadata);
         mockMetadataService.extractInstanceClass.mockReturnValue(AssetClass.AREA);
@@ -289,7 +289,7 @@ describe("AreaTreeRenderer", () => {
     describe("getAssetLabel callback", () => {
       it("should delegate to metadataService", async () => {
         const metadata = createMockMetadata({
-          exo__Instance_class: "ems__Area",
+          exo__Instance_class: ["[[ems__Area]]"],
         });
         mockMetadataExtractor.extractMetadata.mockReturnValue(metadata);
         mockMetadataService.extractInstanceClass.mockReturnValue(AssetClass.AREA);
@@ -317,7 +317,7 @@ describe("AreaTreeRenderer", () => {
 
     it("should handle complex area hierarchies", async () => {
       const metadata = createMockMetadata({
-        exo__Instance_class: "ems__Area",
+        exo__Instance_class: ["[[ems__Area]]"],
       });
       mockMetadataExtractor.extractMetadata.mockReturnValue(metadata);
       mockMetadataService.extractInstanceClass.mockReturnValue(AssetClass.AREA);
@@ -359,7 +359,7 @@ describe("AreaTreeRenderer", () => {
 
     it("should handle empty relations array", async () => {
       const metadata = createMockMetadata({
-        exo__Instance_class: "ems__Area",
+        exo__Instance_class: ["[[ems__Area]]"],
       });
       mockMetadataExtractor.extractMetadata.mockReturnValue(metadata);
       mockMetadataService.extractInstanceClass.mockReturnValue(AssetClass.AREA);
@@ -381,7 +381,7 @@ describe("AreaTreeRenderer", () => {
 
     it("should handle Project class and not render", async () => {
       const metadata = createMockMetadata({
-        exo__Instance_class: "ems__Project",
+        exo__Instance_class: ["[[ems__Project]]"],
       });
       mockMetadataExtractor.extractMetadata.mockReturnValue(metadata);
       mockMetadataService.extractInstanceClass.mockReturnValue(AssetClass.PROJECT);

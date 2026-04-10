@@ -106,14 +106,14 @@ describe("Issue #2311: ArchiveVerifyService", () => {
       mockActiveFs.readFile.mockImplementation(async (p) => {
         if (p === `${ACTIVE_UUID_1}.md`) {
           return buildMd({
-            exo__Instance_class: "ems__Task",
+            exo__Instance_class: ["[[ems__Task]]"],
             exo__Asset_uid: ACTIVE_UUID_1,
           });
         }
         if (p === `${ACTIVE_UUID_2}.md`) {
           return buildMd(
             {
-              exo__Instance_class: "ems__Task",
+              exo__Instance_class: ["[[ems__Task]]"],
               exo__Asset_uid: ACTIVE_UUID_2,
             },
             `References [[${ACTIVE_UUID_1}|Other active task]]`,
@@ -152,7 +152,7 @@ describe("Issue #2311: ArchiveVerifyService", () => {
         "file3.md",
       ]);
       mockActiveFs.readFile.mockResolvedValue(
-        buildMd({ exo__Instance_class: "ems__Task" }),
+        buildMd({ exo__Instance_class: ["[[ems__Task]]"] }),
       );
 
       mockArchiveFs.getMarkdownFiles.mockResolvedValue([
@@ -179,7 +179,7 @@ describe("Issue #2311: ArchiveVerifyService", () => {
       mockActiveFs.readFile.mockResolvedValue(
         buildMd(
           {
-            exo__Instance_class: "ems__Task",
+            exo__Instance_class: ["[[ems__Task]]"],
             exo__Asset_uid: ACTIVE_UUID_1,
           },
           `Depends on [[${ARCHIVE_UUID_1}|Old archived task]]`,
@@ -221,7 +221,7 @@ describe("Issue #2311: ArchiveVerifyService", () => {
         if (p === `${ACTIVE_UUID_1}.md`) {
           return buildMd(
             {
-              exo__Instance_class: "ems__Task",
+              exo__Instance_class: ["[[ems__Task]]"],
               exo__Asset_uid: ACTIVE_UUID_1,
             },
             `Links to [[${ARCHIVE_UUID_1}]]`,
@@ -230,7 +230,7 @@ describe("Issue #2311: ArchiveVerifyService", () => {
         if (p === `${ACTIVE_UUID_2}.md`) {
           return buildMd(
             {
-              exo__Instance_class: "ems__Task",
+              exo__Instance_class: ["[[ems__Task]]"],
               exo__Asset_uid: ACTIVE_UUID_2,
             },
             `Links to [[${ARCHIVE_UUID_2}]]`,
@@ -271,7 +271,7 @@ describe("Issue #2311: ArchiveVerifyService", () => {
       mockActiveFs.readFile.mockResolvedValue(
         buildMd(
           {
-            exo__Instance_class: "ems__Task",
+            exo__Instance_class: ["[[ems__Task]]"],
             exo__Asset_uid: ACTIVE_UUID_1,
           },
           `First ref [[${ARCHIVE_UUID_1}]] and second ref [[${ARCHIVE_UUID_1}|again]]`,
@@ -304,7 +304,7 @@ describe("Issue #2311: ArchiveVerifyService", () => {
       mockActiveFs.readFile.mockResolvedValue(
         buildMd(
           {
-            exo__Instance_class: "ems__Task",
+            exo__Instance_class: ["[[ems__Task]]"],
             exo__Asset_uid: ACTIVE_UUID_1,
             archived: true,
           },
@@ -457,7 +457,7 @@ describe("Issue #2311: ArchiveVerifyService", () => {
         if (p === "unreadable.md") throw new Error("EACCES");
         if (p === `${ACTIVE_UUID_1}.md`) {
           return buildMd({
-            exo__Instance_class: "ems__Task",
+            exo__Instance_class: ["[[ems__Task]]"],
             exo__Asset_uid: ACTIVE_UUID_1,
           });
         }
@@ -504,7 +504,7 @@ describe("Issue #2311: ArchiveVerifyService", () => {
       mockActiveFs.readFile.mockResolvedValue(
         buildMd(
           {
-            exo__Instance_class: "ems__Task",
+            exo__Instance_class: ["[[ems__Task]]"],
           },
           "References [[some-note|My Note]]",
         ),
@@ -540,7 +540,7 @@ describe("Issue #2311: ArchiveVerifyService", () => {
       mockActiveFs.readFile.mockResolvedValue(
         buildMd(
           {
-            exo__Instance_class: "ems__Task",
+            exo__Instance_class: ["[[ems__Task]]"],
           },
           `Broken ref [[${ARCHIVE_UUID_1}]]`,
         ),

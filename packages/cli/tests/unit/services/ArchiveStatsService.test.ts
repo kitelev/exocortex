@@ -203,7 +203,7 @@ describe("ArchiveStatsService", () => {
   it("should handle plain class name without wikilink", async () => {
     mockFsAdapter.getMarkdownFiles.mockResolvedValue(["a.md"]);
     mockFsAdapter.readFile.mockResolvedValue(
-      makeMd({ exo__Instance_class: "ems__Task" }),
+      makeMd({ exo__Instance_class: ["[[ems__Task]]"] }),
     );
 
     const stats = await service.collect();

@@ -121,7 +121,7 @@ describe("PropertiesLinkPatch", () => {
       mockApp.metadataCache.getFileCache.mockReturnValue({
         frontmatter: {
           exo__Asset_label: "Test Label",
-          exo__Instance_class: "ems__Task",
+          exo__Instance_class: ["[[ems__Task]]"],
         },
       });
 
@@ -164,7 +164,7 @@ describe("PropertiesLinkPatch", () => {
       mockApp.metadataCache.getFileCache.mockReturnValue({
         frontmatter: {
           exo__Asset_label: "Test Label",
-          exo__Instance_class: "ems__Task",
+          exo__Instance_class: ["[[ems__Task]]"],
         },
       });
 
@@ -186,7 +186,7 @@ describe("PropertiesLinkPatch", () => {
       mockApp.metadataCache.getFileCache.mockReturnValue({
         frontmatter: {
           exo__Asset_label: "Test Label",
-          exo__Instance_class: "ems__Task",
+          exo__Instance_class: ["[[ems__Task]]"],
         },
       });
 
@@ -215,7 +215,7 @@ describe("PropertiesLinkPatch", () => {
       mockApp.metadataCache.getFileCache.mockReturnValue({
         frontmatter: {
           exo__Asset_label: "Test Label",
-          exo__Instance_class: "ems__Task",
+          exo__Instance_class: ["[[ems__Task]]"],
         },
       });
 
@@ -249,7 +249,7 @@ describe("PropertiesLinkPatch", () => {
       mockApp.metadataCache.getFileCache.mockReturnValue({
         frontmatter: {
           exo__Asset_label: "Test Label",
-          exo__Instance_class: "ems__Task",
+          exo__Instance_class: ["[[ems__Task]]"],
         },
       });
 
@@ -323,7 +323,7 @@ describe("PropertiesLinkPatch", () => {
       mockApp.metadataCache.getFileCache.mockReturnValue({
         frontmatter: {
           exo__Asset_label: "Заполнить таблетницу",
-          exo__Instance_class: "TaskPrototype",
+          exo__Instance_class: ["[[TaskPrototype]]"],
         },
       });
 
@@ -365,7 +365,7 @@ describe("PropertiesLinkPatch", () => {
       mockApp.metadataCache.getFileCache.mockReturnValue({
         frontmatter: {
           exo__Asset_label: "Test Label",
-          exo__Instance_class: "ems__Task",
+          exo__Instance_class: ["[[ems__Task]]"],
         },
       });
 
@@ -402,7 +402,7 @@ describe("PropertiesLinkPatch", () => {
       mockApp.metadataCache.getFileCache.mockReturnValue({
         frontmatter: {
           exo__Asset_label: "Auto Label from Metadata",
-          exo__Instance_class: "ems__Task",
+          exo__Instance_class: ["[[ems__Task]]"],
         },
       });
 
@@ -430,7 +430,7 @@ describe("PropertiesLinkPatch", () => {
       mockApp.metadataCache.getFileCache.mockReturnValue({
         frontmatter: {
           exo__Asset_label: "Task Label",
-          exo__Instance_class: "ems__Task",
+          exo__Instance_class: ["[[ems__Task]]"],
         },
       });
 
@@ -457,7 +457,7 @@ describe("PropertiesLinkPatch", () => {
       mockApp.metadataCache.getFileCache.mockReturnValue({
         frontmatter: {
           exo__Asset_label: "Some Label",
-          exo__Instance_class: "ems__Task",
+          exo__Instance_class: ["[[ems__Task]]"],
         },
       });
 
@@ -501,7 +501,7 @@ describe("PropertiesLinkPatch", () => {
       mockApp.metadataCache.getFileCache.mockReturnValue({
         frontmatter: {
           exo__Asset_label: "Linked Label",
-          exo__Instance_class: "ems__Project",
+          exo__Instance_class: ["[[ems__Project]]"],
         },
       });
 
@@ -548,7 +548,7 @@ describe("PropertiesLinkPatch", () => {
       mockApp.metadataCache.getFileCache.mockReturnValue({
         frontmatter: {
           exo__Asset_label: "Linked Label",
-          exo__Instance_class: "ems__Project",
+          exo__Instance_class: ["[[ems__Project]]"],
         },
       });
 
@@ -583,7 +583,7 @@ describe("PropertiesLinkPatch", () => {
       mockApp.metadataCache.getFileCache.mockReturnValue({
         frontmatter: {
           exo__Asset_label: "Test Label",
-          exo__Instance_class: "ems__Task",
+          exo__Instance_class: ["[[ems__Task]]"],
         },
       });
 
@@ -614,7 +614,7 @@ describe("PropertiesLinkPatch", () => {
       mockApp.metadataCache.getFileCache.mockReturnValue({
         frontmatter: {
           exo__Asset_label: "Test Label",
-          exo__Instance_class: "ems__Task",
+          exo__Instance_class: ["[[ems__Task]]"],
         },
       });
 
@@ -643,7 +643,7 @@ describe("PropertiesLinkPatch", () => {
       mockApp.metadataCache.getFileCache.mockReturnValue({
         frontmatter: {
           exo__Asset_label: "Initial Label",
-          exo__Instance_class: "ems__Task",
+          exo__Instance_class: ["[[ems__Task]]"],
         },
       });
 
@@ -655,7 +655,7 @@ describe("PropertiesLinkPatch", () => {
       mockApp.metadataCache.getFileCache.mockReturnValue({
         frontmatter: {
           exo__Asset_label: "Updated Label",
-          exo__Instance_class: "ems__Task",
+          exo__Instance_class: ["[[ems__Task]]"],
         },
       });
 

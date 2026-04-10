@@ -834,7 +834,7 @@ describe("LayoutParser", () => {
       mockVaultAdapter.getFrontmatter.mockReturnValue({
         exo__Asset_uid: "layout-001",
         exo__Asset_label: "Task Table",
-        exo__Instance_class: "exo__TableLayout", // Plain string, not array or wikilink
+        exo__Instance_class: ["[[exo__TableLayout]]"], // Plain string, not array or wikilink
         exo__Layout_targetClass: "[[ems__Task]]",
       });
 
