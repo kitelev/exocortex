@@ -5,6 +5,7 @@ import { CacheManager } from "../cache/CacheManager.js";
 import { ErrorHandler, type OutputFormat } from "../utils/ErrorHandler.js";
 import { VaultNotFoundError } from "../utils/errors/index.js";
 import { ResponseBuilder } from "../responses/index.js";
+import { validateSchemaCommand } from "./validate-schema.js";
 
 export interface ValidateOptions {
   vault: string;
@@ -12,20 +13,14 @@ export interface ValidateOptions {
 }
 
 /**
- * Creates the 'validate' command for checking vault health.
+ * Creates the 'validate iri' subcommand for checking vault files for IRI issues.
  *
  * Issue #2205: This command checks vault files for IRI issues
  * without actually building the cache. Useful for identifying
  * problematic files before indexing.
- *
- * @returns Commander Command instance configured for validation
- *
- * @example
- * exocortex validate --vault /path/to/vault
- * exocortex validate --vault /path/to/vault --output json
  */
-export function validateCommand(): Command {
-  return new Command("validate")
+function validateIriCommand(): Command {
+  return new Command("iri")
     .description("Check vault files for IRI issues (Issue #2205)")
     .option("--vault <path>", "Path to Obsidian vault", process.cwd())
     .option("--output <type>", "Response format: text|json (for MCP tools)", "text")
@@ -80,4 +75,26 @@ export function validateCommand(): Command {
         ErrorHandler.handle(error as Error);
       }
     });
+}
+
+/**
+ * Creates the 'validate' parent command with subcommands:
+ * - validate iri    — Check vault files for IRI issues (Issue #2205)
+ * - validate schema — Check frontmatter properties against ontology (Issue #2713)
+ *
+ * @returns Commander Command instance with subcommands
+ *
+ * @example
+ * exocortex validate iri --vault /path/to/vault
+ * exocortex validate schema --vault /path/to/vault
+ * exocortex validate schema --staged --vault /path/to/vault
+ */
+export function validateCommand(): Command {
+  const cmd = new Command("validate")
+    .description("Validate vault files (IRI checks, schema linting)");
+
+  cmd.addCommand(validateIriCommand());
+  cmd.addCommand(validateSchemaCommand());
+
+  return cmd;
 }
