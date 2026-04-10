@@ -49,12 +49,21 @@ BRAT will automatically keep the plugin updated with new releases.
 
 ### Step 2: Install Starter Kit
 
-The plugin needs ontology files in your vault to enable buttons and commands. Download and extract the Starter Kit:
+The plugin needs ontology files in your vault to enable buttons and commands. Install the [Starter Kit](https://github.com/kitelev/exocortex-starter-kit):
 
-1. Go to the [latest GitHub Release](https://github.com/kitelev/exocortex/releases/latest)
-2. Download `exocortex-starter-kit.zip`
-3. Extract the ZIP into your vault (any folder works — the plugin scans the entire vault)
-   - Recommended: extract into a folder like `Knowledge/` or at the vault root
+```bash
+cd /path/to/your/vault
+npx degit kitelev/exocortex-starter-kit starter-kit
+```
+
+Or with git (for easy updates via `git pull`):
+
+```bash
+cd /path/to/your/vault
+git clone https://github.com/kitelev/exocortex-starter-kit starter-kit
+```
+
+The folder can be placed anywhere in your vault — the plugin scans everything.
 
 The plugin detects new files automatically — no restart needed.
 
