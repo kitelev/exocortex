@@ -1,7 +1,8 @@
 # Exocortex Obsidian Plugin — Development Guidelines
 
 > **Worktree rules, PR workflow, CI/CD**: See `../../CLAUDE.md` (exocortex-development root).
-> **Coding patterns, troubleshooting**: See `../../PATTERNS.md` and `../../TROUBLESHOOTING.md`.
+> **Coding patterns**: See `../../PATTERNS.md`.
+> **Troubleshooting**: See `../../TROUBLESHOOTING.md`.
 
 ---
 
