@@ -88,7 +88,8 @@ Every piece of knowledge is a Markdown file with YAML frontmatter:
 ```yaml
 ---
 exo__Asset_uid: 965fd5c2-808e-4c7e-8242-e2e5d85bd996
-exo__Instance_class: ims__Concept
+exo__Instance_class:
+  - "[[ims__Concept]]"
 exo__Asset_label: "Exocortex"
 exo__Asset_relates:
   - "[[PKM]]"
