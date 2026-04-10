@@ -79,6 +79,14 @@ export function setupButtonGroupsBuilderTest(): ButtonGroupsBuilderTestContext {
 
   const mockRefresh = jest.fn();
 
+  const mockNotificationService = {
+    info: jest.fn(),
+    success: jest.fn(),
+    error: jest.fn(),
+    warn: jest.fn(),
+    confirm: jest.fn().mockResolvedValue(true),
+  } as any;
+
   const builder = new ButtonGroupsBuilder({
     app: mockApp,
     settings: mockSettings,
@@ -90,6 +98,7 @@ export function setupButtonGroupsBuilderTest(): ButtonGroupsBuilderTestContext {
     metadataExtractor: mockMetadataExtractor,
     logger: mockLogger,
     refresh: mockRefresh,
+    notificationService: mockNotificationService,
   });
 
   return {

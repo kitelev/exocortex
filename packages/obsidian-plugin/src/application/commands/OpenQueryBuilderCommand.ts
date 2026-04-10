@@ -1,4 +1,5 @@
 import type { App, Plugin } from "obsidian";
+import type { INotificationService } from "exocortex";
 import { ICommand } from "./ICommand";
 import { SPARQLQueryBuilderModal } from '@plugin/presentation/modals/SPARQLQueryBuilderModal';
 
@@ -9,10 +10,11 @@ export class OpenQueryBuilderCommand implements ICommand {
   constructor(
     private app: App,
     private plugin: Plugin,
+    private notifier: INotificationService,
   ) {}
 
   callback = async (): Promise<void> => {
-    const modal = new SPARQLQueryBuilderModal(this.app, this.plugin);
+    const modal = new SPARQLQueryBuilderModal(this.app, this.plugin, this.notifier);
     modal.open();
   };
 }

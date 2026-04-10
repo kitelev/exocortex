@@ -1,5 +1,6 @@
-import { Notice, Setting, setIcon } from "obsidian";
+import { Setting, setIcon } from "obsidian";
 import type { TextPropertyFieldProps, ValidationResult } from "./types";
+import type { INotificationService } from "exocortex";
 
 /**
  * Text property field renderer.
@@ -20,10 +21,14 @@ export class TextPropertyField {
   private setting: Setting;
   private inputEl: HTMLInputElement | null = null;
 
+  private notificationService?: INotificationService;
+
   constructor(
     private containerEl: HTMLElement,
     private props: TextPropertyFieldProps,
+    notificationService?: INotificationService,
   ) {
+    this.notificationService = notificationService;
     this.setting = this.render();
   }
 
@@ -78,14 +83,14 @@ export class TextPropertyField {
       }
     });
 
-    if (property.name === "exo__Asset_uid" && value) {
-      this.addCopyButton(setting, value);
+    if (property.name === "exo__Asset_uid" && value && this.notificationService) {
+      this.addCopyButton(setting, value, this.notificationService);
     }
 
     return setting;
   }
 
-  private addCopyButton(setting: Setting, value: string): void {
+  private addCopyButton(setting: Setting, value: string, notifier: INotificationService): void {
     const btn = setting.controlEl.createEl("button", {
       cls: "clickable-icon",
       attr: {
@@ -97,10 +102,10 @@ export class TextPropertyField {
       try {
         await navigator.clipboard.writeText(value);
         setIcon(btn, "check");
-        new Notice("Uid copied to clipboard");
+        notifier.success("Uid copied to clipboard");
         setTimeout(() => setIcon(btn, "copy"), 1500);
       } catch {
-        new Notice("Failed to copy uid");
+        notifier.error("Failed to copy uid");
       }
     });
   }

@@ -36,6 +36,13 @@ function createMockRFC009Services() {
     groundingExecutor: {
       execute: jest.fn().mockResolvedValue({ success: true }),
     },
+    notificationService: {
+      info: jest.fn(),
+      success: jest.fn(),
+      error: jest.fn(),
+      warn: jest.fn(),
+      confirm: jest.fn().mockResolvedValue(true),
+    },
   };
 }
 

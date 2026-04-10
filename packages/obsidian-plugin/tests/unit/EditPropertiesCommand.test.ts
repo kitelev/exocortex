@@ -129,7 +129,8 @@ describe("EditPropertiesCommand", () => {
         mockApp,
         mockPlugin,
         mockFile,
-        frontmatter
+        frontmatter,
+        mockNotifier
       );
       expect(mockModalInstance.open).toHaveBeenCalled();
     });
@@ -206,7 +207,8 @@ describe("EditPropertiesCommand", () => {
         mockApp,
         mockPlugin,
         mockFile,
-        complexFrontmatter
+        complexFrontmatter,
+        mockNotifier
       );
     });
 

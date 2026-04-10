@@ -1,5 +1,5 @@
 import { App } from "obsidian";
-import { PropertyFieldType, type PropertyDefinition } from "exocortex";
+import { PropertyFieldType, type PropertyDefinition, type INotificationService } from "exocortex";
 import type { ValidationResult } from "./types";
 import { TextPropertyField } from "./TextPropertyField";
 import { DatePropertyField } from "./DatePropertyField";
@@ -80,7 +80,7 @@ export interface PropertyFieldCreateOptions {
  * ```
  */
 export class PropertyFieldFactory {
-  constructor(private app?: App) {}
+  constructor(private app?: App, private notificationService?: INotificationService) {}
 
   /**
    * Create a property field renderer based on the property definition.
@@ -100,7 +100,7 @@ export class PropertyFieldFactory {
           onChange: (v) => onChange(v),
           error,
           disabled,
-        });
+        }, this.notificationService);
 
       case PropertyFieldType.Date:
         return new DatePropertyField(containerEl, {
@@ -213,7 +213,7 @@ export class PropertyFieldFactory {
           onChange: (v) => onChange(v),
           error,
           disabled,
-        });
+        }, this.notificationService);
     }
   }
 

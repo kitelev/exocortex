@@ -10,6 +10,7 @@ import {
   PreconditionEvaluator,
   GroundingExecutor,
   FolderRepairService,
+  INotificationService,
 } from "exocortex";
 import {
   ButtonBuilderContext,
@@ -44,6 +45,8 @@ export interface ButtonGroupsBuilderConfig {
   logger: ILogger;
   /** Callback to refresh the view */
   refresh: () => Promise<void>;
+  /** Notification service for user feedback */
+  notificationService?: INotificationService;
 }
 
 /**
@@ -74,6 +77,7 @@ export class ButtonGroupsBuilder {
       metadataExtractor,
       logger,
       refresh,
+      notificationService,
     } = config;
 
     this.app = app;
@@ -86,12 +90,13 @@ export class ButtonGroupsBuilder {
 
     this.builders = [];
 
-    if (commandResolver && preconditionEvaluator && groundingExecutor) {
+    if (commandResolver && preconditionEvaluator && groundingExecutor && notificationService) {
       this.builders.push(
         new DynamicCommandButtonGroupBuilder({
           commandResolver,
           preconditionEvaluator,
           groundingExecutor,
+          notificationService,
         }),
       );
     }

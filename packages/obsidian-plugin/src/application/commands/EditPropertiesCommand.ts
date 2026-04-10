@@ -32,6 +32,7 @@ export class EditPropertiesCommand implements ICommand {
         this.plugin,
         file,
         cache.frontmatter as Record<string, unknown>,
+        this.notifier,
       );
       modal.open();
     } else {

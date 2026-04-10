@@ -84,10 +84,19 @@ function createMockRFC009Services() {
     execute: jest.fn().mockResolvedValue({ success: true }),
   };
 
+  const mockNotificationService = {
+    info: jest.fn(),
+    success: jest.fn(),
+    error: jest.fn(),
+    warn: jest.fn(),
+    confirm: jest.fn().mockResolvedValue(true),
+  };
+
   return {
     commandResolver: mockCommandResolver,
     preconditionEvaluator: mockPreconditionEvaluator,
     groundingExecutor: mockGroundingExecutor,
+    notificationService: mockNotificationService,
   };
 }
 
