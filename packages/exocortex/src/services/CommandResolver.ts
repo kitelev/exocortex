@@ -443,8 +443,8 @@ export class CommandResolver {
     const type = this.resolveGroundingType(typeStr);
     if (!type) return null;
 
-    const targetProperty = await this.getLiteralValue(subject, Namespace.EXOCMD.term("Grounding_targetProperty"));
-    const targetValue = await this.getLiteralValue(subject, Namespace.EXOCMD.term("Grounding_targetValue"));
+    const targetProperty = await this.getObsidianName(subject, Namespace.EXOCMD.term("Grounding_targetProperty"));
+    const targetValue = await this.getObsidianWikilinkValue(subject, Namespace.EXOCMD.term("Grounding_targetValue"));
     const sparqlUpdate = await this.getLiteralValue(subject, Namespace.EXOCMD.term("Grounding_sparqlUpdate"));
     const targetClass = await this.getLiteralValue(subject, Namespace.EXOCMD.term("Grounding_targetClass"));
     const targetPrototype = await this.getLiteralValue(subject, Namespace.EXOCMD.term("Grounding_targetPrototype"));
@@ -579,18 +579,59 @@ export class CommandResolver {
     const obj = triples[0].object;
     if (obj instanceof Literal) return this.normalizeWikilink(obj.value);
     if (obj instanceof IRI) {
-      // Extract local name from IRI (e.g., ems#Task → ems__Task)
-      const hash = obj.value.lastIndexOf("#");
-      if (hash >= 0) {
-        const ns = obj.value.substring(0, hash + 1);
-        const local = obj.value.substring(hash + 1);
-        // Reverse namespace resolution
-        if (ns === Namespace.EMS.iri.value) return `ems__${local}`;
-        if (ns === Namespace.EXO.iri.value) return `exo__${local}`;
-        if (ns === Namespace.EXOCMD.iri.value) return `exocmd__${local}`;
-      }
-      return obj.value;
+      return this.iriToObsidianName(obj.value) ?? obj.value;
     }
+    return null;
+  }
+
+  /**
+   * Reverse-map an IRI to Obsidian-style property name (e.g., ems__Effort_status).
+   * Falls back to getLiteralValue for Literal objects.
+   */
+  private async getObsidianName(subject: IRI, predicate: IRI): Promise<string | null> {
+    const triples = await this.tripleStore.match(subject, predicate, undefined);
+    if (triples.length === 0) return null;
+
+    const obj = triples[0].object;
+    if (obj instanceof Literal) return obj.value;
+    if (obj instanceof IRI) return this.iriToObsidianName(obj.value) ?? obj.value;
+    return null;
+  }
+
+  /**
+   * Read a grounding target value, converting IRIs back to wikilink format.
+   * Literal values are returned as-is (they already contain wikilink syntax).
+   */
+  private async getObsidianWikilinkValue(subject: IRI, predicate: IRI): Promise<string | null> {
+    const triples = await this.tripleStore.match(subject, predicate, undefined);
+    if (triples.length === 0) return null;
+
+    const obj = triples[0].object;
+    if (obj instanceof Literal) return obj.value;
+    if (obj instanceof IRI) {
+      const name = this.iriToObsidianName(obj.value);
+      return name ? `"[[${name}]]"` : obj.value;
+    }
+    return null;
+  }
+
+  private iriToObsidianName(iri: string): string | null {
+    const hash = iri.lastIndexOf("#");
+    if (hash >= 0) {
+      const ns = iri.substring(0, hash + 1);
+      const local = iri.substring(hash + 1);
+      if (ns === Namespace.EMS.iri.value) return `ems__${local}`;
+      if (ns === Namespace.EXO.iri.value) return `exo__${local}`;
+      if (ns === Namespace.EXOCMD.iri.value) return `exocmd__${local}`;
+      if (ns === Namespace.IMS.iri.value) return `ims__${local}`;
+      if (ns === Namespace.ZTLK.iri.value) return `ztlk__${local}`;
+      if (ns === Namespace.PTMS.iri.value) return `ptms__${local}`;
+      if (ns === Namespace.LIT.iri.value) return `lit__${local}`;
+      if (ns === Namespace.INBOX.iri.value) return `inbox__${local}`;
+    }
+    // Handle obsidian:// vault URLs (e.g., obsidian://vault/ems/ems__EffortStatusDoing.md)
+    const obsMatch = iri.match(/\/([^/]+)\.md$/);
+    if (obsMatch) return obsMatch[1];
     return null;
   }
 
