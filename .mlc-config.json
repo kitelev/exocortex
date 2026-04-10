@@ -5,6 +5,21 @@
     },
     {
       "pattern": "^https://github\\.com/kitelev/exocortex/security"
+    },
+    {
+      "pattern": "^https://github\\.com/kitelev/exocortex/discussions"
+    },
+    {
+      "pattern": "^https://www\\.w3\\.org/TR/"
+    },
+    {
+      "pattern": "^https://w3c\\.github\\.io/"
+    },
+    {
+      "pattern": "^https://exocortex\\.my/"
+    },
+    {
+      "pattern": "^\\.\\./src/"
     }
   ],
   "replacementPatterns": [],
