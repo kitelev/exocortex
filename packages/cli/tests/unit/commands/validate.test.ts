@@ -5,16 +5,23 @@ import { Command } from "commander";
 jest.unstable_mockModule("../../../src/cache/CacheManager.js", () => ({
   CacheManager: jest.fn(() => ({
     validateVault: jest.fn(() => []),
+    loadOrBuild: jest.fn(() => ({ triples: [], cacheHit: false })),
   })),
 }));
 
-// Mock exocortex (CacheManager dependency)
+// Mock exocortex (CacheManager dependency + validate-schema dependency)
 jest.unstable_mockModule("exocortex", () => ({
   NoteToRDFConverter: jest.fn(),
   Triple: jest.fn(),
   IRI: jest.fn(),
   Literal: jest.fn(),
   BlankNode: jest.fn(),
+  InMemoryTripleStore: jest.fn(),
+  ExoQLParser: jest.fn(),
+  ExoQLAlgebraTranslator: jest.fn(),
+  AlgebraOptimizer: jest.fn(),
+  ExoQLQueryExecutor: jest.fn(),
+  SPARQL_PREFIXES: "",
 }));
 
 // Mock fs-extra (CacheManager dependency)
@@ -34,9 +41,7 @@ const { validateCommand } = await import("../../../src/commands/validate.js");
 
 /**
  * Issue #2346: Tests for validate CLI command registration
- *
- * Validates that the Commander.js command is correctly configured with
- * all required/optional options and proper defaults.
+ * Updated for #2713: validate is now a parent command with subcommands
  */
 describe("Issue #2346: validate command", () => {
   it("should create a command with name 'validate'", () => {
@@ -45,53 +50,69 @@ describe("Issue #2346: validate command", () => {
     expect(cmd.name()).toBe("validate");
   });
 
-  it("should have a description mentioning IRI or vault validation", () => {
+  it("should have a description mentioning validation", () => {
     const cmd = validateCommand();
     expect(cmd.description()).toBeTruthy();
-    expect(cmd.description().toLowerCase()).toMatch(/iri|valid|check|vault/);
+    expect(cmd.description().toLowerCase()).toMatch(/valid|check|vault/);
   });
 
-  it("should have optional --vault option with default value", () => {
+  it("should have 'iri' subcommand", () => {
     const cmd = validateCommand();
-    const option = cmd.options.find(
-      (opt) => opt.long === "--vault",
+    const iriCmd = cmd.commands.find((c: any) => c.name() === "iri");
+    expect(iriCmd).toBeDefined();
+  });
+
+  it("should have 'schema' subcommand", () => {
+    const cmd = validateCommand();
+    const schemaCmd = cmd.commands.find((c: any) => c.name() === "schema");
+    expect(schemaCmd).toBeDefined();
+  });
+
+  it("iri subcommand should have optional --vault option with default value", () => {
+    const cmd = validateCommand();
+    const iriCmd = cmd.commands.find((c: any) => c.name() === "iri") as any;
+    const option = iriCmd.options.find(
+      (opt: any) => opt.long === "--vault",
     );
     expect(option).toBeDefined();
-    expect(option!.mandatory).toBeFalsy();
-    expect(option!.defaultValue).toBeDefined();
+    expect(option.mandatory).toBeFalsy();
+    expect(option.defaultValue).toBeDefined();
   });
 
-  it("should have optional --output option with default 'text'", () => {
+  it("iri subcommand should have optional --output option with default 'text'", () => {
     const cmd = validateCommand();
-    const option = cmd.options.find(
-      (opt) => opt.long === "--output",
+    const iriCmd = cmd.commands.find((c: any) => c.name() === "iri") as any;
+    const option = iriCmd.options.find(
+      (opt: any) => opt.long === "--output",
     );
     expect(option).toBeDefined();
-    expect(option!.mandatory).toBeFalsy();
-    expect(option!.defaultValue).toBe("text");
+    expect(option.mandatory).toBeFalsy();
+    expect(option.defaultValue).toBe("text");
   });
 
-  it("should register exactly 2 options", () => {
+  it("iri subcommand should register exactly 2 options", () => {
     const cmd = validateCommand();
-    expect(cmd.options).toHaveLength(2);
+    const iriCmd = cmd.commands.find((c: any) => c.name() === "iri") as any;
+    expect(iriCmd.options).toHaveLength(2);
   });
 
-  it("should have --vault option that accepts a path argument", () => {
+  it("iri subcommand should have --vault option that accepts a path argument", () => {
     const cmd = validateCommand();
-    const option = cmd.options.find(
-      (opt) => opt.long === "--vault",
+    const iriCmd = cmd.commands.find((c: any) => c.name() === "iri") as any;
+    const option = iriCmd.options.find(
+      (opt: any) => opt.long === "--vault",
     );
     expect(option).toBeDefined();
-    // Commander uses '<path>' for required argument on optional option
-    expect(option!.flags).toContain("<path>");
+    expect(option.flags).toContain("<path>");
   });
 
-  it("should have --output option that accepts a type argument", () => {
+  it("iri subcommand should have --output option that accepts a type argument", () => {
     const cmd = validateCommand();
-    const option = cmd.options.find(
-      (opt) => opt.long === "--output",
+    const iriCmd = cmd.commands.find((c: any) => c.name() === "iri") as any;
+    const option = iriCmd.options.find(
+      (opt: any) => opt.long === "--output",
     );
     expect(option).toBeDefined();
-    expect(option!.flags).toContain("<type>");
+    expect(option.flags).toContain("<type>");
   });
 });
