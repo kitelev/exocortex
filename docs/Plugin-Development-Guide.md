@@ -217,4 +217,4 @@ npm run dev    # Development watch mode
 
 **See also:**
 - [Core API Reference](api/Core-API.md)
-- [Testing Guide](Testing-Guide.md)
+- [Testing Guide](../TESTING.md)

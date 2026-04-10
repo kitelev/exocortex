@@ -8245,3 +8245,29 @@ When extending `PrototypeChainMaterializer` or similar BFS materializers:
 **Fix**: Filter `protoInheritedPredicates` before annotation.
 
 **Reference**: RFC-013 Post-Mortem — PR #2607 depth annotation bug
+
+---
+
+### SPARQL Property Discovery Pattern (Two-Source)
+
+**When to use**: Querying the ontology for all declared properties (e.g., schema validation)
+
+**Problem**: Not all `exo__Instance_class` wikilinks produce `rdf:type` triples.
+`[[UUID|exo__ObjectProperty]]` (UUID wikilink format) is stored as a **literal string**, not resolved to an IRI. Only `[[exo__DeprecatedProperty]]` (without UUID) creates a proper `rdf:type` triple.
+
+**Solution**: Use UNION to query both sources:
+```sparql
+SELECT ?s WHERE {
+  { ?s a ?type . FILTER(CONTAINS(STR(?type), "Property")) }
+  UNION
+  { ?s exo:Instance_class ?class . FILTER(CONTAINS(STR(?class), "Property")) }
+}
+```
+
+Then extract property names from:
+1. **Subject URI filename**: `obsidian://vault/.../ems__Effort_status.md` → `ems__Effort_status`
+2. **IRI label values**: `exo:Asset_label` when value is a full ontology URI
+
+**Impact**: Single-source query finds ~25 properties. Two-source finds ~170.
+
+**Reference**: Issue #2713 Post-Mortem — PR #2716
