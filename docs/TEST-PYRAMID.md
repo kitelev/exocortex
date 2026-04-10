@@ -329,7 +329,7 @@ Test Files by Type:
 ## References
 
 - [TESTING.md](../TESTING.md) - Comprehensive testing guide
-- [docs/Testing-Guide.md](./Testing-Guide.md) - Quick reference
+- [TESTING.md](../TESTING.md) - Comprehensive test guide
 - [.github/workflows/ci.yml](../.github/workflows/ci.yml) - CI configuration
 - [packages/obsidian-plugin/jest.config.js](../packages/obsidian-plugin/jest.config.js) - Jest configuration
 

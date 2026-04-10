@@ -443,5 +443,5 @@ exocortex/
 
 **See also:**
 - [Plugin Development Guide](../Plugin-Development-Guide.md)
-- [Testing Guide](../Testing-Guide.md)
+- [Testing Guide](../../TESTING.md)
 - [SPARQL Developer Guide](../sparql/Developer-Guide.md)

@@ -3,7 +3,8 @@
 > **Coordination rules, worktree management, and CI/CD**: See `../CLAUDE.md` (parent directory).
 > **Universal AI agent instructions**: See `AGENTS.md`.
 > **Coding patterns**: See `PATTERNS.md`.
-> **Troubleshooting**: See `../TROUBLESHOOTING.md`.
+> **Troubleshooting**: See `TROUBLESHOOTING.md`.
+> **Post-mortem templates**: See `TEMPLATES.md`.
 
 ---
 
