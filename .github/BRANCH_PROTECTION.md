@@ -5,6 +5,7 @@ This guide explains how to configure GitHub branch protection rules to prevent d
 ## Why Branch Protection?
 
 In multi-instance AI development environment:
+
 - **Prevents race conditions**: Only one PR can merge at a time
 - **Ensures quality**: All CI checks must pass before merge
 - **Eliminates version conflicts**: Automatic versioning happens sequentially
@@ -26,18 +27,20 @@ Run the provided script to configure branch protection via GitHub API:
 
 ```bash
 # Navigate to project root
-cd /Users/kitelev/Documents/exocortex
+cd /Users/kitelev/Developer/exocortex-development/exocortex
 
 # Run setup script
 .github/scripts/setup-branch-protection.sh
 ```
 
 **Prerequisites:**
+
 - GitHub CLI installed (`brew install gh`)
 - Authenticated with GitHub (`gh auth login`)
 - Admin access to repository
 
 **What the script does:**
+
 - ✅ Requires PR before merging to main
 - ✅ Requires `build-and-test` and `e2e-tests` to pass
 - ✅ Requires branches to be up to date before merging
@@ -47,6 +50,7 @@ cd /Users/kitelev/Documents/exocortex
 - ✅ Blocks direct pushes to main
 
 **Repository merge settings (configured separately):**
+
 - ✅ Rebase merge enabled
 - ❌ Squash merge disabled
 - ❌ Merge commits disabled
@@ -56,6 +60,7 @@ cd /Users/kitelev/Documents/exocortex
 If you prefer manual setup:
 
 1. Go to **Repository Settings**
+
    ```
    https://github.com/kitelev/exocortex/settings
    ```
@@ -95,6 +100,7 @@ open https://github.com/kitelev/exocortex/settings/branches
 ```
 
 You should see:
+
 - **Branch protection rule** badge next to `main` branch
 - **Required status checks**: build-and-test, e2e-tests
 - **Require pull request** enabled
@@ -111,6 +117,7 @@ git push origin main
 ```
 
 **Expected result:**
+
 ```
 remote: error: GH006: Protected branch update failed
 To github.com:kitelev/exocortex.git
@@ -174,6 +181,7 @@ gh pr merge --auto --rebase
 **Cause**: Required checks not passing or not completed
 
 **Solution**:
+
 ```bash
 # Check which checks are failing
 gh pr checks
@@ -183,6 +191,7 @@ gh pr view --json statusCheckRollup
 ```
 
 Fix the failing tests and push:
+
 ```bash
 # Fix the code
 git commit --amend
@@ -197,6 +206,7 @@ gh pr checks --watch
 **Cause**: Check name mismatch or workflow not running
 
 **Solution**:
+
 1. Verify workflow file names match required checks
 2. Check workflow ran: `https://github.com/kitelev/exocortex/actions`
 3. Ensure workflow triggers on `pull_request` events
@@ -215,6 +225,7 @@ Better approach: Fix in feature branch, use `gh pr merge --admin` if you have ov
 ## Maintenance
 
 Branch protection rules are persistent. No maintenance needed unless:
+
 - Adding new required checks (update via script or UI)
 - Changing CI workflow job names (update required checks)
 - Removing deprecated checks
