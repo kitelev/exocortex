@@ -17,7 +17,8 @@
 
 3. **Verify Frontmatter**: Must include `exo__Instance_class`
    ```yaml
-   exo__Instance_class: ems__Task
+   exo__Instance_class:
+     - "[[ems__Task]]"
    ```
 
 4. **Reload Layout**: Cmd/Ctrl + P → "Reload Layout"
@@ -67,7 +68,7 @@
    pn__Day_date: "2025-11-10"
    ```
 
-2. **Check Note Class**: Daily note must have `exo__Instance_class: pn__DailyNote`
+2. **Check Note Class**: Daily note must have `exo__Instance_class` with `"[[pn__DailyNote]]"`
 
 3. **Check Archive Status**: Toggle "Show Archived" if task is archived
 

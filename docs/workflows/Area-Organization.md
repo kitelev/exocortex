@@ -22,7 +22,8 @@ Areas represent broad domains of work:
 
 ```yaml
 ---
-exo__Instance_class: ems__Area
+exo__Instance_class:
+  - "[[ems__Area]]"
 exo__Asset_label: Development
 ---
 
@@ -35,7 +36,8 @@ All software engineering efforts.
 
 ```yaml
 ---
-exo__Instance_class: ems__Area
+exo__Instance_class:
+  - "[[ems__Area]]"
 exo__Asset_label: Frontend Development
 ems__Area_parent: "[[Development]]"
 ---
@@ -178,7 +180,8 @@ Product Line B (Area)
 
 ```yaml
 ---
-exo__Instance_class: ems__Area
+exo__Instance_class:
+  - "[[ems__Area]]"
 exo__Asset_label: [Area Name]
 ems__Area_parent: "[[Parent Area]]"  # optional
 ---

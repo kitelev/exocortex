@@ -29,7 +29,8 @@ Result: `projects/project-build-api.md` created with:
 
 ```yaml
 ---
-exo__Instance_class: ems__Project
+exo__Instance_class:
+  - "[[ems__Project]]"
 exo__Asset_label: Build API Server
 ems__Effort_area: "[[Development]]"
 ems__Effort_status: "[[ems__EffortStatusBacklog]]"
@@ -44,7 +45,8 @@ REST API for mobile app.
 
 ```yaml
 ---
-exo__Instance_class: ems__Project
+exo__Instance_class:
+  - "[[ems__Project]]"
 exo__Asset_label: [Project Name]
 ems__Effort_area: "[[Area Name]]"
 ems__Effort_status: "[[ems__EffortStatusBacklog]]"
@@ -320,7 +322,8 @@ Clone for next quarter, update dates.
 ### Essential Properties
 
 ```yaml
-exo__Instance_class: ems__Project
+exo__Instance_class:
+  - "[[ems__Project]]"
 exo__Asset_label: [Name]
 ems__Effort_area: "[[Area]]"
 ems__Effort_status: "[[ems__EffortStatusBacklog]]"

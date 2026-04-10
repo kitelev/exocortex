@@ -165,7 +165,8 @@ For each asset, the triple store generates **both** ExoRDF and RDF/RDFS triples:
 
 **Input** (Obsidian frontmatter):
 ```yaml
-exo__Instance_class: ems__Task
+exo__Instance_class:
+  - "[[ems__Task]]"
 ```
 
 **Output** (RDF triples):
@@ -233,7 +234,8 @@ function constructAssetURI(asset: AssetMetadata): string {
 ```yaml
 exo__Asset_uid: 550e8400-e29b-41d4-a716-446655440000
 exo__Asset_isDefinedBy: "[[Ontology/EMS]]"
-exo__Instance_class: ems__Task
+exo__Instance_class:
+  - "[[ems__Task]]"
 ```
 
 **Ontology frontmatter** (`Ontology/EMS.md`):
@@ -265,7 +267,8 @@ URI: https://exocortex.my/ontology/ems/550e8400-e29b-41d4-a716-446655440000
 ```yaml
 ---
 exo__Asset_uid: 550e8400-e29b-41d4-a716-446655440000
-exo__Instance_class: ems__Task
+exo__Instance_class:
+  - "[[ems__Task]]"
 exo__Asset_label: Review PR #365
 exo__Asset_isDefinedBy: "[[Ontology/EMS]]"
 ems__Effort_status: "[[ems__EffortStatusInProgress]]"
@@ -301,7 +304,8 @@ ems__Task_size: M
 ```yaml
 ---
 exo__Asset_uid: 7c9e6679-7425-40de-944b-e07fc1f90ae7
-exo__Instance_class: ems__Project
+exo__Instance_class:
+  - "[[ems__Project]]"
 exo__Asset_label: Implement SPARQL Engine
 exo__Asset_isDefinedBy: "[[Ontology/EMS]]"
 ---
@@ -311,7 +315,8 @@ exo__Asset_isDefinedBy: "[[Ontology/EMS]]"
 ```yaml
 ---
 exo__Asset_uid: 3b241101-e2bb-4255-8caf-4136c566a964
-exo__Instance_class: ems__Task
+exo__Instance_class:
+  - "[[ems__Task]]"
 ems__Effort_parent: "[[Implement SPARQL Engine]]"
 ---
 ```

@@ -12,7 +12,8 @@ Daily notes use `pn__DailyNote` class with date property:
 
 ```yaml
 ---
-exo__Instance_class: pn__DailyNote
+exo__Instance_class:
+  - "[[pn__DailyNote]]"
 exo__Asset_label: "2025-11-10"
 pn__Day_date: "2025-11-10"  # ISO format: YYYY-MM-DD
 ---
@@ -211,7 +212,8 @@ For appointments/deadlines:
 
 ```yaml
 ---
-exo__Instance_class: pn__DailyNote
+exo__Instance_class:
+  - "[[pn__DailyNote]]"
 exo__Asset_label: "YYYY-MM-DD"
 pn__Day_date: "YYYY-MM-DD"
 ---

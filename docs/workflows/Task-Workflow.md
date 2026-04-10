@@ -65,7 +65,8 @@ Create `tasks/task-build-endpoint.md`:
 
 ```yaml
 ---
-exo__Instance_class: ems__Task
+exo__Instance_class:
+  - "[[ems__Task]]"
 exo__Asset_label: Build /users endpoint
 ems__Effort_area: "[[Development]]"
 ems__Effort_project: "[[Build API Server]]"
@@ -89,7 +90,8 @@ For sub-tasks, use `ems__Effort_parent`:
 
 ```yaml
 ---
-exo__Instance_class: ems__Task
+exo__Instance_class:
+  - "[[ems__Task]]"
 exo__Asset_label: Write endpoint tests
 ems__Effort_area: "[[Development]]"
 ems__Effort_project: "[[Build API Server]]"
@@ -461,7 +463,8 @@ Common paths:
 Essential task frontmatter:
 ```yaml
 ---
-exo__Instance_class: ems__Task
+exo__Instance_class:
+  - "[[ems__Task]]"
 exo__Asset_label: [Task Name]
 ems__Effort_area: "[[Area Name]]"
 ems__Effort_project: "[[Project Name]]"
@@ -477,7 +480,7 @@ ems__Effort_scheduled_start_date: "YYYY-MM-DD"
 | Problem | Solution |
 |---------|----------|
 | Task not in daily note | Check `ems__Effort_scheduled_start_date` matches daily note's `pn__Day_date` |
-| Buttons don't appear | Verify `exo__Instance_class: ems__Task` |
+| Buttons don't appear | Verify `exo__Instance_class` contains `"[[ems__Task]]"` |
 | Status won't change | Check for typos in status wiki-link |
 | Task disappeared | Check if accidentally archived (`exo__Asset_archived: true`) |
 

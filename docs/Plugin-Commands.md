@@ -39,7 +39,8 @@ Commands for creating new assets.
 **Result**: Creates `tasks/task-[uid].md` with:
 ```yaml
 ---
-exo__Instance_class: ems__Task
+exo__Instance_class:
+  - "[[ems__Task]]"
 exo__Asset_label: [Label]
 ems__Effort_area: "[[Area]]"
 ems__Effort_project: "[[Project]]"
@@ -89,7 +90,8 @@ ems__Effort_status: "[[ems__EffortStatusToDo]]"
 **Result**: Creates `projects/project-[uid].md` with:
 ```yaml
 ---
-exo__Instance_class: ems__Project
+exo__Instance_class:
+  - "[[ems__Project]]"
 exo__Asset_label: [Label]
 ems__Effort_area: "[[Area]]"
 ems__Effort_status: "[[ems__EffortStatusBacklog]]"
@@ -155,7 +157,8 @@ ems__Effort_status: "[[ems__EffortStatusBacklog]]"
 **Result**: Creates specialized fleeting note in `01 Inbox/` with:
 ```yaml
 ---
-exo__Instance_class: ztlk__FleetingNote
+exo__Instance_class:
+  - "[[ztlk__FleetingNote]]"
 ztlk__FleetingNote_type: "[[CBT-Diary Record]]"
 ---
 
@@ -502,7 +505,8 @@ aliases:
 
 **Updates**:
 ```yaml
-exo__Instance_class: ems__Project
+exo__Instance_class:
+  - "[[ems__Project]]"
 # Removes task-specific properties
 # Keeps area, status, label
 ```
@@ -521,7 +525,8 @@ exo__Instance_class: ems__Project
 
 **Updates**:
 ```yaml
-exo__Instance_class: ems__Task
+exo__Instance_class:
+  - "[[ems__Task]]"
 # Adds task-specific properties if needed
 ```
 

@@ -27,7 +27,8 @@ Ontology definitions are stored in markdown notes with frontmatter. The plugin r
 
 ```yaml
 ---
-exo__Instance_class: exo__Ontology
+exo__Instance_class:
+  - "[[exo__Ontology]]"
 exo__Ontology_url: "https://exocortex.my/ontology/ems#"
 ---
 ```
@@ -105,7 +106,8 @@ In markdown frontmatter format:
 
 ```yaml
 ---
-exo__Instance_class: rdf__Property
+exo__Instance_class:
+  - "[[rdf__Property]]"
 exo__Asset_label: "Task Priority"
 rdf__Property_domain: "[[ems__Task]]"
 rdf__Property_range: xsd:integer
@@ -208,7 +210,8 @@ To use your custom class with Exocortex commands, instances must use the class n
 
 ```yaml
 ---
-exo__Instance_class: myns__Sprint
+exo__Instance_class:
+  - "[[myns__Sprint]]"
 exo__Asset_label: "Sprint 42"
 myns__Sprint_velocity: 21
 myns__Sprint_goal: "Complete user authentication"
@@ -272,7 +275,8 @@ myns__Task_customField: "value"
 
 ```yaml
 ---
-exo__Instance_class: rdfs__Class
+exo__Instance_class:
+  - "[[rdfs__Class]]"
 exo__Asset_label: "Team"
 rdfs__subClassOf: "[[exo__Asset]]"
 rdfs__comment: "A group of people working together"
@@ -287,7 +291,8 @@ Represents a team that can be assigned to projects and tasks.
 
 ```yaml
 ---
-exo__Instance_class: rdf__Property
+exo__Instance_class:
+  - "[[rdf__Property]]"
 exo__Asset_label: "Team"
 rdf__Property_domain: "[[ems__Effort]]"
 rdf__Property_range: "[[myns__Team]]"
@@ -304,7 +309,8 @@ Assigns a team to any effort (task, project, meeting, etc.).
 
 ```yaml
 ---
-exo__Instance_class: myns__Team
+exo__Instance_class:
+  - "[[myns__Team]]"
 exo__Asset_label: "Frontend Team"
 myns__Team_memberCount: 5
 ---
@@ -318,7 +324,8 @@ The team responsible for UI development.
 
 ```yaml
 ---
-exo__Instance_class: ems__Task
+exo__Instance_class:
+  - "[[ems__Task]]"
 exo__Asset_label: "Implement login form"
 ems__Effort_team: "[[Frontend Team]]"
 ems__Effort_status: "[[ems__EffortStatusToDo]]"
@@ -333,7 +340,7 @@ Before expecting your property to appear in modals:
 - [ ] Property has `rdfs:range` with recognized type
 - [ ] Property has `rdfs:label` for display name
 - [ ] Property is NOT marked `owl:deprecated true`
-- [ ] Ontology file has `exo__Instance_class: exo__Ontology`
+- [ ] Ontology file has `exo__Instance_class` with `"[[exo__Ontology]]"`
 - [ ] Default ontology is set in plugin settings
 
 ## Troubleshooting
