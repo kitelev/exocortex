@@ -93,11 +93,20 @@ jest.mock("obsidian", () => ({
   },
 }));
 
+const mockNotificationService = {
+  info: jest.fn(),
+  success: jest.fn(),
+  error: jest.fn(),
+  warn: jest.fn(),
+  confirm: jest.fn().mockResolvedValue(true),
+};
+
 describe("TextPropertyField", () => {
   let containerEl: HTMLDivElement;
 
   beforeEach(() => {
     containerEl = document.createElement("div");
+    jest.clearAllMocks();
   });
 
   afterEach(() => {
@@ -325,7 +334,7 @@ describe("TextPropertyField", () => {
         },
         value: UID_VALUE,
         onChange: jest.fn(),
-      });
+      }, mockNotificationService as any);
 
       const btn = containerEl.querySelector("button.clickable-icon");
       expect(btn).not.toBeNull();
@@ -374,7 +383,7 @@ describe("TextPropertyField", () => {
         },
         value: UID_VALUE,
         onChange: jest.fn(),
-      });
+      }, mockNotificationService as any);
 
       const btn = containerEl.querySelector("button.clickable-icon") as HTMLButtonElement;
       btn.click();
@@ -384,9 +393,7 @@ describe("TextPropertyField", () => {
       expect(navigator.clipboard.writeText).toHaveBeenCalledWith(UID_VALUE);
     });
 
-    it("should show Notice after successful copy", async () => {
-      const { Notice } = require("obsidian");
-
+    it("should show notification after successful copy", async () => {
       new TextPropertyField(containerEl, {
         property: {
           uri: "exo:Asset_uid",
@@ -396,14 +403,14 @@ describe("TextPropertyField", () => {
         },
         value: UID_VALUE,
         onChange: jest.fn(),
-      });
+      }, mockNotificationService as any);
 
       const btn = containerEl.querySelector("button.clickable-icon") as HTMLButtonElement;
       btn.click();
 
       await new Promise(process.nextTick);
 
-      expect(Notice).toHaveBeenCalledWith("Uid copied to clipboard");
+      expect(mockNotificationService.success).toHaveBeenCalledWith("Uid copied to clipboard");
     });
 
     it("should change icon to check after copy", async () => {
@@ -418,7 +425,7 @@ describe("TextPropertyField", () => {
         },
         value: UID_VALUE,
         onChange: jest.fn(),
-      });
+      }, mockNotificationService as any);
 
       const btn = containerEl.querySelector("button.clickable-icon") as HTMLButtonElement;
       btn.click();

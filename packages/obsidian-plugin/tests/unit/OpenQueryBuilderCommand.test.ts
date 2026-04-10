@@ -32,6 +32,7 @@ describe("OpenQueryBuilderCommand", () => {
   let command: OpenQueryBuilderCommand;
   let mockApp: App;
   let mockPlugin: Plugin;
+  let mockNotifier: any;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -47,7 +48,15 @@ describe("OpenQueryBuilderCommand", () => {
       settings: {},
     } as unknown as Plugin;
 
-    command = new OpenQueryBuilderCommand(mockApp, mockPlugin);
+    mockNotifier = {
+      info: jest.fn(),
+      success: jest.fn(),
+      error: jest.fn(),
+      warn: jest.fn(),
+      confirm: jest.fn().mockResolvedValue(true),
+    };
+
+    command = new OpenQueryBuilderCommand(mockApp, mockPlugin, mockNotifier);
   });
 
   describe("properties", () => {
@@ -67,7 +76,7 @@ describe("OpenQueryBuilderCommand", () => {
 
       await command.callback();
 
-      expect(SPARQLQueryBuilderModal).toHaveBeenCalledWith(mockApp, mockPlugin);
+      expect(SPARQLQueryBuilderModal).toHaveBeenCalledWith(mockApp, mockPlugin, mockNotifier);
       expect(mockModalInstance.open).toHaveBeenCalled();
     });
 

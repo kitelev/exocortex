@@ -15,6 +15,7 @@ describe("PropertiesUidCopyPatch", () => {
   let mockContainer: HTMLElement;
   let mockMetadataContainer: HTMLElement;
   let mockWorkspaceLeaf: any;
+  let mockNotificationService: any;
 
   function createUidProperty(uid: string): HTMLElement {
     const property = document.createElement("div");
@@ -88,7 +89,14 @@ describe("PropertiesUidCopyPatch", () => {
       registerEvent: jest.fn(),
     };
 
-    patch = new PropertiesUidCopyPatch(mockPlugin);
+    mockNotificationService = {
+      info: jest.fn(),
+      success: jest.fn(),
+      error: jest.fn(),
+      warn: jest.fn(),
+      confirm: jest.fn().mockResolvedValue(true),
+    };
+    patch = new PropertiesUidCopyPatch(mockPlugin, mockNotificationService as any);
   });
 
   afterEach(() => {
@@ -336,8 +344,7 @@ describe("PropertiesUidCopyPatch", () => {
 
       await new Promise((resolve) => setTimeout(resolve, 0));
 
-      const { Notice } = jest.requireMock("obsidian");
-      expect(Notice).toHaveBeenCalledWith("Uid copied");
+      expect(mockNotificationService.success).toHaveBeenCalledWith("Uid copied");
     });
 
     it("should swap icon to check on success", async () => {
@@ -377,8 +384,7 @@ describe("PropertiesUidCopyPatch", () => {
 
       await new Promise((resolve) => setTimeout(resolve, 0));
 
-      const { Notice } = jest.requireMock("obsidian");
-      expect(Notice).toHaveBeenCalledWith("Failed to copy uid");
+      expect(mockNotificationService.error).toHaveBeenCalledWith("Failed to copy uid");
     });
   });
 

@@ -1,7 +1,7 @@
 import {
   PropertyEditorModal,
 } from "../../src/presentation/modals/PropertyEditorModal";
-import { App, TFile, Notice } from "obsidian";
+import { App, TFile } from "obsidian";
 import type { ExocortexPluginInterface } from "@plugin/types";
 import { ReactRenderer } from "@plugin/presentation/utils/ReactRenderer";
 import { extractInstanceClass } from "@plugin/domain/property-editor/extractInstanceClass";
@@ -15,7 +15,6 @@ jest.mock("obsidian", () => {
   const actual = jest.requireActual("obsidian");
   return {
     ...actual,
-    Notice: jest.fn(),
   };
 });
 
@@ -28,8 +27,16 @@ describe("PropertyEditorModal", () => {
   let mockContentEl: any;
   let mockRender: jest.Mock;
   let mockUnmount: jest.Mock;
+  let mockNotifier: any;
 
   beforeEach(() => {
+    mockNotifier = {
+      info: jest.fn(),
+      success: jest.fn(),
+      error: jest.fn(),
+      warn: jest.fn(),
+      confirm: jest.fn().mockResolvedValue(true),
+    };
     mockRender = jest.fn();
     mockUnmount = jest.fn();
     (ReactRenderer as jest.Mock).mockImplementation(() => ({
@@ -82,39 +89,39 @@ describe("PropertyEditorModal", () => {
 
   describe("constructor", () => {
     it("should initialize with required parameters", () => {
-      modal = new PropertyEditorModal(mockApp, mockPlugin, mockFile, mockFrontmatter);
+      modal = new PropertyEditorModal(mockApp, mockPlugin, mockFile, mockFrontmatter, mockNotifier);
       expect(modal).toBeDefined();
     });
 
     it("should store plugin reference", () => {
-      modal = new PropertyEditorModal(mockApp, mockPlugin, mockFile, mockFrontmatter);
+      modal = new PropertyEditorModal(mockApp, mockPlugin, mockFile, mockFrontmatter, mockNotifier);
       expect((modal as any).plugin).toBe(mockPlugin);
     });
 
     it("should store file reference", () => {
-      modal = new PropertyEditorModal(mockApp, mockPlugin, mockFile, mockFrontmatter);
+      modal = new PropertyEditorModal(mockApp, mockPlugin, mockFile, mockFrontmatter, mockNotifier);
       expect((modal as any).file).toBe(mockFile);
     });
 
     it("should store frontmatter", () => {
-      modal = new PropertyEditorModal(mockApp, mockPlugin, mockFile, mockFrontmatter);
+      modal = new PropertyEditorModal(mockApp, mockPlugin, mockFile, mockFrontmatter, mockNotifier);
       expect((modal as any).frontmatter).toBe(mockFrontmatter);
     });
 
     it("should extract instance class from frontmatter", () => {
-      modal = new PropertyEditorModal(mockApp, mockPlugin, mockFile, mockFrontmatter);
+      modal = new PropertyEditorModal(mockApp, mockPlugin, mockFile, mockFrontmatter, mockNotifier);
       expect((modal as any).instanceClass).toBe("ems__Task");
     });
 
     it("should initialize ReactRenderer", () => {
-      modal = new PropertyEditorModal(mockApp, mockPlugin, mockFile, mockFrontmatter);
+      modal = new PropertyEditorModal(mockApp, mockPlugin, mockFile, mockFrontmatter, mockNotifier);
       expect(ReactRenderer).toHaveBeenCalled();
     });
   });
 
   describe("onOpen", () => {
     beforeEach(() => {
-      modal = new PropertyEditorModal(mockApp, mockPlugin, mockFile, mockFrontmatter);
+      modal = new PropertyEditorModal(mockApp, mockPlugin, mockFile, mockFrontmatter, mockNotifier);
       modal.contentEl = mockContentEl;
       modal.close = jest.fn();
     });
@@ -152,7 +159,7 @@ describe("PropertyEditorModal", () => {
 
   describe("handleSave", () => {
     beforeEach(() => {
-      modal = new PropertyEditorModal(mockApp, mockPlugin, mockFile, mockFrontmatter);
+      modal = new PropertyEditorModal(mockApp, mockPlugin, mockFile, mockFrontmatter, mockNotifier);
       modal.contentEl = mockContentEl;
       modal.close = jest.fn();
     });
@@ -169,7 +176,7 @@ describe("PropertyEditorModal", () => {
 
     it("should show success notice", async () => {
       await (modal as any).handleSave({ key1: "value1" });
-      expect(Notice).toHaveBeenCalledWith("Properties saved successfully");
+      expect(mockNotifier.success).toHaveBeenCalledWith("Properties saved successfully");
     });
 
     it("should close modal after save", async () => {
@@ -196,9 +203,8 @@ describe("PropertyEditorModal", () => {
 
       await (modal as any).handleSave({ key1: "value1" });
 
-      expect(Notice).toHaveBeenCalledWith(
+      expect(mockNotifier.error).toHaveBeenCalledWith(
         expect.stringContaining("Failed to save properties"),
-        5000,
       );
     });
 
@@ -207,9 +213,8 @@ describe("PropertyEditorModal", () => {
 
       await (modal as any).handleSave({ key1: "value1" });
 
-      expect(Notice).toHaveBeenCalledWith(
+      expect(mockNotifier.error).toHaveBeenCalledWith(
         expect.stringContaining("Failed to save properties"),
-        5000,
       );
     });
 
@@ -218,9 +223,8 @@ describe("PropertyEditorModal", () => {
 
       await (modal as any).handleSave({ key1: "value1" });
 
-      expect(Notice).toHaveBeenCalledWith(
+      expect(mockNotifier.error).toHaveBeenCalledWith(
         expect.stringContaining("string error"),
-        5000,
       );
     });
 
@@ -239,7 +243,7 @@ describe("PropertyEditorModal", () => {
 
     it("should handle plugin without refreshLayout", async () => {
       const pluginNoRefresh = { ...mockPlugin, refreshLayout: undefined };
-      modal = new PropertyEditorModal(mockApp, pluginNoRefresh as ExocortexPluginInterface, mockFile, mockFrontmatter);
+      modal = new PropertyEditorModal(mockApp, pluginNoRefresh as ExocortexPluginInterface, mockFile, mockFrontmatter, mockNotifier);
       modal.contentEl = mockContentEl;
       modal.close = jest.fn();
 
@@ -249,7 +253,7 @@ describe("PropertyEditorModal", () => {
 
   describe("handleCancel", () => {
     beforeEach(() => {
-      modal = new PropertyEditorModal(mockApp, mockPlugin, mockFile, mockFrontmatter);
+      modal = new PropertyEditorModal(mockApp, mockPlugin, mockFile, mockFrontmatter, mockNotifier);
       modal.close = jest.fn();
     });
 
@@ -267,7 +271,7 @@ describe("PropertyEditorModal", () => {
 
   describe("onClose", () => {
     it("should unmount React component", () => {
-      modal = new PropertyEditorModal(mockApp, mockPlugin, mockFile, mockFrontmatter);
+      modal = new PropertyEditorModal(mockApp, mockPlugin, mockFile, mockFrontmatter, mockNotifier);
       modal.contentEl = mockContentEl;
 
       modal.onClose();
@@ -276,7 +280,7 @@ describe("PropertyEditorModal", () => {
     });
 
     it("should empty content element", () => {
-      modal = new PropertyEditorModal(mockApp, mockPlugin, mockFile, mockFrontmatter);
+      modal = new PropertyEditorModal(mockApp, mockPlugin, mockFile, mockFrontmatter, mockNotifier);
       modal.contentEl = mockContentEl;
 
       modal.onClose();
@@ -288,18 +292,18 @@ describe("PropertyEditorModal", () => {
   describe("edge cases", () => {
     it("should handle file with no basename", () => {
       const fileNoBn = { ...mockFile, basename: "" };
-      modal = new PropertyEditorModal(mockApp, mockPlugin, fileNoBn as TFile, mockFrontmatter);
+      modal = new PropertyEditorModal(mockApp, mockPlugin, fileNoBn as TFile, mockFrontmatter, mockNotifier);
       expect(modal).toBeDefined();
     });
 
     it("should handle empty frontmatter", () => {
-      modal = new PropertyEditorModal(mockApp, mockPlugin, mockFile, {});
+      modal = new PropertyEditorModal(mockApp, mockPlugin, mockFile, {}, mockNotifier);
       expect(modal).toBeDefined();
     });
 
     it("should handle frontmatter with null values", () => {
       const fmWithNull = { key1: null, key2: undefined, key3: "" };
-      modal = new PropertyEditorModal(mockApp, mockPlugin, mockFile, fmWithNull);
+      modal = new PropertyEditorModal(mockApp, mockPlugin, mockFile, fmWithNull, mockNotifier);
       expect(modal).toBeDefined();
     });
 
@@ -309,12 +313,12 @@ describe("PropertyEditorModal", () => {
         key2: { nested: { deep: "value" } },
         key3: 42,
       };
-      modal = new PropertyEditorModal(mockApp, mockPlugin, mockFile, complexFm);
+      modal = new PropertyEditorModal(mockApp, mockPlugin, mockFile, complexFm, mockNotifier);
       expect(modal).toBeDefined();
     });
 
     it("should handle concurrent save operations gracefully", async () => {
-      modal = new PropertyEditorModal(mockApp, mockPlugin, mockFile, mockFrontmatter);
+      modal = new PropertyEditorModal(mockApp, mockPlugin, mockFile, mockFrontmatter, mockNotifier);
       modal.contentEl = mockContentEl;
       modal.close = jest.fn();
 

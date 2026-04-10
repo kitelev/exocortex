@@ -1,4 +1,4 @@
-import { App, Notice } from "obsidian";
+import { App } from "obsidian";
 import { ActionButton } from '@plugin/presentation/components/ActionButtonsGroup';
 import type {
   CommandResolver,
@@ -7,6 +7,7 @@ import type {
   GroundingExecutor,
   UserInput,
   EvalContext,
+  INotificationService,
 } from "exocortex";
 import { ILogger } from '@plugin/adapters/logging/ILogger';
 import {
@@ -23,6 +24,7 @@ export interface DynamicCommandBuilderConfig {
   commandResolver: CommandResolver;
   preconditionEvaluator: PreconditionEvaluator;
   groundingExecutor: GroundingExecutor;
+  notificationService: INotificationService;
 }
 
 /**
@@ -199,13 +201,13 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
 
     if (result.success) {
       if (command.successMessage) {
-        new Notice(command.successMessage);
+        this.config.notificationService.success(command.successMessage);
       }
       await new Promise((resolve) => setTimeout(resolve, 100));
       await refresh();
       logger.info(`[DynamicCommands] Executed "${command.name}" on ${filePath}`);
     } else {
-      new Notice(`Command failed: ${result.error ?? "unknown error"}`);
+      this.config.notificationService.error(`Command failed: ${result.error ?? "unknown error"}`);
       logger.info(`[DynamicCommands] Failed "${command.name}": ${result.error}`);
     }
   }

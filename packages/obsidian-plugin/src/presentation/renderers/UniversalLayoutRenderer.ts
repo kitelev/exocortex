@@ -6,7 +6,7 @@ import React from "react";
 import { ReactRenderer } from '@plugin/presentation/utils/ReactRenderer';
 import { ExocortexSettings } from '@plugin/domain/settings/ExocortexSettings';
 import { ActionButtonsGroup } from '@plugin/presentation/components/ActionButtonsGroup';
-import { IVaultAdapter, MetadataExtractor } from "exocortex";
+import { IVaultAdapter, MetadataExtractor, INotificationService } from "exocortex";
 import { FolderRepairService } from "exocortex";
 import { CommandResolver, PreconditionEvaluator, GroundingExecutor } from "exocortex";
 import { BacklinksCacheManager } from '@plugin/adapters/caching/BacklinksCacheManager';
@@ -59,6 +59,7 @@ export class UniversalLayoutRenderer {
   private commandResolver?: CommandResolver;
   private preconditionEvaluator?: PreconditionEvaluator;
   private groundingExecutor?: GroundingExecutor;
+  private notificationService?: INotificationService;
 
   private dependencyResolver: PropertyDependencyResolver;
   private deltaDetector: FrontmatterDeltaDetector;
@@ -81,6 +82,7 @@ export class UniversalLayoutRenderer {
       commandResolver?: CommandResolver;
       preconditionEvaluator?: PreconditionEvaluator;
       groundingExecutor?: GroundingExecutor;
+      notificationService?: INotificationService;
     },
   ) {
     this.app = app;
@@ -90,6 +92,7 @@ export class UniversalLayoutRenderer {
     this.commandResolver = rfc009Services?.commandResolver;
     this.preconditionEvaluator = rfc009Services?.preconditionEvaluator;
     this.groundingExecutor = rfc009Services?.groundingExecutor;
+    this.notificationService = rfc009Services?.notificationService;
     this.logger = LoggerFactory.create("UniversalLayoutRenderer");
 
     // Create ReactRenderer with ErrorBoundary enabled for graceful error handling.
@@ -142,6 +145,7 @@ export class UniversalLayoutRenderer {
       metadataExtractor: this.metadataExtractor,
       logger: this.logger,
       refresh: () => this.refresh(),
+      notificationService: this.notificationService,
     });
 
     this.dailyTasksRenderer = new DailyTasksRenderer(

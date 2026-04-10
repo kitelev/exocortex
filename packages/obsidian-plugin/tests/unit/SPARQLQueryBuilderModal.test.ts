@@ -1,15 +1,7 @@
 import {
   SPARQLQueryBuilderModal,
 } from "../../src/presentation/modals/SPARQLQueryBuilderModal";
-import { App, Modal, Notice, TFile, Plugin } from "obsidian";
-
-jest.mock("obsidian", () => {
-  const actual = jest.requireActual("obsidian");
-  return {
-    ...actual,
-    Notice: jest.fn(),
-  };
-});
+import { App, Modal, TFile, Plugin } from "obsidian";
 
 import { ReactRenderer } from "@plugin/presentation/utils/ReactRenderer";
 import { SPARQLQueryService } from "@plugin/application/services/SPARQLQueryService";
@@ -28,8 +20,16 @@ describe("SPARQLQueryBuilderModal", () => {
   let mockUnmount: jest.Mock;
   let mockInitialize: jest.Mock;
   let mockQuery: jest.Mock;
+  let mockNotifier: any;
 
   beforeEach(() => {
+    mockNotifier = {
+      info: jest.fn(),
+      success: jest.fn(),
+      error: jest.fn(),
+      warn: jest.fn(),
+      confirm: jest.fn().mockResolvedValue(true),
+    };
     mockRender = jest.fn();
     mockUnmount = jest.fn();
     (ReactRenderer as jest.Mock).mockImplementation(() => ({
@@ -89,34 +89,34 @@ describe("SPARQLQueryBuilderModal", () => {
 
   describe("constructor", () => {
     it("should initialize with app and plugin", () => {
-      modal = new SPARQLQueryBuilderModal(mockApp, mockPlugin);
+      modal = new SPARQLQueryBuilderModal(mockApp, mockPlugin, mockNotifier);
       expect(modal).toBeDefined();
     });
 
     it("should initialize ReactRenderer", () => {
-      modal = new SPARQLQueryBuilderModal(mockApp, mockPlugin);
+      modal = new SPARQLQueryBuilderModal(mockApp, mockPlugin, mockNotifier);
       expect((modal as any).reactRenderer).toBeDefined();
     });
 
     it("should initialize SPARQLQueryService", () => {
-      modal = new SPARQLQueryBuilderModal(mockApp, mockPlugin);
+      modal = new SPARQLQueryBuilderModal(mockApp, mockPlugin, mockNotifier);
       expect((modal as any).queryService).toBeDefined();
     });
 
     it("should initialize ApplicationErrorHandler", () => {
-      modal = new SPARQLQueryBuilderModal(mockApp, mockPlugin);
+      modal = new SPARQLQueryBuilderModal(mockApp, mockPlugin, mockNotifier);
       expect((modal as any).errorHandler).toBeDefined();
     });
 
     it("should start with isInitialized as false", () => {
-      modal = new SPARQLQueryBuilderModal(mockApp, mockPlugin);
+      modal = new SPARQLQueryBuilderModal(mockApp, mockPlugin, mockNotifier);
       expect((modal as any).isInitialized).toBe(false);
     });
   });
 
   describe("onOpen", () => {
     beforeEach(() => {
-      modal = new SPARQLQueryBuilderModal(mockApp, mockPlugin);
+      modal = new SPARQLQueryBuilderModal(mockApp, mockPlugin, mockNotifier);
       modal.contentEl = mockContentEl;
       modal.close = jest.fn();
     });
@@ -174,7 +174,7 @@ describe("SPARQLQueryBuilderModal", () => {
 
   describe("onClose", () => {
     it("should unmount React component", () => {
-      modal = new SPARQLQueryBuilderModal(mockApp, mockPlugin);
+      modal = new SPARQLQueryBuilderModal(mockApp, mockPlugin, mockNotifier);
       modal.contentEl = mockContentEl;
 
       modal.onClose();
@@ -183,7 +183,7 @@ describe("SPARQLQueryBuilderModal", () => {
     });
 
     it("should empty content element", () => {
-      modal = new SPARQLQueryBuilderModal(mockApp, mockPlugin);
+      modal = new SPARQLQueryBuilderModal(mockApp, mockPlugin, mockNotifier);
       modal.contentEl = mockContentEl;
 
       modal.onClose();
@@ -194,7 +194,7 @@ describe("SPARQLQueryBuilderModal", () => {
 
   describe("ensureQueryServiceInitialized", () => {
     beforeEach(() => {
-      modal = new SPARQLQueryBuilderModal(mockApp, mockPlugin);
+      modal = new SPARQLQueryBuilderModal(mockApp, mockPlugin, mockNotifier);
     });
 
     it("should initialize query service on first call", async () => {
@@ -223,7 +223,7 @@ describe("SPARQLQueryBuilderModal", () => {
 
   describe("executeQuery", () => {
     beforeEach(() => {
-      modal = new SPARQLQueryBuilderModal(mockApp, mockPlugin);
+      modal = new SPARQLQueryBuilderModal(mockApp, mockPlugin, mockNotifier);
     });
 
     it("should execute query via query service", async () => {
@@ -262,7 +262,7 @@ describe("SPARQLQueryBuilderModal", () => {
 
   describe("handleAssetClick", () => {
     beforeEach(() => {
-      modal = new SPARQLQueryBuilderModal(mockApp, mockPlugin);
+      modal = new SPARQLQueryBuilderModal(mockApp, mockPlugin, mockNotifier);
       modal.close = jest.fn();
     });
 
@@ -271,7 +271,7 @@ describe("SPARQLQueryBuilderModal", () => {
 
       (modal as any).handleAssetClick("nonexistent.md");
 
-      expect(Notice).toHaveBeenCalledWith("file not found: nonexistent.md");
+      expect(mockNotifier.error).toHaveBeenCalledWith("file not found: nonexistent.md");
     });
 
     it("should show notice when path is not a file", () => {
@@ -281,7 +281,7 @@ describe("SPARQLQueryBuilderModal", () => {
 
       (modal as any).handleAssetClick("folder");
 
-      expect(Notice).toHaveBeenCalledWith("path is not a file: folder");
+      expect(mockNotifier.error).toHaveBeenCalledWith("path is not a file: folder");
     });
 
     it("should open file in current leaf by default", () => {
@@ -354,19 +354,19 @@ describe("SPARQLQueryBuilderModal", () => {
 
   describe("handleCopyQuery", () => {
     beforeEach(() => {
-      modal = new SPARQLQueryBuilderModal(mockApp, mockPlugin);
+      modal = new SPARQLQueryBuilderModal(mockApp, mockPlugin, mockNotifier);
     });
 
     it("should show notice when query is copied", () => {
       (modal as any).handleCopyQuery("SELECT ?s WHERE { ?s ?p ?o }");
 
-      expect(Notice).toHaveBeenCalledWith("Query copied to clipboard", 2000);
+      expect(mockNotifier.success).toHaveBeenCalledWith("Query copied to clipboard");
     });
 
     it("should show notice for empty query", () => {
       (modal as any).handleCopyQuery("");
 
-      expect(Notice).toHaveBeenCalledWith("Query copied to clipboard", 2000);
+      expect(mockNotifier.success).toHaveBeenCalledWith("Query copied to clipboard");
     });
   });
 
@@ -376,7 +376,7 @@ describe("SPARQLQueryBuilderModal", () => {
         () => new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 10))
       );
 
-      modal = new SPARQLQueryBuilderModal(mockApp, mockPlugin);
+      modal = new SPARQLQueryBuilderModal(mockApp, mockPlugin, mockNotifier);
       modal.contentEl = mockContentEl;
       modal.close = jest.fn();
 
@@ -386,7 +386,7 @@ describe("SPARQLQueryBuilderModal", () => {
     });
 
     it("should handle rapid open/close cycles", () => {
-      modal = new SPARQLQueryBuilderModal(mockApp, mockPlugin);
+      modal = new SPARQLQueryBuilderModal(mockApp, mockPlugin, mockNotifier);
       modal.contentEl = mockContentEl;
       modal.close = jest.fn();
 
@@ -396,17 +396,17 @@ describe("SPARQLQueryBuilderModal", () => {
     });
 
     it("should handle asset click with empty path", () => {
-      modal = new SPARQLQueryBuilderModal(mockApp, mockPlugin);
+      modal = new SPARQLQueryBuilderModal(mockApp, mockPlugin, mockNotifier);
       modal.close = jest.fn();
       (mockApp.vault.getAbstractFileByPath as jest.Mock).mockReturnValue(null);
 
       (modal as any).handleAssetClick("");
 
-      expect(Notice).toHaveBeenCalledWith("file not found: ");
+      expect(mockNotifier.error).toHaveBeenCalledWith("file not found: ");
     });
 
     it("should handle query with special characters", async () => {
-      modal = new SPARQLQueryBuilderModal(mockApp, mockPlugin);
+      modal = new SPARQLQueryBuilderModal(mockApp, mockPlugin, mockNotifier);
       mockQuery.mockResolvedValue([]);
 
       const queryWithSpecialChars = 'SELECT ?s WHERE { ?s rdfs:label "test & <value>" }';
@@ -417,7 +417,7 @@ describe("SPARQLQueryBuilderModal", () => {
     });
 
     it("should handle large query results", async () => {
-      modal = new SPARQLQueryBuilderModal(mockApp, mockPlugin);
+      modal = new SPARQLQueryBuilderModal(mockApp, mockPlugin, mockNotifier);
       const largeResults = Array.from({ length: 10000 }, (_, i) => ({
         s: `subject_${i}`,
         p: `predicate_${i}`,

@@ -161,6 +161,7 @@ describe("EditPropertiesCommand", () => {
         mockPlugin,
         mockFile,
         mockCache.frontmatter,
+        mockNotifier,
       );
     });
   });

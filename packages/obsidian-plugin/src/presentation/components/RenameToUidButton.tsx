@@ -1,19 +1,22 @@
 import React from "react";
-import { TFile, Notice } from "obsidian";
+import { TFile } from "obsidian";
 import { canRenameToUid } from "exocortex";
 import { LoggingService } from "exocortex";
+import type { INotificationService } from "exocortex";
 import type { MetadataRecord } from '@plugin/types';
 
 interface RenameToUidButtonProps {
   file: TFile;
   metadata: MetadataRecord;
   onRename: () => Promise<void>;
+  notificationService: INotificationService;
 }
 
 export const RenameToUidButton: React.FC<RenameToUidButtonProps> = ({
   file,
   metadata,
   onRename,
+  notificationService,
 }) => {
   const context = {
     instanceClass: (metadata.exo__Instance_class as string | string[] | null) || null,
@@ -36,7 +39,7 @@ export const RenameToUidButton: React.FC<RenameToUidButtonProps> = ({
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
-      new Notice(`Failed to rename: ${errorMessage}`);
+      notificationService.error(`Failed to rename: ${errorMessage}`);
       LoggingService.error(
         "Rename to UID error",
         error instanceof Error ? error : new Error(String(error)),

@@ -1,6 +1,6 @@
-import { Modal, App, Notice, TFile, Plugin } from "obsidian";
+import { Modal, App, TFile, Plugin } from "obsidian";
 import React from "react";
-import type { SolutionMapping, Triple } from "exocortex";
+import type { SolutionMapping, Triple, INotificationService } from "exocortex";
 import { ApplicationErrorHandler } from "exocortex";
 import { ReactRenderer } from '@plugin/presentation/utils/ReactRenderer';
 import { QueryBuilder } from '@plugin/presentation/components/sparql/QueryBuilder';
@@ -12,14 +12,16 @@ export class SPARQLQueryBuilderModal extends Modal {
   private reactRenderer: ReactRenderer;
   private queryService: SPARQLQueryService;
   private errorHandler: ApplicationErrorHandler;
+  private notificationService: INotificationService;
   private isInitialized = false;
 
-  constructor(app: App, plugin: Plugin) {
+  constructor(app: App, plugin: Plugin, notificationService: INotificationService) {
     super(app);
     this.plugin = plugin;
     this.reactRenderer = new ReactRenderer();
     this.queryService = new SPARQLQueryService(app);
     this.errorHandler = new ApplicationErrorHandler();
+    this.notificationService = notificationService;
   }
 
   override async onOpen(): Promise<void> {
@@ -89,13 +91,13 @@ export class SPARQLQueryBuilderModal extends Modal {
   private handleAssetClick(path: string, event?: React.MouseEvent): void {
     const file = this.plugin.app.vault.getAbstractFileByPath(path);
     if (!file) {
-      new Notice(`file not found: ${path}`);
+      this.notificationService.error(`file not found: ${path}`);
       return;
     }
 
     // Type guard: openFile requires TFile, not TAbstractFile (which could be TFolder)
     if (!(file instanceof TFile)) {
-      new Notice(`path is not a file: ${path}`);
+      this.notificationService.error(`path is not a file: ${path}`);
       return;
     }
 
@@ -111,6 +113,6 @@ export class SPARQLQueryBuilderModal extends Modal {
   }
 
   private handleCopyQuery(_query: string): void {
-    new Notice("Query copied to clipboard", 2000);
+    this.notificationService.success("Query copied to clipboard");
   }
 }

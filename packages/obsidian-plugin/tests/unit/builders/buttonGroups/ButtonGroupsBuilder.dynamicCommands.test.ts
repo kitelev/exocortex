@@ -87,6 +87,7 @@ describe("ButtonGroupsBuilder - dynamic commands (RFC-009)", () => {
       commandResolver: mockCommandResolver as unknown as CommandResolver,
       preconditionEvaluator: mockPreconditionEvaluator as unknown as PreconditionEvaluator,
       groundingExecutor: mockGroundingExecutor as unknown as GroundingExecutor,
+      notificationService: { info: jest.fn(), success: jest.fn(), error: jest.fn(), warn: jest.fn(), confirm: jest.fn() } as any,
     });
 
     const builder = new ButtonGroupsBuilder(config);

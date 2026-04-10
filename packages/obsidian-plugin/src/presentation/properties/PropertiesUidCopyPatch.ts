@@ -1,5 +1,6 @@
-import { Plugin, Notice } from "obsidian";
+import { Plugin } from "obsidian";
 import { setIcon } from "obsidian";
+import type { INotificationService } from "exocortex";
 
 /**
  * PropertiesUidCopyPatch - Adds a copy button next to exo__Asset_uid in Obsidian's native Properties block
@@ -25,9 +26,12 @@ export class PropertiesUidCopyPatch {
   private enabled = false;
   private restoreTimers: Set<ReturnType<typeof setTimeout>> = new Set();
 
-  constructor(plugin: Plugin) {
+  private readonly notificationService: INotificationService;
+
+  constructor(plugin: Plugin, notificationService: INotificationService) {
     this.plugin = plugin;
     this.app = plugin.app;
+    this.notificationService = notificationService;
   }
 
   enable(): void {
@@ -175,14 +179,14 @@ export class PropertiesUidCopyPatch {
     try {
       await navigator.clipboard.writeText(uid);
       setIcon(btn, "check");
-      new Notice("Uid copied");
+      this.notificationService.success("Uid copied");
       const timer = setTimeout(() => {
         setIcon(btn, "copy");
         this.restoreTimers.delete(timer);
       }, ICON_RESTORE_DELAY);
       this.restoreTimers.add(timer);
     } catch {
-      new Notice("Failed to copy uid");
+      this.notificationService.error("Failed to copy uid");
     }
   }
 

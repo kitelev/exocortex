@@ -92,19 +92,13 @@ function createContext(metadataOverrides?: Record<string, unknown>): ButtonBuild
   };
 }
 
-const NoticeSpy = jest.fn();
-
-jest.mock("obsidian", () => {
-  const actual = jest.requireActual("obsidian");
-  return {
-    ...actual,
-    Notice: class MockNotice {
-      constructor(message: string) {
-        NoticeSpy(message);
-      }
-    },
-  };
-});
+const mockNotificationService = {
+  info: jest.fn(),
+  success: jest.fn(),
+  error: jest.fn(),
+  warn: jest.fn(),
+  confirm: jest.fn().mockResolvedValue(true),
+};
 
 describe("DynamicCommandButtonGroupBuilder", () => {
   let builder: DynamicCommandButtonGroupBuilder;
@@ -115,6 +109,7 @@ describe("DynamicCommandButtonGroupBuilder", () => {
       commandResolver: mockCommandResolver as unknown as Parameters<typeof DynamicCommandButtonGroupBuilder.prototype.build>[0] extends never ? never : any,
       preconditionEvaluator: mockPreconditionEvaluator as unknown as any,
       groundingExecutor: mockGroundingExecutor as unknown as any,
+      notificationService: mockNotificationService as any,
     });
   });
 
@@ -319,7 +314,7 @@ describe("DynamicCommandButtonGroupBuilder", () => {
 
       await result[0].onClick();
 
-      expect(NoticeSpy).toHaveBeenCalledWith("Done!");
+      expect(mockNotificationService.success).toHaveBeenCalledWith("Done!");
     });
 
     it("should refresh layout after successful execution", async () => {
@@ -350,7 +345,7 @@ describe("DynamicCommandButtonGroupBuilder", () => {
 
       await result[0].onClick();
 
-      expect(NoticeSpy).toHaveBeenCalledWith("Command failed: Something went wrong");
+      expect(mockNotificationService.error).toHaveBeenCalledWith("Command failed: Something went wrong");
     });
 
     it("should show confirmation dialog when confirmMessage is set", async () => {
@@ -410,7 +405,7 @@ describe("DynamicCommandButtonGroupBuilder", () => {
 
       await result[0].onClick();
 
-      expect(NoticeSpy).not.toHaveBeenCalled();
+      expect(mockNotificationService.success).not.toHaveBeenCalled();
     });
   });
 

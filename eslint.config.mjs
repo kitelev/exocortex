@@ -52,6 +52,17 @@ export default tseslint.config(
       'obsidianmd/platform': 'warn',
       'obsidianmd/regex-lookbehind': 'error',
       'obsidianmd/no-sample-code': 'warn',
+
+      'no-restricted-syntax': ['error', {
+        selector: 'NewExpression[callee.name="Notice"]',
+        message: 'Use INotificationService instead of direct new Notice(). Only ObsidianNotificationService may call new Notice().',
+      }],
+    },
+  },
+  {
+    files: ['**/ObsidianNotificationService.ts'],
+    rules: {
+      'no-restricted-syntax': 'off',
     },
   },
   {

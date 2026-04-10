@@ -63,7 +63,7 @@ export class CommandManager {
       new ReloadLayoutCommand(reloadLayoutCallback, notifier),
       new ToggleLayoutVisibilityCommand(plugin, notifier),
       new ToggleArchivedAssetsCommand(plugin, notifier),
-      new OpenQueryBuilderCommand(this.app, plugin),
+      new OpenQueryBuilderCommand(this.app, plugin, notifier),
       new EditPropertiesCommand(this.app, plugin, notifier),
       new CreateAssetCommand(this.app, genericAssetCreationService, this.vaultAdapter, classDiscoveryService, notifier, ontologySchemaService),
       new CreateFleetingNoteCommand(this.app, fleetingNoteCreationService, this.vaultAdapter, notifier),

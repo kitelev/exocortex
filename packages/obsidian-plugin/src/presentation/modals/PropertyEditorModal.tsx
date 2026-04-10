@@ -1,6 +1,6 @@
-import { Modal, App, Notice, TFile } from "obsidian";
+import { Modal, App, TFile } from "obsidian";
 import React from "react";
-import { FrontmatterService } from "exocortex";
+import { FrontmatterService, INotificationService } from "exocortex";
 import { ExocortexPluginInterface } from '@plugin/types';
 import { ReactRenderer } from '@plugin/presentation/utils/ReactRenderer';
 import { PropertyEditorForm } from '@plugin/presentation/components/property-editor/PropertyEditorForm';
@@ -14,12 +14,14 @@ export class PropertyEditorModal extends Modal {
   private file: TFile;
   private frontmatter: Record<string, unknown>;
   private instanceClass: string;
+  private notificationService: INotificationService;
 
   constructor(
     app: App,
     plugin: ExocortexPluginInterface,
     file: TFile,
     frontmatter: Record<string, unknown>,
+    notificationService: INotificationService,
   ) {
     super(app);
     this.plugin = plugin;
@@ -27,6 +29,7 @@ export class PropertyEditorModal extends Modal {
     this.file = file;
     this.frontmatter = frontmatter;
     this.instanceClass = extractInstanceClass(frontmatter);
+    this.notificationService = notificationService;
   }
 
   override onOpen(): void {
@@ -55,7 +58,7 @@ export class PropertyEditorModal extends Modal {
           }),
           onError: (error: Error) => {
             console.error("[Exocortex Property Editor] Error:", error);
-            new Notice(`Error in property editor: ${error.message}`);
+            this.notificationService.error(`Error in property editor: ${error.message}`);
           },
         },
       ),
@@ -77,13 +80,13 @@ export class PropertyEditorModal extends Modal {
       }
 
       await this.app.vault.modify(this.file, fileContent);
-      new Notice("Properties saved successfully");
+      this.notificationService.success("Properties saved successfully");
       this.close();
       this.plugin.refreshLayout?.();
     } catch (error) {
       console.error("[Exocortex Property Editor] Save error:", error);
       const message = error instanceof Error ? error.message : String(error);
-      new Notice(`Failed to save properties: ${message}`, 5000);
+      this.notificationService.error(`Failed to save properties: ${message}`);
     }
   }
 

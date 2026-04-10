@@ -2,7 +2,6 @@ import "reflect-metadata";
 import {
   MarkdownPostProcessorContext,
   MarkdownView,
-  Notice,
   Plugin,
   TFile,
 } from "obsidian";
@@ -144,6 +143,7 @@ export default class ExocortexPlugin extends Plugin {
           commandResolver: this.commandResolver,
           preconditionEvaluator: this.preconditionEvaluator,
           groundingExecutor: this.groundingExecutor,
+          notificationService: notifier,
         },
       );
       this.taskStatusService = container.resolve(TaskStatusService);
@@ -171,7 +171,7 @@ export default class ExocortexPlugin extends Plugin {
           this.app,
           this.app.metadataCache,
           this.wikilinkAliasService,
-          (message: string) => new Notice(message),
+          (message: string) => notifier.info(message),
         ),
       );
 
@@ -289,7 +289,7 @@ export default class ExocortexPlugin extends Plugin {
       }
 
       // Initialize Properties UID copy button patch (always enabled)
-      this.propertiesUidCopyPatch = new PropertiesUidCopyPatch(this);
+      this.propertiesUidCopyPatch = new PropertiesUidCopyPatch(this, notifier);
       this.timerManager.setTimeout("properties-uid-copy-patch", () => {
         this.propertiesUidCopyPatch.enable();
       }, 500);
