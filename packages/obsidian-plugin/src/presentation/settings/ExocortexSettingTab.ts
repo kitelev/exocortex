@@ -4,7 +4,9 @@ import { DEFAULT_DISPLAY_NAME_TEMPLATE } from "@plugin/domain/display-name/Displ
 import { DisplayNameResolver } from "@plugin/domain/display-name/DisplayNameResolver";
 import {
   DEFAULT_DISPLAY_NAME_SETTINGS,
+  DEFAULT_LOG_CHANNELS,
   type DisplayNameSettings,
+  type LogLevel,
 } from "@plugin/domain/settings/ExocortexSettings";
 
 export class ExocortexSettingTab extends PluginSettingTab {
@@ -139,6 +141,9 @@ export class ExocortexSettingTab extends PluginSettingTab {
           }),
       );
 
+    // Logging section
+    this.renderLogChannelsSection(containerEl);
+
     // Display Name Template section
     new Setting(containerEl)
       .setName("Display name templates")
@@ -248,6 +253,56 @@ export class ExocortexSettingTab extends PluginSettingTab {
       const li = placeholderList.createEl("li");
       li.createEl("code", { text: code });
       li.appendText(` - ${desc}`);
+    }
+  }
+
+  /**
+   * Render the log channel routing matrix.
+   * Rows = log levels, columns = channels (Notice / Console / File).
+   */
+  private renderLogChannelsSection(containerEl: HTMLElement): void {
+    new Setting(containerEl)
+      .setName("Log channels")
+      .setHeading();
+
+    const desc = containerEl.createDiv({ cls: "setting-item-description" });
+    desc.appendText(
+      "Choose which channels each log level should be routed to. " +
+      "File channel writes to exocortex-logs.txt in the vault root.",
+    );
+
+    // Ensure logChannels exists
+    if (!this.plugin.settings.logChannels) {
+      this.plugin.settings.logChannels = { ...DEFAULT_LOG_CHANNELS };
+    }
+
+    const levels: { key: LogLevel; label: string }[] = [
+      { key: "debug", label: "Debug" },
+      { key: "info", label: "Info" },
+      { key: "warn", label: "Warn" },
+      { key: "error", label: "Error" },
+    ];
+
+    const channels: { key: "notice" | "console" | "file"; label: string }[] = [
+      { key: "notice", label: "Notice" },
+      { key: "console", label: "Console" },
+      { key: "file", label: "File" },
+    ];
+
+    for (const level of levels) {
+      const setting = new Setting(containerEl).setName(level.label);
+
+      for (const channel of channels) {
+        setting.addToggle((toggle) =>
+          toggle
+            .setValue(this.plugin.settings.logChannels[level.key][channel.key])
+            .onChange(async (value) => {
+              this.plugin.settings.logChannels[level.key][channel.key] = value;
+              await this.plugin.saveSettings();
+              this.plugin.configureLogChannels();
+            }),
+        );
+      }
     }
   }
 

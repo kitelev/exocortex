@@ -24,6 +24,7 @@ describe("Logger", () => {
   });
 
   afterEach(() => {
+    Logger.resetChannels();
     jest.restoreAllMocks();
   });
 
@@ -336,6 +337,156 @@ describe("Logger", () => {
       longLogger.info("test");
       expect(consoleInfoSpy).toHaveBeenCalledWith(`[${longContext}] test`);
     });
+  });
+});
+
+describe("Logger channel routing", () => {
+  let logger: Logger;
+  let consoleDebugSpy: jest.SpyInstance;
+  let consoleInfoSpy: jest.SpyInstance;
+  let consoleWarnSpy: jest.SpyInstance;
+  let consoleErrorSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    consoleDebugSpy = jest.spyOn(console, "debug").mockImplementation();
+    consoleInfoSpy = jest.spyOn(console, "info").mockImplementation();
+    consoleWarnSpy = jest.spyOn(console, "warn").mockImplementation();
+    consoleErrorSpy = jest.spyOn(console, "error").mockImplementation();
+    Logger.setDevelopmentMode(false);
+    logger = new Logger("ChannelTest");
+  });
+
+  afterEach(() => {
+    Logger.resetChannels();
+    jest.restoreAllMocks();
+  });
+
+  it("should route to console by default when no config set", () => {
+    logger.info("default message");
+    expect(consoleInfoSpy).toHaveBeenCalledWith("[ChannelTest] default message");
+  });
+
+  it("should suppress console when console channel is disabled", () => {
+    Logger.configure({
+      channels: {
+        debug: { notice: false, console: false, file: false },
+        info: { notice: false, console: false, file: false },
+        warn: { notice: false, console: false, file: false },
+        error: { notice: false, console: false, file: false },
+      },
+    });
+
+    logger.debug("hidden");
+    logger.info("hidden");
+    logger.warn("hidden");
+    logger.error("hidden");
+
+    expect(consoleDebugSpy).not.toHaveBeenCalled();
+    expect(consoleInfoSpy).not.toHaveBeenCalled();
+    expect(consoleWarnSpy).not.toHaveBeenCalled();
+    expect(consoleErrorSpy).not.toHaveBeenCalled();
+  });
+
+  it("should route to notice callback when notice channel is enabled", () => {
+    const noticeFn = jest.fn();
+    Logger.configure({
+      channels: {
+        debug: { notice: false, console: false, file: false },
+        info: { notice: true, console: false, file: false },
+        warn: { notice: true, console: false, file: false },
+        error: { notice: true, console: false, file: false },
+      },
+      noticeCallback: noticeFn,
+    });
+
+    logger.info("visible notice");
+    expect(noticeFn).toHaveBeenCalledWith("visible notice");
+
+    logger.warn("warn notice");
+    expect(noticeFn).toHaveBeenCalledWith("⚠ warn notice");
+
+    logger.error("error notice");
+    expect(noticeFn).toHaveBeenCalledWith("✗ error notice");
+  });
+
+  it("should not emit notice when notice channel is disabled", () => {
+    const noticeFn = jest.fn();
+    Logger.configure({
+      channels: {
+        debug: { notice: false, console: true, file: false },
+        info: { notice: false, console: true, file: false },
+        warn: { notice: false, console: true, file: false },
+        error: { notice: false, console: true, file: false },
+      },
+      noticeCallback: noticeFn,
+    });
+
+    logger.info("no notice");
+    logger.warn("no notice");
+    logger.error("no notice");
+
+    expect(noticeFn).not.toHaveBeenCalled();
+  });
+
+  it("should route to file channel when file channel is enabled", () => {
+    const fileChannel = { append: jest.fn() } as any;
+    Logger.configure({
+      channels: {
+        debug: { notice: false, console: false, file: true },
+        info: { notice: false, console: false, file: true },
+        warn: { notice: false, console: false, file: false },
+        error: { notice: false, console: false, file: false },
+      },
+      fileChannel,
+    });
+
+    logger.debug("file debug");
+    expect(fileChannel.append).toHaveBeenCalledWith("debug", "ChannelTest", "file debug");
+
+    logger.info("file info");
+    expect(fileChannel.append).toHaveBeenCalledWith("info", "ChannelTest", "file info");
+
+    logger.warn("no file warn");
+    expect(fileChannel.append).toHaveBeenCalledTimes(2);
+  });
+
+  it("should support multiple channels simultaneously", () => {
+    const noticeFn = jest.fn();
+    const fileChannel = { append: jest.fn() } as any;
+    Logger.configure({
+      channels: {
+        debug: { notice: false, console: true, file: false },
+        info: { notice: false, console: true, file: false },
+        warn: { notice: true, console: true, file: true },
+        error: { notice: true, console: true, file: true },
+      },
+      noticeCallback: noticeFn,
+      fileChannel,
+    });
+
+    logger.warn("all channels");
+    expect(consoleWarnSpy).toHaveBeenCalledWith("[ChannelTest] all channels");
+    expect(noticeFn).toHaveBeenCalledWith("⚠ all channels");
+    expect(fileChannel.append).toHaveBeenCalledWith("warn", "ChannelTest", "all channels");
+  });
+
+  it("should reset channels correctly", () => {
+    Logger.configure({
+      channels: {
+        debug: { notice: false, console: false, file: false },
+        info: { notice: false, console: false, file: false },
+        warn: { notice: false, console: false, file: false },
+        error: { notice: false, console: false, file: false },
+      },
+    });
+
+    logger.info("suppressed");
+    expect(consoleInfoSpy).not.toHaveBeenCalled();
+
+    Logger.resetChannels();
+
+    logger.info("back to default");
+    expect(consoleInfoSpy).toHaveBeenCalledWith("[ChannelTest] back to default");
   });
 });
 

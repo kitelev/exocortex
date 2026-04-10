@@ -9,10 +9,13 @@ import { container } from "tsyringe";
 import { UniversalLayoutRenderer } from "./presentation/renderers/UniversalLayoutRenderer";
 import { ILogger } from "./adapters/logging/ILogger";
 import { LoggerFactory } from "./adapters/logging/LoggerFactory";
+import { Logger } from "./adapters/logging/Logger";
+import { FileLogChannel } from "./adapters/logging/FileLogChannel";
 import { CommandManager } from "./application/services/CommandManager";
 import {
   ExocortexSettings,
   DEFAULT_SETTINGS,
+  DEFAULT_LOG_CHANNELS,
 } from "./domain/settings/ExocortexSettings";
 import { ExocortexSettingTab } from "./presentation/settings/ExocortexSettingTab";
 import {
@@ -83,6 +86,7 @@ export default class ExocortexPlugin extends Plugin {
   private bodyLinkPatch!: BodyLinkPatch;
   private propertiesUidCopyPatch!: PropertiesUidCopyPatch;
   private graphViewPatch!: GraphViewPatch;
+  private fileLogChannel!: FileLogChannel;
 
   override async onload(): Promise<void> {
     try {
@@ -96,6 +100,10 @@ export default class ExocortexPlugin extends Plugin {
       this.timerManager = new TimerManager();
 
       await this.loadSettings();
+
+      // Initialize log channel routing from settings
+      this.fileLogChannel = new FileLogChannel(this.app.vault.adapter);
+      this.configureLogChannels();
 
       this.printNameRuleService = new PrintNameRuleService(this.app);
       this.printNameRuleService.initialize();
@@ -387,11 +395,31 @@ export default class ExocortexPlugin extends Plugin {
       this.graphViewPatch.cleanup();
     }
 
+    // Reset log channel routing
+    Logger.resetChannels();
+
     this.logger?.info("Exocortex Plugin unloaded");
   }
 
   async loadSettings(): Promise<void> {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    // Ensure logChannels exists for users upgrading from older versions
+    if (!this.settings.logChannels) {
+      this.settings.logChannels = DEFAULT_LOG_CHANNELS;
+    }
+  }
+
+  /**
+   * Apply current log channel settings to the Logger subsystem.
+   * Called on init and whenever log channel settings change.
+   */
+  configureLogChannels(): void {
+    const hasFileEnabled = Object.values(this.settings.logChannels).some(c => c.file);
+    Logger.configure({
+      channels: this.settings.logChannels,
+      fileChannel: hasFileEnabled ? this.fileLogChannel : null,
+      noticeCallback: (msg: string) => new Notice(msg),
+    });
   }
 
   async saveSettings(): Promise<void> {
