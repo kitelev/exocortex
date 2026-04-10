@@ -64,7 +64,8 @@ The plugin detects new files automatically — no restart needed.
 
 ```yaml
 ---
-exo__Instance_class: ems__Area
+exo__Instance_class:
+  - "[[ems__Area]]"
 exo__Asset_label: Test Area
 ---
 ```
@@ -96,7 +97,8 @@ Areas represent broad domains of work (e.g., "Development", "Marketing", "Person
 
 ```yaml
 ---
-exo__Instance_class: ems__Area
+exo__Instance_class:
+  - "[[ems__Area]]"
 exo__Asset_label: Development
 ---
 # Development
@@ -130,7 +132,8 @@ Projects represent specific initiatives within an area.
 
 ```yaml
 ---
-exo__Instance_class: ems__Project
+exo__Instance_class:
+  - "[[ems__Project]]"
 exo__Asset_label: Build API Server
 ems__Effort_area: "[[Development]]"
 ems__Effort_status: "[[ems__EffortStatusBacklog]]"
@@ -184,7 +187,8 @@ Create `Set up Express server.md`:
 
 ```yaml
 ---
-exo__Instance_class: ems__Task
+exo__Instance_class:
+  - "[[ems__Task]]"
 exo__Asset_label: Set up Express server
 ems__Effort_area: "[[Development]]"
 ems__Effort_parent: "[[Build API Server]]"
@@ -213,7 +217,8 @@ Daily notes show all tasks scheduled for a specific date.
 
 ```yaml
 ---
-exo__Instance_class: pn__DailyNote
+exo__Instance_class:
+  - "[[pn__DailyNote]]"
 exo__Asset_label: "2025-11-10"
 pn__Day_date: "2025-11-10"
 ---
