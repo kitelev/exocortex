@@ -5,18 +5,22 @@ export class ObsidianNotificationService implements INotificationService {
   private readonly DEFAULT_DURATION = 4000;
 
   info(message: string, duration?: number): void {
+    console.debug("[Exocortex] info:", message);
     new Notice(message, duration || this.DEFAULT_DURATION);
   }
 
   success(message: string, duration?: number): void {
+    console.debug("[Exocortex] success:", message);
     new Notice(`✓ ${message}`, duration || this.DEFAULT_DURATION);
   }
 
   error(message: string, duration?: number): void {
+    console.error("[Exocortex] error:", message);
     new Notice(`✗ ${message}`, duration || this.DEFAULT_DURATION);
   }
 
   warn(message: string, duration?: number): void {
+    console.warn("[Exocortex] warn:", message);
     new Notice(`⚠ ${message}`, duration || this.DEFAULT_DURATION);
   }
 
