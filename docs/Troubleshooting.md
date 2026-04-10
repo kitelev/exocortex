@@ -16,6 +16,7 @@
 2. **Check Plugin Enabled**: Settings → Community plugins → Exocortex (ON)
 
 3. **Verify Frontmatter**: Must include `exo__Instance_class`
+
    ```yaml
    exo__Instance_class:
      - "[[ems__Task]]"
@@ -59,13 +60,14 @@
 
 **Solutions**:
 
-1. **Check Date Match**: Task's `ems__Effort_scheduled_start_date` must match daily note's `pn__Day_date`
+1. **Check Date Match**: Task's `ems__Effort_plannedStartTimestamp` must match daily note's `pn__DailyNote_day`
+
    ```yaml
    # Task
-   ems__Effort_scheduled_start_date: "2025-11-10"
+   ems__Effort_plannedStartTimestamp: "2025-11-10"
 
    # Daily Note
-   pn__Day_date: "2025-11-10"
+   pn__DailyNote_day: "2025-11-10"
    ```
 
 2. **Check Note Class**: Daily note must have `exo__Instance_class` with `"[[pn__DailyNote]]"`
@@ -83,6 +85,7 @@
 **Solutions**:
 
 1. **Check Status Format**: Must be wiki-link format
+
    ```yaml
    ems__Effort_status: "[[ems__EffortStatusToDo]]"  # Correct
    ems__Effort_status: "ToDo"  # Wrong
@@ -149,6 +152,7 @@
    - Use Cmd/Ctrl + G (local graph) or "Open graph view" command
 
 3. **Check Label Property**: Notes must have `exo__Asset_label` in frontmatter
+
    ```yaml
    exo__Asset_label: "My Project"
    ```
@@ -168,9 +172,10 @@
 **Problem**: Wikilinks inside markdown tables display raw UUIDs while links in regular paragraphs show labels.
 
 **Example**:
+
 ```markdown
-| Link | Shows UUID? |
-|------|-------------|
+| Link          | Shows UUID?   |
+| ------------- | ------------- |
 | [[uuid-here]] | ❌ Shows UUID |
 
 But [[uuid-here]] in text shows label correctly ✅
@@ -209,12 +214,14 @@ But [[uuid-here]] in text shows label correctly ✅
 **Solutions**:
 
 1. **Clean Install**:
+
    ```bash
    rm -rf node_modules package-lock.json
    npm install
    ```
 
 2. **Check Node Version**: Requires Node.js 18+
+
    ```bash
    node --version  # Should be v18+
    ```
@@ -233,6 +240,7 @@ But [[uuid-here]] in text shows label correctly ✅
 ---
 
 **See also:**
+
 - [Getting Started Guide](Getting-Started.md)
 - [Plugin Commands](Plugin-Commands.md)
 - [SPARQL Troubleshooting](sparql/User-Guide.md#troubleshooting)

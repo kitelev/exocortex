@@ -35,7 +35,6 @@ exo__Asset_label: Build API Server
 ems__Effort_area: "[[Development]]"
 ems__Effort_status: "[[ems__EffortStatusBacklog]]"
 ---
-
 # Build API Server
 
 REST API for mobile app.
@@ -77,6 +76,7 @@ Draft → Backlog → Analysis → ToDo → Doing → Done
 ```
 
 Same as tasks, but:
+
 - **Backlog**: Awaiting resource allocation
 - **Analysis**: Defining scope, tasks, timeline
 - **ToDo**: Ready to start (tasks created)
@@ -85,14 +85,14 @@ Same as tasks, but:
 
 ### Typical Duration
 
-| Status | Duration | Percentage Complete |
-|--------|----------|---------------------|
-| Draft | 1-7 days | 0% |
-| Backlog | Weeks to months | 0% |
-| Analysis | 1-5 days | 0-10% |
-| ToDo | Days to weeks | 10-20% |
-| Doing | Weeks to months | 20-95% |
-| Done | Permanent | 100% |
+| Status   | Duration        | Percentage Complete |
+| -------- | --------------- | ------------------- |
+| Draft    | 1-7 days        | 0%                  |
+| Backlog  | Weeks to months | 0%                  |
+| Analysis | 1-5 days        | 0-10%               |
+| ToDo     | Days to weeks   | 10-20%              |
+| Doing    | Weeks to months | 20-95%              |
+| Done     | Permanent       | 100%                |
 
 ---
 
@@ -109,10 +109,12 @@ Same as tasks, but:
 **Good project = 5-15 tasks**
 
 Too few tasks (<3):
+
 - May not need project structure
 - Consider converting to single task
 
 Too many tasks (>20):
+
 - Break into milestones
 - Create multiple projects
 - Group related tasks
@@ -140,6 +142,7 @@ Build API Server (Project)
 Exocortex doesn't auto-calculate progress. Track manually:
 
 **Option 1: Checklist in content**
+
 ```markdown
 ## Progress
 
@@ -153,11 +156,13 @@ Exocortex doesn't auto-calculate progress. Track manually:
 ```
 
 **Option 2: Add progress property**
+
 ```yaml
 ems__Effort_progress_percentage: 40
 ```
 
 **Option 3: Count completed tasks**
+
 - 3 / 8 tasks done = 37.5% complete
 
 ### Project Dashboard
@@ -165,12 +170,14 @@ ems__Effort_progress_percentage: 40
 View project status from project note:
 
 **Asset Relations section shows:**
+
 - All child tasks
 - Status of each task
 - Vote counts
 - Scheduled dates
 
 **Sort by status** to see:
+
 - What's done
 - What's in progress
 - What's blocked
@@ -180,10 +187,11 @@ View project status from project note:
 Schedule entire project to daily note:
 
 ```yaml
-ems__Effort_scheduled_start_date: "2025-11-10"
+ems__Effort_plannedStartTimestamp: "2025-11-10"
 ```
 
 **Daily Projects section shows:**
+
 - Project and all its tasks
 - Task statuses
 - Quick access to start tasks
@@ -195,6 +203,7 @@ ems__Effort_scheduled_start_date: "2025-11-10"
 ### Completion Criteria
 
 Project is done when:
+
 - [ ] All tasks completed or archived
 - [ ] Deliverables met
 - [ ] Documentation updated
@@ -214,11 +223,13 @@ Project is done when:
 **Tasks**: 8 completed, 2 archived (out of scope)
 
 ### Outcomes
+
 - API deployed to production
 - 95% test coverage
 - Documentation published
 
 ### Lessons Learned
+
 - Authentication took longer than expected
 - Should have split user/post endpoints into separate stories
 ```
@@ -236,11 +247,13 @@ Project is done when:
 ### Project Naming
 
 **Good:**
+
 - "Build Mobile App"
 - "Migrate to Kubernetes"
 - "Launch Marketing Campaign Q4"
 
 **Bad:**
+
 - "Project 1" (not descriptive)
 - "Do stuff" (vague)
 - "Fix things" (use task instead)
@@ -248,12 +261,14 @@ Project is done when:
 ### Project Scope
 
 **Clear scope indicators:**
+
 - Specific objective
 - Defined deliverables
 - Measurable success criteria
 - Time-bounded (even if flexible)
 
 **Scope creep warning signs:**
+
 - Tasks keep getting added
 - No clear completion criteria
 - "One more feature" syndrome
@@ -328,18 +343,18 @@ exo__Asset_label: [Name]
 ems__Effort_area: "[[Area]]"
 ems__Effort_status: "[[ems__EffortStatusBacklog]]"
 ems__Effort_votes: 0
-ems__Effort_scheduled_start_date: "YYYY-MM-DD"  # optional
+ems__Effort_plannedStartTimestamp: "YYYY-MM-DD" # optional
 ```
 
 ### Common Commands
 
-| Action | Command/Button |
-|--------|----------------|
+| Action         | Command/Button                      |
+| -------------- | ----------------------------------- |
 | Create project | Area note → "Create Project" button |
-| Create task | Project note → "Create Task" button |
-| Change status | Status buttons or Command Palette |
-| Vote | "Vote" button |
-| Schedule | "Plan on Today" button |
+| Create task    | Project note → "Create Task" button |
+| Change status  | Status buttons or Command Palette   |
+| Vote           | "Vote" button                       |
+| Schedule       | "Plan on Today" button              |
 
 ---
 
