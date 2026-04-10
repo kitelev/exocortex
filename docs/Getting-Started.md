@@ -1,6 +1,6 @@
 # Getting Started with Exocortex
 
-**A beginner-friendly guide to setting up and using Exocortex for task management in Obsidian.**
+**Set up Exocortex for task management in Obsidian. Requires: Obsidian desktop, basic terminal knowledge.**
 
 ---
 
@@ -33,30 +33,35 @@ Exocortex transforms Obsidian into a powerful task management system with:
 
 ## Installation
 
-### Step 1: Download the Plugin
+### Step 1: Install via BRAT
 
-**Option A: Community Plugins (Recommended)**
-1. Open Obsidian Settings → Community plugins
-2. Search for "Exocortex"
+[BRAT](https://github.com/TfTHacker/obsidian42-brat) is a plugin that lets you install beta plugins from GitHub.
+
+1. Open Obsidian Settings → Community plugins → Browse
+2. Search for **"BRAT"** (full name: "Obsidian42 - BRAT")
 3. Click Install → Enable
+4. Open BRAT settings → **Add Beta Plugin**
+5. Enter repository: `kitelev/exocortex`
+6. Click **Add Plugin**
+7. Go to Settings → Community plugins → enable **Exocortex**
 
-**Option B: Manual Installation**
-```bash
-cd /your/vault/.obsidian/plugins
-git clone https://github.com/kitelev/exocortex
-cd exocortex
-npm install && npm run build
-```
+BRAT will automatically keep the plugin updated with new releases.
 
-### Step 2: Enable the Plugin
+### Step 2: Install Starter Kit
 
-1. Settings → Community plugins → Installed plugins
-2. Find "Exocortex" in the list
-3. Toggle ON
+The plugin needs ontology files in your vault to enable buttons and commands. Download and extract the Starter Kit:
+
+1. Go to the [latest GitHub Release](https://github.com/kitelev/exocortex/releases/latest)
+2. Download `exocortex-starter-kit.zip`
+3. Extract the ZIP into your vault (any folder works — the plugin scans the entire vault)
+   - Recommended: extract into a folder like `Knowledge/` or at the vault root
+
+The plugin detects new files automatically — no restart needed.
 
 ### Step 3: Verify Installation
 
-1. Create a test note with frontmatter:
+1. Create a new note with this frontmatter:
+
 ```yaml
 ---
 exo__Instance_class: ems__Area
@@ -65,12 +70,18 @@ exo__Asset_label: Test Area
 ```
 
 2. Switch to **Reading Mode** (Ctrl/Cmd + E)
-3. You should see the Exocortex layout below the metadata
+3. You should see the Exocortex layout with **action buttons** below the metadata
 
 **If the layout doesn't appear:**
+
+- Verify you're in **Reading Mode** (not Live Preview or Source Mode)
 - Check that the plugin is enabled (Settings → Community plugins)
-- Verify you're in Reading Mode (not Live Preview or Source Mode)
 - Check the console for errors (Ctrl/Cmd + Shift + I → Console tab)
+
+**If buttons are missing but the layout appears:**
+
+- Verify the Starter Kit files are in your vault (look for an `exocmd/` folder)
+- Try Cmd/Ctrl+P → "Reload Layout"
 
 ---
 
@@ -88,7 +99,6 @@ Areas represent broad domains of work (e.g., "Development", "Marketing", "Person
 exo__Instance_class: ems__Area
 exo__Asset_label: Development
 ---
-
 # Development
 
 All software development efforts live here.
@@ -101,11 +111,11 @@ All software development efforts live here.
 The Exocortex layout renders with these sections:
 
 - **Properties Table**: Shows all frontmatter properties
-- **Action Buttons**: Commands relevant to areas (Create Project, etc.)
+- **Action Buttons**: Commands relevant to areas (Create Project, Create Task, etc.)
 - **Area Hierarchy Tree**: Parent/child area relationships (empty for now)
 - **Asset Relations**: Notes referencing this area (empty for now)
 
-**📝 Note**: The layout only appears in Reading Mode, not in Edit Mode.
+**Note**: The layout only appears in Reading Mode, not in Edit Mode.
 
 ---
 
@@ -125,7 +135,6 @@ exo__Asset_label: Build API Server
 ems__Effort_area: "[[Development]]"
 ems__Effort_status: "[[ems__EffortStatusBacklog]]"
 ---
-
 # Build API Server
 
 REST API for the mobile app.
@@ -135,10 +144,12 @@ REST API for the mobile app.
 
 ### Understanding the Frontmatter
 
-- `exo__Instance_class: ems__Project` - Declares this note as a project
-- `exo__Asset_label` - Human-readable name (displayed everywhere)
-- `ems__Effort_area` - Links to the parent area (wiki-link)
-- `ems__Effort_status` - Current workflow status (Backlog, Analysis, ToDo, Doing, Done)
+| Property              | Purpose                                    | Human name   |
+| --------------------- | ------------------------------------------ | ------------ |
+| `exo__Instance_class` | Declares this note as a project            | Note type    |
+| `exo__Asset_label`    | Human-readable name (displayed everywhere) | Display name |
+| `ems__Effort_area`    | Links to the parent area (wiki-link)       | Parent area  |
+| `ems__Effort_status`  | Current workflow status                    | Status       |
 
 ### Available Status Values
 
@@ -166,8 +177,6 @@ Tasks represent specific work items within a project.
 2. Click **"Create Task"** button
 3. Fill in the form:
    - **Label**: `Set up Express server`
-   - **Status**: `ems__EffortStatusToDo`
-   - **Area**: (auto-filled from parent project)
 
 ### Or Create Manually
 
@@ -178,10 +187,9 @@ Create `Set up Express server.md`:
 exo__Instance_class: ems__Task
 exo__Asset_label: Set up Express server
 ems__Effort_area: "[[Development]]"
-ems__Effort_project: "[[Build API Server]]"
+ems__Effort_parent: "[[Build API Server]]"
 ems__Effort_status: "[[ems__EffortStatusToDo]]"
 ---
-
 # Set up Express server
 
 Initialize Node.js project and configure Express.
@@ -189,9 +197,8 @@ Initialize Node.js project and configure Express.
 
 ### Understanding Task Frontmatter
 
-- `ems__Effort_project` - Links to the parent project
+- `ems__Effort_parent` - Links to the parent project (or parent task for sub-tasks)
 - All other properties work like projects
-- Tasks can have `ems__Effort_parent` for sub-tasks
 
 ---
 
@@ -210,7 +217,6 @@ exo__Instance_class: pn__DailyNote
 exo__Asset_label: "2025-11-10"
 pn__Day_date: "2025-11-10"
 ---
-
 # 2025-11-10
 
 Today's plan.
@@ -223,7 +229,7 @@ Today's plan.
 3. The task's frontmatter updates with today's date:
 
 ```yaml
-ems__Effort_scheduled_start_date: "2025-11-10"
+ems__Effort_plannedStartTimestamp: "2025-11-10"
 ```
 
 ### View Today's Tasks
@@ -238,6 +244,7 @@ ems__Effort_scheduled_start_date: "2025-11-10"
 ### Shift Scheduling
 
 Use arrow buttons (◀ / ▶) to move tasks between days:
+
 - ◀ Shift Day Backward (reschedule to yesterday)
 - ▶ Shift Day Forward (reschedule to tomorrow)
 
@@ -250,12 +257,14 @@ The Exocortex layout renders automatically in Reading Mode based on the note's `
 ### Common Sections
 
 **1. Properties Table**
+
 - Shows all frontmatter properties
 - Resolves wiki-links to display labels
 - Sortable columns (click headers)
 - Toggle visibility with "Toggle Properties" button
 
 **2. Action Buttons**
+
 - Grouped by function:
   - **Creation**: Create Task, Create Project
   - **Status**: Move to Backlog, Move to ToDo, Start Effort, Mark Done
@@ -264,6 +273,7 @@ The Exocortex layout renders automatically in Reading Mode based on the note's `
 - Only relevant buttons shown (based on note type and state)
 
 **3. Asset Relations**
+
 - Lists all notes that reference this note
 - Grouped by property (e.g., all tasks with this project as parent)
 - Sortable by name, class, status
@@ -271,15 +281,18 @@ The Exocortex layout renders automatically in Reading Mode based on the note's `
 
 ### Class-Specific Sections
 
-**ems__Area**
+**ems\_\_Area**
+
 - **Area Hierarchy Tree**: Interactive collapsible tree of parent/child areas
 
-**pn__DailyNote**
+**pn\_\_DailyNote**
+
 - **Daily Tasks**: All tasks scheduled for this date
 - **Daily Projects**: All projects scheduled for this date
 - **Focus Area Filter**: Show only tasks from specific area
 
-**ems__Project / ems__Task**
+**ems**Project / ems**Task**
+
 - Standard layout (Properties + Buttons + Relations)
 
 ---
@@ -289,26 +302,34 @@ The Exocortex layout renders automatically in Reading Mode based on the note's `
 Now that you have the basics, explore advanced features:
 
 ### 1. Workflow Management
+
 Learn the complete effort lifecycle:
+
 - [Task Workflows](workflows/Task-Workflow.md)
 - [Project Workflows](workflows/Project-Workflow.md)
 
 ### 2. Daily Planning
+
 Master daily note organization:
+
 - [Daily Planning Guide](workflows/Daily-Planning.md)
 
 ### 3. Area Hierarchies
+
 Build knowledge domains:
+
 - [Area Organization Guide](workflows/Area-Organization.md)
 
 ### 4. Command Reference
-Discover all 32 commands:
+
+Discover all commands:
+
 - [Plugin Commands](Plugin-Commands.md)
 
 ### 5. Advanced Features
+
 - [SPARQL Queries](sparql/User-Guide.md)
 - [Effort Voting System](workflows/Effort-Voting.md)
-- [Mobile/iOS Usage](Performance-Guide.md#mobile-optimization)
 
 ---
 
@@ -316,44 +337,43 @@ Discover all 32 commands:
 
 ### Essential Frontmatter Properties
 
-| Property | Purpose | Example Value |
-|----------|---------|---------------|
-| `exo__Instance_class` | Note type | `ems__Task`, `ems__Project`, `ems__Area`, `pn__DailyNote` |
-| `exo__Asset_label` | Display name | `"Build API Server"` |
-| `ems__Effort_area` | Parent area | `"[[Development]]"` |
-| `ems__Effort_project` | Parent project (tasks only) | `"[[Build API Server]]"` |
-| `ems__Effort_status` | Workflow status | `"[[ems__EffortStatusToDo]]"` |
-| `ems__Effort_scheduled_start_date` | Planned date | `"2025-11-10"` |
-| `pn__Day_date` | Daily note date | `"2025-11-10"` |
+| Property                            | Human name          | Example Value                                             |
+| ----------------------------------- | ------------------- | --------------------------------------------------------- |
+| `exo__Instance_class`               | Note type           | `ems__Task`, `ems__Project`, `ems__Area`, `pn__DailyNote` |
+| `exo__Asset_label`                  | Display name        | `"Build API Server"`                                      |
+| `ems__Effort_area`                  | Parent area         | `"[[Development]]"`                                       |
+| `ems__Effort_parent`                | Parent project/task | `"[[Build API Server]]"`                                  |
+| `ems__Effort_status`                | Workflow status     | `"[[ems__EffortStatusToDo]]"`                             |
+| `ems__Effort_plannedStartTimestamp` | Planned start date  | `"2025-11-10"`                                            |
+| `pn__Day_date`                      | Daily note date     | `"2025-11-10"`                                            |
 
 ### Common Commands
 
-| Action | Command |
-|--------|---------|
-| Create task | Click "Create Task" button or Cmd/Ctrl+P → "Create Task" |
-| Move status | Use status buttons (Backlog → Analysis → ToDo → Doing → Done) |
-| Plan for today | Click "Plan on Today" button |
-| Shift day | Use ◀ / ▶ buttons |
-| Vote on effort | Click "Vote" button |
-| Reload layout | Cmd/Ctrl+P → "Reload Layout" |
+| Action         | Command                                                       |
+| -------------- | ------------------------------------------------------------- |
+| Create task    | Click "Create Task" button or Cmd/Ctrl+P → "Create Task"      |
+| Move status    | Use status buttons (Backlog → Analysis → ToDo → Doing → Done) |
+| Plan for today | Click "Plan on Today" button                                  |
+| Shift day      | Use ◀ / ▶ buttons                                             |
+| Vote on effort | Click "Vote" button                                           |
+| Reload layout  | Cmd/Ctrl+P → "Reload Layout"                                  |
 
 ### Troubleshooting
 
-| Problem | Solution |
-|---------|----------|
-| Layout doesn't appear | Switch to Reading Mode (Ctrl/Cmd + E) |
-| Buttons don't work | Check console for errors (Ctrl/Cmd + Shift + I) |
-| Wiki-links not resolving | Verify target note exists with correct `exo__Asset_label` |
-| Daily tasks not showing | Check task has `ems__Effort_scheduled_start_date` matching daily note's `pn__Day_date` |
+| Problem                  | Solution                                                                                |
+| ------------------------ | --------------------------------------------------------------------------------------- |
+| Layout doesn't appear    | Switch to Reading Mode (Ctrl/Cmd + E)                                                   |
+| No buttons visible       | Verify Starter Kit is installed (exocmd/ folder exists in vault)                        |
+| Buttons don't work       | Check console for errors (Ctrl/Cmd + Shift + I)                                         |
+| Wiki-links not resolving | Verify target note exists with correct `exo__Asset_label`                               |
+| Daily tasks not showing  | Check task has `ems__Effort_plannedStartTimestamp` matching daily note's `pn__Day_date` |
 
 ---
 
 ## Getting Help
 
 - **Documentation**: See [full documentation index](../README.md#documentation)
-- **Troubleshooting**: [Troubleshooting Guide](Troubleshooting.md)
 - **Issues**: [GitHub Issues](https://github.com/kitelev/exocortex/issues)
-- **Community**: [Obsidian Forum](https://forum.obsidian.md/)
 
 ---
 
