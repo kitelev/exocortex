@@ -34,6 +34,10 @@ Best for: Visual knowledge management, daily planning, interactive exploration.
 
 BRAT will automatically keep the plugin updated with new releases.
 
+> **Next:** Follow the **[Getting Started Guide](./docs/Getting-Started.md)** to install the Starter Kit and create your first Area, Project, and Task.
+>
+> **Note:** Layouts appear in **Reading Mode** (Ctrl/Cmd + E).
+
 ### Option 2: CLI
 
 Best for: Automation, AI agents, batch operations.
@@ -187,12 +191,12 @@ Monorepo with four packages sharing Clean Architecture core:
 
 ### Packages
 
-| Package                        | npm                       | Purpose                                                                     |
-| ------------------------------ | ------------------------- | --------------------------------------------------------------------------- |
-| **exocortex**                  | Private                   | Core business logic, domain models, SPARQL engine, 35+ services             |
-| **@exocortex/obsidian-plugin** | Private                   | Interactive UI: 24+ components, 6 renderers, 34+ commands, 11 modals        |
-| **@kitelev/exocortex-cli**     | `@kitelev/exocortex-cli`  | CLI for automation, archive/unarchive, SPARQL queries, AI agent integration |
-| **@exocortex/test-utils**      | Private                   | Shared test utilities, mock factories, flaky test reporter                  |
+| Package                        | npm                      | Purpose                                                                     |
+| ------------------------------ | ------------------------ | --------------------------------------------------------------------------- |
+| **exocortex**                  | Private                  | Core business logic, domain models, SPARQL engine, 35+ services             |
+| **@exocortex/obsidian-plugin** | Private                  | Interactive UI: 24+ components, 6 renderers, 34+ commands, 11 modals        |
+| **@kitelev/exocortex-cli**     | `@kitelev/exocortex-cli` | CLI for automation, archive/unarchive, SPARQL queries, AI agent integration |
+| **@exocortex/test-utils**      | Private                  | Shared test utilities, mock factories, flaky test reporter                  |
 
 ### Technical Standards
 
