@@ -571,6 +571,69 @@ describe("NoteToRDFConverter", () => {
         expect(values).toContain(Namespace.EMS.term("Effort").value);
       });
 
+      // Issue #2742: [[UUID|alias]] format should expand alias to class IRI
+      it("should expand UUID|alias Instance_class to namespace URI via alias (Issue #2742)", async () => {
+        const frontmatter: IFrontmatter = {
+          exo__Instance_class: ["[[3677039a-a5a8-4402-9a07-f8f18fe384ad|exocmd__CommandBinding]]"],
+        };
+
+        mockVault.getFrontmatter.mockReturnValue(frontmatter);
+
+        const triples = await converter.convertNote(file);
+
+        const classTriples = triples.filter((t) =>
+          (t.predicate as IRI).value.includes("Instance_class")
+        );
+
+        expect(classTriples.length).toBe(1);
+        expect(classTriples[0].object).toBeInstanceOf(IRI);
+        expect((classTriples[0].object as IRI).value).toBe(
+          Namespace.EXOCMD.term("CommandBinding").value
+        );
+      });
+
+      it("should generate rdf:type triple for UUID|alias Instance_class (Issue #2742)", async () => {
+        const frontmatter: IFrontmatter = {
+          exo__Instance_class: ["[[1b20a8f0-d745-4e93-91db-4531b3df120e|ems__Task]]"],
+        };
+
+        mockVault.getFrontmatter.mockReturnValue(frontmatter);
+
+        const triples = await converter.convertNote(file);
+
+        const typeTriple = triples.find((t) =>
+          (t.predicate as IRI).value === Namespace.RDF.term("type").value
+        );
+
+        expect(typeTriple).toBeDefined();
+        expect(typeTriple!.object).toBeInstanceOf(IRI);
+        expect((typeTriple!.object as IRI).value).toBe(
+          Namespace.EMS.term("Task").value
+        );
+      });
+
+      it("should handle multiple UUID|alias Instance_class values (Issue #2742)", async () => {
+        const frontmatter: IFrontmatter = {
+          exo__Instance_class: [
+            "[[aaa-bbb|ems__Task]]",
+            "[[ccc-ddd|ems__Effort]]",
+          ],
+        };
+
+        mockVault.getFrontmatter.mockReturnValue(frontmatter);
+
+        const triples = await converter.convertNote(file);
+
+        const typeTriples = triples.filter((t) =>
+          (t.predicate as IRI).value === Namespace.RDF.term("type").value
+        );
+
+        expect(typeTriples.length).toBe(2);
+        const values = typeTriples.map((t) => (t.object as IRI).value);
+        expect(values).toContain(Namespace.EMS.term("Task").value);
+        expect(values).toContain(Namespace.EMS.term("Effort").value);
+      });
+
       it("should still use file URI when wiki-link target file exists", async () => {
         const frontmatter: IFrontmatter = {
           exo__Property_domain: "[[ems__Effort]]",

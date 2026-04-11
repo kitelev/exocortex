@@ -732,6 +732,24 @@ export class NoteToRDFConverter {
   }
 
   /**
+   * Extracts the alias (display name) from a [[target|alias]] wikilink.
+   *
+   * Issue #2742: When [[UUID|ems__Task]] format is used, extractWikilink returns
+   * the UUID which can't be expanded to a class IRI. This method extracts the alias
+   * part so it can be tried as a fallback.
+   *
+   * @param value - The raw wikilink string (e.g., "[[UUID|ems__Task]]")
+   * @returns The alias part, or null if no alias present
+   */
+  private extractWikilinkAlias(value: string): string | null {
+    const match = value.match(/^\[\[([^\]]+)\]\]$/);
+    if (!match) return null;
+    const linkpath = match[1];
+    if (!linkpath.includes("|")) return null;
+    return linkpath.split("|")[1];
+  }
+
+  /**
    * Converts a value for exo__Instance_class to a namespace URI.
    *
    * Issue #663: Always stores class references as namespace URIs (not file URIs),
@@ -761,6 +779,16 @@ export class NoteToRDFConverter {
     const classIRI = this.expandClassValue(classRef);
     if (classIRI) {
       return classIRI;
+    }
+
+    // Issue #2742: For [[UUID|alias]] format, extractWikilink returns the UUID
+    // which doesn't expand to a class IRI. Try the alias part as fallback.
+    const alias = this.extractWikilinkAlias(cleanValue);
+    if (alias) {
+      const aliasIRI = this.expandClassValue(alias);
+      if (aliasIRI) {
+        return aliasIRI;
+      }
     }
 
     // Not a class reference - return as literal (preserves original wiki-link format)
