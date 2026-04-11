@@ -348,8 +348,7 @@ describe("SPARQL 1.1 Compliance - Solution Modifiers", () => {
   });
 
   describe("DISTINCT", () => {
-    // DISTINCT not removing duplicates - returns all rows
-    it.skip("should remove duplicate solutions", async () => {
+    it("should remove duplicate solutions", async () => {
       const query = `
         PREFIX ex: <http://example.org/>
         SELECT DISTINCT ?department WHERE {
@@ -366,7 +365,7 @@ describe("SPARQL 1.1 Compliance - Solution Modifiers", () => {
       expect(departments).toEqual(["Engineering", "HR", "Sales"]);
     });
 
-    it.skip("should remove duplicates from multiple variables", async () => {
+    it("should remove duplicates from multiple variables", async () => {
       const query = `
         PREFIX ex: <http://example.org/>
         SELECT DISTINCT ?age ?score WHERE {
@@ -386,7 +385,7 @@ describe("SPARQL 1.1 Compliance - Solution Modifiers", () => {
       expect(uniquePairs.size).toBe(results.length);
     });
 
-    it.skip("should work with ORDER BY", async () => {
+    it("should work with ORDER BY", async () => {
       const query = `
         PREFIX ex: <http://example.org/>
         SELECT DISTINCT ?department WHERE {
@@ -401,6 +400,56 @@ describe("SPARQL 1.1 Compliance - Solution Modifiers", () => {
 
       const departments = results.map((r) => getValue(r.get("department")));
       expect(departments).toEqual(["Engineering", "HR", "Sales"]);
+    });
+
+    it("should preserve results with unbound OPTIONAL variables (#2747)", async () => {
+      // Add a person without a nickname (OPTIONAL field)
+      await store.add(
+        new Triple(
+          new IRI(`${EX}frank`),
+          RDF_TYPE,
+          new IRI(`${EX}Person`)
+        )
+      );
+      await store.add(
+        new Triple(
+          new IRI(`${EX}frank`),
+          new IRI(`${EX}name`),
+          new Literal("Frank")
+        )
+      );
+      // Frank has NO nickname — OPTIONAL will leave ?nickname unbound
+
+      // Alice gets a nickname
+      await store.add(
+        new Triple(
+          new IRI(`${EX}alice`),
+          new IRI(`${EX}nickname`),
+          new Literal("Ali")
+        )
+      );
+
+      const query = `
+        PREFIX ex: <http://example.org/>
+        SELECT DISTINCT ?name ?nickname WHERE {
+          ?person ex:name ?name .
+          OPTIONAL { ?person ex:nickname ?nickname }
+        }
+      `;
+
+      const parsed = parser.parse(query);
+      const algebra = translator.translate(parsed);
+      const results = await executor.executeAll(algebra);
+
+      const names = results.map((r) => getValue(r.get("name"))).sort();
+      // All 6 people should appear (5 original + Frank)
+      expect(names).toEqual(["Alice", "Bob", "Carol", "Dan", "Eve", "Frank"]);
+
+      // Alice should have nickname, Frank should not
+      const alice = results.find((r) => getValue(r.get("name")) === "Alice");
+      expect(getValue(alice?.get("nickname"))).toBe("Ali");
+      const frank = results.find((r) => getValue(r.get("name")) === "Frank");
+      expect(frank?.get("nickname")).toBeUndefined();
     });
   });
 
@@ -590,8 +639,7 @@ describe("SPARQL 1.1 Compliance - Solution Modifiers", () => {
       expect(getValue(page3[0].get("name"))).toBe("Eve");
     });
 
-    // DISTINCT not removing duplicates - OFFSET operates on all rows
-    it.skip("should work with DISTINCT", async () => {
+    it("should work with DISTINCT", async () => {
       const query = `
         PREFIX ex: <http://example.org/>
         SELECT DISTINCT ?department WHERE {
@@ -703,8 +751,7 @@ describe("SPARQL 1.1 Compliance - Solution Modifiers", () => {
   });
 
   describe("Combined Modifiers", () => {
-    // DISTINCT not removing duplicates - returns all rows
-    it.skip("should apply DISTINCT before ORDER BY", async () => {
+    it("should apply DISTINCT before ORDER BY", async () => {
       const query = `
         PREFIX ex: <http://example.org/>
         SELECT DISTINCT ?department WHERE {
