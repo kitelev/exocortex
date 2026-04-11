@@ -93,15 +93,27 @@ export class AssetMetadataService {
 
   extractInstanceClass(metadata: MetadataRecord): string {
     const instanceClass = metadata.exo__Instance_class || "";
-    if (Array.isArray(instanceClass)) {
-      const firstClass = instanceClass[0] || "";
-      return String(firstClass)
-        .replace(/^\[\[|\]\]$/g, "")
-        .trim();
+    const raw = Array.isArray(instanceClass)
+      ? String(instanceClass[0] || "")
+      : String(instanceClass);
+
+    // Strip wikilink brackets: [[target|alias]] → target|alias, or [[target]] → target
+    const stripped = raw.replace(/^\[\[|\]\]$/g, "").trim();
+    if (!stripped) return "";
+
+    // Extract link target (before |) — may be UUID or human-readable name
+    const linkTarget = stripped.includes("|")
+      ? stripped.split("|")[0].trim()
+      : stripped;
+
+    // If linkTarget looks like a UUID, resolve to exo__Asset_label via metadata cache
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(linkTarget)) {
+      const label = this.getAssetLabel(linkTarget);
+      if (label) return label;
     }
-    return String(instanceClass)
-      .replace(/^\[\[|\]\]$/g, "")
-      .trim();
+
+    // Fallback: return as-is (backward compatible with [[ems__Area]] format)
+    return linkTarget;
   }
 
   /**
