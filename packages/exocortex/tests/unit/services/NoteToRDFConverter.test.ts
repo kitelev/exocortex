@@ -636,6 +636,106 @@ describe("NoteToRDFConverter", () => {
         expect((domainTriple!.object as IRI).value).toBe(Namespace.EMS.term("Effort").value);
       });
     });
+
+    // Issue #2742: [[UUID|alias]] format should generate rdf:type triple via alias
+    describe("UUID|alias wikilink format for Instance_class (Issue #2742)", () => {
+      const file: IFile = {
+        path: "test.md",
+        basename: "test",
+        name: "test.md",
+        parent: null,
+      };
+
+      it("should generate rdf:type triple from [[UUID|ems__Task]] format", async () => {
+        const frontmatter: IFrontmatter = {
+          exo__Instance_class: ["[[1b20a8f0-d745-4e93-91db-4531b3df120e|ems__Task]]"],
+        };
+
+        mockVault.getFrontmatter.mockReturnValue(frontmatter);
+
+        const triples = await converter.convertNote(file);
+
+        const typeTriple = triples.find((t) =>
+          (t.predicate as IRI).value === Namespace.RDF.term("type").value
+        );
+
+        expect(typeTriple).toBeDefined();
+        expect(typeTriple!.object).toBeInstanceOf(IRI);
+        expect((typeTriple!.object as IRI).value).toBe(Namespace.EMS.term("Task").value);
+      });
+
+      it("should generate rdf:type triple from [[UUID|exocmd__CommandBinding]] format", async () => {
+        const frontmatter: IFrontmatter = {
+          exo__Instance_class: ["[[3677039a-a5a8-4402-9a07-f8f18fe384ad|exocmd__CommandBinding]]"],
+        };
+
+        mockVault.getFrontmatter.mockReturnValue(frontmatter);
+
+        const triples = await converter.convertNote(file);
+
+        const typeTriple = triples.find((t) =>
+          (t.predicate as IRI).value === Namespace.RDF.term("type").value
+        );
+
+        expect(typeTriple).toBeDefined();
+        expect(typeTriple!.object).toBeInstanceOf(IRI);
+        expect((typeTriple!.object as IRI).value).toBe(Namespace.EXOCMD.term("CommandBinding").value);
+      });
+
+      it("should generate Instance_class IRI from [[UUID|ems__Task]] format", async () => {
+        const frontmatter: IFrontmatter = {
+          exo__Instance_class: ["[[1b20a8f0-d745-4e93-91db-4531b3df120e|ems__Task]]"],
+        };
+
+        mockVault.getFrontmatter.mockReturnValue(frontmatter);
+
+        const triples = await converter.convertNote(file);
+
+        const classTriple = triples.find((t) =>
+          (t.predicate as IRI).value.includes("Instance_class")
+        );
+
+        expect(classTriple).toBeDefined();
+        expect(classTriple!.object).toBeInstanceOf(IRI);
+        expect((classTriple!.object as IRI).value).toBe(Namespace.EMS.term("Task").value);
+      });
+
+      it("should still work with [[alias-only]] format (no UUID)", async () => {
+        const frontmatter: IFrontmatter = {
+          exo__Instance_class: ["[[ems__Task]]"],
+        };
+
+        mockVault.getFrontmatter.mockReturnValue(frontmatter);
+
+        const triples = await converter.convertNote(file);
+
+        const typeTriple = triples.find((t) =>
+          (t.predicate as IRI).value === Namespace.RDF.term("type").value
+        );
+
+        expect(typeTriple).toBeDefined();
+        expect(typeTriple!.object).toBeInstanceOf(IRI);
+        expect((typeTriple!.object as IRI).value).toBe(Namespace.EMS.term("Task").value);
+      });
+
+      it("should still work with bare class name (no wikilink)", async () => {
+        const frontmatter: IFrontmatter = {
+          exo__Instance_class: ["ems__Task"],
+        };
+
+        mockVault.getFrontmatter.mockReturnValue(frontmatter);
+
+        const triples = await converter.convertNote(file);
+
+        const typeTriple = triples.find((t) =>
+          (t.predicate as IRI).value === Namespace.RDF.term("type").value
+        );
+
+        expect(typeTriple).toBeDefined();
+        expect(typeTriple!.object).toBeInstanceOf(IRI);
+        expect((typeTriple!.object as IRI).value).toBe(Namespace.EMS.term("Task").value);
+      });
+    });
   });
 
   // Issue #666: Asset_fileName predicate for SPARQL queries by filename

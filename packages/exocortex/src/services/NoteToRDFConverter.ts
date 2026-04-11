@@ -731,6 +731,15 @@ export class NoteToRDFConverter {
     return linkpath.includes("|") ? linkpath.split("|")[0] : linkpath;
   }
 
+  // Issue #2742: Extract alias from [[UUID|alias]] wikilink format
+  private extractWikilinkAlias(value: string): string | null {
+    const match = value.match(/^\[\[([^\]]+)\]\]$/);
+    if (!match) return null;
+    const linkpath = match[1];
+    const pipeIndex = linkpath.indexOf("|");
+    return pipeIndex >= 0 ? linkpath.substring(pipeIndex + 1).trim() : null;
+  }
+
   /**
    * Converts a value for exo__Instance_class to a namespace URI.
    *
@@ -761,6 +770,15 @@ export class NoteToRDFConverter {
     const classIRI = this.expandClassValue(classRef);
     if (classIRI) {
       return classIRI;
+    }
+
+    // Issue #2742: If UUID didn't expand, try alias from [[UUID|alias]] format
+    const alias = this.extractWikilinkAlias(cleanValue);
+    if (alias) {
+      const aliasIRI = this.expandClassValue(alias);
+      if (aliasIRI) {
+        return aliasIRI;
+      }
     }
 
     // Not a class reference - return as literal (preserves original wiki-link format)
