@@ -99,6 +99,48 @@ describe("DisplayNameTemplateEngine", () => {
       expect(result).toBe("My Task");
     });
 
+    it("should extract alias from wikilink with pipe syntax", () => {
+      const engine = new DisplayNameTemplateEngine("{{exo__Instance_class}}");
+      const result = engine.render(
+        { exo__Instance_class: ["[[8619c4fc-64f1-4869-b17e-e34186cacca9|exo__Class]]"] },
+        "status-doing"
+      );
+      expect(result).toBe("exo__Class");
+    });
+
+    it("should resolve UUID wikilink via metadataResolver", () => {
+      const resolver = jest.fn().mockReturnValue({
+        exo__Asset_label: "exo__Class",
+      });
+      const engine = new DisplayNameTemplateEngine(
+        "{{exo__Asset_label}} ({{exo__Instance_class}})"
+      );
+      const result = engine.render(
+        {
+          exo__Asset_label: "ems__EffortStatusDoing",
+          exo__Instance_class: ["[[8619c4fc-64f1-4869-b17e-e34186cacca9]]"],
+        },
+        "status-doing",
+        undefined,
+        resolver
+      );
+      expect(result).toBe("ems__EffortStatusDoing (exo__Class)");
+      expect(resolver).toHaveBeenCalledWith("[[8619c4fc-64f1-4869-b17e-e34186cacca9]]");
+    });
+
+    it("should show UUID when metadataResolver returns null for UUID wikilink", () => {
+      const resolver = jest.fn().mockReturnValue(null);
+      const engine = new DisplayNameTemplateEngine("{{exo__Instance_class}}");
+      const result = engine.render(
+        { exo__Instance_class: ["[[8619c4fc-64f1-4869-b17e-e34186cacca9]]"] },
+        "status",
+        undefined,
+        resolver
+      );
+      // Fallback to UUID when resolver can't find it
+      expect(result).toBe("8619c4fc-64f1-4869-b17e-e34186cacca9");
+    });
+
     it("should handle array values by using first element", () => {
       const engine = new DisplayNameTemplateEngine("{{exo__Instance_class}}");
       const result = engine.render(

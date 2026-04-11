@@ -131,7 +131,7 @@ export class DisplayNameTemplateEngine {
 
     // Handle dot notation for nested fields (with cross-asset resolution)
     const value = this.getNestedValue(metadata, key, metadataResolver);
-    return this.formatValue(value);
+    return this.formatValue(value, metadataResolver);
   }
 
   /**
@@ -172,16 +172,53 @@ export class DisplayNameTemplateEngine {
   }
 
   /**
-   * Format a value for display
+   * Format a string value, handling wikilink syntax:
+   * - [[target|alias]] → alias
+   * - [[target]] with metadataResolver → resolved exo__Asset_label
+   * - [[target]] without resolver → target (stripped brackets)
    */
-  private formatValue(value: unknown): string {
+  private formatWikilinkValue(value: string, metadataResolver?: MetadataResolver): string {
+    // Match wikilink pattern: [[target]] or [[target|alias]]
+    const match = value.match(/^\[\[([^\]|]+?)(?:\|([^\]]+))?\]\]$/);
+    if (!match) {
+      // Not a wikilink — strip any partial bracket syntax
+      return value.replace(DisplayNameTemplateEngine.WIKILINK_PATTERN, "").trim();
+    }
+
+    const target = match[1].trim();
+    const alias = match[2]?.trim();
+
+    // If alias exists, use it directly
+    if (alias) {
+      return alias;
+    }
+
+    // Try to resolve label via metadataResolver
+    if (metadataResolver) {
+      const resolved = metadataResolver(value);
+      if (resolved) {
+        const label = resolved.exo__Asset_label;
+        if (typeof label === "string" && label.trim()) {
+          return label.trim();
+        }
+      }
+    }
+
+    // Fallback: return target without brackets
+    return target;
+  }
+
+  /**
+   * Format a value for display.
+   * Parses wikilinks to extract alias or resolve label via metadataResolver.
+   */
+  private formatValue(value: unknown, metadataResolver?: MetadataResolver): string {
     if (value === null || value === undefined) {
       return "";
     }
 
     if (typeof value === "string") {
-      // Strip wikilink syntax
-      return value.replace(DisplayNameTemplateEngine.WIKILINK_PATTERN, "").trim();
+      return this.formatWikilinkValue(value, metadataResolver);
     }
 
     if (Array.isArray(value)) {
@@ -189,7 +226,7 @@ export class DisplayNameTemplateEngine {
       if (value.length === 0) {
         return "";
       }
-      return this.formatValue(value[0]);
+      return this.formatValue(value[0], metadataResolver);
     }
 
     if (typeof value === "object") {
