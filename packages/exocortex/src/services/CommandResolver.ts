@@ -461,9 +461,12 @@ export class CommandResolver {
     if (!type) return null;
 
     let targetProperty = await this.getObsidianName(subject, Namespace.EXOCMD.term("Grounding_targetProperty"));
-    // For service_call groundings, serviceId is stored in Grounding_serviceId (not targetProperty)
-    if (!targetProperty && type === GroundingType.SERVICE_CALL) {
-      targetProperty = await this.getLiteralValue(subject, Namespace.EXOCMD.term("Grounding_serviceId"));
+    // For service_call groundings, serviceId takes priority over targetProperty
+    if (type === GroundingType.SERVICE_CALL) {
+      const serviceId = await this.getLiteralValue(subject, Namespace.EXOCMD.term("Grounding_serviceId"));
+      if (serviceId) {
+        targetProperty = serviceId;
+      }
     }
     const targetValue = await this.getObsidianWikilinkValue(subject, Namespace.EXOCMD.term("Grounding_targetValue"));
     const sparqlUpdate = await this.getLiteralValue(subject, Namespace.EXOCMD.term("Grounding_sparqlUpdate"));

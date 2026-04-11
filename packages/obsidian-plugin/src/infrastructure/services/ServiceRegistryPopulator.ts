@@ -84,13 +84,23 @@ export function populateServiceRegistry(
 
   registry.register(
     "createAsset",
-    wrapService(async (_targetIRI: string, userInput?: UserInput) => {
+    wrapService(async (targetIRI: string, userInput?: UserInput) => {
       const prototypeUID = userInput?.prototypeUID as string | undefined;
       const label = userInput?.label as string | undefined;
-      const folder = userInput?.folder as string | undefined;
+      let folder = userInput?.folder as string | undefined;
       if (!prototypeUID) throw new Error("createAsset requires userInput.prototypeUID");
       if (!label) throw new Error("createAsset requires userInput.label");
-      if (!folder) throw new Error("createAsset requires userInput.folder");
+      // Default to current file's folder when not specified
+      if (!folder && targetIRI) {
+        try {
+          const currentPath = resolveFilePath(app, targetIRI);
+          const lastSlash = currentPath.lastIndexOf("/");
+          folder = lastSlash >= 0 ? currentPath.substring(0, lastSlash) : "";
+        } catch {
+          // IRI resolution failed — folder stays undefined
+        }
+      }
+      if (!folder && folder !== "") throw new Error("createAsset requires userInput.folder");
 
       const uid = crypto.randomUUID();
       const fileName = `${uid}.md`;
@@ -282,6 +292,13 @@ export function populateServiceRegistry(
 }
 
 function resolveFilePath(app: App, targetIRI: string): string {
+  // Handle obsidian://vault/ IRIs by decoding to vault-relative path
+  if (targetIRI.startsWith("obsidian://vault/")) {
+    const decoded = decodeURIComponent(targetIRI.replace("obsidian://vault/", ""));
+    const file = app.vault.getAbstractFileByPath(decoded);
+    if (file) return decoded;
+  }
+
   const files = app.vault.getMarkdownFiles();
   for (const file of files) {
     const cache = app.metadataCache.getFileCache(file);
