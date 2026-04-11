@@ -1,5 +1,5 @@
 import { Vault, TFile, TFolder, MetadataCache, App, parseYaml } from "obsidian";
-import { IVaultAdapter, IFile, IFolder, IFrontmatter } from "exocortex";
+import { IVaultAdapter, IFile, IFolder, IFrontmatter, FrontmatterService } from "exocortex";
 
 export class ObsidianVaultAdapter implements IVaultAdapter {
   private fileCache: WeakMap<IFile, TFile> = new WeakMap();
@@ -137,7 +137,12 @@ export class ObsidianVaultAdapter implements IVaultAdapter {
       obsidianFile,
       (frontmatter) => {
         Object.keys(newFrontmatter).forEach((key) => {
-          frontmatter[key] = newFrontmatter[key];
+          const normalizedKey = FrontmatterService.normalizeIRI(key);
+          let value = newFrontmatter[key];
+          if (typeof value === "string") {
+            value = FrontmatterService.normalizeIRIValue(value);
+          }
+          frontmatter[normalizedKey] = value;
         });
       },
     );
