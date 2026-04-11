@@ -349,9 +349,19 @@ export class ExoQLQueryExecutor {
   }
 
   private async *executeProject(operation: ProjectOperation): AsyncIterableIterator<SolutionMapping> {
-    // Project passes through to input, variable filtering happens at result formatting
+    const { SolutionMapping: SM } = await import("../SolutionMapping");
+    const projectedVars = new Set(operation.variables);
     for await (const solution of this.execute(operation.input)) {
-      yield solution;
+      const projected = new SM();
+      for (const variable of solution.variables()) {
+        if (projectedVars.has(variable)) {
+          const value = solution.get(variable);
+          if (value !== undefined) {
+            projected.set(variable, value);
+          }
+        }
+      }
+      yield projected;
     }
   }
 

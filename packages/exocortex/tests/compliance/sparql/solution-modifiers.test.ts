@@ -2,7 +2,7 @@
  * SPARQL 1.1 Solution Modifiers Compliance Tests
  *
  * Coverage Status:
- * - DISTINCT: ⚠️ Partial (not correctly deduplicating)
+ * - DISTINCT: ✅ Implemented (projection-based deduplication)
  * - REDUCED: ✅ Implemented
  * - ORDER BY: ✅ Implemented
  * - ORDER BY DESC: ✅ Implemented
@@ -23,8 +23,7 @@ import {
 
 describe("SPARQL 1.1 Solution Modifiers Compliance", () => {
   describe("DISTINCT", () => {
-    // DISTINCT is not correctly deduplicating results
-    it.skip("should remove duplicate solutions", async () => {
+    it("should remove duplicate solutions", async () => {
       const { store, executor } = createTestEnvironment();
       await loadTestData(store, TEST_DATA.numericData());
 
@@ -42,7 +41,7 @@ describe("SPARQL 1.1 Solution Modifiers Compliance", () => {
       expect(categories).toContain("B");
     });
 
-    it("should return results with DISTINCT (current behavior: not deduplicating)", async () => {
+    it("should deduplicate results correctly", async () => {
       const { store, executor } = createTestEnvironment();
       await loadTestData(store, TEST_DATA.numericData());
 
@@ -54,8 +53,7 @@ describe("SPARQL 1.1 Solution Modifiers Compliance", () => {
       `;
 
       const results = await executeQuery(executor, query);
-      // Current implementation returns 5 (not deduped) instead of 2
-      expect(results.length).toBeGreaterThanOrEqual(2);
+      expect(results.length).toBe(2);
       const categories = results.map((r) => r.category);
       expect(categories).toContain("A");
       expect(categories).toContain("B");
