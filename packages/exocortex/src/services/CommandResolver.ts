@@ -346,7 +346,24 @@ export class CommandResolver {
     // Normalize both sides: remove wikilink brackets, quotes, extract UID
     const normalized = this.normalizeWikilink(bindingValue);
     const normalizedTarget = this.normalizeWikilink(target);
-    return normalized === normalizedTarget;
+    if (normalized === normalizedTarget) return true;
+
+    // Cross-match aliases: when one side is UUID|alias and the other is just alias,
+    // the UUID part won't match the alias. Try matching against the alias part too.
+    // Issue #2740
+    const targetAlias = this.extractAlias(target);
+    if (targetAlias && normalized === targetAlias) return true;
+
+    const bindingAlias = this.extractAlias(bindingValue);
+    if (bindingAlias && bindingAlias === normalizedTarget) return true;
+
+    return false;
+  }
+
+  private extractAlias(value: string): string | null {
+    const cleaned = value.replace(/["'[\]]/g, "").trim();
+    const pipeIndex = cleaned.indexOf("|");
+    return pipeIndex >= 0 ? cleaned.substring(pipeIndex + 1).trim() : null;
   }
 
   private getBindingPriority(binding: CommandBindingDefinition): number {

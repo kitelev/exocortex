@@ -498,6 +498,35 @@ describe("CommandResolver", () => {
 
       expect(bindings).toHaveLength(0);
     });
+
+    it("should match when assetClass is UUID|alias and binding targetClass is alias", async () => {
+      await addBindingAsset(store, {
+        uid: "bind-1",
+        label: "For tasks",
+        commandRef: "cmd-1",
+        targetClass: "ems__Task",
+      });
+
+      // Simulates extractAssetClass output from [[UUID|ems__Task]] wikilink format
+      const bindings = await resolver.findBindings("1b20a8f0-d745-4e93-91db-4531b3df120e|ems__Task");
+
+      expect(bindings).toHaveLength(1);
+      expect(bindings[0].targetClass).toBe("ems__Task");
+    });
+
+    it("should match when both sides use UUID|alias format with same alias", async () => {
+      await addBindingAsset(store, {
+        uid: "bind-1",
+        label: "For tasks",
+        commandRef: "cmd-1",
+        targetClass: "ems__Task",
+      });
+
+      // Both UUID|alias formats should match as long as alias is the same
+      const bindings = await resolver.findBindings("different-uuid|ems__Task");
+
+      expect(bindings).toHaveLength(1);
+    });
   });
 
   describe("resolveForAsset", () => {
@@ -511,6 +540,21 @@ describe("CommandResolver", () => {
       expect(resolved).toHaveLength(1);
       expect(resolved[0].command.name).toBe("Command 1");
       expect(resolved[0].binding.targetClass).toBe("ems__Task");
+    });
+
+    it("should resolve commands when assetClass uses UUID|alias format", async () => {
+      await addGroundingAsset(store, { uid: "gnd-1", label: "G1", type: "property_delete", targetProperty: "test" });
+      await addCommandAsset(store, { uid: "cmd-1", label: "Command 1", groundingRef: "gnd-1" });
+      await addBindingAsset(store, { uid: "bind-1", label: "B1", commandRef: "cmd-1", targetClass: "ems__Task" });
+
+      // UUID|alias format from [[UUID|ems__Task]] wikilink
+      const resolved = await resolver.resolveForAsset(
+        "asset-123",
+        "1b20a8f0-d745-4e93-91db-4531b3df120e|ems__Task",
+      );
+
+      expect(resolved).toHaveLength(1);
+      expect(resolved[0].command.name).toBe("Command 1");
     });
 
     it("should return empty array when no bindings match", async () => {
