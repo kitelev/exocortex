@@ -736,6 +736,149 @@ describe("NoteToRDFConverter", () => {
         expect((typeTriple!.object as IRI).value).toBe(Namespace.EMS.term("Task").value);
       });
     });
+
+    // Issue #2745: [[UUID]] (UUID-only wikilink) should resolve rdf:type via vault lookup
+    describe("UUID-only wikilink format for Instance_class (Issue #2745)", () => {
+      const file: IFile = {
+        path: "exocmd/status/binding.md",
+        basename: "binding",
+        name: "binding.md",
+        parent: null,
+      };
+
+      const classDefFile: IFile = {
+        path: "exocmd/3677039a-a5a8-4402-9a07-f8f18fe384ad.md",
+        basename: "3677039a-a5a8-4402-9a07-f8f18fe384ad",
+        name: "3677039a-a5a8-4402-9a07-f8f18fe384ad.md",
+        parent: null,
+      };
+
+      it("should generate rdf:type triple from [[UUID]] when class def file has exo__Asset_label", async () => {
+        const frontmatter: IFrontmatter = {
+          exo__Instance_class: ["[[3677039a-a5a8-4402-9a07-f8f18fe384ad]]"],
+        };
+
+        mockVault.getFrontmatter.mockImplementation((f: IFile) => {
+          if (f.path === file.path) return frontmatter;
+          if (f.path === classDefFile.path) return { exo__Asset_label: "exocmd__CommandBinding" };
+          return null;
+        });
+
+        mockVault.getFirstLinkpathDest.mockImplementation((linkpath: string) => {
+          if (linkpath === "3677039a-a5a8-4402-9a07-f8f18fe384ad") return classDefFile;
+          return null;
+        });
+
+        const triples = await converter.convertNote(file);
+
+        const typeTriple = triples.find((t) =>
+          (t.predicate as IRI).value === Namespace.RDF.term("type").value
+        );
+
+        expect(typeTriple).toBeDefined();
+        expect(typeTriple!.object).toBeInstanceOf(IRI);
+        expect((typeTriple!.object as IRI).value).toBe(Namespace.EXOCMD.term("CommandBinding").value);
+      });
+
+      it("should generate rdf:type triple from [[UUID]] when class def basename is a class name", async () => {
+        const namedClassFile: IFile = {
+          path: "exocmd/exocmd__CommandGrounding.md",
+          basename: "exocmd__CommandGrounding",
+          name: "exocmd__CommandGrounding.md",
+          parent: null,
+        };
+
+        const frontmatter: IFrontmatter = {
+          exo__Instance_class: ["[[11579feb-2e42-491c-af59-b89b1129a539]]"],
+        };
+
+        mockVault.getFrontmatter.mockImplementation((f: IFile) => {
+          if (f.path === file.path) return frontmatter;
+          return null;
+        });
+
+        mockVault.getFirstLinkpathDest.mockImplementation((linkpath: string) => {
+          if (linkpath === "11579feb-2e42-491c-af59-b89b1129a539") return namedClassFile;
+          return null;
+        });
+
+        const triples = await converter.convertNote(file);
+
+        const typeTriple = triples.find((t) =>
+          (t.predicate as IRI).value === Namespace.RDF.term("type").value
+        );
+
+        expect(typeTriple).toBeDefined();
+        expect(typeTriple!.object).toBeInstanceOf(IRI);
+        expect((typeTriple!.object as IRI).value).toBe(Namespace.EXOCMD.term("CommandGrounding").value);
+      });
+
+      it("should return Literal when [[UUID]] file not found in vault", async () => {
+        const frontmatter: IFrontmatter = {
+          exo__Instance_class: ["[[aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee]]"],
+        };
+
+        mockVault.getFrontmatter.mockImplementation((f: IFile) => {
+          if (f.path === file.path) return frontmatter;
+          return null;
+        });
+
+        mockVault.getFirstLinkpathDest.mockReturnValue(null);
+
+        const triples = await converter.convertNote(file);
+
+        const classTriple = triples.find((t) =>
+          (t.predicate as IRI).value.includes("Instance_class")
+        );
+
+        expect(classTriple).toBeDefined();
+        expect(classTriple!.object).toBeInstanceOf(Literal);
+      });
+
+      it("should return Literal when [[UUID]] file has no label and UUID basename", async () => {
+        const frontmatter: IFrontmatter = {
+          exo__Instance_class: ["[[3677039a-a5a8-4402-9a07-f8f18fe384ad]]"],
+        };
+
+        mockVault.getFrontmatter.mockImplementation((f: IFile) => {
+          if (f.path === file.path) return frontmatter;
+          if (f.path === classDefFile.path) return { exo__Class_description: "Some class" };
+          return null;
+        });
+
+        mockVault.getFirstLinkpathDest.mockImplementation((linkpath: string) => {
+          if (linkpath === "3677039a-a5a8-4402-9a07-f8f18fe384ad") return classDefFile;
+          return null;
+        });
+
+        const triples = await converter.convertNote(file);
+
+        const classTriple = triples.find((t) =>
+          (t.predicate as IRI).value.includes("Instance_class")
+        );
+
+        expect(classTriple).toBeDefined();
+        expect(classTriple!.object).toBeInstanceOf(Literal);
+      });
+
+      it("should still work with [[UUID|alias]] format after vault lookup added (regression #2742)", async () => {
+        const frontmatter: IFrontmatter = {
+          exo__Instance_class: ["[[3677039a-a5a8-4402-9a07-f8f18fe384ad|exocmd__CommandBinding]]"],
+        };
+
+        mockVault.getFrontmatter.mockReturnValue(frontmatter);
+
+        const triples = await converter.convertNote(file);
+
+        const typeTriple = triples.find((t) =>
+          (t.predicate as IRI).value === Namespace.RDF.term("type").value
+        );
+
+        expect(typeTriple).toBeDefined();
+        expect(typeTriple!.object).toBeInstanceOf(IRI);
+        expect((typeTriple!.object as IRI).value).toBe(Namespace.EXOCMD.term("CommandBinding").value);
+      });
+    });
   });
 
   // Issue #666: Asset_fileName predicate for SPARQL queries by filename

@@ -781,6 +781,24 @@ export class NoteToRDFConverter {
       }
     }
 
+    // Issue #2745: If UUID-only wikilink, look up file in vault and resolve via basename/label
+    if (this.isUUID(classRef)) {
+      const resolvedFile = this.vault.getFirstLinkpathDest(classRef, "");
+      if (resolvedFile) {
+        const basenameIRI = this.expandClassValue(resolvedFile.basename);
+        if (basenameIRI) return basenameIRI;
+
+        const fm = this.vault.getFrontmatter(resolvedFile);
+        if (fm) {
+          const label = fm["exo__Asset_label"];
+          if (typeof label === "string") {
+            const labelIRI = this.expandClassValue(label);
+            if (labelIRI) return labelIRI;
+          }
+        }
+      }
+    }
+
     // Not a class reference - return as literal (preserves original wiki-link format)
     return new Literal(cleanValue);
   }
