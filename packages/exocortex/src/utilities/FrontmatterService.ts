@@ -125,6 +125,10 @@ export class FrontmatterService {
    * ```
    */
   updateProperty(content: string, property: string, value: unknown): string {
+    property = FrontmatterService.normalizeIRI(property);
+    if (typeof value === "string") {
+      value = FrontmatterService.normalizeIRIValue(value);
+    }
     const parsed = this.parse(content);
     const serialized = this.serializeValue(property, value);
 
@@ -231,6 +235,51 @@ export class FrontmatterService {
    */
   hasProperty(frontmatterContent: string, property: string): boolean {
     return frontmatterContent.includes(`${property}:`);
+  }
+
+  /** Namespace IRI → Obsidian property name prefix map */
+  private static readonly IRI_PREFIX_MAP: Record<string, string> = {
+    "https://exocortex.my/ontology/ems#": "ems__",
+    "https://exocortex.my/ontology/exo#": "exo__",
+    "https://exocortex.my/ontology/exocmd#": "exocmd__",
+    "https://exocortex.my/ontology/ims#": "ims__",
+    "https://exocortex.my/ontology/ztlk#": "ztlk__",
+    "https://exocortex.my/ontology/ptms#": "ptms__",
+    "https://exocortex.my/ontology/lit#": "lit__",
+    "https://exocortex.my/ontology/inbox#": "inbox__",
+  };
+
+  /**
+   * Reverse-map a full IRI property name to Obsidian-style name.
+   * E.g. "https://exocortex.my/ontology/ems#Effort_status" → "ems__Effort_status"
+   * Non-IRI values pass through unchanged.
+   */
+  static normalizeIRI(property: string): string {
+    const hash = property.lastIndexOf("#");
+    if (hash < 0) return property;
+    const ns = property.substring(0, hash + 1);
+    const local = property.substring(hash + 1);
+    const prefix = FrontmatterService.IRI_PREFIX_MAP[ns];
+    return prefix ? prefix + local : property;
+  }
+
+  /**
+   * Reverse-map an IRI value to wikilink format.
+   * E.g. "obsidian://vault/ems/ems__EffortStatusDoing.md" → "\"[[ems__EffortStatusDoing]]\""
+   * Non-IRI and non-obsidian:// values pass through unchanged.
+   */
+  static normalizeIRIValue(value: string): string {
+    // Handle obsidian:// vault URLs
+    const obsMatch = value.match(/^obsidian:\/\/vault\/.*\/([^/]+)\.md$/);
+    if (obsMatch) {
+      return `"[[${obsMatch[1]}]]"`;
+    }
+    // Handle full ontology IRIs as values
+    const normalized = FrontmatterService.normalizeIRI(value);
+    if (normalized !== value) {
+      return `"[[${normalized}]]"`;
+    }
+    return value;
   }
 
   /**

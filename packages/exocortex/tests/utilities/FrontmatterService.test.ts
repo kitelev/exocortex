@@ -678,4 +678,51 @@ Body`;
       expect(result).toBe('---\nfoo: bar\nstatus: "[[StatusDone]]"\n---\nBody');
     });
   });
+
+  describe("IRI normalization", () => {
+    it("should normalize IRI property name to Obsidian-style", () => {
+      expect(FrontmatterService.normalizeIRI("https://exocortex.my/ontology/ems#Effort_status"))
+        .toBe("ems__Effort_status");
+    });
+
+    it("should normalize all known namespace IRIs", () => {
+      expect(FrontmatterService.normalizeIRI("https://exocortex.my/ontology/exo#Asset_label")).toBe("exo__Asset_label");
+      expect(FrontmatterService.normalizeIRI("https://exocortex.my/ontology/exocmd#Command_icon")).toBe("exocmd__Command_icon");
+      expect(FrontmatterService.normalizeIRI("https://exocortex.my/ontology/ims#Concept_domain")).toBe("ims__Concept_domain");
+      expect(FrontmatterService.normalizeIRI("https://exocortex.my/ontology/ztlk#FleetingNote")).toBe("ztlk__FleetingNote");
+    });
+
+    it("should pass through non-IRI property names", () => {
+      expect(FrontmatterService.normalizeIRI("ems__Effort_status")).toBe("ems__Effort_status");
+      expect(FrontmatterService.normalizeIRI("foo_bar")).toBe("foo_bar");
+    });
+
+    it("should normalize obsidian:// vault URL to wikilink", () => {
+      expect(FrontmatterService.normalizeIRIValue("obsidian://vault/ems/ems__EffortStatusDoing.md"))
+        .toBe('"[[ems__EffortStatusDoing]]"');
+    });
+
+    it("should normalize ontology IRI value to wikilink", () => {
+      expect(FrontmatterService.normalizeIRIValue("https://exocortex.my/ontology/ems#EffortStatusDoing"))
+        .toBe('"[[ems__EffortStatusDoing]]"');
+    });
+
+    it("should pass through normal values", () => {
+      expect(FrontmatterService.normalizeIRIValue('"[[ems__EffortStatusDoing]]"')).toBe('"[[ems__EffortStatusDoing]]"');
+      expect(FrontmatterService.normalizeIRIValue("2025-11-10")).toBe("2025-11-10");
+    });
+
+    it("should update property correctly when given IRI key and value", () => {
+      const content = '---\nems__Effort_status: "[[ems__EffortStatusToDo]]"\n---\nBody';
+      const result = service.updateProperty(
+        content,
+        "https://exocortex.my/ontology/ems#Effort_status",
+        "obsidian://vault/ems/ems__EffortStatusDoing.md",
+      );
+
+      expect(result).toContain('ems__Effort_status: "[[ems__EffortStatusDoing]]"');
+      expect(result).not.toContain("https://");
+      expect(result).not.toContain("obsidian://");
+    });
+  });
 });
