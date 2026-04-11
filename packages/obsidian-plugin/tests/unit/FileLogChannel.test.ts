@@ -2,84 +2,126 @@ import { FileLogChannel } from "../../src/adapters/logging/FileLogChannel";
 
 describe("FileLogChannel", () => {
   let channel: FileLogChannel;
-  let mockAdapter: { append: jest.Mock; write: jest.Mock };
+  let mockAdapter: { append: jest.Mock; write: jest.Mock; exists: jest.Mock };
 
   beforeEach(() => {
     mockAdapter = {
       append: jest.fn().mockResolvedValue(undefined),
       write: jest.fn().mockResolvedValue(undefined),
+      exists: jest.fn().mockResolvedValue(false),
     };
     channel = new FileLogChannel(mockAdapter as any);
   });
 
-  it("should append log lines to the log file via adapter", async () => {
-    channel.append("info", "TestCtx", "Hello world");
+  describe("ensureFileExists", () => {
+    it("should create the log file when it does not exist", async () => {
+      mockAdapter.exists.mockResolvedValue(false);
 
-    // Wait for microtask flush
-    await flushMicrotasks();
+      await channel.ensureFileExists();
 
-    expect(mockAdapter.append).toHaveBeenCalledTimes(1);
-    const writtenLine = mockAdapter.append.mock.calls[0][1] as string;
-    expect(writtenLine).toContain("[INFO]");
-    expect(writtenLine).toContain("[TestCtx]");
-    expect(writtenLine).toContain("Hello world");
-    expect(writtenLine).toMatch(/^\[\d{4}-\d{2}-\d{2}T/);
-    expect(writtenLine).toEndWith("\n");
-    expect(mockAdapter.append.mock.calls[0][0]).toBe("exocortex-logs.txt");
+      expect(mockAdapter.exists).toHaveBeenCalledWith("exocortex-logs.txt");
+      expect(mockAdapter.write).toHaveBeenCalledWith("exocortex-logs.txt", "");
+    });
+
+    it("should not overwrite the log file when it already exists", async () => {
+      mockAdapter.exists.mockResolvedValue(true);
+
+      await channel.ensureFileExists();
+
+      expect(mockAdapter.exists).toHaveBeenCalledWith("exocortex-logs.txt");
+      expect(mockAdapter.write).not.toHaveBeenCalled();
+    });
+
+    it("should not throw when exists check fails", async () => {
+      mockAdapter.exists.mockRejectedValue(new Error("EPERM"));
+
+      await expect(channel.ensureFileExists()).resolves.toBeUndefined();
+    });
   });
 
-  it("should batch multiple appends in the same tick", async () => {
-    channel.append("debug", "A", "Line 1");
-    channel.append("warn", "B", "Line 2");
-    channel.append("error", "C", "Line 3");
+  describe("flush after ensureFileExists", () => {
+    beforeEach(async () => {
+      mockAdapter.exists.mockResolvedValue(false);
+      await channel.ensureFileExists();
+      mockAdapter.write.mockClear();
+    });
 
-    await flushMicrotasks();
+    it("should append log lines via adapter.append", async () => {
+      channel.append("info", "TestCtx", "Hello world");
 
-    expect(mockAdapter.append).toHaveBeenCalledTimes(1);
-    const combined = mockAdapter.append.mock.calls[0][1] as string;
-    expect(combined).toContain("[DEBUG]");
-    expect(combined).toContain("[WARN]");
-    expect(combined).toContain("[ERROR]");
-    expect(combined.split("\n").filter(Boolean)).toHaveLength(3);
+      await flushMicrotasks();
+
+      expect(mockAdapter.append).toHaveBeenCalledTimes(1);
+      const writtenLine = mockAdapter.append.mock.calls[0][1] as string;
+      expect(writtenLine).toContain("[INFO]");
+      expect(writtenLine).toContain("[TestCtx]");
+      expect(writtenLine).toContain("Hello world");
+      expect(writtenLine).toMatch(/^\[\d{4}-\d{2}-\d{2}T/);
+      expect(writtenLine).toEndWith("\n");
+      expect(mockAdapter.append.mock.calls[0][0]).toBe("exocortex-logs.txt");
+    });
+
+    it("should batch multiple appends in the same tick", async () => {
+      channel.append("debug", "A", "Line 1");
+      channel.append("warn", "B", "Line 2");
+      channel.append("error", "C", "Line 3");
+
+      await flushMicrotasks();
+
+      expect(mockAdapter.append).toHaveBeenCalledTimes(1);
+      const combined = mockAdapter.append.mock.calls[0][1] as string;
+      expect(combined).toContain("[DEBUG]");
+      expect(combined).toContain("[WARN]");
+      expect(combined).toContain("[ERROR]");
+      expect(combined.split("\n").filter(Boolean)).toHaveLength(3);
+    });
+
+    it("should format log lines with ISO timestamp", async () => {
+      channel.append("warn", "MyService", "Something happened");
+
+      await flushMicrotasks();
+
+      const line = mockAdapter.append.mock.calls[0][1] as string;
+      const isoMatch = line.match(/^\[(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)\]/);
+      expect(isoMatch).not.toBeNull();
+    });
   });
 
-  it("should fallback to write when append fails (file does not exist)", async () => {
-    mockAdapter.append.mockRejectedValueOnce(new Error("ENOENT"));
+  describe("flush without ensureFileExists (fallback path)", () => {
+    it("should use write to create the file on first flush", async () => {
+      channel.append("info", "Ctx", "First write");
 
-    channel.append("info", "Ctx", "First write");
+      await flushMicrotasks();
 
-    await flushMicrotasks();
-    // Allow error handler promise to resolve
-    await flushMicrotasks();
+      expect(mockAdapter.write).toHaveBeenCalledTimes(1);
+      const writtenLine = mockAdapter.write.mock.calls[0][1] as string;
+      expect(writtenLine).toContain("First write");
+    });
 
-    expect(mockAdapter.write).toHaveBeenCalledTimes(1);
-    const writtenLine = mockAdapter.write.mock.calls[0][1] as string;
-    expect(writtenLine).toContain("First write");
-  });
+    it("should switch to append after successful write", async () => {
+      channel.append("info", "Ctx", "First");
+      await flushMicrotasks();
+      // Let the write promise resolve and set fileReady
+      await flushMicrotasks();
 
-  it("should silently handle write failure", async () => {
-    mockAdapter.append.mockRejectedValueOnce(new Error("ENOENT"));
-    mockAdapter.write.mockRejectedValueOnce(new Error("EPERM"));
+      mockAdapter.write.mockClear();
+      channel.append("info", "Ctx", "Second");
+      await flushMicrotasks();
 
-    // Should not throw
-    channel.append("error", "Ctx", "Fail silently");
+      expect(mockAdapter.append).toHaveBeenCalledTimes(1);
+      expect(mockAdapter.write).not.toHaveBeenCalled();
+    });
 
-    await flushMicrotasks();
-    await flushMicrotasks();
+    it("should silently handle write failure", async () => {
+      mockAdapter.write.mockRejectedValueOnce(new Error("EPERM"));
 
-    expect(mockAdapter.append).toHaveBeenCalledTimes(1);
-    expect(mockAdapter.write).toHaveBeenCalledTimes(1);
-  });
+      channel.append("error", "Ctx", "Fail silently");
 
-  it("should format log lines with ISO timestamp", async () => {
-    channel.append("warn", "MyService", "Something happened");
+      await flushMicrotasks();
+      await flushMicrotasks();
 
-    await flushMicrotasks();
-
-    const line = mockAdapter.append.mock.calls[0][1] as string;
-    // ISO 8601 format check
-    const isoMatch = line.match(/^\[(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)\]/);
-    expect(isoMatch).not.toBeNull();
+      expect(mockAdapter.write).toHaveBeenCalledTimes(1);
+    });
   });
 });
 
