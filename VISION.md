@@ -12,6 +12,30 @@
 
 > "Life is the goal. Awareness is the methodology. Exocortex is the instrument."
 
+### Everything as Knowledge
+
+Exocortex follows the principle of **"Everything as Knowledge"** — an evolution of the "as Code" paradigm. While Infrastructure as Code and Docs as Code describe desired system states in machine-executable files, Exocortex goes further: entities, UI layouts, workflows, commands, and even the schema itself are all **semantic data** in the same format and the same storage.
+
+| Layer | Traditional Approach | Exocortex |
+|-------|---------------------|-----------|
+| Schema | Hardcoded in app or config files | OWL classes and properties as Markdown files in your vault |
+| Workflows | Code (event handlers, scripts) | RDF data: `ems__WorkflowTransition` with states, preconditions, grounding |
+| UI Layouts | JSON/CSS configuration | `pn__Layout` — columns, filters, sorting as semantic data |
+| Commands | Compiled into the plugin | `exocmd__Command` + SPARQL-based preconditions + declarative grounding |
+| Content | Markdown files | Same Markdown files — content and metadata in one place |
+
+This approach gives four advantages over "as Code":
+1. **Composability through a graph** — everything is connected via queryable RDF triples, not just file imports
+2. **Schema = data** — the meta-level lives in the same space as user data; add a file to create a new entity type
+3. **Accessibility** — requires domain expertise, not programming skills
+4. **Foundation for reasoning** — SPARQL queries today, OWL inference potential tomorrow
+
+### Historical Context
+
+Exocortex builds on ideas from the Semantic Web community. [Fresnel](https://www.w3.org/2005/04/fresnel-info/) (W3C, 2005) introduced Lenses and Formats for rendering RDF data, but lacked an action layer. [SHACL](https://www.w3.org/TR/shacl/) describes constraints and UI hints for RDF shapes. Exocortex combines these concepts with an action layer (dynamic commands, workflow state machines), file-based storage (Markdown + YAML frontmatter), and an offline-first runtime (Obsidian).
+
+**Formula:** Exocortex = Fresnel display layer + action layer (RFC-009) + file-based RDF store + Obsidian runtime.
+
 ### The Path to Übermensch
 
 Exocortex is an instrument for becoming **Übermensch** (Nietzsche):

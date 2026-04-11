@@ -10,12 +10,41 @@
 
 ---
 
+## Why Exocortex
+
+Most tools separate data from configuration: you write content in one place and configure UI, workflows, and schemas in another. Exocortex takes a different approach — **Everything as Knowledge**.
+
+Your entities, their properties, UI layouts, workflows, and commands are all described as semantic data in the same Markdown files, in the same vault. Create a new entity type — and the UI adapts automatically. Define a workflow transition — and buttons appear. No code changes, no server, no vendor lock-in.
+
+This is an evolution of the "as Code" paradigm (Infrastructure as Code, Docs as Code):
+
+| As Code | As Knowledge (Exocortex) |
+|---------|--------------------------|
+| **Workflow as Code** — CI/CD pipelines | **Workflow as Knowledge** — status transitions as RDF data, UI buttons generated automatically |
+| **Layout as Code** — JSON/CSS config | **Layout as Knowledge** — columns, filters, sorting described semantically |
+| **Schema as Code** — JSON Schema, Prisma | **Schema as Knowledge** — OWL classes and properties as files in your vault |
+
+**"As Code" describes desired system state. "As Knowledge" describes what things mean and how they relate.**
+
+Compared to existing tools:
+
+| | Exocortex | Notion | Jira | Semantic MediaWiki | Protégé |
+|---|:---:|:---:|:---:|:---:|:---:|
+| RDF/Semantic | ✅ | — | — | ✅ | ✅ |
+| File-based (git-friendly) | ✅ | — | — | — | ✅ |
+| UI from ontology | ✅ | ✅ | ~ | ~ | ✅ |
+| Offline-first | ✅ | ~ | — | — | ✅ |
+| For knowledge workers | ✅ | ✅ | ✅ | ~ | �� |
+| Action layer (commands) | ✅ | ~ | ✅ | — | — |
+
+---
+
 ## What It Does
 
 - **Semantic knowledge graph** — every piece of knowledge is an Asset with UUID, class, properties, and relationships stored as RDF triples
 - **SPARQL queries** — ask complex questions across your entire knowledge base
 - **Modular ontologies** — IMS (concepts, notes, people), EMS (tasks, projects, meetings), ZTLK (zettelkasten)
-- **Vault-driven architecture** — commands, workflows, property schemas, and prototype chains defined as vault assets, not hardcoded
+- **Everything as Knowledge** — commands, workflows, property schemas, and layouts defined as vault assets, not hardcoded
 - **Ontology plugins** — extend the system with installable ontology packages (e.g. [GTD + Jedi Techniques](https://github.com/kitelev/gtd-jedi))
 - **Local-first** — all data stays on your device, no cloud required
 
