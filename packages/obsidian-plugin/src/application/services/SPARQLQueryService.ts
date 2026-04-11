@@ -3,11 +3,10 @@ import {
   ExoQLParser,
   ExoQLAlgebraTranslator,
   AlgebraOptimizer,
-  BGPExecutor,
+  ExoQLQueryExecutor,
   type SPARQLQuery,
   type SolutionMapping,
   type AlgebraOperation,
-  type BGPOperation,
   ValidationError,
   ServiceError,
   ApplicationErrorHandler,
@@ -22,7 +21,7 @@ export class SPARQLQueryService {
   private parser: ExoQLParser;
   private translator: ExoQLAlgebraTranslator;
   private optimizer: AlgebraOptimizer;
-  private executor: BGPExecutor | null = null;
+  private executor: ExoQLQueryExecutor | null = null;
   private isInitialized = false;
   private errorHandler: ApplicationErrorHandler;
   private logger: ILogger;
@@ -72,7 +71,7 @@ export class SPARQLQueryService {
       );
 
       const tripleStore = this.indexer.getTripleStore();
-      this.executor = new BGPExecutor(tripleStore);
+      this.executor = new ExoQLQueryExecutor(tripleStore);
 
       this.isInitialized = true;
     } catch (error) {
@@ -110,13 +109,13 @@ export class SPARQLQueryService {
       let algebra: AlgebraOperation = this.translator.translate(ast);
       algebra = this.optimizer.optimize(algebra);
 
-      const resultIterator = this.executor.execute(algebra as BGPOperation);
-      const results: SolutionMapping[] = [];
-      for await (const mapping of resultIterator) {
-        results.push(mapping);
+      // ASK queries return boolean, not solution mappings
+      if (this.executor.isAskQuery(algebra)) {
+        await this.executor.executeAsk(algebra);
+        return [];
       }
 
-      return results;
+      return await this.executor.executeAll(algebra);
     } catch (error) {
       if (error instanceof ServiceError) {
         this.errorHandler.handle(error);
