@@ -166,7 +166,7 @@ REST API for the mobile app.
 
 ### What You'll See
 
-- **Action Buttons**: Move between statuses, vote, create tasks
+- **Action Buttons**: Create tasks, set planned dates, convert to task
 - **Asset Relations**: This project will appear in the Development area's relations
 
 ---
@@ -297,7 +297,7 @@ The Exocortex layout renders automatically in Reading Mode based on the note's `
 - **Daily Projects**: All projects scheduled for this date
 - **Focus Area Filter**: Show only tasks from specific area
 
-**ems**Project / ems**Task**
+**ems\_\_Project** / **ems\_\_Task**
 
 - Standard layout (Properties + Buttons + Relations)
 
