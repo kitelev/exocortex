@@ -443,12 +443,17 @@ export class CommandResolver {
     const type = this.resolveGroundingType(typeStr);
     if (!type) return null;
 
-    const targetProperty = await this.getObsidianName(subject, Namespace.EXOCMD.term("Grounding_targetProperty"));
+    let targetProperty = await this.getObsidianName(subject, Namespace.EXOCMD.term("Grounding_targetProperty"));
+    // For service_call groundings, serviceId is stored in Grounding_serviceId (not targetProperty)
+    if (!targetProperty && type === GroundingType.SERVICE_CALL) {
+      targetProperty = await this.getLiteralValue(subject, Namespace.EXOCMD.term("Grounding_serviceId"));
+    }
     const targetValue = await this.getObsidianWikilinkValue(subject, Namespace.EXOCMD.term("Grounding_targetValue"));
     const sparqlUpdate = await this.getLiteralValue(subject, Namespace.EXOCMD.term("Grounding_sparqlUpdate"));
     const targetClass = await this.getLiteralValue(subject, Namespace.EXOCMD.term("Grounding_targetClass"));
     const targetPrototype = await this.getLiteralValue(subject, Namespace.EXOCMD.term("Grounding_targetPrototype"));
     const targetFolder = await this.getLiteralValue(subject, Namespace.EXOCMD.term("Grounding_targetFolder"));
+    const inputSchemaRaw = await this.getLiteralValue(subject, Namespace.EXOCMD.term("Grounding_inputSchema"));
 
     // Load composite steps if applicable
     let steps: GroundingDefinition[] | undefined;
@@ -456,7 +461,27 @@ export class CommandResolver {
       steps = await this.loadCompositeSteps(subject, depth + 1);
     }
 
-    return {
+    // Parse inputSchema JSON into array of field descriptors for form modals
+    let inputSchema: unknown[] | undefined;
+    if (inputSchemaRaw) {
+      try {
+        const parsed = JSON.parse(inputSchemaRaw);
+        if (parsed?.properties) {
+          inputSchema = Object.entries(parsed.properties as Record<string, Record<string, string>>).map(
+            ([name, prop]) => ({
+              name,
+              type: prop.type === "string" ? "text" : prop.type,
+              label: prop.title ?? name,
+              required: Array.isArray(parsed.required) && parsed.required.includes(name),
+            }),
+          );
+        }
+      } catch {
+        // Invalid JSON — skip inputSchema
+      }
+    }
+
+    const grounding: GroundingDefinition = {
       id: uid,
       label,
       type,
@@ -468,6 +493,12 @@ export class CommandResolver {
       targetPrototype: targetPrototype ?? undefined,
       targetFolder: targetFolder ?? undefined,
     };
+
+    if (inputSchema) {
+      (grounding as GroundingDefinition & { inputSchema: unknown[] }).inputSchema = inputSchema;
+    }
+
+    return grounding;
   }
 
   private async loadCompositeSteps(
