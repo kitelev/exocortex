@@ -287,6 +287,101 @@ describe("CommandResolver", () => {
       expect(cmd!.grounding.targetValue).toBe("\"[[ems__EffortStatusDoing]]\"");
     });
 
+    it("should resolve UUID wikilink alias in targetValue from triple store", async () => {
+      // Status asset in the triple store (simulates ems__EffortStatusDoing)
+      const statusUUID = "027e78f4-6e16-4b36-b8fb-5510507d5745";
+      const statusSubject = new IRI(`obsidian://vault/${statusUUID}.md`);
+      await store.addAll([
+        new Triple(statusSubject, Namespace.EXO.term("Asset_uid"), new Literal(statusUUID)),
+        new Triple(statusSubject, Namespace.EXO.term("Asset_label"), new Literal("ems__EffortStatusDoing")),
+      ]);
+
+      // Grounding with UUID-only targetValue (as stored in starter kit)
+      await addGroundingAsset(store, {
+        uid: "gnd-uuid-alias",
+        label: "Set Status Doing",
+        type: "property_set",
+        targetProperty: "ems__Effort_status",
+        targetValue: `"[[${statusUUID}]]"`,
+      });
+
+      await addCommandAsset(store, {
+        uid: "cmd-uuid-alias",
+        label: "Set Status Doing",
+        groundingRef: "gnd-uuid-alias",
+      });
+
+      const cmd = await resolver.loadCommand("cmd-uuid-alias");
+
+      expect(cmd!.grounding).toBeDefined();
+      expect(cmd!.grounding.targetValue).toBe(`"[[${statusUUID}|ems__EffortStatusDoing]]"`);
+    });
+
+    it("should preserve targetValue when UUID is not found in store", async () => {
+      const unknownUUID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+
+      await addGroundingAsset(store, {
+        uid: "gnd-unknown-uuid",
+        label: "Unknown Status",
+        type: "property_set",
+        targetProperty: "ems__Effort_status",
+        targetValue: `"[[${unknownUUID}]]"`,
+      });
+
+      await addCommandAsset(store, {
+        uid: "cmd-unknown-uuid",
+        label: "Unknown Status",
+        groundingRef: "gnd-unknown-uuid",
+      });
+
+      const cmd = await resolver.loadCommand("cmd-unknown-uuid");
+
+      expect(cmd!.grounding).toBeDefined();
+      expect(cmd!.grounding.targetValue).toBe(`"[[${unknownUUID}]]"`);
+    });
+
+    it("should not modify targetValue with existing alias", async () => {
+      await addGroundingAsset(store, {
+        uid: "gnd-with-alias",
+        label: "Already Aliased",
+        type: "property_set",
+        targetProperty: "ems__Effort_status",
+        targetValue: '"[[027e78f4-6e16-4b36-b8fb-5510507d5745|ems__EffortStatusDoing]]"',
+      });
+
+      await addCommandAsset(store, {
+        uid: "cmd-with-alias",
+        label: "Already Aliased",
+        groundingRef: "gnd-with-alias",
+      });
+
+      const cmd = await resolver.loadCommand("cmd-with-alias");
+
+      expect(cmd!.grounding).toBeDefined();
+      expect(cmd!.grounding.targetValue).toBe('"[[027e78f4-6e16-4b36-b8fb-5510507d5745|ems__EffortStatusDoing]]"');
+    });
+
+    it("should not modify non-wikilink targetValue", async () => {
+      await addGroundingAsset(store, {
+        uid: "gnd-plain",
+        label: "Plain Value",
+        type: "property_set",
+        targetProperty: "ems__Effort_status",
+        targetValue: "$today",
+      });
+
+      await addCommandAsset(store, {
+        uid: "cmd-plain",
+        label: "Plain Value",
+        groundingRef: "gnd-plain",
+      });
+
+      const cmd = await resolver.loadCommand("cmd-plain");
+
+      expect(cmd!.grounding).toBeDefined();
+      expect(cmd!.grounding.targetValue).toBe("$today");
+    });
+
     it("should return null for missing UID", async () => {
       const cmd = await resolver.loadCommand("non-existent");
       expect(cmd).toBeNull();

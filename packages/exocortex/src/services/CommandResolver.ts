@@ -655,12 +655,31 @@ export class CommandResolver {
     if (triples.length === 0) return null;
 
     const obj = triples[0].object;
-    if (obj instanceof Literal) return obj.value;
+    if (obj instanceof Literal) return this.resolveWikilinkAlias(obj.value);
     if (obj instanceof IRI) {
       const name = this.iriToObsidianName(obj.value);
       return name ? `"[[${name}]]"` : obj.value;
     }
     return null;
+  }
+
+  /**
+   * Resolve UUID-only wikilinks to include alias from the triple store.
+   * Converts "[[UUID]]" to "[[UUID|label]]" when the asset exists.
+   * Already-aliased values ("[[UUID|alias]]") pass through unchanged.
+   */
+  private async resolveWikilinkAlias(value: string): Promise<string> {
+    const match = value.match(/\[\[([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\]\]/);
+    if (!match) return value;
+
+    const uuid = match[1];
+    const assetSubject = await this.findSubjectByUID(uuid);
+    if (!assetSubject) return value;
+
+    const label = await this.getLiteralValue(assetSubject, Namespace.EXO.term("Asset_label"));
+    if (!label) return value;
+
+    return value.replace(`[[${uuid}]]`, `[[${uuid}|${label}]]`);
   }
 
   private iriToObsidianName(iri: string): string | null {
