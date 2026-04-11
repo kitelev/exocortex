@@ -47,10 +47,10 @@ export type LogLevel = "debug" | "info" | "warn" | "error";
 export type LogChannelsSettings = Record<LogLevel, LogChannelConfig>;
 
 export const DEFAULT_LOG_CHANNELS: LogChannelsSettings = {
-  debug: { notice: false, console: true, file: false },
-  info: { notice: false, console: true, file: false },
-  warn: { notice: true, console: true, file: false },
-  error: { notice: true, console: true, file: false },
+  debug: { notice: false, console: true, file: true },
+  info: { notice: false, console: true, file: true },
+  warn: { notice: true, console: true, file: true },
+  error: { notice: true, console: true, file: true },
 };
 
 export interface ExocortexSettings {
