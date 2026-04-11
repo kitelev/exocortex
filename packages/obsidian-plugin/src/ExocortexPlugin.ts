@@ -105,6 +105,7 @@ export default class ExocortexPlugin extends Plugin {
       // Initialize notification service and log channel routing
       this.notifier = new ObsidianNotificationService();
       this.fileLogChannel = new FileLogChannel(this.app.vault.adapter);
+      await this.fileLogChannel.ensureFileExists();
       this.configureLogChannels();
 
       this.printNameRuleService = new PrintNameRuleService(this.app);
