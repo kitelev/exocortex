@@ -1,6 +1,6 @@
 # Getting Started with Exocortex
 
-**Set up Exocortex for task management in Obsidian. Requires: Obsidian desktop, basic terminal knowledge.**
+**Set up Exocortex — an ontology-driven knowledge management plugin for Obsidian. Requires: Obsidian desktop, basic terminal knowledge.**
 
 ---
 
@@ -19,15 +19,20 @@
 
 ## What is Exocortex?
 
-Exocortex transforms Obsidian into a powerful task management system with:
+Exocortex is an Obsidian plugin that lets you **define custom entity types, their properties, and UI — all as data, not code**. Think of it as Notion databases, but with an ontology layer and fully offline.
 
-- **Automatic layouts** that appear below your note's metadata
+You describe your entities (tasks, projects, areas, or any custom type) in YAML frontmatter, and the plugin automatically generates layouts, action buttons, and workflows based on those definitions. No server, no vendor lock-in — your data lives as Markdown files in your git repository.
+
+### What You Get
+
+- **Automatic layouts** that render below your note's metadata in Reading Mode
 - **Hierarchical organization** (Areas → Projects → Tasks)
+- **Dynamic action buttons** that appear based on entity type and state
 - **Daily planning** with focused task lists
 - **Effort tracking** from idea to completion
 - **Collaborative voting** for prioritization
 
-**The key insight**: Instead of manually maintaining task lists, you define relationships in frontmatter, and Exocortex automatically displays relevant information based on context.
+**The key insight**: You define relationships in frontmatter, and Exocortex automatically displays relevant information based on context. Create a new entity type — and the UI adapts without changing any code.
 
 ---
 
