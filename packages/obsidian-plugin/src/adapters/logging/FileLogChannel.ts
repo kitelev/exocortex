@@ -9,8 +9,29 @@ const LOG_FILE_NAME = "exocortex-logs.txt";
 export class FileLogChannel {
   private buffer: string[] = [];
   private flushScheduled = false;
+  private fileReady = false;
 
   constructor(private readonly adapter: DataAdapter) {}
+
+  /**
+   * Ensure the log file exists on disk. Must be called once at startup
+   * before any log lines are flushed.
+   *
+   * Obsidian's DataAdapter.append() silently no-ops when the target file
+   * does not exist (resolves without error), so we cannot rely on a
+   * catch-and-create fallback inside flush().
+   */
+  async ensureFileExists(): Promise<void> {
+    try {
+      const exists = await this.adapter.exists(LOG_FILE_NAME);
+      if (!exists) {
+        await this.adapter.write(LOG_FILE_NAME, "");
+      }
+      this.fileReady = true;
+    } catch {
+      // Best-effort — flush() will retry via write() if needed
+    }
+  }
 
   append(level: string, context: string, message: string): void {
     const timestamp = new Date().toISOString();
@@ -31,12 +52,17 @@ export class FileLogChannel {
     this.buffer = [];
     this.flushScheduled = false;
     if (!lines) return;
-    // Fire-and-forget — logging should never block the caller
-    void this.adapter.append(LOG_FILE_NAME, lines).catch(() => {
-      // If file doesn't exist yet, create it then append
-      void this.adapter.write(LOG_FILE_NAME, lines).catch(() => {
-        // Silently fail — we can't log a logging failure
+
+    if (this.fileReady) {
+      void this.adapter.append(LOG_FILE_NAME, lines).catch(() => {
+        // Silently fail — file may have been deleted mid-session
       });
-    });
+    } else {
+      // File was not pre-created (ensureFileExists failed or was not called).
+      // Write creates the file; subsequent flushes will use append.
+      void this.adapter.write(LOG_FILE_NAME, lines)
+        .then(() => { this.fileReady = true; })
+        .catch(() => { /* Silently fail */ });
+    }
   }
 }
