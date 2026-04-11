@@ -380,6 +380,89 @@ describe("GroundingExecutor", () => {
       expect(result.success).toBe(false);
       expect(result.error).toContain("Service crashed");
     });
+
+    it("should merge JSON targetValue as defaults into userInput", async () => {
+      const mockService = {
+        execute: jest.fn().mockResolvedValue(undefined),
+      };
+      registry.register("updateProperty", mockService);
+
+      const grounding = makeGrounding({
+        type: GroundingType.SERVICE_CALL,
+        targetProperty: "updateProperty",
+        targetValue: '{"property":"ems__Effort_parent"}',
+      });
+
+      const userInput = { value: "[[some-asset]]" };
+      const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH, userInput);
+
+      expect(result.success).toBe(true);
+      expect(mockService.execute).toHaveBeenCalledWith(TARGET_IRI, {
+        property: "ems__Effort_parent",
+        value: "[[some-asset]]",
+      });
+    });
+
+    it("should let userInput override targetValue defaults", async () => {
+      const mockService = {
+        execute: jest.fn().mockResolvedValue(undefined),
+      };
+      registry.register("testService", mockService);
+
+      const grounding = makeGrounding({
+        type: GroundingType.SERVICE_CALL,
+        targetProperty: "testService",
+        targetValue: '{"direction":"forward","extra":"default"}',
+      });
+
+      const userInput = { direction: "backward" };
+      const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH, userInput);
+
+      expect(result.success).toBe(true);
+      expect(mockService.execute).toHaveBeenCalledWith(TARGET_IRI, {
+        direction: "backward",
+        extra: "default",
+      });
+    });
+
+    it("should ignore non-JSON targetValue for service_call", async () => {
+      const mockService = {
+        execute: jest.fn().mockResolvedValue(undefined),
+      };
+      registry.register("myService", mockService);
+
+      const grounding = makeGrounding({
+        type: GroundingType.SERVICE_CALL,
+        targetProperty: "myService",
+        targetValue: "plain-string-not-json",
+      });
+
+      const userInput = { key: "val" };
+      const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH, userInput);
+
+      expect(result.success).toBe(true);
+      expect(mockService.execute).toHaveBeenCalledWith(TARGET_IRI, userInput);
+    });
+
+    it("should use targetValue as sole input when no userInput", async () => {
+      const mockService = {
+        execute: jest.fn().mockResolvedValue(undefined),
+      };
+      registry.register("shiftDay", mockService);
+
+      const grounding = makeGrounding({
+        type: GroundingType.SERVICE_CALL,
+        targetProperty: "shiftDay",
+        targetValue: '{"direction":"forward"}',
+      });
+
+      const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
+
+      expect(result.success).toBe(true);
+      expect(mockService.execute).toHaveBeenCalledWith(TARGET_IRI, {
+        direction: "forward",
+      });
+    });
   });
 
   // -- sparql_update --

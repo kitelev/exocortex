@@ -299,7 +299,20 @@ export class GroundingExecutor {
       };
     }
 
-    await service.execute(targetIRI, userInput);
+    // Merge grounding.targetValue (JSON) as defaults into userInput
+    let mergedInput = userInput;
+    if (grounding.targetValue) {
+      try {
+        const defaults = JSON.parse(grounding.targetValue);
+        if (typeof defaults === "object" && defaults !== null) {
+          mergedInput = { ...defaults, ...(userInput ?? {}) };
+        }
+      } catch {
+        // Not valid JSON — ignore (e.g. plain string targetValue)
+      }
+    }
+
+    await service.execute(targetIRI, mergedInput);
     return { success: true };
   }
 

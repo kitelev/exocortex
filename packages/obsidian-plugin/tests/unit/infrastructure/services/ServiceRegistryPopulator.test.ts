@@ -18,6 +18,10 @@ function createMockDeps(withVaultAdapter = false): ServiceRegistryDeps {
         getMarkdownFiles: jest.fn().mockReturnValue([
           { path: "folder/test-uid-123.md" },
         ]),
+        getAbstractFileByPath: jest.fn().mockImplementation((path: string) => {
+          if (path === "folder/test-uid-123.md") return { path: "folder/test-uid-123.md" };
+          return null;
+        }),
         adapter: {
           trashLocal: jest.fn().mockResolvedValue(undefined),
         },
@@ -317,6 +321,65 @@ describe("ServiceRegistryPopulator", () => {
           value: "bar",
         }),
       ).rejects.toThrow("No file found for IRI");
+    });
+
+    it("should resolve obsidian://vault/ IRI to file path", async () => {
+      const service = registry.get("updateProperty")!;
+      await service.execute("obsidian://vault/folder/test-uid-123.md", {
+        property: "foo",
+        value: "bar",
+      });
+
+      expect(deps.fileSystemAdapter.readFile).toHaveBeenCalledWith(
+        "folder/test-uid-123.md",
+      );
+    });
+
+    it("should decode percent-encoded obsidian://vault/ IRI", async () => {
+      (deps.app.vault.getAbstractFileByPath as jest.Mock).mockImplementation((path: string) => {
+        if (path === "folder/My Task.md") return { path: "folder/My Task.md" };
+        if (path === "folder/test-uid-123.md") return { path: "folder/test-uid-123.md" };
+        return null;
+      });
+
+      const service = registry.get("updateProperty")!;
+      await service.execute("obsidian://vault/folder/My%20Task.md", {
+        property: "foo",
+        value: "bar",
+      });
+
+      expect(deps.fileSystemAdapter.readFile).toHaveBeenCalledWith(
+        "folder/My Task.md",
+      );
+    });
+  });
+
+  describe("createAsset default folder", () => {
+    it("should use current file folder when folder not specified", async () => {
+      const service = registry.get("createAsset")!;
+      await service.execute("test-uid-123", {
+        prototypeUID: "proto-123",
+        label: "New Task",
+      });
+
+      expect(deps.fileSystemAdapter.createFile).toHaveBeenCalledWith(
+        expect.stringMatching(/^folder\/[a-f0-9-]+\.md$/),
+        expect.stringContaining("exo__Asset_label: New Task"),
+      );
+    });
+
+    it("should use explicit folder over default", async () => {
+      const service = registry.get("createAsset")!;
+      await service.execute("test-uid-123", {
+        prototypeUID: "proto-123",
+        label: "New Task",
+        folder: "custom/path",
+      });
+
+      expect(deps.fileSystemAdapter.createFile).toHaveBeenCalledWith(
+        expect.stringMatching(/^custom\/path\/[a-f0-9-]+\.md$/),
+        expect.stringContaining("exo__Asset_label: New Task"),
+      );
     });
   });
 });
