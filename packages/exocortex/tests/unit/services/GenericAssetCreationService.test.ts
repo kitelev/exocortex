@@ -832,6 +832,46 @@ describe("GenericAssetCreationService", () => {
         expect(content).toContain('ems__Effort_parent: "[[project]]"');
       });
 
+      it("should set ems__Effort_area for ems__Task with an ems__Area parent", async () => {
+        const parentFile: IFile = {
+          path: "areas/development.md",
+          basename: "development",
+          name: "development.md",
+          parent: { path: "areas" } as IFolder,
+        };
+        const config = {
+          className: "ems__Task",
+          parentFile,
+          parentMetadata: {
+            exo__Instance_class: ["[[ems__Area]]"],
+          },
+        };
+        await service.createAsset(config);
+        const content = mockVault.create.mock.calls[0][1];
+        expect(content).toContain('ems__Effort_area: "[[development]]"');
+        expect(content).not.toContain("ems__Effort_parent:");
+      });
+
+      it("should set ems__Effort_area to null when Area parent has no basename", async () => {
+        const parentFile: IFile = {
+          path: "areas/",
+          basename: "",
+          name: "",
+          parent: { path: "areas" } as IFolder,
+        };
+        const config = {
+          className: "ems__Task",
+          parentFile,
+          parentMetadata: {
+            exo__Instance_class: ["[[ems__Area]]"],
+          },
+        };
+        await service.createAsset(config);
+        const content = mockVault.create.mock.calls[0][1];
+        expect(content).toContain("ems__Effort_area: null");
+        expect(content).not.toContain("ems__Effort_parent:");
+      });
+
       it("should set ems__Project_area for project with area parent", async () => {
         const parentFile: IFile = {
           path: "areas/my-area.md",
