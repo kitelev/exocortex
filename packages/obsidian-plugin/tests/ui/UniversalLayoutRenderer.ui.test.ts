@@ -295,7 +295,10 @@ describe("UniversalLayoutRenderer UI Integration", () => {
 
       const headerTexts = Array.from(headers).map((h) => h.textContent?.trim());
       expect(headerTexts.some((text) => text?.startsWith("Name"))).toBeTruthy();
-      expect(headerTexts).toContain("exo__Instance_class");
+      // Column header is humanized from raw IRI "exo__Instance_class" → "Instance Class"
+      expect(
+        headerTexts.some((text) => text?.startsWith("Instance Class")),
+      ).toBeTruthy();
     });
 
     it("should render clickable Instance Class links", async () => {
@@ -342,11 +345,16 @@ describe("UniversalLayoutRenderer UI Integration", () => {
       );
       expect(instanceClassLinks?.length).toBeGreaterThan(0);
 
-      // Verify link text (wiki syntax removed)
+      // Link text is humanized from raw IRI "ems__Task" → "Task";
+      // underlying data-href still points to the raw target for navigation.
       const linkText = instanceClassLinks?.[0]?.textContent?.trim();
-      expect(linkText).toBe("ems__Task");
+      expect(linkText).toBe("Task");
       expect(linkText).not.toContain("[[");
       expect(linkText).not.toContain("]]");
+      expect(linkText).not.toContain("__");
+      expect(instanceClassLinks?.[0]?.getAttribute("data-href")).toBe(
+        "ems__Task",
+      );
     });
 
     it("should handle grouped relations rendering", async () => {

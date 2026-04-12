@@ -1,6 +1,17 @@
 import React, { useState, useMemo, useRef, useLayoutEffect, useCallback, useEffect } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function humanizePropertyName(raw: string): string {
+  if (!raw) return raw;
+  if (UUID_REGEX.test(raw)) return raw;
+  if (!raw.includes("__")) return raw;
+  const withoutPrefix = raw.replace(/^[a-z]+__/, "");
+  const spaced = withoutPrefix.replace(/_/g, " ");
+  return spaced.replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 export interface AssetRelation {
   path: string;
   title: string;
@@ -146,7 +157,9 @@ const SingleTable: React.FC<SingleTableProps> = ({
     if (typeof value === "string" && isWikiLink(value)) {
       const parsed = parseWikiLink(value);
       const label = getAssetLabel?.(parsed.target);
-      const displayText = parsed.alias || label || parsed.target;
+      const displayText = parsed.alias
+        ? humanizePropertyName(parsed.alias)
+        : label || humanizePropertyName(parsed.target);
 
       return (
         <a
@@ -301,27 +314,34 @@ const SingleTable: React.FC<SingleTableProps> = ({
       return "-";
     }
 
-    return instanceClasses.map((instanceClass, index) => (
-      <React.Fragment key={`${instanceClass.target}-${index}`}>
-        {instanceClass.target !== "-" ? (
-          <a
-            data-href={instanceClass.target}
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              onAssetClick?.(instanceClass.target, e);
-            }}
-            className="internal-link"
-            style={{ cursor: "pointer" }}
-          >
-            {instanceClass.alias || instanceClass.target}
-          </a>
-        ) : (
-          "-"
-        )}
-        {index < instanceClasses.length - 1 ? ", " : ""}
-      </React.Fragment>
-    ));
+    return instanceClasses.map((instanceClass, index) => {
+      const alias = instanceClass.alias;
+      const target = instanceClass.target;
+      const resolvedLabel = alias
+        ? humanizePropertyName(alias)
+        : getAssetLabel?.(target) || humanizePropertyName(target);
+      return (
+        <React.Fragment key={`${target}-${index}`}>
+          {target !== "-" ? (
+            <a
+              data-href={target}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onAssetClick?.(target, e);
+              }}
+              className="internal-link"
+              style={{ cursor: "pointer" }}
+            >
+              {resolvedLabel}
+            </a>
+          ) : (
+            "-"
+          )}
+          {index < instanceClasses.length - 1 ? ", " : ""}
+        </React.Fragment>
+      );
+    });
   };
 
   const renderRow = (relation: AssetRelation, index: number, style?: React.CSSProperties) => {
@@ -392,7 +412,7 @@ const SingleTable: React.FC<SingleTableProps> = ({
           onClick={() => handleSort("exo__Instance_class")}
           className="sortable"
         >
-          exo__Instance_class{" "}
+          {humanizePropertyName("exo__Instance_class")}{" "}
           {sortState.column === "exo__Instance_class" &&
             (sortState.order === "asc" ? "↑" : "↓")}
         </th>
@@ -403,7 +423,7 @@ const SingleTable: React.FC<SingleTableProps> = ({
             className="sortable"
             style={{ cursor: "pointer" }}
           >
-            {prop}{" "}
+            {humanizePropertyName(prop)}{" "}
             {sortState.column === prop &&
               (sortState.order === "asc" ? "↑" : "↓")}
           </th>
@@ -577,7 +597,7 @@ export const AssetRelationsTable: React.FC<AssetRelationsTableProps> = ({
                 >
                   {isCollapsed ? "▶" : "▼"}
                 </button>
-                <h3 className="group-header">{groupName}</h3>
+                <h3 className="group-header">{humanizePropertyName(groupName)}</h3>
               </div>
               <div
                 className="relation-group-content"
