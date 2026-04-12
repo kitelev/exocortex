@@ -60,13 +60,6 @@ describe("PropertyDependencyResolver", () => {
       expect(sections).toHaveLength(1);
     });
 
-    it("should map ems__Effort_day to Daily Tasks", () => {
-      const sections = resolver.getAffectedSections(["ems__Effort_day"]);
-
-      expect(sections).toContain(LayoutSection.DAILY_TASKS);
-      expect(sections).toHaveLength(1);
-    });
-
     it("should map ems__Effort_area to Daily Tasks", () => {
       const sections = resolver.getAffectedSections(["ems__Effort_area"]);
 

@@ -411,17 +411,17 @@ ems__Effort_votes: 5
 
 ### ems\_\_Effort_day
 
-**Planned day for effort execution**
+**User-facing day tag for SPARQL search**
 
-| Attribute     | Value                                            |
-| ------------- | ------------------------------------------------ |
-| **Type**      | String (WikiLink to date)                        |
-| **Required**  | No                                               |
-| **Format**    | `"[[YYYY-MM-DD]]"`                               |
-| **Purpose**   | Schedule task for specific day                   |
-| **Generated** | By "Plan on Today" or "Plan for Evening" command |
-| **Mutable**   | ✅ Yes (can reschedule)                          |
-| **Used For**  | Daily task aggregation view                      |
+| Attribute     | Value                                                |
+| ------------- | ---------------------------------------------------- |
+| **Type**      | String (WikiLink to date)                            |
+| **Required**  | No                                                   |
+| **Format**    | `"[[YYYY-MM-DD]]"`                                   |
+| **Purpose**   | Optional user-managed tag for SPARQL day queries     |
+| **Generated** | Manually by user or via SPARQL/Dataview queries      |
+| **Mutable**   | ✅ Yes                                               |
+| **Used For**  | SPARQL filtering only (not read by plugin renderers) |
 
 **Example**:
 
@@ -429,12 +429,11 @@ ems__Effort_votes: 5
 ems__Effort_day: "[[2025-10-26]]"
 ```
 
-**Commands that set this**:
+**Notes**:
 
-- "Plan on Today" → Sets to today's date
-- "Plan for Evening" → Sets to today + adds plannedStartTimestamp
-- "Shift Day Forward" → Adds 1 day
-- "Shift Day Backward" → Subtracts 1 day
+- Plugin daily-note aggregation filters tasks by `ems__Effort_startTimestamp`, `ems__Effort_endTimestamp`, `ems__Effort_plannedStartTimestamp`, and `ems__Effort_plannedEndTimestamp` — NOT by `ems__Effort_day`.
+- Planning commands (`Plan on Today`, `Plan for Evening`, `Shift Day Forward/Backward`) update `ems__Effort_plannedStartTimestamp`, not `ems__Effort_day`.
+- This property remains part of the public `ems:` SPARQL vocabulary (see `cli/docs/ONTOLOGY_REFERENCE.md`) — set it manually if you need day-tagging for custom queries.
 
 ---
 

@@ -29,9 +29,6 @@ export class PropertyDependencyResolver {
     "ems__Effort_votes": [
       LayoutSection.DAILY_TASKS,
     ],
-    "ems__Effort_day": [
-      LayoutSection.DAILY_TASKS,
-    ],
     "ems__Effort_area": [
       LayoutSection.DAILY_TASKS,
     ],
