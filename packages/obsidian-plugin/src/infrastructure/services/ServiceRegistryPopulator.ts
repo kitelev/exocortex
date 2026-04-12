@@ -103,11 +103,13 @@ export function populateServiceRegistry(
       if (!folder && folder !== "") throw new Error("createAsset requires userInput.folder");
 
       const uid = crypto.randomUUID();
+      const createdAt = DateFormatter.toISOTimestamp(new Date());
       const fileName = `${uid}.md`;
       const filePath = `${folder}/${fileName}`;
       const frontmatter = [
         "---",
         `exo__Asset_uid: ${uid}`,
+        `exo__Asset_createdAt: ${createdAt}`,
         `exo__Asset_label: ${label}`,
         `exo__Asset_prototype: "[[${prototypeUID}]]"`,
         "---",
