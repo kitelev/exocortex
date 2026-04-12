@@ -187,12 +187,41 @@ export const getEffortAreaDisplayText = (
   }
 };
 
+const DATE_ONLY_TIMESTAMP_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Detects "date only" string timestamps that have no time component.
+ *
+ * Such values get parsed by `new Date()` as UTC midnight, which then renders
+ * as the wrong wall-clock hour in any non-UTC timezone — e.g. `"2025-11-10"`
+ * displays as `05:00` for a viewer in `Asia/Almaty` (UTC+5).
+ *
+ * Issue #2766 item 6: callers should suppress the time portion when this
+ * helper returns true so the daily layout does not leak the local timezone
+ * offset of whoever happens to be viewing the vault.
+ */
+export const isDateOnlyTimestamp = (
+  value: unknown,
+): value is string =>
+  typeof value === "string" && DATE_ONLY_TIMESTAMP_REGEX.test(value);
+
 export const formatTimeDisplay = (
   timestamp: string | number | null | undefined,
   fallbackFormatted: string,
   showFullDateInEffortTimes: boolean,
 ): string => {
   if (!timestamp) return fallbackFormatted || "-";
+
+  // Date-only strings have no real time component. Computing one via
+  // `new Date(...).getHours()` would expose the viewer's timezone offset,
+  // so suppress it (Issue #2766 item 6).
+  if (isDateOnlyTimestamp(timestamp)) {
+    if (showFullDateInEffortTimes) {
+      // Pure-string slice avoids any Date / TZ involvement: "YYYY-MM-DD" → "MM-DD".
+      return timestamp.slice(5);
+    }
+    return fallbackFormatted || "-";
+  }
 
   const date = new Date(timestamp);
   if (isNaN(date.getTime())) return fallbackFormatted || "-";
