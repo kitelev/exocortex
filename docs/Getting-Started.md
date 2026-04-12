@@ -67,11 +67,13 @@ You describe your entities (tasks, projects, areas, or any custom type) in YAML 
 
 [BRAT](https://github.com/TfTHacker/obsidian42-brat) is a plugin that lets you install beta plugins from GitHub.
 
+> **Note — Restricted Mode**: A brand-new vault starts in **Restricted Mode**. If you open Settings → Community plugins and see a **"Turn on community plugins"** button instead of **"Browse"**, click that first, then continue with Step 1.
+
 1. Open Obsidian Settings → Community plugins → Browse
 2. Search for **"BRAT"** (full name: "Obsidian42 - BRAT")
 3. Click Install → Enable
 4. Open BRAT settings → **Add Beta Plugin**
-5. Enter repository: `kitelev/exocortex`
+5. Enter `kitelev/exocortex` in the **GitHub repository** field. Either the `owner/repo` form or the full GitHub URL works. Leave **Personal Access Token** empty and keep **Enable after installing the plugin** checked.
 6. Click **Add Plugin**
 7. Go to Settings → Community plugins → enable **Exocortex**
 
@@ -85,7 +87,7 @@ The plugin needs ontology files in your vault to enable buttons and commands. Do
 2. Download `exocortex-starter-kit.zip`
 3. Extract the ZIP into your vault (any folder works — the plugin scans the entire vault)
    - Recommended: extract into a folder like `Knowledge/` or at the vault root
-   - The ZIP contains `exocmd/` (command definitions), `pn/` (DailyNote properties), `exo/` (core ontology), `ems/` (effort classes and statuses), and `period/` (time periods)
+   - The ZIP contains **seven** folders: `exocmd/` (command definitions), `pn/` (DailyNote properties), `exo/` (core ontology), `ems/` (effort classes and statuses), `ims/` (information-management concepts), `period/` (time periods), and `ztlk/` (Zettelkasten notes). It also contains a top-level `README.md`.
 
 The plugin detects new files automatically — no restart needed.
 
@@ -100,6 +102,8 @@ exo__Instance_class:
 exo__Asset_label: Test Area
 ---
 ```
+
+> **Note — pasting frontmatter**: Obsidian's Live Preview silently captures the `---` markers when you paste YAML, so the frontmatter can end up inside the note body instead of at the top. If the preview swallows the first `---`, switch to **Source Mode** first (**Cmd/Ctrl+P → "Toggle Live Preview / Source mode"**), paste the frontmatter, then switch back. Alternatively, type the `---` markers manually before pasting the rest.
 
 2. Switch to **Reading Mode** (Ctrl/Cmd + E)
 3. You should see the Exocortex layout with **action buttons** below the metadata
@@ -141,12 +145,12 @@ All software development efforts live here.
 
 ### What You'll See
 
-The Exocortex layout renders with these sections:
+The Exocortex layout renders with these sections (header labels match the on-screen UI):
 
-- **Properties Table**: Shows all frontmatter properties
-- **Action Buttons**: Commands relevant to areas (Create Project, Create Task, etc.)
-- **Area Hierarchy Tree**: Parent/child area relationships (empty for now)
-- **Asset Relations**: Notes referencing this area (empty for now)
+- **Properties**: Shows all frontmatter properties
+- **COMMANDS**: Action buttons relevant to areas (Create Project, Create Task, Create Sub Area, etc.)
+- **Area tree**: Parent/child area relationships (empty until you create sub-areas)
+- **Asset Relations**: Notes that reference this area. Populates automatically when another note links to it via a wiki-link.
 
 **Note**: The layout only appears in Reading Mode, not in Edit Mode.
 
@@ -196,8 +200,8 @@ REST API for the mobile app.
 
 ### What You'll See
 
-- **Action Buttons**: Create tasks, set planned dates, convert to task
-- **Asset Relations**: This project will appear in the Development area's relations
+- **COMMANDS**: Create Task, Set Planned Start, Start Effort, Convert to Task, and other action buttons
+- **Asset Relations**: Tasks and notes that reference this project. Your project will also show up in the **Asset Relations** section of the parent area (`Development`) once you open it.
 
 ---
 
@@ -292,14 +296,14 @@ The Exocortex layout renders automatically in Reading Mode based on the note's `
 
 ### Common Sections
 
-**1. Properties Table**
+**1. Properties**
 
 - Shows all frontmatter properties
 - Resolves wiki-links to display labels
 - Sortable columns (click headers)
 - Toggle visibility with "Toggle Properties" button
 
-**2. Action Buttons**
+**2. COMMANDS**
 
 - Grouped by function:
   - **Creation**: Create Task, Create Project
@@ -319,7 +323,7 @@ The Exocortex layout renders automatically in Reading Mode based on the note's `
 
 **ems\_\_Area**
 
-- **Area Hierarchy Tree**: Interactive collapsible tree of parent/child areas
+- **Area tree**: Interactive collapsible tree of parent/child areas
 
 **pn\_\_DailyNote**
 
@@ -539,7 +543,7 @@ Discover all commands:
 
 | Action         | Command                                                       |
 | -------------- | ------------------------------------------------------------- |
-| Create task    | Click "Create Task" button or Cmd/Ctrl+P → "Create Task"      |
+| Create task    | Click the **Create Task** button inside the layout (in-layout only; not wired into the command palette yet) |
 | Move status    | Use status buttons (Backlog → Analysis → ToDo → Doing → Done) |
 | Plan for today | Click "Plan on Today" button                                  |
 | Shift day      | Use ◀ / ▶ buttons                                             |
@@ -553,7 +557,7 @@ For the full diagnostic walkthrough see [Troubleshooting](#troubleshooting) abov
 | Problem                  | First thing to try                                                                           |
 | ------------------------ | -------------------------------------------------------------------------------------------- |
 | Layout doesn't appear    | Switch to Reading Mode (Ctrl/Cmd + E)                                                        |
-| No buttons visible       | Verify Starter Kit is installed (`exocmd/` folder exists in vault)                           |
+| No buttons visible       | Verify Starter Kit is installed (`exocmd/` folder exists in vault); if the folder is present, fully quit and reopen Obsidian (cold restart) to force re-indexing |
 | Buttons don't work       | Read `exocortex-logs.txt` in vault root; check console (Ctrl/Cmd + Shift + I)                |
 | Wiki-links grey          | Reload app without saving (Cmd/Ctrl + P); re-extract Starter Kit zip if folders missing      |
 | Daily tasks not showing  | Check task has `ems__Effort_plannedStartTimestamp` matching daily note's `pn__DailyNote_day` |
