@@ -9,6 +9,7 @@ Common coding patterns and best practices discovered during Exocortex developmen
 **When to use**: Sorting any time-based data chronologically
 
 **Problem**: String-based time sort fails:
+
 ```typescript
 // ❌ WRONG: String sort breaks chronological order
 tasks.sort((a, b) => a.startTime.localeCompare(b.startTime));
@@ -16,21 +17,23 @@ tasks.sort((a, b) => a.startTime.localeCompare(b.startTime));
 ```
 
 **Solution**: Use timestamps for sorting:
+
 ```typescript
 // ✅ CORRECT: Timestamp-based sort
 interface Task {
-  startTime: string;           // Display: "09:00"
-  startTimestamp: number;       // Sort: 1736928000000
+  startTime: string; // Display: "09:00"
+  startTimestamp: number; // Sort: 1736928000000
 }
 
 tasks.sort((a, b) => {
   const aTime = a.startTimestamp ? new Date(a.startTimestamp).getTime() : 0;
   const bTime = b.startTimestamp ? new Date(b.startTimestamp).getTime() : 0;
-  return aTime - bTime;  // Numeric comparison
+  return aTime - bTime; // Numeric comparison
 });
 ```
 
 **Benefits**:
+
 - Accurate chronological ordering
 - Handles midnight boundary correctly
 - Handles dates across multiple days
@@ -47,36 +50,42 @@ tasks.sort((a, b) => {
 **When creating comprehensive documentation:**
 
 ### 1. Research Phase (10-15 minutes)
+
 - Read source code for feature (main files + tests)
 - Identify key components and APIs
 - Note existing patterns and conventions
 - Check for existing partial docs to integrate
 
 ### 2. Structure Phase (5 minutes)
+
 - Create docs/ subdirectory if needed
 - Plan file structure by audience (user/developer/performance)
 - Define scope of each file
 - Identify cross-linking opportunities
 
 ### 3. Writing Phase (60-90 minutes)
+
 - Start with examples (Query-Examples.md pattern)
 - Write user guide with progressive complexity
 - Document developer API with TypeScript examples
 - Add performance/troubleshooting guide if applicable
 
 ### 4. Integration Phase (10 minutes)
+
 - Update README.md with new section
 - Add cross-links between docs
 - Verify all code examples are syntactically correct
 - Test that links resolve
 
 ### 5. Validation Phase
+
 - Commit with "docs:" prefix
 - Verify CI passes (no lint errors)
 - Create PR with clear summary
 - Enable auto-merge
 
 ### Documentation Checklist
+
 - [ ] Examples are copy-paste ready
 - [ ] README.md updated with links
 - [ ] Performance guidance includes numbers
@@ -84,12 +93,14 @@ tasks.sort((a, b) => {
 - [ ] All TypeScript examples type-check
 
 ### Expected Timeline
+
 - Total: 85-90 minutes (research → release)
 - Zero errors expected (documentation-only)
 - First-time CI pass (no code changes)
 - Immediate merge (low risk, high value)
 
 ### Key Insights
+
 - Examples > explanations (users want copy-paste patterns)
 - Separate files by audience (user/developer/performance) improves findability
 - Performance docs need numbers ("100x faster" vs "significantly faster")
@@ -109,7 +120,10 @@ tasks.sort((a, b) => {
 ```typescript
 // 1. Create shared utility in presentation/utils/
 export class FeatureHelpers {
-  static checkCondition(app: ObsidianApp, metadata: Record<string, unknown>): boolean {
+  static checkCondition(
+    app: ObsidianApp,
+    metadata: Record<string, unknown>,
+  ): boolean {
     // Shared logic here
   }
 }
@@ -129,8 +143,8 @@ const icon = task.hasFeature ? "🎯 " : "";
 ### Real-World Example: Blocker Indicator (🚩)
 
 **Utility:** `BlockerHelpers.isEffortBlocked()` (BlockerHelpers.ts)
-**Used by:** DailyTasksRenderer, DailyProjectsRenderer, RelationsRenderer
-**Displayed in:** DailyTasksTable, DailyProjectsTable, AssetRelationsTable
+**Used by:** DailyTasksRenderer, RelationsRenderer
+**Displayed in:** DailyTasksTable, AssetRelationsTable
 **Benefit:** Single source of truth, consistent behavior, easy to test
 
 ### Files to Create
@@ -181,8 +195,8 @@ describe("TableComponent", () => {
 
 ```typescript
 // Step 1: Partition by priority status
-const priorityItems = filtered.filter(item => item.isPriority);
-const normalItems = filtered.filter(item => !item.isPriority);
+const priorityItems = filtered.filter((item) => item.isPriority);
+const normalItems = filtered.filter((item) => !item.isPriority);
 
 // Step 2: Extract sorting logic into reusable function
 const applySorting = (itemList: Item[]): Item[] => {
@@ -204,6 +218,7 @@ return [...sortedPriority, ...sortedNormal];
 ```
 
 **Benefits**:
+
 - Priority items always visible at top
 - Column sorting still works within each partition
 - O(n log n) complexity - no performance impact
@@ -212,6 +227,7 @@ return [...sortedPriority, ...sortedNormal];
 **Pattern**: Partition → Sort each → Concatenate
 
 **Real-World Example**: `DailyTasksTable.tsx:167-243`
+
 - Tasks with `isDoing: true` always appear first
 - Column sorting (Name, Start, End, Status, Area, Votes) works within each partition
 - Empty priority partition handled gracefully
@@ -225,6 +241,7 @@ return [...sortedPriority, ...sortedNormal];
 **When looking up files via `metadataCache.getFirstLinkpathDest()`, always implement `.md` extension fallback to handle wiki-links that don't include the extension.**
 
 ### Standard Pattern
+
 ```typescript
 let file = this.app.metadataCache.getFirstLinkpathDest(path, "");
 
@@ -238,18 +255,21 @@ if (file instanceof TFile) {
 ```
 
 ### Why This Matters
+
 - Wiki-links like `[[Page Name]]` extract to `"Page Name"` (no `.md`)
 - Obsidian's `getFirstLinkpathDest` may require full filename `"Page Name.md"`
 - Without fallback, valid references fail to resolve
 - This pattern prevents bugs in area inheritance, relation lookups, and any file resolution
 
 ### When to Use
+
 - Looking up parent/child relationships (e.g., `ems__Effort_parent`)
 - Resolving prototype references (e.g., `ems__Effort_prototype`)
 - Following any property that contains wiki-links to other notes
 - Any file lookup based on frontmatter property values
 
 ### Test Pattern
+
 ```typescript
 it("should resolve file with .md extension fallback", () => {
   mockApp.metadataCache.getFirstLinkpathDest.mockImplementation(
@@ -281,6 +301,7 @@ it("should not duplicate .md extension if already present", () => {
 ```
 
 ### Reference Implementations
+
 - `AssetMetadataService.getAssetLabel()` (lines 10-14)
 - `AssetMetadataService.getEffortArea()` (lines 103-108 for parent, 131-136 for prototype)
 
@@ -293,6 +314,7 @@ it("should not duplicate .md extension if already present", () => {
 **When to use**: Creating or processing frontmatter properties that reference other notes via wikilinks
 
 **Problem**: Properties containing wikilinks can arrive in different formats:
+
 - `[[Link]]` (without quotes)
 - `"[[Link]]"` (with quotes - correct format)
 - May be undefined or null
@@ -326,30 +348,32 @@ private ensureQuotedWikilink(
 ```
 
 **Usage in frontmatter generation:**
+
 ```typescript
 private generateFrontmatter(
   parentMetadata: Record<string, any>,
 ): Record<string, any> {
   const frontmatter: Record<string, any> = {};
-  
+
   // ❌ WRONG - May be unquoted
-  frontmatter["exo__Asset_isDefinedBy"] = 
+  frontmatter["exo__Asset_isDefinedBy"] =
     parentMetadata.exo__Asset_isDefinedBy || '"[[Ontology/EXO]]"';
-  
+
   // ✅ CORRECT - Always properly quoted
   frontmatter["exo__Asset_isDefinedBy"] = this.ensureQuotedWikilink(
     parentMetadata.exo__Asset_isDefinedBy,
     '"[[Ontology/EXO]]"',
   );
-  
+
   frontmatter["exo__Class_superClass"] = `"[[${parentClassName}]]"`;
   frontmatter["exo__Instance_class"] = [`"[[exo__Class]]"`];
-  
+
   return frontmatter;
 }
 ```
 
 **Properties that need this pattern:**
+
 - `exo__Asset_isDefinedBy` - ontology reference
 - `exo__Class_superClass` - parent class
 - `ems__Effort_parent` - parent effort
@@ -357,10 +381,11 @@ private generateFrontmatter(
 - Any property that links to another note
 
 **Test pattern:**
+
 ```typescript
 it("should add quotes to unquoted wikilink", async () => {
   const parentMetadata = {
-    exo__Asset_isDefinedBy: "[[Custom/Ontology]]",  // Without quotes!
+    exo__Asset_isDefinedBy: "[[Custom/Ontology]]", // Without quotes!
   };
 
   const result = await service.createAsset(parentMetadata);
@@ -369,12 +394,12 @@ it("should add quotes to unquoted wikilink", async () => {
   // Should add quotes around the wikilink
   expect(content).toContain('exo__Asset_isDefinedBy: "[[Custom/Ontology]]"');
   // Should NOT have unquoted wikilink
-  expect(content).not.toContain('exo__Asset_isDefinedBy: [[Custom/Ontology]]');
+  expect(content).not.toContain("exo__Asset_isDefinedBy: [[Custom/Ontology]]");
 });
 
 it("should preserve already quoted wikilinks", async () => {
   const parentMetadata = {
-    exo__Asset_isDefinedBy: '"[[Custom/Ontology]]"',  // Already quoted
+    exo__Asset_isDefinedBy: '"[[Custom/Ontology]]"', // Already quoted
   };
 
   const result = await service.createAsset(parentMetadata);
@@ -388,12 +413,14 @@ it("should preserve already quoted wikilinks", async () => {
 ```
 
 **Benefits:**
+
 - Consistent wikilink formatting across all created assets
 - Obsidian properly detects and highlights links
 - Parent metadata can be in any format - always normalized
 - Easy to extend for new wikilink properties
 
 **Where to apply:**
+
 - All service classes that create frontmatter (TaskCreationService, ProjectCreationService, ClassCreationService, ConceptCreationService)
 - Any code that modifies wikilink properties
 - Import/migration scripts
@@ -410,11 +437,11 @@ it("should preserve already quoted wikilinks", async () => {
 
 ### Productivity Gains
 
-| Phase | Time | Speed Multiplier | Notes |
-|-------|------|------------------|-------|
-| **Cold start** (first feature) | 100% | 1.0x | Baseline |
-| **Warm context** (second feature) | 60-70% | 1.5-2.0x | Architecture familiar |
-| **Hot context** (third+ feature) | 50-60% | 2.0-2.5x | Patterns internalized |
+| Phase                             | Time   | Speed Multiplier | Notes                 |
+| --------------------------------- | ------ | ---------------- | --------------------- |
+| **Cold start** (first feature)    | 100%   | 1.0x             | Baseline              |
+| **Warm context** (second feature) | 60-70% | 1.5-2.0x         | Architecture familiar |
+| **Hot context** (third+ feature)  | 50-60% | 2.0-2.5x         | Patterns internalized |
 
 ### Real-World Example (CLI Development)
 
@@ -444,6 +471,7 @@ PR #434 (CLI Status Commands):         150 minutes* (hot context, includes 5 min
 ### Anti-Pattern: Spacing Related Features Weeks Apart
 
 **Problems:**
+
 - Each feature becomes "cold start" again
 - Relearning architecture every time
 - Higher error rate from forgotten patterns
@@ -451,6 +479,7 @@ PR #434 (CLI Status Commands):         150 minutes* (hot context, includes 5 min
 - Duplicate research time
 
 **Example of inefficiency:**
+
 ```
 Week 1: PR #432 (CLI Core) - 180 min (learn CommandExecutor, adapters, tests)
 Week 5: PR #433 (Commands)  - 180 min (relearn everything, context lost)
@@ -467,6 +496,7 @@ Total: 445 minutes (95 minutes saved, 21% faster)
 ### Success Metrics (PR #434)
 
 **Achieved:**
+
 - ✅ Zero errors after git recovery (implementation was flawless)
 - ✅ All tests passed first time (no debugging cycles)
 - ✅ CI green on first attempt (no fixup commits)
@@ -474,6 +504,7 @@ Total: 445 minutes (95 minutes saved, 21% faster)
 - ✅ 2.3x productivity gain (warm context from PR #432/#433)
 
 **Key factors:**
+
 - Recent related work (< 48 hours since PR #433 merge)
 - Clear requirements (Issue #422 with specific commands)
 - Shared utilities (`DateFormatter`, `FrontmatterService`)
@@ -485,6 +516,7 @@ Total: 445 minutes (95 minutes saved, 21% faster)
 **When planning work**, group related features into sequential sprints rather than interleaving with unrelated work. The productivity gains compound with each related feature completed.
 
 **Before starting new feature**, ask:
+
 - "Is this related to recent work?"
 - "Can I leverage warm context from previous PR?"
 - "Are there 2-3 more related features I could batch?"
@@ -502,20 +534,24 @@ If yes to any → prioritize sequential implementation for maximum efficiency.
 ### Key Architecture Knowledge
 
 **PropertyPathExecutor** (`packages/exocortex/src/infrastructure/sparql/executors/`):
+
 - Handles SPARQL property path operators: `+` (OneOrMore), `*` (ZeroOrMore), `?` (ZeroOrOne), `^` (Inverse), `/` (Sequence), `|` (Alternative)
 - **MAX_DEPTH = 100**: Prevents infinite loops in recursive paths
 - Edge cases to test: empty graphs, failing paths, depth limits
 
 **QueryPlanCache** (`packages/exocortex/src/infrastructure/sparql/cache/`):
+
 - LRU eviction with configurable size
 - **Whitespace normalization**: Cache keys are trimmed and whitespace-collapsed
 - Edge cases to test: cache size of 1, whitespace-only queries, LRU order after updates
 
 **FilterExecutor** (`packages/exocortex/src/infrastructure/sparql/executors/`):
+
 - Handles EXISTS/NOT EXISTS via `ExistsEvaluator` callback pattern
 - Delegates EXISTS subquery evaluation to callback, doesn't execute directly
 
 **AlgebraTranslator** (`packages/exocortex/src/infrastructure/sparql/algebra/`):
+
 - Handles BIND expressions and Subqueries
 - No separate executor needed - translated during algebra generation
 
@@ -593,6 +629,7 @@ npm run test:coverage -- --collectCoverageFrom="packages/exocortex/src/infrastru
 **Problem**: esbuild doesn't emit TypeScript decorator metadata by default, causing TSyringe DI resolution to fail at runtime.
 
 **Symptoms**:
+
 - Unit tests pass (mocked DI container)
 - E2E tests fail: `Cannot resolve TaskCreationService` or similar
 - Error occurs only in built/bundled code, not in ts-node or jest
@@ -610,11 +647,11 @@ npm install -D esbuild-plugin-tsc
 
 ```typescript
 // esbuild.config.mjs
-import esbuildPluginTsc from 'esbuild-plugin-tsc';
+import esbuildPluginTsc from "esbuild-plugin-tsc";
 
 const plugins = [
   esbuildPluginTsc({
-    force: true  // Always use tsc for .ts files
+    force: true, // Always use tsc for .ts files
   }),
   // ... other plugins
 ];
@@ -661,6 +698,7 @@ npm run test:e2e
 ### Real-World Example
 
 **Issue #436 Phase 2**: TaskCreationService migration to TSyringe DI
+
 - Unit tests: 194 passing (mocked container)
 - E2E tests: 11 failing → 11 passing after `esbuild-plugin-tsc` added
 - 6 debugging attempts before finding solution
@@ -709,17 +747,18 @@ tests/unit/commands/visibility/
 
 ### Domain Categories (Examples)
 
-| Category | Description | Example Tests |
-|----------|-------------|---------------|
-| `*.status.test.ts` | Status transition commands | canMoveToBacklog, canStartEffort, canMarkDone |
-| `*.creation.test.ts` | Entity creation commands | canCreateTask, canCreateProject |
-| `*.maintenance.test.ts` | Cleanup/repair commands | canArchiveTask, canCleanProperties |
-| `*.voting.test.ts` | Voting-related commands | canVoteOnEffort |
-| `*.conversion.test.ts` | Type conversion commands | canConvertTaskToProject |
+| Category                | Description                | Example Tests                                 |
+| ----------------------- | -------------------------- | --------------------------------------------- |
+| `*.status.test.ts`      | Status transition commands | canMoveToBacklog, canStartEffort, canMarkDone |
+| `*.creation.test.ts`    | Entity creation commands   | canCreateTask, canCreateProject               |
+| `*.maintenance.test.ts` | Cleanup/repair commands    | canArchiveTask, canCleanProperties            |
+| `*.voting.test.ts`      | Voting-related commands    | canVoteOnEffort                               |
+| `*.conversion.test.ts`  | Type conversion commands   | canConvertTaskToProject                       |
 
 ### Anti-Patterns
 
 **❌ Partial splits that leave duplicates:**
+
 ```
 # WRONG: Original file still has tests that were copied (not moved) to new files
 CommandVisibility.test.ts       (2588 LOC - still has all tests)
@@ -728,6 +767,7 @@ CommandVisibility.status.test.ts (356 LOC - duplicates status tests)
 ```
 
 **❌ Incomplete migration:**
+
 ```
 # WRONG: Some tests moved, some left behind, file not deleted
 CommandVisibility.test.ts       (1200 LOC - partial tests remain)
@@ -746,11 +786,11 @@ CommandVisibility.test.ts       (1200 LOC - partial tests remain)
 
 ### LOC Thresholds
 
-| LOC | Action |
-|-----|--------|
-| < 500 | Acceptable (target) |
+| LOC      | Action                                              |
+| -------- | --------------------------------------------------- |
+| < 500    | Acceptable (target)                                 |
 | 500-1000 | Consider splitting if clear domain boundaries exist |
-| > 1000 | Must split (blocking for new PRs) |
+| > 1000   | Must split (blocking for new PRs)                   |
 
 ### Reference
 
@@ -816,6 +856,7 @@ import { ErrorCode } from "./ErrorCode";
 **Problem**: Component tests failed with "Cannot find module '@exocortex/core/domain/errors'"
 
 **Solution**:
+
 1. Added exports to main package index: `export * from "./domain/errors"`
 2. Kept subpath exports in package.json for Playwright CT
 3. Removed all `.js` extensions from error module imports
@@ -842,25 +883,25 @@ import { ErrorCode } from "./ErrorCode";
 
 ### Real-World Example: RDF-Star Implementation (Issues #951-955)
 
-| Step | Issue | Description | Time |
-|------|-------|-------------|------|
-| 1 | #951 | QuotedTriple data model class | 68 steps |
-| 2 | #952 | TRIPLE() constructor function | 74 steps |
-| 3 | #954 | isTRIPLE() type checker | 80 steps |
-| 4 | #953 | SUBJECT(), PREDICATE(), OBJECT() accessors | 91 steps |
-| 5 | #955 | Parser for `<<( s p o )>>` syntax | 85 steps |
+| Step | Issue | Description                                | Time     |
+| ---- | ----- | ------------------------------------------ | -------- |
+| 1    | #951  | QuotedTriple data model class              | 68 steps |
+| 2    | #952  | TRIPLE() constructor function              | 74 steps |
+| 3    | #954  | isTRIPLE() type checker                    | 80 steps |
+| 4    | #953  | SUBJECT(), PREDICATE(), OBJECT() accessors | 91 steps |
+| 5    | #955  | Parser for `<<( s p o )>>` syntax          | 85 steps |
 
 **Key insight**: Each step builds on the previous. TRIPLE() needs QuotedTriple class, accessors need TRIPLE(), parser creates QuotedTriple instances.
 
 ### DateTime Arithmetic Implementation (Issues #973-975, #988-990)
 
-| Step | Issue | Description |
-|------|-------|-------------|
-| 1 | #973 | date + duration arithmetic |
-| 2 | #974 | date - duration arithmetic |
-| 3 | #975 | duration + duration arithmetic |
-| 4 | #988 | duration comparison operators |
-| 5 | #990 | YEARS() and MONTHS() accessors |
+| Step | Issue | Description                    |
+| ---- | ----- | ------------------------------ |
+| 1    | #973  | date + duration arithmetic     |
+| 2    | #974  | date - duration arithmetic     |
+| 3    | #975  | duration + duration arithmetic |
+| 4    | #988  | duration comparison operators  |
+| 5    | #990  | YEARS() and MONTHS() accessors |
 
 **Pattern**: Addition first, subtraction second (reuses addition logic with negation), then comparison.
 
@@ -874,6 +915,7 @@ import { ErrorCode } from "./ErrorCode";
 ### Test Coverage for SPARQL Features
 
 **Structure:**
+
 ```
 packages/exocortex/tests/
 ├── unit/infrastructure/sparql/
@@ -885,6 +927,7 @@ packages/exocortex/tests/
 ```
 
 **Reference**:
+
 - PR #994: SPARQL 1.2 Integration Test Suite (162 steps)
 - PR #992: Documentation guide for all SPARQL 1.2 features
 
@@ -898,7 +941,7 @@ packages/exocortex/tests/
 
 ```typescript
 // ❌ WRONG: toISOString() converts to UTC
-const userInput = '2025-12-17T20:05';
+const userInput = "2025-12-17T20:05";
 const saved = new Date(userInput).toISOString();
 // Result: '2025-12-17T15:05:00.000Z' (in UTC+5 timezone)
 // User entered 20:05, saved as 15:05 → BROKEN!
@@ -907,10 +950,12 @@ const saved = new Date(userInput).toISOString();
 ### Root Cause Analysis (Issue #1052)
 
 The bug manifested as +20 hour offset:
+
 - User entered: 2025-12-17 20:05
 - Actually saved: 2025-12-18 16:05 (+20 hours)
 
 **Investigation process:**
+
 1. Check `getTimezoneOffset()` usage - returns NEGATIVE for positive timezones
 2. Look for double offset application
 3. Compare working field (plannedStartTimestamp) vs broken field (plannedEndTimestamp)
@@ -923,7 +968,7 @@ function serializeTimestamp(userInput: string): string {
   // userInput format: "2025-12-17T20:05"
   // Add seconds if missing
   if (userInput.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/)) {
-    return userInput + ':00';  // "2025-12-17T20:05:00"
+    return userInput + ":00"; // "2025-12-17T20:05:00"
   }
   return userInput;
 }
@@ -932,11 +977,11 @@ function serializeTimestamp(userInput: string): string {
 ### Alternative: Use Luxon for Local Time
 
 ```typescript
-import { DateTime } from 'luxon';
+import { DateTime } from "luxon";
 
 function serializeTimestamp(userInput: string): string {
   const local = DateTime.fromFormat(userInput, "yyyy-MM-dd'T'HH:mm", {
-    zone: 'local'
+    zone: "local",
   });
   return local.toFormat("yyyy-MM-dd'T'HH:mm:ss");
 }
@@ -945,19 +990,19 @@ function serializeTimestamp(userInput: string): string {
 ### Testing Timezone Handling
 
 ```typescript
-describe('EMS timestamp serialization', () => {
-  it('should preserve local time without offset', () => {
-    const userInput = '2025-12-17T20:05';
+describe("EMS timestamp serialization", () => {
+  it("should preserve local time without offset", () => {
+    const userInput = "2025-12-17T20:05";
     const result = serializeTimestamp(userInput);
-    expect(result).toBe('2025-12-17T20:05:00');
+    expect(result).toBe("2025-12-17T20:05:00");
   });
 
-  it('should handle start and end timestamps identically', () => {
-    const start = serializeTimestamp('2025-12-17T20:00');
-    const end = serializeTimestamp('2025-12-17T20:05');
+  it("should handle start and end timestamps identically", () => {
+    const start = serializeTimestamp("2025-12-17T20:00");
+    const end = serializeTimestamp("2025-12-17T20:05");
     // Both should preserve local time
-    expect(start).toBe('2025-12-17T20:00:00');
-    expect(end).toBe('2025-12-17T20:05:00');
+    expect(start).toBe("2025-12-17T20:00:00");
+    expect(end).toBe("2025-12-17T20:05:00");
   });
 });
 ```
@@ -1028,14 +1073,15 @@ const columnWidths = useMemo(() => ({
 /* Name column: flexible, truncated with tooltip */
 .col-name {
   flex: 1 1 auto;
-  min-width: 0;  /* Critical for text-overflow to work! */
+  min-width: 0; /* Critical for text-overflow to work! */
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 /* Time columns: fixed width */
-.col-start, .col-end {
+.col-start,
+.col-end {
   flex: 0 0 65px;
   text-align: right;
   font-size: 12px;
@@ -1048,7 +1094,7 @@ const columnWidths = useMemo(() => ({
   position: relative;
   z-index: 10;
   background: var(--background-primary);
-  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 ```
 
@@ -1064,17 +1110,17 @@ const columnWidths = useMemo(() => ({
 ```typescript
 // Playwright viewport sizes
 const viewports = [
-  { name: 'iPhone SE', width: 375, height: 667 },
-  { name: 'iPhone 12', width: 390, height: 844 },
-  { name: 'iPad Mini', width: 768, height: 1024 },
+  { name: "iPhone SE", width: 375, height: 667 },
+  { name: "iPhone 12", width: 390, height: 844 },
+  { name: "iPad Mini", width: 768, height: 1024 },
 ];
 
 viewports.forEach(({ name, width, height }) => {
   test(`table layout on ${name}`, async ({ page }) => {
     await page.setViewportSize({ width, height });
     // Test column proportions
-    const nameCol = await page.locator('.col-name').boundingBox();
-    const startCol = await page.locator('.col-start').boundingBox();
+    const nameCol = await page.locator(".col-name").boundingBox();
+    const startCol = await page.locator(".col-start").boundingBox();
     expect(startCol.width).toBeLessThanOrEqual(70);
     expect(nameCol.width).toBeGreaterThan(startCol.width * 2);
   });
@@ -1082,6 +1128,7 @@ viewports.forEach(({ name, width, height }) => {
 ```
 
 **Reference**:
+
 - Issue #941: Column misalignment in virtualized mode (35-82 steps)
 - Issue #1055: Mobile text truncation fix (59 steps)
 
@@ -1157,6 +1204,7 @@ FILTER(?dir = "rtl")
 ```
 
 **Reference**:
+
 - PR #991: Parse directional language tag syntax (120 steps)
 - PR #993: Serialize directional literals in query results (80 steps)
 
@@ -1172,12 +1220,12 @@ Successfully processed 41 code scanning issues (#1072-#1140) in a single day thr
 
 ### Issue Prioritization Strategy
 
-| Priority | Category | Examples | Step Count |
-|----------|----------|----------|------------|
-| **P0** | Security-critical | Incomplete string escaping, insecure randomness, weak crypto | 30-63 steps |
-| **P1** | Code correctness | Useless assignments, unreachable code, identical operands | 34-117 steps |
-| **P2** | Code quality | Overwritten properties, undeclared variables, superfluous arguments | 25-54 steps |
-| **P3** | Cleanup | Unused variables, ASI issues | 25-79 steps |
+| Priority | Category          | Examples                                                            | Step Count   |
+| -------- | ----------------- | ------------------------------------------------------------------- | ------------ |
+| **P0**   | Security-critical | Incomplete string escaping, insecure randomness, weak crypto        | 30-63 steps  |
+| **P1**   | Code correctness  | Useless assignments, unreachable code, identical operands           | 34-117 steps |
+| **P2**   | Code quality      | Overwritten properties, undeclared variables, superfluous arguments | 25-54 steps  |
+| **P3**   | Cleanup           | Unused variables, ASI issues                                        | 25-79 steps  |
 
 ### Pattern: Batch by Alert Type
 
@@ -1207,10 +1255,11 @@ gh issue create --title "P1: Fix Useless assignment to local variable (5 alerts)
 ### Common Fix Patterns by Alert Type
 
 #### Useless Assignment to Local Variable
+
 ```typescript
 // ❌ ALERT: Useless assignment
 let result = expensiveOperation();
-result = anotherOperation();  // First value never used
+result = anotherOperation(); // First value never used
 
 // ✅ FIX: Remove unused assignment
 const result = anotherOperation();
@@ -1222,6 +1271,7 @@ const result = anotherOperation();
 ```
 
 #### Superfluous Trailing Arguments
+
 ```typescript
 // ❌ ALERT: Function only accepts 2 params, called with 3
 function process(a: string, b: number): void { ... }
@@ -1235,41 +1285,49 @@ function process(a: string, b: number, flag?: boolean): void { ... }
 ```
 
 #### Identical Operands
+
 ```typescript
 // ❌ ALERT: Comparing variable to itself
-if (value === value) { }  // Always true (except NaN)
+if (value === value) {
+} // Always true (except NaN)
 
 // ✅ FIX: Use correct comparison
-if (value === expectedValue) { }
+if (value === expectedValue) {
+}
 
 // Exception: NaN check (prefer Number.isNaN)
-if (Number.isNaN(value)) { }  // Instead of value !== value
+if (Number.isNaN(value)) {
+} // Instead of value !== value
 ```
 
 #### Comparison Between Inconvertible Types
+
 ```typescript
 // ❌ ALERT: String compared to number will never be true
-if (id === 42) { }  // id is string
+if (id === 42) {
+} // id is string
 
 // ✅ FIX: Match types
-if (id === "42") { }
+if (id === "42") {
+}
 // Or convert
-if (Number(id) === 42) { }
+if (Number(id) === 42) {
+}
 ```
 
 ### Metrics from December 2025 Sprint
 
-| Metric | Value |
-|--------|-------|
-| Total issues | 41 |
-| Total PRs | 41 |
-| Average steps per issue | ~55 |
-| Minimum steps | 25 (simple unused variable removal) |
-| Maximum steps | 117 (complex expression-has-no-effect fix) |
-| Security issues (P0) | 9 |
-| Correctness issues (P1) | 18 |
-| Quality issues (P2) | 7 |
-| Cleanup issues (P3) | 7 |
+| Metric                  | Value                                      |
+| ----------------------- | ------------------------------------------ |
+| Total issues            | 41                                         |
+| Total PRs               | 41                                         |
+| Average steps per issue | ~55                                        |
+| Minimum steps           | 25 (simple unused variable removal)        |
+| Maximum steps           | 117 (complex expression-has-no-effect fix) |
+| Security issues (P0)    | 9                                          |
+| Correctness issues (P1) | 18                                         |
+| Quality issues (P2)     | 7                                          |
+| Cleanup issues (P3)     | 7                                          |
 
 ### Reference
 
@@ -1308,6 +1366,7 @@ const result = template.split("$name").join(userInput);
 ### When to Apply
 
 Use split/join instead of replace when:
+
 - Replacement string comes from user input
 - Replacement string may contain `$`, `&`, `` ` ``, `'`
 - You need literal string replacement (not regex)
@@ -1346,6 +1405,7 @@ const output = template.split("{{filename}}").join(file.basename);
 ### Pattern Description
 
 Group related features into "clusters" and implement them sequentially in a single session. This leverages:
+
 - Shared understanding of the affected codebase area
 - Reusable components and patterns across features
 - Warm context from recent related work
@@ -1354,13 +1414,13 @@ Group related features into "clusters" and implement them sequentially in a sing
 
 **Features implemented in ~6 hours total:**
 
-| Issue | Feature | Steps | Time |
-|-------|---------|-------|------|
-| #1143 | Show `exo__Asset_label` in File Explorer | 99 | ~90min |
-| #1144 | Show `exo__Asset_label` in Tab Titles | 78 | ~60min |
-| #1145 | Template system for display names | 114 | ~80min |
-| #1146 | Sort File Explorer by label | 162 | ~100min |
-| #1149 | Per-class display name templates | 148 | ~90min |
+| Issue | Feature                                  | Steps | Time    |
+| ----- | ---------------------------------------- | ----- | ------- |
+| #1143 | Show `exo__Asset_label` in File Explorer | 99    | ~90min  |
+| #1144 | Show `exo__Asset_label` in Tab Titles    | 78    | ~60min  |
+| #1145 | Template system for display names        | 114   | ~80min  |
+| #1146 | Sort File Explorer by label              | 162   | ~100min |
+| #1149 | Per-class display name templates         | 148   | ~90min  |
 
 **Key Insight**: First feature (#1143) required research into Obsidian's FileExplorerView monkey-patching. Subsequent features reused the same patching infrastructure, reducing implementation time significantly.
 
@@ -1394,6 +1454,7 @@ Group related features into "clusters" and implement them sequentially in a sing
 ### When to Apply
 
 Look for feature requests that:
+
 - Affect same UI component or area
 - Share common data sources (e.g., `exo__Asset_label`)
 - Can reuse same infrastructure (e.g., Obsidian patches)
@@ -1423,11 +1484,11 @@ Layer 4: Presentation (components, rendering, interactions)
 
 ### Real-World Example: Graph View Foundation (December 2025)
 
-| Layer | Issue | Description | Steps | Additions |
-|-------|-------|-------------|-------|-----------|
-| 1 | #1151 | Graph data model + triple store | 115 | +1943 |
-| 2 | #1152 | Node/edge type system + ontology | 98 | +2389 |
-| 3 | #1153 | Zustand state management | 195 | +3424 |
+| Layer | Issue | Description                      | Steps | Additions |
+| ----- | ----- | -------------------------------- | ----- | --------- |
+| 1     | #1151 | Graph data model + triple store  | 115   | +1943     |
+| 2     | #1152 | Node/edge type system + ontology | 98    | +2389     |
+| 3     | #1153 | Zustand state management         | 195   | +3424     |
 
 **Total**: 408 steps, 7,756 lines added in ~5 hours
 
@@ -1468,12 +1529,12 @@ interface NodeTypeConfig {
   displayName: string;
   color: string;
   icon: string;
-  shape: 'circle' | 'rectangle' | 'diamond';
+  shape: "circle" | "rectangle" | "diamond";
 }
 
 // Create type guards and validators
 function isTaskNode(node: GraphNode): boolean {
-  return node.types.includes('ems__Task');
+  return node.types.includes("ems__Task");
 }
 ```
 
@@ -1491,17 +1552,19 @@ const useGraphStore = create<GraphStore>()(
         viewport: { x: 0, y: 0, zoom: 1 },
 
         // Actions
-        addNode: (node) => set(state => {
-          state.nodes.set(node.id, node);
-        }),
+        addNode: (node) =>
+          set((state) => {
+            state.nodes.set(node.id, node);
+          }),
 
-        selectNode: (id, additive) => set(state => {
-          if (!additive) state.selectedIds.clear();
-          state.selectedIds.add(id);
-        }),
-      }))
-    )
-  )
+        selectNode: (id, additive) =>
+          set((state) => {
+            if (!additive) state.selectedIds.clear();
+            state.selectedIds.add(id);
+          }),
+      })),
+    ),
+  ),
 );
 ```
 
@@ -1522,6 +1585,7 @@ const useGraphStore = create<GraphStore>()(
 ### When to Apply
 
 Use layered implementation for:
+
 - New visualization features (graphs, charts, diagrams)
 - Complex CRUD subsystems
 - Features with significant state requirements
@@ -1556,25 +1620,26 @@ export class FileExplorerPatch {
     if (this.isPatched) return;
 
     // Find internal component
-    const fileExplorer = this.plugin.app.workspace
-      .getLeavesOfType('file-explorer')[0]?.view;
+    const fileExplorer =
+      this.plugin.app.workspace.getLeavesOfType("file-explorer")[0]?.view;
     if (!fileExplorer) return;
 
     // Store original method
-    this.originalMethod = fileExplorer.fileItems.constructor
-      .prototype.updateTitle;
+    this.originalMethod =
+      fileExplorer.fileItems.constructor.prototype.updateTitle;
 
     // Apply patch
     const self = this;
-    fileExplorer.fileItems.constructor.prototype.updateTitle =
-      function(this: FileItem) {
-        const label = self.getAssetLabel(this.file.path);
-        if (label) {
-          this.titleEl.setText(label);
-        } else {
-          self.originalMethod?.call(this);
-        }
-      };
+    fileExplorer.fileItems.constructor.prototype.updateTitle = function (
+      this: FileItem,
+    ) {
+      const label = self.getAssetLabel(this.file.path);
+      if (label) {
+        this.titleEl.setText(label);
+      } else {
+        self.originalMethod?.call(this);
+      }
+    };
 
     this.isPatched = true;
   }
@@ -1583,8 +1648,8 @@ export class FileExplorerPatch {
     if (!this.isPatched || !this.originalMethod) return;
 
     // Restore original
-    const fileExplorer = this.plugin.app.workspace
-      .getLeavesOfType('file-explorer')[0]?.view;
+    const fileExplorer =
+      this.plugin.app.workspace.getLeavesOfType("file-explorer")[0]?.view;
     if (fileExplorer) {
       fileExplorer.fileItems.constructor.prototype.updateTitle =
         this.originalMethod;
@@ -1610,17 +1675,17 @@ export class FileExplorerPatch {
 
 ### Real-World Example: Label Display Features
 
-| Feature | Patched Component | Method |
-|---------|-------------------|--------|
-| File Explorer labels | FileExplorerView.fileItems | updateTitle |
-| Tab titles | WorkspaceLeaf | getDisplayText |
-| Sorting | FileExplorerView | sortFiles |
+| Feature              | Patched Component          | Method         |
+| -------------------- | -------------------------- | -------------- |
+| File Explorer labels | FileExplorerView.fileItems | updateTitle    |
+| Tab titles           | WorkspaceLeaf              | getDisplayText |
+| Sorting              | FileExplorerView           | sortFiles      |
 
 ### Testing Monkey-Patches
 
 ```typescript
-describe('FileExplorerPatch', () => {
-  it('should restore original method on disable', () => {
+describe("FileExplorerPatch", () => {
+  it("should restore original method on disable", () => {
     const patch = new FileExplorerPatch(mockPlugin);
     const originalFn = mockFileExplorer.updateTitle;
 
@@ -1672,8 +1737,8 @@ export interface ExocortexAPI {
   getLinkedAssets(path: string): string[];
 
   // Events
-  on(event: 'label-changed', callback: LabelChangedCallback): EventRef;
-  on(event: 'metadata-changed', callback: MetadataChangedCallback): EventRef;
+  on(event: "label-changed", callback: LabelChangedCallback): EventRef;
+  on(event: "metadata-changed", callback: MetadataChangedCallback): EventRef;
   off(event: string, ref: EventRef): void;
 
   // Query
@@ -1688,7 +1753,9 @@ class ExocortexPlugin extends Plugin {
     this.api = new ExocortexAPIImpl(this);
 
     // Clean up on unload
-    this.register(() => { this.api = null; });
+    this.register(() => {
+      this.api = null;
+    });
   }
 }
 ```
@@ -1697,20 +1764,21 @@ class ExocortexPlugin extends Plugin {
 
 ```typescript
 // In other plugin
-const exocortex = this.app.plugins.getPlugin('exocortex') as
-  ExocortexPlugin | undefined;
+const exocortex = this.app.plugins.getPlugin("exocortex") as
+  | ExocortexPlugin
+  | undefined;
 
 if (exocortex?.api) {
   // Get label for current file
   const label = exocortex.api.getAssetLabel(activeFile.path);
 
   // Subscribe to changes
-  const ref = exocortex.api.on('label-changed', (path, old, new_) => {
+  const ref = exocortex.api.on("label-changed", (path, old, new_) => {
     console.log(`Label changed: ${old} → ${new_}`);
   });
 
   // Clean up subscription
-  this.register(() => exocortex.api?.off('label-changed', ref));
+  this.register(() => exocortex.api?.off("label-changed", ref));
 }
 ```
 
@@ -1726,7 +1794,7 @@ if (exocortex?.api) {
 
 ```typescript
 // types.d.ts (for npm distribution)
-declare module 'exocortex' {
+declare module "exocortex" {
   export interface ExocortexAPI {
     // ... API definition
   }
@@ -1742,12 +1810,12 @@ declare module 'exocortex' {
 
 ### Potential Integrations
 
-| Plugin | Use Case |
-|--------|----------|
-| Dataview | Show labels in query results |
-| TagFolder | Sort by semantic labels |
-| Quick Switcher++ | Search by labels |
-| Templater | Access metadata in templates |
+| Plugin           | Use Case                     |
+| ---------------- | ---------------------------- |
+| Dataview         | Show labels in query results |
+| TagFolder        | Sort by semantic labels      |
+| Quick Switcher++ | Search by labels             |
+| Templater        | Access metadata in templates |
 
 **Reference**: Issue #1147 - API Provider for external plugin integration (PR #1198, +1194 lines)
 
@@ -1854,11 +1922,11 @@ function filterArchivedAreas(
 
 ### Existing Toggle Implementations
 
-| Component | Location | State Key |
-|-----------|----------|-----------|
-| DailyTasksTableWithToggle | DailyNote layout | showArchived |
-| AssetRelationsTable | Relations block | showArchived |
-| AreaHierarchyTreeWithToggle | Area hierarchy | showArchived |
+| Component                   | Location         | State Key    |
+| --------------------------- | ---------------- | ------------ |
+| DailyTasksTableWithToggle   | DailyNote layout | showArchived |
+| AssetRelationsTable         | Relations block  | showArchived |
+| AreaHierarchyTreeWithToggle | Area hierarchy   | showArchived |
 
 ### Benefits
 
@@ -1870,6 +1938,7 @@ function filterArchivedAreas(
 **Reference**: Issue #1142 - Area hierarchy archived toggle (PR #1148, 86 steps)
 
 ---
+
 ## Web Worker Security Pattern
 
 **When to use**: Handling `postMessage` events in Web Workers
@@ -1887,7 +1956,7 @@ self.onmessage = (event: MessageEvent) => {
 
 // ❌ STILL VULNERABLE: Checking origin but not acting on it
 self.onmessage = (event: MessageEvent) => {
-  console.log('Origin:', event.origin);  // Just logging, not blocking
+  console.log("Origin:", event.origin); // Just logging, not blocking
   const { type, data } = event.data;
   processCommand(type, data);
 };
@@ -1900,9 +1969,9 @@ self.onmessage = (event: MessageEvent) => {
 self.onmessage = (event: MessageEvent) => {
   // Workers loaded from same origin receive empty string as origin
   // Trust only same-origin or explicitly allowed origins
-  if (event.origin !== '' && event.origin !== self.location.origin) {
+  if (event.origin !== "" && event.origin !== self.location.origin) {
     console.warn(`Rejected message from untrusted origin: ${event.origin}`);
-    return;  // Early return - don't process message
+    return; // Early return - don't process message
   }
 
   const { type, data } = event.data;
@@ -1911,13 +1980,13 @@ self.onmessage = (event: MessageEvent) => {
 
 // ✅ ALTERNATIVE: Whitelist approach for specific origins
 const TRUSTED_ORIGINS = new Set([
-  '',  // Same-origin workers
-  'https://trusted-domain.com',
+  "", // Same-origin workers
+  "https://trusted-domain.com",
 ]);
 
 self.onmessage = (event: MessageEvent) => {
   if (!TRUSTED_ORIGINS.has(event.origin)) {
-    return;  // Silently reject untrusted origins
+    return; // Silently reject untrusted origins
   }
   processCommand(event.data);
 };
@@ -1937,22 +2006,30 @@ self.onmessage = (event: MessageEvent) => {
 self.onmessage = (event: MessageEvent) => {
   const { type, nodes, edges } = event.data;
   switch (type) {
-    case 'init': initPhysics(nodes, edges); break;
-    case 'tick': runSimulationTick(); break;
+    case "init":
+      initPhysics(nodes, edges);
+      break;
+    case "tick":
+      runSimulationTick();
+      break;
   }
 };
 
 // physics.worker.ts - After fix (PR #1211)
 self.onmessage = (event: MessageEvent) => {
-  if (event.origin !== '' && event.origin !== self.location.origin) {
+  if (event.origin !== "" && event.origin !== self.location.origin) {
     console.warn(`Untrusted origin rejected: ${event.origin}`);
     return;
   }
 
   const { type, nodes, edges } = event.data;
   switch (type) {
-    case 'init': initPhysics(nodes, edges); break;
-    case 'tick': runSimulationTick(); break;
+    case "init":
+      initPhysics(nodes, edges);
+      break;
+    case "tick":
+      runSimulationTick();
+      break;
   }
 };
 ```
@@ -1975,14 +2052,14 @@ Using external input as object property keys can lead to prototype pollution or 
 ```typescript
 // ❌ VULNERABLE: Direct use of external key
 function getNodeProperty(node: GraphNode, propertyKey: string): unknown {
-  return node[propertyKey];  // Attacker could use '__proto__', 'constructor', etc.
+  return node[propertyKey]; // Attacker could use '__proto__', 'constructor', etc.
 }
 
 // ❌ VULNERABLE: No validation of message property access
 function handleMessage(event: MessageEvent) {
   const { action, propertyName, value } = event.data;
-  if (action === 'update') {
-    state[propertyName] = value;  // Prototype pollution possible
+  if (action === "update") {
+    state[propertyName] = value; // Prototype pollution possible
   }
 }
 ```
@@ -1992,8 +2069,15 @@ function handleMessage(event: MessageEvent) {
 ```typescript
 // ✅ SECURE: Whitelist of allowed properties
 const ALLOWED_NODE_PROPERTIES = new Set([
-  'x', 'y', 'vx', 'vy', 'fx', 'fy',
-  'radius', 'mass', 'charge'
+  "x",
+  "y",
+  "vx",
+  "vy",
+  "fx",
+  "fy",
+  "radius",
+  "mass",
+  "charge",
 ]);
 
 function getNodeProperty(node: GraphNode, propertyKey: string): unknown {
@@ -2005,9 +2089,13 @@ function getNodeProperty(node: GraphNode, propertyKey: string): unknown {
 
 // ✅ SECURE: Object.hasOwn() check + blocklist
 const BLOCKED_PROPERTIES = new Set([
-  '__proto__', 'constructor', 'prototype',
-  '__defineGetter__', '__defineSetter__',
-  '__lookupGetter__', '__lookupSetter__'
+  "__proto__",
+  "constructor",
+  "prototype",
+  "__defineGetter__",
+  "__defineSetter__",
+  "__lookupGetter__",
+  "__lookupSetter__",
 ]);
 
 function safePropertyAccess(obj: object, key: string): unknown {
@@ -2026,24 +2114,24 @@ function safePropertyAccess(obj: object, key: string): unknown {
 ```typescript
 // ✅ SECURE: Type-safe message handling with discriminated unions
 interface PhysicsMessage {
-  type: 'init' | 'tick' | 'update' | 'reset';
+  type: "init" | "tick" | "update" | "reset";
   payload?: unknown;
 }
 
 interface UpdatePayload {
   nodeId: string;
-  property: 'x' | 'y' | 'vx' | 'vy';  // Only allowed properties
+  property: "x" | "y" | "vx" | "vy"; // Only allowed properties
   value: number;
 }
 
 function handleMessage(event: MessageEvent<PhysicsMessage>) {
   // Origin check first (see Web Worker Security Pattern)
-  if (event.origin !== '') return;
+  if (event.origin !== "") return;
 
   const { type, payload } = event.data;
 
   switch (type) {
-    case 'update': {
+    case "update": {
       const { nodeId, property, value } = payload as UpdatePayload;
       // TypeScript ensures property is one of allowed values
       updateNode(nodeId, property, value);
@@ -2061,16 +2149,16 @@ function handleMessage(event: MessageEvent<PhysicsMessage>) {
 function applyForce(nodeId: string, forceType: string, value: number) {
   const node = nodes.get(nodeId);
   if (node) {
-    node[forceType] = value;  // Could write to any property
+    node[forceType] = value; // Could write to any property
   }
 }
 
 // physics.worker.ts - After fix (PR #1212)
-type ForceProperty = 'fx' | 'fy';  // Only allowed force properties
+type ForceProperty = "fx" | "fy"; // Only allowed force properties
 
 function applyForce(nodeId: string, forceType: ForceProperty, value: number) {
   const node = nodes.get(nodeId);
-  if (node && (forceType === 'fx' || forceType === 'fy')) {
+  if (node && (forceType === "fx" || forceType === "fy")) {
     node[forceType] = value;
   }
 }
@@ -2110,16 +2198,16 @@ rg "color|green|primary" packages/obsidian-plugin/src/styles/
 
 ```typescript
 // Minimum contrast ratios
-const WCAG_AA_NORMAL = 4.5;   // Normal text
-const WCAG_AA_LARGE = 3.0;    // Large text (>18px or >14px bold)
-const WCAG_AAA = 7.0;         // Enhanced compliance
+const WCAG_AA_NORMAL = 4.5; // Normal text
+const WCAG_AA_LARGE = 3.0; // Large text (>18px or >14px bold)
+const WCAG_AAA = 7.0; // Enhanced compliance
 
 // Recommended green button colors (meet WCAG AA)
 const GREEN_BUTTON = {
-  background: '#10b981',  // Tailwind green-500
-  text: 'white',          // Contrast ratio: 5.8:1 ✓
-  hover: '#059669',       // Tailwind green-600
-  active: '#047857',      // Tailwind green-700
+  background: "#10b981", // Tailwind green-500
+  text: "white", // Contrast ratio: 5.8:1 ✓
+  hover: "#059669", // Tailwind green-600
+  active: "#047857", // Tailwind green-700
 };
 ```
 
@@ -2157,6 +2245,7 @@ const GREEN_BUTTON = {
 **Risk**: Low (CSS-only change)
 
 **Steps**:
+
 1. Located button in `TaskCreationModal.tsx`
 2. Added CSS class `.btn-create-task`
 3. Verified contrast ratio (5.8:1 > 4.5:1 minimum)
@@ -2176,6 +2265,7 @@ const GREEN_BUTTON = {
 ### Problem: Same Alert Appears Multiple Times
 
 Code scanning sometimes generates duplicate alerts for the same issue:
+
 - Alert created at line N
 - Code changes shift the alert to line M
 - Both alerts remain open until both are fixed
@@ -2198,12 +2288,13 @@ gh api repos/OWNER/REPO/code-scanning/alerts --jq '
 
 ### Real-World Example (December 2025)
 
-| Original Issue | Duplicate Issue | Alert | Resolution |
-|---------------|-----------------|-------|------------|
-| #1211 | #1248 | js/missing-origin-check | Single fix closed both |
-| #1212 | #1244 | js/remote-property-injection | Line shift, same fix |
+| Original Issue | Duplicate Issue | Alert                        | Resolution             |
+| -------------- | --------------- | ---------------------------- | ---------------------- |
+| #1211          | #1248           | js/missing-origin-check      | Single fix closed both |
+| #1212          | #1244           | js/remote-property-injection | Line shift, same fix   |
 
 **Timeline**:
+
 - #1211 created 08:XX → fixed at line 72
 - #1248 created 16:XX → same file, line shifted to 72
 - PR #1211 merged → both alerts closed
@@ -2351,6 +2442,7 @@ const HopSelector: React.FC<{
 ### Diagnosis Steps
 
 1. **Isolate the file**: Run each test file individually to find the culprit
+
    ```bash
    npm test -- packages/obsidian-plugin/tests/unit/path/to/test.test.ts
    ```
@@ -2391,6 +2483,7 @@ If the test file and implementation are both pure synchronous:
 ### Problem
 
 CodeQL detects `js/prototype-pollution-utility` when:
+
 - Object merging functions accept arbitrary property paths
 - Deep merge utilities don't validate property names
 - User input can modify Object.prototype
@@ -2401,7 +2494,7 @@ CodeQL detects `js/prototype-pollution-utility` when:
 // ❌ VULNERABLE: Allows __proto__ or constructor pollution
 function deepMerge(target: any, source: any): any {
   for (const key in source) {
-    if (typeof source[key] === 'object') {
+    if (typeof source[key] === "object") {
       target[key] = deepMerge(target[key] || {}, source[key]);
     } else {
       target[key] = source[key];
@@ -2415,7 +2508,7 @@ function deepMerge(target: any, source: any): any {
 
 ```typescript
 // ✅ SAFE: Blocklist dangerous properties
-const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+const FORBIDDEN_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 
 function safeMerge<T extends object>(target: T, source: Partial<T>): T {
   for (const key of Object.keys(source)) {
@@ -2425,10 +2518,10 @@ function safeMerge<T extends object>(target: T, source: Partial<T>): T {
 
     const sourceValue = source[key as keyof T];
     if (sourceValue !== undefined && sourceValue !== null) {
-      if (typeof sourceValue === 'object' && !Array.isArray(sourceValue)) {
+      if (typeof sourceValue === "object" && !Array.isArray(sourceValue)) {
         (target as any)[key] = safeMerge(
           (target as any)[key] || {},
-          sourceValue as object
+          sourceValue as object,
         );
       } else {
         (target as any)[key] = sourceValue;
@@ -2447,11 +2540,11 @@ When using Zustand stores with partial updates:
 // ❌ VULNERABLE: Direct spread from user input
 set((state) => ({
   ...state,
-  config: { ...state.config, ...partialConfig }
+  config: { ...state.config, ...partialConfig },
 }));
 
 // ✅ SAFE: Validate properties before merging
-const ALLOWED_CONFIG_KEYS = new Set(['theme', 'layout', 'zoom']);
+const ALLOWED_CONFIG_KEYS = new Set(["theme", "layout", "zoom"]);
 
 function safeConfigUpdate(partial: Partial<GraphConfig>): Partial<GraphConfig> {
   const safe: Partial<GraphConfig> = {};
@@ -2465,7 +2558,7 @@ function safeConfigUpdate(partial: Partial<GraphConfig>): Partial<GraphConfig> {
 
 set((state) => ({
   ...state,
-  config: { ...state.config, ...safeConfigUpdate(partialConfig) }
+  config: { ...state.config, ...safeConfigUpdate(partialConfig) },
 }));
 ```
 
@@ -2488,6 +2581,7 @@ set((state) => ({
 ### Phase 1: Infrastructure (#1190)
 
 Create standalone 3D components:
+
 - Scene3DManager (Three.js setup)
 - ForceSimulation3D (physics)
 - Node3D/Edge3D renderers
@@ -2495,11 +2589,13 @@ Create standalone 3D components:
 ### Phase 2: ViewMode Extension (#1264)
 
 1. **Extend type**:
+
    ```typescript
    type ViewMode = "table" | "list" | "graph" | "graph3d";
    ```
 
 2. **Add UI option**:
+
    ```typescript
    const modes = [
      { value: "graph", label: "2D Graph", icon: "git-branch-plus" },
@@ -2517,6 +2613,7 @@ Create standalone 3D components:
 ### Phase 3: Full Integration (#1265)
 
 1. **Create wrapper component**:
+
    ```typescript
    export const SPARQLGraph3DView: React.FC<Props> = ({ triples, onAssetClick }) => {
      const containerRef = useRef<HTMLDivElement>(null);
@@ -2540,8 +2637,12 @@ Create standalone 3D components:
    ```
 
 2. **Handle data conversion**:
+
    ```typescript
-   function tripleToGraph3D(triples: Triple[]): { nodes: Node3D[], edges: Edge3D[] } {
+   function tripleToGraph3D(triples: Triple[]): {
+     nodes: Node3D[];
+     edges: Edge3D[];
+   } {
      const nodeMap = new Map<string, Node3D>();
      const edges: Edge3D[] = [];
 
@@ -2578,6 +2679,7 @@ Create standalone 3D components:
 ### Core Components (Issue #1192)
 
 1. **Animation primitive**:
+
    ```typescript
    class Animation {
      private config: AnimationConfig;
@@ -2585,7 +2687,9 @@ Create standalone 3D components:
 
      update(currentTime: number): boolean {
        const elapsed = currentTime - this.startTime;
-       this.progress = this.config.easing(Math.min(1, elapsed / this.config.duration));
+       this.progress = this.config.easing(
+         Math.min(1, elapsed / this.config.duration),
+       );
        this.config.onUpdate(this.progress);
 
        if (this.progress >= 1) {
@@ -2598,6 +2702,7 @@ Create standalone 3D components:
    ```
 
 2. **Scheduler**:
+
    ```typescript
    class AnimationScheduler {
      private animations = new Set<Animation>();
@@ -2626,8 +2731,9 @@ Create standalone 3D components:
    ```typescript
    const Easing = {
      linear: (t) => t,
-     easeOutCubic: (t) => (--t) * t * t + 1,
-     easeOutBack: (t) => 1 + 2.70158 * Math.pow(t - 1, 3) + 1.70158 * Math.pow(t - 1, 2),
+     easeOutCubic: (t) => --t * t * t + 1,
+     easeOutBack: (t) =>
+       1 + 2.70158 * Math.pow(t - 1, 3) + 1.70158 * Math.pow(t - 1, 2),
      spring: (t) => 1 - Math.cos(t * 4.5 * Math.PI) * Math.exp(-t * 6),
    };
    ```
@@ -2763,20 +2869,21 @@ class ArenaAllocator {
 ### Core Components (Issue #1194)
 
 1. **Live Region for Announcements**:
+
    ```typescript
    class AccessibilityManager {
      private liveRegion: HTMLElement;
 
      constructor() {
-       this.liveRegion = document.createElement('div');
-       this.liveRegion.setAttribute('role', 'log');
-       this.liveRegion.setAttribute('aria-live', 'polite');
-       this.liveRegion.className = 'sr-only'; // Visually hidden
+       this.liveRegion = document.createElement("div");
+       this.liveRegion.setAttribute("role", "log");
+       this.liveRegion.setAttribute("aria-live", "polite");
+       this.liveRegion.className = "sr-only"; // Visually hidden
        document.body.appendChild(this.liveRegion);
      }
 
      announce(message: string): void {
-       this.liveRegion.textContent = '';
+       this.liveRegion.textContent = "";
        requestAnimationFrame(() => {
          this.liveRegion.textContent = message;
        });
@@ -2785,6 +2892,7 @@ class ArenaAllocator {
    ```
 
 2. **Virtual Cursor for Navigation**:
+
    ```typescript
    class VirtualCursor {
      private nodes: A11yNode[] = [];
@@ -2793,13 +2901,16 @@ class ArenaAllocator {
      moveNext(): A11yNode | null {
        this.currentIndex = (this.currentIndex + 1) % this.nodes.length;
        const node = this.nodes[this.currentIndex];
-       this.a11y.announce(`${node.label}. ${node.type}. ${node.connectionCount} connections.`);
+       this.a11y.announce(
+         `${node.label}. ${node.type}. ${node.connectionCount} connections.`,
+       );
        return node;
      }
    }
    ```
 
 3. **Keyboard Navigation**:
+
    ```typescript
    handleKeyDown(e: KeyboardEvent) {
      switch (e.key) {
@@ -2817,6 +2928,7 @@ class ArenaAllocator {
    ```
 
 4. **Reduced Motion Support**:
+
    ```typescript
    shouldReduceMotion(): boolean {
      return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -2868,15 +2980,15 @@ Documentation sprints leverage the **warm context** effect to rapidly create hig
 
 7 documentation issues completed in ~5 hours:
 
-| Issue | Feature | Steps | Lines Added | PR |
-|-------|---------|-------|-------------|-----|
-| #1310 | Graph export | 47 | +1463 | #1321 |
-| #1311 | Edge bundling | 48 | +499 | #1322 |
-| #1312 | Accessibility | 52 | +355 | #1323 |
-| #1313 | Filter/search | 64 | +1134 | #1324 |
-| #1314 | Path finding | 63 | +727 | #1325 |
-| #1315 | Inference | 8 | +526 | #1326 |
-| #1316 | Import fix | 6 | +3 | #1327 |
+| Issue | Feature       | Steps | Lines Added | PR    |
+| ----- | ------------- | ----- | ----------- | ----- |
+| #1310 | Graph export  | 47    | +1463       | #1321 |
+| #1311 | Edge bundling | 48    | +499        | #1322 |
+| #1312 | Accessibility | 52    | +355        | #1323 |
+| #1313 | Filter/search | 64    | +1134       | #1324 |
+| #1314 | Path finding  | 63    | +727        | #1325 |
+| #1315 | Inference     | 8     | +526        | #1326 |
+| #1316 | Import fix    | 6     | +3          | #1327 |
 
 **Total**: 288 steps, 4707 lines of documentation in ~5 hours
 
@@ -2915,11 +3027,11 @@ Documentation sprints leverage the **warm context** effect to rapidly create hig
 
 ### Step Count Analysis
 
-| Step Range | Count | Type |
-|------------|-------|------|
-| 1-10 | 2 | Quick fixes, small updates |
-| 40-50 | 2 | Standard guide creation |
-| 60-70 | 3 | Comprehensive guides with examples |
+| Step Range | Count | Type                               |
+| ---------- | ----- | ---------------------------------- |
+| 1-10       | 2     | Quick fixes, small updates         |
+| 40-50      | 2     | Standard guide creation            |
+| 60-70      | 3     | Comprehensive guides with examples |
 
 **Median**: 52 steps per documentation issue
 
@@ -2932,17 +3044,18 @@ Documentation sprints leverage the **warm context** effect to rapidly create hig
 
 ### Benefits vs Feature Sprints
 
-| Metric | Feature Sprint | Documentation Sprint |
-|--------|---------------|---------------------|
-| Risk | Medium-High | Low |
-| CI failures | Common | Rare (lint only) |
-| Rollback needed | Sometimes | Never |
-| User value | Delayed (requires release) | Immediate (docs published on merge) |
-| Step count | 100-200 average | 50-70 average |
+| Metric          | Feature Sprint             | Documentation Sprint                |
+| --------------- | -------------------------- | ----------------------------------- |
+| Risk            | Medium-High                | Low                                 |
+| CI failures     | Common                     | Rare (lint only)                    |
+| Rollback needed | Sometimes                  | Never                               |
+| User value      | Delayed (requires release) | Immediate (docs published on merge) |
+| Step count      | 100-200 average            | 50-70 average                       |
 
 ### When to Apply
 
 Use documentation sprints when:
+
 - Multiple related features lack documentation
 - Feature development complete but docs missing
 - New subsystem shipped (e.g., Graph View)
@@ -2975,11 +3088,11 @@ Phase 4: Polish & Edge Cases
 
 ### Real-World Example: Asset Link Label Replacement (December 2025)
 
-| Phase | Issue | Description | Steps |
-|-------|-------|-------------|-------|
-| 1 | #1333 | Properties block link replacement | 117 |
-| 2 | #1334 | Body content link replacement | 77 |
-| 3 | #1336 | Fix delete button regression | 63 |
+| Phase | Issue | Description                       | Steps |
+| ----- | ----- | --------------------------------- | ----- |
+| 1     | #1333 | Properties block link replacement | 117   |
+| 2     | #1334 | Body content link replacement     | 77    |
+| 3     | #1336 | Fix delete button regression      | 63    |
 
 **Total**: 257 steps across 3 issues for complete feature
 
@@ -2994,9 +3107,11 @@ Phase 4: Polish & Edge Cases
 
 ```markdown
 ## Depends on:
+
 - #1333 - Properties block link replacement (MUST be completed first)
 
 ## This issue provides:
+
 - Shared service: AssetLinkRenderer
 - Reusable pattern: formatAssetLink(uri) → "Label (Class)"
 ```
@@ -3039,7 +3154,7 @@ class NoteToRDFConverter {
 
   private extractBodyLinks(note: Note): Triple[] {
     // Remove frontmatter
-    const bodyContent = note.content.replace(/^---[\s\S]*?---/, '');
+    const bodyContent = note.content.replace(/^---[\s\S]*?---/, "");
 
     // Extract wikilinks, handle aliases [[Target|Alias]]
     const wikilinks = bodyContent.matchAll(/\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g);
@@ -3050,8 +3165,8 @@ class NoteToRDFConverter {
       if (targetPath) {
         triples.push({
           subject: note.uri,
-          predicate: 'exo:Asset_relates',
-          object: this.pathToUri(targetPath)
+          predicate: "exo:Asset_relates",
+          object: this.pathToUri(targetPath),
         });
       }
     }
@@ -3117,7 +3232,7 @@ link.outerHTML = `<span>${formattedText}</span>`;
 // ✅ CORRECT: Only modify text content, preserve structure
 link.textContent = formattedText;
 // OR: Append to existing structure
-link.querySelector('.text-content').textContent = formattedText;
+link.querySelector(".text-content").textContent = formattedText;
 ```
 
 ### Testing for Regressions
@@ -3158,24 +3273,24 @@ describe('Array property values', () => {
 
 ### Real-World Examples (December 2025)
 
-| Issue | Change | Steps | Time |
-|-------|--------|-------|------|
-| #1331 | Show button for all DailyNotes | 7 | ~15 min |
-| #1339 | Make button green | 21 | ~30 min |
+| Issue | Change                         | Steps | Time    |
+| ----- | ------------------------------ | ----- | ------- |
+| #1331 | Show button for all DailyNotes | 7     | ~15 min |
+| #1339 | Make button green              | 21    | ~30 min |
 
 ### Implementation Pattern
 
 ```typescript
 // Before: Conditional visibility with date check
 function shouldShowButton(asset: Asset): boolean {
-  if (!asset.hasClass('pn__DailyNote')) return false;
+  if (!asset.hasClass("pn__DailyNote")) return false;
   const date = extractDate(asset);
-  return isToday(date) || isYesterday(date);  // ❌ Restrictive
+  return isToday(date) || isYesterday(date); // ❌ Restrictive
 }
 
 // After: Simple class check
 function shouldShowButton(asset: Asset): boolean {
-  return asset.hasClass('pn__DailyNote');  // ✅ Always show for class
+  return asset.hasClass("pn__DailyNote"); // ✅ Always show for class
 }
 ```
 
@@ -3236,14 +3351,14 @@ class ExocortexPlugin extends Plugin {
     const links = element.querySelectorAll('a[href^="obsidian://vault/"]');
 
     for (const link of Array.from(links)) {
-      const href = link.getAttribute('href');
+      const href = link.getAttribute("href");
       if (!href) continue;
 
       try {
         const formatted = await this.assetLinkRenderer.format(href);
         link.textContent = formatted;
       } catch (error) {
-        console.warn('Failed to format asset link:', href, error);
+        console.warn("Failed to format asset link:", href, error);
         // Keep original text on error - graceful degradation
       }
     }
@@ -3298,6 +3413,7 @@ class AssetLinkCache {
 ### Pattern Description
 
 When implementing features based on external specifications (file formats, protocols, data schemas), always:
+
 1. Read the specification FIRST (before writing any code)
 2. Identify the STRICT allowlist of allowed properties/fields
 3. Implement validation that REJECTS forbidden elements
@@ -3306,11 +3422,13 @@ When implementing features based on external specifications (file formats, proto
 ### Real-World Example: Exo 0.0.3 File Format (Issues #1351, #1353, #1361)
 
 **Problem**: Initial implementation (PR #1352) deviated from specification:
+
 - Used `exo__metadataType` instead of `metadata`
 - Added `localName`, `label`, `id` properties (forbidden)
 - Included `datatype`, `language`, `direction` in body files (forbidden)
 
 **Result**: Three sequential PRs needed to align with spec:
+
 1. PR #1351 - Initial implementation (deviated from spec)
 2. PR #1360 - First alignment fix (#1353)
 3. PR #1363 - Second alignment fix (#1361)
@@ -3332,7 +3450,7 @@ export const ALLOWED_PROPERTIES: Record<MetadataType, readonly string[]> = {
 // Step 2: Validator REJECTS forbidden properties
 export function validateFrontmatter(
   type: MetadataType,
-  frontmatter: Record<string, unknown>
+  frontmatter: Record<string, unknown>,
 ): ValidationResult {
   const allowed = new Set(ALLOWED_PROPERTIES[type]);
 
@@ -3340,7 +3458,7 @@ export function validateFrontmatter(
     if (!allowed.has(key)) {
       return {
         valid: false,
-        error: `Forbidden property "${key}". Allowed: ${Array.from(allowed).join(", ")}`
+        error: `Forbidden property "${key}". Allowed: ${Array.from(allowed).join(", ")}`,
       };
     }
   }
@@ -3367,8 +3485,8 @@ export function validateFrontmatter(
 interface AnchorMetadata {
   metadata: "anchor";
   uri: string;
-  localName: string;  // ❌ Not in spec - added for convenience
-  label?: string;     // ❌ Not in spec - "makes sense"
+  localName: string; // ❌ Not in spec - added for convenience
+  label?: string; // ❌ Not in spec - "makes sense"
 }
 ```
 
@@ -3452,7 +3570,7 @@ async updateFrontmatter(file: TFile, updates: Record<string, any>) {
 ```typescript
 function mergeFrontmatter(
   existing: Record<string, any>,
-  updates: Record<string, any>
+  updates: Record<string, any>,
 ): Record<string, any> {
   const result: Record<string, any> = {};
   const allKeys = new Set([...Object.keys(existing), ...Object.keys(updates)]);
@@ -3483,7 +3601,7 @@ describe("Frontmatter merge", () => {
     const updates = { aliases: ["new-alias"] };
     const result = mergeFrontmatter(existing, updates);
 
-    const aliasKeys = Object.keys(result).filter(k => k === "aliases");
+    const aliasKeys = Object.keys(result).filter((k) => k === "aliases");
     expect(aliasKeys.length).toBe(1);
     expect(result.aliases).toEqual(["new-alias"]);
   });
@@ -3548,6 +3666,7 @@ npm run test -- affected.test.ts  # Should fail
 **Symptom**: Properties block shows duplicated text like `Label UUID` instead of just `Label`
 
 **Investigation**:
+
 ```bash
 # Recent commits to PropertiesLinkPatch.ts
 git log --oneline -5 -- src/presentation/properties/PropertiesLinkPatch.ts
@@ -3636,6 +3755,7 @@ When specification compliance fails on first attempt, use iterative refinement w
 ### Real-World Example: Exo 0.0.3 (Issues #1353 → #1361)
 
 **Timeline**:
+
 1. **PR #1352**: Initial implementation (deviated significantly)
 2. **Issue #1353** → **PR #1360**: First alignment (266 steps)
    - Changed `exo__metadataType` → `metadata`
@@ -3651,6 +3771,7 @@ When specification compliance fails on first attempt, use iterative refinement w
 ### Preventing Iteration
 
 **Before implementation:**
+
 ```typescript
 // Create exhaustive test for EVERY forbidden property
 const FORBIDDEN_PROPERTIES_BY_TYPE = {
@@ -3661,11 +3782,15 @@ const FORBIDDEN_PROPERTIES_BY_TYPE = {
 };
 
 describe("Strict allowlist validation", () => {
-  for (const [type, forbidden] of Object.entries(FORBIDDEN_PROPERTIES_BY_TYPE)) {
+  for (const [type, forbidden] of Object.entries(
+    FORBIDDEN_PROPERTIES_BY_TYPE,
+  )) {
     for (const prop of forbidden) {
       it(`should reject ${type} with forbidden property "${prop}"`, () => {
         const frontmatter = { metadata: type, uri: "test://", [prop]: "value" };
-        expect(() => validate(frontmatter)).toThrow(`Forbidden property: ${prop}`);
+        expect(() => validate(frontmatter)).toThrow(
+          `Forbidden property: ${prop}`,
+        );
       });
     }
   }
@@ -3680,6 +3805,7 @@ When iteration IS needed, document clearly:
 ## Why This Follow-Up Is Needed
 
 PR #1360 fixed primary issues but missed:
+
 1. **Anchor**: Still used `localName` (spec says `uri`)
 2. **Body**: Still had `datatype`/`language` (spec says none)
 
@@ -3705,10 +3831,17 @@ if (prop === "exo__metadataType") {
 
 ```typescript
 // ✅ CORRECT: Check ALL properties against spec
-const specAllowed = new Set(["metadata", "uri", "aliases", "subject", "predicate", "object"]);
+const specAllowed = new Set([
+  "metadata",
+  "uri",
+  "aliases",
+  "subject",
+  "predicate",
+  "object",
+]);
 const actual = Object.keys(currentImplementation.interface);
 
-const violations = actual.filter(prop => !specAllowed.has(prop));
+const violations = actual.filter((prop) => !specAllowed.has(prop));
 if (violations.length > 0) {
   throw new Error(`Spec violations found: ${violations.join(", ")}`);
 }
@@ -3716,11 +3849,11 @@ if (violations.length > 0) {
 
 ### Metrics
 
-| Approach | PRs Required | Total Steps | Time |
-|----------|--------------|-------------|------|
-| Spec-first (ideal) | 1 | ~150 | 2-3 hours |
-| Iterative (actual) | 3 | ~450 | 8-10 hours |
-| Overhead | +2 PRs | +300 steps | +6 hours |
+| Approach           | PRs Required | Total Steps | Time       |
+| ------------------ | ------------ | ----------- | ---------- |
+| Spec-first (ideal) | 1            | ~150        | 2-3 hours  |
+| Iterative (actual) | 3            | ~450        | 8-10 hours |
+| Overhead           | +2 PRs       | +300 steps  | +6 hours   |
 
 **Reference**: Issues #1353, #1361 - Exo 0.0.3 iterative alignment (January 2026)
 
@@ -3733,6 +3866,7 @@ if (violations.length > 0) {
 ### Pattern Description
 
 Research tasks should produce:
+
 1. Clear comparison criteria
 2. Benchmark methodology
 3. Decision rationale
@@ -3743,29 +3877,35 @@ Research tasks should produce:
 **Task**: Select embedding model for semantic search
 
 **Output Structure**:
+
 ```markdown
 ## docs/semantic-search/EMBEDDING-MODEL-SELECTION.md
 
 ### Evaluation Criteria
+
 1. Privacy (local vs API-based)
 2. Performance (inference speed)
 3. Quality (semantic similarity accuracy)
 4. Size (model file size, memory usage)
 
 ### Candidates Evaluated
-| Model | Local | Speed | Quality | Size |
-|-------|-------|-------|---------|------|
-| all-MiniLM-L6-v2 | ✅ | Fast | Good | 22MB |
-| bge-small-en | ✅ | Fast | Better | 33MB |
-| nomic-embed-text | ✅ | Medium | Best | 274MB |
-| OpenAI ada-002 | ❌ | Fast | Best | API |
+
+| Model            | Local | Speed  | Quality | Size  |
+| ---------------- | ----- | ------ | ------- | ----- |
+| all-MiniLM-L6-v2 | ✅    | Fast   | Good    | 22MB  |
+| bge-small-en     | ✅    | Fast   | Better  | 33MB  |
+| nomic-embed-text | ✅    | Medium | Best    | 274MB |
+| OpenAI ada-002   | ❌    | Fast   | Best    | API   |
 
 ### Decision
+
 Selected: **nomic-embed-text**
+
 - Reason: Best quality while remaining local
 - Tradeoff: Larger size acceptable for quality gain
 
 ### Benchmark Framework
+
 See BENCHMARK-FRAMEWORK.md for reproducible evaluation methodology.
 ```
 
@@ -3788,11 +3928,11 @@ docs/{feature-name}/
 
 ### Research vs Implementation Time
 
-| Phase | Effort | Value |
-|-------|--------|-------|
-| Research | 30% | High (prevents wrong choices) |
-| Documentation | 20% | High (enables future decisions) |
-| Implementation | 50% | Depends on research quality |
+| Phase          | Effort | Value                           |
+| -------------- | ------ | ------------------------------- |
+| Research       | 30%    | High (prevents wrong choices)   |
+| Documentation  | 20%    | High (enables future decisions) |
+| Implementation | 50%    | Depends on research quality     |
 
 **Reference**: Issue #1354 - Embedding model research (January 2026, 59 steps)
 
@@ -3811,22 +3951,38 @@ Force-directed layouts can be enhanced with "semantic physics" where RDF/OWL rel
 ```typescript
 interface SemanticForceConfig {
   predicate: string;
-  attractionMultiplier: number;  // 1.0 = default
-  repulsionMultiplier: number;   // 1.0 = default
+  attractionMultiplier: number; // 1.0 = default
+  repulsionMultiplier: number; // 1.0 = default
 }
 
 const SEMANTIC_FORCES: SemanticForceConfig[] = [
   // Hierarchy: children cluster under parents
-  { predicate: "rdfs:subClassOf", attractionMultiplier: 2.0, repulsionMultiplier: 0.5 },
+  {
+    predicate: "rdfs:subClassOf",
+    attractionMultiplier: 2.0,
+    repulsionMultiplier: 0.5,
+  },
 
   // Prototypes: instances near their templates
-  { predicate: "exo:Asset_prototype", attractionMultiplier: 1.8, repulsionMultiplier: 0.6 },
+  {
+    predicate: "exo:Asset_prototype",
+    attractionMultiplier: 1.8,
+    repulsionMultiplier: 0.6,
+  },
 
   // Parts: components stay near containers
-  { predicate: "dcterms:isPartOf", attractionMultiplier: 1.5, repulsionMultiplier: 0.8 },
+  {
+    predicate: "dcterms:isPartOf",
+    attractionMultiplier: 1.5,
+    repulsionMultiplier: 0.8,
+  },
 
   // Disjoint: incompatible concepts separate
-  { predicate: "owl:disjointWith", attractionMultiplier: 0.3, repulsionMultiplier: 3.0 },
+  {
+    predicate: "owl:disjointWith",
+    attractionMultiplier: 0.3,
+    repulsionMultiplier: 3.0,
+  },
 ];
 ```
 
@@ -3837,11 +3993,14 @@ class SemanticPhysicsEngine {
   constructor(private config: SemanticForceConfig[]) {}
 
   getForceModifier(edge: GraphEdge): { attraction: number; repulsion: number } {
-    const config = this.config.find(c => c.predicate === edge.predicate);
+    const config = this.config.find((c) => c.predicate === edge.predicate);
 
     return config
-      ? { attraction: config.attractionMultiplier, repulsion: config.repulsionMultiplier }
-      : { attraction: 1.0, repulsion: 1.0 };  // Default: no modification
+      ? {
+          attraction: config.attractionMultiplier,
+          repulsion: config.repulsionMultiplier,
+        }
+      : { attraction: 1.0, repulsion: 1.0 }; // Default: no modification
   }
 
   applyToForceLayout(layout: ForceDirectedLayout, edges: GraphEdge[]): void {
@@ -3867,7 +4026,11 @@ class SemanticPhysicsEngine {
 describe("SemanticPhysicsEngine", () => {
   it("should cluster children under parents", () => {
     const engine = new SemanticPhysicsEngine(SEMANTIC_FORCES);
-    const edge = { predicate: "rdfs:subClassOf", source: "child", target: "parent" };
+    const edge = {
+      predicate: "rdfs:subClassOf",
+      source: "child",
+      target: "parent",
+    };
 
     const modifier = engine.getForceModifier(edge);
 
@@ -3877,7 +4040,11 @@ describe("SemanticPhysicsEngine", () => {
 
   it("should separate disjoint classes", () => {
     const engine = new SemanticPhysicsEngine(SEMANTIC_FORCES);
-    const edge = { predicate: "owl:disjointWith", source: "classA", target: "classB" };
+    const edge = {
+      predicate: "owl:disjointWith",
+      source: "classA",
+      target: "classB",
+    };
 
     const modifier = engine.getForceModifier(edge);
 
@@ -3904,7 +4071,7 @@ When CLI commands need to load expensive resources (like a vault's triple store)
 // BEFORE: Each CLI invocation reloads entire vault (500-800ms for 10k files)
 const vaultAdapter = new FileSystemVaultAdapter(vaultPath);
 const converter = new NoteToRDFConverter(vaultAdapter);
-const triples = await converter.convertVault();  // ← 500-800ms every time
+const triples = await converter.convertVault(); // ← 500-800ms every time
 ```
 
 ### Solution Architecture
@@ -3920,10 +4087,10 @@ CLI Command → CacheManager → [Cache Hit?]
 ```typescript
 // packages/cli/src/cache/CacheManager.ts
 interface CacheMetadata {
-  version: string;           // CLI version for compatibility
-  timestamp: number;         // Cache creation time
-  vaultPath: string;         // Absolute path to vault
-  tripleCount: number;       // Number of triples cached
+  version: string; // CLI version for compatibility
+  timestamp: number; // Cache creation time
+  vaultPath: string; // Absolute path to vault
+  tripleCount: number; // Number of triples cached
 }
 
 interface CacheData {
@@ -3938,7 +4105,7 @@ export class CacheManager {
 
   async loadOrBuild(
     vaultPath: string,
-    buildFn: () => Promise<Triple[]>
+    buildFn: () => Promise<Triple[]>,
   ): Promise<Triple[]> {
     const cachePath = this.getCachePath(vaultPath);
 
@@ -3959,7 +4126,7 @@ export class CacheManager {
     const vaultMtime = statSync(vaultPath).mtimeMs;
     const cacheMtime = statSync(cachePath).mtimeMs;
 
-    return cacheMtime > vaultMtime;  // Cache newer than vault
+    return cacheMtime > vaultMtime; // Cache newer than vault
   }
 }
 ```
@@ -3982,20 +4149,20 @@ if (options.useCache) {
 
 ### Cache Invalidation Strategies
 
-| Strategy | Complexity | Accuracy | Use Case |
-|----------|------------|----------|----------|
-| **mtime-based** | Low | Medium | Default - fast checks, covers most changes |
-| **content-hash** | High | High | When exact invalidation needed |
-| **manual** | None | N/A | Add `--force-rebuild` option |
+| Strategy         | Complexity | Accuracy | Use Case                                   |
+| ---------------- | ---------- | -------- | ------------------------------------------ |
+| **mtime-based**  | Low        | Medium   | Default - fast checks, covers most changes |
+| **content-hash** | High       | High     | When exact invalidation needed             |
+| **manual**       | None       | N/A      | Add `--force-rebuild` option               |
 
 ### Performance Results
 
-| Metric | Before | After (cached) | Improvement |
-|--------|--------|----------------|-------------|
-| First query | 800ms | 800ms | N/A (cache build) |
-| Second query | 800ms | 10ms | **80x faster** |
-| 10 sequential queries | 8000ms | 890ms | **9x faster** |
-| Validator workflow (15 queries) | 12s | 1.2s | **10x faster** |
+| Metric                          | Before | After (cached) | Improvement       |
+| ------------------------------- | ------ | -------------- | ----------------- |
+| First query                     | 800ms  | 800ms          | N/A (cache build) |
+| Second query                    | 800ms  | 10ms           | **80x faster**    |
+| 10 sequential queries           | 8000ms | 890ms          | **9x faster**     |
+| Validator workflow (15 queries) | 12s    | 1.2s           | **10x faster**    |
 
 ### Cache Location Convention
 
@@ -4007,6 +4174,7 @@ if (options.useCache) {
 ```
 
 **Why this location:**
+
 - Vault-relative (portable across machines if vault moves)
 - Hidden in `.exocortex/` (doesn't pollute vault)
 - Can be gitignored if vault is version controlled
@@ -4044,6 +4212,7 @@ try {
 ### Pattern Description
 
 Sometimes the best code is no code. Removing unused or experimental features can dramatically improve:
+
 - Bundle size (faster installation)
 - Build times
 - Maintenance burden
@@ -4053,16 +4222,17 @@ Sometimes the best code is no code. Removing unused or experimental features can
 
 Before removing a feature, validate:
 
-| Question | Threshold | Issue #2083 Result |
-|----------|-----------|-------------------|
-| Active users? | <5% of user base | 0% (experimental) |
-| Bundle impact? | >20% of total size | 75% (1.5MB of 2.0MB) |
-| Maintenance cost? | >10% of codebase | 8% (104 of ~1200 files) |
+| Question            | Threshold               | Issue #2083 Result        |
+| ------------------- | ----------------------- | ------------------------- |
+| Active users?       | <5% of user base        | 0% (experimental)         |
+| Bundle impact?      | >20% of total size      | 75% (1.5MB of 2.0MB)      |
+| Maintenance cost?   | >10% of codebase        | 8% (104 of ~1200 files)   |
 | Alternative exists? | External tool available | Yes (Obsidian Graph View) |
 
 ### Removal Checklist
 
 #### Phase 1: Dependencies
+
 ```json
 // package.json - BEFORE
 {
@@ -4082,6 +4252,7 @@ Before removing a feature, validate:
 ```
 
 #### Phase 2: Source Code
+
 ```bash
 # Delete entire feature directories (Issue #2083: 104 files)
 rm -rf src/presentation/renderers/graph/
@@ -4091,15 +4262,17 @@ rm -rf src/presentation/stores/physicsWorkerStore/
 ```
 
 #### Phase 3: Integration Points
+
 ```typescript
 // BEFORE: ViewModeSelector.tsx
-type ViewMode = 'table' | 'graph' | 'raw';
+type ViewMode = "table" | "graph" | "raw";
 
 // AFTER: ViewModeSelector.tsx
-type ViewMode = 'table' | 'raw';
+type ViewMode = "table" | "raw";
 ```
 
 #### Phase 4: Tests
+
 ```bash
 # Delete associated tests
 rm -rf tests/unit/presentation/renderers/graph/
@@ -4107,6 +4280,7 @@ rm -rf tests/performance/ForceSimulation3DPerformance.test.ts
 ```
 
 #### Phase 5: Settings
+
 ```typescript
 // Remove from settings interface
 interface ExocortexSettings {
@@ -4117,39 +4291,42 @@ interface ExocortexSettings {
 
 ### Impact Metrics (Issue #2083)
 
-| Metric | Before | After | Change |
-|--------|--------|-------|--------|
-| Bundle size | 2.0 MB | 0.5 MB | **-75%** |
-| Source files | 1,200 | 1,096 | **-104 files** |
-| Dependencies | 45 | 42 | **-3 packages** |
-| Lines of code | ~180k | ~50k | **-129,442 lines** |
-| BRAT install time | 23s | <10s | **-57%** |
+| Metric            | Before | After  | Change             |
+| ----------------- | ------ | ------ | ------------------ |
+| Bundle size       | 2.0 MB | 0.5 MB | **-75%**           |
+| Source files      | 1,200  | 1,096  | **-104 files**     |
+| Dependencies      | 45     | 42     | **-3 packages**    |
+| Lines of code     | ~180k  | ~50k   | **-129,442 lines** |
+| BRAT install time | 23s    | <10s   | **-57%**           |
 
 ### Follow-up Issues Pattern
 
 Major removals often trigger follow-up work:
 
-| Issue | Purpose | Steps |
-|-------|---------|-------|
-| #2086 | Main removal PR | 170 |
-| #2087 | Fix coverage thresholds | 30 |
-| #2088 | Update CI workflow | 25 |
+| Issue | Purpose                 | Steps |
+| ----- | ----------------------- | ----- |
+| #2086 | Main removal PR         | 170   |
+| #2087 | Fix coverage thresholds | 30    |
+| #2088 | Update CI workflow      | 25    |
 
 **Budget 2-3 follow-up issues** for cleanup after major removals.
 
 ### Communication
 
 **Breaking change documentation:**
+
 ```markdown
 ## Breaking Changes
 
 The following features have been removed:
+
 - 2D graph visualization of SPARQL results
 - 3D graph visualization of SPARQL results
 - Graph-related settings
 - Graph export functionality
 
 **Migration**: Users who need graph visualization should:
+
 1. Stay on the previous version (v14.x), OR
 2. Export SPARQL results and use external graph tools
 ```
@@ -4183,6 +4360,7 @@ npm run test:all
 ### Pattern Description
 
 Obsidian wikilinks support both bare references (`[[uuid]]`) and aliased references (`[[uuid|My Custom Name]]`). Code that processes wikilinks must:
+
 1. Extract the UID/path correctly regardless of alias presence
 2. Preserve user-defined aliases when appropriate
 3. Apply automatic labels only to bare links without aliases
@@ -4193,7 +4371,7 @@ Obsidian wikilinks support both bare references (`[[uuid]]`) and aliased referen
 
 ```typescript
 // ❌ WRONG: Fails with aliased links
-const uid = wikilinkValue.replace(/\[\[|\]\]/g, '');
+const uid = wikilinkValue.replace(/\[\[|\]\]/g, "");
 // Input: "[[uuid|My Alias]]" → Output: "uuid|My Alias" (BROKEN)
 
 // ✅ CORRECT: Extract only the UID part
@@ -4253,23 +4431,29 @@ private patchLink(linkEl: HTMLElement): void {
 ```typescript
 describe("extractWikilinkTarget", () => {
   it("extracts UID from bare wikilink", () => {
-    expect(extractWikilinkTarget("[[ems__EffortStatusBacklog]]"))
-      .toBe("ems__EffortStatusBacklog");
+    expect(extractWikilinkTarget("[[ems__EffortStatusBacklog]]")).toBe(
+      "ems__EffortStatusBacklog",
+    );
   });
 
   it("extracts UID from aliased wikilink (English)", () => {
-    expect(extractWikilinkTarget("[[ems__EffortStatusBacklog|Backlog]]"))
-      .toBe("ems__EffortStatusBacklog");
+    expect(extractWikilinkTarget("[[ems__EffortStatusBacklog|Backlog]]")).toBe(
+      "ems__EffortStatusBacklog",
+    );
   });
 
   it("extracts UID from aliased wikilink (Russian)", () => {
-    expect(extractWikilinkTarget("[[ems__EffortStatusBacklog|Беклог]]"))
-      .toBe("ems__EffortStatusBacklog");
+    expect(extractWikilinkTarget("[[ems__EffortStatusBacklog|Беклог]]")).toBe(
+      "ems__EffortStatusBacklog",
+    );
   });
 
   it("extracts UUID from aliased wikilink", () => {
-    expect(extractWikilinkTarget("[[753a44d5-846c-4b82-9196-4fd9a4d48777|Custom Label]]"))
-      .toBe("753a44d5-846c-4b82-9196-4fd9a4d48777");
+    expect(
+      extractWikilinkTarget(
+        "[[753a44d5-846c-4b82-9196-4fd9a4d48777|Custom Label]]",
+      ),
+    ).toBe("753a44d5-846c-4b82-9196-4fd9a4d48777");
   });
 
   it("returns original string for non-wikilink input", () => {
@@ -4280,12 +4464,12 @@ describe("extractWikilinkTarget", () => {
 
 ### Where This Pattern Applies
 
-| Component | Purpose | Implementation |
-|-----------|---------|----------------|
-| StatusSelectPropertyField | Parse status for button rendering | Extract UID before comparison |
-| BodyLinkPatch | Beautify links in note body | Preserve user aliases |
-| PropertiesLinkPatch | Beautify links in Properties block | Preserve user aliases |
-| LinkRenderer (SPARQL) | Render links in query results | Already handles aliases |
+| Component                 | Purpose                            | Implementation                |
+| ------------------------- | ---------------------------------- | ----------------------------- |
+| StatusSelectPropertyField | Parse status for button rendering  | Extract UID before comparison |
+| BodyLinkPatch             | Beautify links in note body        | Preserve user aliases         |
+| PropertiesLinkPatch       | Beautify links in Properties block | Preserve user aliases         |
+| LinkRenderer (SPARQL)     | Render links in query results      | Already handles aliases       |
 
 ### Benefits
 
@@ -4332,19 +4516,21 @@ async function handleModify(file: TFile): Promise<void> {
   const currentEnd = metadata.ems__Effort_plannedEndTimestamp;
 
   const cacheKey = file.path;
-  const cachedStart = cachedState.get(cacheKey + ':start');
-  const cachedEnd = cachedState.get(cacheKey + ':end');
+  const cachedStart = cachedState.get(cacheKey + ":start");
+  const cachedEnd = cachedState.get(cacheKey + ":end");
 
   // Skip if this is a sync event (end timestamp already matches expected shift)
   if (cachedStart && cachedEnd) {
-    const expectedDelta = new Date(currentStart).getTime() - new Date(cachedStart).getTime();
-    const actualEndDelta = new Date(currentEnd).getTime() - new Date(cachedEnd).getTime();
+    const expectedDelta =
+      new Date(currentStart).getTime() - new Date(cachedStart).getTime();
+    const actualEndDelta =
+      new Date(currentEnd).getTime() - new Date(cachedEnd).getTime();
 
     // If end timestamp already shifted by the same delta, this is a sync - skip
     if (Math.abs(expectedDelta - actualEndDelta) < 1000) {
       // Update cache to current values
-      cachedState.set(cacheKey + ':start', currentStart);
-      cachedState.set(cacheKey + ':end', currentEnd);
+      cachedState.set(cacheKey + ":start", currentStart);
+      cachedState.set(cacheKey + ":end", currentEnd);
       return; // Already applied - idempotent
     }
   }
@@ -4354,8 +4540,8 @@ async function handleModify(file: TFile): Promise<void> {
   await this.shiftEndTimestamp(file, deltaMs);
 
   // Update cache
-  cachedState.set(cacheKey + ':start', currentStart);
-  cachedState.set(cacheKey + ':end', newEndTimestamp);
+  cachedState.set(cacheKey + ":start", currentStart);
+  cachedState.set(cacheKey + ":end", newEndTimestamp);
 }
 ```
 
@@ -4382,19 +4568,19 @@ async function handleModify(file: TFile): Promise<void> {
 
   // Store hash of new state to prevent re-application
   await this.updateFrontmatter(file, {
-    _lastTimestampOperationHash: hash(`${currentStart}-${newEnd}`)
+    _lastTimestampOperationHash: hash(`${currentStart}-${newEnd}`),
   });
 }
 ```
 
 ### When to Apply Idempotency
 
-| Scenario | Apply Idempotency | Reason |
-|----------|-------------------|--------|
-| Timestamp shift on property change | ✅ Yes | Sync causes duplicate events |
-| Status change button click | ❌ No | User action, not event-driven |
-| Cache refresh on file modify | ❌ No | Read-only operation |
-| Automatic metadata correction | ✅ Yes | Could fire on sync |
+| Scenario                           | Apply Idempotency | Reason                        |
+| ---------------------------------- | ----------------- | ----------------------------- |
+| Timestamp shift on property change | ✅ Yes            | Sync causes duplicate events  |
+| Status change button click         | ❌ No             | User action, not event-driven |
+| Cache refresh on file modify       | ❌ No             | Read-only operation           |
+| Automatic metadata correction      | ✅ Yes            | Could fire on sync            |
 
 ### Testing Idempotency
 
@@ -4481,14 +4667,15 @@ ls -lh dist/main.js  # Compare before/after
 
 After removing graph visualization (#2083), these dependencies became dead code:
 
-| Package | Size | Used By | Status After #2083 |
-|---------|------|---------|-------------------|
-| d3 | ~250 KB | SPARQLGraphView | Dead code |
-| immer | ~15 KB | Graph stores (Zustand) | Dead code |
-| zundo | ~5 KB | Nothing (never used) | Dead code |
-| @types/d3 | - | TypeScript | Dead code |
+| Package   | Size    | Used By                | Status After #2083 |
+| --------- | ------- | ---------------------- | ------------------ |
+| d3        | ~250 KB | SPARQLGraphView        | Dead code          |
+| immer     | ~15 KB  | Graph stores (Zustand) | Dead code          |
+| zundo     | ~5 KB   | Nothing (never used)   | Dead code          |
+| @types/d3 | -       | TypeScript             | Dead code          |
 
 **Verification Commands:**
+
 ```bash
 # Check D3 imports (should be empty after graph removal)
 rg "from ['\"]d3['\"]" packages/obsidian-plugin/src/ --type ts
@@ -4510,12 +4697,12 @@ rg "from ['\"]zundo['\"]" packages/obsidian-plugin/src/ --type ts
 
 ### Results Achieved (PR #2090)
 
-| Metric | Change |
-|--------|--------|
-| Lines removed | 762 (mostly package-lock.json) |
-| Packages removed | 4 (d3, @types/d3, immer, zundo) |
-| Bundle size | ~270 KB smaller |
-| Build time | Faster (fewer modules to process) |
+| Metric           | Change                            |
+| ---------------- | --------------------------------- |
+| Lines removed    | 762 (mostly package-lock.json)    |
+| Packages removed | 4 (d3, @types/d3, immer, zundo)   |
+| Bundle size      | ~270 KB smaller                   |
+| Build time       | Faster (fewer modules to process) |
 
 ### Checklist for Dependency Cleanup
 
@@ -4569,6 +4756,7 @@ Store **both** File IRI and UUID Literal for UUID-based wikilinks:
 ```
 
 Now both query patterns work:
+
 - By File IRI: `?s exo:Asset_prototype <obsidian://...>` ✅
 - By UUID Literal: `?s exo:Asset_prototype "e3347bcf-bb50-4fb7-9064-14266469384b"` ✅
 
@@ -4621,16 +4809,16 @@ for (const val of Array.isArray(propValue) ? propValue : [propValue]) {
 
 ### Test Coverage Requirements
 
-| Test Case | Expected Behavior |
-|-----------|-------------------|
-| Valid lowercase UUID | `isUUID()` returns true |
-| Valid uppercase UUID | `isUUID()` returns true |
-| Non-UUID string | `isUUID()` returns false |
-| UUID without dashes | `isUUID()` returns false |
-| UUID wikilink (file exists) | Returns `[IRI, Literal]` |
-| Non-UUID wikilink | Returns `[IRI]` (single element) |
+| Test Case                    | Expected Behavior                    |
+| ---------------------------- | ------------------------------------ |
+| Valid lowercase UUID         | `isUUID()` returns true              |
+| Valid uppercase UUID         | `isUUID()` returns true              |
+| Non-UUID string              | `isUUID()` returns false             |
+| UUID without dashes          | `isUUID()` returns false             |
+| UUID wikilink (file exists)  | Returns `[IRI, Literal]`             |
+| Non-UUID wikilink            | Returns `[IRI]` (single element)     |
 | UUID wikilink (file missing) | Returns `[Literal]` (single element) |
-| Array of UUID wikilinks | Each element produces 2 triples |
+| Array of UUID wikilinks      | Each element produces 2 triples      |
 
 ### Benefits
 
@@ -4652,6 +4840,7 @@ for (const val of Array.isArray(propValue) ? propValue : [propValue]) {
 - **Query speed**: Literal lookup may be faster than IRI lookup (shorter strings)
 
 **Acceptable overhead**: For a vault with 10,000 notes and 50% UUID references:
+
 - Additional triples: ~5,000 (negligible for modern RDF stores)
 - Query performance: Unchanged (both patterns indexed)
 
@@ -4689,14 +4878,14 @@ grep -r "package-name" packages/*/tests/ --include="*.ts"
 
 ### Implementation Steps
 
-| Step | Action | Validation |
-|------|--------|------------|
-| 1 | Verify unused | `grep` returns zero results in src/ |
-| 2 | Check tsconfig.json | Remove from `references` if present |
-| 3 | Remove directory | `rm -rf packages/package-name/` |
-| 4 | Clean lockfile | Run `npm install` to regenerate |
-| 5 | Verify build | `npm run build` passes |
-| 6 | Run tests | All tests pass |
+| Step | Action              | Validation                          |
+| ---- | ------------------- | ----------------------------------- |
+| 1    | Verify unused       | `grep` returns zero results in src/ |
+| 2    | Check tsconfig.json | Remove from `references` if present |
+| 3    | Remove directory    | `rm -rf packages/package-name/`     |
+| 4    | Clean lockfile      | Run `npm install` to regenerate     |
+| 5    | Verify build        | `npm run build` passes              |
+| 6    | Run tests           | All tests pass                      |
 
 ---
 
@@ -4723,6 +4912,7 @@ When renaming asset files from human-readable names to UID-based names (for cons
 ### Code Example (Issue #2110, PR #2111)
 
 **Step 1: Add constant to AssetClass.ts**
+
 ```typescript
 // packages/exocortex/src/domain/constants/AssetClass.ts
 export enum AssetClass {
@@ -4735,6 +4925,7 @@ export enum AssetClass {
 ```
 
 **Step 2: Update visibility rules**
+
 ```typescript
 // packages/exocortex/src/domain/commands/visibility/AssetVisibilityRules.ts
 export function canCreateInstance(context: CommandVisibilityContext): boolean {
@@ -4750,6 +4941,7 @@ export function canCreateInstance(context: CommandVisibilityContext): boolean {
 ```
 
 **Step 3: Update display settings**
+
 ```typescript
 // packages/obsidian-plugin/src/domain/settings/ExocortexSettings.ts
 classTemplates: {
@@ -4760,11 +4952,13 @@ classTemplates: {
 ```
 
 **Step 4: Update button builders**
+
 ```typescript
 // packages/obsidian-plugin/src/presentation/builders/button-groups/CreationButtonGroupBuilder.ts
-const defaultValue = isMeeting ||
+const defaultValue =
+  isMeeting ||
   sourceClass === AssetClass.TASK_PROTOTYPE ||
-  sourceClass === AssetClass.TASK_PROTOTYPE_UID  // NEW
+  sourceClass === AssetClass.TASK_PROTOTYPE_UID // NEW
     ? this.generateDefaultLabel(metadata, file.basename)
     : "";
 ```
@@ -4805,16 +4999,16 @@ describe("canCreateInstance", () => {
 
 ### Metrics (Issue #2110, PR #2111)
 
-| Metric | Value |
-|--------|-------|
-| Steps | 58 |
-| Lines added | 63 |
-| Lines removed | 1 |
-| Files modified | 5 |
-| Tests added | 53 lines |
-| Time | ~18 minutes |
-| Errors encountered | 0 |
-| CI status | ✅ All checks passed |
+| Metric             | Value                |
+| ------------------ | -------------------- |
+| Steps              | 58                   |
+| Lines added        | 63                   |
+| Lines removed      | 1                    |
+| Files modified     | 5                    |
+| Tests added        | 53 lines             |
+| Time               | ~18 minutes          |
+| Errors encountered | 0                    |
+| CI status          | ✅ All checks passed |
 
 ### Success Factors
 
@@ -4823,7 +5017,7 @@ describe("canCreateInstance", () => {
 3. **Focused scope**: Single prototype class migration (not all at once)
 4. **Comprehensive tests**: 53 lines of tests ensured backward compatibility
 
-**Reference**: Issue #2110, PR #2111 - Support UID-based class identifier for ems__TaskPrototype (58 steps, +63 lines, February 2026)
+**Reference**: Issue #2110, PR #2111 - Support UID-based class identifier for ems\_\_TaskPrototype (58 steps, +63 lines, February 2026)
 
 ---
 
@@ -4834,6 +5028,7 @@ describe("canCreateInstance", () => {
 ### Problem
 
 When Obsidian indexes a vault (first launch or after cache invalidation), `metadataCache.getFileCache()` returns `null` until indexing completes. This causes:
+
 - UI components like "Create Instance" buttons to be hidden
 - Plugin features to fail silently
 - Poor UX during vault initialization
@@ -4904,14 +5099,14 @@ export class FrontmatterFallback {
 
 ### Metrics (Issue #2103, PR #2103)
 
-| Metric | Value |
-|--------|-------|
-| Steps | 65 |
-| Files modified | 3 |
-| Tests added | 5 |
-| Time | ~30 minutes |
-| Errors encountered | 0 |
-| CI status | ✅ All checks passed |
+| Metric             | Value                |
+| ------------------ | -------------------- |
+| Steps              | 65                   |
+| Files modified     | 3                    |
+| Tests added        | 5                    |
+| Time               | ~30 minutes          |
+| Errors encountered | 0                    |
+| CI status          | ✅ All checks passed |
 
 **Reference**: Issue #2103, PR #2103 - Make plugin independent from Obsidian metadata cache (65 steps, February 2026)
 
@@ -4932,8 +5127,10 @@ Use interval overlap algorithm with memoization:
 ```typescript
 // Interval overlap detection: start1 <= end2 && start2 <= end1
 const periodsOverlap = (
-  start1: number, end1: number,
-  start2: number, end2: number
+  start1: number,
+  end1: number,
+  start2: number,
+  end2: number,
 ): boolean => {
   return start1 <= end2 && start2 <= end1;
 };
@@ -4941,8 +5138,9 @@ const periodsOverlap = (
 // Memoized calculation of all overlapping tasks
 const tasksWithOverlaps = useMemo(() => {
   const tasksByPlanned = tasks.filter(
-    t => t.metadata.ems__Effort_plannedStartTimestamp &&
-         t.metadata.ems__Effort_plannedEndTimestamp
+    (t) =>
+      t.metadata.ems__Effort_plannedStartTimestamp &&
+      t.metadata.ems__Effort_plannedEndTimestamp,
   );
 
   const overlapping = new Set<string>();
@@ -4950,13 +5148,21 @@ const tasksWithOverlaps = useMemo(() => {
   // O(n²) pairwise comparison - acceptable for <100 tasks
   for (let i = 0; i < tasksByPlanned.length; i++) {
     const task1 = tasksByPlanned[i];
-    const start1 = new Date(task1.metadata.ems__Effort_plannedStartTimestamp as string).getTime();
-    const end1 = new Date(task1.metadata.ems__Effort_plannedEndTimestamp as string).getTime();
+    const start1 = new Date(
+      task1.metadata.ems__Effort_plannedStartTimestamp as string,
+    ).getTime();
+    const end1 = new Date(
+      task1.metadata.ems__Effort_plannedEndTimestamp as string,
+    ).getTime();
 
     for (let j = i + 1; j < tasksByPlanned.length; j++) {
       const task2 = tasksByPlanned[j];
-      const start2 = new Date(task2.metadata.ems__Effort_plannedStartTimestamp as string).getTime();
-      const end2 = new Date(task2.metadata.ems__Effort_plannedEndTimestamp as string).getTime();
+      const start2 = new Date(
+        task2.metadata.ems__Effort_plannedStartTimestamp as string,
+      ).getTime();
+      const end2 = new Date(
+        task2.metadata.ems__Effort_plannedEndTimestamp as string,
+      ).getTime();
 
       if (periodsOverlap(start1, end1, start2, end2)) {
         overlapping.add(task1.path);
@@ -4974,12 +5180,12 @@ const tasksWithOverlaps = useMemo(() => {
 ```css
 /* Pleasant dark red background for conflict rows */
 .task-overlap-conflict {
-  background-color: rgba(139, 0, 0, 0.12);  /* DarkRed with 12% opacity */
+  background-color: rgba(139, 0, 0, 0.12); /* DarkRed with 12% opacity */
 }
 
 /* Dark theme variant */
 .theme-dark .task-overlap-conflict {
-  background-color: rgba(178, 34, 34, 0.15);  /* Firebrick, slightly lighter */
+  background-color: rgba(178, 34, 34, 0.15); /* Firebrick, slightly lighter */
 }
 ```
 
@@ -5007,14 +5213,14 @@ const tasksWithOverlaps = useMemo(() => {
 
 ### Metrics (Issue #2108, PR #2108)
 
-| Metric | Value |
-|--------|-------|
-| Steps | 113 |
-| Files modified | 3 |
-| Tests added | 6 |
-| Time | ~40 minutes |
-| Errors encountered | 0 |
-| CI status | ✅ All checks passed |
+| Metric             | Value                |
+| ------------------ | -------------------- |
+| Steps              | 113                  |
+| Files modified     | 3                    |
+| Tests added        | 6                    |
+| Time               | ~40 minutes          |
+| Errors encountered | 0                    |
+| CI status          | ✅ All checks passed |
 
 **Reference**: Issue #2108, PR #2108 - Highlight overlapping planned task periods in DailyNote table (113 steps, February 2026)
 
@@ -5030,8 +5236,8 @@ Obsidian files can be named by UUID (e.g., `ebf717aa-4070-4b37-abde-10a700e354fc
 
 ```yaml
 exo__Class_superClass:
-  - "[[ems__EffortPrototype]]"           # ✅ Resolves (relative path)
-  - "[[ebf717aa-4070-4b37-abde-10a700e354fc|exo__Prototype]]"  # ❌ May NOT resolve
+  - "[[ems__EffortPrototype]]" # ✅ Resolves (relative path)
+  - "[[ebf717aa-4070-4b37-abde-10a700e354fc|exo__Prototype]]" # ❌ May NOT resolve
 ```
 
 The standard relative path resolution fails because UUID-named files require vault-wide search.
@@ -5050,7 +5256,8 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
 
   private buildUuidIndex(): void {
     const files = this.getAllFiles();
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const uuidRegex =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
     for (const file of files) {
       const basename = path.basename(file.path, ".md");
@@ -5062,10 +5269,11 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
 
   getFirstLinkpathDest(linkpath: string, sourcePath: string): IFile | null {
     // Strip wikilink alias: "uuid|label" → "uuid"
-    const cleanLinkpath = linkpath.split('|')[0].trim();
+    const cleanLinkpath = linkpath.split("|")[0].trim();
 
     // Check if linkpath is a UUID
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const uuidRegex =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     if (uuidRegex.test(cleanLinkpath)) {
       const filePath = this.uuidIndex.get(cleanLinkpath.toLowerCase());
       if (filePath) {
@@ -5101,14 +5309,14 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
 
 ### Metrics (Issue #2113, PR #2113)
 
-| Metric | Value |
-|--------|-------|
-| Steps | 56 |
-| Files modified | 2 |
-| Tests added | 8 |
-| Time | ~25 minutes |
-| Errors encountered | 0 |
-| CI status | ✅ All checks passed |
+| Metric             | Value                |
+| ------------------ | -------------------- |
+| Steps              | 56                   |
+| Files modified     | 2                    |
+| Tests added        | 8                    |
+| Time               | ~25 minutes          |
+| Errors encountered | 0                    |
+| CI status          | ✅ All checks passed |
 
 **Reference**: Issue #2113, PR #2113 - Resolve UUID-based wikilinks in FileSystemVaultAdapter (56 steps, February 2026)
 
@@ -5121,6 +5329,7 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
 ### Problem
 
 When tables exceed the virtualization threshold:
+
 - **Header table**: Fixed, no scrollbar
 - **Body table**: Inside scroll container, has scrollbar (~17px width)
 
@@ -5157,7 +5366,8 @@ useEffect(() => {
 ### Key Formula
 
 ```typescript
-const scrollbarWidth = parentRef.current.offsetWidth - parentRef.current.clientWidth;
+const scrollbarWidth =
+  parentRef.current.offsetWidth - parentRef.current.clientWidth;
 // offsetWidth: total width including scrollbar
 // clientWidth: content width excluding scrollbar
 // difference: scrollbar width (~17px on most systems, 0 if overlay scrollbars)
@@ -5166,6 +5376,7 @@ const scrollbarWidth = parentRef.current.offsetWidth - parentRef.current.clientW
 ### Where to Apply
 
 Any component using virtualization with separate header/body tables:
+
 - `DailyTasksTable.tsx` (PR #941 - original fix)
 - `AssetRelationsTable.tsx` (PR #2116)
 - `TableLayoutRenderer.tsx` (PR #2116)
@@ -5178,14 +5389,14 @@ Any component using virtualization with separate header/body tables:
 
 ### Metrics (Issue #2116, PR #2116)
 
-| Metric | Value |
-|--------|-------|
-| Steps | 53 |
-| Files modified | 2 |
-| Lines added | 16 |
-| Time | ~15 minutes |
-| Errors encountered | 0 |
-| CI status | ✅ All checks passed |
+| Metric             | Value                |
+| ------------------ | -------------------- |
+| Steps              | 53                   |
+| Files modified     | 2                    |
+| Lines added        | 16                   |
+| Time               | ~15 minutes          |
+| Errors encountered | 0                    |
+| CI status          | ✅ All checks passed |
 
 **Reference**: Issue #2116, PR #2116 - Apply scrollbar width fix to AssetRelationsTable and TableLayoutRenderer (53 steps, February 2026)
 
@@ -5198,6 +5409,7 @@ Any component using virtualization with separate header/body tables:
 ### Problem
 
 Some detection algorithms apply to all assets by default, but certain asset classes should be excluded from detection:
+
 - `ems__Context` tasks describe WHERE/HOW (not WHAT), so they don't conflict with actual tasks
 - Archived items shouldn't trigger active-only validations
 - Template assets shouldn't be counted in statistics
@@ -5216,8 +5428,8 @@ const tasksWithOverlaps = useMemo(() => {
     // Check for excluded classes
     const classes = task.metadata.exo__Instance_class;
     const isContext = Array.isArray(classes)
-      ? classes.some((c: string) => c.includes('ems__Context'))
-      : typeof classes === 'string' && classes.includes('ems__Context');
+      ? classes.some((c: string) => c.includes("ems__Context"))
+      : typeof classes === "string" && classes.includes("ems__Context");
 
     return start != null && end != null && !isContext;
   });
@@ -5232,20 +5444,23 @@ const tasksWithOverlaps = useMemo(() => {
 `exo__Instance_class` can appear in several formats - handle all of them:
 
 ```typescript
-function hasClass(metadata: Record<string, unknown>, targetClass: string): boolean {
+function hasClass(
+  metadata: Record<string, unknown>,
+  targetClass: string,
+): boolean {
   const classes = metadata.exo__Instance_class;
 
   if (!classes) return false;
 
   // Format 1: Single string - "ems__Task"
-  if (typeof classes === 'string') {
+  if (typeof classes === "string") {
     return classes.includes(targetClass);
   }
 
   // Format 2: Array - ["ems__Task", "ems__Context"]
   if (Array.isArray(classes)) {
-    return classes.some((c: string) =>
-      typeof c === 'string' && c.includes(targetClass)
+    return classes.some(
+      (c: string) => typeof c === "string" && c.includes(targetClass),
     );
   }
 
@@ -5259,6 +5474,7 @@ function hasClass(metadata: Record<string, unknown>, targetClass: string): boole
 ### Key Insight
 
 Context tasks (`ems__Context`) describe the circumstances under which other tasks are performed:
+
 - "Commute to office" + "Review PR" is NOT a conflict - the review happens DURING commute
 - Context provides metadata about task execution environment
 - Exclude contexts from time-based conflict detection
@@ -5291,16 +5507,16 @@ it("should detect overlaps between regular tasks", () => {
 
 ### Metrics (Issue #2128, PR #2128)
 
-| Metric | Value |
-|--------|-------|
-| Steps | 55 |
-| Files modified | 2 |
-| Test cases added | 5 |
-| Time | ~45 minutes |
-| Errors encountered | 0 |
-| CI status | ✅ All checks passed |
+| Metric             | Value                |
+| ------------------ | -------------------- |
+| Steps              | 55                   |
+| Files modified     | 2                    |
+| Test cases added   | 5                    |
+| Time               | ~45 minutes          |
+| Errors encountered | 0                    |
+| CI status          | ✅ All checks passed |
 
-**Reference**: Issue #2128, PR #2128 - Exclude ems__Context tasks from overlap detection (55 steps, February 2026)
+**Reference**: Issue #2128, PR #2128 - Exclude ems\_\_Context tasks from overlap detection (55 steps, February 2026)
 
 ---
 
@@ -5366,7 +5582,7 @@ export class MarkReviewedCommand implements ICommand {
   checkCallback = (
     checking: boolean,
     file: TFile,
-    context: CommandVisibilityContext | null
+    context: CommandVisibilityContext | null,
   ): boolean => {
     if (!context || !canMarkReviewed(context)) return false;
 
@@ -5395,9 +5611,7 @@ export class MarkReviewedCommand implements ICommand {
 
 ```typescript
 // In registerAllCommands()
-this.registerCommand(
-  new MarkReviewedCommand(this.statusTimestampService)
-);
+this.registerCommand(new MarkReviewedCommand(this.statusTimestampService));
 ```
 
 ### Key Pattern Elements
@@ -5421,14 +5635,14 @@ this.registerCommand(
 
 ### Metrics (Issue #2124, PR #2124)
 
-| Metric | Value |
-|--------|-------|
-| Steps | 41 |
-| Files modified | 10 |
-| Test cases added | ~15 |
-| Time | ~35 minutes |
-| Errors encountered | 0 |
-| CI status | ✅ All checks passed |
+| Metric             | Value                |
+| ------------------ | -------------------- |
+| Steps              | 41                   |
+| Files modified     | 10                   |
+| Test cases added   | ~15                  |
+| Time               | ~35 minutes          |
+| Errors encountered | 0                    |
+| CI status          | ✅ All checks passed |
 
 **Reference**: Issue #2124, PR #2124 - Add 'Reviewed' command (41 steps, February 2026)
 
@@ -5441,6 +5655,7 @@ this.registerCommand(
 ### Problem
 
 Obsidian uses different rendering systems for different modes:
+
 - **Reading View**: DOM-based, use MutationObserver + DOM patching (`BodyLinkPatch.ts`)
 - **Live Preview**: CodeMirror 6, use ViewPlugin + Decorations (`AliasIconViewPlugin.ts`)
 
@@ -5502,11 +5717,11 @@ class InlineTextWidget extends WidgetType {
 
 ### Key Differences: widget() vs replace()
 
-| Method | Effect | Use Case |
-|--------|--------|----------|
-| `Decoration.widget()` | Adds element (doesn't hide original) | Icons, badges |
-| `Decoration.replace()` | Replaces text with widget | Label substitution |
-| `Decoration.mark()` | Applies CSS class to range | Highlighting |
+| Method                 | Effect                               | Use Case           |
+| ---------------------- | ------------------------------------ | ------------------ |
+| `Decoration.widget()`  | Adds element (doesn't hide original) | Icons, badges      |
+| `Decoration.replace()` | Replaces text with widget            | Label substitution |
+| `Decoration.mark()`    | Applies CSS class to range           | Highlighting       |
 
 ### Cursor-Aware Editing
 
@@ -5530,7 +5745,7 @@ if (!this.isInEditRange(view, from, to)) {
 ```typescript
 // ExocortexSettings.ts
 interface ExocortexSettings {
-  showLabelsInLivePreview: boolean;  // Default: true
+  showLabelsInLivePreview: boolean; // Default: true
 }
 
 // In ViewPlugin
@@ -5547,17 +5762,17 @@ if (this.settings.showLabelsInLivePreview) {
 
 ### Metrics (Issue #2126, PR #2126)
 
-| Metric | Value |
-|--------|-------|
-| Steps | 102 |
-| Files modified | 7 |
-| New files created | 1 (WikilinkLabelViewPlugin.ts) |
-| Test cases added | ~10 |
-| Time | ~90 minutes |
-| Errors encountered | 0 |
-| CI status | ✅ All checks passed |
+| Metric             | Value                          |
+| ------------------ | ------------------------------ |
+| Steps              | 102                            |
+| Files modified     | 7                              |
+| New files created  | 1 (WikilinkLabelViewPlugin.ts) |
+| Test cases added   | ~10                            |
+| Time               | ~90 minutes                    |
+| Errors encountered | 0                              |
+| CI status          | ✅ All checks passed           |
 
-**Reference**: Issue #2126, PR #2126 - Display wikilinks by exo__Asset_label in live preview (102 steps, February 2026)
+**Reference**: Issue #2126, PR #2126 - Display wikilinks by exo\_\_Asset_label in live preview (102 steps, February 2026)
 
 ---
 
@@ -5577,16 +5792,19 @@ Task "Morning Commute" has `exo__Asset_prototype: "[[commute-prototype]]"` but n
 
 ```typescript
 // Step 1: Check direct class membership
-function hasClassDirectly(metadata: FrontmatterCache, className: string): boolean {
+function hasClassDirectly(
+  metadata: FrontmatterCache,
+  className: string,
+): boolean {
   const classes = metadata.exo__Instance_class || [];
   const classArray = Array.isArray(classes) ? classes : [classes];
-  return classArray.some(c => typeof c === 'string' && c.includes(className));
+  return classArray.some((c) => typeof c === "string" && c.includes(className));
 }
 
 // Step 2: Resolve prototype's classes
 async function resolvePrototypeClasses(
   metadata: FrontmatterCache,
-  app: ObsidianApp
+  app: ObsidianApp,
 ): Promise<string[]> {
   // ⚠️ CRITICAL: Use exo__Asset_prototype, NOT exo__Instance_prototype
   const prototypeRef = metadata.exo__Asset_prototype;
@@ -5595,7 +5813,10 @@ async function resolvePrototypeClasses(
   const prototypeUid = extractUidFromWikilink(prototypeRef);
   if (!prototypeUid) return [];
 
-  const prototypeFile = app.metadataCache.getFirstLinkpathDest(prototypeUid, '');
+  const prototypeFile = app.metadataCache.getFirstLinkpathDest(
+    prototypeUid,
+    "",
+  );
   if (!prototypeFile) return [];
 
   const prototypeMeta = app.metadataCache.getFileCache(prototypeFile);
@@ -5606,19 +5827,19 @@ async function resolvePrototypeClasses(
 async function hasClassDirectlyOrThroughPrototype(
   metadata: FrontmatterCache,
   className: string,
-  app: ObsidianApp
+  app: ObsidianApp,
 ): Promise<boolean> {
   if (hasClassDirectly(metadata, className)) return true;
 
   const prototypeClasses = await resolvePrototypeClasses(metadata, app);
-  return prototypeClasses.some(c => c.includes(className));
+  return prototypeClasses.some((c) => c.includes(className));
 }
 ```
 
 ### Critical Property Name
 
-| ❌ WRONG | ✅ CORRECT |
-|----------|-----------|
+| ❌ WRONG                                        | ✅ CORRECT                                |
+| ----------------------------------------------- | ----------------------------------------- |
 | `exo__Instance_prototype` (6 vault occurrences) | `exo__Asset_prototype` (3098 occurrences) |
 
 **Mnemonic**: Assets have prototypes, not instances. "Asset → prototype" makes semantic sense.
@@ -5643,7 +5864,7 @@ describe("Prototype-based classification", () => {
   it("should detect class through prototype", async () => {
     const task = {
       exo__Asset_prototype: "[[context-prototype]]",
-      exo__Instance_class: [],  // No direct class
+      exo__Instance_class: [], // No direct class
     };
 
     mockGetFileCache.mockReturnValueOnce({
@@ -5653,7 +5874,9 @@ describe("Prototype-based classification", () => {
     });
 
     const result = await hasClassDirectlyOrThroughPrototype(
-      task, "ems__Context", mockApp
+      task,
+      "ems__Context",
+      mockApp,
     );
 
     expect(result).toBe(true);
@@ -5664,16 +5887,17 @@ describe("Prototype-based classification", () => {
 ### Real-World Use Case
 
 **Overlap Detection Exclusion (Issues #2131, #2135)**:
+
 - Tasks with `ems__Context` class are excluded from time overlap highlighting
 - Recurring contexts ("Commute", "Lunch Break") use prototypes
 - Prototype-based lookup reduces maintenance overhead
 
 **Metrics:**
 
-| Issue | Steps | Result |
-|-------|-------|--------|
-| #2131 (feat: prototype detection) | 62 | +340 lines |
-| #2135 (fix: property name) | 74 | +74 lines |
+| Issue                             | Steps | Result     |
+| --------------------------------- | ----- | ---------- |
+| #2131 (feat: prototype detection) | 62    | +340 lines |
+| #2135 (fix: property name)        | 74    | +74 lines  |
 
 **Reference**: Issues #2131, #2135 - Prototype class inheritance for overlap detection (136 combined steps, February 2026)
 
@@ -5703,22 +5927,24 @@ const fullPattern = /\[\[([^#\]|]+)(?:#(\^)?([^\]|]+))?(?:\|([^\]]+))?\]\]/g;
 
 ```typescript
 interface WikilinkParsed {
-  target: string;        // UUID or path
-  alias?: string;        // Custom display name |...|
-  blockId?: string;      // Block reference (^abc123)
-  headingRef?: string;   // Heading reference (#Heading)
-  isBlock: boolean;      // true if ^, false if heading
+  target: string; // UUID or path
+  alias?: string; // Custom display name |...|
+  blockId?: string; // Block reference (^abc123)
+  headingRef?: string; // Heading reference (#Heading)
+  isBlock: boolean; // true if ^, false if heading
 }
 
 function parseWikilink(value: string): WikilinkParsed | null {
-  const match = value.match(/^\[\[([^#\]|]+)(?:#(\^)?([^\]|]+))?(?:\|([^\]]+))?\]\]$/);
+  const match = value.match(
+    /^\[\[([^#\]|]+)(?:#(\^)?([^\]|]+))?(?:\|([^\]]+))?\]\]$/,
+  );
   if (!match) return null;
 
   return {
     target: match[1].trim(),
-    isBlock: match[2] === '^',
-    blockId: match[2] === '^' ? match[3]?.trim() : undefined,
-    headingRef: match[2] !== '^' ? match[3]?.trim() : undefined,
+    isBlock: match[2] === "^",
+    blockId: match[2] === "^" ? match[3]?.trim() : undefined,
+    headingRef: match[2] !== "^" ? match[3]?.trim() : undefined,
     alias: match[4]?.trim(),
   };
 }
@@ -5727,10 +5953,7 @@ function parseWikilink(value: string): WikilinkParsed | null {
 ### Display Formatting
 
 ```typescript
-function formatDisplayName(
-  label: string,
-  parsed: WikilinkParsed
-): string {
+function formatDisplayName(label: string, parsed: WikilinkParsed): string {
   // Custom alias takes priority
   if (parsed.alias) return parsed.alias;
 
@@ -5752,10 +5975,10 @@ function formatDisplayName(
 
 Apply same formatting in both modes:
 
-| Mode | Implementation | Component |
-|------|----------------|-----------|
-| Live Preview | CodeMirror ViewPlugin | `WikilinkLabelViewPlugin.ts` |
-| Reading View | MutationObserver + DOM | `BodyLinkPatch.ts` |
+| Mode         | Implementation         | Component                    |
+| ------------ | ---------------------- | ---------------------------- |
+| Live Preview | CodeMirror ViewPlugin  | `WikilinkLabelViewPlugin.ts` |
+| Reading View | MutationObserver + DOM | `BodyLinkPatch.ts`           |
 
 ### BodyLinkPatch Extension
 
@@ -5785,13 +6008,13 @@ const finalName = ref
 
 ### Metrics (Issue #2133, PR #2134)
 
-| Metric | Value |
-|--------|-------|
-| Steps | 74 |
-| Files modified | 4 |
-| Lines added | +546 |
-| Lines deleted | -43 |
-| Unit tests added | 24 |
+| Metric           | Value |
+| ---------------- | ----- |
+| Steps            | 74    |
+| Files modified   | 4     |
+| Lines added      | +546  |
+| Lines deleted    | -43   |
+| Unit tests added | 24    |
 
 **Reference**: Issue #2133, PR #2134 - Block reference wikilink display (74 steps, February 2026)
 
@@ -5825,18 +6048,18 @@ grep -r "exo__Asset_prototype" ~/vault-2025 --include="*.md" | wc -l
 
 ### Occurrence Thresholds
 
-| Count | Interpretation | Action |
-|-------|----------------|--------|
-| 0 | Property doesn't exist | Verify ontology, check spelling |
-| 1-10 | Test data or schema only | Probably wrong, investigate |
-| 100+ | Real usage | Correct property name |
-| 1000+ | Core property | Definitely correct |
+| Count | Interpretation           | Action                          |
+| ----- | ------------------------ | ------------------------------- |
+| 0     | Property doesn't exist   | Verify ontology, check spelling |
+| 1-10  | Test data or schema only | Probably wrong, investigate     |
+| 100+  | Real usage               | Correct property name           |
+| 1000+ | Core property            | Definitely correct              |
 
 ### Integration into Development Flow
 
 1. **Before implementation**: Run grep to verify property name
 2. **If count < 100**: Stop and verify in ontology
-3. **Add to test name**: "should use exo__Asset_prototype (not exo__Instance_prototype)"
+3. **Add to test name**: "should use exo**Asset_prototype (not exo**Instance_prototype)"
 4. **Document in PR**: Include occurrence count for validation
 
 ### Defensive Test Pattern
@@ -5846,7 +6069,7 @@ describe("Property name validation", () => {
   // Explicit test name prevents future property name confusion
   it("should resolve prototype using exo__Asset_prototype (NOT exo__Instance_prototype)", () => {
     const metadata = {
-      exo__Asset_prototype: "[[prototype-uid]]",  // Correct property
+      exo__Asset_prototype: "[[prototype-uid]]", // Correct property
     };
 
     const result = resolvePrototypeClasses(metadata);
@@ -5859,6 +6082,7 @@ describe("Property name validation", () => {
 ### Real-World Impact
 
 **Issue #2135**:
+
 - Root cause: PR #2132 used `exo__Instance_prototype` (6 occurrences) instead of `exo__Asset_prototype` (3098 occurrences)
 - Symptom: Tasks with prototypes weren't excluded from overlap detection
 - Time to find: 74 steps of investigation
@@ -5875,6 +6099,7 @@ describe("Property name validation", () => {
 ### Pattern Description
 
 Obsidian renders wikilink text content in multiple undocumented formats depending on:
+
 - View mode (Live Preview vs Reading View)
 - Link type (simple wikilink, block reference, heading reference)
 - Obsidian version
@@ -5898,15 +6123,15 @@ const matchesBlockRefText = currentText === expectedBlockRefText;
 ```typescript
 // ✅ CORRECT: Match ALL known Obsidian rendering formats
 const matchesBlockRefText = blockId
-  ? currentText === `${file.basename}#^${blockId}`     // Standard format
+  ? currentText === `${file.basename}#^${blockId}` // Standard format
   : false;
 
 const matchesBlockRefWithoutCaret = blockId
-  ? currentText === `${file.basename}#${blockId}`       // Without caret
+  ? currentText === `${file.basename}#${blockId}` // Without caret
   : false;
 
 const matchesBlockRefSeparatorFormat = blockId
-  ? currentText === `${file.basename} > ^${blockId}`    // Separator format
+  ? currentText === `${file.basename} > ^${blockId}` // Separator format
   : headingRef
     ? currentText === `${file.basename} > ${headingRef}`
     : false;
@@ -5917,19 +6142,19 @@ const hasUserAlias =
   !matchesBasename &&
   !matchesDataHref &&
   !matchesBlockRefText &&
-  !matchesBlockRefWithoutCaret &&         // NEW
-  !matchesBlockRefSeparatorFormat &&       // NEW
+  !matchesBlockRefWithoutCaret && // NEW
+  !matchesBlockRefSeparatorFormat && // NEW
   !wasAlreadyPatched;
 ```
 
 ### Known Obsidian Wikilink Text Formats
 
-| Link Type | Possible Text Formats |
-|-----------|----------------------|
-| Simple `[[page]]` | `page`, `page.md` |
-| Block ref `[[page#^id]]` | `page#^id`, `page#id`, `page > ^id`, `page` |
-| Heading ref `[[page#Heading]]` | `page#Heading`, `page > Heading`, `page` |
-| With alias `[[page\|Alias]]` | `Alias` (always preserved) |
+| Link Type                      | Possible Text Formats                       |
+| ------------------------------ | ------------------------------------------- |
+| Simple `[[page]]`              | `page`, `page.md`                           |
+| Block ref `[[page#^id]]`       | `page#^id`, `page#id`, `page > ^id`, `page` |
+| Heading ref `[[page#Heading]]` | `page#Heading`, `page > Heading`, `page`    |
+| With alias `[[page\|Alias]]`   | `Alias` (always preserved)                  |
 
 ### Guard Clause Best Practices
 
@@ -6004,6 +6229,7 @@ When implementing wikilink features:
 ### Real-World Impact
 
 **Issue #2139**: Block references in Reading View displayed UUID instead of resolved label
+
 - **Root cause**: `hasUserAlias` guard didn't recognize Obsidian's separator format (`basename > ^blockid`)
 - **Symptom**: `84e75603-0103-4594-8499-09dc404800b0 > ^jgp9nz` instead of `Asset Label > ^jgp9nz`
 - **Fix**: Added recognition for 2 additional Obsidian text rendering formats
@@ -6022,7 +6248,7 @@ When implementing wikilink features:
 
 ```typescript
 // ❌ WRONG: Direct assignment has multiple failure modes
-GraphNode.prototype.getDisplayText = function() {
+GraphNode.prototype.getDisplayText = function () {
   return this.getLabel() || originalGetDisplayText.call(this);
 };
 
@@ -6080,13 +6306,13 @@ private unpatchAll(): void {
 
 ### Key Benefits
 
-| Aspect | Direct Assignment | FunctionReplacer |
-|--------|-------------------|------------------|
-| Cleanup | Manual tracking | Automatic restorer |
-| Multiple prototypes | Fails silently | Maps each prototype |
-| Enable/disable | Re-implements logic | Calls restorer |
-| Original reference | Lost on reassign | Preserved in closure |
-| Testing | Hard to mock | Can inject factory |
+| Aspect              | Direct Assignment   | FunctionReplacer     |
+| ------------------- | ------------------- | -------------------- |
+| Cleanup             | Manual tracking     | Automatic restorer   |
+| Multiple prototypes | Fails silently      | Maps each prototype  |
+| Enable/disable      | Re-implements logic | Calls restorer       |
+| Original reference  | Lost on reassign    | Preserved in closure |
+| Testing             | Hard to mock        | Can inject factory   |
 
 ### Handling Multiple Prototypes (Graph View Example)
 
@@ -6176,13 +6402,11 @@ export class FeaturePatch {
     this.enabled = false;
 
     // 1. Restore all patches
-    this.restorers.forEach(restore => restore());
+    this.restorers.forEach((restore) => restore());
     this.restorers.clear();
 
     // 2. Unregister events
-    this.eventRefs.forEach(ref =>
-      this.app.workspace.offref(ref)
-    );
+    this.eventRefs.forEach((ref) => this.app.workspace.offref(ref));
     this.eventRefs.clear();
 
     // 3. Force re-render to show original state
@@ -6197,7 +6421,7 @@ export class FeaturePatch {
     }, 200);
 
     this.eventRefs.push(
-      this.app.workspace.on("layout-change", debouncedRefresh)
+      this.app.workspace.on("layout-change", debouncedRefresh),
     );
 
     // Metadata changes may affect labels
@@ -6207,7 +6431,7 @@ export class FeaturePatch {
         if (this.isRelevantFile(file)) {
           this.refreshAll();
         }
-      })
+      }),
     );
   }
 }
@@ -6220,30 +6444,31 @@ export class FeaturePatch {
 new Setting(containerEl)
   .setName("Show labels in graph view")
   .setDesc("Display exo__Asset_label instead of UUID filenames")
-  .addToggle(toggle => toggle
-    .setValue(this.plugin.settings.showLabelsInGraphView)
-    .onChange(async (value) => {
-      this.plugin.settings.showLabelsInGraphView = value;
-      await this.plugin.saveSettings();
+  .addToggle((toggle) =>
+    toggle
+      .setValue(this.plugin.settings.showLabelsInGraphView)
+      .onChange(async (value) => {
+        this.plugin.settings.showLabelsInGraphView = value;
+        await this.plugin.saveSettings();
 
-      // CRITICAL: Toggle the patch state
-      if (value) {
-        this.plugin.graphViewPatch.enable();
-      } else {
-        this.plugin.graphViewPatch.disable();
-      }
-    })
+        // CRITICAL: Toggle the patch state
+        if (value) {
+          this.plugin.graphViewPatch.enable();
+        } else {
+          this.plugin.graphViewPatch.disable();
+        }
+      }),
   );
 ```
 
 ### Common Issues and Solutions
 
-| Issue | Symptom | Solution |
-|-------|---------|----------|
-| Race condition at startup | Feature doesn't work on first open | Use `onLayoutReady()` or debounced enable |
-| Toggle doesn't take effect | Need to close/reopen view | Call `refreshAll()` after enable/disable |
-| Events leak on disable | Memory bloat, stale handlers | Store `EventRef[]`, call `offref()` |
-| Patch applied twice | Duplicate labels, errors | Guard with `restorers.has(proto)` |
+| Issue                      | Symptom                            | Solution                                  |
+| -------------------------- | ---------------------------------- | ----------------------------------------- |
+| Race condition at startup  | Feature doesn't work on first open | Use `onLayoutReady()` or debounced enable |
+| Toggle doesn't take effect | Need to close/reopen view          | Call `refreshAll()` after enable/disable  |
+| Events leak on disable     | Memory bloat, stale handlers       | Store `EventRef[]`, call `offref()`       |
+| Patch applied twice        | Duplicate labels, errors           | Guard with `restorers.has(proto)`         |
 
 **Reference**: Issues #2149, #2157 - Graph View patch lifecycle (February 2026)
 
@@ -6300,26 +6525,26 @@ grep -r "DAILY_PROJECTS\|daily-projects" packages/obsidian-plugin/src/
 
 **Scope**: 147 steps, 2323 lines deleted
 
-| File | Change |
-|------|--------|
-| `ExocortexSettings.ts` | Removed `showDailyNoteProjects: boolean` |
-| `ExocortexSettingTab.ts` | Removed toggle (lines 123-136) |
-| `DailyProjectsRenderer.ts` | **Deleted entire file** |
-| `DailyProjectsTable.tsx` | **Deleted entire file** |
-| `PropertyDependencyResolver.ts` | Removed 5 enum mappings |
-| `IncrementalUpdateHandler.ts` | Removed section case |
-| `SectionStateManager.ts` | Removed from known sections |
-| `tableSortStore.ts` | Removed `dailyProjects` state |
-| `UniversalLayoutRenderer.ts` | Removed import, field, instantiation |
-| Tests (7 files) | Updated or deleted |
+| File                            | Change                                   |
+| ------------------------------- | ---------------------------------------- |
+| `ExocortexSettings.ts`          | Removed `showDailyNoteProjects: boolean` |
+| `ExocortexSettingTab.ts`        | Removed toggle (lines 123-136)           |
+| `DailyProjectsRenderer.ts`      | **Deleted entire file**                  |
+| `DailyProjectsTable.tsx`        | **Deleted entire file**                  |
+| `PropertyDependencyResolver.ts` | Removed 5 enum mappings                  |
+| `IncrementalUpdateHandler.ts`   | Removed section case                     |
+| `SectionStateManager.ts`        | Removed from known sections              |
+| `tableSortStore.ts`             | Removed `dailyProjects` state            |
+| `UniversalLayoutRenderer.ts`    | Removed import, field, instantiation     |
+| Tests (7 files)                 | Updated or deleted                       |
 
 ### February 2026 Sprint: 3 Settings Removed
 
-| Issue | Setting Removed | Steps | Deletions |
-|-------|-----------------|-------|-----------|
-| #2144 | Show projects in daily notes | 147 | 2323 lines |
-| #2145 | Default ontology asset | 70 | 608 lines |
-| #2148 | Show labels in file explorer | 60 | 789 lines |
+| Issue | Setting Removed              | Steps | Deletions  |
+| ----- | ---------------------------- | ----- | ---------- |
+| #2144 | Show projects in daily notes | 147   | 2323 lines |
+| #2145 | Default ontology asset       | 70    | 608 lines  |
+| #2148 | Show labels in file explorer | 60    | 789 lines  |
 
 **Total**: 277 steps, 3720 lines deleted in one day
 
@@ -6347,8 +6572,8 @@ this.observer = new MutationObserver((mutations) => {
     for (const node of mutation.addedNodes) {
       if (node instanceof HTMLElement) {
         // Only gets DIRECT links, not nested ones
-        const links = node.querySelectorAll('a.internal-link');
-        links.forEach(link => this.patchLink(link));
+        const links = node.querySelectorAll("a.internal-link");
+        links.forEach((link) => this.patchLink(link));
       }
     }
   }
@@ -6364,12 +6589,12 @@ this.observer = new MutationObserver((mutations) => {
     for (const node of mutation.addedNodes) {
       if (node instanceof HTMLElement) {
         // Case 1: Node IS the target element (e.g., link inside <td>)
-        if (node.matches('a.internal-link')) {
+        if (node.matches("a.internal-link")) {
           this.patchLink(node as HTMLAnchorElement);
         }
 
         // Case 2: Node CONTAINS target elements (tables, divs, etc.)
-        node.querySelectorAll('a.internal-link').forEach(link => {
+        node.querySelectorAll("a.internal-link").forEach((link) => {
           this.patchLink(link as HTMLAnchorElement);
         });
       }
@@ -6382,22 +6607,22 @@ this.observer = new MutationObserver((mutations) => {
 
 ```typescript
 this.observer.observe(container, {
-  childList: true,    // Watch for added/removed children
-  subtree: true,      // Required for nested elements (tables!)
+  childList: true, // Watch for added/removed children
+  subtree: true, // Required for nested elements (tables!)
   characterData: false, // Usually not needed
-  attributes: false,  // Only if watching attribute changes
+  attributes: false, // Only if watching attribute changes
 });
 ```
 
 ### Common Obsidian Rendering Contexts
 
-| Context | DOM Structure | Special Handling |
-|---------|---------------|------------------|
-| Paragraph | `<p><a class="internal-link">` | Standard `querySelectorAll` |
-| List item | `<li><a class="internal-link">` | Standard `querySelectorAll` |
-| Table cell | `<td><a class="internal-link">` | Requires `subtree: true` |
-| Callout | `<div class="callout"><a>` | Nested container |
-| Embedded note | `<div class="markdown-embed">` | Separate observer may fire |
+| Context       | DOM Structure                   | Special Handling            |
+| ------------- | ------------------------------- | --------------------------- |
+| Paragraph     | `<p><a class="internal-link">`  | Standard `querySelectorAll` |
+| List item     | `<li><a class="internal-link">` | Standard `querySelectorAll` |
+| Table cell    | `<td><a class="internal-link">` | Requires `subtree: true`    |
+| Callout       | `<div class="callout"><a>`      | Nested container            |
+| Embedded note | `<div class="markdown-embed">`  | Separate observer may fire  |
 
 ### Testing DOM Coverage
 
@@ -6406,18 +6631,19 @@ describe("MutationObserver coverage", () => {
   it("should patch links in paragraph", async () => {
     container.innerHTML = '<p><a class="internal-link">Link</a></p>';
     await waitForObserver();
-    expect(container.querySelector('a')?.textContent).toBe("Patched");
+    expect(container.querySelector("a")?.textContent).toBe("Patched");
   });
 
   it("should patch links in table cell", async () => {
-    container.innerHTML = '<table><tr><td><a class="internal-link">Link</a></td></tr></table>';
+    container.innerHTML =
+      '<table><tr><td><a class="internal-link">Link</a></td></tr></table>';
     await waitForObserver();
-    expect(container.querySelector('a')?.textContent).toBe("Patched");
+    expect(container.querySelector("a")?.textContent).toBe("Patched");
   });
 
   it("should patch link added directly (not as child)", async () => {
-    const link = document.createElement('a');
-    link.className = 'internal-link';
+    const link = document.createElement("a");
+    link.className = "internal-link";
     container.appendChild(link);
     await waitForObserver();
     expect(link.textContent).toBe("Patched");
@@ -6440,7 +6666,7 @@ describe("MutationObserver coverage", () => {
 const content = await this.app.vault.read(file);
 const newContent = content.replace(
   /^---\n[\s\S]*?\n---/,
-  `---\naliases:\n  - ${newAlias}\n---`
+  `---\naliases:\n  - ${newAlias}\n---`,
 );
 await this.app.vault.modify(file, newContent);
 // Result: Overwrites existing aliases, may corrupt YAML structure
@@ -6493,7 +6719,7 @@ async renameToUID(file: TFile): Promise<void> {
 describe("Rename to UID with aliases", () => {
   it("should append to existing aliases array", async () => {
     const file = createMockFile("test.md", {
-      aliases: ["existing-alias-1", "existing-alias-2"]
+      aliases: ["existing-alias-1", "existing-alias-2"],
     });
 
     await command.execute(file);
@@ -6502,19 +6728,19 @@ describe("Rename to UID with aliases", () => {
     expect(fm.aliases).toEqual([
       "existing-alias-1",
       "existing-alias-2",
-      "test"  // Old basename appended
+      "test", // Old basename appended
     ]);
   });
 
   it("should not duplicate existing alias", async () => {
     const file = createMockFile("test.md", {
-      aliases: ["test"]  // Already contains basename
+      aliases: ["test"], // Already contains basename
     });
 
     await command.execute(file);
 
     const fm = await readFrontmatter(file);
-    expect(fm.aliases).toEqual(["test"]);  // No duplicate
+    expect(fm.aliases).toEqual(["test"]); // No duplicate
   });
 });
 ```
@@ -6533,12 +6759,12 @@ When removing settings, batch related removals in a single sprint session for ma
 
 ### February 2026 Sprint Example: 4 Settings Removed
 
-| Issue | Setting Removed | Steps | Files Changed |
-|-------|-----------------|-------|---------------|
-| #2162 | Default ontology asset | 31 | 8 |
-| #2163 | Status emoji mapping | 87 | 12 |
-| #2146 | Use dynamic property fields | 117 | 15 |
-| #2164 | Webhook integration | 91 | 10 |
+| Issue | Setting Removed             | Steps | Files Changed |
+| ----- | --------------------------- | ----- | ------------- |
+| #2162 | Default ontology asset      | 31    | 8             |
+| #2163 | Status emoji mapping        | 87    | 12            |
+| #2146 | Use dynamic property fields | 117   | 15            |
+| #2164 | Webhook integration         | 91    | 10            |
 
 **Total**: 326 steps, 4 settings removed in one day
 
@@ -6567,6 +6793,7 @@ For EACH setting, follow this exact order:
    - [ ] Remove spy calls for deleted helper methods
 
 5. **Verification**
+
    ```bash
    # Must return zero matches
    grep -r "settingName" packages/ --include="*.ts" --include="*.tsx"
@@ -6588,13 +6815,24 @@ For EACH setting, follow this exact order:
 
 ```typescript
 // BEFORE removal - ontology dropdown is index 0
-(MockSetting as jest.Mock).mock.results[0]  // Ontology dropdown
-(MockSetting as jest.Mock).mock.results[1]  // Show layout
-(MockSetting as jest.Mock).mock.results[2]  // Use labels
+(MockSetting as jest.Mock).mock.results[0](
+  // Ontology dropdown
+  MockSetting as jest.Mock,
+)
+  .mock.results[1](
+    // Show layout
+    MockSetting as jest.Mock,
+  )
+  .mock.results[2](
+    // Use labels
 
-// AFTER removal - indices shift down
-(MockSetting as jest.Mock).mock.results[0]  // Show layout (was 1)
-(MockSetting as jest.Mock).mock.results[1]  // Use labels (was 2)
+    // AFTER removal - indices shift down
+    MockSetting as jest.Mock,
+  )
+  .mock.results[0](
+    // Show layout (was 1)
+    MockSetting as jest.Mock,
+  ).mock.results[1]; // Use labels (was 2)
 ```
 
 **Always audit ALL `mock.results[N]` indices** when removing a Setting.
@@ -6629,6 +6867,7 @@ return renderRow(row, virtualRow.index, {
 ```
 
 **Result**: `<tr>` with `position: absolute` is removed from document flow:
+
 - `<td>` cells lose relationship with `<colgroup>` and `<th>` widths
 - `table-layout: fixed` stops working
 - Cells collapse to minimum content width
@@ -6642,8 +6881,8 @@ const headerRef = useRef<HTMLTableRowElement>(null);
 
 useLayoutEffect(() => {
   if (headerRef.current) {
-    const cells = headerRef.current.querySelectorAll('th');
-    const widths = Array.from(cells).map(cell => cell.offsetWidth);
+    const cells = headerRef.current.querySelectorAll("th");
+    const widths = Array.from(cells).map((cell) => cell.offsetWidth);
     setColumnWidths(widths);
   }
 }, [columns]);
@@ -6652,11 +6891,14 @@ useLayoutEffect(() => {
 const renderVirtualizedRow = (row: Row, style: CSSProperties) => (
   <tr style={style}>
     {columns.map((col, i) => (
-      <td key={col.id} style={{
-        width: columnWidths[i] || 'auto',
-        minWidth: columnWidths[i] || 'auto',
-        maxWidth: columnWidths[i] || 'auto',
-      }}>
+      <td
+        key={col.id}
+        style={{
+          width: columnWidths[i] || "auto",
+          minWidth: columnWidths[i] || "auto",
+          maxWidth: columnWidths[i] || "auto",
+        }}
+      >
         {row[col.id]}
       </td>
     ))}
@@ -6671,20 +6913,20 @@ const renderVirtualizedRow = (row: Row, style: CSSProperties) => (
 <div
   className="virtualized-table-grid"
   style={{
-    display: 'grid',
-    gridTemplateColumns: columns.map(c => c.width || '1fr').join(' '),
+    display: "grid",
+    gridTemplateColumns: columns.map((c) => c.width || "1fr").join(" "),
   }}
 >
-  {virtualItems.map(virtualRow => (
+  {virtualItems.map((virtualRow) => (
     <div
       key={virtualRow.index}
       style={{
-        position: 'absolute',
+        position: "absolute",
         transform: `translateY(${virtualRow.start}px)`,
-        display: 'contents',  // Allows children to participate in grid
+        display: "contents", // Allows children to participate in grid
       }}
     >
-      {columns.map(col => (
+      {columns.map((col) => (
         <div className="grid-cell">{row[col.id]}</div>
       ))}
     </div>
@@ -6699,14 +6941,14 @@ const renderVirtualizedRow = (row: Row, style: CSSProperties) => (
 useEffect(() => {
   const handleResize = debounce(() => {
     if (headerRef.current) {
-      const cells = headerRef.current.querySelectorAll('th');
-      const widths = Array.from(cells).map(cell => cell.offsetWidth);
+      const cells = headerRef.current.querySelectorAll("th");
+      const widths = Array.from(cells).map((cell) => cell.offsetWidth);
       setColumnWidths(widths);
     }
   }, 100);
 
-  window.addEventListener('resize', handleResize);
-  return () => window.removeEventListener('resize', handleResize);
+  window.addEventListener("resize", handleResize);
+  return () => window.removeEventListener("resize", handleResize);
 }, []);
 ```
 
@@ -6718,8 +6960,8 @@ const VIRTUALIZATION_THRESHOLD = 50;
 const shouldVirtualize = rows.length > VIRTUALIZATION_THRESHOLD;
 
 return shouldVirtualize
-  ? renderVirtualizedTable(rows)  // Uses explicit widths
-  : renderStandardTable(rows);     // Uses table-layout: fixed
+  ? renderVirtualizedTable(rows) // Uses explicit widths
+  : renderStandardTable(rows); // Uses table-layout: fixed
 ```
 
 **Reference**: Issue #2152 - Virtualized table column alignment (70 steps, February 2026)
@@ -6817,7 +7059,7 @@ describe("Wikilink labels in Callouts", () => {
 // Debounce decoration updates for large documents
 const debouncedUpdate = debounce(() => {
   this.decorations = this.buildDecorations(view);
-  view.dispatch({});  // Trigger redraw
+  view.dispatch({}); // Trigger redraw
 }, 50);
 ```
 
@@ -6858,8 +7100,8 @@ export const useUIStore = create<UIState & UIActions>()(
       toggleTimeEstimate: () =>
         set((s) => ({ showTimeEstimate: !s.showTimeEstimate })),
     }),
-    { name: 'exocortex-ui-settings' }  // Persist to localStorage
-  )
+    { name: "exocortex-ui-settings" }, // Persist to localStorage
+  ),
 );
 ```
 
@@ -6906,7 +7148,7 @@ export const DailyTasksTable: React.FC<Props> = ({ tasks }) => {
 ```typescript
 // Step 3: Format utility
 function formatTimeEstimate(minutes: number | null | undefined): string {
-  if (!minutes || minutes === 0) return '';
+  if (!minutes || minutes === 0) return "";
 
   const hours = Math.floor(minutes / 60);
   const mins = minutes % 60;
@@ -7028,7 +7270,7 @@ interface UIState {
 export class WikilinkLabelSuggest extends EditorSuggest<TFile> {
   constructor(
     app: App,
-    private resolver: WikilinkLabelResolver
+    private resolver: WikilinkLabelResolver,
   ) {
     super(app);
   }
@@ -7036,7 +7278,7 @@ export class WikilinkLabelSuggest extends EditorSuggest<TFile> {
   // Trigger on [[ pattern
   onTrigger(
     cursor: EditorPosition,
-    editor: Editor
+    editor: Editor,
   ): EditorSuggestTriggerInfo | null {
     const line = editor.getLine(cursor.line).substring(0, cursor.ch);
     const match = line.match(/\[\[([^\]|]*)$/);
@@ -7046,7 +7288,7 @@ export class WikilinkLabelSuggest extends EditorSuggest<TFile> {
     return {
       start: { line: cursor.line, ch: cursor.ch - match[1].length },
       end: cursor,
-      query: match[1]
+      query: match[1],
     };
   }
 
@@ -7054,8 +7296,9 @@ export class WikilinkLabelSuggest extends EditorSuggest<TFile> {
   getSuggestions(context: EditorSuggestContext): TFile[] {
     const query = context.query.toLowerCase();
 
-    return this.app.vault.getMarkdownFiles()
-      .filter(file => {
+    return this.app.vault
+      .getMarkdownFiles()
+      .filter((file) => {
         const label = this.resolver.getAssetLabel(file.path);
         const basename = file.basename;
 
@@ -7071,7 +7314,7 @@ export class WikilinkLabelSuggest extends EditorSuggest<TFile> {
         const labelB = this.resolver.getAssetLabel(b.path) || b.basename;
         return labelA.localeCompare(labelB);
       })
-      .slice(0, 20);  // Limit results
+      .slice(0, 20); // Limit results
   }
 
   // Display label in suggestion list
@@ -7080,8 +7323,8 @@ export class WikilinkLabelSuggest extends EditorSuggest<TFile> {
     const basename = file.basename;
 
     if (label && label !== basename) {
-      el.createEl('div', { text: label, cls: 'suggestion-label' });
-      el.createEl('div', { text: basename, cls: 'suggestion-basename' });
+      el.createEl("div", { text: label, cls: "suggestion-label" });
+      el.createEl("div", { text: basename, cls: "suggestion-basename" });
     } else {
       el.setText(basename);
     }
@@ -7093,14 +7336,15 @@ export class WikilinkLabelSuggest extends EditorSuggest<TFile> {
     const basename = file.basename;
 
     // Insert [[uuid|label]] or [[uuid]]
-    const insertText = label && label !== basename
-      ? `[[${basename}|${label}]]`
-      : `[[${basename}]]`;
+    const insertText =
+      label && label !== basename
+        ? `[[${basename}|${label}]]`
+        : `[[${basename}]]`;
 
     this.context?.editor.replaceRange(
       insertText,
       this.context.start,
-      this.context.end
+      this.context.end,
     );
   }
 }
@@ -7140,7 +7384,7 @@ describe("WikilinkLabelSuggest", () => {
   it("should trigger on [[", () => {
     const trigger = suggest.onTrigger(
       { line: 0, ch: 5 },
-      mockEditor("test [[qu")
+      mockEditor("test [[qu"),
     );
 
     expect(trigger).not.toBeNull();
@@ -7156,7 +7400,7 @@ describe("WikilinkLabelSuggest", () => {
     const results = suggest.getSuggestions({ query: "proj" });
 
     expect(results).toContainEqual(
-      expect.objectContaining({ basename: "abc123" })
+      expect.objectContaining({ basename: "abc123" }),
     );
   });
 
@@ -7168,7 +7412,7 @@ describe("WikilinkLabelSuggest", () => {
     expect(mockEditor.replaceRange).toHaveBeenCalledWith(
       "[[abc123|My Project]]",
       expect.any(Object),
-      expect.any(Object)
+      expect.any(Object),
     );
   });
 });
@@ -7188,11 +7432,11 @@ Complete related SPARQL features in a single sprint, building each feature on th
 
 ### Sprint Structure (February 20-22, 2026)
 
-| Day | Issues | Features | Steps |
-|-----|--------|----------|-------|
-| **Day 1** | #2204 | SPARQL 1.1 full support (GROUP BY, HAVING, subqueries, property paths) | 110 |
-| **Day 2** | #2207, #2208 | REGEX Cyrillic support, OPTIONAL LEFT JOIN semantics | 85+76 |
-| **Day 2** | #2217-2221 | Timeout protection, dry-run, templates, caching, error messages | 62-78 each |
+| Day       | Issues       | Features                                                               | Steps      |
+| --------- | ------------ | ---------------------------------------------------------------------- | ---------- |
+| **Day 1** | #2204        | SPARQL 1.1 full support (GROUP BY, HAVING, subqueries, property paths) | 110        |
+| **Day 2** | #2207, #2208 | REGEX Cyrillic support, OPTIONAL LEFT JOIN semantics                   | 85+76      |
+| **Day 2** | #2217-2221   | Timeout protection, dry-run, templates, caching, error messages        | 62-78 each |
 
 **Total**: 8 SPARQL issues, ~600 steps, 2 days
 
@@ -7243,16 +7487,22 @@ if (options.explain) {
 ```typescript
 // Error suggestion mapping
 const errorSuggestions: Map<RegExp, string> = new Map([
-  [/Unknown prefix: (\w+)/, 'Did you forget to declare PREFIX $1: <...>?'],
-  [/Property .* not found/, 'Check property name spelling. Available: exo:, ems:, ims:'],
-  [/Syntax error at line (\d+)/, 'Check for missing brackets, dots, or semicolons'],
+  [/Unknown prefix: (\w+)/, "Did you forget to declare PREFIX $1: <...>?"],
+  [
+    /Property .* not found/,
+    "Check property name spelling. Available: exo:, ems:, ims:",
+  ],
+  [
+    /Syntax error at line (\d+)/,
+    "Check for missing brackets, dots, or semicolons",
+  ],
 ]);
 
 function enhanceError(error: Error): string {
   for (const [pattern, suggestion] of errorSuggestions) {
     const match = error.message.match(pattern);
     if (match) {
-      return `${error.message}\n\n💡 Suggestion: ${suggestion.replace('$1', match[1] || '')}`;
+      return `${error.message}\n\n💡 Suggestion: ${suggestion.replace("$1", match[1] || "")}`;
     }
   }
   return error.message;
@@ -7280,15 +7530,15 @@ Batch related CLI enhancements together, implementing in order: flags → format
 
 ### Sprint Structure (February 2026)
 
-| Issue | Feature | Steps | Dependencies |
-|-------|---------|-------|--------------|
-| #2206 | --timeout, --format flags, classes command | 56-84 | None |
-| #2213 | --explain, --dry-run debugging | 77 | #2206 (flag infrastructure) |
-| #2217 | Timeout protection | 76 | #2206 (--timeout flag) |
-| #2218 | Dry-run mode | 62 | #2213 (--explain) |
-| #2219 | Query templates library | 78 | None |
-| #2220 | Result caching with TTL | 69 | None |
-| #2221 | Enhanced error messages | 71 | None |
+| Issue | Feature                                    | Steps | Dependencies                |
+| ----- | ------------------------------------------ | ----- | --------------------------- |
+| #2206 | --timeout, --format flags, classes command | 56-84 | None                        |
+| #2213 | --explain, --dry-run debugging             | 77    | #2206 (flag infrastructure) |
+| #2217 | Timeout protection                         | 76    | #2206 (--timeout flag)      |
+| #2218 | Dry-run mode                               | 62    | #2213 (--explain)           |
+| #2219 | Query templates library                    | 78    | None                        |
+| #2220 | Result caching with TTL                    | 69    | None                        |
+| #2221 | Enhanced error messages                    | 71    | None                        |
 
 ### Implementation Order
 
@@ -7308,17 +7558,17 @@ Batch related CLI enhancements together, implementing in order: flags → format
 
 ```typescript
 // CLI output format pattern (Issue #2206)
-type OutputFormat = 'table' | 'json' | 'csv' | 'ntriples';
+type OutputFormat = "table" | "json" | "csv" | "ntriples";
 
 function formatOutput(results: QueryResult[], format: OutputFormat): string {
   switch (format) {
-    case 'json':
+    case "json":
       return JSON.stringify(results, null, 2);
-    case 'csv':
+    case "csv":
       return convertToCSV(results);
-    case 'ntriples':
+    case "ntriples":
       return convertToNTriples(results);
-    case 'table':
+    case "table":
     default:
       return formatAsTable(results);
   }
@@ -7332,14 +7582,16 @@ function formatOutput(results: QueryResult[], format: OutputFormat): string {
 async function executeWithTimeout<T>(
   operation: () => Promise<T>,
   timeoutMs: number,
-  operationName: string
+  operationName: string,
 ): Promise<T> {
   const timeoutPromise = new Promise<never>((_, reject) => {
     setTimeout(() => {
-      reject(new Error(
-        `${operationName} timed out after ${timeoutMs}ms.\n` +
-        `💡 Try: --explain to analyze query complexity`
-      ));
+      reject(
+        new Error(
+          `${operationName} timed out after ${timeoutMs}ms.\n` +
+            `💡 Try: --explain to analyze query complexity`,
+        ),
+      );
     }, timeoutMs);
   });
 
@@ -7368,10 +7620,10 @@ Achieve significant coverage increases by targeting critical user paths first, t
 
 ### Sprint Structure (February 2026)
 
-| Issue | Goal | Steps | Result |
-|-------|------|-------|--------|
-| #2185 | Increase coverage 38% → 60% | 83 | Achieved |
-| #2187 | Add integration tests for critical paths | 134 | 12+ integration tests added |
+| Issue | Goal                                     | Steps | Result                      |
+| ----- | ---------------------------------------- | ----- | --------------------------- |
+| #2185 | Increase coverage 38% → 60%              | 83    | Achieved                    |
+| #2187 | Add integration tests for critical paths | 134   | 12+ integration tests added |
 
 ### Implementation Order
 
@@ -7438,12 +7690,12 @@ describe("Task Creation Flow (Critical Path)", () => {
 
 ### Coverage Target Guidelines
 
-| Coverage Level | Risk | Recommendation |
-|----------------|------|----------------|
-| < 40% | High | Priority improvement needed |
-| 40-60% | Medium | Focus on critical paths |
-| 60-80% | Low | Maintain, add edge cases |
-| > 80% | Minimal | Maintenance mode |
+| Coverage Level | Risk    | Recommendation              |
+| -------------- | ------- | --------------------------- |
+| < 40%          | High    | Priority improvement needed |
+| 40-60%         | Medium  | Focus on critical paths     |
+| 60-80%         | Low     | Maintain, add edge cases    |
+| > 80%          | Minimal | Maintenance mode            |
 
 **Reference**: Issues #2185, #2187 - Test Coverage Sprint (February 2026)
 
@@ -7494,6 +7746,7 @@ export class CopyLabelCommand implements ICommand {
 ### Common Gotcha: Incomplete Implementation
 
 Issue #2202 was created because #2200 didn't fully implement the feature. Lesson: Always verify command works in:
+
 - Command palette
 - Right-click context menu
 - Hotkey assignment
@@ -7517,10 +7770,14 @@ Validate and sanitize IRIs before using in RDF operations to prevent parsing fai
 // IRI validation pattern
 const IRI_REGEX = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
 
-function validateIRI(iri: string): { valid: boolean; sanitized?: string; error?: string } {
+function validateIRI(iri: string): {
+  valid: boolean;
+  sanitized?: string;
+  error?: string;
+} {
   // Check basic structure
-  if (!iri || typeof iri !== 'string') {
-    return { valid: false, error: 'IRI must be a non-empty string' };
+  if (!iri || typeof iri !== "string") {
+    return { valid: false, error: "IRI must be a non-empty string" };
   }
 
   // Check scheme
@@ -7532,7 +7789,7 @@ function validateIRI(iri: string): { valid: boolean; sanitized?: string; error?:
   const problematic = iri.match(/[\s<>"{}|\\^`]/g);
   if (problematic) {
     const sanitized = iri.replace(/[\s<>"{}|\\^`]/g, (char) =>
-      encodeURIComponent(char)
+      encodeURIComponent(char),
     );
     return { valid: true, sanitized };
   }
@@ -7546,7 +7803,7 @@ function validateIRI(iri: string): { valid: boolean; sanitized?: string; error?:
 ```typescript
 // Skip invalid IRIs instead of failing
 function processTriples(triples: Triple[]): Triple[] {
-  return triples.filter(triple => {
+  return triples.filter((triple) => {
     const subjectValid = validateIRI(triple.subject);
     const predicateValid = validateIRI(triple.predicate);
 
@@ -7556,7 +7813,9 @@ function processTriples(triples: Triple[]): Triple[] {
     }
 
     if (!predicateValid.valid) {
-      console.warn(`Skipping triple with invalid predicate: ${triple.predicate}`);
+      console.warn(
+        `Skipping triple with invalid predicate: ${triple.predicate}`,
+      );
       return false;
     }
 
@@ -7585,8 +7844,9 @@ export class QuickSwitcherEnhancement {
   private resolver: WikilinkLabelResolver;
 
   enhanceSuggestions(suggestions: TFile[]): EnhancedSuggestion[] {
-    return suggestions.map(file => {
-      const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
+    return suggestions.map((file) => {
+      const frontmatter =
+        this.app.metadataCache.getFileCache(file)?.frontmatter;
 
       return {
         file,
@@ -7604,7 +7864,7 @@ export class QuickSwitcherEnhancement {
     if (fm?.aliases) parts.push(...fm.aliases);
     // UID is already in basename for UUID-named files
 
-    return parts.join(' ').toLowerCase();
+    return parts.join(" ").toLowerCase();
   }
 
   private getDisplayText(file: TFile, fm: FrontMatter | undefined): string {
@@ -7615,9 +7875,9 @@ export class QuickSwitcherEnhancement {
     // Show classes instead of path
     const classes = fm?.exo__Instance_class;
     if (Array.isArray(classes) && classes.length > 0) {
-      return classes.map(c => c.replace(/[\[\]]/g, '')).join(', ');
+      return classes.map((c) => c.replace(/[\[\]]/g, "")).join(", ");
     }
-    return file.parent?.path || '';
+    return file.parent?.path || "";
   }
 }
 ```
@@ -7666,12 +7926,12 @@ const result = template.split("{{value}}").join(userInput);
 
 ### Common Security Patterns
 
-| Alert Type | Fix Pattern |
-|------------|-------------|
-| Incomplete string escaping | split/join instead of replace |
-| Insecure randomness | crypto.randomUUID() or crypto.getRandomValues() |
-| Weak crypto | Use AES-GCM, avoid MD5/SHA1 for security |
-| Prototype pollution | Object.create(null) for dictionaries |
+| Alert Type                 | Fix Pattern                                     |
+| -------------------------- | ----------------------------------------------- |
+| Incomplete string escaping | split/join instead of replace                   |
+| Insecure randomness        | crypto.randomUUID() or crypto.getRandomValues() |
+| Weak crypto                | Use AES-GCM, avoid MD5/SHA1 for security        |
+| Prototype pollution        | Object.create(null) for dictionaries            |
 
 **Reference**: Issue #2226 - P0 String Escaping Fix (February 2026)
 
@@ -7688,6 +7948,7 @@ Document architecture decisions using Architecture Decision Records (ADR) format
 ### Implementation (Issue #2188)
 
 **Structure**:
+
 ```
 docs/
 ├── adr/
@@ -7698,22 +7959,28 @@ docs/
 ```
 
 **ADR Template**:
+
 ```markdown
 # ADR-NNNN: Title
 
 ## Status
+
 Accepted | Proposed | Deprecated | Superseded by ADR-XXXX
 
 ## Context
+
 What is the issue that we're seeing that is motivating this decision?
 
 ## Decision
+
 What is the change that we're proposing and/or doing?
 
 ## Consequences
+
 What becomes easier or more difficult because of this change?
 
 ## References
+
 - Issue #XXX
 - PR #YYY
 ```
@@ -7764,6 +8031,7 @@ Implement new button groups using the ButtonGroupBuilder architecture with dedic
 ### Real-World Example: Criticality Zone Buttons (Issue #2231)
 
 **Files Modified (10 files, 101 steps)**:
+
 - `packages/exocortex/src/services/CriticalityZoneService.ts` (NEW)
 - `packages/exocortex/src/domain/commands/visibility/TaskVisibilityRules.ts`
 - `packages/exocortex/src/domain/commands/visibility/index.ts`
@@ -7775,12 +8043,13 @@ Implement new button groups using the ButtonGroupBuilder architecture with dedic
 - Tests: `CriticalityZoneButtonGroupBuilder.test.ts`, fixtures
 
 **UUID Wikilink Format for Button Actions**:
+
 ```typescript
 // CriticalityZoneService.ts
 const ZONE_UUIDS = {
-  today: 'e266a2e9-9eb0-431d-b1fe-b95b9d3e9a3f',
-  thisWeek: 'c7f1a968-0959-4ac7-ac82-31b0cdc2aba7',
-  someday: '6968a0fc-7a41-4393-82b1-17d767c7ad7c',
+  today: "e266a2e9-9eb0-431d-b1fe-b95b9d3e9a3f",
+  thisWeek: "c7f1a968-0959-4ac7-ac82-31b0cdc2aba7",
+  someday: "6968a0fc-7a41-4393-82b1-17d767c7ad7c",
 };
 
 // Button click handler sets frontmatter:
@@ -7792,7 +8061,7 @@ const ZONE_UUIDS = {
 - [ ] Create domain service with business logic
 - [ ] Add service interface to tokens.ts
 - [ ] Register service in container.ts
-- [ ] Define visibility rules in appropriate *VisibilityRules.ts
+- [ ] Define visibility rules in appropriate \*VisibilityRules.ts
 - [ ] Create ButtonGroupBuilder with actions
 - [ ] Register builder in ButtonGroupsBuilder.ts
 - [ ] Add builder call in UniversalLayoutRenderer
@@ -7801,14 +8070,14 @@ const ZONE_UUIDS = {
 
 ### Expected Timeline
 
-| Phase | Time |
-|-------|------|
-| Service implementation | 15-20 min |
-| Visibility rules | 10-15 min |
-| ButtonGroupBuilder | 20-30 min |
-| Integration | 10-15 min |
-| Testing | 20-30 min |
-| **Total** | ~90-120 min |
+| Phase                  | Time        |
+| ---------------------- | ----------- |
+| Service implementation | 15-20 min   |
+| Visibility rules       | 10-15 min   |
+| ButtonGroupBuilder     | 20-30 min   |
+| Integration            | 10-15 min   |
+| Testing                | 20-30 min   |
+| **Total**              | ~90-120 min |
 
 **Reference**: Issue #2231 - Criticality Zone Buttons (101 steps, merged February 2026)
 
@@ -7825,6 +8094,7 @@ Add configurable timeout support for CLI SPARQL queries via environment variable
 ### Implementation (Issue #2233/PR #2234)
 
 **Environment Variable Support**:
+
 ```typescript
 // packages/cli/src/commands/sparql-query.ts
 const DEFAULT_TIMEOUT_MS = 30000; // 30 seconds
@@ -7842,15 +8112,16 @@ function getTimeoutMs(): number {
 ```
 
 **Error Handling**:
+
 ```typescript
 // packages/cli/src/utils/errors/QueryTimeoutError.ts
 export class QueryTimeoutError extends Error {
   constructor(timeoutMs: number) {
     super(
       `Query timed out after ${timeoutMs / 1000} seconds. ` +
-      `Try: EXOCORTEX_SPARQL_TIMEOUT=60 npx @kitelev/exocortex-cli sparql query "..."`
+        `Try: EXOCORTEX_SPARQL_TIMEOUT=60 npx @kitelev/exocortex-cli sparql query "..."`,
     );
-    this.name = 'QueryTimeoutError';
+    this.name = "QueryTimeoutError";
   }
 }
 ```
@@ -7873,12 +8144,14 @@ EXOCORTEX_SPARQL_TIMEOUT=300 npx @kitelev/exocortex-cli sparql query "SELECT (CO
 When facing SPARQL timeout issues:
 
 1. **Identify query complexity**:
+
    ```bash
    # Check estimated result size
    npx @kitelev/exocortex-cli sparql query "SELECT (COUNT(*) AS ?n) WHERE { ... }"
    ```
 
 2. **Profile with extended timeout**:
+
    ```bash
    EXOCORTEX_SPARQL_TIMEOUT=120 time npx @kitelev/exocortex-cli sparql query "..."
    ```
@@ -7893,11 +8166,13 @@ When facing SPARQL timeout issues:
 **Problem**: Analytical queries (aggregations over many days) timed out, blocking `/self-audit` and similar skills.
 
 **Root Cause Analysis** (54 steps):
+
 - Default timeout too short for analytical queries
 - No user-configurable timeout option
 - Error messages didn't guide users to solutions
 
 **Solution** (PR #2234):
+
 - Added `EXOCORTEX_SPARQL_TIMEOUT` environment variable
 - Clear error messages with usage examples
 - Default remains 30s (fast for typical queries)
@@ -7913,6 +8188,7 @@ When facing SPARQL timeout issues:
 ### Pattern Description
 
 When adding a new feature to a UI component (like a table or tree), ensure ALL variants of that component receive the feature. Common variants include:
+
 - Regular items
 - Empty slots / placeholder items
 - Grouped / aggregated items
@@ -7923,14 +8199,15 @@ When adding a new feature to a UI component (like a table or tree), ensure ALL v
 
 **Parent Feature (Issue #2236)**: Added `calculateTimeFromTimestamps()` to calculate time from timestamps when explicit estimate is missing.
 
-| Component | Implementation | Status |
-|-----------|---------------|--------|
-| Regular Tasks | ✅ Updated Time column | Done in #2236 |
-| Empty Slots | ❌ Missed initially | Fixed in #2238 |
+| Component     | Implementation         | Status         |
+| ------------- | ---------------------- | -------------- |
+| Regular Tasks | ✅ Updated Time column | Done in #2236  |
+| Empty Slots   | ❌ Missed initially    | Fixed in #2238 |
 
 **Root Cause of Follow-up Issue #2238:**
+
 ```typescript
-// createEmptySlot() returned metadata: {} 
+// createEmptySlot() returned metadata: {}
 // But calculateTimeFromTimestamps() expected:
 // - ems__Effort_startTimestamp
 // - ems__Effort_endTimestamp
@@ -7938,6 +8215,7 @@ When adding a new feature to a UI component (like a table or tree), ensure ALL v
 ```
 
 **Key Metrics:**
+
 - #2236: 50 steps, 244 additions, 15 unit tests
 - #2238: 62 steps, 235 additions, 6 unit tests (fix for missed variant)
 - Combined: 112 steps, 21 tests
@@ -7957,6 +8235,7 @@ Before considering a UI feature complete:
 ### Anti-Pattern: Incomplete Variant Coverage
 
 **❌ WRONG (Issue #2238 scenario):**
+
 ```typescript
 // Feature implementation only for regular tasks
 const timeValue = calculateTimeFromTimestamps(task.metadata);
@@ -7964,9 +8243,10 @@ const timeValue = calculateTimeFromTimestamps(task.metadata);
 ```
 
 **✅ CORRECT (Complete coverage):**
+
 ```typescript
 // 1. Check all component variants
-const variants = ['regularTasks', 'emptySlots', 'groupedTasks'];
+const variants = ["regularTasks", "emptySlots", "groupedTasks"];
 
 // 2. Ensure metadata structure is consistent
 function createEmptySlot(start: string, end: string) {
@@ -7975,12 +8255,12 @@ function createEmptySlot(start: string, end: string) {
       // Map timestamps to expected property names
       ems__Effort_startTimestamp: start,
       ems__Effort_endTimestamp: end,
-    }
+    },
   };
 }
 
 // 3. Feature works for all variants
-variants.forEach(variant => {
+variants.forEach((variant) => {
   const timeValue = calculateTimeFromTimestamps(item.metadata);
   // Works consistently across all variants
 });
@@ -8023,12 +8303,14 @@ describe('Time Column Feature', () => {
 ### When to Apply
 
 Use this pattern when implementing:
+
 - Table columns with calculated values
 - Tree node decorations (icons, badges)
 - Status indicators
 - Any computed UI element
 
 **Key Questions to Ask:**
+
 1. "What other item types exist in this component?"
 2. "Do placeholder/empty items use the same metadata structure?"
 3. "Are there grouped/aggregated views that need this feature?"
@@ -8107,10 +8389,10 @@ exocortex unarchive --uuid <UUID> --vault /active --archive-vault /archive
 
 ```typescript
 interface PrintNameRule {
-  className: string;   // e.g. "ems__Task"
-  template: string;    // e.g. "{{exo__Asset_label}} ({{ems__Effort_status}})"
-  priority: number;    // Higher priority wins
-  sourceFile: string;  // Vault file that defines the rule
+  className: string; // e.g. "ems__Task"
+  template: string; // e.g. "{{exo__Asset_label}} ({{ems__Effort_status}})"
+  priority: number; // Higher priority wins
+  sourceFile: string; // Vault file that defines the rule
 }
 ```
 
@@ -8202,12 +8484,14 @@ for (const alsoPath of alsoVaults) {
 Before implementing any RFC Issue, run a 15-minute codebase audit:
 
 1. Search for the feature name in existing code:
+
    ```bash
    grep -r "PropertyPath\|propertyPath" packages/exocortex/src/
    grep -r "Subquery\|subquery\|SubSelect" packages/exocortex/src/
    ```
 
 2. Check existing test coverage:
+
    ```bash
    grep -r "property.path\|transitive" packages/exocortex/tests/
    ```
@@ -8256,6 +8540,7 @@ When extending `PrototypeChainMaterializer` or similar BFS materializers:
 `[[UUID|exo__ObjectProperty]]` (UUID wikilink format) is stored as a **literal string**, not resolved to an IRI. Only `[[exo__DeprecatedProperty]]` (without UUID) creates a proper `rdf:type` triple.
 
 **Solution**: Use UNION to query both sources:
+
 ```sparql
 SELECT ?s WHERE {
   { ?s a ?type . FILTER(CONTAINS(STR(?type), "Property")) }
@@ -8265,6 +8550,7 @@ SELECT ?s WHERE {
 ```
 
 Then extract property names from:
+
 1. **Subject URI filename**: `obsidian://vault/.../ems__Effort_status.md` → `ems__Effort_status`
 2. **IRI label values**: `exo:Asset_label` when value is a full ontology URI
 

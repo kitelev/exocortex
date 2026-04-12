@@ -29,6 +29,7 @@
 ### What is Exocortex?
 
 Exocortex is a **knowledge management technology** that provides:
+
 - **Asset management**: Tasks, projects, areas, concepts, prototypes
 - **Status workflows**: Complete lifecycle (Draft → Backlog → Analysis → ToDo → Doing → Done)
 - **Hierarchical organization**: Areas, projects, and task relationships
@@ -103,6 +104,7 @@ Exocortex is organized as a **monorepo** with multiple npm workspaces:
 ```
 
 **Benefits:**
+
 - **Shared Core Logic**: Business logic in `exocortex` is reused by both plugin and CLI
 - **Independent Versioning**: Each package has its own version and release cycle
 - **Clear Boundaries**: Enforces separation between storage-agnostic logic and UI/CLI adapters
@@ -119,6 +121,7 @@ Exocortex follows **Clean Architecture** principles with clear separation of con
 **Location**: `packages/exocortex/src/domain/`
 
 **Components**:
+
 - **Constants**: `AssetClass`, `EffortStatus` enums
 - **Models**: `GraphNode`, `GraphData`, `AreaNode` interfaces
 - **Commands**: Visibility rules (`CommandVisibility.ts`)
@@ -127,6 +130,7 @@ Exocortex follows **Clean Architecture** principles with clear separation of con
 **Dependencies**: ZERO external dependencies (pure TypeScript)
 
 **Characteristics**:
+
 - ✅ Pure functions only
 - ✅ No framework imports
 - ✅ Highly testable (100% unit testable)
@@ -139,6 +143,7 @@ Exocortex follows **Clean Architecture** principles with clear separation of con
 **Location**: `packages/exocortex/src/application/services/`
 
 **Components**:
+
 - `CommandManager` - Facade for commands (static registrations removed; commands now resolved dynamically via `CommandResolver`)
 - `CommandResolver` - Resolves commands from vault `exocmd/` assets with precondition evaluation
 - `GroundingExecutor` - Executes grounding actions from command definitions
@@ -148,6 +153,7 @@ Exocortex follows **Clean Architecture** principles with clear separation of con
 **Dependencies**: Domain layer, IFileSystemAdapter interface
 
 **Characteristics**:
+
 - Orchestrates domain logic
 - Uses infrastructure interfaces (not concrete implementations)
 - Framework-agnostic business workflows
@@ -158,18 +164,22 @@ Exocortex follows **Clean Architecture** principles with clear separation of con
 **Purpose**: Implementation details and external integrations
 
 **Core Infrastructure** (`packages/exocortex/src/infrastructure/`):
+
 - **IFileSystemAdapter**: Abstract interface for storage operations
 - **Utilities**: Pure helpers (DateFormatter, WikiLinkHelpers, FrontmatterService)
 
 **Obsidian Plugin Infrastructure** (`packages/obsidian-plugin/src/infrastructure/`):
+
 - **ObsidianVaultAdapter**: Implements IFileSystemAdapter using Obsidian Vault API
 - **Obsidian-specific utilities**: MetadataExtractor, cache management
 
 **CLI Infrastructure** (`packages/cli/src/infrastructure/`):
+
 - **NodeFsAdapter**: Implements IFileSystemAdapter using Node.js fs module
 - **File system operations**: Direct file manipulation
 
 **Dependencies**:
+
 - Core: Zero external dependencies
 - Plugin: Obsidian API (Vault, MetadataCache, TFile)
 - CLI: Node.js fs, path modules
@@ -181,6 +191,7 @@ Exocortex follows **Clean Architecture** principles with clear separation of con
 **Location**: `packages/obsidian-plugin/src/presentation/`
 
 **Components**:
+
 - **Components**: React components (24+ total, including ActionButtons, ArchiveTask, AreaHierarchyTree, PropertyEditor, SPARQL)
 - **Renderers**: Layout renderers (6 total — DailyTasks, TableLayout, Universal, Calendar, Kanban, AreaTree)
 - **Builders**: UI builders (`ButtonGroupsBuilder`, `CriticalityZoneButtonGroupBuilder`)
@@ -189,6 +200,7 @@ Exocortex follows **Clean Architecture** principles with clear separation of con
 **Dependencies**: Obsidian API (App, Modal), React, exocortex
 
 **Characteristics**:
+
 - Obsidian-specific UI
 - React state management
 - Event handlers and user interactions
@@ -203,12 +215,14 @@ Exocortex follows **Clean Architecture** principles with clear separation of con
 Exocortex uses **TSyringe** (Microsoft's lightweight DI container) for dependency injection across all packages. This enables clean architecture patterns, testability, and cross-platform support.
 
 **Why TSyringe?**
+
 - **Lightweight**: ~2KB bundle size (vs InversifyJS ~50KB)
 - **Simple API**: Decorator-based with minimal boilerplate
 - **TypeScript-native**: Full type safety with Symbol tokens
 - **Cross-platform**: Works in both Obsidian (browser) and Node.js (CLI)
 
 **Architecture Benefits:**
+
 - **Separation of concerns**: Business logic independent of infrastructure
 - **Testability**: Easy mocking of dependencies
 - **Platform abstraction**: Same service works in Obsidian and CLI
@@ -218,15 +232,16 @@ Exocortex uses **TSyringe** (Microsoft's lightweight DI container) for dependenc
 
 All cross-cutting concerns are abstracted through interfaces in `exocortex`:
 
-| Interface | Purpose | Obsidian Implementation | CLI Implementation |
-|-----------|---------|------------------------|-------------------|
-| **ILogger** | Structured logging | `ObsidianLogger` (console) | `NodeLogger` (stdout) |
-| **IEventBus** | Pub/sub messaging | `ObsidianEventBus` (in-memory) | `NodeEventBus` (in-memory) |
-| **IConfiguration** | Settings management | `ObsidianConfiguration` (plugin data) | `NodeConfiguration` (~/.exocortexrc) |
-| **INotificationService** | User notifications | `ObsidianNotificationService` (Notice API) | `NodeNotificationService` (console) |
-| **IVaultAdapter** | File operations | `ObsidianVaultAdapter` (Vault API) | `NodeFileSystemAdapter` (fs module) |
+| Interface                | Purpose             | Obsidian Implementation                    | CLI Implementation                   |
+| ------------------------ | ------------------- | ------------------------------------------ | ------------------------------------ |
+| **ILogger**              | Structured logging  | `ObsidianLogger` (console)                 | `NodeLogger` (stdout)                |
+| **IEventBus**            | Pub/sub messaging   | `ObsidianEventBus` (in-memory)             | `NodeEventBus` (in-memory)           |
+| **IConfiguration**       | Settings management | `ObsidianConfiguration` (plugin data)      | `NodeConfiguration` (~/.exocortexrc) |
+| **INotificationService** | User notifications  | `ObsidianNotificationService` (Notice API) | `NodeNotificationService` (console)  |
+| **IVaultAdapter**        | File operations     | `ObsidianVaultAdapter` (Vault API)         | `NodeFileSystemAdapter` (fs module)  |
 
 **Interface Definitions:**
+
 ```typescript
 // packages/exocortex/src/interfaces/ILogger.ts
 export interface ILogger {
@@ -274,10 +289,11 @@ export const DI_TOKENS = {
   INotificationService: Symbol.for("INotificationService"),
 } as const;
 
-export type DIToken = typeof DI_TOKENS[keyof typeof DI_TOKENS];
+export type DIToken = (typeof DI_TOKENS)[keyof typeof DI_TOKENS];
 ```
 
 **Why Symbols over strings?**
+
 - **Type safety**: TypeScript checks prevent typos
 - **No collisions**: Symbol.for() ensures global uniqueness
 - **Refactoring-safe**: Rename interface, Symbol stays same
@@ -323,7 +339,8 @@ export class PluginContainer {
 
     // Register vault adapter
     container.register(DI_TOKENS.IVaultAdapter, {
-      useFactory: () => new ObsidianVaultAdapter(app.vault, app.metadataCache, app),
+      useFactory: () =>
+        new ObsidianVaultAdapter(app.vault, app.metadataCache, app),
     });
   }
 
@@ -334,6 +351,7 @@ export class PluginContainer {
 ```
 
 **Usage in Plugin**:
+
 ```typescript
 // packages/obsidian-plugin/src/ExocortexPlugin.ts
 import "reflect-metadata";
@@ -392,11 +410,10 @@ export class CLIContainer {
 **Migrating existing services to use DI:**
 
 **Before (manual dependency passing):**
+
 ```typescript
 export class PropertyCleanupService {
-  constructor(
-    private vault: IVaultAdapter
-  ) {}
+  constructor(private vault: IVaultAdapter) {}
 
   async cleanEmptyProperties(file: IFile): Promise<void> {
     const content = await this.vault.read(file);
@@ -405,11 +422,16 @@ export class PropertyCleanupService {
 }
 
 // Manual instantiation
-const vaultAdapter = new ObsidianVaultAdapter(app.vault, app.metadataCache, app);
+const vaultAdapter = new ObsidianVaultAdapter(
+  app.vault,
+  app.metadataCache,
+  app,
+);
 const service = new PropertyCleanupService(vaultAdapter);
 ```
 
 **After (DI with @injectable and @inject):**
+
 ```typescript
 import { injectable, inject } from "tsyringe";
 import { DI_TOKENS, IVaultAdapter, ILogger, IFile } from "exocortex";
@@ -418,7 +440,7 @@ import { DI_TOKENS, IVaultAdapter, ILogger, IFile } from "exocortex";
 export class PropertyCleanupService {
   constructor(
     @inject(DI_TOKENS.IVaultAdapter) private vault: IVaultAdapter,
-    @inject(DI_TOKENS.ILogger) private logger: ILogger
+    @inject(DI_TOKENS.ILogger) private logger: ILogger,
   ) {
     this.logger.debug("PropertyCleanupService initialized");
   }
@@ -436,6 +458,7 @@ const service = container.resolve(PropertyCleanupService);
 ```
 
 **Migration Steps:**
+
 1. Add `@injectable()` decorator to class
 2. Add `@inject(DI_TOKENS.X)` to constructor parameters
 3. Import dependencies from `exocortex`
@@ -457,7 +480,13 @@ const service = container.resolve(PropertyCleanupService);
 ```typescript
 import "reflect-metadata";
 import { container } from "tsyringe";
-import { PropertyCleanupService, DI_TOKENS, IVaultAdapter, ILogger, IFile } from "exocortex";
+import {
+  PropertyCleanupService,
+  DI_TOKENS,
+  IVaultAdapter,
+  ILogger,
+  IFile,
+} from "exocortex";
 
 describe("PropertyCleanupService with DI", () => {
   let mockVaultAdapter: jest.Mocked<IVaultAdapter>;
@@ -495,25 +524,37 @@ describe("PropertyCleanupService with DI", () => {
   });
 
   it("should use injected logger when cleaning properties", async () => {
-    const mockFile: IFile = { path: "test.md", name: "test.md", basename: "test", extension: "md" };
-    mockVaultAdapter.read.mockResolvedValue("---\ntitle: Test\nemptyProp:\n---\nContent");
+    const mockFile: IFile = {
+      path: "test.md",
+      name: "test.md",
+      basename: "test",
+      extension: "md",
+    };
+    mockVaultAdapter.read.mockResolvedValue(
+      "---\ntitle: Test\nemptyProp:\n---\nContent",
+    );
 
     await service.cleanEmptyProperties(mockFile);
 
-    expect(mockLogger.debug).toHaveBeenCalledWith("Cleaning empty properties", { path: "test.md" });
-    expect(mockLogger.info).toHaveBeenCalledWith("Empty properties cleaned", { path: "test.md" });
+    expect(mockLogger.debug).toHaveBeenCalledWith("Cleaning empty properties", {
+      path: "test.md",
+    });
+    expect(mockLogger.info).toHaveBeenCalledWith("Empty properties cleaned", {
+      path: "test.md",
+    });
   });
 
   it("should resolve service singleton from container", () => {
     const service1 = container.resolve(PropertyCleanupService);
     const service2 = container.resolve(PropertyCleanupService);
 
-    expect(service1).toBe(service2);  // Same instance
+    expect(service1).toBe(service2); // Same instance
   });
 });
 ```
 
 **Key Testing Patterns:**
+
 - ✅ Always `container.clearInstances()` in beforeEach/afterEach
 - ✅ Register mocks before resolving service
 - ✅ Verify injected dependencies are called correctly
@@ -523,6 +564,7 @@ describe("PropertyCleanupService with DI", () => {
 ### Phase 1 Implementation Status
 
 **✅ Completed:**
+
 - TSyringe + reflect-metadata installed
 - 4 core interfaces defined (ILogger, IEventBus, IConfiguration, INotificationService)
 - Symbol-based DI_TOKENS created
@@ -536,6 +578,7 @@ describe("PropertyCleanupService with DI", () => {
 - Unit tests for POC service (PropertyCleanupService.di.test.ts)
 
 **📋 Future Phases (Not in Scope):**
+
 - Phase 2: Migrate remaining services to DI
 - Phase 3: Implement factory pattern for complex objects
 - Phase 4: Add lifecycle management (scoped instances)
@@ -547,63 +590,62 @@ describe("PropertyCleanupService with DI", () => {
 
 ### Services (25 Total)
 
-| Service | Responsibility | LOC | Dependencies | Pure Logic % |
-|---------|----------------|-----|--------------|--------------|
-| **AlgorithmExtractor** | Extract H2 sections from markdown content | 32 | None | **100%** ✅ |
-| **AreaCreationService** | Create child areas | 66 | Vault | 60% |
-| **AreaHierarchyBuilder** | Build area hierarchy trees | 163 | Vault, MetadataCache | 50% |
-| **AssetConversionService** | Convert between asset classes (Task↔Project) | 147 | Vault | 70% |
-| **ClassCreationService** | Create subclasses in ontology | 76 | Vault | 60% |
-| **ConceptCreationService** | Create narrower concepts | 69 | Vault | 70% |
-| **DynamicFrontmatterGenerator** | Generate YAML frontmatter from property definitions | 363 | None | **100%** ✅ |
-| **EffortStatusWorkflow** | Determine previous status in workflow | 66 | None | **100%** ✅ |
-| **EffortVotingService** | Increment effort vote counts | 103 | Vault | 80% |
-| **FleetingNoteCreationService** | Create fleeting note assets in inbox | 57 | Vault | 70% |
-| **FolderRepairService** | Move files to expected folders | 118 | Vault, MetadataCache | 10% |
-| **LabelToAliasService** | Copy labels to aliases array | 74 | Vault | 70% |
-| **LoggingService** | Centralized logging with debug/info/warn/error | 29 | None | **100%** ✅ |
-| **NoteToRDFConverter** | Convert Obsidian notes to RDF triples | 323 | Vault | 60% |
-| **PlanningService** | Set plannedStartTimestamp on tasks | 37 | Vault | 70% |
-| **ProjectCreationService** | Create projects from areas/initiatives | 86 | Vault | 60% |
-| **PropertyCleanupService** | Remove empty properties from frontmatter | 144 | Vault | 80% |
-| **RenameToUidService** | Rename files to UID format | 93 | App.fileManager | 0% |
-| **SessionEventService** | Track focus session start/end events | 116 | Vault | 60% |
-| **StatusTimestampService** | Manage start/end/resolution timestamps | 153 | Vault | 70% |
-| **SupervisionCreationService** | Create CBT supervision notes | 76 | Vault | 80% |
-| **TaskCreationService** | Create tasks from areas/projects/prototypes | 186 | Vault | 60% |
-| **TaskFrontmatterGenerator** | Generate frontmatter for new tasks | 125 | None | **100%** ✅ |
-| **TaskStatusService** | Manage effort status transitions | 290 | Vault | 70% |
-| **URIConstructionService** | Construct URIs for assets | 111 | FileSystem | 50% |
+| Service                         | Responsibility                                      | LOC | Dependencies         | Pure Logic % |
+| ------------------------------- | --------------------------------------------------- | --- | -------------------- | ------------ |
+| **AlgorithmExtractor**          | Extract H2 sections from markdown content           | 32  | None                 | **100%** ✅  |
+| **AreaCreationService**         | Create child areas                                  | 66  | Vault                | 60%          |
+| **AreaHierarchyBuilder**        | Build area hierarchy trees                          | 163 | Vault, MetadataCache | 50%          |
+| **AssetConversionService**      | Convert between asset classes (Task↔Project)        | 147 | Vault                | 70%          |
+| **ClassCreationService**        | Create subclasses in ontology                       | 76  | Vault                | 60%          |
+| **ConceptCreationService**      | Create narrower concepts                            | 69  | Vault                | 70%          |
+| **DynamicFrontmatterGenerator** | Generate YAML frontmatter from property definitions | 363 | None                 | **100%** ✅  |
+| **EffortStatusWorkflow**        | Determine previous status in workflow               | 66  | None                 | **100%** ✅  |
+| **EffortVotingService**         | Increment effort vote counts                        | 103 | Vault                | 80%          |
+| **FleetingNoteCreationService** | Create fleeting note assets in inbox                | 57  | Vault                | 70%          |
+| **FolderRepairService**         | Move files to expected folders                      | 118 | Vault, MetadataCache | 10%          |
+| **LabelToAliasService**         | Copy labels to aliases array                        | 74  | Vault                | 70%          |
+| **LoggingService**              | Centralized logging with debug/info/warn/error      | 29  | None                 | **100%** ✅  |
+| **NoteToRDFConverter**          | Convert Obsidian notes to RDF triples               | 323 | Vault                | 60%          |
+| **PlanningService**             | Set plannedStartTimestamp on tasks                  | 37  | Vault                | 70%          |
+| **ProjectCreationService**      | Create projects from areas/initiatives              | 86  | Vault                | 60%          |
+| **PropertyCleanupService**      | Remove empty properties from frontmatter            | 144 | Vault                | 80%          |
+| **RenameToUidService**          | Rename files to UID format                          | 93  | App.fileManager      | 0%           |
+| **SessionEventService**         | Track focus session start/end events                | 116 | Vault                | 60%          |
+| **StatusTimestampService**      | Manage start/end/resolution timestamps              | 153 | Vault                | 70%          |
+| **SupervisionCreationService**  | Create CBT supervision notes                        | 76  | Vault                | 80%          |
+| **TaskCreationService**         | Create tasks from areas/projects/prototypes         | 186 | Vault                | 60%          |
+| **TaskFrontmatterGenerator**    | Generate frontmatter for new tasks                  | 125 | None                 | **100%** ✅  |
+| **TaskStatusService**           | Manage effort status transitions                    | 290 | Vault                | 70%          |
+| **URIConstructionService**      | Construct URIs for assets                           | 111 | FileSystem           | 50%          |
 
 **Total Lines**: ~3,103 (services only)
 
 ### Utilities (6 Total)
 
-| Utility | Purpose | LOC | Obsidian Deps | Type |
-|---------|---------|-----|---------------|------|
-| **FrontmatterService** | YAML parsing/manipulation | 303 | None | Pure ✅ |
-| **DateFormatter** | Date formatting (ISO 8601, WikiLinks) | 89 | None | Pure ✅ |
-| **WikiLinkHelpers** | Normalize [[WikiLinks]] | 54 | None | Pure ✅ |
-| **MetadataHelpers** | Metadata operations | 142 | None | Pure ✅ |
-| **EffortSortingHelpers** | Sort efforts by priority | 76 | None | Pure ✅ |
-| **MetadataExtractor** | Extract frontmatter from cache | 165 | MetadataCache | Partial |
+| Utility                  | Purpose                               | LOC | Obsidian Deps | Type    |
+| ------------------------ | ------------------------------------- | --- | ------------- | ------- |
+| **FrontmatterService**   | YAML parsing/manipulation             | 303 | None          | Pure ✅ |
+| **DateFormatter**        | Date formatting (ISO 8601, WikiLinks) | 89  | None          | Pure ✅ |
+| **WikiLinkHelpers**      | Normalize [[WikiLinks]]               | 54  | None          | Pure ✅ |
+| **MetadataHelpers**      | Metadata operations                   | 142 | None          | Pure ✅ |
+| **EffortSortingHelpers** | Sort efforts by priority              | 76  | None          | Pure ✅ |
+| **MetadataExtractor**    | Extract frontmatter from cache        | 165 | MetadataCache | Partial |
 
 **Total Lines**: ~829
 
 **Note**: 5 out of 6 utilities are pure functions (100% testable, 100% reusable).
 
-### Renderers (3 Total)
+### Renderers (2 Total)
 
-| Renderer | Purpose | LOC | Type |
-|----------|---------|-----|------|
-| **UniversalLayoutRenderer** | Main layout coordinator | 816 | Complex |
-| **DailyTasksRenderer** | Render daily tasks section | 463 | Complex |
-| **DailyProjectsRenderer** | Render daily projects section | 227 | Complex |
+| Renderer                    | Purpose                    | LOC | Type    |
+| --------------------------- | -------------------------- | --- | ------- |
+| **UniversalLayoutRenderer** | Main layout coordinator    | 816 | Complex |
+| **DailyTasksRenderer**      | Render daily tasks section | 463 | Complex |
 
 ### Builders (1 Total)
 
-| Builder | Purpose | LOC | Type |
-|---------|---------|-----|------|
+| Builder                              | Purpose                                             | LOC  | Type         |
+| ------------------------------------ | --------------------------------------------------- | ---- | ------------ |
 | **DynamicCommandButtonGroupBuilder** | Build action buttons from vault command definitions | ~200 | Vault-Driven |
 
 > **Note**: As of RFC-011/012, the 5 hardcoded `ButtonGroupBuilder` implementations were replaced by a single universal `DynamicCommandButtonGroupBuilder` that reads command definitions from vault `exocmd/` assets.
@@ -616,43 +658,43 @@ The presentation layer contains **58 component files** organized by purpose:
 
 Core tables, trees, and action buttons:
 
-| Category | Components |
-|----------|------------|
-| **Tables** (4) | `DailyTasksTable`, `DailyProjectsTable`, `AssetPropertiesTable`, `AssetRelationsTable` |
-| **Trees** (1) | `AreaHierarchyTree` |
-| **Button Groups** (1) | `ActionButtonsGroup` |
+| Category                | Components                                                                                                                                                                                                                                                                                                                                                                                                               |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Tables** (3)          | `DailyTasksTable`, `AssetPropertiesTable`, `AssetRelationsTable`                                                                                                                                                                                                                                                                                                                                                         |
+| **Trees** (1)           | `AreaHierarchyTree`                                                                                                                                                                                                                                                                                                                                                                                                      |
+| **Button Groups** (1)   | `ActionButtonsGroup`                                                                                                                                                                                                                                                                                                                                                                                                     |
 | **Action Buttons** (18) | `CreateTaskButton`, `CreateInstanceButton`, `CreateProjectButton`, `StartEffortButton`, `MarkTaskDoneButton`, `PlanOnTodayButton`, `VoteOnEffortButton`, `ArchiveTaskButton`, `TrashEffortButton`, `RollbackStatusButton`, `MoveToToDoButton`, `MoveToBacklogButton`, `MoveToAnalysisButton`, `ShiftDayForwardButton`, `ShiftDayBackwardButton`, `CleanEmptyPropertiesButton`, `RenameToUidButton`, `RepairFolderButton` |
-| **Utilities** (1) | `ErrorBoundary` |
+| **Utilities** (1)       | `ErrorBoundary`                                                                                                                                                                                                                                                                                                                                                                                                          |
 
 #### Property Fields (14 files in `property-fields/`)
 
 Non-React field renderers for inline property editing:
 
-| Type | Files |
-|------|-------|
-| **Field Types** (12) | `TextPropertyField`, `NumberPropertyField`, `BooleanPropertyField`, `DatePropertyField`, `DateTimePropertyField`, `TimestampPropertyField`, `EnumPropertyField`, `ReferencePropertyField`, `SizeSelectPropertyField`, `StatusSelectPropertyField`, `WikilinkPropertyField`, `PropertyFieldFactory` |
-| **Infrastructure** (2) | `index.ts`, `types.ts` |
+| Type                   | Files                                                                                                                                                                                                                                                                                              |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Field Types** (12)   | `TextPropertyField`, `NumberPropertyField`, `BooleanPropertyField`, `DatePropertyField`, `DateTimePropertyField`, `TimestampPropertyField`, `EnumPropertyField`, `ReferencePropertyField`, `SizeSelectPropertyField`, `StatusSelectPropertyField`, `WikilinkPropertyField`, `PropertyFieldFactory` |
+| **Infrastructure** (2) | `index.ts`, `types.ts`                                                                                                                                                                                                                                                                             |
 
 #### Property Editor (8 files in `property-editor/`)
 
 React-based modal property editor:
 
-| Type | Files |
-|------|-------|
-| **Form** (1) | `PropertyEditorForm` |
+| Type                     | Files                                                                                        |
+| ------------------------ | -------------------------------------------------------------------------------------------- |
+| **Form** (1)             | `PropertyEditorForm`                                                                         |
 | **Field Components** (6) | `TextField`, `NumberField`, `BooleanField`, `SelectField`, `TimestampField`, `WikiLinkField` |
-| **Infrastructure** (1) | `fields/index.ts` |
+| **Infrastructure** (1)   | `fields/index.ts`                                                                            |
 
 #### SPARQL Components (9 files in `sparql/`)
 
 SPARQL query interface and result visualization:
 
-| Type | Files |
-|------|-------|
-| **Query Builder** (2) | `QueryBuilder`, `QueryTemplates` |
-| **Result Views** (5) | `SPARQLResultViewer`, `SPARQLTableView`, `SPARQLListView`, `SPARQLGraphView`, `SPARQLEmptyState` |
-| **Error Handling** (1) | `SPARQLErrorView` |
-| **Controls** (1) | `ViewModeSelector` |
+| Type                   | Files                                                                                            |
+| ---------------------- | ------------------------------------------------------------------------------------------------ |
+| **Query Builder** (2)  | `QueryBuilder`, `QueryTemplates`                                                                 |
+| **Result Views** (5)   | `SPARQLResultViewer`, `SPARQLTableView`, `SPARQLListView`, `SPARQLGraphView`, `SPARQLEmptyState` |
+| **Error Handling** (1) | `SPARQLErrorView`                                                                                |
+| **Controls** (1)       | `ViewModeSelector`                                                                               |
 
 #### Properties (2 files in `properties/`)
 
@@ -704,6 +746,7 @@ sequenceDiagram
 ```
 
 **Key Points**:
+
 - Visibility check happens BEFORE modal opens
 - Pure functions (`generateTaskFrontmatter`, `buildFileContent`) have zero dependencies
 - Vault operation is the only Obsidian-specific step
@@ -735,6 +778,7 @@ sequenceDiagram
 ```
 
 **Key Points**:
+
 - Status validation is pure logic (workflow state machine)
 - Timestamps added based on target status
 - Frontmatter manipulation is pure function
@@ -767,6 +811,7 @@ sequenceDiagram
 ```
 
 **Key Points**:
+
 - Triggered by metadata changes (Obsidian event system)
 - Conditional section rendering based on asset class
 - Button visibility determined by CommandVisibility pure functions
@@ -784,12 +829,12 @@ Commands live as vault assets in `exocmd/` with YAML frontmatter defining precon
 
 **Key services:**
 
-| Service | Package | Purpose |
-|---------|---------|---------|
-| `CommandResolver` | exocortex | Resolves available commands from vault `exocmd/` assets; evaluates SPARQL ASK preconditions |
-| `PreconditionEvaluator` | exocortex | Compiled SPARQL ASK cache for fast command visibility checks (27 ASK queries < 50ms) |
-| `GroundingExecutor` | exocortex | Executes grounding actions (`create_instance`, `set_property`, `host_function`) |
-| `DynamicCommandButtonGroupBuilder` | obsidian-plugin | Single universal builder replacing 5 hardcoded ButtonGroupBuilders |
+| Service                            | Package         | Purpose                                                                                     |
+| ---------------------------------- | --------------- | ------------------------------------------------------------------------------------------- |
+| `CommandResolver`                  | exocortex       | Resolves available commands from vault `exocmd/` assets; evaluates SPARQL ASK preconditions |
+| `PreconditionEvaluator`            | exocortex       | Compiled SPARQL ASK cache for fast command visibility checks (27 ASK queries < 50ms)        |
+| `GroundingExecutor`                | exocortex       | Executes grounding actions (`create_instance`, `set_property`, `host_function`)             |
+| `DynamicCommandButtonGroupBuilder` | obsidian-plugin | Single universal builder replacing 5 hardcoded ButtonGroupBuilders                          |
 
 **Flow**: Vault asset (exocmd/) -> CommandResolver -> PreconditionEvaluator -> GroundingExecutor
 
@@ -799,9 +844,9 @@ Prototypes define default properties that are inherited by instances. The `Proto
 
 **Key services:**
 
-| Service | Package | Purpose |
-|---------|---------|---------|
-| `PrototypeChainMaterializer` | exocortex | Walks `exo__Asset_prototype` chains, materializes inherited triples |
+| Service                          | Package   | Purpose                                                                    |
+| -------------------------------- | --------- | -------------------------------------------------------------------------- |
+| `PrototypeChainMaterializer`     | exocortex | Walks `exo__Asset_prototype` chains, materializes inherited triples        |
 | `NonInheritablePropertyRegistry` | exocortex | Registry of properties that must not be inherited (e.g., `exo__Asset_uid`) |
 
 **Own vs. inherited distinction**: Hybrid named graphs annotate each triple's source. The `OWN()` ExoQL function filters to only own (non-inherited) properties.
@@ -812,13 +857,13 @@ ExoQL is the public API for querying the Exocortex knowledge graph. It wraps SPA
 
 **Key components:**
 
-| Component | Package | Purpose |
-|-----------|---------|---------|
-| `ExoQLParser` | exocortex | Parses ExoQL queries (renamed from SPARQLParser) |
-| `OWN()` function | exocortex | Filter function that returns only own (non-inherited) properties |
-| Source annotation | exocortex | Every triple is annotated with its origin (own, inherited, inferred) |
-| ExoQL code block | obsidian-plugin | `exoql` code block processor alias for queries in vault notes |
-| `exoql` CLI alias | cli | CLI command alias with deprecation warning for old `sparql` command |
+| Component         | Package         | Purpose                                                              |
+| ----------------- | --------------- | -------------------------------------------------------------------- |
+| `ExoQLParser`     | exocortex       | Parses ExoQL queries (renamed from SPARQLParser)                     |
+| `OWN()` function  | exocortex       | Filter function that returns only own (non-inherited) properties     |
+| Source annotation | exocortex       | Every triple is annotated with its origin (own, inherited, inferred) |
+| ExoQL code block  | obsidian-plugin | `exoql` code block processor alias for queries in vault notes        |
+| `exoql` CLI alias | cli             | CLI command alias with deprecation warning for old `sparql` command  |
 
 **Specification**: See `docs/exoql-specification.md` for the full ExoQL language reference.
 
@@ -826,22 +871,22 @@ ExoQL is the public API for querying the Exocortex knowledge graph. It wraps SPA
 
 Property schemas are now resolved from the triple store at runtime instead of being hardcoded in `PROPERTY_SCHEMAS` maps.
 
-| Service | Package | Purpose |
-|---------|---------|---------|
-| `PropertySchemaResolver` | exocortex | Resolves property schemas (type, label, enum values) from RDF triples |
+| Service                     | Package   | Purpose                                                                                     |
+| --------------------------- | --------- | ------------------------------------------------------------------------------------------- |
+| `PropertySchemaResolver`    | exocortex | Resolves property schemas (type, label, enum values) from RDF triples                       |
 | `InstantiationRuleResolver` | exocortex | Resolves instance creation rules (which class, which properties, default values) from vault |
 
 ### What Was Removed
 
-| Removed | Replaced By |
-|---------|-------------|
-| 5 hardcoded `ButtonGroupBuilder` classes | 1 universal `DynamicCommandButtonGroupBuilder` |
-| Static command registrations in `CommandRegistry` | Dynamic resolution via `CommandResolver` |
-| Hardcoded `PROPERTY_SCHEMAS` map | `PropertySchemaResolver` (triple store) |
-| Hardcoded `EFFORT_PROPERTY_MAP` | `InstantiationRuleResolver` (vault) |
-| Hardcoded `INSTANCE_CLASS_MAP` | `InstantiationRuleResolver` (vault) |
-| 7 hardcoded label fallback implementations | SPARQL-based label template syntax |
-| 3-tier area fallback in `AssetMetadataService` | Prototype chain inheritance |
+| Removed                                           | Replaced By                                    |
+| ------------------------------------------------- | ---------------------------------------------- |
+| 5 hardcoded `ButtonGroupBuilder` classes          | 1 universal `DynamicCommandButtonGroupBuilder` |
+| Static command registrations in `CommandRegistry` | Dynamic resolution via `CommandResolver`       |
+| Hardcoded `PROPERTY_SCHEMAS` map                  | `PropertySchemaResolver` (triple store)        |
+| Hardcoded `EFFORT_PROPERTY_MAP`                   | `InstantiationRuleResolver` (vault)            |
+| Hardcoded `INSTANCE_CLASS_MAP`                    | `InstantiationRuleResolver` (vault)            |
+| 7 hardcoded label fallback implementations        | SPARQL-based label template syntax             |
+| 3-tier area fallback in `AssetMetadataService`    | Prototype chain inheritance                    |
 
 ---
 
@@ -852,6 +897,7 @@ Property schemas are now resolved from the triple store at runtime instead of be
 **Format**: `[prefix]__[EntityType]_[propertyName]`
 
 **Prefixes**:
+
 - `exo__` - Universal Exocortex properties (all assets)
 - `ems__` - Effort Management System (tasks, projects, meetings)
 - `ims__` - Information Management System (concepts, knowledge)
@@ -860,37 +906,37 @@ Property schemas are now resolved from the triple store at runtime instead of be
 
 ### Core Properties (All Assets)
 
-| Property | Type | Required | Format | Purpose |
-|----------|------|----------|--------|---------|
-| `exo__Asset_uid` | String | ✅ Yes | UUID v4 | Unique identifier |
-| `exo__Asset_label` | String | ✅ Yes | Free text | Human-readable name |
-| `exo__Asset_createdAt` | String | ✅ Yes | ISO 8601 | Creation timestamp |
-| `exo__Asset_isDefinedBy` | String | ✅ Yes | WikiLink | Ontology reference |
-| `exo__Instance_class` | Array | ✅ Yes | WikiLink[] | Asset type(s) |
-| `exo__Asset_isArchived` | Boolean/String | No | `true`, `"true"` | Archive status |
+| Property                 | Type           | Required | Format           | Purpose             |
+| ------------------------ | -------------- | -------- | ---------------- | ------------------- |
+| `exo__Asset_uid`         | String         | ✅ Yes   | UUID v4          | Unique identifier   |
+| `exo__Asset_label`       | String         | ✅ Yes   | Free text        | Human-readable name |
+| `exo__Asset_createdAt`   | String         | ✅ Yes   | ISO 8601         | Creation timestamp  |
+| `exo__Asset_isDefinedBy` | String         | ✅ Yes   | WikiLink         | Ontology reference  |
+| `exo__Instance_class`    | Array          | ✅ Yes   | WikiLink[]       | Asset type(s)       |
+| `exo__Asset_isArchived`  | Boolean/String | No       | `true`, `"true"` | Archive status      |
 
 ### Effort Management Properties
 
-| Property | Type | Assets | Purpose |
-|----------|------|--------|---------|
-| `ems__Effort_status` | String | Task, Project, Meeting | Current status |
-| `ems__Effort_area` | String | Task | Parent area reference |
-| `ems__Effort_parent` | String | Task | Parent project reference |
-| `exo__Asset_prototype` | String | Task, Meeting | Prototype template |
-| `ems__Effort_votes` | Number | Task, Project | Priority vote count |
-| `ems__Effort_day` | String | Task, Project | Planned day (WikiLink) |
-| `ems__Effort_startTimestamp` | String | Task, Project | When started (→ Doing) |
-| `ems__Effort_endTimestamp` | String | Task, Project | When ended (← Doing) |
-| `ems__Effort_resolutionTimestamp` | String | Task, Project | When completed (→ Done) |
-| `ems__Effort_plannedStartTimestamp` | String | Task, Project | Planned start (evening) |
-| `ems__Task_size` | String | Task | Size estimate (S/M/L/XL) |
-| `ems__Area_parent` | String | Area | Parent area reference |
+| Property                            | Type   | Assets                 | Purpose                  |
+| ----------------------------------- | ------ | ---------------------- | ------------------------ |
+| `ems__Effort_status`                | String | Task, Project, Meeting | Current status           |
+| `ems__Effort_area`                  | String | Task                   | Parent area reference    |
+| `ems__Effort_parent`                | String | Task                   | Parent project reference |
+| `exo__Asset_prototype`              | String | Task, Meeting          | Prototype template       |
+| `ems__Effort_votes`                 | Number | Task, Project          | Priority vote count      |
+| `ems__Effort_day`                   | String | Task, Project          | Planned day (WikiLink)   |
+| `ems__Effort_startTimestamp`        | String | Task, Project          | When started (→ Doing)   |
+| `ems__Effort_endTimestamp`          | String | Task, Project          | When ended (← Doing)     |
+| `ems__Effort_resolutionTimestamp`   | String | Task, Project          | When completed (→ Done)  |
+| `ems__Effort_plannedStartTimestamp` | String | Task, Project          | Planned start (evening)  |
+| `ems__Task_size`                    | String | Task                   | Size estimate (S/M/L/XL) |
+| `ems__Area_parent`                  | String | Area                   | Parent area reference    |
 
 ### Information Management Properties
 
-| Property | Type | Assets | Purpose |
-|----------|------|--------|---------|
-| `ims__Concept_broader` | String | Concept | Parent concept |
+| Property                  | Type   | Assets  | Purpose            |
+| ------------------------- | ------ | ------- | ------------------ |
+| `ims__Concept_broader`    | String | Concept | Parent concept     |
 | `ims__Concept_definition` | String | Concept | Concept definition |
 
 **See [PROPERTY_SCHEMA.md](docs/PROPERTY_SCHEMA.md) for complete reference.**
@@ -913,6 +959,7 @@ interface ITaskRepository {
 ```
 
 **Benefits**:
+
 - Abstraction over storage (Vault)
 - Testable with mocks
 - Can swap implementations (File system, Cloud, Database)
@@ -961,6 +1008,7 @@ if (canCreateTask(context)) {
 ```
 
 **Benefits**:
+
 - **Domain cohesion**: Related functions grouped by asset type (Task, Project, Area, Effort, Asset)
 - **Easy to add new visibility rules**: Add to relevant domain file
 - **Testable in isolation**: Each file <100 LOC, tests mirror structure
@@ -984,6 +1032,7 @@ export class CommandManager {
 ```
 
 **Benefits**:
+
 - Single entry point for command execution
 - Commands defined in vault, not code
 - Easy to add/modify commands without code changes
@@ -1001,13 +1050,13 @@ export class DynamicCommandButtonGroupBuilder {
   buildButtonGroups(
     file: TFile,
     context: CommandVisibilityContext,
-    callbacks: ButtonCallbacks
+    callbacks: ButtonCallbacks,
   ): ButtonGroup[] {
     // Commands resolved dynamically from vault, not hardcoded
     const commands = this.commandResolver.resolve(context);
-    return commands.map(cmd => ({
+    return commands.map((cmd) => ({
       id: cmd.id,
-      label: cmd.label,  // Supports SPARQL-based label templates
+      label: cmd.label, // Supports SPARQL-based label templates
       onClick: () => this.groundingExecutor.execute(cmd, context),
     }));
   }
@@ -1015,6 +1064,7 @@ export class DynamicCommandButtonGroupBuilder {
 ```
 
 **Benefits**:
+
 - Single universal builder replaces 5 hardcoded builders
 - Command visibility driven by SPARQL preconditions
 - Labels support dynamic templates
@@ -1027,13 +1077,14 @@ export class DynamicCommandButtonGroupBuilder {
 ```typescript
 // In ExocortexPlugin
 this.registerEvent(
-  this.app.metadataCache.on('changed', (file) => {
+  this.app.metadataCache.on("changed", (file) => {
     this.handleMetadataChange(file);
-  })
+  }),
 );
 ```
 
 **Benefits**:
+
 - Automatic UI updates on file changes
 - Decoupled components
 - Standard Obsidian pattern
@@ -1094,12 +1145,12 @@ const service = new TaskCreationService(this.app.vault);
 3. **Service Call**: `EffortVotingService.incrementEffortVotes(file)`
 4. **Read Current Votes**:
    ```typescript
-   extractVoteCount(content) // PURE function
+   extractVoteCount(content); // PURE function
    // Returns: 3 (current votes)
    ```
 5. **Update Frontmatter** (PURE):
    ```typescript
-   updateFrontmatterWithVotes(content, 4)
+   updateFrontmatterWithVotes(content, 4);
    // Returns: Updated content with ems__Effort_votes: 4
    ```
 6. **Save**: `Vault.modify(file, updatedContent)`
@@ -1114,12 +1165,12 @@ const service = new TaskCreationService(this.app.vault);
 3. **Service Call**: `TaskStatusService.moveToTodo(file)`
 4. **Workflow Validation** (PURE):
    ```typescript
-   getPreviousStatusFromWorkflow("ToDo", "ems__Task")
+   getPreviousStatusFromWorkflow("ToDo", "ems__Task");
    // Returns: "Analysis" (expected previous status)
    ```
 5. **Update Status**:
    ```typescript
-   ems__Effort_status: "[[ems__EffortStatusToDo]]"
+   ems__Effort_status: "[[ems__EffortStatusToDo]]";
    ```
 6. **No Timestamp**: ToDo doesn't trigger timestamps
 7. **Save**: `Vault.modify(file, updatedContent)`
@@ -1139,11 +1190,11 @@ Exocortex enforces its architectural decisions automatically via [Archgate](http
 
 ### Rule Tiers
 
-| Tier | Prefix | Purpose | Automated | Examples |
-|------|--------|---------|-----------|----------|
-| **Tier 1 — Critical Constraints** | `ARCH-*`, `SEC-*` | Layer boundaries, security invariants | Yes (`.rules.ts`) | `ARCH-008` (Clean Architecture layer deps), `SEC-001` (no `Math.random`, no MD5/SHA1) |
-| **Tier 2 — Quality & Consistency** | `QUAL-*` | Code style, DI conventions | Yes (`.rules.ts`) | `QUAL-001` (injectable services, no console in core) |
-| **Documentation-only** | `ARCH-*` (`rules: false`) | Record decisions without automated enforcement | No | `ARCH-001` (UUID filenames) |
+| Tier                               | Prefix                    | Purpose                                        | Automated         | Examples                                                                              |
+| ---------------------------------- | ------------------------- | ---------------------------------------------- | ----------------- | ------------------------------------------------------------------------------------- |
+| **Tier 1 — Critical Constraints**  | `ARCH-*`, `SEC-*`         | Layer boundaries, security invariants          | Yes (`.rules.ts`) | `ARCH-008` (Clean Architecture layer deps), `SEC-001` (no `Math.random`, no MD5/SHA1) |
+| **Tier 2 — Quality & Consistency** | `QUAL-*`                  | Code style, DI conventions                     | Yes (`.rules.ts`) | `QUAL-001` (injectable services, no console in core)                                  |
+| **Documentation-only**             | `ARCH-*` (`rules: false`) | Record decisions without automated enforcement | No                | `ARCH-001` (UUID filenames)                                                           |
 
 Rules with `rules: true` in their frontmatter have a sibling `.rules.ts` that Archgate executes. Rules with `rules: false` serve as reference documentation only.
 
@@ -1208,6 +1259,7 @@ Exocortex implements a **centralized error handling strategy** with structured e
 **Base Class**: `ApplicationError` (abstract)
 
 All application errors extend the base `ApplicationError` class, providing:
+
 - **Standardized error codes** for categorization
 - **Retry hint** for transient errors
 - **User guidance** for actionable messages
@@ -1217,28 +1269,28 @@ All application errors extend the base `ApplicationError` class, providing:
 ```typescript
 // packages/exocortex/src/domain/errors/ApplicationError.ts
 export abstract class ApplicationError extends Error {
-  abstract readonly code: ErrorCode;      // Standardized error code
-  abstract readonly retriable: boolean;   // Can operation be retried?
-  abstract readonly guidance: string;     // User-friendly help text
-  readonly context?: Record<string, unknown>;  // Debug info
-  readonly timestamp: Date;               // When error occurred
+  abstract readonly code: ErrorCode; // Standardized error code
+  abstract readonly retriable: boolean; // Can operation be retried?
+  abstract readonly guidance: string; // User-friendly help text
+  readonly context?: Record<string, unknown>; // Debug info
+  readonly timestamp: Date; // When error occurred
 
-  format(): string;    // Formats error for display
-  toJSON(): Record<string, unknown>;  // For logging/telemetry
+  format(): string; // Formats error for display
+  toJSON(): Record<string, unknown>; // For logging/telemetry
 }
 ```
 
 ### Error Types
 
-| Error Type | Code Range | Retriable | Use Case |
-|------------|------------|-----------|----------|
-| `ValidationError` | 1000-1999 | ❌ No | Invalid input, missing fields, schema failures |
-| `NetworkError` | 2000-2999 | ✅ Yes | Network timeouts, connection failures, file I/O |
-| `StateTransitionError` | 3000-3999 | ❌ No | Invalid workflow transitions, state conflicts |
-| `PermissionError` | 4000-4999 | ❌ No | Access denied, unauthorized operations |
-| `NotFoundError` | 5000-5999 | ❌ No | Missing resources, files not found |
-| `ResourceExhaustedError` | 5000-5999 | ✅ Yes | Quota exceeded, rate limiting |
-| `ServiceError` | 9000-9999 | ❌ No | Internal service failures, initialization errors |
+| Error Type               | Code Range | Retriable | Use Case                                         |
+| ------------------------ | ---------- | --------- | ------------------------------------------------ |
+| `ValidationError`        | 1000-1999  | ❌ No     | Invalid input, missing fields, schema failures   |
+| `NetworkError`           | 2000-2999  | ✅ Yes    | Network timeouts, connection failures, file I/O  |
+| `StateTransitionError`   | 3000-3999  | ❌ No     | Invalid workflow transitions, state conflicts    |
+| `PermissionError`        | 4000-4999  | ❌ No     | Access denied, unauthorized operations           |
+| `NotFoundError`          | 5000-5999  | ❌ No     | Missing resources, files not found               |
+| `ResourceExhaustedError` | 5000-5999  | ✅ Yes    | Quota exceeded, rate limiting                    |
+| `ServiceError`           | 9000-9999  | ❌ No     | Internal service failures, initialization errors |
 
 ### Error Code Ranges
 
@@ -1283,6 +1335,7 @@ enum ErrorCode {
 ### ApplicationErrorHandler
 
 The centralized error handler provides:
+
 - **Error formatting** for display and logging
 - **User notifications** via INotificationService
 - **Automatic retry** with exponential backoff for retriable errors
@@ -1294,7 +1347,7 @@ export class ApplicationErrorHandler {
   constructor(
     retryConfig?: RetryConfig,
     logger?: ILogger,
-    notifier?: INotificationService
+    notifier?: INotificationService,
   );
 
   // Format error, notify user, call telemetry hooks
@@ -1303,7 +1356,7 @@ export class ApplicationErrorHandler {
   // Execute operation with automatic retry for retriable errors
   async executeWithRetry<T>(
     operation: () => Promise<T>,
-    context?: Record<string, unknown>
+    context?: Record<string, unknown>,
   ): Promise<T>;
 
   // Register/unregister telemetry hooks
@@ -1316,12 +1369,12 @@ export class ApplicationErrorHandler {
 
 Default retry behavior uses **exponential backoff**:
 
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `maxRetries` | 3 | Maximum retry attempts |
-| `initialDelayMs` | 1000 | Initial delay before first retry |
-| `backoffMultiplier` | 2 | Multiplier for each subsequent delay |
-| `maxDelayMs` | 10000 | Maximum delay between retries |
+| Parameter           | Default | Description                          |
+| ------------------- | ------- | ------------------------------------ |
+| `maxRetries`        | 3       | Maximum retry attempts               |
+| `initialDelayMs`    | 1000    | Initial delay before first retry     |
+| `backoffMultiplier` | 2       | Multiplier for each subsequent delay |
+| `maxDelayMs`        | 10000   | Maximum delay between retries        |
 
 **Delay sequence**: 1000ms → 2000ms → 4000ms → (capped at 10000ms)
 
@@ -1335,7 +1388,7 @@ const errorHandler = new ApplicationErrorHandler(
     maxDelayMs: 5000,
   },
   logger,
-  notifier
+  notifier,
 );
 ```
 
@@ -1348,22 +1401,22 @@ Services use `ApplicationErrorHandler.executeWithRetry()` for operations that ma
 export class VaultRDFIndexer {
   constructor(
     private converter: TripleConverter,
-    private errorHandler: ApplicationErrorHandler
+    private errorHandler: ApplicationErrorHandler,
   ) {}
 
   async initialize(): Promise<void> {
     const triples = await this.errorHandler.executeWithRetry(
       async () => this.converter.convertVault(),
-      { context: "VaultRDFIndexer.initialize", operation: "convertVault" }
+      { context: "VaultRDFIndexer.initialize", operation: "convertVault" },
     );
     // ... process triples
   }
 
   async refresh(): Promise<void> {
-    await this.errorHandler.executeWithRetry(
-      async () => this.indexAllFiles(),
-      { context: "VaultRDFIndexer.refresh", operation: "indexAllFiles" }
-    );
+    await this.errorHandler.executeWithRetry(async () => this.indexAllFiles(), {
+      context: "VaultRDFIndexer.refresh",
+      operation: "indexAllFiles",
+    });
   }
 }
 ```
@@ -1443,6 +1496,7 @@ throw new Error("Invalid transition");
 **Previous Problem**: Services directly used Obsidian `Vault`, `MetadataCache`, `TFile`
 
 **Solution Implemented**:
+
 - ✅ Extracted `exocortex` package with `IFileSystemAdapter` interface
 - ✅ Created `ObsidianVaultAdapter` in plugin package
 - ✅ Created `NodeFsAdapter` in CLI package
@@ -1455,6 +1509,7 @@ throw new Error("Invalid transition");
 **Previous Problem**: Business logic mixed with UI code
 
 **Solution Implemented**:
+
 - ✅ Created `exocortex` package with pure business logic
 - ✅ Zero external dependencies in core
 - ✅ Shared by both plugin and CLI
@@ -1466,6 +1521,7 @@ throw new Error("Invalid transition");
 **Previous Problem**: No automation without Obsidian running
 
 **Solution Implemented**:
+
 - ✅ Created `@exocortex/cli` package
 - ✅ Supports batch operations and automation
 - ✅ Works with Claude Code and CI/CD
@@ -1477,6 +1533,7 @@ throw new Error("Invalid transition");
 **Problem**: Users must manually edit frontmatter for complex operations
 
 **Impact**:
+
 - Error-prone
 - Steep learning curve
 - Inconsistent formatting
@@ -1488,6 +1545,7 @@ throw new Error("Invalid transition");
 **Problem**: Plugin works with single Obsidian vault only
 
 **Impact**:
+
 - Cannot manage multiple knowledge bases
 - No cross-vault operations
 
@@ -1532,12 +1590,14 @@ graph TB
 ### Achieved Benefits
 
 **For Users**:
+
 - ✅ CLI for automation (Claude Code integration)
 - ✅ Faster development (parallel Core/Plugin work)
 - ✅ More reliable (Core has 80% test coverage, 740+ unit tests)
 - ✅ Batch operations without Obsidian running
 
 **For Developers**:
+
 - ✅ Testable core logic (no Obsidian mocks needed)
 - ✅ Multiple UIs (Plugin, CLI, future Web)
 - ✅ Clear dependency boundaries via npm workspaces
@@ -1558,13 +1618,13 @@ graph TB
 
 ## 🔄 Revision History
 
-| Version | Date | Changes |
-|---------|------|---------|
-| 1.0 | 2025-10-26 | Initial architecture documentation (pre-#122) |
-| 1.1 | 2025-11-26 | Added Error Handling section (#438) |
-| 1.2 | 2025-11-29 | Documented CommandVisibility domain segregation (#468) |
-| 1.3 | 2026-02-19 | Updated to v15.0.1: tech stack versions, test counts (#2176) |
-| 2.0 | 2026-04-05 | RFC-011/012: vault-driven architecture, prototype chains, ExoQL, removed hardcoded builders (#2583) |
+| Version | Date       | Changes                                                                                             |
+| ------- | ---------- | --------------------------------------------------------------------------------------------------- |
+| 1.0     | 2025-10-26 | Initial architecture documentation (pre-#122)                                                       |
+| 1.1     | 2025-11-26 | Added Error Handling section (#438)                                                                 |
+| 1.2     | 2025-11-29 | Documented CommandVisibility domain segregation (#468)                                              |
+| 1.3     | 2026-02-19 | Updated to v15.0.1: tech stack versions, test counts (#2176)                                        |
+| 2.0     | 2026-04-05 | RFC-011/012: vault-driven architecture, prototype chains, ExoQL, removed hardcoded builders (#2583) |
 
 ---
 

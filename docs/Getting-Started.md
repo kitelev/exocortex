@@ -8,12 +8,12 @@
 
 Exocortex has been verified to work with the following minimum versions. Older versions are known to miss critical fixes for grounding, createAsset, and IRI resolution.
 
-| Component                      | Minimum version | Recommended     | Why                                                    |
-| ------------------------------ | --------------- | --------------- | ------------------------------------------------------ |
-| **Obsidian**                   | 1.5.0           | 1.7.0 or newer  | Plugin uses APIs available since 1.5.                  |
-| **Exocortex plugin**           | v15.90.9        | Latest release  | Fixes for createAsset, IRI resolution, targetValue.    |
-| **Exocortex Starter Kit**      | v1.3.4          | Latest release  | $input → service_call conversions for Set/Shift/Plan.  |
-| **BRAT**                       | Latest          | Latest          | Delivers plugin updates automatically.                 |
+| Component                 | Minimum version | Recommended    | Why                                                   |
+| ------------------------- | --------------- | -------------- | ----------------------------------------------------- |
+| **Obsidian**              | 1.5.0           | 1.7.0 or newer | Plugin uses APIs available since 1.5.                 |
+| **Exocortex plugin**      | v15.90.9        | Latest release | Fixes for createAsset, IRI resolution, targetValue.   |
+| **Exocortex Starter Kit** | v1.3.4          | Latest release | $input → service_call conversions for Set/Shift/Plan. |
+| **BRAT**                  | Latest          | Latest         | Delivers plugin updates automatically.                |
 
 ### How to check your versions
 
@@ -328,7 +328,6 @@ The Exocortex layout renders automatically in Reading Mode based on the note's `
 **pn\_\_DailyNote**
 
 - **Daily Tasks**: All tasks scheduled for this date
-- **Daily Projects**: All projects scheduled for this date
 - **Focus Area Filter**: Show only tasks from specific area
 
 **ems\_\_Project** / **ems\_\_Task**
@@ -348,6 +347,7 @@ These are the most common problems encountered by first-time users. Start here b
 **Cause**: Exocortex only renders in **Reading Mode**. In Edit Mode (Live Preview or Source), the layout does not appear.
 
 **Fix**:
+
 1. Press **Ctrl/Cmd + E** to switch to Reading Mode.
 2. If still empty, verify the note's `exo__Instance_class` resolves to a known class (`ems__Area`, `ems__Project`, `ems__Task`, `pn__DailyNote`, etc.) and that the target class file exists in the vault (it comes from the Starter Kit).
 3. Try **Cmd/Ctrl + P → "Reload Layout"**.
@@ -357,11 +357,13 @@ These are the most common problems encountered by first-time users. Start here b
 **Symptom**: `[[ems__Task]]`, `[[ems__EffortStatusBacklog]]`, or similar class references appear grey instead of blue/purple.
 
 **Causes** (in order of likelihood):
+
 1. The Starter Kit is not installed — the referenced class files do not exist in the vault.
 2. The Starter Kit is installed but Obsidian has not indexed the new files yet.
 3. You dragged files into the vault outside Obsidian and the cache is stale.
 
 **Fix**:
+
 1. Confirm the `exocmd/`, `ems/`, `exo/`, `pn/`, and `period/` folders exist somewhere in your vault (any location works).
 2. Reload the vault: **Cmd/Ctrl + P → "Reload app without saving"**.
 3. If the folders are missing, re-download `exocortex-starter-kit.zip` from the latest release and extract into your vault.
@@ -371,6 +373,7 @@ These are the most common problems encountered by first-time users. Start here b
 **Symptom**: The plugin is enabled in settings but commands are missing, layouts never render, or the ribbon icon is absent.
 
 **Fix**:
+
 1. Open Settings → Community plugins and confirm Exocortex is **toggled on** (not just installed).
 2. Open `exocortex-logs.txt` in your **vault root**. This file is written by the plugin and captures startup errors. Search for lines starting with `[ERROR]` or `Failed` to see why initialization failed.
 3. Open Obsidian's developer console: **Ctrl/Cmd + Shift + I → Console**. Exocortex logs initialization there as well.
@@ -382,6 +385,7 @@ These are the most common problems encountered by first-time users. Start here b
 **Symptom**: You click a BRAT link expecting the "Add beta plugin" modal to open, and nothing happens. This is most common on Windows where the `obsidian://` URL handler is sometimes not registered.
 
 **Fix** (fallback path, does not require the URL handler):
+
 1. Open Obsidian → Settings → **Community plugins** → Installed plugins → **BRAT** → **Options**.
 2. Click **Add Beta Plugin**.
 3. Paste `kitelev/exocortex` (or the full GitHub URL) and confirm.
@@ -394,6 +398,7 @@ These are the most common problems encountered by first-time users. Start here b
 **Cause**: `createAsset` uses the **parent folder of the currently active file** as the default location. This is deliberate (tasks live alongside their projects), but it surprises users who expect a central "Inbox" folder.
 
 **Fix**:
+
 - Open the target project in the folder you want the task to be created in, then click Create Task.
 - Or, move the task manually after creation (Obsidian updates all wiki-links automatically).
 - Or, create the task manually with the required frontmatter — see the "Your First Task" section above.
@@ -541,27 +546,27 @@ Discover all commands:
 
 ### Common Commands
 
-| Action         | Command                                                       |
-| -------------- | ------------------------------------------------------------- |
+| Action         | Command                                                                                                     |
+| -------------- | ----------------------------------------------------------------------------------------------------------- |
 | Create task    | Click the **Create Task** button inside the layout (in-layout only; not wired into the command palette yet) |
-| Move status    | Use status buttons (Backlog → Analysis → ToDo → Doing → Done) |
-| Plan for today | Click "Plan on Today" button                                  |
-| Shift day      | Use ◀ / ▶ buttons                                             |
-| Vote on effort | Click "Vote" button                                           |
-| Reload layout  | Cmd/Ctrl+P → "Reload Layout"                                  |
+| Move status    | Use status buttons (Backlog → Analysis → ToDo → Doing → Done)                                               |
+| Plan for today | Click "Plan on Today" button                                                                                |
+| Shift day      | Use ◀ / ▶ buttons                                                                                           |
+| Vote on effort | Click "Vote" button                                                                                         |
+| Reload layout  | Cmd/Ctrl+P → "Reload Layout"                                                                                |
 
 ### Troubleshooting at a glance
 
 For the full diagnostic walkthrough see [Troubleshooting](#troubleshooting) above.
 
-| Problem                  | First thing to try                                                                           |
-| ------------------------ | -------------------------------------------------------------------------------------------- |
-| Layout doesn't appear    | Switch to Reading Mode (Ctrl/Cmd + E)                                                        |
+| Problem                  | First thing to try                                                                                                                                               |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Layout doesn't appear    | Switch to Reading Mode (Ctrl/Cmd + E)                                                                                                                            |
 | No buttons visible       | Verify Starter Kit is installed (`exocmd/` folder exists in vault); if the folder is present, fully quit and reopen Obsidian (cold restart) to force re-indexing |
-| Buttons don't work       | Read `exocortex-logs.txt` in vault root; check console (Ctrl/Cmd + Shift + I)                |
-| Wiki-links grey          | Reload app without saving (Cmd/Ctrl + P); re-extract Starter Kit zip if folders missing      |
-| Daily tasks not showing  | Check task has `ems__Effort_plannedStartTimestamp` matching daily note's `pn__DailyNote_day` |
-| Literal `$input` written | Update Starter Kit to v1.3.4 or newer                                                        |
+| Buttons don't work       | Read `exocortex-logs.txt` in vault root; check console (Ctrl/Cmd + Shift + I)                                                                                    |
+| Wiki-links grey          | Reload app without saving (Cmd/Ctrl + P); re-extract Starter Kit zip if folders missing                                                                          |
+| Daily tasks not showing  | Check task has `ems__Effort_plannedStartTimestamp` matching daily note's `pn__DailyNote_day`                                                                     |
+| Literal `$input` written | Update Starter Kit to v1.3.4 or newer                                                                                                                            |
 
 ---
 

@@ -28,6 +28,7 @@ Commands for creating new assets.
 **Purpose**: Create a new task note with proper frontmatter and relationships.
 
 **Usage**:
+
 1. Open parent project or daily note
 2. Click "Create Task" button
 3. Fill form:
@@ -37,6 +38,7 @@ Commands for creating new assets.
 4. Click OK
 
 **Result**: Creates `tasks/task-[uid].md` with:
+
 ```yaml
 ---
 exo__Instance_class:
@@ -61,6 +63,7 @@ ems__Effort_status: "[[ems__EffortStatusToDo]]"
 **Purpose**: Create a task linked to current task as sub-task.
 
 **Usage**:
+
 1. Open parent task note
 2. Click "Create Related Task" button
 3. Fill form (same as Create Task)
@@ -80,6 +83,7 @@ ems__Effort_status: "[[ems__EffortStatusToDo]]"
 **Purpose**: Create a new project note within an area.
 
 **Usage**:
+
 1. Open area note
 2. Click "Create Project" button
 3. Fill form:
@@ -88,6 +92,7 @@ ems__Effort_status: "[[ems__EffortStatusToDo]]"
    - **Area**: Auto-filled
 
 **Result**: Creates `projects/project-[uid].md` with:
+
 ```yaml
 ---
 exo__Instance_class:
@@ -110,6 +115,7 @@ ems__Effort_status: "[[ems__EffortStatusBacklog]]"
 **Purpose**: Create a new note of any class type (Area, Task, Project, etc.).
 
 **Usage**:
+
 1. Cmd/Ctrl + P → "Create Instance"
 2. Select class from dropdown
 3. Fill form fields (varies by class)
@@ -127,6 +133,7 @@ ems__Effort_status: "[[ems__EffortStatusBacklog]]"
 **Purpose**: Quick capture note for ideas.
 
 **Usage**:
+
 1. Cmd/Ctrl + P → "Create Fleeting Note"
 2. Enter title
 3. Note created in fleeting notes folder
@@ -144,6 +151,7 @@ ems__Effort_status: "[[ems__EffortStatusBacklog]]"
 **Purpose**: Create a structured CBT (Cognitive Behavioral Therapy) diary record for self-reflection.
 
 **Usage**:
+
 1. Cmd/Ctrl + P → "Add Supervision"
 2. Fill form with CBT fields:
    - **Situation/trigger**: What happened
@@ -155,13 +163,13 @@ ems__Effort_status: "[[ems__EffortStatusBacklog]]"
 3. Click OK
 
 **Result**: Creates specialized fleeting note in `01 Inbox/` with:
+
 ```yaml
 ---
 exo__Instance_class:
   - "[[ztlk__FleetingNote]]"
 ztlk__FleetingNote_type: "[[CBT-Diary Record]]"
 ---
-
 - Ситуация/триггер: [situation]
 - Эмоции: [emotions]
 - Мысли: [thoughts]
@@ -283,8 +291,9 @@ Commands for scheduling and organizing efforts.
 **Purpose**: Schedule effort for today.
 
 **Updates**:
+
 ```yaml
-ems__Effort_day: "[[2025-11-10]]"  # Wiki-link to today's date
+ems__Effort_day: "[[2025-11-10]]" # Wiki-link to today's date
 ```
 
 **Visibility**: Available on efforts (tasks/projects).
@@ -300,9 +309,10 @@ ems__Effort_day: "[[2025-11-10]]"  # Wiki-link to today's date
 **Purpose**: Schedule effort for today's evening (18:00).
 
 **Updates**:
+
 ```yaml
 ems__Effort_day: "[[2025-11-10]]"
-ems__Effort_plannedStartTimestamp: "2025-11-10T19:00:00.000Z"  # ISO 8601 timestamp
+ems__Effort_plannedStartTimestamp: "2025-11-10T19:00:00.000Z" # ISO 8601 timestamp
 ```
 
 **Visibility**: Available on efforts.
@@ -350,6 +360,7 @@ ems__Effort_plannedStartTimestamp: "2025-11-10T19:00:00.000Z"  # ISO 8601 timest
 **Purpose**: Filter daily note to show only tasks from specific area.
 
 **Usage**:
+
 1. Open daily note
 2. Click "Set Focus Area" button
 3. Select area from dropdown
@@ -374,11 +385,13 @@ Commands for asset management and cleanup.
 **Purpose**: Archive task (hide from active views).
 
 **Updates**:
+
 ```yaml
 exo__Asset_archived: true
 ```
 
 **Effect**:
+
 - Hidden from daily note (unless "Show Archived" toggled)
 - Hidden from relations
 - Still searchable
@@ -410,8 +423,9 @@ exo__Asset_archived: true
 **Purpose**: Increment vote count for prioritization.
 
 **Updates**:
+
 ```yaml
-ems__Effort_votes: 5  # Increments by 1
+ems__Effort_votes: 5 # Increments by 1
 ```
 
 **Visibility**: Available on efforts (tasks/projects).
@@ -427,6 +441,7 @@ ems__Effort_votes: 5  # Increments by 1
 **Purpose**: Remove empty/invalid properties from frontmatter.
 
 **Actions**:
+
 - Removes properties with empty values
 - Removes properties with `null` or `undefined`
 - Formats inconsistent values
@@ -445,6 +460,7 @@ ems__Effort_votes: 5  # Increments by 1
 **Purpose**: Sync `exo__Asset_label` to Obsidian `aliases` property.
 
 **Updates**:
+
 ```yaml
 exo__Asset_label: "My Task"
 aliases:
@@ -470,6 +486,7 @@ aliases:
 **Use case**: Standardize filenames for consistency.
 
 **Behavior**:
+
 - Renames file: `old-name.md` → `{exo__Asset_uid}.md`
 - Updates `exo__Asset_label` if missing (uses old filename)
 - For **non-archived assets**: Adds old filename to `aliases` for searchability
@@ -487,6 +504,7 @@ aliases:
 **Purpose**: Fix folder structure and file locations.
 
 **Actions**:
+
 - Moves files to correct folders based on class
 - Fixes missing folder structure
 - Reports moved files
@@ -504,6 +522,7 @@ aliases:
 **Purpose**: Upgrade task to project (when scope grows).
 
 **Updates**:
+
 ```yaml
 exo__Instance_class:
   - "[[ems__Project]]"
@@ -524,6 +543,7 @@ exo__Instance_class:
 **Purpose**: Downgrade project to task (when scope reduces).
 
 **Updates**:
+
 ```yaml
 exo__Instance_class:
   - "[[ems__Task]]"
@@ -569,7 +589,7 @@ Commands for controlling layout display.
 ### Toggle Archived Assets Visibility
 
 **Command ID**: `toggle-archived-assets-visibility`
-**Button**: "Show/Hide Archived" (in Daily Tasks and Daily Projects tables)
+**Button**: "Show/Hide Archived" (in the Daily Tasks table)
 **Keyboard**: Cmd/Ctrl + P → "Exocortex: Toggle archived assets visibility"
 
 **Purpose**: Toggle visibility of archived assets across all layout tables.
@@ -577,6 +597,7 @@ Commands for controlling layout display.
 **What are "Archived Assets"?**
 
 Assets (tasks, projects) can be marked as archived in two ways:
+
 ```yaml
 exo__Asset_isArchived: true
 # or
@@ -586,9 +607,9 @@ archived: true
 Archived assets represent completed or inactive items that you want to keep for reference but hide from active views.
 
 **Effect**:
+
 - **When OFF (default)**: Archived assets are hidden from:
   - Daily Tasks table
-  - Daily Projects table
   - Asset Relations table
 - **When ON**: Archived assets are shown with:
   - Reduced opacity (greyed out styling)
@@ -599,13 +620,15 @@ Archived assets represent completed or inactive items that you want to keep for 
 **Persisted**: Setting saves to plugin configuration and persists across sessions.
 
 **Use cases**:
+
 - **Daily planning**: Hide completed tasks to focus on active work
 - **Review mode**: Show archived to review past completions
 - **Cleanup**: Identify archived items that can be permanently deleted
 
 **Alternative Access**:
+
 - Settings → Exocortex → "Show Archived Assets" toggle
-- "Show/Hide Archived" button in Daily Tasks and Daily Projects tables
+- "Show/Hide Archived" button in the Daily Tasks table
 
 **Visibility**: Always available via Command Palette.
 
@@ -620,6 +643,7 @@ Archived assets represent completed or inactive items that you want to keep for 
 **Purpose**: Force refresh of Exocortex layout.
 
 **Use case**:
+
 - After bulk changes to frontmatter
 - If layout appears stale
 - Troubleshooting display issues
@@ -640,6 +664,7 @@ Special-purpose commands.
 **Purpose**: Open a dedicated modal for editing frontmatter properties of the current note.
 
 **Usage**:
+
 1. Open any note with frontmatter
 2. Cmd/Ctrl + P → "Edit Properties"
 3. Modal shows all editable properties for the note's class
@@ -647,6 +672,7 @@ Special-purpose commands.
 5. Click Save to apply changes
 
 **Features**:
+
 - Class-aware property display (shows relevant properties for the note type)
 - Type-specific editors (datetime picker, text input, toggles)
 - Wiki-link property support
@@ -666,6 +692,7 @@ Special-purpose commands.
 **Purpose**: Open visual SPARQL query builder interface.
 
 **Usage**:
+
 1. Cmd/Ctrl + P → "Open Query Builder"
 2. Build SPARQL query visually
 3. Copy generated query to markdown
@@ -678,40 +705,40 @@ Special-purpose commands.
 
 ## Command Quick Reference Table
 
-| Command | Category | Keyboard Shortcut | Button Available |
-|---------|----------|-------------------|------------------|
-| Create Task | Creation | Cmd/Ctrl+P | Yes (Project/Daily) |
-| Create Related Task | Creation | Cmd/Ctrl+P | Yes (Task) |
-| Create Project | Creation | Cmd/Ctrl+P | Yes (Area) |
-| Create Instance | Creation | Cmd/Ctrl+P | No |
-| Create Fleeting Note | Creation | Cmd/Ctrl+P | Yes |
-| Add Supervision | Creation | Cmd/Ctrl+P | Yes |
-| Set Draft Status | Status | Cmd/Ctrl+P | Yes |
-| Move to Backlog | Status | Cmd/Ctrl+P | Yes |
-| Move to Analysis | Status | Cmd/Ctrl+P | Yes |
-| Move to ToDo | Status | Cmd/Ctrl+P | Yes |
-| Start Effort | Status | Cmd/Ctrl+P | Yes |
-| Mark Done | Status | Cmd/Ctrl+P | Yes |
-| Plan on Today | Planning | Cmd/Ctrl+P | Yes |
-| Plan for Evening | Planning | Cmd/Ctrl+P | Yes |
-| Shift Day Forward | Planning | Cmd/Ctrl+P | Yes (▶) |
-| Shift Day Backward | Planning | Cmd/Ctrl+P | Yes (◀) |
-| Set Focus Area | Planning | Cmd/Ctrl+P | Yes (Daily) |
-| Archive Task | Maintenance | Cmd/Ctrl+P | Yes |
-| Trash Effort | Maintenance | Cmd/Ctrl+P | Yes |
-| Vote on Effort | Maintenance | Cmd/Ctrl+P | Yes |
-| Clean Properties | Maintenance | Cmd/Ctrl+P | Yes |
-| Copy Label to Aliases | Maintenance | Cmd/Ctrl+P | Yes |
-| Rename to UID | Maintenance | Cmd/Ctrl+P | Yes |
-| Repair Folder | Maintenance | Cmd/Ctrl+P | No |
-| Convert Task to Project | Maintenance | Cmd/Ctrl+P | Yes |
-| Convert Project to Task | Maintenance | Cmd/Ctrl+P | Yes |
-| Toggle Layout Visibility | View | Cmd/Ctrl+P | Yes |
-| Toggle Properties Visibility | View | Cmd/Ctrl+P | Yes |
-| Toggle Archived Assets Visibility | View | Cmd/Ctrl+P | Yes |
-| Reload Layout | View | Cmd/Ctrl+P | Yes |
-| Edit Properties | Utility | Cmd/Ctrl+P | No |
-| Open Query Builder | Utility | Cmd/Ctrl+P | Yes |
+| Command                           | Category    | Keyboard Shortcut | Button Available    |
+| --------------------------------- | ----------- | ----------------- | ------------------- |
+| Create Task                       | Creation    | Cmd/Ctrl+P        | Yes (Project/Daily) |
+| Create Related Task               | Creation    | Cmd/Ctrl+P        | Yes (Task)          |
+| Create Project                    | Creation    | Cmd/Ctrl+P        | Yes (Area)          |
+| Create Instance                   | Creation    | Cmd/Ctrl+P        | No                  |
+| Create Fleeting Note              | Creation    | Cmd/Ctrl+P        | Yes                 |
+| Add Supervision                   | Creation    | Cmd/Ctrl+P        | Yes                 |
+| Set Draft Status                  | Status      | Cmd/Ctrl+P        | Yes                 |
+| Move to Backlog                   | Status      | Cmd/Ctrl+P        | Yes                 |
+| Move to Analysis                  | Status      | Cmd/Ctrl+P        | Yes                 |
+| Move to ToDo                      | Status      | Cmd/Ctrl+P        | Yes                 |
+| Start Effort                      | Status      | Cmd/Ctrl+P        | Yes                 |
+| Mark Done                         | Status      | Cmd/Ctrl+P        | Yes                 |
+| Plan on Today                     | Planning    | Cmd/Ctrl+P        | Yes                 |
+| Plan for Evening                  | Planning    | Cmd/Ctrl+P        | Yes                 |
+| Shift Day Forward                 | Planning    | Cmd/Ctrl+P        | Yes (▶)             |
+| Shift Day Backward                | Planning    | Cmd/Ctrl+P        | Yes (◀)             |
+| Set Focus Area                    | Planning    | Cmd/Ctrl+P        | Yes (Daily)         |
+| Archive Task                      | Maintenance | Cmd/Ctrl+P        | Yes                 |
+| Trash Effort                      | Maintenance | Cmd/Ctrl+P        | Yes                 |
+| Vote on Effort                    | Maintenance | Cmd/Ctrl+P        | Yes                 |
+| Clean Properties                  | Maintenance | Cmd/Ctrl+P        | Yes                 |
+| Copy Label to Aliases             | Maintenance | Cmd/Ctrl+P        | Yes                 |
+| Rename to UID                     | Maintenance | Cmd/Ctrl+P        | Yes                 |
+| Repair Folder                     | Maintenance | Cmd/Ctrl+P        | No                  |
+| Convert Task to Project           | Maintenance | Cmd/Ctrl+P        | Yes                 |
+| Convert Project to Task           | Maintenance | Cmd/Ctrl+P        | Yes                 |
+| Toggle Layout Visibility          | View        | Cmd/Ctrl+P        | Yes                 |
+| Toggle Properties Visibility      | View        | Cmd/Ctrl+P        | Yes                 |
+| Toggle Archived Assets Visibility | View        | Cmd/Ctrl+P        | Yes                 |
+| Reload Layout                     | View        | Cmd/Ctrl+P        | Yes                 |
+| Edit Properties                   | Utility     | Cmd/Ctrl+P        | No                  |
+| Open Query Builder                | Utility     | Cmd/Ctrl+P        | Yes                 |
 
 ---
 
@@ -721,50 +748,51 @@ Commands appear contextually based on note type and state:
 
 ### By Note Class
 
-| Note Class | Available Commands |
-|------------|-------------------|
-| `ems__Task` | Create Related Task, Status commands, Planning commands, Convert to Project |
-| `ems__Project` | Create Task, Status commands, Planning commands, Convert to Task |
-| `ems__Area` | Create Project |
-| `pn__DailyNote` | Create Task, Set Focus Area |
-| Any (with frontmatter) | Edit Properties |
-| Any | Clean Properties, Reload Layout, Open Query Builder, Toggle Archived Assets Visibility |
+| Note Class             | Available Commands                                                                     |
+| ---------------------- | -------------------------------------------------------------------------------------- |
+| `ems__Task`            | Create Related Task, Status commands, Planning commands, Convert to Project            |
+| `ems__Project`         | Create Task, Status commands, Planning commands, Convert to Task                       |
+| `ems__Area`            | Create Project                                                                         |
+| `pn__DailyNote`        | Create Task, Set Focus Area                                                            |
+| Any (with frontmatter) | Edit Properties                                                                        |
+| Any                    | Clean Properties, Reload Layout, Open Query Builder, Toggle Archived Assets Visibility |
 
 ### By Status
 
-| Current Status | Available Status Commands |
-|----------------|--------------------------|
-| Draft | Move to Backlog, Archive |
-| Backlog | Move to Analysis, Archive |
-| Analysis | Move to ToDo, Move to Backlog |
-| ToDo | Start Effort, Move to Analysis |
-| Doing | Mark Done, Move to ToDo |
-| Done | Archive |
+| Current Status | Available Status Commands      |
+| -------------- | ------------------------------ |
+| Draft          | Move to Backlog, Archive       |
+| Backlog        | Move to Analysis, Archive      |
+| Analysis       | Move to ToDo, Move to Backlog  |
+| ToDo           | Start Effort, Move to Analysis |
+| Doing          | Mark Done, Move to ToDo        |
+| Done           | Archive                        |
 
 ### By Properties
 
-| Property | Required Commands |
-|----------|-------------------|
-| `ems__Effort_day` | Shift Day Forward/Backward |
-| `exo__Asset_label` | Copy Label to Aliases |
-| UID property | Rename to UID |
-| Not archived | Archive Task |
+| Property           | Required Commands          |
+| ------------------ | -------------------------- |
+| `ems__Effort_day`  | Shift Day Forward/Backward |
+| `exo__Asset_label` | Copy Label to Aliases      |
+| UID property       | Rename to UID              |
+| Not archived       | Archive Task               |
 
 ---
 
 ## Troubleshooting Commands
 
-| Problem | Solution Command |
-|---------|------------------|
-| Layout not updating | Reload Layout |
-| Wrong folder | Repair Folder |
-| Empty properties | Clean Properties |
-| Alias mismatch | Copy Label to Aliases |
-| Button missing | Check command visibility rules |
+| Problem             | Solution Command               |
+| ------------------- | ------------------------------ |
+| Layout not updating | Reload Layout                  |
+| Wrong folder        | Repair Folder                  |
+| Empty properties    | Clean Properties               |
+| Alias mismatch      | Copy Label to Aliases          |
+| Button missing      | Check command visibility rules |
 
 ---
 
 **See also**:
+
 - [Getting Started Guide](Getting-Started.md)
 - [Task Workflow](workflows/Task-Workflow.md)
 - [Project Workflow](workflows/Project-Workflow.md)

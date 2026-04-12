@@ -29,9 +29,8 @@ flowchart TD
     PropsConcept --> RelationsConcept[Asset Relations]
     RelationsConcept --> EndConcept[Complete]
 
-    RenderDaily --> DailyTasks[Daily Tasks Table<br/>Filter by ems__Effort_day]
-    DailyTasks --> DailyProjects[Daily Projects Table]
-    DailyProjects --> EndDaily[Complete]
+    RenderDaily --> DailyTasks[Daily Tasks Table<br/>Filter by effort timestamps in day]
+    DailyTasks --> EndDaily[Complete]
 
     RenderGeneric --> PropsGeneric[Properties Table]
     PropsGeneric --> RelationsGeneric[Asset Relations]
