@@ -4,16 +4,41 @@
 
 ---
 
+## Requirements
+
+Exocortex has been verified to work with the following minimum versions. Older versions are known to miss critical fixes for grounding, createAsset, and IRI resolution.
+
+| Component                      | Minimum version | Recommended     | Why                                                    |
+| ------------------------------ | --------------- | --------------- | ------------------------------------------------------ |
+| **Obsidian**                   | 1.5.0           | 1.7.0 or newer  | Plugin uses APIs available since 1.5.                  |
+| **Exocortex plugin**           | v15.90.9        | Latest release  | Fixes for createAsset, IRI resolution, targetValue.    |
+| **Exocortex Starter Kit**      | v1.3.4          | Latest release  | $input → service_call conversions for Set/Shift/Plan.  |
+| **BRAT**                       | Latest          | Latest          | Delivers plugin updates automatically.                 |
+
+### How to check your versions
+
+- **Obsidian**: Settings → About → "Current version".
+- **Exocortex plugin**: Settings → Community plugins → Exocortex → "Installed" line. You can also open `.obsidian/plugins/exocortex/manifest.json` in your vault — the `version` field is authoritative.
+- **Starter Kit**: the starter kit does not ship a version file; verify you downloaded `exocortex-starter-kit.zip` from the **latest** release at `https://github.com/kitelev/exocortex-starter-kit/releases/latest`. If buttons do not appear or dialogs write literal `$input`, re-download the latest zip.
+
+If any component is below the minimum, update it before continuing.
+
+---
+
 ## Table of Contents
 
-1. [What is Exocortex?](#what-is-exocortex)
-2. [Installation](#installation)
-3. [Your First Area](#your-first-area)
-4. [Your First Project](#your-first-project)
-5. [Your First Task](#your-first-task)
-6. [Daily Planning](#daily-planning)
-7. [Understanding the Layout](#understanding-the-layout)
-8. [Next Steps](#next-steps)
+1. [Requirements](#requirements)
+2. [What is Exocortex?](#what-is-exocortex)
+3. [Installation](#installation)
+4. [Your First Area](#your-first-area)
+5. [Your First Project](#your-first-project)
+6. [Your First Task](#your-first-task)
+7. [Daily Planning](#daily-planning)
+8. [Understanding the Layout](#understanding-the-layout)
+9. [Troubleshooting](#troubleshooting)
+10. [Known Limitations](#known-limitations)
+11. [Feedback](#feedback)
+12. [Next Steps](#next-steps)
 
 ---
 
@@ -308,6 +333,158 @@ The Exocortex layout renders automatically in Reading Mode based on the note's `
 
 ---
 
+## Troubleshooting
+
+These are the most common problems encountered by first-time users. Start here before opening an issue.
+
+### "I don't see any buttons on my note"
+
+**Symptom**: The note opens but there is no properties table, no action buttons, nothing below the frontmatter.
+
+**Cause**: Exocortex only renders in **Reading Mode**. In Edit Mode (Live Preview or Source), the layout does not appear.
+
+**Fix**:
+1. Press **Ctrl/Cmd + E** to switch to Reading Mode.
+2. If still empty, verify the note's `exo__Instance_class` resolves to a known class (`ems__Area`, `ems__Project`, `ems__Task`, `pn__DailyNote`, etc.) and that the target class file exists in the vault (it comes from the Starter Kit).
+3. Try **Cmd/Ctrl + P → "Reload Layout"**.
+
+### "Wiki-links to classes are grey (broken)"
+
+**Symptom**: `[[ems__Task]]`, `[[ems__EffortStatusBacklog]]`, or similar class references appear grey instead of blue/purple.
+
+**Causes** (in order of likelihood):
+1. The Starter Kit is not installed — the referenced class files do not exist in the vault.
+2. The Starter Kit is installed but Obsidian has not indexed the new files yet.
+3. You dragged files into the vault outside Obsidian and the cache is stale.
+
+**Fix**:
+1. Confirm the `exocmd/`, `ems/`, `exo/`, `pn/`, and `period/` folders exist somewhere in your vault (any location works).
+2. Reload the vault: **Cmd/Ctrl + P → "Reload app without saving"**.
+3. If the folders are missing, re-download `exocortex-starter-kit.zip` from the latest release and extract into your vault.
+
+### "The Exocortex plugin is not loading"
+
+**Symptom**: The plugin is enabled in settings but commands are missing, layouts never render, or the ribbon icon is absent.
+
+**Fix**:
+1. Open Settings → Community plugins and confirm Exocortex is **toggled on** (not just installed).
+2. Open `exocortex-logs.txt` in your **vault root**. This file is written by the plugin and captures startup errors. Search for lines starting with `[ERROR]` or `Failed` to see why initialization failed.
+3. Open Obsidian's developer console: **Ctrl/Cmd + Shift + I → Console**. Exocortex logs initialization there as well.
+4. If the log mentions schema or RDF errors, a Starter Kit file may be corrupted — re-download the zip.
+5. As a last resort, disable the plugin, restart Obsidian, re-enable it.
+
+### "BRAT URL `obsidian://brat?plugin=...` does nothing (Windows)"
+
+**Symptom**: You click a BRAT link expecting the "Add beta plugin" modal to open, and nothing happens. This is most common on Windows where the `obsidian://` URL handler is sometimes not registered.
+
+**Fix** (fallback path, does not require the URL handler):
+1. Open Obsidian → Settings → **Community plugins** → Installed plugins → **BRAT** → **Options**.
+2. Click **Add Beta Plugin**.
+3. Paste `kitelev/exocortex` (or the full GitHub URL) and confirm.
+4. Enable Exocortex from Community plugins.
+
+### "Create Task creates the file in an unexpected folder"
+
+**Symptom**: You click **Create Task** on a project or area, and the new task note appears in the wrong folder.
+
+**Cause**: `createAsset` uses the **parent folder of the currently active file** as the default location. This is deliberate (tasks live alongside their projects), but it surprises users who expect a central "Inbox" folder.
+
+**Fix**:
+- Open the target project in the folder you want the task to be created in, then click Create Task.
+- Or, move the task manually after creation (Obsidian updates all wiki-links automatically).
+- Or, create the task manually with the required frontmatter — see the "Your First Task" section above.
+
+### "Set Status Doing shows a UUID next to the status name"
+
+**Symptom**: After clicking **Set Status Doing** (or similar), the properties table displays something like `ems__EffortStatusDoing 027e78f4-6e16-4b36-b8fb-5510507d5745`, leaking the UUID.
+
+**Status**: Known cosmetic issue. The status is set correctly — only the UI label is duplicated. A fix is tracked separately and does not affect functionality.
+
+### "A button dialog writes literal `$input` or `$value` into the frontmatter"
+
+**Symptom**: You click Set Result, Set Planned Start, or similar; the dialog accepts your input; but the property is stored as the literal string `$input` instead of your value.
+
+**Cause**: You are running a Starter Kit older than **v1.3.4**. Earlier versions used `property_set` grounding which does not substitute `$input`.
+
+**Fix**: Update the Starter Kit to v1.3.4 or newer. Download the latest `exocortex-starter-kit.zip` and extract into your vault, overwriting the old `exocmd/` folder.
+
+### General diagnostic: `exocortex-logs.txt`
+
+Whenever something feels wrong, the **first file to read** is `exocortex-logs.txt` in your vault root. It contains:
+
+- Plugin initialization
+- Every DynamicCommands execution (button click)
+- IRI resolution results
+- Failed grounding calls
+
+Quick grep to find failures:
+
+```
+grep -iE "Failed|Error" exocortex-logs.txt
+```
+
+Include this file (or the relevant lines) when reporting problems — it saves hours of back-and-forth.
+
+---
+
+## Known Limitations
+
+These are design decisions or rough edges that are **expected** in the current release. Knowing about them up front prevents frustration.
+
+### Create-commands respect the active note's folder
+
+- `createAsset` places the new file in the **parent folder of the active note**.
+- There is no global "Inbox" target folder yet.
+- Workaround: organize your vault so that active notes already live in the folder you want children to land in.
+
+### `Create Area` requires an `01 Areas/` folder
+
+- The Starter Kit's **Create Area** grounding is configured with `targetFolder: 01 Areas`, meaning Obsidian creates a `01 Areas/` folder at the vault root on the first run.
+- If you prefer a different layout, you can edit the grounding file at `exocmd/creation/e72a5fa1-a902-4508-b671-bde8a1461a02.md` and change `exocmd__Grounding_targetFolder`.
+- A configuration UI for this is on the roadmap.
+
+### `Convert to Project` only changes `exo__Instance_class`
+
+- It rewrites `exo__Instance_class` from `[[ems__Task]]` to `[[ems__Project]]`.
+- It does **not** add project-specific properties (start/end timestamps, owner, etc.).
+- After converting, review the frontmatter and add anything the project workflow needs.
+
+### Status display may show a UUID next to the label
+
+- As noted in Troubleshooting, certain status transitions render the metaclass UUID alongside the status name.
+- This is cosmetic — the underlying RDF is correct. Tracked as a known issue.
+
+### First-run indexing takes a moment
+
+- When you install the Starter Kit for the first time, the plugin needs a few seconds to index 150+ ontology files.
+- If buttons or class links look stale on the first opening of a note, switch tabs or run **Reload Layout** once.
+
+### `property_set` grounding does not substitute user input
+
+- If you author custom grounding files, be aware that `property_set` only substitutes `$target`, `$now`, and `$today`. It does **not** substitute `$input` or `$value`.
+- For any user-input property update, use a `service_call` grounding with `updateProperty` — see the Starter Kit's `Set Planned Start` grounding as a reference template.
+
+---
+
+## Feedback
+
+Exocortex is in active development and feedback from early users is highly valuable. The **primary channel** is GitHub Issues:
+
+- **Bug reports and feature requests**: [github.com/kitelev/exocortex/issues](https://github.com/kitelev/exocortex/issues)
+- Before opening a new issue, search existing issues — you may find an active discussion.
+- Include your plugin version, Obsidian version, and the relevant section of `exocortex-logs.txt`.
+
+When reporting a broken button or grounding, the most useful data is:
+
+1. Plugin version (`manifest.json`) and Starter Kit zip date.
+2. The exact button label you clicked.
+3. The target note's full frontmatter.
+4. The last 30 lines of `exocortex-logs.txt` around the click.
+
+This is usually enough to identify the root cause on the first pass.
+
+---
+
 ## Next Steps
 
 Now that you have the basics, explore advanced features:
@@ -369,22 +546,26 @@ Discover all commands:
 | Vote on effort | Click "Vote" button                                           |
 | Reload layout  | Cmd/Ctrl+P → "Reload Layout"                                  |
 
-### Troubleshooting
+### Troubleshooting at a glance
 
-| Problem                  | Solution                                                                                     |
+For the full diagnostic walkthrough see [Troubleshooting](#troubleshooting) above.
+
+| Problem                  | First thing to try                                                                           |
 | ------------------------ | -------------------------------------------------------------------------------------------- |
 | Layout doesn't appear    | Switch to Reading Mode (Ctrl/Cmd + E)                                                        |
-| No buttons visible       | Verify Starter Kit is installed (exocmd/ folder exists in vault)                             |
-| Buttons don't work       | Check console for errors (Ctrl/Cmd + Shift + I)                                              |
-| Wiki-links not resolving | Verify target note exists with correct `exo__Asset_label`                                    |
+| No buttons visible       | Verify Starter Kit is installed (`exocmd/` folder exists in vault)                           |
+| Buttons don't work       | Read `exocortex-logs.txt` in vault root; check console (Ctrl/Cmd + Shift + I)                |
+| Wiki-links grey          | Reload app without saving (Cmd/Ctrl + P); re-extract Starter Kit zip if folders missing      |
 | Daily tasks not showing  | Check task has `ems__Effort_plannedStartTimestamp` matching daily note's `pn__DailyNote_day` |
+| Literal `$input` written | Update Starter Kit to v1.3.4 or newer                                                        |
 
 ---
 
 ## Getting Help
 
 - **Documentation**: See [full documentation index](../README.md#documentation)
-- **Issues**: [GitHub Issues](https://github.com/kitelev/exocortex/issues)
+- **Report a bug or request a feature**: [GitHub Issues](https://github.com/kitelev/exocortex/issues) — see [Feedback](#feedback) for what to include
+- **Starter Kit releases**: [github.com/kitelev/exocortex-starter-kit/releases](https://github.com/kitelev/exocortex-starter-kit/releases)
 
 ---
 
