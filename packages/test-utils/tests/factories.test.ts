@@ -231,16 +231,6 @@ describe("ProjectFactory", () => {
     expect(project.status).toBe("ems__EffortStatusDoing");
   });
 
-  it("should create DailyProject", () => {
-    const dailyProject = ProjectFactory.createDailyProject();
-
-    expect(dailyProject.file).toBeDefined();
-    expect(dailyProject.status).toBe("ems__EffortStatusDraft");
-    expect(dailyProject.isDone).toBe(false);
-    expect(dailyProject.isTrashed).toBe(false);
-    expect(dailyProject.isBlocked).toBe(false);
-  });
-
   it("should convert project to metadata", () => {
     const project = ProjectFactory.create({ label: "My Project", area: "work" });
     const metadata = ProjectFactory.toMetadata(project);

@@ -117,7 +117,7 @@ export interface MeetingFixture extends TaskFixture {
 /**
  * Concept fixture for unit tests.
  */
-export interface ConceptFixture extends BaseFixture {}
+export type ConceptFixture = BaseFixture;
 
 /**
  * DailyTask interface matching the React component interface.
@@ -139,25 +139,6 @@ export interface DailyTask {
   isMeeting: boolean;
   isBlocked: boolean;
   isEmptySlot?: boolean;
-}
-
-/**
- * DailyProject interface matching the React component interface.
- */
-export interface DailyProject {
-  file: FileInfo;
-  path: string;
-  title: string;
-  label: string;
-  startTime: string;
-  endTime: string;
-  startTimestamp: string | number | null;
-  endTimestamp: string | number | null;
-  status: string;
-  metadata: Record<string, unknown>;
-  isDone: boolean;
-  isTrashed: boolean;
-  isBlocked: boolean;
 }
 
 /**
