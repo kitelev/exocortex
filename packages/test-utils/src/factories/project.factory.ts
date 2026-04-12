@@ -7,25 +7,14 @@
  *
  * // Project with specific status
  * const doingProject = ProjectFactory.doing();
- *
- * // DailyProject for React components
- * const dailyProject = ProjectFactory.createDailyProject();
  */
 
 import type {
   ProjectFixture,
-  DailyProject,
-  EffortStatus,
-  EffortStatusName,
   FileInfo,
   Metadata,
 } from "../types";
-import {
-  STATUS_MAP,
-  normalizeStatus,
-  isDoneStatus,
-  isTrashedStatus,
-} from "../helpers/status.helpers";
+import { normalizeStatus } from "../helpers/status.helpers";
 
 let projectCounter = 0;
 
@@ -177,97 +166,6 @@ export const ProjectFactory = {
    */
   inArea(area: string, overrides: Partial<ProjectFixture> = {}): ProjectFixture {
     return ProjectFactory.create({ area, ...overrides });
-  },
-
-  // DailyProject factory methods for React component tests
-
-  /**
-   * Create a DailyProject for React component tests.
-   */
-  createDailyProject(overrides: Partial<DailyProject> = {}): DailyProject {
-    const id = generateId();
-    const basename = overrides.file?.basename ?? id;
-    const path = overrides.path ?? overrides.file?.path ?? `projects/${basename}.md`;
-    const status = overrides.status ?? "ems__EffortStatusDraft";
-    const normalizedStatus = status.startsWith("ems__")
-      ? status
-      : STATUS_MAP[status as EffortStatusName] ?? "ems__EffortStatusDraft";
-
-    return {
-      file: {
-        path,
-        basename,
-        ...overrides.file,
-      },
-      path,
-      title: overrides.title ?? basename,
-      label: overrides.label ?? `Test Project ${projectCounter}`,
-      startTime: overrides.startTime ?? "",
-      endTime: overrides.endTime ?? "",
-      startTimestamp: overrides.startTimestamp ?? null,
-      endTimestamp: overrides.endTimestamp ?? null,
-      status: normalizedStatus,
-      metadata: overrides.metadata ?? {},
-      isDone: overrides.isDone ?? isDoneStatus(normalizedStatus as EffortStatus),
-      isTrashed: overrides.isTrashed ?? isTrashedStatus(normalizedStatus as EffortStatus),
-      isBlocked: overrides.isBlocked ?? false,
-    };
-  },
-
-  /**
-   * Create multiple DailyProjects for React component tests.
-   */
-  createManyDailyProjects(
-    count: number,
-    overrides: Partial<DailyProject> = {}
-  ): DailyProject[] {
-    return Array.from({ length: count }, () =>
-      ProjectFactory.createDailyProject(overrides)
-    );
-  },
-
-  // DailyProject convenience methods
-
-  /**
-   * Create a DailyProject with Doing status.
-   */
-  dailyProjectDoing(overrides: Partial<DailyProject> = {}): DailyProject {
-    return ProjectFactory.createDailyProject({
-      status: "ems__EffortStatusDoing",
-      ...overrides,
-    });
-  },
-
-  /**
-   * Create a DailyProject with Done status.
-   */
-  dailyProjectDone(overrides: Partial<DailyProject> = {}): DailyProject {
-    return ProjectFactory.createDailyProject({
-      status: "ems__EffortStatusDone",
-      isDone: true,
-      ...overrides,
-    });
-  },
-
-  /**
-   * Create a DailyProject with Trashed status.
-   */
-  dailyProjectTrashed(overrides: Partial<DailyProject> = {}): DailyProject {
-    return ProjectFactory.createDailyProject({
-      status: "ems__EffortStatusTrashed",
-      isTrashed: true,
-      ...overrides,
-    });
-  },
-
-  /**
-   * Create a blocked DailyProject.
-   */
-  dailyProjectBlocked(overrides: Partial<DailyProject> = {}): DailyProject {
-    return ProjectFactory.createDailyProject({
-      isBlocked: true,
-      ...overrides,
-    });
   },
 
   // Metadata conversion
