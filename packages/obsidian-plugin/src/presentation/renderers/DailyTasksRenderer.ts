@@ -6,6 +6,7 @@ import { ReactRenderer } from '@plugin/presentation/utils/ReactRenderer';
 import {
   DailyTask,
   DailyTasksTableWithToggle,
+  isDateOnlyTimestamp,
 } from '@plugin/presentation/components/DailyTasksTable';
 import { AssetClass, EffortStatus, IVaultAdapter, IFile } from "exocortex";
 import { MetadataExtractor } from "exocortex";
@@ -200,6 +201,10 @@ export class DailyTasksRenderer {
           timestamp: string | number | null | undefined,
         ): string => {
           if (!timestamp) return "";
+          // Date-only strings ("2025-11-10") have no time component; deriving
+          // hours from `new Date(...)` would expose the viewer's timezone offset
+          // (Issue #2766 item 6 — would render as "05:00" in Asia/Almaty).
+          if (isDateOnlyTimestamp(timestamp)) return "";
           const date = new Date(timestamp);
           if (isNaN(date.getTime())) return "";
           return date.toLocaleTimeString("en-US", {

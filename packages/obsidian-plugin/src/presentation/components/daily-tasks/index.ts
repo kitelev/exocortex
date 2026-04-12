@@ -13,6 +13,7 @@ export {
   getDisplayName,
   getEffortAreaDisplayText,
   formatTimeDisplay,
+  isDateOnlyTimestamp,
   createEmptySlot,
   calculateEmptySlots,
 } from './helpers';
