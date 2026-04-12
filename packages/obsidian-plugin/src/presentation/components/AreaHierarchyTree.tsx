@@ -235,6 +235,15 @@ export const AreaHierarchyTreeWithToggle: React.FC<AreaHierarchyTreeWithTogglePr
   }, [tree, showArchived]);
 
   if (!filteredTree.children || filteredTree.children.length === 0) {
+    // Distinguish "no sub-areas exist at all" (new top-level area, normal state)
+    // from "sub-areas exist but the current filter hid them all" (action needed).
+    // Issue #2766 item 4: the previous "No areas to display" message read as a
+    // bug to first-time users opening their first top-level area.
+    const hasAnyChildren = !!tree?.children && tree.children.length > 0;
+    const emptyMessage = hasAnyChildren
+      ? "No sub-areas match the current filter."
+      : "Sub-areas you create here will appear in this tree.";
+
     return (
       <div className="exocortex-area-tree-wrapper">
         <div className="exocortex-area-tree-controls">
@@ -253,7 +262,7 @@ export const AreaHierarchyTreeWithToggle: React.FC<AreaHierarchyTreeWithTogglePr
         </div>
         <div className="exocortex-area-tree">
           <h3>Area Hierarchy</h3>
-          <p className="exocortex-no-areas">No areas to display</p>
+          <p className="exocortex-no-areas">{emptyMessage}</p>
         </div>
       </div>
     );

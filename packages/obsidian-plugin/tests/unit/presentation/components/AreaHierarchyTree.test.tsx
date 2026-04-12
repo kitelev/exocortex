@@ -274,7 +274,7 @@ describe("AreaHierarchyTreeWithToggle", () => {
       expect(screen.getByText("Child 2")).toBeInTheDocument();
     });
 
-    it("should show 'No areas to display' when all areas are filtered out", () => {
+    it("should show filter empty-state message when all areas are filtered out", () => {
       const allArchivedTree: AreaNode = {
         path: "root",
         title: "Root",
@@ -299,7 +299,10 @@ describe("AreaHierarchyTreeWithToggle", () => {
       });
       render(<AreaHierarchyTreeWithToggle {...props} />);
 
-      expect(screen.getByText("No areas to display")).toBeInTheDocument();
+      // Children exist but the active filter hides them — distinct message.
+      expect(
+        screen.getByText("No sub-areas match the current filter.")
+      ).toBeInTheDocument();
     });
 
     it("should also filter out children of archived areas", () => {
@@ -312,14 +315,17 @@ describe("AreaHierarchyTreeWithToggle", () => {
   });
 
   describe("empty tree handling", () => {
-    it("should handle tree with no children", () => {
+    it("should show top-level-area empty-state message when tree has no children", () => {
       const props = createProps({
         tree: createMockTree({ children: [] }),
         showArchived: false,
       });
       render(<AreaHierarchyTreeWithToggle {...props} />);
 
-      expect(screen.getByText("No areas to display")).toBeInTheDocument();
+      // First-time / top-level-area state — friendly explanation, not a bug.
+      expect(
+        screen.getByText("Sub-areas you create here will appear in this tree.")
+      ).toBeInTheDocument();
     });
 
     it("should still show toggle button when tree is empty", () => {
