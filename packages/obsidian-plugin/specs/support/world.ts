@@ -166,20 +166,6 @@ export class ExocortexWorld extends World {
   }
 
   /**
-   * Get all tasks for a specific day
-   */
-  getTasksForDay(date: string): MockNote[] {
-    const tasks: MockNote[] = [];
-    for (const note of this.notes.values()) {
-      const effortDay = note.frontmatter.ems__Effort_day;
-      if (effortDay === `[[${date}]]`) {
-        tasks.push(note);
-      }
-    }
-    return tasks;
-  }
-
-  /**
    * Simulate viewing a note
    */
   viewNote(note: MockNote): void {
@@ -199,17 +185,6 @@ export class ExocortexWorld extends World {
     if (fm.exo__Instance_class === "[[pn__DailyNote]]") {
       // Always render Properties
       this.renderedSections.add("Properties");
-
-      // Only render Tasks if pn__DailyNote_day exists and tasks available
-      const dayLink = fm.pn__DailyNote_day;
-      if (dayLink && this.dataviewInstalled) {
-        const date = this.extractLinkTarget(dayLink);
-        const tasks = this.getTasksForDay(date);
-        if (tasks.length > 0) {
-          this.renderedSections.add("Tasks");
-          this.tableRows = tasks.map((t) => this.taskToTableRow(t));
-        }
-      }
 
       // Always render Relations
       this.renderedSections.add("Relations");
@@ -236,46 +211,6 @@ export class ExocortexWorld extends World {
       this.renderedButtons.delete("Show Effort Area");
       this.renderedButtons.add("Hide Effort Area");
     }
-  }
-
-  /**
-   * Convert a task note to a table row representation
-   */
-  private taskToTableRow(note: MockNote): any {
-    const fm = note.frontmatter;
-    return {
-      file: note.file,
-      name: fm.exo__Asset_label || note.file.basename,
-      status: fm.ems__Effort_status || null,
-      statusIcon: this.getStatusIcon(fm.ems__Effort_status, fm.exo__Instance_class),
-      startTime: this.formatTime(fm.ems__Effort_startTimestamp || fm.ems__Effort_plannedStartTimestamp),
-      endTime: this.formatTime(fm.ems__Effort_endTimestamp),
-      area: fm.ems__Effort_area || null,
-      votes: fm.ems__Effort_votes ?? 0,
-    };
-  }
-
-  /**
-   * Get status icon based on status and class
-   */
-  private getStatusIcon(status: string | undefined, instanceClass: string | undefined): string {
-    if (instanceClass === "[[ems__Meeting]]") return "👥";
-    if (!status) return "";
-
-    if (status.includes("EffortStatusDoing")) return "🔄";
-    if (status.includes("EffortStatusDone")) return "✅";
-    if (status.includes("EffortStatusTrashed")) return "❌";
-    if (status.includes("EffortStatusPlanned")) return "📅";
-    return "";
-  }
-
-  /**
-   * Format timestamp to time string
-   */
-  private formatTime(timestamp: string | undefined): string {
-    if (!timestamp) return "-";
-    const date = new Date(timestamp);
-    return `${date.getHours().toString().padStart(2, "0")}:${date.getMinutes().toString().padStart(2, "0")}`;
   }
 
   /**

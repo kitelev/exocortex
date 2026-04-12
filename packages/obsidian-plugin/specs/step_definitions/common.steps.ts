@@ -45,11 +45,9 @@ Given("I have a pn__DailyNote with tasks", function (this: ExocortexWorld) {
 
   // Create some default tasks
   this.createTask("Task 1", {
-    ems__Effort_day: `[[${today}]]`,
     ems__Effort_status: "[[ems__EffortStatusDoing]]",
   });
   this.createTask("Task 2", {
-    ems__Effort_day: `[[${today}]]`,
     ems__Effort_status: "[[ems__EffortStatusPlanned]]",
   });
 });
@@ -114,12 +112,7 @@ Given(
 Given(
   "task {string} has status {string}",
   function (this: ExocortexWorld, taskName: string, status: string) {
-    const today = this.currentNote?.frontmatter.pn__DailyNote_day
-      ? this.extractLinkTarget(this.currentNote.frontmatter.pn__DailyNote_day)
-      : new Date().toISOString().split("T")[0];
-
     this.createTask(taskName, {
-      ems__Effort_day: `[[${today}]]`,
       ems__Effort_status: status,
     });
   },
@@ -128,12 +121,7 @@ Given(
 Given(
   "task {string} has status {string} and class {string}",
   function (this: ExocortexWorld, taskName: string, status: string, className: string) {
-    const today = this.currentNote?.frontmatter.pn__DailyNote_day
-      ? this.extractLinkTarget(this.currentNote.frontmatter.pn__DailyNote_day)
-      : new Date().toISOString().split("T")[0];
-
     this.createTask(taskName, {
-      ems__Effort_day: `[[${today}]]`,
       ems__Effort_status: status,
       exo__Instance_class: className,
     });
@@ -151,7 +139,6 @@ Given(
     const timestamp = `${today}T${hours.padStart(2, "0")}:${minutes.padStart(2, "0")}:00`;
 
     this.createTask(taskName, {
-      ems__Effort_day: `[[${today}]]`,
       ems__Effort_status: status,
       ems__Effort_startTimestamp: timestamp,
     });
@@ -161,12 +148,7 @@ Given(
 Given(
   "task {string} has status {string} and {string} set to {int}",
   function (this: ExocortexWorld, taskName: string, status: string, property: string, value: number) {
-    const today = this.currentNote?.frontmatter.pn__DailyNote_day
-      ? this.extractLinkTarget(this.currentNote.frontmatter.pn__DailyNote_day)
-      : new Date().toISOString().split("T")[0];
-
     this.createTask(taskName, {
-      ems__Effort_day: `[[${today}]]`,
       ems__Effort_status: status,
       [property]: value,
     });
@@ -176,13 +158,8 @@ Given(
 Given(
   "task {string} has status {string} and no {string} property",
   function (this: ExocortexWorld, taskName: string, status: string, _property: string) {
-    const today = this.currentNote?.frontmatter.pn__DailyNote_day
-      ? this.extractLinkTarget(this.currentNote.frontmatter.pn__DailyNote_day)
-      : new Date().toISOString().split("T")[0];
-
     // Property is simply not set
     this.createTask(taskName, {
-      ems__Effort_day: `[[${today}]]`,
       ems__Effort_status: status,
     });
   },
@@ -191,12 +168,7 @@ Given(
 Given(
   "task {string} has {string} at {string}",
   function (this: ExocortexWorld, taskName: string, property: string, timestamp: string) {
-    const today = this.currentNote?.frontmatter.pn__DailyNote_day
-      ? this.extractLinkTarget(this.currentNote.frontmatter.pn__DailyNote_day)
-      : new Date().toISOString().split("T")[0];
-
     this.createTask(taskName, {
-      ems__Effort_day: `[[${today}]]`,
       ems__Effort_status: "[[ems__EffortStatusPlanned]]",
       [property]: timestamp,
     });
@@ -206,12 +178,7 @@ Given(
 Given(
   "task {string} has no time properties",
   function (this: ExocortexWorld, taskName: string) {
-    const today = this.currentNote?.frontmatter.pn__DailyNote_day
-      ? this.extractLinkTarget(this.currentNote.frontmatter.pn__DailyNote_day)
-      : new Date().toISOString().split("T")[0];
-
     this.createTask(taskName, {
-      ems__Effort_day: `[[${today}]]`,
       ems__Effort_status: "[[ems__EffortStatusPlanned]]",
     });
   },
