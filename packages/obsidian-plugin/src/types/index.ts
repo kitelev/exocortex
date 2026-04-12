@@ -20,7 +20,6 @@ export interface AssetMetadata {
   ems__Effort_status?: string | string[];
   ems__Effort_votes?: number;
   exo__Asset_prototype?: string;
-  ems__Effort_day?: string;
   ems__Effort_startTimestamp?: string | number;
   ems__Effort_plannedStartTimestamp?: string | number;
   ems__Effort_endTimestamp?: string | number;
