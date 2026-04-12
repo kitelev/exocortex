@@ -39,6 +39,10 @@ function createMockDeps(withVaultAdapter = false): ServiceRegistryDeps {
       workspace: {
         getActiveFile: jest.fn().mockReturnValue({ path: "active.md" }),
         openLinkText: jest.fn().mockResolvedValue(undefined),
+        getLeaf: jest.fn().mockReturnValue({
+          openFile: jest.fn().mockResolvedValue(undefined),
+        }),
+        setActiveLeaf: jest.fn(),
       },
     } as any,
     fileSystemAdapter: {
@@ -66,6 +70,11 @@ function createMockDeps(withVaultAdapter = false): ServiceRegistryDeps {
       modify: jest.fn().mockResolvedValue(undefined),
       create: jest.fn().mockResolvedValue(mockIFile),
       createFolder: jest.fn().mockResolvedValue(undefined),
+      toTFile: jest.fn().mockReturnValue({
+        path: mockIFile.path,
+        basename: mockIFile.basename,
+        name: mockIFile.name,
+      }),
     } as any;
   }
 
@@ -534,6 +543,41 @@ describe("ServiceRegistryPopulator (with vaultAdapter)", () => {
         expect.stringContaining("folder/"),
         expect.stringContaining("ems__Task"),
       );
+    });
+
+    it("should set ems__Effort_status to Draft by default", async () => {
+      const service = registry.get("createRelatedTask")!;
+      await service.execute("test-uid-123", { label: "Subtask" });
+
+      const createCall = (deps.vaultAdapter!.create as jest.Mock).mock.calls[0];
+      const content = createCall[1] as string;
+      expect(content).toContain('ems__Effort_status: "[[ems__EffortStatusDraft]]"');
+    });
+
+    it("should open the created task in a new tab leaf", async () => {
+      const service = registry.get("createRelatedTask")!;
+      await service.execute("test-uid-123", { label: "Subtask" });
+
+      expect(deps.app.workspace.getLeaf).toHaveBeenCalledWith("tab");
+      expect(deps.vaultAdapter!.toTFile).toHaveBeenCalled();
+      const leafMock = (deps.app.workspace.getLeaf as jest.Mock).mock.results[0].value;
+      expect(leafMock.openFile).toHaveBeenCalled();
+      expect(deps.app.workspace.setActiveLeaf).toHaveBeenCalledWith(
+        leafMock,
+        { focus: true },
+      );
+    });
+
+    it("should honor explicit parentProperty override from userInput", async () => {
+      const service = registry.get("createRelatedTask")!;
+      await service.execute("test-uid-123", {
+        label: "Area subtask",
+        parentProperty: "ems__Effort_area",
+      });
+
+      const createCall = (deps.vaultAdapter!.create as jest.Mock).mock.calls[0];
+      const content = createCall[1] as string;
+      expect(content).toContain('ems__Effort_area: "[[test-uid-123]]"');
     });
 
     it("should throw when label is missing", async () => {

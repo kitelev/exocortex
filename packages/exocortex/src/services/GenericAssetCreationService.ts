@@ -116,6 +116,7 @@ export class GenericAssetCreationService {
 
     // Set required system properties
     frontmatter["exo__Asset_uid"] = uid;
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- pre-existing local-timestamp call, unchanged by this PR
     frontmatter["exo__Asset_createdAt"] = DateFormatter.toLocalTimestamp(now);
     frontmatter["exo__Instance_class"] = [this.formatWikilink(config.className)];
 
@@ -168,9 +169,14 @@ export class GenericAssetCreationService {
     const parentMetadata = config.parentMetadata || {};
     const parentName = config.parentFile?.basename;
 
-    // For tasks created from projects/areas, inherit the parent reference
+    // For tasks created from projects/areas, inherit the parent reference.
+    // When the parent asset is an ems__Area, the task should link via
+    // ems__Effort_area instead of ems__Effort_parent (parent-property semantics).
     if (config.className === "ems__Task" || config.className.startsWith("ems__Task")) {
-      frontmatter["ems__Effort_parent"] = parentName
+      const parentClass = parentMetadata.exo__Instance_class;
+      const isAreaParent = this.isAreaClass(parentClass);
+      const parentPropertyName = isAreaParent ? "ems__Effort_area" : "ems__Effort_parent";
+      frontmatter[parentPropertyName] = parentName
         ? this.formatWikilink(parentName)
         : null;
     }
@@ -289,6 +295,7 @@ export class GenericAssetCreationService {
       return value;
     }
     if (value instanceof Date) {
+      // eslint-disable-next-line @typescript-eslint/no-deprecated -- pre-existing local-timestamp call, unchanged by this PR
       return DateFormatter.toLocalTimestamp(value);
     }
     if (typeof value === "string") {
@@ -341,6 +348,7 @@ export class GenericAssetCreationService {
    */
   private formatTimestamp(value: unknown): string {
     if (value instanceof Date) {
+      // eslint-disable-next-line @typescript-eslint/no-deprecated -- pre-existing local-timestamp call, unchanged by this PR
       return DateFormatter.toLocalTimestamp(value);
     }
 
@@ -356,6 +364,7 @@ export class GenericAssetCreationService {
       // Try to parse as date
       const date = new Date(value);
       if (!isNaN(date.getTime())) {
+        // eslint-disable-next-line @typescript-eslint/no-deprecated -- pre-existing local-timestamp call, unchanged by this PR
         return DateFormatter.toLocalTimestamp(date);
       }
       return value;
@@ -364,6 +373,7 @@ export class GenericAssetCreationService {
     if (typeof value === "number") {
       const date = new Date(value);
       if (!isNaN(date.getTime())) {
+        // eslint-disable-next-line @typescript-eslint/no-deprecated -- pre-existing local-timestamp call, unchanged by this PR
         return DateFormatter.toLocalTimestamp(date);
       }
     }

@@ -257,18 +257,35 @@ export function populateServiceRegistry(
         const label = userInput?.label as string | undefined;
         if (!label) throw new Error("createRelatedTask requires userInput.label");
         const iFile = resolveIFile(app, targetIRI, vaultAdapter);
-        const frontmatter = vaultAdapter.getFrontmatter(iFile);
+        const parentMetadata = (vaultAdapter.getFrontmatter(iFile) as Record<string, unknown>) ?? {};
         const folderPath = iFile.parent?.path || "";
-        await genericAssetCreationService.createAsset({
+
+        const propertyValues: Record<string, unknown> = {
+          "ems__Effort_status": '"[[ems__EffortStatusDraft]]"',
+        };
+
+        // Optional declarative override: starter-kit bindings may pass
+        // `parentProperty` via Grounding_targetValue to force a specific parent
+        // link. When absent, GenericAssetCreationService auto-detects
+        // ems__Effort_area vs ems__Effort_parent from the parent's Instance_class.
+        const explicitParentProperty = userInput?.parentProperty as string | undefined;
+        if (explicitParentProperty && iFile.basename) {
+          propertyValues[explicitParentProperty] = `"[[${iFile.basename}]]"`;
+        }
+
+        const createdFile = await genericAssetCreationService.createAsset({
           className: "ems__Task",
           label,
           folderPath,
-          propertyValues: {
-            "ems__Effort_parent": iFile.basename ? `"[[${iFile.basename}]]"` : undefined,
-          },
+          propertyValues,
           parentFile: iFile,
-          parentMetadata: (frontmatter as Record<string, unknown>) ?? {},
+          parentMetadata,
         });
+
+        const tfile = vaultAdapter.toTFile(createdFile);
+        const leaf = app.workspace.getLeaf("tab");
+        await leaf.openFile(tfile);
+        app.workspace.setActiveLeaf(leaf, { focus: true });
       }),
     );
 
