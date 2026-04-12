@@ -182,20 +182,6 @@ View project status from project note:
 - What's in progress
 - What's blocked
 
-### Daily Project View
-
-Schedule entire project to daily note:
-
-```yaml
-ems__Effort_plannedStartTimestamp: "2025-11-10"
-```
-
-**Daily Projects section shows:**
-
-- Project and all its tasks
-- Task statuses
-- Quick access to start tasks
-
 ---
 
 ## Project Completion
