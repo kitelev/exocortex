@@ -212,6 +212,19 @@ describe("ServiceRegistryPopulator", () => {
       );
     });
 
+    it("should include exo__Asset_createdAt with ISO-8601 timestamp", async () => {
+      const service = registry.get("createAsset")!;
+      await service.execute("", {
+        prototypeUID: "ems__TaskPrototype",
+        label: "Timestamped Task",
+        folder: "01 Areas/Tasks",
+      });
+
+      const createCall = (deps.fileSystemAdapter.createFile as jest.Mock).mock.calls[0];
+      const frontmatter = createCall[1] as string;
+      expect(frontmatter).toMatch(/exo__Asset_createdAt: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
+    });
+
     it("should throw when prototypeUID is missing", async () => {
       const service = registry.get("createAsset")!;
       await expect(
