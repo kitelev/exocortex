@@ -19,7 +19,7 @@ Exocortex has been verified to work with the following minimum versions. Older v
 
 - **Obsidian**: Settings → About → "Current version".
 - **Exocortex plugin**: Settings → Community plugins → Exocortex → "Installed" line. You can also open `.obsidian/plugins/exocortex/manifest.json` in your vault — the `version` field is authoritative.
-- **Starter Kit**: the starter kit does not ship a version file; verify you downloaded `exocortex-starter-kit.zip` from the **latest** release at `https://github.com/kitelev/exocortex-starter-kit/releases/latest`. If buttons do not appear or dialogs write literal `$input`, re-download the latest zip.
+- **Starter Kit**: the starter kit does not ship a version file; verify you downloaded `exocortex-starter-kit.zip` from the **latest** release at `https://github.com/kitelev/exocortex-starter-kit/releases/latest`. If action buttons do not appear or dialogs write literal `$input`, re-download the latest zip.
 
 If any component is below the minimum, update it before continuing.
 
@@ -72,7 +72,7 @@ You describe your entities (tasks, projects, areas, or any custom type) in YAML 
 1. Open Obsidian Settings → Community plugins → Browse
 2. Search for **"BRAT"** (full name: "Obsidian42 - BRAT")
 3. Click Install → Enable
-4. Open BRAT settings → **Add Beta Plugin**
+4. Open BRAT settings → **Add beta plugin**
 5. Enter `kitelev/exocortex` in the **GitHub repository** field. Either the `owner/repo` form or the full GitHub URL works. Leave **Personal Access Token** empty and keep **Enable after installing the plugin** checked.
 6. Click **Add Plugin**
 7. Go to Settings → Community plugins → enable **Exocortex**
@@ -81,7 +81,7 @@ BRAT will automatically keep the plugin updated with new releases.
 
 ### Step 2: Install Starter Kit
 
-The plugin needs ontology files in your vault to enable buttons and commands. Download and extract the Starter Kit:
+The plugin needs ontology files in your vault to enable action buttons and commands. Download and extract the Starter Kit:
 
 1. Go to the [Starter Kit Release](https://github.com/kitelev/exocortex-starter-kit/releases/latest)
 2. Download `exocortex-starter-kit.zip`
@@ -114,9 +114,12 @@ exo__Asset_label: Test Area
 - Check that the plugin is enabled (Settings → Community plugins)
 - Check the console for errors (Ctrl/Cmd + Shift + I → Console tab)
 
-**If buttons are missing but the layout appears:**
+**If action buttons are missing but the layout appears:**
+
+> **What are "action buttons"?** They are clickable controls — Create Task, Set Status Doing, Plan on Today, etc. — that the plugin generates from the Starter Kit's `exocmd/` folder. They are different from the small **filter/toggle buttons** at the top of widgets (Show Effort Area, Show Votes, Hide Empty Slots), which are built into the plugin and work without the Starter Kit.
 
 - Verify the Starter Kit files are in your vault (look for an `exocmd/` folder)
+- If the `exocmd/` folder is present and the plugin loads cleanly, fully **quit and reopen Obsidian** (cold restart) to force re-indexing
 - Try Cmd/Ctrl+P → "Reload Layout"
 
 ---
@@ -150,7 +153,7 @@ The Exocortex layout renders with these sections (header labels match the on-scr
 - **Properties**: Shows all frontmatter properties
 - **COMMANDS**: Action buttons relevant to areas (Create Project, Create Task, Create Sub Area, etc.)
 - **Area tree**: Parent/child area relationships (empty until you create sub-areas)
-- **Asset Relations**: Notes that reference this area. Populates automatically when another note links to it via a wiki-link.
+- **Asset Relations**: Notes that reference this area. **This section only appears once another note links to this area** — until then, the section is hidden. As soon as you create a project or task that references the area, the section will populate automatically.
 
 **Note**: The layout only appears in Reading Mode, not in Edit Mode.
 
@@ -247,20 +250,22 @@ Daily notes show all tasks scheduled for a specific date.
 
 ### Create a Daily Note
 
-1. Create a note named `2025-11-10.md` (use ISO format: YYYY-MM-DD)
+1. Create a note named `2025-11-10.md` (use ISO format: YYYY-MM-DD — this is the daily-note convention)
 2. Add frontmatter:
 
 ```yaml
 ---
 exo__Instance_class:
   - "[[pn__DailyNote]]"
-exo__Asset_label: "2025-11-10"
+exo__Asset_label: "Daily 2025-11-10"
 pn__DailyNote_day: "2025-11-10"
 ---
-# 2025-11-10
+# Daily 2025-11-10
 
 Today's plan.
 ```
+
+> **Note — why the label is not just `"2025-11-10"`**: Obsidian's Properties widget auto-detects pure date strings (`YYYY-MM-DD`) and renders them as a date picker (`10 11 2025`). Prefixing the label with `Daily` keeps it readable as a string. The `pn__DailyNote_day` property must remain a pure date — that is the value the daily layout filters tasks by.
 
 ### Schedule Tasks for Today
 
@@ -302,6 +307,7 @@ The Exocortex layout renders automatically in Reading Mode based on the note's `
 - Resolves wiki-links to display labels
 - Sortable columns (click headers)
 - Toggle visibility with "Toggle Properties" button
+- Long property names (e.g., `exo__Instance_class`) may be visually truncated by the Properties widget. Hover over a property name to see the full version, or widen the column / panel to fit.
 
 **2. COMMANDS**
 
@@ -340,9 +346,11 @@ The Exocortex layout renders automatically in Reading Mode based on the note's `
 
 These are the most common problems encountered by first-time users. Start here before opening an issue.
 
-### "I don't see any buttons on my note"
+### "I don't see any action buttons on my note"
 
 **Symptom**: The note opens but there is no properties table, no action buttons, nothing below the frontmatter.
+
+> **Action buttons vs. filter buttons**: "Action buttons" means **Create Task / Set Status Doing / Plan on Today** and similar — generated by the plugin from the Starter Kit's `exocmd/` folder. They are different from the **filter/toggle buttons** (Show Effort Area, Show Votes, Hide Empty Slots) that sit at the top of widgets and work without the Starter Kit. If your filter buttons are present but action buttons are missing, you have a Starter Kit problem, not a plugin problem.
 
 **Cause**: Exocortex only renders in **Reading Mode**. In Edit Mode (Live Preview or Source), the layout does not appear.
 
@@ -559,14 +567,14 @@ Discover all commands:
 
 For the full diagnostic walkthrough see [Troubleshooting](#troubleshooting) above.
 
-| Problem                  | First thing to try                                                                                                                                               |
-| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Layout doesn't appear    | Switch to Reading Mode (Ctrl/Cmd + E)                                                                                                                            |
-| No buttons visible       | Verify Starter Kit is installed (`exocmd/` folder exists in vault); if the folder is present, fully quit and reopen Obsidian (cold restart) to force re-indexing |
-| Buttons don't work       | Read `exocortex-logs.txt` in vault root; check console (Ctrl/Cmd + Shift + I)                                                                                    |
-| Wiki-links grey          | Reload app without saving (Cmd/Ctrl + P); re-extract Starter Kit zip if folders missing                                                                          |
-| Daily tasks not showing  | Check task has `ems__Effort_plannedStartTimestamp` matching daily note's `pn__DailyNote_day`                                                                     |
-| Literal `$input` written | Update Starter Kit to v1.3.4 or newer                                                                                                                            |
+| Problem                   | First thing to try                                                                                                                                               |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Layout doesn't appear     | Switch to Reading Mode (Ctrl/Cmd + E)                                                                                                                            |
+| No action buttons visible | Verify Starter Kit is installed (`exocmd/` folder exists in vault); if the folder is present, fully quit and reopen Obsidian (cold restart) to force re-indexing |
+| Action buttons don't work | Read `exocortex-logs.txt` in vault root; check console (Ctrl/Cmd + Shift + I)                                                                                    |
+| Wiki-links grey           | Reload app without saving (Cmd/Ctrl + P); re-extract Starter Kit zip if folders missing                                                                          |
+| Daily tasks not showing   | Check task has `ems__Effort_plannedStartTimestamp` matching daily note's `pn__DailyNote_day`                                                                     |
+| Literal `$input` written  | Update Starter Kit to v1.3.4 or newer                                                                                                                            |
 
 ---
 
