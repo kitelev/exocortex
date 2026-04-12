@@ -3,6 +3,7 @@ import { AreaNode, AreaNodeData } from "../domain/models/AreaNode";
 import { AssetClass } from "../domain/constants";
 import type { IVaultAdapter, IFile } from "../interfaces/IVaultAdapter";
 import { DI_TOKENS } from "../interfaces/tokens";
+import { WikiLinkHelpers } from "../utilities/WikiLinkHelpers";
 
 export interface AssetRelation {
   path: string;
@@ -48,14 +49,9 @@ export class AreaHierarchyBuilder {
   private extractInstanceClass(metadata: Record<string, unknown>): string {
     const instanceClass = metadata.exo__Instance_class || "";
     if (Array.isArray(instanceClass)) {
-      return this.cleanWikiLink(String(instanceClass[0] || ""));
+      return WikiLinkHelpers.normalize(String(instanceClass[0] || ""));
     }
-    return this.cleanWikiLink(String(instanceClass));
-  }
-
-  private cleanWikiLink(value: string): string {
-    if (typeof value !== "string") return "";
-    return value.replace(/^\[\[|\]\]$/g, "").trim();
+    return WikiLinkHelpers.normalize(String(instanceClass));
   }
 
   private collectAllAreasFromVault(): Map<string, AreaNodeData> {
@@ -99,10 +95,10 @@ export class AreaHierarchyBuilder {
 
     if (Array.isArray(parentProperty)) {
       const firstParent = parentProperty[0] || "";
-      return this.cleanWikiLink(firstParent);
+      return WikiLinkHelpers.normalize(String(firstParent));
     }
 
-    return this.cleanWikiLink(String(parentProperty));
+    return WikiLinkHelpers.normalize(String(parentProperty));
   }
 
   private isArchived(metadata: Record<string, unknown>): boolean {

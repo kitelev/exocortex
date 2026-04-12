@@ -33,6 +33,55 @@ describe("WikiLinkHelpers", () => {
     it("should handle value with only brackets", () => {
       expect(WikiLinkHelpers.normalize("[[]]")).toBe("");
     });
+
+    describe("UUID-alias wikilinks (issue #2764)", () => {
+      it("should prefer alias when target is a UUID", () => {
+        expect(
+          WikiLinkHelpers.normalize("[[82c74542-1b14-4217-b852-d84730484b25|ems__Area]]"),
+        ).toBe("ems__Area");
+      });
+
+      it("should handle UUID-alias with uppercase hex", () => {
+        expect(
+          WikiLinkHelpers.normalize("[[82C74542-1B14-4217-B852-D84730484B25|ems__Project]]"),
+        ).toBe("ems__Project");
+      });
+
+      it("should fall back to UUID when alias is empty", () => {
+        expect(
+          WikiLinkHelpers.normalize("[[82c74542-1b14-4217-b852-d84730484b25|]]"),
+        ).toBe("82c74542-1b14-4217-b852-d84730484b25");
+      });
+
+      it("should prefer target (not alias) when target is non-UUID", () => {
+        // For non-UUID targets, the target is the canonical file basename
+        // and the alias is just display text — keep the target.
+        expect(WikiLinkHelpers.normalize("[[Some Note|Display Label]]")).toBe(
+          "Some Note",
+        );
+      });
+
+      it("should keep working for plain class wikilinks without alias", () => {
+        expect(WikiLinkHelpers.normalize("[[ems__Area]]")).toBe("ems__Area");
+      });
+
+      it("should handle UUID-alias where alias contains special chars", () => {
+        expect(
+          WikiLinkHelpers.normalize("[[82c74542-1b14-4217-b852-d84730484b25|ems__Class Name]]"),
+        ).toBe("ems__Class Name");
+      });
+
+      it("should reject malformed UUID targets (fall through to target)", () => {
+        // "not-a-uuid" doesn't match the UUID pattern, so target (non-UUID branch) is returned
+        expect(WikiLinkHelpers.normalize("[[not-a-uuid|alias]]")).toBe("not-a-uuid");
+      });
+
+      it("should treat a UUID target with multi-pipe alias correctly", () => {
+        expect(
+          WikiLinkHelpers.normalize("[[82c74542-1b14-4217-b852-d84730484b25|label|extra]]"),
+        ).toBe("label|extra");
+      });
+    });
   });
 
   describe("normalizeArray", () => {

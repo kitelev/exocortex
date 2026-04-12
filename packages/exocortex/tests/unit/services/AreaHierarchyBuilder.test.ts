@@ -120,6 +120,52 @@ describe("AreaHierarchyBuilder", () => {
       expect(result!.children).toEqual([]);
     });
 
+    it("should build hierarchy when exo__Instance_class uses UUID-alias form (issue #2764)", () => {
+      // Regression for #2764: starter-kit-style frontmatter uses
+      // "[[UUID|ems__Area]]" instead of "[[ems__Area]]" and the widget
+      // would previously render nothing because the class comparison
+      // stripped only brackets and left the "UUID|ems__Area" literal.
+      const file = createMockFile({
+        path: "areas/test-area-uuid.md",
+        basename: "test-area-uuid",
+      });
+      mockVault.getAbstractFileByPath.mockReturnValue(file);
+      mockVault.getFrontmatter.mockReturnValue({
+        exo__Instance_class:
+          "[[82c74542-1b14-4217-b852-d84730484b25|ems__Area]]",
+        exo__Asset_label: "Test Area UUID",
+      });
+      mockVault.getAllFiles.mockReturnValue([file]);
+
+      const result = builder.buildHierarchy("areas/test-area-uuid.md", []);
+
+      expect(result).not.toBeNull();
+      expect(result!.path).toBe("areas/test-area-uuid.md");
+      expect(result!.label).toBe("Test Area UUID");
+      expect(result!.depth).toBe(0);
+      expect(result!.children).toEqual([]);
+    });
+
+    it("should build hierarchy when exo__Instance_class is an array with UUID-alias form (issue #2764)", () => {
+      const file = createMockFile({
+        path: "areas/array-area.md",
+        basename: "array-area",
+      });
+      mockVault.getAbstractFileByPath.mockReturnValue(file);
+      mockVault.getFrontmatter.mockReturnValue({
+        exo__Instance_class: [
+          "[[82c74542-1b14-4217-b852-d84730484b25|ems__Area]]",
+        ],
+        exo__Asset_label: "Array Area",
+      });
+      mockVault.getAllFiles.mockReturnValue([file]);
+
+      const result = builder.buildHierarchy("areas/array-area.md", []);
+
+      expect(result).not.toBeNull();
+      expect(result!.label).toBe("Array Area");
+    });
+
     it("should build hierarchy with parent-child relationships", () => {
       const parentFile = createMockFile({
         path: "areas/parent.md",

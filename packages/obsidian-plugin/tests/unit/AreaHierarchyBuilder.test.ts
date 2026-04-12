@@ -70,6 +70,92 @@ describe("AreaHierarchyBuilder", () => {
       expect(result?.depth).toBe(0);
     });
 
+    it("should build hierarchy when exo__Instance_class uses UUID-alias wikilink (issue #2764)", () => {
+      // Regression for #2764: starter-kit-style frontmatter uses
+      // `[[UUID|ems__Area]]` instead of `[[ems__Area]]`. Before the fix,
+      // AreaHierarchyBuilder's internal wikilink normalization returned
+      // the literal `UUID|ems__Area` substring and the !== AREA check
+      // failed, so the widget rendered nothing.
+      const currentAreaPath = "areas/test-area-uuid.md";
+      const uuidAreaFile = {
+        basename: "test-area-uuid",
+        path: currentAreaPath,
+        stat: { ctime: 0, mtime: 0 },
+      };
+
+      mockVaultAdapter.getAbstractFileByPath.mockReturnValue(uuidAreaFile);
+      mockVaultAdapter.getAllFiles.mockReturnValue([uuidAreaFile]);
+      mockVaultAdapter.getFrontmatter.mockReturnValue({
+        exo__Instance_class: [
+          "[[82c74542-1b14-4217-b852-d84730484b25|ems__Area]]",
+        ],
+        exo__Asset_label: "Test Area UUID",
+      });
+
+      const result = builder.buildHierarchy(currentAreaPath, []);
+
+      expect(result).not.toBeNull();
+      expect(result?.path).toBe(currentAreaPath);
+      expect(result?.label).toBe("Test Area UUID");
+      expect(result?.children).toHaveLength(0);
+      expect(result?.depth).toBe(0);
+    });
+
+    it("should recognize UUID-alias Area in collectAllAreasFromVault iteration (issue #2764)", () => {
+      // Second regression path: even if the current file is a classic
+      // `[[ems__Area]]`, any OTHER Area in the vault that uses the
+      // UUID-alias form must still be recognized so parent/child linking
+      // works across mixed-form Areas.
+      const rootPath = "areas/root-classic.md";
+      const childPath = "areas/child-uuid.md";
+
+      const rootFile = {
+        basename: "root-classic",
+        path: rootPath,
+        stat: { ctime: 0, mtime: 0 },
+      };
+      const childFile = {
+        basename: "child-uuid",
+        path: childPath,
+        stat: { ctime: 0, mtime: 0 },
+      };
+
+      mockVaultAdapter.getAbstractFileByPath.mockImplementation(
+        (path: string) => {
+          if (path === rootPath) return rootFile;
+          if (path === childPath) return childFile;
+          return null;
+        },
+      );
+      mockVaultAdapter.getAllFiles.mockReturnValue([rootFile, childFile]);
+      mockVaultAdapter.getFrontmatter.mockImplementation((file: any) => {
+        if (file.path === rootPath) {
+          return {
+            exo__Instance_class: ["[[ems__Area]]"],
+            exo__Asset_label: "Classic Root",
+          };
+        }
+        if (file.path === childPath) {
+          return {
+            exo__Instance_class: [
+              "[[82c74542-1b14-4217-b852-d84730484b25|ems__Area]]",
+            ],
+            exo__Asset_label: "UUID Child",
+            ems__Area_parent: "[[root-classic]]",
+          };
+        }
+        return null;
+      });
+
+      const result = builder.buildHierarchy(rootPath, []);
+
+      expect(result).not.toBeNull();
+      expect(result?.path).toBe(rootPath);
+      expect(result?.children).toHaveLength(1);
+      expect(result?.children[0]?.path).toBe(childPath);
+      expect(result?.children[0]?.label).toBe("UUID Child");
+    });
+
     it("should build two-level hierarchy with parent-child relationship", () => {
       const rootPath = "areas/root.md";
       const childPath = "areas/child.md";
