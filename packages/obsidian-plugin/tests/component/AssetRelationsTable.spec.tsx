@@ -171,36 +171,35 @@ test.describe("AssetRelationsTable Component", () => {
     await expect(component.locator("tbody tr")).toHaveCount(0);
   });
 
-  test("should display exo__Instance_class column", async ({ mount }) => {
+  test("should display Instance Class column with humanized header", async ({ mount }) => {
     const component = await mount(
       <AssetRelationsTable relations={mockRelations} />,
     );
 
-    // Check Instance Class column exists
+    // Column header is humanized from raw IRI "exo__Instance_class" → "Instance Class"
     await expect(
-      component.locator('th:has-text("exo__Instance_class")'),
+      component.locator('th:has-text("Instance Class")'),
     ).toBeVisible();
 
-    // Check Instance Class values are displayed (wiki syntax removed)
-    await expect(component.locator("text=ems__Task")).toBeVisible();
-    await expect(component.locator("text=ems__Project")).toBeVisible();
+    // Cell values are humanized from raw class IRIs
+    await expect(component.locator("text=Task").first()).toBeVisible();
+    await expect(component.locator("text=Project").first()).toBeVisible();
   });
 
-  test("should sort by exo__Instance_class", async ({ mount }) => {
+  test("should sort by Instance Class column", async ({ mount }) => {
     const component = await mount(
       <AssetRelationsTable relations={mockRelations} />,
     );
 
-    // Click exo__Instance_class column
-    await component.locator('th:has-text("exo__Instance_class")').click();
+    // Click humanized column header
+    await component.locator('th:has-text("Instance Class")').click();
 
-    // Check sort indicator
     await expect(
-      component.locator('th:has-text("exo__Instance_class")'),
+      component.locator('th:has-text("Instance Class")'),
     ).toContainText("↑");
   });
 
-  test("should display multiple exo__Instance_class values as comma-separated links", async ({
+  test("should display multiple instance classes as humanized comma-separated links", async ({
     mount,
   }) => {
     const relationsWithMultipleClasses: AssetRelation[] = [
@@ -221,12 +220,12 @@ test.describe("AssetRelationsTable Component", () => {
       <AssetRelationsTable relations={relationsWithMultipleClasses} />,
     );
 
-    // All three classes should be visible
-    await expect(component.locator("text=exo__Prototype")).toBeVisible();
-    await expect(component.locator("text=inbox__Stuff")).toBeVisible();
-    await expect(component.locator("text=ems__Task")).toBeVisible();
+    // All three classes render their humanized display label
+    await expect(component.locator("text=Prototype")).toBeVisible();
+    await expect(component.locator("text=Stuff")).toBeVisible();
+    await expect(component.locator("text=Task").first()).toBeVisible();
 
-    // Each class should be a clickable link
+    // Each class should be a clickable link (data-href keeps the raw target)
     const instanceClassCell = component.locator(".instance-class").first();
     const links = instanceClassCell.locator("a.internal-link");
     await expect(links).toHaveCount(3);
@@ -260,16 +259,16 @@ test.describe("AssetRelationsTable Component", () => {
       />,
     );
 
-    // Click on first class link
-    await component.locator('a:has-text("exo__Prototype")').click();
+    // Click on first class link (displayed as humanized "Prototype", underlying target "exo__Prototype")
+    await component.locator('a:has-text("Prototype")').click();
     expect(clickedPaths).toContain("exo__Prototype");
 
     // Click on second class link
-    await component.locator('a:has-text("inbox__Stuff")').click();
+    await component.locator('a:has-text("Stuff")').click();
     expect(clickedPaths).toContain("inbox__Stuff");
   });
 
-  test("should display single exo__Instance_class value without comma", async ({
+  test("should display single instance class value without comma", async ({
     mount,
   }) => {
     const relationsWithSingleClass: AssetRelation[] = [
@@ -290,7 +289,8 @@ test.describe("AssetRelationsTable Component", () => {
       <AssetRelationsTable relations={relationsWithSingleClass} />,
     );
 
-    await expect(component.locator("text=ems__Task")).toBeVisible();
+    // Rendered as humanized "Task"
+    await expect(component.locator("text=Task").first()).toBeVisible();
 
     // Should have exactly one link in instance-class cell
     const instanceClassCell = component.locator(".instance-class").first();
@@ -696,7 +696,7 @@ test.describe("AssetRelationsTableWithToggle Component", () => {
       />,
     );
 
-    await expect(component.locator('th:has-text("ems__Effort_votes")')).toBeVisible();
+    await expect(component.locator('th:has-text("Effort Votes")')).toBeVisible();
     await expect(component.locator("text=5")).toBeVisible();
     await expect(component.locator("text=3")).toBeVisible();
     await expect(
@@ -718,7 +718,7 @@ test.describe("AssetRelationsTableWithToggle Component", () => {
     );
 
     await expect(
-      component.locator('th:has-text("ems__Effort_votes")'),
+      component.locator('th:has-text("Effort Votes")'),
     ).not.toBeVisible();
     await expect(
       component.locator("button.exocortex-toggle-effort-votes"),
@@ -763,7 +763,7 @@ test.describe("AssetRelationsTableWithToggle Component", () => {
 
     await expect(component.locator(".relation-group")).toBeVisible();
     await expect(
-      component.locator('th:has-text("ems__Effort_status")'),
+      component.locator('th:has-text("Effort Status")'),
     ).toBeVisible();
   });
 
@@ -1005,13 +1005,13 @@ test.describe("AssetRelationsTableWithToggle Component", () => {
       />,
     );
 
-    await component.locator('thead th:has-text("ems__Effort_votes")').click();
+    await component.locator('thead th:has-text("Effort Votes")').click();
 
     const firstRow = component.locator("tbody tr").first();
     const firstValue = await firstRow.locator("td").nth(2).textContent();
     expect(firstValue).toBe("3");
 
-    await expect(component.locator('thead th:has-text("ems__Effort_votes")')).toContainText("↑");
+    await expect(component.locator('thead th:has-text("Effort Votes")')).toContainText("↑");
   });
 
   test("should sort by wiki link dynamic property", async ({ mount }) => {
