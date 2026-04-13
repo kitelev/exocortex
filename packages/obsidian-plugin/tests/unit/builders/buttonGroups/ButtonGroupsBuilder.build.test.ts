@@ -55,6 +55,7 @@ describe("ButtonGroupsBuilder - build (dynamic commands only)", () => {
         command: {
           id: "cmd-1",
           name: "Start Effort",
+          category: "status",
           precondition: { type: "always_true" },
           grounding: { type: "set_frontmatter_value", property: "status", value: "doing" },
         },
@@ -65,9 +66,9 @@ describe("ButtonGroupsBuilder - build (dynamic commands only)", () => {
 
     const groups = await ctx.builder.build(mockFile);
 
-    const dynamicGroup = groups.find((g) => g.id === "dynamic-commands");
+    const dynamicGroup = groups.find((g) => g.id === "dynamic-commands-status");
     expect(dynamicGroup).toBeDefined();
-    expect(dynamicGroup!.title).toBe("Commands");
+    expect(dynamicGroup!.title).toBe("Status");
     expect(dynamicGroup!.buttons.length).toBe(1);
     expect(dynamicGroup!.buttons[0].label).toBe("Start Effort");
   });
@@ -93,6 +94,7 @@ describe("ButtonGroupsBuilder - build (dynamic commands only)", () => {
         command: {
           id: "cmd-visible",
           name: "Visible Command",
+          category: "status",
           precondition: { type: "check_status" },
           grounding: { type: "set_frontmatter_value" },
         },
@@ -102,6 +104,7 @@ describe("ButtonGroupsBuilder - build (dynamic commands only)", () => {
         command: {
           id: "cmd-hidden",
           name: "Hidden Command",
+          category: "status",
           precondition: { type: "check_status" },
           grounding: { type: "set_frontmatter_value" },
         },
@@ -114,7 +117,7 @@ describe("ButtonGroupsBuilder - build (dynamic commands only)", () => {
 
     const groups = await ctx.builder.build(mockFile);
 
-    const dynamicGroup = groups.find((g) => g.id === "dynamic-commands");
+    const dynamicGroup = groups.find((g) => g.id === "dynamic-commands-status");
     expect(dynamicGroup).toBeDefined();
     expect(dynamicGroup!.buttons.length).toBe(1);
     expect(dynamicGroup!.buttons[0].label).toBe("Visible Command");
@@ -162,6 +165,7 @@ describe("ButtonGroupsBuilder - build (dynamic commands only)", () => {
         command: {
           id: "cmd-status",
           name: "Move to Backlog",
+          category: "status",
           precondition: { type: "always_true" },
           grounding: { type: "set_frontmatter_value" },
         },
@@ -171,6 +175,7 @@ describe("ButtonGroupsBuilder - build (dynamic commands only)", () => {
         command: {
           id: "cmd-maintenance",
           name: "Clean Properties",
+          category: "maintenance",
           precondition: { type: "always_true" },
           grounding: { type: "set_frontmatter_value" },
         },
@@ -180,6 +185,7 @@ describe("ButtonGroupsBuilder - build (dynamic commands only)", () => {
         command: {
           id: "cmd-danger",
           name: "Trash",
+          category: "maintenance",
           precondition: { type: "always_true" },
           grounding: { type: "set_frontmatter_value" },
         },
@@ -190,12 +196,16 @@ describe("ButtonGroupsBuilder - build (dynamic commands only)", () => {
 
     const groups = await ctx.builder.build(mockFile);
 
-    const dynamicGroup = groups.find((g) => g.id === "dynamic-commands");
-    expect(dynamicGroup).toBeDefined();
-    expect(dynamicGroup!.buttons.length).toBe(3);
-    expect(dynamicGroup!.buttons[0].variant).toBe("primary");
-    expect(dynamicGroup!.buttons[1].variant).toBe("secondary");
-    expect(dynamicGroup!.buttons[2].variant).toBe("danger");
+    const statusGroup = groups.find((g) => g.id === "dynamic-commands-status");
+    const maintenanceGroup = groups.find((g) => g.id === "dynamic-commands-maintenance");
+    expect(statusGroup).toBeDefined();
+    expect(statusGroup!.buttons.length).toBe(1);
+    expect(statusGroup!.buttons[0].variant).toBe("primary");
+    expect(maintenanceGroup).toBeDefined();
+    expect(maintenanceGroup!.collapsedByDefault).toBe(true);
+    expect(maintenanceGroup!.buttons.length).toBe(2);
+    expect(maintenanceGroup!.buttons[0].variant).toBe("secondary");
+    expect(maintenanceGroup!.buttons[1].variant).toBe("danger");
   });
 
   it("should handle resolver errors gracefully", async () => {

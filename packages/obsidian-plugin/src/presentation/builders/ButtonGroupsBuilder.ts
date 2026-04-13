@@ -145,9 +145,21 @@ export class ButtonGroupsBuilder {
       refresh: this.refresh,
     };
 
-    // Build groups from all builders, filtering out empty ones
+    // Build groups from all builders, filtering out empty ones.
+    // DynamicCommandButtonGroupBuilder exposes buildCategoryGroups for
+    // category-sectioned rendering (RFC-009 COMMANDS panel polish); other
+    // flat builders still go through the legacy single-group wrapper.
     const groups: ButtonGroup[] = [];
     for (const builder of this.builders) {
+      if (builder instanceof DynamicCommandButtonGroupBuilder) {
+        const categoryGroups = await builder.buildCategoryGroups(context);
+        for (const g of categoryGroups) {
+          if (g.buttons.some((btn) => btn.visible !== false)) {
+            groups.push(g);
+          }
+        }
+        continue;
+      }
       const group = await createButtonGroupIfVisible(builder, context);
       if (group) {
         groups.push(group);
