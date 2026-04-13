@@ -1,3 +1,4 @@
+import type { TFile } from "obsidian";
 import type { InMemoryTripleStore, SolutionMapping, Triple } from "exocortex";
 import { SPARQLQueryService } from '@plugin/application/services/SPARQLQueryService';
 import type ExocortexPlugin from '@plugin/ExocortexPlugin';
@@ -267,6 +268,30 @@ export class SPARQLApi {
    */
   async refresh(): Promise<void> {
     await this.queryService.refresh();
+  }
+
+  /**
+   * Re-indexes triples for a single file.
+   *
+   * Removes existing triples owned by `file` from the triple store and
+   * re-converts the file's frontmatter + body into fresh triples. Unlike
+   * {@link refresh}, this operation is O(1 file) rather than O(all files),
+   * making it cheap enough to call on every incremental frontmatter mutation.
+   *
+   * Intended use: call from a `metadataCache.on("changed")` handler after
+   * Obsidian has parsed the latest frontmatter. Issue #2785 (hot-mutation
+   * cache invalidation gap) requires this entry point because
+   * `metadataCache.on("changed")` is the only event that fires with
+   * guaranteed-fresh metadata — `vault.on("modify")` may fire before the
+   * cache has re-parsed the file, producing a re-index with stale values.
+   *
+   * @param file - The file whose triples need to be re-indexed
+   * @returns Promise that resolves when re-indexing is complete
+   *
+   * @see Issue #2785
+   */
+  async reindexFile(file: TFile): Promise<void> {
+    await this.queryService.updateFile(file);
   }
 
   /**

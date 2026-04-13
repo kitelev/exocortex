@@ -1703,4 +1703,202 @@ describe("ExocortexPlugin", () => {
       expect(refreshSpy).toHaveBeenCalledTimes(1);
     });
   });
+
+  describe("Issue #2785: hot-mutation cache invalidation (post-click layout refresh)", () => {
+    // Regression for #2785: after clicking an inline-button command like
+    // "Set Status Doing", the frontmatter writes correctly and Obsidian's
+    // Properties widget repaints, but the Exocortex COMMANDS panel stays
+    // stale — the clicked button remains visible until Obsidian restart.
+    //
+    // Root cause: VaultRDFIndexer's own `vault.on("modify")` listener may
+    // re-index with stale metadata (Obsidian hasn't finished re-parsing the
+    // file by the time the modify event fires), AND nothing triggers
+    // `autoRenderLayout()` after the mutation. #2780 only handled the
+    // cold-start race — this describe block pins the hot-mutation contract.
+    //
+    // Fix: `metadataCache.on("changed")` handler schedules a per-file
+    // debounced re-index via `sparql.reindexFile(file)` → invalidates the
+    // command resolver cache → re-renders the layout. `metadataCache.changed`
+    // is the right event because it fires with guaranteed-fresh frontmatter.
+
+    let changedHandlers: Array<(file: TFile) => void> = [];
+    let reindexFileSpy: jest.SpyInstance;
+    let querySpy: jest.SpyInstance;
+
+    beforeEach(async () => {
+      changedHandlers = [];
+      mockMetadataCache.on.mockImplementation(
+        (event: string, cb: (file: TFile) => void) => {
+          if (event === "changed") {
+            changedHandlers.push(cb);
+          }
+          return { unsubscribe: jest.fn() };
+        },
+      );
+
+      const sparqlApiModule = await import("../../src/application/api/SPARQLApi");
+      reindexFileSpy = jest
+        .spyOn(sparqlApiModule.SPARQLApi.prototype, "reindexFile")
+        .mockResolvedValue(undefined);
+      querySpy = jest
+        .spyOn(sparqlApiModule.SPARQLApi.prototype, "query")
+        .mockResolvedValue({ bindings: [], count: 0 });
+    });
+
+    afterEach(() => {
+      reindexFileSpy?.mockRestore();
+      querySpy?.mockRestore();
+    });
+
+    const getLastChangedHandler = (): ((file: TFile) => void) => {
+      expect(changedHandlers.length).toBeGreaterThan(0);
+      return changedHandlers[changedHandlers.length - 1]!;
+    };
+
+    it("re-indexes the changed file via sparql.reindexFile when metadataCache fires 'changed'", async () => {
+      await plugin.onload();
+      await flushPromises();
+
+      const mockFile = { path: "Implement Feature.md", extension: "md" } as TFile;
+      mockMetadataCache.getFileCache.mockReturnValue({
+        frontmatter: {
+          "ems__Effort_status": "[[027e78f4-6e16-4b36-b8fb-5510507d5745]]",
+        },
+      });
+
+      const handler = getLastChangedHandler();
+      handler(mockFile);
+
+      await waitForCondition(
+        () => reindexFileSpy.mock.calls.length > 0,
+        { timeout: 1500, message: "reindexFile was never called" },
+      );
+
+      expect(reindexFileSpy).toHaveBeenCalledWith(mockFile);
+      expect(reindexFileSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it("invalidates commandResolver cache after re-indexing the file", async () => {
+      await plugin.onload();
+      await flushPromises();
+
+      const commandResolverSpy = jest.spyOn(
+        plugin.commandResolver,
+        "invalidateCache",
+      );
+      const preconditionEvaluatorSpy = jest.spyOn(
+        plugin.preconditionEvaluator,
+        "invalidateCache",
+      );
+
+      const mockFile = { path: "Implement Feature.md", extension: "md" } as TFile;
+      mockMetadataCache.getFileCache.mockReturnValue({
+        frontmatter: { "ems__Effort_status": "[[ems__EffortStatusDoing]]" },
+      });
+
+      const handler = getLastChangedHandler();
+      handler(mockFile);
+
+      await waitForCondition(
+        () => commandResolverSpy.mock.calls.length > 0,
+        { timeout: 1500, message: "commandResolver.invalidateCache never called" },
+      );
+
+      expect(commandResolverSpy).toHaveBeenCalled();
+      expect(preconditionEvaluatorSpy).toHaveBeenCalled();
+    });
+
+    it("triggers autoRenderLayout after re-indexing so the COMMANDS panel repaints without Obsidian restart", async () => {
+      await plugin.onload();
+      await flushPromises();
+
+      const autoRenderLayoutSpy = jest
+        .spyOn(plugin as any, "autoRenderLayout")
+        .mockImplementation(() => {});
+
+      const mockFile = { path: "Implement Feature.md", extension: "md" } as TFile;
+      mockMetadataCache.getFileCache.mockReturnValue({
+        frontmatter: { "ems__Effort_status": "[[ems__EffortStatusDoing]]" },
+      });
+
+      const handler = getLastChangedHandler();
+      handler(mockFile);
+
+      await waitForCondition(
+        () => autoRenderLayoutSpy.mock.calls.length > 0,
+        { timeout: 1500, message: "autoRenderLayout never called post-mutation" },
+      );
+
+      expect(autoRenderLayoutSpy).toHaveBeenCalled();
+    });
+
+    it("debounces rapid changes: 5 'changed' events for the same file within the debounce window produce a single reindex", async () => {
+      await plugin.onload();
+      await flushPromises();
+
+      const mockFile = { path: "Implement Feature.md", extension: "md" } as TFile;
+      mockMetadataCache.getFileCache.mockReturnValue({
+        frontmatter: { "ems__Effort_status": "[[ems__EffortStatusDoing]]" },
+      });
+
+      const handler = getLastChangedHandler();
+      for (let i = 0; i < 5; i++) {
+        handler(mockFile);
+      }
+
+      await waitForCondition(
+        () => reindexFileSpy.mock.calls.length >= 1,
+        { timeout: 1500, message: "reindexFile was never called" },
+      );
+      // Wait an extra tick to catch any non-debounced follow-ups.
+      await new Promise((r) => setTimeout(r, 300));
+
+      expect(reindexFileSpy).toHaveBeenCalledTimes(1);
+      expect(reindexFileSpy).toHaveBeenCalledWith(mockFile);
+    });
+
+    it("debounces per-file: two different files both get re-indexed", async () => {
+      await plugin.onload();
+      await flushPromises();
+
+      const fileA = { path: "A.md", extension: "md" } as TFile;
+      const fileB = { path: "B.md", extension: "md" } as TFile;
+      mockMetadataCache.getFileCache.mockReturnValue({
+        frontmatter: { "ems__Effort_status": "[[ems__EffortStatusDoing]]" },
+      });
+
+      const handler = getLastChangedHandler();
+      handler(fileA);
+      handler(fileB);
+      handler(fileA); // duplicate of A should still debounce to 1
+
+      await waitForCondition(
+        () => reindexFileSpy.mock.calls.length >= 2,
+        { timeout: 1500, message: "reindexFile not called for both files" },
+      );
+      // Extra wait to catch over-firing.
+      await new Promise((r) => setTimeout(r, 300));
+
+      expect(reindexFileSpy).toHaveBeenCalledTimes(2);
+      const reindexedPaths = reindexFileSpy.mock.calls
+        .map((c: any[]) => (c[0] as TFile).path)
+        .sort();
+      expect(reindexedPaths).toEqual(["A.md", "B.md"]);
+    });
+
+    it("ignores non-markdown files (extension !== 'md')", async () => {
+      await plugin.onload();
+      await flushPromises();
+
+      const imageFile = { path: "cover.png", extension: "png" } as TFile;
+
+      const handler = getLastChangedHandler();
+      handler(imageFile);
+
+      // Give the debounce ample time to fire if it were going to.
+      await new Promise((r) => setTimeout(r, 400));
+
+      expect(reindexFileSpy).not.toHaveBeenCalled();
+    });
+  });
 });

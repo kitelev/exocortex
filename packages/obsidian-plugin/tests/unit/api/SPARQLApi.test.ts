@@ -1,7 +1,7 @@
 import { SPARQLApi } from "../../../src/application/api/SPARQLApi";
 import { SPARQLQueryService } from "../../../src/application/services/SPARQLQueryService";
 import type ExocortexPlugin from "../../../src/ExocortexPlugin";
-import type { App } from "obsidian";
+import type { App, TFile } from "obsidian";
 
 jest.mock("../../../src/application/services/SPARQLQueryService");
 
@@ -20,6 +20,7 @@ describe("SPARQLApi", () => {
     mockQueryService = {
       query: jest.fn(),
       refresh: jest.fn(),
+      updateFile: jest.fn(),
       dispose: jest.fn(),
       getTripleStore: jest.fn().mockReturnValue({}),
     } as any;
@@ -83,6 +84,25 @@ describe("SPARQLApi", () => {
       await api.refresh();
 
       expect(mockQueryService.refresh).toHaveBeenCalled();
+    });
+  });
+
+  describe("reindexFile (Issue #2785)", () => {
+    it("should delegate to queryService.updateFile for the given file", async () => {
+      const file = { path: "Implement Feature.md", extension: "md" } as TFile;
+
+      await api.reindexFile(file);
+
+      expect(mockQueryService.updateFile).toHaveBeenCalledWith(file);
+      expect(mockQueryService.updateFile).toHaveBeenCalledTimes(1);
+    });
+
+    it("should propagate errors from queryService.updateFile", async () => {
+      const file = { path: "Broken.md", extension: "md" } as TFile;
+      const error = new Error("convert failed");
+      mockQueryService.updateFile.mockRejectedValue(error);
+
+      await expect(api.reindexFile(file)).rejects.toThrow("convert failed");
     });
   });
 
