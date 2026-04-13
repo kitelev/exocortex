@@ -88,6 +88,9 @@ export default class ExocortexPlugin extends Plugin {
   private graphViewPatch!: GraphViewPatch;
   private fileLogChannel!: FileLogChannel;
   private notifier!: ObsidianNotificationService;
+  // Issue #2780: tracked so the post-resolve reindex can await it before
+  // calling refresh(), avoiding a concurrent clear()/convertVault() race.
+  private eagerInitPromise: Promise<void> | null = null;
 
   override async onload(): Promise<void> {
     try {
@@ -220,9 +223,52 @@ export default class ExocortexPlugin extends Plugin {
         (source, el, ctx) => this.layoutProcessor.process(source, el, ctx)
       );
 
+      // Issue #2780: Re-index triple store once metadataCache has fully resolved.
+      //
+      // onLayoutReady (below) triggers an eager store init so buttons render
+      // fast on first paint — but at that point Obsidian's metadataCache may
+      // still be parsing files, so `getFrontmatter(file)` returns null for
+      // any file whose YAML hasn't been parsed yet. NoteToRDFConverter silently
+      // skips those files, leaving them with 0 triples in the store.
+      //
+      // For non-preconditioned commands this is invisible (binding triples come
+      // from starter-kit files that are parsed early), but preconditioned
+      // commands run SPARQL ASKs like `$target ems:Effort_status ?s` against
+      // the TARGET file's triples — and when those are missing, the ASK returns
+      // false, fail-closed → every preconditioned command is silently hidden.
+      // A later mutation to the file triggers `VaultRDFIndexer.updateFile`,
+      // which re-runs convertNote with warm metadata and fills in the missing
+      // triples — that's why clicking any mutating command on the file magically
+      // "wakes up" the hidden commands.
+      //
+      // `metadataCache.on("resolved")` is Obsidian's signal that the initial
+      // vault parse is complete. Once it fires, we await the eager-init promise
+      // (so the two paths serialize — `refresh()` calls clear()+convertVault()
+      // and we don't want that interleaved with an in-flight init) and then do
+      // a full reindex. The one-shot flag keeps this to a single refresh per
+      // plugin load; per-file mutations still go through `vault.on("modify")`.
+      let postResolveReindexDone = false;
       this.registerEvent(
         this.app.metadataCache.on("resolved", () => {
           this.layoutRenderer.invalidateBacklinksCache();
+
+          if (postResolveReindexDone) return;
+          postResolveReindexDone = true;
+
+          const initPromise = this.eagerInitPromise ?? Promise.resolve();
+          void initPromise
+            .then(() => this.sparql.refresh())
+            .then(() => {
+              this.commandResolver.invalidateCache();
+              this.preconditionEvaluator.invalidateCache();
+              this.autoRenderLayout();
+            })
+            .catch((err) => {
+              this.logger.error(
+                "Failed to reindex triple store after metadataCache resolved",
+                err,
+              );
+            });
         }),
       );
 
@@ -272,12 +318,21 @@ export default class ExocortexPlugin extends Plugin {
       // onLayoutReady fires after Obsidian finishes mounting vault files.
       // Without this, VaultRDFIndexer.initialize() finds 0 files → 0 triples
       // → CommandResolver finds no bindings → dynamic buttons don't render.
-      this.app.workspace.onLayoutReady(() => {
-        void this.sparql.query("ASK { ?s ?p ?o }").then(() => {
-          this.commandResolver.invalidateCache();
-          this.autoRenderLayout();
-        }).catch((err) => {
-          this.logger.error("Failed to eagerly initialize triple store", err);
+      //
+      // NB: At this point metadataCache is typically NOT fully resolved yet.
+      // The `metadataCache.on("resolved")` handler above awaits this promise
+      // and then refreshes the store to pick up any files that were skipped
+      // because their frontmatter wasn't parsed in time. See issue #2780.
+      this.eagerInitPromise = new Promise<void>((resolve) => {
+        this.app.workspace.onLayoutReady(() => {
+          void this.sparql.query("ASK { ?s ?p ?o }").then(() => {
+            this.commandResolver.invalidateCache();
+            this.autoRenderLayout();
+          }).catch((err) => {
+            this.logger.error("Failed to eagerly initialize triple store", err);
+          }).finally(() => {
+            resolve();
+          });
         });
       });
 

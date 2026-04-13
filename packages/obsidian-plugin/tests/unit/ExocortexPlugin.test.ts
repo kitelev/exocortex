@@ -1581,4 +1581,126 @@ describe("ExocortexPlugin", () => {
       expect(plugin.serviceRegistry).toBeDefined();
     });
   });
+
+  describe("Issue #2780: post-resolve reindex (cold-open precondition fix)", () => {
+    // Regression for #2780: preconditioned commands never rendered on cold
+    // file-open. Root cause: `onLayoutReady` fires before `metadataCache`
+    // has finished parsing every file, so the first `convertVault()` sees
+    // null frontmatter for racing files and ingests zero triples for them.
+    // Preconditions like `$target ems:Effort_status ?s` then return false
+    // (empty store) → commands hidden. Any subsequent frontmatter mutation
+    // re-runs `convertNote` with warm metadata and restores the commands.
+    //
+    // Fix: register a one-shot `metadataCache.on("resolved")` handler that
+    // awaits the eager-init promise and then calls `sparql.refresh()` to
+    // reindex the vault with guaranteed-warm metadata. These tests pin that
+    // contract so the race can't silently come back.
+    let resolvedHandler: (() => void) | undefined;
+    let refreshSpy: jest.SpyInstance;
+    let querySpy: jest.SpyInstance;
+
+    beforeEach(async () => {
+      resolvedHandler = undefined;
+      mockMetadataCache.on.mockImplementation((event: string, cb: () => void) => {
+        if (event === "resolved") {
+          resolvedHandler = cb;
+        }
+        return { unsubscribe: jest.fn() };
+      });
+
+      // Spy on the real SPARQLApi prototype so the plugin's internal
+      // `new SPARQLApi(this)` call picks up the stubs.
+      const sparqlApiModule = await import("../../src/application/api/SPARQLApi");
+      refreshSpy = jest
+        .spyOn(sparqlApiModule.SPARQLApi.prototype, "refresh")
+        .mockResolvedValue(undefined);
+      querySpy = jest
+        .spyOn(sparqlApiModule.SPARQLApi.prototype, "query")
+        .mockResolvedValue({ bindings: [], count: 0 });
+    });
+
+    afterEach(() => {
+      refreshSpy?.mockRestore();
+      querySpy?.mockRestore();
+    });
+
+    it("registers a metadataCache 'resolved' handler that refreshes the store and invalidates both caches", async () => {
+      await plugin.onload();
+      await flushPromises();
+
+      expect(resolvedHandler).toBeDefined();
+      // eager init ran once (triggered by onLayoutReady mock calling cb inline)
+      expect(querySpy).toHaveBeenCalledWith("ASK { ?s ?p ?o }");
+
+      const commandResolverSpy = jest.spyOn(plugin.commandResolver, "invalidateCache");
+      const preconditionEvaluatorSpy = jest.spyOn(
+        plugin.preconditionEvaluator,
+        "invalidateCache",
+      );
+
+      // Before firing, refresh has never been called.
+      expect(refreshSpy).not.toHaveBeenCalled();
+
+      resolvedHandler!();
+      await flushPromises();
+
+      // Backlinks cache still invalidated (kept from pre-fix behavior)
+      expect(mockLayoutRenderer.invalidateBacklinksCache).toHaveBeenCalled();
+      // New post-resolve behavior: refresh + invalidate BOTH command caches
+      expect(refreshSpy).toHaveBeenCalledTimes(1);
+      expect(commandResolverSpy).toHaveBeenCalled();
+      expect(preconditionEvaluatorSpy).toHaveBeenCalled();
+    });
+
+    it("re-index is one-shot: subsequent 'resolved' events do not trigger another refresh", async () => {
+      await plugin.onload();
+      await flushPromises();
+
+      resolvedHandler!();
+      await flushPromises();
+
+      expect(refreshSpy).toHaveBeenCalledTimes(1);
+
+      // Obsidian can fire "resolved" again on per-file re-resolve; we must
+      // NOT tear down and rebuild the triple store every time.
+      resolvedHandler!();
+      resolvedHandler!();
+      await flushPromises();
+
+      expect(refreshSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it("awaits the eager-init promise before calling refresh to avoid a concurrent clear/convertVault race", async () => {
+      // Hold eager init open until the test explicitly releases it.
+      let releaseEagerInit: () => void = () => {};
+      const eagerInitGate = new Promise<void>((r) => {
+        releaseEagerInit = () => r();
+      });
+      querySpy.mockImplementation(async () => {
+        await eagerInitGate;
+        return { bindings: [], count: 0 };
+      });
+
+      // onLayoutReady fires synchronously via our mock and schedules eager init.
+      await plugin.onload();
+      // Let microtasks settle so the resolved handler is wired up.
+      await flushPromises();
+
+      // Fire resolved while eager init is still pending.
+      resolvedHandler!();
+      await flushPromises();
+
+      // Serialization contract: refresh must NOT have started yet — it's
+      // chained after the eager-init promise, so clear()+convertVault()
+      // from `refresh()` can't race with the in-flight eager init.
+      expect(refreshSpy).not.toHaveBeenCalled();
+
+      // Unblock eager init and let the chained refresh run.
+      releaseEagerInit();
+      await flushPromises();
+      await flushPromises();
+
+      expect(refreshSpy).toHaveBeenCalledTimes(1);
+    });
+  });
 });
