@@ -123,6 +123,7 @@ describe("ServiceRegistryPopulator", () => {
       "incrementVotes",
       "copyLabelToAliases",
       "createRelatedTask",
+      "createRelatedProject",
       "createTaskForDailyNote",
     ];
     for (const id of vaultDependentIds) {
@@ -425,6 +426,7 @@ describe("ServiceRegistryPopulator (with vaultAdapter)", () => {
       "incrementVotes",
       "copyLabelToAliases",
       "createRelatedTask",
+      "createRelatedProject",
       "createTaskForDailyNote",
     ];
     for (const id of vaultDependentIds) {
@@ -584,6 +586,92 @@ describe("ServiceRegistryPopulator (with vaultAdapter)", () => {
       const service = registry.get("createRelatedTask")!;
       await expect(service.execute("test-uid-123", {})).rejects.toThrow(
         "createRelatedTask requires userInput.label",
+      );
+    });
+  });
+
+  describe("createRelatedProject", () => {
+    it("should create a related project asset", async () => {
+      const service = registry.get("createRelatedProject")!;
+      await service.execute("test-uid-123", { label: "New Project" });
+
+      expect(deps.vaultAdapter!.create).toHaveBeenCalledWith(
+        expect.stringContaining("folder/"),
+        expect.stringContaining("ems__Project"),
+      );
+    });
+
+    it("should set ems__Effort_status to Draft by default", async () => {
+      const service = registry.get("createRelatedProject")!;
+      await service.execute("test-uid-123", { label: "New Project" });
+
+      const createCall = (deps.vaultAdapter!.create as jest.Mock).mock.calls[0];
+      const content = createCall[1] as string;
+      expect(content).toContain('ems__Effort_status: "[[ems__EffortStatusDraft]]"');
+    });
+
+    it("should write ems__Effort_area when parent is an Area", async () => {
+      (deps.vaultAdapter!.getFrontmatter as jest.Mock).mockReturnValueOnce({
+        exo__Asset_uid: "test-uid-123",
+        exo__Asset_label: "Research",
+        exo__Instance_class: ["[[82c74542-1b14-4217-b852-d84730484b25|ems__Area]]"],
+      });
+
+      const service = registry.get("createRelatedProject")!;
+      await service.execute("test-uid-123", { label: "Thesis" });
+
+      const createCall = (deps.vaultAdapter!.create as jest.Mock).mock.calls[0];
+      const content = createCall[1] as string;
+      expect(content).toContain('ems__Effort_area: "[[test-uid-123]]"');
+      expect(content).not.toContain("ems__Effort_parent");
+    });
+
+    it("should write ems__Effort_parent when parent is not an Area", async () => {
+      (deps.vaultAdapter!.getFrontmatter as jest.Mock).mockReturnValueOnce({
+        exo__Asset_uid: "test-uid-123",
+        exo__Asset_label: "Parent Project",
+        exo__Instance_class: ["[[ems__Project]]"],
+      });
+
+      const service = registry.get("createRelatedProject")!;
+      await service.execute("test-uid-123", { label: "Sub Project" });
+
+      const createCall = (deps.vaultAdapter!.create as jest.Mock).mock.calls[0];
+      const content = createCall[1] as string;
+      expect(content).toContain('ems__Effort_parent: "[[test-uid-123]]"');
+      expect(content).not.toContain("ems__Effort_area");
+    });
+
+    it("should honor explicit parentProperty override from userInput", async () => {
+      const service = registry.get("createRelatedProject")!;
+      await service.execute("test-uid-123", {
+        label: "Override Project",
+        parentProperty: "ems__Effort_parent",
+      });
+
+      const createCall = (deps.vaultAdapter!.create as jest.Mock).mock.calls[0];
+      const content = createCall[1] as string;
+      expect(content).toContain('ems__Effort_parent: "[[test-uid-123]]"');
+    });
+
+    it("should open the created project in a new tab leaf", async () => {
+      const service = registry.get("createRelatedProject")!;
+      await service.execute("test-uid-123", { label: "Visible Project" });
+
+      expect(deps.app.workspace.getLeaf).toHaveBeenCalledWith("tab");
+      expect(deps.vaultAdapter!.toTFile).toHaveBeenCalled();
+      const leafMock = (deps.app.workspace.getLeaf as jest.Mock).mock.results[0].value;
+      expect(leafMock.openFile).toHaveBeenCalled();
+      expect(deps.app.workspace.setActiveLeaf).toHaveBeenCalledWith(
+        leafMock,
+        { focus: true },
+      );
+    });
+
+    it("should throw when label is missing", async () => {
+      const service = registry.get("createRelatedProject")!;
+      await expect(service.execute("test-uid-123", {})).rejects.toThrow(
+        "createRelatedProject requires userInput.label",
       );
     });
   });
