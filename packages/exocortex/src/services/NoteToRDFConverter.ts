@@ -642,15 +642,18 @@ export class NoteToRDFConverter {
             const uuidLiteral = new Literal(linkpath);
 
             // Issue #2782: when the target file represents a class-like enum
-            // member (status/criticality/etc.), also emit its namespace URI so
-            // starter-kit preconditions of the form
-            //   FILTER(?s != <ems:EffortStatusDoing>)
-            // keep working after `Set Status X` mutates the frontmatter into
-            // [[UUID]] form. Mirrors the basename → label detection used by
-            // valueToClassURI for Instance_class (Issue #2745).
+            // member (status/criticality/etc.), REPLACE the dual-storage pair
+            // with the namespace URI alone. Additive emission (v15.90.25)
+            // does not work for starter-kit preconditions of the form
+            //   ASK { ?s != <ems:EffortStatusDoing> }
+            // because ASK is existential — any non-matching binding (file IRI
+            // or UUID literal) makes the FILTER pass and the gate returns TRUE.
+            // Class-like enum targets are never queried by raw UUID literal
+            // (#2102 dual storage exists for exo__Asset_prototype only) so the
+            // replace is safe. Mirrors valueToClassURI's Issue #2745 lookup.
             const basenameClassIRI = this.expandClassValue(targetFile.basename);
             if (basenameClassIRI) {
-              return [fileIRI, uuidLiteral, basenameClassIRI];
+              return [basenameClassIRI];
             }
             const targetFm = this.vault.getFrontmatter(targetFile);
             if (targetFm) {
@@ -658,7 +661,7 @@ export class NoteToRDFConverter {
               if (typeof label === "string") {
                 const labelClassIRI = this.expandClassValue(label);
                 if (labelClassIRI) {
-                  return [fileIRI, uuidLiteral, labelClassIRI];
+                  return [labelClassIRI];
                 }
               }
             }

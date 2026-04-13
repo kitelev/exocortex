@@ -900,7 +900,7 @@ describe("NoteToRDFConverter", () => {
         parent: null,
       };
 
-      it("should also emit namespace URI when [[UUID]] resolves to a class-like enum file (via exo__Asset_label)", async () => {
+      it("should REPLACE dual-storage with namespace URI alone when [[UUID]] resolves to a class-like enum (via exo__Asset_label)", async () => {
         const taskFrontmatter: IFrontmatter = {
           ems__Effort_status: "[[027e78f4-6e16-4b36-b8fb-5510507d5745]]",
         };
@@ -923,17 +923,16 @@ describe("NoteToRDFConverter", () => {
           (t) => (t.predicate as IRI).value === Namespace.EMS.term("Effort_status").value
         );
 
-        const objectValues = statusTriples.map((t) => (t.object as IRI | Literal).value);
-
-        // Existing dual-storage triples preserved
-        expect(objectValues).toContain("027e78f4-6e16-4b36-b8fb-5510507d5745");
-        expect(objectValues.some((v) => v.includes("027e78f4-6e16-4b36-b8fb-5510507d5745.md"))).toBe(true);
-
-        // NEW (#2782): namespace URI for the resolved class member
-        expect(objectValues).toContain(Namespace.EMS.term("EffortStatusDoing").value);
+        // Replace, not additive: ASK is existential, so file IRI + UUID literal
+        // bindings would defeat FILTER(?s != <ns:URI>) preconditions.
+        expect(statusTriples).toHaveLength(1);
+        expect(statusTriples[0].object).toBeInstanceOf(IRI);
+        expect((statusTriples[0].object as IRI).value).toBe(
+          Namespace.EMS.term("EffortStatusDoing").value
+        );
       });
 
-      it("should also emit namespace URI when [[UUID]] resolves via class-named basename", async () => {
+      it("should REPLACE with namespace URI when [[UUID]] resolves via class-named basename", async () => {
         const namedEnumFile: IFile = {
           path: "ems/ems__EffortStatusBacklog.md",
           basename: "ems__EffortStatusBacklog",
@@ -960,9 +959,12 @@ describe("NoteToRDFConverter", () => {
         const statusTriples = triples.filter(
           (t) => (t.predicate as IRI).value === Namespace.EMS.term("Effort_status").value
         );
-        const objectValues = statusTriples.map((t) => (t.object as IRI | Literal).value);
 
-        expect(objectValues).toContain(Namespace.EMS.term("EffortStatusBacklog").value);
+        expect(statusTriples).toHaveLength(1);
+        expect(statusTriples[0].object).toBeInstanceOf(IRI);
+        expect((statusTriples[0].object as IRI).value).toBe(
+          Namespace.EMS.term("EffortStatusBacklog").value
+        );
       });
 
       it("should NOT emit namespace URI when [[UUID]] target is not a class-like enum", async () => {
