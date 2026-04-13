@@ -437,4 +437,109 @@ describe("DynamicCommandButtonGroupBuilder", () => {
       expect(result[1].label).toBe("Second");
     });
   });
+
+  describe("buildCategoryGroups", () => {
+    it("should return groups in fixed order (creation → status → planning → criticality → maintenance)", async () => {
+      const commands = [
+        createResolvedCommand({ id: "m1", name: "Rename to UID", category: "maintenance" }),
+        createResolvedCommand({ id: "c1", name: "Create Task", category: "creation" }),
+        createResolvedCommand({ id: "s1", name: "Set Status Doing", category: "status" }),
+        createResolvedCommand({ id: "p1", name: "Plan on Today", category: "planning" }),
+        createResolvedCommand({ id: "k1", name: "Set Criticality High", category: "criticality" }),
+      ];
+      mockResolveForAsset.mockResolvedValue(commands);
+      mockEvaluate.mockResolvedValue(true);
+
+      const result = await builder.buildCategoryGroups(createContext());
+
+      expect(result.map((g) => g.id)).toEqual([
+        "dynamic-commands-creation",
+        "dynamic-commands-status",
+        "dynamic-commands-planning",
+        "dynamic-commands-criticality",
+        "dynamic-commands-maintenance",
+      ]);
+      expect(result.map((g) => g.title)).toEqual([
+        "Create",
+        "Status",
+        "Planning",
+        "Criticality",
+        "Maintenance",
+      ]);
+    });
+
+    it("should mark maintenance group collapsedByDefault", async () => {
+      mockResolveForAsset.mockResolvedValue([
+        createResolvedCommand({ id: "c1", name: "Create Task", category: "creation" }),
+        createResolvedCommand({ id: "m1", name: "Rename to UID", category: "maintenance" }),
+      ]);
+      mockEvaluate.mockResolvedValue(true);
+
+      const result = await builder.buildCategoryGroups(createContext());
+
+      const creation = result.find((g) => g.id === "dynamic-commands-creation");
+      const maintenance = result.find((g) => g.id === "dynamic-commands-maintenance");
+      expect(creation?.collapsedByDefault).toBeFalsy();
+      expect(maintenance?.collapsedByDefault).toBe(true);
+    });
+
+    it("should omit categories that have zero visible commands", async () => {
+      mockResolveForAsset.mockResolvedValue([
+        createResolvedCommand({ id: "c1", name: "Create Task", category: "creation" }),
+        createResolvedCommand({ id: "s1", name: "Set Status Doing", category: "status" }),
+      ]);
+      mockEvaluate.mockResolvedValue(true);
+
+      const result = await builder.buildCategoryGroups(createContext());
+
+      expect(result.map((g) => g.id)).toEqual([
+        "dynamic-commands-creation",
+        "dynamic-commands-status",
+      ]);
+      expect(result.find((g) => g.id === "dynamic-commands-maintenance")).toBeUndefined();
+    });
+
+    it("should drop categories where preconditions filter out every command", async () => {
+      mockResolveForAsset.mockResolvedValue([
+        createResolvedCommand({ id: "c1", name: "Create Task", category: "creation" }),
+        createResolvedCommand({ id: "m1", name: "Rename to UID", category: "maintenance" }),
+      ]);
+      mockEvaluate
+        .mockResolvedValueOnce(true)
+        .mockResolvedValueOnce(false);
+
+      const result = await builder.buildCategoryGroups(createContext());
+
+      expect(result.map((g) => g.id)).toEqual(["dynamic-commands-creation"]);
+    });
+
+    it("should route commands without category into Other group at the end", async () => {
+      mockResolveForAsset.mockResolvedValue([
+        createResolvedCommand({ id: "c1", name: "Create Task", category: "creation" }),
+        createResolvedCommand({ id: "u1", name: "Uncategorized" }),
+      ]);
+      mockEvaluate.mockResolvedValue(true);
+
+      const result = await builder.buildCategoryGroups(createContext());
+
+      expect(result.map((g) => g.id)).toEqual([
+        "dynamic-commands-creation",
+        "dynamic-commands-other",
+      ]);
+      const other = result.find((g) => g.id === "dynamic-commands-other");
+      expect(other?.buttons.map((b) => b.label)).toEqual(["Uncategorized"]);
+    });
+
+    it("should return [] when no commands resolved", async () => {
+      mockResolveForAsset.mockResolvedValue([]);
+      const result = await builder.buildCategoryGroups(createContext());
+      expect(result).toEqual([]);
+    });
+
+    it("should return [] when resolver throws", async () => {
+      mockResolveForAsset.mockRejectedValue(new Error("boom"));
+      const result = await builder.buildCategoryGroups(createContext());
+      expect(result).toEqual([]);
+    });
+  });
 });

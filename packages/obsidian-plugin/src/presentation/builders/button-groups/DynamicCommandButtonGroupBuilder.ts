@@ -1,5 +1,5 @@
 import { App } from "obsidian";
-import { ActionButton } from '@plugin/presentation/components/ActionButtonsGroup';
+import { ActionButton, ButtonGroup } from '@plugin/presentation/components/ActionButtonsGroup';
 import type {
   CommandResolver,
   ResolvedCommand,
@@ -87,7 +87,93 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
   }
 
   async build(context: ButtonBuilderContext): Promise<ActionButton[]> {
-    const { app, file, metadata, logger, refresh } = context;
+    const resolved = await this.resolveVisibleCommands(context);
+    if (resolved === null) return [];
+    const { visibleCommands, subjectIRI } = resolved;
+    const { app, file, logger, refresh } = context;
+    return visibleCommands.map((rc) =>
+      this.createButton(rc, subjectIRI, file.path, app as App, logger, refresh),
+    );
+  }
+
+  /**
+   * Build COMMANDS panel as category-grouped ButtonGroups (RFC-009 polish).
+   *
+   * Fixed category order: creation → status → planning → criticality → maintenance.
+   * Commands with no category land in a trailing "Other" group. Maintenance is
+   * marked collapsedByDefault because those commands are power-user repair tools
+   * that rarely apply during normal work and otherwise dominate panel real-estate.
+   *
+   * Groups with zero visible commands are omitted — the React component re-filters
+   * too, but returning them empty here keeps the payload lean.
+   */
+  async buildCategoryGroups(context: ButtonBuilderContext): Promise<ButtonGroup[]> {
+    const resolved = await this.resolveVisibleCommands(context);
+    if (resolved === null) return [];
+    const { visibleCommands, subjectIRI } = resolved;
+    const { app, file, logger, refresh } = context;
+
+    const byCategory = new Map<string, ResolvedCommand[]>();
+    for (const rc of visibleCommands) {
+      const key = (rc.command.category ?? "").trim().toLowerCase() || "other";
+      const bucket = byCategory.get(key);
+      if (bucket) {
+        bucket.push(rc);
+      } else {
+        byCategory.set(key, [rc]);
+      }
+    }
+
+    const groups: ButtonGroup[] = [];
+    for (const spec of DynamicCommandButtonGroupBuilder.CATEGORY_ORDER) {
+      const commands = byCategory.get(spec.id);
+      byCategory.delete(spec.id);
+      if (!commands || commands.length === 0) continue;
+      groups.push({
+        id: `dynamic-commands-${spec.id}`,
+        title: spec.title,
+        collapsedByDefault: spec.collapsedByDefault,
+        buttons: commands.map((rc) =>
+          this.createButton(rc, subjectIRI, file.path, app as App, logger, refresh),
+        ),
+      });
+    }
+
+    // Any leftover categories (unexpected values) go into a single Other group
+    // at the end, in insertion order, so nothing is silently dropped.
+    const leftover: ResolvedCommand[] = [];
+    for (const commands of byCategory.values()) {
+      leftover.push(...commands);
+    }
+    if (leftover.length > 0) {
+      groups.push({
+        id: "dynamic-commands-other",
+        title: "Other",
+        buttons: leftover.map((rc) =>
+          this.createButton(rc, subjectIRI, file.path, app as App, logger, refresh),
+        ),
+      });
+    }
+
+    return groups;
+  }
+
+  private static readonly CATEGORY_ORDER: ReadonlyArray<{
+    id: string;
+    title: string;
+    collapsedByDefault?: boolean;
+  }> = [
+    { id: "creation", title: "Create" },
+    { id: "status", title: "Status" },
+    { id: "planning", title: "Planning" },
+    { id: "criticality", title: "Criticality" },
+    { id: "maintenance", title: "Maintenance", collapsedByDefault: true },
+  ];
+
+  private async resolveVisibleCommands(
+    context: ButtonBuilderContext,
+  ): Promise<{ visibleCommands: ResolvedCommand[]; subjectIRI: string } | null> {
+    const { file, metadata, logger } = context;
 
     // CRITICAL: subjectIRI MUST match triple store subject IRI.
     // NoteToRDFConverter indexes triples by `obsidian://vault/${encodeURI(file.path)}`,
@@ -97,7 +183,7 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
     const subjectIRI = `obsidian://vault/${encodeURI(file.path)}`;
 
     const assetClass = this.extractAssetClass(metadata);
-    if (!assetClass) return [];
+    if (!assetClass) return null;
 
     const prototypeIRI = this.extractPrototypeIRI(metadata);
 
@@ -110,10 +196,10 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
       );
     } catch (error) {
       logger.info(`[DynamicCommands] Failed to resolve commands: ${String(error)}`);
-      return [];
+      return null;
     }
 
-    if (resolved.length === 0) return [];
+    if (resolved.length === 0) return null;
 
     const evalContext: EvalContext = {
       targetIRI: subjectIRI,
@@ -137,13 +223,12 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
     );
 
     const visibleCommands = availabilityChecks
-      .filter(({ available }) => available);
+      .filter(({ available }) => available)
+      .map(({ rc }) => rc);
 
-    if (visibleCommands.length === 0) return [];
+    if (visibleCommands.length === 0) return null;
 
-    return visibleCommands.map(({ rc }) =>
-      this.createButton(rc, subjectIRI, file.path, app as App, logger, refresh),
-    );
+    return { visibleCommands, subjectIRI };
   }
 
   private createButton(

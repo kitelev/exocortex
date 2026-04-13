@@ -42,7 +42,7 @@ describe("ButtonGroupsBuilder - onClick handlers (dynamic commands)", () => {
     ctx.mockGroundingExecutor.execute.mockResolvedValue({ success: true });
 
     const groups = await ctx.builder.build(mockFile);
-    const dynamicGroup = groups.find((g) => g.id === "dynamic-commands");
+    const dynamicGroup = groups.find((g) => g.id.startsWith("dynamic-commands"));
     const button = dynamicGroup?.buttons[0];
 
     expect(button).toBeDefined();
@@ -90,7 +90,7 @@ describe("ButtonGroupsBuilder - onClick handlers (dynamic commands)", () => {
     ctx.mockGroundingExecutor.execute.mockResolvedValue({ success: true });
 
     const groups = await ctx.builder.build(mockFile);
-    const dynamicGroup = groups.find((g) => g.id === "dynamic-commands");
+    const dynamicGroup = groups.find((g) => g.id.startsWith("dynamic-commands"));
     const button = dynamicGroup?.buttons[0];
 
     expect(button).toBeDefined();
@@ -136,7 +136,7 @@ describe("ButtonGroupsBuilder - onClick handlers (dynamic commands)", () => {
     });
 
     const groups = await ctx.builder.build(mockFile);
-    const dynamicGroup = groups.find((g) => g.id === "dynamic-commands");
+    const dynamicGroup = groups.find((g) => g.id.startsWith("dynamic-commands"));
     const button = dynamicGroup?.buttons[0];
 
     expect(button).toBeDefined();

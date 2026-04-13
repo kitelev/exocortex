@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 
 /**
  * Props for individual action buttons within the group
@@ -18,6 +18,13 @@ export interface ButtonGroup {
   id: string;
   title: string;
   buttons: ActionButton[];
+  /**
+   * When true, the group renders as a collapsible disclosure that starts
+   * collapsed on first mount. Users toggle via the header. Used for
+   * power-user / rare-use groups (e.g. Maintenance) so they do not dominate
+   * panel real-estate during normal work.
+   */
+  collapsedByDefault?: boolean;
 }
 
 /**
@@ -38,11 +45,11 @@ export interface ActionButtonsGroupProps {
  * - Color-coded button variants for different action types
  * - Responsive layout adapting to screen size
  * - Clean, modern design with proper spacing
+ * - Optional per-group collapsible disclosure (collapsedByDefault)
  */
 export const ActionButtonsGroup: React.FC<ActionButtonsGroupProps> = ({
   groups,
 }) => {
-  // Filter out groups with no visible buttons
   const visibleGroups = groups
     .map((group) => ({
       ...group,
@@ -50,35 +57,75 @@ export const ActionButtonsGroup: React.FC<ActionButtonsGroupProps> = ({
     }))
     .filter((group) => group.buttons.length > 0);
 
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() => {
+    const initial: Record<string, boolean> = {};
+    for (const g of visibleGroups) {
+      if (g.collapsedByDefault) initial[g.id] = true;
+    }
+    return initial;
+  });
+
   if (visibleGroups.length === 0) {
     return null;
   }
 
+  const toggle = (id: string) => {
+    setCollapsed((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+
   return (
     <div className="exocortex-action-buttons-container">
-      {visibleGroups.map((group, groupIndex) => (
-        <div key={group.id} className="exocortex-button-group">
-          <div className="exocortex-button-group-title">{group.title}</div>
-          <div className="exocortex-button-group-buttons">
-            {group.buttons.map((button) => (
+      {visibleGroups.map((group, groupIndex) => {
+        const isCollapsible = group.collapsedByDefault === true;
+        const isCollapsed = collapsed[group.id] === true;
+        return (
+          <div key={group.id} className="exocortex-button-group">
+            {isCollapsible ? (
               <button
-                key={button.id}
-                className={`exocortex-action-button exocortex-action-button--${button.variant || "secondary"}`}
-                onClick={async (e) => {
+                type="button"
+                className="exocortex-button-group-title exocortex-button-group-title--collapsible"
+                aria-expanded={!isCollapsed}
+                aria-controls={`exocortex-button-group-body-${group.id}`}
+                onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
-                  await button.onClick();
+                  toggle(group.id);
                 }}
               >
-                {button.label}
+                <span className="exocortex-button-group-disclosure">
+                  {isCollapsed ? "▶" : "▼"}
+                </span>
+                {group.title}
               </button>
-            ))}
+            ) : (
+              <div className="exocortex-button-group-title">{group.title}</div>
+            )}
+            {!(isCollapsible && isCollapsed) && (
+              <div
+                className="exocortex-button-group-buttons"
+                id={`exocortex-button-group-body-${group.id}`}
+              >
+                {group.buttons.map((button) => (
+                  <button
+                    key={button.id}
+                    className={`exocortex-action-button exocortex-action-button--${button.variant || "secondary"}`}
+                    onClick={async (e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      await button.onClick();
+                    }}
+                  >
+                    {button.label}
+                  </button>
+                ))}
+              </div>
+            )}
+            {groupIndex < visibleGroups.length - 1 && (
+              <div className="exocortex-button-group-separator" />
+            )}
           </div>
-          {groupIndex < visibleGroups.length - 1 && (
-            <div className="exocortex-button-group-separator" />
-          )}
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 };

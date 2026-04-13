@@ -90,16 +90,27 @@ test.describe("Dynamic Command Button Rendering & Functionality", () => {
       plugin?.refreshLayout?.();
     });
 
-    // Button "Remove Start Timestamp" must render — precondition SPARQL ASK
-    // checks for ems:Effort_startTimestamp triple in triple store, which
-    // exists for this file (task has ems__Effort_startTimestamp: "2026-03-30...")
+    // "Remove Start Timestamp" lives in the Maintenance category, which now
+    // renders as a collapsed-by-default disclosure (UX iteration 2). First the
+    // Maintenance header must appear, then clicking it reveals the button.
+    // Precondition SPARQL ASK checks for ems:Effort_startTimestamp triple,
+    // which exists for this fixture.
+    const maintenanceHeader = page.locator(
+      'button.exocortex-button-group-title--collapsible:has-text("Maintenance")'
+    );
+    await expect(
+      maintenanceHeader,
+      "Maintenance category header must render for task WITH startTimestamp."
+    ).toBeVisible({ timeout: 20000 });
+    await maintenanceHeader.click();
+
     const removeTimestampButton = page.locator(
       'button.exocortex-action-button:has-text("Remove Start Timestamp")'
     );
 
     await expect(
       removeTimestampButton,
-      'Button "Remove Start Timestamp" must render for task WITH startTimestamp.'
+      'Button "Remove Start Timestamp" must render for task WITH startTimestamp after expanding Maintenance.'
     ).toBeVisible({ timeout: 20000 });
   });
 });

@@ -53,7 +53,7 @@ describe("ButtonGroupsBuilder - dynamic commands (RFC-009)", () => {
     (config.folderRepairService.getExpectedFolder as jest.Mock).mockResolvedValue(null);
 
     const groups = await builder.build(mockFile);
-    const dynamicGroup = groups.find((g) => g.id === "dynamic-commands");
+    const dynamicGroup = groups.find((g) => g.id.startsWith("dynamic-commands"));
     expect(dynamicGroup).toBeUndefined();
   });
 
@@ -103,9 +103,10 @@ describe("ButtonGroupsBuilder - dynamic commands (RFC-009)", () => {
     (config.folderRepairService.getExpectedFolder as jest.Mock).mockResolvedValue(null);
 
     const groups = await builder.build(mockFile);
-    const dynamicGroup = groups.find((g) => g.id === "dynamic-commands");
+    const dynamicGroup = groups.find((g) => g.id.startsWith("dynamic-commands"));
     expect(dynamicGroup).toBeDefined();
-    expect(dynamicGroup!.title).toBe("Commands");
+    // Legacy per-builder title "Commands" is now category-specific ("Other", "Status", ...).
+    expect(dynamicGroup!.title.length).toBeGreaterThan(0);
   });
 
   it("should NOT include dynamic-commands builder when only partial services provided", async () => {
@@ -124,7 +125,7 @@ describe("ButtonGroupsBuilder - dynamic commands (RFC-009)", () => {
     (config.folderRepairService.getExpectedFolder as jest.Mock).mockResolvedValue(null);
 
     const groups = await builder.build(mockFile);
-    const dynamicGroup = groups.find((g) => g.id === "dynamic-commands");
+    const dynamicGroup = groups.find((g) => g.id.startsWith("dynamic-commands"));
     expect(dynamicGroup).toBeUndefined();
   });
 });
