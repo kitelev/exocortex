@@ -640,6 +640,29 @@ export class NoteToRDFConverter {
             : wikilink;
           if (this.isUUID(linkpath)) {
             const uuidLiteral = new Literal(linkpath);
+
+            // Issue #2782: when the target file represents a class-like enum
+            // member (status/criticality/etc.), also emit its namespace URI so
+            // starter-kit preconditions of the form
+            //   FILTER(?s != <ems:EffortStatusDoing>)
+            // keep working after `Set Status X` mutates the frontmatter into
+            // [[UUID]] form. Mirrors the basename → label detection used by
+            // valueToClassURI for Instance_class (Issue #2745).
+            const basenameClassIRI = this.expandClassValue(targetFile.basename);
+            if (basenameClassIRI) {
+              return [fileIRI, uuidLiteral, basenameClassIRI];
+            }
+            const targetFm = this.vault.getFrontmatter(targetFile);
+            if (targetFm) {
+              const label = targetFm["exo__Asset_label"];
+              if (typeof label === "string") {
+                const labelClassIRI = this.expandClassValue(label);
+                if (labelClassIRI) {
+                  return [fileIRI, uuidLiteral, labelClassIRI];
+                }
+              }
+            }
+
             return [fileIRI, uuidLiteral];
           }
 

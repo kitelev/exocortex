@@ -879,6 +879,128 @@ describe("NoteToRDFConverter", () => {
         expect((typeTriple!.object as IRI).value).toBe(Namespace.EXOCMD.term("CommandBinding").value);
       });
     });
+
+    // Issue #2782: UUID wikilinks on enum-style properties (e.g. ems__Effort_status)
+    // must also materialize the namespace URI so starter-kit preconditions filtering
+    // FILTER(?s != <ems:EffortStatusDoing>) keep working after `Set Status X` writes
+    // [[UUID]] form. Without the namespace URI, only file IRI + UUID literal exist
+    // → FILTER passes → ASK incorrectly returns TRUE → button stale.
+    describe("UUID wikilink class normalization on enum properties (Issue #2782)", () => {
+      const taskFile: IFile = {
+        path: "Implement Feature.md",
+        basename: "Implement Feature",
+        name: "Implement Feature.md",
+        parent: null,
+      };
+
+      const statusEnumFile: IFile = {
+        path: "ems/027e78f4-6e16-4b36-b8fb-5510507d5745.md",
+        basename: "027e78f4-6e16-4b36-b8fb-5510507d5745",
+        name: "027e78f4-6e16-4b36-b8fb-5510507d5745.md",
+        parent: null,
+      };
+
+      it("should also emit namespace URI when [[UUID]] resolves to a class-like enum file (via exo__Asset_label)", async () => {
+        const taskFrontmatter: IFrontmatter = {
+          ems__Effort_status: "[[027e78f4-6e16-4b36-b8fb-5510507d5745]]",
+        };
+
+        mockVault.getFrontmatter.mockImplementation((f: IFile) => {
+          if (f.path === taskFile.path) return taskFrontmatter;
+          if (f.path === statusEnumFile.path)
+            return { exo__Asset_label: "ems__EffortStatusDoing" };
+          return null;
+        });
+
+        mockVault.getFirstLinkpathDest.mockImplementation((linkpath: string) => {
+          if (linkpath === "027e78f4-6e16-4b36-b8fb-5510507d5745") return statusEnumFile;
+          return null;
+        });
+
+        const triples = await converter.convertNote(taskFile);
+
+        const statusTriples = triples.filter(
+          (t) => (t.predicate as IRI).value === Namespace.EMS.term("Effort_status").value
+        );
+
+        const objectValues = statusTriples.map((t) => (t.object as IRI | Literal).value);
+
+        // Existing dual-storage triples preserved
+        expect(objectValues).toContain("027e78f4-6e16-4b36-b8fb-5510507d5745");
+        expect(objectValues.some((v) => v.includes("027e78f4-6e16-4b36-b8fb-5510507d5745.md"))).toBe(true);
+
+        // NEW (#2782): namespace URI for the resolved class member
+        expect(objectValues).toContain(Namespace.EMS.term("EffortStatusDoing").value);
+      });
+
+      it("should also emit namespace URI when [[UUID]] resolves via class-named basename", async () => {
+        const namedEnumFile: IFile = {
+          path: "ems/ems__EffortStatusBacklog.md",
+          basename: "ems__EffortStatusBacklog",
+          name: "ems__EffortStatusBacklog.md",
+          parent: null,
+        };
+
+        const taskFrontmatter: IFrontmatter = {
+          ems__Effort_status: "[[753a44d5-846c-4b82-9196-4fd9a4d48777]]",
+        };
+
+        mockVault.getFrontmatter.mockImplementation((f: IFile) => {
+          if (f.path === taskFile.path) return taskFrontmatter;
+          return null;
+        });
+
+        mockVault.getFirstLinkpathDest.mockImplementation((linkpath: string) => {
+          if (linkpath === "753a44d5-846c-4b82-9196-4fd9a4d48777") return namedEnumFile;
+          return null;
+        });
+
+        const triples = await converter.convertNote(taskFile);
+
+        const statusTriples = triples.filter(
+          (t) => (t.predicate as IRI).value === Namespace.EMS.term("Effort_status").value
+        );
+        const objectValues = statusTriples.map((t) => (t.object as IRI | Literal).value);
+
+        expect(objectValues).toContain(Namespace.EMS.term("EffortStatusBacklog").value);
+      });
+
+      it("should NOT emit namespace URI when [[UUID]] target is not a class-like enum", async () => {
+        const ordinaryFile: IFile = {
+          path: "ems/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.md",
+          basename: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+          name: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.md",
+          parent: null,
+        };
+
+        const taskFrontmatter: IFrontmatter = {
+          ems__Effort_parent: "[[aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee]]",
+        };
+
+        mockVault.getFrontmatter.mockImplementation((f: IFile) => {
+          if (f.path === taskFile.path) return taskFrontmatter;
+          if (f.path === ordinaryFile.path) return { exo__Asset_label: "Some Other Task" };
+          return null;
+        });
+
+        mockVault.getFirstLinkpathDest.mockImplementation((linkpath: string) => {
+          if (linkpath === "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee") return ordinaryFile;
+          return null;
+        });
+
+        const triples = await converter.convertNote(taskFile);
+
+        const parentTriples = triples.filter(
+          (t) => (t.predicate as IRI).value === Namespace.EMS.term("Effort_parent").value
+        );
+        const objectValues = parentTriples.map((t) => (t.object as IRI | Literal).value);
+
+        // Original behavior preserved: file IRI + UUID literal, no class IRI
+        expect(objectValues).toContain("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+        expect(objectValues.some((v) => v.includes("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.md"))).toBe(true);
+        expect(objectValues.some((v) => v.startsWith("https://exocortex.my/ontology/"))).toBe(false);
+      });
+    });
   });
 
   // Issue #666: Asset_fileName predicate for SPARQL queries by filename
