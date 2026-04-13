@@ -206,6 +206,13 @@ export default class ExocortexPlugin extends Plugin {
         this.autoRenderLayout(),
       );
 
+      // GTD Capture: one-click fleeting note to inbox.
+      // Delegates to the existing `create-fleeting-note` command so the
+      // ribbon and command palette share a single implementation.
+      this.addRibbonIcon("inbox", "Capture to inbox (fleeting note)", () => {
+        void this.commandManager.executeCommand("create-fleeting-note");
+      });
+
       this.addSettingTab(new ExocortexSettingTab(this.app, this));
 
       this.registerMarkdownCodeBlockProcessor(
