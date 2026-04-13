@@ -18,24 +18,24 @@ Your entities, their properties, UI layouts, workflows, and commands are all des
 
 This is an evolution of the "as Code" paradigm (Infrastructure as Code, Docs as Code):
 
-| As Code | As Knowledge (Exocortex) |
-|---------|--------------------------|
-| **Workflow as Code** — CI/CD pipelines | **Workflow as Knowledge** — status transitions as RDF data, UI buttons generated automatically |
-| **Layout as Code** — JSON/CSS config | **Layout as Knowledge** — columns, filters, sorting described semantically |
-| **Schema as Code** — JSON Schema, Prisma | **Schema as Knowledge** — OWL classes and properties as files in your vault |
+| As Code                                  | As Knowledge (Exocortex)                                                                       |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| **Workflow as Code** — CI/CD pipelines   | **Workflow as Knowledge** — status transitions as RDF data, UI buttons generated automatically |
+| **Layout as Code** — JSON/CSS config     | **Layout as Knowledge** — columns, filters, sorting described semantically                     |
+| **Schema as Code** — JSON Schema, Prisma | **Schema as Knowledge** — OWL classes and properties as files in your vault                    |
 
 **"As Code" describes desired system state. "As Knowledge" describes what things mean and how they relate.**
 
 Compared to existing tools:
 
-| | Exocortex | Notion | Jira | Semantic MediaWiki | Protégé |
-|---|:---:|:---:|:---:|:---:|:---:|
-| RDF/Semantic | ✅ | — | — | ✅ | ✅ |
-| File-based (git-friendly) | ✅ | — | — | — | ✅ |
-| UI from ontology | ✅ | ✅ | ~ | ~ | ✅ |
-| Offline-first | ✅ | ~ | — | — | ✅ |
-| For knowledge workers | ✅ | ✅ | ✅ | ~ | �� |
-| Action layer (commands) | ✅ | ~ | ✅ | — | — |
+|                           | Exocortex | Notion | Jira | Semantic MediaWiki | Protégé |
+| ------------------------- | :-------: | :----: | :--: | :----------------: | :-----: |
+| RDF/Semantic              |    ✅     |   —    |  —   |         ✅         |   ✅    |
+| File-based (git-friendly) |    ✅     |   —    |  —   |         —          |   ✅    |
+| UI from ontology          |    ✅     |   ✅   |  ~   |         ~          |   ✅    |
+| Offline-first             |    ✅     |   ~    |  —   |         —          |   ✅    |
+| For knowledge workers     |    ✅     |   ✅   |  ✅  |         ~          |   ��    |
+| Action layer (commands)   |    ✅     |   ~    |  ✅  |         —          |    —    |
 
 ---
 
@@ -56,6 +56,13 @@ Compared to existing tools:
 
 Best for: Visual knowledge management, daily planning, interactive exploration.
 
+**Prerequisites:**
+
+- **Obsidian** 1.4+
+- **[Dataview](https://github.com/blacksmithgu/obsidian-dataview)** community plugin — required for the Daily Tasks widget on daily notes. Install via Community plugins browser (search "Dataview") and enable it before installing Exocortex.
+
+**Install Exocortex via BRAT:**
+
 1. Install [BRAT](https://github.com/TfTHacker/obsidian42-brat) plugin from Obsidian Community Plugins
 2. Open BRAT settings → **Add Beta Plugin**
 3. Enter repository: `kitelev/exocortex`
@@ -65,7 +72,7 @@ BRAT will automatically keep the plugin updated with new releases.
 
 > **Next:** Follow the **[Getting Started Guide](./docs/Getting-Started.md)** to install the Starter Kit and create your first Area, Project, and Task.
 >
-> **Note:** Layouts appear in **Reading Mode** (Ctrl/Cmd + E).
+> **Note:** Layouts appear in **Reading Mode** (Ctrl/Cmd + E). Without Dataview the plugin still renders action buttons, status panels, and Asset Relations — only the Daily Tasks widget on daily notes depends on it.
 
 ### Option 2: CLI
 

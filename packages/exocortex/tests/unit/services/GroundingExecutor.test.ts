@@ -560,6 +560,29 @@ describe("GroundingExecutor", () => {
       expect(result).toMatch(/started at \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
     });
 
+    it("should replace $nowLocal with local timestamp (no ms, no tz suffix)", () => {
+      const result = executor.substituteVariables(
+        "started at $nowLocal",
+        TARGET_IRI,
+      );
+      expect(result).toMatch(/^started at \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/);
+      expect(result).not.toContain(".");
+      expect(result).not.toContain("Z");
+    });
+
+    it("should replace $nowLocal before $now to avoid prefix collision", () => {
+      const result = executor.substituteVariables(
+        "$nowLocal then $now",
+        TARGET_IRI,
+      );
+      expect(result).not.toContain("$now");
+      expect(result).not.toContain("$nowLocal");
+      expect(result).not.toContain("Local");
+      expect(result).toMatch(
+        /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2} then \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/,
+      );
+    });
+
     it("should replace $today with YYYY-MM-DD", () => {
       const result = executor.substituteVariables(
         "due $today",
