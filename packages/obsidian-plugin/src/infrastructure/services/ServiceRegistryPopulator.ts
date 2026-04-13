@@ -290,6 +290,65 @@ export function populateServiceRegistry(
     );
 
     registry.register(
+      "createRelatedProject",
+      wrapService(async (targetIRI: string, userInput?: UserInput) => {
+        const label = userInput?.label as string | undefined;
+        if (!label) throw new Error("createRelatedProject requires userInput.label");
+        const iFile = resolveIFile(app, targetIRI, vaultAdapter);
+        const parentMetadata = (vaultAdapter.getFrontmatter(iFile) as Record<string, unknown>) ?? {};
+        const folderPath = iFile.parent?.path || "";
+
+        // Mirror createRelatedTask but scoped to ems__Project. Uses the same
+        // ems__Effort_* parent-property convention so AssetRelations rendering
+        // works uniformly with sibling Task/Meeting efforts. When the parent
+        // is an ems__Area, write ems__Effort_area; when the parent is another
+        // Project or Task, write ems__Effort_parent. The core
+        // GenericAssetCreationService.inheritParentContext currently only
+        // auto-inherits for ems__Task, so this handler does the area vs parent
+        // detection explicitly via userInput.parentProperty and falls back to
+        // the auto-detected form.
+        const propertyValues: Record<string, unknown> = {
+          "ems__Effort_status": '"[[ems__EffortStatusDraft]]"',
+        };
+
+        if (iFile.basename) {
+          const explicitParentProperty = userInput?.parentProperty as string | undefined;
+          if (explicitParentProperty) {
+            propertyValues[explicitParentProperty] = `"[[${iFile.basename}]]"`;
+          } else {
+            const parentClass = parentMetadata["exo__Instance_class"];
+            const parentClasses = Array.isArray(parentClass)
+              ? parentClass
+              : parentClass != null
+                ? [parentClass]
+                : [];
+            const isAreaParent = parentClasses.some((cls) =>
+              String(cls).includes("Area"),
+            );
+            const parentPropertyName = isAreaParent
+              ? "ems__Effort_area"
+              : "ems__Effort_parent";
+            propertyValues[parentPropertyName] = `"[[${iFile.basename}]]"`;
+          }
+        }
+
+        const createdFile = await genericAssetCreationService.createAsset({
+          className: "ems__Project",
+          label,
+          folderPath,
+          propertyValues,
+          parentFile: iFile,
+          parentMetadata,
+        });
+
+        const tfile = vaultAdapter.toTFile(createdFile);
+        const leaf = app.workspace.getLeaf("tab");
+        await leaf.openFile(tfile);
+        app.workspace.setActiveLeaf(leaf, { focus: true });
+      }),
+    );
+
+    registry.register(
       "createTaskForDailyNote",
       wrapService(async (targetIRI: string, userInput?: UserInput) => {
         const label = userInput?.label as string | undefined;
