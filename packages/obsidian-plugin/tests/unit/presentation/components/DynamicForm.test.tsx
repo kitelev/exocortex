@@ -250,6 +250,31 @@ describe("DynamicForm", () => {
       fireEvent.click(screen.getByText("Cancel"));
       expect(onCancel).toHaveBeenCalled();
     });
+
+    it("should submit form when Enter pressed in text field", () => {
+      const { onSubmit } = renderForm([{ name: "title", type: "text" }]);
+      const input = screen.getByTestId("field-title");
+      fireEvent.change(input, { target: { value: "via enter" } });
+      fireEvent.submit(input.closest("form")!);
+      expect(onSubmit).toHaveBeenCalledWith({ title: "via enter" });
+    });
+
+    it("should validate required fields on Enter submit", () => {
+      const { onSubmit } = renderForm([
+        { name: "title", type: "text", label: "Title", required: true },
+      ]);
+      const input = screen.getByTestId("field-title");
+      fireEvent.submit(input.closest("form")!);
+      expect(onSubmit).not.toHaveBeenCalled();
+      expect(screen.getByText("Title is required")).toBeInTheDocument();
+    });
+
+    it("should not call onCancel from the Cancel button submitting the form", () => {
+      const { onSubmit, onCancel } = renderForm([{ name: "title", type: "text" }]);
+      fireEvent.click(screen.getByText("Cancel"));
+      expect(onCancel).toHaveBeenCalledTimes(1);
+      expect(onSubmit).not.toHaveBeenCalled();
+    });
   });
 
   describe("multiple fields", () => {

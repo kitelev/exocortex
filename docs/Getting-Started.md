@@ -48,6 +48,8 @@ Exocortex is an Obsidian plugin that lets you **define custom entity types, thei
 
 You describe your entities (tasks, projects, areas, or any custom type) in YAML frontmatter, and the plugin automatically generates layouts, action buttons, and workflows based on those definitions. No server, no vendor lock-in — your data lives as Markdown files in your git repository.
 
+> **Important — Reading Mode is required**: every Exocortex layout (action buttons, Asset Relations, Area tree, Daily Tasks) renders **only in Obsidian's Reading Mode**. In Live Preview or Source Mode the layout is intentionally hidden — you will see only the raw frontmatter. Toggle with **Ctrl/Cmd + E** or the reading-glass icon in the top-right. This is a deliberate design choice (read vs. edit separation), not a bug.
+
 ### What You Get
 
 - **Automatic layouts** that render below your note's metadata in Reading Mode
@@ -163,7 +165,19 @@ The Exocortex layout renders with these sections (header labels match the on-scr
 
 Projects represent specific initiatives within an area.
 
-### Create a Project Note
+### Create a Project Using the Button (recommended)
+
+Since plugin **v15.92.0**, the easiest way to create a project is from the parent area's layout:
+
+1. Open your area note (`Development.md`) in **Reading Mode**.
+2. In the **COMMANDS** section, click **Create Project**.
+3. Type the project name (e.g., `Build API Server`) and press **Enter** (or click OK).
+
+The plugin creates the project note, wires `ems__Effort_area` to the active area automatically, and sets the initial status. You can then edit the note to add a description.
+
+> **Why the button path is recommended**: it guarantees the correct frontmatter schema (class, area wiki-link, default status) and keeps area → project relationships consistent. Manual frontmatter authoring (below) remains supported for advanced cases or templating.
+
+### Create a Project Note manually
 
 1. Create a new note called `Build API Server.md`
 2. Add frontmatter:
