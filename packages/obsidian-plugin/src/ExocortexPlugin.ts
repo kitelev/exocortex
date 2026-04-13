@@ -272,9 +272,23 @@ export default class ExocortexPlugin extends Plugin {
         }),
       );
 
+      // Issue #2785: hot-mutation cache invalidation.
+      //
+      // After an inline-button command writes frontmatter (e.g. `Set Status Doing`),
+      // `metadataCache.on("changed")` fires with guaranteed-fresh frontmatter —
+      // this is the right event to drive a re-index. `vault.on("modify")` alone
+      // is insufficient because it can fire before metadataCache has re-parsed
+      // the file, causing a re-index against stale values, and even when it
+      // doesn't race, nothing triggers `autoRenderLayout` after the mutation —
+      // so the COMMANDS panel stays stale until Obsidian restart.
+      //
+      // Fix: schedule a debounced, per-file re-index that swaps the file's
+      // triples → invalidates the command caches → re-renders active layouts.
+      // Symmetric to #2780 but for incremental mutations rather than cold start.
       this.registerEvent(
         this.app.metadataCache.on("changed", (file) => {
           this.handleMetadataChange(file);
+          this.scheduleHotReindex(file);
         }),
       );
 
@@ -941,6 +955,47 @@ export default class ExocortexPlugin extends Plugin {
     }
   }
 
+
+  /**
+   * Issue #2785: schedule a debounced, per-file re-index after a frontmatter mutation.
+   *
+   * Called from the `metadataCache.on("changed")` subscriber — at that point
+   * Obsidian has already re-parsed the file, so `sparql.reindexFile(file)`
+   * converts it against fresh metadata. After the re-index completes we
+   * invalidate the command/precondition caches and trigger `autoRenderLayout`
+   * so active leaves pick up the new button visibility without an Obsidian
+   * restart.
+   *
+   * Debouncing key is per-file (`hot-reindex:<path>`) so a burst of changes
+   * to the same file collapses to one re-index, while concurrent edits to
+   * different files each run their own re-index.
+   *
+   * Non-markdown files are ignored (binary / config assets).
+   */
+  private scheduleHotReindex(file: TFile): void {
+    if (file.extension !== "md") return;
+
+    const timerName = `hot-reindex:${file.path}`;
+    this.timerManager.setTimeout(
+      timerName,
+      () => {
+        void (async () => {
+          try {
+            await this.sparql.reindexFile(file);
+            this.commandResolver.invalidateCache();
+            this.preconditionEvaluator.invalidateCache();
+            this.autoRenderLayout();
+          } catch (err) {
+            this.logger.error(
+              `Failed to hot-reindex ${file.path} after metadata change`,
+              err as Error,
+            );
+          }
+        })();
+      },
+      150,
+    );
+  }
 
   private removeAutoRenderedLayouts(): void {
     document
