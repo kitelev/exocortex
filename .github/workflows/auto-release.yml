@@ -60,7 +60,7 @@ jobs:
             echo "Detected BREAKING CHANGE → major bump"
             echo "type=major" >> $GITHUB_OUTPUT
           # Check for feat:
-          elif echo "$COMMITS" | grep -qE "^feat(\([a-z]+\))?:"; then
+          elif echo "$COMMITS" | grep -qE "^feat(\([a-z0-9-]+\))?:"; then
             echo "Detected feat: → minor bump"
             echo "type=minor" >> $GITHUB_OUTPUT
           # Everything else is patch
