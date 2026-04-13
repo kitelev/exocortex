@@ -56,11 +56,15 @@ export const DynamicForm: React.FC<DynamicFormProps> = ({
     return newErrors.length === 0;
   }, [schema, values]);
 
-  const handleSubmit = useCallback(() => {
-    if (validate()) {
-      onSubmit(values);
-    }
-  }, [validate, values, onSubmit]);
+  const handleSubmit = useCallback(
+    (e?: React.FormEvent) => {
+      e?.preventDefault();
+      if (validate()) {
+        onSubmit(values);
+      }
+    },
+    [validate, values, onSubmit],
+  );
 
   const getFieldError = useCallback(
     (name: string): string | undefined =>
@@ -69,7 +73,7 @@ export const DynamicForm: React.FC<DynamicFormProps> = ({
   );
 
   return (
-    <div className="dynamic-form">
+    <form className="dynamic-form" onSubmit={handleSubmit}>
       {schema.map((field) => (
         <div key={field.name} className="dynamic-form-field">
           <label className="dynamic-form-label">
@@ -83,12 +87,14 @@ export const DynamicForm: React.FC<DynamicFormProps> = ({
         </div>
       ))}
       <div className="modal-button-container">
-        <button className="mod-cta" onClick={handleSubmit}>
+        <button type="submit" className="mod-cta">
           {submitLabel ?? "OK"}
         </button>
-        <button onClick={onCancel}>Cancel</button>
+        <button type="button" onClick={onCancel}>
+          Cancel
+        </button>
       </div>
-    </div>
+    </form>
   );
 };
 
