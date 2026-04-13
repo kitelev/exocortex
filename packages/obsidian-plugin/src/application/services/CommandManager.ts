@@ -97,6 +97,36 @@ export class CommandManager {
     }
   }
 
+  /**
+   * Invoke a registered global command by its id.
+   *
+   * Used by surfaces like the ribbon icon that want to trigger the same flow
+   * as the command palette without duplicating handler code. Fire-and-forget:
+   * returns once the handler has been invoked, not once it has finished.
+   */
+  executeCommand(id: string): boolean {
+    if (!this.commandRegistry) return false;
+    const command = this.commandRegistry
+      .getAllCommands()
+      .find((c) => c.id === id);
+    if (!command) return false;
+
+    if (command.callback) {
+      void command.callback();
+      return true;
+    }
+
+    if (command.checkCallback) {
+      const file = this.app.workspace.getActiveFile();
+      if (!file) return false;
+      const context = this.getContext(file);
+      command.checkCallback(false, file, context);
+      return true;
+    }
+
+    return false;
+  }
+
   private getContext(file: TFile): CommandVisibilityContext | null {
     const context = this.metadataExtractor.extractCommandVisibilityContext(file);
 
