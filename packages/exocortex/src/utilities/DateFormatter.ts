@@ -69,13 +69,23 @@ export class DateFormatter {
    *
    * Format: `YYYY-MM-DDTHH:MM:SS`
    *
-   * @deprecated Use `toISOTimestamp()` for effort timestamps to enable SPARQL filtering.
-   * This method is kept for backward compatibility with display-only timestamps.
+   * Canonical format for effort and asset lifecycle timestamps across the
+   * codebase. Examples:
    *
-   * Used for frontmatter properties like:
-   * - `ems__Effort_created`
-   * - `ems__Effort_modified`
-   * - `ems__Effort_archived`
+   * - `ems__Effort_startTimestamp` / `endTimestamp` / `resolutionTimestamp`
+   *   (written by `TaskStatusService.startEffort` / `markTaskAsDone`)
+   * - `ems__Effort_plannedStartTimestamp` / `plannedEndTimestamp`
+   *   (written by `TaskStatusService.planForEvening` and friends)
+   * - `exo__Asset_createdAt` (written by `GenericAssetCreationService` /
+   *   `AreaCreationService` and other `*CreationService` classes)
+   *
+   * Starter-kit composite groundings produce the same shape via the
+   * `$nowLocal` variable in `GroundingExecutor.substituteVariables`, so palette
+   * commands and inline status buttons stay format-aligned.
+   *
+   * `toISOTimestamp` (UTC with `Z` suffix) is reserved for places that need
+   * explicit UTC anchoring or lexicographic ordering — it is NOT a drop-in
+   * replacement for the local-time format above.
    *
    * @param date - Date object to format
    * @returns ISO 8601 local timestamp string

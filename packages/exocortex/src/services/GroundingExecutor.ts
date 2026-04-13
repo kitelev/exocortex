@@ -5,6 +5,7 @@ import type { IFileSystemWriter } from "../interfaces/IFileSystemAdapter";
 import type { GroundingDefinition } from "../domain/models/CommandDefinition";
 import { GroundingType } from "../domain/constants/GroundingType";
 import { FrontmatterService } from "../utilities/FrontmatterService";
+import { DateFormatter } from "../utilities/DateFormatter";
 import { LoggingService } from "./LoggingService";
 
 /**
@@ -407,15 +408,22 @@ export class GroundingExecutor {
    * Same variables as PreconditionEvaluator for consistency.
    *
    * - $target → targetIRI (no angle brackets — this is a value, not SPARQL)
-   * - $now → current ISO 8601 timestamp
+   * - $now → current ISO 8601 UTC timestamp (with milliseconds and Z suffix)
+   * - $nowLocal → current local timestamp (YYYY-MM-DDTHH:mm:ss, no ms, no tz) —
+   *   matches the format written by `TaskStatusService.startEffort/markTaskAsDone`,
+   *   so composite groundings can chain status + timestamp writes consistently
+   *   with palette commands.
    * - $today → current date (YYYY-MM-DD)
    */
   substituteVariables(value: string, targetIRI: string): string {
-    const now = new Date().toISOString();
+    const date = new Date();
+    const now = date.toISOString();
+    const nowLocal = DateFormatter.toLocalTimestamp(date);
     const today = now.slice(0, 10);
 
     return value
       .replace(/\$target/g, targetIRI)
+      .replace(/\$nowLocal/g, nowLocal)
       .replace(/\$now/g, now)
       .replace(/\$today/g, today);
   }
