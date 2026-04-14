@@ -5969,3 +5969,17 @@
 .metadata-property-key .exo-label-display:hover {
   text-decoration: underline;
 }
+
+/* FileExplorerLabelPatch — span overlay for UUID-named Exocortex assets (#2802) */
+.nav-file-title-content.exo-file-explorer-label-hidden {
+  font-size: 0 !important;
+  line-height: 0 !important;
+}
+
+.nav-file-title-content .exo-file-explorer-label {
+  font-size: var(--nav-item-size, var(--font-ui-small));
+  font-weight: var(--nav-item-weight, inherit);
+  font-family: inherit;
+  line-height: var(--line-height-tight);
+  color: inherit;
+}
