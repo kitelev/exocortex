@@ -5955,6 +5955,10 @@
 .metadata-property-key .exo-label-display {
   cursor: pointer;
   color: var(--text-accent);
+  font-size: var(--metadata-label-font-size, var(--font-ui-small));
+  font-weight: var(--metadata-label-font-weight, var(--font-medium));
+  font-family: inherit;
+  line-height: var(--line-height-tight);
 }
 
 .metadata-property-key .exo-label-display:hover {
