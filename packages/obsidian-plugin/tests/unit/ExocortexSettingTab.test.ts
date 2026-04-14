@@ -127,9 +127,9 @@ describe("ExocortexSettingTab", () => {
       settingTab.display();
 
       expect(mockContainerEl.empty).toHaveBeenCalled();
-      // 9 toggle settings + 3 headings + 1 default template + 6 per-class templates + 1 reset button + 4 log level rows = 23
+      // 9 toggle settings + 1 autoReadingMode toggle + 3 headings + 1 default template + 6 per-class templates + 1 reset button + 4 log level rows = 24
       // Log channels section: 1 heading + 4 log level rows = 5
-      expect(MockSetting).toHaveBeenCalledTimes(23);
+      expect(MockSetting).toHaveBeenCalledTimes(24);
     });
 
     it("should render layout visibility toggle as first setting", () => {
