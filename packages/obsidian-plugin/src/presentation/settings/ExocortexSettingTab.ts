@@ -96,6 +96,20 @@ export class ExocortexSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
+      .setName("Auto Reading Mode for Exocortex assets")
+      .setDesc(
+        "When opening a note with exo__Instance_class, automatically switch to Reading Mode so the Exocortex layout (CREATE / STATUS / PLANNING panels) is visible. Disable to keep Obsidian's default view mode.",
+      )
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.autoReadingModeForExocortexAssets)
+          .onChange(async (value) => {
+            this.plugin.settings.autoReadingModeForExocortexAssets = value;
+            await this.plugin.saveSettings();
+          }),
+      );
+
+    new Setting(containerEl)
       .setName("Show labels in note body")
       .setDesc(
         "Display asset labels instead of filenames for links in the note body (reading mode)",
