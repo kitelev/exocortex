@@ -41,6 +41,7 @@ import { LRUCache } from "./infrastructure/cache";
 import { TabTitlePatch } from "./presentation/tab-titles/TabTitlePatch";
 import { PropertiesLinkPatch } from "./presentation/properties/PropertiesLinkPatch";
 import { PropertiesUidCopyPatch } from "./presentation/properties/PropertiesUidCopyPatch";
+import { PropertiesLabelPatch } from "./presentation/properties/PropertiesLabelPatch";
 import { BodyLinkPatch } from "./presentation/body/BodyLinkPatch";
 import { GraphViewPatch } from "./presentation/graph-view/GraphViewPatch";
 import { PrintNameRuleService } from "./domain/display-name/PrintNameRuleService";
@@ -85,6 +86,7 @@ export default class ExocortexPlugin extends Plugin {
   private propertiesLinkPatch!: PropertiesLinkPatch;
   private bodyLinkPatch!: BodyLinkPatch;
   private propertiesUidCopyPatch!: PropertiesUidCopyPatch;
+  private propertiesLabelPatch!: PropertiesLabelPatch;
   private graphViewPatch!: GraphViewPatch;
   private fileLogChannel!: FileLogChannel;
   private notifier!: ObsidianNotificationService;
@@ -381,6 +383,14 @@ export default class ExocortexPlugin extends Plugin {
         this.propertiesUidCopyPatch.enable();
       }, 500);
 
+      // Initialize Properties readable-label patch (always enabled)
+      // Replaces raw predicate names (e.g. ems__Effort_area) with human-readable
+      // labels resolved from property definition assets' exo__Asset_label.
+      this.propertiesLabelPatch = new PropertiesLabelPatch(this);
+      this.timerManager.setTimeout("properties-label-patch", () => {
+        this.propertiesLabelPatch.enable();
+      }, 500);
+
       // Initialize Body link patch
       this.bodyLinkPatch = new BodyLinkPatch(this);
       if (this.settings.showLabelsInBody) {
@@ -462,6 +472,11 @@ export default class ExocortexPlugin extends Plugin {
     // Cleanup Properties UID copy button patch
     if (this.propertiesUidCopyPatch) {
       this.propertiesUidCopyPatch.cleanup();
+    }
+
+    // Cleanup Properties readable-label patch
+    if (this.propertiesLabelPatch) {
+      this.propertiesLabelPatch.cleanup();
     }
 
     // Cleanup Body link patch
