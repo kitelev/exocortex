@@ -42,6 +42,7 @@ import { TabTitlePatch } from "./presentation/tab-titles/TabTitlePatch";
 import { PropertiesLinkPatch } from "./presentation/properties/PropertiesLinkPatch";
 import { PropertiesUidCopyPatch } from "./presentation/properties/PropertiesUidCopyPatch";
 import { PropertiesLabelPatch } from "./presentation/properties/PropertiesLabelPatch";
+import { ReadingModeEnforcer } from "./presentation/reading-mode/ReadingModeEnforcer";
 import { BodyLinkPatch } from "./presentation/body/BodyLinkPatch";
 import { GraphViewPatch } from "./presentation/graph-view/GraphViewPatch";
 import { PrintNameRuleService } from "./domain/display-name/PrintNameRuleService";
@@ -87,6 +88,7 @@ export default class ExocortexPlugin extends Plugin {
   private bodyLinkPatch!: BodyLinkPatch;
   private propertiesUidCopyPatch!: PropertiesUidCopyPatch;
   private propertiesLabelPatch!: PropertiesLabelPatch;
+  private readingModeEnforcer!: ReadingModeEnforcer;
   private graphViewPatch!: GraphViewPatch;
   private fileLogChannel!: FileLogChannel;
   private notifier!: ObsidianNotificationService;
@@ -390,6 +392,19 @@ export default class ExocortexPlugin extends Plugin {
       this.timerManager.setTimeout("properties-label-patch", () => {
         this.propertiesLabelPatch.enable();
       }, 500);
+
+      // Initialize Reading Mode enforcer.
+      // Obsidian's layout rendering path is Reading Mode only; new leaves open
+      // in Live Preview by default, so first-time users see "nothing happens"
+      // on Exocortex assets. Enforcer flips the leaf to preview mode on
+      // file-open for notes with `exo__Instance_class`. Opt-out via settings.
+      // Finding 9, UX audit 2026-04-14.
+      this.readingModeEnforcer = new ReadingModeEnforcer(this);
+      if (this.settings.autoReadingModeForExocortexAssets) {
+        this.timerManager.setTimeout("reading-mode-enforcer", () => {
+          this.readingModeEnforcer.enable();
+        }, 500);
+      }
 
       // Initialize Body link patch
       this.bodyLinkPatch = new BodyLinkPatch(this);

@@ -81,6 +81,14 @@ export interface ExocortexSettings {
   autoAdjustPlannedEndTimestamp: boolean;
   /** Per-level log channel routing configuration */
   logChannels: LogChannelsSettings;
+  /**
+   * Automatically switch to Reading Mode when opening a note whose frontmatter
+   * contains `exo__Instance_class`. Without this, the Exocortex layout
+   * (CREATE / STATUS / PLANNING panels) is invisible because layout rendering
+   * is Reading Mode only and Obsidian defaults new leaves to Live Preview.
+   * See Finding 9 of the 2026-04-14 UX audit.
+   */
+  autoReadingModeForExocortexAssets: boolean;
   [key: string]: unknown;
 }
 
@@ -100,4 +108,5 @@ export const DEFAULT_SETTINGS: ExocortexSettings = {
   displayNameSettings: DEFAULT_DISPLAY_NAME_SETTINGS,
   autoAdjustPlannedEndTimestamp: false,
   logChannels: DEFAULT_LOG_CHANNELS,
+  autoReadingModeForExocortexAssets: true,
 };
