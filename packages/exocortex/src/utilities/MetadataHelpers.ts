@@ -151,7 +151,15 @@ export class MetadataHelpers {
       })
       .join("\n");
 
-    const body = bodyContent ? `\n${bodyContent}\n` : "\n";
+    let effectiveBody = bodyContent;
+    if (effectiveBody === undefined) {
+      const label = frontmatter["exo__Asset_label"];
+      if (typeof label === "string" && label.trim() !== "") {
+        effectiveBody = `# ${label}`;
+      }
+    }
+
+    const body = effectiveBody ? `\n${effectiveBody}\n` : "\n";
     return `---\n${frontmatterLines}\n---\n${body}`;
   }
 }

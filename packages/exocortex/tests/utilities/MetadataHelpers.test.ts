@@ -660,6 +660,39 @@ describe("MetadataHelpers", () => {
 
       expect(result).toBe("---\ntitle: Doc\n---\n\nLine 1\nLine 2\nLine 3\n");
     });
+
+    it("should inject label as H1 heading when frontmatter has exo__Asset_label and body is omitted", () => {
+      const frontmatter = {
+        exo__Asset_uid: "abc-123",
+        exo__Asset_label: "Audit test task",
+      };
+      const result = MetadataHelpers.buildFileContent(frontmatter);
+
+      expect(result).toBe(
+        "---\nexo__Asset_uid: abc-123\nexo__Asset_label: Audit test task\n---\n\n# Audit test task\n",
+      );
+    });
+
+    it("should NOT inject label heading when explicit body is provided", () => {
+      const frontmatter = {
+        exo__Asset_label: "Explicit body task",
+      };
+      const body = "Custom body content";
+      const result = MetadataHelpers.buildFileContent(frontmatter, body);
+
+      expect(result).toBe(
+        "---\nexo__Asset_label: Explicit body task\n---\n\nCustom body content\n",
+      );
+    });
+
+    it("should NOT inject heading when exo__Asset_label is empty string", () => {
+      const frontmatter = {
+        exo__Asset_label: "",
+      };
+      const result = MetadataHelpers.buildFileContent(frontmatter);
+
+      expect(result).toBe("---\nexo__Asset_label: \n---\n\n");
+    });
   });
 
   describe("containsReference - mutation killing", () => {
