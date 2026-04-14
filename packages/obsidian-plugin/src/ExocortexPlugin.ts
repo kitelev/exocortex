@@ -42,6 +42,7 @@ import { TabTitlePatch } from "./presentation/tab-titles/TabTitlePatch";
 import { PropertiesLinkPatch } from "./presentation/properties/PropertiesLinkPatch";
 import { PropertiesUidCopyPatch } from "./presentation/properties/PropertiesUidCopyPatch";
 import { PropertiesLabelPatch } from "./presentation/properties/PropertiesLabelPatch";
+import { FileExplorerLabelPatch } from "./presentation/fileexplorer/FileExplorerLabelPatch";
 import { ReadingModeEnforcer } from "./presentation/reading-mode/ReadingModeEnforcer";
 import { BodyLinkPatch } from "./presentation/body/BodyLinkPatch";
 import { GraphViewPatch } from "./presentation/graph-view/GraphViewPatch";
@@ -88,6 +89,7 @@ export default class ExocortexPlugin extends Plugin {
   private bodyLinkPatch!: BodyLinkPatch;
   private propertiesUidCopyPatch!: PropertiesUidCopyPatch;
   private propertiesLabelPatch!: PropertiesLabelPatch;
+  private fileExplorerLabelPatch!: FileExplorerLabelPatch;
   private readingModeEnforcer!: ReadingModeEnforcer;
   private graphViewPatch!: GraphViewPatch;
   private fileLogChannel!: FileLogChannel;
@@ -393,6 +395,16 @@ export default class ExocortexPlugin extends Plugin {
         this.propertiesLabelPatch.enable();
       }, 500);
 
+      // Initialize File Explorer readable-label patch (always enabled).
+      // Replaces UUID filenames in the sidebar with `exo__Asset_label`.
+      // Finding: Ваня Холькин UX audit 2026-04-12 09:32 — «Структура уродская»;
+      // File Explorer still showed bare UUIDs after v15.98.0 fixed inline title.
+      // Issue #2802.
+      this.fileExplorerLabelPatch = new FileExplorerLabelPatch(this);
+      this.timerManager.setTimeout("file-explorer-label-patch", () => {
+        this.fileExplorerLabelPatch.enable();
+      }, 500);
+
       // Initialize Reading Mode enforcer.
       // Obsidian's layout rendering path is Reading Mode only; new leaves open
       // in Live Preview by default, so first-time users see "nothing happens"
@@ -492,6 +504,11 @@ export default class ExocortexPlugin extends Plugin {
     // Cleanup Properties readable-label patch
     if (this.propertiesLabelPatch) {
       this.propertiesLabelPatch.cleanup();
+    }
+
+    // Cleanup File Explorer readable-label patch
+    if (this.fileExplorerLabelPatch) {
+      this.fileExplorerLabelPatch.cleanup();
     }
 
     // Cleanup Body link patch
