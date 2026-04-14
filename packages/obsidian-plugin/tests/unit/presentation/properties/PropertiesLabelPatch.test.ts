@@ -441,5 +441,61 @@ describe("PropertiesLabelPatch", () => {
       const spansAfter = row.querySelectorAll(".exo-label-display");
       expect(spansAfter.length).toBe(1);
     });
+
+    it("registers metadataCache resolved event listener", () => {
+      patch.enable();
+      expect(mockApp.metadataCache.on).toHaveBeenCalledWith(
+        "resolved",
+        expect.any(Function)
+      );
+    });
+
+    // REGRESSION: Finding 4 from UX audit 2026-04-14.
+    // Scenario: fresh vault + starter-kit tarball install. Plugin enables 500ms
+    // after onload, but Obsidian's metadataCache has NOT finished the initial
+    // vault parse. buildIndex() runs against a cache where getFileCache returns
+    // null for every def file. Index is empty. Then Obsidian fires "resolved"
+    // ONCE — PropertiesLabelPatch was NOT listening → index stays empty forever
+    // → Properties block shows raw `ems__Effort_a...` instead of "Effort Area"
+    // for every user who installs via the supported tarball path.
+    //
+    // Fix: subscribe to metadataCache.on("resolved") → invalidate + re-patch.
+    // Without the fix this test FAILS: span is null because resolvePredicate
+    // returned null at enable() time and there was no signal to retry.
+    it("recovers when metadataCache is empty at enable() and resolves later (Finding 4)", () => {
+      // Arrange: metadataCache is not yet resolved — every getFileCache call
+      // returns null (Obsidian's actual behavior during fresh vault startup).
+      const lateFrontmatters: Record<string, any> = { ...FRONTMATTERS };
+      let metadataResolved = false;
+      mockApp.metadataCache.getFileCache = jest
+        .fn()
+        .mockImplementation((file: FakeFile) => {
+          if (!metadataResolved) return null;
+          const fm = lateFrontmatters[file.path];
+          return fm ? { frontmatter: fm } : null;
+        });
+
+      const row = createPropertyRow({ inputValue: "ems__Effort_area" });
+      mockMetadataContainer.appendChild(row);
+
+      // Act 1: plugin enables before cache is resolved — no patch possible.
+      patch.enable();
+
+      expect(
+        row.querySelector<HTMLSpanElement>(".exo-label-display")
+      ).toBeNull();
+
+      // Act 2: Obsidian finishes its initial parse and fires "resolved".
+      metadataResolved = true;
+      const resolvedCb = mockApp.metadataCache.on.mock.calls.find(
+        (c: any[]) => c[0] === "resolved"
+      )?.[1];
+      expect(typeof resolvedCb).toBe("function");
+      resolvedCb();
+
+      // Assert: the row now carries the readable label.
+      const span = row.querySelector<HTMLSpanElement>(".exo-label-display");
+      expect(span?.textContent).toBe("Effort Area");
+    });
   });
 });

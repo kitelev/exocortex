@@ -67,6 +67,20 @@ export class PropertiesLabelPatch {
       })
     );
 
+    // Obsidian fires "resolved" once the initial vault parse finishes. On a
+    // fresh-vault/tarball install this arrives AFTER enable() runs — plugin
+    // starts 500ms post-load, but metadata parsing can still be in flight —
+    // so without this listener the index built at enable() sees null
+    // frontmatters for every property def file and readable labels never
+    // appear. Subscribing here makes the feature work on the supported
+    // starter-kit install path. Finding 4, UX audit 2026-04-14.
+    this.plugin.registerEvent(
+      this.app.metadataCache.on("resolved", () => {
+        this.invalidateIndex();
+        this.patchAllPropertiesBlocks();
+      })
+    );
+
     this.plugin.registerEvent(
       this.app.workspace.on("layout-change", () => {
         setTimeout(() => this.patchAllPropertiesBlocks(), 100);
