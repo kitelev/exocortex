@@ -498,4 +498,28 @@ describe("PropertiesLabelPatch", () => {
       expect(span?.textContent).toBe("Effort Area");
     });
   });
+
+  describe("stylesheet: font-size parity with native property keys", () => {
+    it("applies metadata-label font variables to .exo-label-display", () => {
+      const fs = require("fs");
+      const path = require("path");
+      const stylesPath = path.resolve(
+        __dirname,
+        "../../../../styles.css"
+      );
+      const css = fs.readFileSync(stylesPath, "utf8");
+
+      // Extract the .metadata-property-key .exo-label-display rule block.
+      const match = css.match(
+        /\.metadata-property-key \.exo-label-display\s*\{([^}]*)\}/
+      );
+      expect(match).toBeTruthy();
+      const block = match![1];
+
+      // Must inherit Obsidian's metadata-label font sizing so that the patched
+      // property key renders at the same size as native Properties keys.
+      expect(block).toMatch(/font-size:\s*var\(--metadata-label-font-size/);
+      expect(block).toMatch(/font-weight:\s*var\(--metadata-label-font-weight/);
+    });
+  });
 });
