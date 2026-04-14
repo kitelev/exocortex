@@ -5955,10 +5955,15 @@
 .metadata-property-key .exo-label-display {
   cursor: pointer;
   color: var(--text-accent);
+  /* match native .metadata-property-key input metrics */
+  font: inherit;
   font-size: var(--metadata-label-font-size, var(--font-ui-small));
-  font-weight: var(--metadata-label-font-weight, var(--font-medium));
-  font-family: inherit;
-  line-height: var(--line-height-tight);
+  /* vertical centering: span must occupy the same box as the hidden input */
+  display: inline-flex;
+  align-items: center;
+  height: var(--input-height);
+  padding: var(--size-4-1) var(--size-4-2);
+  box-sizing: border-box;
 }
 
 .metadata-property-key .exo-label-display:hover {
