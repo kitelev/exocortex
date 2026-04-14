@@ -499,8 +499,8 @@ describe("PropertiesLabelPatch", () => {
     });
   });
 
-  describe("stylesheet: font-size parity with native property keys", () => {
-    it("applies metadata-label font variables to .exo-label-display", () => {
+  describe("stylesheet: .exo-label-display matches native input metrics", () => {
+    it("occupies the same geometric box as native .metadata-property-key input", () => {
       const fs = require("fs");
       const path = require("path");
       const stylesPath = path.resolve(
@@ -516,10 +516,27 @@ describe("PropertiesLabelPatch", () => {
       expect(match).toBeTruthy();
       const block = match![1];
 
-      // Must inherit Obsidian's metadata-label font sizing so that the patched
-      // property key renders at the same size as native Properties keys.
+      // font: inherit + explicit font-size overrides weight/line-height/family
+      // so the span picks up native metrics instead of forcing --font-medium /
+      // --line-height-tight (which caused the v15.98.1 vertical misalignment).
+      expect(block).toMatch(/font:\s*inherit/);
       expect(block).toMatch(/font-size:\s*var\(--metadata-label-font-size/);
-      expect(block).toMatch(/font-weight:\s*var\(--metadata-label-font-weight/);
+
+      // The span must occupy the same box as the hidden input so baselines
+      // align with native Properties keys.
+      expect(block).toMatch(/display:\s*inline-flex/);
+      expect(block).toMatch(/align-items:\s*center/);
+      expect(block).toMatch(/height:\s*var\(--input-height/);
+      expect(block).toMatch(/padding:\s*var\(--size-4-1\) var\(--size-4-2/);
+      expect(block).toMatch(/box-sizing:\s*border-box/);
+
+      // Regression gates (v15.98.1 post-mortem): explicit font-weight and
+      // line-height broke vertical alignment because native uses --font-normal
+      // and normal line-height. Must NOT be re-introduced.
+      expect(block).not.toMatch(
+        /font-weight:\s*var\(--metadata-label-font-weight/
+      );
+      expect(block).not.toMatch(/line-height:\s*var\(--line-height-tight/);
     });
   });
 });
