@@ -30,16 +30,26 @@ export class FleetingNoteCreationService {
     const frontmatter = this.generateFrontmatter(uid, label);
     const fileContent = MetadataHelpers.buildFileContent(frontmatter);
 
-    const filePath = `${this.vaultSettings.getDefaultInboxFolder()}/${fileName}`;
+    const inboxFolder = this.vaultSettings.getDefaultInboxFolder();
+    const filePath = `${inboxFolder}/${fileName}`;
+
+    await this.ensureFolderExists(inboxFolder);
 
     const createdFile = await this.vault.create(filePath, fileContent);
 
     return createdFile;
   }
 
+  private async ensureFolderExists(folderPath: string): Promise<void> {
+    const exists = await this.vault.exists(folderPath);
+    if (!exists) {
+      await this.vault.createFolder(folderPath);
+    }
+  }
+
   private generateFrontmatter(uid: string, label: string): Record<string, unknown> {
     const now = new Date();
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- display-only timestamp, not for SPARQL filtering
+     
     const timestamp = DateFormatter.toLocalTimestamp(now);
 
     const trimmedLabel = label.trim();
