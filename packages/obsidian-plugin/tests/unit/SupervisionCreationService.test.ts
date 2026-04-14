@@ -20,6 +20,8 @@ describe("SupervisionCreationService", () => {
   beforeEach(() => {
     mockVault = {
       create: jest.fn().mockResolvedValue({ path: "01 Inbox/test-uuid.md" }),
+      exists: jest.fn().mockResolvedValue(true),
+      createFolder: jest.fn().mockResolvedValue(undefined),
     };
     mockVaultSettings = createMockVaultSettings();
     service = new SupervisionCreationService(mockVault, mockVaultSettings);

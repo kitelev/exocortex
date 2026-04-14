@@ -27,6 +27,8 @@ describe("FleetingNoteCreationService", () => {
   beforeEach(() => {
     mockVault = {
       create: jest.fn(),
+      exists: jest.fn().mockResolvedValue(true),
+      createFolder: jest.fn().mockResolvedValue(undefined),
     } as unknown as jest.Mocked<IVaultAdapter>;
 
     mockVaultSettings = createMockVaultSettings();
@@ -121,5 +123,45 @@ describe("FleetingNoteCreationService", () => {
     mockVault.create.mockRejectedValue(error);
 
     await expect(service.createFleetingNote("Label")).rejects.toThrow(error);
+  });
+
+  it("skips folder creation when inbox folder already exists", async () => {
+    (mockVault.exists as jest.Mock).mockResolvedValue(true);
+    mockVault.create.mockResolvedValue({ path: "01 Inbox/test-uuid-123.md" } as IFile);
+
+    await service.createFleetingNote("Label");
+
+    expect(mockVault.exists).toHaveBeenCalledWith("01 Inbox");
+    expect(mockVault.createFolder).not.toHaveBeenCalled();
+    expect(mockVault.create).toHaveBeenCalled();
+  });
+
+  it("auto-creates inbox folder when missing before writing the note", async () => {
+    (mockVault.exists as jest.Mock).mockResolvedValue(false);
+    mockVault.create.mockResolvedValue({ path: "01 Inbox/test-uuid-123.md" } as IFile);
+
+    await service.createFleetingNote("Label");
+
+    expect(mockVault.exists).toHaveBeenCalledWith("01 Inbox");
+    expect(mockVault.createFolder).toHaveBeenCalledWith("01 Inbox");
+    expect(mockVault.create).toHaveBeenCalledWith(
+      "01 Inbox/test-uuid-123.md",
+      expect.any(String),
+    );
+
+    const existsOrder = (mockVault.exists as jest.Mock).mock.invocationCallOrder[0];
+    const createFolderOrder = (mockVault.createFolder as jest.Mock).mock.invocationCallOrder[0];
+    const createOrder = (mockVault.create as jest.Mock).mock.invocationCallOrder[0];
+    expect(existsOrder).toBeLessThan(createFolderOrder);
+    expect(createFolderOrder).toBeLessThan(createOrder);
+  });
+
+  it("propagates createFolder errors and does not attempt to write the note", async () => {
+    (mockVault.exists as jest.Mock).mockResolvedValue(false);
+    const error = new Error("createFolder failed");
+    (mockVault.createFolder as jest.Mock).mockRejectedValue(error);
+
+    await expect(service.createFleetingNote("Label")).rejects.toThrow(error);
+    expect(mockVault.create).not.toHaveBeenCalled();
   });
 });

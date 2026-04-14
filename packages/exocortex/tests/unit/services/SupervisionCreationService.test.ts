@@ -21,6 +21,8 @@ describe("SupervisionCreationService", () => {
   beforeEach(() => {
     mockVault = {
       create: jest.fn<(path: string, content: string) => Promise<IFile>>(),
+      exists: jest.fn<(path: string) => Promise<boolean>>().mockResolvedValue(true),
+      createFolder: jest.fn<(path: string) => Promise<void>>().mockResolvedValue(undefined),
     } as unknown as jest.Mocked<IVaultAdapter>;
 
     mockVault.create.mockResolvedValue({ path: "01 Inbox/test.md", basename: "test" } as IFile);
@@ -122,6 +124,47 @@ describe("SupervisionCreationService", () => {
       expect(body).toContain("- Поведение: Test behavior");
       expect(body).toContain("- Краткосрочные последствия поведения: Short term");
       expect(body).toContain("- Долгосрочные последствия поведения: Long term");
+    });
+  });
+
+  describe("inbox folder auto-creation", () => {
+    const formData: SupervisionFormData = {
+      situation: "s",
+      emotions: "e",
+      thoughts: "t",
+      behavior: "b",
+      shortTermConsequences: "short",
+      longTermConsequences: "long",
+      desiredBehavior: "desired",
+    };
+
+    it("skips createFolder when inbox folder already exists", async () => {
+      jest.mocked(mockVault.exists).mockResolvedValue(true);
+
+      await service.createSupervision(formData);
+
+      expect(mockVault.exists).toHaveBeenCalledWith("01 Inbox");
+      expect(mockVault.createFolder).not.toHaveBeenCalled();
+      expect(mockVault.create).toHaveBeenCalled();
+    });
+
+    it("auto-creates inbox folder when missing before writing the file", async () => {
+      jest.mocked(mockVault.exists).mockResolvedValue(false);
+
+      await service.createSupervision(formData);
+
+      expect(mockVault.createFolder).toHaveBeenCalledWith("01 Inbox");
+      const createFolderOrder = (mockVault.createFolder as jest.Mock).mock.invocationCallOrder[0];
+      const createOrder = (mockVault.create as jest.Mock).mock.invocationCallOrder[0];
+      expect(createFolderOrder).toBeLessThan(createOrder);
+    });
+
+    it("propagates createFolder errors without writing the file", async () => {
+      jest.mocked(mockVault.exists).mockResolvedValue(false);
+      jest.mocked(mockVault.createFolder).mockRejectedValue(new Error("boom"));
+
+      await expect(service.createSupervision(formData)).rejects.toThrow("boom");
+      expect(mockVault.create).not.toHaveBeenCalled();
     });
   });
 });
