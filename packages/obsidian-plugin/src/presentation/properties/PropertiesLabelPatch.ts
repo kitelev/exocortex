@@ -19,7 +19,8 @@ import { Plugin, TFile } from "obsidian";
  */
 
 const PATCHED_ATTR = "data-exo-label-patched";
-const ORIGINAL_KEY_ATTR = "data-exo-original-key";
+const DISPLAY_SPAN_CLASS = "exo-label-display";
+const HIDDEN_INPUT_CLASS = "exo-label-hidden-input";
 const CLICKABLE_CLASS = "exo-label-clickable";
 
 interface ResolvedPredicate {
@@ -31,9 +32,9 @@ interface PatchRecord {
   propertyEl: HTMLElement;
   keyEl: HTMLElement;
   input: HTMLInputElement | null;
-  originalKey: string;
-  originalText: string | null;
+  displaySpan: HTMLSpanElement;
   textNode: Text | null;
+  originalTextContent: string | null;
   clickHandler: (e: MouseEvent) => void;
 }
 
@@ -186,21 +187,41 @@ export class PropertiesLabelPatch {
     const keyEl = propertyEl.querySelector<HTMLElement>(".metadata-property-key");
     if (!keyEl) return;
 
+    // CRITICAL: we MUST NOT mutate `input.value`. Obsidian's native Properties
+    // block treats the input as the canonical frontmatter-key editor — writing
+    // to `input.value` and then clicking on the field persists the new value as
+    // a rename of the frontmatter key, which corrupts the asset. Instead we
+    // keep the original input intact, hide it, and insert a sibling span that
+    // displays the readable label and owns the click handler.
     const input = keyEl.querySelector<HTMLInputElement>("input");
-    let originalText: string | null = null;
+    const displaySpan = document.createElement("span");
+    displaySpan.className = `${DISPLAY_SPAN_CLASS} ${CLICKABLE_CLASS}`;
+    displaySpan.textContent = resolved.label;
+    displaySpan.setAttribute("role", "link");
+    displaySpan.setAttribute("tabindex", "0");
+    displaySpan.setAttribute(
+      "aria-label",
+      `Open definition: ${resolved.label} (${predicate})`
+    );
+    displaySpan.setAttribute("data-exo-predicate", predicate);
+
     let textNode: Text | null = null;
+    let originalTextContent: string | null = null;
 
     if (input) {
-      input.setAttribute(ORIGINAL_KEY_ATTR, input.value);
-      input.value = resolved.label;
+      input.classList.add(HIDDEN_INPUT_CLASS);
+      input.parentNode?.insertBefore(displaySpan, input);
     } else {
       textNode = this.findPredicateTextNode(keyEl, predicate);
       if (textNode) {
-        originalText = textNode.textContent ?? null;
-        textNode.textContent = resolved.label;
+        originalTextContent = textNode.textContent ?? null;
+        textNode.textContent = "";
+        textNode.parentNode?.insertBefore(displaySpan, textNode.nextSibling);
       } else {
-        // Nothing to replace — skip patch to avoid corrupting DOM
-        return;
+        // Nothing recognizable to replace — append the display span as a
+        // best-effort fallback (the key DOM is non-standard), so the user
+        // still sees the readable label and click target.
+        keyEl.appendChild(displaySpan);
       }
     }
 
@@ -209,40 +230,40 @@ export class PropertiesLabelPatch {
       e.stopPropagation();
       this.openDefinition(resolved.file);
     };
-    keyEl.addEventListener("click", clickHandler);
-    keyEl.classList.add(CLICKABLE_CLASS);
-    keyEl.setAttribute(
-      "aria-label",
-      `Open definition: ${resolved.label} (${predicate})`
-    );
+    displaySpan.addEventListener("click", clickHandler);
 
+    keyEl.classList.add(CLICKABLE_CLASS);
     propertyEl.setAttribute(PATCHED_ATTR, "true");
     this.patched.push({
       propertyEl,
       keyEl,
       input,
-      originalKey: predicate,
-      originalText,
+      displaySpan,
       textNode,
+      originalTextContent,
       clickHandler,
     });
   }
 
   private extractPredicate(propertyEl: HTMLElement): string | null {
+    // Obsidian's `data-property-key` attribute is lowercased (e.g. `exo__asset_uid`),
+    // but the index is keyed on the original-case predicate from frontmatter
+    // (e.g. `exo__Asset_uid`). The `<input>` inside `.metadata-property-key` holds
+    // the original-case value, so always prefer it when present.
+    const keyEl = propertyEl.querySelector<HTMLElement>(".metadata-property-key");
+    if (keyEl) {
+      const input = keyEl.querySelector<HTMLInputElement>("input");
+      if (input?.value?.trim()) {
+        return input.value.trim();
+      }
+      const text = (keyEl.textContent || "").trim().replace(/\u200B/g, "");
+      if (text.length > 0) return text;
+    }
+
     const attr = propertyEl.getAttribute("data-property-key");
     if (attr && attr.trim().length > 0) return attr.trim();
 
-    const keyEl = propertyEl.querySelector<HTMLElement>(".metadata-property-key");
-    if (!keyEl) return null;
-
-    const input = keyEl.querySelector<HTMLInputElement>("input");
-    if (input?.value?.trim()) {
-      const val = input.value.trim();
-      return val.length > 0 ? val : null;
-    }
-
-    const text = (keyEl.textContent || "").trim().replace(/\u200B/g, "");
-    return text.length > 0 ? text : null;
+    return null;
   }
 
   private findPredicateTextNode(keyEl: HTMLElement, predicate: string): Text | null {
@@ -303,16 +324,16 @@ export class PropertiesLabelPatch {
   private restoreAll(): void {
     for (const record of this.patched) {
       try {
+        record.displaySpan.removeEventListener("click", record.clickHandler);
+        record.displaySpan.remove();
+
         if (record.input) {
-          const original = record.input.getAttribute(ORIGINAL_KEY_ATTR) ?? record.originalKey;
-          record.input.value = original;
-          record.input.removeAttribute(ORIGINAL_KEY_ATTR);
-        } else if (record.textNode && record.originalText !== null) {
-          record.textNode.textContent = record.originalText;
+          record.input.classList.remove(HIDDEN_INPUT_CLASS);
+        } else if (record.textNode && record.originalTextContent !== null) {
+          record.textNode.textContent = record.originalTextContent;
         }
-        record.keyEl.removeEventListener("click", record.clickHandler);
+
         record.keyEl.classList.remove(CLICKABLE_CLASS);
-        record.keyEl.removeAttribute("aria-label");
         record.propertyEl.removeAttribute(PATCHED_ATTR);
       } catch {
         // Best-effort restore; ignore individual failures
