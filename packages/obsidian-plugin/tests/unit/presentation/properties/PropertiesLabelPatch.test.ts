@@ -27,18 +27,23 @@ describe("PropertiesLabelPatch", () => {
   let openFileMock: jest.Mock;
 
   const FILE_EFFORT_AREA: FakeFile = {
-    path: "exo/properties/ems__Effort_area.md",
-    basename: "ems__Effort_area",
+    path: "ems/ab1b5cc2.md",
+    basename: "ab1b5cc2",
     extension: "md",
   };
   const FILE_EFFORT_STATUS: FakeFile = {
-    path: "exo/properties/ems__Effort_status.md",
-    basename: "ems__Effort_status",
+    path: "ems/64594641.md",
+    basename: "64594641",
     extension: "md",
   };
   const FILE_ASSET_LABEL: FakeFile = {
-    path: "exo/properties/exo__Asset_label.md",
-    basename: "exo__Asset_label",
+    path: "exo/3d1e4212.md",
+    basename: "3d1e4212",
+    extension: "md",
+  };
+  const FILE_EFFORT_AREA_FALLBACK: FakeFile = {
+    path: "exo/properties/ems__Effort_area.md",
+    basename: "ems__Effort_area",
     extension: "md",
   };
 
@@ -46,42 +51,46 @@ describe("PropertiesLabelPatch", () => {
     [FILE_EFFORT_AREA.path]: {
       exo__Asset_label: "Effort Area",
       aliases: ["ems__Effort_area"],
-      exo__Instance_class: "[[exo__ObjectProperty]]",
     },
     [FILE_EFFORT_STATUS.path]: {
       exo__Asset_label: "Effort Status",
       aliases: ["ems__Effort_status"],
-      exo__Instance_class: "[[exo__ObjectProperty]]",
     },
     [FILE_ASSET_LABEL.path]: {
       exo__Asset_label: "Label",
       aliases: ["exo__Asset_label"],
-      exo__Instance_class: "[[exo__StringProperty]]",
+    },
+    [FILE_EFFORT_AREA_FALLBACK.path]: {
+      exo__Asset_label: "Effort Area Fallback",
     },
   };
 
-  function createPropertyRow(key: string, valueText: string): HTMLElement {
+  function createPropertyRow(options: {
+    lowercaseAttr?: boolean;
+    inputValue: string;
+  }): HTMLElement {
+    const { lowercaseAttr = true, inputValue } = options;
     const propertyEl = document.createElement("div");
     propertyEl.className = "metadata-property";
-    propertyEl.setAttribute("data-property-key", key);
+    const attrValue = lowercaseAttr ? inputValue.toLowerCase() : inputValue;
+    propertyEl.setAttribute("data-property-key", attrValue);
 
     const keyEl = document.createElement("div");
     keyEl.className = "metadata-property-key";
     const keyInput = document.createElement("input");
     keyInput.type = "text";
-    keyInput.value = key;
+    keyInput.value = inputValue;
     keyEl.appendChild(keyInput);
     propertyEl.appendChild(keyEl);
 
     const valueEl = document.createElement("div");
     valueEl.className = "metadata-property-value";
-    valueEl.textContent = valueText;
     propertyEl.appendChild(valueEl);
 
     return propertyEl;
   }
 
-  function createPropertyRowTextKey(key: string, valueText: string): HTMLElement {
+  function createPropertyRowTextKey(key: string): HTMLElement {
     const propertyEl = document.createElement("div");
     propertyEl.className = "metadata-property";
 
@@ -92,7 +101,6 @@ describe("PropertiesLabelPatch", () => {
 
     const valueEl = document.createElement("div");
     valueEl.className = "metadata-property-value";
-    valueEl.textContent = valueText;
     propertyEl.appendChild(valueEl);
 
     return propertyEl;
@@ -134,7 +142,12 @@ describe("PropertiesLabelPatch", () => {
       vault: {
         getMarkdownFiles: jest
           .fn()
-          .mockReturnValue([FILE_EFFORT_AREA, FILE_EFFORT_STATUS, FILE_ASSET_LABEL]),
+          .mockReturnValue([
+            FILE_EFFORT_AREA,
+            FILE_EFFORT_STATUS,
+            FILE_ASSET_LABEL,
+            FILE_EFFORT_AREA_FALLBACK,
+          ]),
       },
     };
 
@@ -180,9 +193,9 @@ describe("PropertiesLabelPatch", () => {
     });
   });
 
-  describe("Scenario A: known predicates get readable labels", () => {
-    it("replaces raw predicate with readable label for ems__Effort_area", () => {
-      const row = createPropertyRow("ems__Effort_area", "Development");
+  describe("Scenario A: known predicates get readable labels via span overlay", () => {
+    it("inserts a display span with the readable label while leaving input.value UNCHANGED", () => {
+      const row = createPropertyRow({ inputValue: "ems__Effort_area" });
       mockMetadataContainer.appendChild(row);
 
       patch.enable();
@@ -190,55 +203,72 @@ describe("PropertiesLabelPatch", () => {
       const input = row.querySelector<HTMLInputElement>(
         ".metadata-property-key input"
       )!;
-      expect(input.value).toBe("Effort Area");
-      expect(input.getAttribute("data-exo-original-key")).toBe("ems__Effort_area");
+      // CRITICAL regression guard: input.value MUST stay as the raw predicate.
+      // Mutating input.value causes Obsidian to persist a rename of the
+      // frontmatter key, which corrupts the asset (observed live 2026-04-14).
+      expect(input.value).toBe("ems__Effort_area");
+
+      const span = row.querySelector<HTMLSpanElement>(".exo-label-display")!;
+      expect(span).toBeTruthy();
+      expect(span.textContent).toBe("Effort Area");
+      expect(input.classList.contains("exo-label-hidden-input")).toBe(true);
     });
 
-    it("replaces raw predicate for ems__Effort_status", () => {
-      const row = createPropertyRow("ems__Effort_status", "Doing");
+    it("resolves original-case predicate from input.value when data-property-key is lowercased", () => {
+      // Regression guard: Obsidian lowercases data-property-key
+      // (e.g. `ems__effort_area`), but input.value holds original case.
+      const row = createPropertyRow({
+        inputValue: "ems__Effort_area",
+        lowercaseAttr: true,
+      });
+      expect(row.getAttribute("data-property-key")).toBe("ems__effort_area");
+
+      mockMetadataContainer.appendChild(row);
+      patch.enable();
+
+      const span = row.querySelector<HTMLSpanElement>(".exo-label-display")!;
+      expect(span.textContent).toBe("Effort Area");
+    });
+
+    it("replaces all 3 canonical predicates independently", () => {
+      const rowStatus = createPropertyRow({ inputValue: "ems__Effort_status" });
+      const rowArea = createPropertyRow({ inputValue: "ems__Effort_area" });
+      const rowLabel = createPropertyRow({ inputValue: "exo__Asset_label" });
+      mockMetadataContainer.appendChild(rowStatus);
+      mockMetadataContainer.appendChild(rowArea);
+      mockMetadataContainer.appendChild(rowLabel);
+
+      patch.enable();
+
+      expect(
+        rowStatus.querySelector<HTMLSpanElement>(".exo-label-display")?.textContent
+      ).toBe("Effort Status");
+      expect(
+        rowArea.querySelector<HTMLSpanElement>(".exo-label-display")?.textContent
+      ).toBe("Effort Area");
+      expect(
+        rowLabel.querySelector<HTMLSpanElement>(".exo-label-display")?.textContent
+      ).toBe("Label");
+    });
+
+    it("adds aria-label and role=link affordance for accessibility", () => {
+      const row = createPropertyRow({ inputValue: "ems__Effort_area" });
       mockMetadataContainer.appendChild(row);
 
       patch.enable();
 
-      const input = row.querySelector<HTMLInputElement>(
-        ".metadata-property-key input"
-      )!;
-      expect(input.value).toBe("Effort Status");
-    });
-
-    it("replaces raw predicate for exo__Asset_label", () => {
-      const row = createPropertyRow("exo__Asset_label", "Build API");
-      mockMetadataContainer.appendChild(row);
-
-      patch.enable();
-
-      const input = row.querySelector<HTMLInputElement>(
-        ".metadata-property-key input"
-      )!;
-      expect(input.value).toBe("Label");
-    });
-
-    it("adds clickable affordance (class + aria-label) to the key element", () => {
-      const row = createPropertyRow("ems__Effort_area", "Development");
-      mockMetadataContainer.appendChild(row);
-
-      patch.enable();
-
-      const keyEl = row.querySelector<HTMLElement>(".metadata-property-key")!;
-      expect(keyEl.classList.contains("exo-label-clickable")).toBe(true);
-      expect(keyEl.getAttribute("aria-label")).toContain("Effort Area");
-      expect(keyEl.getAttribute("aria-label")).toContain("ems__Effort_area");
+      const span = row.querySelector<HTMLSpanElement>(".exo-label-display")!;
+      expect(span.getAttribute("role")).toBe("link");
+      expect(span.getAttribute("tabindex")).toBe("0");
+      expect(span.getAttribute("aria-label")).toContain("Effort Area");
+      expect(span.getAttribute("aria-label")).toContain("ems__Effort_area");
     });
 
     it("marks the property row as patched to avoid double-patching", () => {
-      const row = createPropertyRow("ems__Effort_area", "Development");
+      const row = createPropertyRow({ inputValue: "ems__Effort_area" });
       mockMetadataContainer.appendChild(row);
 
       patch.enable();
-      const input = row.querySelector<HTMLInputElement>(
-        ".metadata-property-key input"
-      )!;
-      expect(input.value).toBe("Effort Area");
 
       // Invoke layout-change callback to re-run patchAll
       const layoutCb = mockApp.workspace.on.mock.calls.find(
@@ -246,41 +276,71 @@ describe("PropertiesLabelPatch", () => {
       )?.[1];
       if (layoutCb) layoutCb();
 
-      // Still "Effort Area", not "Effort Area" → (label of "Effort Area")
-      expect(input.value).toBe("Effort Area");
+      // Still exactly one span, not two
+      const spans = row.querySelectorAll(".exo-label-display");
+      expect(spans.length).toBe(1);
     });
 
     it("patches property row that uses text content instead of input for key", () => {
-      const row = createPropertyRowTextKey("ems__Effort_area", "Development");
+      const row = createPropertyRowTextKey("ems__Effort_area");
       mockMetadataContainer.appendChild(row);
 
       patch.enable();
 
-      const keyEl = row.querySelector<HTMLElement>(".metadata-property-key")!;
-      expect(keyEl.textContent).toBe("Effort Area");
-      expect(keyEl.classList.contains("exo-label-clickable")).toBe(true);
+      const span = row.querySelector<HTMLSpanElement>(".exo-label-display")!;
+      expect(span.textContent).toBe("Effort Area");
     });
   });
 
   describe("Scenario B: clicking readable label opens definition", () => {
-    it("click on patched key element calls openFile for the definition asset", () => {
-      const row = createPropertyRow("ems__Effort_status", "Doing");
+    it("click on display span calls openFile for the definition asset", () => {
+      const row = createPropertyRow({ inputValue: "ems__Effort_status" });
       mockMetadataContainer.appendChild(row);
 
       patch.enable();
 
-      const keyEl = row.querySelector<HTMLElement>(".metadata-property-key")!;
-      keyEl.click();
+      const span = row.querySelector<HTMLSpanElement>(".exo-label-display")!;
+      span.click();
 
       expect(mockApp.workspace.getLeaf).toHaveBeenCalledWith("tab");
       expect(openFileMock).toHaveBeenCalledTimes(1);
       expect(openedFiles[0]).toBe(FILE_EFFORT_STATUS);
     });
+
+    it("click event does NOT propagate to the input (no frontmatter corruption)", () => {
+      const row = createPropertyRow({ inputValue: "ems__Effort_status" });
+      mockMetadataContainer.appendChild(row);
+
+      const inputFocusSpy = jest.fn();
+      const input = row.querySelector<HTMLInputElement>(
+        ".metadata-property-key input"
+      )!;
+      input.addEventListener("focus", inputFocusSpy);
+      input.addEventListener("click", inputFocusSpy);
+
+      patch.enable();
+
+      const span = row.querySelector<HTMLSpanElement>(".exo-label-display")!;
+      span.click();
+
+      expect(inputFocusSpy).not.toHaveBeenCalled();
+      expect(input.value).toBe("ems__Effort_status");
+    });
   });
 
   describe("Scenario C: unknown predicate fallback", () => {
-    it("does NOT modify input value for predicate with no definition asset", () => {
-      const row = createPropertyRow("vendor__Custom_field", "whatever");
+    it("does NOT create a display span for unknown predicate", () => {
+      const row = createPropertyRow({ inputValue: "vendor__Custom_field" });
+      mockMetadataContainer.appendChild(row);
+
+      patch.enable();
+
+      const span = row.querySelector<HTMLSpanElement>(".exo-label-display");
+      expect(span).toBeNull();
+    });
+
+    it("leaves the input intact for unknown predicate", () => {
+      const row = createPropertyRow({ inputValue: "vendor__Custom_field" });
       mockMetadataContainer.appendChild(row);
 
       patch.enable();
@@ -289,21 +349,11 @@ describe("PropertiesLabelPatch", () => {
         ".metadata-property-key input"
       )!;
       expect(input.value).toBe("vendor__Custom_field");
-      expect(input.getAttribute("data-exo-original-key")).toBeNull();
-    });
-
-    it("does NOT attach clickable class for unknown predicate", () => {
-      const row = createPropertyRow("vendor__Custom_field", "whatever");
-      mockMetadataContainer.appendChild(row);
-
-      patch.enable();
-
-      const keyEl = row.querySelector<HTMLElement>(".metadata-property-key")!;
-      expect(keyEl.classList.contains("exo-label-clickable")).toBe(false);
+      expect(input.classList.contains("exo-label-hidden-input")).toBe(false);
     });
 
     it("does NOT emit errors when only unknown predicates are present", () => {
-      const row = createPropertyRow("vendor__Custom_field", "whatever");
+      const row = createPropertyRow({ inputValue: "vendor__Custom_field" });
       mockMetadataContainer.appendChild(row);
 
       const errSpy = jest.spyOn(console, "error").mockImplementation(() => undefined);
@@ -314,37 +364,26 @@ describe("PropertiesLabelPatch", () => {
   });
 
   describe("disable / cleanup", () => {
-    it("restores original input.value on disable", () => {
-      const row = createPropertyRow("ems__Effort_area", "Development");
+    it("removes display span on disable and restores input visibility", () => {
+      const row = createPropertyRow({ inputValue: "ems__Effort_area" });
       mockMetadataContainer.appendChild(row);
 
       patch.enable();
       const input = row.querySelector<HTMLInputElement>(
         ".metadata-property-key input"
       )!;
-      expect(input.value).toBe("Effort Area");
+      expect(input.classList.contains("exo-label-hidden-input")).toBe(true);
+      expect(row.querySelector(".exo-label-display")).toBeTruthy();
 
       patch.disable();
 
+      expect(row.querySelector(".exo-label-display")).toBeNull();
+      expect(input.classList.contains("exo-label-hidden-input")).toBe(false);
       expect(input.value).toBe("ems__Effort_area");
-      expect(input.getAttribute("data-exo-original-key")).toBeNull();
     });
 
-    it("restores original text content on disable when no input is present", () => {
-      const row = createPropertyRowTextKey("ems__Effort_area", "Development");
-      mockMetadataContainer.appendChild(row);
-
-      patch.enable();
-      const keyEl = row.querySelector<HTMLElement>(".metadata-property-key")!;
-      expect(keyEl.textContent).toBe("Effort Area");
-
-      patch.disable();
-
-      expect(keyEl.textContent).toBe("ems__Effort_area");
-    });
-
-    it("removes clickable class and aria-label on disable", () => {
-      const row = createPropertyRow("ems__Effort_area", "Development");
+    it("removes clickable class from key element on disable", () => {
+      const row = createPropertyRow({ inputValue: "ems__Effort_area" });
       mockMetadataContainer.appendChild(row);
 
       patch.enable();
@@ -353,18 +392,17 @@ describe("PropertiesLabelPatch", () => {
 
       patch.disable();
       expect(keyEl.classList.contains("exo-label-clickable")).toBe(false);
-      expect(keyEl.getAttribute("aria-label")).toBeNull();
     });
 
     it("click handler no longer fires after disable", () => {
-      const row = createPropertyRow("ems__Effort_status", "Doing");
+      const row = createPropertyRow({ inputValue: "ems__Effort_status" });
       mockMetadataContainer.appendChild(row);
 
       patch.enable();
       patch.disable();
 
-      const keyEl = row.querySelector<HTMLElement>(".metadata-property-key")!;
-      keyEl.click();
+      const span = row.querySelector<HTMLSpanElement>(".exo-label-display");
+      expect(span).toBeNull();
       expect(openFileMock).not.toHaveBeenCalled();
     });
   });
@@ -373,39 +411,35 @@ describe("PropertiesLabelPatch", () => {
     it("patches a property row that is added after enable()", async () => {
       patch.enable();
 
-      const row = createPropertyRow("ems__Effort_area", "Development");
+      const row = createPropertyRow({ inputValue: "ems__Effort_area" });
       mockMetadataContainer.appendChild(row);
 
       await new Promise((resolve) => setTimeout(resolve, 50));
 
-      const input = row.querySelector<HTMLInputElement>(
-        ".metadata-property-key input"
-      )!;
-      expect(input.value).toBe("Effort Area");
+      const span = row.querySelector<HTMLSpanElement>(".exo-label-display");
+      expect(span?.textContent).toBe("Effort Area");
     });
   });
 
   describe("index invalidation", () => {
     it("re-patches on metadataCache changed event", () => {
-      const row = createPropertyRow("ems__Effort_area", "Development");
+      const row = createPropertyRow({ inputValue: "ems__Effort_area" });
       mockMetadataContainer.appendChild(row);
 
       patch.enable();
-      const input = row.querySelector<HTMLInputElement>(
-        ".metadata-property-key input"
-      )!;
-      expect(input.value).toBe("Effort Area");
+      const spanBefore = row.querySelector<HTMLSpanElement>(".exo-label-display");
+      expect(spanBefore?.textContent).toBe("Effort Area");
 
       const changedCb = mockApp.metadataCache.on.mock.calls.find(
         (c: any[]) => c[0] === "changed"
       )?.[1];
       expect(typeof changedCb).toBe("function");
 
-      // Fire the callback — index should rebuild, existing patched rows remain
       changedCb();
 
-      // Still patched (idempotent on patched rows)
-      expect(input.value).toBe("Effort Area");
+      // Still exactly one span (idempotent on patched rows)
+      const spansAfter = row.querySelectorAll(".exo-label-display");
+      expect(spansAfter.length).toBe(1);
     });
   });
 });

@@ -5946,3 +5946,17 @@
   font-size: 0.7em;
   color: var(--text-faint);
 }
+
+/* PropertiesLabelPatch — span overlay + hidden input */
+.metadata-property-key input.exo-label-hidden-input {
+  display: none !important;
+}
+
+.metadata-property-key .exo-label-display {
+  cursor: pointer;
+  color: var(--text-accent);
+}
+
+.metadata-property-key .exo-label-display:hover {
+  text-decoration: underline;
+}
