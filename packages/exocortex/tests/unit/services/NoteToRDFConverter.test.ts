@@ -125,6 +125,55 @@ describe("NoteToRDFConverter", () => {
       expect((labelTriple!.object as Literal).value).toBe("My Label");
     });
 
+    it("should also emit rdfs:label when exo__Asset_label is present (Issue #2807)", async () => {
+      const file: IFile = {
+        path: "test.md",
+        basename: "test",
+        name: "test.md",
+        parent: null,
+      };
+
+      const frontmatter: IFrontmatter = {
+        exo__Asset_label: "ems__Task",
+      };
+
+      mockVault.getFrontmatter.mockReturnValue(frontmatter);
+
+      const triples = await converter.convertNote(file);
+
+      const rdfsLabelIri = Namespace.RDFS.term("label").value;
+      const rdfsLabelTriples = triples.filter(
+        (t) => (t.predicate as IRI).value === rdfsLabelIri
+      );
+
+      expect(rdfsLabelTriples).toHaveLength(1);
+      expect((rdfsLabelTriples[0].object as Literal).value).toBe("ems__Task");
+    });
+
+    it("should emit rdfs:label for each array value in exo__Asset_label (defensive)", async () => {
+      const file: IFile = {
+        path: "test.md",
+        basename: "test",
+        name: "test.md",
+        parent: null,
+      };
+
+      const frontmatter: IFrontmatter = {
+        exo__Asset_label: ["Primary", "Alt"],
+      };
+
+      mockVault.getFrontmatter.mockReturnValue(frontmatter);
+
+      const triples = await converter.convertNote(file);
+
+      const rdfsLabelIri = Namespace.RDFS.term("label").value;
+      const values = triples
+        .filter((t) => (t.predicate as IRI).value === rdfsLabelIri)
+        .map((t) => (t.object as Literal).value);
+
+      expect(values).toEqual(["Primary", "Alt"]);
+    });
+
     it("should convert ems__ properties to RDF triples", async () => {
       const file: IFile = {
         path: "test.md",
