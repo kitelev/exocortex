@@ -10,6 +10,9 @@
       "pattern": "^https://github\\.com/kitelev/exocortex/discussions"
     },
     {
+      "pattern": "^https://github\\.com/kitelev/exocortex/issues/"
+    },
+    {
       "pattern": "^https://www\\.w3\\.org/TR/"
     },
     {

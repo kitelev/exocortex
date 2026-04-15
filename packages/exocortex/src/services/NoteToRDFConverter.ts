@@ -140,6 +140,19 @@ export class NoteToRDFConverter {
           }
         }
       }
+
+      // Issue #2807: exo__Asset_label is the Exocortex display-label property.
+      // Emit an additional rdfs:label triple so standard SPARQL queries
+      // (e.g. ClassDiscoveryService) can find labels without knowing the
+      // Exocortex vocabulary. exo__Asset_label semantically extends rdfs:label.
+      if (key === "exo__Asset_label") {
+        const rdfsLabel = Namespace.RDFS.term("label");
+        for (const val of values) {
+          if (typeof val === "string" && val.length > 0) {
+            triples.push(new Triple(subject, rdfsLabel, new Literal(val)));
+          }
+        }
+      }
     }
 
     // Issue #1329: Index body wikilinks to RDF

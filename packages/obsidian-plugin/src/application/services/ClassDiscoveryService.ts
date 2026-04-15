@@ -74,14 +74,23 @@ export class ClassDiscoveryService {
         const classUri = binding.get("class");
         if (!classUri) continue;
 
-        const className = this.toClassName(String(classUri));
+        // Issue #2807: Class-def notes in starter-kit are stored as UUID-named
+        // files. The SPARQL subject (?class) is therefore a file IRI (UUID),
+        // not a namespace URI. Prefer the prefixed label ("ems__Task") as the
+        // canonical className when available — it is what downstream code
+        // (DynamicAssetCreationModal, GenericAssetCreationService) expects.
+        const labelValue = binding.get("label")?.toString();
+        const className = this.isPrefixedClassName(labelValue)
+          ? (labelValue as string)
+          : this.toClassName(String(classUri));
         if (!className) continue;
 
         // Skip if already processed (avoid duplicates from UNION)
         if (classMap.has(className)) continue;
 
-        const labelValue = binding.get("label")?.toString();
-        const label = labelValue || this.extractLabel(className);
+        // Derive human-readable display label from the canonical className
+        // ("ems__Task" → "Task"). Falls back to whatever the binding gave us.
+        const label = this.extractLabel(className);
         const description = binding.get("comment")?.toString();
         const superClassUri = binding.get("superClass")?.toString();
         const superClass = superClassUri ? this.toClassName(superClassUri) : undefined;
@@ -167,6 +176,16 @@ export class ClassDiscoveryService {
         canCreateInstance: true,
       },
     ];
+  }
+
+  /**
+   * Check whether a label value looks like a canonical prefixed class name
+   * (e.g. "ems__Task", "exo__Area"). Used by Issue #2807 to prefer the
+   * frontmatter label over a file-IRI fallback when building className.
+   */
+  private isPrefixedClassName(value: string | undefined): boolean {
+    if (!value) return false;
+    return /^[a-z]+__[A-Za-z][A-Za-z0-9_]*$/.test(value);
   }
 
   /**
