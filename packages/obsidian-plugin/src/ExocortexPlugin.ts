@@ -39,6 +39,7 @@ import { createAliasIconExtension, createWikilinkLabelExtension } from "./presen
 import { TimerManager } from "./infrastructure/timer";
 import { LRUCache } from "./infrastructure/cache";
 import { TabTitlePatch } from "./presentation/tab-titles/TabTitlePatch";
+import { InlineTitlePatch } from "./presentation/tab-titles/InlineTitlePatch";
 import { PropertiesLinkPatch } from "./presentation/properties/PropertiesLinkPatch";
 import { PropertiesUidCopyPatch } from "./presentation/properties/PropertiesUidCopyPatch";
 import { PropertiesLabelPatch } from "./presentation/properties/PropertiesLabelPatch";
@@ -85,6 +86,7 @@ export default class ExocortexPlugin extends Plugin {
   // MutationObserver to detect when layout is removed by Obsidian re-renders (e.g., when processing embeds)
   private layoutPersistenceObserver: MutationObserver | null = null;
   private tabTitlePatch!: TabTitlePatch;
+  private inlineTitlePatch!: InlineTitlePatch;
   private propertiesLinkPatch!: PropertiesLinkPatch;
   private bodyLinkPatch!: BodyLinkPatch;
   private propertiesUidCopyPatch!: PropertiesUidCopyPatch;
@@ -372,6 +374,15 @@ export default class ExocortexPlugin extends Plugin {
         }, 500);
       }
 
+      // Initialize Inline Title label patch (Issue #2806)
+      // Reuses the tab-title label toggle so both headers stay in sync.
+      this.inlineTitlePatch = new InlineTitlePatch(this);
+      if (this.settings.showLabelsInTabTitles) {
+        this.timerManager.setTimeout("inline-title-patch", () => {
+          this.inlineTitlePatch.enable();
+        }, 500);
+      }
+
       // Initialize Properties link patch
       this.propertiesLinkPatch = new PropertiesLinkPatch(this);
       if (this.settings.showLabelsInProperties) {
@@ -491,6 +502,11 @@ export default class ExocortexPlugin extends Plugin {
       this.tabTitlePatch.cleanup();
     }
 
+    // Cleanup Inline Title patch
+    if (this.inlineTitlePatch) {
+      this.inlineTitlePatch.cleanup();
+    }
+
     // Cleanup Properties link patch
     if (this.propertiesLinkPatch) {
       this.propertiesLinkPatch.cleanup();
@@ -587,8 +603,10 @@ export default class ExocortexPlugin extends Plugin {
   toggleTabTitleLabels(enabled: boolean): void {
     if (enabled) {
       this.tabTitlePatch.enable();
+      this.inlineTitlePatch?.enable();
     } else {
       this.tabTitlePatch.disable();
+      this.inlineTitlePatch?.disable();
     }
   }
 
@@ -638,6 +656,12 @@ export default class ExocortexPlugin extends Plugin {
     if (this.settings.showLabelsInTabTitles && this.tabTitlePatch) {
       this.tabTitlePatch.disable();
       this.tabTitlePatch.enable();
+    }
+
+    // Re-apply inline title labels with new template (Issue #2806)
+    if (this.settings.showLabelsInTabTitles && this.inlineTitlePatch) {
+      this.inlineTitlePatch.disable();
+      this.inlineTitlePatch.enable();
     }
 
     // Re-apply properties link labels with new template
