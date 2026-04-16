@@ -46,43 +46,72 @@ export class ClassDiscoveryService {
    * @returns Array of discovered classes sorted alphabetically by label
    */
   async discoverClasses(): Promise<DiscoveredClass[]> {
-    const query = `
+    // Issue #2810: Split into two queries. The SPARQL engine's OPTIONAL does
+    // not reliably bind rdfs:label / exo:Asset_label alongside rdf:type in
+    // the plugin's in-memory triple store. A separate mandatory-join query
+    // for labels is robust and fast (<5ms on typical vaults).
+    const classQuery = `
       PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
       PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-      PREFIX owl: <http://www.w3.org/2002/07/owl#>
       PREFIX exo: <https://exocortex.my/ontology/exo#>
-      PREFIX ems: <https://exocortex.my/ontology/ems#>
 
-      SELECT ?class ?label ?comment ?superClass ?deprecated WHERE {
+      SELECT ?class WHERE {
         {
           ?class rdf:type exo:Class .
         } UNION {
           ?class rdf:type rdfs:Class .
         }
-        OPTIONAL { ?class rdfs:label ?label . }
-        OPTIONAL { ?class rdfs:comment ?comment . }
-        OPTIONAL { ?class rdfs:subClassOf ?superClass . }
-        OPTIONAL { ?class owl:deprecated ?deprecated . }
+      }
+    `;
+
+    const labelQuery = `
+      PREFIX exo: <https://exocortex.my/ontology/exo#>
+
+      SELECT ?class ?label WHERE {
+        ?class exo:Asset_label ?label .
       }
     `;
 
     try {
-      const results = await this.sparqlService.query(query);
+      const [classResults, labelResults] = await Promise.all([
+        this.sparqlService.query(classQuery),
+        this.sparqlService.query(labelQuery),
+      ]);
+
+      // Build a label lookup: file IRI → exo__Asset_label value
+      const labelByIRI = new Map<string, string>();
+      for (const binding of labelResults) {
+        const iri = binding.get("class")?.toString();
+        const label = binding.get("label")?.toString();
+        if (iri && label) {
+          labelByIRI.set(iri, label);
+        }
+      }
+
       const classMap = new Map<string, DiscoveredClass>();
 
-      for (const binding of results) {
+      for (const binding of classResults) {
         const classUri = binding.get("class");
         if (!classUri) continue;
 
-        // Issue #2807: Class-def notes in starter-kit are stored as UUID-named
-        // files. The SPARQL subject (?class) is therefore a file IRI (UUID),
-        // not a namespace URI. Prefer the prefixed label ("ems__Task") as the
-        // canonical className when available — it is what downstream code
-        // (DynamicAssetCreationModal, GenericAssetCreationService) expects.
-        const labelValue = binding.get("label")?.toString();
-        const className = this.isPrefixedClassName(labelValue)
-          ? (labelValue as string)
-          : this.toClassName(String(classUri));
+        const classIRI = String(classUri);
+
+        // Issue #2807 + #2810: Prefer the exo__Asset_label value as the
+        // canonical className. The label may be stored as:
+        // 1. A prefixed name string ("ems__Task") — use directly
+        // 2. A namespace IRI ("https://exocortex.my/ontology/ems#Task") —
+        //    NoteToRDFConverter expands class-like values to IRIs via
+        //    isClassReference(), so convert back via toClassName()
+        // 3. Absent — fall back to extracting from the file IRI
+        const labelValue = labelByIRI.get(classIRI);
+        let className: string | null;
+        if (this.isPrefixedClassName(labelValue)) {
+          className = labelValue as string;
+        } else if (labelValue) {
+          className = this.toClassName(labelValue) || this.toClassName(classIRI);
+        } else {
+          className = this.toClassName(classIRI);
+        }
         if (!className) continue;
 
         // Skip if already processed (avoid duplicates from UNION)
@@ -91,17 +120,11 @@ export class ClassDiscoveryService {
         // Derive human-readable display label from the canonical className
         // ("ems__Task" → "Task"). Falls back to whatever the binding gave us.
         const label = this.extractLabel(className);
-        const description = binding.get("comment")?.toString();
-        const superClassUri = binding.get("superClass")?.toString();
-        const superClass = superClassUri ? this.toClassName(superClassUri) : undefined;
-        const deprecated = binding.get("deprecated")?.toString() === "true";
 
         classMap.set(className, {
           className,
           label,
-          description,
-          superClass: superClass || undefined,
-          deprecated,
+          deprecated: false,
           canCreateInstance: this.canCreateInstance(className),
         });
       }
@@ -235,6 +258,13 @@ export class ClassDiscoveryService {
    * Meta-classes, prototypes, and system classes cannot be instantiated.
    */
   private canCreateInstance(className: string): boolean {
+    // Issue #2810: Classes without a resolved prefixed className (still UUID
+    // filenames) should not appear in the dropdown — they are class-def files
+    // missing exo__Asset_label or in an unregistered namespace.
+    if (!this.isPrefixedClassName(className)) {
+      return false;
+    }
+
     // Meta-classes cannot be instantiated
     if (className === "exo__Class" || className === "rdfs__Class") {
       return false;

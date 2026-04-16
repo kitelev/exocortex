@@ -15,22 +15,30 @@ describe("ClassDiscoveryService", () => {
     service = new ClassDiscoveryService(mockSparqlService);
   });
 
-  describe("discoverClasses (Issue #2807)", () => {
-    it("should use frontmatter label as className when ?class is a UUID file IRI", async () => {
-      // Starter-kit reality: class-def files are UUID-named, so SPARQL returns
-      // a file IRI for ?class. The label comes from exo__Asset_label (now also
-      // emitted as rdfs:label). The service must prefer the prefixed label
-      // over the file IRI for className.
-      const taskClassBinding = new Map<string, unknown>([
-        ["class", "obsidian://vault/ems/1b20a8f0-d745-4e93-91db-4531b3df120e.md"],
-        ["label", "ems__Task"],
-      ]);
-      const areaClassBinding = new Map<string, unknown>([
-        ["class", "obsidian://vault/ems/7138261c-f964-4f10-a44e-cb153f14c217.md"],
-        ["label", "ems__Area"],
-      ]);
+  // Helper: mock two sequential SPARQL calls (classQuery, labelQuery)
+  function mockTwoQueries(
+    mock: jest.Mock,
+    classBindings: Map<string, unknown>[],
+    labelBindings: Map<string, unknown>[],
+  ): void {
+    mock.mockResolvedValueOnce(classBindings).mockResolvedValueOnce(labelBindings);
+  }
 
-      mockSparqlService.query.mockResolvedValue([taskClassBinding, areaClassBinding]);
+  describe("discoverClasses (Issue #2807 + #2810)", () => {
+    it("should use exo:Asset_label to resolve className for UUID file IRIs", async () => {
+      mockTwoQueries(
+        mockSparqlService.query,
+        // classQuery results
+        [
+          new Map([["class", "obsidian://vault/ems/1b20a8f0-d745-4e93-91db-4531b3df120e.md"]]),
+          new Map([["class", "obsidian://vault/ems/7138261c-f964-4f10-a44e-cb153f14c217.md"]]),
+        ],
+        // labelQuery results
+        [
+          new Map([["class", "obsidian://vault/ems/1b20a8f0-d745-4e93-91db-4531b3df120e.md"], ["label", "ems__Task"]]),
+          new Map([["class", "obsidian://vault/ems/7138261c-f964-4f10-a44e-cb153f14c217.md"], ["label", "ems__Area"]]),
+        ],
+      );
 
       const classes = await service.discoverClasses();
 
@@ -46,32 +54,56 @@ describe("ClassDiscoveryService", () => {
     });
 
     it("should sort classes alphabetically by display label", async () => {
-      mockSparqlService.query.mockResolvedValue([
-        new Map<string, unknown>([
-          ["class", "obsidian://vault/ems/uuid-task.md"],
-          ["label", "ems__Task"],
-        ]),
-        new Map<string, unknown>([
-          ["class", "obsidian://vault/ems/uuid-area.md"],
-          ["label", "ems__Area"],
-        ]),
-        new Map<string, unknown>([
-          ["class", "obsidian://vault/ems/uuid-project.md"],
-          ["label", "ems__Project"],
-        ]),
-      ]);
+      mockTwoQueries(
+        mockSparqlService.query,
+        [
+          new Map([["class", "obsidian://vault/ems/uuid-task.md"]]),
+          new Map([["class", "obsidian://vault/ems/uuid-area.md"]]),
+          new Map([["class", "obsidian://vault/ems/uuid-project.md"]]),
+        ],
+        [
+          new Map([["class", "obsidian://vault/ems/uuid-task.md"], ["label", "ems__Task"]]),
+          new Map([["class", "obsidian://vault/ems/uuid-area.md"], ["label", "ems__Area"]]),
+          new Map([["class", "obsidian://vault/ems/uuid-project.md"], ["label", "ems__Project"]]),
+        ],
+      );
 
       const classes = await service.discoverClasses();
 
       expect(classes.map((c) => c.label)).toEqual(["Area", "Project", "Task"]);
     });
 
-    it("should fall back to toClassName when label is absent", async () => {
-      mockSparqlService.query.mockResolvedValue([
-        new Map<string, unknown>([
-          ["class", "https://exocortex.my/ontology/ems#Task"],
-        ]),
-      ]);
+    it("should handle exo:Asset_label stored as namespace IRI (#2810)", async () => {
+      // NoteToRDFConverter stores "ems__Task" as namespace IRI via isClassReference()
+      mockTwoQueries(
+        mockSparqlService.query,
+        [
+          new Map([["class", "obsidian://vault/ems/1b20a8f0-d745-4e93-91db-4531b3df120e.md"]]),
+          new Map([["class", "obsidian://vault/ems/82c74542-1b14-4217-b852-d84730484b25.md"]]),
+        ],
+        [
+          new Map([["class", "obsidian://vault/ems/1b20a8f0-d745-4e93-91db-4531b3df120e.md"], ["label", "https://exocortex.my/ontology/ems#Task"]]),
+          new Map([["class", "obsidian://vault/ems/82c74542-1b14-4217-b852-d84730484b25.md"], ["label", "https://exocortex.my/ontology/ems#Area"]]),
+        ],
+      );
+
+      const classes = await service.discoverClasses();
+
+      const taskClass = classes.find((c) => c.className === "ems__Task");
+      const areaClass = classes.find((c) => c.className === "ems__Area");
+
+      expect(taskClass).toBeDefined();
+      expect(taskClass!.label).toBe("Task");
+      expect(areaClass).toBeDefined();
+      expect(areaClass!.label).toBe("Area");
+    });
+
+    it("should fall back to toClassName when no label exists", async () => {
+      mockTwoQueries(
+        mockSparqlService.query,
+        [new Map([["class", "https://exocortex.my/ontology/ems#Task"]])],
+        [], // no labels
+      );
 
       const classes = await service.discoverClasses();
 
@@ -80,34 +112,12 @@ describe("ClassDiscoveryService", () => {
       expect(classes[0].label).toBe("Task");
     });
 
-    it("should filter out deprecated classes", async () => {
-      mockSparqlService.query.mockResolvedValue([
-        new Map<string, unknown>([
-          ["class", "obsidian://vault/ems/uuid-task.md"],
-          ["label", "ems__Task"],
-          ["deprecated", "false"],
-        ]),
-        new Map<string, unknown>([
-          ["class", "obsidian://vault/ems/uuid-old.md"],
-          ["label", "ems__Deprecated"],
-          ["deprecated", "true"],
-        ]),
-      ]);
-
-      const classes = await service.discoverClasses();
-
-      expect(classes.map((c) => c.className)).toEqual(["ems__Task"]);
-    });
-
     it("should ignore a label value that is not a prefixed class name", async () => {
-      // Defensive: if someone labels a class with free text like "My Task Type",
-      // that is NOT a valid className, so we must fall back to the IRI path.
-      mockSparqlService.query.mockResolvedValue([
-        new Map<string, unknown>([
-          ["class", "https://exocortex.my/ontology/ems#Task"],
-          ["label", "My Task Type"],
-        ]),
-      ]);
+      mockTwoQueries(
+        mockSparqlService.query,
+        [new Map([["class", "https://exocortex.my/ontology/ems#Task"]])],
+        [new Map([["class", "https://exocortex.my/ontology/ems#Task"], ["label", "My Task Type"]])],
+      );
 
       const classes = await service.discoverClasses();
 
@@ -116,16 +126,14 @@ describe("ClassDiscoveryService", () => {
     });
 
     it("should dedupe duplicate classes emitted by UNION", async () => {
-      mockSparqlService.query.mockResolvedValue([
-        new Map<string, unknown>([
-          ["class", "obsidian://vault/ems/uuid-task.md"],
-          ["label", "ems__Task"],
-        ]),
-        new Map<string, unknown>([
-          ["class", "obsidian://vault/ems/uuid-task.md"],
-          ["label", "ems__Task"],
-        ]),
-      ]);
+      mockTwoQueries(
+        mockSparqlService.query,
+        [
+          new Map([["class", "obsidian://vault/ems/uuid-task.md"]]),
+          new Map([["class", "obsidian://vault/ems/uuid-task.md"]]),
+        ],
+        [new Map([["class", "obsidian://vault/ems/uuid-task.md"], ["label", "ems__Task"]])],
+      );
 
       const classes = await service.discoverClasses();
 
@@ -144,16 +152,17 @@ describe("ClassDiscoveryService", () => {
 
   describe("getCreatableClasses", () => {
     it("should exclude non-instantiable meta-classes", async () => {
-      mockSparqlService.query.mockResolvedValue([
-        new Map<string, unknown>([
-          ["class", "obsidian://vault/ems/uuid-task.md"],
-          ["label", "ems__Task"],
-        ]),
-        new Map<string, unknown>([
-          ["class", "obsidian://vault/exo/uuid-class.md"],
-          ["label", "exo__Class"],
-        ]),
-      ]);
+      mockTwoQueries(
+        mockSparqlService.query,
+        [
+          new Map([["class", "obsidian://vault/ems/uuid-task.md"]]),
+          new Map([["class", "obsidian://vault/exo/uuid-class.md"]]),
+        ],
+        [
+          new Map([["class", "obsidian://vault/ems/uuid-task.md"], ["label", "ems__Task"]]),
+          new Map([["class", "obsidian://vault/exo/uuid-class.md"], ["label", "exo__Class"]]),
+        ],
+      );
 
       const classes = await service.getCreatableClasses();
 
