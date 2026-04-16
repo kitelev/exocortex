@@ -376,6 +376,93 @@ describe("RelationsRenderer", () => {
       });
     });
 
+    describe("when referencing by UID (human-readable filenames)", () => {
+      let sourceFile: any;
+      let sourceMetadata: any;
+
+      beforeEach(() => {
+        sourceFile = createTestTFile("source/project.md");
+        sourceMetadata = createMockMetadata({
+          ems__Effort_parent: "[[uid-of-area|Hello Area]]",
+        });
+
+        mockBacklinksCacheManager.getBacklinks.mockReturnValue([sourceFile.path]);
+        mockVaultAdapter.getAbstractFileByPath.mockReturnValue(sourceFile);
+        mockVaultAdapter.getFrontmatter.mockImplementation((file: any) => {
+          if (file.path === mockFile.path || file === mockFile) {
+            return { exo__Asset_uid: "uid-of-target" };
+          }
+          return sourceMetadata;
+        });
+        MetadataHelpers.isAssetArchived.mockReturnValue(false);
+        BlockerHelpers.isEffortBlocked.mockReturnValue(false);
+        mockMetadataService.getAssetLabel.mockReturnValue(null);
+      });
+
+      it("should match by UID when basename match fails", async () => {
+        // First call with basename returns nothing
+        MetadataHelpers.findAllReferencingProperties.mockReturnValueOnce([]);
+        // Second call with UID returns property
+        MetadataHelpers.findAllReferencingProperties.mockReturnValueOnce(["ems__Effort_parent"]);
+
+        const result = await renderer.getAssetRelations(mockFile, {});
+
+        expect(MetadataHelpers.findAllReferencingProperties).toHaveBeenCalledTimes(2);
+        expect(MetadataHelpers.findAllReferencingProperties).toHaveBeenCalledWith(
+          expect.anything(), "target-file"
+        );
+        expect(MetadataHelpers.findAllReferencingProperties).toHaveBeenCalledWith(
+          expect.anything(), "uid-of-target"
+        );
+        expect(result).toHaveLength(1);
+        expect(result[0].propertyName).toBe("ems__Effort_parent");
+        expect(result[0].isBodyLink).toBe(false);
+      });
+
+      it("should not check UID when basename match succeeds", async () => {
+        MetadataHelpers.findAllReferencingProperties.mockReturnValue(["ems__Effort_parent"]);
+
+        await renderer.getAssetRelations(mockFile, {});
+
+        // Should only be called once (with basename)
+        expect(MetadataHelpers.findAllReferencingProperties).toHaveBeenCalledTimes(1);
+      });
+
+      it("should create body link when neither basename nor UID match", async () => {
+        mockVaultAdapter.getFrontmatter.mockImplementation((file: any) => {
+          if (file.path === mockFile.path || file === mockFile) {
+            return { exo__Asset_uid: "uid-of-target" };
+          }
+          return sourceMetadata;
+        });
+
+        MetadataHelpers.findAllReferencingProperties.mockReturnValue([]);
+
+        const result = await renderer.getAssetRelations(mockFile, {});
+
+        expect(result).toHaveLength(1);
+        expect(result[0].isBodyLink).toBe(true);
+      });
+
+      it("should handle target file with no UID gracefully", async () => {
+        mockVaultAdapter.getFrontmatter.mockImplementation((file: any) => {
+          if (file.path === mockFile.path || file === mockFile) {
+            return {}; // No UID
+          }
+          return sourceMetadata;
+        });
+
+        MetadataHelpers.findAllReferencingProperties.mockReturnValue([]);
+
+        const result = await renderer.getAssetRelations(mockFile, {});
+
+        // Should create body link, only called once (no UID fallback)
+        expect(MetadataHelpers.findAllReferencingProperties).toHaveBeenCalledTimes(1);
+        expect(result).toHaveLength(1);
+        expect(result[0].isBodyLink).toBe(true);
+      });
+    });
+
     describe("when multiple backlinks exist", () => {
       it("should process all backlinks", async () => {
         const file1 = createTestTFile("source/file1.md");

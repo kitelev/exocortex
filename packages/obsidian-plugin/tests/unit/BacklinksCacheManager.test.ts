@@ -37,8 +37,11 @@ describe("BacklinksCacheManager", () => {
     mockApp = {
       metadataCache: {
         resolvedLinks: mockResolvedLinks,
+        unresolvedLinks: {},
+        getFileCache: jest.fn().mockReturnValue({ frontmatter: {} }),
       },
       vault: {
+        getMarkdownFiles: jest.fn().mockReturnValue([]),
         on: jest.fn((eventType: string, handler: (file: any, oldPath?: string) => void) => {
           if (!mockEventHandlers.has(eventType)) {
             mockEventHandlers.set(eventType, []);
@@ -329,6 +332,138 @@ describe("BacklinksCacheManager", () => {
       expect(cacheManager.isValid()).toBe(false);
       cacheManager.buildCache();
       expect(cacheManager.isValid()).toBe(true);
+    });
+  });
+
+  describe("UID-based backlink resolution", () => {
+    it("should resolve unresolved links via UID→path mapping", () => {
+      // Area file has human-readable name but UID in frontmatter
+      const areaFile = Object.assign(Object.create(TFile.prototype), {
+        path: "01 Inbox/Hello Area.md",
+        basename: "Hello Area",
+        extension: "md",
+      });
+
+      // Project file references Area by UUID in frontmatter
+      const projectFile = Object.assign(Object.create(TFile.prototype), {
+        path: "01 Inbox/Build my first project.md",
+        basename: "Build my first project",
+        extension: "md",
+      });
+
+      (mockApp.vault as any).getMarkdownFiles = jest.fn().mockReturnValue([areaFile, projectFile]);
+      (mockApp.metadataCache as any).getFileCache = jest.fn().mockImplementation((file: TFile) => {
+        if (file.path === areaFile.path) {
+          return { frontmatter: { exo__Asset_uid: "723b5de3-3047-41d9-a3dc-ea96ba28a5f1" } };
+        }
+        if (file.path === projectFile.path) {
+          return { frontmatter: { exo__Asset_uid: "00d0631d-56c7-4e4b-b98a-fc0b908e6bc9" } };
+        }
+        return { frontmatter: {} };
+      });
+
+      // Project links to Area by UUID → unresolved because file is "Hello Area.md"
+      (mockApp.metadataCache as any).unresolvedLinks = {
+        "01 Inbox/Build my first project.md": {
+          "723b5de3-3047-41d9-a3dc-ea96ba28a5f1": 1,
+        },
+      };
+
+      // No resolved links between these files
+      mockApp.metadataCache.resolvedLinks = {};
+
+      cacheManager.buildCache();
+
+      const areaBacklinks = cacheManager.getBacklinks("01 Inbox/Hello Area.md");
+      expect(areaBacklinks).toBeDefined();
+      expect(areaBacklinks?.has("01 Inbox/Build my first project.md")).toBe(true);
+    });
+
+    it("should combine resolved and UID-based backlinks", () => {
+      const targetFile = Object.assign(Object.create(TFile.prototype), {
+        path: "01 Inbox/Target.md",
+        basename: "Target",
+        extension: "md",
+      });
+
+      (mockApp.vault as any).getMarkdownFiles = jest.fn().mockReturnValue([targetFile]);
+      (mockApp.metadataCache as any).getFileCache = jest.fn().mockReturnValue({
+        frontmatter: { exo__Asset_uid: "uid-123" },
+      });
+      (mockApp.metadataCache as any).unresolvedLinks = {
+        "source-by-uid.md": { "uid-123": 1 },
+      };
+
+      mockApp.metadataCache.resolvedLinks = {
+        "source-by-name.md": { "01 Inbox/Target.md": 1 },
+      };
+
+      cacheManager.buildCache();
+
+      const backlinks = cacheManager.getBacklinks("01 Inbox/Target.md");
+      expect(backlinks).toBeDefined();
+      expect(backlinks?.size).toBe(2);
+      expect(backlinks?.has("source-by-name.md")).toBe(true);
+      expect(backlinks?.has("source-by-uid.md")).toBe(true);
+    });
+
+    it("should not fail when vault has no files with UIDs", () => {
+      (mockApp.vault as any).getMarkdownFiles = jest.fn().mockReturnValue([]);
+      (mockApp.metadataCache as any).getFileCache = jest.fn().mockReturnValue({ frontmatter: {} });
+      (mockApp.metadataCache as any).unresolvedLinks = {
+        "source.md": { "non-existent-uid": 1 },
+      };
+      mockApp.metadataCache.resolvedLinks = {};
+
+      expect(() => cacheManager.buildCache()).not.toThrow();
+      expect(cacheManager.isValid()).toBe(true);
+    });
+
+    it("should skip files without exo__Asset_uid", () => {
+      const fileNoUid = Object.assign(Object.create(TFile.prototype), {
+        path: "no-uid.md",
+        basename: "no-uid",
+        extension: "md",
+      });
+
+      (mockApp.vault as any).getMarkdownFiles = jest.fn().mockReturnValue([fileNoUid]);
+      (mockApp.metadataCache as any).getFileCache = jest.fn().mockReturnValue({
+        frontmatter: { some_property: "value" },
+      });
+      (mockApp.metadataCache as any).unresolvedLinks = {
+        "source.md": { "some-uid": 1 },
+      };
+      mockApp.metadataCache.resolvedLinks = {};
+
+      cacheManager.buildCache();
+
+      expect(cacheManager.getBacklinks("no-uid.md")).toBeUndefined();
+    });
+
+    it("should not duplicate backlinks from UID resolution", () => {
+      const targetFile = Object.assign(Object.create(TFile.prototype), {
+        path: "target.md",
+        basename: "target",
+        extension: "md",
+      });
+
+      (mockApp.vault as any).getMarkdownFiles = jest.fn().mockReturnValue([targetFile]);
+      (mockApp.metadataCache as any).getFileCache = jest.fn().mockReturnValue({
+        frontmatter: { exo__Asset_uid: "uid-123" },
+      });
+      (mockApp.metadataCache as any).unresolvedLinks = {
+        "source.md": { "uid-123": 1 },
+      };
+
+      // source.md also has a resolved link to target.md
+      mockApp.metadataCache.resolvedLinks = {
+        "source.md": { "target.md": 1 },
+      };
+
+      cacheManager.buildCache();
+
+      const backlinks = cacheManager.getBacklinks("target.md");
+      expect(backlinks?.size).toBe(1); // No duplicates
     });
   });
 

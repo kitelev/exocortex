@@ -47,8 +47,19 @@ export class RelationsRenderer {
 
         const isArchived = MetadataHelpers.isAssetArchived(metadata);
 
-        const referencingProperties =
+        // Match by basename first; also match by UID for files where
+        // the filename doesn't equal the UUID (e.g. human-readable names).
+        let referencingProperties =
           MetadataHelpers.findAllReferencingProperties(metadata, file.basename);
+
+        if (referencingProperties.length === 0) {
+          const targetFm = this.vaultAdapter.getFrontmatter(file as unknown as IFile);
+          const uid = targetFm?.exo__Asset_uid;
+          if (uid && typeof uid === "string") {
+            referencingProperties =
+              MetadataHelpers.findAllReferencingProperties(metadata, uid);
+          }
+        }
 
         const enrichedMetadata = { ...metadata };
         const resolvedLabel = this.metadataService.getAssetLabel(sourcePath);

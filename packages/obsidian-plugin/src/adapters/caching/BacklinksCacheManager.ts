@@ -131,16 +131,50 @@ export class BacklinksCacheManager {
     for (const sourcePath in resolvedLinks) {
       const links = resolvedLinks[sourcePath];
       for (const targetPath in links) {
-        const existingBacklinks = this.backlinksCache.get(targetPath);
-        if (!existingBacklinks) {
-          this.backlinksCache.set(targetPath, new Set([sourcePath]));
-        } else {
-          existingBacklinks.add(sourcePath);
-        }
+        this.addBacklink(targetPath, sourcePath);
       }
     }
 
+    // Resolve unresolved links via UID→path mapping.
+    // When files use human-readable filenames but wikilinks reference by UUID
+    // (e.g. [[uuid|alias]]), Obsidian can't resolve the link → 0 backlinks.
+    // Build a UID→path index and use unresolvedLinks to recover these backlinks.
+    this.resolveUidBacklinks();
+
     this.cacheValid = true;
+  }
+
+  private resolveUidBacklinks(): void {
+    const uidToPath = new Map<string, string>();
+    for (const file of this.app.vault.getMarkdownFiles()) {
+      const cache = this.app.metadataCache.getFileCache(file);
+      const uid = cache?.frontmatter?.exo__Asset_uid;
+      if (uid && typeof uid === "string") {
+        uidToPath.set(uid, file.path);
+      }
+    }
+
+    if (uidToPath.size === 0) return;
+
+    const unresolvedLinks = this.app.metadataCache.unresolvedLinks;
+    for (const sourcePath in unresolvedLinks) {
+      const links = unresolvedLinks[sourcePath];
+      for (const linkTarget in links) {
+        const resolvedPath = uidToPath.get(linkTarget);
+        if (resolvedPath) {
+          this.addBacklink(resolvedPath, sourcePath);
+        }
+      }
+    }
+  }
+
+  private addBacklink(targetPath: string, sourcePath: string): void {
+    const existing = this.backlinksCache.get(targetPath);
+    if (!existing) {
+      this.backlinksCache.set(targetPath, new Set([sourcePath]));
+    } else {
+      existing.add(sourcePath);
+    }
   }
 
   invalidate(): void {
