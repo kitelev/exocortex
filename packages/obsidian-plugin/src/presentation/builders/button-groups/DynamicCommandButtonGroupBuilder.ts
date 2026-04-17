@@ -1,5 +1,8 @@
 import { App } from "obsidian";
-import { ActionButton, ButtonGroup } from '@plugin/presentation/components/ActionButtonsGroup';
+import {
+  ActionButton,
+  ButtonGroup,
+} from "@plugin/presentation/components/ActionButtonsGroup";
 import type {
   CommandResolver,
   ResolvedCommand,
@@ -9,12 +12,13 @@ import type {
   EvalContext,
   INotificationService,
 } from "exocortex";
-import { ILogger } from '@plugin/adapters/logging/ILogger';
+import { ILogger } from "@plugin/adapters/logging/ILogger";
 import {
   IButtonGroupBuilder,
   ButtonBuilderContext,
 } from "./ButtonBuilderTypes";
 import { DynamicFormModal } from "@plugin/presentation/modals/DynamicFormModal";
+import { resolveVariantForGroup } from "./categoryDefaultVariants";
 
 /**
  * Configuration for DynamicCommandButtonGroupBuilder.
@@ -107,7 +111,9 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
    * Groups with zero visible commands are omitted — the React component re-filters
    * too, but returning them empty here keeps the payload lean.
    */
-  async buildCategoryGroups(context: ButtonBuilderContext): Promise<ButtonGroup[]> {
+  async buildCategoryGroups(
+    context: ButtonBuilderContext,
+  ): Promise<ButtonGroup[]> {
     const resolved = await this.resolveVisibleCommands(context);
     if (resolved === null) return [];
     const { visibleCommands, subjectIRI } = resolved;
@@ -134,7 +140,14 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
         title: spec.title,
         collapsedByDefault: spec.collapsedByDefault,
         buttons: commands.map((rc) =>
-          this.createButton(rc, subjectIRI, file.path, app as App, logger, refresh),
+          this.createButton(
+            rc,
+            subjectIRI,
+            file.path,
+            app as App,
+            logger,
+            refresh,
+          ),
         ),
       });
     }
@@ -150,7 +163,14 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
         id: "dynamic-commands-other",
         title: "Other",
         buttons: leftover.map((rc) =>
-          this.createButton(rc, subjectIRI, file.path, app as App, logger, refresh),
+          this.createButton(
+            rc,
+            subjectIRI,
+            file.path,
+            app as App,
+            logger,
+            refresh,
+          ),
         ),
       });
     }
@@ -172,7 +192,10 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
 
   private async resolveVisibleCommands(
     context: ButtonBuilderContext,
-  ): Promise<{ visibleCommands: ResolvedCommand[]; subjectIRI: string } | null> {
+  ): Promise<{
+    visibleCommands: ResolvedCommand[];
+    subjectIRI: string;
+  } | null> {
     const { file, metadata, logger } = context;
 
     // CRITICAL: subjectIRI MUST match triple store subject IRI.
@@ -195,7 +218,9 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
         prototypeIRI,
       );
     } catch (error) {
-      logger.info(`[DynamicCommands] Failed to resolve commands: ${String(error)}`);
+      logger.info(
+        `[DynamicCommands] Failed to resolve commands: ${String(error)}`,
+      );
       return null;
     }
 
@@ -240,7 +265,7 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
     refresh: () => Promise<void>,
   ): ActionButton {
     const { command, binding } = rc;
-    const variant = this.resolveVariant(binding.group);
+    const variant = resolveVariantForGroup(binding.group);
 
     return {
       id: `dynamic-cmd-${command.id}`,
@@ -290,23 +315,17 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
       }
       await new Promise((resolve) => setTimeout(resolve, 100));
       await refresh();
-      logger.info(`[DynamicCommands] Executed "${command.name}" on ${filePath}`);
+      logger.info(
+        `[DynamicCommands] Executed "${command.name}" on ${filePath}`,
+      );
     } else {
-      this.config.notificationService.error(`Command failed: ${result.error ?? "unknown error"}`);
-      logger.info(`[DynamicCommands] Failed "${command.name}": ${result.error}`);
+      this.config.notificationService.error(
+        `Command failed: ${result.error ?? "unknown error"}`,
+      );
+      logger.info(
+        `[DynamicCommands] Failed "${command.name}": ${result.error}`,
+      );
     }
-  }
-
-  private resolveVariant(
-    group?: string,
-  ): "primary" | "secondary" | "success" | "warning" | "danger" {
-    if (!group) return "secondary";
-    const lower = group.toLowerCase();
-    if (lower === "danger" || lower === "destructive") return "danger";
-    if (lower === "warning") return "warning";
-    if (lower === "success") return "success";
-    if (lower === "primary") return "primary";
-    return "secondary";
   }
 
   private async showConfirmation(message: string): Promise<boolean> {
@@ -319,7 +338,9 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
 
   private extractInputSchema(rc: ResolvedCommand): InputSchemaField[] | null {
     const grounding = rc.command.grounding;
-    const raw = (grounding as unknown as Record<string, unknown>)["inputSchema"];
+    const raw = (grounding as unknown as Record<string, unknown>)[
+      "inputSchema"
+    ];
     if (!raw || !Array.isArray(raw)) return null;
 
     return raw.filter(
@@ -331,7 +352,9 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
     );
   }
 
-  private extractAssetClass(metadata: Record<string, unknown>): string | undefined {
+  private extractAssetClass(
+    metadata: Record<string, unknown>,
+  ): string | undefined {
     const raw = metadata["exo__Instance_class"];
     if (typeof raw === "string") {
       return raw.replace(/["'[\]]/g, "").trim();
@@ -345,7 +368,9 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
     return undefined;
   }
 
-  private extractPrototypeIRI(metadata: Record<string, unknown>): string | undefined {
+  private extractPrototypeIRI(
+    metadata: Record<string, unknown>,
+  ): string | undefined {
     const raw = metadata["exo__Asset_prototype"];
     if (typeof raw === "string") {
       return raw.replace(/["'[\]]/g, "").trim();

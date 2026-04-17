@@ -142,4 +142,4 @@ export default {
       },
     },
   },
-};
+} satisfies RuleSet;

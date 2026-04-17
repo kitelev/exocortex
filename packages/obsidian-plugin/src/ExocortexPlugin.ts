@@ -35,7 +35,14 @@ import { SPARQLApi } from "./application/api/SPARQLApi";
 import { ExocortexAPI } from "./application/api/ExocortexAPI";
 import { PluginContainer } from "./infrastructure/di/PluginContainer";
 import { ObsidianNotificationService } from "./infrastructure/di/ObsidianNotificationService";
-import { createAliasIconExtension, createWikilinkLabelExtension } from "./presentation/editor-extensions";
+import {
+  createAliasIconExtension,
+  createWikilinkLabelExtension,
+} from "./presentation/editor-extensions";
+import {
+  ChangelogModal,
+  shouldShowChangelog,
+} from "./presentation/modals/ChangelogModal";
 import { TimerManager } from "./infrastructure/timer";
 import { LRUCache } from "./infrastructure/cache";
 import { TabTitlePatch } from "./presentation/tab-titles/TabTitlePatch";
@@ -125,7 +132,7 @@ export default class ExocortexPlugin extends Plugin {
       this.registerEvent(
         this.app.metadataCache.on("changed", () => {
           this.printNameRuleService.refresh();
-        })
+        }),
       );
 
       this.vaultAdapter = new ObsidianVaultAdapter(
@@ -147,7 +154,11 @@ export default class ExocortexPlugin extends Plugin {
       this.preconditionEvaluator = new PreconditionEvaluator(tripleStore);
       this.serviceRegistry = new ServiceRegistry();
       const obsidianFs = new ObsidianFileSystemAdapter(this.app.vault);
-      this.groundingExecutor = new GroundingExecutor(obsidianFs, obsidianFs, this.serviceRegistry);
+      this.groundingExecutor = new GroundingExecutor(
+        obsidianFs,
+        obsidianFs,
+        this.serviceRegistry,
+      );
 
       populateServiceRegistry(this.serviceRegistry, {
         app: this.app,
@@ -172,11 +183,11 @@ export default class ExocortexPlugin extends Plugin {
       this.taskTrackingService = new TaskTrackingService(
         this.app,
         this.app.vault,
-        this.app.metadataCache
+        this.app.metadataCache,
       );
       this.aliasSyncService = new AliasSyncService(
         this.app.metadataCache,
-        this.app
+        this.app,
       );
       this.wikilinkAliasService = new WikilinkAliasService(
         this.app,
@@ -223,19 +234,16 @@ export default class ExocortexPlugin extends Plugin {
 
       this.addSettingTab(new ExocortexSettingTab(this.app, this));
 
-      this.registerMarkdownCodeBlockProcessor(
-        "sparql",
-        (source, el, ctx) => this.sparqlProcessor.process(source, el, ctx)
+      this.registerMarkdownCodeBlockProcessor("sparql", (source, el, ctx) =>
+        this.sparqlProcessor.process(source, el, ctx),
       );
 
-      this.registerMarkdownCodeBlockProcessor(
-        "exoql",
-        (source, el, ctx) => this.sparqlProcessor.process(source, el, ctx)
+      this.registerMarkdownCodeBlockProcessor("exoql", (source, el, ctx) =>
+        this.sparqlProcessor.process(source, el, ctx),
       );
 
-      this.registerMarkdownCodeBlockProcessor(
-        "exo-layout",
-        (source, el, ctx) => this.layoutProcessor.process(source, el, ctx)
+      this.registerMarkdownCodeBlockProcessor("exo-layout", (source, el, ctx) =>
+        this.layoutProcessor.process(source, el, ctx),
       );
 
       // Issue #2780: Re-index triple store once metadataCache has fully resolved.
@@ -320,27 +328,43 @@ export default class ExocortexPlugin extends Plugin {
       this.registerEvent(
         this.app.workspace.on("file-open", (file) => {
           if (file) {
-            this.timerManager.setTimeout("auto-layout-file-open", () => this.autoRenderLayout(), 150);
+            this.timerManager.setTimeout(
+              "auto-layout-file-open",
+              () => this.autoRenderLayout(),
+              150,
+            );
           }
         }),
       );
 
       this.registerEvent(
         this.app.workspace.on("active-leaf-change", () => {
-          this.timerManager.setTimeout("auto-layout-leaf-change", () => this.autoRenderLayout(), 150);
+          this.timerManager.setTimeout(
+            "auto-layout-leaf-change",
+            () => this.autoRenderLayout(),
+            150,
+          );
         }),
       );
 
       this.registerEvent(
         this.app.workspace.on("layout-change", () => {
-          this.timerManager.setTimeout("auto-layout-change", () => this.autoRenderLayout(), 150);
+          this.timerManager.setTimeout(
+            "auto-layout-change",
+            () => this.autoRenderLayout(),
+            150,
+          );
         }),
       );
 
       // Initial render
       const activeFile = this.app.workspace.getActiveFile();
       if (activeFile) {
-        this.timerManager.setTimeout("auto-layout-initial", () => this.autoRenderLayout(), 150);
+        this.timerManager.setTimeout(
+          "auto-layout-initial",
+          () => this.autoRenderLayout(),
+          150,
+        );
       }
 
       // RFC-009: Eagerly initialize triple store after vault is ready.
@@ -354,14 +378,21 @@ export default class ExocortexPlugin extends Plugin {
       // because their frontmatter wasn't parsed in time. See issue #2780.
       this.eagerInitPromise = new Promise<void>((resolve) => {
         this.app.workspace.onLayoutReady(() => {
-          void this.sparql.query("ASK { ?s ?p ?o }").then(() => {
-            this.commandResolver.invalidateCache();
-            this.autoRenderLayout();
-          }).catch((err) => {
-            this.logger.error("Failed to eagerly initialize triple store", err);
-          }).finally(() => {
-            resolve();
-          });
+          void this.sparql
+            .query("ASK { ?s ?p ?o }")
+            .then(() => {
+              this.commandResolver.invalidateCache();
+              this.autoRenderLayout();
+            })
+            .catch((err) => {
+              this.logger.error(
+                "Failed to eagerly initialize triple store",
+                err,
+              );
+            })
+            .finally(() => {
+              resolve();
+            });
         });
       });
 
@@ -369,42 +400,62 @@ export default class ExocortexPlugin extends Plugin {
       this.tabTitlePatch = new TabTitlePatch(this);
       if (this.settings.showLabelsInTabTitles) {
         // Delay enabling to ensure workspace is fully loaded
-        this.timerManager.setTimeout("tab-title-patch", () => {
-          this.tabTitlePatch.enable();
-        }, 500);
+        this.timerManager.setTimeout(
+          "tab-title-patch",
+          () => {
+            this.tabTitlePatch.enable();
+          },
+          500,
+        );
       }
 
       // Initialize Inline Title label patch (Issue #2806)
       // Reuses the tab-title label toggle so both headers stay in sync.
       this.inlineTitlePatch = new InlineTitlePatch(this);
       if (this.settings.showLabelsInTabTitles) {
-        this.timerManager.setTimeout("inline-title-patch", () => {
-          this.inlineTitlePatch.enable();
-        }, 500);
+        this.timerManager.setTimeout(
+          "inline-title-patch",
+          () => {
+            this.inlineTitlePatch.enable();
+          },
+          500,
+        );
       }
 
       // Initialize Properties link patch
       this.propertiesLinkPatch = new PropertiesLinkPatch(this);
       if (this.settings.showLabelsInProperties) {
         // Delay enabling to ensure Properties block is fully loaded
-        this.timerManager.setTimeout("properties-link-patch", () => {
-          this.propertiesLinkPatch.enable();
-        }, 500);
+        this.timerManager.setTimeout(
+          "properties-link-patch",
+          () => {
+            this.propertiesLinkPatch.enable();
+          },
+          500,
+        );
       }
 
       // Initialize Properties UID copy button patch (always enabled)
       this.propertiesUidCopyPatch = new PropertiesUidCopyPatch(this, notifier);
-      this.timerManager.setTimeout("properties-uid-copy-patch", () => {
-        this.propertiesUidCopyPatch.enable();
-      }, 500);
+      this.timerManager.setTimeout(
+        "properties-uid-copy-patch",
+        () => {
+          this.propertiesUidCopyPatch.enable();
+        },
+        500,
+      );
 
       // Initialize Properties readable-label patch (always enabled)
       // Replaces raw predicate names (e.g. ems__Effort_area) with human-readable
       // labels resolved from property definition assets' exo__Asset_label.
       this.propertiesLabelPatch = new PropertiesLabelPatch(this);
-      this.timerManager.setTimeout("properties-label-patch", () => {
-        this.propertiesLabelPatch.enable();
-      }, 500);
+      this.timerManager.setTimeout(
+        "properties-label-patch",
+        () => {
+          this.propertiesLabelPatch.enable();
+        },
+        500,
+      );
 
       // Initialize File Explorer readable-label patch (always enabled).
       // Replaces UUID filenames in the sidebar with `exo__Asset_label`.
@@ -412,9 +463,13 @@ export default class ExocortexPlugin extends Plugin {
       // File Explorer still showed bare UUIDs after v15.98.0 fixed inline title.
       // Issue #2802.
       this.fileExplorerLabelPatch = new FileExplorerLabelPatch(this);
-      this.timerManager.setTimeout("file-explorer-label-patch", () => {
-        this.fileExplorerLabelPatch.enable();
-      }, 500);
+      this.timerManager.setTimeout(
+        "file-explorer-label-patch",
+        () => {
+          this.fileExplorerLabelPatch.enable();
+        },
+        500,
+      );
 
       // Initialize Reading Mode enforcer.
       // Obsidian's layout rendering path is Reading Mode only; new leaves open
@@ -424,27 +479,72 @@ export default class ExocortexPlugin extends Plugin {
       // Finding 9, UX audit 2026-04-14.
       this.readingModeEnforcer = new ReadingModeEnforcer(this);
       if (this.settings.autoReadingModeForExocortexAssets) {
-        this.timerManager.setTimeout("reading-mode-enforcer", () => {
-          this.readingModeEnforcer.enable();
-        }, 500);
+        this.timerManager.setTimeout(
+          "reading-mode-enforcer",
+          () => {
+            this.readingModeEnforcer.enable();
+          },
+          500,
+        );
       }
 
       // Initialize Body link patch
       this.bodyLinkPatch = new BodyLinkPatch(this);
       if (this.settings.showLabelsInBody) {
         // Delay enabling to ensure markdown body is fully loaded
-        this.timerManager.setTimeout("body-link-patch", () => {
-          this.bodyLinkPatch.enable();
-        }, 500);
+        this.timerManager.setTimeout(
+          "body-link-patch",
+          () => {
+            this.bodyLinkPatch.enable();
+          },
+          500,
+        );
       }
 
       // Initialize Graph View label patch
       this.graphViewPatch = new GraphViewPatch(this);
       if (this.settings.showLabelsInGraphView) {
         // Delay enabling to ensure Graph View is fully loaded
-        this.timerManager.setTimeout("graph-view-patch", () => {
-          this.graphViewPatch.enable();
-        }, 500);
+        this.timerManager.setTimeout(
+          "graph-view-patch",
+          () => {
+            this.graphViewPatch.enable();
+          },
+          500,
+        );
+      }
+
+      // RFC-024 Phase 0: first-launch-after-upgrade changelog modal.
+      // Fresh installs have no prior behaviour to contrast, so we silently seed
+      // `lastShownChangelogVersion` and skip the modal (avoids onboarding noise
+      // and unblocks E2E test vaults that boot from an empty data.json).
+      // Delayed 500ms so Obsidian's own modal stack has settled and the
+      // workspace is interactive before we surface a dialog.
+      const currentVersion = this.manifest.version;
+      if (this.isFreshInstall) {
+        this.settings.lastShownChangelogVersion = currentVersion;
+        void this.saveSettings();
+      } else if (
+        shouldShowChangelog(
+          this.settings.lastShownChangelogVersion,
+          currentVersion,
+        )
+      ) {
+        this.timerManager.setTimeout(
+          "rfc024-changelog-modal",
+          () => {
+            const modal = new ChangelogModal(
+              this.app,
+              currentVersion,
+              (version) => {
+                this.settings.lastShownChangelogVersion = version;
+                void this.saveSettings();
+              },
+            );
+            modal.open();
+          },
+          500,
+        );
       }
 
       this.logger.info("Exocortex Plugin loaded successfully");
@@ -543,8 +643,18 @@ export default class ExocortexPlugin extends Plugin {
     this.logger?.info("Exocortex Plugin unloaded");
   }
 
+  /**
+   * True when the plugin data file did not exist at startup — i.e. this is a
+   * brand-new install with no prior user state. Used to suppress the RFC-024
+   * Phase 0 changelog modal for users who never had pre-recoloring behaviour
+   * (nothing to inform them about).
+   */
+  private isFreshInstall = false;
+
   async loadSettings(): Promise<void> {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    const rawData = await this.loadData();
+    this.isFreshInstall = rawData == null;
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, rawData);
     // Ensure logChannels exists for users upgrading from older versions
     if (!this.settings.logChannels) {
       this.settings.logChannels = DEFAULT_LOG_CHANNELS;
@@ -556,7 +666,9 @@ export default class ExocortexPlugin extends Plugin {
    * Called on init and whenever log channel settings change.
    */
   configureLogChannels(): void {
-    const hasFileEnabled = Object.values(this.settings.logChannels).some(c => c.file);
+    const hasFileEnabled = Object.values(this.settings.logChannels).some(
+      (c) => c.file,
+    );
     Logger.configure({
       channels: this.settings.logChannels,
       fileChannel: hasFileEnabled ? this.fileLogChannel : null,
@@ -745,7 +857,11 @@ export default class ExocortexPlugin extends Plugin {
     // Render layout
     void (async () => {
       try {
-        await this.layoutRenderer.render("", layoutContainer, {} as MarkdownPostProcessorContext);
+        await this.layoutRenderer.render(
+          "",
+          layoutContainer,
+          {} as MarkdownPostProcessorContext,
+        );
       } catch (error) {
         this.logger.error("Failed to auto-render layout", error);
       }
@@ -784,8 +900,12 @@ export default class ExocortexPlugin extends Plugin {
       }
 
       // Check current state of layout and metadata
-      const layoutExists = viewContainer.querySelector(".exocortex-auto-layout");
-      const currentMetadataContainer = viewContainer.querySelector(".metadata-container");
+      const layoutExists = viewContainer.querySelector(
+        ".exocortex-auto-layout",
+      );
+      const currentMetadataContainer = viewContainer.querySelector(
+        ".metadata-container",
+      );
 
       // If layout exists, nothing to do
       if (layoutExists) {
@@ -818,8 +938,12 @@ export default class ExocortexPlugin extends Plugin {
           return;
         }
 
-        const layoutStillMissing = !viewContainer.querySelector(".exocortex-auto-layout");
-        const metadataStillExists = viewContainer.querySelector(".metadata-container");
+        const layoutStillMissing = !viewContainer.querySelector(
+          ".exocortex-auto-layout",
+        );
+        const metadataStillExists = viewContainer.querySelector(
+          ".metadata-container",
+        );
 
         if (layoutStillMissing && metadataStillExists) {
           isReRendering = true;
@@ -834,19 +958,33 @@ export default class ExocortexPlugin extends Plugin {
           `;
 
           // Insert after metadata container
-          metadataStillExists.insertAdjacentElement("afterend", newLayoutContainer);
+          metadataStillExists.insertAdjacentElement(
+            "afterend",
+            newLayoutContainer,
+          );
 
           // Render layout
           void (async () => {
             try {
-              await this.layoutRenderer.render("", newLayoutContainer, {} as MarkdownPostProcessorContext);
+              await this.layoutRenderer.render(
+                "",
+                newLayoutContainer,
+                {} as MarkdownPostProcessorContext,
+              );
             } catch (error) {
-              this.logger.error("Failed to re-render layout after embed processing", error);
+              this.logger.error(
+                "Failed to re-render layout after embed processing",
+                error,
+              );
             } finally {
               // Reset flag after a short delay to allow for DOM stabilization
-              this.timerManager.setTimeout(null, () => {
-                isReRendering = false;
-              }, 100);
+              this.timerManager.setTimeout(
+                null,
+                () => {
+                  isReRendering = false;
+                },
+                100,
+              );
             }
           })();
         }
@@ -922,9 +1060,7 @@ export default class ExocortexPlugin extends Plugin {
             `Skipping plannedEndTimestamp adjustment - autoAdjustPlannedEndTimestamp is disabled`,
           );
         } else {
-          const currentDate = new Date(
-            String(currentPlannedStartTimestamp),
-          );
+          const currentDate = new Date(String(currentPlannedStartTimestamp));
           const previousDate = previousPlannedStartTimestamp
             ? new Date(String(previousPlannedStartTimestamp))
             : null;
@@ -937,39 +1073,49 @@ export default class ExocortexPlugin extends Plugin {
             const deltaMs = currentDate.getTime() - previousDate.getTime();
 
             // Issue #2095: Idempotency check for Obsidian Sync
-          // When synced from another device, plannedEndTimestamp may already be shifted.
-          // Check if the current plannedEndTimestamp equals the expected value to avoid double-shift.
-          const currentPlannedEndTimestamp =
-            metadata.ems__Effort_plannedEndTimestamp;
-          const previousPlannedEndTimestamp =
-            cachedMetadata.ems__Effort_plannedEndTimestamp;
+            // When synced from another device, plannedEndTimestamp may already be shifted.
+            // Check if the current plannedEndTimestamp equals the expected value to avoid double-shift.
+            const currentPlannedEndTimestamp =
+              metadata.ems__Effort_plannedEndTimestamp;
+            const previousPlannedEndTimestamp =
+              cachedMetadata.ems__Effort_plannedEndTimestamp;
 
-          if (currentPlannedEndTimestamp && previousPlannedEndTimestamp) {
-            const currentEndDate = new Date(
-              String(currentPlannedEndTimestamp),
-            );
-            const previousEndDate = new Date(
-              String(previousPlannedEndTimestamp),
-            );
+            if (currentPlannedEndTimestamp && previousPlannedEndTimestamp) {
+              const currentEndDate = new Date(
+                String(currentPlannedEndTimestamp),
+              );
+              const previousEndDate = new Date(
+                String(previousPlannedEndTimestamp),
+              );
 
-            if (
-              !isNaN(currentEndDate.getTime()) &&
-              !isNaN(previousEndDate.getTime())
-            ) {
-              const expectedEndTimestamp =
-                previousEndDate.getTime() + deltaMs;
-              const actualEndTimestamp = currentEndDate.getTime();
+              if (
+                !isNaN(currentEndDate.getTime()) &&
+                !isNaN(previousEndDate.getTime())
+              ) {
+                const expectedEndTimestamp =
+                  previousEndDate.getTime() + deltaMs;
+                const actualEndTimestamp = currentEndDate.getTime();
 
-              // If plannedEndTimestamp is already at expected value, skip the shift
-              // This happens when syncing from another device that already applied the shift
-              if (actualEndTimestamp === expectedEndTimestamp) {
-                this.logger.info(
-                  `Skipping plannedEndTimestamp shift - already at expected value (sync from another device)`,
-                );
-                // Update cache for plannedEndTimestamp to reflect synced value
-                cachedMetadata.ems__Effort_plannedEndTimestamp =
-                  currentPlannedEndTimestamp;
+                // If plannedEndTimestamp is already at expected value, skip the shift
+                // This happens when syncing from another device that already applied the shift
+                if (actualEndTimestamp === expectedEndTimestamp) {
+                  this.logger.info(
+                    `Skipping plannedEndTimestamp shift - already at expected value (sync from another device)`,
+                  );
+                  // Update cache for plannedEndTimestamp to reflect synced value
+                  cachedMetadata.ems__Effort_plannedEndTimestamp =
+                    currentPlannedEndTimestamp;
+                } else {
+                  await this.taskStatusService.shiftPlannedEndTimestamp(
+                    file,
+                    deltaMs,
+                  );
+                  this.logger.info(
+                    `Shifted ems__Effort_plannedEndTimestamp by ${deltaMs}ms`,
+                  );
+                }
               } else {
+                // Dates are invalid, proceed with shift
                 await this.taskStatusService.shiftPlannedEndTimestamp(
                   file,
                   deltaMs,
@@ -979,7 +1125,7 @@ export default class ExocortexPlugin extends Plugin {
                 );
               }
             } else {
-              // Dates are invalid, proceed with shift
+              // No plannedEndTimestamp to check, proceed with shift
               await this.taskStatusService.shiftPlannedEndTimestamp(
                 file,
                 deltaMs,
@@ -988,17 +1134,7 @@ export default class ExocortexPlugin extends Plugin {
                 `Shifted ems__Effort_plannedEndTimestamp by ${deltaMs}ms`,
               );
             }
-          } else {
-            // No plannedEndTimestamp to check, proceed with shift
-            await this.taskStatusService.shiftPlannedEndTimestamp(
-              file,
-              deltaMs,
-            );
-            this.logger.info(
-              `Shifted ems__Effort_plannedEndTimestamp by ${deltaMs}ms`,
-            );
           }
-        }
         }
       }
 
@@ -1019,9 +1155,7 @@ export default class ExocortexPlugin extends Plugin {
           currentAssetLabel,
         );
 
-        this.logger.info(
-          `Auto-synced aliases for exo__Asset_label change`,
-        );
+        this.logger.info(`Auto-synced aliases for exo__Asset_label change`);
       }
 
       this.metadataCache.set(file.path, { ...metadata });
@@ -1032,7 +1166,6 @@ export default class ExocortexPlugin extends Plugin {
       );
     }
   }
-
 
   /**
    * Issue #2785: schedule a debounced, per-file re-index after a frontmatter mutation.
