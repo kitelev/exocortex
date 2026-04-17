@@ -23,7 +23,9 @@ describe("ButtonGroupsBuilder - build (dynamic commands only)", () => {
     };
 
     ctx.mockMetadataExtractor.extractMetadata.mockReturnValue(metadata);
-    ctx.mockMetadataExtractor.extractInstanceClass.mockReturnValue("[[ems__Task]]");
+    ctx.mockMetadataExtractor.extractInstanceClass.mockReturnValue(
+      "[[ems__Task]]",
+    );
     ctx.mockMetadataExtractor.extractStatus.mockReturnValue(null);
     ctx.mockMetadataExtractor.extractIsArchived.mockReturnValue(false);
     ctx.mockFolderRepairService.getExpectedFolder.mockResolvedValue(null);
@@ -46,7 +48,9 @@ describe("ButtonGroupsBuilder - build (dynamic commands only)", () => {
     };
 
     ctx.mockMetadataExtractor.extractMetadata.mockReturnValue(metadata);
-    ctx.mockMetadataExtractor.extractInstanceClass.mockReturnValue("[[ems__Task]]");
+    ctx.mockMetadataExtractor.extractInstanceClass.mockReturnValue(
+      "[[ems__Task]]",
+    );
     ctx.mockMetadataExtractor.extractStatus.mockReturnValue(null);
     ctx.mockMetadataExtractor.extractIsArchived.mockReturnValue(false);
     ctx.mockFolderRepairService.getExpectedFolder.mockResolvedValue("Tasks");
@@ -57,7 +61,11 @@ describe("ButtonGroupsBuilder - build (dynamic commands only)", () => {
           name: "Start Effort",
           category: "status",
           precondition: { type: "always_true" },
-          grounding: { type: "set_frontmatter_value", property: "status", value: "doing" },
+          grounding: {
+            type: "set_frontmatter_value",
+            property: "status",
+            value: "doing",
+          },
         },
         binding: { order: 0, group: "primary" },
       },
@@ -85,7 +93,9 @@ describe("ButtonGroupsBuilder - build (dynamic commands only)", () => {
     };
 
     ctx.mockMetadataExtractor.extractMetadata.mockReturnValue(metadata);
-    ctx.mockMetadataExtractor.extractInstanceClass.mockReturnValue("[[ems__Task]]");
+    ctx.mockMetadataExtractor.extractInstanceClass.mockReturnValue(
+      "[[ems__Task]]",
+    );
     ctx.mockMetadataExtractor.extractStatus.mockReturnValue(null);
     ctx.mockMetadataExtractor.extractIsArchived.mockReturnValue(false);
     ctx.mockFolderRepairService.getExpectedFolder.mockResolvedValue("Tasks");
@@ -134,7 +144,9 @@ describe("ButtonGroupsBuilder - build (dynamic commands only)", () => {
     };
 
     ctx.mockMetadataExtractor.extractMetadata.mockReturnValue(metadata);
-    ctx.mockMetadataExtractor.extractInstanceClass.mockReturnValue("[[ems__Task]]");
+    ctx.mockMetadataExtractor.extractInstanceClass.mockReturnValue(
+      "[[ems__Task]]",
+    );
     ctx.mockMetadataExtractor.extractStatus.mockReturnValue(null);
     ctx.mockMetadataExtractor.extractIsArchived.mockReturnValue(false);
     ctx.mockFolderRepairService.getExpectedFolder.mockResolvedValue("Tasks");
@@ -156,20 +168,22 @@ describe("ButtonGroupsBuilder - build (dynamic commands only)", () => {
     };
 
     ctx.mockMetadataExtractor.extractMetadata.mockReturnValue(metadata);
-    ctx.mockMetadataExtractor.extractInstanceClass.mockReturnValue("[[ems__Task]]");
+    ctx.mockMetadataExtractor.extractInstanceClass.mockReturnValue(
+      "[[ems__Task]]",
+    );
     ctx.mockMetadataExtractor.extractStatus.mockReturnValue(null);
     ctx.mockMetadataExtractor.extractIsArchived.mockReturnValue(false);
     ctx.mockFolderRepairService.getExpectedFolder.mockResolvedValue("Tasks");
     ctx.mockCommandResolver.resolveForAsset.mockResolvedValue([
       {
         command: {
-          id: "cmd-status",
-          name: "Move to Backlog",
+          id: "cmd-creation",
+          name: "Create Task",
           category: "status",
           precondition: { type: "always_true" },
           grounding: { type: "set_frontmatter_value" },
         },
-        binding: { order: 0, group: "primary" },
+        binding: { order: 0, group: "creation" },
       },
       {
         command: {
@@ -179,33 +193,37 @@ describe("ButtonGroupsBuilder - build (dynamic commands only)", () => {
           precondition: { type: "always_true" },
           grounding: { type: "set_frontmatter_value" },
         },
-        binding: { order: 1, group: "secondary" },
+        binding: { order: 1, group: "maintenance" },
       },
       {
         command: {
-          id: "cmd-danger",
+          id: "cmd-unknown",
           name: "Trash",
           category: "maintenance",
           precondition: { type: "always_true" },
           grounding: { type: "set_frontmatter_value" },
         },
-        binding: { order: 2, group: "danger" },
+        binding: { order: 2, group: "legacy-unknown" },
       },
     ]);
     ctx.mockPreconditionEvaluator.evaluate.mockResolvedValue(true);
 
     const groups = await ctx.builder.build(mockFile);
 
+    // RFC-024 Phase 0: category-driven default variants.
+    // `creation` → primary, `maintenance` → muted, unknown group → secondary.
     const statusGroup = groups.find((g) => g.id === "dynamic-commands-status");
-    const maintenanceGroup = groups.find((g) => g.id === "dynamic-commands-maintenance");
+    const maintenanceGroup = groups.find(
+      (g) => g.id === "dynamic-commands-maintenance",
+    );
     expect(statusGroup).toBeDefined();
     expect(statusGroup!.buttons.length).toBe(1);
     expect(statusGroup!.buttons[0].variant).toBe("primary");
     expect(maintenanceGroup).toBeDefined();
     expect(maintenanceGroup!.collapsedByDefault).toBe(true);
     expect(maintenanceGroup!.buttons.length).toBe(2);
-    expect(maintenanceGroup!.buttons[0].variant).toBe("secondary");
-    expect(maintenanceGroup!.buttons[1].variant).toBe("danger");
+    expect(maintenanceGroup!.buttons[0].variant).toBe("muted");
+    expect(maintenanceGroup!.buttons[1].variant).toBe("secondary");
   });
 
   it("should handle resolver errors gracefully", async () => {
@@ -220,11 +238,15 @@ describe("ButtonGroupsBuilder - build (dynamic commands only)", () => {
     };
 
     ctx.mockMetadataExtractor.extractMetadata.mockReturnValue(metadata);
-    ctx.mockMetadataExtractor.extractInstanceClass.mockReturnValue("[[ems__Task]]");
+    ctx.mockMetadataExtractor.extractInstanceClass.mockReturnValue(
+      "[[ems__Task]]",
+    );
     ctx.mockMetadataExtractor.extractStatus.mockReturnValue(null);
     ctx.mockMetadataExtractor.extractIsArchived.mockReturnValue(false);
     ctx.mockFolderRepairService.getExpectedFolder.mockResolvedValue("Tasks");
-    ctx.mockCommandResolver.resolveForAsset.mockRejectedValue(new Error("Resolver failed"));
+    ctx.mockCommandResolver.resolveForAsset.mockRejectedValue(
+      new Error("Resolver failed"),
+    );
 
     const groups = await ctx.builder.build(mockFile);
 

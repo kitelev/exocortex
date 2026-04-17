@@ -1177,6 +1177,19 @@
   box-shadow: 0 2px 12px rgba(244, 67, 54, 0.3);
 }
 
+/* Muted variant - Power-user / maintenance commands (RFC-024 Phase 0) */
+.exocortex-action-button--muted {
+  background-color: var(--background-primary);
+  color: var(--text-muted);
+  border-color: var(--background-modifier-border);
+}
+
+.exocortex-action-button--muted:hover {
+  background-color: var(--background-modifier-hover);
+  color: var(--text-normal);
+  border-color: var(--text-muted);
+}
+
 /* Dark theme adjustments */
 .theme-dark .exocortex-action-buttons-container {
   background-color: var(--background-primary);

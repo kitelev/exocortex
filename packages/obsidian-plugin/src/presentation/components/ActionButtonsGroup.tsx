@@ -1,13 +1,26 @@
 import React, { useState } from "react";
 
 /**
+ * Semantic variants for action buttons. The `muted` variant (RFC-024 Phase 0)
+ * is reserved for power-user / maintenance commands that should recede
+ * visually so primary actions stay prominent.
+ */
+export type ActionButtonVariant =
+  | "primary"
+  | "secondary"
+  | "success"
+  | "warning"
+  | "danger"
+  | "muted";
+
+/**
  * Props for individual action buttons within the group
  */
 export interface ActionButton {
   id: string;
   label: string;
   onClick: () => void | Promise<void>;
-  variant?: "primary" | "secondary" | "success" | "warning" | "danger";
+  variant?: ActionButtonVariant;
   visible?: boolean;
 }
 

@@ -1,7 +1,5 @@
 import { DynamicCommandButtonGroupBuilder } from "../../../../src/presentation/builders/button-groups/DynamicCommandButtonGroupBuilder";
-import {
-  GroundingType,
-} from "exocortex";
+import { GroundingType } from "exocortex";
 
 const mockResolveForAsset = jest.fn();
 const mockEvaluate = jest.fn();
@@ -26,7 +24,9 @@ const mockGroundingExecutor = {
   substituteVariables: jest.fn(),
 };
 
-function createGrounding(overrides?: Partial<GroundingDefinition>): GroundingDefinition {
+function createGrounding(
+  overrides?: Partial<GroundingDefinition>,
+): GroundingDefinition {
   return {
     id: "grounding-1",
     label: "Test grounding",
@@ -37,7 +37,9 @@ function createGrounding(overrides?: Partial<GroundingDefinition>): GroundingDef
   };
 }
 
-function createCommand(overrides?: Partial<CommandDefinition>): CommandDefinition {
+function createCommand(
+  overrides?: Partial<CommandDefinition>,
+): CommandDefinition {
   return {
     id: "cmd-1",
     name: "Test command",
@@ -46,7 +48,9 @@ function createCommand(overrides?: Partial<CommandDefinition>): CommandDefinitio
   };
 }
 
-function createBinding(overrides?: Partial<CommandBindingDefinition>): CommandBindingDefinition {
+function createBinding(
+  overrides?: Partial<CommandBindingDefinition>,
+): CommandBindingDefinition {
   return {
     id: "binding-1",
     label: "Test binding",
@@ -66,12 +70,17 @@ function createResolvedCommand(
   };
 }
 
-function createContext(metadataOverrides?: Record<string, unknown>): ButtonBuilderContext {
+function createContext(
+  metadataOverrides?: Record<string, unknown>,
+): ButtonBuilderContext {
   return {
     app: {} as ButtonBuilderContext["app"],
     settings: {} as ButtonBuilderContext["settings"],
     plugin: {} as ButtonBuilderContext["plugin"],
-    file: { path: "test/file.md", parent: { path: "test" } } as ButtonBuilderContext["file"],
+    file: {
+      path: "test/file.md",
+      parent: { path: "test" },
+    } as ButtonBuilderContext["file"],
     metadata: {
       exo__Asset_uid: "obsidian://vault/test/file.md",
       exo__Instance_class: ["[[ems__Task]]"],
@@ -87,7 +96,12 @@ function createContext(metadataOverrides?: Record<string, unknown>): ButtonBuild
       expectedFolder: "test",
       classIsPrototype: false,
     },
-    logger: { info: jest.fn(), error: jest.fn(), warn: jest.fn(), debug: jest.fn() } as unknown as ButtonBuilderContext["logger"],
+    logger: {
+      info: jest.fn(),
+      error: jest.fn(),
+      warn: jest.fn(),
+      debug: jest.fn(),
+    } as unknown as ButtonBuilderContext["logger"],
     refresh: jest.fn().mockResolvedValue(undefined),
   };
 }
@@ -106,7 +120,11 @@ describe("DynamicCommandButtonGroupBuilder", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     builder = new DynamicCommandButtonGroupBuilder({
-      commandResolver: mockCommandResolver as unknown as Parameters<typeof DynamicCommandButtonGroupBuilder.prototype.build>[0] extends never ? never : any,
+      commandResolver: mockCommandResolver as unknown as Parameters<
+        typeof DynamicCommandButtonGroupBuilder.prototype.build
+      >[0] extends never
+        ? never
+        : any,
       preconditionEvaluator: mockPreconditionEvaluator as unknown as any,
       groundingExecutor: mockGroundingExecutor as unknown as any,
       notificationService: mockNotificationService as any,
@@ -132,7 +150,11 @@ describe("DynamicCommandButtonGroupBuilder", () => {
       const result = await builder.build(context);
       expect(result).toEqual([]);
       // subjectIRI is always constructed from file.path as obsidian://vault/ IRI
-      expect(mockResolveForAsset).toHaveBeenCalledWith("obsidian://vault/test/file.md", "ems__Task", undefined);
+      expect(mockResolveForAsset).toHaveBeenCalledWith(
+        "obsidian://vault/test/file.md",
+        "ems__Task",
+        undefined,
+      );
     });
 
     it("should return empty array when no instance class in metadata", async () => {
@@ -173,9 +195,7 @@ describe("DynamicCommandButtonGroupBuilder", () => {
       const rc1 = createResolvedCommand({ id: "cmd-pass", name: "Passing" });
       const rc2 = createResolvedCommand({ id: "cmd-fail", name: "Failing" });
       mockResolveForAsset.mockResolvedValue([rc1, rc2]);
-      mockEvaluate
-        .mockResolvedValueOnce(true)
-        .mockResolvedValueOnce(false);
+      mockEvaluate.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
 
       const context = createContext();
       const result = await builder.build(context);
@@ -251,10 +271,11 @@ describe("DynamicCommandButtonGroupBuilder", () => {
       );
     });
 
-    it("should resolve variant from binding group", async () => {
+    it("should resolve variant from binding group via categoryDefaultVariant map", async () => {
+      // RFC-024 Phase 0: `creation` group maps to `primary` by built-in defaults
       const rc = createResolvedCommand(
-        { name: "Danger action" },
-        { group: "danger" },
+        { name: "Create action" },
+        { group: "creation" },
       );
       mockResolveForAsset.mockResolvedValue([rc]);
       mockEvaluate.mockResolvedValue(true);
@@ -262,13 +283,41 @@ describe("DynamicCommandButtonGroupBuilder", () => {
       const context = createContext();
       const result = await builder.build(context);
 
-      expect(result[0].variant).toBe("danger");
+      expect(result[0].variant).toBe("primary");
+    });
+
+    it("should map maintenance group to muted variant (RFC-024 Phase 0)", async () => {
+      const rc = createResolvedCommand(
+        { name: "Rebuild index" },
+        { group: "maintenance" },
+      );
+      mockResolveForAsset.mockResolvedValue([rc]);
+      mockEvaluate.mockResolvedValue(true);
+
+      const context = createContext();
+      const result = await builder.build(context);
+
+      expect(result[0].variant).toBe("muted");
     });
 
     it("should default variant to secondary when no group", async () => {
       const rc = createResolvedCommand(
         { name: "Default action" },
         { group: undefined },
+      );
+      mockResolveForAsset.mockResolvedValue([rc]);
+      mockEvaluate.mockResolvedValue(true);
+
+      const context = createContext();
+      const result = await builder.build(context);
+
+      expect(result[0].variant).toBe("secondary");
+    });
+
+    it("should default variant to secondary for unknown group", async () => {
+      const rc = createResolvedCommand(
+        { name: "Future action" },
+        { group: "future-uncategorized" },
       );
       mockResolveForAsset.mockResolvedValue([rc]);
       mockEvaluate.mockResolvedValue(true);
@@ -345,7 +394,9 @@ describe("DynamicCommandButtonGroupBuilder", () => {
 
       await result[0].onClick();
 
-      expect(mockNotificationService.error).toHaveBeenCalledWith("Command failed: Something went wrong");
+      expect(mockNotificationService.error).toHaveBeenCalledWith(
+        "Command failed: Something went wrong",
+      );
     });
 
     it("should show confirmation dialog when confirmMessage is set", async () => {
@@ -425,8 +476,14 @@ describe("DynamicCommandButtonGroupBuilder", () => {
     });
 
     it("should preserve command order from resolver", async () => {
-      const rc1 = createResolvedCommand({ id: "c1", name: "First" }, { order: 1 });
-      const rc2 = createResolvedCommand({ id: "c2", name: "Second" }, { order: 2 });
+      const rc1 = createResolvedCommand(
+        { id: "c1", name: "First" },
+        { order: 1 },
+      );
+      const rc2 = createResolvedCommand(
+        { id: "c2", name: "Second" },
+        { order: 2 },
+      );
       mockResolveForAsset.mockResolvedValue([rc1, rc2]);
       mockEvaluate.mockResolvedValue(true);
 
@@ -441,11 +498,31 @@ describe("DynamicCommandButtonGroupBuilder", () => {
   describe("buildCategoryGroups", () => {
     it("should return groups in fixed order (creation → status → planning → criticality → maintenance)", async () => {
       const commands = [
-        createResolvedCommand({ id: "m1", name: "Rename to UID", category: "maintenance" }),
-        createResolvedCommand({ id: "c1", name: "Create Task", category: "creation" }),
-        createResolvedCommand({ id: "s1", name: "Set Status Doing", category: "status" }),
-        createResolvedCommand({ id: "p1", name: "Plan on Today", category: "planning" }),
-        createResolvedCommand({ id: "k1", name: "Set Criticality High", category: "criticality" }),
+        createResolvedCommand({
+          id: "m1",
+          name: "Rename to UID",
+          category: "maintenance",
+        }),
+        createResolvedCommand({
+          id: "c1",
+          name: "Create Task",
+          category: "creation",
+        }),
+        createResolvedCommand({
+          id: "s1",
+          name: "Set Status Doing",
+          category: "status",
+        }),
+        createResolvedCommand({
+          id: "p1",
+          name: "Plan on Today",
+          category: "planning",
+        }),
+        createResolvedCommand({
+          id: "k1",
+          name: "Set Criticality High",
+          category: "criticality",
+        }),
       ];
       mockResolveForAsset.mockResolvedValue(commands);
       mockEvaluate.mockResolvedValue(true);
@@ -470,23 +547,41 @@ describe("DynamicCommandButtonGroupBuilder", () => {
 
     it("should mark maintenance group collapsedByDefault", async () => {
       mockResolveForAsset.mockResolvedValue([
-        createResolvedCommand({ id: "c1", name: "Create Task", category: "creation" }),
-        createResolvedCommand({ id: "m1", name: "Rename to UID", category: "maintenance" }),
+        createResolvedCommand({
+          id: "c1",
+          name: "Create Task",
+          category: "creation",
+        }),
+        createResolvedCommand({
+          id: "m1",
+          name: "Rename to UID",
+          category: "maintenance",
+        }),
       ]);
       mockEvaluate.mockResolvedValue(true);
 
       const result = await builder.buildCategoryGroups(createContext());
 
       const creation = result.find((g) => g.id === "dynamic-commands-creation");
-      const maintenance = result.find((g) => g.id === "dynamic-commands-maintenance");
+      const maintenance = result.find(
+        (g) => g.id === "dynamic-commands-maintenance",
+      );
       expect(creation?.collapsedByDefault).toBeFalsy();
       expect(maintenance?.collapsedByDefault).toBe(true);
     });
 
     it("should omit categories that have zero visible commands", async () => {
       mockResolveForAsset.mockResolvedValue([
-        createResolvedCommand({ id: "c1", name: "Create Task", category: "creation" }),
-        createResolvedCommand({ id: "s1", name: "Set Status Doing", category: "status" }),
+        createResolvedCommand({
+          id: "c1",
+          name: "Create Task",
+          category: "creation",
+        }),
+        createResolvedCommand({
+          id: "s1",
+          name: "Set Status Doing",
+          category: "status",
+        }),
       ]);
       mockEvaluate.mockResolvedValue(true);
 
@@ -496,17 +591,25 @@ describe("DynamicCommandButtonGroupBuilder", () => {
         "dynamic-commands-creation",
         "dynamic-commands-status",
       ]);
-      expect(result.find((g) => g.id === "dynamic-commands-maintenance")).toBeUndefined();
+      expect(
+        result.find((g) => g.id === "dynamic-commands-maintenance"),
+      ).toBeUndefined();
     });
 
     it("should drop categories where preconditions filter out every command", async () => {
       mockResolveForAsset.mockResolvedValue([
-        createResolvedCommand({ id: "c1", name: "Create Task", category: "creation" }),
-        createResolvedCommand({ id: "m1", name: "Rename to UID", category: "maintenance" }),
+        createResolvedCommand({
+          id: "c1",
+          name: "Create Task",
+          category: "creation",
+        }),
+        createResolvedCommand({
+          id: "m1",
+          name: "Rename to UID",
+          category: "maintenance",
+        }),
       ]);
-      mockEvaluate
-        .mockResolvedValueOnce(true)
-        .mockResolvedValueOnce(false);
+      mockEvaluate.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
 
       const result = await builder.buildCategoryGroups(createContext());
 
@@ -515,7 +618,11 @@ describe("DynamicCommandButtonGroupBuilder", () => {
 
     it("should route commands without category into Other group at the end", async () => {
       mockResolveForAsset.mockResolvedValue([
-        createResolvedCommand({ id: "c1", name: "Create Task", category: "creation" }),
+        createResolvedCommand({
+          id: "c1",
+          name: "Create Task",
+          category: "creation",
+        }),
         createResolvedCommand({ id: "u1", name: "Uncategorized" }),
       ]);
       mockEvaluate.mockResolvedValue(true);
