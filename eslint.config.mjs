@@ -57,6 +57,29 @@ export default tseslint.config(
         selector: 'NewExpression[callee.name="Notice"]',
         message: 'Use INotificationService instead of direct new Notice(). Only ObsidianNotificationService may call new Notice().',
       }],
+
+      // Block Node.js built-ins in plugin/core src for mobile compatibility.
+      // manifest.json sets "isDesktopOnly": false → plugin targets mobile
+      // Obsidian (WKWebView/WebView without a Node.js runtime). Importing
+      // fs/child_process/os/path would crash the plugin on mobile load.
+      // Tests and scripts may use Node APIs (see overrides below).
+      'no-restricted-imports': ['error', {
+        patterns: [
+          {
+            group: [
+              'fs', 'fs/*',
+              'node:fs', 'node:fs/*',
+              'child_process',
+              'node:child_process',
+              'os',
+              'node:os',
+              'path', 'path/*',
+              'node:path', 'node:path/*',
+            ],
+            message: 'Node.js built-ins (fs/child_process/os/path) are forbidden in plugin/core src — plugin is mobile-compatible (manifest isDesktopOnly=false) and would crash on Obsidian mobile (WebView without Node runtime). Use Obsidian Vault/FileSystemAdapter APIs instead.',
+          },
+        ],
+      }],
     },
   },
   {
@@ -70,6 +93,7 @@ export default tseslint.config(
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-unsafe-assignment': 'off',
+      'no-restricted-imports': 'off',
     },
   },
   {
