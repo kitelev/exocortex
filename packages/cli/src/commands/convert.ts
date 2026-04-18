@@ -34,9 +34,9 @@ const FORMAT_MAP: Record<ConvertFormat, RDFSerializationFormat> = {
   jsonld: "json-ld",
 };
 
-const RDF_TYPE_IRI = new IRI(`${Namespace.RDF.iri.value}type`);
+export const RDF_TYPE_IRI = new IRI(`${Namespace.RDF.iri.value}type`);
 
-const KNOWN_NAMESPACES: Namespace[] = [
+export const KNOWN_NAMESPACES: Namespace[] = [
   Namespace.RDF,
   Namespace.RDFS,
   Namespace.OWL,
@@ -57,7 +57,7 @@ const KNOWN_NAMESPACES: Namespace[] = [
  * Accepts shorthand (`ems__Task` → `https://.../ems#Task`), prefixed
  * (`ems:Task` → same), or a full IRI (passed through unchanged).
  */
-function resolveClassIri(filter: string): IRI {
+export function resolveClassIri(filter: string): IRI {
   const trimmed = filter.trim();
 
   if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
@@ -88,7 +88,7 @@ function resolveClassIri(filter: string): IRI {
  * Filter the triple list to keep only triples whose subject is an instance of
  * the given class. The target subjects are discovered by `?s rdf:type <class>`.
  */
-function filterByClass(triples: Triple[], classIri: IRI): Triple[] {
+export function filterByClass(triples: Triple[], classIri: IRI): Triple[] {
   const matchingSubjects = new Set<string>();
   for (const t of triples) {
     if (!t.predicate.equals(RDF_TYPE_IRI)) continue;
