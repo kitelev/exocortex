@@ -85,7 +85,15 @@ export function populateServiceRegistry(
   registry.register(
     "createAsset",
     wrapService(async (targetIRI: string, userInput?: UserInput) => {
-      const prototypeUID = userInput?.prototypeUID as string | undefined;
+      // Accept both `prototypeUID` and `prototype` — starter-kit groundings
+      // prior to 2026-04-13 wired "Create Project" with `{"prototype":"..."}`
+      // (natural JSON key), which diverged from the service contract. The UI
+      // click-through silently failed because the 4 s red Notice fades fast
+      // while the direct console call suggested the plugin was correct. See
+      // #2850 Bug 3.
+      const prototypeUID =
+        (userInput?.prototypeUID as string | undefined) ??
+        (userInput?.prototype as string | undefined);
       const label = userInput?.label as string | undefined;
       let folder = userInput?.folder as string | undefined;
       if (!prototypeUID) throw new Error("createAsset requires userInput.prototypeUID");
