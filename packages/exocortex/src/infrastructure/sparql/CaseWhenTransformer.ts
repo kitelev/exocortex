@@ -39,9 +39,11 @@ export class CaseWhenTransformer {
    * @throws CaseWhenTransformerError if CASE WHEN syntax is malformed
    */
   transform(query: string): string {
-    // Keep transforming until no more CASE expressions are found
-    // (handles nested CASE expressions)
-    let result = query;
+    // Strip SPARQL `#` line comments first so that keywords like
+    // CASE/WHEN/THEN/ELSE/END living inside a comment do not confuse the
+    // scanner. Comment characters are replaced with equivalent whitespace so
+    // positions in downstream error messages still line up with the input.
+    let result = this.stripLineComments(query);
     let transformed: string;
     let iterationCount = 0;
     const maxIterations = 100; // Prevent infinite loops
@@ -57,6 +59,63 @@ export class CaseWhenTransformer {
       }
     } while (result !== transformed);
 
+    return result;
+  }
+
+  /**
+   * Replace SPARQL `#` line comments with equivalent-length whitespace.
+   * Strings and `<...>` IRIs are copied through untouched so that a `#`
+   * inside them is not treated as the start of a comment.
+   */
+  private stripLineComments(query: string): string {
+    let result = "";
+    let i = 0;
+    while (i < query.length) {
+      const char = query[i];
+
+      if (char === "'" || char === '"') {
+        const quote = char;
+        result += char;
+        i++;
+        while (i < query.length && query[i] !== quote) {
+          if (query[i] === "\\" && i + 1 < query.length) {
+            result += query[i] + query[i + 1];
+            i += 2;
+            continue;
+          }
+          result += query[i];
+          i++;
+        }
+        if (i < query.length) {
+          result += query[i];
+          i++;
+        }
+        continue;
+      }
+
+      if (char === "<") {
+        const end = query.indexOf(">", i);
+        // IRIrefs in SPARQL cannot contain newlines — if we don't find `>`
+        // on the same line, treat `<` as an ordinary character.
+        const nextNewline = query.indexOf("\n", i);
+        if (end !== -1 && (nextNewline === -1 || end < nextNewline)) {
+          result += query.substring(i, end + 1);
+          i = end + 1;
+          continue;
+        }
+      }
+
+      if (char === "#") {
+        const newline = query.indexOf("\n", i);
+        const end = newline === -1 ? query.length : newline;
+        result += " ".repeat(end - i);
+        i = end;
+        continue;
+      }
+
+      result += char;
+      i++;
+    }
     return result;
   }
 
@@ -358,7 +417,7 @@ export class CaseWhenTransformer {
    */
   private extractElseClause(caseExpr: string): string | null {
     // Remove CASE and END keywords
-    let content = caseExpr.replace(/^\s*CASE\s+/i, "").replace(/\s*END\s*$/i, "");
+    const content = caseExpr.replace(/^\s*CASE\s+/i, "").replace(/\s*END\s*$/i, "");
 
     // Find ELSE position at top level
     const elsePositions = this.findKeywordPositions(content, "ELSE");

@@ -241,4 +241,52 @@ describe("CaseWhenTransformer", () => {
       expect(result).toBe(`IF(BOUND(?x), ?x, ?default)`);
     });
   });
+
+  describe("SPARQL `#` line comments (bug #2835)", () => {
+    it("should ignore CASE keyword inside a line comment", () => {
+      const input = `# Test: CASE WHEN status is done THEN mark finished
+PREFIX ems: <https://exocortex.my/ontology/ems#>
+SELECT ?s WHERE { ?s ems:Effort_status ?o } LIMIT 1`;
+      expect(() => transformer.transform(input)).not.toThrow();
+      const result = transformer.transform(input);
+      expect(result).toContain("SELECT ?s");
+      expect(result).not.toContain("IF(");
+    });
+
+    it("should ignore WHEN/THEN/ELSE/END keywords inside a trailing comment", () => {
+      const input = `SELECT ?s WHERE { ?s ?p ?o } # WHEN the query runs we take every END`;
+      expect(() => transformer.transform(input)).not.toThrow();
+    });
+
+    it("should not treat `#` inside an IRI as a comment start", () => {
+      const input = `PREFIX ems: <https://exocortex.my/ontology/ems#> # CASE study of CASE WHEN END
+SELECT ?s WHERE { ?s ems:Effort_status ?o }`;
+      expect(() => transformer.transform(input)).not.toThrow();
+    });
+
+    it("should not treat `#` inside a double-quoted string as a comment start", () => {
+      const input = `CASE WHEN ?label = "# CASE study" THEN "hit" ELSE "miss" END`;
+      const result = transformer.transform(input);
+      expect(result).toBe(`IF(?label = "# CASE study", "hit", "miss")`);
+    });
+
+    it("should not treat `#` inside a single-quoted string as a comment start", () => {
+      const input = `CASE WHEN ?label = '# END of line' THEN 'yes' ELSE 'no' END`;
+      const result = transformer.transform(input);
+      expect(result).toBe(`IF(?label = '# END of line', 'yes', 'no')`);
+    });
+
+    it("should transform a valid CASE WHEN even when a sibling comment mentions CASE", () => {
+      const input = `# header: use CASE WHEN for branching
+SELECT (CASE WHEN ?x > 10 THEN "high" ELSE "low" END AS ?level) WHERE { ?s :v ?x }`;
+      const result = transformer.transform(input);
+      expect(result).toContain(`IF(?x > 10, "high", "low")`);
+      expect(result).not.toContain("CASE WHEN ?x");
+    });
+
+    it("should handle a comment-only query without error", () => {
+      const input = `# just a CASE WHEN END comment with no SPARQL content`;
+      expect(() => transformer.transform(input)).not.toThrow();
+    });
+  });
 });
