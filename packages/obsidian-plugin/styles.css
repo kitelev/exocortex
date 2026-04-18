@@ -1113,24 +1113,80 @@
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
 }
 
+/* ----------------------------------------------------------------------------
+   Layer 2 intent tokens (RFC-024 Phase 1)
+   ----------------------------------------------------------------------------
+   Exocortex semantic tokens bridge Obsidian theme vars (Layer 1) with
+   component styles (Layer 3). When a user's theme does not supply a given
+   Layer 1 variable the fallbacks below are chosen to pass WCAG AA (>=4.5:1)
+   against the default Obsidian light/dark backgrounds. The automated
+   `accessibility-contrast-matrix.test.ts` locks these values as the
+   contrast baseline.
+   -------------------------------------------------------------------------- */
+:root {
+  --exo-intent-primary-fg: var(--text-on-accent, #ffffff);
+  --exo-intent-primary-bg: var(--interactive-accent, #5546a8);
+  --exo-intent-primary-border: var(--interactive-accent, #5546a8);
+
+  --exo-intent-secondary-fg: var(--text-normal, #1d1d1d);
+  --exo-intent-secondary-bg: var(--background-primary, #ffffff);
+  --exo-intent-secondary-border: var(--background-modifier-border, #dcdcdc);
+
+  --exo-intent-success-fg: var(--text-success, #1b5e20);
+  --exo-intent-success-bg: rgba(46, 125, 50, 0.12);
+  --exo-intent-success-border: rgba(46, 125, 50, 0.3);
+
+  --exo-intent-warning-fg: var(--text-warning, #bf360c);
+  --exo-intent-warning-bg: rgba(191, 54, 12, 0.12);
+  --exo-intent-warning-border: rgba(191, 54, 12, 0.3);
+
+  --exo-intent-danger-fg: var(--text-error, #b71c1c);
+  --exo-intent-danger-bg: rgba(183, 28, 28, 0.12);
+  --exo-intent-danger-border: rgba(183, 28, 28, 0.3);
+
+  --exo-intent-muted-fg: var(--text-muted, #666666);
+  --exo-intent-muted-bg: var(--background-primary, #ffffff);
+  --exo-intent-muted-border: var(--background-modifier-border, #dcdcdc);
+}
+
+.theme-dark {
+  --exo-intent-secondary-fg: var(--text-normal, #dcddde);
+  --exo-intent-secondary-bg: var(--background-primary, #1e1e1e);
+
+  --exo-intent-success-fg: var(--text-success, #81c784);
+  --exo-intent-success-bg: rgba(102, 187, 106, 0.18);
+  --exo-intent-success-border: rgba(102, 187, 106, 0.35);
+
+  --exo-intent-warning-fg: var(--text-warning, #ffb74d);
+  --exo-intent-warning-bg: rgba(255, 183, 77, 0.18);
+  --exo-intent-warning-border: rgba(255, 183, 77, 0.35);
+
+  --exo-intent-danger-fg: var(--text-error, #ef9a9a);
+  --exo-intent-danger-bg: rgba(239, 154, 154, 0.18);
+  --exo-intent-danger-border: rgba(239, 154, 154, 0.35);
+
+  --exo-intent-muted-fg: var(--text-muted, #b3b3b3);
+  --exo-intent-muted-bg: var(--background-primary, #1e1e1e);
+}
+
 /* Primary variant - Main actions (Create, etc.) */
 .exocortex-action-button--primary {
-  background-color: var(--interactive-accent);
-  color: var(--text-on-accent);
-  border-color: var(--interactive-accent);
+  background-color: var(--exo-intent-primary-bg);
+  color: var(--exo-intent-primary-fg);
+  border-color: var(--exo-intent-primary-border);
 }
 
 .exocortex-action-button--primary:hover {
-  background-color: var(--interactive-accent-hover);
-  border-color: var(--interactive-accent-hover);
-  box-shadow: 0 2px 12px rgba(var(--interactive-accent-rgb, 123, 108, 214), 0.3);
+  background-color: var(--interactive-accent-hover, var(--exo-intent-primary-bg));
+  border-color: var(--interactive-accent-hover, var(--exo-intent-primary-border));
+  box-shadow: 0 2px 12px rgba(var(--interactive-accent-rgb, 85, 70, 168), 0.3);
 }
 
 /* Secondary variant - Status changes */
 .exocortex-action-button--secondary {
-  background-color: var(--background-primary);
-  color: var(--text-normal);
-  border-color: var(--background-modifier-border);
+  background-color: var(--exo-intent-secondary-bg);
+  color: var(--exo-intent-secondary-fg);
+  border-color: var(--exo-intent-secondary-border);
 }
 
 .exocortex-action-button--secondary:hover {
@@ -1140,48 +1196,48 @@
 
 /* Success variant - Complete actions (Done) */
 .exocortex-action-button--success {
-  background-color: rgba(76, 175, 80, 0.15);
-  color: #4caf50;
-  border-color: rgba(76, 175, 80, 0.3);
+  background-color: var(--exo-intent-success-bg);
+  color: var(--exo-intent-success-fg);
+  border-color: var(--exo-intent-success-border);
 }
 
 .exocortex-action-button--success:hover {
-  background-color: rgba(76, 175, 80, 0.25);
-  border-color: #4caf50;
-  box-shadow: 0 2px 12px rgba(76, 175, 80, 0.3);
+  background-color: var(--exo-intent-success-bg);
+  border-color: var(--exo-intent-success-fg);
+  box-shadow: 0 2px 12px var(--exo-intent-success-border);
 }
 
 /* Warning variant - Planning actions */
 .exocortex-action-button--warning {
-  background-color: rgba(255, 152, 0, 0.15);
-  color: #ff9800;
-  border-color: rgba(255, 152, 0, 0.3);
+  background-color: var(--exo-intent-warning-bg);
+  color: var(--exo-intent-warning-fg);
+  border-color: var(--exo-intent-warning-border);
 }
 
 .exocortex-action-button--warning:hover {
-  background-color: rgba(255, 152, 0, 0.25);
-  border-color: #ff9800;
-  box-shadow: 0 2px 12px rgba(255, 152, 0, 0.3);
+  background-color: var(--exo-intent-warning-bg);
+  border-color: var(--exo-intent-warning-fg);
+  box-shadow: 0 2px 12px var(--exo-intent-warning-border);
 }
 
 /* Danger variant - Destructive actions (Trash, Archive) */
 .exocortex-action-button--danger {
-  background-color: rgba(244, 67, 54, 0.15);
-  color: #f44336;
-  border-color: rgba(244, 67, 54, 0.3);
+  background-color: var(--exo-intent-danger-bg);
+  color: var(--exo-intent-danger-fg);
+  border-color: var(--exo-intent-danger-border);
 }
 
 .exocortex-action-button--danger:hover {
-  background-color: rgba(244, 67, 54, 0.25);
-  border-color: #f44336;
-  box-shadow: 0 2px 12px rgba(244, 67, 54, 0.3);
+  background-color: var(--exo-intent-danger-bg);
+  border-color: var(--exo-intent-danger-fg);
+  box-shadow: 0 2px 12px var(--exo-intent-danger-border);
 }
 
 /* Muted variant - Power-user / maintenance commands (RFC-024 Phase 0) */
 .exocortex-action-button--muted {
-  background-color: var(--background-primary);
-  color: var(--text-muted);
-  border-color: var(--background-modifier-border);
+  background-color: var(--exo-intent-muted-bg);
+  color: var(--exo-intent-muted-fg);
+  border-color: var(--exo-intent-muted-border);
 }
 
 .exocortex-action-button--muted:hover {
@@ -1193,18 +1249,6 @@
 /* Dark theme adjustments */
 .theme-dark .exocortex-action-buttons-container {
   background-color: var(--background-primary);
-}
-
-.theme-dark .exocortex-action-button--success {
-  color: #66bb6a;
-}
-
-.theme-dark .exocortex-action-button--warning {
-  color: #ffa726;
-}
-
-.theme-dark .exocortex-action-button--danger {
-  color: #ef5350;
 }
 
 /* Mobile responsive adjustments */

@@ -31,6 +31,38 @@ export enum LayoutType {
 export type CalendarView = "day" | "week" | "month";
 
 /**
+ * Label typography size for the target class of a layout (RFC-024 Phase 1).
+ * Maps to Obsidian font tokens (`--font-ui-small`, `--font-ui-medium`) plus
+ * the Layer 2 alias `--font-ui-larger` for the `large` bucket.
+ */
+export type LabelTypography = "small" | "medium" | "large";
+
+/**
+ * Check if a label typography value is valid.
+ */
+export function isValidLabelTypography(
+  value: unknown,
+): value is LabelTypography {
+  return value === "small" || value === "medium" || value === "large";
+}
+
+/**
+ * Validates an `exo__Layout_accentColor` value per RFC-024 §3 design
+ * governance. Accepts Obsidian CSS vars (`var(--color-green)`) or Layer 2
+ * Exocortex semantic aliases (`--exo-intent-positive`). Hex literals are
+ * rejected so the vault does not accumulate off-palette colors.
+ */
+export function isValidAccentColor(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return false;
+  if (trimmed.startsWith("#")) return false;
+  if (/^var\(\s*--[\w-]+(?:\s*,[^)]+)?\s*\)$/.test(trimmed)) return true;
+  if (/^--[\w-]+$/.test(trimmed)) return true;
+  return false;
+}
+
+/**
  * Base Layout interface.
  * Defines the common structure for all layout types.
  *
@@ -98,6 +130,28 @@ export interface BaseLayout {
    * Maps to exo__Layout_actions.
    */
   actions?: LayoutActions;
+
+  /**
+   * Optional visual accent color for the target class (RFC-024 Phase 1).
+   * Must be an Obsidian CSS var (`var(--color-green)`) or a Layer 2
+   * Exocortex semantic alias (`--exo-intent-positive`). Hex rejected.
+   * Maps to exo__Layout_accentColor.
+   */
+  accentColor?: string;
+
+  /**
+   * Optional Lucide icon name for the target class (RFC-024 Phase 1).
+   * Consumed by file explorer overlay (Phase 4) and class badges.
+   * Maps to exo__Layout_icon.
+   */
+  icon?: string;
+
+  /**
+   * Optional typography size for labels of target-class assets
+   * (RFC-024 Phase 1).
+   * Maps to exo__Layout_labelTypography.
+   */
+  labelTypography?: LabelTypography;
 }
 
 /**
@@ -237,7 +291,9 @@ export type Layout =
 export function getLayoutTypeFromInstanceClass(
   instanceClass: unknown,
 ): LayoutType | null {
-  const classes = Array.isArray(instanceClass) ? instanceClass : [instanceClass];
+  const classes = Array.isArray(instanceClass)
+    ? instanceClass
+    : [instanceClass];
 
   for (const cls of classes) {
     if (typeof cls !== "string") continue;

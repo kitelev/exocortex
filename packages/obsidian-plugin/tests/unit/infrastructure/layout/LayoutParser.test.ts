@@ -16,7 +16,10 @@ function createMockFile(
     path,
     basename: basename.replace(".md", ""),
     name: basename,
-    parent: { path: path.split("/").slice(0, -1).join("/"), name: "parent" } as IFolder,
+    parent: {
+      path: path.split("/").slice(0, -1).join("/"),
+      name: "parent",
+    } as IFolder,
   };
 }
 
@@ -36,13 +39,17 @@ function createMockVaultAdapter(
     rename: jest.fn<IVaultAdapter["rename"]>(),
     updateLinks: jest.fn<IVaultAdapter["updateLinks"]>(),
     createFolder: jest.fn<IVaultAdapter["createFolder"]>(),
-    getDefaultNewFileParent: jest.fn<IVaultAdapter["getDefaultNewFileParent"]>(),
-    getFrontmatter: jest.fn<IVaultAdapter["getFrontmatter"]>().mockImplementation((file: IFile) => {
-      return files.get(file.path) || null;
-    }),
+    getDefaultNewFileParent:
+      jest.fn<IVaultAdapter["getDefaultNewFileParent"]>(),
+    getFrontmatter: jest
+      .fn<IVaultAdapter["getFrontmatter"]>()
+      .mockImplementation((file: IFile) => {
+        return files.get(file.path) || null;
+      }),
     updateFrontmatter: jest.fn<IVaultAdapter["updateFrontmatter"]>(),
-    getFirstLinkpathDest: jest.fn<IVaultAdapter["getFirstLinkpathDest"]>().mockImplementation(
-      (linkpath: string) => {
+    getFirstLinkpathDest: jest
+      .fn<IVaultAdapter["getFirstLinkpathDest"]>()
+      .mockImplementation((linkpath: string) => {
         // Check for exact match
         for (const [path] of files) {
           if (path === linkpath || path === linkpath + ".md") {
@@ -50,13 +57,15 @@ function createMockVaultAdapter(
           }
           // Check if basename matches
           const basename = path.split("/").pop()?.replace(".md", "");
-          if (basename === linkpath || basename === linkpath.replace(".md", "")) {
+          if (
+            basename === linkpath ||
+            basename === linkpath.replace(".md", "")
+          ) {
             return createMockFile(path);
           }
         }
         return null;
-      },
-    ),
+      }),
   } as jest.Mocked<IVaultAdapter>;
 }
 
@@ -218,7 +227,9 @@ describe("LayoutParser", () => {
       mockVaultAdapter = createMockVaultAdapter(files);
       parser = new LayoutParser(mockVaultAdapter);
 
-      const layout = await parser.parseFromWikiLink("[[layouts/tables/TaskTable]]");
+      const layout = await parser.parseFromWikiLink(
+        "[[layouts/tables/TaskTable]]",
+      );
 
       expect(layout).toBeDefined();
       expect(layout!.uid).toBe("layout-001");
@@ -236,10 +247,7 @@ describe("LayoutParser", () => {
               exo__Asset_label: "Task Table",
               exo__Instance_class: ["[[exo__TableLayout]]"],
               exo__Layout_targetClass: "[[ems__Task]]",
-              exo__Layout_columns: [
-                "[[LabelColumn]]",
-                "[[StatusColumn]]",
-              ],
+              exo__Layout_columns: ["[[LabelColumn]]", "[[StatusColumn]]"],
             },
           ],
           [
@@ -415,7 +423,9 @@ describe("LayoutParser", () => {
           endProperty: string;
           view: string;
         };
-        expect(calendarLayout.startProperty).toBe("[[ems__Effort_startTimestamp]]");
+        expect(calendarLayout.startProperty).toBe(
+          "[[ems__Effort_startTimestamp]]",
+        );
         expect(calendarLayout.endProperty).toBe("[[ems__Effort_endTimestamp]]");
         expect(calendarLayout.view).toBe("month");
       });
@@ -555,7 +565,9 @@ describe("LayoutParser", () => {
         parser = new LayoutParser(mockVaultAdapter);
 
         const file = createMockFile("layouts/FilteredTable.md");
-        const result = await parser.parseFromFile(file, { gracefulDegradation: true });
+        const result = await parser.parseFromFile(file, {
+          gracefulDegradation: true,
+        });
 
         expect(result.success).toBe(true);
         expect(result.layout!.filters).toBeUndefined();
@@ -801,7 +813,9 @@ describe("LayoutParser", () => {
       parser = new LayoutParser(mockVaultAdapter);
 
       // Wikilink with alias: [[TaskTable|My Task Table]]
-      const layout = await parser.parseFromWikiLink("[[TaskTable|My Task Table]]");
+      const layout = await parser.parseFromWikiLink(
+        "[[TaskTable|My Task Table]]",
+      );
 
       expect(layout).toBeDefined();
       expect(layout!.uid).toBe("layout-001");
@@ -903,6 +917,73 @@ describe("LayoutParser", () => {
       const layout = await parser.parseLayoutFromFrontmatter(frontmatter);
 
       expect(layout).toBeNull();
+    });
+  });
+
+  describe("RFC-024 Phase 1 visual slots", () => {
+    const baseLayoutFrontmatter: IFrontmatter = {
+      exo__Asset_uid: "layout-visual-001",
+      exo__Asset_label: "Tasks Layout",
+      exo__Instance_class: ["[[exo__TableLayout]]"],
+      exo__Layout_targetClass: "[[ems__Task]]",
+    };
+
+    it("parses accentColor, icon, and labelTypography from frontmatter", async () => {
+      const frontmatter: IFrontmatter = {
+        ...baseLayoutFrontmatter,
+        exo__Layout_accentColor: "var(--color-green)",
+        exo__Layout_icon: "check-circle",
+        exo__Layout_labelTypography: "large",
+      };
+
+      const layout = await parser.parseLayoutFromFrontmatter(frontmatter);
+
+      expect(layout).not.toBeNull();
+      expect(layout!.accentColor).toBe("var(--color-green)");
+      expect(layout!.icon).toBe("check-circle");
+      expect(layout!.labelTypography).toBe("large");
+    });
+
+    it("drops hex accentColor values with a console warning (RFC-024 §3)", async () => {
+      const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+
+      const frontmatter: IFrontmatter = {
+        ...baseLayoutFrontmatter,
+        exo__Layout_accentColor: "#4caf50",
+      };
+
+      const layout = await parser.parseLayoutFromFrontmatter(frontmatter);
+
+      expect(layout).not.toBeNull();
+      expect(layout!.accentColor).toBeUndefined();
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("exo__Layout_accentColor"),
+      );
+
+      warnSpy.mockRestore();
+    });
+
+    it("ignores invalid labelTypography values", async () => {
+      const frontmatter: IFrontmatter = {
+        ...baseLayoutFrontmatter,
+        exo__Layout_labelTypography: "huge",
+      };
+
+      const layout = await parser.parseLayoutFromFrontmatter(frontmatter);
+
+      expect(layout).not.toBeNull();
+      expect(layout!.labelTypography).toBeUndefined();
+    });
+
+    it("omits the fields entirely when frontmatter does not declare them", async () => {
+      const layout = await parser.parseLayoutFromFrontmatter(
+        baseLayoutFrontmatter,
+      );
+
+      expect(layout).not.toBeNull();
+      expect(layout!.accentColor).toBeUndefined();
+      expect(layout!.icon).toBeUndefined();
+      expect(layout!.labelTypography).toBeUndefined();
     });
   });
 });

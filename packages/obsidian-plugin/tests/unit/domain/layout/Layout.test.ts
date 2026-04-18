@@ -10,6 +10,8 @@ import {
   isCalendarLayout,
   isListLayout,
   isValidCalendarView,
+  isValidLabelTypography,
+  isValidAccentColor,
   type Layout,
   type TableLayout,
   type KanbanLayout,
@@ -17,6 +19,7 @@ import {
   type CalendarLayout,
   type ListLayout,
   type BaseLayout,
+  type LabelTypography,
 } from "../../../../src/domain/layout/Layout";
 
 describe("Layout", () => {
@@ -63,7 +66,10 @@ describe("Layout", () => {
 
     it("should return layout type from array of instance classes", () => {
       expect(
-        getLayoutTypeFromInstanceClass(["[[exo__Asset]]", "[[exo__TableLayout]]"]),
+        getLayoutTypeFromInstanceClass([
+          "[[exo__Asset]]",
+          "[[exo__TableLayout]]",
+        ]),
       ).toBe(LayoutType.Table);
     });
 
@@ -453,6 +459,90 @@ describe("Layout", () => {
 
       expect(layout.type).toBe(LayoutType.List);
       expect(layout.template).toBe("{{label}} — {{status}}");
+    });
+  });
+
+  describe("RFC-024 Phase 1 visual slots", () => {
+    describe("isValidLabelTypography", () => {
+      it("accepts small, medium, large", () => {
+        expect(isValidLabelTypography("small")).toBe(true);
+        expect(isValidLabelTypography("medium")).toBe(true);
+        expect(isValidLabelTypography("large")).toBe(true);
+      });
+
+      it("rejects unknown strings, numbers, null, undefined", () => {
+        expect(isValidLabelTypography("huge")).toBe(false);
+        expect(isValidLabelTypography("")).toBe(false);
+        expect(isValidLabelTypography(null)).toBe(false);
+        expect(isValidLabelTypography(undefined)).toBe(false);
+        expect(isValidLabelTypography(12)).toBe(false);
+      });
+    });
+
+    describe("isValidAccentColor", () => {
+      it("accepts Obsidian CSS var references", () => {
+        expect(isValidAccentColor("var(--color-green)")).toBe(true);
+        expect(isValidAccentColor("var(--text-success)")).toBe(true);
+        expect(isValidAccentColor("var(--color-purple, #7b6cd6)")).toBe(true);
+      });
+
+      it("accepts Layer 2 Exocortex semantic aliases", () => {
+        expect(isValidAccentColor("--exo-intent-positive")).toBe(true);
+        expect(isValidAccentColor("--exo-intent-success-fg")).toBe(true);
+      });
+
+      it("rejects hex literals per RFC-024 §3 design governance", () => {
+        expect(isValidAccentColor("#4caf50")).toBe(false);
+        expect(isValidAccentColor("#FFF")).toBe(false);
+        expect(isValidAccentColor("  #abcdef  ")).toBe(false);
+      });
+
+      it("rejects empty / non-string values", () => {
+        expect(isValidAccentColor("")).toBe(false);
+        expect(isValidAccentColor("   ")).toBe(false);
+        expect(isValidAccentColor(null)).toBe(false);
+        expect(isValidAccentColor(undefined)).toBe(false);
+        expect(isValidAccentColor(42)).toBe(false);
+      });
+
+      it("rejects freeform non-token strings", () => {
+        expect(isValidAccentColor("green")).toBe(false);
+        expect(isValidAccentColor("rgb(0,0,0)")).toBe(false);
+      });
+    });
+
+    describe("BaseLayout visual slots", () => {
+      it("permits assets that omit the optional visual slots", () => {
+        const layout: TableLayout = {
+          uid: "layout-1",
+          label: "Tasks",
+          type: LayoutType.Table,
+          targetClass: "[[ems__Task]]",
+          columns: [],
+        };
+
+        expect(layout.accentColor).toBeUndefined();
+        expect(layout.icon).toBeUndefined();
+        expect(layout.labelTypography).toBeUndefined();
+      });
+
+      it("carries accentColor, icon, and labelTypography when provided", () => {
+        const typo: LabelTypography = "medium";
+        const layout: TableLayout = {
+          uid: "layout-1",
+          label: "Tasks",
+          type: LayoutType.Table,
+          targetClass: "[[ems__Task]]",
+          columns: [],
+          accentColor: "var(--color-green)",
+          icon: "check-circle",
+          labelTypography: typo,
+        };
+
+        expect(layout.accentColor).toBe("var(--color-green)");
+        expect(layout.icon).toBe("check-circle");
+        expect(layout.labelTypography).toBe("medium");
+      });
     });
   });
 });
