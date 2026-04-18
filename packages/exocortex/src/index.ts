@@ -18,7 +18,19 @@ export {
   PreconditionProperty,
   GroundingProperty,
   CommandBindingProperty,
+  CommandBindingStyleProperty,
 } from "./domain/constants/CommandProperty";
+export {
+  type CommandVariant,
+  type LabelClass,
+  type StyleSource,
+  COMMAND_VARIANT_VALUES,
+  LABEL_CLASS_VALUES,
+  STYLE_SOURCE_VALUES,
+  isCommandVariant,
+  isLabelClass,
+  isStyleSource,
+} from "./domain/constants/CommandBindingStyleEnums";
 export type {
   CommandDefinition,
   PreconditionDefinition,
