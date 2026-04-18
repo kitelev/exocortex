@@ -60,4 +60,33 @@ export const CommandBindingProperty = {
   GROUP: "exocmd__CommandBinding_group",
   /** Override command-level precondition for this binding (wikilink) */
   PRECONDITION: "exocmd__CommandBinding_precondition",
+  /** Optional reference to exocmd__CommandBindingStyle asset (wikilink, RFC-024 §4 Phase 2) */
+  STYLE: "exocmd__CommandBinding_style",
+  /** Inline shorthand variant literal (RFC-024 §4 Phase 2). Explicit style reference wins over inline. */
+  VARIANT: "exocmd__CommandBinding_variant",
+} as const;
+
+/**
+ * Properties for exocmd__CommandBindingStyle assets (RFC-024 §4 Phase 2).
+ *
+ * Single source для button-level visual properties. Style can be referenced via
+ * `exocmd__CommandBinding_style` (preferred, reusable) or inlined via the
+ * shorthand `exocmd__CommandBinding_variant`. Enum values (`VARIANT`, `LABEL_CLASS`,
+ * `SOURCE`) are mirrored by TS unions in `./CommandBindingStyleEnums`.
+ */
+export const CommandBindingStyleProperty = {
+  /** Semantic variant literal (see {@link CommandVariant}) */
+  VARIANT: "exocmd__CommandBindingStyle_variant",
+  /** Boolean literal ("true" | "false"). Default true — render existing Command_icon */
+  SHOW_ICON: "exocmd__CommandBindingStyle_showIcon",
+  /** Typographic modifier literal (see {@link LabelClass}) */
+  LABEL_CLASS: "exocmd__CommandBindingStyle_labelClass",
+  /** Literal text for aria-label accessibility attribute */
+  ARIA_LABEL: "exocmd__CommandBindingStyle_ariaLabel",
+  /** Literal text for title attribute (Obsidian tooltip convention) */
+  TOOLTIP: "exocmd__CommandBindingStyle_tooltip",
+  /** Chord string (e.g. "Mod+Shift+D"). Registered with exo-cmd- namespace */
+  KEYBOARD_SHORTCUT: "exocmd__CommandBindingStyle_keyboardShortcut",
+  /** Governance marker (see {@link StyleSource}). User wins over vendor (RFC-024 §5) */
+  SOURCE: "exocmd__CommandBindingStyle_source",
 } as const;
