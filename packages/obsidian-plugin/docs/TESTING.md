@@ -2,6 +2,11 @@
 
 This guide documents the testing infrastructure, patterns, and best practices for the Exocortex Obsidian plugin.
 
+> **Pre-release manual pass**: GitHub Actions does not cover iOS/Android
+> WebView. Before publishing a major release, run
+> [release-checklist-mobile.md](./release-checklist-mobile.md) —
+> a 10-minute manual smoke test on a real device.
+
 ## Test Structure
 
 ```

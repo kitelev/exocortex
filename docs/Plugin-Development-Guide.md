@@ -213,8 +213,14 @@ npm run build  # Production build
 npm run dev    # Development watch mode
 ```
 
+Before publishing a major release, run the mobile smoke checklist on a real
+device — GitHub Actions does not cover iOS/Android WebView:
+
+- [Mobile Smoke Release Checklist](../packages/obsidian-plugin/docs/release-checklist-mobile.md)
+
 ---
 
 **See also:**
 - [Core API Reference](api/Core-API.md)
 - [Testing Guide](../TESTING.md)
+- [Mobile Smoke Release Checklist](../packages/obsidian-plugin/docs/release-checklist-mobile.md)
