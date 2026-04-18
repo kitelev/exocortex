@@ -1140,7 +1140,7 @@
   --exo-intent-warning-bg: rgba(191, 54, 12, 0.12);
   --exo-intent-warning-border: rgba(191, 54, 12, 0.3);
 
-  --exo-intent-danger-fg: var(--text-error, #b71c1c);
+  --exo-intent-danger-fg: var(--text-error, #7f1d1d);
   --exo-intent-danger-bg: rgba(183, 28, 28, 0.12);
   --exo-intent-danger-border: rgba(183, 28, 28, 0.3);
 
@@ -1161,7 +1161,7 @@
   --exo-intent-warning-bg: rgba(255, 183, 77, 0.18);
   --exo-intent-warning-border: rgba(255, 183, 77, 0.35);
 
-  --exo-intent-danger-fg: var(--text-error, #ef9a9a);
+  --exo-intent-danger-fg: var(--text-error, #ffcdd2);
   --exo-intent-danger-bg: rgba(239, 154, 154, 0.18);
   --exo-intent-danger-border: rgba(239, 154, 154, 0.35);
 
