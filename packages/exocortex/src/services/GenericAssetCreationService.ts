@@ -116,7 +116,7 @@ export class GenericAssetCreationService {
 
     // Set required system properties
     frontmatter["exo__Asset_uid"] = uid;
-    // eslint-disable-next-line @typescript-eslint/no-deprecated -- pre-existing local-timestamp call, unchanged by this PR
+     
     frontmatter["exo__Asset_createdAt"] = DateFormatter.toLocalTimestamp(now);
     frontmatter["exo__Instance_class"] = [this.formatWikilink(config.className)];
 
@@ -181,20 +181,28 @@ export class GenericAssetCreationService {
         : null;
     }
 
-    // For projects created from areas, inherit the area
+    // For projects created from areas/projects/tasks, inherit the parent via
+    // the unified ems__Effort_* convention (same as Task). When the parent is
+    // an Area, write ems__Effort_area; otherwise ems__Effort_parent. This
+    // replaces the legacy ems__Project_area emission (issue #2850) — downstream
+    // code only consumes the ems__Effort_* properties.
     if (config.className === "ems__Project" || config.className.startsWith("ems__Project")) {
-      // If parent is an area, set it as area reference
       const parentClass = parentMetadata.exo__Instance_class;
-      if (this.isAreaClass(parentClass)) {
-        frontmatter["ems__Project_area"] = parentName
-          ? this.formatWikilink(parentName)
-          : null;
-      }
+      const isAreaParent = this.isAreaClass(parentClass);
+      const parentPropertyName = isAreaParent ? "ems__Effort_area" : "ems__Effort_parent";
+      frontmatter[parentPropertyName] = parentName
+        ? this.formatWikilink(parentName)
+        : null;
     }
 
-    // Inherit isDefinedBy if available
+    // Inherit isDefinedBy if available. Re-quote via formatWikilink so that
+    // namespace-prefixed wikilinks like `[[!foo]]` — which lose their outer
+    // YAML quotes when Obsidian metadataCache parses the parent — are not
+    // re-emitted as unquoted YAML tag directives (issue #2850).
     if (parentMetadata.exo__Asset_isDefinedBy) {
-      frontmatter["exo__Asset_isDefinedBy"] = parentMetadata.exo__Asset_isDefinedBy;
+      const inherited = parentMetadata.exo__Asset_isDefinedBy;
+      frontmatter["exo__Asset_isDefinedBy"] =
+        typeof inherited === "string" ? this.formatWikilink(inherited) : inherited;
     }
   }
 
@@ -295,7 +303,7 @@ export class GenericAssetCreationService {
       return value;
     }
     if (value instanceof Date) {
-      // eslint-disable-next-line @typescript-eslint/no-deprecated -- pre-existing local-timestamp call, unchanged by this PR
+       
       return DateFormatter.toLocalTimestamp(value);
     }
     if (typeof value === "string") {
@@ -348,7 +356,7 @@ export class GenericAssetCreationService {
    */
   private formatTimestamp(value: unknown): string {
     if (value instanceof Date) {
-      // eslint-disable-next-line @typescript-eslint/no-deprecated -- pre-existing local-timestamp call, unchanged by this PR
+       
       return DateFormatter.toLocalTimestamp(value);
     }
 
@@ -364,7 +372,7 @@ export class GenericAssetCreationService {
       // Try to parse as date
       const date = new Date(value);
       if (!isNaN(date.getTime())) {
-        // eslint-disable-next-line @typescript-eslint/no-deprecated -- pre-existing local-timestamp call, unchanged by this PR
+         
         return DateFormatter.toLocalTimestamp(date);
       }
       return value;
@@ -373,7 +381,7 @@ export class GenericAssetCreationService {
     if (typeof value === "number") {
       const date = new Date(value);
       if (!isNaN(date.getTime())) {
-        // eslint-disable-next-line @typescript-eslint/no-deprecated -- pre-existing local-timestamp call, unchanged by this PR
+         
         return DateFormatter.toLocalTimestamp(date);
       }
     }
