@@ -224,47 +224,59 @@ test.describe("Exocortex desktop smoke", () => {
       console.log(`[smoke] diag: ${JSON.stringify(diag)}`);
 
       // Plugin manifest discovered and listed as enabled, but loadedKeys
-      // empty — Obsidian's auto-load on cold vault does not fire on
-      // Windows (trust dialog never shows because trusted=true is honoured,
-      // but the auto-load step is skipped). enablePlugin both loads AND
-      // registers in the plugins map; loadPlugin only loads.
+      // empty — Obsidian opens new vaults in Restricted Mode (community
+      // plugins blocked) regardless of obsidian.json `trusted: true`. Exit
+      // restricted mode via setEnable(true), reload manifests so the
+      // discovered plugin becomes loadable, then enable it.
       if (
-        diag.manifestKeys?.includes("exocortex") &&
         !diag.loadedKeys?.includes("exocortex")
       ) {
-        console.log("[smoke] manifest present but not loaded; enabling explicitly...");
-        const loadResult = await window.evaluate(async () => {
+        console.log("[smoke] plugin not loaded; running full enable cycle...");
+        const enableResult = await window.evaluate(async () => {
           const w = window as unknown as {
             app?: {
               plugins?: {
+                isEnabled?: () => boolean;
+                setEnable?: (state: boolean) => Promise<void> | void;
+                loadManifests?: () => Promise<void>;
                 enablePluginAndSave?: (id: string) => Promise<void>;
                 enablePlugin?: (id: string) => Promise<void>;
-                loadPlugin?: (id: string) => Promise<unknown>;
               };
             };
           };
           const pl = w.app?.plugins;
           if (!pl) return { ok: false, err: "no app.plugins" };
+          const trace: string[] = [];
           try {
-            if (pl.enablePluginAndSave) {
+            const isEnabled =
+              typeof pl.isEnabled === "function" ? pl.isEnabled() : null;
+            trace.push(`isEnabled=${String(isEnabled)}`);
+            if (typeof pl.setEnable === "function") {
+              await pl.setEnable(true);
+              trace.push("setEnable(true) ok");
+            }
+            if (typeof pl.loadManifests === "function") {
+              await pl.loadManifests();
+              trace.push("loadManifests ok");
+            }
+            if (typeof pl.enablePluginAndSave === "function") {
               await pl.enablePluginAndSave("exocortex");
-              return { ok: true, via: "enablePluginAndSave" };
-            }
-            if (pl.enablePlugin) {
+              trace.push("enablePluginAndSave ok");
+            } else if (typeof pl.enablePlugin === "function") {
               await pl.enablePlugin("exocortex");
-              return { ok: true, via: "enablePlugin" };
+              trace.push("enablePlugin ok");
             }
-            if (pl.loadPlugin) {
-              await pl.loadPlugin("exocortex");
-              return { ok: true, via: "loadPlugin" };
-            }
-            return { ok: false, err: "no enable/load method available" };
+            return { ok: true, trace };
           } catch (e) {
             const err = e as Error;
-            return { ok: false, err: `${err.message}\n${err.stack ?? ""}` };
+            return {
+              ok: false,
+              trace,
+              err: `${err.message}\n${err.stack ?? ""}`,
+            };
           }
         });
-        console.log(`[smoke] enable result: ${JSON.stringify(loadResult)}`);
+        console.log(`[smoke] enable result: ${JSON.stringify(enableResult)}`);
       }
 
       // Plugin should be registered.
