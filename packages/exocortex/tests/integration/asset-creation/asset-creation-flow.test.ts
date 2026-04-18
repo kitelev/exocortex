@@ -257,9 +257,10 @@ describe("Asset Creation Flow (Integration)", () => {
       // Act
       const projectFile = await service.createAsset(projectConfig);
 
-      // Assert: Project has parent reference
+      // Assert: Project has parent reference via unified ems__Effort_* convention (issue #2850)
       const storedFile = vault.getStoredFiles().get(projectFile.path);
-      expect(storedFile!.content).toContain("ems__Project_area:");
+      expect(storedFile!.content).toContain("ems__Effort_area:");
+      expect(storedFile!.content).not.toContain("ems__Project_area");
     });
   });
 
