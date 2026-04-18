@@ -224,41 +224,47 @@ test.describe("Exocortex desktop smoke", () => {
       console.log(`[smoke] diag: ${JSON.stringify(diag)}`);
 
       // Plugin manifest discovered and listed as enabled, but loadedKeys
-      // empty — Obsidian's auto-load on cold vault does not fire for
-      // sideloaded community plugins. Call loadPlugin() explicitly with
-      // error capture so we surface any onload exception.
+      // empty — Obsidian's auto-load on cold vault does not fire on
+      // Windows (trust dialog never shows because trusted=true is honoured,
+      // but the auto-load step is skipped). enablePlugin both loads AND
+      // registers in the plugins map; loadPlugin only loads.
       if (
         diag.manifestKeys?.includes("exocortex") &&
         !diag.loadedKeys?.includes("exocortex")
       ) {
-        console.log("[smoke] manifest present but not loaded; loading explicitly...");
+        console.log("[smoke] manifest present but not loaded; enabling explicitly...");
         const loadResult = await window.evaluate(async () => {
           const w = window as unknown as {
             app?: {
               plugins?: {
-                loadPlugin?: (id: string) => Promise<unknown>;
+                enablePluginAndSave?: (id: string) => Promise<void>;
                 enablePlugin?: (id: string) => Promise<void>;
+                loadPlugin?: (id: string) => Promise<unknown>;
               };
             };
           };
           const pl = w.app?.plugins;
           if (!pl) return { ok: false, err: "no app.plugins" };
           try {
-            if (pl.loadPlugin) {
-              await pl.loadPlugin("exocortex");
-              return { ok: true, via: "loadPlugin" };
+            if (pl.enablePluginAndSave) {
+              await pl.enablePluginAndSave("exocortex");
+              return { ok: true, via: "enablePluginAndSave" };
             }
             if (pl.enablePlugin) {
               await pl.enablePlugin("exocortex");
               return { ok: true, via: "enablePlugin" };
             }
-            return { ok: false, err: "neither loadPlugin nor enablePlugin available" };
+            if (pl.loadPlugin) {
+              await pl.loadPlugin("exocortex");
+              return { ok: true, via: "loadPlugin" };
+            }
+            return { ok: false, err: "no enable/load method available" };
           } catch (e) {
             const err = e as Error;
             return { ok: false, err: `${err.message}\n${err.stack ?? ""}` };
           }
         });
-        console.log(`[smoke] load result: ${JSON.stringify(loadResult)}`);
+        console.log(`[smoke] enable result: ${JSON.stringify(loadResult)}`);
       }
 
       // Plugin should be registered.
