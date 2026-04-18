@@ -34,6 +34,13 @@ export interface AssetRelationsTableProps {
   groupSpecificProperties?: Record<string, string[]>;
   onAssetClick?: (path: string, event: React.MouseEvent) => void;
   getAssetLabel?: (path: string) => string | null;
+  /**
+   * RFC-024 Phase 1 AC5 — returns the visual accent colour (a CSS var or
+   * literal) for the given Instance-class reference, or `null` when no
+   * accent applies. Bare class names (`ems__Task`) are expected; the alias
+   * form is stripped upstream.
+   */
+  resolveAccent?: (classRef: string) => string | null;
 }
 
 interface SortState {
@@ -48,6 +55,7 @@ interface SingleTableProps {
   showProperties: string[];
   onAssetClick?: (path: string, event: React.MouseEvent) => void;
   getAssetLabel?: (path: string) => string | null;
+  resolveAccent?: (classRef: string) => string | null;
 }
 
 const SingleTable: React.FC<SingleTableProps> = ({
@@ -57,6 +65,7 @@ const SingleTable: React.FC<SingleTableProps> = ({
   showProperties,
   onAssetClick,
   getAssetLabel,
+  resolveAccent,
 }) => {
   const [sortState, setSortState] = useState<SortState>({
     column: sortBy,
@@ -320,21 +329,36 @@ const SingleTable: React.FC<SingleTableProps> = ({
       const resolvedLabel = alias
         ? humanizePropertyName(alias)
         : getAssetLabel?.(target) || humanizePropertyName(target);
+      const accent = target !== "-" ? resolveAccent?.(target) ?? null : null;
+      const badgeStyle: React.CSSProperties | undefined = accent
+        ? {
+            borderLeftStyle: "solid",
+            borderLeftWidth: "3px",
+            borderLeftColor: accent,
+            paddingLeft: "6px",
+          }
+        : undefined;
       return (
         <React.Fragment key={`${target}-${index}`}>
           {target !== "-" ? (
-            <a
-              data-href={target}
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                onAssetClick?.(target, e);
-              }}
-              className="internal-link"
-              style={{ cursor: "pointer" }}
+            <span
+              className="exocortex-class-badge"
+              style={badgeStyle}
+              data-class-accent={accent ?? undefined}
             >
-              {resolvedLabel}
-            </a>
+              <a
+                data-href={target}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onAssetClick?.(target, e);
+                }}
+                className="internal-link"
+                style={{ cursor: "pointer" }}
+              >
+                {resolvedLabel}
+              </a>
+            </span>
           ) : (
             "-"
           )}
@@ -530,6 +554,7 @@ export const AssetRelationsTable: React.FC<AssetRelationsTableProps> = ({
   groupSpecificProperties = {},
   onAssetClick,
   getAssetLabel,
+  resolveAccent,
 }) => {
   // State to track collapsed groups (all expanded by default)
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(
@@ -611,6 +636,7 @@ export const AssetRelationsTable: React.FC<AssetRelationsTableProps> = ({
                     showProperties={mergedProperties}
                     onAssetClick={onAssetClick}
                     getAssetLabel={getAssetLabel}
+                    resolveAccent={resolveAccent}
                   />
                 )}
               </div>
@@ -630,6 +656,7 @@ export const AssetRelationsTable: React.FC<AssetRelationsTableProps> = ({
         showProperties={showProperties}
         onAssetClick={onAssetClick}
         getAssetLabel={getAssetLabel}
+        resolveAccent={resolveAccent}
       />
     </div>
   );
