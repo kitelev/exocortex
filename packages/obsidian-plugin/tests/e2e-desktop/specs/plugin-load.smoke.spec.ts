@@ -171,6 +171,62 @@ test.describe("Exocortex desktop smoke", () => {
         )
         .toBe(true);
 
+      // Diagnostic snapshot before asserting plugin load.
+      const diag = await window.evaluate(() => {
+        const w = window as unknown as {
+          app?: {
+            vault?: { adapter?: { basePath?: string } };
+            plugins?: {
+              manifests?: Record<string, unknown>;
+              enabledPlugins?: Set<string> | string[];
+              plugins?: Record<string, unknown>;
+            };
+            internalPlugins?: { plugins?: Record<string, unknown> };
+          };
+        };
+        const plugins = w.app?.plugins;
+        const enabled = plugins?.enabledPlugins;
+        return {
+          basePath: w.app?.vault?.adapter?.basePath ?? null,
+          manifestKeys: plugins?.manifests
+            ? Object.keys(plugins.manifests)
+            : null,
+          enabledList:
+            enabled instanceof Set
+              ? Array.from(enabled)
+              : Array.isArray(enabled)
+                ? enabled
+                : null,
+          loadedKeys: plugins?.plugins ? Object.keys(plugins.plugins) : null,
+        };
+      });
+      console.log(`[smoke] diag: ${JSON.stringify(diag)}`);
+
+      // If plugin manifest discovered but not enabled, try enabling it
+      // (covers the "trusted but community plugins not auto-loaded" case).
+      if (
+        diag.manifestKeys?.includes("exocortex") &&
+        !diag.loadedKeys?.includes("exocortex")
+      ) {
+        console.log("[smoke] manifest present but not loaded; enabling...");
+        await window.evaluate(async () => {
+          const w = window as unknown as {
+            app?: {
+              plugins?: {
+                enablePluginAndSave?: (id: string) => Promise<void>;
+                enablePlugin?: (id: string) => Promise<void>;
+              };
+            };
+          };
+          const pl = w.app?.plugins;
+          if (pl?.enablePluginAndSave) {
+            await pl.enablePluginAndSave("exocortex");
+          } else if (pl?.enablePlugin) {
+            await pl.enablePlugin("exocortex");
+          }
+        });
+      }
+
       // Plugin should be registered.
       await expect
         .poll(
