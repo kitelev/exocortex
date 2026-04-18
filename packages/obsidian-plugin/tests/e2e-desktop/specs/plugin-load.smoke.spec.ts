@@ -202,29 +202,42 @@ test.describe("Exocortex desktop smoke", () => {
       });
       console.log(`[smoke] diag: ${JSON.stringify(diag)}`);
 
-      // If plugin manifest discovered but not enabled, try enabling it
-      // (covers the "trusted but community plugins not auto-loaded" case).
+      // Plugin manifest discovered and listed as enabled, but loadedKeys
+      // empty — Obsidian's auto-load on cold vault does not fire for
+      // sideloaded community plugins. Call loadPlugin() explicitly with
+      // error capture so we surface any onload exception.
       if (
         diag.manifestKeys?.includes("exocortex") &&
         !diag.loadedKeys?.includes("exocortex")
       ) {
-        console.log("[smoke] manifest present but not loaded; enabling...");
-        await window.evaluate(async () => {
+        console.log("[smoke] manifest present but not loaded; loading explicitly...");
+        const loadResult = await window.evaluate(async () => {
           const w = window as unknown as {
             app?: {
               plugins?: {
-                enablePluginAndSave?: (id: string) => Promise<void>;
+                loadPlugin?: (id: string) => Promise<unknown>;
                 enablePlugin?: (id: string) => Promise<void>;
               };
             };
           };
           const pl = w.app?.plugins;
-          if (pl?.enablePluginAndSave) {
-            await pl.enablePluginAndSave("exocortex");
-          } else if (pl?.enablePlugin) {
-            await pl.enablePlugin("exocortex");
+          if (!pl) return { ok: false, err: "no app.plugins" };
+          try {
+            if (pl.loadPlugin) {
+              await pl.loadPlugin("exocortex");
+              return { ok: true, via: "loadPlugin" };
+            }
+            if (pl.enablePlugin) {
+              await pl.enablePlugin("exocortex");
+              return { ok: true, via: "enablePlugin" };
+            }
+            return { ok: false, err: "neither loadPlugin nor enablePlugin available" };
+          } catch (e) {
+            const err = e as Error;
+            return { ok: false, err: `${err.message}\n${err.stack ?? ""}` };
           }
         });
+        console.log(`[smoke] load result: ${JSON.stringify(loadResult)}`);
       }
 
       // Plugin should be registered.
