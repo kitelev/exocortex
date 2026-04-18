@@ -5,17 +5,34 @@ All notable changes to @exocortex/cli will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+**RDF Convert / Vault Dump (#2832)**
+
+- New `exocortex convert` subcommand to dump vault graph in RDF serialization formats.
+- `--format turtle|ntriples|jsonld` — pick serialization (Turtle is default).
+- `--out <path>` — write to file (default: stdout).
+- `--filter <class>` — subset to instances of a class (`ems__Task`, `ems:Task`, or full IRI).
+- Reuses existing `RDFSerializer` (`TurtleSerializer` / `NTriplesSerializer` / `JSONLDSerializer`)
+  with default Exocortex namespace prefixes (`exo`, `ems`, plus `rdf`/`rdfs`/`owl`/`xsd`).
+- Use cases: backup, offline analysis (Apache Jena, Protégé), feeding external
+  SHACL engines, diffing two snapshots to surface graph drift.
+
 ## [0.1.0] - 2025-12-02
 
 ### Added
 
 **API Stability Guarantees**
+
 - Formal API reference documentation ([CLI_API_REFERENCE.md](docs/CLI_API_REFERENCE.md))
 - Semantic versioning policy ([VERSIONING.md](VERSIONING.md))
 - Stability tiers (Stable, Experimental, Internal)
 - MCP integration guidelines
 
 **SPARQL Query System**
+
 - `exocortex sparql query` - Execute SPARQL 1.1 queries against vault
 - Multiple output formats: `table`, `json`, `csv`
 - Query plan visualization with `--explain`
@@ -23,6 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Query optimization (can be disabled with `--no-optimize`)
 
 **Status Transition Commands**
+
 - `exocortex command start` - Transition ToDo → Doing with timestamp
 - `exocortex command complete` - Transition Doing → Done with timestamps
 - `exocortex command trash` - Transition to Trashed status
@@ -32,6 +50,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `exocortex command move-to-todo` - Transition to ToDo status
 
 **Asset Creation Commands**
+
 - `exocortex command create-task` - Create task with frontmatter
 - `exocortex command create-meeting` - Create meeting with frontmatter
 - `exocortex command create-project` - Create project with frontmatter
@@ -41,6 +60,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - ISO timestamp for `exo__Asset_createdAt`
 
 **Property Mutation Commands**
+
 - `exocortex command rename-to-uid` - Rename file to match UID
 - `exocortex command update-label` - Update label and sync aliases
 - `exocortex command schedule` - Set planned start date
@@ -48,6 +68,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Support for `--dry-run` preview mode
 
 **Infrastructure**
+
 - Standardized exit codes (0-8) following Unix conventions
 - Path validation with security checks
 - Error handling with descriptive messages
@@ -79,9 +100,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Version History Summary
 
-| Version | Release Date | Breaking Changes |
-|---------|--------------|------------------|
-| 0.1.0 | 2025-12-02 | Initial stable API |
+| Version | Release Date | Breaking Changes   |
+| ------- | ------------ | ------------------ |
+| 0.1.0   | 2025-12-02   | Initial stable API |
 
 ## Stability Notes
 

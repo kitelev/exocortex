@@ -106,6 +106,46 @@ exocortex sparql query "SELECT ?task WHERE { ?task exo:Instance_class ems:Task }
 └────────────────────────────────────────────────────────────┘
 ```
 
+### RDF Convert (Vault Dump)
+
+Dump the entire vault graph as Turtle, N-Triples, or JSON-LD for backup,
+offline analysis, or feeding external SHACL/RDF validators.
+
+```bash
+exocortex convert --format turtle --out vault.ttl --vault ~/vault
+```
+
+**Options:**
+
+- `--format <type>` — Serialization format: `turtle` (default), `ntriples`, `jsonld`
+- `--out <path>` — Write to file (omit to print to stdout)
+- `--filter <class>` — Keep only instances of a class (e.g. `ems__Task`, `ems:Task`, or full IRI)
+- `--vault <path>` — Path to Obsidian vault (default: current directory)
+
+**Examples:**
+
+```bash
+# Dump full vault as Turtle
+exocortex convert --format turtle --out vault.ttl --vault ~/vault
+
+# Dump to stdout, pipe through external tool
+exocortex convert --format ntriples --vault ~/vault | wc -l
+
+# JSON-LD with @context for known namespaces
+exocortex convert --format jsonld --out vault.jsonld --vault ~/vault
+
+# Subset: only ems__Task instances
+exocortex convert --format turtle --filter ems__Task --out tasks.ttl --vault ~/vault
+```
+
+**Use cases:**
+
+- Backup / snapshot of the vault graph at a point in time.
+- Offline analysis with Apache Jena, Protégé, or other RDF tooling.
+- Feeding external SHACL engines (e.g. `shacl-engine`, `rdf-validate-shacl`)
+  for validation outside the plugin.
+- Diffing two `.ttl` snapshots to surface graph drift between runs.
+
 ### Universal Asset Creation
 
 Create any vault asset with a single command. Auto-generates UUID, timestamp, frontmatter, resolves class names, and validates wikilinks.
