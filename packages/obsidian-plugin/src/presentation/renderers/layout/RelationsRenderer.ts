@@ -185,6 +185,8 @@ export class RelationsRenderer {
           }
         },
         getAssetLabel: (path: string) => this.metadataService.getAssetLabel(path),
+        resolveAccent: (classRef: string) =>
+          this.plugin.themeResolver?.resolveAccent(classRef) ?? null,
       }),
     );
   }

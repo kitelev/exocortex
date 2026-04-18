@@ -5,6 +5,7 @@
 import type { App, Plugin, TFile } from "obsidian";
 import type { IVaultAdapter } from "exocortex";
 import type ExocortexPlugin from '@plugin/ExocortexPlugin';
+import type { ThemeResolver } from '@plugin/application/services/ThemeResolver';
 
 /**
  * Metadata extracted from Obsidian frontmatter
@@ -64,6 +65,7 @@ export interface ExocortexPluginInterface extends Plugin {
     showEffortVotes?: boolean;
   };
   vaultAdapter: IVaultAdapter;
+  themeResolver?: ThemeResolver;
   saveSettings(): Promise<void>;
   refreshLayout?(): void;
 }
