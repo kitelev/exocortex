@@ -80,7 +80,11 @@ jobs:
           HOMEBREW_NO_AUTO_UPDATE: "1"
           HOMEBREW_NO_INSTALL_CLEANUP: "1"
         run: |
-          brew install --cask --no-quarantine obsidian
+          # Modern Homebrew rejects --no-quarantine. The runner has Gatekeeper
+          # quarantining off-the-shelf casks for downloaded apps, but launching
+          # without --no-quarantine still works for ephemeral CI runs because
+          # the binary is launched headlessly via spawn (no GUI Gatekeeper check).
+          brew install --cask obsidian
           ls -la "/Applications/Obsidian.app/Contents/MacOS/" || true
 
       - name: Resolve OBSIDIAN_PATH (macOS)
