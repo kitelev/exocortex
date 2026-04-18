@@ -29,6 +29,8 @@ import { ObsidianVaultAdapter } from "./adapters/ObsidianVaultAdapter";
 import { TaskTrackingService } from "./application/services/TaskTrackingService";
 import { AliasSyncService } from "./application/services/AliasSyncService";
 import { WikilinkAliasService } from "./application/services/WikilinkAliasService";
+import { ThemeResolver } from "./application/services/ThemeResolver";
+import { isLayoutFrontmatter } from "./domain/layout";
 import { SPARQLCodeBlockProcessor } from "./application/processors/SPARQLCodeBlockProcessor";
 import { LayoutCodeBlockProcessor } from "./application/processors/LayoutCodeBlockProcessor";
 import { SPARQLApi } from "./application/api/SPARQLApi";
@@ -71,6 +73,7 @@ export default class ExocortexPlugin extends Plugin {
   private taskTrackingService!: TaskTrackingService;
   private aliasSyncService!: AliasSyncService;
   private wikilinkAliasService!: WikilinkAliasService;
+  themeResolver!: ThemeResolver;
   // Use LRU cache with max 1000 entries and 5-minute TTL to prevent unbounded memory growth
   // TTL ensures stale entries are evicted even if not accessed
   private metadataCache!: LRUCache<string, Record<string, unknown>>;
@@ -193,6 +196,21 @@ export default class ExocortexPlugin extends Plugin {
         this.app,
         this.app.metadataCache,
       );
+
+      // RFC-024 Phase 1 — Theme resolver for class-level visual accents.
+      // layoutProvider is a callback placeholder; a subsequent PR will wire a
+      // LayoutService lookup. The resolver still serves plugin-built-in
+      // defaults via CLASS_DEFAULT_ACCENT (Tasks/Projects/Areas/Knowledge).
+      this.themeResolver = new ThemeResolver();
+      this.registerEvent(
+        this.app.metadataCache.on("changed", (file) => {
+          const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
+          if (fm && isLayoutFrontmatter(fm as Record<string, unknown>)) {
+            this.themeResolver.invalidate();
+          }
+        }),
+      );
+
       this.metadataCache = new LRUCache({
         maxEntries: 1000,
         ttl: 5 * 60 * 1000, // 5 minutes

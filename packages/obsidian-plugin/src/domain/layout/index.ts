@@ -42,6 +42,7 @@
 export {
   LayoutType,
   type CalendarView,
+  type LabelTypography,
   type BaseLayout,
   type TableLayout,
   type KanbanLayout,
@@ -58,6 +59,8 @@ export {
   isCalendarLayout,
   isListLayout,
   isValidCalendarView,
+  isValidLabelTypography,
+  isValidAccentColor,
 } from "./Layout";
 
 // LayoutColumn types

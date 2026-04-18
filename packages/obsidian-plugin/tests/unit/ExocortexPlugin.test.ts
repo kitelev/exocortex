@@ -211,8 +211,9 @@ describe("ExocortexPlugin", () => {
         "exoql",
         expect.any(Function)
       );
-      // 10 - 4 semantic search file events (create, modify, delete, rename) = 6 + 1 PrintNameRuleService refresh = 7
-      expect(plugin.registerEvent).toHaveBeenCalledTimes(7);
+      // 10 - 4 semantic search file events (create, modify, delete, rename) = 6
+      // + 1 PrintNameRuleService refresh + 1 ThemeResolver invalidation (RFC-024 Phase 1) = 8
+      expect(plugin.registerEvent).toHaveBeenCalledTimes(8);
       expect(mockLogger.info).toHaveBeenCalledWith("Exocortex Plugin loaded successfully");
     });
 

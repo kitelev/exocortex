@@ -8,11 +8,7 @@
  * @since 1.0.0
  */
 
-import type {
-  IVaultAdapter,
-  IFile,
-  IFrontmatter,
-} from "exocortex";
+import type { IVaultAdapter, IFile, IFrontmatter } from "exocortex";
 
 import {
   type Layout,
@@ -26,6 +22,7 @@ import {
   type LayoutSort,
   type LayoutGroup,
   type LayoutActions,
+  type LabelTypography,
   type CommandRef,
   LayoutType,
   getLayoutTypeFromInstanceClass,
@@ -39,7 +36,18 @@ import {
   isLayoutActionsFrontmatter,
   isCommandFrontmatter,
   isValidCalendarView,
+  isValidLabelTypography,
+  isValidAccentColor,
 } from "../../domain/layout";
+
+/**
+ * Parsed RFC-024 Phase 1 visual slots for a layout.
+ */
+interface VisualSlots {
+  accentColor?: string;
+  icon?: string;
+  labelTypography?: LabelTypography;
+}
 
 /**
  * Result of a layout parsing operation
@@ -172,10 +180,10 @@ export class LayoutParser {
       }
 
       // Parse the layout based on type
-      const layout = await this.parseLayoutFromFrontmatter(
-        frontmatter,
-        { maxDepth, gracefulDegradation },
-      );
+      const layout = await this.parseLayoutFromFrontmatter(frontmatter, {
+        maxDepth,
+        gracefulDegradation,
+      });
 
       if (!layout) {
         return {
@@ -229,8 +237,12 @@ export class LayoutParser {
     // Extract base properties
     const uid = frontmatter["exo__Asset_uid"] as string | undefined;
     const label = frontmatter["exo__Asset_label"] as string | undefined;
-    const description = frontmatter["exo__Asset_description"] as string | undefined;
-    const targetClass = frontmatter["exo__Layout_targetClass"] as string | undefined;
+    const description = frontmatter["exo__Asset_description"] as
+      | string
+      | undefined;
+    const targetClass = frontmatter["exo__Layout_targetClass"] as
+      | string
+      | undefined;
     const instanceClass = frontmatter["exo__Instance_class"];
 
     const layoutType = getLayoutTypeFromInstanceClass(instanceClass);
@@ -245,9 +257,10 @@ export class LayoutParser {
     const groupBy = await this.loadGroupBy(frontmatter, options);
 
     // Build the layout based on type
+    let layout: Layout | null = null;
     switch (layoutType) {
       case LayoutType.Table:
-        return this.buildTableLayout(
+        layout = await this.buildTableLayout(
           uid,
           label,
           description,
@@ -258,9 +271,10 @@ export class LayoutParser {
           groupBy,
           options,
         );
+        break;
 
       case LayoutType.Kanban:
-        return this.buildKanbanLayout(
+        layout = await this.buildKanbanLayout(
           uid,
           label,
           description,
@@ -271,9 +285,10 @@ export class LayoutParser {
           groupBy,
           options,
         );
+        break;
 
       case LayoutType.Graph:
-        return this.buildGraphLayout(
+        layout = this.buildGraphLayout(
           uid,
           label,
           description,
@@ -283,9 +298,10 @@ export class LayoutParser {
           defaultSort,
           groupBy,
         );
+        break;
 
       case LayoutType.Calendar:
-        return this.buildCalendarLayout(
+        layout = this.buildCalendarLayout(
           uid,
           label,
           description,
@@ -295,9 +311,10 @@ export class LayoutParser {
           defaultSort,
           groupBy,
         );
+        break;
 
       case LayoutType.List:
-        return this.buildListLayout(
+        layout = this.buildListLayout(
           uid,
           label,
           description,
@@ -307,10 +324,53 @@ export class LayoutParser {
           defaultSort,
           groupBy,
         );
+        break;
 
       default:
         return null;
     }
+
+    if (!layout) {
+      return null;
+    }
+
+    const visualSlots = this.parseVisualSlots(frontmatter);
+    return { ...layout, ...visualSlots } as Layout;
+  }
+
+  /**
+   * Parse RFC-024 Phase 1 visual customisation slots from frontmatter.
+   * Invalid `accentColor` values (e.g. hex literals) are dropped with a
+   * console warning so the caller falls back to the plugin-built-in default.
+   */
+  private parseVisualSlots(frontmatter: IFrontmatter): VisualSlots {
+    const slots: VisualSlots = {};
+
+    const accentRaw = frontmatter["exo__Layout_accentColor"];
+    if (typeof accentRaw === "string" && accentRaw.trim().length > 0) {
+      if (isValidAccentColor(accentRaw)) {
+        slots.accentColor = accentRaw.trim();
+      } else {
+        console.warn(
+          `[LayoutParser] exo__Layout_accentColor must be an Obsidian CSS ` +
+            `var or Layer 2 alias (RFC-024 §3). Received ${JSON.stringify(
+              accentRaw,
+            )} — falling back to default.`,
+        );
+      }
+    }
+
+    const iconRaw = frontmatter["exo__Layout_icon"];
+    if (typeof iconRaw === "string" && iconRaw.trim().length > 0) {
+      slots.icon = iconRaw.trim();
+    }
+
+    const typoRaw = frontmatter["exo__Layout_labelTypography"];
+    if (isValidLabelTypography(typoRaw)) {
+      slots.labelTypography = typoRaw;
+    }
+
+    return slots;
   }
 
   /**
@@ -347,7 +407,10 @@ export class LayoutParser {
 
     // Try with .md extension if not found (Obsidian file lookup pattern)
     if (!file && !linkPath.endsWith(".md")) {
-      file = this.vaultAdapter.getFirstLinkpathDest(linkPath + ".md", sourcePath);
+      file = this.vaultAdapter.getFirstLinkpathDest(
+        linkPath + ".md",
+        sourcePath,
+      );
     }
 
     // Check if result is a file (not folder)
@@ -606,14 +669,21 @@ export class LayoutParser {
 
     // Load precondition SPARQL
     let preconditionSparql: string | undefined;
-    const preconditionLink = frontmatter["exo__Command_precondition"] as string | undefined;
+    const preconditionLink = frontmatter["exo__Command_precondition"] as
+      | string
+      | undefined;
     if (preconditionLink) {
-      preconditionSparql = await this.loadPreconditionSparql(preconditionLink, options);
+      preconditionSparql = await this.loadPreconditionSparql(
+        preconditionLink,
+        options,
+      );
     }
 
     // Load grounding SPARQL
     let groundingSparql: string | undefined;
-    const groundingLink = frontmatter["exo__Command_grounding"] as string | undefined;
+    const groundingLink = frontmatter["exo__Command_grounding"] as
+      | string
+      | undefined;
     if (groundingLink) {
       groundingSparql = await this.loadGroundingSparql(groundingLink, options);
     }
@@ -772,7 +842,9 @@ export class LayoutParser {
     groupBy: LayoutGroup | undefined,
     options: LayoutParseOptions,
   ): Promise<KanbanLayout | null> {
-    const laneProperty = frontmatter["exo__KanbanLayout_laneProperty"] as string | undefined;
+    const laneProperty = frontmatter["exo__KanbanLayout_laneProperty"] as
+      | string
+      | undefined;
     if (!laneProperty) {
       return null;
     }
@@ -810,7 +882,9 @@ export class LayoutParser {
     defaultSort: LayoutSort | undefined,
     groupBy: LayoutGroup | undefined,
   ): GraphLayout {
-    const nodeLabel = frontmatter["exo__GraphLayout_nodeLabel"] as string | undefined;
+    const nodeLabel = frontmatter["exo__GraphLayout_nodeLabel"] as
+      | string
+      | undefined;
     const edgePropertiesValue = frontmatter["exo__GraphLayout_edgeProperties"];
     const edgeProperties = edgePropertiesValue
       ? this.normalizeToArray(edgePropertiesValue)
@@ -824,7 +898,10 @@ export class LayoutParser {
       type: LayoutType.Graph,
       targetClass,
       nodeLabel,
-      edgeProperties: edgeProperties && edgeProperties.length > 0 ? edgeProperties : undefined,
+      edgeProperties:
+        edgeProperties && edgeProperties.length > 0
+          ? edgeProperties
+          : undefined,
       depth,
       filters,
       defaultSort,
@@ -842,12 +919,16 @@ export class LayoutParser {
     defaultSort: LayoutSort | undefined,
     groupBy: LayoutGroup | undefined,
   ): CalendarLayout | null {
-    const startProperty = frontmatter["exo__CalendarLayout_startProperty"] as string | undefined;
+    const startProperty = frontmatter["exo__CalendarLayout_startProperty"] as
+      | string
+      | undefined;
     if (!startProperty) {
       return null;
     }
 
-    const endProperty = frontmatter["exo__CalendarLayout_endProperty"] as string | undefined;
+    const endProperty = frontmatter["exo__CalendarLayout_endProperty"] as
+      | string
+      | undefined;
     const viewValue = frontmatter["exo__CalendarLayout_view"];
     const view = isValidCalendarView(viewValue) ? viewValue : "week";
 
@@ -876,8 +957,12 @@ export class LayoutParser {
     defaultSort: LayoutSort | undefined,
     groupBy: LayoutGroup | undefined,
   ): ListLayout {
-    const template = frontmatter["exo__ListLayout_template"] as string | undefined;
-    const showIcon = frontmatter["exo__ListLayout_showIcon"] as boolean | undefined;
+    const template = frontmatter["exo__ListLayout_template"] as
+      | string
+      | undefined;
+    const showIcon = frontmatter["exo__ListLayout_showIcon"] as
+      | boolean
+      | undefined;
 
     return {
       uid,
