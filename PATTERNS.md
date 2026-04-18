@@ -8557,3 +8557,70 @@ Then extract property names from:
 **Impact**: Single-source query finds ~25 properties. Two-source finds ~170.
 
 **Reference**: Issue #2713 Post-Mortem — PR #2716
+
+---
+
+## First-Launch Modal Pattern (E2E-safe)
+
+**When to use**: Adding any startup-triggered modal, toast, or notice that appears conditionally based on stored plugin state (e.g. "what's new in vX.Y.Z", onboarding prompts, feature-announcement dialogs).
+
+**Problem**: Naïve implementation shows the modal on fresh installs too — which breaks E2E runs. The test vault at `packages/obsidian-plugin/tests/e2e/test-vault/.obsidian/plugins/exocortex/` ships only `main.js` + `manifest.json`, no `data.json`. On boot, `plugin.loadData()` returns `null` → any "show if stored version ≠ current" gate evaluates `undefined !== "15.x.y"` → `true` → modal opens → intercepts first UI click → first Playwright retry → `NoFlakyReporter` (`packages/obsidian-plugin/playwright-no-flaky-reporter.ts`) fails CI on flaky detection.
+
+**Solution**: Distinguish fresh install from upgrade by capturing the raw `loadData()` result before merging with defaults:
+
+```typescript
+export default class MyPlugin extends Plugin {
+  /**
+   * True when the plugin data file did not exist at startup — i.e. this is a
+   * brand-new install with no prior user state. Used to suppress first-launch
+   * modals for users who never had prior behaviour (nothing to inform them about).
+   */
+  private isFreshInstall = false;
+
+  async loadSettings(): Promise<void> {
+    const rawData = await this.loadData();
+    this.isFreshInstall = rawData == null;
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, rawData);
+  }
+
+  async onload(): Promise<void> {
+    await this.loadSettings();
+    // ... other init ...
+
+    const currentVersion = this.manifest.version;
+    if (this.isFreshInstall) {
+      // Silent seed — fresh install has no prior state to contrast against
+      this.settings.lastShownChangelogVersion = currentVersion;
+      void this.saveSettings();
+    } else if (
+      shouldShowChangelog(
+        this.settings.lastShownChangelogVersion,
+        currentVersion,
+      )
+    ) {
+      this.timerManager.setTimeout(
+        "changelog-modal",
+        () =>
+          new ChangelogModal(this.app, currentVersion, (v) => {
+            this.settings.lastShownChangelogVersion = v;
+            void this.saveSettings();
+          }).open(),
+        500,
+      );
+    }
+  }
+}
+```
+
+**Why `loadData()` return value is the signal**:
+
+- `loadData()` returns `null` **only** on the first load when `data.json` does not exist
+- After the first `saveSettings()`, it returns the stored object (possibly empty)
+- Gating on a missing setting _field_ is unreliable (merge with defaults hides the distinction)
+
+**Validation**:
+
+- Unit tests should cover `shouldShowChangelog(undefined, version) → false-or-true` explicitly (spec-dependent)
+- Run `npm run test:e2e` locally before push when modifying plugin startup sequence — the in-repo `npm run test:all` does NOT include Docker E2E, so flaky-modal races only surface in CI
+
+**Reference**: RFC-024 Phase 0 (#2833) / PR #2838 — E2E flaky `daily-archive-filter.spec.ts` was caused by `ChangelogModal` intercepting archive-toggle clicks on fresh test vault; fixed by `isFreshInstall` gate.

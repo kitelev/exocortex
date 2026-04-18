@@ -76,6 +76,20 @@ Before starting any RFC Phase, audit existing codebase for pre-implemented featu
 - Always redirect to test coverage when feature already exists
 - 15 min grepping > hours of redundant implementation
 
+## RFC Scope: Additive vs Transformative
+
+When a session prompt says "do not touch file X — that's Phase N+1 scope", read the intent before treating it as a hard block. Scope fences are usually aimed at **transformative** changes (rename, delete, rewrite, migration of existing values) — not **additive** changes (new variant in a union, new CSS class, new optional setting field).
+
+Before escalating as a blocker, verify three things against the RFC itself:
+
+1. Does the current Phase's acceptance criteria literally require a new value or new file to be added?
+2. Is the addition documented in the RFC's architectural principles (e.g. "whitelist расширяется, никогда не удаляется")?
+3. Is the physical change additive only — one new union member, one new CSS class — without altering existing values or behaviour?
+
+If all three are yes, the change belongs to the current Phase even if the touched file is nominally "upstream scope". RFC-024 Phase 0 (#2833) example: the `muted` button variant had to be added to `ActionButtonsGroup.tsx` and `styles.css` to satisfy AC2 — both files were prompt-marked "do not touch (Phase 1)", but the addition is additive (whitelist extension), not transformative (WCAG recalibration, which is what Phase 1 actually scopes).
+
+When the RFC acceptance criteria and prompt scope fences conflict, stop and ask the user with three clearly separated options (additive / downgrade / defer). Do not silently pick.
+
 ## ESM Packages
 
 `packages/cli` uses ESM (`"type": "module"`). Never use `__dirname` or `require()` — use `import.meta.url` and dynamic `import()`. See PATTERNS.md for the replacement pattern.

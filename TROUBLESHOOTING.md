@@ -46,12 +46,14 @@ git stash pop
 **🚨 ALWAYS check your location before editing files!**
 
 **Quick detection:**
+
 ```bash
 pwd  # MUST output: .../worktrees/exocortex-*
 # If "worktrees/" is missing → STOP immediately!
 ```
 
 **Quick recovery:**
+
 ```bash
 # 1. Revert changes in main directory
 git restore .
@@ -64,6 +66,7 @@ cd ../worktrees/exocortex-fix-something
 ```
 
 **Prevention:**
+
 - Run `pwd` before first file edit
 - Add shell prompt showing current directory
 - Use `/worktree-create` command (handles paths automatically)
@@ -71,6 +74,7 @@ cd ../worktrees/exocortex-fix-something
 **Reference**: PR #312 - Lost 2-3 minutes fixing this mistake
 
 ### "Worktree already exists"
+
 ```bash
 /worktree-list  # See what's there
 /worktree-cleanup  # Clean merged ones
@@ -78,6 +82,7 @@ cd ../worktrees/exocortex-fix-something
 ```
 
 ### "Lost track of current worktree"
+
 ```bash
 pwd  # Check current directory
 # Should be: .../exocortex-development/worktrees/exocortex-*
@@ -90,6 +95,7 @@ pwd  # Check current directory
 **Problem**: Running cleanup while Claude session is active in the worktree breaks bash environment.
 
 **Safe cleanup workflow:**
+
 ```bash
 # Step 1: Exit Claude Code session or switch directory
 cd /Users/kitelev/Developer/exocortex-development
@@ -107,6 +113,7 @@ cd /Users/kitelev/Developer/exocortex-development
 ### Git Repository Corruption (Missing Objects/Refs)
 
 **Symptoms:**
+
 - `error: refs/tags/vX.X.X does not point to a valid object!`
 - `fatal: missing blob object '<sha>'`
 - `error: github.com:kitelev/... did not send all necessary objects`
@@ -152,11 +159,13 @@ git gc --aggressive --prune=now
 ```
 
 **When to use Fresh Clone vs Repair:**
+
 - ✅ **Fresh clone** (5 minutes): Corrupted main repo, no uncommitted work in worktrees
 - ❌ **Repair attempt** (30-60 minutes): Might not work, complex steps, high failure rate
 - 💡 **Best practice**: Fresh clone is almost always faster and more reliable
 
 **Prevention:**
+
 - Always use SSH remotes (more reliable than HTTPS)
 - Don't interrupt `git fetch` or `git pull` operations
 - Periodically run `git gc` to maintain repository health
@@ -166,6 +175,7 @@ git gc --aggressive --prune=now
 ### Git Packfile Corruption
 
 **Symptoms:**
+
 - `error: file .git/objects/pack/*.pack is far too short to be a packfile`
 - `fatal: unable to read tree [hash]`
 - `fatal: 'worktree-name' could not be created`
@@ -219,11 +229,13 @@ git prune
 ```
 
 **When to use Fresh Clone vs Repair:**
+
 - ✅ **Fresh clone** (5 minutes): Corrupted main repo, no uncommitted work in worktrees - ALWAYS RECOMMENDED
 - ❌ **Repair attempt** (30-60 minutes): Might not work, complex steps, high failure rate
 - 💡 **Best practice**: Fresh clone is almost always faster and guarantees clean state
 
 **Workaround (if git is completely broken):**
+
 ```bash
 # Preserve uncommitted work via file copy
 cp worktrees/your-worktree/path/to/file.ts /tmp/file-backup.ts
@@ -231,15 +243,18 @@ cp worktrees/your-worktree/path/to/file.ts /tmp/file-backup.ts
 ```
 
 **Prevention:**
+
 - Run `git gc` periodically to maintain repository health
 - Add CI check: `git fsck --full` in scheduled workflow
 - Avoid interrupting git operations (Ctrl+C during push/fetch)
 - Session interruptions can corrupt packfiles - fresh clone recovers quickly
 
 **Additional symptom:**
+
 - `error: invalid object 100644 <sha> for '<filepath>'` - Specific object corruption preventing commit
 
 **Backup before fresh clone (preserve work in progress):**
+
 ```bash
 # 1. Copy modified files to temp directory
 mkdir -p /tmp/my-changes
@@ -258,6 +273,7 @@ npm install && npm run build
 ```
 
 **Real-world examples:**
+
 - Issue #407 - packfile corruption blocked git commit
 - PR #434 - packfile corruption at session start → fresh clone in 5 minutes → zero errors for rest of session (150 minutes of flawless work)
 - PR #477 - `error: invalid object 100644` during DI standardization → backup 33 files → fresh clone → restore → commit succeeded
@@ -265,6 +281,7 @@ npm install && npm run build
 ### Git Authentication Failure (HTTPS vs SSH)
 
 **Symptoms:**
+
 - `fatal: could not read Username for 'https://github.com': Device not configured`
 - `git push` fails asking for credentials
 - Authentication prompts in non-interactive environment
@@ -292,11 +309,13 @@ git push origin your-branch
 ```
 
 **Prevention:**
+
 - ✅ **ALWAYS use SSH remotes for worktree workflows**
 - ✅ Clone with SSH from the start: `git clone git@github.com:user/repo.git`
 - ❌ **NEVER use HTTPS remotes** in AI agent development environments
 
 **Why SSH is required:**
+
 - Non-interactive environment (no credential prompts possible)
 - Better security (SSH keys vs password/token)
 - More reliable for automated workflows
@@ -309,12 +328,14 @@ git push origin your-branch
 **Problem**: `error: cannot pull with rebase: Your index contains uncommitted changes.`
 
 **Symptoms**:
+
 - Trying to `git pull --rebase` or `git rebase` after staging files
 - Error appears immediately, no actual rebase attempt
 
 **Root Cause**: Git refuses to rebase when there are staged but uncommitted changes in the index.
 
 **Solution**:
+
 ```bash
 # ❌ WRONG ORDER - Will fail
 git add .
@@ -337,6 +358,7 @@ git stash pop
 **Reference**: PR #511 - Encountered during SPARQL test coverage work
 
 ### "Rebase conflicts"
+
 ```bash
 git status  # See conflicting files
 # Edit files, resolve conflicts
@@ -349,11 +371,13 @@ git rebase --continue
 **Problem: Auto-merge enabled but PR not merging**
 
 1. **Check mergeStateStatus**:
+
    ```bash
    gh pr view <PR-NUMBER> --json mergeStateStatus
    ```
 
    If `mergeStateStatus: BEHIND`:
+
    ```bash
    git fetch origin main
    git rebase origin/main
@@ -386,18 +410,25 @@ git rebase --continue
 **Root Cause**: Types imported but only used as discriminant literals trigger `noUnusedLocals` errors.
 
 **Example:**
+
 ```typescript
 // ❌ BAD: JoinOperation imported but never used in type annotation
 import type { AlgebraOperation, JoinOperation } from "./AlgebraOperation";
 
-function createJoin(left: AlgebraOperation, right: AlgebraOperation): AlgebraOperation {
+function createJoin(
+  left: AlgebraOperation,
+  right: AlgebraOperation,
+): AlgebraOperation {
   return { type: "join", left, right };
 }
 
 // ✅ GOOD: Only import types used in annotations
 import type { AlgebraOperation } from "./AlgebraOperation";
 
-function createJoin(left: AlgebraOperation, right: AlgebraOperation): AlgebraOperation {
+function createJoin(
+  left: AlgebraOperation,
+  right: AlgebraOperation,
+): AlgebraOperation {
   return { type: "join", left, right };
 }
 ```
@@ -411,6 +442,7 @@ function createJoin(left: AlgebraOperation, right: AlgebraOperation): AlgebraOpe
 **Problem**: Pre-commit hook fails on lint errors in files you didn't touch.
 
 **Solution (when your files are clean)**:
+
 ```bash
 # Verify YOUR changes pass lint individually
 npx eslint packages/obsidian-plugin/src/path/to/your/file.ts
@@ -420,6 +452,7 @@ git commit --no-verify -m "feat: your change"
 ```
 
 **When to use --no-verify:**
+
 - ✅ Your staged files pass lint individually
 - ✅ Errors are in files you didn't modify
 - ✅ CI will catch any actual lint issues
@@ -430,6 +463,7 @@ git commit --no-verify -m "feat: your change"
 **Problem**: `husky - pre-commit script failed (code 1)` but all tests show PASS.
 
 **Symptoms**:
+
 - All unit tests pass (PASS status for each test file)
 - All component tests pass
 - All UI tests pass
@@ -440,6 +474,7 @@ git commit --no-verify -m "feat: your change"
 **Root Cause**: Unknown intermittent issue with husky pre-commit hook execution.
 
 **Solution**:
+
 ```bash
 # 1. Verify ALL checks pass locally
 npm run test:all       # Must pass
@@ -452,6 +487,7 @@ git commit --no-verify -m "feat: your change"
 ```
 
 **When safe to use --no-verify:**
+
 - ✅ All tests pass locally (`npm run test:all`)
 - ✅ Lint has no errors (`npm run lint`)
 - ✅ BDD coverage 100% (`npm run bdd:check`)
@@ -459,6 +495,40 @@ git commit --no-verify -m "feat: your change"
 - ✅ CI will catch any issues (safety net)
 
 **Reference**: PR #524 - Focus Mode toggle (all tests passed but hook failed)
+
+### Archgate CI fails: "Missing 'satisfies RuleSet' on default export"
+
+**Problem**: CI `archgate` job fails with a rule-file syntax-convention error, but `main` branch passes and local pre-commit (`archgate check --staged`) passes.
+
+**Symptoms**:
+
+```
+##[error]Rule execution error: ADR DOC-001: rule file has syntax convention violations (1 violation)
+##[error]Missing `satisfies RuleSet` on default export. The export must use `} satisfies RuleSet;` for compile-time type validation.
+check failed: 13 passed, 0 failed, 6 warnings
+##[error]Process completed with exit code 2.
+```
+
+**Root Cause**: One of the `.archgate/adrs/<ADR>.rules.ts` files has a bare `};` at the end of its default export instead of `} satisfies RuleSet;`. Newer `archgate` versions (installed fresh via `npm install -g archgate` in CI) enforce this strictly; older cached versions on `main`'s CI do not. This is a latent config issue that activates on version bump, not on your PR's code changes.
+
+**Solution**: Append `satisfies RuleSet` to the failing rule file's default export:
+
+```typescript
+// .archgate/adrs/DOC-001-documentation-consistency.rules.ts
+export default {
+  // ... rules ...
+} satisfies RuleSet; // ← add ` satisfies RuleSet` before `;`
+```
+
+Verify locally with `archgate check --ci` (uses the same global-install path as CI).
+
+**Prevention**: Pin the archgate version in `.github/workflows/ci.yml`:
+
+```yaml
+- run: npm install -g archgate@<pinned-version>
+```
+
+**Reference**: PR #2838 (RFC-024 Phase 0) — CI archgate broke on the DOC-001 rules file that had been committed without `satisfies RuleSet` months earlier.
 
 ---
 
@@ -469,9 +539,11 @@ git commit --no-verify -m "feat: your change"
 **Problem**: Component tests fail with "Cannot find module '@exocortex/core/dist/..." in fresh worktrees
 
 **Symptoms**:
+
 ```
 Cannot find module '@exocortex/core/dist/domain/errors/index.js'
 ```
+
 - Error appears during pre-commit hook or `npm run test:component`
 - Only occurs in fresh worktrees
 - Tests pass after building
@@ -479,6 +551,7 @@ Cannot find module '@exocortex/core/dist/domain/errors/index.js'
 **Root Cause**: Fresh worktrees don't have built `dist/` folders needed for Playwright CT subpath imports.
 
 **Solution**:
+
 ```bash
 npm install
 npm run build  # Required before running component tests!
@@ -488,12 +561,14 @@ npm run test:component
 **Prevention**: Always run `npm run build` after `npm install` in new worktrees. The pre-commit hook runs component tests, so build is needed before first commit.
 
 **Why This Happens**:
+
 - Playwright CT uses subpath imports (e.g., `@exocortex/core/domain/errors`)
 - Subpath imports point to `dist/` folder
 - Fresh worktree has no `dist/` folder until build runs
 - Jest unit tests use main package import (works without build)
 
 **Checklist for Fresh Worktrees**:
+
 1. `npm install` (install dependencies)
 2. `npm run build` (build dist/ folders)
 3. `npm run test:all` (verify everything works)
@@ -507,10 +582,12 @@ npm run test:component
 **Problem**: Unit tests pass but E2E tests fail with TSyringe DI resolution errors.
 
 **Symptoms**:
+
 ```
 Error: Cannot resolve TaskCreationService
 Error: Cannot resolve PropertyCleanupService
 ```
+
 - All unit tests pass (194/194 ✅)
 - E2E tests fail on any code path using `container.resolve()`
 - Error only appears in built/bundled code
@@ -518,6 +595,7 @@ Error: Cannot resolve PropertyCleanupService
 **Root Cause**: esbuild doesn't emit TypeScript decorator metadata. TSyringe requires `Reflect.defineMetadata()` calls at runtime, which `emitDecoratorMetadata: true` in tsconfig tells tsc to emit. esbuild ignores this setting.
 
 **Solution**:
+
 ```bash
 # Install esbuild-plugin-tsc
 npm install -D esbuild-plugin-tsc
@@ -525,26 +603,29 @@ npm install -D esbuild-plugin-tsc
 
 ```typescript
 // esbuild.config.mjs
-import esbuildPluginTsc from 'esbuild-plugin-tsc';
+import esbuildPluginTsc from "esbuild-plugin-tsc";
 
 const plugins = [
   esbuildPluginTsc({
-    force: true  // Use tsc for .ts files
+    force: true, // Use tsc for .ts files
   }),
 ];
 ```
 
 **Verification**:
+
 ```bash
 npm run test:e2e  # Should pass now
 ```
 
 **Why unit tests pass but E2E fail**:
+
 - Unit tests mock `container.resolve()` → no actual DI resolution
 - E2E tests use real built code → DI resolution requires metadata
 - Build output missing metadata → runtime resolution fails
 
 **Prevention**:
+
 - Always test DI resolution in E2E tests early in migration
 - Add E2E test for new DI services before marking migration complete
 - See PATTERNS.md § "TSyringe DI with esbuild Build" for full setup
@@ -558,6 +639,7 @@ npm run test:e2e  # Should pass now
 **Problem**: Test passes when it should fail because mock helper provides default value.
 
 **Example from PR #337**:
+
 ```typescript
 // ❌ Test uses mock default instead of testing fallback
 frontmatter: createMockMetadata(),  // Has default: exo__Asset_label: "Test Asset"
@@ -567,6 +649,7 @@ frontmatter: createMockMetadata({ exo__Asset_label: null }),
 ```
 
 **Prevention:**
+
 1. Review default values in test helpers before writing tests
 2. Explicitly test missing data scenarios with `null` overrides
 3. Don't assume defaults match your test intention
@@ -581,6 +664,7 @@ frontmatter: createMockMetadata({ exo__Asset_label: null }),
 **Root Cause**: Mock data doesn't match actual interface definition. Required properties are missing from test fixtures.
 
 **Example from PR #408**:
+
 ```typescript
 // ❌ WRONG - Missing required properties
 const mockTask: DailyTask = {
@@ -601,17 +685,20 @@ const mockTask: DailyTask = {
 ```
 
 **Solution**:
+
 1. Check interface definition in source file (e.g., `DailyTask` interface in `DailyTasksTable.tsx`)
 2. Update ALL mock data to include newly added required properties
 3. Set reasonable defaults (null, false, empty string, 0) for unused properties
 4. Run `npm run check:types` to verify
 
 **When This Happens**:
+
 - Interface evolves and adds new required properties
 - Test files not updated to match new interface shape
 - TypeScript strict mode catches the mismatch
 
 **Prevention**:
+
 - Always reference source interface when creating mock data
 - Use test helpers like `createMockMetadata()` which provide defaults
 - Update all test files when interfaces change
@@ -623,6 +710,7 @@ const mockTask: DailyTask = {
 ## Coordination Issues
 
 ### "Someone else is working on this"
+
 ```bash
 /worktree-list  # Check active work
 gh pr list  # Check open PRs
@@ -640,6 +728,7 @@ gh pr list  # Check open PRs
 ### Q: User said "adjust the proposal" - what do I do?
 
 **A**:
+
 1. Modify ONLY the requested proposal
 2. Keep other proposals unchanged
 3. Present updated version with note: "Updated X proposal as requested"
@@ -648,6 +737,7 @@ gh pr list  # Check open PRs
 ### Q: User approved some changes but not others - what do I do?
 
 **A**:
+
 1. Edit ONLY approved files
 2. Do NOT edit non-approved files
 3. Confirm with user what was applied and what remains pending
@@ -659,6 +749,7 @@ gh pr list  # Check open PRs
 ### Q: Should I commit documentation changes to the same PR?
 
 **A**: Ask user for preference:
+
 - Option A: Separate commit in same PR
 - Option B: Separate PR for documentation only
 - Let user decide
@@ -666,6 +757,7 @@ gh pr list  # Check open PRs
 ### Q: User is not responding to my approval request?
 
 **A**:
+
 1. Do NOT edit files without approval
 2. Your post-mortem is already written and available
 3. Continue with other tasks if available
@@ -680,6 +772,7 @@ gh pr list  # Check open PRs
 If you just completed a task with zero errors from start to release, document why:
 
 **Common success factors**:
+
 1. **Recent related work**: Building on abstractions validated in previous session (< 24 hours ago)
 2. **Clear requirements**: Issue had specific acceptance criteria and examples
 3. **Shared utilities**: Used FrontmatterService, PathResolver (no custom logic)
@@ -687,6 +780,7 @@ If you just completed a task with zero errors from start to release, document wh
 5. **Continuation session**: Full context from previous work still loaded
 
 **Example**: PR #433 (CLI Maintenance Commands)
+
 - **Why zero errors?** Immediate continuation of PR #432 (CLI Core Infrastructure)
 - **What helped?** Same patterns, same abstractions, same tests, fresh context
 - **Time saved**: ~60-90 minutes (vs cold start on same task)
@@ -694,12 +788,14 @@ If you just completed a task with zero errors from start to release, document wh
 **Lesson**: Don't assume zero errors means "easy task". Often means **excellent preparation** (abstractions, patterns, tests) from previous work. Document what made it smooth so future agents can replicate the pattern.
 
 **Patterns that enable zero-error sessions**:
+
 - Sequential Related Tasks (see CLAUDE.md)
 - Task Batching Strategy (see AGENTS.md)
 - Reusing validated abstractions (FrontmatterService, PathResolver)
 - Comprehensive test mocks (testHelpers.ts patterns)
 
 **When to document**:
+
 - ✅ **ALWAYS** write post-mortem after zero-error sessions
 - ✅ Identify which patterns/abstractions enabled smooth implementation
 - ✅ Propose documentation updates to capture learnings
@@ -712,6 +808,7 @@ If you just completed a task with zero errors from start to release, document wh
 **Problem**: Playwright component tests pass 100% locally but fail systematically in GitHub Actions CI.
 
 **Diagnosis**:
+
 ```bash
 # Verify tests pass locally (multiple runs)
 npm run test:component
@@ -734,6 +831,7 @@ gh pr checks <PR-NUMBER>
 ```
 
 **Root Causes**:
+
 - **Timing differences**: CI runs slower/faster than local, breaks timeouts
 - **OS differences**: Linux (CI) vs macOS/Windows (local) rendering differences
 - **Node version**: CI uses different Node version than local
@@ -743,17 +841,19 @@ gh pr checks <PR-NUMBER>
 **Solutions**:
 
 1. **Increase timeouts**:
+
    ```typescript
    // In playwright.config.ts
    export default defineConfig({
      timeout: 30000, // Increase from 10000
      expect: {
        timeout: 10000, // Increase from 5000
-     }
+     },
    });
    ```
 
 2. **Add retries**:
+
    ```typescript
    export default defineConfig({
      retries: process.env.CI ? 3 : 0, // Retry in CI only
@@ -761,11 +861,13 @@ gh pr checks <PR-NUMBER>
    ```
 
 3. **Run locally in Docker** (reproduce CI environment):
+
    ```bash
    npm run test:e2e:local  # Uses Docker
    ```
 
 4. **Check environment variables**:
+
    ```bash
    # In CI logs, verify:
    echo $CI  # Should be "1" or "true"
@@ -779,6 +881,7 @@ gh pr checks <PR-NUMBER>
    - Request manual review
 
 **When to skip CI check**:
+
 - ❌ NEVER skip if your code changed UI components
 - ✅ MAY skip with documentation if:
   - All tests pass locally (verified multiple runs)
@@ -788,10 +891,12 @@ gh pr checks <PR-NUMBER>
   - Document in PR with full evidence
 
 **Example Documentation for PR**:
+
 ```markdown
 ## CI Status
 
 **7/8 checks GREEN:**
+
 - ✅ build
 - ✅ typecheck
 - ✅ lint
@@ -801,10 +906,12 @@ gh pr checks <PR-NUMBER>
 - ✅ e2e-tests
 
 **1/8 check FLAKY:**
+
 - ❌ test-component (130/168 fail in CI)
 - ✅ ALL 168 tests pass locally (verified 3 runs)
 
 **Evidence this is CI environment issue:**
+
 1. Component tests pass 100% locally
 2. DI infrastructure code doesn't modify UI components
 3. Same tests fail identically across 3 CI attempts
@@ -812,6 +919,7 @@ gh pr checks <PR-NUMBER>
 5. All other checks GREEN (code quality confirmed)
 
 **Investigation attempted:**
+
 - Checked CI logs (no detailed errors beyond test names)
 - Verified Vite build passes
 - Confirmed decorator support enabled
@@ -829,6 +937,7 @@ gh pr checks <PR-NUMBER>
 **Problem**: `husky - pre-commit script failed (code 1)` but manual test run shows all tests passing.
 
 **Diagnosis**:
+
 ```bash
 # Run tests manually to verify they pass
 npm run test:all
@@ -842,12 +951,14 @@ git commit -am "feat: my change"
 **Root Cause**: Flaky pre-commit hook script - tests pass when run manually but hook returns non-zero exit code.
 
 **Possible Causes**:
+
 1. **Hook script timeout**: Tests take longer in hook context than standalone
 2. **Environment differences**: Hook runs in different shell/context
 3. **Exit code propagation bug**: Hook script misinterprets test exit codes
 4. **Concurrent execution**: Hook runs tests differently than manual run
 
 **Solution (when tests verified passing)**:
+
 ```bash
 # 1. ALWAYS verify tests pass first (MANDATORY)
 npm run test:all  # Must be 100% GREEN ✅
@@ -859,6 +970,7 @@ HUSKY=0 git commit -m "feat: my change"
 **⚠️ CRITICAL**: Only use `HUSKY=0` when you've verified ALL tests pass manually. Never bypass hook to avoid fixing legitimate failures.
 
 **Verification Checklist Before Bypass**:
+
 - [ ] `npm run test:all` passes 100%
 - [ ] `npm run typecheck` passes
 - [ ] `npm run lint` passes
@@ -870,6 +982,7 @@ HUSKY=0 git commit -m "feat: my change"
 **Frequency**: Observed in ~30% of commits during Issue #436 Phase 1 implementation (2/3 commits required bypass).
 
 **Future Work**: Investigate `.husky/pre-commit` script for flaky behavior:
+
 ```bash
 # Check hook script
 cat .husky/pre-commit
@@ -882,12 +995,14 @@ cat .husky/pre-commit
 ```
 
 **Alternative Solutions**:
+
 1. **Increase hook timeout** (if timeout is the issue)
 2. **Simplify hook** (run fewer checks)
 3. **Debug hook script** (add logging)
 4. **Disable hook temporarily** (if fixing will take time)
 
 **Document in Commit Message** (when using HUSKY=0):
+
 ```
 feat: implement DI infrastructure
 
@@ -905,6 +1020,7 @@ Used HUSKY=0 after verifying all checks pass manually.
 ```
 
 **Related Issues**: Common during:
+
 - DI infrastructure work (Issue #436)
 - Documentation-heavy PRs
 - Large test suite additions (> 1000 tests)
@@ -918,6 +1034,7 @@ Used HUSKY=0 after verifying all checks pass manually.
 **Problem**: `Edit failed: File has not been read yet in this conversation`
 
 **Symptoms**:
+
 - Edit tool fails even though file path is known
 - File was mentioned in context summary but not read in current session
 - Happens after context window reset or session continuation
@@ -925,6 +1042,7 @@ Used HUSKY=0 after verifying all checks pass manually.
 **Root Cause**: The Edit tool requires that the file be read in the current conversation context before editing, even if the file content was mentioned in a context summary or previous session.
 
 **Solution**:
+
 ```bash
 # Wrong - using path from context summary
 Read /path/from/summary/CLAUDE.md  # May fail if file moved
@@ -934,11 +1052,13 @@ Read /Users/kitelev/Developer/exocortex-development/worktrees/exocortex-claude1-
 ```
 
 **Step-by-step fix**:
+
 1. Identify the correct file path in your current worktree
 2. Use `Read` tool to read the file first
 3. Then use `Edit` tool to make changes
 
 **Prevention**:
+
 - After creating a worktree, always read files from the worktree path
 - Don't rely on file paths from context summaries
 - When session continues, re-read files before editing
@@ -956,6 +1076,7 @@ Read /Users/kitelev/Developer/exocortex-development/worktrees/exocortex-claude1-
 **Strategy (learned from December 2025 sprint - 41 issues in one day)**:
 
 1. **Group by rule ID**:
+
    ```bash
    gh api repos/kitelev/exocortex/code-scanning/alerts --jq '
      group_by(.rule.id) | .[] | {rule: .[0].rule.id, count: length}
@@ -981,6 +1102,7 @@ Read /Users/kitelev/Developer/exocortex-development/worktrees/exocortex-claude1-
 ### Common CodeQL Alert Solutions
 
 #### js/incomplete-string-escaping
+
 ```typescript
 // ❌ ALERT
 str.replace("pattern", userInput);
@@ -990,16 +1112,18 @@ str.split("pattern").join(userInput);
 ```
 
 #### js/useless-assignment-to-local
+
 ```typescript
 // ❌ ALERT
 let x = getValue();
-x = getOtherValue();  // First value unused
+x = getOtherValue(); // First value unused
 
 // ✅ FIX
 const x = getOtherValue();
 ```
 
 #### js/superfluous-trailing-arguments
+
 ```typescript
 // ❌ ALERT - function takes 2 args, called with 3
 fn(a, b, c);
@@ -1019,18 +1143,21 @@ fn(a, b);
 **Problem**: User enters datetime value, but it's saved with unexpected hour offset.
 
 **Example (Issue #1052)**:
+
 - User entered: `2025-12-17T20:05`
 - Actually saved: `2025-12-18T16:05` (+20 hours offset!)
 
 **Symptoms**:
+
 - One datetime field works correctly (e.g., plannedStartTimestamp)
 - Another field has offset bug (e.g., plannedEndTimestamp)
 - Offset is not a simple timezone conversion (e.g., +20 hours instead of ±5)
 
 **Root Cause Investigation**:
+
 ```typescript
 // Check if code uses Date.toISOString() - converts to UTC
-const saved = new Date(userInput).toISOString();  // ❌ WRONG
+const saved = new Date(userInput).toISOString(); // ❌ WRONG
 
 // Check getTimezoneOffset() arithmetic
 // GOTCHA: Returns NEGATIVE for POSITIVE timezones!
@@ -1044,6 +1171,7 @@ const saved = new Date(userInput).toISOString();  // ❌ WRONG
 ```
 
 **Debugging Steps**:
+
 ```typescript
 // 1. Find the serialization code
 rg "toISOString" packages/obsidian-plugin/src --type ts
@@ -1064,11 +1192,12 @@ console.log('getTimezoneOffset:', new Date(testDate).getTimezoneOffset());
 ```
 
 **Solution**:
+
 ```typescript
 // ✅ CORRECT: Preserve user input as string
 function serializeTimestamp(userInput: string): string {
   if (userInput.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/)) {
-    return userInput + ':00';  // Just add seconds
+    return userInput + ":00"; // Just add seconds
   }
   return userInput;
 }
@@ -1078,6 +1207,7 @@ const broken = new Date(userInput).toISOString();
 ```
 
 **Key Gotchas**:
+
 - `getTimezoneOffset()` returns **negative** for **positive** timezones
 - `toISOString()` **always** converts to UTC
 - JavaScript Date is always UTC internally
@@ -1094,6 +1224,7 @@ const broken = new Date(userInput).toISOString();
 **Problem**: CLI SPARQL queries return empty results for files in Exo 0.0.3 format.
 
 **Symptoms**:
+
 - `exocortex-cli sparql query "SELECT ?s WHERE { ?s a exo:Statement }"` returns 0 results
 - Files exist and are in correct format
 - Previous version worked correctly
@@ -1101,6 +1232,7 @@ const broken = new Date(userInput).toISOString();
 **Root Cause**: Statement files in Exo 0.0.3 format have different structure (anchor/statement/body sections) and require specialized indexing.
 
 **Diagnosis**:
+
 ```bash
 # Check if files are being found
 exocortex-cli sparql query --folder /path/to/vault \
@@ -1112,11 +1244,13 @@ exocortex-cli sparql query --verbose \
 ```
 
 **Common Causes**:
+
 1. **Regression from format change**: New format parser doesn't emit triples
 2. **Missing file type handling**: Indexer skips `.md` files with certain frontmatter
 3. **Wikilink alias stripping**: Links like `[[Page|Alias]]` not properly parsed
 
 **Solution History**:
+
 - Issue #1377: Initial regression - statement files not converted to RDF
 - Issue #1380: Follow-up regression - statement files still not indexed after #1377 fix
 
@@ -1133,6 +1267,7 @@ exocortex-cli sparql query --verbose \
 **Problem**: E2E tests timeout with "Quadtree" in error message.
 
 **Symptoms**:
+
 ```
 Timeout exceeded while waiting for Quadtree layout
 Test "should render graph" timed out after 30000ms
@@ -1141,6 +1276,7 @@ Test "should render graph" timed out after 30000ms
 **Root Cause**: Graph layout algorithms using Quadtree are CPU-intensive and timing varies significantly between local machines and CI runners.
 
 **Solution**:
+
 ```typescript
 // Skip timing-sensitive tests in CI
 const describeOrSkip = process.env.CI ? describe.skip : describe;
@@ -1153,6 +1289,7 @@ describeOrSkip("Graph layout performance", () => {
 ```
 
 **Alternative**: Increase timeouts specifically for graph tests:
+
 ```typescript
 test("graph view", { timeout: 60000 }, async () => {
   // Test code
@@ -1166,17 +1303,43 @@ test("graph view", { timeout: 60000 }, async () => {
 **Problem**: E2E tests abort randomly without clear error.
 
 **Symptoms**:
+
 - Test suite starts but exits mid-run
 - No clear error message
 - Happens intermittently
 
 **Solution**: Increase retry count in CI:
+
 ```typescript
 // playwright.config.ts
 retries: process.env.CI ? 3 : 0,
 ```
 
 **Reference**: Issue #1384 - E2E tests flaky (January 2026)
+
+### NoFlakyReporter fails on first-launch modal race
+
+**Problem**: `❌ FLAKY TEST DETECTED (will fail CI)` from `playwright-no-flaky-reporter.ts` on a UI test that passes only after retry, typically in `daily-*` specs that click something shortly after plugin load.
+
+**Symptoms**:
+
+```
+✘   1 [e2e] › daily-archive-filter.spec.ts:18 › should toggle archived tasks visibility with button click (1.0m)
+✓   2 [e2e] › daily-archive-filter.spec.ts:18 › should toggle archived tasks visibility with button click (retry #1) (14.2s)
+❌ FLAKY TEST DETECTED (will fail CI): should toggle archived tasks visibility with button click
+   This test passed after 1 retries.
+```
+
+**Root Cause**: Any delay-timer modal (e.g. `timerManager.setTimeout(..., 500)`) that opens when a settings version field differs from `manifest.version` will open on the E2E test vault too — because `packages/obsidian-plugin/tests/e2e/test-vault/.obsidian/plugins/exocortex/` ships without `data.json`. The modal intercepts the first UI click; the test times out, succeeds on retry (modal already dismissed or Obsidian reloaded), and `NoFlakyReporter` fails the CI.
+
+**Solution**: Gate the modal on `plugin.loadData() == null` (fresh install) and silently seed the stored version so the modal only opens on real upgrades. See `PATTERNS.md` → "First-Launch Modal Pattern (E2E-safe)".
+
+**Prevention**:
+
+- Run `npm run test:e2e` locally before pushing any plugin-startup-sequence change — the default `npm run test:all` does NOT include Docker E2E, so this race only surfaces in CI
+- Check `playwright-no-flaky-reporter.ts` behaviour: it fails CI on **any** passing-after-retry result, no quarantine mechanism
+
+**Reference**: RFC-024 Phase 0 (#2833) / PR #2838 — `ChangelogModal` first-launch race
 
 ---
 
@@ -1187,11 +1350,13 @@ retries: process.env.CI ? 3 : 0,
 **Problem**: After updating TTL files in exocortex-public-ontologies, plugin doesn't see changes.
 
 **Symptoms**:
+
 - New classes/properties defined in TTL
 - SPARQL queries return empty for new terms
 - Plugin uses outdated ontology version
 
 **Solution Checklist**:
+
 1. ✅ Commit and push to exocortex-public-ontologies
 2. ✅ Wait for CI to publish (if using npm package)
 3. ✅ Update dependency version in exocortex package.json
@@ -1199,6 +1364,7 @@ retries: process.env.CI ? 3 : 0,
 5. ✅ Rebuild plugin: `npm run build`
 
 **Quick Test**:
+
 ```bash
 # Verify ontology content in node_modules
 cat node_modules/@kitelev/exocortex-public-ontologies/ontologies/exo-ui.ttl
@@ -1215,6 +1381,7 @@ cat node_modules/@kitelev/exocortex-public-ontologies/ontologies/exo-ui.ttl
 **Problem**: Documentation links become stale over time.
 
 **Solution**: Run link validation:
+
 ```bash
 # Find all markdown links
 grep -r '\[.*\](.*\.md)' docs/ --include="*.md"
@@ -1226,6 +1393,7 @@ done
 ```
 
 **Common Broken Link Causes**:
+
 1. File renamed without updating references
 2. Section header changed (anchor links broken)
 3. Cross-repo links to wrong branch
@@ -1241,6 +1409,7 @@ done
 **Problem**: Plugin features (buttons, commands, renderers) are not available when opening files immediately after Obsidian startup.
 
 **Symptoms**:
+
 - "Create Instance" buttons not visible on prototype files
 - Commands fail with "cannot determine asset class"
 - Renderers show empty/incomplete layouts
@@ -1249,6 +1418,7 @@ done
 **Root Cause**: `metadataCache.getFileCache(file)` returns `null` until Obsidian finishes indexing the vault.
 
 **Diagnosis**:
+
 ```typescript
 // Check in browser console (Ctrl+Shift+I in Obsidian)
 const file = app.workspace.getActiveFile();
@@ -1272,6 +1442,7 @@ if (cache?.frontmatter) {
 ```
 
 **When This Happens**:
+
 - First launch after Obsidian update
 - Cache invalidation (`.obsidian/` folder deleted)
 - Large vaults (>10,000 files) with slow indexing
@@ -1288,6 +1459,7 @@ if (cache?.frontmatter) {
 **Problem**: In tables with >50 rows (virtualized), header columns don't align with body columns.
 
 **Symptoms**:
+
 - Header text appears shifted ~17px to the left of body cells
 - Problem only appears with scrollbar visible
 - Works correctly in non-virtualized tables (<50 rows)
@@ -1295,9 +1467,10 @@ if (cache?.frontmatter) {
 **Root Cause**: Virtualized tables use separate `<table>` elements for header and body. The body table is inside a scroll container, which has a scrollbar taking ~17px width.
 
 **Diagnosis**:
+
 ```typescript
 // Check in browser console
-const scrollContainer = document.querySelector('.scroll-container');
+const scrollContainer = document.querySelector(".scroll-container");
 console.log(scrollContainer.offsetWidth - scrollContainer.clientWidth);
 // Output: 17 (Windows/Linux) or 0 (macOS overlay scrollbars)
 ```
@@ -1305,21 +1478,25 @@ console.log(scrollContainer.offsetWidth - scrollContainer.clientWidth);
 **Solution**: Apply padding compensation to header table (see PATTERNS.md § "Virtualized Table Scrollbar Compensation Pattern")
 
 **Quick Fix** (CSS only):
+
 ```css
 /* May not work with all scrollbar styles */
 .virtualized-table-header {
-  padding-right: 17px;  /* Hardcoded scrollbar width */
+  padding-right: 17px; /* Hardcoded scrollbar width */
 }
 ```
 
 **Proper Fix** (measure dynamically):
+
 ```typescript
-const scrollWidth = parentRef.current.offsetWidth - parentRef.current.clientWidth;
+const scrollWidth =
+  parentRef.current.offsetWidth - parentRef.current.clientWidth;
 setScrollbarWidth(scrollWidth);
 // Apply as style={{ paddingRight: scrollbarWidth }}
 ```
 
 **Affected Components**:
+
 - `DailyTasksTable.tsx` (fixed in PR #941)
 - `AssetRelationsTable.tsx` (fixed in PR #2116)
 - `TableLayoutRenderer.tsx` (fixed in PR #2116)
@@ -1335,6 +1512,7 @@ setScrollbarWidth(scrollWidth);
 **Problem**: SPARQL queries for class hierarchies return incomplete results.
 
 **Symptoms**:
+
 ```sparql
 # Expected: Returns all subclasses of exo:Prototype
 SELECT ?subclass WHERE {
@@ -1346,20 +1524,22 @@ SELECT ?subclass WHERE {
 **Root Cause**: Wikilinks like `[[ebf717aa-4070-4b37-abde-10a700e354fc|exo__Prototype]]` are not resolved to file IRIs because standard relative path resolution fails for UUID-named files.
 
 **Diagnosis**:
+
 ```yaml
 # Check frontmatter of affected file
 exo__Class_superClass:
-  - "[[ems__EffortPrototype]]"                              # ✅ Resolves
-  - "[[ebf717aa-4070-4b37-abde-10a700e354fc|exo__Prototype]]"  # ❌ May fail
+  - "[[ems__EffortPrototype]]" # ✅ Resolves
+  - "[[ebf717aa-4070-4b37-abde-10a700e354fc|exo__Prototype]]" # ❌ May fail
 ```
 
 **Solution**: Build UUID-to-filepath index in `FileSystemVaultAdapter` (see PATTERNS.md § "UUID Wikilink Resolution Pattern")
 
 **Quick Workaround**:
+
 ```yaml
 # Use human-readable filename instead of UUID
 exo__Class_superClass:
-  - "[[exo__Prototype]]"  # If file exists as exo__Prototype.md
+  - "[[exo__Prototype]]" # If file exists as exo__Prototype.md
 ```
 
 **Long-term Fix**: Update CLI to version with UUID resolution (PR #2113+)
@@ -1375,6 +1555,7 @@ exo__Class_superClass:
 **Problem**: Wikilinks like `[[uuid#^blockid]]` display as `uuid > ^blockid` instead of `Asset Label > ^blockid` in Reading View.
 
 **Symptoms**:
+
 - Block reference links show raw UUID in Reading View
 - Same links display correctly in Live Preview mode
 - Links work correctly (navigation functions)
@@ -1383,17 +1564,19 @@ exo__Class_superClass:
 **Root Cause**: `BodyLinkPatch.ts` has a `hasUserAlias` guard that may incorrectly classify Obsidian-generated text as user-provided aliases, causing early return before label resolution.
 
 **Diagnosis**:
+
 ```typescript
 // Add temporary debug logging in BodyLinkPatch.patchLink()
 console.log("BodyLinkPatch debug:", {
-  currentText,           // What Obsidian rendered
-  expectedBlockRefText,  // What we expect
-  matchesBlockRefText,   // true/false
-  hasUserAlias,          // If true, patching is skipped
+  currentText, // What Obsidian rendered
+  expectedBlockRefText, // What we expect
+  matchesBlockRefText, // true/false
+  hasUserAlias, // If true, patching is skipped
 });
 ```
 
 **Common Cause**: Obsidian renders wikilink text in multiple formats:
+
 - `basename#^blockid` (standard)
 - `basename#blockid` (without caret)
 - `basename > ^blockid` (separator format)
@@ -1419,12 +1602,13 @@ const hasUserAlias =
   !matchesBasename &&
   !matchesDataHref &&
   !matchesBlockRefText &&
-  !matchesBlockRefWithoutCaret &&       // NEW
-  !matchesBlockRefSeparatorFormat &&     // NEW
+  !matchesBlockRefWithoutCaret && // NEW
+  !matchesBlockRefSeparatorFormat && // NEW
   !wasAlreadyPatched;
 ```
 
 **Prevention**:
+
 - Always test wikilink features in **both** Live Preview and Reading View
 - Log actual Obsidian output before hardcoding expected formats
 - Add regression tests for format variations
@@ -1440,6 +1624,7 @@ const hasUserAlias =
 **Problem**: `showLabelsInGraphView` setting is enabled, GraphViewPatch unit tests pass, but Graph View still displays UUID filenames instead of `exo__Asset_label` values.
 
 **Symptoms**:
+
 - All unit tests pass (including GraphViewPatch tests)
 - Setting toggle is enabled in plugin settings
 - Graph View nodes show UUIDs like `84e75603-0103-4594-8499-09dc404800b0`
@@ -1456,6 +1641,7 @@ const hasUserAlias =
 4. **Mocks hide lifecycle issues**: Unit tests mock graph nodes directly, never testing actual Obsidian rendering lifecycle.
 
 **Diagnosis**:
+
 ```typescript
 // Add debug logging to GraphViewPatch.patchProto()
 console.log("GraphViewPatch.patchProto called:", {
@@ -1466,6 +1652,7 @@ console.log("GraphViewPatch.patchProto called:", {
 ```
 
 Check browser console:
+
 - If not logged → patch never called
 - If logged but 0 nodes → patch applied before graph loaded
 - If logged with nodes but still UUIDs → missing re-render
@@ -1473,6 +1660,7 @@ Check browser console:
 **Solution**: See PATTERNS.md § "FunctionReplacer Pattern for Obsidian Patches"
 
 Key fixes:
+
 1. Use FunctionReplacer pattern with restorer functions
 2. Collect ALL unique prototypes from renderer nodes
 3. Call `forceRedrawGraphView()` after patching
@@ -1489,6 +1677,7 @@ Key fixes:
 **Problem**: After implementing FunctionReplacer pattern for Graph View, local build works but CI reports TypeScript errors.
 
 **Common Errors**:
+
 ```
 error TS2339: Property 'getDisplayText' does not exist on type 'object'
 error TS7006: Parameter 'proto' implicitly has an 'any' type
@@ -1533,6 +1722,7 @@ function replacePrototypeMethod(
 ```
 
 **Prevention**:
+
 - Run `npm run check:types` before pushing
 - Use explicit type casts for Obsidian internals
 - Avoid overly generic typing for prototype manipulation
@@ -1548,25 +1738,29 @@ function replacePrototypeMethod(
 **Problem**: Wikilink label resolution works for `[[uuid]]` links in paragraphs, but links inside markdown tables still display raw UUIDs.
 
 **Example**:
+
 ```markdown
 <!-- This works -->
+
 Link to [[7db5eeff-718a-49b0-8d2b-39b084a356e3]] in paragraph.
 
 <!-- This shows UUID -->
-| Field | Value |
-|-------|-------|
+
+| Field | Value                                    |
+| ----- | ---------------------------------------- |
 | Link  | [[7db5eeff-718a-49b0-8d2b-39b084a356e3]] |
 ```
 
 **Root Cause**: MutationObserver in `BodyLinkPatch.ts` uses `querySelectorAll()` on added nodes, but doesn't check if the added node itself IS a link (which can happen when Obsidian adds table cells).
 
 **Diagnosis**:
+
 ```typescript
 // Add debug logging to observer callback
 console.log("Mutation added:", {
   nodeName: node.nodeName,
   isElement: node instanceof HTMLElement,
-  isLink: node instanceof HTMLElement && node.matches('a.internal-link'),
+  isLink: node instanceof HTMLElement && node.matches("a.internal-link"),
   innerHTML: node instanceof HTMLElement ? node.innerHTML.slice(0, 100) : null,
 });
 ```
@@ -1578,12 +1772,12 @@ console.log("Mutation added:", {
 for (const node of mutation.addedNodes) {
   if (node instanceof HTMLElement) {
     // Case 1: Node IS a link (common in table cells)
-    if (node.matches('a.internal-link')) {
+    if (node.matches("a.internal-link")) {
       this.patchLink(node as HTMLAnchorElement);
     }
 
     // Case 2: Node CONTAINS links
-    node.querySelectorAll('a.internal-link').forEach(link => {
+    node.querySelectorAll("a.internal-link").forEach((link) => {
       this.patchLink(link as HTMLAnchorElement);
     });
   }
@@ -1591,10 +1785,11 @@ for (const node of mutation.addedNodes) {
 ```
 
 **Also verify**: Observer configuration includes `subtree: true`:
+
 ```typescript
 observer.observe(container, {
   childList: true,
-  subtree: true,  // Required for table cell content!
+  subtree: true, // Required for table cell content!
 });
 ```
 
@@ -1611,11 +1806,13 @@ observer.observe(container, {
 **Root cause**: Auto Release triggers on `workflow_run` with `conclusion == 'success'`. A **non-required** check failure (e.g., `docs-link-check`) causes the overall CI run conclusion to be `failure`, which blocks Auto Release even though the PR was mergeable.
 
 **Fix**:
+
 1. Check which non-required job failed: `gh run view <RUN_ID> --json jobs --jq '.jobs[] | select(.conclusion == "failure") | .name'`
 2. Fix the root cause (e.g., add ignore patterns to `.mlc-config.json` for external links that block CI bots)
 3. After fix merges, the next CI run on main will have `conclusion: success` → Auto Release triggers
 
 **Common `.mlc-config.json` ignore patterns**:
+
 - `w3.org/TR/*` — W3C returns 403 for CI bots
 - `exocortex.my/*` — ontology namespace URI, not a real website
 - `../src/*` — relative code references, not web links
