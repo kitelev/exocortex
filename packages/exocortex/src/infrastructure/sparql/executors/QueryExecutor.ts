@@ -485,9 +485,14 @@ export class ExoQLQueryExecutor {
   }
 
   private async *executeExtend(operation: ExtendOperation): AsyncIterableIterator<SolutionMapping> {
+    const hasExists = operation.expression.type !== "aggregate"
+      && this.filterExecutor.expressionContainsExists(operation.expression);
+
     for await (const solution of this.execute(operation.input)) {
       const clone = solution.clone();
-      const value = this.evaluateExtendExpression(operation.expression, solution);
+      const value = hasExists
+        ? await this.evaluateExtendExpressionAsync(operation.expression, solution)
+        : this.evaluateExtendExpression(operation.expression, solution);
       if (value !== undefined) {
         clone.set(operation.variable, value as Parameters<SolutionMapping["set"]>[1]);
       }
@@ -798,6 +803,27 @@ export class ExoQLQueryExecutor {
     // This handles: variable, literal, function (REPLACE, STR, etc.), comparison, logical
     try {
       return this.filterExecutor.evaluateExpression(expr, solution);
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * Async counterpart for BIND expressions containing EXISTS/NOT EXISTS
+   * (e.g. `BIND(IF(EXISTS { ... }, a, b) AS ?v)`). The sync path throws on
+   * EXISTS; this path threads the async evaluator so the EXISTS subquery
+   * can actually run.
+   */
+  private async evaluateExtendExpressionAsync(
+    expr: ExtendOperation["expression"],
+    solution: SolutionMapping
+  ): Promise<unknown> {
+    if (expr.type === "aggregate") {
+      return undefined;
+    }
+
+    try {
+      return await this.filterExecutor.evaluateExpressionAsync(expr, solution);
     } catch {
       return undefined;
     }

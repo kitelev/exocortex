@@ -74,7 +74,7 @@ export class FilterExecutor {
         if (result === true) {
           yield solution;
         }
-      } catch (error) {
+      } catch {
         continue;
       }
     }
@@ -82,8 +82,14 @@ export class FilterExecutor {
 
   /**
    * Check if an expression contains EXISTS or NOT EXISTS.
+   *
+   * Recurses into logical, comparison, arithmetic, IN, and function-call
+   * arguments so that nested EXISTS — e.g. `BIND(IF(EXISTS {...}, a, b))` —
+   * triggers the async evaluation path instead of throwing in sync mode.
    */
-  private expressionContainsExists(expr: Expression): boolean {
+  expressionContainsExists(expr: Expression): boolean {
+    if (!expr || typeof expr !== "object") return false;
+
     if (expr.type === "exists") {
       return true;
     }
@@ -100,12 +106,27 @@ export class FilterExecutor {
       );
     }
 
+    if (expr.type === "arithmetic") {
+      const arithExpr = expr as ArithmeticExpression;
+      return (
+        this.expressionContainsExists(arithExpr.left) ||
+        this.expressionContainsExists(arithExpr.right)
+      );
+    }
+
     if (expr.type === "in") {
       const inExpr = expr as InExpression;
       return (
         this.expressionContainsExists(inExpr.expression) ||
         inExpr.list.some((item) => this.expressionContainsExists(item))
       );
+    }
+
+    if (expr.type === "function" || expr.type === "functionCall") {
+      const fnExpr = expr as { args?: Expression[] };
+      return Array.isArray(fnExpr.args)
+        ? fnExpr.args.some((arg) => this.expressionContainsExists(arg))
+        : false;
     }
 
     return false;
@@ -185,18 +206,39 @@ export class FilterExecutor {
   /**
    * Evaluate a SPARQL expression asynchronously.
    * Required for EXISTS/NOT EXISTS which need to execute subqueries.
+   *
+   * Recurses through expression shapes that can host EXISTS (logical,
+   * comparison, arithmetic, IN, and function calls such as IF/COALESCE).
+   * Sub-expressions without EXISTS fall back to the synchronous path.
    */
   async evaluateExpressionAsync(expr: Expression, solution: SolutionMapping): Promise<ExpressionResult> {
+    if (!this.expressionContainsExists(expr)) {
+      return this.evaluateExpression(expr, solution);
+    }
+
     if (expr.type === "exists") {
       return this.evaluateExists(expr as ExistsExpression, solution);
     }
 
-    // For logical expressions, need to handle nested EXISTS
     if (expr.type === "logical") {
       return this.evaluateLogicalAsync(expr, solution);
     }
 
-    // For other expression types, use synchronous evaluation
+    if (expr.type === "comparison") {
+      const compExpr = expr as import("../algebra/AlgebraOperation").ComparisonExpression;
+      const left = await this.evaluateExpressionAsync(compExpr.left, solution);
+      const right = await this.evaluateExpressionAsync(compExpr.right, solution);
+      return BuiltInFunctions.compare(left, right, compExpr.operator);
+    }
+
+    if (expr.type === "in") {
+      return this.evaluateInAsync(expr as InExpression, solution);
+    }
+
+    if (expr.type === "function" || expr.type === "functionCall") {
+      return this.evaluateFunctionAsync(expr, solution);
+    }
+
     return this.evaluateExpression(expr, solution);
   }
 
@@ -238,7 +280,93 @@ export class FilterExecutor {
       return BuiltInFunctions.logicalOr(results);
     }
 
-    throw new FilterExecutorError(`Unknown logical operator: ${expr.operator}`);
+    throw new FilterExecutorError(`Unknown logical operator: ${String(expr.operator)}`);
+  }
+
+  /**
+   * Evaluate IN / NOT IN asynchronously, threading EXISTS-aware evaluation
+   * through the tested expression and list items.
+   */
+  private async evaluateInAsync(expr: InExpression, solution: SolutionMapping): Promise<boolean> {
+    const testValue = await this.evaluateExpressionAsync(expr.expression, solution);
+    let found = false;
+    for (const listItem of expr.list) {
+      const listValue = await this.evaluateExpressionAsync(listItem, solution);
+      if (BuiltInFunctions.compare(testValue, listValue, "=")) {
+        found = true;
+        break;
+      }
+    }
+    return expr.negated ? !found : found;
+  }
+
+  /**
+   * Evaluate a function-call expression asynchronously when it contains
+   * a nested EXISTS. Handles IF/COALESCE lazily (only the selected branch
+   * is evaluated), and falls back to awaiting each argument before
+   * delegating to the synchronous handler for everything else.
+   */
+  private async evaluateFunctionAsync(expr: Expression, solution: SolutionMapping): Promise<ExpressionResult> {
+    const typedExpr = expr as { type: string; function: string | { value: string }; args: Expression[] };
+    const funcName = this.extractFunctionName(typedExpr.function);
+    const args = typedExpr.args ?? [];
+
+    if (funcName === "if") {
+      if (args.length !== 3) {
+        throw new FilterExecutorError("IF requires exactly 3 arguments");
+      }
+      const condition = await this.evaluateExpressionAsync(args[0], solution);
+      const conditionBool = this.toBoolean(condition);
+      return conditionBool
+        ? this.evaluateExpressionAsync(args[1], solution)
+        : this.evaluateExpressionAsync(args[2], solution);
+    }
+
+    if (funcName === "coalesce") {
+      for (const arg of args) {
+        try {
+          const value = await this.evaluateExpressionAsync(arg, solution);
+          if (value !== undefined && value !== null) {
+            return value;
+          }
+        } catch {
+          continue;
+        }
+      }
+      return undefined;
+    }
+
+    // For generic functions, materialize args async (so nested EXISTS is
+    // resolved) and delegate to the sync handler by shadowing args with
+    // pre-computed literal values.
+    const resolvedArgs: Expression[] = [];
+    for (const arg of args) {
+      const value = await this.evaluateExpressionAsync(arg, solution);
+      resolvedArgs.push(this.wrapAsLiteralExpression(value));
+    }
+    const syntheticExpr = { ...typedExpr, args: resolvedArgs } as unknown;
+    return this.evaluateFunction(syntheticExpr, solution);
+  }
+
+  /**
+   * Wrap an already-evaluated value as a literal expression so that the
+   * synchronous `evaluateExpression` path can reuse it without re-evaluating
+   * the original sub-tree (which may contain EXISTS).
+   */
+  private wrapAsLiteralExpression(value: unknown): Expression {
+    if (value === undefined || value === null) {
+      return { type: "literal", value: "" } as unknown as Expression;
+    }
+    if (typeof value === "object" && value !== null && "termType" in (value as object)) {
+      return value as unknown as Expression;
+    }
+    if (value instanceof IRI || value instanceof Literal) {
+      return { type: "literal", value: (value as IRI | Literal).value } as unknown as Expression;
+    }
+    if (typeof value === "number" || typeof value === "boolean" || typeof value === "string") {
+      return { type: "literal", value } as unknown as Expression;
+    }
+    return { type: "literal", value: String(value) } as unknown as Expression;
   }
 
   private evaluateComparison(expr: import("../algebra/AlgebraOperation").ComparisonExpression, solution: SolutionMapping): boolean {
@@ -267,7 +395,7 @@ export class FilterExecutor {
       return BuiltInFunctions.logicalOr(results);
     }
 
-    throw new FilterExecutorError(`Unknown logical operator: ${expr.operator}`);
+    throw new FilterExecutorError(`Unknown logical operator: ${String(expr.operator)}`);
   }
 
   /**
@@ -425,7 +553,7 @@ export class FilterExecutor {
         }
         return leftNum / rightNum;
       default:
-        throw new FilterExecutorError(`Unknown arithmetic operator: ${expr.operator}`);
+        throw new FilterExecutorError(`Unknown arithmetic operator: ${String(expr.operator)}`);
     }
   }
 
@@ -598,7 +726,7 @@ export class FilterExecutor {
       const localName = iri.includes("#") ? iri.split("#").pop() : iri.split("/").pop();
       return (localName || iri).toLowerCase();
     }
-    throw new FilterExecutorError(`Unknown function format: ${func}`);
+    throw new FilterExecutorError(`Unknown function format: ${String(func)}`);
   }
 
   /**
@@ -627,20 +755,18 @@ export class FilterExecutor {
         // All arguments were unbound or errored - return undefined (unbound)
         return { value: undefined };
 
-      case "if":
+      case "if": {
         // IF requires exactly 3 arguments: condition, thenExpr, elseExpr
         if (!args || args.length !== 3) {
           throw new FilterExecutorError("IF requires exactly 3 arguments");
         }
-        // Evaluate condition first
         const condition = this.evaluateExpression(args[0], solution);
-        // Convert to boolean (handle various truthy/falsy values)
         const conditionBool = this.toBoolean(condition);
-        // Only evaluate the appropriate branch (lazy evaluation)
         const result = conditionBool
           ? this.evaluateExpression(args[1], solution)
           : this.evaluateExpression(args[2], solution);
         return { value: result };
+      }
 
       case "byuuid":
         // Exocortex extension function - requires instance state (tripleStore, uuidCache)
