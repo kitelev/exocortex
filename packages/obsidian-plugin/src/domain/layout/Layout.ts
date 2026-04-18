@@ -3,6 +3,7 @@ import type { LayoutFilter } from "./LayoutFilter";
 import type { LayoutSort } from "./LayoutSort";
 import type { LayoutGroup } from "./LayoutGroup";
 import type { LayoutActions } from "./LayoutActions";
+import type { CommandPanel } from "./CommandPanel";
 
 /**
  * Layout type enumeration.
@@ -152,6 +153,15 @@ export interface BaseLayout {
    * Maps to exo__Layout_labelTypography.
    */
   labelTypography?: LabelTypography;
+
+  /**
+   * Optional per-class command panel configuration (RFC-024 Phase 3).
+   * Inline structure parsed from `exo__Layout_commandPanel` that
+   * controls which command bindings render next to this layout and how.
+   * Absence means "no panel override" — consumer falls back to the
+   * plugin-wide default button set.
+   */
+  commandPanel?: CommandPanel;
 }
 
 /**
