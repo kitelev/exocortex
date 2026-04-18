@@ -157,6 +157,27 @@ test.describe("Exocortex desktop smoke", () => {
 
       await window.waitForLoadState("domcontentloaded", { timeout: 30_000 });
 
+      // Trust dialog appears even with trusted=true in obsidian.json — the
+      // existing Docker launcher confirms this. Click it if present so
+      // community plugins are allowed to load.
+      const trustButton = window
+        .locator('button:has-text("Trust author and enable plugins")')
+        .first();
+      if (await trustButton.isVisible({ timeout: 10_000 }).catch(() => false)) {
+        console.log("[smoke] trust dialog visible — clicking");
+        await trustButton.click();
+        await window
+          .waitForSelector(
+            'button:has-text("Trust author and enable plugins")',
+            { state: "hidden", timeout: 10_000 },
+          )
+          .catch(() => {
+            console.log("[smoke] trust dialog did not hide — continuing");
+          });
+      } else {
+        console.log("[smoke] trust dialog not present");
+      }
+
       // Wait for Obsidian's app object.
       await expect
         .poll(
