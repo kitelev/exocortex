@@ -149,12 +149,19 @@ describe("WCAG AA contrast matrix (RFC-024 Phase 1 CI gate)", () => {
       },
     );
 
-    it.each(THEMES)("danger variant reaches AAA (>=7:1) in %s mode", () => {
-      // AAA is aspirational for danger — AA (>=4.5:1) is the merge gate.
-      // Asserting at 4.5 keeps the intent documented without blocking
-      // releases if dark-mode danger lands at ~5.5:1.
-      expect(true).toBe(true);
-    });
+    // RFC-024 §8 lists AAA (>=7:1) as an aspirational target for `danger`,
+    // not a merge gate. The shipped palette lands at ~5.6:1 light / ~5.5:1
+    // dark — comfortably AA but below AAA. Tightening to AAA would require
+    // a darker/lighter foreground that harms perceived "danger-ness".
+    // The test below is skipped so the intent is visible in source without
+    // gating merges. Re-enable if the palette is ever recalibrated.
+    it.skip.each(THEMES)(
+      "danger variant reaches AAA (>=7:1) in %s mode (aspirational)",
+      (theme) => {
+        const { fg, bg } = VARIANT_PALETTE.danger[theme];
+        expect(contrastRatio(fg, bg)).toBeGreaterThanOrEqual(7);
+      },
+    );
   });
 
   describe("styles.css lock", () => {
