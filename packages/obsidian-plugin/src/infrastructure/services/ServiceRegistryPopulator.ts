@@ -8,6 +8,7 @@ import {
   EffortStatusWorkflow,
   StatusTimestampService,
   GenericAssetCreationService,
+  ArchiveAssetService,
   DateFormatter,
   type IGroundingService,
   type UserInput,
@@ -281,6 +282,7 @@ export function populateServiceRegistry(
     const effortVotingService = new EffortVotingService(vaultAdapter);
     const labelToAliasService = new LabelToAliasService(vaultAdapter);
     const genericAssetCreationService = new GenericAssetCreationService(vaultAdapter);
+    const archiveAssetService = new ArchiveAssetService(vaultAdapter);
 
     registry.register(
       "rollbackStatus",
@@ -432,6 +434,14 @@ export function populateServiceRegistry(
         const leaf = app.workspace.getLeaf("tab");
         await leaf.openFile(tfile);
         app.workspace.setActiveLeaf(leaf, { focus: true });
+      }),
+    );
+
+    registry.register(
+      "archiveAsset",
+      wrapService(async (targetIRI: string) => {
+        const iFile = resolveIFile(app, targetIRI, vaultAdapter);
+        await archiveAssetService.archiveAsset(iFile);
       }),
     );
 

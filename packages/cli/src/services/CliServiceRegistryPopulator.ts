@@ -5,6 +5,7 @@ import {
   type IFile,
   type UserInput,
   GenericAssetCreationService,
+  ArchiveAssetService,
 } from "exocortex";
 
 /**
@@ -65,6 +66,7 @@ function notImplementedService(serviceId: string): IGroundingService {
 export interface CliServiceRegistryDeps {
   vaultAdapter: IVaultAdapter;
   genericAssetCreationService: GenericAssetCreationService;
+  archiveAssetService: ArchiveAssetService;
 }
 
 function resolveTargetFile(vaultAdapter: IVaultAdapter, targetIRI: string): IFile {
@@ -169,6 +171,28 @@ export function createCreateRelatedProjectService(
 }
 
 /**
+ * CLI-side implementation of the `archiveAsset` service (#2867).
+ *
+ * Mirrors the plugin handler in
+ * `packages/obsidian-plugin/src/infrastructure/services/ServiceRegistryPopulator.ts`.
+ * Archive semantic is in-place frontmatter mutation (`archived: true` +
+ * remove `aliases`) delegated to the shared `ArchiveAssetService`. No
+ * file move; batch cross-vault archival remains the domain of the
+ * separate `cli archive` command (`ArchiveService`).
+ */
+export function createArchiveAssetService(
+  vaultAdapter: IVaultAdapter,
+  archiveAssetService: ArchiveAssetService,
+): IGroundingService {
+  return {
+    async execute(targetIRI: string): Promise<void> {
+      const targetFile = resolveTargetFile(vaultAdapter, targetIRI);
+      await archiveAssetService.archiveAsset(targetFile);
+    },
+  };
+}
+
+/**
  * Populate a ServiceRegistry with fail-loud stubs for all well-known services.
  *
  * Pre-#2864 the stubs resolved silently, so `dyncommand exec` on service_call
@@ -203,6 +227,13 @@ export function populateCliServiceRegistry(
       createCreateRelatedProjectService(
         deps.vaultAdapter,
         deps.genericAssetCreationService,
+      ),
+    );
+    registry.register(
+      "archiveAsset",
+      createArchiveAssetService(
+        deps.vaultAdapter,
+        deps.archiveAssetService,
       ),
     );
   }
