@@ -132,4 +132,69 @@ describe("AssetConversionService", () => {
       expect(mockVault.modify).toHaveBeenCalled();
     });
   });
+
+  // =============================================================================
+  // RFC-028 Finding 5 — Convert to Task regression lock
+  // =============================================================================
+  //
+  // Belt-and-suspenders regression lock for the Project→Task conversion service.
+  // Per design spec (vault 85440451 §3.1 Triad C): `convertProjectToTask` method
+  // already exists and flips class correctly — this block asserts the full
+  // behaviour (class flip + per-property preservation) so any future refactor
+  // that accidentally drops metadata is caught.
+  //
+  // Orchestrator decision 2026-04-19T11:45 (per user): Option A — IMPLEMENT
+  // Project→Task conversion. Single-branch assertion (no OR).
+  //
+  // Note: this suite may pass pre-fix (service already works) — the actual
+  // end-to-end bug lives in GroundingExecutor wiring (see GroundingExecutor.test.ts
+  // EOF block). Kept as regression lock per §3.1.
+  // =============================================================================
+  describe("convertProjectToTask — regression lock (Finding 5)", () => {
+    it("flips exo__Instance_class to [[ems__Task]] and preserves all other frontmatter properties", async () => {
+      const projectFile = {
+        path: "project.md",
+        basename: "project-uuid",
+        name: "project.md",
+      } as IFile;
+      const originalContent = [
+        "---",
+        "exo__Asset_uid: project-uuid",
+        'exo__Asset_label: "Audit Project"',
+        'exo__Asset_isDefinedBy: "[[!toos_areas]]"',
+        "exo__Instance_class:",
+        '  - "[[ems__Project]]"',
+        'ems__Effort_area: "[[area-uuid]]"',
+        'ems__Effort_status: "[[ems__EffortStatusDraft]]"',
+        "exo__Asset_createdAt: 2026-04-19T05:53:45Z",
+        "---",
+        "",
+        "Body content preserved too",
+      ].join("\n");
+      mockVault.read.mockResolvedValue(originalContent);
+
+      await service.convertProjectToTask(projectFile);
+
+      const updated = mockVault.modify.mock.calls[0][1];
+
+      // Assert: class flipped to ems__Task, no lingering ems__Project reference
+      expect(updated).toMatch(/exo__Instance_class:\s*\[?\s*"\[\[ems__Task\]\]"/);
+      expect(updated).not.toMatch(
+        /exo__Instance_class:[\s\S]*?ems__Project/,
+      );
+
+      // Assert: every other frontmatter property preserved verbatim
+      expect(updated).toContain("exo__Asset_uid: project-uuid");
+      expect(updated).toContain('exo__Asset_label: "Audit Project"');
+      expect(updated).toContain('exo__Asset_isDefinedBy: "[[!toos_areas]]"');
+      expect(updated).toContain('ems__Effort_area: "[[area-uuid]]"');
+      expect(updated).toContain(
+        'ems__Effort_status: "[[ems__EffortStatusDraft]]"',
+      );
+      expect(updated).toContain("exo__Asset_createdAt: 2026-04-19T05:53:45Z");
+
+      // Assert: body preserved
+      expect(updated).toContain("Body content preserved too");
+    });
+  });
 });
