@@ -274,6 +274,106 @@ describe("dynamic-command CLI", () => {
 
       consoleSpy.mockRestore();
     });
+
+    it("should find commands with plain class-name wikilink (regression)", async () => {
+      const commandFm = [
+        'exo__Instance_class: "[[exocmd__Command]]"',
+        "exo__Asset_uid: cmd-plain-wikilink",
+        "exo__Asset_label: Plain Wikilink Command",
+        "exocmd__Command_grounding: [[gnd-plain]]",
+      ].join("\n");
+
+      mockReaddirSync.mockImplementation((dir: string) => {
+        if (dir.endsWith("/vault")) {
+          return [{ name: "cmd.md", isDirectory: () => false }];
+        }
+        return [];
+      });
+
+      mockReadFileSync.mockImplementation((path: string) => {
+        if (path.endsWith("cmd.md")) return `---\n${commandFm}\n---\n`;
+        return "";
+      });
+
+      const consoleSpy = jest.spyOn(console, "log").mockImplementation(() => {});
+
+      const cmd = dynamicCommandCommand();
+      const listCmd = cmd.commands.find((c: any) => c.name() === "list");
+      await listCmd.parseAsync(["--vault", "/vault", "--output", "json"], { from: "user" });
+
+      const output = consoleSpy.mock.calls.map((c: any) => c[0]).join("\n");
+      expect(output).toMatch(/"totalCommands":\s*1/);
+      expect(output).toContain("cmd-plain-wikilink");
+
+      consoleSpy.mockRestore();
+    });
+
+    it("should find commands referencing class via UUID-wikilink (#2863)", async () => {
+      // Class definition file: UUID filename, exo__Asset_label = "exocmd__Command"
+      const classFm = [
+        "exo__Asset_uid: 790e5b16-251d-4556-96ac-e5c7f1429b2e",
+        'exo__Asset_label: "exocmd__Command"',
+      ].join("\n");
+
+      // Command file: exo__Instance_class is UUID-wikilink pointing to the class
+      const commandFm = [
+        "exo__Instance_class:",
+        '  - "[[790e5b16-251d-4556-96ac-e5c7f1429b2e]]"',
+        "exo__Asset_uid: cmd-uuid-wikilink",
+        "exo__Asset_label: UUID Wikilink Command",
+        "exocmd__Command_grounding: [[gnd-uuid]]",
+      ].join("\n");
+
+      // Grounding class definition: UUID filename, label = "exocmd__Grounding"
+      const groundingClassFm = [
+        "exo__Asset_uid: 11579feb-2e42-491c-af59-b89b1129a539",
+        'exo__Asset_label: "exocmd__Grounding"',
+      ].join("\n");
+
+      // Grounding instance: UUID-wikilink class ref
+      const groundingFm = [
+        "exo__Instance_class:",
+        '  - "[[11579feb-2e42-491c-af59-b89b1129a539]]"',
+        "exo__Asset_uid: gnd-uuid",
+        "exo__Asset_label: UUID Grounding",
+        'exocmd__Grounding_type: "property_set"',
+      ].join("\n");
+
+      mockReaddirSync.mockImplementation((dir: string) => {
+        if (dir.endsWith("/vault")) {
+          return [
+            { name: "class.md", isDirectory: () => false },
+            { name: "cmd.md", isDirectory: () => false },
+            { name: "gnd-class.md", isDirectory: () => false },
+            { name: "gnd.md", isDirectory: () => false },
+          ];
+        }
+        return [];
+      });
+
+      mockReadFileSync.mockImplementation((path: string) => {
+        // More specific matches MUST come before generic ones
+        if (path.endsWith("/gnd-class.md")) return `---\n${groundingClassFm}\n---\n`;
+        if (path.endsWith("/class.md")) return `---\n${classFm}\n---\n`;
+        if (path.endsWith("/cmd.md")) return `---\n${commandFm}\n---\n`;
+        if (path.endsWith("/gnd.md")) return `---\n${groundingFm}\n---\n`;
+        return "";
+      });
+
+      const consoleSpy = jest.spyOn(console, "log").mockImplementation(() => {});
+
+      const cmd = dynamicCommandCommand();
+      const listCmd = cmd.commands.find((c: any) => c.name() === "list");
+      await listCmd.parseAsync(["--vault", "/vault", "--output", "json"], { from: "user" });
+
+      const output = consoleSpy.mock.calls.map((c: any) => c[0]).join("\n");
+      expect(output).toMatch(/"totalCommands":\s*1/);
+      expect(output).toContain("cmd-uuid-wikilink");
+      // Grounding type must resolve via UUID-wikilink reverse lookup too
+      expect(output).toContain("property_set");
+
+      consoleSpy.mockRestore();
+    });
   });
 
   describe("show action", () => {
