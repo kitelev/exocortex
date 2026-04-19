@@ -58,6 +58,11 @@ jest.unstable_mockModule("exocortex", () => ({
   ArchiveAssetService: jest.fn(() => ({
     archiveAsset: jest.fn().mockResolvedValue(undefined),
   })),
+  TaskStatusService: jest.fn(() => ({
+    planForEvening: jest.fn().mockResolvedValue(undefined),
+  })),
+  EffortStatusWorkflow: jest.fn(() => ({})),
+  StatusTimestampService: jest.fn(() => ({})),
   GroundingType: {
     SPARQL_UPDATE: "sparql_update",
     PROPERTY_DELETE: "property_delete",

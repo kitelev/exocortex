@@ -6,6 +6,7 @@ import {
   type UserInput,
   GenericAssetCreationService,
   ArchiveAssetService,
+  TaskStatusService,
 } from "exocortex";
 
 /**
@@ -67,6 +68,7 @@ export interface CliServiceRegistryDeps {
   vaultAdapter: IVaultAdapter;
   genericAssetCreationService: GenericAssetCreationService;
   archiveAssetService: ArchiveAssetService;
+  taskStatusService: TaskStatusService;
 }
 
 function resolveTargetFile(vaultAdapter: IVaultAdapter, targetIRI: string): IFile {
@@ -193,6 +195,27 @@ export function createArchiveAssetService(
 }
 
 /**
+ * CLI-side implementation of the `planForEvening` service (#2868).
+ *
+ * Mirrors the plugin handler in
+ * `packages/obsidian-plugin/src/infrastructure/services/ServiceRegistryPopulator.ts`.
+ * Sets `ems__Effort_plannedStartTimestamp` to today at 19:00:00 local time
+ * (no ms, no tz) via the shared `TaskStatusService.planForEvening`, which
+ * is already storage-agnostic via `IVaultAdapter`.
+ */
+export function createPlanForEveningService(
+  vaultAdapter: IVaultAdapter,
+  taskStatusService: TaskStatusService,
+): IGroundingService {
+  return {
+    async execute(targetIRI: string): Promise<void> {
+      const targetFile = resolveTargetFile(vaultAdapter, targetIRI);
+      await taskStatusService.planForEvening(targetFile);
+    },
+  };
+}
+
+/**
  * Populate a ServiceRegistry with fail-loud stubs for all well-known services.
  *
  * Pre-#2864 the stubs resolved silently, so `dyncommand exec` on service_call
@@ -234,6 +257,13 @@ export function populateCliServiceRegistry(
       createArchiveAssetService(
         deps.vaultAdapter,
         deps.archiveAssetService,
+      ),
+    );
+    registry.register(
+      "planForEvening",
+      createPlanForEveningService(
+        deps.vaultAdapter,
+        deps.taskStatusService,
       ),
     );
   }
