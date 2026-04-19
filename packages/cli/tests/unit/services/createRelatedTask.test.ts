@@ -7,6 +7,7 @@ import {
   ArchiveAssetService,
   EffortStatusWorkflow,
   FixMissingLabelService,
+  FolderRepairService,
   GenericAssetCreationService,
   PropertyCleanupService,
   RenameToUidService,
@@ -57,6 +58,7 @@ describe("createRelatedTask (CLI)", () => {
   let taskStatusService: TaskStatusService;
   let fixMissingLabelService: FixMissingLabelService;
   let renameToUidService: RenameToUidService;
+  let folderRepairService: FolderRepairService;
   let service: ReturnType<typeof createCreateRelatedTaskService>;
 
   beforeEach(() => {
@@ -67,6 +69,7 @@ describe("createRelatedTask (CLI)", () => {
     propertyCleanupService = new PropertyCleanupService(vaultAdapter);
     fixMissingLabelService = new FixMissingLabelService(vaultAdapter);
     renameToUidService = new RenameToUidService(vaultAdapter);
+    folderRepairService = new FolderRepairService(vaultAdapter);
     taskStatusService = new TaskStatusService(
       vaultAdapter,
       new EffortStatusWorkflow(),
@@ -169,6 +172,7 @@ describe("createRelatedTask (CLI)", () => {
       propertyCleanupService,
       fixMissingLabelService,
       renameToUidService,
+      folderRepairService,
     });
 
     const registered = registry.get("createRelatedTask");
@@ -194,6 +198,7 @@ describe("createRelatedTask (CLI)", () => {
       propertyCleanupService,
       fixMissingLabelService,
       renameToUidService,
+      folderRepairService,
     });
     const registered = registry.get("createRelatedTask");
     expect(registered).toBeDefined();

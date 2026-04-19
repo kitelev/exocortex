@@ -7,6 +7,7 @@ import {
   ArchiveAssetService,
   EffortStatusWorkflow,
   FixMissingLabelService,
+  FolderRepairService,
   GenericAssetCreationService,
   PropertyCleanupService,
   RenameToUidService,
@@ -46,6 +47,7 @@ describe("fixMissingLabel (CLI)", () => {
   let propertyCleanupService: PropertyCleanupService;
   let taskStatusService: TaskStatusService;
   let renameToUidService: RenameToUidService;
+  let folderRepairService: FolderRepairService;
   let service: ReturnType<typeof createFixMissingLabelService>;
 
   beforeEach(() => {
@@ -56,6 +58,7 @@ describe("fixMissingLabel (CLI)", () => {
     genericAssetCreationService = new GenericAssetCreationService(vaultAdapter);
     propertyCleanupService = new PropertyCleanupService(vaultAdapter);
     renameToUidService = new RenameToUidService(vaultAdapter);
+    folderRepairService = new FolderRepairService(vaultAdapter);
     taskStatusService = new TaskStatusService(
       vaultAdapter,
       new EffortStatusWorkflow(),
@@ -152,6 +155,7 @@ describe("fixMissingLabel (CLI)", () => {
       propertyCleanupService,
       fixMissingLabelService,
       renameToUidService,
+      folderRepairService,
     });
 
     const registered = registry.get("fixMissingLabel");
@@ -178,6 +182,7 @@ describe("fixMissingLabel (CLI)", () => {
       propertyCleanupService,
       fixMissingLabelService,
       renameToUidService,
+      folderRepairService,
     });
     const registered = registry.get("fixMissingLabel");
     expect(registered).toBeDefined();

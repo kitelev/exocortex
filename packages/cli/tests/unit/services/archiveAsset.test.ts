@@ -7,6 +7,7 @@ import {
   ArchiveAssetService,
   EffortStatusWorkflow,
   FixMissingLabelService,
+  FolderRepairService,
   GenericAssetCreationService,
   PropertyCleanupService,
   RenameToUidService,
@@ -51,6 +52,7 @@ describe("archiveAsset (CLI)", () => {
   let propertyCleanupService: PropertyCleanupService;
   let fixMissingLabelService: FixMissingLabelService;
   let renameToUidService: RenameToUidService;
+  let folderRepairService: FolderRepairService;
   let taskStatusService: TaskStatusService;
   let service: ReturnType<typeof createArchiveAssetService>;
 
@@ -62,6 +64,7 @@ describe("archiveAsset (CLI)", () => {
     propertyCleanupService = new PropertyCleanupService(vaultAdapter);
     fixMissingLabelService = new FixMissingLabelService(vaultAdapter);
     renameToUidService = new RenameToUidService(vaultAdapter);
+    folderRepairService = new FolderRepairService(vaultAdapter);
     taskStatusService = new TaskStatusService(
       vaultAdapter,
       new EffortStatusWorkflow(),
@@ -163,6 +166,7 @@ describe("archiveAsset (CLI)", () => {
       propertyCleanupService,
       fixMissingLabelService,
       renameToUidService,
+      folderRepairService,
     });
 
     const registered = registry.get("archiveAsset");
@@ -188,6 +192,7 @@ describe("archiveAsset (CLI)", () => {
       propertyCleanupService,
       fixMissingLabelService,
       renameToUidService,
+      folderRepairService,
     });
     const registered = registry.get("archiveAsset");
     expect(registered).toBeDefined();

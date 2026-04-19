@@ -136,6 +136,7 @@ describe("ServiceRegistryPopulator", () => {
       "cleanProperties",
       "fixMissingLabel",
       "renameToUid",
+      "repairFolder",
       "createTaskForDailyNote",
     ];
     for (const id of vaultDependentIds) {
@@ -465,6 +466,7 @@ describe("ServiceRegistryPopulator (with vaultAdapter)", () => {
       "cleanProperties",
       "fixMissingLabel",
       "renameToUid",
+      "repairFolder",
       "createTaskForDailyNote",
     ];
     for (const id of vaultDependentIds) {
@@ -901,6 +903,101 @@ describe("ServiceRegistryPopulator (with vaultAdapter)", () => {
       const service = registry.get("createTaskForDailyNote")!;
       await expect(service.execute("test-uid-123", {})).rejects.toThrow(
         "createTaskForDailyNote requires userInput.label",
+      );
+    });
+  });
+
+  describe("repairFolder", () => {
+    const REFERENCED_PATH = "01 Areas/!toos_areas.md";
+    const REFERENCED_FILE = {
+      path: REFERENCED_PATH,
+      basename: "!toos_areas",
+      name: "!toos_areas.md",
+      parent: { path: "01 Areas", name: "01 Areas" },
+    };
+
+    beforeEach(() => {
+      (deps.vaultAdapter!.getFrontmatter as jest.Mock).mockReturnValue({
+        exo__Asset_uid: "test-uid-123",
+        exo__Asset_label: "Test Asset",
+        exo__Asset_isDefinedBy: "[[!toos_areas]]",
+      });
+
+      const adapter = deps.vaultAdapter! as unknown as {
+        getFirstLinkpathDest?: jest.Mock;
+        getAbstractFileByPath: jest.Mock;
+      };
+      adapter.getFirstLinkpathDest = jest
+        .fn()
+        .mockImplementation((reference: string) => {
+          if (reference === "!toos_areas") return REFERENCED_FILE;
+          return null;
+        });
+      adapter.getAbstractFileByPath = jest
+        .fn()
+        .mockImplementation((path: string) => {
+          if (path === mockIFile.path) return mockIFile;
+          if (path === REFERENCED_PATH) return REFERENCED_FILE;
+          return null;
+        });
+    });
+
+    it("moves the target file to the folder of its isDefinedBy referent", async () => {
+      const service = registry.get("repairFolder")!;
+      await service.execute("test-uid-123");
+
+      expect(deps.vaultAdapter!.rename).toHaveBeenCalledWith(
+        mockIFile,
+        "01 Areas/test-uid-123.md",
+      );
+    });
+
+    it("is a no-op when the target is already in the expected folder", async () => {
+      const sameFolderReferenced = {
+        ...REFERENCED_FILE,
+        parent: { path: mockIFile.parent.path, name: mockIFile.parent.name },
+      };
+      (
+        deps.vaultAdapter! as unknown as { getFirstLinkpathDest: jest.Mock }
+      ).getFirstLinkpathDest.mockReturnValue(sameFolderReferenced);
+
+      const service = registry.get("repairFolder")!;
+      await service.execute("test-uid-123");
+
+      expect(deps.vaultAdapter!.rename).not.toHaveBeenCalled();
+    });
+
+    it("throws when exo__Asset_isDefinedBy is missing (no expected folder derivable)", async () => {
+      (deps.vaultAdapter!.getFrontmatter as jest.Mock).mockReturnValueOnce({
+        exo__Asset_uid: "test-uid-123",
+        exo__Asset_label: "Test Asset",
+      });
+
+      const service = registry.get("repairFolder")!;
+      await expect(service.execute("test-uid-123")).rejects.toThrow(
+        /expected folder|isDefinedBy/i,
+      );
+    });
+
+    it("throws when the isDefinedBy referent cannot be located", async () => {
+      (
+        deps.vaultAdapter! as unknown as { getFirstLinkpathDest: jest.Mock }
+      ).getFirstLinkpathDest.mockReturnValue(null);
+
+      const service = registry.get("repairFolder")!;
+      await expect(service.execute("test-uid-123")).rejects.toThrow(
+        /expected folder|isDefinedBy/i,
+      );
+    });
+
+    it("throws when the target IRI cannot be resolved", async () => {
+      (deps.app.metadataCache.getFileCache as jest.Mock).mockReturnValue({
+        frontmatter: { exo__Asset_uid: "different-uid" },
+      });
+
+      const service = registry.get("repairFolder")!;
+      await expect(service.execute("nonexistent-iri")).rejects.toThrow(
+        "No file found for IRI",
       );
     });
   });

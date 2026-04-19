@@ -67,6 +67,10 @@ jest.unstable_mockModule("exocortex", () => ({
   RenameToUidService: jest.fn(() => ({
     renameToUid: jest.fn().mockResolvedValue(undefined),
   })),
+  FolderRepairService: jest.fn(() => ({
+    getExpectedFolder: jest.fn().mockResolvedValue(null),
+    repairFolder: jest.fn().mockResolvedValue(undefined),
+  })),
   TaskStatusService: jest.fn(() => ({
     planForEvening: jest.fn().mockResolvedValue(undefined),
   })),
