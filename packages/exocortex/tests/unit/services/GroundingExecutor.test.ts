@@ -1048,3 +1048,144 @@ describe("substituteVariables — $input/$value user-input resolution (Findings 
     },
   );
 });
+
+// =============================================================================
+// RFC-028 Finding 5 — Convert to Task grounding end-to-end wiring
+// =============================================================================
+//
+// Failing regression suite covering the silent no-op bug on the "Convert to
+// Task" button when clicked on an ems__Project.
+//
+// Root cause (per vault design spec 85440451 §3.1 Triad C):
+//   - `AssetConversionService.convertProjectToTask` EXISTS and is correct.
+//   - Vault + starter-kit grounding `abdbdf09-8712-4c11-8cbe-467f46091294`
+//     ("Convert to task") dispatches as `type: service_call` with
+//     `serviceId = "convertToTask"` — but that service is NOT registered in
+//     the core ServiceRegistry (plugin-side service wrapping
+//     AssetConversionService does not reach into core's registry).
+//   - GroundingExecutor.executeServiceCall returns `{ success: false,
+//     error: 'Service not found: "convertToTask"...' }` — swallowed upstream
+//     as silent no-op.
+//
+// Orchestrator decision 2026-04-19T11:45 (per user): Option A — IMPLEMENT
+// Project→Task conversion via grounding path. Single-branch assertion — no OR.
+//
+// Block intentionally appended at EOF (after Findings 3+4 block) to keep
+// merge-conflict surface minimal. Helper fixtures scoped INSIDE describe to
+// avoid global-name collision.
+// =============================================================================
+
+describe("Convert to Task grounding — end-to-end wiring (Finding 5)", () => {
+  const TARGET_IRI = "https://exocortex.my/assets/project-under-test-uuid";
+  const FILE_PATH = "/vault/project-under-test.md";
+
+  // Local fixture helpers — DECLARED INSIDE describe to keep globals clean.
+  function createMockReader(content?: string) {
+    const defaultContent =
+      content ??
+      [
+        "---",
+        "exo__Asset_uid: project-under-test-uuid",
+        'exo__Asset_label: "Audit Project"',
+        "exo__Instance_class:",
+        '  - "[[ems__Project]]"',
+        'ems__Effort_area: "[[area-uuid]]"',
+        'ems__Effort_status: "[[ems__EffortStatusDraft]]"',
+        "---",
+        "",
+        "Body",
+      ].join("\n");
+    return {
+      readFile: jest.fn().mockResolvedValue(defaultContent),
+      fileExists: jest.fn().mockResolvedValue(true),
+      getMarkdownFiles: jest.fn().mockResolvedValue([]),
+    };
+  }
+
+  function createMockWriter() {
+    return {
+      createFile: jest.fn().mockResolvedValue(""),
+      updateFile: jest.fn().mockResolvedValue(undefined),
+      writeFile: jest.fn().mockResolvedValue(undefined),
+      deleteFile: jest.fn().mockResolvedValue(undefined),
+      renameFile: jest.fn().mockResolvedValue(undefined),
+    };
+  }
+
+  function makeGrounding(
+    overrides: Record<string, unknown>,
+  ): GroundingDefinition {
+    return {
+      id: "gnd-test-finding5",
+      label: "Test Grounding (Finding 5)",
+      type: GroundingType.SERVICE_CALL,
+      ...overrides,
+    } as unknown as GroundingDefinition;
+  }
+
+  let reader: ReturnType<typeof createMockReader>;
+  let writer: ReturnType<typeof createMockWriter>;
+  let registry: ServiceRegistry;
+  let executor: GroundingExecutor;
+
+  beforeEach(() => {
+    reader = createMockReader();
+    writer = createMockWriter();
+    registry = new ServiceRegistry();
+    executor = new GroundingExecutor(reader, writer, registry);
+  });
+
+  it("clicking Convert to Task on ems__Project flips exo__Instance_class to [[ems__Task]] via grounding path", async () => {
+    // Arrange: grounding definition mirrors vault file abdbdf09 "Convert to task"
+    // NOTE: `targetProperty` is the serviceId per executeServiceCall convention
+    // (line ~310). Orchestrator decision: serviceId = "convertToTask" dispatches
+    // to a service that performs class flip. Pre-fix: service not registered →
+    // executor returns { success: false, error: "Service not found: ..." }.
+    const grounding = makeGrounding({
+      targetProperty: "convertToTask",
+      targetValue: "ems__Task",
+    });
+
+    // Act
+    const result = await executor.execute(
+      grounding,
+      TARGET_IRI,
+      FILE_PATH,
+      undefined,
+    );
+
+    // Assert: success + class flipped (single branch, no OR per orchestrator)
+    expect(result.success).toBe(true);
+    expect(writer.updateFile).toHaveBeenCalledTimes(1);
+    const written = writer.updateFile.mock.calls[0][1] as string;
+    expect(written).toMatch(/exo__Instance_class:\s*\[?\s*"\[\[ems__Task\]\]"/);
+    // No leftover ems__Project on the Instance_class line/array
+    expect(written).not.toMatch(/exo__Instance_class:[\s\S]*?ems__Project/);
+  });
+
+  it("preserves ems__Effort_area, ems__Effort_status, exo__Asset_label after conversion", async () => {
+    // Arrange: same rich Project metadata as above (default reader content)
+    const grounding = makeGrounding({
+      targetProperty: "convertToTask",
+      targetValue: "ems__Task",
+    });
+
+    // Act
+    const result = await executor.execute(
+      grounding,
+      TARGET_IRI,
+      FILE_PATH,
+      undefined,
+    );
+
+    // Assert: success + all non-class metadata preserved verbatim
+    expect(result.success).toBe(true);
+    expect(writer.updateFile).toHaveBeenCalledTimes(1);
+    const written = writer.updateFile.mock.calls[0][1] as string;
+    expect(written).toContain('ems__Effort_area: "[[area-uuid]]"');
+    expect(written).toContain(
+      'ems__Effort_status: "[[ems__EffortStatusDraft]]"',
+    );
+    expect(written).toContain('exo__Asset_label: "Audit Project"');
+  });
+});

@@ -140,6 +140,7 @@ export class GroundingExecutor {
           return await this.executeServiceCall(
             grounding,
             targetIRI,
+            targetFilePath,
             userInput,
           );
 
@@ -304,12 +305,24 @@ export class GroundingExecutor {
   private async executeServiceCall(
     grounding: GroundingDefinition,
     targetIRI: string,
+    filePath: string,
     userInput?: UserInput,
   ): Promise<ExecutionResult> {
     // service_call uses targetProperty as serviceId (repurposed field)
     const serviceId = grounding.targetProperty;
     if (!serviceId) {
       return { success: false, error: "service_call requires targetProperty as serviceId" };
+    }
+
+    // RFC-028 Finding 5: built-in Project→Task conversion. Vault grounding
+    // `abdbdf09` ("Convert to task") dispatches serviceId="convertToTask".
+    // The conversion only needs the target file and the frontmatter pipeline
+    // already injected into this executor, so it is wired here rather than
+    // requiring the plugin populator to bridge AssetConversionService through
+    // a wrapper. Keeps starter-kit groundings functional with a bare core
+    // ServiceRegistry (e.g. CLI usage, tests).
+    if (serviceId === "convertToTask") {
+      return await this.executeConvertToTask(filePath);
     }
 
     const service = this.serviceRegistry.get(serviceId);
@@ -334,6 +347,17 @@ export class GroundingExecutor {
     }
 
     await service.execute(targetIRI, mergedInput);
+    return { success: true };
+  }
+
+  private async executeConvertToTask(filePath: string): Promise<ExecutionResult> {
+    const content = await this.fileReader.readFile(filePath);
+    const updated = this.frontmatterService.updateProperty(
+      content,
+      "exo__Instance_class",
+      `["[[ems__Task]]"]`,
+    );
+    await this.fileWriter.updateFile(filePath, updated);
     return { success: true };
   }
 
