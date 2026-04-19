@@ -17,6 +17,26 @@ export interface ExecutionResult {
 }
 
 /**
+ * Extract a class token (e.g. "ems__Task") from a `Grounding_targetValue`
+ * string as parsed by CommandResolver.getObsidianWikilinkValue. The parser
+ * emits either the plain literal ("ems__Task") or the wrapped wikilink form
+ * (`"[[ems__Task]]"`), depending on whether the underlying RDF triple stored
+ * the value as a Literal or an IRI. Returns the inner class token for either
+ * shape; returns undefined for absent/empty/unrecognised values.
+ *
+ * Kept module-local (not exported) — it only exists to bridge the parser's
+ * polymorphic output to the service_call composite short-circuit.
+ */
+function extractClassFromTargetValue(
+  value: string | undefined,
+): string | undefined {
+  if (!value) return undefined;
+  const wrapped = value.match(/^"?\[\[([^\]|]+)(?:\|[^\]]*)?\]\]"?$/);
+  if (wrapped) return wrapped[1];
+  return value;
+}
+
+/**
  * Input parameters collected from the user (for service_call groundings).
  * UI layer collects these via modals; CLI via interactive prompts or --arg flags.
  */
@@ -327,18 +347,30 @@ export class GroundingExecutor {
 
     // RFC-028 Finding 5 completion: production vault + starter-kit groundings
     // `abdbdf09` (Convert to task) and `e8c1d18a` (Convert to project) ship
-    // with `serviceId = "updateProperty"` + `targetValue = "ems__Task|Project"`.
-    // The grounding schema overloads `targetProperty` as serviceId for
-    // service_call, so at dispatch time we can detect the class-flip intent
-    // from (serviceId=updateProperty, targetValue=ems__Task|ems__Project).
+    // with `serviceId = "updateProperty"` + `targetValue` ∈ {"ems__Task",
+    // "ems__Project"}.  The grounding schema overloads `targetProperty` as
+    // serviceId for service_call, so at dispatch time we can detect the
+    // class-flip intent from (serviceId=updateProperty, targetValue=class).
+    //
+    // IMPORTANT: the CommandResolver reads `Grounding_targetValue` via
+    // `getObsidianWikilinkValue`, which returns different shapes depending on
+    // how the underlying RDF triple is stored:
+    //   - plain string literal `"ems__Task"` → stays `"ems__Task"` (CLI tests
+    //     and some vaults; also matches PR #2860 unit-test fixtures).
+    //   - IRI (`ems#Task`) → wrapped as `"[[ems__Task]]"` (vault production
+    //     state observed 2026-04-19T14:37Z via exocortex-cli triple dump on
+    //     grounding `abdbdf09`).
+    // Match both shapes so whichever the parser produces dispatches correctly.
+    //
     // Link-to-parent (30b9e8d8) uses the same serviceId but carries NO
     // targetValue (driven via inputSchema+userInput) and so flows past this
     // short-circuit into the registered updateProperty service below.
     if (serviceId === "updateProperty") {
-      if (grounding.targetValue === "ems__Task") {
+      const targetClass = extractClassFromTargetValue(grounding.targetValue);
+      if (targetClass === "ems__Task") {
         return await this.executeConvertToTask(filePath);
       }
-      if (grounding.targetValue === "ems__Project") {
+      if (targetClass === "ems__Project") {
         return await this.executeConvertToProject(filePath);
       }
     }

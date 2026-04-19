@@ -1424,4 +1424,131 @@ describe("Convert commands — production-shape dispatch (Finding 5 completion)"
       expect(writer.updateFile).not.toHaveBeenCalled();
     });
   });
+
+  describe("Wrapped wikilink targetValue (real vault shape — Finding 5 follow-up)", () => {
+    // Background: CommandResolver.getObsidianWikilinkValue returns a Literal
+    // string as-is ("ems__Task") OR wraps an IRI back into wikilink form
+    // ("[[ems__Task]]" with literal quotes). The vault grounding abdbdf09
+    // stores targetValue as `ems__Task` in YAML, but depending on how the
+    // Turtle parser resolves it in the triple store, the parsed
+    // GroundingDefinition.targetValue may arrive as `"[[ems__Task]]"` instead
+    // of the plain `ems__Task` string. v15.105.5 shipped the composite
+    // short-circuit checking only the plain string — live UI confirmed the
+    // wrapped form is what reaches the executor in production, so the
+    // Convert to Task button still failed with "updateProperty requires
+    // userInput.property". This suite locks in both shapes.
+
+    beforeEach(() => {
+      reader = createConvertReader("ems__Project");
+      writer = createWriter();
+      registry = new ServiceRegistry();
+      executor = new GroundingExecutor(reader, writer, registry);
+    });
+
+    it("flips class to ems__Task when targetValue is wrapped as \"[[ems__Task]]\"", async () => {
+      const grounding = makeSvcCall({
+        targetProperty: "updateProperty",
+        targetValue: '"[[ems__Task]]"',
+      });
+
+      const result = await executor.execute(
+        grounding,
+        TARGET_IRI,
+        FILE_PATH,
+        undefined,
+      );
+
+      expect(result.success).toBe(true);
+      expect(writer.updateFile).toHaveBeenCalledTimes(1);
+      const written = writer.updateFile.mock.calls[0][1] as string;
+      expect(written).toMatch(/exo__Instance_class:\s*\[?\s*"\[\[ems__Task\]\]"/);
+      expect(written).not.toMatch(/exo__Instance_class:[\s\S]*?ems__Project/);
+    });
+
+    it("flips class to ems__Task when targetValue is unquoted [[ems__Task]]", async () => {
+      const grounding = makeSvcCall({
+        targetProperty: "updateProperty",
+        targetValue: "[[ems__Task]]",
+      });
+
+      const result = await executor.execute(
+        grounding,
+        TARGET_IRI,
+        FILE_PATH,
+        undefined,
+      );
+
+      expect(result.success).toBe(true);
+      const written = writer.updateFile.mock.calls[0][1] as string;
+      expect(written).toMatch(/exo__Instance_class:\s*\[?\s*"\[\[ems__Task\]\]"/);
+    });
+
+    it("flips class to ems__Project when targetValue is wrapped as \"[[ems__Project]]\"", async () => {
+      const projectReader = createConvertReader("ems__Task");
+      const projectWriter = createWriter();
+      const projectExec = new GroundingExecutor(
+        projectReader,
+        projectWriter,
+        new ServiceRegistry(),
+      );
+
+      const grounding = makeSvcCall({
+        targetProperty: "updateProperty",
+        targetValue: '"[[ems__Project]]"',
+      });
+
+      const result = await projectExec.execute(
+        grounding,
+        TARGET_IRI,
+        FILE_PATH,
+        undefined,
+      );
+
+      expect(result.success).toBe(true);
+      const written = projectWriter.updateFile.mock.calls[0][1] as string;
+      expect(written).toMatch(
+        /exo__Instance_class:\s*\[?\s*"\[\[ems__Project\]\]"/,
+      );
+    });
+
+    it("handles wikilink with alias \"[[ems__Task|Task]]\" — extracts ems__Task target", async () => {
+      const grounding = makeSvcCall({
+        targetProperty: "updateProperty",
+        targetValue: '"[[ems__Task|Task]]"',
+      });
+
+      const result = await executor.execute(
+        grounding,
+        TARGET_IRI,
+        FILE_PATH,
+        undefined,
+      );
+
+      expect(result.success).toBe(true);
+      const written = writer.updateFile.mock.calls[0][1] as string;
+      expect(written).toMatch(/exo__Instance_class:\s*\[?\s*"\[\[ems__Task\]\]"/);
+    });
+
+    it("does NOT short-circuit when targetValue wraps an unrelated class", async () => {
+      // Defensive: a wrapped wikilink that is NOT ems__Task/ems__Project
+      // must still reach the registered service (via the extractor returning
+      // the inner token, which fails both matches).
+      const mockService = { execute: jest.fn().mockResolvedValue(undefined) };
+      registry.register("updateProperty", mockService);
+
+      const grounding = makeSvcCall({
+        targetProperty: "updateProperty",
+        targetValue: '"[[some__OtherClass]]"',
+      });
+
+      const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH, {
+        property: "x",
+        value: "y",
+      });
+
+      expect(result.success).toBe(true);
+      expect(mockService.execute).toHaveBeenCalledTimes(1);
+      expect(writer.updateFile).not.toHaveBeenCalled();
+    });
+  });
 });
