@@ -75,22 +75,34 @@ describe("CliServiceRegistryPopulator", () => {
       }
     });
 
-    it("stub execute should be a no-op that resolves", async () => {
+    it("stub execute should throw NotImplementedError naming the serviceId (#2864)", async () => {
       const registry = new ServiceRegistry();
       populateCliServiceRegistry(registry);
 
       const service = registry.get("updateProperty");
-      await expect(service.execute("test-iri")).resolves.toBeUndefined();
+      await expect(service.execute("test-iri")).rejects.toThrow(/updateProperty/);
     });
 
-    it("stub execute should accept userInput parameter", async () => {
+    it("stub execute should throw when invoked with userInput (#2864)", async () => {
       const registry = new ServiceRegistry();
       populateCliServiceRegistry(registry);
 
       const service = registry.get("setStatus");
       await expect(
         service.execute("test-iri", { statusUID: "some-uid" }),
-      ).resolves.toBeUndefined();
+      ).rejects.toThrow(/setStatus/);
+    });
+
+    it("every stub should throw an error that names its serviceId (#2864)", async () => {
+      const registry = new ServiceRegistry();
+      populateCliServiceRegistry(registry);
+
+      for (const id of CLI_STUB_SERVICE_IDS) {
+        const service = registry.get(id);
+        await expect(service.execute("test-iri")).rejects.toThrow(
+          new RegExp(id),
+        );
+      }
     });
   });
 });
