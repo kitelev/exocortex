@@ -15,7 +15,7 @@ import {
 } from "exocortex";
 import { FileSystemVaultAdapter } from "../../../src/adapters/FileSystemVaultAdapter.js";
 import {
-  createArchiveAssetService,
+  createFixMissingLabelService,
   populateCliServiceRegistry,
   CliServiceNotImplementedError,
 } from "../../../src/services/CliServiceRegistryPopulator.js";
@@ -29,105 +29,95 @@ function readFrontmatter(filePath: string): Frontmatter {
   return yaml.load(match[1]) as Frontmatter;
 }
 
-function writeAsset(
-  vaultRoot: string,
-  relPath: string,
-  frontmatter: Frontmatter,
-  body = "",
-): string {
+function writeRaw(vaultRoot: string, relPath: string, content: string): string {
   const fullPath = path.join(vaultRoot, relPath);
   fs.ensureDirSync(path.dirname(fullPath));
-  const yamlBody = yaml.dump(frontmatter, { quotingType: '"', lineWidth: -1 });
-  fs.writeFileSync(fullPath, `---\n${yamlBody.trim()}\n---\n${body}`, "utf-8");
+  fs.writeFileSync(fullPath, content, "utf-8");
   return fullPath;
 }
 
-describe("archiveAsset (CLI)", () => {
+describe("fixMissingLabel (CLI)", () => {
   let vaultRoot: string;
   let vaultAdapter: FileSystemVaultAdapter;
+  let fixMissingLabelService: FixMissingLabelService;
   let archiveAssetService: ArchiveAssetService;
   let genericAssetCreationService: GenericAssetCreationService;
   let propertyCleanupService: PropertyCleanupService;
-  let fixMissingLabelService: FixMissingLabelService;
   let taskStatusService: TaskStatusService;
-  let service: ReturnType<typeof createArchiveAssetService>;
+  let service: ReturnType<typeof createFixMissingLabelService>;
 
   beforeEach(() => {
-    vaultRoot = fs.mkdtempSync(path.join(os.tmpdir(), "cli-archiveasset-"));
+    vaultRoot = fs.mkdtempSync(path.join(os.tmpdir(), "cli-fixmissinglabel-"));
     vaultAdapter = new FileSystemVaultAdapter(vaultRoot);
+    fixMissingLabelService = new FixMissingLabelService(vaultAdapter);
     archiveAssetService = new ArchiveAssetService(vaultAdapter);
     genericAssetCreationService = new GenericAssetCreationService(vaultAdapter);
     propertyCleanupService = new PropertyCleanupService(vaultAdapter);
-    fixMissingLabelService = new FixMissingLabelService(vaultAdapter);
     taskStatusService = new TaskStatusService(
       vaultAdapter,
       new EffortStatusWorkflow(),
       new StatusTimestampService(vaultAdapter),
     );
-    service = createArchiveAssetService(vaultAdapter, archiveAssetService);
+    service = createFixMissingLabelService(vaultAdapter, fixMissingLabelService);
   });
 
   afterEach(() => {
     fs.removeSync(vaultRoot);
   });
 
-  it("sets archived: true on a Done task", async () => {
-    writeAsset(vaultRoot, "tasks/DoneTask.md", {
-      exo__Asset_uid: "task-1",
-      exo__Asset_label: "Done Task",
-      ems__Effort_status: "[[ems__EffortStatusDone]]",
-    });
+  it("adds exo__Asset_label derived from basename when missing", async () => {
+    writeRaw(
+      vaultRoot,
+      "tasks/7de4ab12-label.md",
+      "---\nexo__Asset_uid: 7de4ab12-label\n---\nBody\n",
+    );
 
-    await service.execute("tasks/DoneTask");
+    await service.execute("tasks/7de4ab12-label");
 
-    const fm = readFrontmatter(path.join(vaultRoot, "tasks/DoneTask.md"));
-    expect(fm.archived).toBe(true);
+    const fm = readFrontmatter(path.join(vaultRoot, "tasks/7de4ab12-label.md"));
+    expect(fm.exo__Asset_label).toBe("7de4ab12-label");
+    expect(fm.exo__Asset_uid).toBe("7de4ab12-label");
   });
 
-  it("removes aliases when archiving", async () => {
-    writeAsset(vaultRoot, "tasks/WithAliases.md", {
-      exo__Asset_uid: "task-2",
-      exo__Asset_label: "With Aliases",
-      ems__Effort_status: "[[ems__EffortStatusDone]]",
-      aliases: ["With Aliases", "Alt Name"],
-    });
+  it("sets exo__Asset_label when value is empty string", async () => {
+    writeRaw(
+      vaultRoot,
+      "tasks/Empty.md",
+      '---\nexo__Asset_uid: 7de4ab12\nexo__Asset_label: ""\n---\nBody\n',
+    );
 
-    await service.execute("tasks/WithAliases");
+    await service.execute("tasks/Empty");
 
-    const fm = readFrontmatter(path.join(vaultRoot, "tasks/WithAliases.md"));
-    expect(fm.archived).toBe(true);
-    expect(fm.aliases).toBeUndefined();
+    const fm = readFrontmatter(path.join(vaultRoot, "tasks/Empty.md"));
+    expect(fm.exo__Asset_label).toBe("Empty");
   });
 
-  it("is idempotent when already archived", async () => {
-    writeAsset(vaultRoot, "tasks/Already.md", {
-      exo__Asset_uid: "task-3",
-      exo__Asset_label: "Already",
-      archived: true,
-    });
-    const before = fs.readFileSync(
-      path.join(vaultRoot, "tasks/Already.md"),
+  it("is a no-op when label already set to non-empty value", async () => {
+    writeRaw(
+      vaultRoot,
+      "tasks/Labeled.md",
+      '---\nexo__Asset_uid: 7de4ab12\nexo__Asset_label: "Already Has Label"\n---\nBody\n',
+    );
+
+    const originalContent = fs.readFileSync(
+      path.join(vaultRoot, "tasks/Labeled.md"),
       "utf-8",
     );
 
-    await service.execute("tasks/Already");
+    await service.execute("tasks/Labeled");
 
-    const after = fs.readFileSync(
-      path.join(vaultRoot, "tasks/Already.md"),
+    const unchanged = fs.readFileSync(
+      path.join(vaultRoot, "tasks/Labeled.md"),
       "utf-8",
     );
-    expect(after).toBe(before);
+    expect(unchanged).toBe(originalContent);
   });
 
   it("preserves file body content", async () => {
-    writeAsset(
+    writeRaw(
       vaultRoot,
       "tasks/WithBody.md",
-      {
-        exo__Asset_uid: "task-4",
-        exo__Asset_label: "With Body",
-      },
-      "## Notes\n- bullet one\n- bullet two\n",
+      "---\nexo__Asset_uid: task-5\n---\n## Notes\n- bullet one\n- bullet two\n",
     );
 
     await service.execute("tasks/WithBody");
@@ -137,19 +127,18 @@ describe("archiveAsset (CLI)", () => {
       "utf-8",
     );
     expect(content).toContain("## Notes\n- bullet one\n- bullet two\n");
-    const fm = readFrontmatter(path.join(vaultRoot, "tasks/WithBody.md"));
-    expect(fm.archived).toBe(true);
   });
 
   it("rejects when target file does not exist", async () => {
     await expect(service.execute("tasks/Missing")).rejects.toThrow();
   });
 
-  it("registry integration: populateCliServiceRegistry with deps registers real archiveAsset (no throw-stub)", async () => {
-    writeAsset(vaultRoot, "tasks/Registered.md", {
-      exo__Asset_uid: "task-5",
-      exo__Asset_label: "Registered",
-    });
+  it("registry integration: populateCliServiceRegistry with deps registers real fixMissingLabel (no throw-stub)", async () => {
+    writeRaw(
+      vaultRoot,
+      "tasks/Registered.md",
+      "---\nexo__Asset_uid: task-6\n---\nBody\n",
+    );
 
     const registry = new ServiceRegistry();
     populateCliServiceRegistry(registry, {
@@ -161,19 +150,20 @@ describe("archiveAsset (CLI)", () => {
       fixMissingLabelService,
     });
 
-    const registered = registry.get("archiveAsset");
+    const registered = registry.get("fixMissingLabel");
     expect(registered).toBeDefined();
     await expect(registered!.execute("tasks/Registered")).resolves.toBeUndefined();
 
     const fm = readFrontmatter(path.join(vaultRoot, "tasks/Registered.md"));
-    expect(fm.archived).toBe(true);
+    expect(fm.exo__Asset_label).toBe("Registered");
   });
 
-  it("registry integration: archiveAsset is NOT a CliServiceNotImplementedError stub when deps provided (#2867 regression guard)", async () => {
-    writeAsset(vaultRoot, "tasks/Guard.md", {
-      exo__Asset_uid: "task-6",
-      exo__Asset_label: "Guard",
-    });
+  it("registry integration: fixMissingLabel is NOT a CliServiceNotImplementedError stub when deps provided (#2870 regression guard)", async () => {
+    writeRaw(
+      vaultRoot,
+      "tasks/Guard.md",
+      "---\nexo__Asset_uid: task-7\n---\nBody\n",
+    );
 
     const registry = new ServiceRegistry();
     populateCliServiceRegistry(registry, {
@@ -184,7 +174,7 @@ describe("archiveAsset (CLI)", () => {
       propertyCleanupService,
       fixMissingLabelService,
     });
-    const registered = registry.get("archiveAsset");
+    const registered = registry.get("fixMissingLabel");
     expect(registered).toBeDefined();
 
     try {
@@ -194,9 +184,9 @@ describe("archiveAsset (CLI)", () => {
     }
   });
 
-  it("registry integration: when deps are NOT provided, archiveAsset is absent (backwards-compat)", () => {
+  it("registry integration: when deps are NOT provided, fixMissingLabel is absent (backwards-compat)", () => {
     const registry = new ServiceRegistry();
     populateCliServiceRegistry(registry);
-    expect(registry.has("archiveAsset")).toBe(false);
+    expect(registry.has("fixMissingLabel")).toBe(false);
   });
 });

@@ -6,6 +6,7 @@ import {
   type UserInput,
   GenericAssetCreationService,
   ArchiveAssetService,
+  FixMissingLabelService,
   PropertyCleanupService,
   TaskStatusService,
 } from "exocortex";
@@ -71,6 +72,7 @@ export interface CliServiceRegistryDeps {
   archiveAssetService: ArchiveAssetService;
   taskStatusService: TaskStatusService;
   propertyCleanupService: PropertyCleanupService;
+  fixMissingLabelService: FixMissingLabelService;
 }
 
 function resolveTargetFile(vaultAdapter: IVaultAdapter, targetIRI: string): IFile {
@@ -219,6 +221,28 @@ export function createCleanPropertiesService(
 }
 
 /**
+ * CLI-side implementation of the `fixMissingLabel` service (#2870).
+ *
+ * Mirrors the plugin handler in
+ * `packages/obsidian-plugin/src/infrastructure/services/ServiceRegistryPopulator.ts`.
+ * Delegates to the shared `FixMissingLabelService` which sets
+ * `exo__Asset_label` to `file.basename` when the property is missing or
+ * empty. Idempotent: a no-op when the label is already set. Storage-agnostic
+ * via `IVaultAdapter`, so plugin and CLI stay byte-identical.
+ */
+export function createFixMissingLabelService(
+  vaultAdapter: IVaultAdapter,
+  fixMissingLabelService: FixMissingLabelService,
+): IGroundingService {
+  return {
+    async execute(targetIRI: string): Promise<void> {
+      const targetFile = resolveTargetFile(vaultAdapter, targetIRI);
+      await fixMissingLabelService.fixMissingLabel(targetFile);
+    },
+  };
+}
+
+/**
  * CLI-side implementation of the `planForEvening` service (#2868).
  *
  * Mirrors the plugin handler in
@@ -295,6 +319,13 @@ export function populateCliServiceRegistry(
       createCleanPropertiesService(
         deps.vaultAdapter,
         deps.propertyCleanupService,
+      ),
+    );
+    registry.register(
+      "fixMissingLabel",
+      createFixMissingLabelService(
+        deps.vaultAdapter,
+        deps.fixMissingLabelService,
       ),
     );
   }

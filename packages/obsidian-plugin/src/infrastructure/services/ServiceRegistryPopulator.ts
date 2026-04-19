@@ -9,6 +9,7 @@ import {
   StatusTimestampService,
   GenericAssetCreationService,
   ArchiveAssetService,
+  FixMissingLabelService,
   PropertyCleanupService,
   DateFormatter,
   type IGroundingService,
@@ -285,6 +286,7 @@ export function populateServiceRegistry(
     const genericAssetCreationService = new GenericAssetCreationService(vaultAdapter);
     const archiveAssetService = new ArchiveAssetService(vaultAdapter);
     const propertyCleanupService = new PropertyCleanupService(vaultAdapter);
+    const fixMissingLabelService = new FixMissingLabelService(vaultAdapter);
 
     registry.register(
       "rollbackStatus",
@@ -452,6 +454,14 @@ export function populateServiceRegistry(
       wrapService(async (targetIRI: string) => {
         const iFile = resolveIFile(app, targetIRI, vaultAdapter);
         await propertyCleanupService.cleanEmptyProperties(iFile);
+      }),
+    );
+
+    registry.register(
+      "fixMissingLabel",
+      wrapService(async (targetIRI: string) => {
+        const iFile = resolveIFile(app, targetIRI, vaultAdapter);
+        await fixMissingLabelService.fixMissingLabel(iFile);
       }),
     );
 

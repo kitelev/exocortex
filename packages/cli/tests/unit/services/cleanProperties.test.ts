@@ -6,6 +6,7 @@ import yaml from "js-yaml";
 import {
   ArchiveAssetService,
   EffortStatusWorkflow,
+  FixMissingLabelService,
   GenericAssetCreationService,
   PropertyCleanupService,
   ServiceRegistry,
@@ -42,6 +43,7 @@ describe("cleanProperties (CLI)", () => {
   let archiveAssetService: ArchiveAssetService;
   let genericAssetCreationService: GenericAssetCreationService;
   let taskStatusService: TaskStatusService;
+  let fixMissingLabelService: FixMissingLabelService;
   let service: ReturnType<typeof createCleanPropertiesService>;
 
   beforeEach(() => {
@@ -50,6 +52,7 @@ describe("cleanProperties (CLI)", () => {
     propertyCleanupService = new PropertyCleanupService(vaultAdapter);
     archiveAssetService = new ArchiveAssetService(vaultAdapter);
     genericAssetCreationService = new GenericAssetCreationService(vaultAdapter);
+    fixMissingLabelService = new FixMissingLabelService(vaultAdapter);
     taskStatusService = new TaskStatusService(
       vaultAdapter,
       new EffortStatusWorkflow(),
@@ -153,6 +156,7 @@ describe("cleanProperties (CLI)", () => {
       archiveAssetService,
       taskStatusService,
       propertyCleanupService,
+      fixMissingLabelService,
     });
 
     const registered = registry.get("cleanProperties");
@@ -178,6 +182,7 @@ describe("cleanProperties (CLI)", () => {
       archiveAssetService,
       taskStatusService,
       propertyCleanupService,
+      fixMissingLabelService,
     });
     const registered = registry.get("cleanProperties");
     expect(registered).toBeDefined();
