@@ -5,8 +5,11 @@ import os from "os";
 import yaml from "js-yaml";
 import {
   ArchiveAssetService,
+  EffortStatusWorkflow,
   GenericAssetCreationService,
   ServiceRegistry,
+  StatusTimestampService,
+  TaskStatusService,
 } from "exocortex";
 import { FileSystemVaultAdapter } from "../../../src/adapters/FileSystemVaultAdapter.js";
 import {
@@ -42,6 +45,7 @@ describe("archiveAsset (CLI)", () => {
   let vaultAdapter: FileSystemVaultAdapter;
   let archiveAssetService: ArchiveAssetService;
   let genericAssetCreationService: GenericAssetCreationService;
+  let taskStatusService: TaskStatusService;
   let service: ReturnType<typeof createArchiveAssetService>;
 
   beforeEach(() => {
@@ -49,6 +53,11 @@ describe("archiveAsset (CLI)", () => {
     vaultAdapter = new FileSystemVaultAdapter(vaultRoot);
     archiveAssetService = new ArchiveAssetService(vaultAdapter);
     genericAssetCreationService = new GenericAssetCreationService(vaultAdapter);
+    taskStatusService = new TaskStatusService(
+      vaultAdapter,
+      new EffortStatusWorkflow(),
+      new StatusTimestampService(vaultAdapter),
+    );
     service = createArchiveAssetService(vaultAdapter, archiveAssetService);
   });
 
@@ -141,6 +150,7 @@ describe("archiveAsset (CLI)", () => {
       vaultAdapter,
       genericAssetCreationService,
       archiveAssetService,
+      taskStatusService,
     });
 
     const registered = registry.get("archiveAsset");
@@ -162,6 +172,7 @@ describe("archiveAsset (CLI)", () => {
       vaultAdapter,
       genericAssetCreationService,
       archiveAssetService,
+      taskStatusService,
     });
     const registered = registry.get("archiveAsset");
     expect(registered).toBeDefined();
