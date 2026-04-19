@@ -118,6 +118,7 @@ export class GroundingExecutor {
             grounding,
             targetIRI,
             targetFilePath,
+            userInput,
           );
 
         case GroundingType.PROPERTY_DELETE:
@@ -176,6 +177,7 @@ export class GroundingExecutor {
     grounding: GroundingDefinition,
     targetIRI: string,
     filePath: string,
+    userInput?: UserInput,
   ): Promise<ExecutionResult> {
     if (!grounding.targetProperty) {
       return { success: false, error: "property_set requires targetProperty" };
@@ -184,9 +186,27 @@ export class GroundingExecutor {
       return { success: false, error: "property_set requires targetValue" };
     }
 
+    // RFC-028 Findings 3+4: fail loudly if $input/$value placeholder is present
+    // but no userInput.value is provided. Prevents silently writing the literal
+    // string ("$input"/"$value") into frontmatter as a value.
+    const needsUserInput = /\$(input|value)\b/.test(grounding.targetValue);
+    if (
+      needsUserInput &&
+      (userInput === undefined ||
+        userInput.value === undefined ||
+        userInput.value === null)
+    ) {
+      return {
+        success: false,
+        error:
+          "property_set: targetValue contains $input/$value placeholder but no userInput.value provided",
+      };
+    }
+
     const substitutedValue = this.substituteVariables(
       grounding.targetValue,
       targetIRI,
+      userInput,
     );
 
     const content = await this.fileReader.readFile(filePath);
@@ -414,17 +434,32 @@ export class GroundingExecutor {
    *   so composite groundings can chain status + timestamp writes consistently
    *   with palette commands.
    * - $today → current date (YYYY-MM-DD)
+   * - $input / $value → userInput.value (RFC-028 Findings 3+4) — powers
+   *   "Set Planned Start/End", "Set Scheduled Date", "Set Result" buttons.
+   *   Substituted only when userInput.value is defined; callers must gate
+   *   missing-input at the executePropertySet layer for fail-loud semantics.
    */
-  substituteVariables(value: string, targetIRI: string): string {
+  substituteVariables(
+    value: string,
+    targetIRI: string,
+    userInput?: UserInput,
+  ): string {
     const date = new Date();
     const now = date.toISOString();
     const nowLocal = DateFormatter.toLocalTimestamp(date);
     const today = now.slice(0, 10);
 
-    return value
+    let result = value
       .replace(/\$target/g, targetIRI)
       .replace(/\$nowLocal/g, nowLocal)
       .replace(/\$now/g, now)
       .replace(/\$today/g, today);
+
+    if (userInput?.value !== undefined && userInput.value !== null) {
+      const inputStr = String(userInput.value);
+      result = result.replace(/\$input\b/g, inputStr).replace(/\$value\b/g, inputStr);
+    }
+
+    return result;
   }
 }
