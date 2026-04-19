@@ -7,6 +7,7 @@ import {
   ArchiveAssetService,
   EffortStatusWorkflow,
   GenericAssetCreationService,
+  PropertyCleanupService,
   ServiceRegistry,
   StatusTimestampService,
   TaskStatusService,
@@ -45,6 +46,7 @@ describe("archiveAsset (CLI)", () => {
   let vaultAdapter: FileSystemVaultAdapter;
   let archiveAssetService: ArchiveAssetService;
   let genericAssetCreationService: GenericAssetCreationService;
+  let propertyCleanupService: PropertyCleanupService;
   let taskStatusService: TaskStatusService;
   let service: ReturnType<typeof createArchiveAssetService>;
 
@@ -53,6 +55,7 @@ describe("archiveAsset (CLI)", () => {
     vaultAdapter = new FileSystemVaultAdapter(vaultRoot);
     archiveAssetService = new ArchiveAssetService(vaultAdapter);
     genericAssetCreationService = new GenericAssetCreationService(vaultAdapter);
+    propertyCleanupService = new PropertyCleanupService(vaultAdapter);
     taskStatusService = new TaskStatusService(
       vaultAdapter,
       new EffortStatusWorkflow(),
@@ -151,6 +154,7 @@ describe("archiveAsset (CLI)", () => {
       genericAssetCreationService,
       archiveAssetService,
       taskStatusService,
+      propertyCleanupService,
     });
 
     const registered = registry.get("archiveAsset");
@@ -173,6 +177,7 @@ describe("archiveAsset (CLI)", () => {
       genericAssetCreationService,
       archiveAssetService,
       taskStatusService,
+      propertyCleanupService,
     });
     const registered = registry.get("archiveAsset");
     expect(registered).toBeDefined();

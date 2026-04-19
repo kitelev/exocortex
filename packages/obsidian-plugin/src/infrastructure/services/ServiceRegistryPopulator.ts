@@ -9,6 +9,7 @@ import {
   StatusTimestampService,
   GenericAssetCreationService,
   ArchiveAssetService,
+  PropertyCleanupService,
   DateFormatter,
   type IGroundingService,
   type UserInput,
@@ -283,6 +284,7 @@ export function populateServiceRegistry(
     const labelToAliasService = new LabelToAliasService(vaultAdapter);
     const genericAssetCreationService = new GenericAssetCreationService(vaultAdapter);
     const archiveAssetService = new ArchiveAssetService(vaultAdapter);
+    const propertyCleanupService = new PropertyCleanupService(vaultAdapter);
 
     registry.register(
       "rollbackStatus",
@@ -442,6 +444,14 @@ export function populateServiceRegistry(
       wrapService(async (targetIRI: string) => {
         const iFile = resolveIFile(app, targetIRI, vaultAdapter);
         await archiveAssetService.archiveAsset(iFile);
+      }),
+    );
+
+    registry.register(
+      "cleanProperties",
+      wrapService(async (targetIRI: string) => {
+        const iFile = resolveIFile(app, targetIRI, vaultAdapter);
+        await propertyCleanupService.cleanEmptyProperties(iFile);
       }),
     );
 

@@ -7,6 +7,7 @@ import {
   ArchiveAssetService,
   EffortStatusWorkflow,
   GenericAssetCreationService,
+  PropertyCleanupService,
   ServiceRegistry,
   StatusTimestampService,
   TaskStatusService,
@@ -68,6 +69,7 @@ describe("planForEvening (CLI)", () => {
   let vaultAdapter: FileSystemVaultAdapter;
   let archiveAssetService: ArchiveAssetService;
   let genericAssetCreationService: GenericAssetCreationService;
+  let propertyCleanupService: PropertyCleanupService;
   let workflow: EffortStatusWorkflow;
   let timestampService: StatusTimestampService;
   let taskStatusService: TaskStatusService;
@@ -78,6 +80,7 @@ describe("planForEvening (CLI)", () => {
     vaultAdapter = new FileSystemVaultAdapter(vaultRoot);
     archiveAssetService = new ArchiveAssetService(vaultAdapter);
     genericAssetCreationService = new GenericAssetCreationService(vaultAdapter);
+    propertyCleanupService = new PropertyCleanupService(vaultAdapter);
     workflow = new EffortStatusWorkflow();
     timestampService = new StatusTimestampService(vaultAdapter);
     taskStatusService = new TaskStatusService(
@@ -195,6 +198,7 @@ describe("planForEvening (CLI)", () => {
       genericAssetCreationService,
       archiveAssetService,
       taskStatusService,
+      propertyCleanupService,
     });
 
     const registered = registry.get("planForEvening");
@@ -220,6 +224,7 @@ describe("planForEvening (CLI)", () => {
       genericAssetCreationService,
       archiveAssetService,
       taskStatusService,
+      propertyCleanupService,
     });
     const registered = registry.get("planForEvening");
     expect(registered).toBeDefined();

@@ -12,6 +12,7 @@ import {
   GroundingType,
   GenericAssetCreationService,
   ArchiveAssetService,
+  PropertyCleanupService,
   EffortStatusWorkflow,
   StatusTimestampService,
   TaskStatusService,
@@ -338,6 +339,7 @@ export function dynamicCommandCommand(): Command {
         const vaultAdapter = new FileSystemVaultAdapter(vaultPath);
         const genericAssetCreationService = new GenericAssetCreationService(vaultAdapter);
         const archiveAssetService = new ArchiveAssetService(vaultAdapter);
+        const propertyCleanupService = new PropertyCleanupService(vaultAdapter);
         const taskStatusService = new TaskStatusService(
           vaultAdapter,
           new EffortStatusWorkflow(),
@@ -348,6 +350,7 @@ export function dynamicCommandCommand(): Command {
           genericAssetCreationService,
           archiveAssetService,
           taskStatusService,
+          propertyCleanupService,
         });
         const nodeFsAdapter = new NodeFsAdapter(vaultPath);
         const groundingExecutor = new GroundingExecutor(

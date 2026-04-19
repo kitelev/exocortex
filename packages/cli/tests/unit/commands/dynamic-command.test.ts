@@ -58,6 +58,9 @@ jest.unstable_mockModule("exocortex", () => ({
   ArchiveAssetService: jest.fn(() => ({
     archiveAsset: jest.fn().mockResolvedValue(undefined),
   })),
+  PropertyCleanupService: jest.fn(() => ({
+    cleanEmptyProperties: jest.fn().mockResolvedValue(undefined),
+  })),
   TaskStatusService: jest.fn(() => ({
     planForEvening: jest.fn().mockResolvedValue(undefined),
   })),

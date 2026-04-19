@@ -6,6 +6,7 @@ import {
   type UserInput,
   GenericAssetCreationService,
   ArchiveAssetService,
+  PropertyCleanupService,
   TaskStatusService,
 } from "exocortex";
 
@@ -69,6 +70,7 @@ export interface CliServiceRegistryDeps {
   genericAssetCreationService: GenericAssetCreationService;
   archiveAssetService: ArchiveAssetService;
   taskStatusService: TaskStatusService;
+  propertyCleanupService: PropertyCleanupService;
 }
 
 function resolveTargetFile(vaultAdapter: IVaultAdapter, targetIRI: string): IFile {
@@ -195,6 +197,28 @@ export function createArchiveAssetService(
 }
 
 /**
+ * CLI-side implementation of the `cleanProperties` service (#2869).
+ *
+ * Mirrors the plugin handler in
+ * `packages/obsidian-plugin/src/infrastructure/services/ServiceRegistryPopulator.ts`.
+ * Delegates to the shared `PropertyCleanupService` which strips frontmatter
+ * entries whose values are empty (`""`, `null`, `undefined`, `[]`, `{}`).
+ * Storage-agnostic via `IVaultAdapter`, so the plugin and CLI paths stay
+ * byte-identical for the same input.
+ */
+export function createCleanPropertiesService(
+  vaultAdapter: IVaultAdapter,
+  propertyCleanupService: PropertyCleanupService,
+): IGroundingService {
+  return {
+    async execute(targetIRI: string): Promise<void> {
+      const targetFile = resolveTargetFile(vaultAdapter, targetIRI);
+      await propertyCleanupService.cleanEmptyProperties(targetFile);
+    },
+  };
+}
+
+/**
  * CLI-side implementation of the `planForEvening` service (#2868).
  *
  * Mirrors the plugin handler in
@@ -264,6 +288,13 @@ export function populateCliServiceRegistry(
       createPlanForEveningService(
         deps.vaultAdapter,
         deps.taskStatusService,
+      ),
+    );
+    registry.register(
+      "cleanProperties",
+      createCleanPropertiesService(
+        deps.vaultAdapter,
+        deps.propertyCleanupService,
       ),
     );
   }
