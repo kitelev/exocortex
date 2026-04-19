@@ -717,3 +717,109 @@ describe("ServiceRegistryPopulator (with vaultAdapter)", () => {
     });
   });
 });
+
+// Regression suite for RFC-028 Finding 2: prototype-based asset creation
+// produces orphan files. The "Create Task / Note / Knowledge" buttons in vault
+// groundings bind to the `createAsset` service, which currently writes ONLY 4
+// frontmatter keys (uid, createdAt, label, prototype). It does NOT inherit
+// parent Project context (Instance_class, Effort_parent, Effort_area,
+// Effort_status, Asset_isDefinedBy), so created tasks render as orphans in
+// Project layout / Area Tree. The symmetric `createRelatedTask` /
+// `createRelatedProject` services already perform inheritance via
+// `GenericAssetCreationService.inheritParentContext` — `createAsset` must do
+// the same. These tests are EXPECTED TO FAIL until the fix lands (TDD Step 1).
+describe("createAsset — orphan prevention regression (Finding 2)", () => {
+  let registry: ServiceRegistry;
+  let deps: ServiceRegistryDeps;
+  const PARENT_PROJECT_UID = "parent-project-uid-001";
+  const PARENT_AREA_UID = "parent-area-uid-001";
+  const PARENT_PATH = "01 Areas/parent-project-uid-001.md";
+
+  beforeEach(() => {
+    registry = new ServiceRegistry();
+    deps = createMockDeps();
+
+    // Override mocks so the parent IRI resolves to a Project file with
+    // rich inheritable context (area, isDefinedBy, Project class).
+    (deps.app.vault.getMarkdownFiles as jest.Mock).mockReturnValue([
+      { path: PARENT_PATH },
+    ]);
+    (deps.app.vault.getAbstractFileByPath as jest.Mock).mockImplementation(
+      (path: string) => (path === PARENT_PATH ? { path: PARENT_PATH } : null),
+    );
+    (deps.app.metadataCache.getFileCache as jest.Mock).mockReturnValue({
+      frontmatter: {
+        exo__Asset_uid: PARENT_PROJECT_UID,
+        exo__Asset_label: "Audit Project",
+        exo__Instance_class: ["[[ems__Project]]"],
+        ems__Effort_area: `[[${PARENT_AREA_UID}]]`,
+        exo__Asset_isDefinedBy: "[[!toos_areas]]",
+      },
+    });
+
+    populateServiceRegistry(registry, deps);
+  });
+
+  it("inherits all required context properties when invoked with parent Project IRI", async () => {
+    const service = registry.get("createAsset")!;
+    await service.execute(PARENT_PROJECT_UID, {
+      prototypeUID: "ems__TaskPrototype",
+      label: "Regression Task",
+    });
+
+    const createCall = (deps.fileSystemAdapter.createFile as jest.Mock).mock.calls[0];
+    expect(createCall).toBeDefined();
+    const frontmatter = createCall[1] as string;
+
+    // 1. Instance_class must resolve from prototype (no orphan)
+    expect(frontmatter).toMatch(/exo__Instance_class:[\s\S]*ems__Task/);
+
+    // 2. Effort_parent must link back to parent Project
+    expect(frontmatter).toMatch(
+      new RegExp(`ems__Effort_parent:\\s*"\\[\\[${PARENT_PROJECT_UID}`),
+    );
+
+    // 3. Effort_area must inherit from parent
+    expect(frontmatter).toMatch(
+      new RegExp(`ems__Effort_area:\\s*"\\[\\[${PARENT_AREA_UID}`),
+    );
+
+    // 4. Effort_status must default (Backlog or Draft) so task is queryable
+    expect(frontmatter).toMatch(
+      /ems__Effort_status:\s*"\[\[ems__EffortStatus(Backlog|Draft)\]\]"/,
+    );
+
+    // 5. Asset_isDefinedBy must inherit from parent
+    expect(frontmatter).toContain('exo__Asset_isDefinedBy: "[[!toos_areas]]"');
+  });
+
+  it.each([
+    ["ems__TaskPrototype", "ems__Task"],
+    ["ztlk__FleetingNotePrototype", "ztlk__FleetingNote"],
+    ["ims__ConceptPrototype", "ims__Concept"],
+  ])(
+    "prototype %s expands exo__Instance_class to %s (no orphan) when created on Project parent",
+    async (prototypeUID, expectedClass) => {
+      const service = registry.get("createAsset")!;
+      await service.execute(PARENT_PROJECT_UID, {
+        prototypeUID,
+        label: `Regression ${expectedClass}`,
+      });
+
+      const createCall = (deps.fileSystemAdapter.createFile as jest.Mock).mock.calls[0];
+      expect(createCall).toBeDefined();
+      const frontmatter = createCall[1] as string;
+
+      // exo__Instance_class must contain the expanded class wikilink, not
+      // the literal prototype UID. Regex tolerates YAML list-item or inline
+      // formatting variants.
+      expect(frontmatter).toMatch(
+        new RegExp(`exo__Instance_class:[\\s\\S]*?\\[\\[${expectedClass}`),
+      );
+      // And the expanded class must NOT just echo the prototype suffix
+      expect(frontmatter).not.toMatch(
+        new RegExp(`exo__Instance_class:[\\s\\S]*?\\[\\[${prototypeUID}\\]\\]`),
+      );
+    },
+  );
+});
