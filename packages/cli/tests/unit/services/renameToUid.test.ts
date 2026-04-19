@@ -16,7 +16,7 @@ import {
 } from "exocortex";
 import { FileSystemVaultAdapter } from "../../../src/adapters/FileSystemVaultAdapter.js";
 import {
-  createFixMissingLabelService,
+  createRenameToUidService,
   populateCliServiceRegistry,
   CliServiceNotImplementedError,
 } from "../../../src/services/CliServiceRegistryPopulator.js";
@@ -37,110 +37,108 @@ function writeRaw(vaultRoot: string, relPath: string, content: string): string {
   return fullPath;
 }
 
-describe("fixMissingLabel (CLI)", () => {
+describe("renameToUid (CLI)", () => {
   let vaultRoot: string;
   let vaultAdapter: FileSystemVaultAdapter;
+  let renameToUidService: RenameToUidService;
   let fixMissingLabelService: FixMissingLabelService;
   let archiveAssetService: ArchiveAssetService;
   let genericAssetCreationService: GenericAssetCreationService;
   let propertyCleanupService: PropertyCleanupService;
   let taskStatusService: TaskStatusService;
-  let renameToUidService: RenameToUidService;
-  let service: ReturnType<typeof createFixMissingLabelService>;
+  let service: ReturnType<typeof createRenameToUidService>;
 
   beforeEach(() => {
-    vaultRoot = fs.mkdtempSync(path.join(os.tmpdir(), "cli-fixmissinglabel-"));
+    vaultRoot = fs.mkdtempSync(path.join(os.tmpdir(), "cli-renametouid-"));
     vaultAdapter = new FileSystemVaultAdapter(vaultRoot);
+    renameToUidService = new RenameToUidService(vaultAdapter);
     fixMissingLabelService = new FixMissingLabelService(vaultAdapter);
     archiveAssetService = new ArchiveAssetService(vaultAdapter);
     genericAssetCreationService = new GenericAssetCreationService(vaultAdapter);
     propertyCleanupService = new PropertyCleanupService(vaultAdapter);
-    renameToUidService = new RenameToUidService(vaultAdapter);
     taskStatusService = new TaskStatusService(
       vaultAdapter,
       new EffortStatusWorkflow(),
       new StatusTimestampService(vaultAdapter),
     );
-    service = createFixMissingLabelService(vaultAdapter, fixMissingLabelService);
+    service = createRenameToUidService(vaultAdapter, renameToUidService);
   });
 
   afterEach(() => {
     fs.removeSync(vaultRoot);
   });
 
-  it("adds exo__Asset_label derived from basename when missing", async () => {
+  it("renames file to match exo__Asset_uid when filename differs", async () => {
     writeRaw(
       vaultRoot,
-      "tasks/7de4ab12-label.md",
-      "---\nexo__Asset_uid: 7de4ab12-label\n---\nBody\n",
+      "tasks/My Task.md",
+      "---\nexo__Asset_uid: a1b2c3d4-renamed-uid\nexo__Asset_label: My Task\n---\nBody\n",
     );
 
-    await service.execute("tasks/7de4ab12-label");
+    await service.execute("tasks/My Task");
 
-    const fm = readFrontmatter(path.join(vaultRoot, "tasks/7de4ab12-label.md"));
-    expect(fm.exo__Asset_label).toBe("7de4ab12-label");
-    expect(fm.exo__Asset_uid).toBe("7de4ab12-label");
+    expect(fs.existsSync(path.join(vaultRoot, "tasks/a1b2c3d4-renamed-uid.md"))).toBe(true);
+    expect(fs.existsSync(path.join(vaultRoot, "tasks/My Task.md"))).toBe(false);
   });
 
-  it("sets exo__Asset_label when value is empty string", async () => {
+  it("preserves frontmatter properties after rename", async () => {
     writeRaw(
       vaultRoot,
-      "tasks/Empty.md",
-      '---\nexo__Asset_uid: 7de4ab12\nexo__Asset_label: ""\n---\nBody\n',
+      "tasks/Original.md",
+      "---\nexo__Asset_uid: xyz-789\nexo__Asset_label: Original\nems__Effort_status: '\"[[ems__EffortStatusDoing]]\"'\n---\nBody\n",
     );
 
-    await service.execute("tasks/Empty");
+    await service.execute("tasks/Original");
 
-    const fm = readFrontmatter(path.join(vaultRoot, "tasks/Empty.md"));
-    expect(fm.exo__Asset_label).toBe("Empty");
+    const fm = readFrontmatter(path.join(vaultRoot, "tasks/xyz-789.md"));
+    expect(fm.exo__Asset_uid).toBe("xyz-789");
+    expect(fm.exo__Asset_label).toBe("Original");
   });
 
-  it("is a no-op when label already set to non-empty value", async () => {
+  it("adds exo__Asset_label = original basename when label is missing before rename", async () => {
     writeRaw(
       vaultRoot,
-      "tasks/Labeled.md",
-      '---\nexo__Asset_uid: 7de4ab12\nexo__Asset_label: "Already Has Label"\n---\nBody\n',
+      "tasks/Needs Label.md",
+      "---\nexo__Asset_uid: label-fix-uid\n---\nBody\n",
     );
 
-    const originalContent = fs.readFileSync(
-      path.join(vaultRoot, "tasks/Labeled.md"),
-      "utf-8",
-    );
+    await service.execute("tasks/Needs Label");
 
-    await service.execute("tasks/Labeled");
-
-    const unchanged = fs.readFileSync(
-      path.join(vaultRoot, "tasks/Labeled.md"),
-      "utf-8",
-    );
-    expect(unchanged).toBe(originalContent);
+    const fm = readFrontmatter(path.join(vaultRoot, "tasks/label-fix-uid.md"));
+    expect(fm.exo__Asset_label).toBe("Needs Label");
   });
 
-  it("preserves file body content", async () => {
+  it("throws when exo__Asset_uid is missing", async () => {
     writeRaw(
       vaultRoot,
-      "tasks/WithBody.md",
-      "---\nexo__Asset_uid: task-5\n---\n## Notes\n- bullet one\n- bullet two\n",
+      "tasks/NoUid.md",
+      "---\nexo__Asset_label: NoUid\n---\nBody\n",
     );
 
-    await service.execute("tasks/WithBody");
+    await expect(service.execute("tasks/NoUid")).rejects.toThrow(/uid/i);
+  });
 
-    const content = fs.readFileSync(
-      path.join(vaultRoot, "tasks/WithBody.md"),
-      "utf-8",
+  it("throws when file is already named according to UID", async () => {
+    writeRaw(
+      vaultRoot,
+      "tasks/already-named.md",
+      "---\nexo__Asset_uid: already-named\nexo__Asset_label: Already\n---\nBody\n",
     );
-    expect(content).toContain("## Notes\n- bullet one\n- bullet two\n");
+
+    await expect(service.execute("tasks/already-named")).rejects.toThrow(
+      /already named/i,
+    );
   });
 
   it("rejects when target file does not exist", async () => {
     await expect(service.execute("tasks/Missing")).rejects.toThrow();
   });
 
-  it("registry integration: populateCliServiceRegistry with deps registers real fixMissingLabel (no throw-stub)", async () => {
+  it("registry integration: populateCliServiceRegistry with deps registers real renameToUid (no throw-stub)", async () => {
     writeRaw(
       vaultRoot,
       "tasks/Registered.md",
-      "---\nexo__Asset_uid: task-6\n---\nBody\n",
+      "---\nexo__Asset_uid: reg-uid-42\nexo__Asset_label: Registered\n---\nBody\n",
     );
 
     const registry = new ServiceRegistry();
@@ -154,19 +152,18 @@ describe("fixMissingLabel (CLI)", () => {
       renameToUidService,
     });
 
-    const registered = registry.get("fixMissingLabel");
+    const registered = registry.get("renameToUid");
     expect(registered).toBeDefined();
     await expect(registered!.execute("tasks/Registered")).resolves.toBeUndefined();
 
-    const fm = readFrontmatter(path.join(vaultRoot, "tasks/Registered.md"));
-    expect(fm.exo__Asset_label).toBe("Registered");
+    expect(fs.existsSync(path.join(vaultRoot, "tasks/reg-uid-42.md"))).toBe(true);
   });
 
-  it("registry integration: fixMissingLabel is NOT a CliServiceNotImplementedError stub when deps provided (#2870 regression guard)", async () => {
+  it("registry integration: renameToUid is NOT a CliServiceNotImplementedError stub when deps provided (#2871 regression guard)", async () => {
     writeRaw(
       vaultRoot,
       "tasks/Guard.md",
-      "---\nexo__Asset_uid: task-7\n---\nBody\n",
+      "---\nexo__Asset_uid: guard-uid\nexo__Asset_label: Guard\n---\nBody\n",
     );
 
     const registry = new ServiceRegistry();
@@ -179,7 +176,7 @@ describe("fixMissingLabel (CLI)", () => {
       fixMissingLabelService,
       renameToUidService,
     });
-    const registered = registry.get("fixMissingLabel");
+    const registered = registry.get("renameToUid");
     expect(registered).toBeDefined();
 
     try {
@@ -189,9 +186,9 @@ describe("fixMissingLabel (CLI)", () => {
     }
   });
 
-  it("registry integration: when deps are NOT provided, fixMissingLabel is absent (backwards-compat)", () => {
+  it("registry integration: when deps are NOT provided, renameToUid is absent (backwards-compat)", () => {
     const registry = new ServiceRegistry();
     populateCliServiceRegistry(registry);
-    expect(registry.has("fixMissingLabel")).toBe(false);
+    expect(registry.has("renameToUid")).toBe(false);
   });
 });

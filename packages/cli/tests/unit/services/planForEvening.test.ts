@@ -9,6 +9,7 @@ import {
   FixMissingLabelService,
   GenericAssetCreationService,
   PropertyCleanupService,
+  RenameToUidService,
   ServiceRegistry,
   StatusTimestampService,
   TaskStatusService,
@@ -75,6 +76,7 @@ describe("planForEvening (CLI)", () => {
   let timestampService: StatusTimestampService;
   let taskStatusService: TaskStatusService;
   let fixMissingLabelService: FixMissingLabelService;
+  let renameToUidService: RenameToUidService;
   let service: ReturnType<typeof createPlanForEveningService>;
 
   beforeEach(() => {
@@ -84,6 +86,7 @@ describe("planForEvening (CLI)", () => {
     genericAssetCreationService = new GenericAssetCreationService(vaultAdapter);
     propertyCleanupService = new PropertyCleanupService(vaultAdapter);
     fixMissingLabelService = new FixMissingLabelService(vaultAdapter);
+    renameToUidService = new RenameToUidService(vaultAdapter);
     workflow = new EffortStatusWorkflow();
     timestampService = new StatusTimestampService(vaultAdapter);
     taskStatusService = new TaskStatusService(
@@ -203,6 +206,7 @@ describe("planForEvening (CLI)", () => {
       taskStatusService,
       propertyCleanupService,
       fixMissingLabelService,
+      renameToUidService,
     });
 
     const registered = registry.get("planForEvening");
@@ -230,6 +234,7 @@ describe("planForEvening (CLI)", () => {
       taskStatusService,
       propertyCleanupService,
       fixMissingLabelService,
+      renameToUidService,
     });
     const registered = registry.get("planForEvening");
     expect(registered).toBeDefined();

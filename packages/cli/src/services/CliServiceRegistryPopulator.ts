@@ -8,6 +8,7 @@ import {
   ArchiveAssetService,
   FixMissingLabelService,
   PropertyCleanupService,
+  RenameToUidService,
   TaskStatusService,
 } from "exocortex";
 
@@ -73,6 +74,7 @@ export interface CliServiceRegistryDeps {
   taskStatusService: TaskStatusService;
   propertyCleanupService: PropertyCleanupService;
   fixMissingLabelService: FixMissingLabelService;
+  renameToUidService: RenameToUidService;
 }
 
 function resolveTargetFile(vaultAdapter: IVaultAdapter, targetIRI: string): IFile {
@@ -243,6 +245,36 @@ export function createFixMissingLabelService(
 }
 
 /**
+ * CLI-side implementation of the `renameToUid` service (#2871).
+ *
+ * Mirrors the plugin handler in
+ * `packages/obsidian-plugin/src/infrastructure/services/ServiceRegistryPopulator.ts`.
+ * Delegates to the shared `RenameToUidService` which renames the file to
+ * match its `exo__Asset_uid` property (e.g. `My Task.md` → `a1b2c3d4-….md`).
+ *
+ * Caveat: `FileSystemVaultAdapter.updateLinks` in the CLI is a no-op stub —
+ * the file itself is renamed and a missing label is backfilled, but
+ * wikilinks referencing the old basename in other vault notes are NOT
+ * rewritten. Parity with the Obsidian plugin's vault-wide link update is
+ * tracked separately; users relying on link rewrite should continue to use
+ * Obsidian. Plugin path remains fully symmetric.
+ */
+export function createRenameToUidService(
+  vaultAdapter: IVaultAdapter,
+  renameToUidService: RenameToUidService,
+): IGroundingService {
+  return {
+    async execute(targetIRI: string): Promise<void> {
+      const targetFile = resolveTargetFile(vaultAdapter, targetIRI);
+      const metadata =
+        (vaultAdapter.getFrontmatter(targetFile) as Record<string, unknown>) ??
+        {};
+      await renameToUidService.renameToUid(targetFile, metadata);
+    },
+  };
+}
+
+/**
  * CLI-side implementation of the `planForEvening` service (#2868).
  *
  * Mirrors the plugin handler in
@@ -319,6 +351,13 @@ export function populateCliServiceRegistry(
       createCleanPropertiesService(
         deps.vaultAdapter,
         deps.propertyCleanupService,
+      ),
+    );
+    registry.register(
+      "renameToUid",
+      createRenameToUidService(
+        deps.vaultAdapter,
+        deps.renameToUidService,
       ),
     );
     registry.register(
