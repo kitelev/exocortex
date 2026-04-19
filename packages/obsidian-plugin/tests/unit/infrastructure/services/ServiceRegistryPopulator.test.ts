@@ -125,6 +125,7 @@ describe("ServiceRegistryPopulator", () => {
       "createRelatedTask",
       "createRelatedProject",
       "archiveAsset",
+      "cleanProperties",
       "createTaskForDailyNote",
     ];
     for (const id of vaultDependentIds) {
@@ -451,6 +452,7 @@ describe("ServiceRegistryPopulator (with vaultAdapter)", () => {
       "createRelatedTask",
       "createRelatedProject",
       "archiveAsset",
+      "cleanProperties",
       "createTaskForDailyNote",
     ];
     for (const id of vaultDependentIds) {
@@ -746,6 +748,39 @@ describe("ServiceRegistryPopulator (with vaultAdapter)", () => {
         frontmatter: { exo__Asset_uid: "different-uid" },
       });
       const service = registry.get("archiveAsset")!;
+      await expect(service.execute("nonexistent-iri")).rejects.toThrow(
+        "No file found for IRI",
+      );
+    });
+  });
+
+  describe("cleanProperties", () => {
+    beforeEach(() => {
+      (deps.vaultAdapter!.read as jest.Mock).mockResolvedValue(
+        "---\nexo__Asset_uid: test-uid-123\nexo__Asset_label: Test Asset\nems__Effort_plannedStartTimestamp: \"\"\nobsolete_prop: null\nempty_list: []\n---\nBody",
+      );
+    });
+
+    it("should strip empty properties from frontmatter via PropertyCleanupService", async () => {
+      const service = registry.get("cleanProperties")!;
+      await service.execute("test-uid-123");
+
+      expect(deps.vaultAdapter!.read).toHaveBeenCalledWith(mockIFile);
+      const modifyCall = (deps.vaultAdapter!.modify as jest.Mock).mock.calls[0];
+      expect(modifyCall).toBeDefined();
+      const written = modifyCall[1] as string;
+      expect(written).not.toMatch(/ems__Effort_plannedStartTimestamp:\s*""/);
+      expect(written).not.toMatch(/obsolete_prop:\s*null/);
+      expect(written).not.toMatch(/empty_list:\s*\[\]/);
+      expect(written).toContain("exo__Asset_uid: test-uid-123");
+      expect(written).toContain("exo__Asset_label: Test Asset");
+    });
+
+    it("should throw when target IRI cannot be resolved", async () => {
+      (deps.app.metadataCache.getFileCache as jest.Mock).mockReturnValue({
+        frontmatter: { exo__Asset_uid: "different-uid" },
+      });
+      const service = registry.get("cleanProperties")!;
       await expect(service.execute("nonexistent-iri")).rejects.toThrow(
         "No file found for IRI",
       );
