@@ -30,6 +30,12 @@ function wrapService(
   return { execute: fn };
 }
 
+function toQuotedWikilink(value: string): string {
+  if (value.startsWith('"[[') && value.endsWith(']]"')) return value;
+  if (value.startsWith("[[") && value.endsWith("]]")) return `"${value}"`;
+  return `"[[${value}]]"`;
+}
+
 export function populateServiceRegistry(
   registry: ServiceRegistry,
   deps: ServiceRegistryDeps,
@@ -110,19 +116,92 @@ export function populateServiceRegistry(
       }
       if (!folder && folder !== "") throw new Error("createAsset requires userInput.folder");
 
+      // Resolve parent file and metadata from targetIRI so prototype-based
+      // creation inherits context (Instance_class, Effort_parent/area, status,
+      // isDefinedBy) — mirrors createRelatedTask's inheritParentContext but
+      // operates through fileSystemAdapter.createFile because this handler is
+      // used from bindings that only have app+fileSystemAdapter wired.
+      // RFC-028 Finding 2: without this inheritance, prototype-button created
+      // Tasks render as orphans in Project layouts.
+      let parentPath: string | undefined;
+      let parentMetadata: Record<string, unknown> | undefined;
+      if (targetIRI) {
+        try {
+          parentPath = resolveFilePath(app, targetIRI);
+          const parentFile = app.vault.getAbstractFileByPath(parentPath);
+          if (parentFile) {
+            const cache = app.metadataCache.getFileCache(parentFile as never);
+            parentMetadata = cache?.frontmatter as
+              | Record<string, unknown>
+              | undefined;
+          }
+        } catch {
+          // IRI resolution failed — no parent inheritance
+        }
+      }
+      // Default folder from current file's parent folder (re-use parentPath)
+      if (!folder && parentPath) {
+        const lastSlash = parentPath.lastIndexOf("/");
+        folder = lastSlash >= 0 ? parentPath.substring(0, lastSlash) : "";
+      }
+      if (!folder && folder !== "") throw new Error("createAsset requires userInput.folder");
+
+      const expectedClass = prototypeUID.endsWith("Prototype")
+        ? prototypeUID.slice(0, -"Prototype".length)
+        : prototypeUID;
+
       const uid = crypto.randomUUID();
       const createdAt = DateFormatter.toISOTimestamp(new Date());
       const fileName = `${uid}.md`;
       const filePath = `${folder}/${fileName}`;
-      const frontmatter = [
+      const lines: string[] = [
         "---",
         `exo__Asset_uid: ${uid}`,
         `exo__Asset_createdAt: ${createdAt}`,
         `exo__Asset_label: ${label}`,
         `exo__Asset_prototype: "[[${prototypeUID}]]"`,
-        "---",
-        "",
-      ].join("\n");
+        "exo__Instance_class:",
+        `  - "[[${expectedClass}]]"`,
+      ];
+      if (parentMetadata) {
+        const parentClass = parentMetadata.exo__Instance_class;
+        const parentClasses = Array.isArray(parentClass)
+          ? parentClass
+          : parentClass != null
+            ? [parentClass]
+            : [];
+        const isAreaParent = parentClasses.some((cls) =>
+          String(cls).includes("Area"),
+        );
+        const parentBasename = parentPath
+          ? parentPath
+              .substring(parentPath.lastIndexOf("/") + 1)
+              .replace(/\.md$/, "")
+          : undefined;
+        if (parentBasename) {
+          const parentProperty = isAreaParent
+            ? "ems__Effort_area"
+            : "ems__Effort_parent";
+          lines.push(`${parentProperty}: "[[${parentBasename}]]"`);
+        }
+        if (!isAreaParent && parentMetadata.ems__Effort_area) {
+          lines.push(
+            `ems__Effort_area: ${toQuotedWikilink(
+              String(parentMetadata.ems__Effort_area),
+            )}`,
+          );
+        }
+        lines.push('ems__Effort_status: "[[ems__EffortStatusBacklog]]"');
+        if (parentMetadata.exo__Asset_isDefinedBy) {
+          lines.push(
+            `exo__Asset_isDefinedBy: ${toQuotedWikilink(
+              String(parentMetadata.exo__Asset_isDefinedBy),
+            )}`,
+          );
+        }
+      }
+      lines.push("---", "");
+      const frontmatter = lines.join("\n");
       await fileSystemAdapter.createFile(filePath, frontmatter);
     }),
   );
