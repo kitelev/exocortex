@@ -986,4 +986,76 @@ describe("LayoutParser", () => {
       expect(layout!.labelTypography).toBeUndefined();
     });
   });
+
+  describe("RFC-024 Phase 3 commandPanel slot", () => {
+    const baseLayoutFrontmatter: IFrontmatter = {
+      exo__Asset_uid: "layout-cmdpanel-001",
+      exo__Asset_label: "Tasks Layout",
+      exo__Instance_class: ["[[exo__TableLayout]]"],
+      exo__Layout_targetClass: "[[ems__Task]]",
+    };
+
+    it("parses the inline commandPanel with all four fields", async () => {
+      const frontmatter: IFrontmatter = {
+        ...baseLayoutFrontmatter,
+        exo__Layout_commandPanel: {
+          includeGroups: ["creation", "status"],
+          excludeCommands: ["[[cmd-uuid-1]]", "[[cmd-uuid-2|alias]]"],
+          layout: "stacked",
+          featuredBinding: "[[bind-uuid-xyz]]",
+        },
+      };
+
+      const layout = await parser.parseLayoutFromFrontmatter(frontmatter);
+
+      expect(layout).not.toBeNull();
+      expect(layout!.commandPanel).toEqual({
+        includeGroups: ["creation", "status"],
+        excludeCommands: ["cmd-uuid-1", "cmd-uuid-2"],
+        layout: "stacked",
+        featuredBinding: "bind-uuid-xyz",
+      });
+    });
+
+    it("is non-breaking: omits commandPanel when absent from frontmatter", async () => {
+      const layout = await parser.parseLayoutFromFrontmatter(
+        baseLayoutFrontmatter,
+      );
+
+      expect(layout).not.toBeNull();
+      expect(layout!.commandPanel).toBeUndefined();
+      expect(layout!.uid).toBe("layout-cmdpanel-001");
+      expect(layout!.type).toBe(LayoutType.Table);
+    });
+
+    it("omits commandPanel when the slot contains no valid fields", async () => {
+      const warnSpy = jest
+        .spyOn(console, "warn")
+        .mockImplementation(() => undefined);
+      try {
+        const frontmatter: IFrontmatter = {
+          ...baseLayoutFrontmatter,
+          exo__Layout_commandPanel: { layout: "grid" },
+        };
+
+        const layout = await parser.parseLayoutFromFrontmatter(frontmatter);
+
+        expect(layout).not.toBeNull();
+        expect(layout!.commandPanel).toBeUndefined();
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+
+    it("keeps partial commandPanel structures (layout-only)", async () => {
+      const frontmatter: IFrontmatter = {
+        ...baseLayoutFrontmatter,
+        exo__Layout_commandPanel: { layout: "dropdown" },
+      };
+
+      const layout = await parser.parseLayoutFromFrontmatter(frontmatter);
+
+      expect(layout!.commandPanel).toEqual({ layout: "dropdown" });
+    });
+  });
 });

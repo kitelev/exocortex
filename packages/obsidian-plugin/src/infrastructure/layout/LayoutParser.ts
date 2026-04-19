@@ -24,6 +24,7 @@ import {
   type LayoutActions,
   type LabelTypography,
   type CommandRef,
+  type CommandPanel,
   LayoutType,
   getLayoutTypeFromInstanceClass,
   isLayoutFrontmatter,
@@ -33,6 +34,7 @@ import {
   createLayoutGroupFromFrontmatter,
   createLayoutActionsFromFrontmatter,
   createCommandRefFromFrontmatter,
+  createCommandPanelFromFrontmatter,
   isLayoutActionsFrontmatter,
   isCommandFrontmatter,
   isValidCalendarView,
@@ -335,7 +337,12 @@ export class LayoutParser {
     }
 
     const visualSlots = this.parseVisualSlots(frontmatter);
-    return { ...layout, ...visualSlots } as Layout;
+    const commandPanel = this.parseCommandPanel(frontmatter);
+    return {
+      ...layout,
+      ...visualSlots,
+      ...(commandPanel ? { commandPanel } : {}),
+    } as Layout;
   }
 
   /**
@@ -371,6 +378,24 @@ export class LayoutParser {
     }
 
     return slots;
+  }
+
+  /**
+   * Parse RFC-024 Phase 3 `exo__Layout_commandPanel` inline structure.
+   *
+   * Returns `undefined` when the slot is absent or contains no valid
+   * fields, keeping the layout backward-compatible with vaults that
+   * never defined a command panel.
+   */
+  private parseCommandPanel(
+    frontmatter: IFrontmatter,
+  ): CommandPanel | undefined {
+    const raw = frontmatter["exo__Layout_commandPanel"];
+    if (raw === undefined || raw === null) {
+      return undefined;
+    }
+    const panel = createCommandPanelFromFrontmatter(raw);
+    return panel ?? undefined;
   }
 
   /**

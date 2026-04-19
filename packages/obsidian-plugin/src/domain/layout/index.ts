@@ -115,3 +115,14 @@ export {
   isPreconditionFrontmatter,
   isSparqlGroundingFrontmatter,
 } from "./LayoutActions";
+
+// CommandPanel types (RFC-024 Phase 3)
+export {
+  type CommandPanelMode,
+  type CommandPanel,
+  isValidCommandPanelMode,
+  normalizeBindingRef,
+  createCommandPanelFromFrontmatter,
+  applyCommandPanelFilter,
+  isFeaturedBinding,
+} from "./CommandPanel";

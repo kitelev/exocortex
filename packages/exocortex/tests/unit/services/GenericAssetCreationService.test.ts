@@ -872,7 +872,7 @@ describe("GenericAssetCreationService", () => {
         expect(content).not.toContain("ems__Effort_parent:");
       });
 
-      it("should set ems__Project_area for project with area parent", async () => {
+      it("should set ems__Effort_area for project with area parent (issue #2850)", async () => {
         const parentFile: IFile = {
           path: "areas/my-area.md",
           basename: "my-area",
@@ -888,10 +888,12 @@ describe("GenericAssetCreationService", () => {
         };
         await service.createAsset(config);
         const content = mockVault.create.mock.calls[0][1];
-        expect(content).toContain('ems__Project_area: "[[my-area]]"');
+        expect(content).toContain('ems__Effort_area: "[[my-area]]"');
+        // Legacy property must not appear (was the duplicate in issue #2850).
+        expect(content).not.toContain("ems__Project_area");
       });
 
-      it("should set ems__Project_area to null when parent has no basename", async () => {
+      it("should set ems__Effort_area to null when parent has no basename", async () => {
         const parentFile: IFile = {
           path: "areas/",
           basename: "",
@@ -907,10 +909,10 @@ describe("GenericAssetCreationService", () => {
         };
         await service.createAsset(config);
         const content = mockVault.create.mock.calls[0][1];
-        expect(content).toContain("ems__Project_area: null");
+        expect(content).toContain("ems__Effort_area: null");
       });
 
-      it("should not set ems__Project_area when parent is not area class", async () => {
+      it("should set ems__Effort_parent when project parent is not an area (issue #2850)", async () => {
         const parentFile: IFile = {
           path: "projects/parent.md",
           basename: "parent",
@@ -926,6 +928,8 @@ describe("GenericAssetCreationService", () => {
         };
         await service.createAsset(config);
         const content = mockVault.create.mock.calls[0][1];
+        expect(content).toContain('ems__Effort_parent: "[[parent]]"');
+        expect(content).not.toContain("ems__Effort_area");
         expect(content).not.toContain("ems__Project_area");
       });
 
@@ -945,10 +949,10 @@ describe("GenericAssetCreationService", () => {
         };
         await service.createAsset(config);
         const content = mockVault.create.mock.calls[0][1];
-        expect(content).toContain('ems__Project_area: "[[area]]"');
+        expect(content).toContain('ems__Effort_area: "[[area]]"');
       });
 
-      it("should inherit exo__Asset_isDefinedBy from parent", async () => {
+      it("should inherit exo__Asset_isDefinedBy from parent (already-quoted value)", async () => {
         const parentFile: IFile = {
           path: "projects/project.md",
           basename: "project",
@@ -965,6 +969,31 @@ describe("GenericAssetCreationService", () => {
         await service.createAsset(config);
         const content = mockVault.create.mock.calls[0][1];
         expect(content).toContain('exo__Asset_isDefinedBy: "[[my-ontology]]"');
+      });
+
+      it("should re-quote inherited exo__Asset_isDefinedBy when metadataCache stripped outer quotes (issue #2850)", async () => {
+        // Obsidian metadataCache parses `"[[foo]]"` from YAML and returns the
+        // inner string `[[foo]]` — inherited unwrapped value must be re-quoted
+        // by the writer so YAML doesn't re-interpret `[[!foo]]` as a tag.
+        const parentFile: IFile = {
+          path: "areas/area.md",
+          basename: "area",
+          name: "area.md",
+          parent: { path: "areas" } as IFolder,
+        };
+        const config = {
+          className: "ems__Project",
+          parentFile,
+          parentMetadata: {
+            exo__Instance_class: ["[[ems__Area]]"],
+            exo__Asset_isDefinedBy: "[[!toos_areas]]",
+          },
+        };
+        await service.createAsset(config);
+        const content = mockVault.create.mock.calls[0][1];
+        expect(content).toContain('exo__Asset_isDefinedBy: "[[!toos_areas]]"');
+        // Unquoted `[[!foo]]` would cause YAMLWarning + empty wikilink.
+        expect(content).not.toMatch(/exo__Asset_isDefinedBy:\s*\[\[!/);
       });
 
       it("should not inherit when parentMetadata has no exo__Asset_isDefinedBy", async () => {
@@ -986,7 +1015,7 @@ describe("GenericAssetCreationService", () => {
     });
 
     describe("isAreaClass edge cases", () => {
-      it("should return false for null instanceClass", async () => {
+      it("should treat null instanceClass as non-area and emit ems__Effort_parent", async () => {
         const parentFile: IFile = {
           path: "projects/project.md",
           basename: "project",
@@ -1002,6 +1031,7 @@ describe("GenericAssetCreationService", () => {
         };
         await service.createAsset(config);
         const content = mockVault.create.mock.calls[0][1];
+        expect(content).toContain('ems__Effort_parent: "[[project]]"');
         expect(content).not.toContain("ems__Project_area");
       });
 
@@ -1021,7 +1051,7 @@ describe("GenericAssetCreationService", () => {
         };
         await service.createAsset(config);
         const content = mockVault.create.mock.calls[0][1];
-        expect(content).toContain('ems__Project_area: "[[area]]"');
+        expect(content).toContain('ems__Effort_area: "[[area]]"');
       });
     });
 

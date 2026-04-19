@@ -103,11 +103,11 @@ const VARIANT_PALETTE = {
   },
   danger: {
     light: {
-      fg: hexToRGB("#b71c1c"),
+      fg: hexToRGB("#7f1d1d"),
       bg: blendRGBA([183, 28, 28, 0.12], THEME_BASE.light),
     },
     dark: {
-      fg: hexToRGB("#ef9a9a"),
+      fg: hexToRGB("#ffcdd2"),
       bg: blendRGBA([239, 154, 154, 0.18], THEME_BASE.dark),
     },
   },
@@ -149,14 +149,12 @@ describe("WCAG AA contrast matrix (RFC-024 Phase 1 CI gate)", () => {
       },
     );
 
-    // RFC-024 §8 lists AAA (>=7:1) as an aspirational target for `danger`,
-    // not a merge gate. The shipped palette lands at ~5.6:1 light / ~5.5:1
-    // dark — comfortably AA but below AAA. Tightening to AAA would require
-    // a darker/lighter foreground that harms perceived "danger-ness".
-    // The test below is skipped so the intent is visible in source without
-    // gating merges. Re-enable if the palette is ever recalibrated.
-    it.skip.each(THEMES)(
-      "danger variant reaches AAA (>=7:1) in %s mode (aspirational)",
+    // Recalibrated to AAA per issue #2847 (RFC-024 Phase 4 AC2):
+    // foreground darkened in light mode (`#b71c1c` → `#7f1d1d`, Tailwind red-900)
+    // and lightened in dark mode (`#ef9a9a` → `#ffcdd2`, Material Red 100) against
+    // the same tinted backgrounds. Ratios: light ≈ 8.18:1, dark ≈ 8.35:1.
+    it.each(THEMES)(
+      "danger variant reaches AAA (>=7:1) in %s mode",
       (theme) => {
         const { fg, bg } = VARIANT_PALETTE.danger[theme];
         expect(contrastRatio(fg, bg)).toBeGreaterThanOrEqual(7);
@@ -173,7 +171,7 @@ describe("WCAG AA contrast matrix (RFC-024 Phase 1 CI gate)", () => {
       ["--exo-intent-secondary-fg", "#1d1d1d"],
       ["--exo-intent-success-fg", "#1b5e20"],
       ["--exo-intent-warning-fg", "#bf360c"],
-      ["--exo-intent-danger-fg", "#b71c1c"],
+      ["--exo-intent-danger-fg", "#7f1d1d"],
       ["--exo-intent-muted-fg", "#666666"],
     ])("styles.css defines %s with fallback %s", (token, expectedHex) => {
       const pattern = new RegExp(

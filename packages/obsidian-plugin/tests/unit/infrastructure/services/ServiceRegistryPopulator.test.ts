@@ -241,6 +241,28 @@ describe("ServiceRegistryPopulator", () => {
         service.execute("", { label: "x", folder: "y" }),
       ).rejects.toThrow("userInput.prototypeUID");
     });
+
+    // Regression #2850 Bug 3: `Create Project` grounding in the vault was
+    // authored with `{"prototype":"..."}` (matching the natural JSON key
+    // name) while the service expected `prototypeUID`. The mismatch caused
+    // the UI click-through to fail with a brief 4 s red Notice and no file
+    // created — user reported as "silent fail". Accept `prototype` as an
+    // alias so outdated starter-kit groundings keep working.
+    it("should accept 'prototype' as alias for 'prototypeUID'", async () => {
+      const service = registry.get("createAsset")!;
+      await service.execute("", {
+        prototype: "ems__ProjectPrototype",
+        label: "Aliased Project",
+        folder: "01 Areas",
+      });
+
+      expect(deps.fileSystemAdapter.createFile).toHaveBeenCalledWith(
+        expect.stringMatching(/^01 Areas\/[a-f0-9-]+\.md$/),
+        expect.stringContaining(
+          'exo__Asset_prototype: "[[ems__ProjectPrototype]]"',
+        ),
+      );
+    });
   });
 
   describe("openFile", () => {
