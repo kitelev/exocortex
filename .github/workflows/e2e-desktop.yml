@@ -1,0 +1,137 @@
+# Desktop E2E smoke matrix — macOS + Windows.
+#
+# Why a separate workflow:
+# - Existing `e2e-shard` in ci.yml runs Docker (Linux + xvfb) on every PR.
+# - This workflow exercises Obsidian on real macOS/Windows GHA runners and
+#   only runs on demand (PR label `e2e-desktop`) plus a nightly cron and
+#   manual dispatch — so it never blocks regular PRs and stays cheap on
+#   minutes (free for public repos).
+#
+# Trigger summary:
+# - pull_request (labeled / synchronize) — gated by the `e2e-desktop` label
+# - schedule       — daily at 06:00 UTC against default branch
+# - workflow_dispatch — manual run from any branch
+#
+# Per-cell budget: ≤5 minutes (job timeout 10 min as a hard cap).
+# Spec: packages/obsidian-plugin/tests/e2e-desktop/specs/plugin-load.smoke.spec.ts
+# Doc:  docs/e2e-desktop.md
+name: E2E Desktop Smoke
+
+on:
+  pull_request:
+    types: [labeled, synchronize, reopened]
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    # Skip PR runs that don't carry the trigger label. Keep cron/dispatch
+    # unconditional.
+    if: >-
+      github.event_name != 'pull_request' ||
+      contains(github.event.pull_request.labels.*.name, 'e2e-desktop')
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build plugin
+        run: npm run build
+
+      - name: Stage plugin into smoke vault
+        shell: bash
+        run: |
+          set -euo pipefail
+          DEST="packages/obsidian-plugin/tests/e2e-desktop/test-vault/.obsidian/plugins/exocortex"
+          mkdir -p "$DEST"
+          cp packages/obsidian-plugin/main.js "$DEST/main.js"
+          cp packages/obsidian-plugin/manifest.json "$DEST/manifest.json"
+          if [ -f packages/obsidian-plugin/styles.css ]; then
+            cp packages/obsidian-plugin/styles.css "$DEST/styles.css"
+          fi
+          ls -la "$DEST"
+
+      - name: Install Obsidian (macOS)
+        if: runner.os == 'macOS'
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+          HOMEBREW_NO_INSTALL_CLEANUP: "1"
+        run: |
+          # Modern Homebrew rejects --no-quarantine. The runner has Gatekeeper
+          # quarantining off-the-shelf casks for downloaded apps, but launching
+          # without --no-quarantine still works for ephemeral CI runs because
+          # the binary is launched headlessly via spawn (no GUI Gatekeeper check).
+          brew install --cask obsidian
+          ls -la "/Applications/Obsidian.app/Contents/MacOS/" || true
+
+      - name: Resolve OBSIDIAN_PATH (macOS)
+        if: runner.os == 'macOS'
+        run: echo "OBSIDIAN_PATH=/Applications/Obsidian.app/Contents/MacOS/Obsidian" >> "$GITHUB_ENV"
+
+      - name: Install Obsidian (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          # winget is preinstalled on windows-latest images.
+          winget install --id Obsidian.Obsidian `
+            --accept-source-agreements --accept-package-agreements `
+            --silent --disable-interactivity --scope user `
+            --source winget
+          # Surface the install location for debugging.
+          Get-ChildItem -Path "$env:LOCALAPPDATA\Programs\Obsidian" -ErrorAction SilentlyContinue | Format-Table -AutoSize
+
+      - name: Resolve OBSIDIAN_PATH (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $candidates = @(
+            "$env:LOCALAPPDATA\Programs\Obsidian\Obsidian.exe",
+            "$env:ProgramFiles\Obsidian\Obsidian.exe",
+            "${env:ProgramFiles(x86)}\Obsidian\Obsidian.exe"
+          )
+          $found = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $found) {
+            Write-Host "Searched candidates:`n$($candidates -join `"`n`")"
+            throw "Obsidian.exe not found after winget install"
+          }
+          Write-Host "Resolved OBSIDIAN_PATH=$found"
+          "OBSIDIAN_PATH=$found" | Out-File -Append -FilePath $env:GITHUB_ENV -Encoding utf8
+
+      - name: Run desktop smoke spec
+        env:
+          CI: "true"
+        run: npx playwright test -c packages/obsidian-plugin/playwright-e2e-desktop.config.ts
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: e2e-desktop-report-${{ matrix.os }}
+          path: |
+            packages/obsidian-plugin/playwright-report-e2e-desktop/
+            packages/obsidian-plugin/test-results-e2e-desktop/
+          retention-days: 7
+          if-no-files-found: ignore

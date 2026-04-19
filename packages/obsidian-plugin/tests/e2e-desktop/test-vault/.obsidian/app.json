@@ -1,0 +1,11 @@
+{
+  "showLineNumber": false,
+  "foldHeading": true,
+  "foldIndent": true,
+  "showFrontmatter": true,
+  "livePreview": false,
+  "readableLineLength": false,
+  "strictLineBreaks": false,
+  "defaultViewMode": "preview",
+  "theme": "obsidian"
+}
