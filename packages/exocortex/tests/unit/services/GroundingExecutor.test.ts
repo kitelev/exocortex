@@ -859,3 +859,192 @@ describe("GroundingExecutor", () => {
     });
   });
 });
+
+// =============================================================================
+// RFC-028 Findings 3+4 — grounding $input / $value user-input resolution
+// =============================================================================
+//
+// Failing regression suite covering the literal `$input` / `$value` placeholder
+// bug — `GroundingExecutor.substituteVariables` (line ~418) handles only
+// `$target` / `$now` / `$nowLocal` / `$today`. Buttons "Set Planned Start",
+// "Set Planned End", "Set Scheduled Date" (vault `85687461`, `afda78d9`,
+// `d222ddaf`) and "Set Result" (vault `c4616dcd`) ship `targetValue: "$input"`
+// / `"$value"`. The literal string passes through and gets written to
+// frontmatter as-is — P0 data corruption.
+//
+// Block intentionally appended at EOF to keep merge-conflict surface minimal
+// for the parallel 3.C.1 child (also touches this file with a different
+// `describe`). Helper / fixture functions are scoped INSIDE the describe to
+// avoid global-name collision with that child's later append.
+// =============================================================================
+
+describe("substituteVariables — $input/$value user-input resolution (Findings 3+4)", () => {
+  const TARGET_IRI = "https://exocortex.my/assets/test-asset-123";
+  const FILE_PATH = "/vault/test-asset.md";
+
+  // Local fixture helpers — DECLARED INSIDE describe to keep 3.C.1 append safe.
+  function createMockReader(content?: string) {
+    const defaultContent = content ?? "---\nfoo: bar\n---\nBody";
+    return {
+      readFile: jest.fn().mockResolvedValue(defaultContent),
+      fileExists: jest.fn().mockResolvedValue(true),
+      getMarkdownFiles: jest.fn().mockResolvedValue([]),
+    };
+  }
+
+  function createMockWriter() {
+    return {
+      createFile: jest.fn().mockResolvedValue(""),
+      updateFile: jest.fn().mockResolvedValue(undefined),
+      writeFile: jest.fn().mockResolvedValue(undefined),
+      deleteFile: jest.fn().mockResolvedValue(undefined),
+      renameFile: jest.fn().mockResolvedValue(undefined),
+    };
+  }
+
+  function makeGrounding(overrides: Record<string, unknown>): GroundingDefinition {
+    return {
+      id: "gnd-test-findings34",
+      label: "Test Grounding (Findings 3+4)",
+      type: GroundingType.PROPERTY_SET,
+      ...overrides,
+    } as unknown as GroundingDefinition;
+  }
+
+  function getWrittenContent(writer: ReturnType<typeof createMockWriter>): string {
+    expect(writer.updateFile).toHaveBeenCalledTimes(1);
+    return writer.updateFile.mock.calls[0][1] as string;
+  }
+
+  let reader: ReturnType<typeof createMockReader>;
+  let writer: ReturnType<typeof createMockWriter>;
+  let registry: ServiceRegistry;
+  let executor: GroundingExecutor;
+
+  beforeEach(() => {
+    reader = createMockReader();
+    writer = createMockWriter();
+    registry = new ServiceRegistry();
+    executor = new GroundingExecutor(reader, writer, registry);
+  });
+
+  it("resolves $input placeholder to user-provided value, not literal (Set Planned Start, Finding 3)", async () => {
+    // Mirrors vault grounding 85687461-* (Set Planned Start)
+    const grounding = makeGrounding({
+      targetProperty: "ems__Effort_plannedStartTimestamp",
+      targetValue: "$input",
+    });
+    const userInput = { value: "2026-04-19T10:00:00+0500" };
+
+    const result = await executor.execute(
+      grounding,
+      TARGET_IRI,
+      FILE_PATH,
+      userInput,
+    );
+
+    expect(result.success).toBe(true);
+    const written = getWrittenContent(writer);
+    expect(written).toContain(
+      "ems__Effort_plannedStartTimestamp: 2026-04-19T10:00:00+0500",
+    );
+    // The bug: literal "$input" is persisted into frontmatter
+    expect(written).not.toMatch(/ems__Effort_plannedStartTimestamp:\s*\$input/);
+  });
+
+  it("resolves $value placeholder to user-provided value (Set Result, Finding 4)", async () => {
+    // Mirrors vault grounding c4616dcd-* (Set Result)
+    const grounding = makeGrounding({
+      targetProperty: "ems__Effort_result",
+      targetValue: "$value",
+    });
+    const userInput = { value: "Completed successfully" };
+
+    const result = await executor.execute(
+      grounding,
+      TARGET_IRI,
+      FILE_PATH,
+      userInput,
+    );
+
+    expect(result.success).toBe(true);
+    const written = getWrittenContent(writer);
+    expect(written).toContain("ems__Effort_result: Completed successfully");
+    expect(written).not.toMatch(/ems__Effort_result:\s*\$value/);
+  });
+
+  it("fails loudly (does NOT silently write literal) when $input placeholder present but no userInput provided", async () => {
+    const grounding = makeGrounding({
+      targetProperty: "ems__Effort_plannedStartTimestamp",
+      targetValue: "$input",
+    });
+
+    const result = await executor.execute(
+      grounding,
+      TARGET_IRI,
+      FILE_PATH,
+      undefined,
+    );
+
+    // Outcome-based assertion: either explicit failure OR (if writer was called
+    // anyway) the literal "$input" string MUST NOT appear in frontmatter.
+    if (result.success) {
+      const written = getWrittenContent(writer);
+      expect(written).not.toMatch(
+        /ems__Effort_plannedStartTimestamp:\s*\$input/,
+      );
+    } else {
+      expect(writer.updateFile).not.toHaveBeenCalled();
+      expect(result.error).toMatch(
+        /input|placeholder|user input required|missing user input/i,
+      );
+    }
+  });
+
+  it.each([
+    [
+      "Set Planned Start",
+      "ems__Effort_plannedStartTimestamp",
+      "$input",
+      "2026-04-19T10:00:00+0500",
+    ],
+    [
+      "Set Planned End",
+      "ems__Effort_plannedEndTimestamp",
+      "$input",
+      "2026-04-19T18:00:00+0500",
+    ],
+    [
+      "Set Scheduled Date",
+      "ems__Effort_scheduledDate",
+      "$input",
+      "2026-04-20",
+    ],
+    [
+      "Set Result",
+      "ems__Effort_result",
+      "$value",
+      "Completed successfully",
+    ],
+  ])(
+    "button %s never persists literal %s placeholder as frontmatter value",
+    async (_label, property, placeholder, sampleValue) => {
+      const grounding = makeGrounding({
+        targetProperty: property,
+        targetValue: placeholder,
+      });
+      const userInput = { value: sampleValue };
+
+      await executor.execute(grounding, TARGET_IRI, FILE_PATH, userInput);
+
+      const written = getWrittenContent(writer);
+      // Literal placeholder MUST NOT appear in frontmatter value position
+      const literalRegex = new RegExp(
+        `${property}:\\s*\\${placeholder}\\b`,
+      );
+      expect(written).not.toMatch(literalRegex);
+      // User-provided value MUST appear
+      expect(written).toContain(`${property}: ${sampleValue}`);
+    },
+  );
+});
