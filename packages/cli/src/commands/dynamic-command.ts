@@ -10,6 +10,7 @@ import {
   GroundingExecutor,
   ServiceRegistry,
   GroundingType,
+  GenericAssetCreationService,
   type GroundingDefinition,
   type CommandBindingDefinition,
 } from "exocortex";
@@ -26,6 +27,7 @@ export interface DynCommandOptions {
   output?: OutputFormat;
   target?: string;
   dryRun?: boolean;
+  input?: string;
 }
 
 interface CommandFileInfo {
@@ -234,6 +236,7 @@ export function dynamicCommandCommand(): Command {
     .option("--target <filepath>", "Path to target asset file (relative to vault)")
     .option("--output <type>", "Response format: text|json", "text")
     .option("--dry-run", "Preview changes without modifying files")
+    .option("--input <json>", "JSON userInput for service_call groundings, e.g. '{\"label\":\"Task name\"}'")
     .action(async (uid: string, options: DynCommandOptions) => {
       const outputFormat = (options.output || "text") as OutputFormat;
       ErrorHandler.setFormat(outputFormat);
@@ -328,7 +331,12 @@ export function dynamicCommandCommand(): Command {
 
         // Execute grounding
         const serviceRegistry = new ServiceRegistry();
-        populateCliServiceRegistry(serviceRegistry);
+        const vaultAdapter = new FileSystemVaultAdapter(vaultPath);
+        const genericAssetCreationService = new GenericAssetCreationService(vaultAdapter);
+        populateCliServiceRegistry(serviceRegistry, {
+          vaultAdapter,
+          genericAssetCreationService,
+        });
         const nodeFsAdapter = new NodeFsAdapter(vaultPath);
         const groundingExecutor = new GroundingExecutor(
           nodeFsAdapter,
@@ -336,10 +344,27 @@ export function dynamicCommandCommand(): Command {
           serviceRegistry,
         );
 
+        let userInput: Record<string, unknown> | undefined;
+        if (options.input) {
+          try {
+            const parsed = JSON.parse(options.input);
+            if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+              throw new Error("must be a JSON object");
+            }
+            userInput = parsed as Record<string, unknown>;
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            console.error(`❌ --input: invalid JSON object (${msg})`);
+            process.exitCode = ExitCodes.INVALID_ARGUMENTS;
+            return;
+          }
+        }
+
         const result = await groundingExecutor.execute(
           command.grounding,
           targetIRI,
           options.target,
+          userInput,
         );
 
         if (outputFormat === "json") {

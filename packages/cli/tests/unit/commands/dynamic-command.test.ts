@@ -52,6 +52,9 @@ jest.unstable_mockModule("exocortex", () => ({
     has: jest.fn(),
     getRegisteredIds: jest.fn().mockReturnValue([]),
   })),
+  GenericAssetCreationService: jest.fn(() => ({
+    createAsset: jest.fn().mockResolvedValue({ path: "", basename: "", name: "" }),
+  })),
   GroundingType: {
     SPARQL_UPDATE: "sparql_update",
     PROPERTY_DELETE: "property_delete",
