@@ -430,8 +430,10 @@ function scanCommands(vaultPath: string): CommandFileInfo[] {
   const allFiles: Array<{ filePath: string; fm: Record<string, any> }> = [];
   collectParsedFiles(vaultPath, allFiles);
 
+  const classLabelByUid = buildClassLabelIndex(allFiles);
+
   for (const { filePath, fm } of allFiles) {
-    if (!hasClass(fm, "exocmd__Command")) continue;
+    if (!hasClass(fm, "exocmd__Command", classLabelByUid)) continue;
 
     const uid = fm["exo__Asset_uid"] ?? "";
     const label = fm["exo__Asset_label"] ?? extractLabelFromFilename(filePath);
@@ -445,7 +447,7 @@ function scanCommands(vaultPath: string): CommandFileInfo[] {
     if (groundingRef) {
       const groundingUid = normalizeWikilink(String(groundingRef));
       const groundingFile = allFiles.find(f =>
-        f.fm["exo__Asset_uid"] === groundingUid && hasClass(f.fm, "exocmd__Grounding"),
+        f.fm["exo__Asset_uid"] === groundingUid && hasClass(f.fm, "exocmd__Grounding", classLabelByUid),
       );
       if (groundingFile) {
         groundingType = groundingFile.fm["exocmd__Grounding_type"];
@@ -505,6 +507,8 @@ function validateCommands(vaultPath: string): ValidationIssue[] {
   const allFiles: Array<{ filePath: string; fm: Record<string, any> }> = [];
   collectParsedFiles(vaultPath, allFiles);
 
+  const classLabelByUid = buildClassLabelIndex(allFiles);
+
   // Build lookup maps
   const uidMap = new Map<string, { filePath: string; fm: Record<string, any> }>();
   for (const file of allFiles) {
@@ -514,7 +518,7 @@ function validateCommands(vaultPath: string): ValidationIssue[] {
 
   // Validate each command
   for (const { filePath, fm } of allFiles) {
-    if (!hasClass(fm, "exocmd__Command")) continue;
+    if (!hasClass(fm, "exocmd__Command", classLabelByUid)) continue;
 
     const uid = fm["exo__Asset_uid"] ?? "";
     const label = fm["exo__Asset_label"] ?? extractLabelFromFilename(filePath);
@@ -539,7 +543,7 @@ function validateCommands(vaultPath: string): ValidationIssue[] {
       const groundingFile = uidMap.get(groundingUid);
       if (!groundingFile) {
         commandIssues.push(`Grounding reference "${groundingUid}" not found in vault`);
-      } else if (!hasClass(groundingFile.fm, "exocmd__Grounding")) {
+      } else if (!hasClass(groundingFile.fm, "exocmd__Grounding", classLabelByUid)) {
         commandIssues.push(`Grounding reference "${groundingUid}" is not an exocmd__Grounding asset`);
       } else {
         // Validate grounding definition
@@ -582,7 +586,7 @@ function validateCommands(vaultPath: string): ValidationIssue[] {
       const preconditionFile = uidMap.get(preconditionUid);
       if (!preconditionFile) {
         commandIssues.push(`Precondition reference "${preconditionUid}" not found in vault`);
-      } else if (!hasClass(preconditionFile.fm, "exocmd__Precondition")) {
+      } else if (!hasClass(preconditionFile.fm, "exocmd__Precondition", classLabelByUid)) {
         commandIssues.push(`Precondition reference "${preconditionUid}" is not an exocmd__Precondition asset`);
       } else {
         // Validate precondition has either sparqlAsk or hostFunction
@@ -596,7 +600,7 @@ function validateCommands(vaultPath: string): ValidationIssue[] {
 
     // Check bindings exist for this command
     const hasBinding = allFiles.some(f => {
-      if (!hasClass(f.fm, "exocmd__CommandBinding")) return false;
+      if (!hasClass(f.fm, "exocmd__CommandBinding", classLabelByUid)) return false;
       const cmdRef = normalizeWikilink(String(f.fm["exocmd__CommandBinding_command"] ?? ""));
       return cmdRef === uid;
     });
@@ -721,7 +725,27 @@ function parseYamlFrontmatter(content: string): Record<string, any> {
   return result;
 }
 
-function hasClass(fm: Record<string, any>, className: string): boolean {
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function buildClassLabelIndex(
+  files: Array<{ filePath: string; fm: Record<string, any> }>,
+): Map<string, string> {
+  const idx = new Map<string, string>();
+  for (const { fm } of files) {
+    const uid = fm["exo__Asset_uid"];
+    const label = fm["exo__Asset_label"];
+    if (typeof uid === "string" && typeof label === "string") {
+      idx.set(uid, label);
+    }
+  }
+  return idx;
+}
+
+function hasClass(
+  fm: Record<string, any>,
+  className: string,
+  classLabelByUid?: Map<string, string>,
+): boolean {
   const instanceClass = fm["exo__Instance_class"];
   if (!instanceClass) return false;
 
@@ -731,6 +755,13 @@ function hasClass(fm: Record<string, any>, className: string): boolean {
     const match = cls.match(/\[\[([^|\]]+)/);
     const extracted = match ? match[1] : cls;
     if (extracted === className) return true;
+    // Issue #2863: starter-kit uses UUID-named class definition files
+    // (exo__Instance_class: "[[<uuid>]]"), so the wikilink target is a UUID,
+    // not the class name. Resolve UUID → exo__Asset_label via reverse index.
+    if (classLabelByUid && UUID_RE.test(extracted)) {
+      const resolved = classLabelByUid.get(extracted);
+      if (resolved === className) return true;
+    }
   }
   return false;
 }
