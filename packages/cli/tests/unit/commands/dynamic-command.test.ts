@@ -61,6 +61,9 @@ jest.unstable_mockModule("exocortex", () => ({
   PropertyCleanupService: jest.fn(() => ({
     cleanEmptyProperties: jest.fn().mockResolvedValue(undefined),
   })),
+  FixMissingLabelService: jest.fn(() => ({
+    fixMissingLabel: jest.fn().mockResolvedValue(undefined),
+  })),
   TaskStatusService: jest.fn(() => ({
     planForEvening: jest.fn().mockResolvedValue(undefined),
   })),

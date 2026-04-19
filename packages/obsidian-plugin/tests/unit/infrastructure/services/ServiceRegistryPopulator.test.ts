@@ -126,6 +126,7 @@ describe("ServiceRegistryPopulator", () => {
       "createRelatedProject",
       "archiveAsset",
       "cleanProperties",
+      "fixMissingLabel",
       "createTaskForDailyNote",
     ];
     for (const id of vaultDependentIds) {
@@ -453,6 +454,7 @@ describe("ServiceRegistryPopulator (with vaultAdapter)", () => {
       "createRelatedProject",
       "archiveAsset",
       "cleanProperties",
+      "fixMissingLabel",
       "createTaskForDailyNote",
     ];
     for (const id of vaultDependentIds) {
@@ -781,6 +783,45 @@ describe("ServiceRegistryPopulator (with vaultAdapter)", () => {
         frontmatter: { exo__Asset_uid: "different-uid" },
       });
       const service = registry.get("cleanProperties")!;
+      await expect(service.execute("nonexistent-iri")).rejects.toThrow(
+        "No file found for IRI",
+      );
+    });
+  });
+
+  describe("fixMissingLabel", () => {
+    it("sets exo__Asset_label to file.basename when the label is missing", async () => {
+      (deps.vaultAdapter!.read as jest.Mock).mockResolvedValue(
+        "---\nexo__Asset_uid: test-uid-123\n---\nBody",
+      );
+
+      const service = registry.get("fixMissingLabel")!;
+      await service.execute("test-uid-123");
+
+      expect(deps.vaultAdapter!.read).toHaveBeenCalledWith(mockIFile);
+      const modifyCall = (deps.vaultAdapter!.modify as jest.Mock).mock.calls[0];
+      expect(modifyCall).toBeDefined();
+      const written = modifyCall[1] as string;
+      expect(written).toContain("exo__Asset_label: test-uid-123");
+      expect(written).toContain("exo__Asset_uid: test-uid-123");
+    });
+
+    it("is a no-op when the asset already has a label", async () => {
+      (deps.vaultAdapter!.read as jest.Mock).mockResolvedValue(
+        "---\nexo__Asset_uid: test-uid-123\nexo__Asset_label: Existing\n---\nBody",
+      );
+
+      const service = registry.get("fixMissingLabel")!;
+      await service.execute("test-uid-123");
+
+      expect(deps.vaultAdapter!.modify).not.toHaveBeenCalled();
+    });
+
+    it("throws when target IRI cannot be resolved", async () => {
+      (deps.app.metadataCache.getFileCache as jest.Mock).mockReturnValue({
+        frontmatter: { exo__Asset_uid: "different-uid" },
+      });
+      const service = registry.get("fixMissingLabel")!;
       await expect(service.execute("nonexistent-iri")).rejects.toThrow(
         "No file found for IRI",
       );

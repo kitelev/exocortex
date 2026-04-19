@@ -138,6 +138,7 @@ export {
   type AssetPropertyDefinition,
 } from "./services/GenericAssetCreationService";
 export { ArchiveAssetService } from "./services/ArchiveAssetService";
+export { FixMissingLabelService } from "./services/FixMissingLabelService";
 export type {
   URIConstructionOptions,
   AssetMetadata,

@@ -6,6 +6,7 @@ import yaml from "js-yaml";
 import {
   ArchiveAssetService,
   EffortStatusWorkflow,
+  FixMissingLabelService,
   GenericAssetCreationService,
   PropertyCleanupService,
   ServiceRegistry,
@@ -53,6 +54,7 @@ describe("createRelatedProject (CLI)", () => {
   let archiveAssetService: ArchiveAssetService;
   let propertyCleanupService: PropertyCleanupService;
   let taskStatusService: TaskStatusService;
+  let fixMissingLabelService: FixMissingLabelService;
   let service: ReturnType<typeof createCreateRelatedProjectService>;
 
   beforeEach(() => {
@@ -61,6 +63,7 @@ describe("createRelatedProject (CLI)", () => {
     genericAssetCreationService = new GenericAssetCreationService(vaultAdapter);
     archiveAssetService = new ArchiveAssetService(vaultAdapter);
     propertyCleanupService = new PropertyCleanupService(vaultAdapter);
+    fixMissingLabelService = new FixMissingLabelService(vaultAdapter);
     taskStatusService = new TaskStatusService(
       vaultAdapter,
       new EffortStatusWorkflow(),
@@ -179,6 +182,7 @@ describe("createRelatedProject (CLI)", () => {
       archiveAssetService,
       taskStatusService,
       propertyCleanupService,
+      fixMissingLabelService,
     });
 
     const registered = registry.get("createRelatedProject");
@@ -202,6 +206,7 @@ describe("createRelatedProject (CLI)", () => {
       archiveAssetService,
       taskStatusService,
       propertyCleanupService,
+      fixMissingLabelService,
     });
     const registered = registry.get("createRelatedProject");
     expect(registered).toBeDefined();
