@@ -14,6 +14,7 @@ import {
   ArchiveAssetService,
   FixMissingLabelService,
   PropertyCleanupService,
+  RenameToUidService,
   EffortStatusWorkflow,
   StatusTimestampService,
   TaskStatusService,
@@ -342,6 +343,7 @@ export function dynamicCommandCommand(): Command {
         const archiveAssetService = new ArchiveAssetService(vaultAdapter);
         const propertyCleanupService = new PropertyCleanupService(vaultAdapter);
         const fixMissingLabelService = new FixMissingLabelService(vaultAdapter);
+        const renameToUidService = new RenameToUidService(vaultAdapter);
         const taskStatusService = new TaskStatusService(
           vaultAdapter,
           new EffortStatusWorkflow(),
@@ -354,6 +356,7 @@ export function dynamicCommandCommand(): Command {
           taskStatusService,
           propertyCleanupService,
           fixMissingLabelService,
+          renameToUidService,
         });
         const nodeFsAdapter = new NodeFsAdapter(vaultPath);
         const groundingExecutor = new GroundingExecutor(

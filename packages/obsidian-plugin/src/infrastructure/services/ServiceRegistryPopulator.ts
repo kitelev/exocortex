@@ -11,6 +11,7 @@ import {
   ArchiveAssetService,
   FixMissingLabelService,
   PropertyCleanupService,
+  RenameToUidService,
   DateFormatter,
   type IGroundingService,
   type UserInput,
@@ -287,6 +288,7 @@ export function populateServiceRegistry(
     const archiveAssetService = new ArchiveAssetService(vaultAdapter);
     const propertyCleanupService = new PropertyCleanupService(vaultAdapter);
     const fixMissingLabelService = new FixMissingLabelService(vaultAdapter);
+    const renameToUidService = new RenameToUidService(vaultAdapter);
 
     registry.register(
       "rollbackStatus",
@@ -462,6 +464,16 @@ export function populateServiceRegistry(
       wrapService(async (targetIRI: string) => {
         const iFile = resolveIFile(app, targetIRI, vaultAdapter);
         await fixMissingLabelService.fixMissingLabel(iFile);
+      }),
+    );
+
+    registry.register(
+      "renameToUid",
+      wrapService(async (targetIRI: string) => {
+        const iFile = resolveIFile(app, targetIRI, vaultAdapter);
+        const metadata =
+          (vaultAdapter.getFrontmatter(iFile) as Record<string, unknown>) ?? {};
+        await renameToUidService.renameToUid(iFile, metadata);
       }),
     );
 

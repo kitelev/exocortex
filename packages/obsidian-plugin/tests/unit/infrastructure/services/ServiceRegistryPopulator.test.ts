@@ -70,6 +70,14 @@ function createMockDeps(withVaultAdapter = false): ServiceRegistryDeps {
       modify: jest.fn().mockResolvedValue(undefined),
       create: jest.fn().mockResolvedValue(mockIFile),
       createFolder: jest.fn().mockResolvedValue(undefined),
+      rename: jest.fn().mockResolvedValue(undefined),
+      updateLinks: jest.fn().mockResolvedValue(undefined),
+      process: jest.fn().mockImplementation(
+        async (_file: unknown, fn: (content: string) => string) => {
+          const content = "---\nexo__Asset_uid: test\n---\nBody";
+          return fn(content);
+        },
+      ),
       toTFile: jest.fn().mockReturnValue({
         path: mockIFile.path,
         basename: mockIFile.basename,
@@ -127,6 +135,7 @@ describe("ServiceRegistryPopulator", () => {
       "archiveAsset",
       "cleanProperties",
       "fixMissingLabel",
+      "renameToUid",
       "createTaskForDailyNote",
     ];
     for (const id of vaultDependentIds) {
@@ -455,6 +464,7 @@ describe("ServiceRegistryPopulator (with vaultAdapter)", () => {
       "archiveAsset",
       "cleanProperties",
       "fixMissingLabel",
+      "renameToUid",
       "createTaskForDailyNote",
     ];
     for (const id of vaultDependentIds) {
@@ -825,6 +835,54 @@ describe("ServiceRegistryPopulator (with vaultAdapter)", () => {
       await expect(service.execute("nonexistent-iri")).rejects.toThrow(
         "No file found for IRI",
       );
+    });
+  });
+
+  describe("renameToUid", () => {
+    it("renames the target file to its exo__Asset_uid.md", async () => {
+      (deps.vaultAdapter!.getFrontmatter as jest.Mock).mockReturnValueOnce({
+        exo__Asset_uid: "renamed-uid-001",
+        exo__Asset_label: "Original Label",
+      });
+
+      const service = registry.get("renameToUid")!;
+      await service.execute("test-uid-123");
+
+      expect(deps.vaultAdapter!.rename).toHaveBeenCalledWith(
+        mockIFile,
+        expect.stringMatching(/renamed-uid-001\.md$/),
+      );
+    });
+
+    it("updates wikilinks across the vault when file is renamed", async () => {
+      (deps.vaultAdapter!.getFrontmatter as jest.Mock).mockReturnValueOnce({
+        exo__Asset_uid: "newuid-xyz",
+        exo__Asset_label: "Foo",
+      });
+
+      const service = registry.get("renameToUid")!;
+      await service.execute("test-uid-123");
+
+      expect(deps.vaultAdapter!.updateLinks).toHaveBeenCalled();
+    });
+
+    it("throws when target IRI cannot be resolved", async () => {
+      (deps.app.metadataCache.getFileCache as jest.Mock).mockReturnValue({
+        frontmatter: { exo__Asset_uid: "different-uid" },
+      });
+      const service = registry.get("renameToUid")!;
+      await expect(service.execute("nonexistent-iri")).rejects.toThrow(
+        "No file found for IRI",
+      );
+    });
+
+    it("throws when asset has no exo__Asset_uid", async () => {
+      (deps.vaultAdapter!.getFrontmatter as jest.Mock).mockReturnValueOnce({
+        exo__Asset_label: "NoUid",
+      });
+
+      const service = registry.get("renameToUid")!;
+      await expect(service.execute("test-uid-123")).rejects.toThrow(/uid/i);
     });
   });
 
