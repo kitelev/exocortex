@@ -1189,3 +1189,239 @@ describe("Convert to Task grounding — end-to-end wiring (Finding 5)", () => {
     expect(written).toContain('exo__Asset_label: "Audit Project"');
   });
 });
+
+// =============================================================================
+// RFC-028 Finding 5 completion — production-shape dispatch for Convert commands
+// =============================================================================
+//
+// The fix shipped in PR #2860 short-circuits on `serviceId === "convertToTask"`,
+// which is the shape used by unit-test fixtures. But the real vault + starter-kit
+// grounding `abdbdf09` ("Convert to task") ships with `serviceId = "updateProperty"`
+// + `targetProperty = "exo__Instance_class"` + `targetValue = "ems__Task"`.
+//
+// The CommandResolver parser overrides `targetProperty` with `Grounding_serviceId`
+// for service_call groundings, so at executor time the definition looks like:
+//   { type: service_call, targetProperty: "updateProperty", targetValue: "ems__Task" }
+//
+// That shape DOES NOT match the short-circuit, falls through to
+// `serviceRegistry.get("updateProperty")`, which requires `userInput.property`
+// → runtime error "updateProperty requires userInput.property" (seen live in
+// vault v15.105.4 verification, Task 2f7c7e56).
+//
+// Scope: extend dispatch to cover BOTH Convert groundings without touching the
+// vault data layer. Convert to Project grounding `e8c1d18a` follows the same
+// pattern with `targetValue = "ems__Project"` and is wired to `b1b6978e` via
+// binding `148aaf8c` (targetClass: ems__Task) — active UI surface.
+// =============================================================================
+
+describe("Convert commands — production-shape dispatch (Finding 5 completion)", () => {
+  const TARGET_IRI = "https://exocortex.my/assets/convert-under-test";
+  const FILE_PATH = "/vault/convert-under-test.md";
+
+  function createConvertReader(sourceClass: "ems__Project" | "ems__Task") {
+    const content = [
+      "---",
+      "exo__Asset_uid: convert-under-test",
+      'exo__Asset_label: "Audit Asset"',
+      "exo__Instance_class:",
+      `  - "[[${sourceClass}]]"`,
+      'ems__Effort_area: "[[area-uuid]]"',
+      'ems__Effort_status: "[[ems__EffortStatusDraft]]"',
+      "---",
+      "",
+      "Body",
+    ].join("\n");
+    return {
+      readFile: jest.fn().mockResolvedValue(content),
+      fileExists: jest.fn().mockResolvedValue(true),
+      getMarkdownFiles: jest.fn().mockResolvedValue([]),
+    };
+  }
+
+  function createWriter() {
+    return {
+      createFile: jest.fn().mockResolvedValue(""),
+      updateFile: jest.fn().mockResolvedValue(undefined),
+      writeFile: jest.fn().mockResolvedValue(undefined),
+      deleteFile: jest.fn().mockResolvedValue(undefined),
+      renameFile: jest.fn().mockResolvedValue(undefined),
+    };
+  }
+
+  function makeSvcCall(overrides: Record<string, unknown>): GroundingDefinition {
+    return {
+      id: "gnd-prod-shape",
+      label: "Prod-shape service_call",
+      type: GroundingType.SERVICE_CALL,
+      ...overrides,
+    } as unknown as GroundingDefinition;
+  }
+
+  let reader: ReturnType<typeof createConvertReader>;
+  let writer: ReturnType<typeof createWriter>;
+  let registry: ServiceRegistry;
+  let executor: GroundingExecutor;
+
+  describe("Convert to Task (production grounding shape)", () => {
+    beforeEach(() => {
+      reader = createConvertReader("ems__Project");
+      writer = createWriter();
+      registry = new ServiceRegistry();
+      executor = new GroundingExecutor(reader, writer, registry);
+    });
+
+    it("flips class to ems__Task when serviceId=updateProperty + targetValue=ems__Task", async () => {
+      // Arrange: grounding matches parsed shape of vault file abdbdf09
+      // after CommandResolver's serviceId-overrides-targetProperty step.
+      const grounding = makeSvcCall({
+        targetProperty: "updateProperty",
+        targetValue: "ems__Task",
+      });
+
+      // Act
+      const result = await executor.execute(
+        grounding,
+        TARGET_IRI,
+        FILE_PATH,
+        undefined,
+      );
+
+      // Assert
+      expect(result.success).toBe(true);
+      expect(writer.updateFile).toHaveBeenCalledTimes(1);
+      const written = writer.updateFile.mock.calls[0][1] as string;
+      expect(written).toMatch(/exo__Instance_class:\s*\[?\s*"\[\[ems__Task\]\]"/);
+      expect(written).not.toMatch(/exo__Instance_class:[\s\S]*?ems__Project/);
+    });
+
+    it("preserves other frontmatter properties (area, status, label)", async () => {
+      const grounding = makeSvcCall({
+        targetProperty: "updateProperty",
+        targetValue: "ems__Task",
+      });
+
+      const result = await executor.execute(
+        grounding,
+        TARGET_IRI,
+        FILE_PATH,
+        undefined,
+      );
+
+      expect(result.success).toBe(true);
+      const written = writer.updateFile.mock.calls[0][1] as string;
+      expect(written).toContain('ems__Effort_area: "[[area-uuid]]"');
+      expect(written).toContain(
+        'ems__Effort_status: "[[ems__EffortStatusDraft]]"',
+      );
+      expect(written).toContain('exo__Asset_label: "Audit Asset"');
+    });
+  });
+
+  describe("Convert to Project (production grounding shape)", () => {
+    beforeEach(() => {
+      reader = createConvertReader("ems__Task");
+      writer = createWriter();
+      registry = new ServiceRegistry();
+      executor = new GroundingExecutor(reader, writer, registry);
+    });
+
+    it("flips class to ems__Project when serviceId=updateProperty + targetValue=ems__Project", async () => {
+      // Arrange: grounding matches parsed shape of vault file e8c1d18a
+      // ("Convert to project"), mirror of Convert-to-Task path.
+      const grounding = makeSvcCall({
+        targetProperty: "updateProperty",
+        targetValue: "ems__Project",
+      });
+
+      const result = await executor.execute(
+        grounding,
+        TARGET_IRI,
+        FILE_PATH,
+        undefined,
+      );
+
+      expect(result.success).toBe(true);
+      expect(writer.updateFile).toHaveBeenCalledTimes(1);
+      const written = writer.updateFile.mock.calls[0][1] as string;
+      expect(written).toMatch(
+        /exo__Instance_class:\s*\[?\s*"\[\[ems__Project\]\]"/,
+      );
+      expect(written).not.toMatch(/exo__Instance_class:[\s\S]*?ems__Task/);
+    });
+
+    it("preserves other frontmatter properties after Task→Project flip", async () => {
+      const grounding = makeSvcCall({
+        targetProperty: "updateProperty",
+        targetValue: "ems__Project",
+      });
+
+      const result = await executor.execute(
+        grounding,
+        TARGET_IRI,
+        FILE_PATH,
+        undefined,
+      );
+
+      expect(result.success).toBe(true);
+      const written = writer.updateFile.mock.calls[0][1] as string;
+      expect(written).toContain('ems__Effort_area: "[[area-uuid]]"');
+      expect(written).toContain('exo__Asset_label: "Audit Asset"');
+    });
+  });
+
+  describe("Link-to-parent (non-regression: updateProperty with userInput must not short-circuit)", () => {
+    beforeEach(() => {
+      reader = createConvertReader("ems__Task");
+      writer = createWriter();
+      registry = new ServiceRegistry();
+      executor = new GroundingExecutor(reader, writer, registry);
+    });
+
+    it("dispatches to registered updateProperty service when targetProperty !== exo__Instance_class", async () => {
+      // Arrange: grounding mirrors vault file 30b9e8d8 ("Link to parent").
+      // After parser override, targetProperty ends up as serviceId="updateProperty",
+      // BUT real distinguishing signal is the presence of userInput + absence of
+      // class-flip targetValue. Register a mock updateProperty service and assert
+      // it is invoked (i.e. the composite short-circuit did NOT swallow this).
+      const mockService = { execute: jest.fn().mockResolvedValue(undefined) };
+      registry.register("updateProperty", mockService);
+
+      const grounding = makeSvcCall({
+        targetProperty: "updateProperty",
+        // targetValue absent — Link-to-parent drives the new parent via userInput
+      });
+
+      const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH, {
+        property: "ems__Effort_parent",
+        value: "[[parent-uuid]]",
+      });
+
+      expect(result.success).toBe(true);
+      expect(mockService.execute).toHaveBeenCalledTimes(1);
+      // Writer should NOT have been called by a Convert short-circuit
+      expect(writer.updateFile).not.toHaveBeenCalled();
+    });
+
+    it("also non-regresses when targetValue is a non-class-flip string", async () => {
+      // Defensive: even if a future grounding supplies a targetValue that is
+      // neither "ems__Task" nor "ems__Project", dispatch must still reach
+      // the registered service (not short-circuit).
+      const mockService = { execute: jest.fn().mockResolvedValue(undefined) };
+      registry.register("updateProperty", mockService);
+
+      const grounding = makeSvcCall({
+        targetProperty: "updateProperty",
+        targetValue: "some-other-value",
+      });
+
+      const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH, {
+        property: "any__prop",
+        value: "x",
+      });
+
+      expect(result.success).toBe(true);
+      expect(mockService.execute).toHaveBeenCalledTimes(1);
+      expect(writer.updateFile).not.toHaveBeenCalled();
+    });
+  });
+});
