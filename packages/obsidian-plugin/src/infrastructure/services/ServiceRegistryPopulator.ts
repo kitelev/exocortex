@@ -10,6 +10,7 @@ import {
   GenericAssetCreationService,
   ArchiveAssetService,
   FixMissingLabelService,
+  FolderRepairService,
   PropertyCleanupService,
   RenameToUidService,
   DateFormatter,
@@ -289,6 +290,7 @@ export function populateServiceRegistry(
     const propertyCleanupService = new PropertyCleanupService(vaultAdapter);
     const fixMissingLabelService = new FixMissingLabelService(vaultAdapter);
     const renameToUidService = new RenameToUidService(vaultAdapter);
+    const folderRepairService = new FolderRepairService(vaultAdapter);
 
     registry.register(
       "rollbackStatus",
@@ -474,6 +476,29 @@ export function populateServiceRegistry(
         const metadata =
           (vaultAdapter.getFrontmatter(iFile) as Record<string, unknown>) ?? {};
         await renameToUidService.renameToUid(iFile, metadata);
+      }),
+    );
+
+    registry.register(
+      "repairFolder",
+      wrapService(async (targetIRI: string) => {
+        const iFile = resolveIFile(app, targetIRI, vaultAdapter);
+        const metadata =
+          (vaultAdapter.getFrontmatter(iFile) as Record<string, unknown>) ?? {};
+        const expectedFolder = await folderRepairService.getExpectedFolder(
+          iFile,
+          metadata,
+        );
+        if (expectedFolder === null) {
+          throw new Error(
+            "repairFolder: cannot determine expected folder (missing exo__Asset_isDefinedBy or referenced asset not found)",
+          );
+        }
+        const currentFolder = iFile.parent?.path ?? "";
+        if (currentFolder === expectedFolder) {
+          return;
+        }
+        await folderRepairService.repairFolder(iFile, expectedFolder);
       }),
     );
 

@@ -7,6 +7,7 @@ import {
   GenericAssetCreationService,
   ArchiveAssetService,
   FixMissingLabelService,
+  FolderRepairService,
   PropertyCleanupService,
   RenameToUidService,
   TaskStatusService,
@@ -75,6 +76,7 @@ export interface CliServiceRegistryDeps {
   propertyCleanupService: PropertyCleanupService;
   fixMissingLabelService: FixMissingLabelService;
   renameToUidService: RenameToUidService;
+  folderRepairService: FolderRepairService;
 }
 
 function resolveTargetFile(vaultAdapter: IVaultAdapter, targetIRI: string): IFile {
@@ -275,6 +277,51 @@ export function createRenameToUidService(
 }
 
 /**
+ * CLI-side implementation of the `repairFolder` service (#2872).
+ *
+ * Mirrors the plugin handler in
+ * `packages/obsidian-plugin/src/infrastructure/services/ServiceRegistryPopulator.ts`.
+ * Delegates to the shared `FolderRepairService`: derives the expected folder
+ * from `exo__Asset_isDefinedBy` and moves the target file there. Idempotent —
+ * a no-op when the asset is already in the expected folder. Throws when the
+ * expected folder cannot be derived (missing `exo__Asset_isDefinedBy` or the
+ * referenced asset is not in the vault) so the CLI exits non-zero and dyncommand
+ * groundings surface the failure instead of silently no-op'ing (#2864 pattern).
+ *
+ * Storage-agnostic via `IVaultAdapter`, so plugin and CLI stay byte-identical
+ * for the same input. The separate hardcoded `cli command repair-folder`
+ * subcommand (`FolderRepairExecutor`) remains for batch/scripting workflows
+ * and is not touched by this wiring.
+ */
+export function createRepairFolderService(
+  vaultAdapter: IVaultAdapter,
+  folderRepairService: FolderRepairService,
+): IGroundingService {
+  return {
+    async execute(targetIRI: string): Promise<void> {
+      const targetFile = resolveTargetFile(vaultAdapter, targetIRI);
+      const metadata =
+        (vaultAdapter.getFrontmatter(targetFile) as Record<string, unknown>) ??
+        {};
+      const expectedFolder = await folderRepairService.getExpectedFolder(
+        targetFile,
+        metadata,
+      );
+      if (expectedFolder === null) {
+        throw new Error(
+          "repairFolder: cannot determine expected folder (missing exo__Asset_isDefinedBy or referenced asset not found)",
+        );
+      }
+      const currentFolder = targetFile.parent?.path ?? "";
+      if (currentFolder === expectedFolder) {
+        return;
+      }
+      await folderRepairService.repairFolder(targetFile, expectedFolder);
+    },
+  };
+}
+
+/**
  * CLI-side implementation of the `planForEvening` service (#2868).
  *
  * Mirrors the plugin handler in
@@ -358,6 +405,13 @@ export function populateCliServiceRegistry(
       createRenameToUidService(
         deps.vaultAdapter,
         deps.renameToUidService,
+      ),
+    );
+    registry.register(
+      "repairFolder",
+      createRepairFolderService(
+        deps.vaultAdapter,
+        deps.folderRepairService,
       ),
     );
     registry.register(
