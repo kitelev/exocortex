@@ -122,6 +122,53 @@ export function createCreateRelatedTaskService(
 }
 
 /**
+ * CLI-side implementation of the `createRelatedProject` service (#2866).
+ *
+ * Mirrors the plugin handler in
+ * `packages/obsidian-plugin/src/infrastructure/services/ServiceRegistryPopulator.ts`
+ * minus workspace/leaf side-effects. Parent-context inheritance
+ * (ems__Effort_area vs ems__Effort_parent) is delegated to
+ * `GenericAssetCreationService.inheritParentContext`, which covers the
+ * `ems__Project` branch symmetrically with `ems__Task`.
+ */
+export function createCreateRelatedProjectService(
+  vaultAdapter: IVaultAdapter,
+  genericAssetCreationService: GenericAssetCreationService,
+): IGroundingService {
+  return {
+    async execute(targetIRI: string, userInput?: UserInput): Promise<void> {
+      const label = userInput?.label as string | undefined;
+      if (!label) {
+        throw new Error("createRelatedProject requires userInput.label");
+      }
+
+      const parentFile = resolveTargetFile(vaultAdapter, targetIRI);
+      const parentMetadata =
+        (vaultAdapter.getFrontmatter(parentFile) as Record<string, unknown>) ?? {};
+      const folderPath = parentFile.parent?.path || "";
+
+      const propertyValues: Record<string, unknown> = {
+        ems__Effort_status: '"[[ems__EffortStatusDraft]]"',
+      };
+
+      const explicitParentProperty = userInput?.parentProperty as string | undefined;
+      if (explicitParentProperty && parentFile.basename) {
+        propertyValues[explicitParentProperty] = `"[[${parentFile.basename}]]"`;
+      }
+
+      await genericAssetCreationService.createAsset({
+        className: "ems__Project",
+        label,
+        folderPath,
+        propertyValues,
+        parentFile,
+        parentMetadata,
+      });
+    },
+  };
+}
+
+/**
  * Populate a ServiceRegistry with fail-loud stubs for all well-known services.
  *
  * Pre-#2864 the stubs resolved silently, so `dyncommand exec` on service_call
@@ -147,6 +194,13 @@ export function populateCliServiceRegistry(
     registry.register(
       "createRelatedTask",
       createCreateRelatedTaskService(
+        deps.vaultAdapter,
+        deps.genericAssetCreationService,
+      ),
+    );
+    registry.register(
+      "createRelatedProject",
+      createCreateRelatedProjectService(
         deps.vaultAdapter,
         deps.genericAssetCreationService,
       ),
