@@ -325,6 +325,24 @@ export class GroundingExecutor {
       return await this.executeConvertToTask(filePath);
     }
 
+    // RFC-028 Finding 5 completion: production vault + starter-kit groundings
+    // `abdbdf09` (Convert to task) and `e8c1d18a` (Convert to project) ship
+    // with `serviceId = "updateProperty"` + `targetValue = "ems__Task|Project"`.
+    // The grounding schema overloads `targetProperty` as serviceId for
+    // service_call, so at dispatch time we can detect the class-flip intent
+    // from (serviceId=updateProperty, targetValue=ems__Task|ems__Project).
+    // Link-to-parent (30b9e8d8) uses the same serviceId but carries NO
+    // targetValue (driven via inputSchema+userInput) and so flows past this
+    // short-circuit into the registered updateProperty service below.
+    if (serviceId === "updateProperty") {
+      if (grounding.targetValue === "ems__Task") {
+        return await this.executeConvertToTask(filePath);
+      }
+      if (grounding.targetValue === "ems__Project") {
+        return await this.executeConvertToProject(filePath);
+      }
+    }
+
     const service = this.serviceRegistry.get(serviceId);
     if (!service) {
       return {
@@ -356,6 +374,17 @@ export class GroundingExecutor {
       content,
       "exo__Instance_class",
       `["[[ems__Task]]"]`,
+    );
+    await this.fileWriter.updateFile(filePath, updated);
+    return { success: true };
+  }
+
+  private async executeConvertToProject(filePath: string): Promise<ExecutionResult> {
+    const content = await this.fileReader.readFile(filePath);
+    const updated = this.frontmatterService.updateProperty(
+      content,
+      "exo__Instance_class",
+      `["[[ems__Project]]"]`,
     );
     await this.fileWriter.updateFile(filePath, updated);
     return { success: true };
