@@ -137,6 +137,7 @@ export {
   type GenericAssetCreationConfig,
   type AssetPropertyDefinition,
 } from "./services/GenericAssetCreationService";
+export { ArchiveAssetService } from "./services/ArchiveAssetService";
 export type {
   URIConstructionOptions,
   AssetMetadata,

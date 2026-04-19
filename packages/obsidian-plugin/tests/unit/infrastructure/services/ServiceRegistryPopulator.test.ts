@@ -124,6 +124,7 @@ describe("ServiceRegistryPopulator", () => {
       "copyLabelToAliases",
       "createRelatedTask",
       "createRelatedProject",
+      "archiveAsset",
       "createTaskForDailyNote",
     ];
     for (const id of vaultDependentIds) {
@@ -449,6 +450,7 @@ describe("ServiceRegistryPopulator (with vaultAdapter)", () => {
       "copyLabelToAliases",
       "createRelatedTask",
       "createRelatedProject",
+      "archiveAsset",
       "createTaskForDailyNote",
     ];
     for (const id of vaultDependentIds) {
@@ -694,6 +696,58 @@ describe("ServiceRegistryPopulator (with vaultAdapter)", () => {
       const service = registry.get("createRelatedProject")!;
       await expect(service.execute("test-uid-123", {})).rejects.toThrow(
         "createRelatedProject requires userInput.label",
+      );
+    });
+  });
+
+  describe("archiveAsset", () => {
+    beforeEach(() => {
+      (deps.vaultAdapter!.read as jest.Mock).mockResolvedValue(
+        "---\nexo__Asset_uid: test-uid-123\nexo__Asset_label: Done Task\nems__Effort_status: \"[[ems__EffortStatusDone]]\"\n---\nBody",
+      );
+    });
+
+    it("should set archived: true on target asset", async () => {
+      const service = registry.get("archiveAsset")!;
+      await service.execute("test-uid-123");
+
+      expect(deps.vaultAdapter!.read).toHaveBeenCalledWith(mockIFile);
+      expect(deps.vaultAdapter!.modify).toHaveBeenCalledWith(
+        mockIFile,
+        expect.stringMatching(/\narchived: true\n/),
+      );
+    });
+
+    it("should remove aliases when archiving", async () => {
+      (deps.vaultAdapter!.read as jest.Mock).mockResolvedValue(
+        "---\nexo__Asset_uid: test-uid-123\nexo__Asset_label: Done Task\naliases:\n  - \"Done Task\"\n---\nBody",
+      );
+      const service = registry.get("archiveAsset")!;
+      await service.execute("test-uid-123");
+
+      const modifyCall = (deps.vaultAdapter!.modify as jest.Mock).mock.calls[0];
+      const written = modifyCall[1] as string;
+      expect(written).toMatch(/\narchived: true\n/);
+      expect(written).not.toMatch(/\naliases:/);
+    });
+
+    it("should be a no-op when asset is already archived with no aliases", async () => {
+      (deps.vaultAdapter!.read as jest.Mock).mockResolvedValue(
+        "---\nexo__Asset_uid: test-uid-123\narchived: true\n---\nBody",
+      );
+      const service = registry.get("archiveAsset")!;
+      await service.execute("test-uid-123");
+
+      expect(deps.vaultAdapter!.modify).not.toHaveBeenCalled();
+    });
+
+    it("should throw when target IRI cannot be resolved", async () => {
+      (deps.app.metadataCache.getFileCache as jest.Mock).mockReturnValue({
+        frontmatter: { exo__Asset_uid: "different-uid" },
+      });
+      const service = registry.get("archiveAsset")!;
+      await expect(service.execute("nonexistent-iri")).rejects.toThrow(
+        "No file found for IRI",
       );
     });
   });

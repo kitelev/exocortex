@@ -4,6 +4,7 @@ import path from "path";
 import os from "os";
 import yaml from "js-yaml";
 import {
+  ArchiveAssetService,
   GenericAssetCreationService,
   ServiceRegistry,
 } from "exocortex";
@@ -45,12 +46,14 @@ describe("createRelatedTask (CLI)", () => {
   let vaultRoot: string;
   let vaultAdapter: FileSystemVaultAdapter;
   let genericAssetCreationService: GenericAssetCreationService;
+  let archiveAssetService: ArchiveAssetService;
   let service: ReturnType<typeof createCreateRelatedTaskService>;
 
   beforeEach(() => {
     vaultRoot = fs.mkdtempSync(path.join(os.tmpdir(), "cli-createrelatedtask-"));
     vaultAdapter = new FileSystemVaultAdapter(vaultRoot);
     genericAssetCreationService = new GenericAssetCreationService(vaultAdapter);
+    archiveAssetService = new ArchiveAssetService(vaultAdapter);
     service = createCreateRelatedTaskService(vaultAdapter, genericAssetCreationService);
   });
 
@@ -143,6 +146,7 @@ describe("createRelatedTask (CLI)", () => {
     populateCliServiceRegistry(registry, {
       vaultAdapter,
       genericAssetCreationService,
+      archiveAssetService,
     });
 
     const registered = registry.get("createRelatedTask");
@@ -163,6 +167,7 @@ describe("createRelatedTask (CLI)", () => {
     populateCliServiceRegistry(registry, {
       vaultAdapter,
       genericAssetCreationService,
+      archiveAssetService,
     });
     const registered = registry.get("createRelatedTask");
     expect(registered).toBeDefined();

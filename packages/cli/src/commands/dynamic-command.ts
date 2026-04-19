@@ -11,6 +11,7 @@ import {
   ServiceRegistry,
   GroundingType,
   GenericAssetCreationService,
+  ArchiveAssetService,
   type GroundingDefinition,
   type CommandBindingDefinition,
 } from "exocortex";
@@ -333,9 +334,11 @@ export function dynamicCommandCommand(): Command {
         const serviceRegistry = new ServiceRegistry();
         const vaultAdapter = new FileSystemVaultAdapter(vaultPath);
         const genericAssetCreationService = new GenericAssetCreationService(vaultAdapter);
+        const archiveAssetService = new ArchiveAssetService(vaultAdapter);
         populateCliServiceRegistry(serviceRegistry, {
           vaultAdapter,
           genericAssetCreationService,
+          archiveAssetService,
         });
         const nodeFsAdapter = new NodeFsAdapter(vaultPath);
         const groundingExecutor = new GroundingExecutor(
