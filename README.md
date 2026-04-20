@@ -295,10 +295,13 @@ See **[SPARQL 1.2 Features](./docs/sparql/SPARQL-1.2-Features.md)** for complete
 ```bash
 git clone https://github.com/kitelev/exocortex
 cd exocortex
+git submodule update --init --recursive
 npm install
 npm run build
 npm run test:all
 ```
+
+The `git submodule update --init --recursive` step hydrates `packages/starter-kit-fixtures`, which mirrors the [`exocortex-starter-kit`](https://github.com/kitelev/exocortex-starter-kit) repo and is consumed by unit and E2E tests. If you forget it, tests that read fixture Commands will fail with ENOENT. See [docs/fixture-access.md](./docs/fixture-access.md) for the rationale and fallback plan.
 
 This project is developed primarily by AI agents (Claude Code, GitHub Copilot) following documented patterns. Human contributions welcome!
 
