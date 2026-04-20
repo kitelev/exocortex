@@ -570,14 +570,7 @@ jobs:
   # Note: Named e2e-shard-* to avoid conflict with branch protection rule for "e2e-tests"
   e2e-shard:
     runs-on: ubuntu-latest
-    # timeout-minutes 5→8 for PR #2895 starter-kit-smoke runtime debug window.
-    # Surfaced shard 3 cancellation pattern (24687335513 + 24688241551 + 24689082400):
-    # 6 active smoke tests × ~25s + 4 retries × ~25s + 7 existing shard-3 tests + Docker build
-    # ≈ 5.5min total — exceeds 5min and even 6min headroom. Cancellation kills `if: always()`
-    # upload steps (timeout-minutes triggers job-level kill, not step-level).
-    # 8min headroom guarantees natural-completion + artifact upload for root-cause investigation.
-    # Revert to 5 after follow-up issue resolves the smoke spec runtime gap.
-    timeout-minutes: 8
+    timeout-minutes: 5
     needs: build
     strategy:
       fail-fast: false
