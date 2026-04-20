@@ -1,0 +1,129 @@
+name: Phase 0 wall-time benchmark (RFC-CI-Tests)
+
+on:
+  pull_request:
+    paths:
+      - "packages/cli/tests/integration/phase0-benchmark/**"
+      - "scripts/phase0-benchmark-subprocess.sh"
+      - ".github/workflows/benchmark-phase0.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    name: 5 pilot commands × 3 scenarios
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout exocortex
+        uses: actions/checkout@v6
+        with:
+          path: exocortex
+
+      - name: Checkout starter-kit
+        uses: actions/checkout@v6
+        with:
+          repository: kitelev/exocortex-starter-kit
+          path: exocortex-starter-kit
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: exocortex/package-lock.json
+
+      - name: Install dependencies
+        working-directory: exocortex
+        run: npm ci
+
+      - name: Build CLI
+        working-directory: exocortex
+        run: npm --workspace @kitelev/exocortex-cli run build
+
+      - name: Run jest-suite benchmark (amortized — primary gate input)
+        id: jest_benchmark
+        working-directory: exocortex
+        env:
+          PHASE0_STARTER_KIT_PATH: ${{ github.workspace }}/exocortex-starter-kit
+          PHASE0_BENCHMARK_OUT: ${{ github.workspace }}/phase0-benchmark-jest.json
+          NODE_OPTIONS: "--max-old-space-size=4096 --experimental-vm-modules"
+        run: |
+          node --experimental-vm-modules node_modules/jest/bin/jest.js \
+            --config packages/cli/jest.config.js \
+            --testPathPatterns "phase0-benchmark/benchmark.test.ts" \
+            --runInBand \
+            --verbose \
+            --no-coverage
+
+      - name: Run subprocess benchmark (worst-case upper bound)
+        id: subprocess_benchmark
+        working-directory: exocortex
+        env:
+          STARTER_KIT_PATH: ${{ github.workspace }}/exocortex-starter-kit
+          CLI_DIST: ${{ github.workspace }}/exocortex/packages/cli/dist/index.js
+          PHASE0_BENCHMARK_SUBPROCESS_OUT: ${{ github.workspace }}/phase0-benchmark-subprocess.json
+        run: bash scripts/phase0-benchmark-subprocess.sh
+
+      - name: Render step summary
+        if: always()
+        run: |
+          JEST=${{ github.workspace }}/phase0-benchmark-jest.json
+          SUB=${{ github.workspace }}/phase0-benchmark-subprocess.json
+          {
+            echo "# Phase 0 Benchmark — wall-time per pilot command"
+            echo ""
+            echo "## Jest-suite (amortized — primary gate input)"
+            if [[ -s "$JEST" ]]; then
+              node -e "
+                const r = require('$JEST');
+                console.log('| Command | Scenario | Wall-time (ms) | Outcome |');
+                console.log('|---|---|---:|---|');
+                for (const s of r.scenarios) {
+                  console.log(\`| \${s.commandLabel} (\${s.commandUid.slice(0,8)}) | \${s.scenario} | \${s.wallTimeMs.toFixed(1)} | \${s.outcome} |\`);
+                }
+                console.log('');
+                console.log(\`- **buildTripleStore (amortized):** \${r.buildTripleStoreMs.toFixed(0)} ms\`);
+                console.log(\`- **avg per scenario:** \${r.avgPerScenarioMs.toFixed(1)} ms\`);
+                console.log(\`- **projected Phase 1 suite** (\${r.extrapolation.totalCommands} × \${r.extrapolation.scenariosPerCommand} = \${r.extrapolation.totalScenarios} scenarios): **\${r.extrapolation.projectedSuiteWallTimeMs.toFixed(0)} ms**\`);
+                console.log(\`- **gate threshold:** \${r.extrapolation.gateThresholdMs} ms\`);
+                console.log(\`- **gate verdict:** \${r.extrapolation.gateVerdict === 'PASS' ? ':white_check_mark: PASS' : ':x: FAIL'}\`);
+              "
+            else
+              echo "_jest-suite report missing_"
+            fi
+            echo ""
+            echo "## Subprocess (cold-start — upper-bound user-facing cost)"
+            if [[ -s "$SUB" ]]; then
+              node -e "
+                const r = require('$SUB');
+                console.log('| Command | Scenario | Wall-time (ms) |');
+                console.log('|---|---|---:|');
+                let total = 0;
+                for (const s of r) {
+                  console.log(\`| \${s.commandLabel} (\${s.commandUid.slice(0,8)}) | \${s.scenario} | \${s.wallTimeMs} |\`);
+                  total += s.wallTimeMs;
+                }
+                console.log('');
+                console.log(\`- **total (\${r.length} invocations):** \${total} ms\`);
+                console.log(\`- **avg per invocation:** \${Math.round(total / Math.max(r.length, 1))} ms\`);
+                console.log(\`- **projected 44 × 3 subprocess cost:** \${Math.round(total / Math.max(r.length, 1) * 44 * 3)} ms\`);
+              "
+            else
+              echo "_subprocess report missing_"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload benchmark artifacts
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: phase0-benchmark-${{ github.run_id }}
+          path: |
+            phase0-benchmark-jest.json
+            phase0-benchmark-subprocess.json
+          retention-days: 30
+          if-no-files-found: warn
