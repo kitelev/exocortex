@@ -40,6 +40,10 @@ jobs:
         working-directory: exocortex
         run: npm ci
 
+      - name: Build exocortex core package (CLI esbuild depends on dist)
+        working-directory: exocortex
+        run: npm --workspace exocortex run build
+
       - name: Build CLI
         working-directory: exocortex
         run: npm --workspace @kitelev/exocortex-cli run build
