@@ -67,13 +67,30 @@ describe("toGroundingDefinition", () => {
     expect(out.targetValue).toBe(`"[[ems__Task]]"`);
   });
 
-  it("does NOT overwrite explicit targetProperty on service_call", () => {
+  it("prefers serviceId over targetProperty for service_call (mirrors CommandResolver:465-468)", () => {
+    // Starter-kit fixtures split serviceId + targetProperty fields
+    // (e.g. abdbdf09 Convert to task: serviceId=updateProperty,
+    // targetProperty=exo__Instance_class). CommandResolver resolves this
+    // ambiguity by letting serviceId win; the YAML-path helper does the
+    // same so both entry points produce the same GroundingDefinition shape.
     const out = toGroundingDefinition({
       uid: "g-3b",
       label: "Convert",
       type: "service_call",
+      targetProperty: "exo__Instance_class",
+      serviceId: "updateProperty",
+      targetValue: `"[[ems__Task]]"`,
+      raw: {},
+    });
+    expect(out.targetProperty).toBe("updateProperty");
+  });
+
+  it("falls back to targetProperty when serviceId is absent (vault grounding shape)", () => {
+    const out = toGroundingDefinition({
+      uid: "g-3c",
+      label: "Vault convert",
+      type: "service_call",
       targetProperty: "updateProperty",
-      serviceId: "different-value",
       targetValue: `"[[ems__Task]]"`,
       raw: {},
     });

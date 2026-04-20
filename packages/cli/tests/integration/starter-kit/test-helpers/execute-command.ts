@@ -103,10 +103,14 @@ const TYPE_LOOKUP: ReadonlyMap<string, GroundingType> = new Map([
  * the `GroundingDefinition` shape the real `GroundingExecutor` expects.
  *
  * The executor's service_call dispatcher reads `targetProperty` as the
- * `serviceId` (executor:331). Vault groundings store this under a different
- * YAML key (`exocmd__Grounding_serviceId`), so when the raw grounding lacks
- * `targetProperty` but has `serviceId`, we copy the latter into the former so
- * the executor can find it.
+ * `serviceId` (executor:331). Starter-kit fixtures split the two fields
+ * (`exocmd__Grounding_serviceId` + `exocmd__Grounding_targetProperty`);
+ * vault groundings collapse them (`exocmd__Grounding_targetProperty` holds
+ * the serviceId directly). To dispatch starter-kit fixtures correctly, we
+ * mirror `CommandResolver.loadGrounding` (CommandResolver:463-470): for
+ * `service_call`, `serviceId` wins over `targetProperty` when both are set.
+ * When only `targetProperty` is set we fall back to it (vault shape). When
+ * only `serviceId` is set we use it (starter-kit-with-no-targetProperty shape).
  */
 export function toGroundingDefinition(
   data: GroundingData,
@@ -114,7 +118,7 @@ export function toGroundingDefinition(
   const type = TYPE_LOOKUP.get(data.type ?? "") ?? GroundingType.PROPERTY_SET;
   const targetProperty =
     type === GroundingType.SERVICE_CALL
-      ? data.targetProperty ?? data.serviceId
+      ? data.serviceId ?? data.targetProperty
       : data.targetProperty;
   const steps = data.steps?.map(toGroundingDefinition);
   return {
