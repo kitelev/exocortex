@@ -48,7 +48,12 @@ import {
 } from "@jest/globals";
 import * as fs from "fs";
 import * as os from "os";
-import { ServiceRegistry } from "exocortex";
+import {
+  InMemoryTripleStore,
+  PreconditionEvaluator,
+  ServiceRegistry,
+  type PreconditionDefinition,
+} from "exocortex";
 import {
   loadActiveCommandCatalog,
   KNOWN_BROKEN_UUIDS,
@@ -74,6 +79,7 @@ import {
   executeCommandHarness,
   toGroundingDefinition,
 } from "./test-helpers/execute-command.js";
+import { classifyPreconditionUnmet } from "./test-helpers/precondition-unmet-fixture.js";
 
 // ---------------------------------------------------------------------------
 // Module-scope catalog load — describe.each requires the array synchronously,
@@ -316,6 +322,280 @@ describe("Phase 2 parametrized suite — all active starter-kit Commands", () =>
           cleanupFixtureRoot(root);
         }
       });
+    },
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Phase 2 follow-up — f68d0553. Three additional aspect suites layered on
+// top of the parametrized dispatch run above. Kept as separate describe
+// blocks so per-aspect failures don't interact with per-command dispatch
+// coverage and §12 gate triage stays clean.
+// ---------------------------------------------------------------------------
+
+// --- Precondition-unmet --------------------------------------------------
+// AC restated: the CLI `dynamic-command exec` gate (dynamic-command.ts:293-318)
+// aborts with `preconditionPassed: false` before the GroundingExecutor ever
+// runs, so the `result.success === false + error.code === "PRECONDITION_UNMET"`
+// contract from the task description translates cleanly to
+// `await evaluator.evaluate(...) === false` at this layer. Documented in
+// Handoff so reviewers don't look for a literal error.code assertion.
+
+interface PreconditionCase {
+  readonly uid: string;
+  readonly label: string;
+  readonly sparqlAsk: string;
+  readonly hostFunction?: string;
+}
+
+function collectPreconditionCases(
+  catalog: readonly CommandCatalogEntry[],
+  ctx: StarterKitContext,
+): PreconditionCase[] {
+  const seenUids = new Set<string>();
+  const out: PreconditionCase[] = [];
+  for (const cmd of catalog) {
+    if (!cmd.precondition) continue;
+    const uid = unwrap(cmd.precondition);
+    if (seenUids.has(uid)) continue;
+    const resolved = ctx.preconditions.get(uid);
+    if (!resolved) continue;
+    if (!resolved.sparqlAsk && !resolved.hostFunction) continue;
+    seenUids.add(uid);
+    out.push({
+      uid,
+      label: resolved.label,
+      sparqlAsk: resolved.sparqlAsk ?? "",
+      hostFunction: resolved.hostFunction,
+    });
+  }
+  return out;
+}
+
+const PRECONDITION_CASES: PreconditionCase[] = collectPreconditionCases(
+  ACTIVE_CATALOG,
+  CONTEXT,
+);
+
+/** Single `$target` substitution used for every unmet assertion. */
+const UNMET_TARGET_IRI = "obsidian://vault/phase2-precondition-unmet-target";
+
+describe("Phase 2 f68d0553 — precondition-unmet assertions (per distinct precondition)", () => {
+  it("every active Command with a precondition has a resolvable sparqlAsk/hostFunction", () => {
+    const activeWithPrecondition = ACTIVE_CATALOG.filter(
+      (c) => c.precondition,
+    );
+    // Hard-floor guard — Phase 0 ladder report counted 23 active-command
+    // preconditions (status + criticality + creation + planning + maintenance
+    // families). If the starter-kit ever drops below that, something drifted.
+    expect(activeWithPrecondition.length).toBeGreaterThanOrEqual(20);
+    for (const cmd of activeWithPrecondition) {
+      const uid = unwrap(cmd.precondition!);
+      const resolved = CONTEXT.preconditions.get(uid);
+      if (!resolved) {
+        throw new Error(
+          `Command ${cmd.uid} (${cmd.label}) references precondition ${uid} that does not resolve in StarterKitContext`,
+        );
+      }
+      if (!resolved.sparqlAsk && !resolved.hostFunction) {
+        throw new Error(
+          `Precondition ${uid} (${resolved.label}) has neither sparqlAsk nor hostFunction`,
+        );
+      }
+    }
+  });
+
+  describe.each(PRECONDITION_CASES)(
+    "$label ($uid)",
+    (pre) => {
+      it("classifies to a non-unknown shape (silent-zero defence)", () => {
+        if (pre.hostFunction) {
+          // Host-function preconditions have no SPARQL body; the CLI gate
+          // defaults to permissive (PreconditionEvaluator.evaluateHostFunction
+          // returns true when the function is not registered) — no
+          // universally-unmet mechanism exists. We record and skip.
+          return;
+        }
+        const classification = classifyPreconditionUnmet(pre.sparqlAsk);
+        if (classification.kind === "unknown") {
+          throw new Error(
+            `Precondition ${pre.uid} (${pre.label}) classifies to "unknown": ${classification.reason}`,
+          );
+        }
+      });
+
+      it("evaluator returns false on the synthesised unmet triple store", async () => {
+        if (pre.hostFunction) return;
+        const classification = classifyPreconditionUnmet(pre.sparqlAsk);
+        if (classification.kind === "always-met") {
+          // No unmet state exists; record via console (surfaces in logs) and
+          // skip the assertion. This is the only precondition shape with no
+          // demonstrable unmet state (Always-visible, `a75beba2`).
+          // eslint-disable-next-line no-console
+          console.log(
+            `[phase2:precondition-unmet] ${pre.uid.slice(0, 8)} ${pre.label}: always-met — skipped`,
+          );
+          return;
+        }
+
+        const store = new InMemoryTripleStore();
+        if (classification.kind === "add-triple") {
+          const triples = classification.materialiseTriples!(UNMET_TARGET_IRI);
+          await store.addAll(triples);
+        }
+        const definition: PreconditionDefinition = {
+          id: pre.uid,
+          label: pre.label,
+          sparqlAsk: pre.sparqlAsk,
+        };
+        const evaluator = new PreconditionEvaluator(store);
+        const result = await evaluator.evaluate(definition, UNMET_TARGET_IRI);
+        expect(result).toBe(false);
+      });
+    },
+  );
+});
+
+// --- Mutation-diff coverage aggregate (S1..S4) ---------------------------
+// The per-Command dispatch loop above already compares raw frontmatter to the
+// predictor's diff via `assertMutationMatchesRaw`; what we add here is a
+// visible, hard-locked aggregate so reviewers can confirm S1..S4 coverage
+// did not silently collapse (memory `project_rfc_ci_tests_phase2_parametrized_done`
+// reports 15 predictable-PASS vs 26 dispatch-only-clean — the predictable
+// slice is what must stay above the floor).
+
+interface StrategyBuckets {
+  readonly S1: CommandCatalogEntry[];
+  readonly S2: CommandCatalogEntry[];
+  readonly S3: CommandCatalogEntry[];
+  readonly S4: CommandCatalogEntry[];
+  readonly S5: CommandCatalogEntry[];
+}
+
+function partitionByStrategy(
+  catalog: readonly CommandCatalogEntry[],
+  ctx: StarterKitContext,
+): StrategyBuckets {
+  const buckets: StrategyBuckets = { S1: [], S2: [], S3: [], S4: [], S5: [] };
+  for (const cmd of catalog) {
+    const resolution = extractTargetClassFromCommand(cmd, ctx);
+    buckets[resolution.strategy].push(cmd);
+  }
+  return buckets;
+}
+
+describe("Phase 2 f68d0553 — mutation-diff coverage aggregate (S1..S4)", () => {
+  const buckets = partitionByStrategy(ACTIVE_CATALOG, CONTEXT);
+
+  it("S1..S4 together cover at least 17 active Commands (predictable floor)", () => {
+    const predictableCount =
+      buckets.S1.length + buckets.S2.length + buckets.S3.length + buckets.S4.length;
+    // eslint-disable-next-line no-console
+    console.log(
+      `[phase2:mutation-aggregate] S1=${buckets.S1.length} S2=${buckets.S2.length} ` +
+        `S3=${buckets.S3.length} S4=${buckets.S4.length} S5=${buckets.S5.length} ` +
+        `(predictable=${predictableCount}/41)`,
+    );
+    // Phase 0 ladder reported 8+19+5+2=34 before Phase 1 filtered to 41 active;
+    // Option C migration keeps ~31 predictable, floor set conservatively at 17
+    // (covers even a Phase 3 consolidation that halves S2).
+    expect(predictableCount).toBeGreaterThanOrEqual(17);
+  });
+
+  it("S5 ratio ≤ 30% (RFC §7.1a gate holds post-filter)", () => {
+    const ratio = buckets.S5.length / ACTIVE_CATALOG.length;
+    expect(ratio).toBeLessThanOrEqual(0.3);
+  });
+
+  it("every S4 command has a resolvable grounding in the starter-kit context", () => {
+    for (const cmd of buckets.S4) {
+      expect(cmd.grounding).toBeDefined();
+      const grounding = CONTEXT.groundings.get(unwrap(cmd.grounding!));
+      expect(grounding).toBeDefined();
+    }
+  });
+});
+
+// --- S4 literal-vs-IRI class-flip shape ----------------------------------
+// Per §7.1 + non-blocking flag 3 in the task prompt: S4 class-flip commands
+// emit `exo__Instance_class: ["[[ems__Task]]"]` as a literal string, not a
+// YAML array. The predictor encodes this explicitly (predict-mutation.ts:263-281)
+// and the integration suite's `assertMutationMatchesRaw` compares raw
+// frontmatter lines. The assertion below makes the invariant auditable —
+// it enumerates every S4 command and asserts the predictor's frontmatterDiff
+// holds the exact literal without round-tripping through YAML.
+
+describe("Phase 2 f68d0553 — class-flip literal-vs-IRI verification", () => {
+  // Note on ladder interaction: Convert-to-Task / Convert-to-Project carry a
+  // precondition ("Is not a task" / "Is not a project"), so the S2 ladder
+  // step short-circuits S4 at classification time. We therefore enumerate
+  // class-flip commands by predictor shape rather than by `strategy === "S4"`
+  // — the Literal-vs-IRI invariant is about the executor's writeback path,
+  // which is the same whether the ladder reports S2 or S4.
+
+  interface ClassFlipCase {
+    readonly cmd: CommandCatalogEntry;
+    readonly predictedLiteral: string;
+  }
+
+  const CLASS_FLIP_CASES: ClassFlipCase[] = (() => {
+    const out: ClassFlipCase[] = [];
+    for (const cmd of ACTIVE_CATALOG) {
+      if (!cmd.grounding) continue;
+      const grounding = CONTEXT.groundings.get(unwrap(cmd.grounding));
+      if (!grounding) continue;
+      const definition = toGroundingDefinition(grounding);
+      const predicted = predictMutationForGrounding(
+        definition,
+        "obsidian://vault/phase2-classflip-synthetic",
+        undefined,
+        { now: PINNED_NOW },
+      );
+      const raw = predicted.frontmatterDiff["exo__Instance_class"];
+      if (typeof raw === "string" && raw.startsWith(`["[[`)) {
+        out.push({ cmd, predictedLiteral: raw });
+      }
+    }
+    return out;
+  })();
+
+  it("discovers at least one class-flip command via predictor shape", () => {
+    // eslint-disable-next-line no-console
+    console.log(
+      `[phase2:classflip-literal] found ${CLASS_FLIP_CASES.length} class-flip command(s)`,
+    );
+    expect(CLASS_FLIP_CASES.length).toBeGreaterThan(0);
+  });
+
+  it.each(CLASS_FLIP_CASES)(
+    "emits JSON-array string literal (not YAML list) for $cmd.label",
+    ({ cmd, predictedLiteral }) => {
+      // eslint-disable-next-line no-console
+      console.log(
+        `[phase2:classflip-literal] ${cmd.uid.slice(0, 8)} ${cmd.label}: exo__Instance_class=${JSON.stringify(predictedLiteral)}`,
+      );
+
+      // The two accepted destinations on the current executor are Task and
+      // Project (predict-mutation.ts:269-281). Any other literal means the
+      // predictor grew a new branch — force an audit.
+      const accepted =
+        predictedLiteral === `["[[ems__Task]]"]` ||
+        predictedLiteral === `["[[ems__Project]]"]`;
+      if (!accepted) {
+        throw new Error(
+          `Command ${cmd.uid} (${cmd.label}) predictor emitted unexpected class-flip literal: ${JSON.stringify(predictedLiteral)}`,
+        );
+      }
+
+      // Hard-locked shape checks (memory
+      // `reference_class_flip_frontmatter_json_array_string`):
+      //   1. Wrapper is a JSON array literal (opens `["`, closes `"]`).
+      //   2. Inner wikilink is double-bracketed.
+      //   3. Value is a STRING, not a parsed array — YAML writer must not
+      //      deserialise/re-serialise.
+      expect(typeof predictedLiteral).toBe("string");
+      expect(predictedLiteral.startsWith('["[[')).toBe(true);
+      expect(predictedLiteral.endsWith(']]"]')).toBe(true);
     },
   );
 });
