@@ -14,9 +14,13 @@ import { describe, it, expect, jest } from "@jest/globals";
 import * as fsNode from "fs";
 import {
   loadCommandCatalog,
+  loadActiveCommandCatalog,
+  classifyCommand,
   buildClassLabelToUuid,
   EXOCMD_COMMAND_CLASS_UUID,
   EXO_CLASS_META_UUID,
+  KNOWN_BROKEN_UUIDS,
+  type CommandCatalogEntry,
 } from "../../integration/starter-kit/test-helpers/command-catalog.js";
 
 // ---------------------------------------------------------------------------
@@ -440,5 +444,165 @@ describe("loadCommandCatalog — defaults", () => {
       fixturesRoot: "/definitely-does-not-exist-" + Date.now(),
     });
     expect(catalog).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// KNOWN_BROKEN_UUIDS / classifyCommand / loadActiveCommandCatalog
+// (Phase 2 — RFC v4 §4.0 stopgap filter, §12 gate)
+// ---------------------------------------------------------------------------
+
+function entryFor(
+  uid: string,
+  overrides: Partial<CommandCatalogEntry> = {},
+): CommandCatalogEntry {
+  return {
+    uid,
+    label: overrides.label ?? `Cmd ${uid.slice(0, 4)}`,
+    path: overrides.path ?? `/mock/${uid}.md`,
+    classUuid: EXOCMD_COMMAND_CLASS_UUID,
+    icon: overrides.icon,
+    category: overrides.category,
+    grounding: overrides.grounding,
+    precondition: overrides.precondition,
+    targetClass: overrides.targetClass,
+    raw: overrides.raw ?? {},
+  };
+}
+
+describe("KNOWN_BROKEN_UUIDS", () => {
+  it("contains exactly the 3 criticality Command UUIDs", () => {
+    expect(KNOWN_BROKEN_UUIDS.size).toBe(3);
+    expect(KNOWN_BROKEN_UUIDS.has("6b2f1cc6-a9f4-452a-93be-79b531188a62")).toBe(true);
+    expect(KNOWN_BROKEN_UUIDS.has("e64dd9bd-49b6-480c-8e62-baaf6cab81fc")).toBe(true);
+    expect(KNOWN_BROKEN_UUIDS.has("828c4653-cae2-446e-8d47-2826f8638bd9")).toBe(true);
+  });
+});
+
+describe("classifyCommand", () => {
+  it("returns 'broken' for each KNOWN_BROKEN UUID", () => {
+    for (const uid of KNOWN_BROKEN_UUIDS) {
+      expect(classifyCommand(entryFor(uid))).toBe("broken");
+    }
+  });
+
+  it("returns 'active' for an unknown UUID with no state override", () => {
+    expect(
+      classifyCommand(entryFor("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")),
+    ).toBe("active");
+  });
+
+  it("honours explicit exocmd__Command_state=broken even for active UUIDs", () => {
+    const e = entryFor("11111111-1111-1111-1111-111111111111", {
+      raw: { exocmd__Command_state: "broken" },
+    });
+    expect(classifyCommand(e)).toBe("broken");
+  });
+
+  it("honours explicit exocmd__Command_state=deprecated", () => {
+    const e = entryFor("22222222-2222-2222-2222-222222222222", {
+      raw: { exocmd__Command_state: "deprecated" },
+    });
+    expect(classifyCommand(e)).toBe("deprecated");
+  });
+
+  it("honours explicit exocmd__Command_state=active even for a KNOWN_BROKEN UUID", () => {
+    const broken = [...KNOWN_BROKEN_UUIDS][0];
+    const e = entryFor(broken, {
+      raw: { exocmd__Command_state: "active" },
+    });
+    expect(classifyCommand(e)).toBe("active");
+  });
+
+  it("ignores unrecognised exocmd__Command_state values (falls through)", () => {
+    const broken = [...KNOWN_BROKEN_UUIDS][0];
+    const e = entryFor(broken, {
+      raw: { exocmd__Command_state: "whatever" },
+    });
+    // Falls back to KNOWN_BROKEN → broken.
+    expect(classifyCommand(e)).toBe("broken");
+    const fresh = entryFor("99999999-9999-9999-9999-999999999999", {
+      raw: { exocmd__Command_state: 42 },
+    });
+    expect(classifyCommand(fresh)).toBe("active");
+  });
+});
+
+describe("loadActiveCommandCatalog", () => {
+  it("filters out entries whose UUIDs are in KNOWN_BROKEN_UUIDS", () => {
+    const brokenUid = [...KNOWN_BROKEN_UUIDS][0];
+    const files: InMemoryFixture = {
+      "/mock-fixtures/exocmd/broken.md": commandFrontmatter(
+        brokenUid,
+        "Known Broken",
+        `[[${EXOCMD_COMMAND_CLASS_UUID}]]`,
+      ),
+      "/mock-fixtures/exocmd/active.md": commandFrontmatter(
+        "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        "Alive",
+        `[[${EXOCMD_COMMAND_CLASS_UUID}]]`,
+      ),
+    };
+    const active = loadActiveCommandCatalog(makeOptions(files));
+    expect(active.map((c) => c.label)).toEqual(["Alive"]);
+  });
+
+  it("returns the raw catalog unchanged when none of the entries are broken", () => {
+    const files: InMemoryFixture = {
+      "/mock-fixtures/exocmd/a.md": commandFrontmatter(
+        "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        "A",
+        `[[${EXOCMD_COMMAND_CLASS_UUID}]]`,
+      ),
+      "/mock-fixtures/exocmd/b.md": commandFrontmatter(
+        "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+        "B",
+        `[[${EXOCMD_COMMAND_CLASS_UUID}]]`,
+      ),
+    };
+    const raw = loadCommandCatalog(makeOptions(files));
+    const active = loadActiveCommandCatalog(makeOptions(files));
+    expect(active.length).toBe(raw.length);
+    expect(active.map((c) => c.uid)).toEqual(raw.map((c) => c.uid));
+  });
+
+  it("preserves determinism — filtered output still sorted by uid", () => {
+    const files: InMemoryFixture = {
+      "/mock-fixtures/exocmd/z.md": commandFrontmatter(
+        "22222222-2222-2222-2222-222222222222",
+        "Z",
+        `[[${EXOCMD_COMMAND_CLASS_UUID}]]`,
+      ),
+      "/mock-fixtures/exocmd/a.md": commandFrontmatter(
+        "11111111-1111-1111-1111-111111111111",
+        "A",
+        `[[${EXOCMD_COMMAND_CLASS_UUID}]]`,
+      ),
+    };
+    expect(
+      loadActiveCommandCatalog(makeOptions(files)).map((c) => c.uid),
+    ).toEqual([
+      "11111111-1111-1111-1111-111111111111",
+      "22222222-2222-2222-2222-222222222222",
+    ]);
+  });
+
+  it("propagates explicit exocmd__Command_state=broken frontmatter", () => {
+    const files: InMemoryFixture = {
+      "/mock-fixtures/exocmd/marked.md": commandFrontmatter(
+        "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        "Marked broken",
+        `[[${EXOCMD_COMMAND_CLASS_UUID}]]`,
+        { exocmd__Command_state: "broken" },
+      ),
+      "/mock-fixtures/exocmd/alive.md": commandFrontmatter(
+        "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+        "Alive",
+        `[[${EXOCMD_COMMAND_CLASS_UUID}]]`,
+      ),
+    };
+    expect(
+      loadActiveCommandCatalog(makeOptions(files)).map((c) => c.label),
+    ).toEqual(["Alive"]);
   });
 });

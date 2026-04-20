@@ -44,6 +44,27 @@ export const EXOCMD_COMMAND_CLASS_UUID =
 /** `exo__Class` meta-class UUID — used to find class-definition files. */
 export const EXO_CLASS_META_UUID = "8619c4fc-64f1-4869-b17e-e34186cacca9";
 
+/**
+ * Phase 2 stopgap filter (RFC v4 §4.0). The starter-kit has 44 `exocmd__Command`
+ * instances, of which 3 criticality commands are UI-broken pending the UX-RFC
+ * zone migration (P0-2). Until `exocmd__Command_state` lands in the starter-kit
+ * ontology, we hardcode the broken set so the parametrized integration suite
+ * can filter to 41 active commands without running against known-red fixtures.
+ *
+ * Dropping any UUID from this set must be accompanied by the corresponding
+ * starter-kit cleanup; the integration self-test asserts each UUID is still
+ * present in the raw catalog so a rename surfaces as a test failure rather
+ * than a silent filter drift.
+ */
+export const KNOWN_BROKEN_UUIDS: ReadonlySet<string> = new Set([
+  "6b2f1cc6-a9f4-452a-93be-79b531188a62", // Set Criticality High
+  "e64dd9bd-49b6-480c-8e62-baaf6cab81fc", // Set Criticality Medium
+  "828c4653-cae2-446e-8d47-2826f8638bd9", // Set Criticality Low
+]);
+
+/** Lifecycle classification of a Command (RFC v4 §4.0). */
+export type CommandState = "active" | "broken" | "deprecated";
+
 const COMMAND_CLASS_WIKILINK_UUID = `[[${EXOCMD_COMMAND_CLASS_UUID}]]`;
 const COMMAND_CLASS_WIKILINK_LABEL = "[[exocmd__Command]]";
 const COMMAND_CLASS_BARE_LABEL = "exocmd__Command";
@@ -275,4 +296,42 @@ export function loadCommandCatalog(options: LoadOptions = {}): CommandCatalogEnt
 
   entries.sort((a, b) => a.uid.localeCompare(b.uid));
   return entries;
+}
+
+/**
+ * Classify a `CommandCatalogEntry` into a lifecycle state. Phase 2 resolves in
+ * precedence order:
+ *
+ *   1. Explicit `exocmd__Command_state` (reserved for the RFC v4 §4.0 future
+ *      starter-kit property addition — not currently emitted by fixtures).
+ *   2. Membership in the hardcoded `KNOWN_BROKEN_UUIDS` set → `"broken"`.
+ *   3. Default → `"active"`.
+ *
+ * The explicit-property branch is load-bearing: once starter-kit adds the
+ * property, `loadActiveCommandCatalog` transparently switches without needing
+ * a second cleanup PR (RFC v4 §7.4a transition plan).
+ */
+export function classifyCommand(entry: CommandCatalogEntry): CommandState {
+  const explicit = entry.raw["exocmd__Command_state"];
+  if (explicit === "broken" || explicit === "deprecated" || explicit === "active") {
+    return explicit;
+  }
+  if (KNOWN_BROKEN_UUIDS.has(entry.uid)) return "broken";
+  return "active";
+}
+
+/**
+ * Return only the `"active"` slice of the Command catalog — Phase 2's
+ * parametrized-suite entry point (RFC v4 §8 Phase 2 item 7).
+ *
+ * The underlying `loadCommandCatalog()` output is deterministic, so the
+ * filtered view is also deterministic and stable across runs. `options` are
+ * passed straight through for test-isolation DI.
+ */
+export function loadActiveCommandCatalog(
+  options: LoadOptions = {},
+): CommandCatalogEntry[] {
+  return loadCommandCatalog(options).filter(
+    (entry) => classifyCommand(entry) === "active",
+  );
 }
