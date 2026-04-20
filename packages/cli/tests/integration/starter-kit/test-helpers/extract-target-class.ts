@@ -369,9 +369,15 @@ function classFlipPreFlip(
 ): { class: string; reason: string } | undefined {
   // Only serviceId=updateProperty with a class targetValue counts as a
   // class-flip in the current executor (see GroundingExecutor:368-376).
+  // Starter-kit fixtures may split serviceId into `exocmd__Grounding_serviceId`
+  // (parsed as `grounding.serviceId`) OR collapse it onto `targetProperty`
+  // (vault shape). Accept both — CommandResolver.loadGrounding does the same
+  // resolution (CommandResolver:465-468).
+  const effectiveServiceId =
+    grounding.serviceId ?? grounding.targetProperty;
   if (
     grounding.type !== "service_call" ||
-    grounding.targetProperty !== "updateProperty" ||
+    effectiveServiceId !== "updateProperty" ||
     !grounding.targetValue
   ) {
     return undefined;
