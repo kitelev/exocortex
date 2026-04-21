@@ -37,9 +37,6 @@ test.describe("Table Column Alignment (#594)", () => {
 
     await launcher.waitForModalsToClose(10000);
 
-    // Additional wait for plugin to fully render after modals close
-    await window.waitForTimeout(5000);
-
     await launcher.waitForElement(".exocortex-daily-tasks-section", 60000);
 
     const tasksTable = window

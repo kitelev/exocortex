@@ -25,12 +25,12 @@ test.describe("Daily Note Navigation", () => {
     const window = await launcher.getWindow();
 
     await launcher.waitForModalsToClose(10000);
-    await window.waitForTimeout(5000);
-
-    await launcher.waitForElement(".exocortex-daily-navigation", 60000);
 
     const navContainer = window.locator(".exocortex-daily-navigation");
-    await expect(navContainer).toBeVisible({ timeout: 10000 });
+    await expect(navContainer.locator(".exocortex-nav-prev a")).toContainText(
+      "2025-10-15",
+      { timeout: 30000 },
+    );
 
     const prevLink = navContainer.locator(".exocortex-nav-prev a");
     await expect(prevLink).toBeVisible();
@@ -49,11 +49,13 @@ test.describe("Daily Note Navigation", () => {
     const window = await launcher.getWindow();
 
     await launcher.waitForModalsToClose(10000);
-    await window.waitForTimeout(5000);
-
-    await launcher.waitForElement(".exocortex-daily-navigation", 60000);
 
     const navContainer = window.locator(".exocortex-daily-navigation");
+    await expect(navContainer.locator(".exocortex-nav-prev a")).toContainText(
+      "2025-10-15",
+      { timeout: 30000 },
+    );
+
     const propertiesSection = window.locator(".exocortex-properties-section");
 
     const navVisible = await navContainer.isVisible();
@@ -76,9 +78,12 @@ test.describe("Daily Note Navigation", () => {
     const window = await launcher.getWindow();
 
     await launcher.waitForModalsToClose(10000);
-    await window.waitForTimeout(5000);
 
     await launcher.waitForElement(".exocortex-layout-rendered", 60000);
+    // Layout signals render complete; if nav would appear, it would be here by now.
+    await expect(window.locator(".exocortex-layout-rendered")).toBeVisible({
+      timeout: 5000,
+    });
 
     const navContainer = window.locator(".exocortex-daily-navigation");
     const isVisible = await navContainer.isVisible().catch(() => false);
@@ -92,12 +97,12 @@ test.describe("Daily Note Navigation", () => {
     const window = await launcher.getWindow();
 
     await launcher.waitForModalsToClose(10000);
-    await window.waitForTimeout(5000);
-
-    await launcher.waitForElement(".exocortex-daily-navigation", 60000);
 
     const navContainer = window.locator(".exocortex-daily-navigation");
-    await expect(navContainer).toBeVisible({ timeout: 10000 });
+    await expect(navContainer.locator(".exocortex-nav-prev a")).toContainText(
+      "2025-10-15",
+      { timeout: 30000 },
+    );
 
     const prevLink = navContainer.locator(".exocortex-nav-prev a");
     const nextLink = navContainer.locator(".exocortex-nav-next a");
@@ -120,12 +125,12 @@ test.describe("Daily Note Navigation", () => {
     const window = await launcher.getWindow();
 
     await launcher.waitForModalsToClose(10000);
-    await window.waitForTimeout(5000);
-
-    await launcher.waitForElement(".exocortex-daily-navigation", 60000);
 
     const navContainer = window.locator(".exocortex-daily-navigation");
-    await expect(navContainer).toBeVisible({ timeout: 10000 });
+    await expect(navContainer.locator(".exocortex-nav-prev a")).toContainText(
+      "2025-10-15",
+      { timeout: 30000 },
+    );
 
     const prevLink = navContainer.locator(".exocortex-nav-prev a");
     const nextLink = navContainer.locator(".exocortex-nav-next a");
@@ -146,12 +151,11 @@ test.describe("Daily Note Navigation", () => {
     const window = await launcher.getWindow();
 
     await launcher.waitForModalsToClose(10000);
-    await window.waitForTimeout(5000);
-
-    await launcher.waitForElement(".exocortex-daily-navigation", 60000);
 
     const navContainer = window.locator(".exocortex-daily-navigation");
-    await expect(navContainer).toBeVisible({ timeout: 10000 });
+    await expect(
+      navContainer.locator(".exocortex-nav-prev .exocortex-nav-disabled"),
+    ).toContainText("2025-10-14", { timeout: 30000 });
 
     const prevDisabled = navContainer.locator(
       ".exocortex-nav-prev .exocortex-nav-disabled",
