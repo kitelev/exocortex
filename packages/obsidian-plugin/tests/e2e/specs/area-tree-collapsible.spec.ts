@@ -19,10 +19,6 @@ test.describe("Area Tree Collapsible Functionality", () => {
     await launcher.openFile("Areas/development.md");
     await launcher.waitForModalsToClose(10000);
 
-    // Additional wait for plugin to fully render after modals close
-    const window = await launcher.getWindow();
-    await window.waitForTimeout(5000);
-
     await launcher.waitForElement(".exocortex-area-tree", 60000);
 
     const areaTree = launcher.page.locator(".exocortex-area-tree");

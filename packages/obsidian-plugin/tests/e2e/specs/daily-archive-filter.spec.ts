@@ -25,14 +25,13 @@ test.describe("DailyNote Archive Filter", () => {
     const window = await launcher.getWindow();
 
     await launcher.waitForModalsToClose(10000);
-    await window.waitForTimeout(5000);
-
-    await launcher.waitForElement(".exocortex-daily-tasks-section", 60000);
 
     const toggleButton = window.locator(
       ".exocortex-daily-tasks-section .exocortex-toggle-archived",
     );
-    await expect(toggleButton).toBeVisible({ timeout: 10000 });
+    await expect(toggleButton).toContainText("Show Archived", {
+      timeout: 30000,
+    });
 
     const initialButtonText = await toggleButton.textContent();
     expect(initialButtonText).toContain("Show Archived");
@@ -51,7 +50,7 @@ test.describe("DailyNote Archive Filter", () => {
     expect(tableContent).not.toContain("Archived Task");
 
     await toggleButton.click();
-    await window.waitForTimeout(2000);
+    await expect(toggleButton).toContainText("Hide Archived", { timeout: 5000 });
 
     const updatedButtonText = await toggleButton.textContent();
     expect(updatedButtonText).toContain("Hide Archived");
@@ -65,7 +64,7 @@ test.describe("DailyNote Archive Filter", () => {
     expect(updatedTableContent).toContain("Archived Task");
 
     await toggleButton.click();
-    await window.waitForTimeout(2000);
+    await expect(toggleButton).toContainText("Show Archived", { timeout: 5000 });
 
     const finalButtonText = await toggleButton.textContent();
     expect(finalButtonText).toContain("Show Archived");
@@ -84,34 +83,32 @@ test.describe("DailyNote Archive Filter", () => {
     const window = await launcher.getWindow();
 
     await launcher.waitForModalsToClose(10000);
-    await window.waitForTimeout(5000);
-
-    await launcher.waitForElement(".exocortex-daily-tasks-section", 60000);
 
     const toggleButton = window.locator(
       ".exocortex-daily-tasks-section .exocortex-toggle-archived",
     );
-    await expect(toggleButton).toBeVisible({ timeout: 10000 });
+    await expect(toggleButton).toContainText("Show Archived", {
+      timeout: 30000,
+    });
 
     await toggleButton.click();
-    await window.waitForTimeout(2000);
+    await expect(toggleButton).toContainText("Hide Archived", { timeout: 5000 });
 
     let buttonText = await toggleButton.textContent();
     expect(buttonText).toContain("Hide Archived");
 
     await launcher.openFile("Daily Notes/2025-10-17.md");
-    await window.waitForTimeout(2000);
+    await launcher.waitForModalsToClose(10000);
 
     await launcher.openFile("Daily Notes/2025-10-18.md");
     await launcher.waitForModalsToClose(10000);
-    await window.waitForTimeout(5000);
-
-    await launcher.waitForElement(".exocortex-daily-tasks-section", 60000);
 
     const toggleButtonAfterRefresh = window.locator(
       ".exocortex-daily-tasks-section .exocortex-toggle-archived",
     );
-    await expect(toggleButtonAfterRefresh).toBeVisible({ timeout: 10000 });
+    await expect(toggleButtonAfterRefresh).toContainText("Hide Archived", {
+      timeout: 30000,
+    });
 
     buttonText = await toggleButtonAfterRefresh.textContent();
     expect(buttonText).toContain("Hide Archived");

@@ -26,9 +26,6 @@ test.describe("DailyNote Tasks Table", () => {
 
     await launcher.waitForModalsToClose(10000);
 
-    // Additional wait for plugin to fully render after modals close
-    await window.waitForTimeout(5000);
-
     await launcher.waitForElement(".exocortex-daily-tasks-section", 60000);
 
     const tasksTable = window
@@ -125,9 +122,9 @@ test.describe("DailyNote Tasks Table", () => {
       expect(initialHeaderCount).toBe(5);
 
       await toggleButton.click();
-      await window.waitForTimeout(1000);
 
       headers = tasksTable.locator("thead th");
+      await expect(headers).toHaveCount(4, { timeout: 5000 });
       let headerCount = await headers.count();
       expect(headerCount).toBe(4);
 
@@ -143,9 +140,9 @@ test.describe("DailyNote Tasks Table", () => {
     expect(headerTexts).not.toContain("Effort Area");
 
     await toggleButton.click();
-    await window.waitForTimeout(1000);
 
     headers = tasksTable.locator("thead th");
+    await expect(headers).toHaveCount(5, { timeout: 5000 });
     headerCount = await headers.count();
     expect(headerCount).toBe(5);
 
