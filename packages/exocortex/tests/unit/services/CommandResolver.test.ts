@@ -566,6 +566,27 @@ describe("CommandResolver", () => {
       expect(bindings).toHaveLength(1);
     });
 
+    // Issue #2896: production DynamicCommandButtonGroupBuilder passes the full
+    // obsidian:// vault URL as assetIRI, while bindings store the referenced
+    // file basename (via iriToObsidianName on the resolved fileIRI).
+    // matchesReference must bridge path-based IRIs with basename references.
+    it("should match targetAsset basename against obsidian:// path IRI", async () => {
+      await addBindingAsset(store, {
+        uid: "bind-path-asset",
+        label: "For path-addressed asset",
+        commandRef: "cmd-1",
+        targetAsset: "smoke-task",
+      });
+
+      const bindings = await resolver.findBindings(
+        undefined,
+        undefined,
+        "obsidian://vault/Tasks/smoke-task.md",
+      );
+
+      expect(bindings).toHaveLength(1);
+    });
+
     it("should return empty array when no bindings match", async () => {
       await addBindingAsset(store, {
         uid: "bind-project",

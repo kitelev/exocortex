@@ -4,6 +4,8 @@ exo__Asset_label: "Smoke task (Set Status Doing)"
 exo__Asset_isDefinedBy: "[[!kitelev]]"
 exo__Instance_class:
   - "[[ems__Task]]"
+aliases:
+  - smoke-set-status-doing-task
 ---
 
 Phase 3 smoke fixture for `Set Status Doing` (composite grounding — sets

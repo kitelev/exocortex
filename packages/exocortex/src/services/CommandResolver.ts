@@ -348,6 +348,15 @@ export class CommandResolver {
     const normalizedTarget = this.normalizeWikilink(target);
     if (normalized === normalizedTarget) return true;
 
+    // Issue #2896: targetAsset bindings store the referenced file basename
+    // (via iriToObsidianName on the resolved fileIRI), while assetIRI arrives
+    // as full `obsidian://vault/<path>/<basename>.md` URL. Compare basenames
+    // to bridge path-based IRIs with wikilink-style references.
+    const targetBasename = this.extractPathBasename(normalizedTarget);
+    if (targetBasename && targetBasename === normalized) return true;
+    const bindingBasename = this.extractPathBasename(normalized);
+    if (bindingBasename && bindingBasename === normalizedTarget) return true;
+
     // Cross-match aliases: when one side is UUID|alias and the other is just alias,
     // the UUID part won't match the alias. Try matching against the alias part too.
     // Issue #2740
@@ -358,6 +367,11 @@ export class CommandResolver {
     if (bindingAlias && bindingAlias === normalizedTarget) return true;
 
     return false;
+  }
+
+  private extractPathBasename(value: string): string | null {
+    const m = value.match(/\/([^/]+)\.md$/);
+    return m ? m[1] : null;
   }
 
   private extractAlias(value: string): string | null {
