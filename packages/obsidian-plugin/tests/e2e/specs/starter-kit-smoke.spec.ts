@@ -215,8 +215,13 @@ test.describe("Starter-kit smoke (RFC-CI-Tests Phase 3)", () => {
       );
       return file ? await app.vault.read(file) : "";
     });
-    expect(raw).not.toContain("$input");
-    expect(raw).not.toContain("$value");
+    // Scope the regression guard to frontmatter only — the fixture body
+    // mentions `$input` / `$value` literally (documents the guard), so a
+    // whole-file `toContain` would false-fire on the docs not the data.
+    const fmMatch = raw.match(/^---\n([\s\S]*?)\n---/);
+    const frontmatter = fmMatch ? fmMatch[1] : raw;
+    expect(frontmatter).not.toContain("$input");
+    expect(frontmatter).not.toContain("$value");
   });
 
   test("Plan on Today: planning, direct fast-path (no modal)", async () => {
@@ -337,16 +342,26 @@ async function primeDynamicLayout(
  * the DOM. Groups with `collapsedByDefault: true` (e.g. Maintenance) render
  * only the title button until expanded — `.exocortex-button-group-buttons`
  * is absent, so `:has-text(...)` locators timeout without this helper.
+ *
+ * Implementation note: React's useState re-initializes collapsed=true on
+ * re-mount (refreshLayout between primeDynamicLayout and this helper can
+ * race). Poll aria-expanded after click so the helper is idempotent under
+ * either starting state.
  */
 async function expandGroupIfCollapsed(window: Page, title: string): Promise<void> {
-  const titleButton = window.locator(
-    `.exocortex-button-group-title--collapsible:has-text("${title}")`,
-  );
-  const count = await titleButton.count();
-  if (count === 0) return;
-  const expanded = await titleButton.first().getAttribute("aria-expanded");
-  if (expanded === "false") {
-    await titleButton.first().click();
+  const titleButton = window
+    .locator(`.exocortex-button-group-title--collapsible:has-text("${title}")`)
+    .first();
+  if ((await titleButton.count()) === 0) return;
+  // Wait until aria-expanded is populated (React hydration).
+  await expect(titleButton).toHaveAttribute("aria-expanded", /true|false/, {
+    timeout: 5000,
+  });
+  if ((await titleButton.getAttribute("aria-expanded")) === "false") {
+    await titleButton.click();
+    await expect(titleButton).toHaveAttribute("aria-expanded", "true", {
+      timeout: 5000,
+    });
   }
 }
 
