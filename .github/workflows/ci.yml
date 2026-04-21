@@ -134,9 +134,16 @@ jobs:
       - name: Run ADR compliance checks
         run: archgate check --ci
 
+  # test-unit runs ONLY UI tests (jest-environment-obsidian).
+  # Phase 2 (CI speedup, task 761ca21e 2026-04-21):
+  #   Previously also ran test:unit (= test-ci-batched.sh) duplicating test-coverage.
+  #   That duplicate jest invocation was removed here. test-coverage remains the
+  #   single full-suite jest runner with --coverage.
+  # Phase 4 (planned, task f235881d): drop this job after the main branch
+  # protection rule is updated to no longer require "test-unit" as a status check.
   test-unit:
     runs-on: ubuntu-latest
-    timeout-minutes: 7
+    timeout-minutes: 4
     container:
       image: mcr.microsoft.com/playwright:v1.57.0-jammy
 
@@ -155,10 +162,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run unit and UI tests only (component tests have separate job)
+      - name: Run UI tests (jest-environment-obsidian)
         run: |
           export NODE_OPTIONS="--max-old-space-size=4096"
-          npm run test:unit && npm run test:ui
+          npm run test:ui
 
       - name: Track Flaky Tests
         if: always()
