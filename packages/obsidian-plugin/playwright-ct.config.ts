@@ -34,7 +34,8 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
 
   // Workers for parallel execution
-  workers: process.env.CI ? 1 : undefined,
+  // ctPort is auto-incremented per-worker (3100, 3101), so 2 workers do not collide
+  workers: process.env.CI ? 2 : undefined,
 
   // Reporter configuration
   reporter: [
