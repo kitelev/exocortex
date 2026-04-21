@@ -16,18 +16,22 @@ import * as path from "path";
  * `ems__Effort_area: "[[development]]"`. This guarantees that
  * .exocortex-assets-relations and .exocortex-relations-table render.
  */
+test.describe.configure({ mode: "parallel" });
+
 test.describe("Layout Overflow and Styling Consistency", () => {
   let launcher: ObsidianLauncher;
   let vaultPath: string;
 
-  test.beforeEach(async () => {
+  test.beforeAll(async () => {
     vaultPath = path.join(__dirname, "../test-vault");
     launcher = new ObsidianLauncher(vaultPath);
     await launcher.launch();
   });
 
-  test.afterEach(async () => {
-    await launcher.close();
+  test.afterAll(async () => {
+    if (launcher) {
+      await launcher.close();
+    }
   });
 
   test("should not have horizontal overflow in asset relations section", async () => {
