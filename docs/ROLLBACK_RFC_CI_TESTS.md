@@ -192,7 +192,7 @@ Log the incident under **Log** below. File a follow-up issue with label `rfc-ci-
 
 Append one-line entries per rollback event. Format: `YYYY-MM-DD · <trigger> · <summary> · <restoration-PR-or-TBD>`.
 
-- (empty)
+- 2026-04-21 · Phase 4 cutover · Branch-protection amended to 11 required checks (Option B — `test-bdd` retained; `build`/`e2e-tests` removed; `e2e-shard (1..4)` + `lint` added) via `gh api PATCH` at 17:02+05. Baseline → `/Users/kitelev/Developer/branch-protection-baseline-2026-04-21.pretty.json`; post-amend → `/Users/kitelev/Developer/branch-protection-postamend-2026-04-21.pretty.json`. Coordination task `70b28b93-…`. No rollback event — enforcement cutover only.
 
 ---
 
