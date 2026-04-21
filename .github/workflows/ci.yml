@@ -196,9 +196,78 @@ jobs:
           retention-days: 30
           if-no-files-found: ignore
 
-  test-coverage:
+  # Phase 2 CI speedup (task 9346c5be, 2026-04-21):
+  # test-coverage was previously a single 190s job running three jest invocations
+  # serially (obsidian-plugin full suite + CLI + exocortex regression).
+  # Split into parallel matrix (obsidian-plugin 1/4..4/4) + sibling jobs (CLI,
+  # exocortex-regression), with the branch-protected `test-coverage` name
+  # repurposed as the aggregator (mirrors the e2e-shard → e2e-tests pattern).
+  # Per-shard coverage-final.json is merged via scripts/merge-coverage.js.
+  test-coverage-shard:
     runs-on: ubuntu-latest
-    timeout-minutes: 7
+    timeout-minutes: 4
+    container:
+      image: mcr.microsoft.com/playwright:v1.57.0-jammy
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run obsidian-plugin tests (shard ${{ matrix.shard }}/4)
+        env:
+          NODE_OPTIONS: "--max-old-space-size=4096"
+          CI: "true"
+          FLAKY_REPORT_FILE: "flaky-report-shard-${{ matrix.shard }}.json"
+        run: |
+          # Empty --coverageThreshold overrides jest.config.js thresholds so a
+          # partial shard doesn't falsely fail the gate; aggregator applies
+          # thresholds on merged coverage.
+          node ./node_modules/jest/bin/jest.js \
+            --config packages/obsidian-plugin/jest.config.js \
+            --shard=${{ matrix.shard }}/4 \
+            --coverage \
+            --coverageReporters=json \
+            --coverageReporters=lcov \
+            --coverageThreshold='{}' \
+            --maxWorkers=2 \
+            --forceExit
+
+      - name: Upload shard coverage
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: coverage-shard-${{ matrix.shard }}
+          path: packages/obsidian-plugin/coverage/coverage-final.json
+          retention-days: 1
+          if-no-files-found: error
+
+      - name: Upload shard flaky report
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: flaky-report-shard-${{ matrix.shard }}
+          path: flaky-report-shard-${{ matrix.shard }}.json
+          retention-days: 30
+          if-no-files-found: ignore
+
+  test-coverage-cli:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
     container:
       image: mcr.microsoft.com/playwright:v1.57.0-jammy
 
@@ -220,67 +289,18 @@ jobs:
       - name: Install jq for coverage parsing
         run: apt-get update && apt-get install -y jq
 
-      - name: Run unit tests with coverage
+      - name: Run CLI tests with coverage
+        env:
+          NODE_OPTIONS: "--max-old-space-size=4096 --experimental-vm-modules"
+          CI: "true"
         run: |
-          export NODE_OPTIONS="--max-old-space-size=4096"
-          export COVERAGE=true
-          ./scripts/test-ci-batched.sh || exit 1
-
-      - name: Check coverage thresholds (obsidian-plugin)
-        run: |
-          echo "=============================================="
-          echo "Verifying obsidian-plugin coverage thresholds"
-          echo "=============================================="
-
-          # Check if coverage report exists
-          COVERAGE_FILE="packages/obsidian-plugin/coverage/coverage-summary.json"
-          if [ ! -f "$COVERAGE_FILE" ]; then
-            echo "❌ Coverage report not found at $COVERAGE_FILE"
-            echo "This means the test-ci-batched.sh script did not collect coverage."
-            exit 1
-          fi
-
-          # Extract coverage percentages from JSON
-          STATEMENTS=$(cat "$COVERAGE_FILE" | jq -r '.total.statements.pct')
-          BRANCHES=$(cat "$COVERAGE_FILE" | jq -r '.total.branches.pct')
-          FUNCTIONS=$(cat "$COVERAGE_FILE" | jq -r '.total.functions.pct')
-          LINES=$(cat "$COVERAGE_FILE" | jq -r '.total.lines.pct')
-
-          echo "📊 obsidian-plugin Coverage Report:"
-          echo "  Statements: ${STATEMENTS}% (required: 75.5%)"
-          echo "  Branches:   ${BRANCHES}% (required: 63%)"
-          echo "  Functions:  ${FUNCTIONS}% (required: 69%)"
-          echo "  Lines:      ${LINES}% (required: 76%)"
-
-          # Check if coverage meets thresholds using awk for floating point comparison
-          # Updated thresholds after graph visualization removal (Issue #2083)
-          # statements: lowered from 76 to 75.5 due to marginal failure (75.94% vs 76%) after PR #1338
-          FAILED=0
-          if [ $(echo "$STATEMENTS < 75.5" | awk '{print ($1 < $3) ? 1 : 0}') -eq 1 ]; then
-            echo "❌ Statement coverage ${STATEMENTS}% is below 75.5% threshold"
-            FAILED=1
-          fi
-
-          if [ $(echo "$BRANCHES < 63" | awk '{print ($1 < $3) ? 1 : 0}') -eq 1 ]; then
-            echo "❌ Branch coverage ${BRANCHES}% is below 63% threshold"
-            FAILED=1
-          fi
-
-          if [ $(echo "$FUNCTIONS < 69" | awk '{print ($1 < $3) ? 1 : 0}') -eq 1 ]; then
-            echo "❌ Function coverage ${FUNCTIONS}% is below 69% threshold"
-            FAILED=1
-          fi
-
-          if [ $(echo "$LINES < 76" | awk '{print ($1 < $3) ? 1 : 0}') -eq 1 ]; then
-            echo "❌ Line coverage ${LINES}% is below 76% threshold"
-            FAILED=1
-          fi
-
-          if [ $FAILED -eq 1 ]; then
-            exit 1
-          fi
-
-          echo "✅ obsidian-plugin coverage thresholds met!"
+          node --experimental-vm-modules ./node_modules/jest/bin/jest.js \
+            --config packages/cli/jest.config.js \
+            --coverage \
+            --coverageReporters=lcov \
+            --coverageReporters=json-summary \
+            --coverageReporters=text-summary \
+            --forceExit
 
       - name: Check coverage thresholds (cli)
         run: |
@@ -288,7 +308,6 @@ jobs:
           echo "Verifying CLI package coverage thresholds"
           echo "=============================================="
 
-          # Check if CLI coverage report exists
           CLI_COVERAGE_FILE="packages/cli/coverage/coverage-summary.json"
           if [ ! -f "$CLI_COVERAGE_FILE" ]; then
             echo "⚠️ CLI coverage report not found at $CLI_COVERAGE_FILE"
@@ -296,7 +315,6 @@ jobs:
             exit 0
           fi
 
-          # Extract coverage percentages from JSON
           STATEMENTS=$(cat "$CLI_COVERAGE_FILE" | jq -r '.total.statements.pct')
           BRANCHES=$(cat "$CLI_COVERAGE_FILE" | jq -r '.total.branches.pct')
           FUNCTIONS=$(cat "$CLI_COVERAGE_FILE" | jq -r '.total.functions.pct')
@@ -308,7 +326,6 @@ jobs:
           echo "  Functions:  ${FUNCTIONS}% (required: 70%)"
           echo "  Lines:      ${LINES}% (required: 65%)"
 
-          # Check if coverage meets thresholds
           FAILED=0
           if [ $(echo "$STATEMENTS < 65" | awk '{print ($1 < $3) ? 1 : 0}') -eq 1 ]; then
             echo "❌ CLI Statement coverage ${STATEMENTS}% is below 65% threshold"
@@ -335,9 +352,148 @@ jobs:
           fi
 
           echo "✅ CLI coverage thresholds met!"
+
+      - name: Upload CLI coverage
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: coverage-cli
+          path: packages/cli/coverage/
+          retention-days: 1
+          if-no-files-found: ignore
+
+  test-coverage-exocortex:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    container:
+      image: mcr.microsoft.com/playwright:v1.57.0-jammy
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run exocortex grounding regression tests
+        env:
+          NODE_OPTIONS: "--max-old-space-size=4096"
+          CI: "true"
+        run: |
+          node ./node_modules/jest/bin/jest.js \
+            --config packages/exocortex/jest.config.js \
+            --testPathPatterns='services/(GroundingExecutor|AssetConversionService)\.test\.ts' \
+            --forceExit
+
+  test-coverage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    needs: [test-coverage-shard, test-coverage-cli, test-coverage-exocortex]
+    if: always()
+    container:
+      image: mcr.microsoft.com/playwright:v1.57.0-jammy
+
+    steps:
+      - name: Verify upstream jobs succeeded
+        run: |
+          if [ "${{ needs.test-coverage-shard.result }}" != "success" ]; then
+            echo "❌ test-coverage-shard failed"
+            exit 1
+          fi
+          if [ "${{ needs.test-coverage-cli.result }}" != "success" ]; then
+            echo "❌ test-coverage-cli failed"
+            exit 1
+          fi
+          if [ "${{ needs.test-coverage-exocortex.result }}" != "success" ]; then
+            echo "❌ test-coverage-exocortex failed"
+            exit 1
+          fi
+          echo "✅ All upstream coverage jobs passed"
+
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install jq for coverage parsing
+        run: apt-get update && apt-get install -y jq
+
+      - name: Download obsidian-plugin shard coverage
+        uses: actions/download-artifact@v7
+        with:
+          pattern: coverage-shard-*
+          path: coverage-shards
+
+      - name: Merge obsidian-plugin coverage
+        run: |
+          mkdir -p packages/obsidian-plugin/coverage
+          node scripts/merge-coverage.js coverage-shards packages/obsidian-plugin/coverage
+
+      - name: Check coverage thresholds (obsidian-plugin)
+        run: |
           echo "=============================================="
-          echo "✅ All package coverage thresholds passed!"
+          echo "Verifying obsidian-plugin coverage thresholds"
           echo "=============================================="
+
+          COVERAGE_FILE="packages/obsidian-plugin/coverage/coverage-summary.json"
+          if [ ! -f "$COVERAGE_FILE" ]; then
+            echo "❌ Coverage report not found at $COVERAGE_FILE"
+            echo "The merge step did not produce a summary."
+            exit 1
+          fi
+
+          STATEMENTS=$(cat "$COVERAGE_FILE" | jq -r '.total.statements.pct')
+          BRANCHES=$(cat "$COVERAGE_FILE" | jq -r '.total.branches.pct')
+          FUNCTIONS=$(cat "$COVERAGE_FILE" | jq -r '.total.functions.pct')
+          LINES=$(cat "$COVERAGE_FILE" | jq -r '.total.lines.pct')
+
+          echo "📊 obsidian-plugin Coverage Report (merged across shards):"
+          echo "  Statements: ${STATEMENTS}% (required: 75.5%)"
+          echo "  Branches:   ${BRANCHES}% (required: 63%)"
+          echo "  Functions:  ${FUNCTIONS}% (required: 69%)"
+          echo "  Lines:      ${LINES}% (required: 76%)"
+
+          FAILED=0
+          if [ $(echo "$STATEMENTS < 75.5" | awk '{print ($1 < $3) ? 1 : 0}') -eq 1 ]; then
+            echo "❌ Statement coverage ${STATEMENTS}% is below 75.5% threshold"
+            FAILED=1
+          fi
+
+          if [ $(echo "$BRANCHES < 63" | awk '{print ($1 < $3) ? 1 : 0}') -eq 1 ]; then
+            echo "❌ Branch coverage ${BRANCHES}% is below 63% threshold"
+            FAILED=1
+          fi
+
+          if [ $(echo "$FUNCTIONS < 69" | awk '{print ($1 < $3) ? 1 : 0}') -eq 1 ]; then
+            echo "❌ Function coverage ${FUNCTIONS}% is below 69% threshold"
+            FAILED=1
+          fi
+
+          if [ $(echo "$LINES < 76" | awk '{print ($1 < $3) ? 1 : 0}') -eq 1 ]; then
+            echo "❌ Line coverage ${LINES}% is below 76% threshold"
+            FAILED=1
+          fi
+
+          if [ $FAILED -eq 1 ]; then
+            exit 1
+          fi
+
+          echo "✅ obsidian-plugin coverage thresholds met!"
 
       - name: Generate coverage summary
         if: always()
