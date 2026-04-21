@@ -578,6 +578,31 @@ jest.mock("../../src/presentation/modals/AreaSelectionModal", () => ({
 }));
 ```
 
+### RFC-CI-Tests L1/L2/L3 Testing Convention (Phase 4, 2026-04-21)
+
+Starter-kit dynamic commands (`exocmd__Command`) are covered in three test layers. New commands MUST be added to every applicable layer before merge. Source of truth: RFC v5 at `/Users/kitelev/Developer/rfc-ci-button-testing-2026-04-20.md`.
+
+| Layer | Runner | Location | Scope |
+| ----- | ------ | -------- | ----- |
+| **L1 — Unit** | Jest (ts-jest) | `packages/cli/tests/unit/**` | Helpers (`command-catalog`, `extract-target-class`, `predict-mutation`, `fixture-factory`, `user-input-factory`, `execute-command`) + per-command outcome assertions with mocked boundaries. |
+| **L2 — Integration** | Jest + real `GroundingExecutor` | `packages/cli/tests/integration/starter-kit/**` | 41 active starter-kit commands through `CommandResolver` / `PreconditionEvaluator` / `GroundingExecutor` against fixture vaults. Parametrized catalogue + YAML contract invariants. |
+| **L3 — E2E** | Playwright + Docker Obsidian | `packages/obsidian-plugin/tests/e2e/specs/**` | Smoke subset (RFC §7.4.3) exercising the real plugin UI, sharded across `e2e-shard-1..4`. |
+
+**Layer authoring rules:**
+
+- New helper → L1 unit test under `packages/cli/tests/unit/test-helpers/` (threshold-neutrality — RFC v5 §9.1).
+- New `exocmd__Command` or grounding change → L2 parametrized entry + L1 unit cases for any new dispatch branches.
+- New user-visible button flow → L3 smoke spec (or extend existing spec) covering golden path with `expandGroupIfCollapsed("Maintenance")` helper where applicable.
+
+**Runtime-verify gate:** new E2E specs MUST run green in CI (not only local) before the hosting task flips to Review; skipping this gate caused attribution drift flagged in Phase 2 retrospective.
+
+**Required CI checks (branch-protected per Phase 4 amendment 2026-04-21):**
+`test-unit`, `test-coverage`, `e2e-shard-1`, `e2e-shard-2`, `e2e-shard-3`, `e2e-shard-4`, `archgate`, `test-component`, `typecheck`, `lint`.
+
+**Rollback playbook:** `docs/ROLLBACK_RFC_CI_TESTS.md` — per-trigger mitigation (flaky quarantine / smoke budget trim / submodule → npm migration / admin nuclear rollback).
+
+**Cross-project narrative (2026-04-21):** Phase 4 stability rests on Phase 3 EXIT (PR #2895) and was measurably helped by the parallel CI Speedup project (PR #2900 — `test-unit` ↔ `test-coverage` jest dedupe); both contributed to the 5/5 consecutive green main-PR counter required before branch-protection amendment.
+
 ### GitHub Branch Protection Best Practices
 
 **⚠️ CRITICAL: NEVER use aggregator jobs for branch protection!**
