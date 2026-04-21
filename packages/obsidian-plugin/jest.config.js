@@ -93,7 +93,7 @@ module.exports = {
           [
             "<rootDir>/../test-utils/reporters/flaky-reporter.js",
             {
-              outputFile: "flaky-report.json",
+              outputFile: process.env.FLAKY_REPORT_FILE || "flaky-report.json",
               failOnFlaky: false,
               verbose: true,
             },
