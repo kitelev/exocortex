@@ -18,17 +18,21 @@ import * as path from "path";
  *
  * Issue #2435
  */
+test.describe.configure({ mode: "parallel" });
+
 test.describe("Dynamic Command System E2E", () => {
   let launcher: ObsidianLauncher;
 
-  test.beforeEach(async () => {
+  test.beforeAll(async () => {
     const vaultPath = path.join(__dirname, "../test-vault");
     launcher = new ObsidianLauncher(vaultPath);
     await launcher.launch();
   });
 
-  test.afterEach(async () => {
-    await launcher.close();
+  test.afterAll(async () => {
+    if (launcher) {
+      await launcher.close();
+    }
   });
 
   test("should load exocortex plugin with vault containing command files", async () => {

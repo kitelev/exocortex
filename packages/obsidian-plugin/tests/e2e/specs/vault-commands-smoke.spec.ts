@@ -25,17 +25,21 @@ import * as path from "path";
  * - Tasks/dynamic-cmd-test-with-ts.md    (Task with status Doing)
  * - exoql-test-page.md (ExoQL code block)
  */
+test.describe.configure({ mode: "parallel" });
+
 test.describe("Vault Commands Smoke Tests", () => {
   let launcher: ObsidianLauncher;
 
-  test.beforeEach(async () => {
+  test.beforeAll(async () => {
     const vaultPath = path.join(__dirname, "../test-vault");
     launcher = new ObsidianLauncher(vaultPath);
     await launcher.launch();
   });
 
-  test.afterEach(async () => {
-    await launcher.close();
+  test.afterAll(async () => {
+    if (launcher) {
+      await launcher.close();
+    }
   });
 
   test("should render vault command buttons on a Task note", async () => {
