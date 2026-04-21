@@ -58,7 +58,7 @@ test.describe("Starter-kit smoke (RFC-CI-Tests Phase 3)", () => {
     await expect(button).toBeVisible({ timeout: 20000 });
     await button.click();
 
-    await fillDynamicFormModal(window, { value: "Smoke child task" });
+    await fillDynamicFormModal(window, { label: "Smoke child task" });
 
     // Scan ALL vault files for one whose exo__Asset_label contains our marker.
     // The grounding creates the child file at a path independent of alphabetical
@@ -123,12 +123,9 @@ test.describe("Starter-kit smoke (RFC-CI-Tests Phase 3)", () => {
               return archived ? "moved-to-archive" : null;
             }
             const raw = await app.vault.read(file);
-            // Archive grounding sets ems__Effort_archived: true OR moves file
-            return raw.includes("ems__Effort_archived: true")
-              ? "archived-flag-set"
-              : raw.includes("ems__Effort_archived: \"true\"")
-                ? "archived-flag-set"
-                : null;
+            // ArchiveAssetService sets top-level `archived: true` property
+            // (see packages/exocortex/src/services/ArchiveAssetService.ts).
+            return /^\s*archived:\s*"?true"?/m.test(raw) ? "archived-flag-set" : null;
           });
         },
         {
