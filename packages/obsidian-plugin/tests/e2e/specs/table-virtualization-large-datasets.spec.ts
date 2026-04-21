@@ -18,18 +18,22 @@ import * as path from "path";
  *
  * VIRTUALIZATION_THRESHOLD = 50 (defined in AssetRelationsTable.tsx)
  */
+test.describe.configure({ mode: "parallel" });
+
 test.describe("Table Virtualization for Large Datasets", () => {
   let launcher: ObsidianLauncher;
   let vaultPath: string;
 
-  test.beforeEach(async () => {
+  test.beforeAll(async () => {
     vaultPath = path.join(__dirname, "../test-vault");
     launcher = new ObsidianLauncher(vaultPath);
     await launcher.launch();
   });
 
-  test.afterEach(async () => {
-    await launcher.close();
+  test.afterAll(async () => {
+    if (launcher) {
+      await launcher.close();
+    }
   });
 
   test("should render virtual table rows for >50 items (Issue #549)", async () => {
