@@ -5,6 +5,8 @@ exo__Asset_isDefinedBy: "[[!kitelev]]"
 exo__Instance_class:
   - "[[ems__Task]]"
 ems__Effort_status: "[[ems__EffortStatusBacklog]]"
+aliases:
+  - smoke-set-planned-start-task
 ---
 
 Phase 3 smoke fixture for `Set Planned Start`. No `ems__Effort_plannedStartTimestamp`

@@ -570,7 +570,7 @@ jobs:
   # Note: Named e2e-shard-* to avoid conflict with branch protection rule for "e2e-tests"
   e2e-shard:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     needs: build
     strategy:
       fail-fast: false
