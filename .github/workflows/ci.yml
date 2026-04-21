@@ -21,17 +21,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Setup Node & install deps (+ build)
+        uses: ./.github/actions/setup-node-pnpm
         with:
-          node-version: "22"
-          cache: "npm"
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build
-        run: npm run build
+          run-build: "true"
 
       - name: Upload built plugin
         uses: actions/upload-artifact@v6
@@ -50,14 +43,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: "npm"
-
-      - name: Install dependencies
-        run: npm ci
+      - name: Setup Node & install deps
+        uses: ./.github/actions/setup-node-pnpm
 
       - name: Type check
         run: npm run check:types
@@ -70,14 +57,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: "npm"
-
-      - name: Install dependencies
-        run: npm ci
+      - name: Setup Node & install deps
+        uses: ./.github/actions/setup-node-pnpm
 
       - name: Lint
         run: npm run lint
@@ -153,14 +134,10 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Setup Node & install deps
+        uses: ./.github/actions/setup-node-pnpm
         with:
-          node-version: "22"
-          cache: "npm"
-
-      - name: Install dependencies
-        run: npm ci
+          cache-key-extra: "playwright-jammy"
 
       - name: Run UI tests (jest-environment-obsidian)
         run: |
@@ -220,14 +197,8 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: "npm"
-
-      - name: Install dependencies
-        run: npm ci
+      - name: Setup Node & install deps
+        uses: ./.github/actions/setup-node-pnpm
 
       - name: Run obsidian-plugin tests (shard ${{ matrix.shard }}/4)
         env:
@@ -277,14 +248,8 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: "npm"
-
-      - name: Install dependencies
-        run: npm ci
+      - name: Setup Node & install deps
+        uses: ./.github/actions/setup-node-pnpm
 
       - name: Run CLI tests with coverage
         env:
@@ -370,14 +335,8 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: "npm"
-
-      - name: Install dependencies
-        run: npm ci
+      - name: Setup Node & install deps
+        uses: ./.github/actions/setup-node-pnpm
 
       - name: Run exocortex grounding regression tests
         env:
@@ -417,14 +376,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: "npm"
-
-      - name: Install dependencies
-        run: npm ci
+      - name: Setup Node & install deps
+        uses: ./.github/actions/setup-node-pnpm
 
       - name: Download obsidian-plugin shard coverage
         uses: actions/download-artifact@v7
@@ -519,14 +472,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: "npm"
-
-      - name: Install dependencies
-        run: npm ci
+      - name: Setup Node & install deps
+        uses: ./.github/actions/setup-node-pnpm
 
       - name: Run BDD Tests
         run: npm run bdd:test
@@ -568,17 +515,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Setup Node & install deps (+ build)
+        uses: ./.github/actions/setup-node-pnpm
         with:
-          node-version: "22"
-          cache: "npm"
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build packages
-        run: npm run build
+          run-build: "true"
+          cache-key-extra: "playwright-jammy"
 
       - name: Run component tests (excluding visual)
         run: |
@@ -677,14 +618,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: "npm"
-
-      - name: Install dependencies
-        run: npm ci
+      - name: Setup Node & install deps
+        uses: ./.github/actions/setup-node-pnpm
 
       - name: Download coverage reports
         uses: actions/download-artifact@v7
@@ -863,22 +798,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Setup Node & install deps (+ build)
+        uses: ./.github/actions/setup-node-pnpm
         with:
-          node-version: "22"
-          cache: "npm"
-
-      - name: Install dependencies
-        run: npm ci
+          run-build: "true"
+          cache-key-extra: "playwright-jammy"
 
       - name: Run unit-level performance tests
         run: |
           export NODE_OPTIONS="--max-old-space-size=4096"
           npm run test:perf
-
-      - name: Build packages (required for component tests)
-        run: npm run build
 
       - name: Run component rendering performance tests
         run: |

@@ -1,0 +1,67 @@
+name: Setup Node & Install Dependencies
+description: >
+  Shared setup used by every Node-based job in ci.yml — Node install,
+  cached node_modules restore, conditional `npm ci`, and an optional
+  `npm run build`. The caller is responsible for running
+  `actions/checkout` beforehand (local composite actions require the repo
+  to be on disk before the action can be resolved).
+inputs:
+  node-version:
+    description: Node.js version to install
+    required: false
+    default: "22"
+  run-build:
+    description: Run `npm run build` after dependency install
+    required: false
+    default: "false"
+  cache-key-extra:
+    description: >
+      Extra discriminator appended to the node_modules cache key. Use this to
+      segregate caches produced inside different container images so the
+      restore step never unpacks artifacts built against a different glibc /
+      native module ABI.
+    required: false
+    default: ""
+runs:
+  using: composite
+  steps:
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: "npm"
+
+    - name: Cache node_modules
+      id: nm-cache
+      uses: actions/cache@v4
+      with:
+        path: |
+          node_modules
+          packages/cli/node_modules
+          packages/exocortex/node_modules
+          packages/obsidian-plugin/node_modules
+          packages/test-utils/node_modules
+        key: ${{ runner.os }}-nm-node${{ inputs.node-version }}-${{ hashFiles('package-lock.json') }}${{ inputs.cache-key-extra != '' && format('-{0}', inputs.cache-key-extra) || '' }}
+
+    - name: Install dependencies
+      if: steps.nm-cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: npm ci --prefer-offline --no-audit --no-fund
+
+    - name: Verify dependencies (cache hit path)
+      if: steps.nm-cache.outputs.cache-hit == 'true'
+      shell: bash
+      run: |
+        echo "node_modules restored from cache — skipping npm ci"
+        # Sanity check — if the restored tree is incomplete (e.g. cache
+        # corruption), fall back to a fresh install so the job doesn't fail
+        # later with a cryptic "Cannot find module" error.
+        if [ ! -d node_modules ] || [ ! -f node_modules/.package-lock.json ]; then
+          echo "node_modules looks incomplete — running npm ci as fallback"
+          npm ci --prefer-offline --no-audit --no-fund
+        fi
+
+    - name: Build packages
+      if: inputs.run-build == 'true'
+      shell: bash
+      run: npm run build
