@@ -204,10 +204,11 @@ jobs:
   # repurposed as the aggregator (mirrors the e2e-shard → e2e-tests pattern).
   # Per-shard coverage-final.json is merged via scripts/merge-coverage.js.
   test-coverage-shard:
+    # Runs on bare ubuntu-latest — jest uses jsdom testEnvironment, no browser
+    # or Playwright binaries are needed. Skipping the playwright container
+    # saves ~25s of container init per shard leg.
     runs-on: ubuntu-latest
     timeout-minutes: 4
-    container:
-      image: mcr.microsoft.com/playwright:v1.57.0-jammy
     strategy:
       fail-fast: false
       matrix:
@@ -266,10 +267,9 @@ jobs:
           if-no-files-found: ignore
 
   test-coverage-cli:
+    # Bare ubuntu-latest — CLI jest is node-only; no browser/playwright needed.
     runs-on: ubuntu-latest
     timeout-minutes: 3
-    container:
-      image: mcr.microsoft.com/playwright:v1.57.0-jammy
 
     steps:
       - name: Checkout
@@ -285,9 +285,6 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
-
-      - name: Install jq for coverage parsing
-        run: apt-get update && apt-get install -y jq
 
       - name: Run CLI tests with coverage
         env:
@@ -363,10 +360,9 @@ jobs:
           if-no-files-found: ignore
 
   test-coverage-exocortex:
+    # Bare ubuntu-latest — narrow node-only regression suite, no browser needed.
     runs-on: ubuntu-latest
     timeout-minutes: 2
-    container:
-      image: mcr.microsoft.com/playwright:v1.57.0-jammy
 
     steps:
       - name: Checkout
@@ -394,12 +390,12 @@ jobs:
             --forceExit
 
   test-coverage:
+    # Bare ubuntu-latest aggregator — only runs istanbul merge + threshold
+    # checks in pure Node. jq is preinstalled on ubuntu-latest.
     runs-on: ubuntu-latest
     timeout-minutes: 3
     needs: [test-coverage-shard, test-coverage-cli, test-coverage-exocortex]
     if: always()
-    container:
-      image: mcr.microsoft.com/playwright:v1.57.0-jammy
 
     steps:
       - name: Verify upstream jobs succeeded
@@ -429,9 +425,6 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
-
-      - name: Install jq for coverage parsing
-        run: apt-get update && apt-get install -y jq
 
       - name: Download obsidian-plugin shard coverage
         uses: actions/download-artifact@v7
