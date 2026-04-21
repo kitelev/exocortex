@@ -2,17 +2,21 @@ import { test, expect } from "@playwright/test";
 import { ObsidianLauncher } from "../utils/obsidian-launcher";
 import * as path from "path";
 
+test.describe.configure({ mode: "parallel" });
+
 test.describe("DailyNote Archive Filter", () => {
   let launcher: ObsidianLauncher;
 
-  test.beforeEach(async () => {
+  test.beforeAll(async () => {
     const vaultPath = path.join(__dirname, "../test-vault");
     launcher = new ObsidianLauncher(vaultPath);
     await launcher.launch();
   });
 
-  test.afterEach(async () => {
-    await launcher.close();
+  test.afterAll(async () => {
+    if (launcher) {
+      await launcher.close();
+    }
   });
 
   test("should toggle archived tasks visibility with button click", async () => {
