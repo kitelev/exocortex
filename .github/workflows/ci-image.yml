@@ -1,0 +1,82 @@
+name: CI Docker Image
+
+# Builds and publishes the pre-built CI base image to GHCR. The image
+# contains the Playwright runtime, Obsidian binary, xvfb, and node_modules
+# installed from the current lock file. It is consumed by e2e-shard jobs
+# in ci.yml via `--build-arg BASE_IMAGE=ghcr.io/kitelev/exocortex-ci:<tag>`
+# (Phase 5 CI Speedup, task d7d18dd6).
+#
+# Triggers:
+#   - push on main touching the lock file or Dockerfile.ci  → publish
+#   - workflow_dispatch                                      → manual rebuild
+#
+# PRs cannot publish to GHCR (GITHUB_TOKEN from fork PRs lacks packages:write
+# scope, and writing from untrusted PR content would be a security issue).
+# The e2e-shard job handles cache-miss by falling back to a local
+# Dockerfile.ci build, so PRs that change the lock file still work — they
+# simply do not benefit from the speedup until they land on main.
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "package-lock.json"
+      - "packages/obsidian-plugin/Dockerfile.ci"
+      - ".github/workflows/ci-image.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: ci-image-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute image tag
+        id: tag
+        # Hash the inputs that determine image contents:
+        #   - package-lock.json     (drives npm ci)
+        #   - Dockerfile.ci         (drives apt install / obsidian download)
+        # Any change in either invalidates the tag and republishes. Truncated
+        # to 16 hex chars for readability — collision space 2^64 is adequate
+        # given the small number of distinct tags we ever produce.
+        run: |
+          HASH=$(cat \
+            package-lock.json \
+            packages/obsidian-plugin/Dockerfile.ci \
+            | sha256sum | cut -c1-16)
+          echo "tag=$HASH" >> "$GITHUB_OUTPUT"
+          echo "::notice::ci-image tag = $HASH"
+
+      - name: Build and push base image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: packages/obsidian-plugin/Dockerfile.ci
+          push: true
+          tags: |
+            ghcr.io/kitelev/exocortex-ci:${{ steps.tag.outputs.tag }}
+            ghcr.io/kitelev/exocortex-ci:latest
+          cache-from: type=gha,scope=ci-image
+          cache-to: type=gha,scope=ci-image,mode=max

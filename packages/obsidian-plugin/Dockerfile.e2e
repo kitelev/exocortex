@@ -1,61 +1,21 @@
-# Stage 1: Base image with Obsidian (cached for long time)
-FROM mcr.microsoft.com/playwright:v1.55.1-jammy AS obsidian-base
-
-# Install xvfb, window manager, and dependencies for headless Obsidian
-RUN apt-get update && apt-get install -y \
-    xvfb \
-    x11-utils \
-    fluxbox \
-    libgbm1 \
-    libnss3 \
-    libxss1 \
-    libasound2 \
-    libgtk-3-0 \
-    libgdk-pixbuf2.0-0 \
-    libxcomposite1 \
-    libxcursor1 \
-    libxdamage1 \
-    libxi6 \
-    libxrandr2 \
-    libxtst6 \
-    wget \
-    unzip \
-    squashfs-tools \
-    zlib1g \
-    libfuse2 \
-    && rm -rf /var/lib/apt/lists/*
-
-# Download and extract Obsidian (cached until version changes)
-WORKDIR /opt
-RUN ARCH=$(uname -m) && \
-    if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then \
-        OBSIDIAN_FILE="obsidian-1.9.14-arm64.tar.gz"; \
-        OBSIDIAN_DIR="obsidian-1.9.14-arm64"; \
-    else \
-        OBSIDIAN_FILE="obsidian-1.9.14.tar.gz"; \
-        OBSIDIAN_DIR="obsidian-1.9.14"; \
-    fi && \
-    wget -q https://github.com/obsidianmd/obsidian-releases/releases/download/v1.9.14/$OBSIDIAN_FILE \
-    && tar -xzf $OBSIDIAN_FILE \
-    && mv $OBSIDIAN_DIR obsidian \
-    && rm $OBSIDIAN_FILE
-
-# Stage 2: Dependencies (cached until package.json changes)
-FROM obsidian-base AS dependencies
+# E2E test image — thin app layer on top of a pre-built base.
+#
+# Phase 5 CI Speedup (task d7d18dd6): the heavy Stage 1 (obsidian + xvfb)
+# and Stage 2 (npm ci) work has been extracted into Dockerfile.ci and
+# published to ghcr.io/kitelev/exocortex-ci. This file now only adds the
+# app-specific layer (plugin artifacts + test fixtures), which is fast.
+#
+# BASE_IMAGE defaults to a local tag. CI passes either
+# `--build-arg BASE_IMAGE=ghcr.io/kitelev/exocortex-ci:<hash>` (cache-hit)
+# or `--build-arg BASE_IMAGE=exocortex-ci-base:local` after falling back
+# to a local Dockerfile.ci build (cache-miss / bootstrap). `docker build`
+# outside CI needs the base image available locally under the same tag.
+ARG BASE_IMAGE=exocortex-ci-base:local
+FROM ${BASE_IMAGE}
 
 WORKDIR /app
 
-# Copy package files from root and all workspaces
-COPY package*.json ./
-COPY packages/exocortex/package*.json ./packages/exocortex/
-COPY packages/obsidian-plugin/package*.json ./packages/obsidian-plugin/
-COPY packages/cli/package*.json ./packages/cli/
-RUN npm ci --prefer-offline --no-audit
-
-# Stage 3: Application (rebuilt on code changes)
-FROM dependencies AS app
-
-# Copy entrypoint first (rarely changes)
+# Copy entrypoint first (rarely changes so it stays in a stable layer).
 COPY packages/obsidian-plugin/docker-entrypoint-e2e.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
 
@@ -79,7 +39,9 @@ RUN mkdir -p packages/obsidian-plugin/tests/e2e/test-vault/.obsidian/plugins/exo
     && echo "=== Plugin files installed: ===" \
     && ls -lh packages/obsidian-plugin/tests/e2e/test-vault/.obsidian/plugins/exocortex/
 
-# Environment variables
+# Environment variables (also inherited from Dockerfile.ci base, but set
+# explicitly here so a bootstrap build from a fallback base without them
+# still produces a runnable image).
 ENV DISPLAY=:99
 ENV OBSIDIAN_PATH=/opt/obsidian/obsidian
 ENV OBSIDIAN_VAULT=/app/packages/obsidian-plugin/tests/e2e/test-vault
