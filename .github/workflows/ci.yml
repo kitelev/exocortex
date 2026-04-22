@@ -853,15 +853,15 @@ jobs:
         if: env.RUN_E2E == 'true'
         uses: actions/checkout@v6
 
-      - name: Setup Node.js
+      # Phase 3 exit gate (task 574476fc 2026-04-22):
+      # Aggregator previously ran `actions/setup-node@v4` + `npm install -D
+      # @playwright/test` (~18s). Replaced with the cached composite action
+      # (`@playwright/test` is already a root devDependency, version-locked
+      # via package-lock.json). Cache-hit path is ~8-10s, saving ~8-10s on
+      # the critical path.
+      - name: Setup Node & install deps
         if: env.RUN_E2E == 'true'
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-
-      - name: Install Playwright
-        if: env.RUN_E2E == 'true'
-        run: npm install -D @playwright/test
+        uses: ./.github/actions/setup-node-pnpm
 
       - name: Download all blob reports
         if: env.RUN_E2E == 'true'
