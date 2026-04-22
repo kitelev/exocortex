@@ -130,6 +130,13 @@ jobs:
         run: npm run lint
         continue-on-error: true
 
+      # D1 CI Path 2 (task e0f6e6fd): guard against shard-assignment drift.
+      # Playwright shard configs are hand-maintained lists; this step fails
+      # the lint job if a new *.spec.ts lands without being added to exactly
+      # one shard (or if a shard references a deleted/renamed spec).
+      - name: Validate e2e shard assignments
+        run: node scripts/validate-shard-assignments.mjs
+
   docs-link-check:
     runs-on: ubuntu-latest
     timeout-minutes: 3
@@ -846,6 +853,14 @@ jobs:
           build-args: |
             BASE_IMAGE=${{ steps.base.outputs.image }}
 
+      # D1 CI Path 2 (task e0f6e6fd): per-shard weighted configs replace
+      # Playwright's default `--shard=N/M` split. Each playwright.shard-N.config.ts
+      # extends playwright-e2e.config.ts and sets an explicit testMatch drawn
+      # from packages/obsidian-plugin/playwright-shard-assignments.json — LPT
+      # bin-packed by Phase 2a per-spec median timing (asset 473184ea) so that
+      # max-minus-min shard variance stays ≤15s. The lint job runs
+      # scripts/validate-shard-assignments.mjs to guard against drift when
+      # new *.spec.ts files land.
       - name: Run E2E tests (shard ${{ matrix.shard }}/6)
         if: env.RUN_E2E == 'true'
         run: |
@@ -855,7 +870,7 @@ jobs:
             -v $PWD/playwright-report-e2e:/app/playwright-report-e2e \
             -v $PWD/blob-report:/app/packages/obsidian-plugin/blob-report \
             -e CI=true \
-            exocortex-e2e npx playwright test -c packages/obsidian-plugin/playwright-e2e.config.ts --shard=${{ matrix.shard }}/6
+            exocortex-e2e npx playwright test -c packages/obsidian-plugin/playwright.shard-${{ matrix.shard }}.config.ts
 
       - name: Upload blob report for shard ${{ matrix.shard }}
         if: always() && env.RUN_E2E == 'true'

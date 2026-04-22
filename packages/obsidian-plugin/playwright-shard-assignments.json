@@ -1,0 +1,39 @@
+{
+  "_comment": "D1 weighted shard assignment (CI Path 2, task e0f6e6fd). LPT bin-pack by per-spec median ms from Phase 2a baseline (473184ea, N=2). Spec filenames relative to testDir packages/obsidian-plugin/tests/e2e/specs. Validator scripts/validate-shard-assignments.mjs. When adding a new spec, extend exactly one shard array.",
+  "_generated_from": {
+    "phase_2a_baseline": "473184ea-c0da-49dd-bfe4-4c1d63421001",
+    "method": "greedy LPT (longest processing time) bin-packing, ties broken by current shard load ascending"
+  },
+  "shards": [
+    ["dynamic-commands.spec.ts"],
+    ["effort-timestamps-auto-sync.spec.ts", "daily-archive-filter.spec.ts"],
+    [
+      "dynamic-command-buttons-render.spec.ts",
+      "alias-sync-on-label-change.spec.ts"
+    ],
+    [
+      "starter-kit-smoke.spec.ts",
+      "layout-overflow-styling.spec.ts",
+      "brat-installation-compatibility.spec.ts"
+    ],
+    [
+      "area-tree-collapsible.spec.ts",
+      "vault-commands-smoke.spec.ts",
+      "table-virtualization-large-datasets.spec.ts"
+    ],
+    [
+      "daily-navigation.spec.ts",
+      "table-column-alignment.spec.ts",
+      "daily-note-tasks.spec.ts"
+    ]
+  ],
+  "_projected_weights_ms": {
+    "shard_1": 10432,
+    "shard_2": 6922,
+    "shard_3": 6894,
+    "shard_4": 5397,
+    "shard_5": 6341,
+    "shard_6": 6113,
+    "max_minus_min_ms": 5035
+  }
+}
