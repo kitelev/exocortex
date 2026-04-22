@@ -5,8 +5,12 @@ export default defineConfig({
   // fullyParallel: false - E2E tests share Obsidian state, must run serially per shard
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
-  // Reduced retries: 1 instead of 2 to speed up failing tests
-  retries: process.env.CI ? 1 : 0,
+  // D2 (2026-04-22): retries: 0 — the only recurring flake was a deterministic
+  // race in starter-kit-smoke.spec.ts (expandGroupIfCollapsed silent-return on
+  // un-hydrated Maintenance group after Project→Task class switch); fixed in
+  // the same PR. Post-fix, all tests pass attempt-1 — no retry safety net
+  // needed. Flaky failures now surface immediately instead of being masked.
+  retries: 0,
   workers: 1,
   // Reduced timeout from 90s to 60s - most tests complete in 30-45s
   timeout: 60000,
