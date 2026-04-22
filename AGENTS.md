@@ -586,7 +586,7 @@ Starter-kit dynamic commands (`exocmd__Command`) are covered in three test layer
 | ----- | ------ | -------- | ----- |
 | **L1 — Unit** | Jest (ts-jest) | `packages/cli/tests/unit/**` | Helpers (`command-catalog`, `extract-target-class`, `predict-mutation`, `fixture-factory`, `user-input-factory`, `execute-command`) + per-command outcome assertions with mocked boundaries. |
 | **L2 — Integration** | Jest + real `GroundingExecutor` | `packages/cli/tests/integration/starter-kit/**` | 41 active starter-kit commands through `CommandResolver` / `PreconditionEvaluator` / `GroundingExecutor` against fixture vaults. Parametrized catalogue + YAML contract invariants. |
-| **L3 — E2E** | Playwright + Docker Obsidian | `packages/obsidian-plugin/tests/e2e/specs/**` | Smoke subset (RFC §7.4.3) exercising the real plugin UI, sharded across `e2e-shard-1..4`. |
+| **L3 — E2E** | Playwright + Docker Obsidian | `packages/obsidian-plugin/tests/e2e/specs/**` | Smoke subset (RFC §7.4.3) exercising the real plugin UI, sharded across `e2e-shard-1..6`. |
 
 **Layer authoring rules:**
 
@@ -596,8 +596,8 @@ Starter-kit dynamic commands (`exocmd__Command`) are covered in three test layer
 
 **Runtime-verify gate:** new E2E specs MUST run green in CI (not only local) before the hosting task flips to Review; skipping this gate caused attribution drift flagged in Phase 2 retrospective.
 
-**Required CI checks (branch-protected, 11 contexts as of Phase 4 cutover 2026-04-22):**
-`archgate`, `detect-changes`, `e2e-shard (1)`, `e2e-shard (2)`, `e2e-shard (3)`, `e2e-shard (4)`, `lint`, `test-bdd`, `test-component`, `test-coverage`, `typecheck`.
+**Required CI checks (branch-protected, 13 contexts post CI Path 2 D0 2026-04-22):**
+`archgate`, `detect-changes`, `e2e-shard (1)`, `e2e-shard (2)`, `e2e-shard (3)`, `e2e-shard (4)`, `e2e-shard (5)`, `e2e-shard (6)`, `lint`, `test-bdd`, `test-component`, `test-coverage`, `typecheck`.
 Matrix contexts use the parenthesised form `<job> (<shard>)` — hyphenated names like `e2e-shard-1` silently resolve to no required check. `test-unit` was dropped from required contexts in f235881d (Phase 4 cutover) now that it is a deduplicated stub; `detect-changes` was added so path-filter infrastructure always runs.
 
 **Rollback playbook:** `docs/ROLLBACK_RFC_CI_TESTS.md` — per-trigger mitigation (flaky quarantine / smoke budget trim / submodule → npm migration / admin nuclear rollback).
@@ -630,7 +630,7 @@ build-and-test:
 
 ```bash
 # Configure branch protection via GitHub API.
-# Current exocortex required set (11 contexts) as of Phase 4 cutover 2026-04-22.
+# Current exocortex required set (13 contexts) post CI Path 2 D0 2026-04-22.
 gh api repos/OWNER/REPO/branches/main/protection/required_status_checks -X PATCH --input - <<EOF
 {
   "strict": true,
@@ -641,6 +641,8 @@ gh api repos/OWNER/REPO/branches/main/protection/required_status_checks -X PATCH
     "e2e-shard (2)",
     "e2e-shard (3)",
     "e2e-shard (4)",
+    "e2e-shard (5)",
+    "e2e-shard (6)",
     "lint",
     "test-bdd",
     "test-component",
@@ -657,7 +659,7 @@ literal space and parens** (e.g. `e2e-shard (1)`). Hyphenated names like
 a live PR via `gh pr view <PR> --json statusCheckRollup` before composing a
 PATCH payload.
 
-**Path-filtered jobs** (`test-component`, `e2e-shard (1..4)`): on docs-only
+**Path-filtered jobs** (`test-component`, `e2e-shard (1..6)`): on docs-only
 PRs the `detect-changes` job emits `code=false`, and downstream jobs either
 skip via job-level `if:` (singletons — reported as skipped=success) or
 short-circuit via `env.RUN_E2E` gates at step level (matrix jobs must NOT
