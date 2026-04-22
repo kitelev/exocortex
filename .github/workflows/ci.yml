@@ -242,7 +242,7 @@ jobs:
   # Phase 2 CI speedup (task 9346c5be, 2026-04-21):
   # test-coverage was previously a single 190s job running three jest invocations
   # serially (obsidian-plugin full suite + CLI + exocortex regression).
-  # Split into parallel matrix (obsidian-plugin 1/4..4/4) + sibling jobs (CLI,
+  # Split into parallel matrix (obsidian-plugin 1/6..6/6) + sibling jobs (CLI,
   # exocortex-regression), with the branch-protected `test-coverage` name
   # repurposed as the aggregator (mirrors the e2e-shard → e2e-tests pattern).
   # Per-shard coverage-final.json is merged via scripts/merge-coverage.js.
@@ -255,7 +255,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5, 6]
 
     steps:
       - name: Checkout
@@ -266,7 +266,7 @@ jobs:
       - name: Setup Node & install deps
         uses: ./.github/actions/setup-node-pnpm
 
-      - name: Run obsidian-plugin tests (shard ${{ matrix.shard }}/4)
+      - name: Run obsidian-plugin tests (shard ${{ matrix.shard }}/6)
         env:
           NODE_OPTIONS: "--max-old-space-size=4096"
           CI: "true"
@@ -277,7 +277,7 @@ jobs:
           # thresholds on merged coverage.
           node ./node_modules/jest/bin/jest.js \
             --config packages/obsidian-plugin/jest.config.js \
-            --shard=${{ matrix.shard }}/4 \
+            --shard=${{ matrix.shard }}/6 \
             --coverage \
             --coverageReporters=json \
             --coverageReporters=lcov \
@@ -739,7 +739,7 @@ jobs:
     needs: [build, detect-changes]
     # NOTE: no job-level `if:` here — matrix-job skip collapses to a single
     # base `e2e-shard` check-run, dropping the branch-protected parenthesised
-    # `e2e-shard (1..4)` required check names. Instead, the job always starts,
+    # `e2e-shard (1..6)` required check names. Instead, the job always starts,
     # then each step is gated on `env.RUN_E2E`. On docs-only PRs the runner
     # exits in ~15-30s after skipping every heavy step, registering an
     # individual `e2e-shard (N)` check-run with conclusion `success` — which
@@ -749,16 +749,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5, 6]
 
     steps:
       - name: Announce gating decision
         run: |
           echo "RUN_E2E=${RUN_E2E}"
           if [ "$RUN_E2E" = "true" ]; then
-            echo "::notice::Running e2e shard ${{ matrix.shard }}/4 (code change detected)"
+            echo "::notice::Running e2e shard ${{ matrix.shard }}/6 (code change detected)"
           else
-            echo "::notice::Skipping e2e shard ${{ matrix.shard }}/4 (docs-only PR — detect-changes gate)"
+            echo "::notice::Skipping e2e shard ${{ matrix.shard }}/6 (docs-only PR — detect-changes gate)"
           fi
 
       - name: Checkout
@@ -846,7 +846,7 @@ jobs:
           build-args: |
             BASE_IMAGE=${{ steps.base.outputs.image }}
 
-      - name: Run E2E tests (shard ${{ matrix.shard }}/4)
+      - name: Run E2E tests (shard ${{ matrix.shard }}/6)
         if: env.RUN_E2E == 'true'
         run: |
           mkdir -p test-results-e2e playwright-report-e2e blob-report
@@ -855,7 +855,7 @@ jobs:
             -v $PWD/playwright-report-e2e:/app/playwright-report-e2e \
             -v $PWD/blob-report:/app/packages/obsidian-plugin/blob-report \
             -e CI=true \
-            exocortex-e2e npx playwright test -c packages/obsidian-plugin/playwright-e2e.config.ts --shard=${{ matrix.shard }}/4
+            exocortex-e2e npx playwright test -c packages/obsidian-plugin/playwright-e2e.config.ts --shard=${{ matrix.shard }}/6
 
       - name: Upload blob report for shard ${{ matrix.shard }}
         if: always() && env.RUN_E2E == 'true'
