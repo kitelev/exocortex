@@ -596,8 +596,9 @@ Starter-kit dynamic commands (`exocmd__Command`) are covered in three test layer
 
 **Runtime-verify gate:** new E2E specs MUST run green in CI (not only local) before the hosting task flips to Review; skipping this gate caused attribution drift flagged in Phase 2 retrospective.
 
-**Required CI checks (branch-protected per Phase 4 amendment 2026-04-21):**
-`test-unit`, `test-coverage`, `e2e-shard-1`, `e2e-shard-2`, `e2e-shard-3`, `e2e-shard-4`, `archgate`, `test-component`, `typecheck`, `lint`.
+**Required CI checks (branch-protected, 11 contexts as of Phase 4 cutover 2026-04-22):**
+`archgate`, `detect-changes`, `e2e-shard (1)`, `e2e-shard (2)`, `e2e-shard (3)`, `e2e-shard (4)`, `lint`, `test-bdd`, `test-component`, `test-coverage`, `typecheck`.
+Matrix contexts use the parenthesised form `<job> (<shard>)` — hyphenated names like `e2e-shard-1` silently resolve to no required check. `test-unit` was dropped from required contexts in f235881d (Phase 4 cutover) now that it is a deduplicated stub; `detect-changes` was added so path-filter infrastructure always runs.
 
 **Rollback playbook:** `docs/ROLLBACK_RFC_CI_TESTS.md` — per-trigger mitigation (flaky quarantine / smoke budget trim / submodule → npm migration / admin nuclear rollback).
 
@@ -628,22 +629,40 @@ build-and-test:
 **✅ CORRECT - Require individual jobs:**
 
 ```bash
-# Configure branch protection via GitHub API
+# Configure branch protection via GitHub API.
+# Current exocortex required set (11 contexts) as of Phase 4 cutover 2026-04-22.
 gh api repos/OWNER/REPO/branches/main/protection/required_status_checks -X PATCH --input - <<EOF
 {
   "strict": true,
-  "checks": [
-    {"context": "build", "app_id": 15368},
-    {"context": "typecheck", "app_id": 15368},
-    {"context": "test-unit", "app_id": 15368},
-    {"context": "test-coverage", "app_id": 15368},
-    {"context": "test-bdd", "app_id": 15368},
-    {"context": "test-component", "app_id": 15368},
-    {"context": "e2e-tests", "app_id": 15368}
+  "contexts": [
+    "archgate",
+    "detect-changes",
+    "e2e-shard (1)",
+    "e2e-shard (2)",
+    "e2e-shard (3)",
+    "e2e-shard (4)",
+    "lint",
+    "test-bdd",
+    "test-component",
+    "test-coverage",
+    "typecheck"
   ]
 }
 EOF
 ```
+
+**Matrix-job check-run names use parenthesised form `<job> (<shard>)` with
+literal space and parens** (e.g. `e2e-shard (1)`). Hyphenated names like
+`e2e-shard-1` silently resolve to no required check — always verify names on
+a live PR via `gh pr view <PR> --json statusCheckRollup` before composing a
+PATCH payload.
+
+**Path-filtered jobs** (`test-component`, `e2e-shard (1..4)`): on docs-only
+PRs the `detect-changes` job emits `code=false`, and downstream jobs either
+skip via job-level `if:` (singletons — reported as skipped=success) or
+short-circuit via `env.RUN_E2E` gates at step level (matrix jobs must NOT
+use job-level `if:` or the parenthesised `(N)` contexts collapse to a single
+base name).
 
 **Why this matters:**
 - Individual job requirements provide **real protection**
@@ -726,10 +745,12 @@ refactor: simplify RDF store queries
    ```
 
 ### Task NOT Complete Until:
-- ✅ CI pipeline passes (build-and-test + e2e-tests)
+- ✅ All 11 required CI checks pass (see "GitHub Branch Protection Best Practices" above for the current list). Critical-path target after Phase 3: **~236s avg ±50s**, gate relaxed to **≤220s** per Decision B (RFC v2 relax, 2026-04-22). Original ≤135s target was infeasible given setup-floor dominance.
 - ✅ PR merged to main
 - ✅ Auto-release workflow creates GitHub release
 - ✅ Worktree cleaned up
+
+**Rollback reference:** `docs/ROLLBACK_CI_SPEEDUP.md` documents per-phase revert procedure for any of the Phase 1–3 speedup changes if a regression is detected post-merge.
 
 ---
 
