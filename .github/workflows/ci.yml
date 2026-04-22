@@ -11,8 +11,70 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
+  # Detect whether PR touches code that requires e2e/browser testing.
+  # Used to skip heavy jobs (e2e-shard, test-component, performance-tests)
+  # on docs-only PRs. R4 mitigation: the `code` filter includes restrictive
+  # globs for ANY *.spec.{ts,tsx,js,jsx} or *.test.{ts,tsx,js,jsx} change
+  # anywhere in the tree, so a docs PR that inadvertently renames or adds
+  # a spec file still triggers e2e (no false-green).
+  #
+  # Manual override: apply the `force-e2e` label to a PR to force e2e jobs
+  # to run even if only docs/** changed (FORCE_E2E equivalent).
+  #
+  # Push events to main always run e2e (bypass gating via github.event_name).
+  detect-changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+      force: ${{ steps.force.outputs.force }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Detect code changes
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            code:
+              # R4 mitigation: spec/test files anywhere trigger e2e even if
+              # the rest of the diff is docs-only (catches inadvertent spec
+              # rename / migration into docs/ or similar directories).
+              - '**/*.spec.{ts,tsx,js,jsx}'
+              - '**/*.test.{ts,tsx,js,jsx}'
+              # Production code & config.
+              - 'packages/**'
+              - 'scripts/**'
+              # CI infrastructure itself (workflows, composite actions,
+              # Dockerfiles) must always trigger e2e so workflow changes
+              # are validated end-to-end.
+              - '.github/workflows/**'
+              - '.github/actions/**'
+              - '**/Dockerfile*'
+              # Dependency & TS config changes that can affect runtime.
+              - 'package.json'
+              - 'package-lock.json'
+              - 'tsconfig*.json'
+              - '**/jest.config.*'
+              - '**/playwright*.config.*'
+
+      - name: Detect manual override (force-e2e label)
+        id: force
+        env:
+          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        run: |
+          if echo "$LABELS" | grep -q '"force-e2e"'; then
+            echo "force=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::FORCE_E2E override active (force-e2e label present)"
+          else
+            echo "force=false" >> "$GITHUB_OUTPUT"
+          fi
+
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 3
@@ -508,6 +570,14 @@ jobs:
   test-component:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    needs: detect-changes
+    # Skip on docs-only PRs (no packages/ or spec/test changes). Push events
+    # and force-e2e-labelled PRs always run. Skipped required checks are
+    # treated as passing by GitHub branch protection.
+    if: >-
+      github.event_name == 'push' ||
+      needs.detect-changes.outputs.code == 'true' ||
+      needs.detect-changes.outputs.force == 'true'
     container:
       image: mcr.microsoft.com/playwright:v1.57.0-jammy
 
@@ -662,7 +732,14 @@ jobs:
   e2e-shard:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: build
+    needs: [build, detect-changes]
+    # Skip on docs-only PRs (no packages/ or spec/test changes). Push events
+    # and force-e2e-labelled PRs always run. Skipped required checks are
+    # treated as passing by GitHub branch protection.
+    if: >-
+      github.event_name == 'push' ||
+      needs.detect-changes.outputs.code == 'true' ||
+      needs.detect-changes.outputs.force == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -732,25 +809,40 @@ jobs:
     steps:
       - name: Check shard results
         run: |
-          # Fail if any shard failed (needs.e2e-shard.result will be 'failure' or 'success')
-          if [ "${{ needs.e2e-shard.result }}" != "success" ]; then
-            echo "❌ One or more E2E shards failed"
-            exit 1
-          fi
-          echo "✅ All E2E shards passed"
+          # needs.e2e-shard.result: 'success' | 'failure' | 'skipped' | 'cancelled'
+          # Treat 'skipped' as success — this is the expected state on
+          # docs-only PRs where the detect-changes gate intentionally
+          # disabled e2e. Only 'failure' / 'cancelled' block the aggregator.
+          RESULT="${{ needs.e2e-shard.result }}"
+          case "$RESULT" in
+            success)
+              echo "✅ All E2E shards passed"
+              ;;
+            skipped)
+              echo "✅ E2E shards skipped (docs-only PR — gate from detect-changes)"
+              ;;
+            *)
+              echo "❌ E2E shards reported result: $RESULT"
+              exit 1
+              ;;
+          esac
 
       - name: Checkout
+        if: needs.e2e-shard.result == 'success'
         uses: actions/checkout@v6
 
       - name: Setup Node.js
+        if: needs.e2e-shard.result == 'success'
         uses: actions/setup-node@v4
         with:
           node-version: "22"
 
       - name: Install Playwright
+        if: needs.e2e-shard.result == 'success'
         run: npm install -D @playwright/test
 
       - name: Download all blob reports
+        if: needs.e2e-shard.result == 'success'
         uses: actions/download-artifact@v7
         with:
           pattern: e2e-blob-report-*
@@ -758,7 +850,7 @@ jobs:
           merge-multiple: true
 
       - name: Download all test artifacts (videos, screenshots, traces)
-        if: always()
+        if: needs.e2e-shard.result == 'success'
         uses: actions/download-artifact@v7
         with:
           pattern: e2e-test-artifacts-*
@@ -766,12 +858,13 @@ jobs:
           merge-multiple: true
 
       - name: Merge E2E reports
+        if: needs.e2e-shard.result == 'success'
         run: |
           npx playwright merge-reports --reporter html ./all-blob-reports
         continue-on-error: true
 
       - name: Upload merged E2E test report
-        if: always()
+        if: needs.e2e-shard.result == 'success'
         uses: actions/upload-artifact@v6
         with:
           name: e2e-test-report
@@ -780,7 +873,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: Upload merged test artifacts (videos, screenshots, traces)
-        if: always()
+        if: needs.e2e-shard.result == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: e2e-test-artifacts
@@ -791,6 +884,13 @@ jobs:
   performance-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    needs: detect-changes
+    # Skip on docs-only PRs — performance regression detection is only
+    # meaningful when production code / perf benchmarks / deps change.
+    if: >-
+      github.event_name == 'push' ||
+      needs.detect-changes.outputs.code == 'true' ||
+      needs.detect-changes.outputs.force == 'true'
     container:
       image: mcr.microsoft.com/playwright:v1.57.0-jammy
 
