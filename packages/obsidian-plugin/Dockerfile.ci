@@ -1,0 +1,66 @@
+# Pre-built CI base image — Playwright + Obsidian + xvfb + node_modules.
+#
+# Published to ghcr.io/kitelev/exocortex-ci by .github/workflows/ci-image.yml
+# on any change to package-lock.json or this Dockerfile. Consumed by
+# Dockerfile.e2e via `--build-arg BASE_IMAGE=ghcr.io/kitelev/exocortex-ci:<tag>`.
+#
+# Phase 5 CI Speedup (task d7d18dd6): amortises the ~60s npm ci cost that
+# was being paid by every e2e-shard on every PR. Only rebuilt on lock-file
+# churn (rare), so steady-state cache-hit rate is high.
+FROM mcr.microsoft.com/playwright:v1.55.1-jammy
+
+# xvfb + window manager + Obsidian runtime deps (matches Dockerfile.e2e
+# Stage 1 verbatim so the two image layers stay binary-compatible).
+RUN apt-get update && apt-get install -y \
+    xvfb \
+    x11-utils \
+    fluxbox \
+    libgbm1 \
+    libnss3 \
+    libxss1 \
+    libasound2 \
+    libgtk-3-0 \
+    libgdk-pixbuf2.0-0 \
+    libxcomposite1 \
+    libxcursor1 \
+    libxdamage1 \
+    libxi6 \
+    libxrandr2 \
+    libxtst6 \
+    wget \
+    unzip \
+    squashfs-tools \
+    zlib1g \
+    libfuse2 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Obsidian binary (cached until version changes).
+WORKDIR /opt
+RUN ARCH=$(uname -m) && \
+    if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then \
+        OBSIDIAN_FILE="obsidian-1.9.14-arm64.tar.gz"; \
+        OBSIDIAN_DIR="obsidian-1.9.14-arm64"; \
+    else \
+        OBSIDIAN_FILE="obsidian-1.9.14.tar.gz"; \
+        OBSIDIAN_DIR="obsidian-1.9.14"; \
+    fi && \
+    wget -q https://github.com/obsidianmd/obsidian-releases/releases/download/v1.9.14/$OBSIDIAN_FILE \
+    && tar -xzf $OBSIDIAN_FILE \
+    && mv $OBSIDIAN_DIR obsidian \
+    && rm $OBSIDIAN_FILE
+
+WORKDIR /app
+
+# Copy manifests for every published workspace (starter-kit-fixtures is
+# excluded from `workspaces` in root package.json, so no package.json is
+# required for it).
+COPY package*.json ./
+COPY packages/exocortex/package*.json ./packages/exocortex/
+COPY packages/obsidian-plugin/package*.json ./packages/obsidian-plugin/
+COPY packages/cli/package*.json ./packages/cli/
+COPY packages/test-utils/package*.json ./packages/test-utils/
+RUN npm ci --prefer-offline --no-audit --no-fund
+
+ENV DISPLAY=:99
+ENV OBSIDIAN_PATH=/opt/obsidian/obsidian
+ENV OBSIDIAN_VAULT=/app/packages/obsidian-plugin/tests/e2e/test-vault
