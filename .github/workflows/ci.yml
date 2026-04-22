@@ -733,34 +733,49 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: [build, detect-changes]
-    # Skip on docs-only PRs (no packages/ or spec/test changes). Push events
-    # and force-e2e-labelled PRs always run. Skipped required checks are
-    # treated as passing by GitHub branch protection.
-    if: >-
-      github.event_name == 'push' ||
-      needs.detect-changes.outputs.code == 'true' ||
-      needs.detect-changes.outputs.force == 'true'
+    # NOTE: no job-level `if:` here — matrix-job skip collapses to a single
+    # base `e2e-shard` check-run, dropping the branch-protected parenthesised
+    # `e2e-shard (1..4)` required check names. Instead, the job always starts,
+    # then each step is gated on `env.RUN_E2E`. On docs-only PRs the runner
+    # exits in ~15-30s after skipping every heavy step, registering an
+    # individual `e2e-shard (N)` check-run with conclusion `success` — which
+    # satisfies branch protection.
+    env:
+      RUN_E2E: ${{ github.event_name == 'push' || needs.detect-changes.outputs.code == 'true' || needs.detect-changes.outputs.force == 'true' }}
     strategy:
       fail-fast: false
       matrix:
         shard: [1, 2, 3, 4]
 
     steps:
+      - name: Announce gating decision
+        run: |
+          echo "RUN_E2E=${RUN_E2E}"
+          if [ "$RUN_E2E" = "true" ]; then
+            echo "::notice::Running e2e shard ${{ matrix.shard }}/4 (code change detected)"
+          else
+            echo "::notice::Skipping e2e shard ${{ matrix.shard }}/4 (docs-only PR — detect-changes gate)"
+          fi
+
       - name: Checkout
+        if: env.RUN_E2E == 'true'
         uses: actions/checkout@v6
         with:
           submodules: recursive
 
       - name: Download built plugin
+        if: env.RUN_E2E == 'true'
         uses: actions/download-artifact@v7
         with:
           name: plugin-build
           path: .
 
       - name: Set up Docker Buildx
+        if: env.RUN_E2E == 'true'
         uses: docker/setup-buildx-action@v3
 
       - name: Build E2E Docker image
+        if: env.RUN_E2E == 'true'
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -771,6 +786,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Run E2E tests (shard ${{ matrix.shard }}/4)
+        if: env.RUN_E2E == 'true'
         run: |
           mkdir -p test-results-e2e playwright-report-e2e blob-report
           docker run --init --rm \
@@ -781,7 +797,7 @@ jobs:
             exocortex-e2e npx playwright test -c packages/obsidian-plugin/playwright-e2e.config.ts --shard=${{ matrix.shard }}/4
 
       - name: Upload blob report for shard ${{ matrix.shard }}
-        if: always()
+        if: always() && env.RUN_E2E == 'true'
         uses: actions/upload-artifact@v6
         with:
           name: e2e-blob-report-${{ matrix.shard }}
@@ -790,7 +806,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: Upload E2E test artifacts (videos, screenshots, traces) for shard ${{ matrix.shard }}
-        if: always()
+        if: always() && env.RUN_E2E == 'true'
         uses: actions/upload-artifact@v6
         with:
           name: e2e-test-artifacts-${{ matrix.shard }}
@@ -803,23 +819,29 @@ jobs:
   e2e-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 2
-    needs: e2e-shard
+    needs: [e2e-shard, detect-changes]
     if: always()
+    env:
+      RUN_E2E: ${{ github.event_name == 'push' || needs.detect-changes.outputs.code == 'true' || needs.detect-changes.outputs.force == 'true' }}
 
     steps:
       - name: Check shard results
         run: |
           # needs.e2e-shard.result: 'success' | 'failure' | 'skipped' | 'cancelled'
-          # Treat 'skipped' as success — this is the expected state on
-          # docs-only PRs where the detect-changes gate intentionally
-          # disabled e2e. Only 'failure' / 'cancelled' block the aggregator.
+          # On docs-only PRs each shard finishes quickly with 'success' after
+          # the inner-step-skip gate, so 'success' covers both real-pass and
+          # no-op-pass. Only 'failure' / 'cancelled' block the aggregator.
           RESULT="${{ needs.e2e-shard.result }}"
           case "$RESULT" in
             success)
-              echo "✅ All E2E shards passed"
+              if [ "$RUN_E2E" = "true" ]; then
+                echo "✅ All E2E shards passed"
+              else
+                echo "✅ E2E shards no-op-passed (docs-only PR — detect-changes gate)"
+              fi
               ;;
             skipped)
-              echo "✅ E2E shards skipped (docs-only PR — gate from detect-changes)"
+              echo "✅ E2E shards skipped (upstream job-level skip)"
               ;;
             *)
               echo "❌ E2E shards reported result: $RESULT"
@@ -828,21 +850,21 @@ jobs:
           esac
 
       - name: Checkout
-        if: needs.e2e-shard.result == 'success'
+        if: env.RUN_E2E == 'true'
         uses: actions/checkout@v6
 
       - name: Setup Node.js
-        if: needs.e2e-shard.result == 'success'
+        if: env.RUN_E2E == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: "22"
 
       - name: Install Playwright
-        if: needs.e2e-shard.result == 'success'
+        if: env.RUN_E2E == 'true'
         run: npm install -D @playwright/test
 
       - name: Download all blob reports
-        if: needs.e2e-shard.result == 'success'
+        if: env.RUN_E2E == 'true'
         uses: actions/download-artifact@v7
         with:
           pattern: e2e-blob-report-*
@@ -850,7 +872,7 @@ jobs:
           merge-multiple: true
 
       - name: Download all test artifacts (videos, screenshots, traces)
-        if: needs.e2e-shard.result == 'success'
+        if: env.RUN_E2E == 'true'
         uses: actions/download-artifact@v7
         with:
           pattern: e2e-test-artifacts-*
@@ -858,13 +880,13 @@ jobs:
           merge-multiple: true
 
       - name: Merge E2E reports
-        if: needs.e2e-shard.result == 'success'
+        if: env.RUN_E2E == 'true'
         run: |
           npx playwright merge-reports --reporter html ./all-blob-reports
         continue-on-error: true
 
       - name: Upload merged E2E test report
-        if: needs.e2e-shard.result == 'success'
+        if: env.RUN_E2E == 'true'
         uses: actions/upload-artifact@v6
         with:
           name: e2e-test-report
@@ -873,7 +895,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: Upload merged test artifacts (videos, screenshots, traces)
-        if: needs.e2e-shard.result == 'success'
+        if: env.RUN_E2E == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: e2e-test-artifacts
