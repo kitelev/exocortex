@@ -343,16 +343,28 @@ async function primeDynamicLayout(
  * only the title button until expanded — `.exocortex-button-group-buttons`
  * is absent, so `:has-text(...)` locators timeout without this helper.
  *
- * Implementation note: React's useState re-initializes collapsed=true on
- * re-mount (refreshLayout between primeDynamicLayout and this helper can
- * race). Poll aria-expanded after click so the helper is idempotent under
- * either starting state.
+ * Implementation note: `ExocortexPlugin.refreshLayout()` is fire-and-forget
+ * (wraps `autoRenderLayout` without returning its promise), so primeDynamicLayout
+ * returns before ActionButtonsGroup has finished re-hydrating after a class
+ * switch. Wait for the collapsible title button to become visible before
+ * checking its aria-expanded state — otherwise the first Task-class test
+ * after a Project-class test observes `.count() === 0`, returns silently,
+ * and the subsequent button locator times out for 20s. Root-cause for N=4
+ * 100% attempt-1 failure of `Archive Completed` (D2 2026-04-22).
  */
 async function expandGroupIfCollapsed(window: Page, title: string): Promise<void> {
   const titleButton = window
     .locator(`.exocortex-button-group-title--collapsible:has-text("${title}")`)
     .first();
-  if ((await titleButton.count()) === 0) return;
+  // Wait for React hydration of the collapsible group. If the group never
+  // appears within the timeout (truly absent, not race), return silently so
+  // the caller's subsequent button-visibility assertion surfaces the real
+  // diagnostic rather than this helper's internal state.
+  try {
+    await expect(titleButton).toBeVisible({ timeout: 15000 });
+  } catch {
+    return;
+  }
   // Wait until aria-expanded is populated (React hydration).
   await expect(titleButton).toHaveAttribute("aria-expanded", /true|false/, {
     timeout: 5000,
