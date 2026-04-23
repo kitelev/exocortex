@@ -82,20 +82,23 @@ else
     fi
 fi
 
-# Run exocortex regression tests (narrow scope: two files only).
+# Run exocortex regression tests (narrow scope: allow-listed files only).
 # The packages/exocortex/jest.config.js root-level config is otherwise unreachable
 # from CI because obsidian-plugin/jest.config.js's `testMatch` with `<rootDir>/../exocortex/...`
 # does not actually discover external roots without a `roots` entry. This narrow
-# invocation pulls in only the files targeted by RFC-028 Findings 3+4 / Finding 5
-# regression suites so those TDD steps can produce CI-verified RED→GREEN proof.
+# invocation pulls in only the files targeted by specific RFC regression /
+# Phase-N green-gates so those TDD steps can produce CI-verified RED→GREEN proof.
 # Pre-existing failures in the wider exocortex package (performance tests,
 # QueryExecutor.branch, MetadataExtractor, etc.) are intentionally excluded —
 # tracked as a separate follow-up (CI gap audit).
 #
-# RFC-028 Finding 5 (3.C.1) extends the pattern with AssetConversionService.test.ts
-# so the Project→Task conversion regression lock is also observable in CI.
-echo "📦 Running exocortex grounding regression tests..."
-EXOCORTEX_JEST_ARGS="--config packages/exocortex/jest.config.js --testPathPatterns=services/(GroundingExecutor|AssetConversionService)\.test\.ts --forceExit"
+# Allow-list additions:
+# - RFC-028 Findings 3+4: services/GroundingExecutor.test.ts
+# - RFC-028 Finding 5 (3.C.1): services/AssetConversionService.test.ts
+# - RFC be70f741 Phase 2: application/services/RelationColumnSetResolver(.property)?.test.ts
+#   + performance/RelationColumnSetResolverPerformance.test.ts (p95 <1ms gate)
+echo "📦 Running exocortex grounding + RFC regression tests..."
+EXOCORTEX_JEST_ARGS="--config packages/exocortex/jest.config.js --testPathPatterns=(services/(GroundingExecutor|AssetConversionService)\.test|application/services/RelationColumnSetResolver(\.property)?\.test|performance/RelationColumnSetResolverPerformance\.test)\.ts --forceExit"
 if [ "$CI" = "true" ]; then
     if timeout 60 node ./node_modules/jest/bin/jest.js $EXOCORTEX_JEST_ARGS; then
         echo "✅ Exocortex grounding regression tests passed!"
