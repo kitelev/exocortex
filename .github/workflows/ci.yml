@@ -411,14 +411,18 @@ jobs:
       - name: Setup Node & install deps
         uses: ./.github/actions/setup-node-pnpm
 
-      - name: Run exocortex grounding regression tests
+      - name: Run exocortex grounding + RFC regression tests
         env:
           NODE_OPTIONS: "--max-old-space-size=4096"
           CI: "true"
+        # Allow-list pattern kept in sync with scripts/test-ci-batched.sh.
+        # Additions:
+        # - RFC be70f741 Phase 2: application/services/RelationColumnSetResolver(.property)?.test.ts
+        #   + performance/RelationColumnSetResolverPerformance.test.ts (p95 <1ms gate).
         run: |
           node ./node_modules/jest/bin/jest.js \
             --config packages/exocortex/jest.config.js \
-            --testPathPatterns='services/(GroundingExecutor|AssetConversionService)\.test\.ts' \
+            --testPathPatterns='(services/(GroundingExecutor|AssetConversionService)\.test|application/services/RelationColumnSetResolver(\.property)?\.test|performance/RelationColumnSetResolverPerformance\.test)\.ts' \
             --forceExit
 
   test-coverage:
