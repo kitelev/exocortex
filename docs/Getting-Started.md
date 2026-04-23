@@ -425,12 +425,6 @@ These are the most common problems encountered by first-time users. Start here b
 - Or, move the task manually after creation (Obsidian updates all wiki-links automatically).
 - Or, create the task manually with the required frontmatter — see the "Your First Task" section above.
 
-### "Set Status Doing shows a UUID next to the status name"
-
-**Symptom**: After clicking **Set Status Doing** (or similar), the properties table displays something like `ems__EffortStatusDoing 027e78f4-6e16-4b36-b8fb-5510507d5745`, leaking the UUID.
-
-**Status**: Known cosmetic issue. The status is set correctly — only the UI label is duplicated. A fix is tracked separately and does not affect functionality.
-
 ### "A button dialog writes literal `$input` or `$value` into the frontmatter"
 
 **Symptom**: You click Set Result, Set Planned Start, or similar; the dialog accepts your input; but the property is stored as the literal string `$input` instead of your value.
@@ -479,11 +473,6 @@ These are design decisions or rough edges that are **expected** in the current r
 - It rewrites `exo__Instance_class` from `[[ems__Task]]` to `[[ems__Project]]`.
 - It does **not** add project-specific properties (start/end timestamps, owner, etc.).
 - After converting, review the frontmatter and add anything the project workflow needs.
-
-### Status display may show a UUID next to the label
-
-- As noted in Troubleshooting, certain status transitions render the metaclass UUID alongside the status name.
-- This is cosmetic — the underlying RDF is correct. Tracked as a known issue.
 
 ### First-run indexing takes a moment
 
