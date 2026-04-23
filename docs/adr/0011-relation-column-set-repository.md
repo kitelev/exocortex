@@ -8,7 +8,7 @@ Accepted
 
 RFC be70f741-a8e3-4826-aab1-d3f950068861 ("RDF-configurable columns for UniversalLayout backlinks table", v2) introduces `ui__RelationColumnSet` — the first Exocortex ontology class whose instances are **automatically discovered and bound** to a runtime component without a vault-authored layout file pointing at them.
 
-Prior examples (`exo__TableLayout`, `exo__Layout`) are always referenced explicitly — either via codeblock `source` attribute or via `exo__Class_layout` on the class asset. `RelationColumnSetRepository` is different: it scans every file in the vault, matches by `exo__Instance_class`, indexes by `(normalizedClass, normalizedProperty)`, and later (Phase 2 resolver + Phase 3 renderer integration) answers "which columns should the auto-backlinks table render for rows of class X referenced via property Y?"
+Prior examples (`exo__TableLayout`, `exo__Layout`) are always referenced explicitly — either via codeblock `source` attribute or via a class-level layout property on the class asset. `RelationColumnSetRepository` is different: it scans every file in the vault, matches by `exo__Instance_class`, indexes by `(normalizedClass, normalizedProperty)`, and later (Phase 2 resolver + Phase 3 renderer integration) answers "which columns should the auto-backlinks table render for rows of class X referenced via property Y?"
 
 ### Problem
 
