@@ -59,7 +59,6 @@ Best for: Visual knowledge management, daily planning, interactive exploration.
 **Prerequisites:**
 
 - **Obsidian** 1.4+
-- **[Dataview](https://github.com/blacksmithgu/obsidian-dataview)** community plugin — required for the Daily Tasks widget on daily notes. Install via Community plugins browser (search "Dataview") and enable it before installing Exocortex.
 
 **Install Exocortex via BRAT:**
 
@@ -72,7 +71,7 @@ BRAT will automatically keep the plugin updated with new releases.
 
 > **Next:** Follow the **[Getting Started Guide](./docs/Getting-Started.md)** to install the Starter Kit and create your first Area, Project, and Task.
 >
-> **Note:** Layouts appear in **Reading Mode** (Ctrl/Cmd + E). Without Dataview the plugin still renders action buttons, status panels, and Asset Relations — only the Daily Tasks widget on daily notes depends on it.
+> **Note:** Layouts appear in **Reading Mode** (Ctrl/Cmd + E).
 
 ### Option 2: CLI
 
