@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![CI](https://github.com/kitelev/exocortex/actions/workflows/ci.yml/badge.svg)](https://github.com/kitelev/exocortex/actions/workflows/ci.yml)
 [![Tests](https://img.shields.io/badge/tests-11400%2B-success)](https://github.com/kitelev/exocortex/actions)
-[![Coverage](https://img.shields.io/badge/coverage-core%2095%25%20%7C%20plugin%2076%25%20%7C%20cli%2065%25-brightgreen)](https://github.com/kitelev/exocortex/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/badge/coverage-core%2095%25%20%7C%20plugin%2075.5%25%20%7C%20cli%2065%25-brightgreen)](https://github.com/kitelev/exocortex/actions/workflows/ci.yml)
 [![SPARQL 1.2](https://img.shields.io/badge/SPARQL-1.2-blue)](./docs/sparql/SPARQL-1.2-Features.md)
 
 ---
@@ -190,11 +190,9 @@ Features: wikilink syntax, loading state, error handling, auto-refresh, interact
 
 ### Ontology Plugins
 
-Install community ontology packages to extend your knowledge graph:
+Install community ontology packages to extend your knowledge graph.
 
-```bash
-exocortex-cli assetspace add @kitelev/gtd-jedi@^0.1
-```
+> **Note:** The `assetspace` CLI subcommand is on the roadmap and not yet available. Follow [kitelev/exocortex](https://github.com/kitelev/exocortex) for updates.
 
 ---
 
@@ -230,7 +228,7 @@ Monorepo with four packages sharing Clean Architecture core:
 | Package                        | npm                      | Purpose                                                                     |
 | ------------------------------ | ------------------------ | --------------------------------------------------------------------------- |
 | **exocortex**                  | Private                  | Core business logic, domain models, SPARQL engine, 35+ services             |
-| **@exocortex/obsidian-plugin** | Private                  | Interactive UI: 24+ components, 6 renderers, 34+ commands, 11 modals        |
+| **@exocortex/obsidian-plugin** | Private                  | Interactive UI: 24+ components, 3 renderers, 33+ commands, 6 modals         |
 | **@kitelev/exocortex-cli**     | `@kitelev/exocortex-cli` | CLI for automation, archive/unarchive, SPARQL queries, AI agent integration |
 | **@exocortex/test-utils**      | Private                  | Shared test utilities, mock factories, flaky test reporter                  |
 
@@ -267,7 +265,7 @@ See **[SPARQL 1.2 Features](./docs/sparql/SPARQL-1.2-Features.md)** for complete
 
 **Obsidian Plugin:**
 
-- **[Plugin Commands](./docs/Plugin-Commands.md)** — All 34+ commands documented
+- **[Plugin Commands](./docs/Plugin-Commands.md)** — All 33+ commands documented
 
 **CLI:**
 
