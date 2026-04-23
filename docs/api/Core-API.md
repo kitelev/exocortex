@@ -10,7 +10,7 @@ The `exocortex` package provides storage-independent business logic:
 
 ```typescript
 import {
-  TaskCreationService,
+  GenericAssetCreationService,
   EffortStatusWorkflow,
   RDFSerializer
 } from 'exocortex';
@@ -25,47 +25,52 @@ import {
 
 ## Services
 
-### Task Creation Service
+### Generic Asset Creation Service
 
 ```typescript
-import { TaskCreationService } from 'exocortex';
+import { GenericAssetCreationService } from 'exocortex';
 
-class TaskCreationService {
-  createTask(params: {
-    label: string;
-    area: string;
-    project?: string;
-    status?: string;
-  }): Promise<{ path: string; frontmatter: Record<string, any> }>;
+class GenericAssetCreationService {
+  constructor(vault: IVaultAdapter) {}
+
+  createAsset(
+    config: {
+      className: string;
+      label?: string;
+      folderPath?: string;
+      propertyValues?: Record<string, unknown>;
+      parentFile?: IFile;
+      parentMetadata?: Record<string, unknown>;
+    },
+    propertyDefinitions?: AssetPropertyDefinition[]
+  ): Promise<IFile>;
 }
 ```
 
-**Example**:
+**Example — creating a task**:
 ```typescript
-const service = new TaskCreationService(vaultAdapter);
+const service = container.resolve(GenericAssetCreationService);
 
-const task = await service.createTask({
+const file = await service.createAsset({
+  className: "ems__Task",
   label: "Build API endpoint",
-  area: "[[Development]]",
-  project: "[[API Server]]",
-  status: "[[ems__EffortStatusToDo]]"
+  propertyValues: {
+    ems__Effort_status: "[[ems__EffortStatusToDo]]"
+  }
 });
 
-// Result: { path: "tasks/task-abc123.md", frontmatter: {...} }
+// Result: IFile { path: "tasks/<uuid>.md", basename: "<uuid>", ... }
 ```
 
-### Project Creation Service
-
+**Example — creating a project**:
 ```typescript
-import { ProjectCreationService } from 'exocortex';
-
-class ProjectCreationService {
-  createProject(params: {
-    label: string;
-    area: string;
-    status?: string;
-  }): Promise<{ path: string; frontmatter: Record<string, any> }>;
-}
+const file = await service.createAsset({
+  className: "ems__Project",
+  label: "API Server",
+  propertyValues: {
+    ems__Effort_status: "[[ems__EffortStatusBacklog]]"
+  }
+});
 ```
 
 ### Effort Status Workflow
