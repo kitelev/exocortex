@@ -88,20 +88,29 @@ export function canExecuteMyCustomCommand(metadata: Record<string, any>): boolea
 
 ### 1. Create Renderer Class
 
+Renderers are standalone classes that accept dependencies via constructor and expose
+a `render` method. There is no `BaseRenderer` base class to extend.
+
 `src/presentation/renderers/layout/MyCustomRenderer.ts`:
 
 ```typescript
-import { BaseRenderer } from './BaseRenderer';
+import { App } from 'obsidian';
+import { IVaultAdapter } from 'exocortex';
 
-export class MyCustomRenderer extends BaseRenderer {
+export class MyCustomRenderer {
+  constructor(
+    private app: App,
+    private vault: IVaultAdapter,
+  ) {}
+
   async render(
     container: HTMLElement,
-    metadata: Record<string, any>
+    metadata: Record<string, unknown>
   ): Promise<void> {
     const section = container.createDiv({ cls: 'my-custom-section' });
     section.createEl('h3', { text: 'My Custom Section' });
 
-    // Render logic
+    // Render logic using this.app, this.vault, metadata
   }
 }
 ```
@@ -111,8 +120,8 @@ export class MyCustomRenderer extends BaseRenderer {
 `src/presentation/renderers/layout/UniversalLayoutRenderer.ts`:
 
 ```typescript
-private renderCustomSection(container: HTMLElement): void {
-  const renderer = new MyCustomRenderer(this.app, this.plugin);
+private async renderCustomSection(container: HTMLElement): Promise<void> {
+  const renderer = new MyCustomRenderer(this.app, this.vault);
   await renderer.render(container, this.metadata);
 }
 ```
