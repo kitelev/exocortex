@@ -89,7 +89,7 @@ The plugin needs ontology files in your vault to enable action buttons and comma
 2. Download `exocortex-starter-kit.zip`
 3. Extract the ZIP into your vault (any folder works — the plugin scans the entire vault)
    - Recommended: extract into a folder like `Knowledge/` or at the vault root
-   - The ZIP contains **seven** folders: `exocmd/` (command definitions), `pn/` (DailyNote properties), `exo/` (core ontology), `ems/` (effort classes and statuses), `ims/` (information-management concepts), `period/` (time periods), and `ztlk/` (Zettelkasten notes). It also contains a top-level `README.md`.
+   - The ZIP contains several folders: `exocmd/` (command definitions), `pn/` (DailyNote properties), `exo/` (core ontology), `ems/` (effort classes and statuses), `ims/` (information-management concepts), `period/` (time periods), `ztlk/` (Zettelkasten notes), `uj/` (user journeys), `01 Inbox/` (sample inbox), `docs/` (additional guides), and utility folders (`assets/`, `invariants/`, `layouts/`, `scripts/`).
 
 The plugin detects new files automatically — no restart needed.
 
