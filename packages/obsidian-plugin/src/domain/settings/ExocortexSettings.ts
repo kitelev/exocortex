@@ -96,6 +96,14 @@ export interface ExocortexSettings {
    * installs (which will see the modal on first load).
    */
   lastShownChangelogVersion?: string;
+  /**
+   * RFC be70f741 Phase 1 — enable the `RelationColumnSetRepository` and the
+   * future `RelationColumnSetResolver`.  Phase 1 is behaviour-neutral (no
+   * consumer wired yet) so the flag defaults to `true`; it exists so the
+   * Phase 3 integration can be bisected if a regression surfaces in the
+   * UniversalLayout auto-backlinks table.
+   */
+  enableRelationColumnSetResolver: boolean;
   [key: string]: unknown;
 }
 
@@ -116,4 +124,5 @@ export const DEFAULT_SETTINGS: ExocortexSettings = {
   autoAdjustPlannedEndTimestamp: false,
   logChannels: DEFAULT_LOG_CHANNELS,
   autoReadingModeForExocortexAssets: true,
+  enableRelationColumnSetResolver: true,
 };
