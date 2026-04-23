@@ -438,6 +438,14 @@ export {
   type RelationColumnSet,
 } from "./domain/layout";
 
+// RelationColumnSetResolver (RFC be70f741 Phase 2)
+export {
+  RelationColumnSetResolver,
+  type RelationColumnSetProvider,
+  type RelationColumnSetResolverLogger,
+  type RelationColumnSetResolverOptions,
+} from "./application/services";
+
 // Error exports
 export * from "./domain/errors";
 export * from "./application/errors";
