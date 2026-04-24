@@ -904,6 +904,7 @@ jobs:
             -v $PWD/plugin-wait-ms:/app/plugin-wait-ms \
             -e CI=true \
             -e PLUGIN_WAIT_MS_LOG=/app/plugin-wait-ms/shard-${{ matrix.shard }}.jsonl \
+            -e FIXTURE_DRIFT_OUTPUT=/app/test-results/fixture-drift.json \
             exocortex-e2e npx playwright test -c packages/obsidian-plugin/playwright.shard-${{ matrix.shard }}.config.ts
 
       - name: Upload blob report for shard ${{ matrix.shard }}
