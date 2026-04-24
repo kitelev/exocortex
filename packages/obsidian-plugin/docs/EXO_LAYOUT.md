@@ -94,12 +94,12 @@ Two block kinds ship in this MVP. Their discriminator is the
 
 Renders the open note's own frontmatter as a two-column properties table.
 
-| Field                           | Required | Notes                                                       |
-| ------------------------------- | -------- | ----------------------------------------------------------- |
-| `exo__Asset_uid`                | yes      | Block uid referenced from `exo__Layout_blocks`.             |
-| `exo__Instance_class`           | yes      | Must contain `[[exo__PropertiesBlock]]` (plain or UUID).    |
-| `exo__LayoutBlock_title`        | no       | `<h3>` shown above the table. Falls back to `exo__Asset_label`, then to the block file basename. |
-| `exo__LayoutBlock_collapsed`    | no       | Reserved for a future "collapsed by default" UX — not yet consulted by the renderer. |
+| Field                        | Required | Notes                                                                                            |
+| ---------------------------- | -------- | ------------------------------------------------------------------------------------------------ |
+| `exo__Asset_uid`             | yes      | Block uid referenced from `exo__Layout_blocks`.                                                  |
+| `exo__Instance_class`        | yes      | Must contain `[[exo__PropertiesBlock]]` (plain or UUID).                                         |
+| `exo__LayoutBlock_title`     | no       | `<h3>` shown above the table. Falls back to `exo__Asset_label`, then to the block file basename. |
+| `exo__LayoutBlock_collapsed` | no       | Reserved for a future "collapsed by default" UX — not yet consulted by the renderer.             |
 
 ### `exo__BacklinksTableBlock`
 
@@ -107,17 +107,17 @@ Renders a filtered, sorted table of backlinks — the block equivalent of
 the default Asset Relations section, but scoped to a single
 `(rowClass, referencingProperty)` pair and with explicit columns.
 
-| Field                                                 | Required | Notes                                                                                       |
-| ----------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------- |
-| `exo__Asset_uid`                                      | yes      | Block uid.                                                                                  |
-| `exo__Instance_class`                                 | yes      | Must contain `[[exo__BacklinksTableBlock]]`.                                                |
-| `exo__BacklinksTableBlock_rowClass`                   | yes      | Wikilink; only backlinks whose `exo__Instance_class` matches are included.                  |
-| `exo__BacklinksTableBlock_referencingProperty`        | yes      | Wikilink; only backlinks whose referencing frontmatter property equals this are included.   |
-| `exo__BacklinksTableBlock_columns`                    | yes      | Array of wikilinks or bare identifiers. Each is normalised to a property name before rendering. |
-| `exo__BacklinksTableBlock_sortBy`                     | no       | Column to sort by; defaults to `exo__Asset_label`.                                          |
-| `exo__BacklinksTableBlock_sortOrder`                  | no       | `"asc"` (default) or `"desc"`.                                                              |
-| `exo__BacklinksTableBlock_limit`                      | no       | Positive integer cap on visible rows; omit for unlimited.                                   |
-| `exo__BacklinksTableBlock_showArchived`               | no       | `false` by default; set `true` to include rows with `archived: true`.                       |
+| Field                                          | Required | Notes                                                                                           |
+| ---------------------------------------------- | -------- | ----------------------------------------------------------------------------------------------- |
+| `exo__Asset_uid`                               | yes      | Block uid.                                                                                      |
+| `exo__Instance_class`                          | yes      | Must contain `[[exo__BacklinksTableBlock]]`.                                                    |
+| `exo__BacklinksTableBlock_rowClass`            | yes      | Wikilink; only backlinks whose `exo__Instance_class` matches are included.                      |
+| `exo__BacklinksTableBlock_referencingProperty` | yes      | Wikilink; only backlinks whose referencing frontmatter property equals this are included.       |
+| `exo__BacklinksTableBlock_columns`             | yes      | Array of wikilinks or bare identifiers. Each is normalised to a property name before rendering. |
+| `exo__BacklinksTableBlock_sortBy`              | no       | Column to sort by; defaults to `exo__Asset_label`.                                              |
+| `exo__BacklinksTableBlock_sortOrder`           | no       | `"asc"` (default) or `"desc"`.                                                                  |
+| `exo__BacklinksTableBlock_limit`               | no       | Positive integer cap on visible rows; omit for unlimited.                                       |
+| `exo__BacklinksTableBlock_showArchived`        | no       | `false` by default; set `true` to include rows with `archived: true`.                           |
 
 ### Wikilink forms — canonical normalization
 
@@ -144,12 +144,12 @@ the React renderer looks it up against the row frontmatter (e.g.
 When more than one Layout asset targets the same class, the resolver
 picks a single winner.
 
-| Step | Rule                                                                                      |
-| ---- | ----------------------------------------------------------------------------------------- |
+| Step | Rule                                                                                       |
+| ---- | ------------------------------------------------------------------------------------------ |
 | 1    | Walk `exo__Instance_class` of the open note in declaration order; stop at the first match. |
-| 2    | Among matches for the winning class, pick the highest `exo__Layout_priority`.             |
-| 3    | Tiebreaker — `exo__Asset_uid` ascending.                                                  |
-| 4    | Nothing matched — fall back to the default Asset Relations rendering.                     |
+| 2    | Among matches for the winning class, pick the highest `exo__Layout_priority`.              |
+| 3    | Tiebreaker — `exo__Asset_uid` ascending.                                                   |
+| 4    | Nothing matched — fall back to the default Asset Relations rendering.                      |
 
 Declaration order of classes in `exo__Instance_class` matters: the
 selector walks classes in that order, and the first class to produce a
@@ -226,3 +226,87 @@ expected a Layout, check:
    selector returns `null`).
 4. The Layout file itself is inside the vault (the repository subscribes
    to `vault` events, not `metadataCache`-synthesised ones).
+
+## Bootstrap (auto-installed ontology)
+
+Since RFC exo**Layout Phase 4 shipped, the plugin auto-installs the 18
+`exo**Layout`ontology assets (4 classes + 14 properties) into a hidden`\_exocortex-exo-layout-ontology/` folder on first load. Without these
+assets, Layout and Block wikilinks would dangle and nothing would render.
+The install is **idempotent and UID-aware**:
+
+- If any of the 18 UUIDs are already present anywhere in the vault (e.g.
+  you imported the starter-kit `exo/` folder manually), the bootstrap
+  skips them — no duplicates.
+- If the hidden folder already has the files (second plugin load), nothing
+  is written.
+- If only a subset is present, only the missing files are created.
+
+**Troubleshooting bootstrap:**
+
+- `exocortex:ExoLayoutOntologyBootstrapper: installed N ontology file(s)`
+  in the console — normal on first load (N ≤ 18).
+- `exocortex:ExoLayoutOntologyBootstrapper: failed to install <path>: <err>` —
+  a single write failed (e.g. the folder was momentarily locked). The
+  bootstrap continues with the remaining files; re-open the vault to
+  retry.
+- `exocortex:ExoLayoutOntologyBootstrapper: bootstrap failed: <err>` — an
+  unexpected error aborted the whole run. The plugin still loads; Layouts
+  that reference the missing ontology classes will log `unknown block
+class` warnings. Copy the 18 files from
+  `kitelev/exocortex-starter-kit/exo/` manually as a workaround.
+- If the `_exocortex-exo-layout-ontology/` folder clutters your file
+  explorer, hide dot-files / underscore-prefixed folders in Obsidian's
+  Files & Links settings.
+- **Do not edit** the 18 auto-installed files in place — the plugin
+  treats them as an ontology source-of-truth. If you want to customise
+  (e.g. add a new `aliases` entry), copy the file to a non-hidden folder
+  and delete the original; the UID-aware bootstrap will then honour your
+  copy and never regenerate the underscore-folder version.
+
+## Migrating from `ui__RelationColumnSet`
+
+The CLI ships with an opt-in migration helper
+(`exocortex migrate-relcolset-to-exolayout`) that scans a vault for
+existing `ui__RelationColumnSet` configs and generates a starting-point
+`exo__Layout` + `exo__BacklinksTableBlock` pair per config.
+
+```bash
+# Dry-run — prints YAML previews + warnings to stderr (nothing written)
+exocortex migrate-relcolset-to-exolayout --vault /path/to/vault
+
+# Apply — writes pairs to vault (default: exo-layout-migrated/)
+exocortex migrate-relcolset-to-exolayout --vault /path/to/vault --apply
+
+# JSON report
+exocortex migrate-relcolset-to-exolayout --vault /path/to/vault --json
+```
+
+**Semantic gap — read before applying:**
+
+- `ui__RelationColumnSet` is **additive** (extends `Name` + `Instance Class`
+  columns). `exo__BacklinksTableBlock` is **replacing** (renders only the
+  configured columns). The generated block will look different from the
+  original RelationColumnSet rendering by default.
+- `exo__Layout.targetClass` is the **page class** the layout renders on.
+  `ui__RelationColumnSet.targetClass` is the **row class** filtered in the
+  relations table. The migration cannot infer the former from the latter
+  and inserts a placeholder — review every generated Layout before
+  applying in production, and fix the `exo__Layout_targetClass` wikilink
+  to the class of the page you want the layout on.
+- The generated files carry `exo__Layout_coexistsWithDefault: true` so
+  the migrated block renders **in addition to** the legacy Asset
+  Relations table. Set to `false` once you are happy to remove the
+  legacy rendering.
+
+The command is non-destructive in apply mode — it writes new files and
+never edits or removes the source `ui__RelationColumnSet` assets. Delete
+the RelationColumnSet configs manually once you've verified the migrated
+Layouts.
+
+**Idempotency.** Generated UIDs are **deterministic** (SHA-1 of source UID
+
+- suffix). Re-running `--apply` against the same vault produces identical
+  Layout+Block UIDs and contents — so the second run is a no-op at the
+  filesystem level rather than creating a duplicate set of migrated files.
+  This matches the plugin ontology bootstrap (UID-aware) and avoids the
+  duplicate-assets footgun that would otherwise trip power-users.

@@ -1,5 +1,17 @@
 # `ui__RelationColumnSet` — RDF-configurable backlinks columns
 
+> **Consider `exo__Layout` for full body control.** `ui__RelationColumnSet`
+> is **additive** — it extends the hardcoded `Name` + `Instance Class`
+> columns of the default Asset Relations table. If you want to _replace_
+> those columns, remove the table's `Asset Relations` wrapper, or build a
+> standalone body composed of multiple typed blocks, see
+> [`EXO_LAYOUT.md`](./EXO_LAYOUT.md). The CLI helper
+> `exocortex migrate-relcolset-to-exolayout` generates a starting-point
+> `exo__Layout` + `exo__BacklinksTableBlock` pair from each existing
+> RelationColumnSet — read the "Migrating from `ui__RelationColumnSet`"
+> section of `EXO_LAYOUT.md` for the semantic gaps the tool cannot bridge
+> automatically.
+
 `ui__RelationColumnSet` lets you declare, directly in the vault, which
 properties should appear as columns in the UniversalLayout auto-backlinks
 table for a given (rowClass, referencingProperty) pair. Previously this map
