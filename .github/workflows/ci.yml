@@ -310,6 +310,34 @@ jobs:
           retention-days: 30
           if-no-files-found: ignore
 
+      # RFC 3cc77ba2 v2 §Phase 1.3: fail-mode flaky gate per shard.
+      # Threshold resolution (most → least specific):
+      #   1. Per-shard override: `vars.FLAKY_THRESHOLD_SHARD_{N}`
+      #   2. Global default:     `vars.FLAKY_THRESHOLD` (covers all 6 shards)
+      #   3. Hardcoded fallback: `0` (Phase 0.3 baseline — 158 reports, 0 flakes)
+      # Governance: raise → 2-reviewer approval + quarantine entry with
+      # expiresAt ≤30d (see docs/FLAKY_POLICY.md). Lowering: 1 reviewer.
+      - name: Enforce FLAKY_THRESHOLD per shard
+        if: always()
+        env:
+          FLAKY_THRESHOLD: ${{ vars[format('FLAKY_THRESHOLD_SHARD_{0}', matrix.shard)] || vars.FLAKY_THRESHOLD || '0' }}
+        run: |
+          REPORT="flaky-report-shard-${{ matrix.shard }}.json"
+          if [ ! -f "$REPORT" ]; then
+            echo "::notice::No flaky-report for shard ${{ matrix.shard }} — gate skipped (jest retries disabled or run aborted)"
+            exit 0
+          fi
+          THRESHOLD="${FLAKY_THRESHOLD:-0}"
+          FLAKY=$(jq -r '.totalFlaky // 0' "$REPORT")
+          TOTAL=$(jq -r '.summary.totalTests // 0' "$REPORT")
+          echo "::notice::shard=${{ matrix.shard }} totalFlaky=${FLAKY} totalTests=${TOTAL} threshold=${THRESHOLD}"
+          if [ "$FLAKY" -gt "$THRESHOLD" ]; then
+            echo "::error::Flaky tests detected on shard ${{ matrix.shard }} (${FLAKY} > ${THRESHOLD}). Fix or quarantine per docs/FLAKY_POLICY.md. Raising FLAKY_THRESHOLD requires 2-reviewer approval + tests/quarantine.ts entry (expiresAt ≤30d)."
+            jq '.flakyTests // []' "$REPORT"
+            exit 1
+          fi
+          echo "✅ FLAKY_THRESHOLD gate passed: ${FLAKY} ≤ ${THRESHOLD}"
+
   test-coverage-cli:
     # Bare ubuntu-latest — CLI jest is node-only; no browser/playwright needed.
     runs-on: ubuntu-latest
