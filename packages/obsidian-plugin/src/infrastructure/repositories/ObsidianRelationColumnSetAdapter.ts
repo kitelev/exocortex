@@ -8,7 +8,7 @@
  */
 
 import { TFile } from "obsidian";
-import type { App, EventRef } from "obsidian";
+import type { App } from "obsidian";
 
 import type {
   RelationColumnSetEventHandler,
@@ -35,20 +35,27 @@ export class ObsidianRelationColumnSetAdapter
     event: "changed" | "deleted" | "renamed",
     handler: RelationColumnSetEventHandler,
   ): () => void {
-    let eventRef: EventRef;
+    // Each event belongs to a different `Events` instance (metadataCache for
+    // changed/deleted, vault for rename).  Capturing the correct offref target
+    // here avoids a listener leak on plugin unload → load cycles — the
+    // `eventRef` returned by `vault.on('rename', …)` is NOT registered in
+    // `metadataCache`, so routing all offrefs through `metadataCache.offref`
+    // would silently no-op for rename.
     if (event === "changed") {
-      eventRef = this.app.metadataCache.on("changed", (file) => {
+      const eventRef = this.app.metadataCache.on("changed", (file) => {
         if (file instanceof TFile) handler({ path: file.path });
       });
-    } else if (event === "deleted") {
-      eventRef = this.app.metadataCache.on("deleted", (file) => {
-        if (file instanceof TFile) handler({ path: file.path });
-      });
-    } else {
-      eventRef = this.app.vault.on("rename", (file, _oldPath) => {
-        if (file instanceof TFile) handler({ path: file.path });
-      });
+      return () => this.app.metadataCache.offref(eventRef);
     }
-    return () => this.app.metadataCache.offref(eventRef);
+    if (event === "deleted") {
+      const eventRef = this.app.metadataCache.on("deleted", (file) => {
+        if (file instanceof TFile) handler({ path: file.path });
+      });
+      return () => this.app.metadataCache.offref(eventRef);
+    }
+    const eventRef = this.app.vault.on("rename", (file, _oldPath) => {
+      if (file instanceof TFile) handler({ path: file.path });
+    });
+    return () => this.app.vault.offref(eventRef);
   }
 }
