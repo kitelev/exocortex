@@ -1,21 +1,31 @@
-import type { Vault } from "obsidian";
+import type { MetadataCache, Vault } from "obsidian";
 import type { UiOntologyBootstrapperVault } from "./UiOntologyBootstrapper";
 
 /**
  * Obsidian-concrete `UiOntologyBootstrapperVault` adapter — translates the
  * minimal bootstrapper API to `Vault` primitives.
  *
- * `fileExists` is a fast path-level check against `getAbstractFileByPath`.
- * It does NOT scan the whole vault for a file with the same
- * `exo__Asset_uid`; if a user manually copied the 7 files to a non-default
- * folder, calling bootstrap still installs them at `_exocortex-ui-ontology/`.
- * Rationale: scanning by UID requires a resolved `metadataCache`, and
- * bootstrap runs early in `onload` before resolution.
+ * `hasAssetWithUid` uses `MetadataCache.getFirstLinkpathDest`, which Obsidian
+ * indexes on basename and resolves synchronously without requiring a full
+ * `metadataCache.on("resolved")` — suitable for early `onload` invocation.
+ * This catches legacy copies of the 7 files at non-default folders (e.g.
+ * starter-kit `03 Knowledge/ui/` convention) and prevents the bootstrapper
+ * from creating duplicate `exo__Asset_uid` assets on plugin upgrade.
+ *
+ * `fileExists` remains a fast path-level fallback against
+ * `getAbstractFileByPath` — used after the UID scan as defence in depth.
  */
 export class ObsidianUiOntologyBootstrapperVault
   implements UiOntologyBootstrapperVault
 {
-  constructor(private readonly vault: Vault) {}
+  constructor(
+    private readonly vault: Vault,
+    private readonly metadataCache: MetadataCache,
+  ) {}
+
+  hasAssetWithUid(uid: string): boolean {
+    return this.metadataCache.getFirstLinkpathDest(uid, "") !== null;
+  }
 
   fileExists(path: string): boolean {
     return this.vault.getAbstractFileByPath(path) !== null;

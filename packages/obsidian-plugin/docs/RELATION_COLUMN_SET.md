@@ -21,15 +21,14 @@ manual copy from `kitelev/exocortex-starter-kit`. Target folder:
 `_exocortex-ui-ontology/` — one UUID-named file per asset, following the
 starter-kit convention.
 
-Bootstrap is idempotent — files already present at the target path are
-skipped, so upgrading the plugin (or opening a vault where the ontology was
-pre-installed) does not create duplicates, overwrite customisation, or log
-warnings on subsequent loads. If you moved the 7 files to a different
-folder in your vault, the plugin will still install a fresh copy at
-`_exocortex-ui-ontology/`; delete whichever copy you prefer to keep one
-canonical location (duplicate `exo__Asset_uid` values are flagged by
-`RelationColumnSetRepository: duplicate exo__Asset_uid` warnings — see
-Troubleshooting below).
+Bootstrap is idempotent at two levels — it first checks whether an asset
+with the UUID exists anywhere in the vault (UID scan via Obsidian's
+link-path index), and only then falls back to a path-level check at the
+default target. So if you already copied the 7 files from the starter-kit
+into `03 Knowledge/ui/` (or any other custom folder), the plugin will NOT
+create a duplicate copy at `_exocortex-ui-ontology/` on upgrade. Plugin
+reloads, vault opens, and plugin upgrades are all no-ops once the 7 UUIDs
+are reachable.
 
 ## Copy-pasteable example
 
