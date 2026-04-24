@@ -202,11 +202,16 @@ test.describe("Layout Visual Tests", () => {
 
     if (isVisible) {
       await page.setViewportSize({ width: 1920, height: 1080 });
-      await page.waitForTimeout(100);
+      // Wait for browser to propagate viewport change, replaces blind sleep.
+      await page.waitForFunction(() => window.innerWidth === 1920, undefined, {
+        timeout: 2000,
+      });
       const wideBox = await container.boundingBox();
 
       await page.setViewportSize({ width: 1280, height: 720 });
-      await page.waitForTimeout(100);
+      await page.waitForFunction(() => window.innerWidth === 1280, undefined, {
+        timeout: 2000,
+      });
       const narrowBox = await container.boundingBox();
 
       if (wideBox && narrowBox) {
