@@ -868,12 +868,14 @@ jobs:
       - name: Run E2E tests (shard ${{ matrix.shard }}/6)
         if: env.RUN_E2E == 'true'
         run: |
-          mkdir -p test-results-e2e playwright-report-e2e blob-report
+          mkdir -p test-results-e2e playwright-report-e2e blob-report plugin-wait-ms
           docker run --init --rm \
             -v $PWD/test-results-e2e:/app/test-results \
             -v $PWD/playwright-report-e2e:/app/playwright-report-e2e \
             -v $PWD/blob-report:/app/packages/obsidian-plugin/blob-report \
+            -v $PWD/plugin-wait-ms:/app/plugin-wait-ms \
             -e CI=true \
+            -e PLUGIN_WAIT_MS_LOG=/app/plugin-wait-ms/shard-${{ matrix.shard }}.jsonl \
             exocortex-e2e npx playwright test -c packages/obsidian-plugin/playwright.shard-${{ matrix.shard }}.config.ts
 
       - name: Upload blob report for shard ${{ matrix.shard }}
@@ -893,6 +895,48 @@ jobs:
           path: test-results-e2e/
           retention-days: 7
           if-no-files-found: ignore
+
+      # RFC 3cc77ba2 v2 §Phase 1.2: PLUGIN_WAIT_MS observability. Helper
+      # `tests/e2e/utils/waitForExocortexPlugin.ts` writes per-invocation
+      # timings as JSONL when `PLUGIN_WAIT_MS_LOG` is set. We upload the
+      # artifact unconditionally and then run a post-hoc P99 gate
+      # (fail when P99 > 15000 ms) per shard. Empty log is benign: the
+      # gate only fires on observed samples.
+      - name: Upload PLUGIN_WAIT_MS log for shard ${{ matrix.shard }}
+        if: always() && env.RUN_E2E == 'true'
+        uses: actions/upload-artifact@v6
+        with:
+          name: plugin-wait-ms-shard-${{ matrix.shard }}
+          path: plugin-wait-ms/shard-${{ matrix.shard }}.jsonl
+          retention-days: 30
+          if-no-files-found: ignore
+
+      - name: Enforce PLUGIN_WAIT_MS P99 gate (shard ${{ matrix.shard }})
+        if: always() && env.RUN_E2E == 'true'
+        run: |
+          LOG="plugin-wait-ms/shard-${{ matrix.shard }}.jsonl"
+          if [ ! -s "$LOG" ]; then
+            echo "::notice::No PLUGIN_WAIT_MS samples for shard ${{ matrix.shard }} — gate skipped"
+            exit 0
+          fi
+          # Compute P99 across samples; for N<100 we floor to index
+          # `floor(N * 0.99)` which is functionally the max for small N.
+          P99=$(jq -s '
+            map(.ms) | sort_by(.) as $xs |
+            if length == 0 then 0
+            else $xs[(length - 1) | floor | if . < 0 then 0 else . end]
+            end' "$LOG" | head -1)
+          N=$(wc -l < "$LOG" | tr -d ' ')
+          echo "::notice::shard=${{ matrix.shard }} N=$N P99_PLUGIN_WAIT_MS=${P99}ms (gate: ≤15000)"
+          if [ -z "$P99" ] || [ "$P99" = "null" ]; then
+            echo "::warning::Unable to compute P99 (N=$N) — gate skipped"
+            exit 0
+          fi
+          if [ "$P99" -gt 15000 ]; then
+            echo "::error::P99 PLUGIN_WAIT_MS=${P99}ms exceeds 15000ms gate on shard ${{ matrix.shard }} (N=$N samples)"
+            exit 1
+          fi
+          echo "✅ P99 PLUGIN_WAIT_MS gate passed: ${P99}ms ≤ 15000ms"
 
   # Merge E2E test reports from all shards
   # Named "e2e-tests" to satisfy branch protection rule
