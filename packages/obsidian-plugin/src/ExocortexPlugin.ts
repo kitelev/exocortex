@@ -25,10 +25,13 @@ import {
   GroundingExecutor,
   ServiceRegistry,
   RelationColumnSetResolver,
+  LayoutSelector,
 } from "exocortex";
 import {
   RelationColumnSetRepository,
   ObsidianRelationColumnSetAdapter,
+  ExoLayoutRepository,
+  ObsidianExoLayoutAdapter,
 } from "./infrastructure/repositories";
 import { ObsidianVaultAdapter } from "./adapters/ObsidianVaultAdapter";
 import { TaskTrackingService } from "./application/services/TaskTrackingService";
@@ -101,6 +104,8 @@ export default class ExocortexPlugin extends Plugin {
   serviceRegistry!: ServiceRegistry;
   private relationColumnSetRepository: RelationColumnSetRepository | null = null;
   private relationColumnSetResolver: RelationColumnSetResolver | null = null;
+  private exoLayoutRepository: ExoLayoutRepository | null = null;
+  private layoutSelector: LayoutSelector | null = null;
   private timerManager!: TimerManager;
   // MutationObserver to detect when layout is removed by Obsidian re-renders (e.g., when processing embeds)
   private layoutPersistenceObserver: MutationObserver | null = null;
@@ -238,6 +243,24 @@ export default class ExocortexPlugin extends Plugin {
         { logger: relationColumnSetLogger },
       );
 
+      // RFC exo__Layout Phase 2 — wire ExoLayoutRepository + LayoutSelector
+      // using the same live-snapshot pattern as RelationColumnSet.
+      const exoLayoutLogger = {
+        warn: (message: string) => this.logger.warn("ExoLayout", { message }),
+        info: (message: string) => this.logger.info("ExoLayout", { message }),
+      };
+      this.exoLayoutRepository = new ExoLayoutRepository(
+        new ObsidianExoLayoutAdapter(this.app),
+        { logger: exoLayoutLogger },
+      );
+      this.exoLayoutRepository.initialize();
+      const exoLayoutRepo = this.exoLayoutRepository;
+      this.layoutSelector = new LayoutSelector({
+        get all() {
+          return exoLayoutRepo.getSnapshot().layouts;
+        },
+      });
+
       this.layoutRenderer = new UniversalLayoutRenderer(
         this.app,
         this.settings,
@@ -249,6 +272,8 @@ export default class ExocortexPlugin extends Plugin {
           groundingExecutor: this.groundingExecutor,
           notificationService: notifier,
           relationColumnSetResolver: this.relationColumnSetResolver,
+          exoLayoutRepository: this.exoLayoutRepository,
+          layoutSelector: this.layoutSelector,
         },
       );
       this.taskStatusService = container.resolve(TaskStatusService);
@@ -685,6 +710,13 @@ export default class ExocortexPlugin extends Plugin {
       this.relationColumnSetRepository.dispose();
       this.relationColumnSetRepository = null;
       this.relationColumnSetResolver = null;
+    }
+
+    // RFC exo__Layout Phase 2 — release ExoLayoutRepository subscriptions.
+    if (this.exoLayoutRepository) {
+      this.exoLayoutRepository.dispose();
+      this.exoLayoutRepository = null;
+      this.layoutSelector = null;
     }
 
     // Cleanup metadata cache
