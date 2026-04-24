@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { ObsidianLauncher } from "../utils/obsidian-launcher";
+import { waitForExocortexPluginViaPlaywright } from "../utils/waitForExocortexPlugin";
 import * as path from "path";
 
 test.describe.configure({ mode: "parallel" });
@@ -21,53 +22,44 @@ test.describe("Alias Sync on Label Change", () => {
 
   test("should sync alias when exo__Asset_label changes", async () => {
     await launcher.openFile("Tasks/alias-sync-task.md");
-
     const window = await launcher.getWindow();
+
+    // Playwright-level cold-start wait (RFC 3cc77ba2 v2 §Phase 1.2).
+    await waitForExocortexPluginViaPlaywright(window, {
+      specName: "alias-sync-on-label-change/single",
+    });
 
     const newLabel = "Updated Label";
 
-    const syncResult = await window.evaluate(async (newAssetLabel) => {
+    const triggerResult = await window.evaluate(async (newAssetLabel) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const app = (window as any).app;
-      if (!app || !app.vault) {
+      if (!app?.vault) {
         return { success: false, error: "App not available" };
       }
-
-      // Wait for exocortex plugin to be loaded
-      const maxPluginWait = 10;
-      for (let i = 0; i < maxPluginWait; i++) {
-        if (app.plugins?.plugins?.exocortex) {
-          break;
-        }
-        await new Promise((resolve) => setTimeout(resolve, 1000));
+      const plugin = app.plugins?.plugins?.exocortex;
+      if (!plugin) {
+        return { success: false, error: "Plugin not loaded at mutation time" };
       }
 
-      if (!app.plugins?.plugins?.exocortex) {
-        return {
-          success: false,
-          error: "Exocortex plugin not loaded after 10 seconds",
-        };
-      }
-
-      const plugin = app.plugins.plugins.exocortex;
-      const file = app.vault.getAbstractFileByPath(
-        "Tasks/alias-sync-task.md",
-      );
+      const file = app.vault.getAbstractFileByPath("Tasks/alias-sync-task.md");
       if (!file) {
         return { success: false, error: "File not found" };
       }
 
-      // Get old label from parsed frontmatter (matches what AliasSyncService reads)
       const fileCache = app.metadataCache.getFileCache(file);
       const oldLabel = fileCache?.frontmatter?.exo__Asset_label || null;
 
-      // Change the frontmatter
-      await app.fileManager.processFrontMatter(file, (frontmatter: any) => {
-        frontmatter.exo__Asset_label = newAssetLabel;
-      });
+      await app.fileManager.processFrontMatter(
+        file,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (frontmatter: any) => {
+          frontmatter.exo__Asset_label = newAssetLabel;
+        },
+      );
 
       // In E2E Docker environment, metadata change events don't fire reliably,
       // so we manually trigger the sync to test the functionality.
-      // The automatic sync via metadata listener is tested in production use.
       if (plugin.aliasSyncService) {
         await plugin.aliasSyncService.syncAliases(
           file,
@@ -76,111 +68,83 @@ test.describe("Alias Sync on Label Change", () => {
         );
       }
 
-      const maxRetries = 10;
-      const retryDelay = 500;
-
-      for (let i = 0; i < maxRetries; i++) {
-        await new Promise((resolve) => setTimeout(resolve, retryDelay));
-
-        const updatedContent = await app.vault.read(file);
-        const frontmatterMatch = updatedContent.match(/^---\n([\s\S]*?)\n---/);
-
-        if (!frontmatterMatch) {
-          continue;
-        }
-
-        const frontmatterText = frontmatterMatch[1];
-        const labelMatch = frontmatterText.match(
-          /exo__Asset_label:\s*(.+)$/m,
-        );
-        const aliasMatch = frontmatterText.match(/aliases:\s*(.+)$/m);
-
-        const currentLabel = labelMatch ? labelMatch[1].trim() : null;
-        const currentAlias = aliasMatch ? aliasMatch[1].trim() : null;
-
-        if (currentLabel === newAssetLabel && currentAlias === newAssetLabel) {
-          return {
-            success: true,
-            label: currentLabel,
-            alias: currentAlias,
-            retriesNeeded: i + 1,
-          };
-        }
-      }
-
-      const finalContent = await app.vault.read(file);
-      const finalMatch = finalContent.match(/^---\n([\s\S]*?)\n---/);
-
-      if (!finalMatch) {
-        return { success: false, error: "No frontmatter found after retries" };
-      }
-
-      const finalText = finalMatch[1];
-      const finalLabelMatch = finalText.match(/exo__Asset_label:\s*(.+)$/m);
-      const finalAliasMatch = finalText.match(/aliases:\s*(.+)$/m);
-
-      return {
-        success: false,
-        error: "Alias did not sync within timeout",
-        label: finalLabelMatch ? finalLabelMatch[1].trim() : null,
-        alias: finalAliasMatch ? finalAliasMatch[1].trim() : null,
-        expectedLabel: newAssetLabel,
-      };
+      return { success: true };
     }, newLabel);
 
-    console.log("[E2E Test] Sync result:", syncResult);
+    expect(triggerResult.success).toBe(true);
 
-    expect(syncResult.success).toBe(true);
-    expect(syncResult.label).toBe(newLabel);
-    expect(syncResult.alias).toBe(newLabel);
+    // Replace the 10-retry / 500ms sleep-loop with structured `expect.poll`.
+    await expect
+      .poll(
+        async () =>
+          window.evaluate(async () => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const app = (window as any).app;
+            const file = app.vault.getAbstractFileByPath(
+              "Tasks/alias-sync-task.md",
+            );
+            if (!file) return { label: null, alias: null };
+            const content = await app.vault.read(file);
+            const match = content.match(/^---\n([\s\S]*?)\n---/);
+            if (!match) return { label: null, alias: null };
+            const labelMatch = match[1].match(
+              /exo__Asset_label:\s*(.+)$/m,
+            );
+            const aliasMatch = match[1].match(/aliases:\s*(.+)$/m);
+            return {
+              label: labelMatch ? labelMatch[1].trim() : null,
+              alias: aliasMatch ? aliasMatch[1].trim() : null,
+            };
+          }),
+        { timeout: 10_000, intervals: [200, 500, 500, 1000, 1000, 2000] },
+      )
+      .toEqual({ label: newLabel, alias: newLabel });
   });
 
   test("should handle multiple aliases and replace only matching one", async () => {
     await launcher.openFile("Tasks/alias-sync-multi-task.md");
-
     const window = await launcher.getWindow();
+
+    // Playwright-level cold-start wait (RFC 3cc77ba2 v2 §Phase 1.2).
+    await waitForExocortexPluginViaPlaywright(window, {
+      specName: "alias-sync-on-label-change/multi",
+    });
 
     const newLabel = "New Project Name";
 
-    const syncResult = await window.evaluate(async (newAssetLabel) => {
+    const triggerResult = await window.evaluate(async (newAssetLabel) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const app = (window as any).app;
-      if (!app || !app.vault) {
-        return { success: false, error: "App not available" };
+      if (!app?.vault) {
+        return { success: false, error: "App not available", oldLabel: null };
       }
-
-      const maxPluginWait = 10;
-      for (let i = 0; i < maxPluginWait; i++) {
-        if (app.plugins?.plugins?.exocortex) {
-          break;
-        }
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-      }
-
-      if (!app.plugins?.plugins?.exocortex) {
+      const plugin = app.plugins?.plugins?.exocortex;
+      if (!plugin) {
         return {
           success: false,
-          error: "Exocortex plugin not loaded after 10 seconds",
+          error: "Plugin not loaded at mutation time",
+          oldLabel: null,
         };
       }
 
-      const plugin = app.plugins.plugins.exocortex;
       const file = app.vault.getAbstractFileByPath(
         "Tasks/alias-sync-multi-task.md",
       );
       if (!file) {
-        return { success: false, error: "File not found" };
+        return { success: false, error: "File not found", oldLabel: null };
       }
 
-      // Get old label from parsed frontmatter (matches what AliasSyncService reads)
       const fileCache = app.metadataCache.getFileCache(file);
       const oldLabel = fileCache?.frontmatter?.exo__Asset_label || null;
 
-      // Change the frontmatter
-      await app.fileManager.processFrontMatter(file, (frontmatter: any) => {
-        frontmatter.exo__Asset_label = newAssetLabel;
-      });
+      await app.fileManager.processFrontMatter(
+        file,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (frontmatter: any) => {
+          frontmatter.exo__Asset_label = newAssetLabel;
+        },
+      );
 
-      // Manually trigger sync
       if (plugin.aliasSyncService) {
         await plugin.aliasSyncService.syncAliases(
           file,
@@ -189,64 +153,72 @@ test.describe("Alias Sync on Label Change", () => {
         );
       }
 
-      const maxRetries = 10;
-      const retryDelay = 500;
-
-      for (let i = 0; i < maxRetries; i++) {
-        await new Promise((resolve) => setTimeout(resolve, retryDelay));
-
-        const updatedContent = await app.vault.read(file);
-        const frontmatterMatch = updatedContent.match(/^---\n([\s\S]*?)\n---/);
-
-        if (!frontmatterMatch) {
-          continue;
-        }
-
-        const frontmatterText = frontmatterMatch[1];
-
-        // Parse YAML array
-        const aliasesMatch = frontmatterText.match(
-          /aliases:\s*\n((?:  - .+\n?)+)/m,
-        );
-
-        if (aliasesMatch) {
-          const aliasesList = aliasesMatch[1]
-            .split("\n")
-            .filter((line) => line.trim().startsWith("- "))
-            .map((line) => line.trim().substring(2).trim());
-
-          // Check if new label is in aliases and old label is not
-          if (
-            aliasesList.includes(newAssetLabel) &&
-            !aliasesList.includes(oldLabel || "")
-          ) {
-            return {
-              success: true,
-              aliases: aliasesList,
-              retriesNeeded: i + 1,
-            };
-          }
-        }
-      }
-
-      const finalContent = await app.vault.read(file);
-      const finalMatch = finalContent.match(/^---\n([\s\S]*?)\n---/);
-
-      if (!finalMatch) {
-        return { success: false, error: "No frontmatter found after retries" };
-      }
-
-      return {
-        success: false,
-        error: "Aliases did not sync correctly within timeout",
-        finalContent: finalMatch[1],
-      };
+      return { success: true, oldLabel };
     }, newLabel);
 
-    console.log("[E2E Test] Multi-alias sync result:", syncResult);
+    expect(triggerResult.success).toBe(true);
+    const oldLabel = triggerResult.oldLabel;
 
-    expect(syncResult.success).toBe(true);
-    expect(syncResult.aliases).toContain(newLabel);
-    expect(syncResult.aliases).not.toContain("Old Project Name");
+    // Poll for aliases array state — replaces the 10-retry sleep-loop.
+    await expect
+      .poll(
+        async () =>
+          window.evaluate(
+            async ({ knownOld, knownNew }) => {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const app = (window as any).app;
+              const file = app.vault.getAbstractFileByPath(
+                "Tasks/alias-sync-multi-task.md",
+              );
+              if (!file) return { containsNew: false, containsOld: true };
+              const content = await app.vault.read(file);
+              const match = content.match(/^---\n([\s\S]*?)\n---/);
+              if (!match) return { containsNew: false, containsOld: true };
+              const aliasesMatch = match[1].match(
+                /aliases:\s*\n((?:  - .+\n?)+)/m,
+              );
+              if (!aliasesMatch) {
+                return { containsNew: false, containsOld: true };
+              }
+              const aliasesList = aliasesMatch[1]
+                .split("\n")
+                .filter((line: string) => line.trim().startsWith("- "))
+                .map((line: string) => line.trim().substring(2).trim());
+              return {
+                containsNew: aliasesList.includes(knownNew),
+                containsOld:
+                  knownOld !== null && knownOld !== undefined
+                    ? aliasesList.includes(knownOld)
+                    : false,
+                aliases: aliasesList,
+              };
+            },
+            { knownOld: oldLabel, knownNew: newLabel },
+          ),
+        { timeout: 10_000, intervals: [200, 500, 500, 1000, 1000, 2000] },
+      )
+      .toMatchObject({ containsNew: true, containsOld: false });
+
+    // Final assertion: also confirm "Old Project Name" not in aliases
+    // (preserves original test invariant).
+    const finalAliases = await window.evaluate(async () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const app = (window as any).app;
+      const file = app.vault.getAbstractFileByPath(
+        "Tasks/alias-sync-multi-task.md",
+      );
+      const content = await app.vault.read(file);
+      const match = content.match(/^---\n([\s\S]*?)\n---/);
+      if (!match) return [];
+      const aliasesMatch = match[1].match(/aliases:\s*\n((?:  - .+\n?)+)/m);
+      if (!aliasesMatch) return [];
+      return aliasesMatch[1]
+        .split("\n")
+        .filter((line: string) => line.trim().startsWith("- "))
+        .map((line: string) => line.trim().substring(2).trim());
+    });
+
+    expect(finalAliases).toContain(newLabel);
+    expect(finalAliases).not.toContain("Old Project Name");
   });
 });
