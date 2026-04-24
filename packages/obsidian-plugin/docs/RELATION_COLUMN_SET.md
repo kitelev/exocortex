@@ -42,6 +42,31 @@ class wikilink in `exo__Instance_class` is mandatory for discovery; every
 `ui__RelationColumnSet_*` field is validated on parse with a `log.warn` on
 malformed input — invalid assets are skipped, never thrown.
 
+### Wikilink forms — canonical normalization
+
+Every wikilink field (`ui__RelationColumnSet_targetClass`,
+`ui__RelationColumnSet_referencingProperty`, each entry in
+`ui__RelationColumnSet_columns`) is normalized through
+`WikiLinkHelpers.normalize` before it reaches the resolver. All four
+frontmatter forms below are therefore equivalent:
+
+- `ems__WeeklyObjective` (bare identifier — valid for matching but Obsidian
+  won't autocomplete it)
+- `[[ems__WeeklyObjective]]` (plain wikilink — recommended for the
+  copy-pasteable example above)
+- `[[ems__WeeklyObjective|Weekly Objective]]` (non-UUID target ⇒ target
+  wins, alias is display-only)
+- `[[97fc9862-c886-4d86-9a60-e0cf9d778575|ems__WeeklyObjective]]` (starter-kit
+  convention — UUID target ⇒ alias wins, starter-kit assets use this form)
+
+Row-side `exo__Instance_class` values from the vault are normalized under
+the same rules, so a `ui__RelationColumnSet` config parsed in any form
+above matches a row in any form above — no pipe-order mirroring needed.
+
+The `columns` array receives the same normalization: every entry is reduced
+to a bare property name before the React renderer looks it up against the
+row frontmatter (e.g. `[[exo__Asset_createdAt]]` → `exo__Asset_createdAt`).
+
 ## Priority ladder
 
 The resolver matches one config per (rowClass, referencingProperty) pair.

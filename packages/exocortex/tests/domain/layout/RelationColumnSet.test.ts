@@ -24,8 +24,27 @@ describe("normalizeRef", () => {
     expect(normalizeRef("[[foo]]")).toBe("foo");
   });
 
-  test("strips alias after pipe", () => {
+  test("non-UUID target — target wins (alias is display-only)", () => {
+    // `uuid` here is a literal identifier string, NOT a UUID pattern.
     expect(normalizeRef("[[uuid|Display Name]]")).toBe("uuid");
+    expect(normalizeRef("[[Some Note|Display Label]]")).toBe("Some Note");
+  });
+
+  test("UUID target — alias wins (starter-kit `[[UUID|className]]` form)", () => {
+    // Post issue #2941: wikilinks where the target matches the UUID regex
+    // now normalize to the alias (the canonical class identifier), matching
+    // `WikiLinkHelpers.normalize` semantics across the rest of `@exocortex/core`.
+    expect(
+      normalizeRef("[[82c74542-1b14-4217-b852-d84730484b25|ems__Area]]"),
+    ).toBe("ems__Area");
+    expect(
+      normalizeRef("[[1b20a8f0-d745-4e93-91db-4531b3df120e|ems__Task]]"),
+    ).toBe("ems__Task");
+    expect(
+      normalizeRef(
+        "[[97fc9862-c886-4d86-9a60-e0cf9d778575|ui__RelationColumnSet]]",
+      ),
+    ).toBe("ui__RelationColumnSet");
   });
 
   test("preserves raw identifier when no wikilink", () => {
@@ -59,6 +78,41 @@ describe("normalizeRef", () => {
   });
 });
 
+describe("normalizeRef — 4×3 pipe-order matrix (issue #2941)", () => {
+  // Every frontmatter form produced by vault-2025 / starter-kit MUST collapse
+  // to the same canonical identifier regardless of pipe order.  Matrix: 4
+  // wikilink forms × 3 role fields (targetClass / referencingProperty /
+  // column entry) = 12 equivalence assertions.
+  const UUID = "97fc9862-c886-4d86-9a60-e0cf9d778575";
+
+  interface MatrixCase {
+    readonly form: "bare" | "[[name]]" | "[[name|uuid]]" | "[[uuid|name]]";
+    readonly input: string;
+  }
+
+  const roles: readonly ({ readonly name: string; readonly canonical: string })[] = [
+    { name: "targetClass — ems__WeeklyObjective", canonical: "ems__WeeklyObjective" },
+    { name: "referencingProperty — ems__WeeklyObjective__week", canonical: "ems__WeeklyObjective__week" },
+    { name: "column entry — exo__Asset_createdAt", canonical: "exo__Asset_createdAt" },
+  ];
+
+  for (const role of roles) {
+    const cases: readonly MatrixCase[] = [
+      { form: "bare", input: role.canonical },
+      { form: "[[name]]", input: `[[${role.canonical}]]` },
+      // basename-first: non-UUID target wins; alias `UUID` is display-only.
+      { form: "[[name|uuid]]", input: `[[${role.canonical}|${UUID}]]` },
+      // starter-kit pipe order: UUID target ⇒ alias (canonical name) wins.
+      { form: "[[uuid|name]]", input: `[[${UUID}|${role.canonical}]]` },
+    ];
+    for (const c of cases) {
+      test(`${role.name} in ${c.form} form → "${role.canonical}"`, () => {
+        expect(normalizeRef(c.input)).toBe(role.canonical);
+      });
+    }
+  }
+});
+
 describe("createRelationColumnSetFromFrontmatter — happy path", () => {
   test("parses a fully-populated asset", () => {
     const { warn, messages } = makeWarn();
@@ -78,12 +132,14 @@ describe("createRelationColumnSetFromFrontmatter — happy path", () => {
     );
 
     expect(result).not.toBeNull();
+    // `columns` MUST be bare property names (issue #2942): raw wikilinks were
+    // previously passed as-is, so React used `"[[prop]]"` as a metadata key.
     expect(result).toEqual({
       uid: "6533ca08-uid",
       label: "Week → WeeklyObjective",
       targetClasses: ["ems__WeeklyObjective"],
       referencingProperty: "ems__WeeklyObjective__week",
-      columns: ["[[exo__Asset_createdAt]]", "[[exo__Asset_label]]"],
+      columns: ["exo__Asset_createdAt", "exo__Asset_label"],
       priority: 10,
       sourcePath: SOURCE_PATH,
     });
@@ -195,6 +251,69 @@ describe("createRelationColumnSetFromFrontmatter — happy path", () => {
     );
     expect(result?.targetClasses).toEqual(["X"]);
     expect(result?.referencingProperty).toBeNull();
+  });
+});
+
+describe("createRelationColumnSetFromFrontmatter — column normalization (issue #2942)", () => {
+  const UUID = "5bc8d83d-34e4-4c2d-86e4-0c7dd30a2a12";
+
+  test("mixed column forms all collapse to bare property names", () => {
+    const { warn } = makeWarn();
+    const result = createRelationColumnSetFromFrontmatter(
+      {
+        exo__Asset_uid: "cols-mixed",
+        ui__RelationColumnSet_targetClass: ["[[ems__Task]]"],
+        ui__RelationColumnSet_columns: [
+          "[[exo__Asset_createdAt]]", // plain wikilink
+          "[[exo__Asset_label]]", // plain wikilink
+          "exo__Asset_uid", // bare property name
+          `[[${UUID}|exo__Effort_status]]`, // starter-kit: UUID target ⇒ alias
+          "[[ems__Task_priority|human label]]", // non-UUID target ⇒ target
+        ],
+      },
+      { sourcePath: SOURCE_PATH, warn },
+    );
+    expect(result?.columns).toEqual([
+      "exo__Asset_createdAt",
+      "exo__Asset_label",
+      "exo__Asset_uid",
+      "exo__Effort_status",
+      "ems__Task_priority",
+    ]);
+  });
+
+  test("empty/blank column entries are dropped after normalization", () => {
+    const { warn, messages } = makeWarn();
+    const result = createRelationColumnSetFromFrontmatter(
+      {
+        exo__Asset_uid: "cols-filtered",
+        ui__RelationColumnSet_targetClass: ["[[ems__Task]]"],
+        ui__RelationColumnSet_columns: [
+          "",
+          "   ",
+          "[[]]",
+          "[[|only-alias]]",
+          "exo__Asset_label",
+        ],
+      },
+      { sourcePath: SOURCE_PATH, warn },
+    );
+    expect(result?.columns).toEqual(["exo__Asset_label"]);
+    expect(messages).toHaveLength(0);
+  });
+
+  test("all columns degenerate to empty → reject with warn", () => {
+    const { warn, messages } = makeWarn();
+    const result = createRelationColumnSetFromFrontmatter(
+      {
+        exo__Asset_uid: "cols-all-blank",
+        ui__RelationColumnSet_targetClass: ["[[ems__Task]]"],
+        ui__RelationColumnSet_columns: ["[[]]", "[[|x]]", "   "],
+      },
+      { sourcePath: SOURCE_PATH, warn },
+    );
+    expect(result).toBeNull();
+    expect(messages[0]).toMatch(/columns array/);
   });
 });
 
