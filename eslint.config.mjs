@@ -96,6 +96,34 @@ export default tseslint.config(
       'no-restricted-imports': 'off',
     },
   },
+  // E2E spec timing-flake guard (RFC 3cc77ba2 v2 §Phase 1.1).
+  // Blocks `page.waitForTimeout()`, `setTimeout()`, `new Promise(r => setTimeout(r, N))`
+  // (the inner setTimeout is caught) and `setInterval()` in E2E specs.
+  // Launcher (`tests/e2e/utils/obsidian-launcher.ts:190`) is exempt because the
+  // glob is `*.spec.ts` only; launcher is infrastructure `.ts`, not a spec.
+  {
+    files: ['packages/obsidian-plugin/tests/e2e/**/*.spec.ts'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'CallExpression[callee.property.name="waitForTimeout"]',
+          message:
+            'waitForTimeout creates Category A timing flakes (RFC 3cc77ba2 v2 §Phase 1.1). Use expect(locator).toBeVisible({timeout}), expect.poll(() => condition, {timeout}), or page.waitForFunction() instead.',
+        },
+        {
+          selector: 'CallExpression[callee.name="setTimeout"]',
+          message:
+            'setTimeout (including inside `new Promise(r => setTimeout(r, N))`) creates Category A timing flakes. Use Playwright web-first assertions with explicit timeouts.',
+        },
+        {
+          selector: 'CallExpression[callee.name="setInterval"]',
+          message:
+            'setInterval creates Category A timing flakes. Use expect.poll({intervals, timeout}) instead.',
+        },
+      ],
+    },
+  },
   {
     ignores: [
       'node_modules/',

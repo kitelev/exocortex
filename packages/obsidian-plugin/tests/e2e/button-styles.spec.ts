@@ -93,7 +93,18 @@ test.describe("Button CSS Styles Tests", () => {
     });
 
     await firstButton.hover();
-    await page.waitForTimeout(200);
+
+    // Structured poll: wait for hover-transform to diverge from initial,
+    // replaces blind 200ms sleep.
+    await expect
+      .poll(
+        async () =>
+          firstButton.evaluate(
+            (el) => window.getComputedStyle(el).transform,
+          ),
+        { timeout: 2000 },
+      )
+      .not.toBe(initialTransform);
 
     const hoverTransform = await firstButton.evaluate((el) => {
       return window.getComputedStyle(el).transform;
