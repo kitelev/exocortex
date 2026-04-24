@@ -179,11 +179,11 @@ describe("Phase 4 cache invalidation — add/modify/delete/rename/batch", () => 
     const resolved = resolver.resolve(ROW_CLASSES, GROUP_PROP);
     expect(resolved).not.toBeNull();
     expect(resolved?.uid).toBe("wo-1");
-    // Columns are preserved verbatim (the resolver's consumer — the renderer —
-    // treats them as opaque refs and does the final lookup downstream).
+    // Columns normalize to bare property names (post #2942) so React's
+    // `metadata[column]` lookup on the row frontmatter succeeds.
     expect(resolved?.columns).toEqual([
-      "[[exo__Asset_createdAt]]",
-      "[[exo__Asset_label]]",
+      "exo__Asset_createdAt",
+      "exo__Asset_label",
     ]);
   });
 
@@ -194,8 +194,8 @@ describe("Phase 4 cache invalidation — add/modify/delete/rename/batch", () => 
 
     const before = resolver.resolve(ROW_CLASSES, GROUP_PROP);
     expect(before?.columns).toEqual([
-      "[[exo__Asset_createdAt]]",
-      "[[exo__Asset_label]]",
+      "exo__Asset_createdAt",
+      "exo__Asset_label",
     ]);
 
     // User reorders columns — uid stays, columns change.
@@ -212,8 +212,8 @@ describe("Phase 4 cache invalidation — add/modify/delete/rename/batch", () => 
     const after = resolver.resolve(ROW_CLASSES, GROUP_PROP);
     expect(after?.uid).toBe("wo-1");
     expect(after?.columns).toEqual([
-      "[[exo__Asset_label]]",
-      "[[ems__Effort_status]]",
+      "exo__Asset_label",
+      "ems__Effort_status",
     ]);
   });
 
