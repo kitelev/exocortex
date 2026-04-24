@@ -67,24 +67,19 @@ test.describe("docs/RELATION_COLUMN_SET.md example renders", () => {
 
     expect(docsConfig.targetClasses).toEqual(["ems__WeeklyObjective"]);
     expect(docsConfig.referencingProperty).toBe("ems__WeeklyObjective__week");
+    // Post issue #2942: columns are normalized to bare property names during
+    // parse, so the renderer can index frontmatter directly with no transform.
     expect(docsConfig.columns).toEqual([
-      "[[exo__Asset_createdAt]]",
-      "[[exo__Asset_label]]",
+      "exo__Asset_createdAt",
+      "exo__Asset_label",
     ]);
 
     const resolver = new RelationColumnSetResolver(() => [docsConfig]);
     const resolved = resolver.resolve(ROW_CLASSES, GROUP_PROP);
     expect(resolved?.uid).toBe(docsConfig.uid);
 
-    // Strip wikilink wrapping — AssetRelationsTable expects bare property
-    // names for column header lookup (the renderer does the same transform
-    // in `buildGroupSpecificProperties`).
-    const columnPropertyNames = resolved!.columns.map((col) => {
-      const m = col.match(/^\[\[([^|\]]+)(?:\|[^\]]+)?\]\]$/);
-      return m ? m[1] : col;
-    });
     const groupSpecificProperties = {
-      ems__WeeklyObjective__week: columnPropertyNames,
+      ems__WeeklyObjective__week: [...resolved!.columns],
     };
 
     const component = await mount(
