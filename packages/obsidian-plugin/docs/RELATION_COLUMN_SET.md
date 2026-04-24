@@ -12,6 +12,25 @@ off, or no matching config exists, the renderer transparently falls back to
 the original hardcoded map — the feature is purely additive and opt-in per
 (rowClass, referencingProperty) pair.
 
+## Initial setup — zero-friction ontology bootstrap
+
+The plugin installs the 7 required ontology assets (`!ui` ontology root,
+`ui__RelationColumnSet` class, and 5 `ui__RelationColumnSet_*` properties)
+automatically on `onload`, so a fresh personal vault does not need any
+manual copy from `kitelev/exocortex-starter-kit`. Target folder:
+`_exocortex-ui-ontology/` — one UUID-named file per asset, following the
+starter-kit convention.
+
+Bootstrap is idempotent — files already present at the target path are
+skipped, so upgrading the plugin (or opening a vault where the ontology was
+pre-installed) does not create duplicates, overwrite customisation, or log
+warnings on subsequent loads. If you moved the 7 files to a different
+folder in your vault, the plugin will still install a fresh copy at
+`_exocortex-ui-ontology/`; delete whichever copy you prefer to keep one
+canonical location (duplicate `exo__Asset_uid` values are flagged by
+`RelationColumnSetRepository: duplicate exo__Asset_uid` warnings — see
+Troubleshooting below).
+
 ## Copy-pasteable example
 
 Create a new note anywhere in the vault (e.g.

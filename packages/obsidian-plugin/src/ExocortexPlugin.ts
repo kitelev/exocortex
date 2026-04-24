@@ -64,6 +64,8 @@ import { GraphViewPatch } from "./presentation/graph-view/GraphViewPatch";
 import { PrintNameRuleService } from "./domain/display-name/PrintNameRuleService";
 import { ObsidianFileSystemAdapter } from "./adapters/ObsidianFileSystemAdapter";
 import { populateServiceRegistry } from "./infrastructure/services/ServiceRegistryPopulator";
+import { UiOntologyBootstrapper } from "./infrastructure/ontology/UiOntologyBootstrapper";
+import { ObsidianUiOntologyBootstrapperVault } from "./infrastructure/ontology/ObsidianUiOntologyBootstrapperVault";
 
 /**
  * Exocortex Plugin - Automatic layout rendering
@@ -176,6 +178,34 @@ export default class ExocortexPlugin extends Plugin {
         sparqlApi: this.sparql,
         vaultAdapter: this.vaultAdapter,
       });
+
+      // Issue #2943 — install the `ui__RelationColumnSet` ontology (7 files)
+      // into the vault before the repository initialises, so the snapshot
+      // can pick up the class + property assets on first rebuild. Idempotent:
+      // skips any file already present at the target path. Errors on
+      // individual writes are logged but do not abort plugin load.
+      try {
+        const bootstrapResult = await new UiOntologyBootstrapper(
+          new ObsidianUiOntologyBootstrapperVault(this.app.vault),
+        ).bootstrap();
+        if (bootstrapResult.created.length > 0) {
+          this.logger.info("UiOntologyBootstrapper", {
+            message: `installed ${bootstrapResult.created.length} ontology file(s)`,
+            created: bootstrapResult.created,
+          });
+        }
+        if (bootstrapResult.errors.length > 0) {
+          for (const err of bootstrapResult.errors) {
+            this.logger.warn("UiOntologyBootstrapper", {
+              message: `failed to install ${err.path}: ${err.error.message}`,
+            });
+          }
+        }
+      } catch (err) {
+        this.logger.warn("UiOntologyBootstrapper", {
+          message: `bootstrap failed: ${err instanceof Error ? err.message : String(err)}`,
+        });
+      }
 
       // RFC be70f741 Phase 3 — wire RelationColumnSetRepository + Resolver so
       // `UniversalLayoutRenderer` → `RelationsRenderer` can consult the index
