@@ -6,13 +6,25 @@
  * `ui__RelationColumnSet` configs — the feature would otherwise require a
  * manual 7-file copy from `kitelev/exocortex-starter-kit`.
  *
- * Idempotency: skip each file already present at its target path. The second
- * call after the first is a no-op. Errors on individual writes do not abort
- * the run; each failure is collected in `result.errors` and the remaining
- * files are still installed.
+ * Idempotency (two layers, UUID check first — stronger):
+ * 1. `hasAssetWithUid(uid)` — true if a `<uid>.md` file exists anywhere in
+ *    the vault. Catches users who already copied the 7 files to a custom
+ *    folder (e.g. starter-kit `03 Knowledge/ui/` convention).
+ * 2. `fileExists(path)` — fallback path-level check at the default target.
+ *
+ * The second call after the first is a no-op. Errors on individual writes
+ * do not abort the run; each failure is collected in `result.errors` and
+ * the remaining files are still installed.
  */
 
 export interface UiOntologyBootstrapperVault {
+  /**
+   * True iff a `.md` file whose basename equals this UUID exists anywhere
+   * in the vault. Stronger than path-level `fileExists` — catches legacy
+   * copies at non-default folders (starter-kit `03 Knowledge/ui/`, etc.)
+   * and avoids creating duplicate `exo__Asset_uid` assets on upgrade.
+   */
+  hasAssetWithUid(uid: string): boolean;
   fileExists(path: string): boolean;
   createFile(path: string, content: string): Promise<void>;
   ensureFolder(path: string): Promise<void>;
@@ -193,7 +205,7 @@ export class UiOntologyBootstrapper {
     const pending: Array<{ path: string; content: string }> = [];
     for (const file of UI_ONTOLOGY_FILES) {
       const path = `${this.targetFolder}/${file.filename}`;
-      if (this.vault.fileExists(path)) {
+      if (this.vault.hasAssetWithUid(file.uid) || this.vault.fileExists(path)) {
         skipped.push(path);
       } else {
         pending.push({ path, content: file.content });

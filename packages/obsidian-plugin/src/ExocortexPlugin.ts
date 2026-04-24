@@ -181,12 +181,19 @@ export default class ExocortexPlugin extends Plugin {
 
       // Issue #2943 — install the `ui__RelationColumnSet` ontology (7 files)
       // into the vault before the repository initialises, so the snapshot
-      // can pick up the class + property assets on first rebuild. Idempotent:
-      // skips any file already present at the target path. Errors on
-      // individual writes are logged but do not abort plugin load.
+      // can pick up the class + property assets on first rebuild.
+      //
+      // Idempotency is UID-first (`metadataCache.getFirstLinkpathDest`) then
+      // path-level — catches legacy copies at non-default folders (e.g.
+      // starter-kit `03 Knowledge/ui/` convention) and prevents duplicate
+      // `exo__Asset_uid` assets on plugin upgrade. Errors on individual
+      // writes are logged but do not abort plugin load.
       try {
         const bootstrapResult = await new UiOntologyBootstrapper(
-          new ObsidianUiOntologyBootstrapperVault(this.app.vault),
+          new ObsidianUiOntologyBootstrapperVault(
+            this.app.vault,
+            this.app.metadataCache,
+          ),
         ).bootstrap();
         if (bootstrapResult.created.length > 0) {
           this.logger.info("UiOntologyBootstrapper", {

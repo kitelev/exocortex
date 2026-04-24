@@ -9,16 +9,25 @@ interface FakeVault extends UiOntologyBootstrapperVault {
   folders: Set<string>;
   createdPaths: string[];
   ensuredFolders: string[];
+  existingUids: Set<string>;
 }
 
-function makeVault(existingPaths: Iterable<string> = []): FakeVault {
+const UUID_BASENAME_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+function makeVault(
+  existingPaths: Iterable<string> = [],
+  existingUids: Iterable<string> = [],
+): FakeVault {
   const files = new Map<string, string>();
   const folders = new Set<string>();
   const createdPaths: string[] = [];
   const ensuredFolders: string[] = [];
+  const uids = new Set<string>(existingUids);
 
   for (const path of existingPaths) {
     files.set(path, "existing-stub");
+    const basename = path.replace(/^.*\//, "").replace(/\.md$/, "");
+    if (UUID_BASENAME_RE.test(basename)) uids.add(basename);
   }
 
   return {
@@ -26,6 +35,10 @@ function makeVault(existingPaths: Iterable<string> = []): FakeVault {
     folders,
     createdPaths,
     ensuredFolders,
+    existingUids: uids,
+    hasAssetWithUid(uid) {
+      return uids.has(uid);
+    },
     fileExists(path) {
       return files.has(path);
     },
@@ -167,6 +180,32 @@ describe("UiOntologyBootstrapper", () => {
       expect(second.created).toHaveLength(0);
       expect(second.skipped).toHaveLength(7);
       expect(vault.files.size).toBe(7);
+    });
+
+    it("is a no-op when the 7 UUIDs already exist in a legacy custom folder (e.g. starter-kit `03 Knowledge/ui/`)", async () => {
+      // Regression for #2943 follow-up: user with manually-copied starter-kit
+      // files at `03 Knowledge/ui/<uid>.md` must NOT receive a duplicate copy
+      // at `_exocortex-ui-ontology/` on plugin upgrade — duplicate
+      // `exo__Asset_uid` breaks `RelationColumnSetRepository`.
+      const legacyPaths = BUNDLED_UIDS.map(
+        (uid) => `03 Knowledge/ui/${uid}.md`,
+      );
+      const vault = makeVault(legacyPaths);
+
+      // UID-scan must fire first (before the default-target path check)
+      expect(vault.hasAssetWithUid(BUNDLED_UIDS[0])).toBe(true);
+
+      const bootstrapper = new UiOntologyBootstrapper(vault);
+      const result = await bootstrapper.bootstrap();
+
+      expect(result.created).toHaveLength(0);
+      expect(result.skipped).toHaveLength(7);
+      expect(vault.createdPaths).toHaveLength(0);
+      expect(vault.ensuredFolders).toHaveLength(0);
+      // Nothing written at the default target — no duplicates.
+      for (const uid of BUNDLED_UIDS) {
+        expect(vault.files.has(`${TARGET_FOLDER}/${uid}.md`)).toBe(false);
+      }
     });
 
     it("creates only the missing subset when vault has partial install", async () => {
