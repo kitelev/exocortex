@@ -614,5 +614,11 @@ describe("PropertySchemas", () => {
       expect(getStatusLabel("unknown_status")).toBe("unknown_status");
       expect(getStatusLabel("CustomStatus")).toBe("CustomStatus");
     });
+
+    it("should strip UUID suffix when status contains class name and UUID", () => {
+      expect(getStatusLabel("[[ems__EffortStatusDoing 027e78f4-6e16-4b36-b8fb-5510507d5745]]")).toBe("Doing");
+      expect(getStatusLabel("[[ems__EffortStatusDone 7b9b3116-7c3c-438c-9618-94fe301320a6]]")).toBe("Done");
+      expect(getStatusLabel("ems__EffortStatusBacklog 753a44d5-846c-4b82-9196-4fd9a4d48777")).toBe("Backlog");
+    });
   });
 });

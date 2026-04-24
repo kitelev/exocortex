@@ -206,7 +206,12 @@ export function getPropertyByName(
 
 export function getStatusLabel(statusUri: string | null | undefined): string {
   if (!statusUri || statusUri.trim() === "") return "-";
-  const normalized = statusUri.replace(/[[\]"']/g, "").trim().toLowerCase();
+  // Strip wikilink brackets, then remove a trailing UUID if present.
+  // Frontmatter may store "[[ems__EffortStatusDoing 027e78f4-...]]" (class + UUID)
+  // after certain status transitions; the UUID is stripped so the class name matches.
+  const normalized = statusUri.replace(/[[\]"']/g, "").trim()
+    .replace(/\s+[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i, "")
+    .toLowerCase();
   const match = EFFORT_STATUS_VALUES.find(
     (v) =>
       v.value.replace(/[[\]]/g, "").toLowerCase() === normalized ||
