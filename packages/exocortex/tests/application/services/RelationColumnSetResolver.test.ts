@@ -350,13 +350,13 @@ describe("RelationColumnSetResolver — normalization roundtrip", () => {
     expect(resolver.resolve(rowClasses, "P")).toBe(config);
   });
 
-  it("wikilink with internal brackets drops the unmatched trailing part via trim", () => {
-    // `normalizeRef` expects matched `[[...]]`. A malformed `[[C` is not a
-    // wikilink match → treated as raw, resulting in literal `[[C` which will
-    // not match config `C`.
+  it("malformed half-wikilink is tolerated — outer brackets stripped (delegates to WikiLinkHelpers)", () => {
+    // After issue #2941 consolidation, `normalizeRef` delegates to
+    // `WikiLinkHelpers.normalize`, which permissively strips any `[[` / `]]`
+    // substrings.  `"[[C"` therefore collapses to `"C"` and matches config `C`.
     const config = mk({ targetClasses: ["C"], referencingProperty: "P" });
     const resolver = new RelationColumnSetResolver(() => [config]);
-    expect(resolver.resolve(["[[C"], "P")).toBeNull();
+    expect(resolver.resolve(["[[C"], "P")).toBe(config);
   });
 
   it("null rowClass element skipped gracefully (type-cast)", () => {
@@ -505,5 +505,59 @@ describe("RelationColumnSetResolver — logger default (no options)", () => {
     const b = mk({ uid: "b", targetClasses: ["C"], referencingProperty: "P", priority: 5 });
     const resolver = new RelationColumnSetResolver(() => [a, b], {});
     expect(resolver.resolve(["C"], "P")).toBe(a);
+  });
+});
+
+describe("RelationColumnSetResolver — wikilink pipe-order matrix (issue #2941)", () => {
+  // Config-side `targetClasses` / `referencingProperty` are already normalized
+  // by `createRelationColumnSetFromFrontmatter` before reaching the resolver.
+  // Row-side inputs (`exo__Instance_class`, backlink property) arrive RAW from
+  // Obsidian's `metadataCache`, so the resolver MUST normalize them through
+  // the same `WikiLinkHelpers.normalize` semantics — issue #2941 fix.
+  const TARGET_CLASS = "ems__WeeklyObjective";
+  const PROPERTY = "ems__WeeklyObjective__week";
+  const UUID_CLS = "5bc8d83d-34e4-4c2d-86e4-0c7dd30a2a12";
+  const UUID_PROP = "8f3b9e12-4a7c-4f2e-9b1a-3c4d5e6f7a8b";
+
+  const classForms: readonly { readonly label: string; readonly input: string }[] = [
+    { label: "bare", input: TARGET_CLASS },
+    { label: "[[name]]", input: `[[${TARGET_CLASS}]]` },
+    { label: "[[name|uuid]] (basename-first)", input: `[[${TARGET_CLASS}|${UUID_CLS}]]` },
+    { label: "[[uuid|name]] (starter-kit pipe order)", input: `[[${UUID_CLS}|${TARGET_CLASS}]]` },
+  ];
+
+  const propertyForms: readonly { readonly label: string; readonly input: string }[] = [
+    { label: "bare", input: PROPERTY },
+    { label: "[[name]]", input: `[[${PROPERTY}]]` },
+    { label: "[[name|uuid]] (basename-first)", input: `[[${PROPERTY}|${UUID_PROP}]]` },
+    { label: "[[uuid|name]] (starter-kit pipe order)", input: `[[${UUID_PROP}|${PROPERTY}]]` },
+  ];
+
+  for (const cls of classForms) {
+    for (const prop of propertyForms) {
+      it(`row class=${cls.label} × property=${prop.label} → Tier-1 match`, () => {
+        const config = mk({
+          uid: "matrix",
+          targetClasses: [TARGET_CLASS],
+          referencingProperty: PROPERTY,
+        });
+        const resolver = new RelationColumnSetResolver(() => [config]);
+        expect(resolver.resolve([cls.input], prop.input)).toBe(config);
+      });
+    }
+  }
+
+  // Symmetric: config frontmatter in starter-kit pipe order matches plain row.
+  it("config parsed from starter-kit-style `[[uuid|name]]` matches bare row", () => {
+    // Simulate what `createRelationColumnSetFromFrontmatter` produces after
+    // normalization: bare `TARGET_CLASS` in `targetClasses`.  (The resolver
+    // itself receives already-normalized config strings by contract.)
+    const config = mk({
+      uid: "sym",
+      targetClasses: [TARGET_CLASS],
+      referencingProperty: PROPERTY,
+    });
+    const resolver = new RelationColumnSetResolver(() => [config]);
+    expect(resolver.resolve([TARGET_CLASS], PROPERTY)).toBe(config);
   });
 });

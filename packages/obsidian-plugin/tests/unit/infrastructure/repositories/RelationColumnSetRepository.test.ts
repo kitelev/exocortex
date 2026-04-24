@@ -148,6 +148,34 @@ describe("RelationColumnSetRepository — initial scan", () => {
     expect(adapter.listenerCount("deleted")).toBe(1);
     expect(adapter.listenerCount("renamed")).toBe(1);
   });
+
+  test("snapshot columns normalized via WikiLinkHelpers (issue #2942)", () => {
+    // Post issue #2942 fix: columns produced by
+    // `createRelationColumnSetFromFrontmatter` MUST be bare property names so
+    // React's `metadata[column]` lookup succeeds.  Wikilink + UUID-alias +
+    // mixed-form inputs all collapse to the canonical identifier.
+    const UUID = "5bc8d83d-34e4-4c2d-86e4-0c7dd30a2a12";
+    const adapter = makeAdapter({
+      "cols.md": validConfig("uid-cols", {
+        ui__RelationColumnSet_columns: [
+          "[[exo__Asset_createdAt]]",
+          "[[exo__Asset_label]]",
+          "exo__Asset_uid",
+          `[[${UUID}|exo__Effort_status]]`,
+        ],
+      }),
+    });
+    const repo = new RelationColumnSetRepository(adapter, makeTimer());
+    repo.initialize();
+
+    const entry = repo.getSnapshot().byUid.get("uid-cols");
+    expect(entry?.columns).toEqual([
+      "exo__Asset_createdAt",
+      "exo__Asset_label",
+      "exo__Asset_uid",
+      "exo__Effort_status",
+    ]);
+  });
 });
 
 describe("RelationColumnSetRepository — event debouncing", () => {

@@ -13,6 +13,8 @@
  * @since 15.x (RFC be70f741-a8e3-4826-aab1-d3f950068861 Phase 1)
  */
 
+import { WikiLinkHelpers } from "../../utilities/WikiLinkHelpers";
+
 export interface RelationColumnSet {
   readonly uid: string;
   readonly label: string;
@@ -23,19 +25,30 @@ export interface RelationColumnSet {
   readonly sourcePath: string;
 }
 
+/**
+ * Normalize a wikilink or raw identifier to its canonical string form, or
+ * `null` when the input cannot be normalized.
+ *
+ * Delegates to {@link WikiLinkHelpers.normalize} so the resolver + repository
+ * share the SAME wikilink semantics as every other `@exocortex/core` consumer
+ * (issue #2941 — prior asymmetric "before-pipe wins" behaviour caused
+ * `ui__RelationColumnSet` match failures for starter-kit-style
+ * `[[uuid|alias]]` frontmatter).
+ *
+ * Behaviour (via `WikiLinkHelpers.normalize`):
+ * - `"[[ems__Area]]"` → `"ems__Area"`
+ * - `"[[UUID|ems__Area]]"` → `"ems__Area"` (UUID target ⇒ alias wins)
+ * - `"[[Some Note|Display]]"` → `"Some Note"` (non-UUID target ⇒ target wins)
+ *
+ * Preserves the `string | null` contract of the original function: returns
+ * `null` for non-string inputs, empty strings, and wikilinks whose inner text
+ * collapses to empty (e.g. `"[[|alias]]"`).
+ */
 export function normalizeRef(value: unknown): string | null {
   if (typeof value !== "string") {
     return null;
   }
-  const trimmed = value.trim();
-  if (trimmed.length === 0) {
-    return null;
-  }
-  const wikilinkMatch = trimmed.match(/^\[\[([^\]]+)\]\]$/);
-  const inner = wikilinkMatch ? wikilinkMatch[1] : trimmed;
-  const aliasSeparator = inner.indexOf("|");
-  const bare = aliasSeparator >= 0 ? inner.slice(0, aliasSeparator) : inner;
-  const normalized = bare.trim();
+  const normalized = WikiLinkHelpers.normalize(value);
   return normalized.length > 0 ? normalized : null;
 }
 
@@ -103,8 +116,20 @@ export function createRelationColumnSetFromFrontmatter(
     return null;
   }
 
+  // Normalize column entries through the shared wikilink normalizer so
+  // downstream consumers (`AssetRelationsTable`, `RelationsRenderer`) receive
+  // bare property names even when the frontmatter uses starter-kit-style
+  // wikilink forms (`[[exo__Asset_createdAt]]`, `[[UUID|exo__Asset_label]]`).
+  // Issue #2942 — raw wikilinks were previously passed through as literal
+  // React metadata keys, yielding undefined column values.
   const columnsRaw = toStringArray(frontmatter["ui__RelationColumnSet_columns"]);
-  const columns = columnsRaw.map((entry) => entry.trim()).filter((entry) => entry.length > 0);
+  const columns: string[] = [];
+  for (const entry of columnsRaw) {
+    const normalized = WikiLinkHelpers.normalize(entry);
+    if (normalized.length > 0) {
+      columns.push(normalized);
+    }
+  }
   if (columns.length === 0) {
     warn(
       `RelationColumnSet ${uid}: columns array must contain at least one entry (${sourcePath})`,
