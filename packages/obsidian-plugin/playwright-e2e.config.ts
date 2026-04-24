@@ -28,6 +28,10 @@ export default defineConfig({
     ["list"],
     ...(process.env.CI ? [["github", {}] as ["github", {}]] : []),
     ["./playwright-no-flaky-reporter.ts"],
+    // RFC 3cc77ba2 Phase 2.2 step 1 — data-flake detector (Category F).
+    // Warn-only: snapshots tests/e2e/test-vault/ before/after each test and writes
+    // test-results/fixture-drift.json for CI artifact pickup. Never fails the run.
+    ["./tests/e2e/reporters/fixture-drift-reporter.ts"],
   ],
 
   // Output directory for test artifacts (videos, screenshots, traces)
