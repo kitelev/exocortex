@@ -9,7 +9,9 @@ import { ActionButtonsGroup } from '@plugin/presentation/components/ActionButton
 import { IVaultAdapter, MetadataExtractor, INotificationService } from "exocortex";
 import { FolderRepairService } from "exocortex";
 import { CommandResolver, PreconditionEvaluator, GroundingExecutor } from "exocortex";
-import type { RelationColumnSetResolver } from "exocortex";
+import type { LayoutSelector, RelationColumnSetResolver } from "exocortex";
+import type { ExoLayoutRepository } from "@plugin/infrastructure/repositories";
+import { ExoLayoutRenderer } from "./ExoLayoutRenderer";
 import { BacklinksCacheManager } from '@plugin/adapters/caching/BacklinksCacheManager';
 import { EventListenerManager } from '@plugin/adapters/events/EventListenerManager';
 import { ButtonGroupsBuilder } from '@plugin/presentation/builders/ButtonGroupsBuilder';
@@ -62,6 +64,9 @@ export class UniversalLayoutRenderer {
   private groundingExecutor?: GroundingExecutor;
   private notificationService?: INotificationService;
   private relationColumnSetResolver: RelationColumnSetResolver | null = null;
+  private exoLayoutRepository: ExoLayoutRepository | null = null;
+  private layoutSelector: LayoutSelector | null = null;
+  private exoLayoutRenderer!: ExoLayoutRenderer;
 
   private dependencyResolver: PropertyDependencyResolver;
   private deltaDetector: FrontmatterDeltaDetector;
@@ -86,6 +91,8 @@ export class UniversalLayoutRenderer {
       groundingExecutor?: GroundingExecutor;
       notificationService?: INotificationService;
       relationColumnSetResolver?: RelationColumnSetResolver | null;
+      exoLayoutRepository?: ExoLayoutRepository | null;
+      layoutSelector?: LayoutSelector | null;
     },
   ) {
     this.app = app;
@@ -98,6 +105,8 @@ export class UniversalLayoutRenderer {
     this.notificationService = rfc009Services?.notificationService;
     this.relationColumnSetResolver =
       rfc009Services?.relationColumnSetResolver ?? null;
+    this.exoLayoutRepository = rfc009Services?.exoLayoutRepository ?? null;
+    this.layoutSelector = rfc009Services?.layoutSelector ?? null;
     this.logger = LoggerFactory.create("UniversalLayoutRenderer");
 
     // Create ReactRenderer with ErrorBoundary enabled for graceful error handling.
@@ -126,6 +135,20 @@ export class UniversalLayoutRenderer {
     this.initializeRenderers();
     this.dependencyResolver = new PropertyDependencyResolver();
     this.deltaDetector = new FrontmatterDeltaDetector();
+
+    const exoLayoutRepo = this.exoLayoutRepository;
+    this.exoLayoutRenderer = new ExoLayoutRenderer({
+      app: this.app,
+      reactRenderer: this.reactRenderer,
+      logger: this.logger,
+      snapshotProvider: () =>
+        exoLayoutRepo?.getSnapshot() ?? {
+          layouts: [],
+          blocks: [],
+          blocksByUid: new Map(),
+          blocksByLabel: new Map(),
+        },
+    });
   }
 
   private initializeRenderers(): void {
@@ -245,6 +268,31 @@ export class UniversalLayoutRenderer {
       await this.dailyTasksRenderer.render(el, currentFile, renderHeader, this.sectionStateManager.isCollapsed("daily-tasks"));
 
       const relations = await this.relationsRenderer.getAssetRelations(currentFile, config);
+
+      // RFC exo__Layout Phase 2 — resolve Layout for current asset's classes.
+      // When a layout is found AND the feature flag is on, render its blocks.
+      // If the layout's `coexistsWithDefault` is false, skip the default
+      // AreaTree + Relations sections (full replace mode). Properties block
+      // and action buttons are always preserved per RFC §62.
+      const layout = this.resolveLayoutForFile(currentFile);
+      const layoutActive = layout !== null && this.settings.enableExoLayoutRenderer;
+      if (layoutActive && layout !== null) {
+        await this.exoLayoutRenderer.render(el, currentFile, layout, relations);
+        if (!layout.coexistsWithDefault) {
+          this.currentFilePath = currentFile.path;
+          this.currentConfig = config;
+          this.metadataCache.set(
+            currentFile.path,
+            this.metadataExtractor.extractMetadata(currentFile),
+          );
+          el.addClass("exocortex-layout-rendered");
+          this.logger.info(
+            `Rendered ExoLayout ${layout.uid} (replace) for ${currentFile.path}`,
+          );
+          return;
+        }
+      }
+
       await this.areaTreeRenderer.render(el, currentFile, relations, renderHeader, this.sectionStateManager.isCollapsed("area-tree"));
       await this.relationsRenderer.render(el, relations, config, renderHeader, this.sectionStateManager.isCollapsed("relations"));
 
@@ -258,6 +306,21 @@ export class UniversalLayoutRenderer {
       this.logger.error("Failed to render UniversalLayout", { error });
       el.createDiv({ text: `Error: ${error instanceof Error ? error.message : String(error)}`, cls: "exocortex-error-message" });
     }
+  }
+
+  private resolveLayoutForFile(
+    file: TFile,
+  ): import("exocortex").Layout | null {
+    if (this.layoutSelector === null) return null;
+    const cache = this.app.metadataCache.getFileCache(file);
+    const raw = cache?.frontmatter?.["exo__Instance_class"];
+    const classes = Array.isArray(raw)
+      ? raw.filter((v): v is string => typeof v === "string")
+      : typeof raw === "string"
+        ? [raw]
+        : [];
+    if (classes.length === 0) return null;
+    return this.layoutSelector.resolve(classes);
   }
 
   public async refresh(_el?: HTMLElement): Promise<void> {
