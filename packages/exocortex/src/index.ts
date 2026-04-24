@@ -446,6 +446,39 @@ export {
   type RelationColumnSetResolverOptions,
 } from "./application/services";
 
+// Layout / LayoutBlock (RFC exo__Layout Phase 1 — 6628d78a-78a9-473c-ace3-e9b6d28750d1)
+export {
+  LAYOUT_CLASS_IRI,
+  LAYOUT_CLASS_UID,
+  createLayoutFromFrontmatter,
+  isLayout,
+  isLayoutFrontmatter,
+  type CreateLayoutOptions,
+  type Layout,
+} from "./domain/layout";
+
+export {
+  BACKLINKS_TABLE_BLOCK_CLASS_IRI,
+  BACKLINKS_TABLE_BLOCK_CLASS_UID,
+  PROPERTIES_BLOCK_CLASS_IRI,
+  PROPERTIES_BLOCK_CLASS_UID,
+  createLayoutBlockFromFrontmatter,
+  isBacklinksTableBlock,
+  isLayoutBlockFrontmatter,
+  isPropertiesBlock,
+  type BacklinksTableBlock,
+  type CreateLayoutBlockOptions,
+  type LayoutBlock,
+  type LayoutBlockBase,
+  type PropertiesBlock,
+} from "./domain/layout";
+
+export {
+  LayoutSelector,
+  selectByPriority,
+  type LayoutSelectorSource,
+} from "./application/services/LayoutSelector";
+
 // Error exports
 export * from "./domain/errors";
 export * from "./application/errors";

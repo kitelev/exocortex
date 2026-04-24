@@ -104,6 +104,17 @@ export interface ExocortexSettings {
    * UniversalLayout auto-backlinks table.
    */
   enableRelationColumnSetResolver: boolean;
+  /**
+   * RFC exo__Layout Phase 2 — enable `ExoLayoutRenderer`.  When `true` and an
+   * `exo__Layout` asset targets one of the current asset's classes, the
+   * renderer replaces (or coexists with, depending on the Layout's
+   * `coexistsWithDefault` flag) the default Asset Relations section.  When
+   * `false`, the plugin behaves identically to pre-RFC exo__Layout versions.
+   * Default `true` is safe because the starter-kit ships only class/property
+   * definitions, not Layout instances — rendering is a no-op until the user
+   * authors a Layout.
+   */
+  enableExoLayoutRenderer: boolean;
   [key: string]: unknown;
 }
 
@@ -125,4 +136,5 @@ export const DEFAULT_SETTINGS: ExocortexSettings = {
   logChannels: DEFAULT_LOG_CHANNELS,
   autoReadingModeForExocortexAssets: true,
   enableRelationColumnSetResolver: true,
+  enableExoLayoutRenderer: true,
 };
