@@ -11,7 +11,9 @@ test.describe("Show Archived Button in pn__DailyNote", () => {
     const dailyNoteLink = page.locator('a[href*="2025-10-18"]').first();
     if (await dailyNoteLink.isVisible()) {
       await dailyNoteLink.click();
-      await page.waitForTimeout(1000);
+      await expect(page.locator(".exocortex-assets-relations")).toBeVisible({
+        timeout: 10000,
+      });
     }
   });
 
@@ -21,21 +23,19 @@ test.describe("Show Archived Button in pn__DailyNote", () => {
 
     const showArchivedButton = page.locator("button.exocortex-toggle-archived");
     await expect(showArchivedButton).toBeVisible();
-
-    const buttonText = await showArchivedButton.textContent();
-    expect(buttonText).toContain("Show Archived");
+    await expect(showArchivedButton).toContainText("Show Archived");
   });
 
   test("should hide archived assets by default", async ({ page }) => {
     const relationsSection = page.locator(".exocortex-assets-relations");
     await expect(relationsSection).toBeVisible({ timeout: 10000 });
 
-    await page.waitForTimeout(1000);
+    await expect(
+      page.locator(".exocortex-relation-table tbody tr").first(),
+    ).toBeVisible({ timeout: 5000 });
 
     const archivedTaskRow = page.locator('text="Archived Task"');
-    const isVisible = await archivedTaskRow.isVisible().catch(() => false);
-
-    expect(isVisible).toBe(false);
+    await expect(archivedTaskRow).toBeHidden();
   });
 
   test("should show archived assets when Show Archived button is clicked", async ({ page }) => {
@@ -48,10 +48,7 @@ test.describe("Show Archived Button in pn__DailyNote", () => {
     const rowsBeforeClick = await page.locator(".exocortex-relation-table tbody tr").count();
 
     await showArchivedButton.click();
-    await page.waitForTimeout(500);
-
-    const buttonTextAfter = await showArchivedButton.textContent();
-    expect(buttonTextAfter).toContain("Hide Archived");
+    await expect(showArchivedButton).toContainText("Hide Archived", { timeout: 5000 });
 
     const archivedTaskRow = page.locator('text="Archived Task"');
     await expect(archivedTaskRow).toBeVisible({ timeout: 5000 });
@@ -68,7 +65,6 @@ test.describe("Show Archived Button in pn__DailyNote", () => {
     await expect(showArchivedButton).toBeVisible();
 
     await showArchivedButton.click();
-    await page.waitForTimeout(500);
 
     const archivedTaskRow = page.locator('text="Archived Task"');
     await expect(archivedTaskRow).toBeVisible({ timeout: 5000 });
@@ -76,13 +72,8 @@ test.describe("Show Archived Button in pn__DailyNote", () => {
     const rowsWithArchived = await page.locator(".exocortex-relation-table tbody tr").count();
 
     await showArchivedButton.click();
-    await page.waitForTimeout(500);
-
-    const buttonText = await showArchivedButton.textContent();
-    expect(buttonText).toContain("Show Archived");
-
-    const isVisible = await archivedTaskRow.isVisible().catch(() => false);
-    expect(isVisible).toBe(false);
+    await expect(showArchivedButton).toContainText("Show Archived", { timeout: 5000 });
+    await expect(archivedTaskRow).toBeHidden();
 
     const rowsWithoutArchived = await page.locator(".exocortex-relation-table tbody tr").count();
     expect(rowsWithoutArchived).toBeLessThan(rowsWithArchived);
@@ -96,22 +87,20 @@ test.describe("Show Archived Button in pn__DailyNote", () => {
     await expect(showArchivedButton).toBeVisible();
 
     await showArchivedButton.click();
-    await page.waitForTimeout(500);
 
     const archivedTaskRow = page.locator('text="Archived Task"');
     await expect(archivedTaskRow).toBeVisible({ timeout: 5000 });
 
     await page.reload();
     await page.waitForSelector(".exocortex-assets-relations", { timeout: 10000 });
-    await page.waitForTimeout(1000);
 
     const archivedTaskAfterReload = page.locator('text="Archived Task"');
-    const isVisibleAfterReload = await archivedTaskAfterReload.isVisible({ timeout: 5000 }).catch(() => false);
+    await expect(archivedTaskAfterReload).toBeVisible({ timeout: 5000 });
 
-    expect(isVisibleAfterReload).toBe(true);
-
-    const buttonTextAfterReload = await page.locator("button.exocortex-toggle-archived").textContent();
-    expect(buttonTextAfterReload).toContain("Hide Archived");
+    await expect(page.locator("button.exocortex-toggle-archived")).toContainText(
+      "Hide Archived",
+      { timeout: 5000 },
+    );
   });
 
   test("should only filter archived assets, not other assets", async ({ page }) => {
@@ -124,10 +113,14 @@ test.describe("Show Archived Button in pn__DailyNote", () => {
     const nonArchivedRowsInitial = await page.locator(".exocortex-relation-table tbody tr").count();
 
     await showArchivedButton.click();
-    await page.waitForTimeout(500);
+    await expect
+      .poll(
+        async () => page.locator(".exocortex-relation-table tbody tr").count(),
+        { timeout: 5000 },
+      )
+      .toBeGreaterThan(nonArchivedRowsInitial);
 
     const allRowsAfterShow = await page.locator(".exocortex-relation-table tbody tr").count();
-
     const archivedCount = allRowsAfterShow - nonArchivedRowsInitial;
     expect(archivedCount).toBeGreaterThan(0);
 
@@ -146,7 +139,6 @@ test.describe("Show Archived Button in pn__DailyNote", () => {
     const rowsBeforeClick = await page.locator(".exocortex-relation-table tbody tr").count();
 
     await showArchivedButton.click();
-    await page.waitForTimeout(500);
 
     const newFormatTask = page.locator('text="Archived Task"').first();
     await expect(newFormatTask).toBeVisible({ timeout: 5000 });
