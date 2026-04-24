@@ -24,7 +24,12 @@ import {
   PreconditionEvaluator,
   GroundingExecutor,
   ServiceRegistry,
+  RelationColumnSetResolver,
 } from "exocortex";
+import {
+  RelationColumnSetRepository,
+  ObsidianRelationColumnSetAdapter,
+} from "./infrastructure/repositories";
 import { ObsidianVaultAdapter } from "./adapters/ObsidianVaultAdapter";
 import { TaskTrackingService } from "./application/services/TaskTrackingService";
 import { AliasSyncService } from "./application/services/AliasSyncService";
@@ -92,6 +97,8 @@ export default class ExocortexPlugin extends Plugin {
   preconditionEvaluator!: PreconditionEvaluator;
   groundingExecutor!: GroundingExecutor;
   serviceRegistry!: ServiceRegistry;
+  private relationColumnSetRepository: RelationColumnSetRepository | null = null;
+  private relationColumnSetResolver: RelationColumnSetResolver | null = null;
   private timerManager!: TimerManager;
   // MutationObserver to detect when layout is removed by Obsidian re-renders (e.g., when processing embeds)
   private layoutPersistenceObserver: MutationObserver | null = null;
@@ -170,6 +177,30 @@ export default class ExocortexPlugin extends Plugin {
         vaultAdapter: this.vaultAdapter,
       });
 
+      // RFC be70f741 Phase 3 — wire RelationColumnSetRepository + Resolver so
+      // `UniversalLayoutRenderer` → `RelationsRenderer` can consult the index
+      // when composing `groupSpecificProperties`.  Initialize BEFORE the
+      // renderer construction so the snapshot is populated when the resolver
+      // is first invoked.  The `enableRelationColumnSetResolver` flag gates
+      // consumption — the repository always runs so the snapshot is warm if
+      // the flag is toggled at runtime.
+      const relationColumnSetLogger = {
+        warn: (message: string) =>
+          this.logger.warn("RelationColumnSet", { message }),
+        info: (message: string) =>
+          this.logger.info("RelationColumnSet", { message }),
+      };
+      this.relationColumnSetRepository = new RelationColumnSetRepository(
+        new ObsidianRelationColumnSetAdapter(this.app),
+        { logger: relationColumnSetLogger },
+      );
+      this.relationColumnSetRepository.initialize();
+      const repo = this.relationColumnSetRepository;
+      this.relationColumnSetResolver = new RelationColumnSetResolver(
+        () => repo.getSnapshot().all,
+        { logger: relationColumnSetLogger },
+      );
+
       this.layoutRenderer = new UniversalLayoutRenderer(
         this.app,
         this.settings,
@@ -180,6 +211,7 @@ export default class ExocortexPlugin extends Plugin {
           preconditionEvaluator: this.preconditionEvaluator,
           groundingExecutor: this.groundingExecutor,
           notificationService: notifier,
+          relationColumnSetResolver: this.relationColumnSetResolver,
         },
       );
       this.taskStatusService = container.resolve(TaskStatusService);
@@ -608,6 +640,14 @@ export default class ExocortexPlugin extends Plugin {
     // Cleanup layout renderer (includes backlinks cache, metadata cache, etc.)
     if (this.layoutRenderer) {
       this.layoutRenderer.cleanup();
+    }
+
+    // RFC be70f741 Phase 3 — release metadataCache subscriptions and pending
+    // debounce timers held by the RelationColumnSetRepository.
+    if (this.relationColumnSetRepository) {
+      this.relationColumnSetRepository.dispose();
+      this.relationColumnSetRepository = null;
+      this.relationColumnSetResolver = null;
     }
 
     // Cleanup metadata cache

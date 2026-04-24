@@ -9,7 +9,8 @@
     ["effort-timestamps-auto-sync.spec.ts", "daily-archive-filter.spec.ts"],
     [
       "dynamic-command-buttons-render.spec.ts",
-      "alias-sync-on-label-change.spec.ts"
+      "alias-sync-on-label-change.spec.ts",
+      "relation-column-set-smoke.spec.ts"
     ],
     [
       "starter-kit-smoke.spec.ts",

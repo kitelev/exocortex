@@ -9,6 +9,7 @@ import { ActionButtonsGroup } from '@plugin/presentation/components/ActionButton
 import { IVaultAdapter, MetadataExtractor, INotificationService } from "exocortex";
 import { FolderRepairService } from "exocortex";
 import { CommandResolver, PreconditionEvaluator, GroundingExecutor } from "exocortex";
+import type { RelationColumnSetResolver } from "exocortex";
 import { BacklinksCacheManager } from '@plugin/adapters/caching/BacklinksCacheManager';
 import { EventListenerManager } from '@plugin/adapters/events/EventListenerManager';
 import { ButtonGroupsBuilder } from '@plugin/presentation/builders/ButtonGroupsBuilder';
@@ -60,6 +61,7 @@ export class UniversalLayoutRenderer {
   private preconditionEvaluator?: PreconditionEvaluator;
   private groundingExecutor?: GroundingExecutor;
   private notificationService?: INotificationService;
+  private relationColumnSetResolver: RelationColumnSetResolver | null = null;
 
   private dependencyResolver: PropertyDependencyResolver;
   private deltaDetector: FrontmatterDeltaDetector;
@@ -83,6 +85,7 @@ export class UniversalLayoutRenderer {
       preconditionEvaluator?: PreconditionEvaluator;
       groundingExecutor?: GroundingExecutor;
       notificationService?: INotificationService;
+      relationColumnSetResolver?: RelationColumnSetResolver | null;
     },
   ) {
     this.app = app;
@@ -93,6 +96,8 @@ export class UniversalLayoutRenderer {
     this.preconditionEvaluator = rfc009Services?.preconditionEvaluator;
     this.groundingExecutor = rfc009Services?.groundingExecutor;
     this.notificationService = rfc009Services?.notificationService;
+    this.relationColumnSetResolver =
+      rfc009Services?.relationColumnSetResolver ?? null;
     this.logger = LoggerFactory.create("UniversalLayoutRenderer");
 
     // Create ReactRenderer with ErrorBoundary enabled for graceful error handling.
@@ -132,7 +137,8 @@ export class UniversalLayoutRenderer {
 
     this.relationsRenderer = new RelationsRenderer(
       this.app, this.settings, this.reactRenderer, this.backlinksCacheManager,
-      this.metadataService, this.plugin, () => this.refresh(), this.vaultAdapter);
+      this.metadataService, this.plugin, () => this.refresh(), this.vaultAdapter,
+      this.relationColumnSetResolver);
 
     this.buttonGroupsBuilder = new ButtonGroupsBuilder({
       app: this.app,
