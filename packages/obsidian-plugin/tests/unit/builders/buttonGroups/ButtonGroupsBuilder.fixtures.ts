@@ -48,6 +48,7 @@ export function setupButtonGroupsBuilderTest(): ButtonGroupsBuilderTestContext {
 
   const mockCommandResolver = {
     resolveForAsset: jest.fn().mockResolvedValue([]),
+    resolveForAssetMulti: jest.fn().mockResolvedValue([]),
   } as any;
 
   const mockPreconditionEvaluator = {
