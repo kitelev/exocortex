@@ -2,11 +2,13 @@ import { DynamicCommandButtonGroupBuilder } from "../../../../src/presentation/b
 import { GroundingType } from "exocortex";
 
 const mockResolveForAsset = jest.fn();
+const mockResolveForAssetMulti = jest.fn();
 const mockEvaluate = jest.fn();
 const mockExecute = jest.fn();
 
 const mockCommandResolver = {
   resolveForAsset: mockResolveForAsset,
+  resolveForAssetMulti: mockResolveForAssetMulti,
   loadCommand: jest.fn(),
   findBindings: jest.fn(),
   invalidateCache: jest.fn(),
@@ -145,14 +147,15 @@ describe("DynamicCommandButtonGroupBuilder", () => {
 
   describe("build", () => {
     it("should use file path as fallback when no Asset UID in metadata", async () => {
-      mockResolveForAsset.mockResolvedValue([]);
+      mockResolveForAssetMulti.mockResolvedValue([]);
       const context = createContext({ exo__Asset_uid: undefined });
       const result = await builder.build(context);
       expect(result).toEqual([]);
       // subjectIRI is always constructed from file.path as obsidian://vault/ IRI
-      expect(mockResolveForAsset).toHaveBeenCalledWith(
+      // Issue #2958: classes array always includes universal "exo__Asset" superclass
+      expect(mockResolveForAssetMulti).toHaveBeenCalledWith(
         "obsidian://vault/test/file.md",
-        "ems__Task",
+        ["ems__Task", "exo__Asset"],
         undefined,
       );
     });
@@ -164,14 +167,14 @@ describe("DynamicCommandButtonGroupBuilder", () => {
     });
 
     it("should return empty array when no commands resolved", async () => {
-      mockResolveForAsset.mockResolvedValue([]);
+      mockResolveForAssetMulti.mockResolvedValue([]);
       const context = createContext();
       const result = await builder.build(context);
       expect(result).toEqual([]);
     });
 
     it("should return empty array when CommandResolver throws", async () => {
-      mockResolveForAsset.mockRejectedValue(new Error("resolver error"));
+      mockResolveForAssetMulti.mockRejectedValue(new Error("resolver error"));
       const context = createContext();
       const result = await builder.build(context);
       expect(result).toEqual([]);
@@ -179,7 +182,7 @@ describe("DynamicCommandButtonGroupBuilder", () => {
 
     it("should return buttons for commands with passing preconditions", async () => {
       const rc = createResolvedCommand({ name: "Do something" });
-      mockResolveForAsset.mockResolvedValue([rc]);
+      mockResolveForAssetMulti.mockResolvedValue([rc]);
       mockEvaluate.mockResolvedValue(true);
 
       const context = createContext();
@@ -194,7 +197,7 @@ describe("DynamicCommandButtonGroupBuilder", () => {
     it("should filter out commands with failing preconditions", async () => {
       const rc1 = createResolvedCommand({ id: "cmd-pass", name: "Passing" });
       const rc2 = createResolvedCommand({ id: "cmd-fail", name: "Failing" });
-      mockResolveForAsset.mockResolvedValue([rc1, rc2]);
+      mockResolveForAssetMulti.mockResolvedValue([rc1, rc2]);
       mockEvaluate.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
 
       const context = createContext();
@@ -208,7 +211,7 @@ describe("DynamicCommandButtonGroupBuilder", () => {
       const rc1 = createResolvedCommand({ id: "cmd-1", name: "Cmd 1" });
       const rc2 = createResolvedCommand({ id: "cmd-2", name: "Cmd 2" });
       const rc3 = createResolvedCommand({ id: "cmd-3", name: "Cmd 3" });
-      mockResolveForAsset.mockResolvedValue([rc1, rc2, rc3]);
+      mockResolveForAssetMulti.mockResolvedValue([rc1, rc2, rc3]);
       mockEvaluate.mockResolvedValue(true);
 
       const context = createContext();
@@ -219,7 +222,7 @@ describe("DynamicCommandButtonGroupBuilder", () => {
 
     it("should handle precondition evaluation errors gracefully", async () => {
       const rc = createResolvedCommand();
-      mockResolveForAsset.mockResolvedValue([rc]);
+      mockResolveForAssetMulti.mockResolvedValue([rc]);
       mockEvaluate.mockRejectedValue(new Error("eval error"));
 
       const context = createContext();
@@ -228,7 +231,7 @@ describe("DynamicCommandButtonGroupBuilder", () => {
     });
 
     it("should pass correct arguments to CommandResolver", async () => {
-      mockResolveForAsset.mockResolvedValue([]);
+      mockResolveForAssetMulti.mockResolvedValue([]);
       const context = createContext({
         exo__Asset_uid: "obsidian://vault/test/file.md",
         exo__Instance_class: ["[[ems__Task]]"],
@@ -236,37 +239,65 @@ describe("DynamicCommandButtonGroupBuilder", () => {
       });
       await builder.build(context);
 
-      expect(mockResolveForAsset).toHaveBeenCalledWith(
+      expect(mockResolveForAssetMulti).toHaveBeenCalledWith(
         "obsidian://vault/test/file.md",
-        "ems__Task",
+        ["ems__Task", "exo__Asset"],
         "proto-uid",
       );
     });
 
-    it("should handle array instance class", async () => {
-      mockResolveForAsset.mockResolvedValue([]);
+    it("should handle array instance class — pass all classes plus universal exo__Asset (Issue #2958)", async () => {
+      mockResolveForAssetMulti.mockResolvedValue([]);
       const context = createContext({
         exo__Instance_class: ["ems__Task", "ems__Meeting"],
       });
       await builder.build(context);
 
-      expect(mockResolveForAsset).toHaveBeenCalledWith(
+      expect(mockResolveForAssetMulti).toHaveBeenCalledWith(
         "obsidian://vault/test/file.md",
-        "ems__Task",
+        ["ems__Task", "ems__Meeting", "exo__Asset"],
         undefined,
       );
     });
 
     it("should normalize wikilink brackets from instance class", async () => {
-      mockResolveForAsset.mockResolvedValue([]);
+      mockResolveForAssetMulti.mockResolvedValue([]);
       const context = createContext({
         exo__Instance_class: ["[[ems__Task]]"],
       });
       await builder.build(context);
 
-      expect(mockResolveForAsset).toHaveBeenCalledWith(
+      expect(mockResolveForAssetMulti).toHaveBeenCalledWith(
         "obsidian://vault/test/file.md",
-        "ems__Task",
+        ["ems__Task", "exo__Asset"],
+        undefined,
+      );
+    });
+
+    it("should not duplicate exo__Asset when already declared in instance class (Issue #2958)", async () => {
+      mockResolveForAssetMulti.mockResolvedValue([]);
+      const context = createContext({
+        exo__Instance_class: ["[[exo__Asset]]"],
+      });
+      await builder.build(context);
+
+      expect(mockResolveForAssetMulti).toHaveBeenCalledWith(
+        "obsidian://vault/test/file.md",
+        ["exo__Asset"],
+        undefined,
+      );
+    });
+
+    it("should preserve order — declared classes first, exo__Asset appended (Issue #2958)", async () => {
+      mockResolveForAssetMulti.mockResolvedValue([]);
+      const context = createContext({
+        exo__Instance_class: ["[[ems__Project]]", "[[custom__Class]]"],
+      });
+      await builder.build(context);
+
+      expect(mockResolveForAssetMulti).toHaveBeenCalledWith(
+        "obsidian://vault/test/file.md",
+        ["ems__Project", "custom__Class", "exo__Asset"],
         undefined,
       );
     });
@@ -277,7 +308,7 @@ describe("DynamicCommandButtonGroupBuilder", () => {
         { name: "Create action" },
         { group: "creation" },
       );
-      mockResolveForAsset.mockResolvedValue([rc]);
+      mockResolveForAssetMulti.mockResolvedValue([rc]);
       mockEvaluate.mockResolvedValue(true);
 
       const context = createContext();
@@ -291,7 +322,7 @@ describe("DynamicCommandButtonGroupBuilder", () => {
         { name: "Rebuild index" },
         { group: "maintenance" },
       );
-      mockResolveForAsset.mockResolvedValue([rc]);
+      mockResolveForAssetMulti.mockResolvedValue([rc]);
       mockEvaluate.mockResolvedValue(true);
 
       const context = createContext();
@@ -305,7 +336,7 @@ describe("DynamicCommandButtonGroupBuilder", () => {
         { name: "Default action" },
         { group: undefined },
       );
-      mockResolveForAsset.mockResolvedValue([rc]);
+      mockResolveForAssetMulti.mockResolvedValue([rc]);
       mockEvaluate.mockResolvedValue(true);
 
       const context = createContext();
@@ -319,7 +350,7 @@ describe("DynamicCommandButtonGroupBuilder", () => {
         { name: "Future action" },
         { group: "future-uncategorized" },
       );
-      mockResolveForAsset.mockResolvedValue([rc]);
+      mockResolveForAssetMulti.mockResolvedValue([rc]);
       mockEvaluate.mockResolvedValue(true);
 
       const context = createContext();
@@ -332,7 +363,7 @@ describe("DynamicCommandButtonGroupBuilder", () => {
   describe("button onClick", () => {
     it("should execute grounding on click", async () => {
       const rc = createResolvedCommand({ name: "Execute me" });
-      mockResolveForAsset.mockResolvedValue([rc]);
+      mockResolveForAssetMulti.mockResolvedValue([rc]);
       mockEvaluate.mockResolvedValue(true);
       mockExecute.mockResolvedValue({ success: true } as ExecutionResult);
 
@@ -354,7 +385,7 @@ describe("DynamicCommandButtonGroupBuilder", () => {
         name: "Success cmd",
         successMessage: "Done!",
       });
-      mockResolveForAsset.mockResolvedValue([rc]);
+      mockResolveForAssetMulti.mockResolvedValue([rc]);
       mockEvaluate.mockResolvedValue(true);
       mockExecute.mockResolvedValue({ success: true } as ExecutionResult);
 
@@ -368,7 +399,7 @@ describe("DynamicCommandButtonGroupBuilder", () => {
 
     it("should refresh layout after successful execution", async () => {
       const rc = createResolvedCommand();
-      mockResolveForAsset.mockResolvedValue([rc]);
+      mockResolveForAssetMulti.mockResolvedValue([rc]);
       mockEvaluate.mockResolvedValue(true);
       mockExecute.mockResolvedValue({ success: true } as ExecutionResult);
 
@@ -382,7 +413,7 @@ describe("DynamicCommandButtonGroupBuilder", () => {
 
     it("should show error notice when execution fails", async () => {
       const rc = createResolvedCommand();
-      mockResolveForAsset.mockResolvedValue([rc]);
+      mockResolveForAssetMulti.mockResolvedValue([rc]);
       mockEvaluate.mockResolvedValue(true);
       mockExecute.mockResolvedValue({
         success: false,
@@ -404,7 +435,7 @@ describe("DynamicCommandButtonGroupBuilder", () => {
         name: "Dangerous",
         confirmMessage: "Are you sure?",
       });
-      mockResolveForAsset.mockResolvedValue([rc]);
+      mockResolveForAssetMulti.mockResolvedValue([rc]);
       mockEvaluate.mockResolvedValue(true);
 
       const originalConfirm = window.confirm;
@@ -426,7 +457,7 @@ describe("DynamicCommandButtonGroupBuilder", () => {
         name: "Dangerous",
         confirmMessage: "Are you sure?",
       });
-      mockResolveForAsset.mockResolvedValue([rc]);
+      mockResolveForAssetMulti.mockResolvedValue([rc]);
       mockEvaluate.mockResolvedValue(true);
 
       const originalConfirm = window.confirm;
@@ -447,7 +478,7 @@ describe("DynamicCommandButtonGroupBuilder", () => {
         name: "No message",
         successMessage: undefined,
       });
-      mockResolveForAsset.mockResolvedValue([rc]);
+      mockResolveForAssetMulti.mockResolvedValue([rc]);
       mockEvaluate.mockResolvedValue(true);
       mockExecute.mockResolvedValue({ success: true } as ExecutionResult);
 
@@ -465,7 +496,7 @@ describe("DynamicCommandButtonGroupBuilder", () => {
       const rc1 = createResolvedCommand({ id: "c1", name: "Cmd A" });
       const rc2 = createResolvedCommand({ id: "c2", name: "Cmd B" });
       const rc3 = createResolvedCommand({ id: "c3", name: "Cmd C" });
-      mockResolveForAsset.mockResolvedValue([rc1, rc2, rc3]);
+      mockResolveForAssetMulti.mockResolvedValue([rc1, rc2, rc3]);
       mockEvaluate.mockResolvedValue(true);
 
       const context = createContext();
@@ -484,7 +515,7 @@ describe("DynamicCommandButtonGroupBuilder", () => {
         { id: "c2", name: "Second" },
         { order: 2 },
       );
-      mockResolveForAsset.mockResolvedValue([rc1, rc2]);
+      mockResolveForAssetMulti.mockResolvedValue([rc1, rc2]);
       mockEvaluate.mockResolvedValue(true);
 
       const context = createContext();
@@ -524,7 +555,7 @@ describe("DynamicCommandButtonGroupBuilder", () => {
           category: "criticality",
         }),
       ];
-      mockResolveForAsset.mockResolvedValue(commands);
+      mockResolveForAssetMulti.mockResolvedValue(commands);
       mockEvaluate.mockResolvedValue(true);
 
       const result = await builder.buildCategoryGroups(createContext());
@@ -546,7 +577,7 @@ describe("DynamicCommandButtonGroupBuilder", () => {
     });
 
     it("should mark maintenance group collapsedByDefault", async () => {
-      mockResolveForAsset.mockResolvedValue([
+      mockResolveForAssetMulti.mockResolvedValue([
         createResolvedCommand({
           id: "c1",
           name: "Create Task",
@@ -571,7 +602,7 @@ describe("DynamicCommandButtonGroupBuilder", () => {
     });
 
     it("should omit categories that have zero visible commands", async () => {
-      mockResolveForAsset.mockResolvedValue([
+      mockResolveForAssetMulti.mockResolvedValue([
         createResolvedCommand({
           id: "c1",
           name: "Create Task",
@@ -597,7 +628,7 @@ describe("DynamicCommandButtonGroupBuilder", () => {
     });
 
     it("should drop categories where preconditions filter out every command", async () => {
-      mockResolveForAsset.mockResolvedValue([
+      mockResolveForAssetMulti.mockResolvedValue([
         createResolvedCommand({
           id: "c1",
           name: "Create Task",
@@ -617,7 +648,7 @@ describe("DynamicCommandButtonGroupBuilder", () => {
     });
 
     it("should route commands without category into Other group at the end", async () => {
-      mockResolveForAsset.mockResolvedValue([
+      mockResolveForAssetMulti.mockResolvedValue([
         createResolvedCommand({
           id: "c1",
           name: "Create Task",
@@ -638,13 +669,13 @@ describe("DynamicCommandButtonGroupBuilder", () => {
     });
 
     it("should return [] when no commands resolved", async () => {
-      mockResolveForAsset.mockResolvedValue([]);
+      mockResolveForAssetMulti.mockResolvedValue([]);
       const result = await builder.buildCategoryGroups(createContext());
       expect(result).toEqual([]);
     });
 
     it("should return [] when resolver throws", async () => {
-      mockResolveForAsset.mockRejectedValue(new Error("boom"));
+      mockResolveForAssetMulti.mockRejectedValue(new Error("boom"));
       const result = await builder.buildCategoryGroups(createContext());
       expect(result).toEqual([]);
     });

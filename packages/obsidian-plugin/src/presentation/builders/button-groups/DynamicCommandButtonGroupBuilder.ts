@@ -205,16 +205,16 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
     // making all preconditions return false and no buttons to render.
     const subjectIRI = `obsidian://vault/${encodeURI(file.path)}`;
 
-    const assetClass = this.extractAssetClass(metadata);
-    if (!assetClass) return null;
+    const assetClasses = this.extractAssetClasses(metadata);
+    if (assetClasses.length === 0) return null;
 
     const prototypeIRI = this.extractPrototypeIRI(metadata);
 
     let resolved: ResolvedCommand[];
     try {
-      resolved = await this.config.commandResolver.resolveForAsset(
+      resolved = await this.config.commandResolver.resolveForAssetMulti(
         subjectIRI,
-        assetClass,
+        assetClasses,
         prototypeIRI,
       );
     } catch (error) {
@@ -352,20 +352,40 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
     );
   }
 
-  private extractAssetClass(
+  /**
+   * Extract all declared classes from `exo__Instance_class`, plus the universal
+   * `exo__Asset` superclass appended last so that bindings with `targetClass: exo__Asset`
+   * match every asset in the vault (RFC-009 semantics, Issue #2958).
+   *
+   * Returns an empty array when no `exo__Instance_class` is declared — the builder
+   * treats this as "no asset class context" and skips command resolution. This
+   * preserves the pre-fix behavior of returning no buttons for unclassed files.
+   *
+   * If `exo__Asset` is already declared explicitly, it is not duplicated.
+   */
+  private extractAssetClasses(
     metadata: Record<string, unknown>,
-  ): string | undefined {
+  ): string[] {
     const raw = metadata["exo__Instance_class"];
+    const classes: string[] = [];
+
+    const collect = (value: unknown): void => {
+      if (typeof value !== "string") return;
+      const cleaned = value.replace(/["'[\]]/g, "").trim();
+      if (cleaned && !classes.includes(cleaned)) classes.push(cleaned);
+    };
+
     if (typeof raw === "string") {
-      return raw.replace(/["'[\]]/g, "").trim();
+      collect(raw);
+    } else if (Array.isArray(raw)) {
+      for (const item of raw) collect(item);
     }
-    if (Array.isArray(raw) && raw.length > 0) {
-      const first = raw[0];
-      if (typeof first === "string") {
-        return first.replace(/["'[\]]/g, "").trim();
-      }
-    }
-    return undefined;
+
+    if (classes.length === 0) return [];
+
+    if (!classes.includes("exo__Asset")) classes.push("exo__Asset");
+
+    return classes;
   }
 
   private extractPrototypeIRI(

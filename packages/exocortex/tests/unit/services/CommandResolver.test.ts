@@ -725,6 +725,124 @@ describe("CommandResolver", () => {
     });
   });
 
+  describe("resolveForAssetMulti (Issue #2958 — Universal exo__Asset bindings)", () => {
+    it("should match binding with targetClass=exo__Asset when exo__Asset is in classes array", async () => {
+      // AC1: Universal binding visible on subclass instance via multi-class dispatch
+      await addGroundingAsset(store, { uid: "gnd-univ", label: "G", type: "property_delete", targetProperty: "p" });
+      await addCommandAsset(store, { uid: "cmd-clean", label: "Clean Properties", groundingRef: "gnd-univ" });
+      await addBindingAsset(store, { uid: "bind-univ", label: "Universal", commandRef: "cmd-clean", targetClass: "exo__Asset" });
+
+      const resolved = await resolver.resolveForAssetMulti("asset-1", ["ems__Task", "exo__Asset"]);
+
+      expect(resolved).toHaveLength(1);
+      expect(resolved[0].command.name).toBe("Clean Properties");
+      expect(resolved[0].binding.targetClass).toBe("exo__Asset");
+    });
+
+    it("should merge bindings from multiple classes", async () => {
+      // AC2: Multi-class asset gets bindings from each declared class
+      await addGroundingAsset(store, { uid: "gnd-1", label: "G", type: "property_delete", targetProperty: "p" });
+      await addCommandAsset(store, { uid: "cmd-task", label: "Task cmd", groundingRef: "gnd-1" });
+      await addCommandAsset(store, { uid: "cmd-univ", label: "Universal cmd", groundingRef: "gnd-1" });
+
+      await addBindingAsset(store, { uid: "bind-task", label: "BT", commandRef: "cmd-task", targetClass: "ems__Task" });
+      await addBindingAsset(store, { uid: "bind-univ", label: "BU", commandRef: "cmd-univ", targetClass: "exo__Asset" });
+
+      const resolved = await resolver.resolveForAssetMulti("asset-1", ["ems__Task", "exo__Asset"]);
+
+      expect(resolved).toHaveLength(2);
+      const names = resolved.map((rc) => rc.command.name).sort();
+      expect(names).toEqual(["Task cmd", "Universal cmd"]);
+    });
+
+    it("should deduplicate by binding.id when same binding matches multiple classes", async () => {
+      // AC3: dedup by binding.id (NOT commandRef)
+      await addGroundingAsset(store, { uid: "gnd-1", label: "G", type: "property_delete", targetProperty: "p" });
+      await addCommandAsset(store, { uid: "cmd-shared", label: "Shared", groundingRef: "gnd-1" });
+
+      // Two SEPARATE bindings to the same command — both should appear (dedupe by binding.id, not commandRef)
+      await addBindingAsset(store, { uid: "bind-task", label: "BT", commandRef: "cmd-shared", targetClass: "ems__Task" });
+      await addBindingAsset(store, { uid: "bind-univ", label: "BU", commandRef: "cmd-shared", targetClass: "exo__Asset" });
+
+      const resolved = await resolver.resolveForAssetMulti("asset-1", ["ems__Task", "exo__Asset"]);
+
+      // Both bindings appear because they have different binding.id
+      expect(resolved).toHaveLength(2);
+      const bindingIds = resolved.map((rc) => rc.binding.id).sort();
+      expect(bindingIds).toEqual(["bind-task", "bind-univ"]);
+    });
+
+    it("should not duplicate when same binding object is matched twice via different classes", async () => {
+      // If somehow the same binding gets returned for two classes, dedup by binding.id keeps it once
+      await addGroundingAsset(store, { uid: "gnd-1", label: "G", type: "property_delete", targetProperty: "p" });
+      await addCommandAsset(store, { uid: "cmd-1", label: "C1", groundingRef: "gnd-1" });
+      // Single binding with targetClass=exo__Asset; both array entries trigger same binding
+      await addBindingAsset(store, { uid: "bind-1", label: "B1", commandRef: "cmd-1", targetClass: "exo__Asset" });
+
+      const resolved = await resolver.resolveForAssetMulti("asset-1", ["exo__Asset", "exo__Asset"]);
+
+      expect(resolved).toHaveLength(1);
+      expect(resolved[0].binding.id).toBe("bind-1");
+    });
+
+    it("should return empty when classes array is empty", async () => {
+      await addGroundingAsset(store, { uid: "gnd-1", label: "G", type: "property_delete", targetProperty: "p" });
+      await addCommandAsset(store, { uid: "cmd-1", label: "C1", groundingRef: "gnd-1" });
+      await addBindingAsset(store, { uid: "bind-1", label: "B1", commandRef: "cmd-1", targetClass: "ems__Task" });
+
+      const resolved = await resolver.resolveForAssetMulti("asset-1", []);
+
+      expect(resolved).toHaveLength(0);
+    });
+
+    it("should produce stable cache key for any permutation of class array", async () => {
+      // Cache key sorts classes — same key for ['A','B'] and ['B','A']
+      await addGroundingAsset(store, { uid: "gnd-1", label: "G", type: "property_delete", targetProperty: "p" });
+      await addCommandAsset(store, { uid: "cmd-1", label: "C1", groundingRef: "gnd-1" });
+      await addBindingAsset(store, { uid: "bind-1", label: "B1", commandRef: "cmd-1", targetClass: "exo__Asset" });
+
+      const matchSpy = jest.spyOn(store, "match");
+
+      const first = await resolver.resolveForAssetMulti("asset-1", ["ems__Task", "exo__Asset"]);
+      const callsAfterFirst = matchSpy.mock.calls.length;
+
+      const second = await resolver.resolveForAssetMulti("asset-1", ["exo__Asset", "ems__Task"]);
+      const callsAfterSecond = matchSpy.mock.calls.length;
+
+      // Second call hits cache — no new match() calls
+      expect(callsAfterSecond).toBe(callsAfterFirst);
+      expect(second).toEqual(first);
+    });
+
+    it("should pass prototypeIRI through to inner resolution for each class", async () => {
+      await addGroundingAsset(store, { uid: "gnd-1", label: "G", type: "property_delete", targetProperty: "p" });
+      await addCommandAsset(store, { uid: "cmd-proto", label: "Proto cmd", groundingRef: "gnd-1" });
+      await addBindingAsset(store, { uid: "bind-proto", label: "BP", commandRef: "cmd-proto", targetPrototype: "proto-1" });
+
+      const resolved = await resolver.resolveForAssetMulti("asset-1", ["ems__Task", "exo__Asset"], "proto-1");
+
+      expect(resolved).toHaveLength(1);
+      expect(resolved[0].binding.targetPrototype).toBe("proto-1");
+    });
+
+    it("should sort by binding priority across all classes (asset > prototype > class)", async () => {
+      await addGroundingAsset(store, { uid: "gnd-1", label: "G", type: "property_delete", targetProperty: "p" });
+      await addCommandAsset(store, { uid: "cmd-class", label: "Class cmd", groundingRef: "gnd-1" });
+      await addCommandAsset(store, { uid: "cmd-univ", label: "Univ cmd", groundingRef: "gnd-1" });
+      await addCommandAsset(store, { uid: "cmd-asset", label: "Asset cmd", groundingRef: "gnd-1" });
+
+      await addBindingAsset(store, { uid: "bind-class", label: "BC", commandRef: "cmd-class", targetClass: "ems__Task" });
+      await addBindingAsset(store, { uid: "bind-univ", label: "BU", commandRef: "cmd-univ", targetClass: "exo__Asset" });
+      await addBindingAsset(store, { uid: "bind-asset", label: "BA", commandRef: "cmd-asset", targetAsset: "asset-1" });
+
+      const resolved = await resolver.resolveForAssetMulti("asset-1", ["ems__Task", "exo__Asset"]);
+
+      expect(resolved).toHaveLength(3);
+      // targetAsset (priority 0) first, then targetClass entries (priority 2)
+      expect(resolved[0].command.name).toBe("Asset cmd");
+    });
+  });
+
   describe("cache", () => {
     it("should return cached results on second call", async () => {
       await addGroundingAsset(store, { uid: "gnd-1", label: "G", type: "property_delete", targetProperty: "p" });
