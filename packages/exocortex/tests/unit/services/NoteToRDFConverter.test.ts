@@ -620,7 +620,11 @@ describe("NoteToRDFConverter", () => {
         expect(values).toContain(Namespace.EMS.term("Effort").value);
       });
 
-      it("should still use file URI when wiki-link target file exists", async () => {
+      // Issue #2959: when a class-named wikilink resolves to its class
+      // definition file, the namespace class IRI is emitted (not the file
+      // IRI). This is required for SPARQL ASK/FILTER preconditions and
+      // canonical rdfs:domain/range triples (Issue #871) to match.
+      it("should use namespace URI when wiki-link target file exists for a class reference (Issue #2959)", async () => {
         const frontmatter: IFrontmatter = {
           exo__Property_domain: "[[ems__Effort]]",
         };
@@ -643,8 +647,7 @@ describe("NoteToRDFConverter", () => {
 
         expect(domainTriple).toBeDefined();
         expect(domainTriple!.object).toBeInstanceOf(IRI);
-        expect((domainTriple!.object as IRI).value).toContain("obsidian://vault/");
-        expect((domainTriple!.object as IRI).value).toContain("ems__Effort.md");
+        expect((domainTriple!.object as IRI).value).toBe(Namespace.EMS.term("Effort").value);
       });
 
       it("should return literal for wiki-link to non-class file when not found", async () => {

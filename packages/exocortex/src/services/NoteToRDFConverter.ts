@@ -682,6 +682,25 @@ export class NoteToRDFConverter {
             return [fileIRI, uuidLiteral];
           }
 
+          // Issue #2959: When a class-named wikilink resolves to its class
+          // definition file (e.g. `ems__Effort_status: "[[ems__EffortStatusDone]]"`
+          // → `ems/ems__EffortStatusDone.md`), emit the namespace class IRI
+          // (`<https://exocortex.my/ontology/ems#EffortStatusDone>`) instead of
+          // the file IRI. SPARQL ASK preconditions of the form
+          //   ASK { ?s ems:Effort_status <ems:EffortStatusDone> }
+          // require the canonical class IRI to match. Without this, the
+          // "Archive Completed" command's "Is in Done status" precondition
+          // returned `false` on tasks that were actually Done.
+          //
+          // This mirrors the Issue #2782 fix for UUID-form wikilinks but
+          // applies when the wikilink is itself a class-prefixed name
+          // (`ems__*` / `exo__*` / etc.) and the resolved file's basename
+          // is a class reference.
+          const basenameClassIRI = this.expandClassValue(targetFile.basename);
+          if (basenameClassIRI) {
+            return [basenameClassIRI];
+          }
+
           return [fileIRI];
         }
         // If target file not found but wikilink is a class reference,

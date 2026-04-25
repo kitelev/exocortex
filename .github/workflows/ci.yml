@@ -447,10 +447,12 @@ jobs:
         # Additions:
         # - RFC be70f741 Phase 2: application/services/RelationColumnSetResolver(.property)?.test.ts
         #   + performance/RelationColumnSetResolverPerformance.test.ts (p95 <1ms gate).
+        # - Issue #2959: services/NoteToRDFConverter.issue-2959.test.ts (class-named
+        #   wikilink → namespace IRI normalization regression suite).
         run: |
           node ./node_modules/jest/bin/jest.js \
             --config packages/exocortex/jest.config.js \
-            --testPathPatterns='(services/(GroundingExecutor|AssetConversionService)\.test|application/services/RelationColumnSetResolver(\.property)?\.test|performance/RelationColumnSetResolverPerformance\.test)\.ts' \
+            --testPathPatterns='(services/(GroundingExecutor|AssetConversionService|NoteToRDFConverter\.issue-2959)\.test|application/services/RelationColumnSetResolver(\.property)?\.test|performance/RelationColumnSetResolverPerformance\.test)\.ts' \
             --forceExit
 
   test-coverage:
