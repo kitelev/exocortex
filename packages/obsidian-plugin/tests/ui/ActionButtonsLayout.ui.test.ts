@@ -27,6 +27,9 @@ function createMockRFC009Services() {
       resolveForAsset: jest.fn().mockImplementation(
         () => Promise.resolve([makeCommand("test-cmd", "Test Action")]),
       ),
+      resolveForAssetMulti: jest.fn().mockImplementation(
+        () => Promise.resolve([makeCommand("test-cmd", "Test Action")]),
+      ),
       invalidateCache: jest.fn(),
     },
     preconditionEvaluator: {

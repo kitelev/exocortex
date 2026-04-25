@@ -58,12 +58,33 @@ function createMockRFC009Services() {
     "repair-folder": { id: "repair-folder", name: "Repair Folder" },
   };
 
+  const resolveByClasses = (assetClasses: string[]) => {
+    const seen = new Set<string>();
+    const merged: any[] = [];
+    for (const cls of assetClasses) {
+      const normalizedClass = cls.replace(/["'[\]]/g, "").trim();
+      const ids = commandsByClass[normalizedClass] || [];
+      for (const cid of ids) {
+        if (!seen.has(cid)) {
+          seen.add(cid);
+          merged.push(makeCommand(commandDefs[cid].id, commandDefs[cid].name));
+        }
+      }
+    }
+    return merged;
+  };
+
   const mockCommandResolver = {
     resolveForAsset: jest.fn().mockImplementation(
       (_subjectIRI: string, assetClass: string) => {
         const normalizedClass = assetClass.replace(/["'[\]]/g, "").trim();
         const ids = commandsByClass[normalizedClass] || [];
         return Promise.resolve(ids.map((cid) => makeCommand(commandDefs[cid].id, commandDefs[cid].name)));
+      },
+    ),
+    resolveForAssetMulti: jest.fn().mockImplementation(
+      (_subjectIRI: string, assetClasses: string[]) => {
+        return Promise.resolve(resolveByClasses(assetClasses));
       },
     ),
     invalidateCache: jest.fn(),
