@@ -38,8 +38,62 @@ const MAX_TRANSITIVE_DEPTH = 10;
 @injectable()
 export class CommandResolver {
   private readonly cache = new Map<string, ResolvedCommand[]>();
+  private readonly multiCache = new Map<string, ResolvedCommand[]>();
 
   constructor(private readonly tripleStore: ITripleStore) {}
+
+  /**
+   * Resolve commands for an asset declaring multiple classes (RFC-009 §5.3, Issue #2958).
+   *
+   * Iterates each class in `assetClasses`, merges results, and deduplicates by `binding.id`
+   * (NOT `commandRef` — the same command may have multiple bindings, each must surface once).
+   *
+   * Caller-side multi-class dispatch enables universal bindings (`targetClass: exo__Asset`)
+   * to match subclass instances when the caller appends `exo__Asset` to the classes array.
+   *
+   * @param subjectIRI - IRI of the target asset (subject)
+   * @param assetClasses - All declared classes of the asset (typically `exo__Instance_class`
+   *                      array + universal `exo__Asset` superclass appended by caller)
+   * @param prototypeIRI - Optional prototype IRI for prototype-scoped bindings
+   * @returns Resolved commands sorted by binding priority then order; deduped by binding.id
+   */
+  async resolveForAssetMulti(
+    subjectIRI: string,
+    assetClasses: string[],
+    prototypeIRI?: string,
+  ): Promise<ResolvedCommand[]> {
+    if (assetClasses.length === 0) return [];
+
+    // Cache key uses sorted classes — stable across permutations
+    const sortedClasses = [...assetClasses].sort().join(",");
+    const cacheKey = `${subjectIRI}::${sortedClasses}::${prototypeIRI ?? ""}`;
+    const cached = this.multiCache.get(cacheKey);
+    if (cached) return cached;
+
+    const seen = new Set<string>();
+    const merged: ResolvedCommand[] = [];
+
+    for (const cls of assetClasses) {
+      const bindings = await this.resolveForAsset(subjectIRI, cls, prototypeIRI);
+      for (const rc of bindings) {
+        if (!seen.has(rc.binding.id)) {
+          seen.add(rc.binding.id);
+          merged.push(rc);
+        }
+      }
+    }
+
+    // Re-sort across merged classes: priority (asset > prototype > class) then order
+    merged.sort((a, b) => {
+      const priorityA = this.getBindingPriority(a.binding);
+      const priorityB = this.getBindingPriority(b.binding);
+      if (priorityA !== priorityB) return priorityA - priorityB;
+      return (a.binding.order ?? 100) - (b.binding.order ?? 100);
+    });
+
+    this.multiCache.set(cacheKey, merged);
+    return merged;
+  }
 
   /**
    * Resolve all available commands for a specific asset.
@@ -171,6 +225,7 @@ export class CommandResolver {
    */
   invalidateCache(): void {
     this.cache.clear();
+    this.multiCache.clear();
   }
 
   /**

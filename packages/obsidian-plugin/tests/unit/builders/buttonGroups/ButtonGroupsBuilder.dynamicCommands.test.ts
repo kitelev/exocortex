@@ -59,7 +59,8 @@ describe("ButtonGroupsBuilder - dynamic commands (RFC-009)", () => {
 
   it("should include dynamic-commands builder when RFC-009 services are provided", async () => {
     const mockCommandResolver = {
-      resolveForAsset: jest.fn().mockResolvedValue([
+      resolveForAsset: jest.fn().mockResolvedValue([]),
+      resolveForAssetMulti: jest.fn().mockResolvedValue([
         {
           command: {
             id: "test-cmd",

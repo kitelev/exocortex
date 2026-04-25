@@ -29,7 +29,7 @@ describe("ButtonGroupsBuilder - build (dynamic commands only)", () => {
     ctx.mockMetadataExtractor.extractStatus.mockReturnValue(null);
     ctx.mockMetadataExtractor.extractIsArchived.mockReturnValue(false);
     ctx.mockFolderRepairService.getExpectedFolder.mockResolvedValue(null);
-    ctx.mockCommandResolver.resolveForAsset.mockResolvedValue([]);
+    ctx.mockCommandResolver.resolveForAssetMulti.mockResolvedValue([]);
 
     const groups = await ctx.builder.build(mockFile);
 
@@ -54,7 +54,7 @@ describe("ButtonGroupsBuilder - build (dynamic commands only)", () => {
     ctx.mockMetadataExtractor.extractStatus.mockReturnValue(null);
     ctx.mockMetadataExtractor.extractIsArchived.mockReturnValue(false);
     ctx.mockFolderRepairService.getExpectedFolder.mockResolvedValue("Tasks");
-    ctx.mockCommandResolver.resolveForAsset.mockResolvedValue([
+    ctx.mockCommandResolver.resolveForAssetMulti.mockResolvedValue([
       {
         command: {
           id: "cmd-1",
@@ -99,7 +99,7 @@ describe("ButtonGroupsBuilder - build (dynamic commands only)", () => {
     ctx.mockMetadataExtractor.extractStatus.mockReturnValue(null);
     ctx.mockMetadataExtractor.extractIsArchived.mockReturnValue(false);
     ctx.mockFolderRepairService.getExpectedFolder.mockResolvedValue("Tasks");
-    ctx.mockCommandResolver.resolveForAsset.mockResolvedValue([
+    ctx.mockCommandResolver.resolveForAssetMulti.mockResolvedValue([
       {
         command: {
           id: "cmd-visible",
@@ -174,7 +174,7 @@ describe("ButtonGroupsBuilder - build (dynamic commands only)", () => {
     ctx.mockMetadataExtractor.extractStatus.mockReturnValue(null);
     ctx.mockMetadataExtractor.extractIsArchived.mockReturnValue(false);
     ctx.mockFolderRepairService.getExpectedFolder.mockResolvedValue("Tasks");
-    ctx.mockCommandResolver.resolveForAsset.mockResolvedValue([
+    ctx.mockCommandResolver.resolveForAssetMulti.mockResolvedValue([
       {
         command: {
           id: "cmd-creation",
@@ -244,7 +244,7 @@ describe("ButtonGroupsBuilder - build (dynamic commands only)", () => {
     ctx.mockMetadataExtractor.extractStatus.mockReturnValue(null);
     ctx.mockMetadataExtractor.extractIsArchived.mockReturnValue(false);
     ctx.mockFolderRepairService.getExpectedFolder.mockResolvedValue("Tasks");
-    ctx.mockCommandResolver.resolveForAsset.mockRejectedValue(
+    ctx.mockCommandResolver.resolveForAssetMulti.mockRejectedValue(
       new Error("Resolver failed"),
     );
 
@@ -272,7 +272,7 @@ describe("ButtonGroupsBuilder - build (dynamic commands only)", () => {
     ctx.mockMetadataExtractor.extractStatus.mockReturnValue(null);
     ctx.mockMetadataExtractor.extractIsArchived.mockReturnValue(false);
     ctx.mockFolderRepairService.getExpectedFolder.mockResolvedValue("Tasks");
-    ctx.mockCommandResolver.resolveForAsset.mockResolvedValue([
+    ctx.mockCommandResolver.resolveForAssetMulti.mockResolvedValue([
       {
         command: {
           id: "cmd-1",
