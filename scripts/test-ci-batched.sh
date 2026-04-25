@@ -97,8 +97,10 @@ fi
 # - RFC-028 Finding 5 (3.C.1): services/AssetConversionService.test.ts
 # - RFC be70f741 Phase 2: application/services/RelationColumnSetResolver(.property)?.test.ts
 #   + performance/RelationColumnSetResolverPerformance.test.ts (p95 <1ms gate)
+# - Issue #2959: services/NoteToRDFConverter.issue-2959.test.ts (class-named
+#   wikilink → namespace IRI normalization regression suite)
 echo "📦 Running exocortex grounding + RFC regression tests..."
-EXOCORTEX_JEST_ARGS="--config packages/exocortex/jest.config.js --testPathPatterns=(services/(GroundingExecutor|AssetConversionService)\.test|application/services/RelationColumnSetResolver(\.property)?\.test|performance/RelationColumnSetResolverPerformance\.test)\.ts --forceExit"
+EXOCORTEX_JEST_ARGS="--config packages/exocortex/jest.config.js --testPathPatterns=(services/(GroundingExecutor|AssetConversionService|NoteToRDFConverter\.issue-2959)\.test|application/services/RelationColumnSetResolver(\.property)?\.test|performance/RelationColumnSetResolverPerformance\.test)\.ts --forceExit"
 if [ "$CI" = "true" ]; then
     if timeout 60 node ./node_modules/jest/bin/jest.js $EXOCORTEX_JEST_ARGS; then
         echo "✅ Exocortex grounding regression tests passed!"
