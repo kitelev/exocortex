@@ -198,6 +198,35 @@ describe("NoteToRDFConverter", () => {
       expect((statusTriple!.object as Literal).value).toBe("ToDo");
     });
 
+    it("should convert pmbok__ properties to RDF triples with pmbok namespace IRI", async () => {
+      const file: IFile = {
+        path: "test.md",
+        basename: "test",
+        name: "test.md",
+        parent: null,
+      };
+
+      const frontmatter: IFrontmatter = {
+        pmbok__ProjectStatusRecord_reportDate: "2026-04-25T02:32:28+0500",
+      };
+
+      mockVault.getFrontmatter.mockReturnValue(frontmatter);
+
+      const triples = await converter.convertNote(file);
+
+      const reportDateTriple = triples.find((t) =>
+        (t.predicate as IRI).value.includes("ProjectStatusRecord_reportDate")
+      );
+
+      expect(reportDateTriple).toBeDefined();
+      expect((reportDateTriple!.predicate as IRI).value).toBe(
+        "https://exocortex.my/ontology/pmbok#ProjectStatusRecord_reportDate"
+      );
+      expect((reportDateTriple!.object as Literal).value).toBe(
+        "2026-04-25T02:32:28+0500"
+      );
+    });
+
     it("should convert wikilinks to IRI references", async () => {
       const file: IFile = {
         path: "test.md",
@@ -276,6 +305,32 @@ describe("NoteToRDFConverter", () => {
 
       expect(typeTriple).toBeDefined();
       expect((typeTriple!.object as IRI).value).toContain("Task");
+    });
+
+    it("should resolve pmbok__ class wikilinks to pmbok namespace IRI", async () => {
+      const file: IFile = {
+        path: "test.md",
+        basename: "test",
+        name: "test.md",
+        parent: null,
+      };
+
+      const frontmatter: IFrontmatter = {
+        exo__Instance_class: ["[[pmbok__OverallStatusOnTrack]]"],
+      };
+
+      mockVault.getFrontmatter.mockReturnValue(frontmatter);
+
+      const triples = await converter.convertNote(file);
+
+      const typeTriple = triples.find((t) =>
+        (t.predicate as IRI).value === Namespace.RDF.term("type").value
+      );
+
+      expect(typeTriple).toBeDefined();
+      expect((typeTriple!.object as IRI).value).toBe(
+        "https://exocortex.my/ontology/pmbok#OverallStatusOnTrack"
+      );
     });
 
     it("should handle archived notes with exo__Asset_isArchived", async () => {
