@@ -71,4 +71,6 @@ export class Namespace {
   static readonly LIT = new Namespace("lit", "https://exocortex.my/ontology/lit#");
 
   static readonly INBOX = new Namespace("inbox", "https://exocortex.my/ontology/inbox#");
+
+  static readonly PMBOK = new Namespace("pmbok", "https://exocortex.my/ontology/pmbok#");
 }

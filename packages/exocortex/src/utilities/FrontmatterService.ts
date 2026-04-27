@@ -247,6 +247,7 @@ export class FrontmatterService {
     "https://exocortex.my/ontology/ptms#": "ptms__",
     "https://exocortex.my/ontology/lit#": "lit__",
     "https://exocortex.my/ontology/inbox#": "inbox__",
+    "https://exocortex.my/ontology/pmbok#": "pmbok__",
   };
 
   /**

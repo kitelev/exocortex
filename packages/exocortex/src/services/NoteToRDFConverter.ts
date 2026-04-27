@@ -603,6 +603,7 @@ export class NoteToRDFConverter {
     ["ptms__", Namespace.PTMS],
     ["lit__", Namespace.LIT],
     ["inbox__", Namespace.INBOX],
+    ["pmbok__", Namespace.PMBOK],
   ];
 
   private isExocortexProperty(key: string): boolean {
