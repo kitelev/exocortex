@@ -9,7 +9,7 @@ import { ObsidianLauncher } from "../utils/obsidian-launcher";
  * given the vault's `exo__Layout` for `ems__Task` declares
  * `exo__Layout_icon: check-square`. The fixture
  * `exolayout/layout-task-featured-binding.md` provides the layout, and
- * `Tasks/featured-binding-test.md` provides a class-bearing target.
+ * `e2e-icon-target-task.md` provides a class-bearing target.
  *
  * Acceptance (RFC-024 §8 Phase 4 success metric):
  *   `npm run test:e2e file-explorer-icons` — class-bearing notes show
@@ -36,11 +36,11 @@ test.describe("FileExplorerIconPatch — Phase 4 smoke", () => {
       // Open any file to ensure the workspace is initialised; the patch
       // attaches to nav-file-title elements globally and re-applies on
       // metadataCache "resolved".
-      await launcher.openFile("Tasks/featured-binding-test.md");
+      await launcher.openFile("e2e-icon-target-task.md");
       await launcher.waitForModalsToClose(10_000);
 
       const targetTitle = launcher.page!.locator(
-        '.nav-file-title[data-path="Tasks/featured-binding-test.md"]',
+        '.nav-file-title[data-path="e2e-icon-target-task.md"]',
       );
 
       // Wait for the file explorer to render the row.
