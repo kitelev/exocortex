@@ -36,6 +36,25 @@ export interface ActionButton {
    * before T5.3.
    */
   icon?: string;
+  /**
+   * Optional accessible label (RFC-024 §4 Phase 2 — T5.4).
+   *
+   * Rendered as the `aria-label` attribute when set. Use to override the
+   * visible `label` for screen readers when the visible text is not
+   * self-explanatory (icon-only or short labels). Sourced from
+   * `binding.style.ariaLabel` resolved by CommandResolver (T5.2). When
+   * undefined the visible label remains the accessible name per the
+   * default ARIA accessible-name computation.
+   */
+  ariaLabel?: string;
+  /**
+   * Optional hover tooltip (RFC-024 §4 Phase 2 — T5.4).
+   *
+   * Rendered as the `title` attribute (Obsidian convention). Sourced from
+   * `binding.style.tooltip` resolved by CommandResolver (T5.2). When
+   * undefined no tooltip is shown.
+   */
+  tooltip?: string;
 }
 
 /**
@@ -90,9 +109,26 @@ const ActionButtonView: React.FC<{ button: ActionButton }> = ({ button }) => {
     };
   }, [button.icon]);
 
+  // RFC-024 §4 Phase 2 — T5.4 — accessibility infrastructure.
+  // `ariaLabel` overrides the screen-reader name (otherwise the visible
+  // `<span>` label is used per default ARIA name computation). `tooltip`
+  // populates the `title` attribute — Obsidian's convention for hover
+  // copy. Both are no-ops when undefined: ARIA accessible name then falls
+  // back to the visible label and no tooltip is rendered.
+  const ariaLabelProp =
+    typeof button.ariaLabel === "string" && button.ariaLabel.length > 0
+      ? { "aria-label": button.ariaLabel }
+      : {};
+  const titleProp =
+    typeof button.tooltip === "string" && button.tooltip.length > 0
+      ? { title: button.tooltip }
+      : {};
+
   return (
     <button
       className={`exocortex-action-button exocortex-action-button--${button.variant || "secondary"}`}
+      {...ariaLabelProp}
+      {...titleProp}
       onClick={async (e) => {
         e.preventDefault();
         e.stopPropagation();
