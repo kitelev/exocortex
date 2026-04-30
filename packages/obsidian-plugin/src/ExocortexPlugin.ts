@@ -67,6 +67,7 @@ import { PropertiesUidCopyPatch } from "./presentation/properties/PropertiesUidC
 import { PropertiesLabelPatch } from "./presentation/properties/PropertiesLabelPatch";
 import { FileExplorerLabelPatch } from "./presentation/fileexplorer/FileExplorerLabelPatch";
 import { FileExplorerIconPatch } from "./presentation/fileexplorer/FileExplorerIconPatch";
+import { IconizeDetector } from "./presentation/fileexplorer/IconizeDetector";
 import { ReadingModeEnforcer } from "./presentation/reading-mode/ReadingModeEnforcer";
 import { BodyLinkPatch } from "./presentation/body/BodyLinkPatch";
 import { GraphViewPatch } from "./presentation/graph-view/GraphViewPatch";
@@ -727,6 +728,17 @@ export default class ExocortexPlugin extends Plugin {
         this,
         this.themeResolver,
       );
+      // RFC-024 §8 (T7.2) — log Iconize plugin coexistence handshake. Per-row
+      // skip happens inside FileExplorerIconPatch.hasIconizeOverlay; this
+      // startup log lets users see which plugin "wins" on iconized rows.
+      const iconize = IconizeDetector.detect(this.app);
+      if (iconize.detected) {
+        this.logger.info("FileExplorerIconPatch", {
+          message:
+            `Iconize community plugin detected (${iconize.pluginId}); ` +
+            "Exocortex will skip overlay on rows already iconized by Iconize.",
+        });
+      }
       if (this.settings.showIconsInFileExplorer) {
         this.timerManager.setTimeout(
           "file-explorer-icon-patch",
@@ -1041,6 +1053,19 @@ export default class ExocortexPlugin extends Plugin {
       this.graphViewPatch.enable();
     } else {
       this.graphViewPatch.disable();
+    }
+  }
+
+  /**
+   * Toggle File Explorer class-icon overlay on/off (RFC-024 §4 Phase 4).
+   * Called from settings when the showIconsInFileExplorer toggle changes.
+   */
+  toggleFileExplorerIcons(enabled: boolean): void {
+    if (!this.fileExplorerIconPatch) return;
+    if (enabled) {
+      this.fileExplorerIconPatch.enable();
+    } else {
+      this.fileExplorerIconPatch.disable();
     }
   }
 
