@@ -1,2 +1,5 @@
 raw/
 raw-historical/
+jobs-postcutover/
+logs-failed/
+logs-success/
