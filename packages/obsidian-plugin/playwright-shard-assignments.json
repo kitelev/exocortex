@@ -22,7 +22,8 @@
     [
       "area-tree-collapsible.spec.ts",
       "vault-commands-smoke.spec.ts",
-      "table-virtualization-large-datasets.spec.ts"
+      "table-virtualization-large-datasets.spec.ts",
+      "file-explorer-icons.spec.ts"
     ],
     [
       "daily-navigation.spec.ts",

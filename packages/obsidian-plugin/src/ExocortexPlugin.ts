@@ -388,10 +388,70 @@ export default class ExocortexPlugin extends Plugin {
       );
 
       // RFC-024 Phase 1 — Theme resolver for class-level visual accents.
-      // layoutProvider is a callback placeholder; a subsequent PR will wire a
-      // LayoutService lookup. The resolver still serves plugin-built-in
-      // defaults via CLASS_DEFAULT_ACCENT (Tasks/Projects/Areas/Knowledge).
-      this.themeResolver = new ThemeResolver();
+      // RFC-024 §4 Phase 4 (T7.3) — `layoutProvider` scans vault metadata for
+      // the `exo__Layout` asset whose `targetClass` matches the requested
+      // class reference and returns its parsed visual slots (accentColor,
+      // icon, labelTypography). Multiple matches are resolved by
+      // `exo__Layout_priority` ASC (RFC-024 §5 rule #1). Result is memoised
+      // by ThemeResolver per class until a layout edit invalidates the entry,
+      // so the O(N markdown files) scan runs at most once per class until
+      // vault state shifts. Mirrors the PanelResolver wiring above.
+      this.themeResolver = new ThemeResolver({
+        layoutProvider: (classRef) => {
+          const files = this.app.vault.getMarkdownFiles();
+          let bestSlots:
+            | {
+                accentColor?: string;
+                icon?: string;
+                labelTypography?: import("@plugin/domain/layout").LabelTypography;
+              }
+            | null = null;
+          let bestPriority = Number.POSITIVE_INFINITY;
+          for (const file of files) {
+            const fm = this.app.metadataCache.getFileCache(file)
+              ?.frontmatter as Record<string, unknown> | undefined;
+            if (!fm || !isLayoutFrontmatter(fm)) continue;
+            const targetRaw = fm["exo__Layout_targetClass"];
+            if (typeof targetRaw !== "string") continue;
+            const target = targetRaw
+              .trim()
+              .replace(/^\[\[|\]\]$/g, "")
+              .split("|")[0]
+              .trim();
+            if (target !== classRef) continue;
+            const priorityRaw = fm["exo__Layout_priority"];
+            const priority =
+              typeof priorityRaw === "number" && Number.isFinite(priorityRaw)
+                ? priorityRaw
+                : 0;
+            if (priority >= bestPriority) continue;
+            const accentRaw = fm["exo__Layout_accentColor"];
+            const iconRaw = fm["exo__Layout_icon"];
+            const typoRaw = fm["exo__Layout_labelTypography"];
+            const slots: {
+              accentColor?: string;
+              icon?: string;
+              labelTypography?: import("@plugin/domain/layout").LabelTypography;
+            } = {};
+            if (typeof accentRaw === "string" && accentRaw.trim().length > 0) {
+              slots.accentColor = accentRaw.trim();
+            }
+            if (typeof iconRaw === "string" && iconRaw.trim().length > 0) {
+              slots.icon = iconRaw.trim();
+            }
+            if (
+              typoRaw === "small" ||
+              typoRaw === "medium" ||
+              typoRaw === "large"
+            ) {
+              slots.labelTypography = typoRaw;
+            }
+            bestSlots = slots;
+            bestPriority = priority;
+          }
+          return bestSlots;
+        },
+      });
       this.registerEvent(
         this.app.metadataCache.on("changed", (file) => {
           const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
