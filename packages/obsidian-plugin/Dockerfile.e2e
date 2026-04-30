@@ -26,6 +26,7 @@ COPY manifest.json ./packages/obsidian-plugin/
 COPY packages/obsidian-plugin/tests/e2e/ ./packages/obsidian-plugin/tests/e2e/
 COPY packages/obsidian-plugin/playwright-e2e.config.ts ./packages/obsidian-plugin/
 COPY packages/obsidian-plugin/playwright-no-flaky-reporter.ts ./packages/obsidian-plugin/
+COPY packages/obsidian-plugin/playwright-retry-summary-reporter.ts ./packages/obsidian-plugin/
 # D1 CI Path 2 (task e0f6e6fd): per-shard configs + factory + LPT assignments JSON.
 # The CI runner invokes `npx playwright test -c packages/obsidian-plugin/playwright.shard-N.config.ts`,
 # so each of these files must exist inside the image (matching the /app/packages/obsidian-plugin path).

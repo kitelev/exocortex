@@ -27,7 +27,8 @@ import * as path from "path";
  * `muted` (categoryDefaultVariants.ts); only the featured `Complete`
  * button must carry `--primary`.
  */
-test.describe.configure({ mode: "parallel" });
+// RFC Phase 3.2 (T2.1): per-spec retry(1) — top T0.2 offender (rank #1, Cat H net-new spec).
+test.describe.configure({ mode: "parallel", retries: 1 });
 
 test.describe("RFC-024 Phase 3 — featuredBinding promotion", () => {
   let launcher: ObsidianLauncher;
