@@ -26,7 +26,7 @@
 
 import { functionHandlers } from "../../../../exocortex/src/infrastructure/sparql/filters/FunctionRegistry";
 
-const EXPECTED_FUNCTIONS_PRE_EXOQL_EVAL: ReadonlyArray<string> = [
+const EXPECTED_FUNCTIONS_INCLUDING_EXOQL_EVAL: ReadonlyArray<string> = [
   "abs",
   "adjust",
   "age_days",
@@ -60,6 +60,7 @@ const EXPECTED_FUNCTIONS_PRE_EXOQL_EVAL: ReadonlyArray<string> = [
   "durationtoseconds",
   "durationyears",
   "encode_for_uri",
+  "exo:eval",
   "floor",
   "format_date",
   "haslangdir",
@@ -121,14 +122,14 @@ const EXPECTED_FUNCTIONS_PRE_EXOQL_EVAL: ReadonlyArray<string> = [
 describe("drift-guard: SPARQL FunctionRegistry", () => {
   it("registry sorted keys match the inline manifest exactly", () => {
     const actual = Array.from(functionHandlers.keys()).sort();
-    const expected = [...EXPECTED_FUNCTIONS_PRE_EXOQL_EVAL].sort();
+    const expected = [...EXPECTED_FUNCTIONS_INCLUDING_EXOQL_EVAL].sort();
     expect(actual).toEqual(expected);
   });
 
-  // PR1 TDD red anchor — `it.failing()` inverts the expectation:
-  //   • PR1 (no impl):  body throws  → it.failing PASSES → CI green
-  //   • PR2 (impl):    body passes → it.failing FAILS  → forces flip to `it(...)` + manifest update
-  it.failing("exo:eval is registered as a SPARQL builtin (will be impl in PR2)", () => {
+  // PR2 (T2) flipped this from `it.failing` to `it(...)` once the handler
+  // landed in FunctionRegistry. The presence of `exo:eval` is now an
+  // affirmative invariant; removing the registration breaks this test.
+  it("exo:eval is registered as a SPARQL builtin (PR2 — T2)", () => {
     expect(functionHandlers.has("exo:eval")).toBe(true);
   });
 });
