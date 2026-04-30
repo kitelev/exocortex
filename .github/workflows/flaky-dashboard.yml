@@ -1,0 +1,80 @@
+name: Flaky Dashboard Aggregator
+
+# RFC Phase 3.4 / T4.1 — aggregate flaky-reporter.json artifacts from the
+# last 30 main CI runs and publish a structured JSON for downstream
+# dashboard rendering. Read-only with respect to repository content.
+
+on:
+  schedule:
+    # Mondays 06:00 UTC (≈11:00 Asia/Almaty, after weekend lull)
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Rolling window size (number of recent main runs)"
+        required: false
+        default: "30"
+      dry_run:
+        description: "Skip artifact downloads"
+        required: false
+        default: "false"
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  aggregate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+
+      - name: Install root deps (tsx)
+        run: npm ci --no-audit --no-fund
+
+      - name: Run flaky-aggregate
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          LIMIT="${{ inputs.limit || '30' }}"
+          DRY_RUN_FLAG=""
+          if [ "${{ inputs.dry_run || 'false' }}" = "true" ]; then
+            DRY_RUN_FLAG="--dry-run"
+          fi
+          mkdir -p packages/obsidian-plugin/docs
+          npx tsx packages/obsidian-plugin/scripts/flaky-aggregate.ts \
+            --repo "${{ github.repository }}" \
+            --workflow ci.yml \
+            --branch main \
+            --limit "$LIMIT" \
+            --output packages/obsidian-plugin/docs/FLAKY_DASHBOARD.json \
+            $DRY_RUN_FLAG
+
+      - name: Show summary
+        run: |
+          if [ -f packages/obsidian-plugin/docs/FLAKY_DASHBOARD.json ]; then
+            echo "## Flaky Dashboard Summary" >> "$GITHUB_STEP_SUMMARY"
+            jq -r '
+              "- generatedAt: \(.generatedAt)",
+              "- runs analyzed: \(.summary.totalRuns)",
+              "- runs with flaky: \(.summary.runsWithFlaky)",
+              "- rerun rate: \(.summary.rerunRatePercent)%",
+              "- avg flaky/run: \(.summary.averageFlakyPerRun)"
+            ' packages/obsidian-plugin/docs/FLAKY_DASHBOARD.json >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload dashboard JSON
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: flaky-dashboard
+          path: packages/obsidian-plugin/docs/FLAKY_DASHBOARD.json
+          retention-days: 90
+          if-no-files-found: warn
