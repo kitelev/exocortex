@@ -1,9 +1,19 @@
 import { injectable } from "tsyringe";
 import type { ITripleStore } from "../interfaces/ITripleStore";
+import type { ILogger } from "../interfaces/ILogger";
+import { NullLogger } from "../infrastructure/NullLogger";
 import { IRI } from "../domain/models/rdf/IRI";
 import { Literal } from "../domain/models/rdf/Literal";
 import { Namespace } from "../domain/models/rdf/Namespace";
 import { GroundingType } from "../domain/constants/GroundingType";
+import {
+  COMMAND_VARIANT_VALUES,
+  LABEL_CLASS_VALUES,
+  STYLE_SOURCE_VALUES,
+  type CommandVariant,
+  type LabelClass,
+  type StyleSource,
+} from "../domain/constants/CommandBindingStyleEnums";
 import { ExoQLParser } from "../infrastructure/sparql/SPARQLParser";
 import { ExoQLAlgebraTranslator } from "../infrastructure/sparql/algebra/AlgebraTranslator";
 import { ExoQLQueryExecutor } from "../infrastructure/sparql/executors/QueryExecutor";
@@ -12,6 +22,7 @@ import type {
   PreconditionDefinition,
   GroundingDefinition,
   CommandBindingDefinition,
+  CommandBindingStyleDefinition,
 } from "../domain/models/CommandDefinition";
 
 /**
@@ -40,7 +51,16 @@ export class CommandResolver {
   private readonly cache = new Map<string, ResolvedCommand[]>();
   private readonly multiCache = new Map<string, ResolvedCommand[]>();
 
-  constructor(private readonly tripleStore: ITripleStore) {}
+  /**
+   * @param tripleStore - RDF triple store backing vault assets.
+   * @param logger - Optional structured logger; defaults to no-op.
+   *                 RFC-024 §5: invalid enum values warn (capped 200 chars)
+   *                 then fall back — never crash.
+   */
+  constructor(
+    private readonly tripleStore: ITripleStore,
+    private readonly logger: ILogger = NullLogger,
+  ) {}
 
   /**
    * Resolve commands for an asset declaring multiple classes (RFC-009 §5.3, Issue #2958).
@@ -359,6 +379,9 @@ export class CommandResolver {
       Namespace.EXOCMD.term("CommandBinding_precondition"),
     );
 
+    // RFC-024 §4 Phase 2 — resolve visual style with fallback chain
+    const style = await this.loadLinkedStyle(subject, uid);
+
     return {
       id: uid,
       label,
@@ -370,7 +393,220 @@ export class CommandResolver {
       order: orderStr ? parseInt(orderStr, 10) : undefined,
       group: group ?? undefined,
       precondition: precondition ?? undefined,
+      style: style ?? undefined,
     };
+  }
+
+  /**
+   * Resolve a binding's visual style via the RFC-024 §4 Phase 2 fallback chain.
+   *
+   * Step 1 (preferred): follow `exocmd__CommandBinding_style` wikilink to a
+   * CommandBindingStyle asset and project all 7 properties.
+   *
+   * Step 2 (shorthand): if no style asset reference, read inline literal
+   * `exocmd__CommandBinding_variant` and synthesize a minimal style with
+   * only `variant` populated. Coerce via `String(v).trim().toLowerCase()`,
+   * whitelist via `COMMAND_VARIANT_VALUES`, drop with capped warning on miss.
+   *
+   * Returns `null` when neither source is present — caller treats as
+   * "delegate to UI-level group default" (Phase 0 `categoryDefaultVariant`).
+   *
+   * Strategy: split-query (separate `match()` calls per property), **not**
+   * SPARQL OPTIONAL — see RFC-024 §3 architectural principle.
+   */
+  private async loadLinkedStyle(
+    bindingSubject: IRI,
+    bindingUid: string,
+  ): Promise<CommandBindingStyleDefinition | null> {
+    // Step 1 — explicit style asset reference (preferred)
+    const styleRefTriples = await this.tripleStore.match(
+      bindingSubject,
+      Namespace.EXOCMD.term("CommandBinding_style"),
+      undefined,
+    );
+
+    if (styleRefTriples.length > 0) {
+      const ref = styleRefTriples[0].object;
+      let styleSubject: IRI | null = null;
+
+      if (ref instanceof IRI) {
+        styleSubject = ref;
+      } else if (ref instanceof Literal) {
+        const refUid = this.normalizeWikilink(ref.value);
+        styleSubject = await this.findSubjectByUID(refUid);
+      }
+
+      if (styleSubject) {
+        const fromAsset = await this.loadStyleAsset(styleSubject);
+        if (fromAsset) return fromAsset;
+      }
+      // Reference present but didn't yield a usable style asset — log + try inline
+      this.logger.warn(
+        this.capWarning(
+          `CommandBinding ${bindingUid}: style reference unresolved, falling back to inline variant`,
+        ),
+      );
+    }
+
+    // Step 2 — inline shorthand `CommandBinding_variant` literal
+    const inlineVariantRaw = await this.getLiteralValue(
+      bindingSubject,
+      Namespace.EXOCMD.term("CommandBinding_variant"),
+    );
+
+    if (inlineVariantRaw !== null) {
+      const variant = this.coerceVariant(inlineVariantRaw, bindingUid);
+      if (variant !== undefined) {
+        return {
+          id: `inline:${bindingUid}`,
+          label: "",
+          variant,
+          inline: true,
+        };
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Project a CommandBindingStyle asset to a {@link CommandBindingStyleDefinition}.
+   * Invalid enum values are coerced and dropped with warning (RFC-024 §5).
+   * Returns `null` if the asset is missing the mandatory `Asset_uid` property.
+   */
+  private async loadStyleAsset(
+    subject: IRI,
+  ): Promise<CommandBindingStyleDefinition | null> {
+    const uid = await this.getLiteralValue(subject, Namespace.EXO.term("Asset_uid"));
+    if (!uid) return null;
+
+    const label =
+      (await this.getLiteralValue(subject, Namespace.EXO.term("Asset_label"))) ?? "";
+
+    const variantRaw = await this.getLiteralValue(
+      subject,
+      Namespace.EXOCMD.term("CommandBindingStyle_variant"),
+    );
+    const variant =
+      variantRaw !== null ? this.coerceVariant(variantRaw, uid) : undefined;
+
+    const showIconRaw = await this.getLiteralValue(
+      subject,
+      Namespace.EXOCMD.term("CommandBindingStyle_showIcon"),
+    );
+    const showIcon = this.coerceBoolean(showIconRaw);
+
+    const labelClassRaw = await this.getLiteralValue(
+      subject,
+      Namespace.EXOCMD.term("CommandBindingStyle_labelClass"),
+    );
+    const labelClass =
+      labelClassRaw !== null ? this.coerceLabelClass(labelClassRaw, uid) : undefined;
+
+    const ariaLabel = await this.getLiteralValue(
+      subject,
+      Namespace.EXOCMD.term("CommandBindingStyle_ariaLabel"),
+    );
+    const tooltip = await this.getLiteralValue(
+      subject,
+      Namespace.EXOCMD.term("CommandBindingStyle_tooltip"),
+    );
+    const keyboardShortcut = await this.getLiteralValue(
+      subject,
+      Namespace.EXOCMD.term("CommandBindingStyle_keyboardShortcut"),
+    );
+
+    const sourceRaw = await this.getLiteralValue(
+      subject,
+      Namespace.EXOCMD.term("CommandBindingStyle_source"),
+    );
+    const source =
+      sourceRaw !== null ? this.coerceStyleSource(sourceRaw, uid) : undefined;
+
+    return {
+      id: uid,
+      label,
+      variant,
+      showIcon,
+      labelClass,
+      ariaLabel: ariaLabel ?? undefined,
+      tooltip: tooltip ?? undefined,
+      keyboardShortcut: keyboardShortcut ?? undefined,
+      source,
+      inline: false,
+    };
+  }
+
+  /**
+   * Coerce raw input to a {@link CommandVariant} or warn and drop.
+   * RFC-024 §5: trim + lowercase + whitelist → never crash.
+   */
+  private coerceVariant(
+    raw: unknown,
+    contextUid: string,
+  ): CommandVariant | undefined {
+    if (raw == null) return undefined;
+    const normalized = String(raw).trim().toLowerCase();
+    if (normalized === "") return undefined;
+    if ((COMMAND_VARIANT_VALUES as readonly string[]).includes(normalized)) {
+      return normalized as CommandVariant;
+    }
+    this.logger.warn(
+      this.capWarning(
+        `CommandBindingStyle variant "${normalized}" not in whitelist [${COMMAND_VARIANT_VALUES.join(",")}]; dropped (asset ${contextUid})`,
+      ),
+    );
+    return undefined;
+  }
+
+  private coerceLabelClass(
+    raw: unknown,
+    contextUid: string,
+  ): LabelClass | undefined {
+    if (raw == null) return undefined;
+    const normalized = String(raw).trim().toLowerCase();
+    if (normalized === "") return undefined;
+    if ((LABEL_CLASS_VALUES as readonly string[]).includes(normalized)) {
+      return normalized as LabelClass;
+    }
+    this.logger.warn(
+      this.capWarning(
+        `CommandBindingStyle labelClass "${normalized}" not in whitelist [${LABEL_CLASS_VALUES.join(",")}]; dropped (asset ${contextUid})`,
+      ),
+    );
+    return undefined;
+  }
+
+  private coerceStyleSource(
+    raw: unknown,
+    contextUid: string,
+  ): StyleSource | undefined {
+    if (raw == null) return undefined;
+    const normalized = String(raw).trim().toLowerCase();
+    if (normalized === "") return undefined;
+    if ((STYLE_SOURCE_VALUES as readonly string[]).includes(normalized)) {
+      return normalized as StyleSource;
+    }
+    this.logger.warn(
+      this.capWarning(
+        `CommandBindingStyle source "${normalized}" not in whitelist [${STYLE_SOURCE_VALUES.join(",")}]; dropped (asset ${contextUid})`,
+      ),
+    );
+    return undefined;
+  }
+
+  /** Returns boolean for "true"/"false" (case-insensitive); undefined otherwise. */
+  private coerceBoolean(raw: string | null): boolean | undefined {
+    if (raw === null) return undefined;
+    const normalized = raw.trim().toLowerCase();
+    if (normalized === "true") return true;
+    if (normalized === "false") return false;
+    return undefined;
+  }
+
+  /** Cap warning messages at 200 chars per RFC-024 §5 logging policy. */
+  private capWarning(message: string): string {
+    return message.length <= 200 ? message : message.slice(0, 197) + "...";
   }
 
   private bindingMatches(

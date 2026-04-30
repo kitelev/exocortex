@@ -169,7 +169,7 @@ export default class ExocortexPlugin extends Plugin {
       // RFC-009: Wire Dynamic Command System services BEFORE renderer
       // Construct manually (not via tsyringe) because they need the live triple store
       const tripleStore = this.sparql.getTripleStore();
-      this.commandResolver = new CommandResolver(tripleStore);
+      this.commandResolver = new CommandResolver(tripleStore, this.logger);
       this.preconditionEvaluator = new PreconditionEvaluator(tripleStore);
       this.serviceRegistry = new ServiceRegistry();
       const obsidianFs = new ObsidianFileSystemAdapter(this.app.vault);

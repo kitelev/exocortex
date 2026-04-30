@@ -1,4 +1,9 @@
 import { GroundingType } from "../constants/GroundingType";
+import type {
+  CommandVariant,
+  LabelClass,
+  StyleSource,
+} from "../constants/CommandBindingStyleEnums";
 
 /**
  * Domain model for a dynamic command (RFC-009 Section 4.2.1).
@@ -119,6 +124,53 @@ export interface CommandBindingDefinition {
   readonly group?: string;
   /** Binding-level precondition overriding command-level precondition */
   readonly precondition?: PreconditionDefinition;
+  /**
+   * Resolved visual style (RFC-024 §4 Phase 2).
+   *
+   * Populated by CommandResolver applying the fallback chain:
+   * 1. `exocmd__CommandBinding_style` wikilink → load referenced
+   *    CommandBindingStyle asset (preferred — reusable across bindings).
+   * 2. `exocmd__CommandBinding_variant` inline literal → synthesize
+   *    minimal style with only `variant` set.
+   * 3. Neither present → `style` is `undefined`; UI applies group-based
+   *    Phase 0 default via `resolveVariant(group)`.
+   *
+   * Invalid enum values are coerced (lowercase + trim) and dropped to
+   * `undefined` after warning (RFC-024 §5 — never crash).
+   */
+  readonly style?: CommandBindingStyleDefinition;
+}
+
+/**
+ * Domain model for `exocmd__CommandBindingStyle` (RFC-024 §4 Phase 2).
+ *
+ * Resolved visual properties for a command binding. Constructed by
+ * CommandResolver from either a referenced style asset (full definition)
+ * or an inline `CommandBinding_variant` shorthand (variant only).
+ *
+ * All fields are optional — caller (UI layer) supplies its own defaults.
+ */
+export interface CommandBindingStyleDefinition {
+  /** Asset UID of the style asset (or synthetic `inline:<binding-uid>` for shorthand) */
+  readonly id: string;
+  /** Human-readable label of the style asset (empty for inline shorthand) */
+  readonly label: string;
+  /** Semantic button variant whitelist value */
+  readonly variant?: CommandVariant;
+  /** Boolean — render the existing Command_icon (default true at UI layer) */
+  readonly showIcon?: boolean;
+  /** Typographic modifier whitelist value */
+  readonly labelClass?: LabelClass;
+  /** Literal text for the aria-label attribute */
+  readonly ariaLabel?: string;
+  /** Literal text for the title attribute (Obsidian tooltip convention) */
+  readonly tooltip?: string;
+  /** Chord string (e.g. "Mod+Shift+D") — registered with `exo-cmd-` namespace */
+  readonly keyboardShortcut?: string;
+  /** Governance marker — user wins over vendor per precedence matrix */
+  readonly source?: StyleSource;
+  /** True iff this style was synthesized from inline `CommandBinding_variant` */
+  readonly inline: boolean;
 }
 
 // -- Type Guards --
