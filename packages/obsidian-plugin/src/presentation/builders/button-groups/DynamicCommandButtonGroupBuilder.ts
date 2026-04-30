@@ -190,9 +190,7 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
     { id: "maintenance", title: "Maintenance", collapsedByDefault: true },
   ];
 
-  private async resolveVisibleCommands(
-    context: ButtonBuilderContext,
-  ): Promise<{
+  private async resolveVisibleCommands(context: ButtonBuilderContext): Promise<{
     visibleCommands: ResolvedCommand[];
     subjectIRI: string;
   } | null> {
@@ -267,10 +265,22 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
     const { command, binding } = rc;
     const variant = resolveVariantForGroup(binding.group);
 
+    // RFC-024 §4 Phase 2 — T5.3: render `Command_icon` by default. The
+    // resolved `binding.style.showIcon` (populated in T5.2 by CommandResolver)
+    // can opt out per-binding; absence of style or `showIcon=true` keeps the
+    // existing icon — covers the 44 starter-kit bindings that already declare
+    // `Command_icon` in RDF without any user configuration.
+    const showIcon = binding.style?.showIcon !== false;
+    const icon =
+      showIcon && command.icon && command.icon.length > 0
+        ? command.icon
+        : undefined;
+
     return {
       id: `dynamic-cmd-${command.id}`,
       label: command.name,
       variant,
+      icon,
       visible: true,
       onClick: async () => {
         await this.handleClick(rc, targetIRI, filePath, app, logger, refresh);
@@ -363,9 +373,7 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
    *
    * If `exo__Asset` is already declared explicitly, it is not duplicated.
    */
-  private extractAssetClasses(
-    metadata: Record<string, unknown>,
-  ): string[] {
+  private extractAssetClasses(metadata: Record<string, unknown>): string[] {
     const raw = metadata["exo__Instance_class"];
     const classes: string[] = [];
 
