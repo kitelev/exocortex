@@ -898,16 +898,28 @@ jobs:
       - name: Run E2E tests (shard ${{ matrix.shard }}/6)
         if: env.RUN_E2E == 'true'
         run: |
-          mkdir -p test-results-e2e playwright-report-e2e blob-report plugin-wait-ms
+          mkdir -p test-results-e2e playwright-report-e2e blob-report plugin-wait-ms cold-start-telemetry
           docker run --init --rm \
             -v $PWD/test-results-e2e:/app/test-results \
             -v $PWD/playwright-report-e2e:/app/playwright-report-e2e \
             -v $PWD/blob-report:/app/packages/obsidian-plugin/blob-report \
             -v $PWD/plugin-wait-ms:/app/plugin-wait-ms \
+            -v $PWD/cold-start-telemetry:/app/cold-start-telemetry \
             -e CI=true \
             -e PLUGIN_WAIT_MS_LOG=/app/plugin-wait-ms/shard-${{ matrix.shard }}.jsonl \
+            -e COLD_START_TELEMETRY_LOG=/app/cold-start-telemetry/shard-${{ matrix.shard }}.jsonl \
+            -e E2E_SHARD_ID=${{ matrix.shard }} \
             -e FIXTURE_DRIFT_OUTPUT=/app/test-results/fixture-drift.json \
             exocortex-e2e npx playwright test -c packages/obsidian-plugin/playwright.shard-${{ matrix.shard }}.config.ts
+
+      - name: Upload cold-start telemetry for shard ${{ matrix.shard }}
+        if: always() && env.RUN_E2E == 'true'
+        uses: actions/upload-artifact@v6
+        with:
+          name: cold-start-telemetry-shard-${{ matrix.shard }}
+          path: cold-start-telemetry/shard-${{ matrix.shard }}.jsonl
+          retention-days: 30
+          if-no-files-found: ignore
 
       - name: Upload blob report for shard ${{ matrix.shard }}
         if: always() && env.RUN_E2E == 'true'
