@@ -112,6 +112,23 @@ export class ExocortexSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
+      .setName("Show class icons in file explorer")
+      .setDesc(
+        "Render Lucide icons next to file explorer rows for notes whose " +
+        "exo__Instance_class resolves to an exo__Layout_icon. " +
+        "Skips rows already iconized by the Iconize community plugin.",
+      )
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.showIconsInFileExplorer)
+          .onChange(async (value) => {
+            this.plugin.settings.showIconsInFileExplorer = value;
+            await this.plugin.saveSettings();
+            this.plugin.toggleFileExplorerIcons(value);
+          }),
+      );
+
+    new Setting(containerEl)
       .setName("Auto reading mode for exocortex assets")
       .setDesc(
         "When opening a note with the `exo__Instance_class` frontmatter property, automatically switch to reading mode so the exocortex layout (create / status / planning panels) is visible. Disable to keep obsidian's default view mode.",
