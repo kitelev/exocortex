@@ -27,7 +27,10 @@ export interface FunctionContext {
   /** Evaluate an expression and get the result */
   evaluateExpression: (expr: Expression, solution: SolutionMapping) => unknown;
   /** Get term from expression (for RDF term functions) */
-  getTermFromExpression: (expr: Expression, solution: SolutionMapping) => unknown;
+  getTermFromExpression: (
+    expr: Expression,
+    solution: SolutionMapping,
+  ) => unknown;
   /** Convert value to string */
   getStringValue: (value: unknown) => string;
   /** Current solution mapping */
@@ -46,7 +49,7 @@ export interface FunctionContext {
  */
 export type FunctionHandler = (
   args: Expression[],
-  ctx: FunctionContext
+  ctx: FunctionContext,
 ) => unknown;
 
 /**
@@ -60,36 +63,50 @@ export const functionHandlers: Map<string, FunctionHandler> = new Map();
 // =============================================================================
 
 functionHandlers.set("str", (args, ctx) => {
-  const term = ctx.getTermFromExpression(args[0], ctx.solution) as RDFTerm | undefined;
+  const term = ctx.getTermFromExpression(args[0], ctx.solution) as
+    | RDFTerm
+    | undefined;
   return BuiltInFunctions.str(term);
 });
 
 functionHandlers.set("lang", (args, ctx) => {
-  const term = ctx.getTermFromExpression(args[0], ctx.solution) as RDFTerm | undefined;
+  const term = ctx.getTermFromExpression(args[0], ctx.solution) as
+    | RDFTerm
+    | undefined;
   return BuiltInFunctions.lang(term);
 });
 
 functionHandlers.set("langmatches", (args, ctx) => {
-  const langTag = ctx.getStringValue(ctx.evaluateExpression(args[0], ctx.solution));
-  const langRange = ctx.getStringValue(ctx.evaluateExpression(args[1], ctx.solution));
+  const langTag = ctx.getStringValue(
+    ctx.evaluateExpression(args[0], ctx.solution),
+  );
+  const langRange = ctx.getStringValue(
+    ctx.evaluateExpression(args[1], ctx.solution),
+  );
   return BuiltInFunctions.langMatches(langTag, langRange);
 });
 
 functionHandlers.set("contains", (args, ctx) => {
   const str = ctx.getStringValue(ctx.evaluateExpression(args[0], ctx.solution));
-  const substr = ctx.getStringValue(ctx.evaluateExpression(args[1], ctx.solution));
+  const substr = ctx.getStringValue(
+    ctx.evaluateExpression(args[1], ctx.solution),
+  );
   return BuiltInFunctions.contains(str, substr);
 });
 
 functionHandlers.set("strstarts", (args, ctx) => {
   const str = ctx.getStringValue(ctx.evaluateExpression(args[0], ctx.solution));
-  const prefix = ctx.getStringValue(ctx.evaluateExpression(args[1], ctx.solution));
+  const prefix = ctx.getStringValue(
+    ctx.evaluateExpression(args[1], ctx.solution),
+  );
   return BuiltInFunctions.strStarts(str, prefix);
 });
 
 functionHandlers.set("strends", (args, ctx) => {
   const str = ctx.getStringValue(ctx.evaluateExpression(args[0], ctx.solution));
-  const suffix = ctx.getStringValue(ctx.evaluateExpression(args[1], ctx.solution));
+  const suffix = ctx.getStringValue(
+    ctx.evaluateExpression(args[1], ctx.solution),
+  );
   return BuiltInFunctions.strEnds(str, suffix);
 });
 
@@ -132,15 +149,19 @@ functionHandlers.set("strafter", (args, ctx) => {
 
 functionHandlers.set("concat", (args, ctx) => {
   const concatArgs = args.map((arg) =>
-    ctx.getStringValue(ctx.evaluateExpression(arg, ctx.solution))
+    ctx.getStringValue(ctx.evaluateExpression(arg, ctx.solution)),
   );
   return BuiltInFunctions.concat(...concatArgs);
 });
 
 functionHandlers.set("replace", (args, ctx) => {
   const str = ctx.getStringValue(ctx.evaluateExpression(args[0], ctx.solution));
-  const pattern = ctx.getStringValue(ctx.evaluateExpression(args[1], ctx.solution));
-  const replacement = ctx.getStringValue(ctx.evaluateExpression(args[2], ctx.solution));
+  const pattern = ctx.getStringValue(
+    ctx.evaluateExpression(args[1], ctx.solution),
+  );
+  const replacement = ctx.getStringValue(
+    ctx.evaluateExpression(args[2], ctx.solution),
+  );
   const flags = args[3]
     ? ctx.getStringValue(ctx.evaluateExpression(args[3], ctx.solution))
     : undefined;
@@ -148,8 +169,12 @@ functionHandlers.set("replace", (args, ctx) => {
 });
 
 functionHandlers.set("regex", (args, ctx) => {
-  const text = ctx.getStringValue(ctx.evaluateExpression(args[0], ctx.solution));
-  const pattern = ctx.getStringValue(ctx.evaluateExpression(args[1], ctx.solution));
+  const text = ctx.getStringValue(
+    ctx.evaluateExpression(args[0], ctx.solution),
+  );
+  const pattern = ctx.getStringValue(
+    ctx.evaluateExpression(args[1], ctx.solution),
+  );
   const flags = args[2]
     ? ctx.getStringValue(ctx.evaluateExpression(args[2], ctx.solution))
     : undefined;
@@ -166,7 +191,9 @@ functionHandlers.set("encode_for_uri", (args, ctx) => {
 // =============================================================================
 
 functionHandlers.set("datatype", (args, ctx) => {
-  const term = ctx.getTermFromExpression(args[0], ctx.solution) as RDFTerm | undefined;
+  const term = ctx.getTermFromExpression(args[0], ctx.solution) as
+    | RDFTerm
+    | undefined;
   return BuiltInFunctions.datatype(term).value;
 });
 
@@ -181,40 +208,56 @@ functionHandlers.set("bound", (args, ctx) => {
 
 // Register both isiri and isuri (aliases)
 const isIriHandler: FunctionHandler = (args, ctx) => {
-  const term = ctx.getTermFromExpression(args[0], ctx.solution) as RDFTerm | undefined;
+  const term = ctx.getTermFromExpression(args[0], ctx.solution) as
+    | RDFTerm
+    | undefined;
   return BuiltInFunctions.isIRI(term);
 };
 functionHandlers.set("isiri", isIriHandler);
 functionHandlers.set("isuri", isIriHandler);
 
 functionHandlers.set("isblank", (args, ctx) => {
-  const term = ctx.getTermFromExpression(args[0], ctx.solution) as RDFTerm | undefined;
+  const term = ctx.getTermFromExpression(args[0], ctx.solution) as
+    | RDFTerm
+    | undefined;
   return BuiltInFunctions.isBlank(term);
 });
 
 functionHandlers.set("isliteral", (args, ctx) => {
-  const term = ctx.getTermFromExpression(args[0], ctx.solution) as RDFTerm | undefined;
+  const term = ctx.getTermFromExpression(args[0], ctx.solution) as
+    | RDFTerm
+    | undefined;
   return BuiltInFunctions.isLiteral(term);
 });
 
 functionHandlers.set("isnumeric", (args, ctx) => {
-  const term = ctx.getTermFromExpression(args[0], ctx.solution) as RDFTerm | undefined;
+  const term = ctx.getTermFromExpression(args[0], ctx.solution) as
+    | RDFTerm
+    | undefined;
   return BuiltInFunctions.isNumeric(term);
 });
 
 functionHandlers.set("haslangdir", (args, ctx) => {
-  const term = ctx.getTermFromExpression(args[0], ctx.solution) as RDFTerm | undefined;
+  const term = ctx.getTermFromExpression(args[0], ctx.solution) as
+    | RDFTerm
+    | undefined;
   return BuiltInFunctions.hasLangdir(term);
 });
 
 functionHandlers.set("istriple", (args, ctx) => {
-  const term = ctx.getTermFromExpression(args[0], ctx.solution) as RDFTerm | undefined;
+  const term = ctx.getTermFromExpression(args[0], ctx.solution) as
+    | RDFTerm
+    | undefined;
   return BuiltInFunctions.isTriple(term);
 });
 
 functionHandlers.set("sameterm", (args, ctx) => {
-  const term1 = ctx.getTermFromExpression(args[0], ctx.solution) as RDFTerm | undefined;
-  const term2 = ctx.getTermFromExpression(args[1], ctx.solution) as RDFTerm | undefined;
+  const term1 = ctx.getTermFromExpression(args[0], ctx.solution) as
+    | RDFTerm
+    | undefined;
+  const term2 = ctx.getTermFromExpression(args[1], ctx.solution) as
+    | RDFTerm
+    | undefined;
   return BuiltInFunctions.sameTerm(term1, term2);
 });
 
@@ -223,22 +266,30 @@ functionHandlers.set("sameterm", (args, ctx) => {
 // =============================================================================
 
 functionHandlers.set("abs", (args, ctx) => {
-  const num = Number(ctx.getStringValue(ctx.evaluateExpression(args[0], ctx.solution)));
+  const num = Number(
+    ctx.getStringValue(ctx.evaluateExpression(args[0], ctx.solution)),
+  );
   return BuiltInFunctions.abs(num);
 });
 
 functionHandlers.set("round", (args, ctx) => {
-  const num = Number(ctx.getStringValue(ctx.evaluateExpression(args[0], ctx.solution)));
+  const num = Number(
+    ctx.getStringValue(ctx.evaluateExpression(args[0], ctx.solution)),
+  );
   return BuiltInFunctions.round(num);
 });
 
 functionHandlers.set("ceil", (args, ctx) => {
-  const num = Number(ctx.getStringValue(ctx.evaluateExpression(args[0], ctx.solution)));
+  const num = Number(
+    ctx.getStringValue(ctx.evaluateExpression(args[0], ctx.solution)),
+  );
   return BuiltInFunctions.ceil(num);
 });
 
 functionHandlers.set("floor", (args, ctx) => {
-  const num = Number(ctx.getStringValue(ctx.evaluateExpression(args[0], ctx.solution)));
+  const num = Number(
+    ctx.getStringValue(ctx.evaluateExpression(args[0], ctx.solution)),
+  );
   return BuiltInFunctions.floor(num);
 });
 
@@ -258,33 +309,53 @@ functionHandlers.set("parsedate", (args, ctx) => {
 });
 
 functionHandlers.set("datebefore", (args, ctx) => {
-  const date1 = ctx.getStringValue(ctx.evaluateExpression(args[0], ctx.solution));
-  const date2 = ctx.getStringValue(ctx.evaluateExpression(args[1], ctx.solution));
+  const date1 = ctx.getStringValue(
+    ctx.evaluateExpression(args[0], ctx.solution),
+  );
+  const date2 = ctx.getStringValue(
+    ctx.evaluateExpression(args[1], ctx.solution),
+  );
   return BuiltInFunctions.dateBefore(date1, date2);
 });
 
 functionHandlers.set("dateafter", (args, ctx) => {
-  const date1 = ctx.getStringValue(ctx.evaluateExpression(args[0], ctx.solution));
-  const date2 = ctx.getStringValue(ctx.evaluateExpression(args[1], ctx.solution));
+  const date1 = ctx.getStringValue(
+    ctx.evaluateExpression(args[0], ctx.solution),
+  );
+  const date2 = ctx.getStringValue(
+    ctx.evaluateExpression(args[1], ctx.solution),
+  );
   return BuiltInFunctions.dateAfter(date1, date2);
 });
 
 functionHandlers.set("dateinrange", (args, ctx) => {
-  const date = ctx.getStringValue(ctx.evaluateExpression(args[0], ctx.solution));
-  const start = ctx.getStringValue(ctx.evaluateExpression(args[1], ctx.solution));
+  const date = ctx.getStringValue(
+    ctx.evaluateExpression(args[0], ctx.solution),
+  );
+  const start = ctx.getStringValue(
+    ctx.evaluateExpression(args[1], ctx.solution),
+  );
   const end = ctx.getStringValue(ctx.evaluateExpression(args[2], ctx.solution));
   return BuiltInFunctions.dateInRange(date, start, end);
 });
 
 functionHandlers.set("datediffminutes", (args, ctx) => {
-  const date1 = ctx.getStringValue(ctx.evaluateExpression(args[0], ctx.solution));
-  const date2 = ctx.getStringValue(ctx.evaluateExpression(args[1], ctx.solution));
+  const date1 = ctx.getStringValue(
+    ctx.evaluateExpression(args[0], ctx.solution),
+  );
+  const date2 = ctx.getStringValue(
+    ctx.evaluateExpression(args[1], ctx.solution),
+  );
   return BuiltInFunctions.dateDiffMinutes(date1, date2);
 });
 
 functionHandlers.set("datediffhours", (args, ctx) => {
-  const date1 = ctx.getStringValue(ctx.evaluateExpression(args[0], ctx.solution));
-  const date2 = ctx.getStringValue(ctx.evaluateExpression(args[1], ctx.solution));
+  const date1 = ctx.getStringValue(
+    ctx.evaluateExpression(args[0], ctx.solution),
+  );
+  const date2 = ctx.getStringValue(
+    ctx.evaluateExpression(args[1], ctx.solution),
+  );
   return BuiltInFunctions.dateDiffHours(date1, date2);
 });
 
@@ -292,7 +363,7 @@ functionHandlers.set("datediffhours", (args, ctx) => {
 const createDateTimeAccessor = (
   dateTimeFn: (s: string) => number,
   yearMonthDurFn: ((v: DurationArg) => number) | null,
-  dayTimeDurFn: ((v: DurationArg) => number) | null
+  dayTimeDurFn: ((v: DurationArg) => number) | null,
 ): FunctionHandler => {
   return (args, ctx) => {
     const value = ctx.evaluateExpression(args[0], ctx.solution);
@@ -312,7 +383,7 @@ const createDateTimeAccessor = (
 const yearHandler = createDateTimeAccessor(
   BuiltInFunctions.year.bind(BuiltInFunctions),
   BuiltInFunctions.durationYears.bind(BuiltInFunctions),
-  null
+  null,
 );
 functionHandlers.set("year", yearHandler);
 functionHandlers.set("years", yearHandler);
@@ -321,7 +392,7 @@ functionHandlers.set("years", yearHandler);
 const monthHandler = createDateTimeAccessor(
   BuiltInFunctions.month.bind(BuiltInFunctions),
   BuiltInFunctions.durationMonths.bind(BuiltInFunctions),
-  null
+  null,
 );
 functionHandlers.set("month", monthHandler);
 functionHandlers.set("months", monthHandler);
@@ -330,47 +401,63 @@ functionHandlers.set("months", monthHandler);
 const dayHandler = createDateTimeAccessor(
   BuiltInFunctions.day.bind(BuiltInFunctions),
   null,
-  BuiltInFunctions.durationDays.bind(BuiltInFunctions)
+  BuiltInFunctions.durationDays.bind(BuiltInFunctions),
 );
 functionHandlers.set("day", dayHandler);
 functionHandlers.set("days", dayHandler);
 
 // hours - can work on dateTime or dayTimeDuration
-functionHandlers.set("hours", createDateTimeAccessor(
-  BuiltInFunctions.hours.bind(BuiltInFunctions),
-  null,
-  BuiltInFunctions.durationHours.bind(BuiltInFunctions)
-));
+functionHandlers.set(
+  "hours",
+  createDateTimeAccessor(
+    BuiltInFunctions.hours.bind(BuiltInFunctions),
+    null,
+    BuiltInFunctions.durationHours.bind(BuiltInFunctions),
+  ),
+);
 
 // minutes - can work on dateTime or dayTimeDuration
-functionHandlers.set("minutes", createDateTimeAccessor(
-  BuiltInFunctions.minutes.bind(BuiltInFunctions),
-  null,
-  BuiltInFunctions.durationMinutes.bind(BuiltInFunctions)
-));
+functionHandlers.set(
+  "minutes",
+  createDateTimeAccessor(
+    BuiltInFunctions.minutes.bind(BuiltInFunctions),
+    null,
+    BuiltInFunctions.durationMinutes.bind(BuiltInFunctions),
+  ),
+);
 
 // seconds - can work on dateTime or dayTimeDuration
-functionHandlers.set("seconds", createDateTimeAccessor(
-  BuiltInFunctions.seconds.bind(BuiltInFunctions),
-  null,
-  BuiltInFunctions.durationSeconds.bind(BuiltInFunctions)
-));
+functionHandlers.set(
+  "seconds",
+  createDateTimeAccessor(
+    BuiltInFunctions.seconds.bind(BuiltInFunctions),
+    null,
+    BuiltInFunctions.durationSeconds.bind(BuiltInFunctions),
+  ),
+);
 
 functionHandlers.set("timezone", (args, ctx) => {
-  const date = ctx.getStringValue(ctx.evaluateExpression(args[0], ctx.solution));
+  const date = ctx.getStringValue(
+    ctx.evaluateExpression(args[0], ctx.solution),
+  );
   return BuiltInFunctions.timezone(date);
 });
 
 functionHandlers.set("tz", (args, ctx) => {
-  const date = ctx.getStringValue(ctx.evaluateExpression(args[0], ctx.solution));
+  const date = ctx.getStringValue(
+    ctx.evaluateExpression(args[0], ctx.solution),
+  );
   return BuiltInFunctions.tz(date);
 });
 
 functionHandlers.set("adjust", (args, ctx) => {
   const dateTime = ctx.evaluateExpression(args[0], ctx.solution) as DurationArg;
-  const timezone = args.length > 1
-    ? ctx.evaluateExpression(args[1], ctx.solution) as DurationArg | undefined
-    : undefined;
+  const timezone =
+    args.length > 1
+      ? (ctx.evaluateExpression(args[1], ctx.solution) as
+          | DurationArg
+          | undefined)
+      : undefined;
   return BuiltInFunctions.adjust(dateTime, timezone);
 });
 
@@ -536,24 +623,36 @@ functionHandlers.set("sha512", (args, ctx) => {
 // =============================================================================
 
 functionHandlers.set("subject", (args, ctx) => {
-  const term = ctx.getTermFromExpression(args[0], ctx.solution) as RDFTerm | undefined;
+  const term = ctx.getTermFromExpression(args[0], ctx.solution) as
+    | RDFTerm
+    | undefined;
   return BuiltInFunctions.subject(term);
 });
 
 functionHandlers.set("predicate", (args, ctx) => {
-  const term = ctx.getTermFromExpression(args[0], ctx.solution) as RDFTerm | undefined;
+  const term = ctx.getTermFromExpression(args[0], ctx.solution) as
+    | RDFTerm
+    | undefined;
   return BuiltInFunctions.predicate(term);
 });
 
 functionHandlers.set("object", (args, ctx) => {
-  const term = ctx.getTermFromExpression(args[0], ctx.solution) as RDFTerm | undefined;
+  const term = ctx.getTermFromExpression(args[0], ctx.solution) as
+    | RDFTerm
+    | undefined;
   return BuiltInFunctions.object(term);
 });
 
 functionHandlers.set("triple", (args, ctx) => {
-  const subject = ctx.getTermFromExpression(args[0], ctx.solution) as RDFTerm | undefined;
-  const predicate = ctx.getTermFromExpression(args[1], ctx.solution) as RDFTerm | undefined;
-  const object = ctx.getTermFromExpression(args[2], ctx.solution) as RDFTerm | undefined;
+  const subject = ctx.getTermFromExpression(args[0], ctx.solution) as
+    | RDFTerm
+    | undefined;
+  const predicate = ctx.getTermFromExpression(args[1], ctx.solution) as
+    | RDFTerm
+    | undefined;
+  const object = ctx.getTermFromExpression(args[2], ctx.solution) as
+    | RDFTerm
+    | undefined;
   return BuiltInFunctions.triple(subject, predicate, object);
 });
 
@@ -572,8 +671,12 @@ functionHandlers.set("triple", (args, ctx) => {
 
 // DAYS_BETWEEN(a, b) → integer: days between two dateTimes
 functionHandlers.set("days_between", (args, ctx) => {
-  const date1 = ctx.getStringValue(ctx.evaluateExpression(args[0], ctx.solution));
-  const date2 = ctx.getStringValue(ctx.evaluateExpression(args[1], ctx.solution));
+  const date1 = ctx.getStringValue(
+    ctx.evaluateExpression(args[0], ctx.solution),
+  );
+  const date2 = ctx.getStringValue(
+    ctx.evaluateExpression(args[1], ctx.solution),
+  );
   const d1 = new Date(date1);
   const d2 = new Date(date2);
   return Math.floor((d2.getTime() - d1.getTime()) / (24 * 60 * 60 * 1000));
@@ -581,8 +684,12 @@ functionHandlers.set("days_between", (args, ctx) => {
 
 // MINUTES_BETWEEN(a, b) → integer: minutes between two dateTimes
 functionHandlers.set("minutes_between", (args, ctx) => {
-  const date1 = ctx.getStringValue(ctx.evaluateExpression(args[0], ctx.solution));
-  const date2 = ctx.getStringValue(ctx.evaluateExpression(args[1], ctx.solution));
+  const date1 = ctx.getStringValue(
+    ctx.evaluateExpression(args[0], ctx.solution),
+  );
+  const date2 = ctx.getStringValue(
+    ctx.evaluateExpression(args[1], ctx.solution),
+  );
   const d1 = new Date(date1);
   const d2 = new Date(date2);
   return Math.floor((d2.getTime() - d1.getTime()) / (60 * 1000));
@@ -590,8 +697,12 @@ functionHandlers.set("minutes_between", (args, ctx) => {
 
 // HOURS_BETWEEN(a, b) → decimal: hours between two dateTimes
 functionHandlers.set("hours_between", (args, ctx) => {
-  const date1 = ctx.getStringValue(ctx.evaluateExpression(args[0], ctx.solution));
-  const date2 = ctx.getStringValue(ctx.evaluateExpression(args[1], ctx.solution));
+  const date1 = ctx.getStringValue(
+    ctx.evaluateExpression(args[0], ctx.solution),
+  );
+  const date2 = ctx.getStringValue(
+    ctx.evaluateExpression(args[1], ctx.solution),
+  );
   const d1 = new Date(date1);
   const d2 = new Date(date2);
   return (d2.getTime() - d1.getTime()) / (60 * 60 * 1000);
@@ -599,7 +710,9 @@ functionHandlers.set("hours_between", (args, ctx) => {
 
 // AGE_DAYS(dateTime) → integer: days from dateTime to NOW()
 functionHandlers.set("age_days", (args, ctx) => {
-  const dateStr = ctx.getStringValue(ctx.evaluateExpression(args[0], ctx.solution));
+  const dateStr = ctx.getStringValue(
+    ctx.evaluateExpression(args[0], ctx.solution),
+  );
   const d = new Date(dateStr);
   const now = new Date();
   return Math.floor((now.getTime() - d.getTime()) / (24 * 60 * 60 * 1000));
@@ -607,20 +720,28 @@ functionHandlers.set("age_days", (args, ctx) => {
 
 // WEEK_NUMBER(dateTime) → integer: ISO week number
 functionHandlers.set("week_number", (args, ctx) => {
-  const dateStr = ctx.getStringValue(ctx.evaluateExpression(args[0], ctx.solution));
+  const dateStr = ctx.getStringValue(
+    ctx.evaluateExpression(args[0], ctx.solution),
+  );
   const d = new Date(dateStr);
   // ISO 8601 week number calculation
   const tmp = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
   tmp.setUTCDate(tmp.getUTCDate() + 4 - (tmp.getUTCDay() || 7));
   const yearStart = new Date(Date.UTC(tmp.getUTCFullYear(), 0, 1));
-  return Math.ceil(((tmp.getTime() - yearStart.getTime()) / (24 * 60 * 60 * 1000) + 1) / 7);
+  return Math.ceil(
+    ((tmp.getTime() - yearStart.getTime()) / (24 * 60 * 60 * 1000) + 1) / 7,
+  );
 });
 
 // FORMAT_DATE(dateTime, pattern) → string: format date with pattern
 // Supported patterns: YYYY, MM, DD, HH, mm, ss
 functionHandlers.set("format_date", (args, ctx) => {
-  const dateStr = ctx.getStringValue(ctx.evaluateExpression(args[0], ctx.solution));
-  const pattern = ctx.getStringValue(ctx.evaluateExpression(args[1], ctx.solution));
+  const dateStr = ctx.getStringValue(
+    ctx.evaluateExpression(args[0], ctx.solution),
+  );
+  const pattern = ctx.getStringValue(
+    ctx.evaluateExpression(args[1], ctx.solution),
+  );
   const d = new Date(dateStr);
   return pattern
     .replace("YYYY", String(d.getFullYear()))
@@ -629,4 +750,24 @@ functionHandlers.set("format_date", (args, ctx) => {
     .replace("HH", String(d.getHours()).padStart(2, "0"))
     .replace("mm", String(d.getMinutes()).padStart(2, "0"))
     .replace("ss", String(d.getSeconds()).padStart(2, "0"));
+});
+
+// =============================================================================
+// exo:eval — RFC c78cc5c8 Phase 1a (PR2 inert)
+// =============================================================================
+//
+// Registered so the symbol exists in the SPARQL filter dispatcher (drift-guard
+// + visibility for downstream tooling), but the handler itself throws
+// `ExoQLEvalDisabledError` until PR3 (T4) flips `exoql.eval.enabled` and wires
+// the recursive engine through `evaluateWithExoEval`. Calling `exo:eval` from
+// a regular ExoQL.query path on PR2 surfaces the disabled-error so users see
+// an explicit signal instead of a silent no-op.
+functionHandlers.set("exo:eval", () => {
+  // Imported lazily to avoid a circular dependency between
+  // `infrastructure/sparql/filters` and `exoql/`.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { ExoQLEvalDisabledError } = require("../../../exoql/eval-errors") as {
+    ExoQLEvalDisabledError: new () => Error;
+  };
+  throw new ExoQLEvalDisabledError();
 });

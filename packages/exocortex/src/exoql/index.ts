@@ -1,5 +1,10 @@
 import type { ITripleStore } from "../interfaces/ITripleStore";
-import type { Triple, Subject, Predicate, Object as RDFObject } from "../domain/models/rdf/Triple";
+import type {
+  Triple,
+  Subject,
+  Predicate,
+  Object as RDFObject,
+} from "../domain/models/rdf/Triple";
 import { ExoQLParser } from "../infrastructure/sparql/SPARQLParser";
 import { ExoQLAlgebraTranslator } from "../infrastructure/sparql/algebra/AlgebraTranslator";
 import {
@@ -13,6 +18,21 @@ import type {
 } from "../infrastructure/sparql/algebra/AlgebraOperation";
 import { SourceAnnotator, SOURCE_VARIABLE } from "../services/SourceAnnotator";
 import { Literal } from "../domain/models/rdf/Literal";
+
+// RFC c78cc5c8 Phase 1a — exoql__Query + exo:eval MVP (PR2 inert surface).
+export {
+  evaluateWithExoEval,
+  type EvaluateWithExoEvalOptions,
+} from "./evaluateWithExoEval";
+export { validateExoQLAllowlist } from "./AllowlistValidator";
+export { DEFAULT_EVAL_CONFIG, type ExoQLEvalConfig } from "./eval-config";
+export {
+  ExoQLForbiddenKeywordError,
+  ExoQLEvalDisabledError,
+  ExoQLCycleError,
+  ExoQLBudgetExceededError,
+  type ExoQLBudgetKind,
+} from "./eval-errors";
 
 /**
  * ExoQL  public facade for executing SPARQL queries against a triple store.
