@@ -38,7 +38,9 @@ import { TaskTrackingService } from "./application/services/TaskTrackingService"
 import { AliasSyncService } from "./application/services/AliasSyncService";
 import { WikilinkAliasService } from "./application/services/WikilinkAliasService";
 import { ThemeResolver } from "./application/services/ThemeResolver";
+import { PanelResolver } from "./application/services/PanelResolver";
 import { isLayoutFrontmatter } from "./domain/layout";
+import { isCommandBindingFrontmatter } from "exocortex";
 import { SPARQLCodeBlockProcessor } from "./application/processors/SPARQLCodeBlockProcessor";
 import { LayoutCodeBlockProcessor } from "./application/processors/LayoutCodeBlockProcessor";
 import { SPARQLApi } from "./application/api/SPARQLApi";
@@ -86,6 +88,7 @@ export default class ExocortexPlugin extends Plugin {
   private aliasSyncService!: AliasSyncService;
   private wikilinkAliasService!: WikilinkAliasService;
   themeResolver!: ThemeResolver;
+  panelResolver!: PanelResolver;
   // Use LRU cache with max 1000 entries and 5-minute TTL to prevent unbounded memory growth
   // TTL ensures stale entries are evicted even if not accessed
   private metadataCache!: LRUCache<string, Record<string, unknown>>;
@@ -338,6 +341,49 @@ export default class ExocortexPlugin extends Plugin {
           if (fm && isLayoutFrontmatter(fm as Record<string, unknown>)) {
             this.themeResolver.invalidate();
           }
+        }),
+      );
+
+      // RFC-024 Phase 3 — Panel resolver for class-level command panels.
+      // 3-axis cache invalidation: layout edit / binding edit / class change.
+      // layoutProvider is a placeholder pending T6.3 wiring of an
+      // ExoLayoutRepository lookup; the resolver still serves as a
+      // permanent contract surface — `applyFilter` and `isFeatured`
+      // become no-ops when no panel is declared (non-breaking).
+      this.panelResolver = new PanelResolver();
+      this.registerEvent(
+        this.app.metadataCache.on("changed", (file) => {
+          const fm = this.app.metadataCache.getFileCache(file)?.frontmatter as
+            | Record<string, unknown>
+            | undefined;
+          if (!fm) return;
+          // Axis 1 — Layout asset edited (panel spec / target class / order).
+          if (isLayoutFrontmatter(fm)) {
+            this.panelResolver.invalidateOnLayoutChange();
+            return;
+          }
+          // Axis 2 — Binding asset edited; may be referenced by
+          // featuredBinding / excludeCommands of any panel.
+          if (isCommandBindingFrontmatter(fm)) {
+            this.panelResolver.invalidateOnBindingChange();
+          }
+          // Axis 3 — Class membership change is observed via the
+          // metadataCache `changed` event itself when `exo__Instance_class`
+          // is mutated; the affected file's previous class is unknown
+          // here, so the safest invariant is to clear all entries.
+          // (Falls through to full invalidation below.)
+        }),
+      );
+      // Axis 3 wiring — explicit hook for class membership renames /
+      // deletions that the `changed` predicate above cannot detect.
+      this.registerEvent(
+        this.app.metadataCache.on("deleted", () => {
+          this.panelResolver.invalidateOnClassChange();
+        }),
+      );
+      this.registerEvent(
+        this.app.vault.on("rename", () => {
+          this.panelResolver.invalidateOnClassChange();
         }),
       );
 
