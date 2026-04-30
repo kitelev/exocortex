@@ -39,7 +39,10 @@ import { AliasSyncService } from "./application/services/AliasSyncService";
 import { WikilinkAliasService } from "./application/services/WikilinkAliasService";
 import { ThemeResolver } from "./application/services/ThemeResolver";
 import { PanelResolver } from "./application/services/PanelResolver";
-import { isLayoutFrontmatter } from "./domain/layout";
+import {
+  createCommandPanelFromFrontmatter,
+  isLayoutFrontmatter,
+} from "./domain/layout";
 import { isCommandBindingFrontmatter } from "exocortex";
 import { SPARQLCodeBlockProcessor } from "./application/processors/SPARQLCodeBlockProcessor";
 import { LayoutCodeBlockProcessor } from "./application/processors/LayoutCodeBlockProcessor";
@@ -306,7 +309,51 @@ export default class ExocortexPlugin extends Plugin {
       // UniversalLayoutRenderer (and through it, ButtonGroupsBuilder /
       // DynamicCommandButtonGroupBuilder) shares the same instance with
       // the metadata-cache invalidation hooks wired further below.
-      this.panelResolver = new PanelResolver();
+      //
+      // T6.4 — `layoutProvider` scans vault metadata for the `exo__Layout`
+      // asset whose `targetClass` matches the requested class reference and
+      // returns its parsed `commandPanel` slot. Multiple matches are
+      // resolved by `exo__Layout_priority` ASC (RFC-024 §5 rule #1).
+      // Result is memoised by PanelResolver per class until a layout /
+      // binding / class-membership change invalidates the entry, so the
+      // O(N markdown files) scan runs at most once per class until vault
+      // state shifts. Only the `commandPanel` slot is extracted (other
+      // Layout fields require async block resolution and are out of scope
+      // for the panel resolver).
+      this.panelResolver = new PanelResolver({
+        layoutProvider: (classRef) => {
+          const files = this.app.vault.getMarkdownFiles();
+          let bestPanel: ReturnType<typeof createCommandPanelFromFrontmatter> =
+            null;
+          let bestPriority = Number.POSITIVE_INFINITY;
+          for (const file of files) {
+            const fm = this.app.metadataCache.getFileCache(file)
+              ?.frontmatter as Record<string, unknown> | undefined;
+            if (!fm || !isLayoutFrontmatter(fm)) continue;
+            const targetRaw = fm["exo__Layout_targetClass"];
+            if (typeof targetRaw !== "string") continue;
+            const target = targetRaw
+              .trim()
+              .replace(/^\[\[|\]\]$/g, "")
+              .split("|")[0]
+              .trim();
+            if (target !== classRef) continue;
+            const priorityRaw = fm["exo__Layout_priority"];
+            const priority =
+              typeof priorityRaw === "number" && Number.isFinite(priorityRaw)
+                ? priorityRaw
+                : 0;
+            if (priority >= bestPriority) continue;
+            const panel = createCommandPanelFromFrontmatter(
+              fm["exo__Layout_commandPanel"],
+            );
+            if (panel === null) continue;
+            bestPanel = panel;
+            bestPriority = priority;
+          }
+          return bestPanel === null ? null : { commandPanel: bestPanel };
+        },
+      });
 
       this.layoutRenderer = new UniversalLayoutRenderer(
         this.app,
