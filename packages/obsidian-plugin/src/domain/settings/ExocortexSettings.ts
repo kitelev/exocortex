@@ -115,6 +115,13 @@ export interface ExocortexSettings {
    * authors a Layout.
    */
   enableExoLayoutRenderer: boolean;
+  /**
+   * RFC-024 Phase 4 — render Lucide icons next to File Explorer rows whose
+   * frontmatter declares `exo__Instance_class` and whose resolved
+   * `exo__Layout_icon` is non-null. DOM overlay pattern (sibling to
+   * `FileExplorerLabelPatch`). Set to `false` to opt out.
+   */
+  showIconsInFileExplorer: boolean;
   [key: string]: unknown;
 }
 
@@ -137,4 +144,5 @@ export const DEFAULT_SETTINGS: ExocortexSettings = {
   autoReadingModeForExocortexAssets: true,
   enableRelationColumnSetResolver: true,
   enableExoLayoutRenderer: true,
+  showIconsInFileExplorer: true,
 };
