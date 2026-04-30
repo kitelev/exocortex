@@ -214,7 +214,8 @@ describe("ExocortexPlugin", () => {
       // 10 - 4 semantic search file events (create, modify, delete, rename) = 6
       // + 1 PrintNameRuleService refresh + 1 ThemeResolver invalidation (RFC-024 Phase 1) = 8
       // + 3 PanelResolver invalidations (RFC-024 Phase 3 — layout/binding `changed`, `deleted`, vault `rename`) = 11
-      expect(plugin.registerEvent).toHaveBeenCalledTimes(11);
+      // + 3 ObsidianQueryBodyResolver cache invalidations (RFC c78cc5c8 Phase 1a — metadata `changed`, vault `delete`, vault `rename`) = 14
+      expect(plugin.registerEvent).toHaveBeenCalledTimes(14);
       expect(mockLogger.info).toHaveBeenCalledWith("Exocortex Plugin loaded successfully");
     });
 

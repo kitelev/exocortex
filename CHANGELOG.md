@@ -2,6 +2,16 @@
 
 ### Added
 
+**exoql:eval default ON + IQueryBodyResolver (RFC c78cc5c8 Phase 1a, PR3 / T4–T6)**: The `exoql__Query` + `exo:eval` MVP pipeline is now active. Preconditions can reference an `exoql__Query` asset by UID (`exocmd__Precondition_query`) instead of inlining the SPARQL string in frontmatter — preserving the M2 invariant that the query body lives only in the markdown ```sparql code-block.
+
+- `DEFAULT_EVAL_CONFIG.enabled` flipped from `false` to `true`
+- `IQueryBodyResolver` interface published from `@exocortex` (resolves a UID → SPARQL body)
+- `ObsidianQueryBodyResolver` plugin implementation (vault scan + cached UID→path index, invalidated on metadata/rename/delete events)
+- `PreconditionEvaluator` constructor accepts the resolver; new `evaluateQueryRef` path routes through `evaluateWithExoEval` (allowlist + flag + executor) and fails closed on missing/unresolvable bodies
+- 7 new unit tests covering the query path (body match / `ASK {}` trivial / null resolver / throw / no-resolver / kind mismatch / sparqlAsk-priority)
+
+Rollback procedure: `docs/ROLLBACK_EXOQL_EVAL.md`. T7 (CI drift-guard + scoped E2E) deferred per M1 — see follow-up issue.
+
 **`create_instance` Grounding Type for Declarative File Creation (RFC-016 Blocker 2)**: A new grounding type that allows plugin commands to declaratively create new Exocortex asset files. This enables ontology plugins to define "create new instance" actions without writing imperative code.
 
 - `GroundingType.CREATE_INSTANCE` enum value with `targetClass`, `targetPrototype`, `targetFolder` fields

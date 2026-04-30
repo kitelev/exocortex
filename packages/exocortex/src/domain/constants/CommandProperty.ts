@@ -26,6 +26,8 @@ export const CommandProperty = {
 export const PreconditionProperty = {
   /** SPARQL ASK query that determines command visibility */
   SPARQL_ASK: "exocmd__Precondition_sparqlAsk",
+  /** Reference (wikilink) to an exoql__Query asset (RFC c78cc5c8 Phase 1a) */
+  QUERY: "exocmd__Precondition_query",
 } as const;
 
 /** Properties for exocmd__Grounding assets */
