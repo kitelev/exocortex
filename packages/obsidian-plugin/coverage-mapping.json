@@ -1,0 +1,39 @@
+{
+  "exoql-eval.feature": {
+    "exo:eval happy path returns rows from a referenced exoql__Query": {
+      "tests": [
+        "packages/obsidian-plugin/tests/unit/exoql/exoql-eval-stubs.test.ts::happy path"
+      ],
+      "status": "covered",
+      "note": "PR1 — pending; tracked by it.failing() stub in exoql-eval-stubs.test.ts; PR2/PR3 flip to it()."
+    },
+    "parser rejects forbidden SPARQL keywords on parse-stage (AST allowlist)": {
+      "tests": [
+        "packages/obsidian-plugin/tests/unit/exoql/exoql-eval-stubs.test.ts::parser rejection (SERVICE/FROM/LOAD/UPDATE)"
+      ],
+      "status": "covered",
+      "note": "PR1 — pending; tracked by it.failing() stub; PR2 implements AST allowlist parser."
+    },
+    "cycle detection terminates eval(A)→eval(B)→eval(A)": {
+      "tests": [
+        "packages/obsidian-plugin/tests/unit/exoql/exoql-eval-stubs.test.ts::cycle detection"
+      ],
+      "status": "covered",
+      "note": "PR1 — pending; tracked by it.failing() stub; PR2 implements cycle detection."
+    },
+    "global eval-budget rejects nested>100 invocations per top-level query": {
+      "tests": [
+        "packages/obsidian-plugin/tests/unit/exoql/exoql-eval-stubs.test.ts::nested-eval-count budget"
+      ],
+      "status": "covered",
+      "note": "PR1 — pending; tracked by it.failing() stub; PR2 implements eval-budget."
+    },
+    "global eval-budget rejects aggregate runtime > 10 seconds per top-level query": {
+      "tests": [
+        "packages/obsidian-plugin/tests/unit/exoql/exoql-eval-stubs.test.ts::aggregate-eval-millis budget"
+      ],
+      "status": "covered",
+      "note": "PR1 — pending; tracked by it.failing() stub; PR2 implements eval-budget."
+    }
+  }
+}
