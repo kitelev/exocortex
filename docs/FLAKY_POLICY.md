@@ -4,6 +4,12 @@ This policy governs how the Exocortex CI pipeline detects, reports, and
 gates on flaky tests. It is the operational realisation of RFC
 `3cc77ba2-2ef7-4677-a198-ab490d6461f6` v2, §Phase 1.3.
 
+> **Continuous measurement** of the policy outcomes (rerun rate, top
+> offenders, per-shard breakdown) is provided by the Phase 3.4 flaky
+> dashboard — see
+> [`packages/obsidian-plugin/docs/phase3/PHASE3_DASHBOARD_README.md`](../packages/obsidian-plugin/docs/phase3/PHASE3_DASHBOARD_README.md)
+> for architecture, data flow, and operating runbook.
+
 ## Definitions
 
 | Term | Definition |
