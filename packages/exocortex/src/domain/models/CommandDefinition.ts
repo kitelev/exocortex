@@ -61,6 +61,12 @@ export interface PreconditionDefinition {
   readonly sparqlAsk?: string;
   /** Host function name (evaluated via registered TypeScript function) */
   readonly hostFunction?: string;
+  /**
+   * Reference (UID) of an `exoql__Query` asset whose body holds an ASK SPARQL
+   * block (RFC c78cc5c8 Phase 1a). Evaluated through the `evaluateWithExoEval`
+   * pipeline (allowlist + flag + executor). Mutually exclusive with `sparqlAsk`.
+   */
+  readonly query?: string;
 }
 
 /**

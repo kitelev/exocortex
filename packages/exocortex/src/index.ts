@@ -361,6 +361,7 @@ export {
 
 // DI Interfaces exports
 export type { ILogger } from "./interfaces/ILogger";
+export type { IQueryBodyResolver } from "./interfaces/IQueryBodyResolver";
 export type { IEventBus } from "./interfaces/IEventBus";
 export type { IConfiguration } from "./interfaces/IConfiguration";
 export type { IVaultSettings } from "./interfaces/IVaultSettings";

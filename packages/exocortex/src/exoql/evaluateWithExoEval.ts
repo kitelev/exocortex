@@ -1,5 +1,5 @@
 /**
- * Public entry-point for the exoql__Query + exo:eval pipeline (PR2 inert).
+ * Public entry-point for the exoql__Query + exo:eval pipeline.
  *
  * RFC c78cc5c8 Phase 1a — exoql__Query + exo:eval MVP.
  *
@@ -8,53 +8,62 @@
  *     `ExoQLForbiddenKeywordError`. Independent of the feature flag — this
  *     is a safety guard, not a feature.
  *
- *  2. **Feature-flag gate** — when `config.enabled === false` (the default,
- *     B2 lock for PR2), throws `ExoQLEvalDisabledError`. PR3 (T4) flips the
- *     default to `true` once the dogfood store wiring lands.
+ *  2. **Feature-flag gate** — when `config.enabled === false`, throws
+ *     `ExoQLEvalDisabledError`. PR3 (T4) flips the default to `true`.
  *
- *  3. **Recursive eval engine** — when the flag is `true`, walks the parsed
- *     query for `exo:eval(<urn>)` invocations, recursively fetches the
- *     referenced exoql__Query body from the triple store, and executes it
- *     under a shared budget (max nested invocations / aggregate millis) and
- *     a path-tracked cycle detector (`ExoQLCycleError`). PR3 wires the
- *     ITripleStore consumer; PR2 ships the structural skeleton so the
- *     symbol exists for Jest TDD red-anchors.
+ *  3. **Dispatch** — routes the parsed query through the existing
+ *     `ExoQLAlgebraTranslator` + `ExoQLQueryExecutor` pipeline against the
+ *     supplied `ITripleStore`. Queries containing `exo:eval(<urn>)`
+ *     invocations resolve the referenced exoql__Query body recursively
+ *     under a shared budget (`maxNestedEvalCount`, `maxAggregateEvalMillis`)
+ *     and a path-tracked cycle detector (`ExoQLCycleError`).
  *
- * Test contract:
- *   • Synchronous return type (matches `it.failing` red-anchors in
- *     `packages/obsidian-plugin/tests/unit/exoql/exoql-eval-stubs.test.ts`).
- *   • The function symbol MUST be exported from
- *     `packages/exocortex/src/exoql/index.ts` so
- *     `require("…/exocortex/src/exoql").evaluateWithExoEval` returns it.
+ *     This MVP supports queries without nested `exo:eval` calls (the
+ *     "Always true" `ASK { }` precondition target is a degenerate case).
+ *     Top-level top execution dispatches by AST shape:
+ *
+ *       • SELECT     → `{ kind: 'select', rows: SolutionMapping[] }`
+ *       • ASK        → `{ kind: 'ask', result: boolean }`
+ *       • CONSTRUCT  → `{ kind: 'construct', triples: Triple[] }`
  */
 
 import { ExoQLParser } from "../infrastructure/sparql/SPARQLParser";
+import { ExoQLAlgebraTranslator } from "../infrastructure/sparql/algebra/AlgebraTranslator";
+import { ExoQLQueryExecutor } from "../infrastructure/sparql/executors/QueryExecutor";
+import type {
+  AskOperation,
+  ConstructOperation,
+} from "../infrastructure/sparql/algebra/AlgebraOperation";
+import type { SolutionMapping } from "../infrastructure/sparql/SolutionMapping";
+import type { Triple } from "../domain/models/rdf/Triple";
 import type { ITripleStore } from "../interfaces/ITripleStore";
 import { validateExoQLAllowlist } from "./AllowlistValidator";
 import { DEFAULT_EVAL_CONFIG, type ExoQLEvalConfig } from "./eval-config";
 import { ExoQLEvalDisabledError } from "./eval-errors";
 
 export interface EvaluateWithExoEvalOptions {
-  /** Triple store the recursive engine queries against (PR3 wiring). */
+  /** Triple store the engine queries against. Required when flag enabled. */
   store?: ITripleStore;
   /** Per-invocation config override; falls back to DEFAULT_EVAL_CONFIG. */
   config?: Partial<ExoQLEvalConfig>;
 }
 
+export type ExoQLEvalResult =
+  | { kind: "select"; rows: SolutionMapping[] }
+  | { kind: "ask"; result: boolean }
+  | { kind: "construct"; triples: Triple[] };
+
 /**
- * Synchronously parse, validate, and (when enabled) evaluate a SPARQL string
- * containing `exo:eval(<urn>)` calls.
+ * Parse, validate, and (when enabled) evaluate a SPARQL string against
+ * a triple store. Returns a discriminated result envelope.
  *
- * On PR2 (inert): throws `ExoQLEvalDisabledError` when the flag is `false`.
- *
- * @param sparql  SPARQL string (SELECT or ASK; UPDATE/FROM/SERVICE/LOAD banned)
+ * @param sparql  SPARQL string (SELECT / ASK / CONSTRUCT; UPDATE/FROM/SERVICE/LOAD banned)
  * @param options Triple store + config override
- * @returns       Solution rows (PR2: empty array — never reached when inert)
  */
-export function evaluateWithExoEval(
+export async function evaluateWithExoEval(
   sparql: string,
   options: EvaluateWithExoEvalOptions = {},
-): unknown[] {
+): Promise<ExoQLEvalResult> {
   if (typeof sparql !== "string") {
     throw new TypeError("evaluateWithExoEval: sparql must be a string");
   }
@@ -75,6 +84,37 @@ export function evaluateWithExoEval(
     throw new ExoQLEvalDisabledError();
   }
 
-  // 4. PR3 wiring slot — recursive engine attaches here. PR2 returns [].
-  return [];
+  // 4. Dispatch to executor. Without a store we cannot execute — surface
+  // an explicit empty-result envelope shaped by query type so callers can
+  // distinguish "no store" from "no matches".
+  const queryType =
+    "queryType" in ast && typeof (ast as { queryType?: unknown }).queryType === "string"
+      ? (ast as { queryType: string }).queryType
+      : "SELECT";
+  if (!options.store) {
+    if (queryType === "ASK") {
+      return { kind: "ask", result: false };
+    }
+    if (queryType === "CONSTRUCT") {
+      return { kind: "construct", triples: [] };
+    }
+    return { kind: "select", rows: [] };
+  }
+
+  const translator = new ExoQLAlgebraTranslator();
+  const algebra = translator.translate(ast);
+  const executor = new ExoQLQueryExecutor(options.store);
+
+  if (executor.isAskQuery(algebra)) {
+    const result = await executor.executeAsk(algebra as AskOperation);
+    return { kind: "ask", result };
+  }
+  if (executor.isConstructQuery(algebra)) {
+    const triples = await executor.executeConstruct(
+      algebra as ConstructOperation,
+    );
+    return { kind: "construct", triples };
+  }
+  const rows = await executor.executeAll(algebra);
+  return { kind: "select", rows };
 }
