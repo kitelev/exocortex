@@ -28,6 +28,13 @@ export default defineConfig({
     ["list"],
     ...(process.env.CI ? [["github", {}] as ["github", {}]] : []),
     ["./playwright-no-flaky-reporter.ts"],
+    // RFC Phase 3 / T2.2 — surface per-shard retry counts to the GitHub
+    // Actions job summary so retries are visible at PR-check level instead
+    // of buried in raw logs. Pure observability; never fails the run.
+    [
+      "./playwright-retry-summary-reporter.ts",
+      { outputDir: "test-results" },
+    ],
     // RFC 3cc77ba2 Phase 2.2 step 1 — data-flake detector (Category F).
     // Warn-only: snapshots tests/e2e/test-vault/ before/after each test and writes
     // test-results/fixture-drift.json for CI artifact pickup. Never fails the run.

@@ -2,7 +2,8 @@ import { test, expect } from "@playwright/test";
 import { ObsidianLauncher } from "../utils/obsidian-launcher";
 import * as path from "path";
 
-test.describe.configure({ mode: "parallel" });
+// RFC Phase 3.2 (T2.1): per-spec retry(1) — Cat G environmental noise on Xvfb runner.
+test.describe.configure({ mode: "parallel", retries: 1 });
 
 test.describe("Daily Note Navigation", () => {
   let launcher: ObsidianLauncher;

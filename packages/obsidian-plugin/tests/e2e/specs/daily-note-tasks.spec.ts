@@ -2,7 +2,8 @@ import { test, expect } from "@playwright/test";
 import { ObsidianLauncher } from "../utils/obsidian-launcher";
 import * as path from "path";
 
-test.describe.configure({ mode: "parallel" });
+// RFC Phase 3.2 (T2.1): per-spec retry(1) — top T0.2 offender (rank #2, Cat I time-dependent).
+test.describe.configure({ mode: "parallel", retries: 1 });
 
 test.describe("DailyNote Tasks Table", () => {
   let launcher: ObsidianLauncher;
