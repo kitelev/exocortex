@@ -18,6 +18,7 @@ import {
   createButtonGroupIfVisible,
   DynamicCommandButtonGroupBuilder,
 } from "./button-groups";
+import { PanelResolver } from "@plugin/application/services/PanelResolver";
 import { ObsidianApp, ExocortexPluginInterface } from '@plugin/types';
 
 /**
@@ -47,6 +48,12 @@ export interface ButtonGroupsBuilderConfig {
   refresh: () => Promise<void>;
   /** Notification service for user feedback */
   notificationService?: INotificationService;
+  /**
+   * RFC-024 Phase 3 panel resolver. Optional — when omitted the dynamic
+   * builder constructs a default no-op resolver so existing wiring keeps
+   * working until the layout-provider lookup is wired up.
+   */
+  panelResolver?: PanelResolver;
 }
 
 /**
@@ -78,6 +85,7 @@ export class ButtonGroupsBuilder {
       logger,
       refresh,
       notificationService,
+      panelResolver,
     } = config;
 
     this.app = app;
@@ -97,6 +105,7 @@ export class ButtonGroupsBuilder {
           preconditionEvaluator,
           groundingExecutor,
           notificationService,
+          panelResolver,
         }),
       );
     }

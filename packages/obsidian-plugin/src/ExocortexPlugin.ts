@@ -302,6 +302,12 @@ export default class ExocortexPlugin extends Plugin {
         },
       });
 
+      // RFC-024 Phase 3 — PanelResolver constructed early so that
+      // UniversalLayoutRenderer (and through it, ButtonGroupsBuilder /
+      // DynamicCommandButtonGroupBuilder) shares the same instance with
+      // the metadata-cache invalidation hooks wired further below.
+      this.panelResolver = new PanelResolver();
+
       this.layoutRenderer = new UniversalLayoutRenderer(
         this.app,
         this.settings,
@@ -315,6 +321,7 @@ export default class ExocortexPlugin extends Plugin {
           relationColumnSetResolver: this.relationColumnSetResolver,
           exoLayoutRepository: this.exoLayoutRepository,
           layoutSelector: this.layoutSelector,
+          panelResolver: this.panelResolver,
         },
       );
       this.taskStatusService = container.resolve(TaskStatusService);
@@ -346,13 +353,12 @@ export default class ExocortexPlugin extends Plugin {
         }),
       );
 
-      // RFC-024 Phase 3 — Panel resolver for class-level command panels.
-      // 3-axis cache invalidation: layout edit / binding edit / class change.
-      // layoutProvider is a placeholder pending T6.3 wiring of an
-      // ExoLayoutRepository lookup; the resolver still serves as a
-      // permanent contract surface — `applyFilter` and `isFeatured`
-      // become no-ops when no panel is declared (non-breaking).
-      this.panelResolver = new PanelResolver();
+      // RFC-024 Phase 3 — Panel resolver invalidation hooks (3 axes:
+      // layout edit / binding edit / class change). The instance itself
+      // is created earlier so the layout renderer can share it. The
+      // `layoutProvider` is still a placeholder — wiring it to the
+      // ExoLayoutRepository lookup is tracked separately; until then
+      // `applyFilter` and `isFeatured` are non-breaking no-ops.
       this.registerEvent(
         this.app.metadataCache.on("changed", (file) => {
           const fm = this.app.metadataCache.getFileCache(file)?.frontmatter as
