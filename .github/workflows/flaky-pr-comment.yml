@@ -1,0 +1,143 @@
+name: Flaky PR Comment Widget
+
+# RFC Phase 3.4 / T4.3 — после squash-merge в main комментирует исходный PR
+# с rolling rerun-rate snapshot (current 30 vs prior 30, top-3 offenders).
+# Sticky comment: один пер PR, edit-in-place при повторных запусках.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "PR number to comment on (overrides commit auto-resolution)"
+        required: false
+      window:
+        description: "Rolling window size per cohort"
+        required: false
+        default: "30"
+      dry_run:
+        description: "Skip artifact downloads (smoke test)"
+        required: false
+        default: "false"
+
+permissions:
+  contents: read
+  pull-requests: write
+  actions: read
+
+concurrency:
+  # One widget update per PR/main commit at a time. We don't cancel — every
+  # merge deserves its sticky update.
+  group: flaky-pr-comment-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  comment:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+
+      - name: Install root deps (tsx)
+        run: npm ci --no-audit --no-fund
+
+      - name: Resolve PR number
+        id: resolve
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_PR: ${{ inputs.pr }}
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          PR=""
+          if [ -n "${INPUT_PR:-}" ]; then
+            PR="$INPUT_PR"
+          else
+            # First try `(#N)` extraction from squash-merge subject (cheap).
+            PR="$(printf '%s' "$COMMIT_MSG" | grep -oE '\(#[0-9]+\)' | tail -n1 | tr -d '(#)')" || true
+            # Fallback: ask GH which PR contains this commit.
+            if [ -z "$PR" ]; then
+              PR="$(gh api "repos/${{ github.repository }}/commits/${COMMIT_SHA}/pulls" --jq '.[0].number' 2>/dev/null || true)"
+            fi
+          fi
+          if [ -z "$PR" ] || [ "$PR" = "null" ]; then
+            echo "pr=" >> "$GITHUB_OUTPUT"
+            echo "No PR resolved for commit ${COMMIT_SHA} — exiting cleanly."
+          else
+            echo "pr=$PR" >> "$GITHUB_OUTPUT"
+            echo "Resolved PR=#$PR"
+          fi
+
+      - name: Build widget body
+        if: steps.resolve.outputs.pr != ''
+        id: build
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          WINDOW="${{ inputs.window || '30' }}"
+          DRY_RUN_FLAG=""
+          if [ "${{ inputs.dry_run || 'false' }}" = "true" ]; then
+            DRY_RUN_FLAG="--dry-run"
+          fi
+          mkdir -p artifacts/flaky-pr-comment
+          npx tsx packages/obsidian-plugin/scripts/flaky-pr-comment.ts \
+            --repo "${{ github.repository }}" \
+            --workflow ci.yml \
+            --branch main \
+            --window "$WINDOW" \
+            --top 3 \
+            --pr "${{ steps.resolve.outputs.pr }}" \
+            --output artifacts/flaky-pr-comment/body.md \
+            $DRY_RUN_FLAG
+          echo "body_path=artifacts/flaky-pr-comment/body.md" >> "$GITHUB_OUTPUT"
+
+      - name: Post or update sticky comment
+        if: steps.resolve.outputs.pr != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ steps.resolve.outputs.pr }}
+          BODY_PATH: ${{ steps.build.outputs.body_path }}
+        run: |
+          set -euo pipefail
+          MARKER='<!-- exocortex-flaky-widget:v1 -->'
+          # Find existing sticky widget comment (by marker prefix). Pagination
+          # is required because long-lived PRs accumulate many comments.
+          EXISTING="$(gh api \
+            "repos/${{ github.repository }}/issues/${PR}/comments" \
+            --paginate \
+            --jq "[.[] | select(.body | startswith(\"${MARKER}\"))] | first | .id // empty")"
+
+          # Build payload safely via jq (handles newlines, quotes, backticks).
+          PAYLOAD="$(jq -n --rawfile body "${BODY_PATH}" '{body: $body}')"
+
+          if [ -n "${EXISTING:-}" ]; then
+            echo "Updating sticky comment id=${EXISTING} on PR #${PR}."
+            echo "$PAYLOAD" | gh api \
+              "repos/${{ github.repository }}/issues/comments/${EXISTING}" \
+              -X PATCH --input -
+          else
+            echo "Creating new sticky comment on PR #${PR}."
+            echo "$PAYLOAD" | gh api \
+              "repos/${{ github.repository }}/issues/${PR}/comments" \
+              -X POST --input -
+          fi
+
+      - name: Upload widget body artifact
+        if: always() && steps.resolve.outputs.pr != ''
+        uses: actions/upload-artifact@v6
+        with:
+          name: flaky-pr-comment-body
+          path: artifacts/flaky-pr-comment/body.md
+          retention-days: 30
+          if-no-files-found: warn
