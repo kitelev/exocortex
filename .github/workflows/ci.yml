@@ -905,9 +905,34 @@ jobs:
             -v $PWD/blob-report:/app/packages/obsidian-plugin/blob-report \
             -v $PWD/plugin-wait-ms:/app/plugin-wait-ms \
             -e CI=true \
+            -e SHARD_LABEL=${{ matrix.shard }} \
             -e PLUGIN_WAIT_MS_LOG=/app/plugin-wait-ms/shard-${{ matrix.shard }}.jsonl \
             -e FIXTURE_DRIFT_OUTPUT=/app/test-results/fixture-drift.json \
             exocortex-e2e npx playwright test -c packages/obsidian-plugin/playwright.shard-${{ matrix.shard }}.config.ts
+
+      # RFC Phase 3 / T2.2 — surface per-shard retry count to job summary.
+      # Reporter writes retry-summary.{md,json} inside the container at
+      # /app/test-results, which is mounted to ./test-results-e2e on the host.
+      # We always run this step so the summary is visible even when the test
+      # step failed (retries exhausted).
+      - name: Append retry summary to job summary (shard ${{ matrix.shard }})
+        if: always() && env.RUN_E2E == 'true'
+        run: |
+          SUMMARY="test-results-e2e/retry-summary.md"
+          if [ -f "$SUMMARY" ]; then
+            cat "$SUMMARY" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "_No retry-summary.md emitted by shard ${{ matrix.shard }} (reporter did not run)._" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload retry-summary JSON for shard ${{ matrix.shard }}
+        if: always() && env.RUN_E2E == 'true'
+        uses: actions/upload-artifact@v6
+        with:
+          name: retry-summary-shard-${{ matrix.shard }}
+          path: test-results-e2e/retry-summary.json
+          retention-days: 7
+          if-no-files-found: ignore
 
       - name: Upload blob report for shard ${{ matrix.shard }}
         if: always() && env.RUN_E2E == 'true'
@@ -1039,6 +1064,66 @@ jobs:
         run: |
           npx playwright merge-reports --reporter html ./all-blob-reports
         continue-on-error: true
+
+      # RFC Phase 3 / T2.2 — aggregate retry counts across shards into a
+      # single PR-level "this PR's e2e was retried: <count>" annotation.
+      - name: Download retry-summary artifacts
+        if: always() && env.RUN_E2E == 'true'
+        uses: actions/download-artifact@v7
+        with:
+          pattern: retry-summary-shard-*
+          path: all-retry-summaries
+          merge-multiple: false
+
+      - name: Aggregate retry summary across shards
+        if: always() && env.RUN_E2E == 'true'
+        run: |
+          set -euo pipefail
+          ROOT="all-retry-summaries"
+          if [ ! -d "$ROOT" ]; then
+            echo "_No retry-summary artifacts downloaded._" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          mapfile -t FILES < <(find "$ROOT" -name retry-summary.json -print | sort)
+          if [ "${#FILES[@]}" -eq 0 ]; then
+            echo "_No retry-summary.json files found across shards._" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          TOTAL_TESTS=0
+          TOTAL_RETRIES=0
+          TOTAL_RETRIED_SPECS=0
+          TOTAL_FLAKY_PASSED=0
+          TOTAL_FAILED_AFTER_RETRY=0
+          for f in "${FILES[@]}"; do
+            T=$(jq -r '.totalTests // 0' "$f")
+            R=$(jq -r '.totalRetries // 0' "$f")
+            S=$(jq -r '(.entries // []) | length' "$f")
+            FP=$(jq -r '.flakyPassed // 0' "$f")
+            FA=$(jq -r '.failedAfterRetry // 0' "$f")
+            TOTAL_TESTS=$((TOTAL_TESTS + T))
+            TOTAL_RETRIES=$((TOTAL_RETRIES + R))
+            TOTAL_RETRIED_SPECS=$((TOTAL_RETRIED_SPECS + S))
+            TOTAL_FLAKY_PASSED=$((TOTAL_FLAKY_PASSED + FP))
+            TOTAL_FAILED_AFTER_RETRY=$((TOTAL_FAILED_AFTER_RETRY + FA))
+          done
+          {
+            echo ""
+            echo "## E2E retry summary — aggregated across shards"
+            echo ""
+            echo "**This PR's e2e was retried: ${TOTAL_RETRIES} time(s) across ${TOTAL_RETRIED_SPECS} spec(s).**"
+            echo ""
+            echo "- Total tests executed: **${TOTAL_TESTS}**"
+            echo "- Specs that retried at least once: **${TOTAL_RETRIED_SPECS}**"
+            echo "- Total retries: **${TOTAL_RETRIES}**"
+            echo "- Flaky-passed (passed after retry): **${TOTAL_FLAKY_PASSED}**"
+            echo "- Failed after retry: **${TOTAL_FAILED_AFTER_RETRY}**"
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$TOTAL_RETRIES" -gt 0 ]; then
+            echo "::notice::E2E retry count for this run = ${TOTAL_RETRIES} (across ${TOTAL_RETRIED_SPECS} spec(s))"
+          else
+            echo "::notice::E2E retry count for this run = 0"
+          fi
 
       - name: Upload merged E2E test report
         if: env.RUN_E2E == 'true'
