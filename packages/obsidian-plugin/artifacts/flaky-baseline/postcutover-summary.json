@@ -1,0 +1,79 @@
+{
+  "cohort_dir": "packages/obsidian-plugin/artifacts/flaky-baseline/raw",
+  "total_runs_with_artifacts": 41,
+  "runs_success": 28,
+  "runs_failure": 13,
+  "runs_cancelled": 0,
+  "success_rate_pct": 68.29,
+  "failure_rate_pct": 31.71,
+  "total_flaky_test_instances": 0,
+  "total_test_instances": 333055,
+  "flaky_per_run_avg": 0.0,
+  "by_event": {
+    "pull_request": {
+      "total": 27,
+      "success": 19,
+      "failure": 8,
+      "cancelled": 0
+    },
+    "push": {
+      "total": 14,
+      "success": 9,
+      "failure": 5,
+      "cancelled": 0
+    }
+  },
+  "per_shard": {
+    "flaky-report-shard-1": {
+      "runs": 33,
+      "totalFlaky": 0,
+      "totalTests": 28596
+    },
+    "flaky-report-shard-3": {
+      "runs": 23,
+      "totalFlaky": 0,
+      "totalTests": 17829
+    },
+    "flaky-report-shard-4": {
+      "runs": 31,
+      "totalFlaky": 0,
+      "totalTests": 24756
+    },
+    "flaky-report-shard-6": {
+      "runs": 23,
+      "totalFlaky": 0,
+      "totalTests": 16997
+    },
+    "flaky-test-report-unit": {
+      "runs": 39,
+      "totalFlaky": 0,
+      "totalTests": 176124
+    },
+    "flaky-test-report-component": {
+      "runs": 41,
+      "totalFlaky": 0,
+      "totalTests": 23370
+    },
+    "flaky-report-shard-2": {
+      "runs": 29,
+      "totalFlaky": 0,
+      "totalTests": 23512
+    },
+    "flaky-report-shard-5": {
+      "runs": 24,
+      "totalFlaky": 0,
+      "totalTests": 21871
+    }
+  },
+  "artifact_collection_counts": {
+    "flaky-report-shard-1": 33,
+    "flaky-report-shard-3": 23,
+    "flaky-report-shard-4": 31,
+    "flaky-report-shard-6": 23,
+    "flaky-test-report-unit": 39,
+    "flaky-test-report-component": 41,
+    "flaky-report-shard-2": 29,
+    "flaky-report-shard-5": 24
+  },
+  "top_flaky_specs": []
+}
