@@ -63,6 +63,7 @@ import { PropertiesLinkPatch } from "./presentation/properties/PropertiesLinkPat
 import { PropertiesUidCopyPatch } from "./presentation/properties/PropertiesUidCopyPatch";
 import { PropertiesLabelPatch } from "./presentation/properties/PropertiesLabelPatch";
 import { FileExplorerLabelPatch } from "./presentation/fileexplorer/FileExplorerLabelPatch";
+import { FileExplorerIconPatch } from "./presentation/fileexplorer/FileExplorerIconPatch";
 import { ReadingModeEnforcer } from "./presentation/reading-mode/ReadingModeEnforcer";
 import { BodyLinkPatch } from "./presentation/body/BodyLinkPatch";
 import { GraphViewPatch } from "./presentation/graph-view/GraphViewPatch";
@@ -121,6 +122,7 @@ export default class ExocortexPlugin extends Plugin {
   private propertiesUidCopyPatch!: PropertiesUidCopyPatch;
   private propertiesLabelPatch!: PropertiesLabelPatch;
   private fileExplorerLabelPatch!: FileExplorerLabelPatch;
+  private fileExplorerIconPatch!: FileExplorerIconPatch;
   private readingModeEnforcer!: ReadingModeEnforcer;
   private graphViewPatch!: GraphViewPatch;
   private fileLogChannel!: FileLogChannel;
@@ -671,6 +673,23 @@ export default class ExocortexPlugin extends Plugin {
         500,
       );
 
+      // RFC-024 Phase 4 — File Explorer icons (DOM overlay, sibling to
+      // FileExplorerLabelPatch). Renders Lucide icons resolved via
+      // ThemeResolver from `exo__Layout_icon` for class-bearing notes.
+      this.fileExplorerIconPatch = new FileExplorerIconPatch(
+        this,
+        this.themeResolver,
+      );
+      if (this.settings.showIconsInFileExplorer) {
+        this.timerManager.setTimeout(
+          "file-explorer-icon-patch",
+          () => {
+            this.fileExplorerIconPatch.enable();
+          },
+          500,
+        );
+      }
+
       // Initialize Reading Mode enforcer.
       // Obsidian's layout rendering path is Reading Mode only; new leaves open
       // in Live Preview by default, so first-time users see "nothing happens"
@@ -840,6 +859,11 @@ export default class ExocortexPlugin extends Plugin {
     // Cleanup File Explorer readable-label patch
     if (this.fileExplorerLabelPatch) {
       this.fileExplorerLabelPatch.cleanup();
+    }
+
+    // Cleanup File Explorer icon patch (RFC-024 Phase 4)
+    if (this.fileExplorerIconPatch) {
+      this.fileExplorerIconPatch.cleanup();
     }
 
     // Cleanup Body link patch

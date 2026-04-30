@@ -6069,3 +6069,21 @@
   line-height: var(--line-height-tight);
   color: inherit;
 }
+
+/* FileExplorerIconPatch (RFC-024 Phase 4) — Lucide icon prepended to nav rows */
+.nav-file-title .exo-file-explorer-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--icon-s, 16px);
+  height: var(--icon-s, 16px);
+  margin-right: var(--size-2-2, 4px);
+  flex-shrink: 0;
+  color: var(--icon-color, currentColor);
+  vertical-align: middle;
+}
+
+.nav-file-title .exo-file-explorer-icon svg {
+  width: 100%;
+  height: 100%;
+}
