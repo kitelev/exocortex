@@ -1,0 +1,116 @@
+{
+  "generated_at": "2026-04-30T20:29:03.101Z",
+  "rfc": "32a64ed9-9a74-4e0c-bb26-e455605aa384",
+  "phase": "3.1",
+  "task": "T1.2",
+  "inputs": [
+    {
+      "file": "run-25187245556-shard-1.jsonl",
+      "records": 2
+    },
+    {
+      "file": "run-25187245556-shard-2.jsonl",
+      "records": 4
+    },
+    {
+      "file": "run-25187245556-shard-3.jsonl",
+      "records": 6
+    },
+    {
+      "file": "run-25187245556-shard-4.jsonl",
+      "records": 2
+    },
+    {
+      "file": "run-25187245556-shard-5.jsonl",
+      "records": 2
+    },
+    {
+      "file": "run-25187245556-shard-6.jsonl",
+      "records": 2
+    },
+    {
+      "file": "run-25187249529-shard-1.jsonl",
+      "records": 2
+    },
+    {
+      "file": "run-25187249529-shard-2.jsonl",
+      "records": 4
+    },
+    {
+      "file": "run-25187249529-shard-3.jsonl",
+      "records": 6
+    },
+    {
+      "file": "run-25187249529-shard-4.jsonl",
+      "records": 2
+    },
+    {
+      "file": "run-25187249529-shard-5.jsonl",
+      "records": 2
+    },
+    {
+      "file": "run-25187249529-shard-6.jsonl",
+      "records": 2
+    }
+  ],
+  "total_records": 36,
+  "stats": {
+    "docker_pull": {
+      "count": 0,
+      "p50": null,
+      "p95": null,
+      "p99": null,
+      "p99_p50_ratio": null
+    },
+    "container_start": {
+      "count": 12,
+      "min": 1,
+      "max": 3,
+      "p50": 1,
+      "p95": 2,
+      "p99": 3,
+      "p99_p50_ratio": 2.89
+    },
+    "xvfb_ready": {
+      "count": 12,
+      "min": 19789,
+      "max": 35140,
+      "p50": 26614,
+      "p95": 34620,
+      "p99": 35036,
+      "p99_p50_ratio": 1.32
+    },
+    "obsidian_spawn": {
+      "count": 6,
+      "min": 41,
+      "max": 66,
+      "p50": 50,
+      "p95": 64,
+      "p99": 66,
+      "p99_p50_ratio": 1.31
+    },
+    "plugin_load": {
+      "count": 6,
+      "min": 14,
+      "max": 53,
+      "p50": 39,
+      "p95": 52,
+      "p99": 53,
+      "p99_p50_ratio": 1.37
+    },
+    "vault_index": {
+      "count": 0,
+      "p50": null,
+      "p95": null,
+      "p99": null,
+      "p99_p50_ratio": null
+    },
+    "first_interaction": {
+      "count": 0,
+      "p50": null,
+      "p95": null,
+      "p99": null,
+      "p99_p50_ratio": null
+    }
+  }
+}
