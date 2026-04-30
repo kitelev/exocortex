@@ -3,6 +3,9 @@ import { ObsidianLauncher } from "../utils/obsidian-launcher";
 import { waitForExocortexPluginViaPlaywright } from "../utils/waitForExocortexPlugin";
 import * as path from "path";
 
+// RFC Phase 3.2 (T2.1): per-spec retry(1) — Cat J post-Phase-2.1 plaintive recurrence (T0.2 rank #8).
+test.describe.configure({ retries: 1 });
+
 test.describe("Effort Timestamps Auto-Sync", () => {
   let launcher: ObsidianLauncher;
 

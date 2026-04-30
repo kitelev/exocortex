@@ -13,7 +13,8 @@ import * as path from "path";
  * 2. Column widths are consistent between header and body
  * 3. The Name column has non-zero width (doesn't collapse)
  */
-test.describe.configure({ mode: "parallel" });
+// RFC Phase 3.2 (T2.1): per-spec retry(1) — T0.2 rank #5 known plaintive offender.
+test.describe.configure({ mode: "parallel", retries: 1 });
 
 test.describe("Table Column Alignment (#594)", () => {
   let launcher: ObsidianLauncher;

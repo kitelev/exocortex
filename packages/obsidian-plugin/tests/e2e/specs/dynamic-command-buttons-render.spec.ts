@@ -25,6 +25,9 @@ const FIXTURE_PATH = path.join(
   __dirname, "../test-vault/Tasks/dynamic-cmd-test-with-ts.md"
 );
 
+// RFC Phase 3.2 (T2.1): per-spec retry(1) — T0.2 rank #3 (Maintenance header timeout 20s).
+test.describe.configure({ retries: 1 });
+
 test.describe("Dynamic Command Button Rendering & Functionality", () => {
   let launcher: ObsidianLauncher;
   let fixtureOriginal: string;

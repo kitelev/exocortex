@@ -30,7 +30,8 @@ import * as path from "path";
  * rename has not merged yet (no command with this label exists in
  * starter-kit-fixtures as of 2026-04-20). Unskip after rename lands.
  */
-test.describe.configure({ mode: "parallel" });
+// RFC Phase 3.2 (T2.1): per-spec retry(1) — T0.2 rank #4 known plaintive offender.
+test.describe.configure({ mode: "parallel", retries: 1 });
 
 test.describe("Starter-kit smoke (RFC-CI-Tests Phase 3)", () => {
   let launcher: ObsidianLauncher;
