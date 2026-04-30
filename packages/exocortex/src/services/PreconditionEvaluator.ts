@@ -1,10 +1,12 @@
 import { injectable } from "tsyringe";
 import type { ITripleStore } from "../interfaces/ITripleStore";
+import type { IQueryBodyResolver } from "../interfaces/IQueryBodyResolver";
 import type { PreconditionDefinition } from "../domain/models/CommandDefinition";
 import { ExoQLParser } from "../infrastructure/sparql/SPARQLParser";
 import { ExoQLAlgebraTranslator } from "../infrastructure/sparql/algebra/AlgebraTranslator";
 import { ExoQLQueryExecutor } from "../infrastructure/sparql/executors/QueryExecutor";
 import type { AskOperation } from "../infrastructure/sparql/algebra/AlgebraOperation";
+import { evaluateWithExoEval } from "../exoql/evaluateWithExoEval";
 
 /**
  * Context passed to host function evaluators.
@@ -42,9 +44,14 @@ export class PreconditionEvaluator {
   private readonly hostFunctions = new Map<string, HostFunction>();
   private readonly tripleStore: ITripleStore;
   private readonly askCache = new Map<string, AskOperation>();
+  private readonly queryBodyResolver?: IQueryBodyResolver;
 
-  constructor(tripleStore: ITripleStore) {
+  constructor(
+    tripleStore: ITripleStore,
+    queryBodyResolver?: IQueryBodyResolver,
+  ) {
     this.tripleStore = tripleStore;
+    this.queryBodyResolver = queryBodyResolver;
   }
 
   /**
@@ -63,9 +70,17 @@ export class PreconditionEvaluator {
     // No precondition = always available
     if (!precondition) return true;
 
-    // SPARQL ASK evaluation
+    // SPARQL ASK evaluation (inline body — legacy path)
     if (precondition.sparqlAsk) {
       return this.evaluateSparqlAsk(precondition.sparqlAsk, targetIRI);
+    }
+
+    // exoql__Query reference (RFC c78cc5c8 Phase 1a) — resolve body
+    // through IQueryBodyResolver, then route through evaluateWithExoEval
+    // (allowlist + flag + executor). Fail closed if resolver is absent
+    // or the query asset cannot be loaded.
+    if (precondition.query) {
+      return this.evaluateQueryRef(precondition.query, targetIRI);
     }
 
     // Host function evaluation
@@ -78,6 +93,25 @@ export class PreconditionEvaluator {
     }
 
     return true;
+  }
+
+  private async evaluateQueryRef(
+    queryUid: string,
+    targetIRI: string,
+  ): Promise<boolean> {
+    if (!this.queryBodyResolver) return false;
+    try {
+      const body = await this.queryBodyResolver.resolveSparql(queryUid);
+      if (!body) return false;
+      const substituted = this.substituteVariables(body, targetIRI);
+      const result = await evaluateWithExoEval(substituted, {
+        store: this.tripleStore,
+      });
+      if (result.kind !== "ask") return false;
+      return result.result;
+    } catch {
+      return false;
+    }
   }
 
   /**
