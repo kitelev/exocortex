@@ -15,6 +15,7 @@ import { ExoLayoutRenderer } from "./ExoLayoutRenderer";
 import { BacklinksCacheManager } from '@plugin/adapters/caching/BacklinksCacheManager';
 import { EventListenerManager } from '@plugin/adapters/events/EventListenerManager';
 import { ButtonGroupsBuilder } from '@plugin/presentation/builders/ButtonGroupsBuilder';
+import { PanelResolver } from '@plugin/application/services/PanelResolver';
 import { DailyTasksRenderer } from "./DailyTasksRenderer";
 
 import { AreaTreeRenderer } from "./layout/AreaTreeRenderer";
@@ -66,6 +67,7 @@ export class UniversalLayoutRenderer {
   private relationColumnSetResolver: RelationColumnSetResolver | null = null;
   private exoLayoutRepository: ExoLayoutRepository | null = null;
   private layoutSelector: LayoutSelector | null = null;
+  private panelResolver: PanelResolver | null = null;
   private exoLayoutRenderer!: ExoLayoutRenderer;
 
   private dependencyResolver: PropertyDependencyResolver;
@@ -93,6 +95,7 @@ export class UniversalLayoutRenderer {
       relationColumnSetResolver?: RelationColumnSetResolver | null;
       exoLayoutRepository?: ExoLayoutRepository | null;
       layoutSelector?: LayoutSelector | null;
+      panelResolver?: PanelResolver;
     },
   ) {
     this.app = app;
@@ -107,6 +110,7 @@ export class UniversalLayoutRenderer {
       rfc009Services?.relationColumnSetResolver ?? null;
     this.exoLayoutRepository = rfc009Services?.exoLayoutRepository ?? null;
     this.layoutSelector = rfc009Services?.layoutSelector ?? null;
+    this.panelResolver = rfc009Services?.panelResolver ?? null;
     this.logger = LoggerFactory.create("UniversalLayoutRenderer");
 
     // Create ReactRenderer with ErrorBoundary enabled for graceful error handling.
@@ -175,6 +179,7 @@ export class UniversalLayoutRenderer {
       logger: this.logger,
       refresh: () => this.refresh(),
       notificationService: this.notificationService,
+      panelResolver: this.panelResolver ?? undefined,
     });
 
     this.dailyTasksRenderer = new DailyTasksRenderer(
