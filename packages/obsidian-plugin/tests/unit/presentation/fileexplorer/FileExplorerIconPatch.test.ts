@@ -298,6 +298,31 @@ describe("FileExplorerIconPatch", () => {
       expect(titleEl.querySelector(".exo-file-explorer-icon")).toBeNull();
       expect(titleEl.getAttribute("data-exo-fe-icon-patched")).toBeNull();
     });
+
+    it("disconnects MutationObserver on cleanup — no overlay for rows added later", async () => {
+      patch.enable();
+      patch.cleanup();
+
+      // Row appears AFTER cleanup; the observer must not re-patch it.
+      const titleEl = createNavFileTitle(TASK_PATH);
+      navContainer.appendChild(titleEl);
+
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      expect(titleEl.querySelector(".exo-file-explorer-icon")).toBeNull();
+      expect(titleEl.getAttribute("data-exo-fe-icon-patched")).toBeNull();
+    });
+
+    it("cleanup is idempotent (double cleanup safe)", () => {
+      const titleEl = createNavFileTitle(TASK_PATH);
+      navContainer.appendChild(titleEl);
+
+      patch.enable();
+      patch.cleanup();
+      // Second cleanup must not throw and must keep the row free of overlay.
+      expect(() => patch.cleanup()).not.toThrow();
+      expect(titleEl.querySelector(".exo-file-explorer-icon")).toBeNull();
+    });
   });
 
   describe("MutationObserver", () => {

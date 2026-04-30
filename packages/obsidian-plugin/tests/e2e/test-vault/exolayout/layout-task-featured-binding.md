@@ -6,6 +6,7 @@ exo__Instance_class:
   - "[[exo__TableLayout]]"
 exo__Layout_targetClass: "[[ems__Task]]"
 exo__Layout_priority: 100
+exo__Layout_icon: check-square
 exo__Layout_commandPanel:
   featuredBinding: "[[e2e-bind-status-done-for-tasks]]"
 ---
