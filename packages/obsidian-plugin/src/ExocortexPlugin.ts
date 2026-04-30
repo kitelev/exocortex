@@ -34,6 +34,7 @@ import {
   ObsidianExoLayoutAdapter,
 } from "./infrastructure/repositories";
 import { ObsidianVaultAdapter } from "./adapters/ObsidianVaultAdapter";
+import { ObsidianQueryBodyResolver } from "./infrastructure/ObsidianQueryBodyResolver";
 import { TaskTrackingService } from "./application/services/TaskTrackingService";
 import { AliasSyncService } from "./application/services/AliasSyncService";
 import { WikilinkAliasService } from "./application/services/WikilinkAliasService";
@@ -179,7 +180,27 @@ export default class ExocortexPlugin extends Plugin {
       // Construct manually (not via tsyringe) because they need the live triple store
       const tripleStore = this.sparql.getTripleStore();
       this.commandResolver = new CommandResolver(tripleStore, this.logger);
-      this.preconditionEvaluator = new PreconditionEvaluator(tripleStore);
+      const queryBodyResolver = new ObsidianQueryBodyResolver(this.app);
+      this.preconditionEvaluator = new PreconditionEvaluator(
+        tripleStore,
+        queryBodyResolver,
+      );
+      // Vault changes invalidate the cached UID→path index.
+      this.registerEvent(
+        this.app.metadataCache.on("changed", () =>
+          queryBodyResolver.invalidateCache(),
+        ),
+      );
+      this.registerEvent(
+        this.app.vault.on("delete", () =>
+          queryBodyResolver.invalidateCache(),
+        ),
+      );
+      this.registerEvent(
+        this.app.vault.on("rename", () =>
+          queryBodyResolver.invalidateCache(),
+        ),
+      );
       this.serviceRegistry = new ServiceRegistry();
       const obsidianFs = new ObsidianFileSystemAdapter(this.app.vault);
       this.groundingExecutor = new GroundingExecutor(

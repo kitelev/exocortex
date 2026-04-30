@@ -514,4 +514,110 @@ describe("PreconditionEvaluator", () => {
       expect(elapsed).toBeLessThan(50);
     });
   });
+
+  // RFC c78cc5c8 Phase 1a — exoql__Query reference via IQueryBodyResolver.
+  describe("evaluate with query reference (IQueryBodyResolver)", () => {
+    it("returns true when resolver returns ASK body matching store", async () => {
+      const subject = new IRI(ASSET_IRI);
+      await store.add(
+        new Triple(
+          subject,
+          Namespace.EMS.term("Effort_startTimestamp"),
+          new Literal("2026-04-30T00:00:00"),
+        ),
+      );
+      const resolver = {
+        resolveSparql: jest.fn().mockResolvedValue(
+          `PREFIX ems: <https://exocortex.my/ontology/ems#>
+           ASK { $target ems:Effort_startTimestamp ?ts }`,
+        ),
+      };
+      const ev = new PreconditionEvaluator(store, resolver);
+      const result = await ev.evaluate(
+        {
+          id: "pre-q",
+          label: "Has start (via query ref)",
+          query: "always-true-uid",
+        },
+        ASSET_IRI,
+      );
+      expect(result).toBe(true);
+      expect(resolver.resolveSparql).toHaveBeenCalledWith("always-true-uid");
+    });
+
+    it("returns true for trivial ASK {} body (Always-true precondition)", async () => {
+      const resolver = {
+        resolveSparql: jest.fn().mockResolvedValue("ASK { }"),
+      };
+      const ev = new PreconditionEvaluator(store, resolver);
+      const result = await ev.evaluate(
+        { id: "pre-q", label: "Always true", query: "always-true-uid" },
+        ASSET_IRI,
+      );
+      expect(result).toBe(true);
+    });
+
+    it("returns false when resolver returns null (asset missing)", async () => {
+      const resolver = { resolveSparql: jest.fn().mockResolvedValue(null) };
+      const ev = new PreconditionEvaluator(store, resolver);
+      const result = await ev.evaluate(
+        { id: "pre-q", label: "Missing", query: "missing-uid" },
+        ASSET_IRI,
+      );
+      expect(result).toBe(false);
+    });
+
+    it("returns false when resolver throws", async () => {
+      const resolver = {
+        resolveSparql: jest.fn().mockRejectedValue(new Error("fs error")),
+      };
+      const ev = new PreconditionEvaluator(store, resolver);
+      const result = await ev.evaluate(
+        { id: "pre-q", label: "Boom", query: "boom-uid" },
+        ASSET_IRI,
+      );
+      expect(result).toBe(false);
+    });
+
+    it("returns false when no resolver is wired (legacy constructor)", async () => {
+      const ev = new PreconditionEvaluator(store);
+      const result = await ev.evaluate(
+        { id: "pre-q", label: "No resolver", query: "any-uid" },
+        ASSET_IRI,
+      );
+      expect(result).toBe(false);
+    });
+
+    it("returns false when resolved body is SELECT (kind mismatch)", async () => {
+      const resolver = {
+        resolveSparql: jest.fn().mockResolvedValue("SELECT * WHERE { ?s ?p ?o }"),
+      };
+      const ev = new PreconditionEvaluator(store, resolver);
+      const result = await ev.evaluate(
+        { id: "pre-q", label: "Wrong kind", query: "q-uid" },
+        ASSET_IRI,
+      );
+      expect(result).toBe(false);
+    });
+
+    it("sparqlAsk takes priority over query when both present", async () => {
+      const resolver = {
+        resolveSparql: jest.fn().mockResolvedValue("ASK { }"),
+      };
+      const ev = new PreconditionEvaluator(store, resolver);
+      const result = await ev.evaluate(
+        {
+          id: "pre-q",
+          label: "Both",
+          // Empty store + non-matching ASK → false
+          sparqlAsk: `PREFIX ex: <urn:ex:>
+            ASK { <urn:nope> ex:p ?o }`,
+          query: "always-true-uid",
+        },
+        ASSET_IRI,
+      );
+      expect(result).toBe(false);
+      expect(resolver.resolveSparql).not.toHaveBeenCalled();
+    });
+  });
 });

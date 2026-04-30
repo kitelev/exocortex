@@ -709,16 +709,36 @@ export class CommandResolver {
     const sparqlAsk = await this.getLiteralValue(preconditionSubject, Namespace.EXOCMD.term("Precondition_sparqlAsk"));
     const hostFunction = await this.getLiteralValue(preconditionSubject, Namespace.EXOCMD.term("Precondition_hostFunction"));
 
+    // Precondition_query — wikilink reference to an exoql__Query asset.
+    // Resolved to its UID so PreconditionEvaluator can fetch the body
+    // through the existing asset-loader. RFC c78cc5c8 Phase 1a (T4).
+    const queryRefTriples = await this.tripleStore.match(
+      preconditionSubject,
+      Namespace.EXOCMD.term("Precondition_query"),
+      undefined,
+    );
+    let query: string | undefined = undefined;
+    if (queryRefTriples.length > 0) {
+      const queryRef = queryRefTriples[0].object;
+      if (queryRef instanceof IRI) {
+        const queryUid = await this.getLiteralValue(queryRef, Namespace.EXO.term("Asset_uid"));
+        if (queryUid) query = queryUid;
+      } else if (queryRef instanceof Literal) {
+        query = this.normalizeWikilink(queryRef.value);
+      }
+    }
+
     if (!uid) return null;
 
-    // A precondition must have either sparqlAsk or hostFunction
-    if (!sparqlAsk && !hostFunction) return null;
+    // A precondition must have at least one evaluation source.
+    if (!sparqlAsk && !hostFunction && !query) return null;
 
     return {
       id: uid,
       label,
       ...(sparqlAsk && { sparqlAsk }),
       ...(hostFunction && { hostFunction }),
+      ...(query && { query }),
     };
   }
 
