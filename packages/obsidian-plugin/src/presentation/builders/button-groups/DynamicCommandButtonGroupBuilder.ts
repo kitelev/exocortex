@@ -1,6 +1,7 @@
 import { App } from "obsidian";
 import {
   ActionButton,
+  ActionButtonVariant,
   ButtonGroup,
 } from "@plugin/presentation/components/ActionButtonsGroup";
 import type {
@@ -19,16 +20,30 @@ import {
 } from "./ButtonBuilderTypes";
 import { DynamicFormModal } from "@plugin/presentation/modals/DynamicFormModal";
 import { resolveVariantForGroup } from "./categoryDefaultVariants";
+import {
+  FALLBACK_CATEGORY_ORDER,
+  resolveCategoryCollapsed,
+  resolveCategoryTitle,
+} from "./categoryDisplayDefaults";
+import { PanelResolver } from "@plugin/application/services/PanelResolver";
 
 /**
  * Configuration for DynamicCommandButtonGroupBuilder.
- * Injects the three core RFC-009 services.
+ * Injects the three core RFC-009 services plus the optional RFC-024 Phase 3
+ * {@link PanelResolver} that consults `exo__Layout_commandPanel` for
+ * per-class command filtering / regrouping / featured-binding overrides.
  */
 export interface DynamicCommandBuilderConfig {
   commandResolver: CommandResolver;
   preconditionEvaluator: PreconditionEvaluator;
   groundingExecutor: GroundingExecutor;
   notificationService: INotificationService;
+  /**
+   * Optional. When omitted a default no-op resolver is used (no panel
+   * declared for any class) so existing call-sites and tests remain
+   * non-breaking.
+   */
+  panelResolver?: PanelResolver;
 }
 
 /**
@@ -73,14 +88,21 @@ export interface InputSchemaField {
  *
  * 1. Resolves commands for the current asset via CommandResolver
  * 2. Evaluates preconditions in PARALLEL via Promise.all
- * 3. Sorts by binding order and groups by binding group
- * 4. Creates ActionButtons for each visible command
- * 5. Handles confirmMessage, inputSchema modal, and successMessage
+ * 3. Applies the class-level `exo__Layout_commandPanel` filter
+ *    (RFC-024 Phase 3 — `excludeCommands` trumps `includeGroups`)
+ * 4. Sorts by binding order and groups by command category
+ * 5. Creates ActionButtons for each visible command, promoting the
+ *    panel's `featuredBinding` to the `primary` variant
+ * 6. Handles confirmMessage, inputSchema modal, and successMessage
  *
  * Issue #2432
  */
 export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
-  constructor(private readonly config: DynamicCommandBuilderConfig) {}
+  private readonly panelResolver: PanelResolver;
+
+  constructor(private readonly config: DynamicCommandBuilderConfig) {
+    this.panelResolver = config.panelResolver ?? new PanelResolver();
+  }
 
   getGroupId(): string {
     return "dynamic-commands";
@@ -93,30 +115,46 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
   async build(context: ButtonBuilderContext): Promise<ActionButton[]> {
     const resolved = await this.resolveVisibleCommands(context);
     if (resolved === null) return [];
-    const { visibleCommands, subjectIRI } = resolved;
+    const { visibleCommands, subjectIRI, panelClassRef } = resolved;
     const { app, file, logger, refresh } = context;
     return visibleCommands.map((rc) =>
-      this.createButton(rc, subjectIRI, file.path, app as App, logger, refresh),
+      this.createButton(
+        rc,
+        subjectIRI,
+        file.path,
+        app as App,
+        logger,
+        refresh,
+        panelClassRef,
+      ),
     );
   }
 
   /**
-   * Build COMMANDS panel as category-grouped ButtonGroups (RFC-009 polish).
+   * Build COMMANDS panel as category-grouped ButtonGroups (RFC-009 polish,
+   * RFC-024 Phase 3 panel-aware ordering).
    *
-   * Fixed category order: creation → status → planning → criticality → maintenance.
-   * Commands with no category land in a trailing "Other" group. Maintenance is
-   * marked collapsedByDefault because those commands are power-user repair tools
-   * that rarely apply during normal work and otherwise dominate panel real-estate.
+   * Ordering rules (RFC-024 §5 precedence):
+   * - When the resolved panel for the asset's class declares
+   *   `includeGroups`, that array determines the section order. Categories
+   *   present in commands but absent from `includeGroups` are appended
+   *   afterwards in insertion order so nothing is silently dropped.
+   * - When no panel is declared, the plugin-built-in
+   *   {@link FALLBACK_CATEGORY_ORDER} is used as a sensible default
+   *   (creation → status → planning → criticality → maintenance).
    *
-   * Groups with zero visible commands are omitted — the React component re-filters
-   * too, but returning them empty here keeps the payload lean.
+   * Titles and `collapsedByDefault` come from
+   * {@link resolveCategoryTitle}/{@link resolveCategoryCollapsed} — these
+   * are display defaults, not ordering authority.
+   *
+   * Groups with zero visible commands are omitted.
    */
   async buildCategoryGroups(
     context: ButtonBuilderContext,
   ): Promise<ButtonGroup[]> {
     const resolved = await this.resolveVisibleCommands(context);
     if (resolved === null) return [];
-    const { visibleCommands, subjectIRI } = resolved;
+    const { visibleCommands, subjectIRI, panelClassRef } = resolved;
     const { app, file, logger, refresh } = context;
 
     const byCategory = new Map<string, ResolvedCommand[]>();
@@ -130,15 +168,17 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
       }
     }
 
+    const orderedKeys = this.resolveCategoryOrder(panelClassRef, byCategory);
+
     const groups: ButtonGroup[] = [];
-    for (const spec of DynamicCommandButtonGroupBuilder.CATEGORY_ORDER) {
-      const commands = byCategory.get(spec.id);
-      byCategory.delete(spec.id);
+    for (const key of orderedKeys) {
+      const commands = byCategory.get(key);
       if (!commands || commands.length === 0) continue;
+      const isOther = key === "other";
       groups.push({
-        id: `dynamic-commands-${spec.id}`,
-        title: spec.title,
-        collapsedByDefault: spec.collapsedByDefault,
+        id: `dynamic-commands-${key}`,
+        title: isOther ? "Other" : resolveCategoryTitle(key),
+        collapsedByDefault: isOther ? undefined : resolveCategoryCollapsed(key),
         buttons: commands.map((rc) =>
           this.createButton(
             rc,
@@ -147,29 +187,7 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
             app as App,
             logger,
             refresh,
-          ),
-        ),
-      });
-    }
-
-    // Any leftover categories (unexpected values) go into a single Other group
-    // at the end, in insertion order, so nothing is silently dropped.
-    const leftover: ResolvedCommand[] = [];
-    for (const commands of byCategory.values()) {
-      leftover.push(...commands);
-    }
-    if (leftover.length > 0) {
-      groups.push({
-        id: "dynamic-commands-other",
-        title: "Other",
-        buttons: leftover.map((rc) =>
-          this.createButton(
-            rc,
-            subjectIRI,
-            file.path,
-            app as App,
-            logger,
-            refresh,
+            panelClassRef,
           ),
         ),
       });
@@ -178,21 +196,50 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
     return groups;
   }
 
-  private static readonly CATEGORY_ORDER: ReadonlyArray<{
-    id: string;
-    title: string;
-    collapsedByDefault?: boolean;
-  }> = [
-    { id: "creation", title: "Create" },
-    { id: "status", title: "Status" },
-    { id: "planning", title: "Planning" },
-    { id: "criticality", title: "Criticality" },
-    { id: "maintenance", title: "Maintenance", collapsedByDefault: true },
-  ];
+  /**
+   * Compute the rendering order of category section keys for the resolved
+   * panel. `includeGroups` (when present) wins; remaining categories are
+   * appended in insertion order so unexpected values are never silently
+   * dropped.
+   */
+  private resolveCategoryOrder(
+    panelClassRef: string | null,
+    byCategory: ReadonlyMap<string, ResolvedCommand[]>,
+  ): string[] {
+    const present = new Set(byCategory.keys());
+    const ordered: string[] = [];
+    const seen = new Set<string>();
+
+    const includeGroups =
+      panelClassRef !== null
+        ? this.panelResolver.resolve(panelClassRef)?.includeGroups
+        : undefined;
+
+    const primary =
+      includeGroups && includeGroups.length > 0
+        ? includeGroups
+        : FALLBACK_CATEGORY_ORDER;
+
+    for (const key of primary) {
+      const normalized = key.trim().toLowerCase();
+      if (!seen.has(normalized) && present.has(normalized)) {
+        ordered.push(normalized);
+        seen.add(normalized);
+      }
+    }
+    for (const key of byCategory.keys()) {
+      if (!seen.has(key)) {
+        ordered.push(key);
+        seen.add(key);
+      }
+    }
+    return ordered;
+  }
 
   private async resolveVisibleCommands(context: ButtonBuilderContext): Promise<{
     visibleCommands: ResolvedCommand[];
     subjectIRI: string;
+    panelClassRef: string | null;
   } | null> {
     const { file, metadata, logger } = context;
 
@@ -205,6 +252,13 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
 
     const assetClasses = this.extractAssetClasses(metadata);
     if (assetClasses.length === 0) return null;
+
+    // RFC-024 Phase 3: panels are resolved against the most-specific
+    // declared class — i.e. the first non-`exo__Asset` class. Universal
+    // `exo__Asset` is the appended superclass and would over-broadly bind
+    // to every asset's panel.
+    const panelClassRef =
+      assetClasses.find((c) => c !== "exo__Asset") ?? null;
 
     const prototypeIRI = this.extractPrototypeIRI(metadata);
 
@@ -245,13 +299,31 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
       }),
     );
 
-    const visibleCommands = availabilityChecks
+    const preconditionPassed = availabilityChecks
       .filter(({ available }) => available)
       .map(({ rc }) => rc);
 
+    // RFC-024 Phase 3 — apply class-level panel filter (excludeCommands
+    // trumps includeGroups). When no panel is declared this is a pure
+    // pass-through. Group dimension uses `command.category` since the UI
+    // sections by category, not by `binding.group`.
+    const visibleCommands =
+      panelClassRef !== null
+        ? this.panelResolver
+            .applyFilter(
+              panelClassRef,
+              preconditionPassed.map((rc) => ({
+                uid: rc.binding.id,
+                group: rc.command.category,
+                rc,
+              })),
+            )
+            .map((entry) => entry.rc)
+        : preconditionPassed;
+
     if (visibleCommands.length === 0) return null;
 
-    return { visibleCommands, subjectIRI };
+    return { visibleCommands, subjectIRI, panelClassRef };
   }
 
   private createButton(
@@ -261,9 +333,19 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
     app: App,
     logger: ILogger,
     refresh: () => Promise<void>,
+    panelClassRef: string | null,
   ): ActionButton {
     const { command, binding } = rc;
-    const variant = resolveVariantForGroup(binding.group);
+
+    // RFC-024 §5 rule #3 — `featuredBinding` overrides binding-level
+    // style.variant → `primary` regardless of any other resolution.
+    const featured =
+      panelClassRef !== null &&
+      this.panelResolver.isFeatured(panelClassRef, binding.id);
+
+    const variant: ActionButtonVariant = featured
+      ? "primary"
+      : resolveVariantForGroup(binding.group);
 
     // RFC-024 §4 Phase 2 — T5.3: render `Command_icon` by default. The
     // resolved `binding.style.showIcon` (populated in T5.2 by CommandResolver)

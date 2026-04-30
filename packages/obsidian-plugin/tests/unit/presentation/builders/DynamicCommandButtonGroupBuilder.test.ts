@@ -1,4 +1,6 @@
 import { DynamicCommandButtonGroupBuilder } from "../../../../src/presentation/builders/button-groups/DynamicCommandButtonGroupBuilder";
+import { PanelResolver } from "../../../../src/application/services/PanelResolver";
+import type { CommandPanel } from "../../../../src/domain/layout/CommandPanel";
 import { GroundingType } from "exocortex";
 
 const mockResolveForAsset = jest.fn();
@@ -759,6 +761,218 @@ describe("DynamicCommandButtonGroupBuilder", () => {
       mockResolveForAssetMulti.mockRejectedValue(new Error("boom"));
       const result = await builder.buildCategoryGroups(createContext());
       expect(result).toEqual([]);
+    });
+  });
+
+  describe("RFC-024 Phase 3 — PanelResolver integration", () => {
+    /**
+     * Helper that builds a builder pre-wired with a PanelResolver whose
+     * layout provider returns the given panel for `ems__Task` and `null`
+     * for any other class. Using the real PanelResolver (rather than a
+     * mock) keeps the test honest about wikilink normalisation,
+     * `excludeCommands` precedence, and `featuredBinding` matching.
+     */
+    function makeBuilderWithPanel(panel: CommandPanel | null) {
+      const panelResolver = new PanelResolver({
+        layoutProvider: (classRef) =>
+          classRef === "ems__Task"
+            ? { commandPanel: panel ?? undefined }
+            : null,
+      });
+      return new DynamicCommandButtonGroupBuilder({
+        commandResolver: mockCommandResolver as unknown as any,
+        preconditionEvaluator: mockPreconditionEvaluator as unknown as any,
+        groundingExecutor: mockGroundingExecutor as unknown as any,
+        notificationService: mockNotificationService as any,
+        panelResolver,
+      });
+    }
+
+    it("excludeCommands drops bindings even when their group passes includeGroups", async () => {
+      const allowed = createResolvedCommand(
+        { id: "c-allowed", name: "Allowed", category: "creation" },
+        { id: "binding-allowed" },
+      );
+      const excluded = createResolvedCommand(
+        { id: "c-excluded", name: "Excluded", category: "creation" },
+        { id: "binding-excluded" },
+      );
+      mockResolveForAssetMulti.mockResolvedValue([allowed, excluded]);
+      mockEvaluate.mockResolvedValue(true);
+
+      const builder = makeBuilderWithPanel({
+        includeGroups: ["creation"],
+        excludeCommands: ["binding-excluded"],
+      });
+      const result = await builder.build(createContext());
+
+      expect(result.map((b) => b.label)).toEqual(["Allowed"]);
+    });
+
+    it("includeGroups drops categories absent from the include list", async () => {
+      const create = createResolvedCommand({
+        id: "c1",
+        name: "Create",
+        category: "creation",
+      });
+      const status = createResolvedCommand({
+        id: "s1",
+        name: "Status",
+        category: "status",
+      });
+      mockResolveForAssetMulti.mockResolvedValue([create, status]);
+      mockEvaluate.mockResolvedValue(true);
+
+      const builder = makeBuilderWithPanel({ includeGroups: ["creation"] });
+      const result = await builder.build(createContext());
+
+      expect(result.map((b) => b.label)).toEqual(["Create"]);
+    });
+
+    it("buildCategoryGroups orders sections by panel.includeGroups", async () => {
+      const commands = [
+        createResolvedCommand({
+          id: "c1",
+          name: "Create Task",
+          category: "creation",
+        }),
+        createResolvedCommand({
+          id: "s1",
+          name: "Set Status",
+          category: "status",
+        }),
+        createResolvedCommand({
+          id: "p1",
+          name: "Plan Today",
+          category: "planning",
+        }),
+      ];
+      mockResolveForAssetMulti.mockResolvedValue(commands);
+      mockEvaluate.mockResolvedValue(true);
+
+      const builder = makeBuilderWithPanel({
+        includeGroups: ["status", "planning", "creation"],
+      });
+      const result = await builder.buildCategoryGroups(createContext());
+
+      expect(result.map((g) => g.id)).toEqual([
+        "dynamic-commands-status",
+        "dynamic-commands-planning",
+        "dynamic-commands-creation",
+      ]);
+    });
+
+    it("buildCategoryGroups appends categories absent from includeGroups in insertion order", async () => {
+      const commands = [
+        createResolvedCommand({
+          id: "c1",
+          name: "Create",
+          category: "creation",
+        }),
+        createResolvedCommand({
+          id: "m1",
+          name: "Maintenance",
+          category: "maintenance",
+        }),
+      ];
+      mockResolveForAssetMulti.mockResolvedValue(commands);
+      mockEvaluate.mockResolvedValue(true);
+
+      // includeGroups omits "maintenance"; with no excludeCommands the
+      // command still surfaces (filter only drops by exclude when include
+      // does not list its group). Verify the section appears AFTER the
+      // explicitly ordered ones.
+      const builder = makeBuilderWithPanel({
+        includeGroups: ["creation", "maintenance"],
+      });
+      const result = await builder.buildCategoryGroups(createContext());
+
+      expect(result.map((g) => g.id)).toEqual([
+        "dynamic-commands-creation",
+        "dynamic-commands-maintenance",
+      ]);
+    });
+
+    it("featuredBinding promotes its binding to primary regardless of group default", async () => {
+      const featured = createResolvedCommand(
+        // `maintenance` would normally resolve to `muted` per Phase 0 defaults.
+        { id: "c-featured", name: "Featured", category: "maintenance" },
+        { id: "binding-featured", group: "maintenance" },
+      );
+      mockResolveForAssetMulti.mockResolvedValue([featured]);
+      mockEvaluate.mockResolvedValue(true);
+
+      const builder = makeBuilderWithPanel({
+        featuredBinding: "binding-featured",
+      });
+      const result = await builder.build(createContext());
+
+      expect(result).toHaveLength(1);
+      expect(result[0].variant).toBe("primary");
+    });
+
+    it("non-featured bindings keep their group-derived variant", async () => {
+      const nonFeatured = createResolvedCommand(
+        { id: "c-other", name: "Maintenance Op", category: "maintenance" },
+        { id: "binding-other", group: "maintenance" },
+      );
+      mockResolveForAssetMulti.mockResolvedValue([nonFeatured]);
+      mockEvaluate.mockResolvedValue(true);
+
+      const builder = makeBuilderWithPanel({
+        featuredBinding: "binding-elsewhere",
+      });
+      const result = await builder.build(createContext());
+
+      expect(result[0].variant).toBe("muted");
+    });
+
+    it("panel resolution uses the most-specific (non-exo__Asset) declared class", async () => {
+      // Even though `exo__Instance_class` includes `exo__Asset` superclass,
+      // the panel for `ems__Task` (the specific class) must be consulted —
+      // an `exo__Asset` panel would over-broadly capture every asset.
+      const command = createResolvedCommand(
+        { id: "c1", name: "Task only", category: "creation" },
+        { id: "binding-task" },
+      );
+      mockResolveForAssetMulti.mockResolvedValue([command]);
+      mockEvaluate.mockResolvedValue(true);
+
+      const builder = makeBuilderWithPanel({
+        excludeCommands: ["binding-task"],
+      });
+      const result = await builder.build(
+        createContext({
+          exo__Instance_class: ["[[ems__Task]]", "[[exo__Asset]]"],
+        }),
+      );
+
+      expect(result).toEqual([]);
+    });
+
+    it("falls through to plugin-built-in fallback order when no panel is declared", async () => {
+      // `ems__Project` has no layout provider entry → null panel → falls
+      // back to FALLBACK_CATEGORY_ORDER (creation → status → maintenance).
+      const commands = [
+        createResolvedCommand({
+          id: "m1",
+          name: "M",
+          category: "maintenance",
+        }),
+        createResolvedCommand({ id: "c1", name: "C", category: "creation" }),
+      ];
+      mockResolveForAssetMulti.mockResolvedValue(commands);
+      mockEvaluate.mockResolvedValue(true);
+
+      const builder = makeBuilderWithPanel(null);
+      const result = await builder.buildCategoryGroups(
+        createContext({ exo__Instance_class: ["[[ems__Project]]"] }),
+      );
+
+      expect(result.map((g) => g.id)).toEqual([
+        "dynamic-commands-creation",
+        "dynamic-commands-maintenance",
+      ]);
     });
   });
 });
