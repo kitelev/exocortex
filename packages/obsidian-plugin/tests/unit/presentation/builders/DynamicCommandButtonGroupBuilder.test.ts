@@ -362,6 +362,87 @@ describe("DynamicCommandButtonGroupBuilder", () => {
     });
   });
 
+  // RFC-024 §4 Phase 2 — T5.3: Command_icon projection to ActionButton.
+  describe("icon projection (RFC-024 T5.3)", () => {
+    it("should project command.icon to button.icon when style.showIcon is unset (default)", async () => {
+      const rc = createResolvedCommand({
+        name: "Mark done",
+        icon: "check",
+      });
+      mockResolveForAssetMulti.mockResolvedValue([rc]);
+      mockEvaluate.mockResolvedValue(true);
+
+      const context = createContext();
+      const result = await builder.build(context);
+
+      expect(result[0].icon).toBe("check");
+    });
+
+    it("should project icon when binding.style.showIcon is explicitly true", async () => {
+      const rc = createResolvedCommand(
+        { name: "Mark done", icon: "check" },
+        {
+          style: {
+            id: "style-1",
+            label: "Default",
+            showIcon: true,
+            inline: false,
+          },
+        },
+      );
+      mockResolveForAssetMulti.mockResolvedValue([rc]);
+      mockEvaluate.mockResolvedValue(true);
+
+      const context = createContext();
+      const result = await builder.build(context);
+
+      expect(result[0].icon).toBe("check");
+    });
+
+    it("should suppress icon when binding.style.showIcon is false", async () => {
+      const rc = createResolvedCommand(
+        { name: "Mark done", icon: "check" },
+        {
+          style: {
+            id: "style-1",
+            label: "No icon",
+            showIcon: false,
+            inline: false,
+          },
+        },
+      );
+      mockResolveForAssetMulti.mockResolvedValue([rc]);
+      mockEvaluate.mockResolvedValue(true);
+
+      const context = createContext();
+      const result = await builder.build(context);
+
+      expect(result[0].icon).toBeUndefined();
+    });
+
+    it("should leave icon undefined when command has no icon", async () => {
+      const rc = createResolvedCommand({ name: "No-icon cmd" });
+      mockResolveForAssetMulti.mockResolvedValue([rc]);
+      mockEvaluate.mockResolvedValue(true);
+
+      const context = createContext();
+      const result = await builder.build(context);
+
+      expect(result[0].icon).toBeUndefined();
+    });
+
+    it("should treat empty string icon as no icon", async () => {
+      const rc = createResolvedCommand({ name: "Empty icon", icon: "" });
+      mockResolveForAssetMulti.mockResolvedValue([rc]);
+      mockEvaluate.mockResolvedValue(true);
+
+      const context = createContext();
+      const result = await builder.build(context);
+
+      expect(result[0].icon).toBeUndefined();
+    });
+  });
+
   describe("button onClick", () => {
     it("should execute grounding on click", async () => {
       const rc = createResolvedCommand({ name: "Execute me" });

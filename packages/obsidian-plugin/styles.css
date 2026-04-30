@@ -1114,6 +1114,35 @@
 }
 
 /* ----------------------------------------------------------------------------
+   Action button icon (RFC-024 §4 Phase 2 — T5.3)
+   ----------------------------------------------------------------------------
+   Obsidian's `setIcon` injects an inline `<svg>` into the host element. We
+   constrain the SVG to 16px (button default) and leave a 6px gap to the label.
+   The compact label class (T5.4) overrides the icon size to 14px so the icon
+   stays proportional to the smaller label glyphs. */
+.exocortex-action-button-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 6px;
+  width: 16px;
+  height: 16px;
+  line-height: 0;
+  flex-shrink: 0;
+}
+
+.exocortex-action-button-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.exocortex-action-button--label-compact .exocortex-action-button-icon,
+.exocortex-action-button--label-compact .exocortex-action-button-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* ----------------------------------------------------------------------------
    Layer 2 intent tokens (RFC-024 Phase 1)
    ----------------------------------------------------------------------------
    Exocortex semantic tokens bridge Obsidian theme vars (Layer 1) with

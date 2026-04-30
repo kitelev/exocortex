@@ -404,4 +404,67 @@ test.describe("ActionButtonsGroup Component", () => {
     const buttons = component.locator("button");
     await expect(buttons).toHaveCount(3);
   });
+
+  // RFC-024 §4 Phase 2 — T5.3: ActionButton icon rendering via setIcon + useRef.
+  test("should render icon via setIcon when button.icon is set", async ({
+    mount,
+  }) => {
+    const groups: ButtonGroup[] = [
+      {
+        id: "with-icon",
+        title: "With Icon",
+        buttons: [
+          {
+            id: "btn-icon",
+            label: "Mark Done",
+            variant: "success",
+            icon: "check",
+            visible: true,
+            onClick: async () => {},
+          },
+        ],
+      },
+    ];
+
+    const component = await mount(<ActionButtonsGroup groups={groups} />);
+
+    const iconHost = component.locator(".exocortex-action-button-icon");
+    await expect(iconHost).toHaveCount(1);
+    // Mock `setIcon` writes data-* attributes on the host element.
+    await expect(iconHost).toHaveAttribute("data-icon-set", "true");
+    await expect(iconHost).toHaveAttribute("data-icon-name", "check");
+    await expect(iconHost).toHaveAttribute("aria-hidden", "true");
+
+    // Label still rendered next to the icon.
+    const label = component.locator(".exocortex-action-button-label");
+    await expect(label).toHaveText("Mark Done");
+  });
+
+  test("should not render icon container when button.icon is undefined", async ({
+    mount,
+  }) => {
+    const groups: ButtonGroup[] = [
+      {
+        id: "no-icon",
+        title: "No Icon",
+        buttons: [
+          {
+            id: "btn-no-icon",
+            label: "Plain",
+            variant: "secondary",
+            visible: true,
+            onClick: async () => {},
+          },
+        ],
+      },
+    ];
+
+    const component = await mount(<ActionButtonsGroup groups={groups} />);
+
+    const iconHost = component.locator(".exocortex-action-button-icon");
+    await expect(iconHost).toHaveCount(0);
+
+    const label = component.locator(".exocortex-action-button-label");
+    await expect(label).toHaveText("Plain");
+  });
 });

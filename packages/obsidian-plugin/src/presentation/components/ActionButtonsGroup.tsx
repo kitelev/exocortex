@@ -1,4 +1,5 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
+import { setIcon } from "obsidian";
 
 /**
  * Semantic variants for action buttons. The `muted` variant (RFC-024 Phase 0)
@@ -22,6 +23,19 @@ export interface ActionButton {
   onClick: () => void | Promise<void>;
   variant?: ActionButtonVariant;
   visible?: boolean;
+  /**
+   * Optional Lucide icon name (RFC-024 §4 Phase 2 — T5.3).
+   *
+   * When set, the button renders an SVG icon to the left of the label using
+   * Obsidian's `setIcon` helper, which writes the bundled Lucide SVG into the
+   * supplied element. The DOM-mutation bridge is implemented inside
+   * `ActionButtonsGroup` via `useRef` + `useEffect`, so callers may simply
+   * propagate `command.icon` from the resolved binding.
+   *
+   * No-op when undefined or empty — preserves the no-icon baseline established
+   * before T5.3.
+   */
+  icon?: string;
 }
 
 /**
@@ -46,6 +60,56 @@ export interface ButtonGroup {
 export interface ActionButtonsGroupProps {
   groups: ButtonGroup[];
 }
+
+/**
+ * Renders a single action button.
+ *
+ * RFC-024 §4 Phase 2 — T5.3: when `button.icon` is set, an icon container is
+ * mounted before the label and `setIcon(ref, iconName)` is invoked from a
+ * `useEffect` whose cleanup empties the container before the next icon swap
+ * (and on unmount). This keeps the React/Obsidian boundary explicit — Obsidian
+ * mutates the DOM, React owns the container reference and lifecycle.
+ *
+ * The Obsidian `setIcon` helper writes the Lucide SVG into the supplied
+ * element. We intentionally do not memoize on `button.icon`: a fresh render
+ * with the same icon name is harmless (cleanup empties the host element first)
+ * and keeps the swap path identical to the mount path.
+ */
+const ActionButtonView: React.FC<{ button: ActionButton }> = ({ button }) => {
+  const iconRef = useRef<HTMLSpanElement | null>(null);
+
+  useEffect(() => {
+    const host = iconRef.current;
+    if (host === null) return;
+    if (!button.icon) return;
+    setIcon(host, button.icon);
+    return () => {
+      // Drop the SVG before the next icon name takes effect (or on unmount)
+      // so we do not stack icons under DOM mutation in development StrictMode.
+      while (host.firstChild) host.removeChild(host.firstChild);
+    };
+  }, [button.icon]);
+
+  return (
+    <button
+      className={`exocortex-action-button exocortex-action-button--${button.variant || "secondary"}`}
+      onClick={async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        await button.onClick();
+      }}
+    >
+      {button.icon ? (
+        <span
+          ref={iconRef}
+          className="exocortex-action-button-icon"
+          aria-hidden="true"
+        />
+      ) : null}
+      <span className="exocortex-action-button-label">{button.label}</span>
+    </button>
+  );
+};
 
 /**
  * ActionButtonsGroup Component
@@ -119,17 +183,7 @@ export const ActionButtonsGroup: React.FC<ActionButtonsGroupProps> = ({
                 id={`exocortex-button-group-body-${group.id}`}
               >
                 {group.buttons.map((button) => (
-                  <button
-                    key={button.id}
-                    className={`exocortex-action-button exocortex-action-button--${button.variant || "secondary"}`}
-                    onClick={async (e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      await button.onClick();
-                    }}
-                  >
-                    {button.label}
-                  </button>
+                  <ActionButtonView key={button.id} button={button} />
                 ))}
               </div>
             )}
