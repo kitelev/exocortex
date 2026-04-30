@@ -440,6 +440,99 @@ test.describe("ActionButtonsGroup Component", () => {
     await expect(label).toHaveText("Mark Done");
   });
 
+  // RFC-024 §4 Phase 2 — T5.4: ARIA labels + hover tooltips propagation.
+  test("should apply aria-label and title attributes when ariaLabel and tooltip are set", async ({
+    mount,
+  }) => {
+    const groups: ButtonGroup[] = [
+      {
+        id: "a11y",
+        title: "A11y",
+        buttons: [
+          {
+            id: "btn-a11y",
+            label: "Done",
+            variant: "success",
+            ariaLabel: "Mark this task as done",
+            tooltip: "Sets ems__Effort_status to Done",
+            visible: true,
+            onClick: async () => {},
+          },
+        ],
+      },
+    ];
+
+    const component = await mount(<ActionButtonsGroup groups={groups} />);
+
+    const button = component.locator("button");
+    await expect(button).toHaveAttribute(
+      "aria-label",
+      "Mark this task as done",
+    );
+    await expect(button).toHaveAttribute(
+      "title",
+      "Sets ems__Effort_status to Done",
+    );
+  });
+
+  test("should omit aria-label and title attributes when ariaLabel and tooltip are undefined", async ({
+    mount,
+  }) => {
+    const groups: ButtonGroup[] = [
+      {
+        id: "no-a11y",
+        title: "No A11y",
+        buttons: [
+          {
+            id: "btn-no-a11y",
+            label: "Plain",
+            variant: "secondary",
+            visible: true,
+            onClick: async () => {},
+          },
+        ],
+      },
+    ];
+
+    const component = await mount(<ActionButtonsGroup groups={groups} />);
+
+    const button = component.locator("button");
+    await expect(button).not.toHaveAttribute("aria-label", /.*/);
+    await expect(button).not.toHaveAttribute("title", /.*/);
+    // The visible label remains the accessible name fallback.
+    await expect(button.locator(".exocortex-action-button-label")).toHaveText(
+      "Plain",
+    );
+  });
+
+  test("should omit aria-label and title when set to empty strings", async ({
+    mount,
+  }) => {
+    const groups: ButtonGroup[] = [
+      {
+        id: "empty-a11y",
+        title: "Empty A11y",
+        buttons: [
+          {
+            id: "btn-empty",
+            label: "Plain",
+            variant: "secondary",
+            ariaLabel: "",
+            tooltip: "",
+            visible: true,
+            onClick: async () => {},
+          },
+        ],
+      },
+    ];
+
+    const component = await mount(<ActionButtonsGroup groups={groups} />);
+
+    const button = component.locator("button");
+    await expect(button).not.toHaveAttribute("aria-label", /.*/);
+    await expect(button).not.toHaveAttribute("title", /.*/);
+  });
+
   test("should not render icon container when button.icon is undefined", async ({
     mount,
   }) => {

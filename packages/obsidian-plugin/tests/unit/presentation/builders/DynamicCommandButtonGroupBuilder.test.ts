@@ -443,6 +443,84 @@ describe("DynamicCommandButtonGroupBuilder", () => {
     });
   });
 
+  describe("a11y propagation (RFC-024 T5.4)", () => {
+    it("should propagate ariaLabel from binding.style to ActionButton", async () => {
+      const rc = createResolvedCommand(
+        { name: "Mark done" },
+        {
+          style: {
+            id: "style-1",
+            label: "Done style",
+            ariaLabel: "Mark this task as done",
+            inline: false,
+          },
+        },
+      );
+      mockResolveForAssetMulti.mockResolvedValue([rc]);
+      mockEvaluate.mockResolvedValue(true);
+
+      const context = createContext();
+      const result = await builder.build(context);
+
+      expect(result[0].ariaLabel).toBe("Mark this task as done");
+    });
+
+    it("should propagate tooltip from binding.style to ActionButton", async () => {
+      const rc = createResolvedCommand(
+        { name: "Mark done" },
+        {
+          style: {
+            id: "style-1",
+            label: "Done style",
+            tooltip: "Sets ems__Effort_status to Done",
+            inline: false,
+          },
+        },
+      );
+      mockResolveForAssetMulti.mockResolvedValue([rc]);
+      mockEvaluate.mockResolvedValue(true);
+
+      const context = createContext();
+      const result = await builder.build(context);
+
+      expect(result[0].tooltip).toBe("Sets ems__Effort_status to Done");
+    });
+
+    it("should leave ariaLabel and tooltip undefined when binding.style is absent", async () => {
+      const rc = createResolvedCommand({ name: "No style" });
+      mockResolveForAssetMulti.mockResolvedValue([rc]);
+      mockEvaluate.mockResolvedValue(true);
+
+      const context = createContext();
+      const result = await builder.build(context);
+
+      expect(result[0].ariaLabel).toBeUndefined();
+      expect(result[0].tooltip).toBeUndefined();
+    });
+
+    it("should leave ariaLabel and tooltip undefined when style has no a11y fields", async () => {
+      const rc = createResolvedCommand(
+        { name: "Style without a11y" },
+        {
+          style: {
+            id: "style-1",
+            label: "Variant only",
+            variant: "primary",
+            inline: false,
+          },
+        },
+      );
+      mockResolveForAssetMulti.mockResolvedValue([rc]);
+      mockEvaluate.mockResolvedValue(true);
+
+      const context = createContext();
+      const result = await builder.build(context);
+
+      expect(result[0].ariaLabel).toBeUndefined();
+      expect(result[0].tooltip).toBeUndefined();
+    });
+  });
+
   describe("button onClick", () => {
     it("should execute grounding on click", async () => {
       const rc = createResolvedCommand({ name: "Execute me" });

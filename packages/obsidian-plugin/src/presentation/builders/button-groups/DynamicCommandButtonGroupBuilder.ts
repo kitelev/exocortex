@@ -257,8 +257,7 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
     // declared class — i.e. the first non-`exo__Asset` class. Universal
     // `exo__Asset` is the appended superclass and would over-broadly bind
     // to every asset's panel.
-    const panelClassRef =
-      assetClasses.find((c) => c !== "exo__Asset") ?? null;
+    const panelClassRef = assetClasses.find((c) => c !== "exo__Asset") ?? null;
 
     const prototypeIRI = this.extractPrototypeIRI(metadata);
 
@@ -358,11 +357,21 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
         ? command.icon
         : undefined;
 
+    // RFC-024 §4 Phase 2 — T5.4: propagate accessibility properties from
+    // the resolved CommandBindingStyle. `ariaLabel` overrides the
+    // screen-reader name; `tooltip` populates the `title` attribute. Both
+    // are populated by CommandResolver (T5.2) and forwarded as-is so the
+    // UI layer remains a passthrough — no defaults / coercion here.
+    const ariaLabel = binding.style?.ariaLabel;
+    const tooltip = binding.style?.tooltip;
+
     return {
       id: `dynamic-cmd-${command.id}`,
       label: command.name,
       variant,
       icon,
+      ariaLabel,
+      tooltip,
       visible: true,
       onClick: async () => {
         await this.handleClick(rc, targetIRI, filePath, app, logger, refresh);
