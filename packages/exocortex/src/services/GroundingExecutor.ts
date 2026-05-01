@@ -96,7 +96,13 @@ const MAX_COMPOSITE_DEPTH = 20;
  * - `$today` → current date (YYYY-MM-DD)
  * - `$target` → IRI of the target asset
  *
- * Issue #2430
+ * Substitution applies to `property_set` raw values and to `service_call`
+ * JSON `targetValue` defaults (Issue #2999 / RFC 5a61a359 Phase C.0). For
+ * service_call the substitution is performed before `JSON.parse`, so any
+ * string position inside the JSON object can reference a token, e.g.
+ * `{"prototype":"$target"}` resolves to `{prototype: <targetIRI>}`.
+ *
+ * Issue #2430, #2999
  */
 @injectable()
 export class GroundingExecutor {
@@ -383,11 +389,30 @@ export class GroundingExecutor {
       };
     }
 
-    // Merge grounding.targetValue (JSON) as defaults into userInput
+    // Merge grounding.targetValue (JSON) as defaults into userInput.
+    //
+    // Issue #2999 (RFC 5a61a359 Phase C.0): apply substituteVariables BEFORE
+    // JSON.parse so vault groundings can reference $target / $now / $today /
+    // $nowLocal / $input / $value inside JSON string values. This unlocks the
+    // create-instance-from-prototype pattern: a Grounding with
+    //   targetValue: '{"prototype":"$target"}'
+    // resolves $target to the current asset IRI, which `createAsset` then
+    // writes as exo__Asset_prototype on the new instance. Substitution is
+    // identical to the property_set path (substituteVariables already escapes
+    // nothing — JSON safety relies on caller-supplied IRIs being safe; UUID
+    // and URL IRIs in the vault contain no `"` or `\\`). Backwards compatible:
+    // groundings without `$<token>` substrings are unchanged by the regex
+    // pass, so existing literal-JSON targetValues (e.g. updateProperty +
+    // {"property":"ems__Effort_parent"}) continue to parse identically.
     let mergedInput = userInput;
     if (grounding.targetValue) {
       try {
-        const defaults = JSON.parse(grounding.targetValue);
+        const substituted = this.substituteVariables(
+          grounding.targetValue,
+          targetIRI,
+          userInput,
+        );
+        const defaults = JSON.parse(substituted);
         if (typeof defaults === "object" && defaults !== null) {
           mergedInput = { ...defaults, ...(userInput ?? {}) };
         }
