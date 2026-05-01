@@ -1,18 +1,20 @@
 import type { ActionButtonVariant } from "@plugin/presentation/components/ActionButtonsGroup";
 
 /**
- * Built-in default variant map per command-binding group (RFC-024 Phase 0).
+ * Built-in default variant map per command category (RFC-024 Phase 0,
+ * post-RFC f1dc284a-eadc-4d0e-8e72-323e999ea510 rename).
  *
- * Keys are values of `exocmd__CommandBinding_group` (or the `binding.group` field
+ * Keys are values of `exocmd__Command_category` (the `command.category` field
  * on the domain model). Forward-looking sub-category keys (`status/done`,
  * `status/blocked`, `status/cancelled`) are included per RFC-024 §4 acceptance
- * criteria — they are inert today because starter-kit bindings use flat `status`
- * category, but will activate when sub-category granularity is introduced.
+ * criteria — they are inert today because starter-kit commands use a flat
+ * `status` category, but will activate when sub-category granularity is
+ * introduced.
  *
- * Rationale: prior implementation hardcoded a 5-case switch in
- * `DynamicCommandButtonGroupBuilder.resolveVariant`; this map is
- * independently testable and removes rollout coupling to starter-kit migration
- * (every installation receives the correct default colors on plugin upgrade).
+ * Rationale: `Command_category` (UI sectioning) and per-binding
+ * `CommandBinding_variant` (button color override) are now separate axes.
+ * This map encodes the built-in fallback colour for a category when no
+ * per-binding variant is set.
  */
 export const categoryDefaultVariant: Readonly<
   Record<string, ActionButtonVariant>
@@ -26,12 +28,17 @@ export const categoryDefaultVariant: Readonly<
 });
 
 /**
- * Resolves the default button variant for a command binding's `group` string.
- * Falls back to `"secondary"` for unknown, empty, or missing groups.
+ * Resolves the default button variant for a command's `category` string.
+ * Falls back to `"secondary"` for unknown, empty, or missing categories.
+ *
+ * Note: prior to RFC f1dc284a this function was named `resolveVariantForGroup`
+ * and was keyed by the legacy `binding.group` literal. After the split of
+ * `Command_category` (UI sectioning) and `CommandBinding_variant` (button
+ * color override) it is now keyed by `command.category` directly.
  */
-export function resolveVariantForGroup(
-  group: string | undefined,
+export function resolveDefaultVariantForCategory(
+  category: string | undefined,
 ): ActionButtonVariant {
-  if (!group) return "secondary";
-  return categoryDefaultVariant[group] ?? "secondary";
+  if (!category) return "secondary";
+  return categoryDefaultVariant[category] ?? "secondary";
 }

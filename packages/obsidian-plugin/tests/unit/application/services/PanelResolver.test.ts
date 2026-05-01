@@ -73,10 +73,10 @@ describe("PanelResolver", () => {
 
   describe("applyFilter", () => {
     const candidates = [
-      { uid: "bind-create", group: "creation" },
-      { uid: "bind-status", group: "status" },
-      { uid: "bind-block", group: "status" },
-      { uid: "bind-misc", group: "maintenance" },
+      { uid: "bind-create", category: "creation" },
+      { uid: "bind-status", category: "status" },
+      { uid: "bind-block", category: "status" },
+      { uid: "bind-misc", category: "maintenance" },
     ];
 
     it("returns the candidates unchanged when no panel is declared", () => {
@@ -85,7 +85,7 @@ describe("PanelResolver", () => {
       expect(resolver.applyFilter("ems__Task", candidates)).toEqual(candidates);
     });
 
-    it("includes only bindings whose group is whitelisted", () => {
+    it("includes only bindings whose category is whitelisted", () => {
       const panel: CommandPanel = { includeGroups: ["creation", "status"] };
       const resolver = new PanelResolver({
         layoutProvider: () => ({ commandPanel: panel }),
@@ -98,7 +98,7 @@ describe("PanelResolver", () => {
       ]);
     });
 
-    it("drops excluded bindings even when their group is included (rule #2)", () => {
+    it("drops excluded bindings even when their category is included (rule #2)", () => {
       const panel: CommandPanel = {
         includeGroups: ["creation", "status"],
         excludeCommands: ["bind-block"],

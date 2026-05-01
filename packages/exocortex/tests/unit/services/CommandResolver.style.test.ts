@@ -512,6 +512,84 @@ describe("CommandResolver — RFC-024 binding style resolution", () => {
     });
   });
 
+  describe("RFC f1dc284a — top-level binding.variant", () => {
+    it("populates binding.variant from `_variant` literal", async () => {
+      await addBinding(store, {
+        uid: "bind-variant-top",
+        commandUid: "cmd-1",
+        targetClass: TARGET_CLASS,
+        inlineVariant: "danger",
+      });
+
+      const [resolved] = await resolver.resolveForAsset(
+        "obsidian://vault/asset-1.md",
+        TARGET_CLASS,
+      );
+
+      expect(resolved.binding.variant).toBe("danger");
+    });
+
+    it("drops invalid variant (coerce → warn → undefined)", async () => {
+      await addBinding(store, {
+        uid: "bind-variant-bad",
+        commandUid: "cmd-1",
+        targetClass: TARGET_CLASS,
+        inlineVariant: "rainbow",
+      });
+
+      const [resolved] = await resolver.resolveForAsset(
+        "obsidian://vault/asset-1.md",
+        TARGET_CLASS,
+      );
+
+      expect(resolved.binding.variant).toBeUndefined();
+    });
+
+    it("logs warning when both legacy `_group` and `_variant` are present (prefers _variant)", async () => {
+      const subject = await addBinding(store, {
+        uid: "bind-coexist",
+        commandUid: "cmd-1",
+        targetClass: TARGET_CLASS,
+        inlineVariant: "primary",
+      });
+      await store.addAll([
+        new Triple(
+          subject,
+          Namespace.EXOCMD.term("CommandBinding_group"),
+          new Literal("maintenance"),
+        ),
+      ]);
+
+      const [resolved] = await resolver.resolveForAsset(
+        "obsidian://vault/asset-1.md",
+        TARGET_CLASS,
+      );
+
+      expect(resolved.binding.variant).toBe("primary");
+      expect(resolved.binding.group).toBe("maintenance");
+      expect(
+        logger.warnings.some((w) =>
+          /both _group and _variant present/.test(w),
+        ),
+      ).toBe(true);
+    });
+
+    it("leaves binding.variant undefined when neither `_variant` literal nor style asset is set", async () => {
+      await addBinding(store, {
+        uid: "bind-no-variant",
+        commandUid: "cmd-1",
+        targetClass: TARGET_CLASS,
+      });
+
+      const [resolved] = await resolver.resolveForAsset(
+        "obsidian://vault/asset-1.md",
+        TARGET_CLASS,
+      );
+
+      expect(resolved.binding.variant).toBeUndefined();
+    });
+  });
+
   describe("Default constructor — no logger", () => {
     it("works without explicit logger (NullLogger fallback)", async () => {
       const silentResolver = new CommandResolver(store);

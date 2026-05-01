@@ -19,7 +19,7 @@ import {
   ButtonBuilderContext,
 } from "./ButtonBuilderTypes";
 import { DynamicFormModal } from "@plugin/presentation/modals/DynamicFormModal";
-import { resolveVariantForGroup } from "./categoryDefaultVariants";
+import { resolveDefaultVariantForCategory } from "./categoryDefaultVariants";
 import {
   FALLBACK_CATEGORY_ORDER,
   resolveCategoryCollapsed,
@@ -307,8 +307,9 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
 
     // RFC-024 Phase 3 — apply class-level panel filter (excludeCommands
     // trumps includeGroups). When no panel is declared this is a pure
-    // pass-through. Group dimension uses `command.category` since the UI
-    // sections by category, not by `binding.group`.
+    // pass-through. Filter dimension uses `command.category` (post-RFC
+    // f1dc284a — sectioning axis is `Command_category`, no longer routed
+    // through the synthesised `binding.group` bridge).
     const visibleCommands =
       panelClassRef !== null
         ? this.panelResolver
@@ -316,7 +317,7 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
               panelClassRef,
               preconditionPassed.map((rc) => ({
                 uid: rc.binding.id,
-                group: rc.command.category,
+                category: rc.command.category,
                 rc,
               })),
             )
@@ -339,15 +340,21 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
   ): ActionButton {
     const { command, binding } = rc;
 
-    // RFC-024 §5 rule #3 — `featuredBinding` overrides binding-level
-    // style.variant → `primary` regardless of any other resolution.
+    // Variant precedence (RFC f1dc284a-eadc-4d0e-8e72-323e999ea510):
+    //   binding.variant > featuredBinding > category default > "secondary"
+    // Explicit per-binding override wins over panel-level featuredBinding so
+    // a destructive `maintenance` command can be rendered as `danger` even
+    // when nominated featured (cf. RFC §Кейс A). Featured binding still
+    // promotes to `primary` when no explicit variant is set.
     const featured =
       panelClassRef !== null &&
       this.panelResolver.isFeatured(panelClassRef, binding.id);
 
-    const variant: ActionButtonVariant = featured
-      ? "primary"
-      : resolveVariantForGroup(binding.group);
+    const variant: ActionButtonVariant =
+      binding.variant ??
+      (featured
+        ? "primary"
+        : resolveDefaultVariantForCategory(command.category));
 
     // RFC-024 §4 Phase 2 — T5.3: render `Command_icon` by default. The
     // resolved `binding.style.showIcon` (populated in T5.2 by CommandResolver)

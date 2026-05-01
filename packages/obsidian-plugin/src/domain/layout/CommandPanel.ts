@@ -182,12 +182,12 @@ export function createCommandPanelFromFrontmatter(
  * Group membership is supplied by the caller since command assets live
  * outside this domain module.
  *
- * @param candidates - Candidate commands (each with uid + optional group).
+ * @param candidates - Candidate commands (each with uid + optional category).
  * @param panel - Parsed command panel spec.
- * @returns Commands that pass both include-by-group and exclude-by-uid.
+ * @returns Commands that pass both include-by-category and exclude-by-uid.
  */
 export function applyCommandPanelFilter<
-  T extends { uid: string; group?: string },
+  T extends { uid: string; category?: string },
 >(candidates: readonly T[], panel: CommandPanel | undefined): T[] {
   if (!panel) {
     return [...candidates];
@@ -201,7 +201,7 @@ export function applyCommandPanelFilter<
       return false;
     }
     if (include && include.length > 0) {
-      if (!candidate.group || !include.includes(candidate.group)) {
+      if (!candidate.category || !include.includes(candidate.category)) {
         return false;
       }
     }
