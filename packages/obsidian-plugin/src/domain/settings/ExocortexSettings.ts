@@ -91,12 +91,6 @@ export interface ExocortexSettings {
    */
   autoReadingModeForExocortexAssets: boolean;
   /**
-   * Plugin version that last displayed the RFC-024 changelog modal.
-   * Used to show the modal exactly once per upgrade. Undefined on fresh
-   * installs (which will see the modal on first load).
-   */
-  lastShownChangelogVersion?: string;
-  /**
    * RFC be70f741 Phase 1 — enable the `RelationColumnSetRepository` and the
    * future `RelationColumnSetResolver`.  Phase 1 is behaviour-neutral (no
    * consumer wired yet) so the flag defaults to `true`; it exists so the

@@ -55,10 +55,6 @@ import {
   createAliasIconExtension,
   createWikilinkLabelExtension,
 } from "./presentation/editor-extensions";
-import {
-  ChangelogModal,
-  shouldShowChangelog,
-} from "./presentation/modals/ChangelogModal";
 import { TimerManager } from "./infrastructure/timer";
 import { LRUCache } from "./infrastructure/cache";
 import { TabTitlePatch } from "./presentation/tab-titles/TabTitlePatch";
@@ -873,39 +869,6 @@ export default class ExocortexPlugin extends Plugin {
         );
       }
 
-      // RFC-024 Phase 0: first-launch-after-upgrade changelog modal.
-      // Fresh installs have no prior behaviour to contrast, so we silently seed
-      // `lastShownChangelogVersion` and skip the modal (avoids onboarding noise
-      // and unblocks E2E test vaults that boot from an empty data.json).
-      // Delayed 500ms so Obsidian's own modal stack has settled and the
-      // workspace is interactive before we surface a dialog.
-      const currentVersion = this.manifest.version;
-      if (this.isFreshInstall) {
-        this.settings.lastShownChangelogVersion = currentVersion;
-        void this.saveSettings();
-      } else if (
-        shouldShowChangelog(
-          this.settings.lastShownChangelogVersion,
-          currentVersion,
-        )
-      ) {
-        this.timerManager.setTimeout(
-          "rfc024-changelog-modal",
-          () => {
-            const modal = new ChangelogModal(
-              this.app,
-              currentVersion,
-              (version) => {
-                this.settings.lastShownChangelogVersion = version;
-                void this.saveSettings();
-              },
-            );
-            modal.open();
-          },
-          500,
-        );
-      }
-
       this.logger.info("Exocortex Plugin loaded successfully");
     } catch (error) {
       this.logger?.error("Failed to load Exocortex Plugin", error as Error);
@@ -1022,17 +985,8 @@ export default class ExocortexPlugin extends Plugin {
     this.logger?.info("Exocortex Plugin unloaded");
   }
 
-  /**
-   * True when the plugin data file did not exist at startup — i.e. this is a
-   * brand-new install with no prior user state. Used to suppress the RFC-024
-   * Phase 0 changelog modal for users who never had pre-recoloring behaviour
-   * (nothing to inform them about).
-   */
-  private isFreshInstall = false;
-
   async loadSettings(): Promise<void> {
     const rawData = await this.loadData();
-    this.isFreshInstall = rawData == null;
     this.settings = Object.assign({}, DEFAULT_SETTINGS, rawData);
     // Ensure logChannels exists for users upgrading from older versions
     if (!this.settings.logChannels) {
