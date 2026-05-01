@@ -126,8 +126,21 @@ export interface CommandBindingDefinition {
   readonly position?: string;
   /** Sort order (default: 100) */
   readonly order?: number;
-  /** Button group name */
+  /**
+   * @deprecated Button group name (legacy). Use `variant` for explicit per-binding
+   * button variant override. Parser still reads `_group` for backward compat,
+   * but prefers `_variant` when both are present (logs warning). RFC
+   * f1dc284a-eadc-4d0e-8e72-323e999ea510 — removal scheduled for next release
+   * after starter-kit migration.
+   */
   readonly group?: string;
+  /**
+   * Per-binding button variant override (RFC command-variant-split,
+   * f1dc284a-eadc-4d0e-8e72-323e999ea510). Populated from
+   * `exocmd__CommandBinding_variant` frontmatter literal. When absent, UI
+   * falls back to category-default variant (then `secondary`).
+   */
+  readonly variant?: CommandVariant;
   /** Binding-level precondition overriding command-level precondition */
   readonly precondition?: PreconditionDefinition;
   /**

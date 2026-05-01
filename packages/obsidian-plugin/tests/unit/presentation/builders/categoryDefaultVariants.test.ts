@@ -1,6 +1,6 @@
 import {
   categoryDefaultVariant,
-  resolveVariantForGroup,
+  resolveDefaultVariantForCategory,
 } from "../../../../src/presentation/builders/button-groups/categoryDefaultVariants";
 
 describe("categoryDefaultVariant map (RFC-024 Phase 0)", () => {
@@ -37,36 +37,38 @@ describe("categoryDefaultVariant map (RFC-024 Phase 0)", () => {
   });
 });
 
-describe("resolveVariantForGroup (RFC-024 Phase 0)", () => {
-  it("returns secondary for undefined group", () => {
-    expect(resolveVariantForGroup(undefined)).toBe("secondary");
+describe("resolveDefaultVariantForCategory (RFC f1dc284a rename)", () => {
+  it("returns secondary for undefined category", () => {
+    expect(resolveDefaultVariantForCategory(undefined)).toBe("secondary");
   });
 
-  it("returns secondary for empty string group", () => {
-    expect(resolveVariantForGroup("")).toBe("secondary");
+  it("returns secondary for empty string category", () => {
+    expect(resolveDefaultVariantForCategory("")).toBe("secondary");
   });
 
-  it("returns primary for creation group", () => {
-    expect(resolveVariantForGroup("creation")).toBe("primary");
+  it("returns primary for creation category", () => {
+    expect(resolveDefaultVariantForCategory("creation")).toBe("primary");
   });
 
-  it("returns warning for criticality group", () => {
-    expect(resolveVariantForGroup("criticality")).toBe("warning");
+  it("returns warning for criticality category", () => {
+    expect(resolveDefaultVariantForCategory("criticality")).toBe("warning");
   });
 
-  it("returns muted for maintenance group", () => {
-    expect(resolveVariantForGroup("maintenance")).toBe("muted");
+  it("returns muted for maintenance category", () => {
+    expect(resolveDefaultVariantForCategory("maintenance")).toBe("muted");
   });
 
-  it("returns secondary for unknown group", () => {
-    expect(resolveVariantForGroup("unknown-future-category")).toBe("secondary");
+  it("returns secondary for unknown category", () => {
+    expect(resolveDefaultVariantForCategory("unknown-future-category")).toBe(
+      "secondary",
+    );
   });
 
-  it("returns secondary for bare status group (sub-category required for color)", () => {
-    expect(resolveVariantForGroup("status")).toBe("secondary");
+  it("returns secondary for bare status category (sub-category required for color)", () => {
+    expect(resolveDefaultVariantForCategory("status")).toBe("secondary");
   });
 
-  it("returns secondary for planning group", () => {
-    expect(resolveVariantForGroup("planning")).toBe("secondary");
+  it("returns secondary for planning category", () => {
+    expect(resolveDefaultVariantForCategory("planning")).toBe("secondary");
   });
 });

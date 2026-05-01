@@ -304,11 +304,10 @@ describe("DynamicCommandButtonGroupBuilder", () => {
       );
     });
 
-    it("should resolve variant from binding group via categoryDefaultVariant map", async () => {
-      // RFC-024 Phase 0: `creation` group maps to `primary` by built-in defaults
+    it("should resolve variant from command category via categoryDefaultVariant map", async () => {
+      // RFC f1dc284a: `creation` category maps to `primary` by built-in defaults.
       const rc = createResolvedCommand(
-        { name: "Create action" },
-        { group: "creation" },
+        { name: "Create action", category: "creation" },
       );
       mockResolveForAssetMulti.mockResolvedValue([rc]);
       mockEvaluate.mockResolvedValue(true);
@@ -319,10 +318,9 @@ describe("DynamicCommandButtonGroupBuilder", () => {
       expect(result[0].variant).toBe("primary");
     });
 
-    it("should map maintenance group to muted variant (RFC-024 Phase 0)", async () => {
+    it("should map maintenance category to muted variant", async () => {
       const rc = createResolvedCommand(
-        { name: "Rebuild index" },
-        { group: "maintenance" },
+        { name: "Rebuild index", category: "maintenance" },
       );
       mockResolveForAssetMulti.mockResolvedValue([rc]);
       mockEvaluate.mockResolvedValue(true);
@@ -333,10 +331,9 @@ describe("DynamicCommandButtonGroupBuilder", () => {
       expect(result[0].variant).toBe("muted");
     });
 
-    it("should default variant to secondary when no group", async () => {
+    it("should default variant to secondary when no category", async () => {
       const rc = createResolvedCommand(
-        { name: "Default action" },
-        { group: undefined },
+        { name: "Default action", category: undefined },
       );
       mockResolveForAssetMulti.mockResolvedValue([rc]);
       mockEvaluate.mockResolvedValue(true);
@@ -345,6 +342,21 @@ describe("DynamicCommandButtonGroupBuilder", () => {
       const result = await builder.build(context);
 
       expect(result[0].variant).toBe("secondary");
+    });
+
+    it("binding.variant override wins over category default and featuredBinding (RFC f1dc284a)", async () => {
+      // Кейс A: destructive maintenance command rendered as `danger`.
+      const rc = createResolvedCommand(
+        { name: "Delete asset", category: "maintenance" },
+        { variant: "danger" },
+      );
+      mockResolveForAssetMulti.mockResolvedValue([rc]);
+      mockEvaluate.mockResolvedValue(true);
+
+      const context = createContext();
+      const result = await builder.build(context);
+
+      expect(result[0].variant).toBe("danger");
     });
 
     it("should default variant to secondary for unknown group", async () => {

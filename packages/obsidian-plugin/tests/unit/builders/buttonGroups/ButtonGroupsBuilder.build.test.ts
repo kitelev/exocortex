@@ -179,11 +179,11 @@ describe("ButtonGroupsBuilder - build (dynamic commands only)", () => {
         command: {
           id: "cmd-creation",
           name: "Create Task",
-          category: "status",
+          category: "creation",
           precondition: { type: "always_true" },
           grounding: { type: "set_frontmatter_value" },
         },
-        binding: { order: 0, group: "creation" },
+        binding: { order: 0 },
       },
       {
         command: {
@@ -193,37 +193,43 @@ describe("ButtonGroupsBuilder - build (dynamic commands only)", () => {
           precondition: { type: "always_true" },
           grounding: { type: "set_frontmatter_value" },
         },
-        binding: { order: 1, group: "maintenance" },
+        binding: { order: 1 },
       },
       {
         command: {
           id: "cmd-unknown",
           name: "Trash",
-          category: "maintenance",
+          category: "unknown-future-category",
           precondition: { type: "always_true" },
           grounding: { type: "set_frontmatter_value" },
         },
-        binding: { order: 2, group: "legacy-unknown" },
+        binding: { order: 2 },
       },
     ]);
     ctx.mockPreconditionEvaluator.evaluate.mockResolvedValue(true);
 
     const groups = await ctx.builder.build(mockFile);
 
-    // RFC-024 Phase 0: category-driven default variants.
-    // `creation` → primary, `maintenance` → muted, unknown group → secondary.
-    const statusGroup = groups.find((g) => g.id === "dynamic-commands-status");
+    // RFC f1dc284a: category-driven default variants.
+    // `creation` → primary, `maintenance` → muted, unknown category → secondary.
+    const creationGroup = groups.find(
+      (g) => g.id === "dynamic-commands-creation",
+    );
     const maintenanceGroup = groups.find(
       (g) => g.id === "dynamic-commands-maintenance",
     );
-    expect(statusGroup).toBeDefined();
-    expect(statusGroup!.buttons.length).toBe(1);
-    expect(statusGroup!.buttons[0].variant).toBe("primary");
+    const unknownGroup = groups.find(
+      (g) => g.id === "dynamic-commands-unknown-future-category",
+    );
+    expect(creationGroup).toBeDefined();
+    expect(creationGroup!.buttons.length).toBe(1);
+    expect(creationGroup!.buttons[0].variant).toBe("primary");
     expect(maintenanceGroup).toBeDefined();
     expect(maintenanceGroup!.collapsedByDefault).toBe(true);
-    expect(maintenanceGroup!.buttons.length).toBe(2);
+    expect(maintenanceGroup!.buttons.length).toBe(1);
     expect(maintenanceGroup!.buttons[0].variant).toBe("muted");
-    expect(maintenanceGroup!.buttons[1].variant).toBe("secondary");
+    expect(unknownGroup).toBeDefined();
+    expect(unknownGroup!.buttons[0].variant).toBe("secondary");
   });
 
   it("should handle resolver errors gracefully", async () => {
