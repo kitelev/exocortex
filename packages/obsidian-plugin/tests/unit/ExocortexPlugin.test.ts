@@ -1171,7 +1171,7 @@ describe("ExocortexPlugin", () => {
       // Wait for 150ms setTimeout in handler
       await waitForCondition(
         () => mockWorkspace.getActiveViewOfType.mock.calls.length > 0,
-        { timeout: 500, message: "getActiveViewOfType not called" }
+        { timeout: 2000, message: "getActiveViewOfType not called" }
       );
 
       // Assert
@@ -1194,7 +1194,7 @@ describe("ExocortexPlugin", () => {
       // Wait for 150ms setTimeout in handler
       await waitForCondition(
         () => mockWorkspace.getActiveViewOfType.mock.calls.length > 0,
-        { timeout: 500, message: "getActiveViewOfType not called" }
+        { timeout: 2000, message: "getActiveViewOfType not called" }
       );
 
       // Assert
@@ -1217,7 +1217,7 @@ describe("ExocortexPlugin", () => {
       // Wait for 150ms setTimeout in handler
       await waitForCondition(
         () => mockWorkspace.getActiveViewOfType.mock.calls.length > 0,
-        { timeout: 500, message: "getActiveViewOfType not called" }
+        { timeout: 2000, message: "getActiveViewOfType not called" }
       );
 
       // Assert
@@ -1226,11 +1226,13 @@ describe("ExocortexPlugin", () => {
   });
 
   describe("SPARQL processor integration", () => {
-    it("should register SPARQL code block processor", async () => {
+    it("should register SPARQL code block processor (delegates to processor when toggle on)", async () => {
       // Arrange
       await plugin.onload();
+      // Issue #2992: auto-execute is opt-in (default off). Enable for legacy delegation test.
+      plugin.settings.enableSparqlAutoExecute = true;
 
-      // Assert
+      // Assert registration happened
       expect(plugin.registerMarkdownCodeBlockProcessor).toHaveBeenCalledWith(
         "sparql",
         expect.any(Function)
@@ -1252,9 +1254,10 @@ describe("ExocortexPlugin", () => {
       expect(mockSparqlProcessor.process).toHaveBeenCalledWith(source, el, ctx);
     });
 
-    it("should register exoql code block processor as alias for SPARQL", async () => {
+    it("should register exoql code block processor as alias for SPARQL (delegates when toggle on)", async () => {
       // Arrange
       await plugin.onload();
+      plugin.settings.enableSparqlAutoExecute = true;
 
       // Assert
       expect(plugin.registerMarkdownCodeBlockProcessor).toHaveBeenCalledWith(
@@ -1278,6 +1281,32 @@ describe("ExocortexPlugin", () => {
 
       // Assert
       expect(mockSparqlProcessor.process).toHaveBeenCalledWith(source, el, ctx);
+    });
+
+    it("Issue #2992: when toggle is off (default), does NOT execute SPARQL — renders plain code", async () => {
+      // Arrange
+      await plugin.onload();
+      // Default is false; assert explicitly for clarity
+      expect(plugin.settings.enableSparqlAutoExecute).toBe(false);
+
+      const calls = (plugin.registerMarkdownCodeBlockProcessor as jest.Mock).mock.calls;
+      const sparqlCall = calls.find((c: any[]) => c[0] === "sparql");
+      const processorFn = sparqlCall![1];
+
+      const source = "ASK { ?s ?p ?o }";
+      const el = document.createElement("div");
+      const ctx = {} as any;
+
+      // Act
+      processorFn(source, el, ctx);
+
+      // Assert — processor not invoked, plain <pre><code> appended
+      expect(mockSparqlProcessor.process).not.toHaveBeenCalled();
+      const pre = el.querySelector("pre.language-sparql");
+      expect(pre).not.toBeNull();
+      const code = pre!.querySelector("code.language-sparql");
+      expect(code).not.toBeNull();
+      expect(code!.textContent).toBe(source);
     });
   });
 

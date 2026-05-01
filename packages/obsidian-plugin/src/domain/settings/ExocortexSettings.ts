@@ -116,6 +116,14 @@ export interface ExocortexSettings {
    * `FileExplorerLabelPatch`). Set to `false` to opt out.
    */
   showIconsInFileExplorer: boolean;
+  /**
+   * When `true`, ` ```sparql ` and ` ```exoql ` markdown code blocks are
+   * executed as queries during note rendering (legacy behaviour). When
+   * `false` (default), those code blocks render as plain code so users can
+   * paste SPARQL snippets for documentation/reference without side effects.
+   * Issue #2992.
+   */
+  enableSparqlAutoExecute: boolean;
   [key: string]: unknown;
 }
 
@@ -139,4 +147,5 @@ export const DEFAULT_SETTINGS: ExocortexSettings = {
   enableRelationColumnSetResolver: true,
   enableExoLayoutRenderer: true,
   showIconsInFileExplorer: true,
+  enableSparqlAutoExecute: false,
 };

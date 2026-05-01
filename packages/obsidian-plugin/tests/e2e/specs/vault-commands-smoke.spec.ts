@@ -265,6 +265,18 @@ test.describe("Vault Commands Smoke Tests", () => {
     const window = await launcher.getWindow();
 
     await launcher.waitForModalsToClose(10000);
+    // Issue #2992: SPARQL auto-execute is opt-in (default off). Enable it
+    // for this test so the legacy SPARQLCodeBlockProcessor path runs.
+    await window.evaluate(async () => {
+      const app = (window as any).app;
+      const plugin = app.plugins?.plugins?.exocortex;
+      if (plugin) {
+        plugin.settings.enableSparqlAutoExecute = true;
+        await plugin.saveSettings?.();
+      }
+    });
+    // Re-open so the markdown post-processor re-runs with the new setting.
+    await launcher.openFile("exoql-test-page.md");
     await launcher.waitForElement(".exocortex-layout-rendered", 30000);
 
     // ExoQL code blocks are processed by SPARQLCodeBlockProcessor and MUST

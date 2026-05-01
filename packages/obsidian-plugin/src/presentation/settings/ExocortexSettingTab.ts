@@ -1,5 +1,5 @@
 import { App, PluginSettingTab, Setting } from "obsidian";
-import type ExocortexPlugin from '@plugin/ExocortexPlugin';
+import type ExocortexPlugin from "@plugin/ExocortexPlugin";
 import { DEFAULT_DISPLAY_NAME_TEMPLATE } from "@plugin/domain/display-name/DisplayNameTemplateEngine";
 import { DisplayNameResolver } from "@plugin/domain/display-name/DisplayNameResolver";
 import {
@@ -54,7 +54,7 @@ export class ExocortexSettingTab extends PluginSettingTab {
       .setName("Auto-adjust planned end time")
       .setDesc(
         "Automatically shift plannedEndTimestamp when plannedStartTimestamp changes. " +
-        "Disable if using Obsidian Sync to prevent duplicate shifts.",
+          "Disable if using Obsidian Sync to prevent duplicate shifts.",
       )
       .addToggle((toggle) =>
         toggle
@@ -67,9 +67,7 @@ export class ExocortexSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Show labels in tab titles")
-      .setDesc(
-        "Display asset labels instead of filenames in tab headers",
-      )
+      .setDesc("Display asset labels instead of filenames in tab headers")
       .addToggle((toggle) =>
         toggle
           .setValue(this.plugin.settings.showLabelsInTabTitles)
@@ -99,7 +97,7 @@ export class ExocortexSettingTab extends PluginSettingTab {
       .setName("Enable custom layouts")
       .setDesc(
         "Render class-specific layouts defined via exo__Layout assets. " +
-        "When disabled, the plugin falls back to the default Asset Relations section.",
+          "When disabled, the plugin falls back to the default Asset Relations section.",
       )
       .addToggle((toggle) =>
         toggle
@@ -115,8 +113,8 @@ export class ExocortexSettingTab extends PluginSettingTab {
       .setName("Show class icons in file explorer")
       .setDesc(
         "Render Lucide icons next to file explorer rows for notes whose " +
-        "exo__Instance_class resolves to an exo__Layout_icon. " +
-        "Skips rows already iconized by the Iconize community plugin.",
+          "exo__Instance_class resolves to an exo__Layout_icon. " +
+          "Skips rows already iconized by the Iconize community plugin.",
       )
       .addToggle((toggle) =>
         toggle
@@ -125,6 +123,24 @@ export class ExocortexSettingTab extends PluginSettingTab {
             this.plugin.settings.showIconsInFileExplorer = value;
             await this.plugin.saveSettings();
             this.plugin.toggleFileExplorerIcons(value);
+          }),
+      );
+
+    new Setting(containerEl)
+      // eslint-disable-next-line obsidianmd/ui/sentence-case -- "SPARQL" is an established acronym
+      .setName("Auto-execute SPARQL code blocks")
+      .setDesc(
+        "When enabled, sparql and exoql code blocks are executed as queries " +
+          "during note rendering. When disabled (default), those code blocks " +
+          "render as plain code so SPARQL snippets can be pasted for " +
+          "documentation or reference without side effects. Issue #2992.",
+      )
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.enableSparqlAutoExecute)
+          .onChange(async (value) => {
+            this.plugin.settings.enableSparqlAutoExecute = value;
+            await this.plugin.saveSettings();
           }),
       );
 
@@ -176,7 +192,7 @@ export class ExocortexSettingTab extends PluginSettingTab {
       .setName("Show labels in live preview")
       .setDesc(
         "Display asset labels instead of UUIDs for wikilinks in live preview mode (edit mode). " +
-        "When enabled, [[uuid]] will show as 'Asset Label' while editing.",
+          "When enabled, [[uuid]] will show as 'Asset Label' while editing.",
       )
       .addToggle((toggle) =>
         toggle
@@ -192,13 +208,13 @@ export class ExocortexSettingTab extends PluginSettingTab {
     this.renderLogChannelsSection(containerEl);
 
     // Display Name Template section
-    new Setting(containerEl)
-      .setName("Display name templates")
-      .setHeading();
+    new Setting(containerEl).setName("Display name templates").setHeading();
 
     // Ensure displayNameSettings is initialized
     if (!this.plugin.settings.displayNameSettings) {
-      this.plugin.settings.displayNameSettings = { ...DEFAULT_DISPLAY_NAME_SETTINGS };
+      this.plugin.settings.displayNameSettings = {
+        ...DEFAULT_DISPLAY_NAME_SETTINGS,
+      };
     }
 
     const displayNameSettings = this.plugin.settings.displayNameSettings;
@@ -227,13 +243,15 @@ export class ExocortexSettingTab extends PluginSettingTab {
       );
 
     // Per-class templates section
-    new Setting(containerEl)
-      .setName("Per-class templates")
-      .setHeading();
+    new Setting(containerEl).setName("Per-class templates").setHeading();
 
-    const classTemplatesDesc = containerEl.createDiv({ cls: "setting-item-description" });
+    const classTemplatesDesc = containerEl.createDiv({
+      cls: "setting-item-description",
+    });
     const classTemplatesP = classTemplatesDesc.createEl("p");
-    classTemplatesP.appendText("Configure different display name templates for each asset class.");
+    classTemplatesP.appendText(
+      "Configure different display name templates for each asset class.",
+    );
 
     // Common classes to configure
     const commonClasses = [
@@ -272,14 +290,14 @@ export class ExocortexSettingTab extends PluginSettingTab {
       .setName("Reset to defaults")
       .setDesc("Reset all display name templates to default values")
       .addButton((button) =>
-        button
-          .setButtonText("Reset")
-          .onClick(async () => {
-            this.plugin.settings.displayNameSettings = { ...DEFAULT_DISPLAY_NAME_SETTINGS };
-            await this.plugin.saveSettings();
-            this.plugin.applyDisplayNameTemplate();
-            this.display(); // Refresh UI
-          }),
+        button.setButtonText("Reset").onClick(async () => {
+          this.plugin.settings.displayNameSettings = {
+            ...DEFAULT_DISPLAY_NAME_SETTINGS,
+          };
+          await this.plugin.saveSettings();
+          this.plugin.applyDisplayNameTemplate();
+          this.display(); // Refresh UI
+        }),
       );
 
     // Template syntax help
@@ -287,10 +305,15 @@ export class ExocortexSettingTab extends PluginSettingTab {
       cls: "setting-item-description",
     });
     helpEl.createEl("strong", { text: "Available placeholders:" });
-    const placeholderList = helpEl.createEl("ul", { cls: "exocortex-placeholder-list" });
+    const placeholderList = helpEl.createEl("ul", {
+      cls: "exocortex-placeholder-list",
+    });
     const placeholders = [
       { code: "{{exo__Asset_label}}", desc: "Asset label" },
-      { code: "{{exo__Instance_class}}", desc: "Asset class (Task, Project, etc.)" },
+      {
+        code: "{{exo__Instance_class}}",
+        desc: "Asset class (Task, Project, etc.)",
+      },
       { code: "{{ems__Effort_status}}", desc: "Current effort status" },
       { code: "{{_basename}}", desc: "Original filename" },
       { code: "{{_created}}", desc: "File creation date" },
@@ -308,14 +331,12 @@ export class ExocortexSettingTab extends PluginSettingTab {
    * Rows = log levels, columns = channels (Notice / Console / File).
    */
   private renderLogChannelsSection(containerEl: HTMLElement): void {
-    new Setting(containerEl)
-      .setName("Log channels")
-      .setHeading();
+    new Setting(containerEl).setName("Log channels").setHeading();
 
     const desc = containerEl.createDiv({ cls: "setting-item-description" });
     desc.appendText(
       "Choose which channels each log level should be routed to. " +
-      "File channel writes to exocortex-logs.txt in the vault root.",
+        "File channel writes to exocortex-logs.txt in the vault root.",
     );
 
     // Ensure logChannels exists
@@ -356,22 +377,35 @@ export class ExocortexSettingTab extends PluginSettingTab {
   /**
    * Update the per-class template preview
    */
-  private updatePerClassPreview(previewEl: HTMLElement, settings: DisplayNameSettings): void {
+  private updatePerClassPreview(
+    previewEl: HTMLElement,
+    settings: DisplayNameSettings,
+  ): void {
     const resolver = new DisplayNameResolver(settings);
 
     const sampleAssets = [
       {
-        metadata: { exo__Asset_label: "Fix bug", exo__Instance_class: ["[[ems__Task]]"], ems__Effort_status: "DOING" },
+        metadata: {
+          exo__Asset_label: "Fix bug",
+          exo__Instance_class: ["[[ems__Task]]"],
+          ems__Effort_status: "DOING",
+        },
         basename: "fix-bug-123",
         name: "Task",
       },
       {
-        metadata: { exo__Asset_label: "Morning routine", exo__Instance_class: ["[[ems__TaskPrototype]]"] },
+        metadata: {
+          exo__Asset_label: "Morning routine",
+          exo__Instance_class: ["[[ems__TaskPrototype]]"],
+        },
         basename: "morning-routine",
         name: "TaskPrototype",
       },
       {
-        metadata: { exo__Asset_label: "Alpha Project", exo__Instance_class: ["[[ems__Project]]"] },
+        metadata: {
+          exo__Asset_label: "Alpha Project",
+          exo__Instance_class: ["[[ems__Project]]"],
+        },
         basename: "alpha-project",
         name: "Project",
       },
@@ -381,10 +415,16 @@ export class ExocortexSettingTab extends PluginSettingTab {
     previewEl.empty();
 
     previewEl.createEl("strong", { text: "Preview:" });
-    const previewList = previewEl.createEl("ul", { cls: "exocortex-preview-list" });
+    const previewList = previewEl.createEl("ul", {
+      cls: "exocortex-preview-list",
+    });
 
     for (const { metadata, basename, name } of sampleAssets) {
-      const displayName = resolver.resolve({ metadata, basename, createdDate: new Date() });
+      const displayName = resolver.resolve({
+        metadata,
+        basename,
+        createdDate: new Date(),
+      });
       const li = previewList.createEl("li");
       li.createEl("strong", { text: `${name}: ` });
       li.appendText(displayName || "(empty)");
