@@ -242,7 +242,11 @@ export { NonInheritablePropertyRegistry } from "./services/NonInheritablePropert
 export { PropertyCardinalityRegistry } from "./services/PropertyCardinalityRegistry";
 export { PrototypeChainMaterializer, INFERRED_GRAPH } from "./services/PrototypeChainMaterializer";
 export { SourceAnnotator, SOURCE_VARIABLE, type TripleSource } from "./services/SourceAnnotator";
-export { NoteToRDFConverter } from "./services/NoteToRDFConverter";
+export {
+  NoteToRDFConverter,
+  type ExocortexInvariantCode,
+  type ExocortexInvariantViolation,
+} from "./services/NoteToRDFConverter";
 
 // SPARQL Engine exports
 export { ExoQLParser, SPARQLParser, SPARQLParseError, type SPARQLQuery, type SelectQuery, type ConstructQuery, type Update, type UpdateOperation, type ExtendedDescribeQuery, type ParseResult } from "./infrastructure/sparql/SPARQLParser";
