@@ -99,8 +99,10 @@ fi
 #   + performance/RelationColumnSetResolverPerformance.test.ts (p95 <1ms gate)
 # - Issue #2959: services/NoteToRDFConverter.issue-2959.test.ts (class-named
 #   wikilink → namespace IRI normalization regression suite)
+# - Issue #2997 Phase 5 (RFC 0810aad3): infrastructure/sparql/executors/BGPExecutor.issue-2997.test.ts
+#   (translator literal-safety guard regression gate)
 echo "📦 Running exocortex grounding + RFC regression tests..."
-EXOCORTEX_JEST_ARGS="--config packages/exocortex/jest.config.js --testPathPatterns=(services/(GroundingExecutor|AssetConversionService|NoteToRDFConverter\.issue-2959)\.test|application/services/RelationColumnSetResolver(\.property)?\.test|performance/RelationColumnSetResolverPerformance\.test)\.ts --forceExit"
+EXOCORTEX_JEST_ARGS="--config packages/exocortex/jest.config.js --testPathPatterns=(services/(GroundingExecutor|AssetConversionService|NoteToRDFConverter\.issue-2959)\.test|application/services/RelationColumnSetResolver(\.property)?\.test|performance/RelationColumnSetResolverPerformance\.test|infrastructure/sparql/executors/BGPExecutor\.issue-2997\.test)\.ts --forceExit"
 if [ "$CI" = "true" ]; then
     if timeout 60 node ./node_modules/jest/bin/jest.js $EXOCORTEX_JEST_ARGS; then
         echo "✅ Exocortex grounding regression tests passed!"

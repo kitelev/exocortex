@@ -2,6 +2,8 @@
 
 ### Added
 
+**Issue #2997 Phase 5 — Regression test → CI gate (RFC `0810aad3-90fc-46bb-a103-26ca8172970b`)**: Closes #2997 ("Literals cannot appear in subject position" SPARQL crash). The Phase 1 reproduction suite (`packages/cli/tests/integration/issue-2997-repro.integration.test.ts`) was un-skipped by Phase 2 (#3004) and is now active under `test-coverage-cli`; the Phase 3 BGP literal-safety guard suite (`packages/exocortex/tests/unit/infrastructure/sparql/executors/BGPExecutor.issue-2997.test.ts`) is added to the explicit allow-list in `test-coverage-exocortex` (ci.yml + scripts/test-ci-batched.sh) so it runs as a named regression gate rather than relying on transitive test discovery. Together with `issue-2997-loader-2pc.integration.test.ts` (11 parametrized 2pc cases) the gate covers loader partial-state leak, translator literal-safety guard, and the original user-reported query shape end-to-end.
+
 **exoql:eval default ON + IQueryBodyResolver (RFC c78cc5c8 Phase 1a, PR3 / T4–T6)**: The `exoql__Query` + `exo:eval` MVP pipeline is now active. Preconditions can reference an `exoql__Query` asset by UID (`exocmd__Precondition_query`) instead of inlining the SPARQL string in frontmatter — preserving the M2 invariant that the query body lives only in the markdown ```sparql code-block.
 
 - `DEFAULT_EVAL_CONFIG.enabled` flipped from `false` to `true`

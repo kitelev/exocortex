@@ -449,10 +449,15 @@ jobs:
         #   + performance/RelationColumnSetResolverPerformance.test.ts (p95 <1ms gate).
         # - Issue #2959: services/NoteToRDFConverter.issue-2959.test.ts (class-named
         #   wikilink → namespace IRI normalization regression suite).
+        # - Issue #2997 Phase 5 (RFC 0810aad3): infrastructure/sparql/executors/BGPExecutor.issue-2997.test.ts
+        #   (translator literal-safety guard regression gate). Phase 1+2 CLI integration
+        #   tests (issue-2997-repro / issue-2997-loader-2pc) run via test-coverage-cli;
+        #   BGP unit suite needs explicit allow-list entry here because exocortex
+        #   jest.config.js is otherwise unreachable from CI (see scripts/test-ci-batched.sh).
         run: |
           node ./node_modules/jest/bin/jest.js \
             --config packages/exocortex/jest.config.js \
-            --testPathPatterns='(services/(GroundingExecutor|AssetConversionService|NoteToRDFConverter\.issue-2959)\.test|application/services/RelationColumnSetResolver(\.property)?\.test|performance/RelationColumnSetResolverPerformance\.test)\.ts' \
+            --testPathPatterns='(services/(GroundingExecutor|AssetConversionService|NoteToRDFConverter\.issue-2959)\.test|application/services/RelationColumnSetResolver(\.property)?\.test|performance/RelationColumnSetResolverPerformance\.test|infrastructure/sparql/executors/BGPExecutor\.issue-2997\.test)\.ts' \
             --forceExit
 
   test-coverage:
