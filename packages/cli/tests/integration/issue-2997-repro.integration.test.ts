@@ -24,7 +24,8 @@
  * the suite then becomes the regression gate for #2997.
  */
 import { describe, it, expect } from "@jest/globals";
-import { resolve } from "path";
+import { dirname, resolve } from "path";
+import { fileURLToPath } from "url";
 import {
   ExoQLAlgebraTranslator,
   ExoQLParser,
@@ -35,6 +36,7 @@ import {
 } from "exocortex";
 import { FileSystemVaultAdapter } from "../../src/adapters/FileSystemVaultAdapter.js";
 
+const __dirname = dirname(fileURLToPath(import.meta.url));
 const FIXTURE_ROOT = resolve(__dirname, "../fixtures/issue-2997");
 
 const ISSUE_QUERY = `
