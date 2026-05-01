@@ -109,7 +109,8 @@ export default class ExocortexPlugin extends Plugin {
   preconditionEvaluator!: PreconditionEvaluator;
   groundingExecutor!: GroundingExecutor;
   serviceRegistry!: ServiceRegistry;
-  private relationColumnSetRepository: RelationColumnSetRepository | null = null;
+  private relationColumnSetRepository: RelationColumnSetRepository | null =
+    null;
   private relationColumnSetResolver: RelationColumnSetResolver | null = null;
   private exoLayoutRepository: ExoLayoutRepository | null = null;
   private layoutSelector: LayoutSelector | null = null;
@@ -188,14 +189,10 @@ export default class ExocortexPlugin extends Plugin {
         ),
       );
       this.registerEvent(
-        this.app.vault.on("delete", () =>
-          queryBodyResolver.invalidateCache(),
-        ),
+        this.app.vault.on("delete", () => queryBodyResolver.invalidateCache()),
       );
       this.registerEvent(
-        this.app.vault.on("rename", () =>
-          queryBodyResolver.invalidateCache(),
-        ),
+        this.app.vault.on("rename", () => queryBodyResolver.invalidateCache()),
       );
       this.serviceRegistry = new ServiceRegistry();
       const obsidianFs = new ObsidianFileSystemAdapter(this.app.vault);
@@ -416,13 +413,11 @@ export default class ExocortexPlugin extends Plugin {
       this.themeResolver = new ThemeResolver({
         layoutProvider: (classRef) => {
           const files = this.app.vault.getMarkdownFiles();
-          let bestSlots:
-            | {
-                accentColor?: string;
-                icon?: string;
-                labelTypography?: import("@plugin/domain/layout").LabelTypography;
-              }
-            | null = null;
+          let bestSlots: {
+            accentColor?: string;
+            icon?: string;
+            labelTypography?: import("@plugin/domain/layout").LabelTypography;
+          } | null = null;
           let bestPriority = Number.POSITIVE_INFINITY;
           for (const file of files) {
             const fm = this.app.metadataCache.getFileCache(file)
@@ -561,12 +556,36 @@ export default class ExocortexPlugin extends Plugin {
 
       this.addSettingTab(new ExocortexSettingTab(this.app, this));
 
+      // Issue #2992: gate auto-execution behind opt-in setting. When
+      // `enableSparqlAutoExecute` is `false` (default), render the code block
+      // as plain `<pre><code>` so users can paste SPARQL snippets for
+      // documentation/reference without triggering query execution on every
+      // render. The setting is read at render time, so flipping the toggle
+      // takes effect on next render without a plugin reload.
+      const renderSparqlBlock = (
+        source: string,
+        el: HTMLElement,
+        ctx: Parameters<
+          Parameters<typeof this.registerMarkdownCodeBlockProcessor>[1]
+        >[2],
+        language: "sparql" | "exoql",
+      ): void | Promise<void> => {
+        if (this.settings.enableSparqlAutoExecute) {
+          return this.sparqlProcessor.process(source, el, ctx);
+        }
+        const pre = el.createEl("pre");
+        pre.addClass(`language-${language}`);
+        const code = pre.createEl("code");
+        code.addClass(`language-${language}`);
+        code.setText(source);
+      };
+
       this.registerMarkdownCodeBlockProcessor("sparql", (source, el, ctx) =>
-        this.sparqlProcessor.process(source, el, ctx),
+        renderSparqlBlock(source, el, ctx, "sparql"),
       );
 
       this.registerMarkdownCodeBlockProcessor("exoql", (source, el, ctx) =>
-        this.sparqlProcessor.process(source, el, ctx),
+        renderSparqlBlock(source, el, ctx, "exoql"),
       );
 
       this.registerMarkdownCodeBlockProcessor("exo-layout", (source, el, ctx) =>
