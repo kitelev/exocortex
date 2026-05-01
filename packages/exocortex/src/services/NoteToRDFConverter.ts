@@ -9,6 +9,7 @@ import { Namespace } from "../domain/models/rdf/Namespace";
 import { DI_TOKENS } from "../interfaces/tokens";
 import { RDFVocabularyMapper } from "../infrastructure/rdf/RDFVocabularyMapper";
 import { NullLogger } from "../infrastructure/NullLogger";
+import { vaultPathToIRI, OBSIDIAN_VAULT_SCHEME } from "../infrastructure/vault/iri";
 import {
   Exo003Parser,
   Exo003MetadataType,
@@ -29,7 +30,7 @@ import {
  */
 @injectable()
 export class NoteToRDFConverter {
-  private readonly OBSIDIAN_VAULT_SCHEME = "obsidian://vault/";
+  private readonly OBSIDIAN_VAULT_SCHEME = OBSIDIAN_VAULT_SCHEME;
   private readonly vocabularyMapper: RDFVocabularyMapper;
 
   /**
@@ -555,8 +556,7 @@ export class NoteToRDFConverter {
 
     for (const file of files) {
       // Check if the file path can be converted to a valid IRI
-      const encodedPath = encodeURI(file.path);
-      const iriString = `${this.OBSIDIAN_VAULT_SCHEME}${encodedPath}`;
+      const iriString = vaultPathToIRI(file.path);
 
       if (!IRI.isValidIRI(iriString)) {
         issues.push({
@@ -586,12 +586,7 @@ export class NoteToRDFConverter {
    * ```
    */
   notePathToIRI(path: string): IRI {
-    // Use encodeURI to preserve forward slashes (/) while encoding
-    // spaces and other special characters. This fixes query mismatch
-    // issues where exact URI matches fail due to inconsistent encoding.
-    // See: https://github.com/kitelev/exocortex/issues/621
-    const encodedPath = encodeURI(path);
-    return new IRI(`${this.OBSIDIAN_VAULT_SCHEME}${encodedPath}`);
+    return new IRI(vaultPathToIRI(path));
   }
 
   private static readonly NAMESPACE_MAP: ReadonlyArray<[string, Namespace]> = [
