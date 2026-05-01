@@ -235,6 +235,7 @@ export {
   type RDFDeserializeOptions,
 } from "./infrastructure/rdf/RDFSerializer";
 export { NullLogger } from "./infrastructure/NullLogger";
+export { vaultPathToIRI, OBSIDIAN_VAULT_SCHEME } from "./infrastructure/vault/iri";
 export { InMemoryTripleStore } from "./infrastructure/rdf/InMemoryTripleStore";
 export { RDFVocabularyMapper } from "./infrastructure/rdf/RDFVocabularyMapper";
 export { RDFSInferenceEngine } from "./infrastructure/rdf/RDFSInferenceEngine";
