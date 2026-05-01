@@ -79,12 +79,18 @@ async function runIssueQuery(vaultPath: string): Promise<unknown[]> {
   return rows;
 }
 
-// Phase 3 (translator literal-safety guard) is now in place — the full-fixture
-// case is enabled because the executor must complete without throwing even if
-// the loader leaks partial-state literals (Phase 2 will additionally make the
-// loader all-or-nothing so 0 such literals leak; Phase 3 is the safety net).
-// Control test always passes; full-fixture case is the regression gate.
-describe("Issue #2997 reproduction (Phase 3 guard active)", () => {
+// Active regression gate for #2997 — both fix layers are in place:
+//   • Phase 2 (loader all-or-nothing) lands the file-level invariant
+//     validator in `NoteToRDFConverter.convertVaultWithValidation`,
+//     so partial-state literals never leak into the store.
+//   • Phase 3 (translator literal-safety guard) reinforces the same
+//     property at the algebra layer — even if a literal somehow
+//     reached subject position, the executor would surface a
+//     diagnostic instead of crashing.
+// With both layers active the issue query resolves cleanly on the
+// full fixture vault. The control test always passes; the
+// full-fixture case is the regression gate.
+describe("Issue #2997 reproduction (regression gate, Phases 2+3)", () => {
   it("issue query on full fixture vault returns rows without throwing", async () => {
     // Expected post-fix behaviour: query resolves and returns at least
     // the row from the well-formed subtree (Project → Phase → Task with
