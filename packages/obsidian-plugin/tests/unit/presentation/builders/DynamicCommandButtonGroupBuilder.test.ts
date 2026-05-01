@@ -1123,4 +1123,145 @@ describe("DynamicCommandButtonGroupBuilder", () => {
       ]);
     });
   });
+
+  // -- T3 — RFC f1dc284a variant precedence chain ----------------------------
+  // Six explicit branches of:
+  //   binding.variant > featuredBinding > category default > "secondary"
+  // Each test labels its branch (a–f) so the AC checklist on
+  // task 4ed5c130-6aae-4e36-acb0-6292852be67d can be verified by name.
+  describe("variant precedence chain (RFC f1dc284a, T3)", () => {
+    function makeBuilderWithFeatured(featuredBindingId: string | undefined) {
+      const panelResolver = new PanelResolver({
+        layoutProvider: (classRef) =>
+          classRef === "ems__Task"
+            ? {
+                commandPanel: featuredBindingId
+                  ? { featuredBinding: featuredBindingId }
+                  : {},
+              }
+            : null,
+      });
+      return new DynamicCommandButtonGroupBuilder({
+        commandResolver: mockCommandResolver as unknown as any,
+        preconditionEvaluator: mockPreconditionEvaluator as unknown as any,
+        groundingExecutor: mockGroundingExecutor as unknown as any,
+        notificationService: mockNotificationService as any,
+        panelResolver,
+      });
+    }
+
+    it("(a) binding.variant=danger wins over featuredBinding and category default", async () => {
+      // featuredBinding would normally promote to `primary`; category
+      // `creation` would normally default to `primary`. Explicit
+      // `binding.variant=danger` must beat both.
+      const rc = createResolvedCommand(
+        { name: "Hard delete", category: "creation" },
+        { id: "binding-a", variant: "danger" },
+      );
+      mockResolveForAssetMulti.mockResolvedValue([rc]);
+      mockEvaluate.mockResolvedValue(true);
+
+      const builder = makeBuilderWithFeatured("binding-a");
+      const result = await builder.build(createContext());
+
+      expect(result).toHaveLength(1);
+      expect(result[0].variant).toBe("danger");
+    });
+
+    it("(b) no variant + no group + category=creation → primary", async () => {
+      const rc = createResolvedCommand(
+        { name: "Create Task", category: "creation" },
+        { id: "binding-b" },
+      );
+      expect(rc.binding.variant).toBeUndefined();
+      expect(rc.binding.group).toBeUndefined();
+      mockResolveForAssetMulti.mockResolvedValue([rc]);
+      mockEvaluate.mockResolvedValue(true);
+
+      const result = await builder.build(createContext());
+
+      expect(result[0].variant).toBe("primary");
+    });
+
+    it("(c) no variant + unknown category → secondary fallback", async () => {
+      const rc = createResolvedCommand(
+        { name: "Mystery action", category: "future-uncategorized-bucket" },
+        { id: "binding-c" },
+      );
+      mockResolveForAssetMulti.mockResolvedValue([rc]);
+      mockEvaluate.mockResolvedValue(true);
+
+      const result = await builder.build(createContext());
+
+      expect(result[0].variant).toBe("secondary");
+    });
+
+    it("(d) legacy group=maintenance + variant=danger → variant wins (group still parsed for diagnostics)", async () => {
+      // Mirrors the parser-level CommandResolver assertion that both fields
+      // coexist; here the builder consumes the resolved object and must
+      // pick `variant` regardless of legacy `group`. The CommandResolver
+      // unit suite (`CommandResolver.style.test.ts`) covers the parser
+      // warning emission for the same shape.
+      const rc = createResolvedCommand(
+        { name: "Wipe cache", category: "maintenance" },
+        { id: "binding-d", group: "maintenance", variant: "danger" },
+      );
+      mockResolveForAssetMulti.mockResolvedValue([rc]);
+      mockEvaluate.mockResolvedValue(true);
+
+      const result = await builder.build(createContext());
+
+      expect(result[0].variant).toBe("danger");
+    });
+
+    it("(e) backward compat — binding without _variant produces stable UI snapshot", async () => {
+      // Pre-RFC fixture: explicit `_variant` absent, only category drives
+      // colour. Snapshot pins the full button shape so a future regression
+      // (e.g. accidental field reorder, default flip) flags here.
+      const rc = createResolvedCommand(
+        {
+          id: "cmd-legacy",
+          name: "Mark Done",
+          category: "status",
+          icon: "check",
+        },
+        { id: "binding-legacy" },
+      );
+      expect(rc.binding.variant).toBeUndefined();
+      mockResolveForAssetMulti.mockResolvedValue([rc]);
+      mockEvaluate.mockResolvedValue(true);
+
+      const result = await builder.build(createContext());
+
+      expect(result).toHaveLength(1);
+      const { onClick: _onClick, ...snapshot } = result[0];
+      expect(snapshot).toMatchInlineSnapshot(`
+{
+  "ariaLabel": undefined,
+  "icon": "check",
+  "id": "dynamic-cmd-cmd-legacy",
+  "label": "Mark Done",
+  "tooltip": undefined,
+  "variant": "secondary",
+  "visible": true,
+}
+`);
+    });
+
+    it("(f) binding.variant=warning + featuredBinding=this → explicit variant beats featured promotion", async () => {
+      const rc = createResolvedCommand(
+        { name: "Caution action", category: "creation" },
+        { id: "binding-f", variant: "warning" },
+      );
+      mockResolveForAssetMulti.mockResolvedValue([rc]);
+      mockEvaluate.mockResolvedValue(true);
+
+      const builder = makeBuilderWithFeatured("binding-f");
+      const result = await builder.build(createContext());
+
+      // Without binding.variant, featured would have promoted to `primary`.
+      // With explicit `warning`, that wins per RFC §Кейс A precedence.
+      expect(result[0].variant).toBe("warning");
+    });
+  });
 });
