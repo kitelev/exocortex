@@ -6,6 +6,7 @@ import { ErrorHandler, type OutputFormat } from "../utils/ErrorHandler.js";
 import { VaultNotFoundError } from "../utils/errors/index.js";
 import { ResponseBuilder } from "../responses/index.js";
 import { validateSchemaCommand } from "./validate-schema.js";
+import { validateFrontmatterCommand } from "./validate-frontmatter.js";
 
 export interface ValidateOptions {
   vault: string;
@@ -91,10 +92,13 @@ function validateIriCommand(): Command {
  */
 export function validateCommand(): Command {
   const cmd = new Command("validate")
-    .description("Validate vault files (IRI checks, schema linting)");
+    .description(
+      "Validate vault files (IRI checks, schema linting, frontmatter shapes)",
+    );
 
   cmd.addCommand(validateIriCommand());
   cmd.addCommand(validateSchemaCommand());
+  cmd.addCommand(validateFrontmatterCommand());
 
   return cmd;
 }
