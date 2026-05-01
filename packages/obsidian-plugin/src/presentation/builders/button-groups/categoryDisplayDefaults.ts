@@ -52,9 +52,24 @@ export function resolveCategoryTitle(categoryId: string): string {
 }
 
 /**
- * Resolve the `collapsedByDefault` flag for a category id. Unknown
- * categories default to `false` (expanded).
+ * Resolve the `collapsedByDefault` flag for a category id.
+ *
+ * Precedence (RFC layout-collapsedGroups):
+ *  1. Vault-supplied `panel.collapsedGroups` wins — if the category id is
+ *     listed there, the section renders collapsed regardless of TS defaults.
+ *  2. Fallback to {@link categoryDisplayDefaults}`.collapsedByDefault` when
+ *     no panel override is provided (preserves pre-RFC UX).
+ *  3. Unknown categories default to `false` (expanded).
+ *
+ * The `panel` parameter is optional so the function stays backward-compatible
+ * for call-sites that don't have a panel context.
  */
-export function resolveCategoryCollapsed(categoryId: string): boolean {
+export function resolveCategoryCollapsed(
+  categoryId: string,
+  panel?: { collapsedGroups?: readonly string[] },
+): boolean {
+  if (panel?.collapsedGroups !== undefined) {
+    return panel.collapsedGroups.includes(categoryId);
+  }
   return categoryDisplayDefaults[categoryId]?.collapsedByDefault ?? false;
 }

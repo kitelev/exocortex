@@ -151,6 +151,47 @@ describe("CommandPanel — RFC-024 Phase 3 domain model", () => {
       expect(panel).toEqual({ includeGroups: ["creation"] });
       expect(warnSpy).not.toHaveBeenCalled();
     });
+
+    it("parses collapsedGroups array", () => {
+      const panel = createCommandPanelFromFrontmatter({
+        collapsedGroups: ["maintenance", "planning"],
+      });
+      expect(panel).toEqual({ collapsedGroups: ["maintenance", "planning"] });
+    });
+
+    it("omits collapsedGroups when empty / nullish", () => {
+      expect(
+        createCommandPanelFromFrontmatter({
+          includeGroups: ["creation"],
+          collapsedGroups: [],
+        }),
+      ).toEqual({ includeGroups: ["creation"] });
+      expect(
+        createCommandPanelFromFrontmatter({
+          includeGroups: ["creation"],
+          collapsedGroups: null,
+        }),
+      ).toEqual({ includeGroups: ["creation"] });
+      expect(
+        createCommandPanelFromFrontmatter({
+          includeGroups: ["creation"],
+        }),
+      ).toEqual({ includeGroups: ["creation"] });
+    });
+
+    it("drops non-string entries in collapsedGroups", () => {
+      const panel = createCommandPanelFromFrontmatter({
+        collapsedGroups: ["maintenance", 42, "", "  ", "planning"],
+      });
+      expect(panel?.collapsedGroups).toEqual(["maintenance", "planning"]);
+    });
+
+    it("coerces single-string collapsedGroups into an array", () => {
+      const panel = createCommandPanelFromFrontmatter({
+        collapsedGroups: "maintenance",
+      });
+      expect(panel?.collapsedGroups).toEqual(["maintenance"]);
+    });
   });
 
   describe("applyCommandPanelFilter — precedence rule #2", () => {
