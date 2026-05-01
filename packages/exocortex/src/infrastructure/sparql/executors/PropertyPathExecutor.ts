@@ -9,6 +9,7 @@ import type {
 import { SolutionMapping } from "../SolutionMapping";
 import { IRI as RDFiri } from "../../../domain/models/rdf/IRI";
 import { BlankNode } from "../../../domain/models/rdf/BlankNode";
+import { Literal as RDFLiteral } from "../../../domain/models/rdf/Literal";
 import type { Subject, Object as RDFObject } from "../../../domain/models/rdf/Triple";
 
 export class PropertyPathExecutorError extends Error {
@@ -42,6 +43,22 @@ export class PropertyPathExecutor {
     path: PropertyPath,
     object: TripleElement
   ): AsyncIterableIterator<SolutionMapping> {
+    // Issue #2997 Phase 3: defense-in-depth literal safety guard.
+    // Property paths require IRI/blank/variable in subject and object
+    // positions; a literal here means upstream code (loader, join
+    // instantiation) leaked bad data. Yield zero solutions instead of
+    // throwing.
+    if (this.isLiteralElement(subject) || this.isLiteralElement(object)) {
+      const position = this.isLiteralElement(subject) ? "subject" : "object";
+      const offending = this.isLiteralElement(subject) ? subject : object;
+      const value = "value" in offending ? String((offending as { value: unknown }).value) : "<unknown>";
+      const truncated = value.length > 80 ? `${value.slice(0, 77)}...` : value;
+      console.warn(
+        `[PropertyPathExecutor] literal-safety guard fired: literal in ${position} position — yielding 0 solutions. value="${truncated}"`,
+      );
+      return;
+    }
+
     // Get start and end nodes
     const startNodes = await this.resolveElement(subject);
     const endNodes = this.isVariable(object) ? null : await this.resolveElement(object);
@@ -209,7 +226,9 @@ export class PropertyPathExecutor {
     const queue: { node: Subject | RDFObject; depth: number }[] = [{ node: start, depth: 0 }];
 
     while (queue.length > 0) {
-      const { node, depth } = queue.shift()!;
+      const head = queue.shift();
+      if (!head) break;
+      const { node, depth } = head;
 
       if (depth >= this.MAX_DEPTH) continue;
 
@@ -332,7 +351,7 @@ export class PropertyPathExecutor {
         };
       case "+":
       case "*":
-      case "?":
+      case "?": {
         // Invert the inner path
         const innerInverted = path.items[0].type === "iri"
           ? { type: "path", pathType: "^", items: [path.items[0]] } as PropertyPath
@@ -342,6 +361,7 @@ export class PropertyPathExecutor {
           pathType: path.pathType,
           items: [innerInverted],
         } as PropertyPath;
+      }
     }
   }
 
@@ -387,6 +407,19 @@ export class PropertyPathExecutor {
         } else if (bound instanceof BlankNode) {
           return { type: "blank", value: bound.id };
         }
+        // Issue #2997 Phase 3: surface literal bindings as a literal element
+        // so the entry-point guard in execute() catches them; previously a
+        // Literal binding was silently dropped and resolveElement re-scanned
+        // the entire store via the unbound-variable branch.
+        if (bound instanceof RDFLiteral) {
+          return {
+            type: "literal",
+            value: bound.value,
+            datatype: bound.datatype?.value,
+            language: bound.language,
+            direction: bound.direction,
+          } as TripleElement;
+        }
       }
     }
     return element;
@@ -394,6 +427,14 @@ export class PropertyPathExecutor {
 
   private isVariable(element: TripleElement): element is AlgebraVariable {
     return element.type === "variable";
+  }
+
+  /**
+   * Issue #2997 Phase 3: detect a literal algebra element to power the
+   * defense-in-depth guard at the property-path entry point.
+   */
+  private isLiteralElement(element: TripleElement): boolean {
+    return element.type === "literal";
   }
 
   private isPropertyPath(predicate: TripleElement | PropertyPath): predicate is PropertyPath {

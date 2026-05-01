@@ -79,10 +79,15 @@ async function runIssueQuery(vaultPath: string): Promise<unknown[]> {
   return rows;
 }
 
-// Suite is `.skip`'d until Phase 2 (loader all-or-nothing) + Phase 3
-// (translator literal-safety guard) land. Drop `.skip` then to convert
-// these into the regression gate for #2997.
-describe.skip("Issue #2997 reproduction (skipped until Phase 2/3 fix)", () => {
+// Phase 2 (loader all-or-nothing) lands the file-level invariant
+// validator in `NoteToRDFConverter.convertVaultWithValidation`, which
+// removes the partial-state leak that was tripping the SPARQL executor.
+// With the leak gone the issue query already resolves cleanly on the
+// full fixture vault (no literal ever reaches subject position), so
+// this suite is now the active regression gate for #2997 — Phase 3
+// (translator literal-safety guard) reinforces the same property at
+// the algebra layer but is no longer a prerequisite for the test.
+describe("Issue #2997 reproduction (regression gate after Phase 2)", () => {
   it("issue query on full fixture vault returns rows without throwing", async () => {
     // Expected post-fix behaviour: query resolves and returns at least
     // the row from the well-formed subtree (Project → Phase → Task with
