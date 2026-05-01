@@ -444,6 +444,87 @@ describe("GroundingExecutor", () => {
       expect(mockService.execute).toHaveBeenCalledWith(TARGET_IRI, userInput);
     });
 
+    // Issue #2999 / RFC 5a61a359 Phase C.0 (AC1): create-instance-from-prototype.
+    // Grounding `service_call → createAsset` with targetValue carrying `$target`
+    // must resolve to the current target IRI before JSON.parse, so the underlying
+    // service receives `{prototype: <targetIRI>}` as a default and writes
+    // `exo__Asset_prototype: "[[<source-IRI>]]"` on the new instance.
+    it("should interpolate $target in JSON targetValue and merge as default (#2999)", async () => {
+      const mockService = {
+        execute: jest.fn().mockResolvedValue(undefined),
+      };
+      registry.register("createAsset", mockService);
+
+      const grounding = makeGrounding({
+        type: GroundingType.SERVICE_CALL,
+        targetProperty: "createAsset",
+        targetValue: '{"prototype":"$target"}',
+      });
+
+      const userInput = { label: "New Instance" };
+      const result = await executor.execute(
+        grounding,
+        TARGET_IRI,
+        FILE_PATH,
+        userInput,
+      );
+
+      expect(result.success).toBe(true);
+      expect(mockService.execute).toHaveBeenCalledWith(TARGET_IRI, {
+        prototype: TARGET_IRI,
+        label: "New Instance",
+      });
+    });
+
+    it("should let userInput override $target-interpolated default (#2999)", async () => {
+      const mockService = {
+        execute: jest.fn().mockResolvedValue(undefined),
+      };
+      registry.register("createAsset", mockService);
+
+      const grounding = makeGrounding({
+        type: GroundingType.SERVICE_CALL,
+        targetProperty: "createAsset",
+        targetValue: '{"prototype":"$target","folder":"03 Knowledge/inbox"}',
+      });
+
+      const userInput = { prototype: "explicit-prototype-uid", label: "Lunch 2026-05-02" };
+      const result = await executor.execute(
+        grounding,
+        TARGET_IRI,
+        FILE_PATH,
+        userInput,
+      );
+
+      expect(result.success).toBe(true);
+      expect(mockService.execute).toHaveBeenCalledWith(TARGET_IRI, {
+        prototype: "explicit-prototype-uid",
+        folder: "03 Knowledge/inbox",
+        label: "Lunch 2026-05-02",
+      });
+    });
+
+    it("should interpolate $today in JSON targetValue defaults (#2999)", async () => {
+      const mockService = {
+        execute: jest.fn().mockResolvedValue(undefined),
+      };
+      registry.register("scheduleTask", mockService);
+
+      const grounding = makeGrounding({
+        type: GroundingType.SERVICE_CALL,
+        targetProperty: "scheduleTask",
+        targetValue: '{"plannedStartDate":"$today"}',
+      });
+
+      const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
+
+      expect(result.success).toBe(true);
+      const today = new Date().toISOString().slice(0, 10);
+      expect(mockService.execute).toHaveBeenCalledWith(TARGET_IRI, {
+        plannedStartDate: today,
+      });
+    });
+
     it("should use targetValue as sole input when no userInput", async () => {
       const mockService = {
         execute: jest.fn().mockResolvedValue(undefined),
