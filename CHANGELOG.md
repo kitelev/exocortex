@@ -19,11 +19,19 @@ Rollback procedure: `docs/ROLLBACK_EXOQL_EVAL.md`. T7 (CI drift-guard + scoped E
 - Integration tests for full create_instance pipeline with NoteToRDFConverter validation
 - Obsidian plugin wiring for create_instance grounding with vault-relative path resolution
 
+**Per-binding button variant override (RFC `f1dc284a-eadc-4d0e-8e72-323e999ea510` command-variant-split)**: New `exocmd__CommandBinding_variant` property lets each binding override the button colour independently of its category. Variant precedence is now `binding.variant > featuredBinding > category default > "secondary"`, so an explicit `danger` override on a maintenance command wins over a panel-level `featuredBinding` nomination.
+
 ### Changed
+
+**`resolveVariantForGroup` renamed → `resolveDefaultVariantForCategory`** (`categoryDefaultVariants.ts`, RFC command-variant-split): the map keys were always category strings — the rename makes that explicit and removes the synthetic `group: rc.command.category` bridge in the panel filter (`applyCommandPanelFilter` / `PanelResolver.applyFilter` now type the candidate dimension as `category` directly).
 
 **Multi-Valued Property Merge in PrototypeChainMaterializer (RFC-016 Blocker 1)**: Properties marked with `exo__PropertyCardinalityMultiple` now APPEND inherited values from the prototype chain instead of skipping when already present. This enables RFC-014 plugin class adoption where an existing instance can adopt additional classes from a plugin prototype.
 
 **`property_set` Grounding Verified with YAML Arrays of Wikilinks (RFC-016 Blocker 3)**: Confirmed and tested that `property_set` grounding correctly handles YAML arrays of wikilinks (`[[uuid|label]]`), ensuring plugin commands can set multi-valued properties declaratively.
+
+### Deprecated
+
+**`exocmd__CommandBinding_group` property (RFC command-variant-split)**: Use `exocmd__CommandBinding_variant` instead. The parser still tolerates legacy `_group` for one release — when both `_group` and `_variant` appear on the same binding, `_variant` wins and a capped warning is logged. Starter-kit assets have been migrated to drop `_group` (kitelev/exocortex-starter-kit#94).
 
 ### Note
 

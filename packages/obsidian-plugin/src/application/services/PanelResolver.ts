@@ -90,10 +90,10 @@ export class PanelResolver {
    *
    * @param classRef   - Target class whose panel is consulted.
    * @param candidates - Candidate commands (each with `uid` + optional
-   *                     `group`). Order is preserved.
+   *                     `category`). Order is preserved.
    * @returns Filtered subset honouring rule #2 (exclude trumps include).
    */
-  applyFilter<T extends { uid: string; group?: string }>(
+  applyFilter<T extends { uid: string; category?: string }>(
     classRef: string,
     candidates: readonly T[],
   ): T[] {

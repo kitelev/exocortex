@@ -196,10 +196,10 @@ describe("CommandPanel — RFC-024 Phase 3 domain model", () => {
 
   describe("applyCommandPanelFilter — precedence rule #2", () => {
     const candidates = [
-      { uid: "a", group: "creation" },
-      { uid: "b", group: "creation" },
-      { uid: "c", group: "status" },
-      { uid: "d", group: "misc" },
+      { uid: "a", category: "creation" },
+      { uid: "b", category: "creation" },
+      { uid: "c", category: "status" },
+      { uid: "d", category: "misc" },
       { uid: "e" },
     ];
 
@@ -240,7 +240,7 @@ describe("CommandPanel — RFC-024 Phase 3 domain model", () => {
       ).toEqual(["b"]);
     });
 
-    it("drops ungrouped commands when includeGroups is active", () => {
+    it("drops uncategorized commands when includeGroups is active", () => {
       const panel: CommandPanel = { includeGroups: ["creation"] };
       expect(
         applyCommandPanelFilter(candidates, panel).map((c) => c.uid),
