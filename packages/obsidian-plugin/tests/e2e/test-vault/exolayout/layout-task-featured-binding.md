@@ -9,6 +9,8 @@ exo__Layout_priority: 100
 exo__Layout_icon: check-square
 exo__Layout_commandPanel:
   featuredBinding: "[[e2e-bind-status-done-for-tasks]]"
+  collapsedGroups:
+    - maintenance
 ---
 
 RFC-024 §3 Phase 3 e2e fixture: a TaskLayout for `ems__Task` whose
@@ -24,3 +26,10 @@ targeting `ems__Task` in the test vault.
 all preconditioned bindings still render; only `featuredBinding`
 modifies the `Complete` button's variant from `success` (status
 group default) to `primary`.
+
+`collapsedGroups: [maintenance]` exercises the RFC layout-collapsedGroups
+extension: vault-supplied override re-asserting the TS-default
+collapse for the `maintenance` category. Behaviour-neutral against
+pre-RFC fixtures (TS default also collapses maintenance), but ensures
+the parsed-panel → `resolveCategoryCollapsed(id, panel)` precedence
+chain is exercised on a real fixture.
