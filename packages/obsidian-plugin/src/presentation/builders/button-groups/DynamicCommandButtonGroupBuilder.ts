@@ -168,7 +168,11 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
       }
     }
 
-    const orderedKeys = this.resolveCategoryOrder(panelClassRef, byCategory);
+    const panel =
+      panelClassRef !== null
+        ? (this.panelResolver.resolve(panelClassRef) ?? undefined)
+        : undefined;
+    const orderedKeys = this.resolveCategoryOrder(panel, byCategory);
 
     const groups: ButtonGroup[] = [];
     for (const key of orderedKeys) {
@@ -178,7 +182,9 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
       groups.push({
         id: `dynamic-commands-${key}`,
         title: isOther ? "Other" : resolveCategoryTitle(key),
-        collapsedByDefault: isOther ? undefined : resolveCategoryCollapsed(key),
+        collapsedByDefault: isOther
+          ? undefined
+          : resolveCategoryCollapsed(key, panel),
         buttons: commands.map((rc) =>
           this.createButton(
             rc,
@@ -203,17 +209,14 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
    * dropped.
    */
   private resolveCategoryOrder(
-    panelClassRef: string | null,
+    panel: { includeGroups?: readonly string[] } | undefined,
     byCategory: ReadonlyMap<string, ResolvedCommand[]>,
   ): string[] {
     const present = new Set(byCategory.keys());
     const ordered: string[] = [];
     const seen = new Set<string>();
 
-    const includeGroups =
-      panelClassRef !== null
-        ? this.panelResolver.resolve(panelClassRef)?.includeGroups
-        : undefined;
+    const includeGroups = panel?.includeGroups;
 
     const primary =
       includeGroups && includeGroups.length > 0

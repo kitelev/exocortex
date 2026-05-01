@@ -6,11 +6,12 @@
  * buttons render above/next to its target-class view without introducing
  * a parallel class `exocmd__CommandPanel`.
  *
- * Four fields (all optional; absence is backward-compatible):
- * - `includeGroups` — OR-merge of command group ids to include
- * - `excludeCommands` — UUIDs of specific bindings/commands to exclude
+ * Five fields (all optional; absence is backward-compatible):
+ * - `includeGroups`  — OR-merge of command group ids to include
+ * - `excludeCommands`— UUIDs of specific bindings/commands to exclude
  * - `layout`         — rendering mode: inline | stacked | dropdown
  * - `featuredBinding`— UUID of a binding promoted to `primary` variant
+ * - `collapsedGroups`— group ids collapsed-by-default (vault wins over TS-defaults)
  *
  * Precedence rules (RFC-024 §4 Phase 3):
  *   1. Multiple layouts for one class: sort by `exo__Layout_order` ASC
@@ -66,6 +67,14 @@ export interface CommandPanel {
    * UUID string regardless of the wikilink form used in frontmatter.
    */
   featuredBinding?: string;
+
+  /**
+   * Command-group ids that should render collapsed-by-default. Vault wins
+   * over the TS-side `categoryDisplayDefaults.collapsedByDefault` flag.
+   * Empty / missing means "use TS defaults" (pre-RFC behaviour).
+   * Same id whitelist as `includeGroups` (e.g. `creation`, `maintenance`).
+   */
+  collapsedGroups?: string[];
 }
 
 /**
@@ -143,6 +152,12 @@ export function createCommandPanelFromFrontmatter(
           layoutRaw,
         )} — dropping field.`,
     );
+  }
+
+  const collapsedGroupsRaw = record["collapsedGroups"];
+  const collapsedGroups = normalizeStringArray(collapsedGroupsRaw);
+  if (collapsedGroups && collapsedGroups.length > 0) {
+    panel.collapsedGroups = collapsedGroups;
   }
 
   const featuredRaw = record["featuredBinding"];

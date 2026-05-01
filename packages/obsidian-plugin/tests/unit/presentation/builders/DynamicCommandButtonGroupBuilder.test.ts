@@ -940,6 +940,64 @@ describe("DynamicCommandButtonGroupBuilder", () => {
       ]);
     });
 
+    it("buildCategoryGroups collapses categories listed in panel.collapsedGroups (vault override)", async () => {
+      const commands = [
+        createResolvedCommand({
+          id: "c1",
+          name: "Create",
+          category: "creation",
+        }),
+        createResolvedCommand({
+          id: "m1",
+          name: "Mark Done",
+          category: "maintenance",
+        }),
+      ];
+      mockResolveForAssetMulti.mockResolvedValue(commands);
+      mockEvaluate.mockResolvedValue(true);
+
+      // Vault collapses creation (which TS-defaults expanded) and overrides
+      // maintenance to expanded by omitting it from collapsedGroups.
+      const builder = makeBuilderWithPanel({ collapsedGroups: ["creation"] });
+      const result = await builder.buildCategoryGroups(createContext());
+      const byId = new Map(result.map((g) => [g.id, g]));
+
+      expect(byId.get("dynamic-commands-creation")?.collapsedByDefault).toBe(
+        true,
+      );
+      expect(
+        byId.get("dynamic-commands-maintenance")?.collapsedByDefault,
+      ).toBeFalsy();
+    });
+
+    it("buildCategoryGroups falls back to TS defaults when panel.collapsedGroups absent", async () => {
+      const commands = [
+        createResolvedCommand({
+          id: "c1",
+          name: "Create",
+          category: "creation",
+        }),
+        createResolvedCommand({
+          id: "m1",
+          name: "Mark Done",
+          category: "maintenance",
+        }),
+      ];
+      mockResolveForAssetMulti.mockResolvedValue(commands);
+      mockEvaluate.mockResolvedValue(true);
+
+      const builder = makeBuilderWithPanel({});
+      const result = await builder.buildCategoryGroups(createContext());
+      const byId = new Map(result.map((g) => [g.id, g]));
+
+      expect(byId.get("dynamic-commands-creation")?.collapsedByDefault).toBe(
+        false,
+      );
+      expect(byId.get("dynamic-commands-maintenance")?.collapsedByDefault).toBe(
+        true,
+      );
+    });
+
     it("buildCategoryGroups appends categories absent from includeGroups in insertion order", async () => {
       const commands = [
         createResolvedCommand({
