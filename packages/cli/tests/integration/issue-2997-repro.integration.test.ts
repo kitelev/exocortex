@@ -79,15 +79,18 @@ async function runIssueQuery(vaultPath: string): Promise<unknown[]> {
   return rows;
 }
 
-// Phase 2 (loader all-or-nothing) lands the file-level invariant
-// validator in `NoteToRDFConverter.convertVaultWithValidation`, which
-// removes the partial-state leak that was tripping the SPARQL executor.
-// With the leak gone the issue query already resolves cleanly on the
-// full fixture vault (no literal ever reaches subject position), so
-// this suite is now the active regression gate for #2997 — Phase 3
-// (translator literal-safety guard) reinforces the same property at
-// the algebra layer but is no longer a prerequisite for the test.
-describe("Issue #2997 reproduction (regression gate after Phase 2)", () => {
+// Active regression gate for #2997 — both fix layers are in place:
+//   • Phase 2 (loader all-or-nothing) lands the file-level invariant
+//     validator in `NoteToRDFConverter.convertVaultWithValidation`,
+//     so partial-state literals never leak into the store.
+//   • Phase 3 (translator literal-safety guard) reinforces the same
+//     property at the algebra layer — even if a literal somehow
+//     reached subject position, the executor would surface a
+//     diagnostic instead of crashing.
+// With both layers active the issue query resolves cleanly on the
+// full fixture vault. The control test always passes; the
+// full-fixture case is the regression gate.
+describe("Issue #2997 reproduction (regression gate, Phases 2+3)", () => {
   it("issue query on full fixture vault returns rows without throwing", async () => {
     // Expected post-fix behaviour: query resolves and returns at least
     // the row from the well-formed subtree (Project → Phase → Task with
