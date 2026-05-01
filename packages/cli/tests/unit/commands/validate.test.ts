@@ -68,6 +68,12 @@ describe("Issue #2346: validate command", () => {
     expect(schemaCmd).toBeDefined();
   });
 
+  it("should have 'frontmatter' subcommand (Issue #2997 Phase 4)", () => {
+    const cmd = validateCommand();
+    const fmCmd = cmd.commands.find((c: any) => c.name() === "frontmatter");
+    expect(fmCmd).toBeDefined();
+  });
+
   it("iri subcommand should have optional --vault option with default value", () => {
     const cmd = validateCommand();
     const iriCmd = cmd.commands.find((c: any) => c.name() === "iri") as any;
