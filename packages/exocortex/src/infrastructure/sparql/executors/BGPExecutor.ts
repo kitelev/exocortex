@@ -119,8 +119,15 @@ export class BGPExecutor {
 
     const predElement = pattern.predicate as TripleElement;
 
-    // Issue #2292: Gracefully handle literals in subject/predicate position
+    // Issue #2292 / #2997: Gracefully handle literals in subject/predicate position.
+    // Defense in depth — even if upstream code (loader, optimizer, join) leaks a
+    // literal into a node-only position we yield zero solutions instead of throwing.
     if (this.isLiteral(pattern.subject) || this.isLiteral(predElement)) {
+      this.warnLiteralGuard(
+        "matchTriplePatternInGraph",
+        this.isLiteral(pattern.subject) ? "subject" : "predicate",
+        this.isLiteral(pattern.subject) ? pattern.subject : predElement,
+      );
       return;
     }
 
@@ -191,8 +198,19 @@ export class BGPExecutor {
    * Also supports RDF-Star quoted triples in subject/object positions.
    */
   private async *matchTriplePattern(pattern: AlgebraTriple): AsyncIterableIterator<SolutionMapping> {
-    // Delegate property path patterns to PropertyPathExecutor
+    // Issue #2997 Phase 3: For property paths, the subject/object can also be
+    // bound to a literal via instantiation (e.g., the previous BGP triple bound
+    // a variable to a Literal value). PropertyPathExecutor's resolveElement
+    // throws on literals, so guard here as defense in depth.
     if (this.isPropertyPath(pattern.predicate)) {
+      if (this.isLiteral(pattern.subject) || this.isLiteral(pattern.object)) {
+        this.warnLiteralGuard(
+          "matchTriplePattern.propertyPath",
+          this.isLiteral(pattern.subject) ? "subject" : "object",
+          this.isLiteral(pattern.subject) ? pattern.subject : pattern.object,
+        );
+        return;
+      }
       yield* this.propertyPathExecutor.execute(
         pattern.subject,
         pattern.predicate,
@@ -203,11 +221,17 @@ export class BGPExecutor {
 
     const predElement = pattern.predicate as TripleElement;
 
-    // Issue #2292: When a variable is bound to a literal and placed in subject
-    // or predicate position (e.g., via join before FILTER(isIRI()) is applied),
-    // we yield no results instead of throwing, since RDF does not allow literals
-    // in subject or predicate position — no matching triples can exist.
+    // Issue #2292 / #2997: When a variable is bound to a literal and placed in
+    // subject or predicate position (e.g., via join before FILTER(isIRI()) is
+    // applied), we yield no results instead of throwing, since RDF does not
+    // allow literals in subject or predicate position — no matching triples
+    // can exist. Warn-level log helps diagnose bad data upstream.
     if (this.isLiteral(pattern.subject) || this.isLiteral(predElement)) {
+      this.warnLiteralGuard(
+        "matchTriplePattern",
+        this.isLiteral(pattern.subject) ? "subject" : "predicate",
+        this.isLiteral(pattern.subject) ? pattern.subject : predElement,
+      );
       return;
     }
 
@@ -508,6 +532,24 @@ export class BGPExecutor {
    */
   private isLiteral(element: TripleElement): boolean {
     return element.type === "literal";
+  }
+
+  /**
+   * Warn-level log when a literal-safety guard fires (Issue #2997 Phase 3).
+   * Indicates upstream bad data (loader leak, malformed wikilink, ...) reached
+   * the BGP executor; the guard suppresses the crash but the log preserves
+   * diagnostic visibility.
+   */
+  private warnLiteralGuard(
+    context: string,
+    position: "subject" | "predicate" | "object",
+    element: TripleElement,
+  ): void {
+    const value = "value" in element ? String((element as { value: unknown }).value) : "<unknown>";
+    const truncated = value.length > 80 ? `${value.slice(0, 77)}...` : value;
+    console.warn(
+      `[BGPExecutor] literal-safety guard fired in ${context}: literal in ${position} position — yielding 0 solutions. value="${truncated}"`,
+    );
   }
 
   /**

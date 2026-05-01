@@ -639,17 +639,25 @@ describe("PropertyPathExecutor", () => {
         expect(results).toBeDefined();
       });
 
-      it("should throw for unsupported element type", async () => {
+      it("yields zero solutions for literal subject (Issue #2997 Phase 3 guard)", async () => {
         const path: PropertyPath = {
           type: "path",
           pathType: "+",
           items: [algebraIri("http://example.org/p")],
         };
 
-        const unsupported: TripleElement = { type: "literal" as any, value: "hello" };
-        await expect(collectResults(unsupported, path, algebraVar("o"))).rejects.toThrow(
-          "Unsupported element type"
-        );
+        const literalSubject: TripleElement = { type: "literal" as const, value: "hello" };
+        // Pre-#2997 this threw "Unsupported element type"; the Phase 3 guard
+        // converts the throw to a warn-and-empty so a literal leaked from the
+        // loader or a join-instantiation cannot crash the algebra pipeline.
+        const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => undefined);
+        try {
+          const results = await collectResults(literalSubject, path, algebraVar("o"));
+          expect(results).toEqual([]);
+          expect(warnSpy).toHaveBeenCalled();
+        } finally {
+          warnSpy.mockRestore();
+        }
       });
     });
 

@@ -19,6 +19,24 @@ import {
 } from "../domain/models/exo003";
 
 /**
+ * File-level invariant codes detected by `validateExocortexAsset`.
+ *
+ * Issue #2997 Phase 2: each code maps to one of the 11 bad-file shapes
+ * that previously leaked partial triples into the store.
+ */
+export type ExocortexInvariantCode =
+  | "MISSING_PROPERTY"
+  | "EMPTY_PROPERTY"
+  | "EMPTY_OPTIONAL_PROPERTY"
+  | "INVALID_INSTANCE_CLASS_IRI";
+
+export interface ExocortexInvariantViolation {
+  code: ExocortexInvariantCode;
+  property: string;
+  message: string;
+}
+
+/**
  * Service for converting Obsidian notes (frontmatter + wikilinks) to RDF triples.
  *
  * @example
@@ -497,8 +515,50 @@ export class NoteToRDFConverter {
 
     for (const file of files) {
       try {
-        const triples = await this.convertNote(file);
-        allTriples.push(...triples);
+        // Issue #2997 Phase 2 — Loader two-phase commit (all-or-nothing).
+        //
+        // Pipeline (per file):
+        //   1. Read frontmatter once.
+        //   2. Validate file-level invariants against raw frontmatter
+        //      (see `validateExocortexAsset`). Covers the 11 bad shapes
+        //      from RFC 0810aad3-…/Phase 2 fixtures (empty required
+        //      properties, empty optionals, malformed Instance_class
+        //      IRI). Validation is cheap (dictionary lookup) so we
+        //      front-load it before any triple work.
+        //   3. Build the candidate triple buffer via `convertNote`.
+        //      The buffer is local to this iteration — it never enters
+        //      `allTriples` if anything below fails.
+        //   4. Commit the buffer into `allTriples` atomically.
+        //
+        // Any violation at step 2, or any throw at step 3, discards the
+        // entire buffer and records the file as skipped — a single
+        // malformed asset can never leak partial triples into the store
+        // (which previously tripped the SPARQL executor with
+        // "Literals cannot appear in subject position").
+        const frontmatter = this.vault.getFrontmatter(file);
+        const violation = frontmatter
+          ? this.validateExocortexAsset(frontmatter)
+          : null;
+
+        if (violation) {
+          if (strict) {
+            throw new Error(
+              `Invariant violation in "${file.path}": ${violation.message}`,
+            );
+          }
+          skippedFiles.push({
+            path: file.path,
+            reason: `Invariant violation: ${violation.message}`,
+          });
+          this.logger.warn(
+            `Skipping file with invariant violation: ${file.path}`,
+            { code: violation.code, property: violation.property, reason: violation.message },
+          );
+          continue;
+        }
+
+        const candidate = await this.convertNote(file);
+        allTriples.push(...candidate);
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
 
@@ -549,6 +609,120 @@ export class NoteToRDFConverter {
    * }
    * ```
    */
+  /**
+   * Validates a single file's frontmatter against Exocortex asset
+   * invariants.
+   *
+   * Issue #2997 Phase 2 — file-level invariants, evaluated against
+   * the raw frontmatter before any triple is committed to the store.
+   * Used by `convertVaultWithValidation` as the second leg of the
+   * two-phase load (build candidate → validate → commit).
+   *
+   * Trigger: only frontmatter that looks like an Exocortex asset
+   * (declares `exo__Instance_class` or `exo__Asset_uid`) is checked.
+   * Plain markdown notes with arbitrary frontmatter pass through
+   * unchanged.
+   *
+   * Invariants:
+   *   - Required + non-empty: `exo__Asset_uid`, `exo__Asset_isDefinedBy`,
+   *     `exo__Asset_label`, `exo__Instance_class`.
+   *   - Optional but non-empty if present: `ems__Effort_status`,
+   *     `ems__Effort_parent`, `ems__Effort_lockedBy`,
+   *     `ems__Effort_lockExpires`, `exo__Asset_updatedAt`,
+   *     `ems__Effort_startTimestamp`.
+   *   - `exo__Instance_class` wikilink target must not contain
+   *     whitespace or parentheses when it carries a class-style
+   *     namespace prefix (e.g. `exo__`, `ems__`) — those expand to
+   *     namespace IRIs and would otherwise produce invalid IRIs.
+   *
+   * @param frontmatter - The note's parsed frontmatter.
+   * @returns The first detected invariant violation, or `null` if the
+   *          frontmatter passes (or is not an Exocortex asset).
+   */
+  validateExocortexAsset(
+    frontmatter: Record<string, unknown>,
+  ): ExocortexInvariantViolation | null {
+    const isEmpty = (v: unknown): boolean => {
+      if (v === null || v === undefined) return true;
+      if (typeof v === "string") return v.trim() === "";
+      if (Array.isArray(v)) return v.length === 0 || v.every(isEmpty);
+      return false;
+    };
+
+    // Trigger: skip non-Exocortex notes entirely.
+    const looksLikeAsset =
+      "exo__Instance_class" in frontmatter ||
+      "exo__Asset_uid" in frontmatter;
+    if (!looksLikeAsset) {
+      return null;
+    }
+
+    const REQUIRED_PROPERTIES = [
+      "exo__Asset_uid",
+      "exo__Asset_isDefinedBy",
+      "exo__Asset_label",
+      "exo__Instance_class",
+    ];
+    for (const key of REQUIRED_PROPERTIES) {
+      if (!(key in frontmatter)) {
+        return {
+          code: "MISSING_PROPERTY",
+          property: key,
+          message: `Required property "${key}" is missing`,
+        };
+      }
+      if (isEmpty(frontmatter[key])) {
+        return {
+          code: "EMPTY_PROPERTY",
+          property: key,
+          message: `Required property "${key}" is empty`,
+        };
+      }
+    }
+
+    const OPTIONAL_NON_EMPTY_PROPERTIES = [
+      "ems__Effort_status",
+      "ems__Effort_parent",
+      "ems__Effort_lockedBy",
+      "ems__Effort_lockExpires",
+      "exo__Asset_updatedAt",
+      "ems__Effort_startTimestamp",
+    ];
+    for (const key of OPTIONAL_NON_EMPTY_PROPERTIES) {
+      if (key in frontmatter && isEmpty(frontmatter[key])) {
+        return {
+          code: "EMPTY_OPTIONAL_PROPERTY",
+          property: key,
+          message: `Optional property "${key}" is present but empty`,
+        };
+      }
+    }
+
+    // Instance_class wikilink shape — only reject when target carries
+    // a known namespace prefix (e.g. `exo__`, `ems__`) but contains
+    // characters that would produce an invalid namespace IRI.
+    const instanceClassValue = frontmatter["exo__Instance_class"];
+    const classCandidates = Array.isArray(instanceClassValue)
+      ? instanceClassValue
+      : [instanceClassValue];
+    for (const candidate of classCandidates) {
+      if (typeof candidate !== "string") continue;
+      const cleaned = this.removeQuotes(candidate);
+      const wikilink = this.extractWikilink(cleaned);
+      const target = (wikilink ?? cleaned).trim();
+      const looksLikeNamespacedClass = /^[a-z][a-zA-Z0-9]*__/.test(target);
+      if (looksLikeNamespacedClass && /[\s()]/.test(target)) {
+        return {
+          code: "INVALID_INSTANCE_CLASS_IRI",
+          property: "exo__Instance_class",
+          message: `Invalid Instance_class IRI: "${candidate}"`,
+        };
+      }
+    }
+
+    return null;
+  }
+
   async validateVault(): Promise<Array<{ path: string; reason: string }>> {
     const files = this.vault.getAllFiles();
     const issues: Array<{ path: string; reason: string }> = [];
