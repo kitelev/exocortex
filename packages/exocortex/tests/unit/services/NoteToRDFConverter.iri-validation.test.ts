@@ -53,10 +53,17 @@ describe("Issue #2205: IRI Validation and Error Handling", () => {
 
       mockVaultAdapter.getAllFiles.mockReturnValue([validFile, problematicFile]);
 
-      // Valid file returns good frontmatter
+      // Valid file returns good frontmatter (Issue #2997 Phase 2:
+      // includes all required Exocortex asset properties so the
+      // file-level invariant validator does not skip it).
       mockVaultAdapter.getFrontmatter.mockImplementation((file) => {
         if (file.path === "valid-file.md") {
-          return { exo__Instance_class: ["[[ems__Task]]"] };
+          return {
+            exo__Asset_uid: "11111111-1111-1111-1111-111111111111",
+            exo__Asset_isDefinedBy: "[[!kitelev]]",
+            exo__Asset_label: "Valid File",
+            exo__Instance_class: ["[[ems__Task]]"],
+          };
         }
         // Problematic file will throw during conversion
         throw new Error("Invalid subject: cannot parse frontmatter");
@@ -151,7 +158,12 @@ describe("Issue #2205: IRI Validation and Error Handling", () => {
         if (file.path === "will-fail.md") {
           throw new Error("Conversion error");
         }
-        return { exo__Instance_class: ["[[ems__Task]]"] };
+        return {
+          exo__Asset_uid: "22222222-2222-2222-2222-222222222222",
+          exo__Asset_isDefinedBy: "[[!kitelev]]",
+          exo__Asset_label: file.path,
+          exo__Instance_class: ["[[ems__Task]]"],
+        };
       });
       mockVaultAdapter.read.mockResolvedValue("# Content");
 
@@ -181,6 +193,9 @@ describe("Issue #2205: IRI Validation and Error Handling", () => {
 
       mockVaultAdapter.getAllFiles.mockReturnValue(validFiles);
       mockVaultAdapter.getFrontmatter.mockReturnValue({
+        exo__Asset_uid: "33333333-3333-3333-3333-333333333333",
+        exo__Asset_isDefinedBy: "[[!kitelev]]",
+        exo__Asset_label: "Valid File",
         exo__Instance_class: ["[[ems__Task]]"],
       });
       mockVaultAdapter.read.mockResolvedValue("# Content");

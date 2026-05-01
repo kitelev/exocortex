@@ -79,10 +79,12 @@ async function runIssueQuery(vaultPath: string): Promise<unknown[]> {
   return rows;
 }
 
-// Suite is `.skip`'d until Phase 2 (loader all-or-nothing) + Phase 3
-// (translator literal-safety guard) land. Drop `.skip` then to convert
-// these into the regression gate for #2997.
-describe.skip("Issue #2997 reproduction (skipped until Phase 2/3 fix)", () => {
+// Phase 3 (translator literal-safety guard) is now in place — the full-fixture
+// case is enabled because the executor must complete without throwing even if
+// the loader leaks partial-state literals (Phase 2 will additionally make the
+// loader all-or-nothing so 0 such literals leak; Phase 3 is the safety net).
+// Control test always passes; full-fixture case is the regression gate.
+describe("Issue #2997 reproduction (Phase 3 guard active)", () => {
   it("issue query on full fixture vault returns rows without throwing", async () => {
     // Expected post-fix behaviour: query resolves and returns at least
     // the row from the well-formed subtree (Project → Phase → Task with
