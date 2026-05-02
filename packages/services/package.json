@@ -1,0 +1,40 @@
+{
+  "name": "@kitelev/exocortex-services",
+  "version": "0.1.0",
+  "description": "Shared grounding-service factories for Exocortex plugin and CLI (RFC 94e520da Phase 1, T1.2)",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "source": "src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "jest",
+    "lint": "eslint src --ext .ts",
+    "clean": "rm -rf dist"
+  },
+  "keywords": [
+    "exocortex",
+    "grounding",
+    "service-call",
+    "shared-services"
+  ],
+  "author": "A. Kitelev",
+  "license": "MIT",
+  "dependencies": {
+    "exocortex": "file:../exocortex"
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/node": "^20.19.24",
+    "jest": "^30.0.0",
+    "ts-jest": "^29.4.6",
+    "typescript": "^5.9.3"
+  }
+}
