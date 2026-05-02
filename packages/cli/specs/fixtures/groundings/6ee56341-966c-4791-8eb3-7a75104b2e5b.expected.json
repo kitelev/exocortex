@@ -1,0 +1,13 @@
+{
+  "uid": "6ee56341-966c-4791-8eb3-7a75104b2e5b",
+  "label": "Shift day backward via service",
+  "type": "service_call",
+  "cliStatus": "unregistered",
+  "serviceId": "shiftDay",
+  "sourcePath": "exocmd/planning/6ee56341-966c-4791-8eb3-7a75104b2e5b.md",
+  "userInput": null,
+  "expect": {
+    "outcome": "failure",
+    "errorPattern": "Service not found: \\\"shiftDay\\\""
+  }
+}

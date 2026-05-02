@@ -1,0 +1,13 @@
+{
+  "uid": "506f031e-007f-4c74-8257-158550c64956",
+  "label": "Increment votes via service",
+  "type": "service_call",
+  "cliStatus": "unregistered",
+  "serviceId": "incrementVotes",
+  "sourcePath": "exocmd/planning/506f031e-007f-4c74-8257-158550c64956.md",
+  "userInput": null,
+  "expect": {
+    "outcome": "failure",
+    "errorPattern": "Service not found: \\\"incrementVotes\\\""
+  }
+}
