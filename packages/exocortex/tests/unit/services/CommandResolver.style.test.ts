@@ -545,9 +545,13 @@ describe("CommandResolver — RFC-024 binding style resolution", () => {
       expect(resolved.binding.variant).toBeUndefined();
     });
 
-    it("logs warning when both legacy `_group` and `_variant` are present (prefers _variant)", async () => {
+    it("silently ignores legacy `_group` frontmatter (RFC f1dc284a Phase 8 — `_group` parsing dropped)", async () => {
+      // Pre-RFC vaults can still ship `exocmd__CommandBinding_group` triples.
+      // After Phase 8 the parser must NOT surface a `binding.group` field, must
+      // NOT log a coexistence warning, and must continue to resolve the
+      // explicit `_variant` override unchanged.
       const subject = await addBinding(store, {
-        uid: "bind-coexist",
+        uid: "bind-legacy-group",
         commandUid: "cmd-1",
         targetClass: TARGET_CLASS,
         inlineVariant: "primary",
@@ -566,12 +570,10 @@ describe("CommandResolver — RFC-024 binding style resolution", () => {
       );
 
       expect(resolved.binding.variant).toBe("primary");
-      expect(resolved.binding.group).toBe("maintenance");
+      expect((resolved.binding as { group?: string }).group).toBeUndefined();
       expect(
-        logger.warnings.some((w) =>
-          /both _group and _variant present/.test(w),
-        ),
-      ).toBe(true);
+        logger.warnings.some((w) => /_group/.test(w)),
+      ).toBe(false);
     });
 
     it("leaves binding.variant undefined when neither `_variant` literal nor style asset is set", async () => {

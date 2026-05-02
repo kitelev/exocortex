@@ -58,8 +58,6 @@ export const CommandBindingProperty = {
   POSITION: "exocmd__CommandBinding_position",
   /** Sort order among buttons (default: 100) */
   ORDER: "exocmd__CommandBinding_order",
-  /** Button group name for grouping related commands */
-  GROUP: "exocmd__CommandBinding_group",
   /** Override command-level precondition for this binding (wikilink) */
   PRECONDITION: "exocmd__CommandBinding_precondition",
   /** Optional reference to exocmd__CommandBindingStyle asset (wikilink, RFC-024 §4 Phase 2) */

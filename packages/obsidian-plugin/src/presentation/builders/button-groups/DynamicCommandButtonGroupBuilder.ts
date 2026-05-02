@@ -307,9 +307,8 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
 
     // RFC-024 Phase 3 — apply class-level panel filter (excludeCommands
     // trumps includeGroups). When no panel is declared this is a pure
-    // pass-through. Filter dimension uses `command.category` (post-RFC
-    // f1dc284a — sectioning axis is `Command_category`, no longer routed
-    // through the synthesised `binding.group` bridge).
+    // pass-through. Filter dimension is `command.category` (RFC f1dc284a
+    // — sectioning axis is `Command_category`).
     const visibleCommands =
       panelClassRef !== null
         ? this.panelResolver
