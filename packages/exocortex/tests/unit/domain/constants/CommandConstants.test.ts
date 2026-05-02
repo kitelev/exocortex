@@ -58,8 +58,11 @@ describe("CommandBindingProperty", () => {
     expect(CommandBindingProperty.TARGET_ASSET).toBe("exocmd__CommandBinding_targetAsset");
     expect(CommandBindingProperty.POSITION).toBe("exocmd__CommandBinding_position");
     expect(CommandBindingProperty.ORDER).toBe("exocmd__CommandBinding_order");
-    expect(CommandBindingProperty.GROUP).toBe("exocmd__CommandBinding_group");
     expect(CommandBindingProperty.PRECONDITION).toBe("exocmd__CommandBinding_precondition");
+  });
+
+  it("should not expose dropped legacy `GROUP` constant (RFC f1dc284a Phase 8)", () => {
+    expect((CommandBindingProperty as Record<string, unknown>).GROUP).toBeUndefined();
   });
 });
 

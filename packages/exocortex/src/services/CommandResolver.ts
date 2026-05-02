@@ -371,11 +371,15 @@ export class CommandResolver {
     // Load display options
     const position = await this.getLiteralValue(subject, Namespace.EXOCMD.term("CommandBinding_position"));
     const orderStr = await this.getLiteralValue(subject, Namespace.EXOCMD.term("CommandBinding_order"));
-    const group = await this.getLiteralValue(subject, Namespace.EXOCMD.term("CommandBinding_group"));
 
     // RFC command-variant-split (f1dc284a) — top-level variant override.
     // Read `_variant` literal directly so callers can use `binding.variant`
     // without having to walk the legacy RFC-024 inline-style path.
+    //
+    // Legacy `exocmd__CommandBinding_group` was removed in RFC f1dc284a
+    // Phase 8 (`drop _group parsing`). Existing vaults with `_group`
+    // frontmatter remain valid markdown — the parser silently ignores the
+    // unknown property.
     const variantRawForBinding = await this.getLiteralValue(
       subject,
       Namespace.EXOCMD.term("CommandBinding_variant"),
@@ -384,17 +388,6 @@ export class CommandResolver {
       variantRawForBinding !== null
         ? this.coerceVariant(variantRawForBinding, uid)
         : undefined;
-
-    // Coexistence guard: if binding declares both legacy `_group` and
-    // explicit `_variant`, log a (capped) warning so legacy bindings can be
-    // migrated. `_variant` always wins downstream (builder precedence).
-    if (group !== null && variantRawForBinding !== null) {
-      this.logger.warn(
-        this.capWarning(
-          `CommandBinding ${uid}: both _group and _variant present; preferring _variant (${String(variantRawForBinding)})`,
-        ),
-      );
-    }
 
     // Load binding-level precondition override
     const precondition = await this.loadLinkedPreconditionFromProperty(
@@ -414,7 +407,6 @@ export class CommandResolver {
       targetAsset: targetAsset ?? undefined,
       position: position ?? undefined,
       order: orderStr ? parseInt(orderStr, 10) : undefined,
-      group: group ?? undefined,
       variant,
       precondition: precondition ?? undefined,
       style: style ?? undefined,
@@ -433,7 +425,7 @@ export class CommandResolver {
    * whitelist via `COMMAND_VARIANT_VALUES`, drop with capped warning on miss.
    *
    * Returns `null` when neither source is present — caller treats as
-   * "delegate to UI-level group default" (Phase 0 `categoryDefaultVariant`).
+   * "delegate to UI-level category default" (`categoryDefaultVariant`).
    *
    * Strategy: split-query (separate `match()` calls per property), **not**
    * SPARQL OPTIONAL — see RFC-024 §3 architectural principle.

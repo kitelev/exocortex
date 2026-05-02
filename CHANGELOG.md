@@ -31,9 +31,9 @@ Rollback procedure: `docs/ROLLBACK_EXOQL_EVAL.md`. T7 (CI drift-guard + scoped E
 
 **`property_set` Grounding Verified with YAML Arrays of Wikilinks (RFC-016 Blocker 3)**: Confirmed and tested that `property_set` grounding correctly handles YAML arrays of wikilinks (`[[uuid|label]]`), ensuring plugin commands can set multi-valued properties declaratively.
 
-### Deprecated
+### Removed
 
-**`exocmd__CommandBinding_group` property (RFC command-variant-split)**: Use `exocmd__CommandBinding_variant` instead. The parser still tolerates legacy `_group` for one release — when both `_group` and `_variant` appear on the same binding, `_variant` wins and a capped warning is logged. Starter-kit assets have been migrated to drop `_group` (kitelev/exocortex-starter-kit#94).
+**`exocmd__CommandBinding_group` parsing dropped (RFC `f1dc284a-eadc-4d0e-8e72-323e999ea510` Phase 8)**: After two release windows of deprecation, `binding.group` is gone. The `CommandBindingDefinition` interface no longer exposes a `group` field, `CommandResolver.loadBindingDefinition` no longer reads `exocmd__CommandBinding_group`, the coexistence-warning log line is removed, and `CommandBindingProperty.GROUP` is deleted from the constants table. Existing user vaults that still ship the legacy `_group` frontmatter remain valid markdown — the parser silently ignores the unknown property (verified by parser unit test + retained E2E fixtures). Starter-kit assets were migrated in kitelev/exocortex-starter-kit#94. Use `exocmd__CommandBinding_variant` for per-binding button-color overrides.
 
 ### Note
 

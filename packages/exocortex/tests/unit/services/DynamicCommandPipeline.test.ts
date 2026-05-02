@@ -167,9 +167,11 @@ describe("Dynamic Command Pipeline — Remove Start Timestamp (RFC-009 §6)", ()
       expect(command.grounding.type).toBe("property_delete");
       expect(command.grounding.targetProperty).toBe("ems__Effort_startTimestamp");
 
-      // Step 4: Verify binding metadata
-      expect(binding.group).toBe("maintenance");
+      // Step 4: Verify binding metadata.
+      // Legacy `_group` triple is present in the fixture (line 77) but parser
+      // silently ignores it (RFC f1dc284a Phase 8). Assert position only.
       expect(binding.position).toBe("inline");
+      expect((binding as { group?: string }).group).toBeUndefined();
     });
 
     it("should hide command when asset has no startTimestamp", async () => {

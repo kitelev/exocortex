@@ -312,14 +312,16 @@ describe("Issue #2494: Remove Start Timestamp — dynamic command pipeline integ
       expect(grounding.targetProperty).toBe("ems__Effort_startTimestamp");
     });
 
-    it("should load binding metadata (position, order, group)", async () => {
+    it("should load binding metadata (position, order, targetClass) and silently ignore legacy `_group`", async () => {
       const commands = await resolver.resolveForAsset(ASSET_IRI, "ems__Task");
       const binding = commands[0].binding;
 
       expect(binding.position).toBe("header");
       expect(binding.order).toBe(10);
-      expect(binding.group).toBe("maintenance");
       expect(binding.targetClass).toBe("ems__Task");
+      // RFC f1dc284a Phase 8 — `_group` parsing dropped. Fixture still emits
+      // the legacy triple to verify parser silently ignores it.
+      expect((binding as { group?: string }).group).toBeUndefined();
     });
 
     it("should NOT resolve command for a non-matching class (ems__Project)", async () => {

@@ -127,7 +127,6 @@ async function addBindingAsset(
     targetAsset?: string;
     position?: string;
     order?: number;
-    group?: string;
   },
 ): Promise<IRI> {
   const subject = new IRI(`obsidian://vault/${opts.uid}.md`);
@@ -153,9 +152,6 @@ async function addBindingAsset(
   }
   if (opts.order !== undefined) {
     triples.push(new Triple(subject, Namespace.EXOCMD.term("CommandBinding_order"), new Literal(String(opts.order))));
-  }
-  if (opts.group) {
-    triples.push(new Triple(subject, Namespace.EXOCMD.term("CommandBinding_group"), new Literal(opts.group)));
   }
 
   await store.addAll(triples);

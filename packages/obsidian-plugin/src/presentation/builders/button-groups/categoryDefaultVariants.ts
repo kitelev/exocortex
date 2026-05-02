@@ -30,11 +30,6 @@ export const categoryDefaultVariant: Readonly<
 /**
  * Resolves the default button variant for a command's `category` string.
  * Falls back to `"secondary"` for unknown, empty, or missing categories.
- *
- * Note: prior to RFC f1dc284a this function was named `resolveVariantForGroup`
- * and was keyed by the legacy `binding.group` literal. After the split of
- * `Command_category` (UI sectioning) and `CommandBinding_variant` (button
- * color override) it is now keyed by `command.category` directly.
  */
 export function resolveDefaultVariantForCategory(
   category: string | undefined,
