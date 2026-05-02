@@ -145,6 +145,23 @@ export class ExocortexSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
+      // eslint-disable-next-line obsidianmd/ui/sentence-case -- "SHACL" is an established acronym
+      .setName("Enable SHACL validation (experimental)")
+      .setDesc(
+        "When enabled, validates frontmatter properties against SHACL shapes " +
+          "on every file save (50ms debounce). Violations are logged as warnings. " +
+          "Default off in v15.x.0; will be enabled by default after soak period.",
+      )
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.enableShaclValidation)
+          .onChange(async (value) => {
+            this.plugin.settings.enableShaclValidation = value;
+            await this.plugin.saveSettings();
+          }),
+      );
+
+    new Setting(containerEl)
       .setName("Auto reading mode for exocortex assets")
       .setDesc(
         "When opening a note with the `exo__Instance_class` frontmatter property, automatically switch to reading mode so the exocortex layout (create / status / planning panels) is visible. Disable to keep obsidian's default view mode.",
