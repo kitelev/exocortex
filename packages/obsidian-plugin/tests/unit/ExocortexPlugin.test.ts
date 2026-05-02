@@ -2013,4 +2013,167 @@ describe("ExocortexPlugin", () => {
       expect(loadFromRDFGraphSpy).not.toHaveBeenCalled();
     });
   });
+
+  describe("scheduleValidation — P1.11 severity-based UI dispatch", () => {
+    // Pins the severity-dispatch contract introduced by P1.11:
+    //   sh:Violation → new Notice(msg)
+    //   sh:Warning   → statusbar dot update
+    //   sh:Info      → console.log only
+    //   engine throw → caught, Obsidian does not crash
+
+    let changedHandlers: Array<(file: TFile) => void> = [];
+    let loadFromRDFGraphSpy: jest.SpyInstance;
+    let shaclValidateSpy: jest.SpyInstance;
+    let notifierWarnSpy: jest.SpyInstance;
+    let consoleDebugSpy: jest.SpyInstance;
+    let consoleErrorSpy: jest.SpyInstance;
+
+    const makeReport = (violations: Array<{ severity: string; message: string }>) => ({
+      conforms: !violations.some((v) => v.severity === "sh:Violation"),
+      violations,
+    });
+
+    beforeEach(async () => {
+      changedHandlers = [];
+      mockMetadataCache.on.mockImplementation(
+        (event: string, cb: (file: TFile) => void) => {
+          if (event === "changed") {
+            changedHandlers.push(cb);
+          }
+          return { unsubscribe: jest.fn() };
+        },
+      );
+
+      const exocortexModule = await import("exocortex");
+      loadFromRDFGraphSpy = jest
+        .spyOn(exocortexModule.ShapeLoader, "loadFromRDFGraph")
+        .mockResolvedValue({ size: 1, getAll: () => [] } as any);
+
+      shaclValidateSpy = jest
+        .spyOn(exocortexModule, "shaclValidate")
+        .mockReturnValue(makeReport([]) as any);
+
+      consoleDebugSpy = jest.spyOn(console, "debug").mockImplementation(() => {});
+      consoleErrorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
+
+      await plugin.onload();
+      await flushPromises();
+
+      // Spy on notifier.warn after onload so the instance exists
+      notifierWarnSpy = jest.spyOn((plugin as any).notifier, "warn");
+    });
+
+    afterEach(() => {
+      loadFromRDFGraphSpy?.mockRestore();
+      shaclValidateSpy?.mockRestore();
+      notifierWarnSpy?.mockRestore();
+      consoleDebugSpy?.mockRestore();
+      consoleErrorSpy?.mockRestore();
+    });
+
+    const getLastChangedHandler = (): ((file: TFile) => void) => {
+      expect(changedHandlers.length).toBeGreaterThan(0);
+      return changedHandlers[changedHandlers.length - 1]!;
+    };
+
+    it("AC1: calls notifier.warn for each sh:Violation", async () => {
+      shaclValidateSpy.mockReturnValue(
+        makeReport([
+          { severity: "sh:Violation", message: "minCount violation on label" },
+        ]) as any,
+      );
+
+      const mockFile = { path: "note.md", extension: "md" } as TFile;
+      getLastChangedHandler()(mockFile);
+
+      await waitForCondition(
+        () => loadFromRDFGraphSpy.mock.calls.length > 0,
+        { timeout: 500, message: "ShapeLoader never called" },
+      );
+      await new Promise((r) => setTimeout(r, 50));
+
+      expect(notifierWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("minCount violation on label"),
+      );
+    });
+
+    it("AC2: updates statusbar text when sh:Warning violations exist", async () => {
+      shaclValidateSpy.mockReturnValue(
+        makeReport([
+          { severity: "sh:Warning", message: "optional field missing" },
+        ]) as any,
+      );
+
+      const mockFile = { path: "note.md", extension: "md" } as TFile;
+      getLastChangedHandler()(mockFile);
+
+      await waitForCondition(
+        () => loadFromRDFGraphSpy.mock.calls.length > 0,
+        { timeout: 500, message: "ShapeLoader never called" },
+      );
+      await new Promise((r) => setTimeout(r, 50));
+
+      const statusBarEl = (plugin as any).shaclStatusBar as HTMLElement | null;
+      expect(statusBarEl).not.toBeNull();
+      expect(statusBarEl?.textContent).toMatch(/⚠/);
+    });
+
+    it("AC2: clears statusbar text when no warnings", async () => {
+      shaclValidateSpy.mockReturnValue(makeReport([]) as any);
+
+      const mockFile = { path: "note.md", extension: "md" } as TFile;
+      getLastChangedHandler()(mockFile);
+
+      await waitForCondition(
+        () => loadFromRDFGraphSpy.mock.calls.length > 0,
+        { timeout: 500, message: "ShapeLoader never called" },
+      );
+      await new Promise((r) => setTimeout(r, 50));
+
+      const statusBarEl = (plugin as any).shaclStatusBar as HTMLElement | null;
+      expect(statusBarEl).not.toBeNull();
+      expect(statusBarEl?.textContent ?? "").toBe("");
+    });
+
+    it("AC2: logs sh:Info to console.debug without notifier.warn", async () => {
+      shaclValidateSpy.mockReturnValue(
+        makeReport([{ severity: "sh:Info", message: "informational hint" }]) as any,
+      );
+
+      const mockFile = { path: "note.md", extension: "md" } as TFile;
+      getLastChangedHandler()(mockFile);
+
+      await waitForCondition(
+        () => loadFromRDFGraphSpy.mock.calls.length > 0,
+        { timeout: 500, message: "ShapeLoader never called" },
+      );
+      await new Promise((r) => setTimeout(r, 50));
+
+      expect(consoleDebugSpy).toHaveBeenCalledWith(
+        expect.stringContaining("informational hint"),
+      );
+      expect(notifierWarnSpy).not.toHaveBeenCalled();
+    });
+
+    it("AC3: engine throw is caught — plugin does not re-throw", async () => {
+      shaclValidateSpy.mockImplementation(() => {
+        throw new Error("engine exploded");
+      });
+
+      const mockFile = { path: "note.md", extension: "md" } as TFile;
+      getLastChangedHandler()(mockFile);
+
+      await waitForCondition(
+        () => loadFromRDFGraphSpy.mock.calls.length > 0,
+        { timeout: 500, message: "ShapeLoader never called" },
+      );
+      await new Promise((r) => setTimeout(r, 50));
+
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining("SHACL engine error"),
+        expect.any(Error),
+      );
+      expect(notifierWarnSpy).not.toHaveBeenCalled();
+    });
+  });
 });

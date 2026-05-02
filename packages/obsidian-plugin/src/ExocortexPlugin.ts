@@ -135,6 +135,7 @@ export default class ExocortexPlugin extends Plugin {
   private graphViewPatch!: GraphViewPatch;
   private fileLogChannel!: FileLogChannel;
   private notifier!: ObsidianNotificationService;
+  private shaclStatusBar: HTMLElement | null = null;
   // Issue #2780: tracked so the post-resolve reindex can await it before
   // calling refresh(), avoiding a concurrent clear()/convertVault() race.
   private eagerInitPromise: Promise<void> | null = null;
@@ -895,6 +896,8 @@ export default class ExocortexPlugin extends Plugin {
         );
       }
 
+      this.shaclStatusBar = this.addStatusBarItem();
+
       this.logger.info("Exocortex Plugin loaded successfully");
     } catch (error) {
       this.logger?.error("Failed to load Exocortex Plugin", error as Error);
@@ -1629,18 +1632,37 @@ export default class ExocortexPlugin extends Plugin {
             const hierarchy: ShaclClassHierarchy = { isSubClassOf: (c, p) => c === p };
             const report = shaclValidate(algebraTriples, shaclRegistry, hierarchy);
 
-            if (!report.conforms) {
-              for (const v of report.violations) {
-                this.logger.warn(
-                  `SHACL ${v.severity} in ${file.path}: ${v.message}`,
-                );
+            const violations = report.violations.filter(
+              (v) => v.severity === "sh:Violation",
+            );
+            const warnings = report.violations.filter(
+              (v) => v.severity === "sh:Warning",
+            );
+            const infos = report.violations.filter(
+              (v) => v.severity === "sh:Info",
+            );
+
+            for (const v of violations) {
+              this.notifier.warn(`SHACL: ${v.message}`);
+            }
+
+            if (this.shaclStatusBar) {
+              if (warnings.length > 0) {
+                this.shaclStatusBar.setText(`⚠ ${warnings.length}`);
+                this.shaclStatusBar.title = warnings
+                  .map((w) => w.message)
+                  .join("\n");
+              } else {
+                this.shaclStatusBar.setText("");
+                this.shaclStatusBar.title = "";
               }
             }
+
+            for (const v of infos) {
+              console.debug(`[Exocortex SHACL] Info in ${file.path}: ${v.message}`);
+            }
           } catch (err) {
-            this.logger.error(
-              `SHACL validation failed for ${file.path}`,
-              err as Error,
-            );
+            console.error("[Exocortex] SHACL engine error", err);
           }
         })();
       },
