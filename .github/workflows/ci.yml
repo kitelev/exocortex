@@ -425,6 +425,36 @@ jobs:
           retention-days: 1
           if-no-files-found: ignore
 
+  parity-gate:
+    # RFC `94e520da` Phase 3 (T3.3) — required CI gate enforcing CLI ↔ plugin
+    # triple parity (М2: diff = 0 across 5 reference vaults). Runs ONLY the
+    # parity integration test in isolation so a failure surfaces with a
+    # named, dedicated check rather than being absorbed into the broader
+    # `test-coverage-cli` job. Independently parallel; not part of the
+    # `test-coverage` aggregator chain by design.
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Setup Node & install deps
+        uses: ./.github/actions/setup-node-pnpm
+
+      - name: Run CLI ↔ plugin triple parity diff-test
+        env:
+          NODE_OPTIONS: "--max-old-space-size=4096 --experimental-vm-modules"
+          CI: "true"
+        run: |
+          node --experimental-vm-modules ./node_modules/jest/bin/jest.js \
+            --config packages/cli/jest.config.js \
+            --testPathPatterns='tests/integration/cli-plugin-triple-parity\.integration\.test\.ts' \
+            --runInBand \
+            --forceExit
+
   test-coverage-exocortex:
     # Bare ubuntu-latest — narrow node-only regression suite, no browser needed.
     runs-on: ubuntu-latest
