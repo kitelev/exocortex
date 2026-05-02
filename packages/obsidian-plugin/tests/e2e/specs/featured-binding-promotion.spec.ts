@@ -66,11 +66,40 @@ test.describe("RFC-024 Phase 3 — featuredBinding promotion", () => {
     }, { timeout: 15000 }).not.toBeNull();
 
     // Force re-render with populated triple store + metadataCache.
+    // `refreshLayout()` removes the old auto-layout container and fires a
+    // fire-and-forget async render — `evaluate` resolves before the new
+    // render commits. Without an explicit re-render signal here, downstream
+    // assertions race against `featuredBinding` promotion (#2985).
+    //
+    // Capture the current `.exocortex-layout-rendered` element; the refresh
+    // will detach it and a NEW container will get the class once render() in
+    // UniversalLayoutRenderer reaches its terminal `el.addClass(...)` line.
+    // Awaiting both transitions makes the rest of the spec deterministic.
+    const oldLayoutRendered = window
+      .locator(".exocortex-auto-layout.exocortex-layout-rendered")
+      .first();
+
     await window.evaluate(() => {
       const plugin = (window as any).app?.plugins?.plugins?.exocortex;
       plugin?.commandResolver?.invalidateCache?.();
       plugin?.refreshLayout?.();
     });
+
+    // Old container is removed by `removeAutoRenderedLayouts()` at the very
+    // start of `autoRenderLayout()`. Ignore detach failures (a previous test
+    // run could have left no rendered marker — e.g. settings.layoutVisible
+    // off — and then there's nothing to wait for).
+    await oldLayoutRendered
+      .waitFor({ state: "detached", timeout: 5000 })
+      .catch(() => {});
+
+    // Wait for the freshly mounted auto-layout to reach its rendered marker
+    // before any visual assertion. This is the explicit render signal that
+    // RFC-024 Phase 3 visual invariants depend on.
+    await window
+      .locator(".exocortex-auto-layout.exocortex-layout-rendered")
+      .first()
+      .waitFor({ state: "attached", timeout: 20000 });
 
     const buttonsSection = window.locator(".exocortex-buttons-section");
     await expect(buttonsSection).toBeVisible({ timeout: 20000 });
