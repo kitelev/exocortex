@@ -413,6 +413,74 @@ describe("QueryExecutor", () => {
       const results = await executor.executeAll(orderByOp);
       expect(results).toHaveLength(2);
     });
+
+    // Regression: #2964 — ORDER BY on xsd:dayTimeDuration must sort by value,
+    // not lexically. P10D > P3D > P1D numerically, but lex-order gives P3D > P1D > P10D.
+    // Per W3C SPARQL 1.1 §17.4.5.4 ordering must be value-based.
+    it("should sort xsd:dayTimeDuration values numerically (issue #2964)", async () => {
+      const dayTimeDuration = new IRI("http://www.w3.org/2001/XMLSchema#dayTimeDuration");
+      await store.add(new Triple(ex("ms-a"), ex("slip"), new Literal("P3D", dayTimeDuration)));
+      await store.add(new Triple(ex("ms-b"), ex("slip"), new Literal("P1D", dayTimeDuration)));
+      await store.add(new Triple(ex("ms-c"), ex("slip"), new Literal("P10D", dayTimeDuration)));
+
+      const orderByOp: OrderByOperation = {
+        type: "orderby",
+        comparators: [
+          {
+            expression: { type: "variable", name: "slip" },
+            descending: true,
+          },
+        ],
+        input: {
+          type: "bgp",
+          triples: [
+            {
+              subject: { type: "variable", value: "s" },
+              predicate: { type: "iri", value: ex("slip").value },
+              object: { type: "variable", value: "slip" },
+            },
+          ],
+        } as BGPOperation,
+      };
+
+      const results = await executor.executeAll(orderByOp);
+      const slipValues = results.map((sol) => (sol.get("slip") as Literal).value);
+      expect(slipValues).toEqual(["P10D", "P3D", "P1D"]);
+    });
+
+    // Regression: numeric typed literals (e.g. xsd:integer "10" vs "9") must
+    // sort numerically, not lexically. Same root cause as #2964 — datatype loss
+    // on extraction.
+    it("should sort xsd:integer values numerically", async () => {
+      const xsdInteger = new IRI("http://www.w3.org/2001/XMLSchema#integer");
+      await store.add(new Triple(ex("n-a"), ex("count"), new Literal("9", xsdInteger)));
+      await store.add(new Triple(ex("n-b"), ex("count"), new Literal("10", xsdInteger)));
+      await store.add(new Triple(ex("n-c"), ex("count"), new Literal("2", xsdInteger)));
+
+      const orderByOp: OrderByOperation = {
+        type: "orderby",
+        comparators: [
+          {
+            expression: { type: "variable", name: "n" },
+            descending: false,
+          },
+        ],
+        input: {
+          type: "bgp",
+          triples: [
+            {
+              subject: { type: "variable", value: "s" },
+              predicate: { type: "iri", value: ex("count").value },
+              object: { type: "variable", value: "n" },
+            },
+          ],
+        } as BGPOperation,
+      };
+
+      const results = await executor.executeAll(orderByOp);
+      const nValues = results.map((sol) => (sol.get("n") as Literal).value);
+      expect(nValues).toEqual(["2", "9", "10"]);
+    });
   });
 
   describe("execute slice (LIMIT/OFFSET)", () => {

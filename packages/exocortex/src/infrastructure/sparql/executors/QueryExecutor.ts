@@ -36,6 +36,28 @@ import { ServiceExecutor, ServiceExecutorConfig } from "./ServiceExecutor";
 import { GraphExecutor } from "./GraphExecutor";
 import { SPARQLGenerator } from "../algebra/SPARQLGenerator";
 import { IRI } from "../../../domain/models/rdf/IRI";
+import { Literal } from "../../../domain/models/rdf/Literal";
+import { DateTimeFunctions } from "../filters/functions/DateTimeFunctions";
+
+const XSD = "http://www.w3.org/2001/XMLSchema#";
+const XSD_NUMERIC_DATATYPES: ReadonlySet<string> = new Set([
+  `${XSD}integer`,
+  `${XSD}decimal`,
+  `${XSD}float`,
+  `${XSD}double`,
+  `${XSD}nonPositiveInteger`,
+  `${XSD}negativeInteger`,
+  `${XSD}long`,
+  `${XSD}int`,
+  `${XSD}short`,
+  `${XSD}byte`,
+  `${XSD}nonNegativeInteger`,
+  `${XSD}unsignedLong`,
+  `${XSD}unsignedInt`,
+  `${XSD}unsignedShort`,
+  `${XSD}unsignedByte`,
+  `${XSD}positiveInteger`,
+]);
 
 export class QueryExecutorError extends Error {
   constructor(message: string, cause?: Error) {
@@ -832,10 +854,30 @@ export class ExoQLQueryExecutor {
   private getExpressionValue(expr: import("../algebra/AlgebraOperation").Expression, solution: SolutionMapping): unknown {
     if (expr.type === "variable") {
       const term = solution.get(expr.name);
-      if (term) {
-        return (term as { value?: string; id?: string }).value ?? (term as { value?: string; id?: string }).id ?? String(term);
+      if (!term) {
+        return undefined;
       }
-      return undefined;
+      // SPARQL 1.1 §17.4.5.4 — ORDER BY uses value-based ordering.
+      // For numeric-typed and xsd:dayTimeDuration literals, return a number so
+      // the sort comparator compares values, not lexical forms.
+      if (term instanceof Literal) {
+        const dt = term.datatype?.value;
+        if (dt === `${XSD}dayTimeDuration`) {
+          try {
+            return DateTimeFunctions.parseDayTimeDuration(term.value);
+          } catch {
+            return term.value;
+          }
+        }
+        if (dt && XSD_NUMERIC_DATATYPES.has(dt)) {
+          const n = parseFloat(term.value);
+          if (!Number.isNaN(n)) {
+            return n;
+          }
+        }
+        return term.value;
+      }
+      return (term as { value?: string; id?: string }).value ?? (term as { value?: string; id?: string }).id ?? String(term);
     }
     if (expr.type === "literal") {
       return expr.value;
