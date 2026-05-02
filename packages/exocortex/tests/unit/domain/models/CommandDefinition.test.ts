@@ -191,7 +191,6 @@ describe("CommandDefinition", () => {
         targetPrototype: "a717a21b-a960-4795-9caa-04aeaba730ee",
         position: "inline",
         order: 50,
-        group: "maintenance",
       };
 
       expect(binding.targetPrototype).toBe("a717a21b-a960-4795-9caa-04aeaba730ee");

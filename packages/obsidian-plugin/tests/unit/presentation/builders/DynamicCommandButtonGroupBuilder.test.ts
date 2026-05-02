@@ -359,10 +359,10 @@ describe("DynamicCommandButtonGroupBuilder", () => {
       expect(result[0].variant).toBe("danger");
     });
 
-    it("should default variant to secondary for unknown group", async () => {
+    it("should default variant to secondary for unknown category", async () => {
       const rc = createResolvedCommand(
-        { name: "Future action" },
-        { group: "future-uncategorized" },
+        { name: "Future action", category: "future-uncategorized" },
+        { id: "binding-unknown-category" },
       );
       mockResolveForAssetMulti.mockResolvedValue([rc]);
       mockEvaluate.mockResolvedValue(true);
@@ -1041,11 +1041,11 @@ describe("DynamicCommandButtonGroupBuilder", () => {
       ]);
     });
 
-    it("featuredBinding promotes its binding to primary regardless of group default", async () => {
+    it("featuredBinding promotes its binding to primary regardless of category default", async () => {
       const featured = createResolvedCommand(
         // `maintenance` would normally resolve to `muted` per Phase 0 defaults.
         { id: "c-featured", name: "Featured", category: "maintenance" },
-        { id: "binding-featured", group: "maintenance" },
+        { id: "binding-featured" },
       );
       mockResolveForAssetMulti.mockResolvedValue([featured]);
       mockEvaluate.mockResolvedValue(true);
@@ -1059,10 +1059,10 @@ describe("DynamicCommandButtonGroupBuilder", () => {
       expect(result[0].variant).toBe("primary");
     });
 
-    it("non-featured bindings keep their group-derived variant", async () => {
+    it("non-featured bindings keep their category-derived variant", async () => {
       const nonFeatured = createResolvedCommand(
         { id: "c-other", name: "Maintenance Op", category: "maintenance" },
-        { id: "binding-other", group: "maintenance" },
+        { id: "binding-other" },
       );
       mockResolveForAssetMulti.mockResolvedValue([nonFeatured]);
       mockEvaluate.mockResolvedValue(true);
@@ -1168,13 +1168,12 @@ describe("DynamicCommandButtonGroupBuilder", () => {
       expect(result[0].variant).toBe("danger");
     });
 
-    it("(b) no variant + no group + category=creation → primary", async () => {
+    it("(b) no variant + category=creation → primary", async () => {
       const rc = createResolvedCommand(
         { name: "Create Task", category: "creation" },
         { id: "binding-b" },
       );
       expect(rc.binding.variant).toBeUndefined();
-      expect(rc.binding.group).toBeUndefined();
       mockResolveForAssetMulti.mockResolvedValue([rc]);
       mockEvaluate.mockResolvedValue(true);
 
@@ -1196,15 +1195,14 @@ describe("DynamicCommandButtonGroupBuilder", () => {
       expect(result[0].variant).toBe("secondary");
     });
 
-    it("(d) legacy group=maintenance + variant=danger → variant wins (group still parsed for diagnostics)", async () => {
-      // Mirrors the parser-level CommandResolver assertion that both fields
-      // coexist; here the builder consumes the resolved object and must
-      // pick `variant` regardless of legacy `group`. The CommandResolver
-      // unit suite (`CommandResolver.style.test.ts`) covers the parser
-      // warning emission for the same shape.
+    it("(d) variant=danger on a maintenance category → variant wins over category default `muted`", async () => {
+      // Sanity check that an explicit `_variant` override always beats the
+      // category-derived default. (Pre-RFC f1dc284a Phase 8 this branch was
+      // labelled "legacy `group` + `variant` coexistence"; with `_group`
+      // parsing dropped only the variant axis remains.)
       const rc = createResolvedCommand(
         { name: "Wipe cache", category: "maintenance" },
-        { id: "binding-d", group: "maintenance", variant: "danger" },
+        { id: "binding-d", variant: "danger" },
       );
       mockResolveForAssetMulti.mockResolvedValue([rc]);
       mockEvaluate.mockResolvedValue(true);

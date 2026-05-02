@@ -127,14 +127,6 @@ export interface CommandBindingDefinition {
   /** Sort order (default: 100) */
   readonly order?: number;
   /**
-   * @deprecated Button group name (legacy). Use `variant` for explicit per-binding
-   * button variant override. Parser still reads `_group` for backward compat,
-   * but prefers `_variant` when both are present (logs warning). RFC
-   * f1dc284a-eadc-4d0e-8e72-323e999ea510 — removal scheduled for next release
-   * after starter-kit migration.
-   */
-  readonly group?: string;
-  /**
    * Per-binding button variant override (RFC command-variant-split,
    * f1dc284a-eadc-4d0e-8e72-323e999ea510). Populated from
    * `exocmd__CommandBinding_variant` frontmatter literal. When absent, UI
@@ -151,8 +143,8 @@ export interface CommandBindingDefinition {
    *    CommandBindingStyle asset (preferred — reusable across bindings).
    * 2. `exocmd__CommandBinding_variant` inline literal → synthesize
    *    minimal style with only `variant` set.
-   * 3. Neither present → `style` is `undefined`; UI applies group-based
-   *    Phase 0 default via `resolveVariant(group)`.
+   * 3. Neither present → `style` is `undefined`; UI applies category-based
+   *    default via `resolveDefaultVariantForCategory(command.category)`.
    *
    * Invalid enum values are coerced (lowercase + trim) and dropped to
    * `undefined` after warning (RFC-024 §5 — never crash).
