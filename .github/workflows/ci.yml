@@ -633,7 +633,18 @@ jobs:
       # required check so a single named gate enforces both BDD coverage
       # and grounding state-change correctness; failure surfaces by failing
       # this step (no continue-on-error). Requires exocortex + services
-      # workspace dist (CLI imports them at runtime via tsx loader).
+      # workspace dist (CLI imports them at runtime via tsx loader) and a
+      # sibling checkout of exocortex-starter-kit (resolved by
+      # specs/step_definitions/grounding.steps.ts via `../exocortex-starter-kit`).
+      - name: Checkout exocortex-starter-kit (sibling repo for BDD fixtures)
+        run: |
+          # findStarterKit() in grounding.steps.ts probes ../exocortex-starter-kit
+          # and ../../exocortex-starter-kit relative to repoRoot. GITHUB_WORKSPACE
+          # is /home/runner/work/exocortex/exocortex, so cloning to its parent
+          # places the kit at the first probe path.
+          git clone --depth 1 https://github.com/kitelev/exocortex-starter-kit.git \
+            "${GITHUB_WORKSPACE}/../exocortex-starter-kit"
+
       - name: Build workspace deps for CLI BDD suite
         run: npm run build -w exocortex && npm run build -w @kitelev/exocortex-services
 
