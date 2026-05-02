@@ -288,5 +288,28 @@ SELECT (CASE WHEN ?x > 10 THEN "high" ELSE "low" END AS ?level) WHERE { ?s :v ?x
       const input = `# just a CASE WHEN END comment with no SPARQL content`;
       expect(() => transformer.transform(input)).not.toThrow();
     });
+
+    // Regression: #2844 — substring `case` (e.g. `worst-case`) inside a `#`
+    // comment combined with a parenthesised projection like `(CONCAT(...) AS ?x)`
+    // must not trip the CASE/END scanner. Comment-stripping (#2842) is applied
+    // before the CASE scan, so this query should round-trip unchanged.
+    it("should not trip on substring 'case' in a # header comment with CONCAT projection (#2844)", () => {
+      const input = `# Notes:  Quadratic worst-case -- benchmark before scaling past about 100 Areas.
+
+PREFIX ems: <https://exocortex.my/ontology/ems#>
+
+SELECT ?task (CONCAT("ems__Area parent cycle detected: ", STR(?task)) AS ?issue) WHERE {
+  ?task ems:Area_parent+ ?task .
+  FILTER(isIRI(?task))
+}
+GROUP BY ?task`;
+      expect(() => transformer.transform(input)).not.toThrow();
+      const result = transformer.transform(input);
+      // No CASE WHEN to transform → IF() must not appear
+      expect(result).not.toContain("IF(");
+      // Body keywords preserved, comment replaced by whitespace of equal length
+      expect(result).toContain("SELECT ?task");
+      expect(result).toContain("GROUP BY ?task");
+    });
   });
 });
