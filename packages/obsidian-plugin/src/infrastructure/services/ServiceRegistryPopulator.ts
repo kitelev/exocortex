@@ -13,6 +13,8 @@ import {
   FolderRepairService,
   PropertyCleanupService,
   RenameToUidService,
+  ConceptCreationService,
+  ClassCreationService,
   DateFormatter,
   type IGroundingService,
   type UserInput,
@@ -291,6 +293,8 @@ export function populateServiceRegistry(
     const fixMissingLabelService = new FixMissingLabelService(vaultAdapter);
     const renameToUidService = new RenameToUidService(vaultAdapter);
     const folderRepairService = new FolderRepairService(vaultAdapter);
+    const conceptCreationService = new ConceptCreationService(vaultAdapter);
+    const classCreationService = new ClassCreationService(vaultAdapter);
 
     registry.register(
       "rollbackStatus",
@@ -499,6 +503,60 @@ export function populateServiceRegistry(
           return;
         }
         await folderRepairService.repairFolder(iFile, expectedFolder);
+      }),
+    );
+
+    registry.register(
+      "createNarrowerConcept",
+      wrapService(async (targetIRI: string, userInput?: UserInput) => {
+        // Create a child ims__Concept whose ims__Concept_broader points to the
+        // current target concept. Wraps existing ConceptCreationService (which
+        // was previously orphaned: no service_call wiring → no UI button could
+        // invoke it). Mirrors createRelatedTask pattern: resolve target file,
+        // call domain service, open created file. See RFC 5a61a359 Phase C.2.
+        const label = userInput?.label as string | undefined;
+        if (!label) throw new Error("createNarrowerConcept requires userInput.label");
+        const definition = (userInput?.definition as string | undefined) ?? "";
+        const aliasesInput = userInput?.aliases;
+        const aliases = Array.isArray(aliasesInput)
+          ? aliasesInput.map(String)
+          : typeof aliasesInput === "string" && aliasesInput.length > 0
+            ? [aliasesInput]
+            : [];
+        const iFile = resolveIFile(app, targetIRI, vaultAdapter);
+        const createdFile = await conceptCreationService.createNarrowerConcept(
+          iFile,
+          label,
+          definition,
+          aliases,
+        );
+        const tfile = vaultAdapter.toTFile(createdFile);
+        const leaf = app.workspace.getLeaf("tab");
+        await leaf.openFile(tfile);
+        app.workspace.setActiveLeaf(leaf, { focus: true });
+      }),
+    );
+
+    registry.register(
+      "createSubclass",
+      wrapService(async (targetIRI: string, userInput?: UserInput) => {
+        // Create a child exo__Class whose exo__Class_superClass points to the
+        // current target class. Wraps existing ClassCreationService (previously
+        // orphaned). See RFC 5a61a359 Phase C.3.
+        const label = userInput?.label as string | undefined;
+        if (!label) throw new Error("createSubclass requires userInput.label");
+        const iFile = resolveIFile(app, targetIRI, vaultAdapter);
+        const parentMetadata =
+          (vaultAdapter.getFrontmatter(iFile) as Record<string, unknown>) ?? {};
+        const createdFile = await classCreationService.createSubclass(
+          iFile,
+          label,
+          parentMetadata,
+        );
+        const tfile = vaultAdapter.toTFile(createdFile);
+        const leaf = app.workspace.getLeaf("tab");
+        await leaf.openFile(tfile);
+        app.workspace.setActiveLeaf(leaf, { focus: true });
       }),
     );
 

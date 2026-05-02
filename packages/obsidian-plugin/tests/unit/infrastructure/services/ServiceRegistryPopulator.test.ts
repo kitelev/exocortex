@@ -137,6 +137,8 @@ describe("ServiceRegistryPopulator", () => {
       "fixMissingLabel",
       "renameToUid",
       "repairFolder",
+      "createNarrowerConcept",
+      "createSubclass",
       "createTaskForDailyNote",
     ];
     for (const id of vaultDependentIds) {
@@ -467,6 +469,8 @@ describe("ServiceRegistryPopulator (with vaultAdapter)", () => {
       "fixMissingLabel",
       "renameToUid",
       "repairFolder",
+      "createNarrowerConcept",
+      "createSubclass",
       "createTaskForDailyNote",
     ];
     for (const id of vaultDependentIds) {
@@ -712,6 +716,92 @@ describe("ServiceRegistryPopulator (with vaultAdapter)", () => {
       const service = registry.get("createRelatedProject")!;
       await expect(service.execute("test-uid-123", {})).rejects.toThrow(
         "createRelatedProject requires userInput.label",
+      );
+    });
+  });
+
+  describe("createNarrowerConcept", () => {
+    it("should create child concept with ims__Concept_broader pointing to parent", async () => {
+      const service = registry.get("createNarrowerConcept")!;
+      await service.execute("test-uid-123", { label: "Child Concept" });
+
+      expect(deps.vaultAdapter!.create).toHaveBeenCalledWith(
+        expect.stringContaining("concepts/Child Concept.md"),
+        expect.stringContaining("ims__Concept_broader: \"[[test-uid-123]]\""),
+      );
+    });
+
+    it("should accept optional definition and aliases", async () => {
+      const service = registry.get("createNarrowerConcept")!;
+      await service.execute("test-uid-123", {
+        label: "Child",
+        definition: "A narrower concept",
+        aliases: ["alt-label"],
+      });
+
+      const createCall = (deps.vaultAdapter!.create as jest.Mock).mock.calls[0];
+      const content = createCall[1] as string;
+      expect(content).toContain("ims__Concept_definition: A narrower concept");
+      expect(content).toContain("alt-label");
+    });
+
+    it("should open the created concept in a new tab leaf", async () => {
+      const service = registry.get("createNarrowerConcept")!;
+      await service.execute("test-uid-123", { label: "Visible Concept" });
+
+      expect(deps.app.workspace.getLeaf).toHaveBeenCalledWith("tab");
+      expect(deps.vaultAdapter!.toTFile).toHaveBeenCalled();
+      const leafMock = (deps.app.workspace.getLeaf as jest.Mock).mock.results[0].value;
+      expect(leafMock.openFile).toHaveBeenCalled();
+      expect(deps.app.workspace.setActiveLeaf).toHaveBeenCalledWith(
+        leafMock,
+        { focus: true },
+      );
+    });
+
+    it("should throw when label is missing", async () => {
+      const service = registry.get("createNarrowerConcept")!;
+      await expect(service.execute("test-uid-123", {})).rejects.toThrow(
+        "createNarrowerConcept requires userInput.label",
+      );
+    });
+  });
+
+  describe("createSubclass", () => {
+    it("should create child class with exo__Class_superClass pointing to parent", async () => {
+      const service = registry.get("createSubclass")!;
+      await service.execute("test-uid-123", { label: "ChildClass" });
+
+      expect(deps.vaultAdapter!.create).toHaveBeenCalledWith(
+        expect.stringContaining("classes/childclass.md"),
+        expect.stringContaining("exo__Class_superClass: \"[[test-uid-123]]\""),
+      );
+    });
+
+    it("should write exo__Instance_class as exo__Class", async () => {
+      const service = registry.get("createSubclass")!;
+      await service.execute("test-uid-123", { label: "MyClass" });
+
+      const createCall = (deps.vaultAdapter!.create as jest.Mock).mock.calls[0];
+      const content = createCall[1] as string;
+      expect(content).toContain("exo__Instance_class");
+      expect(content).toContain("[[exo__Class]]");
+    });
+
+    it("should open the created class in a new tab leaf", async () => {
+      const service = registry.get("createSubclass")!;
+      await service.execute("test-uid-123", { label: "VisibleClass" });
+
+      expect(deps.app.workspace.getLeaf).toHaveBeenCalledWith("tab");
+      expect(deps.vaultAdapter!.toTFile).toHaveBeenCalled();
+      const leafMock = (deps.app.workspace.getLeaf as jest.Mock).mock.results[0].value;
+      expect(leafMock.openFile).toHaveBeenCalled();
+    });
+
+    it("should throw when label is missing", async () => {
+      const service = registry.get("createSubclass")!;
+      await expect(service.execute("test-uid-123", {})).rejects.toThrow(
+        "createSubclass requires userInput.label",
       );
     });
   });
