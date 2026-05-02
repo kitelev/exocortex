@@ -84,6 +84,14 @@ export function commandCommand(): Command {
       const format = (options.format || "text") as OutputFormat;
       ErrorHandler.setFormat(format);
 
+      if (commandName === "start") {
+        console.error(
+          '⚠️  DEPRECATED: `command start <path>` is deprecated. ' +
+            'Use `dyncommand exec <uid>` instead. ' +
+            '`command start <path>` will be removed in 2 minor releases (T7.3).',
+        );
+      }
+
       try {
         const vaultPath = resolve(options.vault);
         const executor = new CommandExecutor(vaultPath, options.dryRun);
