@@ -1,0 +1,12 @@
+{
+  "uid": "e8c1d18a-f622-41b4-89e7-9a3be33a96d7",
+  "label": "Convert to project",
+  "type": "service_call",
+  "cliStatus": "real",
+  "serviceId": "updateProperty",
+  "sourcePath": "exocmd/creation/e8c1d18a-f622-41b4-89e7-9a3be33a96d7.md",
+  "userInput": null,
+  "expect": {
+    "outcome": "success"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "uid": "22a6ba6b-030a-47e4-946e-1a30dc9450e5",
+  "label": "Plan on today via service",
+  "type": "service_call",
+  "cliStatus": "unregistered",
+  "serviceId": "planOnToday",
+  "sourcePath": "exocmd/planning/22a6ba6b-030a-47e4-946e-1a30dc9450e5.md",
+  "userInput": null,
+  "expect": {
+    "outcome": "failure",
+    "errorPattern": "Service not found: \\\"planOnToday\\\""
+  }
+}

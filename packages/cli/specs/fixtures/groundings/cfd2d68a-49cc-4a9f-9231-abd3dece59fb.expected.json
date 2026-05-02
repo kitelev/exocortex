@@ -1,0 +1,15 @@
+{
+  "uid": "cfd2d68a-49cc-4a9f-9231-abd3dece59fb",
+  "label": "Set status to Backlog",
+  "type": "property_set",
+  "cliStatus": "real",
+  "serviceId": null,
+  "sourcePath": "exocmd/status/cfd2d68a-49cc-4a9f-9231-abd3dece59fb.md",
+  "userInput": null,
+  "expect": {
+    "outcome": "success",
+    "frontmatterAfter": {
+      "ems__Effort_status": "[[753a44d5-846c-4b82-9196-4fd9a4d48777]]"
+    }
+  }
+}

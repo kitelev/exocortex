@@ -1,0 +1,12 @@
+{
+  "uid": "de7914fb-3f56-4278-81f1-6c23345553f0",
+  "label": "Clean properties via service",
+  "type": "service_call",
+  "cliStatus": "real",
+  "serviceId": "cleanProperties",
+  "sourcePath": "exocmd/maintenance-complex/de7914fb-3f56-4278-81f1-6c23345553f0.md",
+  "userInput": null,
+  "expect": {
+    "outcome": "success"
+  }
+}

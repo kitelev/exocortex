@@ -1,0 +1,16 @@
+{
+  "uid": "23727560-5f6b-4c49-9b33-eea34c7eec9e",
+  "label": "Transition to Doing (status + startTimestamp)",
+  "type": "composite",
+  "cliStatus": "real",
+  "serviceId": null,
+  "sourcePath": "exocmd/status/23727560-5f6b-4c49-9b33-eea34c7eec9e.md",
+  "userInput": null,
+  "expect": {
+    "outcome": "success"
+  },
+  "compositeStepUids": [
+    "d5deac7a-149d-43a1-b249-875d91834b60",
+    "95dfbcad-daca-47aa-8788-74e09f6b10a1"
+  ]
+}

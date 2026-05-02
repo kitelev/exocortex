@@ -434,7 +434,7 @@ set -euo pipefail
 
 VAULT="$HOME/vault"
 DAILY="daily/$(date +%Y-%m-%d).md"
-CREATE_INSTANCE_CMD="<create-instance-command-uid>"
+CREATE_INSTANCE_CMD="1abe7877-a462-4bd5-9bd8-1f75fe7f50aa"  # Start Lunch (RFC 94e520da § Phase 7)
 
 npx @kitelev/exocortex-cli dyncommand exec "$CREATE_INSTANCE_CMD" \
   --target "$DAILY" \
@@ -445,6 +445,73 @@ npx @kitelev/exocortex-cli dyncommand exec "$CREATE_INSTANCE_CMD" \
 
 If the command, its precondition, or its grounding ever change in the vault,
 the cron job picks up the new behavior automatically — no redeploy.
+
+A drop-in deployable version of this script — with crontab fragment, nightly
+verifier, install instructions, and a 7-day soak protocol — lives in
+[`examples/production-cron/`](../../examples/production-cron/) (RFC
+`94e520da` § Phase 5).
+
+#### Telegram bot integration (Phase 7 migration)
+
+> **Migration target (RFC `94e520da` § Phase 7, T7.1):** Telegram bot Claude
+> subprocess **must** invoke `dyncommand exec <uid>` rather than legacy
+> `command start <path>`.
+
+The legacy `exocortex command start <path-to-asset>` (`Doing` transition by
+file path) is **deprecated** as part of the Phase 7 sunset of the hardcoded
+plugin-command CLI surface. Equivalent vault-defined behaviour now lives
+behind a stable command UID:
+
+```bash
+# ✅ NEW canonical path — vault-defined command, stable UID, runtime-agnostic:
+LUNCH_CMD="1abe7877-a462-4bd5-9bd8-1f75fe7f50aa"   # "Start Lunch" command
+TODAY_DAILY="03 Knowledge/daily/$(date +%Y-%m-%d).md"
+
+exocortex dyncommand exec "$LUNCH_CMD" \
+  --target "$TODAY_DAILY" \
+  --vault ~/vault \
+  --output json
+
+# ⚠️ LEGACY (still works until Phase 7.3 sunset, ≥ 2 minor releases out):
+# exocortex command start "tasks/<lunch-task-uid>.md" --vault ~/vault
+```
+
+**What the bot subprocess Claude does:**
+
+1. Receives user phrase (e.g. «начать обедать»).
+2. Resolves the phrase to a vault `exocmd:Command` asset by `exo__Asset_label`
+   or `aliases:` (the `Start Lunch` command above carries `aliases: [начать
+   обедать]` so direct lookup works).
+3. Invokes `dyncommand exec <uid> --target <today-daily-note> --vault $VAULT`.
+4. Surfaces the JSON `successMessage` back to the user.
+
+**Why this is a real migration, not a rename:**
+
+- Adding a new bot phrase (e.g. «закрой задачу», «отправь в backlog») requires
+  **zero bot or CLI code changes** — only a new vault `exocmd:Command` asset.
+- The same UID drives plugin UI buttons, CLI invocations, cron jobs, and
+  Telegram routing. One definition, every runtime.
+- Backward compat: the legacy `command start` path keeps working through
+  Phase 7.2 (deprecation warning) and Phase 7.3 (sunset), so existing bot
+  configurations roll over without user-visible regression (RFC § R4).
+
+**Verification:**
+
+```bash
+# 1. Confirm command exists and precondition compiles:
+exocortex dyncommand show 1abe7877-a462-4bd5-9bd8-1f75fe7f50aa --vault ~/vault
+
+# 2. Dry-run on today's daily note (no writes):
+exocortex dyncommand exec 1abe7877-a462-4bd5-9bd8-1f75fe7f50aa \
+  --target "03 Knowledge/daily/$(date +%Y-%m-%d).md" \
+  --dry-run --vault ~/vault --output json
+```
+
+The canonical `Start Lunch` command lives at
+`03 Knowledge/exocmd/status/1abe7877-a462-4bd5-9bd8-1f75fe7f50aa.md` in the
+vault; its grounding (`93e4a830-0911-4589-91f2-49ac0acdb4d2`) is a
+`service_call createAsset` materialising a fresh `ems__Task` instance from
+the Lunch `TaskPrototype` (`4b571141-5fc3-4ddd-8f07-ca681fc8410a`).
 
 #### Troubleshooting
 

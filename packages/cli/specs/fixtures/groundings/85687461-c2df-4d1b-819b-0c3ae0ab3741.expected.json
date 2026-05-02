@@ -1,0 +1,14 @@
+{
+  "uid": "85687461-c2df-4d1b-819b-0c3ae0ab3741",
+  "label": "Set planned start timestamp",
+  "type": "service_call",
+  "cliStatus": "real",
+  "serviceId": "updateProperty",
+  "sourcePath": "exocmd/planning/85687461-c2df-4d1b-819b-0c3ae0ab3741.md",
+  "userInput": {
+    "value": "[[bdd-parent-asset]]"
+  },
+  "expect": {
+    "outcome": "success"
+  }
+}

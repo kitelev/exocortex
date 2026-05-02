@@ -1,0 +1,14 @@
+{
+  "uid": "8748f8b0-989b-45a0-88a9-155bc5126f3c",
+  "label": "Create project",
+  "type": "service_call",
+  "cliStatus": "real",
+  "serviceId": "createRelatedProject",
+  "sourcePath": "exocmd/creation/8748f8b0-989b-45a0-88a9-155bc5126f3c.md",
+  "userInput": {
+    "label": "BDD Test"
+  },
+  "expect": {
+    "outcome": "success"
+  }
+}
