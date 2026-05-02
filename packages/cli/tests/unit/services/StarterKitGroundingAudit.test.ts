@@ -1,6 +1,9 @@
 import { describe, it, expect } from "@jest/globals";
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const testDir = dirname(fileURLToPath(import.meta.url));
 
 // RFC 94e520da Phase 1 / T1.5 — pin the audit fixture committed at
 // docs/rfc-94e520da/starter-kit-grounding-status.json so any change to the
@@ -13,7 +16,7 @@ import { resolve } from "node:path";
 //     --out docs/rfc-94e520da/starter-kit-grounding-status.json
 
 const FIXTURE_PATH = resolve(
-  __dirname,
+  testDir,
   "..",
   "..",
   "..",
