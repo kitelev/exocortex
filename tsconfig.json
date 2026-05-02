@@ -3,13 +3,18 @@
     "baseUrl": ".",
     "paths": {
       "exocortex": ["./packages/exocortex/src/index.ts"],
+      "@kitelev/exocortex-services": ["./packages/services/src/index.ts"],
       "@plugin/types": ["./packages/obsidian-plugin/src/types/index.ts"],
       "@plugin/types/*": ["./packages/obsidian-plugin/src/types/*"],
       "@plugin/adapters/*": ["./packages/obsidian-plugin/src/adapters/*"],
       "@plugin/application/*": ["./packages/obsidian-plugin/src/application/*"],
       "@plugin/domain/*": ["./packages/obsidian-plugin/src/domain/*"],
-      "@plugin/infrastructure/*": ["./packages/obsidian-plugin/src/infrastructure/*"],
-      "@plugin/presentation/*": ["./packages/obsidian-plugin/src/presentation/*"],
+      "@plugin/infrastructure/*": [
+        "./packages/obsidian-plugin/src/infrastructure/*"
+      ],
+      "@plugin/presentation/*": [
+        "./packages/obsidian-plugin/src/presentation/*"
+      ],
       "@plugin/*": ["./packages/obsidian-plugin/src/*"]
     },
     "inlineSourceMap": true,
