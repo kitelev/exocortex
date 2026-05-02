@@ -1,10 +1,25 @@
+// flaky-track: Issue #2988 — single-incident flake (1/41) without retry(1).
+// Per RFC 32a64ed9 §3.3, bucket = track: keep enabled, no retry, rely on
+// Phase 3.4 dashboard to disambiguate at higher N.
+// Watch criteria: incident #2 within 30 days → escalate to fix; zero further
+// at N≥100 → close as resolved. Expiry: 2026-05-31.
 import { test, expect } from "@playwright/test";
 import { ObsidianLauncher } from "../utils/obsidian-launcher";
 import * as path from "path";
 
 test.describe.configure({ mode: "parallel" });
 
-test.describe("DailyNote Archive Filter", () => {
+test.describe(
+  "DailyNote Archive Filter",
+  {
+    tag: ["@flaky-track"],
+    annotation: {
+      type: "flaky-track",
+      description:
+        "Issue #2988 — RFC 32a64ed9 §3.3 track bucket; watch criteria: incident #2 → fix, N≥100 zero-further → close; expiry 2026-05-31",
+    },
+  },
+  () => {
   let launcher: ObsidianLauncher;
 
   test.beforeAll(async () => {
