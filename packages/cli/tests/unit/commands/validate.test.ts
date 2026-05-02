@@ -22,6 +22,13 @@ jest.unstable_mockModule("exocortex", () => ({
   AlgebraOptimizer: jest.fn(),
   ExoQLQueryExecutor: jest.fn(),
   SPARQL_PREFIXES: "",
+  // SHACL-lite exports (P1.6)
+  ShapeLoader: { loadFromVaultFS: jest.fn().mockResolvedValue({ getAll: jest.fn().mockReturnValue([]) }) },
+  ShaclShapeRegistry: jest.fn().mockImplementation(() => ({})),
+  shaclValidate: jest.fn().mockReturnValue({ conforms: true, violations: [] }),
+  DomainIRI: class { constructor(public value: string) {} },
+  DomainLiteral: class { constructor(public value: string) {} },
+  DomainTriple: jest.fn(),
 }));
 
 // Mock fs-extra (CacheManager dependency)
