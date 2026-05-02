@@ -1,5 +1,8 @@
-import { Vault, TFile } from "obsidian";
+import { Vault, TFile, TFolder } from "obsidian";
 import {
+  IFileSystemAdapter,
+  IFileSystemDirectoryManager,
+  IFileSystemMetadataProvider,
   IFileSystemReader,
   IFileSystemWriter,
   FileNotFoundError,
@@ -250,11 +253,251 @@ describe("ObsidianFileSystemAdapter", () => {
     });
   });
 
-  describe("combined IFileSystemReader & IFileSystemWriter", () => {
-    it("should be assignable to both interfaces simultaneously", () => {
+  describe("IFileSystemMetadataProvider", () => {
+    it("should implement IFileSystemMetadataProvider interface", () => {
+      const provider: IFileSystemMetadataProvider = adapter;
+      expect(provider.getFileMetadata).toBeDefined();
+      expect(provider.findFilesByMetadata).toBeDefined();
+      expect(provider.findFileByUID).toBeDefined();
+    });
+
+    describe("getFileMetadata", () => {
+      it("should parse YAML frontmatter from file content", async () => {
+        const content =
+          "---\nexo__Asset_uid: abc-123\nexo__Asset_label: Test\n---\nbody";
+        mockDataAdapter.exists.mockResolvedValue(true);
+        mockDataAdapter.read.mockResolvedValue(content);
+
+        const meta = await adapter.getFileMetadata("note.md");
+
+        expect(meta).toEqual({
+          exo__Asset_uid: "abc-123",
+          exo__Asset_label: "Test",
+        });
+      });
+
+      it("should return empty object when file has no frontmatter", async () => {
+        mockDataAdapter.exists.mockResolvedValue(true);
+        mockDataAdapter.read.mockResolvedValue("plain text without yaml");
+
+        const meta = await adapter.getFileMetadata("note.md");
+
+        expect(meta).toEqual({});
+      });
+
+      it("should return empty object when frontmatter is malformed YAML", async () => {
+        mockDataAdapter.exists.mockResolvedValue(true);
+        mockDataAdapter.read.mockResolvedValue("---\n  : : :\n---\n");
+
+        const meta = await adapter.getFileMetadata("note.md");
+
+        expect(meta).toEqual({});
+      });
+
+      it("should propagate FileNotFoundError when file is missing", async () => {
+        mockDataAdapter.exists.mockResolvedValue(false);
+
+        await expect(adapter.getFileMetadata("missing.md")).rejects.toThrow(
+          FileNotFoundError,
+        );
+      });
+    });
+
+    describe("findFilesByMetadata", () => {
+      function makeMd(path: string): TFile {
+        const file = Object.create(TFile.prototype);
+        Object.assign(file, { path, extension: "md" });
+        return file;
+      }
+
+      it("should match scalar property values", async () => {
+        const f1 = makeMd("a.md");
+        const f2 = makeMd("b.md");
+        mockVault.getMarkdownFiles.mockReturnValue([f1, f2]);
+
+        const contents: Record<string, string> = {
+          "a.md": "---\nstatus: active\n---\n",
+          "b.md": "---\nstatus: archived\n---\n",
+        };
+        mockDataAdapter.exists.mockImplementation(async (p: string) =>
+          Object.prototype.hasOwnProperty.call(contents, p),
+        );
+        mockDataAdapter.read.mockImplementation(
+          async (p: string) => contents[p] ?? "",
+        );
+
+        const matches = await adapter.findFilesByMetadata({ status: "active" });
+
+        expect(matches).toEqual(["a.md"]);
+      });
+
+      it("should match against array property values", async () => {
+        const f1 = makeMd("multi.md");
+        mockVault.getMarkdownFiles.mockReturnValue([f1]);
+        mockDataAdapter.exists.mockResolvedValue(true);
+        mockDataAdapter.read.mockResolvedValue(
+          "---\ntags:\n  - alpha\n  - beta\n---\n",
+        );
+
+        const matches = await adapter.findFilesByMetadata({ tags: "beta" });
+
+        expect(matches).toEqual(["multi.md"]);
+      });
+
+      it("should normalize wikilink-wrapped values for comparison", async () => {
+        const f1 = makeMd("wikilink.md");
+        mockVault.getMarkdownFiles.mockReturnValue([f1]);
+        mockDataAdapter.exists.mockResolvedValue(true);
+        mockDataAdapter.read.mockResolvedValue(
+          '---\nstatus: "[[ems__EffortStatusDoing]]"\n---\n',
+        );
+
+        const matches = await adapter.findFilesByMetadata({
+          status: "ems__EffortStatusDoing",
+        });
+
+        expect(matches).toEqual(["wikilink.md"]);
+      });
+
+      it("should skip files whose metadata cannot be read", async () => {
+        const ok = makeMd("ok.md");
+        const broken = makeMd("broken.md");
+        mockVault.getMarkdownFiles.mockReturnValue([ok, broken]);
+
+        mockDataAdapter.exists.mockImplementation(async (p: string) =>
+          p === "ok.md",
+        );
+        mockDataAdapter.read.mockImplementation(async (p: string) => {
+          if (p === "ok.md") return "---\nkind: x\n---\n";
+          throw new Error("disk failure");
+        });
+
+        const matches = await adapter.findFilesByMetadata({ kind: "x" });
+
+        expect(matches).toEqual(["ok.md"]);
+      });
+
+      it("should return empty array when nothing matches", async () => {
+        const f1 = makeMd("a.md");
+        mockVault.getMarkdownFiles.mockReturnValue([f1]);
+        mockDataAdapter.exists.mockResolvedValue(true);
+        mockDataAdapter.read.mockResolvedValue("---\nstatus: active\n---\n");
+
+        const matches = await adapter.findFilesByMetadata({
+          status: "missing",
+        });
+
+        expect(matches).toEqual([]);
+      });
+    });
+
+    describe("findFileByUID", () => {
+      it("should return file path when UID matches", async () => {
+        const f1 = Object.create(TFile.prototype);
+        Object.assign(f1, { path: "asset.md", extension: "md" });
+        mockVault.getMarkdownFiles.mockReturnValue([f1]);
+        mockDataAdapter.exists.mockResolvedValue(true);
+        mockDataAdapter.read.mockResolvedValue(
+          "---\nexo__Asset_uid: 49fe40ea-673a-4155-abb0-52d05a0a96c3\n---\n",
+        );
+
+        const path = await adapter.findFileByUID(
+          "49fe40ea-673a-4155-abb0-52d05a0a96c3",
+        );
+
+        expect(path).toBe("asset.md");
+      });
+
+      it("should return null when no file has the UID", async () => {
+        mockVault.getMarkdownFiles.mockReturnValue([]);
+
+        const path = await adapter.findFileByUID("does-not-exist");
+
+        expect(path).toBeNull();
+      });
+    });
+  });
+
+  describe("IFileSystemDirectoryManager", () => {
+    it("should implement IFileSystemDirectoryManager interface", () => {
+      const dirs: IFileSystemDirectoryManager = adapter;
+      expect(dirs.createDirectory).toBeDefined();
+      expect(dirs.directoryExists).toBeDefined();
+    });
+
+    describe("createDirectory", () => {
+      it("should delegate to vault.adapter.mkdir", async () => {
+        mockDataAdapter.mkdir.mockResolvedValue(undefined);
+
+        await adapter.createDirectory("nested/path");
+
+        expect(mockDataAdapter.mkdir).toHaveBeenCalledWith("nested/path");
+      });
+
+      it("should propagate underlying mkdir errors", async () => {
+        mockDataAdapter.mkdir.mockRejectedValue(new Error("EACCES"));
+
+        await expect(adapter.createDirectory("ro/path")).rejects.toThrow(
+          "EACCES",
+        );
+      });
+    });
+
+    describe("directoryExists", () => {
+      it("should return true when path resolves to a TFolder", async () => {
+        mockDataAdapter.exists.mockResolvedValue(true);
+        const folder = Object.create(TFolder.prototype);
+        Object.assign(folder, { path: "folder" });
+        (mockVault.getAbstractFileByPath as jest.Mock).mockReturnValue(folder);
+
+        const exists = await adapter.directoryExists("folder");
+
+        expect(exists).toBe(true);
+        expect(mockVault.getAbstractFileByPath).toHaveBeenCalledWith("folder");
+      });
+
+      it("should return false when path resolves to a TFile (not a folder)", async () => {
+        mockDataAdapter.exists.mockResolvedValue(true);
+        const file = Object.create(TFile.prototype);
+        Object.assign(file, { path: "note.md", extension: "md" });
+        (mockVault.getAbstractFileByPath as jest.Mock).mockReturnValue(file);
+
+        const exists = await adapter.directoryExists("note.md");
+
+        expect(exists).toBe(false);
+      });
+
+      it("should return false when path does not exist", async () => {
+        mockDataAdapter.exists.mockResolvedValue(false);
+
+        const exists = await adapter.directoryExists("ghost");
+
+        expect(exists).toBe(false);
+        expect(mockVault.getAbstractFileByPath).not.toHaveBeenCalled();
+      });
+
+      it("should return false when getAbstractFileByPath returns null", async () => {
+        mockDataAdapter.exists.mockResolvedValue(true);
+        (mockVault.getAbstractFileByPath as jest.Mock).mockReturnValue(null);
+
+        const exists = await adapter.directoryExists("orphan");
+
+        expect(exists).toBe(false);
+      });
+    });
+  });
+
+  describe("composite IFileSystemAdapter", () => {
+    it("should be assignable to all role-based interfaces simultaneously", () => {
+      const composite: IFileSystemAdapter = adapter;
       const reader: IFileSystemReader = adapter;
       const writer: IFileSystemWriter = adapter;
-      expect(reader).toBe(writer);
+      const meta: IFileSystemMetadataProvider = adapter;
+      const dirs: IFileSystemDirectoryManager = adapter;
+      expect(composite).toBe(reader);
+      expect(composite).toBe(writer);
+      expect(composite).toBe(meta);
+      expect(composite).toBe(dirs);
     });
   });
 });
