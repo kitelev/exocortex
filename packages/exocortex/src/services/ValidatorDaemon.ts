@@ -15,22 +15,20 @@ export interface DaemonResponse {
   error?: string;
 }
 
-export const DEFAULT_SOCKET_PATH = (() => {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports, import/no-nodejs-modules
-  const os = require('os') as typeof import('os');
-  // eslint-disable-next-line @typescript-eslint/no-require-imports, import/no-nodejs-modules
-  const path = require('path') as typeof import('path');
-  return path.join(os.homedir(), '.cache', 'exocortex', 'validator.sock');
-})();
+export const DEFAULT_SOCKET_PATH = `${process.env.HOME ?? process.env.USERPROFILE ?? '/tmp'}/.cache/exocortex/validator.sock`;
+
+export const IDLE_TIMEOUT_MS = 5 * 60 * 1000;
 
 export class ValidatorDaemon {
   private readonly socketPath: string;
   private readonly registryCache = new Map<string, ValidatorShapeRegistry>();
-   
+  private readonly idleTimeoutMs: number;
   private server: import('net').Server | null = null;
+  private idleTimer: ReturnType<typeof setTimeout> | null = null;
 
-  constructor(socketPath: string = DEFAULT_SOCKET_PATH) {
+  constructor(socketPath: string = DEFAULT_SOCKET_PATH, idleTimeoutMs: number = IDLE_TIMEOUT_MS) {
     this.socketPath = socketPath;
+    this.idleTimeoutMs = idleTimeoutMs;
   }
 
   async start(): Promise<void> {
@@ -59,16 +57,27 @@ export class ValidatorDaemon {
       server.listen(this.socketPath, resolve);
     });
 
+    this.resetIdleTimer();
+
     const handleSignal = (): void => { void this.stop(); };
     process.once('SIGTERM', handleSignal);
     process.once('SIGINT', handleSignal);
   }
 
   async stop(): Promise<void> {
+    if (this.idleTimer !== null) {
+      clearTimeout(this.idleTimer);
+      this.idleTimer = null;
+    }
     if (!this.server) return;
     const server = this.server;
     this.server = null;
     await new Promise<void>((resolve) => { server.close(() => resolve()); });
+  }
+
+  private resetIdleTimer(): void {
+    if (this.idleTimer !== null) clearTimeout(this.idleTimer);
+    this.idleTimer = setTimeout(() => { process.exit(0); }, this.idleTimeoutMs);
   }
 
   private handleConnection(socket: import('net').Socket): void {
@@ -93,6 +102,7 @@ export class ValidatorDaemon {
   }
 
   private async handleRequest(raw: string, socket: import('net').Socket): Promise<void> {
+    this.resetIdleTimer();
     let response: DaemonResponse;
     try {
       const req = JSON.parse(raw) as DaemonRequest;

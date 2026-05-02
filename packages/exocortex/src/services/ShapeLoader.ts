@@ -119,8 +119,10 @@ export class ShapeLoader {
    * Format: ShapeJSONCache — see RFC 82a72aca §"Cached shape format".
    */
   static async loadFromShapeJSON(jsonPath: string): Promise<ShapeRegistry> {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports, import/no-nodejs-modules
-    const { readFile } = require("fs/promises") as typeof import("fs/promises");
+    // Dynamic import avoids static no-restricted-imports lint rule while
+    // supporting both CommonJS (transpiled) and ESM (--experimental-vm-modules) contexts.
+    // eslint-disable-next-line import/no-nodejs-modules
+    const { readFile } = await import("fs/promises");
     const raw = await readFile(jsonPath, "utf-8");
     const cache: ShapeJSONCache = JSON.parse(raw) as ShapeJSONCache;
     const registry = new ShapeRegistry();
