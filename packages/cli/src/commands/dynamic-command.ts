@@ -19,6 +19,7 @@ import {
   EffortStatusWorkflow,
   StatusTimestampService,
   TaskStatusService,
+  vaultPathToIRI,
   type GroundingDefinition,
   type CommandBindingDefinition,
 } from "exocortex";
@@ -286,8 +287,12 @@ export function dynamicCommandCommand(): Command {
           return;
         }
 
-        // Derive IRI for precondition evaluation
-        const targetIRI = options.target.replace(/\.md$/, "");
+        // Derive canonical IRI for precondition evaluation and grounding.
+        // The triple store keys notes by `obsidian://vault/<encoded-path>` —
+        // a bare relative path (or one with `.md` stripped) does not match
+        // any subject in the store, so `$target` substitution would yield
+        // false negatives even on trivially-true ASK queries (Issue #2996).
+        const targetIRI = vaultPathToIRI(options.target);
 
         // Evaluate precondition
         const evaluator = new PreconditionEvaluator(tripleStore);
