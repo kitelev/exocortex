@@ -1,0 +1,21 @@
+# Example crontab entry for the Exocortex daily Lunch tracker.
+#
+# Install on the production server with:
+#   crontab -e
+# and append the lines below (adjust paths to your environment).
+#
+# Layout:
+#   m  h  dom  mon  dow  command
+
+# Required environment for the wrapped script
+VAULT=/home/exocortex/vault
+CREATE_INSTANCE_CMD=00000000-0000-0000-0000-000000000000
+PATH=/usr/local/bin:/usr/bin:/bin
+
+# Daily Lunch instance at 13:00 server time.
+# Logs go to a rotated log file; verification script tails it.
+0 13 * * * /opt/exocortex/lunch-tracker.sh >> /var/log/exocortex-lunch.log 2>&1
+
+# Optional: nightly verification at 23:55 (writes a JSON heartbeat the operator
+# can monitor via Prometheus textfile collector or any log-tailer).
+55 23 * * * /opt/exocortex/verify-cron.sh >> /var/log/exocortex-cron-verify.log 2>&1
