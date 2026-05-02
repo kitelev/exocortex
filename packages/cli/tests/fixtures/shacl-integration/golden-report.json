@@ -1,0 +1,30 @@
+[
+  {
+    "focusNode": "obsidian://vault/data/asset-a.md",
+    "propertyPath": "https://exocortex.my/ontology/ems#Task_name",
+    "severity": "sh:Violation",
+    "message": "sh:maxCount violation: expected at most 1 value for <https://exocortex.my/ontology/ems#Task_name>, got 2"
+  },
+  {
+    "focusNode": "obsidian://vault/data/asset-b.md",
+    "propertyPath": "https://exocortex.my/ontology/ems#Task_count",
+    "severity": "sh:Violation",
+    "message": "sh:datatype violation: literal \"not-a-number\" has datatype <http://www.w3.org/2001/XMLSchema#string>, expected http://www.w3.org/2001/XMLSchema#integer",
+    "actualValue": "not-a-number",
+    "expectedRange": "http://www.w3.org/2001/XMLSchema#integer"
+  },
+  {
+    "focusNode": "obsidian://vault/data/asset-c.md",
+    "propertyPath": "https://exocortex.my/ontology/ems#Task_count",
+    "severity": "sh:Violation",
+    "message": "sh:datatype violation: literal \"bad-count\" has datatype <http://www.w3.org/2001/XMLSchema#string>, expected http://www.w3.org/2001/XMLSchema#integer",
+    "actualValue": "bad-count",
+    "expectedRange": "http://www.w3.org/2001/XMLSchema#integer"
+  },
+  {
+    "focusNode": "obsidian://vault/data/asset-c.md",
+    "propertyPath": "https://exocortex.my/ontology/ems#Task_name",
+    "severity": "sh:Violation",
+    "message": "sh:maxCount violation: expected at most 1 value for <https://exocortex.my/ontology/ems#Task_name>, got 2"
+  }
+]
