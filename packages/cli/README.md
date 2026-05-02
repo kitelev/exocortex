@@ -298,6 +298,171 @@ exocortex command schedule "tasks/feature.md" --date "2025-12-15" --vault ~/vaul
 exocortex command set-deadline "tasks/feature.md" --date "2025-12-31" --vault ~/vault
 ```
 
+### Dynamic Commands (RFC-009)
+
+Execute **vault-defined commands** through a single generic interpreter. Any
+`exocmd:Command` asset in the vault — defined entirely in RDF (precondition +
+grounding + bindings) — can be invoked from CLI, Telegram bot, plugin button,
+or `cron`, without writing TypeScript.
+
+This is the **killer feature** of Exocortex: a uniform runtime for vault-defined
+commands across plugin / CLI / scripts / Claude sessions. Source of truth is
+the RDF graph in your vault, not hardcoded TS logic. Architectural contract:
+RFC-009 (Dynamic Command System) and the umbrella RFC
+`94e520da-c6f7-48af-944c-51298d68da45` for the production-ready roadmap.
+Working command definitions live in
+[`docs/examples/rfc-009/`](../../docs/examples/rfc-009/).
+
+#### Subcommands
+
+| Subcommand | Purpose |
+|------------|---------|
+| `dyncommand list` | Discover all `exocmd:Command` assets in vault |
+| `dyncommand show <uid>` | Show full details: precondition, grounding, bindings |
+| `dyncommand exec <uid> --target <path>` | Execute the command on a target asset |
+| `dyncommand validate` | Validate all command definitions; surface duplicate UIDs |
+
+```bash
+# 1. Discover what commands the vault defines
+exocortex dyncommand list --vault ~/vault
+
+# 2. Filter to commands applicable to a specific asset
+exocortex dyncommand list --target obsidian://vault/tasks/abc-123.md --vault ~/vault
+
+# 3. Inspect a command (precondition SPARQL ASK + grounding)
+exocortex dyncommand show 6e050240-58e9-4695-9dce-d73fc32cc1d7 --vault ~/vault
+
+# 4. Execute (precondition is evaluated; non-passing ASK aborts before grounding)
+exocortex dyncommand exec 6e050240-58e9-4695-9dce-d73fc32cc1d7 \
+  --target tasks/abc-123.md \
+  --vault ~/vault
+
+# 5. Preview without writing
+exocortex dyncommand exec <uid> --target tasks/abc-123.md --dry-run --vault ~/vault
+
+# 6. Pass userInput to a service_call grounding
+exocortex dyncommand exec <uid> \
+  --target daily/2026-05-02.md \
+  --input '{"label":"Lunch — vegetable soup"}' \
+  --vault ~/vault
+
+# 7. Validate vault-wide command definitions
+exocortex dyncommand validate --vault ~/vault --output json
+```
+
+**Common options for all subcommands:**
+
+- `--vault <path>` — Path to Obsidian vault (default: current directory)
+- `--output <text|json>` — Response format (default: `text`)
+
+**Additional options for `exec`:**
+
+- `--target <filepath>` — Path to target asset, relative to vault **[required]**
+- `--dry-run` — Evaluate precondition + print grounding plan; do not mutate files
+- `--input <json>` — JSON object forwarded to `service_call` groundings as `userInput`
+
+**Exit codes (exec / validate):**
+
+- `0` — Success (executed or precondition passed in dry-run)
+- `1` — Operation failed (precondition not satisfied, grounding error)
+- `2` — File not found (target or vault)
+- `3` — Invalid arguments (missing `--target`, malformed `--input`)
+
+#### Example 1 — Telegram bot: complete a task by UID
+
+A Telegram bot routes the user phrase «закрой задачу abc-123» to a single
+`dyncommand exec` invocation. The bot does **not** know what "complete" means —
+the semantics live entirely in the vault command asset (e.g.
+`ems__Effort_status` transition `Doing → Done` plus `endTimestamp`):
+
+```bash
+TASK_UID="abc-123"
+COMPLETE_CMD_UID="6e050240-58e9-4695-9dce-d73fc32cc1d7"   # from dyncommand list
+
+exocortex dyncommand exec "$COMPLETE_CMD_UID" \
+  --target "tasks/${TASK_UID}.md" \
+  --vault ~/vault \
+  --output json
+```
+
+Why this matters: adding a new vault-defined command (e.g. «отправить в backlog»,
+«rollback to ToDo») requires **zero bot code changes** — only a new
+`exocmd:Command` asset in the vault. This is Homoiconicity Q1 in practice
+(see RFC `c78cc5c8-076c-4509-9e22-6f0257c51df4`).
+
+#### Example 2 — CLI / Claude session: bulk-apply a command across a class
+
+A Claude session needs to mark every `ems__Task` resolved in 2025 as archived.
+Discover the command UID once, then loop over targets selected by SPARQL:
+
+```bash
+ARCHIVE_CMD_UID=$(exocortex dyncommand list --vault ~/vault --output json \
+  | jq -r '.data[] | select(.label == "Archive Asset") | .uid')
+
+exocortex sparql query \
+  "PREFIX ems: <https://exocortex.my/ontology/ems#>
+   SELECT ?path WHERE {
+     ?s a ems:Task ;
+        ems:Effort_status ems:EffortStatusDone ;
+        ems:Effort_endTimestamp ?ts .
+     FILTER(STRSTARTS(STR(?ts), '2025'))
+     BIND(STRAFTER(STR(?s), 'obsidian://vault/') AS ?path)
+   }" \
+  --vault ~/vault --format json \
+  | jq -r '.results.bindings[].path.value' \
+  | while read -r path; do
+      exocortex dyncommand exec "$ARCHIVE_CMD_UID" \
+        --target "$path" \
+        --vault ~/vault \
+        --output json
+    done
+```
+
+The same `ARCHIVE_CMD_UID` works from a UI button (plugin), Telegram message,
+or scheduled job — one definition, many runtimes.
+
+#### Example 3 — `cron`: daily Lunch instance from a prototype
+
+Production server runs `lunch-tracker.sh` at 13:00 every day. The script
+materializes a fresh `Lunch` instance from a vault prototype using the generic
+`Create Instance` command (a `create_instance` grounding):
+
+```bash
+#!/usr/bin/env bash
+# lunch-tracker.sh — cron entry: 0 13 * * * /opt/exocortex/lunch-tracker.sh
+set -euo pipefail
+
+VAULT="$HOME/vault"
+DAILY="daily/$(date +%Y-%m-%d).md"
+CREATE_INSTANCE_CMD="<create-instance-command-uid>"
+
+npx @kitelev/exocortex-cli dyncommand exec "$CREATE_INSTANCE_CMD" \
+  --target "$DAILY" \
+  --input "{\"label\":\"Lunch — $(date +%Y-%m-%d)\"}" \
+  --vault "$VAULT" \
+  --output json
+```
+
+If the command, its precondition, or its grounding ever change in the vault,
+the cron job picks up the new behavior automatically — no redeploy.
+
+#### Troubleshooting
+
+- **`Precondition not satisfied`** — run `dyncommand show <uid>` to read the
+  SPARQL ASK; verify with `sparql query` that the target asset matches the
+  pattern. Common cause: target IRI mismatch (CLI ↔ plugin parity, RFC-027 in
+  progress) or an unset frontmatter property the precondition requires.
+- **`Command with UID "..." not found`** — `dyncommand list` returns 0 on
+  UUID-wikilink-only vaults if the discovery index is stale; rebuild the
+  vault cache or pass `--target <iri>` to bypass class filtering.
+- **Service `…` not implemented in CLI runtime** — the grounding uses a
+  `service_call` that is plugin-only (Phase 1 hard-fails such calls instead
+  of silently succeeding). Run from the plugin, or implement the service in
+  `@kitelev/exocortex-services`.
+- **`dyncommand show` and `exec` disagree** — almost always a duplicate
+  `exo__Asset_uid`; run `dyncommand validate --output json` and grep for
+  `duplicateUids`. RCA: `docs/RCA_DYNCOMMAND_SHOW_VS_EXEC.md`.
+
 ## Workflow Examples
 
 ### Morning Planning
@@ -750,6 +915,13 @@ ems__Effort_status: "[[ems__EffortStatusDraft]]"
 - `exocortex command update-label` - Update asset label
 - `exocortex command schedule` - Set planned start date
 - `exocortex command set-deadline` - Set planned end date
+
+**Dynamic Commands (RFC-009):**
+
+- `exocortex dyncommand list` - Discover vault-defined `exocmd:Command` assets
+- `exocortex dyncommand show` - Show precondition / grounding / bindings for a command
+- `exocortex dyncommand exec` - Execute vault-defined command on a target asset
+- `exocortex dyncommand validate` - Validate command definitions; flag duplicate UIDs
 
 **Batch Operations:**
 
