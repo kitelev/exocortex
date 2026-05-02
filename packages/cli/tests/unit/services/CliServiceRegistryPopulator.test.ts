@@ -10,7 +10,13 @@ jest.unstable_mockModule("exocortex", () => {
     has(id: string) { return this.services.has(id); }
     getRegisteredIds() { return Array.from(this.services.keys()); }
   }
-  return { ServiceRegistry };
+  // T1.4: CliServiceRegistryPopulator imports FrontmatterService at module
+  // load time to wire the new updateProperty/removeProperty/setStatus
+  // factories. The constructor is never invoked from this suite (deps left
+  // out → stubs path), so a no-op shape is sufficient for the import to
+  // resolve under ESM mocking.
+  class FrontmatterService {}
+  return { ServiceRegistry, FrontmatterService };
 });
 
 let populateCliServiceRegistry: any;
@@ -28,15 +34,12 @@ beforeEach(async () => {
 
 describe("CliServiceRegistryPopulator", () => {
   describe("CLI_STUB_SERVICE_IDS", () => {
-    it("should export exactly 10 service IDs", () => {
-      expect(CLI_STUB_SERVICE_IDS).toHaveLength(10);
+    it("should export exactly 7 service IDs (T1.4: updateProperty/removeProperty/setStatus moved to real impls)", () => {
+      expect(CLI_STUB_SERVICE_IDS).toHaveLength(7);
     });
 
-    it("should include all well-known service IDs", () => {
+    it("should include all genuinely-unsupported well-known service IDs", () => {
       const expected = [
-        "updateProperty",
-        "removeProperty",
-        "setStatus",
         "createAsset",
         "openFile",
         "sparqlSelect",
@@ -50,9 +53,12 @@ describe("CliServiceRegistryPopulator", () => {
   });
 
   describe("populateCliServiceRegistry", () => {
-    it("should register all 10 stub services", () => {
+    it("should register the 7 fail-loud stubs + the 3 frontmatter handlers (10 total) when called without deps", () => {
       const registry = new ServiceRegistry();
       populateCliServiceRegistry(registry);
+      // Without `deps.fsAdapter`, the 3 frontmatter handlers
+      // (updateProperty/removeProperty/setStatus) fall back to fail-loud stubs
+      // so `dyncommand validate` keeps recognising them as known service IDs.
       expect(registry.getRegisteredIds()).toHaveLength(10);
     });
 

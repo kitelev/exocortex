@@ -2,7 +2,10 @@ import type {
   IGroundingService,
   IVaultAdapter,
   IFile,
+  IFileSystemReader,
+  IFileSystemWriter,
   UserInput,
+  FrontmatterService,
   GenericAssetCreationService,
   ArchiveAssetService,
   TaskStatusService,
@@ -226,6 +229,113 @@ export function createPlanForEveningService(
     async execute(targetIRI: string): Promise<void> {
       const targetFile = resolver.resolveFile(targetIRI);
       await taskStatusService.planForEvening(targetFile);
+    },
+  };
+}
+
+/**
+ * Resolves a `service_call` `targetIRI` to a vault-relative file path the
+ * `IFileSystemAdapter` can `readFile`/`updateFile`. The plugin scans
+ * `app.metadataCache` (UID lookup, `obsidian://vault/` decode); the CLI
+ * decodes the `obsidian://vault/<encoded-path>` scheme + falls back to
+ * `IFileSystemMetadataProvider.findFileByUID`. This indirection lets shared
+ * factories below stay storage-agnostic.
+ *
+ * RFC 94e520da Phase 1, T1.4 — added when porting the
+ * frontmatter-only handlers (`updateProperty`/`removeProperty`/`setStatus`)
+ * out of plugin-side inline lambdas into runtime-agnostic factories.
+ */
+export interface IPathResolver {
+  resolveTargetPath(targetIRI: string): Promise<string>;
+}
+
+/**
+ * Shared factory for the `updateProperty` `service_call` grounding.
+ *
+ * Reads the target file via `IFileSystemReader.readFile`, applies
+ * `FrontmatterService.updateProperty`, writes back via
+ * `IFileSystemWriter.updateFile`. Path resolution is delegated to the
+ * caller-supplied `IPathResolver` because plugin and CLI runtimes locate
+ * a file from a `targetIRI` differently (see interface doc).
+ */
+export function createUpdatePropertyService(
+  fsAdapter: IFileSystemReader & IFileSystemWriter,
+  frontmatterService: FrontmatterService,
+  pathResolver: IPathResolver,
+): IGroundingService {
+  return {
+    async execute(targetIRI: string, userInput?: UserInput): Promise<void> {
+      const property = userInput?.property as string | undefined;
+      const value = userInput?.value;
+      if (!property) {
+        throw new Error("updateProperty requires userInput.property");
+      }
+      if (value === undefined) {
+        throw new Error("updateProperty requires userInput.value");
+      }
+      const filePath = await pathResolver.resolveTargetPath(targetIRI);
+      const content = await fsAdapter.readFile(filePath);
+      const updated = frontmatterService.updateProperty(
+        content,
+        property,
+        value,
+      );
+      await fsAdapter.updateFile(filePath, updated);
+    },
+  };
+}
+
+/**
+ * Shared factory for the `removeProperty` `service_call` grounding.
+ *
+ * Mirrors {@link createUpdatePropertyService} but applies
+ * `FrontmatterService.removeProperty`. No-op if the property is absent.
+ */
+export function createRemovePropertyService(
+  fsAdapter: IFileSystemReader & IFileSystemWriter,
+  frontmatterService: FrontmatterService,
+  pathResolver: IPathResolver,
+): IGroundingService {
+  return {
+    async execute(targetIRI: string, userInput?: UserInput): Promise<void> {
+      const property = userInput?.property as string | undefined;
+      if (!property) {
+        throw new Error("removeProperty requires userInput.property");
+      }
+      const filePath = await pathResolver.resolveTargetPath(targetIRI);
+      const content = await fsAdapter.readFile(filePath);
+      const updated = frontmatterService.removeProperty(content, property);
+      await fsAdapter.updateFile(filePath, updated);
+    },
+  };
+}
+
+/**
+ * Shared factory for the `setStatus` `service_call` grounding.
+ *
+ * Sugar over {@link createUpdatePropertyService}: forces `ems__Effort_status`
+ * as the property and quotes `userInput.statusUID` into a wikilink so callers
+ * pass the bare UID (e.g. `ems__EffortStatusBacklog`).
+ */
+export function createSetStatusService(
+  fsAdapter: IFileSystemReader & IFileSystemWriter,
+  frontmatterService: FrontmatterService,
+  pathResolver: IPathResolver,
+): IGroundingService {
+  return {
+    async execute(targetIRI: string, userInput?: UserInput): Promise<void> {
+      const statusUID = userInput?.statusUID as string | undefined;
+      if (!statusUID) {
+        throw new Error("setStatus requires userInput.statusUID");
+      }
+      const filePath = await pathResolver.resolveTargetPath(targetIRI);
+      const content = await fsAdapter.readFile(filePath);
+      const updated = frontmatterService.updateProperty(
+        content,
+        "ems__Effort_status",
+        `"[[${statusUID}]]"`,
+      );
+      await fsAdapter.updateFile(filePath, updated);
     },
   };
 }
