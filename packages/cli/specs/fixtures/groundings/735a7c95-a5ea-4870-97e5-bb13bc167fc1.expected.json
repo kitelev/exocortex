@@ -1,0 +1,15 @@
+{
+  "uid": "735a7c95-a5ea-4870-97e5-bb13bc167fc1",
+  "label": "Set status to Waiting",
+  "type": "property_set",
+  "cliStatus": "real",
+  "serviceId": null,
+  "sourcePath": "exocmd/status/735a7c95-a5ea-4870-97e5-bb13bc167fc1.md",
+  "userInput": null,
+  "expect": {
+    "outcome": "success",
+    "frontmatterAfter": {
+      "ems__Effort_status": "[[0610947c-6a62-41c8-9d44-7863d3ba3a8e]]"
+    }
+  }
+}

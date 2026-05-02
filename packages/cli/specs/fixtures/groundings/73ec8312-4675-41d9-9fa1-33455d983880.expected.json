@@ -1,0 +1,17 @@
+{
+  "uid": "73ec8312-4675-41d9-9fa1-33455d983880",
+  "label": "Set ems__Effort_resolutionTimestamp to $nowLocal",
+  "type": "property_set",
+  "cliStatus": "real",
+  "serviceId": null,
+  "sourcePath": "exocmd/status/73ec8312-4675-41d9-9fa1-33455d983880.md",
+  "userInput": null,
+  "expect": {
+    "outcome": "success",
+    "frontmatterAfter": {
+      "ems__Effort_resolutionTimestamp": {
+        "__regex": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}$"
+      }
+    }
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "uid": "54bd588f-e5f2-4fbf-b6da-64b54a9a3ee4",
+  "label": "Set status to ToDo",
+  "type": "property_set",
+  "cliStatus": "real",
+  "serviceId": null,
+  "sourcePath": "exocmd/status/54bd588f-e5f2-4fbf-b6da-64b54a9a3ee4.md",
+  "userInput": null,
+  "expect": {
+    "outcome": "success",
+    "frontmatterAfter": {
+      "ems__Effort_status": "[[6a0e933a-6653-46f4-95ae-ed7508177c73]]"
+    }
+  }
+}

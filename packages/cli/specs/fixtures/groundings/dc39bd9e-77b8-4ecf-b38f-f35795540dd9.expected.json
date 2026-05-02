@@ -1,0 +1,15 @@
+{
+  "uid": "dc39bd9e-77b8-4ecf-b38f-f35795540dd9",
+  "label": "Set zone to Someday",
+  "type": "property_set",
+  "cliStatus": "real",
+  "serviceId": null,
+  "sourcePath": "exocmd/criticality/dc39bd9e-77b8-4ecf-b38f-f35795540dd9.md",
+  "userInput": null,
+  "expect": {
+    "outcome": "success",
+    "frontmatterAfter": {
+      "ems__Task_zone": "[[6968a0fc-7a41-4393-82b1-17d767c7ad7c]]"
+    }
+  }
+}

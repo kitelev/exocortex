@@ -1,0 +1,14 @@
+{
+  "uid": "c4616dcd-3832-4812-b289-0968510fb8be",
+  "label": "Set result value",
+  "type": "service_call",
+  "cliStatus": "real",
+  "serviceId": "updateProperty",
+  "sourcePath": "exocmd/maintenance/c4616dcd-3832-4812-b289-0968510fb8be.md",
+  "userInput": {
+    "value": "[[bdd-parent-asset]]"
+  },
+  "expect": {
+    "outcome": "success"
+  }
+}

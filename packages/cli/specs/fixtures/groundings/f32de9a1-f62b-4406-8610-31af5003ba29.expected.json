@@ -1,0 +1,15 @@
+{
+  "uid": "f32de9a1-f62b-4406-8610-31af5003ba29",
+  "label": "Set status to Cancelled",
+  "type": "property_set",
+  "cliStatus": "real",
+  "serviceId": null,
+  "sourcePath": "exocmd/status/f32de9a1-f62b-4406-8610-31af5003ba29.md",
+  "userInput": null,
+  "expect": {
+    "outcome": "success",
+    "frontmatterAfter": {
+      "ems__Effort_status": "[[cf6269e4-6c5e-418e-b9f2-115aea5fcfb6]]"
+    }
+  }
+}

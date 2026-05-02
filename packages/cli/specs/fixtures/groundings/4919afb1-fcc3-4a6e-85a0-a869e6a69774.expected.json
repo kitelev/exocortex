@@ -1,0 +1,14 @@
+{
+  "uid": "4919afb1-fcc3-4a6e-85a0-a869e6a69774",
+  "label": "Create related task via service",
+  "type": "service_call",
+  "cliStatus": "real",
+  "serviceId": "createRelatedTask",
+  "sourcePath": "exocmd/creation/4919afb1-fcc3-4a6e-85a0-a869e6a69774.md",
+  "userInput": {
+    "label": "BDD Test"
+  },
+  "expect": {
+    "outcome": "success"
+  }
+}
