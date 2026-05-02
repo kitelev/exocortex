@@ -26,6 +26,12 @@ import {
   ServiceRegistry,
   RelationColumnSetResolver,
   LayoutSelector,
+  ShapeLoader,
+  ShaclShapeRegistry,
+  shaclValidate,
+  type ClassHierarchy as ShaclClassHierarchy,
+  DomainIRI,
+  DomainLiteral,
 } from "exocortex";
 import {
   RelationColumnSetRepository,
@@ -658,6 +664,7 @@ export default class ExocortexPlugin extends Plugin {
         this.app.metadataCache.on("changed", (file) => {
           this.handleMetadataChange(file);
           this.scheduleHotReindex(file);
+          this.scheduleValidation(file);
         }),
       );
 
@@ -1570,6 +1577,74 @@ export default class ExocortexPlugin extends Plugin {
         })();
       },
       150,
+    );
+  }
+
+  /**
+   * P1.10: Schedule a 50ms-debounced SHACL-lite validation run for a changed file.
+   *
+   * Frontmatter is already parsed by Obsidian's metadataCache when this fires,
+   * so there is no need to re-parse the file. The engine is strictly read-only —
+   * it never writes back to vault files (no save-loop risk).
+   *
+   * Timer key is per-file (`shacl-validate:<path>`) so burst edits collapse to
+   * one validation while concurrent file changes each get their own timer.
+   */
+  private scheduleValidation(file: TFile): void {
+    if (file.extension !== "md") return;
+
+    const timerName = `shacl-validate:${file.path}`;
+    this.timerManager.setTimeout(
+      timerName,
+      () => {
+        void (async () => {
+          try {
+            const store = this.sparql.getTripleStore();
+            const shapeRegistry = await ShapeLoader.loadFromRDFGraph(store);
+            if (shapeRegistry.size === 0) return;
+
+            const domainTriples = await store.match();
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const algebraTriples: any[] = [];
+            for (const t of domainTriples) {
+              const subj = t.subject;
+              const pred = t.predicate;
+              const obj = t.object;
+              if (!(subj instanceof DomainIRI) || !(pred instanceof DomainIRI)) continue;
+              let algObj: { type: 'iri'; value: string } | { type: 'literal'; value: string; datatype?: string } | null = null;
+              if (obj instanceof DomainIRI) {
+                algObj = { type: 'iri', value: obj.value };
+              } else if (obj instanceof DomainLiteral) {
+                algObj = { type: 'literal', value: obj.value, datatype: obj.datatype?.value };
+              }
+              if (!algObj) continue;
+              algebraTriples.push({
+                subject: { type: 'iri', value: subj.value },
+                predicate: { type: 'iri', value: pred.value },
+                object: algObj,
+              });
+            }
+
+            const shaclRegistry = new ShaclShapeRegistry(shapeRegistry.getAll());
+            const hierarchy: ShaclClassHierarchy = { isSubClassOf: (c, p) => c === p };
+            const report = shaclValidate(algebraTriples, shaclRegistry, hierarchy);
+
+            if (!report.conforms) {
+              for (const v of report.violations) {
+                this.logger.warn(
+                  `SHACL ${v.severity} in ${file.path}: ${v.message}`,
+                );
+              }
+            }
+          } catch (err) {
+            this.logger.error(
+              `SHACL validation failed for ${file.path}`,
+              err as Error,
+            );
+          }
+        })();
+      },
+      50,
     );
   }
 
