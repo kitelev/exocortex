@@ -34,6 +34,7 @@ const KNOWN_EXCEPTIONS = new Set([
   "exo__Task_priority", // sparql/User-Guide.md SPARQL example (simplified)
   "ems__Session_scheduled_start_time", // workflows time-specific scheduling
   "ems__Effort_status_changes", // workflows status history YAML example
+  "exo__Property_minCount", // SHACL_LITE_MAPPING.md Phase 3+ planned property (YAGNI Drop #3 in RFC 82a72aca v3)
 ]);
 
 function extractPropertiesFromDocs() {
