@@ -1591,6 +1591,7 @@ export default class ExocortexPlugin extends Plugin {
    * one validation while concurrent file changes each get their own timer.
    */
   private scheduleValidation(file: TFile): void {
+    if (!this.settings.enableShaclValidation) return;
     if (file.extension !== "md") return;
 
     const timerName = `shacl-validate:${file.path}`;

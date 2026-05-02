@@ -1959,6 +1959,8 @@ describe("ExocortexPlugin", () => {
         .mockResolvedValue({ size: 0, getAll: () => [] } as any);
 
       await plugin.onload();
+      // P1.12: enable the flag so P1.10 contract tests can exercise the engine
+      plugin.settings.enableShaclValidation = true;
       await flushPromises();
     });
 
@@ -2011,6 +2013,71 @@ describe("ExocortexPlugin", () => {
       await new Promise((r) => setTimeout(r, 200));
 
       expect(loadFromRDFGraphSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("enableShaclValidation feature flag — P1.12", () => {
+    // Pins the P1.12 contract: scheduleValidation must short-circuit when
+    // enableShaclValidation is false (default), and run when true.
+
+    let changedHandlers: Array<(file: TFile) => void> = [];
+    let loadFromRDFGraphSpy: jest.SpyInstance;
+
+    beforeEach(async () => {
+      changedHandlers = [];
+      mockMetadataCache.on.mockImplementation(
+        (event: string, cb: (file: TFile) => void) => {
+          if (event === "changed") {
+            changedHandlers.push(cb);
+          }
+          return { unsubscribe: jest.fn() };
+        },
+      );
+
+      const exocortexModule = await import("exocortex");
+      loadFromRDFGraphSpy = jest
+        .spyOn(exocortexModule.ShapeLoader, "loadFromRDFGraph")
+        .mockResolvedValue({ size: 0, getAll: () => [] } as any);
+
+      await plugin.onload();
+      await flushPromises();
+    });
+
+    afterEach(() => {
+      loadFromRDFGraphSpy?.mockRestore();
+    });
+
+    const getLastChangedHandler = (): ((file: TFile) => void) => {
+      expect(changedHandlers.length).toBeGreaterThan(0);
+      return changedHandlers[changedHandlers.length - 1]!;
+    };
+
+    it("skips validation when enableShaclValidation is false (default)", async () => {
+      expect(plugin.settings.enableShaclValidation).toBe(false);
+      const mockFile = { path: "note.md", extension: "md" } as TFile;
+      const handler = getLastChangedHandler();
+
+      handler(mockFile);
+
+      await new Promise((r) => setTimeout(r, 200));
+
+      expect(loadFromRDFGraphSpy).not.toHaveBeenCalled();
+    });
+
+    it("runs validation after hot-toggle to true without plugin reload", async () => {
+      plugin.settings.enableShaclValidation = true;
+
+      const mockFile = { path: "note.md", extension: "md" } as TFile;
+      const handler = getLastChangedHandler();
+
+      handler(mockFile);
+
+      await waitForCondition(
+        () => loadFromRDFGraphSpy.mock.calls.length > 0,
+        { timeout: 500, message: "ShapeLoader.loadFromRDFGraph never called after hot-toggle" },
+      );
+
+      expect(loadFromRDFGraphSpy).toHaveBeenCalledTimes(1);
     });
   });
 });
