@@ -1052,6 +1052,44 @@ describe("FilterExecutor", () => {
     });
   });
 
+  describe("wrapAsLiteralExpression (regression #2849)", () => {
+    type WrapFn = (value: unknown) => { type: string; value: unknown; termType?: string };
+    const getWrap = (): WrapFn =>
+      (executor as unknown as { wrapAsLiteralExpression: WrapFn }).wrapAsLiteralExpression.bind(executor);
+
+    it("should return empty literal for null without throwing", () => {
+      const wrap = getWrap();
+      expect(() => wrap(null)).not.toThrow();
+      expect(wrap(null)).toEqual({ type: "literal", value: "" });
+    });
+
+    it("should return empty literal for undefined", () => {
+      const wrap = getWrap();
+      expect(wrap(undefined)).toEqual({ type: "literal", value: "" });
+    });
+
+    it("should preserve RDF term-like objects with termType", () => {
+      const wrap = getWrap();
+      const term = { termType: "Literal", value: "hello" };
+      expect(wrap(term)).toBe(term);
+    });
+
+    it("should wrap primitives as literals", () => {
+      const wrap = getWrap();
+      expect(wrap(42)).toEqual({ type: "literal", value: 42 });
+      expect(wrap(true)).toEqual({ type: "literal", value: true });
+      expect(wrap("foo")).toEqual({ type: "literal", value: "foo" });
+    });
+
+    it("should not misclassify null as a term-like object", () => {
+      // Null has typeof === "object" — verifies null-first guard prevents
+      // accidental "in" operator on null (TypeError) and CodeQL alert #303.
+      const wrap = getWrap();
+      const result = wrap(null);
+      expect(result).toEqual({ type: "literal", value: "" });
+    });
+  });
+
   describe("Streaming", () => {
     it("should support streaming iteration", async () => {
       const operation: FilterOperation = {
