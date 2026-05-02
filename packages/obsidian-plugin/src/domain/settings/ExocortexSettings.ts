@@ -124,6 +124,13 @@ export interface ExocortexSettings {
    * Issue #2992.
    */
   enableSparqlAutoExecute: boolean;
+  /**
+   * P1.12 — enable the metadataCache SHACL-lite validation debounce (P1.10).
+   * Default `false` in v15.x.0; will flip to `true` in v15.y.0 after soak.
+   * Hot-toggle: the `scheduleValidation` guard reads this flag on every
+   * invocation — no plugin reload required.
+   */
+  enableShaclValidation: boolean;
   [key: string]: unknown;
 }
 
@@ -148,4 +155,5 @@ export const DEFAULT_SETTINGS: ExocortexSettings = {
   enableExoLayoutRenderer: true,
   showIconsInFileExplorer: true,
   enableSparqlAutoExecute: false,
+  enableShaclValidation: false,
 };
