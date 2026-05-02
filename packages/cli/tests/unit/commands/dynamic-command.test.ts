@@ -958,6 +958,202 @@ describe("dynamic-command CLI", () => {
     });
   });
 
+  // RFC 94e520da § Phase 4 T4.2 — duplicate `exo__Asset_uid` detector.
+  // R5 mitigation: detector is **informational** (no exit-code change for
+  // warnings alone), bulk-resolution is out of scope for this RFC. The
+  // detector targets the H1 root cause documented in
+  // packages/cli/docs/RCA_DYNCOMMAND_SHOW_VS_EXEC.md (order-dependent
+  // `findSubjectByUID` between adjacent CLI invocations).
+  describe("validate: duplicate exo__Asset_uid detector (RFC Phase 4 T4.2)", () => {
+    it("warns on two assets sharing the same exo__Asset_uid (text output)", async () => {
+      const dupUid = "11111111-1111-4111-8111-111111111111";
+      const fileA = [
+        "exo__Instance_class: ems__Task",
+        `exo__Asset_uid: ${dupUid}`,
+        "exo__Asset_label: First Copy",
+      ].join("\n");
+      const fileB = [
+        "exo__Instance_class: ems__Task",
+        `exo__Asset_uid: ${dupUid}`,
+        "exo__Asset_label: Second Copy",
+      ].join("\n");
+
+      mockReaddirSync.mockImplementation((dir: string) => {
+        if (dir.endsWith("/vault")) {
+          return [
+            { name: "active.md", isDirectory: () => false },
+            { name: "archive.md", isDirectory: () => false },
+          ];
+        }
+        return [];
+      });
+      mockReadFileSync.mockImplementation((path: string) => {
+        if (path.endsWith("active.md")) return `---\n${fileA}\n---\n`;
+        if (path.endsWith("archive.md")) return `---\n${fileB}\n---\n`;
+        return "";
+      });
+
+      const consoleSpy = jest.spyOn(console, "log").mockImplementation(() => {});
+      const exitCodeBefore = process.exitCode;
+
+      const cmd = dynamicCommandCommand();
+      const valCmd = cmd.commands.find((c: any) => c.name() === "validate");
+      await valCmd.parseAsync(["--vault", "/vault"], { from: "user" });
+
+      const output = consoleSpy.mock.calls.map((c: any) => c[0]).join("\n");
+      expect(output).toContain("duplicate exo__Asset_uid");
+      expect(output).toContain(dupUid);
+      expect(output).toContain("active.md");
+      expect(output).toContain("archive.md");
+      // R5: warning-only, must NOT promote process.exitCode by itself.
+      expect(process.exitCode).toBe(exitCodeBefore);
+
+      consoleSpy.mockRestore();
+      process.exitCode = exitCodeBefore;
+    });
+
+    it("does not warn when every exo__Asset_uid is unique", async () => {
+      const fileA = [
+        "exo__Instance_class: ems__Task",
+        "exo__Asset_uid: 22222222-2222-4222-8222-222222222222",
+        "exo__Asset_label: Unique A",
+      ].join("\n");
+      const fileB = [
+        "exo__Instance_class: ems__Task",
+        "exo__Asset_uid: 33333333-3333-4333-8333-333333333333",
+        "exo__Asset_label: Unique B",
+      ].join("\n");
+
+      mockReaddirSync.mockImplementation((dir: string) => {
+        if (dir.endsWith("/vault")) {
+          return [
+            { name: "a.md", isDirectory: () => false },
+            { name: "b.md", isDirectory: () => false },
+          ];
+        }
+        return [];
+      });
+      mockReadFileSync.mockImplementation((path: string) => {
+        if (path.endsWith("a.md")) return `---\n${fileA}\n---\n`;
+        if (path.endsWith("b.md")) return `---\n${fileB}\n---\n`;
+        return "";
+      });
+
+      const consoleSpy = jest.spyOn(console, "log").mockImplementation(() => {});
+      const cmd = dynamicCommandCommand();
+      const valCmd = cmd.commands.find((c: any) => c.name() === "validate");
+      await valCmd.parseAsync(["--vault", "/vault"], { from: "user" });
+
+      const output = consoleSpy.mock.calls.map((c: any) => c[0]).join("\n");
+      expect(output).not.toContain("duplicate exo__Asset_uid");
+      consoleSpy.mockRestore();
+    });
+
+    it("emits duplicateUidWarnings in JSON output (sorted, file paths sorted)", async () => {
+      const dupUid = "44444444-4444-4444-8444-444444444444";
+      const fileA = [
+        "exo__Instance_class: ems__Task",
+        `exo__Asset_uid: ${dupUid}`,
+        "exo__Asset_label: A",
+      ].join("\n");
+      const fileB = [
+        "exo__Instance_class: ems__Task",
+        `exo__Asset_uid: ${dupUid}`,
+        "exo__Asset_label: B",
+      ].join("\n");
+      const fileC = [
+        "exo__Instance_class: ems__Task",
+        `exo__Asset_uid: ${dupUid}`,
+        "exo__Asset_label: C",
+      ].join("\n");
+
+      // Intentionally insert in non-sorted order so we can assert sort.
+      mockReaddirSync.mockImplementation((dir: string) => {
+        if (dir.endsWith("/vault")) {
+          return [
+            { name: "z-third.md", isDirectory: () => false },
+            { name: "a-first.md", isDirectory: () => false },
+            { name: "m-second.md", isDirectory: () => false },
+          ];
+        }
+        return [];
+      });
+      mockReadFileSync.mockImplementation((path: string) => {
+        if (path.endsWith("z-third.md")) return `---\n${fileC}\n---\n`;
+        if (path.endsWith("a-first.md")) return `---\n${fileA}\n---\n`;
+        if (path.endsWith("m-second.md")) return `---\n${fileB}\n---\n`;
+        return "";
+      });
+
+      const consoleSpy = jest.spyOn(console, "log").mockImplementation(() => {});
+      const cmd = dynamicCommandCommand();
+      const valCmd = cmd.commands.find((c: any) => c.name() === "validate");
+      await valCmd.parseAsync(
+        ["--vault", "/vault", "--output", "json"],
+        { from: "user" },
+      );
+
+      const output = consoleSpy.mock.calls.map((c: any) => c[0]).join("\n");
+      const parsed = JSON.parse(output);
+      expect(parsed.success).toBe(true);
+      expect(parsed.data.duplicateUidWarnings).toHaveLength(1);
+      const warning = parsed.data.duplicateUidWarnings[0];
+      expect(warning.uid).toBe(dupUid);
+      expect(warning.filePaths).toHaveLength(3);
+      // File paths inside one group are sorted lexicographically (deterministic).
+      expect(warning.filePaths).toEqual([...warning.filePaths].sort());
+      consoleSpy.mockRestore();
+    });
+
+    it("warnings coexist with command issues (non-blocking)", async () => {
+      const dupUid = "55555555-5555-4555-8555-555555555555";
+      const brokenCmd = [
+        "exo__Instance_class: exocmd__Command",
+        "exo__Asset_uid: cmd-broken-with-dup",
+        "exo__Asset_label: Broken",
+      ].join("\n");
+      const dupA = [
+        "exo__Instance_class: ems__Task",
+        `exo__Asset_uid: ${dupUid}`,
+      ].join("\n");
+      const dupB = [
+        "exo__Instance_class: ems__Task",
+        `exo__Asset_uid: ${dupUid}`,
+      ].join("\n");
+
+      mockReaddirSync.mockImplementation((dir: string) => {
+        if (dir.endsWith("/vault")) {
+          return [
+            { name: "broken.md", isDirectory: () => false },
+            { name: "dup-a.md", isDirectory: () => false },
+            { name: "dup-b.md", isDirectory: () => false },
+          ];
+        }
+        return [];
+      });
+      mockReadFileSync.mockImplementation((path: string) => {
+        if (path.endsWith("broken.md")) return `---\n${brokenCmd}\n---\n`;
+        if (path.endsWith("dup-a.md")) return `---\n${dupA}\n---\n`;
+        if (path.endsWith("dup-b.md")) return `---\n${dupB}\n---\n`;
+        return "";
+      });
+
+      const consoleSpy = jest.spyOn(console, "log").mockImplementation(() => {});
+      const exitCodeBefore = process.exitCode;
+      const cmd = dynamicCommandCommand();
+      const valCmd = cmd.commands.find((c: any) => c.name() === "validate");
+      await valCmd.parseAsync(["--vault", "/vault"], { from: "user" });
+
+      const output = consoleSpy.mock.calls.map((c: any) => c[0]).join("\n");
+      expect(output).toContain("Missing exocmd__Command_grounding");
+      expect(output).toContain("duplicate exo__Asset_uid");
+      // Issue still drives the failing exit code; warning is supplemental.
+      expect(process.exitCode).not.toBe(exitCodeBefore);
+      consoleSpy.mockRestore();
+      process.exitCode = exitCodeBefore;
+    });
+  });
+
   describe("exec target IRI binding (regression #2996)", () => {
     it("passes a canonical obsidian:// IRI (URL-encoded, including .md) to the precondition evaluator", async () => {
       mockLoadCommand.mockResolvedValue({

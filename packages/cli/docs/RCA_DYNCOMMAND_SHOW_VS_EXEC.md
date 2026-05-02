@@ -1,6 +1,7 @@
 # RCA: `dyncommand show` vs `dyncommand exec` precondition divergence
 
-**Status:** investigation complete, fix tracked in T4.2
+**Status:** investigation complete; T4.2 ships the duplicate-UID detector
+in `dyncommand validate` (informational warning, R5 mitigation)
 **Phase:** RFC `94e520da-c6f7-48af-944c-51298d68da45` § Phase 4
 **Task:** T4.1 — RCA через bisect (3 hypothesis testing)
 **Author:** ExoAssistant + Andrey Kitelev, 2026-05-02

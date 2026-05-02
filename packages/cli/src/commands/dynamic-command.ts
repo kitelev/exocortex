@@ -56,6 +56,20 @@ interface ValidationIssue {
   issues: string[];
 }
 
+/**
+ * Vault-wide structural defect: two or more assets share the same
+ * `exo__Asset_uid`. Surfaced as a non-fatal warning by `dyncommand validate`
+ * because R5 of RFC `94e520da-c6f7-48af-944c-51298d68da45` reserves
+ * bulk-resolution to a separate skill — but every such duplicate is the
+ * direct enabler of the H1 root cause documented in
+ * `docs/RCA_DYNCOMMAND_SHOW_VS_EXEC.md` (order-dependent
+ * `findSubjectByUID` between adjacent CLI invocations).
+ */
+interface DuplicateUidWarning {
+  uid: string;
+  filePaths: string[];
+}
+
 const frontmatterService = new FrontmatterService();
 
 /**
@@ -438,18 +452,22 @@ export function dynamicCommandCommand(): Command {
           throw new VaultNotFoundError(vaultPath);
         }
 
-        const issues = validateCommands(vaultPath);
+        const allFiles: Array<{ filePath: string; fm: Record<string, any> }> = [];
+        collectParsedFiles(vaultPath, allFiles);
+        const issues = validateCommandsFromFiles(allFiles);
+        const duplicateUidWarnings = findDuplicateUIDs(allFiles);
 
         if (outputFormat === "json") {
           const response = ResponseBuilder.success({
-            totalCommands: scanCommands(vaultPath).length,
+            totalCommands: scanCommandsFromFiles(allFiles).length,
             totalIssues: issues.reduce((sum, i) => sum + i.issues.length, 0),
             commandsWithIssues: issues.length,
             issues,
+            duplicateUidWarnings,
           });
           console.log(JSON.stringify(response, null, 2));
         } else {
-          const commands = scanCommands(vaultPath);
+          const commands = scanCommandsFromFiles(allFiles);
           if (issues.length === 0) {
             console.log(`✅ All ${commands.length} dynamic command(s) are valid.`);
           } else {
@@ -466,6 +484,24 @@ export function dynamicCommandCommand(): Command {
             }
             process.exitCode = ExitCodes.OPERATION_FAILED;
           }
+
+          if (duplicateUidWarnings.length > 0) {
+            console.log(
+              `⚠️  Found ${duplicateUidWarnings.length} duplicate exo__Asset_uid value(s) ` +
+                `(structural defect — see docs/RCA_DYNCOMMAND_SHOW_VS_EXEC.md §H1):\n`,
+            );
+            for (const warning of duplicateUidWarnings) {
+              console.log(`  • ${warning.uid}`);
+              for (const filePath of warning.filePaths) {
+                console.log(`      ${filePath}`);
+              }
+            }
+            console.log(
+              `\n  Hint: rename one of the duplicates to a fresh UID, ` +
+                `or delete the stale copy. Duplicates make ` +
+                `\`dyncommand show\` and \`dyncommand exec\` non-deterministic.`,
+            );
+          }
         }
       } catch (error) {
         ErrorHandler.handle(error as Error);
@@ -481,10 +517,15 @@ export function dynamicCommandCommand(): Command {
  * Scan vault for exocmd__Command assets.
  */
 function scanCommands(vaultPath: string): CommandFileInfo[] {
-  const commands: CommandFileInfo[] = [];
   const allFiles: Array<{ filePath: string; fm: Record<string, any> }> = [];
   collectParsedFiles(vaultPath, allFiles);
+  return scanCommandsFromFiles(allFiles);
+}
 
+function scanCommandsFromFiles(
+  allFiles: Array<{ filePath: string; fm: Record<string, any> }>,
+): CommandFileInfo[] {
+  const commands: CommandFileInfo[] = [];
   const classLabelByUid = buildClassLabelIndex(allFiles);
 
   for (const { filePath, fm } of allFiles) {
@@ -557,11 +598,10 @@ async function listCommandsForTarget(
 /**
  * Validate all command definitions for common issues.
  */
-function validateCommands(vaultPath: string): ValidationIssue[] {
+function validateCommandsFromFiles(
+  allFiles: Array<{ filePath: string; fm: Record<string, any> }>,
+): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
-  const allFiles: Array<{ filePath: string; fm: Record<string, any> }> = [];
-  collectParsedFiles(vaultPath, allFiles);
-
   const classLabelByUid = buildClassLabelIndex(allFiles);
 
   // Build lookup maps
@@ -831,4 +871,42 @@ function normalizeWikilink(value: string): string {
 
 function extractLabelFromFilename(filePath: string): string {
   return basename(filePath, ".md");
+}
+
+/**
+ * Detect vault-wide duplicate `exo__Asset_uid` values across **all** parsed
+ * assets (not only commands). Two or more assets sharing a single UID make
+ * `CommandResolver.findSubjectByUID` order-dependent — the documented H1 root
+ * cause of the `dyncommand show` ≢ `dyncommand exec` divergence
+ * (see `packages/cli/docs/RCA_DYNCOMMAND_SHOW_VS_EXEC.md`). Returned warnings
+ * are **informational**: per RFC `94e520da` § R5 the detector surfaces the
+ * defect, but bulk-resolution is delegated to a separate skill so existing
+ * vaults with hundreds of legacy duplicates are not blocked from `validate`.
+ *
+ * Output is deterministic: groups are sorted by UID, file paths within each
+ * group are sorted lexicographically.
+ */
+function findDuplicateUIDs(
+  allFiles: Array<{ filePath: string; fm: Record<string, any> }>,
+): DuplicateUidWarning[] {
+  const byUid = new Map<string, string[]>();
+  for (const { filePath, fm } of allFiles) {
+    const uid = fm["exo__Asset_uid"];
+    if (typeof uid !== "string" || uid.length === 0) continue;
+    const existing = byUid.get(uid);
+    if (existing) {
+      existing.push(filePath);
+    } else {
+      byUid.set(uid, [filePath]);
+    }
+  }
+
+  const warnings: DuplicateUidWarning[] = [];
+  for (const [uid, filePaths] of byUid.entries()) {
+    if (filePaths.length > 1) {
+      warnings.push({ uid, filePaths: [...filePaths].sort() });
+    }
+  }
+  warnings.sort((a, b) => a.uid.localeCompare(b.uid));
+  return warnings;
 }
