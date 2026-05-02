@@ -1,4 +1,5 @@
 import { describe, it, expect } from "@jest/globals";
+import { FrontmatterService } from "../../exocortex/src/utilities/FrontmatterService";
 import {
   createCreateRelatedTaskService,
   createCreateRelatedProjectService,
@@ -8,6 +9,10 @@ import {
   createRenameToUidService,
   createRepairFolderService,
   createPlanForEveningService,
+  createUpdatePropertyService,
+  createRemovePropertyService,
+  createSetStatusService,
+  type IPathResolver,
 } from "../src/index";
 
 /**
@@ -219,5 +224,126 @@ describe("@kitelev/exocortex-services — factory contract", () => {
     await expect(service.execute("missing-uid", { label: "x" })).rejects.toThrow(
       /Cannot resolve target file/,
     );
+  });
+
+  describe("frontmatter-only factories (T1.4)", () => {
+    function makeFsStub(initial: Record<string, string>): {
+      reads: string[];
+      writes: Array<{ path: string; content: string }>;
+      adapter: never;
+    } {
+      const files = new Map(Object.entries(initial));
+      const reads: string[] = [];
+      const writes: Array<{ path: string; content: string }> = [];
+      const adapter = {
+        async readFile(path: string): Promise<string> {
+          reads.push(path);
+          const content = files.get(path);
+          if (content === undefined) throw new Error(`not found: ${path}`);
+          return content;
+        },
+        async updateFile(path: string, content: string): Promise<void> {
+          if (!files.has(path)) throw new Error(`not found: ${path}`);
+          files.set(path, content);
+          writes.push({ path, content });
+        },
+      } as never;
+      return { reads, writes, adapter };
+    }
+
+    function pathResolver(returns: string): IPathResolver {
+      return {
+        async resolveTargetPath(): Promise<string> {
+          return returns;
+        },
+      };
+    }
+
+    const fmInput = `---\nfoo: bar\n---\nbody\n`;
+
+    it("createUpdatePropertyService rewrites frontmatter property via FrontmatterService", async () => {
+      const fs = makeFsStub({ "tasks/x.md": fmInput });
+      const service = createUpdatePropertyService(
+        fs.adapter,
+        new FrontmatterService(),
+        pathResolver("tasks/x.md"),
+      );
+      await service.execute("any-iri", { property: "foo", value: "baz" });
+      expect(fs.writes).toHaveLength(1);
+      expect(fs.writes[0].path).toBe("tasks/x.md");
+      expect(fs.writes[0].content).toMatch(/foo: baz/);
+    });
+
+    it("createUpdatePropertyService throws on missing userInput.property", async () => {
+      const fs = makeFsStub({});
+      const service = createUpdatePropertyService(
+        fs.adapter,
+        new FrontmatterService(),
+        pathResolver("tasks/x.md"),
+      );
+      await expect(service.execute("iri", { value: "v" })).rejects.toThrow(
+        /requires userInput.property/,
+      );
+    });
+
+    it("createUpdatePropertyService throws on missing userInput.value", async () => {
+      const fs = makeFsStub({});
+      const service = createUpdatePropertyService(
+        fs.adapter,
+        new FrontmatterService(),
+        pathResolver("tasks/x.md"),
+      );
+      await expect(service.execute("iri", { property: "foo" })).rejects.toThrow(
+        /requires userInput.value/,
+      );
+    });
+
+    it("createRemovePropertyService removes a property via FrontmatterService", async () => {
+      const fs = makeFsStub({ "tasks/x.md": fmInput });
+      const service = createRemovePropertyService(
+        fs.adapter,
+        new FrontmatterService(),
+        pathResolver("tasks/x.md"),
+      );
+      await service.execute("iri", { property: "foo" });
+      expect(fs.writes[0].content).not.toMatch(/foo:/);
+    });
+
+    it("createRemovePropertyService throws on missing userInput.property", async () => {
+      const fs = makeFsStub({});
+      const service = createRemovePropertyService(
+        fs.adapter,
+        new FrontmatterService(),
+        pathResolver("tasks/x.md"),
+      );
+      await expect(service.execute("iri", {})).rejects.toThrow(
+        /requires userInput.property/,
+      );
+    });
+
+    it("createSetStatusService writes ems__Effort_status as wikilink to statusUID", async () => {
+      const fs = makeFsStub({ "tasks/x.md": `---\nlabel: x\n---\n` });
+      const service = createSetStatusService(
+        fs.adapter,
+        new FrontmatterService(),
+        pathResolver("tasks/x.md"),
+      );
+      await service.execute("iri", { statusUID: "ems__EffortStatusDone" });
+      expect(fs.writes[0].content).toMatch(
+        /ems__Effort_status:\s*"\[\[ems__EffortStatusDone\]\]"/,
+      );
+    });
+
+    it("createSetStatusService throws on missing userInput.statusUID", async () => {
+      const fs = makeFsStub({});
+      const service = createSetStatusService(
+        fs.adapter,
+        new FrontmatterService(),
+        pathResolver("tasks/x.md"),
+      );
+      await expect(service.execute("iri", {})).rejects.toThrow(
+        /requires userInput.statusUID/,
+      );
+    });
   });
 });

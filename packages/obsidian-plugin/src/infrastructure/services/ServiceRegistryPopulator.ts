@@ -27,6 +27,10 @@ import {
   createPlanForEveningService,
   createRenameToUidService,
   createRepairFolderService,
+  createUpdatePropertyService,
+  createRemovePropertyService,
+  createSetStatusService,
+  type IPathResolver,
 } from "@kitelev/exocortex-services";
 import type { SPARQLApi } from "../../application/api/SPARQLApi";
 import type { ObsidianFileSystemAdapter } from "../../adapters/ObsidianFileSystemAdapter";
@@ -59,49 +63,40 @@ export function populateServiceRegistry(
   const { app, fileSystemAdapter, sparqlApi, vaultAdapter } = deps;
   const frontmatterService = new FrontmatterService();
 
+  // Plugin-side `IPathResolver` adapting the existing `resolveFilePath`
+  // (UID lookup via `app.metadataCache` + `obsidian://vault/` URI decode) to
+  // the storage-agnostic shared factories ported in T1.4.
+  const pluginPathResolver: IPathResolver = {
+    async resolveTargetPath(targetIRI: string): Promise<string> {
+      return resolveFilePath(app, targetIRI);
+    },
+  };
+
   registry.register(
     "updateProperty",
-    wrapService(async (targetIRI: string, userInput?: UserInput) => {
-      const property = userInput?.property as string | undefined;
-      const value = userInput?.value;
-      if (!property) throw new Error("updateProperty requires userInput.property");
-      if (value === undefined) throw new Error("updateProperty requires userInput.value");
-
-      const filePath = resolveFilePath(app, targetIRI);
-      const content = await fileSystemAdapter.readFile(filePath);
-      const updated = frontmatterService.updateProperty(content, property, value);
-      await fileSystemAdapter.updateFile(filePath, updated);
-    }),
+    createUpdatePropertyService(
+      fileSystemAdapter,
+      frontmatterService,
+      pluginPathResolver,
+    ),
   );
 
   registry.register(
     "removeProperty",
-    wrapService(async (targetIRI: string, userInput?: UserInput) => {
-      const property = userInput?.property as string | undefined;
-      if (!property) throw new Error("removeProperty requires userInput.property");
-
-      const filePath = resolveFilePath(app, targetIRI);
-      const content = await fileSystemAdapter.readFile(filePath);
-      const updated = frontmatterService.removeProperty(content, property);
-      await fileSystemAdapter.updateFile(filePath, updated);
-    }),
+    createRemovePropertyService(
+      fileSystemAdapter,
+      frontmatterService,
+      pluginPathResolver,
+    ),
   );
 
   registry.register(
     "setStatus",
-    wrapService(async (targetIRI: string, userInput?: UserInput) => {
-      const statusUID = userInput?.statusUID as string | undefined;
-      if (!statusUID) throw new Error("setStatus requires userInput.statusUID");
-
-      const filePath = resolveFilePath(app, targetIRI);
-      const content = await fileSystemAdapter.readFile(filePath);
-      const updated = frontmatterService.updateProperty(
-        content,
-        "ems__Effort_status",
-        `"[[${statusUID}]]"`,
-      );
-      await fileSystemAdapter.updateFile(filePath, updated);
-    }),
+    createSetStatusService(
+      fileSystemAdapter,
+      frontmatterService,
+      pluginPathResolver,
+    ),
   );
 
   registry.register(
