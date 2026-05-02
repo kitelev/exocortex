@@ -12,7 +12,7 @@
   },
   "scripts": {
     "dev": "npm run dev -w @exocortex/obsidian-plugin",
-    "build": "npm run build -w exocortex && npm run build --workspaces --if-present && tsc -noEmit -skipLibCheck && node packages/obsidian-plugin/esbuild.config.mjs production",
+    "build": "npm run build -w exocortex && npm run build -w @kitelev/exocortex-services && npm run build --workspaces --if-present && tsc -noEmit -skipLibCheck && node packages/obsidian-plugin/esbuild.config.mjs production",
     "lint": "eslint packages/obsidian-plugin/src --ext .ts,.tsx",
     "lint:fix": "eslint packages/obsidian-plugin/src --ext .ts,.tsx --fix",
     "format": "prettier --write 'packages/**/*.{ts,tsx}'",
