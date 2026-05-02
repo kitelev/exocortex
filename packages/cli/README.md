@@ -446,6 +446,11 @@ npx @kitelev/exocortex-cli dyncommand exec "$CREATE_INSTANCE_CMD" \
 If the command, its precondition, or its grounding ever change in the vault,
 the cron job picks up the new behavior automatically — no redeploy.
 
+A drop-in deployable version of this script — with crontab fragment, nightly
+verifier, install instructions, and a 7-day soak protocol — lives in
+[`examples/production-cron/`](../../examples/production-cron/) (RFC
+`94e520da` § Phase 5).
+
 #### Troubleshooting
 
 - **`Precondition not satisfied`** — run `dyncommand show <uid>` to read the
