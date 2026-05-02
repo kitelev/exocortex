@@ -5,7 +5,15 @@ import * as path from "path";
 
 test.describe.configure({ mode: "parallel" });
 
-test.describe("Alias Sync on Label Change", () => {
+// flaky-track #2987 — RFC 32a64ed9-9a74-4e0c-bb26-e455605aa384 §3.3.
+// Single-incident at N=41 (T3.1 row #6); insufficient evidence to discriminate
+// flake vs regression. Keep enabled, no retry (Charter Risk 1). Watch criteria:
+// incident #2 by 2026-05-31 → escalate to fix; zero further at N≥100 → close.
+// Tag enables Phase 3.4 dashboard filtering (`--grep @flaky-track`).
+test.describe(
+  "Alias Sync on Label Change",
+  { tag: ["@flaky-track", "@issue-2987"] },
+  () => {
   let launcher: ObsidianLauncher;
 
   test.beforeAll(async () => {
