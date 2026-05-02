@@ -237,6 +237,12 @@ export {
 export { NullLogger } from "./infrastructure/NullLogger";
 export { vaultPathToIRI, OBSIDIAN_VAULT_SCHEME } from "./infrastructure/vault/iri";
 export { InMemoryTripleStore } from "./infrastructure/rdf/InMemoryTripleStore";
+
+// Domain RDF model exports (for CLI/external consumers)
+export { IRI as DomainIRI } from "./domain/models/rdf/IRI";
+export { Literal as DomainLiteral } from "./domain/models/rdf/Literal";
+export { BlankNode as DomainBlankNode } from "./domain/models/rdf/BlankNode";
+export { Triple as DomainTriple } from "./domain/models/rdf/Triple";
 export { RDFVocabularyMapper } from "./infrastructure/rdf/RDFVocabularyMapper";
 export { RDFSInferenceEngine } from "./infrastructure/rdf/RDFSInferenceEngine";
 export { NonInheritablePropertyRegistry } from "./services/NonInheritablePropertyRegistry";
@@ -487,4 +493,17 @@ export {
 
 // Error exports
 export * from "./domain/errors";
+
+// SHACL-lite validation engine (RFC 82a72aca)
+export { ShapeLoader, type ShapeJSONCache } from "./services/ShapeLoader";
+export { ShapeRegistry } from "./services/ShapeRegistry";
+export {
+  validate as shaclValidate,
+  ShapeRegistry as ShaclShapeRegistry,
+  type ValidationReport,
+  type Violation,
+  type ClassHierarchy,
+  type Severity,
+  type Shape as ShaclShape,
+} from "./services/ShaclLiteValidator";
 export * from "./application/errors";

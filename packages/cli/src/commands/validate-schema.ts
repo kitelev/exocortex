@@ -10,6 +10,15 @@ import {
   ExoQLQueryExecutor,
   NoteToRDFConverter,
   Triple,
+  ShapeLoader,
+  ShaclShapeRegistry,
+  shaclValidate,
+  DomainIRI,
+  DomainLiteral,
+  DomainTriple,
+  type ValidationReport,
+  type Violation,
+  type ClassHierarchy,
 } from "exocortex";
 import { FileSystemVaultAdapter } from "../adapters/FileSystemVaultAdapter.js";
 import { ErrorHandler, type OutputFormat } from "../utils/ErrorHandler.js";
@@ -65,11 +74,15 @@ export const NAMESPACE_PREFIX_MAP: ReadonlyMap<string, string> = new Map([
   ["owl__", "http://www.w3.org/2002/07/owl#"],
 ]);
 
+export type ShapesFormat = "text" | "json" | "earl";
+
 export interface ValidateSchemaOptions {
   vault: string;
   output?: OutputFormat;
   staged?: boolean;
   useCache?: boolean;
+  shapesMode?: boolean;
+  format?: ShapesFormat;
 }
 
 export interface SchemaViolation {
@@ -361,6 +374,239 @@ export function validateFile(
   return violations;
 }
 
+const RDFS_SUBCLASS_OF = "http://www.w3.org/2000/01/rdf-schema#subClassOf";
+
+type AlgebraIRI = { type: "iri"; value: string };
+type AlgebraLiteral = { type: "literal"; value: string; datatype?: string; language?: string };
+type AlgebraBlank = { type: "blank"; value: string };
+type AlgebraNode = AlgebraIRI | AlgebraLiteral | AlgebraBlank;
+
+interface AlgebraStyleTriple {
+  subject: AlgebraNode;
+  predicate: AlgebraNode;
+  object: AlgebraNode;
+}
+
+/**
+ * Converts domain Triple[] (class-based) to algebra-compatible Triple[] (interface-based).
+ * Required because ShaclLiteValidator.validate() expects algebra Triple types.
+ */
+export function domainToAlgebraTriples(triples: DomainTriple[]): AlgebraStyleTriple[] {
+  const mapNode = (node: unknown): AlgebraNode | null => {
+    if (node instanceof DomainIRI) return { type: "iri", value: node.value };
+    if (node instanceof DomainLiteral) {
+      const lit: AlgebraLiteral = { type: "literal", value: node.value };
+      if (node.datatype) lit.datatype = node.datatype.value;
+      if (node.language) lit.language = node.language;
+      return lit;
+    }
+    return null;
+  };
+
+  const result: AlgebraStyleTriple[] = [];
+  for (const t of triples) {
+    const s = mapNode(t.subject);
+    const p = mapNode(t.predicate);
+    const o = mapNode(t.object);
+    if (s && p && o) result.push({ subject: s, predicate: p, object: o });
+  }
+  return result;
+}
+
+/**
+ * Builds a ClassHierarchy by extracting rdfs:subClassOf triples.
+ */
+export class TripleClassHierarchy implements ClassHierarchy {
+  private readonly subClassMap: Map<string, Set<string>> = new Map();
+
+  constructor(triples: DomainTriple[]) {
+    for (const t of triples) {
+      if (
+        t.predicate instanceof DomainIRI &&
+        t.predicate.value === RDFS_SUBCLASS_OF &&
+        t.subject instanceof DomainIRI &&
+        t.object instanceof DomainIRI
+      ) {
+        const set = this.subClassMap.get(t.subject.value) ?? new Set<string>();
+        set.add(t.object.value);
+        this.subClassMap.set(t.subject.value, set);
+      }
+    }
+  }
+
+  isSubClassOf(child: string, parent: string): boolean {
+    const visited = new Set<string>();
+    const queue: string[] = [child];
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      if (current === parent) return true;
+      if (visited.has(current)) continue;
+      visited.add(current);
+      const superClasses = this.subClassMap.get(current);
+      if (superClasses) {
+        for (const sc of superClasses) queue.push(sc);
+      }
+    }
+    return false;
+  }
+}
+
+export interface EARLReport {
+  "@context": Record<string, string>;
+  "@graph": unknown[];
+}
+
+/**
+ * Formats a ValidationReport as W3C EARL JSON-LD.
+ */
+export function buildEARLReport(vaultPath: string, report: ValidationReport): EARLReport {
+  const subjectId = `file://${vaultPath}`;
+  const assertorId = "https://exocortex.my/cli/shacl-validator";
+
+  const context = {
+    earl: "http://www.w3.org/ns/earl#",
+    dc: "http://purl.org/dc/terms/",
+    xsd: "http://www.w3.org/2001/XMLSchema#",
+    sh: "http://www.w3.org/ns/shacl#",
+  };
+
+  const graph: unknown[] = [
+    {
+      "@type": "earl:Assertor",
+      "@id": assertorId,
+      "dc:title": "Exocortex CLI SHACL-lite Validator",
+    },
+    {
+      "@type": "earl:TestSubject",
+      "@id": subjectId,
+      "dc:title": vaultPath,
+    },
+  ];
+
+  if (report.violations.length === 0) {
+    graph.push({
+      "@type": "earl:Assertion",
+      "earl:assertedBy": { "@id": assertorId },
+      "earl:subject": { "@id": subjectId },
+      "earl:result": {
+        "@type": "earl:TestResult",
+        "earl:outcome": { "@id": "earl:passed" },
+        "dc:description": "All nodes conform to shapes",
+      },
+    });
+  } else {
+    for (const v of report.violations) {
+      graph.push({
+        "@type": "earl:Assertion",
+        "earl:assertedBy": { "@id": assertorId },
+        "earl:subject": { "@id": subjectId },
+        "earl:test": { "@id": v.propertyPath },
+        "earl:result": {
+          "@type": "earl:TestResult",
+          "earl:outcome": { "@id": "earl:failed" },
+          "dc:description": v.message,
+          "sh:focusNode": v.focusNode,
+          "sh:resultPath": v.propertyPath,
+          "sh:resultSeverity": { "@id": `sh:${v.severity.replace("sh:", "")}` },
+          ...(v.actualValue !== undefined ? { "sh:value": v.actualValue } : {}),
+        },
+      });
+    }
+  }
+
+  return { "@context": context, "@graph": graph };
+}
+
+/**
+ * Runs SHACL-lite shapes validation against vault triples.
+ */
+export async function runShapesValidation(
+  vaultPath: string,
+  triples: DomainTriple[],
+): Promise<ValidationReport> {
+  const standaloneRegistry = await ShapeLoader.loadFromVaultFS(vaultPath);
+  const shapes = standaloneRegistry.getAll();
+  const registry = new ShaclShapeRegistry(shapes);
+  const hierarchy = new TripleClassHierarchy(triples);
+  const algebraTriples = domainToAlgebraTriples(triples);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return shaclValidate(algebraTriples as any, registry, hierarchy);
+}
+
+async function runShapesModeAction(options: ValidateSchemaOptions): Promise<void> {
+  const fmt = (options.format || "text") as ShapesFormat;
+
+  try {
+    const vaultPath = resolve(options.vault);
+    if (!existsSync(vaultPath)) {
+      throw new VaultNotFoundError(vaultPath);
+    }
+
+    if (fmt === "text") {
+      console.log(`📦 Loading vault (shapes-mode): ${vaultPath}...`);
+    }
+
+    let triples: DomainTriple[];
+    if (options.useCache) {
+      const cacheManager = new CacheManager(vaultPath);
+      const cacheResult = await cacheManager.loadOrBuild();
+      triples = cacheResult.triples as DomainTriple[];
+      if (fmt === "text" && cacheResult.cacheHit) {
+        console.log("🚀 Cache hit! Loading from persistent cache...");
+      }
+    } else {
+      const vaultAdapter = new FileSystemVaultAdapter(vaultPath);
+      const converter = new NoteToRDFConverter(vaultAdapter);
+      triples = await converter.convertVault() as DomainTriple[];
+    }
+
+    if (fmt === "text") {
+      console.log(`✅ Loaded ${triples.length} triples`);
+      console.log(`🔍 Running SHACL-lite validation...`);
+    }
+
+    const report = await runShapesValidation(vaultPath, triples);
+
+    if (fmt === "earl") {
+      const earl = buildEARLReport(vaultPath, report);
+      console.log(JSON.stringify(earl, null, 2));
+    } else if (fmt === "json") {
+      const response = ResponseBuilder.success({
+        vaultPath,
+        conforms: report.conforms,
+        violationCount: report.violations.length,
+        violations: report.violations,
+      });
+      console.log(JSON.stringify(response, null, 2));
+    } else {
+      if (report.conforms) {
+        console.log(`✅ Vault conforms to all shapes (${report.violations.length === 0 ? "no violations" : `${report.violations.length} warning(s)`}).`);
+      } else {
+        const byNode = new Map<string, Violation[]>();
+        for (const v of report.violations) {
+          const existing = byNode.get(v.focusNode) ?? [];
+          existing.push(v);
+          byNode.set(v.focusNode, existing);
+        }
+        console.log(`⚠️  Found ${report.violations.length} SHACL violation(s) in ${byNode.size} node(s):\n`);
+        for (const [node, violations] of byNode) {
+          console.log(`   ❌ ${node}`);
+          for (const v of violations) {
+            const sev = v.severity.replace("sh:", "");
+            console.log(`      [${sev}] ${v.message}`);
+          }
+        }
+      }
+    }
+
+    if (!report.conforms) {
+      process.exitCode = 1;
+    }
+  } catch (error) {
+    ErrorHandler.handle(error as Error);
+  }
+}
+
 /**
  * Creates the 'validate schema' subcommand for checking frontmatter
  * properties against the ontology.
@@ -374,9 +620,16 @@ export function validateSchemaCommand(): Command {
     .option("--output <type>", "Response format: text|json (for MCP tools)", "text")
     .option("--staged", "Only validate git-staged .md files (for pre-commit hooks)")
     .option("--use-cache", "Use persistent triple cache (faster vault loading)")
+    .option("--shapes-mode", "Run SHACL-lite shapes validation instead of schema linting")
+    .option("--format <type>", "Output format for shapes-mode: text|json|earl", "text")
     .action(async (options: ValidateSchemaOptions) => {
       const outputFormat = (options.output || "text") as OutputFormat;
       ErrorHandler.setFormat(outputFormat);
+
+      if (options.shapesMode) {
+        await runShapesModeAction(options);
+        return;
+      }
 
       try {
         const vaultPath = resolve(options.vault);

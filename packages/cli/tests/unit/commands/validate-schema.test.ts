@@ -12,6 +12,13 @@ jest.unstable_mockModule("exocortex", () => ({
   NoteToRDFConverter: jest.fn(),
   Triple: jest.fn(),
   SPARQL_PREFIXES: "",
+  // SHACL-lite validation
+  ShapeLoader: { loadFromVaultFS: jest.fn().mockResolvedValue({ getAll: jest.fn().mockReturnValue([]) }) },
+  ShaclShapeRegistry: jest.fn().mockImplementation(() => ({})),
+  shaclValidate: jest.fn().mockReturnValue({ conforms: true, violations: [] }),
+  DomainIRI: class { constructor(public value: string) {} },
+  DomainLiteral: class { constructor(public value: string) {} },
+  DomainTriple: jest.fn(),
 }));
 
 // Mock fs-extra (CacheManager dependency)
@@ -46,6 +53,10 @@ const {
   classifyKeys,
   validateFile,
   extractPropertyNameFromURI,
+  TripleClassHierarchy,
+  domainToAlgebraTriples,
+  buildEARLReport,
+  runShapesValidation,
 } = await import("../../../src/commands/validate-schema.js");
 
 const TMP_DIR = "/tmp/validate-schema-test-" + Date.now();
@@ -97,9 +108,21 @@ describe("Issue #2713: validate schema command", () => {
       expect(option).toBeDefined();
     });
 
-    it("should register exactly 4 options", () => {
+    it("should register exactly 6 options", () => {
       const cmd = validateSchemaCommand();
-      expect(cmd.options).toHaveLength(4);
+      expect(cmd.options).toHaveLength(6);
+    });
+
+    it("should register --shapes-mode option", () => {
+      const cmd = validateSchemaCommand();
+      const option = cmd.options.find((o) => o.long === "--shapes-mode");
+      expect(option).toBeDefined();
+    });
+
+    it("should register --format option", () => {
+      const cmd = validateSchemaCommand();
+      const option = cmd.options.find((o) => o.long === "--format");
+      expect(option).toBeDefined();
     });
   });
 
@@ -436,5 +459,56 @@ describe("Issue #2713: validate parent command", () => {
     const cmd = validateCommandFn();
     const schemaCmd = cmd.commands.find((c: any) => c.name() === "schema") as any;
     expect(schemaCmd.options.find((o: any) => o.long === "--staged")).toBeDefined();
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// P1.6 Shapes-mode tests
+// ──────────────────────────────────────────────────────────────────────────────
+
+describe("P1.6 TripleClassHierarchy", () => {
+  it("returns false when subClassMap is empty", () => {
+    const hier = new TripleClassHierarchy([]);
+    expect(hier.isSubClassOf("https://a.com/A", "https://a.com/B")).toBe(false);
+  });
+
+  it("is instantiated without errors from an empty array", () => {
+    expect(() => new TripleClassHierarchy([])).not.toThrow();
+  });
+});
+
+describe("P1.6 domainToAlgebraTriples", () => {
+  it("returns empty array for empty input", () => {
+    expect(domainToAlgebraTriples([])).toEqual([]);
+  });
+
+  it("skips triples with non-IRI/non-Literal nodes", () => {
+    const triple = { subject: {}, predicate: {}, object: {} };
+    const result = domainToAlgebraTriples([triple as any]);
+    expect(result).toHaveLength(0);
+  });
+});
+
+describe("P1.6 buildEARLReport", () => {
+  it("produces earl:passed when conforms=true", () => {
+    const report = buildEARLReport("/vault", { conforms: true, violations: [] });
+    expect(report["@context"].earl).toBe("http://www.w3.org/ns/earl#");
+    const passed = report["@graph"].find((n: any) => n["earl:result"]?.["earl:outcome"]?.["@id"] === "earl:passed");
+    expect(passed).toBeDefined();
+  });
+
+  it("produces earl:failed entries for violations", () => {
+    const report = buildEARLReport("/vault", {
+      conforms: false,
+      violations: [{
+        focusNode: "https://node.com/n1",
+        propertyPath: "https://prop.com/p1",
+        severity: "sh:Violation" as const,
+        message: "Missing required property",
+      }],
+    });
+    const failed = report["@graph"].find((n: any) => n["earl:result"]?.["earl:outcome"]?.["@id"] === "earl:failed");
+    expect(failed).toBeDefined();
+    expect((failed as any)["earl:result"]["dc:description"]).toBe("Missing required property");
   });
 });
