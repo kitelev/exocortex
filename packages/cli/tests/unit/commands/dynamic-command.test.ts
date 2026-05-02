@@ -412,6 +412,110 @@ describe("dynamic-command CLI", () => {
 
       consoleSpy.mockRestore();
     });
+
+    it("mixed vault: resolves both UUID-wikilink and label-form class refs in one scan (#2863 T2.3)", async () => {
+      // Class definition file: UUID filename, exo__Asset_label = "exocmd__Command"
+      const classFm = [
+        "exo__Asset_uid: 790e5b16-251d-4556-96ac-e5c7f1429b2e",
+        'exo__Asset_label: "exocmd__Command"',
+      ].join("\n");
+
+      // Command #1 — UUID-wikilink shape (modern starter-kit)
+      const cmdUuidFm = [
+        "exo__Instance_class:",
+        '  - "[[790e5b16-251d-4556-96ac-e5c7f1429b2e]]"',
+        "exo__Asset_uid: cmd-uuid",
+        "exo__Asset_label: UUID-Form Command",
+        "exocmd__Command_grounding: [[gnd-uuid]]",
+      ].join("\n");
+
+      // Command #2 — bare label shape (legacy vault)
+      const cmdLabelFm = [
+        "exo__Instance_class: exocmd__Command",
+        "exo__Asset_uid: cmd-label",
+        "exo__Asset_label: Label-Form Command",
+        "exocmd__Command_grounding: [[gnd-label]]",
+      ].join("\n");
+
+      // Command #3 — plain class-name wikilink shape (label in [[...]])
+      const cmdPlainFm = [
+        'exo__Instance_class: "[[exocmd__Command]]"',
+        "exo__Asset_uid: cmd-plain",
+        "exo__Asset_label: Plain-Wikilink Command",
+        "exocmd__Command_grounding: [[gnd-plain]]",
+      ].join("\n");
+
+      // Grounding class definition: UUID filename, label = "exocmd__Grounding"
+      const gndClassFm = [
+        "exo__Asset_uid: 11579feb-2e42-491c-af59-b89b1129a539",
+        'exo__Asset_label: "exocmd__Grounding"',
+      ].join("\n");
+
+      const gndUuidFm = [
+        "exo__Instance_class:",
+        '  - "[[11579feb-2e42-491c-af59-b89b1129a539]]"',
+        "exo__Asset_uid: gnd-uuid",
+        'exocmd__Grounding_type: "property_set"',
+      ].join("\n");
+
+      const gndLabelFm = [
+        "exo__Instance_class: exocmd__Grounding",
+        "exo__Asset_uid: gnd-label",
+        "exocmd__Grounding_type: property_set",
+      ].join("\n");
+
+      const gndPlainFm = [
+        'exo__Instance_class: "[[exocmd__Grounding]]"',
+        "exo__Asset_uid: gnd-plain",
+        "exocmd__Grounding_type: property_set",
+      ].join("\n");
+
+      mockReaddirSync.mockImplementation((dir: string) => {
+        if (dir.endsWith("/vault")) {
+          return [
+            { name: "cmd-class.md", isDirectory: () => false },
+            { name: "gnd-class.md", isDirectory: () => false },
+            { name: "cmd-uuid.md", isDirectory: () => false },
+            { name: "cmd-label.md", isDirectory: () => false },
+            { name: "cmd-plain.md", isDirectory: () => false },
+            { name: "gnd-uuid.md", isDirectory: () => false },
+            { name: "gnd-label.md", isDirectory: () => false },
+            { name: "gnd-plain.md", isDirectory: () => false },
+          ];
+        }
+        return [];
+      });
+
+      mockReadFileSync.mockImplementation((path: string) => {
+        // More specific (longer suffix) before generic
+        if (path.endsWith("/cmd-class.md")) return `---\n${classFm}\n---\n`;
+        if (path.endsWith("/gnd-class.md")) return `---\n${gndClassFm}\n---\n`;
+        if (path.endsWith("/cmd-uuid.md")) return `---\n${cmdUuidFm}\n---\n`;
+        if (path.endsWith("/cmd-label.md")) return `---\n${cmdLabelFm}\n---\n`;
+        if (path.endsWith("/cmd-plain.md")) return `---\n${cmdPlainFm}\n---\n`;
+        if (path.endsWith("/gnd-uuid.md")) return `---\n${gndUuidFm}\n---\n`;
+        if (path.endsWith("/gnd-label.md")) return `---\n${gndLabelFm}\n---\n`;
+        if (path.endsWith("/gnd-plain.md")) return `---\n${gndPlainFm}\n---\n`;
+        return "";
+      });
+
+      const consoleSpy = jest.spyOn(console, "log").mockImplementation(() => {});
+
+      const cmd = dynamicCommandCommand();
+      const listCmd = cmd.commands.find((c: any) => c.name() === "list");
+      await listCmd.parseAsync(["--vault", "/vault", "--output", "json"], { from: "user" });
+
+      const output = consoleSpy.mock.calls.map((c: any) => c[0]).join("\n");
+      expect(output).toMatch(/"totalCommands":\s*3/);
+      expect(output).toContain("cmd-uuid");
+      expect(output).toContain("cmd-label");
+      expect(output).toContain("cmd-plain");
+      // Grounding type resolves for all three shapes via the same reverse index
+      const propertySetMatches = output.match(/property_set/g) ?? [];
+      expect(propertySetMatches.length).toBeGreaterThanOrEqual(3);
+
+      consoleSpy.mockRestore();
+    });
   });
 
   describe("show action", () => {
