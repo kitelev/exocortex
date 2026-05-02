@@ -507,3 +507,11 @@ export {
   type Shape as ShaclShape,
 } from "./services/ShaclLiteValidator";
 export * from "./application/errors";
+export {
+  ValidatorDaemon,
+  DEFAULT_SOCKET_PATH,
+  IDLE_TIMEOUT_MS,
+  type DaemonRequest,
+  type DaemonResponse,
+} from "./services/ValidatorDaemon";
+export { ClassHierarchy as TripleClassHierarchy } from "./services/ClassHierarchy";
