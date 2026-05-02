@@ -2,8 +2,6 @@ import {
   ServiceRegistry,
   type IGroundingService,
   type IVaultAdapter,
-  type IFile,
-  type UserInput,
   GenericAssetCreationService,
   ArchiveAssetService,
   FixMissingLabelService,
@@ -12,6 +10,16 @@ import {
   RenameToUidService,
   TaskStatusService,
 } from "exocortex";
+import {
+  createCreateRelatedTaskService,
+  createCreateRelatedProjectService,
+  createArchiveAssetService,
+  createCleanPropertiesService,
+  createFixMissingLabelService,
+  createRenameToUidService,
+  createRepairFolderService,
+  createPlanForEveningService,
+} from "@kitelev/exocortex-services";
 
 /**
  * The 10 well-known service IDs the plugin registers via
@@ -79,268 +87,25 @@ export interface CliServiceRegistryDeps {
   folderRepairService: FolderRepairService;
 }
 
-function resolveTargetFile(vaultAdapter: IVaultAdapter, targetIRI: string): IFile {
-  const candidate = vaultAdapter.getAbstractFileByPath(`${targetIRI}.md`);
-  if (!candidate || !("basename" in candidate)) {
-    throw new Error(`Cannot resolve target file for IRI: ${targetIRI}`);
-  }
-  return candidate as IFile;
-}
-
 /**
- * CLI-side implementation of the `createRelatedTask` service (#2865).
+ * Re-export the storage-agnostic grounding-service factories from the shared
+ * `@kitelev/exocortex-services` package (RFC 94e520da Phase 1, T1.2).
  *
- * Mirrors the plugin handler in
- * `packages/obsidian-plugin/src/infrastructure/services/ServiceRegistryPopulator.ts`
- * minus workspace/leaf side-effects — the CLI just writes the new `.md` file
- * and returns. Parent-context inheritance (ems__Effort_area vs ems__Effort_parent)
- * is delegated to `GenericAssetCreationService.inheritParentContext`.
+ * Existing call sites — both internal (`populateCliServiceRegistry` below)
+ * and external test imports — continue to work via this re-export. The
+ * factory definitions themselves moved to `packages/services/src/` so the
+ * plugin can adopt the same handlers in T1.3 without code duplication.
  */
-export function createCreateRelatedTaskService(
-  vaultAdapter: IVaultAdapter,
-  genericAssetCreationService: GenericAssetCreationService,
-): IGroundingService {
-  return {
-    async execute(targetIRI: string, userInput?: UserInput): Promise<void> {
-      const label = userInput?.label as string | undefined;
-      if (!label) {
-        throw new Error("createRelatedTask requires userInput.label");
-      }
-
-      const parentFile = resolveTargetFile(vaultAdapter, targetIRI);
-      const parentMetadata =
-        (vaultAdapter.getFrontmatter(parentFile) as Record<string, unknown>) ?? {};
-      const folderPath = parentFile.parent?.path || "";
-
-      const propertyValues: Record<string, unknown> = {
-        ems__Effort_status: '"[[ems__EffortStatusDraft]]"',
-      };
-
-      const explicitParentProperty = userInput?.parentProperty as string | undefined;
-      if (explicitParentProperty && parentFile.basename) {
-        propertyValues[explicitParentProperty] = `"[[${parentFile.basename}]]"`;
-      }
-
-      await genericAssetCreationService.createAsset({
-        className: "ems__Task",
-        label,
-        folderPath,
-        propertyValues,
-        parentFile,
-        parentMetadata,
-      });
-    },
-  };
-}
-
-/**
- * CLI-side implementation of the `createRelatedProject` service (#2866).
- *
- * Mirrors the plugin handler in
- * `packages/obsidian-plugin/src/infrastructure/services/ServiceRegistryPopulator.ts`
- * minus workspace/leaf side-effects. Parent-context inheritance
- * (ems__Effort_area vs ems__Effort_parent) is delegated to
- * `GenericAssetCreationService.inheritParentContext`, which covers the
- * `ems__Project` branch symmetrically with `ems__Task`.
- */
-export function createCreateRelatedProjectService(
-  vaultAdapter: IVaultAdapter,
-  genericAssetCreationService: GenericAssetCreationService,
-): IGroundingService {
-  return {
-    async execute(targetIRI: string, userInput?: UserInput): Promise<void> {
-      const label = userInput?.label as string | undefined;
-      if (!label) {
-        throw new Error("createRelatedProject requires userInput.label");
-      }
-
-      const parentFile = resolveTargetFile(vaultAdapter, targetIRI);
-      const parentMetadata =
-        (vaultAdapter.getFrontmatter(parentFile) as Record<string, unknown>) ?? {};
-      const folderPath = parentFile.parent?.path || "";
-
-      const propertyValues: Record<string, unknown> = {
-        ems__Effort_status: '"[[ems__EffortStatusDraft]]"',
-      };
-
-      const explicitParentProperty = userInput?.parentProperty as string | undefined;
-      if (explicitParentProperty && parentFile.basename) {
-        propertyValues[explicitParentProperty] = `"[[${parentFile.basename}]]"`;
-      }
-
-      await genericAssetCreationService.createAsset({
-        className: "ems__Project",
-        label,
-        folderPath,
-        propertyValues,
-        parentFile,
-        parentMetadata,
-      });
-    },
-  };
-}
-
-/**
- * CLI-side implementation of the `archiveAsset` service (#2867).
- *
- * Mirrors the plugin handler in
- * `packages/obsidian-plugin/src/infrastructure/services/ServiceRegistryPopulator.ts`.
- * Archive semantic is in-place frontmatter mutation (`archived: true` +
- * remove `aliases`) delegated to the shared `ArchiveAssetService`. No
- * file move; batch cross-vault archival remains the domain of the
- * separate `cli archive` command (`ArchiveService`).
- */
-export function createArchiveAssetService(
-  vaultAdapter: IVaultAdapter,
-  archiveAssetService: ArchiveAssetService,
-): IGroundingService {
-  return {
-    async execute(targetIRI: string): Promise<void> {
-      const targetFile = resolveTargetFile(vaultAdapter, targetIRI);
-      await archiveAssetService.archiveAsset(targetFile);
-    },
-  };
-}
-
-/**
- * CLI-side implementation of the `cleanProperties` service (#2869).
- *
- * Mirrors the plugin handler in
- * `packages/obsidian-plugin/src/infrastructure/services/ServiceRegistryPopulator.ts`.
- * Delegates to the shared `PropertyCleanupService` which strips frontmatter
- * entries whose values are empty (`""`, `null`, `undefined`, `[]`, `{}`).
- * Storage-agnostic via `IVaultAdapter`, so the plugin and CLI paths stay
- * byte-identical for the same input.
- */
-export function createCleanPropertiesService(
-  vaultAdapter: IVaultAdapter,
-  propertyCleanupService: PropertyCleanupService,
-): IGroundingService {
-  return {
-    async execute(targetIRI: string): Promise<void> {
-      const targetFile = resolveTargetFile(vaultAdapter, targetIRI);
-      await propertyCleanupService.cleanEmptyProperties(targetFile);
-    },
-  };
-}
-
-/**
- * CLI-side implementation of the `fixMissingLabel` service (#2870).
- *
- * Mirrors the plugin handler in
- * `packages/obsidian-plugin/src/infrastructure/services/ServiceRegistryPopulator.ts`.
- * Delegates to the shared `FixMissingLabelService` which sets
- * `exo__Asset_label` to `file.basename` when the property is missing or
- * empty. Idempotent: a no-op when the label is already set. Storage-agnostic
- * via `IVaultAdapter`, so plugin and CLI stay byte-identical.
- */
-export function createFixMissingLabelService(
-  vaultAdapter: IVaultAdapter,
-  fixMissingLabelService: FixMissingLabelService,
-): IGroundingService {
-  return {
-    async execute(targetIRI: string): Promise<void> {
-      const targetFile = resolveTargetFile(vaultAdapter, targetIRI);
-      await fixMissingLabelService.fixMissingLabel(targetFile);
-    },
-  };
-}
-
-/**
- * CLI-side implementation of the `renameToUid` service (#2871).
- *
- * Mirrors the plugin handler in
- * `packages/obsidian-plugin/src/infrastructure/services/ServiceRegistryPopulator.ts`.
- * Delegates to the shared `RenameToUidService` which renames the file to
- * match its `exo__Asset_uid` property (e.g. `My Task.md` → `a1b2c3d4-….md`).
- *
- * Caveat: `FileSystemVaultAdapter.updateLinks` in the CLI is a no-op stub —
- * the file itself is renamed and a missing label is backfilled, but
- * wikilinks referencing the old basename in other vault notes are NOT
- * rewritten. Parity with the Obsidian plugin's vault-wide link update is
- * tracked separately; users relying on link rewrite should continue to use
- * Obsidian. Plugin path remains fully symmetric.
- */
-export function createRenameToUidService(
-  vaultAdapter: IVaultAdapter,
-  renameToUidService: RenameToUidService,
-): IGroundingService {
-  return {
-    async execute(targetIRI: string): Promise<void> {
-      const targetFile = resolveTargetFile(vaultAdapter, targetIRI);
-      const metadata =
-        (vaultAdapter.getFrontmatter(targetFile) as Record<string, unknown>) ??
-        {};
-      await renameToUidService.renameToUid(targetFile, metadata);
-    },
-  };
-}
-
-/**
- * CLI-side implementation of the `repairFolder` service (#2872).
- *
- * Mirrors the plugin handler in
- * `packages/obsidian-plugin/src/infrastructure/services/ServiceRegistryPopulator.ts`.
- * Delegates to the shared `FolderRepairService`: derives the expected folder
- * from `exo__Asset_isDefinedBy` and moves the target file there. Idempotent —
- * a no-op when the asset is already in the expected folder. Throws when the
- * expected folder cannot be derived (missing `exo__Asset_isDefinedBy` or the
- * referenced asset is not in the vault) so the CLI exits non-zero and dyncommand
- * groundings surface the failure instead of silently no-op'ing (#2864 pattern).
- *
- * Storage-agnostic via `IVaultAdapter`, so plugin and CLI stay byte-identical
- * for the same input. The separate hardcoded `cli command repair-folder`
- * subcommand (`FolderRepairExecutor`) remains for batch/scripting workflows
- * and is not touched by this wiring.
- */
-export function createRepairFolderService(
-  vaultAdapter: IVaultAdapter,
-  folderRepairService: FolderRepairService,
-): IGroundingService {
-  return {
-    async execute(targetIRI: string): Promise<void> {
-      const targetFile = resolveTargetFile(vaultAdapter, targetIRI);
-      const metadata =
-        (vaultAdapter.getFrontmatter(targetFile) as Record<string, unknown>) ??
-        {};
-      const expectedFolder = await folderRepairService.getExpectedFolder(
-        targetFile,
-        metadata,
-      );
-      if (expectedFolder === null) {
-        throw new Error(
-          "repairFolder: cannot determine expected folder (missing exo__Asset_isDefinedBy or referenced asset not found)",
-        );
-      }
-      const currentFolder = targetFile.parent?.path ?? "";
-      if (currentFolder === expectedFolder) {
-        return;
-      }
-      await folderRepairService.repairFolder(targetFile, expectedFolder);
-    },
-  };
-}
-
-/**
- * CLI-side implementation of the `planForEvening` service (#2868).
- *
- * Mirrors the plugin handler in
- * `packages/obsidian-plugin/src/infrastructure/services/ServiceRegistryPopulator.ts`.
- * Sets `ems__Effort_plannedStartTimestamp` to today at 19:00:00 local time
- * (no ms, no tz) via the shared `TaskStatusService.planForEvening`, which
- * is already storage-agnostic via `IVaultAdapter`.
- */
-export function createPlanForEveningService(
-  vaultAdapter: IVaultAdapter,
-  taskStatusService: TaskStatusService,
-): IGroundingService {
-  return {
-    async execute(targetIRI: string): Promise<void> {
-      const targetFile = resolveTargetFile(vaultAdapter, targetIRI);
-      await taskStatusService.planForEvening(targetFile);
-    },
-  };
-}
+export {
+  createCreateRelatedTaskService,
+  createCreateRelatedProjectService,
+  createArchiveAssetService,
+  createCleanPropertiesService,
+  createFixMissingLabelService,
+  createRenameToUidService,
+  createRepairFolderService,
+  createPlanForEveningService,
+};
 
 /**
  * Populate a ServiceRegistry with fail-loud stubs for all well-known services.
@@ -381,17 +146,11 @@ export function populateCliServiceRegistry(
     );
     registry.register(
       "archiveAsset",
-      createArchiveAssetService(
-        deps.vaultAdapter,
-        deps.archiveAssetService,
-      ),
+      createArchiveAssetService(deps.vaultAdapter, deps.archiveAssetService),
     );
     registry.register(
       "planForEvening",
-      createPlanForEveningService(
-        deps.vaultAdapter,
-        deps.taskStatusService,
-      ),
+      createPlanForEveningService(deps.vaultAdapter, deps.taskStatusService),
     );
     registry.register(
       "cleanProperties",
@@ -402,17 +161,11 @@ export function populateCliServiceRegistry(
     );
     registry.register(
       "renameToUid",
-      createRenameToUidService(
-        deps.vaultAdapter,
-        deps.renameToUidService,
-      ),
+      createRenameToUidService(deps.vaultAdapter, deps.renameToUidService),
     );
     registry.register(
       "repairFolder",
-      createRepairFolderService(
-        deps.vaultAdapter,
-        deps.folderRepairService,
-      ),
+      createRepairFolderService(deps.vaultAdapter, deps.folderRepairService),
     );
     registry.register(
       "fixMissingLabel",
