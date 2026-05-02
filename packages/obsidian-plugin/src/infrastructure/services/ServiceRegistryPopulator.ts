@@ -20,9 +20,18 @@ import {
   type UserInput,
   type IFile,
 } from "exocortex";
+import {
+  createArchiveAssetService,
+  createCleanPropertiesService,
+  createFixMissingLabelService,
+  createPlanForEveningService,
+  createRenameToUidService,
+  createRepairFolderService,
+} from "@kitelev/exocortex-services";
 import type { SPARQLApi } from "../../application/api/SPARQLApi";
 import type { ObsidianFileSystemAdapter } from "../../adapters/ObsidianFileSystemAdapter";
 import type { ObsidianVaultAdapter } from "../../adapters/ObsidianVaultAdapter";
+import { createObsidianTargetResolver } from "./ObsidianTargetResolver";
 
 export interface ServiceRegistryDeps {
   app: App;
@@ -295,6 +304,10 @@ export function populateServiceRegistry(
     const folderRepairService = new FolderRepairService(vaultAdapter);
     const conceptCreationService = new ConceptCreationService(vaultAdapter);
     const classCreationService = new ClassCreationService(vaultAdapter);
+    // Obsidian-aware resolver for shared @kitelev/exocortex-services factories
+    // (RFC 94e520da Phase 1, T1.3). Produces byte-identical IFile resolution
+    // to the legacy `resolveIFile` helper below — see ObsidianTargetResolver.
+    const targetResolver = createObsidianTargetResolver(app, vaultAdapter);
 
     registry.register(
       "rollbackStatus",
@@ -314,10 +327,7 @@ export function populateServiceRegistry(
 
     registry.register(
       "planForEvening",
-      wrapService(async (targetIRI: string) => {
-        const iFile = resolveIFile(app, targetIRI, vaultAdapter);
-        await taskStatusService.planForEvening(iFile);
-      }),
+      createPlanForEveningService(vaultAdapter, taskStatusService, targetResolver),
     );
 
     registry.register(
@@ -451,59 +461,39 @@ export function populateServiceRegistry(
 
     registry.register(
       "archiveAsset",
-      wrapService(async (targetIRI: string) => {
-        const iFile = resolveIFile(app, targetIRI, vaultAdapter);
-        await archiveAssetService.archiveAsset(iFile);
-      }),
+      createArchiveAssetService(vaultAdapter, archiveAssetService, targetResolver),
     );
 
     registry.register(
       "cleanProperties",
-      wrapService(async (targetIRI: string) => {
-        const iFile = resolveIFile(app, targetIRI, vaultAdapter);
-        await propertyCleanupService.cleanEmptyProperties(iFile);
-      }),
+      createCleanPropertiesService(
+        vaultAdapter,
+        propertyCleanupService,
+        targetResolver,
+      ),
     );
 
     registry.register(
       "fixMissingLabel",
-      wrapService(async (targetIRI: string) => {
-        const iFile = resolveIFile(app, targetIRI, vaultAdapter);
-        await fixMissingLabelService.fixMissingLabel(iFile);
-      }),
+      createFixMissingLabelService(
+        vaultAdapter,
+        fixMissingLabelService,
+        targetResolver,
+      ),
     );
 
     registry.register(
       "renameToUid",
-      wrapService(async (targetIRI: string) => {
-        const iFile = resolveIFile(app, targetIRI, vaultAdapter);
-        const metadata =
-          (vaultAdapter.getFrontmatter(iFile) as Record<string, unknown>) ?? {};
-        await renameToUidService.renameToUid(iFile, metadata);
-      }),
+      createRenameToUidService(vaultAdapter, renameToUidService, targetResolver),
     );
 
     registry.register(
       "repairFolder",
-      wrapService(async (targetIRI: string) => {
-        const iFile = resolveIFile(app, targetIRI, vaultAdapter);
-        const metadata =
-          (vaultAdapter.getFrontmatter(iFile) as Record<string, unknown>) ?? {};
-        const expectedFolder = await folderRepairService.getExpectedFolder(
-          iFile,
-          metadata,
-        );
-        if (expectedFolder === null) {
-          throw new Error(
-            "repairFolder: cannot determine expected folder (missing exo__Asset_isDefinedBy or referenced asset not found)",
-          );
-        }
-        const currentFolder = iFile.parent?.path ?? "";
-        if (currentFolder === expectedFolder) {
-          return;
-        }
-        await folderRepairService.repairFolder(iFile, expectedFolder);
-      }),
+      createRepairFolderService(
+        vaultAdapter,
+        folderRepairService,
+        targetResolver,
+      ),
     );
 
     registry.register(

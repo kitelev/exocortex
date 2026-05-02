@@ -21,6 +21,7 @@
     "@codemirror/view": "^6.38.1",
     "@tanstack/react-query": "^5.90.12",
     "@tanstack/react-virtual": "^3.13.13",
+    "@kitelev/exocortex-services": "*",
     "exocortex": "*",
     "obsidian": "latest",
     "react": "^19.2.3",

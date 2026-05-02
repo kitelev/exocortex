@@ -36,6 +36,7 @@ module.exports = {
   ],
   moduleNameMapper: {
     "^exocortex$": "<rootDir>/../exocortex/src/index.ts",
+    "^@kitelev/exocortex-services$": "<rootDir>/../services/src/index.ts",
     "^@plugin/types$": "<rootDir>/src/types/index.ts",
     "^@plugin/types/(.*)$": "<rootDir>/src/types/$1",
     "^@plugin/adapters/(.*)$": "<rootDir>/src/adapters/$1",
@@ -123,6 +124,7 @@ module.exports = {
           isolatedModules: true,
           paths: {
             "exocortex": ["<rootDir>/../exocortex/src/index.ts"],
+            "@kitelev/exocortex-services": ["<rootDir>/../services/src/index.ts"],
             "@plugin/types": ["<rootDir>/src/types/index.ts"],
             "@plugin/types/*": ["<rootDir>/src/types/*"],
             "@plugin/adapters/*": ["<rootDir>/src/adapters/*"],
