@@ -787,6 +787,133 @@ describe("dynamic-command CLI", () => {
       consoleSpy.mockRestore();
     });
 
+    // RFC 94e520da § Phase 2 — T2.3 explicit per-shape coverage for `dyncommand validate`.
+    // List-side coverage shipped in T2.1 (#3022 mixed) + T2.2 (#3026 UUID+alias).
+    // Validate-side previously covered only the label-only shape — these cases lock in
+    // the dual-format `hasClass` reverse index for the `validate` codepath as well.
+    describe.each([
+      {
+        shape: "UUID-only",
+        commandClass: '"[[790e5b16-251d-4556-96ac-e5c7f1429b2e]]"',
+        groundingClass: '"[[11579feb-2e42-491c-af59-b89b1129a539]]"',
+      },
+      {
+        shape: "label-only",
+        commandClass: "exocmd__Command",
+        groundingClass: "exocmd__Grounding",
+      },
+      {
+        shape: "mixed (cmd UUID-wikilink, grounding label)",
+        commandClass: '"[[790e5b16-251d-4556-96ac-e5c7f1429b2e]]"',
+        groundingClass: "exocmd__Grounding",
+      },
+    ])(
+      "vault shape: $shape (RFC Phase 2 T2.3)",
+      ({ commandClass, groundingClass }) => {
+        const cmdClassFm = [
+          "exo__Asset_uid: 790e5b16-251d-4556-96ac-e5c7f1429b2e",
+          'exo__Asset_label: "exocmd__Command"',
+        ].join("\n");
+        const gndClassFm = [
+          "exo__Asset_uid: 11579feb-2e42-491c-af59-b89b1129a539",
+          'exo__Asset_label: "exocmd__Grounding"',
+        ].join("\n");
+
+        it("validates a well-formed command + grounding pair", async () => {
+          const commandFm = [
+            `exo__Instance_class: ${commandClass}`,
+            "exo__Asset_uid: cmd-shape",
+            "exo__Asset_label: Shape Command",
+            "exocmd__Command_grounding: [[gnd-shape]]",
+          ].join("\n");
+
+          const groundingFm = [
+            `exo__Instance_class: ${groundingClass}`,
+            "exo__Asset_uid: gnd-shape",
+            "exo__Asset_label: Shape Grounding",
+            "exocmd__Grounding_type: property_set",
+            "exocmd__Grounding_targetProperty: ems__Effort_startTimestamp",
+            "exocmd__Grounding_targetValue: $now",
+          ].join("\n");
+
+          const bindingFm = [
+            "exo__Instance_class: exocmd__CommandBinding",
+            "exo__Asset_uid: bind-shape",
+            "exocmd__CommandBinding_command: [[cmd-shape]]",
+          ].join("\n");
+
+          mockReaddirSync.mockImplementation((dir: string) => {
+            if (dir.endsWith("/vault")) {
+              return [
+                { name: "cmd-class.md", isDirectory: () => false },
+                { name: "gnd-class.md", isDirectory: () => false },
+                { name: "cmd.md", isDirectory: () => false },
+                { name: "gnd.md", isDirectory: () => false },
+                { name: "bind.md", isDirectory: () => false },
+              ];
+            }
+            return [];
+          });
+
+          mockReadFileSync.mockImplementation((path: string) => {
+            if (path.endsWith("/cmd-class.md")) return `---\n${cmdClassFm}\n---\n`;
+            if (path.endsWith("/gnd-class.md")) return `---\n${gndClassFm}\n---\n`;
+            if (path.endsWith("/cmd.md")) return `---\n${commandFm}\n---\n`;
+            if (path.endsWith("/gnd.md")) return `---\n${groundingFm}\n---\n`;
+            if (path.endsWith("/bind.md")) return `---\n${bindingFm}\n---\n`;
+            return "";
+          });
+
+          const consoleSpy = jest.spyOn(console, "log").mockImplementation(() => {});
+
+          const cmd = dynamicCommandCommand();
+          const valCmd = cmd.commands.find((c: any) => c.name() === "validate");
+          await valCmd.parseAsync(["--vault", "/vault"], { from: "user" });
+
+          const output = consoleSpy.mock.calls.map((c: any) => c[0]).join("\n");
+          expect(output).toContain("valid");
+          expect(output).not.toContain("Missing");
+
+          consoleSpy.mockRestore();
+        });
+
+        it("flags a command with missing grounding link", async () => {
+          const commandFm = [
+            `exo__Instance_class: ${commandClass}`,
+            "exo__Asset_uid: cmd-broken-shape",
+            "exo__Asset_label: Broken Shape Command",
+          ].join("\n");
+
+          mockReaddirSync.mockImplementation((dir: string) => {
+            if (dir.endsWith("/vault")) {
+              return [
+                { name: "cmd-class.md", isDirectory: () => false },
+                { name: "broken.md", isDirectory: () => false },
+              ];
+            }
+            return [];
+          });
+
+          mockReadFileSync.mockImplementation((path: string) => {
+            if (path.endsWith("/cmd-class.md")) return `---\n${cmdClassFm}\n---\n`;
+            if (path.endsWith("/broken.md")) return `---\n${commandFm}\n---\n`;
+            return "";
+          });
+
+          const consoleSpy = jest.spyOn(console, "log").mockImplementation(() => {});
+
+          const cmd = dynamicCommandCommand();
+          const valCmd = cmd.commands.find((c: any) => c.name() === "validate");
+          await valCmd.parseAsync(["--vault", "/vault"], { from: "user" });
+
+          const output = consoleSpy.mock.calls.map((c: any) => c[0]).join("\n");
+          expect(output).toContain("Missing exocmd__Command_grounding");
+
+          consoleSpy.mockRestore();
+        });
+      },
+    );
+
     it("should report missing serviceId in service_call grounding", async () => {
       const commandFm = [
         "exo__Instance_class: exocmd__Command",
