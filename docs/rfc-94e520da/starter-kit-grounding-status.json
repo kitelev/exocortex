@@ -1,0 +1,426 @@
+{
+  "summary": {
+    "rfc": "94e520da",
+    "phase": 1,
+    "task": "T1.5",
+    "auditedAt": "2026-05-02T12:24:40.767Z",
+    "starterKitPath": "/Users/kitelev/Developer/exocortex-development/exocortex-starter-kit",
+    "totalGroundings": 48,
+    "byType": {
+      "property_delete": 4,
+      "service_call": 25,
+      "create_instance": 1,
+      "property_set": 16,
+      "composite": 2
+    },
+    "byCliStatus": {
+      "real": 38,
+      "unregistered": 7,
+      "stub": 3
+    },
+    "serviceIdCounts": {
+      "updateProperty": 7,
+      "createRelatedTask": 1,
+      "createTaskForDailyNote": 1,
+      "createRelatedProject": 1,
+      "createAsset": 3,
+      "renameToUid": 1,
+      "fixMissingLabel": 1,
+      "cleanProperties": 1,
+      "repairFolder": 1,
+      "archiveAsset": 1,
+      "rollbackStatus": 1,
+      "copyLabelToAliases": 1,
+      "shiftDay": 2,
+      "planOnToday": 1,
+      "incrementVotes": 1,
+      "planForEvening": 1
+    }
+  },
+  "groundings": [
+    {
+      "uid": "58714ab2-c155-47d8-a8bb-38da317817ad",
+      "label": "Remove start timestamp",
+      "path": "exocmd/58714ab2-c155-47d8-a8bb-38da317817ad.md",
+      "type": "property_delete",
+      "serviceId": null,
+      "cliStatus": "real"
+    },
+    {
+      "uid": "30b9e8d8-bc55-492d-80fa-82f01ed19a45",
+      "label": "Link to parent",
+      "path": "exocmd/creation/30b9e8d8-bc55-492d-80fa-82f01ed19a45.md",
+      "type": "service_call",
+      "serviceId": "updateProperty",
+      "cliStatus": "real"
+    },
+    {
+      "uid": "4919afb1-fcc3-4a6e-85a0-a869e6a69774",
+      "label": "Create related task via service",
+      "path": "exocmd/creation/4919afb1-fcc3-4a6e-85a0-a869e6a69774.md",
+      "type": "service_call",
+      "serviceId": "createRelatedTask",
+      "cliStatus": "real"
+    },
+    {
+      "uid": "4d8d5055-cf83-4d12-8749-7c0f6956d9be",
+      "label": "Create task for daily note via service",
+      "path": "exocmd/creation/4d8d5055-cf83-4d12-8749-7c0f6956d9be.md",
+      "type": "service_call",
+      "serviceId": "createTaskForDailyNote",
+      "cliStatus": "unregistered"
+    },
+    {
+      "uid": "8748f8b0-989b-45a0-88a9-155bc5126f3c",
+      "label": "Create project",
+      "path": "exocmd/creation/8748f8b0-989b-45a0-88a9-155bc5126f3c.md",
+      "type": "service_call",
+      "serviceId": "createRelatedProject",
+      "cliStatus": "real"
+    },
+    {
+      "uid": "95aaab51-8cd5-42db-a207-42793864d133",
+      "label": "Create knowledge",
+      "path": "exocmd/creation/95aaab51-8cd5-42db-a207-42793864d133.md",
+      "type": "service_call",
+      "serviceId": "createAsset",
+      "cliStatus": "stub"
+    },
+    {
+      "uid": "a222094b-f499-4342-aec0-65c4ba99c657",
+      "label": "Create task",
+      "path": "exocmd/creation/a222094b-f499-4342-aec0-65c4ba99c657.md",
+      "type": "service_call",
+      "serviceId": "createAsset",
+      "cliStatus": "stub"
+    },
+    {
+      "uid": "abdbdf09-8712-4c11-8cbe-467f46091294",
+      "label": "Convert to task",
+      "path": "exocmd/creation/abdbdf09-8712-4c11-8cbe-467f46091294.md",
+      "type": "service_call",
+      "serviceId": "updateProperty",
+      "cliStatus": "real"
+    },
+    {
+      "uid": "c84e2e08-8fb9-42e7-9112-11864fb13a09",
+      "label": "Create note",
+      "path": "exocmd/creation/c84e2e08-8fb9-42e7-9112-11864fb13a09.md",
+      "type": "service_call",
+      "serviceId": "createAsset",
+      "cliStatus": "stub"
+    },
+    {
+      "uid": "e72a5fa1-a902-4508-b671-bde8a1461a02",
+      "label": "Create Area via service",
+      "path": "exocmd/creation/e72a5fa1-a902-4508-b671-bde8a1461a02.md",
+      "type": "create_instance",
+      "serviceId": null,
+      "cliStatus": "real"
+    },
+    {
+      "uid": "e8c1d18a-f622-41b4-89e7-9a3be33a96d7",
+      "label": "Convert to project",
+      "path": "exocmd/creation/e8c1d18a-f622-41b4-89e7-9a3be33a96d7.md",
+      "type": "service_call",
+      "serviceId": "updateProperty",
+      "cliStatus": "real"
+    },
+    {
+      "uid": "023596ba-3ea1-4d3c-aaf5-5589c8a4f7f5",
+      "label": "Set zone to Today",
+      "path": "exocmd/criticality/023596ba-3ea1-4d3c-aaf5-5589c8a4f7f5.md",
+      "type": "property_set",
+      "serviceId": null,
+      "cliStatus": "real"
+    },
+    {
+      "uid": "6d78a3a4-401a-4fb9-8b44-48c6530eef62",
+      "label": "Set zone to This Week",
+      "path": "exocmd/criticality/6d78a3a4-401a-4fb9-8b44-48c6530eef62.md",
+      "type": "property_set",
+      "serviceId": null,
+      "cliStatus": "real"
+    },
+    {
+      "uid": "dc39bd9e-77b8-4ecf-b38f-f35795540dd9",
+      "label": "Set zone to Someday",
+      "path": "exocmd/criticality/dc39bd9e-77b8-4ecf-b38f-f35795540dd9.md",
+      "type": "property_set",
+      "serviceId": null,
+      "cliStatus": "real"
+    },
+    {
+      "uid": "bf4772d7-9f5c-401e-9ac6-8f9e240a5928",
+      "label": "Rename to UID via service",
+      "path": "exocmd/maintenance-complex/bf4772d7-9f5c-401e-9ac6-8f9e240a5928.md",
+      "type": "service_call",
+      "serviceId": "renameToUid",
+      "cliStatus": "real"
+    },
+    {
+      "uid": "cd98b4de-3c04-4d05-9715-7335ffb61630",
+      "label": "Fix missing label via service",
+      "path": "exocmd/maintenance-complex/cd98b4de-3c04-4d05-9715-7335ffb61630.md",
+      "type": "service_call",
+      "serviceId": "fixMissingLabel",
+      "cliStatus": "real"
+    },
+    {
+      "uid": "de7914fb-3f56-4278-81f1-6c23345553f0",
+      "label": "Clean properties via service",
+      "path": "exocmd/maintenance-complex/de7914fb-3f56-4278-81f1-6c23345553f0.md",
+      "type": "service_call",
+      "serviceId": "cleanProperties",
+      "cliStatus": "real"
+    },
+    {
+      "uid": "e7189a73-fa97-45ad-b9e9-bd68a0feee10",
+      "label": "Repair folder via service",
+      "path": "exocmd/maintenance-complex/e7189a73-fa97-45ad-b9e9-bd68a0feee10.md",
+      "type": "service_call",
+      "serviceId": "repairFolder",
+      "cliStatus": "real"
+    },
+    {
+      "uid": "eb3bb751-596b-48f8-b834-7a9e680dabbe",
+      "label": "Archive asset via service",
+      "path": "exocmd/maintenance-complex/eb3bb751-596b-48f8-b834-7a9e680dabbe.md",
+      "type": "service_call",
+      "serviceId": "archiveAsset",
+      "cliStatus": "real"
+    },
+    {
+      "uid": "eba11892-6e8d-4e38-b5e4-d50dd006e6d8",
+      "label": "Rollback status via service",
+      "path": "exocmd/maintenance-complex/eba11892-6e8d-4e38-b5e4-d50dd006e6d8.md",
+      "type": "service_call",
+      "serviceId": "rollbackStatus",
+      "cliStatus": "unregistered"
+    },
+    {
+      "uid": "1a14832c-f657-4816-b2aa-d06f2a80fccf",
+      "label": "Delete start timestamp",
+      "path": "exocmd/maintenance/1a14832c-f657-4816-b2aa-d06f2a80fccf.md",
+      "type": "property_delete",
+      "serviceId": null,
+      "cliStatus": "real"
+    },
+    {
+      "uid": "2c53ea68-8247-4ea8-870e-3bfbf2256b2f",
+      "label": "Delete end timestamp",
+      "path": "exocmd/maintenance/2c53ea68-8247-4ea8-870e-3bfbf2256b2f.md",
+      "type": "property_delete",
+      "serviceId": null,
+      "cliStatus": "real"
+    },
+    {
+      "uid": "a85668fa-17b7-45d0-aa7f-935e2502dff0",
+      "label": "Copy label to aliases via service",
+      "path": "exocmd/maintenance/a85668fa-17b7-45d0-aa7f-935e2502dff0.md",
+      "type": "service_call",
+      "serviceId": "copyLabelToAliases",
+      "cliStatus": "unregistered"
+    },
+    {
+      "uid": "c4616dcd-3832-4812-b289-0968510fb8be",
+      "label": "Set result value",
+      "path": "exocmd/maintenance/c4616dcd-3832-4812-b289-0968510fb8be.md",
+      "type": "service_call",
+      "serviceId": "updateProperty",
+      "cliStatus": "real"
+    },
+    {
+      "uid": "0b104d75-3ed5-44c5-ab04-cffb26e2578a",
+      "label": "Shift day forward via service",
+      "path": "exocmd/planning/0b104d75-3ed5-44c5-ab04-cffb26e2578a.md",
+      "type": "service_call",
+      "serviceId": "shiftDay",
+      "cliStatus": "unregistered"
+    },
+    {
+      "uid": "22a6ba6b-030a-47e4-946e-1a30dc9450e5",
+      "label": "Plan on today via service",
+      "path": "exocmd/planning/22a6ba6b-030a-47e4-946e-1a30dc9450e5.md",
+      "type": "service_call",
+      "serviceId": "planOnToday",
+      "cliStatus": "unregistered"
+    },
+    {
+      "uid": "4ffd02e9-f0a6-477d-846e-6364b8b4d528",
+      "label": "Remove scheduled date",
+      "path": "exocmd/planning/4ffd02e9-f0a6-477d-846e-6364b8b4d528.md",
+      "type": "property_delete",
+      "serviceId": null,
+      "cliStatus": "real"
+    },
+    {
+      "uid": "506f031e-007f-4c74-8257-158550c64956",
+      "label": "Increment votes via service",
+      "path": "exocmd/planning/506f031e-007f-4c74-8257-158550c64956.md",
+      "type": "service_call",
+      "serviceId": "incrementVotes",
+      "cliStatus": "unregistered"
+    },
+    {
+      "uid": "6ee56341-966c-4791-8eb3-7a75104b2e5b",
+      "label": "Shift day backward via service",
+      "path": "exocmd/planning/6ee56341-966c-4791-8eb3-7a75104b2e5b.md",
+      "type": "service_call",
+      "serviceId": "shiftDay",
+      "cliStatus": "unregistered"
+    },
+    {
+      "uid": "85687461-c2df-4d1b-819b-0c3ae0ab3741",
+      "label": "Set planned start timestamp",
+      "path": "exocmd/planning/85687461-c2df-4d1b-819b-0c3ae0ab3741.md",
+      "type": "service_call",
+      "serviceId": "updateProperty",
+      "cliStatus": "real"
+    },
+    {
+      "uid": "afda78d9-88e1-4590-8ce8-2c664d6359d3",
+      "label": "Set planned end timestamp",
+      "path": "exocmd/planning/afda78d9-88e1-4590-8ce8-2c664d6359d3.md",
+      "type": "service_call",
+      "serviceId": "updateProperty",
+      "cliStatus": "real"
+    },
+    {
+      "uid": "d222ddaf-0a56-4bac-91e3-6af02fafebc8",
+      "label": "Set scheduled date",
+      "path": "exocmd/planning/d222ddaf-0a56-4bac-91e3-6af02fafebc8.md",
+      "type": "service_call",
+      "serviceId": "updateProperty",
+      "cliStatus": "real"
+    },
+    {
+      "uid": "f8893042-77ed-4241-959e-e360a4858759",
+      "label": "Plan for evening via service",
+      "path": "exocmd/planning/f8893042-77ed-4241-959e-e360a4858759.md",
+      "type": "service_call",
+      "serviceId": "planForEvening",
+      "cliStatus": "real"
+    },
+    {
+      "uid": "21e534ee-afe7-464f-8d96-6142660e965b",
+      "label": "Set status to Draft",
+      "path": "exocmd/status/21e534ee-afe7-464f-8d96-6142660e965b.md",
+      "type": "property_set",
+      "serviceId": null,
+      "cliStatus": "real"
+    },
+    {
+      "uid": "23727560-5f6b-4c49-9b33-eea34c7eec9e",
+      "label": "Transition to Doing (status + startTimestamp)",
+      "path": "exocmd/status/23727560-5f6b-4c49-9b33-eea34c7eec9e.md",
+      "type": "composite",
+      "serviceId": null,
+      "cliStatus": "real"
+    },
+    {
+      "uid": "53c228c8-c169-4345-a893-9c4dd005949c",
+      "label": "Set status to Review",
+      "path": "exocmd/status/53c228c8-c169-4345-a893-9c4dd005949c.md",
+      "type": "property_set",
+      "serviceId": null,
+      "cliStatus": "real"
+    },
+    {
+      "uid": "54bd588f-e5f2-4fbf-b6da-64b54a9a3ee4",
+      "label": "Set status to ToDo",
+      "path": "exocmd/status/54bd588f-e5f2-4fbf-b6da-64b54a9a3ee4.md",
+      "type": "property_set",
+      "serviceId": null,
+      "cliStatus": "real"
+    },
+    {
+      "uid": "584f7e07-d485-4d85-9be6-23b2bf3f19af",
+      "label": "Set ems__Effort_endTimestamp to $nowLocal",
+      "path": "exocmd/status/584f7e07-d485-4d85-9be6-23b2bf3f19af.md",
+      "type": "property_set",
+      "serviceId": null,
+      "cliStatus": "real"
+    },
+    {
+      "uid": "735a7c95-a5ea-4870-97e5-bb13bc167fc1",
+      "label": "Set status to Waiting",
+      "path": "exocmd/status/735a7c95-a5ea-4870-97e5-bb13bc167fc1.md",
+      "type": "property_set",
+      "serviceId": null,
+      "cliStatus": "real"
+    },
+    {
+      "uid": "73ec8312-4675-41d9-9fa1-33455d983880",
+      "label": "Set ems__Effort_resolutionTimestamp to $nowLocal",
+      "path": "exocmd/status/73ec8312-4675-41d9-9fa1-33455d983880.md",
+      "type": "property_set",
+      "serviceId": null,
+      "cliStatus": "real"
+    },
+    {
+      "uid": "95dfbcad-daca-47aa-8788-74e09f6b10a1",
+      "label": "Set ems__Effort_startTimestamp to $nowLocal",
+      "path": "exocmd/status/95dfbcad-daca-47aa-8788-74e09f6b10a1.md",
+      "type": "property_set",
+      "serviceId": null,
+      "cliStatus": "real"
+    },
+    {
+      "uid": "bdf3c81f-3531-48a8-a680-eaf5543ea042",
+      "label": "Set status to Done",
+      "path": "exocmd/status/bdf3c81f-3531-48a8-a680-eaf5543ea042.md",
+      "type": "property_set",
+      "serviceId": null,
+      "cliStatus": "real"
+    },
+    {
+      "uid": "cce66b76-9ca5-4954-85b0-6d549855ed2a",
+      "label": "Set status to Analysis",
+      "path": "exocmd/status/cce66b76-9ca5-4954-85b0-6d549855ed2a.md",
+      "type": "property_set",
+      "serviceId": null,
+      "cliStatus": "real"
+    },
+    {
+      "uid": "cfd2d68a-49cc-4a9f-9231-abd3dece59fb",
+      "label": "Set status to Backlog",
+      "path": "exocmd/status/cfd2d68a-49cc-4a9f-9231-abd3dece59fb.md",
+      "type": "property_set",
+      "serviceId": null,
+      "cliStatus": "real"
+    },
+    {
+      "uid": "d5deac7a-149d-43a1-b249-875d91834b60",
+      "label": "Set status to Doing",
+      "path": "exocmd/status/d5deac7a-149d-43a1-b249-875d91834b60.md",
+      "type": "property_set",
+      "serviceId": null,
+      "cliStatus": "real"
+    },
+    {
+      "uid": "ef1d12dc-6a65-4f1d-b7f5-d5c5367d9633",
+      "label": "Set status to Blocked",
+      "path": "exocmd/status/ef1d12dc-6a65-4f1d-b7f5-d5c5367d9633.md",
+      "type": "property_set",
+      "serviceId": null,
+      "cliStatus": "real"
+    },
+    {
+      "uid": "f32de9a1-f62b-4406-8610-31af5003ba29",
+      "label": "Set status to Cancelled",
+      "path": "exocmd/status/f32de9a1-f62b-4406-8610-31af5003ba29.md",
+      "type": "property_set",
+      "serviceId": null,
+      "cliStatus": "real"
+    },
+    {
+      "uid": "f9e23c9e-174b-456c-a2f0-c11f811a7ee6",
+      "label": "Transition to Done (status + end + resolution)",
+      "path": "exocmd/status/f9e23c9e-174b-456c-a2f0-c11f811a7ee6.md",
+      "type": "composite",
+      "serviceId": null,
+      "cliStatus": "real"
+    }
+  ]
+}
