@@ -2,9 +2,9 @@ import * as os from 'os';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as net from 'net';
-import { ValidatorDaemon } from '../../src/services/ValidatorDaemon';
-import type { DaemonRequest, DaemonResponse } from '../../src/services/ValidatorDaemon';
-import type { ShapeJSONCache } from '../../src/services/ShapeLoader';
+import { ValidatorDaemon, IDLE_TIMEOUT_MS } from '../../src/services/ValidatorDaemon';
+import { DaemonRequest, DaemonResponse } from '../../src/services/ValidatorDaemon';
+import { ShapeJSONCache } from '../../src/services/ShapeLoader';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -189,5 +189,66 @@ describe('ValidatorDaemon', () => {
 
       expect(p95).toBeLessThan(30);
     }, 15_000);
+  });
+
+  describe('idle-kill', () => {
+    it('IDLE_TIMEOUT_MS constant is 5 minutes', () => {
+      expect(IDLE_TIMEOUT_MS).toBe(5 * 60 * 1000);
+    });
+
+    it('idle timer fires process.exit after short timeout', async () => {
+      const socketPath = makeSocketPath();
+      const daemon = new ValidatorDaemon(socketPath, 50);
+      await daemon.start();
+
+      const exitSpy = jest.spyOn(process, 'exit').mockImplementation((() => {}) as never);
+      try {
+        await new Promise<void>((resolve) => setTimeout(resolve, 120));
+        expect(exitSpy).toHaveBeenCalledWith(0);
+      } finally {
+        exitSpy.mockRestore();
+        await daemon.stop();
+      }
+    });
+
+    it('idle timer resets on each request', async () => {
+      const socketPath = makeSocketPath();
+      const daemon = new ValidatorDaemon(socketPath, 150);
+      await daemon.start();
+
+      const exitSpy = jest.spyOn(process, 'exit').mockImplementation((() => {}) as never);
+      try {
+        const req: DaemonRequest = { triples: [], registryPath };
+
+        // Send request at t=0, t=100 — each resets the 150ms timer
+        await sendRequest(socketPath, req);
+        await new Promise<void>((resolve) => setTimeout(resolve, 100));
+        await sendRequest(socketPath, req);
+        // At t=100 the timer was reset; wait only 80ms — should NOT fire yet
+        await new Promise<void>((resolve) => setTimeout(resolve, 80));
+        expect(exitSpy).not.toHaveBeenCalled();
+        // Wait past the 150ms window without further requests — timer fires
+        await new Promise<void>((resolve) => setTimeout(resolve, 120));
+        expect(exitSpy).toHaveBeenCalledWith(0);
+      } finally {
+        exitSpy.mockRestore();
+        await daemon.stop();
+      }
+    });
+
+    it('stop() cancels idle timer', async () => {
+      const socketPath = makeSocketPath();
+      const daemon = new ValidatorDaemon(socketPath, 50);
+      await daemon.start();
+
+      const exitSpy = jest.spyOn(process, 'exit').mockImplementation((() => {}) as never);
+      try {
+        await daemon.stop();
+        await new Promise<void>((resolve) => setTimeout(resolve, 100));
+        expect(exitSpy).not.toHaveBeenCalled();
+      } finally {
+        exitSpy.mockRestore();
+      }
+    });
   });
 });

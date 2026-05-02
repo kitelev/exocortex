@@ -33,10 +33,10 @@ export class ShapeLoader {
    * builds ShapeRegistry from their frontmatter.
    */
   static async loadFromVaultFS(vaultPath: string): Promise<ShapeRegistry> {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports, import/no-nodejs-modules
-    const { readdir, readFile } = require("fs/promises") as typeof import("fs/promises");
-    // eslint-disable-next-line @typescript-eslint/no-require-imports, import/no-nodejs-modules
-    const path = require("path") as typeof import("path");
+    // eslint-disable-next-line import/no-nodejs-modules
+    const { readdir, readFile } = await import("fs/promises");
+    // eslint-disable-next-line import/no-nodejs-modules
+    const path = await import("path");
     const registry = new ShapeRegistry();
     await ShapeLoader.scanDir(vaultPath, registry, { readdir, readFile, path });
     return registry;
@@ -119,8 +119,8 @@ export class ShapeLoader {
    * Format: ShapeJSONCache — see RFC 82a72aca §"Cached shape format".
    */
   static async loadFromShapeJSON(jsonPath: string): Promise<ShapeRegistry> {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports, import/no-nodejs-modules
-    const { readFile } = require("fs/promises") as typeof import("fs/promises");
+    // eslint-disable-next-line import/no-nodejs-modules
+    const { readFile } = await import("fs/promises");
     const raw = await readFile(jsonPath, "utf-8");
     const cache: ShapeJSONCache = JSON.parse(raw) as ShapeJSONCache;
     const registry = new ShapeRegistry();
