@@ -23,23 +23,38 @@ import type {
  * access goes through `IVaultAdapter`, so plugin (Obsidian) and CLI (Node fs)
  * runtimes produce byte-identical state changes for the same input.
  *
- * RFC 94e520da Phase 1, T1.2 (`@kitelev/exocortex-services` package).
+ * Target-IRI → IFile resolution is delegated to the optional
+ * `ITargetResolver` parameter. CLI runtime keeps the historical
+ * path-based default (`getAbstractFileByPath(`${IRI}.md`)`); the Obsidian
+ * plugin (T1.3) injects an Obsidian-aware resolver that scans
+ * `metadataCache` for `exo__Asset_uid` / `@id` matches and decodes
+ * `obsidian://vault/...` URIs.
+ *
+ * RFC 94e520da Phase 1, T1.2 (factories) + T1.3 (plugin migration).
  */
 
-function resolveTargetFile(
+export interface ITargetResolver {
+  resolveFile(targetIRI: string): IFile;
+}
+
+export function createPathBasedTargetResolver(
   vaultAdapter: IVaultAdapter,
-  targetIRI: string,
-): IFile {
-  const candidate = vaultAdapter.getAbstractFileByPath(`${targetIRI}.md`);
-  if (!candidate || !("basename" in candidate)) {
-    throw new Error(`Cannot resolve target file for IRI: ${targetIRI}`);
-  }
-  return candidate as IFile;
+): ITargetResolver {
+  return {
+    resolveFile(targetIRI: string): IFile {
+      const candidate = vaultAdapter.getAbstractFileByPath(`${targetIRI}.md`);
+      if (!candidate || !("basename" in candidate)) {
+        throw new Error(`Cannot resolve target file for IRI: ${targetIRI}`);
+      }
+      return candidate as IFile;
+    },
+  };
 }
 
 export function createCreateRelatedTaskService(
   vaultAdapter: IVaultAdapter,
   genericAssetCreationService: GenericAssetCreationService,
+  resolver: ITargetResolver = createPathBasedTargetResolver(vaultAdapter),
 ): IGroundingService {
   return {
     async execute(targetIRI: string, userInput?: UserInput): Promise<void> {
@@ -48,7 +63,7 @@ export function createCreateRelatedTaskService(
         throw new Error("createRelatedTask requires userInput.label");
       }
 
-      const parentFile = resolveTargetFile(vaultAdapter, targetIRI);
+      const parentFile = resolver.resolveFile(targetIRI);
       const parentMetadata =
         (vaultAdapter.getFrontmatter(parentFile) as Record<string, unknown>) ??
         {};
@@ -80,6 +95,7 @@ export function createCreateRelatedTaskService(
 export function createCreateRelatedProjectService(
   vaultAdapter: IVaultAdapter,
   genericAssetCreationService: GenericAssetCreationService,
+  resolver: ITargetResolver = createPathBasedTargetResolver(vaultAdapter),
 ): IGroundingService {
   return {
     async execute(targetIRI: string, userInput?: UserInput): Promise<void> {
@@ -88,7 +104,7 @@ export function createCreateRelatedProjectService(
         throw new Error("createRelatedProject requires userInput.label");
       }
 
-      const parentFile = resolveTargetFile(vaultAdapter, targetIRI);
+      const parentFile = resolver.resolveFile(targetIRI);
       const parentMetadata =
         (vaultAdapter.getFrontmatter(parentFile) as Record<string, unknown>) ??
         {};
@@ -120,10 +136,11 @@ export function createCreateRelatedProjectService(
 export function createArchiveAssetService(
   vaultAdapter: IVaultAdapter,
   archiveAssetService: ArchiveAssetService,
+  resolver: ITargetResolver = createPathBasedTargetResolver(vaultAdapter),
 ): IGroundingService {
   return {
     async execute(targetIRI: string): Promise<void> {
-      const targetFile = resolveTargetFile(vaultAdapter, targetIRI);
+      const targetFile = resolver.resolveFile(targetIRI);
       await archiveAssetService.archiveAsset(targetFile);
     },
   };
@@ -132,10 +149,11 @@ export function createArchiveAssetService(
 export function createCleanPropertiesService(
   vaultAdapter: IVaultAdapter,
   propertyCleanupService: PropertyCleanupService,
+  resolver: ITargetResolver = createPathBasedTargetResolver(vaultAdapter),
 ): IGroundingService {
   return {
     async execute(targetIRI: string): Promise<void> {
-      const targetFile = resolveTargetFile(vaultAdapter, targetIRI);
+      const targetFile = resolver.resolveFile(targetIRI);
       await propertyCleanupService.cleanEmptyProperties(targetFile);
     },
   };
@@ -144,10 +162,11 @@ export function createCleanPropertiesService(
 export function createFixMissingLabelService(
   vaultAdapter: IVaultAdapter,
   fixMissingLabelService: FixMissingLabelService,
+  resolver: ITargetResolver = createPathBasedTargetResolver(vaultAdapter),
 ): IGroundingService {
   return {
     async execute(targetIRI: string): Promise<void> {
-      const targetFile = resolveTargetFile(vaultAdapter, targetIRI);
+      const targetFile = resolver.resolveFile(targetIRI);
       await fixMissingLabelService.fixMissingLabel(targetFile);
     },
   };
@@ -156,10 +175,11 @@ export function createFixMissingLabelService(
 export function createRenameToUidService(
   vaultAdapter: IVaultAdapter,
   renameToUidService: RenameToUidService,
+  resolver: ITargetResolver = createPathBasedTargetResolver(vaultAdapter),
 ): IGroundingService {
   return {
     async execute(targetIRI: string): Promise<void> {
-      const targetFile = resolveTargetFile(vaultAdapter, targetIRI);
+      const targetFile = resolver.resolveFile(targetIRI);
       const metadata =
         (vaultAdapter.getFrontmatter(targetFile) as Record<string, unknown>) ??
         {};
@@ -171,10 +191,11 @@ export function createRenameToUidService(
 export function createRepairFolderService(
   vaultAdapter: IVaultAdapter,
   folderRepairService: FolderRepairService,
+  resolver: ITargetResolver = createPathBasedTargetResolver(vaultAdapter),
 ): IGroundingService {
   return {
     async execute(targetIRI: string): Promise<void> {
-      const targetFile = resolveTargetFile(vaultAdapter, targetIRI);
+      const targetFile = resolver.resolveFile(targetIRI);
       const metadata =
         (vaultAdapter.getFrontmatter(targetFile) as Record<string, unknown>) ??
         {};
@@ -199,10 +220,11 @@ export function createRepairFolderService(
 export function createPlanForEveningService(
   vaultAdapter: IVaultAdapter,
   taskStatusService: TaskStatusService,
+  resolver: ITargetResolver = createPathBasedTargetResolver(vaultAdapter),
 ): IGroundingService {
   return {
     async execute(targetIRI: string): Promise<void> {
-      const targetFile = resolveTargetFile(vaultAdapter, targetIRI);
+      const targetFile = resolver.resolveFile(targetIRI);
       await taskStatusService.planForEvening(targetFile);
     },
   };
