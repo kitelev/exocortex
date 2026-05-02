@@ -10,6 +10,21 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
   /** UUID (lowercase) → relative filepath mapping for O(1) lookups */
   private uuidIndex: Map<string, string> | null = null;
 
+  /**
+   * Lower-cased basename → relative filepath. Mirrors Obsidian's
+   * metadataCache basename-aware wikilink resolution across the vault.
+   */
+  private basenameIndex: Map<string, string> | null = null;
+
+  /**
+   * Lower-cased frontmatter alias → relative filepath. Required for
+   * CLI ↔ plugin triple parity (RFC-027 Phase 3): wikilinks like
+   * `[[ems__EffortStatusBacklog]]` must resolve to the file that has
+   * `aliases: [ems__EffortStatusBacklog]`, just like Obsidian's
+   * metadataCache.getFirstLinkpathDest does.
+   */
+  private aliasIndex: Map<string, string> | null = null;
+
   constructor(private rootPath: string) {}
 
   async read(file: IFile): Promise<string> {
@@ -163,7 +178,80 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
       return this.createFileObject(relativePath);
     }
 
+    // Step 4: Fall back to basename / frontmatter-alias index lookup so
+    // wikilinks like [[ems__EffortStatusBacklog]] resolve to the file that
+    // declares it as a basename or alias, matching Obsidian's behavior.
+    if (this.basenameIndex === null || this.aliasIndex === null) {
+      this.buildLinkpathIndex();
+    }
+
+    const linkKey = cleanLinkpath.toLowerCase();
+    const basenameMatch = this.basenameIndex!.get(linkKey);
+    if (basenameMatch) {
+      return this.createFileObject(basenameMatch);
+    }
+
+    const aliasMatch = this.aliasIndex!.get(linkKey);
+    if (aliasMatch) {
+      return this.createFileObject(aliasMatch);
+    }
+
     return null;
+  }
+
+  /**
+   * Build basename- and alias-to-filepath indexes by scanning the vault
+   * once. Mirrors Obsidian's metadataCache.getFirstLinkpathDest semantics
+   * required for CLI ↔ plugin triple parity (RFC-027 Phase 3).
+   *
+   * Conflict policy: first-write-wins. Obsidian itself produces a single
+   * winner for ambiguous basenames/aliases; we choose deterministically
+   * by traversal order rather than overwriting, so repeated lookups are
+   * stable within one process.
+   */
+  private buildLinkpathIndex(): void {
+    this.basenameIndex = new Map();
+    this.aliasIndex = new Map();
+
+    this.walkDirectory(this.rootPath, (fullPath) => {
+      if (!fullPath.endsWith(".md")) {
+        return;
+      }
+
+      const relativePath = path.relative(this.rootPath, fullPath);
+      const basename = path.basename(fullPath, ".md").toLowerCase();
+      if (!this.basenameIndex!.has(basename)) {
+        this.basenameIndex!.set(basename, relativePath);
+      }
+
+      let raw: string;
+      try {
+        raw = fs.readFileSync(fullPath, "utf-8");
+      } catch {
+        return; // Permission/IO errors – skip this file.
+      }
+
+      const frontmatter = this.extractFrontmatter(raw);
+      if (!frontmatter) {
+        return;
+      }
+
+      const aliases = frontmatter.aliases;
+      const aliasList = Array.isArray(aliases)
+        ? aliases
+        : typeof aliases === "string"
+          ? [aliases]
+          : [];
+
+      for (const alias of aliasList) {
+        if (typeof alias !== "string") continue;
+        const key = alias.trim().toLowerCase();
+        if (!key) continue;
+        if (!this.aliasIndex!.has(key)) {
+          this.aliasIndex!.set(key, relativePath);
+        }
+      }
+    });
   }
 
   /**

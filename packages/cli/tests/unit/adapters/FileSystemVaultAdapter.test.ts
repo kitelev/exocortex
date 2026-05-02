@@ -375,6 +375,194 @@ describe("FileSystemVaultAdapter", () => {
         expect(result2).not.toBeNull();
       });
     });
+
+    // RFC-027 Phase 3: alias-aware getFirstLinkpathDest for CLI ↔ plugin parity
+    describe("alias-index resolution (RFC-027 Phase 3)", () => {
+      let readFileSyncSpy: jest.SpiedFunction<typeof fs.readFileSync>;
+
+      beforeEach(() => {
+        readFileSyncSpy = jest.spyOn(fs, "readFileSync");
+      });
+
+      const setupVault = (
+        files: { name: string; content: string }[],
+      ): void => {
+        const filenames = files.map((f) => f.name);
+
+        readdirSyncSpy.mockImplementation((dir) => {
+          if (String(dir) === rootPath) {
+            return filenames.map((name) => ({
+              name,
+              isDirectory: () => false,
+              isFile: () => true,
+            })) as unknown as fs.Dirent[];
+          }
+          return [] as unknown as fs.Dirent[];
+        });
+
+        existsSyncSpy.mockImplementation((p) => {
+          const pathStr = String(p);
+          return filenames.some(
+            (name) => pathStr === path.join(rootPath, name),
+          );
+        });
+
+        readFileSyncSpy.mockImplementation((p) => {
+          const pathStr = String(p);
+          const match = files.find(
+            (f) => pathStr === path.join(rootPath, f.name),
+          );
+          if (match) return match.content;
+          throw new Error(`File not found: ${pathStr}`);
+        });
+      };
+
+      it("should resolve wikilink to file via frontmatter alias match", () => {
+        // [[ems__EffortStatusBacklog]] → file `753a44d5-...md` whose
+        // frontmatter declares aliases: [ems__EffortStatusBacklog].
+        const uuid = "753a44d5-846c-4b82-9196-4fd9a4d48777";
+        setupVault([
+          {
+            name: `${uuid}.md`,
+            content: `---\nexo__Asset_uid: ${uuid}\naliases:\n  - ems__EffortStatusBacklog\n---\nbody`,
+          },
+          {
+            name: "other.md",
+            content: "---\naliases:\n  - something-else\n---\n",
+          },
+        ]);
+
+        const result = adapter.getFirstLinkpathDest(
+          "ems__EffortStatusBacklog",
+          "source.md",
+        );
+
+        expect(result).not.toBeNull();
+        expect(result?.path).toBe(`${uuid}.md`);
+      });
+
+      it("should resolve wikilink via basename when file isn't in source dir", () => {
+        // Basename match anywhere in vault, like Obsidian's
+        // metadataCache. Existing path-relative resolution returns null
+        // when the file isn't adjacent to source.
+        setupVault([
+          {
+            name: "ems__EffortStatusBacklog.md",
+            content: "---\nlabel: Backlog\n---\nbody",
+          },
+        ]);
+
+        const result = adapter.getFirstLinkpathDest(
+          "ems__EffortStatusBacklog",
+          "deep/nested/source.md",
+        );
+
+        expect(result).not.toBeNull();
+        expect(result?.path).toBe("ems__EffortStatusBacklog.md");
+      });
+
+      it("should match aliases case-insensitively", () => {
+        const uuid = "027e78f4-6e16-4b36-b8fb-5510507d5745";
+        setupVault([
+          {
+            name: `${uuid}.md`,
+            content: `---\naliases:\n  - ems__EffortStatusDoing\n---\n`,
+          },
+        ]);
+
+        const result = adapter.getFirstLinkpathDest(
+          "EMS__effortstatusDOING",
+          "source.md",
+        );
+
+        expect(result).not.toBeNull();
+        expect(result?.path).toBe(`${uuid}.md`);
+      });
+
+      it("should accept scalar alias (single string) in frontmatter", () => {
+        setupVault([
+          {
+            name: "scalar.md",
+            content: "---\naliases: solo-alias\n---\n",
+          },
+        ]);
+
+        const result = adapter.getFirstLinkpathDest("solo-alias", "src.md");
+
+        expect(result).not.toBeNull();
+        expect(result?.path).toBe("scalar.md");
+      });
+
+      it("should return null when neither basename nor alias matches", () => {
+        setupVault([
+          {
+            name: "alpha.md",
+            content: "---\naliases:\n  - alpha-alias\n---\n",
+          },
+        ]);
+
+        const result = adapter.getFirstLinkpathDest("nope", "src.md");
+
+        expect(result).toBeNull();
+      });
+
+      it("should prefer basename over alias when both could match different files", () => {
+        // Obsidian-style precedence: a file named exactly like the
+        // linkpath wins over a different file that lists it as alias.
+        setupVault([
+          {
+            name: "Foo.md",
+            content: "---\n---\nbody",
+          },
+          {
+            name: "other.md",
+            content: "---\naliases:\n  - Foo\n---\n",
+          },
+        ]);
+
+        const result = adapter.getFirstLinkpathDest("Foo", "src.md");
+
+        expect(result).not.toBeNull();
+        expect(result?.path).toBe("Foo.md");
+      });
+
+      it("should ignore alias-stripped suffix when matching", () => {
+        // Wikilink display alias (`linkpath|label`) is stripped before
+        // alias-index lookup, just like for UUID resolution.
+        setupVault([
+          {
+            name: "target.md",
+            content: "---\naliases:\n  - my-alias\n---\n",
+          },
+        ]);
+
+        const result = adapter.getFirstLinkpathDest(
+          "my-alias|Display Label",
+          "src.md",
+        );
+
+        expect(result).not.toBeNull();
+        expect(result?.path).toBe("target.md");
+      });
+
+      it("should not crash on files with malformed frontmatter", () => {
+        setupVault([
+          {
+            name: "broken.md",
+            content: "---\naliases: [unterminated\n---\nbody",
+          },
+          {
+            name: "good.md",
+            content: "---\naliases:\n  - good-alias\n---\n",
+          },
+        ]);
+
+        const result = adapter.getFirstLinkpathDest("good-alias", "src.md");
+
+        expect(result).not.toBeNull();
+        expect(result?.path).toBe("good.md");
+      });
+    });
   });
 
   describe("getAllFiles() - directory boundary and hidden folders", () => {
