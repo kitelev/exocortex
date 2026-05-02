@@ -1,0 +1,13 @@
+{
+  "uid": "95aaab51-8cd5-42db-a207-42793864d133",
+  "label": "Create knowledge",
+  "type": "service_call",
+  "cliStatus": "stub",
+  "serviceId": "createAsset",
+  "sourcePath": "exocmd/creation/95aaab51-8cd5-42db-a207-42793864d133.md",
+  "userInput": null,
+  "expect": {
+    "outcome": "failure",
+    "errorPattern": "Service \\\"createAsset\\\" is not implemented"
+  }
+}

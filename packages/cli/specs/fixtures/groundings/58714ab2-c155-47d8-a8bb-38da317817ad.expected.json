@@ -1,0 +1,13 @@
+{
+  "uid": "58714ab2-c155-47d8-a8bb-38da317817ad",
+  "label": "Remove start timestamp",
+  "type": "property_delete",
+  "cliStatus": "real",
+  "serviceId": null,
+  "sourcePath": "exocmd/58714ab2-c155-47d8-a8bb-38da317817ad.md",
+  "userInput": null,
+  "expect": {
+    "outcome": "success",
+    "frontmatterRemoved": ["ems__Effort_startTimestamp"]
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "uid": "a85668fa-17b7-45d0-aa7f-935e2502dff0",
+  "label": "Copy label to aliases via service",
+  "type": "service_call",
+  "cliStatus": "unregistered",
+  "serviceId": "copyLabelToAliases",
+  "sourcePath": "exocmd/maintenance/a85668fa-17b7-45d0-aa7f-935e2502dff0.md",
+  "userInput": null,
+  "expect": {
+    "outcome": "failure",
+    "errorPattern": "Service not found: \\\"copyLabelToAliases\\\""
+  }
+}

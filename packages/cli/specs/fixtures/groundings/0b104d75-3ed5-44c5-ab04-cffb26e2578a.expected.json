@@ -1,0 +1,13 @@
+{
+  "uid": "0b104d75-3ed5-44c5-ab04-cffb26e2578a",
+  "label": "Shift day forward via service",
+  "type": "service_call",
+  "cliStatus": "unregistered",
+  "serviceId": "shiftDay",
+  "sourcePath": "exocmd/planning/0b104d75-3ed5-44c5-ab04-cffb26e2578a.md",
+  "userInput": null,
+  "expect": {
+    "outcome": "failure",
+    "errorPattern": "Service not found: \\\"shiftDay\\\""
+  }
+}

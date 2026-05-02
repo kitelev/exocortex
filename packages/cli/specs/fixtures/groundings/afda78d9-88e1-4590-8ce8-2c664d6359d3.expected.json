@@ -1,0 +1,14 @@
+{
+  "uid": "afda78d9-88e1-4590-8ce8-2c664d6359d3",
+  "label": "Set planned end timestamp",
+  "type": "service_call",
+  "cliStatus": "real",
+  "serviceId": "updateProperty",
+  "sourcePath": "exocmd/planning/afda78d9-88e1-4590-8ce8-2c664d6359d3.md",
+  "userInput": {
+    "value": "[[bdd-parent-asset]]"
+  },
+  "expect": {
+    "outcome": "success"
+  }
+}

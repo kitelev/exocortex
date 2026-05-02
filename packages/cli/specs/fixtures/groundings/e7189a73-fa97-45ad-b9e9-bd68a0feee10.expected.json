@@ -1,0 +1,12 @@
+{
+  "uid": "e7189a73-fa97-45ad-b9e9-bd68a0feee10",
+  "label": "Repair folder via service",
+  "type": "service_call",
+  "cliStatus": "real",
+  "serviceId": "repairFolder",
+  "sourcePath": "exocmd/maintenance-complex/e7189a73-fa97-45ad-b9e9-bd68a0feee10.md",
+  "userInput": null,
+  "expect": {
+    "outcome": "success"
+  }
+}

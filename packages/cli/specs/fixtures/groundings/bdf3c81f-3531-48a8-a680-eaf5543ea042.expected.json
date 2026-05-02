@@ -1,0 +1,15 @@
+{
+  "uid": "bdf3c81f-3531-48a8-a680-eaf5543ea042",
+  "label": "Set status to Done",
+  "type": "property_set",
+  "cliStatus": "real",
+  "serviceId": null,
+  "sourcePath": "exocmd/status/bdf3c81f-3531-48a8-a680-eaf5543ea042.md",
+  "userInput": null,
+  "expect": {
+    "outcome": "success",
+    "frontmatterAfter": {
+      "ems__Effort_status": "[[7b9b3116-7c3c-438c-9618-94fe301320a6]]"
+    }
+  }
+}

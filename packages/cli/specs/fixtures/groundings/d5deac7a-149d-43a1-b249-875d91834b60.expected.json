@@ -1,0 +1,15 @@
+{
+  "uid": "d5deac7a-149d-43a1-b249-875d91834b60",
+  "label": "Set status to Doing",
+  "type": "property_set",
+  "cliStatus": "real",
+  "serviceId": null,
+  "sourcePath": "exocmd/status/d5deac7a-149d-43a1-b249-875d91834b60.md",
+  "userInput": null,
+  "expect": {
+    "outcome": "success",
+    "frontmatterAfter": {
+      "ems__Effort_status": "[[027e78f4-6e16-4b36-b8fb-5510507d5745]]"
+    }
+  }
+}

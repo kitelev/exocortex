@@ -98,6 +98,31 @@ describe("commandCommand", () => {
       expect(mockExecutor.executeStart).toHaveBeenCalledWith("task.md");
     });
 
+    it("should print deprecation warning when start is invoked (T7.2)", async () => {
+      const cmd = commandCommand();
+      await cmd.parseAsync(["node", "test", "start", "task.md", "--vault", "/test/vault"]);
+
+      const deprecationCalls = consoleErrorSpy.mock.calls.filter(
+        (call) => typeof call[0] === "string" && (call[0] as string).includes("DEPRECATED"),
+      );
+      expect(deprecationCalls.length).toBeGreaterThan(0);
+      const warning = deprecationCalls[0][0] as string;
+      expect(warning).toContain("dyncommand exec");
+      expect(warning).toContain("command start");
+      // Backward-compat: executor still invoked
+      expect(mockExecutor.executeStart).toHaveBeenCalledWith("task.md");
+    });
+
+    it("should NOT print deprecation warning for non-start commands (T7.2)", async () => {
+      const cmd = commandCommand();
+      await cmd.parseAsync(["node", "test", "complete", "task.md", "--vault", "/test/vault"]);
+
+      const deprecationCalls = consoleErrorSpy.mock.calls.filter(
+        (call) => typeof call[0] === "string" && (call[0] as string).includes("DEPRECATED"),
+      );
+      expect(deprecationCalls).toHaveLength(0);
+    });
+
     it("should execute complete", async () => {
       const cmd = commandCommand();
       await cmd.parseAsync(["node", "test", "complete", "task.md", "--vault", "/test/vault"]);

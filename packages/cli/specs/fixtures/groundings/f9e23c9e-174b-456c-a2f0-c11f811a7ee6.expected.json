@@ -1,0 +1,17 @@
+{
+  "uid": "f9e23c9e-174b-456c-a2f0-c11f811a7ee6",
+  "label": "Transition to Done (status + end + resolution)",
+  "type": "composite",
+  "cliStatus": "real",
+  "serviceId": null,
+  "sourcePath": "exocmd/status/f9e23c9e-174b-456c-a2f0-c11f811a7ee6.md",
+  "userInput": null,
+  "expect": {
+    "outcome": "success"
+  },
+  "compositeStepUids": [
+    "bdf3c81f-3531-48a8-a680-eaf5543ea042",
+    "584f7e07-d485-4d85-9be6-23b2bf3f19af",
+    "73ec8312-4675-41d9-9fa1-33455d983880"
+  ]
+}

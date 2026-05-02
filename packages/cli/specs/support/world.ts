@@ -1,11 +1,7 @@
 import { setWorldConstructor, World, IWorldOptions } from "@cucumber/cucumber";
 
 /**
- * Result of a CLI-style helper invocation.
- *
- * T6.2 will replace `helperResult` with a real `dyncommand exec` runner that
- * captures exit code, stdout, stderr and frontmatter mutations against a test
- * vault. This minimal shape is the contract the step layer relies on.
+ * Result of a CLI-style helper invocation (smoke harness only).
  */
 export interface CliHelperResult {
   exitCode: number;
@@ -13,10 +9,28 @@ export interface CliHelperResult {
   stderr: string;
 }
 
+/**
+ * Result of a `dyncommand exec`-style grounding invocation captured by the
+ * T6.2 step layer. Mirrors `GroundingExecutor.execute` (RFC-009 §5.4) and is
+ * augmented with frontmatter snapshots so `Then` clauses can assert the
+ * observable state delta against per-grounding `expected.json` fixtures.
+ */
+export interface GroundingRunResult {
+  success: boolean;
+  error?: string;
+  frontmatterBefore?: Record<string, unknown>;
+  frontmatterAfter?: Record<string, unknown>;
+}
+
 export class CliBddWorld extends World {
   initialized = false;
   recordedValue: string | null = null;
   helperResult: CliHelperResult | null = null;
+
+  // T6.2 — grounding scenario state
+  fixtureVaultPath: string | null = null;
+  testTargetRelPath: string | null = null;
+  groundingResult: GroundingRunResult | null = null;
 
   constructor(options: IWorldOptions) {
     super(options);

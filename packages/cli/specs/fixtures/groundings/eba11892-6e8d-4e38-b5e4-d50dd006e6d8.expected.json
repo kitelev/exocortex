@@ -1,0 +1,13 @@
+{
+  "uid": "eba11892-6e8d-4e38-b5e4-d50dd006e6d8",
+  "label": "Rollback status via service",
+  "type": "service_call",
+  "cliStatus": "unregistered",
+  "serviceId": "rollbackStatus",
+  "sourcePath": "exocmd/maintenance-complex/eba11892-6e8d-4e38-b5e4-d50dd006e6d8.md",
+  "userInput": null,
+  "expect": {
+    "outcome": "failure",
+    "errorPattern": "Service not found: \\\"rollbackStatus\\\""
+  }
+}

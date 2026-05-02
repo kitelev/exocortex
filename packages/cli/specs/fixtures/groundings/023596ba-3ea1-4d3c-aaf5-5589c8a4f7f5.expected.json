@@ -1,0 +1,15 @@
+{
+  "uid": "023596ba-3ea1-4d3c-aaf5-5589c8a4f7f5",
+  "label": "Set zone to Today",
+  "type": "property_set",
+  "cliStatus": "real",
+  "serviceId": null,
+  "sourcePath": "exocmd/criticality/023596ba-3ea1-4d3c-aaf5-5589c8a4f7f5.md",
+  "userInput": null,
+  "expect": {
+    "outcome": "success",
+    "frontmatterAfter": {
+      "ems__Task_zone": "[[e266a2e9-9eb0-431d-b1fe-b95b9d3e9a3f]]"
+    }
+  }
+}

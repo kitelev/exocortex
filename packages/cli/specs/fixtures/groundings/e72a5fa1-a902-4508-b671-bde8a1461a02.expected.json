@@ -1,0 +1,16 @@
+{
+  "uid": "e72a5fa1-a902-4508-b671-bde8a1461a02",
+  "label": "Create Area via service",
+  "type": "create_instance",
+  "cliStatus": "real",
+  "serviceId": null,
+  "sourcePath": "exocmd/creation/e72a5fa1-a902-4508-b671-bde8a1461a02.md",
+  "userInput": {
+    "label": "BDD Test"
+  },
+  "expect": {
+    "outcome": "success"
+  },
+  "targetClass": "82c74542-1b14-4217-b852-d84730484b25",
+  "targetFolder": "01 Areas"
+}
