@@ -9,7 +9,7 @@ import { Namespace } from "../domain/models/rdf/Namespace";
 import { DI_TOKENS } from "../interfaces/tokens";
 import { RDFVocabularyMapper } from "../infrastructure/rdf/RDFVocabularyMapper";
 import { NullLogger } from "../infrastructure/NullLogger";
-import { vaultPathToIRI, OBSIDIAN_VAULT_SCHEME } from "../infrastructure/vault/iri";
+import { vaultPathToIRI } from "../infrastructure/vault/iri";
 import {
   Exo003Parser,
   Exo003MetadataType,
@@ -48,7 +48,6 @@ export interface ExocortexInvariantViolation {
  */
 @injectable()
 export class NoteToRDFConverter {
-  private readonly OBSIDIAN_VAULT_SCHEME = OBSIDIAN_VAULT_SCHEME;
   private readonly vocabularyMapper: RDFVocabularyMapper;
 
   /**
