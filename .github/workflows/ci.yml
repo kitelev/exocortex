@@ -625,6 +625,21 @@ jobs:
         run: npm run bdd:check
         continue-on-error: false
 
+      # RFC `94e520da` Phase 6 (T6.3) — runs the L3 CLI BDD suite covering
+      # all 48 starter-kit groundings (М6: 48/48 green as release v16 gate).
+      # Suite source: packages/cli/specs/features/groundings.feature +
+      # per-grounding fixtures under specs/fixtures/groundings/. Mirrors the
+      # T3.3 parity-gate pattern by executing under the same `test-bdd`
+      # required check so a single named gate enforces both BDD coverage
+      # and grounding state-change correctness; failure surfaces by failing
+      # this step (no continue-on-error). Requires exocortex + services
+      # workspace dist (CLI imports them at runtime via tsx loader).
+      - name: Build workspace deps for CLI BDD suite
+        run: npm run build -w exocortex && npm run build -w @kitelev/exocortex-services
+
+      - name: Run CLI BDD suite (48 starter-kit groundings)
+        run: npm run bdd:test:cli
+
       - name: Generate BDD Coverage Report
         if: always()
         run: npm run bdd:report
