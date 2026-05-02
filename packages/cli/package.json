@@ -18,6 +18,8 @@
     "start": "node dist/index.js",
     "clean": "rm -rf dist",
     "test": "node --experimental-vm-modules ../../node_modules/jest/bin/jest.js",
+    "bdd:test": "tsx ../../node_modules/@cucumber/cucumber/bin/cucumber.js",
+    "bdd:test:dry": "tsx ../../node_modules/@cucumber/cucumber/bin/cucumber.js --dry-run",
     "prepublishOnly": "npm run clean && npm run build"
   },
   "keywords": [
