@@ -84,6 +84,11 @@ export function commandCommand(): Command {
       const format = (options.format || "text") as OutputFormat;
       ErrorHandler.setFormat(format);
 
+      // SUNSET-T7.3: legacy `command start <path>` is deprecated as of v15.55.x
+      // (RFC 94e520da § Phase 7). Remove this `if` block AND the `case "start"`
+      // branch below in v15.57.0 or later (≥2 minor releases after 15.55.5).
+      // See packages/cli/docs/SUNSET_LEGACY_COMMAND_START.md for the full removal
+      // checklist; canonical replacement is `dyncommand exec <uid>`.
       if (commandName === "start") {
         console.error(
           '⚠️  DEPRECATED: `command start <path>` is deprecated. ' +
@@ -119,6 +124,10 @@ export function commandCommand(): Command {
             break;
 
           // Status transition commands
+          // SUNSET-T7.3: remove this `case "start"` branch in v15.57.0+
+          // (RFC 94e520da § Phase 7). After removal, "start" falls through to
+          // the `default` branch and surfaces an "unknown command" error,
+          // pushing callers onto `dyncommand exec <uid>`.
           case "start":
             await executor.executeStart(filepath);
             outputResult(format, commandName, filepath, "Started task");
