@@ -1,4 +1,4 @@
-import { jest, describe, it, expect, beforeEach } from "@jest/globals";
+import { jest, describe, it, expect, beforeEach, afterEach } from "@jest/globals";
 
 // Mock fs module
 const mockReaddirSync = jest.fn();
@@ -76,6 +76,10 @@ jest.unstable_mockModule("exocortex", () => ({
   })),
   EffortStatusWorkflow: jest.fn(() => ({})),
   StatusTimestampService: jest.fn(() => ({})),
+  vaultPathToIRI: (path: string) => {
+    const normalized = path.startsWith("./") ? path.slice(2) : path;
+    return `obsidian://vault/${encodeURI(normalized)}`;
+  },
   GroundingType: {
     SPARQL_UPDATE: "sparql_update",
     PROPERTY_DELETE: "property_delete",
@@ -158,6 +162,16 @@ beforeEach(async () => {
   mockExistsSync.mockReturnValue(true);
   const mod = await import("../../../src/commands/dynamic-command.js");
   dynamicCommandCommand = mod.dynamicCommandCommand;
+});
+
+// Reset process.exitCode between tests. Several specs exercise CLI failure
+// branches that set `process.exitCode` (commander does not throw — it stores
+// the code on the host process). Without this, the last failing-branch test
+// leaks a non-zero exit code into the Jest runner, which makes the suite
+// appear to fail (exit 5) even when every individual test passes —
+// breaking the lint-staged pre-commit hook for any CLI change.
+afterEach(() => {
+  process.exitCode = 0;
 });
 
 describe("dynamic-command CLI", () => {
@@ -644,6 +658,94 @@ describe("dynamic-command CLI", () => {
 
       const output = consoleSpy.mock.calls.map((c: any) => c[0]).join("\n");
       expect(output).toContain("missing serviceId and targetProperty");
+
+      consoleSpy.mockRestore();
+    });
+  });
+
+  describe("exec target IRI binding (regression #2996)", () => {
+    it("passes a canonical obsidian:// IRI (URL-encoded, including .md) to the precondition evaluator", async () => {
+      mockLoadCommand.mockResolvedValue({
+        id: "e941b3bb-d375-40d2-b271-e1d71deb014c",
+        name: "Start Effort",
+        precondition: { id: "p1", label: "p1", sparqlAsk: "ASK { $target ?p ?o }" },
+        grounding: { id: "g1", label: "g1", type: "service_call" },
+      });
+      mockEvaluate.mockResolvedValue(true);
+      mockGroundingExecute.mockResolvedValue({ success: true });
+
+      const consoleSpy = jest.spyOn(console, "log").mockImplementation(() => {});
+
+      const cmd = dynamicCommandCommand();
+      const execCmd = cmd.commands.find((c: any) => c.name() === "exec");
+      await execCmd.parseAsync(
+        [
+          "e941b3bb-d375-40d2-b271-e1d71deb014c",
+          "--vault",
+          "/vault",
+          "--target",
+          "03 Knowledge/kitelev/2f3a8928-3136-4d2d-b6cf-31a228aa0343.md",
+          "--output",
+          "json",
+        ],
+        { from: "user" },
+      );
+
+      expect(mockEvaluate).toHaveBeenCalledTimes(1);
+      const targetIRI = mockEvaluate.mock.calls[0][1] as string;
+      expect(targetIRI).toBe(
+        "obsidian://vault/03%20Knowledge/kitelev/2f3a8928-3136-4d2d-b6cf-31a228aa0343.md",
+      );
+      // Negative guards — make sure we did NOT regress to the buggy form.
+      expect(targetIRI).not.toBe(
+        "03 Knowledge/kitelev/2f3a8928-3136-4d2d-b6cf-31a228aa0343",
+      );
+      expect(targetIRI.endsWith(".md")).toBe(true);
+      expect(targetIRI).toContain("%20");
+
+      // GroundingExecutor receives the same canonical IRI plus the original
+      // relative path as a separate argument (matches existing contract).
+      expect(mockGroundingExecute).toHaveBeenCalledTimes(1);
+      const [, execTargetIRI, execTargetPath] = mockGroundingExecute.mock.calls[0];
+      expect(execTargetIRI).toBe(targetIRI);
+      expect(execTargetPath).toBe(
+        "03 Knowledge/kitelev/2f3a8928-3136-4d2d-b6cf-31a228aa0343.md",
+      );
+
+      consoleSpy.mockRestore();
+    });
+
+    it("strips a leading ./ from --target before encoding (canonical contract)", async () => {
+      mockLoadCommand.mockResolvedValue({
+        id: "cmd-1",
+        name: "Cmd",
+        precondition: undefined,
+        grounding: { id: "g1", label: "g1", type: "service_call" },
+      });
+      mockEvaluate.mockResolvedValue(true);
+      mockGroundingExecute.mockResolvedValue({ success: true });
+
+      const consoleSpy = jest.spyOn(console, "log").mockImplementation(() => {});
+
+      const cmd = dynamicCommandCommand();
+      const execCmd = cmd.commands.find((c: any) => c.name() === "exec");
+      await execCmd.parseAsync(
+        [
+          "cmd-1",
+          "--vault",
+          "/vault",
+          "--target",
+          "./03 Knowledge/x.md",
+          "--output",
+          "json",
+          "--dry-run",
+        ],
+        { from: "user" },
+      );
+
+      // --dry-run skips grounding; the relevant assertion is that the path
+      // never reaches the executor in the wrong form.
+      expect(mockGroundingExecute).not.toHaveBeenCalled();
 
       consoleSpy.mockRestore();
     });
