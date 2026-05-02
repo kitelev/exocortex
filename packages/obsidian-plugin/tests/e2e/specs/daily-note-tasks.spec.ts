@@ -2,8 +2,15 @@ import { test, expect } from "@playwright/test";
 import { ObsidianLauncher } from "../utils/obsidian-launcher";
 import * as path from "path";
 
-// RFC Phase 3.2 (T2.1): per-spec retry(1) — top T0.2 offender (rank #2, Cat I time-dependent).
-test.describe.configure({ mode: "parallel", retries: 1 });
+// RFC Phase 3.3 (T3.1 #2986): root-cause fix via deterministic clock pins virtual time
+// to the daily-note fixture date, so the spec sees a fixed wall-clock regardless of when
+// CI runs. retry(1) (T2.1) removed per Charter Risk 1 — retries papered over time
+// dependence; pinned clock removes the dependence entirely.
+test.describe.configure({ mode: "parallel" });
+
+// Pinned virtual time aligned to the fixture daily note (`Daily Notes/2025-10-16.md`)
+// so any "today" check sees the same date as the on-disk fixture.
+const PINNED_VIRTUAL_TIME = new Date("2025-10-16T12:00:00");
 
 test.describe("DailyNote Tasks Table", () => {
   let launcher: ObsidianLauncher;
@@ -12,6 +19,12 @@ test.describe("DailyNote Tasks Table", () => {
     const vaultPath = path.join(__dirname, "../test-vault");
     launcher = new ObsidianLauncher(vaultPath);
     await launcher.launch();
+
+    // Pin Date.now() / new Date() in the renderer page to the fixture date.
+    // Resolves Issue #2986: "current day" predicate was time-dependent and crossed
+    // UTC midnight intermittently, causing 2 / 41 post-cutover incidents.
+    const window = await launcher.getWindow();
+    await window.clock.install({ time: PINNED_VIRTUAL_TIME });
   });
 
   test.afterAll(async () => {
