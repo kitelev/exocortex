@@ -198,29 +198,47 @@ Install community ontology packages to extend your knowledge graph.
 
 ## Architecture
 
-Monorepo with four packages sharing Clean Architecture core:
+Monorepo with packages sharing a Clean Architecture core. Two runtime entry points (Obsidian Plugin and CLI) both depend on the same domain core and shared grounding-service factories; runtime-specific adapters implement common storage interfaces (`IVaultAdapter` / `IFileSystemAdapter`) so domain logic stays runtime-agnostic.
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                      Exocortex System                        │
-├─────────────────────────────────────────────────────────────┤
-│                                                               │
-│   ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
-│   │   Obsidian   │  │     CLI      │  │  Core Library │      │
-│   │   Plugin     │  │              │  │  (TypeScript) │      │
-│   └──────┬───────┘  └──────┬───────┘  └──────┬───────┘      │
-│          └─────────────────┼─────────────────┘               │
-│                            │                                  │
-│               ┌────────────▼────────────┐                     │
-│               │     @exocortex/core     │                     │
-│               │                         │                     │
-│               │  • Domain models        │                     │
-│               │  • SPARQL engine        │                     │
-│               │  • Inference rules      │                     │
-│               │  • Storage adapters     │                     │
-│               └─────────────────────────┘                     │
-│                                                               │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph Runtimes["Runtime entry points"]
+        Plugin["@exocortex/obsidian-plugin<br/>(Obsidian UI, renderers, commands)"]
+        CLI["@kitelev/exocortex-cli<br/>(Node CLI, automation, AI agents)"]
+    end
+
+    subgraph Shared["Shared (runtime-agnostic) packages"]
+        Core["@exocortex/core (exocortex)<br/>Domain models · RDF/SPARQL · Services"]
+        Services["@kitelev/exocortex-services<br/>Grounding-service factories"]
+        Interfaces[["IVaultAdapter · IFileSystemAdapter<br/>(ports defined in core)"]]
+    end
+
+    subgraph Adapters["Runtime adapters (implement ports)"]
+        ObsAdapter["ObsidianVaultAdapter<br/>ObsidianFileSystemAdapter<br/>(app.vault API)"]
+        NodeAdapter["NodeVaultAdapter<br/>NodeFileSystemAdapter<br/>(fs/promises)"]
+    end
+
+    Plugin --> Core
+    Plugin --> Services
+    CLI --> Core
+    CLI --> Services
+    Services --> Core
+    Services -. depends on .-> Interfaces
+    Core --- Interfaces
+
+    Plugin --> ObsAdapter
+    CLI --> NodeAdapter
+    ObsAdapter -.implements.-> Interfaces
+    NodeAdapter -.implements.-> Interfaces
+
+    classDef runtime fill:#e3f2fd,stroke:#1565c0,color:#0d47a1;
+    classDef shared fill:#f3e5f5,stroke:#6a1b9a,color:#4a148c;
+    classDef adapter fill:#e8f5e9,stroke:#2e7d32,color:#1b5e20;
+    classDef iface fill:#fff8e1,stroke:#f9a825,color:#7d5500,stroke-dasharray: 4 3;
+    class Plugin,CLI runtime;
+    class Core,Services shared;
+    class ObsAdapter,NodeAdapter adapter;
+    class Interfaces iface;
 ```
 
 ### Packages
@@ -230,6 +248,7 @@ Monorepo with four packages sharing Clean Architecture core:
 | **exocortex**                  | Private                  | Core business logic, domain models, SPARQL engine, 35+ services             |
 | **@exocortex/obsidian-plugin** | Private                  | Interactive UI: 24+ components, 3 renderers, 33+ commands, 6 modals         |
 | **@kitelev/exocortex-cli**     | `@kitelev/exocortex-cli` | CLI for automation, archive/unarchive, SPARQL queries, AI agent integration |
+| **@kitelev/exocortex-services** | Private                 | Shared runtime-agnostic grounding-service factories (RFC 94e520da Phase 1)  |
 | **@exocortex/test-utils**      | Private                  | Shared test utilities, mock factories, flaky test reporter                  |
 
 ### Technical Standards
