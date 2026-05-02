@@ -30,6 +30,10 @@ export {
   createRenameToUidService,
   createRepairFolderService,
   createPlanForEveningService,
+  createUpdatePropertyService,
+  createRemovePropertyService,
+  createSetStatusService,
   createPathBasedTargetResolver,
   type ITargetResolver,
+  type IPathResolver,
 } from "./grounding-service-factories";

@@ -356,8 +356,10 @@ export function dynamicCommandCommand(): Command {
           new EffortStatusWorkflow(),
           new StatusTimestampService(vaultAdapter),
         );
+        const nodeFsAdapter = new NodeFsAdapter(vaultPath);
         populateCliServiceRegistry(serviceRegistry, {
           vaultAdapter,
+          fsAdapter: nodeFsAdapter,
           genericAssetCreationService,
           archiveAssetService,
           taskStatusService,
@@ -366,7 +368,6 @@ export function dynamicCommandCommand(): Command {
           renameToUidService,
           folderRepairService,
         });
-        const nodeFsAdapter = new NodeFsAdapter(vaultPath);
         const groundingExecutor = new GroundingExecutor(
           nodeFsAdapter,
           nodeFsAdapter,

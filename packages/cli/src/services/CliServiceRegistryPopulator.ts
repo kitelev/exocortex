@@ -1,7 +1,9 @@
 import {
   ServiceRegistry,
+  FrontmatterService,
   type IGroundingService,
   type IVaultAdapter,
+  type IFileSystemAdapter,
   GenericAssetCreationService,
   ArchiveAssetService,
   FixMissingLabelService,
@@ -19,20 +21,93 @@ import {
   createRenameToUidService,
   createRepairFolderService,
   createPlanForEveningService,
+  createUpdatePropertyService,
+  createRemovePropertyService,
+  createSetStatusService,
+  type IPathResolver,
 } from "@kitelev/exocortex-services";
 
+const OBSIDIAN_VAULT_SCHEME = "obsidian://vault/";
+
 /**
- * The 10 well-known service IDs the plugin registers via
- * ServiceRegistryPopulator. CLI stubs exist so that `dyncommand validate` can
- * verify grounding service references point to a known service, and so that
- * `dyncommand exec` fails loudly instead of silently fake-succeeding.
+ * CLI implementation of `IPathResolver` used by the
+ * `updateProperty`/`removeProperty`/`setStatus` factories (RFC 94e520da
+ * Phase 1, T1.4).
+ *
+ * Resolution rules — in order:
+ * 1. `obsidian://vault/<encoded>` URIs decode to a vault-relative path,
+ *    matching the canonical `$target` IRI form built by `vaultPathToIRI`
+ *    after the #2996 fix. The decoded path is returned verbatim — typically
+ *    already includes `.md` because `dyncommand exec --target <path>` keeps
+ *    the extension.
+ * 2. UUID-shaped IRIs are resolved through
+ *    `IFileSystemMetadataProvider.findFileByUID`, supporting tests and
+ *    callers that pass a bare UUID.
+ * 3. Anything else is treated as a vault-relative path; if it lacks a `.md`
+ *    extension, it is appended (mirrors the legacy CLI behaviour for the
+ *    historical path-based factories that did `${IRI}.md`).
+ *
+ * If the resolved candidate does not exist on disk we fall through to a
+ * loud `Error` so callers see a named failure instead of a stale path.
+ */
+export function createCliPathResolver(
+  fsAdapter: IFileSystemAdapter,
+): IPathResolver {
+  const UUID_RE =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+  return {
+    async resolveTargetPath(targetIRI: string): Promise<string> {
+      if (!targetIRI) {
+        throw new Error("Cannot resolve empty targetIRI to a vault path");
+      }
+      let candidate = targetIRI;
+      if (candidate.startsWith(OBSIDIAN_VAULT_SCHEME)) {
+        candidate = decodeURI(candidate.slice(OBSIDIAN_VAULT_SCHEME.length));
+      } else if (UUID_RE.test(candidate)) {
+        const found = await fsAdapter.findFileByUID(candidate);
+        if (!found) {
+          throw new Error(`No vault file found for UID: ${candidate}`);
+        }
+        candidate = found;
+      }
+      if (!candidate.endsWith(".md")) {
+        candidate = `${candidate}.md`;
+      }
+      if (!(await fsAdapter.fileExists(candidate))) {
+        throw new Error(
+          `Cannot resolve target file for IRI "${targetIRI}" (tried "${candidate}")`,
+        );
+      }
+      return candidate;
+    },
+  };
+}
+
+/**
+ * Well-known service IDs the plugin registers via ServiceRegistryPopulator.
+ * CLI stubs exist so that `dyncommand validate` can verify grounding service
+ * references point to a known service, and so that `dyncommand exec` fails
+ * loudly instead of silently fake-succeeding.
+ *
+ * RFC 94e520da Phase 1, T1.4: `updateProperty`, `removeProperty`, `setStatus`
+ * dropped from this list — they now have real CLI implementations through
+ * the shared `@kitelev/exocortex-services` package and run end-to-end against
+ * a vault on disk via {@link CliServiceRegistryDeps.fsAdapter}.
+ *
+ * The remaining 7 services are genuinely unsupported in CLI runtime:
+ * - `openFile`, `getActiveFileIRI`, `getActiveFilePath` rely on Obsidian's
+ *   workspace/active-file concept that has no CLI analogue.
+ * - `sparqlSelect` would require porting plugin's SPARQLApi — separate issue.
+ * - `trashFile` semantics (Obsidian trash) differ from `fs.unlink`; needs an
+ *   adapter design before it can be safely shared.
+ * - `createAsset`, `duplicateFile` carry parent-context inheritance that
+ *   currently reads `app.metadataCache`; porting them awaits an Obsidian-free
+ *   metadata abstraction.
  *
  * Issue #2518, #2864
  */
 export const CLI_STUB_SERVICE_IDS = [
-  "updateProperty",
-  "removeProperty",
-  "setStatus",
   "createAsset",
   "openFile",
   "sparqlSelect",
@@ -78,6 +153,14 @@ function notImplementedService(serviceId: string): IGroundingService {
  */
 export interface CliServiceRegistryDeps {
   vaultAdapter: IVaultAdapter;
+  /**
+   * Path-based filesystem adapter (NodeFsAdapter in production) used by the
+   * frontmatter-only handlers ported in T1.4: `updateProperty`,
+   * `removeProperty`, `setStatus`. Optional so existing callers without
+   * adapter wiring degrade to the fail-loud stubs only for those three
+   * services.
+   */
+  fsAdapter?: IFileSystemAdapter;
   genericAssetCreationService: GenericAssetCreationService;
   archiveAssetService: ArchiveAssetService;
   taskStatusService: TaskStatusService;
@@ -105,6 +188,9 @@ export {
   createRenameToUidService,
   createRepairFolderService,
   createPlanForEveningService,
+  createUpdatePropertyService,
+  createRemovePropertyService,
+  createSetStatusService,
 };
 
 /**
@@ -129,7 +215,43 @@ export function populateCliServiceRegistry(
     registry.register(id, notImplementedService(id));
   }
 
+  // T1.4: frontmatter-only handlers registered as fail-loud stubs when no
+  // fsAdapter is wired (e.g. `dyncommand validate`). With fsAdapter the real
+  // shared-package factories below replace these stubs.
+  for (const id of ["updateProperty", "removeProperty", "setStatus"] as const) {
+    registry.register(id, notImplementedService(id));
+  }
+
   if (deps) {
+    if (deps.fsAdapter) {
+      const frontmatterService = new FrontmatterService();
+      const pathResolver = createCliPathResolver(deps.fsAdapter);
+      registry.register(
+        "updateProperty",
+        createUpdatePropertyService(
+          deps.fsAdapter,
+          frontmatterService,
+          pathResolver,
+        ),
+      );
+      registry.register(
+        "removeProperty",
+        createRemovePropertyService(
+          deps.fsAdapter,
+          frontmatterService,
+          pathResolver,
+        ),
+      );
+      registry.register(
+        "setStatus",
+        createSetStatusService(
+          deps.fsAdapter,
+          frontmatterService,
+          pathResolver,
+        ),
+      );
+    }
+
     registry.register(
       "createRelatedTask",
       createCreateRelatedTaskService(
