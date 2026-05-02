@@ -1933,4 +1933,84 @@ describe("ExocortexPlugin", () => {
       expect(reindexFileSpy).not.toHaveBeenCalled();
     });
   });
+
+  describe("scheduleValidation — P1.10 metadataCache.on('changed') 50ms debounce", () => {
+    // Pins the hot-validation contract introduced by P1.10.
+    // When metadataCache fires 'changed', SHACL validation must be scheduled
+    // with a 50ms debounce and the engine must never write to vault files.
+
+    let changedHandlers: Array<(file: TFile) => void> = [];
+    let loadFromRDFGraphSpy: jest.SpyInstance;
+
+    beforeEach(async () => {
+      changedHandlers = [];
+      mockMetadataCache.on.mockImplementation(
+        (event: string, cb: (file: TFile) => void) => {
+          if (event === "changed") {
+            changedHandlers.push(cb);
+          }
+          return { unsubscribe: jest.fn() };
+        },
+      );
+
+      const exocortexModule = await import("exocortex");
+      loadFromRDFGraphSpy = jest
+        .spyOn(exocortexModule.ShapeLoader, "loadFromRDFGraph")
+        .mockResolvedValue({ size: 0, getAll: () => [] } as any);
+
+      await plugin.onload();
+      await flushPromises();
+    });
+
+    afterEach(() => {
+      loadFromRDFGraphSpy?.mockRestore();
+    });
+
+    const getLastChangedHandler = (): ((file: TFile) => void) => {
+      expect(changedHandlers.length).toBeGreaterThan(0);
+      return changedHandlers[changedHandlers.length - 1]!;
+    };
+
+    it("fires ShapeLoader.loadFromRDFGraph after the 50ms debounce", async () => {
+      const mockFile = { path: "note.md", extension: "md" } as TFile;
+      const handler = getLastChangedHandler();
+
+      handler(mockFile);
+
+      await waitForCondition(
+        () => loadFromRDFGraphSpy.mock.calls.length > 0,
+        { timeout: 500, message: "ShapeLoader.loadFromRDFGraph never called after debounce" },
+      );
+
+      expect(loadFromRDFGraphSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it("never writes to vault files — engine is strictly read-only (no save-loop)", async () => {
+      const mockFile = { path: "note.md", extension: "md" } as TFile;
+      mockVault.modify = jest.fn();
+      const handler = getLastChangedHandler();
+
+      handler(mockFile);
+
+      await waitForCondition(
+        () => loadFromRDFGraphSpy.mock.calls.length > 0,
+        { timeout: 500, message: "ShapeLoader.loadFromRDFGraph never called" },
+      );
+      // Extra settling time to catch any deferred vault writes
+      await new Promise((r) => setTimeout(r, 100));
+
+      expect(mockVault.modify).not.toHaveBeenCalled();
+    });
+
+    it("ignores non-markdown files (extension !== 'md')", async () => {
+      const imageFile = { path: "cover.png", extension: "png" } as TFile;
+      const handler = getLastChangedHandler();
+
+      handler(imageFile);
+
+      await new Promise((r) => setTimeout(r, 200));
+
+      expect(loadFromRDFGraphSpy).not.toHaveBeenCalled();
+    });
+  });
 });
