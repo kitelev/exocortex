@@ -516,6 +516,70 @@ describe("dynamic-command CLI", () => {
 
       consoleSpy.mockRestore();
     });
+
+    it("should resolve UUID-wikilink with alias via reverse index (#2863 T2.2)", async () => {
+      // Real vault pattern: exo__Instance_class entries are UUID-wikilinks WITH human-readable
+      // alias suffix, e.g. "[[<class-uuid>|exocmd__Command]]". hasClass must extract the UUID
+      // (before the pipe) and resolve to label via reverse index, ignoring the alias text.
+      const classFm = [
+        "exo__Asset_uid: 790e5b16-251d-4556-96ac-e5c7f1429b2e",
+        'exo__Asset_label: "exocmd__Command"',
+      ].join("\n");
+
+      const gndClassFm = [
+        "exo__Asset_uid: 11579feb-2e42-491c-af59-b89b1129a539",
+        'exo__Asset_label: "exocmd__Grounding"',
+      ].join("\n");
+
+      const cmdAliasFm = [
+        "exo__Instance_class:",
+        // UUID-wikilink with deliberately misleading alias text — must NOT short-circuit on alias
+        '  - "[[790e5b16-251d-4556-96ac-e5c7f1429b2e|Some Display Name]]"',
+        "exo__Asset_uid: cmd-uuid-aliased",
+        "exo__Asset_label: UUID Aliased Command",
+        "exocmd__Command_grounding: [[gnd-uuid-aliased]]",
+      ].join("\n");
+
+      const gndAliasFm = [
+        "exo__Instance_class:",
+        '  - "[[11579feb-2e42-491c-af59-b89b1129a539|Grounding Instance]]"',
+        "exo__Asset_uid: gnd-uuid-aliased",
+        'exocmd__Grounding_type: "property_set"',
+      ].join("\n");
+
+      mockReaddirSync.mockImplementation((dir: string) => {
+        if (dir.endsWith("/vault")) {
+          return [
+            { name: "cmd-class.md", isDirectory: () => false },
+            { name: "gnd-class.md", isDirectory: () => false },
+            { name: "cmd.md", isDirectory: () => false },
+            { name: "gnd.md", isDirectory: () => false },
+          ];
+        }
+        return [];
+      });
+
+      mockReadFileSync.mockImplementation((path: string) => {
+        if (path.endsWith("/cmd-class.md")) return `---\n${classFm}\n---\n`;
+        if (path.endsWith("/gnd-class.md")) return `---\n${gndClassFm}\n---\n`;
+        if (path.endsWith("/cmd.md")) return `---\n${cmdAliasFm}\n---\n`;
+        if (path.endsWith("/gnd.md")) return `---\n${gndAliasFm}\n---\n`;
+        return "";
+      });
+
+      const consoleSpy = jest.spyOn(console, "log").mockImplementation(() => {});
+
+      const cmd = dynamicCommandCommand();
+      const listCmd = cmd.commands.find((c: any) => c.name() === "list");
+      await listCmd.parseAsync(["--vault", "/vault", "--output", "json"], { from: "user" });
+
+      const output = consoleSpy.mock.calls.map((c: any) => c[0]).join("\n");
+      expect(output).toMatch(/"totalCommands":\s*1/);
+      expect(output).toContain("cmd-uuid-aliased");
+      expect(output).toContain("property_set");
+
+      consoleSpy.mockRestore();
+    });
   });
 
   describe("show action", () => {
