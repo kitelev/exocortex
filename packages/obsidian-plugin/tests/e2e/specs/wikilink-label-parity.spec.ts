@@ -113,8 +113,9 @@ test.describe("Wikilink label parity — Reading View and Live Preview", () => {
         });
       });
 
-      // Wait for CodeMirror editor to be active
-      await window.waitForSelector(".cm-editor", { timeout: 15_000 });
+      // CI: mode switch to Live Preview (source:false) can take >15s on Docker/headless.
+      // Wait for CodeMirror editor with generous budget.
+      await window.waitForSelector(".cm-editor", { timeout: 30_000 });
 
       // WikilinkLabelViewPlugin initialises via MutationObserver (24ms in dev, up to
       // 30s in CI due to plugin load sequencing). Use waitForFunction polling so we
@@ -149,7 +150,7 @@ test.describe("Wikilink label parity — Reading View and Live Preview", () => {
 
   test(
     "Parity: Reading View and Live Preview show identical labels for all 3 types",
-    { timeout: 60_000 },
+    { timeout: 90_000 },
     async () => {
       // Reading View snapshot
       await launcher.openFile(HOST_FILE);
@@ -177,7 +178,8 @@ test.describe("Wikilink label parity — Reading View and Live Preview", () => {
         });
       });
 
-      await window.waitForSelector(".cm-editor", { timeout: 15_000 });
+      // Same generous budget as Live Preview test for mode switch in CI.
+      await window.waitForSelector(".cm-editor", { timeout: 30_000 });
 
       // Same polling guard as the Live Preview test (CI MutationObserver race).
       await window.waitForFunction(
