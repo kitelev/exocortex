@@ -35,7 +35,7 @@ function failingExecFn(message: string): ExecFn {
 }
 
 const TASK_UUID = "c576b1e2-0f88-4f0a-badc-ec817c8779ce";
-const WINDOW_NAME = `aitask-${TASK_UUID.replace(/-/g, "").slice(0, 8)}`;
+const WINDOW_NAME = `claude-child-${TASK_UUID}`;
 
 let tmpDir: string;
 let taskFile: string;
