@@ -72,13 +72,13 @@ describe("MyTest", () => {
 
 ### Available Factory Methods
 
-| Method | Description | Default Values |
-|--------|-------------|----------------|
-| `task()` | Creates a task fixture | status: "Draft", votes: 0 |
+| Method      | Description               | Default Values            |
+| ----------- | ------------------------- | ------------------------- |
+| `task()`    | Creates a task fixture    | status: "Draft", votes: 0 |
 | `project()` | Creates a project fixture | status: "Draft", votes: 0 |
-| `area()` | Creates an area fixture | isArchived: false |
-| `meeting()` | Creates a meeting fixture | status: "Draft" |
-| `concept()` | Creates a concept fixture | isArchived: false |
+| `area()`    | Creates an area fixture   | isArchived: false         |
+| `meeting()` | Creates a meeting fixture | status: "Draft"           |
+| `concept()` | Creates a concept fixture | isArchived: false         |
 
 ### Creating Metadata
 
@@ -112,12 +112,18 @@ const vault = TestFixtureBuilder.complexVault();
 ```typescript
 // Create tasks by status
 const { tasks, metadata } = TestFixtureBuilder.withTasksByStatus([
-  "Draft", "To Do", "Doing", "Done"
+  "Draft",
+  "To Do",
+  "Doing",
+  "Done",
 ]);
 
 // Create tasks by size
 const { tasks, metadata } = TestFixtureBuilder.withTasksBySize([
-  "XS", "S", "M", "L"
+  "XS",
+  "S",
+  "M",
+  "L",
 ]);
 
 // Create archived tasks
@@ -323,3 +329,34 @@ Run coverage check:
 npm run test:coverage
 npm run bdd:check
 ```
+
+## Label Parity E2E
+
+**Spec:** `packages/obsidian-plugin/tests/e2e/specs/wikilink-label-parity.spec.ts`
+
+**Shard:** e2e-shard-6
+
+**Purpose:** Regression guard verifying that bare `[[uuid]]` wikilinks display `exo__Asset_label` in **both** Reading View and Live Preview — not the raw filename/UUID.
+
+**What it tests:**
+
+| Test                       | Mode                                | Mechanism                                                                        |
+| -------------------------- | ----------------------------------- | -------------------------------------------------------------------------------- |
+| Reading View label display | Reading View (preview)              | Obsidian native `aliases` frontmatter resolution → `a.internal-link` text        |
+| Live Preview label display | Live Preview (source, source=false) | `WikilinkLabelViewPlugin` CodeMirror extension → `span.exocortex-wikilink-label` |
+| Parity assertion           | Both                                | Labels in both modes are equal and neither equals the raw filename               |
+
+**Asset types covered:** `ems__Task`, `ems__Project`, `ims__Concept`
+
+**Fixtures:**
+
+```
+tests/e2e/test-vault/
+├── Tasks/label-parity-task.md         # ems__Task with exo__Asset_label + aliases
+├── Projects/label-parity-project.md   # ems__Project with exo__Asset_label + aliases
+└── label-parity/
+    ├── lp-concept.md                  # ims__Concept with exo__Asset_label + aliases
+    └── lp-host.md                     # Host file with bare [[target]] wikilinks
+```
+
+**Invariant being guarded:** When `exo__Asset_label` is set and `aliases` is synced to match it, both rendering modes must display the label. This prevents regressions where one mode shows a UUID while the other shows the human-readable label.

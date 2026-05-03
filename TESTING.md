@@ -72,13 +72,13 @@ describe("FrontmatterService", () => {
 
 ### Test File Naming Conventions
 
-| Pattern | Location | Runner |
-|---------|----------|--------|
-| `*.test.ts` | `packages/*/tests/unit/` | Jest |
-| `*.test.ts` | `packages/*/tests/ui/` | Jest (jsdom) |
+| Pattern      | Location                                    | Runner        |
+| ------------ | ------------------------------------------- | ------------- |
+| `*.test.ts`  | `packages/*/tests/unit/`                    | Jest          |
+| `*.test.ts`  | `packages/*/tests/ui/`                      | Jest (jsdom)  |
 | `*.spec.tsx` | `packages/obsidian-plugin/tests/component/` | Playwright CT |
-| `*.spec.ts` | `packages/obsidian-plugin/tests/e2e/specs/` | Playwright |
-| `*.feature` | `packages/obsidian-plugin/specs/features/` | Cucumber |
+| `*.spec.ts`  | `packages/obsidian-plugin/tests/e2e/specs/` | Playwright    |
+| `*.feature`  | `packages/obsidian-plugin/specs/features/`  | Cucumber      |
 
 ---
 
@@ -91,6 +91,7 @@ describe("FrontmatterService", () => {
 **Framework**: Jest + ts-jest
 
 **Location**:
+
 - `packages/exocortex/tests/` - Core business logic
 - `packages/obsidian-plugin/tests/unit/` - Plugin-specific logic
 - `packages/cli/tests/unit/` - CLI commands and utilities
@@ -98,6 +99,7 @@ describe("FrontmatterService", () => {
 **Configuration**: `packages/*/jest.config.js`
 
 **Command**:
+
 ```bash
 npm run test:unit
 
@@ -109,6 +111,7 @@ npx jest --watch packages/exocortex/tests/utilities/FrontmatterService.test.ts
 ```
 
 **Example**:
+
 ```typescript
 import { StatusTimestampService } from "../../src/services/StatusTimestampService";
 import { createMockVault, createMockFile } from "../helpers/mockFactory";
@@ -134,7 +137,7 @@ describe("StatusTimestampService", () => {
       // Assert
       expect(mockVault.modify).toHaveBeenCalledWith(
         file,
-        expect.stringContaining("ems__doing_timestamp")
+        expect.stringContaining("ems__doing_timestamp"),
       );
     });
   });
@@ -142,6 +145,7 @@ describe("StatusTimestampService", () => {
 ```
 
 **When to use unit tests**:
+
 - Testing pure functions and business logic
 - Testing data transformations
 - Testing service methods in isolation
@@ -160,6 +164,7 @@ describe("StatusTimestampService", () => {
 **Configuration**: `packages/obsidian-plugin/playwright-ct.config.ts`
 
 **Command**:
+
 ```bash
 npm run test:component
 
@@ -171,6 +176,7 @@ npx playwright test -c packages/obsidian-plugin/playwright-ct.config.ts --update
 ```
 
 **Example**:
+
 ```typescript
 import { test, expect } from "@playwright/experimental-ct-react";
 import { TaskRow } from "./TaskRow";
@@ -197,11 +203,13 @@ test.describe("TaskRow", () => {
 ```
 
 **Visual Regression Testing**:
+
 - Snapshots stored in `tests/component/__snapshots__/`
 - Threshold: 20% pixel difference allowed (for anti-aliasing)
 - Update baselines: `npx playwright test --update-snapshots`
 
 **When to use component tests**:
+
 - Testing React component rendering
 - Testing user interactions (clicks, inputs)
 - Visual regression testing
@@ -220,11 +228,13 @@ test.describe("TaskRow", () => {
 **Configuration**: `packages/obsidian-plugin/jest.ui.config.js`
 
 **Command**:
+
 ```bash
 npm run test:ui
 ```
 
 **When to use UI tests**:
+
 - Testing Obsidian API integration points
 - Testing layout rendering logic
 - Testing with mocked Obsidian environment
@@ -242,6 +252,7 @@ npm run test:ui
 **Configuration**: `packages/obsidian-plugin/playwright-e2e.config.ts`
 
 **Command**:
+
 ```bash
 # Docker execution (recommended)
 npm run test:e2e:docker
@@ -252,6 +263,7 @@ npm run test:e2e
 ```
 
 **Test Structure**:
+
 ```
 packages/obsidian-plugin/tests/e2e/
 ├── test-vault/              # Test Obsidian vault
@@ -265,6 +277,7 @@ packages/obsidian-plugin/tests/e2e/
 ```
 
 **Example**:
+
 ```typescript
 import { test, expect } from "@playwright/test";
 import { ObsidianLauncher } from "../utils/obsidian-launcher";
@@ -294,6 +307,7 @@ test.describe("Daily Tasks", () => {
 ```
 
 **When to use E2E tests**:
+
 - Testing critical user workflows
 - Testing full plugin integration with Obsidian
 - Regression testing for major features
@@ -312,6 +326,7 @@ test.describe("Daily Tasks", () => {
 **Configuration**: `cucumber.js` (in package root)
 
 **Commands**:
+
 ```bash
 # Run BDD tests
 npm run bdd:test
@@ -327,6 +342,7 @@ npm run bdd:check
 ```
 
 **Example Feature File** (`daily-tasks.feature`):
+
 ```gherkin
 Feature: Daily Tasks Table in Layout
   As a user viewing a pn__DailyNote
@@ -354,6 +370,7 @@ Feature: Daily Tasks Table in Layout
 ```
 
 **When to use BDD tests**:
+
 - Documenting user-facing behavior
 - Acceptance criteria for features
 - Communication between developers and stakeholders
@@ -384,12 +401,12 @@ The project enforces a **test pyramid architecture** to ensure fast feedback, ma
 
 #### Ratios and Enforcement
 
-| Layer | Target Ratio | CI Gate | Framework |
-|-------|--------------|---------|-----------|
-| Unit Tests | ≥70% | `npm run test:pyramid:strict` | Jest |
-| Component Tests | 10-25% | All must pass | Playwright CT |
-| E2E Tests | ≤10% | All must pass | Playwright E2E |
-| BDD Scenarios | 100% coverage | `npm run bdd:check` | Cucumber |
+| Layer           | Target Ratio  | CI Gate                       | Framework      |
+| --------------- | ------------- | ----------------------------- | -------------- |
+| Unit Tests      | ≥70%          | `npm run test:pyramid:strict` | Jest           |
+| Component Tests | 10-25%        | All must pass                 | Playwright CT  |
+| E2E Tests       | ≤10%          | All must pass                 | Playwright E2E |
+| BDD Scenarios   | 100% coverage | `npm run bdd:check`           | Cucumber       |
 
 #### Why This Structure?
 
@@ -441,6 +458,7 @@ Example output:
 #### When to Add Each Test Type
 
 **Add Unit Tests when**:
+
 - Testing pure functions and algorithms
 - Testing business logic in services
 - Testing data transformations
@@ -448,18 +466,21 @@ Example output:
 - Fast iteration is needed
 
 **Add Component Tests when**:
+
 - Testing React component behavior
 - Testing user interactions (clicks, inputs)
 - Testing visual appearance (snapshots)
 - Testing component state changes
 
 **Add E2E Tests when**:
+
 - Testing critical user workflows
 - Testing full integration with Obsidian
 - Regression testing major features
 - Testing file operations and vault modifications
 
 **Avoid adding E2E tests when**:
+
 - The scenario can be tested at unit level
 - Testing implementation details
 - Testing non-critical paths
@@ -469,12 +490,12 @@ Example output:
 
 As of December 2025:
 
-| Type | Files | Test Cases | Percentage |
-|------|-------|------------|------------|
-| Unit | ~244 | ~5116 | 84% |
-| Component | ~33 | ~530 | 11% |
-| E2E | ~14 | ~67 | 5% |
-| **Total** | **291** | **5713** | **100%** |
+| Type      | Files   | Test Cases | Percentage |
+| --------- | ------- | ---------- | ---------- |
+| Unit      | ~244    | ~5116      | 84%        |
+| Component | ~33     | ~530       | 11%        |
+| E2E       | ~14     | ~67        | 5%         |
+| **Total** | **291** | **5713**   | **100%**   |
 
 This distribution is **healthy** and follows the test pyramid principles.
 
@@ -485,6 +506,7 @@ This distribution is **healthy** and follows the test pyramid principles.
 Pure business logic, storage-agnostic utilities.
 
 **Test Focus**:
+
 - Domain models and entities
 - Business services
 - Utility functions
@@ -504,6 +526,7 @@ npx jest --config packages/exocortex/jest.config.js
 Obsidian UI integration layer.
 
 **Test Focus**:
+
 - React components
 - Obsidian adapter integration
 - Layout renderers
@@ -512,6 +535,7 @@ Obsidian UI integration layer.
 **Configuration**: `packages/obsidian-plugin/jest.config.js`
 
 **Coverage Thresholds**:
+
 - Branches: 67%
 - Functions: 71%
 - Lines: 78%
@@ -527,6 +551,7 @@ npx jest --config packages/obsidian-plugin/jest.config.js
 Command-line automation tool.
 
 **Test Focus**:
+
 - CLI command execution
 - File system operations
 - Batch processing
@@ -573,13 +598,13 @@ describe("MyTest", () => {
 
 **Available Factory Methods**:
 
-| Method | Description | Default Values |
-|--------|-------------|----------------|
-| `task()` | Creates a task fixture | status: "Draft", votes: 0 |
+| Method      | Description               | Default Values            |
+| ----------- | ------------------------- | ------------------------- |
+| `task()`    | Creates a task fixture    | status: "Draft", votes: 0 |
 | `project()` | Creates a project fixture | status: "Draft", votes: 0 |
-| `area()` | Creates an area fixture | isArchived: false |
-| `meeting()` | Creates a meeting fixture | status: "Draft" |
-| `concept()` | Creates a concept fixture | isArchived: false |
+| `area()`    | Creates an area fixture   | isArchived: false         |
+| `meeting()` | Creates a meeting fixture | status: "Draft"           |
+| `concept()` | Creates a concept fixture | isArchived: false         |
 
 #### Creating Metadata
 
@@ -758,6 +783,7 @@ it("should provide helpful error message", async () => {
 ### Best Practices Summary
 
 1. **Reset State Before Each Test**
+
    ```typescript
    beforeEach(() => {
      TestFixtureBuilder.resetFixtureCounter();
@@ -766,6 +792,7 @@ it("should provide helpful error message", async () => {
    ```
 
 2. **Test Edge Cases**
+
    ```typescript
    it("should handle null label", () => {
      const metadata = createMockMetadata({ exo__Asset_label: null });
@@ -775,6 +802,7 @@ it("should provide helpful error message", async () => {
    ```
 
 3. **Use Specific Assertions**
+
    ```typescript
    // Prefer
    expect(task.status).toBe("Doing");
@@ -786,6 +814,7 @@ it("should provide helpful error message", async () => {
    ```
 
 4. **Test Behavior, Not Implementation**
+
    ```typescript
    // Bad: Testing implementation details
    expect(mockDataviewApi.pages).toHaveBeenCalled();
@@ -807,14 +836,15 @@ it("should provide helpful error message", async () => {
 
 **Global Thresholds** (enforced in CI):
 
-| Metric | Threshold | Current |
-|--------|-----------|---------|
-| Branches | 67% | ~68% |
-| Functions | 71% | ~72% |
-| Lines | 78% | ~79% |
-| Statements | 79% | ~79% |
+| Metric     | Threshold | Current |
+| ---------- | --------- | ------- |
+| Branches   | 67%       | ~68%    |
+| Functions  | 71%       | ~72%    |
+| Lines      | 78%       | ~79%    |
+| Statements | 79%       | ~79%    |
 
 **Domain Layer Targets** (aspirational):
+
 - Branches: 78%
 - Functions: 80%
 - Lines: 79%
@@ -869,16 +899,19 @@ Reports are available as CI artifacts on every run.
 **Symptoms**: Tests fail with timeout errors, especially in CI.
 
 **Solutions**:
+
 1. Increase timeout in test configuration:
+
    ```javascript
    // jest.config.js
-   testTimeout: process.env.CI ? 300000 : 60000
+   testTimeout: process.env.CI ? 300000 : 60000;
    ```
 
 2. For Playwright tests:
+
    ```typescript
    // playwright.config.ts
-   timeout: 90000
+   timeout: 90000;
    ```
 
 3. For specific tests:
@@ -893,30 +926,34 @@ Reports are available as CI artifacts on every run.
 **Symptoms**: Tests pass locally but fail intermittently in CI.
 
 **Solutions**:
+
 1. Use explicit waits instead of arbitrary delays:
+
    ```typescript
    await launcher.waitForElement(".my-element", 30000);
    ```
 
 2. Use polling assertions:
+
    ```typescript
-   await expect.poll(
-     async () => component.locator(".status").textContent()
-   ).toBe("Ready");
+   await expect
+     .poll(async () => component.locator(".status").textContent())
+     .toBe("Ready");
    ```
 
 3. Disable animations in visual tests:
+
    ```typescript
    expect: {
      toHaveScreenshot: {
-       animations: "disabled"
+       animations: "disabled";
      }
    }
    ```
 
 4. Add retries for E2E tests:
    ```typescript
-   retries: process.env.CI ? 2 : 0
+   retries: process.env.CI ? 2 : 0;
    ```
 
 #### Mock Leaks
@@ -924,7 +961,9 @@ Reports are available as CI artifacts on every run.
 **Symptoms**: Tests pass individually but fail when run together.
 
 **Solutions**:
+
 1. Clear mocks in `beforeEach`:
+
    ```typescript
    beforeEach(() => {
      jest.clearAllMocks();
@@ -933,6 +972,7 @@ Reports are available as CI artifacts on every run.
    ```
 
 2. Reset module state:
+
    ```typescript
    beforeEach(() => {
      jest.resetModules();
@@ -946,6 +986,7 @@ Reports are available as CI artifacts on every run.
 **Problem**: `createMockMetadata()` provides defaults, hiding null-handling bugs.
 
 **Solution**: Always explicitly test null cases:
+
 ```typescript
 // Bad: Test passes but bug exists
 const metadata = createMockMetadata();
@@ -960,6 +1001,7 @@ const metadata = createMockMetadata({ exo__Asset_label: null });
 **Symptoms**: Component tests use old code after switching worktrees.
 
 **Solution**:
+
 ```bash
 pkill -f vite
 npm run test:component
@@ -970,12 +1012,15 @@ npm run test:component
 **Symptoms**: E2E tests fail to launch Obsidian.
 
 **Solutions**:
+
 1. Increase timeout in config:
+
    ```typescript
-   timeout: 120000
+   timeout: 120000;
    ```
 
 2. Set OBSIDIAN_PATH environment variable:
+
    ```bash
    export OBSIDIAN_PATH="/Applications/Obsidian.app/Contents/MacOS/Obsidian"
    ```
@@ -997,6 +1042,7 @@ node --inspect-brk node_modules/.bin/jest --runInBand tests/unit/mytest.test.ts
 #### VS Code Integration
 
 Add to `.vscode/launch.json`:
+
 ```json
 {
   "type": "node",
@@ -1022,6 +1068,7 @@ npx playwright test --debug tests/component/MyComponent.spec.tsx
 #### Log Output
 
 Enable verbose logging in tests:
+
 ```typescript
 // Jest
 console.log("Debug info:", data);
@@ -1035,8 +1082,10 @@ await page.evaluate(() => console.log("Debug from browser"));
 **Problem**: New code drops coverage below threshold.
 
 **Solutions**:
+
 1. Write tests for new code
 2. Extract testable utilities from complex components:
+
    ```typescript
    // Before: Private method not testable
    class MyComponent {
@@ -1046,6 +1095,7 @@ await page.evaluate(() => console.log("Debug from browser"));
    // After: Exported utility function
    export function formatValue(value: unknown): string { ... }
    ```
+
 3. Temporarily lower thresholds (with documented plan to restore)
 
 ---
@@ -1077,45 +1127,76 @@ await page.evaluate(() => console.log("Debug from browser"));
 
 ### Commands
 
-| Command | Purpose | Speed |
-|---------|---------|-------|
-| `npm test` | Unit + UI + Component tests | ~30s |
-| `npm run test:all` | All tests including E2E | ~5min |
-| `npm run test:unit` | Unit tests only | ~8s |
-| `npm run test:component` | Component tests | ~30s |
-| `npm run test:e2e:docker` | E2E in Docker | ~3min |
-| `npm run bdd:check` | BDD coverage check | ~5s |
-| `npm run test:pyramid` | Test pyramid health check | ~2s |
-| `npm run test:pyramid:strict` | Pyramid check (fails on violation) | ~2s |
+| Command                       | Purpose                            | Speed |
+| ----------------------------- | ---------------------------------- | ----- |
+| `npm test`                    | Unit + UI + Component tests        | ~30s  |
+| `npm run test:all`            | All tests including E2E            | ~5min |
+| `npm run test:unit`           | Unit tests only                    | ~8s   |
+| `npm run test:component`      | Component tests                    | ~30s  |
+| `npm run test:e2e:docker`     | E2E in Docker                      | ~3min |
+| `npm run bdd:check`           | BDD coverage check                 | ~5s   |
+| `npm run test:pyramid`        | Test pyramid health check          | ~2s   |
+| `npm run test:pyramid:strict` | Pyramid check (fails on violation) | ~2s   |
 
 ### Coverage Targets
 
-| Layer | Target | Current |
-|-------|--------|---------|
-| Global (statements) | 75% | ✅ 80% |
-| Global (branches) | 67% | ✅ 71% |
-| Global (functions) | 70% | ✅ 73% |
-| Global (lines) | 75% | ✅ 81% |
-| BDD scenarios | 100% | ✅ |
-| Domain layer | 78% | 🎯 |
+| Layer               | Target | Current |
+| ------------------- | ------ | ------- |
+| Global (statements) | 75%    | ✅ 80%  |
+| Global (branches)   | 67%    | ✅ 71%  |
+| Global (functions)  | 70%    | ✅ 73%  |
+| Global (lines)      | 75%    | ✅ 81%  |
+| BDD scenarios       | 100%   | ✅      |
+| Domain layer        | 78%    | 🎯      |
 
 ### Test Pyramid Targets
 
-| Layer | Target Ratio | Current |
-|-------|--------------|---------|
-| Unit Tests | ≥70% | ✅ 84% |
-| Component Tests | 10-25% | ✅ 11% |
-| E2E Tests | ≤10% | ✅ 5% |
+| Layer           | Target Ratio | Current |
+| --------------- | ------------ | ------- |
+| Unit Tests      | ≥70%         | ✅ 84%  |
+| Component Tests | 10-25%       | ✅ 11%  |
+| E2E Tests       | ≤10%         | ✅ 5%   |
 
 ### Test Count
 
-| Type | Files | Test Cases |
-|------|-------|------------|
-| Unit tests | ~244 | ~5116 |
-| Component tests | ~33 | ~530 |
-| E2E tests | ~14 | ~67 |
-| BDD scenarios | 14 | ~50 |
+| Type            | Files | Test Cases |
+| --------------- | ----- | ---------- |
+| Unit tests      | ~244  | ~5116      |
+| Component tests | ~33   | ~530       |
+| E2E tests       | ~14   | ~67        |
+| BDD scenarios   | 14    | ~50        |
 
 ---
 
-**Last updated**: 2025-12-11
+## Label parity E2E
+
+**Spec**: `packages/obsidian-plugin/tests/e2e/specs/wikilink-label-parity.spec.ts`
+
+**Purpose**: Regression guard for the "Wikilink Read View Label Restoration" fix (task `bde3a1d3`). Verifies that bare `[[uuid]]` wikilinks are rendered using `exo__Asset_label` in **both** Reading View and Live Preview — not the raw filename/UUID.
+
+**What it covers**:
+
+- Reading View: Obsidian renders `<a class="internal-link">` with alias from `aliases` frontmatter
+- Live Preview: `WikilinkLabelViewPlugin` (CodeMirror extension) decorates bare `[[target]]` with `span.exocortex-wikilink-label[data-target-path="target"]`
+- Parity assertion: both modes show identical human-readable labels
+- 3 asset types: `ems__Task`, `ems__Project`, `ims__Concept`
+
+**Fixtures** (`packages/obsidian-plugin/tests/e2e/test-vault/label-parity/`):
+| File | Class | Label |
+|------|-------|-------|
+| `label-parity-task.md` | `ems__Task` | `LP Task Label` |
+| `label-parity-project.md` | `ems__Project` | `LP Project Label` |
+| `lp-concept.md` | `ims__Concept` | `LP Concept Label` |
+| `lp-host.md` | host file | contains all 3 bare wikilinks |
+
+**CI shard**: shard 6 (see `packages/obsidian-plugin/playwright-shard-assignments.json`)
+
+**Relevant source paths** (spec will fail if these regress):
+
+- `packages/obsidian-plugin/src/presentation/editor-extensions/WikilinkLabelViewPlugin.ts`
+- `packages/obsidian-plugin/src/domain/display-name/`
+- `packages/obsidian-plugin/src/presentation/body/`
+
+---
+
+**Last updated**: 2026-05-03
