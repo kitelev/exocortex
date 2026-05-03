@@ -34,6 +34,6 @@ PROMPT="$(< "$TASK_FILE")"
 
 echo "[runner] $(date '+%Y-%m-%dT%H:%M:%S%z'): spawning claude model=$TASK_MODEL timeout=${TASK_TIMEOUT}m"
 
-# Run real claude -p — exec replaces this process
-exec env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_EXECPATH \
-  claude --dangerously-skip-permissions --model "$TASK_MODEL" -p "$PROMPT"
+# Pass prompt via stdin to avoid shell parsing '---' frontmatter delimiter as a CLI option.
+printf '%s' "$PROMPT" | env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_EXECPATH \
+  claude --dangerously-skip-permissions --model "$TASK_MODEL" -p

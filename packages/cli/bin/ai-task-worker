@@ -14,7 +14,7 @@ mkdir -p "$LOG_DIR"
 LOG="$LOG_DIR/aitask-worker.log"
 RUNNER="$HOME/.exocortex/bin/ai-task-runner"
 
-log() { echo "[ai-task-worker] $(date '+%Y-%m-%dT%H:%M:%S%z'): $*" | tee -a "$LOG"; }
+log() { echo "[ai-task-worker] $(date '+%Y-%m-%dT%H:%M:%S%z'): $*"; }
 
 log "Scan start (vault=$VAULT_DIR)"
 
@@ -25,9 +25,7 @@ vault, log_path, runner, parent_pid = sys.argv[1:5]
 
 def log(msg):
     ts = datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S%z')
-    line = f"[ai-task-worker] {ts}: {msg}"
-    print(line)
-    open(log_path, 'a').write(line + "\n")
+    print(f"[ai-task-worker] {ts}: {msg}")
 
 def now_iso5():
     tz5 = datetime.timezone(datetime.timedelta(hours=5))
