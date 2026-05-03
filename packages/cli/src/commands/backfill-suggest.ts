@@ -109,8 +109,10 @@ function extractAliases(content: string): string[] {
   return aliases.filter(Boolean);
 }
 
-function isConceptFile(content: string): boolean {
-  return content.includes(IMS_CONCEPT_UUID);
+export function isConceptFile(content: string): boolean {
+  const fm = parseFrontmatterRaw(content);
+  const classVal = fm["exo__Instance_class"] ?? "";
+  return classVal.includes(IMS_CONCEPT_UUID);
 }
 
 export function walkMdFiles(dir: string): string[] {
@@ -153,13 +155,15 @@ export function loadConcepts(vaultPath: string): ConceptEntry[] {
   return concepts;
 }
 
+export const MIN_LABEL_FOR_SUBSTRING = 4;
+
 export function scoreMatch(text: string, term: string): number {
   const textLower = text.toLowerCase();
   const termLower = term.toLowerCase();
-  if (!termLower || termLower.length < 2) return 0;
+  if (!termLower) return 0;
 
   if (textLower === termLower) return 1.0;
-  if (textLower.includes(termLower)) return 0.85;
+  if (termLower.length >= MIN_LABEL_FOR_SUBSTRING && textLower.includes(termLower)) return 0.85;
   return 0;
 }
 
