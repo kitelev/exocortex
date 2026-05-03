@@ -3,8 +3,6 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSy
 import { homedir } from "os";
 import { join, resolve } from "path";
 
-// ims__Concept class UUID
-const IMS_CONCEPT_UUID = "dda12c48-6886-4624-8710-ed4ba92ce2b3";
 
 export interface ConceptEntry {
   uid: string;
@@ -109,10 +107,8 @@ function extractAliases(content: string): string[] {
   return aliases.filter(Boolean);
 }
 
-export function isConceptFile(content: string): boolean {
-  const fm = parseFrontmatterRaw(content);
-  const classVal = fm["exo__Instance_class"] ?? "";
-  return classVal.includes(IMS_CONCEPT_UUID);
+export function isConceptFile(filePath: string, _content: string): boolean {
+  return filePath.includes("/concepts/");
 }
 
 export function walkMdFiles(dir: string): string[] {
@@ -142,7 +138,7 @@ export function loadConcepts(vaultPath: string): ConceptEntry[] {
     } catch {
       continue;
     }
-    if (!isConceptFile(content)) continue;
+    if (!isConceptFile(filePath, content)) continue;
 
     const fm = parseFrontmatterRaw(content);
     const uid = fm["exo__Asset_uid"] ?? "";

@@ -51,38 +51,24 @@ describe("backfill suggest — scoreMatch", () => {
 });
 
 describe("backfill suggest — isConceptFile", () => {
-  const CONCEPT_UUID = "dda12c48-6886-4624-8710-ed4ba92ce2b3";
-
-  const conceptFrontmatter = `---
-exo__Asset_uid: abc-123
-exo__Asset_label: My Concept
-exo__Instance_class: "[[${CONCEPT_UUID}|ims__Concept]]"
----
-This is the body text.`;
-
-  const nonConceptFrontmatter = `---
-exo__Asset_uid: def-456
-exo__Asset_label: My Task
-exo__Instance_class: "[[1b20a8f0-d745-4e93-91db-4531b3df120e|ems__Task]]"
----
-This text references a concept wikilink [[${CONCEPT_UUID}|ims__Concept]] in the body.`;
-
-  const noFrontmatter = `Just plain body text mentioning ${CONCEPT_UUID} without frontmatter.`;
-
-  it("returns true when exo__Instance_class frontmatter contains concept UUID", () => {
-    expect(isConceptFile(conceptFrontmatter)).toBe(true);
+  it("returns true for file inside /concepts/ directory", () => {
+    expect(isConceptFile("/vault/03 Knowledge/concepts/abc-123.md", "")).toBe(true);
   });
 
-  it("returns false when concept UUID appears only in body, not in frontmatter class", () => {
-    expect(isConceptFile(nonConceptFrontmatter)).toBe(false);
+  it("returns true for nested path inside /concepts/", () => {
+    expect(isConceptFile("/vault/03 Knowledge/concepts/sub/def-456.md", "")).toBe(true);
   });
 
-  it("returns false for file with no frontmatter", () => {
-    expect(isConceptFile(noFrontmatter)).toBe(false);
+  it("returns false for file outside /concepts/ directory", () => {
+    expect(isConceptFile("/vault/03 Knowledge/aiKnow/ghi-789.md", "some content")).toBe(false);
   });
 
-  it("returns false for file with empty content", () => {
-    expect(isConceptFile("")).toBe(false);
+  it("returns false for file whose name contains 'concepts' but not as directory segment", () => {
+    expect(isConceptFile("/vault/03 Knowledge/my-concepts-index.md", "")).toBe(false);
+  });
+
+  it("returns false for empty path", () => {
+    expect(isConceptFile("", "")).toBe(false);
   });
 });
 
