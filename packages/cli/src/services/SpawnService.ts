@@ -128,6 +128,26 @@ export async function countClaudeSessions(execFn: ExecFn = exec): Promise<number
 }
 
 /**
+ * Completion detection B (T1.4): scans the last 20 lines of the Claude stdout
+ * log for a line starting with "DONE:" (case-insensitive). Returns true if the
+ * marker is found, false otherwise (file unreadable counts as not found).
+ */
+export function checkStdoutDone(
+  logFilePath: string,
+  readFileFn?: (filePath: string) => string,
+): boolean {
+  try {
+    const read = readFileFn ?? ((p: string) => readFileSync(p, "utf8"));
+    const content = read(logFilePath);
+    const lines = content.trimEnd().split("\n");
+    const tail = lines.slice(-20);
+    return tail.some((line) => /^DONE:/i.test(line.trim()));
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Polls tmux list-windows until the named window disappears or timeout elapses.
  * Returns 0 if window exited cleanly, 124 if timed out.
  */
@@ -270,8 +290,15 @@ export async function spawnSession(
       await execPromise(`tmux kill-window -t ${windowName}`).catch(() => {});
       return 0;
     }
-    // Vault polling timed out — hand off to Completion detection B (T1.4).
+    // Vault polling timed out — Completion detection B (T1.4): check stdout log.
     await execPromise(`tmux kill-window -t ${windowName}`).catch(() => {});
+    if (checkStdoutDone(logFile, deps.readFileFn)) {
+      updateFn(opts.taskFilePath, {
+        "ems__Effort_status": "[[ems__EffortStatusReview]]",
+        "exo__Asset_updatedAt": nowIso(),
+      });
+      return 0;
+    }
     updateFn(opts.taskFilePath, {
       "ems__Effort_status": "[[ems__EffortStatusFailed]]",
       "aiTask__Task_lastError": "timeout exceeded",
@@ -282,8 +309,15 @@ export async function spawnSession(
 
   // tmux window exited first.
   if (winner.code === 124) {
-    // tmux-side timeout — treat same as vault timeout.
+    // tmux-side timeout — Completion detection B (T1.4): check stdout log.
     await execPromise(`tmux kill-window -t ${windowName}`).catch(() => {});
+    if (checkStdoutDone(logFile, deps.readFileFn)) {
+      updateFn(opts.taskFilePath, {
+        "ems__Effort_status": "[[ems__EffortStatusReview]]",
+        "exo__Asset_updatedAt": nowIso(),
+      });
+      return 0;
+    }
     updateFn(opts.taskFilePath, {
       "ems__Effort_status": "[[ems__EffortStatusFailed]]",
       "aiTask__Task_lastError": "timeout exceeded",
