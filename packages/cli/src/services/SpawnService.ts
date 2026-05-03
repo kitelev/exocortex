@@ -3,6 +3,7 @@ import { mkdirSync, existsSync, readFileSync, appendFileSync } from "fs";
 import { homedir } from "os";
 import path from "path";
 import { atomicUpdateFrontmatter } from "./AtomicFrontmatterService.js";
+import { computeSessionCost } from "./SessionCostService.js";
 
 export interface SpawnOptions {
   taskFilePath: string;
@@ -17,6 +18,8 @@ export type ExecFn = (
   callback: (error: Error | null, stdout: string, stderr: string) => void,
 ) => unknown;
 
+export type CostFn = typeof computeSessionCost;
+
 /** Result of vault status polling: completion detected or deadline reached. */
 export type VaultPollResult = "done" | "timeout";
 
@@ -25,6 +28,8 @@ export interface SpawnDeps {
   atomicUpdate?: typeof atomicUpdateFrontmatter;
   /** Polling interval for tmux window monitoring (ms). Default: 5000. */
   pollIntervalMs?: number;
+  /** Injectable cost computation function for tests. */
+  costFn?: CostFn;
   /** Custom file reader for vault status polling (injectable for tests). */
   readFileFn?: (filePath: string) => string;
   /** Polling interval for vault status detection (ms). Default: 10_000. */
@@ -205,6 +210,7 @@ export async function spawnSession(
 ): Promise<number> {
   const execFn = deps.execFn ?? exec;
   const updateFn = deps.atomicUpdate ?? atomicUpdateFrontmatter;
+  const costFn = deps.costFn ?? computeSessionCost;
   const execPromise = makeExecPromise(execFn);
   const getSessionCount = deps.countClaudeSessionsFn ?? (() => countClaudeSessions(execFn));
 
@@ -223,6 +229,8 @@ export async function spawnSession(
   const envPrefix =
     "env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_EXECPATH";
   const tmuxCmd = `tmux new-window -d -n ${windowName} "${envPrefix} bash -c ${JSON.stringify(claudeCmd)}"`;
+
+  const spawnTimestamp = Date.now();
 
   // Pre-spawn cap check — performed immediately before spawn to minimise race window
   const sessionCount = await getSessionCount();
@@ -318,14 +326,21 @@ export async function spawnSession(
       });
       return 0;
     }
+    const { costUsd } = costFn(opts.taskUuid, spawnTimestamp);
     updateFn(opts.taskFilePath, {
       "ems__Effort_status": "[[ems__EffortStatusFailed]]",
       "aiTask__Task_lastError": "timeout exceeded",
+      "aiTask__Task_cost": costUsd,
       "exo__Asset_updatedAt": nowIso(),
     });
     return 124;
   }
 
   // Window closed naturally — success.
+  const { costUsd } = costFn(opts.taskUuid, spawnTimestamp);
+  updateFn(opts.taskFilePath, {
+    "aiTask__Task_cost": costUsd,
+    "exo__Asset_updatedAt": nowIso(),
+  });
   return 0;
 }
