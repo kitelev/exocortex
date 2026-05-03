@@ -1,15 +1,16 @@
 import { jest, describe, it, expect, beforeEach, afterEach } from "@jest/globals";
-import type { ExecFn } from "../../../src/services/SpawnService.js";
 import {
   spawnSession,
   monitorSession,
   pollVaultStatus,
   countClaudeSessions,
+  checkStdoutDone,
   CLAUDE_SESSION_CAP,
+  type ExecFn,
 } from "../../../src/services/SpawnService.js";
 import type { AtomicUpdateResult } from "../../../src/services/AtomicFrontmatterService.js";
 import { mkdtempSync, rmSync, writeFileSync } from "fs";
-import { tmpdir } from "os";
+import { tmpdir, homedir } from "os";
 import path from "path";
 import yaml from "js-yaml";
 
@@ -435,6 +436,46 @@ describe("spawnSession", () => {
     expect(code).toBe(0);
   });
 
+  it("returns 0 and sets Review when vault times out but stdout contains DONE: (T1.4)", async () => {
+    jest.useFakeTimers();
+
+    const timeoutMinutes = 8 / 60; // 8_000 ms
+    const opts = { ...BASE_OPTS, timeoutMinutes };
+
+    const execFn: ExecFn = (cmd, cb) => {
+      if (cmd.includes("list-windows")) {
+        cb(null, `${WINDOW_NAME}\n`, ""); // window stays alive
+      } else {
+        cb(null, "", "");
+      }
+      return {};
+    };
+
+    const logPath = path.join(homedir(), ".exocortex", "ai-task-logs", `${TASK_UUID}.log`);
+
+    const promise = spawnSession(opts, {
+      execFn,
+      atomicUpdate: mockAtomicUpdate,
+      pollIntervalMs: 600_000,
+      readFileFn: (p) => {
+        if (p === logPath) return "Claude output\nDONE: task completed successfully\n";
+        return buildMd({ exo__Asset_uid: TASK_UUID }); // vault — no status flip
+      },
+      vaultPollIntervalMs: 5_000,
+    });
+
+    await jest.advanceTimersByTimeAsync(20_000);
+    const code = await promise;
+
+    expect(code).toBe(0);
+    expect(
+      atomicCalls.some(([, u]) => u["ems__Effort_status"] === "[[ems__EffortStatusReview]]"),
+    ).toBe(true);
+    expect(
+      atomicCalls.some(([, u]) => u["aiTask__Task_lastError"] !== undefined),
+    ).toBe(false);
+  });
+
   it("returns 124 when vault times out without status flip (T1.4 handoff)", async () => {
     jest.useFakeTimers();
 
@@ -465,6 +506,45 @@ describe("spawnSession", () => {
     expect(
       atomicCalls.some(([, u]) => u["aiTask__Task_lastError"] === "timeout exceeded"),
     ).toBe(true);
+  });
+});
+
+// --- checkStdoutDone ---
+
+describe("checkStdoutDone", () => {
+  it("returns true when last lines contain 'DONE:' marker", () => {
+    const log = "some output\nprocessing...\nDONE: task completed\n";
+    expect(checkStdoutDone("/any.log", () => log)).toBe(true);
+  });
+
+  it("returns true when DONE: appears within last 20 lines", () => {
+    const body = Array.from({ length: 15 }, (_, i) => `line ${i}`).join("\n");
+    const log = `${body}\nDONE: finished\n`;
+    expect(checkStdoutDone("/any.log", () => log)).toBe(true);
+  });
+
+  it("returns false when DONE: is not in last 20 lines", () => {
+    const earlyDone = "DONE: old run\n" + Array.from({ length: 25 }, (_, i) => `line ${i}`).join("\n");
+    expect(checkStdoutDone("/any.log", () => earlyDone)).toBe(false);
+  });
+
+  it("returns false when log has no DONE: marker at all", () => {
+    const log = "Claude output...\nsome work done\nfinal line\n";
+    expect(checkStdoutDone("/any.log", () => log)).toBe(false);
+  });
+
+  it("returns false when log file is unreadable", () => {
+    expect(checkStdoutDone("/nonexistent/path.log")).toBe(false);
+  });
+
+  it("matches DONE: case-insensitively", () => {
+    const log = "work done\ndone: lowercase marker\n";
+    expect(checkStdoutDone("/any.log", () => log)).toBe(true);
+  });
+
+  it("ignores DONE: that appears mid-line (not at line start)", () => {
+    const log = "output containing DONE: in middle of line\n";
+    expect(checkStdoutDone("/any.log", () => log)).toBe(false);
   });
 });
 
