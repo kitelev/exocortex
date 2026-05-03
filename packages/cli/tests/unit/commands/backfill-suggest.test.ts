@@ -5,6 +5,7 @@ import {
   computeCandidates,
   isAutoApproved,
   isConceptFile,
+  matchesWordBoundary,
   MIN_LABEL_FOR_SUBSTRING,
 } from "../../../src/commands/backfill-suggest.js";
 
@@ -47,6 +48,44 @@ describe("backfill suggest — scoreMatch", () => {
 
   it("returns 0.85 for substring with term of exactly 4 chars", () => {
     expect(scoreMatch("knowledge management", "know")).toBe(0.85);
+  });
+});
+
+describe("backfill suggest — matchesWordBoundary", () => {
+  it("returns true when term appears as a standalone word", () => {
+    expect(matchesWordBoundary("used typescript interfaces to define the schema", "TypeScript")).toBe(true);
+  });
+
+  it("returns false when term is a substring of a larger word", () => {
+    expect(matchesWordBoundary("javascriptengine.run()", "Java")).toBe(false);
+  });
+
+  it("returns false for stop word terms", () => {
+    expect(matchesWordBoundary("this is the answer for all", "the")).toBe(false);
+    expect(matchesWordBoundary("made for testing", "for")).toBe(false);
+  });
+
+  it("returns false for terms shorter than MIN_LABEL_FOR_SUBSTRING", () => {
+    expect(matchesWordBoundary("go is a language", "go")).toBe(false);
+    expect(matchesWordBoundary("a ai b", "ai")).toBe(false);
+  });
+
+  it("is case-insensitive", () => {
+    expect(matchesWordBoundary("used TYPESCRIPT daily", "typescript")).toBe(true);
+    expect(matchesWordBoundary("used typescript daily", "TypeScript")).toBe(true);
+  });
+
+  it("matches at start and end of string", () => {
+    expect(matchesWordBoundary("typescript is great", "TypeScript")).toBe(true);
+    expect(matchesWordBoundary("we use typescript", "TypeScript")).toBe(true);
+  });
+
+  it("returns false when term is not present", () => {
+    expect(matchesWordBoundary("totally different text", "TypeScript")).toBe(false);
+  });
+
+  it("returns true for multi-word concept labels when present as phrase", () => {
+    expect(matchesWordBoundary("knowledge management systems are important", "knowledge management")).toBe(true);
   });
 });
 
@@ -159,6 +198,59 @@ describe("backfill suggest — computeCandidates", () => {
       expect(labelTop.confidence).toBeGreaterThan(bodyTop.confidence);
     }
   });
+
+  it("detects body_word_exact when concept label is a standalone word in body", () => {
+    const candidates = computeCandidates(
+      "T2.1: Implement backfill-suggester",
+      "",
+      "used typescript interfaces to define the schema",
+      [{ uid: "uid-ts", label: "TypeScript", aliases: [], filePath: "/vault/c-ts.md" }],
+    );
+    const top = candidates[0];
+    expect(top).toBeDefined();
+    expect(top.match_type).toBe("body_word_exact");
+    expect(top.confidence).toBe(0.90);
+  });
+
+  it("does NOT produce body_word_exact when concept label is substring of larger word", () => {
+    const candidates = computeCandidates(
+      "Some title",
+      "",
+      "javascriptengine runs the code",
+      [{ uid: "uid-java", label: "Java", aliases: [], filePath: "/vault/c-java.md" }],
+    );
+    const javaCandidate = candidates.find((c) => c.concept_uid === "uid-java");
+    if (javaCandidate) {
+      expect(javaCandidate.match_type).not.toBe("body_word_exact");
+    }
+  });
+
+  it("detects body_word_exact in description field as well", () => {
+    const candidates = computeCandidates(
+      "Some unrelated title",
+      "This note covers TypeScript best practices",
+      "",
+      [{ uid: "uid-ts", label: "TypeScript", aliases: [], filePath: "/vault/c-ts.md" }],
+    );
+    const top = candidates[0];
+    expect(top).toBeDefined();
+    expect(top.match_type).toBe("body_word_exact");
+    expect(top.confidence).toBe(0.90);
+  });
+
+  it("body_word_exact confidence 0.90 beats description_exact 0.75", () => {
+    // If body has word-boundary match AND description has exact match, body_word_exact wins
+    const candidates = computeCandidates(
+      "Some title",
+      "blockchain",
+      "this note covers blockchain technology in detail",
+      concepts,
+    );
+    const top = candidates.find((c) => c.concept_uid === "uid-5");
+    expect(top).toBeDefined();
+    expect(top!.match_type).toBe("body_word_exact");
+    expect(top!.confidence).toBe(0.90);
+  });
 });
 
 describe("backfill suggest — isAutoApproved", () => {
@@ -201,6 +293,29 @@ describe("backfill suggest — isAutoApproved", () => {
   it("respects custom threshold", () => {
     expect(isAutoApproved(substringCandidate, 0.5)).toBe(false);
     expect(isAutoApproved(exactLabelCandidate, 1.1)).toBe(false);
+  });
+
+  it("auto-approves body_word_exact with confidence ≥ threshold", () => {
+    const wordExactCandidate: BackfillCandidate = {
+      concept_uid: "uid-ts",
+      concept_label: "TypeScript",
+      concept_file: "/vault/c-ts.md",
+      confidence: 0.90,
+      match_type: "body_word_exact",
+    };
+    expect(isAutoApproved(wordExactCandidate, 0.8)).toBe(true);
+    expect(isAutoApproved(wordExactCandidate, 0.95)).toBe(false);
+  });
+
+  it("does NOT auto-approve body_word_exact below threshold", () => {
+    const lowWordExact: BackfillCandidate = {
+      concept_uid: "uid-ts",
+      concept_label: "TypeScript",
+      concept_file: "/vault/c-ts.md",
+      confidence: 0.70,
+      match_type: "body_word_exact",
+    };
+    expect(isAutoApproved(lowWordExact, 0.8)).toBe(false);
   });
 });
 
