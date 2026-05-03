@@ -48,7 +48,7 @@ export interface BackfillSuggestOptions {
   dryRun?: boolean;
 }
 
-function parseFrontmatterRaw(content: string): Record<string, string> {
+export function parseFrontmatterRaw(content: string): Record<string, string> {
   const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (!match) return {};
   const result: Record<string, string> = {};
@@ -60,7 +60,7 @@ function parseFrontmatterRaw(content: string): Record<string, string> {
   return result;
 }
 
-function extractBodyText(content: string): string {
+export function extractBodyText(content: string): string {
   const afterFrontmatter = content.replace(/^---[\s\S]*?---\r?\n/, "");
   // Strip markdown headers, wikilinks, code blocks
   return afterFrontmatter
