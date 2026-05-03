@@ -7,6 +7,7 @@ import {
   checkStdoutDone,
   CLAUDE_SESSION_CAP,
   type ExecFn,
+  type CostFn,
 } from "../../../src/services/SpawnService.js";
 import type { AtomicUpdateResult } from "../../../src/services/AtomicFrontmatterService.js";
 import { mkdtempSync, rmSync, writeFileSync } from "fs";
@@ -49,6 +50,8 @@ const mockAtomicUpdate = (
   atomicCalls.push([filePath, updates]);
   return { success: true, verified: true };
 };
+
+const mockCostFn: CostFn = (_taskUuid, _spawnTs) => ({ costUsd: 0.42, warning: null });
 
 const BASE_OPTS = {
   taskFilePath: "", // set in beforeEach
@@ -309,6 +312,7 @@ describe("spawnSession", () => {
     await spawnSession(BASE_OPTS, {
       execFn,
       atomicUpdate: mockAtomicUpdate,
+      costFn: mockCostFn,
       pollIntervalMs: 1,
       countClaudeSessionsFn: async () => 0,
     });
@@ -323,12 +327,69 @@ describe("spawnSession", () => {
     );
   });
 
+  it("writes aiTask__Task_cost to frontmatter after successful session", async () => {
+    const execFn = makeExecFn({
+      "new-window": "",
+      "list-windows": "",
+    });
+
+    await spawnSession(BASE_OPTS, {
+      execFn,
+      atomicUpdate: mockAtomicUpdate,
+      costFn: mockCostFn,
+      pollIntervalMs: 1,
+      countClaudeSessionsFn: async () => 0,
+    });
+
+    const costCall = atomicCalls.find(([, u]) => "aiTask__Task_cost" in u);
+    expect(costCall).toBeDefined();
+    expect(costCall![1]["aiTask__Task_cost"]).toBe(0.42);
+  });
+
+  it("writes aiTask__Task_cost on tmux-side timeout", async () => {
+    jest.useFakeTimers();
+
+    const timeoutMinutes = 6 / 60;
+    const timeoutMs = timeoutMinutes * 60 * 1000;
+    const opts = { ...BASE_OPTS, timeoutMinutes };
+
+    const execFn: ExecFn = (cmd, cb) => {
+      if (cmd.includes("list-windows")) {
+        cb(null, `${WINDOW_NAME}\n`, "");
+      } else {
+        cb(null, "", "");
+      }
+      return {};
+    };
+
+    const promise = spawnSession(opts, {
+      execFn,
+      atomicUpdate: mockAtomicUpdate,
+      costFn: mockCostFn,
+      pollIntervalMs: 5000,
+      countClaudeSessionsFn: async () => 0,
+      // Vault polling disabled by very large interval so tmux wins the race
+      vaultPollIntervalMs: 999_999,
+      readFileFn: () => buildMd({ exo__Asset_uid: TASK_UUID }),
+    });
+
+    await jest.advanceTimersByTimeAsync(timeoutMs + 12_000);
+    await promise;
+
+    const timeoutCall = atomicCalls.find(
+      ([, u]) => u["aiTask__Task_lastError"] === "timeout exceeded",
+    );
+    expect(timeoutCall).toBeDefined();
+    expect(timeoutCall![1]["aiTask__Task_cost"]).toBe(0.42);
+  });
+
   it("returns 1 and stores lastError when tmux spawn fails", async () => {
     const execFn = failingExecFn("no server running on /tmp/tmux-501/default");
 
     const code = await spawnSession(BASE_OPTS, {
       execFn,
       atomicUpdate: mockAtomicUpdate,
+      costFn: mockCostFn,
       pollIntervalMs: 1,
       countClaudeSessionsFn: async () => 0,
     });
@@ -362,6 +423,7 @@ describe("spawnSession", () => {
     const promise = spawnSession(opts, {
       execFn,
       atomicUpdate: mockAtomicUpdate,
+      costFn: mockCostFn,
       pollIntervalMs: 5000,
       countClaudeSessionsFn: async () => 0,
     });
@@ -388,8 +450,8 @@ describe("spawnSession", () => {
     const opts2 = { ...BASE_OPTS, taskUuid: "bbbbbbbb-0000-0000-0000-000000000002" };
 
     const [code1, code2] = await Promise.all([
-      spawnSession(opts1, { execFn, atomicUpdate: mockAtomicUpdate, pollIntervalMs: 1, countClaudeSessionsFn: async () => 0 }),
-      spawnSession(opts2, { execFn, atomicUpdate: mockAtomicUpdate, pollIntervalMs: 1, countClaudeSessionsFn: async () => 0 }),
+      spawnSession(opts1, { execFn, atomicUpdate: mockAtomicUpdate, costFn: mockCostFn, pollIntervalMs: 1, countClaudeSessionsFn: async () => 0 }),
+      spawnSession(opts2, { execFn, atomicUpdate: mockAtomicUpdate, costFn: mockCostFn, pollIntervalMs: 1, countClaudeSessionsFn: async () => 0 }),
     ]);
 
     const spawnCalls = calls.filter((c) => c.includes("new-window"));
