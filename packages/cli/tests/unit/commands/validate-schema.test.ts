@@ -57,7 +57,11 @@ const {
   domainToAlgebraTriples,
   buildEARLReport,
   runShapesValidation,
+  applyLegacyExceptionFilter,
 } = await import("../../../src/commands/validate-schema.js");
+
+// Import mocked DomainIRI/DomainLiteral so instanceof checks in applyLegacyExceptionFilter work
+const { DomainIRI: _DomainIRI, DomainLiteral: _DomainLiteral } = await import("exocortex");
 
 const TMP_DIR = "/tmp/validate-schema-test-" + Date.now();
 
@@ -510,5 +514,62 @@ describe("P1.6 buildEARLReport", () => {
     const failed = report["@graph"].find((n: any) => n["earl:result"]?.["earl:outcome"]?.["@id"] === "earl:failed");
     expect(failed).toBeDefined();
     expect((failed as any)["earl:result"]["dc:description"]).toBe("Missing required property");
+  });
+});
+
+describe("P4.3 applyLegacyExceptionFilter", () => {
+  const LEGACY_IRI = "https://exocortex.my/ontology/exo#Asset_legacyValidationException";
+  const EXEMPT_NODE = "obsidian://vault/03%20Knowledge/exo/ebf717aa.md";
+  const OTHER_NODE = "obsidian://vault/03%20Knowledge/exo/other.md";
+
+  // Use the same mocked DomainIRI/DomainLiteral classes that the production code imports
+  const makeTriple = (subjectIRI: string, predicateIRI: string, value: string) => ({
+    subject: new _DomainIRI(subjectIRI),
+    predicate: new _DomainIRI(predicateIRI),
+    object: new _DomainLiteral(value),
+  });
+
+  it("returns report unchanged when no exempt nodes", () => {
+    const report = { conforms: false, violations: [{ focusNode: EXEMPT_NODE, propertyPath: "p", severity: "sh:Violation" as const, message: "err" }] };
+    const result = applyLegacyExceptionFilter([], report);
+    expect(result.violations).toHaveLength(1);
+    expect(result.conforms).toBe(false);
+  });
+
+  it("removes violations for exempt node", () => {
+    const triples = [makeTriple(EXEMPT_NODE, LEGACY_IRI, "true")];
+    const report = {
+      conforms: false,
+      violations: [{ focusNode: EXEMPT_NODE, propertyPath: "p", severity: "sh:Violation" as const, message: "err" }],
+    };
+    const result = applyLegacyExceptionFilter(triples as any, report);
+    expect(result.violations).toHaveLength(0);
+    expect(result.conforms).toBe(true);
+  });
+
+  it("preserves violations for non-exempt nodes", () => {
+    const triples = [makeTriple(EXEMPT_NODE, LEGACY_IRI, "true")];
+    const report = {
+      conforms: false,
+      violations: [
+        { focusNode: EXEMPT_NODE, propertyPath: "p", severity: "sh:Violation" as const, message: "exempt" },
+        { focusNode: OTHER_NODE, propertyPath: "p", severity: "sh:Violation" as const, message: "keep" },
+      ],
+    };
+    const result = applyLegacyExceptionFilter(triples as any, report);
+    expect(result.violations).toHaveLength(1);
+    expect(result.violations[0].focusNode).toBe(OTHER_NODE);
+    expect(result.conforms).toBe(false);
+  });
+
+  it("is idempotent — second call produces same result", () => {
+    const triples = [makeTriple(EXEMPT_NODE, LEGACY_IRI, "true")];
+    const report = {
+      conforms: false,
+      violations: [{ focusNode: EXEMPT_NODE, propertyPath: "p", severity: "sh:Violation" as const, message: "err" }],
+    };
+    const first = applyLegacyExceptionFilter(triples as any, report);
+    const second = applyLegacyExceptionFilter(triples as any, first);
+    expect(second).toEqual(first);
   });
 });
