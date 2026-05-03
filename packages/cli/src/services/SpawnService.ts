@@ -45,6 +45,11 @@ export const CLAUDE_SESSION_CAP = 4;
 
 const COMPLETION_STATUS_FRAGMENTS = ["EffortStatusDone", "EffortStatusReview"];
 
+/** POSIX single-quote escaping: embeds arbitrary string safely in a shell command. */
+function shellSingleQuote(s: string): string {
+  return "'" + s.replace(/'/g, "'\\''") + "'";
+}
+
 const LOG_DIR = path.join(homedir(), ".exocortex", "ai-task-logs");
 const WORKER_LOG = path.join(homedir(), ".exocortex", "logs", "aitask-worker.log");
 
@@ -221,11 +226,11 @@ export async function spawnSession(
   const logFile = path.join(LOG_DIR, `${opts.taskUuid}.log`);
   const windowName = `claude-child-${opts.taskUuid}`;
 
-  const promptFlag = opts.systemPrompt
-    ? `-p ${JSON.stringify(opts.systemPrompt)}`
-    : "";
-
-  const claudeCmd = `claude --model ${opts.model} --dangerously-skip-permissions ${promptFlag} 2>&1 | tee ${JSON.stringify(logFile)}`;
+  // Pass prompt via stdin to avoid shell parsing '---' YAML frontmatter as a CLI option flag.
+  // Single-quote escaping (POSIX) preserves newlines and special characters safely.
+  const claudeCmd = opts.systemPrompt
+    ? `printf '%s' ${shellSingleQuote(opts.systemPrompt)} | claude --model ${opts.model} --dangerously-skip-permissions -p 2>&1 | tee ${JSON.stringify(logFile)}`
+    : `claude --model ${opts.model} --dangerously-skip-permissions -p 2>&1 | tee ${JSON.stringify(logFile)}`;
   const envPrefix =
     "env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_EXECPATH";
   const tmuxCmd = `tmux new-window -d -n ${windowName} "${envPrefix} bash -c ${JSON.stringify(claudeCmd)}"`;
