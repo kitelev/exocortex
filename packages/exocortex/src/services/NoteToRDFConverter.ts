@@ -57,6 +57,10 @@ export class NoteToRDFConverter {
    */
   private readonly BODY_WIKILINK_PATTERN = /(?<!!)\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g;
 
+  // Side-channel for rdf:type triples emitted by valueToRDFObject for enum instance IRIs.
+  // Reset at start of each convertLegacyNote call, flushed after the frontmatter loop.
+  private pendingExtraTriples: Triple[] = [];
+
   constructor(
     @inject(DI_TOKENS.IVaultAdapter) private readonly vault: IVaultAdapter,
     @inject(DI_TOKENS.ILogger) private readonly logger: ILogger = NullLogger,
@@ -102,6 +106,7 @@ export class NoteToRDFConverter {
     file: IFile,
     frontmatter: Record<string, unknown>
   ): Promise<Triple[]> {
+    this.pendingExtraTriples = [];
     const triples: Triple[] = [];
     const subject = this.notePathToIRI(file.path);
 
@@ -128,7 +133,7 @@ export class NoteToRDFConverter {
           triples.push(new Triple(subject, predicate, objectNode));
         } else {
           // Issue #2102: valueToRDFObject now returns array for dual storage support
-          const objectNodes = await this.valueToRDFObject(val, file);
+          const objectNodes = await this.valueToRDFObject(val, file, predicate);
           for (const objectNode of objectNodes) {
             triples.push(new Triple(subject, predicate, objectNode));
 
@@ -172,6 +177,10 @@ export class NoteToRDFConverter {
         }
       }
     }
+
+    // Flush rdf:type triples emitted by valueToRDFObject for enum instance IRIs (Fix #ff3858e5)
+    triples.push(...this.pendingExtraTriples);
+    this.pendingExtraTriples = [];
 
     // Issue #1329: Index body wikilinks to RDF
     // This enables SPARQL queries to find all notes referencing a target note
@@ -787,19 +796,40 @@ export class NoteToRDFConverter {
     throw new Error(`Invalid property key: ${key}`);
   }
 
+  // Fix #ff3858e5: when emitting a class IRI for an enum instance, also push an
+  // rdf:type triple derived from the target file's exo__Instance_class frontmatter.
+  // This satisfies sh:class constraints in the SHACL-lite engine.
+  private emitTypeTripleForEnumInstance(classIRI: IRI, targetFile: IFile): void {
+    const targetFm = this.vault.getFrontmatter(targetFile);
+    if (!targetFm) return;
+    const targetInstanceClass = targetFm["exo__Instance_class"];
+    const raw = Array.isArray(targetInstanceClass)
+      ? targetInstanceClass[0]
+      : targetInstanceClass;
+    if (typeof raw !== "string") return;
+    const parentClassIRI = this.valueToClassURI(raw);
+    if (parentClassIRI instanceof IRI) {
+      this.pendingExtraTriples.push(
+        new Triple(classIRI, Namespace.RDF.term("type"), parentClassIRI)
+      );
+    }
+  }
+
   /**
    * Converts a frontmatter value to RDF object(s).
    *
-   * Issue #2102: For UUID-based wikilinks, returns both File IRI and UUID Literal
-   * to enable SPARQL queries that search by UUID string.
+   * Issue #2102: For UUID-based wikilinks pointing at exo__Asset_prototype, returns both
+   * File IRI and UUID Literal. All other predicates return a single IRI (Fix #ff3858e5).
    *
    * @param value - The frontmatter value to convert
    * @param sourceFile - The source file for resolving wikilinks
-   * @returns Array of RDF objects (IRI or Literal). UUID wikilinks return [IRI, Literal].
+   * @param predicate - The predicate IRI being populated (used to gate dual-storage)
+   * @returns Array of RDF objects (IRI or Literal).
    */
   private async valueToRDFObject(
     value: unknown,
-    sourceFile: IFile
+    sourceFile: IFile,
+    predicate?: IRI
   ): Promise<(IRI | Literal)[]> {
     if (typeof value === "string") {
       const cleanValue = this.removeQuotes(value);
@@ -835,6 +865,8 @@ export class NoteToRDFConverter {
             // replace is safe. Mirrors valueToClassURI's Issue #2745 lookup.
             const basenameClassIRI = this.expandClassValue(targetFile.basename);
             if (basenameClassIRI) {
+              // Fix #ff3858e5: emit rdf:type triple so sh:class constraints resolve
+              this.emitTypeTripleForEnumInstance(basenameClassIRI, targetFile);
               return [basenameClassIRI];
             }
             const targetFm = this.vault.getFrontmatter(targetFile);
@@ -848,7 +880,16 @@ export class NoteToRDFConverter {
               }
             }
 
-            return [fileIRI, uuidLiteral];
+            // Fix #ff3858e5: dual-storage (IRI + UUID Literal) is scoped to
+            // exo__Asset_prototype only. All other predicates emit a single IRI
+            // to avoid sh:maxCount=1 cardinality violations.
+            const isProtoPredicate =
+              predicate?.value.endsWith("#Asset_prototype") ||
+              predicate?.value.endsWith("/Asset_prototype");
+            if (isProtoPredicate) {
+              return [fileIRI, uuidLiteral];
+            }
+            return [fileIRI];
           }
 
           // Issue #2959: When a class-named wikilink resolves to its class
@@ -867,6 +908,8 @@ export class NoteToRDFConverter {
           // is a class reference.
           const basenameClassIRI = this.expandClassValue(targetFile.basename);
           if (basenameClassIRI) {
+            // Fix #ff3858e5: emit rdf:type triple so sh:class constraints resolve
+            this.emitTypeTripleForEnumInstance(basenameClassIRI, targetFile);
             return [basenameClassIRI];
           }
 
