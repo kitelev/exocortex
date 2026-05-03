@@ -1,5 +1,5 @@
 import { exec } from "child_process";
-import { mkdirSync, existsSync, readFileSync } from "fs";
+import { mkdirSync, existsSync, readFileSync, appendFileSync } from "fs";
 import { homedir } from "os";
 import path from "path";
 import { atomicUpdateFrontmatter } from "./AtomicFrontmatterService.js";
@@ -31,15 +31,17 @@ export interface SpawnDeps {
   vaultPollIntervalMs?: number;
   /** Shared cancellation signal — set `cancelled: true` to stop vault polling. */
   vaultCancelSignal?: { cancelled: boolean };
+  /** Override for countClaudeSessions (injected in tests). */
+  countClaudeSessionsFn?: () => Promise<number>;
 }
 
-const LOG_DIR = path.join(homedir(), ".exocortex", "ai-task-logs");
+/** Maximum allowed concurrent claude-(orch|child) tmux sessions before deferring. */
+export const CLAUDE_SESSION_CAP = 4;
 
 const COMPLETION_STATUS_FRAGMENTS = ["EffortStatusDone", "EffortStatusReview"];
 
-function uuid8(uuid: string): string {
-  return uuid.replace(/-/g, "").slice(0, 8);
-}
+const LOG_DIR = path.join(homedir(), ".exocortex", "ai-task-logs");
+const WORKER_LOG = path.join(homedir(), ".exocortex", "logs", "aitask-worker.log");
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -109,6 +111,23 @@ export function pollVaultStatus(
 }
 
 /**
+ * Returns the count of active tmux sessions whose name starts with
+ * "claude-orch" or "claude-child". Used for pre-spawn cap enforcement.
+ */
+export async function countClaudeSessions(execFn: ExecFn = exec): Promise<number> {
+  const execPromise = makeExecPromise(execFn);
+  try {
+    const { stdout } = await execPromise(
+      "tmux list-sessions 2>/dev/null | grep -E '^claude-(orch|child)' | wc -l",
+    );
+    const n = parseInt(stdout.trim(), 10);
+    return isNaN(n) ? 0 : n;
+  } catch {
+    return 0;
+  }
+}
+
+/**
  * Polls tmux list-windows until the named window disappears or timeout elapses.
  * Returns 0 if window exited cleanly, 124 if timed out.
  */
@@ -157,6 +176,7 @@ export function monitorSession(
  * Returns:
  *   0   — vault status flipped OR window exited cleanly
  *   1   — spawn failed
+ *   2   — deferred (session cap exceeded)
  *   124 — timeout without status flip (hand off to Completion detection B / T1.4)
  */
 export async function spawnSession(
@@ -166,13 +186,14 @@ export async function spawnSession(
   const execFn = deps.execFn ?? exec;
   const updateFn = deps.atomicUpdate ?? atomicUpdateFrontmatter;
   const execPromise = makeExecPromise(execFn);
+  const getSessionCount = deps.countClaudeSessionsFn ?? (() => countClaudeSessions(execFn));
 
   if (!existsSync(LOG_DIR)) {
     mkdirSync(LOG_DIR, { recursive: true });
   }
 
   const logFile = path.join(LOG_DIR, `${opts.taskUuid}.log`);
-  const windowName = `aitask-${uuid8(opts.taskUuid)}`;
+  const windowName = `claude-child-${opts.taskUuid}`;
 
   const promptFlag = opts.systemPrompt
     ? `-p ${JSON.stringify(opts.systemPrompt)}`
@@ -182,6 +203,29 @@ export async function spawnSession(
   const envPrefix =
     "env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_EXECPATH";
   const tmuxCmd = `tmux new-window -d -n ${windowName} "${envPrefix} bash -c ${JSON.stringify(claudeCmd)}"`;
+
+  // Pre-spawn cap check — performed immediately before spawn to minimise race window
+  const sessionCount = await getSessionCount();
+  if (sessionCount >= CLAUDE_SESSION_CAP) {
+    const now = nowIso();
+    const deferReason = `claude session cap reached (${sessionCount}/${CLAUDE_SESSION_CAP}), task deferred to next iteration`;
+    updateFn(opts.taskFilePath, {
+      "ems__Effort_status": "[[ems__EffortStatusBacklog]]",
+      "aiTask__Task_claimedBy": null,
+      "aiTask__Task_claimedAt": null,
+      "ems__Effort_startTimestamp": null,
+      "aiTask__Task_deferReason": deferReason,
+      "aiTask__Task_deferredAt": now,
+      "exo__Asset_updatedAt": now,
+    });
+    try {
+      mkdirSync(path.dirname(WORKER_LOG), { recursive: true });
+      appendFileSync(WORKER_LOG, `[ai-task-worker] ${now}: DEFERRED ${opts.taskUuid}: ${deferReason}\n`);
+    } catch {
+      // log write is best-effort
+    }
+    return 2;
+  }
 
   try {
     await execPromise(tmuxCmd);
