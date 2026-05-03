@@ -3,6 +3,7 @@ import { mkdirSync, existsSync } from "fs";
 import { homedir } from "os";
 import path from "path";
 import { atomicUpdateFrontmatter } from "./AtomicFrontmatterService.js";
+import { computeSessionCost } from "./SessionCostService.js";
 
 export interface SpawnOptions {
   taskFilePath: string;
@@ -17,11 +18,15 @@ export type ExecFn = (
   callback: (error: Error | null, stdout: string, stderr: string) => void,
 ) => unknown;
 
+export type CostFn = typeof computeSessionCost;
+
 export interface SpawnDeps {
   execFn?: ExecFn;
   atomicUpdate?: typeof atomicUpdateFrontmatter;
   /** Polling interval for tmux window monitoring (ms). Default: 5000. */
   pollIntervalMs?: number;
+  /** Injectable cost computation function for tests. */
+  costFn?: CostFn;
 }
 
 const LOG_DIR = path.join(homedir(), ".exocortex", "ai-task-logs");
@@ -91,6 +96,7 @@ export async function spawnSession(
 ): Promise<number> {
   const execFn = deps.execFn ?? exec;
   const updateFn = deps.atomicUpdate ?? atomicUpdateFrontmatter;
+  const costFn = deps.costFn ?? computeSessionCost;
   const execPromise = makeExecPromise(execFn);
 
   if (!existsSync(LOG_DIR)) {
@@ -108,6 +114,8 @@ export async function spawnSession(
   const envPrefix =
     "env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_EXECPATH";
   const tmuxCmd = `tmux new-window -d -n ${windowName} "${envPrefix} bash -c ${JSON.stringify(claudeCmd)}"`;
+
+  const spawnTimestamp = Date.now();
 
   try {
     await execPromise(tmuxCmd);
@@ -137,13 +145,21 @@ export async function spawnSession(
     } catch {
       // window may already be gone
     }
+    const { costUsd } = costFn(opts.taskUuid, spawnTimestamp);
     updateFn(opts.taskFilePath, {
       "ems__Effort_status": "[[ems__EffortStatusFailed]]",
       "aiTask__Task_lastError": "timeout exceeded",
+      "aiTask__Task_cost": costUsd,
       "exo__Asset_updatedAt": nowIso(),
     });
     return 124;
   }
+
+  const { costUsd } = costFn(opts.taskUuid, spawnTimestamp);
+  updateFn(opts.taskFilePath, {
+    "aiTask__Task_cost": costUsd,
+    "exo__Asset_updatedAt": nowIso(),
+  });
 
   return 0;
 }
