@@ -483,8 +483,10 @@ describe("NoteToRDFConverter", () => {
 
       const nonExoEmsTriples = triples.filter((t) => {
         const pred = (t.predicate as IRI).value;
-        // Namespace uses exocortex.my not exocortex.org
-        return !pred.includes("exocortex.my");
+        // exocortex.my predicates are allowed; rdfs:label is emitted as a
+        // companion to exo__Asset_label (Issue #2807) and is also expected
+        return !pred.includes("exocortex.my") &&
+               !pred.startsWith("http://www.w3.org/2000/01/rdf-schema#");
       });
 
       expect(nonExoEmsTriples.length).toBe(0);
@@ -1104,8 +1106,8 @@ describe("NoteToRDFConverter", () => {
         );
         const objectValues = parentTriples.map((t) => (t.object as IRI | Literal).value);
 
-        // Original behavior preserved: file IRI + UUID literal, no class IRI
-        expect(objectValues).toContain("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+        // Fix #ff3858e5: non-prototype predicates emit single file IRI only (no UUID Literal)
+        expect(parentTriples).toHaveLength(1);
         expect(objectValues.some((v) => v.includes("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.md"))).toBe(true);
         expect(objectValues.some((v) => v.startsWith("https://exocortex.my/ontology/"))).toBe(false);
       });
@@ -1834,10 +1836,13 @@ describe("NoteToRDFConverter", () => {
       );
       expect(labelTriple).toBeDefined();
 
-      // Should NOT have any rdfs:* triples (except what's naturally generated)
-      const rdfsTriples = triples.filter((t) =>
-        (t.predicate as IRI).value.startsWith("http://www.w3.org/2000/01/rdf-schema#")
-      );
+      // rdfs:label is emitted as companion to exo__Asset_label (Issue #2807).
+      // No OTHER rdfs:* triples should appear.
+      const rdfsTriples = triples.filter((t) => {
+        const pred = (t.predicate as IRI).value;
+        return pred.startsWith("http://www.w3.org/2000/01/rdf-schema#") &&
+               !pred.endsWith("#label");
+      });
       expect(rdfsTriples.length).toBe(0);
     });
 
@@ -2297,8 +2302,8 @@ Here is an image: ![[screenshot.png]] and a link [[Real Note]].
         // Should NOT throw, just skip body links
         const triples = await converter.convertNote(file);
 
-        // Should have Asset_fileName and Asset_label, but no body links
-        expect(triples.length).toBe(2);
+        // Should have Asset_fileName, Asset_label, and rdfs:label (Issue #2807), but no body links
+        expect(triples.length).toBe(3);
         const bodyLinkTriples = triples.filter((t) =>
           (t.predicate as IRI).value.includes("Asset_bodyLink")
         );
@@ -3060,20 +3065,20 @@ It can contain **markdown** formatting.
           (t.predicate as IRI).value.includes("Asset_references")
         );
 
-        // Each UUID wikilink should produce 2 triples (IRI + Literal)
-        // So 2 UUIDs * 2 triples = 4 triples
-        expect(referenceTriples.length).toBe(4);
+        // Fix #ff3858e5: non-prototype predicates emit single IRI per UUID wikilink.
+        // 2 UUIDs * 1 triple = 2 triples (dual-storage only for exo__Asset_prototype)
+        expect(referenceTriples.length).toBe(2);
 
         const iriTriples = referenceTriples.filter((t) => t.object instanceof IRI);
         const literalTriples = referenceTriples.filter((t) => t.object instanceof Literal);
 
         expect(iriTriples.length).toBe(2);
-        expect(literalTriples.length).toBe(2);
+        expect(literalTriples.length).toBe(0);
 
-        // Verify UUIDs are stored as literals
-        const literalValues = literalTriples.map((t) => (t.object as Literal).value);
-        expect(literalValues).toContain(uuid1);
-        expect(literalValues).toContain(uuid2);
+        // Verify each file IRI references the correct UUID path
+        const iriValues = iriTriples.map((t) => (t.object as IRI).value);
+        expect(iriValues.some((v) => v.includes(uuid1))).toBe(true);
+        expect(iriValues.some((v) => v.includes(uuid2))).toBe(true);
       });
 
       it("should not create duplicate Literal when wikilink target file doesn't exist", async () => {
