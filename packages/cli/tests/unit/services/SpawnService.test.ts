@@ -571,6 +571,91 @@ describe("spawnSession", () => {
   });
 });
 
+// --- spawnSession: stdin prompt (regression W6) ---
+
+describe("spawnSession — systemPrompt piped via stdin", () => {
+  it("does not pass frontmatter body as -p positional arg when systemPrompt starts with '---'", async () => {
+    const capturedCmds: string[] = [];
+    const execFn: ExecFn = (cmd, cb) => {
+      capturedCmds.push(cmd);
+      cb(null, "", "");
+      return {};
+    };
+
+    const frontmatterPrompt =
+      "---\nexo__Asset_uid: test-uuid\nems__Effort_status: \"[[ems__EffortStatusBacklog]]\"\n---\n\nDo something useful.";
+
+    await spawnSession(
+      { ...BASE_OPTS, systemPrompt: frontmatterPrompt },
+      {
+        execFn,
+        atomicUpdate: mockAtomicUpdate,
+        costFn: mockCostFn,
+        pollIntervalMs: 1,
+        countClaudeSessionsFn: async () => 0,
+      },
+    );
+
+    const spawnCmd = capturedCmds.find((c) => c.includes("new-window"));
+    expect(spawnCmd).toBeDefined();
+    // Must use stdin pipe, NOT -p "<content>" as positional arg
+    expect(spawnCmd).toContain("printf '%s'");
+    expect(spawnCmd).toContain("| claude");
+    // Must NOT pass the raw --- string as a positional argument
+    expect(spawnCmd).not.toMatch(/-p\s+"---/);
+    expect(spawnCmd).not.toMatch(/-p\s+'---/);
+  });
+
+  it("properly escapes single quotes in systemPrompt", async () => {
+    const capturedCmds: string[] = [];
+    const execFn: ExecFn = (cmd, cb) => {
+      capturedCmds.push(cmd);
+      cb(null, "", "");
+      return {};
+    };
+
+    const promptWithQuotes = "Task: fix the user's issue\n---\nbody";
+
+    await spawnSession(
+      { ...BASE_OPTS, systemPrompt: promptWithQuotes },
+      {
+        execFn,
+        atomicUpdate: mockAtomicUpdate,
+        costFn: mockCostFn,
+        pollIntervalMs: 1,
+        countClaudeSessionsFn: async () => 0,
+      },
+    );
+
+    const spawnCmd = capturedCmds.find((c) => c.includes("new-window"));
+    expect(spawnCmd).toBeDefined();
+    // JSON.stringify in tmuxCmd construction doubles the backslash; the actual shell sees '\''
+    expect(spawnCmd).toContain("'\\\\''");
+    expect(spawnCmd).toContain("printf '%s'");
+  });
+
+  it("spawns without prompt prefix when systemPrompt is not provided", async () => {
+    const capturedCmds: string[] = [];
+    const execFn: ExecFn = (cmd, cb) => {
+      capturedCmds.push(cmd);
+      cb(null, "", "");
+      return {};
+    };
+
+    await spawnSession(BASE_OPTS, {
+      execFn,
+      atomicUpdate: mockAtomicUpdate,
+      costFn: mockCostFn,
+      pollIntervalMs: 1,
+      countClaudeSessionsFn: async () => 0,
+    });
+
+    const spawnCmd = capturedCmds.find((c) => c.includes("new-window"));
+    expect(spawnCmd).toBeDefined();
+    expect(spawnCmd).not.toContain("printf '%s'");
+  });
+});
+
 // --- checkStdoutDone ---
 
 describe("checkStdoutDone", () => {
