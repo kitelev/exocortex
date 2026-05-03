@@ -1,6 +1,12 @@
 import { jest, describe, it, expect, beforeEach, afterEach } from "@jest/globals";
-import { spawnSession, monitorSession, type ExecFn } from "../../../src/services/SpawnService.js";
-import { type AtomicUpdateResult } from "../../../src/services/AtomicFrontmatterService.js";
+import type { ExecFn } from "../../../src/services/SpawnService.js";
+import {
+  spawnSession,
+  monitorSession,
+  countClaudeSessions,
+  CLAUDE_SESSION_CAP,
+} from "../../../src/services/SpawnService.js";
+import type { AtomicUpdateResult } from "../../../src/services/AtomicFrontmatterService.js";
 import { mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import path from "path";
@@ -65,6 +71,127 @@ afterEach(() => {
   jest.useRealTimers();
 });
 
+// --- countClaudeSessions ---
+
+describe("countClaudeSessions", () => {
+  it("parses wc -l output to an integer", async () => {
+    const execFn = makeExecFn({ "list-sessions": "claude-orch-abc: 1 windows\nclaude-child-def: 1 windows\n" });
+    // The wc -l mock: grep | wc -l → we mock by returning "2\n" for wc-containing cmd
+    const wclExec: ExecFn = (_cmd, cb) => {
+      cb(null, "2\n", "");
+      return {};
+    };
+    const count = await countClaudeSessions(wclExec);
+    expect(count).toBe(2);
+  });
+
+  it("returns 0 when tmux is not running (exec error)", async () => {
+    const count = await countClaudeSessions(failingExecFn("no server running"));
+    expect(count).toBe(0);
+  });
+
+  it("returns 0 when wc -l outputs non-numeric text", async () => {
+    const execFn: ExecFn = (_cmd, cb) => {
+      cb(null, "  \n", "");
+      return {};
+    };
+    const count = await countClaudeSessions(execFn);
+    expect(count).toBe(0);
+  });
+});
+
+// --- spawnSession: cap check ---
+
+describe("spawnSession — cap check", () => {
+  it("returns 2 and reverts task to Backlog when session count >= cap", async () => {
+    const execFn = makeExecFn({ "new-window": "", "list-windows": "" });
+    const countFn = async () => CLAUDE_SESSION_CAP; // at cap
+
+    const code = await spawnSession(BASE_OPTS, {
+      execFn,
+      atomicUpdate: mockAtomicUpdate,
+      pollIntervalMs: 1,
+      countClaudeSessionsFn: countFn,
+    });
+
+    expect(code).toBe(2);
+
+    const deferCall = atomicCalls.find(
+      ([, u]) => u["ems__Effort_status"] === "[[ems__EffortStatusBacklog]]",
+    );
+    expect(deferCall).toBeDefined();
+    expect(deferCall![1]["aiTask__Task_deferReason"]).toContain("cap reached");
+    expect(deferCall![1]["aiTask__Task_deferredAt"]).toBeDefined();
+    expect(deferCall![1]["aiTask__Task_claimedBy"]).toBeNull();
+    expect(deferCall![1]["aiTask__Task_claimedAt"]).toBeNull();
+  });
+
+  it("returns 2 when session count exceeds cap", async () => {
+    const execFn = makeExecFn({ "new-window": "", "list-windows": "" });
+    const countFn = async () => CLAUDE_SESSION_CAP + 2;
+
+    const code = await spawnSession(BASE_OPTS, {
+      execFn,
+      atomicUpdate: mockAtomicUpdate,
+      pollIntervalMs: 1,
+      countClaudeSessionsFn: countFn,
+    });
+
+    expect(code).toBe(2);
+  });
+
+  it("proceeds with spawn when session count is below cap", async () => {
+    const execFn = makeExecFn({ "new-window": "", "list-windows": "" });
+    const countFn = async () => CLAUDE_SESSION_CAP - 1;
+
+    const code = await spawnSession(BASE_OPTS, {
+      execFn,
+      atomicUpdate: mockAtomicUpdate,
+      pollIntervalMs: 1,
+      countClaudeSessionsFn: countFn,
+    });
+
+    expect(code).toBe(0);
+    const deferCall = atomicCalls.find(
+      ([, u]) => u["ems__Effort_status"] === "[[ems__EffortStatusBacklog]]",
+    );
+    expect(deferCall).toBeUndefined();
+  });
+
+  it("proceeds with spawn when session count is 0", async () => {
+    const execFn = makeExecFn({ "new-window": "", "list-windows": "" });
+    const countFn = async () => 0;
+
+    const code = await spawnSession(BASE_OPTS, {
+      execFn,
+      atomicUpdate: mockAtomicUpdate,
+      pollIntervalMs: 1,
+      countClaudeSessionsFn: countFn,
+    });
+
+    expect(code).toBe(0);
+  });
+
+  it("does not spawn a tmux window when deferred", async () => {
+    const spawnedWindows: string[] = [];
+    const execFn: ExecFn = (cmd, cb) => {
+      if (cmd.includes("new-window")) spawnedWindows.push(cmd);
+      cb(null, "", "");
+      return {};
+    };
+    const countFn = async () => CLAUDE_SESSION_CAP;
+
+    await spawnSession(BASE_OPTS, {
+      execFn,
+      atomicUpdate: mockAtomicUpdate,
+      pollIntervalMs: 1,
+      countClaudeSessionsFn: countFn,
+    });
+
+    expect(spawnedWindows).toHaveLength(0);
+  });
+});
+
 // --- spawnSession ---
 
 describe("spawnSession", () => {
@@ -78,6 +205,7 @@ describe("spawnSession", () => {
       execFn,
       atomicUpdate: mockAtomicUpdate,
       pollIntervalMs: 1,
+      countClaudeSessionsFn: async () => 0,
     });
 
     const sessionLogCall = atomicCalls.find(
@@ -97,6 +225,7 @@ describe("spawnSession", () => {
       execFn,
       atomicUpdate: mockAtomicUpdate,
       pollIntervalMs: 1,
+      countClaudeSessionsFn: async () => 0,
     });
 
     expect(code).toBe(1);
@@ -129,6 +258,7 @@ describe("spawnSession", () => {
       execFn,
       atomicUpdate: mockAtomicUpdate,
       pollIntervalMs: 5000,
+      countClaudeSessionsFn: async () => 0,
     });
 
     await jest.advanceTimersByTimeAsync(timeoutMs + 12_000);
@@ -153,8 +283,8 @@ describe("spawnSession", () => {
     const opts2 = { ...BASE_OPTS, taskUuid: "bbbbbbbb-0000-0000-0000-000000000002" };
 
     const [code1, code2] = await Promise.all([
-      spawnSession(opts1, { execFn, atomicUpdate: mockAtomicUpdate, pollIntervalMs: 1 }),
-      spawnSession(opts2, { execFn, atomicUpdate: mockAtomicUpdate, pollIntervalMs: 1 }),
+      spawnSession(opts1, { execFn, atomicUpdate: mockAtomicUpdate, pollIntervalMs: 1, countClaudeSessionsFn: async () => 0 }),
+      spawnSession(opts2, { execFn, atomicUpdate: mockAtomicUpdate, pollIntervalMs: 1, countClaudeSessionsFn: async () => 0 }),
     ]);
 
     const spawnCalls = calls.filter((c) => c.includes("new-window"));

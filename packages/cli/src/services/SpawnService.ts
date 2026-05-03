@@ -1,5 +1,5 @@
 import { exec } from "child_process";
-import { mkdirSync, existsSync } from "fs";
+import { mkdirSync, existsSync, appendFileSync } from "fs";
 import { homedir } from "os";
 import path from "path";
 import { atomicUpdateFrontmatter } from "./AtomicFrontmatterService.js";
@@ -22,9 +22,15 @@ export interface SpawnDeps {
   atomicUpdate?: typeof atomicUpdateFrontmatter;
   /** Polling interval for tmux window monitoring (ms). Default: 5000. */
   pollIntervalMs?: number;
+  /** Override for countClaudeSessions (injected in tests). */
+  countClaudeSessionsFn?: () => Promise<number>;
 }
 
+/** Maximum allowed concurrent claude-(orch|child) tmux sessions before deferring. */
+export const CLAUDE_SESSION_CAP = 4;
+
 const LOG_DIR = path.join(homedir(), ".exocortex", "ai-task-logs");
+const WORKER_LOG = path.join(homedir(), ".exocortex", "logs", "aitask-worker.log");
 
 function uuid8(uuid: string): string {
   return uuid.replace(/-/g, "").slice(0, 8);
@@ -42,6 +48,23 @@ function makeExecPromise(execFn: ExecFn) {
         else resolve({ stdout, stderr });
       });
     });
+}
+
+/**
+ * Returns the count of active tmux sessions whose name starts with
+ * "claude-orch" or "claude-child". Used for pre-spawn cap enforcement.
+ */
+export async function countClaudeSessions(execFn: ExecFn = exec): Promise<number> {
+  const execPromise = makeExecPromise(execFn);
+  try {
+    const { stdout } = await execPromise(
+      "tmux list-sessions 2>/dev/null | grep -E '^claude-(orch|child)' | wc -l",
+    );
+    const n = parseInt(stdout.trim(), 10);
+    return isNaN(n) ? 0 : n;
+  } catch {
+    return 0;
+  }
 }
 
 /**
@@ -83,7 +106,7 @@ export function monitorSession(
 
 /**
  * Spawns a detached Claude session in a tmux window.
- * Returns exit code: 0 = success, 1 = failed, 124 = timeout.
+ * Returns exit code: 0 = success, 1 = failed, 2 = deferred (cap exceeded), 124 = timeout.
  */
 export async function spawnSession(
   opts: SpawnOptions,
@@ -92,6 +115,7 @@ export async function spawnSession(
   const execFn = deps.execFn ?? exec;
   const updateFn = deps.atomicUpdate ?? atomicUpdateFrontmatter;
   const execPromise = makeExecPromise(execFn);
+  const getSessionCount = deps.countClaudeSessionsFn ?? (() => countClaudeSessions(execFn));
 
   if (!existsSync(LOG_DIR)) {
     mkdirSync(LOG_DIR, { recursive: true });
@@ -108,6 +132,29 @@ export async function spawnSession(
   const envPrefix =
     "env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_EXECPATH";
   const tmuxCmd = `tmux new-window -d -n ${windowName} "${envPrefix} bash -c ${JSON.stringify(claudeCmd)}"`;
+
+  // Pre-spawn cap check — performed immediately before spawn to minimise race window
+  const sessionCount = await getSessionCount();
+  if (sessionCount >= CLAUDE_SESSION_CAP) {
+    const now = nowIso();
+    const deferReason = `claude session cap reached (${sessionCount}/${CLAUDE_SESSION_CAP}), task deferred to next iteration`;
+    updateFn(opts.taskFilePath, {
+      "ems__Effort_status": "[[ems__EffortStatusBacklog]]",
+      "aiTask__Task_claimedBy": null,
+      "aiTask__Task_claimedAt": null,
+      "ems__Effort_startTimestamp": null,
+      "aiTask__Task_deferReason": deferReason,
+      "aiTask__Task_deferredAt": now,
+      "exo__Asset_updatedAt": now,
+    });
+    try {
+      mkdirSync(path.dirname(WORKER_LOG), { recursive: true });
+      appendFileSync(WORKER_LOG, `[ai-task-worker] ${now}: DEFERRED ${opts.taskUuid}: ${deferReason}\n`);
+    } catch {
+      // log write is best-effort
+    }
+    return 2;
+  }
 
   try {
     await execPromise(tmuxCmd);
