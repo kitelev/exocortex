@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# ai-task-runner — executed inside spawned tmux session per claimed task.
+# Phase 6: real claude -p --dangerously-skip-permissions invocation.
+
+set -euo pipefail
+
+TASK_FILE="${1:?task file required}"
+SESSION_LOG="${2:?session log required}"
+
+mkdir -p "$(dirname "$SESSION_LOG")"
+exec >>"$SESSION_LOG" 2>&1
+
+echo "[runner] $(date '+%Y-%m-%dT%H:%M:%S%z'): start task=$TASK_FILE"
+
+# Extract metadata from task frontmatter
+eval "$(/usr/bin/python3 - "$TASK_FILE" <<'PYEOF'
+import sys, re
+fp = sys.argv[1]
+content = open(fp, encoding='utf-8').read()
+end = content.find('\n---', 3)
+fm = content[3:end]
+def get(key):
+    m = re.search(rf'^{re.escape(key)}\s*:\s*(.*)$', fm, re.MULTILINE)
+    return m.group(1).strip().strip('"') if m else ''
+model = get('aiTask__Task_model') or 'sonnet'
+timeout = get('aiTask__Task_timeoutMinutes') or '30'
+print(f"TASK_MODEL={model}")
+print(f"TASK_TIMEOUT={timeout}")
+PYEOF
+)"
+
+# Build prompt: full task file content (frontmatter + body)
+PROMPT="$(< "$TASK_FILE")"
+
+echo "[runner] $(date '+%Y-%m-%dT%H:%M:%S%z'): spawning claude model=$TASK_MODEL timeout=${TASK_TIMEOUT}m"
+
+# Run real claude -p — exec replaces this process
+exec env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_EXECPATH \
+  claude --dangerously-skip-permissions --model "$TASK_MODEL" -p "$PROMPT"
