@@ -3,6 +3,7 @@ import type { ExecFn } from "../../../src/services/SpawnService.js";
 import {
   spawnSession,
   monitorSession,
+  pollVaultStatus,
   countClaudeSessions,
   CLAUDE_SESSION_CAP,
 } from "../../../src/services/SpawnService.js";
@@ -69,6 +70,109 @@ beforeEach(() => {
 afterEach(() => {
   rmSync(tmpDir, { recursive: true, force: true });
   jest.useRealTimers();
+});
+
+// --- pollVaultStatus ---
+
+describe("pollVaultStatus", () => {
+  it("returns 'done' when status is EffortStatusDone", async () => {
+    jest.useFakeTimers();
+
+    const content = buildMd({
+      exo__Asset_uid: TASK_UUID,
+      "ems__Effort_status": "[[ems__EffortStatusDone]]",
+    });
+    const promise = pollVaultStatus(taskFile, 60_000, {
+      readFileFn: () => content,
+      vaultPollIntervalMs: 1_000,
+    });
+
+    await jest.advanceTimersByTimeAsync(1_100);
+    expect(await promise).toBe("done");
+  });
+
+  it("returns 'done' when status is EffortStatusReview", async () => {
+    jest.useFakeTimers();
+
+    const content = buildMd({
+      exo__Asset_uid: TASK_UUID,
+      "ems__Effort_status": "[[ems__EffortStatusReview]]",
+    });
+    const promise = pollVaultStatus(taskFile, 60_000, {
+      readFileFn: () => content,
+      vaultPollIntervalMs: 1_000,
+    });
+
+    await jest.advanceTimersByTimeAsync(1_100);
+    expect(await promise).toBe("done");
+  });
+
+  it("returns 'done' for UUID|label wikilink format", async () => {
+    jest.useFakeTimers();
+
+    const content =
+      `---\nexo__Asset_uid: ${TASK_UUID}\n` +
+      `ems__Effort_status: "[[7b9b3116-7c3c-438c-9618-94fe301320a6|ems__EffortStatusDone]]"\n---\n`;
+    const promise = pollVaultStatus(taskFile, 60_000, {
+      readFileFn: () => content,
+      vaultPollIntervalMs: 1_000,
+    });
+
+    await jest.advanceTimersByTimeAsync(1_100);
+    expect(await promise).toBe("done");
+  });
+
+  it("returns 'timeout' when status never flips before deadline", async () => {
+    jest.useFakeTimers();
+
+    const content = buildMd({ exo__Asset_uid: TASK_UUID });
+    const promise = pollVaultStatus(taskFile, 3_000, {
+      readFileFn: () => content,
+      vaultPollIntervalMs: 1_000,
+    });
+
+    await jest.advanceTimersByTimeAsync(10_000);
+    expect(await promise).toBe("timeout");
+  });
+
+  it("returns 'timeout' on next check when cancel signal is set", async () => {
+    jest.useFakeTimers();
+
+    const content = buildMd({ exo__Asset_uid: TASK_UUID });
+    const vaultCancelSignal = { cancelled: false };
+    const promise = pollVaultStatus(taskFile, 60_000, {
+      readFileFn: () => content,
+      vaultPollIntervalMs: 1_000,
+      vaultCancelSignal,
+    });
+
+    await jest.advanceTimersByTimeAsync(500);
+    vaultCancelSignal.cancelled = true;
+    await jest.advanceTimersByTimeAsync(1_100);
+    expect(await promise).toBe("timeout");
+  });
+
+  it("handles file read errors gracefully and keeps polling until status flips", async () => {
+    jest.useFakeTimers();
+
+    let callCount = 0;
+    const readFileFn = () => {
+      callCount++;
+      if (callCount < 3) throw new Error("ENOENT: no such file");
+      return buildMd({
+        exo__Asset_uid: TASK_UUID,
+        "ems__Effort_status": "[[ems__EffortStatusDone]]",
+      });
+    };
+
+    const promise = pollVaultStatus(taskFile, 60_000, {
+      readFileFn,
+      vaultPollIntervalMs: 1_000,
+    });
+
+    await jest.advanceTimersByTimeAsync(4_000);
+    expect(await promise).toBe("done");
+  });
 });
 
 // --- countClaudeSessions ---
@@ -291,6 +395,76 @@ describe("spawnSession", () => {
     expect(spawnCalls.length).toBeGreaterThanOrEqual(2);
     expect([0, 1, 124]).toContain(code1);
     expect([0, 1, 124]).toContain(code2);
+  });
+
+  it("returns 0 when vault status flips to Done before tmux window closes", async () => {
+    jest.useFakeTimers();
+
+    let fileContent = buildMd({ exo__Asset_uid: TASK_UUID });
+
+    const execFn: ExecFn = (cmd, cb) => {
+      if (cmd.includes("list-windows")) {
+        cb(null, `${WINDOW_NAME}\n`, ""); // window stays alive
+      } else {
+        cb(null, "", "");
+      }
+      return {};
+    };
+
+    const promise = spawnSession(BASE_OPTS, {
+      execFn,
+      atomicUpdate: mockAtomicUpdate,
+      pollIntervalMs: 600_000, // tmux won't fire before vault
+      readFileFn: () => fileContent,
+      vaultPollIntervalMs: 5_000,
+    });
+
+    // Advance past first vault poll — status not yet set
+    await jest.advanceTimersByTimeAsync(5_100);
+
+    // Flip vault status to Done
+    fileContent = buildMd({
+      exo__Asset_uid: TASK_UUID,
+      "ems__Effort_status": "[[ems__EffortStatusDone]]",
+    });
+
+    // Advance past next vault poll — status detected
+    await jest.advanceTimersByTimeAsync(5_100);
+    const code = await promise;
+
+    expect(code).toBe(0);
+  });
+
+  it("returns 124 when vault times out without status flip (T1.4 handoff)", async () => {
+    jest.useFakeTimers();
+
+    const timeoutMinutes = 8 / 60; // 8_000 ms
+    const opts = { ...BASE_OPTS, timeoutMinutes };
+
+    const execFn: ExecFn = (cmd, cb) => {
+      if (cmd.includes("list-windows")) {
+        cb(null, `${WINDOW_NAME}\n`, ""); // window stays alive
+      } else {
+        cb(null, "", "");
+      }
+      return {};
+    };
+
+    const promise = spawnSession(opts, {
+      execFn,
+      atomicUpdate: mockAtomicUpdate,
+      pollIntervalMs: 600_000, // tmux won't fire before vault
+      readFileFn: () => buildMd({ exo__Asset_uid: TASK_UUID }), // never completes
+      vaultPollIntervalMs: 5_000,
+    });
+
+    await jest.advanceTimersByTimeAsync(20_000);
+    const code = await promise;
+
+    expect(code).toBe(124);
+    expect(
+      atomicCalls.some(([, u]) => u["aiTask__Task_lastError"] === "timeout exceeded"),
+    ).toBe(true);
   });
 });
 
