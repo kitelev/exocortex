@@ -818,12 +818,17 @@ export class NoteToRDFConverter {
   /**
    * Converts a frontmatter value to RDF object(s).
    *
-   * Issue #2102: For UUID-based wikilinks pointing at exo__Asset_prototype, returns both
-   * File IRI and UUID Literal. All other predicates return a single IRI (Fix #ff3858e5).
+   * Dual-storage (IRI + UUID Literal) is emitted ONLY for `exo__Asset_prototype` predicate
+   * (Issue #2102 original design). All other predicates emit a single IRI per wikilink.
+   * Dual-storage on other predicates causes sh:maxCount=1 SHACL violations (Fix #ff3858e5).
+   *
+   * Side effect: may push rdf:type triples into `pendingExtraTriples` when resolving enum
+   * instance wikilinks (e.g. [[pmbok__ClosureOutcomeAllAccepted]]). Caller must flush
+   * `pendingExtraTriples` after the frontmatter loop.
    *
    * @param value - The frontmatter value to convert
    * @param sourceFile - The source file for resolving wikilinks
-   * @param predicate - The predicate IRI being populated (used to gate dual-storage)
+   * @param predicate - The predicate IRI being populated (gates dual-storage to Asset_prototype)
    * @returns Array of RDF objects (IRI or Literal).
    */
   private async valueToRDFObject(

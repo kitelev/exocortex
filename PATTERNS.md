@@ -4815,10 +4815,11 @@ for (const val of Array.isArray(propValue) ? propValue : [propValue]) {
 | Valid uppercase UUID         | `isUUID()` returns true              |
 | Non-UUID string              | `isUUID()` returns false             |
 | UUID without dashes          | `isUUID()` returns false             |
-| UUID wikilink (file exists)  | Returns `[IRI, Literal]`             |
-| Non-UUID wikilink            | Returns `[IRI]` (single element)     |
-| UUID wikilink (file missing) | Returns `[Literal]` (single element) |
-| Array of UUID wikilinks      | Each element produces 2 triples      |
+| UUID on `exo__Asset_prototype` (file exists) | Returns `[IRI, Literal]`             |
+| UUID on any other predicate (file exists)    | Returns `[IRI]` (single element)     |
+| Non-UUID wikilink                            | Returns `[IRI]` (single element)     |
+| UUID wikilink (file missing)                 | Returns `[Literal]` (single element) |
+| Array of UUID on prototype                   | Each element produces 2 triples      |
 
 ### Benefits
 
@@ -4829,9 +4830,9 @@ for (const val of Array.isArray(propValue) ? propValue : [propValue]) {
 
 ### When to Apply
 
-- Properties that reference assets by UUID (e.g., `exo__Asset_prototype`, `ems__Effort_parent`)
-- Knowledge graphs where UUID-based queries are common
-- Systems needing to search by UUID without file path resolution
+- **Only `exo__Asset_prototype`** — dual storage is scoped to this predicate only (Fix #ff3858e5, v15.160.1)
+- Other UUID-wikilink predicates emit a single file IRI; dual-storage on other predicates causes `sh:maxCount=1` SHACL violations
+- Knowledge graphs where UUID-based prototype/template queries are needed without file path resolution
 
 ### Performance Considerations
 
@@ -4845,6 +4846,109 @@ for (const val of Array.isArray(propValue) ? propValue : [propValue]) {
 - Query performance: Unchanged (both patterns indexed)
 
 **Reference**: Issue #2102, PR #2104 - Dual storage for UUID-based wikilinks (72 steps, +296 lines, February 2026)
+
+---
+
+## Side-Channel Triple Emission Pattern
+
+**When to use**: A private converter method needs to emit additional RDF triples with a *different subject* from the one it is currently populating — without changing its return type or breaking callers.
+
+### Problem
+
+`valueToRDFObject` returns `(IRI | Literal)[]` — objects for triples where the source note is the subject. When resolving an enum instance wikilink (e.g. `[[pmbok__ClosureOutcomeAllAccepted]]`), SHACL `sh:class` requires a triple:
+
+```turtle
+pmbok:ClosureOutcomeAllAccepted  rdf:type  pmbok:ClosureOutcome .
+```
+
+The subject here is the *enum class IRI*, not the source note. Returning it from `valueToRDFObject` would pollute the return type.
+
+### Solution: `pendingExtraTriples` class field
+
+```typescript
+// Class field — reset at start of each convertLegacyNote call
+private pendingExtraTriples: Triple[] = [];
+
+private async convertLegacyNote(file, frontmatter): Promise<Triple[]> {
+  this.pendingExtraTriples = [];           // reset
+  const triples: Triple[] = [];
+  // ... frontmatter loop calling valueToRDFObject ...
+  triples.push(...this.pendingExtraTriples); // flush before body links
+  this.pendingExtraTriples = [];
+  const bodyLinkTriples = await this.convertBodyWikilinks(file, subject);
+  triples.push(...bodyLinkTriples);
+  return triples;
+}
+
+private emitTypeTripleForEnumInstance(classIRI: IRI, targetFile: IFile): void {
+  const targetFm = this.vault.getFrontmatter(targetFile);
+  if (!targetFm) return;
+  const raw = Array.isArray(targetFm["exo__Instance_class"])
+    ? targetFm["exo__Instance_class"][0]
+    : targetFm["exo__Instance_class"];
+  if (typeof raw !== "string") return;
+  const parentClassIRI = this.valueToClassURI(raw);
+  if (parentClassIRI instanceof IRI) {
+    this.pendingExtraTriples.push(
+      new Triple(classIRI, Namespace.RDF.term("type"), parentClassIRI)
+    );
+  }
+}
+
+private async valueToRDFObject(value, sourceFile, predicate?): Promise<(IRI | Literal)[]> {
+  // ... existing logic ...
+  const basenameClassIRI = this.expandClassValue(targetFile.basename);
+  if (basenameClassIRI) {
+    this.emitTypeTripleForEnumInstance(basenameClassIRI, targetFile); // side-channel
+    return [basenameClassIRI];
+  }
+  // ...
+}
+```
+
+### Key invariants
+
+- **Reset before, flush after**: `pendingExtraTriples = []` at the start of the public method; `push(...pendingExtraTriples)` before body-link step.
+- **Single-threaded safety**: JavaScript event loop guarantees no concurrent `convertLegacyNote` calls interleave — class field is safe.
+- **External API unchanged**: `valueToRDFObject` return type stays `(IRI | Literal)[]`.
+- **Flush before body links**: extra triples are frontmatter-derived; they must appear before body-link triples for consistent ordering.
+
+### Alternative: refactor return type
+
+If the number of side-channel types grows, consider `{objects: (IRI|Literal)[], extraTriples: Triple[]}`. Prefer the class field while side-channel usage is limited to one call site.
+
+**Reference**: PR #3070 (Fix #ff3858e5) — `emitTypeTripleForEnumInstance` in `NoteToRDFConverter.ts`
+
+---
+
+## Baseline Test Count Before Bug Fix
+
+**Workflow note** — establish a pre-fix baseline before changing behavior-affecting code.
+
+### Problem
+
+When a bug fix changes existing behavior (e.g., narrowing dual-storage from all predicates to one), some existing tests may *already* be failing for unrelated reasons (e.g., a companion feature added triples that tests don't account for). Without a baseline, it's impossible to tell which test failures your fix introduced vs. which were pre-existing.
+
+### Practice
+
+```bash
+# Before writing any fix code — run the affected test file
+npx jest --config packages/exocortex/jest.config.js <path/to/test.ts> --no-coverage
+
+# Record: N passed, M failed
+# Then implement the fix
+# After fix: re-run and compare
+# New failures = caused by your fix (update tests intentionally)
+# Failures present in both = pre-existing (note in PR but don't hide)
+```
+
+### Why it matters
+
+- Avoids spending time "fixing" tests that were already broken
+- Gives you a clear attribution: "5 test updates caused by Fix 1, 3 were pre-existing failures from Issue #2807"
+- Makes PR review easier — reviewer understands which test changes are intentional behavior changes
+
+**Reference**: Post-mortem 2026-05-03 SHACL fix (IssueItem ff3858e5) — Lesson 4
 
 ---
 
