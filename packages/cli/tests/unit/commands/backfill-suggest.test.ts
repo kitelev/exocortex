@@ -4,6 +4,8 @@ import {
   scoreMatch,
   computeCandidates,
   isAutoApproved,
+  isConceptFile,
+  MIN_LABEL_FOR_SUBSTRING,
 } from "../../../src/commands/backfill-suggest.js";
 
 describe("backfill suggest — scoreMatch", () => {
@@ -26,11 +28,67 @@ describe("backfill suggest — scoreMatch", () => {
   it("returns 0 for single-char term (too short)", () => {
     expect(scoreMatch("a text", "a")).toBe(0);
   });
+
+  it("MIN_LABEL_FOR_SUBSTRING constant equals 4", () => {
+    expect(MIN_LABEL_FOR_SUBSTRING).toBe(4);
+  });
+
+  it("returns 0 for 2-char term substring (below MIN_LABEL_FOR_SUBSTRING)", () => {
+    expect(scoreMatch("a beautiful day", "be")).toBe(0);
+  });
+
+  it("returns 0 for 3-char term substring (below MIN_LABEL_FOR_SUBSTRING)", () => {
+    expect(scoreMatch("knowledge management", "man")).toBe(0);
+  });
+
+  it("still returns 1.0 exact match for short term", () => {
+    expect(scoreMatch("ai", "AI")).toBe(1.0);
+  });
+
+  it("returns 0.85 for substring with term of exactly 4 chars", () => {
+    expect(scoreMatch("knowledge management", "know")).toBe(0.85);
+  });
+});
+
+describe("backfill suggest — isConceptFile", () => {
+  const CONCEPT_UUID = "dda12c48-6886-4624-8710-ed4ba92ce2b3";
+
+  const conceptFrontmatter = `---
+exo__Asset_uid: abc-123
+exo__Asset_label: My Concept
+exo__Instance_class: "[[${CONCEPT_UUID}|ims__Concept]]"
+---
+This is the body text.`;
+
+  const nonConceptFrontmatter = `---
+exo__Asset_uid: def-456
+exo__Asset_label: My Task
+exo__Instance_class: "[[1b20a8f0-d745-4e93-91db-4531b3df120e|ems__Task]]"
+---
+This text references a concept wikilink [[${CONCEPT_UUID}|ims__Concept]] in the body.`;
+
+  const noFrontmatter = `Just plain body text mentioning ${CONCEPT_UUID} without frontmatter.`;
+
+  it("returns true when exo__Instance_class frontmatter contains concept UUID", () => {
+    expect(isConceptFile(conceptFrontmatter)).toBe(true);
+  });
+
+  it("returns false when concept UUID appears only in body, not in frontmatter class", () => {
+    expect(isConceptFile(nonConceptFrontmatter)).toBe(false);
+  });
+
+  it("returns false for file with no frontmatter", () => {
+    expect(isConceptFile(noFrontmatter)).toBe(false);
+  });
+
+  it("returns false for file with empty content", () => {
+    expect(isConceptFile("")).toBe(false);
+  });
 });
 
 describe("backfill suggest — computeCandidates", () => {
   const concepts: ConceptEntry[] = [
-    { uid: "uid-1", label: "Knowledge Management", aliases: ["KM", "PKM"], filePath: "/vault/c1.md" },
+    { uid: "uid-1", label: "Knowledge Management", aliases: ["KM", "PKMS"], filePath: "/vault/c1.md" },
     { uid: "uid-2", label: "Distributed Systems", aliases: ["DS"], filePath: "/vault/c2.md" },
     { uid: "uid-3", label: "Graph Database", aliases: ["Graph DB"], filePath: "/vault/c3.md" },
     { uid: "uid-4", label: "Totally Unrelated Topic", aliases: [], filePath: "/vault/c4.md" },
@@ -88,7 +146,7 @@ describe("backfill suggest — computeCandidates", () => {
 
   it("detects alias match with lower confidence than direct label match", () => {
     const candidates = computeCandidates(
-      "PKM notes",
+      "PKMS notes",
       "",
       "",
       concepts,
@@ -97,6 +155,13 @@ describe("backfill suggest — computeCandidates", () => {
     expect(kmCandidate).toBeDefined();
     expect(kmCandidate!.confidence).toBeLessThan(1.0);
     expect(kmCandidate!.match_type).toContain("alias");
+  });
+
+  it("does NOT match 3-char alias as substring (MIN_LABEL_FOR_SUBSTRING=4)", () => {
+    // "PKM" is 3 chars — below MIN_LABEL_FOR_SUBSTRING, so no substring match
+    const candidates = computeCandidates("PKM notes", "", "", concepts);
+    const kmCandidate = candidates.find((c) => c.concept_uid === "uid-1");
+    expect(kmCandidate).toBeUndefined();
   });
 
   it("body match has lower confidence than label match", () => {
