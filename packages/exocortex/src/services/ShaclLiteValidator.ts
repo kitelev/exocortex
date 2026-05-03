@@ -30,6 +30,15 @@ export interface ClassHierarchy {
   isSubClassOf(child: string, parent: string): boolean;
 }
 
+export interface ValidatorOptions {
+  /**
+   * When true, any property predicate that has no registered shape emits sh:Warning.
+   * CQ4 SPARQL shapes are the source of truth — the legacy validate-properties whitelist
+   * file is deprecated in favour of this closed-world engine mode.
+   */
+  closedWorldMode?: boolean;
+}
+
 export class ShapeRegistry {
   private readonly shapeMap: Map<string, Shape>;
   readonly typePredicateIRI: string;
@@ -59,6 +68,7 @@ export function validate(
   triples: Triple[],
   registry: ShapeRegistry,
   hierarchy: ClassHierarchy,
+  options?: ValidatorOptions,
 ): ValidationReport {
   const subjectClasses = new Map<string, string[]>();
   const subjectProps = new Map<string, Map<string, Array<IRI | Literal>>>();
@@ -180,6 +190,22 @@ export function validate(
               });
             }
           }
+        }
+      }
+    }
+  }
+
+  if (options?.closedWorldMode) {
+    for (const subjectIRI of allSubjects) {
+      const props = subjectProps.get(subjectIRI) ?? new Map<string, Array<IRI | Literal>>();
+      for (const predicateIRI of props.keys()) {
+        if (!registry.hasShape(predicateIRI)) {
+          violations.push({
+            focusNode: subjectIRI,
+            propertyPath: predicateIRI,
+            severity: 'sh:Warning',
+            message: `Unknown property: <${predicateIRI}> has no registered shape`,
+          });
         }
       }
     }
