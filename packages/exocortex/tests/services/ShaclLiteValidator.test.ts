@@ -770,3 +770,95 @@ describe('validate — edge cases', () => {
     expect(report.violations).toHaveLength(0);
   });
 });
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Suite 12: Closed-world mode
+// ═════════════════════════════════════════════════════════════════════════════
+
+describe('validate — closed-world mode', () => {
+  it('T58: closedWorldMode=false (default) — unknown property emits no violation', () => {
+    const triples = [
+      typeTriple('node:A', `${EMS}Effort`),
+      litTriple('node:A', `${EMS}Effort_unknownProp`, 'value'),
+    ];
+    const report = validate(triples, makeRegistry([]), flatHierarchy);
+    expect(report.violations).toHaveLength(0);
+    expect(report.conforms).toBe(true);
+  });
+
+  it('T59: closedWorldMode=true — unknown property emits sh:Warning', () => {
+    const triples = [
+      typeTriple('node:A', `${EMS}Effort`),
+      litTriple('node:A', `${EMS}Effort_unknownProp`, 'value'),
+    ];
+    const report = validate(triples, makeRegistry([]), flatHierarchy, { closedWorldMode: true });
+    expect(report.violations).toHaveLength(1);
+    expect(report.violations[0].severity).toBe('sh:Warning');
+    expect(report.violations[0].propertyPath).toBe(`${EMS}Effort_unknownProp`);
+    expect(report.violations[0].message).toContain('Unknown property');
+  });
+
+  it('T60: closedWorldMode=true — unknown property warning does not affect conforms', () => {
+    const triples = [
+      typeTriple('node:A', `${EMS}Effort`),
+      litTriple('node:A', `${EMS}Effort_unknownProp`, 'value'),
+    ];
+    const report = validate(triples, makeRegistry([]), flatHierarchy, { closedWorldMode: true });
+    expect(report.conforms).toBe(true);
+    expect(report.violations).toHaveLength(1);
+  });
+
+  it('T61: closedWorldMode=true — known property (has shape) emits no extra warning', () => {
+    const shape = makeShape({ propertyIRI: `${EMS}Effort_status` });
+    const triples = [
+      typeTriple('node:A', `${EMS}Effort`),
+      litTriple('node:A', `${EMS}Effort_status`, 'Doing'),
+    ];
+    const report = validate(triples, makeRegistry([shape]), flatHierarchy, { closedWorldMode: true });
+    expect(report.violations).toHaveLength(0);
+  });
+
+  it('T62: closedWorldMode=true — typePredicateIRI triple does not trigger unknown-property warning', () => {
+    const triples = [typeTriple('node:A', `${EMS}Effort`)];
+    const report = validate(triples, makeRegistry([]), flatHierarchy, { closedWorldMode: true });
+    expect(report.violations).toHaveLength(0);
+  });
+
+  it('T63: closedWorldMode=true — multiple unknown properties emit one warning each', () => {
+    const triples = [
+      typeTriple('node:A', `${EMS}Effort`),
+      litTriple('node:A', `${EMS}Effort_propA`, 'val1'),
+      litTriple('node:A', `${EMS}Effort_propB`, 'val2'),
+    ];
+    const report = validate(triples, makeRegistry([]), flatHierarchy, { closedWorldMode: true });
+    expect(report.violations).toHaveLength(2);
+    expect(report.violations.every((v) => v.severity === 'sh:Warning')).toBe(true);
+  });
+
+  it('T64: closedWorldMode=true — mix of known and unknown properties', () => {
+    const shape = makeShape({ propertyIRI: `${EMS}Effort_status` });
+    const triples = [
+      typeTriple('node:A', `${EMS}Effort`),
+      litTriple('node:A', `${EMS}Effort_status`, 'Doing'),
+      litTriple('node:A', `${EMS}Effort_unknownProp`, 'value'),
+    ];
+    const report = validate(triples, makeRegistry([shape]), flatHierarchy, { closedWorldMode: true });
+    expect(report.violations).toHaveLength(1);
+    expect(report.violations[0].propertyPath).toBe(`${EMS}Effort_unknownProp`);
+    expect(report.violations[0].severity).toBe('sh:Warning');
+  });
+
+  it('T65: closedWorldMode=true — sh:Violation from shape plus Warning from unknown prop', () => {
+    const shape = makeShape({ propertyIRI: `${EMS}Effort_status`, minCount: 1, severity: 'sh:Violation' });
+    const triples = [
+      typeTriple('node:A', `${EMS}Effort`),
+      litTriple('node:A', `${EMS}Effort_unknownProp`, 'value'),
+    ];
+    const report = validate(triples, makeRegistry([shape]), flatHierarchy, { closedWorldMode: true });
+    expect(report.conforms).toBe(false);
+    const violation = report.violations.find((v) => v.severity === 'sh:Violation');
+    const warning = report.violations.find((v) => v.severity === 'sh:Warning');
+    expect(violation).toBeDefined();
+    expect(warning).toBeDefined();
+  });
+});

@@ -505,6 +505,7 @@ export {
   type ClassHierarchy,
   type Severity,
   type Shape as ShaclShape,
+  type ValidatorOptions,
 } from "./services/ShaclLiteValidator";
 export * from "./application/errors";
 export {
