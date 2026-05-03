@@ -26,10 +26,6 @@ export interface SpawnDeps {
 
 const LOG_DIR = path.join(homedir(), ".exocortex", "ai-task-logs");
 
-function uuid8(uuid: string): string {
-  return uuid.replace(/-/g, "").slice(0, 8);
-}
-
 function nowIso(): string {
   return new Date().toISOString();
 }
@@ -98,7 +94,7 @@ export async function spawnSession(
   }
 
   const logFile = path.join(LOG_DIR, `${opts.taskUuid}.log`);
-  const windowName = `aitask-${uuid8(opts.taskUuid)}`;
+  const windowName = `claude-child-${opts.taskUuid}`;
 
   const promptFlag = opts.systemPrompt
     ? `-p ${JSON.stringify(opts.systemPrompt)}`
