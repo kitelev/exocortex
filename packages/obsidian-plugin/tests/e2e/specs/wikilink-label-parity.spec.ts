@@ -86,7 +86,7 @@ test.describe("Wikilink label parity — Reading View and Live Preview", () => {
 
   test(
     "Live Preview: all 3 asset types show exo__Asset_label via WikilinkLabelViewPlugin",
-    { timeout: 45_000 },
+    { timeout: 60_000 },
     async () => {
       await launcher.openFile(HOST_FILE);
       const window = await launcher.getWindow();
@@ -116,6 +116,18 @@ test.describe("Wikilink label parity — Reading View and Live Preview", () => {
       // Wait for CodeMirror editor to be active
       await window.waitForSelector(".cm-editor", { timeout: 15_000 });
 
+      // WikilinkLabelViewPlugin initialises via MutationObserver (24ms in dev, up to
+      // 30s in CI due to plugin load sequencing). Use waitForFunction polling so we
+      // re-check every 100ms rather than waiting for a single DOM event.
+      await window.waitForFunction(
+        (firstTarget: string) =>
+          document.querySelector(
+            `span.exocortex-wikilink-label[data-target-path="${firstTarget}"]`,
+          ) !== null,
+        FIXTURES[0].target,
+        { timeout: 30_000 },
+      );
+
       // The WikilinkLabelViewPlugin requires settings.showLabelsInLivePreview=true (default).
       // It creates spans with class exocortex-wikilink-label for bare [[target]] links.
       for (const { type, target, label } of FIXTURES) {
@@ -125,7 +137,7 @@ test.describe("Wikilink label parity — Reading View and Live Preview", () => {
         await expect(
           span,
           `Live Preview: ${type} label span should be visible`,
-        ).toBeVisible({ timeout: 15_000 });
+        ).toBeVisible({ timeout: 10_000 });
         const displayedText = await span.innerText();
         expect(
           displayedText,
@@ -167,12 +179,22 @@ test.describe("Wikilink label parity — Reading View and Live Preview", () => {
 
       await window.waitForSelector(".cm-editor", { timeout: 15_000 });
 
+      // Same polling guard as the Live Preview test (CI MutationObserver race).
+      await window.waitForFunction(
+        (firstTarget: string) =>
+          document.querySelector(
+            `span.exocortex-wikilink-label[data-target-path="${firstTarget}"]`,
+          ) !== null,
+        FIXTURES[0].target,
+        { timeout: 30_000 },
+      );
+
       // Live Preview snapshot and parity assertion
       for (const { type, target, label } of FIXTURES) {
         const span = window.locator(
           `span.exocortex-wikilink-label[data-target-path="${target}"]`,
         );
-        await expect(span).toBeVisible({ timeout: 15_000 });
+        await expect(span).toBeVisible({ timeout: 10_000 });
         const livePreviewLabel = await span.innerText();
 
         expect(
