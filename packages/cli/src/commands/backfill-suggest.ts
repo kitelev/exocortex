@@ -24,6 +24,7 @@ export type MatchType =
   | "label_substring"
   | "description_exact"
   | "description_substring"
+  | "body_word_exact"
   | "body_exact"
   | "body_substring"
   | "alias_label_exact"
@@ -153,6 +154,24 @@ export function loadConcepts(vaultPath: string): ConceptEntry[] {
 
 export const MIN_LABEL_FOR_SUBSTRING = 4;
 
+const STOP_WORDS = new Set([
+  "the", "and", "for", "but", "with", "this", "that", "from", "have",
+  "been", "are", "was", "will", "can", "not", "all", "any", "both",
+  "each", "few", "more", "most", "other", "some", "such", "than", "then",
+  "when", "where", "which", "while", "who", "how", "its", "into", "over",
+]);
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+export function matchesWordBoundary(text: string, term: string): boolean {
+  if (term.length < MIN_LABEL_FOR_SUBSTRING) return false;
+  if (STOP_WORDS.has(term.toLowerCase())) return false;
+  const pattern = new RegExp(`\\b${escapeRegex(term)}\\b`, "i");
+  return pattern.test(text);
+}
+
 export function scoreMatch(text: string, term: string): number {
   const textLower = text.toLowerCase();
   const termLower = term.toLowerCase();
@@ -186,6 +205,13 @@ export function computeCandidates(
     }
 
     if (bestScore < 1.0) {
+      if (matchesWordBoundary(bodyLower, concept.label) || matchesWordBoundary(descLower, concept.label)) {
+        if (0.90 > bestScore) {
+          bestScore = 0.90;
+          bestType = "body_word_exact";
+        }
+      }
+
       const descScore = scoreMatch(descLower, concept.label);
       const descAdjusted = descScore === 1.0 ? 0.75 : descScore > 0 ? 0.65 : 0;
       if (descAdjusted > bestScore) {
@@ -250,7 +276,11 @@ export function isAutoApproved(
 ): boolean {
   return (
     candidate.confidence >= threshold &&
-    (candidate.match_type === "label_exact" || candidate.match_type === "alias_label_exact")
+    (
+      candidate.match_type === "label_exact" ||
+      candidate.match_type === "alias_label_exact" ||
+      candidate.match_type === "body_word_exact"
+    )
   );
 }
 
