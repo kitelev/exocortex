@@ -41,6 +41,44 @@ const FIXTURES = [
   },
 ] as const;
 
+/**
+ * Opens HOST_FILE directly in Live Preview (source:false) mode.
+ * More reliable than openFile→setViewState in Docker/headless CI because:
+ * - setViewState on an existing preview leaf leaves cm-editor hidden (Playwright sees
+ *   the element in the DOM but its visibility never changes during the 30s poll).
+ * - A fresh leaf opened directly in source mode gets a visible cm-editor immediately.
+ */
+async function openInLivePreview(page: import("@playwright/test").Page): Promise<void> {
+  await page.evaluate(async (filePath: string) => {
+    const app = (window as any).app;
+    const file = app?.vault?.getAbstractFileByPath(filePath);
+    if (!file) return;
+    const leaf = app.workspace.getLeaf(true);
+    await leaf.openFile(file, { state: { mode: "source", source: false } });
+    app.workspace.setActiveLeaf(leaf, { focus: true });
+  }, HOST_FILE);
+}
+
+/**
+ * Waits until the first WikilinkLabelViewPlugin span is visible on screen.
+ * Uses getBoundingClientRect so the poll returns true only when the span has
+ * non-zero dimensions (i.e., actually rendered, not just attached to the DOM).
+ */
+async function waitForFirstLabelSpan(page: import("@playwright/test").Page): Promise<void> {
+  await page.waitForFunction(
+    (firstTarget: string) => {
+      const el = document.querySelector(
+        `span.exocortex-wikilink-label[data-target-path="${firstTarget}"]`,
+      );
+      if (!el) return false;
+      const rect = (el as HTMLElement).getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    },
+    FIXTURES[0].target,
+    { timeout: 45_000 },
+  );
+}
+
 test.describe("Wikilink label parity — Reading View and Live Preview", () => {
   let launcher: ObsidianLauncher;
 
@@ -86,51 +124,21 @@ test.describe("Wikilink label parity — Reading View and Live Preview", () => {
 
   test(
     "Live Preview: all 3 asset types show exo__Asset_label via WikilinkLabelViewPlugin",
-    { timeout: 60_000 },
+    { timeout: 75_000 },
     async () => {
-      await launcher.openFile(HOST_FILE);
+      // Open directly in Live Preview — avoids the preview→setViewState race where
+      // cm-editor ends up in the DOM but remains hidden to Playwright for >30s in CI.
       const window = await launcher.getWindow();
-
       await waitForExocortexPluginViaPlaywright(window, {
         specName: "wikilink-label-parity/live-preview",
       });
+      await openInLivePreview(window);
 
-      // Switch the active leaf to Live Preview (source mode, source: false).
-      // WikilinkLabelViewPlugin runs in CodeMirror and decorates bare [[target]]
-      // wikilinks with span.exocortex-wikilink-label[data-target-path="target"].
-      await window.evaluate(async () => {
-        const app = (window as any).app;
-        const leaf = app?.workspace?.activeLeaf;
-        if (!leaf) return;
-        const currentState = leaf.getViewState();
-        await leaf.setViewState({
-          ...currentState,
-          state: {
-            ...currentState.state,
-            mode: "source",
-            source: false,
-          },
-        });
-      });
+      // WikilinkLabelViewPlugin decorates bare [[target]] wikilinks with
+      // span.exocortex-wikilink-label. Poll until the first span is visible.
+      await waitForFirstLabelSpan(window);
 
-      // CI: mode switch to Live Preview (source:false) can take >15s on Docker/headless.
-      // Wait for CodeMirror editor with generous budget.
-      await window.waitForSelector(".cm-editor", { timeout: 30_000 });
-
-      // WikilinkLabelViewPlugin initialises via MutationObserver (24ms in dev, up to
-      // 30s in CI due to plugin load sequencing). Use waitForFunction polling so we
-      // re-check every 100ms rather than waiting for a single DOM event.
-      await window.waitForFunction(
-        (firstTarget: string) =>
-          document.querySelector(
-            `span.exocortex-wikilink-label[data-target-path="${firstTarget}"]`,
-          ) !== null,
-        FIXTURES[0].target,
-        { timeout: 30_000 },
-      );
-
-      // The WikilinkLabelViewPlugin requires settings.showLabelsInLivePreview=true (default).
-      // It creates spans with class exocortex-wikilink-label for bare [[target]] links.
+      // Assert all 3 asset types.
       for (const { type, target, label } of FIXTURES) {
         const span = window.locator(
           `span.exocortex-wikilink-label[data-target-path="${target}"]`,
@@ -166,32 +174,11 @@ test.describe("Wikilink label parity — Reading View and Live Preview", () => {
         readingViewLabels[target] = await link.innerText();
       }
 
-      // Switch to Live Preview
-      await window.evaluate(async () => {
-        const app = (window as any).app;
-        const leaf = app?.workspace?.activeLeaf;
-        if (!leaf) return;
-        const currentState = leaf.getViewState();
-        await leaf.setViewState({
-          ...currentState,
-          state: { ...currentState.state, mode: "source", source: false },
-        });
-      });
+      // Switch to Live Preview by opening a fresh leaf directly in source mode.
+      await openInLivePreview(window);
+      await waitForFirstLabelSpan(window);
 
-      // Same generous budget as Live Preview test for mode switch in CI.
-      await window.waitForSelector(".cm-editor", { timeout: 30_000 });
-
-      // Same polling guard as the Live Preview test (CI MutationObserver race).
-      await window.waitForFunction(
-        (firstTarget: string) =>
-          document.querySelector(
-            `span.exocortex-wikilink-label[data-target-path="${firstTarget}"]`,
-          ) !== null,
-        FIXTURES[0].target,
-        { timeout: 30_000 },
-      );
-
-      // Live Preview snapshot and parity assertion
+      // Live Preview snapshot and parity assertion.
       for (const { type, target, label } of FIXTURES) {
         const span = window.locator(
           `span.exocortex-wikilink-label[data-target-path="${target}"]`,
