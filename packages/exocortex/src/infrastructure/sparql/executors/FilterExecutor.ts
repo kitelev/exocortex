@@ -160,8 +160,17 @@ export class FilterExecutor {
       switch (exprRecord.termType) {
         case "Variable":
           return solution.get(exprRecord.value as string);
-        case "Literal":
-          return exprRecord.value as string;
+        case "Literal": {
+          const value = exprRecord.value as string;
+          const datatype = exprRecord.datatype as { value?: string } | string | undefined;
+          const datatypeIri = typeof datatype === "string"
+            ? datatype
+            : datatype?.value;
+          if (datatypeIri && value.length > 0 && this.shouldPreserveDatatype(datatypeIri)) {
+            return new Literal(value, new IRI(datatypeIri));
+          }
+          return value;
+        }
         case "NamedNode":
           return exprRecord.value as string;
         default:
@@ -186,8 +195,13 @@ export class FilterExecutor {
       case "variable":
         return solution.get(expr.name);
 
-      case "literal":
-        return expr.value;
+      case "literal": {
+        const litExpr = expr as import("../algebra/AlgebraOperation").Literal;
+        if (litExpr.datatype && litExpr.value.length > 0 && this.shouldPreserveDatatype(litExpr.datatype)) {
+          return new Literal(litExpr.value, new IRI(litExpr.datatype));
+        }
+        return litExpr.value;
+      }
 
       case "in":
         return this.evaluateIn(expr as InExpression, solution);
@@ -555,6 +569,29 @@ export class FilterExecutor {
       default:
         throw new FilterExecutorError(`Unknown arithmetic operator: ${String(expr.operator)}`);
     }
+  }
+
+  /**
+   * Whether a literal's datatype is one whose semantics affect arithmetic /
+   * type-guard dispatch in `evaluateArithmetic` and must therefore survive as
+   * a `Literal` instance instead of being collapsed to a bare string.
+   *
+   * Restricted to date/time/duration types so that string-tagged literals
+   * (xsd:string, language tags, plain identifiers) keep their pre-existing
+   * primitive-string behaviour and do not regress equality / IF / projection
+   * paths that compare to plain strings.
+   *
+   * Issue #3088.
+   */
+  private shouldPreserveDatatype(datatypeIri: string): boolean {
+    return (
+      datatypeIri === "http://www.w3.org/2001/XMLSchema#dateTime" ||
+      datatypeIri === "http://www.w3.org/2001/XMLSchema#date" ||
+      datatypeIri === "http://www.w3.org/2001/XMLSchema#time" ||
+      datatypeIri === "http://www.w3.org/2001/XMLSchema#dayTimeDuration" ||
+      datatypeIri === "http://www.w3.org/2001/XMLSchema#yearMonthDuration" ||
+      datatypeIri === "http://www.w3.org/2001/XMLSchema#duration"
+    );
   }
 
   /**
