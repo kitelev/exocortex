@@ -7,6 +7,8 @@ import {
   isConceptFile,
   matchesWordBoundary,
   MIN_LABEL_FOR_SUBSTRING,
+  CONCEPT_STOP_NAMES,
+  isConceptStopListed,
 } from "../../../src/commands/backfill-suggest.js";
 
 describe("backfill suggest — scoreMatch", () => {
@@ -319,6 +321,72 @@ describe("backfill suggest — isAutoApproved", () => {
   });
 });
 
+describe("backfill suggest — CONCEPT_STOP_NAMES and isConceptStopListed", () => {
+  it("CONCEPT_STOP_NAMES contains known generic names (lowercase)", () => {
+    expect(CONCEPT_STOP_NAMES.has("class")).toBe(true);
+    expect(CONCEPT_STOP_NAMES.has("state")).toBe(true);
+    expect(CONCEPT_STOP_NAMES.has("error")).toBe(true);
+    expect(CONCEPT_STOP_NAMES.has("false")).toBe(true);
+  });
+
+  it("isConceptStopListed returns true for single-token generic names (case-insensitive)", () => {
+    expect(isConceptStopListed("Class")).toBe(true);
+    expect(isConceptStopListed("State")).toBe(true);
+    expect(isConceptStopListed("ERROR")).toBe(true);
+    expect(isConceptStopListed("development")).toBe(true);
+  });
+
+  it("isConceptStopListed returns false for multi-word concepts", () => {
+    expect(isConceptStopListed("Domain Model")).toBe(false);
+    expect(isConceptStopListed("Claude Code")).toBe(false);
+    expect(isConceptStopListed("Knowledge Management")).toBe(false);
+  });
+
+  it("isConceptStopListed returns false for specific single-token concepts not in list", () => {
+    expect(isConceptStopListed("TypeScript")).toBe(false);
+    expect(isConceptStopListed("Obsidian")).toBe(false);
+    expect(isConceptStopListed("RDFS")).toBe(false);
+    expect(isConceptStopListed("Session")).toBe(false);
+  });
+
+  it("computeCandidates excludes concepts on stop-list by name", () => {
+    const stopConcepts: ConceptEntry[] = [
+      { uid: "uid-class", label: "Class", aliases: [], filePath: "/vault/c-class.md" },
+      { uid: "uid-state", label: "State", aliases: [], filePath: "/vault/c-state.md" },
+      { uid: "uid-ts", label: "TypeScript", aliases: [], filePath: "/vault/c-ts.md" },
+    ];
+    const candidates = computeCandidates(
+      "UUID wikilink dual-storage breaks class preconditions",
+      "",
+      "used typescript interfaces to define the schema",
+      stopConcepts,
+    );
+    const classCandidate = candidates.find((c) => c.concept_uid === "uid-class");
+    const stateCandidate = candidates.find((c) => c.concept_uid === "uid-state");
+    const tsCandidate = candidates.find((c) => c.concept_uid === "uid-ts");
+    expect(classCandidate).toBeUndefined();
+    expect(stateCandidate).toBeUndefined();
+    expect(tsCandidate).toBeDefined();
+  });
+
+  it("computeCandidates excludes concepts by excludedUids (frequency cap)", () => {
+    const concepts: ConceptEntry[] = [
+      { uid: "uid-session", label: "Session", aliases: [], filePath: "/vault/c-session.md" },
+      { uid: "uid-obsidian", label: "Obsidian", aliases: [], filePath: "/vault/c-obsidian.md" },
+    ];
+    const excludedUids = new Set(["uid-session"]);
+    const candidates = computeCandidates(
+      "Obsidian Sync modal blocks session",
+      "",
+      "obsidian session dialog",
+      concepts,
+      excludedUids,
+    );
+    expect(candidates.find((c) => c.concept_uid === "uid-session")).toBeUndefined();
+    expect(candidates.find((c) => c.concept_uid === "uid-obsidian")).toBeDefined();
+  });
+});
+
 describe("backfill suggest — command registration", () => {
   it("backfillSuggestCommand registers with name 'suggest'", async () => {
     const { backfillSuggestCommand } = await import("../../../src/commands/backfill-suggest.js");
@@ -338,6 +406,13 @@ describe("backfill suggest — command registration", () => {
     const { backfillSuggestCommand } = await import("../../../src/commands/backfill-suggest.js");
     const cmd = backfillSuggestCommand();
     const opt = cmd.options.find((o) => o.long === "--auto-threshold");
+    expect(opt).toBeDefined();
+  });
+
+  it("backfillSuggestCommand has --frequency-cap option", async () => {
+    const { backfillSuggestCommand } = await import("../../../src/commands/backfill-suggest.js");
+    const cmd = backfillSuggestCommand();
+    const opt = cmd.options.find((o) => o.long === "--frequency-cap");
     expect(opt).toBeDefined();
   });
 
