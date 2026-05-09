@@ -64,6 +64,12 @@ export class ShapeRegistry {
   }
 }
 
+// Standard W3C RDF type predicate. Treated as equivalent to the registry's
+// `typePredicateIRI` (default `exo__Instance_class`) for class-membership
+// purposes — see Issue ff3858e5 Fix 2: enum-instance wikilinks resolve via
+// rdf:type, and sh:class constraints must accept that path.
+const RDF_TYPE_IRI = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type';
+
 export function validate(
   triples: Triple[],
   registry: ShapeRegistry,
@@ -83,7 +89,11 @@ export function validate(
     const predicateIRI = predicate.value;
     const obj = object as IRI | Literal;
 
-    if (predicateIRI === registry.typePredicateIRI) {
+    const isTypePredicate =
+      predicateIRI === registry.typePredicateIRI ||
+      predicateIRI === RDF_TYPE_IRI;
+
+    if (isTypePredicate) {
       if (obj.type === 'iri') {
         const classes = subjectClasses.get(subjectIRI) ?? [];
         classes.push(obj.value);

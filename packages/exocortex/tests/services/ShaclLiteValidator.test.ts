@@ -862,3 +862,57 @@ describe('validate — closed-world mode', () => {
     expect(warning).toBeDefined();
   });
 });
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Suite 8: rdf:type recognition (Issue ff3858e5 Fix 2)
+// ═════════════════════════════════════════════════════════════════════════════
+//
+// Background: NoteToRDFConverter emits rdf:type triples for class-named enum
+// instance wikilinks (e.g. <pmbok#ClosureOutcomeAllAccepted> rdf:type
+// <pmbok#ClosureOutcome>). Previously the validator only recognised
+// `exo__Instance_class` as the class-membership predicate, so sh:class
+// constraints over enum instances false-positived even after the converter
+// fix was applied. This suite locks in rdf:type as an additional class
+// membership predicate.
+describe('Suite 8: rdf:type recognition (sh:class enum instances)', () => {
+  const RDF_TYPE = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type';
+  const PMBOK = 'https://exocortex.my/ontology/pmbok#';
+
+  function rdfTypeTriple(s: string, cls: string): Triple {
+    return iriTriple(s, RDF_TYPE, cls);
+  }
+
+  it('T66: rdf:type assigns class membership for sh:class check', () => {
+    const reportShape = makeShape({
+      propertyIRI: `${PMBOK}ProjectClosureReport_outcome`,
+      domain: [`${PMBOK}ProjectClosureReport`],
+      range: [`${PMBOK}ClosureOutcome`],
+    });
+    const triples: Triple[] = [
+      typeTriple('asset:report', `${PMBOK}ProjectClosureReport`),
+      iriTriple('asset:report', `${PMBOK}ProjectClosureReport_outcome`, `${PMBOK}ClosureOutcomeAllAccepted`),
+      // class membership of the enum instance is declared via rdf:type only
+      rdfTypeTriple(`${PMBOK}ClosureOutcomeAllAccepted`, `${PMBOK}ClosureOutcome`),
+    ];
+    const report = validate(triples, makeRegistry([reportShape]), flatHierarchy);
+    expect(report.violations).toHaveLength(0);
+    expect(report.conforms).toBe(true);
+  });
+
+  it('T67: rdf:type and exo__Instance_class are both honoured', () => {
+    const reportShape = makeShape({
+      propertyIRI: `${PMBOK}ProjectClosureReport_outcome`,
+      domain: [`${PMBOK}ProjectClosureReport`],
+      range: [`${PMBOK}ClosureOutcome`],
+    });
+    const triples: Triple[] = [
+      // domain established via exo__Instance_class
+      typeTriple('asset:report', `${PMBOK}ProjectClosureReport`),
+      iriTriple('asset:report', `${PMBOK}ProjectClosureReport_outcome`, `${PMBOK}ClosureOutcomeAllAccepted`),
+      // range satisfied by rdf:type
+      rdfTypeTriple(`${PMBOK}ClosureOutcomeAllAccepted`, `${PMBOK}ClosureOutcome`),
+    ];
+    const report = validate(triples, makeRegistry([reportShape]), flatHierarchy);
+    expect(report.conforms).toBe(true);
+  });
+});
