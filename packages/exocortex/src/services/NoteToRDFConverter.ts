@@ -928,7 +928,16 @@ export class NoteToRDFConverter {
             return [classIRI];
           }
         }
-        return [new Literal(cleanValue)];
+        // Issue ff3858e5 Fix 3: wikilink syntax `[[Target]]` semantically
+        // signals an asset reference even when the target file does not yet
+        // exist in the vault (e.g. fresh vaults, deferred-creation flows).
+        // Emit a vault-path IRI based on the linkpath instead of falling back
+        // to a string Literal, which previously produced `sh:datatype` /
+        // `sh:class` false-positives against shapes whose range is an Asset
+        // class IRI. The synthesised IRI mirrors what notePathToIRI would
+        // emit if the file existed at the vault root with a `.md` suffix.
+        const synthesizedIRI = this.notePathToIRI(`${wikilink}.md`);
+        return [synthesizedIRI];
       }
 
       if (this.isClassReference(cleanValue)) {

@@ -707,7 +707,12 @@ describe("NoteToRDFConverter", () => {
         expect((domainTriple!.object as IRI).value).toBe(Namespace.EMS.term("Effort").value);
       });
 
-      it("should return literal for wiki-link to non-class file when not found", async () => {
+      it("should emit synthesised IRI for wiki-link to non-class file when not found (Issue ff3858e5 Fix 3)", async () => {
+        // Previously: emitted Literal("[[Development]]") which produced
+        // sh:datatype false-positives against SHACL shapes whose range is an
+        // Asset class IRI. After Fix 3, the wikilink syntax always resolves
+        // to an IRI — synthesised from the linkpath when the target file
+        // does not (yet) exist in the vault.
         const frontmatter: IFrontmatter = {
           ems__Effort_area: "[[Development]]",
         };
@@ -722,8 +727,11 @@ describe("NoteToRDFConverter", () => {
         );
 
         expect(areaTriple).toBeDefined();
-        expect(areaTriple!.object).toBeInstanceOf(Literal);
-        expect((areaTriple!.object as Literal).value).toBe("[[Development]]");
+        expect(areaTriple!.object).toBeInstanceOf(IRI);
+        const objIri = areaTriple!.object as IRI;
+        expect(objIri.value).not.toContain("[[");
+        expect(objIri.value).not.toContain("]]");
+        expect(objIri.value).toContain("Development");
       });
 
       it("should handle quoted wiki-link to class when file not found", async () => {
@@ -3081,7 +3089,7 @@ It can contain **markdown** formatting.
         expect(iriValues.some((v) => v.includes(uuid2))).toBe(true);
       });
 
-      it("should not create duplicate Literal when wikilink target file doesn't exist", async () => {
+      it("should emit single synthesised IRI when wikilink target file doesn't exist (Issue ff3858e5 Fix 3)", async () => {
         const uuid = "e3347bcf-bb50-4fb7-9064-14266469384b";
 
         // File not found
@@ -3100,10 +3108,11 @@ It can contain **markdown** formatting.
           (t.predicate as IRI).value.includes("Asset_prototype")
         );
 
-        // When file doesn't exist, should fall back to literal (existing behavior)
-        // Should be 1 triple, not 2 (no dual storage when file doesn't exist)
+        // Fix 3: emit synthesised IRI from linkpath. Single triple — dual
+        // storage requires the target file to exist (so the basename can be
+        // verified as non-class-like). No Literal fallback.
         expect(prototypeTriples.length).toBe(1);
-        expect(prototypeTriples[0].object).toBeInstanceOf(Literal);
+        expect(prototypeTriples[0].object).toBeInstanceOf(IRI);
       });
 
       // Issue #2489: Verify dual storage with display name wikilink syntax
