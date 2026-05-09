@@ -18,12 +18,10 @@ import { describe, it, expect, beforeAll, afterAll } from "@jest/globals";
 import fs from "fs-extra";
 import os from "os";
 import path from "path";
-import { dirname, resolve } from "path";
-import { fileURLToPath } from "url";
+import { resolve } from "path";
 import { NoteToRDFConverter } from "exocortex";
 import { FileSystemVaultAdapter } from "../../src/adapters/FileSystemVaultAdapter.js";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
 const BAD_FILES_DIR = resolve(__dirname, "../fixtures/issue-2997/bad-files");
 const VALID_TREE_DIR = resolve(__dirname, "../fixtures/issue-2997/valid-tree");
 
