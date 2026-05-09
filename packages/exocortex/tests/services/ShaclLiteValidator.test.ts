@@ -864,6 +864,92 @@ describe('validate — closed-world mode', () => {
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
+// Suite 13: Phase 1 pilot constraint — ems__Effort_parent → ems__ParentEffort
+// RFC 82a72aca §"Pilot scope (Phase 1 minimum-shippable)"
+// ems__Project rdfs:subClassOf ems__ParentEffort (user ontology change 2026-04-29)
+// ═════════════════════════════════════════════════════════════════════════════
+
+describe('validate — Phase 1 pilot: ems__Effort_parent→ems__ParentEffort', () => {
+  const PARENT_EFFORT = `${EMS}ParentEffort`;
+  const PROJECT = `${EMS}Project`;
+  const TASK = `${EMS}Task`;
+  const EFFORT_PARENT_PROP = `${EMS}Effort_parent`;
+
+  // ems__Project rdfs:subClassOf ems__ParentEffort (user ontology change 2026-04-29)
+  const pilotHierarchy = makeHierarchy({
+    [PROJECT]: [PARENT_EFFORT],
+    [TASK]: [`${EMS}Effort`],
+    [`${EMS}Effort`]: [`${EMS}Asset`],
+  });
+
+  const pilotShape = makeShape({
+    propertyIRI: EFFORT_PARENT_PROP,
+    domain: [`${EMS}Effort`],
+    range: [PARENT_EFFORT],
+    cardinality: 'Single',
+    severity: 'sh:Violation',
+  });
+
+  it('T66: ems__Task.parent → ems__Project conforms (Project subClassOf ParentEffort)', () => {
+    const triples = [
+      typeTriple('task:A', TASK),
+      typeTriple('project:P', PROJECT),
+      iriTriple('task:A', EFFORT_PARENT_PROP, 'project:P'),
+    ];
+    const report = validate(triples, makeRegistry([pilotShape]), pilotHierarchy);
+    expect(report.conforms).toBe(true);
+    expect(report.violations).toHaveLength(0);
+  });
+
+  it('T67: ems__Task.parent → ems__Task violates (Task not subClassOf ParentEffort)', () => {
+    const triples = [
+      typeTriple('task:A', TASK),
+      typeTriple('task:B', TASK),
+      iriTriple('task:A', EFFORT_PARENT_PROP, 'task:B'),
+    ];
+    const report = validate(triples, makeRegistry([pilotShape]), pilotHierarchy);
+    expect(report.conforms).toBe(false);
+    expect(report.violations).toHaveLength(1);
+    expect(report.violations[0].focusNode).toBe('task:A');
+    expect(report.violations[0].propertyPath).toBe(EFFORT_PARENT_PROP);
+    expect(report.violations[0].severity).toBe('sh:Violation');
+    expect(report.violations[0].actualValue).toBe('task:B');
+    expect(report.violations[0].expectedRange).toContain(PARENT_EFFORT);
+  });
+
+  it('T68: cardinality=Single — two parent values on one task violates', () => {
+    const triples = [
+      typeTriple('task:A', TASK),
+      typeTriple('project:P1', PROJECT),
+      typeTriple('project:P2', PROJECT),
+      iriTriple('task:A', EFFORT_PARENT_PROP, 'project:P1'),
+      iriTriple('task:A', EFFORT_PARENT_PROP, 'project:P2'),
+    ];
+    const report = validate(triples, makeRegistry([pilotShape]), pilotHierarchy);
+    expect(report.conforms).toBe(false);
+    expect(report.violations.some((v) => v.message.includes('maxCount'))).toBe(true);
+  });
+
+  it('T69: missing parent on task — no violation (minCount not set)', () => {
+    const triples = [typeTriple('task:A', TASK)];
+    const report = validate(triples, makeRegistry([pilotShape]), pilotHierarchy);
+    expect(report.conforms).toBe(true);
+    expect(report.violations).toHaveLength(0);
+  });
+
+  it('T70: broken wikilink (parent IRI with no type info) → range violation', () => {
+    const triples = [
+      typeTriple('task:A', TASK),
+      iriTriple('task:A', EFFORT_PARENT_PROP, 'project:MISSING'),
+    ];
+    const report = validate(triples, makeRegistry([pilotShape]), pilotHierarchy);
+    expect(report.conforms).toBe(false);
+    expect(report.violations).toHaveLength(1);
+    expect(report.violations[0].actualValue).toBe('project:MISSING');
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
 // Suite 8: rdf:type recognition (Issue ff3858e5 Fix 2)
 // ═════════════════════════════════════════════════════════════════════════════
 //
