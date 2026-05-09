@@ -7,7 +7,9 @@ import { Namespace } from "../domain/models/rdf/Namespace";
 // W3C SHACL namespace base
 const SH_NS = "http://www.w3.org/ns/shacl#";
 
-// Maps namespace prefix → Namespace (mirrors NoteToRDFConverter.NAMESPACE_MAP)
+// Legacy whitelist retained for documentation; runtime resolution now goes
+// through Namespace.fromPropertyKey, which auto-extends to any well-formed
+// `<prefix>__<local>` key (RFC: SHACL namespace whitelist relaxation).
 const NAMESPACE_MAP: ReadonlyArray<[string, Namespace]> = [
   ["exo__", Namespace.EXO],
   ["ems__", Namespace.EMS],
@@ -19,6 +21,8 @@ const NAMESPACE_MAP: ReadonlyArray<[string, Namespace]> = [
   ["inbox__", Namespace.INBOX],
   ["pmbok__", Namespace.PMBOK],
 ];
+
+void NAMESPACE_MAP;
 
 /** Cached shape format written to / read from ~/.cache/exocortex/property-shapes.json */
 export interface ShapeJSONCache {
@@ -280,14 +284,16 @@ export class ShapeLoader {
     return result;
   }
 
-  /** Converts label like "ems__Effort_parent" to full IRI, or null if unknown prefix. */
+  /**
+   * Converts label like `ems__Effort_parent` to full IRI, returning null only
+   * for shapes that do not match the `<prefix>__<local>` form. Auto-extends to
+   * ad-hoc namespaces under `https://exocortex.my/ontology/<prefix>#` for
+   * prefixes outside the static whitelist (e.g. `aiKnow__`).
+   */
   private static labelToIRI(label: string): string | null {
-    for (const [prefix, ns] of NAMESPACE_MAP) {
-      if (label.startsWith(prefix)) {
-        return ns.term(label.substring(prefix.length)).value;
-      }
-    }
-    return null;
+    const parsed = Namespace.fromPropertyKey(label);
+    if (!parsed) return null;
+    return parsed.namespace.term(parsed.localName).value;
   }
 
   /** Extracts the first part of [[ref]] or [[ref|alias]], stripping quotes. */

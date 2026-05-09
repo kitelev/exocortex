@@ -771,29 +771,16 @@ export class NoteToRDFConverter {
     return new IRI(vaultPathToIRI(path));
   }
 
-  private static readonly NAMESPACE_MAP: ReadonlyArray<[string, Namespace]> = [
-    ["exo__", Namespace.EXO],
-    ["ems__", Namespace.EMS],
-    ["exocmd__", Namespace.EXOCMD],
-    ["ims__", Namespace.IMS],
-    ["ztlk__", Namespace.ZTLK],
-    ["ptms__", Namespace.PTMS],
-    ["lit__", Namespace.LIT],
-    ["inbox__", Namespace.INBOX],
-    ["pmbok__", Namespace.PMBOK],
-  ];
-
   private isExocortexProperty(key: string): boolean {
-    return NoteToRDFConverter.NAMESPACE_MAP.some(([prefix]) => key.startsWith(prefix));
+    return Namespace.fromPropertyKey(key) !== null;
   }
 
   private propertyKeyToIRI(key: string): IRI {
-    for (const [prefix, ns] of NoteToRDFConverter.NAMESPACE_MAP) {
-      if (key.startsWith(prefix)) {
-        return ns.term(key.substring(prefix.length));
-      }
+    const parsed = Namespace.fromPropertyKey(key);
+    if (!parsed) {
+      throw new Error(`Invalid property key: ${key}`);
     }
-    throw new Error(`Invalid property key: ${key}`);
+    return parsed.namespace.term(parsed.localName);
   }
 
   // Fix #ff3858e5: when emitting a class IRI for an enum instance, also push an
@@ -1079,8 +1066,8 @@ export class NoteToRDFConverter {
   }
 
   private isClassReference(value: string): boolean {
-    return NoteToRDFConverter.NAMESPACE_MAP.some(([prefix]) => value.startsWith(prefix))
-      && !/\s/.test(value);
+    if (/\s/.test(value)) return false;
+    return Namespace.fromPropertyKey(value) !== null;
   }
 
   /**
@@ -1106,14 +1093,9 @@ export class NoteToRDFConverter {
 
   private expandClassValue(value: string): IRI | null {
     const cleanValue = this.removeQuotes(value);
-
-    for (const [prefix, ns] of NoteToRDFConverter.NAMESPACE_MAP) {
-      if (cleanValue.startsWith(prefix)) {
-        return ns.term(cleanValue.substring(prefix.length));
-      }
-    }
-
-    return null;
+    const parsed = Namespace.fromPropertyKey(cleanValue);
+    if (!parsed) return null;
+    return parsed.namespace.term(parsed.localName);
   }
 
   /**

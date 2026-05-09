@@ -1,6 +1,18 @@
 import { SPARQL_PREFIXES } from "exocortex";
 
 /**
+ * Standard Exocortex ontology IRI base used to derive ad-hoc prefix
+ * declarations for non-whitelisted namespaces (e.g. `aiKnow:`, `aiTask:`).
+ * Mirrors `Namespace.EXOCORTEX_ONTOLOGY_BASE` in the core package — kept as a
+ * local constant to avoid pulling the full RDF module into the CLI's mock
+ * surface area for every consuming test.
+ */
+const EXOCORTEX_ONTOLOGY_BASE = "https://exocortex.my/ontology/";
+
+/** Prefix shape: lowercase letter, then alphanumerics. Mirrors Namespace.forPrefix. */
+const VALID_PREFIX_PATTERN = /^[a-z][a-zA-Z0-9]*$/;
+
+/**
  * Well-known Exocortex ontology prefixes that should NOT be treated as vault
  * directory namespaces. These map to ontology IRIs, not vault file paths.
  */
@@ -43,6 +55,34 @@ export function injectExocortexPrefixes(query: string): string {
     if (lineMatch && !declaredPrefixes.has(lineMatch[1].toLowerCase())) {
       missingPrefixes.push(line);
     }
+  }
+
+  // RFC: SHACL namespace whitelist relaxation — auto-declare prefixes used
+  // in the query body that are not in the static whitelist (e.g. `aiKnow:`,
+  // `aiTask:`) using the standard Exocortex ontology IRI convention. Mirrors
+  // NoteToRDFConverter's runtime auto-extension so cross-namespace SPARQL
+  // queries like `?s aiKnow:Memory_aboutConcept ?c` resolve without forcing
+  // the user to hand-declare every PREFIX.
+  const usedPrefixPattern = /(?<![:\w])([a-z][a-zA-Z0-9]*):[a-zA-Z_]/g;
+  const usedPrefixes = new Set<string>();
+  let usedMatch: RegExpExecArray | null;
+  while ((usedMatch = usedPrefixPattern.exec(query)) !== null) {
+    usedPrefixes.add(usedMatch[1]);
+  }
+  // Track all prefixes we will end up declaring (existing + the ones we just
+  // queued from SPARQL_PREFIXES) so we don't double-declare.
+  const declaringPrefixes = new Set(declaredPrefixes);
+  for (const line of missingPrefixes) {
+    const m = /PREFIX\s+(\w+)\s*:/i.exec(line);
+    if (m) declaringPrefixes.add(m[1].toLowerCase());
+  }
+  for (const prefix of usedPrefixes) {
+    if (declaringPrefixes.has(prefix.toLowerCase())) continue;
+    if (!VALID_PREFIX_PATTERN.test(prefix)) continue;
+    missingPrefixes.push(
+      `PREFIX ${prefix}: <${EXOCORTEX_ONTOLOGY_BASE}${prefix}#>`,
+    );
+    declaringPrefixes.add(prefix.toLowerCase());
   }
 
   if (missingPrefixes.length === 0) {
