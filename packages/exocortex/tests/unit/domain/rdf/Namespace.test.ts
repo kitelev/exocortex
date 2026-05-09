@@ -115,4 +115,53 @@ describe("Namespace", () => {
       expect(str.value).toBe("http://www.w3.org/2001/XMLSchema#string");
     });
   });
+
+  describe("forPrefix (whitelist relaxation)", () => {
+    it("returns the canonical singleton for well-known prefixes", () => {
+      expect(Namespace.forPrefix("ems")).toBe(Namespace.EMS);
+      expect(Namespace.forPrefix("inbox")).toBe(Namespace.INBOX);
+      expect(Namespace.forPrefix("pmbok")).toBe(Namespace.PMBOK);
+    });
+
+    it("auto-extends to ad-hoc namespace for non-whitelisted prefixes", () => {
+      const ns = Namespace.forPrefix("aiKnow");
+      expect(ns).not.toBeNull();
+      expect(ns!.prefix).toBe("aiKnow");
+      expect(ns!.iri.value).toBe("https://exocortex.my/ontology/aiKnow#");
+      expect(ns!.term("Memory_aboutConcept").value).toBe(
+        "https://exocortex.my/ontology/aiKnow#Memory_aboutConcept",
+      );
+    });
+
+    it("returns null for invalid prefix shape", () => {
+      expect(Namespace.forPrefix("Has-Dash")).toBeNull();
+      expect(Namespace.forPrefix("UpperCase")).toBeNull();
+      expect(Namespace.forPrefix("")).toBeNull();
+      expect(Namespace.forPrefix("9starts_with_digit")).toBeNull();
+    });
+  });
+
+  describe("fromPropertyKey", () => {
+    it("parses well-known prefix into canonical namespace + local name", () => {
+      const parsed = Namespace.fromPropertyKey("ems__Effort_status");
+      expect(parsed).not.toBeNull();
+      expect(parsed!.namespace).toBe(Namespace.EMS);
+      expect(parsed!.localName).toBe("Effort_status");
+    });
+
+    it("parses ad-hoc prefix into derived namespace", () => {
+      const parsed = Namespace.fromPropertyKey("aiKnow__Memory_aboutConcept");
+      expect(parsed).not.toBeNull();
+      expect(parsed!.namespace.prefix).toBe("aiKnow");
+      expect(parsed!.namespace.term(parsed!.localName).value).toBe(
+        "https://exocortex.my/ontology/aiKnow#Memory_aboutConcept",
+      );
+    });
+
+    it("returns null for keys without the <prefix>__<local> pattern", () => {
+      expect(Namespace.fromPropertyKey("aliases")).toBeNull();
+      expect(Namespace.fromPropertyKey("single_underscore")).toBeNull();
+      expect(Namespace.fromPropertyKey("__leading")).toBeNull();
+    });
+  });
 });

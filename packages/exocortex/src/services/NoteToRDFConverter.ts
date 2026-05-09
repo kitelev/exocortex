@@ -771,34 +771,28 @@ export class NoteToRDFConverter {
     return new IRI(vaultPathToIRI(path));
   }
 
-  private static readonly NAMESPACE_MAP: ReadonlyArray<[string, Namespace]> = [
-    ["exo__", Namespace.EXO],
-    ["ems__", Namespace.EMS],
-    ["exocmd__", Namespace.EXOCMD],
-    ["ims__", Namespace.IMS],
-    ["ztlk__", Namespace.ZTLK],
-    ["ptms__", Namespace.PTMS],
-    ["lit__", Namespace.LIT],
-    ["inbox__", Namespace.INBOX],
-    ["pmbok__", Namespace.PMBOK],
-  ];
-
   private isExocortexProperty(key: string): boolean {
-    return NoteToRDFConverter.NAMESPACE_MAP.some(([prefix]) => key.startsWith(prefix));
+    return Namespace.fromPropertyKey(key) !== null;
   }
 
   private propertyKeyToIRI(key: string): IRI {
-    for (const [prefix, ns] of NoteToRDFConverter.NAMESPACE_MAP) {
-      if (key.startsWith(prefix)) {
-        return ns.term(key.substring(prefix.length));
-      }
+    const parsed = Namespace.fromPropertyKey(key);
+    if (!parsed) {
+      throw new Error(`Invalid property key: ${key}`);
     }
-    throw new Error(`Invalid property key: ${key}`);
+    return parsed.namespace.term(parsed.localName);
   }
 
   // Fix #ff3858e5: when emitting a class IRI for an enum instance, also push an
   // rdf:type triple derived from the target file's exo__Instance_class frontmatter.
   // This satisfies sh:class constraints in the SHACL-lite engine.
+  //
+  // Also emit exo:Instance_class triple — ShaclLiteValidator.typePredicateIRI is
+  // exo#Instance_class (not rdf:type), so the rdf:type triple alone does not
+  // register the enum-instance IRI as a member of its class for sh:class checks.
+  // Without this, references like [[<uuid>|inbox__Role]] resolve to namespace IRI
+  // <inbox#Role>, but the validator finds no class declaration for that subject
+  // and reports false sh:class violations even when the class file exists.
   private emitTypeTripleForEnumInstance(classIRI: IRI, targetFile: IFile): void {
     const targetFm = this.vault.getFrontmatter(targetFile);
     if (!targetFm) return;
@@ -811,6 +805,9 @@ export class NoteToRDFConverter {
     if (parentClassIRI instanceof IRI) {
       this.pendingExtraTriples.push(
         new Triple(classIRI, Namespace.RDF.term("type"), parentClassIRI)
+      );
+      this.pendingExtraTriples.push(
+        new Triple(classIRI, Namespace.EXO.term("Instance_class"), parentClassIRI)
       );
     }
   }
@@ -880,6 +877,10 @@ export class NoteToRDFConverter {
               if (typeof label === "string") {
                 const labelClassIRI = this.expandClassValue(label);
                 if (labelClassIRI) {
+                  // Fix: emit class-registration triples for label-derived class IRI
+                  // so sh:class constraints resolve for UID-named class declarations
+                  // (e.g. `<uuid>.md` with alias `inbox__Role`).
+                  this.emitTypeTripleForEnumInstance(labelClassIRI, targetFile);
                   return [labelClassIRI];
                 }
               }
@@ -1079,8 +1080,8 @@ export class NoteToRDFConverter {
   }
 
   private isClassReference(value: string): boolean {
-    return NoteToRDFConverter.NAMESPACE_MAP.some(([prefix]) => value.startsWith(prefix))
-      && !/\s/.test(value);
+    if (/\s/.test(value)) return false;
+    return Namespace.fromPropertyKey(value) !== null;
   }
 
   /**
@@ -1106,14 +1107,9 @@ export class NoteToRDFConverter {
 
   private expandClassValue(value: string): IRI | null {
     const cleanValue = this.removeQuotes(value);
-
-    for (const [prefix, ns] of NoteToRDFConverter.NAMESPACE_MAP) {
-      if (cleanValue.startsWith(prefix)) {
-        return ns.term(cleanValue.substring(prefix.length));
-      }
-    }
-
-    return null;
+    const parsed = Namespace.fromPropertyKey(cleanValue);
+    if (!parsed) return null;
+    return parsed.namespace.term(parsed.localName);
   }
 
   /**
