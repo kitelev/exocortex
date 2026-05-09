@@ -47,7 +47,17 @@ export interface BackfillSuggestOptions {
   output?: string;
   autoThreshold?: number;
   dryRun?: boolean;
+  frequencyCap?: number;
 }
+
+// Single-token generic English names that produce noise matches.
+// Multi-word concepts (≥2 tokens) are never blocked by this list.
+export const CONCEPT_STOP_NAMES = new Set([
+  "class", "state", "error", "phase", "development", "multi", "asset",
+  "version", "limit", "flow", "single", "universal", "loop", "time",
+  "function", "document", "system", "driven", "commitment", "false", "true",
+  "alert", "positive", "backup", "tool", "user",
+]);
 
 export function parseFrontmatterRaw(content: string): Record<string, string> {
   const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
@@ -128,6 +138,31 @@ export function walkMdFiles(dir: string): string[] {
   return result;
 }
 
+export function countConceptFrequencies(aiKnowDir: string): Map<string, number> {
+  const freq = new Map<string, number>();
+  let files: string[];
+  try {
+    files = readdirSync(aiKnowDir);
+  } catch {
+    return freq;
+  }
+  for (const fname of files) {
+    if (!fname.endsWith(".md")) continue;
+    let content: string;
+    try {
+      content = readFileSync(join(aiKnowDir, fname), "utf-8");
+    } catch {
+      continue;
+    }
+    const m = content.match(/^aiKnow__Memory_aboutConcept:\s*"?\[\[([0-9a-f-]+)\|/m);
+    if (m) {
+      const uid = m[1];
+      freq.set(uid, (freq.get(uid) ?? 0) + 1);
+    }
+  }
+  return freq;
+}
+
 export function loadConcepts(vaultPath: string): ConceptEntry[] {
   const allFiles = walkMdFiles(vaultPath);
   const concepts: ConceptEntry[] = [];
@@ -182,11 +217,18 @@ export function scoreMatch(text: string, term: string): number {
   return 0;
 }
 
+export function isConceptStopListed(label: string): boolean {
+  const tokens = label.trim().split(/\s+/);
+  if (tokens.length !== 1) return false;
+  return CONCEPT_STOP_NAMES.has(tokens[0].toLowerCase());
+}
+
 export function computeCandidates(
   aiKnowLabel: string,
   aiKnowDescription: string,
   aiKnowBody: string,
   concepts: ConceptEntry[],
+  excludedUids?: Set<string>,
 ): BackfillCandidate[] {
   const labelLower = aiKnowLabel.toLowerCase();
   const descLower = aiKnowDescription.toLowerCase();
@@ -195,6 +237,8 @@ export function computeCandidates(
   const scored: BackfillCandidate[] = [];
 
   for (const concept of concepts) {
+    if (isConceptStopListed(concept.label)) continue;
+    if (excludedUids?.has(concept.uid)) continue;
     let bestScore = 0;
     let bestType: MatchType = "body_substring";
 
@@ -288,8 +332,14 @@ export async function runBackfillSuggest(options: BackfillSuggestOptions): Promi
   const aiKnowDir = resolve(options.aiKnowDir);
   const vaultPath = resolve(options.vault ?? join(aiKnowDir, "..", "..", ".."));
   const threshold = options.autoThreshold ?? 0.8;
+  const cap = options.frequencyCap ?? 100;
 
   const concepts = loadConcepts(vaultPath);
+  const freq = countConceptFrequencies(aiKnowDir);
+  const excludedUids = new Set(
+    [...freq.entries()].filter(([, count]) => count >= cap).map(([uid]) => uid),
+  );
+
   const aiKnowFiles = walkMdFiles(aiKnowDir);
   const records: BackfillRecord[] = [];
 
@@ -308,7 +358,7 @@ export async function runBackfillSuggest(options: BackfillSuggestOptions): Promi
     const description = fm["exo__Asset_description"] ?? "";
     const body = extractBodyText(content);
 
-    const candidates = computeCandidates(label, description, body, concepts);
+    const candidates = computeCandidates(label, description, body, concepts, excludedUids);
     const topCandidate = candidates[0];
     const autoApproved = topCandidate ? isAutoApproved(topCandidate, threshold) : false;
 
@@ -343,11 +393,19 @@ export function backfillSuggestCommand(): Command {
     .option("--vault <path>", "Path to Obsidian vault (for finding concepts)")
     .option("--output <path>", "Output JSONL path", defaultOutput)
     .option("--auto-threshold <number>", "Auto-approve confidence threshold", "0.8")
+    .option("--frequency-cap <number>", "Skip concepts with ≥N existing stamps in aiKnow dir", "100")
     .option("--dry-run", "Dry-run mode: output JSONL but do not write to vault (default)", true)
-    .action(async (options: { aiKnowDir: string; vault?: string; output: string; autoThreshold: string; dryRun: boolean }) => {
+    .action(async (options: { aiKnowDir: string; vault?: string; output: string; autoThreshold: string; frequencyCap: string; dryRun: boolean }) => {
       const threshold = parseFloat(options.autoThreshold);
       if (isNaN(threshold) || threshold < 0 || threshold > 1) {
         console.error("❌ --auto-threshold must be a number between 0 and 1");
+        process.exitCode = 1;
+        return;
+      }
+
+      const cap = parseInt(options.frequencyCap, 10);
+      if (isNaN(cap) || cap < 1) {
+        console.error("❌ --frequency-cap must be a positive integer");
         process.exitCode = 1;
         return;
       }
@@ -368,6 +426,7 @@ export function backfillSuggestCommand(): Command {
         vault: vaultPath,
         output: options.output,
         autoThreshold: threshold,
+        frequencyCap: cap,
         dryRun: options.dryRun,
       });
 
