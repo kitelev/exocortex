@@ -238,6 +238,112 @@ describe("SHACL cardinality regression (Issue ff3858e5)", () => {
     expect(typeTriple).toBeDefined();
   });
 
+  it("Enum instance wikilink emits exo:Instance_class triple alongside rdf:type (sh:class registration)", async () => {
+    // ShaclLiteValidator uses exo#Instance_class (not rdf:type) as typePredicateIRI.
+    // Without this triple, even existing class declarations don't satisfy sh:class
+    // constraints because no asset's subject IRI maps to the namespace IRI form.
+    const taskFile: IFile = {
+      path: "03 Knowledge/kitelev/3d62b9cf-0000-0000-0000-000000000000.md",
+      basename: "3d62b9cf-0000-0000-0000-000000000000",
+      name: "3d62b9cf-0000-0000-0000-000000000000.md",
+      parent: null,
+    };
+    const doneFile: IFile = {
+      path: "03 Knowledge/ems/ems__EffortStatusDone.md",
+      basename: "ems__EffortStatusDone",
+      name: "ems__EffortStatusDone.md",
+      parent: null,
+    };
+
+    mockVault.getFrontmatter.mockImplementation((f: IFile) => {
+      if (f.path === taskFile.path) {
+        return { ems__Effort_status: "[[ems__EffortStatusDone]]" };
+      }
+      if (f.path === doneFile.path) {
+        return { exo__Instance_class: "ems__EffortStatus" };
+      }
+      return null;
+    });
+
+    mockVault.getFirstLinkpathDest.mockImplementation((linkpath: string) => {
+      if (linkpath === "ems__EffortStatusDone") return doneFile;
+      return null;
+    });
+
+    mockVault.read.mockResolvedValue("");
+
+    const triples = await converter.convertNote(taskFile);
+
+    const instanceClassPred = Namespace.EXO.term("Instance_class").value;
+    const instanceClassTriple = triples.find(
+      (t) =>
+        (t.subject as IRI).value === Namespace.EMS.term("EffortStatusDone").value &&
+        (t.predicate as IRI).value === instanceClassPred &&
+        (t.object as IRI).value === Namespace.EMS.term("EffortStatus").value
+    );
+    expect(instanceClassTriple).toBeDefined();
+  });
+
+  it("UID-named class file resolved via UUID wikilink with class-prefixed label emits exo:Instance_class triple", async () => {
+    // Real-world case: vault has UID-named class declarations like
+    //   inbox/<uuid>.md  with  exo__Asset_label: inbox__Role
+    //                          exo__Instance_class: [[exo__Class]]
+    // and references like exo__Class_superClass: "[[<uuid>|inbox__Role]]".
+    // The converter resolves the wikilink to the namespace IRI <inbox#Role> via
+    // the file's exo__Asset_label (basename is the UUID, doesn't expand). For
+    // sh:class to resolve, <inbox#Role> needs an exo:Instance_class triple.
+    const sourceUUID = "11111111-1111-1111-1111-111111111111";
+    const targetUUID = "f9713a5d-88e3-40a5-b407-9dfec0d1649d";
+    const sourceFile: IFile = {
+      path: `03 Knowledge/ems/${sourceUUID}.md`,
+      basename: sourceUUID,
+      name: `${sourceUUID}.md`,
+      parent: null,
+    };
+    const targetFile: IFile = {
+      path: `03 Knowledge/inbox/${targetUUID}.md`,
+      basename: targetUUID,
+      name: `${targetUUID}.md`,
+      parent: null,
+    };
+
+    mockVault.getFrontmatter.mockImplementation((f: IFile) => {
+      if (f.path === sourceFile.path) {
+        return {
+          exo__Class_superClass: [`[[${targetUUID}|inbox__Role]]`],
+        };
+      }
+      if (f.path === targetFile.path) {
+        return {
+          exo__Asset_label: "inbox__Role",
+          exo__Instance_class: "[[exo__Class]]",
+        };
+      }
+      return null;
+    });
+
+    mockVault.getFirstLinkpathDest.mockImplementation((linkpath: string) => {
+      if (linkpath === targetUUID) return targetFile;
+      return null;
+    });
+
+    mockVault.read.mockResolvedValue("");
+
+    const triples = await converter.convertNote(sourceFile);
+
+    const instanceClassPred = Namespace.EXO.term("Instance_class").value;
+    const inboxRoleIRI = Namespace.INBOX.term("Role").value;
+    const exoClassIRI = Namespace.EXO.term("Class").value;
+
+    const registrationTriple = triples.find(
+      (t) =>
+        (t.subject as IRI).value === inboxRoleIRI &&
+        (t.predicate as IRI).value === instanceClassPred &&
+        (t.object as IRI).value === exoClassIRI
+    );
+    expect(registrationTriple).toBeDefined();
+  });
+
   it("Fix 3 audit: body wikilinks use exo:Asset_bodyLink — no cardinality impact on frontmatter predicates", async () => {
     // Body wikilinks are stored under the dedicated exo:Asset_bodyLink predicate,
     // so they cannot inflate cardinality counts for frontmatter predicates.

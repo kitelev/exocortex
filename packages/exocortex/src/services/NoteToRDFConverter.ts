@@ -786,6 +786,13 @@ export class NoteToRDFConverter {
   // Fix #ff3858e5: when emitting a class IRI for an enum instance, also push an
   // rdf:type triple derived from the target file's exo__Instance_class frontmatter.
   // This satisfies sh:class constraints in the SHACL-lite engine.
+  //
+  // Also emit exo:Instance_class triple — ShaclLiteValidator.typePredicateIRI is
+  // exo#Instance_class (not rdf:type), so the rdf:type triple alone does not
+  // register the enum-instance IRI as a member of its class for sh:class checks.
+  // Without this, references like [[<uuid>|inbox__Role]] resolve to namespace IRI
+  // <inbox#Role>, but the validator finds no class declaration for that subject
+  // and reports false sh:class violations even when the class file exists.
   private emitTypeTripleForEnumInstance(classIRI: IRI, targetFile: IFile): void {
     const targetFm = this.vault.getFrontmatter(targetFile);
     if (!targetFm) return;
@@ -798,6 +805,9 @@ export class NoteToRDFConverter {
     if (parentClassIRI instanceof IRI) {
       this.pendingExtraTriples.push(
         new Triple(classIRI, Namespace.RDF.term("type"), parentClassIRI)
+      );
+      this.pendingExtraTriples.push(
+        new Triple(classIRI, Namespace.EXO.term("Instance_class"), parentClassIRI)
       );
     }
   }
@@ -867,6 +877,10 @@ export class NoteToRDFConverter {
               if (typeof label === "string") {
                 const labelClassIRI = this.expandClassValue(label);
                 if (labelClassIRI) {
+                  // Fix: emit class-registration triples for label-derived class IRI
+                  // so sh:class constraints resolve for UID-named class declarations
+                  // (e.g. `<uuid>.md` with alias `inbox__Role`).
+                  this.emitTypeTripleForEnumInstance(labelClassIRI, targetFile);
                   return [labelClassIRI];
                 }
               }
