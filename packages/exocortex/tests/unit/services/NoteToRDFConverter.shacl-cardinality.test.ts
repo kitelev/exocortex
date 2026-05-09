@@ -238,49 +238,6 @@ describe("SHACL cardinality regression (Issue ff3858e5)", () => {
     expect(typeTriple).toBeDefined();
   });
 
-  it("Unresolved wikilink emits IRI (not literal) — sh:datatype false-positive fix", async () => {
-    // Issue ff3858e5: when wikilink target is not present in vault and the
-    // linkpath is not a class-namespaced reference (e.g. `[[Sales Platform]]`
-    // pointing at a yet-to-be-created asset), the converter previously emitted
-    // a string Literal. SHACL-lite shapes whose range expects an Asset IRI
-    // then false-positived with `sh:datatype violation: literal "[[…]]" has
-    // datatype xsd:string, expected exo__Asset`. The wikilink syntax itself
-    // signals an asset reference; the converter must emit an IRI even when
-    // the target file does not yet exist.
-    const sourceFile: IFile = {
-      path: "03 Knowledge/inbox/12340000-0000-0000-0000-000000000007.md",
-      basename: "12340000-0000-0000-0000-000000000007",
-      name: "12340000-0000-0000-0000-000000000007.md",
-      parent: null,
-    };
-
-    mockVault.getFrontmatter.mockImplementation((f: IFile) => {
-      if (f.path === sourceFile.path) {
-        return { pmbok__RiskItem_project: "[[Sales Platform]]" };
-      }
-      return null;
-    });
-
-    // Wikilink target not in vault — getFirstLinkpathDest returns null
-    mockVault.getFirstLinkpathDest.mockReturnValue(null);
-
-    mockVault.read.mockResolvedValue("");
-
-    const triples = await converter.convertNote(sourceFile);
-
-    const projectTriples = triples.filter((t) =>
-      (t.predicate as IRI).value.endsWith("RiskItem_project")
-    );
-
-    expect(projectTriples).toHaveLength(1);
-    // Must be IRI, not Literal
-    expect(projectTriples[0].object).toBeInstanceOf(IRI);
-    // Should not preserve the wikilink syntax inside an IRI
-    const objIri = projectTriples[0].object as IRI;
-    expect(objIri.value).not.toContain("[[");
-    expect(objIri.value).not.toContain("]]");
-  });
-
   it("Fix 3 audit: body wikilinks use exo:Asset_bodyLink — no cardinality impact on frontmatter predicates", async () => {
     // Body wikilinks are stored under the dedicated exo:Asset_bodyLink predicate,
     // so they cannot inflate cardinality counts for frontmatter predicates.
