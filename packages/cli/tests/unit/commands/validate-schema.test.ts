@@ -54,10 +54,13 @@ const {
   validateFile,
   extractPropertyNameFromURI,
   TripleClassHierarchy,
+  labelToOntologyIRI,
   domainToAlgebraTriples,
   buildEARLReport,
   runShapesValidation,
 } = await import("../../../src/commands/validate-schema.js");
+
+const { DomainIRI, DomainLiteral } = await import("exocortex");
 
 const TMP_DIR = "/tmp/validate-schema-test-" + Date.now();
 
@@ -474,6 +477,132 @@ describe("P1.6 TripleClassHierarchy", () => {
 
   it("is instantiated without errors from an empty array", () => {
     expect(() => new TripleClassHierarchy([])).not.toThrow();
+  });
+});
+
+describe("P1.6 labelToOntologyIRI", () => {
+  it("converts ims__Concept to ontology URI", () => {
+    expect(labelToOntologyIRI("ims__Concept")).toBe("https://exocortex.my/ontology/ims#Concept");
+  });
+
+  it("converts exo__Asset to ontology URI", () => {
+    expect(labelToOntologyIRI("exo__Asset")).toBe("https://exocortex.my/ontology/exo#Asset");
+  });
+
+  it("converts ems__Task to ontology URI", () => {
+    expect(labelToOntologyIRI("ems__Task")).toBe("https://exocortex.my/ontology/ems#Task");
+  });
+
+  it("returns null for label without double-underscore", () => {
+    expect(labelToOntologyIRI("SomePlainLabel")).toBeNull();
+  });
+
+  it("returns null for label with unknown prefix", () => {
+    expect(labelToOntologyIRI("unknown__Foo")).toBeNull();
+  });
+
+  it("returns null for label with prefix only (no local name)", () => {
+    expect(labelToOntologyIRI("ims__")).toBeNull();
+  });
+});
+
+describe("P1.6 TripleClassHierarchy ontology URI resolution", () => {
+  const RDFS_SUBCLASS_OF = "http://www.w3.org/2000/01/rdf-schema#subClassOf";
+  const RDFS_LABEL = "http://www.w3.org/2000/01/rdf-schema#label";
+
+  function makeIRI(value: string) { return new DomainIRI(value); }
+  function makeLiteral(value: string) { return new DomainLiteral(value); }
+  function makeTriple(s: any, p: any, o: any) { return { subject: s, predicate: p, object: o }; }
+
+  it("resolves isSubClassOf via ontology URIs when rdfs:label triples are present", () => {
+    const conceptFileIri = "obsidian://vault/ims/ims-concept.md";
+    const assetFileIri = "obsidian://vault/exo/exo-asset.md";
+
+    const triples = [
+      // rdfs:label for ims__Concept file
+      makeTriple(makeIRI(conceptFileIri), makeIRI(RDFS_LABEL), makeLiteral("ims__Concept")),
+      // rdfs:label for exo__Asset file
+      makeTriple(makeIRI(assetFileIri), makeIRI(RDFS_LABEL), makeLiteral("exo__Asset")),
+      // rdfs:subClassOf (file IRI based)
+      makeTriple(makeIRI(conceptFileIri), makeIRI(RDFS_SUBCLASS_OF), makeIRI(assetFileIri)),
+    ];
+
+    const hier = new TripleClassHierarchy(triples);
+
+    // Ontology URI-based check (the previously broken case)
+    expect(hier.isSubClassOf(
+      "https://exocortex.my/ontology/ims#Concept",
+      "https://exocortex.my/ontology/exo#Asset"
+    )).toBe(true);
+
+    // File IRI-based check still works
+    expect(hier.isSubClassOf(conceptFileIri, assetFileIri)).toBe(true);
+  });
+
+  it("returns true when checking fileIRI against its own ontology URI (identity mapping)", () => {
+    // exo__Instance_class [[UUID|ims__Concept]] → NoteToRDFConverter emits ims#Concept as class
+    // But when another file references UUID, it may produce UUID-file-IRI as the type.
+    // TripleClassHierarchy must also handle isSubClassOf("UUID-file-IRI", "ims#Concept").
+    const conceptFileIri = "obsidian://vault/ims/dda12c48-1234.md";
+
+    const triples = [
+      makeTriple(makeIRI(conceptFileIri), makeIRI(RDFS_LABEL), makeLiteral("ims__Concept")),
+    ];
+
+    const hier = new TripleClassHierarchy(triples);
+
+    // fileIRI "is" ims#Concept because it declares rdfs:label "ims__Concept"
+    expect(hier.isSubClassOf(conceptFileIri, "https://exocortex.my/ontology/ims#Concept")).toBe(true);
+  });
+
+  it("returns false for unrelated ontology URIs", () => {
+    const hier = new TripleClassHierarchy([]);
+    expect(hier.isSubClassOf(
+      "https://exocortex.my/ontology/ims#Concept",
+      "https://exocortex.my/ontology/ems#Task"
+    )).toBe(false);
+  });
+
+  it("resolves isSubClassOf via filename fallback when no rdfs:label triple exists", () => {
+    // exo__Asset.md has no exo__Asset_label, so no rdfs:label triple
+    // but filename "exo__Asset.md" can be decoded from the file IRI
+    const conceptFileIri = "obsidian://vault/03%20Knowledge/ims/dda12c48-6886-4624-8710.md";
+    const assetFileIri = "obsidian://vault/03%20Knowledge/exo/exo__Asset.md";
+
+    const triples = [
+      // UUID-named concept file has rdfs:label "ims__Concept"
+      makeTriple(makeIRI(conceptFileIri), makeIRI(RDFS_LABEL), makeLiteral("ims__Concept")),
+      // Label-named asset file has no rdfs:label — fallback to filename
+      makeTriple(makeIRI(conceptFileIri), makeIRI(RDFS_SUBCLASS_OF), makeIRI(assetFileIri)),
+    ];
+
+    const hier = new TripleClassHierarchy(triples);
+
+    expect(hier.isSubClassOf(
+      "https://exocortex.my/ontology/ims#Concept",
+      "https://exocortex.my/ontology/exo#Asset"
+    )).toBe(true);
+  });
+
+  it("resolves transitive ontology URI hierarchy", () => {
+    const conceptFileIri = "obsidian://vault/ims/concept.md";
+    const assetFileIri = "obsidian://vault/exo/asset.md";
+    const thingFileIri = "obsidian://vault/exo/thing.md";
+
+    const triples = [
+      makeTriple(makeIRI(conceptFileIri), makeIRI(RDFS_LABEL), makeLiteral("ims__Concept")),
+      makeTriple(makeIRI(assetFileIri), makeIRI(RDFS_LABEL), makeLiteral("exo__Asset")),
+      makeTriple(makeIRI(thingFileIri), makeIRI(RDFS_LABEL), makeLiteral("exo__Thing")),
+      makeTriple(makeIRI(conceptFileIri), makeIRI(RDFS_SUBCLASS_OF), makeIRI(assetFileIri)),
+      makeTriple(makeIRI(assetFileIri), makeIRI(RDFS_SUBCLASS_OF), makeIRI(thingFileIri)),
+    ];
+
+    const hier = new TripleClassHierarchy(triples);
+
+    expect(hier.isSubClassOf(
+      "https://exocortex.my/ontology/ims#Concept",
+      "https://exocortex.my/ontology/exo#Thing"
+    )).toBe(true);
   });
 });
 
