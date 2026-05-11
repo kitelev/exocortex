@@ -496,7 +496,8 @@ export * from "./domain/errors";
 
 // SHACL-lite validation engine (RFC 82a72aca)
 export { ShapeLoader, type ShapeJSONCache } from "./services/ShapeLoader";
-export { ShapeRegistry } from "./services/ShapeRegistry";
+export { ShapeRegistry, type Shape } from "./services/ShapeRegistry";
+export { Namespace } from "./domain/models/rdf/Namespace";
 export {
   validate as shaclValidate,
   ShapeRegistry as ShaclShapeRegistry,

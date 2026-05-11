@@ -13,6 +13,28 @@ jest.unstable_mockModule("exocortex", () => ({
   IFileSystemAdapter: {},
   FileNotFoundError: class FileNotFoundError extends Error {},
   FileAlreadyExistsError: class FileAlreadyExistsError extends Error {},
+  Namespace: {
+    fromPropertyKey: (key: string) => {
+      const match = /^([a-z][a-zA-Z0-9]*)__(.+)$/.exec(key);
+      if (!match) return null;
+      return {
+        namespace: {
+          term: (localName: string) => ({
+            value: `https://exocortex.my/ontology/${match[1]}#${localName}`,
+          }),
+        },
+        localName: match[2],
+      };
+    },
+  },
+  ShapeLoader: {
+    loadFromVaultFS: jest.fn(async () => ({
+      get: () => undefined,
+      getAll: () => [],
+      register: () => undefined,
+      size: 0,
+    })),
+  },
 }));
 
 // Mock fs-extra (NodeFsAdapter dependency)
