@@ -159,7 +159,12 @@ export class ShapeLoader {
       if (entry.isDirectory()) {
         await ShapeLoader.scanDir(full, registry, io);
       } else if (entry.isFile() && entry.name.endsWith(".md")) {
-        await ShapeLoader.processFile(full, registry, io.readFile);
+        // Fail-soft: one malformed property asset should not abort the scan.
+        try {
+          await ShapeLoader.processFile(full, registry, io.readFile, io.path);
+        } catch {
+          // Skip the offending file silently
+        }
       }
     }
   }
@@ -168,6 +173,7 @@ export class ShapeLoader {
     filePath: string,
     registry: ShapeRegistry,
     readFile: (p: string, enc: "utf-8") => Promise<string>,
+    path?: typeof import("path"),
   ): Promise<void> {
     let content: string;
     try {
@@ -192,9 +198,20 @@ export class ShapeLoader {
     });
     if (!isProperty) return;
 
+    // Resolve label: prefer explicit `exo__Asset_label`, fall back to filename
+    // basename for property assets that omit the label field (issue #3099).
+    let label: string | null = null;
     const labelRaw = fm["exo__Asset_label"];
-    if (!labelRaw || typeof labelRaw !== "string") return;
-    const label = labelRaw.trim();
+    if (typeof labelRaw === "string" && labelRaw.trim().length > 0) {
+      label = labelRaw.trim();
+    } else if (path) {
+      const basename = path.basename(filePath, ".md");
+      if (Namespace.fromPropertyKey(basename)) {
+        label = basename;
+      }
+    }
+    if (!label) return;
+
     const propertyIRI = ShapeLoader.labelToIRI(label);
     if (!propertyIRI) return;
 
