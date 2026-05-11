@@ -606,6 +606,80 @@ describe("P1.6 TripleClassHierarchy ontology URI resolution", () => {
   });
 });
 
+describe("P1.6 TripleClassHierarchy exo:Class_superClass support", () => {
+  const EXO_CLASS_SUPER_CLASS = "https://exocortex.my/ontology/exo#Class_superClass";
+  const RDFS_SUBCLASS_OF = "http://www.w3.org/2000/01/rdf-schema#subClassOf";
+  const RDFS_LABEL = "http://www.w3.org/2000/01/rdf-schema#label";
+
+  function makeIRI(value: string) { return new DomainIRI(value); }
+  function makeLiteral(value: string) { return new DomainLiteral(value); }
+  function makeTriple(s: any, p: any, o: any) { return { subject: s, predicate: p, object: o }; }
+
+  it("treats exo:Class_superClass as subclass source (direct ontology URIs)", () => {
+    const classFileIri = "obsidian://vault/exo/exo__Class.md";
+    const assetFileIri = "obsidian://vault/exo/exo__Asset.md";
+
+    const triples = [
+      makeTriple(makeIRI(classFileIri), makeIRI(RDFS_LABEL), makeLiteral("exo__Class")),
+      makeTriple(makeIRI(assetFileIri), makeIRI(RDFS_LABEL), makeLiteral("exo__Asset")),
+      // exo:Class_superClass — the Exocortex-native superclass declaration predicate
+      makeTriple(makeIRI(classFileIri), makeIRI(EXO_CLASS_SUPER_CLASS), makeIRI(assetFileIri)),
+    ];
+
+    const hier = new TripleClassHierarchy(triples);
+
+    expect(hier.isSubClassOf(
+      "https://exocortex.my/ontology/exo#Class",
+      "https://exocortex.my/ontology/exo#Asset"
+    )).toBe(true);
+  });
+
+  it("treats exo:Class_superClass as subclass source when no rdfs:subClassOf triple present", () => {
+    const conceptFileIri = "obsidian://vault/ims/concept.md";
+    const assetFileIri = "obsidian://vault/exo/asset.md";
+
+    const triples = [
+      makeTriple(makeIRI(conceptFileIri), makeIRI(RDFS_LABEL), makeLiteral("ims__Concept")),
+      makeTriple(makeIRI(assetFileIri), makeIRI(RDFS_LABEL), makeLiteral("exo__Asset")),
+      // Only exo:Class_superClass, no rdfs:subClassOf
+      makeTriple(makeIRI(conceptFileIri), makeIRI(EXO_CLASS_SUPER_CLASS), makeIRI(assetFileIri)),
+    ];
+
+    const hier = new TripleClassHierarchy(triples);
+
+    expect(hier.isSubClassOf(
+      "https://exocortex.my/ontology/ims#Concept",
+      "https://exocortex.my/ontology/exo#Asset"
+    )).toBe(true);
+    // Inverse should still be false
+    expect(hier.isSubClassOf(
+      "https://exocortex.my/ontology/exo#Asset",
+      "https://exocortex.my/ontology/ims#Concept"
+    )).toBe(false);
+  });
+
+  it("handles transitive chain via exo:Class_superClass", () => {
+    const conceptFileIri = "obsidian://vault/ims/concept.md";
+    const assetFileIri = "obsidian://vault/exo/asset.md";
+    const thingFileIri = "obsidian://vault/exo/thing.md";
+
+    const triples = [
+      makeTriple(makeIRI(conceptFileIri), makeIRI(RDFS_LABEL), makeLiteral("ims__Concept")),
+      makeTriple(makeIRI(assetFileIri), makeIRI(RDFS_LABEL), makeLiteral("exo__Asset")),
+      makeTriple(makeIRI(thingFileIri), makeIRI(RDFS_LABEL), makeLiteral("exo__Thing")),
+      makeTriple(makeIRI(conceptFileIri), makeIRI(EXO_CLASS_SUPER_CLASS), makeIRI(assetFileIri)),
+      makeTriple(makeIRI(assetFileIri), makeIRI(RDFS_SUBCLASS_OF), makeIRI(thingFileIri)),
+    ];
+
+    const hier = new TripleClassHierarchy(triples);
+
+    expect(hier.isSubClassOf(
+      "https://exocortex.my/ontology/ims#Concept",
+      "https://exocortex.my/ontology/exo#Thing"
+    )).toBe(true);
+  });
+});
+
 describe("P1.6 domainToAlgebraTriples", () => {
   it("returns empty array for empty input", () => {
     expect(domainToAlgebraTriples([])).toEqual([]);

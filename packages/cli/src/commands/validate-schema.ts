@@ -375,6 +375,7 @@ export function validateFile(
 }
 
 const RDFS_SUBCLASS_OF = "http://www.w3.org/2000/01/rdf-schema#subClassOf";
+const EXO_CLASS_SUPER_CLASS = "https://exocortex.my/ontology/exo#Class_superClass";
 const RDFS_LABEL = "http://www.w3.org/2000/01/rdf-schema#label";
 
 /**
@@ -465,12 +466,15 @@ export class TripleClassHierarchy implements ClassHierarchy {
     // Fallback: filename stem (e.g. "exo__Asset.md" → exo#Asset for label-named class files).
     const fileIriToOntologyUri = new Map<string, string>();
 
-    // Collect file IRIs that appear in rdfs:subClassOf triples (candidates for class files)
+    // Collect file IRIs that appear in rdfs:subClassOf or exo:Class_superClass triples
+    // (candidates for class files that need their ontologyURI resolved)
     const classFileIris = new Set<string>();
+    const isSubClassPredicate = (iri: string) =>
+      iri === RDFS_SUBCLASS_OF || iri === EXO_CLASS_SUPER_CLASS;
     for (const t of triples) {
       if (
         t.predicate instanceof DomainIRI &&
-        t.predicate.value === RDFS_SUBCLASS_OF &&
+        isSubClassPredicate(t.predicate.value) &&
         t.subject instanceof DomainIRI &&
         t.object instanceof DomainIRI
       ) {
@@ -515,11 +519,15 @@ export class TripleClassHierarchy implements ClassHierarchy {
       this.subClassMap.set(fileIri, selfSet);
     }
 
-    // Pass 2b: build subClassMap for both file IRIs and ontology URIs
+    // Pass 2b: build subClassMap for both file IRIs and ontology URIs.
+    // Processes both rdfs:subClassOf and exo:Class_superClass (the Exocortex-native
+    // superclass declaration predicate). Without exo:Class_superClass support, classes
+    // declared via exo__Class_superClass (e.g. ims#Concept → exo#Asset) are invisible
+    // to the hierarchy, causing false sh:class violations on properties like exo:Asset_relates.
     for (const t of triples) {
       if (
         t.predicate instanceof DomainIRI &&
-        t.predicate.value === RDFS_SUBCLASS_OF &&
+        isSubClassPredicate(t.predicate.value) &&
         t.subject instanceof DomainIRI &&
         t.object instanceof DomainIRI
       ) {
