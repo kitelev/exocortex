@@ -1002,3 +1002,106 @@ describe('Suite 8: rdf:type recognition (sh:class enum instances)', () => {
     expect(report.conforms).toBe(true);
   });
 });
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Suite 12: External ontology IRI allowlist
+// ═════════════════════════════════════════════════════════════════════════════
+
+describe('validate — external ontology IRI allowlist', () => {
+  const exoClass = `${EXO}Class`;
+  const exoProperty = `${EXO}Property`;
+  const exoClassSuperClass = `${EXO}Class_superClass`;
+  const exoPropertySuperProperty = `${EXO}Property_superProperty`;
+
+  const classShape = makeShape({
+    propertyIRI: exoClassSuperClass,
+    domain: [exoClass],
+    range: [exoClass],
+  });
+  const propertyShape = makeShape({
+    propertyIRI: exoPropertySuperProperty,
+    domain: [exoProperty],
+    range: [exoProperty],
+  });
+
+  it('T-EXT-01: canonical W3C xsd IRI as superClass value → no violation', () => {
+    const triples: Triple[] = [
+      typeTriple('asset:LocalDate', exoClass),
+      iriTriple('asset:LocalDate', exoClassSuperClass, `${XSD}Date`),
+    ];
+    const report = validate(triples, makeRegistry([classShape]), flatHierarchy);
+    expect(report.conforms).toBe(true);
+    expect(report.violations).toHaveLength(0);
+  });
+
+  it('T-EXT-02: canonical W3C rdf IRI as superClass value → no violation', () => {
+    const RDF = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#';
+    const triples: Triple[] = [
+      typeTriple('asset:Statement', exoClass),
+      iriTriple('asset:Statement', exoClassSuperClass, `${RDF}Statement`),
+    ];
+    const report = validate(triples, makeRegistry([classShape]), flatHierarchy);
+    expect(report.conforms).toBe(true);
+    expect(report.violations).toHaveLength(0);
+  });
+
+  it('T-EXT-03: canonical W3C rdfs IRI as superClass value → no violation', () => {
+    const RDFS = 'http://www.w3.org/2000/01/rdf-schema#';
+    const triples: Triple[] = [
+      typeTriple('asset:Resource', exoClass),
+      iriTriple('asset:Resource', exoClassSuperClass, `${RDFS}Resource`),
+    ];
+    const report = validate(triples, makeRegistry([classShape]), flatHierarchy);
+    expect(report.conforms).toBe(true);
+    expect(report.violations).toHaveLength(0);
+  });
+
+  it('T-EXT-04: canonical W3C owl IRI as superClass value → no violation', () => {
+    const OWL = 'http://www.w3.org/2002/07/owl#';
+    const triples: Triple[] = [
+      typeTriple('asset:ObjProp', exoClass),
+      iriTriple('asset:ObjProp', exoClassSuperClass, `${OWL}ObjectProperty`),
+    ];
+    const report = validate(triples, makeRegistry([classShape]), flatHierarchy);
+    expect(report.conforms).toBe(true);
+    expect(report.violations).toHaveLength(0);
+  });
+
+  it('T-EXT-05: Exocortex ad-hoc xsd IRI (xsd__ prefix) as superClass → no violation', () => {
+    // Produced by Namespace.forPrefix('xsd') when xsd is not in KNOWN_NAMESPACES
+    const XSD_ADHOC = 'https://exocortex.my/ontology/xsd#';
+    const triples: Triple[] = [
+      typeTriple('asset:LocalDate', exoClass),
+      iriTriple('asset:LocalDate', exoClassSuperClass, `${XSD_ADHOC}Date`),
+    ];
+    const report = validate(triples, makeRegistry([classShape]), flatHierarchy);
+    expect(report.conforms).toBe(true);
+    expect(report.violations).toHaveLength(0);
+  });
+
+  it('T-EXT-06: Exocortex ad-hoc rdfs IRI (rdfs__) as superProperty → no violation', () => {
+    const RDFS_ADHOC = 'https://exocortex.my/ontology/rdfs#';
+    const triples: Triple[] = [
+      typeTriple('asset:RangeProperty', exoProperty),
+      iriTriple('asset:RangeProperty', exoPropertySuperProperty, `${RDFS_ADHOC}range`),
+    ];
+    const report = validate(triples, makeRegistry([propertyShape]), flatHierarchy);
+    expect(report.conforms).toBe(true);
+    expect(report.violations).toHaveLength(0);
+  });
+
+  it('T-EXT-07: internal exocortex IRI as superClass → still validated (not exempt)', () => {
+    // An ims__Concept IRI used as superClass should still be validated
+    const IMS = 'https://exocortex.my/ontology/ims#';
+    const triples: Triple[] = [
+      typeTriple('asset:SpecialClass', exoClass),
+      iriTriple('asset:SpecialClass', exoClassSuperClass, `${IMS}Concept`),
+      // Note: ims#Concept has NO type triple → empty valueClasses → violation expected
+    ];
+    const report = validate(triples, makeRegistry([classShape]), flatHierarchy);
+    // ims#Concept is an internal IRI and should be checked — violation is expected
+    expect(report.conforms).toBe(false);
+    expect(report.violations).toHaveLength(1);
+    expect(report.violations[0].message).toContain('sh:class violation');
+  });
+});
