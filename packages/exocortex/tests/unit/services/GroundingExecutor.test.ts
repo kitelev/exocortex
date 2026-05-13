@@ -922,6 +922,253 @@ describe("GroundingExecutor", () => {
       expect(content).toContain(`exo__Asset_uid: ${pathUuid}`);
     });
 
+    // -- Task 2.4: copy-from-target + configurable back-link --
+
+    describe("copy-from-target + linkBackProperty (Task 2.4)", () => {
+      const TARGET_FM = [
+        "---",
+        'exo__Asset_uid: "src-uid"',
+        'exo__Asset_label: "Source asset"',
+        "exo__Instance_class:",
+        '  - "[[ems__Project]]"',
+        "aliases:",
+        "  - Old alias",
+        'ems__Effort_status: "[[ems__EffortStatusDoing]]"',
+        "ems__Effort_startTimestamp: 2026-01-01T10:00:00",
+        'ems__Effort_area: "[[area-uid-42]]"',
+        'ems__Effort_priority: "[[priority-high]]"',
+        "ems__Effort_tags:",
+        '  - "[[tag-alpha]]"',
+        '  - "[[tag-beta]]"',
+        "---",
+        "Body",
+      ].join("\n");
+
+      it("copies $target frontmatter into new asset (blacklist respected)", async () => {
+        reader.readFile.mockResolvedValue(TARGET_FM);
+
+        const grounding = makeGrounding({
+          type: GroundingType.CREATE_INSTANCE,
+          targetClass: "ems__Task",
+          targetFolder: "01 Inbox",
+        });
+
+        await executor.execute(grounding, TARGET_IRI, FILE_PATH, { label: "Sub-task" });
+
+        const [, content] = writer.createFile.mock.calls[0];
+        // Inherited non-blacklisted properties
+        expect(content).toContain('ems__Effort_area: "[[area-uid-42]]"');
+        expect(content).toContain('ems__Effort_priority: "[[priority-high]]"');
+        expect(content).toContain('"[[tag-alpha]]"');
+        expect(content).toContain('"[[tag-beta]]"');
+        // Blacklisted — must NOT leak
+        expect(content).not.toContain("src-uid");
+        expect(content).not.toContain("Source asset");
+        expect(content).not.toContain("Old alias");
+        expect(content).not.toMatch(/exo__Instance_class:[\s\S]*ems__Project/);
+        expect(content).not.toContain("ems__EffortStatusDoing");
+        expect(content).not.toContain("ems__Effort_startTimestamp:");
+      });
+
+      it("re-quotes wikilink values copied from $target", async () => {
+        reader.readFile.mockResolvedValue(
+          '---\nems__Effort_area: "[[area-uid-42]]"\nems__Effort_unquoted: [[bare-link]]\n---\n',
+        );
+
+        const grounding = makeGrounding({
+          type: GroundingType.CREATE_INSTANCE,
+          targetClass: "ems__Task",
+          targetFolder: "01 Inbox",
+        });
+
+        await executor.execute(grounding, TARGET_IRI, FILE_PATH);
+
+        const [, content] = writer.createFile.mock.calls[0];
+        expect(content).toContain('ems__Effort_area: "[[area-uid-42]]"');
+        expect(content).toContain('ems__Effort_unquoted: "[[bare-link]]"');
+      });
+
+      it("does not overwrite properties already set via userInput", async () => {
+        reader.readFile.mockResolvedValue(
+          '---\nems__Effort_area: "[[area-from-target]]"\n---\n',
+        );
+
+        const grounding = makeGrounding({
+          type: GroundingType.CREATE_INSTANCE,
+          targetClass: "ems__Task",
+          targetFolder: "01 Inbox",
+        });
+
+        await executor.execute(grounding, TARGET_IRI, FILE_PATH, {
+          label: "X",
+          ems__Effort_area: '"[[area-from-user]]"',
+        });
+
+        const [, content] = writer.createFile.mock.calls[0];
+        expect(content).toContain('ems__Effort_area: "[[area-from-user]]"');
+        expect(content).not.toContain("area-from-target");
+      });
+
+      it("writes back-link to grounding.linkBackProperty when provided", async () => {
+        reader.readFile.mockResolvedValue("---\nfoo: bar\n---\n");
+
+        const grounding = makeGrounding({
+          type: GroundingType.CREATE_INSTANCE,
+          targetClass: "ems__Task",
+          targetFolder: "01 Inbox",
+          linkBackProperty: "ems__Effort_parent",
+        });
+
+        await executor.execute(grounding, TARGET_IRI, FILE_PATH, { label: "Sub" });
+
+        const [, content] = writer.createFile.mock.calls[0];
+        expect(content).toContain(`ems__Effort_parent: "[[${TARGET_IRI}]]"`);
+        expect(content).not.toContain("exo__Asset_source:");
+      });
+
+      it("falls back to exo__Asset_source when linkBackProperty is absent", async () => {
+        reader.readFile.mockResolvedValue("---\nfoo: bar\n---\n");
+
+        const grounding = makeGrounding({
+          type: GroundingType.CREATE_INSTANCE,
+          targetClass: "ems__Task",
+          targetFolder: "01 Inbox",
+        });
+
+        await executor.execute(grounding, TARGET_IRI, FILE_PATH);
+
+        const [, content] = writer.createFile.mock.calls[0];
+        expect(content).toContain(`exo__Asset_source: "[[${TARGET_IRI}]]"`);
+        expect(content).not.toContain("ems__Effort_prevIteration:");
+      });
+
+      it("accepts bare property name (no wikilink wrapping) for linkBackProperty", async () => {
+        reader.readFile.mockResolvedValue("---\nfoo: bar\n---\n");
+
+        const grounding = makeGrounding({
+          type: GroundingType.CREATE_INSTANCE,
+          targetClass: "ems__Task",
+          targetFolder: "01 Inbox",
+          linkBackProperty: "ems__Effort_prevIteration",
+        });
+
+        await executor.execute(grounding, TARGET_IRI, FILE_PATH, { label: "Next" });
+
+        const [, content] = writer.createFile.mock.calls[0];
+        expect(content).toContain(`ems__Effort_prevIteration: "[[${TARGET_IRI}]]"`);
+        expect(content).not.toContain("exo__Asset_source:");
+        expect(content).not.toContain("[[ems__Effort_prevIteration]]:");
+      });
+
+      it("returns descriptive error when $target file is missing", async () => {
+        reader.readFile.mockRejectedValue(new Error("ENOENT: no such file"));
+
+        const grounding = makeGrounding({
+          type: GroundingType.CREATE_INSTANCE,
+          targetClass: "ems__Task",
+          targetFolder: "01 Inbox",
+        });
+
+        const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
+
+        expect(result.success).toBe(false);
+        expect(result.error).toContain("$target");
+        expect(result.error).toContain(FILE_PATH);
+        expect(result.error).toContain("ENOENT");
+        // Must not silently fall through to createFile
+        expect(writer.createFile).not.toHaveBeenCalled();
+      });
+    });
+
+    // Task 4.4 — regression suite for Phase 2 changes (RFC v0.2 copy-from-target +
+    // configurable linkBackProperty). Guarantees existing vault groundings authored
+    // before RFC v0.2 (e.g. `e01b025b` "Create MeetingPrototype instance",
+    // `adc73790`, `3da98088`, `00a6a887`, `a6ef8fda`) keep emitting
+    // `exo__Asset_source` and that the no-$target path does NOT introduce a phantom
+    // fallback link.
+    describe("Phase 2 regression: existing groundings unchanged (Task 4.4)", () => {
+      // Fixture mirrors vault grounding `e01b025b-d03f-4028-b4c8-45d3786ff43d`
+      // ("Create MeetingPrototype instance") — pre-RFC v0.2 shape: targetClass +
+      // targetPrototype + targetFolder, no linkBackProperty.
+      const LEGACY_MEETING_GROUNDING = {
+        type: GroundingType.CREATE_INSTANCE,
+        targetClass: "ems__Meeting",
+        targetPrototype: "7ab483c7-aafc-4ac8-8aca-0de52db34a93|ems__MeetingPrototype",
+        targetFolder: "03 Knowledge/inbox",
+      } as const;
+
+      it("legacy grounding (no linkBackProperty) emits exo__Asset_source as before", async () => {
+        reader.readFile.mockResolvedValue("---\nfoo: bar\n---\nBody");
+
+        const grounding = makeGrounding({ ...LEGACY_MEETING_GROUNDING });
+
+        const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH, {
+          label: "Weekly sync",
+        });
+
+        expect(result.success).toBe(true);
+        const [, content] = writer.createFile.mock.calls[0];
+        expect(content).toContain(`exo__Asset_source: "[[${TARGET_IRI}]]"`);
+        expect(content).not.toMatch(/ems__Effort_parent: "\[\[https/);
+        expect(content).not.toMatch(/ems__Effort_prevIteration:/);
+      });
+
+      it("legacy grounding with targetClass only (no prototype, no linkBackProperty) preserves behavior", async () => {
+        reader.readFile.mockResolvedValue("---\nfoo: bar\n---\n");
+
+        const grounding = makeGrounding({
+          type: GroundingType.CREATE_INSTANCE,
+          targetClass: "ems__Task",
+          targetFolder: "01 Inbox",
+        });
+
+        const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
+
+        expect(result.success).toBe(true);
+        const [, content] = writer.createFile.mock.calls[0];
+        expect(content).toContain('exo__Instance_class:\n  - "[[ems__Task]]"');
+        expect(content).toContain(`exo__Asset_source: "[[${TARGET_IRI}]]"`);
+        expect(content).not.toContain("exo__Asset_prototype:");
+      });
+
+      it("legacy grounding without $target (empty targetIRI) does NOT emit any back-link", async () => {
+        // Pre-RFC v0.2 behavior — when targetIRI is falsy, no link is written.
+        // RFC v0.2 must preserve this: must not introduce a phantom
+        // `exo__Asset_source: "[[]]"` or write linkBackProperty with empty value.
+        reader.readFile.mockResolvedValue("---\nfoo: bar\n---\n");
+
+        const grounding = makeGrounding({
+          type: GroundingType.CREATE_INSTANCE,
+          targetClass: "ems__Task",
+          targetFolder: "01 Inbox",
+        });
+
+        const result = await executor.execute(grounding, "", "", { label: "Standalone" });
+
+        expect(result.success).toBe(true);
+        const [, content] = writer.createFile.mock.calls[0];
+        expect(content).not.toContain("exo__Asset_source:");
+        expect(content).not.toMatch(/"\[\[\]\]"/);
+      });
+
+      it("legacy grounding with linkBackProperty=undefined writes exo__Asset_source (no fallback drift)", async () => {
+        reader.readFile.mockResolvedValue("---\nfoo: bar\n---\n");
+
+        const grounding = makeGrounding({
+          type: GroundingType.CREATE_INSTANCE,
+          targetClass: "ems__Task",
+          targetFolder: "01 Inbox",
+          linkBackProperty: undefined,
+        });
+
+        const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
+
+        expect(result.success).toBe(true);
+        const [, content] = writer.createFile.mock.calls[0];
+        expect(content).toContain(`exo__Asset_source: "[[${TARGET_IRI}]]"`);
+      });
+    });
+
     // Plugin adapter test: vault-relative path (RFC-016 #2645)
     it("should pass vault-relative path to createFile (plugin adapter compatibility)", async () => {
       const grounding = makeGrounding({

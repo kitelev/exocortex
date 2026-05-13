@@ -22,6 +22,21 @@ export interface GroundingRunResult {
   frontmatterAfter?: Record<string, unknown>;
 }
 
+/**
+ * Loose in-memory draft of a GroundingDefinition built piece-by-piece by
+ * multiple Given steps for the RFC-024 create_instance + linkBackProperty
+ * scenario (Task 4.3). Kept structurally compatible with the production type
+ * but typed locally so the BDD layer does not have to import the executor's
+ * full GroundingDefinition shape.
+ */
+export interface GroundingDraft {
+  type?: string;
+  targetClass?: string;
+  targetFolder?: string;
+  targetPrototype?: string;
+  linkBackProperty?: string;
+}
+
 export class CliBddWorld extends World {
   initialized = false;
   recordedValue: string | null = null;
@@ -31,6 +46,11 @@ export class CliBddWorld extends World {
   fixtureVaultPath: string | null = null;
   testTargetRelPath: string | null = null;
   groundingResult: GroundingRunResult | null = null;
+
+  // Task 4.3 — bespoke create_instance + linkBackProperty scenario state
+  groundingDraft: GroundingDraft | null = null;
+  customTargetRelPath: string | null = null;
+  customCreatedFrontmatter: Record<string, unknown> | null = null;
 
   constructor(options: IWorldOptions) {
     super(options);

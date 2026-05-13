@@ -275,6 +275,165 @@ When(
   },
 );
 
+// --- Task 4.3 — create_instance + linkBackProperty bespoke scenario ---
+
+const LINKBACK_TARGET_REL = "01 Inbox/bdd-linkback-target.md";
+const LINKBACK_CREATED_FOLDER = "01 Inbox/bdd-linkback-created";
+
+Given(
+  "a Grounding with type {string}",
+  function (this: CliBddWorld, type: string) {
+    this.groundingDraft = { type };
+    // Use a dedicated subfolder for the new instance so we can find it
+    // deterministically without scanning the entire vault.
+    this.groundingDraft.targetFolder = LINKBACK_CREATED_FOLDER;
+    this.customCreatedFrontmatter = null;
+  },
+);
+
+Given(
+  "targetClass {string}",
+  function (this: CliBddWorld, targetClass: string) {
+    assert.ok(this.groundingDraft, "Grounding draft must be initialized");
+    this.groundingDraft!.targetClass = targetClass;
+  },
+);
+
+Given(
+  "linkBackProperty {string}",
+  function (this: CliBddWorld, prop: string) {
+    assert.ok(this.groundingDraft, "Grounding draft must be initialized");
+    this.groundingDraft!.linkBackProperty = prop;
+  },
+);
+
+Given(
+  "a $target {string} with frontmatter {string}",
+  function (this: CliBddWorld, _instanceClass: string, fmLine: string) {
+    assert.ok(this.fixtureVaultPath, "vault path missing");
+    const vault = this.fixtureVaultPath!;
+    const targetAbs = join(vault, LINKBACK_TARGET_REL);
+    mkdirSync(dirname(targetAbs), { recursive: true });
+
+    const colonIdx = fmLine.indexOf(":");
+    assert.ok(colonIdx > 0, `Malformed frontmatter line: ${fmLine}`);
+    const key = fmLine.slice(0, colonIdx).trim();
+    const rawValue = fmLine.slice(colonIdx + 1).trim();
+    // Wrap wikilink values in quotes so YAML keeps them as strings.
+    const yamlValue = /^\[\[.*\]\]$/.test(rawValue) ? `"${rawValue}"` : rawValue;
+
+    const content = `---\nexo__Asset_uid: aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\nexo__Asset_label: "Linkback BDD Target"\nexo__Instance_class:\n  - "[[${_instanceClass}]]"\n${key}: ${yamlValue}\n---\n\n# Linkback BDD Target\n`;
+    writeFileSync(targetAbs, content, "utf8");
+    this.customTargetRelPath = LINKBACK_TARGET_REL;
+  },
+);
+
+When("I execute the grounding", async function (this: CliBddWorld) {
+  assert.ok(this.fixtureVaultPath, "vault path missing");
+  assert.ok(this.groundingDraft, "grounding draft missing");
+  assert.ok(this.customTargetRelPath, "custom target path missing");
+  const vault = this.fixtureVaultPath!;
+  const targetRel = this.customTargetRelPath!;
+  const targetIRI = targetRel.replace(/\.md$/, "");
+  const draft = this.groundingDraft!;
+
+  const grounding: GroundingDefinition = {
+    id: "bdd-task-4.3-linkback",
+    label: "Task 4.3 — linkBackProperty BDD",
+    type: draft.type as GroundingType,
+    targetClass: draft.targetClass,
+    targetFolder: draft.targetFolder,
+    targetPrototype: draft.targetPrototype,
+    linkBackProperty: draft.linkBackProperty,
+  };
+
+  // Clean any leftover created files from a prior run so we can deterministically
+  // find the single new file the executor produces.
+  const createdFolderAbs = join(vault, LINKBACK_CREATED_FOLDER);
+  if (existsSync(createdFolderAbs)) {
+    rmSync(createdFolderAbs, { recursive: true, force: true });
+  }
+
+  const { executor } = buildExecutor(vault);
+  const result = await executor.execute(grounding, targetIRI, targetRel, undefined);
+
+  this.groundingResult = {
+    success: result.success,
+    error: result.error,
+  };
+
+  if (!result.success) return;
+
+  // Locate the single .md file the executor wrote inside targetFolder.
+  assert.ok(existsSync(createdFolderAbs), `targetFolder missing: ${createdFolderAbs}`);
+  const created = readdirSync(createdFolderAbs).filter((n) => n.endsWith(".md"));
+  assert.equal(created.length, 1, `Expected exactly 1 created file, got ${created.length}`);
+  const createdAbs = join(createdFolderAbs, created[0]);
+  this.customCreatedFrontmatter = parseFrontmatter(readFileSync(createdAbs, "utf8"));
+});
+
+Then(
+  "a new {string} is created",
+  function (this: CliBddWorld, instanceClass: string) {
+    assert.ok(this.groundingResult?.success, `grounding failed: ${this.groundingResult?.error}`);
+    assert.ok(this.customCreatedFrontmatter, "created frontmatter missing");
+    const cls = this.customCreatedFrontmatter!["exo__Instance_class"];
+    const flat = Array.isArray(cls) ? cls.join(",") : String(cls ?? "");
+    assert.ok(
+      flat.includes(instanceClass),
+      `Expected exo__Instance_class to contain ${instanceClass}, got ${flat}`,
+    );
+  },
+);
+
+Then(
+  "the created asset has {string}",
+  function (this: CliBddWorld, fmLine: string) {
+    assert.ok(this.customCreatedFrontmatter, "created frontmatter missing");
+    const colonIdx = fmLine.indexOf(":");
+    assert.ok(colonIdx > 0, `Malformed frontmatter expectation: ${fmLine}`);
+    const key = fmLine.slice(0, colonIdx).trim();
+    const expected = fmLine.slice(colonIdx + 1).trim();
+    const actualRaw = this.customCreatedFrontmatter![key];
+    const actual = typeof actualRaw === "string" ? actualRaw : String(actualRaw);
+    // Normalize wikilink shape — copied values are stored as "[[X]]" but the
+    // YAML parser strips the wrapping quotes leaving [[X]].
+    const normalize = (s: string) => s.replace(/^"|"$/g, "").trim();
+    assert.equal(
+      normalize(actual),
+      normalize(expected),
+      `Property ${key} mismatch: expected ${expected}, got ${actualRaw}`,
+    );
+  },
+);
+
+Then(
+  "the created asset has {string} pointing to $target",
+  function (this: CliBddWorld, key: string) {
+    assert.ok(this.customCreatedFrontmatter, "created frontmatter missing");
+    assert.ok(this.customTargetRelPath, "custom target path missing");
+    const targetIRI = this.customTargetRelPath!.replace(/\.md$/, "");
+    const value = this.customCreatedFrontmatter![key];
+    const flat = typeof value === "string" ? value : String(value);
+    assert.ok(
+      flat.includes(targetIRI),
+      `Expected ${key} to wikilink-reference ${targetIRI}, got ${flat}`,
+    );
+  },
+);
+
+Then(
+  "the created asset does NOT have {string}",
+  function (this: CliBddWorld, key: string) {
+    assert.ok(this.customCreatedFrontmatter, "created frontmatter missing");
+    assert.equal(
+      this.customCreatedFrontmatter![key],
+      undefined,
+      `Property ${key} should be absent, got ${JSON.stringify(this.customCreatedFrontmatter![key])}`,
+    );
+  },
+);
+
 Then(
   "the result should match the expected fixture for {string}",
   function (this: CliBddWorld, uid: string) {

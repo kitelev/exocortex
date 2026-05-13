@@ -174,6 +174,7 @@ export class GroundingExecutor {
           return await this.executeCreateInstance(
             grounding,
             targetIRI,
+            targetFilePath,
             userInput,
           );
 
@@ -447,9 +448,32 @@ export class GroundingExecutor {
     return { success: true };
   }
 
+  /**
+   * Frontmatter keys that must NEVER be copied from $target into a newly
+   * created instance. These either identify the source asset (uid, label,
+   * aliases, createdAt) or describe its lifecycle state (status, timestamps),
+   * neither of which is meaningful on the new asset. exo__Instance_class is
+   * blacklisted because the new instance has its own class supplied via
+   * grounding.targetClass.
+   */
+  private static readonly CREATE_INSTANCE_BLACKLIST: ReadonlySet<string> =
+    new Set([
+      "exo__Asset_uid",
+      "exo__Asset_createdAt",
+      "exo__Asset_updatedAt",
+      "exo__Instance_class",
+      "exo__Asset_label",
+      "aliases",
+      "ems__Effort_status",
+      "ems__Effort_startTimestamp",
+      "ems__Effort_endTimestamp",
+      "ems__Effort_resolutionTimestamp",
+    ]);
+
   private async executeCreateInstance(
     grounding: GroundingDefinition,
     targetIRI: string,
+    targetFilePath: string,
     userInput?: UserInput,
   ): Promise<ExecutionResult> {
     if (!grounding.targetFolder) {
@@ -477,10 +501,8 @@ export class GroundingExecutor {
       properties.exo__Asset_prototype = `"[[${grounding.targetPrototype}]]"`;
     }
 
-    if (targetIRI) {
-      properties.exo__Asset_source = `"[[${targetIRI}]]"`;
-    }
-
+    // userInput wins over copy-from-target — apply first so the copy-loop
+    // below can skip already-set keys without re-quoting.
     if (userInput) {
       for (const [key, value] of Object.entries(userInput)) {
         if (key === "label") continue;
@@ -489,12 +511,63 @@ export class GroundingExecutor {
       }
     }
 
+    // Copy-from-target: read $target frontmatter and inherit any non-blacklisted
+    // property the new instance does not already have. Wikilink values are
+    // re-quoted so they round-trip through the YAML serializer.
+    if (targetIRI && targetFilePath) {
+      let targetContent: string;
+      try {
+        targetContent = await this.fileReader.readFile(targetFilePath);
+      } catch (error) {
+        return {
+          success: false,
+          error: `create_instance: failed to read $target file "${targetFilePath}": ${error instanceof Error ? error.message : String(error)}`,
+        };
+      }
+
+      const targetFm = this.frontmatterService.parseObject(targetContent);
+      if (targetFm) {
+        for (const [key, value] of Object.entries(targetFm)) {
+          if (GroundingExecutor.CREATE_INSTANCE_BLACKLIST.has(key)) continue;
+          if (properties[key] !== undefined) continue;
+          properties[key] = this.reformatCopiedValue(value);
+        }
+      }
+    }
+
+    // Back-link to $target — configurable per grounding (RFC Phase 2).
+    // Fallback to legacy `exo__Asset_source` preserves behaviour for existing
+    // groundings that have no `Grounding_linkBackProperty` set.
+    if (targetIRI) {
+      const backLinkProp = grounding.linkBackProperty ?? "exo__Asset_source";
+      properties[backLinkProp] = `"[[${targetIRI}]]"`;
+    }
+
     const content = this.frontmatterService.createFrontmatter("", properties);
     const filePath = `${grounding.targetFolder}/${uid}.md`;
 
     await this.fileWriter.createFile(filePath, content);
 
     return { success: true };
+  }
+
+  /**
+   * Re-quote wikilink values copied from $target frontmatter so they survive
+   * round-trip through the YAML serializer. Mirrors the logic of
+   * `GenericAssetCreationService.formatWikilink` so copy-from-target ассеты
+   * look identical to ones produced by the modal-driven creation path.
+   */
+  private reformatCopiedValue(value: string | string[]): string | string[] {
+    if (Array.isArray(value)) {
+      return value.map((item) => this.reformatWikilink(item));
+    }
+    return this.reformatWikilink(value);
+  }
+
+  private reformatWikilink(value: string): string {
+    if (value.startsWith('"[[') && value.endsWith(']]"')) return value;
+    if (value.startsWith("[[") && value.endsWith("]]")) return `"${value}"`;
+    return value;
   }
 
   private async executeStep(
