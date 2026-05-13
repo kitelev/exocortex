@@ -429,6 +429,73 @@ it("should preserve already quoted wikilinks", async () => {
 
 ---
 
+## Cardinality-Aware Wikilink Serialization Pattern
+
+**When to use**: Writing services that emit frontmatter for vault assets and need to honour single-valued vs multi-valued property semantics declared in the SHACL-lite ontology.
+
+**Problem**: Wrapping every wikilink value in a YAML array regardless of cardinality produces noise — `ems__Effort_status: - "[[…]]"` reads worse than the canonical `ems__Effort_status: "[[…]]"`, and it diverges from hand-authored content. Hardcoding a per-property allow-list is brittle and duplicates the ontology source of truth.
+
+**Solution**: Load `ShapeRegistry` from the vault and route the cardinality check through it.
+
+```typescript
+import { Namespace, ShapeLoader, type ShapeRegistry } from "exocortex";
+
+// 1. Load the registry once per CLI/service invocation
+let shapeRegistry: ShapeRegistry | undefined;
+try {
+  shapeRegistry = await ShapeLoader.loadFromVaultFS(vaultPath);
+} catch {
+  // Fail-soft: legacy array-wrap behaviour is the safe default
+  shapeRegistry = undefined;
+}
+
+// 2. Inside the serializer: scalar vs array based on declared cardinality
+function formatPropertyValue(
+  key: string,
+  value: string,
+  registry?: ShapeRegistry,
+): string | string[] {
+  if (!value.includes("[[")) return value;                         // plain scalar
+  const quoted = value.startsWith('"') ? value : `"${value}"`;
+
+  const parsed = Namespace.fromPropertyKey(key);
+  const iri    = parsed ? parsed.namespace.term(parsed.localName).value : null;
+  const shape  = iri ? registry?.get(iri) : undefined;
+
+  return shape?.cardinality === "Single" ? quoted : [quoted];
+}
+```
+
+### Properties that must be present on the property asset
+
+```yaml
+# 03 Knowledge/ems/ems__Effort_status.md
+exo__Instance_class:
+  - "[[exo__ObjectProperty]]"
+exo__Property_domain: "[[ems__Effort]]"
+exo__Property_range:  "[[ems__EffortStatus]]"
+exo__Property_cardinality: "[[exo__PropertyCardinalitySingle]]"
+```
+
+`ShapeLoader.processFile` accepts a filename-basename fallback when `exo__Asset_label` is missing, so legacy ontology files keep working without migration. See `docs/PROPERTY_SCHEMA.md` → "Property Cardinality Declarations".
+
+### Backward-compat invariants (do not violate)
+
+- Properties **without** an `exo__Property_cardinality` declaration must keep the legacy array-wrap behaviour.
+- Properties declared `PropertyCardinalityMultiple` must also keep the array-wrap behaviour.
+- Only `PropertyCardinalitySingle` flips to scalar.
+
+These invariants protect existing callers and avoid mass vault rewrites when new code lands.
+
+**Reference Implementations**:
+
+- `AssetCreationService.formatPropertyValue()` — cardinality lookup against optional `ShapeRegistry`.
+- `ShapeLoader.processFile()` — filename-basename fallback for property assets that omit `exo__Asset_label`.
+
+**Reference**: Issue #3099 — `cli create` ignored cardinality declarations and emitted YAML arrays unconditionally.
+
+---
+
 ## Sequential Related Tasks Pattern
 
 **When to use**: Implementing multiple related features in same subsystem
