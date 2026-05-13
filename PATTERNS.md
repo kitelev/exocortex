@@ -455,12 +455,12 @@ function formatPropertyValue(
   value: string,
   registry?: ShapeRegistry,
 ): string | string[] {
-  if (!value.includes("[[")) return value;                         // plain scalar
+  if (!value.includes("[[")) return value; // plain scalar
   const quoted = value.startsWith('"') ? value : `"${value}"`;
 
   const parsed = Namespace.fromPropertyKey(key);
-  const iri    = parsed ? parsed.namespace.term(parsed.localName).value : null;
-  const shape  = iri ? registry?.get(iri) : undefined;
+  const iri = parsed ? parsed.namespace.term(parsed.localName).value : null;
+  const shape = iri ? registry?.get(iri) : undefined;
 
   return shape?.cardinality === "Single" ? quoted : [quoted];
 }
@@ -473,7 +473,7 @@ function formatPropertyValue(
 exo__Instance_class:
   - "[[exo__ObjectProperty]]"
 exo__Property_domain: "[[ems__Effort]]"
-exo__Property_range:  "[[ems__EffortStatus]]"
+exo__Property_range: "[[ems__EffortStatus]]"
 exo__Property_cardinality: "[[exo__PropertyCardinalitySingle]]"
 ```
 
@@ -4876,12 +4876,12 @@ for (const val of Array.isArray(propValue) ? propValue : [propValue]) {
 
 ### Test Coverage Requirements
 
-| Test Case                    | Expected Behavior                    |
-| ---------------------------- | ------------------------------------ |
-| Valid lowercase UUID         | `isUUID()` returns true              |
-| Valid uppercase UUID         | `isUUID()` returns true              |
-| Non-UUID string              | `isUUID()` returns false             |
-| UUID without dashes          | `isUUID()` returns false             |
+| Test Case                                    | Expected Behavior                    |
+| -------------------------------------------- | ------------------------------------ |
+| Valid lowercase UUID                         | `isUUID()` returns true              |
+| Valid uppercase UUID                         | `isUUID()` returns true              |
+| Non-UUID string                              | `isUUID()` returns false             |
+| UUID without dashes                          | `isUUID()` returns false             |
 | UUID on `exo__Asset_prototype` (file exists) | Returns `[IRI, Literal]`             |
 | UUID on any other predicate (file exists)    | Returns `[IRI]` (single element)     |
 | Non-UUID wikilink                            | Returns `[IRI]` (single element)     |
@@ -4918,7 +4918,7 @@ for (const val of Array.isArray(propValue) ? propValue : [propValue]) {
 
 ## Side-Channel Triple Emission Pattern
 
-**When to use**: A private converter method needs to emit additional RDF triples with a *different subject* from the one it is currently populating — without changing its return type or breaking callers.
+**When to use**: A private converter method needs to emit additional RDF triples with a _different subject_ from the one it is currently populating — without changing its return type or breaking callers.
 
 ### Problem
 
@@ -4928,7 +4928,7 @@ for (const val of Array.isArray(propValue) ? propValue : [propValue]) {
 pmbok:ClosureOutcomeAllAccepted  rdf:type  pmbok:ClosureOutcome .
 ```
 
-The subject here is the *enum class IRI*, not the source note. Returning it from `valueToRDFObject` would pollute the return type.
+The subject here is the _enum class IRI_, not the source note. Returning it from `valueToRDFObject` would pollute the return type.
 
 ### Solution: `pendingExtraTriples` class field
 
@@ -4994,7 +4994,7 @@ If the number of side-channel types grows, consider `{objects: (IRI|Literal)[], 
 
 ### Problem
 
-When a bug fix changes existing behavior (e.g., narrowing dual-storage from all predicates to one), some existing tests may *already* be failing for unrelated reasons (e.g., a companion feature added triples that tests don't account for). Without a baseline, it's impossible to tell which test failures your fix introduced vs. which were pre-existing.
+When a bug fix changes existing behavior (e.g., narrowing dual-storage from all predicates to one), some existing tests may _already_ be failing for unrelated reasons (e.g., a companion feature added triples that tests don't account for). Without a baseline, it's impossible to tell which test failures your fix introduced vs. which were pre-existing.
 
 ### Practice
 

@@ -133,6 +133,7 @@ aliases:
 Property-definition assets (those whose `exo__Instance_class` references `exo__Property` or `exo__ObjectProperty`) may omit `exo__Asset_label` when the **filename basename matches the canonical property key** (e.g. `ems__Effort_status.md`). In that case the SHACL-lite shape loader (`ShapeLoader.processFile`) infers the label from the basename — this matches the long-standing convention used by hand-authored ontology files in `03 Knowledge/ems/`, `03 Knowledge/exo/`, etc.
 
 The fallback is intentionally narrow:
+
 - Only triggers when `exo__Asset_label` is absent or empty.
 - Only triggers when the basename parses as `<prefix>__<localName>` via `Namespace.fromPropertyKey`.
 - Does not affect non-property assets.
@@ -1013,14 +1014,14 @@ Property-definition assets may declare their cardinality via `exo__Property_card
 
 **Multiplicity constraint for a property**
 
-| Attribute    | Value                                                                                  |
-| ------------ | -------------------------------------------------------------------------------------- |
-| **Type**     | WikiLink                                                                               |
-| **Required** | No (omission ≡ `PropertyCardinalityMultiple` — legacy safe default)                    |
-| **Domain**   | Asset of class `exo__Property` or `exo__ObjectProperty`                                |
-| **Range**    | `exo__PropertyCardinalitySingle` or `exo__PropertyCardinalityMultiple`                 |
-| **Purpose**  | SHACL-lite cardinality validation; CLI scalar-vs-array YAML serialization              |
-| **Mutable**  | ✅ Yes — adding/changing the declaration takes effect on the next CLI/validator load   |
+| Attribute    | Value                                                                                |
+| ------------ | ------------------------------------------------------------------------------------ |
+| **Type**     | WikiLink                                                                             |
+| **Required** | No (omission ≡ `PropertyCardinalityMultiple` — legacy safe default)                  |
+| **Domain**   | Asset of class `exo__Property` or `exo__ObjectProperty`                              |
+| **Range**    | `exo__PropertyCardinalitySingle` or `exo__PropertyCardinalityMultiple`               |
+| **Purpose**  | SHACL-lite cardinality validation; CLI scalar-vs-array YAML serialization            |
+| **Mutable**  | ✅ Yes — adding/changing the declaration takes effect on the next CLI/validator load |
 
 **Example — single-valued property**:
 
@@ -1031,7 +1032,7 @@ exo__Asset_uid: 44c6e9e3-955f-4afc-9ca5-b4bd70667051
 exo__Instance_class:
   - "[[exo__ObjectProperty]]"
 exo__Property_domain: "[[ems__Effort]]"
-exo__Property_range:  "[[ems__EffortStatus]]"
+exo__Property_range: "[[ems__EffortStatus]]"
 exo__Property_cardinality: "[[exo__PropertyCardinalitySingle]]"
 ---
 ```
@@ -1039,14 +1040,14 @@ exo__Property_cardinality: "[[exo__PropertyCardinalitySingle]]"
 With this declaration, `exocortex-cli create --property ems__Effort_status=[[…]]` emits the value as a scalar:
 
 ```yaml
-ems__Effort_status: "[[ems__EffortStatusBacklog]]"   # ✅ scalar
+ems__Effort_status: "[[ems__EffortStatusBacklog]]" # ✅ scalar
 ```
 
 Without the declaration (or with `PropertyCardinalityMultiple`), the value is wrapped in a single-entry YAML array — the legacy default preserved for backward compatibility:
 
 ```yaml
 ems__Effort_status:
-  - "[[ems__EffortStatusBacklog]]"                   # legacy default
+  - "[[ems__EffortStatusBacklog]]" # legacy default
 ```
 
 **Migration guidance**: declare `PropertyCardinalitySingle` on properties that are semantically single-valued (status, parent, area, prototype-target, plannedStartTimestamp, etc.). The declaration is opt-in — unmarked properties retain the existing array-form serialization.

@@ -640,6 +640,30 @@ export function buildEARLReport(vaultPath: string, report: ValidationReport): EA
   return { "@context": context, "@graph": graph };
 }
 
+const LEGACY_EXCEPTION_IRI = "https://exocortex.my/ontology/exo#Asset_legacyValidationException";
+
+/**
+ * P4.3: Filters out violations for assets marked with exo__Asset_legacyValidationException.
+ * Grandfathered assets have pre-existing violations that are intentionally silenced.
+ */
+export function applyLegacyExceptionFilter(
+  triples: DomainTriple[],
+  report: ValidationReport,
+): ValidationReport {
+  const exemptNodes = new Set<string>(
+    triples
+      .filter(t => t.predicate instanceof DomainIRI && t.predicate.value === LEGACY_EXCEPTION_IRI)
+      .map(t => (t.subject instanceof DomainIRI ? t.subject.value : null))
+      .filter((v): v is string => v !== null),
+  );
+  if (exemptNodes.size === 0) return report;
+  const violations = report.violations.filter(v => !exemptNodes.has(v.focusNode));
+  return {
+    conforms: violations.every(v => v.severity !== "sh:Violation"),
+    violations,
+  };
+}
+
 /**
  * Runs SHACL-lite shapes validation against vault triples.
  */
@@ -688,7 +712,8 @@ async function runShapesModeAction(options: ValidateSchemaOptions): Promise<void
       console.log(`🔍 Running SHACL-lite validation...`);
     }
 
-    const report = await runShapesValidation(vaultPath, triples);
+    const rawReport = await runShapesValidation(vaultPath, triples);
+    const report = applyLegacyExceptionFilter(triples, rawReport);
 
     if (fmt === "earl") {
       const earl = buildEARLReport(vaultPath, report);
