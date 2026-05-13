@@ -178,6 +178,20 @@ export class NoteToRDFConverter {
       }
     }
 
+    // Issue #3101: For non-UIDified class files (e.g. exo__Class.md) the label
+    // is not present in frontmatter but can be inferred from the basename.
+    // Emit rdfs:label + exo:Asset_label when frontmatter lacks exo__Asset_label.
+    if (!("exo__Asset_label" in frontmatter)) {
+      const inferredLabel = NoteToRDFConverter.inferLabelFromBasename(file.basename);
+      if (inferredLabel !== null) {
+        const rdfsLabel = Namespace.RDFS.term("label");
+        const exoAssetLabel = Namespace.EXO.term("Asset_label");
+        const labelLiteral = new Literal(inferredLabel);
+        triples.push(new Triple(subject, rdfsLabel, labelLiteral));
+        triples.push(new Triple(subject, exoAssetLabel, labelLiteral));
+      }
+    }
+
     // Flush rdf:type triples emitted by valueToRDFObject for enum instance IRIs (Fix #ff3858e5)
     triples.push(...this.pendingExtraTriples);
     this.pendingExtraTriples = [];
@@ -546,7 +560,7 @@ export class NoteToRDFConverter {
         // "Literals cannot appear in subject position").
         const frontmatter = this.vault.getFrontmatter(file);
         const violation = frontmatter
-          ? this.validateExocortexAsset(frontmatter)
+          ? this.validateExocortexAsset(frontmatter, file.basename)
           : null;
 
         if (violation) {
@@ -648,8 +662,23 @@ export class NoteToRDFConverter {
    * @returns The first detected invariant violation, or `null` if the
    *          frontmatter passes (or is not an Exocortex asset).
    */
+  /**
+   * Returns a label inferred from a basename of the form `prefix__LocalName`
+   * (e.g. `exo__Class` → `"exo__Class"`), or `null` if the basename does not
+   * match a known Exocortex namespace pattern.
+   *
+   * Non-UIDified ontology class files (exo__Class.md, ems__Area.md, …) encode
+   * their label in the filename.  This helper lets the converter skip the
+   * `exo__Asset_label` requirement for those files and synthesise the triple
+   * instead of skipping the file entirely (Issue #3101).
+   */
+  static inferLabelFromBasename(basename: string): string | null {
+    return Namespace.fromPropertyKey(basename) !== null ? basename : null;
+  }
+
   validateExocortexAsset(
     frontmatter: Record<string, unknown>,
+    basename?: string,
   ): ExocortexInvariantViolation | null {
     const isEmpty = (v: unknown): boolean => {
       if (v === null || v === undefined) return true;
@@ -666,6 +695,12 @@ export class NoteToRDFConverter {
       return null;
     }
 
+    // For non-UIDified class files (e.g. exo__Class.md) the label is encoded
+    // in the filename — skip the exo__Asset_label requirement when inferrable.
+    const inferredLabel = basename
+      ? NoteToRDFConverter.inferLabelFromBasename(basename)
+      : null;
+
     const REQUIRED_PROPERTIES = [
       "exo__Asset_uid",
       "exo__Asset_isDefinedBy",
@@ -673,6 +708,9 @@ export class NoteToRDFConverter {
       "exo__Instance_class",
     ];
     for (const key of REQUIRED_PROPERTIES) {
+      if (key === "exo__Asset_label" && inferredLabel !== null) {
+        continue; // label will be synthesised from basename
+      }
       if (!(key in frontmatter)) {
         return {
           code: "MISSING_PROPERTY",
