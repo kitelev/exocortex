@@ -1830,6 +1830,7 @@ observer.observe(container, {
 **Fix**: Upgrade to `@kitelev/exocortex-cli@^15.160.1`. Dual-storage is now scoped to `exo__Asset_prototype` only — all other predicates emit a single IRI.
 
 **If still failing after upgrade**:
+
 - Verify the predicate in the violation is NOT `exo__Asset_prototype` (that predicate intentionally emits 2 triples)
 - Check for `exo__Asset_legacyValidationException: "true"` in the asset — if present from the window 2026-05-03 10:00–13:20 UTC+5, it can now be removed
 
