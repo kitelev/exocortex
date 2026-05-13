@@ -8,6 +8,7 @@ export interface DaemonRequest {
   triples: Triple[];
   registryPath: string;
   subclassTriples?: Triple[];
+  closedWorldMode?: boolean;
 }
 
 export interface DaemonResponse {
@@ -108,7 +109,7 @@ export class ValidatorDaemon {
       const req = JSON.parse(raw) as DaemonRequest;
       const registry = await this.getRegistry(req.registryPath);
       const hierarchy = new ClassHierarchy(req.subclassTriples ?? []);
-      const report = validate(req.triples, registry, hierarchy);
+      const report = validate(req.triples, registry, hierarchy, { closedWorldMode: req.closedWorldMode });
       response = { report };
     } catch (err) {
       response = { error: err instanceof Error ? err.message : String(err) };

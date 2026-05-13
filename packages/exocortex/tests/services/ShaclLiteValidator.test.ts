@@ -770,3 +770,338 @@ describe('validate — edge cases', () => {
     expect(report.violations).toHaveLength(0);
   });
 });
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Suite 12: Closed-world mode
+// ═════════════════════════════════════════════════════════════════════════════
+
+describe('validate — closed-world mode', () => {
+  it('T58: closedWorldMode=false (default) — unknown property emits no violation', () => {
+    const triples = [
+      typeTriple('node:A', `${EMS}Effort`),
+      litTriple('node:A', `${EMS}Effort_unknownProp`, 'value'),
+    ];
+    const report = validate(triples, makeRegistry([]), flatHierarchy);
+    expect(report.violations).toHaveLength(0);
+    expect(report.conforms).toBe(true);
+  });
+
+  it('T59: closedWorldMode=true — unknown property emits sh:Warning', () => {
+    const triples = [
+      typeTriple('node:A', `${EMS}Effort`),
+      litTriple('node:A', `${EMS}Effort_unknownProp`, 'value'),
+    ];
+    const report = validate(triples, makeRegistry([]), flatHierarchy, { closedWorldMode: true });
+    expect(report.violations).toHaveLength(1);
+    expect(report.violations[0].severity).toBe('sh:Warning');
+    expect(report.violations[0].propertyPath).toBe(`${EMS}Effort_unknownProp`);
+    expect(report.violations[0].message).toContain('Unknown property');
+  });
+
+  it('T60: closedWorldMode=true — unknown property warning does not affect conforms', () => {
+    const triples = [
+      typeTriple('node:A', `${EMS}Effort`),
+      litTriple('node:A', `${EMS}Effort_unknownProp`, 'value'),
+    ];
+    const report = validate(triples, makeRegistry([]), flatHierarchy, { closedWorldMode: true });
+    expect(report.conforms).toBe(true);
+    expect(report.violations).toHaveLength(1);
+  });
+
+  it('T61: closedWorldMode=true — known property (has shape) emits no extra warning', () => {
+    const shape = makeShape({ propertyIRI: `${EMS}Effort_status` });
+    const triples = [
+      typeTriple('node:A', `${EMS}Effort`),
+      litTriple('node:A', `${EMS}Effort_status`, 'Doing'),
+    ];
+    const report = validate(triples, makeRegistry([shape]), flatHierarchy, { closedWorldMode: true });
+    expect(report.violations).toHaveLength(0);
+  });
+
+  it('T62: closedWorldMode=true — typePredicateIRI triple does not trigger unknown-property warning', () => {
+    const triples = [typeTriple('node:A', `${EMS}Effort`)];
+    const report = validate(triples, makeRegistry([]), flatHierarchy, { closedWorldMode: true });
+    expect(report.violations).toHaveLength(0);
+  });
+
+  it('T63: closedWorldMode=true — multiple unknown properties emit one warning each', () => {
+    const triples = [
+      typeTriple('node:A', `${EMS}Effort`),
+      litTriple('node:A', `${EMS}Effort_propA`, 'val1'),
+      litTriple('node:A', `${EMS}Effort_propB`, 'val2'),
+    ];
+    const report = validate(triples, makeRegistry([]), flatHierarchy, { closedWorldMode: true });
+    expect(report.violations).toHaveLength(2);
+    expect(report.violations.every((v) => v.severity === 'sh:Warning')).toBe(true);
+  });
+
+  it('T64: closedWorldMode=true — mix of known and unknown properties', () => {
+    const shape = makeShape({ propertyIRI: `${EMS}Effort_status` });
+    const triples = [
+      typeTriple('node:A', `${EMS}Effort`),
+      litTriple('node:A', `${EMS}Effort_status`, 'Doing'),
+      litTriple('node:A', `${EMS}Effort_unknownProp`, 'value'),
+    ];
+    const report = validate(triples, makeRegistry([shape]), flatHierarchy, { closedWorldMode: true });
+    expect(report.violations).toHaveLength(1);
+    expect(report.violations[0].propertyPath).toBe(`${EMS}Effort_unknownProp`);
+    expect(report.violations[0].severity).toBe('sh:Warning');
+  });
+
+  it('T65: closedWorldMode=true — sh:Violation from shape plus Warning from unknown prop', () => {
+    const shape = makeShape({ propertyIRI: `${EMS}Effort_status`, minCount: 1, severity: 'sh:Violation' });
+    const triples = [
+      typeTriple('node:A', `${EMS}Effort`),
+      litTriple('node:A', `${EMS}Effort_unknownProp`, 'value'),
+    ];
+    const report = validate(triples, makeRegistry([shape]), flatHierarchy, { closedWorldMode: true });
+    expect(report.conforms).toBe(false);
+    const violation = report.violations.find((v) => v.severity === 'sh:Violation');
+    const warning = report.violations.find((v) => v.severity === 'sh:Warning');
+    expect(violation).toBeDefined();
+    expect(warning).toBeDefined();
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Suite 13: Phase 1 pilot constraint — ems__Effort_parent → ems__ParentEffort
+// RFC 82a72aca §"Pilot scope (Phase 1 minimum-shippable)"
+// ems__Project rdfs:subClassOf ems__ParentEffort (user ontology change 2026-04-29)
+// ═════════════════════════════════════════════════════════════════════════════
+
+describe('validate — Phase 1 pilot: ems__Effort_parent→ems__ParentEffort', () => {
+  const PARENT_EFFORT = `${EMS}ParentEffort`;
+  const PROJECT = `${EMS}Project`;
+  const TASK = `${EMS}Task`;
+  const EFFORT_PARENT_PROP = `${EMS}Effort_parent`;
+
+  // ems__Project rdfs:subClassOf ems__ParentEffort (user ontology change 2026-04-29)
+  const pilotHierarchy = makeHierarchy({
+    [PROJECT]: [PARENT_EFFORT],
+    [TASK]: [`${EMS}Effort`],
+    [`${EMS}Effort`]: [`${EMS}Asset`],
+  });
+
+  const pilotShape = makeShape({
+    propertyIRI: EFFORT_PARENT_PROP,
+    domain: [`${EMS}Effort`],
+    range: [PARENT_EFFORT],
+    cardinality: 'Single',
+    severity: 'sh:Violation',
+  });
+
+  it('T66: ems__Task.parent → ems__Project conforms (Project subClassOf ParentEffort)', () => {
+    const triples = [
+      typeTriple('task:A', TASK),
+      typeTriple('project:P', PROJECT),
+      iriTriple('task:A', EFFORT_PARENT_PROP, 'project:P'),
+    ];
+    const report = validate(triples, makeRegistry([pilotShape]), pilotHierarchy);
+    expect(report.conforms).toBe(true);
+    expect(report.violations).toHaveLength(0);
+  });
+
+  it('T67: ems__Task.parent → ems__Task violates (Task not subClassOf ParentEffort)', () => {
+    const triples = [
+      typeTriple('task:A', TASK),
+      typeTriple('task:B', TASK),
+      iriTriple('task:A', EFFORT_PARENT_PROP, 'task:B'),
+    ];
+    const report = validate(triples, makeRegistry([pilotShape]), pilotHierarchy);
+    expect(report.conforms).toBe(false);
+    expect(report.violations).toHaveLength(1);
+    expect(report.violations[0].focusNode).toBe('task:A');
+    expect(report.violations[0].propertyPath).toBe(EFFORT_PARENT_PROP);
+    expect(report.violations[0].severity).toBe('sh:Violation');
+    expect(report.violations[0].actualValue).toBe('task:B');
+    expect(report.violations[0].expectedRange).toContain(PARENT_EFFORT);
+  });
+
+  it('T68: cardinality=Single — two parent values on one task violates', () => {
+    const triples = [
+      typeTriple('task:A', TASK),
+      typeTriple('project:P1', PROJECT),
+      typeTriple('project:P2', PROJECT),
+      iriTriple('task:A', EFFORT_PARENT_PROP, 'project:P1'),
+      iriTriple('task:A', EFFORT_PARENT_PROP, 'project:P2'),
+    ];
+    const report = validate(triples, makeRegistry([pilotShape]), pilotHierarchy);
+    expect(report.conforms).toBe(false);
+    expect(report.violations.some((v) => v.message.includes('maxCount'))).toBe(true);
+  });
+
+  it('T69: missing parent on task — no violation (minCount not set)', () => {
+    const triples = [typeTriple('task:A', TASK)];
+    const report = validate(triples, makeRegistry([pilotShape]), pilotHierarchy);
+    expect(report.conforms).toBe(true);
+    expect(report.violations).toHaveLength(0);
+  });
+
+  it('T70: broken wikilink (parent IRI with no type info) → range violation', () => {
+    const triples = [
+      typeTriple('task:A', TASK),
+      iriTriple('task:A', EFFORT_PARENT_PROP, 'project:MISSING'),
+    ];
+    const report = validate(triples, makeRegistry([pilotShape]), pilotHierarchy);
+    expect(report.conforms).toBe(false);
+    expect(report.violations).toHaveLength(1);
+    expect(report.violations[0].actualValue).toBe('project:MISSING');
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Suite 8: rdf:type recognition (Issue ff3858e5 Fix 2)
+// ═════════════════════════════════════════════════════════════════════════════
+//
+// Background: NoteToRDFConverter emits rdf:type triples for class-named enum
+// instance wikilinks (e.g. <pmbok#ClosureOutcomeAllAccepted> rdf:type
+// <pmbok#ClosureOutcome>). Previously the validator only recognised
+// `exo__Instance_class` as the class-membership predicate, so sh:class
+// constraints over enum instances false-positived even after the converter
+// fix was applied. This suite locks in rdf:type as an additional class
+// membership predicate.
+describe('Suite 8: rdf:type recognition (sh:class enum instances)', () => {
+  const RDF_TYPE = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type';
+  const PMBOK = 'https://exocortex.my/ontology/pmbok#';
+
+  function rdfTypeTriple(s: string, cls: string): Triple {
+    return iriTriple(s, RDF_TYPE, cls);
+  }
+
+  it('T66: rdf:type assigns class membership for sh:class check', () => {
+    const reportShape = makeShape({
+      propertyIRI: `${PMBOK}ProjectClosureReport_outcome`,
+      domain: [`${PMBOK}ProjectClosureReport`],
+      range: [`${PMBOK}ClosureOutcome`],
+    });
+    const triples: Triple[] = [
+      typeTriple('asset:report', `${PMBOK}ProjectClosureReport`),
+      iriTriple('asset:report', `${PMBOK}ProjectClosureReport_outcome`, `${PMBOK}ClosureOutcomeAllAccepted`),
+      // class membership of the enum instance is declared via rdf:type only
+      rdfTypeTriple(`${PMBOK}ClosureOutcomeAllAccepted`, `${PMBOK}ClosureOutcome`),
+    ];
+    const report = validate(triples, makeRegistry([reportShape]), flatHierarchy);
+    expect(report.violations).toHaveLength(0);
+    expect(report.conforms).toBe(true);
+  });
+
+  it('T67: rdf:type and exo__Instance_class are both honoured', () => {
+    const reportShape = makeShape({
+      propertyIRI: `${PMBOK}ProjectClosureReport_outcome`,
+      domain: [`${PMBOK}ProjectClosureReport`],
+      range: [`${PMBOK}ClosureOutcome`],
+    });
+    const triples: Triple[] = [
+      // domain established via exo__Instance_class
+      typeTriple('asset:report', `${PMBOK}ProjectClosureReport`),
+      iriTriple('asset:report', `${PMBOK}ProjectClosureReport_outcome`, `${PMBOK}ClosureOutcomeAllAccepted`),
+      // range satisfied by rdf:type
+      rdfTypeTriple(`${PMBOK}ClosureOutcomeAllAccepted`, `${PMBOK}ClosureOutcome`),
+    ];
+    const report = validate(triples, makeRegistry([reportShape]), flatHierarchy);
+    expect(report.conforms).toBe(true);
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Suite 12: External ontology IRI allowlist
+// ═════════════════════════════════════════════════════════════════════════════
+
+describe('validate — external ontology IRI allowlist', () => {
+  const exoClass = `${EXO}Class`;
+  const exoProperty = `${EXO}Property`;
+  const exoClassSuperClass = `${EXO}Class_superClass`;
+  const exoPropertySuperProperty = `${EXO}Property_superProperty`;
+
+  const classShape = makeShape({
+    propertyIRI: exoClassSuperClass,
+    domain: [exoClass],
+    range: [exoClass],
+  });
+  const propertyShape = makeShape({
+    propertyIRI: exoPropertySuperProperty,
+    domain: [exoProperty],
+    range: [exoProperty],
+  });
+
+  it('T-EXT-01: canonical W3C xsd IRI as superClass value → no violation', () => {
+    const triples: Triple[] = [
+      typeTriple('asset:LocalDate', exoClass),
+      iriTriple('asset:LocalDate', exoClassSuperClass, `${XSD}Date`),
+    ];
+    const report = validate(triples, makeRegistry([classShape]), flatHierarchy);
+    expect(report.conforms).toBe(true);
+    expect(report.violations).toHaveLength(0);
+  });
+
+  it('T-EXT-02: canonical W3C rdf IRI as superClass value → no violation', () => {
+    const RDF = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#';
+    const triples: Triple[] = [
+      typeTriple('asset:Statement', exoClass),
+      iriTriple('asset:Statement', exoClassSuperClass, `${RDF}Statement`),
+    ];
+    const report = validate(triples, makeRegistry([classShape]), flatHierarchy);
+    expect(report.conforms).toBe(true);
+    expect(report.violations).toHaveLength(0);
+  });
+
+  it('T-EXT-03: canonical W3C rdfs IRI as superClass value → no violation', () => {
+    const RDFS = 'http://www.w3.org/2000/01/rdf-schema#';
+    const triples: Triple[] = [
+      typeTriple('asset:Resource', exoClass),
+      iriTriple('asset:Resource', exoClassSuperClass, `${RDFS}Resource`),
+    ];
+    const report = validate(triples, makeRegistry([classShape]), flatHierarchy);
+    expect(report.conforms).toBe(true);
+    expect(report.violations).toHaveLength(0);
+  });
+
+  it('T-EXT-04: canonical W3C owl IRI as superClass value → no violation', () => {
+    const OWL = 'http://www.w3.org/2002/07/owl#';
+    const triples: Triple[] = [
+      typeTriple('asset:ObjProp', exoClass),
+      iriTriple('asset:ObjProp', exoClassSuperClass, `${OWL}ObjectProperty`),
+    ];
+    const report = validate(triples, makeRegistry([classShape]), flatHierarchy);
+    expect(report.conforms).toBe(true);
+    expect(report.violations).toHaveLength(0);
+  });
+
+  it('T-EXT-05: Exocortex ad-hoc xsd IRI (xsd__ prefix) as superClass → no violation', () => {
+    // Produced by Namespace.forPrefix('xsd') when xsd is not in KNOWN_NAMESPACES
+    const XSD_ADHOC = 'https://exocortex.my/ontology/xsd#';
+    const triples: Triple[] = [
+      typeTriple('asset:LocalDate', exoClass),
+      iriTriple('asset:LocalDate', exoClassSuperClass, `${XSD_ADHOC}Date`),
+    ];
+    const report = validate(triples, makeRegistry([classShape]), flatHierarchy);
+    expect(report.conforms).toBe(true);
+    expect(report.violations).toHaveLength(0);
+  });
+
+  it('T-EXT-06: Exocortex ad-hoc rdfs IRI (rdfs__) as superProperty → no violation', () => {
+    const RDFS_ADHOC = 'https://exocortex.my/ontology/rdfs#';
+    const triples: Triple[] = [
+      typeTriple('asset:RangeProperty', exoProperty),
+      iriTriple('asset:RangeProperty', exoPropertySuperProperty, `${RDFS_ADHOC}range`),
+    ];
+    const report = validate(triples, makeRegistry([propertyShape]), flatHierarchy);
+    expect(report.conforms).toBe(true);
+    expect(report.violations).toHaveLength(0);
+  });
+
+  it('T-EXT-07: internal exocortex IRI as superClass → still validated (not exempt)', () => {
+    // An ims__Concept IRI used as superClass should still be validated
+    const IMS = 'https://exocortex.my/ontology/ims#';
+    const triples: Triple[] = [
+      typeTriple('asset:SpecialClass', exoClass),
+      iriTriple('asset:SpecialClass', exoClassSuperClass, `${IMS}Concept`),
+      // Note: ims#Concept has NO type triple → empty valueClasses → violation expected
+    ];
+    const report = validate(triples, makeRegistry([classShape]), flatHierarchy);
+    // ims#Concept is an internal IRI and should be checked — violation is expected
+    expect(report.conforms).toBe(false);
+    expect(report.violations).toHaveLength(1);
+    expect(report.violations[0].message).toContain('sh:class violation');
+  });
+});

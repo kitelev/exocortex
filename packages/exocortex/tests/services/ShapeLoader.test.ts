@@ -243,11 +243,26 @@ describe("ShapeLoader.loadFromRDFGraph", () => {
     expect(reg.get(`${EMS}Effort_parent`)!.cardinality).toBe("Multiple");
   });
 
-  it("handles property with unknown label prefix (non-namespaced) — skips", async () => {
+  it("auto-extends ad-hoc namespaces for non-whitelisted label prefixes", async () => {
+    // RFC: SHACL namespace whitelist relaxation — `unknown__something`
+    // resolves to `https://exocortex.my/ontology/unknown#something` instead of
+    // being silently dropped, so cross-namespace queries (e.g. aiKnow:*) work.
     const triples = [
       makeTriple(FILE_IRI, RDF_TYPE, OBJ_PROP_TYPE),
       makeTriple(FILE_IRI, RDFS_DOMAIN, `${EMS}Effort`),
       makeTriple(FILE_IRI, EXO_LABEL, { literal: "unknown__something" }),
+    ];
+    const store = makeStore(triples);
+    const reg = await ShapeLoader.loadFromRDFGraph(store);
+    expect(reg.size).toBe(1);
+    expect(reg.get("https://exocortex.my/ontology/unknown#something")).toBeDefined();
+  });
+
+  it("rejects label that does not match the <prefix>__<local> form", async () => {
+    const triples = [
+      makeTriple(FILE_IRI, RDF_TYPE, OBJ_PROP_TYPE),
+      makeTriple(FILE_IRI, RDFS_DOMAIN, `${EMS}Effort`),
+      makeTriple(FILE_IRI, EXO_LABEL, { literal: "no_double_underscore" }),
     ];
     const store = makeStore(triples);
     const reg = await ShapeLoader.loadFromRDFGraph(store);
@@ -539,7 +554,9 @@ describe("ShapeLoader.loadFromVaultFS", () => {
     expect(shape!.cardinality).toBeUndefined();
   });
 
-  it("ignores range wikilink with unrecognized prefix (no IRI produced)", async () => {
+  it("auto-extends range wikilink with non-whitelisted prefix to ad-hoc IRI", async () => {
+    // RFC: SHACL namespace whitelist relaxation — period__Day now resolves to
+    // <https://exocortex.my/ontology/period#Day> instead of being dropped.
     await writeFile(
       "period-range.md",
       [
@@ -554,9 +571,8 @@ describe("ShapeLoader.loadFromVaultFS", () => {
     );
     const reg = await ShapeLoader.loadFromVaultFS(tmpDir);
     const shape = reg.get(`${EMS}Effort_day2`);
-    // range value with unknown prefix → wikilinkToIRI returns null → shape.range = undefined
     expect(shape).toBeDefined();
-    expect(shape!.range).toBeUndefined();
+    expect(shape!.range).toEqual(["https://exocortex.my/ontology/period#Day"]);
   });
 
   it("handles sh: prefix in range wikilink", async () => {

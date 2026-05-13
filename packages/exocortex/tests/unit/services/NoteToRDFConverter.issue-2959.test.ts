@@ -184,9 +184,9 @@ describe("NoteToRDFConverter — Issue #2959 regression", () => {
       expect((relatesTriples[0].object as IRI).value).toContain("Some%20Note.md");
     });
 
-    it("preserves UUID dual-storage behavior (Issue #2782 regression guard)", async () => {
-      // UUID-form wikilinks pointing at non-class-like targets keep the
-      // existing dual-storage (file IRI + UUID literal) behavior.
+    it("UUID wikilink on non-prototype predicate emits single IRI (Fix #ff3858e5)", async () => {
+      // Fix #ff3858e5 narrowed dual-storage to exo__Asset_prototype only.
+      // Non-prototype predicates (e.g. ems__Effort_parent) now emit a single file IRI.
       const ordinaryFile: IFile = {
         path: "03 Knowledge/inbox/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.md",
         basename: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
@@ -215,11 +215,10 @@ describe("NoteToRDFConverter — Issue #2959 regression", () => {
         (t) => (t.predicate as IRI).value === Namespace.EMS.term("Effort_parent").value
       );
 
-      // Two triples expected: file IRI + UUID literal (no class IRI replacement).
-      expect(parentTriples).toHaveLength(2);
+      // Single file IRI expected — UUID Literal no longer emitted for non-prototype predicates.
+      expect(parentTriples).toHaveLength(1);
       const objectValues = parentTriples.map((t) => (t.object as IRI | { value: string }).value);
       expect(objectValues.some((v) => v.includes("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.md"))).toBe(true);
-      expect(objectValues).toContain("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
       expect(objectValues.some((v) => v.startsWith("https://exocortex.my/ontology/"))).toBe(false);
     });
   });

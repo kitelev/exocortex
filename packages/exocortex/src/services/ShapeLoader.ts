@@ -9,7 +9,9 @@ const SH_NS = "http://www.w3.org/ns/shacl#";
 // XML Schema Datatypes namespace base
 const XSD_NS = "http://www.w3.org/2001/XMLSchema#";
 
-// Maps namespace prefix → Namespace (mirrors NoteToRDFConverter.NAMESPACE_MAP)
+// Legacy whitelist retained for documentation; runtime resolution now goes
+// through Namespace.fromPropertyKey, which auto-extends to any well-formed
+// `<prefix>__<local>` key (RFC: SHACL namespace whitelist relaxation).
 const NAMESPACE_MAP: ReadonlyArray<[string, Namespace]> = [
   ["exo__", Namespace.EXO],
   ["ems__", Namespace.EMS],
@@ -21,6 +23,8 @@ const NAMESPACE_MAP: ReadonlyArray<[string, Namespace]> = [
   ["inbox__", Namespace.INBOX],
   ["pmbok__", Namespace.PMBOK],
 ];
+
+void NAMESPACE_MAP;
 
 /** Cached shape format written to / read from ~/.cache/exocortex/property-shapes.json */
 export interface ShapeJSONCache {
@@ -164,7 +168,12 @@ export class ShapeLoader {
       if (entry.isDirectory()) {
         await ShapeLoader.scanDir(full, registry, io);
       } else if (entry.isFile() && entry.name.endsWith(".md")) {
-        await ShapeLoader.processFile(full, registry, io.readFile);
+        // Fail-soft: one malformed property asset should not abort the scan.
+        try {
+          await ShapeLoader.processFile(full, registry, io.readFile, io.path);
+        } catch {
+          // Skip the offending file silently
+        }
       }
     }
   }
@@ -173,6 +182,7 @@ export class ShapeLoader {
     filePath: string,
     registry: ShapeRegistry,
     readFile: (p: string, enc: "utf-8") => Promise<string>,
+    path?: typeof import("path"),
   ): Promise<void> {
     let content: string;
     try {
@@ -197,9 +207,20 @@ export class ShapeLoader {
     });
     if (!isProperty) return;
 
+    // Resolve label: prefer explicit `exo__Asset_label`, fall back to filename
+    // basename for property assets that omit the label field (issue #3099).
+    let label: string | null = null;
     const labelRaw = fm["exo__Asset_label"];
-    if (!labelRaw || typeof labelRaw !== "string") return;
-    const label = labelRaw.trim();
+    if (typeof labelRaw === "string" && labelRaw.trim().length > 0) {
+      label = labelRaw.trim();
+    } else if (path) {
+      const basename = path.basename(filePath, ".md");
+      if (Namespace.fromPropertyKey(basename)) {
+        label = basename;
+      }
+    }
+    if (!label) return;
+
     const propertyIRI = ShapeLoader.labelToIRI(label);
     if (!propertyIRI) return;
 
@@ -296,14 +317,16 @@ export class ShapeLoader {
     return result;
   }
 
-  /** Converts label like "ems__Effort_parent" to full IRI, or null if unknown prefix. */
+  /**
+   * Converts label like `ems__Effort_parent` to full IRI, returning null only
+   * for shapes that do not match the `<prefix>__<local>` form. Auto-extends to
+   * ad-hoc namespaces under `https://exocortex.my/ontology/<prefix>#` for
+   * prefixes outside the static whitelist (e.g. `aiKnow__`).
+   */
   private static labelToIRI(label: string): string | null {
-    for (const [prefix, ns] of NAMESPACE_MAP) {
-      if (label.startsWith(prefix)) {
-        return ns.term(label.substring(prefix.length)).value;
-      }
-    }
-    return null;
+    const parsed = Namespace.fromPropertyKey(label);
+    if (!parsed) return null;
+    return parsed.namespace.term(parsed.localName).value;
   }
 
   /** Extracts the first part of [[ref]] or [[ref|alias]], stripping quotes. */

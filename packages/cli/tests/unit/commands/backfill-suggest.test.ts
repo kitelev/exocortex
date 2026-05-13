@@ -1,0 +1,426 @@
+import { describe, it, expect } from "@jest/globals";
+import type { ConceptEntry, BackfillCandidate } from "../../../src/commands/backfill-suggest.js";
+import {
+  scoreMatch,
+  computeCandidates,
+  isAutoApproved,
+  isConceptFile,
+  matchesWordBoundary,
+  MIN_LABEL_FOR_SUBSTRING,
+  CONCEPT_STOP_NAMES,
+  isConceptStopListed,
+} from "../../../src/commands/backfill-suggest.js";
+
+describe("backfill suggest — scoreMatch", () => {
+  it("returns 1.0 for exact case-insensitive match", () => {
+    expect(scoreMatch("knowledge management", "Knowledge Management")).toBe(1.0);
+  });
+
+  it("returns 0.85 for substring match", () => {
+    expect(scoreMatch("knowledge management system", "knowledge management")).toBe(0.85);
+  });
+
+  it("returns 0 when no match", () => {
+    expect(scoreMatch("totally different text", "knowledge management")).toBe(0);
+  });
+
+  it("returns 0 for empty term", () => {
+    expect(scoreMatch("some text", "")).toBe(0);
+  });
+
+  it("returns 0 for single-char term (too short)", () => {
+    expect(scoreMatch("a text", "a")).toBe(0);
+  });
+
+  it("MIN_LABEL_FOR_SUBSTRING constant equals 4", () => {
+    expect(MIN_LABEL_FOR_SUBSTRING).toBe(4);
+  });
+
+  it("returns 0 for 2-char term substring (below MIN_LABEL_FOR_SUBSTRING)", () => {
+    expect(scoreMatch("a beautiful day", "be")).toBe(0);
+  });
+
+  it("returns 0 for 3-char term substring (below MIN_LABEL_FOR_SUBSTRING)", () => {
+    expect(scoreMatch("knowledge management", "man")).toBe(0);
+  });
+
+  it("still returns 1.0 exact match for short term", () => {
+    expect(scoreMatch("ai", "AI")).toBe(1.0);
+  });
+
+  it("returns 0.85 for substring with term of exactly 4 chars", () => {
+    expect(scoreMatch("knowledge management", "know")).toBe(0.85);
+  });
+});
+
+describe("backfill suggest — matchesWordBoundary", () => {
+  it("returns true when term appears as a standalone word", () => {
+    expect(matchesWordBoundary("used typescript interfaces to define the schema", "TypeScript")).toBe(true);
+  });
+
+  it("returns false when term is a substring of a larger word", () => {
+    expect(matchesWordBoundary("javascriptengine.run()", "Java")).toBe(false);
+  });
+
+  it("returns false for stop word terms", () => {
+    expect(matchesWordBoundary("this is the answer for all", "the")).toBe(false);
+    expect(matchesWordBoundary("made for testing", "for")).toBe(false);
+  });
+
+  it("returns false for terms shorter than MIN_LABEL_FOR_SUBSTRING", () => {
+    expect(matchesWordBoundary("go is a language", "go")).toBe(false);
+    expect(matchesWordBoundary("a ai b", "ai")).toBe(false);
+  });
+
+  it("is case-insensitive", () => {
+    expect(matchesWordBoundary("used TYPESCRIPT daily", "typescript")).toBe(true);
+    expect(matchesWordBoundary("used typescript daily", "TypeScript")).toBe(true);
+  });
+
+  it("matches at start and end of string", () => {
+    expect(matchesWordBoundary("typescript is great", "TypeScript")).toBe(true);
+    expect(matchesWordBoundary("we use typescript", "TypeScript")).toBe(true);
+  });
+
+  it("returns false when term is not present", () => {
+    expect(matchesWordBoundary("totally different text", "TypeScript")).toBe(false);
+  });
+
+  it("returns true for multi-word concept labels when present as phrase", () => {
+    expect(matchesWordBoundary("knowledge management systems are important", "knowledge management")).toBe(true);
+  });
+});
+
+describe("backfill suggest — isConceptFile", () => {
+  it("returns true for file inside /concepts/ directory", () => {
+    expect(isConceptFile("/vault/03 Knowledge/concepts/abc-123.md", "")).toBe(true);
+  });
+
+  it("returns true for nested path inside /concepts/", () => {
+    expect(isConceptFile("/vault/03 Knowledge/concepts/sub/def-456.md", "")).toBe(true);
+  });
+
+  it("returns false for file outside /concepts/ directory", () => {
+    expect(isConceptFile("/vault/03 Knowledge/aiKnow/ghi-789.md", "some content")).toBe(false);
+  });
+
+  it("returns false for file whose name contains 'concepts' but not as directory segment", () => {
+    expect(isConceptFile("/vault/03 Knowledge/my-concepts-index.md", "")).toBe(false);
+  });
+
+  it("returns false for empty path", () => {
+    expect(isConceptFile("", "")).toBe(false);
+  });
+});
+
+describe("backfill suggest — computeCandidates", () => {
+  const concepts: ConceptEntry[] = [
+    { uid: "uid-1", label: "Knowledge Management", aliases: ["KM", "PKMS"], filePath: "/vault/c1.md" },
+    { uid: "uid-2", label: "Distributed Systems", aliases: ["DS"], filePath: "/vault/c2.md" },
+    { uid: "uid-3", label: "Graph Database", aliases: ["Graph DB"], filePath: "/vault/c3.md" },
+    { uid: "uid-4", label: "Totally Unrelated Topic", aliases: [], filePath: "/vault/c4.md" },
+    { uid: "uid-5", label: "Blockchain", aliases: ["DLT", "Distributed Ledger"], filePath: "/vault/c5.md" },
+  ];
+
+  it("returns top-3 candidates sorted by confidence", () => {
+    const candidates = computeCandidates(
+      "Knowledge Management System",
+      "A system for managing distributed knowledge",
+      "graph database notes here",
+      concepts,
+    );
+    expect(candidates.length).toBeLessThanOrEqual(3);
+    for (let i = 0; i < candidates.length - 1; i++) {
+      expect(candidates[i].confidence).toBeGreaterThanOrEqual(candidates[i + 1].confidence);
+    }
+  });
+
+  it("detects exact label match with confidence 1.0", () => {
+    const candidates = computeCandidates(
+      "Blockchain",
+      "",
+      "",
+      concepts,
+    );
+    const top = candidates[0];
+    expect(top.concept_uid).toBe("uid-5");
+    expect(top.confidence).toBe(1.0);
+    expect(top.match_type).toBe("label_exact");
+  });
+
+  it("detects label substring match with confidence 0.85", () => {
+    const candidates = computeCandidates(
+      "Introduction to Graph Database concepts",
+      "",
+      "",
+      concepts,
+    );
+    const graphCandidate = candidates.find((c) => c.concept_uid === "uid-3");
+    expect(graphCandidate).toBeDefined();
+    expect(graphCandidate!.confidence).toBe(0.85);
+    expect(graphCandidate!.match_type).toBe("label_substring");
+  });
+
+  it("returns empty array when no concepts match", () => {
+    const candidates = computeCandidates(
+      "Xyzzy Plugh Frotz",
+      "",
+      "",
+      concepts,
+    );
+    expect(candidates).toHaveLength(0);
+  });
+
+  it("detects alias match with lower confidence than direct label match", () => {
+    const candidates = computeCandidates(
+      "PKMS notes",
+      "",
+      "",
+      concepts,
+    );
+    const kmCandidate = candidates.find((c) => c.concept_uid === "uid-1");
+    expect(kmCandidate).toBeDefined();
+    expect(kmCandidate!.confidence).toBeLessThan(1.0);
+    expect(kmCandidate!.match_type).toContain("alias");
+  });
+
+  it("does NOT match 3-char alias as substring (MIN_LABEL_FOR_SUBSTRING=4)", () => {
+    // "PKM" is 3 chars — below MIN_LABEL_FOR_SUBSTRING, so no substring match
+    const candidates = computeCandidates("PKM notes", "", "", concepts);
+    const kmCandidate = candidates.find((c) => c.concept_uid === "uid-1");
+    expect(kmCandidate).toBeUndefined();
+  });
+
+  it("body match has lower confidence than label match", () => {
+    const labelCandidates = computeCandidates("Blockchain", "", "", concepts);
+    const bodyCandidates = computeCandidates("XyzzyFrotz", "", "blockchain reference in body", concepts);
+    const labelTop = labelCandidates.find((c) => c.concept_uid === "uid-5");
+    const bodyTop = bodyCandidates.find((c) => c.concept_uid === "uid-5");
+    if (labelTop && bodyTop) {
+      expect(labelTop.confidence).toBeGreaterThan(bodyTop.confidence);
+    }
+  });
+
+  it("detects body_word_exact when concept label is a standalone word in body", () => {
+    const candidates = computeCandidates(
+      "T2.1: Implement backfill-suggester",
+      "",
+      "used typescript interfaces to define the schema",
+      [{ uid: "uid-ts", label: "TypeScript", aliases: [], filePath: "/vault/c-ts.md" }],
+    );
+    const top = candidates[0];
+    expect(top).toBeDefined();
+    expect(top.match_type).toBe("body_word_exact");
+    expect(top.confidence).toBe(0.90);
+  });
+
+  it("does NOT produce body_word_exact when concept label is substring of larger word", () => {
+    const candidates = computeCandidates(
+      "Some title",
+      "",
+      "javascriptengine runs the code",
+      [{ uid: "uid-java", label: "Java", aliases: [], filePath: "/vault/c-java.md" }],
+    );
+    const javaCandidate = candidates.find((c) => c.concept_uid === "uid-java");
+    if (javaCandidate) {
+      expect(javaCandidate.match_type).not.toBe("body_word_exact");
+    }
+  });
+
+  it("detects body_word_exact in description field as well", () => {
+    const candidates = computeCandidates(
+      "Some unrelated title",
+      "This note covers TypeScript best practices",
+      "",
+      [{ uid: "uid-ts", label: "TypeScript", aliases: [], filePath: "/vault/c-ts.md" }],
+    );
+    const top = candidates[0];
+    expect(top).toBeDefined();
+    expect(top.match_type).toBe("body_word_exact");
+    expect(top.confidence).toBe(0.90);
+  });
+
+  it("body_word_exact confidence 0.90 beats description_exact 0.75", () => {
+    // If body has word-boundary match AND description has exact match, body_word_exact wins
+    const candidates = computeCandidates(
+      "Some title",
+      "blockchain",
+      "this note covers blockchain technology in detail",
+      concepts,
+    );
+    const top = candidates.find((c) => c.concept_uid === "uid-5");
+    expect(top).toBeDefined();
+    expect(top!.match_type).toBe("body_word_exact");
+    expect(top!.confidence).toBe(0.90);
+  });
+});
+
+describe("backfill suggest — isAutoApproved", () => {
+  const exactLabelCandidate: BackfillCandidate = {
+    concept_uid: "uid-1",
+    concept_label: "Knowledge Management",
+    concept_file: "/vault/c1.md",
+    confidence: 1.0,
+    match_type: "label_exact",
+  };
+
+  const substringCandidate: BackfillCandidate = {
+    concept_uid: "uid-2",
+    concept_label: "Distributed Systems",
+    concept_file: "/vault/c2.md",
+    confidence: 0.85,
+    match_type: "label_substring",
+  };
+
+  const lowConfidenceExact: BackfillCandidate = {
+    concept_uid: "uid-3",
+    concept_label: "Graph Database",
+    concept_file: "/vault/c3.md",
+    confidence: 0.5,
+    match_type: "label_exact",
+  };
+
+  it("auto-approves when confidence ≥ threshold AND match_type is label_exact", () => {
+    expect(isAutoApproved(exactLabelCandidate, 0.8)).toBe(true);
+  });
+
+  it("does NOT auto-approve label_substring even above threshold", () => {
+    expect(isAutoApproved(substringCandidate, 0.8)).toBe(false);
+  });
+
+  it("does NOT auto-approve label_exact below threshold", () => {
+    expect(isAutoApproved(lowConfidenceExact, 0.8)).toBe(false);
+  });
+
+  it("respects custom threshold", () => {
+    expect(isAutoApproved(substringCandidate, 0.5)).toBe(false);
+    expect(isAutoApproved(exactLabelCandidate, 1.1)).toBe(false);
+  });
+
+  it("auto-approves body_word_exact with confidence ≥ threshold", () => {
+    const wordExactCandidate: BackfillCandidate = {
+      concept_uid: "uid-ts",
+      concept_label: "TypeScript",
+      concept_file: "/vault/c-ts.md",
+      confidence: 0.90,
+      match_type: "body_word_exact",
+    };
+    expect(isAutoApproved(wordExactCandidate, 0.8)).toBe(true);
+    expect(isAutoApproved(wordExactCandidate, 0.95)).toBe(false);
+  });
+
+  it("does NOT auto-approve body_word_exact below threshold", () => {
+    const lowWordExact: BackfillCandidate = {
+      concept_uid: "uid-ts",
+      concept_label: "TypeScript",
+      concept_file: "/vault/c-ts.md",
+      confidence: 0.70,
+      match_type: "body_word_exact",
+    };
+    expect(isAutoApproved(lowWordExact, 0.8)).toBe(false);
+  });
+});
+
+describe("backfill suggest — CONCEPT_STOP_NAMES and isConceptStopListed", () => {
+  it("CONCEPT_STOP_NAMES contains known generic names (lowercase)", () => {
+    expect(CONCEPT_STOP_NAMES.has("class")).toBe(true);
+    expect(CONCEPT_STOP_NAMES.has("state")).toBe(true);
+    expect(CONCEPT_STOP_NAMES.has("error")).toBe(true);
+    expect(CONCEPT_STOP_NAMES.has("false")).toBe(true);
+  });
+
+  it("isConceptStopListed returns true for single-token generic names (case-insensitive)", () => {
+    expect(isConceptStopListed("Class")).toBe(true);
+    expect(isConceptStopListed("State")).toBe(true);
+    expect(isConceptStopListed("ERROR")).toBe(true);
+    expect(isConceptStopListed("development")).toBe(true);
+  });
+
+  it("isConceptStopListed returns false for multi-word concepts", () => {
+    expect(isConceptStopListed("Domain Model")).toBe(false);
+    expect(isConceptStopListed("Claude Code")).toBe(false);
+    expect(isConceptStopListed("Knowledge Management")).toBe(false);
+  });
+
+  it("isConceptStopListed returns false for specific single-token concepts not in list", () => {
+    expect(isConceptStopListed("TypeScript")).toBe(false);
+    expect(isConceptStopListed("Obsidian")).toBe(false);
+    expect(isConceptStopListed("RDFS")).toBe(false);
+    expect(isConceptStopListed("Session")).toBe(false);
+  });
+
+  it("computeCandidates excludes concepts on stop-list by name", () => {
+    const stopConcepts: ConceptEntry[] = [
+      { uid: "uid-class", label: "Class", aliases: [], filePath: "/vault/c-class.md" },
+      { uid: "uid-state", label: "State", aliases: [], filePath: "/vault/c-state.md" },
+      { uid: "uid-ts", label: "TypeScript", aliases: [], filePath: "/vault/c-ts.md" },
+    ];
+    const candidates = computeCandidates(
+      "UUID wikilink dual-storage breaks class preconditions",
+      "",
+      "used typescript interfaces to define the schema",
+      stopConcepts,
+    );
+    const classCandidate = candidates.find((c) => c.concept_uid === "uid-class");
+    const stateCandidate = candidates.find((c) => c.concept_uid === "uid-state");
+    const tsCandidate = candidates.find((c) => c.concept_uid === "uid-ts");
+    expect(classCandidate).toBeUndefined();
+    expect(stateCandidate).toBeUndefined();
+    expect(tsCandidate).toBeDefined();
+  });
+
+  it("computeCandidates excludes concepts by excludedUids (frequency cap)", () => {
+    const concepts: ConceptEntry[] = [
+      { uid: "uid-session", label: "Session", aliases: [], filePath: "/vault/c-session.md" },
+      { uid: "uid-obsidian", label: "Obsidian", aliases: [], filePath: "/vault/c-obsidian.md" },
+    ];
+    const excludedUids = new Set(["uid-session"]);
+    const candidates = computeCandidates(
+      "Obsidian Sync modal blocks session",
+      "",
+      "obsidian session dialog",
+      concepts,
+      excludedUids,
+    );
+    expect(candidates.find((c) => c.concept_uid === "uid-session")).toBeUndefined();
+    expect(candidates.find((c) => c.concept_uid === "uid-obsidian")).toBeDefined();
+  });
+});
+
+describe("backfill suggest — command registration", () => {
+  it("backfillSuggestCommand registers with name 'suggest'", async () => {
+    const { backfillSuggestCommand } = await import("../../../src/commands/backfill-suggest.js");
+    const cmd = backfillSuggestCommand();
+    expect(cmd.name()).toBe("suggest");
+  });
+
+  it("backfillSuggestCommand has --aiKnow-dir option", async () => {
+    const { backfillSuggestCommand } = await import("../../../src/commands/backfill-suggest.js");
+    const cmd = backfillSuggestCommand();
+    const opt = cmd.options.find((o) => o.long === "--aiKnow-dir");
+    expect(opt).toBeDefined();
+    expect(opt!.mandatory).toBe(true);
+  });
+
+  it("backfillSuggestCommand has --auto-threshold option", async () => {
+    const { backfillSuggestCommand } = await import("../../../src/commands/backfill-suggest.js");
+    const cmd = backfillSuggestCommand();
+    const opt = cmd.options.find((o) => o.long === "--auto-threshold");
+    expect(opt).toBeDefined();
+  });
+
+  it("backfillSuggestCommand has --frequency-cap option", async () => {
+    const { backfillSuggestCommand } = await import("../../../src/commands/backfill-suggest.js");
+    const cmd = backfillSuggestCommand();
+    const opt = cmd.options.find((o) => o.long === "--frequency-cap");
+    expect(opt).toBeDefined();
+  });
+
+  it("backfillCommand registers with name 'backfill' and has suggest subcommand", async () => {
+    const { backfillCommand } = await import("../../../src/commands/backfill.js");
+    const cmd = backfillCommand();
+    expect(cmd.name()).toBe("backfill");
+    const sub = cmd.commands.find((c) => c.name() === "suggest");
+    expect(sub).toBeDefined();
+  });
+});

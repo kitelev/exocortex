@@ -118,6 +118,33 @@ SELECT ?s WHERE { ?s exo:Instance_class ems:Task }`;
       expect(filtered.size).toBe(0);
     });
 
+    it("auto-declares non-whitelisted prefixes used in the query body", () => {
+      // RFC: SHACL namespace whitelist relaxation — `aiKnow:` referenced in the
+      // query body must get an auto-injected PREFIX declaration using the
+      // standard ontology IRI convention, mirroring NoteToRDFConverter.
+      const query =
+        "SELECT ?s ?c WHERE { ?s aiKnow:Memory_aboutConcept ?c }";
+      const result = injectExocortexPrefixes(query);
+
+      expect(result).toContain(
+        "PREFIX aiKnow: <https://exocortex.my/ontology/aiKnow#>",
+      );
+      // Static whitelist still injected
+      expect(result).toContain("PREFIX exo: <https://exocortex.my/ontology/exo#>");
+    });
+
+    it("does not auto-declare a prefix when user already supplied one", () => {
+      const query = `PREFIX aiKnow: <https://example.org/custom#>
+SELECT ?s WHERE { ?s aiKnow:Memory_aboutConcept ?c }`;
+      const result = injectExocortexPrefixes(query);
+
+      const aiKnowDecls = (result.match(/PREFIX aiKnow:/gi) || []).length;
+      expect(aiKnowDecls).toBe(1);
+      // User's custom IRI must be preserved (no override)
+      expect(result).toContain("<https://example.org/custom#>");
+      expect(result).not.toContain("<https://exocortex.my/ontology/aiKnow#>");
+    });
+
     it("should filter all standard ontology prefixes", () => {
       const allOntology = new Map([
         ["exo", "a"], ["ems", "b"], ["ims", "c"],

@@ -22,6 +22,8 @@ import { dynamicCommandCommand } from "./commands/dynamic-command.js";
 import { convertCommand } from "./commands/convert.js";
 import { migrateRelColSetToExoLayoutCommand } from "./commands/migrate-relcolset-to-exolayout.js";
 import { daemonCommand } from "./commands/daemon.js";
+import { backfillCommand } from "./commands/backfill.js";
+import { recoverCommand } from "./commands/recover.js";
 
 // Version injected at build time by esbuild (see esbuild.config.mjs)
 declare const __CLI_VERSION__: string;
@@ -83,6 +85,8 @@ export function createProgram(version?: string): Command {
   program.addCommand(convertCommand());
   program.addCommand(migrateRelColSetToExoLayoutCommand());
   program.addCommand(daemonCommand());
+  program.addCommand(backfillCommand());
+  program.addCommand(recoverCommand());
 
   return program;
 }

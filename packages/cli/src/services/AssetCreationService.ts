@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
-import { DateFormatter, MetadataHelpers } from "exocortex";
+import { DateFormatter, MetadataHelpers, Namespace } from "exocortex";
+import type { ShapeRegistry } from "exocortex";
 import { NodeFsAdapter } from "../adapters/NodeFsAdapter.js";
 import { ClassResolverService } from "./ClassResolverService.js";
 import { WikilinkValidator } from "./WikilinkValidator.js";
@@ -74,6 +75,14 @@ export class AssetCreationService {
     private readonly fsAdapter: NodeFsAdapter,
     private readonly classResolver: ClassResolverService,
     private readonly wikilinkValidator: WikilinkValidator,
+    /**
+     * Optional SHACL-lite shape registry loaded from vault property assets.
+     * When provided, properties declared with
+     * `exo__Property_cardinality: "[[exo__PropertyCardinalitySingle]]"`
+     * are serialized as scalar YAML values instead of single-entry arrays.
+     * When omitted, all wikilink values are wrapped in arrays (legacy default).
+     */
+    private readonly shapeRegistry?: ShapeRegistry,
   ) {}
 
   /**
@@ -187,7 +196,7 @@ export class AssetCreationService {
         ) {
           continue;
         }
-        fm[key] = this.formatPropertyValue(value);
+        fm[key] = this.formatPropertyValue(key, value);
       }
     }
 
@@ -197,13 +206,18 @@ export class AssetCreationService {
   /**
    * Format a property value for frontmatter.
    *
-   * Wikilink values (containing `[[`) are quoted and wrapped in a YAML array
-   * so Obsidian can parse them correctly. Plain values are left as scalars.
+   * Wikilink values (containing `[[`) are quoted. By default they are wrapped
+   * in a single-entry YAML array so Obsidian can parse them as a list. If the
+   * shape registry declares the property's cardinality as `"Single"`, the
+   * quoted value is emitted as a scalar instead (issue #3099).
    *
+   * Plain (non-wikilink) values are always left as scalars.
+   *
+   * @param key - The property key (e.g. `ems__Effort_status`)
    * @param value - The raw property value string
-   * @returns Formatted value: `string` for plain values, `string[]` for wikilinks
+   * @returns Formatted value: `string` for plain or single-cardinality wikilinks, `string[]` for arrays
    */
-  private formatPropertyValue(value: string): string | string[] {
+  private formatPropertyValue(key: string, value: string): string | string[] {
     if (!value.includes("[[")) {
       return value;
     }
@@ -212,8 +226,28 @@ export class AssetCreationService {
     const quoted =
       value.startsWith('"') && value.endsWith('"') ? value : `"${value}"`;
 
-    // Wrap in array for YAML list format
+    if (this.isSingleValued(key)) {
+      return quoted;
+    }
+
+    // Default: wrap in array for YAML list format
     return [quoted];
+  }
+
+  /**
+   * Check whether a property is declared single-valued in the shape registry.
+   *
+   * Safe default: `false` (treat as multi-valued / wrap in array) when no
+   * registry is provided, when the property has no shape, or when its
+   * cardinality is not explicitly `"Single"`.
+   */
+  private isSingleValued(key: string): boolean {
+    if (!this.shapeRegistry) return false;
+    const parsed = Namespace.fromPropertyKey(key);
+    if (!parsed) return false;
+    const propertyIRI = parsed.namespace.term(parsed.localName).value;
+    const shape = this.shapeRegistry.get(propertyIRI);
+    return shape?.cardinality === "Single";
   }
 
   /**

@@ -28,7 +28,8 @@
     [
       "daily-navigation.spec.ts",
       "table-column-alignment.spec.ts",
-      "daily-note-tasks.spec.ts"
+      "daily-note-tasks.spec.ts",
+      "wikilink-label-parity.spec.ts"
     ]
   ],
   "_projected_weights_ms": {

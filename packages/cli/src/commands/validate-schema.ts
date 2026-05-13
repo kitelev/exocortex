@@ -375,6 +375,39 @@ export function validateFile(
 }
 
 const RDFS_SUBCLASS_OF = "http://www.w3.org/2000/01/rdf-schema#subClassOf";
+const EXO_CLASS_SUPER_CLASS = "https://exocortex.my/ontology/exo#Class_superClass";
+const RDFS_LABEL = "http://www.w3.org/2000/01/rdf-schema#label";
+
+/**
+ * Converts a frontmatter label string (e.g. "ims__Concept") to its ontology URI
+ * (e.g. "https://exocortex.my/ontology/ims#Concept") using NAMESPACE_PREFIX_MAP.
+ * Returns null if no matching namespace prefix is found.
+ */
+export function labelToOntologyIRI(label: string): string | null {
+  const dunderIdx = label.indexOf("__");
+  if (dunderIdx === -1) return null;
+  const prefix = label.slice(0, dunderIdx + 2);
+  const local = label.slice(dunderIdx + 2);
+  const ns = NAMESPACE_PREFIX_MAP.get(prefix);
+  if (!ns || !local) return null;
+  return ns + local;
+}
+
+/**
+ * Tries to extract an ontology URI from a file IRI by examining the filename.
+ * File IRIs for label-named class files look like:
+ *   obsidian://vault/03%20Knowledge/exo/exo__Asset.md
+ * The filename stem "exo__Asset" can be converted to "https://exocortex.my/ontology/exo#Asset".
+ * Returns null for UUID-named files or unrecognised prefixes.
+ */
+function fileIriToOntologyURIFromFilename(fileIri: string): string | null {
+  const decodedIri = decodeURIComponent(fileIri);
+  const lastSlash = decodedIri.lastIndexOf("/");
+  if (lastSlash === -1) return null;
+  const filename = decodedIri.slice(lastSlash + 1);
+  const stem = filename.endsWith(".md") ? filename.slice(0, -3) : filename;
+  return labelToOntologyIRI(stem);
+}
 
 type AlgebraIRI = { type: "iri"; value: string };
 type AlgebraLiteral = { type: "literal"; value: string; datatype?: string; language?: string };
@@ -415,21 +448,111 @@ export function domainToAlgebraTriples(triples: DomainTriple[]): AlgebraStyleTri
 
 /**
  * Builds a ClassHierarchy by extracting rdfs:subClassOf triples.
+ *
+ * The hierarchy is built in two IRI spaces simultaneously:
+ *   1. File IRIs  — from rdfs:subClassOf triples as emitted by NoteToRDFConverter
+ *   2. Ontology URIs — derived via rdfs:label + NAMESPACE_PREFIX_MAP
+ *
+ * This dual mapping is necessary because exo__Instance_class values are converted
+ * to ontology URIs (e.g. "ims#Concept") while rdfs:subClassOf triples use file IRIs.
+ * Without the dual mapping, isSubClassOf("ims#Concept", "exo#Asset") always returns false.
  */
 export class TripleClassHierarchy implements ClassHierarchy {
   private readonly subClassMap: Map<string, Set<string>> = new Map();
 
   constructor(triples: DomainTriple[]) {
+    // Pass 1: build fileIRI → ontologyURI map.
+    // Primary source: rdfs:label triples (e.g. from UUID-named class files with exo__Asset_label).
+    // Fallback: filename stem (e.g. "exo__Asset.md" → exo#Asset for label-named class files).
+    const fileIriToOntologyUri = new Map<string, string>();
+
+    // Collect file IRIs that appear in rdfs:subClassOf or exo:Class_superClass triples
+    // (candidates for class files that need their ontologyURI resolved)
+    const classFileIris = new Set<string>();
+    const isSubClassPredicate = (iri: string) =>
+      iri === RDFS_SUBCLASS_OF || iri === EXO_CLASS_SUPER_CLASS;
     for (const t of triples) {
       if (
         t.predicate instanceof DomainIRI &&
-        t.predicate.value === RDFS_SUBCLASS_OF &&
+        isSubClassPredicate(t.predicate.value) &&
         t.subject instanceof DomainIRI &&
         t.object instanceof DomainIRI
       ) {
-        const set = this.subClassMap.get(t.subject.value) ?? new Set<string>();
-        set.add(t.object.value);
-        this.subClassMap.set(t.subject.value, set);
+        classFileIris.add(t.subject.value);
+        classFileIris.add(t.object.value);
+      }
+    }
+
+    // Populate from rdfs:label triples first (preferred — explicit label)
+    for (const t of triples) {
+      if (
+        t.predicate instanceof DomainIRI &&
+        t.predicate.value === RDFS_LABEL &&
+        t.subject instanceof DomainIRI &&
+        t.object instanceof DomainLiteral
+      ) {
+        const ontologyUri = labelToOntologyIRI(t.object.value);
+        if (ontologyUri) {
+          fileIriToOntologyUri.set(t.subject.value, ontologyUri);
+        }
+      }
+    }
+
+    // Fallback: derive from filename for class-file IRIs not covered by rdfs:label
+    for (const fileIri of classFileIris) {
+      if (!fileIriToOntologyUri.has(fileIri)) {
+        const ontologyUri = fileIriToOntologyURIFromFilename(fileIri);
+        if (ontologyUri) {
+          fileIriToOntologyUri.set(fileIri, ontologyUri);
+        }
+      }
+    }
+
+    // Pass 2a: add identity entries so that fileIri is-a ontologyUri.
+    // Example: <dda12c48-file-IRI> rdfs:label "ims__Concept"
+    // → isSubClassOf("dda12c48-file-IRI", "ims#Concept") must return true.
+    // This handles the case where exo__Instance_class stores a UUID wikilink
+    // (resolves to file IRI) but the range check uses the ontology URI.
+    for (const [fileIri, ontUri] of fileIriToOntologyUri) {
+      const selfSet = this.subClassMap.get(fileIri) ?? new Set<string>();
+      selfSet.add(ontUri);
+      this.subClassMap.set(fileIri, selfSet);
+    }
+
+    // Pass 2b: build subClassMap for both file IRIs and ontology URIs.
+    // Processes both rdfs:subClassOf and exo:Class_superClass (the Exocortex-native
+    // superclass declaration predicate). Without exo:Class_superClass support, classes
+    // declared via exo__Class_superClass (e.g. ims#Concept → exo#Asset) are invisible
+    // to the hierarchy, causing false sh:class violations on properties like exo:Asset_relates.
+    for (const t of triples) {
+      if (
+        t.predicate instanceof DomainIRI &&
+        isSubClassPredicate(t.predicate.value) &&
+        t.subject instanceof DomainIRI &&
+        t.object instanceof DomainIRI
+      ) {
+        const childFileIri = t.subject.value;
+        const parentFileIri = t.object.value;
+
+        // File IRI hierarchy entry (original behaviour)
+        const fileSet = this.subClassMap.get(childFileIri) ?? new Set<string>();
+        fileSet.add(parentFileIri);
+        this.subClassMap.set(childFileIri, fileSet);
+
+        // Ontology URI hierarchy entry (enables isSubClassOf for ontology URIs).
+        // The parent object may already be an ontology URI (when [[exo__Asset]] wikilink
+        // resolves to a class-named file and NoteToRDFConverter emits the namespace IRI
+        // directly). In that case, use it as-is; otherwise look it up via fileIriToOntologyUri
+        // or fall back to the filename-derived mapping.
+        const childOntUri = fileIriToOntologyUri.get(childFileIri);
+        const parentOntUri = parentFileIri.startsWith("obsidian://")
+          ? fileIriToOntologyUri.get(parentFileIri)
+          : parentFileIri; // already an ontology URI
+        if (childOntUri && parentOntUri) {
+          const ontSet = this.subClassMap.get(childOntUri) ?? new Set<string>();
+          ontSet.add(parentOntUri);
+          this.subClassMap.set(childOntUri, ontSet);
+        }
       }
     }
   }

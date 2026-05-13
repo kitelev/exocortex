@@ -30,6 +30,15 @@ export interface ClassHierarchy {
   isSubClassOf(child: string, parent: string): boolean;
 }
 
+export interface ValidatorOptions {
+  /**
+   * When true, any property predicate that has no registered shape emits sh:Warning.
+   * CQ4 SPARQL shapes are the source of truth — the legacy validate-properties whitelist
+   * file is deprecated in favour of this closed-world engine mode.
+   */
+  closedWorldMode?: boolean;
+}
+
 export class ShapeRegistry {
   private readonly shapeMap: Map<string, Shape>;
   readonly typePredicateIRI: string;
@@ -55,10 +64,68 @@ export class ShapeRegistry {
   }
 }
 
+// Standard W3C RDF type predicate. Treated as equivalent to the registry's
+// `typePredicateIRI` (default `exo__Instance_class`) for class-membership
+// purposes — see Issue ff3858e5 Fix 2: enum-instance wikilinks resolve via
+// rdf:type, and sh:class constraints must accept that path.
+const RDF_TYPE_IRI = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type';
+
+/**
+ * IRI prefixes that represent external (non-vault) ontology resources.
+ *
+ * Two forms appear in practice:
+ *
+ * 1. **Canonical W3C IRIs** — when the Namespace resolver uses the real XSD/RDF/OWL/RDFS
+ *    base URIs (e.g. `http://www.w3.org/2001/XMLSchema#Date`).
+ *
+ * 2. **Exocortex ad-hoc IRIs** — when `Namespace.forPrefix` falls back to the ad-hoc
+ *    convention `https://exocortex.my/ontology/<prefix>#` for prefixes that are not in
+ *    the static whitelist (`KNOWN_NAMESPACES` in Namespace.ts). This currently affects
+ *    `xsd__`, `rdf__`, `rdfs__`, `owl__` keys in vault frontmatter:
+ *      • `xsd__Date`  → `https://exocortex.my/ontology/xsd#Date`
+ *      • `rdf__Statement` → `https://exocortex.my/ontology/rdf#Statement`
+ *      • `rdfs__Resource` → `https://exocortex.my/ontology/rdfs#Resource`
+ *      • `owl__ObjectProperty` → `https://exocortex.my/ontology/owl#ObjectProperty`
+ *
+ * None of these are vault assets — they will never appear in `subjectClasses`.
+ * An sh:class range check against them always produces a false-positive violation.
+ * We skip the check for any value IRI matching these prefixes.
+ *
+ * See: fix(shacl): allowlist external ontology IRIs — 5 false-positive violations
+ */
+const EXTERNAL_ONTOLOGY_IRI_PREFIXES: readonly string[] = [
+  // Canonical W3C IRIs
+  'http://www.w3.org/2001/XMLSchema#',            // xsd (canonical)
+  'http://www.w3.org/1999/02/22-rdf-syntax-ns#',  // rdf (canonical)
+  'http://www.w3.org/2000/01/rdf-schema#',         // rdfs (canonical)
+  'http://www.w3.org/2002/07/owl#',                // owl (canonical)
+  'http://www.w3.org/2004/02/skos/core#',          // skos
+  'http://purl.org/dc/elements/1.1/',              // dc
+  'http://purl.org/dc/terms/',                     // dcterms
+  'http://xmlns.com/foaf/0.1/',                    // foaf
+  'https://schema.org/',                           // schema.org
+  // Exocortex ad-hoc IRIs for the same external namespaces
+  // (produced by Namespace.forPrefix fallback when prefix is not in KNOWN_NAMESPACES)
+  'https://exocortex.my/ontology/xsd#',            // xsd__ → ad-hoc
+  'https://exocortex.my/ontology/rdf#',            // rdf__ → ad-hoc
+  'https://exocortex.my/ontology/rdfs#',           // rdfs__ → ad-hoc
+  'https://exocortex.my/ontology/owl#',            // owl__ → ad-hoc
+  'https://exocortex.my/ontology/skos#',           // skos__ → ad-hoc
+];
+
+/**
+ * Returns true when `iri` belongs to a well-known external ontology that is not
+ * represented as vault assets. Such IRIs are exempt from sh:class range checks.
+ */
+function isExternalOntologyIRI(iri: string): boolean {
+  return EXTERNAL_ONTOLOGY_IRI_PREFIXES.some((prefix) => iri.startsWith(prefix));
+}
+
 export function validate(
   triples: Triple[],
   registry: ShapeRegistry,
   hierarchy: ClassHierarchy,
+  options?: ValidatorOptions,
 ): ValidationReport {
   const subjectClasses = new Map<string, string[]>();
   const subjectProps = new Map<string, Map<string, Array<IRI | Literal>>>();
@@ -73,7 +140,11 @@ export function validate(
     const predicateIRI = predicate.value;
     const obj = object as IRI | Literal;
 
-    if (predicateIRI === registry.typePredicateIRI) {
+    const isTypePredicate =
+      predicateIRI === registry.typePredicateIRI ||
+      predicateIRI === RDF_TYPE_IRI;
+
+    if (isTypePredicate) {
       if (obj.type === 'iri') {
         const classes = subjectClasses.get(subjectIRI) ?? [];
         classes.push(obj.value);
@@ -142,6 +213,10 @@ export function validate(
       if (shape.range && shape.range.length > 0) {
         for (const obj of values) {
           if (obj.type === 'iri') {
+            // External ontology IRIs (xsd, rdf, rdfs, owl, …) are not vault assets
+            // and are never registered in subjectClasses. Skip the sh:class check for
+            // them — they are authoritative by definition (fix: 5 external IRI violations).
+            if (isExternalOntologyIRI(obj.value)) continue;
             // Class range: value's class(es) must satisfy range via hierarchy
             const valueClasses = subjectClasses.get(obj.value) ?? [];
             // R13: ANY-of semantics — any value class matching any range class satisfies
@@ -180,6 +255,22 @@ export function validate(
               });
             }
           }
+        }
+      }
+    }
+  }
+
+  if (options?.closedWorldMode) {
+    for (const subjectIRI of allSubjects) {
+      const props = subjectProps.get(subjectIRI) ?? new Map<string, Array<IRI | Literal>>();
+      for (const predicateIRI of props.keys()) {
+        if (!registry.hasShape(predicateIRI)) {
+          violations.push({
+            focusNode: subjectIRI,
+            propertyPath: predicateIRI,
+            severity: 'sh:Warning',
+            message: `Unknown property: <${predicateIRI}> has no registered shape`,
+          });
         }
       }
     }
