@@ -86,6 +86,65 @@ export class FrontmatterService {
   }
 
   /**
+   * Parse frontmatter into a key/value object.
+   *
+   * Handles `key: value` scalar lines and `key:\n  - item` two-space-indented
+   * YAML arrays — the two shapes Exocortex ассеты actually use. Returns null
+   * when no frontmatter block is present. Used by callers that need to read
+   * another asset's properties (e.g. copy-from-target in create_instance),
+   * where `parse()` (which returns the raw YAML string) is insufficient.
+   *
+   * NOTE: deliberately minimal — does NOT cover inline `[a, b]` arrays, block
+   * scalars, nested maps, or quoted-key edge cases. Match the existing
+   * lightweight parser in ShapeLoader so behaviour is consistent vault-wide
+   * without pulling in a heavyweight YAML dependency.
+   */
+  parseObject(content: string): Record<string, string | string[]> | null {
+    const parsed = this.parse(content);
+    if (!parsed.exists) return null;
+
+    const result: Record<string, string | string[]> = {};
+    const lines = parsed.content.split(/\r?\n/);
+    let currentKey: string | null = null;
+    let currentArray: string[] | null = null;
+
+    const flushArray = (): void => {
+      if (currentKey !== null && currentArray !== null) {
+        result[currentKey] = currentArray;
+      }
+      currentKey = null;
+      currentArray = null;
+    };
+
+    for (const line of lines) {
+      const arrayItem = /^ {2}- (.*)$/.exec(line);
+      if (arrayItem) {
+        if (currentKey !== null && currentArray !== null) {
+          currentArray.push(arrayItem[1].trim());
+        }
+        continue;
+      }
+
+      flushArray();
+
+      const kvMatch = /^([^:\s][^:]*):\s*(.*)$/.exec(line);
+      if (!kvMatch) continue;
+      const key = kvMatch[1].trim();
+      const value = kvMatch[2].trim();
+
+      if (value === "") {
+        currentKey = key;
+        currentArray = [];
+      } else {
+        result[key] = value;
+      }
+    }
+
+    flushArray();
+    return result;
+  }
+
+  /**
    * Update or add a property in frontmatter.
    *
    * - If frontmatter exists and has the property: updates value

@@ -378,6 +378,49 @@ describe("CommandResolver", () => {
       expect(cmd!.grounding.targetValue).toBe("$today");
     });
 
+    it("should read Grounding_linkBackProperty as IRI wikilink and resolve to bare property name", async () => {
+      const groundingSubject = new IRI(`obsidian://vault/gnd-linkback.md`);
+      await store.addAll([
+        new Triple(groundingSubject, Namespace.RDF.term("type"), Namespace.EXOCMD.term("Grounding")),
+        new Triple(groundingSubject, Namespace.EXO.term("Asset_uid"), new Literal("gnd-linkback")),
+        new Triple(groundingSubject, Namespace.EXO.term("Asset_label"), new Literal("Create Next Iter")),
+        new Triple(groundingSubject, Namespace.EXOCMD.term("Grounding_type"), new Literal("create_instance")),
+        new Triple(
+          groundingSubject,
+          Namespace.EXOCMD.term("Grounding_linkBackProperty"),
+          Namespace.EMS.term("Effort_prevIteration"),
+        ),
+      ]);
+
+      await addCommandAsset(store, {
+        uid: "cmd-linkback",
+        label: "Create Next Iter",
+        groundingRef: "gnd-linkback",
+      });
+
+      const cmd = await resolver.loadCommand("cmd-linkback");
+
+      expect(cmd!.grounding.linkBackProperty).toBe("ems__Effort_prevIteration");
+    });
+
+    it("should set linkBackProperty to undefined when Grounding_linkBackProperty absent", async () => {
+      await addGroundingAsset(store, {
+        uid: "gnd-no-linkback",
+        label: "No LinkBack",
+        type: "create_instance",
+      });
+
+      await addCommandAsset(store, {
+        uid: "cmd-no-linkback",
+        label: "No LinkBack",
+        groundingRef: "gnd-no-linkback",
+      });
+
+      const cmd = await resolver.loadCommand("cmd-no-linkback");
+
+      expect(cmd!.grounding.linkBackProperty).toBeUndefined();
+    });
+
     it("should return null for missing UID", async () => {
       const cmd = await resolver.loadCommand("non-existent");
       expect(cmd).toBeNull();

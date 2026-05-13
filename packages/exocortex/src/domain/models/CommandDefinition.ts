@@ -95,6 +95,14 @@ export interface GroundingDefinition {
   readonly targetPrototype?: string;
   /** Vault-relative folder path (for create_instance, e.g., "01 Inbox") */
   readonly targetFolder?: string;
+  /**
+   * Frontmatter property name on the newly created instance where the plugin
+   * writes the `[[$target]]` wikilink back to the source asset (for
+   * `create_instance` grounding).
+   *
+   * If absent → fallback to hardcoded `exo__Asset_source`.
+   */
+  readonly linkBackProperty?: string;
 }
 
 /**

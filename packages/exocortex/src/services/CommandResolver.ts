@@ -814,6 +814,7 @@ export class CommandResolver {
     const targetClass = await this.getLiteralValue(subject, Namespace.EXOCMD.term("Grounding_targetClass"));
     const targetPrototype = await this.getLiteralValue(subject, Namespace.EXOCMD.term("Grounding_targetPrototype"));
     const targetFolder = await this.getLiteralValue(subject, Namespace.EXOCMD.term("Grounding_targetFolder"));
+    const linkBackProperty = await this.getObsidianName(subject, Namespace.EXOCMD.term("Grounding_linkBackProperty"));
     const inputSchemaRaw = await this.getLiteralValue(subject, Namespace.EXOCMD.term("Grounding_inputSchema"));
 
     // Load composite steps if applicable
@@ -853,6 +854,7 @@ export class CommandResolver {
       targetClass: targetClass ?? undefined,
       targetPrototype: targetPrototype ?? undefined,
       targetFolder: targetFolder ?? undefined,
+      linkBackProperty: linkBackProperty ?? undefined,
     };
 
     if (inputSchema) {
