@@ -6,6 +6,8 @@ import { Namespace } from "../domain/models/rdf/Namespace";
 
 // W3C SHACL namespace base
 const SH_NS = "http://www.w3.org/ns/shacl#";
+// XML Schema Datatypes namespace base
+const XSD_NS = "http://www.w3.org/2001/XMLSchema#";
 
 // Legacy whitelist retained for documentation; runtime resolution now goes
 // through Namespace.fromPropertyKey, which auto-extends to any well-formed
@@ -71,12 +73,13 @@ export class ShapeLoader {
     for (const subjectValue of subjects) {
       const subject = new IRI(subjectValue);
 
-      const [domainTs, rangeTs, cardTs, sevTs, labelTs] = await Promise.all([
+      const [domainTs, rangeTs, cardTs, sevTs, labelTs, minCountTs] = await Promise.all([
         graph.match(subject, RDFS.term("domain"), undefined),
         graph.match(subject, RDFS.term("range"), undefined),
         graph.match(subject, EXO.term("Property_cardinality"), undefined),
         graph.match(subject, EXO.term("Property_severity"), undefined),
         graph.match(subject, EXO.term("Asset_label"), undefined),
+        graph.match(subject, EXO.term("Property_minCount"), undefined),
       ]);
 
       if (domainTs.length === 0) continue;
@@ -106,12 +109,18 @@ export class ShapeLoader {
             : undefined,
       );
 
+      const minCountLiteral = minCountTs[0]?.object;
+      const minCountParsed =
+        minCountLiteral instanceof Literal ? parseInt(minCountLiteral.value, 10) : NaN;
+      const minCount = !isNaN(minCountParsed) ? minCountParsed : undefined;
+
       registry.register({
         propertyIRI,
         domain,
         range: rangeValues.length > 0 ? rangeValues : undefined,
         cardinality,
         severity,
+        minCount,
       });
     }
 
@@ -219,6 +228,7 @@ export class ShapeLoader {
     const rangeRaw = fm["exo__Property_range"];
     const cardRaw = fm["exo__Property_cardinality"];
     const sevRaw = fm["exo__Property_severity"];
+    const minCountRaw = fm["exo__Property_minCount"];
 
     const domain = ShapeLoader.asArray(domainRaw)
       .map((v) => ShapeLoader.wikilinkToIRI(v))
@@ -237,12 +247,18 @@ export class ShapeLoader {
       typeof sevRaw === "string" ? sevRaw : undefined,
     );
 
+    const minCountParsed =
+      typeof minCountRaw === "string" ? parseInt(minCountRaw, 10) : undefined;
+    const minCount =
+      minCountParsed !== undefined && !isNaN(minCountParsed) ? minCountParsed : undefined;
+
     registry.register({
       propertyIRI,
       domain,
       range: range.length > 0 ? range : undefined,
       cardinality,
       severity,
+      minCount,
     });
   }
 
@@ -342,6 +358,8 @@ export class ShapeLoader {
     if (ref.startsWith("http")) return ref;
     // Try SHACL prefix
     if (ref.startsWith("sh:")) return SH_NS + ref.substring(3);
+    // Try XSD prefix
+    if (ref.startsWith("xsd:")) return XSD_NS + ref.substring(4);
 
     return null;
   }

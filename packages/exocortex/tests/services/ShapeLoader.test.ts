@@ -631,4 +631,131 @@ describe("ShapeLoader.loadFromRDFGraph — additional cases", () => {
     const reg = await ShapeLoader.loadFromRDFGraph(store);
     expect(reg.get(`${EMS_NS}Effort_test2`)!.cardinality).toBeUndefined();
   });
+
+  it("parses minCount from RDF graph literal", async () => {
+    const EXO_MIN_COUNT = Namespace.EXO.term("Property_minCount").value;
+    const triples = [
+      makeTriple(FILE_IRI, RDF_TYPE, OBJ_PROP_TYPE),
+      makeTriple(FILE_IRI, RDFS_DOMAIN, `${EMS_NS}Effort`),
+      makeTriple(FILE_IRI, EXO_LABEL, { literal: "ems__Effort_mintest" }),
+      makeTriple(FILE_IRI, EXO_MIN_COUNT, { literal: "1" }),
+    ];
+    const store = makeStore(triples);
+    const reg = await ShapeLoader.loadFromRDFGraph(store);
+    expect(reg.get(`${EMS_NS}Effort_mintest`)!.minCount).toBe(1);
+  });
+
+  it("returns undefined minCount when not specified in RDF graph", async () => {
+    const triples = [
+      makeTriple(FILE_IRI, RDF_TYPE, OBJ_PROP_TYPE),
+      makeTriple(FILE_IRI, RDFS_DOMAIN, `${EMS_NS}Effort`),
+      makeTriple(FILE_IRI, EXO_LABEL, { literal: "ems__Effort_nomin" }),
+    ];
+    const store = makeStore(triples);
+    const reg = await ShapeLoader.loadFromRDFGraph(store);
+    expect(reg.get(`${EMS_NS}Effort_nomin`)!.minCount).toBeUndefined();
+  });
+});
+
+// ── xsd: prefix and minCount in loadFromVaultFS ───────────────────────────────
+
+describe("ShapeLoader.loadFromVaultFS — minCount and xsd: range", () => {
+  const XSD_NS = "http://www.w3.org/2001/XMLSchema#";
+  const EXO_NS = "https://exocortex.my/ontology/exo#";
+  let tmpDir: string;
+
+  async function writeFile(name: string, content: string): Promise<string> {
+    const filePath = path.join(tmpDir, name);
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    await fs.writeFile(filePath, content, "utf-8");
+    return filePath;
+  }
+
+  beforeAll(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "shacl-mincount-"));
+  });
+
+  afterAll(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it("parses minCount from frontmatter", async () => {
+    await writeFile(
+      "min-count-prop.md",
+      [
+        "---",
+        'exo__Instance_class:',
+        '  - "[[exo__Property]]"',
+        'exo__Property_domain: "[[exo__Asset]]"',
+        "exo__Property_minCount: 1",
+        "exo__Asset_label: exo__Asset_updatedAt",
+        "---",
+      ].join("\n"),
+    );
+    const reg = await ShapeLoader.loadFromVaultFS(tmpDir);
+    const shape = reg.get(`${EXO_NS}Asset_updatedAt`);
+    expect(shape).toBeDefined();
+    expect(shape!.minCount).toBe(1);
+  });
+
+  it("returns undefined minCount when not specified in frontmatter", async () => {
+    await writeFile(
+      "no-min-count.md",
+      [
+        "---",
+        'exo__Instance_class:',
+        '  - "[[exo__Property]]"',
+        'exo__Property_domain: "[[exo__Asset]]"',
+        "exo__Asset_label: exo__Asset_description",
+        "---",
+      ].join("\n"),
+    );
+    const reg = await ShapeLoader.loadFromVaultFS(tmpDir);
+    const shape = reg.get(`${EXO_NS}Asset_description`);
+    expect(shape).toBeDefined();
+    expect(shape!.minCount).toBeUndefined();
+  });
+
+  it("resolves xsd: prefix in range to full XSD IRI", async () => {
+    await writeFile(
+      "xsd-range.md",
+      [
+        "---",
+        'exo__Instance_class:',
+        '  - "[[exo__Property]]"',
+        'exo__Property_domain: "[[exo__Asset]]"',
+        'exo__Property_range: "[[xsd:dateTime]]"',
+        "exo__Asset_label: exo__Asset_createdAt",
+        "---",
+      ].join("\n"),
+    );
+    const reg = await ShapeLoader.loadFromVaultFS(tmpDir);
+    const shape = reg.get(`${EXO_NS}Asset_createdAt`);
+    expect(shape).toBeDefined();
+    expect(shape!.range).toEqual([`${XSD_NS}dateTime`]);
+  });
+
+  it("exo__Asset_updatedAt shape: minCount=1, xsd:dateTime range, sh:Warning severity", async () => {
+    await writeFile(
+      "updatedAt-full.md",
+      [
+        "---",
+        'exo__Instance_class:',
+        '  - "[[exo__Property]]"',
+        'exo__Property_domain: "[[exo__Asset]]"',
+        'exo__Property_range: "[[xsd:dateTime]]"',
+        "exo__Property_minCount: 1",
+        "exo__Property_severity: sh:Warning",
+        "exo__Asset_label: exo__Asset_updatedAt",
+        "---",
+      ].join("\n"),
+    );
+    const reg = await ShapeLoader.loadFromVaultFS(tmpDir);
+    const shape = reg.get(`${EXO_NS}Asset_updatedAt`);
+    expect(shape).toBeDefined();
+    expect(shape!.minCount).toBe(1);
+    expect(shape!.range).toEqual([`${XSD_NS}dateTime`]);
+    expect(shape!.severity).toBe("sh:Warning");
+    expect(shape!.domain).toEqual([`${EXO_NS}Asset`]);
+  });
 });
