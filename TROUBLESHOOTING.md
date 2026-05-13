@@ -1818,3 +1818,34 @@ observer.observe(container, {
 - `../src/*` — relative code references, not web links
 
 **Reference**: Issue #2713 Post-Mortem — PR #2717 fixed docs-link-check
+
+---
+
+## SHACL-lite `sh:maxCount got 2` on Single UUID Wikilink
+
+**Symptom**: `sh:maxCount violation: expected at most 1 value for <predicate>, got 2` — but the frontmatter has only one wikilink value (e.g. `pmbok__RiskItem_project: "[[uuid]]"`).
+
+**Root cause**: Before v15.160.1, `NoteToRDFConverter.valueToRDFObject` emitted dual-storage (IRI + UUID Literal) for **all** UUID-form wikilinks. SHACL cardinality shapes with `sh:maxCount=1` counted both as separate values.
+
+**Fix**: Upgrade to `@kitelev/exocortex-cli@^15.160.1`. Dual-storage is now scoped to `exo__Asset_prototype` only — all other predicates emit a single IRI.
+
+**If still failing after upgrade**:
+
+- Verify the predicate in the violation is NOT `exo__Asset_prototype` (that predicate intentionally emits 2 triples)
+- Check for `exo__Asset_legacyValidationException: "true"` in the asset — if present from the window 2026-05-03 10:00–13:20 UTC+5, it can now be removed
+
+**Reference**: IssueItem ff3858e5, PR #3070
+
+---
+
+## SHACL-lite `sh:class violation` on Enum Instance Wikilink
+
+**Symptom**: `sh:class violation: <pmbok#ClosureOutcomeAllAccepted> does not conform to expected class pmbok#ClosureOutcome` (or similar for RiskImpact, RiskProbability, RiskStatus, etc.).
+
+**Root cause**: Before v15.160.1, resolving `[[pmbok__ClosureOutcomeAllAccepted]]` to namespace IRI `pmbok#ClosureOutcomeAllAccepted` did not emit an `rdf:type` triple. SHACL `sh:class` validation requires `pmbok:ClosureOutcomeAllAccepted rdf:type pmbok:ClosureOutcome` to be present in the graph to confirm conformance.
+
+**Fix**: Upgrade to `@kitelev/exocortex-cli@^15.160.1`. The converter now emits the `rdf:type` triple derived from the target file's `exo__Instance_class` frontmatter.
+
+**Prerequisite**: The enum instance file (e.g. `pmbok__ClosureOutcomeAllAccepted.md`) must have `exo__Instance_class` in its frontmatter pointing to the parent class.
+
+**Reference**: IssueItem ff3858e5, PR #3070

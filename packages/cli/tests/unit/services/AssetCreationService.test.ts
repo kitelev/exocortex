@@ -36,6 +36,20 @@ jest.unstable_mockModule("exocortex", () => ({
     toLocalTimestamp: jest.fn(() => "2026-03-21T15:30:00"),
   },
   MetadataHelpers: mockMetadataHelpers,
+  Namespace: {
+    fromPropertyKey: (key: string) => {
+      const match = /^([a-z][a-zA-Z0-9]*)__(.+)$/.exec(key);
+      if (!match) return null;
+      return {
+        namespace: {
+          term: (localName: string) => ({
+            value: `https://exocortex.my/ontology/${match[1]}#${localName}`,
+          }),
+        },
+        localName: match[2],
+      };
+    },
+  },
 }));
 
 // Mock services
@@ -267,6 +281,137 @@ describe("AssetCreationService", () => {
         expect(result.frontmatter["exo__Asset_relates"]).toEqual(
           ['"[[some-uuid|Label]]"'],
         );
+      });
+    });
+
+    describe("Issue #3099: cardinality-aware wikilink serialization", () => {
+      const propertyIRI = (prefix: string, local: string) =>
+        `https://exocortex.my/ontology/${prefix}#${local}`;
+
+      const buildRegistry = (
+        entries: Array<{ key: string; cardinality: "Single" | "Multiple" }>,
+      ) => {
+        const map = new Map<string, { cardinality: "Single" | "Multiple" }>();
+        for (const { key, cardinality } of entries) {
+          const match = /^([a-z][a-zA-Z0-9]*)__(.+)$/.exec(key);
+          if (!match) continue;
+          map.set(propertyIRI(match[1], match[2]), { cardinality });
+        }
+        return {
+          get: (iri: string) => map.get(iri),
+        };
+      };
+
+      it("should emit scalar for properties declared PropertyCardinalitySingle", async () => {
+        const registry = buildRegistry([
+          { key: "ems__Effort_status", cardinality: "Single" },
+        ]);
+        const singleService = new AssetCreationService(
+          mockFsAdapter as any,
+          mockClassResolver as any,
+          mockWikilinkValidator as any,
+          registry as any,
+        );
+
+        const result = await singleService.create({
+          classShortName: "ems__Task",
+          label: "Test Task",
+          vault: "/vault",
+          properties: {
+            "ems__Effort_status": "[[ems__EffortStatusBacklog]]",
+          },
+        });
+
+        expect(result.frontmatter["ems__Effort_status"]).toBe(
+          '"[[ems__EffortStatusBacklog]]"',
+        );
+      });
+
+      it("should emit array for properties declared PropertyCardinalityMultiple", async () => {
+        const registry = buildRegistry([
+          { key: "ems__Effort_prototype", cardinality: "Multiple" },
+        ]);
+        const multiService = new AssetCreationService(
+          mockFsAdapter as any,
+          mockClassResolver as any,
+          mockWikilinkValidator as any,
+          registry as any,
+        );
+
+        const result = await multiService.create({
+          classShortName: "ems__Task",
+          label: "Test Task",
+          vault: "/vault",
+          properties: {
+            "ems__Effort_prototype": "[[some-uuid|Proto]]",
+          },
+        });
+
+        expect(result.frontmatter["ems__Effort_prototype"]).toEqual([
+          '"[[some-uuid|Proto]]"',
+        ]);
+      });
+
+      it("should emit array (legacy default) for properties not in registry", async () => {
+        const registry = buildRegistry([]);
+        const emptyService = new AssetCreationService(
+          mockFsAdapter as any,
+          mockClassResolver as any,
+          mockWikilinkValidator as any,
+          registry as any,
+        );
+
+        const result = await emptyService.create({
+          classShortName: "ems__Task",
+          label: "Test Task",
+          vault: "/vault",
+          properties: {
+            "ems__Effort_status": "[[ems__EffortStatusBacklog]]",
+          },
+        });
+
+        expect(result.frontmatter["ems__Effort_status"]).toEqual([
+          '"[[ems__EffortStatusBacklog]]"',
+        ]);
+      });
+
+      it("should emit array (legacy default) when no shape registry is provided", async () => {
+        // Service constructed without registry (existing behavior)
+        const result = await service.create({
+          classShortName: "ems__Task",
+          label: "Test Task",
+          vault: "/vault",
+          properties: {
+            "ems__Effort_status": "[[ems__EffortStatusBacklog]]",
+          },
+        });
+
+        expect(result.frontmatter["ems__Effort_status"]).toEqual([
+          '"[[ems__EffortStatusBacklog]]"',
+        ]);
+      });
+
+      it("should leave plain (non-wikilink) values as scalars regardless of cardinality", async () => {
+        const registry = buildRegistry([
+          { key: "custom_prop", cardinality: "Single" },
+        ]);
+        const singleService = new AssetCreationService(
+          mockFsAdapter as any,
+          mockClassResolver as any,
+          mockWikilinkValidator as any,
+          registry as any,
+        );
+
+        const result = await singleService.create({
+          classShortName: "ems__Task",
+          label: "Test Task",
+          vault: "/vault",
+          properties: {
+            "custom_prop": "plain value",
+          },
+        });
+
+        expect(result.frontmatter["custom_prop"]).toBe("plain value");
       });
     });
 

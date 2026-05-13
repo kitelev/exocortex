@@ -8,9 +8,12 @@
   },
   "files": [
     "dist",
+    "bin",
+    "scripts",
     "README.md"
   ],
   "scripts": {
+    "postinstall": "node ./scripts/postinstall.cjs",
     "build": "npm run build:bundle",
     "build:tsc": "tsc",
     "build:bundle": "node esbuild.config.mjs production",

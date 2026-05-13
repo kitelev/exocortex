@@ -57,6 +57,10 @@ export class NoteToRDFConverter {
    */
   private readonly BODY_WIKILINK_PATTERN = /(?<!!)\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g;
 
+  // Side-channel for rdf:type triples emitted by valueToRDFObject for enum instance IRIs.
+  // Reset at start of each convertLegacyNote call, flushed after the frontmatter loop.
+  private pendingExtraTriples: Triple[] = [];
+
   constructor(
     @inject(DI_TOKENS.IVaultAdapter) private readonly vault: IVaultAdapter,
     @inject(DI_TOKENS.ILogger) private readonly logger: ILogger = NullLogger,
@@ -102,6 +106,7 @@ export class NoteToRDFConverter {
     file: IFile,
     frontmatter: Record<string, unknown>
   ): Promise<Triple[]> {
+    this.pendingExtraTriples = [];
     const triples: Triple[] = [];
     const subject = this.notePathToIRI(file.path);
 
@@ -128,7 +133,7 @@ export class NoteToRDFConverter {
           triples.push(new Triple(subject, predicate, objectNode));
         } else {
           // Issue #2102: valueToRDFObject now returns array for dual storage support
-          const objectNodes = await this.valueToRDFObject(val, file);
+          const objectNodes = await this.valueToRDFObject(val, file, predicate);
           for (const objectNode of objectNodes) {
             triples.push(new Triple(subject, predicate, objectNode));
 
@@ -172,6 +177,10 @@ export class NoteToRDFConverter {
         }
       }
     }
+
+    // Flush rdf:type triples emitted by valueToRDFObject for enum instance IRIs (Fix #ff3858e5)
+    triples.push(...this.pendingExtraTriples);
+    this.pendingExtraTriples = [];
 
     // Issue #1329: Index body wikilinks to RDF
     // This enables SPARQL queries to find all notes referencing a target note
@@ -762,44 +771,67 @@ export class NoteToRDFConverter {
     return new IRI(vaultPathToIRI(path));
   }
 
-  private static readonly NAMESPACE_MAP: ReadonlyArray<[string, Namespace]> = [
-    ["exo__", Namespace.EXO],
-    ["ems__", Namespace.EMS],
-    ["exocmd__", Namespace.EXOCMD],
-    ["ims__", Namespace.IMS],
-    ["ztlk__", Namespace.ZTLK],
-    ["ptms__", Namespace.PTMS],
-    ["lit__", Namespace.LIT],
-    ["inbox__", Namespace.INBOX],
-    ["pmbok__", Namespace.PMBOK],
-  ];
-
   private isExocortexProperty(key: string): boolean {
-    return NoteToRDFConverter.NAMESPACE_MAP.some(([prefix]) => key.startsWith(prefix));
+    return Namespace.fromPropertyKey(key) !== null;
   }
 
   private propertyKeyToIRI(key: string): IRI {
-    for (const [prefix, ns] of NoteToRDFConverter.NAMESPACE_MAP) {
-      if (key.startsWith(prefix)) {
-        return ns.term(key.substring(prefix.length));
-      }
+    const parsed = Namespace.fromPropertyKey(key);
+    if (!parsed) {
+      throw new Error(`Invalid property key: ${key}`);
     }
-    throw new Error(`Invalid property key: ${key}`);
+    return parsed.namespace.term(parsed.localName);
+  }
+
+  // Fix #ff3858e5: when emitting a class IRI for an enum instance, also push an
+  // rdf:type triple derived from the target file's exo__Instance_class frontmatter.
+  // This satisfies sh:class constraints in the SHACL-lite engine.
+  //
+  // Also emit exo:Instance_class triple — ShaclLiteValidator.typePredicateIRI is
+  // exo#Instance_class (not rdf:type), so the rdf:type triple alone does not
+  // register the enum-instance IRI as a member of its class for sh:class checks.
+  // Without this, references like [[<uuid>|inbox__Role]] resolve to namespace IRI
+  // <inbox#Role>, but the validator finds no class declaration for that subject
+  // and reports false sh:class violations even when the class file exists.
+  private emitTypeTripleForEnumInstance(classIRI: IRI, targetFile: IFile): void {
+    const targetFm = this.vault.getFrontmatter(targetFile);
+    if (!targetFm) return;
+    const targetInstanceClass = targetFm["exo__Instance_class"];
+    const raw = Array.isArray(targetInstanceClass)
+      ? targetInstanceClass[0]
+      : targetInstanceClass;
+    if (typeof raw !== "string") return;
+    const parentClassIRI = this.valueToClassURI(raw);
+    if (parentClassIRI instanceof IRI) {
+      this.pendingExtraTriples.push(
+        new Triple(classIRI, Namespace.RDF.term("type"), parentClassIRI)
+      );
+      this.pendingExtraTriples.push(
+        new Triple(classIRI, Namespace.EXO.term("Instance_class"), parentClassIRI)
+      );
+    }
   }
 
   /**
    * Converts a frontmatter value to RDF object(s).
    *
-   * Issue #2102: For UUID-based wikilinks, returns both File IRI and UUID Literal
-   * to enable SPARQL queries that search by UUID string.
+   * Dual-storage (IRI + UUID Literal) is emitted ONLY for `exo__Asset_prototype` predicate
+   * (Issue #2102 original design). All other predicates emit a single IRI per wikilink.
+   * Dual-storage on other predicates causes sh:maxCount=1 SHACL violations (Fix #ff3858e5).
+   *
+   * Side effect: may push rdf:type triples into `pendingExtraTriples` when resolving enum
+   * instance wikilinks (e.g. [[pmbok__ClosureOutcomeAllAccepted]]). Caller must flush
+   * `pendingExtraTriples` after the frontmatter loop.
    *
    * @param value - The frontmatter value to convert
    * @param sourceFile - The source file for resolving wikilinks
-   * @returns Array of RDF objects (IRI or Literal). UUID wikilinks return [IRI, Literal].
+   * @param predicate - The predicate IRI being populated (gates dual-storage to Asset_prototype)
+   * @returns Array of RDF objects (IRI or Literal).
    */
   private async valueToRDFObject(
     value: unknown,
-    sourceFile: IFile
+    sourceFile: IFile,
+    predicate?: IRI
   ): Promise<(IRI | Literal)[]> {
     if (typeof value === "string") {
       const cleanValue = this.removeQuotes(value);
@@ -835,6 +867,8 @@ export class NoteToRDFConverter {
             // replace is safe. Mirrors valueToClassURI's Issue #2745 lookup.
             const basenameClassIRI = this.expandClassValue(targetFile.basename);
             if (basenameClassIRI) {
+              // Fix #ff3858e5: emit rdf:type triple so sh:class constraints resolve
+              this.emitTypeTripleForEnumInstance(basenameClassIRI, targetFile);
               return [basenameClassIRI];
             }
             const targetFm = this.vault.getFrontmatter(targetFile);
@@ -843,12 +877,25 @@ export class NoteToRDFConverter {
               if (typeof label === "string") {
                 const labelClassIRI = this.expandClassValue(label);
                 if (labelClassIRI) {
+                  // Fix: emit class-registration triples for label-derived class IRI
+                  // so sh:class constraints resolve for UID-named class declarations
+                  // (e.g. `<uuid>.md` with alias `inbox__Role`).
+                  this.emitTypeTripleForEnumInstance(labelClassIRI, targetFile);
                   return [labelClassIRI];
                 }
               }
             }
 
-            return [fileIRI, uuidLiteral];
+            // Fix #ff3858e5: dual-storage (IRI + UUID Literal) is scoped to
+            // exo__Asset_prototype only. All other predicates emit a single IRI
+            // to avoid sh:maxCount=1 cardinality violations.
+            const isProtoPredicate =
+              predicate?.value.endsWith("#Asset_prototype") ||
+              predicate?.value.endsWith("/Asset_prototype");
+            if (isProtoPredicate) {
+              return [fileIRI, uuidLiteral];
+            }
+            return [fileIRI];
           }
 
           // Issue #2959: When a class-named wikilink resolves to its class
@@ -867,6 +914,8 @@ export class NoteToRDFConverter {
           // is a class reference.
           const basenameClassIRI = this.expandClassValue(targetFile.basename);
           if (basenameClassIRI) {
+            // Fix #ff3858e5: emit rdf:type triple so sh:class constraints resolve
+            this.emitTypeTripleForEnumInstance(basenameClassIRI, targetFile);
             return [basenameClassIRI];
           }
 
@@ -1031,8 +1080,8 @@ export class NoteToRDFConverter {
   }
 
   private isClassReference(value: string): boolean {
-    return NoteToRDFConverter.NAMESPACE_MAP.some(([prefix]) => value.startsWith(prefix))
-      && !/\s/.test(value);
+    if (/\s/.test(value)) return false;
+    return Namespace.fromPropertyKey(value) !== null;
   }
 
   /**
@@ -1058,14 +1107,9 @@ export class NoteToRDFConverter {
 
   private expandClassValue(value: string): IRI | null {
     const cleanValue = this.removeQuotes(value);
-
-    for (const [prefix, ns] of NoteToRDFConverter.NAMESPACE_MAP) {
-      if (cleanValue.startsWith(prefix)) {
-        return ns.term(cleanValue.substring(prefix.length));
-      }
-    }
-
-    return null;
+    const parsed = Namespace.fromPropertyKey(cleanValue);
+    if (!parsed) return null;
+    return parsed.namespace.term(parsed.localName);
   }
 
   /**

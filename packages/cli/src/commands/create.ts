@@ -2,6 +2,7 @@ import { Command } from "commander";
 import { resolve } from "path";
 import { existsSync } from "fs";
 import { readFileSync } from "fs";
+import { ShapeLoader, type ShapeRegistry } from "exocortex";
 import { NodeFsAdapter } from "../adapters/NodeFsAdapter.js";
 import { ClassResolverService } from "../services/ClassResolverService.js";
 import { WikilinkValidator } from "../services/WikilinkValidator.js";
@@ -201,10 +202,22 @@ export function createCommand(): Command {
         const fsAdapter = new NodeFsAdapter(vaultPath);
         const classResolver = new ClassResolverService(fsAdapter);
         const wikilinkValidator = new WikilinkValidator(fsAdapter);
+
+        // Load SHACL-lite shape registry from vault for cardinality-aware
+        // property serialization (issue #3099). Failure here is non-fatal —
+        // proceed with default array wrapping if shapes cannot be loaded.
+        let shapeRegistry: ShapeRegistry | undefined;
+        try {
+          shapeRegistry = await ShapeLoader.loadFromVaultFS(vaultPath);
+        } catch {
+          shapeRegistry = undefined;
+        }
+
         const creationService = new AssetCreationService(
           fsAdapter,
           classResolver,
           wikilinkValidator,
+          shapeRegistry,
         );
 
         // Execute creation

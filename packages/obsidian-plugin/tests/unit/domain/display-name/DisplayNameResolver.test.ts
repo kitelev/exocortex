@@ -277,11 +277,9 @@ describe("DisplayNameResolver", () => {
   });
 
   describe("DEFAULT_DISPLAY_NAME_SETTINGS", () => {
-    it("should have default template with class suffix for all asset types", () => {
-      // Default template now includes class suffix for consistent display across all asset types
-      expect(DEFAULT_DISPLAY_NAME_SETTINGS.defaultTemplate).toBe(
-        "{{exo__Asset_label}} ({{exo__Instance_class}})"
-      );
+    it("should have default template showing label only", () => {
+      // Default template shows just the label — classes needing a suffix have explicit entries in classTemplates
+      expect(DEFAULT_DISPLAY_NAME_SETTINGS.defaultTemplate).toBe("{{exo__Asset_label}}");
     });
 
     it("should have class templates for common classes", () => {
@@ -316,10 +314,10 @@ describe("DisplayNameResolver", () => {
       expect(prototypeResult).toBe("Morning routine (TaskPrototype)");
     });
 
-    it("should use default template with class suffix for unknown asset types", () => {
+    it("should use default template (label only) for unknown asset types", () => {
       const resolver = new DisplayNameResolver(DEFAULT_DISPLAY_NAME_SETTINGS);
 
-      // Custom/unknown asset class should use default template
+      // Unknown class (e.g. ims__Concept, myapp__CustomClass) shows just the label — no class suffix
       const customResult = resolver.resolve({
         metadata: {
           exo__Asset_label: "My Custom Asset",
@@ -327,7 +325,20 @@ describe("DisplayNameResolver", () => {
         },
         basename: "custom-asset",
       });
-      expect(customResult).toBe("My Custom Asset (myapp__CustomClass)");
+      expect(customResult).toBe("My Custom Asset");
+    });
+
+    it("should show label only for ims__Concept (H1 regression fix)", () => {
+      const resolver = new DisplayNameResolver(DEFAULT_DISPLAY_NAME_SETTINGS);
+
+      const result = resolver.resolve({
+        metadata: {
+          exo__Asset_label: "Wikilink in Reading View",
+          exo__Instance_class: ["[[ims__Concept]]"],
+        },
+        basename: "some-concept-uuid",
+      });
+      expect(result).toBe("Wikilink in Reading View");
     });
 
     it("should gracefully handle missing class in default template", () => {

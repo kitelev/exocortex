@@ -1,0 +1,125 @@
+#!/usr/bin/env bash
+# ai-task-worker — scan vault for delegated aiTask, claim atomically, spawn tmux session.
+#
+# Picks tasks where ems__Effort_status=Backlog AND aiTask__Task_delegated="true" AND no claimedBy.
+# Atomic claim via frontmatter update (writes Doing+claimedBy+claimedAt+sessionLog).
+# Spawns a detached tmux session named claude-child-<uuid> executing ai-task-runner,
+# which calls real claude -p --dangerously-skip-permissions with task content as prompt.
+
+set -euo pipefail
+
+VAULT_DIR="${EXOCORTEX_VAULT:-/Users/kitelev/vault-2025}"
+LOG_DIR="$HOME/.exocortex/logs"
+mkdir -p "$LOG_DIR"
+LOG="$LOG_DIR/aitask-worker.log"
+RUNNER="$HOME/.exocortex/bin/ai-task-runner"
+
+log() { echo "[ai-task-worker] $(date '+%Y-%m-%dT%H:%M:%S%z'): $*"; }
+
+log "Scan start (vault=$VAULT_DIR)"
+
+/usr/bin/python3 - "$VAULT_DIR" "$LOG" "$RUNNER" "$$" <<'PYEOF'
+import os, re, sys, datetime, tempfile, shutil, subprocess
+
+vault, log_path, runner, parent_pid = sys.argv[1:5]
+
+def log(msg):
+    ts = datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S%z')
+    print(f"[ai-task-worker] {ts}: {msg}")
+
+def now_iso5():
+    tz5 = datetime.timezone(datetime.timedelta(hours=5))
+    return datetime.datetime.now(tz5).strftime('%Y-%m-%dT%H:%M:%S+0500')
+
+def split_fm(text):
+    if not text.startswith('---'):
+        return None, text
+    end = text.find('\n---', 3)
+    if end == -1:
+        return None, text
+    return text[3:end], text[end+4:]
+
+def set_field(fm, key, val):
+    pat = re.compile(rf'^({re.escape(key)})\s*:.*$', re.MULTILINE)
+    if pat.search(fm):
+        return pat.sub(f'{key}: {val}', fm, 1)
+    return fm.rstrip('\n') + f'\n{key}: {val}\n'
+
+def get_field(fm, key):
+    m = re.search(rf'^{re.escape(key)}\s*:\s*(.*)$', fm, re.MULTILINE)
+    return m.group(1).strip() if m else ''
+
+def write_atomic(path, fm, body):
+    d = os.path.dirname(path)
+    with tempfile.NamedTemporaryFile('w', dir=d, delete=False, suffix='.tmp', encoding='utf-8') as t:
+        t.write(f"---{fm}\n---{body}")
+        tmp = t.name
+    shutil.move(tmp, path)
+
+DELEG_PAT = re.compile(r'aiTask__Task_delegated\s*:\s*"?true"?', re.IGNORECASE)
+BACKLOG_PAT = re.compile(r'ems__Effort_status\s*:\s*["\[]*ems__EffortStatusBacklog')
+CLAIMED_PAT = re.compile(r'^aiTask__Task_claimedBy\s*:', re.MULTILINE)
+
+candidates = []
+for dp, dns, fns in os.walk(vault):
+    dns[:] = [d for d in dns if not d.startswith('.')]
+    for fn in fns:
+        if not fn.endswith('.md'):
+            continue
+        fp = os.path.join(dp, fn)
+        try:
+            content = open(fp, encoding='utf-8').read()
+        except Exception:
+            continue
+        if not content.startswith('---'):
+            continue
+        fm, _ = split_fm(content)
+        if fm is None:
+            continue
+        if not DELEG_PAT.search(fm):
+            continue
+        if not BACKLOG_PAT.search(fm):
+            continue
+        if CLAIMED_PAT.search(fm):
+            continue
+        candidates.append(fp)
+
+log(f"Candidates: {len(candidates)}")
+
+for fp in candidates:
+    try:
+        content = open(fp, encoding='utf-8').read()
+        fm, body = split_fm(content)
+        if fm is None:
+            continue
+        uid = get_field(fm, 'exo__Asset_uid').strip('"')
+        label = get_field(fm, 'exo__Asset_label').strip('"')
+        session_name = f"claude-child-{uid}"
+        session_log = f"{os.path.expanduser('~')}/.exocortex/logs/aitask-session-{uid}.log"
+        ts = now_iso5()
+
+        # Atomic claim — set Doing + claimedBy + claimedAt + sessionLog + startTimestamp + updatedAt
+        new_fm = fm
+        new_fm = set_field(new_fm, 'ems__Effort_status', '"[[ems__EffortStatusDoing]]"')
+        new_fm = set_field(new_fm, 'aiTask__Task_claimedBy', f'"{parent_pid}"')
+        new_fm = set_field(new_fm, 'aiTask__Task_claimedAt', f'"{ts}"')
+        new_fm = set_field(new_fm, 'aiTask__Task_sessionLog', f'"{session_log}"')
+        if 'ems__Effort_startTimestamp' not in new_fm:
+            new_fm = set_field(new_fm, 'ems__Effort_startTimestamp', ts)
+        new_fm = set_field(new_fm, 'exo__Asset_updatedAt', ts)
+        write_atomic(fp, new_fm, body)
+        log(f"CLAIMED {uid} ({label}) → session={session_name}")
+
+        # Spawn detached tmux session named claude-child-<full-uuid>
+        cmd = ['tmux', 'new-session', '-d', '-s', session_name,
+               'bash', '-l', '-c', f"{runner} '{fp}' '{session_log}' 2>&1 | tee -a '{session_log}'"]
+        try:
+            subprocess.run(cmd, check=True)
+            log(f"SPAWNED tmux session {session_name}")
+        except subprocess.CalledProcessError as e:
+            log(f"SPAWN_FAIL {uid}: {e}")
+    except Exception as e:
+        log(f"ERROR {fp}: {e}")
+
+log("Scan done")
+PYEOF

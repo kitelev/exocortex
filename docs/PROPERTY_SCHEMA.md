@@ -12,11 +12,12 @@
 2. [Core Properties (exo\_\_ prefix)](#core-properties-exo-prefix)
 3. [Effort Management Properties (ems\_\_ prefix)](#effort-management-properties-ems-prefix)
 4. [Information Management Properties (ims\_\_ prefix)](#information-management-properties-ims-prefix)
-5. [Personal Notes Properties (pn\_\_ prefix)](#personal-notes-properties-pn-prefix)
-6. [Obsidian Standard Properties](#obsidian-standard-properties)
-7. [Property Inheritance Rules](#property-inheritance-rules)
-8. [Validation Rules](#validation-rules)
-9. [Examples](#examples)
+5. [Property Cardinality Declarations](#property-cardinality-declarations)
+6. [Personal Notes Properties (pn\_\_ prefix)](#personal-notes-properties-pn-prefix)
+7. [Obsidian Standard Properties](#obsidian-standard-properties)
+8. [Property Inheritance Rules](#property-inheritance-rules)
+9. [Validation Rules](#validation-rules)
+10. [Examples](#examples)
 
 ---
 
@@ -126,6 +127,18 @@ aliases:
 
 - Must not be empty
 - Should be descriptive (recommended 3-50 characters)
+
+**Property-asset exception (filename → label fallback)**:
+
+Property-definition assets (those whose `exo__Instance_class` references `exo__Property` or `exo__ObjectProperty`) may omit `exo__Asset_label` when the **filename basename matches the canonical property key** (e.g. `ems__Effort_status.md`). In that case the SHACL-lite shape loader (`ShapeLoader.processFile`) infers the label from the basename — this matches the long-standing convention used by hand-authored ontology files in `03 Knowledge/ems/`, `03 Knowledge/exo/`, etc.
+
+The fallback is intentionally narrow:
+
+- Only triggers when `exo__Asset_label` is absent or empty.
+- Only triggers when the basename parses as `<prefix>__<localName>` via `Namespace.fromPropertyKey`.
+- Does not affect non-property assets.
+
+For all new property assets, **prefer explicit `exo__Asset_label`** — the fallback exists to keep legacy ontology files working without forcing a vault-wide migration.
 
 ---
 
@@ -990,6 +1003,54 @@ Programming (broader)
 ```yaml
 ims__Concept_definition: A typed superset of JavaScript that compiles to plain JavaScript
 ```
+
+---
+
+## 🔢 Property Cardinality Declarations
+
+Property-definition assets may declare their cardinality via `exo__Property_cardinality`. This drives SHACL-lite validation and cardinality-aware serialization in `exocortex-cli create` (see issue #3099).
+
+### exo\_\_Property_cardinality
+
+**Multiplicity constraint for a property**
+
+| Attribute    | Value                                                                                |
+| ------------ | ------------------------------------------------------------------------------------ |
+| **Type**     | WikiLink                                                                             |
+| **Required** | No (omission ≡ `PropertyCardinalityMultiple` — legacy safe default)                  |
+| **Domain**   | Asset of class `exo__Property` or `exo__ObjectProperty`                              |
+| **Range**    | `exo__PropertyCardinalitySingle` or `exo__PropertyCardinalityMultiple`               |
+| **Purpose**  | SHACL-lite cardinality validation; CLI scalar-vs-array YAML serialization            |
+| **Mutable**  | ✅ Yes — adding/changing the declaration takes effect on the next CLI/validator load |
+
+**Example — single-valued property**:
+
+```yaml
+# /Users/.../03 Knowledge/ems/ems__Effort_status.md
+---
+exo__Asset_uid: 44c6e9e3-955f-4afc-9ca5-b4bd70667051
+exo__Instance_class:
+  - "[[exo__ObjectProperty]]"
+exo__Property_domain: "[[ems__Effort]]"
+exo__Property_range: "[[ems__EffortStatus]]"
+exo__Property_cardinality: "[[exo__PropertyCardinalitySingle]]"
+---
+```
+
+With this declaration, `exocortex-cli create --property ems__Effort_status=[[…]]` emits the value as a scalar:
+
+```yaml
+ems__Effort_status: "[[ems__EffortStatusBacklog]]" # ✅ scalar
+```
+
+Without the declaration (or with `PropertyCardinalityMultiple`), the value is wrapped in a single-entry YAML array — the legacy default preserved for backward compatibility:
+
+```yaml
+ems__Effort_status:
+  - "[[ems__EffortStatusBacklog]]" # legacy default
+```
+
+**Migration guidance**: declare `PropertyCardinalitySingle` on properties that are semantically single-valued (status, parent, area, prototype-target, plannedStartTimestamp, etc.). The declaration is opt-in — unmarked properties retain the existing array-form serialization.
 
 ---
 
