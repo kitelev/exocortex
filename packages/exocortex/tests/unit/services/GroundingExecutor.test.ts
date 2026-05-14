@@ -812,7 +812,7 @@ describe("GroundingExecutor", () => {
 
       expect(result.success).toBe(true);
       const [, content] = writer.createFile.mock.calls[0];
-      expect(content).toContain(`"[[test-asset]]"`);
+      expect(content).toContain(`"[[vault/test-asset]]"`);
     });
 
     it("should add aliases when label is provided", async () => {
@@ -915,7 +915,7 @@ describe("GroundingExecutor", () => {
       expect(content).toContain("exo__Asset_label: Купить молоко");
       expect(content).toContain("gtd__InboxItem");
       expect(content).toContain("proto-daily-review-uuid");
-      expect(content).toContain(`"[[test-asset]]"`);
+      expect(content).toContain(`"[[vault/test-asset]]"`);
 
       // Verify UUID in path matches UUID in frontmatter
       const pathUuid = path.split("/").pop()?.replace(".md", "");
@@ -1022,7 +1022,7 @@ describe("GroundingExecutor", () => {
         await executor.execute(grounding, TARGET_IRI, FILE_PATH, { label: "Sub" });
 
         const [, content] = writer.createFile.mock.calls[0];
-        expect(content).toContain(`ems__Effort_parent: "[[test-asset]]"`);
+        expect(content).toContain(`ems__Effort_parent: "[[vault/test-asset]]"`);
         expect(content).not.toContain("exo__Asset_source:");
       });
 
@@ -1038,7 +1038,7 @@ describe("GroundingExecutor", () => {
         await executor.execute(grounding, TARGET_IRI, FILE_PATH);
 
         const [, content] = writer.createFile.mock.calls[0];
-        expect(content).toContain(`exo__Asset_source: "[[test-asset]]"`);
+        expect(content).toContain(`exo__Asset_source: "[[vault/test-asset]]"`);
         expect(content).not.toContain("ems__Effort_prevIteration:");
       });
 
@@ -1055,7 +1055,7 @@ describe("GroundingExecutor", () => {
         await executor.execute(grounding, TARGET_IRI, FILE_PATH, { label: "Next" });
 
         const [, content] = writer.createFile.mock.calls[0];
-        expect(content).toContain(`ems__Effort_prevIteration: "[[test-asset]]"`);
+        expect(content).toContain(`ems__Effort_prevIteration: "[[vault/test-asset]]"`);
         expect(content).not.toContain("exo__Asset_source:");
         expect(content).not.toContain("[[ems__Effort_prevIteration]]:");
       });
@@ -1108,7 +1108,7 @@ describe("GroundingExecutor", () => {
 
         expect(result.success).toBe(true);
         const [, content] = writer.createFile.mock.calls[0];
-        expect(content).toContain(`exo__Asset_source: "[[test-asset]]"`);
+        expect(content).toContain(`exo__Asset_source: "[[vault/test-asset]]"`);
         expect(content).not.toMatch(/ems__Effort_parent: "\[\[https/);
         expect(content).not.toMatch(/ems__Effort_prevIteration:/);
       });
@@ -1127,7 +1127,7 @@ describe("GroundingExecutor", () => {
         expect(result.success).toBe(true);
         const [, content] = writer.createFile.mock.calls[0];
         expect(content).toContain('exo__Instance_class:\n  - "[[ems__Task]]"');
-        expect(content).toContain(`exo__Asset_source: "[[test-asset]]"`);
+        expect(content).toContain(`exo__Asset_source: "[[vault/test-asset]]"`);
         expect(content).not.toContain("exo__Asset_prototype:");
       });
 
@@ -1165,7 +1165,7 @@ describe("GroundingExecutor", () => {
 
         expect(result.success).toBe(true);
         const [, content] = writer.createFile.mock.calls[0];
-        expect(content).toContain(`exo__Asset_source: "[[test-asset]]"`);
+        expect(content).toContain(`exo__Asset_source: "[[vault/test-asset]]"`);
       });
     });
 

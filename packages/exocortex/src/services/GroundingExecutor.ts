@@ -648,19 +648,18 @@ export class GroundingExecutor {
   }
 
   /**
-   * Derive a stable wikilink target (UID-form filename) for the back-link
-   * property write from the source asset's filesystem path. Falls back to
-   * decoding the obsidian:// URL when no fs path is provided. Without this
-   * normalization the executor would emit `[[obsidian://vault/.../<uid>.md]]`
-   * instead of the desired `[[<uid>]]` form.
+   * Derive a stable wikilink target (vault-relative path, no `.md` suffix) for
+   * the back-link property write. Falls back to decoding the `obsidian://` URL
+   * when no fs path is provided. Without this normalization the executor would
+   * emit `[[obsidian://vault/.../<uid>.md]]` instead of the desired
+   * `[[<folder>/<basename>]]` form that Obsidian resolves directly.
    */
   private static extractBacklinkTarget(targetIRI: string, targetFilePath: string): string {
     if (targetFilePath) {
-      const m = targetFilePath.match(/([^/]+?)(?:\.md)?$/);
-      if (m && m[1]) return m[1];
+      return targetFilePath.replace(/\.md$/i, "").replace(/^\/+/, "");
     }
     if (targetIRI) {
-      const m = targetIRI.match(/\/([^/]+?)(?:\.md)?(?:\?|#|$)/);
+      const m = targetIRI.match(/^obsidian:\/\/vault\/(.+?)(?:\.md)?(?:\?|#|$)/i);
       if (m && m[1]) {
         try {
           return decodeURIComponent(m[1]);

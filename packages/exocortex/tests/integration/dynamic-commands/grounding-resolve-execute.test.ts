@@ -274,7 +274,7 @@ describe("RFC da3a7555 — RDF → Resolver → Executor pipeline (create_instan
     const content = fs.getContent(createdPath!)!;
 
     // MUST use ems__Effort_prevIteration, NOT legacy exo__Asset_source.
-    expect(content).toContain(`ems__Effort_prevIteration: "[[${SOURCE_UID}]]"`);
+    expect(content).toContain(`ems__Effort_prevIteration: "[[${SOURCE_FILE_PATH.replace(/\.md$/, "")}]]"`);
     expect(content).not.toContain("exo__Asset_source:");
     // Must NOT contain the obsidian:// URL form (regression marker).
     expect(content).not.toMatch(/\[\[obsidian:\/\/vault/);
@@ -334,6 +334,6 @@ describe("RFC da3a7555 — RDF → Resolver → Executor pipeline (create_instan
     expect(content).not.toMatch(/\nexo__Asset_uid: 36e54b4c/);
     expect(content).not.toMatch(/^aliases:\n.*- "Source Task"/m);
     // Back-link present.
-    expect(content).toContain(`ems__Effort_prevIteration: "[[${SOURCE_UID}]]"`);
+    expect(content).toContain(`ems__Effort_prevIteration: "[[${SOURCE_FILE_PATH.replace(/\.md$/, "")}]]"`);
   });
 });
