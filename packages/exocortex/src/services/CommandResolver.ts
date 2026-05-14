@@ -811,8 +811,8 @@ export class CommandResolver {
     }
     const targetValue = await this.getObsidianWikilinkValue(subject, Namespace.EXOCMD.term("Grounding_targetValue"));
     const sparqlUpdate = await this.getLiteralValue(subject, Namespace.EXOCMD.term("Grounding_sparqlUpdate"));
-    const targetClass = await this.getLiteralValue(subject, Namespace.EXOCMD.term("Grounding_targetClass"));
-    const targetPrototype = await this.getLiteralValue(subject, Namespace.EXOCMD.term("Grounding_targetPrototype"));
+    const targetClass = await this.getObsidianName(subject, Namespace.EXOCMD.term("Grounding_targetClass"));
+    const targetPrototype = await this.getObsidianName(subject, Namespace.EXOCMD.term("Grounding_targetPrototype"));
     const targetFolder = await this.getLiteralValue(subject, Namespace.EXOCMD.term("Grounding_targetFolder"));
     const linkBackProperty = await this.getObsidianName(subject, Namespace.EXOCMD.term("Grounding_linkBackProperty"));
     const inputSchemaRaw = await this.getLiteralValue(subject, Namespace.EXOCMD.term("Grounding_inputSchema"));
@@ -980,16 +980,44 @@ export class CommandResolver {
 
   /**
    * Reverse-map an IRI to Obsidian-style property name (e.g., ems__Effort_status).
-   * Falls back to getLiteralValue for Literal objects.
+   * Falls back to unwrapWikilink for Literal objects (which may carry
+   * wikilink-wrapped property references like "[[<UID>|ems__Effort_prevIteration]]").
    */
   private async getObsidianName(subject: IRI, predicate: IRI): Promise<string | null> {
     const triples = await this.tripleStore.match(subject, predicate, undefined);
     if (triples.length === 0) return null;
 
     const obj = triples[0].object;
-    if (obj instanceof Literal) return obj.value;
+    if (obj instanceof Literal) return this.unwrapWikilink(obj.value);
     if (obj instanceof IRI) return this.iriToObsidianName(obj.value) ?? obj.value;
     return null;
+  }
+
+  /**
+   * Unwrap a property-style reference into a bare short-name. Accepts:
+   *   - `[[<UID>|<short-name>]]` → `<short-name>` (alias path — primary case)
+   *   - `[[<short-name>]]` → `<short-name>`
+   *   - `<full-IRI>` (e.g. `https://exocortex.my/ontology/ems#Task`) → `ems__Task`
+   *   - bare `<short-name>` → unchanged
+   * Returns the input unchanged when no pattern matches (legacy fallback).
+   */
+  private unwrapWikilink(value: string): string {
+    if (!value) return value;
+    const trimmed = value.trim().replace(/^"|"$/g, "");
+    if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+      return this.iriToObsidianName(trimmed) ?? trimmed;
+    }
+    const aliasMatch = trimmed.match(/^\[\[([^\]|]+)\|([^\]]+)\]\]$/);
+    if (aliasMatch) return aliasMatch[2].trim();
+    const plainMatch = trimmed.match(/^\[\[([^\]|]+)\]\]$/);
+    if (plainMatch) {
+      const inner = plainMatch[1].trim();
+      if (inner.startsWith("http://") || inner.startsWith("https://")) {
+        return this.iriToObsidianName(inner) ?? inner;
+      }
+      return inner;
+    }
+    return trimmed;
   }
 
   /**

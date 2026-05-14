@@ -540,7 +540,8 @@ export class GroundingExecutor {
     // groundings that have no `Grounding_linkBackProperty` set.
     if (targetIRI) {
       const backLinkProp = grounding.linkBackProperty ?? "exo__Asset_source";
-      properties[backLinkProp] = `"[[${targetIRI}]]"`;
+      const backLinkTarget = GroundingExecutor.extractBacklinkTarget(targetIRI, targetFilePath);
+      properties[backLinkProp] = `"[[${backLinkTarget}]]"`;
     }
 
     const content = this.frontmatterService.createFrontmatter("", properties);
@@ -644,5 +645,30 @@ export class GroundingExecutor {
     }
 
     return result;
+  }
+
+  /**
+   * Derive a stable wikilink target (UID-form filename) for the back-link
+   * property write from the source asset's filesystem path. Falls back to
+   * decoding the obsidian:// URL when no fs path is provided. Without this
+   * normalization the executor would emit `[[obsidian://vault/.../<uid>.md]]`
+   * instead of the desired `[[<uid>]]` form.
+   */
+  private static extractBacklinkTarget(targetIRI: string, targetFilePath: string): string {
+    if (targetFilePath) {
+      const m = targetFilePath.match(/([^/]+?)(?:\.md)?$/);
+      if (m && m[1]) return m[1];
+    }
+    if (targetIRI) {
+      const m = targetIRI.match(/\/([^/]+?)(?:\.md)?(?:\?|#|$)/);
+      if (m && m[1]) {
+        try {
+          return decodeURIComponent(m[1]);
+        } catch {
+          return m[1];
+        }
+      }
+    }
+    return targetIRI;
   }
 }
