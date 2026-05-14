@@ -124,6 +124,15 @@ export class NoteToRDFConverter {
       const values = Array.isArray(value) ? value : [value];
 
       for (const val of values) {
+        // Skip empty-string exo__Asset_label values — Literal() rejects empty
+        // strings. Basename fallback below will synthesise the label triple.
+        if (
+          key === "exo__Asset_label" &&
+          typeof val === "string" &&
+          val.trim() === ""
+        ) {
+          continue;
+        }
         // Issue #663: For exo__Instance_class, always use namespace URIs for class references
         // This enables canonical SPARQL JOINs: ?s exo:Instance_class ?class . ?class exo:Asset_label ?label .
         // Previously, if the class file existed, we'd use the file URI which couldn't be joined with
@@ -178,18 +187,26 @@ export class NoteToRDFConverter {
       }
     }
 
-    // Issue #3101: For non-UIDified class files (e.g. exo__Class.md) the label
-    // is not present in frontmatter but can be inferred from the basename.
-    // Emit rdfs:label + exo:Asset_label when frontmatter lacks exo__Asset_label.
-    if (!("exo__Asset_label" in frontmatter)) {
-      const inferredLabel = NoteToRDFConverter.inferLabelFromBasename(file.basename);
-      if (inferredLabel !== null) {
-        const rdfsLabel = Namespace.RDFS.term("label");
-        const exoAssetLabel = Namespace.EXO.term("Asset_label");
-        const labelLiteral = new Literal(inferredLabel);
-        triples.push(new Triple(subject, rdfsLabel, labelLiteral));
-        triples.push(new Triple(subject, exoAssetLabel, labelLiteral));
-      }
+    // exo__Asset_label fallback: when an Exocortex asset's frontmatter lacks
+    // a usable label (missing, empty string, or empty array), synthesise
+    // rdfs:label + exo:Asset_label from the file basename. Plain markdown
+    // notes (no Exocortex properties) do not get synthesised labels.
+    const looksLikeAsset =
+      "exo__Instance_class" in frontmatter ||
+      "exo__Asset_uid" in frontmatter;
+    const rawLabel = frontmatter["exo__Asset_label"];
+    const hasUsableLabel =
+      "exo__Asset_label" in frontmatter &&
+      rawLabel !== null &&
+      rawLabel !== undefined &&
+      !(typeof rawLabel === "string" && rawLabel.trim() === "") &&
+      !(Array.isArray(rawLabel) && rawLabel.length === 0);
+    if (looksLikeAsset && !hasUsableLabel) {
+      const rdfsLabel = Namespace.RDFS.term("label");
+      const exoAssetLabel = Namespace.EXO.term("Asset_label");
+      const labelLiteral = new Literal(file.basename);
+      triples.push(new Triple(subject, rdfsLabel, labelLiteral));
+      triples.push(new Triple(subject, exoAssetLabel, labelLiteral));
     }
 
     // Flush rdf:type triples emitted by valueToRDFObject for enum instance IRIs (Fix #ff3858e5)
@@ -695,22 +712,17 @@ export class NoteToRDFConverter {
       return null;
     }
 
-    // For non-UIDified class files (e.g. exo__Class.md) the label is encoded
-    // in the filename — skip the exo__Asset_label requirement when inferrable.
-    const inferredLabel = basename
-      ? NoteToRDFConverter.inferLabelFromBasename(basename)
-      : null;
+    // exo__Asset_label is no longer required — convertNote falls back to
+    // file.basename when the frontmatter property is missing or empty.
+    // The unused `basename` parameter is kept for API compatibility.
+    void basename;
 
     const REQUIRED_PROPERTIES = [
       "exo__Asset_uid",
       "exo__Asset_isDefinedBy",
-      "exo__Asset_label",
       "exo__Instance_class",
     ];
     for (const key of REQUIRED_PROPERTIES) {
-      if (key === "exo__Asset_label" && inferredLabel !== null) {
-        continue; // label will be synthesised from basename
-      }
       if (!(key in frontmatter)) {
         return {
           code: "MISSING_PROPERTY",
