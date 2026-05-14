@@ -959,13 +959,32 @@ export class NoteToRDFConverter {
 
           return [fileIRI];
         }
-        // If target file not found but wikilink is a class reference,
-        // expand to namespace URI (Issue #667, #668: normalize Instance_class/Property_domain)
+        // Three-step wikilink resolver (RFC 4724eb62, phased rollout).
+        // Step 1: canonical namespace mapping for prefix__LocalName form.
+        // Issue #667, #668 — normalize Instance_class/Property_domain.
         if (this.isClassReference(wikilink)) {
           const classIRI = this.expandClassValue(wikilink);
           if (classIRI) {
             return [classIRI];
           }
+        }
+        // Step 2 (vault file lookup) reached the no-match branch above
+        // (`getFirstLinkpathDest` returned null).
+        // Step 3 (phase A — UUID-form only): synthesised vault-path IRI
+        // when the linkpath is a UUID. Narrow scope intentionally — Fix 3
+        // attempt 1 (PR #3106) broadened this to all unresolved wikilinks
+        // and broke 4 E2E specs that depend on non-UUID identifier wikilinks
+        // (e.g. `[[e2e-bind-status-done-for-tasks]]` in test vault) flowing
+        // as Literal so downstream `CommandResolver.normalizeWikilink` can
+        // extract the bare reference. Phase B will widen to non-UUID forms
+        // once those downstream paths are migrated.
+        //
+        // Strip optional `|alias` suffix — the alias is a display hint.
+        const linkpath = wikilink.includes("|")
+          ? wikilink.split("|")[0]
+          : wikilink;
+        if (this.isUUID(linkpath)) {
+          return [this.notePathToIRI(`${linkpath}.md`)];
         }
         return [new Literal(cleanValue)];
       }
