@@ -959,15 +959,27 @@ export class NoteToRDFConverter {
 
           return [fileIRI];
         }
-        // If target file not found but wikilink is a class reference,
-        // expand to namespace URI (Issue #667, #668: normalize Instance_class/Property_domain)
+        // Three-step wikilink resolver (RFC 4724eb62-7396-4928-a129-1d17a0f190ee).
+        // Step 1: canonical namespace mapping for prefix__LocalName form.
+        // Issue #667, #668 — normalize Instance_class/Property_domain.
         if (this.isClassReference(wikilink)) {
           const classIRI = this.expandClassValue(wikilink);
           if (classIRI) {
             return [classIRI];
           }
         }
-        return [new Literal(cleanValue)];
+        // Step 2 (vault file lookup) reached the no-match branch above
+        // (`getFirstLinkpathDest` returned null).
+        // Step 3: synthesised vault-path IRI for unresolved wikilinks.
+        // Behavioral rule (aiKnow 64d2a7ac-cf4a-4f81-80f0-4982ae63cbf0):
+        // `[[...]]` is always an asset reference (existing or future).
+        // Never emit Literal — dangling link allowed.
+        // Strip optional `|alias` suffix before synthesising path; the alias
+        // is a display hint, not part of the identity.
+        const linkpath = wikilink.includes("|")
+          ? wikilink.split("|")[0]
+          : wikilink;
+        return [this.notePathToIRI(`${linkpath}.md`)];
       }
 
       if (this.isClassReference(cleanValue)) {
