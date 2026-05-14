@@ -55,12 +55,11 @@ describe("Issue #3101: Infer exo__Asset_label from filename", () => {
     });
   });
 
-  describe("validateExocortexAsset with basename", () => {
-    it("should not require exo__Asset_label when basename is inferrable", () => {
+  describe("validateExocortexAsset — exo__Asset_label is optional", () => {
+    it("should not require exo__Asset_label when basename is class-like", () => {
       const frontmatter = {
         exo__Asset_uid: "8619c4fc-64f1-4869-b17e-e34186cacca9",
         exo__Asset_isDefinedBy: "[[!exo]]",
-        // no exo__Asset_label
         exo__Instance_class: ["[[exo__Class]]"],
       };
 
@@ -68,21 +67,18 @@ describe("Issue #3101: Infer exo__Asset_label from filename", () => {
       expect(result).toBeNull();
     });
 
-    it("should still require exo__Asset_label when basename is not inferrable", () => {
+    it("should not require exo__Asset_label for plain (non-class-like) basenames", () => {
       const frontmatter = {
         exo__Asset_uid: "11111111-1111-1111-1111-111111111111",
         exo__Asset_isDefinedBy: "[[!exo]]",
-        // no exo__Asset_label
         exo__Instance_class: ["[[ems__Task]]"],
       };
 
       const result = converter.validateExocortexAsset(frontmatter, "plain-file-name");
-      expect(result).not.toBeNull();
-      expect(result?.code).toBe("MISSING_PROPERTY");
-      expect(result?.property).toBe("exo__Asset_label");
+      expect(result).toBeNull();
     });
 
-    it("should still require exo__Asset_label when no basename provided", () => {
+    it("should not require exo__Asset_label when no basename provided", () => {
       const frontmatter = {
         exo__Asset_uid: "11111111-1111-1111-1111-111111111111",
         exo__Asset_isDefinedBy: "[[!exo]]",
@@ -90,9 +86,19 @@ describe("Issue #3101: Infer exo__Asset_label from filename", () => {
       };
 
       const result = converter.validateExocortexAsset(frontmatter);
-      expect(result).not.toBeNull();
-      expect(result?.code).toBe("MISSING_PROPERTY");
-      expect(result?.property).toBe("exo__Asset_label");
+      expect(result).toBeNull();
+    });
+
+    it("should not flag empty-string exo__Asset_label", () => {
+      const frontmatter = {
+        exo__Asset_uid: "11111111-1111-1111-1111-111111111111",
+        exo__Asset_isDefinedBy: "[[!exo]]",
+        exo__Asset_label: "",
+        exo__Instance_class: ["[[ems__Task]]"],
+      };
+
+      const result = converter.validateExocortexAsset(frontmatter, "my-note");
+      expect(result).toBeNull();
     });
   });
 
@@ -189,6 +195,66 @@ describe("Issue #3101: Infer exo__Asset_label from filename", () => {
       expect(result.skippedFiles).toHaveLength(0);
       expect(result.summary.indexed).toBe(1);
       expect(result.summary.skipped).toBe(0);
+    });
+
+    it("should fall back to basename for plain (non-class-like) files when label missing", async () => {
+      const file: IFile = {
+        path: "03 Knowledge/kitelev/Wim Hof (Person).md",
+        basename: "Wim Hof (Person)",
+        name: "Wim Hof (Person).md",
+        parent: null,
+      };
+
+      mockVault.getFrontmatter.mockReturnValue({
+        exo__Asset_uid: "b2acc0e7-cd0f-4629-b3bd-5447fc03bf9b",
+        exo__Asset_isDefinedBy: "[[!kitelev]]",
+        // no exo__Asset_label — should fall back to basename
+        exo__Instance_class: ["[[1bd359f1-1fd8-447a-a82b-584cd7d7d515|ims__Person]]"],
+      });
+      mockVault.read.mockResolvedValue("");
+      mockVault.getFirstLinkpathDest.mockReturnValue(null);
+
+      const triples = await converter.convertNote(file);
+
+      const rdfsLabelIRI = Namespace.RDFS.term("label").value;
+      const exoAssetLabelIRI = Namespace.EXO.term("Asset_label").value;
+
+      const basenameLabel = triples.find(
+        (t) =>
+          (t.predicate.value === rdfsLabelIRI || t.predicate.value === exoAssetLabelIRI) &&
+          t.object instanceof Literal &&
+          (t.object as Literal).value === "Wim Hof (Person)",
+      );
+      expect(basenameLabel).toBeDefined();
+    });
+
+    it("should fall back to basename when exo__Asset_label is empty string", async () => {
+      const file: IFile = {
+        path: "03 Knowledge/some-note.md",
+        basename: "some-note",
+        name: "some-note.md",
+        parent: null,
+      };
+
+      mockVault.getFrontmatter.mockReturnValue({
+        exo__Asset_uid: "33333333-3333-3333-3333-333333333333",
+        exo__Asset_isDefinedBy: "[[!exo]]",
+        exo__Asset_label: "",
+        exo__Instance_class: ["[[ems__Task]]"],
+      });
+      mockVault.read.mockResolvedValue("");
+      mockVault.getFirstLinkpathDest.mockReturnValue(null);
+
+      const triples = await converter.convertNote(file);
+
+      const rdfsLabelIRI = Namespace.RDFS.term("label").value;
+      const basenameLabel = triples.find(
+        (t) =>
+          t.predicate.value === rdfsLabelIRI &&
+          t.object instanceof Literal &&
+          (t.object as Literal).value === "some-note",
+      );
+      expect(basenameLabel).toBeDefined();
     });
   });
 });
