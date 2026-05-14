@@ -3081,7 +3081,11 @@ It can contain **markdown** formatting.
         expect(iriValues.some((v) => v.includes(uuid2))).toBe(true);
       });
 
-      it("should not create duplicate Literal when wikilink target file doesn't exist", async () => {
+      it("should emit single synthesised IRI for UUID wikilink when target file doesn't exist", async () => {
+        // RFC 4724eb62 Phase A: UUID-form wikilinks emit synthesised vault-path
+        // IRI (dangling link) when target file is missing, not Literal.
+        // Non-UUID wikilinks remain Literal — see Phase A scope tests in
+        // NoteToRDFConverter.uniform-wikilink.test.ts.
         const uuid = "e3347bcf-bb50-4fb7-9064-14266469384b";
 
         // File not found
@@ -3100,10 +3104,11 @@ It can contain **markdown** formatting.
           (t.predicate as IRI).value.includes("Asset_prototype")
         );
 
-        // When file doesn't exist, should fall back to literal (existing behavior)
-        // Should be 1 triple, not 2 (no dual storage when file doesn't exist)
         expect(prototypeTriples.length).toBe(1);
-        expect(prototypeTriples[0].object).toBeInstanceOf(Literal);
+        expect(prototypeTriples[0].object).toBeInstanceOf(IRI);
+        expect((prototypeTriples[0].object as IRI).value).toBe(
+          `obsidian://vault/${uuid}.md`
+        );
       });
 
       // Issue #2489: Verify dual storage with display name wikilink syntax
