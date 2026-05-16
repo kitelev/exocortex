@@ -202,26 +202,51 @@ exo__Asset_isDefinedBy: "[[Ontology/EMS]]"
 
 **Asset type classification (one or more types)**
 
-| Attribute        | Value                                                   |
-| ---------------- | ------------------------------------------------------- |
-| **Type**         | Array of WikiLinks                                      |
-| **Required**     | ✅ Yes (ALL assets)                                     |
-| **Format**       | `['"[[AssetClassValue]]"']` (quoted WikiLinks in array) |
-| **Purpose**      | Determine asset type for UI rendering and commands      |
-| **Generated**    | Based on creation context (see `INSTANCE_CLASS_MAP`)    |
-| **Mutable**      | Rarely (type usually fixed at creation)                 |
-| **Valid Values** | See `AssetClass` enum                                   |
+| Attribute          | Value                                                                    |
+| ------------------ | ------------------------------------------------------------------------ |
+| **Type**           | Array of WikiLinks                                                       |
+| **Required**       | ✅ Yes (ALL assets)                                                      |
+| **Canonical form** | **Form C — bare UUID** `"[[<class-uuid>]]"` (see _Canonical form_ below) |
+| **Purpose**        | Determine asset type for UI rendering and commands                       |
+| **Generated**      | Based on creation context (see `INSTANCE_CLASS_MAP`)                     |
+| **Mutable**        | Rarely (type usually fixed at creation)                                  |
+| **Valid Values**   | See `AssetClass` enum                                                    |
 
-**Example**:
+#### Canonical form (decided 2026-05-16, issue #3123)
+
+For new assets the canonical encoding of `exo__Instance_class` values is **Form C — bare UUID wikilink**:
 
 ```yaml
 exo__Instance_class:
-  - "[[ems__Task]]"
+  - "[[1b20a8f0-d745-4e93-91db-4531b3df120e]]" # ems__Task
+```
 
-# Or multiple classes
+Two non-canonical legacy forms are still accepted by the converter and are **semantically equivalent** for RDF/SHACL purposes — see `TROUBLESHOOTING.md` § _exo\_\_Instance_class wikilink form mismatch — all forms RDF-equivalent_ — but new assets must not emit them:
+
+| Form | Example                                                 | Status        |
+| ---- | ------------------------------------------------------- | ------------- |
+| A    | `"[[ems__Task]]"`                                       | Legacy (warn) |
+| B    | `"[[1b20a8f0-d745-4e93-91db-4531b3df120e\|ems__Task]]"` | Legacy (warn) |
+| C    | `"[[1b20a8f0-d745-4e93-91db-4531b3df120e]]"`            | **Canonical** |
+
+**Why Form C:**
+
+1. **Symbolic stability** — UUID is immutable; renaming the class file (label change) never breaks the wikilink.
+2. **Storage consistency** — every class asset is already stored under its UUID filename (`<UUID>.md`); Form C navigates directly to the canonical file with no shim required.
+3. **Zero RDF semantic difference** — `NoteToRDFConverter.valueToClassURI` resolves all three forms to the same namespace IRI via `Namespace.fromPropertyKey`; file existence is _not_ consulted for class wikilinks. Empirically confirmed in the 2026-05-16 SHACL deep-dive (n=305 files migrated A → C, total SHACL violations 307 → 307).
+4. **No shim files needed** — Form A requires a label-named `<ClassName>.md` shim alongside the UUID-named original for Obsidian navigation; Form C avoids that duplication entirely.
+
+**Enforcement:**
+
+- Pre-write hook `~/.claude/hooks/validate-wikilinks.sh` emits a `warn` (not block) when an asset write contains a non-Form-C `exo__Instance_class` entry. Pre-existing files are untouched; the warning fires only on new content.
+- The `/exocortex-asset` skill template emits Form C for all `exo__Instance_class` examples and references.
+
+**Multiple classes example**:
+
+```yaml
 exo__Instance_class:
-  - "[[ems__Task]]"
-  - "[[ims__Concept]]"
+  - "[[1b20a8f0-d745-4e93-91db-4531b3df120e]]" # ems__Task
+  - "[[08691c91-3d64-4f6c-a475-ec46daa1c1fb]]" # ims__Concept
 ```
 
 **Valid Asset Classes**:
