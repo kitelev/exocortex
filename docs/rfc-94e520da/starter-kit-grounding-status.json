@@ -8,14 +8,15 @@
     "totalGroundings": 48,
     "byType": {
       "property_delete": 4,
-      "service_call": 25,
+      "service_call": 24,
       "create_instance": 1,
       "property_set": 16,
-      "composite": 2
+      "composite": 2,
+      "property_append": 1
     },
     "byCliStatus": {
-      "real": 38,
-      "unregistered": 7,
+      "real": 39,
+      "unregistered": 6,
       "stub": 3
     },
     "serviceIdCounts": {
@@ -30,7 +31,6 @@
       "repairFolder": 1,
       "archiveAsset": 1,
       "rollbackStatus": 1,
-      "copyLabelToAliases": 1,
       "shiftDay": 2,
       "planOnToday": 1,
       "incrementVotes": 1,
@@ -218,9 +218,9 @@
       "uid": "a85668fa-17b7-45d0-aa7f-935e2502dff0",
       "label": "Copy label to aliases via service",
       "path": "exocmd/maintenance/a85668fa-17b7-45d0-aa7f-935e2502dff0.md",
-      "type": "service_call",
-      "serviceId": "copyLabelToAliases",
-      "cliStatus": "unregistered"
+      "type": "property_append",
+      "serviceId": null,
+      "cliStatus": "real"
     },
     {
       "uid": "c4616dcd-3832-4812-b289-0968510fb8be",

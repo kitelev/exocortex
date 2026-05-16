@@ -178,6 +178,14 @@ export class GroundingExecutor {
             userInput,
           );
 
+        case GroundingType.PROPERTY_APPEND:
+          return await this.executePropertyAppend(
+            grounding,
+            targetIRI,
+            targetFilePath,
+            userInput,
+          );
+
         case GroundingType.SPARQL_UPDATE:
           return {
             success: false,
@@ -627,13 +635,45 @@ export class GroundingExecutor {
     value: string,
     targetIRI: string,
     userInput?: UserInput,
+    targetFrontmatter?: Record<string, string | string[]>,
   ): string {
     const date = new Date();
     const now = date.toISOString();
     const nowLocal = DateFormatter.toLocalTimestamp(date);
     const today = now.slice(0, 10);
 
-    let result = value
+    // Issue #3132: `$target.<propertyName>` reads from target asset
+    // frontmatter. MUST run before bare `$target` substitution (more-specific
+    // first), otherwise `$target.foo` would become `<IRI>.foo`. If
+    // targetFrontmatter is not supplied (e.g. legacy property_set call sites),
+    // any `$target.<prop>` token throws — fail-loud, never silently emits a
+    // half-substituted literal.
+    let result = value.replace(/\$target\.([A-Za-z_][\w]*)/g, (_, prop) => {
+      if (!targetFrontmatter) {
+        throw new Error(
+          `$target.${prop} substitution requires target frontmatter context; ` +
+            `none was supplied (asset IRI: ${targetIRI})`,
+        );
+      }
+      const fmValue = targetFrontmatter[prop];
+      if (fmValue === undefined || fmValue === null) {
+        throw new Error(
+          `$target.${prop} is undefined on asset ${targetIRI}`,
+        );
+      }
+      if (Array.isArray(fmValue)) {
+        // Array properties cannot be substituted into a scalar position —
+        // refuse rather than emit YAML-like `[a, b]` literal.
+        throw new Error(
+          `$target.${prop} resolved to an array on asset ${targetIRI}; ` +
+            `only scalar properties are supported for substitution`,
+        );
+      }
+      // Strip surrounding YAML quotes if present (parseObject preserves them).
+      return String(fmValue).replace(/^["'](.*)["']$/, "$1");
+    });
+
+    result = result
       .replace(/\$target/g, targetIRI)
       .replace(/\$nowLocal/g, nowLocal)
       .replace(/\$now/g, now)
@@ -645,6 +685,89 @@ export class GroundingExecutor {
     }
 
     return result;
+  }
+
+  /**
+   * Append a resolved value to a frontmatter array property with Set-based
+   * dedup. Issue #3132 — declarative replacement for `service_call` /
+   * `copyLabelToAliases` (Homoiconicity Invariant Q1).
+   *
+   * Reads:
+   * - `grounding.targetProperty` — array property to append to (e.g. `aliases`).
+   * - `grounding.targetValue` — value to append, with substituteVariables
+   *   resolution (supports `$target.<prop>` dotted-property reads from target
+   *   asset frontmatter).
+   *
+   * Behavior:
+   * - Empty / missing array → write `[resolvedValue]`.
+   * - Existing array without value → append.
+   * - Existing array containing value → no-op (idempotent — Set-based dedup).
+   *
+   * Errors (plain Error with structured message — `GroundingError` class is
+   * not yet introduced in the codebase; existing executors also use Error):
+   * - Missing `targetProperty` / `targetValue` on the grounding definition.
+   * - `$target.<prop>` resolved to undefined / null / array.
+   */
+  private async executePropertyAppend(
+    grounding: GroundingDefinition,
+    targetIRI: string,
+    filePath: string,
+    userInput?: UserInput,
+  ): Promise<ExecutionResult> {
+    if (!grounding.targetProperty) {
+      return {
+        success: false,
+        error: "property_append requires targetProperty",
+      };
+    }
+    if (grounding.targetValue === undefined) {
+      return {
+        success: false,
+        error: "property_append requires targetValue",
+      };
+    }
+
+    const content = await this.fileReader.readFile(filePath);
+    const targetFrontmatter =
+      this.frontmatterService.parseObject(content) ?? {};
+
+    const resolvedValue = this.substituteVariables(
+      grounding.targetValue,
+      targetIRI,
+      userInput,
+      targetFrontmatter,
+    );
+
+    const existingRaw = targetFrontmatter[grounding.targetProperty];
+    const existing: string[] = Array.isArray(existingRaw)
+      ? existingRaw
+      : existingRaw !== undefined
+        ? [String(existingRaw)]
+        : [];
+
+    // Set-based dedup. Compare against unquoted form so a stored
+    // `"Foo"` (with YAML quotes) does not duplicate a plain `Foo`.
+    const stripQuotes = (s: string): string =>
+      s.replace(/^["'](.*)["']$/, "$1");
+    const seen = new Set(existing.map(stripQuotes));
+    let merged: string[];
+    if (seen.has(stripQuotes(resolvedValue))) {
+      merged = existing;
+    } else {
+      // Preserve YAML-quoted form for string values to round-trip safely
+      // through serializeValue (matches LabelToAliasService behavior).
+      const formatted = `"${stripQuotes(resolvedValue)}"`;
+      merged = [...existing, formatted];
+    }
+
+    const updated = this.frontmatterService.updateProperty(
+      content,
+      grounding.targetProperty,
+      merged,
+    );
+    await this.fileWriter.updateFile(filePath, updated);
+
+    return { success: true };
   }
 
   /**
