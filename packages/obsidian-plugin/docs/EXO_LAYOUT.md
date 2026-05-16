@@ -227,41 +227,22 @@ expected a Layout, check:
 4. The Layout file itself is inside the vault (the repository subscribes
    to `vault` events, not `metadataCache`-synthesised ones).
 
-## Bootstrap (auto-installed ontology)
+## Installing the `exo__Layout` ontology
 
-Since RFC exo**Layout Phase 4 shipped, the plugin auto-installs the 18
-`exo**Layout`ontology assets (4 classes + 14 properties) into a hidden`\_exocortex-exo-layout-ontology/` folder on first load. Without these
-assets, Layout and Block wikilinks would dangle and nothing would render.
-The install is **idempotent and UID-aware**:
+The 18 `exo__Layout` ontology assets (4 classes + 14 properties) are **not
+auto-installed** by the plugin (see #3125 — TBox distribution is user
+responsibility). Install them yourself via one of:
 
-- If any of the 18 UUIDs are already present anywhere in the vault (e.g.
-  you imported the starter-kit `exo/` folder manually), the bootstrap
-  skips them — no duplicates.
-- If the hidden folder already has the files (second plugin load), nothing
-  is written.
-- If only a subset is present, only the missing files are created.
+- Copy the `exo/` ontology folder from
+  [`kitelev/exocortex-starter-kit`](https://github.com/kitelev/exocortex-starter-kit)
+  into your vault (any folder — plugin reads by UUID, not by path).
+- Or wire the `kitelev/exocortex-exo-ontology` repo under
+  `assetspaces/exo/` per RFC-D vault layout.
 
-**Troubleshooting bootstrap:**
-
-- `exocortex:ExoLayoutOntologyBootstrapper: installed N ontology file(s)`
-  in the console — normal on first load (N ≤ 18).
-- `exocortex:ExoLayoutOntologyBootstrapper: failed to install <path>: <err>` —
-  a single write failed (e.g. the folder was momentarily locked). The
-  bootstrap continues with the remaining files; re-open the vault to
-  retry.
-- `exocortex:ExoLayoutOntologyBootstrapper: bootstrap failed: <err>` — an
-  unexpected error aborted the whole run. The plugin still loads; Layouts
-  that reference the missing ontology classes will log `unknown block
-class` warnings. Copy the 18 files from
-  `kitelev/exocortex-starter-kit/exo/` manually as a workaround.
-- If the `_exocortex-exo-layout-ontology/` folder clutters your file
-  explorer, hide dot-files / underscore-prefixed folders in Obsidian's
-  Files & Links settings.
-- **Do not edit** the 18 auto-installed files in place — the plugin
-  treats them as an ontology source-of-truth. If you want to customise
-  (e.g. add a new `aliases` entry), copy the file to a non-hidden folder
-  and delete the original; the UID-aware bootstrap will then honour your
-  copy and never regenerate the underscore-folder version.
+If the ontology is absent the plugin loads without error; Layout-based
+rendering falls back to the default Asset Relations table. Layouts that
+reference unknown ontology classes will log `unknown block class`
+warnings in the console.
 
 ## Migrating from `ui__RelationColumnSet`
 

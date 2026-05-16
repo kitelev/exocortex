@@ -77,10 +77,6 @@ import { GraphViewPatch } from "./presentation/graph-view/GraphViewPatch";
 import { PrintNameRuleService } from "./domain/display-name/PrintNameRuleService";
 import { ObsidianFileSystemAdapter } from "./adapters/ObsidianFileSystemAdapter";
 import { populateServiceRegistry } from "./infrastructure/services/ServiceRegistryPopulator";
-import { UiOntologyBootstrapper } from "./infrastructure/ontology/UiOntologyBootstrapper";
-import { ObsidianUiOntologyBootstrapperVault } from "./infrastructure/ontology/ObsidianUiOntologyBootstrapperVault";
-import { ExoLayoutOntologyBootstrapper } from "./infrastructure/ontology/ExoLayoutOntologyBootstrapper";
-import { ObsidianExoLayoutOntologyBootstrapperVault } from "./infrastructure/ontology/ObsidianExoLayoutOntologyBootstrapperVault";
 
 /**
  * Exocortex Plugin - Automatic layout rendering
@@ -216,41 +212,6 @@ export default class ExocortexPlugin extends Plugin {
         vaultAdapter: this.vaultAdapter,
       });
 
-      // Issue #2943 — install the `ui__RelationColumnSet` ontology (7 files)
-      // into the vault before the repository initialises, so the snapshot
-      // can pick up the class + property assets on first rebuild.
-      //
-      // Idempotency is UID-first (`metadataCache.getFirstLinkpathDest`) then
-      // path-level — catches legacy copies at non-default folders (e.g.
-      // starter-kit `03 Knowledge/ui/` convention) and prevents duplicate
-      // `exo__Asset_uid` assets on plugin upgrade. Errors on individual
-      // writes are logged but do not abort plugin load.
-      try {
-        const bootstrapResult = await new UiOntologyBootstrapper(
-          new ObsidianUiOntologyBootstrapperVault(
-            this.app.vault,
-            this.app.metadataCache,
-          ),
-        ).bootstrap();
-        if (bootstrapResult.created.length > 0) {
-          this.logger.info("UiOntologyBootstrapper", {
-            message: `installed ${bootstrapResult.created.length} ontology file(s)`,
-            created: bootstrapResult.created,
-          });
-        }
-        if (bootstrapResult.errors.length > 0) {
-          for (const err of bootstrapResult.errors) {
-            this.logger.warn("UiOntologyBootstrapper", {
-              message: `failed to install ${err.path}: ${err.error.message}`,
-            });
-          }
-        }
-      } catch (err) {
-        this.logger.warn("UiOntologyBootstrapper", {
-          message: `bootstrap failed: ${err instanceof Error ? err.message : String(err)}`,
-        });
-      }
-
       // RFC be70f741 Phase 3 — wire RelationColumnSetRepository + Resolver so
       // `UniversalLayoutRenderer` → `RelationsRenderer` can consult the index
       // when composing `groupSpecificProperties`.  Initialize BEFORE the
@@ -274,40 +235,6 @@ export default class ExocortexPlugin extends Plugin {
         () => repo.getSnapshot().all,
         { logger: relationColumnSetLogger },
       );
-
-      // RFC exo__Layout Phase 4 — install the 18-file `exo__Layout` ontology
-      // (4 classes + 14 properties) into the vault before the repository
-      // initialises, so the snapshot can pick up the class + property assets
-      // on first rebuild. Without this, a vault that has not manually imported
-      // the starter-kit `exo/` folder cannot render any `exo__Layout` asset
-      // (wikilinks dangle). Idempotency is UID-first then path-level — same
-      // semantics as the `ui__RelationColumnSet` bootstrapper (v15.121.1).
-      try {
-        const exoLayoutBootstrapResult =
-          await new ExoLayoutOntologyBootstrapper(
-            new ObsidianExoLayoutOntologyBootstrapperVault(
-              this.app.vault,
-              this.app.metadataCache,
-            ),
-          ).bootstrap();
-        if (exoLayoutBootstrapResult.created.length > 0) {
-          this.logger.info("ExoLayoutOntologyBootstrapper", {
-            message: `installed ${exoLayoutBootstrapResult.created.length} ontology file(s)`,
-            created: exoLayoutBootstrapResult.created,
-          });
-        }
-        if (exoLayoutBootstrapResult.errors.length > 0) {
-          for (const err of exoLayoutBootstrapResult.errors) {
-            this.logger.warn("ExoLayoutOntologyBootstrapper", {
-              message: `failed to install ${err.path}: ${err.error.message}`,
-            });
-          }
-        }
-      } catch (err) {
-        this.logger.warn("ExoLayoutOntologyBootstrapper", {
-          message: `bootstrap failed: ${err instanceof Error ? err.message : String(err)}`,
-        });
-      }
 
       // RFC exo__Layout Phase 2 — wire ExoLayoutRepository + LayoutSelector
       // using the same live-snapshot pattern as RelationColumnSet.
