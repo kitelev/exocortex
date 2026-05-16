@@ -125,6 +125,12 @@ describe("classesCommand", () => {
       const cacheOption = cmd.options.find(opt => opt.flags.includes("--use-cache"));
       expect(cacheOption).toBeDefined();
     });
+
+    // Issue #3043 Phase B: schema introspection AC requires `describe-class` name.
+    it("should expose describe-class alias (#3043 RFC §B)", () => {
+      const cmd = classesCommand();
+      expect(cmd.aliases()).toContain("describe-class");
+    });
   });
 
   describe("vault validation", () => {

@@ -41,7 +41,11 @@ interface PropertyInfo {
  */
 export function classesCommand(): Command {
   return new Command("classes")
-    .description("List RDF classes in Obsidian vault or show class details")
+    .alias("describe-class")
+    .description(
+      "List RDF classes in vault, or describe a class (predicates + counts). " +
+      "Alias `describe-class` is provided per #3043 RFC §B (schema introspection).",
+    )
     .argument("[class-name]", "Optional class name to show details (e.g., ems__Task)")
     .option("--vault <path>", "Path to Obsidian vault", process.cwd())
     .option("--format <type>", "Output format: table|json", "table")
