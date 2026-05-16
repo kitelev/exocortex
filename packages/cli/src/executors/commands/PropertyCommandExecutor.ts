@@ -3,6 +3,7 @@ import { BaseCommandExecutor, CommandContext } from "./BaseCommandExecutor.js";
 import { ErrorHandler } from "../../utils/ErrorHandler.js";
 import { ExitCodes } from "../../utils/ExitCodes.js";
 import { DateFormatter } from "exocortex";
+import { rewriteInboundWikilinks } from "../../utils/wikilinkRewriter.js";
 
 /**
  * Executes property-related commands (rename-to-uid, update-label, schedule, set-deadline)
@@ -52,6 +53,19 @@ export class PropertyCommandExecutor extends BaseCommandExecutor {
           }
         }
         console.log(`[dry-run] Would rename: ${relativePath} -> ${newPath}`);
+        // Inbound wikilink preview (Issue #3113)
+        const linkPreview = await rewriteInboundWikilinks(
+          this.pathResolver.getVaultRoot(),
+          currentBasename,
+          targetBasename,
+          { dryRun: true, excludeRelPath: relativePath },
+        );
+        console.log(
+          `[dry-run] Would update links in ${linkPreview.filesModified} file(s)` +
+            (linkPreview.filesModified > 0
+              ? ` (${linkPreview.replacements} replacement(s))`
+              : ""),
+        );
         console.log(`\n💡 Run without --dry-run to apply changes`);
         process.exit(ExitCodes.SUCCESS);
       }
@@ -79,12 +93,26 @@ export class PropertyCommandExecutor extends BaseCommandExecutor {
         console.log(`   Updated label: "${currentBasename}"`);
       }
 
+      // Update inbound wikilinks before renaming (Issue #3113).
+      const linkResult = await rewriteInboundWikilinks(
+        this.pathResolver.getVaultRoot(),
+        currentBasename,
+        targetBasename,
+        { dryRun: false, excludeRelPath: relativePath },
+      );
+
       // Rename file
       await this.fsAdapter.renameFile(relativePath, newPath);
 
       console.log(`✅ Renamed to UID format`);
       console.log(`   Old: ${relativePath}`);
       console.log(`   New: ${newPath}`);
+      console.log(
+        `   Updated links in ${linkResult.filesModified} file(s)` +
+          (linkResult.filesModified > 0
+            ? ` (${linkResult.replacements} replacement(s))`
+            : ""),
+      );
       process.exit(ExitCodes.SUCCESS);
     } catch (error) {
       ErrorHandler.handle(error as Error);
