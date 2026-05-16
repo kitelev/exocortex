@@ -56,6 +56,11 @@ export function createProgram(version?: string): Command {
 
   addQuerySubcommands(exoqlCommand);
 
+  // RFC 8e83442b (CLI v16) T1.7/T1.8: top-level aliases for query and index
+  // (exoql namespace is scheduled for removal in T2.5, this is the replacement surface)
+  program.addCommand(sparqlQueryCommand());
+  program.addCommand(sparqlIndexCommand());
+
   // Deprecated alias: sparql → exoql (prints deprecation warning)
   const sparqlCommand = program
     .command("sparql")
