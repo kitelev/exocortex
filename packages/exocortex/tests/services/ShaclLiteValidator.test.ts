@@ -489,6 +489,63 @@ describe('validate — range conformance (literal values)', () => {
     expect(report.violations).toHaveLength(1);
     expect(report.violations[0].expectedRange).toBe(`${XSD}integer`);
   });
+
+  // Issue #3115: dual-storage for exo__Asset_prototype emits both IRI and UUID
+  // Literal. The Literal must NOT trigger an sh:datatype violation when the
+  // shape's range is a class IRI (sh:class semantics — Literals are skipped).
+  it('T34: literal value against class-IRI range → no violation (dual-storage tolerance, Issue #3115)', () => {
+    const shape = makeShape({
+      propertyIRI: `${EXO}Asset_prototype`,
+      domain: [`${EXO}Asset`],
+      range: [`${EXO}Asset`],
+    });
+    const targetUUID = 'f2dccb6a-802d-48d3-8e8a-2c4264197692';
+    const targetIRI = `vault://kitelev/${targetUUID}.md`;
+    const triples = [
+      typeTriple('node:A', `${EXO}Asset`),
+      typeTriple(targetIRI, `${EXO}Asset`),
+      iriTriple('node:A', `${EXO}Asset_prototype`, targetIRI),
+      litTriple('node:A', `${EXO}Asset_prototype`, targetUUID),
+    ];
+    const report = validate(triples, makeRegistry([shape]), flatHierarchy);
+    expect(report.conforms).toBe(true);
+    expect(report.violations).toHaveLength(0);
+  });
+
+  it('T35: literal-only value against class-IRI range → no violation (sh:class skips Literals)', () => {
+    const shape = makeShape({
+      propertyIRI: `${EXO}Asset_prototype`,
+      domain: [`${EXO}Asset`],
+      range: [`${EXO}Asset`],
+    });
+    const triples = [
+      typeTriple('node:A', `${EXO}Asset`),
+      litTriple('node:A', `${EXO}Asset_prototype`, 'some-uuid-string'),
+    ];
+    const report = validate(triples, makeRegistry([shape]), flatHierarchy);
+    // sh:class doesn't apply to Literals; range has no XSD datatype entries.
+    expect(report.violations.filter((v) => v.message.includes('sh:datatype'))).toHaveLength(0);
+  });
+
+  it('T36: mixed range (class IRI + xsd:string) — Literal validated against datatype subset', () => {
+    const shape = makeShape({
+      propertyIRI: `${EMS}Effort_mixed`,
+      range: [`${EMS}Foo`, `${XSD}string`],
+    });
+    const triplesOk = [
+      typeTriple('node:A', `${EMS}Effort`),
+      litTriple('node:A', `${EMS}Effort_mixed`, 'plain string'),
+    ];
+    expect(validate(triplesOk, makeRegistry([shape]), flatHierarchy).violations).toHaveLength(0);
+
+    const triplesBad = [
+      typeTriple('node:B', `${EMS}Effort`),
+      litTriple('node:B', `${EMS}Effort_mixed`, '42', `${XSD}integer`),
+    ];
+    const badReport = validate(triplesBad, makeRegistry([shape]), flatHierarchy);
+    expect(badReport.violations).toHaveLength(1);
+    expect(badReport.violations[0].message).toContain('sh:datatype');
+  });
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
