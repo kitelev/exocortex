@@ -2,6 +2,7 @@ import fs from "fs-extra";
 import path from "path";
 import yaml from "js-yaml";
 import { IVaultAdapter, IFile, IFolder, IFrontmatter } from "exocortex";
+import { rewriteInboundWikilinks } from "../utils/wikilinkRewriter.js";
 
 /** UUID v4 pattern for wikilink resolution */
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -291,12 +292,21 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
     };
   }
 
+  /**
+   * Rewrites inbound wikilinks pointing at `oldBasename` so they target the
+   * new file's basename, preserving the original basename as the display
+   * alias (UID-form convention). Honors fenced/inline code-block exclusion
+   * and skips the file being renamed itself. Issue #3113.
+   */
   async updateLinks(
-    _oldPath: string,
-    _newPath: string,
-    _oldBasename: string,
+    oldPath: string,
+    newPath: string,
+    oldBasename: string,
   ): Promise<void> {
-    return Promise.resolve();
+    const newBasename = path.basename(newPath, ".md");
+    await rewriteInboundWikilinks(this.rootPath, oldBasename, newBasename, {
+      excludeRelPath: oldPath,
+    });
   }
 
   private resolvePath(filePath: string): string {
