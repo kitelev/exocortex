@@ -23,6 +23,19 @@ export CI=1
 export DEBUG=pw:browser*
 export ELECTRON_ENABLE_LOGGING=0
 
+# Issue #3024 — Block Obsidian auto-update endpoints.
+# Obsidian binary is pinned at 1.9.14 in Dockerfile.ci, but at runtime Obsidian
+# polls releases.obsidian.md on first launch and starts a background asar.gz
+# download for any newer version. That download races plugin-load assertions in
+# e2e-shard-1 (dynamic-commands.spec.ts:38) and causes intermittent timeouts.
+# Routing the update endpoints to 127.0.0.1 makes the check fail fast so the
+# plugin reaches "loaded" state deterministically. Plugin downloads still work
+# (those resolve through github.com, untouched).
+{
+  echo "127.0.0.1 releases.obsidian.md"
+  echo "127.0.0.1 publish.obsidian.md"
+} >> /etc/hosts 2>/dev/null || echo "WARN: could not pin update endpoints in /etc/hosts" >&2
+
 XVFB_VARIANT="${XVFB_VARIANT:-v1+v2}"
 
 echo "========================================" >&2
