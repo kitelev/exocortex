@@ -38,6 +38,18 @@ export interface ExocortexInvariantViolation {
 }
 
 /**
+ * Issue #3043 Phase 1 (RFC 871c1e56 A-series): whitelist of unprefixed
+ * frontmatter keys that index as `exo:Asset_<key>` triples. The whitelist is
+ * intentionally narrow — extending it requires an explicit decision because
+ * every entry trades indexer simplicity for triple-graph growth.
+ */
+const UNPREFIXED_ASSET_FIELDS: ReadonlySet<string> = new Set([
+  "archived",
+  "draft",
+  "pinned",
+]);
+
+/**
  * Service for converting Obsidian notes (frontmatter + wikilinks) to RDF triples.
  *
  * @example
@@ -116,11 +128,19 @@ export class NoteToRDFConverter {
     triples.push(new Triple(subject, fileNamePredicate, new Literal(file.basename)));
 
     for (const [key, value] of Object.entries(frontmatter)) {
-      if (!this.isExocortexProperty(key)) {
+      // Issue #3043 Phase 1: whitelisted unprefixed frontmatter keys are
+      // indexed under the `exo:Asset_<key>` predicate so SPARQL queries like
+      // `?s exo:Asset_archived true` can match assets that carry the bare
+      // Obsidian-style flag in frontmatter (`archived: true`). Keys outside
+      // the whitelist remain skipped to avoid uncontrolled triple growth.
+      const normalizedKey = UNPREFIXED_ASSET_FIELDS.has(key)
+        ? `exo__Asset_${key}`
+        : key;
+      if (!this.isExocortexProperty(normalizedKey)) {
         continue;
       }
 
-      const predicate = this.propertyKeyToIRI(key);
+      const predicate = this.propertyKeyToIRI(normalizedKey);
       const values = Array.isArray(value) ? value : [value];
 
       for (const val of values) {
