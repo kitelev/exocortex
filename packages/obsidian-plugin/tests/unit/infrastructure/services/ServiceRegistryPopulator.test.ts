@@ -129,7 +129,6 @@ describe("ServiceRegistryPopulator", () => {
       "planForEvening",
       "shiftDay",
       "incrementVotes",
-      "copyLabelToAliases",
       "createRelatedTask",
       "createRelatedProject",
       "archiveAsset",
@@ -461,7 +460,6 @@ describe("ServiceRegistryPopulator (with vaultAdapter)", () => {
       "planForEvening",
       "shiftDay",
       "incrementVotes",
-      "copyLabelToAliases",
       "createRelatedTask",
       "createRelatedProject",
       "archiveAsset",
@@ -476,6 +474,10 @@ describe("ServiceRegistryPopulator (with vaultAdapter)", () => {
     for (const id of vaultDependentIds) {
       expect(registry.has(id)).toBe(true);
     }
+  });
+
+  it("should NOT register copyLabelToAliases (Issue #3132 — migrated to declarative property_append)", () => {
+    expect(registry.has("copyLabelToAliases")).toBe(false);
   });
 
   describe("rollbackStatus", () => {
@@ -567,18 +569,10 @@ describe("ServiceRegistryPopulator (with vaultAdapter)", () => {
     });
   });
 
-  describe("copyLabelToAliases", () => {
-    it("should resolve file and add label to aliases", async () => {
-      const service = registry.get("copyLabelToAliases")!;
-      await service.execute("test-uid-123");
-
-      expect(deps.vaultAdapter!.read).toHaveBeenCalledWith(mockIFile);
-      expect(deps.vaultAdapter!.modify).toHaveBeenCalledWith(
-        mockIFile,
-        expect.stringContaining("aliases"),
-      );
-    });
-  });
+  // describe("copyLabelToAliases", ...) removed — Issue #3132 migrated the
+  // grounding to declarative property_append; the registry registration no
+  // longer exists. See GroundingExecutor.property_append.test.ts for new
+  // coverage at the executor layer.
 
   describe("createRelatedTask", () => {
     it("should create a related task with ems__Effort_parent link", async () => {

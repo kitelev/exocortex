@@ -63,17 +63,22 @@ describe("RFC 94e520da T1.5 starter-kit grounding audit fixture", () => {
   });
 
   it("matches the expected type/cliStatus distribution", () => {
+    // Issue #3132: grounding a85668fa-… migrated from service_call
+    // (copyLabelToAliases) to declarative property_append, reducing
+    // service_call count by 1, introducing property_append count = 1, and
+    // moving 1 grounding from unregistered to real.
     expect(fixture.summary.byType).toEqual({
-      service_call: 25,
+      service_call: 24,
       property_set: 16,
       property_delete: 4,
       composite: 2,
       create_instance: 1,
+      property_append: 1,
     });
     expect(fixture.summary.byCliStatus).toEqual({
-      real: 38,
+      real: 39,
       stub: 3,
-      unregistered: 7,
+      unregistered: 6,
     });
   });
 
@@ -108,7 +113,8 @@ describe("RFC 94e520da T1.5 starter-kit grounding audit fixture", () => {
       "rollbackStatus",
       "incrementVotes",
       "createTaskForDailyNote",
-      "copyLabelToAliases",
+      // copyLabelToAliases removed in Issue #3132 — grounding migrated to
+      // declarative property_append (no longer a service_call).
     ]);
 
     for (const g of fixture.groundings) {

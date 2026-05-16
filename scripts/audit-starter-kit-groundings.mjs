@@ -44,7 +44,8 @@ const KNOWN_UNREGISTERED_SERVICE_IDS = new Set([
   "rollbackStatus",
   "incrementVotes",
   "createTaskForDailyNote",
-  "copyLabelToAliases",
+  // copyLabelToAliases removed in Issue #3132 — grounding a85668fa-… migrated
+  // to declarative `property_append` (Homoiconicity Q1 remediation).
 ]);
 
 function parseArgs(argv) {
