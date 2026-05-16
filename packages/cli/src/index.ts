@@ -4,11 +4,7 @@ import "reflect-metadata";
 import { Command } from "commander";
 import { sparqlQueryCommand } from "./commands/sparql-query.js";
 import { sparqlIndexCommand } from "./commands/sparql-index.js";
-import { sparqlTemplatesCommand } from "./commands/sparql-templates.js";
-import { commandCommand } from "./commands/command.js";
 import { watchCommand } from "./commands/watch.js";
-import { batchCommand } from "./commands/batch.js";
-import { batchRepairCommand } from "./commands/batch-repair.js";
 import { resolveCommand } from "./commands/resolve.js";
 import { askCommand } from "./commands/ask.js";
 import { dailyReviewCommand } from "./commands/daily-review.js";
@@ -18,28 +14,23 @@ import { createCommand } from "./commands/create.js";
 import { archiveCommand } from "./commands/archive.js";
 import { unarchiveCommand } from "./commands/unarchive.js";
 import { workflowCommand } from "./commands/workflow.js";
-import { dynamicCommandCommand } from "./commands/dynamic-command.js";
-import { convertCommand } from "./commands/convert.js";
 import { migrateRelColSetToExoLayoutCommand } from "./commands/migrate-relcolset-to-exolayout.js";
 import { daemonCommand } from "./commands/daemon.js";
 import { backfillCommand } from "./commands/backfill.js";
 import { recoverCommand } from "./commands/recover.js";
+import { findCommand } from "./commands/find.js";
+import { applyCommand } from "./commands/apply.js";
 
 // Version injected at build time by esbuild (see esbuild.config.mjs)
 declare const __CLI_VERSION__: string;
 
 /**
- * Attach query subcommands (query, index, templates) to a parent command.
- */
-function addQuerySubcommands(parent: Command): void {
-  parent.addCommand(sparqlQueryCommand());
-  parent.addCommand(sparqlIndexCommand());
-  parent.addCommand(sparqlTemplatesCommand());
-}
-
-/**
  * Create the CLI program with all commands registered.
  * Exported for testing.
+ *
+ * RFC 8e83442b (CLI v16.0) — Unix-style surface:
+ *   5 verbs: find, apply, query, index, validate.
+ *   Removed: batch, batch-repair, command, dyncommand, exoql, convert, sparql (deprecated alias).
  */
 export function createProgram(version?: string): Command {
   const program = new Command();
@@ -49,45 +40,23 @@ export function createProgram(version?: string): Command {
     .description("CLI tool for Exocortex knowledge management system")
     .version(version ?? __CLI_VERSION__);
 
-  // Primary command: exoql
-  const exoqlCommand = program
-    .command("exoql")
-    .description("ExoQL query execution and cache management");
-
-  addQuerySubcommands(exoqlCommand);
-
-  // RFC 8e83442b (CLI v16) T1.7/T1.8: top-level aliases for query and index
-  // (exoql namespace is scheduled for removal in T2.5, this is the replacement surface)
+  // Five core verbs (RFC 8e83442b)
+  program.addCommand(findCommand());
+  program.addCommand(applyCommand());
   program.addCommand(sparqlQueryCommand());
   program.addCommand(sparqlIndexCommand());
+  program.addCommand(validateCommand());
 
-  // Deprecated alias: sparql → exoql (prints deprecation warning)
-  const sparqlCommand = program
-    .command("sparql")
-    .description("(deprecated) Use 'exoql' instead");
-
-  addQuerySubcommands(sparqlCommand);
-
-  // Hook fires before any sparql subcommand action runs
-  sparqlCommand.hook("preAction", () => {
-    console.error('⚠️  "sparql" is deprecated. Use "exoql" instead.');
-  });
-
-  program.addCommand(commandCommand());
+  // Auxiliary commands retained from v15
   program.addCommand(watchCommand());
-  program.addCommand(batchCommand());
-  program.addCommand(batchRepairCommand());
   program.addCommand(resolveCommand());
   program.addCommand(askCommand());
   program.addCommand(dailyReviewCommand());
-  program.addCommand(validateCommand());
   program.addCommand(classesCommand());
   program.addCommand(createCommand());
   program.addCommand(archiveCommand());
   program.addCommand(unarchiveCommand());
   program.addCommand(workflowCommand());
-  program.addCommand(dynamicCommandCommand());
-  program.addCommand(convertCommand());
   program.addCommand(migrateRelColSetToExoLayoutCommand());
   program.addCommand(daemonCommand());
   program.addCommand(backfillCommand());

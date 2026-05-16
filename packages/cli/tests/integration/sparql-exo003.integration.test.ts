@@ -173,7 +173,7 @@ describeOrSkip("SPARQL queries on Exo 0.0.3 format (Issue #1367)", () => {
 
       // Query for owl:sameAs triples
       const result = await runCLI([
-        "sparql", "query",
+        "query",
         "SELECT ?s ?o WHERE { ?s <http://www.w3.org/2002/07/owl#sameAs> ?o } LIMIT 10",
         "--vault", tempDir,
         "--format", "json",
@@ -215,7 +215,7 @@ describeOrSkip("SPARQL queries on Exo 0.0.3 format (Issue #1367)", () => {
 
       // Query for the statement triple
       const result = await runCLI([
-        "sparql", "query",
+        "query",
         "SELECT ?s ?p ?o WHERE { ?s ?p ?o . FILTER(CONTAINS(STR(?s), 'task-1')) } LIMIT 10",
         "--vault", tempDir,
         "--format", "json",
@@ -241,7 +241,7 @@ describeOrSkip("SPARQL queries on Exo 0.0.3 format (Issue #1367)", () => {
       );
 
       const result = await runCLI([
-        "sparql", "query",
+        "query",
         "SELECT ?s ?p ?o WHERE { ?s ?p ?o . FILTER(CONTAINS(STR(?s), 'resource/1')) } LIMIT 10",
         "--vault", tempDir,
         "--format", "json",
@@ -273,7 +273,7 @@ describeOrSkip("SPARQL queries on Exo 0.0.3 format (Issue #1367)", () => {
       );
 
       const result = await runCLI([
-        "sparql", "query",
+        "query",
         "SELECT ?s ?o WHERE { ?s <https://exocortex.my/ontology/exo#Asset_label> ?o } LIMIT 10",
         "--vault", tempDir,
         "--format", "json",
@@ -296,7 +296,7 @@ describeOrSkip("SPARQL queries on Exo 0.0.3 format (Issue #1367)", () => {
 
       // Should not error when loading namespace files
       const result = await runCLI([
-        "sparql", "query",
+        "query",
         "SELECT ?s ?p ?o WHERE { ?s ?p ?o } LIMIT 1",
         "--vault", tempDir,
         "--format", "json",
@@ -324,7 +324,7 @@ describeOrSkip("SPARQL queries on Exo 0.0.3 format (Issue #1367)", () => {
 
       // Query for Asset_label (from legacy)
       const labelResult = await runCLI([
-        "sparql", "query",
+        "query",
         "SELECT ?s ?label WHERE { ?s <https://exocortex.my/ontology/exo#Asset_label> ?label } LIMIT 10",
         "--vault", tempDir,
         "--format", "json",
@@ -338,7 +338,7 @@ describeOrSkip("SPARQL queries on Exo 0.0.3 format (Issue #1367)", () => {
 
       // Query for owl:sameAs (from Exo003)
       const sameAsResult = await runCLI([
-        "sparql", "query",
+        "query",
         "SELECT ?s ?o WHERE { ?s <http://www.w3.org/2002/07/owl#sameAs> ?o } LIMIT 10",
         "--vault", tempDir,
         "--format", "json",
@@ -362,7 +362,7 @@ describeOrSkip("SPARQL queries on Exo 0.0.3 format (Issue #1367)", () => {
 
       // Count all triples
       const result = await runCLI([
-        "sparql", "query",
+        "query",
         "SELECT (COUNT(*) AS ?count) WHERE { ?s ?p ?o }",
         "--vault", tempDir,
         "--format", "json",
@@ -396,7 +396,7 @@ metadata: anchor
 
       // Should still work without crashing
       const result = await runCLI([
-        "sparql", "query",
+        "query",
         "SELECT ?s ?p ?o WHERE { ?s ?p ?o } LIMIT 1",
         "--vault", tempDir,
         "--format", "json",
@@ -421,7 +421,7 @@ metadata: anchor
 
       // Should handle gracefully (may produce literals for unresolvable links)
       const result = await runCLI([
-        "sparql", "query",
+        "query",
         "SELECT ?s ?p ?o WHERE { ?s ?p ?o } LIMIT 10",
         "--vault", tempDir,
         "--format", "json",
@@ -450,7 +450,7 @@ metadata: anchor
       );
 
       const result = await runCLI([
-        "sparql", "query",
+        "query",
         "CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o . FILTER(CONTAINS(STR(?s), 'example.org')) }",
         "--vault", tempDir,
         "--format", "ntriples",
