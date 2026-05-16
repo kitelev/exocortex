@@ -12,6 +12,7 @@ import {
   Triple,
   ShapeLoader,
   ShaclShapeRegistry,
+  type Shape,
   shaclValidate,
   DomainIRI,
   DomainLiteral,
@@ -78,11 +79,136 @@ export type ShapesFormat = "text" | "json" | "earl";
 
 export interface ValidateSchemaOptions {
   vault: string;
+  also?: string[];
   output?: OutputFormat;
   staged?: boolean;
   useCache?: boolean;
   shapesMode?: boolean;
   format?: ShapesFormat;
+}
+
+/**
+ * Commander.js accumulator for repeatable --also flag.
+ * Each --also <path> adds a vault path to the array.
+ */
+function collectAlso(value: string, previous: string[]): string[] {
+  return previous.concat([value]);
+}
+
+/**
+ * Loads triples from the primary vault plus any additional --also vaults
+ * and concatenates them into a single array (last-write-wins on duplicate
+ * subjects, matching `exoql query --also` semantics).
+ *
+ * If `--use-cache` and `--also` are combined, the cache is disabled and a
+ * warning is logged: the per-vault triple cache cannot represent merged
+ * multi-vault state.
+ */
+async function loadTriplesFromAllVaults(
+  vaultPath: string,
+  alsoPaths: string[],
+  useCache: boolean,
+  verbose: boolean,
+): Promise<{ triples: DomainTriple[]; cacheHit: boolean }> {
+  if (useCache && alsoPaths.length > 0) {
+    if (verbose) {
+      console.log("⚠️  --use-cache is disabled when --also is specified (per-vault cache cannot represent multi-vault state).");
+    }
+    useCache = false;
+  }
+
+  let triples: DomainTriple[];
+  let cacheHit = false;
+  if (useCache) {
+    const cacheManager = new CacheManager(vaultPath);
+    const cacheResult = await cacheManager.loadOrBuild();
+    triples = cacheResult.triples as DomainTriple[];
+    cacheHit = cacheResult.cacheHit;
+  } else {
+    const adapter = new FileSystemVaultAdapter(vaultPath);
+    const converter = new NoteToRDFConverter(adapter);
+    triples = (await converter.convertVault()) as DomainTriple[];
+  }
+
+  for (const alsoPath of alsoPaths) {
+    const resolvedAlsoPath = resolve(alsoPath);
+    if (!existsSync(resolvedAlsoPath)) {
+      throw new VaultNotFoundError(resolvedAlsoPath);
+    }
+    if (verbose) {
+      console.log(`📦 Loading additional vault: ${resolvedAlsoPath}...`);
+    }
+    const alsoAdapter = new FileSystemVaultAdapter(resolvedAlsoPath);
+    const alsoConverter = new NoteToRDFConverter(alsoAdapter);
+    const alsoTriples = (await alsoConverter.convertVault()) as DomainTriple[];
+    triples = triples.concat(alsoTriples);
+    if (verbose) {
+      console.log(`   ➕ Added ${alsoTriples.length} triples from ${resolvedAlsoPath}`);
+    }
+  }
+
+  return { triples, cacheHit };
+}
+
+/**
+ * Loads shape files from the primary vault plus all --also vaults and
+ * merges them into one ShaclShapeRegistry. First-wins on duplicate
+ * propertyIRI; conflicts are warned to stderr.
+ */
+async function loadMergedShapeRegistry(
+  vaultPath: string,
+  alsoPaths: string[],
+  verbose: boolean,
+): Promise<ShaclShapeRegistry> {
+  const seen = new Map<string, string>(); // propertyIRI → vault path that registered it
+  const merged: Shape[] = [];
+
+  const ingest = async (path: string): Promise<void> => {
+    const reg = await ShapeLoader.loadFromVaultFS(path);
+    for (const shape of reg.getAll()) {
+      const owner = seen.get(shape.propertyIRI);
+      if (owner !== undefined) {
+        if (verbose) {
+          console.log(`⚠️  Duplicate shape for ${shape.propertyIRI} in ${path} (first-wins: kept from ${owner})`);
+        }
+        continue;
+      }
+      seen.set(shape.propertyIRI, path);
+      merged.push(shape);
+    }
+  };
+
+  await ingest(vaultPath);
+  for (const alsoPath of alsoPaths) {
+    await ingest(resolve(alsoPath));
+  }
+
+  return new ShaclShapeRegistry(merged);
+}
+
+/**
+ * Resolves a focusNode IRI (obsidian://vault/<relPath>) to the absolute
+ * filesystem path inside one of the vault roots. Returns the first vault
+ * root whose <root>/<relPath> exists; falls back to primary vault otherwise.
+ */
+export function qualifyFocusNodePath(
+  focusNode: string,
+  vaultPaths: string[],
+): string {
+  const prefix = "obsidian://vault/";
+  let relPath = focusNode;
+  if (focusNode.startsWith(prefix)) {
+    relPath = decodeURIComponent(focusNode.substring(prefix.length));
+  } else {
+    return focusNode;
+  }
+  for (const root of vaultPaths) {
+    const candidate = join(root, relPath);
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  return join(vaultPaths[0] ?? "", relPath);
 }
 
 export interface SchemaViolation {
@@ -666,14 +792,20 @@ export function applyLegacyExceptionFilter(
 
 /**
  * Runs SHACL-lite shapes validation against vault triples.
+ *
+ * When `alsoPaths` is supplied, shape definitions are loaded from each path
+ * in addition to the primary vault and merged into a single registry
+ * (first-wins on duplicate propertyIRI). Caller is responsible for merging
+ * triples from --also vaults into `triples` before calling.
  */
 export async function runShapesValidation(
   vaultPath: string,
   triples: DomainTriple[],
+  alsoPaths: string[] = [],
 ): Promise<ValidationReport> {
-  const standaloneRegistry = await ShapeLoader.loadFromVaultFS(vaultPath);
-  const shapes = standaloneRegistry.getAll();
-  const registry = new ShaclShapeRegistry(shapes);
+  const registry = alsoPaths.length > 0
+    ? await loadMergedShapeRegistry(vaultPath, alsoPaths, false)
+    : new ShaclShapeRegistry((await ShapeLoader.loadFromVaultFS(vaultPath)).getAll());
   const hierarchy = new TripleClassHierarchy(triples);
   const algebraTriples = domainToAlgebraTriples(triples);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -689,22 +821,21 @@ async function runShapesModeAction(options: ValidateSchemaOptions): Promise<void
       throw new VaultNotFoundError(vaultPath);
     }
 
+    const alsoPaths = options.also ?? [];
+    const allVaultRoots = [vaultPath, ...alsoPaths.map((p) => resolve(p))];
+
     if (fmt === "text") {
       console.log(`📦 Loading vault (shapes-mode): ${vaultPath}...`);
     }
 
-    let triples: DomainTriple[];
-    if (options.useCache) {
-      const cacheManager = new CacheManager(vaultPath);
-      const cacheResult = await cacheManager.loadOrBuild();
-      triples = cacheResult.triples as DomainTriple[];
-      if (fmt === "text" && cacheResult.cacheHit) {
-        console.log("🚀 Cache hit! Loading from persistent cache...");
-      }
-    } else {
-      const vaultAdapter = new FileSystemVaultAdapter(vaultPath);
-      const converter = new NoteToRDFConverter(vaultAdapter);
-      triples = await converter.convertVault() as DomainTriple[];
+    const { triples, cacheHit } = await loadTriplesFromAllVaults(
+      vaultPath,
+      alsoPaths,
+      Boolean(options.useCache),
+      fmt === "text",
+    );
+    if (fmt === "text" && cacheHit) {
+      console.log("🚀 Cache hit! Loading from persistent cache...");
     }
 
     if (fmt === "text") {
@@ -712,18 +843,26 @@ async function runShapesModeAction(options: ValidateSchemaOptions): Promise<void
       console.log(`🔍 Running SHACL-lite validation...`);
     }
 
-    const rawReport = await runShapesValidation(vaultPath, triples);
+    const rawReport = await runShapesValidation(vaultPath, triples, alsoPaths);
     const report = applyLegacyExceptionFilter(triples, rawReport);
+
+    const qualifyNode = (focusNode: string): string =>
+      allVaultRoots.length > 1 ? qualifyFocusNodePath(focusNode, allVaultRoots) : focusNode;
 
     if (fmt === "earl") {
       const earl = buildEARLReport(vaultPath, report);
       console.log(JSON.stringify(earl, null, 2));
     } else if (fmt === "json") {
+      const annotated = report.violations.map((v) => ({
+        ...v,
+        vaultQualifiedPath: qualifyNode(v.focusNode),
+      }));
       const response = ResponseBuilder.success({
         vaultPath,
+        alsoPaths: alsoPaths.map((p) => resolve(p)),
         conforms: report.conforms,
         violationCount: report.violations.length,
-        violations: report.violations,
+        violations: annotated,
       });
       console.log(JSON.stringify(response, null, 2));
     } else {
@@ -738,7 +877,8 @@ async function runShapesModeAction(options: ValidateSchemaOptions): Promise<void
         }
         console.log(`⚠️  Found ${report.violations.length} SHACL violation(s) in ${byNode.size} node(s):\n`);
         for (const [node, violations] of byNode) {
-          console.log(`   ❌ ${node}`);
+          const label = allVaultRoots.length > 1 ? qualifyNode(node) : node;
+          console.log(`   ❌ ${label}`);
           for (const v of violations) {
             const sev = v.severity.replace("sh:", "");
             console.log(`      [${sev}] ${v.message}`);
@@ -765,9 +905,10 @@ export function validateSchemaCommand(): Command {
   return new Command("schema")
     .description("Check frontmatter properties against ontology (Issue #2713)")
     .option("--vault <path>", "Path to Obsidian vault", process.cwd())
+    .option("--also <path>", "Additional vault to merge into validation graph (repeatable). --use-cache is disabled when --also is present.", collectAlso, [])
     .option("--output <type>", "Response format: text|json (for MCP tools)", "text")
     .option("--staged", "Only validate git-staged .md files (for pre-commit hooks)")
-    .option("--use-cache", "Use persistent triple cache (faster vault loading)")
+    .option("--use-cache", "Use persistent triple cache (faster vault loading; disabled when --also is set)")
     .option("--shapes-mode", "Run SHACL-lite shapes validation instead of schema linting")
     .option("--format <type>", "Output format for shapes-mode: text|json|earl", "text")
     .action(async (options: ValidateSchemaOptions) => {
@@ -807,23 +948,21 @@ export function validateSchemaCommand(): Command {
           targetFiles = collectMdFiles(vaultPath);
         }
 
-        // 2. Load vault into triple store
+        // 2. Load vault (+ --also vaults) into triple store
         if (outputFormat === "text") {
           console.log(`📦 Loading vault: ${vaultPath}...`);
         }
 
-        let triples: Triple[];
-        if (options.useCache) {
-          const cacheManager = new CacheManager(vaultPath);
-          const cacheResult = await cacheManager.loadOrBuild();
-          triples = cacheResult.triples;
-          if (outputFormat === "text" && cacheResult.cacheHit) {
-            console.log("🚀 Cache hit! Loading from persistent cache...");
-          }
-        } else {
-          const vaultAdapter = new FileSystemVaultAdapter(vaultPath);
-          const converter = new NoteToRDFConverter(vaultAdapter);
-          triples = await converter.convertVault();
+        const alsoPaths = options.also ?? [];
+        const { triples: loadedTriples, cacheHit } = await loadTriplesFromAllVaults(
+          vaultPath,
+          alsoPaths,
+          Boolean(options.useCache),
+          outputFormat === "text",
+        );
+        const triples: Triple[] = loadedTriples as Triple[];
+        if (outputFormat === "text" && cacheHit) {
+          console.log("🚀 Cache hit! Loading from persistent cache...");
         }
 
         if (outputFormat === "text") {
