@@ -371,7 +371,7 @@ export class FilterExecutor {
     if (value === undefined || value === null) {
       return { type: "literal", value: "" } as unknown as Expression;
     }
-    if (value !== null && typeof value === "object" && "termType" in value) {
+    if (typeof value === "object" && "termType" in value) {
       return value as unknown as Expression;
     }
     if (value instanceof IRI || value instanceof Literal) {
