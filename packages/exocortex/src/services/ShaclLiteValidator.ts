@@ -121,6 +121,20 @@ function isExternalOntologyIRI(iri: string): boolean {
   return EXTERNAL_ONTOLOGY_IRI_PREFIXES.some((prefix) => iri.startsWith(prefix));
 }
 
+/**
+ * XSD datatype IRI prefixes — both canonical W3C and Exocortex ad-hoc forms.
+ * Range entries with these prefixes are sh:datatype constraints (apply to Literals).
+ * All other range entries are sh:class constraints (apply to IRI nodes only).
+ */
+const XSD_DATATYPE_PREFIXES: readonly string[] = [
+  'http://www.w3.org/2001/XMLSchema#',
+  'https://exocortex.my/ontology/xsd#',
+];
+
+function isXSDDatatypeIRI(iri: string): boolean {
+  return XSD_DATATYPE_PREFIXES.some((prefix) => iri.startsWith(prefix));
+}
+
 export function validate(
   triples: Triple[],
   registry: ShapeRegistry,
@@ -238,10 +252,20 @@ export function validate(
               });
             }
           } else if (obj.type === 'literal') {
-            // Datatype range: literal datatype must match declared range IRI
+            // sh:datatype constraints apply only to range entries that are XSD datatypes.
+            // Class-IRI range entries express sh:class — by SHACL semantics they
+            // constrain non-Literal nodes only. Skip them silently for Literals.
+            //
+            // This also tolerates dual-storage predicates (Issue #2102) such as
+            // exo__Asset_prototype, where the converter intentionally emits both
+            // an IRI (for sh:class targets) and a UUID Literal (for raw-UUID SPARQL
+            // lookup). Without this distinction the Literal triggered a false
+            // sh:datatype violation against an exo:Asset class range (Issue #3115).
+            const datatypeRanges = shape.range.filter((r) => isXSDDatatypeIRI(r));
+            if (datatypeRanges.length === 0) continue;
             const literalDatatype =
               obj.datatype ?? 'http://www.w3.org/2001/XMLSchema#string';
-            const datatypeConforms = shape.range.some((r) => r === literalDatatype);
+            const datatypeConforms = datatypeRanges.some((r) => r === literalDatatype);
             if (!datatypeConforms) {
               violations.push({
                 focusNode: subjectIRI,
@@ -249,9 +273,9 @@ export function validate(
                 severity: shape.severity,
                 message:
                   shape.message ??
-                  `sh:datatype violation: literal "${obj.value}" has datatype <${literalDatatype}>, expected ${shape.range.join(' | ')}`,
+                  `sh:datatype violation: literal "${obj.value}" has datatype <${literalDatatype}>, expected ${datatypeRanges.join(' | ')}`,
                 actualValue: obj.value,
-                expectedRange: shape.range.join(' | '),
+                expectedRange: datatypeRanges.join(' | '),
               });
             }
           }
