@@ -113,9 +113,9 @@ describe("Issue #2713: validate schema command", () => {
       expect(option).toBeDefined();
     });
 
-    it("should register exactly 7 options (incl. --also for multi-vault SHACL — Issue #3127)", () => {
+    it("should register exactly 8 options (incl. --also for multi-vault SHACL — Issue #3127, --class for RFC 8e83442b T1.4)", () => {
       const cmd = validateSchemaCommand();
-      expect(cmd.options).toHaveLength(7);
+      expect(cmd.options).toHaveLength(8);
     });
 
     it("should register --also option (Issue #3127 — repeatable additional vaults)", () => {

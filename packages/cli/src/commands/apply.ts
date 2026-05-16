@@ -1,0 +1,310 @@
+import { Command } from "commander";
+import { existsSync } from "fs";
+import { resolve } from "path";
+import {
+  InMemoryTripleStore,
+  NoteToRDFConverter,
+  CommandResolver,
+  PreconditionEvaluator,
+  GroundingExecutor,
+  ServiceRegistry,
+  GenericAssetCreationService,
+  ArchiveAssetService,
+  FixMissingLabelService,
+  FolderRepairService,
+  PropertyCleanupService,
+  RenameToUidService,
+  EffortStatusWorkflow,
+  StatusTimestampService,
+  TaskStatusService,
+  vaultPathToIRI,
+  IRI,
+} from "exocortex";
+import { ErrorHandler, type OutputFormat } from "../utils/ErrorHandler.js";
+import { VaultNotFoundError, InvalidArgumentsError } from "../utils/errors/index.js";
+import { ExitCodes } from "../utils/ExitCodes.js";
+import { FileSystemVaultAdapter } from "../adapters/FileSystemVaultAdapter.js";
+import { NodeFsAdapter } from "../adapters/NodeFsAdapter.js";
+import { populateCliServiceRegistry } from "../services/CliServiceRegistryPopulator.js";
+
+export interface ApplyOptions {
+  vault: string;
+  output?: OutputFormat;
+  dryRun?: boolean;
+  yes?: boolean;
+  input?: string;
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+async function readStdinLines(): Promise<string[]> {
+  if (process.stdin.isTTY) return [];
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) {
+    chunks.push(chunk as Buffer);
+  }
+  const text = Buffer.concat(chunks).toString("utf-8");
+  return text
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0);
+}
+
+/**
+ * Resolve a slug (exocmd__Command_cliName) to its UUID via SPARQL lookup.
+ * Returns null if not found, throws on ambiguity.
+ */
+function nodeValue(node: { value: string } | unknown): string {
+  if (node && typeof node === "object" && "value" in (node as Record<string, unknown>)) {
+    const v = (node as { value: unknown }).value;
+    return typeof v === "string" ? v : String(v);
+  }
+  return String(node);
+}
+
+async function resolveSlugToUuid(
+  tripleStore: InMemoryTripleStore,
+  slug: string,
+): Promise<string | null> {
+  const cliNameURI = new IRI("https://exocortex.my/ontology/exocmd#Command_cliName");
+  const triples = await tripleStore.match(undefined, cliNameURI, undefined);
+  const matches: string[] = [];
+  for (const t of triples) {
+    const objStr = nodeValue(t.object);
+    if (objStr === slug) {
+      const subjStr = nodeValue(t.subject);
+      const match = subjStr.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.md$/i);
+      if (match) matches.push(match[1]);
+    }
+  }
+  if (matches.length === 0) return null;
+  if (matches.length > 1) {
+    throw new InvalidArgumentsError(
+      `Ambiguous cliName "${slug}" — resolves to ${matches.length} commands: ${matches.join(", ")}`,
+      `Use the UUID directly: exocortex apply <uuid> <path>`,
+    );
+  }
+  return matches[0];
+}
+
+/**
+ * Look up whether the command asset is marked destructive (exocmd__Command_destructive).
+ */
+async function isDestructive(
+  tripleStore: InMemoryTripleStore,
+  commandUid: string,
+): Promise<boolean> {
+  const destructiveURI = new IRI("https://exocortex.my/ontology/exocmd#Command_destructive");
+  const triples = await tripleStore.match(undefined, destructiveURI, undefined);
+  for (const t of triples) {
+    const subjStr = nodeValue(t.subject);
+    if (subjStr.includes(commandUid)) {
+      const objStr = nodeValue(t.object);
+      if (objStr === "true" || objStr === "True") return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Execute a command on a single target. Returns true on success.
+ */
+async function executeOnTarget(
+  vaultPath: string,
+  tripleStore: InMemoryTripleStore,
+  commandUid: string,
+  targetRelative: string,
+  options: ApplyOptions,
+): Promise<boolean> {
+  const targetPath = resolve(vaultPath, targetRelative);
+  if (!existsSync(targetPath)) {
+    console.error(`❌ Target file not found: ${targetRelative}`);
+    return false;
+  }
+
+  const resolver = new CommandResolver(tripleStore);
+  const command = await resolver.loadCommand(commandUid);
+
+  if (!command) {
+    console.error(`❌ Command with UID "${commandUid}" not found.`);
+    return false;
+  }
+
+  // Destructive safety guard (T1.6)
+  const destructive = await isDestructive(tripleStore, commandUid);
+  if (destructive && !options.dryRun && !options.yes) {
+    console.error(
+      `❌ Command "${command.name}" is marked destructive. ` +
+        `Add --dry-run to preview, or --yes to apply.`,
+    );
+    return false;
+  }
+
+  const targetIRI = vaultPathToIRI(targetRelative);
+
+  // Precondition
+  const evaluator = new PreconditionEvaluator(tripleStore);
+  const preconditionPassed = await evaluator.evaluate(command.precondition, targetIRI);
+  if (!preconditionPassed) {
+    console.error(
+      `❌ Precondition not satisfied for "${command.name}" on "${targetRelative}".`,
+    );
+    return false;
+  }
+
+  // Dry-run
+  if (options.dryRun) {
+    console.log(`🔍 Dry-run: would apply "${command.name}" to "${targetRelative}" (precondition passed).`);
+    return true;
+  }
+
+  // Execute grounding
+  const serviceRegistry = new ServiceRegistry();
+  const vaultAdapter = new FileSystemVaultAdapter(vaultPath);
+  const genericAssetCreationService = new GenericAssetCreationService(vaultAdapter);
+  const archiveAssetService = new ArchiveAssetService(vaultAdapter);
+  const propertyCleanupService = new PropertyCleanupService(vaultAdapter);
+  const fixMissingLabelService = new FixMissingLabelService(vaultAdapter);
+  const renameToUidService = new RenameToUidService(vaultAdapter);
+  const folderRepairService = new FolderRepairService(vaultAdapter);
+  const taskStatusService = new TaskStatusService(
+    vaultAdapter,
+    new EffortStatusWorkflow(),
+    new StatusTimestampService(vaultAdapter),
+  );
+  const nodeFsAdapter = new NodeFsAdapter(vaultPath);
+  populateCliServiceRegistry(serviceRegistry, {
+    vaultAdapter,
+    fsAdapter: nodeFsAdapter,
+    genericAssetCreationService,
+    archiveAssetService,
+    taskStatusService,
+    propertyCleanupService,
+    fixMissingLabelService,
+    renameToUidService,
+    folderRepairService,
+  });
+  const groundingExecutor = new GroundingExecutor(
+    nodeFsAdapter,
+    nodeFsAdapter,
+    serviceRegistry,
+  );
+
+  let userInput: Record<string, unknown> | undefined;
+  if (options.input) {
+    try {
+      const parsed = JSON.parse(options.input);
+      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+        throw new Error("must be a JSON object");
+      }
+      userInput = parsed as Record<string, unknown>;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`❌ --input: invalid JSON object (${msg})`);
+      return false;
+    }
+  }
+
+  const result = await groundingExecutor.execute(
+    command.grounding,
+    targetIRI,
+    targetRelative,
+    userInput,
+  );
+
+  if (result.success) {
+    const msg = command.successMessage ?? `Applied "${command.name}" to "${targetRelative}".`;
+    console.log(`✅ ${msg}`);
+    return true;
+  } else {
+    console.error(`❌ "${command.name}" failed on "${targetRelative}": ${result.error}`);
+    return false;
+  }
+}
+
+/**
+ * RFC 8e83442b (CLI v16) T1.2 / T1.3 / T1.5 / T1.6:
+ * `exocortex apply <cmd> [path]` — operation invoker.
+ *
+ *   <cmd>: UUID of exocmd__Command, or its cliName slug.
+ *   [path]: optional vault-relative path; if omitted, read paths from stdin.
+ */
+export function applyCommand(): Command {
+  return new Command("apply")
+    .description(
+      "Apply an exocmd__Command to one or more vault assets (RFC 8e83442b T1.2). " +
+        "Pass a path arg or pipe paths via stdin.",
+    )
+    .argument("<cmd>", "Command UUID or cliName slug")
+    .argument("[path]", "Vault-relative path to target asset (omit to read paths from stdin)")
+    .option("--vault <path>", "Path to Obsidian vault", process.cwd())
+    .option("--dry-run", "Preview without writing")
+    .option("--yes", "Skip destructive-command confirmation")
+    .option("--input <json>", "JSON userInput for service_call groundings")
+    .action(async (cmdArg: string, pathArg: string | undefined, options: ApplyOptions) => {
+      ErrorHandler.setFormat("text" as OutputFormat);
+
+      try {
+        const vaultPath = resolve(options.vault);
+        if (!existsSync(vaultPath)) {
+          throw new VaultNotFoundError(vaultPath);
+        }
+
+        // Build triple store once for the whole batch
+        const vaultAdapter = new FileSystemVaultAdapter(vaultPath);
+        const converter = new NoteToRDFConverter(vaultAdapter);
+        const triples = await converter.convertVault();
+        const tripleStore = new InMemoryTripleStore();
+        await tripleStore.addAll(triples);
+
+        // Resolve cmdArg → UUID
+        let commandUid: string;
+        if (UUID_RE.test(cmdArg)) {
+          commandUid = cmdArg;
+        } else {
+          const resolved = await resolveSlugToUuid(tripleStore, cmdArg);
+          if (!resolved) {
+            console.error(
+              `❌ No command found with UUID or cliName "${cmdArg}".`,
+            );
+            process.exit(ExitCodes.FILE_NOT_FOUND);
+          }
+          commandUid = resolved;
+        }
+
+        // Build target list
+        let targets: string[];
+        if (pathArg) {
+          targets = [pathArg];
+        } else {
+          targets = await readStdinLines();
+          if (targets.length === 0) {
+            throw new InvalidArgumentsError(
+              "No target path provided and stdin is empty.",
+              "exocortex apply <uuid> <path>  OR  exocortex find ... | exocortex apply <uuid>",
+            );
+          }
+        }
+
+        // Continue-on-error semantics
+        let successCount = 0;
+        let failCount = 0;
+        for (const target of targets) {
+          const ok = await executeOnTarget(vaultPath, tripleStore, commandUid, target, options);
+          if (ok) successCount++;
+          else failCount++;
+        }
+
+        if (targets.length > 1) {
+          console.log(`\n📊 Applied to ${successCount}/${targets.length} target(s) (${failCount} failed).`);
+        }
+
+        if (failCount > 0) {
+          process.exit(ExitCodes.OPERATION_FAILED);
+        }
+      } catch (error) {
+        ErrorHandler.handle(error as Error);
+        process.exit(ExitCodes.OPERATION_FAILED);
+      }
+    });
+}

@@ -85,6 +85,33 @@ export interface ValidateSchemaOptions {
   useCache?: boolean;
   shapesMode?: boolean;
   format?: ShapesFormat;
+  /** RFC 8e83442b T1.4: only validate files whose exo__Instance_class contains this IRI/slug. */
+  class?: string;
+}
+
+/**
+ * RFC 8e83442b T1.4: Check whether a file's frontmatter exo__Instance_class
+ * declarations include the requested class. Match is permissive — substring
+ * match on the wikilink target (so users can pass either the full IRI, the
+ * slug like "ems__Task", or the bare UUID).
+ */
+export function frontmatterMatchesClass(
+  frontmatter: Record<string, unknown> | null,
+  classFilter: string,
+): boolean {
+  if (!frontmatter) return false;
+  const raw = frontmatter["exo__Instance_class"];
+  if (raw === undefined || raw === null) return false;
+  const values = Array.isArray(raw) ? raw : [raw];
+  for (const v of values) {
+    if (typeof v !== "string") continue;
+    // Strip wikilink brackets and alias suffix
+    const match = v.match(/\[\[([^|\]]+)/);
+    const target = match ? match[1] : v;
+    if (target === classFilter) return true;
+    if (target.includes(classFilter)) return true;
+  }
+  return false;
 }
 
 /**
@@ -911,6 +938,7 @@ export function validateSchemaCommand(): Command {
     .option("--use-cache", "Use persistent triple cache (faster vault loading; disabled when --also is set)")
     .option("--shapes-mode", "Run SHACL-lite shapes validation instead of schema linting")
     .option("--format <type>", "Output format for shapes-mode: text|json|earl", "text")
+    .option("--class <iri>", "Only validate assets whose exo__Instance_class matches this IRI/slug (RFC 8e83442b T1.4)")
     .action(async (options: ValidateSchemaOptions) => {
       const outputFormat = (options.output || "text") as OutputFormat;
       ErrorHandler.setFormat(outputFormat);
@@ -946,6 +974,20 @@ export function validateSchemaCommand(): Command {
           }
         } else {
           targetFiles = collectMdFiles(vaultPath);
+        }
+
+        // RFC 8e83442b T1.4: apply --class filter
+        if (options.class) {
+          const classFilter = options.class;
+          targetFiles = targetFiles.filter((relPath) => {
+            try {
+              const content = readFileSync(resolve(vaultPath, relPath), "utf-8");
+              const fm = extractFrontmatter(content);
+              return frontmatterMatchesClass(fm, classFilter);
+            } catch {
+              return false;
+            }
+          });
         }
 
         // 2. Load vault (+ --also vaults) into triple store
