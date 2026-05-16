@@ -16,8 +16,17 @@ export class StatusCommandExecutor extends BaseCommandExecutor {
   async executeStart(filepath: string): Promise<void> {
     try {
       const { relativePath } = this.resolveAndValidate(filepath);
-      const content = await this.fsAdapter.readFile(relativePath);
       const timestamp = this.getCurrentTimestamp();
+
+      if (this.dryRun) {
+        console.log(`[dry-run] Would start: ${filepath}`);
+        console.log(`[dry-run]   ems__Effort_status: "[[ems__EffortStatusDoing]]"`);
+        console.log(`[dry-run]   ems__Effort_startTimestamp: ${timestamp}`);
+        console.log(`\n💡 Run without --dry-run to apply changes`);
+        process.exit(ExitCodes.SUCCESS);
+      }
+
+      const content = await this.fsAdapter.readFile(relativePath);
 
       let updated = this.frontmatterService.updateProperty(
         content,
@@ -48,8 +57,18 @@ export class StatusCommandExecutor extends BaseCommandExecutor {
   async executeComplete(filepath: string): Promise<void> {
     try {
       const { relativePath } = this.resolveAndValidate(filepath);
-      const content = await this.fsAdapter.readFile(relativePath);
       const timestamp = this.getCurrentTimestamp();
+
+      if (this.dryRun) {
+        console.log(`[dry-run] Would complete: ${filepath}`);
+        console.log(`[dry-run]   ems__Effort_status: "[[ems__EffortStatusDone]]"`);
+        console.log(`[dry-run]   ems__Effort_endTimestamp: ${timestamp}`);
+        console.log(`[dry-run]   ems__Effort_resolutionTimestamp: ${timestamp}`);
+        console.log(`\n💡 Run without --dry-run to apply changes`);
+        process.exit(ExitCodes.SUCCESS);
+      }
+
+      const content = await this.fsAdapter.readFile(relativePath);
 
       let updated = this.frontmatterService.updateProperty(
         content,
@@ -86,8 +105,17 @@ export class StatusCommandExecutor extends BaseCommandExecutor {
   async executeTrash(filepath: string): Promise<void> {
     try {
       const { relativePath } = this.resolveAndValidate(filepath);
-      const content = await this.fsAdapter.readFile(relativePath);
       const timestamp = this.getCurrentTimestamp();
+
+      if (this.dryRun) {
+        console.log(`[dry-run] Would trash: ${filepath}`);
+        console.log(`[dry-run]   ems__Effort_status: "[[ems__EffortStatusTrashed]]"`);
+        console.log(`[dry-run]   ems__Effort_resolutionTimestamp: ${timestamp}`);
+        console.log(`\n💡 Run without --dry-run to apply changes`);
+        process.exit(ExitCodes.SUCCESS);
+      }
+
+      const content = await this.fsAdapter.readFile(relativePath);
 
       let updated = this.frontmatterService.updateProperty(
         content,
@@ -118,6 +146,15 @@ export class StatusCommandExecutor extends BaseCommandExecutor {
   async executeArchive(filepath: string): Promise<void> {
     try {
       const { relativePath } = this.resolveAndValidate(filepath);
+
+      if (this.dryRun) {
+        console.log(`[dry-run] Would archive: ${filepath}`);
+        console.log(`[dry-run]   archived: true`);
+        console.log(`[dry-run]   aliases: removed`);
+        console.log(`\n💡 Run without --dry-run to apply changes`);
+        process.exit(ExitCodes.SUCCESS);
+      }
+
       const content = await this.fsAdapter.readFile(relativePath);
 
       let updated = this.frontmatterService.updateProperty(content, "archived", "true");
@@ -179,6 +216,14 @@ export class StatusCommandExecutor extends BaseCommandExecutor {
     displayName: string,
   ): Promise<void> {
     const { relativePath } = this.resolveAndValidate(filepath);
+
+    if (this.dryRun) {
+      console.log(`[dry-run] Would move to ${displayName}: ${filepath}`);
+      console.log(`[dry-run]   ems__Effort_status: "[[${statusValue}]]"`);
+      console.log(`\n💡 Run without --dry-run to apply changes`);
+      return;
+    }
+
     const content = await this.fsAdapter.readFile(relativePath);
 
     const updated = this.frontmatterService.updateProperty(

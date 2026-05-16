@@ -101,6 +101,16 @@ export class AssetCreationExecutor extends BaseCommandExecutor {
     const frontmatter = this.buildAssetFrontmatter(assetClass, uid, trimmedLabel, options);
     const content = MetadataHelpers.buildFileContent(frontmatter);
 
+    // Dry-run: preview only, no fs writes (Issue #3111)
+    if (this.dryRun) {
+      console.log(`[dry-run] Would create ${this.getAssetTypeName(assetClass)}: ${filepath}`);
+      console.log(`[dry-run]   UID: ${uid}`);
+      console.log(`[dry-run]   Label: ${trimmedLabel}`);
+      console.log(`[dry-run]   Class: ${assetClass}`);
+      console.log(`\n💡 Run without --dry-run to apply changes`);
+      return;
+    }
+
     await this.fsAdapter.createFile(relativePath, content);
 
     console.log(`✅ Created ${this.getAssetTypeName(assetClass)}: ${filepath}`);

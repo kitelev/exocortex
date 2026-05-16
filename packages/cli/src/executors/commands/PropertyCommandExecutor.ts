@@ -34,8 +34,30 @@ export class PropertyCommandExecutor extends BaseCommandExecutor {
         process.exit(ExitCodes.SUCCESS);
       }
 
+      const labelMissing =
+        !metadata.exo__Asset_label || metadata.exo__Asset_label.trim() === "";
+      const isArchived = this.isAssetArchived(metadata);
+
+      // Construct new path
+      const directory = path.dirname(relativePath);
+      const newPath =
+        directory !== "." ? `${directory}/${targetBasename}.md` : `${targetBasename}.md`;
+
+      // Dry-run: preview only, no fs writes (Issue #3111)
+      if (this.dryRun) {
+        if (labelMissing) {
+          console.log(`[dry-run] Would update label: "${currentBasename}"`);
+          if (!isArchived) {
+            console.log(`[dry-run] Would add alias: "${currentBasename}"`);
+          }
+        }
+        console.log(`[dry-run] Would rename: ${relativePath} -> ${newPath}`);
+        console.log(`\n💡 Run without --dry-run to apply changes`);
+        process.exit(ExitCodes.SUCCESS);
+      }
+
       // If label missing, update it to preserve original filename
-      if (!metadata.exo__Asset_label || metadata.exo__Asset_label.trim() === "") {
+      if (labelMissing) {
         const content = await this.fsAdapter.readFile(relativePath);
         const updatedContent = this.frontmatterService.updateProperty(
           content,
@@ -44,7 +66,6 @@ export class PropertyCommandExecutor extends BaseCommandExecutor {
         );
 
         // Also add to aliases if not archived
-        const isArchived = this.isAssetArchived(metadata);
         let finalContent = updatedContent;
         if (!isArchived) {
           finalContent = this.frontmatterService.updateProperty(
@@ -57,11 +78,6 @@ export class PropertyCommandExecutor extends BaseCommandExecutor {
         await this.fsAdapter.updateFile(relativePath, finalContent);
         console.log(`   Updated label: "${currentBasename}"`);
       }
-
-      // Construct new path
-      const directory = path.dirname(relativePath);
-      const newPath =
-        directory !== "." ? `${directory}/${targetBasename}.md` : `${targetBasename}.md`;
 
       // Rename file
       await this.fsAdapter.renameFile(relativePath, newPath);
@@ -207,6 +223,19 @@ export class PropertyCommandExecutor extends BaseCommandExecutor {
     // Convert date to timestamp at start of day
     const timestamp = DateFormatter.toTimestampAtStartOfDay(dateStr);
 
+    const actionName =
+      property === "ems__Effort_plannedStartTimestamp"
+        ? "Scheduled"
+        : "Set deadline for";
+
+    // Dry-run: preview only, no fs writes (Issue #3111)
+    if (this.dryRun) {
+      console.log(`[dry-run] Would ${actionName === "Scheduled" ? "schedule" : "set deadline for"}: ${filepath}`);
+      console.log(`[dry-run]   ${property}: ${timestamp}`);
+      console.log(`\n💡 Run without --dry-run to apply changes`);
+      return;
+    }
+
     // Read file content
     const content = await this.fsAdapter.readFile(relativePath);
 
@@ -220,10 +249,6 @@ export class PropertyCommandExecutor extends BaseCommandExecutor {
     // Write updated content
     await this.fsAdapter.writeFile(relativePath, updatedContent);
 
-    const actionName =
-      property === "ems__Effort_plannedStartTimestamp"
-        ? "Scheduled"
-        : "Set deadline for";
     console.log(`✅ ${actionName}: ${filepath}`);
     console.log(`   Date: ${dateStr}`);
     console.log(`   Timestamp: ${timestamp}`);
