@@ -1889,3 +1889,66 @@ exo__Instance_class:
 **User action**: optionally rename malformed targets to a valid namespace form (e.g. `kf__AcademicDiscipline`). The asset is no longer invisible to SHACL in the meantime.
 
 **Reference**: Issue #3121
+
+---
+
+## exo\_\_Instance_class wikilink form mismatch — all forms RDF-equivalent
+
+**Symptom / question**: "I bulk-rewrote `exo__Instance_class` from label form `[[ems__Task]]` to bare-UUID form `[[1b20a8f0-…]]`. SHACL violation count didn't change at all. Did the rewrite do nothing? Was my hypothesis wrong?"
+
+**Short answer**: The rewrite did exactly what it should — **nothing semantically**, because all three accepted forms are RDF-equivalent. The violation count is identical _by design_. Don't burn cycles debugging this.
+
+### The three forms
+
+`exo__Instance_class` historically accepts three wikilink shapes:
+
+| Form | Example                                                 | Where used                                                                   |
+| ---- | ------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| A    | `"[[ems__Task]]"`                                       | Older `/exocortex-asset` skill template, hand-written assets                 |
+| B    | `"[[1b20a8f0-d745-4e93-91db-4531b3df120e\|ems__Task]]"` | Mixed-form skill outputs (UUID for stability, alias for humans)              |
+| C    | `"[[1b20a8f0-d745-4e93-91db-4531b3df120e]]"`            | **Canonical** since 2026-05-16 (issue #3123). Used by recent bulk migrations |
+
+### Why all three are semantically equivalent
+
+`NoteToRDFConverter.valueToClassURI` resolves any of the three to the **same namespace IRI** (e.g. `https://exocortex.my/ontology/ems#Task`) via `Namespace.fromPropertyKey`. The converter:
+
+1. Strips wikilink brackets `[[...]]` and any alias `|...`.
+2. Tries the inner value as a property-key (`ems__Task`) — succeeds for Form A and Form B (after alias strip).
+3. If not a property-key (Form C: bare UUID), looks up the target asset and reads _its_ `exo__Instance_class` to derive the class IRI.
+
+Crucially, **file existence at the wikilink target is not consulted for the class IRI itself in Form A/B** — only the property-key registry. That means Form A (`[[ems__Task]]`) produces a valid class IRI even when no file named `ems__Task.md` exists in the vault.
+
+The SHACL-lite validator (`ShaclLiteValidator`) then sees the same `rdf:type` triple regardless of which form was emitted, so:
+
+- `sh:class` checks: identical result.
+- `sh:in` enum checks: identical result.
+- `sh:minCount` / `sh:maxCount` cardinality: identical result.
+
+### Empirical evidence (2026-05-16 SHACL deep-dive session)
+
+Migration A → C across the vault:
+
+- **n** = 305 files rewritten
+- **Total SHACL violations before**: 307
+- **Total SHACL violations after**: 307
+- **Delta**: 0
+
+This is the expected, correct outcome — not a bug, not a missed cache invalidation, not a malformed entry being silently dropped.
+
+### Obsidian navigation caveat
+
+The forms _do_ differ for **Obsidian wiki-style navigation** (Ctrl/Cmd + click on the link in the editor):
+
+- Form A `[[ems__Task]]` only navigates if a file `ems__Task.md` exists (label-named shim).
+- Form B `[[uuid|ems__Task]]` navigates to the UUID-named file (`<uuid>.md`); alias is display-only.
+- Form C `[[uuid]]` navigates to the UUID-named file with the UUID as display text.
+
+This is a UX/cosmetic concern that has **no bearing on RDF semantics or SHACL conformance**.
+
+### What to do
+
+1. **For new assets**: emit Form C only. `/exocortex-asset` skill template and `docs/PROPERTY_SCHEMA.md` § _exo\_\_Instance_class › Canonical form_ are the source of truth.
+2. **For existing assets**: Form A and Form B continue to work; migration is cosmetic and may be deferred. The pre-write hook `~/.claude/hooks/validate-wikilinks.sh` warns on non-Form-C in _new_ writes but does not block or rewrite legacy content.
+3. **If SHACL violation counts didn't change after a form-only rewrite**: that's success, not failure. Move on.
+
+**Reference**: Issue #3123. Related: `docs/PROPERTY_SCHEMA.md` § `exo__Instance_class` › _Canonical form_.
