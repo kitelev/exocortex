@@ -357,6 +357,52 @@ describe("NoteToRDFConverter", () => {
       expect((archivedTriple!.object as Literal).value).toBe("true");
     });
 
+    // Issue #3043 Phase 1: unprefixed frontmatter whitelist
+    describe("unprefixed frontmatter whitelist (Issue #3043 Phase 1)", () => {
+      it.each([
+        ["archived", "exo__Asset_archived"],
+        ["draft", "exo__Asset_draft"],
+        ["pinned", "exo__Asset_pinned"],
+      ])("indexes unprefixed %s as %s", async (key, expectedPredicate) => {
+        const file: IFile = {
+          path: "test.md",
+          basename: "test",
+          name: "test.md",
+          parent: null,
+        };
+        const frontmatter: IFrontmatter = { [key]: true };
+        mockVault.getFrontmatter.mockReturnValue(frontmatter);
+
+        const triples = await converter.convertNote(file);
+
+        const match = triples.find((t) =>
+          (t.predicate as IRI).value.endsWith(expectedPredicate.replace("__", "#"))
+            || (t.predicate as IRI).value.endsWith(`/${expectedPredicate.split("__")[1]}`)
+        );
+        expect(match).toBeDefined();
+        expect((match!.object as Literal).value).toBe("true");
+      });
+
+      it("does not index non-whitelisted unprefixed keys", async () => {
+        const file: IFile = {
+          path: "test.md",
+          basename: "test",
+          name: "test.md",
+          parent: null,
+        };
+        const frontmatter: IFrontmatter = { color: "blue", priority: 5 };
+        mockVault.getFrontmatter.mockReturnValue(frontmatter);
+
+        const triples = await converter.convertNote(file);
+
+        const leaked = triples.find((t) => {
+          const p = (t.predicate as IRI).value;
+          return p.includes("Asset_color") || p.includes("Asset_priority");
+        });
+        expect(leaked).toBeUndefined();
+      });
+    });
+
     // Issue #666: Add Asset_fileName predicate for all assets
     describe("Asset_fileName predicate (Issue #666)", () => {
       it("should add Asset_fileName triple with file basename (without .md)", async () => {
