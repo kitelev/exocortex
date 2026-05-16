@@ -146,13 +146,15 @@ body
 
   describe("AC3: empty literal property", () => {
     it("reports file path + property name + hint when a required property is empty", () => {
+      // exo__Asset_label is optional (basename fallback); empty exo__Asset_uid
+      // exercises the EMPTY_PROPERTY path on a still-required property.
       writeFile(
         vault,
-        "empty-label.md",
+        "empty-uid.md",
         `---
-exo__Asset_uid: 22222222-2222-2222-2222-222222222222
+exo__Asset_uid: ""
 exo__Asset_isDefinedBy: "[[!kitelev]]"
-exo__Asset_label: ""
+exo__Asset_label: "task"
 exo__Instance_class:
   - "[[ems__Task]]"
 ---
@@ -163,12 +165,12 @@ exo__Instance_class:
       const err = errors.find(
         (e) =>
           e.code === "EMPTY_PROPERTY" &&
-          (e as any).property === "exo__Asset_label",
+          (e as any).property === "exo__Asset_uid",
       );
       expect(err).toBeDefined();
-      expect(err!.file).toBe("empty-label.md");
-      expect(err!.hint).toMatch(/exo__Asset_label/);
-      expect(err!.hint).toMatch(/non-empty value|remove/);
+      expect(err!.file).toBe("empty-uid.md");
+      expect(err!.hint).toMatch(/exo__Asset_uid/);
+      expect(err!.hint).toMatch(/non-empty value|remove|<uuid>/);
     });
 
     it("reports the property name when an optional property is present but empty", () => {
