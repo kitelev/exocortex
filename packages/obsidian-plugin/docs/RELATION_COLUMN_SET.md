@@ -24,23 +24,20 @@ off, or no matching config exists, the renderer transparently falls back to
 the original hardcoded map — the feature is purely additive and opt-in per
 (rowClass, referencingProperty) pair.
 
-## Initial setup — zero-friction ontology bootstrap
+## Initial setup — install the ontology
 
-The plugin installs the 7 required ontology assets (`!ui` ontology root,
-`ui__RelationColumnSet` class, and 5 `ui__RelationColumnSet_*` properties)
-automatically on `onload`, so a fresh personal vault does not need any
-manual copy from `kitelev/exocortex-starter-kit`. Target folder:
-`_exocortex-ui-ontology/` — one UUID-named file per asset, following the
-starter-kit convention.
+The 7 required ontology assets (`!ui` ontology root, `ui__RelationColumnSet`
+class, and 5 `ui__RelationColumnSet_*` properties) are not auto-installed by
+the plugin (see #3125). Install them yourself via one of:
 
-Bootstrap is idempotent at two levels — it first checks whether an asset
-with the UUID exists anywhere in the vault (UID scan via Obsidian's
-link-path index), and only then falls back to a path-level check at the
-default target. So if you already copied the 7 files from the starter-kit
-into `03 Knowledge/ui/` (or any other custom folder), the plugin will NOT
-create a duplicate copy at `_exocortex-ui-ontology/` on upgrade. Plugin
-reloads, vault opens, and plugin upgrades are all no-ops once the 7 UUIDs
-are reachable.
+- Copy the `ui/` ontology folder from
+  [`kitelev/exocortex-starter-kit`](https://github.com/kitelev/exocortex-starter-kit)
+  into your vault (any folder — plugin reads by UUID, not by path).
+- Or add the starter-kit as a git submodule under `assetspaces/ui/` per
+  RFC-D vault layout.
+
+If the ontology is absent the plugin loads without error; `RelationColumnSet`
+customization is simply unavailable until the 7 assets are present.
 
 ## Copy-pasteable example
 
