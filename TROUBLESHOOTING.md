@@ -1849,3 +1849,43 @@ observer.observe(container, {
 **Prerequisite**: The enum instance file (e.g. `pmbok__ClosureOutcomeAllAccepted.md`) must have `exo__Instance_class` in its frontmatter pointing to the parent class.
 
 **Reference**: IssueItem ff3858e5, PR #3070
+
+---
+
+## SHACL-lite false `sh:class violation` from Multi-Valued `exo__Instance_class` with One Malformed Entry
+
+**Symptom**: An asset has frontmatter like
+
+```yaml
+exo__Instance_class:
+  - "[[kf__Academic Discipline]]" # malformed (whitespace in local name)
+  - "[[ims__Concept]]" # well-formed
+```
+
+…and SHACL still reports `sh:class violation` for the asset (or for assets that reference it) even though `ims__Concept` IS expected to be in `rdf:type`.
+
+**Diagnostic procedure (IRI-normalization / triple-presence audit, ≤15 min)**
+
+1. **Probe whether the target has ANY triples in the store:**
+
+   ```bash
+   npx @kitelev/exocortex-cli exoql query \
+     "SELECT ?p ?o WHERE { <obsidian://vault/path/to/target.md> ?p ?o }"
+   ```
+
+   - `0 results` → the converter dropped the entire asset. Continue at step 2.
+   - rdf:type triples appear → the bug is not the converter. Suspect IRI normalization between `subjectClasses.set` (line 165 of `ShaclLiteValidator.ts`) and `subjectClasses.get(obj.value)` (line 235) — compare lookup-key vs subject-key encoding (percent-encoding, trailing slashes).
+
+2. **Inspect the target's `exo__Instance_class` array.** Any entry whose `[[wikilink]]` starts with a namespaced prefix (`kf__`, `ems__`, `inbox__`, …) but whose local name contains whitespace, parentheses, or other characters illegal in an IRI is malformed.
+
+3. **Pre-fix root cause (resolved by Issue #3121):** a single malformed entry threw at `Namespace.term()`, aborting the whole-asset triple build via the outer catch in `convertVaultWithValidation`. Validator-side `validateExocortexAsset` also rejected the whole asset on the first malformed entry. Net result: every reference to the asset triggered a false sh:class violation because the target had zero `rdf:type` triples in the store.
+
+**Fix (Issue #3121, v15.176.x+)**
+
+- `expandClassValue` rejects local names containing whitespace/parens — returns `null` instead of throwing.
+- `validateExocortexAsset` accepts a multi-valued array if **any** entry is well-formed; only rejects when **all** entries are malformed.
+- Net effect: malformed entries are silently dropped at conversion; valid siblings still produce `rdf:type` and `exo__Instance_class` triples, so SHACL `sh:class` ANY-of check sees the correct class set.
+
+**User action**: optionally rename malformed targets to a valid namespace form (e.g. `kf__AcademicDiscipline`). The asset is no longer invisible to SHACL in the meantime.
+
+**Reference**: Issue #3121

@@ -780,10 +780,20 @@ export class NoteToRDFConverter {
     // Instance_class wikilink shape — only reject when target carries
     // a known namespace prefix (e.g. `exo__`, `ems__`) but contains
     // characters that would produce an invalid namespace IRI.
+    //
+    // Issue #3121: for multi-valued exo__Instance_class, only reject if
+    // ALL entries are invalid. Mixed arrays (one bad + N valid) survive —
+    // the bad entries are dropped by `expandClassValue` returning null at
+    // triple-build time, while valid entries still produce rdf:type and
+    // exo__Instance_class triples. Previously a single malformed entry
+    // dropped the entire asset from the store, cascading false sh:class
+    // violations on referencing assets.
     const instanceClassValue = frontmatter["exo__Instance_class"];
     const classCandidates = Array.isArray(instanceClassValue)
       ? instanceClassValue
       : [instanceClassValue];
+    let firstInvalid: { candidate: string } | null = null;
+    let anyValid = false;
     for (const candidate of classCandidates) {
       if (typeof candidate !== "string") continue;
       const cleaned = this.removeQuotes(candidate);
@@ -791,12 +801,17 @@ export class NoteToRDFConverter {
       const target = (wikilink ?? cleaned).trim();
       const looksLikeNamespacedClass = /^[a-z][a-zA-Z0-9]*__/.test(target);
       if (looksLikeNamespacedClass && /[\s()]/.test(target)) {
-        return {
-          code: "INVALID_INSTANCE_CLASS_IRI",
-          property: "exo__Instance_class",
-          message: `Invalid Instance_class IRI: "${candidate}"`,
-        };
+        if (!firstInvalid) firstInvalid = { candidate };
+      } else {
+        anyValid = true;
       }
+    }
+    if (firstInvalid && !anyValid) {
+      return {
+        code: "INVALID_INSTANCE_CLASS_IRI",
+        property: "exo__Instance_class",
+        message: `Invalid Instance_class IRI: "${firstInvalid.candidate}"`,
+      };
     }
 
     return null;
@@ -1198,6 +1213,12 @@ export class NoteToRDFConverter {
     const cleanValue = this.removeQuotes(value);
     const parsed = Namespace.fromPropertyKey(cleanValue);
     if (!parsed) return null;
+    // Issue #3121: reject local names whose IRI form would be invalid
+    // (whitespace, parens). Without this gate, `Namespace.term` throws and
+    // aborts the entire vault-load iteration via the outer catch, dropping
+    // every triple for the asset — including valid sibling rdf:type triples
+    // from other entries in a multi-valued exo__Instance_class array.
+    if (/[\s()]/.test(parsed.localName)) return null;
     return parsed.namespace.term(parsed.localName);
   }
 
