@@ -113,9 +113,15 @@ describe("Issue #2713: validate schema command", () => {
       expect(option).toBeDefined();
     });
 
-    it("should register exactly 6 options", () => {
+    it("should register exactly 7 options (incl. --also for multi-vault SHACL — Issue #3127)", () => {
       const cmd = validateSchemaCommand();
-      expect(cmd.options).toHaveLength(6);
+      expect(cmd.options).toHaveLength(7);
+    });
+
+    it("should register --also option (Issue #3127 — repeatable additional vaults)", () => {
+      const cmd = validateSchemaCommand();
+      const option = cmd.options.find((o: any) => o.long === "--also");
+      expect(option).toBeDefined();
     });
 
     it("should register --shapes-mode option", () => {
