@@ -23,6 +23,7 @@ import {
 } from "./categoryDisplayDefaults";
 import { PanelResolver } from "@plugin/application/services/PanelResolver";
 import type { ExocmdFastResolver } from "./ExocmdFastResolver";
+import type { ExocmdBindingsCache } from "@plugin/cache/ExocmdBindingsCache";
 
 /**
  * Configuration for DynamicCommandButtonGroupBuilder.
@@ -66,6 +67,20 @@ export interface DynamicCommandBuilderConfig {
    */
   fastResolver?: ExocmdFastResolver;
   isFullPathReady?: () => boolean;
+  /**
+   * Issue #3183 — persistent disk cache that pre-computes visible commands
+   * per class. When provided AND the warm snapshot already has an entry
+   * for the open file's primary class, the builder skips both the fast
+   * and full paths and returns the cached `ResolvedCommand[]` directly.
+   * Cache misses (no entry for this class, snapshot empty, snapshot
+   * never loaded) fall through cleanly to the existing
+   * fast-path/full-path strategy selector — the cache is a strict
+   * superset of fast behaviour, never a replacement.
+   *
+   * Wiring is opt-in: tests and other call-sites that do not pass
+   * `bindingsCache` retain the original two-path behaviour byte-for-byte.
+   */
+  bindingsCache?: ExocmdBindingsCache;
 }
 
 /**
@@ -277,6 +292,25 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
 
     const prototypeIRI = this.extractPrototypeIRI(metadata);
 
+    // Issue #3183 — persistent disk cache. Cache stores binding-resolution
+    // output (NOT precondition-filter output): the indexer's representative
+    // target cannot speak for every future asset of the same class — its
+    // frontmatter state determines target-state preconditions like
+    // `ASK { $target ems:Effort_startTimestamp ?x }` differently than a
+    // sibling task that does have that property. So the cache only saves
+    // the binding-resolution SPARQL hop; preconditions are re-evaluated
+    // per-render against the live triple store, matching the full-path
+    // contract byte-for-byte. Class-hierarchy preconditions (CREATE
+    // category) still need the full store to evaluate correctly — once
+    // it is ready they pass and the buttons appear; in the cold-start
+    // window before convertVault() they remain hidden (same as today's
+    // fast path).
+    //
+    // Lookup tries every non-`exo__Asset` class key the asset declares
+    // — UUID-canonical first (post-2026-05-16) then symbolic aliases —
+    // so cache writes keyed by either form resolve correctly.
+    const cachedBindings = this.resolveViaCache(assetClasses);
+
     // Issue #3171 — cold-start fast path. When the full vault triple store
     // has NOT yet finished `convertVault()`, delegate to ExocmdFastResolver
     // which builds a mini-store from just the open file + 41 exocmd assets
@@ -287,19 +321,31 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
     // re-renders automatically via the plugin's resolved-cache invalidation
     // hook.
     const useFastPath =
+      cachedBindings === null &&
       this.config.fastResolver !== undefined &&
       this.config.isFullPathReady !== undefined &&
       !this.config.isFullPathReady();
 
-    const preconditionPassed = useFastPath
-      ? await this.resolveViaFastPath(context)
-      : await this.resolveViaFullPath(
-          subjectIRI,
-          assetClasses,
-          prototypeIRI,
-          file,
-          logger,
-        );
+    let preconditionPassed: ResolvedCommand[] | null;
+    if (cachedBindings !== null) {
+      // Cache hit: skip binding resolution, run preconditions through
+      // the live evaluator against the current target.
+      preconditionPassed = await this.evaluatePreconditions(
+        cachedBindings,
+        subjectIRI,
+        file,
+      );
+    } else if (useFastPath) {
+      preconditionPassed = await this.resolveViaFastPath(context);
+    } else {
+      preconditionPassed = await this.resolveViaFullPath(
+        subjectIRI,
+        assetClasses,
+        prototypeIRI,
+        file,
+        logger,
+      );
+    }
 
     if (preconditionPassed === null) return null;
 
@@ -355,12 +401,29 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
 
     if (resolved.length === 0) return null;
 
+    return this.evaluatePreconditions(resolved, subjectIRI, file);
+  }
+
+  /**
+   * Run preconditions in PARALLEL against the live `PreconditionEvaluator`
+   * and return only the commands whose preconditions evaluated to true.
+   * Extracted from {@link resolveViaFullPath} so the Issue #3183 cache
+   * hit path can reuse the exact same precondition pipeline — cached
+   * bindings then render through the same per-target evaluation as the
+   * full path, eliminating per-target false positives/negatives that a
+   * pre-filtered cache would carry.
+   */
+  private async evaluatePreconditions(
+    resolved: ReadonlyArray<ResolvedCommand>,
+    subjectIRI: string,
+    file: ButtonBuilderContext["file"],
+  ): Promise<ResolvedCommand[]> {
+    if (resolved.length === 0) return [];
     const evalContext: EvalContext = {
       targetIRI: subjectIRI,
       fileBasename: file.basename,
       currentFolder: file.parent?.path,
     };
-
     const availabilityChecks = await Promise.all(
       resolved.map(async (rc) => {
         try {
@@ -375,7 +438,6 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
         }
       }),
     );
-
     return availabilityChecks
       .filter(({ available }) => available)
       .map(({ rc }) => rc);
@@ -432,6 +494,73 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
     }
   }
   private fastpathReadyMarked = false;
+
+  /**
+   * Issue #3183 — disk-cache strategy. Returns the cached `ResolvedCommand[]`
+   * for the first non-`exo__Asset` class key that has a snapshot entry,
+   * or `null` when no cache is wired, no snapshot is loaded, or no key
+   * matches. Cache hits emit a one-shot `exocmd-cache-applied`
+   * `performance.mark` paired with `exocmd-cache-read-to-applied` so the
+   * cold-start AC #1 latency target is observable in the same DevTools
+   * console session as `exocmd-fastpath` / `exocmd-fullpath` (#3175).
+   *
+   * The lookup is synchronous — it does not touch disk; the snapshot is
+   * loaded once at plugin onload, before `convertVault()` even starts.
+   */
+  private resolveViaCache(
+    assetClasses: ReadonlyArray<string>,
+  ): ResolvedCommand[] | null {
+    const cache = this.config.bindingsCache;
+    if (!cache) return null;
+    // Issue #3183 follow-up: once the full triple store is ready, the
+    // disk cache must yield — its per-class snapshot cannot represent
+    // `targetAsset` / `targetPrototype` bindings (those are subject-keyed
+    // and only the production `resolveForAssetMulti` against the live
+    // subject IRI matches them). The cache stays useful in the
+    // cold-start window where `isFullPathReady() === false`; the post-
+    // ready render through full path then corrects any per-subject
+    // bindings the cache could not pre-compute.
+    if (this.config.isFullPathReady && this.config.isFullPathReady()) {
+      return null;
+    }
+    for (const cls of assetClasses) {
+      if (cls === "exo__Asset") continue;
+      const entry = cache.lookup(cls);
+      if (entry) {
+        if (!this.cacheAppliedMarked) {
+          this.cacheAppliedMarked = true;
+          try {
+            performance.mark("exocmd-cache-applied");
+            // `getEntriesByName` may not be implemented by every host
+            // (jsdom stubs only `mark`/`measure`). Treat its absence as
+            // "start marker unknown" and skip the measure — the mark
+            // alone is enough for the AC #1 visibility target.
+            const hasGet =
+              typeof (
+                performance as unknown as Record<string, unknown>
+              )["getEntriesByName"] === "function";
+            if (
+              hasGet &&
+              performance.getEntriesByName("exocmd-cache-read-start")
+                .length > 0
+            ) {
+              performance.measure(
+                "exocmd-cache-read-to-applied",
+                "exocmd-cache-read-start",
+                "exocmd-cache-applied",
+              );
+            }
+          } catch {
+            // Performance API edge cases (missing start mark, browser
+            // throwing on unknown name) must never break button rendering.
+          }
+        }
+        return [...entry.commands];
+      }
+    }
+    return null;
+  }
+  private cacheAppliedMarked = false;
 
   private createButton(
     rc: ResolvedCommand,
