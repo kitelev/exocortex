@@ -42,11 +42,14 @@ describe("DailyTasksRenderer - render", () => {
     expect(ctx.mockReactRenderer.render).not.toHaveBeenCalled();
   });
 
-  it("should not render when pn__DailyNote_day is missing", async () => {
+  it("should not render when pn__DailyNote_day is missing AND basename has no YYYY-MM-DD prefix", async () => {
+    // Both `pn__DailyNote_day` and the basename-fallback (YYYY-MM-DD
+    // prefix) are absent, so `extractDailyNoteInfo` returns day=null
+    // and the renderer must bail.
     const mockFile = {
-      path: "test.md",
+      path: "daily.md",
       parent: { path: "DailyNotes" },
-      basename: "2025-10-20",
+      basename: "daily",
     } as TFile;
     const metadata = { exo__Instance_class: ["[[pn__DailyNote]]"] };
 
@@ -59,7 +62,7 @@ describe("DailyTasksRenderer - render", () => {
     await ctx.renderer.render(mockEl, mockFile);
 
     expect(ctx.mockLogger.debug).toHaveBeenCalledWith(
-      "No pn__DailyNote_day found for daily note",
+      "No pn__DailyNote_day or YYYY-MM-DD basename for daily note",
     );
     expect(ctx.mockReactRenderer.render).not.toHaveBeenCalled();
   });

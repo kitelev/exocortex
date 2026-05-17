@@ -42,7 +42,18 @@ export class DailyNoteHelpers {
 
     const dayProperty = metadata.pn__DailyNote_day;
     if (!dayProperty) {
-      logger?.debug("No pn__DailyNote_day found for daily note");
+      // Fallback: derive day from basename when frontmatter lacks the
+      // explicit property. obsidian-calendar-plugin and most daily-note
+      // templates name files `YYYY-MM-DD*` (e.g. "2026-05-17 Note.md"),
+      // so the basename prefix is a reliable source of truth. This keeps
+      // the Tasks section rendering for daily notes created by templates
+      // that don't populate `pn__DailyNote_day` (regression seen on
+      // vault-2025 daily notes from 2025-11 onward).
+      const basenameDay = DailyNoteHelpers.extractDayFromBasename(file);
+      if (basenameDay) {
+        return { isDailyNote: true, day: basenameDay };
+      }
+      logger?.debug("No pn__DailyNote_day or YYYY-MM-DD basename for daily note");
       return { isDailyNote: true, day: null };
     }
 
@@ -55,6 +66,18 @@ export class DailyNoteHelpers {
       : String(dayProperty).replace(/^\[\[|\]\]$/g, "");
 
     return { isDailyNote: true, day };
+  }
+
+  /**
+   * Extract a `YYYY-MM-DD` day from a filename basename like
+   * `2026-05-17 Note.md`. Returns null if the basename does not begin
+   * with that pattern.
+   */
+  private static extractDayFromBasename(file: TFile | IFile): string | null {
+    const basename = file.basename;
+    if (!basename) return null;
+    const match = basename.match(/^(\d{4}-\d{2}-\d{2})/);
+    return match ? match[1] : null;
   }
 
   static findDailyNoteByDate(
