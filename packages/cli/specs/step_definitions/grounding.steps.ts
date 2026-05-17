@@ -133,6 +133,24 @@ function readGroundingDef(uid: string, depth = 0): GroundingDefinition {
       steps = rawSteps.map((ref) => readGroundingDef(normalizeWikilink(ref), depth + 1));
     }
   }
+  const incrementByRaw = fm["exocmd__Grounding_incrementBy"];
+  let incrementBy: number | undefined;
+  if (incrementByRaw !== undefined && incrementByRaw !== null && incrementByRaw !== "") {
+    const parsed = Number.parseInt(String(incrementByRaw), 10);
+    if (Number.isFinite(parsed)) incrementBy = parsed;
+  }
+  const propertyDefaultsRaw = fm["exocmd__Grounding_propertyDefaults"];
+  let propertyDefaults: Record<string, string> | undefined;
+  if (typeof propertyDefaultsRaw === "string" && propertyDefaultsRaw.length > 0) {
+    try {
+      const parsed = JSON.parse(propertyDefaultsRaw);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        propertyDefaults = parsed as Record<string, string>;
+      }
+    } catch {
+      // fail loud at executor layer if needed
+    }
+  }
   return {
     id: uid,
     label: (fm["exo__Asset_label"] as string) ?? "",
@@ -142,6 +160,10 @@ function readGroundingDef(uid: string, depth = 0): GroundingDefinition {
     targetClass: fm["exocmd__Grounding_targetClass"] as string | undefined,
     targetPrototype: fm["exocmd__Grounding_targetPrototype"] as string | undefined,
     targetFolder: fm["exocmd__Grounding_targetFolder"] as string | undefined,
+    shiftDelta: fm["exocmd__Grounding_shiftDelta"] as string | undefined,
+    incrementBy,
+    linkBackProperty: fm["exocmd__Grounding_linkBackProperty"] as string | undefined,
+    propertyDefaults,
     steps,
   };
 }

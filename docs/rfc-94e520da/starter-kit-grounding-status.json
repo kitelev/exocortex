@@ -3,28 +3,27 @@
     "rfc": "94e520da",
     "phase": 1,
     "task": "T1.5",
-    "auditedAt": "2026-05-17T03:52:35.692Z",
-    "starterKitPath": "/Users/kitelev/Developer/exocortex-development/worktrees/starter-kit-claude1-property-increment-shift",
+    "auditedAt": "2026-05-17T06:43:06.521Z",
+    "starterKitPath": "../starter-kit-claude2-feat-q3b-migration",
     "totalGroundings": 48,
     "byType": {
       "property_delete": 4,
-      "service_call": 21,
-      "create_instance": 1,
-      "property_set": 16,
+      "service_call": 19,
+      "create_instance": 2,
+      "property_set": 17,
       "property_append": 1,
       "property_shift": 2,
       "property_increment": 1,
       "composite": 2
     },
     "byCliStatus": {
-      "real": 42,
-      "unregistered": 3,
-      "stub": 3
+      "real": 44,
+      "stub": 3,
+      "unregistered": 1
     },
     "serviceIdCounts": {
       "updateProperty": 7,
       "createRelatedTask": 1,
-      "createTaskForDailyNote": 1,
       "createRelatedProject": 1,
       "createAsset": 3,
       "renameToUid": 1,
@@ -33,7 +32,6 @@
       "repairFolder": 1,
       "archiveAsset": 1,
       "rollbackStatus": 1,
-      "planOnToday": 1,
       "planForEvening": 1
     }
   },
@@ -64,11 +62,11 @@
     },
     {
       "uid": "4d8d5055-cf83-4d12-8749-7c0f6956d9be",
-      "label": "Create task for daily note via service",
+      "label": "Create task for daily note (declarative)",
       "path": "exocmd/creation/4d8d5055-cf83-4d12-8749-7c0f6956d9be.md",
-      "type": "service_call",
-      "serviceId": "createTaskForDailyNote",
-      "cliStatus": "unregistered"
+      "type": "create_instance",
+      "serviceId": null,
+      "cliStatus": "real"
     },
     {
       "uid": "8748f8b0-989b-45a0-88a9-155bc5126f3c",
@@ -240,11 +238,11 @@
     },
     {
       "uid": "22a6ba6b-030a-47e4-946e-1a30dc9450e5",
-      "label": "Plan on today via service",
+      "label": "Plan on today (declarative)",
       "path": "exocmd/planning/22a6ba6b-030a-47e4-946e-1a30dc9450e5.md",
-      "type": "service_call",
-      "serviceId": "planOnToday",
-      "cliStatus": "unregistered"
+      "type": "property_set",
+      "serviceId": null,
+      "cliStatus": "real"
     },
     {
       "uid": "4ffd02e9-f0a6-477d-846e-6364b8b4d528",

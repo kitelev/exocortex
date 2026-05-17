@@ -319,13 +319,14 @@ export function populateServiceRegistry(
       }),
     );
 
-    registry.register(
-      "planOnToday",
-      wrapService(async (targetIRI: string) => {
-        const iFile = resolveIFile(app, targetIRI, vaultAdapter);
-        await taskStatusService.planOnToday(iFile);
-      }),
-    );
+    // `planOnToday` service registration removed in Issue #3136 — the sole
+    // grounding consumer (`22a6ba6b-…`) was migrated to declarative
+    // `property_set` with the new `$todayStart` substitution token
+    // (Homoiconicity Invariant Q1 remediation, RFC
+    // `18407cb2-9554-4897-9213-17321f9dd434` Path B). The palette command
+    // path `PlanOnTodayCommand → TaskStatusService.planOnToday` still wires
+    // through direct DI (not the grounding service registry), so the
+    // `taskStatusService.planOnToday` method itself is retained.
 
     registry.register(
       "planForEvening",
@@ -539,24 +540,13 @@ export function populateServiceRegistry(
       }),
     );
 
-    registry.register(
-      "createTaskForDailyNote",
-      wrapService(async (targetIRI: string, userInput?: UserInput) => {
-        const label = userInput?.label as string | undefined;
-        if (!label) throw new Error("createTaskForDailyNote requires userInput.label");
-        const iFile = resolveIFile(app, targetIRI, vaultAdapter);
-        const folderPath = iFile.parent?.path || "";
-        const today = DateFormatter.toISOTimestamp(new Date()).substring(0, 10);
-        await genericAssetCreationService.createAsset({
-          className: "ems__Task",
-          label,
-          folderPath,
-          propertyValues: {
-            "ems__Effort_plannedStartTimestamp": today,
-          },
-        });
-      }),
-    );
+    // `createTaskForDailyNote` service registration removed in Issue #3136 —
+    // the sole grounding consumer (`4d8d5055-…`) was migrated to declarative
+    // `create_instance` grounding with the new `$targetFolder` substitution
+    // token + `exocmd__Grounding_propertyDefaults` JSON literal
+    // (Homoiconicity Invariant Q1 remediation, RFC
+    // `18407cb2-9554-4897-9213-17321f9dd434` Path B). No palette-command
+    // path used this service id, so nothing else needs migration.
   }
 }
 

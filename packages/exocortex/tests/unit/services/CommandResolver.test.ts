@@ -421,6 +421,58 @@ describe("CommandResolver", () => {
       expect(cmd!.grounding.linkBackProperty).toBeUndefined();
     });
 
+    // Issue #3136 — Q3.b closure: propertyDefaults JSON literal
+    it("should parse exocmd__Grounding_propertyDefaults JSON object into propertyDefaults map", async () => {
+      const groundingSubject = new IRI(`obsidian://vault/gnd-defaults.md`);
+      await store.addAll([
+        new Triple(groundingSubject, Namespace.RDF.term("type"), Namespace.EXOCMD.term("Grounding")),
+        new Triple(groundingSubject, Namespace.EXO.term("Asset_uid"), new Literal("gnd-defaults")),
+        new Triple(groundingSubject, Namespace.EXO.term("Asset_label"), new Literal("With defaults")),
+        new Triple(groundingSubject, Namespace.EXOCMD.term("Grounding_type"), new Literal("create_instance")),
+        new Triple(
+          groundingSubject,
+          Namespace.EXOCMD.term("Grounding_propertyDefaults"),
+          new Literal('{"ems__Effort_plannedStartTimestamp":"$today","ems__Effort_status":"[[backlog]]"}'),
+        ),
+      ]);
+      await addCommandAsset(store, {
+        uid: "cmd-defaults",
+        label: "Create With Defaults",
+        groundingRef: "gnd-defaults",
+      });
+
+      const cmd = await resolver.loadCommand("cmd-defaults");
+
+      expect(cmd!.grounding.propertyDefaults).toEqual({
+        ems__Effort_plannedStartTimestamp: "$today",
+        ems__Effort_status: "[[backlog]]",
+      });
+    });
+
+    it("should fail-loud when exocmd__Grounding_propertyDefaults is invalid JSON", async () => {
+      const groundingSubject = new IRI(`obsidian://vault/gnd-bad-defaults.md`);
+      await store.addAll([
+        new Triple(groundingSubject, Namespace.RDF.term("type"), Namespace.EXOCMD.term("Grounding")),
+        new Triple(groundingSubject, Namespace.EXO.term("Asset_uid"), new Literal("gnd-bad-defaults")),
+        new Triple(groundingSubject, Namespace.EXO.term("Asset_label"), new Literal("Bad defaults")),
+        new Triple(groundingSubject, Namespace.EXOCMD.term("Grounding_type"), new Literal("create_instance")),
+        new Triple(
+          groundingSubject,
+          Namespace.EXOCMD.term("Grounding_propertyDefaults"),
+          new Literal("not-json"),
+        ),
+      ]);
+      await addCommandAsset(store, {
+        uid: "cmd-bad-defaults",
+        label: "Bad",
+        groundingRef: "gnd-bad-defaults",
+      });
+
+      await expect(resolver.loadCommand("cmd-bad-defaults")).rejects.toThrow(
+        /not valid JSON/,
+      );
+    });
+
     it("should return null for missing UID", async () => {
       const cmd = await resolver.loadCommand("non-existent");
       expect(cmd).toBeNull();

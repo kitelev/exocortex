@@ -1,13 +1,12 @@
 {
   "uid": "4d8d5055-cf83-4d12-8749-7c0f6956d9be",
-  "label": "Create task for daily note via service",
-  "type": "service_call",
-  "cliStatus": "unregistered",
-  "serviceId": "createTaskForDailyNote",
+  "label": "Create task for daily note (declarative)",
+  "type": "create_instance",
+  "cliStatus": "real",
+  "serviceId": null,
   "sourcePath": "exocmd/creation/4d8d5055-cf83-4d12-8749-7c0f6956d9be.md",
   "userInput": null,
   "expect": {
-    "outcome": "failure",
-    "errorPattern": "Service not found: \\\"createTaskForDailyNote\\\""
+    "outcome": "success"
   }
 }

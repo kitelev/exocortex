@@ -1,13 +1,15 @@
 {
   "uid": "0b104d75-3ed5-44c5-ab04-cffb26e2578a",
-  "label": "Shift day forward via service",
-  "type": "service_call",
-  "cliStatus": "unregistered",
-  "serviceId": "shiftDay",
+  "label": "Shift day forward via property_shift",
+  "type": "property_shift",
+  "cliStatus": "real",
+  "serviceId": null,
   "sourcePath": "exocmd/planning/0b104d75-3ed5-44c5-ab04-cffb26e2578a.md",
   "userInput": null,
   "expect": {
-    "outcome": "failure",
-    "errorPattern": "Service not found: \\\"shiftDay\\\""
+    "outcome": "success",
+    "frontmatterAfter": {
+      "ems__Effort_plannedStartTimestamp": "2026-04-21T09:00:00"
+    }
   }
 }
