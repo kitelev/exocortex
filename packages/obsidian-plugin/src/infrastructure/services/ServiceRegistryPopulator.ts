@@ -110,7 +110,14 @@ export function populateServiceRegistry(
         (userInput?.prototypeUID as string | undefined) ??
         (userInput?.prototype as string | undefined);
       const label = userInput?.label as string | undefined;
+      // `userInput.folder` literal wins over the targetIRI-based inference.
+      // Global surfaces (Obsidian Command Palette, RFC `1429fcd0`) call this
+      // service without an active file, so they pass `folder` explicitly via
+      // the exocmd grounding `targetValue`. Layout buttons keep working
+      // unchanged: they don't pass `folder` and the inference below fills it
+      // in from the active asset.
       let folder = userInput?.folder as string | undefined;
+      const ownerIdentity = userInput?.ownerIdentity as string | undefined;
       if (!prototypeUID) throw new Error("createAsset requires userInput.prototypeUID");
       if (!label) throw new Error("createAsset requires userInput.label");
       // Default to current file's folder when not specified
@@ -172,6 +179,7 @@ export function populateServiceRegistry(
         "exo__Instance_class:",
         `  - "[[${expectedClass}]]"`,
       ];
+      let isDefinedByWritten = false;
       if (parentMetadata) {
         const parentClass = parentMetadata.exo__Instance_class;
         const parentClasses = Array.isArray(parentClass)
@@ -207,7 +215,19 @@ export function populateServiceRegistry(
               String(parentMetadata.exo__Asset_isDefinedBy),
             )}`,
           );
+          isDefinedByWritten = true;
         }
+      }
+      // Fallback for global surfaces without an active file (RFC `1429fcd0`):
+      // the caller (e.g. ExocmdCommandPaletteRegistrar) injects the user's
+      // owner-identity wikilink via `userInput.ownerIdentity`. Parent
+      // inheritance takes precedence above — a button click on an
+      // ontology-specific asset still inherits that asset's `isDefinedBy`,
+      // so this branch only fires when there is no parent at all.
+      if (!isDefinedByWritten && ownerIdentity) {
+        lines.push(
+          `exo__Asset_isDefinedBy: ${toQuotedWikilink(ownerIdentity)}`,
+        );
       }
       lines.push("---", "");
       const frontmatter = lines.join("\n");

@@ -1,4 +1,4 @@
-import { App } from "obsidian";
+import type { App } from "obsidian";
 import {
   ActionButton,
   ActionButtonVariant,
@@ -8,17 +8,13 @@ import type {
   CommandResolver,
   ResolvedCommand,
   PreconditionEvaluator,
-  GroundingExecutor,
-  UserInput,
   EvalContext,
-  INotificationService,
+  CommandExecutionFlow,
 } from "exocortex";
-import { ILogger } from "@plugin/adapters/logging/ILogger";
 import {
   IButtonGroupBuilder,
   ButtonBuilderContext,
 } from "./ButtonBuilderTypes";
-import { DynamicFormModal } from "@plugin/presentation/modals/DynamicFormModal";
 import { resolveDefaultVariantForCategory } from "./categoryDefaultVariants";
 import {
   FALLBACK_CATEGORY_ORDER,
@@ -36,8 +32,13 @@ import { PanelResolver } from "@plugin/application/services/PanelResolver";
 export interface DynamicCommandBuilderConfig {
   commandResolver: CommandResolver;
   preconditionEvaluator: PreconditionEvaluator;
-  groundingExecutor: GroundingExecutor;
-  notificationService: INotificationService;
+  /**
+   * Pipeline that handles confirm → modal → execute → notify when a
+   * button is clicked. Shared with the global Command Palette registrar
+   * (RFC `1429fcd0`). Construct it with a `GroundingExecutor` +
+   * `INotificationService` + an Obsidian-side `CommandPromptAdapter`.
+   */
+  commandExecutionFlow: CommandExecutionFlow;
   /**
    * Optional. When omitted a default no-op resolver is used (no panel
    * declared for any class) so existing call-sites and tests remain
@@ -116,17 +117,9 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
     const resolved = await this.resolveVisibleCommands(context);
     if (resolved === null) return [];
     const { visibleCommands, subjectIRI, panelClassRef } = resolved;
-    const { app, file, logger, refresh } = context;
+    const { file, refresh } = context;
     return visibleCommands.map((rc) =>
-      this.createButton(
-        rc,
-        subjectIRI,
-        file.path,
-        app as App,
-        logger,
-        refresh,
-        panelClassRef,
-      ),
+      this.createButton(rc, subjectIRI, file.path, refresh, panelClassRef),
     );
   }
 
@@ -155,7 +148,7 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
     const resolved = await this.resolveVisibleCommands(context);
     if (resolved === null) return [];
     const { visibleCommands, subjectIRI, panelClassRef } = resolved;
-    const { app, file, logger, refresh } = context;
+    const { file, refresh } = context;
 
     const byCategory = new Map<string, ResolvedCommand[]>();
     for (const rc of visibleCommands) {
@@ -186,15 +179,7 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
           ? undefined
           : resolveCategoryCollapsed(key, panel),
         buttons: commands.map((rc) =>
-          this.createButton(
-            rc,
-            subjectIRI,
-            file.path,
-            app as App,
-            logger,
-            refresh,
-            panelClassRef,
-          ),
+          this.createButton(rc, subjectIRI, file.path, refresh, panelClassRef),
         ),
       });
     }
@@ -339,8 +324,6 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
     rc: ResolvedCommand,
     targetIRI: string,
     filePath: string,
-    app: App,
-    logger: ILogger,
     refresh: () => Promise<void>,
     panelClassRef: string | null,
   ): ActionButton {
@@ -390,83 +373,13 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
       tooltip,
       visible: true,
       onClick: async () => {
-        await this.handleClick(rc, targetIRI, filePath, app, logger, refresh);
+        await this.config.commandExecutionFlow.run(rc, {
+          targetIRI,
+          filePath,
+          onComplete: refresh,
+        });
       },
     };
-  }
-
-  private async handleClick(
-    rc: ResolvedCommand,
-    targetIRI: string,
-    filePath: string,
-    app: App,
-    logger: ILogger,
-    refresh: () => Promise<void>,
-  ): Promise<void> {
-    const { command } = rc;
-
-    if (command.confirmMessage) {
-      const confirmed = await this.showConfirmation(command.confirmMessage);
-      if (!confirmed) return;
-    }
-
-    let userInput: UserInput | undefined;
-    const inputSchema = this.extractInputSchema(rc);
-    if (inputSchema && inputSchema.length > 0) {
-      const modal = new DynamicFormModal(app, inputSchema);
-      const collected = await modal.waitForResult();
-      if (collected === null) return;
-      userInput = collected;
-    }
-
-    const result = await this.config.groundingExecutor.execute(
-      command.grounding,
-      targetIRI,
-      filePath,
-      userInput,
-    );
-
-    if (result.success) {
-      if (command.successMessage) {
-        this.config.notificationService.success(command.successMessage);
-      }
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      await refresh();
-      logger.info(
-        `[DynamicCommands] Executed "${command.name}" on ${filePath}`,
-      );
-    } else {
-      this.config.notificationService.error(
-        `Command failed: ${result.error ?? "unknown error"}`,
-      );
-      logger.info(
-        `[DynamicCommands] Failed "${command.name}": ${result.error}`,
-      );
-    }
-  }
-
-  private async showConfirmation(message: string): Promise<boolean> {
-    return new Promise((resolve) => {
-      // eslint-disable-next-line no-alert -- simple confirmation until a proper Obsidian modal is implemented
-      const confirmed = window.confirm(message);
-      resolve(confirmed);
-    });
-  }
-
-  private extractInputSchema(rc: ResolvedCommand): InputSchemaField[] | null {
-    const grounding = rc.command.grounding;
-    const raw = (grounding as unknown as Record<string, unknown>)[
-      "inputSchema"
-    ];
-    if (!raw || !Array.isArray(raw)) return null;
-
-    return raw.filter(
-      (field): field is InputSchemaField =>
-        typeof field === "object" &&
-        field !== null &&
-        typeof (field as Record<string, unknown>)["name"] === "string" &&
-        typeof (field as Record<string, unknown>)["type"] === "string",
-    );
   }
 
   /**

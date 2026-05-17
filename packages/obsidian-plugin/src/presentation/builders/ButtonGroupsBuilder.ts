@@ -11,6 +11,7 @@ import {
   GroundingExecutor,
   FolderRepairService,
   INotificationService,
+  CommandExecutionFlow,
 } from "exocortex";
 import {
   ButtonBuilderContext,
@@ -20,6 +21,7 @@ import {
 } from "./button-groups";
 import { PanelResolver } from "@plugin/application/services/PanelResolver";
 import { ObsidianApp, ExocortexPluginInterface } from '@plugin/types';
+import { ObsidianCommandPromptAdapter } from "@plugin/infrastructure/adapters/ObsidianCommandPromptAdapter";
 
 /**
  * Configuration object for ButtonGroupsBuilder.
@@ -99,12 +101,17 @@ export class ButtonGroupsBuilder {
     this.builders = [];
 
     if (commandResolver && preconditionEvaluator && groundingExecutor && notificationService) {
+      const commandExecutionFlow = new CommandExecutionFlow(
+        groundingExecutor,
+        notificationService,
+        logger,
+        new ObsidianCommandPromptAdapter(app),
+      );
       this.builders.push(
         new DynamicCommandButtonGroupBuilder({
           commandResolver,
           preconditionEvaluator,
-          groundingExecutor,
-          notificationService,
+          commandExecutionFlow,
           panelResolver,
         }),
       );
