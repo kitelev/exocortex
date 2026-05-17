@@ -691,6 +691,67 @@ describe("GroundingExecutor", () => {
       );
       expect(result).toBe("plain value");
     });
+
+    // Issue #3136 — Q3.b closure
+    it("should replace $todayStart with YYYY-MM-DDT00:00:00 (local midnight)", () => {
+      const result = executor.substituteVariables(
+        "planned $todayStart",
+        TARGET_IRI,
+      );
+      expect(result).toMatch(/^planned \d{4}-\d{2}-\d{2}T00:00:00$/);
+    });
+
+    it("should replace $todayStart before $today to avoid prefix collision", () => {
+      const result = executor.substituteVariables(
+        "$todayStart vs $today",
+        TARGET_IRI,
+      );
+      expect(result).toMatch(/^\d{4}-\d{2}-\d{2}T00:00:00 vs \d{4}-\d{2}-\d{2}$/);
+      expect(result).not.toContain("Start");
+      expect(result).not.toContain("$today");
+    });
+
+    it("should replace $targetFolder with parent dir of targetFilePath", () => {
+      const result = executor.substituteVariables(
+        "place under $targetFolder",
+        TARGET_IRI,
+        undefined,
+        undefined,
+        "03 Knowledge/areas/2026-05-17.md",
+      );
+      expect(result).toBe("place under 03 Knowledge/areas");
+    });
+
+    it("should resolve $targetFolder to empty string at vault root", () => {
+      const result = executor.substituteVariables(
+        "under [$targetFolder]",
+        TARGET_IRI,
+        undefined,
+        undefined,
+        "root-file.md",
+      );
+      expect(result).toBe("under []");
+    });
+
+    it("should fail-fast when $targetFolder is used without targetFilePath", () => {
+      expect(() =>
+        executor.substituteVariables(
+          "place under $targetFolder",
+          TARGET_IRI,
+        ),
+      ).toThrow(/\$targetFolder substitution requires targetFilePath/);
+    });
+
+    it("should not let $target consume $targetFolder prefix", () => {
+      const result = executor.substituteVariables(
+        "iri=$target folder=$targetFolder",
+        TARGET_IRI,
+        undefined,
+        undefined,
+        "x/y/z.md",
+      );
+      expect(result).toBe(`iri=${TARGET_IRI} folder=x/y`);
+    });
   });
 
   // -- create_instance (RFC-016 #2643, #2645) --
@@ -785,6 +846,105 @@ describe("GroundingExecutor", () => {
       expect(result.success).toBe(true);
       const [, content] = writer.createFile.mock.calls[0];
       expect(content).toMatch(/exo__Asset_createdAt: \d{4}-\d{2}-\d{2}T/);
+    });
+
+    // Issue #3136 — Q3.b closure: propertyDefaults + $targetFolder
+    describe("propertyDefaults (Issue #3136)", () => {
+      it("should apply propertyDefaults with $today substitution", async () => {
+        const grounding = makeGrounding({
+          type: GroundingType.CREATE_INSTANCE,
+          targetClass: "ems__Task",
+          targetFolder: "01 Inbox",
+          propertyDefaults: {
+            "ems__Effort_plannedStartTimestamp": "$today",
+          },
+        });
+
+        const result = await executor.execute(
+          grounding,
+          TARGET_IRI,
+          FILE_PATH,
+          { label: "task" },
+        );
+
+        expect(result.success).toBe(true);
+        const [, content] = writer.createFile.mock.calls[0];
+        expect(content).toMatch(
+          /ems__Effort_plannedStartTimestamp: \d{4}-\d{2}-\d{2}/,
+        );
+      });
+
+      it("should allow userInput to override propertyDefaults", async () => {
+        const grounding = makeGrounding({
+          type: GroundingType.CREATE_INSTANCE,
+          targetClass: "ems__Task",
+          targetFolder: "01 Inbox",
+          propertyDefaults: {
+            "ems__Effort_plannedStartTimestamp": "$today",
+          },
+        });
+
+        const result = await executor.execute(
+          grounding,
+          TARGET_IRI,
+          FILE_PATH,
+          {
+            label: "task",
+            ems__Effort_plannedStartTimestamp: "2099-12-31",
+          },
+        );
+
+        expect(result.success).toBe(true);
+        const [, content] = writer.createFile.mock.calls[0];
+        expect(content).toContain(
+          "ems__Effort_plannedStartTimestamp: 2099-12-31",
+        );
+      });
+
+      it("should resolve $targetFolder token in grounding.targetFolder", async () => {
+        const grounding = makeGrounding({
+          type: GroundingType.CREATE_INSTANCE,
+          targetClass: "ems__Task",
+          targetFolder: "$targetFolder",
+        });
+
+        const result = await executor.execute(
+          grounding,
+          TARGET_IRI,
+          "03 Knowledge/areas/host.md",
+          { label: "task" },
+        );
+
+        expect(result.success).toBe(true);
+        const [path] = writer.createFile.mock.calls[0];
+        expect(path).toMatch(/^03 Knowledge\/areas\/[a-f0-9-]+\.md$/);
+      });
+
+      it("should apply multiple propertyDefaults", async () => {
+        const grounding = makeGrounding({
+          type: GroundingType.CREATE_INSTANCE,
+          targetClass: "ems__Task",
+          targetFolder: "tasks",
+          propertyDefaults: {
+            "ems__Effort_plannedStartTimestamp": "$today",
+            "ems__Effort_status": "[[backlog]]",
+          },
+        });
+
+        const result = await executor.execute(
+          grounding,
+          TARGET_IRI,
+          FILE_PATH,
+          { label: "multi" },
+        );
+
+        expect(result.success).toBe(true);
+        const [, content] = writer.createFile.mock.calls[0];
+        expect(content).toMatch(
+          /ems__Effort_plannedStartTimestamp: \d{4}-\d{2}-\d{2}/,
+        );
+        expect(content).toContain("ems__Effort_status:");
+      });
     });
 
     it("should include exo__Instance_class as YAML array", async () => {

@@ -19,7 +19,7 @@ Feature: Starter-kit grounding execution (RFC 94e520da § Phase 6)
       | 58714ab2-c155-47d8-a8bb-38da317817ad | property_delete | real         | Remove start timestamp |
       | 30b9e8d8-bc55-492d-80fa-82f01ed19a45 | service_call    | real         | Link to parent |
       | 4919afb1-fcc3-4a6e-85a0-a869e6a69774 | service_call    | real         | Create related task via service |
-      | 4d8d5055-cf83-4d12-8749-7c0f6956d9be | service_call    | unregistered | Create task for daily note via service |
+      | 4d8d5055-cf83-4d12-8749-7c0f6956d9be | create_instance | real         | Create task for daily note (declarative) |
       | 8748f8b0-989b-45a0-88a9-155bc5126f3c | service_call    | real         | Create project |
       | 95aaab51-8cd5-42db-a207-42793864d133 | service_call    | stub         | Create knowledge |
       | a222094b-f499-4342-aec0-65c4ba99c657 | service_call    | stub         | Create task |
@@ -38,13 +38,13 @@ Feature: Starter-kit grounding execution (RFC 94e520da § Phase 6)
       | eba11892-6e8d-4e38-b5e4-d50dd006e6d8 | service_call    | unregistered | Rollback status via service |
       | 1a14832c-f657-4816-b2aa-d06f2a80fccf | property_delete | real         | Delete start timestamp |
       | 2c53ea68-8247-4ea8-870e-3bfbf2256b2f | property_delete | real         | Delete end timestamp |
-      | a85668fa-17b7-45d0-aa7f-935e2502dff0 | service_call    | unregistered | Copy label to aliases via service |
+      | a85668fa-17b7-45d0-aa7f-935e2502dff0 | property_append | real         | Copy label to aliases via property_append |
       | c4616dcd-3832-4812-b289-0968510fb8be | service_call    | real         | Set result value |
-      | 0b104d75-3ed5-44c5-ab04-cffb26e2578a | service_call    | unregistered | Shift day forward via service |
-      | 22a6ba6b-030a-47e4-946e-1a30dc9450e5 | service_call    | unregistered | Plan on today via service |
+      | 0b104d75-3ed5-44c5-ab04-cffb26e2578a | property_shift  | real         | Shift day forward via property_shift |
+      | 22a6ba6b-030a-47e4-946e-1a30dc9450e5 | property_set    | real         | Plan on today (declarative) |
       | 4ffd02e9-f0a6-477d-846e-6364b8b4d528 | property_delete | real         | Remove scheduled date |
-      | 506f031e-007f-4c74-8257-158550c64956 | service_call    | unregistered | Increment votes via service |
-      | 6ee56341-966c-4791-8eb3-7a75104b2e5b | service_call    | unregistered | Shift day backward via service |
+      | 506f031e-007f-4c74-8257-158550c64956 | property_increment | real      | Increment votes via property_increment |
+      | 6ee56341-966c-4791-8eb3-7a75104b2e5b | property_shift  | real         | Shift day backward via property_shift |
       | 85687461-c2df-4d1b-819b-0c3ae0ab3741 | service_call    | real         | Set planned start timestamp |
       | afda78d9-88e1-4590-8ce8-2c664d6359d3 | service_call    | real         | Set planned end timestamp |
       | d222ddaf-0a56-4bac-91e3-6af02fafebc8 | service_call    | real         | Set scheduled date |

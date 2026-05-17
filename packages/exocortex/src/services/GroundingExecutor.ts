@@ -522,8 +522,25 @@ export class GroundingExecutor {
       properties.exo__Asset_prototype = `"[[${grounding.targetPrototype}]]"`;
     }
 
-    // userInput wins over copy-from-target — apply first so the copy-loop
-    // below can skip already-set keys without re-quoting.
+    // Issue #3136 (Q3.b closure): apply propertyDefaults BEFORE userInput so
+    // user input wins. Values are passed through substituteVariables, enabling
+    // declarative use of `$today` / `$todayStart` / `$targetFolder` / `$target`
+    // (replacing the legacy `createTaskForDailyNote` service_call).
+    if (grounding.propertyDefaults) {
+      for (const [key, rawValue] of Object.entries(grounding.propertyDefaults)) {
+        if (typeof rawValue !== "string") continue;
+        properties[key] = this.substituteVariables(
+          rawValue,
+          targetIRI,
+          userInput,
+          undefined,
+          targetFilePath,
+        );
+      }
+    }
+
+    // userInput wins over propertyDefaults and over copy-from-target — apply
+    // here so the copy-loop below can skip already-set keys without re-quoting.
     if (userInput) {
       for (const [key, value] of Object.entries(userInput)) {
         if (key === "label") continue;
@@ -566,7 +583,17 @@ export class GroundingExecutor {
     }
 
     const content = this.frontmatterService.createFrontmatter("", properties);
-    const filePath = `${grounding.targetFolder}/${uid}.md`;
+    // Issue #3136 (Q3.b closure): allow `$targetFolder` / `$target` tokens in
+    // `grounding.targetFolder` so new instances can inherit the target's
+    // parent folder declaratively (replacing legacy `createTaskForDailyNote`).
+    const resolvedFolder = this.substituteVariables(
+      grounding.targetFolder,
+      targetIRI,
+      userInput,
+      undefined,
+      targetFilePath,
+    );
+    const filePath = resolvedFolder ? `${resolvedFolder}/${uid}.md` : `${uid}.md`;
 
     await this.fileWriter.createFile(filePath, content);
 
@@ -639,6 +666,13 @@ export class GroundingExecutor {
    *   so composite groundings can chain status + timestamp writes consistently
    *   with palette commands.
    * - $today → current date (YYYY-MM-DD)
+   * - $todayStart → today at local midnight (YYYY-MM-DDT00:00:00, no TZ) —
+   *   matches `DateFormatter.getTodayStartTimestamp()` written by the legacy
+   *   `TaskStatusService.planOnToday` so a declarative `property_set` with
+   *   `$todayStart` is byte-identical to the previous service_call output.
+   * - $targetFolder → parent folder (vault-relative) of the $target file.
+   *   Resolves to empty string when target is at the vault root. Available
+   *   only when callers pass `targetFilePath`; fail-fast otherwise.
    * - $input / $value → userInput.value (RFC-028 Findings 3+4) — powers
    *   "Set Planned Start/End", "Set Scheduled Date", "Set Result" buttons.
    *   Substituted only when userInput.value is defined; callers must gate
@@ -649,11 +683,13 @@ export class GroundingExecutor {
     targetIRI: string,
     userInput?: UserInput,
     targetFrontmatter?: Record<string, string | string[]>,
+    targetFilePath?: string,
   ): string {
     const date = new Date();
     const now = date.toISOString();
     const nowLocal = DateFormatter.toLocalTimestamp(date);
     const today = now.slice(0, 10);
+    const todayStart = `${today}T00:00:00`;
 
     // Issue #3132: `$target.<propertyName>` reads from target asset
     // frontmatter. MUST run before bare `$target` substitution (more-specific
@@ -686,10 +722,27 @@ export class GroundingExecutor {
       return String(fmValue).replace(/^["'](.*)["']$/, "$1");
     });
 
+    // $targetFolder is resolved BEFORE the generic `$target` substitution so
+    // the latter does not consume the `$target` prefix and leave `Folder`
+    // behind. Same applies to $todayStart vs $today below.
+    if (/\$targetFolder\b/.test(result)) {
+      if (!targetFilePath) {
+        throw new Error(
+          "$targetFolder substitution requires targetFilePath context; " +
+            "none was supplied (asset IRI: " + targetIRI + ")",
+        );
+      }
+      const normalized = targetFilePath.replace(/^\/+/, "");
+      const slashIdx = normalized.lastIndexOf("/");
+      const targetFolder = slashIdx >= 0 ? normalized.slice(0, slashIdx) : "";
+      result = result.replace(/\$targetFolder\b/g, targetFolder);
+    }
+
     result = result
       .replace(/\$target/g, targetIRI)
       .replace(/\$nowLocal/g, nowLocal)
       .replace(/\$now/g, now)
+      .replace(/\$todayStart\b/g, todayStart)
       .replace(/\$today/g, today);
 
     if (userInput?.value !== undefined && userInput.value !== null) {

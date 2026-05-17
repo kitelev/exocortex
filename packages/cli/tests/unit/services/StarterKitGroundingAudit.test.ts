@@ -73,20 +73,28 @@ describe("RFC 94e520da T1.5 starter-kit grounding audit fixture", () => {
     // +1 property_increment). Net: 3 groundings move from
     // unregistered → real (24 → 21 service_call, 39 → 42 real,
     // 6 → 3 unregistered).
+    // Issue #3136: grounding 22a6ba6b-… migrated from service_call
+    // (planOnToday) to declarative property_set with new $todayStart token
+    // (−1 service_call, +1 property_set). Grounding 4d8d5055-… migrated
+    // from service_call (createTaskForDailyNote) to declarative
+    // create_instance with new $targetFolder token + propertyDefaults JSON
+    // literal (−1 service_call, +1 create_instance). Net: 2 groundings
+    // move from unregistered → real (21 → 19 service_call, 42 → 44 real,
+    // 3 → 1 unregistered).
     expect(fixture.summary.byType).toEqual({
-      service_call: 21,
-      property_set: 16,
+      service_call: 19,
+      property_set: 17,
       property_delete: 4,
       composite: 2,
-      create_instance: 1,
+      create_instance: 2,
       property_append: 1,
       property_increment: 1,
       property_shift: 2,
     });
     expect(fixture.summary.byCliStatus).toEqual({
-      real: 42,
+      real: 44,
       stub: 3,
-      unregistered: 3,
+      unregistered: 1,
     });
   });
 
@@ -116,14 +124,16 @@ describe("RFC 94e520da T1.5 starter-kit grounding audit fixture", () => {
     ]);
     const documentedStubIds = new Set(["createAsset"]);
     const documentedUnregisteredIds = new Set([
-      "planOnToday",
       "rollbackStatus",
-      "createTaskForDailyNote",
       // copyLabelToAliases removed in Issue #3132 — grounding migrated to
       // declarative property_append (no longer a service_call).
       // shiftDay (×2) + incrementVotes (×1) removed in Issue #3134 —
       // groundings migrated to declarative property_shift /
       // property_increment (RFC 18407cb2 Path B).
+      // planOnToday + createTaskForDailyNote removed in Issue #3136 —
+      // groundings migrated to declarative property_set (with $todayStart)
+      // + create_instance (with $targetFolder + propertyDefaults). Only
+      // rollbackStatus remains — Q3.a documented temporal-stack pop.
     ]);
 
     for (const g of fixture.groundings) {

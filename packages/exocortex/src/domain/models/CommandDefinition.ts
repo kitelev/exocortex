@@ -114,6 +114,20 @@ export interface GroundingDefinition {
    * xsd:yearMonthDuration (`P1M`, `P1Y2M`) shapes.
    */
   readonly shiftDelta?: string;
+  /**
+   * Property defaults applied to a newly created instance BEFORE userInput
+   * is merged (for `create_instance` grounding, Issue #3136 — Q3.b closure).
+   * Values pass through `substituteVariables`, so tokens like `$today`,
+   * `$todayStart`, `$targetFolder`, `$target` are resolved at execution time.
+   *
+   * Authored on grounding ассеты as a JSON literal in the
+   * `exocmd__Grounding_propertyDefaults` RDF triple, e.g.
+   * `'{"ems__Effort_plannedStartTimestamp": "$today"}'`.
+   *
+   * userInput keys override defaults; class / prototype / back-link wiring
+   * is unaffected by this map.
+   */
+  readonly propertyDefaults?: Record<string, string>;
 }
 
 /**
