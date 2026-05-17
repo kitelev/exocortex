@@ -20,6 +20,7 @@ import {
   createButtonGroupIfVisible,
   DynamicCommandButtonGroupBuilder,
 } from "./button-groups";
+import type { ExocmdFastResolver } from "./button-groups/ExocmdFastResolver";
 import { PanelResolver } from "@plugin/application/services/PanelResolver";
 import { ObsidianApp, ExocortexPluginInterface } from '@plugin/types';
 import { ObsidianCommandPromptAdapter } from "@plugin/infrastructure/adapters/ObsidianCommandPromptAdapter";
@@ -63,6 +64,19 @@ export interface ButtonGroupsBuilderConfig {
    * working until the layout-provider lookup is wired up.
    */
   panelResolver?: PanelResolver;
+  /**
+   * Issue #3171 — cold-start fast-path resolver for `exocmd__Command`
+   * buttons. When provided together with `isFullPathReady`, the dynamic
+   * builder takes the fast path until the full vault triple store has
+   * finished initializing.
+   */
+  fastResolver?: ExocmdFastResolver;
+  /**
+   * Issue #3171 — returns true once the full vault triple store is
+   * ready. Wired to `SPARQLApi.isReady()` in production; tests pass an
+   * inline closure. Must be supplied alongside `fastResolver`.
+   */
+  isFullPathReady?: () => boolean;
 }
 
 /**
@@ -122,6 +136,8 @@ export class ButtonGroupsBuilder {
           preconditionEvaluator,
           commandExecutionFlow,
           panelResolver,
+          fastResolver: config.fastResolver,
+          isFullPathReady: config.isFullPathReady,
         }),
       );
     }
