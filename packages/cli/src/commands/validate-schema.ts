@@ -173,8 +173,125 @@ async function loadTriplesFromAllVaults(
     }
   }
 
+  if (alsoPaths.length > 0) {
+    const before = triples.length;
+    triples = resolveCrossVaultInstanceClassWikilinks(triples);
+    if (verbose) {
+      const added = triples.length - before;
+      if (added > 0) {
+        console.log(
+          `   🔗 Cross-vault Instance_class resolution: emitted ${added} additional canonical-IRI triple(s)`,
+        );
+      }
+    }
+  }
+
   return { triples, cacheHit };
 }
+
+const EXO_INSTANCE_CLASS_IRI =
+  "https://exocortex.my/ontology/exo#Instance_class";
+const RDF_TYPE_IRI = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type";
+const INSTANCE_CLASS_LITERAL_WIKILINK_RE =
+  /^\[\[([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\|[^\]]*)?\]\]$/i;
+const SUBJECT_UID_SUFFIX_RE =
+  /\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.md$/i;
+
+/**
+ * In multi-vault scans (`--also` repeated), each per-path NoteToRDFConverter
+ * resolves `exo__Instance_class` wikilink targets only against its own vault.
+ * When a class definition file lives in vault A and a typed asset lives in
+ * vault B passed via `--also`, the converter in B cannot find the class file,
+ * leaving the value as a literal `[[<uid>]]` instead of the canonical class
+ * IRI. SHACL sh:class checks then fail for the asset, even though the asset
+ * IS correctly typed in another vault.
+ *
+ * This post-processing pass closes the gap purely in CLI scope:
+ *
+ *   1. Scan all triples once to build a `uid → canonical-class-IRI` map from
+ *      class-definition files. A file at `obsidian://…/<uid>.md` is a class
+ *      definition when it carries an `rdfs:label` or `exo:Asset_label`
+ *      literal whose value matches the `<namespacePrefix>__<LocalName>`
+ *      pattern recognised by `labelToOntologyIRI()`.
+ *
+ *   2. Walk the triple set again. For each triple with predicate
+ *      `exo:Instance_class` and a Literal object of form `[[<uid>]]` or
+ *      `[[<uid>|alias]]`, emit the missing canonical-IRI triple AND a
+ *      matching `rdf:type` triple (the SHACL validator reads either
+ *      predicate, see ShaclLiteValidator.ts L158–159).
+ *
+ * The literal triple is preserved — downstream consumers that read the raw
+ * wikilink (SPARQL queries against the literal form) keep working. Only
+ * additive emission, no replacement.
+ */
+export function resolveCrossVaultInstanceClassWikilinks(
+  triples: DomainTriple[],
+): DomainTriple[] {
+  const uidToClassIRI = new Map<string, string>();
+  for (const t of triples) {
+    if (
+      !(t.subject instanceof DomainIRI) ||
+      !(t.predicate instanceof DomainIRI) ||
+      !(t.object instanceof DomainLiteral)
+    ) {
+      continue;
+    }
+    if (t.predicate.value !== RDFS_LABEL && t.predicate.value !== EXO_ASSET_LABEL_IRI) {
+      continue;
+    }
+    const m = SUBJECT_UID_SUFFIX_RE.exec(t.subject.value);
+    if (!m) continue;
+    const uid = m[1].toLowerCase();
+    if (uidToClassIRI.has(uid)) continue;
+    const labelValue = t.object.value.trim();
+    // labelToOntologyIRI splits on first `__`; multi-word or whitespace-bearing
+    // labels (e.g. "ems__Project Special") would yield an invalid IRI. Restrict
+    // to single-token labels to keep DomainIRI construction safe.
+    if (/\s/.test(labelValue)) continue;
+    const classIRI = labelToOntologyIRI(labelValue);
+    if (classIRI) {
+      uidToClassIRI.set(uid, classIRI);
+    }
+  }
+
+  if (uidToClassIRI.size === 0) return triples;
+
+  const emitted = new Set<string>();
+  const additions: DomainTriple[] = [];
+  for (const t of triples) {
+    if (
+      !(t.subject instanceof DomainIRI) ||
+      !(t.predicate instanceof DomainIRI) ||
+      !(t.object instanceof DomainLiteral)
+    ) {
+      continue;
+    }
+    if (t.predicate.value !== EXO_INSTANCE_CLASS_IRI) continue;
+    const lit = t.object.value.trim();
+    const m = INSTANCE_CLASS_LITERAL_WIKILINK_RE.exec(lit);
+    if (!m) continue;
+    const uid = m[1].toLowerCase();
+    const classIRI = uidToClassIRI.get(uid);
+    if (!classIRI) continue;
+
+    const subjectIRI = t.subject.value;
+    const dedupKey = `${subjectIRI} ${classIRI}`;
+    if (emitted.has(dedupKey)) continue;
+    emitted.add(dedupKey);
+
+    const classNode = new DomainIRI(classIRI);
+    additions.push(
+      new DomainTriple(t.subject, new DomainIRI(EXO_INSTANCE_CLASS_IRI), classNode),
+    );
+    additions.push(
+      new DomainTriple(t.subject, new DomainIRI(RDF_TYPE_IRI), classNode),
+    );
+  }
+
+  return additions.length > 0 ? triples.concat(additions) : triples;
+}
+
+const EXO_ASSET_LABEL_IRI = "https://exocortex.my/ontology/exo#Asset_label";
 
 /**
  * Resolves a focusNode IRI (obsidian://vault/<relPath>) to the absolute
