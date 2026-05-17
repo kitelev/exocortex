@@ -21,6 +21,7 @@ import {
   DynamicCommandButtonGroupBuilder,
 } from "./button-groups";
 import type { ExocmdFastResolver } from "./button-groups/ExocmdFastResolver";
+import type { ExocmdBindingsCache } from "@plugin/cache/ExocmdBindingsCache";
 import { PanelResolver } from "@plugin/application/services/PanelResolver";
 import { ObsidianApp, ExocortexPluginInterface } from '@plugin/types';
 import { ObsidianCommandPromptAdapter } from "@plugin/infrastructure/adapters/ObsidianCommandPromptAdapter";
@@ -77,6 +78,14 @@ export interface ButtonGroupsBuilderConfig {
    * inline closure. Must be supplied alongside `fastResolver`.
    */
   isFullPathReady?: () => boolean;
+  /**
+   * Issue #3183 — persistent disk cache for resolved exocmd bindings.
+   * Optional; when omitted the dynamic builder skips the cache layer and
+   * falls back to the existing fast/full path strategy. Same instance is
+   * loaded once at plugin onload by `ExocortexPlugin` and shared across
+   * every render so the in-memory snapshot is hit O(1).
+   */
+  bindingsCache?: ExocmdBindingsCache;
 }
 
 /**
@@ -138,6 +147,7 @@ export class ButtonGroupsBuilder {
           panelResolver,
           fastResolver: config.fastResolver,
           isFullPathReady: config.isFullPathReady,
+          bindingsCache: config.bindingsCache,
         }),
       );
     }

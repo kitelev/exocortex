@@ -23,6 +23,7 @@ import {
 } from "./categoryDisplayDefaults";
 import { PanelResolver } from "@plugin/application/services/PanelResolver";
 import type { ExocmdFastResolver } from "./ExocmdFastResolver";
+import type { ExocmdBindingsCache } from "@plugin/cache/ExocmdBindingsCache";
 
 /**
  * Configuration for DynamicCommandButtonGroupBuilder.
@@ -66,6 +67,20 @@ export interface DynamicCommandBuilderConfig {
    */
   fastResolver?: ExocmdFastResolver;
   isFullPathReady?: () => boolean;
+  /**
+   * Issue #3183 — persistent disk cache that pre-computes visible commands
+   * per class. When provided AND the warm snapshot already has an entry
+   * for the open file's primary class, the builder skips both the fast
+   * and full paths and returns the cached `ResolvedCommand[]` directly.
+   * Cache misses (no entry for this class, snapshot empty, snapshot
+   * never loaded) fall through cleanly to the existing
+   * fast-path/full-path strategy selector — the cache is a strict
+   * superset of fast behaviour, never a replacement.
+   *
+   * Wiring is opt-in: tests and other call-sites that do not pass
+   * `bindingsCache` retain the original two-path behaviour byte-for-byte.
+   */
+  bindingsCache?: ExocmdBindingsCache;
 }
 
 /**
@@ -277,6 +292,38 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
 
     const prototypeIRI = this.extractPrototypeIRI(metadata);
 
+    // Issue #3183 — persistent disk cache. Tried first because it is the
+    // ONLY path that can serve a *complete* CREATE+MISC button set during
+    // the ~5-21 s cold-start window where the full triple store is still
+    // being built (the fast path's mini-store lacks the class-hierarchy
+    // graph that CREATE-category preconditions traverse). Cache hits emit
+    // the `exocmd-cache-applied` performance.mark so the AC #1 latency
+    // target is observable from the same DevTools call the original
+    // `exocmd-fastpath` / `exocmd-fullpath` marks support (#3175).
+    //
+    // Lookup tries every non-`exo__Asset` class key the asset declares
+    // — UUID-canonical first (post-2026-05-16) then symbolic aliases —
+    // so cache writes keyed by either form resolve correctly.
+    const cachedCommands = this.resolveViaCache(assetClasses);
+    if (cachedCommands !== null) {
+      const preconditionPassed = cachedCommands;
+      const visibleCommands =
+        panelClassRef !== null
+          ? this.panelResolver
+              .applyFilter(
+                panelClassRef,
+                preconditionPassed.map((rc) => ({
+                  uid: rc.binding.id,
+                  category: rc.command.category,
+                  rc,
+                })),
+              )
+              .map((entry) => entry.rc)
+          : preconditionPassed;
+      if (visibleCommands.length === 0) return null;
+      return { visibleCommands, subjectIRI, panelClassRef };
+    }
+
     // Issue #3171 — cold-start fast path. When the full vault triple store
     // has NOT yet finished `convertVault()`, delegate to ExocmdFastResolver
     // which builds a mini-store from just the open file + 41 exocmd assets
@@ -432,6 +479,62 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
     }
   }
   private fastpathReadyMarked = false;
+
+  /**
+   * Issue #3183 — disk-cache strategy. Returns the cached `ResolvedCommand[]`
+   * for the first non-`exo__Asset` class key that has a snapshot entry,
+   * or `null` when no cache is wired, no snapshot is loaded, or no key
+   * matches. Cache hits emit a one-shot `exocmd-cache-applied`
+   * `performance.mark` paired with `exocmd-cache-read-to-applied` so the
+   * cold-start AC #1 latency target is observable in the same DevTools
+   * console session as `exocmd-fastpath` / `exocmd-fullpath` (#3175).
+   *
+   * The lookup is synchronous — it does not touch disk; the snapshot is
+   * loaded once at plugin onload, before `convertVault()` even starts.
+   */
+  private resolveViaCache(
+    assetClasses: ReadonlyArray<string>,
+  ): ResolvedCommand[] | null {
+    const cache = this.config.bindingsCache;
+    if (!cache) return null;
+    for (const cls of assetClasses) {
+      if (cls === "exo__Asset") continue;
+      const entry = cache.lookup(cls);
+      if (entry) {
+        if (!this.cacheAppliedMarked) {
+          this.cacheAppliedMarked = true;
+          try {
+            performance.mark("exocmd-cache-applied");
+            // `getEntriesByName` may not be implemented by every host
+            // (jsdom stubs only `mark`/`measure`). Treat its absence as
+            // "start marker unknown" and skip the measure — the mark
+            // alone is enough for the AC #1 visibility target.
+            const hasGet =
+              typeof (
+                performance as unknown as Record<string, unknown>
+              )["getEntriesByName"] === "function";
+            if (
+              hasGet &&
+              performance.getEntriesByName("exocmd-cache-read-start")
+                .length > 0
+            ) {
+              performance.measure(
+                "exocmd-cache-read-to-applied",
+                "exocmd-cache-read-start",
+                "exocmd-cache-applied",
+              );
+            }
+          } catch {
+            // Performance API edge cases (missing start mark, browser
+            // throwing on unknown name) must never break button rendering.
+          }
+        }
+        return [...entry.commands];
+      }
+    }
+    return null;
+  }
+  private cacheAppliedMarked = false;
 
   private createButton(
     rc: ResolvedCommand,
