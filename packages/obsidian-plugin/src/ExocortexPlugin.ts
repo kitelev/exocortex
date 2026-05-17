@@ -78,6 +78,7 @@ import { GraphViewPatch } from "./presentation/graph-view/GraphViewPatch";
 import { PrintNameRuleService } from "./domain/display-name/PrintNameRuleService";
 import { ObsidianFileSystemAdapter } from "./adapters/ObsidianFileSystemAdapter";
 import { populateServiceRegistry } from "./infrastructure/services/ServiceRegistryPopulator";
+import { ObsidianFileOpener } from "./infrastructure/services/ObsidianFileOpener";
 import { ExocmdCommandPaletteRegistrar } from "./application/services/ExocmdCommandPaletteRegistrar";
 import { ObsidianCommandPromptAdapter } from "./infrastructure/adapters/ObsidianCommandPromptAdapter";
 import {
@@ -569,6 +570,7 @@ export default class ExocortexPlugin extends Plugin {
             this.logger,
             new ObsidianCommandPromptAdapter(this.app),
             tripleStore,
+            new ObsidianFileOpener(this.app),
           );
           await new ExocmdCommandPaletteRegistrar(
             this,

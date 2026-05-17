@@ -822,7 +822,12 @@ describe("GroundingExecutor", () => {
       expect(content).toContain("exo__Asset_uid:");
       expect(content).toContain("exo__Asset_label: Buy milk");
       expect(content).toContain("gtd__InboxItem");
-      expect(content).toContain("proto-uuid-123");
+      // Issue #3184 B1: exo__Asset_prototype links to the $target file
+      // (the prototype-instance the user clicked on), not the class UID
+      // declared in `grounding.targetPrototype`. The class UID is only
+      // used for binding resolution, never materialised into frontmatter.
+      expect(content).toContain('exo__Asset_prototype: "[[vault/test-asset]]"');
+      expect(content).not.toContain("proto-uuid-123");
     });
 
     it("should generate valid UUID in filename", async () => {
@@ -851,7 +856,7 @@ describe("GroundingExecutor", () => {
       expect(result.error).toContain("targetFolder");
     });
 
-    it("should work without targetPrototype", async () => {
+    it("should work without grounding.targetPrototype (prototype back-link still applied)", async () => {
       const grounding = makeGrounding({
         type: GroundingType.CREATE_INSTANCE,
         targetClass: "ems__Task",
@@ -863,7 +868,11 @@ describe("GroundingExecutor", () => {
       expect(result.success).toBe(true);
       const [, content] = writer.createFile.mock.calls[0];
       expect(content).toContain("exo__Asset_label: No proto");
-      expect(content).not.toContain("exo__Asset_prototype");
+      // Issue #3184 B2: with a non-empty targetIRI, exo__Asset_prototype is
+      // always written by the default back-link — even if grounding.targetPrototype
+      // (the class UID) is absent. The link references $target (the parent
+      // file the user clicked on), not the class UID.
+      expect(content).toContain('exo__Asset_prototype: "[[vault/test-asset]]"');
     });
 
     it("should use 'Untitled' as default label when no user input", async () => {
@@ -892,6 +901,29 @@ describe("GroundingExecutor", () => {
       expect(result.success).toBe(true);
       const [, content] = writer.createFile.mock.calls[0];
       expect(content).toMatch(/exo__Asset_createdAt: \d{4}-\d{2}-\d{2}T/);
+    });
+
+    it("should emit exo__Asset_createdAt as a local timestamp (no Z / TZ suffix) — Issue #3188", async () => {
+      const grounding = makeGrounding({
+        type: GroundingType.CREATE_INSTANCE,
+        targetClass: "ems__Task",
+        targetFolder: "01 Inbox",
+      });
+
+      const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
+
+      expect(result.success).toBe(true);
+      const [, content] = writer.createFile.mock.calls[0];
+      // Match the exact line carrying the timestamp.
+      const match = content.match(/^exo__Asset_createdAt:\s*(.+)$/m);
+      expect(match).not.toBeNull();
+      const ts = match![1].trim();
+      // Local timestamp shape: YYYY-MM-DDTHH:mm:ss (no fractional seconds,
+      // no timezone designator) — matches DateFormatter.toLocalTimestamp.
+      expect(ts).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/);
+      // Issue #3188: must NOT carry the UTC `Z` or any `±HH:MM` offset.
+      expect(ts).not.toMatch(/Z$/);
+      expect(ts).not.toMatch(/[+-]\d{2}:?\d{2}$/);
     });
 
     // Issue #3136 — Q3.b closure: propertyDefaults + $targetFolder
@@ -1007,7 +1039,7 @@ describe("GroundingExecutor", () => {
       expect(content).toContain('exo__Instance_class:\n  - "[[ems__Task]]"');
     });
 
-    it("should include exo__Asset_source linking to target asset", async () => {
+    it("should default the back-link to exo__Asset_prototype for create_instance (Issue #3184 B2)", async () => {
       const grounding = makeGrounding({
         type: GroundingType.CREATE_INSTANCE,
         targetClass: "ems__Task",
@@ -1018,7 +1050,13 @@ describe("GroundingExecutor", () => {
 
       expect(result.success).toBe(true);
       const [, content] = writer.createFile.mock.calls[0];
-      expect(content).toContain(`"[[vault/test-asset]]"`);
+      expect(content).toContain(
+        'exo__Asset_prototype: "[[vault/test-asset]]"',
+      );
+      // Issue #3184 B2: no automatic exo__Asset_source for create_instance.
+      // The prototype back-link already conveys the same semantic edge in
+      // the RDF graph; doubling it up bloats frontmatter and confuses users.
+      expect(content).not.toContain("exo__Asset_source:");
     });
 
     it("should add aliases when label is provided", async () => {
@@ -1120,8 +1158,10 @@ describe("GroundingExecutor", () => {
       expect(content).toContain("exo__Asset_createdAt:");
       expect(content).toContain("exo__Asset_label: Купить молоко");
       expect(content).toContain("gtd__InboxItem");
-      expect(content).toContain("proto-daily-review-uuid");
-      expect(content).toContain(`"[[vault/test-asset]]"`);
+      // Issue #3184 B1: prototype-class UID is NOT materialised; the
+      // back-link references the prototype-INSTANCE the user clicked.
+      expect(content).not.toContain("proto-daily-review-uuid");
+      expect(content).toContain('exo__Asset_prototype: "[[vault/test-asset]]"');
 
       // Verify UUID in path matches UUID in frontmatter
       const pathUuid = path.split("/").pop()?.replace(".md", "");
@@ -1163,7 +1203,6 @@ describe("GroundingExecutor", () => {
 
         const [, content] = writer.createFile.mock.calls[0];
         // Inherited non-blacklisted properties
-        expect(content).toContain('ems__Effort_area: "[[area-uid-42]]"');
         expect(content).toContain('ems__Effort_priority: "[[priority-high]]"');
         expect(content).toContain('"[[tag-alpha]]"');
         expect(content).toContain('"[[tag-beta]]"');
@@ -1174,11 +1213,19 @@ describe("GroundingExecutor", () => {
         expect(content).not.toMatch(/exo__Instance_class:[\s\S]*ems__Project/);
         expect(content).not.toContain("ems__EffortStatusDoing");
         expect(content).not.toContain("ems__Effort_startTimestamp:");
+        // Issue #3184 B3: ems__Effort_area belongs on the prototype-instance
+        // and is reachable through the prototype-chain in the RDF graph;
+        // copying the wikilink into the new instance double-materialises it.
+        expect(content).not.toContain("ems__Effort_area:");
+        expect(content).not.toContain("area-uid-42");
       });
 
       it("re-quotes wikilink values copied from $target", async () => {
+        // Use ems__Effort_priority (NOT blacklisted) instead of
+        // ems__Effort_area (blacklisted per Issue #3184 B3) so the test
+        // exercises the wikilink-re-quoting path rather than the blacklist.
         reader.readFile.mockResolvedValue(
-          '---\nems__Effort_area: "[[area-uid-42]]"\nems__Effort_unquoted: [[bare-link]]\n---\n',
+          '---\nems__Effort_priority: "[[priority-high]]"\nems__Effort_unquoted: [[bare-link]]\n---\n',
         );
 
         const grounding = makeGrounding({
@@ -1190,13 +1237,15 @@ describe("GroundingExecutor", () => {
         await executor.execute(grounding, TARGET_IRI, FILE_PATH);
 
         const [, content] = writer.createFile.mock.calls[0];
-        expect(content).toContain('ems__Effort_area: "[[area-uid-42]]"');
+        expect(content).toContain('ems__Effort_priority: "[[priority-high]]"');
         expect(content).toContain('ems__Effort_unquoted: "[[bare-link]]"');
       });
 
       it("does not overwrite properties already set via userInput", async () => {
+        // Use ems__Effort_priority (NOT blacklisted by Issue #3184 B3) so the
+        // assertion focuses on userInput-vs-copy-from-target precedence.
         reader.readFile.mockResolvedValue(
-          '---\nems__Effort_area: "[[area-from-target]]"\n---\n',
+          '---\nems__Effort_priority: "[[priority-from-target]]"\n---\n',
         );
 
         const grounding = makeGrounding({
@@ -1207,12 +1256,14 @@ describe("GroundingExecutor", () => {
 
         await executor.execute(grounding, TARGET_IRI, FILE_PATH, {
           label: "X",
-          ems__Effort_area: '"[[area-from-user]]"',
+          ems__Effort_priority: '"[[priority-from-user]]"',
         });
 
         const [, content] = writer.createFile.mock.calls[0];
-        expect(content).toContain('ems__Effort_area: "[[area-from-user]]"');
-        expect(content).not.toContain("area-from-target");
+        expect(content).toContain(
+          'ems__Effort_priority: "[[priority-from-user]]"',
+        );
+        expect(content).not.toContain("priority-from-target");
       });
 
       it("writes back-link to grounding.linkBackProperty when provided", async () => {
@@ -1232,7 +1283,7 @@ describe("GroundingExecutor", () => {
         expect(content).not.toContain("exo__Asset_source:");
       });
 
-      it("falls back to exo__Asset_source when linkBackProperty is absent", async () => {
+      it("falls back to exo__Asset_prototype when linkBackProperty is absent (Issue #3184 B2)", async () => {
         reader.readFile.mockResolvedValue("---\nfoo: bar\n---\n");
 
         const grounding = makeGrounding({
@@ -1244,7 +1295,10 @@ describe("GroundingExecutor", () => {
         await executor.execute(grounding, TARGET_IRI, FILE_PATH);
 
         const [, content] = writer.createFile.mock.calls[0];
-        expect(content).toContain(`exo__Asset_source: "[[vault/test-asset]]"`);
+        expect(content).toContain(
+          'exo__Asset_prototype: "[[vault/test-asset]]"',
+        );
+        expect(content).not.toContain("exo__Asset_source:");
         expect(content).not.toContain("ems__Effort_prevIteration:");
       });
 
@@ -1286,16 +1340,19 @@ describe("GroundingExecutor", () => {
       });
     });
 
-    // Task 4.4 — regression suite for Phase 2 changes (RFC v0.2 copy-from-target +
-    // configurable linkBackProperty). Guarantees existing vault groundings authored
-    // before RFC v0.2 (e.g. `e01b025b` "Create MeetingPrototype instance",
-    // `adc73790`, `3da98088`, `00a6a887`, `a6ef8fda`) keep emitting
-    // `exo__Asset_source` and that the no-$target path does NOT introduce a phantom
-    // fallback link.
-    describe("Phase 2 regression: existing groundings unchanged (Task 4.4)", () => {
+    // Issue #3184 (B1+B2) replaces the legacy default `exo__Asset_source` with
+    // `exo__Asset_prototype` for create_instance — the prior assumption was
+    // that vault groundings (e.g. `e01b025b` "Create MeetingPrototype instance",
+    // `adc73790`, `3da98088`, `00a6a887`, `a6ef8fda`) wanted `exo__Asset_source`
+    // back-links, but user-facing inspection of created assets showed the
+    // source link duplicated semantics already conveyed by the prototype edge.
+    // The suite below was originally Task 4.4 (Phase 2 backwards compat); it
+    // has been re-pointed at the new default to keep coverage on the no-
+    // `linkBackProperty` path without losing the empty-targetIRI guard.
+    describe("default back-link path (Issue #3184 B2)", () => {
       // Fixture mirrors vault grounding `e01b025b-d03f-4028-b4c8-45d3786ff43d`
-      // ("Create MeetingPrototype instance") — pre-RFC v0.2 shape: targetClass +
-      // targetPrototype + targetFolder, no linkBackProperty.
+      // ("Create MeetingPrototype instance") — targetClass + targetPrototype +
+      // targetFolder, no explicit linkBackProperty.
       const LEGACY_MEETING_GROUNDING = {
         type: GroundingType.CREATE_INSTANCE,
         targetClass: "ems__Meeting",
@@ -1303,7 +1360,7 @@ describe("GroundingExecutor", () => {
         targetFolder: "03 Knowledge/inbox",
       } as const;
 
-      it("legacy grounding (no linkBackProperty) emits exo__Asset_source as before", async () => {
+      it("vault grounding without linkBackProperty defaults to exo__Asset_prototype", async () => {
         reader.readFile.mockResolvedValue("---\nfoo: bar\n---\nBody");
 
         const grounding = makeGrounding({ ...LEGACY_MEETING_GROUNDING });
@@ -1314,12 +1371,15 @@ describe("GroundingExecutor", () => {
 
         expect(result.success).toBe(true);
         const [, content] = writer.createFile.mock.calls[0];
-        expect(content).toContain(`exo__Asset_source: "[[vault/test-asset]]"`);
+        expect(content).toContain(
+          'exo__Asset_prototype: "[[vault/test-asset]]"',
+        );
+        expect(content).not.toContain("exo__Asset_source:");
         expect(content).not.toMatch(/ems__Effort_parent: "\[\[https/);
         expect(content).not.toMatch(/ems__Effort_prevIteration:/);
       });
 
-      it("legacy grounding with targetClass only (no prototype, no linkBackProperty) preserves behavior", async () => {
+      it("grounding with targetClass only (no prototype, no linkBackProperty) defaults to exo__Asset_prototype", async () => {
         reader.readFile.mockResolvedValue("---\nfoo: bar\n---\n");
 
         const grounding = makeGrounding({
@@ -1333,14 +1393,16 @@ describe("GroundingExecutor", () => {
         expect(result.success).toBe(true);
         const [, content] = writer.createFile.mock.calls[0];
         expect(content).toContain('exo__Instance_class:\n  - "[[ems__Task]]"');
-        expect(content).toContain(`exo__Asset_source: "[[vault/test-asset]]"`);
-        expect(content).not.toContain("exo__Asset_prototype:");
+        expect(content).toContain(
+          'exo__Asset_prototype: "[[vault/test-asset]]"',
+        );
+        expect(content).not.toContain("exo__Asset_source:");
       });
 
-      it("legacy grounding without $target (empty targetIRI) does NOT emit any back-link", async () => {
-        // Pre-RFC v0.2 behavior — when targetIRI is falsy, no link is written.
-        // RFC v0.2 must preserve this: must not introduce a phantom
-        // `exo__Asset_source: "[[]]"` or write linkBackProperty with empty value.
+      it("grounding without $target (empty targetIRI) does NOT emit any back-link", async () => {
+        // When targetIRI is falsy, no link is written — neither the legacy
+        // `exo__Asset_source: "[[]]"` nor the new
+        // `exo__Asset_prototype: "[[]]"` phantom value.
         reader.readFile.mockResolvedValue("---\nfoo: bar\n---\n");
 
         const grounding = makeGrounding({
@@ -1354,10 +1416,11 @@ describe("GroundingExecutor", () => {
         expect(result.success).toBe(true);
         const [, content] = writer.createFile.mock.calls[0];
         expect(content).not.toContain("exo__Asset_source:");
+        expect(content).not.toContain("exo__Asset_prototype:");
         expect(content).not.toMatch(/"\[\[\]\]"/);
       });
 
-      it("legacy grounding with linkBackProperty=undefined writes exo__Asset_source (no fallback drift)", async () => {
+      it("grounding with linkBackProperty=undefined still uses the new default (no fallback drift)", async () => {
         reader.readFile.mockResolvedValue("---\nfoo: bar\n---\n");
 
         const grounding = makeGrounding({
@@ -1371,7 +1434,176 @@ describe("GroundingExecutor", () => {
 
         expect(result.success).toBe(true);
         const [, content] = writer.createFile.mock.calls[0];
-        expect(content).toContain(`exo__Asset_source: "[[vault/test-asset]]"`);
+        expect(content).toContain(
+          'exo__Asset_prototype: "[[vault/test-asset]]"',
+        );
+        expect(content).not.toContain("exo__Asset_source:");
+      });
+    });
+
+    // =========================================================================
+    // Issue #3184 — bug fixes: prototype reference, source removal, blacklist,
+    // open-in-tab plumbing. Each bug gets a dedicated test so a future
+    // regression points at the exact AC that broke.
+    // =========================================================================
+    describe("Issue #3184 — grounding bug fixes", () => {
+      // Fixture mirrors the "Lunch" prototype-instance from the issue:
+      //   ems__Effort_area: "[[5dd75bb5-...]]" (B3)
+      //   exo__Asset_relates: "[[some-X]]"    (B4)
+      const PROTOTYPE_INSTANCE_FM = [
+        "---",
+        'exo__Asset_uid: "4b571141-5fc3-4ddd-8f07-ca681fc8410a"',
+        'exo__Asset_label: "Lunch"',
+        "exo__Instance_class:",
+        '  - "[[df7e579d-classid-emsTaskPrototype]]"',
+        'ems__Effort_area: "[[5dd75bb5-areauid]]"',
+        'exo__Asset_relates: "[[some-related-asset]]"',
+        'ems__Effort_priority: "[[priority-mid]]"',
+        "---",
+        "Body",
+      ].join("\n");
+
+      it("B1: exo__Asset_prototype references the prototype-INSTANCE ($target), not the class UID", async () => {
+        reader.readFile.mockResolvedValue(PROTOTYPE_INSTANCE_FM);
+
+        const grounding = makeGrounding({
+          type: GroundingType.CREATE_INSTANCE,
+          targetClass: "ems__Task",
+          // `targetPrototype` is the CLASS UID (`ems__TaskPrototype`) — must
+          // NOT bleed into the created asset's frontmatter.
+          targetPrototype: "df7e579d-classid-emsTaskPrototype",
+          targetFolder: "01 Inbox",
+        });
+
+        const result = await executor.execute(
+          grounding,
+          TARGET_IRI,
+          FILE_PATH,
+          { label: "Lunch instance" },
+        );
+
+        expect(result.success).toBe(true);
+        const [, content] = writer.createFile.mock.calls[0];
+        expect(content).toContain(
+          'exo__Asset_prototype: "[[vault/test-asset]]"',
+        );
+        expect(content).not.toContain("df7e579d-classid-emsTaskPrototype");
+      });
+
+      it("B2: exo__Asset_source is not written by default for create_instance", async () => {
+        reader.readFile.mockResolvedValue(PROTOTYPE_INSTANCE_FM);
+
+        const grounding = makeGrounding({
+          type: GroundingType.CREATE_INSTANCE,
+          targetClass: "ems__Task",
+          targetFolder: "01 Inbox",
+        });
+
+        const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
+
+        expect(result.success).toBe(true);
+        const [, content] = writer.createFile.mock.calls[0];
+        expect(content).not.toContain("exo__Asset_source:");
+      });
+
+      it("B3: ems__Effort_area is not inherited from the prototype-instance", async () => {
+        reader.readFile.mockResolvedValue(PROTOTYPE_INSTANCE_FM);
+
+        const grounding = makeGrounding({
+          type: GroundingType.CREATE_INSTANCE,
+          targetClass: "ems__Task",
+          targetFolder: "01 Inbox",
+        });
+
+        const result = await executor.execute(
+          grounding,
+          TARGET_IRI,
+          FILE_PATH,
+          { label: "task" },
+        );
+
+        expect(result.success).toBe(true);
+        const [, content] = writer.createFile.mock.calls[0];
+        expect(content).not.toContain("ems__Effort_area:");
+        expect(content).not.toContain("5dd75bb5-areauid");
+      });
+
+      it("B4: exo__Asset_relates is not inherited from the prototype-instance", async () => {
+        reader.readFile.mockResolvedValue(PROTOTYPE_INSTANCE_FM);
+
+        const grounding = makeGrounding({
+          type: GroundingType.CREATE_INSTANCE,
+          targetClass: "ems__Task",
+          targetFolder: "01 Inbox",
+        });
+
+        const result = await executor.execute(
+          grounding,
+          TARGET_IRI,
+          FILE_PATH,
+          { label: "task" },
+        );
+
+        expect(result.success).toBe(true);
+        const [, content] = writer.createFile.mock.calls[0];
+        expect(content).not.toContain("exo__Asset_relates:");
+        expect(content).not.toContain("some-related-asset");
+      });
+
+      it("B3+B4: non-blacklisted properties (e.g. ems__Effort_priority) are still inherited", async () => {
+        reader.readFile.mockResolvedValue(PROTOTYPE_INSTANCE_FM);
+
+        const grounding = makeGrounding({
+          type: GroundingType.CREATE_INSTANCE,
+          targetClass: "ems__Task",
+          targetFolder: "01 Inbox",
+        });
+
+        await executor.execute(grounding, TARGET_IRI, FILE_PATH, {
+          label: "task",
+        });
+
+        const [, content] = writer.createFile.mock.calls[0];
+        expect(content).toContain('ems__Effort_priority: "[[priority-mid]]"');
+      });
+
+      it("B5: ExecutionResult.openPath equals the created file path", async () => {
+        reader.readFile.mockResolvedValue("---\nfoo: bar\n---\n");
+
+        const grounding = makeGrounding({
+          type: GroundingType.CREATE_INSTANCE,
+          targetClass: "ems__Task",
+          targetFolder: "01 Inbox",
+        });
+
+        const result = await executor.execute(
+          grounding,
+          TARGET_IRI,
+          FILE_PATH,
+          { label: "lunch" },
+        );
+
+        expect(result.success).toBe(true);
+        expect(result.openPath).toBeDefined();
+        expect(result.openPath).toMatch(/^01 Inbox\/[a-f0-9-]+\.md$/);
+        // openPath equals the path actually passed to createFile.
+        const [createdPath] = writer.createFile.mock.calls[0];
+        expect(result.openPath).toBe(createdPath);
+      });
+
+      it("B5: other grounding types do not surface openPath", async () => {
+        reader.readFile.mockResolvedValue("---\nfoo: bar\n---\nBody");
+
+        const grounding = makeGrounding({
+          type: GroundingType.PROPERTY_SET,
+          targetProperty: "ems__status",
+          targetValue: "Done",
+        });
+
+        const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
+
+        expect(result.success).toBe(true);
+        expect(result.openPath).toBeUndefined();
       });
     });
 

@@ -109,6 +109,11 @@ const SOURCE_CONTENT = [
   'ems__Effort_parent: "[[parent-project-uid]]"',
   'ems__Effort_area: "[[area-uid]]"',
   'ems__Effort_responsible: "[[user-uid]]"',
+  // Issue #3184 B3 added `ems__Effort_area` to the blacklist; without
+  // another non-blacklisted ems__Effort_* property the fixture would only
+  // cover 2 inherited keys instead of the documented "≥3" contract. Pick
+  // `ems__Effort_priority` — already used in vault, still copyable.
+  'ems__Effort_priority: "[[priority-high]]"',
   "---",
   "",
   "# Source Task",
@@ -326,13 +331,23 @@ describe("RFC da3a7555 — RDF → Resolver → Executor pipeline (create_instan
     const content = fs.getContent(createdPath!)!;
 
     // ≥3 copy-from-target fields must be present.
-    const copiedKeys = ["ems__Effort_parent", "ems__Effort_area", "ems__Effort_responsible"];
+    // Issue #3184 B3: `ems__Effort_area` is now blacklisted — replace with
+    // `ems__Effort_priority` which still inherits through copy-from-target.
+    const copiedKeys = [
+      "ems__Effort_parent",
+      "ems__Effort_priority",
+      "ems__Effort_responsible",
+    ];
     const copiedCount = copiedKeys.filter((k) => content.includes(`${k}:`)).length;
     expect(copiedCount).toBeGreaterThanOrEqual(3);
 
     // Blacklist enforcement: must NOT copy uid, label, status, instance_class.
     expect(content).not.toMatch(/\nexo__Asset_uid: 36e54b4c/);
     expect(content).not.toMatch(/^aliases:\n.*- "Source Task"/m);
+    // Issue #3184 B3+B4: `ems__Effort_area` and `exo__Asset_relates` are
+    // blacklisted; verify they don't bleed into the new instance.
+    expect(content).not.toContain("ems__Effort_area:");
+    expect(content).not.toContain("exo__Asset_relates:");
     // Back-link present.
     expect(content).toContain(`ems__Effort_prevIteration: "[[${SOURCE_FILE_PATH.replace(/\.md$/, "")}]]"`);
   });

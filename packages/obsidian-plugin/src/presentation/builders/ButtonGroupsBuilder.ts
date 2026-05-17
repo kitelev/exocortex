@@ -24,6 +24,7 @@ import type { ExocmdFastResolver } from "./button-groups/ExocmdFastResolver";
 import { PanelResolver } from "@plugin/application/services/PanelResolver";
 import { ObsidianApp, ExocortexPluginInterface } from '@plugin/types';
 import { ObsidianCommandPromptAdapter } from "@plugin/infrastructure/adapters/ObsidianCommandPromptAdapter";
+import { ObsidianFileOpener } from "@plugin/infrastructure/services/ObsidianFileOpener";
 
 /**
  * Configuration object for ButtonGroupsBuilder.
@@ -129,6 +130,7 @@ export class ButtonGroupsBuilder {
         logger,
         new ObsidianCommandPromptAdapter(app),
         tripleStore,
+        new ObsidianFileOpener(app),
       );
       this.builders.push(
         new DynamicCommandButtonGroupBuilder({
