@@ -274,6 +274,61 @@ describe("ShapeLoader.loadFromRDFGraph", () => {
     const reg = await ShapeLoader.loadFromRDFGraph(store);
     expect(reg.size).toBe(0);
   });
+
+  it("resolves file-IRI domain/range via rdfs:label to canonical IRI", async () => {
+    // Regression: after RFC-004 UUID-canonicalization, NoteToRDFConverter
+    // sometimes emits domain/range as a synthesised file IRI when the
+    // wikilink target lies outside the source vault. resolveClassIRI must
+    // look up the file IRI's rdfs:label in the graph and convert it to the
+    // canonical namespace IRI so sh:class constraints match rdf:type values.
+    const CLASS_FILE_IRI = "obsidian://vault/ems/uid-1.md";
+    const RDFS_LABEL = Namespace.RDFS.term("label").value;
+    const triples = [
+      makeTriple(FILE_IRI, RDF_TYPE, OBJ_PROP_TYPE),
+      makeTriple(FILE_IRI, RDFS_DOMAIN, CLASS_FILE_IRI),
+      makeTriple(FILE_IRI, RDFS_RANGE, CLASS_FILE_IRI),
+      makeTriple(FILE_IRI, EXO_LABEL, { literal: "ems__Effort_parent" }),
+      makeTriple(CLASS_FILE_IRI, RDFS_LABEL, { literal: "ems__Task" }),
+    ];
+    const store = makeStore(triples);
+    const reg = await ShapeLoader.loadFromRDFGraph(store);
+    const shape = reg.get(`${EMS}Effort_parent`);
+    expect(shape).toBeDefined();
+    expect(shape!.domain).toEqual([`${EMS}Task`]);
+    expect(shape!.range).toEqual([`${EMS}Task`]);
+  });
+
+  it("falls back to original file IRI when no label exists in graph", async () => {
+    const UNKNOWN_CLASS_IRI = "obsidian://vault/foo/unknown.md";
+    const triples = [
+      makeTriple(FILE_IRI, RDF_TYPE, OBJ_PROP_TYPE),
+      makeTriple(FILE_IRI, RDFS_DOMAIN, UNKNOWN_CLASS_IRI),
+      makeTriple(FILE_IRI, EXO_LABEL, { literal: "ems__Effort_parent" }),
+    ];
+    const store = makeStore(triples);
+    const reg = await ShapeLoader.loadFromRDFGraph(store);
+    const shape = reg.get(`${EMS}Effort_parent`);
+    expect(shape).toBeDefined();
+    // Unresolvable class file → original IRI retained so the shape still
+    // registers (cardinality / minCount checks remain effective).
+    expect(shape!.domain).toEqual([UNKNOWN_CLASS_IRI]);
+  });
+
+  it("skips label that produces an invalid IRI (e.g. whitespace in localName)", async () => {
+    // Regression: real-world vault assets had labels like 'exo__Class Foo'
+    // (with whitespace) which made Namespace.term throw and aborted the
+    // entire validation run. labelToIRI must now treat such labels as
+    // unresolvable and drop the shape without throwing.
+    const triples = [
+      makeTriple(FILE_IRI, RDF_TYPE, OBJ_PROP_TYPE),
+      makeTriple(FILE_IRI, RDFS_DOMAIN, `${EMS}Effort`),
+      makeTriple(FILE_IRI, EXO_LABEL, { literal: "ems__bad label with spaces" }),
+    ];
+    const store = makeStore(triples);
+    await expect(ShapeLoader.loadFromRDFGraph(store)).resolves.toBeDefined();
+    const reg = await ShapeLoader.loadFromRDFGraph(store);
+    expect(reg.size).toBe(0);
+  });
 });
 
 // ── loadFromVaultFS ───────────────────────────────────────────────────────────

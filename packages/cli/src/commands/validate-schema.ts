@@ -12,7 +12,6 @@ import {
   Triple,
   ShapeLoader,
   ShaclShapeRegistry,
-  type Shape,
   shaclValidate,
   DomainIRI,
   DomainLiteral,
@@ -175,42 +174,6 @@ async function loadTriplesFromAllVaults(
   }
 
   return { triples, cacheHit };
-}
-
-/**
- * Loads shape files from the primary vault plus all --also vaults and
- * merges them into one ShaclShapeRegistry. First-wins on duplicate
- * propertyIRI; conflicts are warned to stderr.
- */
-async function loadMergedShapeRegistry(
-  vaultPath: string,
-  alsoPaths: string[],
-  verbose: boolean,
-): Promise<ShaclShapeRegistry> {
-  const seen = new Map<string, string>(); // propertyIRI → vault path that registered it
-  const merged: Shape[] = [];
-
-  const ingest = async (path: string): Promise<void> => {
-    const reg = await ShapeLoader.loadFromVaultFS(path);
-    for (const shape of reg.getAll()) {
-      const owner = seen.get(shape.propertyIRI);
-      if (owner !== undefined) {
-        if (verbose) {
-          console.log(`⚠️  Duplicate shape for ${shape.propertyIRI} in ${path} (first-wins: kept from ${owner})`);
-        }
-        continue;
-      }
-      seen.set(shape.propertyIRI, path);
-      merged.push(shape);
-    }
-  };
-
-  await ingest(vaultPath);
-  for (const alsoPath of alsoPaths) {
-    await ingest(resolve(alsoPath));
-  }
-
-  return new ShaclShapeRegistry(merged);
 }
 
 /**
@@ -830,9 +793,20 @@ export async function runShapesValidation(
   triples: DomainTriple[],
   alsoPaths: string[] = [],
 ): Promise<ValidationReport> {
-  const registry = alsoPaths.length > 0
-    ? await loadMergedShapeRegistry(vaultPath, alsoPaths, false)
-    : new ShaclShapeRegistry((await ShapeLoader.loadFromVaultFS(vaultPath)).getAll());
+  // Load shapes from the merged RDF graph rather than the filesystem. After
+  // RFC-004 UUID-canonicalization, exo__Property_domain/range frontmatter is
+  // pure-UID wikilinks (`[[<uid>]]`) that the filesystem loader cannot resolve
+  // to canonical class IRIs without scanning every TBox class file. The graph
+  // loader uses in-memory rdfs:label triples to bridge file IRI → namespace
+  // IRI, and also automatically picks up shapes from --also vaults (since
+  // their triples are already merged in).
+  void vaultPath;
+  void alsoPaths;
+  const tripleStore = new InMemoryTripleStore();
+  await tripleStore.addAll(triples as unknown as Triple[]);
+  const registry = new ShaclShapeRegistry(
+    (await ShapeLoader.loadFromRDFGraph(tripleStore)).getAll(),
+  );
   const hierarchy = new TripleClassHierarchy(triples);
   const algebraTriples = domainToAlgebraTriples(triples);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

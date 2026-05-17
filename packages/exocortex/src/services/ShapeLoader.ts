@@ -71,31 +71,99 @@ export class ShapeLoader {
     }
 
     for (const subjectValue of subjects) {
-      const subject = new IRI(subjectValue);
+      let subject: IRI;
+      try {
+        subject = new IRI(subjectValue);
+      } catch {
+        continue;
+      }
 
-      const [domainTs, rangeTs, cardTs, sevTs, labelTs, minCountTs] = await Promise.all([
+      const [
+        rdfsDomainTs,
+        exoDomainTs,
+        rdfsRangeTs,
+        exoRangeTs,
+        cardTs,
+        sevTs,
+        exoLabelTs,
+        rdfsLabelTs,
+        minCountTs,
+      ] = await Promise.all([
         graph.match(subject, RDFS.term("domain"), undefined),
+        graph.match(subject, EXO.term("Property_domain"), undefined),
         graph.match(subject, RDFS.term("range"), undefined),
+        graph.match(subject, EXO.term("Property_range"), undefined),
         graph.match(subject, EXO.term("Property_cardinality"), undefined),
         graph.match(subject, EXO.term("Property_severity"), undefined),
         graph.match(subject, EXO.term("Asset_label"), undefined),
+        // Issue #2807 twin: when exo__Asset_label parses as a class reference
+        // (`ems__Foo`), NoteToRDFConverter emits it as an IRI instead of a
+        // Literal, breaking the Literal-only check below. Fall back to the
+        // rdfs:label Literal twin that Exocortex always emits alongside.
+        graph.match(subject, RDFS.term("label"), undefined),
         graph.match(subject, EXO.term("Property_minCount"), undefined),
       ]);
+      const labelTs = [...exoLabelTs, ...rdfsLabelTs];
+      // NoteToRDFConverter emits the RDFS-mapped twin triple only when the
+      // object is an IRI (Issue #871). Plain-string range/domain values
+      // (e.g. xsd:integer URIs) arrive only under the native
+      // exo:Property_range / exo:Property_domain predicate, so we union both
+      // sources to recover them.
+      const domainTs = [...rdfsDomainTs, ...exoDomainTs];
+      const rangeTs = [...rdfsRangeTs, ...exoRangeTs];
 
       if (domainTs.length === 0) continue;
 
-      const labelObj = labelTs[0]?.object;
-      if (!(labelObj instanceof Literal)) continue;
-      const propertyIRI = ShapeLoader.labelToIRI(labelObj.value);
+      let propertyIRI: string | null = null;
+      for (const t of labelTs) {
+        if (t.object instanceof Literal) {
+          propertyIRI = ShapeLoader.labelToIRI(t.object.value);
+          if (propertyIRI) break;
+        }
+      }
       if (!propertyIRI) continue;
 
-      const domain = domainTs
-        .map((t) => (t.object instanceof IRI ? t.object.value : null))
-        .filter((v): v is string => v !== null);
+      // Resolve domain/range IRIs to canonical namespace form. After RFC-004
+      // UUID-canonicalization, exo__Property_domain/range frontmatter holds
+      // pure-UID wikilinks like `[[1b20a8f0-...]]`, which NoteToRDFConverter
+      // converts to file IRIs (`obsidian://vault/.../1b20a8f0.md`) — not the
+      // canonical class IRI (`https://exocortex.my/ontology/ems#Task`).
+      // To make sh:class constraints fire against rdf:type triples (which DO
+      // use canonical IRIs via valueToClassURI), look up each file IRI's
+      // rdfs:label and convert to canonical IRI.
+      const domainRaw = await Promise.all(
+        domainTs.map(async (t) =>
+          t.object instanceof IRI
+            ? await ShapeLoader.resolveClassIRI(t.object.value, graph)
+            : null,
+        ),
+      );
+      const domain = Array.from(
+        new Set(domainRaw.filter((v): v is string => v !== null)),
+      );
 
-      const rangeValues = rangeTs
-        .map((t) => (t.object instanceof IRI ? t.object.value : null))
-        .filter((v): v is string => v !== null);
+      const rangeValuesRaw = await Promise.all(
+        rangeTs.map(async (t) => {
+          if (t.object instanceof IRI) {
+            return await ShapeLoader.resolveClassIRI(t.object.value, graph);
+          }
+          // Plain-string range values (e.g. `exo__Property_range:
+          // "http://www.w3.org/2001/XMLSchema#integer"`) arrive as Literals
+          // because NoteToRDFConverter only emits IRI objects for wikilink
+          // values. Accept any literal whose lexical form is itself a valid
+          // IRI — this covers xsd:* datatype ranges and explicit HTTP IRIs.
+          if (t.object instanceof Literal) {
+            const raw = t.object.value;
+            if (raw.startsWith("http://") || raw.startsWith("https://")) {
+              return raw;
+            }
+          }
+          return null;
+        }),
+      );
+      const rangeValues = Array.from(
+        new Set(rangeValuesRaw.filter((v): v is string => v !== null)),
+      );
 
       const cardinality = ShapeLoader.cardinalityFromIRI(
         cardTs[0]?.object instanceof IRI ? cardTs[0].object.value : undefined,
@@ -144,6 +212,69 @@ export class ShapeLoader {
   }
 
   // ── Private helpers ───────────────────────────────────────────────────────
+
+  /**
+   * Resolves a domain/range IRI to its canonical namespace form.
+   *
+   * Context: after RFC-004 UUID-canonicalization, `exo__Property_domain` and
+   * `exo__Property_range` frontmatter values are pure-UID wikilinks
+   * `[[1b20a8f0-...]]`. NoteToRDFConverter emits these as file IRIs
+   * (`obsidian://vault/.../1b20a8f0.md`) via `valueToRDFObject`, not as the
+   * canonical class IRI (`https://exocortex.my/ontology/ems#Task`).
+   *
+   * sh:class constraints must compare against `rdf:type` triples which DO use
+   * canonical IRIs (NoteToRDFConverter routes `exo__Instance_class` through
+   * `valueToClassURI`). To bridge the two IRI spaces, this helper looks up
+   * the class file's `rdfs:label` / `exo:Asset_label` literal and converts
+   * via `labelToIRI`.
+   *
+   * Returns:
+   *   - the passed IRI unchanged if it's already canonical
+   *     (`https://exocortex.my/ontology/...` or `http://www.w3.org/...`)
+   *   - the canonical IRI if a label lookup succeeds
+   *   - the original file IRI as a passthrough fallback if no label exists
+   *     (validator will likely skip; preserves prior behaviour)
+   */
+  private static async resolveClassIRI(
+    iri: string,
+    graph: ITripleStore,
+  ): Promise<string | null> {
+    if (
+      iri.startsWith("https://exocortex.my/ontology/") ||
+      iri.startsWith("http://www.w3.org/")
+    ) {
+      return iri;
+    }
+
+    let subject: IRI;
+    try {
+      subject = new IRI(iri);
+    } catch {
+      // Malformed file IRI (rare edge case) — drop this domain/range entry
+      // rather than abort the entire shape registration.
+      return null;
+    }
+    const RDFS = Namespace.RDFS;
+    const EXO = Namespace.EXO;
+
+    const [rdfsLabelTs, exoLabelTs] = await Promise.all([
+      graph.match(subject, RDFS.term("label"), undefined),
+      graph.match(subject, EXO.term("Asset_label"), undefined),
+    ]);
+
+    for (const t of [...rdfsLabelTs, ...exoLabelTs]) {
+      if (t.object instanceof Literal) {
+        const resolved = ShapeLoader.labelToIRI(t.object.value);
+        if (resolved) return resolved;
+      }
+    }
+
+    // Unresolvable — return original file IRI; validator will not match
+    // against canonical rdf:type values, but at least domain[] is non-empty
+    // so the shape still registers and other constraints (cardinality,
+    // minCount) still apply.
+    return iri;
+  }
 
   private static async scanDir(
     dir: string,
@@ -336,7 +467,13 @@ export class ShapeLoader {
   private static labelToIRI(label: string): string | null {
     const parsed = Namespace.fromPropertyKey(label);
     if (!parsed) return null;
-    return parsed.namespace.term(parsed.localName).value;
+    try {
+      return parsed.namespace.term(parsed.localName).value;
+    } catch {
+      // Label contains characters that produce an invalid IRI when appended to
+      // the namespace base (e.g. whitespace, brackets). Treat as unresolvable.
+      return null;
+    }
   }
 
   /** Extracts the first part of [[ref]] or [[ref|alias]], stripping quotes. */
