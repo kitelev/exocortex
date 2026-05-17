@@ -101,8 +101,40 @@ describe("DailyNoteHelpers", () => {
       expect(result.day).toBe("2025-10-15");
     });
 
-    it("should return isDailyNote=true with day=null when pn__DailyNote_day is missing", () => {
-      const mockFile = { path: "daily.md" } as TFile;
+    it("should derive day from basename when pn__DailyNote_day is missing (YYYY-MM-DD prefix)", () => {
+      const mockFile = { path: "2026-05-17 Note.md", basename: "2026-05-17 Note" } as TFile;
+      mockMetadataExtractor.extractMetadata.mockReturnValue({});
+      mockMetadataExtractor.extractInstanceClass.mockReturnValue(
+        "[[pn__DailyNote]]",
+      );
+
+      const result = DailyNoteHelpers.extractDailyNoteInfo(
+        mockFile,
+        mockMetadataExtractor,
+      );
+
+      expect(result.isDailyNote).toBe(true);
+      expect(result.day).toBe("2026-05-17");
+    });
+
+    it("should derive day from basename also for UUID-canon class refs", () => {
+      const mockFile = { path: "2026-05-17.md", basename: "2026-05-17" } as TFile;
+      mockMetadataExtractor.extractMetadata.mockReturnValue({});
+      mockMetadataExtractor.extractInstanceClass.mockReturnValue(
+        "[[b04e7a3e-6b49-4984-9f8d-b74e9f36818b]]",
+      );
+
+      const result = DailyNoteHelpers.extractDailyNoteInfo(
+        mockFile,
+        mockMetadataExtractor,
+      );
+
+      expect(result.isDailyNote).toBe(true);
+      expect(result.day).toBe("2026-05-17");
+    });
+
+    it("should return day=null when pn__DailyNote_day missing AND basename does not match YYYY-MM-DD", () => {
+      const mockFile = { path: "daily.md", basename: "daily" } as TFile;
       mockMetadataExtractor.extractMetadata.mockReturnValue({});
       mockMetadataExtractor.extractInstanceClass.mockReturnValue(
         "[[pn__DailyNote]]",
@@ -115,6 +147,24 @@ describe("DailyNoteHelpers", () => {
 
       expect(result.isDailyNote).toBe(true);
       expect(result.day).toBeNull();
+    });
+
+    it("should prefer pn__DailyNote_day over basename when both present", () => {
+      const mockFile = { path: "2026-05-17 Note.md", basename: "2026-05-17 Note" } as TFile;
+      mockMetadataExtractor.extractMetadata.mockReturnValue({
+        pn__DailyNote_day: "[[2025-12-25]]",
+      });
+      mockMetadataExtractor.extractInstanceClass.mockReturnValue(
+        "[[pn__DailyNote]]",
+      );
+
+      const result = DailyNoteHelpers.extractDailyNoteInfo(
+        mockFile,
+        mockMetadataExtractor,
+      );
+
+      expect(result.isDailyNote).toBe(true);
+      expect(result.day).toBe("2025-12-25");
     });
   });
 
