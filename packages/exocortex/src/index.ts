@@ -80,6 +80,11 @@ export {
   type UserInput,
   type IGroundingService,
 } from "./services/GroundingExecutor";
+export {
+  CommandExecutionFlow,
+  type CommandExecutionContext,
+  type CommandPromptAdapter,
+} from "./services/CommandExecutionFlow";
 export { TaskStatusService } from "./services/TaskStatusService";
 export { AreaCreationService } from "./services/AreaCreationService";
 export {

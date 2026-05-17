@@ -1,7 +1,44 @@
 import { DynamicCommandButtonGroupBuilder } from "../../../../src/presentation/builders/button-groups/DynamicCommandButtonGroupBuilder";
 import { PanelResolver } from "../../../../src/application/services/PanelResolver";
 import type { CommandPanel } from "../../../../src/domain/layout/CommandPanel";
-import { GroundingType } from "exocortex";
+import { GroundingType, CommandExecutionFlow } from "exocortex";
+import type { CommandPromptAdapter, UserInput } from "exocortex";
+
+const mockLogger = {
+  info: jest.fn(),
+  error: jest.fn(),
+  warn: jest.fn(),
+  debug: jest.fn(),
+};
+
+/**
+ * Test prompt adapter that defers to `window.confirm` (matching the
+ * production `ObsidianCommandPromptAdapter`) and never opens a real modal.
+ * Tests that exercise `inputSchema`-driven modal flow live in
+ * `CommandExecutionFlow.test.ts`, not here.
+ */
+class TestPromptAdapter implements CommandPromptAdapter {
+  async confirm(message: string): Promise<boolean> {
+    // eslint-disable-next-line no-alert -- mirrors production adapter
+    return window.confirm(message);
+  }
+  async promptInputSchema(): Promise<UserInput | null> {
+    return null;
+  }
+}
+
+function buildCommandExecutionFlow(): CommandExecutionFlow {
+  return new CommandExecutionFlow(
+    mockGroundingExecutor as unknown as Parameters<
+      typeof CommandExecutionFlow.prototype.run
+    >[0] extends never
+      ? never
+      : any,
+    mockNotificationService as any,
+    mockLogger as any,
+    new TestPromptAdapter(),
+  );
+}
 
 const mockResolveForAsset = jest.fn();
 const mockResolveForAssetMulti = jest.fn();
@@ -130,8 +167,7 @@ describe("DynamicCommandButtonGroupBuilder", () => {
         ? never
         : any,
       preconditionEvaluator: mockPreconditionEvaluator as unknown as any,
-      groundingExecutor: mockGroundingExecutor as unknown as any,
-      notificationService: mockNotificationService as any,
+      commandExecutionFlow: buildCommandExecutionFlow(),
     });
   });
 
@@ -872,8 +908,7 @@ describe("DynamicCommandButtonGroupBuilder", () => {
       return new DynamicCommandButtonGroupBuilder({
         commandResolver: mockCommandResolver as unknown as any,
         preconditionEvaluator: mockPreconditionEvaluator as unknown as any,
-        groundingExecutor: mockGroundingExecutor as unknown as any,
-        notificationService: mockNotificationService as any,
+        commandExecutionFlow: buildCommandExecutionFlow(),
         panelResolver,
       });
     }
@@ -1144,8 +1179,7 @@ describe("DynamicCommandButtonGroupBuilder", () => {
       return new DynamicCommandButtonGroupBuilder({
         commandResolver: mockCommandResolver as unknown as any,
         preconditionEvaluator: mockPreconditionEvaluator as unknown as any,
-        groundingExecutor: mockGroundingExecutor as unknown as any,
-        notificationService: mockNotificationService as any,
+        commandExecutionFlow: buildCommandExecutionFlow(),
         panelResolver,
       });
     }
