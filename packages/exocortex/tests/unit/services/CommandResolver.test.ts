@@ -449,6 +449,173 @@ describe("CommandResolver", () => {
       });
     });
 
+    it("should parse exocmd__Grounding_prefillLabelWithDate and resolve prototypeLabel from triple store", async () => {
+      const prototypeSubject = new IRI("obsidian://vault/proto-1.md");
+      await store.addAll([
+        new Triple(prototypeSubject, Namespace.RDF.term("type"), Namespace.EXO.term("Asset")),
+        new Triple(prototypeSubject, Namespace.EXO.term("Asset_uid"), new Literal("proto-1")),
+        new Triple(prototypeSubject, Namespace.EXO.term("Asset_label"), new Literal("Morning Wim Hof")),
+      ]);
+      const groundingSubject = new IRI("obsidian://vault/gnd-prefill.md");
+      await store.addAll([
+        new Triple(groundingSubject, Namespace.RDF.term("type"), Namespace.EXOCMD.term("Grounding")),
+        new Triple(groundingSubject, Namespace.EXO.term("Asset_uid"), new Literal("gnd-prefill")),
+        new Triple(groundingSubject, Namespace.EXO.term("Asset_label"), new Literal("Create Wim Hof session")),
+        new Triple(groundingSubject, Namespace.EXOCMD.term("Grounding_type"), new Literal("create_instance")),
+        new Triple(
+          groundingSubject,
+          Namespace.EXOCMD.term("Grounding_targetPrototype"),
+          new Literal("[[proto-1|Morning Wim Hof]]"),
+        ),
+        new Triple(
+          groundingSubject,
+          Namespace.EXOCMD.term("Grounding_prefillLabelWithDate"),
+          new Literal("true"),
+        ),
+      ]);
+      await addCommandAsset(store, {
+        uid: "cmd-prefill",
+        label: "Create Wim Hof Session",
+        groundingRef: "gnd-prefill",
+      });
+
+      const cmd = await resolver.loadCommand("cmd-prefill");
+
+      expect(cmd!.grounding.prefillLabelWithDate).toBe(true);
+      expect(cmd!.grounding.prototypeLabel).toBe("Morning Wim Hof");
+    });
+
+    it("should leave prefillLabelWithDate undefined when triple is absent (backward-compat)", async () => {
+      await addGroundingAsset(store, {
+        uid: "gnd-no-prefill",
+        label: "Plain create_instance",
+        type: "create_instance",
+      });
+      await addCommandAsset(store, {
+        uid: "cmd-no-prefill",
+        label: "Plain",
+        groundingRef: "gnd-no-prefill",
+      });
+
+      const cmd = await resolver.loadCommand("cmd-no-prefill");
+
+      expect(cmd!.grounding.prefillLabelWithDate).toBeUndefined();
+      expect(cmd!.grounding.prototypeLabel).toBeUndefined();
+    });
+
+    it("should leave prefillLabelWithDate undefined for non-true literals (only 'true' opts in)", async () => {
+      const groundingSubject = new IRI("obsidian://vault/gnd-not-true.md");
+      await store.addAll([
+        new Triple(groundingSubject, Namespace.RDF.term("type"), Namespace.EXOCMD.term("Grounding")),
+        new Triple(groundingSubject, Namespace.EXO.term("Asset_uid"), new Literal("gnd-not-true")),
+        new Triple(groundingSubject, Namespace.EXO.term("Asset_label"), new Literal("Disabled prefill")),
+        new Triple(groundingSubject, Namespace.EXOCMD.term("Grounding_type"), new Literal("create_instance")),
+        new Triple(
+          groundingSubject,
+          Namespace.EXOCMD.term("Grounding_prefillLabelWithDate"),
+          new Literal("false"),
+        ),
+      ]);
+      await addCommandAsset(store, {
+        uid: "cmd-not-true",
+        label: "Disabled",
+        groundingRef: "gnd-not-true",
+      });
+
+      const cmd = await resolver.loadCommand("cmd-not-true");
+
+      expect(cmd!.grounding.prefillLabelWithDate).toBeUndefined();
+      expect(cmd!.grounding.prototypeLabel).toBeUndefined();
+    });
+
+    it("should leave prototypeLabel undefined when prototype asset is missing (graceful fallback)", async () => {
+      const groundingSubject = new IRI("obsidian://vault/gnd-orphan.md");
+      await store.addAll([
+        new Triple(groundingSubject, Namespace.RDF.term("type"), Namespace.EXOCMD.term("Grounding")),
+        new Triple(groundingSubject, Namespace.EXO.term("Asset_uid"), new Literal("gnd-orphan")),
+        new Triple(groundingSubject, Namespace.EXO.term("Asset_label"), new Literal("Orphan proto")),
+        new Triple(groundingSubject, Namespace.EXOCMD.term("Grounding_type"), new Literal("create_instance")),
+        new Triple(
+          groundingSubject,
+          Namespace.EXOCMD.term("Grounding_targetPrototype"),
+          new Literal("[[missing-proto]]"),
+        ),
+        new Triple(
+          groundingSubject,
+          Namespace.EXOCMD.term("Grounding_prefillLabelWithDate"),
+          new Literal("true"),
+        ),
+      ]);
+      await addCommandAsset(store, {
+        uid: "cmd-orphan",
+        label: "Orphan",
+        groundingRef: "gnd-orphan",
+      });
+
+      const cmd = await resolver.loadCommand("cmd-orphan");
+
+      expect(cmd!.grounding.prefillLabelWithDate).toBe(true);
+      expect(cmd!.grounding.prototypeLabel).toBeUndefined();
+    });
+
+    it("should pass through `default` and `defaultValue` from inputSchema JSON Schema properties", async () => {
+      const groundingSubject = new IRI("obsidian://vault/gnd-defaults-input.md");
+      await store.addAll([
+        new Triple(groundingSubject, Namespace.RDF.term("type"), Namespace.EXOCMD.term("Grounding")),
+        new Triple(groundingSubject, Namespace.EXO.term("Asset_uid"), new Literal("gnd-defaults-input")),
+        new Triple(groundingSubject, Namespace.EXO.term("Asset_label"), new Literal("With input defaults")),
+        new Triple(groundingSubject, Namespace.EXOCMD.term("Grounding_type"), new Literal("create_instance")),
+        new Triple(
+          groundingSubject,
+          Namespace.EXOCMD.term("Grounding_inputSchema"),
+          new Literal(
+            JSON.stringify({
+              type: "object",
+              properties: {
+                label: { type: "string", title: "Label", default: "Static default" },
+                note: { type: "string", title: "Note", defaultValue: "from defaultValue" },
+                empty: { type: "string", title: "Empty" },
+              },
+              required: ["label"],
+            }),
+          ),
+        ),
+      ]);
+      await addCommandAsset(store, {
+        uid: "cmd-defaults-input",
+        label: "With input defaults",
+        groundingRef: "gnd-defaults-input",
+      });
+
+      const cmd = await resolver.loadCommand("cmd-defaults-input");
+      const inputSchema = (cmd!.grounding as unknown as Record<string, unknown>)[
+        "inputSchema"
+      ] as Array<Record<string, unknown>>;
+
+      expect(inputSchema).toEqual([
+        {
+          name: "label",
+          type: "text",
+          label: "Label",
+          required: true,
+          defaultValue: "Static default",
+        },
+        {
+          name: "note",
+          type: "text",
+          label: "Note",
+          required: false,
+          defaultValue: "from defaultValue",
+        },
+        {
+          name: "empty",
+          type: "text",
+          label: "Empty",
+          required: false,
+        },
+      ]);
+    });
+
     it("should fail-loud when exocmd__Grounding_propertyDefaults is invalid JSON", async () => {
       const groundingSubject = new IRI(`obsidian://vault/gnd-bad-defaults.md`);
       await store.addAll([
