@@ -16,7 +16,14 @@ export interface DaemonResponse {
   error?: string;
 }
 
-export const DEFAULT_SOCKET_PATH = `${process.env.HOME ?? process.env.USERPROFILE ?? '/tmp'}/.cache/exocortex/validator.sock`;
+// Guarded against `process` being undefined on platforms where this module
+// gets bundled into a non-Node runtime (e.g. Obsidian on iOS). The Daemon
+// itself is server-side only and never instantiated on mobile, but the
+// module's top-level evaluation must not throw when imported transitively.
+export const DEFAULT_SOCKET_PATH =
+  typeof process !== 'undefined' && process.env
+    ? `${process.env.HOME ?? process.env.USERPROFILE ?? '/tmp'}/.cache/exocortex/validator.sock`
+    : '/tmp/.cache/exocortex/validator.sock';
 
 export const IDLE_TIMEOUT_MS = 5 * 60 * 1000;
 

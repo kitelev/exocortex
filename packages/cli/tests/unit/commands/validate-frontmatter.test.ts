@@ -116,11 +116,15 @@ body
     });
   });
 
-  describe("AC2: missing exo__Asset_isDefinedBy", () => {
-    it("reports file path + hint to add `exo__Asset_isDefinedBy`", () => {
+  describe("AC2: missing exo__Asset_isDefinedBy is allowed", () => {
+    it("does not report a violation when exo__Asset_isDefinedBy is absent", () => {
+      // exo__Asset_isDefinedBy was downgraded from required to optional —
+      // downstream consumers (FolderRepairService, URIConstructionService,
+      // MetadataExtractor) handle the missing case via defaults, so the loader
+      // no longer skips assets that lack the ontology pointer.
       writeFile(
         vault,
-        "bad-defined-by.md",
+        "missing-defined-by.md",
         `---
 exo__Asset_uid: 11111111-1111-1111-1111-111111111111
 exo__Asset_label: "no defined-by"
@@ -137,10 +141,7 @@ body
           e.code === "MISSING_PROPERTY" &&
           (e as any).property === "exo__Asset_isDefinedBy",
       );
-      expect(err).toBeDefined();
-      expect(err!.file).toBe("bad-defined-by.md");
-      expect(err!.hint).toMatch(/exo__Asset_isDefinedBy/);
-      expect(err!.hint).toMatch(/\[\[!kitelev\]\]/);
+      expect(err).toBeUndefined();
     });
   });
 
