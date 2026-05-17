@@ -12,6 +12,7 @@ import {
   FolderRepairService,
   INotificationService,
   CommandExecutionFlow,
+  ITripleStore,
 } from "exocortex";
 import {
   ButtonBuilderContext,
@@ -40,6 +41,12 @@ export interface ButtonGroupsBuilderConfig {
   preconditionEvaluator?: PreconditionEvaluator;
   /** Executor for grounding actions */
   groundingExecutor?: GroundingExecutor;
+  /**
+   * Live triple store backing vault assets. Used by
+   * `CommandExecutionFlow.applyLabelDatePrefill` to read the current asset's
+   * `exo__Asset_label` for the v15.38 prefill restoration (v16.7.5 fix).
+   */
+  tripleStore?: ITripleStore;
   /** Service for repairing folder locations (used for visibility context) */
   folderRepairService: FolderRepairService;
   /** Extractor for file metadata */
@@ -82,6 +89,7 @@ export class ButtonGroupsBuilder {
       commandResolver,
       preconditionEvaluator,
       groundingExecutor,
+      tripleStore,
       folderRepairService,
       metadataExtractor,
       logger,
@@ -106,6 +114,7 @@ export class ButtonGroupsBuilder {
         notificationService,
         logger,
         new ObsidianCommandPromptAdapter(app),
+        tripleStore,
       );
       this.builders.push(
         new DynamicCommandButtonGroupBuilder({

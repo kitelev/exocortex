@@ -3,8 +3,12 @@ import type { GroundingExecutor, UserInput } from "./GroundingExecutor";
 import type { ResolvedCommand } from "./CommandResolver";
 import type { INotificationService } from "../interfaces/INotificationService";
 import type { ILogger } from "../interfaces/ILogger";
+import type { ITripleStore } from "../interfaces/ITripleStore";
 import type { GroundingDefinition } from "../domain/models/CommandDefinition";
 import { GroundingType } from "../domain/constants/GroundingType";
+import { IRI } from "../domain/models/rdf/IRI";
+import { Literal } from "../domain/models/rdf/Literal";
+import { Namespace } from "../domain/models/rdf/Namespace";
 import { DateFormatter } from "../utilities/DateFormatter";
 
 /**
@@ -69,6 +73,7 @@ export class CommandExecutionFlow {
     private readonly notificationService: INotificationService,
     private readonly logger: ILogger,
     private readonly prompts: CommandPromptAdapter,
+    private readonly tripleStore?: ITripleStore,
   ) {}
 
   async run(
@@ -85,9 +90,10 @@ export class CommandExecutionFlow {
     let userInput: UserInput | undefined = ctx.injectedUserInput;
     const inputSchema = CommandExecutionFlow.extractInputSchema(rc);
     if (inputSchema !== null && inputSchema.length > 0) {
-      const effectiveSchema = CommandExecutionFlow.applyLabelDatePrefill(
+      const effectiveSchema = await this.applyLabelDatePrefill(
         inputSchema,
         command.grounding,
+        ctx.targetIRI,
       );
       const collected = await this.prompts.promptInputSchema(effectiveSchema);
       if (collected === null) return;
@@ -147,28 +153,43 @@ export class CommandExecutionFlow {
    * — restores the v15.38 behaviour stripped by PR #2733. Active only when:
    *   - grounding type is `create_instance`,
    *   - `prefillLabelWithDate` is true on the grounding (RDF opt-in),
-   *   - the resolver populated `prototypeLabel`,
+   *   - a `targetIRI` is available (the asset the user clicked the button on),
+   *   - that asset has a non-empty `exo__Asset_label`,
    *   - the schema has a field named `label` without an existing defaultValue.
    *
-   * The current date is computed here (not in the resolver) so it stays fresh
-   * regardless of grounding caching. Defaults already supplied by the schema
-   * author win — user-explicit configuration takes precedence over the prefill.
+   * The label source is the CURRENT asset (where the user clicked), not the
+   * grounding's `targetPrototype` — that matches the legacy v15.38
+   * `CreateInstanceCommand.showModal()` which builds `defaultLabel` from
+   * `metadata.exo__Asset_label || file.basename` of the active file.
+   *
+   * Runtime lookup (not resolver-time) keeps both the source label and the
+   * date portion fresh regardless of grounding caching. Defaults already
+   * supplied by the schema author win — user-explicit configuration takes
+   * precedence over the prefill.
    *
    * Date formatter matches the legacy `CreateInstanceCommand.showModal()` —
    * `DateFormatter.toDateString` uses local-tz calendar parts so the prefill
    * stays "today" in the user's timezone (Almaty UTC+5, etc.) even between
    * 00:00–04:59 local when UTC would still report yesterday.
+   *
+   * Graceful fallback: missing `tripleStore`, missing `targetIRI`, asset not
+   * found, or empty label → returns the schema unchanged (no-op).
    */
-  static applyLabelDatePrefill(
+  async applyLabelDatePrefill(
     schema: ReadonlyArray<unknown>,
     grounding: GroundingDefinition,
-  ): ReadonlyArray<unknown> {
+    targetIRI: string | null,
+  ): Promise<ReadonlyArray<unknown>> {
     if (grounding.type !== GroundingType.CREATE_INSTANCE) return schema;
     if (!grounding.prefillLabelWithDate) return schema;
-    if (!grounding.prototypeLabel) return schema;
+    if (!targetIRI) return schema;
+    if (!this.tripleStore) return schema;
+
+    const label = await this.resolveAssetLabel(targetIRI);
+    if (!label) return schema;
 
     const today = DateFormatter.toDateString(new Date());
-    const prefill = `${grounding.prototypeLabel} ${today}`;
+    const prefill = `${label} ${today}`;
 
     return schema.map((field) => {
       if (typeof field !== "object" || field === null) return field;
@@ -178,5 +199,28 @@ export class CommandExecutionFlow {
       if (typeof existing === "string" && existing.length > 0) return field;
       return { ...f, defaultValue: prefill };
     });
+  }
+
+  /**
+   * Read `exo__Asset_label` literal of the asset identified by `targetIRI`.
+   * Returns `undefined` when the triple is missing or non-literal — callers
+   * must handle the absence gracefully.
+   */
+  private async resolveAssetLabel(
+    targetIRI: string,
+  ): Promise<string | undefined> {
+    if (!this.tripleStore) return undefined;
+    const subject = new IRI(targetIRI);
+    const triples = await this.tripleStore.match(
+      subject,
+      Namespace.EXO.term("Asset_label"),
+      undefined,
+    );
+    if (triples.length === 0) return undefined;
+    const obj = triples[0].object;
+    if (obj instanceof Literal) {
+      return obj.value.length > 0 ? obj.value : undefined;
+    }
+    return undefined;
   }
 }

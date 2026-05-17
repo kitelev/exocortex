@@ -152,17 +152,6 @@ export interface GroundingDefinition {
    * (`xsd:boolean`). Default `false` keeps existing groundings unchanged.
    */
   readonly prefillLabelWithDate?: boolean;
-  /**
-   * Resolved `exo__Asset_label` of the prototype referenced by
-   * `targetPrototype`. Populated by `CommandResolver` only when
-   * `prefillLabelWithDate === true` (otherwise omitted to keep grounding
-   * definitions lean).
-   *
-   * `CommandExecutionFlow` reads this together with the current date to build
-   * the prefill string at the moment the user clicks the button — so the date
-   * portion stays fresh even though the grounding definition is cached.
-   */
-  readonly prototypeLabel?: string;
 }
 
 /**

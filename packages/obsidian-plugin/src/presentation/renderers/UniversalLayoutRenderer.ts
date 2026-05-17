@@ -9,7 +9,7 @@ import { ActionButtonsGroup } from '@plugin/presentation/components/ActionButton
 import { IVaultAdapter, MetadataExtractor, INotificationService } from "exocortex";
 import { FolderRepairService } from "exocortex";
 import { CommandResolver, PreconditionEvaluator, GroundingExecutor } from "exocortex";
-import type { LayoutSelector, RelationColumnSetResolver } from "exocortex";
+import type { LayoutSelector, RelationColumnSetResolver, ITripleStore } from "exocortex";
 import type { ExoLayoutRepository } from "@plugin/infrastructure/repositories";
 import { ExoLayoutRenderer } from "./ExoLayoutRenderer";
 import { BacklinksCacheManager } from '@plugin/adapters/caching/BacklinksCacheManager';
@@ -64,6 +64,7 @@ export class UniversalLayoutRenderer {
   private preconditionEvaluator?: PreconditionEvaluator;
   private groundingExecutor?: GroundingExecutor;
   private notificationService?: INotificationService;
+  private tripleStore?: ITripleStore;
   private relationColumnSetResolver: RelationColumnSetResolver | null = null;
   private exoLayoutRepository: ExoLayoutRepository | null = null;
   private layoutSelector: LayoutSelector | null = null;
@@ -92,6 +93,7 @@ export class UniversalLayoutRenderer {
       preconditionEvaluator?: PreconditionEvaluator;
       groundingExecutor?: GroundingExecutor;
       notificationService?: INotificationService;
+      tripleStore?: ITripleStore;
       relationColumnSetResolver?: RelationColumnSetResolver | null;
       exoLayoutRepository?: ExoLayoutRepository | null;
       layoutSelector?: LayoutSelector | null;
@@ -106,6 +108,7 @@ export class UniversalLayoutRenderer {
     this.preconditionEvaluator = rfc009Services?.preconditionEvaluator;
     this.groundingExecutor = rfc009Services?.groundingExecutor;
     this.notificationService = rfc009Services?.notificationService;
+    this.tripleStore = rfc009Services?.tripleStore;
     this.relationColumnSetResolver =
       rfc009Services?.relationColumnSetResolver ?? null;
     this.exoLayoutRepository = rfc009Services?.exoLayoutRepository ?? null;
@@ -174,6 +177,7 @@ export class UniversalLayoutRenderer {
       commandResolver: this.commandResolver,
       preconditionEvaluator: this.preconditionEvaluator,
       groundingExecutor: this.groundingExecutor,
+      tripleStore: this.tripleStore,
       folderRepairService: services.folderRepair,
       metadataExtractor: this.metadataExtractor,
       logger: this.logger,
