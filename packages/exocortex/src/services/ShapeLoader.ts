@@ -194,13 +194,23 @@ export class ShapeLoader {
     const fm = ShapeLoader.parseFrontmatter(content);
     if (!fm) return;
 
-    // Must be a property definition
+    // Must be a property definition.
+    // After RFC-004 UUID-canonicalization (2026-05-16), TBox class IRIs in
+    // exo__Instance_class are written as pure UID wikilinks (no alias suffix),
+    // so we must accept both:
+    //   - label-form `[[exo__Property]]` / `[[exo__ObjectProperty]]` (legacy)
+    //   - UID+alias form `[[<uid>|exo__Property]]` (intermediate canon)
+    //   - pure UID form `[[<uid>]]` (current strip-canon)
+    const EXO_PROPERTY_UID = "38277bfa-d7f9-4a75-b856-b23276ab0db3";
+    const EXO_OBJECT_PROPERTY_UID = "9a1cf31c-9d41-4ef3-9023-584a8d087d16";
     const classes = ShapeLoader.asArray(fm["exo__Instance_class"]);
     const isProperty = classes.some((c) => {
       const ref = ShapeLoader.extractWikilinkRef(c);
       return (
         ref === "exo__Property" ||
         ref === "exo__ObjectProperty" ||
+        ref === EXO_PROPERTY_UID ||
+        ref === EXO_OBJECT_PROPERTY_UID ||
         ref?.includes("|exo__Property") ||
         ref?.includes("|exo__ObjectProperty")
       );

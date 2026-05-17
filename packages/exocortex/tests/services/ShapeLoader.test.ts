@@ -338,6 +338,51 @@ describe("ShapeLoader.loadFromVaultFS", () => {
     expect(shape!.cardinality).toBe("Single");
   });
 
+  it("loads property with pure UID-form exo__Instance_class (post UUID-canon, no alias)", async () => {
+    // After RFC-004 UUID-canonicalization + alias strip (2026-05-17),
+    // property files reference their type class by bare UID with no display alias:
+    //   exo__Instance_class:
+    //     - "[[9a1cf31c-9d41-4ef3-9023-584a8d087d16]]"  # exo__ObjectProperty UID
+    // ShapeLoader must recognise this form, otherwise validate-schema --shapes-mode
+    // silently loads zero shapes and reports `conforms: true` on every vault.
+    await writeFile(
+      "uid-form-prop.md",
+      [
+        "---",
+        'exo__Instance_class:',
+        '  - "[[9a1cf31c-9d41-4ef3-9023-584a8d087d16]]"',
+        'exo__Property_domain: "[[ems__Effort]]"',
+        'exo__Property_range: "[[ems__Task]]"',
+        "exo__Asset_label: ems__Task_uidFormProp",
+        "---",
+      ].join("\n"),
+    );
+    const reg = await ShapeLoader.loadFromVaultFS(tmpDir);
+    const shape = reg.get(`${EMS}Task_uidFormProp`);
+    expect(shape).toBeDefined();
+    expect(shape!.range).toEqual([`${EMS}Task`]);
+  });
+
+  it("loads property with pure UID-form for exo__Property class UID", async () => {
+    // Same scenario for exo__Property (not ObjectProperty) by UID:
+    //   38277bfa-d7f9-4a75-b856-b23276ab0db3 = exo__Property class
+    await writeFile(
+      "uid-form-base-prop.md",
+      [
+        "---",
+        'exo__Instance_class:',
+        '  - "[[38277bfa-d7f9-4a75-b856-b23276ab0db3]]"',
+        'exo__Property_domain: "[[exo__Asset]]"',
+        "exo__Asset_label: exo__Asset_uidLabel",
+        "---",
+      ].join("\n"),
+    );
+    const reg = await ShapeLoader.loadFromVaultFS(tmpDir);
+    const shape = reg.get(`${EXO}Asset_uidLabel`);
+    expect(shape).toBeDefined();
+    expect(shape!.domain).toEqual([`${EXO}Asset`]);
+  });
+
   it("defaults severity to sh:Violation when absent", async () => {
     await writeFile(
       "no-severity.md",
