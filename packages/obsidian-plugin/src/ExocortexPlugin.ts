@@ -489,34 +489,43 @@ export default class ExocortexPlugin extends Plugin {
       );
 
       // RFC 1429fcd0 PR-2: register vault-described palette-enabled exocmd
-      // commands as Obsidian Command Palette entries. Runs synchronously after
-      // CommandManager so it sees the same plugin command surface; SPARQL
-      // resolution + plugin.addCommand are both cheap enough for onload.
-      // Known limitation: Obsidian's public API has no `removeCommand`, so
-      // newly-added paletteEnabled assets only surface after plugin reload.
-      try {
-        const vaultSettings = container.resolve<IVaultSettings>(
-          DI_TOKENS.IVaultSettings,
-        );
-        const paletteFlow = new CommandExecutionFlow(
-          this.groundingExecutor,
-          new ObsidianNotificationService(),
-          this.logger,
-          new ObsidianCommandPromptAdapter(this.app),
-        );
-        await new ExocmdCommandPaletteRegistrar(
-          this,
-          this.commandResolver,
-          paletteFlow,
-          vaultSettings,
-          this.logger,
-        ).init();
-      } catch (error) {
-        this.logger.error(
-          "[ExocortexPlugin] ExocmdCommandPaletteRegistrar init failed",
-          error instanceof Error ? error : new Error(String(error)),
-        );
-      }
+      // commands as Obsidian Command Palette entries. Runs **after**
+      // `eagerInitPromise` resolves below — the registrar SPARQLs the
+      // triple store, which is empty until `onLayoutReady` fires and the
+      // ASK query populates `VaultRDFIndexer`. The original wiring tried
+      // to init synchronously in `onload()`; that left the registrar
+      // looking at an empty graph and silently registering zero commands.
+      // See user-visible regression: v16.6.0 shipped without
+      // "Create fleeting note" in Cmd-P.
+      //
+      // Known limitation: Obsidian's public API has no `removeCommand`,
+      // so newly-added paletteEnabled assets surface only after plugin
+      // reload — that's a separate gap.
+      const initExocmdPalette = async (): Promise<void> => {
+        try {
+          const vaultSettings = container.resolve<IVaultSettings>(
+            DI_TOKENS.IVaultSettings,
+          );
+          const paletteFlow = new CommandExecutionFlow(
+            this.groundingExecutor,
+            new ObsidianNotificationService(),
+            this.logger,
+            new ObsidianCommandPromptAdapter(this.app),
+          );
+          await new ExocmdCommandPaletteRegistrar(
+            this,
+            this.commandResolver,
+            paletteFlow,
+            vaultSettings,
+            this.logger,
+          ).init();
+        } catch (error) {
+          this.logger.error(
+            "[ExocortexPlugin] ExocmdCommandPaletteRegistrar init failed",
+            error instanceof Error ? error : new Error(String(error)),
+          );
+        }
+      };
 
       // GTD Capture: one-click fleeting note to inbox.
       // Triggers the same Obsidian Command Palette entry as Cmd-P → "Create
@@ -612,9 +621,21 @@ export default class ExocortexPlugin extends Plugin {
           const initPromise = this.eagerInitPromise ?? Promise.resolve();
           void initPromise
             .then(() => this.sparql.refresh())
-            .then(() => {
+            .then(async () => {
               this.commandResolver.invalidateCache();
               this.preconditionEvaluator.invalidateCache();
+              // RFC 1429fcd0 hotfix #2: rerun the palette registrar after
+              // the full reindex completes. The earlier call inside
+              // `eagerInitPromise.then(...)` ran against a partially-loaded
+              // graph — files under `assetspaces/` (where the production
+              // 692aa011-... Create-fleeting-note asset lives) weren't yet
+              // indexed → `findPaletteEnabledCommands()` returned 0. After
+              // `sparql.refresh()` the store contains every vault file →
+              // the second call sees the asset and registers the Palette
+              // command. Idempotent: Obsidian's `plugin.addCommand`
+              // overwrites by id, so this is safe even if the first
+              // attempt registered nothing.
+              await initExocmdPalette();
               this.autoRenderLayout();
             })
             .catch((err) => {
@@ -712,8 +733,13 @@ export default class ExocortexPlugin extends Plugin {
         this.app.workspace.onLayoutReady(() => {
           void this.sparql
             .query("ASK { ?s ?p ?o }")
-            .then(() => {
+            .then(async () => {
               this.commandResolver.invalidateCache();
+              // Triple store is now populated — RFC 1429fcd0 PR-2 registrar
+              // can run its SPARQL match and see paletteEnabled assets. Must
+              // happen before `autoRenderLayout` so the Command Palette is
+              // ready for the very first user Cmd-P invocation.
+              await initExocmdPalette();
               this.autoRenderLayout();
             })
             .catch((err) => {
