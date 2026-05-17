@@ -408,15 +408,20 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
       const visible = await fastResolver.resolveVisibleCommands(file);
       // Issue #3171 perf benchmark — emit the cold-start UX marker the
       // first time a fast-path render produces visible commands. Paired
-      // with `console.time("exocmd-fastpath-ready")` in `ExocortexPlugin`.
+      // with `performance.mark("exocmd-fastpath-start")` in
+      // `ExocortexPlugin` (Issue #3175 migrated from `console.time`).
       // Guarded by `!this.fastpathReadyMarked` so we only emit once per
       // plugin session (subsequent file switches still take the fast
       // path until `isFullPathReady` flips, but the metric we care about
       // is "first-render cold-start latency").
       if (!this.fastpathReadyMarked && visible.length > 0) {
         this.fastpathReadyMarked = true;
-        // eslint-disable-next-line no-console -- intentional perf benchmark for Issue #3171
-        console.timeEnd("exocmd-fastpath-ready");
+        performance.mark("exocmd-fastpath-ready");
+        performance.measure(
+          "exocmd-fastpath",
+          "exocmd-fastpath-start",
+          "exocmd-fastpath-ready",
+        );
       }
       return visible;
     } catch (error) {
