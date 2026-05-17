@@ -183,6 +183,9 @@ describe("DynamicCommandButtonGroupBuilder — Issue #3183 cache strategy", () =
       preconditionEvaluator: mockPreconditionEvaluator as any,
       commandExecutionFlow: buildCommandExecutionFlow(),
       bindingsCache: cache,
+      // Cache only activates in the cold-start window — emulate it here
+      // by declaring the full path NOT yet ready.
+      isFullPathReady: () => false,
     });
 
     const result = await builder.build(buildContext());
@@ -193,6 +196,45 @@ describe("DynamicCommandButtonGroupBuilder — Issue #3183 cache strategy", () =
     // command so per-target visibility stays correct.
     expect(mockResolveForAssetMulti).not.toHaveBeenCalled();
     expect(mockEvaluate).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips the cache once the full triple store is ready (per-subject correctness)", async () => {
+    // Issue #3183 follow-up: cache cannot represent `targetAsset` /
+    // `targetPrototype` bindings — those are subject-keyed and only the
+    // full path resolves them. Once `isFullPathReady` flips, the cache
+    // must yield so per-subject bindings (like the starter-kit smoke
+    // fixture's asset-specific "Start" binding) surface correctly.
+    const fs = inMemoryFs();
+    const cache = new ExocmdBindingsCache(
+      fs,
+      ".exocortex/cache/exocmd-bindings.json",
+      "16.9.0",
+      mockLogger,
+    );
+    await cache.save({
+      "ems__Task": {
+        commands: [makeResolvedCommand("from-cache", "creation")],
+        preconditions_signature: "x",
+      },
+    });
+    await cache.load();
+    mockResolveForAssetMulti.mockResolvedValue([
+      makeResolvedCommand("from-full-path", "creation"),
+    ]);
+    mockEvaluate.mockResolvedValue(true);
+
+    const builder = new DynamicCommandButtonGroupBuilder({
+      commandResolver: mockCommandResolver as any,
+      preconditionEvaluator: mockPreconditionEvaluator as any,
+      commandExecutionFlow: buildCommandExecutionFlow(),
+      bindingsCache: cache,
+      isFullPathReady: () => true,
+    });
+
+    const result = await builder.build(buildContext());
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("dynamic-cmd-from-full-path");
+    expect(mockResolveForAssetMulti).toHaveBeenCalledTimes(1);
   });
 
   it("hides cached commands whose preconditions fail for the current target", async () => {
@@ -227,6 +269,7 @@ describe("DynamicCommandButtonGroupBuilder — Issue #3183 cache strategy", () =
       preconditionEvaluator: mockPreconditionEvaluator as any,
       commandExecutionFlow: buildCommandExecutionFlow(),
       bindingsCache: cache,
+      isFullPathReady: () => false,
     });
 
     const result = await builder.build(buildContext());
@@ -321,6 +364,7 @@ describe("DynamicCommandButtonGroupBuilder — Issue #3183 cache strategy", () =
       preconditionEvaluator: mockPreconditionEvaluator as any,
       commandExecutionFlow: buildCommandExecutionFlow(),
       bindingsCache: cache,
+      isFullPathReady: () => false,
     });
     const cachedResult = await builderWithCache.build(buildContext());
 
@@ -379,6 +423,7 @@ describe("DynamicCommandButtonGroupBuilder — Issue #3183 cache strategy", () =
         preconditionEvaluator: mockPreconditionEvaluator as any,
         commandExecutionFlow: buildCommandExecutionFlow(),
         bindingsCache: cache,
+        isFullPathReady: () => false,
       });
       await builder.build(buildContext());
       await builder.build(buildContext());

@@ -512,6 +512,17 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
   ): ResolvedCommand[] | null {
     const cache = this.config.bindingsCache;
     if (!cache) return null;
+    // Issue #3183 follow-up: once the full triple store is ready, the
+    // disk cache must yield — its per-class snapshot cannot represent
+    // `targetAsset` / `targetPrototype` bindings (those are subject-keyed
+    // and only the production `resolveForAssetMulti` against the live
+    // subject IRI matches them). The cache stays useful in the
+    // cold-start window where `isFullPathReady() === false`; the post-
+    // ready render through full path then corrects any per-subject
+    // bindings the cache could not pre-compute.
+    if (this.config.isFullPathReady && this.config.isFullPathReady()) {
+      return null;
+    }
     for (const cls of assetClasses) {
       if (cls === "exo__Asset") continue;
       const entry = cache.lookup(cls);
