@@ -150,6 +150,20 @@ export class SPARQLQueryService {
     }
   }
 
+  /**
+   * Returns true once the underlying triple store is fully populated and
+   * ready to execute SPARQL queries.
+   *
+   * Used by `DynamicCommandButtonGroupBuilder` (Issue #3171) to decide
+   * whether to take the cold-start fast path via `ExocmdFastResolver` or
+   * the full-resolver path. The flag flips inside {@link initialize} after
+   * `convertVault()` completes — exactly the window we want to avoid
+   * blocking the UI on.
+   */
+  isReady(): boolean {
+    return this.isInitialized;
+  }
+
   async refresh(): Promise<void> {
     await this.errorHandler.executeWithRetry(
       async () => this.indexer.refresh(),

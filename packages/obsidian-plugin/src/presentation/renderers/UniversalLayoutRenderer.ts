@@ -15,6 +15,7 @@ import { ExoLayoutRenderer } from "./ExoLayoutRenderer";
 import { BacklinksCacheManager } from '@plugin/adapters/caching/BacklinksCacheManager';
 import { EventListenerManager } from '@plugin/adapters/events/EventListenerManager';
 import { ButtonGroupsBuilder } from '@plugin/presentation/builders/ButtonGroupsBuilder';
+import type { ExocmdFastResolver } from '@plugin/presentation/builders/button-groups/ExocmdFastResolver';
 import { PanelResolver } from '@plugin/application/services/PanelResolver';
 import { DailyTasksRenderer } from "./DailyTasksRenderer";
 
@@ -68,6 +69,9 @@ export class UniversalLayoutRenderer {
   private exoLayoutRepository: ExoLayoutRepository | null = null;
   private layoutSelector: LayoutSelector | null = null;
   private panelResolver: PanelResolver | null = null;
+  // Issue #3171 — cold-start fast path
+  private fastResolver?: ExocmdFastResolver;
+  private isFullPathReady?: () => boolean;
   private exoLayoutRenderer!: ExoLayoutRenderer;
 
   private dependencyResolver: PropertyDependencyResolver;
@@ -96,6 +100,9 @@ export class UniversalLayoutRenderer {
       exoLayoutRepository?: ExoLayoutRepository | null;
       layoutSelector?: LayoutSelector | null;
       panelResolver?: PanelResolver;
+      // Issue #3171
+      fastResolver?: ExocmdFastResolver;
+      isFullPathReady?: () => boolean;
     },
   ) {
     this.app = app;
@@ -111,6 +118,8 @@ export class UniversalLayoutRenderer {
     this.exoLayoutRepository = rfc009Services?.exoLayoutRepository ?? null;
     this.layoutSelector = rfc009Services?.layoutSelector ?? null;
     this.panelResolver = rfc009Services?.panelResolver ?? null;
+    this.fastResolver = rfc009Services?.fastResolver;
+    this.isFullPathReady = rfc009Services?.isFullPathReady;
     this.logger = LoggerFactory.create("UniversalLayoutRenderer");
 
     // Create ReactRenderer with ErrorBoundary enabled for graceful error handling.
@@ -180,6 +189,8 @@ export class UniversalLayoutRenderer {
       refresh: () => this.refresh(),
       notificationService: this.notificationService,
       panelResolver: this.panelResolver ?? undefined,
+      fastResolver: this.fastResolver,
+      isFullPathReady: this.isFullPathReady,
     });
 
     this.dailyTasksRenderer = new DailyTasksRenderer(

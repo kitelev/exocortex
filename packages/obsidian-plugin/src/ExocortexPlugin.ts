@@ -61,6 +61,7 @@ import {
   createAliasIconExtension,
   createWikilinkLabelExtension,
 } from "./presentation/editor-extensions";
+import { ExocmdFastResolver } from "./presentation/builders/button-groups/ExocmdFastResolver";
 import { TimerManager } from "./infrastructure/timer";
 import { LRUCache } from "./infrastructure/cache";
 import { TabTitlePatch } from "./presentation/tab-titles/TabTitlePatch";
@@ -118,6 +119,8 @@ export default class ExocortexPlugin extends Plugin {
   preconditionEvaluator!: PreconditionEvaluator;
   groundingExecutor!: GroundingExecutor;
   serviceRegistry!: ServiceRegistry;
+  // Issue #3171 — cold-start fast-path resolver for exocmd buttons
+  exocmdFastResolver?: ExocmdFastResolver;
   private relationColumnSetRepository: RelationColumnSetRepository | null =
     null;
   private relationColumnSetResolver: RelationColumnSetResolver | null = null;
@@ -311,6 +314,19 @@ export default class ExocortexPlugin extends Plugin {
         },
       });
 
+      // Issue #3171 — cold-start fast resolver for exocmd buttons.
+      // Builds a mini in-memory triple store from the open file +
+      // ~41 `assetspaces/exocmd/*.md` assets while the full vault
+      // triple store is still being built in the background.
+      // Cache invalidation hook for exocmd files is wired further
+      // below (next to `metadataCache.on('changed')` listeners).
+      const exocmdFastResolver = new ExocmdFastResolver(
+        this.vaultAdapter,
+        "assetspaces/exocmd",
+        this.logger,
+      );
+      this.exocmdFastResolver = exocmdFastResolver;
+
       this.layoutRenderer = new UniversalLayoutRenderer(
         this.app,
         this.settings,
@@ -325,8 +341,48 @@ export default class ExocortexPlugin extends Plugin {
           exoLayoutRepository: this.exoLayoutRepository,
           layoutSelector: this.layoutSelector,
           panelResolver: this.panelResolver,
+          fastResolver: exocmdFastResolver,
+          isFullPathReady: () => this.sparql.isReady(),
         },
       );
+
+      // Issue #3171 — invalidate fast-path cache when any exocmd asset
+      // changes. We listen on the generic metadata-cache `changed` event
+      // (fires for every modified file) and filter by path prefix.
+      // Granular delete/rename are not needed: the fast-path lazily
+      // rebuilds from `vault.getAllFiles()` on next `resolveVisibleCommands`,
+      // so a stale cached list of files cannot survive a generation flip.
+      this.registerEvent(
+        this.app.metadataCache.on("changed", (changedFile) => {
+          if (
+            changedFile?.path?.startsWith("assetspaces/exocmd/") ||
+            changedFile?.path === "assetspaces/exocmd"
+          ) {
+            exocmdFastResolver.invalidateCommandCache();
+          }
+        }),
+      );
+      this.registerEvent(
+        this.app.vault.on("delete", (file) => {
+          if (
+            file?.path?.startsWith("assetspaces/exocmd/") ||
+            file?.path === "assetspaces/exocmd"
+          ) {
+            exocmdFastResolver.invalidateCommandCache();
+          }
+        }),
+      );
+      this.registerEvent(
+        this.app.vault.on("rename", (file, oldPath) => {
+          if (
+            file?.path?.startsWith("assetspaces/exocmd/") ||
+            oldPath?.startsWith("assetspaces/exocmd/")
+          ) {
+            exocmdFastResolver.invalidateCommandCache();
+          }
+        }),
+      );
+
       this.taskStatusService = container.resolve(TaskStatusService);
       this.taskTrackingService = new TaskTrackingService(
         this.app,
@@ -729,28 +785,61 @@ export default class ExocortexPlugin extends Plugin {
       // The `metadataCache.on("resolved")` handler above awaits this promise
       // and then refreshes the store to pick up any files that were skipped
       // because their frontmatter wasn't parsed in time. See issue #2780.
+      //
+      // Issue #3171 cold-start fast path: the SPARQL query (which triggers
+      // `convertVault()` on the 12k+ file vault) is launched via
+      // `setTimeout(0)` so it is fully deferred to the next macrotask —
+      // the `Initial render` block above (150ms) runs first and takes
+      // the fast path through `ExocmdFastResolver`, giving the user
+      // visible buttons within ~tens of ms instead of ~40s on mobile.
+      // The post-init re-render below upgrades the open file to the
+      // full-resolver path once `convertVault()` finishes.
+      // `console.time` instrumentation lets us measure cold-start
+      // latency against the issue's AC #1 / AC #2 targets in real
+      // sessions (developer DevTools / mobile dev tools).
       this.eagerInitPromise = new Promise<void>((resolve) => {
         this.app.workspace.onLayoutReady(() => {
-          void this.sparql
-            .query("ASK { ?s ?p ?o }")
-            .then(async () => {
-              this.commandResolver.invalidateCache();
-              // Triple store is now populated — RFC 1429fcd0 PR-2 registrar
-              // can run its SPARQL match and see paletteEnabled assets. Must
-              // happen before `autoRenderLayout` so the Command Palette is
-              // ready for the very first user Cmd-P invocation.
-              await initExocmdPalette();
-              this.autoRenderLayout();
-            })
-            .catch((err) => {
-              this.logger.error(
-                "Failed to eagerly initialize triple store",
-                err,
-              );
-            })
-            .finally(() => {
-              resolve();
-            });
+          // Issue #3171 perf instrumentation. Two distinct markers so the
+          // developer can read the cold-start UX *and* the full-path
+          // completion separately in DevTools — fusing them under one
+          // label would falsely suggest the fast path takes ~10–40 s.
+          //   `exocmd-fastpath-ready`  — onload → first `autoRenderLayout()`
+          //                              that takes the ExocmdFastResolver
+          //                              branch (AC #1 / AC #2 metric).
+          //   `exocmd-fullpath-ready`  — onload → background `convertVault()`
+          //                              completion + post-init re-render.
+          // eslint-disable-next-line no-console -- intentional perf benchmark for Issue #3171
+          console.time("exocmd-fastpath-ready");
+          // eslint-disable-next-line no-console -- intentional perf benchmark for Issue #3171
+          console.time("exocmd-fullpath-ready");
+          setTimeout(() => {
+            void this.sparql
+              .query("ASK { ?s ?p ?o }")
+              .then(async () => {
+                this.commandResolver.invalidateCache();
+                // Triple store is now populated — RFC 1429fcd0 PR-2 registrar
+                // can run its SPARQL match and see paletteEnabled assets. Must
+                // happen before `autoRenderLayout` so the Command Palette is
+                // ready for the very first user Cmd-P invocation.
+                await initExocmdPalette();
+                // Issue #3171 — re-render to upgrade currently-open file
+                // from the fast path to the full resolver. The strategy
+                // switch in `DynamicCommandButtonGroupBuilder` is per-call,
+                // so this single `autoRenderLayout()` is enough.
+                this.autoRenderLayout();
+                // eslint-disable-next-line no-console -- intentional perf benchmark for Issue #3171
+                console.timeEnd("exocmd-fullpath-ready");
+              })
+              .catch((err) => {
+                this.logger.error(
+                  "Failed to eagerly initialize triple store",
+                  err,
+                );
+              })
+              .finally(() => {
+                resolve();
+              });
+          }, 0);
         });
       });
 
