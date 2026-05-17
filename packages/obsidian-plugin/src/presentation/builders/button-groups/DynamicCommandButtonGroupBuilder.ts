@@ -292,37 +292,24 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
 
     const prototypeIRI = this.extractPrototypeIRI(metadata);
 
-    // Issue #3183 — persistent disk cache. Tried first because it is the
-    // ONLY path that can serve a *complete* CREATE+MISC button set during
-    // the ~5-21 s cold-start window where the full triple store is still
-    // being built (the fast path's mini-store lacks the class-hierarchy
-    // graph that CREATE-category preconditions traverse). Cache hits emit
-    // the `exocmd-cache-applied` performance.mark so the AC #1 latency
-    // target is observable from the same DevTools call the original
-    // `exocmd-fastpath` / `exocmd-fullpath` marks support (#3175).
+    // Issue #3183 — persistent disk cache. Cache stores binding-resolution
+    // output (NOT precondition-filter output): the indexer's representative
+    // target cannot speak for every future asset of the same class — its
+    // frontmatter state determines target-state preconditions like
+    // `ASK { $target ems:Effort_startTimestamp ?x }` differently than a
+    // sibling task that does have that property. So the cache only saves
+    // the binding-resolution SPARQL hop; preconditions are re-evaluated
+    // per-render against the live triple store, matching the full-path
+    // contract byte-for-byte. Class-hierarchy preconditions (CREATE
+    // category) still need the full store to evaluate correctly — once
+    // it is ready they pass and the buttons appear; in the cold-start
+    // window before convertVault() they remain hidden (same as today's
+    // fast path).
     //
     // Lookup tries every non-`exo__Asset` class key the asset declares
     // — UUID-canonical first (post-2026-05-16) then symbolic aliases —
     // so cache writes keyed by either form resolve correctly.
-    const cachedCommands = this.resolveViaCache(assetClasses);
-    if (cachedCommands !== null) {
-      const preconditionPassed = cachedCommands;
-      const visibleCommands =
-        panelClassRef !== null
-          ? this.panelResolver
-              .applyFilter(
-                panelClassRef,
-                preconditionPassed.map((rc) => ({
-                  uid: rc.binding.id,
-                  category: rc.command.category,
-                  rc,
-                })),
-              )
-              .map((entry) => entry.rc)
-          : preconditionPassed;
-      if (visibleCommands.length === 0) return null;
-      return { visibleCommands, subjectIRI, panelClassRef };
-    }
+    const cachedBindings = this.resolveViaCache(assetClasses);
 
     // Issue #3171 — cold-start fast path. When the full vault triple store
     // has NOT yet finished `convertVault()`, delegate to ExocmdFastResolver
@@ -334,19 +321,31 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
     // re-renders automatically via the plugin's resolved-cache invalidation
     // hook.
     const useFastPath =
+      cachedBindings === null &&
       this.config.fastResolver !== undefined &&
       this.config.isFullPathReady !== undefined &&
       !this.config.isFullPathReady();
 
-    const preconditionPassed = useFastPath
-      ? await this.resolveViaFastPath(context)
-      : await this.resolveViaFullPath(
-          subjectIRI,
-          assetClasses,
-          prototypeIRI,
-          file,
-          logger,
-        );
+    let preconditionPassed: ResolvedCommand[] | null;
+    if (cachedBindings !== null) {
+      // Cache hit: skip binding resolution, run preconditions through
+      // the live evaluator against the current target.
+      preconditionPassed = await this.evaluatePreconditions(
+        cachedBindings,
+        subjectIRI,
+        file,
+      );
+    } else if (useFastPath) {
+      preconditionPassed = await this.resolveViaFastPath(context);
+    } else {
+      preconditionPassed = await this.resolveViaFullPath(
+        subjectIRI,
+        assetClasses,
+        prototypeIRI,
+        file,
+        logger,
+      );
+    }
 
     if (preconditionPassed === null) return null;
 
@@ -402,12 +401,29 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
 
     if (resolved.length === 0) return null;
 
+    return this.evaluatePreconditions(resolved, subjectIRI, file);
+  }
+
+  /**
+   * Run preconditions in PARALLEL against the live `PreconditionEvaluator`
+   * and return only the commands whose preconditions evaluated to true.
+   * Extracted from {@link resolveViaFullPath} so the Issue #3183 cache
+   * hit path can reuse the exact same precondition pipeline — cached
+   * bindings then render through the same per-target evaluation as the
+   * full path, eliminating per-target false positives/negatives that a
+   * pre-filtered cache would carry.
+   */
+  private async evaluatePreconditions(
+    resolved: ReadonlyArray<ResolvedCommand>,
+    subjectIRI: string,
+    file: ButtonBuilderContext["file"],
+  ): Promise<ResolvedCommand[]> {
+    if (resolved.length === 0) return [];
     const evalContext: EvalContext = {
       targetIRI: subjectIRI,
       fileBasename: file.basename,
       currentFolder: file.parent?.path,
     };
-
     const availabilityChecks = await Promise.all(
       resolved.map(async (rc) => {
         try {
@@ -422,7 +438,6 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
         }
       }),
     );
-
     return availabilityChecks
       .filter(({ available }) => available)
       .map(({ rc }) => rc);

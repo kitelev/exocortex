@@ -176,7 +176,13 @@ describe("ExocmdBindingsIndexer", () => {
     expect(taskEntry!.preconditions_signature).toMatch(/^fnv1a:[0-9a-f]{8}$/);
   });
 
-  it("filters out commands whose preconditions evaluate to false", async () => {
+  it("persists raw binding resolution output WITHOUT precondition filtering", async () => {
+    // Issue #3183 follow-up: the indexer MUST NOT filter by preconditions
+    // because the representative target's state cannot speak for every
+    // sibling instance (e.g. a task without startTimestamp would have
+    // hidden "Remove Start Timestamp" from the cache, then a task WITH
+    // startTimestamp opening would get a stale cache hit and miss the
+    // button — broke `dynamic-command-buttons-render.spec.ts`).
     const fs = createInMemoryFs();
     const cache = new ExocmdBindingsCache(
       fs,
@@ -196,10 +202,7 @@ describe("ExocmdBindingsIndexer", () => {
       makeResolvedCommand("yes", "pre-yes", "yes"),
       makeResolvedCommand("no", "pre-no", "no"),
     ]);
-    const evalSpy = jest.fn(
-      async (precondition: { id: string } | undefined) =>
-        precondition?.id === "pre-yes",
-    );
+    const evalSpy = jest.fn(async () => false); // would have filtered both out
 
     const indexer = new ExocmdBindingsIndexer({
       cache,
@@ -211,12 +214,20 @@ describe("ExocmdBindingsIndexer", () => {
 
     const summary = await indexer.runFullScan();
     expect(summary.classesWritten).toBe(1);
+    // Preconditions are NOT evaluated in the indexer — the eval spy must
+    // never be called (per-target eval happens at render time in the
+    // builder instead).
+    expect(evalSpy).not.toHaveBeenCalled();
 
     await cache.load();
     const entry = cache.lookup("ems__Task");
     expect(entry).not.toBeNull();
-    expect(entry!.commands).toHaveLength(1);
-    expect(entry!.commands[0].command.id).toBe("yes");
+    // Both bindings are persisted; render-time eval decides per target.
+    expect(entry!.commands).toHaveLength(2);
+    expect(entry!.commands.map((c) => c.command.id).sort()).toEqual([
+      "no",
+      "yes",
+    ]);
   });
 
   it("does not poison the cache when one class throws", async () => {

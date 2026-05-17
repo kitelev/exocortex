@@ -3,7 +3,6 @@ import type {
   PreconditionEvaluator,
   ResolvedCommand,
   ILogger,
-  EvalContext,
 } from "exocortex";
 import type {
   ExocmdBindingsCache,
@@ -38,7 +37,16 @@ export interface ExocmdBindingsIndexerConfig {
   readonly cache: ExocmdBindingsCache;
   readonly vaultSource: IndexerVaultSource;
   readonly commandResolver: CommandResolver;
-  readonly preconditionEvaluator: PreconditionEvaluator;
+  /**
+   * Reserved for a future precondition-classification phase that splits
+   * cacheable class-stable preconditions from per-target ones. The current
+   * implementation does NOT evaluate preconditions in the indexer: cached
+   * commands are re-evaluated at render time against the live target so
+   * sibling instances of the same class always get correct visibility
+   * (Issue #3183 follow-up: per-target false negatives broke
+   * `dynamic-command-buttons-render.spec.ts` when this filter ran here).
+   */
+  readonly preconditionEvaluator?: PreconditionEvaluator;
   readonly logger: ILogger;
 }
 
@@ -99,8 +107,7 @@ export class ExocmdBindingsIndexer {
   constructor(private readonly config: ExocmdBindingsIndexerConfig) {}
 
   async runFullScan(): Promise<IndexerRunSummary> {
-    const { vaultSource, commandResolver, preconditionEvaluator, logger } =
-      this.config;
+    const { vaultSource, commandResolver, logger } = this.config;
 
     const repsByClass = new Map<string, FrontmatterRecord>();
     let assetsConsidered = 0;
@@ -123,7 +130,6 @@ export class ExocmdBindingsIndexer {
           classKey,
           rep,
           commandResolver,
-          preconditionEvaluator,
         );
         if (entry !== null) {
           bindings[classKey] = entry;
@@ -155,15 +161,16 @@ export class ExocmdBindingsIndexer {
   }
 
   /**
-   * Run the full resolver against a single representative asset for the
-   * class and return the cache entry shape. Returns `null` when no
-   * commands are visible (no need to persist an empty bucket).
+   * Resolve all `exocmd__CommandBinding` matches for the class via the
+   * full triple store and return them verbatim. Preconditions are NOT
+   * evaluated here — see `preconditionEvaluator` doc on the config
+   * interface for the per-target-correctness rationale. Returns `null`
+   * when no bindings match (no need to persist an empty bucket).
    */
   private async resolveForRepresentative(
     classKey: string,
     rep: FrontmatterRecord,
     commandResolver: CommandResolver,
-    preconditionEvaluator: PreconditionEvaluator,
   ): Promise<ExocmdBindingsCacheEntry | null> {
     const fm = rep.frontmatter ?? {};
     const assetClasses = this.extractAssetClasses(fm);
@@ -178,38 +185,11 @@ export class ExocmdBindingsIndexer {
     );
     if (resolved.length === 0) return null;
 
-    const evalContext: EvalContext = {
-      targetIRI: subjectIRI,
-      fileBasename: this.basenameOf(rep.path),
-      currentFolder: this.parentOf(rep.path),
-    };
-
-    const checks = await Promise.all(
-      resolved.map(async (rc) => {
-        try {
-          const available = await preconditionEvaluator.evaluate(
-            rc.command.precondition,
-            subjectIRI,
-            evalContext,
-          );
-          return { rc, available };
-        } catch {
-          return { rc, available: false };
-        }
-      }),
-    );
-
-    const visible: ResolvedCommand[] = checks
-      .filter(({ available }) => available)
-      .map(({ rc }) => rc);
-
-    if (visible.length === 0) return null;
-
-    const signature = this.computePreconditionsSignature(visible);
+    const signature = this.computePreconditionsSignature(resolved);
     void classKey; // key is the caller-provided grouping; nothing to do with it here
 
     return {
-      commands: visible,
+      commands: resolved,
       preconditions_signature: signature,
     };
   }
@@ -298,15 +278,4 @@ export class ExocmdBindingsIndexer {
     return `fnv1a:${fnv1aHex(parts.join(""))}`;
   }
 
-  private basenameOf(path: string): string {
-    const idx = path.lastIndexOf("/");
-    const tail = idx >= 0 ? path.slice(idx + 1) : path;
-    const dot = tail.lastIndexOf(".");
-    return dot > 0 ? tail.slice(0, dot) : tail;
-  }
-
-  private parentOf(path: string): string | undefined {
-    const idx = path.lastIndexOf("/");
-    return idx >= 0 ? path.slice(0, idx) : undefined;
-  }
 }

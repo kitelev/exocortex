@@ -173,6 +173,10 @@ describe("DynamicCommandButtonGroupBuilder — Issue #3183 cache strategy", () =
       },
     });
     await cache.load();
+    // Render-time precondition eval still runs (we cache bindings, not
+    // visibility verdicts — see indexer doc); make it pass so the cached
+    // command actually renders.
+    mockEvaluate.mockResolvedValue(true);
 
     const builder = new DynamicCommandButtonGroupBuilder({
       commandResolver: mockCommandResolver as any,
@@ -184,9 +188,52 @@ describe("DynamicCommandButtonGroupBuilder — Issue #3183 cache strategy", () =
     const result = await builder.build(buildContext());
     expect(result).toHaveLength(1);
     expect(result[0].id).toBe("dynamic-cmd-cached-cmd");
-    // Cache hit must short-circuit the full resolver path entirely.
+    // Cache hit short-circuits the binding-resolution SPARQL hop; the
+    // builder still calls `preconditionEvaluator.evaluate` once per cached
+    // command so per-target visibility stays correct.
     expect(mockResolveForAssetMulti).not.toHaveBeenCalled();
-    expect(mockEvaluate).not.toHaveBeenCalled();
+    expect(mockEvaluate).toHaveBeenCalledTimes(1);
+  });
+
+  it("hides cached commands whose preconditions fail for the current target", async () => {
+    // Issue #3183 follow-up: cached "Remove Start Timestamp" binding must
+    // be filtered OUT by render-time eval when the open task has no
+    // startTimestamp (precondition ASKs against $target's frontmatter).
+    const fs = inMemoryFs();
+    const cache = new ExocmdBindingsCache(
+      fs,
+      ".exocortex/cache/exocmd-bindings.json",
+      "16.9.0",
+      mockLogger,
+    );
+    await cache.save({
+      "ems__Task": {
+        commands: [
+          makeResolvedCommand("always-visible", "creation"),
+          makeResolvedCommand("target-state", "maintenance"),
+        ],
+        preconditions_signature: "x",
+      },
+    });
+    await cache.load();
+    // First command's precondition passes; second fails (e.g. target has
+    // no `ems__Effort_startTimestamp`).
+    mockEvaluate
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false);
+
+    const builder = new DynamicCommandButtonGroupBuilder({
+      commandResolver: mockCommandResolver as any,
+      preconditionEvaluator: mockPreconditionEvaluator as any,
+      commandExecutionFlow: buildCommandExecutionFlow(),
+      bindingsCache: cache,
+    });
+
+    const result = await builder.build(buildContext());
+    expect(result.map((b) => b.id)).toEqual(["dynamic-cmd-always-visible"]);
+    // Binding resolution is still skipped — only preconditions run.
+    expect(mockResolveForAssetMulti).not.toHaveBeenCalled();
+    expect(mockEvaluate).toHaveBeenCalledTimes(2);
   });
 
   it("falls through to the full path on cache miss (no snapshot loaded)", async () => {
@@ -267,6 +314,7 @@ describe("DynamicCommandButtonGroupBuilder — Issue #3183 cache strategy", () =
       },
     });
     await cache.load();
+    mockEvaluate.mockResolvedValue(true);
 
     const builderWithCache = new DynamicCommandButtonGroupBuilder({
       commandResolver: mockCommandResolver as any,
@@ -309,6 +357,7 @@ describe("DynamicCommandButtonGroupBuilder — Issue #3183 cache strategy", () =
       },
     });
     await cache.load();
+    mockEvaluate.mockResolvedValue(true);
 
     // jsdom does not implement Web Performance API marks/measures; swap
     // the stubs from `setup-reflect-metadata.ts` with jest spies so we
