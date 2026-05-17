@@ -891,6 +891,7 @@ export class CommandResolver {
       }
     }
     const targetValue = await this.getObsidianWikilinkValue(subject, Namespace.EXOCMD.term("Grounding_targetValue"));
+    const isDefinedBy = await this.getObsidianWikilinkValue(subject, Namespace.EXOCMD.term("Grounding_isDefinedBy"));
     const sparqlUpdate = await this.getLiteralValue(subject, Namespace.EXOCMD.term("Grounding_sparqlUpdate"));
     const targetClass = await this.getObsidianName(subject, Namespace.EXOCMD.term("Grounding_targetClass"));
     const targetPrototype = await this.getObsidianName(subject, Namespace.EXOCMD.term("Grounding_targetPrototype"));
@@ -984,6 +985,7 @@ export class CommandResolver {
       incrementBy,
       shiftDelta: shiftDelta ?? undefined,
       propertyDefaults,
+      isDefinedBy: isDefinedBy ?? undefined,
     };
 
     if (inputSchema) {

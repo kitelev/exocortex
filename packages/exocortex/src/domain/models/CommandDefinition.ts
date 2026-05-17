@@ -128,6 +128,17 @@ export interface GroundingDefinition {
    * is unaffected by this map.
    */
   readonly propertyDefaults?: Record<string, string>;
+  /**
+   * Standalone wikilink to the owner identity asset pinned by this grounding.
+   * Injected into `userInput.isDefinedBy` for the `service_call` createAsset
+   * service, where it becomes `exo__Asset_isDefinedBy` on the new asset.
+   *
+   * Encoded as the `exocmd__Grounding_isDefinedBy` RDF triple — a real
+   * frontmatter wikilink, not a value embedded in `Grounding_targetValue`
+   * JSON. This makes the relationship discoverable in the referenced
+   * identity asset's incoming-links / layout.
+   */
+  readonly isDefinedBy?: string;
 }
 
 /**
