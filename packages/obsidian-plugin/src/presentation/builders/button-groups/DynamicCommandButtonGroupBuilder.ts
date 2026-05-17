@@ -22,6 +22,7 @@ import {
   resolveCategoryTitle,
 } from "./categoryDisplayDefaults";
 import { PanelResolver } from "@plugin/application/services/PanelResolver";
+import type { ExocmdFastResolver } from "./ExocmdFastResolver";
 
 /**
  * Configuration for DynamicCommandButtonGroupBuilder.
@@ -45,6 +46,26 @@ export interface DynamicCommandBuilderConfig {
    * non-breaking.
    */
   panelResolver?: PanelResolver;
+  /**
+   * Issue #3171 — cold-start fast path. When both `fastResolver` and
+   * `isFullPathReady` are provided AND `isFullPathReady()` returns false,
+   * `resolveVisibleCommands` delegates to {@link ExocmdFastResolver} using
+   * a mini in-memory triple store fed exclusively from
+   * `metadataCache.getFileCache()` for the open file + the ~41 exocmd
+   * assets. This eliminates the ~10s/~40s desktop/mobile cold-start window
+   * during which the full vault triple store is still being built.
+   *
+   * Once `isFullPathReady()` flips to true (background `convertVault()`
+   * completion), subsequent renders take the full path; the currently
+   * open file re-renders automatically when the plugin invalidates the
+   * `commandResolver` cache and triggers `autoRenderLayout()`.
+   *
+   * Both fields are optional and independent of each other — when either
+   * is missing the builder falls back to the full path always (legacy
+   * behaviour, used in unit tests).
+   */
+  fastResolver?: ExocmdFastResolver;
+  isFullPathReady?: () => boolean;
 }
 
 /**
@@ -256,6 +277,68 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
 
     const prototypeIRI = this.extractPrototypeIRI(metadata);
 
+    // Issue #3171 — cold-start fast path. When the full vault triple store
+    // has NOT yet finished `convertVault()`, delegate to ExocmdFastResolver
+    // which builds a mini-store from just the open file + 41 exocmd assets
+    // (~42 metadata-cache lookups vs ~12k file reads). This converts the
+    // ~10s/~40s desktop/mobile cold-start wait into ~tens of ms. Once the
+    // background indexer finishes, `isFullPathReady()` flips to true and
+    // subsequent renders use the production path — the open file
+    // re-renders automatically via the plugin's resolved-cache invalidation
+    // hook.
+    const useFastPath =
+      this.config.fastResolver !== undefined &&
+      this.config.isFullPathReady !== undefined &&
+      !this.config.isFullPathReady();
+
+    const preconditionPassed = useFastPath
+      ? await this.resolveViaFastPath(context)
+      : await this.resolveViaFullPath(
+          subjectIRI,
+          assetClasses,
+          prototypeIRI,
+          file,
+          logger,
+        );
+
+    if (preconditionPassed === null) return null;
+
+    // RFC-024 Phase 3 — apply class-level panel filter (excludeCommands
+    // trumps includeGroups). When no panel is declared this is a pure
+    // pass-through. Filter dimension is `command.category` (RFC f1dc284a
+    // — sectioning axis is `Command_category`).
+    const visibleCommands =
+      panelClassRef !== null
+        ? this.panelResolver
+            .applyFilter(
+              panelClassRef,
+              preconditionPassed.map((rc) => ({
+                uid: rc.binding.id,
+                category: rc.command.category,
+                rc,
+              })),
+            )
+            .map((entry) => entry.rc)
+        : preconditionPassed;
+
+    if (visibleCommands.length === 0) return null;
+
+    return { visibleCommands, subjectIRI, panelClassRef };
+  }
+
+  /**
+   * Production path: resolves bindings against the fully-populated global
+   * triple store and evaluates preconditions in PARALLEL. Returns `null`
+   * when bindings resolution itself throws (logged), or an empty array
+   * when no binding matches.
+   */
+  private async resolveViaFullPath(
+    subjectIRI: string,
+    assetClasses: string[],
+    prototypeIRI: string | undefined,
+    file: ButtonBuilderContext["file"],
+    logger: ButtonBuilderContext["logger"],
+  ): Promise<ResolvedCommand[] | null> {
     let resolved: ResolvedCommand[];
     try {
       resolved = await this.config.commandResolver.resolveForAssetMulti(
@@ -293,32 +376,57 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
       }),
     );
 
-    const preconditionPassed = availabilityChecks
+    return availabilityChecks
       .filter(({ available }) => available)
       .map(({ rc }) => rc);
-
-    // RFC-024 Phase 3 — apply class-level panel filter (excludeCommands
-    // trumps includeGroups). When no panel is declared this is a pure
-    // pass-through. Filter dimension is `command.category` (RFC f1dc284a
-    // — sectioning axis is `Command_category`).
-    const visibleCommands =
-      panelClassRef !== null
-        ? this.panelResolver
-            .applyFilter(
-              panelClassRef,
-              preconditionPassed.map((rc) => ({
-                uid: rc.binding.id,
-                category: rc.command.category,
-                rc,
-              })),
-            )
-            .map((entry) => entry.rc)
-        : preconditionPassed;
-
-    if (visibleCommands.length === 0) return null;
-
-    return { visibleCommands, subjectIRI, panelClassRef };
   }
+
+  /**
+   * Issue #3171 cold-start fast path — delegates the binding +
+   * precondition evaluation to {@link ExocmdFastResolver}, which uses a
+   * mini in-memory triple store built solely from the open file's
+   * frontmatter + the ~41 `assetspaces/exocmd/*.md` assets. Returns
+   * `null` on resolver failure so the caller treats the file as having
+   * no visible buttons (identical to the full-path error contract).
+   *
+   * Pre-conditions for entering this branch are checked by the caller —
+   * `fastResolver` and `isFullPathReady` are both present, and the latter
+   * returned false. The class hierarchy guards (`extractAssetClasses` /
+   * `extractPrototypeIRI`) have already run on the caller side and
+   * returned a non-empty class set; the fast resolver re-derives them
+   * internally because it does not receive the caller's pre-computed
+   * vector (keeping `ExocmdFastResolver` decoupled from this builder's
+   * private helpers).
+   */
+  private async resolveViaFastPath(
+    context: ButtonBuilderContext,
+  ): Promise<ResolvedCommand[] | null> {
+    const { file, logger } = context;
+    const fastResolver = this.config.fastResolver;
+    if (!fastResolver) return null;
+    try {
+      const visible = await fastResolver.resolveVisibleCommands(file);
+      // Issue #3171 perf benchmark — emit the cold-start UX marker the
+      // first time a fast-path render produces visible commands. Paired
+      // with `console.time("exocmd-fastpath-ready")` in `ExocortexPlugin`.
+      // Guarded by `!this.fastpathReadyMarked` so we only emit once per
+      // plugin session (subsequent file switches still take the fast
+      // path until `isFullPathReady` flips, but the metric we care about
+      // is "first-render cold-start latency").
+      if (!this.fastpathReadyMarked && visible.length > 0) {
+        this.fastpathReadyMarked = true;
+        // eslint-disable-next-line no-console -- intentional perf benchmark for Issue #3171
+        console.timeEnd("exocmd-fastpath-ready");
+      }
+      return visible;
+    } catch (error) {
+      logger.info(
+        `[DynamicCommands] Fast-path resolver failed: ${String(error)}`,
+      );
+      return null;
+    }
+  }
+  private fastpathReadyMarked = false;
 
   private createButton(
     rc: ResolvedCommand,
