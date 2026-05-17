@@ -3,6 +3,9 @@ import type { GroundingExecutor, UserInput } from "./GroundingExecutor";
 import type { ResolvedCommand } from "./CommandResolver";
 import type { INotificationService } from "../interfaces/INotificationService";
 import type { ILogger } from "../interfaces/ILogger";
+import type { GroundingDefinition } from "../domain/models/CommandDefinition";
+import { GroundingType } from "../domain/constants/GroundingType";
+import { DateFormatter } from "../utilities/DateFormatter";
 
 /**
  * Surface-agnostic execution context for a resolved exocmd command.
@@ -82,7 +85,11 @@ export class CommandExecutionFlow {
     let userInput: UserInput | undefined = ctx.injectedUserInput;
     const inputSchema = CommandExecutionFlow.extractInputSchema(rc);
     if (inputSchema !== null && inputSchema.length > 0) {
-      const collected = await this.prompts.promptInputSchema(inputSchema);
+      const effectiveSchema = CommandExecutionFlow.applyLabelDatePrefill(
+        inputSchema,
+        command.grounding,
+      );
+      const collected = await this.prompts.promptInputSchema(effectiveSchema);
       if (collected === null) return;
       userInput = { ...(ctx.injectedUserInput ?? {}), ...collected };
     }
@@ -133,5 +140,43 @@ export class CommandExecutionFlow {
     ];
     if (!raw || !Array.isArray(raw)) return null;
     return raw;
+  }
+
+  /**
+   * Opt-in pre-fill of the `label` modal field for `create_instance` groundings
+   * — restores the v15.38 behaviour stripped by PR #2733. Active only when:
+   *   - grounding type is `create_instance`,
+   *   - `prefillLabelWithDate` is true on the grounding (RDF opt-in),
+   *   - the resolver populated `prototypeLabel`,
+   *   - the schema has a field named `label` without an existing defaultValue.
+   *
+   * The current date is computed here (not in the resolver) so it stays fresh
+   * regardless of grounding caching. Defaults already supplied by the schema
+   * author win — user-explicit configuration takes precedence over the prefill.
+   *
+   * Date formatter matches the legacy `CreateInstanceCommand.showModal()` —
+   * `DateFormatter.toDateString` uses local-tz calendar parts so the prefill
+   * stays "today" in the user's timezone (Almaty UTC+5, etc.) even between
+   * 00:00–04:59 local when UTC would still report yesterday.
+   */
+  static applyLabelDatePrefill(
+    schema: ReadonlyArray<unknown>,
+    grounding: GroundingDefinition,
+  ): ReadonlyArray<unknown> {
+    if (grounding.type !== GroundingType.CREATE_INSTANCE) return schema;
+    if (!grounding.prefillLabelWithDate) return schema;
+    if (!grounding.prototypeLabel) return schema;
+
+    const today = DateFormatter.toDateString(new Date());
+    const prefill = `${grounding.prototypeLabel} ${today}`;
+
+    return schema.map((field) => {
+      if (typeof field !== "object" || field === null) return field;
+      const f = field as Record<string, unknown>;
+      if (f.name !== "label") return field;
+      const existing = f.defaultValue;
+      if (typeof existing === "string" && existing.length > 0) return field;
+      return { ...f, defaultValue: prefill };
+    });
   }
 }

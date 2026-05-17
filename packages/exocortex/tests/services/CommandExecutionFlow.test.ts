@@ -12,6 +12,7 @@ import type { INotificationService } from "../../src/interfaces/INotificationSer
 import type { ILogger } from "../../src/interfaces/ILogger";
 import type { GroundingDefinition } from "../../src/domain/models/CommandDefinition";
 import { GroundingType } from "../../src/domain/constants/GroundingType";
+import { DateFormatter } from "../../src/utilities/DateFormatter";
 
 const baseGrounding: GroundingDefinition = {
   id: "grounding-1",
@@ -204,6 +205,172 @@ describe("CommandExecutionFlow", () => {
       await flow.run(rc, { targetIRI: "iri://x", filePath: "x.md" });
 
       expect(prompts.promptInputSchema).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("applyLabelDatePrefill (v15.38 regression restoration)", () => {
+    // Patch the date helper directly — keeps the test deterministic regardless
+    // of the runner's timezone (DateFormatter.toDateString uses local-tz
+    // calendar parts, so fake-system-time + UTC instants drift between TZs).
+    let toDateStringSpy: jest.SpyInstance<string, [Date]>;
+
+    beforeEach(() => {
+      toDateStringSpy = jest
+        .spyOn(DateFormatter, "toDateString")
+        .mockReturnValue("2026-05-17");
+    });
+
+    afterEach(() => {
+      toDateStringSpy.mockRestore();
+    });
+
+    it("prefills label field with `${prototypeLabel} YYYY-MM-DD` when flag is on", () => {
+      const grounding: GroundingDefinition = {
+        ...baseGrounding,
+        type: GroundingType.CREATE_INSTANCE,
+        targetPrototype: "proto-uid",
+        targetFolder: "01 Inbox",
+        prefillLabelWithDate: true,
+        prototypeLabel: "Morning Wim Hof",
+      };
+      const schema = [{ name: "label", type: "text", required: true }];
+
+      const result = CommandExecutionFlow.applyLabelDatePrefill(
+        schema,
+        grounding,
+      );
+
+      expect(result).toEqual([
+        {
+          name: "label",
+          type: "text",
+          required: true,
+          defaultValue: "Morning Wim Hof 2026-05-17",
+        },
+      ]);
+    });
+
+    it("is no-op when prefillLabelWithDate is false / missing", () => {
+      const grounding: GroundingDefinition = {
+        ...baseGrounding,
+        type: GroundingType.CREATE_INSTANCE,
+        targetFolder: "01 Inbox",
+        prototypeLabel: "Whatever",
+      };
+      const schema = [{ name: "label", type: "text" }];
+
+      expect(
+        CommandExecutionFlow.applyLabelDatePrefill(schema, grounding),
+      ).toBe(schema);
+    });
+
+    it("is no-op when grounding type is not create_instance", () => {
+      const grounding: GroundingDefinition = {
+        ...baseGrounding,
+        type: GroundingType.PROPERTY_SET,
+        prefillLabelWithDate: true,
+        prototypeLabel: "Morning Wim Hof",
+      };
+      const schema = [{ name: "label", type: "text" }];
+
+      expect(
+        CommandExecutionFlow.applyLabelDatePrefill(schema, grounding),
+      ).toBe(schema);
+    });
+
+    it("is no-op when prototypeLabel is missing (graceful fallback)", () => {
+      const grounding: GroundingDefinition = {
+        ...baseGrounding,
+        type: GroundingType.CREATE_INSTANCE,
+        targetFolder: "01 Inbox",
+        prefillLabelWithDate: true,
+      };
+      const schema = [{ name: "label", type: "text" }];
+
+      const result = CommandExecutionFlow.applyLabelDatePrefill(
+        schema,
+        grounding,
+      );
+      expect(result).toBe(schema);
+    });
+
+    it("does not overwrite an existing non-empty defaultValue (user-explicit wins)", () => {
+      const grounding: GroundingDefinition = {
+        ...baseGrounding,
+        type: GroundingType.CREATE_INSTANCE,
+        targetFolder: "01 Inbox",
+        prefillLabelWithDate: true,
+        prototypeLabel: "Morning Wim Hof",
+      };
+      const schema = [
+        {
+          name: "label",
+          type: "text",
+          defaultValue: "Author Explicit Default",
+        },
+      ];
+
+      const result = CommandExecutionFlow.applyLabelDatePrefill(
+        schema,
+        grounding,
+      );
+      expect(result[0]).toEqual({
+        name: "label",
+        type: "text",
+        defaultValue: "Author Explicit Default",
+      });
+    });
+
+    it("leaves non-label fields untouched even when prefill is active", () => {
+      const grounding: GroundingDefinition = {
+        ...baseGrounding,
+        type: GroundingType.CREATE_INSTANCE,
+        targetFolder: "01 Inbox",
+        prefillLabelWithDate: true,
+        prototypeLabel: "Morning Wim Hof",
+      };
+      const schema = [
+        { name: "label", type: "text" },
+        { name: "note", type: "multiline" },
+      ];
+
+      const result = CommandExecutionFlow.applyLabelDatePrefill(
+        schema,
+        grounding,
+      );
+      expect(result).toEqual([
+        {
+          name: "label",
+          type: "text",
+          defaultValue: "Morning Wim Hof 2026-05-17",
+        },
+        { name: "note", type: "multiline" },
+      ]);
+    });
+
+    it("flow.run passes prefilled schema into promptInputSchema", async () => {
+      const { flow, prompts } = makeFlow({
+        promptResult: { label: "user-typed" },
+      });
+      const rc = makeRC(
+        {},
+        {
+          type: GroundingType.CREATE_INSTANCE,
+          targetPrototype: "proto-uid",
+          targetFolder: "01 Inbox",
+          prefillLabelWithDate: true,
+          prototypeLabel: "Morning Wim Hof",
+          inputSchema: [{ name: "label", type: "text", required: true }],
+        },
+      );
+
+      await flow.run(rc, { targetIRI: "iri://x", filePath: "x.md" });
+
+      expect(prompts.promptInputSchema).toHaveBeenCalledTimes(1);
+      const passedSchema = prompts.promptInputSchema.mock.calls[0][0] as Array<
+        Record<string, unknown>
+      >;
+      expect(passedSchema[0].defaultValue).toBe("Morning Wim Hof 2026-05-17");
     });
   });
 

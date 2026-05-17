@@ -950,24 +950,55 @@ export class CommandResolver {
       steps = await this.loadCompositeSteps(subject, depth + 1);
     }
 
-    // Parse inputSchema JSON into array of field descriptors for form modals
+    // Parse inputSchema JSON into array of field descriptors for form modals.
+    // `default` / `defaultValue` are propagated so static prefills authored in
+    // the JSON Schema survive the projection (restoration of v15.38 behaviour
+    // — pre-PR #2733 this field was silently dropped).
     let inputSchema: unknown[] | undefined;
     if (inputSchemaRaw) {
       try {
         const parsed = JSON.parse(inputSchemaRaw);
         if (parsed?.properties) {
-          inputSchema = Object.entries(parsed.properties as Record<string, Record<string, string>>).map(
-            ([name, prop]) => ({
-              name,
-              type: prop.type === "string" ? "text" : prop.type,
-              label: prop.title ?? name,
-              required: Array.isArray(parsed.required) && parsed.required.includes(name),
-            }),
+          inputSchema = Object.entries(parsed.properties as Record<string, Record<string, unknown>>).map(
+            ([name, prop]) => {
+              const rawType = prop.type;
+              const fieldType = rawType === "string" ? "text" : rawType;
+              const rawDefault =
+                prop.defaultValue !== undefined ? prop.defaultValue : prop.default;
+              const field: Record<string, unknown> = {
+                name,
+                type: fieldType,
+                label: prop.title ?? name,
+                required: Array.isArray(parsed.required) && parsed.required.includes(name),
+              };
+              if (rawDefault !== undefined && rawDefault !== null) {
+                field.defaultValue = String(rawDefault);
+              }
+              return field;
+            },
           );
         }
       } catch {
         // Invalid JSON — skip inputSchema
       }
+    }
+
+    // Restoration regression v15.38: opt-in pre-fill of the `label` modal field
+    // with `${prototype.exo__Asset_label} YYYY-MM-DD`. The boolean flag lives
+    // on the grounding; the prototype label is resolved here (one triple-store
+    // lookup, cached with the grounding) so that `CommandExecutionFlow` can
+    // build the final string at click-time without acquiring a triple-store
+    // dependency.
+    const prefillRaw = await this.getLiteralValue(
+      subject,
+      Namespace.EXOCMD.term("Grounding_prefillLabelWithDate"),
+    );
+    const prefillLabelWithDate =
+      prefillRaw !== null && String(prefillRaw).trim().toLowerCase() === "true";
+
+    let prototypeLabel: string | undefined;
+    if (prefillLabelWithDate && type === GroundingType.CREATE_INSTANCE) {
+      prototypeLabel = await this.resolvePrototypeLabel(subject);
     }
 
     const grounding: GroundingDefinition = {
@@ -986,6 +1017,8 @@ export class CommandResolver {
       shiftDelta: shiftDelta ?? undefined,
       propertyDefaults,
       isDefinedBy: isDefinedBy ?? undefined,
+      prefillLabelWithDate: prefillLabelWithDate || undefined,
+      prototypeLabel,
     };
 
     if (inputSchema) {
@@ -993,6 +1026,43 @@ export class CommandResolver {
     }
 
     return grounding;
+  }
+
+  /**
+   * Read the `exo__Asset_label` of the prototype referenced by
+   * `exocmd__Grounding_targetPrototype`. Resolves alias-form
+   * `[[<UID>|<symbolic>]]` to the UID (NOT the symbolic tail) so the lookup
+   * works against UUID-canonicalised vaults (CLAUDE.md §UUID-canon).
+   * Returns `undefined` when the prototype is missing, unresolved, or has no
+   * label — callers must handle the absence gracefully (no prefill).
+   */
+  private async resolvePrototypeLabel(
+    groundingSubject: IRI,
+  ): Promise<string | undefined> {
+    const refTriples = await this.tripleStore.match(
+      groundingSubject,
+      Namespace.EXOCMD.term("Grounding_targetPrototype"),
+      undefined,
+    );
+    if (refTriples.length === 0) return undefined;
+
+    const ref = refTriples[0].object;
+    let prototypeSubject: IRI | null = null;
+    if (ref instanceof IRI) {
+      prototypeSubject = ref;
+    } else if (ref instanceof Literal) {
+      const uid = this.normalizeWikilink(ref.value);
+      if (uid) {
+        prototypeSubject = await this.findSubjectByUID(uid);
+      }
+    }
+    if (!prototypeSubject) return undefined;
+
+    const label = await this.getLiteralValue(
+      prototypeSubject,
+      Namespace.EXO.term("Asset_label"),
+    );
+    return label ?? undefined;
   }
 
   private async loadCompositeSteps(
