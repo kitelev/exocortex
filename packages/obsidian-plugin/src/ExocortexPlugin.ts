@@ -796,24 +796,25 @@ export default class ExocortexPlugin extends Plugin {
       // visible buttons within ~tens of ms instead of ~40s on mobile.
       // The post-init re-render below upgrades the open file to the
       // full-resolver path once `convertVault()` finishes.
-      // `console.time` instrumentation lets us measure cold-start
-      // latency against the issue's AC #1 / AC #2 targets in real
-      // sessions (developer DevTools / mobile dev tools).
+      // `performance.mark` / `performance.measure` instrumentation lets
+      // us read cold-start latency against the issue's AC #1 / AC #2
+      // targets via `performance.getEntriesByName(...)` — works on
+      // desktop and mobile without Verbose log level (Issue #3175).
       this.eagerInitPromise = new Promise<void>((resolve) => {
         this.app.workspace.onLayoutReady(() => {
-          // Issue #3171 perf instrumentation. Two distinct markers so the
+          // Issue #3171 perf instrumentation (Issue #3175 migrated from
+          // `console.time` to Web Performance API). Two distinct
+          // start-marks paired with `performance.measure` calls so the
           // developer can read the cold-start UX *and* the full-path
-          // completion separately in DevTools — fusing them under one
-          // label would falsely suggest the fast path takes ~10–40 s.
-          //   `exocmd-fastpath-ready`  — onload → first `autoRenderLayout()`
-          //                              that takes the ExocmdFastResolver
-          //                              branch (AC #1 / AC #2 metric).
-          //   `exocmd-fullpath-ready`  — onload → background `convertVault()`
-          //                              completion + post-init re-render.
-          // eslint-disable-next-line no-console -- intentional perf benchmark for Issue #3171
-          console.time("exocmd-fastpath-ready");
-          // eslint-disable-next-line no-console -- intentional perf benchmark for Issue #3171
-          console.time("exocmd-fullpath-ready");
+          // completion separately — fusing them under one label would
+          // falsely suggest the fast path takes ~10–40 s.
+          //   `exocmd-fastpath`  — onload → first `autoRenderLayout()`
+          //                        that takes the ExocmdFastResolver
+          //                        branch (AC #1 / AC #2 metric).
+          //   `exocmd-fullpath`  — onload → background `convertVault()`
+          //                        completion + post-init re-render.
+          performance.mark("exocmd-fastpath-start");
+          performance.mark("exocmd-fullpath-start");
           setTimeout(() => {
             void this.sparql
               .query("ASK { ?s ?p ?o }")
@@ -829,8 +830,12 @@ export default class ExocortexPlugin extends Plugin {
                 // switch in `DynamicCommandButtonGroupBuilder` is per-call,
                 // so this single `autoRenderLayout()` is enough.
                 this.autoRenderLayout();
-                // eslint-disable-next-line no-console -- intentional perf benchmark for Issue #3171
-                console.timeEnd("exocmd-fullpath-ready");
+                performance.mark("exocmd-fullpath-ready");
+                performance.measure(
+                  "exocmd-fullpath",
+                  "exocmd-fullpath-start",
+                  "exocmd-fullpath-ready",
+                );
               })
               .catch((err) => {
                 this.logger.error(

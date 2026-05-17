@@ -1344,4 +1344,124 @@ describe("DynamicCommandButtonGroupBuilder", () => {
       expect(result[0].variant).toBe("warning");
     });
   });
+
+  // -- Issue #3175 — performance.mark cold-start observability ----------------
+  // Replaces console.time markers from PR #3173 with Web Performance API so
+  // the cold-start cold-start latency is programmatic-queryable
+  // (`performance.getEntriesByName('exocmd-fastpath')[0].duration`) and visible
+  // without Verbose log level in DevTools.
+  describe("Issue #3175: performance.mark on fast-path first render", () => {
+    // jsdom does not implement Web Performance API marks — install jest
+    // mocks directly on the global performance object and restore the
+    // originals after each test.
+    let markSpy: jest.Mock;
+    let measureSpy: jest.Mock;
+    let originalMark: unknown;
+    let originalMeasure: unknown;
+
+    beforeEach(() => {
+      originalMark = (performance as unknown as Record<string, unknown>)["mark"];
+      originalMeasure = (performance as unknown as Record<string, unknown>)["measure"];
+      markSpy = jest.fn();
+      measureSpy = jest.fn();
+      (performance as unknown as Record<string, unknown>)["mark"] = markSpy;
+      (performance as unknown as Record<string, unknown>)["measure"] = measureSpy;
+    });
+
+    afterEach(() => {
+      (performance as unknown as Record<string, unknown>)["mark"] = originalMark;
+      (performance as unknown as Record<string, unknown>)["measure"] =
+        originalMeasure;
+    });
+
+    function makeBuilderWithFastPath(opts: {
+      visibleCommands: ResolvedCommand[];
+      fullPathReady: boolean;
+    }) {
+      const fastResolver = {
+        resolveVisibleCommands: jest
+          .fn()
+          .mockResolvedValue(opts.visibleCommands),
+        invalidateCache: jest.fn(),
+      };
+      return {
+        builder: new DynamicCommandButtonGroupBuilder({
+          commandResolver: mockCommandResolver as unknown as any,
+          preconditionEvaluator: mockPreconditionEvaluator as unknown as any,
+          commandExecutionFlow: buildCommandExecutionFlow(),
+          fastResolver: fastResolver as unknown as any,
+          isFullPathReady: () => opts.fullPathReady,
+        }),
+        fastResolver,
+      };
+    }
+
+    it("emits performance.mark('exocmd-fastpath-ready') + measure on first fast-path render with visible commands", async () => {
+      const rc = createResolvedCommand();
+      const { builder } = makeBuilderWithFastPath({
+        visibleCommands: [rc],
+        fullPathReady: false,
+      });
+
+      await builder.build(createContext());
+
+      expect(markSpy).toHaveBeenCalledWith("exocmd-fastpath-ready");
+      expect(measureSpy).toHaveBeenCalledWith(
+        "exocmd-fastpath",
+        "exocmd-fastpath-start",
+        "exocmd-fastpath-ready",
+      );
+    });
+
+    it("emits the fastpath marker exactly once across multiple build() calls (guarded by fastpathReadyMarked)", async () => {
+      const rc = createResolvedCommand();
+      const { builder } = makeBuilderWithFastPath({
+        visibleCommands: [rc],
+        fullPathReady: false,
+      });
+
+      await builder.build(createContext());
+      await builder.build(createContext());
+      await builder.build(createContext());
+
+      const readyMarkCalls = markSpy.mock.calls.filter(
+        ([label]) => label === "exocmd-fastpath-ready",
+      );
+      expect(readyMarkCalls).toHaveLength(1);
+      const fastpathMeasureCalls = measureSpy.mock.calls.filter(
+        ([label]) => label === "exocmd-fastpath",
+      );
+      expect(fastpathMeasureCalls).toHaveLength(1);
+    });
+
+    it("does NOT emit the fastpath marker when fast-path returns zero visible commands", async () => {
+      const { builder } = makeBuilderWithFastPath({
+        visibleCommands: [],
+        fullPathReady: false,
+      });
+
+      await builder.build(createContext());
+
+      expect(markSpy).not.toHaveBeenCalledWith("exocmd-fastpath-ready");
+      expect(measureSpy).not.toHaveBeenCalledWith(
+        "exocmd-fastpath",
+        expect.any(String),
+        expect.any(String),
+      );
+    });
+
+    it("does NOT emit the fastpath marker when full path is ready (fast-path branch skipped)", async () => {
+      const rc = createResolvedCommand();
+      mockResolveForAssetMulti.mockResolvedValue([rc]);
+      mockEvaluate.mockResolvedValue(true);
+      const { builder } = makeBuilderWithFastPath({
+        visibleCommands: [rc],
+        fullPathReady: true,
+      });
+
+      await builder.build(createContext());
+
+      expect(markSpy).not.toHaveBeenCalledWith("exocmd-fastpath-ready");
+    });
+  });
 });
