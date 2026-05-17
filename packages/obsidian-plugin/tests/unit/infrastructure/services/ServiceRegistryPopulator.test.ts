@@ -491,6 +491,33 @@ describe("ServiceRegistryPopulator", () => {
       );
     });
 
+    it("explicit isDefinedBy from grounding targetValue wins over ownerIdentity fallback", async () => {
+      const service = registry.get("createAsset")!;
+      await service.execute("", {
+        prototypeUID: "ztlk__FleetingNotePrototype",
+        label: "Pinned-owner note",
+        folder: "03 Knowledge/inbox",
+        // GroundingExecutor merges targetValue defaults into userInput; an
+        // explicit `isDefinedBy` pin must trump the registrar-injected
+        // vault default `ownerIdentity`.
+        isDefinedBy: "[[0aa339bc-9b56-400a-8148-cbde57bbf0b6]]",
+        ownerIdentity: "[[!some-other-default]]",
+      });
+
+      const writeCall = (deps.fileSystemAdapter.createFile as jest.Mock).mock
+        .calls[0];
+      const writtenContent: string = writeCall[1];
+      expect(writtenContent).toContain(
+        'exo__Asset_isDefinedBy: "[[0aa339bc-9b56-400a-8148-cbde57bbf0b6]]"',
+      );
+      expect(writtenContent).not.toContain("[[!some-other-default]]");
+      // Guard against duplicate isDefinedBy lines (regression: parent block
+      // used to unconditionally append after explicit pin landed).
+      const occurrences = (writtenContent.match(/exo__Asset_isDefinedBy:/g) ?? [])
+        .length;
+      expect(occurrences).toBe(1);
+    });
+
     it("omits exo__Asset_isDefinedBy when neither parent nor ownerIdentity supplies it", async () => {
       const service = registry.get("createAsset")!;
       await service.execute("", {

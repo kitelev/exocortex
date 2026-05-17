@@ -143,6 +143,7 @@ export function populateServiceRegistry(
       // in from the active asset.
       let folder = userInput?.folder as string | undefined;
       const ownerIdentity = userInput?.ownerIdentity as string | undefined;
+      const explicitIsDefinedBy = userInput?.isDefinedBy as string | undefined;
       if (!prototypeUID) throw new Error("createAsset requires userInput.prototypeUID");
       if (!label) throw new Error("createAsset requires userInput.label");
       // Default to current file's folder when not specified
@@ -205,6 +206,18 @@ export function populateServiceRegistry(
         `  - "[[${expectedClass}]]"`,
       ];
       let isDefinedByWritten = false;
+      // Highest precedence: explicit `isDefinedBy` from grounding `targetValue`
+      // (RFC `1429fcd0` follow-up). Lets each exocmd command pin its created
+      // assets to a specific owner without depending on vault default or parent
+      // inheritance. Example: a global Palette "Create note" command sets
+      // `targetValue.isDefinedBy = "[[<kitelev-uid>]]"` so the note is owned
+      // by the user even when fired without an active file.
+      if (explicitIsDefinedBy) {
+        lines.push(
+          `exo__Asset_isDefinedBy: ${toQuotedWikilink(explicitIsDefinedBy)}`,
+        );
+        isDefinedByWritten = true;
+      }
       if (parentMetadata) {
         const parentClass = parentMetadata.exo__Instance_class;
         const parentClasses = Array.isArray(parentClass)
@@ -236,7 +249,7 @@ export function populateServiceRegistry(
           );
         }
         lines.push('ems__Effort_status: "[[ems__EffortStatusBacklog]]"');
-        if (parentMetadata.exo__Asset_isDefinedBy) {
+        if (!isDefinedByWritten && parentMetadata.exo__Asset_isDefinedBy) {
           lines.push(
             `exo__Asset_isDefinedBy: ${toQuotedWikilink(
               String(parentMetadata.exo__Asset_isDefinedBy),
@@ -245,12 +258,11 @@ export function populateServiceRegistry(
           isDefinedByWritten = true;
         }
       }
-      // Fallback for global surfaces without an active file (RFC `1429fcd0`):
-      // the caller (e.g. ExocmdCommandPaletteRegistrar) injects the user's
-      // owner-identity wikilink via `userInput.ownerIdentity`. Parent
-      // inheritance takes precedence above — a button click on an
-      // ontology-specific asset still inherits that asset's `isDefinedBy`,
-      // so this branch only fires when there is no parent at all.
+      // Final fallback for global surfaces without an active file (RFC
+      // `1429fcd0`): ExocmdCommandPaletteRegistrar injects the vault default
+      // owner-identity wikilink via `userInput.ownerIdentity`. Precedence
+      // chain: explicit grounding `isDefinedBy` > parent inheritance >
+      // vault-default `ownerIdentity`.
       if (!isDefinedByWritten && ownerIdentity) {
         lines.push(
           `exo__Asset_isDefinedBy: ${toQuotedWikilink(ownerIdentity)}`,
