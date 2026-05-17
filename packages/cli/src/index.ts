@@ -7,7 +7,6 @@ import { sparqlIndexCommand } from "./commands/sparql-index.js";
 import { watchCommand } from "./commands/watch.js";
 import { resolveCommand } from "./commands/resolve.js";
 import { askCommand } from "./commands/ask.js";
-import { dailyReviewCommand } from "./commands/daily-review.js";
 import { validateCommand } from "./commands/validate.js";
 import { classesCommand } from "./commands/classes.js";
 import { createCommand } from "./commands/create.js";
@@ -51,7 +50,6 @@ export function createProgram(version?: string): Command {
   program.addCommand(watchCommand());
   program.addCommand(resolveCommand());
   program.addCommand(askCommand());
-  program.addCommand(dailyReviewCommand());
   program.addCommand(classesCommand());
   program.addCommand(createCommand());
   program.addCommand(archiveCommand());

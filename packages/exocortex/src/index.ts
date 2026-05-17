@@ -178,40 +178,6 @@ export {
   type SPARQLTemplate,
 } from "./services/SPARQLTemplateLibrary";
 export {
-  AnalyticsService,
-  type AnalyticsPeriod,
-  type DurationStats,
-  type DailyAggregate,
-  type HourlyDistribution,
-  type SleepAnalysis,
-  type TaskCompletionAnalysis,
-  type ActivityFrequencyAnalysis,
-  type EffortData,
-} from "./services/AnalyticsService";
-export {
-  TrendDetectionService,
-  type TrendDirection,
-  type TrendStrength,
-  type TrendAnalysis,
-  type Anomaly,
-  type CorrelationResult,
-  type WeeklyPattern,
-  type BehavioralInsight,
-} from "./services/TrendDetectionService";
-export {
-  AutocompleteService,
-  type AutocompleteSuggestion,
-  type AutocompleteConfig,
-  DEFAULT_AUTOCOMPLETE_CONFIG,
-} from "./services/AutocompleteService";
-export {
-  DailyReviewService,
-  type Practice,
-  type DailyReviewSummary,
-  type QuickCaptureResult,
-  type CreateFromPracticeOptions,
-} from "./services/DailyReviewService";
-export {
   CriticalityZoneService,
   CriticalityZoneUUIDs,
   type CriticalityZone,
