@@ -519,10 +519,24 @@ export default class ExocortexPlugin extends Plugin {
       }
 
       // GTD Capture: one-click fleeting note to inbox.
-      // Delegates to the existing `create-fleeting-note` command so the
-      // ribbon and command palette share a single implementation.
+      // Triggers the same Obsidian Command Palette entry as Cmd-P → "Create
+      // fleeting note". The command itself is registered by
+      // `ExocmdCommandPaletteRegistrar` from the vault `exocmd__Command`
+      // asset `692aa011-...` (RFC 1429fcd0 PR-3 migration). Using
+      // `app.commands.executeCommandById` keeps a single source of truth.
+      // The id is prefixed with the plugin manifest id at registration time,
+      // so the canonical form is `<manifest.id>:create-fleeting-note`.
       this.addRibbonIcon("inbox", "Capture to inbox (fleeting note)", () => {
-        void this.commandManager.executeCommand("create-fleeting-note");
+        const commandId = `${this.manifest.id}:create-fleeting-note`;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const commands = (this.app as any).commands;
+        if (typeof commands?.executeCommandById === "function") {
+          commands.executeCommandById(commandId);
+        } else {
+          this.logger.warn(
+            "[ExocortexPlugin] app.commands.executeCommandById unavailable; ribbon click no-op",
+          );
+        }
       });
 
       this.addSettingTab(new ExocortexSettingTab(this.app, this));

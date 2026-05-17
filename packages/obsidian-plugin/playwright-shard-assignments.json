@@ -17,7 +17,8 @@
       "layout-overflow-styling.spec.ts",
       "brat-installation-compatibility.spec.ts",
       "exo-layout-smoke.spec.ts",
-      "featured-binding-promotion.spec.ts"
+      "featured-binding-promotion.spec.ts",
+      "create-fleeting-note-palette.spec.ts"
     ],
     [
       "area-tree-collapsible.spec.ts",

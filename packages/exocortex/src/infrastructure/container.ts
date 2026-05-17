@@ -19,7 +19,6 @@ import { SessionEventService } from "../services/SessionEventService";
 import { AssetConversionService } from "../services/AssetConversionService";
 import { ClassCreationService } from "../services/ClassCreationService";
 import { ConceptCreationService } from "../services/ConceptCreationService";
-import { FleetingNoteCreationService } from "../services/FleetingNoteCreationService";
 import { SupervisionCreationService } from "../services/SupervisionCreationService";
 import { NoteToRDFConverter } from "../services/NoteToRDFConverter";
 import { AreaHierarchyBuilder } from "../services/AreaHierarchyBuilder";
@@ -85,10 +84,6 @@ export function registerCoreServices(
   targetContainer.registerSingleton(
     DI_TOKENS.ConceptCreationService,
     ConceptCreationService,
-  );
-  targetContainer.registerSingleton(
-    DI_TOKENS.FleetingNoteCreationService,
-    FleetingNoteCreationService,
   );
   targetContainer.registerSingleton(
     DI_TOKENS.SupervisionCreationService,

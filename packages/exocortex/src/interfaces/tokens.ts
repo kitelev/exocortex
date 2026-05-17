@@ -30,7 +30,6 @@ export const DI_TOKENS = {
   AreaCreationService: Symbol.for("AreaCreationService"),
   ClassCreationService: Symbol.for("ClassCreationService"),
   ConceptCreationService: Symbol.for("ConceptCreationService"),
-  FleetingNoteCreationService: Symbol.for("FleetingNoteCreationService"),
   SupervisionCreationService: Symbol.for("SupervisionCreationService"),
   GenericAssetCreationService: Symbol.for("GenericAssetCreationService"),
 

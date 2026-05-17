@@ -18,7 +18,6 @@ jest.mock("../../../../src/presentation/modals/modalSchemas", () => ({
   showSupervisionModal: jest.fn().mockReturnValue(new Promise(() => {})),
   showTrashReasonModal: jest.fn().mockReturnValue(new Promise(() => {})),
   showClassSelectionModal: jest.fn().mockReturnValue(new Promise(() => {})),
-  showFleetingNoteModal: jest.fn().mockReturnValue(new Promise(() => {})),
 }));
 
 export interface CommandManagerTestContext {

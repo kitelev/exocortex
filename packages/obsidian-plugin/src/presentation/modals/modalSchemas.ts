@@ -17,10 +17,6 @@ export interface TrashReasonModalResult {
   reason: string | null;
 }
 
-export interface FleetingNoteModalResult {
-  label: string | null;
-}
-
 export interface NarrowerConceptModalResult {
   fileName: string | null;
   definition: string | null;
@@ -64,17 +60,6 @@ export async function showSubclassCreationModal(
     { name: "label", type: "text", label: "Subclass label", required: true },
   ];
   const result = await buildModal(app, schema, "Create subclass", "Create");
-  if (!result) return { label: null };
-  return { label: result["label"]?.trim() || null };
-}
-
-export async function showFleetingNoteModal(
-  app: App,
-): Promise<FleetingNoteModalResult> {
-  const schema: InputSchemaField[] = [
-    { name: "label", type: "text", label: "Label", required: true },
-  ];
-  const result = await buildModal(app, schema, "Create fleeting note", "Create");
   if (!result) return { label: null };
   return { label: result["label"]?.trim() || null };
 }
