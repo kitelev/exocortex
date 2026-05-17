@@ -337,6 +337,7 @@ export default class ExocortexPlugin extends Plugin {
           preconditionEvaluator: this.preconditionEvaluator,
           groundingExecutor: this.groundingExecutor,
           notificationService: notifier,
+          tripleStore,
           relationColumnSetResolver: this.relationColumnSetResolver,
           exoLayoutRepository: this.exoLayoutRepository,
           layoutSelector: this.layoutSelector,
@@ -567,6 +568,7 @@ export default class ExocortexPlugin extends Plugin {
             new ObsidianNotificationService(),
             this.logger,
             new ObsidianCommandPromptAdapter(this.app),
+            tripleStore,
           );
           await new ExocmdCommandPaletteRegistrar(
             this,

@@ -13,6 +13,11 @@ import type { ILogger } from "../../src/interfaces/ILogger";
 import type { GroundingDefinition } from "../../src/domain/models/CommandDefinition";
 import { GroundingType } from "../../src/domain/constants/GroundingType";
 import { DateFormatter } from "../../src/utilities/DateFormatter";
+import { InMemoryTripleStore } from "../../src/infrastructure/rdf/InMemoryTripleStore";
+import { IRI } from "../../src/domain/models/rdf/IRI";
+import { Literal } from "../../src/domain/models/rdf/Literal";
+import { Namespace } from "../../src/domain/models/rdf/Namespace";
+import { Triple } from "../../src/domain/models/rdf/Triple";
 
 const baseGrounding: GroundingDefinition = {
   id: "grounding-1",
@@ -46,6 +51,7 @@ function makeFlow(overrides?: {
   groundingResult?: ExecutionResult;
   confirmResult?: boolean;
   promptResult?: UserInput | null;
+  tripleStore?: InMemoryTripleStore;
 }) {
   const groundingExecutor = {
     execute: jest
@@ -75,14 +81,44 @@ function makeFlow(overrides?: {
       .mockResolvedValue(overrides?.promptResult ?? null),
   };
 
+  const tripleStore = overrides?.tripleStore;
+
   const flow = new CommandExecutionFlow(
     groundingExecutor,
     notificationService,
     logger,
     prompts,
+    tripleStore,
   );
 
-  return { flow, groundingExecutor, notificationService, logger, prompts };
+  return {
+    flow,
+    groundingExecutor,
+    notificationService,
+    logger,
+    prompts,
+    tripleStore,
+  };
+}
+
+/**
+ * Seed an InMemoryTripleStore with an asset whose `exo__Asset_label` is the
+ * provided literal. Returns the store ready for use as `tripleStore` in
+ * `makeFlow({ tripleStore })`.
+ */
+async function makeStoreWithAssetLabel(
+  targetIRI: string,
+  label: string,
+): Promise<InMemoryTripleStore> {
+  const store = new InMemoryTripleStore();
+  await store.add(
+    new Triple(
+      new IRI(targetIRI),
+      Namespace.EXO.term("Asset_label"),
+      new Literal(label),
+    ),
+  );
+  return store;
 }
 
 describe("CommandExecutionFlow", () => {
@@ -208,11 +244,12 @@ describe("CommandExecutionFlow", () => {
     });
   });
 
-  describe("applyLabelDatePrefill (v15.38 regression restoration)", () => {
+  describe("applyLabelDatePrefill (v15.38 regression restoration, v16.7.5 runtime fix)", () => {
     // Patch the date helper directly — keeps the test deterministic regardless
     // of the runner's timezone (DateFormatter.toDateString uses local-tz
     // calendar parts, so fake-system-time + UTC instants drift between TZs).
     let toDateStringSpy: jest.SpyInstance<string, [Date]>;
+    const TARGET_IRI = "obsidian://vault/asset-1.md";
 
     beforeEach(() => {
       toDateStringSpy = jest
@@ -224,20 +261,25 @@ describe("CommandExecutionFlow", () => {
       toDateStringSpy.mockRestore();
     });
 
-    it("prefills label field with `${prototypeLabel} YYYY-MM-DD` when flag is on", () => {
+    it("prefills label field with `${currentAsset.exo__Asset_label} YYYY-MM-DD` when flag is on", async () => {
+      const store = await makeStoreWithAssetLabel(
+        TARGET_IRI,
+        "EMS Weekly Review Light",
+      );
+      const { flow } = makeFlow({ tripleStore: store });
       const grounding: GroundingDefinition = {
         ...baseGrounding,
         type: GroundingType.CREATE_INSTANCE,
         targetPrototype: "proto-uid",
         targetFolder: "01 Inbox",
         prefillLabelWithDate: true,
-        prototypeLabel: "Morning Wim Hof",
       };
       const schema = [{ name: "label", type: "text", required: true }];
 
-      const result = CommandExecutionFlow.applyLabelDatePrefill(
+      const result = await flow.applyLabelDatePrefill(
         schema,
         grounding,
+        TARGET_IRI,
       );
 
       expect(result).toEqual([
@@ -245,62 +287,116 @@ describe("CommandExecutionFlow", () => {
           name: "label",
           type: "text",
           required: true,
-          defaultValue: "Morning Wim Hof 2026-05-17",
+          defaultValue: "EMS Weekly Review Light 2026-05-17",
         },
       ]);
     });
 
-    it("is no-op when prefillLabelWithDate is false / missing", () => {
+    it("is no-op when prefillLabelWithDate is false / missing", async () => {
+      const store = await makeStoreWithAssetLabel(TARGET_IRI, "Whatever");
+      const { flow } = makeFlow({ tripleStore: store });
       const grounding: GroundingDefinition = {
         ...baseGrounding,
         type: GroundingType.CREATE_INSTANCE,
         targetFolder: "01 Inbox",
-        prototypeLabel: "Whatever",
       };
       const schema = [{ name: "label", type: "text" }];
 
-      expect(
-        CommandExecutionFlow.applyLabelDatePrefill(schema, grounding),
-      ).toBe(schema);
-    });
-
-    it("is no-op when grounding type is not create_instance", () => {
-      const grounding: GroundingDefinition = {
-        ...baseGrounding,
-        type: GroundingType.PROPERTY_SET,
-        prefillLabelWithDate: true,
-        prototypeLabel: "Morning Wim Hof",
-      };
-      const schema = [{ name: "label", type: "text" }];
-
-      expect(
-        CommandExecutionFlow.applyLabelDatePrefill(schema, grounding),
-      ).toBe(schema);
-    });
-
-    it("is no-op when prototypeLabel is missing (graceful fallback)", () => {
-      const grounding: GroundingDefinition = {
-        ...baseGrounding,
-        type: GroundingType.CREATE_INSTANCE,
-        targetFolder: "01 Inbox",
-        prefillLabelWithDate: true,
-      };
-      const schema = [{ name: "label", type: "text" }];
-
-      const result = CommandExecutionFlow.applyLabelDatePrefill(
+      const result = await flow.applyLabelDatePrefill(
         schema,
         grounding,
+        TARGET_IRI,
       );
       expect(result).toBe(schema);
     });
 
-    it("does not overwrite an existing non-empty defaultValue (user-explicit wins)", () => {
+    it("is no-op when grounding type is not create_instance", async () => {
+      const store = await makeStoreWithAssetLabel(
+        TARGET_IRI,
+        "Morning Wim Hof",
+      );
+      const { flow } = makeFlow({ tripleStore: store });
+      const grounding: GroundingDefinition = {
+        ...baseGrounding,
+        type: GroundingType.PROPERTY_SET,
+        prefillLabelWithDate: true,
+      };
+      const schema = [{ name: "label", type: "text" }];
+
+      const result = await flow.applyLabelDatePrefill(
+        schema,
+        grounding,
+        TARGET_IRI,
+      );
+      expect(result).toBe(schema);
+    });
+
+    it("is no-op when targetIRI is null (global Palette surface without active file)", async () => {
+      const store = await makeStoreWithAssetLabel(
+        TARGET_IRI,
+        "Morning Wim Hof",
+      );
+      const { flow } = makeFlow({ tripleStore: store });
       const grounding: GroundingDefinition = {
         ...baseGrounding,
         type: GroundingType.CREATE_INSTANCE,
         targetFolder: "01 Inbox",
         prefillLabelWithDate: true,
-        prototypeLabel: "Morning Wim Hof",
+      };
+      const schema = [{ name: "label", type: "text" }];
+
+      const result = await flow.applyLabelDatePrefill(schema, grounding, null);
+      expect(result).toBe(schema);
+    });
+
+    it("is no-op when tripleStore is not wired (back-compat for callers without DI)", async () => {
+      const { flow } = makeFlow();
+      const grounding: GroundingDefinition = {
+        ...baseGrounding,
+        type: GroundingType.CREATE_INSTANCE,
+        targetFolder: "01 Inbox",
+        prefillLabelWithDate: true,
+      };
+      const schema = [{ name: "label", type: "text" }];
+
+      const result = await flow.applyLabelDatePrefill(
+        schema,
+        grounding,
+        TARGET_IRI,
+      );
+      expect(result).toBe(schema);
+    });
+
+    it("is no-op when current asset has no exo__Asset_label (graceful fallback)", async () => {
+      const store = new InMemoryTripleStore();
+      const { flow } = makeFlow({ tripleStore: store });
+      const grounding: GroundingDefinition = {
+        ...baseGrounding,
+        type: GroundingType.CREATE_INSTANCE,
+        targetFolder: "01 Inbox",
+        prefillLabelWithDate: true,
+      };
+      const schema = [{ name: "label", type: "text" }];
+
+      const result = await flow.applyLabelDatePrefill(
+        schema,
+        grounding,
+        TARGET_IRI,
+      );
+      expect(result).toBe(schema);
+    });
+
+    it("does not overwrite an existing non-empty defaultValue (user-explicit wins)", async () => {
+      const store = await makeStoreWithAssetLabel(
+        TARGET_IRI,
+        "Morning Wim Hof",
+      );
+      const { flow } = makeFlow({ tripleStore: store });
+      const grounding: GroundingDefinition = {
+        ...baseGrounding,
+        type: GroundingType.CREATE_INSTANCE,
+        targetFolder: "01 Inbox",
+        prefillLabelWithDate: true,
       };
       const schema = [
         {
@@ -310,9 +406,10 @@ describe("CommandExecutionFlow", () => {
         },
       ];
 
-      const result = CommandExecutionFlow.applyLabelDatePrefill(
+      const result = await flow.applyLabelDatePrefill(
         schema,
         grounding,
+        TARGET_IRI,
       );
       expect(result[0]).toEqual({
         name: "label",
@@ -321,22 +418,27 @@ describe("CommandExecutionFlow", () => {
       });
     });
 
-    it("leaves non-label fields untouched even when prefill is active", () => {
+    it("leaves non-label fields untouched even when prefill is active", async () => {
+      const store = await makeStoreWithAssetLabel(
+        TARGET_IRI,
+        "Morning Wim Hof",
+      );
+      const { flow } = makeFlow({ tripleStore: store });
       const grounding: GroundingDefinition = {
         ...baseGrounding,
         type: GroundingType.CREATE_INSTANCE,
         targetFolder: "01 Inbox",
         prefillLabelWithDate: true,
-        prototypeLabel: "Morning Wim Hof",
       };
       const schema = [
         { name: "label", type: "text" },
         { name: "note", type: "multiline" },
       ];
 
-      const result = CommandExecutionFlow.applyLabelDatePrefill(
+      const result = await flow.applyLabelDatePrefill(
         schema,
         grounding,
+        TARGET_IRI,
       );
       expect(result).toEqual([
         {
@@ -348,9 +450,14 @@ describe("CommandExecutionFlow", () => {
       ]);
     });
 
-    it("flow.run passes prefilled schema into promptInputSchema", async () => {
+    it("flow.run passes prefilled schema into promptInputSchema using current asset label", async () => {
+      const store = await makeStoreWithAssetLabel(
+        TARGET_IRI,
+        "EMS Weekly Review Light",
+      );
       const { flow, prompts } = makeFlow({
         promptResult: { label: "user-typed" },
+        tripleStore: store,
       });
       const rc = makeRC(
         {},
@@ -359,18 +466,19 @@ describe("CommandExecutionFlow", () => {
           targetPrototype: "proto-uid",
           targetFolder: "01 Inbox",
           prefillLabelWithDate: true,
-          prototypeLabel: "Morning Wim Hof",
           inputSchema: [{ name: "label", type: "text", required: true }],
         },
       );
 
-      await flow.run(rc, { targetIRI: "iri://x", filePath: "x.md" });
+      await flow.run(rc, { targetIRI: TARGET_IRI, filePath: "x.md" });
 
       expect(prompts.promptInputSchema).toHaveBeenCalledTimes(1);
       const passedSchema = prompts.promptInputSchema.mock.calls[0][0] as Array<
         Record<string, unknown>
       >;
-      expect(passedSchema[0].defaultValue).toBe("Morning Wim Hof 2026-05-17");
+      expect(passedSchema[0].defaultValue).toBe(
+        "EMS Weekly Review Light 2026-05-17",
+      );
     });
   });
 

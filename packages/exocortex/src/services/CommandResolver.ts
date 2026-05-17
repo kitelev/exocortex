@@ -984,22 +984,16 @@ export class CommandResolver {
     }
 
     // Restoration regression v15.38: opt-in pre-fill of the `label` modal field
-    // with `${prototype.exo__Asset_label} YYYY-MM-DD`. The boolean flag lives
-    // on the grounding; the prototype label is resolved here (one triple-store
-    // lookup, cached with the grounding) so that `CommandExecutionFlow` can
-    // build the final string at click-time without acquiring a triple-store
-    // dependency.
+    // with `${currentAsset.exo__Asset_label} YYYY-MM-DD`. Only the boolean flag
+    // is parsed here. The label source (= the current asset the user clicked
+    // the button on) is resolved at click-time in `CommandExecutionFlow`, since
+    // the grounding definition is cached and the click target varies per-call.
     const prefillRaw = await this.getLiteralValue(
       subject,
       Namespace.EXOCMD.term("Grounding_prefillLabelWithDate"),
     );
     const prefillLabelWithDate =
       prefillRaw !== null && String(prefillRaw).trim().toLowerCase() === "true";
-
-    let prototypeLabel: string | undefined;
-    if (prefillLabelWithDate && type === GroundingType.CREATE_INSTANCE) {
-      prototypeLabel = await this.resolvePrototypeLabel(subject);
-    }
 
     const grounding: GroundingDefinition = {
       id: uid,
@@ -1018,7 +1012,6 @@ export class CommandResolver {
       propertyDefaults,
       isDefinedBy: isDefinedBy ?? undefined,
       prefillLabelWithDate: prefillLabelWithDate || undefined,
-      prototypeLabel,
     };
 
     if (inputSchema) {
@@ -1026,43 +1019,6 @@ export class CommandResolver {
     }
 
     return grounding;
-  }
-
-  /**
-   * Read the `exo__Asset_label` of the prototype referenced by
-   * `exocmd__Grounding_targetPrototype`. Resolves alias-form
-   * `[[<UID>|<symbolic>]]` to the UID (NOT the symbolic tail) so the lookup
-   * works against UUID-canonicalised vaults (CLAUDE.md §UUID-canon).
-   * Returns `undefined` when the prototype is missing, unresolved, or has no
-   * label — callers must handle the absence gracefully (no prefill).
-   */
-  private async resolvePrototypeLabel(
-    groundingSubject: IRI,
-  ): Promise<string | undefined> {
-    const refTriples = await this.tripleStore.match(
-      groundingSubject,
-      Namespace.EXOCMD.term("Grounding_targetPrototype"),
-      undefined,
-    );
-    if (refTriples.length === 0) return undefined;
-
-    const ref = refTriples[0].object;
-    let prototypeSubject: IRI | null = null;
-    if (ref instanceof IRI) {
-      prototypeSubject = ref;
-    } else if (ref instanceof Literal) {
-      const uid = this.normalizeWikilink(ref.value);
-      if (uid) {
-        prototypeSubject = await this.findSubjectByUID(uid);
-      }
-    }
-    if (!prototypeSubject) return undefined;
-
-    const label = await this.getLiteralValue(
-      prototypeSubject,
-      Namespace.EXO.term("Asset_label"),
-    );
-    return label ?? undefined;
   }
 
   private async loadCompositeSteps(
