@@ -6,6 +6,7 @@ import type { GroundingDefinition } from "../domain/models/CommandDefinition";
 import { GroundingType } from "../domain/constants/GroundingType";
 import { FrontmatterService } from "../utilities/FrontmatterService";
 import { DateFormatter } from "../utilities/DateFormatter";
+import { DateTimeParsing } from "../infrastructure/sparql/filters/functions/DateTimeParsing";
 import { LoggingService } from "./LoggingService";
 
 /**
@@ -184,6 +185,18 @@ export class GroundingExecutor {
             targetIRI,
             targetFilePath,
             userInput,
+          );
+
+        case GroundingType.PROPERTY_INCREMENT:
+          return await this.executePropertyIncrement(
+            grounding,
+            targetFilePath,
+          );
+
+        case GroundingType.PROPERTY_SHIFT:
+          return await this.executePropertyShift(
+            grounding,
+            targetFilePath,
           );
 
         case GroundingType.SPARQL_UPDATE:
@@ -768,6 +781,187 @@ export class GroundingExecutor {
     await this.fileWriter.updateFile(filePath, updated);
 
     return { success: true };
+  }
+
+  /**
+   * Increment an integer frontmatter property by `incrementBy` (default 1).
+   * Issue #3134 — declarative replacement for `service_call` /
+   * `incrementVotes` (Homoiconicity Invariant Q1).
+   *
+   * Behaviour:
+   * - Missing property → write `incrementBy` (treats current as 0).
+   * - Existing int → write `current + incrementBy` (preserves YAML int).
+   * - Negative delta supported.
+   * - YAML-quoted string ("5") is also accepted and coerced to int per
+   *   ontology range — output is always emitted as bare int.
+   *
+   * Errors (returned as { success: false, error }):
+   * - Missing `targetProperty` on grounding.
+   * - Current value not parseable as integer (e.g. "abc" or "1.5").
+   */
+  private async executePropertyIncrement(
+    grounding: GroundingDefinition,
+    filePath: string,
+  ): Promise<ExecutionResult> {
+    if (!grounding.targetProperty) {
+      return {
+        success: false,
+        error: "property_increment requires targetProperty",
+      };
+    }
+
+    const delta = grounding.incrementBy ?? 1;
+    if (!Number.isFinite(delta) || !Number.isInteger(delta)) {
+      return {
+        success: false,
+        error: `property_increment: incrementBy must be an integer (got ${String(grounding.incrementBy)})`,
+      };
+    }
+
+    const content = await this.fileReader.readFile(filePath);
+    const fm = this.frontmatterService.parseObject(content) ?? {};
+    const raw = fm[grounding.targetProperty];
+
+    let current: number;
+    if (raw === undefined || raw === null || raw === "") {
+      current = 0;
+    } else if (Array.isArray(raw)) {
+      return {
+        success: false,
+        error: `property_increment: targetProperty "${grounding.targetProperty}" is an array, expected integer`,
+      };
+    } else {
+      // Strip optional YAML quotes (FrontmatterService.parseObject preserves
+      // them for string values). Then require strict integer literal.
+      const unquoted = String(raw).replace(/^["'](.*)["']$/, "$1").trim();
+      if (!/^-?\d+$/.test(unquoted)) {
+        return {
+          success: false,
+          error: `property_increment: targetProperty "${grounding.targetProperty}" current value "${String(raw)}" is not a valid integer`,
+        };
+      }
+      current = Number.parseInt(unquoted, 10);
+    }
+
+    const next = current + delta;
+    const updated = this.frontmatterService.updateProperty(
+      content,
+      grounding.targetProperty,
+      next,
+    );
+    await this.fileWriter.updateFile(filePath, updated);
+    return { success: true };
+  }
+
+  /**
+   * Shift a datetime frontmatter property by an ISO-8601 duration literal.
+   * Issue #3134 — declarative replacement for `service_call` / `shiftDay`
+   * (Homoiconicity Invariant Q1).
+   *
+   * Accepts xsd:dayTimeDuration (`P1D`, `-PT2H`, `P1DT12H`) and
+   * xsd:yearMonthDuration (`P1M`, `P1Y2M`) shapes. Day-time durations are
+   * applied via Date arithmetic (`new Date(getTime() + ms)`); year-month
+   * durations use `setMonth(getMonth() + months)`, inheriting JS Date's
+   * month-end normalization (Jan 31 + P1M → Mar 03 in non-leap years; see
+   * tests for the documented behaviour).
+   *
+   * Output is formatted via DateFormatter.toLocalTimestamp — no TZ suffix —
+   * matching the canonical effort-timestamp shape (RFC-009 +
+   * BehavioralRule [[609e78ed-56aa-4697-8d9c-af9efde32c10]]).
+   *
+   * Errors (returned as { success: false, error }):
+   * - Missing `targetProperty` or `shiftDelta` on grounding.
+   * - Current value undefined or not parseable as a datetime.
+   * - shiftDelta is not a valid ISO-8601 duration literal.
+   */
+  private async executePropertyShift(
+    grounding: GroundingDefinition,
+    filePath: string,
+  ): Promise<ExecutionResult> {
+    if (!grounding.targetProperty) {
+      return {
+        success: false,
+        error: "property_shift requires targetProperty",
+      };
+    }
+    if (!grounding.shiftDelta) {
+      return {
+        success: false,
+        error: "property_shift requires shiftDelta (ISO-8601 duration literal)",
+      };
+    }
+
+    const content = await this.fileReader.readFile(filePath);
+    const fm = this.frontmatterService.parseObject(content) ?? {};
+    const raw = fm[grounding.targetProperty];
+
+    if (raw === undefined || raw === null || raw === "") {
+      return {
+        success: false,
+        error: `property_shift: targetProperty "${grounding.targetProperty}" is not set on target asset`,
+      };
+    }
+    if (Array.isArray(raw)) {
+      return {
+        success: false,
+        error: `property_shift: targetProperty "${grounding.targetProperty}" is an array, expected single datetime`,
+      };
+    }
+
+    const currentStr = String(raw).replace(/^["'](.*)["']$/, "$1").trim();
+    const currentDate = new Date(currentStr);
+    if (Number.isNaN(currentDate.getTime())) {
+      return {
+        success: false,
+        error: `property_shift: current value "${currentStr}" is not a valid datetime`,
+      };
+    }
+
+    // Parse duration — auto-detect day-time vs year-month shape.
+    let shifted: Date;
+    try {
+      shifted = GroundingExecutor.applyIsoDuration(currentDate, grounding.shiftDelta);
+    } catch (error) {
+      return {
+        success: false,
+        error: `property_shift: invalid shiftDelta "${grounding.shiftDelta}": ${error instanceof Error ? error.message : String(error)}`,
+      };
+    }
+
+    const nextTimestamp = DateFormatter.toLocalTimestamp(shifted);
+    const updated = this.frontmatterService.updateProperty(
+      content,
+      grounding.targetProperty,
+      nextTimestamp,
+    );
+    await this.fileWriter.updateFile(filePath, updated);
+    return { success: true };
+  }
+
+  /**
+   * Apply an ISO-8601 duration to a Date. Auto-detects xsd:yearMonthDuration
+   * (PnY[mM] / Pn M — no T component, no day) vs xsd:dayTimeDuration (PnDTnH…)
+   * by checking for a `T` separator or a day/time component. Throws on
+   * unparseable literals (delegated to DateTimeParsing helpers).
+   *
+   * For year-month durations: uses JS `setMonth` semantics (Jan 31 + P1M
+   * overflows into March in non-leap years — documented behaviour, matches
+   * Date.prototype.setMonth contract; no leap-year compensation invented).
+   */
+  private static applyIsoDuration(date: Date, literal: string): Date {
+    const trimmed = literal.trim();
+    // Heuristic: a year-month duration is P[-]?nY[mM] or P[-]?nM with no T.
+    // A day-time duration has a D component or a T separator.
+    const isYearMonth = /^-?P(\d+Y)(\d+M)?$|^-?P\d+M$/.test(trimmed);
+    if (isYearMonth) {
+      const months = DateTimeParsing.parseYearMonthDuration(trimmed);
+      const result = new Date(date.getTime());
+      result.setMonth(result.getMonth() + months);
+      return result;
+    }
+    // Fallback: day-time duration (P1D, PT2H, -PT2H30M, P1DT12H, ...).
+    const ms = DateTimeParsing.parseDayTimeDuration(trimmed);
+    return new Date(date.getTime() + ms);
   }
 
   /**

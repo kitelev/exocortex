@@ -64,21 +64,29 @@ describe("RFC 94e520da T1.5 starter-kit grounding audit fixture", () => {
 
   it("matches the expected type/cliStatus distribution", () => {
     // Issue #3132: grounding a85668fa-… migrated from service_call
-    // (copyLabelToAliases) to declarative property_append, reducing
-    // service_call count by 1, introducing property_append count = 1, and
-    // moving 1 grounding from unregistered to real.
+    // (copyLabelToAliases) to declarative property_append (−1 service_call,
+    // +1 property_append).
+    // Issue #3134: groundings 0b104d75-… + 6ee56341-… migrated from
+    // service_call (shiftDay) to declarative property_shift (−2 service_call,
+    // +2 property_shift); grounding 506f031e-… migrated from service_call
+    // (incrementVotes) to declarative property_increment (−1 service_call,
+    // +1 property_increment). Net: 3 groundings move from
+    // unregistered → real (24 → 21 service_call, 39 → 42 real,
+    // 6 → 3 unregistered).
     expect(fixture.summary.byType).toEqual({
-      service_call: 24,
+      service_call: 21,
       property_set: 16,
       property_delete: 4,
       composite: 2,
       create_instance: 1,
       property_append: 1,
+      property_increment: 1,
+      property_shift: 2,
     });
     expect(fixture.summary.byCliStatus).toEqual({
-      real: 39,
+      real: 42,
       stub: 3,
-      unregistered: 6,
+      unregistered: 3,
     });
   });
 
@@ -108,13 +116,14 @@ describe("RFC 94e520da T1.5 starter-kit grounding audit fixture", () => {
     ]);
     const documentedStubIds = new Set(["createAsset"]);
     const documentedUnregisteredIds = new Set([
-      "shiftDay",
       "planOnToday",
       "rollbackStatus",
-      "incrementVotes",
       "createTaskForDailyNote",
       // copyLabelToAliases removed in Issue #3132 — grounding migrated to
       // declarative property_append (no longer a service_call).
+      // shiftDay (×2) + incrementVotes (×1) removed in Issue #3134 —
+      // groundings migrated to declarative property_shift /
+      // property_increment (RFC 18407cb2 Path B).
     ]);
 
     for (const g of fixture.groundings) {

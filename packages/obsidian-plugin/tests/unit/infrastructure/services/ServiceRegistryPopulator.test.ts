@@ -127,8 +127,6 @@ describe("ServiceRegistryPopulator", () => {
       "rollbackStatus",
       "planOnToday",
       "planForEvening",
-      "shiftDay",
-      "incrementVotes",
       "createRelatedTask",
       "createRelatedProject",
       "archiveAsset",
@@ -458,8 +456,6 @@ describe("ServiceRegistryPopulator (with vaultAdapter)", () => {
       "rollbackStatus",
       "planOnToday",
       "planForEvening",
-      "shiftDay",
-      "incrementVotes",
       "createRelatedTask",
       "createRelatedProject",
       "archiveAsset",
@@ -478,6 +474,11 @@ describe("ServiceRegistryPopulator (with vaultAdapter)", () => {
 
   it("should NOT register copyLabelToAliases (Issue #3132 — migrated to declarative property_append)", () => {
     expect(registry.has("copyLabelToAliases")).toBe(false);
+  });
+
+  it("should NOT register shiftDay or incrementVotes (Issue #3134 — migrated to declarative property_shift / property_increment)", () => {
+    expect(registry.has("shiftDay")).toBe(false);
+    expect(registry.has("incrementVotes")).toBe(false);
   });
 
   describe("rollbackStatus", () => {
@@ -524,50 +525,14 @@ describe("ServiceRegistryPopulator (with vaultAdapter)", () => {
     });
   });
 
-  describe("shiftDay", () => {
-    it("should shift day forward when direction is 'forward'", async () => {
-      const service = registry.get("shiftDay")!;
-      await service.execute("test-uid-123", { direction: "forward" });
-
-      expect(deps.vaultAdapter!.read).toHaveBeenCalledWith(mockIFile);
-      expect(deps.vaultAdapter!.modify).toHaveBeenCalled();
-    });
-
-    it("should shift day backward when direction is 'backward'", async () => {
-      const service = registry.get("shiftDay")!;
-      await service.execute("test-uid-123", { direction: "backward" });
-
-      expect(deps.vaultAdapter!.read).toHaveBeenCalledWith(mockIFile);
-      expect(deps.vaultAdapter!.modify).toHaveBeenCalled();
-    });
-
-    it("should throw when direction is missing", async () => {
-      const service = registry.get("shiftDay")!;
-      await expect(service.execute("test-uid-123", {})).rejects.toThrow(
-        "shiftDay requires userInput.direction",
-      );
-    });
-
-    it("should throw when direction is unknown", async () => {
-      const service = registry.get("shiftDay")!;
-      await expect(
-        service.execute("test-uid-123", { direction: "sideways" }),
-      ).rejects.toThrow('unknown direction "sideways"');
-    });
-  });
-
-  describe("incrementVotes", () => {
-    it("should resolve file and increment ems__Effort_votes", async () => {
-      const service = registry.get("incrementVotes")!;
-      await service.execute("test-uid-123");
-
-      expect(deps.vaultAdapter!.read).toHaveBeenCalledWith(mockIFile);
-      expect(deps.vaultAdapter!.modify).toHaveBeenCalledWith(
-        mockIFile,
-        expect.stringContaining("ems__Effort_votes"),
-      );
-    });
-  });
+  // describe("shiftDay", ...) + describe("incrementVotes", ...) removed —
+  // Issue #3134 migrated the three groundings to declarative
+  // property_shift / property_increment; the registry registrations no
+  // longer exist. See GroundingExecutor.property_shift.test.ts and
+  // GroundingExecutor.property_increment.test.ts for new coverage at the
+  // executor layer. Palette command paths (ShiftDayForwardCommand,
+  // ShiftDayBackwardCommand, VoteOnEffortCommand) continue to call
+  // taskStatusService / effortVotingService directly via DI.
 
   // describe("copyLabelToAliases", ...) removed — Issue #3132 migrated the
   // grounding to declarative property_append; the registry registration no

@@ -3,20 +3,22 @@
     "rfc": "94e520da",
     "phase": 1,
     "task": "T1.5",
-    "auditedAt": "2026-05-02T12:24:40.767Z",
-    "starterKitPath": "/Users/kitelev/Developer/exocortex-development/exocortex-starter-kit",
+    "auditedAt": "2026-05-17T03:52:35.692Z",
+    "starterKitPath": "/Users/kitelev/Developer/exocortex-development/worktrees/starter-kit-claude1-property-increment-shift",
     "totalGroundings": 48,
     "byType": {
       "property_delete": 4,
-      "service_call": 24,
+      "service_call": 21,
       "create_instance": 1,
       "property_set": 16,
-      "composite": 2,
-      "property_append": 1
+      "property_append": 1,
+      "property_shift": 2,
+      "property_increment": 1,
+      "composite": 2
     },
     "byCliStatus": {
-      "real": 39,
-      "unregistered": 6,
+      "real": 42,
+      "unregistered": 3,
       "stub": 3
     },
     "serviceIdCounts": {
@@ -31,9 +33,7 @@
       "repairFolder": 1,
       "archiveAsset": 1,
       "rollbackStatus": 1,
-      "shiftDay": 2,
       "planOnToday": 1,
-      "incrementVotes": 1,
       "planForEvening": 1
     }
   },
@@ -232,11 +232,11 @@
     },
     {
       "uid": "0b104d75-3ed5-44c5-ab04-cffb26e2578a",
-      "label": "Shift day forward via service",
+      "label": "Shift day forward via property_shift",
       "path": "exocmd/planning/0b104d75-3ed5-44c5-ab04-cffb26e2578a.md",
-      "type": "service_call",
-      "serviceId": "shiftDay",
-      "cliStatus": "unregistered"
+      "type": "property_shift",
+      "serviceId": null,
+      "cliStatus": "real"
     },
     {
       "uid": "22a6ba6b-030a-47e4-946e-1a30dc9450e5",
@@ -256,19 +256,19 @@
     },
     {
       "uid": "506f031e-007f-4c74-8257-158550c64956",
-      "label": "Increment votes via service",
+      "label": "Increment votes via property_increment",
       "path": "exocmd/planning/506f031e-007f-4c74-8257-158550c64956.md",
-      "type": "service_call",
-      "serviceId": "incrementVotes",
-      "cliStatus": "unregistered"
+      "type": "property_increment",
+      "serviceId": null,
+      "cliStatus": "real"
     },
     {
       "uid": "6ee56341-966c-4791-8eb3-7a75104b2e5b",
-      "label": "Shift day backward via service",
+      "label": "Shift day backward via property_shift",
       "path": "exocmd/planning/6ee56341-966c-4791-8eb3-7a75104b2e5b.md",
-      "type": "service_call",
-      "serviceId": "shiftDay",
-      "cliStatus": "unregistered"
+      "type": "property_shift",
+      "serviceId": null,
+      "cliStatus": "real"
     },
     {
       "uid": "85687461-c2df-4d1b-819b-0c3ae0ab3741",

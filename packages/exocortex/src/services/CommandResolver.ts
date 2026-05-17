@@ -816,6 +816,16 @@ export class CommandResolver {
     const targetFolder = await this.getLiteralValue(subject, Namespace.EXOCMD.term("Grounding_targetFolder"));
     const linkBackProperty = await this.getObsidianName(subject, Namespace.EXOCMD.term("Grounding_linkBackProperty"));
     const inputSchemaRaw = await this.getLiteralValue(subject, Namespace.EXOCMD.term("Grounding_inputSchema"));
+    // Issue #3134: property_increment / property_shift control fields.
+    const incrementByRaw = await this.getLiteralValue(subject, Namespace.EXOCMD.term("Grounding_incrementBy"));
+    const shiftDelta = await this.getLiteralValue(subject, Namespace.EXOCMD.term("Grounding_shiftDelta"));
+    let incrementBy: number | undefined;
+    if (incrementByRaw !== undefined && incrementByRaw !== null && incrementByRaw !== "") {
+      const parsed = Number.parseInt(String(incrementByRaw), 10);
+      if (Number.isFinite(parsed)) {
+        incrementBy = parsed;
+      }
+    }
 
     // Load composite steps if applicable
     let steps: GroundingDefinition[] | undefined;
@@ -855,6 +865,8 @@ export class CommandResolver {
       targetPrototype: targetPrototype ?? undefined,
       targetFolder: targetFolder ?? undefined,
       linkBackProperty: linkBackProperty ?? undefined,
+      incrementBy,
+      shiftDelta: shiftDelta ?? undefined,
     };
 
     if (inputSchema) {
