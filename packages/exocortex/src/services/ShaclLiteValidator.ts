@@ -135,6 +135,26 @@ function isXSDDatatypeIRI(iri: string): boolean {
   return XSD_DATATYPE_PREFIXES.some((prefix) => iri.startsWith(prefix));
 }
 
+/**
+ * Extract bare UUID from a vault subject IRI of the form
+ * `obsidian://vault/.../<uuid>.md` or `obsidian://vault/<uuid>.md`.
+ *
+ * Returns the lowercase UUID string when the IRI ends with `<uuid>.md`,
+ * otherwise null. Used to build a secondary UID-keyed index of subject
+ * classes so that cross-vault wikilink references resolve regardless of
+ * whether the producing converter saw the file at its full vault path
+ * (`obsidian://vault/assetspaces/.../<uid>.md`) or only as a synthesized
+ * UUID-only IRI (`obsidian://vault/<uid>.md`) emitted when the wikilink
+ * target lives outside the converter's own vault scope.
+ */
+const UID_SUFFIX_RE =
+  /\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.md$/i;
+
+function extractUid(iri: string): string | null {
+  const m = UID_SUFFIX_RE.exec(iri);
+  return m ? m[1].toLowerCase() : null;
+}
+
 export function validate(
   triples: Triple[],
   registry: ShapeRegistry,
@@ -163,6 +183,17 @@ export function validate(
         const classes = subjectClasses.get(subjectIRI) ?? [];
         classes.push(obj.value);
         subjectClasses.set(subjectIRI, classes);
+        // Secondary UID-keyed index: lets cross-vault wikilink targets
+        // (synthesized as `obsidian://vault/<uid>.md` without directory)
+        // resolve to the class set indexed by the full-path subject IRI
+        // produced by the owning vault's converter.
+        const uid = extractUid(subjectIRI);
+        if (uid) {
+          const uidKey = `uid:${uid}`;
+          const uidClasses = subjectClasses.get(uidKey) ?? [];
+          uidClasses.push(obj.value);
+          subjectClasses.set(uidKey, uidClasses);
+        }
       }
     } else {
       let props = subjectProps.get(subjectIRI);
@@ -231,8 +262,19 @@ export function validate(
             // and are never registered in subjectClasses. Skip the sh:class check for
             // them — they are authoritative by definition (fix: 5 external IRI violations).
             if (isExternalOntologyIRI(obj.value)) continue;
-            // Class range: value's class(es) must satisfy range via hierarchy
-            const valueClasses = subjectClasses.get(obj.value) ?? [];
+            // Class range: value's class(es) must satisfy range via hierarchy.
+            // Direct lookup first; if it misses and the value IRI ends with a
+            // UUID-named markdown file, fall back to the UID-keyed index so
+            // cross-vault synth IRIs (`obsidian://vault/<uid>.md` without dir)
+            // join with full-path subject IRIs produced by another vault's
+            // converter for the same underlying asset.
+            let valueClasses = subjectClasses.get(obj.value) ?? [];
+            if (valueClasses.length === 0) {
+              const uid = extractUid(obj.value);
+              if (uid) {
+                valueClasses = subjectClasses.get(`uid:${uid}`) ?? [];
+              }
+            }
             // R13: ANY-of semantics — any value class matching any range class satisfies
             const rangeConforms = shape.range.some((expectedClass) =>
               valueClasses.some(
