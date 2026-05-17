@@ -164,4 +164,96 @@ describe("WikiLinkHelpers", () => {
       expect(WikiLinkHelpers.includes("[[A]]", "B")).toBe(false);
     });
   });
+
+  describe("resolveSymbolic (UID-canon, RFC-004)", () => {
+    const UID = "82c74542-1b14-4217-b852-d84730484b25";
+    const labelByUid: Record<string, string> = {
+      [UID]: "ems__Area",
+    };
+    const resolver = (uid: string): string | null => labelByUid[uid] ?? null;
+
+    it("returns symbolic name unchanged for plain wikilink", () => {
+      expect(WikiLinkHelpers.resolveSymbolic("[[ems__Task]]", resolver)).toBe(
+        "ems__Task",
+      );
+    });
+
+    it("resolves bare-UUID wikilink to label via resolver (UID-canon form)", () => {
+      expect(WikiLinkHelpers.resolveSymbolic(`[[${UID}]]`, resolver)).toBe(
+        "ems__Area",
+      );
+    });
+
+    it("prefers alias in UUID-alias form without invoking resolver", () => {
+      const spy = jest.fn().mockReturnValue("UNEXPECTED");
+      expect(
+        WikiLinkHelpers.resolveSymbolic(`[[${UID}|ems__Project]]`, spy),
+      ).toBe("ems__Project");
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it("falls back to UUID when resolver yields null/empty", () => {
+      expect(
+        WikiLinkHelpers.resolveSymbolic(`[[${UID}]]`, () => null),
+      ).toBe(UID);
+      expect(
+        WikiLinkHelpers.resolveSymbolic(`[[${UID}]]`, () => ""),
+      ).toBe(UID);
+    });
+
+    it("handles null / undefined / empty input", () => {
+      expect(WikiLinkHelpers.resolveSymbolic(null, resolver)).toBe("");
+      expect(WikiLinkHelpers.resolveSymbolic(undefined, resolver)).toBe("");
+      expect(WikiLinkHelpers.resolveSymbolic("", resolver)).toBe("");
+    });
+
+    it("handles non-bracketed bare symbolic strings", () => {
+      expect(WikiLinkHelpers.resolveSymbolic("ems__Task", resolver)).toBe(
+        "ems__Task",
+      );
+    });
+
+    it("handles non-bracketed bare UUID strings", () => {
+      expect(WikiLinkHelpers.resolveSymbolic(UID, resolver)).toBe("ems__Area");
+    });
+  });
+
+  describe("resolveSymbolicArray", () => {
+    const UID_A = "11111111-1111-4111-8111-111111111111";
+    const UID_B = "22222222-2222-4222-8222-222222222222";
+    const resolver = (uid: string): string | null => {
+      if (uid === UID_A) return "ems__Area";
+      if (uid === UID_B) return "ems__Task";
+      return null;
+    };
+
+    it("resolves array mixed of plain, alias and bare-UUID forms", () => {
+      expect(
+        WikiLinkHelpers.resolveSymbolicArray(
+          [`[[${UID_A}]]`, "[[ems__Project]]", `[[${UID_B}|ems__Task]]`],
+          resolver,
+        ),
+      ).toEqual(["ems__Area", "ems__Project", "ems__Task"]);
+    });
+
+    it("accepts single string and returns array", () => {
+      expect(
+        WikiLinkHelpers.resolveSymbolicArray(`[[${UID_A}]]`, resolver),
+      ).toEqual(["ems__Area"]);
+    });
+
+    it("filters empty values", () => {
+      expect(
+        WikiLinkHelpers.resolveSymbolicArray(
+          ["[[ems__A]]", "", "  ", "[[]]"],
+          resolver,
+        ),
+      ).toEqual(["ems__A"]);
+    });
+
+    it("handles null / undefined", () => {
+      expect(WikiLinkHelpers.resolveSymbolicArray(null, resolver)).toEqual([]);
+      expect(WikiLinkHelpers.resolveSymbolicArray(undefined, resolver)).toEqual([]);
+    });
+  });
 });

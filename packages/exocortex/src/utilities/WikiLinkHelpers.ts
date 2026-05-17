@@ -54,4 +54,44 @@ export class WikiLinkHelpers {
     const target = this.normalize(value);
     return normalized.includes(target);
   }
+
+  /**
+   * Normalize a wikilink and, when the canonical form is a bare UUID
+   * (UID-canon storage form, see RFC-004), resolve it to its symbolic
+   * label via the supplied resolver.
+   *
+   * This is the safe form for consumers that do substring/equality
+   * comparisons against symbolic class names (`ems__Task`, `ems__Area`),
+   * which used to work directly on alias-wikilinks but silently broke
+   * after `strip-aliases.py` Phase 3 (2026-05-16) converted vault values
+   * from `[[<uuid>|ems__Area]]` to bare `[[<uuid>]]`.
+   *
+   * Resolver typically reads `exo__Asset_label` from the file named
+   * `<uuid>.md` (Obsidian: via `metadataCache`; CLI: via a prebuilt
+   * `uuid → label` map). Returns the UUID unchanged when the resolver
+   * yields no label.
+   */
+  static resolveSymbolic(
+    value: string | null | undefined,
+    resolver: (uuid: string) => string | null | undefined,
+  ): string {
+    const normalized = this.normalize(value);
+    if (!normalized) return "";
+    if (this.UUID_PATTERN.test(normalized)) {
+      const resolved = resolver(normalized);
+      return resolved && resolved.length > 0 ? resolved : normalized;
+    }
+    return normalized;
+  }
+
+  static resolveSymbolicArray(
+    values: string[] | string | null | undefined,
+    resolver: (uuid: string) => string | null | undefined,
+  ): string[] {
+    if (!values) return [];
+    const arr = Array.isArray(values) ? values : [values];
+    return arr
+      .map((v) => this.resolveSymbolic(v, resolver))
+      .filter((v) => v.length > 0);
+  }
 }

@@ -5,6 +5,7 @@ import {
   WikiLinkHelpers,
   DateFormatter,
   GenericAssetCreationService,
+  type ClassRefResolver,
   type InstantiationRule,
   type InstantiationRuleResolver,
   type IFile,
@@ -51,6 +52,22 @@ export class CreateInstanceCommand extends BaseContextAssetCreationCommand {
     const defaultLabel = `${baseLabel} ${DateFormatter.toDateString(new Date())}`;
 
     return showLabelInputModal(this.app, defaultLabel, true);
+  }
+
+  /**
+   * UUID → symbolic class-label resolver via Obsidian `metadataCache`.
+   * Needed by `GenericAssetCreationService` to branch parent-property
+   * inheritance on `ems__Area` after RFC-004 UID-canon, where
+   * `exo__Instance_class` is stored as `[[<uuid>]]`.
+   */
+  private buildClassResolver(): ClassRefResolver {
+    return (uuid: string): string | null => {
+      const target = this.app.metadataCache.getFirstLinkpathDest(uuid, "");
+      if (!target) return null;
+      const cache = this.app.metadataCache.getFileCache(target);
+      const label = cache?.frontmatter?.exo__Asset_label;
+      return typeof label === "string" && label.length > 0 ? label : null;
+    };
   }
 
   protected async createAsset(
@@ -108,6 +125,7 @@ export class CreateInstanceCommand extends BaseContextAssetCreationCommand {
       propertyValues,
       parentFile: this.toIFile(file),
       parentMetadata: metadata,
+      classResolver: this.buildClassResolver(),
     });
   }
 
@@ -132,6 +150,7 @@ export class CreateInstanceCommand extends BaseContextAssetCreationCommand {
       propertyValues,
       parentFile: this.toIFile(file),
       parentMetadata: metadata,
+      classResolver: this.buildClassResolver(),
     });
   }
 
