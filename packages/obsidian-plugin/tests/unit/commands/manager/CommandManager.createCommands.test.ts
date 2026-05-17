@@ -15,10 +15,10 @@ describe("CommandManager - create commands (vault-driven)", () => {
       ctx.commandManager.registerAllCommands(ctx.mockPlugin);
     });
 
-    it("should register create-fleeting-note as global command", () => {
-      const command = ctx.registeredCommands.get("create-fleeting-note");
-      expect(command).toBeDefined();
-      expect(typeof command.callback).toBe("function");
+    it("should NOT register create-fleeting-note (migrated to vault exocmd asset)", () => {
+      // RFC 1429fcd0 PR-3: registered by ExocmdCommandPaletteRegistrar
+      // from the vault asset 692aa011-..., not by CommandManager.
+      expect(ctx.registeredCommands.has("create-fleeting-note")).toBe(false);
     });
 
     it("should register create-asset as global command", () => {

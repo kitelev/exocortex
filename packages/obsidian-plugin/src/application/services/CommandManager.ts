@@ -6,7 +6,6 @@ import {
   MetadataExtractor,
   CommandVisibilityContext,
   WikiLinkHelpers,
-  FleetingNoteCreationService,
   GenericAssetCreationService,
   DI_TOKENS,
   registerCoreServices,
@@ -25,7 +24,9 @@ import { ToggleArchivedAssetsCommand } from '@plugin/application/commands/Toggle
 import { OpenQueryBuilderCommand } from '@plugin/application/commands/OpenQueryBuilderCommand';
 import { EditPropertiesCommand } from '@plugin/application/commands/EditPropertiesCommand';
 import { CreateAssetCommand } from '@plugin/application/commands/CreateAssetCommand';
-import { CreateFleetingNoteCommand } from '@plugin/application/commands/CreateFleetingNoteCommand';
+// `CreateFleetingNoteCommand` removed in RFC 1429fcd0 PR-3 — the command is
+// now registered from the vault `exocmd__Command` asset `692aa011-...` by
+// `ExocmdCommandPaletteRegistrar`.
 
 export class CommandManager {
   private commandRegistry: CommandRegistry | null = null;
@@ -53,7 +54,6 @@ export class CommandManager {
 
     const notifier: INotificationService = new ObsidianNotificationService();
 
-    const fleetingNoteCreationService = container.resolve(FleetingNoteCreationService);
     const genericAssetCreationService = container.resolve(GenericAssetCreationService);
     const sparqlQueryService = new SPARQLQueryService(this.app, logger);
     const ontologySchemaService = new OntologySchemaService(sparqlQueryService);
@@ -66,7 +66,6 @@ export class CommandManager {
       new OpenQueryBuilderCommand(this.app, plugin, notifier),
       new EditPropertiesCommand(this.app, plugin, notifier),
       new CreateAssetCommand(this.app, genericAssetCreationService, this.vaultAdapter, classDiscoveryService, notifier, ontologySchemaService),
-      new CreateFleetingNoteCommand(this.app, fleetingNoteCreationService, this.vaultAdapter, notifier),
     ];
 
     this.commandRegistry = new CommandRegistry(globalCommands);

@@ -1,7 +1,6 @@
 import { App } from "obsidian";
 import {
   showSubclassCreationModal,
-  showFleetingNoteModal,
   showTrashReasonModal,
   showSupervisionModal,
   showNarrowerConceptModal,
@@ -89,27 +88,9 @@ describe("modalSchemas", () => {
     });
   });
 
-  describe("showFleetingNoteModal", () => {
-    it("should return label when submitted", async () => {
-      mockModalResult({ label: "MyNote" });
-      const result = await showFleetingNoteModal(mockApp);
-      expect(result).toEqual({ label: "MyNote" });
-    });
-
-    it("should return null label when cancelled", async () => {
-      mockModalResult(null);
-      const result = await showFleetingNoteModal(mockApp);
-      expect(result).toEqual({ label: null });
-    });
-
-    it("should create schema with required text field", async () => {
-      mockModalResult({ label: "test" });
-      await showFleetingNoteModal(mockApp);
-      const schema = getSchemaFromLastCall();
-      expect(schema).toHaveLength(1);
-      expect(schema[0]).toMatchObject({ name: "label", type: "text", required: true });
-    });
-  });
+  // showFleetingNoteModal removed in RFC 1429fcd0 PR-3 — "Create fleeting
+  // note" is now resolved from the vault exocmd asset 692aa011-... and
+  // executed via the generic DynamicFormModal driven by inputSchema.
 
   describe("showTrashReasonModal", () => {
     it("should return confirmed true with reason when submitted", async () => {

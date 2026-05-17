@@ -13,8 +13,8 @@ describe("CommandManager - executeCommand", () => {
   });
 
   it("returns true for a registered global command id", () => {
-    expect(ctx.registeredCommands.get("create-fleeting-note")).toBeDefined();
-    const result = ctx.commandManager.executeCommand("create-fleeting-note");
+    expect(ctx.registeredCommands.get("reload-layout")).toBeDefined();
+    const result = ctx.commandManager.executeCommand("reload-layout");
     expect(result).toBe(true);
   });
 
@@ -25,7 +25,7 @@ describe("CommandManager - executeCommand", () => {
 
   it("returns false when commands have not been registered yet", () => {
     const fresh = new CommandManager({} as never);
-    const result = fresh.executeCommand("create-fleeting-note");
+    const result = fresh.executeCommand("reload-layout");
     expect(result).toBe(false);
   });
 });
