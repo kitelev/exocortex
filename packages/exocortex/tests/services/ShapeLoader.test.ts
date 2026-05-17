@@ -383,6 +383,54 @@ describe("ShapeLoader.loadFromVaultFS", () => {
     expect(shape!.domain).toEqual([`${EXO}Asset`]);
   });
 
+  it("resolves pure UID-form domain/range via vault uidToLabel map (post strip-canon)", async () => {
+    // After RFC-004 + strip-canon (2026-05-17), property files reference their
+    // domain/range classes by pure UID wikilinks:
+    //   exo__Property_domain: "[[<uid>]]"
+    //   exo__Property_range:  "[[<uid>]]"
+    // ShapeLoader's Pass 1 collects UID→label across vault; Pass 2 resolves UID
+    // wikilinks through that map. Without this, range = undefined and SHACL
+    // sh:class checks silently skip.
+    const subDir = await fs.mkdtemp(path.join(os.tmpdir(), "shacl-uid-resolve-"));
+    try {
+      const classUid = "1b20a8f0-d745-4e93-91db-4531b3df120e";
+      await fs.writeFile(
+        path.join(subDir, `${classUid}.md`),
+        [
+          "---",
+          'exo__Instance_class:',
+          '  - "[[8619c4fc-64f1-4869-b17e-e34186cacca9]]"',
+          `exo__Asset_uid: ${classUid}`,
+          "exo__Asset_label: ems__Task",
+          "---",
+        ].join("\n"),
+        "utf-8",
+      );
+      const propUid = "aaaa1111-bbbb-2222-cccc-333344445555";
+      await fs.writeFile(
+        path.join(subDir, `${propUid}.md`),
+        [
+          "---",
+          'exo__Instance_class:',
+          '  - "[[9a1cf31c-9d41-4ef3-9023-584a8d087d16]]"',
+          `exo__Asset_uid: ${propUid}`,
+          `exo__Property_domain: "[[${classUid}]]"`,
+          `exo__Property_range: "[[${classUid}]]"`,
+          "exo__Asset_label: ems__Task_clones",
+          "---",
+        ].join("\n"),
+        "utf-8",
+      );
+      const reg = await ShapeLoader.loadFromVaultFS(subDir);
+      const shape = reg.get(`${EMS}Task_clones`);
+      expect(shape).toBeDefined();
+      expect(shape!.domain).toEqual([`${EMS}Task`]);
+      expect(shape!.range).toEqual([`${EMS}Task`]);
+    } finally {
+      await fs.rm(subDir, { recursive: true, force: true });
+    }
+  });
+
   it("defaults severity to sh:Violation when absent", async () => {
     await writeFile(
       "no-severity.md",

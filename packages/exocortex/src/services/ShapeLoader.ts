@@ -8,6 +8,9 @@ import { Namespace } from "../domain/models/rdf/Namespace";
 const SH_NS = "http://www.w3.org/ns/shacl#";
 // XML Schema Datatypes namespace base
 const XSD_NS = "http://www.w3.org/2001/XMLSchema#";
+// UUID v4 regex (case-insensitive)
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // Legacy whitelist retained for documentation; runtime resolution now goes
 // through Namespace.fromPropertyKey, which auto-extends to any well-formed
@@ -44,8 +47,61 @@ export class ShapeLoader {
     // eslint-disable-next-line import/no-nodejs-modules
     const path = await import("path");
     const registry = new ShapeRegistry();
-    await ShapeLoader.scanDir(vaultPath, registry, { readdir, readFile, path });
+    // Pass 1: build UID → label map so wikilinkToIRI can resolve pure-UID
+    // refs `[[<uid>]]` (post RFC-004 strip-canon). Without this, shapes
+    // get range=undefined/domain=[] when their frontmatter uses UID-form,
+    // and SHACL silently passes.
+    const uidToLabel = new Map<string, string>();
+    await ShapeLoader.buildUidLabelMap(vaultPath, uidToLabel, { readdir, readFile, path });
+    await ShapeLoader.scanDir(vaultPath, registry, { readdir, readFile, path }, uidToLabel);
     return registry;
+  }
+
+  /**
+   * Pass 1 helper: walks the vault and collects exo__Asset_uid → exo__Asset_label
+   * mapping for every .md file. Used by `wikilinkToIRI` to resolve pure-UID
+   * wikilinks like `[[1b20a8f0-...]]` to their ontology IRI.
+   */
+  private static async buildUidLabelMap(
+    dir: string,
+    out: Map<string, string>,
+    io: {
+      readdir: (
+        p: string,
+        opts: { withFileTypes: true },
+      ) => Promise<import("fs").Dirent[]>;
+      readFile: (p: string, enc: "utf-8") => Promise<string>;
+      path: typeof import("path");
+    },
+  ): Promise<void> {
+    let entries: import("fs").Dirent[];
+    try {
+      entries = await io.readdir(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const full = io.path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        await ShapeLoader.buildUidLabelMap(full, out, io);
+      } else if (entry.isFile() && entry.name.endsWith(".md")) {
+        try {
+          const content = await io.readFile(full, "utf-8");
+          const fm = ShapeLoader.parseFrontmatter(content);
+          if (!fm) continue;
+          const uid = fm["exo__Asset_uid"];
+          const label = fm["exo__Asset_label"];
+          if (typeof uid !== "string" || typeof label !== "string") continue;
+          const uidTrim = uid.trim().replace(/^["']|["']$/g, "");
+          const labelTrim = label.trim().replace(/^["']|["']$/g, "");
+          if (uidTrim && labelTrim && !out.has(uidTrim)) {
+            out.set(uidTrim, labelTrim);
+          }
+        } catch {
+          // skip unreadable file
+        }
+      }
+    }
   }
 
   /**
@@ -156,6 +212,7 @@ export class ShapeLoader {
       readFile: (p: string, enc: "utf-8") => Promise<string>;
       path: typeof import("path");
     },
+    uidToLabel?: Map<string, string>,
   ): Promise<void> {
     let entries: import("fs").Dirent[];
     try {
@@ -166,11 +223,11 @@ export class ShapeLoader {
     for (const entry of entries) {
       const full = io.path.join(dir, entry.name);
       if (entry.isDirectory()) {
-        await ShapeLoader.scanDir(full, registry, io);
+        await ShapeLoader.scanDir(full, registry, io, uidToLabel);
       } else if (entry.isFile() && entry.name.endsWith(".md")) {
         // Fail-soft: one malformed property asset should not abort the scan.
         try {
-          await ShapeLoader.processFile(full, registry, io.readFile, io.path);
+          await ShapeLoader.processFile(full, registry, io.readFile, io.path, uidToLabel);
         } catch {
           // Skip the offending file silently
         }
@@ -183,6 +240,7 @@ export class ShapeLoader {
     registry: ShapeRegistry,
     readFile: (p: string, enc: "utf-8") => Promise<string>,
     path?: typeof import("path"),
+    uidToLabel?: Map<string, string>,
   ): Promise<void> {
     let content: string;
     try {
@@ -241,12 +299,12 @@ export class ShapeLoader {
     const minCountRaw = fm["exo__Property_minCount"];
 
     const domain = ShapeLoader.asArray(domainRaw)
-      .map((v) => ShapeLoader.wikilinkToIRI(v))
+      .map((v) => ShapeLoader.wikilinkToIRI(v, uidToLabel))
       .filter((v): v is string => v !== null);
     if (domain.length === 0) return;
 
     const range = ShapeLoader.asArray(rangeRaw)
-      .map((v) => ShapeLoader.wikilinkToIRI(v))
+      .map((v) => ShapeLoader.wikilinkToIRI(v, uidToLabel))
       .filter((v): v is string => v !== null);
 
     const cardinality = ShapeLoader.cardinalityFromLabel(
@@ -349,19 +407,36 @@ export class ShapeLoader {
 
   /**
    * Converts a wikilink value to a full IRI string.
-   * Handles: "[[ems__Effort]]", "[[uuid|ems__Effort]]", "[[exo__PropertyCardinalitySingle]]"
+   * Handles:
+   *   - `[[ems__Effort]]`                  — label-form (legacy)
+   *   - `[[uuid|ems__Effort]]`             — UID + alias
+   *   - `[[ems__PropertyCardinalitySingle]]` — label-form
+   *   - `[[1b20a8f0-...]]`                 — pure UID (post RFC-004 strip-canon)
+   *     resolved via `uidToLabel` map → label → IRI
    */
-  private static wikilinkToIRI(value: string): string | null {
+  private static wikilinkToIRI(
+    value: string,
+    uidToLabel?: Map<string, string>,
+  ): string | null {
     const ref = ShapeLoader.extractWikilinkRef(value);
     if (!ref) return null;
 
-    // [[uuid|alias]] — take alias part
+    // [[uuid|alias]] — try alias first, then UID part
     const parts = ref.split("|");
     const candidates = parts.length > 1 ? [parts[1], parts[0]] : [parts[0]];
 
     for (const candidate of candidates) {
       const iri = ShapeLoader.labelToIRI(candidate.trim());
       if (iri) return iri;
+    }
+
+    // Pure UID form `[[<uid>]]`: resolve via uidToLabel map (Pass 1 result)
+    if (uidToLabel && UUID_RE.test(ref)) {
+      const label = uidToLabel.get(ref);
+      if (label) {
+        const iri = ShapeLoader.labelToIRI(label);
+        if (iri) return iri;
+      }
     }
 
     // Try as a full IRI
