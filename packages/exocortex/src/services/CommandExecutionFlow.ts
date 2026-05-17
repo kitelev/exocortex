@@ -1,3 +1,4 @@
+import { injectable } from "tsyringe";
 import type { GroundingExecutor, UserInput } from "./GroundingExecutor";
 import type { ResolvedCommand } from "./CommandResolver";
 import type { INotificationService } from "../interfaces/INotificationService";
@@ -58,6 +59,7 @@ export interface CommandPromptAdapter {
  *
  * Source: code-RFC `1429fcd0-0948-4a42-89c4-8d1426e9bc7a` (PR-1).
  */
+@injectable()
 export class CommandExecutionFlow {
   constructor(
     private readonly groundingExecutor: GroundingExecutor,
