@@ -103,6 +103,17 @@ export interface GroundingDefinition {
    * If absent → fallback to hardcoded `exo__Asset_source`.
    */
   readonly linkBackProperty?: string;
+  /**
+   * Integer delta for `property_increment` grounding (Issue #3134).
+   * Supports negative values. Default 1 when omitted.
+   */
+  readonly incrementBy?: number;
+  /**
+   * ISO-8601 duration literal for `property_shift` grounding (Issue #3134).
+   * Accepts xsd:dayTimeDuration (`P1D`, `-PT2H`, `P1DT12H`) and
+   * xsd:yearMonthDuration (`P1M`, `P1Y2M`) shapes.
+   */
+  readonly shiftDelta?: string;
 }
 
 /**

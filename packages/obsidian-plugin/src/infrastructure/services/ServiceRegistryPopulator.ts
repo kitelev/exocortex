@@ -3,7 +3,6 @@ import {
   ServiceRegistry,
   FrontmatterService,
   TaskStatusService,
-  EffortVotingService,
   EffortStatusWorkflow,
   StatusTimestampService,
   GenericAssetCreationService,
@@ -288,7 +287,12 @@ export function populateServiceRegistry(
       effortStatusWorkflow,
       statusTimestampService,
     );
-    const effortVotingService = new EffortVotingService(vaultAdapter);
+    // EffortVotingService is no longer constructed here — Issue #3134 migrated
+    // the only `service_call` consumer (grounding 506f031e-…) to the
+    // declarative `property_increment` grounding type. The palette command
+    // `VoteOnEffortCommand` instantiates EffortVotingService directly via DI,
+    // not through this registry.
+    //
     // LabelToAliasService is no longer constructed here — Issue #3132 migrated
     // the only `service_call` consumer (grounding a85668fa-…) to the
     // declarative `property_append` grounding type. The palette command
@@ -328,29 +332,18 @@ export function populateServiceRegistry(
       createPlanForEveningService(vaultAdapter, taskStatusService, targetResolver),
     );
 
-    registry.register(
-      "shiftDay",
-      wrapService(async (targetIRI: string, userInput?: UserInput) => {
-        const direction = userInput?.direction as string | undefined;
-        if (!direction) throw new Error("shiftDay requires userInput.direction");
-        const iFile = resolveIFile(app, targetIRI, vaultAdapter);
-        if (direction === "forward") {
-          await taskStatusService.shiftDayForward(iFile);
-        } else if (direction === "backward") {
-          await taskStatusService.shiftDayBackward(iFile);
-        } else {
-          throw new Error(`shiftDay: unknown direction "${direction}". Use "forward" or "backward"`);
-        }
-      }),
-    );
-
-    registry.register(
-      "incrementVotes",
-      wrapService(async (targetIRI: string) => {
-        const iFile = resolveIFile(app, targetIRI, vaultAdapter);
-        await effortVotingService.incrementEffortVotes(iFile);
-      }),
-    );
+    // `shiftDay` + `incrementVotes` service registrations removed in
+    // Issue #3134 — the three grounding consumers (`0b104d75-…`, `6ee56341-…`,
+    // `506f031e-…`) were migrated to declarative `property_shift` /
+    // `property_increment` (Homoiconicity Invariant Q1 remediation, RFC
+    // `18407cb2-9554-4897-9213-17321f9dd434` Path B). Palette command paths
+    // remain via direct DI:
+    //   - `ShiftDayForwardCommand` / `ShiftDayBackwardCommand` →
+    //     `taskStatusService.shiftDay{Forward,Backward}(file)`
+    //   - `VoteOnEffortCommand` → `effortVotingService.incrementEffortVotes(file)`
+    // The TS service classes are intentionally preserved (palette + hotkey
+    // surfaces); only the registry registrations are deleted to avoid
+    // duplicate dispatch paths for the now-declarative groundings.
 
     // `copyLabelToAliases` service registration removed in Issue #3132 —
     // the sole grounding consumer (a85668fa-17b7-45d0-aa7f-935e2502dff0) was

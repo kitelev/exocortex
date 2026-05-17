@@ -26,4 +26,27 @@ export enum GroundingType {
    * semantics belong in RDF, not TypeScript).
    */
   PROPERTY_APPEND = "property_append",
+  /**
+   * Increment an integer frontmatter property by `incrementBy` (default 1).
+   * Reads `targetProperty` (integer property) and `incrementBy` (xsd:integer,
+   * supports negative values). Missing property is treated as 0.
+   *
+   * Issue #3134 — Declarative replacement for `service_call` /
+   * `incrementVotes` (Homoiconicity Invariant Q1). Fails fast when target
+   * value is not parseable as an integer.
+   */
+  PROPERTY_INCREMENT = "property_increment",
+  /**
+   * Shift a datetime frontmatter property by an ISO-8601 duration literal.
+   * Reads `targetProperty` (xsd:dateTime property) and `shiftDelta` (ISO-8601
+   * duration string, e.g. "P1D", "-PT2H", "P1M"; supports both
+   * xsd:dayTimeDuration and xsd:yearMonthDuration shapes).
+   *
+   * Issue #3134 — Declarative replacement for `service_call` / `shiftDay`
+   * (Homoiconicity Invariant Q1). Fails fast on non-datetime current value
+   * or invalid duration literal. Output is formatted via
+   * DateFormatter.toLocalTimestamp (no TZ suffix, matching the
+   * BehavioralRule for ems__Effort_*Timestamp properties).
+   */
+  PROPERTY_SHIFT = "property_shift",
 }
