@@ -684,8 +684,9 @@ export class NoteToRDFConverter {
    * unchanged.
    *
    * Invariants:
-   *   - Required + non-empty: `exo__Asset_uid`, `exo__Asset_isDefinedBy`,
-   *     `exo__Asset_label`, `exo__Instance_class`.
+   *   - Required + non-empty: `exo__Asset_uid`, `exo__Instance_class`.
+   *   - `exo__Asset_isDefinedBy` and `exo__Asset_label` are no longer
+   *     required — converter falls back to defaults when absent.
    *   - Optional but non-empty if present: `ems__Effort_status`,
    *     `ems__Effort_parent`, `ems__Effort_lockedBy`,
    *     `ems__Effort_lockExpires`, `exo__Asset_updatedAt`,
@@ -739,7 +740,6 @@ export class NoteToRDFConverter {
 
     const REQUIRED_PROPERTIES = [
       "exo__Asset_uid",
-      "exo__Asset_isDefinedBy",
       "exo__Instance_class",
     ];
     for (const key of REQUIRED_PROPERTIES) {

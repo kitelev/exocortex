@@ -102,6 +102,40 @@ describe("Issue #3101: Infer exo__Asset_label from filename", () => {
     });
   });
 
+  describe("validateExocortexAsset — exo__Asset_isDefinedBy is optional", () => {
+    it("should not require exo__Asset_isDefinedBy when missing", () => {
+      const frontmatter = {
+        exo__Asset_uid: "11111111-1111-1111-1111-111111111111",
+        exo__Instance_class: ["[[ems__Task]]"],
+      };
+
+      const result = converter.validateExocortexAsset(frontmatter, "my-note");
+      expect(result).toBeNull();
+    });
+
+    it("should not flag empty-string exo__Asset_isDefinedBy", () => {
+      const frontmatter = {
+        exo__Asset_uid: "11111111-1111-1111-1111-111111111111",
+        exo__Asset_isDefinedBy: "",
+        exo__Instance_class: ["[[ems__Task]]"],
+      };
+
+      const result = converter.validateExocortexAsset(frontmatter, "my-note");
+      expect(result).toBeNull();
+    });
+
+    it("should not flag empty-array exo__Asset_isDefinedBy", () => {
+      const frontmatter = {
+        exo__Asset_uid: "11111111-1111-1111-1111-111111111111",
+        exo__Asset_isDefinedBy: [],
+        exo__Instance_class: ["[[ems__Task]]"],
+      };
+
+      const result = converter.validateExocortexAsset(frontmatter, "my-note");
+      expect(result).toBeNull();
+    });
+  });
+
   describe("convertNote with inferred label", () => {
     it("should emit rdfs:label and exo:Asset_label triples when label inferred from basename", async () => {
       const file: IFile = {
