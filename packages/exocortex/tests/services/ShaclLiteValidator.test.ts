@@ -1162,3 +1162,106 @@ describe('validate — external ontology IRI allowlist', () => {
     expect(report.violations[0].message).toContain('sh:class violation');
   });
 });
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Suite 12: Cross-vault UUID-keyed subject resolution
+//
+// In multi-vault scans (`--also <path>` repeated), each vault's
+// NoteToRDFConverter emits subject IRIs from its own root:
+//   primary vault →   obsidian://vault/assetspaces/exoass/<uid>.md
+// For wikilink targets resolving outside that vault's scope, the converter
+// synthesizes a directory-less IRI:
+//                     obsidian://vault/<uid>.md
+// These two IRIs reference the same underlying asset but never join in the
+// validator's subjectClasses map, producing spurious sh:class violations.
+//
+// Fix: maintain a secondary `uid:<uuid>` keyed index of subject classes so
+// rdf:type recorded under the full-path form resolves under the synth form
+// (and vice versa) for any subject whose IRI ends with `<uuid>.md`.
+// ═════════════════════════════════════════════════════════════════════════════
+
+describe('validate — cross-vault UUID-keyed subject resolution', () => {
+  const UID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+  const FULL_PATH_IRI = `obsidian://vault/assetspaces/exoass/${UID}.md`;
+  const SYNTH_IRI = `obsidian://vault/${UID}.md`;
+  const EFFORT = `${EMS}Effort`;
+  const TASK = `${EMS}Task`;
+
+  it('T-CV-01: synth IRI value joins to full-path subject classes via UID', () => {
+    const shape = makeShape({
+      propertyIRI: `${EMS}Effort_parent`,
+      range: [EFFORT],
+    });
+    const triples: Triple[] = [
+      typeTriple('node:A', EFFORT),
+      // Target subject typed under full-path IRI (other vault's converter)
+      typeTriple(FULL_PATH_IRI, EFFORT),
+      // Reference to it via synth IRI (this vault's converter)
+      iriTriple('node:A', `${EMS}Effort_parent`, SYNTH_IRI),
+    ];
+    const report = validate(triples, makeRegistry([shape]), flatHierarchy);
+    expect(report.violations).toHaveLength(0);
+  });
+
+  it('T-CV-02: full-path IRI value joins to synth-IRI subject classes via UID', () => {
+    const shape = makeShape({
+      propertyIRI: `${EMS}Effort_parent`,
+      range: [EFFORT],
+    });
+    const triples: Triple[] = [
+      typeTriple('node:A', EFFORT),
+      // Target subject typed under synth IRI
+      typeTriple(SYNTH_IRI, EFFORT),
+      // Reference to it via full-path IRI
+      iriTriple('node:A', `${EMS}Effort_parent`, FULL_PATH_IRI),
+    ];
+    const report = validate(triples, makeRegistry([shape]), flatHierarchy);
+    expect(report.violations).toHaveLength(0);
+  });
+
+  it('T-CV-03: direct match still preferred over UID fallback', () => {
+    const shape = makeShape({
+      propertyIRI: `${EMS}Effort_parent`,
+      range: [EFFORT],
+    });
+    const triples: Triple[] = [
+      typeTriple('node:A', EFFORT),
+      typeTriple(FULL_PATH_IRI, EFFORT),
+      iriTriple('node:A', `${EMS}Effort_parent`, FULL_PATH_IRI),
+    ];
+    const report = validate(triples, makeRegistry([shape]), flatHierarchy);
+    expect(report.violations).toHaveLength(0);
+  });
+
+  it('T-CV-04: UID fallback respects class mismatch (still produces violation)', () => {
+    const shape = makeShape({
+      propertyIRI: `${EMS}Effort_parent`,
+      range: [EFFORT],
+    });
+    const triples: Triple[] = [
+      typeTriple('node:A', EFFORT),
+      // Target typed as Task (wrong class) under full-path
+      typeTriple(FULL_PATH_IRI, TASK),
+      // Reference via synth IRI
+      iriTriple('node:A', `${EMS}Effort_parent`, SYNTH_IRI),
+    ];
+    const report = validate(triples, makeRegistry([shape]), flatHierarchy);
+    expect(report.violations).toHaveLength(1);
+    expect(report.violations[0].message).toContain('sh:class');
+  });
+
+  it('T-CV-05: non-UUID IRIs are not touched by UID fallback', () => {
+    const shape = makeShape({
+      propertyIRI: `${EMS}Effort_parent`,
+      range: [EFFORT],
+    });
+    const triples: Triple[] = [
+      typeTriple('node:A', EFFORT),
+      // node:B has no type triple → empty valueClasses → violation expected
+      iriTriple('node:A', `${EMS}Effort_parent`, 'node:B'),
+    ];
+    const report = validate(triples, makeRegistry([shape]), flatHierarchy);
+    expect(report.violations).toHaveLength(1);
+    expect(report.violations[0].actualValue).toBe('node:B');
+  });
+});
