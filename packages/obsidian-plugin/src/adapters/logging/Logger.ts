@@ -15,7 +15,7 @@ export type NoticeCallback = (message: string) => void;
  * Each log level can independently route to three channels:
  * - Console (developer tools)
  * - Notice (Obsidian UI notification)
- * - File (exocortex-logs.txt in vault root)
+ * - File (exocortex-logs.txt inside the plugin's data folder, rotated at 1 MB)
  */
 export class Logger implements ILogger {
   private static isDevelopment: boolean | undefined = undefined;

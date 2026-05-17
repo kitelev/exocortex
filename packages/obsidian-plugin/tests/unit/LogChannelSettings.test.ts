@@ -13,12 +13,12 @@ describe("LogChannelSettings", () => {
       expect(DEFAULT_LOG_CHANNELS).toHaveProperty("error");
     });
 
-    it("should default debug to console + file", () => {
-      expect(DEFAULT_LOG_CHANNELS.debug).toEqual({ notice: false, console: true, file: true });
+    it("should default debug to console only (no file persistence)", () => {
+      expect(DEFAULT_LOG_CHANNELS.debug).toEqual({ notice: false, console: true, file: false });
     });
 
-    it("should default info to console + file", () => {
-      expect(DEFAULT_LOG_CHANNELS.info).toEqual({ notice: false, console: true, file: true });
+    it("should default info to console only (no file persistence)", () => {
+      expect(DEFAULT_LOG_CHANNELS.info).toEqual({ notice: false, console: true, file: false });
     });
 
     it("should default warn to notice + console + file", () => {
@@ -29,9 +29,16 @@ describe("LogChannelSettings", () => {
       expect(DEFAULT_LOG_CHANNELS.error).toEqual({ notice: true, console: true, file: true });
     });
 
-    it("should enable file channel by default for all levels", () => {
-      const levels = Object.keys(DEFAULT_LOG_CHANNELS) as (keyof LogChannelsSettings)[];
-      for (const level of levels) {
+    it("should disable file channel by default for diagnostic levels (debug, info)", () => {
+      const diagnosticLevels: (keyof LogChannelsSettings)[] = ["debug", "info"];
+      for (const level of diagnosticLevels) {
+        expect(DEFAULT_LOG_CHANNELS[level].file).toBe(false);
+      }
+    });
+
+    it("should enable file channel by default for actionable levels (warn, error)", () => {
+      const actionableLevels: (keyof LogChannelsSettings)[] = ["warn", "error"];
+      for (const level of actionableLevels) {
         expect(DEFAULT_LOG_CHANNELS[level].file).toBe(true);
       }
     });

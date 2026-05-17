@@ -353,7 +353,8 @@ export class ExocortexSettingTab extends PluginSettingTab {
     const desc = containerEl.createDiv({ cls: "setting-item-description" });
     desc.appendText(
       "Choose which channels each log level should be routed to. " +
-        "File channel writes to exocortex-logs.txt in the vault root.",
+        "File channel writes to exocortex-logs.txt inside the plugin's data " +
+        "folder (rotated at 1 MB). Defaults: warn/error only.",
     );
 
     // Ensure logChannels exists
