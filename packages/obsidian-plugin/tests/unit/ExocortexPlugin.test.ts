@@ -2247,4 +2247,71 @@ describe("ExocortexPlugin", () => {
       expect(loadFromRDFGraphSpy).toHaveBeenCalledTimes(1);
     });
   });
+
+  describe("Issue #3175: performance.mark cold-start observability", () => {
+    // Issue #3175 replaces the PR #3173 `console.time` markers with Web
+    // Performance API so the cold-start latency is programmatic-queryable
+    // (`performance.getEntriesByName('exocmd-fullpath')[0].duration`) and
+    // visible without Verbose log level in DevTools. These tests pin the
+    // start-marks emitted on `onLayoutReady` and the final
+    // `exocmd-fullpath` measure emitted after eager-init completes.
+    // jsdom does not implement Web Performance API marks — install jest
+    // mocks directly on the global performance object and restore the
+    // originals after each test.
+    let markSpy: jest.Mock;
+    let measureSpy: jest.Mock;
+    let originalMark: unknown;
+    let originalMeasure: unknown;
+    let querySpy: jest.SpyInstance;
+
+    beforeEach(async () => {
+      originalMark = (performance as unknown as Record<string, unknown>)["mark"];
+      originalMeasure = (performance as unknown as Record<string, unknown>)["measure"];
+      markSpy = jest.fn();
+      measureSpy = jest.fn();
+      (performance as unknown as Record<string, unknown>)["mark"] = markSpy;
+      (performance as unknown as Record<string, unknown>)["measure"] = measureSpy;
+
+      const sparqlApiModule = await import("../../src/application/api/SPARQLApi");
+      querySpy = jest
+        .spyOn(sparqlApiModule.SPARQLApi.prototype, "query")
+        .mockResolvedValue({ bindings: [], count: 0 } as any);
+      jest
+        .spyOn(sparqlApiModule.SPARQLApi.prototype, "refresh")
+        .mockResolvedValue(undefined);
+    });
+
+    afterEach(() => {
+      (performance as unknown as Record<string, unknown>)["mark"] = originalMark;
+      (performance as unknown as Record<string, unknown>)["measure"] =
+        originalMeasure;
+      querySpy?.mockRestore();
+    });
+
+    it("emits 'exocmd-fastpath-start' and 'exocmd-fullpath-start' marks on onLayoutReady", async () => {
+      await plugin.onload();
+      await flushPromises();
+
+      expect(markSpy).toHaveBeenCalledWith("exocmd-fastpath-start");
+      expect(markSpy).toHaveBeenCalledWith("exocmd-fullpath-start");
+    });
+
+    it("emits 'exocmd-fullpath-ready' mark + 'exocmd-fullpath' measure after eager-init completes", async () => {
+      await plugin.onload();
+      // Run flushPromises twice — onload schedules setTimeout(0) which
+      // queues the query.then() chain; one flush executes the timer, a
+      // second flush drains the resolved-query continuation that finally
+      // emits the ready-mark + measure.
+      await flushPromises();
+      await flushPromises();
+      await flushPromises();
+
+      expect(markSpy).toHaveBeenCalledWith("exocmd-fullpath-ready");
+      expect(measureSpy).toHaveBeenCalledWith(
+        "exocmd-fullpath",
+        "exocmd-fullpath-start",
+        "exocmd-fullpath-ready",
+      );
+    });
+  });
 });
