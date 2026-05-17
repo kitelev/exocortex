@@ -14,10 +14,31 @@ import {
   ConceptCreationService,
   ClassCreationService,
   DateFormatter,
+  WikiLinkHelpers,
+  type ClassRefResolver,
   type IGroundingService,
   type UserInput,
   type IFile,
 } from "exocortex";
+
+/**
+ * Build a `ClassRefResolver` (UUID → symbolic class label) backed by
+ * Obsidian's `metadataCache`. After RFC-004 UID-canon, parent class
+ * refs in frontmatter are stored as `[[<uuid>]]`; resolving the UUID
+ * to the target file's `exo__Asset_label` recovers the symbolic name
+ * (`ems__Area`, `ems__Project`, ...) needed for parent-property
+ * branching. Returns `null` when the linkpath does not resolve or the
+ * target has no label.
+ */
+function createMetadataClassResolver(app: App): ClassRefResolver {
+  return (uuid: string): string | null => {
+    const target = app.metadataCache.getFirstLinkpathDest(uuid, "");
+    if (!target) return null;
+    const cache = app.metadataCache.getFileCache(target);
+    const label = cache?.frontmatter?.exo__Asset_label;
+    return typeof label === "string" && label.length > 0 ? label : null;
+  };
+}
 import {
   createArchiveAssetService,
   createCleanPropertiesService,
@@ -60,6 +81,10 @@ export function populateServiceRegistry(
 ): void {
   const { app, fileSystemAdapter, sparqlApi, vaultAdapter } = deps;
   const frontmatterService = new FrontmatterService();
+  // Shared metadataCache-backed resolver for UID-canon class refs.
+  // Used wherever parent-class branching reads `exo__Instance_class`
+  // from frontmatter (post RFC-004 the value is `[[<uuid>]]`).
+  const classResolver = createMetadataClassResolver(app);
 
   // Plugin-side `IPathResolver` adapting the existing `resolveFilePath`
   // (UID lookup via `app.metadataCache` + `obsidian://vault/` URI decode) to
@@ -188,7 +213,9 @@ export function populateServiceRegistry(
             ? [parentClass]
             : [];
         const isAreaParent = parentClasses.some((cls) =>
-          String(cls).includes("Area"),
+          WikiLinkHelpers.resolveSymbolic(String(cls), classResolver).includes(
+            "Area",
+          ),
         );
         const parentBasename = parentPath
           ? parentPath
@@ -401,6 +428,7 @@ export function populateServiceRegistry(
           propertyValues,
           parentFile: iFile,
           parentMetadata,
+          classResolver,
         });
 
         const tfile = vaultAdapter.toTFile(createdFile);
@@ -444,7 +472,9 @@ export function populateServiceRegistry(
                 ? [parentClass]
                 : [];
             const isAreaParent = parentClasses.some((cls) =>
-              String(cls).includes("Area"),
+              WikiLinkHelpers.resolveSymbolic(String(cls), classResolver).includes(
+                "Area",
+              ),
             );
             const parentPropertyName = isAreaParent
               ? "ems__Effort_area"
@@ -460,6 +490,7 @@ export function populateServiceRegistry(
           propertyValues,
           parentFile: iFile,
           parentMetadata,
+          classResolver,
         });
 
         const tfile = vaultAdapter.toTFile(createdFile);

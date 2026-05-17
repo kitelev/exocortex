@@ -3,6 +3,7 @@ import { existsSync, readdirSync, readFileSync } from "fs";
 import { resolve, join } from "path";
 import {
   FrontmatterService,
+  WikiLinkHelpers,
   WorkflowEngine,
   AssetClass,
   EffortStatus,
@@ -227,13 +228,48 @@ function scanWorkflows(vaultPath: string): WorkflowFileInfo[] {
   const allFiles: Array<{ filePath: string; fm: Record<string, any> }> = [];
   collectParsedFiles(vaultPath, allFiles);
 
+  // Build UUID → exo__Asset_label map so `exo__Instance_class` refs stored
+  // in UID-canon form `[[<uuid>]]` (post RFC-004, 2026-05-16) resolve back
+  // to their symbolic class names (`ems__Workflow`, `ems__WorkflowState`,
+  // `ems__WorkflowTransition`) before the substring discriminator runs.
+  const labelByUid = new Map<string, string>();
+  for (const { fm } of allFiles) {
+    const uid = fm["exo__Asset_uid"];
+    const label = fm["exo__Asset_label"];
+    if (uid && label) labelByUid.set(String(uid), String(label));
+  }
+  const resolver = (uid: string): string | null =>
+    labelByUid.get(uid) ?? null;
+
+  const isWorkflowClass = (c: unknown): boolean => {
+    const sym = WikiLinkHelpers.resolveSymbolic(
+      typeof c === "string" ? c : String(c ?? ""),
+      resolver,
+    );
+    return (
+      sym.includes("ems__Workflow") &&
+      !sym.includes("WorkflowState") &&
+      !sym.includes("WorkflowTransition")
+    );
+  };
+  const isWorkflowStateClass = (c: unknown): boolean =>
+    WikiLinkHelpers.resolveSymbolic(
+      typeof c === "string" ? c : String(c ?? ""),
+      resolver,
+    ).includes("ems__WorkflowState");
+  const isWorkflowTransitionClass = (c: unknown): boolean =>
+    WikiLinkHelpers.resolveSymbolic(
+      typeof c === "string" ? c : String(c ?? ""),
+      resolver,
+    ).includes("ems__WorkflowTransition");
+
   for (const { filePath, fm } of allFiles) {
     const instanceClass = fm["exo__Instance_class"];
     if (!instanceClass) continue;
 
     const isWorkflow = Array.isArray(instanceClass)
-      ? instanceClass.some((c: string) => c.includes("ems__Workflow") && !c.includes("WorkflowState") && !c.includes("WorkflowTransition"))
-      : typeof instanceClass === "string" && instanceClass.includes("ems__Workflow") && !instanceClass.includes("WorkflowState") && !instanceClass.includes("WorkflowTransition");
+      ? instanceClass.some(isWorkflowClass)
+      : isWorkflowClass(instanceClass);
 
     if (!isWorkflow) continue;
 
@@ -255,12 +291,12 @@ function scanWorkflows(vaultPath: string): WorkflowFileInfo[] {
       if (!referencesThisWorkflow) continue;
 
       const isState = Array.isArray(otherClass)
-        ? otherClass.some((c: string) => c.includes("ems__WorkflowState"))
-        : typeof otherClass === "string" && otherClass.includes("ems__WorkflowState");
+        ? otherClass.some(isWorkflowStateClass)
+        : isWorkflowStateClass(otherClass);
 
       const isTransition = Array.isArray(otherClass)
-        ? otherClass.some((c: string) => c.includes("ems__WorkflowTransition"))
-        : typeof otherClass === "string" && otherClass.includes("ems__WorkflowTransition");
+        ? otherClass.some(isWorkflowTransitionClass)
+        : isWorkflowTransitionClass(otherClass);
 
       if (isState) stateCount++;
       if (isTransition) transitionCount++;
