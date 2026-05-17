@@ -240,6 +240,87 @@ export class CommandResolver {
   }
 
   /**
+   * Find all commands that opt-in to Obsidian Command Palette registration via
+   * `exocmd__Command_paletteEnabled: true`. Used by
+   * `ExocmdCommandPaletteRegistrar` to surface global commands at plugin load.
+   *
+   * The palette id used for `plugin.addCommand({ id })` is derived per command:
+   *   1. `exocmd__Command_paletteId` literal (if present)
+   *   2. `exocmd__Command_cliName` literal (fallback — shared CLI surface)
+   *   3. `exo__Asset_uid` (last-resort, always present)
+   *
+   * Duplicate ids across the vault are dropped after the first occurrence and
+   * warned through the logger — first match wins, deterministically ordered by
+   * triple store iteration order.
+   *
+   * Source: code-RFC `1429fcd0-0948-4a42-89c4-8d1426e9bc7a` (PR-2).
+   */
+  async findPaletteEnabledCommands(): Promise<
+    Array<{ command: CommandDefinition; paletteId: string }>
+  > {
+    const typeTriples = await this.tripleStore.match(
+      undefined,
+      Namespace.RDF.term("type"),
+      Namespace.EXOCMD.term("Command"),
+    );
+
+    const results: Array<{ command: CommandDefinition; paletteId: string }> =
+      [];
+    const seenIds = new Set<string>();
+
+    for (const triple of typeTriples) {
+      const subject = triple.subject as IRI;
+
+      const enabledRaw = await this.getLiteralValue(
+        subject,
+        Namespace.EXOCMD.term("Command_paletteEnabled"),
+      );
+      if (enabledRaw?.toLowerCase() !== "true") continue;
+
+      const uid = await this.getLiteralValue(
+        subject,
+        Namespace.EXO.term("Asset_uid"),
+      );
+      if (!uid) {
+        this.logger.warn(
+          `[CommandResolver] paletteEnabled command at ${subject.value} has no exo__Asset_uid — skipped`,
+        );
+        continue;
+      }
+
+      const command = await this.loadCommand(uid);
+      if (!command) {
+        this.logger.warn(
+          `[CommandResolver] paletteEnabled command ${uid} could not be loaded (missing grounding?) — skipped`,
+        );
+        continue;
+      }
+
+      const explicitPaletteId = await this.getLiteralValue(
+        subject,
+        Namespace.EXOCMD.term("Command_paletteId"),
+      );
+      const cliName = await this.getLiteralValue(
+        subject,
+        Namespace.EXOCMD.term("Command_cliName"),
+      );
+      const paletteId = explicitPaletteId ?? cliName ?? uid;
+
+      if (seenIds.has(paletteId)) {
+        this.logger.warn(
+          `[CommandResolver] duplicate paletteId "${paletteId}" — first registration wins, dropping ${uid}`,
+        );
+        continue;
+      }
+      seenIds.add(paletteId);
+
+      results.push({ command, paletteId });
+    }
+
+    return results;
+  }
+
+  /**
    * Invalidate all cached command resolutions.
    * Call when vault files change.
    */
