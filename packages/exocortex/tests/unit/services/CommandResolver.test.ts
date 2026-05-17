@@ -1144,4 +1144,245 @@ describe("CommandResolver", () => {
       expect(cmd!.labelTemplate).toBe("Dynamic ({SELECT ?x WHERE { ?s ?p ?o }})");
     });
   });
+
+  describe("findPaletteEnabledCommands (RFC 1429fcd0 PR-2)", () => {
+    async function setEnabled(
+      uid: string,
+      enabled: "true" | "false" | string,
+    ): Promise<void> {
+      await store.add(
+        new Triple(
+          new IRI(`obsidian://vault/${uid}.md`),
+          Namespace.EXOCMD.term("Command_paletteEnabled"),
+          new Literal(enabled),
+        ),
+      );
+    }
+    async function setLiteral(
+      uid: string,
+      predicate: IRI,
+      value: string,
+    ): Promise<void> {
+      await store.add(
+        new Triple(
+          new IRI(`obsidian://vault/${uid}.md`),
+          predicate,
+          new Literal(value),
+        ),
+      );
+    }
+
+    it("returns only commands marked paletteEnabled=true", async () => {
+      await addGroundingAsset(store, {
+        uid: "gnd-p1",
+        label: "G",
+        type: "property_set",
+        targetProperty: "x",
+        targetValue: "y",
+      });
+      await addGroundingAsset(store, {
+        uid: "gnd-p2",
+        label: "G",
+        type: "property_set",
+        targetProperty: "x",
+        targetValue: "y",
+      });
+      await addGroundingAsset(store, {
+        uid: "gnd-p3",
+        label: "G",
+        type: "property_set",
+        targetProperty: "x",
+        targetValue: "y",
+      });
+      await addCommandAsset(store, {
+        uid: "cmd-enabled",
+        label: "Enabled cmd",
+        groundingRef: "gnd-p1",
+      });
+      await addCommandAsset(store, {
+        uid: "cmd-disabled",
+        label: "Disabled cmd",
+        groundingRef: "gnd-p2",
+      });
+      await addCommandAsset(store, {
+        uid: "cmd-absent",
+        label: "No flag cmd",
+        groundingRef: "gnd-p3",
+      });
+      await setEnabled("cmd-enabled", "true");
+      await setEnabled("cmd-disabled", "false");
+      // cmd-absent has no Command_paletteEnabled triple at all
+
+      const found = await resolver.findPaletteEnabledCommands();
+      expect(found).toHaveLength(1);
+      expect(found[0].command.id).toBe("cmd-enabled");
+    });
+
+    it("derives paletteId from Command_paletteId when present", async () => {
+      await addGroundingAsset(store, {
+        uid: "gnd-id1",
+        label: "G",
+        type: "property_set",
+        targetProperty: "x",
+        targetValue: "y",
+      });
+      await addCommandAsset(store, {
+        uid: "cmd-id1",
+        label: "Foo",
+        groundingRef: "gnd-id1",
+      });
+      await setEnabled("cmd-id1", "true");
+      await setLiteral(
+        "cmd-id1",
+        Namespace.EXOCMD.term("Command_paletteId"),
+        "stable-id",
+      );
+
+      const found = await resolver.findPaletteEnabledCommands();
+      expect(found[0].paletteId).toBe("stable-id");
+    });
+
+    it("falls back to Command_cliName when paletteId absent", async () => {
+      await addGroundingAsset(store, {
+        uid: "gnd-id2",
+        label: "G",
+        type: "property_set",
+        targetProperty: "x",
+        targetValue: "y",
+      });
+      await addCommandAsset(store, {
+        uid: "cmd-id2",
+        label: "Foo",
+        groundingRef: "gnd-id2",
+      });
+      await setEnabled("cmd-id2", "true");
+      await setLiteral(
+        "cmd-id2",
+        Namespace.EXOCMD.term("Command_cliName"),
+        "create-note",
+      );
+
+      const found = await resolver.findPaletteEnabledCommands();
+      expect(found[0].paletteId).toBe("create-note");
+    });
+
+    it("falls back to Asset_uid when neither paletteId nor cliName present", async () => {
+      await addGroundingAsset(store, {
+        uid: "gnd-id3",
+        label: "G",
+        type: "property_set",
+        targetProperty: "x",
+        targetValue: "y",
+      });
+      await addCommandAsset(store, {
+        uid: "cmd-id3",
+        label: "Foo",
+        groundingRef: "gnd-id3",
+      });
+      await setEnabled("cmd-id3", "true");
+
+      const found = await resolver.findPaletteEnabledCommands();
+      expect(found[0].paletteId).toBe("cmd-id3");
+    });
+
+    it("drops duplicate paletteIds — first wins, logs warning", async () => {
+      const warn = jest.fn();
+      const debug = jest.fn();
+      const info = jest.fn();
+      const error = jest.fn();
+      resolver = new CommandResolver(store, { warn, debug, info, error });
+
+      await addGroundingAsset(store, {
+        uid: "gnd-dup1",
+        label: "G",
+        type: "property_set",
+        targetProperty: "x",
+        targetValue: "y",
+      });
+      await addGroundingAsset(store, {
+        uid: "gnd-dup2",
+        label: "G",
+        type: "property_set",
+        targetProperty: "x",
+        targetValue: "y",
+      });
+      await addCommandAsset(store, {
+        uid: "cmd-dup-a",
+        label: "A",
+        groundingRef: "gnd-dup1",
+      });
+      await addCommandAsset(store, {
+        uid: "cmd-dup-b",
+        label: "B",
+        groundingRef: "gnd-dup2",
+      });
+      await setEnabled("cmd-dup-a", "true");
+      await setEnabled("cmd-dup-b", "true");
+      await setLiteral(
+        "cmd-dup-a",
+        Namespace.EXOCMD.term("Command_paletteId"),
+        "collide",
+      );
+      await setLiteral(
+        "cmd-dup-b",
+        Namespace.EXOCMD.term("Command_paletteId"),
+        "collide",
+      );
+
+      const found = await resolver.findPaletteEnabledCommands();
+      expect(found).toHaveLength(1);
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining("duplicate paletteId"),
+      );
+    });
+
+    it("treats string 'True' case-insensitively (resilient to YAML quoting)", async () => {
+      await addGroundingAsset(store, {
+        uid: "gnd-case",
+        label: "G",
+        type: "property_set",
+        targetProperty: "x",
+        targetValue: "y",
+      });
+      await addCommandAsset(store, {
+        uid: "cmd-case",
+        label: "Foo",
+        groundingRef: "gnd-case",
+      });
+      await setEnabled("cmd-case", "True");
+
+      const found = await resolver.findPaletteEnabledCommands();
+      expect(found).toHaveLength(1);
+    });
+
+    it("skips commands without grounding (loadCommand returns null)", async () => {
+      // Command type triple exists but no grounding link → loadCommand returns null.
+      const subject = new IRI("obsidian://vault/cmd-no-grounding.md");
+      await store.addAll([
+        new Triple(
+          subject,
+          Namespace.RDF.term("type"),
+          Namespace.EXOCMD.term("Command"),
+        ),
+        new Triple(
+          subject,
+          Namespace.EXO.term("Asset_uid"),
+          new Literal("cmd-no-grounding"),
+        ),
+        new Triple(
+          subject,
+          Namespace.EXO.term("Asset_label"),
+          new Literal("No grounding"),
+        ),
+        new Triple(
+          subject,
+          Namespace.EXOCMD.term("Command_paletteEnabled"),
+          new Literal("true"),
+        ),
+      ]);
+
+      const found = await resolver.findPaletteEnabledCommands();
+      expect(found).toHaveLength(0);
+    });
+  });
 });

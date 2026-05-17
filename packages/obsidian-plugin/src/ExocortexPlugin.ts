@@ -77,6 +77,13 @@ import { GraphViewPatch } from "./presentation/graph-view/GraphViewPatch";
 import { PrintNameRuleService } from "./domain/display-name/PrintNameRuleService";
 import { ObsidianFileSystemAdapter } from "./adapters/ObsidianFileSystemAdapter";
 import { populateServiceRegistry } from "./infrastructure/services/ServiceRegistryPopulator";
+import { ExocmdCommandPaletteRegistrar } from "./application/services/ExocmdCommandPaletteRegistrar";
+import { ObsidianCommandPromptAdapter } from "./infrastructure/adapters/ObsidianCommandPromptAdapter";
+import {
+  CommandExecutionFlow,
+  DI_TOKENS,
+  type IVaultSettings,
+} from "exocortex";
 
 /**
  * Exocortex Plugin - Automatic layout rendering
@@ -480,6 +487,36 @@ export default class ExocortexPlugin extends Plugin {
       this.commandManager.registerAllCommands(this, () =>
         this.autoRenderLayout(),
       );
+
+      // RFC 1429fcd0 PR-2: register vault-described palette-enabled exocmd
+      // commands as Obsidian Command Palette entries. Runs synchronously after
+      // CommandManager so it sees the same plugin command surface; SPARQL
+      // resolution + plugin.addCommand are both cheap enough for onload.
+      // Known limitation: Obsidian's public API has no `removeCommand`, so
+      // newly-added paletteEnabled assets only surface after plugin reload.
+      try {
+        const vaultSettings = container.resolve<IVaultSettings>(
+          DI_TOKENS.IVaultSettings,
+        );
+        const paletteFlow = new CommandExecutionFlow(
+          this.groundingExecutor,
+          new ObsidianNotificationService(),
+          this.logger,
+          new ObsidianCommandPromptAdapter(this.app),
+        );
+        await new ExocmdCommandPaletteRegistrar(
+          this,
+          this.commandResolver,
+          paletteFlow,
+          vaultSettings,
+          this.logger,
+        ).init();
+      } catch (error) {
+        this.logger.error(
+          "[ExocortexPlugin] ExocmdCommandPaletteRegistrar init failed",
+          error instanceof Error ? error : new Error(String(error)),
+        );
+      }
 
       // GTD Capture: one-click fleeting note to inbox.
       // Delegates to the existing `create-fleeting-note` command so the
