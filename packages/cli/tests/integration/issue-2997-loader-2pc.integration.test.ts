@@ -37,7 +37,8 @@ const BAD_FIXTURES: BadFixture[] = [
   { filename: "02-empty-locked-by.md", expectedReasonContains: "ems__Effort_lockedBy" },
   { filename: "03-empty-lock-expires.md", expectedReasonContains: "ems__Effort_lockExpires" },
   { filename: "04-missing-asset-uid.md", expectedReasonContains: "exo__Asset_uid" },
-  { filename: "05-missing-asset-isdefinedby.md", expectedReasonContains: "exo__Asset_isDefinedBy" },
+  // 05-missing-asset-isdefinedby removed: exo__Asset_isDefinedBy is now
+  // optional — downstream consumers handle the missing case via defaults.
   // 06-empty-asset-label removed: exo__Asset_label is now optional with basename fallback.
   { filename: "07-empty-instance-class.md", expectedReasonContains: "exo__Instance_class" },
   { filename: "08-empty-effort-status.md", expectedReasonContains: "ems__Effort_status" },
