@@ -47,8 +47,11 @@ export type LogLevel = "debug" | "info" | "warn" | "error";
 export type LogChannelsSettings = Record<LogLevel, LogChannelConfig>;
 
 export const DEFAULT_LOG_CHANNELS: LogChannelsSettings = {
-  debug: { notice: false, console: true, file: true },
-  info: { notice: false, console: true, file: true },
+  // Diagnostic levels: console only by default. Persisting every INFO/DEBUG
+  // line to disk produced ~6 MB / 54k lines per 2 days from renderer traces
+  // alone (#3186). Users can re-enable file routing per-level in settings.
+  debug: { notice: false, console: true, file: false },
+  info: { notice: false, console: true, file: false },
   warn: { notice: true, console: true, file: true },
   error: { notice: true, console: true, file: true },
 };

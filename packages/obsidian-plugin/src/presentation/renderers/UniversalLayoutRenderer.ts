@@ -16,6 +16,7 @@ import { BacklinksCacheManager } from '@plugin/adapters/caching/BacklinksCacheMa
 import { EventListenerManager } from '@plugin/adapters/events/EventListenerManager';
 import { ButtonGroupsBuilder } from '@plugin/presentation/builders/ButtonGroupsBuilder';
 import type { ExocmdFastResolver } from '@plugin/presentation/builders/button-groups/ExocmdFastResolver';
+import type { ExocmdBindingsCache } from '@plugin/cache/ExocmdBindingsCache';
 import { PanelResolver } from '@plugin/application/services/PanelResolver';
 import { DailyTasksRenderer } from "./DailyTasksRenderer";
 
@@ -73,6 +74,8 @@ export class UniversalLayoutRenderer {
   // Issue #3171 — cold-start fast path
   private fastResolver?: ExocmdFastResolver;
   private isFullPathReady?: () => boolean;
+  // Issue #3183 — persistent disk cache for exocmd bindings
+  private bindingsCache?: ExocmdBindingsCache;
   private exoLayoutRenderer!: ExoLayoutRenderer;
 
   private dependencyResolver: PropertyDependencyResolver;
@@ -105,6 +108,8 @@ export class UniversalLayoutRenderer {
       // Issue #3171
       fastResolver?: ExocmdFastResolver;
       isFullPathReady?: () => boolean;
+      // Issue #3183
+      bindingsCache?: ExocmdBindingsCache;
     },
   ) {
     this.app = app;
@@ -123,6 +128,7 @@ export class UniversalLayoutRenderer {
     this.panelResolver = rfc009Services?.panelResolver ?? null;
     this.fastResolver = rfc009Services?.fastResolver;
     this.isFullPathReady = rfc009Services?.isFullPathReady;
+    this.bindingsCache = rfc009Services?.bindingsCache;
     this.logger = LoggerFactory.create("UniversalLayoutRenderer");
 
     // Create ReactRenderer with ErrorBoundary enabled for graceful error handling.
@@ -195,6 +201,7 @@ export class UniversalLayoutRenderer {
       panelResolver: this.panelResolver ?? undefined,
       fastResolver: this.fastResolver,
       isFullPathReady: this.isFullPathReady,
+      bindingsCache: this.bindingsCache,
     });
 
     this.dailyTasksRenderer = new DailyTasksRenderer(
@@ -321,7 +328,7 @@ export class UniversalLayoutRenderer {
       this.metadataCache.set(currentFile.path, this.metadataExtractor.extractMetadata(currentFile));
 
       el.addClass("exocortex-layout-rendered");
-      this.logger.info(`Rendered UniversalLayout with ${relations.length} asset relations`);
+      this.logger.debug(`Rendered UniversalLayout with ${relations.length} asset relations`);
     } catch (error) {
       this.logger.error("Failed to render UniversalLayout", { error });
       el.createDiv({ text: `Error: ${error instanceof Error ? error.message : String(error)}`, cls: "exocortex-error-message" });

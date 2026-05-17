@@ -10,7 +10,7 @@ Specs in this directory execute against a **shared** vault under `tests/e2e/test
 Consequences:
 
 - A test that mutates a fixture file (via `fs.writeFileSync`, `app.fileManager.processFrontMatter`, or plugin-triggered writes) leaves the fixture in a drifted state for every subsequent test in the same shard.
-- Plugin logging emits to `test-vault/exocortex-logs.txt`. That file is almost always in the modified set of `fixture-drift.json`; it is ambient output and can be ignored for isolation purposes.
+- Plugin logging emits to `test-vault/.obsidian/plugins/exocortex/exocortex-logs.txt` (since #3186). The drift detector should not see it because `.obsidian/` is outside the vault content tree, but any future log writes that escape the plugin data directory would resurface here as ambient noise.
 - Specs do **not** declare or rely on a cross-spec ordering contract. Parallel/shuffled execution must still pass. Any spec that requires a specific neighbour state must set that state itself in `beforeAll`/`beforeEach` rather than depend on the order Playwright happens to choose.
 
 ## Fixture drift detector

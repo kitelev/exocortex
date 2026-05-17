@@ -62,6 +62,15 @@ import {
   createWikilinkLabelExtension,
 } from "./presentation/editor-extensions";
 import { ExocmdFastResolver } from "./presentation/builders/button-groups/ExocmdFastResolver";
+import {
+  ExocmdBindingsCache,
+  DEFAULT_CACHE_FILE_PATH,
+  type CacheFileSystem,
+} from "./cache/ExocmdBindingsCache";
+import {
+  ExocmdBindingsIndexer,
+  type FrontmatterRecord,
+} from "./cache/ExocmdBindingsIndexer";
 import { TimerManager } from "./infrastructure/timer";
 import { LRUCache } from "./infrastructure/cache";
 import { TabTitlePatch } from "./presentation/tab-titles/TabTitlePatch";
@@ -122,6 +131,8 @@ export default class ExocortexPlugin extends Plugin {
   serviceRegistry!: ServiceRegistry;
   // Issue #3171 — cold-start fast-path resolver for exocmd buttons
   exocmdFastResolver?: ExocmdFastResolver;
+  // Issue #3183 — persistent disk cache for exocmd bindings
+  exocmdBindingsCache?: ExocmdBindingsCache;
   private relationColumnSetRepository: RelationColumnSetRepository | null =
     null;
   private relationColumnSetResolver: RelationColumnSetResolver | null = null;
@@ -162,7 +173,7 @@ export default class ExocortexPlugin extends Plugin {
 
       // Initialize notification service and log channel routing
       this.notifier = new ObsidianNotificationService();
-      this.fileLogChannel = new FileLogChannel(this.app.vault.adapter);
+      this.fileLogChannel = new FileLogChannel(this.app.vault.adapter, this.manifest.dir ?? `${this.app.vault.configDir}/plugins/${this.manifest.id}`);
       await this.fileLogChannel.ensureFileExists();
       this.configureLogChannels();
 
@@ -328,6 +339,39 @@ export default class ExocortexPlugin extends Plugin {
       );
       this.exocmdFastResolver = exocmdFastResolver;
 
+      // Issue #3183 — persistent disk cache. Load synchronously here so
+      // the very first `autoRenderLayout()` already has cache content
+      // available; subsequent loads are no-ops once `snapshot` is held
+      // in memory. `performance.mark` lets the AC #1 latency target be
+      // observable in DevTools alongside the existing fast/full-path marks.
+      performance.mark("exocmd-cache-read-start");
+      const cacheFs: CacheFileSystem = {
+        exists: (p) => this.app.vault.adapter.exists(p),
+        read: (p) => this.app.vault.adapter.read(p),
+        write: (p, content) => this.app.vault.adapter.write(p, content),
+        remove: (p) => this.app.vault.adapter.remove(p),
+        rename: (oldP, newP) => this.app.vault.adapter.rename(oldP, newP),
+        mkdir: (p) => this.app.vault.adapter.mkdir(p),
+      };
+      const bindingsCache = new ExocmdBindingsCache(
+        cacheFs,
+        DEFAULT_CACHE_FILE_PATH,
+        this.manifest.version,
+        this.logger,
+      );
+      this.exocmdBindingsCache = bindingsCache;
+      // Fire-and-forget load — the strategy in
+      // `DynamicCommandButtonGroupBuilder` treats "snapshot not yet loaded"
+      // as cache miss and falls through to fast-path, so awaiting here
+      // would only add startup latency without unblocking anything.
+      // First subsequent `autoRenderLayout()` that fires after the I/O
+      // completes (typically <10 ms) sees the warm snapshot.
+      void bindingsCache.load().catch((err) => {
+        this.logger.warn(
+          `[ExocortexPlugin] cache load failed (non-fatal): ${String(err)}`,
+        );
+      });
+
       this.layoutRenderer = new UniversalLayoutRenderer(
         this.app,
         this.settings,
@@ -345,6 +389,7 @@ export default class ExocortexPlugin extends Plugin {
           panelResolver: this.panelResolver,
           fastResolver: exocmdFastResolver,
           isFullPathReady: () => this.sparql.isReady(),
+          bindingsCache,
         },
       );
 
@@ -354,13 +399,24 @@ export default class ExocortexPlugin extends Plugin {
       // Granular delete/rename are not needed: the fast-path lazily
       // rebuilds from `vault.getAllFiles()` on next `resolveVisibleCommands`,
       // so a stale cached list of files cannot survive a generation flip.
+      //
+      // Issue #3183 — same path-prefix predicate also invalidates the
+      // in-memory disk-cache snapshot. The on-disk file itself is left
+      // alone; the next post-`convertVault` indexer pass (triggered by
+      // `commandResolver.invalidateCache()` plumbing below or by the
+      // next plugin reload) overwrites it atomically. Until then, lookups
+      // fall through to fast-path with the freshly invalidated mini-store.
+      const invalidateExocmdCaches = (): void => {
+        exocmdFastResolver.invalidateCommandCache();
+        bindingsCache.clear();
+      };
       this.registerEvent(
         this.app.metadataCache.on("changed", (changedFile) => {
           if (
             changedFile?.path?.startsWith("assetspaces/exocmd/") ||
             changedFile?.path === "assetspaces/exocmd"
           ) {
-            exocmdFastResolver.invalidateCommandCache();
+            invalidateExocmdCaches();
           }
         }),
       );
@@ -370,7 +426,7 @@ export default class ExocortexPlugin extends Plugin {
             file?.path?.startsWith("assetspaces/exocmd/") ||
             file?.path === "assetspaces/exocmd"
           ) {
-            exocmdFastResolver.invalidateCommandCache();
+            invalidateExocmdCaches();
           }
         }),
       );
@@ -380,7 +436,7 @@ export default class ExocortexPlugin extends Plugin {
             file?.path?.startsWith("assetspaces/exocmd/") ||
             oldPath?.startsWith("assetspaces/exocmd/")
           ) {
-            exocmdFastResolver.invalidateCommandCache();
+            invalidateExocmdCaches();
           }
         }),
       );
@@ -838,6 +894,52 @@ export default class ExocortexPlugin extends Plugin {
                   "exocmd-fullpath-start",
                   "exocmd-fullpath-ready",
                 );
+
+                // Issue #3183 — once the full triple store is warm, run
+                // the background indexer to populate the disk cache. The
+                // next cold start will read this file in ~10 ms and skip
+                // both the fast and full paths for already-indexed classes,
+                // giving the user the complete CREATE+MISC button set
+                // immediately. Errors are swallowed: a failed indexer
+                // run only means the next cold start falls back to the
+                // existing fast-path behaviour — never a regression.
+                try {
+                  const indexer = new ExocmdBindingsIndexer({
+                    cache: bindingsCache,
+                    vaultSource: {
+                      listAllAssets: (): Iterable<FrontmatterRecord> => {
+                        const files = this.app.vault.getMarkdownFiles();
+                        const records: FrontmatterRecord[] = [];
+                        for (const f of files) {
+                          const fm = this.app.metadataCache.getFileCache(f)
+                            ?.frontmatter as Record<string, unknown> | undefined;
+                          records.push({
+                            path: f.path,
+                            frontmatter: fm ?? null,
+                          });
+                        }
+                        return records;
+                      },
+                    },
+                    commandResolver: this.commandResolver,
+                    preconditionEvaluator: this.preconditionEvaluator,
+                    logger: this.logger,
+                  });
+                  const summary = await indexer.runFullScan();
+                  this.logger.info(
+                    `[ExocortexPlugin] exocmd-bindings cache populated`,
+                    {
+                      classesScanned: summary.classesScanned,
+                      classesWritten: summary.classesWritten,
+                      assetsConsidered: summary.assetsConsidered,
+                      errors: summary.errors,
+                    },
+                  );
+                } catch (err) {
+                  this.logger.warn(
+                    `[ExocortexPlugin] exocmd-bindings indexer failed (non-fatal): ${String(err)}`,
+                  );
+                }
               })
               .catch((err) => {
                 this.logger.error(
