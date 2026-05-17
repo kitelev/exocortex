@@ -2,9 +2,19 @@ import { injectable, inject } from "tsyringe";
 import { v4 as uuidv4 } from "uuid";
 import { DateFormatter } from "../utilities/DateFormatter";
 import { MetadataHelpers } from "../utilities/MetadataHelpers";
+import { WikiLinkHelpers } from "../utilities/WikiLinkHelpers";
 import type { IVaultAdapter, IFile } from "../interfaces/IVaultAdapter";
 import { DI_TOKENS } from "../interfaces/tokens";
 import { PropertyFieldType } from "../domain/types/PropertyFieldType";
+
+/**
+ * UUID → symbolic class name resolver. After RFC-004 UID-canon
+ * (commit `ca2d916`, 2026-05-16) `exo__Instance_class` values are stored
+ * as bare `[[<uuid>]]`; symbolic comparisons require resolution via the
+ * caller's environment (Obsidian `metadataCache` in the plugin, prebuilt
+ * UUID→label map in CLI/tests).
+ */
+export type ClassRefResolver = (uuid: string) => string | null | undefined;
 
 /**
  * Configuration for creating a generic asset.
@@ -22,6 +32,14 @@ export interface GenericAssetCreationConfig {
   parentFile?: IFile;
   /** Parent file metadata (for context inheritance) */
   parentMetadata?: Record<string, unknown>;
+  /**
+   * Optional UUID → symbolic-class-name resolver for the parent's
+   * `exo__Instance_class`. Required when the vault stores class refs
+   * in UID-canon form (`[[<uuid>]]`) and parent-class inheritance must
+   * branch on `ems__Area` vs other classes. When omitted, parent-class
+   * detection still works for symbolic and alias-wikilink forms.
+   */
+  classResolver?: ClassRefResolver;
 }
 
 /**
@@ -174,7 +192,7 @@ export class GenericAssetCreationService {
     // ems__Effort_area instead of ems__Effort_parent (parent-property semantics).
     if (config.className === "ems__Task" || config.className.startsWith("ems__Task")) {
       const parentClass = parentMetadata.exo__Instance_class;
-      const isAreaParent = this.isAreaClass(parentClass);
+      const isAreaParent = this.isAreaClass(parentClass, config.classResolver);
       const parentPropertyName = isAreaParent ? "ems__Effort_area" : "ems__Effort_parent";
       frontmatter[parentPropertyName] = parentName
         ? this.formatWikilink(parentName)
@@ -188,7 +206,7 @@ export class GenericAssetCreationService {
     // code only consumes the ems__Effort_* properties.
     if (config.className === "ems__Project" || config.className.startsWith("ems__Project")) {
       const parentClass = parentMetadata.exo__Instance_class;
-      const isAreaParent = this.isAreaClass(parentClass);
+      const isAreaParent = this.isAreaClass(parentClass, config.classResolver);
       const parentPropertyName = isAreaParent ? "ems__Effort_area" : "ems__Effort_parent";
       frontmatter[parentPropertyName] = parentName
         ? this.formatWikilink(parentName)
@@ -208,14 +226,32 @@ export class GenericAssetCreationService {
 
   /**
    * Check if a class is an Area class.
+   *
+   * Handles three storage forms for `exo__Instance_class`:
+   *  - symbolic literal `"ems__Area"`
+   *  - alias wikilink `"[[<uuid>|ems__Area]]"` (pre-UID-canon)
+   *  - bare-UUID wikilink `"[[<uuid>]]"` (post-UID-canon, RFC-004)
+   *
+   * The first two cases work without a resolver. The third requires the
+   * caller to supply a `ClassRefResolver` that maps the UUID to the
+   * target file's `exo__Asset_label`; otherwise the bare-UUID form
+   * remains unresolved and the check returns `false` for it.
    */
-  private isAreaClass(instanceClass: unknown): boolean {
+  private isAreaClass(
+    instanceClass: unknown,
+    resolver?: ClassRefResolver,
+  ): boolean {
     if (!instanceClass) return false;
 
     const classes = Array.isArray(instanceClass) ? instanceClass : [instanceClass];
-    return classes.some(
-      (cls) => String(cls).includes("Area") || String(cls).includes("ems__Area"),
-    );
+    const noopResolver: ClassRefResolver = () => null;
+    return classes.some((cls) => {
+      const symbolic = WikiLinkHelpers.resolveSymbolic(
+        String(cls),
+        resolver ?? noopResolver,
+      );
+      return symbolic.includes("Area") || symbolic.includes("ems__Area");
+    });
   }
 
   /**
