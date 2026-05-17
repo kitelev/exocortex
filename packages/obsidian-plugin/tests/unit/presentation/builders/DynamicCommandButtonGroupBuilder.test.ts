@@ -326,6 +326,54 @@ describe("DynamicCommandButtonGroupBuilder", () => {
       );
     });
 
+    it("Issue #3141 — should expand UUID-form instance class refs to symbolic Asset_label so class-targeted bindings match after UUID-canon strip-aliases", async () => {
+      mockResolveForAssetMulti.mockResolvedValue([]);
+      const classUid = "1b20a8f0-d745-4e93-91db-4531b3df120e";
+      const mockClassFile = { path: "assetspaces/ems/" + classUid + ".md" };
+      const context = createContext({
+        exo__Instance_class: ["[[" + classUid + "]]"],
+      });
+      // Wire metadataCache so the resolver finds the class file and reads its label
+      (context.app as any).metadataCache = {
+        getFirstLinkpathDest: jest.fn((link: string) =>
+          link === classUid ? mockClassFile : null,
+        ),
+        getFileCache: jest.fn((file: any) =>
+          file === mockClassFile
+            ? { frontmatter: { exo__Asset_label: "ems__Task" } }
+            : null,
+        ),
+      };
+
+      await builder.build(context);
+
+      // Expect both UUID and symbolic forms passed through to the resolver,
+      // plus the universal exo__Asset superclass appended last.
+      expect(mockResolveForAssetMulti).toHaveBeenCalledWith(
+        "obsidian://vault/test/file.md",
+        [classUid, "ems__Task", "exo__Asset"],
+        undefined,
+      );
+    });
+
+    it("Issue #3141 — should gracefully no-op symbolic expansion when metadataCache is unavailable", async () => {
+      mockResolveForAssetMulti.mockResolvedValue([]);
+      const classUid = "1b20a8f0-d745-4e93-91db-4531b3df120e";
+      const context = createContext({
+        exo__Instance_class: ["[[" + classUid + "]]"],
+      });
+      // No metadataCache wired — must not throw, just pass UUID through.
+      (context.app as any) = {};
+
+      await builder.build(context);
+
+      expect(mockResolveForAssetMulti).toHaveBeenCalledWith(
+        "obsidian://vault/test/file.md",
+        [classUid, "exo__Asset"],
+        undefined,
+      );
+    });
+
     it("should preserve order — declared classes first, exo__Asset appended (Issue #2958)", async () => {
       mockResolveForAssetMulti.mockResolvedValue([]);
       const context = createContext({

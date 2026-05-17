@@ -1,3 +1,4 @@
+import type { App } from "obsidian";
 import {
   ActionButton,
   ActionButtonVariant,
@@ -237,14 +238,21 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
     // making all preconditions return false and no buttons to render.
     const subjectIRI = `obsidian://vault/${encodeURI(file.path)}`;
 
-    const assetClasses = this.extractAssetClasses(metadata);
+    const assetClasses = this.extractAssetClasses(metadata, context.app as App);
     if (assetClasses.length === 0) return null;
 
     // RFC-024 Phase 3: panels are resolved against the most-specific
     // declared class — i.e. the first non-`exo__Asset` class. Universal
     // `exo__Asset` is the appended superclass and would over-broadly bind
-    // to every asset's panel.
-    const panelClassRef = assetClasses.find((c) => c !== "exo__Asset") ?? null;
+    // to every asset's panel. Symbolic names (e.g. `ems__Task`) are
+    // preferred over UUID-form refs for panel lookup since panel configs
+    // are authored against symbolic class names.
+    const panelClassRef =
+      assetClasses.find(
+        (c) => c !== "exo__Asset" && !this.isUuidRef(c),
+      ) ??
+      assetClasses.find((c) => c !== "exo__Asset") ??
+      null;
 
     const prototypeIRI = this.extractPrototypeIRI(metadata);
 
@@ -379,13 +387,29 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
    * `exo__Asset` superclass appended last so that bindings with `targetClass: exo__Asset`
    * match every asset in the vault (RFC-009 semantics, Issue #2958).
    *
-   * Returns an empty array when no `exo__Instance_class` is declared — the builder
-   * treats this as "no asset class context" and skips command resolution. This
-   * preserves the pre-fix behavior of returning no buttons for unclassed files.
+   * Issue #3141: After UUID-canon TBox migration (CLAUDE.md §UUID-canon, 2026-05-16)
+   * and the subsequent strip-aliases pass (2026-05-17 — `[[<uid>|<symbolic>]]` →
+   * `[[<uid>]]`), `exo__Instance_class` references are bare UUIDs. CommandBinding
+   * `targetClass` literals (e.g. `"ems__Task"`) are authored as symbolic names and
+   * are compared by `CommandResolver.matchesReference` at JS-string level — no
+   * IRI resolution, no triple-store lookup. The previous alias-form
+   * `[[<uid>|<symbolic>]]` worked because `extractAlias` extracted the symbolic
+   * tail. After strip-aliases, that path collapsed and class-targeted bindings
+   * silently stopped matching.
    *
-   * If `exo__Asset` is already declared explicitly, it is not duplicated.
+   * Fix: when a class ref looks like a UUID, resolve it through Obsidian's
+   * metadata cache and append the class file's symbolic `exo__Asset_label`
+   * (e.g. `ems__Task`) alongside the UUID. Both forms then participate in
+   * `resolveForAssetMulti`'s per-class binding scan. Universal `exo__Asset`
+   * bindings already work because `extractAssetClasses` appends the literal
+   * `"exo__Asset"` regardless of UUID-canon — that path was never broken.
+   *
+   * Returns an empty array when no `exo__Instance_class` is declared.
    */
-  private extractAssetClasses(metadata: Record<string, unknown>): string[] {
+  private extractAssetClasses(
+    metadata: Record<string, unknown>,
+    app?: App,
+  ): string[] {
     const raw = metadata["exo__Instance_class"];
     const classes: string[] = [];
 
@@ -403,9 +427,39 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
 
     if (classes.length === 0) return [];
 
+    // Issue #3141 — expand UUID class refs to also include their symbolic
+    // `exo__Asset_label` so CommandBindings with `targetClass: "ems__Task"`
+    // match instances whose `exo__Instance_class` is UUID-canonicalised.
+    if (app?.metadataCache?.getFirstLinkpathDest) {
+      const symbolicAliases: string[] = [];
+      for (const cls of classes) {
+        if (!this.isUuidRef(cls)) continue;
+        const classFile = app.metadataCache.getFirstLinkpathDest(cls, "");
+        if (!classFile) continue;
+        const cache = app.metadataCache.getFileCache?.(classFile);
+        const label = cache?.frontmatter?.["exo__Asset_label"];
+        if (typeof label === "string" && label.length > 0 && !classes.includes(label)) {
+          symbolicAliases.push(label);
+        }
+      }
+      for (const alias of symbolicAliases) {
+        if (!classes.includes(alias)) classes.push(alias);
+      }
+    }
+
     if (!classes.includes("exo__Asset")) classes.push("exo__Asset");
 
     return classes;
+  }
+
+  /**
+   * Bare-UUID-v4 sniff used to decide whether a class ref needs symbolic
+   * expansion via the metadata cache (Issue #3141).
+   */
+  private isUuidRef(value: string): boolean {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      value,
+    );
   }
 
   private extractPrototypeIRI(
