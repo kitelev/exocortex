@@ -140,6 +140,7 @@ export {
   GenericAssetCreationService,
   type GenericAssetCreationConfig,
   type AssetPropertyDefinition,
+  type ClassRefResolver,
 } from "./services/GenericAssetCreationService";
 export { ArchiveAssetService } from "./services/ArchiveAssetService";
 export { FixMissingLabelService } from "./services/FixMissingLabelService";

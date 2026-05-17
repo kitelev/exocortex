@@ -1053,6 +1053,58 @@ describe("GenericAssetCreationService", () => {
         const content = mockVault.create.mock.calls[0][1];
         expect(content).toContain('ems__Effort_area: "[[area]]"');
       });
+
+      it("should resolve UID-canon `[[<uuid>]]` parent class via classResolver (RFC-004)", async () => {
+        // Post `strip-aliases.py` Phase 3 (2026-05-16) the parent's
+        // `exo__Instance_class` is stored as bare `[[<uuid>]]`, so the
+        // legacy `.includes("Area")` check sees only the UUID. The
+        // caller-supplied resolver maps the UUID → `exo__Asset_label`.
+        const areaUid = "11111111-1111-4111-8111-111111111111";
+        const parentFile: IFile = {
+          path: "areas/my-area.md",
+          basename: "my-area",
+          name: "my-area.md",
+          parent: { path: "areas" } as IFolder,
+        };
+        const config = {
+          className: "ems__Project",
+          parentFile,
+          parentMetadata: {
+            exo__Instance_class: [`[[${areaUid}]]`],
+          },
+          classResolver: (uid: string) =>
+            uid === areaUid ? "ems__Area" : null,
+        };
+        await service.createAsset(config);
+        const content = mockVault.create.mock.calls[0][1];
+        expect(content).toContain('ems__Effort_area: "[[my-area]]"');
+        expect(content).not.toContain("ems__Effort_parent");
+      });
+
+      it("should fall back to ems__Effort_parent when UID-canon class is not resolvable", async () => {
+        // No resolver provided + bare-UUID class ref → the substring check
+        // sees only the UUID, which does not include "Area". This is the
+        // pre-fix legacy behaviour preserved as a deliberate fallback so
+        // unrelated callers do not silently change their parent-property
+        // emission.
+        const someUid = "22222222-2222-4222-8222-222222222222";
+        const parentFile: IFile = {
+          path: "things/thing.md",
+          basename: "thing",
+          name: "thing.md",
+          parent: { path: "things" } as IFolder,
+        };
+        const config = {
+          className: "ems__Task",
+          parentFile,
+          parentMetadata: {
+            exo__Instance_class: [`[[${someUid}]]`],
+          },
+        };
+        await service.createAsset(config);
+        const content = mockVault.create.mock.calls[0][1];
+        expect(content).toContain('ems__Effort_parent: "[[thing]]"');
+      });
     });
 
     describe("getDefaultFolderPath", () => {

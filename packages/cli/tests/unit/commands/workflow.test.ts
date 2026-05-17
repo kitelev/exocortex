@@ -22,6 +22,30 @@ jest.unstable_mockModule("exocortex", () => ({
       return { exists: true, content: match[1], originalContent: content };
     }),
   })),
+  // Minimal stub matching the public WikiLinkHelpers.resolveSymbolic shape.
+  // Real impl is exercised by `packages/exocortex/tests/utilities/WikiLinkHelpers.test.ts`;
+  // here we only need a passthrough that returns the canonical alias / target
+  // so the workflow class-name substring discriminator runs against symbolic
+  // strings, not UUIDs.
+  WikiLinkHelpers: {
+    resolveSymbolic: (value, resolver) => {
+      if (typeof value !== "string") return "";
+      const stripped = value.replace(/^\[\[|\]\]$/g, "").trim();
+      if (!stripped) return "";
+      const pipeIdx = stripped.indexOf("|");
+      if (pipeIdx !== -1) {
+        const target = stripped.substring(0, pipeIdx);
+        const alias = stripped.substring(pipeIdx + 1);
+        return alias || target;
+      }
+      const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (uuidPattern.test(stripped)) {
+        const resolved = resolver(stripped);
+        return resolved && resolved.length > 0 ? resolved : stripped;
+      }
+      return stripped;
+    },
+  },
   WorkflowEngine: jest.fn(() => ({
     validate: mockValidate,
   })),
@@ -174,6 +198,102 @@ describe("Issue #2365: workflow command", () => {
       expect(consoleLogSpy).toHaveBeenCalledWith(
         expect.stringContaining('"totalWorkflows"')
       );
+    });
+
+    it("should classify workflow classes stored in UID-canon form (RFC-004)", async () => {
+      // After `strip-aliases.py` Phase 3 (2026-05-16), `exo__Instance_class`
+      // stores bare `[[<uuid>]]` instead of `[[<uuid>|ems__Workflow]]` or
+      // `ems__Workflow`. The substring discriminator must resolve UUIDs to
+      // labels via the prebuilt UID→label map before checking
+      // `.includes("ems__Workflow")` etc.
+      const workflowClassUid = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+      const stateClassUid = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+      const transitionClassUid = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+      const workflowInstanceUid = "wf-uid-uidcanon";
+
+      mockReaddirSync.mockImplementation((dir) => {
+        if (dir.includes("test-vault")) {
+          return [
+            { name: `${workflowClassUid}.md`, isDirectory: () => false },
+            { name: `${stateClassUid}.md`, isDirectory: () => false },
+            { name: `${transitionClassUid}.md`, isDirectory: () => false },
+            { name: "wf-instance.md", isDirectory: () => false },
+            { name: "state-inst.md", isDirectory: () => false },
+            { name: "trans-inst.md", isDirectory: () => false },
+          ];
+        }
+        return [];
+      });
+
+      const fileContents = {
+        // TBox class files — provide UID → label so the resolver works.
+        [`${workflowClassUid}.md`]: [
+          "---",
+          `exo__Asset_uid: ${workflowClassUid}`,
+          "exo__Asset_label: ems__Workflow",
+          "---",
+        ].join("\n"),
+        [`${stateClassUid}.md`]: [
+          "---",
+          `exo__Asset_uid: ${stateClassUid}`,
+          "exo__Asset_label: ems__WorkflowState",
+          "---",
+        ].join("\n"),
+        [`${transitionClassUid}.md`]: [
+          "---",
+          `exo__Asset_uid: ${transitionClassUid}`,
+          "exo__Asset_label: ems__WorkflowTransition",
+          "---",
+        ].join("\n"),
+        // ABox instances — `exo__Instance_class` is the UID-canon form.
+        "wf-instance.md": [
+          "---",
+          `exo__Instance_class: \"[[${workflowClassUid}]]\"`,
+          `exo__Asset_uid: ${workflowInstanceUid}`,
+          "exo__Asset_label: My Workflow",
+          "ems__Workflow_targetClass: ems__Task",
+          "---",
+        ].join("\n"),
+        "state-inst.md": [
+          "---",
+          `exo__Instance_class: \"[[${stateClassUid}]]\"`,
+          `ems__WorkflowState_workflow: \"[[${workflowInstanceUid}]]\"`,
+          "---",
+        ].join("\n"),
+        "trans-inst.md": [
+          "---",
+          `exo__Instance_class: \"[[${transitionClassUid}]]\"`,
+          `ems__WorkflowTransition_workflow: \"[[${workflowInstanceUid}]]\"`,
+          "---",
+        ].join("\n"),
+      };
+
+      mockReadFileSync.mockImplementation((filePath) => {
+        for (const [name, content] of Object.entries(fileContents)) {
+          if (filePath.endsWith(name)) return content;
+        }
+        return "";
+      });
+
+      const cmd = workflowCommand();
+      const listCmd = cmd.commands.find((c) => c.name() === "list");
+
+      await listCmd.parseAsync(
+        ["node", "test", "--vault", "/tmp/test-vault", "--output", "json"],
+        { from: "node" },
+      );
+
+      const jsonOutput = consoleLogSpy.mock.calls.find((call) =>
+        call[0]?.includes?.("totalWorkflows"),
+      );
+      expect(jsonOutput).toBeDefined();
+      const parsed = JSON.parse(jsonOutput[0]);
+      // Pre-fix: zero workflows because `[[<uuid>]]` did not match
+      // `.includes("ems__Workflow")`. Post-fix: resolved via labelByUid.
+      expect(parsed.data.totalWorkflows).toBe(1);
+      expect(parsed.data.workflows[0].uid).toBe(workflowInstanceUid);
+      expect(parsed.data.workflows[0].stateCount).toBe(1);
+      expect(parsed.data.workflows[0].transitionCount).toBe(1);
     });
 
     it("should count linked states and transitions for a workflow", async () => {
