@@ -827,6 +827,41 @@ export class CommandResolver {
       }
     }
 
+    // Issue #3136: propertyDefaults JSON literal — declarative replacement for
+    // the legacy `createTaskForDailyNote` service_call (Q3.b closure). Authored
+    // as `exocmd__Grounding_propertyDefaults: '{"prop": "$today"}'`. Invalid
+    // JSON or non-object payload → fail-loud (skip silently would mask typos).
+    const propertyDefaultsRaw = await this.getLiteralValue(
+      subject,
+      Namespace.EXOCMD.term("Grounding_propertyDefaults"),
+    );
+    let propertyDefaults: Record<string, string> | undefined;
+    if (propertyDefaultsRaw) {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(propertyDefaultsRaw);
+      } catch (error) {
+        throw new Error(
+          `Grounding ${uid}: exocmd__Grounding_propertyDefaults is not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+        throw new Error(
+          `Grounding ${uid}: exocmd__Grounding_propertyDefaults must be a JSON object literal`,
+        );
+      }
+      const map: Record<string, string> = {};
+      for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+        if (typeof value !== "string") {
+          throw new Error(
+            `Grounding ${uid}: exocmd__Grounding_propertyDefaults["${key}"] must be a string (got ${typeof value})`,
+          );
+        }
+        map[key] = value;
+      }
+      propertyDefaults = map;
+    }
+
     // Load composite steps if applicable
     let steps: GroundingDefinition[] | undefined;
     if (type === GroundingType.COMPOSITE) {
@@ -867,6 +902,7 @@ export class CommandResolver {
       linkBackProperty: linkBackProperty ?? undefined,
       incrementBy,
       shiftDelta: shiftDelta ?? undefined,
+      propertyDefaults,
     };
 
     if (inputSchema) {

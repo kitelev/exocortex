@@ -39,14 +39,17 @@ const KNOWN_STUB_SERVICE_IDS = new Set([
 // follow-up (T1.6). Listed explicitly so the drift gate exits zero today
 // and exits non-zero the moment a brand-new service id appears.
 const KNOWN_UNREGISTERED_SERVICE_IDS = new Set([
-  "planOnToday",
   "rollbackStatus",
-  "createTaskForDailyNote",
   // copyLabelToAliases removed in Issue #3132 — grounding a85668fa-… migrated
   // to declarative `property_append` (Homoiconicity Q1 remediation).
   // shiftDay (×2) + incrementVotes (×1) removed in Issue #3134 — migrated to
   // declarative `property_shift` / `property_increment` (RFC
   // 18407cb2-9554-4897-9213-17321f9dd434 Path B).
+  // planOnToday + createTaskForDailyNote removed in Issue #3136 — migrated
+  // to declarative `property_set` (with new $todayStart token) and
+  // `create_instance` (with new $targetFolder token + propertyDefaults
+  // JSON literal) respectively. Q3.b closure — only `rollbackStatus`
+  // (Q3.a temporal-stack pop over non-RDF `_history`) remains documented.
 ]);
 
 function parseArgs(argv) {

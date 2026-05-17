@@ -123,9 +123,11 @@ describe("ServiceRegistryPopulator", () => {
   });
 
   it("should not register vault-dependent services when vaultAdapter is absent", () => {
+    // `planOnToday` + `createTaskForDailyNote` removed in Issue #3136 (Q3.b
+    // closure — migrated to declarative groundings via $todayStart /
+    // $targetFolder + propertyDefaults).
     const vaultDependentIds = [
       "rollbackStatus",
-      "planOnToday",
       "planForEvening",
       "createRelatedTask",
       "createRelatedProject",
@@ -136,7 +138,6 @@ describe("ServiceRegistryPopulator", () => {
       "repairFolder",
       "createNarrowerConcept",
       "createSubclass",
-      "createTaskForDailyNote",
     ];
     for (const id of vaultDependentIds) {
       expect(registry.has(id)).toBe(false);
@@ -452,9 +453,11 @@ describe("ServiceRegistryPopulator (with vaultAdapter)", () => {
   });
 
   it("should register vault-dependent services when vaultAdapter is provided", () => {
+    // `planOnToday` + `createTaskForDailyNote` removed in Issue #3136 (Q3.b
+    // closure — migrated to declarative groundings via $todayStart /
+    // $targetFolder + propertyDefaults).
     const vaultDependentIds = [
       "rollbackStatus",
-      "planOnToday",
       "planForEvening",
       "createRelatedTask",
       "createRelatedProject",
@@ -465,7 +468,6 @@ describe("ServiceRegistryPopulator (with vaultAdapter)", () => {
       "repairFolder",
       "createNarrowerConcept",
       "createSubclass",
-      "createTaskForDailyNote",
     ];
     for (const id of vaultDependentIds) {
       expect(registry.has(id)).toBe(true);
@@ -479,6 +481,11 @@ describe("ServiceRegistryPopulator (with vaultAdapter)", () => {
   it("should NOT register shiftDay or incrementVotes (Issue #3134 — migrated to declarative property_shift / property_increment)", () => {
     expect(registry.has("shiftDay")).toBe(false);
     expect(registry.has("incrementVotes")).toBe(false);
+  });
+
+  it("should NOT register planOnToday or createTaskForDailyNote (Issue #3136 — migrated to declarative property_set + create_instance with $todayStart / $targetFolder)", () => {
+    expect(registry.has("planOnToday")).toBe(false);
+    expect(registry.has("createTaskForDailyNote")).toBe(false);
   });
 
   describe("rollbackStatus", () => {
@@ -499,18 +506,12 @@ describe("ServiceRegistryPopulator (with vaultAdapter)", () => {
     });
   });
 
-  describe("planOnToday", () => {
-    it("should resolve file and update plannedStartTimestamp", async () => {
-      const service = registry.get("planOnToday")!;
-      await service.execute("test-uid-123");
-
-      expect(deps.vaultAdapter!.read).toHaveBeenCalledWith(mockIFile);
-      expect(deps.vaultAdapter!.modify).toHaveBeenCalledWith(
-        mockIFile,
-        expect.stringContaining("ems__Effort_plannedStartTimestamp"),
-      );
-    });
-  });
+  // describe("planOnToday", ...) removed — Issue #3136 migrated the
+  // grounding to declarative property_set with the new $todayStart token;
+  // the registry registration no longer exists. Coverage moved to
+  // GroundingExecutor.test.ts substituteVariables suite ($todayStart cases).
+  // The TaskStatusService.planOnToday method is retained because palette
+  // command PlanOnTodayCommand still wires through it via direct DI.
 
   describe("planForEvening", () => {
     it("should resolve file and update plannedStartTimestamp to 19:00", async () => {
@@ -937,24 +938,11 @@ describe("ServiceRegistryPopulator (with vaultAdapter)", () => {
     });
   });
 
-  describe("createTaskForDailyNote", () => {
-    it("should create a task with ems__Effort_plannedStartTimestamp", async () => {
-      const service = registry.get("createTaskForDailyNote")!;
-      await service.execute("test-uid-123", { label: "Daily Task" });
-
-      expect(deps.vaultAdapter!.create).toHaveBeenCalledWith(
-        expect.stringContaining("folder/"),
-        expect.stringContaining("ems__Task"),
-      );
-    });
-
-    it("should throw when label is missing", async () => {
-      const service = registry.get("createTaskForDailyNote")!;
-      await expect(service.execute("test-uid-123", {})).rejects.toThrow(
-        "createTaskForDailyNote requires userInput.label",
-      );
-    });
-  });
+  // describe("createTaskForDailyNote", ...) removed — Issue #3136 migrated
+  // the grounding to declarative create_instance with the new $targetFolder
+  // token + propertyDefaults map; the registry registration no longer
+  // exists. Coverage moved to GroundingExecutor.test.ts (substituteVariables
+  // $targetFolder cases + propertyDefaults suite).
 
   describe("repairFolder", () => {
     const REFERENCED_PATH = "01 Areas/!toos_areas.md";
