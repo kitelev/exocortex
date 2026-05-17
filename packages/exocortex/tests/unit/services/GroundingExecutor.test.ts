@@ -425,6 +425,52 @@ describe("GroundingExecutor", () => {
       });
     });
 
+    it("should inject standalone Grounding_isDefinedBy as userInput default", async () => {
+      const mockService = {
+        execute: jest.fn().mockResolvedValue(undefined),
+      };
+      registry.register("createAsset", mockService);
+
+      const grounding = makeGrounding({
+        type: GroundingType.SERVICE_CALL,
+        targetProperty: "createAsset",
+        targetValue: '{"prototype":"ztlk__FleetingNotePrototype"}',
+        isDefinedBy: "[[0aa339bc-9b56-400a-8148-cbde57bbf0b6]]",
+      });
+
+      const userInput = { label: "Test note" };
+      const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH, userInput);
+
+      expect(result.success).toBe(true);
+      expect(mockService.execute).toHaveBeenCalledWith(TARGET_IRI, {
+        prototype: "ztlk__FleetingNotePrototype",
+        isDefinedBy: "[[0aa339bc-9b56-400a-8148-cbde57bbf0b6]]",
+        label: "Test note",
+      });
+    });
+
+    it("should let userInput.isDefinedBy override grounding.isDefinedBy default", async () => {
+      const mockService = {
+        execute: jest.fn().mockResolvedValue(undefined),
+      };
+      registry.register("createAsset", mockService);
+
+      const grounding = makeGrounding({
+        type: GroundingType.SERVICE_CALL,
+        targetProperty: "createAsset",
+        isDefinedBy: "[[default-owner]]",
+      });
+
+      const userInput = { label: "x", isDefinedBy: "[[runtime-pick]]" };
+      const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH, userInput);
+
+      expect(result.success).toBe(true);
+      expect(mockService.execute).toHaveBeenCalledWith(TARGET_IRI, {
+        label: "x",
+        isDefinedBy: "[[runtime-pick]]",
+      });
+    });
+
     it("should ignore non-JSON targetValue for service_call", async () => {
       const mockService = {
         execute: jest.fn().mockResolvedValue(undefined),

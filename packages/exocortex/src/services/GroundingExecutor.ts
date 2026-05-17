@@ -427,6 +427,15 @@ export class GroundingExecutor {
     // pass, so existing literal-JSON targetValues (e.g. updateProperty +
     // {"property":"ems__Effort_parent"}) continue to parse identically.
     let mergedInput = userInput;
+    // Standalone `Grounding_isDefinedBy` wikilink (RFC follow-up): inject as a
+    // default so `createAsset` (or any service_call that consumes
+    // userInput.isDefinedBy) can pin owner identity without burying the link
+    // inside JSON `targetValue`. Authored as a real frontmatter wikilink, the
+    // identity asset's layout / backlinks list every Grounding that references
+    // it. userInput from the modal still wins over this default.
+    if (grounding.isDefinedBy) {
+      mergedInput = { isDefinedBy: grounding.isDefinedBy, ...(mergedInput ?? {}) };
+    }
     if (grounding.targetValue) {
       try {
         const substituted = this.substituteVariables(
@@ -436,7 +445,10 @@ export class GroundingExecutor {
         );
         const defaults = JSON.parse(substituted);
         if (typeof defaults === "object" && defaults !== null) {
-          mergedInput = { ...defaults, ...(userInput ?? {}) };
+          // Spread the already-merged `mergedInput` (which may carry the
+          // standalone `Grounding_isDefinedBy` default from the block above),
+          // so JSON-derived defaults stack on top without erasing it.
+          mergedInput = { ...defaults, ...(mergedInput ?? {}) };
         }
       } catch {
         // Not valid JSON — ignore (e.g. plain string targetValue)

@@ -42,6 +42,14 @@ export const GroundingProperty = {
   TARGET_VALUE: "exocmd__Grounding_targetValue",
   /** Ordered array of Grounding asset references (for composite type) */
   STEPS: "exocmd__Grounding_steps",
+  /**
+   * Wikilink to the owner identity to write as `exo__Asset_isDefinedBy` on
+   * the newly created asset (for `service_call` createAsset). Standalone
+   * property (not embedded in `Grounding_targetValue` JSON) so the link is
+   * a real Obsidian backlink — the referenced identity asset's layout can
+   * list every Grounding that pins it.
+   */
+  IS_DEFINED_BY: "exocmd__Grounding_isDefinedBy",
 } as const;
 
 /** Properties for exocmd__CommandBinding assets */
