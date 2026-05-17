@@ -11,10 +11,17 @@ import { LoggingService } from "./LoggingService";
 
 /**
  * Result of executing a grounding action.
+ *
+ * `openPath` is set by `create_instance` to the vault-relative path of the
+ * newly written asset; presentation layers use it to open the file in a new
+ * tab after a successful run (Issue #3184 B5). Surface-agnostic — the core
+ * executor only reports the path; opening is wired by the platform adapter
+ * (Obsidian plugin / CLI / test harness).
  */
 export interface ExecutionResult {
   readonly success: boolean;
   readonly error?: string;
+  readonly openPath?: string;
 }
 
 /**
@@ -488,6 +495,12 @@ export class GroundingExecutor {
    * neither of which is meaningful on the new asset. exo__Instance_class is
    * blacklisted because the new instance has its own class supplied via
    * grounding.targetClass.
+   *
+   * Issue #3184 B3+B4: `ems__Effort_area` and `exo__Asset_relates` are also
+   * blacklisted. Both belong on the prototype-instance (the asset the user
+   * clicked); inheriting them into a created instance double-materialises the
+   * link that `exo__Asset_prototype` (back-link, see executeCreateInstance)
+   * already implies through the RDF graph.
    */
   private static readonly CREATE_INSTANCE_BLACKLIST: ReadonlySet<string> =
     new Set([
@@ -501,6 +514,8 @@ export class GroundingExecutor {
       "ems__Effort_startTimestamp",
       "ems__Effort_endTimestamp",
       "ems__Effort_resolutionTimestamp",
+      "ems__Effort_area",
+      "exo__Asset_relates",
     ]);
 
   private async executeCreateInstance(
@@ -518,7 +533,14 @@ export class GroundingExecutor {
 
     const properties: Record<string, unknown> = {
       exo__Asset_uid: uid,
-      exo__Asset_createdAt: new Date().toISOString(),
+      // Issue #3188: emit `exo__Asset_createdAt` as a local timestamp without
+      // the trailing `Z` / TZ offset, matching every other creation service
+      // in the codebase (Generic/Area/Class/Concept/Supervision asset
+      // creation, TaskStatusService start/end timestamps). The legacy
+      // `new Date().toISOString()` produced UTC-suffixed values which then
+      // disagreed with the rest of the vault when rendered in the user's
+      // local timezone; this one-liner aligns the format.
+      exo__Asset_createdAt: DateFormatter.toLocalTimestamp(new Date()),
       exo__Asset_label: label,
     };
 
@@ -530,9 +552,14 @@ export class GroundingExecutor {
       properties.exo__Instance_class = [`"[[${grounding.targetClass}]]"`];
     }
 
-    if (grounding.targetPrototype) {
-      properties.exo__Asset_prototype = `"[[${grounding.targetPrototype}]]"`;
-    }
+    // Issue #3184 B1: do NOT materialise `grounding.targetPrototype` (which is
+    // the UID of the prototype CLASS, e.g. `ems__TaskPrototype`) into the new
+    // instance's `exo__Asset_prototype`. The semantically correct value is the
+    // wikilink to the prototype-INSTANCE the user clicked on ($target), and
+    // that link is written below by the back-link block whose default for
+    // create_instance is now `exo__Asset_prototype` (B2). Keeping a literal
+    // class-UID write here would either overwrite the correct back-link value
+    // or be silently overwritten — both confusing.
 
     // Issue #3136 (Q3.b closure): apply propertyDefaults BEFORE userInput so
     // user input wins. Values are passed through substituteVariables, enabling
@@ -586,10 +613,18 @@ export class GroundingExecutor {
     }
 
     // Back-link to $target — configurable per grounding (RFC Phase 2).
-    // Fallback to legacy `exo__Asset_source` preserves behaviour for existing
-    // groundings that have no `Grounding_linkBackProperty` set.
+    //
+    // Issue #3184 B1+B2: default for `create_instance` is `exo__Asset_prototype`,
+    // not `exo__Asset_source`. The prototype-driven creation flow always links
+    // the new instance back to the prototype-instance via `exo__Asset_prototype`,
+    // and the separate `exo__Asset_source` field added nothing but duplication
+    // (and a confusing extra wikilink in the resulting frontmatter). Groundings
+    // that genuinely want a different back-link target (e.g. `ems__Effort_parent`
+    // for fork-style "Create related task") still set `linkBackProperty`
+    // explicitly and bypass the default.
     if (targetIRI) {
-      const backLinkProp = grounding.linkBackProperty ?? "exo__Asset_source";
+      const backLinkProp =
+        grounding.linkBackProperty ?? "exo__Asset_prototype";
       const backLinkTarget = GroundingExecutor.extractBacklinkTarget(targetIRI, targetFilePath);
       properties[backLinkProp] = `"[[${backLinkTarget}]]"`;
     }
@@ -609,7 +644,11 @@ export class GroundingExecutor {
 
     await this.fileWriter.createFile(filePath, content);
 
-    return { success: true };
+    // Issue #3184 B5: surface the created file's vault-relative path so the
+    // presentation layer can open it in a new tab. Core stays surface-agnostic
+    // — actually opening the file is wired by the platform adapter through
+    // CommandExecutionFlow's optional IFileOpener dependency.
+    return { success: true, openPath: filePath };
   }
 
   /**

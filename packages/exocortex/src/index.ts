@@ -84,6 +84,7 @@ export {
   CommandExecutionFlow,
   type CommandExecutionContext,
   type CommandPromptAdapter,
+  type IFileOpener,
 } from "./services/CommandExecutionFlow";
 export { TaskStatusService } from "./services/TaskStatusService";
 export { AreaCreationService } from "./services/AreaCreationService";

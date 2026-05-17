@@ -49,6 +49,21 @@ export interface CommandPromptAdapter {
 }
 
 /**
+ * Surface-agnostic file-opening hook (Issue #3184 B5). When
+ * {@link GroundingExecutor.executeCreateInstance} writes a new asset it
+ * returns the vault-relative path via {@link ExecutionResult.openPath};
+ * {@link CommandExecutionFlow} forwards that path here so the platform
+ * adapter (Obsidian plugin / future CLI) can decide where the file appears
+ * — in Obsidian, `app.workspace.getLeaf("tab").openFile(...)` + focus.
+ *
+ * Tests and headless runners may omit the dependency: when undefined the
+ * core run pipeline is unchanged (creation succeeds without auto-opening).
+ */
+export interface IFileOpener {
+  open(path: string): Promise<void>;
+}
+
+/**
  * Domain-agnostic execution pipeline for a resolved exocmd command.
  *
  * Pipeline:
@@ -74,6 +89,7 @@ export class CommandExecutionFlow {
     private readonly logger: ILogger,
     private readonly prompts: CommandPromptAdapter,
     private readonly tripleStore?: ITripleStore,
+    private readonly fileOpener?: IFileOpener,
   ) {}
 
   async run(
@@ -118,6 +134,19 @@ export class CommandExecutionFlow {
       await new Promise((resolve) => setTimeout(resolve, 100));
       if (ctx.onComplete) {
         await ctx.onComplete();
+      }
+      // Issue #3184 B5: open the newly created file when create_instance
+      // reports a path. Best-effort — failure to open is logged but does
+      // not flip the run result (the file was created; the UI may simply
+      // remain on the source asset).
+      if (result.openPath && this.fileOpener) {
+        try {
+          await this.fileOpener.open(result.openPath);
+        } catch (error) {
+          this.logger.info(
+            `[CommandExecutionFlow] Failed to open created file "${result.openPath}": ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
       }
       this.logger.info(
         `[CommandExecutionFlow] Executed "${command.name}" on ${displayPath}`,

@@ -1,6 +1,7 @@
 import {
   CommandExecutionFlow,
   type CommandPromptAdapter,
+  type IFileOpener,
 } from "../../src/services/CommandExecutionFlow";
 import type {
   GroundingExecutor,
@@ -52,6 +53,7 @@ function makeFlow(overrides?: {
   confirmResult?: boolean;
   promptResult?: UserInput | null;
   tripleStore?: InMemoryTripleStore;
+  fileOpener?: IFileOpener;
 }) {
   const groundingExecutor = {
     execute: jest
@@ -82,6 +84,7 @@ function makeFlow(overrides?: {
   };
 
   const tripleStore = overrides?.tripleStore;
+  const fileOpener = overrides?.fileOpener;
 
   const flow = new CommandExecutionFlow(
     groundingExecutor,
@@ -89,6 +92,7 @@ function makeFlow(overrides?: {
     logger,
     prompts,
     tripleStore,
+    fileOpener,
   );
 
   return {
@@ -98,6 +102,7 @@ function makeFlow(overrides?: {
     logger,
     prompts,
     tripleStore,
+    fileOpener,
   };
 }
 
@@ -596,6 +601,96 @@ describe("CommandExecutionFlow", () => {
       expect(notificationService.error).toHaveBeenCalledWith(
         "Command failed: unknown error",
       );
+    });
+  });
+
+  // Issue #3184 B5 — open-in-tab plumbing across IFileOpener.
+  describe("openPath / IFileOpener (Issue #3184 B5)", () => {
+    it("forwards openPath to fileOpener.open on success", async () => {
+      const openFn = jest.fn().mockResolvedValue(undefined);
+      const fileOpener: IFileOpener = { open: openFn };
+      const { flow } = makeFlow({
+        groundingResult: {
+          success: true,
+          openPath: "01 Inbox/abc-uuid.md",
+        } as ExecutionResult,
+        fileOpener,
+      });
+      const rc = makeRC();
+
+      await flow.run(rc, { targetIRI: "iri://x", filePath: "x.md" });
+
+      expect(openFn).toHaveBeenCalledTimes(1);
+      expect(openFn).toHaveBeenCalledWith("01 Inbox/abc-uuid.md");
+    });
+
+    it("does nothing when fileOpener is omitted (CLI/headless surface)", async () => {
+      const { flow } = makeFlow({
+        groundingResult: {
+          success: true,
+          openPath: "01 Inbox/abc-uuid.md",
+        } as ExecutionResult,
+        // fileOpener intentionally omitted
+      });
+      const rc = makeRC();
+
+      // No-throw is the spec for surfaces that don't supply IFileOpener.
+      await expect(
+        flow.run(rc, { targetIRI: "iri://x", filePath: "x.md" }),
+      ).resolves.toBeUndefined();
+    });
+
+    it("does not call fileOpener when grounding did not surface openPath", async () => {
+      const openFn = jest.fn().mockResolvedValue(undefined);
+      const { flow } = makeFlow({
+        groundingResult: { success: true } as ExecutionResult, // no openPath
+        fileOpener: { open: openFn },
+      });
+      const rc = makeRC();
+
+      await flow.run(rc, { targetIRI: "iri://x", filePath: "x.md" });
+
+      expect(openFn).not.toHaveBeenCalled();
+    });
+
+    it("does not call fileOpener when grounding failed", async () => {
+      const openFn = jest.fn().mockResolvedValue(undefined);
+      const { flow } = makeFlow({
+        groundingResult: {
+          success: false,
+          error: "boom",
+          openPath: "should-not-open.md",
+        } as ExecutionResult,
+        fileOpener: { open: openFn },
+      });
+      const rc = makeRC();
+
+      await flow.run(rc, { targetIRI: "iri://x", filePath: "x.md" });
+
+      expect(openFn).not.toHaveBeenCalled();
+    });
+
+    it("logs but does not propagate fileOpener errors", async () => {
+      const openErr = new Error("workspace busy");
+      const openFn = jest.fn().mockRejectedValue(openErr);
+      const { flow, logger, notificationService } = makeFlow({
+        groundingResult: {
+          success: true,
+          openPath: "01 Inbox/abc-uuid.md",
+        } as ExecutionResult,
+        fileOpener: { open: openFn },
+      });
+      const rc = makeRC();
+
+      await expect(
+        flow.run(rc, { targetIRI: "iri://x", filePath: "x.md" }),
+      ).resolves.toBeUndefined();
+
+      expect(logger.info).toHaveBeenCalledWith(
+        expect.stringContaining("Failed to open created file"),
+      );
+      // Success path side-effects should still have fired (no error toast).
+      expect(notificationService.error).not.toHaveBeenCalled();
     });
   });
 });

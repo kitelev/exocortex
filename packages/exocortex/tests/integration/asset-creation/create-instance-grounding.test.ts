@@ -276,13 +276,51 @@ describe("Integration: create_instance grounding → NoteToRDFConverter", () => 
   let groundingExecutor: GroundingExecutor;
   let converter: NoteToRDFConverter;
 
-  beforeEach(() => {
+  // copy-from-target (RFC v0.2) reads the parent file's frontmatter via
+  // `fs.readFile(targetFilePath)`; the integration test previously omitted
+  // this seeding, causing every test to fail at the read with "File not
+  // found" before this suite was wired into a green required check. Seed a
+  // minimal parent.md so the executor's copy-loop sees real frontmatter and
+  // proceeds to write the new instance.
+  const PARENT_FILE_PATH = "/vault/parent.md";
+  const PARENT_FILE_CONTENT = [
+    "---",
+    'exo__Asset_uid: "parent-uid"',
+    'exo__Asset_label: "Parent prototype"',
+    "exo__Instance_class:",
+    '  - "[[ems__TaskPrototype]]"',
+    "---",
+    "Body",
+  ].join("\n");
+
+  beforeEach(async () => {
     fs = new InMemoryFileSystem();
+    await fs.createFile(PARENT_FILE_PATH, PARENT_FILE_CONTENT);
     vaultAdapter = new InMemoryVaultAdapter(fs);
     const serviceRegistry = new ServiceRegistry();
     groundingExecutor = new GroundingExecutor(fs, fs, serviceRegistry);
     converter = new NoteToRDFConverter(vaultAdapter);
   });
+
+  /**
+   * Return the single newly-created `IFile` (the parent.md seed file is
+   * excluded). Tests that expect exactly one created file get a friendlier
+   * failure message via the length assertion than a silent `files[0]` that
+   * picks parent.md when nothing was created.
+   */
+  function getCreatedFile(): IFile {
+    const created = vaultAdapter
+      .getAllFiles()
+      .filter((f) => f.path !== PARENT_FILE_PATH);
+    if (created.length !== 1) {
+      throw new Error(
+        `Expected exactly 1 created file, got ${created.length}: ${created
+          .map((f) => f.path)
+          .join(", ")}`,
+      );
+    }
+    return created[0];
+  }
 
   // -----------------------------------------------------------------------
   // Full pipeline: with prototype
@@ -308,8 +346,11 @@ describe("Integration: create_instance grounding → NoteToRDFConverter", () => 
 
       expect(result.success).toBe(true);
 
-      const allPaths = fs.getAllPaths();
-      expect(allPaths).toHaveLength(1);
+      const createdPaths = fs
+        .getAllPaths()
+        .filter((p) => p !== PARENT_FILE_PATH);
+      expect(createdPaths).toHaveLength(1);
+      const allPaths = createdPaths;
       expect(allPaths[0]).toMatch(/^01 Inbox\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\.md$/);
     });
 
@@ -321,10 +362,8 @@ describe("Integration: create_instance grounding → NoteToRDFConverter", () => 
         { label: "Test Task" },
       );
 
-      const files = vaultAdapter.getAllFiles();
-      expect(files).toHaveLength(1);
-
-      const triples = await converter.convertNote(files[0]);
+      const file = getCreatedFile();
+      const triples = await converter.convertNote(file);
       expect(triples.length).toBeGreaterThan(0);
     });
 
@@ -336,8 +375,8 @@ describe("Integration: create_instance grounding → NoteToRDFConverter", () => 
         { label: "Test Task" },
       );
 
-      const files = vaultAdapter.getAllFiles();
-      const triples = await converter.convertNote(files[0]);
+      const file = getCreatedFile();
+      const triples = await converter.convertNote(file);
 
       const rdfType = Namespace.RDF.term("type");
       const emsTask = Namespace.EMS.term("Task");
@@ -359,8 +398,8 @@ describe("Integration: create_instance grounding → NoteToRDFConverter", () => 
         { label: "Test Task" },
       );
 
-      const files = vaultAdapter.getAllFiles();
-      const triples = await converter.convertNote(files[0]);
+      const file = getCreatedFile();
+      const triples = await converter.convertNote(file);
 
       const labelPredicate = Namespace.EXO.term("Asset_label");
       expect(hasTripleWithObject(triples, labelPredicate, "Test Task")).toBe(true);
@@ -374,8 +413,8 @@ describe("Integration: create_instance grounding → NoteToRDFConverter", () => 
         { label: "Test Task" },
       );
 
-      const files = vaultAdapter.getAllFiles();
-      const triples = await converter.convertNote(files[0]);
+      const file = getCreatedFile();
+      const triples = await converter.convertNote(file);
 
       const uidPredicate = Namespace.EXO.term("Asset_uid");
       const uidTriples = findTriples(triples, uidPredicate);
@@ -394,8 +433,8 @@ describe("Integration: create_instance grounding → NoteToRDFConverter", () => 
         { label: "Test Task" },
       );
 
-      const files = vaultAdapter.getAllFiles();
-      const triples = await converter.convertNote(files[0]);
+      const file = getCreatedFile();
+      const triples = await converter.convertNote(file);
 
       const instanceClassPredicate = Namespace.EXO.term("Instance_class");
       const classTriples = findTriples(triples, instanceClassPredicate);
@@ -409,7 +448,7 @@ describe("Integration: create_instance grounding → NoteToRDFConverter", () => 
       expect(hasEmsTask).toBe(true);
     });
 
-    it("should produce exo:Asset_prototype triple linking to prototype", async () => {
+    it("should produce exo:Asset_prototype triple linking to the prototype-instance ($target, Issue #3184 B1)", async () => {
       await groundingExecutor.execute(
         GROUNDING,
         "https://exocortex.my/assets/parent",
@@ -417,15 +456,30 @@ describe("Integration: create_instance grounding → NoteToRDFConverter", () => 
         { label: "Test Task" },
       );
 
-      const files = vaultAdapter.getAllFiles();
-      const triples = await converter.convertNote(files[0]);
+      const file = getCreatedFile();
+      const triples = await converter.convertNote(file);
 
       const prototypePredicate = Namespace.EXO.term("Asset_prototype");
       const protoTriples = findTriples(triples, prototypePredicate);
       expect(protoTriples.length).toBeGreaterThanOrEqual(1);
 
-      // Prototype value should contain the UUID string
-      const hasProtoRef = protoTriples.some((t) => {
+      // After Issue #3184 the prototype back-link points at the
+      // prototype-INSTANCE (the file the user clicked on, i.e. parent.md),
+      // not the class UID declared in `grounding.targetPrototype`. The
+      // converter resolves wikilink targets to the linked asset's basename
+      // (`parent`) — strip the path and `.md` extension before matching.
+      const hasParentRef = protoTriples.some((t) => {
+        if (t.object instanceof Literal) {
+          return t.object.value.includes("parent");
+        }
+        if (t.object instanceof IRI) {
+          return t.object.value.includes("parent");
+        }
+        return false;
+      });
+      expect(hasParentRef).toBe(true);
+      // Class UID is NOT materialised as the prototype reference.
+      const leaksClassUID = protoTriples.some((t) => {
         if (t.object instanceof Literal) {
           return t.object.value.includes("proto-task-template-001");
         }
@@ -434,7 +488,7 @@ describe("Integration: create_instance grounding → NoteToRDFConverter", () => 
         }
         return false;
       });
-      expect(hasProtoRef).toBe(true);
+      expect(leaksClassUID).toBe(false);
     });
 
     it("should produce exo:Asset_fileName triple with basename", async () => {
@@ -445,8 +499,8 @@ describe("Integration: create_instance grounding → NoteToRDFConverter", () => 
         { label: "Test Task" },
       );
 
-      const files = vaultAdapter.getAllFiles();
-      const triples = await converter.convertNote(files[0]);
+      const file = getCreatedFile();
+      const triples = await converter.convertNote(file);
 
       const fileNamePredicate = Namespace.EXO.term("Asset_fileName");
       const fileNameTriples = findTriples(triples, fileNamePredicate);
@@ -472,7 +526,12 @@ describe("Integration: create_instance grounding → NoteToRDFConverter", () => 
       targetFolder: "01 Inbox",
     };
 
-    it("should create file without exo__Asset_prototype in frontmatter", async () => {
+    it("should still write exo__Asset_prototype linked to $target (Issue #3184 B2 default)", async () => {
+      // Before Issue #3184 a grounding lacking `targetPrototype` produced
+      // no `exo__Asset_prototype` line. After Issue #3184 the back-link
+      // default is `exo__Asset_prototype`, so the field is always present
+      // when targetIRI is non-empty — it just points to the parent file
+      // (the asset the user clicked on) instead of a synthetic class UID.
       await groundingExecutor.execute(
         GROUNDING,
         "https://exocortex.my/assets/parent",
@@ -480,14 +539,20 @@ describe("Integration: create_instance grounding → NoteToRDFConverter", () => 
         { label: "No Proto Task" },
       );
 
-      const allPaths = fs.getAllPaths();
-      expect(allPaths).toHaveLength(1);
+      const createdPaths = fs
+        .getAllPaths()
+        .filter((p) => p !== PARENT_FILE_PATH);
+      expect(createdPaths).toHaveLength(1);
+      const allPaths = createdPaths;
 
       const content = fs.getContent(allPaths[0])!;
-      expect(content).not.toContain("exo__Asset_prototype");
+      expect(content).toContain('exo__Asset_prototype: "[[vault/parent]]"');
+      // Issue #3184 B2: legacy `exo__Asset_source` default no longer
+      // applied for create_instance.
+      expect(content).not.toContain("exo__Asset_source:");
     });
 
-    it("should NOT produce exo:Asset_prototype triple", async () => {
+    it("should produce exo:Asset_prototype triple linking to $target", async () => {
       await groundingExecutor.execute(
         GROUNDING,
         "https://exocortex.my/assets/parent",
@@ -495,12 +560,24 @@ describe("Integration: create_instance grounding → NoteToRDFConverter", () => 
         { label: "No Proto Task" },
       );
 
-      const files = vaultAdapter.getAllFiles();
-      const triples = await converter.convertNote(files[0]);
+      const file = getCreatedFile();
+      const triples = await converter.convertNote(file);
 
       const prototypePredicate = Namespace.EXO.term("Asset_prototype");
       const protoTriples = findTriples(triples, prototypePredicate);
-      expect(protoTriples).toHaveLength(0);
+      expect(protoTriples.length).toBeGreaterThanOrEqual(1);
+      // Same expectation as the "with prototype" case — the prototype
+      // back-link always references the parent file's basename.
+      const hasParentRef = protoTriples.some((t) => {
+        if (t.object instanceof Literal) {
+          return t.object.value.includes("parent");
+        }
+        if (t.object instanceof IRI) {
+          return t.object.value.includes("parent");
+        }
+        return false;
+      });
+      expect(hasParentRef).toBe(true);
     });
 
     it("should still produce rdf:type, label, uid, and Instance_class triples", async () => {
@@ -511,8 +588,8 @@ describe("Integration: create_instance grounding → NoteToRDFConverter", () => 
         { label: "No Proto Task" },
       );
 
-      const files = vaultAdapter.getAllFiles();
-      const triples = await converter.convertNote(files[0]);
+      const file = getCreatedFile();
+      const triples = await converter.convertNote(file);
 
       // rdf:type
       const rdfType = Namespace.RDF.term("type");
@@ -564,11 +641,13 @@ describe("Integration: create_instance grounding → NoteToRDFConverter", () => 
         { label: "Task B" },
       );
 
-      const allPaths = fs.getAllPaths();
-      expect(allPaths).toHaveLength(2);
+      const createdPaths = fs
+        .getAllPaths()
+        .filter((p) => p !== PARENT_FILE_PATH);
+      expect(createdPaths).toHaveLength(2);
 
       // Extract UUIDs from paths
-      const uuids = allPaths.map((p) =>
+      const uuids = createdPaths.map((p) =>
         p.replace("01 Inbox/", "").replace(".md", ""),
       );
       expect(uuids[0]).not.toBe(uuids[1]);
