@@ -65,6 +65,42 @@ describe("DailyNoteHelpers", () => {
       expect(result.day).toBe("2025-10-15");
     });
 
+    it("should return isDailyNote=true for UUID-canon class ref [[<uid>]] (RFC-004)", () => {
+      const mockFile = { path: "2025-10-15.md" } as TFile;
+      mockMetadataExtractor.extractMetadata.mockReturnValue({
+        pn__DailyNote_day: "[[2025-10-15]]",
+      });
+      mockMetadataExtractor.extractInstanceClass.mockReturnValue(
+        "[[b04e7a3e-6b49-4984-9f8d-b74e9f36818b]]",
+      );
+
+      const result = DailyNoteHelpers.extractDailyNoteInfo(
+        mockFile,
+        mockMetadataExtractor,
+      );
+
+      expect(result.isDailyNote).toBe(true);
+      expect(result.day).toBe("2025-10-15");
+    });
+
+    it("should return isDailyNote=true for bare-UUID class ref (RFC-004)", () => {
+      const mockFile = { path: "2025-10-15.md" } as TFile;
+      mockMetadataExtractor.extractMetadata.mockReturnValue({
+        pn__DailyNote_day: "2025-10-15",
+      });
+      mockMetadataExtractor.extractInstanceClass.mockReturnValue(
+        "b04e7a3e-6b49-4984-9f8d-b74e9f36818b",
+      );
+
+      const result = DailyNoteHelpers.extractDailyNoteInfo(
+        mockFile,
+        mockMetadataExtractor,
+      );
+
+      expect(result.isDailyNote).toBe(true);
+      expect(result.day).toBe("2025-10-15");
+    });
+
     it("should return isDailyNote=true with day=null when pn__DailyNote_day is missing", () => {
       const mockFile = { path: "daily.md" } as TFile;
       mockMetadataExtractor.extractMetadata.mockReturnValue({});

@@ -7,6 +7,12 @@ export interface DailyNoteInfo {
   day: string | null;
 }
 
+// UUID-canon (RFC-004 follow-up, 2026-05-16): class TBox files are renamed
+// to `<uid>.md`, so `exo__Instance_class` in instances is now stored as
+// `[[<uid>]]`. The symbolic alternative is retained as a fallback for
+// vaults that have not migrated yet.
+const PN_DAILYNOTE_UID = "b04e7a3e-6b49-4984-9f8d-b74e9f36818b";
+
 export class DailyNoteHelpers {
   /**
    * Checks if a file is a daily note and extracts the day property
@@ -23,7 +29,11 @@ export class DailyNoteHelpers {
       ? instanceClass
       : [instanceClass];
     const isDailyNote = classes.some(
-      (c: string | null) => c === "[[pn__DailyNote]]" || c === "pn__DailyNote",
+      (c: string | null) =>
+        c === "[[pn__DailyNote]]" ||
+        c === "pn__DailyNote" ||
+        c === `[[${PN_DAILYNOTE_UID}]]` ||
+        c === PN_DAILYNOTE_UID,
     );
 
     if (!isDailyNote) {
