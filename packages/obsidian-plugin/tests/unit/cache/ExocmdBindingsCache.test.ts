@@ -241,6 +241,77 @@ describe("ExocmdBindingsCache", () => {
     });
   });
 
+  describe("Issue #3190 — diagnostic console.error on cache load failures", () => {
+    // The original PR #3185 routed every cache failure through
+    // `ILogger.warn`, which `Logger` only emits when the user has the
+    // `warn` console channel enabled. In production with the default
+    // settings the channel is on, but `logger.warn` calls were invisible
+    // when the user had silenced their log channels for noise reasons.
+    // Issue #3190 surfaces these failures unconditionally via
+    // `console.error` so future regressions stay observable.
+
+    let consoleErrorSpy: jest.SpyInstance;
+
+    beforeEach(() => {
+      consoleErrorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+      consoleErrorSpy.mockRestore();
+    });
+
+    it("logs to console.error when the cache file cannot be read", async () => {
+      const fs = createInMemoryFs();
+      // exists() returns true but read() throws — simulate a permission
+      // / corruption I/O failure.
+      jest.spyOn(fs, "exists").mockResolvedValue(true);
+      jest.spyOn(fs, "read").mockRejectedValue(new Error("EACCES"));
+      const cache = new ExocmdBindingsCache(
+        fs,
+        CACHE_PATH,
+        PLUGIN_VERSION,
+        mockLogger,
+      );
+      await cache.load();
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        "[exocortex] cache read failed:",
+        expect.any(Error),
+      );
+    });
+
+    it("logs to console.error when the JSON payload cannot be parsed", async () => {
+      const fs = createInMemoryFs();
+      fs.__files.set(CACHE_PATH, "{ not json");
+      const cache = new ExocmdBindingsCache(
+        fs,
+        CACHE_PATH,
+        PLUGIN_VERSION,
+        mockLogger,
+      );
+      await cache.load();
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        "[exocortex] cache parse failed:",
+        expect.any(Error),
+      );
+    });
+
+    it("logs to console.error when the file shape is invalid", async () => {
+      const fs = createInMemoryFs();
+      fs.__files.set(CACHE_PATH, JSON.stringify({ wrong: "shape" }));
+      const cache = new ExocmdBindingsCache(
+        fs,
+        CACHE_PATH,
+        PLUGIN_VERSION,
+        mockLogger,
+      );
+      await cache.load();
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        "[exocortex] cache shape-validation failed:",
+        expect.any(String),
+      );
+    });
+  });
+
   describe("save", () => {
     it("writes a valid snapshot that round-trips via load", async () => {
       const fs = createInMemoryFs();

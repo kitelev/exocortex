@@ -454,4 +454,105 @@ describe("DynamicCommandButtonGroupBuilder — Issue #3183 cache strategy", () =
     expect(result).toHaveLength(1);
     expect(result[0].id).toBe("dynamic-cmd-legacy-cmd");
   });
+
+  describe("Issue #3190 — fastpath-ready mark fires even when fast-path yields no visible commands", () => {
+    // The original `visible.length > 0` guard meant a cold-start session
+    // whose first fast-path call returned [] (e.g. metadata cache not yet
+    // warm for the open file → `getFrontmatter()` returned null) never
+    // wrote the mark. Empirical evidence in #3190 showed the mark
+    // permanently missing in that case, conflating "fast-path ran but
+    // empty" with "fast-path never ran". The mark documents the path
+    // execution itself, independent of whether anything matched.
+
+    afterEach(() => {
+      // Reset jsdom perf stubs between tests so spies do not leak.
+      const perfRecord = performance as unknown as Record<string, unknown>;
+      delete perfRecord["mark"];
+      delete perfRecord["measure"];
+    });
+
+    it("emits exocmd-fastpath-ready on first fast-path call even when visible is empty", async () => {
+      const perfRecord = performance as unknown as Record<string, unknown>;
+      const markSpy = jest.fn();
+      perfRecord["mark"] = markSpy;
+      perfRecord["measure"] = jest.fn();
+
+      const emptyFastResolver = {
+        resolveVisibleCommands: jest.fn().mockResolvedValue([]),
+      };
+      const builder = new DynamicCommandButtonGroupBuilder({
+        commandResolver: mockCommandResolver as any,
+        preconditionEvaluator: mockPreconditionEvaluator as any,
+        commandExecutionFlow: buildCommandExecutionFlow(),
+        fastResolver: emptyFastResolver as any,
+        isFullPathReady: () => false,
+      });
+      mockResolveForAssetMulti.mockResolvedValue([]);
+
+      await builder.build(buildContext());
+
+      const fastpathReadyCalls = markSpy.mock.calls.filter(
+        ([label]) => label === "exocmd-fastpath-ready",
+      );
+      expect(fastpathReadyCalls).toHaveLength(1);
+    });
+
+    it("emits exocmd-fastpath-ready only once across multiple build() calls", async () => {
+      const perfRecord = performance as unknown as Record<string, unknown>;
+      const markSpy = jest.fn();
+      perfRecord["mark"] = markSpy;
+      perfRecord["measure"] = jest.fn();
+
+      const fastResolver = {
+        resolveVisibleCommands: jest.fn().mockResolvedValue([]),
+      };
+      const builder = new DynamicCommandButtonGroupBuilder({
+        commandResolver: mockCommandResolver as any,
+        preconditionEvaluator: mockPreconditionEvaluator as any,
+        commandExecutionFlow: buildCommandExecutionFlow(),
+        fastResolver: fastResolver as any,
+        isFullPathReady: () => false,
+      });
+
+      await builder.build(buildContext());
+      await builder.build(buildContext());
+      await builder.build(buildContext());
+
+      const fastpathReadyCalls = markSpy.mock.calls.filter(
+        ([label]) => label === "exocmd-fastpath-ready",
+      );
+      expect(fastpathReadyCalls).toHaveLength(1);
+    });
+
+    it("logs to console.error when the fast-path resolver throws", async () => {
+      const perfRecord = performance as unknown as Record<string, unknown>;
+      perfRecord["mark"] = jest.fn();
+      perfRecord["measure"] = jest.fn();
+      const consoleErrorSpy = jest
+        .spyOn(console, "error")
+        .mockImplementation(() => {});
+
+      const failingFastResolver = {
+        resolveVisibleCommands: jest
+          .fn()
+          .mockRejectedValue(new Error("triple store boom")),
+      };
+      const builder = new DynamicCommandButtonGroupBuilder({
+        commandResolver: mockCommandResolver as any,
+        preconditionEvaluator: mockPreconditionEvaluator as any,
+        commandExecutionFlow: buildCommandExecutionFlow(),
+        fastResolver: failingFastResolver as any,
+        isFullPathReady: () => false,
+      });
+
+      await builder.build(buildContext());
+
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        "[exocortex] cache fast-path failed:",
+        expect.any(Error),
+      );
+
+      consoleErrorSpy.mockRestore();
+    });
+  });
 });

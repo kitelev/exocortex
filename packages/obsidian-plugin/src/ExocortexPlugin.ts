@@ -370,6 +370,11 @@ export default class ExocortexPlugin extends Plugin {
         this.logger.warn(
           `[ExocortexPlugin] cache load failed (non-fatal): ${String(err)}`,
         );
+        // Issue #3190 — surface every cache-pipeline failure to the DevTools
+        // console as well, since `logger.warn` may be silenced by the user's
+        // log-channel settings. `console.error` is the diagnostic channel of
+        // last resort for cache regressions.
+        console.error("[exocortex] cache load failed:", err);
       });
 
       this.layoutRenderer = new UniversalLayoutRenderer(
@@ -406,9 +411,32 @@ export default class ExocortexPlugin extends Plugin {
       // `commandResolver.invalidateCache()` plumbing below or by the
       // next plugin reload) overwrites it atomically. Until then, lookups
       // fall through to fast-path with the freshly invalidated mini-store.
+      //
+      // Issue #3190 — `metadataCache.on("changed")` fires for every
+      // `assetspaces/exocmd/*.md` file as Obsidian parses it during the
+      // initial vault scan, BEFORE `on("resolved")` fires. Without a
+      // bootstrap guard those bootstrap-time fires call `bindingsCache.clear()`
+      // and wipe the snapshot loaded fire-and-forget at line ~370 — by the
+      // time `autoRenderLayout()` runs the snapshot is null and the cache
+      // strategy degrades to a permanent miss (cache-applied mark never
+      // fires, full-path button set arrives at ~10 s like pre-PR #3185).
+      // The flag below is flipped by the `on("resolved")` listener below
+      // and gates invalidation so bootstrap-time `changed` events become
+      // no-ops; post-bootstrap edits invalidate as before.
+      let bootstrapResolved = false;
       const invalidateExocmdCaches = (): void => {
+        if (!bootstrapResolved) return;
         exocmdFastResolver.invalidateCommandCache();
         bindingsCache.clear();
+      };
+      // Issue #3190 — flag set in the existing `metadataCache.on("resolved")`
+      // handler further down in onload (search for `postResolveReindexDone`).
+      // The handler runs idempotently every time Obsidian fires `resolved`;
+      // we set the flag there rather than registering a second listener so
+      // the existing "first registered resolved handler" test contract is
+      // preserved (tests look up the handler by index).
+      const flipBootstrapResolved = (): void => {
+        bootstrapResolved = true;
       };
       this.registerEvent(
         this.app.metadataCache.on("changed", (changedFile) => {
@@ -729,6 +757,13 @@ export default class ExocortexPlugin extends Plugin {
       let postResolveReindexDone = false;
       this.registerEvent(
         this.app.metadataCache.on("resolved", () => {
+          // Issue #3190 — flip the bootstrap gate so post-bootstrap
+          // exocmd asset edits invalidate the bindings cache. Bootstrap
+          // `changed` events fired while parsing `assetspaces/exocmd/*.md`
+          // during the initial vault scan become no-ops, preserving the
+          // disk-cache snapshot just loaded fire-and-forget at onload.
+          flipBootstrapResolved();
+
           this.layoutRenderer.invalidateBacklinksCache();
 
           if (postResolveReindexDone) return;

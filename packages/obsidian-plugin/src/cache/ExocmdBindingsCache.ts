@@ -131,6 +131,10 @@ export class ExocmdBindingsCache {
       this.logger.warn(
         `[ExocmdBindingsCache] failed to read ${this.cacheFilePath}: ${String(err)}`,
       );
+      // Issue #3190 — `logger.warn` may be silenced by log-channel settings;
+      // surface every cache-pipeline failure to DevTools console as well so
+      // future regressions are visible without re-enabling Verbose logging.
+      console.error("[exocortex] cache read failed:", err);
       this.snapshot = null;
       return null;
     }
@@ -142,6 +146,7 @@ export class ExocmdBindingsCache {
       this.logger.warn(
         `[ExocmdBindingsCache] cache file is not valid JSON, discarding: ${String(err)}`,
       );
+      console.error("[exocortex] cache parse failed:", err);
       this.snapshot = null;
       return null;
     }
@@ -149,6 +154,10 @@ export class ExocmdBindingsCache {
     if (!this.isValidFileShape(parsed)) {
       this.logger.warn(
         `[ExocmdBindingsCache] cache file has unexpected shape, discarding`,
+      );
+      console.error(
+        "[exocortex] cache shape-validation failed:",
+        "cache file has unexpected shape",
       );
       this.snapshot = null;
       return null;
@@ -221,6 +230,7 @@ export class ExocmdBindingsCache {
       this.logger.warn(
         `[ExocmdBindingsCache] failed to ensure parent dir: ${String(err)}`,
       );
+      console.error("[exocortex] cache mkdir failed:", err);
       // Try the write anyway — adapter may auto-create.
     }
 
@@ -231,6 +241,7 @@ export class ExocmdBindingsCache {
       this.logger.warn(
         `[ExocmdBindingsCache] failed to write tmp cache file: ${String(err)}`,
       );
+      console.error("[exocortex] cache write-tmp failed:", err);
       throw err;
     }
 
@@ -246,6 +257,7 @@ export class ExocmdBindingsCache {
       this.logger.warn(
         `[ExocmdBindingsCache] failed to rename tmp file into place: ${String(err)}`,
       );
+      console.error("[exocortex] cache rename failed:", err);
       // Best-effort cleanup of orphaned tmp.
       try {
         if (await this.fs.exists(tmpPath)) {
