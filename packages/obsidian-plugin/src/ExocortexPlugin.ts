@@ -360,13 +360,19 @@ export default class ExocortexPlugin extends Plugin {
         this.logger,
       );
       this.exocmdBindingsCache = bindingsCache;
-      // Fire-and-forget load — the strategy in
-      // `DynamicCommandButtonGroupBuilder` treats "snapshot not yet loaded"
-      // as cache miss and falls through to fast-path, so awaiting here
-      // would only add startup latency without unblocking anything.
-      // First subsequent `autoRenderLayout()` that fires after the I/O
-      // completes (typically <10 ms) sees the warm snapshot.
-      void bindingsCache.load().catch((err) => {
+      // Issue #3192 — capture the load promise so it can chain an
+      // immediate `autoRenderLayout()` once the snapshot lands in memory.
+      // The earlier fire-and-forget version waited for the next workspace
+      // event (file-open / layout-change / active-leaf-change), each of
+      // which adds a 150ms debounce on top of Obsidian's own startup
+      // latency — total wall-time between `exocmd-cache-read-start` and
+      // `exocmd-cache-applied` was ~1.9 s mean in v16.8.6 (Issue #3192
+      // baseline). Triggering a render the instant the snapshot is ready
+      // collapses that wait when the active view is already mounted.
+      // The render itself is idempotent (re-running with a warm cache is
+      // a no-op modulo the one-shot `cache-applied` mark guard) so this
+      // does not race with the existing event-driven renders.
+      const cacheLoadPromise = bindingsCache.load().catch((err) => {
         this.logger.warn(
           `[ExocortexPlugin] cache load failed (non-fatal): ${String(err)}`,
         );
@@ -375,6 +381,7 @@ export default class ExocortexPlugin extends Plugin {
         // log-channel settings. `console.error` is the diagnostic channel of
         // last resort for cache regressions.
         console.error("[exocortex] cache load failed:", err);
+        return null;
       });
 
       this.layoutRenderer = new UniversalLayoutRenderer(
@@ -861,15 +868,45 @@ export default class ExocortexPlugin extends Plugin {
         }),
       );
 
-      // Initial render
+      // Initial render — Issue #3192.
+      //
+      // Previously this used `setTimeout(_, 150)` so the call landed
+      // 150ms after `onload()` regardless of whether Obsidian's view
+      // had finished mounting. On cold start the view is rarely ready
+      // that early; the call almost always returned at the
+      // "no active view / no metadata-container" guards in
+      // `autoRenderLayout` and the real first render came from one of
+      // the workspace events further above (also 150ms-debounced) —
+      // worst-case adding 150ms of pure wait to the
+      // `cache-read-start` → `cache-applied` window.
+      //
+      // `onLayoutReady` is Obsidian's authoritative "view tree mounted"
+      // signal: it fires once on cold start and immediately if layout
+      // is already ready (e.g. plugin re-enabled after vault load).
+      // Pair it with `cacheLoadPromise.then(...)` below so whichever of
+      // {view ready, cache snapshot loaded} happens second triggers the
+      // render — the first one to fire is a no-op (view-absent guard or
+      // cache-miss fall-through to fast-path).
       const activeFile = this.app.workspace.getActiveFile();
       if (activeFile) {
-        this.timerManager.setTimeout(
-          "auto-layout-initial",
-          () => this.autoRenderLayout(),
-          150,
-        );
+        this.app.workspace.onLayoutReady(() => {
+          this.autoRenderLayout();
+        });
       }
+      // Trigger a render the moment the disk cache snapshot lands in
+      // memory — covers the case where the view became ready before
+      // the cache I/O finished and the `onLayoutReady` render above
+      // saw a null snapshot and fell through to fast-path. Idempotent:
+      // `cache-applied` mark is one-shot (`cacheAppliedMarked` guard
+      // in `DynamicCommandButtonGroupBuilder`) and a warm cache lookup
+      // is O(1). Errors during load are already logged inside the
+      // catch handler attached to `cacheLoadPromise`; the chained
+      // `.then` only fires on the success branch via the swallowed
+      // `null` return so we never re-render on failure.
+      void cacheLoadPromise.then((snapshot) => {
+        if (snapshot === null) return;
+        this.autoRenderLayout();
+      });
 
       // RFC-009: Eagerly initialize triple store after vault is ready.
       // onLayoutReady fires after Obsidian finishes mounting vault files.

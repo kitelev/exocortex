@@ -418,6 +418,198 @@ describe("ExocmdBindingsCache", () => {
   });
 });
 
+describe("ExocmdBindingsCache — load() performance (Issue #3192)", () => {
+  // Cold-start fixture: the production cache file in vault-2025 is ~1.1 MB
+  // spanning ~140 class signatures. We build a synthetic equivalent (10
+  // ResolvedCommand-shaped entries × 140 classes ≈ 1.2 MB serialized JSON)
+  // and assert the load pipeline finishes inside an envelope generous
+  // enough to absorb CI runner jitter (Linux GitHub Actions noise can add
+  // 100–200 ms vs local Mac runs) while still failing if a future change
+  // regresses the in-memory parse path back to the 1.9 s baseline that
+  // Issue #3192 was filed against.
+  const CACHE_PATH = ".exocortex/cache/exocmd-bindings.json";
+  const PLUGIN_VERSION = "16.9.0";
+
+  function buildFixture(numClasses: number, commandsPerClass: number): string {
+    // Synthetic command shaped to match production `ResolvedCommand`
+    // serialized payloads — long IRIs, SPARQL ASK preconditions,
+    // grounding metadata. Sized to land in the same byte envelope as
+    // the real vault-2025 cache (1.1 MB at 140 classes × ~10 cmds).
+    const bindings: Record<string, unknown> = {};
+    for (let c = 0; c < numClasses; c++) {
+      const commands = [] as unknown[];
+      for (let k = 0; k < commandsPerClass; k++) {
+        commands.push({
+          binding: {
+            id: `obsidian://vault/assetspaces/exocmd/binding-${c}-${k}-00000000-0000-0000-0000-000000000000.md`,
+            targetClass: `https://exocortex.my/ontology/ems#class-${c}-Task-Project-Asset`,
+            order: k,
+            style: {
+              showIcon: true,
+              tooltip: `Run command ${k} on class ${c} — long descriptive tooltip for realism`,
+              ariaLabel: `Command number ${k} for class ${c} — accessible label`,
+            },
+          },
+          command: {
+            id: `https://exocortex.my/ontology/exocmd#cmd-${c}-${k}-00000000-0000-0000-0000-000000000000`,
+            name: `Command #${k} for class ${c} — human-readable label`,
+            category: c % 5 === 0 ? "creation" : c % 5 === 1 ? "status" : c % 5 === 2 ? "planning" : c % 5 === 3 ? "criticality" : "maintenance",
+            icon: "plus-circle-icon-variant",
+            confirmMessage: `Are you sure you want to run command ${k} on the current asset of class ${c}? This action will mutate frontmatter and may cascade through related assets.`,
+            successMessage: `Command ${k} on class ${c} completed successfully — refreshed view`,
+            precondition: {
+              type: "sparql-ask",
+              query: `ASK { $target <https://exocortex.my/ontology/ems#status> ?s . FILTER(?s != <https://exocortex.my/ontology/ems#EffortStatusDone-${c}-${k}>) }`,
+            },
+            grounding: {
+              type: "frontmatter-set",
+              property: `ems__Effort_status_class_${c}_command_${k}`,
+              value: `[[https://exocortex.my/ontology/ems#EffortStatusDoing-${c}-${k}]]`,
+            },
+          },
+        });
+      }
+      bindings[`class-${c}`] = {
+        commands,
+        preconditions_signature: `fnv1a:${(c * 31).toString(16).padStart(8, "0")}`,
+      };
+    }
+    return JSON.stringify({
+      version: EXOCMD_BINDINGS_CACHE_VERSION,
+      plugin_version: PLUGIN_VERSION,
+      last_full_scan_at: "2026-05-18T00:00:00.000Z",
+      bindings,
+    });
+  }
+
+  function makeInMemoryFs(seedPath: string, seedContent: string): CacheFileSystem {
+    const files = new Map<string, string>([[seedPath, seedContent]]);
+    return {
+      async exists(path: string) {
+        return files.has(path);
+      },
+      async read(path: string) {
+        const v = files.get(path);
+        if (v === undefined) throw new Error(`ENOENT: ${path}`);
+        return v;
+      },
+      async write(path: string, content: string) {
+        files.set(path, content);
+      },
+      async remove(path: string) {
+        files.delete(path);
+      },
+      async rename(oldPath: string, newPath: string) {
+        const c = files.get(oldPath);
+        if (c === undefined) throw new Error(`ENOENT: ${oldPath}`);
+        files.delete(oldPath);
+        files.set(newPath, c);
+      },
+      async mkdir() {
+        /* no-op */
+      },
+    };
+  }
+
+  const noopLogger = {
+    info: () => {},
+    warn: () => {},
+    error: () => {},
+    debug: () => {},
+  };
+
+  it("loads a ~1.2 MB / 140-class fixture in under 250 ms (Issue #3192 AC envelope)", async () => {
+    const fixture = buildFixture(140, 10);
+    // Sanity: confirm the fixture is in the same order of magnitude as the
+    // production cache file the issue baseline was collected on.
+    expect(fixture.length).toBeGreaterThan(500_000);
+    expect(fixture.length).toBeLessThan(3_000_000);
+
+    const fs = makeInMemoryFs(CACHE_PATH, fixture);
+    const cache = new ExocmdBindingsCache(
+      fs,
+      CACHE_PATH,
+      PLUGIN_VERSION,
+      noopLogger,
+    );
+
+    const start = performance.now();
+    const snapshot = await cache.load();
+    const elapsedMs = performance.now() - start;
+
+    expect(snapshot).not.toBeNull();
+    // In-memory fs + JSON.parse without disk I/O: ought to be <50 ms on
+    // any developer machine and <250 ms on the slowest CI runner. Bumping
+    // this ceiling without rationale is a regression signal — the whole
+    // point of Issue #3192 is keeping the parse phase well under the
+    // user-perceptible budget.
+    expect(elapsedMs).toBeLessThan(250);
+  });
+
+  it("loads a ~5 MB / 600-class fixture in under 800 ms (Issue #3192 AC #2)", async () => {
+    const fixture = buildFixture(600, 10);
+    expect(fixture.length).toBeGreaterThan(4_000_000);
+
+    const fs = makeInMemoryFs(CACHE_PATH, fixture);
+    const cache = new ExocmdBindingsCache(
+      fs,
+      CACHE_PATH,
+      PLUGIN_VERSION,
+      noopLogger,
+    );
+
+    const start = performance.now();
+    const snapshot = await cache.load();
+    const elapsedMs = performance.now() - start;
+
+    expect(snapshot).not.toBeNull();
+    expect(elapsedMs).toBeLessThan(800);
+  });
+
+  it("emits exocmd-cache-load-done mark on successful load (diagnostic instrumentation)", async () => {
+    // Best-effort instrumentation: marks are wrapped in try/catch so a
+    // missing performance API never breaks the load path. When the API
+    // is available (jsdom test env exposes it), the marks MUST be emitted
+    // so DevTools shows them on the user's machine too.
+    if (
+      typeof (performance as unknown as Record<string, unknown>)[
+        "getEntriesByName"
+      ] !== "function"
+    ) {
+      // Env without getEntriesByName — skip silently; the production
+      // jsdom test env does have it, so this branch only protects
+      // against future runtime regressions.
+      return;
+    }
+
+    // Clean any leftover marks from earlier tests / suites.
+    try {
+      performance.clearMarks();
+    } catch {
+      /* not all jsdom versions support clearMarks — non-fatal */
+    }
+
+    performance.mark("exocmd-cache-read-start");
+    const fs = makeInMemoryFs(CACHE_PATH, buildFixture(10, 2));
+    const cache = new ExocmdBindingsCache(
+      fs,
+      CACHE_PATH,
+      PLUGIN_VERSION,
+      noopLogger,
+    );
+    await cache.load();
+
+    expect(performance.getEntriesByName("exocmd-cache-fs-read-done").length)
+      .toBeGreaterThan(0);
+    expect(performance.getEntriesByName("exocmd-cache-parse-done").length)
+      .toBeGreaterThan(0);
+    expect(performance.getEntriesByName("exocmd-cache-validate-done").length)
+      .toBeGreaterThan(0);
+    expect(performance.getEntriesByName("exocmd-cache-load-done").length)
+      .toBeGreaterThan(0);
+  });
+});
+
 describe("fnv1aHex", () => {
   it("is deterministic for the same input", () => {
     expect(fnv1aHex("hello")).toBe(fnv1aHex("hello"));

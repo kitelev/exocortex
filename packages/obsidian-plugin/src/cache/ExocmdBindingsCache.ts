@@ -117,8 +117,53 @@ export class ExocmdBindingsCache {
    *
    * Idempotent: subsequent calls re-read from disk so the indexer's
    * post-scan `save()` becomes visible without restarting the plugin.
+   *
+   * # Performance instrumentation (Issue #3192)
+   *
+   * The cold-start `cache-read-start` → `cache-applied` window was
+   * 1.9 s mean on v16.8.6 (Issue #3192 baseline). To pinpoint which
+   * sub-phase dominates, the load pipeline emits four marks:
+   *
+   * - `exocmd-cache-fs-read-done`   — after `fs.read` resolves
+   * - `exocmd-cache-parse-done`     — after `JSON.parse`
+   * - `exocmd-cache-validate-done`  — after shape + version validation
+   * - `exocmd-cache-load-done`      — after the in-memory snapshot is set
+   *
+   * Plus three paired `performance.measure` segments
+   * (`exocmd-cache-fs-read` / `exocmd-cache-parse` / `exocmd-cache-validate`)
+   * so DevTools shows per-phase durations without having to subtract
+   * raw mark timestamps. Marks are best-effort: `performance.mark`
+   * absence (very old jsdom, hot reload) never breaks the read.
    */
   async load(): Promise<ExocmdBindingsCacheFile | null> {
+    const markPerf = (name: string): void => {
+      try {
+        performance.mark(name);
+      } catch {
+        /* swallow — perf API missing must never break cache load */
+      }
+    };
+    const measurePerf = (
+      label: string,
+      startMark: string,
+      endMark: string,
+    ): void => {
+      try {
+        const hasGet =
+          typeof (performance as unknown as Record<string, unknown>)[
+            "getEntriesByName"
+          ] === "function";
+        if (
+          hasGet &&
+          performance.getEntriesByName(startMark).length > 0 &&
+          performance.getEntriesByName(endMark).length > 0
+        ) {
+          performance.measure(label, startMark, endMark);
+        }
+      } catch {
+        /* swallow — same reason as markPerf */
+      }
+    };
     let raw: string;
     try {
       const exists = await this.fs.exists(this.cacheFilePath);
@@ -127,6 +172,12 @@ export class ExocmdBindingsCache {
         return null;
       }
       raw = await this.fs.read(this.cacheFilePath);
+      markPerf("exocmd-cache-fs-read-done");
+      measurePerf(
+        "exocmd-cache-fs-read",
+        "exocmd-cache-read-start",
+        "exocmd-cache-fs-read-done",
+      );
     } catch (err) {
       this.logger.warn(
         `[ExocmdBindingsCache] failed to read ${this.cacheFilePath}: ${String(err)}`,
@@ -142,6 +193,12 @@ export class ExocmdBindingsCache {
     let parsed: unknown;
     try {
       parsed = JSON.parse(raw);
+      markPerf("exocmd-cache-parse-done");
+      measurePerf(
+        "exocmd-cache-parse",
+        "exocmd-cache-fs-read-done",
+        "exocmd-cache-parse-done",
+      );
     } catch (err) {
       this.logger.warn(
         `[ExocmdBindingsCache] cache file is not valid JSON, discarding: ${String(err)}`,
@@ -179,7 +236,20 @@ export class ExocmdBindingsCache {
       return null;
     }
 
+    markPerf("exocmd-cache-validate-done");
+    measurePerf(
+      "exocmd-cache-validate",
+      "exocmd-cache-parse-done",
+      "exocmd-cache-validate-done",
+    );
+
     this.snapshot = parsed;
+    markPerf("exocmd-cache-load-done");
+    measurePerf(
+      "exocmd-cache-load",
+      "exocmd-cache-read-start",
+      "exocmd-cache-load-done",
+    );
     return parsed;
   }
 
