@@ -216,6 +216,8 @@ describe("ExocortexPlugin", () => {
       // + 3 PanelResolver invalidations (RFC-024 Phase 3 — layout/binding `changed`, `deleted`, vault `rename`) = 11
       // + 3 ObsidianQueryBodyResolver cache invalidations (RFC c78cc5c8 Phase 1a — metadata `changed`, vault `delete`, vault `rename`) = 14
       // + 3 ExocmdFastResolver cache invalidations (Issue #3171 — metadata `changed`, vault `delete`, vault `rename`) = 17
+      // Issue #3190 — bootstrap-resolved gate is folded into the existing
+      // `metadataCache.on("resolved")` handler (no additional registerEvent).
       expect(plugin.registerEvent).toHaveBeenCalledTimes(17);
       expect(mockLogger.info).toHaveBeenCalledWith("Exocortex Plugin loaded successfully");
     });
@@ -270,6 +272,118 @@ describe("ExocortexPlugin", () => {
       expect(mockWorkspace.getActiveFile).toHaveBeenCalled();
       // Layout should not be rendered
       expect(mockLayoutRenderer.render).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("Issue #3190 — bootstrap-resolved gate around exocmd cache invalidation", () => {
+    // Empirical evidence in #3190 showed `exocmd-cache-applied` mark
+    // permanently missing on cold start in v16.8.5 even with a healthy
+    // 1.1 MB cache on disk. Root cause: Obsidian fires
+    // `metadataCache.on("changed")` for every `assetspaces/exocmd/*.md`
+    // file as it parses them during the initial vault scan — BEFORE
+    // `on("resolved")` fires. The pre-#3190 invalidation handler
+    // unconditionally called `bindingsCache.clear()`, wiping the
+    // snapshot loaded fire-and-forget at onload long before
+    // `autoRenderLayout()` could read it.
+    //
+    // Fix: gate `bindingsCache.clear()` (and the fast-resolver cache wipe)
+    // behind a `bootstrapResolved` flag set by `on("resolved")`. Bootstrap
+    // `changed` events become no-ops; post-bootstrap edits invalidate as
+    // before. These tests pin the contract so the race cannot return.
+
+    let changedHandlers: Array<(file: TFile) => void> = [];
+    let resolvedHandlers: Array<() => void> = [];
+
+    beforeEach(() => {
+      changedHandlers = [];
+      resolvedHandlers = [];
+      mockMetadataCache.on.mockImplementation(
+        (event: string, cb: (...args: any[]) => void) => {
+          if (event === "changed") changedHandlers.push(cb);
+          if (event === "resolved") resolvedHandlers.push(cb);
+          return { unsubscribe: jest.fn() };
+        },
+      );
+    });
+
+    /** The earliest-registered changed handler is the exocmd invalidator
+     *  (registered before the hot-mutation reindex handler in onload). */
+    const fireExocmdChanged = (): void => {
+      // The first `changed` listener registered in onload is the
+      // exocmd-invalidator (the one we care about); subsequent listeners
+      // handle hot-mutation reindex etc.
+      const exocmdFile = { path: "assetspaces/exocmd/some-cmd.md" } as TFile;
+      for (const handler of changedHandlers) {
+        handler(exocmdFile);
+      }
+    };
+
+    it("does NOT clear bindingsCache when metadataCache.changed fires before resolved", async () => {
+      await plugin.onload();
+      await flushPromises();
+
+      const cache = plugin.exocmdBindingsCache;
+      const fastResolver = plugin.exocmdFastResolver;
+      expect(cache).toBeDefined();
+      expect(fastResolver).toBeDefined();
+      const clearSpy = jest.spyOn(cache!, "clear");
+      const invalidateFastSpy = jest.spyOn(
+        fastResolver!,
+        "invalidateCommandCache",
+      );
+
+      // Simulate Obsidian parsing an exocmd asset during the initial
+      // vault scan — BEFORE the resolved handler has had a chance to
+      // fire. With the bootstrap gate in place, no invalidation should
+      // happen yet.
+      fireExocmdChanged();
+      fireExocmdChanged();
+      fireExocmdChanged();
+
+      expect(clearSpy).not.toHaveBeenCalled();
+      expect(invalidateFastSpy).not.toHaveBeenCalled();
+    });
+
+    it("clears bindingsCache when metadataCache.changed fires AFTER resolved", async () => {
+      await plugin.onload();
+      await flushPromises();
+
+      const cache = plugin.exocmdBindingsCache;
+      const fastResolver = plugin.exocmdFastResolver;
+      expect(cache).toBeDefined();
+      expect(fastResolver).toBeDefined();
+      const clearSpy = jest.spyOn(cache!, "clear");
+      const invalidateFastSpy = jest.spyOn(
+        fastResolver!,
+        "invalidateCommandCache",
+      );
+
+      // Fire `resolved` to flip the bootstrap flag.
+      expect(resolvedHandlers.length).toBeGreaterThan(0);
+      for (const handler of resolvedHandlers) handler();
+
+      fireExocmdChanged();
+
+      expect(clearSpy).toHaveBeenCalledTimes(1);
+      expect(invalidateFastSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it("ignores changed events for non-exocmd files at any time", async () => {
+      await plugin.onload();
+      await flushPromises();
+
+      const cache = plugin.exocmdBindingsCache;
+      expect(cache).toBeDefined();
+      const clearSpy = jest.spyOn(cache!, "clear");
+
+      // After resolved
+      for (const handler of resolvedHandlers) handler();
+
+      // Random non-exocmd file change — must NOT touch the cache.
+      const randomFile = { path: "03 Knowledge/something.md" } as TFile;
+      for (const handler of changedHandlers) handler(randomFile);
+
+      expect(clearSpy).not.toHaveBeenCalled();
     });
   });
 

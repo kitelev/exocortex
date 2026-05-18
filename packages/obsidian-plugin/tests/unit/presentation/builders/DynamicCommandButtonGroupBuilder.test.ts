@@ -1434,7 +1434,14 @@ describe("DynamicCommandButtonGroupBuilder", () => {
       expect(fastpathMeasureCalls).toHaveLength(1);
     });
 
-    it("does NOT emit the fastpath marker when fast-path returns zero visible commands", async () => {
+    it("emits the fastpath marker even when fast-path returns zero visible commands (Issue #3190)", async () => {
+      // Issue #3190 contract amendment: the mark documents "fast-path
+      // branch executed to completion" — independent of whether anything
+      // matched. Pre-#3190 the mark was guarded by `visible.length > 0`,
+      // which conflated "fast-path never ran" (no mark) with "fast-path
+      // ran but the open file's metadata cache was not yet warm so it
+      // returned []" (also no mark) — empirical evidence for #3190 showed
+      // the mark perpetually missing in the latter case.
       const { builder } = makeBuilderWithFastPath({
         visibleCommands: [],
         fullPathReady: false,
@@ -1442,11 +1449,11 @@ describe("DynamicCommandButtonGroupBuilder", () => {
 
       await builder.build(createContext());
 
-      expect(markSpy).not.toHaveBeenCalledWith("exocmd-fastpath-ready");
-      expect(measureSpy).not.toHaveBeenCalledWith(
+      expect(markSpy).toHaveBeenCalledWith("exocmd-fastpath-ready");
+      expect(measureSpy).toHaveBeenCalledWith(
         "exocmd-fastpath",
-        expect.any(String),
-        expect.any(String),
+        "exocmd-fastpath-start",
+        "exocmd-fastpath-ready",
       );
     });
 

@@ -469,27 +469,45 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
     try {
       const visible = await fastResolver.resolveVisibleCommands(file);
       // Issue #3171 perf benchmark — emit the cold-start UX marker the
-      // first time a fast-path render produces visible commands. Paired
+      // first time the fast-path branch executes to completion. Paired
       // with `performance.mark("exocmd-fastpath-start")` in
       // `ExocortexPlugin` (Issue #3175 migrated from `console.time`).
       // Guarded by `!this.fastpathReadyMarked` so we only emit once per
-      // plugin session (subsequent file switches still take the fast
-      // path until `isFullPathReady` flips, but the metric we care about
-      // is "first-render cold-start latency").
-      if (!this.fastpathReadyMarked && visible.length > 0) {
+      // plugin session.
+      //
+      // Issue #3190 — the previous `visible.length > 0` guard meant
+      // cold-start sessions where the first fast-path render produced no
+      // visible commands (e.g. open file's metadata cache not yet warm,
+      // so `getFrontmatter()` returned null) never wrote the mark, and
+      // the empirical evidence for #3190 showed the mark perpetually
+      // missing. The mark documents "fast-path completed" — independent
+      // of whether anything matched — so we drop the `length > 0` guard.
+      if (!this.fastpathReadyMarked) {
         this.fastpathReadyMarked = true;
-        performance.mark("exocmd-fastpath-ready");
-        performance.measure(
-          "exocmd-fastpath",
-          "exocmd-fastpath-start",
-          "exocmd-fastpath-ready",
-        );
+        try {
+          performance.mark("exocmd-fastpath-ready");
+          performance.measure(
+            "exocmd-fastpath",
+            "exocmd-fastpath-start",
+            "exocmd-fastpath-ready",
+          );
+        } catch (markErr) {
+          // Performance API may throw if `exocmd-fastpath-start` is
+          // missing (hot reload, embedded jest env). Never let it break
+          // button rendering. Issue #3190 — surface via console.error too.
+          console.error("[exocortex] cache fastpath-mark failed:", markErr);
+        }
       }
       return visible;
     } catch (error) {
       logger.info(
         `[DynamicCommands] Fast-path resolver failed: ${String(error)}`,
       );
+      // Issue #3190 — surface fast-path failures to DevTools console so
+      // a silent fallthrough does not look identical to a successful
+      // empty result. `logger.info` is channel-gated; `console.error`
+      // is unconditional.
+      console.error("[exocortex] cache fast-path failed:", error);
       return null;
     }
   }
@@ -550,9 +568,15 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
                 "exocmd-cache-applied",
               );
             }
-          } catch {
+          } catch (markErr) {
             // Performance API edge cases (missing start mark, browser
             // throwing on unknown name) must never break button rendering.
+            // Issue #3190 — log to console.error so we can spot a future
+            // regression where the mark silently fails instead of fires.
+            console.error(
+              "[exocortex] cache cache-applied-mark failed:",
+              markErr,
+            );
           }
         }
         return [...entry.commands];
