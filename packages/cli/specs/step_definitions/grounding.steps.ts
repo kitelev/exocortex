@@ -151,12 +151,20 @@ function readGroundingDef(uid: string, depth = 0): GroundingDefinition {
       // fail loud at executor layer if needed
     }
   }
+  // RFC 31c1a0be Phase 5a — typed predicates required for property_set.
+  // targetValueRef stored as wikilink-form `"[[uuid]]"` in frontmatter;
+  // unwrap to bare UID so executor re-wraps for emission.
+  const rawTargetValueRef = fm["exocmd__Grounding_targetValueRef"] as string | undefined;
+  const targetValueRef = rawTargetValueRef ? normalizeWikilink(rawTargetValueRef) : undefined;
   return {
     id: uid,
     label: (fm["exo__Asset_label"] as string) ?? "",
     type,
     targetProperty,
     targetValue: fm["exocmd__Grounding_targetValue"] as string | undefined,
+    targetValueRef,
+    targetValueLiteral: fm["exocmd__Grounding_targetValueLiteral"] as string | undefined,
+    targetValueSubstitution: fm["exocmd__Grounding_targetValueSubstitution"] as string | undefined,
     targetClass: fm["exocmd__Grounding_targetClass"] as string | undefined,
     targetPrototype: fm["exocmd__Grounding_targetPrototype"] as string | undefined,
     targetFolder: fm["exocmd__Grounding_targetFolder"] as string | undefined,
