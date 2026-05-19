@@ -364,12 +364,17 @@ export class DynamicAssetCreationModal extends Modal {
       cls: "dropdown",
     });
 
+    // UUID-form per RFC 31c1a0be Phase 4 PR-C (#3194). The legacy values used
+    // `ems__EffortStatus_Draft` (with underscore) which never matched any
+    // vault asset (canonical TBox uses `ems__EffortStatusDraft` without the
+    // underscore). UUIDs reference the canonical TBox files at
+    // `assetspaces/ems/<UUID>.md`. "Active" maps to Doing (027e78f4-…).
     const statusOptions = [
       { value: "", label: "Not specified" },
-      { value: '"[[ems__EffortStatus_Draft]]"', label: "Draft" },
-      { value: '"[[ems__EffortStatus_Active]]"', label: "Active" },
-      { value: '"[[ems__EffortStatus_Done]]"', label: "Done" },
-      { value: '"[[ems__EffortStatus_Cancelled]]"', label: "Cancelled" },
+      { value: '"[[c42245d0-01de-4c35-bfcf-d910445ea28e]]"', label: "Draft" },
+      { value: '"[[027e78f4-6e16-4b36-b8fb-5510507d5745]]"', label: "Active" },
+      { value: '"[[7b9b3116-7c3c-438c-9618-94fe301320a6]]"', label: "Done" },
+      { value: '"[[cf6269e4-6c5e-418e-b9f2-115aea5fcfb6]]"', label: "Cancelled" },
     ];
 
     statusOptions.forEach((option) => {

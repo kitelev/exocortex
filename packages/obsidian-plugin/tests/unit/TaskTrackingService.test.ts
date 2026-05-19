@@ -154,6 +154,36 @@ describe("TaskTrackingService", () => {
       expect(windowOpenSpy).toHaveBeenCalled();
     });
 
+    it("should handle file with DOING status (UUID-form, RFC 31c1a0be PR-C)", async () => {
+      (mockMetadataCache.getFileCache as jest.Mock).mockReturnValue({
+        frontmatter: {
+          Status: "[[027e78f4-6e16-4b36-b8fb-5510507d5745]]",
+          TaskId: "existing-task-id",
+          Title: "Test Task"
+        }
+      });
+
+      await service.handleFileChange(mockFile);
+
+      expect(mockMetadataCache.getFileCache).toHaveBeenCalledWith(mockFile);
+      expect(windowOpenSpy).toHaveBeenCalled();
+    });
+
+    it("should handle file with DOING status (UUID-form with alias)", async () => {
+      (mockMetadataCache.getFileCache as jest.Mock).mockReturnValue({
+        frontmatter: {
+          Status: "[[027e78f4-6e16-4b36-b8fb-5510507d5745|Doing]]",
+          TaskId: "existing-task-id",
+          Title: "Test Task"
+        }
+      });
+
+      await service.handleFileChange(mockFile);
+
+      expect(mockMetadataCache.getFileCache).toHaveBeenCalledWith(mockFile);
+      expect(windowOpenSpy).toHaveBeenCalled();
+    });
+
     it("should handle file with DOING status but no TaskId", async () => {
       (mockMetadataCache.getFileCache as jest.Mock).mockReturnValue({
         frontmatter: {

@@ -90,17 +90,23 @@ export class TaskTrackingService {
   }
 
   /**
-   * Check if status is "DOING"
-   * Handles both formats: [[ems__EffortStatusDoing]] and ems__EffortStatusDoing
+   * Check if status is "DOING".
+   * Accepts both the UUID-form (UUID-canon, RFC 31c1a0be Phase 4 PR-C) and
+   * the legacy symbolic form. Both wikilinked and plain variants are matched.
+   * The Doing UUID is the TBox identifier at
+   * `assetspaces/ems/027e78f4-6e16-4b36-b8fb-5510507d5745.md`.
    */
   private isDoingStatus(status: unknown): boolean {
     if (!status || typeof status !== "string") {
       return false;
     }
 
-    // Remove wiki link brackets if present
-    const normalized = status.replace(/\[\[|\]\]/g, "").trim();
-    return normalized === "ems__EffortStatusDoing";
+    // Remove wiki link brackets if present, drop optional `|label` alias.
+    const normalized = status.replace(/\[\[|\]\]/g, "").split("|")[0].trim();
+    return (
+      normalized === "027e78f4-6e16-4b36-b8fb-5510507d5745" ||
+      normalized === "ems__EffortStatusDoing"
+    );
   }
 
   /**
@@ -237,15 +243,17 @@ export class TaskTrackingService {
     const encodedPath = encodeURIComponent(filePath);
     const encodedVault = encodeURIComponent(vaultName);
 
-    // Advanced URI format for updating frontmatter
-    // Requires "Advanced URI" community plugin to be installed
+    // Advanced URI format for updating frontmatter.
+    // Requires "Advanced URI" community plugin to be installed.
+    // UUID-form per RFC 31c1a0be Phase 4 PR-C (#3194). The Done UUID is the
+    // TBox identifier at `assetspaces/ems/7b9b3116-7c3c-438c-9618-94fe301320a6.md`.
     const callbackURL =
       `obsidian://advanced-uri?` +
       `vault=${encodedVault}&` +
       `filepath=${encodedPath}&` +
       `updatefrontmatter=true&` +
       `frontmatterkey=Status&` +
-      `frontmattervalue=[[ems__EffortStatusDone]]`;
+      `frontmattervalue=[[7b9b3116-7c3c-438c-9618-94fe301320a6]]`;
 
     return callbackURL;
   }

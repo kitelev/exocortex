@@ -144,9 +144,14 @@ describe("PropertySchemas", () => {
       expect(labels).toContain("Trashed");
     });
 
-    it("should have wikilink format values", () => {
+    it("should have UUID-form wikilink values (RFC 31c1a0be Phase 4 PR-C)", () => {
       for (const status of FALLBACK_EFFORT_STATUS_VALUES) {
-        expect(status.value).toMatch(/^\[\[ems__EffortStatus\w+\]\]$/);
+        expect(status.value).toMatch(
+          /^\[\[[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\]\]$/,
+        );
+        expect(status.wikilink).toMatch(
+          /^\[\[[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\|.+\]\]$/,
+        );
       }
     });
   });
