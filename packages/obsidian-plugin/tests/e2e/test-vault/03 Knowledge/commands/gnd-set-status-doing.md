@@ -6,5 +6,5 @@ exo__Instance_class:
   - "[[exocmd__Grounding]]"
 exocmd__Grounding_type: "property_set"
 exocmd__Grounding_targetProperty: "ems__Effort_status"
-exocmd__Grounding_targetValue: '"[[ems__EffortStatusDoing]]"'
+exocmd__Grounding_targetValueRef: "[[ems__EffortStatusDoing]]"
 ---

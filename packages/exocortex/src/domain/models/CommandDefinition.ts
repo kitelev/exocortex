@@ -87,9 +87,11 @@ export interface GroundingDefinition {
    *  resolved by CommandResolver to the property's `exo__Asset_label` before
    *  reaching here. RFC 31c1a0be Phase 3: never bare UUID. */
   readonly targetProperty?: string;
-  /** Legacy single-value for property_set. RFC 31c1a0be Phase 3: still read
-   *  for backward-compat (warn-log fires); new groundings use one of
-   *  `targetValueRef` / `targetValueLiteral` / `targetValueSubstitution`. */
+  /** Single-value payload for service_call (createAsset/updateProperty JSON
+   *  config, class-flip dispatch) and property_append (value to append).
+   *  RFC 31c1a0be Phase 5a removed the BC fallback in property_set — for
+   *  property_set use `targetValueRef` / `targetValueLiteral` /
+   *  `targetValueSubstitution`. */
   readonly targetValue?: string;
   /** RFC 31c1a0be Phase 1: typed RDF reference to the value asset. When set,
    *  emits `"[[<UID>]]"` wikilink as the property_set value. Mutually exclusive

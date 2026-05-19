@@ -233,7 +233,7 @@ describe("executeCommandHarness (real GroundingExecutor end-to-end)", () => {
           label: "Set Status",
           type: "property_set",
           targetProperty: "ems__Effort_status",
-          targetValue: `"[[ems__EffortStatusDoing]]"`,
+          targetValueRef: "ems__EffortStatusDoing",
           raw: {},
         },
         filePath,

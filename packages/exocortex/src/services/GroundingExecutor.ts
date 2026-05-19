@@ -239,8 +239,7 @@ export class GroundingExecutor {
       return { success: false, error: "property_set requires targetProperty" };
     }
 
-    // RFC 31c1a0be Phase 3 dispatch — typed predicates take priority over
-    // legacy `targetValue`. Priority: Ref > Literal > Substitution > legacy.
+    // RFC 31c1a0be Phase 5a — typed predicates only.
     // Multiple typed predicates simultaneously = fail-loud (RFC §4 cardinality).
     let effectiveValue: string | undefined;
     const typedFieldsSet = [
@@ -261,17 +260,11 @@ export class GroundingExecutor {
       effectiveValue = grounding.targetValueLiteral;
     } else if (grounding.targetValueSubstitution !== undefined) {
       effectiveValue = grounding.targetValueSubstitution;
-    } else if (grounding.targetValue !== undefined) {
-      // RFC 31c1a0be Phase 3 backward-compat fallback. Phase 5 removes this branch.
-      effectiveValue = grounding.targetValue;
-      LoggingService.warn(
-        `[legacy] Grounding ${grounding.id ?? "(unknown)"} uses deprecated exocmd__Grounding_targetValue — migrate to typed predicate (Ref/Literal/Substitution) per RFC 31c1a0be`,
-      );
     } else {
       return {
         success: false,
         error:
-          "property_set requires one of targetValueRef/targetValueLiteral/targetValueSubstitution (or legacy targetValue)",
+          "property_set requires one of targetValueRef/targetValueLiteral/targetValueSubstitution",
       };
     }
 
@@ -288,7 +281,7 @@ export class GroundingExecutor {
       return {
         success: false,
         error:
-          "property_set: targetValue contains $input/$value placeholder but no userInput.value provided",
+          "property_set: substituted value contains $input/$value placeholder but no userInput.value provided",
       };
     }
 
