@@ -1644,6 +1644,71 @@ describe("CommandResolver — RFC 31c1a0be Phase 3", () => {
     );
   });
 
+  it("returns null grounding when targetProperty UID resolves to nothing (fail-loud)", async () => {
+    // No property asset registered for this UID — resolveLabelByUID returns null.
+    const missingPropUID = "00000000-0000-0000-0000-000000000bad";
+    await addGroundingAsset(store, {
+      uid: "gnd-bad-prop",
+      label: "Bad targetProperty grounding",
+      type: "property_set",
+      targetProperty: `[[${missingPropUID}]]`,
+      targetValue: '"[[some-uid]]"',
+    });
+    await addBindingAsset(store, {
+      uid: "bind-bad-prop",
+      label: "Bad → Task binding",
+      commandRef: "cmd-bad-prop",
+      targetClass: "ems__Task",
+    });
+    await addCommandAsset(store, {
+      uid: "cmd-bad-prop",
+      label: "Bad Mark Done",
+      groundingRef: "gnd-bad-prop",
+    });
+
+    const resolved = await resolver.resolveForAsset(
+      "obsidian://vault/test.md",
+      "ems__Task",
+    );
+    // Grounding is inert because we cannot safely resolve targetProperty.
+    // CommandResolver skips the entire command (binding has no grounding to attach to).
+    expect(resolved).toHaveLength(0);
+  });
+
+  it("returns null grounding when targetValueSubstitution UID resolves to nothing (fail-loud)", async () => {
+    const missingTokenUID = "00000000-0000-0000-0000-000000000fed";
+    const gndSubject = new IRI("obsidian://vault/gnd-bad-subst.md");
+    await store.addAll([
+      new Triple(gndSubject, Namespace.RDF.term("type"), Namespace.EXOCMD.term("Grounding")),
+      new Triple(gndSubject, Namespace.EXO.term("Asset_uid"), new Literal("gnd-bad-subst")),
+      new Triple(gndSubject, Namespace.EXO.term("Asset_label"), new Literal("Bad subst grounding")),
+      new Triple(gndSubject, Namespace.EXOCMD.term("Grounding_type"), new Literal("property_set")),
+      new Triple(gndSubject, Namespace.EXOCMD.term("Grounding_targetProperty"), new Literal("ems__Effort_reviewTimestamp")),
+      new Triple(
+        gndSubject,
+        Namespace.EXOCMD.term("Grounding_targetValueSubstitution"),
+        new Literal(`[[${missingTokenUID}]]`),
+      ),
+    ]);
+    await addBindingAsset(store, {
+      uid: "bind-bad-subst",
+      label: "Bad subst → Task binding",
+      commandRef: "cmd-bad-subst",
+      targetClass: "ems__Task",
+    });
+    await addCommandAsset(store, {
+      uid: "cmd-bad-subst",
+      label: "Bad Mark Reviewed",
+      groundingRef: "gnd-bad-subst",
+    });
+
+    const resolved = await resolver.resolveForAsset(
+      "obsidian://vault/test.md",
+      "ems__Task",
+    );
+    expect(resolved).toHaveLength(0);
+  });
+
   it("resolves targetValueSubstitution wikilink to SubstitutionToken label", async () => {
     const tokenUID = "8bc0c038-1fd1-4ad3-a4a4-178a64b492b8";
     await addSubstitutionToken(tokenUID, "$nowLocal");

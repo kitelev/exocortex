@@ -887,9 +887,21 @@ export class CommandResolver {
     // to the property asset's exo__Asset_label. Otherwise GroundingExecutor
     // would write the bare UUID as a frontmatter key (data corruption per
     // HIGH-4 in self-review). Symbolic-string form passes through unchanged.
+    //
+    // Fail-loud: a UUID that resolves to nothing (asset missing or has no
+    // exo__Asset_label) MUST skip this grounding entirely. Returning the bare
+    // UUID would defeat the corruption fix (post-merge adversarial review of
+    // PR #3197 caught this fail-open). Caller already treats `null` as
+    // "grounding inert" — UI silently omits its button instead of corrupting.
     if (targetProperty && this.looksLikeUUID(targetProperty)) {
       const resolved = await this.resolveLabelByUID(targetProperty);
-      if (resolved) targetProperty = resolved;
+      if (!resolved) {
+        this.logger.warn(
+          `Grounding ${uid}: targetProperty wikilink UID '${targetProperty}' is not resolvable to exo__Asset_label — grounding skipped (would otherwise write a UUID-named frontmatter key).`,
+        );
+        return null;
+      }
+      targetProperty = resolved;
     }
     // For service_call groundings, serviceId takes priority over targetProperty
     if (type === GroundingType.SERVICE_CALL) {
@@ -913,7 +925,17 @@ export class CommandResolver {
     const substitutionRefRaw = await this.getObsidianName(subject, Namespace.EXOCMD.term("Grounding_targetValueSubstitution"));
     let targetValueSubstitution: string | null = null;
     if (substitutionRefRaw && this.looksLikeUUID(substitutionRefRaw)) {
-      targetValueSubstitution = await this.resolveLabelByUID(substitutionRefRaw);
+      // Fail-loud: same pattern as targetProperty above. Missing/labelless
+      // SubstitutionToken instance → skip grounding rather than silently
+      // dropping the substitution and falling through to legacy targetValue.
+      const resolved = await this.resolveLabelByUID(substitutionRefRaw);
+      if (!resolved) {
+        this.logger.warn(
+          `Grounding ${uid}: targetValueSubstitution UID '${substitutionRefRaw}' is not resolvable to exo__Asset_label (SubstitutionToken instance missing or unlabelled) — grounding skipped.`,
+        );
+        return null;
+      }
+      targetValueSubstitution = resolved;
     } else if (substitutionRefRaw) {
       targetValueSubstitution = substitutionRefRaw;
     }
