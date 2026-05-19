@@ -883,6 +883,14 @@ export class CommandResolver {
     if (!type) return null;
 
     let targetProperty = await this.getObsidianName(subject, Namespace.EXOCMD.term("Grounding_targetProperty"));
+    // RFC 31c1a0be Phase 3: resolve UUID-form (`"[[<UID>]]"`) targetProperty
+    // to the property asset's exo__Asset_label. Otherwise GroundingExecutor
+    // would write the bare UUID as a frontmatter key (data corruption per
+    // HIGH-4 in self-review). Symbolic-string form passes through unchanged.
+    if (targetProperty && this.looksLikeUUID(targetProperty)) {
+      const resolved = await this.resolveLabelByUID(targetProperty);
+      if (resolved) targetProperty = resolved;
+    }
     // For service_call groundings, serviceId takes priority over targetProperty
     if (type === GroundingType.SERVICE_CALL) {
       const serviceId = await this.getLiteralValue(subject, Namespace.EXOCMD.term("Grounding_serviceId"));
@@ -891,6 +899,24 @@ export class CommandResolver {
       }
     }
     const targetValue = await this.getObsidianWikilinkValue(subject, Namespace.EXOCMD.term("Grounding_targetValue"));
+    // RFC 31c1a0be Phase 1 typed predicates — emit wikilink/literal/token-label
+    // for property_set dispatch in GroundingExecutor.
+    // targetValueRef: use getObsidianName so the value is unwrapped to the
+    // bare UID (executor re-wraps to `"[[<UID>]]"`). Avoids
+    // getObsidianWikilinkValue's `"[[...]]"`-with-alias output that would
+    // double-wrap the wikilink at dispatch time.
+    const targetValueRef = await this.getObsidianName(subject, Namespace.EXOCMD.term("Grounding_targetValueRef"));
+    const targetValueLiteral = await this.getLiteralValue(subject, Namespace.EXOCMD.term("Grounding_targetValueLiteral"));
+    // SubstitutionToken reference — read the token's exo__Asset_label
+    // (e.g. "$nowLocal") so executePropertySet's substituteVariables can
+    // resolve it via the existing regex paths.
+    const substitutionRefRaw = await this.getObsidianName(subject, Namespace.EXOCMD.term("Grounding_targetValueSubstitution"));
+    let targetValueSubstitution: string | null = null;
+    if (substitutionRefRaw && this.looksLikeUUID(substitutionRefRaw)) {
+      targetValueSubstitution = await this.resolveLabelByUID(substitutionRefRaw);
+    } else if (substitutionRefRaw) {
+      targetValueSubstitution = substitutionRefRaw;
+    }
     const isDefinedBy = await this.getObsidianWikilinkValue(subject, Namespace.EXOCMD.term("Grounding_isDefinedBy"));
     const sparqlUpdate = await this.getLiteralValue(subject, Namespace.EXOCMD.term("Grounding_sparqlUpdate"));
     const targetClass = await this.getObsidianName(subject, Namespace.EXOCMD.term("Grounding_targetClass"));
@@ -1001,6 +1027,9 @@ export class CommandResolver {
       type,
       targetProperty: targetProperty ?? undefined,
       targetValue: targetValue ?? undefined,
+      targetValueRef: targetValueRef ?? undefined,
+      targetValueLiteral: targetValueLiteral ?? undefined,
+      targetValueSubstitution: targetValueSubstitution ?? undefined,
       sparqlUpdate: sparqlUpdate ?? undefined,
       steps,
       targetClass: targetClass ?? undefined,
@@ -1095,6 +1124,25 @@ export class CommandResolver {
     if (obj instanceof Literal) return obj.value;
     if (obj instanceof IRI) return obj.value;
     return null;
+  }
+
+  /**
+   * RFC 31c1a0be Phase 3 helper. UUID v4 detection — used to decide whether a
+   * resolved name from `getObsidianName` is actually a bare UUID basename
+   * (from UUID-named asset file) vs an already-symbolic identifier.
+   */
+  private looksLikeUUID(value: string): boolean {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+  }
+
+  /**
+   * RFC 31c1a0be Phase 3 helper. Resolve a UID to the linked asset's
+   * `exo__Asset_label`. Returns null if asset not found or has no label.
+   */
+  private async resolveLabelByUID(uid: string): Promise<string | null> {
+    const subject = await this.findSubjectByUID(uid);
+    if (!subject) return null;
+    return this.getLiteralValue(subject, Namespace.EXO.term("Asset_label"));
   }
 
   private async getLinkedUID(subject: IRI, predicate: IRI): Promise<string | null> {

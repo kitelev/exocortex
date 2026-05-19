@@ -81,10 +81,25 @@ export interface GroundingDefinition {
   readonly label: string;
   /** Type of grounding action */
   readonly type: GroundingType;
-  /** Frontmatter property name (for property_delete / property_set) */
+  /** Frontmatter property name (for property_delete / property_set). Resolved
+   *  from `exocmd__Grounding_targetProperty` — symbolic-string form
+   *  (`"ems__Effort_status"`) OR UUID-wikilink form (`"[[<UID>]]"`) which is
+   *  resolved by CommandResolver to the property's `exo__Asset_label` before
+   *  reaching here. RFC 31c1a0be Phase 3: never bare UUID. */
   readonly targetProperty?: string;
-  /** Value to set (for property_set) */
+  /** Legacy single-value for property_set. RFC 31c1a0be Phase 3: still read
+   *  for backward-compat (warn-log fires); new groundings use one of
+   *  `targetValueRef` / `targetValueLiteral` / `targetValueSubstitution`. */
   readonly targetValue?: string;
+  /** RFC 31c1a0be Phase 1: typed RDF reference to the value asset. When set,
+   *  emits `"[[<UID>]]"` wikilink as the property_set value. Mutually exclusive
+   *  with `targetValueLiteral` / `targetValueSubstitution`. */
+  readonly targetValueRef?: string;
+  /** RFC 31c1a0be Phase 1: literal string value for property_set. */
+  readonly targetValueLiteral?: string;
+  /** RFC 31c1a0be Phase 1: UUID of SubstitutionToken instance whose label
+   *  (e.g. `$nowLocal`) becomes the substituted value. */
+  readonly targetValueSubstitution?: string;
   /** SPARQL UPDATE query (for sparql_update) */
   readonly sparqlUpdate?: string;
   /** Ordered sub-steps (for composite type) */
