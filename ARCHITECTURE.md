@@ -1,8 +1,8 @@
 # Exocortex Architecture
 
-**Version**: 15.44.0
-**Last Updated**: 2026-04-05
-**Status**: Monorepo v15.x (Clean Architecture + Vault-Driven)
+**Version**: 16.9.2
+**Last Updated**: 2026-05-20
+**Status**: Monorepo v16.x (Clean Architecture + Vault-Driven)
 
 ---
 
