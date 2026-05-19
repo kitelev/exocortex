@@ -42,6 +42,18 @@ infrastructure/  → Obsidian API adapters, file system
 - **Required CI checks (13, post CI Path 2 D0 2026-04-22)**: archgate · detect-changes · e2e-shard (1..6) · lint · test-bdd · test-component · test-coverage · typecheck. Source of truth: `gh api repos/kitelev/exocortex/branches/main/protection/required_status_checks`.
 - **CI pipeline target**: post-Phase 3 baseline is ~236s avg ±50s (N=3 on main). Gate relaxed to **≤220s** per Decision B (RFC v2 relax, 2026-04-22); original ≤135s target was infeasible given setup-floor dominance. See `docs/ROLLBACK_CI_SPEEDUP.md` for per-phase revert procedure.
 
+## Test Suite Awareness
+
+The exocortex-package jest config has `roots: ['<rootDir>/tests']`, but CI's `test-coverage` step uses an allowlist regex in `scripts/test-ci-batched.sh` (see `EXOCORTEX_JEST_ARGS`). New integration suites under `packages/exocortex/tests/integration/**` are NOT picked up automatically — either add them to the allowlist or accept they can rot silently.
+
+When fixing a bug, run the directly-affected suite locally even if it isn't gated by CI:
+
+```bash
+npm test -- packages/exocortex/tests/integration/<affected-suite>.test.ts
+```
+
+**Reference**: PR #3189 — `create-instance-grounding.test.ts` was silently red on `main` (12/12 fail, missing parent.md fixture) because the allowlist never included it. Coverage gates measure file/line %, not "did this suite pass"; orphan integration suites can rot indefinitely.
+
 ## TypeScript Tooling
 
 - `ts-jest` cannot transpile class-level `async *` generator methods — use `AsyncIterableIterator` from a helper/closure instead.

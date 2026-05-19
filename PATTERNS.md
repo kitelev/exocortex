@@ -496,6 +496,52 @@ These invariants protect existing callers and avoid mass vault rewrites when new
 
 ---
 
+## Optional Cross-Layer Dependencies Pattern
+
+**When to use**: A core service needs to trigger a surface-specific side-effect (open file, show notification, refresh layout) but the side-effect doesn't belong in the core's responsibility.
+
+**Pattern**: Don't bake the side-effect into the core. Define a small interface (`IFileOpener`, `IRefreshAfter…`), accept it as an *optional* constructor argument, and `await it?.(args)` at the call site. Tests and CLI surfaces omit the dep; the platform layer wires its implementation.
+
+```ts
+// Core service — no opener dependency baked in
+class CommandExecutionFlow {
+  constructor(
+    private deps: CoreDeps,
+    private opener?: IFileOpener,  // optional
+  ) {}
+
+  async execute(cmd: Command): Promise<ExecutionResult> {
+    const result = await this.run(cmd);
+    if (result.openPath) {
+      await this.opener?.(result.openPath);  // no-op if absent
+    }
+    return result;
+  }
+}
+
+// Obsidian wiring layer — provides the platform-specific opener
+const opener: IFileOpener = async (path) => {
+  const af = app.vault.getAbstractFileByPath(path);
+  if (af instanceof TFile) {
+    await app.workspace.getLeaf("tab").openFile(af);
+  }
+};
+new CommandExecutionFlow(deps, opener);
+
+// CLI / tests — no opener arg, side-effect simply doesn't fire
+new CommandExecutionFlow(deps);
+```
+
+**Key properties**:
+- Core test fixtures stay unchanged (they pass 3 args)
+- Headless CLI path stays unchanged (no opener)
+- One-line surface added on the Obsidian wiring side
+- Side-effect is platform-conditional without conditionals scattered through the core
+
+**Reference**: PR #3189 — `GroundingExecutor` returns `ExecutionResult.openPath`; `CommandExecutionFlow` consumes via optional `IFileOpener`; `ObsidianFileOpener` opens the file in a new tab (B5 fix for #3184).
+
+---
+
 ## Sequential Related Tasks Pattern
 
 **When to use**: Implementing multiple related features in same subsystem
