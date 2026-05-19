@@ -12,7 +12,10 @@
  *   - `NoteToRDFConverter.expandClassValue` symbolic class-IRI emission
  *     (Issues #2782/#2959 — SPARQL `ASK` preconditions match the symbolic
  *     namespace IRI, not file UUIDs)
- *   - 27+ call sites comparing against the symbolic form
+ *   - 25+ direct call sites comparing against the symbolic form
+ *     (broader grep including companion `EFFORT_STATUSES` and
+ *     `EffortStatusConfig` symbols reaches ~29 files; all are well above
+ *     the Phase 4 PR-B 20-file WAITING_DECISION threshold)
  *
  * Removal requires a coordinated migration of (a) the SPARQL templates,
  * (b) the converter's class-IRI substitution branch, and (c) all callers
