@@ -37,9 +37,9 @@ infrastructure/  → Obsidian API adapters, file system
 
 ## Quality Metrics
 
-- **Tests:** 564 test files, ~11K+ individual test cases (parametrized). Run `npm run test:all` for exact count.
+- **Tests:** 619 test files (run `find packages -name '*.test.ts' | wc -l` for live count; 642 including `.test.tsx`), ~11K+ individual test cases (parametrized). Run `npm run test:all` for exact count.
 - **Coverage thresholds**: statements 75.5%, branches 63%, BDD ≥80%
-- **Required CI checks (13, post CI Path 2 D0 2026-04-22)**: archgate · detect-changes · e2e-shard (1..6) · lint · test-bdd · test-component · test-coverage · typecheck. Source of truth: `gh api repos/kitelev/exocortex/branches/main/protection/required_status_checks`.
+- **Required CI checks (14, parity-gate added post 2026-04-22)**: archgate · detect-changes · e2e-shard (1..6) · lint · parity-gate · test-bdd · test-component · test-coverage · typecheck. Source of truth: `gh api repos/kitelev/exocortex/branches/main/protection/required_status_checks`.
 - **CI pipeline target**: post-Phase 3 baseline is ~236s avg ±50s (N=3 on main). Gate relaxed to **≤220s** per Decision B (RFC v2 relax, 2026-04-22); original ≤135s target was infeasible given setup-floor dominance. See `docs/ROLLBACK_CI_SPEEDUP.md` for per-phase revert procedure.
 
 ## Test Suite Awareness
@@ -75,7 +75,7 @@ npm run test:all                                    # Test first
 git commit -am "feat: user-facing description"
 git push origin feature/my-feature
 gh pr create --title "feat: description" --body "..."
-gh pr merge --auto --squash                         # Wait for 11 required CI checks
+gh pr merge --auto --squash                         # Wait for 14 required CI checks
 ```
 
 **Task is NOT complete until**: CI green + PR merged + Auto Release succeeds + post-mortem written.
