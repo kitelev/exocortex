@@ -145,6 +145,93 @@ describe("GroundingExecutor", () => {
       expect(result.success).toBe(false);
       expect(result.error).toContain("targetValue");
     });
+
+    // RFC 31c1a0be Phase 3 — typed predicate dispatch
+    describe("RFC 31c1a0be typed predicates", () => {
+      it("targetValueRef emits wikilink-form value", async () => {
+        reader.readFile.mockResolvedValue("---\nfoo: bar\n---\n");
+        const grounding = makeGrounding({
+          type: GroundingType.PROPERTY_SET,
+          targetProperty: "ems__Effort_status",
+          targetValueRef: "7b9b3116-7c3c-438c-9618-94fe301320a6",
+        });
+        const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
+        expect(result.success).toBe(true);
+        const written = writer.updateFile.mock.calls[0][1];
+        expect(written).toContain(
+          'ems__Effort_status: "[[7b9b3116-7c3c-438c-9618-94fe301320a6]]"',
+        );
+      });
+
+      it("targetValueLiteral emits literal value as-is", async () => {
+        reader.readFile.mockResolvedValue("---\nfoo: bar\n---\n");
+        const grounding = makeGrounding({
+          type: GroundingType.PROPERTY_SET,
+          targetProperty: "ems__Effort_notes",
+          targetValueLiteral: "some plain literal",
+        });
+        const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
+        expect(result.success).toBe(true);
+        const written = writer.updateFile.mock.calls[0][1];
+        expect(written).toContain("ems__Effort_notes: some plain literal");
+      });
+
+      it("targetValueSubstitution resolves token label like legacy targetValue", async () => {
+        reader.readFile.mockResolvedValue("---\nfoo: bar\n---\n");
+        const grounding = makeGrounding({
+          type: GroundingType.PROPERTY_SET,
+          targetProperty: "ems__Effort_reviewTimestamp",
+          // Already-resolved SubstitutionToken.label injected by CommandResolver
+          targetValueSubstitution: "$nowLocal",
+        });
+        const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
+        expect(result.success).toBe(true);
+        const written = writer.updateFile.mock.calls[0][1];
+        expect(written).toMatch(
+          /ems__Effort_reviewTimestamp: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/,
+        );
+      });
+
+      it("rejects more than one typed predicate (cardinality 0..1 each)", async () => {
+        const grounding = makeGrounding({
+          type: GroundingType.PROPERTY_SET,
+          targetProperty: "ems__foo",
+          targetValueRef: "uid-a",
+          targetValueLiteral: "literal-b",
+        });
+        const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
+        expect(result.success).toBe(false);
+        expect(result.error).toContain("more than one");
+      });
+
+      it("legacy targetValue still works (backward-compat fallback)", async () => {
+        reader.readFile.mockResolvedValue("---\nfoo: bar\n---\n");
+        const grounding = makeGrounding({
+          type: GroundingType.PROPERTY_SET,
+          targetProperty: "ems__legacy_status",
+          targetValue: '"[[ems__EffortStatusDone]]"',
+        });
+        const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
+        expect(result.success).toBe(true);
+        const written = writer.updateFile.mock.calls[0][1];
+        expect(written).toContain('ems__legacy_status:');
+      });
+
+      it("typed predicate wins over legacy targetValue (priority)", async () => {
+        reader.readFile.mockResolvedValue("---\nfoo: bar\n---\n");
+        const grounding = makeGrounding({
+          type: GroundingType.PROPERTY_SET,
+          targetProperty: "ems__foo",
+          targetValueLiteral: "from-typed",
+          targetValue: "from-legacy",
+        });
+        const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
+        expect(result.success).toBe(true);
+        const written = writer.updateFile.mock.calls[0][1];
+        expect(written).toContain("ems__foo: from-typed");
+        expect(written).not.toContain("from-legacy");
+      });
+    });
   });
 
   // -- property_delete --

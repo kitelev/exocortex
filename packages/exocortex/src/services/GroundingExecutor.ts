@@ -238,14 +238,47 @@ export class GroundingExecutor {
     if (!grounding.targetProperty) {
       return { success: false, error: "property_set requires targetProperty" };
     }
-    if (grounding.targetValue === undefined) {
-      return { success: false, error: "property_set requires targetValue" };
+
+    // RFC 31c1a0be Phase 3 dispatch — typed predicates take priority over
+    // legacy `targetValue`. Priority: Ref > Literal > Substitution > legacy.
+    // Multiple typed predicates simultaneously = fail-loud (RFC §4 cardinality).
+    let effectiveValue: string | undefined;
+    const typedFieldsSet = [
+      grounding.targetValueRef !== undefined,
+      grounding.targetValueLiteral !== undefined,
+      grounding.targetValueSubstitution !== undefined,
+    ].filter(Boolean).length;
+    if (typedFieldsSet > 1) {
+      return {
+        success: false,
+        error:
+          "property_set: more than one of targetValueRef/targetValueLiteral/targetValueSubstitution set (cardinality 0..1 each, mutually exclusive)",
+      };
+    }
+    if (grounding.targetValueRef !== undefined) {
+      effectiveValue = `"[[${grounding.targetValueRef}]]"`;
+    } else if (grounding.targetValueLiteral !== undefined) {
+      effectiveValue = grounding.targetValueLiteral;
+    } else if (grounding.targetValueSubstitution !== undefined) {
+      effectiveValue = grounding.targetValueSubstitution;
+    } else if (grounding.targetValue !== undefined) {
+      // RFC 31c1a0be Phase 3 backward-compat fallback. Phase 5 removes this branch.
+      effectiveValue = grounding.targetValue;
+      LoggingService.warn(
+        `[legacy] Grounding ${grounding.id ?? "(unknown)"} uses deprecated exocmd__Grounding_targetValue — migrate to typed predicate (Ref/Literal/Substitution) per RFC 31c1a0be`,
+      );
+    } else {
+      return {
+        success: false,
+        error:
+          "property_set requires one of targetValueRef/targetValueLiteral/targetValueSubstitution (or legacy targetValue)",
+      };
     }
 
     // RFC-028 Findings 3+4: fail loudly if $input/$value placeholder is present
     // but no userInput.value is provided. Prevents silently writing the literal
     // string ("$input"/"$value") into frontmatter as a value.
-    const needsUserInput = /\$(input|value)\b/.test(grounding.targetValue);
+    const needsUserInput = /\$(input|value)\b/.test(effectiveValue);
     if (
       needsUserInput &&
       (userInput === undefined ||
@@ -260,7 +293,7 @@ export class GroundingExecutor {
     }
 
     const substitutedValue = this.substituteVariables(
-      grounding.targetValue,
+      effectiveValue,
       targetIRI,
       userInput,
     );

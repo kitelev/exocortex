@@ -1509,3 +1509,178 @@ describe("CommandResolver", () => {
     });
   });
 });
+
+// -- RFC 31c1a0be Phase 3 — wikilink-form targetProperty resolution --
+//
+// The corruption fix (HIGH-4 from self-review): when a grounding has
+// `targetProperty: "[[<UID>]]"` referencing a property asset, CommandResolver
+// must resolve the UUID to the property's exo__Asset_label
+// (e.g. "ems__Effort_status"). Otherwise GroundingExecutor would write a
+// UUID-named frontmatter key — data corruption.
+//
+// New typed predicate dispatch (targetValueRef / Literal / Substitution) is
+// also exercised here at the resolver level — executor-level tests live in
+// GroundingExecutor.test.ts.
+describe("CommandResolver — RFC 31c1a0be Phase 3", () => {
+  let store: InMemoryTripleStore;
+  let resolver: CommandResolver;
+
+  beforeEach(() => {
+    store = new InMemoryTripleStore();
+    resolver = new CommandResolver(store);
+  });
+
+  async function addPropertyAsset(uid: string, label: string): Promise<void> {
+    const subject = new IRI(`obsidian://vault/${uid}.md`);
+    await store.addAll([
+      new Triple(subject, Namespace.EXO.term("Asset_uid"), new Literal(uid)),
+      new Triple(subject, Namespace.EXO.term("Asset_label"), new Literal(label)),
+    ]);
+  }
+
+  async function addSubstitutionToken(uid: string, label: string): Promise<void> {
+    const subject = new IRI(`obsidian://vault/${uid}.md`);
+    await store.addAll([
+      new Triple(subject, Namespace.EXO.term("Asset_uid"), new Literal(uid)),
+      new Triple(subject, Namespace.EXO.term("Asset_label"), new Literal(label)),
+    ]);
+  }
+
+  it("resolves wikilink-form targetProperty UUID to exo__Asset_label (corruption fix)", async () => {
+    const propUID = "44c6e9e3-955f-4afc-9ca5-b4bd70667051";
+    await addPropertyAsset(propUID, "ems__Effort_status");
+
+    await addGroundingAsset(store, {
+      uid: "gnd-1",
+      label: "Set status to Done",
+      type: "property_set",
+      targetProperty: `[[${propUID}]]`,
+      targetValue: '"[[ems__EffortStatusDone]]"',
+    });
+    await addBindingAsset(store, {
+      uid: "bind-1",
+      label: "Set status to Done → Task binding",
+      commandRef: "cmd-1",
+      targetClass: "ems__Task",
+    });
+    await addCommandAsset(store, {
+      uid: "cmd-1",
+      label: "Mark Done",
+      groundingRef: "gnd-1",
+    });
+
+    const resolved = await resolver.resolveForAsset(
+      "obsidian://vault/test.md",
+      "ems__Task",
+    );
+
+    expect(resolved).toHaveLength(1);
+    expect(resolved[0].command.grounding.targetProperty).toBe("ems__Effort_status");
+    // Bare UUID never reaches the executor — corruption signature absent.
+    expect(resolved[0].command.grounding.targetProperty).not.toBe(propUID);
+  });
+
+  it("passes symbolic-string targetProperty through unchanged", async () => {
+    await addGroundingAsset(store, {
+      uid: "gnd-1",
+      label: "Set status to Doing",
+      type: "property_set",
+      targetProperty: "ems__Effort_status",
+      targetValue: '"[[ems__EffortStatusDoing]]"',
+    });
+    await addBindingAsset(store, {
+      uid: "bind-1",
+      label: "Start Effort → Task binding",
+      commandRef: "cmd-1",
+      targetClass: "ems__Task",
+    });
+    await addCommandAsset(store, {
+      uid: "cmd-1",
+      label: "Start Effort",
+      groundingRef: "gnd-1",
+    });
+
+    const resolved = await resolver.resolveForAsset(
+      "obsidian://vault/test.md",
+      "ems__Task",
+    );
+    expect(resolved[0].command.grounding.targetProperty).toBe("ems__Effort_status");
+  });
+
+  it("reads targetValueRef typed predicate as raw UID string", async () => {
+    const gndSubject = new IRI("obsidian://vault/gnd-typed.md");
+    await store.addAll([
+      new Triple(gndSubject, Namespace.RDF.term("type"), Namespace.EXOCMD.term("Grounding")),
+      new Triple(gndSubject, Namespace.EXO.term("Asset_uid"), new Literal("gnd-typed")),
+      new Triple(gndSubject, Namespace.EXO.term("Asset_label"), new Literal("Set status Ref-form")),
+      new Triple(gndSubject, Namespace.EXOCMD.term("Grounding_type"), new Literal("property_set")),
+      new Triple(gndSubject, Namespace.EXOCMD.term("Grounding_targetProperty"), new Literal("ems__Effort_status")),
+      new Triple(
+        gndSubject,
+        Namespace.EXOCMD.term("Grounding_targetValueRef"),
+        new Literal("[[7b9b3116-7c3c-438c-9618-94fe301320a6]]"),
+      ),
+    ]);
+    await addBindingAsset(store, {
+      uid: "bind-typed",
+      label: "Mark Done → Task (typed)",
+      commandRef: "cmd-typed",
+      targetClass: "ems__Task",
+    });
+    await addCommandAsset(store, {
+      uid: "cmd-typed",
+      label: "Mark Done (typed)",
+      groundingRef: "gnd-typed",
+    });
+
+    const resolved = await resolver.resolveForAsset(
+      "obsidian://vault/test.md",
+      "ems__Task",
+    );
+
+    expect(resolved).toHaveLength(1);
+    expect(resolved[0].command.grounding.targetValueRef).toBe(
+      "7b9b3116-7c3c-438c-9618-94fe301320a6",
+    );
+  });
+
+  it("resolves targetValueSubstitution wikilink to SubstitutionToken label", async () => {
+    const tokenUID = "8bc0c038-1fd1-4ad3-a4a4-178a64b492b8";
+    await addSubstitutionToken(tokenUID, "$nowLocal");
+
+    const gndSubject = new IRI("obsidian://vault/gnd-subst.md");
+    await store.addAll([
+      new Triple(gndSubject, Namespace.RDF.term("type"), Namespace.EXOCMD.term("Grounding")),
+      new Triple(gndSubject, Namespace.EXO.term("Asset_uid"), new Literal("gnd-subst")),
+      new Triple(gndSubject, Namespace.EXO.term("Asset_label"), new Literal("Set ts to now (subst)")),
+      new Triple(gndSubject, Namespace.EXOCMD.term("Grounding_type"), new Literal("property_set")),
+      new Triple(gndSubject, Namespace.EXOCMD.term("Grounding_targetProperty"), new Literal("ems__Effort_reviewTimestamp")),
+      new Triple(
+        gndSubject,
+        Namespace.EXOCMD.term("Grounding_targetValueSubstitution"),
+        new Literal(`[[${tokenUID}]]`),
+      ),
+    ]);
+    await addBindingAsset(store, {
+      uid: "bind-subst",
+      label: "Mark Reviewed → Task binding",
+      commandRef: "cmd-subst",
+      targetClass: "ems__Task",
+    });
+    await addCommandAsset(store, {
+      uid: "cmd-subst",
+      label: "Mark Reviewed",
+      groundingRef: "gnd-subst",
+    });
+
+    const resolved = await resolver.resolveForAsset(
+      "obsidian://vault/test.md",
+      "ems__Task",
+    );
+
+    expect(resolved).toHaveLength(1);
+    // CommandResolver injects the token's exo__Asset_label so the executor's
+    // existing substituteVariables regex paths handle it transparently.
+    expect(resolved[0].command.grounding.targetValueSubstitution).toBe("$nowLocal");
+  });
+});
