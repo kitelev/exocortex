@@ -34,14 +34,20 @@ export interface SizeEnumValue {
   label: string;
 }
 
+// UUID-form per RFC 31c1a0be Phase 4 PR-C (#3194). UUID-canon mapping for
+// ems__EffortStatus instances in the vault TBox (assetspaces/ems/<UUID>.md).
+// Fallback path: used when EnumValueResolver is unavailable (pre-triple-store
+// load). Resolved path (EnumValueResolver) still emits symbolic-form short
+// names — Stage 5 will migrate that. UUID-form `value` ensures property
+// writes from this fallback are UUID-canon even when the resolver fails.
 const FALLBACK_EFFORT_STATUS_VALUES: StatusEnumValue[] = [
-  { value: "[[ems__EffortStatusBacklog]]", wikilink: "[[ems__EffortStatusBacklog|Backlog]]", label: "Backlog" },
-  { value: "[[ems__EffortStatusAnalysis]]", wikilink: "[[ems__EffortStatusAnalysis|Analysis]]", label: "Analysis" },
-  { value: "[[ems__EffortStatusToDo]]", wikilink: "[[ems__EffortStatusToDo|To Do]]", label: "To Do" },
-  { value: "[[ems__EffortStatusDoing]]", wikilink: "[[ems__EffortStatusDoing|Doing]]", label: "Doing" },
-  { value: "[[ems__EffortStatusDone]]", wikilink: "[[ems__EffortStatusDone|Done]]", label: "Done" },
-  { value: "[[ems__EffortStatusTrashed]]", wikilink: "[[ems__EffortStatusTrashed|Trashed]]", label: "Trashed" },
-  { value: "[[ems__EffortStatusDraft]]", wikilink: "[[ems__EffortStatusDraft|Draft]]", label: "Draft" },
+  { value: "[[753a44d5-846c-4b82-9196-4fd9a4d48777]]", wikilink: "[[753a44d5-846c-4b82-9196-4fd9a4d48777|Backlog]]", label: "Backlog" },
+  { value: "[[cde3525c-57ea-4efc-b477-2e7e7ccd3a1e]]", wikilink: "[[cde3525c-57ea-4efc-b477-2e7e7ccd3a1e|Analysis]]", label: "Analysis" },
+  { value: "[[6a0e933a-6653-46f4-95ae-ed7508177c73]]", wikilink: "[[6a0e933a-6653-46f4-95ae-ed7508177c73|To Do]]", label: "To Do" },
+  { value: "[[027e78f4-6e16-4b36-b8fb-5510507d5745]]", wikilink: "[[027e78f4-6e16-4b36-b8fb-5510507d5745|Doing]]", label: "Doing" },
+  { value: "[[7b9b3116-7c3c-438c-9618-94fe301320a6]]", wikilink: "[[7b9b3116-7c3c-438c-9618-94fe301320a6|Done]]", label: "Done" },
+  { value: "[[5d14f18d-db2b-4847-9ac1-144cb93b2541]]", wikilink: "[[5d14f18d-db2b-4847-9ac1-144cb93b2541|Trashed]]", label: "Trashed" },
+  { value: "[[c42245d0-01de-4c35-bfcf-d910445ea28e]]", wikilink: "[[c42245d0-01de-4c35-bfcf-d910445ea28e|Draft]]", label: "Draft" },
 ];
 
 const FALLBACK_TASK_SIZE_VALUES: SizeEnumValue[] = [
@@ -204,18 +210,52 @@ export function getPropertyByName(
   return schema.find((prop) => prop.name === propertyName);
 }
 
+// RFC 31c1a0be Phase 4 PR-C (#3194). Legacy symbolic-form short-name to label
+// map. UI surfaces (table renderers, kanban) may receive stale symbolic
+// values written before the UUID-canon migration; this preserves the
+// human-readable label for both forms. Stage 5 will remove this map alongside
+// the `EffortStatus` enum deletion.
+const SYMBOLIC_STATUS_LABEL_FALLBACK: Record<string, string> = {
+  emseffortstatusdraft: "Draft",
+  emseffortstatusbacklog: "Backlog",
+  emseffortstatusanalysis: "Analysis",
+  emseffortstatustodo: "To Do",
+  emseffortstatusdoing: "Doing",
+  emseffortstatusdone: "Done",
+  emseffortstatustrashed: "Trashed",
+};
+
 export function getStatusLabel(statusUri: string | null | undefined): string {
   if (!statusUri || statusUri.trim() === "") return "-";
-  // Strip wikilink brackets, then remove a trailing UUID if present.
-  // Frontmatter may store "[[ems__EffortStatusDoing 027e78f4-...]]" (class + UUID)
-  // after certain status transitions; the UUID is stripped so the class name matches.
-  const normalized = statusUri.replace(/[[\]"']/g, "").trim()
-    .replace(/\s+[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i, "")
+  // Strip wikilink brackets and optional `|alias` suffix.
+  // Frontmatter may store "[[ems__EffortStatusDoing 027e78f4-...]]" (class
+  // name + UUID) after certain status transitions, or "[[<UUID>|Doing]]"
+  // (UUID + alias). The space-separated trailing UUID is stripped so the
+  // class-name lookup still matches.
+  const normalized = statusUri
+    .replace(/[[\]"']/g, "")
+    .split("|")[0]
+    .trim()
+    .replace(
+      /\s+[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+      "",
+    )
     .toLowerCase();
+
+  // UUID-form lookup against the canonical EFFORT_STATUS_VALUES table.
   const match = EFFORT_STATUS_VALUES.find(
     (v) =>
       v.value.replace(/[[\]]/g, "").toLowerCase() === normalized ||
       v.label.toLowerCase() === normalized,
   );
-  return match?.label ?? statusUri;
+  if (match) return match.label;
+
+  // Backward-compatibility lookup against the legacy symbolic form. The
+  // double-underscore is stripped during normalization (the `[[`/`]]` regex
+  // does not strip underscores, so we collapse them here).
+  const symbolicKey = normalized.replace(/_/g, "");
+  const symbolicLabel = SYMBOLIC_STATUS_LABEL_FALLBACK[symbolicKey];
+  if (symbolicLabel) return symbolicLabel;
+
+  return statusUri;
 }

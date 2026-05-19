@@ -20,6 +20,17 @@ import { WorkflowEngine } from "./WorkflowEngine";
  * Wraps WorkflowEngine for transition queries and adds command semantics.
  *
  * Issue #2431
+ *
+ * **RFC 31c1a0be Phase 4 PR-C (#3194) descope note.** This adapter depends
+ * on the `EffortStatus` enum (symbolic-form values such as
+ * `"ems__EffortStatusDoing"`) for its `shortStatus` label derivation and for
+ * the SPARQL `ASK` precondition string built in `buildPrecondition`. The
+ * `EffortStatus` enum is on the Phase 5 deletion list (see
+ * `EffortStatus.ts`); migrating this adapter to UUID-form requires a
+ * coordinated change of the enum, `WorkflowDefinition`, `WorkflowEngine`,
+ * `WorkflowResolver`, `DefaultWorkflows`, `VisibilityGenerator`,
+ * `EffortVisibilityRules`, `ProjectVisibilityRules`, plus all consumer tests
+ * — comfortably above the 15-caller cascade-cap. Deferred to Phase 5.
  */
 @injectable()
 export class WorkflowCommandAdapter {

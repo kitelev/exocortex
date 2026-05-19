@@ -664,7 +664,9 @@ describe("ServiceRegistryPopulator (with vaultAdapter)", () => {
 
       const createCall = (deps.vaultAdapter!.create as jest.Mock).mock.calls[0];
       const content = createCall[1] as string;
-      expect(content).toContain('ems__Effort_status: "[[ems__EffortStatusDraft]]"');
+      expect(content).toContain(
+        'ems__Effort_status: "[[c42245d0-01de-4c35-bfcf-d910445ea28e]]"',
+      );
     });
 
     it("should open the created task in a new tab leaf", async () => {
@@ -718,7 +720,9 @@ describe("ServiceRegistryPopulator (with vaultAdapter)", () => {
 
       const createCall = (deps.vaultAdapter!.create as jest.Mock).mock.calls[0];
       const content = createCall[1] as string;
-      expect(content).toContain('ems__Effort_status: "[[ems__EffortStatusDraft]]"');
+      expect(content).toContain(
+        'ems__Effort_status: "[[c42245d0-01de-4c35-bfcf-d910445ea28e]]"',
+      );
     });
 
     it("should write ems__Effort_area when parent is an Area", async () => {
@@ -1213,9 +1217,12 @@ describe("createAsset — orphan prevention regression (Finding 2)", () => {
       new RegExp(`ems__Effort_area:\\s*"\\[\\[${PARENT_AREA_UID}`),
     );
 
-    // 4. Effort_status must default (Backlog or Draft) so task is queryable
+    // 4. Effort_status must default (Backlog or Draft UUID) so task is queryable.
+    // UUID-form per RFC 31c1a0be Phase 4 PR-C (#3194).
+    // Backlog: 753a44d5-846c-4b82-9196-4fd9a4d48777
+    // Draft:   c42245d0-01de-4c35-bfcf-d910445ea28e
     expect(frontmatter).toMatch(
-      /ems__Effort_status:\s*"\[\[ems__EffortStatus(Backlog|Draft)\]\]"/,
+      /ems__Effort_status:\s*"\[\[(753a44d5-846c-4b82-9196-4fd9a4d48777|c42245d0-01de-4c35-bfcf-d910445ea28e)\]\]"/,
     );
 
     // 5. Asset_isDefinedBy must inherit from parent
