@@ -63,6 +63,10 @@ export interface GroundingData {
   readonly type?: string;
   readonly targetProperty?: string;
   readonly targetValue?: string;
+  /** RFC 31c1a0be: typed predicates for property_set (replace legacy `targetValue`). */
+  readonly targetValueRef?: string;
+  readonly targetValueLiteral?: string;
+  readonly targetValueSubstitution?: string;
   readonly serviceId?: string;
   readonly inputSchema?: string;
   readonly targetClass?: string;
@@ -235,12 +239,18 @@ function buildGroundingData(
     const stepFm = fmMap.get(stepUid);
     if (stepFm) steps.push(buildGroundingData(stepUid, stepFm, fmMap));
   }
+  // RFC 31c1a0be: targetValueRef is stored wikilink-form "[[uuid]]" → unwrap
+  const rawRef = asString(fm["exocmd__Grounding_targetValueRef"]);
+  const targetValueRef = rawRef ? unwrapWikilink(rawRef) : undefined;
   return {
     uid,
     label,
     type: asString(fm["exocmd__Grounding_type"]),
     targetProperty: asString(fm["exocmd__Grounding_targetProperty"]),
     targetValue: asString(fm["exocmd__Grounding_targetValue"]),
+    targetValueRef,
+    targetValueLiteral: asString(fm["exocmd__Grounding_targetValueLiteral"]),
+    targetValueSubstitution: asString(fm["exocmd__Grounding_targetValueSubstitution"]),
     serviceId: asString(fm["exocmd__Grounding_serviceId"]),
     inputSchema: asString(fm["exocmd__Grounding_inputSchema"]),
     targetClass: asString(fm["exocmd__Grounding_targetClass"]),
