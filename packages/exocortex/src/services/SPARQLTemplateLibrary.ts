@@ -61,7 +61,21 @@ export const ASSET_CLASSES = {
 } as const;
 
 /**
- * Effort status values
+ * Effort status values, in symbolic PREFIX-form (`ems:` shorthand).
+ *
+ * @remarks
+ * RFC 31c1a0be Phase 4 PR-B (#3194) invariant: these PREFIX-form strings
+ * are coupled to {@link NoteToRDFConverter} `expandClassValue`. The
+ * converter emits the same canonical class IRI (e.g.
+ * `<https://exocortex.my/ontology/ems#EffortStatusDoing>`) for wikilinks
+ * whose target file basename is a class-prefixed name (Issues #2782/#2959).
+ * Templates that query `?s ems:Effort_status <ems:EffortStatusDoing>` rely
+ * on the emitted IRI matching the templated literal.
+ *
+ * Migration to UUID-form (e.g. `<obsidian://vault/<UUID>.md>`) requires a
+ * coordinated change in this table, the converter's class-IRI branch, the
+ * starter-kit SPARQL ASK preconditions, and all callers — deferred to RFC
+ * 31c1a0be Phase 5.
  */
 export const EFFORT_STATUSES = {
   DOING: "ems:EffortStatusDoing",
