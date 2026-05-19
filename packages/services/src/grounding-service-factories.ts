@@ -72,8 +72,13 @@ export function createCreateRelatedTaskService(
         {};
       const folderPath = parentFile.parent?.path || "";
 
+      // UUID-form per RFC 31c1a0be Phase 4 PR-C (#3194). Draft UUID is the
+      // canonical TBox identifier at
+      // assetspaces/ems/c42245d0-01de-4c35-bfcf-d910445ea28e.md. Mirrors the
+      // obsidian-plugin ServiceRegistryPopulator default-write migration.
       const propertyValues: Record<string, unknown> = {
-        ems__Effort_status: '"[[ems__EffortStatusDraft]]"',
+        ems__Effort_status:
+          '"[[c42245d0-01de-4c35-bfcf-d910445ea28e]]"',
       };
 
       const explicitParentProperty = userInput?.parentProperty as
@@ -113,8 +118,13 @@ export function createCreateRelatedProjectService(
         {};
       const folderPath = parentFile.parent?.path || "";
 
+      // UUID-form per RFC 31c1a0be Phase 4 PR-C (#3194). Draft UUID is the
+      // canonical TBox identifier at
+      // assetspaces/ems/c42245d0-01de-4c35-bfcf-d910445ea28e.md. Mirrors the
+      // obsidian-plugin ServiceRegistryPopulator default-write migration.
       const propertyValues: Record<string, unknown> = {
-        ems__Effort_status: '"[[ems__EffortStatusDraft]]"',
+        ems__Effort_status:
+          '"[[c42245d0-01de-4c35-bfcf-d910445ea28e]]"',
       };
 
       const explicitParentProperty = userInput?.parentProperty as

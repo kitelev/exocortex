@@ -90,16 +90,18 @@ test.describe("SelectField Component", () => {
 
   test("should display selected value correctly", async ({ mount }) => {
     const property = createStatusProperty();
+    // UUID-form per RFC 31c1a0be Phase 4 PR-C (#3194). Doing UUID
+    // 027e78f4-6e16-4b36-b8fb-5510507d5745.
     const component = await mount(
       <SelectField
         property={property}
-        value="[[ems__EffortStatusDoing]]"
+        value="[[027e78f4-6e16-4b36-b8fb-5510507d5745]]"
         onChange={() => {}}
       />,
     );
 
     const select = component.locator("select");
-    await expect(select).toHaveValue("[[ems__EffortStatusDoing]]");
+    await expect(select).toHaveValue("[[027e78f4-6e16-4b36-b8fb-5510507d5745]]");
   });
 
   test("should call onChange when selection changes", async ({ mount }) => {
@@ -109,18 +111,22 @@ test.describe("SelectField Component", () => {
     };
     const property = createStatusProperty();
 
+    // UUID-form per RFC 31c1a0be Phase 4 PR-C (#3194).
+    // Backlog → Done transition.
     const component = await mount(
       <SelectField
         property={property}
-        value="[[ems__EffortStatusBacklog]]"
+        value="[[753a44d5-846c-4b82-9196-4fd9a4d48777]]"
         onChange={onChange}
       />,
     );
 
     const select = component.locator("select");
-    await select.selectOption("[[ems__EffortStatusDone]]");
+    await select.selectOption("[[7b9b3116-7c3c-438c-9618-94fe301320a6]]");
 
-    await expect.poll(() => changedValue).toBe("[[ems__EffortStatusDone]]");
+    await expect
+      .poll(() => changedValue)
+      .toBe("[[7b9b3116-7c3c-438c-9618-94fe301320a6]]");
   });
 
   test("should have 'Not specified' option when property is not required", async ({ mount }) => {
@@ -141,10 +147,12 @@ test.describe("SelectField Component", () => {
 
   test("should NOT have 'Not specified' option when property is required", async ({ mount }) => {
     const property = createStatusProperty({ required: true });
+    // UUID-form per RFC 31c1a0be Phase 4 PR-C (#3194). Draft UUID
+    // c42245d0-01de-4c35-bfcf-d910445ea28e.
     const component = await mount(
       <SelectField
         property={property}
-        value="[[ems__EffortStatusDraft]]"
+        value="[[c42245d0-01de-4c35-bfcf-d910445ea28e]]"
         onChange={() => {}}
       />,
     );
@@ -245,10 +253,12 @@ test.describe("SelectField Component", () => {
 
   test("should disable select when property is readOnly", async ({ mount }) => {
     const property = createStatusProperty({ readOnly: true });
+    // UUID-form per RFC 31c1a0be Phase 4 PR-C (#3194). Doing UUID
+    // 027e78f4-6e16-4b36-b8fb-5510507d5745.
     const component = await mount(
       <SelectField
         property={property}
-        value="[[ems__EffortStatusDoing]]"
+        value="[[027e78f4-6e16-4b36-b8fb-5510507d5745]]"
         onChange={() => {}}
       />,
     );
@@ -273,17 +283,20 @@ test.describe("SelectField Component", () => {
 
   test("should normalize value by removing quotes", async ({ mount }) => {
     const property = createStatusProperty();
+    // UUID-form per RFC 31c1a0be Phase 4 PR-C (#3194). Doing UUID
+    // 027e78f4-6e16-4b36-b8fb-5510507d5745, double-quoted as it appears
+    // in raw YAML frontmatter.
     const component = await mount(
       <SelectField
         property={property}
-        value='"[[ems__EffortStatusDoing]]"'
+        value='"[[027e78f4-6e16-4b36-b8fb-5510507d5745]]"'
         onChange={() => {}}
       />,
     );
 
     const select = component.locator("select");
     // The normalized value should match the option without quotes
-    await expect(select).toHaveValue("[[ems__EffortStatusDoing]]");
+    await expect(select).toHaveValue("[[027e78f4-6e16-4b36-b8fb-5510507d5745]]");
   });
 
   test("should have dropdown class for styling", async ({ mount }) => {

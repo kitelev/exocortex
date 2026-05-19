@@ -184,6 +184,25 @@ describe("TaskTrackingService", () => {
       expect(windowOpenSpy).toHaveBeenCalled();
     });
 
+    it("should embed UUID-form Done in Advanced URI callback (RFC 31c1a0be PR-C)", async () => {
+      (mockMetadataCache.getFileCache as jest.Mock).mockReturnValue({
+        frontmatter: {
+          Status: "[[027e78f4-6e16-4b36-b8fb-5510507d5745]]",
+          TaskId: "existing-task-id",
+          Title: "Test Task"
+        }
+      });
+
+      await service.handleFileChange(mockFile);
+
+      expect(windowOpenSpy).toHaveBeenCalled();
+      const launchedUrl = windowOpenSpy.mock.calls[0][0] as string;
+      // The Advanced URI callback is x-success-encoded inside the launched URL.
+      // It must carry the Done UUID, not the symbolic-form `ems__EffortStatusDone`.
+      expect(launchedUrl).toContain("7b9b3116-7c3c-438c-9618-94fe301320a6");
+      expect(launchedUrl).not.toContain("ems__EffortStatusDone");
+    });
+
     it("should handle file with DOING status but no TaskId", async () => {
       (mockMetadataCache.getFileCache as jest.Mock).mockReturnValue({
         frontmatter: {
