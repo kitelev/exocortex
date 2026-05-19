@@ -1,6 +1,19 @@
 import { EffortStatus } from "./EffortStatus";
 
 /**
+ * **Direction note (RFC 31c1a0be Phase 4 PR-B, #3194).** This file maps
+ * human-readable status names to the symbolic class-prefixed wikilink
+ * form (e.g. `"[[ems__EffortStatusDoing]]"`). Symbolic wikilinks are the
+ * pre-UUID-canon form; new code should emit UUID-canon wikilinks
+ * `[[<UUID>]]` produced from a TBox lookup.
+ *
+ * **Not yet removable.** See {@link EffortStatus} for the coupling to
+ * SPARQL templates and `NoteToRDFConverter` class-IRI emission. Wholesale
+ * deletion is deferred to RFC 31c1a0be Phase 5 once the coordinated
+ * SPARQL+RDF migration is in place.
+ */
+
+/**
  * Human-readable status name type.
  */
 export type EffortStatusName =
