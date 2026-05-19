@@ -382,10 +382,9 @@ export function populateServiceRegistry(
     // grounding consumer (`22a6ba6b-…`) was migrated to declarative
     // `property_set` with the new `$todayStart` substitution token
     // (Homoiconicity Invariant Q1 remediation, RFC
-    // `18407cb2-9554-4897-9213-17321f9dd434` Path B). The palette command
-    // path `PlanOnTodayCommand → TaskStatusService.planOnToday` still wires
-    // through direct DI (not the grounding service registry), so the
-    // `taskStatusService.planOnToday` method itself is retained.
+    // `18407cb2-9554-4897-9213-17321f9dd434` Path B). The legacy palette
+    // command `PlanOnTodayCommand` and its `TaskStatusService.planOnToday`
+    // method were subsequently deleted in Phase 4 PR-A (RFC 31c1a0be).
 
     registry.register(
       "planForEvening",
@@ -396,14 +395,12 @@ export function populateServiceRegistry(
     // Issue #3134 — the three grounding consumers (`0b104d75-…`, `6ee56341-…`,
     // `506f031e-…`) were migrated to declarative `property_shift` /
     // `property_increment` (Homoiconicity Invariant Q1 remediation, RFC
-    // `18407cb2-9554-4897-9213-17321f9dd434` Path B). Palette command paths
-    // remain via direct DI:
-    //   - `ShiftDayForwardCommand` / `ShiftDayBackwardCommand` →
-    //     `taskStatusService.shiftDay{Forward,Backward}(file)`
-    //   - `VoteOnEffortCommand` → `effortVotingService.incrementEffortVotes(file)`
-    // The TS service classes are intentionally preserved (palette + hotkey
-    // surfaces); only the registry registrations are deleted to avoid
-    // duplicate dispatch paths for the now-declarative groundings.
+    // `18407cb2-9554-4897-9213-17321f9dd434` Path B). The legacy palette
+    // commands (`ShiftDayForwardCommand`, `ShiftDayBackwardCommand`) and
+    // their `TaskStatusService.shiftDay{Forward,Backward}` methods were
+    // subsequently deleted in Phase 4 PR-A (RFC 31c1a0be).
+    // `VoteOnEffortCommand` → `effortVotingService.incrementEffortVotes(file)`
+    // is still wired via direct DI (out of Phase 4 PR-A scope).
 
     // `copyLabelToAliases` service registration removed in Issue #3132 —
     // the sole grounding consumer (a85668fa-17b7-45d0-aa7f-935e2502dff0) was

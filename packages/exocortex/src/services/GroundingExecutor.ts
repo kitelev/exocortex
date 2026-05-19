@@ -569,10 +569,11 @@ export class GroundingExecutor {
       // Issue #3188: emit `exo__Asset_createdAt` as a local timestamp without
       // the trailing `Z` / TZ offset, matching every other creation service
       // in the codebase (Generic/Area/Class/Concept/Supervision asset
-      // creation, TaskStatusService start/end timestamps). The legacy
-      // `new Date().toISOString()` produced UTC-suffixed values which then
-      // disagreed with the rest of the vault when rendered in the user's
-      // local timezone; this one-liner aligns the format.
+      // creation) and the `$nowLocal` substitution token used by composite
+      // groundings. The legacy `new Date().toISOString()` produced
+      // UTC-suffixed values which then disagreed with the rest of the vault
+      // when rendered in the user's local timezone; this one-liner aligns
+      // the format.
       exo__Asset_createdAt: DateFormatter.toLocalTimestamp(new Date()),
       exo__Asset_label: label,
     };
@@ -746,14 +747,14 @@ export class GroundingExecutor {
    * - $target → targetIRI (no angle brackets — this is a value, not SPARQL)
    * - $now → current ISO 8601 UTC timestamp (with milliseconds and Z suffix)
    * - $nowLocal → current local timestamp (YYYY-MM-DDTHH:mm:ss, no ms, no tz) —
-   *   matches the format written by `TaskStatusService.startEffort/markTaskAsDone`,
-   *   so composite groundings can chain status + timestamp writes consistently
-   *   with palette commands.
+   *   matches the canonical `DateFormatter.toLocalTimestamp()` output, so
+   *   composite groundings (Mark Done, Start Effort, etc.) write the same
+   *   shape as every other effort/asset timestamp in the codebase.
    * - $today → current date (YYYY-MM-DD)
    * - $todayStart → today at local midnight (YYYY-MM-DDT00:00:00, no TZ) —
-   *   matches `DateFormatter.getTodayStartTimestamp()` written by the legacy
-   *   `TaskStatusService.planOnToday` so a declarative `property_set` with
-   *   `$todayStart` is byte-identical to the previous service_call output.
+   *   matches `DateFormatter.getTodayStartTimestamp()`. A declarative
+   *   `property_set` with `$todayStart` is byte-identical to the legacy
+   *   `planOnToday` service_call output (removed in Issue #3136).
    * - $targetFolder → parent folder (vault-relative) of the $target file.
    *   Resolves to empty string when target is at the vault root. Available
    *   only when callers pass `targetFilePath`; fail-fast otherwise.

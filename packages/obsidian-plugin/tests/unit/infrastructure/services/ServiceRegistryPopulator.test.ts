@@ -616,8 +616,8 @@ describe("ServiceRegistryPopulator (with vaultAdapter)", () => {
   // grounding to declarative property_set with the new $todayStart token;
   // the registry registration no longer exists. Coverage moved to
   // GroundingExecutor.test.ts substituteVariables suite ($todayStart cases).
-  // The TaskStatusService.planOnToday method is retained because palette
-  // command PlanOnTodayCommand still wires through it via direct DI.
+  // The TaskStatusService.planOnToday method + PlanOnTodayCommand palette
+  // command were subsequently deleted in Phase 4 PR-A (RFC 31c1a0be).
 
   describe("planForEvening", () => {
     it("should resolve file and update plannedStartTimestamp to 19:00", async () => {
@@ -637,9 +637,10 @@ describe("ServiceRegistryPopulator (with vaultAdapter)", () => {
   // property_shift / property_increment; the registry registrations no
   // longer exist. See GroundingExecutor.property_shift.test.ts and
   // GroundingExecutor.property_increment.test.ts for new coverage at the
-  // executor layer. Palette command paths (ShiftDayForwardCommand,
-  // ShiftDayBackwardCommand, VoteOnEffortCommand) continue to call
-  // taskStatusService / effortVotingService directly via DI.
+  // executor layer. The legacy ShiftDayForwardCommand / ShiftDayBackwardCommand
+  // palette commands + their taskStatusService.shiftDay{Forward,Backward}
+  // methods were deleted in Phase 4 PR-A (RFC 31c1a0be); VoteOnEffortCommand
+  // remains wired via direct DI (out of Phase 4 PR-A scope).
 
   // describe("copyLabelToAliases", ...) removed — Issue #3132 migrated the
   // grounding to declarative property_append; the registry registration no

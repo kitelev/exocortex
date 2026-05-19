@@ -73,15 +73,18 @@ export class DateFormatter {
    * codebase. Examples:
    *
    * - `ems__Effort_startTimestamp` / `endTimestamp` / `resolutionTimestamp`
-   *   (written by `TaskStatusService.startEffort` / `markTaskAsDone`)
+   *   (written via the `$nowLocal` substitution token in starter-kit
+   *   composite groundings, e.g. Mark Done / Start Effort)
    * - `ems__Effort_plannedStartTimestamp` / `plannedEndTimestamp`
-   *   (written by `TaskStatusService.planForEvening` and friends)
+   *   (written by `TaskStatusService.planForEvening` and starter-kit
+   *   property_set groundings using `$todayStart`)
    * - `exo__Asset_createdAt` (written by `GenericAssetCreationService` /
    *   `AreaCreationService` and other `*CreationService` classes)
    *
    * Starter-kit composite groundings produce the same shape via the
-   * `$nowLocal` variable in `GroundingExecutor.substituteVariables`, so palette
-   * commands and inline status buttons stay format-aligned.
+   * `$nowLocal` variable in `GroundingExecutor.substituteVariables`, so
+   * inline status buttons and the few remaining service-backed mutations
+   * stay format-aligned.
    *
    * `toISOTimestamp` (UTC with `Z` suffix) is reserved for places that need
    * explicit UTC anchoring or lexicographic ordering — it is NOT a drop-in
