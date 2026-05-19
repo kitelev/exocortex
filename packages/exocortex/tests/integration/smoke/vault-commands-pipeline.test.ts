@@ -124,6 +124,9 @@ async function seedCommand(
     gndType: string;
     gndTargetProperty?: string;
     gndTargetValue?: string;
+    gndTargetValueRef?: string;
+    gndTargetValueLiteral?: string;
+    gndTargetValueSubstitution?: string;
     bindUid: string;
     bindTargetClass: string;
     bindPosition?: string;
@@ -159,6 +162,21 @@ async function seedCommand(
   if (opts.gndTargetValue) {
     gndTriples.push(
       new Triple(gndSubject, Namespace.EXOCMD.term("Grounding_targetValue"), new Literal(opts.gndTargetValue)),
+    );
+  }
+  if (opts.gndTargetValueRef) {
+    gndTriples.push(
+      new Triple(gndSubject, Namespace.EXOCMD.term("Grounding_targetValueRef"), new Literal(opts.gndTargetValueRef)),
+    );
+  }
+  if (opts.gndTargetValueLiteral) {
+    gndTriples.push(
+      new Triple(gndSubject, Namespace.EXOCMD.term("Grounding_targetValueLiteral"), new Literal(opts.gndTargetValueLiteral)),
+    );
+  }
+  if (opts.gndTargetValueSubstitution) {
+    gndTriples.push(
+      new Triple(gndSubject, Namespace.EXOCMD.term("Grounding_targetValueSubstitution"), new Literal(opts.gndTargetValueSubstitution)),
     );
   }
   await store.addAll(gndTriples);
@@ -266,7 +284,7 @@ describe("Smoke: Vault Commands Pipeline (all categories)", () => {
           gndUid: `gnd-${cmd.uid}`,
           gndType: "property_set",
           gndTargetProperty: "ems__Effort_status",
-          gndTargetValue: `'[[${cmd.to}]]'`,
+          gndTargetValueRef: cmd.to,
           bindUid: `bind-${cmd.uid}`,
           bindTargetClass: "ems__Task",
           bindPosition: "header",
@@ -335,7 +353,7 @@ describe("Smoke: Vault Commands Pipeline (all categories)", () => {
           gndUid: `gnd-${z.uid}`,
           gndType: "property_set",
           gndTargetProperty: "ems__Effort_zone",
-          gndTargetValue: z.zone,
+          gndTargetValueLiteral: z.zone,
           bindUid: `bind-${z.uid}`,
           bindTargetClass: "ems__Task",
           bindPosition: "header",
@@ -377,7 +395,7 @@ describe("Smoke: Vault Commands Pipeline (all categories)", () => {
         gndUid: "gnd-set-deadline",
         gndType: "property_set",
         gndTargetProperty: "ems__Effort_plannedEndTimestamp",
-        gndTargetValue: "$now",
+        gndTargetValueSubstitution: "$now",
         bindUid: "bind-set-deadline",
         bindTargetClass: "ems__Task",
         bindGroup: "planning",
@@ -567,7 +585,7 @@ describe("Smoke: Vault Commands Pipeline (all categories)", () => {
         gndUid: "gnd-status-x",
         gndType: "property_set",
         gndTargetProperty: "ems__Effort_status",
-        gndTargetValue: "done",
+        gndTargetValueLiteral: "done",
         bindUid: "bind-status-x",
         bindTargetClass: "ems__Task",
         bindOrder: "10",

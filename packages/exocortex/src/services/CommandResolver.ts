@@ -927,7 +927,7 @@ export class CommandResolver {
     if (substitutionRefRaw && this.looksLikeUUID(substitutionRefRaw)) {
       // Fail-loud: same pattern as targetProperty above. Missing/labelless
       // SubstitutionToken instance → skip grounding rather than silently
-      // dropping the substitution and falling through to legacy targetValue.
+      // dropping the substitution.
       const resolved = await this.resolveLabelByUID(substitutionRefRaw);
       if (!resolved) {
         this.logger.warn(
