@@ -281,7 +281,7 @@ export class GroundingExecutor {
       return {
         success: false,
         error:
-          "property_set: targetValue contains $input/$value placeholder but no userInput.value provided",
+          "property_set: substituted value contains $input/$value placeholder but no userInput.value provided",
       };
     }
 
