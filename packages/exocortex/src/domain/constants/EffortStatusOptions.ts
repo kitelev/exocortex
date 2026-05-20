@@ -39,4 +39,4 @@ export const EFFORT_STATUS_OPTIONS: ReadonlyArray<{
   { value: "[[ems__EffortStatusDoing]]", label: "Doing" },
   { value: "[[ems__EffortStatusDone]]", label: "Done" },
   { value: "[[ems__EffortStatusTrashed]]", label: "Trashed" },
-];
+] as const;
