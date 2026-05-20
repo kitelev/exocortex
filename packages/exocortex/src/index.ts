@@ -1,17 +1,7 @@
 // Domain exports
 export * from "./domain/constants/AssetClass";
 export * from "./domain/constants/EffortStatus";
-export {
-  type EffortStatusName,
-  EFFORT_STATUS_CONFIG,
-  STATUS_NAME_TO_ENUM,
-  STATUS_NAME_TO_WIKILINK,
-  EFFORT_STATUS_OPTIONS,
-  normalizeEffortStatus,
-  isDoneStatus,
-  isTrashedStatus,
-  getEffortStatusLabel,
-} from "./domain/constants/EffortStatusConfig";
+export { EFFORT_STATUS_OPTIONS } from "./domain/constants/EffortStatusOptions";
 export { GroundingType } from "./domain/constants/GroundingType";
 export {
   CommandProperty,

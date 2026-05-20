@@ -12,14 +12,20 @@
  *   - `NoteToRDFConverter.expandClassValue` symbolic class-IRI emission
  *     (Issues #2782/#2959 — SPARQL `ASK` preconditions match the symbolic
  *     namespace IRI, not file UUIDs)
- *   - 25+ direct call sites comparing against the symbolic form
- *     (broader grep including companion `EFFORT_STATUSES` and
- *     `EffortStatusConfig` symbols reaches ~29 files; all are well above
- *     the Phase 4 PR-B 20-file WAITING_DECISION threshold)
+ *   - 18+ direct call sites comparing against the symbolic form (workflow
+ *     engine, visibility rules, kanban provider, renderers; broader grep
+ *     including companion `EFFORT_STATUSES` reaches ~25 files — all well
+ *     above the 15-caller cascade-cap that gates in-PR migration)
  *
  * Removal requires a coordinated migration of (a) the SPARQL templates,
- * (b) the converter's class-IRI substitution branch, and (c) all callers
- * — deferred to RFC 31c1a0be Phase 5.
+ * (b) the converter's class-IRI substitution branch, (c) all callers, AND
+ * (d) the starter-kit ASK preconditions in the public-ontologies repo —
+ * deferred to RFC 31c1a0be Phase 5b (cross-repo coordinated PR series).
+ *
+ * The companion `EffortStatusConfig.ts` (legacy name-to-enum / wikilink
+ * helpers with no production callers) was removed in Phase 4 PR-D, #3194;
+ * the single live export `EFFORT_STATUS_OPTIONS` now lives in
+ * `EffortStatusOptions.ts`.
  *
  * New code should not introduce additional dependencies on this enum.
  * Resolve UUIDs at runtime via the TBox lookup instead.
