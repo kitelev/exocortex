@@ -3,6 +3,12 @@ name: Publish CLI to npm
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to publish (e.g. v16.12.2). If empty, uses latest release."
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -24,14 +30,22 @@ jobs:
           registry-url: "https://registry.npmjs.org"
           cache: "npm"
 
-      - name: Get version from release tag
+      - name: Get version from release tag or input
         id: version
         run: |
-          # Extract version from tag (remove 'v' prefix if present)
-          VERSION="${{ github.event.release.tag_name }}"
-          VERSION="${VERSION#v}"
+          # Source: release event tag_name OR workflow_dispatch input.tag OR latest release tag
+          if [ -n "${{ github.event.release.tag_name }}" ]; then
+            RAW="${{ github.event.release.tag_name }}"
+          elif [ -n "${{ inputs.tag }}" ]; then
+            RAW="${{ inputs.tag }}"
+          else
+            RAW=$(gh release view --json tagName --jq .tagName --repo "${{ github.repository }}")
+          fi
+          VERSION="${RAW#v}"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Publishing version: $VERSION"
+          echo "Publishing version: $VERSION (source tag: $RAW)"
+        env:
+          GH_TOKEN: ${{ github.token }}
 
       - name: Install dependencies
         run: npm ci
