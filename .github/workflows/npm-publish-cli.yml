@@ -53,6 +53,13 @@ jobs:
       - name: Build core package
         run: npm run build -w exocortex
 
+      - name: Build services workspace
+        # CLI bundle imports @kitelev/exocortex-services (file:../services workspace).
+        # esbuild requires dist/ to exist before bundling — without this step, build
+        # fails «could not be resolved». Symptom seen after a Feb-Mar refactor moved
+        # CLI's runtime imports through services.
+        run: npm run build -w @kitelev/exocortex-services
+
       - name: Update CLI version
         working-directory: packages/cli
         run: |
