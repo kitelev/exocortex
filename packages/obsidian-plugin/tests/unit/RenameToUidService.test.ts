@@ -82,7 +82,7 @@ Test content`;
       );
     });
 
-    it("should rename file but not add label when label already exists", async () => {
+    it("should rename file and process frontmatter to append alias when label already exists", async () => {
       const mockFile = {
         basename: "Old Task Name",
         parent: { path: "03 Knowledge/user" },
@@ -95,7 +95,8 @@ Test content`;
 
       await service.renameToUid(mockFile, metadata);
 
-      expect(mockVaultAdapter.process).not.toHaveBeenCalled();
+      // process is still invoked — label preserved, but old basename appended to aliases.
+      expect(mockVaultAdapter.process).toHaveBeenCalledTimes(1);
       expect(mockVaultAdapter.rename).toHaveBeenCalledWith(
         mockFile,
         "03 Knowledge/user/abc-123-def.md",

@@ -963,7 +963,7 @@ nested:
       } as any;
     });
 
-    it("should update simple wikilinks with alias", async () => {
+    it("should collapse simple wikilinks to [[uid]]", async () => {
       const sourceFile = Object.create(TFile.prototype);
       Object.assign(sourceFile, {
         path: "source.md",
@@ -985,11 +985,11 @@ nested:
 
       expect(mockVault.modify).toHaveBeenCalledWith(
         sourceFile,
-        "Content with [[uid-123|asset1]] link"
+        "Content with [[uid-123]] link"
       );
     });
 
-    it("should update heading links with alias", async () => {
+    it("should collapse heading links to [[uid]]", async () => {
       const sourceFile = Object.create(TFile.prototype);
       Object.assign(sourceFile, {
         path: "source.md",
@@ -1011,11 +1011,11 @@ nested:
 
       expect(mockVault.modify).toHaveBeenCalledWith(
         sourceFile,
-        "Link to [[uid-123#section|asset1]]"
+        "Link to [[uid-123]]"
       );
     });
 
-    it("should update block links with alias", async () => {
+    it("should collapse block links to [[uid]]", async () => {
       const sourceFile = Object.create(TFile.prototype);
       Object.assign(sourceFile, {
         path: "source.md",
@@ -1037,11 +1037,11 @@ nested:
 
       expect(mockVault.modify).toHaveBeenCalledWith(
         sourceFile,
-        "Link to [[uid-123^block-id|asset1]]"
+        "Link to [[uid-123]]"
       );
     });
 
-    it("should preserve custom aliases", async () => {
+    it("should drop custom aliases (collapse to [[uid]])", async () => {
       const sourceFile = Object.create(TFile.prototype);
       Object.assign(sourceFile, {
         path: "source.md",
@@ -1065,7 +1065,7 @@ nested:
 
       expect(mockVault.modify).toHaveBeenCalledWith(
         sourceFile,
-        "Links: [[uid-123|Custom Alias]] and [[uid-123#section|Another Alias]]"
+        "Links: [[uid-123]] and [[uid-123]]"
       );
     });
 
@@ -1107,11 +1107,11 @@ nested:
       expect(mockVault.modify).toHaveBeenCalledTimes(2);
       expect(mockVault.modify).toHaveBeenCalledWith(
         source1,
-        "Link in file 1: [[uid-123|asset1]]"
+        "Link in file 1: [[uid-123]]"
       );
       expect(mockVault.modify).toHaveBeenCalledWith(
         source2,
-        "Link in file 2: [[uid-123|asset1]]"
+        "Link in file 2: [[uid-123]]"
       );
     });
 
@@ -1168,7 +1168,7 @@ nested:
 
       expect(mockVault.modify).toHaveBeenCalledWith(
         sourceFile,
-        "Link to [[uid-123|asset (with) [special]]]"
+        "Link to [[uid-123]]"
       );
     });
 
@@ -1196,7 +1196,7 @@ nested:
 
       expect(mockVault.modify).toHaveBeenCalledWith(
         sourceFile,
-        "Links: [[uid-123|asset1]], [[uid-123#heading|asset1]], [[uid-123|Custom]]"
+        "Links: [[uid-123]], [[uid-123]], [[uid-123]]"
       );
     });
   });

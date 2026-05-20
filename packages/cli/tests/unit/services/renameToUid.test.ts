@@ -98,6 +98,34 @@ describe("renameToUid (CLI)", () => {
     expect(fm.exo__Asset_label).toBe("Original");
   });
 
+  it("appends old basename to aliases even when label is preset (decoupled from label-gate)", async () => {
+    writeRaw(
+      vaultRoot,
+      "tasks/Preset Label.md",
+      "---\nexo__Asset_uid: alias-only-uid\nexo__Asset_label: Custom Label\n---\nBody\n",
+    );
+
+    await service.execute("tasks/Preset Label");
+
+    const fm = readFrontmatter(path.join(vaultRoot, "tasks/alias-only-uid.md"));
+    expect(fm.exo__Asset_label).toBe("Custom Label");
+    expect(fm.aliases).toEqual(expect.arrayContaining(["Preset Label"]));
+  });
+
+  it("does NOT append alias for archived asset", async () => {
+    writeRaw(
+      vaultRoot,
+      "tasks/Archived Task.md",
+      "---\nexo__Asset_uid: arch-uid\nexo__Asset_label: Archived\nexo__Asset_isArchived: true\n---\nBody\n",
+    );
+
+    await service.execute("tasks/Archived Task");
+
+    const fm = readFrontmatter(path.join(vaultRoot, "tasks/arch-uid.md"));
+    expect(fm.exo__Asset_label).toBe("Archived");
+    expect(fm.aliases).toBeUndefined();
+  });
+
   it("adds exo__Asset_label = original basename when label is missing before rename", async () => {
     writeRaw(
       vaultRoot,
