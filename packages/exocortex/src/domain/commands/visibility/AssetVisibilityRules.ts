@@ -93,20 +93,6 @@ export function canRepairFolder(context: CommandVisibilityContext): boolean {
 }
 
 /**
- * Can execute "Rename to UID" command
- * Available for: Any asset where filename doesn't match exo__Asset_uid
- */
-export function canRenameToUid(
-  context: CommandVisibilityContext,
-  currentFilename: string,
-): boolean {
-  const uid = context.metadata.exo__Asset_uid;
-  if (!uid) return false;
-
-  return currentFilename !== uid;
-}
-
-/**
  * Can execute "Copy Label to Aliases" command
  * Available for: Assets with exo__Asset_label that don't have this label in aliases yet
  */

@@ -3,7 +3,6 @@ import {
   canCreateInstance,
   canCleanProperties,
   canRepairFolder,
-  canRenameToUid,
   canCopyLabelToAliases,
   canCreateNarrowerConcept,
   canCreateSubclass,
@@ -225,41 +224,6 @@ describe("AssetVisibilityRules", () => {
             expectedFolder: "/correct/folder",
           }),
         ),
-      ).toBe(false);
-    });
-  });
-
-  // ─── canRenameToUid ───
-
-  describe("canRenameToUid", () => {
-    it("should return true when filename differs from uid", () => {
-      expect(
-        canRenameToUid(
-          makeContext({ metadata: { exo__Asset_uid: "abc-123" } }),
-          "different-name",
-        ),
-      ).toBe(true);
-    });
-
-    it("should return false when filename matches uid", () => {
-      expect(
-        canRenameToUid(makeContext({ metadata: { exo__Asset_uid: "abc-123" } }), "abc-123"),
-      ).toBe(false);
-    });
-
-    it("should return false when uid is missing", () => {
-      expect(canRenameToUid(makeContext({ metadata: {} }), "some-file")).toBe(false);
-    });
-
-    it("should return false when uid is null", () => {
-      expect(
-        canRenameToUid(makeContext({ metadata: { exo__Asset_uid: null } }), "some-file"),
-      ).toBe(false);
-    });
-
-    it("should return false when uid is undefined", () => {
-      expect(
-        canRenameToUid(makeContext({ metadata: { exo__Asset_uid: undefined } }), "some-file"),
       ).toBe(false);
     });
   });

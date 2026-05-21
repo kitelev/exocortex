@@ -3,6 +3,7 @@ import {
   NoteToRDFConverter,
   CommandResolver,
   PreconditionEvaluator,
+  registerDefaultHostFunctions,
   type IVaultAdapter,
   type IFile,
   type ILogger,
@@ -126,6 +127,7 @@ export class ExocmdFastResolver {
     // references (Phase 1a) — those degrade to false until full path catches
     // up, identical to the class-hierarchy degradation above.
     const preconditionEvaluator = new PreconditionEvaluator(miniStore);
+    registerDefaultHostFunctions(preconditionEvaluator);
 
     // CRITICAL: subjectIRI MUST match the IRI emitted by NoteToRDFConverter
     // for `currentFile`. The converter uses
@@ -150,10 +152,17 @@ export class ExocmdFastResolver {
     }
     if (resolved.length === 0) return [];
 
+    const rawUid = targetFrontmatter.exo__Asset_uid;
+    const assetUid =
+      typeof rawUid === "string" && rawUid.trim() !== ""
+        ? rawUid.trim()
+        : undefined;
+
     const evalContext: EvalContext = {
       targetIRI: subjectIRI,
       fileBasename: currentFile.basename,
       currentFolder: currentFile.parent?.path,
+      assetUid,
     };
 
     // Evaluate preconditions in PARALLEL — mirrors the full path

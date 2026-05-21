@@ -4,7 +4,6 @@ export { BaseContextAssetCreationCommand } from "./base/BaseContextAssetCreation
 export { CreateInstanceCommand } from "./CreateInstanceCommand";
 export { CleanPropertiesCommand } from "./CleanPropertiesCommand";
 export { RepairFolderCommand } from "./RepairFolderCommand";
-export { RenameToUidCommand } from "./RenameToUidCommand";
 export { VoteOnEffortCommand } from "./VoteOnEffortCommand";
 export { CopyLabelToAliasesCommand } from "./CopyLabelToAliasesCommand";
 export { AddSupervisionCommand } from "./AddSupervisionCommand";

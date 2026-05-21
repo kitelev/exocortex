@@ -75,7 +75,6 @@ export {
   canCreateInstance,
   canCleanProperties,
   canRepairFolder,
-  canRenameToUid,
   canCopyLabelToAliases,
   canCreateNarrowerConcept,
   canCreateSubclass,

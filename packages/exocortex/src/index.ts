@@ -64,6 +64,10 @@ export {
   type HostFunction,
 } from "./services/PreconditionEvaluator";
 export {
+  hasNonUidFilename,
+  registerDefaultHostFunctions,
+} from "./services/preconditionHostFunctions";
+export {
   GroundingExecutor,
   ServiceRegistry,
   type ExecutionResult,
