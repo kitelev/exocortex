@@ -42,12 +42,14 @@ function buildCommandExecutionFlow(): CommandExecutionFlow {
 
 const mockResolveForAsset = jest.fn();
 const mockResolveForAssetMulti = jest.fn();
+const mockResolveLabelByUID = jest.fn();
 const mockEvaluate = jest.fn();
 const mockExecute = jest.fn();
 
 const mockCommandResolver = {
   resolveForAsset: mockResolveForAsset,
   resolveForAssetMulti: mockResolveForAssetMulti,
+  resolveLabelByUID: mockResolveLabelByUID,
   loadCommand: jest.fn(),
   findBindings: jest.fn(),
   invalidateCache: jest.fn(),
@@ -364,6 +366,8 @@ describe("DynamicCommandButtonGroupBuilder", () => {
       });
       // No metadataCache wired — must not throw, just pass UUID through.
       (context.app as any) = {};
+      // Triple-store fallback also empty in this scenario (asset graph cold).
+      mockResolveLabelByUID.mockResolvedValue(null);
 
       await builder.build(context);
 
@@ -372,6 +376,87 @@ describe("DynamicCommandButtonGroupBuilder", () => {
         [classUid, "exo__Asset"],
         undefined,
       );
+    });
+
+    it("Issue #3141 follow-up — should fall back to commandResolver.resolveLabelByUID when metadataCache cannot find the class file (cold-start race)", async () => {
+      mockResolveForAssetMulti.mockResolvedValue([]);
+      const classUid = "7ab483c7-aafc-4ac8-8aca-0de52db34a93";
+      const context = createContext({
+        exo__Instance_class: ["[[" + classUid + "]]"],
+      });
+      // metadataCache wired but returns null — simulates cold-start window
+      // where Obsidian hasn't yet indexed `assetspaces/ems/<uid>.md`.
+      (context.app as any).metadataCache = {
+        getFirstLinkpathDest: jest.fn().mockReturnValue(null),
+        getFileCache: jest.fn(),
+      };
+      // Triple store has the class indexed (NoteToRDFConverter runs first).
+      mockResolveLabelByUID.mockResolvedValue("ems__MeetingPrototype");
+
+      await builder.build(context);
+
+      expect(mockResolveLabelByUID).toHaveBeenCalledWith(classUid);
+      expect(mockResolveForAssetMulti).toHaveBeenCalledWith(
+        "obsidian://vault/test/file.md",
+        [classUid, "ems__MeetingPrototype", "exo__Asset"],
+        undefined,
+      );
+    });
+
+    it("Issue #3141 follow-up — should prefer metadataCache hit over triple-store fallback (fast path stays fast)", async () => {
+      mockResolveForAssetMulti.mockResolvedValue([]);
+      const classUid = "1b20a8f0-d745-4e93-91db-4531b3df120e";
+      const mockClassFile = { path: "assetspaces/ems/" + classUid + ".md" };
+      const context = createContext({
+        exo__Instance_class: ["[[" + classUid + "]]"],
+      });
+      (context.app as any).metadataCache = {
+        getFirstLinkpathDest: jest.fn((link: string) =>
+          link === classUid ? mockClassFile : null,
+        ),
+        getFileCache: jest.fn((file: any) =>
+          file === mockClassFile
+            ? { frontmatter: { exo__Asset_label: "ems__Task" } }
+            : null,
+        ),
+      };
+      // resolveLabelByUID must NOT be called when metadataCache already
+      // produced the symbolic label — avoids an unnecessary triple-store
+      // round-trip in the warm path.
+      mockResolveLabelByUID.mockResolvedValue("SHOULD_NOT_BE_USED");
+
+      await builder.build(context);
+
+      expect(mockResolveLabelByUID).not.toHaveBeenCalled();
+      expect(mockResolveForAssetMulti).toHaveBeenCalledWith(
+        "obsidian://vault/test/file.md",
+        [classUid, "ems__Task", "exo__Asset"],
+        undefined,
+      );
+    });
+
+    it("Issue #3141 follow-up — should log a warning when both metadataCache and triple-store fail to resolve a UUID class ref", async () => {
+      mockResolveForAssetMulti.mockResolvedValue([]);
+      const classUid = "deadbeef-0000-4000-8000-000000000000";
+      const context = createContext({
+        exo__Instance_class: ["[[" + classUid + "]]"],
+      });
+      (context.app as any).metadataCache = {
+        getFirstLinkpathDest: jest.fn().mockReturnValue(null),
+        getFileCache: jest.fn(),
+      };
+      mockResolveLabelByUID.mockResolvedValue(null);
+
+      await builder.build(context);
+
+      const infoLogs = (context.logger.info as jest.Mock).mock.calls;
+      const matched = infoLogs.find(
+        ([msg]: [string]) =>
+          typeof msg === "string" &&
+          msg.includes(classUid) &&
+          msg.includes("no symbolic"),
+      );
+      expect(matched).toBeDefined();
     });
 
     it("should preserve order — declared classes first, exo__Asset appended (Issue #2958)", async () => {
@@ -390,9 +475,10 @@ describe("DynamicCommandButtonGroupBuilder", () => {
 
     it("should resolve variant from command category via categoryDefaultVariant map", async () => {
       // RFC f1dc284a: `creation` category maps to `primary` by built-in defaults.
-      const rc = createResolvedCommand(
-        { name: "Create action", category: "creation" },
-      );
+      const rc = createResolvedCommand({
+        name: "Create action",
+        category: "creation",
+      });
       mockResolveForAssetMulti.mockResolvedValue([rc]);
       mockEvaluate.mockResolvedValue(true);
 
@@ -403,9 +489,10 @@ describe("DynamicCommandButtonGroupBuilder", () => {
     });
 
     it("should map maintenance category to muted variant", async () => {
-      const rc = createResolvedCommand(
-        { name: "Rebuild index", category: "maintenance" },
-      );
+      const rc = createResolvedCommand({
+        name: "Rebuild index",
+        category: "maintenance",
+      });
       mockResolveForAssetMulti.mockResolvedValue([rc]);
       mockEvaluate.mockResolvedValue(true);
 
@@ -416,9 +503,10 @@ describe("DynamicCommandButtonGroupBuilder", () => {
     });
 
     it("should default variant to secondary when no category", async () => {
-      const rc = createResolvedCommand(
-        { name: "Default action", category: undefined },
-      );
+      const rc = createResolvedCommand({
+        name: "Default action",
+        category: undefined,
+      });
       mockResolveForAssetMulti.mockResolvedValue([rc]);
       mockEvaluate.mockResolvedValue(true);
 
@@ -1360,16 +1448,22 @@ describe("DynamicCommandButtonGroupBuilder", () => {
     let originalMeasure: unknown;
 
     beforeEach(() => {
-      originalMark = (performance as unknown as Record<string, unknown>)["mark"];
-      originalMeasure = (performance as unknown as Record<string, unknown>)["measure"];
+      originalMark = (performance as unknown as Record<string, unknown>)[
+        "mark"
+      ];
+      originalMeasure = (performance as unknown as Record<string, unknown>)[
+        "measure"
+      ];
       markSpy = jest.fn();
       measureSpy = jest.fn();
       (performance as unknown as Record<string, unknown>)["mark"] = markSpy;
-      (performance as unknown as Record<string, unknown>)["measure"] = measureSpy;
+      (performance as unknown as Record<string, unknown>)["measure"] =
+        measureSpy;
     });
 
     afterEach(() => {
-      (performance as unknown as Record<string, unknown>)["mark"] = originalMark;
+      (performance as unknown as Record<string, unknown>)["mark"] =
+        originalMark;
       (performance as unknown as Record<string, unknown>)["measure"] =
         originalMeasure;
     });
