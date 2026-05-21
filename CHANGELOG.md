@@ -2,6 +2,20 @@
 
 ### Added
 
+**RFC v2 Phase 2 — Instance assets for Create Task Grounding (vault-only, closes #3161)**: New `exocmd__PropertyDefault` + `exocmd__InheritanceRule` instances in `exocortex-exocmd-ontology` (commit `8e4bf1f`) attached to Grounding `a6ef8fda-addb-40c3-940c-fe55fd7e8500` (Create TaskPrototype instance). Declarative replacement for hardcoded literal defaults in `ServiceRegistryPopulator.ts:199-211` (Phase 4b removal scope). Engine still reads hardcoded TS dispatch in this phase; switch to declarative reads happens in Phase 3 (#3162, #3163).
+
+- **1 PropertyDefault** (`d9aa9bb8-…`): `ems__Effort_status = [[c42245d0-…|ems__EffortStatusDraft]]` (UID-canon Draft, replacing legacy symbolic `EffortStatusBacklog` literal)
+- **3 InheritanceRule instances** with priority-based mutual exclusion:
+  - `3f08f5a8-…` — `exo__Asset_uid → ems__Effort_area` with `targetClassCondition = ems__Area`, priority 100 (Area parent path)
+  - `43731bae-…` — `exo__Asset_uid → ems__Effort_parent` with `targetClassExclusion = ems__Area`, priority 50 (non-Area parent path)
+  - `cbe000c4-…` — `exo__Asset_isDefinedBy → exo__Asset_isDefinedBy` unconditional pass-through, priority 10 (ontology-membership fallback)
+- Grounding `a6ef8fda-…` frontmatter updated with `Grounding_propertyDefault` (1 ref) and `Grounding_inheritanceRule` (3 refs)
+- Idempotency proven via SPARQL `(Grounding-uid, property-uid)` key lookup; re-run finds existing PropertyDefault, 0 new files
+- SHACL `--shapes-mode`: 0 new violations introduced (baseline 629 — pre-existing legacy, unrelated to Phase 2)
+- CQ1 (RFC §Competency Questions) returns expected row: `?grounding=a6ef8fda-…, ?defaultValue=EffortStatusDraft`
+
+Coexistence note: Grounding had no legacy `Grounding_propertyDefaults` plural JSON form before Phase 2 — coexistence log path stays dormant. Phase 5 cleanup remains scheduled per RFC v2.
+
 **RFC v2 Phase 1 — Homoiconic Grounding rules TBox (vault-only, closes #3160)**: New TBox assets in `exocortex-exocmd-ontology` (commit `a3b06db`) introducing the foundation for declarative Grounding rules — replacing hardcoded literal defaults in `ServiceRegistryPopulator.ts:199-211` (Phase 4b removal scope). No engine code changes in this phase (Phase 3 follows). Added:
 
 - 4 classes: `exocmd__DeclarativeRule` (abstract superclass), `exocmd__PropertyDefault`, `exocmd__InheritanceRule`, `exocmd__SubstitutionToken`
