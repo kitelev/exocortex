@@ -1,8 +1,10 @@
-// flaky-track: Issue #2988 — single-incident flake (1/41) without retry(1).
-// Per RFC 32a64ed9 §3.3, bucket = track: keep enabled, no retry, rely on
-// Phase 3.4 dashboard to disambiguate at higher N.
-// Watch criteria: incident #2 within 30 days → escalate to fix; zero further
-// at N≥100 → close as resolved. Expiry: 2026-05-31.
+// flaky-track: Issue #2988 — incident #2 logged 2026-05-21 on PR #3211.
+// RCA: positive test missed `.exocortex-layout-rendered` wait that 6 other
+// specs use; render race under Xvfb load → "Target page closed" (60s test
+// timeout). Fix: add `waitForElement(".exocortex-layout-rendered", 30000)`
+// after every `waitForModalsToClose` in this spec.
+// Per RFC 32a64ed9 §3.3 escalation: incident #2 triggered fix; watch shifts
+// to "N≥100 zero-further on main → close `@flaky-track` tag". Expiry: 2026-05-31.
 import { test, expect } from "@playwright/test";
 import { ObsidianLauncher } from "../utils/obsidian-launcher";
 import * as path from "path";
@@ -40,6 +42,7 @@ test.describe(
     const window = await launcher.getWindow();
 
     await launcher.waitForModalsToClose(10000);
+    await launcher.waitForElement(".exocortex-layout-rendered", 30000);
 
     const toggleButton = window.locator(
       ".exocortex-daily-tasks-section .exocortex-toggle-archived",
@@ -98,6 +101,7 @@ test.describe(
     const window = await launcher.getWindow();
 
     await launcher.waitForModalsToClose(10000);
+    await launcher.waitForElement(".exocortex-layout-rendered", 30000);
 
     const toggleButton = window.locator(
       ".exocortex-daily-tasks-section .exocortex-toggle-archived",
@@ -114,9 +118,11 @@ test.describe(
 
     await launcher.openFile("Daily Notes/2025-10-17.md");
     await launcher.waitForModalsToClose(10000);
+    await launcher.waitForElement(".exocortex-layout-rendered", 30000);
 
     await launcher.openFile("Daily Notes/2025-10-18.md");
     await launcher.waitForModalsToClose(10000);
+    await launcher.waitForElement(".exocortex-layout-rendered", 30000);
 
     const toggleButtonAfterRefresh = window.locator(
       ".exocortex-daily-tasks-section .exocortex-toggle-archived",

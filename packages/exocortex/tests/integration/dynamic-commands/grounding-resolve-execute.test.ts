@@ -312,6 +312,152 @@ describe("RFC da3a7555 — RDF → Resolver → Executor pipeline (create_instan
     expect(content).not.toContain("[[https://exocortex.my/ontology/ems#Task]]");
   });
 
+  it("Fixture 2b: targetClass IRI pointing at a UUID-named class TBox file → UID-form wikilink (#3212)", async () => {
+    // Issue #3212 — UUID-canon TBox: when Grounding_targetClass points at a
+    // UUID-named class file (e.g. `1b20a8f0-...md` whose label is
+    // `ems__Task`), the executor must emit `exo__Instance_class: "[[<UID>]]"`,
+    // NOT the legacy label-form `"[[ems__Task]]"`. The fix is at the parser
+    // layer (NoteToRDFConverter Phase 3 hotfix bypass extended to
+    // `Grounding_targetClass`); this fixture seeds the store with the
+    // parser's post-fix output (file IRI for the class TBox) and asserts
+    // the resolver+executor chain produces UID-form.
+    const CLASS_UID = "1b20a8f0-d745-4e93-91db-4531b3df120e";
+    const CLASS_FILE_IRI = new IRI(
+      `obsidian://vault/assetspaces/ems/${CLASS_UID}.md`,
+    );
+
+    // Seed the class TBox file's identity (uid + label). Required so the
+    // resolver's IRI → UUID basename mapping has a well-formed target.
+    await store.addAll([
+      new Triple(
+        CLASS_FILE_IRI,
+        Namespace.RDF.term("type"),
+        Namespace.EXO.term("Class"),
+      ),
+      new Triple(
+        CLASS_FILE_IRI,
+        Namespace.EXO.term("Asset_uid"),
+        new Literal(CLASS_UID),
+      ),
+      new Triple(
+        CLASS_FILE_IRI,
+        Namespace.EXO.term("Asset_label"),
+        new Literal("ems__Task"),
+      ),
+    ]);
+
+    // Manually seed grounding with file IRI for targetClass (simulating
+    // the parser's post-fix output for `Grounding_targetClass: [[<UID>]]`).
+    const gnd = new IRI(`obsidian://vault/${GND_UID}.md`);
+    await store.addAll([
+      new Triple(gnd, Namespace.RDF.term("type"), Namespace.EXOCMD.term("Grounding")),
+      new Triple(gnd, Namespace.EXO.term("Asset_uid"), new Literal(GND_UID)),
+      new Triple(
+        gnd,
+        Namespace.EXO.term("Asset_label"),
+        new Literal("Create Task Instance grounding"),
+      ),
+      new Triple(
+        gnd,
+        Namespace.EXOCMD.term("Grounding_type"),
+        new Literal("create_instance"),
+      ),
+      new Triple(
+        gnd,
+        Namespace.EXOCMD.term("Grounding_targetClass"),
+        CLASS_FILE_IRI,
+      ),
+      new Triple(
+        gnd,
+        Namespace.EXOCMD.term("Grounding_targetFolder"),
+        new Literal("03 Knowledge/inbox"),
+      ),
+      new Triple(
+        gnd,
+        Namespace.EXOCMD.term("Grounding_linkBackProperty"),
+        new Literal(`[[${PROPERTY_UID}|ems__Effort_prevIteration]]`),
+      ),
+    ]);
+    await seedCommand(store);
+
+    const grounding = await loadGrounding(resolver, store);
+    // CommandResolver.iriToObsidianName extracts the UUID basename for
+    // `obsidian://vault/...` IRIs — yielding the canonical UID.
+    expect(grounding.targetClass).toBe(CLASS_UID);
+
+    const result = await executor.execute(
+      grounding as never,
+      SOURCE_IRI,
+      SOURCE_FILE_PATH,
+    );
+    expect(result.success).toBe(true);
+
+    const createdPath = fs.listCreated().find((p) => p !== SOURCE_FILE_PATH);
+    const content = fs.getContent(createdPath!)!;
+
+    // UID-form, NOT label-form.
+    expect(content).toContain(
+      `exo__Instance_class:\n  - "[[${CLASS_UID}]]"`,
+    );
+    expect(content).not.toContain('"[[ems__Task]]"');
+  });
+
+  it("Fixture 2c: targetClass plain literal + class TBox in store → UID-form via CommandResolver label→UID lookup (#3212)", async () => {
+    // Issue #3212 — vault grounding `a6ef8fda-...` ("Create TaskPrototype
+    // instance") stores `exocmd__Grounding_targetClass: "ems__Task"` as a
+    // plain string literal (not a wikilink). The Phase 3 parser bypass does
+    // not fire (no UUID wikilink, no IRI). The CommandResolver then performs
+    // a label→UID lookup against the seeded class TBox file so the executor
+    // emits UID-form regardless of legacy storage shape.
+    const CLASS_UID = "1b20a8f0-d745-4e93-91db-4531b3df120e";
+    const CLASS_FILE_IRI = new IRI(
+      `obsidian://vault/assetspaces/ems/${CLASS_UID}.md`,
+    );
+
+    await store.addAll([
+      new Triple(
+        CLASS_FILE_IRI,
+        Namespace.RDF.term("type"),
+        Namespace.EXO.term("Class"),
+      ),
+      new Triple(
+        CLASS_FILE_IRI,
+        Namespace.EXO.term("Asset_uid"),
+        new Literal(CLASS_UID),
+      ),
+      new Triple(
+        CLASS_FILE_IRI,
+        Namespace.EXO.term("Asset_label"),
+        new Literal("ems__Task"),
+      ),
+    ]);
+
+    // Plain literal short-name — empirical reproduction of vault grounding
+    // `a6ef8fda-...` (see issue body).
+    await seedGrounding(store, {
+      linkBackPropertyLiteral: `[[${PROPERTY_UID}|ems__Effort_prevIteration]]`,
+    });
+    await seedCommand(store);
+
+    const grounding = await loadGrounding(resolver, store);
+    expect(grounding.targetClass).toBe(CLASS_UID);
+
+    const result = await executor.execute(
+      grounding as never,
+      SOURCE_IRI,
+      SOURCE_FILE_PATH,
+    );
+    expect(result.success).toBe(true);
+
+    const createdPath = fs.listCreated().find((p) => p !== SOURCE_FILE_PATH);
+    const content = fs.getContent(createdPath!)!;
+
+    expect(content).toContain(
+      `exo__Instance_class:\n  - "[[${CLASS_UID}]]"`,
+    );
+    expect(content).not.toContain('"[[ems__Task]]"');
+  });
+
   it("Fixture 3: copy-from-target inherits ≥3 non-blacklisted fields from source frontmatter", async () => {
     await seedGrounding(store, {
       linkBackPropertyLiteral: `[[${PROPERTY_UID}|ems__Effort_prevIteration]]`,
