@@ -26,6 +26,7 @@ test.describe("Daily Note Navigation", () => {
     const window = await launcher.getWindow();
 
     await launcher.waitForModalsToClose(10000);
+    await launcher.waitForElement(".exocortex-layout-rendered", 30000);
 
     const navContainer = window.locator(".exocortex-daily-navigation");
     await expect(navContainer.locator(".exocortex-nav-prev a")).toContainText(
@@ -50,6 +51,7 @@ test.describe("Daily Note Navigation", () => {
     const window = await launcher.getWindow();
 
     await launcher.waitForModalsToClose(10000);
+    await launcher.waitForElement(".exocortex-layout-rendered", 30000);
 
     const navContainer = window.locator(".exocortex-daily-navigation");
     await expect(navContainer.locator(".exocortex-nav-prev a")).toContainText(
@@ -98,6 +100,7 @@ test.describe("Daily Note Navigation", () => {
     const window = await launcher.getWindow();
 
     await launcher.waitForModalsToClose(10000);
+    await launcher.waitForElement(".exocortex-layout-rendered", 30000);
 
     const navContainer = window.locator(".exocortex-daily-navigation");
     await expect(navContainer.locator(".exocortex-nav-prev a")).toContainText(
@@ -126,6 +129,7 @@ test.describe("Daily Note Navigation", () => {
     const window = await launcher.getWindow();
 
     await launcher.waitForModalsToClose(10000);
+    await launcher.waitForElement(".exocortex-layout-rendered", 30000);
 
     const navContainer = window.locator(".exocortex-daily-navigation");
     await expect(navContainer.locator(".exocortex-nav-prev a")).toContainText(
@@ -152,6 +156,7 @@ test.describe("Daily Note Navigation", () => {
     const window = await launcher.getWindow();
 
     await launcher.waitForModalsToClose(10000);
+    await launcher.waitForElement(".exocortex-layout-rendered", 30000);
 
     const navContainer = window.locator(".exocortex-daily-navigation");
     await expect(
