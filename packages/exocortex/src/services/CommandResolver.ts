@@ -941,7 +941,27 @@ export class CommandResolver {
     }
     const isDefinedBy = await this.getObsidianWikilinkValue(subject, Namespace.EXOCMD.term("Grounding_isDefinedBy"));
     const sparqlUpdate = await this.getLiteralValue(subject, Namespace.EXOCMD.term("Grounding_sparqlUpdate"));
-    const targetClass = await this.getObsidianName(subject, Namespace.EXOCMD.term("Grounding_targetClass"));
+    // Issue #3212: `Grounding_targetClass` must yield UID-form for UUID-canon
+    // TBox (vault aiKnow `[[152e39df-cc1b-4175-a4f2-2c2913018937]]`). Three
+    // storage shapes flow through here:
+    //   (a) IRI to a UUID-named class TBox file (post-NoteToRDFConverter Phase
+    //       3 bypass extension) — `getObsidianName` extracts the UUID basename
+    //       via `iriToObsidianName`. Already UID-form.
+    //   (b) Plain literal short-name `"ems__Task"` (legacy ABox shape, still
+    //       prevalent in vault — e.g. grounding `a6ef8fda-...` "Create
+    //       TaskPrototype instance"). Resolver returns `"ems__Task"`.
+    //   (c) Wikilink-to-label `"[[ems__Task]]"` (legacy) — resolver returns
+    //       `"ems__Task"` via `unwrapWikilink`.
+    // For (b) and (c) we look up the class file by `exo__Asset_label` and
+    // substitute the UID. Falls back to the short-name when no class file
+    // matches (test fixtures without a seeded TBox, ABox typos, etc.).
+    let targetClass = await this.getObsidianName(subject, Namespace.EXOCMD.term("Grounding_targetClass"));
+    if (targetClass && !this.looksLikeUUID(targetClass)) {
+      const classUid = await this.findUidByLabel(targetClass);
+      if (classUid) {
+        targetClass = classUid;
+      }
+    }
     const targetPrototype = await this.getObsidianName(subject, Namespace.EXOCMD.term("Grounding_targetPrototype"));
     const targetFolder = await this.getLiteralValue(subject, Namespace.EXOCMD.term("Grounding_targetFolder"));
     const linkBackProperty = await this.getObsidianName(subject, Namespace.EXOCMD.term("Grounding_linkBackProperty"));
@@ -1179,6 +1199,43 @@ export class CommandResolver {
     const subject = await this.findSubjectByUID(uid);
     if (!subject) return null;
     return this.getLiteralValue(subject, Namespace.EXO.term("Asset_label"));
+  }
+
+  /**
+   * Reverse-direction lookup: given an `exo__Asset_label` literal value
+   * (e.g. `"ems__Task"`), find the matching asset's `exo__Asset_uid` in
+   * the triple store. Used by `loadGroundingDefinition` (#3212) to
+   * substitute the canonical UID when `Grounding_targetClass` is stored
+   * as a plain short-name literal or wikilink-to-label rather than as
+   * a UUID wikilink. Returns null when no asset bears that label or
+   * the labelled asset has no UID literal.
+   */
+  private async findUidByLabel(label: string): Promise<string | null> {
+    const labelTriples = await this.tripleStore.match(
+      undefined,
+      Namespace.EXO.term("Asset_label"),
+      undefined,
+    );
+    for (const triple of labelTriples) {
+      if (
+        triple.object instanceof Literal &&
+        triple.object.value === label &&
+        triple.subject instanceof IRI
+      ) {
+        const uidTriples = await this.tripleStore.match(
+          triple.subject,
+          Namespace.EXO.term("Asset_uid"),
+          undefined,
+        );
+        if (
+          uidTriples.length > 0 &&
+          uidTriples[0].object instanceof Literal
+        ) {
+          return uidTriples[0].object.value;
+        }
+      }
+    }
+    return null;
   }
 
   private async getLinkedUID(subject: IRI, predicate: IRI): Promise<string | null> {
