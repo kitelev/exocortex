@@ -293,10 +293,10 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
   }
 
   /**
-   * Rewrites inbound wikilinks pointing at `oldBasename` so they target the
-   * new file's basename, preserving the original basename as the display
-   * alias (UID-form convention). Honors fenced/inline code-block exclusion
-   * and skips the file being renamed itself. Issue #3113.
+   * Rewrites inbound wikilinks pointing at `oldBasename` so they collapse to a
+   * bare `[[newBasename]]` — display label is resolved at render time from the
+   * target's `exo__Asset_label`. Honors fenced/inline code-block exclusion and
+   * skips the file being renamed itself. Issue #3113.
    */
   async updateLinks(
     oldPath: string,

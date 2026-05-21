@@ -11,12 +11,12 @@ export class RenameToUidService {
   async renameToUid(file: IFile, metadata: Record<string, unknown>): Promise<void> {
     const uid = metadata.exo__Asset_uid;
 
-    if (!uid) {
+    if (!uid || typeof uid !== "string") {
       throw new Error("Asset has no exo__Asset_uid property");
     }
 
     const currentBasename = file.basename;
-    const targetBasename = uid;
+    const targetBasename: string = uid;
 
     if (currentBasename === targetBasename) {
       throw new Error("File is already named according to UID");
@@ -24,10 +24,13 @@ export class RenameToUidService {
 
     const currentLabel = metadata.exo__Asset_label as string | undefined;
     const needsLabelUpdate = !currentLabel || currentLabel.trim() === "";
+    const needsAliasUpdate = !this.isAssetArchived(metadata);
 
-    if (needsLabelUpdate) {
-      const isArchived = this.isAssetArchived(metadata);
-      await this.updateLabel(file, currentBasename, isArchived);
+    if (needsLabelUpdate || needsAliasUpdate) {
+      await this.updateFrontmatter(file, currentBasename, {
+        setLabel: needsLabelUpdate,
+        appendAlias: needsAliasUpdate,
+      });
     }
 
     const folderPath = file.parent?.path || "";
@@ -40,10 +43,10 @@ export class RenameToUidService {
     await this.vault.rename(file, newPath);
   }
 
-  private async updateLabel(
+  private async updateFrontmatter(
     file: IFile,
-    label: string,
-    isArchived: boolean,
+    basename: string,
+    opts: { setLabel: boolean; appendAlias: boolean },
   ): Promise<void> {
     await this.vault.process(file, (content) => {
       const frontmatterRegex = /^---\n([\s\S]*?)\n---/;
@@ -55,12 +58,12 @@ export class RenameToUidService {
 
       let frontmatterContent = match[1];
 
-      // Add label
-      frontmatterContent = `${frontmatterContent}\nexo__Asset_label: ${label}`;
+      if (opts.setLabel) {
+        frontmatterContent = `${frontmatterContent}\nexo__Asset_label: ${basename}`;
+      }
 
-      // Add aliases if not archived
-      if (!isArchived) {
-        frontmatterContent = this.updateAliases(frontmatterContent, label);
+      if (opts.appendAlias) {
+        frontmatterContent = this.updateAliases(frontmatterContent, basename);
       }
 
       return content.replace(frontmatterRegex, `---\n${frontmatterContent}\n---`);

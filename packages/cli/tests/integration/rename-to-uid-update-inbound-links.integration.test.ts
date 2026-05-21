@@ -63,7 +63,7 @@ describe("Issue #3113: rename-to-uid updates inbound wikilinks", () => {
     return full;
   }
 
-  it("rewrites all wikilink shapes; skips code/embeds/already-UID-form", async () => {
+  it("collapses all wikilink shapes to bare [[uid]]; skips code/embeds/already-UID-form", async () => {
     const inbox = "01 Inbox/Choco.md";
     write(inbox, targetFile({ uid: ASSET_UID, label: "Choco" }));
 
@@ -114,27 +114,23 @@ describe("Issue #3113: rename-to-uid updates inbound wikilinks", () => {
     expect(fs.existsSync(newTargetPath)).toBe(true);
     expect(fs.existsSync(path.join(vaultRoot, inbox))).toBe(false);
 
-    // Trigger files updated
-    expect(fs.readFileSync(bare, "utf-8")).toContain(`[[${ASSET_UID}|Choco]]`);
-    expect(fs.readFileSync(aliased, "utf-8")).toContain(
-      `[[${ASSET_UID}|Шоколад]]`,
-    );
-    expect(fs.readFileSync(heading, "utf-8")).toContain(
-      `[[${ASSET_UID}#Ingredients|Choco]]`,
-    );
+    // Trigger files updated — all shapes collapse to bare [[uid]]
+    expect(fs.readFileSync(bare, "utf-8")).toContain(`[[${ASSET_UID}]]`);
+    expect(fs.readFileSync(aliased, "utf-8")).toContain(`[[${ASSET_UID}]]`);
+    expect(fs.readFileSync(heading, "utf-8")).toContain(`[[${ASSET_UID}]]`);
     expect(fs.readFileSync(headingAliased, "utf-8")).toContain(
-      `[[${ASSET_UID}#Ingredients|See Ingredients]]`,
+      `[[${ASSET_UID}]]`,
     );
 
     // Code-block contents preserved verbatim
     const codeBlockContent = fs.readFileSync(codeBlock, "utf-8");
     expect(codeBlockContent).toContain("Do not rewrite [[Choco]] here");
-    expect(codeBlockContent).toContain(`After code [[${ASSET_UID}|Choco]]`);
+    expect(codeBlockContent).toContain(`After code [[${ASSET_UID}]]`);
 
     // Inline code preserved
     const inlineContent = fs.readFileSync(inlineCode, "utf-8");
     expect(inlineContent).toContain("`[[Choco]]`");
-    expect(inlineContent).toContain(`Outside [[${ASSET_UID}|Choco]]`);
+    expect(inlineContent).toContain(`Outside [[${ASSET_UID}]]`);
 
     // Already-UID-form unchanged
     expect(fs.readFileSync(alreadyUid, "utf-8")).toContain(

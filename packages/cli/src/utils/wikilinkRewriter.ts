@@ -16,14 +16,18 @@ export interface RewriteResult {
 }
 
 /**
- * Rewrites inbound wikilinks pointing to `oldBasename` so they target
- * `newBasename` while preserving the original basename as the display alias.
+ * Rewrites inbound wikilinks pointing to `oldBasename` so they collapse to a
+ * bare `[[newBasename]]`. Display label is resolved at render time from the
+ * target's `exo__Asset_label`; the old basename is preserved in the target's
+ * frontmatter `aliases:` array by RenameToUidService.
  *
- * Shapes handled (Issue #3113 AC):
- *   [[OldName]]                 -> [[NewBase|OldName]]
- *   [[OldName|Display]]         -> [[NewBase|Display]]
- *   [[OldName#Heading]]         -> [[NewBase#Heading|OldName]]
- *   [[OldName#Heading|Display]] -> [[NewBase#Heading|Display]]
+ * Shapes handled (all collapse to [[NewBase]]):
+ *   [[OldName]]                 -> [[NewBase]]
+ *   [[OldName|Display]]         -> [[NewBase]]
+ *   [[OldName#Heading]]         -> [[NewBase]]
+ *   [[OldName#Heading|Display]] -> [[NewBase]]
+ *   [[OldName^block]]           -> [[NewBase]]
+ *   [[OldName^block|Display]]   -> [[NewBase]]
  *
  * Skips fenced code blocks (``` … ```), inline code (` … `), and embeds (`![[…]]`).
  * Skips the renamed file itself via `excludeRelPath`.
@@ -134,31 +138,19 @@ function replaceWikilinks(
   newBasename: string,
 ): { updated: string; replacements: number } {
   // (?<!!) — exclude embeds ![[...]]
-  // Group 1: link target (no |, #, ], [, newline)
-  // Group 2: optional #heading (without |)
-  // Group 3: optional |display
-  const regex = /(?<!!)\[\[([^\[\]\n|#]+)(#[^\[\]\n|]*)?(\|[^\[\]\n]*)?\]\]/g;
+  // Group 1: link target (no |, #, ^, ], [, newline)
+  // Optional non-capturing groups for heading / block / alias — all dropped.
+  // All shapes collapse to bare [[newBasename]]; display alias is resolved
+  // at render time from the target's exo__Asset_label.
+  const regex =
+    /(?<!!)\[\[([^\[\]\n|#^]+)(?:[#^][^\[\]\n|]*)?(?:\|[^\[\]\n]*)?\]\]/g;
   let replacements = 0;
 
-  const updated = text.replace(regex, (match, target, heading, alias) => {
+  const updated = text.replace(regex, (match, target) => {
     const trimmedTarget = target.trim();
     if (trimmedTarget !== oldBasename) return match;
     replacements += 1;
-
-    const headingPart = heading ?? "";
-    let aliasPart: string;
-    if (alias) {
-      // Preserve existing display alias.
-      aliasPart = alias;
-    } else if (headingPart) {
-      // Heading without explicit alias — preserve original basename as display.
-      aliasPart = `|${oldBasename}`;
-    } else {
-      // Bare wikilink — preserve original basename as display per UID-form convention.
-      aliasPart = `|${oldBasename}`;
-    }
-
-    return `[[${newBasename}${headingPart}${aliasPart}]]`;
+    return `[[${newBasename}]]`;
   });
 
   return { updated, replacements };

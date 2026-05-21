@@ -245,48 +245,15 @@ export class ObsidianVaultAdapter implements IVaultAdapter {
         "\\$&",
       );
 
-      const patterns = [
-        {
-          regex: new RegExp(
-            `\\[\\[${escapedOldBasename}(#[^\\]|]+)\\|([^\\]]+)\\]\\]`,
-            "g",
-          ),
-          replacement: `[[${newBasename}$1|$2]]`,
-        },
-        {
-          regex: new RegExp(
-            `\\[\\[${escapedOldBasename}(\\^[^\\]|]+)\\|([^\\]]+)\\]\\]`,
-            "g",
-          ),
-          replacement: `[[${newBasename}$1|$2]]`,
-        },
-        {
-          regex: new RegExp(
-            `\\[\\[${escapedOldBasename}\\|([^\\]]+)\\]\\]`,
-            "g",
-          ),
-          replacement: `[[${newBasename}|$1]]`,
-        },
-        {
-          regex: new RegExp(`\\[\\[${escapedOldBasename}(#[^\\]|]+)\\]\\]`, "g"),
-          replacement: `[[${newBasename}$1|${oldBasename}]]`,
-        },
-        {
-          regex: new RegExp(
-            `\\[\\[${escapedOldBasename}(\\^[^\\]|]+)\\]\\]`,
-            "g",
-          ),
-          replacement: `[[${newBasename}$1|${oldBasename}]]`,
-        },
-        {
-          regex: new RegExp(`\\[\\[${escapedOldBasename}\\]\\]`, "g"),
-          replacement: `[[${newBasename}|${oldBasename}]]`,
-        },
-      ];
-
-      for (const { regex, replacement } of patterns) {
-        content = content.replace(regex, replacement);
-      }
+      // Collapse all wikilink shapes to bare [[newBasename]]:
+      //   [[Old]] / [[Old|*]] / [[Old#h]] / [[Old#h|*]] / [[Old^b]] / [[Old^b|*]]
+      // Display label resolved at render time from target's exo__Asset_label;
+      // old basename preserved in target frontmatter `aliases:` by service.
+      const collapseRegex = new RegExp(
+        `\\[\\[${escapedOldBasename}(?:[#^][^\\]|]*)?(?:\\|[^\\]]*)?\\]\\]`,
+        "g",
+      );
+      content = content.replace(collapseRegex, `[[${newBasename}]]`);
 
       await this.vault.modify(sourceFile, content);
     }

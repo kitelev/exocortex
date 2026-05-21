@@ -30,7 +30,7 @@ describe("RenameToUidService", () => {
   });
 
   describe("renameToUid", () => {
-    it("should rename file to UID", async () => {
+    it("should rename file to UID and process frontmatter for alias append", async () => {
       const metadata = {
         exo__Asset_uid: "asset-123",
         exo__Asset_label: "Existing Label",
@@ -39,7 +39,8 @@ describe("RenameToUidService", () => {
       await service.renameToUid(mockFile, metadata);
 
       expect(mockVault.rename).toHaveBeenCalledWith(mockFile, "/folder/asset-123.md");
-      expect(mockVault.process).not.toHaveBeenCalled();
+      // Even with existing label, process is invoked to append old basename to aliases.
+      expect(mockVault.process).toHaveBeenCalled();
     });
 
     it("should throw error when no UID property", async () => {
@@ -113,15 +114,28 @@ describe("RenameToUidService", () => {
       expect(mockVault.rename).toHaveBeenCalled();
     });
 
-    it("should not update label when valid label exists", async () => {
+    it("should not overwrite label but still append alias when valid label exists", async () => {
       const metadata = {
         exo__Asset_uid: "asset-123",
         exo__Asset_label: "Valid Label",
       };
 
+      mockVault.process.mockImplementation(async (file, fn) => {
+        const content = "---\nexo__Asset_label: Valid Label\n---\nContent";
+        const result = fn(content);
+        // Existing label preserved verbatim — no second `exo__Asset_label:` added.
+        const labelMatches = result.match(/^exo__Asset_label\s*:/gm);
+        expect(labelMatches?.length).toBe(1);
+        expect(result).toContain("exo__Asset_label: Valid Label");
+        // Old basename appended to aliases.
+        expect(result).toContain("aliases:");
+        expect(result).toContain("- old-name");
+        return result;
+      });
+
       await service.renameToUid(mockFile, metadata);
 
-      expect(mockVault.process).not.toHaveBeenCalled();
+      expect(mockVault.process).toHaveBeenCalled();
       expect(mockVault.rename).toHaveBeenCalledWith(mockFile, "/folder/asset-123.md");
     });
 
