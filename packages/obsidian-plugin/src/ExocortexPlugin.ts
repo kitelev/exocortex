@@ -22,6 +22,7 @@ import {
   TaskStatusService,
   CommandResolver,
   PreconditionEvaluator,
+  registerDefaultHostFunctions,
   GroundingExecutor,
   ServiceRegistry,
   RelationColumnSetResolver,
@@ -207,6 +208,7 @@ export default class ExocortexPlugin extends Plugin {
         tripleStore,
         queryBodyResolver,
       );
+      registerDefaultHostFunctions(this.preconditionEvaluator);
       // Vault changes invalidate the cached UID→path index.
       this.registerEvent(
         this.app.metadataCache.on("changed", () =>

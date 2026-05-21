@@ -15,6 +15,7 @@ export interface EvalContext {
   readonly targetIRI: string;
   readonly fileBasename?: string;
   readonly currentFolder?: string;
+  readonly assetUid?: string;
   readonly [key: string]: unknown;
 }
 

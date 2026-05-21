@@ -293,6 +293,7 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
       null;
 
     const prototypeIRI = this.extractPrototypeIRI(metadata);
+    const assetUid = this.extractAssetUid(metadata);
 
     // Issue #3183 — persistent disk cache. Cache stores binding-resolution
     // output (NOT precondition-filter output): the indexer's representative
@@ -336,6 +337,7 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
         cachedBindings,
         subjectIRI,
         file,
+        assetUid,
       );
     } else if (useFastPath) {
       preconditionPassed = await this.resolveViaFastPath(context);
@@ -346,6 +348,7 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
         prototypeIRI,
         file,
         logger,
+        assetUid,
       );
     }
 
@@ -386,6 +389,7 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
     prototypeIRI: string | undefined,
     file: ButtonBuilderContext["file"],
     logger: ButtonBuilderContext["logger"],
+    assetUid: string | undefined,
   ): Promise<ResolvedCommand[] | null> {
     let resolved: ResolvedCommand[];
     try {
@@ -403,7 +407,7 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
 
     if (resolved.length === 0) return null;
 
-    return this.evaluatePreconditions(resolved, subjectIRI, file);
+    return this.evaluatePreconditions(resolved, subjectIRI, file, assetUid);
   }
 
   /**
@@ -419,12 +423,14 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
     resolved: ReadonlyArray<ResolvedCommand>,
     subjectIRI: string,
     file: ButtonBuilderContext["file"],
+    assetUid: string | undefined,
   ): Promise<ResolvedCommand[]> {
     if (resolved.length === 0) return [];
     const evalContext: EvalContext = {
       targetIRI: subjectIRI,
       fileBasename: file.basename,
       currentFolder: file.parent?.path,
+      assetUid,
     };
     const availabilityChecks = await Promise.all(
       resolved.map(async (rc) => {
@@ -771,5 +777,14 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
       return raw.replace(/["'[\]]/g, "").trim();
     }
     return undefined;
+  }
+
+  private extractAssetUid(
+    metadata: Record<string, unknown>,
+  ): string | undefined {
+    const raw = metadata["exo__Asset_uid"];
+    if (typeof raw !== "string") return undefined;
+    const trimmed = raw.trim();
+    return trimmed === "" ? undefined : trimmed;
   }
 }
