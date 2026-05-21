@@ -927,7 +927,7 @@ export class CommandResolver {
     if (substitutionRefRaw && this.looksLikeUUID(substitutionRefRaw)) {
       // Fail-loud: same pattern as targetProperty above. Missing/labelless
       // SubstitutionToken instance → skip grounding rather than silently
-      // dropping the substitution and falling through to legacy targetValue.
+      // dropping the substitution.
       const resolved = await this.resolveLabelByUID(substitutionRefRaw);
       if (!resolved) {
         this.logger.warn(
@@ -1158,10 +1158,24 @@ export class CommandResolver {
   }
 
   /**
-   * RFC 31c1a0be Phase 3 helper. Resolve a UID to the linked asset's
-   * `exo__Asset_label`. Returns null if asset not found or has no label.
+   * Resolve a UID to the linked asset's `exo__Asset_label` via the triple
+   * store. Returns null if no asset with that UID exists in the store or
+   * if the asset has no `exo__Asset_label` literal.
+   *
+   * Originally an RFC 31c1a0be Phase 3 helper (private). Promoted to
+   * public as a triple-store fallback for the UI builder's UUID→symbolic
+   * class-label expansion (#3141 follow-up, 2026-05-21): when
+   * `app.metadataCache.getFirstLinkpathDest()` cannot find the class file
+   * during cold-start / post-reload race windows, the builder falls back
+   * here so class-targeted CommandBindings do not silently fail to match.
+   *
+   * The helper does NOT type-check the resolved asset — it returns the
+   * label of whatever asset bears the given UID. Callers are responsible
+   * for ensuring the UID refers to an asset whose label is meaningful in
+   * their context (e.g., a class file when expanding `exo__Instance_class`
+   * UUID refs).
    */
-  private async resolveLabelByUID(uid: string): Promise<string | null> {
+  async resolveLabelByUID(uid: string): Promise<string | null> {
     const subject = await this.findSubjectByUID(uid);
     if (!subject) return null;
     return this.getLiteralValue(subject, Namespace.EXO.term("Asset_label"));

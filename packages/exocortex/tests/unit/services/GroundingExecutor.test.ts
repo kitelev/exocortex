@@ -61,7 +61,7 @@ describe("GroundingExecutor", () => {
       const grounding = makeGrounding({
         type: GroundingType.PROPERTY_SET,
         targetProperty: "ems__status",
-        targetValue: "Done",
+        targetValueLiteral: "Done",
       });
 
       const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
@@ -78,7 +78,7 @@ describe("GroundingExecutor", () => {
       const grounding = makeGrounding({
         type: GroundingType.PROPERTY_SET,
         targetProperty: "ems__Effort_startTimestamp",
-        targetValue: "$now",
+        targetValueSubstitution: "$now",
       });
 
       const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
@@ -96,7 +96,7 @@ describe("GroundingExecutor", () => {
       const grounding = makeGrounding({
         type: GroundingType.PROPERTY_SET,
         targetProperty: "due_date",
-        targetValue: "$today",
+        targetValueSubstitution: "$today",
       });
 
       const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
@@ -112,7 +112,7 @@ describe("GroundingExecutor", () => {
       const grounding = makeGrounding({
         type: GroundingType.PROPERTY_SET,
         targetProperty: "linked_from",
-        targetValue: "$target",
+        targetValueSubstitution: "$target",
       });
 
       const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
@@ -125,7 +125,7 @@ describe("GroundingExecutor", () => {
     it("should fail when targetProperty is missing", async () => {
       const grounding = makeGrounding({
         type: GroundingType.PROPERTY_SET,
-        targetValue: "value",
+        targetValueLiteral: "value",
       });
 
       const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
@@ -134,7 +134,7 @@ describe("GroundingExecutor", () => {
       expect(result.error).toContain("targetProperty");
     });
 
-    it("should fail when targetValue is undefined", async () => {
+    it("should fail when no typed predicate is provided", async () => {
       const grounding = makeGrounding({
         type: GroundingType.PROPERTY_SET,
         targetProperty: "prop",
@@ -143,7 +143,9 @@ describe("GroundingExecutor", () => {
       const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
 
       expect(result.success).toBe(false);
-      expect(result.error).toContain("targetValue");
+      expect(result.error).toContain(
+        "targetValueRef/targetValueLiteral/targetValueSubstitution",
+      );
     });
 
     // RFC 31c1a0be Phase 3 — typed predicate dispatch
@@ -204,7 +206,7 @@ describe("GroundingExecutor", () => {
         expect(result.error).toContain("more than one");
       });
 
-      it("legacy targetValue still works (backward-compat fallback)", async () => {
+      it("rejects property_set with only legacy targetValue (no typed predicate) — RFC 31c1a0be Phase 5a", async () => {
         reader.readFile.mockResolvedValue("---\nfoo: bar\n---\n");
         const grounding = makeGrounding({
           type: GroundingType.PROPERTY_SET,
@@ -212,24 +214,10 @@ describe("GroundingExecutor", () => {
           targetValue: '"[[ems__EffortStatusDone]]"',
         });
         const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
-        expect(result.success).toBe(true);
-        const written = writer.updateFile.mock.calls[0][1];
-        expect(written).toContain('ems__legacy_status:');
-      });
-
-      it("typed predicate wins over legacy targetValue (priority)", async () => {
-        reader.readFile.mockResolvedValue("---\nfoo: bar\n---\n");
-        const grounding = makeGrounding({
-          type: GroundingType.PROPERTY_SET,
-          targetProperty: "ems__foo",
-          targetValueLiteral: "from-typed",
-          targetValue: "from-legacy",
-        });
-        const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
-        expect(result.success).toBe(true);
-        const written = writer.updateFile.mock.calls[0][1];
-        expect(written).toContain("ems__foo: from-typed");
-        expect(written).not.toContain("from-legacy");
+        expect(result.success).toBe(false);
+        expect(result.error).toContain(
+          "property_set requires one of targetValueRef/targetValueLiteral/targetValueSubstitution",
+        );
       });
     });
   });
@@ -292,12 +280,12 @@ describe("GroundingExecutor", () => {
           makeGrounding({
             type: GroundingType.PROPERTY_SET,
             targetProperty: "status",
-            targetValue: "Doing",
+            targetValueLiteral: "Doing",
           }),
           makeGrounding({
             type: GroundingType.PROPERTY_SET,
             targetProperty: "ems__Effort_startTimestamp",
-            targetValue: "$now",
+            targetValueSubstitution: "$now",
           }),
         ],
       });
@@ -320,12 +308,12 @@ describe("GroundingExecutor", () => {
           makeGrounding({
             type: GroundingType.PROPERTY_SET,
             targetProperty: "status",
-            targetValue: "Doing",
+            targetValueLiteral: "Doing",
           }),
           makeGrounding({
             type: GroundingType.PROPERTY_SET,
             // Missing targetProperty → will fail
-            targetValue: "broken",
+            targetValueLiteral: "broken",
           }),
         ],
       });
@@ -367,7 +355,7 @@ describe("GroundingExecutor", () => {
       let innermost = makeGrounding({
         type: GroundingType.PROPERTY_SET,
         targetProperty: "foo",
-        targetValue: "bar",
+        targetValueLiteral: "bar",
       });
 
       for (let i = 0; i < 25; i++) {
@@ -1684,7 +1672,7 @@ describe("GroundingExecutor", () => {
         const grounding = makeGrounding({
           type: GroundingType.PROPERTY_SET,
           targetProperty: "ems__status",
-          targetValue: "Done",
+          targetValueLiteral: "Done",
         });
 
         const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
@@ -1785,7 +1773,7 @@ describe("substituteVariables — $input/$value user-input resolution (Findings 
     // Mirrors vault grounding 85687461-* (Set Planned Start)
     const grounding = makeGrounding({
       targetProperty: "ems__Effort_plannedStartTimestamp",
-      targetValue: "$input",
+      targetValueSubstitution: "$input",
     });
     const userInput = { value: "2026-04-19T10:00:00+0500" };
 
@@ -1809,7 +1797,7 @@ describe("substituteVariables — $input/$value user-input resolution (Findings 
     // Mirrors vault grounding c4616dcd-* (Set Result)
     const grounding = makeGrounding({
       targetProperty: "ems__Effort_result",
-      targetValue: "$value",
+      targetValueSubstitution: "$value",
     });
     const userInput = { value: "Completed successfully" };
 
@@ -1829,7 +1817,7 @@ describe("substituteVariables — $input/$value user-input resolution (Findings 
   it("fails loudly (does NOT silently write literal) when $input placeholder present but no userInput provided", async () => {
     const grounding = makeGrounding({
       targetProperty: "ems__Effort_plannedStartTimestamp",
-      targetValue: "$input",
+      targetValueSubstitution: "$input",
     });
 
     const result = await executor.execute(
@@ -1884,7 +1872,7 @@ describe("substituteVariables — $input/$value user-input resolution (Findings 
     async (_label, property, placeholder, sampleValue) => {
       const grounding = makeGrounding({
         targetProperty: property,
-        targetValue: placeholder,
+        targetValueSubstitution: placeholder,
       });
       const userInput = { value: sampleValue };
 

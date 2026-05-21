@@ -616,8 +616,8 @@ describe("ServiceRegistryPopulator (with vaultAdapter)", () => {
   // grounding to declarative property_set with the new $todayStart token;
   // the registry registration no longer exists. Coverage moved to
   // GroundingExecutor.test.ts substituteVariables suite ($todayStart cases).
-  // The TaskStatusService.planOnToday method is retained because palette
-  // command PlanOnTodayCommand still wires through it via direct DI.
+  // The TaskStatusService.planOnToday method + PlanOnTodayCommand palette
+  // command were subsequently deleted in Phase 4 PR-A (RFC 31c1a0be).
 
   describe("planForEvening", () => {
     it("should resolve file and update plannedStartTimestamp to 19:00", async () => {
@@ -637,9 +637,10 @@ describe("ServiceRegistryPopulator (with vaultAdapter)", () => {
   // property_shift / property_increment; the registry registrations no
   // longer exist. See GroundingExecutor.property_shift.test.ts and
   // GroundingExecutor.property_increment.test.ts for new coverage at the
-  // executor layer. Palette command paths (ShiftDayForwardCommand,
-  // ShiftDayBackwardCommand, VoteOnEffortCommand) continue to call
-  // taskStatusService / effortVotingService directly via DI.
+  // executor layer. The legacy ShiftDayForwardCommand / ShiftDayBackwardCommand
+  // palette commands + their taskStatusService.shiftDay{Forward,Backward}
+  // methods were deleted in Phase 4 PR-A (RFC 31c1a0be); VoteOnEffortCommand
+  // remains wired via direct DI (out of Phase 4 PR-A scope).
 
   // describe("copyLabelToAliases", ...) removed — Issue #3132 migrated the
   // grounding to declarative property_append; the registry registration no
@@ -663,7 +664,9 @@ describe("ServiceRegistryPopulator (with vaultAdapter)", () => {
 
       const createCall = (deps.vaultAdapter!.create as jest.Mock).mock.calls[0];
       const content = createCall[1] as string;
-      expect(content).toContain('ems__Effort_status: "[[ems__EffortStatusDraft]]"');
+      expect(content).toContain(
+        'ems__Effort_status: "[[c42245d0-01de-4c35-bfcf-d910445ea28e]]"',
+      );
     });
 
     it("should open the created task in a new tab leaf", async () => {
@@ -717,7 +720,9 @@ describe("ServiceRegistryPopulator (with vaultAdapter)", () => {
 
       const createCall = (deps.vaultAdapter!.create as jest.Mock).mock.calls[0];
       const content = createCall[1] as string;
-      expect(content).toContain('ems__Effort_status: "[[ems__EffortStatusDraft]]"');
+      expect(content).toContain(
+        'ems__Effort_status: "[[c42245d0-01de-4c35-bfcf-d910445ea28e]]"',
+      );
     });
 
     it("should write ems__Effort_area when parent is an Area", async () => {
@@ -1212,9 +1217,12 @@ describe("createAsset — orphan prevention regression (Finding 2)", () => {
       new RegExp(`ems__Effort_area:\\s*"\\[\\[${PARENT_AREA_UID}`),
     );
 
-    // 4. Effort_status must default (Backlog or Draft) so task is queryable
+    // 4. Effort_status must default (Backlog or Draft UUID) so task is queryable.
+    // UUID-form per RFC 31c1a0be Phase 4 PR-C (#3194).
+    // Backlog: 753a44d5-846c-4b82-9196-4fd9a4d48777
+    // Draft:   c42245d0-01de-4c35-bfcf-d910445ea28e
     expect(frontmatter).toMatch(
-      /ems__Effort_status:\s*"\[\[ems__EffortStatus(Backlog|Draft)\]\]"/,
+      /ems__Effort_status:\s*"\[\[(753a44d5-846c-4b82-9196-4fd9a4d48777|c42245d0-01de-4c35-bfcf-d910445ea28e)\]\]"/,
     );
 
     // 5. Asset_isDefinedBy must inherit from parent

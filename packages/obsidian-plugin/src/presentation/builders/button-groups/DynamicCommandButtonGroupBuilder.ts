@@ -274,7 +274,11 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
     // making all preconditions return false and no buttons to render.
     const subjectIRI = `obsidian://vault/${encodeURI(file.path)}`;
 
-    const assetClasses = this.extractAssetClasses(metadata, context.app as App);
+    const assetClasses = await this.extractAssetClasses(
+      metadata,
+      context.app as App,
+      logger,
+    );
     if (assetClasses.length === 0) return null;
 
     // RFC-024 Phase 3: panels are resolved against the most-specific
@@ -284,9 +288,7 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
     // preferred over UUID-form refs for panel lookup since panel configs
     // are authored against symbolic class names.
     const panelClassRef =
-      assetClasses.find(
-        (c) => c !== "exo__Asset" && !this.isUuidRef(c),
-      ) ??
+      assetClasses.find((c) => c !== "exo__Asset" && !this.isUuidRef(c)) ??
       assetClasses.find((c) => c !== "exo__Asset") ??
       null;
 
@@ -554,13 +556,12 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
             // "start marker unknown" and skip the measure — the mark
             // alone is enough for the AC #1 visibility target.
             const hasGet =
-              typeof (
-                performance as unknown as Record<string, unknown>
-              )["getEntriesByName"] === "function";
+              typeof (performance as unknown as Record<string, unknown>)[
+                "getEntriesByName"
+              ] === "function";
             if (
               hasGet &&
-              performance.getEntriesByName("exocmd-cache-read-start")
-                .length > 0
+              performance.getEntriesByName("exocmd-cache-read-start").length > 0
             ) {
               performance.measure(
                 "exocmd-cache-read-to-applied",
@@ -672,10 +673,11 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
    *
    * Returns an empty array when no `exo__Instance_class` is declared.
    */
-  private extractAssetClasses(
+  private async extractAssetClasses(
     metadata: Record<string, unknown>,
     app?: App,
-  ): string[] {
+    logger?: ButtonBuilderContext["logger"],
+  ): Promise<string[]> {
     const raw = metadata["exo__Instance_class"];
     const classes: string[] = [];
 
@@ -696,21 +698,54 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
     // Issue #3141 — expand UUID class refs to also include their symbolic
     // `exo__Asset_label` so CommandBindings with `targetClass: "ems__Task"`
     // match instances whose `exo__Instance_class` is UUID-canonicalised.
-    if (app?.metadataCache?.getFirstLinkpathDest) {
-      const symbolicAliases: string[] = [];
-      for (const cls of classes) {
-        if (!this.isUuidRef(cls)) continue;
-        const classFile = app.metadataCache.getFirstLinkpathDest(cls, "");
-        if (!classFile) continue;
-        const cache = app.metadataCache.getFileCache?.(classFile);
-        const label = cache?.frontmatter?.["exo__Asset_label"];
-        if (typeof label === "string" && label.length > 0 && !classes.includes(label)) {
-          symbolicAliases.push(label);
+    //
+    // Two-tier resolution (#3141 follow-up, 2026-05-21):
+    //   1. `app.metadataCache.getFirstLinkpathDest()` — fast, in-process.
+    //   2. `commandResolver.resolveLabelByUID()` — triple-store fallback
+    //      when Obsidian's metadata cache has not yet indexed the class
+    //      file (cold-start, post-reload, or class file lives under
+    //      `assetspaces/` that the cache hasn't visited yet).
+    // Without (2), class-targeted bindings silently fail to match in the
+    // race window — empirically observed on `1-2-1 a.kayukova`
+    // (ems__MeetingPrototype instance) where buttons disappeared until
+    // a forced re-open warmed the metadata cache.
+    const symbolicAliases: string[] = [];
+    for (const cls of classes) {
+      if (!this.isUuidRef(cls)) continue;
+
+      let label: string | null = null;
+
+      const classFile = app?.metadataCache?.getFirstLinkpathDest?.(cls, "");
+      if (classFile) {
+        const cache = app?.metadataCache?.getFileCache?.(classFile);
+        const cachedLabel = cache?.frontmatter?.["exo__Asset_label"];
+        if (typeof cachedLabel === "string" && cachedLabel.length > 0) {
+          label = cachedLabel;
         }
       }
-      for (const alias of symbolicAliases) {
-        if (!classes.includes(alias)) classes.push(alias);
+
+      if (!label) {
+        try {
+          label = await this.config.commandResolver.resolveLabelByUID(cls);
+        } catch (error) {
+          logger?.info(
+            `[DynamicCommands] resolveLabelByUID(${cls}) threw: ${String(error)}`,
+          );
+        }
       }
+
+      if (label && label.length > 0) {
+        if (!classes.includes(label) && !symbolicAliases.includes(label)) {
+          symbolicAliases.push(label);
+        }
+      } else {
+        logger?.info(
+          `[DynamicCommands] no symbolic exo__Asset_label resolved for UUID class ref ${cls} (metadata cache + triple store both empty); class-targeted bindings may silently fail to match.`,
+        );
+      }
+    }
+    for (const alias of symbolicAliases) {
+      if (!classes.includes(alias)) classes.push(alias);
     }
 
     if (!classes.includes("exo__Asset")) classes.push("exo__Asset");

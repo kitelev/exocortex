@@ -19,6 +19,14 @@ export interface KanbanColumn {
  * preserving badge colors and display order.
  *
  * Issue #2367
+ *
+ * **RFC 31c1a0be Phase 4 PR-C (#3194) descope note.** `statusToLabel` derives
+ * the column display name by stripping the `"ems__EffortStatus"` prefix from
+ * the `EffortStatus` enum value. This is structurally tied to the symbolic
+ * form of the enum, which is Phase 5 deletion territory. Migrating to
+ * UUID-form requires a UUID→label map plus updates to the WorkflowDefinition
+ * / WorkflowEngine / consumer pipeline — above the cascade-cap. Deferred to
+ * Phase 5.
  */
 @injectable()
 export class KanbanColumnProvider {

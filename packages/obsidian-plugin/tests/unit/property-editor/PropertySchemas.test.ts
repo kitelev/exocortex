@@ -144,9 +144,14 @@ describe("PropertySchemas", () => {
       expect(labels).toContain("Trashed");
     });
 
-    it("should have wikilink format values", () => {
+    it("should have UUID-form wikilink values (RFC 31c1a0be Phase 4 PR-C)", () => {
       for (const status of FALLBACK_EFFORT_STATUS_VALUES) {
-        expect(status.value).toMatch(/^\[\[ems__EffortStatus\w+\]\]$/);
+        expect(status.value).toMatch(
+          /^\[\[[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\]\]$/,
+        );
+        expect(status.wikilink).toMatch(
+          /^\[\[[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\|.+\]\]$/,
+        );
       }
     });
   });
@@ -619,6 +624,18 @@ describe("PropertySchemas", () => {
       expect(getStatusLabel("[[ems__EffortStatusDoing 027e78f4-6e16-4b36-b8fb-5510507d5745]]")).toBe("Doing");
       expect(getStatusLabel("[[ems__EffortStatusDone 7b9b3116-7c3c-438c-9618-94fe301320a6]]")).toBe("Done");
       expect(getStatusLabel("ems__EffortStatusBacklog 753a44d5-846c-4b82-9196-4fd9a4d48777")).toBe("Backlog");
+    });
+
+    it("should return human-readable label for UUID-form wikilink (RFC 31c1a0be PR-C)", () => {
+      expect(getStatusLabel("[[027e78f4-6e16-4b36-b8fb-5510507d5745]]")).toBe("Doing");
+      expect(getStatusLabel("[[7b9b3116-7c3c-438c-9618-94fe301320a6]]")).toBe("Done");
+      expect(getStatusLabel("[[753a44d5-846c-4b82-9196-4fd9a4d48777]]")).toBe("Backlog");
+      expect(getStatusLabel("[[c42245d0-01de-4c35-bfcf-d910445ea28e]]")).toBe("Draft");
+    });
+
+    it("should return human-readable label for UUID-form wikilink with alias", () => {
+      expect(getStatusLabel("[[027e78f4-6e16-4b36-b8fb-5510507d5745|Doing]]")).toBe("Doing");
+      expect(getStatusLabel("[[7b9b3116-7c3c-438c-9618-94fe301320a6|Done]]")).toBe("Done");
     });
   });
 });

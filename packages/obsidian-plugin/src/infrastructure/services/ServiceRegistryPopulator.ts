@@ -248,7 +248,11 @@ export function populateServiceRegistry(
             )}`,
           );
         }
-        lines.push('ems__Effort_status: "[[ems__EffortStatusBacklog]]"');
+        // UUID-form per RFC 31c1a0be Phase 4 PR-C (#3194). Resolves the
+        // 42-asset symbolic-form trace back to this default-write site.
+        lines.push(
+          'ems__Effort_status: "[[753a44d5-846c-4b82-9196-4fd9a4d48777]]"',
+        );
         if (!isDefinedByWritten && parentMetadata.exo__Asset_isDefinedBy) {
           lines.push(
             `exo__Asset_isDefinedBy: ${toQuotedWikilink(
@@ -382,10 +386,9 @@ export function populateServiceRegistry(
     // grounding consumer (`22a6ba6b-…`) was migrated to declarative
     // `property_set` with the new `$todayStart` substitution token
     // (Homoiconicity Invariant Q1 remediation, RFC
-    // `18407cb2-9554-4897-9213-17321f9dd434` Path B). The palette command
-    // path `PlanOnTodayCommand → TaskStatusService.planOnToday` still wires
-    // through direct DI (not the grounding service registry), so the
-    // `taskStatusService.planOnToday` method itself is retained.
+    // `18407cb2-9554-4897-9213-17321f9dd434` Path B). The legacy palette
+    // command `PlanOnTodayCommand` and its `TaskStatusService.planOnToday`
+    // method were subsequently deleted in Phase 4 PR-A (RFC 31c1a0be).
 
     registry.register(
       "planForEvening",
@@ -396,14 +399,12 @@ export function populateServiceRegistry(
     // Issue #3134 — the three grounding consumers (`0b104d75-…`, `6ee56341-…`,
     // `506f031e-…`) were migrated to declarative `property_shift` /
     // `property_increment` (Homoiconicity Invariant Q1 remediation, RFC
-    // `18407cb2-9554-4897-9213-17321f9dd434` Path B). Palette command paths
-    // remain via direct DI:
-    //   - `ShiftDayForwardCommand` / `ShiftDayBackwardCommand` →
-    //     `taskStatusService.shiftDay{Forward,Backward}(file)`
-    //   - `VoteOnEffortCommand` → `effortVotingService.incrementEffortVotes(file)`
-    // The TS service classes are intentionally preserved (palette + hotkey
-    // surfaces); only the registry registrations are deleted to avoid
-    // duplicate dispatch paths for the now-declarative groundings.
+    // `18407cb2-9554-4897-9213-17321f9dd434` Path B). The legacy palette
+    // commands (`ShiftDayForwardCommand`, `ShiftDayBackwardCommand`) and
+    // their `TaskStatusService.shiftDay{Forward,Backward}` methods were
+    // subsequently deleted in Phase 4 PR-A (RFC 31c1a0be).
+    // `VoteOnEffortCommand` → `effortVotingService.incrementEffortVotes(file)`
+    // is still wired via direct DI (out of Phase 4 PR-A scope).
 
     // `copyLabelToAliases` service registration removed in Issue #3132 —
     // the sole grounding consumer (a85668fa-17b7-45d0-aa7f-935e2502dff0) was
@@ -420,8 +421,12 @@ export function populateServiceRegistry(
         const parentMetadata = (vaultAdapter.getFrontmatter(iFile) as Record<string, unknown>) ?? {};
         const folderPath = iFile.parent?.path || "";
 
+        // UUID-form per RFC 31c1a0be Phase 4 PR-C (#3194). Draft status UUID
+        // is the canonical TBox identifier; vault file at
+        // assetspaces/ems/c42245d0-01de-4c35-bfcf-d910445ea28e.md.
         const propertyValues: Record<string, unknown> = {
-          "ems__Effort_status": '"[[ems__EffortStatusDraft]]"',
+          "ems__Effort_status":
+            '"[[c42245d0-01de-4c35-bfcf-d910445ea28e]]"',
         };
 
         // Optional declarative override: starter-kit bindings may pass
@@ -468,8 +473,10 @@ export function populateServiceRegistry(
         // auto-inherits for ems__Task, so this handler does the area vs parent
         // detection explicitly via userInput.parentProperty and falls back to
         // the auto-detected form.
+        // UUID-form per RFC 31c1a0be Phase 4 PR-C (#3194).
         const propertyValues: Record<string, unknown> = {
-          "ems__Effort_status": '"[[ems__EffortStatusDraft]]"',
+          "ems__Effort_status":
+            '"[[c42245d0-01de-4c35-bfcf-d910445ea28e]]"',
         };
 
         if (iFile.basename) {

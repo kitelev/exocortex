@@ -127,6 +127,9 @@ export function toGroundingDefinition(
     type,
     targetProperty,
     targetValue: data.targetValue,
+    targetValueRef: data.targetValueRef,
+    targetValueLiteral: data.targetValueLiteral,
+    targetValueSubstitution: data.targetValueSubstitution,
     targetClass: data.targetClass,
     steps,
   };

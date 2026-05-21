@@ -326,7 +326,7 @@ This project is developed primarily by AI agents (Claude Code, GitHub Copilot) f
 | Document                                                         | Purpose                             |
 | ---------------------------------------------------------------- | ----------------------------------- |
 | **[CLAUDE.md](./CLAUDE.md)**                                     | AI agent guidelines, worktree rules |
-| **[AI Development Patterns](./docs/AI-DEVELOPMENT-PATTERNS.md)** | Lessons from 1250+ completed issues |
+| **[AI Development Patterns](./docs/AI-DEVELOPMENT-PATTERNS.md)** | Lessons from 1500+ completed issues |
 | **[Architecture Guide](./ARCHITECTURE.md)**                      | Clean Architecture patterns         |
 | **[Architecture Decision Records](./docs/adr/)**                 | Key architectural decisions (ADRs)  |
 

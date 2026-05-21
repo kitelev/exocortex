@@ -940,6 +940,27 @@ export class NoteToRDFConverter {
           if (this.isUUID(linkpath)) {
             const uuidLiteral = new Literal(linkpath);
 
+            // RFC 31c1a0be Phase 3 hotfix: bypass class-IRI substitution for
+            // grounding-ref predicates. When a typed grounding ref points at a
+            // UUID-named target whose `exo__Asset_label` happens to be a
+            // class-prefixed string (e.g. `ems__EffortStatusDoing`), the
+            // Issue #2782/#2959 substitution below rewrites the triple to the
+            // namespace class IRI. CommandResolver.iriToObsidianName then
+            // returns the symbolic local name and the executor writes
+            // `"[[ems__EffortStatusDoing]]"` instead of `"[[<UUID>]]"` —
+            // defeating the typed-predicate migration. Emit the file IRI so
+            // iriToObsidianName extracts the UUID basename instead.
+            //
+            // `targetValueLiteral` is intentionally excluded — CommandResolver
+            // reads it via `getLiteralValue` so it never enters the wikilink
+            // branch (it's a plain string, not a wikilink reference).
+            const isGroundingRef =
+              predicate?.value.endsWith("#Grounding_targetValueRef") ||
+              predicate?.value.endsWith("#Grounding_targetValueSubstitution");
+            if (isGroundingRef) {
+              return [fileIRI];
+            }
+
             // Issue #2782: when the target file represents a class-like enum
             // member (status/criticality/etc.), REPLACE the dual-storage pair
             // with the namespace URI alone. Additive emission (v15.90.25)
@@ -950,6 +971,11 @@ export class NoteToRDFConverter {
             // Class-like enum targets are never queried by raw UUID literal
             // (#2102 dual storage exists for exo__Asset_prototype only) so the
             // replace is safe. Mirrors valueToClassURI's Issue #2745 lookup.
+            //
+            // RFC 31c1a0be Phase 4 PR-B (#3194) invariant: the class IRI
+            // emitted here is coupled to `SPARQLTemplateLibrary.EFFORT_STATUSES`
+            // and starter-kit ASK preconditions. Migrating to UUID-form
+            // requires changing all three together; see Phase 5 follow-up.
             const basenameClassIRI = this.expandClassValue(targetFile.basename);
             if (basenameClassIRI) {
               // Fix #ff3858e5: emit rdf:type triple so sh:class constraints resolve

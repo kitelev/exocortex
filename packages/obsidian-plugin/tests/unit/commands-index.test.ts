@@ -14,19 +14,6 @@ describe("Commands Index Exports", () => {
   it("should export all command classes", () => {
     const expectedCommands = [
       "CreateInstanceCommand",
-      "SetDraftStatusCommand",
-      "MoveToBacklogCommand",
-      "MoveToAnalysisCommand",
-      "MoveToToDoCommand",
-      "StartEffortCommand",
-      "PlanOnTodayCommand",
-      "PlanForEveningCommand",
-      "ShiftDayBackwardCommand",
-      "ShiftDayForwardCommand",
-      "MarkDoneCommand",
-      "MarkReviewedCommand",
-      "TrashEffortCommand",
-      "ArchiveTaskCommand",
       "CleanPropertiesCommand",
       "RepairFolderCommand",
       "RenameToUidCommand",
@@ -51,9 +38,9 @@ describe("Commands Index Exports", () => {
     const commandClasses = exports.filter((key) => key.endsWith("Command"));
     const registryClasses = exports.filter((key) => key.endsWith("Registry"));
 
-    expect(commandClasses.length).toBe(24); // All commands + BaseContextAssetCreationCommand
+    expect(commandClasses.length).toBe(11); // 10 commands + BaseContextAssetCreationCommand
     expect(registryClasses.length).toBe(1); // CommandRegistry
-    expect(exports.length).toBe(25); // Total exports (excluding ICommand type)
+    expect(exports.length).toBe(12); // Total exports (excluding ICommand type)
   });
 
   it("should have all exported classes be constructable", () => {

@@ -99,7 +99,10 @@ describe("createRelatedTask (CLI)", () => {
     expect(fm.exo__Asset_label).toBe("New Task from Area");
     expect(fm.ems__Effort_area).toBe("[[Area1]]");
     expect(fm.ems__Effort_parent).toBeUndefined();
-    expect(fm.ems__Effort_status).toBe("[[ems__EffortStatusDraft]]");
+    // UUID-form per RFC 31c1a0be Phase 4 PR-C (#3194).
+    expect(fm.ems__Effort_status).toBe(
+      "[[c42245d0-01de-4c35-bfcf-d910445ea28e]]",
+    );
   });
 
   it("inherits ems__Effort_parent when parent is ems__Project", async () => {
