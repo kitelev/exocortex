@@ -954,9 +954,18 @@ export class NoteToRDFConverter {
             // `targetValueLiteral` is intentionally excluded — CommandResolver
             // reads it via `getLiteralValue` so it never enters the wikilink
             // branch (it's a plain string, not a wikilink reference).
+            //
+            // Issue #3212: `Grounding_targetClass` joins the bypass list.
+            // create_instance groundings reference the class TBox by
+            // `[[<class-uid>]]`; the class file's label is the canonical
+            // short-name (`ems__Task`), which would otherwise round-trip
+            // back through #2782 → `<ems#Task>` and yield label-form
+            // `"[[ems__Task]]"` in the created instance's
+            // `exo__Instance_class` — violating UUID-canon TBox.
             const isGroundingRef =
               predicate?.value.endsWith("#Grounding_targetValueRef") ||
-              predicate?.value.endsWith("#Grounding_targetValueSubstitution");
+              predicate?.value.endsWith("#Grounding_targetValueSubstitution") ||
+              predicate?.value.endsWith("#Grounding_targetClass");
             if (isGroundingRef) {
               return [fileIRI];
             }

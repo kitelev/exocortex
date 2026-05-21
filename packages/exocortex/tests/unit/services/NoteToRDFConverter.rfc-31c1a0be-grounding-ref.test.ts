@@ -233,6 +233,78 @@ describe("NoteToRDFConverter — RFC 31c1a0be grounding-ref UUID identity", () =
     );
   });
 
+  it("preserves UUID identity for Grounding_targetClass when target is UUID-named class TBox file (#3212)", async () => {
+    // Issue #3212 — create_instance grounding emits `exo__Instance_class: "[[ems__Task]]"`
+    // (label-form) instead of `"[[<UID>]]"` (UID-form, UUID-canon TBox).
+    // Root cause: `Grounding_targetClass` wikilink pointing at a UUID-named
+    // class TBox file (e.g. `1b20a8f0-...md`, label `ems__Task`) is rewritten
+    // to the namespace class IRI `<ems#Task>` by the Issue #2782/#2959
+    // substitution. CommandResolver.iriToObsidianName then yields `ems__Task`
+    // and GroundingExecutor.executeCreateInstance wraps it as
+    // `"[[ems__Task]]"` — defeating the UUID-canon TBox invariant.
+    //
+    // Fix: extend the Phase 3 hotfix bypass list to include
+    // `Grounding_targetClass`, emitting the file IRI so the resolver
+    // returns the UUID basename and the executor emits `"[[<UID>]]"`.
+    const classTBoxFile: IFile = {
+      path: "assetspaces/ems/1b20a8f0-d745-4e93-91db-4531b3df120e.md",
+      basename: "1b20a8f0-d745-4e93-91db-4531b3df120e",
+      name: "1b20a8f0-d745-4e93-91db-4531b3df120e.md",
+      parent: null,
+    };
+
+    const groundingFile: IFile = {
+      path: "assetspaces/exocmd/create-instance/c8d10000-0000-0000-0000-000000000001.md",
+      basename: "c8d10000-0000-0000-0000-000000000001",
+      name: "c8d10000-0000-0000-0000-000000000001.md",
+      parent: null,
+    };
+
+    const groundingFrontmatter: IFrontmatter = {
+      exo__Asset_uid: "c8d10000-0000-0000-0000-000000000001",
+      exo__Asset_label: "Create Task Instance grounding",
+      exocmd__Grounding_type: "create_instance",
+      exocmd__Grounding_targetClass:
+        "[[1b20a8f0-d745-4e93-91db-4531b3df120e]]",
+      exocmd__Grounding_targetFolder: "03 Knowledge/inbox",
+    };
+
+    const classTBoxFrontmatter: IFrontmatter = {
+      exo__Asset_uid: "1b20a8f0-d745-4e93-91db-4531b3df120e",
+      exo__Asset_label: "ems__Task",
+    };
+
+    mockVault.getFrontmatter.mockImplementation((f: IFile) => {
+      if (f.path === groundingFile.path) return groundingFrontmatter;
+      if (f.path === classTBoxFile.path) return classTBoxFrontmatter;
+      return null;
+    });
+
+    mockVault.getFirstLinkpathDest.mockImplementation((linkpath: string) => {
+      if (linkpath === "1b20a8f0-d745-4e93-91db-4531b3df120e")
+        return classTBoxFile;
+      return null;
+    });
+
+    const triples = await converter.convertNote(groundingFile);
+
+    const classTriples = triples.filter(
+      (t) =>
+        (t.predicate as IRI).value ===
+        Namespace.EXOCMD.term("Grounding_targetClass").value,
+    );
+
+    expect(classTriples).toHaveLength(1);
+    const obj = classTriples[0].object;
+
+    // Pre-fix: obj was IRI("https://exocortex.my/ontology/ems#Task")
+    // Post-fix: obj is the file IRI carrying the UUID in its basename.
+    expect(obj).toBeInstanceOf(IRI);
+    const value = (obj as IRI).value;
+    expect(value).not.toBe(Namespace.EMS.term("Task").value);
+    expect(value).toMatch(/1b20a8f0-d745-4e93-91db-4531b3df120e\.md$/);
+  });
+
   it("Issue #2959 path (ems__Effort_status on a task) remains class-IRI normalized", async () => {
     // Guard against scope creep — the fix must NOT regress the Issue #2959
     // behaviour where `ems__Effort_status: "[[ems__EffortStatusDone]]"` on
