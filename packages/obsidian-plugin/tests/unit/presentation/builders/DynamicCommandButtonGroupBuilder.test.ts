@@ -358,7 +358,7 @@ describe("DynamicCommandButtonGroupBuilder", () => {
       );
     });
 
-    it("Issue #3141 — should gracefully no-op symbolic expansion when metadataCache is unavailable", async () => {
+    it("Issue #3141 — should gracefully no-op symbolic expansion when both metadataCache and triple-store have no label", async () => {
       mockResolveForAssetMulti.mockResolvedValue([]);
       const classUid = "1b20a8f0-d745-4e93-91db-4531b3df120e";
       const context = createContext({
@@ -457,6 +457,37 @@ describe("DynamicCommandButtonGroupBuilder", () => {
           msg.includes("no symbolic"),
       );
       expect(matched).toBeDefined();
+    });
+
+    it("Issue #3141 follow-up — should log a warning and continue when triple-store fallback throws", async () => {
+      mockResolveForAssetMulti.mockResolvedValue([]);
+      const classUid = "cafebabe-0000-4000-8000-000000000000";
+      const context = createContext({
+        exo__Instance_class: ["[[" + classUid + "]]"],
+      });
+      (context.app as any).metadataCache = {
+        getFirstLinkpathDest: jest.fn().mockReturnValue(null),
+        getFileCache: jest.fn(),
+      };
+      mockResolveLabelByUID.mockRejectedValue(new Error("triple-store-down"));
+
+      await builder.build(context);
+
+      const infoLogs = (context.logger.info as jest.Mock).mock.calls;
+      const threwLog = infoLogs.find(
+        ([msg]: [string]) =>
+          typeof msg === "string" &&
+          msg.includes(classUid) &&
+          msg.includes("threw"),
+      );
+      expect(threwLog).toBeDefined();
+      // Builder still calls into the resolver with UUID alone (and exo__Asset),
+      // i.e. throw does not abort the whole render pipeline.
+      expect(mockResolveForAssetMulti).toHaveBeenCalledWith(
+        "obsidian://vault/test/file.md",
+        [classUid, "exo__Asset"],
+        undefined,
+      );
     });
 
     it("should preserve order — declared classes first, exo__Asset appended (Issue #2958)", async () => {

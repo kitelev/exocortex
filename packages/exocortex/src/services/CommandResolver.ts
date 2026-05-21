@@ -1168,6 +1168,12 @@ export class CommandResolver {
    * `app.metadataCache.getFirstLinkpathDest()` cannot find the class file
    * during cold-start / post-reload race windows, the builder falls back
    * here so class-targeted CommandBindings do not silently fail to match.
+   *
+   * The helper does NOT type-check the resolved asset — it returns the
+   * label of whatever asset bears the given UID. Callers are responsible
+   * for ensuring the UID refers to an asset whose label is meaningful in
+   * their context (e.g., a class file when expanding `exo__Instance_class`
+   * UUID refs).
    */
   async resolveLabelByUID(uid: string): Promise<string | null> {
     const subject = await this.findSubjectByUID(uid);
