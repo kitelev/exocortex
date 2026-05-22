@@ -26,6 +26,8 @@ export type {
   PreconditionDefinition,
   GroundingDefinition,
   CommandBindingDefinition,
+  PropertyDefaultResolved,
+  InheritanceRuleResolved,
 } from "./domain/models/CommandDefinition";
 export {
   isCommandFrontmatter,

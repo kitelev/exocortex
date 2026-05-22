@@ -23,6 +23,8 @@ import type {
   GroundingDefinition,
   CommandBindingDefinition,
   CommandBindingStyleDefinition,
+  PropertyDefaultResolved,
+  InheritanceRuleResolved,
 } from "../domain/models/CommandDefinition";
 
 /**
@@ -35,6 +37,50 @@ export interface ResolvedCommand {
 
 /** Maximum depth for transitive loading to prevent infinite loops */
 const MAX_TRANSITIVE_DEPTH = 10;
+
+/**
+ * RFC v2 Phase 3a — UID of the canonical `exocmd__SubstitutionToken` class
+ * file (UUID-named TBox per RFC-004). Used to detect whether the value asset
+ * of a `PropertyDefault_value` reference is a SubstitutionToken instance, in
+ * which case the parser invokes a resolver from the registry below.
+ */
+const SUBSTITUTION_TOKEN_CLASS_UID = "08cec529-90eb-4d43-88de-ceecccea12b0";
+
+/**
+ * RFC v2 Phase 3a — IRI form of `exocmd__SubstitutionToken`. NoteToRDFConverter
+ * normalises every `exo__Instance_class` triple to namespace IRI form via
+ * `valueToClassURI` regardless of whether the authoring shape is symbolic
+ * (`[[exocmd__SubstitutionToken]]`) or UUID-canon (`[[<UID>]]`). Comparing
+ * class IRIs against this constant is the cheapest detection path; UID
+ * fallback exists for the unlikely case where label expansion failed.
+ */
+const SUBSTITUTION_TOKEN_CLASS_IRI = Namespace.EXOCMD.term("SubstitutionToken").value;
+
+/**
+ * RFC v2 Phase 3a — known SubstitutionToken resolver-ids. RDF vocabulary
+ * (the token assets themselves) lives in vault; this Set is the TS-side
+ * validation surface so the parser can warn loudly on unknown resolver-ids
+ * instead of silently emitting a marker the executor can't honour.
+ */
+const KNOWN_SUBSTITUTION_RESOLVER_IDS: ReadonlySet<string> = new Set([
+  "today",
+  "todayStart",
+  "targetFolder",
+  "target",
+]);
+
+/**
+ * Marker for context-dependent SubstitutionToken resolvers (targetFolder /
+ * target). The Phase 3b GroundingExecutor recognises this exact shape and
+ * substitutes the resolver's value at execution time, when the click target
+ * IRI / UID is known. Context-independent resolvers (today / todayStart) are
+ * resolved at parse time and never produce this marker.
+ *
+ * Shape: `__SUBSTITUTE__<resolver-id>__<token-uid>__`
+ */
+function buildSubstitutionMarker(resolverId: string, tokenUid: string): string {
+  return `__SUBSTITUTE__${resolverId}__${tokenUid}__`;
+}
 
 /**
  * Resolves dynamic commands from vault assets stored in an ITripleStore (RFC-009 §5.3).
@@ -50,6 +96,15 @@ const MAX_TRANSITIVE_DEPTH = 10;
 export class CommandResolver {
   private readonly cache = new Map<string, ResolvedCommand[]>();
   private readonly multiCache = new Map<string, ResolvedCommand[]>();
+
+  /**
+   * RFC v2 Phase 3a — once-per-session-per-Grounding warning suppression set
+   * for the coexistence rule (ref-form `propertyDefault` wins over legacy
+   * `propertyDefaults` JSON). `readonly` refers to the binding; the Set is
+   * mutable. CommandResolver is a `@injectable` singleton via tsyringe, so
+   * "session" == "container lifetime" which matches the brief's contract.
+   */
+  private readonly _coexistenceWarnedGroundings = new Set<string>();
 
   /**
    * @param tripleStore - RDF triple store backing vault assets.
@@ -1012,6 +1067,27 @@ export class CommandResolver {
       propertyDefaults = map;
     }
 
+    // RFC v2 Phase 3a — declarative ref-form replacement for the legacy
+    // `Grounding_propertyDefaults` JSON. Multi-valued list of
+    // `exocmd__PropertyDefault` assets attached via `Grounding_propertyDefault`.
+    const propertyDefault = await this.resolvePropertyDefaults(subject, uid);
+    // RFC v2 Phase 3a — multi-valued list of `exocmd__InheritanceRule` assets
+    // attached via `Grounding_inheritanceRule`. Phase 3b executor applies them.
+    const inheritanceRule = await this.resolveInheritanceRules(subject, uid);
+
+    // RFC v2 Phase 3a coexistence rule — both legacy JSON `propertyDefaults`
+    // and ref-form `propertyDefault` present on the same Grounding? Ref-form
+    // wins; legacy is dropped with a one-shot warn per Grounding-uid.
+    if (propertyDefaults !== undefined && propertyDefault.length > 0) {
+      if (!this._coexistenceWarnedGroundings.has(uid)) {
+        this.logger.warn(
+          `Grounding ${uid}: legacy exocmd__Grounding_propertyDefaults JSON ignored — ref-form exocmd__Grounding_propertyDefault takes precedence. Remove legacy property to silence this warning.`,
+        );
+        this._coexistenceWarnedGroundings.add(uid);
+      }
+      propertyDefaults = undefined;
+    }
+
     // Load composite steps if applicable
     let steps: GroundingDefinition[] | undefined;
     if (type === GroundingType.COMPOSITE) {
@@ -1081,6 +1157,8 @@ export class CommandResolver {
       incrementBy,
       shiftDelta: shiftDelta ?? undefined,
       propertyDefaults,
+      propertyDefault: propertyDefault.length > 0 ? propertyDefault : undefined,
+      inheritanceRule: inheritanceRule.length > 0 ? inheritanceRule : undefined,
       isDefinedBy: isDefinedBy ?? undefined,
       prefillLabelWithDate: prefillLabelWithDate || undefined,
     };
@@ -1122,6 +1200,333 @@ export class CommandResolver {
     }
 
     return steps;
+  }
+
+  // ────────────────────────────────────────────────────────────────────────
+  // RFC v2 Phase 3a — ref-form Grounding extensions (Phase 3b executor wires)
+  // ────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Resolve the multi-valued `exocmd__Grounding_propertyDefault` predicate
+   * into a list of {@link PropertyDefaultResolved} entries.
+   *
+   * Each referenced `exocmd__PropertyDefault` asset must carry:
+   *   - `exocmd__PropertyDefault_property` → wikilink to an `exo__Property`
+   *     asset; resolved to that property's `exo__Asset_label`.
+   *   - `exocmd__PropertyDefault_value` → wikilink to the value asset; if the
+   *     value asset is a SubstitutionToken instance, its
+   *     `exocmd__SubstitutionToken_resolver` is invoked (today / todayStart
+   *     resolve at parse time; targetFolder / target emit a marker for the
+   *     Phase 3b executor). Otherwise the value is emitted as
+   *     wikilink-form `"[[<UID>]]"`.
+   *
+   * Refs that cannot be resolved (target asset missing, property has no
+   * label) are skipped with a `logger.warn` — never silently dropped, never
+   * fail-loud (would mask other valid PropertyDefault entries on the same
+   * Grounding).
+   */
+  private async resolvePropertyDefaults(
+    grounding: IRI,
+    groundingUid: string,
+  ): Promise<PropertyDefaultResolved[]> {
+    const refTriples = await this.tripleStore.match(
+      grounding,
+      Namespace.EXOCMD.term("Grounding_propertyDefault"),
+      undefined,
+    );
+
+    const resolved: PropertyDefaultResolved[] = [];
+    for (const triple of refTriples) {
+      const refSubject = await this.resolveRefTripleObject(triple.object);
+      if (!refSubject) continue;
+
+      // -- property → exo__Asset_label of the referenced exo__Property
+      const propertyRefUid = await this.getObsidianName(
+        refSubject,
+        Namespace.EXOCMD.term("PropertyDefault_property"),
+      );
+      if (!propertyRefUid) {
+        this.logger.warn(
+          `Grounding ${groundingUid}: PropertyDefault asset missing exocmd__PropertyDefault_property — entry skipped.`,
+        );
+        continue;
+      }
+      const propertyName = this.looksLikeUUID(propertyRefUid)
+        ? await this.resolveLabelByUID(propertyRefUid)
+        : propertyRefUid;
+      if (!propertyName) {
+        this.logger.warn(
+          `Grounding ${groundingUid}: PropertyDefault property UID '${propertyRefUid}' is not resolvable to exo__Asset_label — entry skipped.`,
+        );
+        continue;
+      }
+
+      // -- value → either SubstitutionToken-resolved string, or wikilink form
+      const valueRefUid = await this.getObsidianName(
+        refSubject,
+        Namespace.EXOCMD.term("PropertyDefault_value"),
+      );
+      if (!valueRefUid) {
+        this.logger.warn(
+          `Grounding ${groundingUid}: PropertyDefault '${propertyName}' missing exocmd__PropertyDefault_value — entry skipped.`,
+        );
+        continue;
+      }
+
+      const value = await this.resolvePropertyDefaultValue(
+        valueRefUid,
+        groundingUid,
+        propertyName,
+      );
+      if (value === null) continue;
+
+      resolved.push({ propertyName, value });
+    }
+    return resolved;
+  }
+
+  /**
+   * Resolve the multi-valued `exocmd__Grounding_inheritanceRule` predicate
+   * into a list of {@link InheritanceRuleResolved} entries.
+   *
+   * Each `exocmd__InheritanceRule` asset declares 5 properties:
+   *   - `InheritanceRule_sourceProperty`  (REQUIRED — UID → label)
+   *   - `InheritanceRule_targetProperty`  (REQUIRED — UID → label)
+   *   - `InheritanceRule_targetClassCondition` (optional — UID → label)
+   *   - `InheritanceRule_targetClassExclusion` (optional, multi-valued — list of UIDs → labels)
+   *   - `InheritanceRule_priority`  (xsd:integer literal; defaults to 50)
+   *
+   * Missing REQUIRED fields cause the entry to be skipped with a warn;
+   * optional fields default to absent/empty/50.
+   */
+  private async resolveInheritanceRules(
+    grounding: IRI,
+    groundingUid: string,
+  ): Promise<InheritanceRuleResolved[]> {
+    const refTriples = await this.tripleStore.match(
+      grounding,
+      Namespace.EXOCMD.term("Grounding_inheritanceRule"),
+      undefined,
+    );
+
+    const resolved: InheritanceRuleResolved[] = [];
+    for (const triple of refTriples) {
+      const refSubject = await this.resolveRefTripleObject(triple.object);
+      if (!refSubject) continue;
+
+      const sourcePropertyName = await this.resolveLabelRef(
+        refSubject,
+        Namespace.EXOCMD.term("InheritanceRule_sourceProperty"),
+      );
+      if (!sourcePropertyName) {
+        this.logger.warn(
+          `Grounding ${groundingUid}: InheritanceRule missing/unresolvable exocmd__InheritanceRule_sourceProperty — entry skipped.`,
+        );
+        continue;
+      }
+
+      const targetPropertyName = await this.resolveLabelRef(
+        refSubject,
+        Namespace.EXOCMD.term("InheritanceRule_targetProperty"),
+      );
+      if (!targetPropertyName) {
+        this.logger.warn(
+          `Grounding ${groundingUid}: InheritanceRule missing/unresolvable exocmd__InheritanceRule_targetProperty — entry skipped.`,
+        );
+        continue;
+      }
+
+      const targetClassCondition = await this.resolveLabelRef(
+        refSubject,
+        Namespace.EXOCMD.term("InheritanceRule_targetClassCondition"),
+      );
+
+      const targetClassExclusion = await this.resolveLabelRefMulti(
+        refSubject,
+        Namespace.EXOCMD.term("InheritanceRule_targetClassExclusion"),
+      );
+
+      const priorityRaw = await this.getLiteralValue(
+        refSubject,
+        Namespace.EXOCMD.term("InheritanceRule_priority"),
+      );
+      let priority = 50;
+      if (priorityRaw !== null && priorityRaw !== "") {
+        const parsed = Number.parseInt(String(priorityRaw), 10);
+        if (Number.isFinite(parsed)) {
+          priority = parsed;
+        }
+      }
+
+      resolved.push({
+        sourcePropertyName,
+        targetPropertyName,
+        targetClassCondition: targetClassCondition ?? undefined,
+        targetClassExclusion,
+        priority,
+      });
+    }
+    return resolved;
+  }
+
+  /**
+   * Helper: given a triple object that points to another asset (IRI or
+   * literal wikilink), resolve it to the asset's subject IRI in the store.
+   *
+   * Mirrors `loadCompositeSteps`' pattern: accept either IRI (direct) or
+   * Literal (UUID wikilink → `findSubjectByUID`).
+   */
+  private async resolveRefTripleObject(object: unknown): Promise<IRI | null> {
+    if (object instanceof IRI) return object;
+    if (object instanceof Literal) {
+      const uid = this.normalizeWikilink(object.value);
+      if (!uid) return null;
+      return this.findSubjectByUID(uid);
+    }
+    return null;
+  }
+
+  /**
+   * Helper: read a single wikilink predicate, resolve it to the referenced
+   * asset's `exo__Asset_label`. UUID short-name path returns the asset label
+   * via `resolveLabelByUID`; non-UUID short-name is treated as already-symbolic
+   * (legacy authoring) and returned unchanged.
+   */
+  private async resolveLabelRef(
+    subject: IRI,
+    predicate: IRI,
+  ): Promise<string | null> {
+    const refUid = await this.getObsidianName(subject, predicate);
+    if (!refUid) return null;
+    if (!this.looksLikeUUID(refUid)) return refUid;
+    return this.resolveLabelByUID(refUid);
+  }
+
+  /**
+   * Helper: read a multi-valued wikilink predicate, resolve each referenced
+   * UID to its asset's `exo__Asset_label`. Refs that fail to resolve are
+   * dropped silently (the parent caller already controls aggregate semantics
+   * — e.g. an empty exclusion list means "no exclusion", which is a valid
+   * default; warning per-entry would spam).
+   */
+  private async resolveLabelRefMulti(
+    subject: IRI,
+    predicate: IRI,
+  ): Promise<string[]> {
+    const triples = await this.tripleStore.match(subject, predicate, undefined);
+    const labels: string[] = [];
+    for (const triple of triples) {
+      let name: string | null = null;
+      if (triple.object instanceof IRI) {
+        name = this.iriToObsidianName(triple.object.value) ?? triple.object.value;
+      } else if (triple.object instanceof Literal) {
+        name = this.unwrapWikilink(triple.object.value);
+      }
+      if (!name) continue;
+      const resolved = this.looksLikeUUID(name)
+        ? await this.resolveLabelByUID(name)
+        : name;
+      if (resolved) labels.push(resolved);
+    }
+    return labels;
+  }
+
+  /**
+   * Resolve the value side of a PropertyDefault entry. If the value asset is
+   * a SubstitutionToken instance, dispatch via the resolver registry; else
+   * emit wikilink-form `"[[<UID>]]"`.
+   *
+   * Returns `null` to signal "skip this entry" (e.g. value asset has no
+   * SubstitutionToken_resolver despite being typed as one — fail-loud per
+   * the brief).
+   */
+  private async resolvePropertyDefaultValue(
+    valueRefUid: string,
+    groundingUid: string,
+    propertyName: string,
+  ): Promise<string | null> {
+    // Non-UUID-form values (legacy symbolic shape) pass through as wikilinks.
+    if (!this.looksLikeUUID(valueRefUid)) {
+      return `"[[${valueRefUid}]]"`;
+    }
+
+    const valueSubject = await this.findSubjectByUID(valueRefUid);
+    if (!valueSubject) {
+      // Asset not in store yet (cold-start race / pruned vault) — emit
+      // wikilink anyway; downstream UI / executor renders it as a dead link.
+      return `"[[${valueRefUid}]]"`;
+    }
+
+    const isSubstitutionToken = await this.assetIsSubstitutionToken(valueSubject);
+    if (!isSubstitutionToken) {
+      return `"[[${valueRefUid}]]"`;
+    }
+
+    const resolverId = await this.getLiteralValue(
+      valueSubject,
+      Namespace.EXOCMD.term("SubstitutionToken_resolver"),
+    );
+    if (!resolverId || !resolverId.trim()) {
+      this.logger.warn(
+        `Grounding ${groundingUid}: PropertyDefault '${propertyName}' references SubstitutionToken '${valueRefUid}' with no exocmd__SubstitutionToken_resolver — falling back to wikilink form.`,
+      );
+      return `"[[${valueRefUid}]]"`;
+    }
+    const trimmedResolverId = resolverId.trim();
+
+    if (!KNOWN_SUBSTITUTION_RESOLVER_IDS.has(trimmedResolverId)) {
+      this.logger.warn(
+        `Grounding ${groundingUid}: PropertyDefault '${propertyName}' SubstitutionToken '${valueRefUid}' declares unknown resolver-id '${trimmedResolverId}' — falling back to wikilink form. Known ids: ${Array.from(KNOWN_SUBSTITUTION_RESOLVER_IDS).join(", ")}.`,
+      );
+      return `"[[${valueRefUid}]]"`;
+    }
+
+    // Context-independent resolvers — invoke at parse time.
+    if (trimmedResolverId === "today") {
+      return new Date().toISOString().slice(0, 10);
+    }
+    if (trimmedResolverId === "todayStart") {
+      return new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
+    }
+
+    // Context-dependent resolvers (targetFolder / target) — emit a marker so
+    // the Phase 3b GroundingExecutor substitutes at runtime when the click
+    // target IRI/UID is known.
+    return buildSubstitutionMarker(trimmedResolverId, valueRefUid);
+  }
+
+  /**
+   * Detect whether `subject` is an instance of `exocmd__SubstitutionToken`.
+   *
+   * Primary path: iterate the asset's `exo__Instance_class` triples and
+   * compare each to `SUBSTITUTION_TOKEN_CLASS_IRI` (NoteToRDFConverter
+   * normalises every Instance_class triple to the namespace IRI regardless
+   * of authoring shape — symbolic, UUID-canon, or full IRI — via
+   * `valueToClassURI`).
+   *
+   * Fallback: when the class triple's object is a Literal wikilink (e.g.
+   * `[[<UID>|exocmd__SubstitutionToken]]` shape that didn't fully expand),
+   * unwrap to short-name and compare; or when the value is a bare UUID,
+   * compare to `SUBSTITUTION_TOKEN_CLASS_UID`.
+   */
+  private async assetIsSubstitutionToken(subject: IRI): Promise<boolean> {
+    const classTriples = await this.tripleStore.match(
+      subject,
+      Namespace.EXO.term("Instance_class"),
+      undefined,
+    );
+    for (const triple of classTriples) {
+      if (triple.object instanceof IRI) {
+        if (triple.object.value === SUBSTITUTION_TOKEN_CLASS_IRI) return true;
+        // Edge case: class IRI is the UUID-named TBox file URL itself.
+        if (triple.object.value.includes(SUBSTITUTION_TOKEN_CLASS_UID)) return true;
+      } else if (triple.object instanceof Literal) {
+        const unwrapped = this.unwrapWikilink(triple.object.value);
+        if (unwrapped === "exocmd__SubstitutionToken") return true;
+        if (unwrapped === SUBSTITUTION_TOKEN_CLASS_UID) return true;
+      }
+    }
+    return false;
   }
 
   private resolveGroundingType(value: string): GroundingType | null {
