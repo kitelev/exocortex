@@ -146,6 +146,30 @@ export interface GroundingDefinition {
    */
   readonly propertyDefaults?: Record<string, string>;
   /**
+   * RFC v2 Phase 1+2: declarative ref-form replacement for the legacy JSON
+   * `propertyDefaults`. Multi-valued list of `exocmd__PropertyDefault`
+   * instances attached via `Grounding_propertyDefault` predicate.
+   *
+   * Each PropertyDefault asset declares (property, value) pair. Values that
+   * point to a `SubstitutionToken` instance are resolved at parse time via
+   * the SubstitutionToken resolver registry (today / todayStart) when the
+   * resolver is context-independent. Context-dependent resolvers
+   * (targetFolder / target) are encoded as marker string
+   * `__SUBSTITUTE__<resolver-id>__<token-uid>__` for the Phase 3b executor.
+   *
+   * Coexistence rule: when present alongside legacy `propertyDefaults` JSON
+   * on the same Grounding, ref-form wins; legacy is ignored with a
+   * `logger.warn` once per session per Grounding-uid.
+   */
+  readonly propertyDefault?: ReadonlyArray<PropertyDefaultResolved>;
+  /**
+   * RFC v2 Phase 1+2: declarative ref-form mapping rules. Multi-valued list of
+   * `exocmd__InheritanceRule` instances attached via `Grounding_inheritanceRule`
+   * predicate. Engine (Phase 3b) applies them in priority-descending order
+   * with class condition / exclusion filters relative to the target IRI.
+   */
+  readonly inheritanceRule?: ReadonlyArray<InheritanceRuleResolved>;
+  /**
    * Standalone wikilink to the owner identity asset pinned by this grounding.
    * Injected into `userInput.isDefinedBy` for the `service_call` createAsset
    * service, where it becomes `exo__Asset_isDefinedBy` on the new asset.
@@ -169,6 +193,47 @@ export interface GroundingDefinition {
    * (`xsd:boolean`). Default `false` keeps existing groundings unchanged.
    */
   readonly prefillLabelWithDate?: boolean;
+}
+
+/**
+ * Domain model for a resolved `exocmd__PropertyDefault` instance
+ * (RFC v2 Phase 1+2 — ref-form replacement for legacy `propertyDefaults` JSON).
+ *
+ * Each instance binds one property (resolved to its `exo__Asset_label`) to a
+ * value. Values may be:
+ *   - wikilink-form `"[[<UID>]]"` when the value asset is a regular asset;
+ *   - already-resolved string for context-independent SubstitutionToken
+ *     resolvers (e.g. `today` → `"2026-05-21"`);
+ *   - marker `__SUBSTITUTE__<resolver-id>__<token-uid>__` for
+ *     context-dependent SubstitutionToken resolvers (Phase 3b executor
+ *     replaces the marker at execution time).
+ */
+export interface PropertyDefaultResolved {
+  /** Resolved `exo__Asset_label` of the target `exo__Property` asset. */
+  readonly propertyName: string;
+  /** Resolved value string (see interface docstring for shapes). */
+  readonly value: string;
+}
+
+/**
+ * Domain model for a resolved `exocmd__InheritanceRule` instance
+ * (RFC v2 Phase 1+2 — ref-form mapping rule attached to a Grounding).
+ *
+ * `targetClassCondition` absent → rule applies unconditionally.
+ * `targetClassExclusion` empty → no class is excluded.
+ * `priority` default 50 — higher first when Phase 3b engine sorts rules.
+ */
+export interface InheritanceRuleResolved {
+  /** Resolved `exo__Asset_label` of the source `exo__Property`. */
+  readonly sourcePropertyName: string;
+  /** Resolved `exo__Asset_label` of the target `exo__Property`. */
+  readonly targetPropertyName: string;
+  /** Resolved `exo__Asset_label` of the class condition; absent = unconditional. */
+  readonly targetClassCondition?: string;
+  /** Resolved labels of excluded classes; empty = no exclusion. */
+  readonly targetClassExclusion: readonly string[];
+  /** Priority for ordering when Phase 3b engine applies multiple rules. */
+  readonly priority: number;
 }
 
 /**
