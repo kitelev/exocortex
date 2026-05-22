@@ -1453,35 +1453,6 @@ export class CommandResolver {
   }
 
   /**
-   * Helper: read a multi-valued wikilink predicate, resolve each referenced
-   * UID to its asset's `exo__Asset_label`. Refs that fail to resolve are
-   * dropped silently (the parent caller already controls aggregate semantics
-   * — e.g. an empty exclusion list means "no exclusion", which is a valid
-   * default; warning per-entry would spam).
-   */
-  private async resolveLabelRefMulti(
-    subject: IRI,
-    predicate: IRI,
-  ): Promise<string[]> {
-    const triples = await this.tripleStore.match(subject, predicate, undefined);
-    const labels: string[] = [];
-    for (const triple of triples) {
-      let name: string | null = null;
-      if (triple.object instanceof IRI) {
-        name = this.iriToObsidianName(triple.object.value) ?? triple.object.value;
-      } else if (triple.object instanceof Literal) {
-        name = this.unwrapWikilink(triple.object.value);
-      }
-      if (!name) continue;
-      const resolved = this.looksLikeUUID(name)
-        ? await this.resolveLabelByUID(name)
-        : name;
-      if (resolved) labels.push(resolved);
-    }
-    return labels;
-  }
-
-  /**
    * Resolve the value side of a PropertyDefault entry. If the value asset is
    * a SubstitutionToken instance, dispatch via the resolver registry; else
    * emit wikilink-form `"[[<UID>]]"`.
