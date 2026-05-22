@@ -950,6 +950,90 @@ describe("GroundingExecutor", () => {
       expect(content).toContain('exo__Asset_prototype: "[[vault/test-asset]]"');
     });
 
+    // Issue #3195: strip-canon. For UUID-named prototype-instance targets
+    // (UID-canon TBox/ABox convention, 2026-05-17), the `exo__Asset_prototype`
+    // back-link must be the BARE UID — `[[<uid>]]` — not the full vault-relative
+    // path `[[assetspaces/shared-identities/<uid>]]`. Both resolve to the same
+    // file in Obsidian runtime, but the path-form violates the convention.
+    //
+    // Production shape (from the issue's empirical evidence): the user clicks
+    // the Lunch prototype-instance whose file is
+    // `assetspaces/shared-identities/4b571141-…fc8410a.md`; `executeCreateInstance`
+    // receives that vault-relative path as `targetFilePath`. The fix lives in
+    // `extractBacklinkTarget` (a pure string transform — no Obsidian API to
+    // mock), so the realism that matters here is the path SHAPE, not a faked
+    // API return value.
+    describe("strip-canon back-link for UUID-named targets (Issue #3195)", () => {
+      const PROTO_UID = "4b571141-5fc3-4ddd-8f07-ca681fc8410a";
+      const PROTO_PATH = `assetspaces/shared-identities/${PROTO_UID}.md`;
+      const PROTO_IRI = `obsidian://vault/vault-2025/assetspaces/shared-identities/${PROTO_UID}.md`;
+
+      it("writes exo__Asset_prototype as bare UID, not path-form (targetFilePath branch)", async () => {
+        const grounding = makeGrounding({
+          type: GroundingType.CREATE_INSTANCE,
+          targetClass: "ems__Task",
+          targetPrototype: "df7e579d-02d4-4f3a-971f-3d1d785b689b|ems__TaskPrototype",
+          targetFolder: "03 Knowledge/inbox",
+        });
+
+        const result = await executor.execute(
+          grounding,
+          PROTO_IRI,
+          PROTO_PATH,
+          { label: "Lunch 2026-05-19" },
+        );
+
+        expect(result.success).toBe(true);
+        const [, content] = writer.createFile.mock.calls[0];
+        // Bare strip-canon UID — the actual fix assertion.
+        expect(content).toContain(`exo__Asset_prototype: "[[${PROTO_UID}]]"`);
+        // Must NOT leak the path prefix.
+        expect(content).not.toContain("assetspaces/shared-identities");
+      });
+
+      it("strips path-form to bare UID via the obsidian:// IRI fallback branch too", async () => {
+        const grounding = makeGrounding({
+          type: GroundingType.CREATE_INSTANCE,
+          targetClass: "ems__Task",
+          targetFolder: "03 Knowledge/inbox",
+        });
+
+        // Empty targetFilePath forces the obsidian:// IRI decoding branch.
+        const result = await executor.execute(
+          grounding,
+          PROTO_IRI,
+          "",
+          { label: "Lunch" },
+        );
+
+        expect(result.success).toBe(true);
+        const [, content] = writer.createFile.mock.calls[0];
+        expect(content).toContain(`exo__Asset_prototype: "[[${PROTO_UID}]]"`);
+        expect(content).not.toContain("assetspaces/shared-identities");
+      });
+
+      it("leaves non-UUID-named targets in path-form (whitelist: DailyNote etc.)", async () => {
+        const grounding = makeGrounding({
+          type: GroundingType.CREATE_INSTANCE,
+          targetClass: "ems__Task",
+          targetFolder: "03 Knowledge/inbox",
+        });
+
+        // A DailyNote-style basename is NOT a UUID → path-form preserved so
+        // Obsidian still resolves it (basename is unique by calendar convention).
+        const result = await executor.execute(
+          grounding,
+          "obsidian://vault/vault-2025/01 Daily/2026-05-19.md",
+          "01 Daily/2026-05-19.md",
+          { label: "From daily" },
+        );
+
+        expect(result.success).toBe(true);
+        const [, content] = writer.createFile.mock.calls[0];
+        expect(content).toContain('exo__Asset_prototype: "[[01 Daily/2026-05-19]]"');
+      });
+    });
+
     it("should use 'Untitled' as default label when no user input", async () => {
       const grounding = makeGrounding({
         type: GroundingType.CREATE_INSTANCE,

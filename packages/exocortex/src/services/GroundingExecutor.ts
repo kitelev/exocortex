@@ -1167,13 +1167,47 @@ export class GroundingExecutor {
   }
 
   /**
+   * Matches a bare UUID v4-shaped basename (the UID-canon filename convention,
+   * 2026-05-17). Anchored — must be the *entire* basename, so a folder named
+   * `<uuid>` embedded mid-path does not trip it.
+   */
+  private static readonly UUID_BASENAME_RE =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+  /**
    * Derive a stable wikilink target (vault-relative path, no `.md` suffix) for
    * the back-link property write. Falls back to decoding the `obsidian://` URL
    * when no fs path is provided. Without this normalization the executor would
-   * emit `[[obsidian://vault/.../<uid>.md]]` instead of the desired
-   * `[[<folder>/<basename>]]` form that Obsidian resolves directly.
+   * emit `[[obsidian://vault/.../<uid>.md]]` instead of an Obsidian-resolvable
+   * link.
+   *
+   * Issue #3195 — strip-canon: when the target is a UUID-named file (the
+   * UID-canon TBox/ABox convention, 2026-05-17), the link must be the BARE UID
+   * (`[[<uid>]]`), not the full vault-relative path
+   * (`[[assetspaces/shared-identities/<uid>]]`). Both forms resolve to the same
+   * file at runtime, but the path-form violates the convention and leaks a
+   * folder prefix into `exo__Asset_prototype` (and any other back-link this
+   * helper feeds). Non-UUID basenames (e.g. whitelisted `pn__DailyNote`
+   * `YYYY-MM-DD`, `period__Week` `YYYY-Www`) keep their path-form so Obsidian
+   * still resolves them.
    */
   private static extractBacklinkTarget(targetIRI: string, targetFilePath: string): string {
+    const path = GroundingExecutor.resolveTargetPath(targetIRI, targetFilePath);
+    const basename = path.split("/").pop() ?? path;
+    if (GroundingExecutor.UUID_BASENAME_RE.test(basename)) {
+      return basename;
+    }
+    return path;
+  }
+
+  /**
+   * Resolve the raw vault-relative path (no `.md` suffix, no leading slash) of
+   * the back-link target, from either the fs path or the `obsidian://` IRI.
+   * Split out from {@link extractBacklinkTarget} so the strip-canon gate has a
+   * single exit point covering both the fs-path and IRI-fallback branches
+   * (Issue #3195).
+   */
+  private static resolveTargetPath(targetIRI: string, targetFilePath: string): string {
     if (targetFilePath) {
       return targetFilePath.replace(/\.md$/i, "").replace(/^\/+/, "");
     }
