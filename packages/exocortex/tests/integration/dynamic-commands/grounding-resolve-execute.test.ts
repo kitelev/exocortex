@@ -458,6 +458,138 @@ describe("RFC da3a7555 — RDF → Resolver → Executor pipeline (create_instan
     expect(content).not.toContain('"[[ems__Task]]"');
   });
 
+  it("Fixture 2d: PRODUCTION-SHAPE — class TBox absent from store (cold-start) → resolver-time findUidByLabel returns null → execution-time ClassLabelToUidResolver yields UID-form (#3220)", async () => {
+    // Issue #3220 — the #3212 resolver-layer fix (CommandResolver.findUidByLabel,
+    // exercised by Fixture 2c) works ONLY when the class TBox label triple is in
+    // the SAME store the resolver queries. Production cold-start paths violate
+    // that precondition:
+    //   - ExocmdFastResolver (#3171) builds a mini-store from the open asset +
+    //     `assetspaces/exocmd` only — NEVER `assetspaces/ems` where the class
+    //     TBox lives.
+    //   - the persisted binding cache (#3183) bakes the resolved grounding and
+    //     survives an Obsidian restart.
+    // This fixture reproduces that shape: the grounding stores the plain literal
+    // `"ems__Task"` (vault grounding `a6ef8fda-...`) but — UNLIKE Fixture 2c —
+    // the class TBox file is DELIBERATELY NOT seeded into the store. So
+    // findUidByLabel returns null and the grounding bakes the bare label.
+    const CLASS_UID = "1b20a8f0-d745-4e93-91db-4531b3df120e";
+
+    await seedGrounding(store, {
+      linkBackPropertyLiteral: `[[${PROPERTY_UID}|ems__Effort_prevIteration]]`,
+    });
+    await seedCommand(store);
+
+    const grounding = await loadGrounding(resolver, store);
+    // The production gap: with no class TBox in the store, the resolver-layer
+    // fix degrades to the bare label. This is the value baked into the disk
+    // cache / fast-path ResolvedCommand that production executes.
+    expect(grounding.targetClass).toBe("ems__Task");
+
+    // --- Execution WITHOUT a resolver (tests/CLI/headless) → label-form. ---
+    // Backward-compatibility guard: the prior behaviour is preserved when no
+    // ClassLabelToUidResolver is injected.
+    const fsNoResolver = new InMemoryFileSystem({
+      [SOURCE_FILE_PATH]: SOURCE_CONTENT,
+    });
+    const executorNoResolver = new GroundingExecutor(
+      fsNoResolver,
+      fsNoResolver,
+      new ServiceRegistry(),
+    );
+    const resNoResolver = await executorNoResolver.execute(
+      grounding as never,
+      SOURCE_IRI,
+      SOURCE_FILE_PATH,
+    );
+    expect(resNoResolver.success).toBe(true);
+    const pathNoResolver = fsNoResolver
+      .listCreated()
+      .find((p) => p !== SOURCE_FILE_PATH)!;
+    expect(fsNoResolver.getContent(pathNoResolver)!).toContain(
+      'exo__Instance_class:\n  - "[[ems__Task]]"',
+    );
+
+    // --- Execution WITH the metadata-cache-backed resolver → UID-form. ---
+    // Simulates the always-warm Obsidian metadata cache that DOES know the
+    // class (the plugin wires `createObsidianClassLabelResolver`). This is the
+    // assertion that FAILS before the #3220 fix — executeCreateInstance ignored
+    // the label and wrote `"[[ems__Task]]"` regardless.
+    const fsWithResolver = new InMemoryFileSystem({
+      [SOURCE_FILE_PATH]: SOURCE_CONTENT,
+    });
+    const calls: string[] = [];
+    const executorWithResolver = new GroundingExecutor(
+      fsWithResolver,
+      fsWithResolver,
+      new ServiceRegistry(),
+      (label: string) => {
+        calls.push(label);
+        return label === "ems__Task" ? CLASS_UID : null;
+      },
+    );
+    const resWithResolver = await executorWithResolver.execute(
+      grounding as never,
+      SOURCE_IRI,
+      SOURCE_FILE_PATH,
+    );
+    expect(resWithResolver.success).toBe(true);
+    const pathWithResolver = fsWithResolver
+      .listCreated()
+      .find((p) => p !== SOURCE_FILE_PATH)!;
+    const contentWithResolver = fsWithResolver.getContent(pathWithResolver)!;
+
+    expect(calls).toContain("ems__Task");
+    expect(contentWithResolver).toContain(
+      `exo__Instance_class:\n  - "[[${CLASS_UID}]]"`,
+    );
+    expect(contentWithResolver).not.toContain('"[[ems__Task]]"');
+  });
+
+  it("Fixture 2e: resolver is NOT invoked for already-UUID targetClass — and never overrides it (#3220)", async () => {
+    // Guards against a resolver that mis-resolves a UUID back to something else:
+    // when grounding.targetClass is already UUID-canon (full-path resolution /
+    // parser-layer bypass #3212), executeCreateInstance must short-circuit and
+    // emit it verbatim without calling the resolver.
+    const CLASS_UID = "1b20a8f0-d745-4e93-91db-4531b3df120e";
+
+    // Seed the class TBox so the resolver-layer fix produces UID-form, mirroring
+    // a warm full-path resolution.
+    const CLASS_FILE_IRI = new IRI(
+      `obsidian://vault/assetspaces/ems/${CLASS_UID}.md`,
+    );
+    await store.addAll([
+      new Triple(CLASS_FILE_IRI, Namespace.RDF.term("type"), Namespace.EXO.term("Class")),
+      new Triple(CLASS_FILE_IRI, Namespace.EXO.term("Asset_uid"), new Literal(CLASS_UID)),
+      new Triple(CLASS_FILE_IRI, Namespace.EXO.term("Asset_label"), new Literal("ems__Task")),
+    ]);
+    await seedGrounding(store, {
+      linkBackPropertyLiteral: `[[${PROPERTY_UID}|ems__Effort_prevIteration]]`,
+    });
+    await seedCommand(store);
+
+    const grounding = await loadGrounding(resolver, store);
+    expect(grounding.targetClass).toBe(CLASS_UID);
+
+    const calls: string[] = [];
+    const executorWithResolver = new GroundingExecutor(fs, fs, new ServiceRegistry(), (label: string) => {
+      calls.push(label);
+      return "SHOULD-NOT-BE-USED";
+    });
+    const result = await executorWithResolver.execute(
+      grounding as never,
+      SOURCE_IRI,
+      SOURCE_FILE_PATH,
+    );
+    expect(result.success).toBe(true);
+    // Resolver MUST be skipped for UUID refs.
+    expect(calls).toHaveLength(0);
+    const createdPath = fs.listCreated().find((p) => p !== SOURCE_FILE_PATH)!;
+    expect(fs.getContent(createdPath)!).toContain(
+      `exo__Instance_class:\n  - "[[${CLASS_UID}]]"`,
+    );
+    expect(fs.getContent(createdPath)!).not.toContain("SHOULD-NOT-BE-USED");
+  });
+
   it("Fixture 3: copy-from-target inherits ≥3 non-blacklisted fields from source frontmatter", async () => {
     await seedGrounding(store, {
       linkBackPropertyLiteral: `[[${PROPERTY_UID}|ems__Effort_prevIteration]]`,

@@ -89,6 +89,7 @@ import { PrintNameRuleService } from "./domain/display-name/PrintNameRuleService
 import { ObsidianFileSystemAdapter } from "./adapters/ObsidianFileSystemAdapter";
 import { populateServiceRegistry } from "./infrastructure/services/ServiceRegistryPopulator";
 import { ObsidianFileOpener } from "./infrastructure/services/ObsidianFileOpener";
+import { createObsidianClassLabelResolver } from "./infrastructure/services/ObsidianClassLabelResolver";
 import { ExocmdCommandPaletteRegistrar } from "./application/services/ExocmdCommandPaletteRegistrar";
 import { ObsidianCommandPromptAdapter } from "./infrastructure/adapters/ObsidianCommandPromptAdapter";
 import {
@@ -227,6 +228,11 @@ export default class ExocortexPlugin extends Plugin {
         obsidianFs,
         obsidianFs,
         this.serviceRegistry,
+        // Issue #3220: execution-time label→UID class resolution via the
+        // always-warm Obsidian metadata cache. Closes the cold-start gap where
+        // create_instance baked label-form `exo__Instance_class` because the
+        // fast resolver / disk cache store lacked the `assetspaces/ems` TBox.
+        createObsidianClassLabelResolver(this.app),
       );
 
       populateServiceRegistry(this.serviceRegistry, {

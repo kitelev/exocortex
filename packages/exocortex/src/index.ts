@@ -73,6 +73,7 @@ export {
   type ExecutionResult,
   type UserInput,
   type IGroundingService,
+  type ClassLabelToUidResolver,
 } from "./services/GroundingExecutor";
 export {
   CommandExecutionFlow,

@@ -51,6 +51,37 @@ function extractClassFromTargetValue(
 export type UserInput = Record<string, unknown>;
 
 /**
+ * Issue #3220 — execution-time class-label → canonical-UID resolver.
+ *
+ * `create_instance` writes `exo__Instance_class` from `grounding.targetClass`.
+ * That value may arrive in label-form (e.g. `"ems__Task"`) instead of the
+ * UUID-canon form (`"1b20a8f0-..."`) whenever the command was resolved against
+ * a store that does NOT contain the class TBox file — which is exactly what
+ * the cold-start resolution paths use:
+ *
+ *   - `ExocmdFastResolver` (#3171) builds a mini-store from the open asset
+ *     plus `assetspaces/exocmd/*.md` only — never `assetspaces/ems` where the
+ *     UUID-named class TBox files live.
+ *   - the persisted binding cache (#3183) yields `ResolvedCommand`s whose
+ *     `grounding.targetClass` was baked at write time and survives an Obsidian
+ *     restart on disk.
+ *
+ * In both cases `CommandResolver.findUidByLabel` (#3212) returns null for lack
+ * of the TBox label triple, so the grounding bakes the bare label. Re-resolving
+ * here, at execution time, against an always-warm source (the Obsidian metadata
+ * cache, injected by the plugin) guarantees UID-form regardless of which path
+ * produced the grounding. A `null` return (no resolver wired, test/CLI harness,
+ * unknown label) leaves the ref untouched — backward-compatible label-form.
+ */
+export type ClassLabelToUidResolver = (
+  label: string,
+) => string | null | Promise<string | null>;
+
+/** UUID-v4 sniff used to skip resolution for already-canonical class refs. */
+const UUID_V4_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
  * A named service that can be invoked by service_call groundings.
  */
 export interface IGroundingService {
@@ -118,16 +149,23 @@ export class GroundingExecutor {
   private readonly fileReader: IFileSystemReader;
   private readonly fileWriter: IFileSystemWriter;
   private readonly serviceRegistry: ServiceRegistry;
+  private readonly classLabelToUid?: ClassLabelToUidResolver;
 
   constructor(
     fileReader: IFileSystemReader,
     fileWriter: IFileSystemWriter,
     serviceRegistry: ServiceRegistry,
+    // Issue #3220 — optional. When omitted (tests, CLI, headless runners) the
+    // executor preserves its prior label-form behaviour for class refs that
+    // arrived non-canonical. The Obsidian plugin injects a metadata-cache-
+    // backed implementation so production create_instance always emits UID-form.
+    classLabelToUid?: ClassLabelToUidResolver,
   ) {
     this.frontmatterService = new FrontmatterService();
     this.fileReader = fileReader;
     this.fileWriter = fileWriter;
     this.serviceRegistry = serviceRegistry;
+    this.classLabelToUid = classLabelToUid;
   }
 
   /**
@@ -576,7 +614,12 @@ export class GroundingExecutor {
     }
 
     if (grounding.targetClass) {
-      properties.exo__Instance_class = [`"[[${grounding.targetClass}]]"`];
+      // Issue #3220: re-resolve label-form refs to UID at execution time. See
+      // {@link ClassLabelToUidResolver} for why resolver-time resolution
+      // (CommandResolver.findUidByLabel, #3212) is insufficient in production
+      // cold-start paths. Already-UUID refs and unresolvable labels pass through.
+      const classRef = await this.resolveClassRefToUid(grounding.targetClass);
+      properties.exo__Instance_class = [`"[[${classRef}]]"`];
     }
 
     // Issue #3184 B1: do NOT materialise `grounding.targetPrototype` (which is
@@ -676,6 +719,27 @@ export class GroundingExecutor {
     // — actually opening the file is wired by the platform adapter through
     // CommandExecutionFlow's optional IFileOpener dependency.
     return { success: true, openPath: filePath };
+  }
+
+  /**
+   * Issue #3220 — resolve a class reference to its canonical UUID at execution
+   * time, falling back to the original ref when resolution is unavailable.
+   *
+   * Skips already-UUID refs (full-path resolution + the parser-layer bypass
+   * #3212/#3214 already produce these). For label-form refs (the cold-start
+   * gap), delegates to the injected {@link ClassLabelToUidResolver}; a missing
+   * resolver, a `null`/empty result, or a thrown error all preserve the prior
+   * label-form behaviour rather than failing the creation.
+   */
+  private async resolveClassRefToUid(classRef: string): Promise<string> {
+    if (UUID_V4_RE.test(classRef)) return classRef;
+    if (!this.classLabelToUid) return classRef;
+    try {
+      const uid = await this.classLabelToUid(classRef);
+      return uid && uid.length > 0 ? uid : classRef;
+    } catch {
+      return classRef;
+    }
   }
 
   /**
