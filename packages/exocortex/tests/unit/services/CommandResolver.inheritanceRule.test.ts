@@ -325,4 +325,64 @@ describe("CommandResolver — RFC v2 Phase 3a resolveInheritanceRules", () => {
     );
     expect(rule.priority).toBe(25);
   });
+
+  // HIGH fix (PR #3224 code-review, 2026-05-22): broken condition/exclusion
+  // refs must skip the ENTIRE rule, not silently expand scope.
+  it("skips entire rule when targetClassCondition triple exists but ref unresolvable", async () => {
+    const BROKEN_CLASS_UID = "ffffffff-ffff-4fff-8fff-ffffffffffff";
+    // Add InheritanceRule that references a class UID that has no asset (no Asset_label triple).
+    await addInheritanceRuleAsset(store, {
+      uid: RULE_UID_COND,
+      sourcePropertyRefUid: SRC_PROP_UID,
+      targetPropertyRefUid: TGT_PROP_UID,
+      targetClassConditionRefUid: BROKEN_CLASS_UID, // exists in triple but never labelled
+      priority: 100,
+    });
+    await addGroundingWithInheritanceRules(store, {
+      uid: GROUNDING_UID,
+      label: "Grounding with broken condition ref",
+      ruleRefUids: [RULE_UID_COND],
+    });
+    await addCommandForGrounding(store, COMMAND_UID, GROUNDING_UID);
+
+    const cmd = await resolver.loadCommand(COMMAND_UID);
+
+    // Entire rule dropped — would-be unconditional rule is not silently applied.
+    expect(cmd!.grounding.inheritanceRule).toBeUndefined();
+    // Warn surfaces the scope-broadening risk.
+    expect(
+      logger.warnings.some((w) =>
+        w.includes("targetClassCondition triple but ref is unresolvable") &&
+        w.includes("entire rule skipped"),
+      ),
+    ).toBe(true);
+  });
+
+  it("skips entire rule when one targetClassExclusion entry is unresolvable (asymmetric scope expansion)", async () => {
+    const BROKEN_EXCL_UID = "ffffffff-ffff-4fff-8fff-fffffffffff0";
+    // Two exclusion refs — one valid, one broken (no asset_label triple).
+    await addInheritanceRuleAsset(store, {
+      uid: RULE_UID_EXCL,
+      sourcePropertyRefUid: SRC_PROP_UID,
+      targetPropertyRefUid: TGT_PROP_UID,
+      targetClassExclusionRefUids: [EXCL_CLASS_TASK, BROKEN_EXCL_UID],
+      priority: 50,
+    });
+    await addGroundingWithInheritanceRules(store, {
+      uid: GROUNDING_UID,
+      label: "Grounding with broken exclusion entry",
+      ruleRefUids: [RULE_UID_EXCL],
+    });
+    await addCommandForGrounding(store, COMMAND_UID, GROUNDING_UID);
+
+    const cmd = await resolver.loadCommand(COMMAND_UID);
+
+    expect(cmd!.grounding.inheritanceRule).toBeUndefined();
+    expect(
+      logger.warnings.some((w) =>
+        w.includes("targetClassExclusion entry") &&
+        w.includes("entire rule skipped"),
+      ),
+    ).toBe(true);
+  });
 });

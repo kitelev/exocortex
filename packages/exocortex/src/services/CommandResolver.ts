@@ -1336,15 +1336,65 @@ export class CommandResolver {
         continue;
       }
 
-      const targetClassCondition = await this.resolveLabelRef(
+      // HIGH fix (PR #3224 review, 2026-05-22): distinguish "no triple authored"
+      // from "broken ref" for optional class predicates. If the triple exists
+      // but resolution fails, scope of the rule changes — for exclusion in
+      // particular, dropping a broken excluded class makes the rule apply to
+      // MORE classes than authored (asymmetric failure direction). Safer:
+      // skip the entire rule on data-integrity issues.
+      const conditionTriples = await this.tripleStore.match(
         refSubject,
         Namespace.EXOCMD.term("InheritanceRule_targetClassCondition"),
+        undefined,
       );
+      let targetClassCondition: string | undefined = undefined;
+      if (conditionTriples.length > 0) {
+        const resolved = await this.resolveLabelRef(
+          refSubject,
+          Namespace.EXOCMD.term("InheritanceRule_targetClassCondition"),
+        );
+        if (!resolved) {
+          this.logger.warn(
+            `Grounding ${groundingUid}: InheritanceRule has exocmd__InheritanceRule_targetClassCondition triple but ref is unresolvable — entire rule skipped (would otherwise apply unconditionally, broadening scope).`,
+          );
+          continue;
+        }
+        targetClassCondition = resolved;
+      }
 
-      const targetClassExclusion = await this.resolveLabelRefMulti(
+      const exclusionTriples = await this.tripleStore.match(
         refSubject,
         Namespace.EXOCMD.term("InheritanceRule_targetClassExclusion"),
+        undefined,
       );
+      const targetClassExclusion: string[] = [];
+      let exclusionBroken = false;
+      for (const triple of exclusionTriples) {
+        let name: string | null = null;
+        if (triple.object instanceof IRI) {
+          name = this.iriToObsidianName(triple.object.value) ?? triple.object.value;
+        } else if (triple.object instanceof Literal) {
+          name = this.unwrapWikilink(triple.object.value);
+        }
+        if (!name) {
+          exclusionBroken = true;
+          continue;
+        }
+        const resolved = this.looksLikeUUID(name)
+          ? await this.resolveLabelByUID(name)
+          : name;
+        if (!resolved) {
+          exclusionBroken = true;
+          continue;
+        }
+        targetClassExclusion.push(resolved);
+      }
+      if (exclusionBroken) {
+        this.logger.warn(
+          `Grounding ${groundingUid}: InheritanceRule has unresolvable exocmd__InheritanceRule_targetClassExclusion entry — entire rule skipped (would otherwise expand scope by silently dropping the excluded class).`,
+        );
+        continue;
+      }
 
       const priorityRaw = await this.getLiteralValue(
         refSubject,
@@ -1361,7 +1411,7 @@ export class CommandResolver {
       resolved.push({
         sourcePropertyName,
         targetPropertyName,
-        targetClassCondition: targetClassCondition ?? undefined,
+        targetClassCondition,
         targetClassExclusion,
         priority,
       });
