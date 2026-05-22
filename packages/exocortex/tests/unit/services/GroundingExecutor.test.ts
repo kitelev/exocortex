@@ -2392,4 +2392,172 @@ describe("Convert commands — production-shape dispatch (Finding 5 completion)"
       expect(writer.updateFile).not.toHaveBeenCalled();
     });
   });
+
+  // ===========================================================================
+  // Issue #3222: the convert paths (executeConvertToTask / executeConvertToProject)
+  // wrote a hardcoded label-form `["[[ems__Task]]"]` / `["[[ems__Project]]"]`,
+  // bypassing the execution-time class label→UID resolution added in #3220.
+  // When an ObsidianClassLabelResolver is injected (production plugin), the
+  // written `exo__Instance_class` must be UUID-canon. With no resolver
+  // (tests/CLI/headless), the label-form fallback is preserved.
+  // ===========================================================================
+  describe("Convert paths — UID-canon resolution (#3222)", () => {
+    const TASK_UID = "1b20a8f0-d745-4e93-91db-4531b3df120e";
+    const PROJECT_UID = "7db5eeff-718a-49b0-8d2b-39b084a356e3";
+
+    function makeResolver(map: Record<string, string>) {
+      const calls: string[] = [];
+      const fn = (label: string): string | null => {
+        calls.push(label);
+        return map[label] ?? null;
+      };
+      return { fn, calls };
+    }
+
+    it("Convert to Task emits UID-form exo__Instance_class when a resolver is wired", async () => {
+      const reader = createConvertReader("ems__Project");
+      const writer = createWriter();
+      const { fn, calls } = makeResolver({ ems__Task: TASK_UID });
+      const executor = new GroundingExecutor(
+        reader,
+        writer,
+        new ServiceRegistry(),
+        fn,
+      );
+
+      const grounding = makeSvcCall({
+        targetProperty: "updateProperty",
+        targetValue: "ems__Task",
+      });
+
+      const result = await executor.execute(
+        grounding,
+        TARGET_IRI,
+        FILE_PATH,
+        undefined,
+      );
+
+      expect(result.success).toBe(true);
+      expect(calls).toContain("ems__Task");
+      const written = writer.updateFile.mock.calls[0][1] as string;
+      expect(written).toMatch(
+        new RegExp(`exo__Instance_class:\\s*\\[?\\s*"\\[\\[${TASK_UID}\\]\\]"`),
+      );
+      // label-form was replaced by UID (regression criterion: pre-fix wrote
+      // "[[ems__Task]]") and the source class was overwritten.
+      expect(written).not.toMatch(/"\[\[ems__Task\]\]"/);
+      expect(written).not.toMatch(/"\[\[ems__Project\]\]"/);
+    });
+
+    it("Convert to Project emits UID-form exo__Instance_class when a resolver is wired", async () => {
+      const reader = createConvertReader("ems__Task");
+      const writer = createWriter();
+      const { fn, calls } = makeResolver({ ems__Project: PROJECT_UID });
+      const executor = new GroundingExecutor(
+        reader,
+        writer,
+        new ServiceRegistry(),
+        fn,
+      );
+
+      const grounding = makeSvcCall({
+        targetProperty: "updateProperty",
+        targetValue: "ems__Project",
+      });
+
+      const result = await executor.execute(
+        grounding,
+        TARGET_IRI,
+        FILE_PATH,
+        undefined,
+      );
+
+      expect(result.success).toBe(true);
+      expect(calls).toContain("ems__Project");
+      const written = writer.updateFile.mock.calls[0][1] as string;
+      expect(written).toMatch(
+        new RegExp(
+          `exo__Instance_class:\\s*\\[?\\s*"\\[\\[${PROJECT_UID}\\]\\]"`,
+        ),
+      );
+      // label-form was replaced by UID (regression criterion: pre-fix wrote
+      // "[[ems__Project]]") and the source class was overwritten.
+      expect(written).not.toMatch(/"\[\[ems__Project\]\]"/);
+      expect(written).not.toMatch(/"\[\[ems__Task\]\]"/);
+    });
+
+    it("Convert to Task falls back to label-form when no resolver is injected", async () => {
+      const reader = createConvertReader("ems__Project");
+      const writer = createWriter();
+      const executor = new GroundingExecutor(reader, writer, new ServiceRegistry());
+
+      const grounding = makeSvcCall({
+        targetProperty: "updateProperty",
+        targetValue: "ems__Task",
+      });
+
+      const result = await executor.execute(
+        grounding,
+        TARGET_IRI,
+        FILE_PATH,
+        undefined,
+      );
+
+      expect(result.success).toBe(true);
+      const written = writer.updateFile.mock.calls[0][1] as string;
+      expect(written).toMatch(/exo__Instance_class:\s*\[?\s*"\[\[ems__Task\]\]"/);
+    });
+
+    it("Convert to Project falls back to label-form when no resolver is injected", async () => {
+      const reader = createConvertReader("ems__Task");
+      const writer = createWriter();
+      const executor = new GroundingExecutor(reader, writer, new ServiceRegistry());
+
+      const grounding = makeSvcCall({
+        targetProperty: "updateProperty",
+        targetValue: "ems__Project",
+      });
+
+      const result = await executor.execute(
+        grounding,
+        TARGET_IRI,
+        FILE_PATH,
+        undefined,
+      );
+
+      expect(result.success).toBe(true);
+      const written = writer.updateFile.mock.calls[0][1] as string;
+      expect(written).toMatch(
+        /exo__Instance_class:\s*\[?\s*"\[\[ems__Project\]\]"/,
+      );
+    });
+
+    it("Convert to Task preserves label-form when resolver returns null (unresolvable)", async () => {
+      const reader = createConvertReader("ems__Project");
+      const writer = createWriter();
+      const { fn } = makeResolver({}); // resolves nothing
+      const executor = new GroundingExecutor(
+        reader,
+        writer,
+        new ServiceRegistry(),
+        fn,
+      );
+
+      const grounding = makeSvcCall({
+        targetProperty: "updateProperty",
+        targetValue: "ems__Task",
+      });
+
+      const result = await executor.execute(
+        grounding,
+        TARGET_IRI,
+        FILE_PATH,
+        undefined,
+      );
+
+      expect(result.success).toBe(true);
+      const written = writer.updateFile.mock.calls[0][1] as string;
+      expect(written).toMatch(/exo__Instance_class:\s*\[?\s*"\[\[ems__Task\]\]"/);
+    });
+  });
 });

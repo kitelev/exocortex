@@ -532,10 +532,15 @@ export class GroundingExecutor {
 
   private async executeConvertToTask(filePath: string): Promise<ExecutionResult> {
     const content = await this.fileReader.readFile(filePath);
+    // Issue #3222: route the hardcoded class label through the same
+    // execution-time resolver as create_instance (#3220) so the written
+    // exo__Instance_class is UUID-canon when a resolver is wired; falls back
+    // to label-form for tests/CLI/headless. See resolveClassRefToUid.
+    const classRef = await this.resolveClassRefToUid("ems__Task");
     const updated = this.frontmatterService.updateProperty(
       content,
       "exo__Instance_class",
-      `["[[ems__Task]]"]`,
+      `["[[${classRef}]]"]`,
     );
     await this.fileWriter.updateFile(filePath, updated);
     return { success: true };
@@ -543,10 +548,12 @@ export class GroundingExecutor {
 
   private async executeConvertToProject(filePath: string): Promise<ExecutionResult> {
     const content = await this.fileReader.readFile(filePath);
+    // Issue #3222: see executeConvertToTask — same UID-canon resolution.
+    const classRef = await this.resolveClassRefToUid("ems__Project");
     const updated = this.frontmatterService.updateProperty(
       content,
       "exo__Instance_class",
-      `["[[ems__Project]]"]`,
+      `["[[${classRef}]]"]`,
     );
     await this.fileWriter.updateFile(filePath, updated);
     return { success: true };
