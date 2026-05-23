@@ -13,8 +13,6 @@ import {
   RenameToUidService,
   ConceptCreationService,
   ClassCreationService,
-  DateFormatter,
-  WikiLinkHelpers,
   type ClassRefResolver,
   type IGroundingService,
   type UserInput,
@@ -42,6 +40,9 @@ function createMetadataClassResolver(app: App): ClassRefResolver {
 import {
   createArchiveAssetService,
   createCleanPropertiesService,
+  createCreateAssetService,
+  createCreateRelatedProjectService,
+  createCreateRelatedTaskService,
   createFixMissingLabelService,
   createPlanForEveningService,
   createRenameToUidService,
@@ -67,12 +68,6 @@ function wrapService(
   fn: (targetIRI: string, userInput?: UserInput) => Promise<void>,
 ): IGroundingService {
   return { execute: fn };
-}
-
-function toQuotedWikilink(value: string): string {
-  if (value.startsWith('"[[') && value.endsWith(']]"')) return value;
-  if (value.startsWith("[[") && value.endsWith("]]")) return `"${value}"`;
-  return `"[[${value}]]"`;
 }
 
 export function populateServiceRegistry(
@@ -120,162 +115,6 @@ export function populateServiceRegistry(
       frontmatterService,
       pluginPathResolver,
     ),
-  );
-
-  registry.register(
-    "createAsset",
-    wrapService(async (targetIRI: string, userInput?: UserInput) => {
-      // Accept both `prototypeUID` and `prototype` — starter-kit groundings
-      // prior to 2026-04-13 wired "Create Project" with `{"prototype":"..."}`
-      // (natural JSON key), which diverged from the service contract. The UI
-      // click-through silently failed because the 4 s red Notice fades fast
-      // while the direct console call suggested the plugin was correct. See
-      // #2850 Bug 3.
-      const prototypeUID =
-        (userInput?.prototypeUID as string | undefined) ??
-        (userInput?.prototype as string | undefined);
-      const label = userInput?.label as string | undefined;
-      // `userInput.folder` literal wins over the targetIRI-based inference.
-      // Global surfaces (Obsidian Command Palette, RFC `1429fcd0`) call this
-      // service without an active file, so they pass `folder` explicitly via
-      // the exocmd grounding `targetValue`. Layout buttons keep working
-      // unchanged: they don't pass `folder` and the inference below fills it
-      // in from the active asset.
-      let folder = userInput?.folder as string | undefined;
-      const ownerIdentity = userInput?.ownerIdentity as string | undefined;
-      const explicitIsDefinedBy = userInput?.isDefinedBy as string | undefined;
-      if (!prototypeUID) throw new Error("createAsset requires userInput.prototypeUID");
-      if (!label) throw new Error("createAsset requires userInput.label");
-      // Default to current file's folder when not specified
-      if (!folder && targetIRI) {
-        try {
-          const currentPath = resolveFilePath(app, targetIRI);
-          const lastSlash = currentPath.lastIndexOf("/");
-          folder = lastSlash >= 0 ? currentPath.substring(0, lastSlash) : "";
-        } catch {
-          // IRI resolution failed — folder stays undefined
-        }
-      }
-      if (!folder && folder !== "") throw new Error("createAsset requires userInput.folder");
-
-      // Resolve parent file and metadata from targetIRI so prototype-based
-      // creation inherits context (Instance_class, Effort_parent/area, status,
-      // isDefinedBy) — mirrors createRelatedTask's inheritParentContext but
-      // operates through fileSystemAdapter.createFile because this handler is
-      // used from bindings that only have app+fileSystemAdapter wired.
-      // RFC-028 Finding 2: without this inheritance, prototype-button created
-      // Tasks render as orphans in Project layouts.
-      let parentPath: string | undefined;
-      let parentMetadata: Record<string, unknown> | undefined;
-      if (targetIRI) {
-        try {
-          parentPath = resolveFilePath(app, targetIRI);
-          const parentFile = app.vault.getAbstractFileByPath(parentPath);
-          if (parentFile) {
-            const cache = app.metadataCache.getFileCache(parentFile as never);
-            parentMetadata = cache?.frontmatter as
-              | Record<string, unknown>
-              | undefined;
-          }
-        } catch {
-          // IRI resolution failed — no parent inheritance
-        }
-      }
-      // Default folder from current file's parent folder (re-use parentPath)
-      if (!folder && parentPath) {
-        const lastSlash = parentPath.lastIndexOf("/");
-        folder = lastSlash >= 0 ? parentPath.substring(0, lastSlash) : "";
-      }
-      if (!folder && folder !== "") throw new Error("createAsset requires userInput.folder");
-
-      const expectedClass = prototypeUID.endsWith("Prototype")
-        ? prototypeUID.slice(0, -"Prototype".length)
-        : prototypeUID;
-
-      const uid = crypto.randomUUID();
-      const createdAt = DateFormatter.toISOTimestamp(new Date());
-      const fileName = `${uid}.md`;
-      const filePath = `${folder}/${fileName}`;
-      const lines: string[] = [
-        "---",
-        `exo__Asset_uid: ${uid}`,
-        `exo__Asset_createdAt: ${createdAt}`,
-        `exo__Asset_label: ${label}`,
-        `exo__Asset_prototype: "[[${prototypeUID}]]"`,
-        "exo__Instance_class:",
-        `  - "[[${expectedClass}]]"`,
-      ];
-      let isDefinedByWritten = false;
-      // Highest precedence: explicit `isDefinedBy` from grounding `targetValue`
-      // (RFC `1429fcd0` follow-up). Lets each exocmd command pin its created
-      // assets to a specific owner without depending on vault default or parent
-      // inheritance. Example: a global Palette "Create note" command sets
-      // `targetValue.isDefinedBy = "[[<kitelev-uid>]]"` so the note is owned
-      // by the user even when fired without an active file.
-      if (explicitIsDefinedBy) {
-        lines.push(
-          `exo__Asset_isDefinedBy: ${toQuotedWikilink(explicitIsDefinedBy)}`,
-        );
-        isDefinedByWritten = true;
-      }
-      if (parentMetadata) {
-        const parentClass = parentMetadata.exo__Instance_class;
-        const parentClasses = Array.isArray(parentClass)
-          ? parentClass
-          : parentClass != null
-            ? [parentClass]
-            : [];
-        const isAreaParent = parentClasses.some((cls) =>
-          WikiLinkHelpers.resolveSymbolic(String(cls), classResolver).includes(
-            "Area",
-          ),
-        );
-        const parentBasename = parentPath
-          ? parentPath
-              .substring(parentPath.lastIndexOf("/") + 1)
-              .replace(/\.md$/, "")
-          : undefined;
-        if (parentBasename) {
-          const parentProperty = isAreaParent
-            ? "ems__Effort_area"
-            : "ems__Effort_parent";
-          lines.push(`${parentProperty}: "[[${parentBasename}]]"`);
-        }
-        if (!isAreaParent && parentMetadata.ems__Effort_area) {
-          lines.push(
-            `ems__Effort_area: ${toQuotedWikilink(
-              String(parentMetadata.ems__Effort_area),
-            )}`,
-          );
-        }
-        // UUID-form per RFC 31c1a0be Phase 4 PR-C (#3194). Resolves the
-        // 42-asset symbolic-form trace back to this default-write site.
-        lines.push(
-          'ems__Effort_status: "[[753a44d5-846c-4b82-9196-4fd9a4d48777]]"',
-        );
-        if (!isDefinedByWritten && parentMetadata.exo__Asset_isDefinedBy) {
-          lines.push(
-            `exo__Asset_isDefinedBy: ${toQuotedWikilink(
-              String(parentMetadata.exo__Asset_isDefinedBy),
-            )}`,
-          );
-          isDefinedByWritten = true;
-        }
-      }
-      // Final fallback for global surfaces without an active file (RFC
-      // `1429fcd0`): ExocmdCommandPaletteRegistrar injects the vault default
-      // owner-identity wikilink via `userInput.ownerIdentity`. Precedence
-      // chain: explicit grounding `isDefinedBy` > parent inheritance >
-      // vault-default `ownerIdentity`.
-      if (!isDefinedByWritten && ownerIdentity) {
-        lines.push(
-          `exo__Asset_isDefinedBy: ${toQuotedWikilink(ownerIdentity)}`,
-        );
-      }
-      lines.push("---", "");
-      const frontmatter = lines.join("\n");
-      await fileSystemAdapter.createFile(filePath, frontmatter);
-    }),
   );
 
   registry.register(
@@ -412,111 +251,49 @@ export function populateServiceRegistry(
     // (Homoiconicity Invariant Q1 remediation). Palette command path remains
     // via direct LabelToAliasService usage in CopyLabelToAliasesCommand.
 
+    // Phase 4b (#3166) — thin wrappers delegate the createAsset family to the
+    // storage-agnostic shared factories from `@kitelev/exocortex-services`
+    // (Phase 3.5 ship). Removes ~250 LOC of inlined logic previously duplicated
+    // between plugin and CLI. The `openCreatedFileInTab` callback wires the
+    // Obsidian-specific post-create UX (focus the new asset in a new workspace
+    // tab) without leaking Obsidian dependencies into the shared package.
+    const openCreatedFileInTab = async (createdFile: IFile): Promise<void> => {
+      const tfile = vaultAdapter.toTFile(createdFile);
+      const leaf = app.workspace.getLeaf("tab");
+      await leaf.openFile(tfile);
+      app.workspace.setActiveLeaf(leaf, { focus: true });
+    };
+
+    registry.register(
+      "createAsset",
+      createCreateAssetService(
+        vaultAdapter,
+        fileSystemAdapter,
+        classResolver,
+        targetResolver,
+      ),
+    );
+
     registry.register(
       "createRelatedTask",
-      wrapService(async (targetIRI: string, userInput?: UserInput) => {
-        const label = userInput?.label as string | undefined;
-        if (!label) throw new Error("createRelatedTask requires userInput.label");
-        const iFile = resolveIFile(app, targetIRI, vaultAdapter);
-        const parentMetadata = (vaultAdapter.getFrontmatter(iFile) as Record<string, unknown>) ?? {};
-        const folderPath = iFile.parent?.path || "";
-
-        // UUID-form per RFC 31c1a0be Phase 4 PR-C (#3194). Draft status UUID
-        // is the canonical TBox identifier; vault file at
-        // assetspaces/ems/c42245d0-01de-4c35-bfcf-d910445ea28e.md.
-        const propertyValues: Record<string, unknown> = {
-          "ems__Effort_status":
-            '"[[c42245d0-01de-4c35-bfcf-d910445ea28e]]"',
-        };
-
-        // Optional declarative override: starter-kit bindings may pass
-        // `parentProperty` via Grounding_targetValue to force a specific parent
-        // link. When absent, GenericAssetCreationService auto-detects
-        // ems__Effort_area vs ems__Effort_parent from the parent's Instance_class.
-        const explicitParentProperty = userInput?.parentProperty as string | undefined;
-        if (explicitParentProperty && iFile.basename) {
-          propertyValues[explicitParentProperty] = `"[[${iFile.basename}]]"`;
-        }
-
-        const createdFile = await genericAssetCreationService.createAsset({
-          className: "ems__Task",
-          label,
-          folderPath,
-          propertyValues,
-          parentFile: iFile,
-          parentMetadata,
-          classResolver,
-        });
-
-        const tfile = vaultAdapter.toTFile(createdFile);
-        const leaf = app.workspace.getLeaf("tab");
-        await leaf.openFile(tfile);
-        app.workspace.setActiveLeaf(leaf, { focus: true });
-      }),
+      createCreateRelatedTaskService(
+        vaultAdapter,
+        genericAssetCreationService,
+        targetResolver,
+        openCreatedFileInTab,
+        classResolver,
+      ),
     );
 
     registry.register(
       "createRelatedProject",
-      wrapService(async (targetIRI: string, userInput?: UserInput) => {
-        const label = userInput?.label as string | undefined;
-        if (!label) throw new Error("createRelatedProject requires userInput.label");
-        const iFile = resolveIFile(app, targetIRI, vaultAdapter);
-        const parentMetadata = (vaultAdapter.getFrontmatter(iFile) as Record<string, unknown>) ?? {};
-        const folderPath = iFile.parent?.path || "";
-
-        // Mirror createRelatedTask but scoped to ems__Project. Uses the same
-        // ems__Effort_* parent-property convention so AssetRelations rendering
-        // works uniformly with sibling Task/Meeting efforts. When the parent
-        // is an ems__Area, write ems__Effort_area; when the parent is another
-        // Project or Task, write ems__Effort_parent. The core
-        // GenericAssetCreationService.inheritParentContext currently only
-        // auto-inherits for ems__Task, so this handler does the area vs parent
-        // detection explicitly via userInput.parentProperty and falls back to
-        // the auto-detected form.
-        // UUID-form per RFC 31c1a0be Phase 4 PR-C (#3194).
-        const propertyValues: Record<string, unknown> = {
-          "ems__Effort_status":
-            '"[[c42245d0-01de-4c35-bfcf-d910445ea28e]]"',
-        };
-
-        if (iFile.basename) {
-          const explicitParentProperty = userInput?.parentProperty as string | undefined;
-          if (explicitParentProperty) {
-            propertyValues[explicitParentProperty] = `"[[${iFile.basename}]]"`;
-          } else {
-            const parentClass = parentMetadata["exo__Instance_class"];
-            const parentClasses = Array.isArray(parentClass)
-              ? parentClass
-              : parentClass != null
-                ? [parentClass]
-                : [];
-            const isAreaParent = parentClasses.some((cls) =>
-              WikiLinkHelpers.resolveSymbolic(String(cls), classResolver).includes(
-                "Area",
-              ),
-            );
-            const parentPropertyName = isAreaParent
-              ? "ems__Effort_area"
-              : "ems__Effort_parent";
-            propertyValues[parentPropertyName] = `"[[${iFile.basename}]]"`;
-          }
-        }
-
-        const createdFile = await genericAssetCreationService.createAsset({
-          className: "ems__Project",
-          label,
-          folderPath,
-          propertyValues,
-          parentFile: iFile,
-          parentMetadata,
-          classResolver,
-        });
-
-        const tfile = vaultAdapter.toTFile(createdFile);
-        const leaf = app.workspace.getLeaf("tab");
-        await leaf.openFile(tfile);
-        app.workspace.setActiveLeaf(leaf, { focus: true });
-      }),
+      createCreateRelatedProjectService(
+        vaultAdapter,
+        genericAssetCreationService,
+        targetResolver,
+        openCreatedFileInTab,
+        classResolver,
+      ),
     );
 
     registry.register(

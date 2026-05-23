@@ -99,17 +99,20 @@ describe("ServiceRegistryPopulator", () => {
     populateServiceRegistry(registry, deps);
   });
 
-  it("should register 10 services", () => {
+  it("should register 9 services", () => {
     const ids = registry.getRegisteredIds();
-    expect(ids.length).toBeGreaterThanOrEqual(10);
+    // `createAsset` moved into the vaultAdapter-gated block in Phase 4b (#3166)
+    // — the shared-factory delegation requires `vaultAdapter.getFrontmatter`
+    // for parent inheritance, so the registration is now vault-dependent.
+    expect(ids.length).toBeGreaterThanOrEqual(9);
   });
 
   it("should register all expected service IDs", () => {
+    // `createAsset` moved to the vault-dependent block in Phase 4b (#3166).
     const expectedIds = [
       "updateProperty",
       "removeProperty",
       "setStatus",
-      "createAsset",
       "openFile",
       "sparqlSelect",
       "getActiveFileIRI",
@@ -126,9 +129,12 @@ describe("ServiceRegistryPopulator", () => {
     // `planOnToday` + `createTaskForDailyNote` removed in Issue #3136 (Q3.b
     // closure — migrated to declarative groundings via $todayStart /
     // $targetFolder + propertyDefaults).
+    // `createAsset` moved into vault-dependent block in Phase 4b (#3166) —
+    // shared-factory delegation needs `vaultAdapter.getFrontmatter`.
     const vaultDependentIds = [
       "rollbackStatus",
       "planForEvening",
+      "createAsset",
       "createRelatedTask",
       "createRelatedProject",
       "archiveAsset",
@@ -221,6 +227,14 @@ describe("ServiceRegistryPopulator", () => {
   });
 
   describe("createAsset", () => {
+    // Phase 4b (#3166): createAsset is now registered inside the vault-adapter
+    // gated block (delegates to shared `createCreateAssetService` factory).
+    beforeEach(() => {
+      registry = new ServiceRegistry();
+      deps = createMockDeps(true);
+      populateServiceRegistry(registry, deps);
+    });
+
     it("should create file with frontmatter", async () => {
       const service = registry.get("createAsset")!;
       await service.execute("", {
@@ -413,6 +427,12 @@ describe("ServiceRegistryPopulator", () => {
   });
 
   describe("createAsset default folder", () => {
+    beforeEach(() => {
+      registry = new ServiceRegistry();
+      deps = createMockDeps(true);
+      populateServiceRegistry(registry, deps);
+    });
+
     it("should use current file folder when folder not specified", async () => {
       const service = registry.get("createAsset")!;
       await service.execute("test-uid-123", {
@@ -445,6 +465,12 @@ describe("ServiceRegistryPopulator", () => {
   // owner identity literally because the active-file inheritance branch
   // can't fire.
   describe("createAsset ownerIdentity fallback", () => {
+    beforeEach(() => {
+      registry = new ServiceRegistry();
+      deps = createMockDeps(true);
+      populateServiceRegistry(registry, deps);
+    });
+
     it("writes exo__Asset_isDefinedBy from userInput.ownerIdentity when no active file present", async () => {
       const service = registry.get("createAsset")!;
 
@@ -1170,10 +1196,21 @@ describe("createAsset — orphan prevention regression (Finding 2)", () => {
 
   beforeEach(() => {
     registry = new ServiceRegistry();
-    deps = createMockDeps();
+    // Phase 4b (#3166): createAsset is now registered inside the vault-adapter
+    // gated block (delegates to shared `createCreateAssetService` factory).
+    // Both the targetResolver (`createObsidianTargetResolver`) and the
+    // parent-metadata lookup go through `vaultAdapter`, so the mocks below
+    // need to mirror what `metadataCache` previously provided.
+    deps = createMockDeps(true);
 
     // Override mocks so the parent IRI resolves to a Project file with
     // rich inheritable context (area, isDefinedBy, Project class).
+    const parentIFile = {
+      path: PARENT_PATH,
+      basename: "parent-project-uid-001",
+      name: "parent-project-uid-001.md",
+      parent: { path: "01 Areas", name: "01 Areas" },
+    };
     (deps.app.vault.getMarkdownFiles as jest.Mock).mockReturnValue([
       { path: PARENT_PATH },
     ]);
@@ -1188,6 +1225,17 @@ describe("createAsset — orphan prevention regression (Finding 2)", () => {
         ems__Effort_area: `[[${PARENT_AREA_UID}]]`,
         exo__Asset_isDefinedBy: "[[!toos_areas]]",
       },
+    });
+    // Mirror metadataCache content via vaultAdapter for shared factory path.
+    (deps.vaultAdapter!.getAbstractFileByPath as jest.Mock).mockImplementation(
+      (path: string) => (path === PARENT_PATH ? parentIFile : null),
+    );
+    (deps.vaultAdapter!.getFrontmatter as jest.Mock).mockReturnValue({
+      exo__Asset_uid: PARENT_PROJECT_UID,
+      exo__Asset_label: "Audit Project",
+      exo__Instance_class: ["[[ems__Project]]"],
+      ems__Effort_area: `[[${PARENT_AREA_UID}]]`,
+      exo__Asset_isDefinedBy: "[[!toos_areas]]",
     });
 
     populateServiceRegistry(registry, deps);
