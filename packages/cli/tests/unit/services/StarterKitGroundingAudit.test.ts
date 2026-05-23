@@ -91,9 +91,11 @@ describe("RFC 94e520da T1.5 starter-kit grounding audit fixture", () => {
       property_increment: 1,
       property_shift: 2,
     });
+    // Phase 3.5 (Issue #3164): `createAsset` ported from CLI stub → real
+    // via shared `createCreateAssetService` factory. The 3 starter-kit
+    // groundings previously classified as `stub` are now `real`.
     expect(fixture.summary.byCliStatus).toEqual({
-      real: 44,
-      stub: 3,
+      real: 47,
       unregistered: 1,
     });
   });
@@ -121,8 +123,11 @@ describe("RFC 94e520da T1.5 starter-kit grounding audit fixture", () => {
       "repairFolder",
       "fixMissingLabel",
       "updateProperty",
+      // Phase 3.5 (Issue #3164, 2026-05-23): createAsset moved from stub →
+      // real (shared `createCreateAssetService` factory).
+      "createAsset",
     ]);
-    const documentedStubIds = new Set(["createAsset"]);
+    const documentedStubIds = new Set<string>();
     const documentedUnregisteredIds = new Set([
       "rollbackStatus",
       // copyLabelToAliases removed in Issue #3132 — grounding migrated to

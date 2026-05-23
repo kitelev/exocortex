@@ -3,6 +3,8 @@
   "compilerOptions": {
     "rootDir": ".",
     "baseUrl": ".",
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
     "paths": {
       "exocortex": ["../exocortex/src"]
     }

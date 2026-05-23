@@ -1,4 +1,6 @@
+import { WikiLinkHelpers, DateFormatter } from "exocortex";
 import type {
+  ClassRefResolver,
   IGroundingService,
   IVaultAdapter,
   IFile,
@@ -142,6 +144,195 @@ export function createCreateRelatedProjectService(
         parentFile,
         parentMetadata,
       });
+    },
+  };
+}
+
+/**
+ * Format a wikilink value as the quoted YAML form (`"[[X]]"`) consistently with
+ * the plugin's hand-rolled `createAsset` frontmatter writer
+ * (`ServiceRegistryPopulator.toQuotedWikilink`). Idempotent — already-quoted
+ * inputs round-trip unchanged; bare/unwrapped values are re-wrapped.
+ */
+function toQuotedWikilink(value: string): string {
+  if (value.startsWith('"[[') && value.endsWith(']]"')) return value;
+  if (value.startsWith("[[") && value.endsWith("]]")) return `"${value}"`;
+  return `"[[${value}]]"`;
+}
+
+/**
+ * Default `ClassRefResolver` used when CLI callers don't supply one. The
+ * legacy plugin path resolved UID-canon `[[<uuid>]]` references through
+ * Obsidian's `metadataCache`; in CLI runtime there is no resolver, so this
+ * fallback returns `null` for every UUID. Symbolic refs (`[[ems__Area]]`)
+ * continue to round-trip through `WikiLinkHelpers.resolveSymbolic` without
+ * resolver assistance.
+ *
+ * Production CLI usage that needs UID-canon resolution should inject a real
+ * resolver (e.g. one that scans the vault for `<uuid>.md` and reads
+ * `exo__Asset_label`). Phase 3.5 keeps parity with plugin's `createAsset` on
+ * vaults that still use symbolic refs for `exo__Instance_class`; the UID-canon
+ * variant is a follow-up tracked in #3164's review checklist.
+ */
+const NULL_CLASS_RESOLVER: ClassRefResolver = () => null;
+
+/**
+ * Shared factory for the `createAsset` `service_call` grounding — ports the
+ * inlined plugin handler (`ServiceRegistryPopulator.ts:126-275`) onto the
+ * storage-agnostic `IVaultAdapter` + `IFileSystemWriter` contract so the CLI
+ * registry can reuse the same logic via `populateCliServiceRegistry`.
+ *
+ * Behaviour mirrors the plugin handler one-for-one:
+ *
+ * 1. Accepts `prototypeUID` (or legacy `prototype`) + `label`; folder defaults
+ *    to the parent file's folder when omitted.
+ * 2. Reads parent metadata via `vaultAdapter.getFrontmatter` to inherit
+ *    `ems__Effort_area`/`ems__Effort_parent` (auto-detected from parent class),
+ *    `ems__Effort_status: "[[ems__EffortStatusBacklog]]"`, and
+ *    `exo__Asset_isDefinedBy` when not explicitly overridden by the caller.
+ * 3. Writes the new asset as `<folder>/<uid>.md` via `fsAdapter.createFile`.
+ *
+ * Precedence chain for `exo__Asset_isDefinedBy` (highest first), preserved
+ * from the plugin:
+ * - `userInput.isDefinedBy` (explicit grounding override).
+ * - Parent's `exo__Asset_isDefinedBy` (inherited).
+ * - `userInput.ownerIdentity` (vault-default owner fallback, see RFC `1429fcd0`).
+ *
+ * Phase 3.5 (RFC v2, Issue #3164) — CLI parity port. Phase 4b will remove
+ * both this factory and the plugin's parallel handler once vault Groundings
+ * migrate from `service_call createAsset` to declarative `create_instance`.
+ */
+export function createCreateAssetService(
+  vaultAdapter: IVaultAdapter,
+  fsAdapter: IFileSystemWriter,
+  classResolver: ClassRefResolver = NULL_CLASS_RESOLVER,
+  resolver: ITargetResolver = createPathBasedTargetResolver(vaultAdapter),
+): IGroundingService {
+  return {
+    async execute(targetIRI: string, userInput?: UserInput): Promise<void> {
+      const prototypeUID =
+        (userInput?.prototypeUID as string | undefined) ??
+        (userInput?.prototype as string | undefined);
+      const label = userInput?.label as string | undefined;
+      let folder = userInput?.folder as string | undefined;
+      const ownerIdentity = userInput?.ownerIdentity as string | undefined;
+      const explicitIsDefinedBy = userInput?.isDefinedBy as string | undefined;
+
+      if (!prototypeUID) {
+        throw new Error("createAsset requires userInput.prototypeUID");
+      }
+      if (!label) {
+        throw new Error("createAsset requires userInput.label");
+      }
+
+      let parentPath: string | undefined;
+      let parentMetadata: Record<string, unknown> | undefined;
+      if (targetIRI) {
+        try {
+          const parentFile = resolver.resolveFile(targetIRI);
+          parentPath = parentFile.path;
+          parentMetadata =
+            (vaultAdapter.getFrontmatter(parentFile) as
+              | Record<string, unknown>
+              | null) ?? undefined;
+        } catch {
+          // Mirrors plugin: IRI resolution failure is non-fatal — folder
+          // resolution falls back to `userInput.folder` and parent inheritance
+          // is skipped entirely.
+        }
+      }
+
+      if (!folder && parentPath) {
+        const lastSlash = parentPath.lastIndexOf("/");
+        folder = lastSlash >= 0 ? parentPath.substring(0, lastSlash) : "";
+      }
+      if (folder === undefined) {
+        throw new Error("createAsset requires userInput.folder");
+      }
+
+      const expectedClass = prototypeUID.endsWith("Prototype")
+        ? prototypeUID.slice(0, -"Prototype".length)
+        : prototypeUID;
+
+      const uid = crypto.randomUUID();
+      const createdAt = DateFormatter.toISOTimestamp(new Date());
+      const fileName = `${uid}.md`;
+      const filePath = folder ? `${folder}/${fileName}` : fileName;
+
+      const lines: string[] = [
+        "---",
+        `exo__Asset_uid: ${uid}`,
+        `exo__Asset_createdAt: ${createdAt}`,
+        `exo__Asset_label: ${label}`,
+        `exo__Asset_prototype: "[[${prototypeUID}]]"`,
+        "exo__Instance_class:",
+        `  - "[[${expectedClass}]]"`,
+      ];
+
+      let isDefinedByWritten = false;
+      if (explicitIsDefinedBy) {
+        lines.push(
+          `exo__Asset_isDefinedBy: ${toQuotedWikilink(explicitIsDefinedBy)}`,
+        );
+        isDefinedByWritten = true;
+      }
+
+      if (parentMetadata) {
+        const parentClass = parentMetadata.exo__Instance_class;
+        const parentClasses = Array.isArray(parentClass)
+          ? parentClass
+          : parentClass != null
+            ? [parentClass]
+            : [];
+        const isAreaParent = parentClasses.some((cls) =>
+          WikiLinkHelpers.resolveSymbolic(String(cls), classResolver).includes(
+            "Area",
+          ),
+        );
+        const parentBasename = parentPath
+          ? parentPath
+              .substring(parentPath.lastIndexOf("/") + 1)
+              .replace(/\.md$/, "")
+          : undefined;
+        if (parentBasename) {
+          const parentProperty = isAreaParent
+            ? "ems__Effort_area"
+            : "ems__Effort_parent";
+          lines.push(`${parentProperty}: "[[${parentBasename}]]"`);
+        }
+        if (!isAreaParent && parentMetadata.ems__Effort_area) {
+          lines.push(
+            `ems__Effort_area: ${toQuotedWikilink(
+              String(parentMetadata.ems__Effort_area),
+            )}`,
+          );
+        }
+        // UUID-form per RFC 31c1a0be Phase 4 PR-C (#3194). Mirrors plugin's
+        // `ServiceRegistryPopulator.createAsset` line 253-255; CLI must emit
+        // the same UID so backlinks resolve uniformly with the rest of the
+        // graph (avoid the 42-asset symbolic-form trace the prior RFC closed).
+        lines.push(
+          'ems__Effort_status: "[[753a44d5-846c-4b82-9196-4fd9a4d48777]]"',
+        );
+        if (!isDefinedByWritten && parentMetadata.exo__Asset_isDefinedBy) {
+          lines.push(
+            `exo__Asset_isDefinedBy: ${toQuotedWikilink(
+              String(parentMetadata.exo__Asset_isDefinedBy),
+            )}`,
+          );
+          isDefinedByWritten = true;
+        }
+      }
+
+      if (!isDefinedByWritten && ownerIdentity) {
+        lines.push(
+          `exo__Asset_isDefinedBy: ${toQuotedWikilink(ownerIdentity)}`,
+        );
+      }
+
+      lines.push("---", "");
+      const frontmatter = lines.join("\n");
+      await fsAdapter.createFile(filePath, frontmatter);
     },
   };
 }

@@ -2,12 +2,13 @@
   "uid": "a222094b-f499-4342-aec0-65c4ba99c657",
   "label": "Create task",
   "type": "service_call",
-  "cliStatus": "stub",
+  "cliStatus": "real",
   "serviceId": "createAsset",
   "sourcePath": "exocmd/creation/a222094b-f499-4342-aec0-65c4ba99c657.md",
-  "userInput": null,
+  "userInput": {
+    "label": "BDD Task"
+  },
   "expect": {
-    "outcome": "failure",
-    "errorPattern": "Service \\\"createAsset\\\" is not implemented"
+    "outcome": "success"
   }
 }

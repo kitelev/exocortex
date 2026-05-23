@@ -16,7 +16,30 @@ jest.unstable_mockModule("exocortex", () => {
   // out → stubs path), so a no-op shape is sufficient for the import to
   // resolve under ESM mocking.
   class FrontmatterService {}
-  return { ServiceRegistry, FrontmatterService };
+  // Phase 3.5 (#3164): the shared `@kitelev/exocortex-services` factory used
+  // by the new createAsset registration imports `WikiLinkHelpers` and
+  // `DateFormatter` from the `exocortex` package at module-evaluation time.
+  // The deps-omitted code path tested here never invokes the factory body, so
+  // shape stubs are sufficient — the imports just need to resolve.
+  class WikiLinkHelpers {
+    static resolveSymbolic(value: string): string {
+      return value;
+    }
+    static normalize(value: string): string {
+      return value;
+    }
+  }
+  class DateFormatter {
+    static toISOTimestamp(date: Date): string {
+      return date.toISOString();
+    }
+  }
+  return {
+    ServiceRegistry,
+    FrontmatterService,
+    WikiLinkHelpers,
+    DateFormatter,
+  };
 });
 
 let populateCliServiceRegistry: any;
@@ -34,13 +57,12 @@ beforeEach(async () => {
 
 describe("CliServiceRegistryPopulator", () => {
   describe("CLI_STUB_SERVICE_IDS", () => {
-    it("should export exactly 7 service IDs (T1.4: updateProperty/removeProperty/setStatus moved to real impls)", () => {
-      expect(CLI_STUB_SERVICE_IDS).toHaveLength(7);
+    it("should export exactly 6 service IDs (T1.4 + Phase 3.5: updateProperty/removeProperty/setStatus + createAsset moved to real impls)", () => {
+      expect(CLI_STUB_SERVICE_IDS).toHaveLength(6);
     });
 
     it("should include all genuinely-unsupported well-known service IDs", () => {
       const expected = [
-        "createAsset",
         "openFile",
         "sparqlSelect",
         "getActiveFileIRI",
@@ -53,12 +75,13 @@ describe("CliServiceRegistryPopulator", () => {
   });
 
   describe("populateCliServiceRegistry", () => {
-    it("should register the 7 fail-loud stubs + the 3 frontmatter handlers (10 total) when called without deps", () => {
+    it("should register the 6 fail-loud stubs + the 4 fsAdapter-gated handlers (10 total) when called without deps", () => {
       const registry = new ServiceRegistry();
       populateCliServiceRegistry(registry);
-      // Without `deps.fsAdapter`, the 3 frontmatter handlers
-      // (updateProperty/removeProperty/setStatus) fall back to fail-loud stubs
-      // so `dyncommand validate` keeps recognising them as known service IDs.
+      // Without `deps.fsAdapter`, the 4 fsAdapter-gated handlers
+      // (updateProperty/removeProperty/setStatus/createAsset) fall back to
+      // fail-loud stubs so `dyncommand validate` keeps recognising them as
+      // known service IDs.
       expect(registry.getRegisteredIds()).toHaveLength(10);
     });
 

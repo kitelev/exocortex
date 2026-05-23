@@ -22,6 +22,7 @@
  */
 
 export {
+  createCreateAssetService,
   createCreateRelatedTaskService,
   createCreateRelatedProjectService,
   createArchiveAssetService,
