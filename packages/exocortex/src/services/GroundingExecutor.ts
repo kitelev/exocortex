@@ -32,26 +32,6 @@ export interface ExecutionResult {
 }
 
 /**
- * Extract a class token (e.g. "ems__Task") from a `Grounding_targetValue`
- * string as parsed by CommandResolver.getObsidianWikilinkValue. The parser
- * emits either the plain literal ("ems__Task") or the wrapped wikilink form
- * (`"[[ems__Task]]"`), depending on whether the underlying RDF triple stored
- * the value as a Literal or an IRI. Returns the inner class token for either
- * shape; returns undefined for absent/empty/unrecognised values.
- *
- * Kept module-local (not exported) — it only exists to bridge the parser's
- * polymorphic output to the service_call composite short-circuit.
- */
-function extractClassFromTargetValue(
-  value: string | undefined,
-): string | undefined {
-  if (!value) return undefined;
-  const wrapped = value.match(/^"?\[\[([^\]|]+)(?:\|[^\]]*)?\]\]"?$/);
-  if (wrapped) return wrapped[1];
-  return value;
-}
-
-/**
  * RFC 918a2b65 Phase 2 — translate a `Grounding_targetValueRef` value into a
  * class label for the `service_call/updateProperty` class-flip dispatch
  * (Convert to Task / Convert to Project). The ref arrives as one of:
@@ -60,8 +40,7 @@ function extractClassFromTargetValue(
  *   - bare UUID `"1b20a8f0-..."` (post-#3165 migration, UUID-canon TBox).
  *
  * Returns the class label (`"ems__Task"` or `"ems__Project"`) if recognised;
- * undefined otherwise. Coupled to the same two classes the legacy
- * `extractClassFromTargetValue` recognises — extending this requires a
+ * undefined otherwise. Extending the set of recognised classes requires a
  * separate RFC for class-flip generalisation (`class_convert` grounding type).
  */
 function resolveClassFlipTarget(
@@ -175,13 +154,13 @@ const MAX_COMPOSITE_DEPTH = 20;
  * - `service_call` — delegate to a registered TypeScript service
  * - `sparql_update` — stub (NotImplementedError), pending UpdateExecutor support
  *
- * Variable substitution in targetValue:
+ * Variable substitution in serviceCallPayload / appendExpression / property_set values:
  * - `$now` → current ISO 8601 timestamp
  * - `$today` → current date (YYYY-MM-DD)
  * - `$target` → IRI of the target asset
  *
  * Substitution applies to `property_set` raw values and to `service_call`
- * JSON `targetValue` defaults (Issue #2999 / RFC 5a61a359 Phase C.0). For
+ * JSON `serviceCallPayload` defaults (Issue #2999 / RFC 5a61a359 Phase C.0,
  * service_call the substitution is performed before `JSON.parse`, so any
  * string position inside the JSON object can reference a token, e.g.
  * `{"prototype":"$target"}` resolves to `{prototype: <targetIRI>}`.
@@ -494,44 +473,32 @@ export class GroundingExecutor {
       return await this.executeConvertToTask(filePath);
     }
 
-    // RFC-028 Finding 5 completion: production vault + starter-kit groundings
-    // `abdbdf09` (Convert to task) and `e8c1d18a` (Convert to project) ship
-    // with `serviceId = "updateProperty"` + `targetValue` ∈ {"ems__Task",
-    // "ems__Project"}.  The grounding schema overloads `targetProperty` as
-    // serviceId for service_call, so at dispatch time we can detect the
-    // class-flip intent from (serviceId=updateProperty, targetValue=class).
+    // RFC-028 Finding 5 + RFC 918a2b65 Phase 4: production vault + starter-kit
+    // groundings `abdbdf09` (Convert to task) and `e8c1d18a` (Convert to
+    // project) ship with `serviceId = "updateProperty"` + typed
+    // `targetValueRef` ∈ {ems__Task UUID, ems__Project UUID}. The grounding
+    // schema overloads `targetProperty` as serviceId for service_call, so at
+    // dispatch time we detect the class-flip intent from
+    // (serviceId=updateProperty, targetValueRef=class UUID/label).
     //
-    // IMPORTANT: the CommandResolver reads `Grounding_targetValue` via
-    // `getObsidianWikilinkValue`, which returns different shapes depending on
-    // how the underlying RDF triple is stored:
-    //   - plain string literal `"ems__Task"` → stays `"ems__Task"` (CLI tests
-    //     and some vaults; also matches PR #2860 unit-test fixtures).
-    //   - IRI (`ems#Task`) → wrapped as `"[[ems__Task]]"` (vault production
-    //     state observed 2026-04-19T14:37Z via exocortex-cli triple dump on
-    //     grounding `abdbdf09`).
-    // Match both shapes so whichever the parser produces dispatches correctly.
+    // `resolveClassFlipTarget` accepts both UUID-canon (post-#3165) and bare
+    // label form (CommandResolver may have downgraded when class TBox file is
+    // absent from resolution store, see #3220).
     //
     // Link-to-parent (30b9e8d8) uses the same serviceId but carries NO
-    // targetValue (driven via inputSchema+userInput) and so flows past this
-    // short-circuit into the registered updateProperty service below.
+    // targetValueRef (driven via inputSchema+userInput) and so flows past
+    // this short-circuit into the registered updateProperty service below.
     if (serviceId === "updateProperty") {
-      // RFC 918a2b65 Phase 2 — priority chain: targetValueRef (typed) wins,
-      // legacy targetValue (string/wikilink) is the deprecated fallback.
-      // targetValueRef is the canonical class-flip predicate after Phase 5b;
-      // it can be either UUID-canon (post-#3165 migration) or bare label
-      // (older stores without TBox lookup). Both shapes are accepted.
+      // RFC 918a2b65 Phase 4 — class-flip dispatch via typed `targetValueRef`
+      // only. Legacy `targetValue` path removed after vault migration
+      // (CQ4 legacyCount=0) and property asset 321b5623 deletion. The ref
+      // accepts UUID-canon (post-#3165) or bare label (older stores without
+      // TBox warm-up).
       const refClass = resolveClassFlipTarget(grounding.targetValueRef);
       if (refClass === "ems__Task") {
         return await this.executeConvertToTask(filePath);
       }
       if (refClass === "ems__Project") {
-        return await this.executeConvertToProject(filePath);
-      }
-      const legacyClass = extractClassFromTargetValue(grounding.targetValue);
-      if (legacyClass === "ems__Task") {
-        return await this.executeConvertToTask(filePath);
-      }
-      if (legacyClass === "ems__Project") {
         return await this.executeConvertToProject(filePath);
       }
     }
@@ -544,41 +511,33 @@ export class GroundingExecutor {
       };
     }
 
-    // Merge grounding.targetValue (JSON) as defaults into userInput.
+    // Merge grounding.serviceCallPayload (JSON) as defaults into userInput.
     //
-    // Issue #2999 (RFC 5a61a359 Phase C.0): apply substituteVariables BEFORE
-    // JSON.parse so vault groundings can reference $target / $now / $today /
-    // $nowLocal / $input / $value inside JSON string values. This unlocks the
-    // create-instance-from-prototype pattern: a Grounding with
-    //   targetValue: '{"prototype":"$target"}'
+    // Issue #2999 (RFC 5a61a359 Phase C.0) + RFC 918a2b65 Phase 4: apply
+    // substituteVariables BEFORE JSON.parse so vault groundings can reference
+    // $target / $now / $today / $nowLocal / $input / $value inside JSON
+    // string values. This unlocks the create-instance-from-prototype pattern:
+    // a Grounding with
+    //   serviceCallPayload: '{"prototype":"$target"}'
     // resolves $target to the current asset IRI, which `createAsset` then
     // writes as exo__Asset_prototype on the new instance. Substitution is
     // identical to the property_set path (substituteVariables already escapes
     // nothing — JSON safety relies on caller-supplied IRIs being safe; UUID
-    // and URL IRIs in the vault contain no `"` or `\\`). Backwards compatible:
-    // groundings without `$<token>` substrings are unchanged by the regex
-    // pass, so existing literal-JSON targetValues (e.g. updateProperty +
-    // {"property":"ems__Effort_parent"}) continue to parse identically.
+    // and URL IRIs in the vault contain no `"` or `\\`).
     let mergedInput = userInput;
-    // Standalone `Grounding_isDefinedBy` wikilink (RFC follow-up): inject as a
-    // default so `createAsset` (or any service_call that consumes
-    // userInput.isDefinedBy) can pin owner identity without burying the link
-    // inside JSON `targetValue`. Authored as a real frontmatter wikilink, the
-    // identity asset's layout / backlinks list every Grounding that references
-    // it. userInput from the modal still wins over this default.
+    // Standalone `Grounding_isDefinedBy` wikilink: inject as a default so
+    // `createAsset` (or any service_call that consumes userInput.isDefinedBy)
+    // can pin owner identity without burying the link inside the payload.
+    // Authored as a real frontmatter wikilink, the identity asset's layout /
+    // backlinks list every Grounding that references it. userInput from the
+    // modal still wins over this default.
     if (grounding.isDefinedBy) {
       mergedInput = { isDefinedBy: grounding.isDefinedBy, ...(mergedInput ?? {}) };
     }
-    // RFC 918a2b65 Phase 2 — priority chain: serviceCallPayload (typed) first,
-    // legacy targetValue is the deprecated fallback. CommandResolver emits a
-    // one-shot deprecation warn at parse time when targetValue is used for
-    // service_call/property_append, so this dispatch stays silent. Both fields
-    // may briefly coexist mid-migration — the typed predicate wins definitively.
-    const payloadSource = grounding.serviceCallPayload ?? grounding.targetValue;
-    if (payloadSource) {
+    if (grounding.serviceCallPayload) {
       try {
         const substituted = this.substituteVariables(
-          payloadSource,
+          grounding.serviceCallPayload,
           targetIRI,
           userInput,
         );
@@ -590,8 +549,7 @@ export class GroundingExecutor {
           mergedInput = { ...defaults, ...(mergedInput ?? {}) };
         }
       } catch {
-        // Not valid JSON — ignore (e.g. plain string targetValue used as class
-        // ref for `updateProperty` class-flip dispatch handled above).
+        // Not valid JSON — ignore.
       }
     }
 
@@ -1228,9 +1186,9 @@ export class GroundingExecutor {
    *
    * Reads:
    * - `grounding.targetProperty` — array property to append to (e.g. `aliases`).
-   * - `grounding.targetValue` — value to append, with substituteVariables
+   * - `grounding.appendExpression` — value to append, with substituteVariables
    *   resolution (supports `$target.<prop>` dotted-property reads from target
-   *   asset frontmatter).
+   *   asset frontmatter). RFC 918a2b65 Phase 4 typed predicate (canonical).
    *
    * Behavior:
    * - Empty / missing array → write `[resolvedValue]`.
@@ -1239,10 +1197,7 @@ export class GroundingExecutor {
    *
    * Errors (plain Error with structured message — `GroundingError` class is
    * not yet introduced in the codebase; existing executors also use Error):
-   * - Missing `targetProperty` / `appendExpression` (or legacy `targetValue`)
-   *   on the grounding definition. RFC 918a2b65 Phase 2: `appendExpression`
-   *   is the canonical predicate; legacy `targetValue` is the deprecated
-   *   transitional fallback.
+   * - Missing `targetProperty` / `appendExpression` on the grounding definition.
    * - `$target.<prop>` resolved to undefined / null / array.
    */
   private async executePropertyAppend(
@@ -1257,11 +1212,9 @@ export class GroundingExecutor {
         error: "property_append requires targetProperty",
       };
     }
-    // RFC 918a2b65 Phase 2 — priority chain: appendExpression (typed) first,
-    // legacy targetValue is the deprecated fallback. CommandResolver emits the
-    // one-shot deprecation warn at parse time for legacy use.
-    const exprSource = grounding.appendExpression ?? grounding.targetValue;
-    if (exprSource === undefined) {
+    // RFC 918a2b65 Phase 4 — typed `appendExpression` only; legacy
+    // `targetValue` path removed after vault migration completed.
+    if (grounding.appendExpression === undefined) {
       return {
         success: false,
         error: "property_append requires appendExpression",
@@ -1273,7 +1226,7 @@ export class GroundingExecutor {
       this.frontmatterService.parseObject(content) ?? {};
 
     const resolvedValue = this.substituteVariables(
-      exprSource,
+      grounding.appendExpression,
       targetIRI,
       userInput,
       targetFrontmatter,

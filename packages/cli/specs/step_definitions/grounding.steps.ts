@@ -153,10 +153,14 @@ function readGroundingDef(uid: string, depth = 0): GroundingDefinition {
     label: (fm["exo__Asset_label"] as string) ?? "",
     type,
     targetProperty,
-    targetValue: fm["exocmd__Grounding_targetValue"] as string | undefined,
+    // RFC 918a2b65 Phase 4 (#3243): legacy `Grounding_targetValue` removed from
+    // GroundingDefinition. Replaced by `serviceCallPayload` for service_call +
+    // `appendExpression` for property_append.
     targetValueRef,
     targetValueLiteral: fm["exocmd__Grounding_targetValueLiteral"] as string | undefined,
     targetValueSubstitution: fm["exocmd__Grounding_targetValueSubstitution"] as string | undefined,
+    serviceCallPayload: fm["exocmd__Grounding_serviceCallPayload"] as string | undefined,
+    appendExpression: fm["exocmd__Grounding_appendExpression"] as string | undefined,
     targetClass: fm["exocmd__Grounding_targetClass"] as string | undefined,
     targetPrototype: fm["exocmd__Grounding_targetPrototype"] as string | undefined,
     targetFolder: fm["exocmd__Grounding_targetFolder"] as string | undefined,

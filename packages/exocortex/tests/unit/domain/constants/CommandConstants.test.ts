@@ -17,9 +17,12 @@ describe("GroundingType", () => {
     expect(GroundingType.CREATE_INSTANCE).toBe("create_instance");
   });
 
-  it("should have exactly 6 values", () => {
+  it("should have exactly 9 values", () => {
+    // SPARQL_UPDATE, PROPERTY_DELETE, PROPERTY_SET, COMPOSITE, SERVICE_CALL,
+    // CREATE_INSTANCE, PROPERTY_APPEND (#3132), PROPERTY_INCREMENT (#3134),
+    // PROPERTY_SHIFT (#3134).
     const values = Object.values(GroundingType);
-    expect(values).toHaveLength(6);
+    expect(values).toHaveLength(9);
   });
 });
 
@@ -45,8 +48,11 @@ describe("GroundingProperty", () => {
     expect(GroundingProperty.TYPE).toBe("exocmd__Grounding_type");
     expect(GroundingProperty.SPARQL_UPDATE).toBe("exocmd__Grounding_sparqlUpdate");
     expect(GroundingProperty.TARGET_PROPERTY).toBe("exocmd__Grounding_targetProperty");
-    expect(GroundingProperty.TARGET_VALUE).toBe("exocmd__Grounding_targetValue");
     expect(GroundingProperty.STEPS).toBe("exocmd__Grounding_steps");
+  });
+
+  it("should not expose dropped legacy `TARGET_VALUE` constant (RFC 918a2b65 Phase 4)", () => {
+    expect((GroundingProperty as Record<string, unknown>).TARGET_VALUE).toBeUndefined();
   });
 });
 

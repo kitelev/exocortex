@@ -143,16 +143,21 @@ export class WorkflowCommandAdapter {
   ): GroundingDefinition {
     const steps: GroundingDefinition[] = [];
 
-    // Step 1: Set the status to the target state
+    // Step 1: Set the status to the target state.
+    // RFC 31c1a0be Phase 1 + RFC 918a2b65 Phase 4 — emit via `targetValueRef`
+    // so executePropertySet wraps `transition.to` (a class symbolic / UUID
+    // string) as `"[[...]]"` wikilink, matching production vault frontmatter.
     steps.push({
       id: `gnd-status-${this.shortStatus(transition.to)}`,
       label: `Set status to ${this.shortStatus(transition.to)}`,
       type: GroundingType.PROPERTY_SET,
       targetProperty: "ems__Effort_status",
-      targetValue: transition.to,
+      targetValueRef: transition.to,
     });
 
-    // Step 2: Set timestamps defined in timestampOnEnter for the target state
+    // Step 2: Set timestamps defined in timestampOnEnter for the target state.
+    // `$now` is the SubstitutionToken label resolved at execution time by
+    // `substituteVariables`.
     const timestamps = this.engine.getTimestampsForStatus(transition.to);
     for (const tsProperty of timestamps) {
       steps.push({
@@ -160,7 +165,7 @@ export class WorkflowCommandAdapter {
         label: `Set ${tsProperty}`,
         type: GroundingType.PROPERTY_SET,
         targetProperty: tsProperty,
-        targetValue: "$now",
+        targetValueSubstitution: "$now",
       });
     }
 
