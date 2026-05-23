@@ -107,6 +107,12 @@ export class CommandResolver {
    * remove after one minor release window.
    */
   private readonly _legacyPropertyDefaultsWarnedGroundings = new Set<string>();
+  /** RFC 918a2b65 Phase 2: per-Grounding-uid suppression for the transitional
+   *  legacy-targetValue warn (mirrors `_legacyPropertyDefaultsWarnedGroundings`
+   *  pattern). Surface change audibly once per Grounding to avoid log noise on
+   *  re-parses. Remove together with the deprecation warn after vault migration
+   *  completes and the property asset 321b5623 is deleted. */
+  private readonly _legacyTargetValueWarnedGroundings = new Set<string>();
 
   /**
    * @param tripleStore - RDF triple store backing vault assets.
@@ -996,6 +1002,34 @@ export class CommandResolver {
     } else if (substitutionRefRaw) {
       targetValueSubstitution = substitutionRefRaw;
     }
+    // RFC 918a2b65 Phase 1 typed predicates for service_call + property_append.
+    // Replace legacy `Grounding_targetValue` for those two grounding types.
+    // Both are plain string literals (JSON config or substitution expression);
+    // resolution is identical to `targetValueLiteral`. Parser piles them onto
+    // `GroundingDefinition`; executor dispatches in priority chain (new
+    // predicates first, legacy fallback with console.warn).
+    const serviceCallPayload = await this.getLiteralValue(
+      subject,
+      Namespace.EXOCMD.term("Grounding_serviceCallPayload"),
+    );
+    const appendExpression = await this.getLiteralValue(
+      subject,
+      Namespace.EXOCMD.term("Grounding_appendExpression"),
+    );
+    // RFC 918a2b65 Phase 2 — transitional deprecation warn when legacy
+    // `Grounding_targetValue` is paired with a grounding_type that has a
+    // dedicated typed predicate. Mirrors the RFC v2 Phase 5 warn pattern
+    // (one-shot per Grounding-uid).
+    if (
+      targetValue &&
+      (type === GroundingType.SERVICE_CALL || type === GroundingType.PROPERTY_APPEND) &&
+      !this._legacyTargetValueWarnedGroundings.has(uid)
+    ) {
+      this.logger.warn(
+        `Grounding ${uid}: deprecated exocmd__Grounding_targetValue used for ${typeStr} — migrate to exocmd__Grounding_${type === GroundingType.SERVICE_CALL ? "serviceCallPayload" : "appendExpression"} per RFC 918a2b65 (the legacy predicate will be removed after vault migration).`,
+      );
+      this._legacyTargetValueWarnedGroundings.add(uid);
+    }
     const isDefinedBy = await this.getObsidianWikilinkValue(subject, Namespace.EXOCMD.term("Grounding_isDefinedBy"));
     const sparqlUpdate = await this.getLiteralValue(subject, Namespace.EXOCMD.term("Grounding_sparqlUpdate"));
     // Issue #3212: `Grounding_targetClass` must yield UID-form for UUID-canon
@@ -1124,6 +1158,8 @@ export class CommandResolver {
       targetValueRef: targetValueRef ?? undefined,
       targetValueLiteral: targetValueLiteral ?? undefined,
       targetValueSubstitution: targetValueSubstitution ?? undefined,
+      serviceCallPayload: serviceCallPayload ?? undefined,
+      appendExpression: appendExpression ?? undefined,
       sparqlUpdate: sparqlUpdate ?? undefined,
       steps,
       targetClass: targetClass ?? undefined,

@@ -102,6 +102,18 @@ export interface GroundingDefinition {
   /** RFC 31c1a0be Phase 1: UUID of SubstitutionToken instance whose label
    *  (e.g. `$nowLocal`) becomes the substituted value. */
   readonly targetValueSubstitution?: string;
+  /** RFC 918a2b65 Phase 1: Opaque JSON config payload for `service_call`
+   *  groundings. Resolved through `substituteVariables` before `JSON.parse`;
+   *  merged into `userInput` defaults at `GroundingExecutor.executeServiceCall`.
+   *  Replaces legacy `targetValue` for service_call semantics. Disjoint with
+   *  `appendExpression`. */
+  readonly serviceCallPayload?: string;
+  /** RFC 918a2b65 Phase 1: Substitution expression for `property_append`
+   *  groundings. Resolved by `substituteVariables` (supports standard tokens +
+   *  property-accessor postfix like `$target.<property>`). Replaces legacy
+   *  `targetValue` for property_append semantics. Disjoint with
+   *  `serviceCallPayload`. */
+  readonly appendExpression?: string;
   /** SPARQL UPDATE query (for sparql_update) */
   readonly sparqlUpdate?: string;
   /** Ordered sub-steps (for composite type) */

@@ -52,6 +52,32 @@ function extractClassFromTargetValue(
 }
 
 /**
+ * RFC 918a2b65 Phase 2 — translate a `Grounding_targetValueRef` value into a
+ * class label for the `service_call/updateProperty` class-flip dispatch
+ * (Convert to Task / Convert to Project). The ref arrives as one of:
+ *   - bare label `"ems__Task"` (older vault clones, test fixtures, CLI usage
+ *     without TBox warm-up);
+ *   - bare UUID `"1b20a8f0-..."` (post-#3165 migration, UUID-canon TBox).
+ *
+ * Returns the class label (`"ems__Task"` or `"ems__Project"`) if recognised;
+ * undefined otherwise. Coupled to the same two classes the legacy
+ * `extractClassFromTargetValue` recognises — extending this requires a
+ * separate RFC for class-flip generalisation (`class_convert` grounding type).
+ */
+function resolveClassFlipTarget(
+  ref: string | undefined,
+): string | undefined {
+  if (!ref) return undefined;
+  // UUID-canon match — the only two class-flip targets in scope today.
+  if (ref === "1b20a8f0-d745-4e93-91db-4531b3df120e") return "ems__Task";
+  if (ref === "7db5eeff-718a-49b0-8d2b-39b084a356e3") return "ems__Project";
+  // Bare label match (CommandResolver may have downgraded to label-form when
+  // the class TBox file was absent from the resolution store, see #3220).
+  if (ref === "ems__Task" || ref === "ems__Project") return ref;
+  return undefined;
+}
+
+/**
  * Input parameters collected from the user (for service_call groundings).
  * UI layer collects these via modals; CLI via interactive prompts or --arg flags.
  */
@@ -489,11 +515,23 @@ export class GroundingExecutor {
     // targetValue (driven via inputSchema+userInput) and so flows past this
     // short-circuit into the registered updateProperty service below.
     if (serviceId === "updateProperty") {
-      const targetClass = extractClassFromTargetValue(grounding.targetValue);
-      if (targetClass === "ems__Task") {
+      // RFC 918a2b65 Phase 2 — priority chain: targetValueRef (typed) wins,
+      // legacy targetValue (string/wikilink) is the deprecated fallback.
+      // targetValueRef is the canonical class-flip predicate after Phase 5b;
+      // it can be either UUID-canon (post-#3165 migration) or bare label
+      // (older stores without TBox lookup). Both shapes are accepted.
+      const refClass = resolveClassFlipTarget(grounding.targetValueRef);
+      if (refClass === "ems__Task") {
         return await this.executeConvertToTask(filePath);
       }
-      if (targetClass === "ems__Project") {
+      if (refClass === "ems__Project") {
+        return await this.executeConvertToProject(filePath);
+      }
+      const legacyClass = extractClassFromTargetValue(grounding.targetValue);
+      if (legacyClass === "ems__Task") {
+        return await this.executeConvertToTask(filePath);
+      }
+      if (legacyClass === "ems__Project") {
         return await this.executeConvertToProject(filePath);
       }
     }
@@ -531,10 +569,16 @@ export class GroundingExecutor {
     if (grounding.isDefinedBy) {
       mergedInput = { isDefinedBy: grounding.isDefinedBy, ...(mergedInput ?? {}) };
     }
-    if (grounding.targetValue) {
+    // RFC 918a2b65 Phase 2 — priority chain: serviceCallPayload (typed) first,
+    // legacy targetValue is the deprecated fallback. CommandResolver emits a
+    // one-shot deprecation warn at parse time when targetValue is used for
+    // service_call/property_append, so this dispatch stays silent. Both fields
+    // may briefly coexist mid-migration — the typed predicate wins definitively.
+    const payloadSource = grounding.serviceCallPayload ?? grounding.targetValue;
+    if (payloadSource) {
       try {
         const substituted = this.substituteVariables(
-          grounding.targetValue,
+          payloadSource,
           targetIRI,
           userInput,
         );
@@ -546,7 +590,8 @@ export class GroundingExecutor {
           mergedInput = { ...defaults, ...(mergedInput ?? {}) };
         }
       } catch {
-        // Not valid JSON — ignore (e.g. plain string targetValue)
+        // Not valid JSON — ignore (e.g. plain string targetValue used as class
+        // ref for `updateProperty` class-flip dispatch handled above).
       }
     }
 
@@ -1194,7 +1239,10 @@ export class GroundingExecutor {
    *
    * Errors (plain Error with structured message — `GroundingError` class is
    * not yet introduced in the codebase; existing executors also use Error):
-   * - Missing `targetProperty` / `targetValue` on the grounding definition.
+   * - Missing `targetProperty` / `appendExpression` (or legacy `targetValue`)
+   *   on the grounding definition. RFC 918a2b65 Phase 2: `appendExpression`
+   *   is the canonical predicate; legacy `targetValue` is the deprecated
+   *   transitional fallback.
    * - `$target.<prop>` resolved to undefined / null / array.
    */
   private async executePropertyAppend(
@@ -1209,10 +1257,14 @@ export class GroundingExecutor {
         error: "property_append requires targetProperty",
       };
     }
-    if (grounding.targetValue === undefined) {
+    // RFC 918a2b65 Phase 2 — priority chain: appendExpression (typed) first,
+    // legacy targetValue is the deprecated fallback. CommandResolver emits the
+    // one-shot deprecation warn at parse time for legacy use.
+    const exprSource = grounding.appendExpression ?? grounding.targetValue;
+    if (exprSource === undefined) {
       return {
         success: false,
-        error: "property_append requires targetValue",
+        error: "property_append requires appendExpression",
       };
     }
 
@@ -1221,7 +1273,7 @@ export class GroundingExecutor {
       this.frontmatterService.parseObject(content) ?? {};
 
     const resolvedValue = this.substituteVariables(
-      grounding.targetValue,
+      exprSource,
       targetIRI,
       userInput,
       targetFrontmatter,
