@@ -302,6 +302,29 @@ describe("PropertiesLabelPatch", () => {
         unwrapWikilinkUid("  [[38277bfa-d7f9-4a75-b856-b23276ab0db3]]  ")
       ).toBe("38277bfa-d7f9-4a75-b856-b23276ab0db3");
     });
+
+    it("strips path prefix from path-qualified wikilink (defensive)", () => {
+      // UID-canon TBox doesn't emit path-qualified links, but legacy
+      // authoring tools may. Defensive parsing prevents silent BFS-closure
+      // miss on class refs like [[03 Knowledge/exo/38277bfa-...]].
+      expect(
+        unwrapWikilinkUid(
+          "[[assetspaces/exo/38277bfa-d7f9-4a75-b856-b23276ab0db3]]"
+        )
+      ).toBe("38277bfa-d7f9-4a75-b856-b23276ab0db3");
+      expect(
+        unwrapWikilinkUid(
+          "[[some/path/38277bfa-d7f9-4a75-b856-b23276ab0db3|alias]]"
+        )
+      ).toBe("38277bfa-d7f9-4a75-b856-b23276ab0db3");
+    });
+
+    it("returns null when path-stripped form is not a UUID", () => {
+      // Symbolic path-qualified wikilink — neither UID-canon nor UUID shape.
+      expect(
+        unwrapWikilinkUid("[[some/path/symbolic-label]]")
+      ).toBeNull();
+    });
   });
 
   describe("normalizeClassList", () => {

@@ -66,10 +66,15 @@ interface PatchRecord {
 
 /**
  * Unwrap an Obsidian-style wikilink to a canonical UID.
- *   "[[uuid]]"        → "uuid"
- *   "[[uuid|alias]]"  → "uuid"
- *   "uuid"            → "uuid" (when shape matches UUID v4 layout)
- *   anything else     → null
+ *   "[[uuid]]"              → "uuid"
+ *   "[[uuid|alias]]"        → "uuid"
+ *   "[[path/to/uuid]]"      → "uuid"  (strips path prefix; UID-canon TBox
+ *                                       does not emit path-qualified links,
+ *                                       but legacy authoring tools may —
+ *                                       defensive parsing avoids silent
+ *                                       BFS-closure miss for class refs)
+ *   "uuid"                  → "uuid"  (when shape matches UUID v4 layout)
+ *   anything else           → null
  *
  * Exported for unit testing.
  */
@@ -78,7 +83,17 @@ export function unwrapWikilinkUid(value: unknown): string | null {
   const trimmed = value.trim();
   if (!trimmed) return null;
   const wlMatch = trimmed.match(/^\[\[([^\]|]+)(?:\|[^\]]*)?\]\]$/);
-  if (wlMatch) return wlMatch[1].trim();
+  if (wlMatch) {
+    // Strip any path prefix: "some/path/uuid" → "uuid". Mirrors the leniency
+    // pattern from PrintNameRuleService.cleanClassValue for cross-resolver
+    // consistency.
+    const inner = wlMatch[1].trim();
+    const lastSegment = inner.split("/").pop()?.trim() ?? "";
+    if (UUID_REGEX.test(lastSegment)) return lastSegment;
+    // Path-stripped form isn't a UUID — return null so the caller can skip
+    // (consistent with non-UUID symbolic wikilink behavior).
+    return null;
+  }
   if (UUID_REGEX.test(trimmed)) return trimmed;
   return null;
 }
