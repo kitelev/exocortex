@@ -1,7 +1,10 @@
 import { injectable } from "tsyringe";
-import { v4 as uuidv4 } from "uuid";
 import type { IFileSystemReader } from "../interfaces/IFileSystemAdapter";
 import type { IFileSystemWriter } from "../interfaces/IFileSystemAdapter";
+import type { IClock } from "./IClock";
+import { liveClock } from "./IClock";
+import type { IUidGenerator } from "./IUidGenerator";
+import { liveUidGenerator } from "./IUidGenerator";
 import type {
   GroundingDefinition,
   InheritanceRuleResolved,
@@ -166,6 +169,8 @@ export class GroundingExecutor {
   private readonly fileWriter: IFileSystemWriter;
   private readonly serviceRegistry: ServiceRegistry;
   private readonly classLabelToUid?: ClassLabelToUidResolver;
+  private readonly clock: IClock;
+  private readonly uidGen: IUidGenerator;
 
   constructor(
     fileReader: IFileSystemReader,
@@ -176,12 +181,15 @@ export class GroundingExecutor {
     // arrived non-canonical. The Obsidian plugin injects a metadata-cache-
     // backed implementation so production create_instance always emits UID-form.
     classLabelToUid?: ClassLabelToUidResolver,
+    options?: { clock?: IClock; uidGenerator?: IUidGenerator },
   ) {
     this.frontmatterService = new FrontmatterService();
     this.fileReader = fileReader;
     this.fileWriter = fileWriter;
     this.serviceRegistry = serviceRegistry;
     this.classLabelToUid = classLabelToUid;
+    this.clock = options?.clock ?? liveClock();
+    this.uidGen = options?.uidGenerator ?? liveUidGenerator();
   }
 
   /**
@@ -615,7 +623,7 @@ export class GroundingExecutor {
       return { success: false, error: "create_instance requires targetFolder" };
     }
 
-    const uid = uuidv4();
+    const uid = this.uidGen.next();
     const label = (userInput?.label as string) ?? "Untitled";
 
     const properties: Record<string, unknown> = {
@@ -628,7 +636,7 @@ export class GroundingExecutor {
       // UTC-suffixed values which then disagreed with the rest of the vault
       // when rendered in the user's local timezone; this one-liner aligns
       // the format.
-      exo__Asset_createdAt: DateFormatter.toLocalTimestamp(new Date()),
+      exo__Asset_createdAt: DateFormatter.toLocalTimestamp(this.clock.now()),
       exo__Asset_label: label,
     };
 
@@ -1124,7 +1132,7 @@ export class GroundingExecutor {
     targetFrontmatter?: Record<string, string | string[]>,
     targetFilePath?: string,
   ): string {
-    const date = new Date();
+    const date = this.clock.now();
     const now = date.toISOString();
     const nowLocal = DateFormatter.toLocalTimestamp(date);
     const today = now.slice(0, 10);

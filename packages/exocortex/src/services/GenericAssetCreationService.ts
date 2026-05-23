@@ -1,11 +1,14 @@
 import { injectable, inject } from "tsyringe";
-import { v4 as uuidv4 } from "uuid";
 import { DateFormatter } from "../utilities/DateFormatter";
 import { MetadataHelpers } from "../utilities/MetadataHelpers";
 import { WikiLinkHelpers } from "../utilities/WikiLinkHelpers";
 import type { IVaultAdapter, IFile } from "../interfaces/IVaultAdapter";
 import { DI_TOKENS } from "../interfaces/tokens";
 import { PropertyFieldType } from "../domain/types/PropertyFieldType";
+import type { IClock } from "./IClock";
+import { liveClock } from "./IClock";
+import type { IUidGenerator } from "./IUidGenerator";
+import { liveUidGenerator } from "./IUidGenerator";
 
 /**
  * UUID → symbolic class name resolver. After RFC-004 UID-canon
@@ -74,9 +77,16 @@ export interface AssetPropertyDefinition {
  */
 @injectable()
 export class GenericAssetCreationService {
+  private readonly clock: IClock;
+  private readonly uidGen: IUidGenerator;
+
   constructor(
     @inject(DI_TOKENS.IVaultAdapter) private vault: IVaultAdapter,
-  ) {}
+    options?: { clock?: IClock; uidGenerator?: IUidGenerator },
+  ) {
+    this.clock = options?.clock ?? liveClock();
+    this.uidGen = options?.uidGenerator ?? liveUidGenerator();
+  }
 
   /**
    * Create an asset of any class type.
@@ -89,7 +99,7 @@ export class GenericAssetCreationService {
     config: GenericAssetCreationConfig,
     propertyDefinitions?: AssetPropertyDefinition[],
   ): Promise<IFile> {
-    const uid = uuidv4();
+    const uid = this.uidGen.next();
     const fileName = `${uid}.md`;
 
     const frontmatter = this.generateFrontmatter(
@@ -123,7 +133,7 @@ export class GenericAssetCreationService {
     propertyDefinitions: AssetPropertyDefinition[],
     uid: string,
   ): Record<string, unknown> {
-    const now = new Date();
+    const now = this.clock.now();
     const frontmatter: Record<string, unknown> = {};
 
     // Build property type map for quick lookup
