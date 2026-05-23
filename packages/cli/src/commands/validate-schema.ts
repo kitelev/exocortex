@@ -788,6 +788,113 @@ export class TripleClassHierarchy implements ClassHierarchy {
         }
       }
     }
+
+    // Pass 3: Single-level metaclass propagation (Issue #3247).
+    //
+    // Rule (one level only): ∀C: if `<C> rdf:type <Mc>` AND `<Mc> rdfs:subClassOf <Super>`
+    //                              (directly or transitively, as already in subClassMap),
+    //                              then `<C> rdfs:subClassOf <Super>` (inferred).
+    //
+    // Specifically: any class file typed as exo:Class (the meta-class for classes)
+    // inherits exo:Class's own superClass declarations. Without this pass, class
+    // files that fail to declare `exo__Class_superClass: [[exo__Asset]]` produce
+    // false sh:class violations for every instance, even though the chain is
+    // logically derivable from the metaclass declaration alone.
+    //
+    // Scope note: this is single-level OWL Full punning, NOT a fixpoint loop.
+    // It propagates ONE step from Mc → C using `subClassMap` as populated by
+    // Pass 2b. Multi-level meta chains (Mc2 rdf:type Mc1, Mc1 subClassOf X,
+    // C rdf:type Mc2 → expect C subClassOf X) are order-dependent and may miss
+    // the propagation. Sufficient for the current vault shape (only `exo:Class`
+    // serves as a meta-class). If multi-level meta is introduced in future,
+    // wrap this pass in a do/while loop until `subClassMap.size` stabilises.
+    //
+    // Naming: variables are named generically (childIri / metaclassIri) because
+    // rdf:type triples carry EITHER file IRIs OR ontology URIs depending on the
+    // emission path in NoteToRDFConverter:
+    //   - main path (valueToClassURI): object is ontology URI for labeled
+    //     classes, file IRI for label-less (Issue #3242 fall-back).
+    //   - enum-instance path: both subject and object are ontology URIs.
+    // The dual indexing (file IRI scope + ontology URI scope) handles both
+    // uniformly through subClassMap.
+    //
+    // Instance pollution caveat: this pass fires for ALL rdf:type triples,
+    // including instance-level ones (e.g. `<task> rdf:type ems:Task`). The
+    // resulting `<task> subClassMap += {ems:Effort, exo:Asset}` is semantically
+    // incorrect (an instance is a *member*, not a *subclass*), but currently
+    // INERT because `ShaclLiteValidator.isSubClassOf(...)` only ever calls with
+    // class IRIs in the `child` position (sourced from `subjectClasses` map
+    // built from rdf:type objects). Future callers must NOT rely on subClassMap
+    // for class-vs-instance discrimination.
+    //
+    // Cost: empirically vault-2025 emits ~12-15K rdf:type triples (one per
+    // exo__Instance_class value + enum paths). With chain depth ≤4 and
+    // dual-index ops O(1), total ~50-100K Set operations — sub-second.
+    const typeTriples = triples.filter(
+      (t) =>
+        t.predicate instanceof DomainIRI &&
+        t.predicate.value === RDF_TYPE_IRI &&
+        t.subject instanceof DomainIRI &&
+        t.object instanceof DomainIRI,
+    );
+    for (const t of typeTriples) {
+      const childIri = (t.subject as DomainIRI).value;
+      const metaclassIri = (t.object as DomainIRI).value;
+
+      // Collect all supers of the metaclass (transitive BFS over current subClassMap)
+      const metaSupers = this.collectAncestors(metaclassIri);
+
+      // Primary IRI scope: child inherits each meta-super (skip self-loops)
+      for (const sup of metaSupers) {
+        if (childIri === sup) continue;
+        const set = this.subClassMap.get(childIri) ?? new Set<string>();
+        set.add(sup);
+        this.subClassMap.set(childIri, set);
+      }
+
+      // Ontology URI scope: if both child and the meta-supers resolve to
+      // ontology URIs, propagate them as well. This keeps the dual-index
+      // behaviour from Pass 2b consistent — `isSubClassOf` callers may use
+      // either IRI form.
+      const childOntUri = fileIriToOntologyUri.get(childIri);
+      if (!childOntUri) continue;
+      // Ontology-URI supers may be either ontology URIs (when meta-super was
+      // already an ontology URI parent) or file IRIs that we can resolve back
+      // to ontology URIs.
+      for (const sup of metaSupers) {
+        const supOntUri = sup.startsWith("obsidian://")
+          ? fileIriToOntologyUri.get(sup)
+          : sup;
+        if (!supOntUri || childOntUri === supOntUri) continue;
+        const set = this.subClassMap.get(childOntUri) ?? new Set<string>();
+        set.add(supOntUri);
+        this.subClassMap.set(childOntUri, set);
+      }
+    }
+  }
+
+  /**
+   * Collect all ancestors of `iri` reachable through the existing subClassMap.
+   * Cycle-safe via visited set. Used by metaclass inference (Pass 3) to find the
+   * transitive superclass chain of a metaclass before propagating to instances.
+   */
+  private collectAncestors(iri: string): Set<string> {
+    const result = new Set<string>();
+    const visited = new Set<string>();
+    const queue: string[] = [iri];
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      if (visited.has(current)) continue;
+      visited.add(current);
+      const supers = this.subClassMap.get(current);
+      if (!supers) continue;
+      for (const s of supers) {
+        if (s === iri) continue; // skip ancestors equal to the starting node
+        result.add(s);
+        if (!visited.has(s)) queue.push(s);
+      }
+    }
+    return result;
   }
 
   isSubClassOf(child: string, parent: string): boolean {
