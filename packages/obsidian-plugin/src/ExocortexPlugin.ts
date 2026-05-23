@@ -1083,14 +1083,19 @@ export default class ExocortexPlugin extends Plugin {
         500,
       );
 
-      // Initialize Properties readable-label patch (always enabled)
+      // Initialize Properties readable-label patch (RFC-030).
       // Replaces raw predicate names (e.g. ems__Effort_area) with human-readable
-      // labels resolved from property definition assets' exo__Asset_label.
+      // labels resolved from property definition assets' exo__Property_displayName
+      // (fallback exo__Asset_label). Gated by settings.enablePropertiesLabelPatch
+      // (default true; user-toggleable for users who prefer native predicate
+      // rendering or who hit edge cases with custom TBox conventions).
       this.propertiesLabelPatch = new PropertiesLabelPatch(this);
       this.timerManager.setTimeout(
         "properties-label-patch",
         () => {
-          this.propertiesLabelPatch.enable();
+          if (this.settings.enablePropertiesLabelPatch) {
+            this.propertiesLabelPatch.enable();
+          }
         },
         500,
       );
@@ -1377,6 +1382,20 @@ export default class ExocortexPlugin extends Plugin {
       this.propertiesLinkPatch.enable();
     } else {
       this.propertiesLinkPatch.disable();
+    }
+  }
+
+  /**
+   * Toggle PropertiesLabelPatch (RFC-030 predicate-key resolver) on/off.
+   * Called from settings when `enablePropertiesLabelPatch` changes. Hot-toggle:
+   * `enable()` rebuilds the property-class subClass closure + cache from
+   * scratch; `disable()` restores any patched DOM and disconnects observers.
+   */
+  togglePropertiesLabelPatch(enabled: boolean): void {
+    if (enabled) {
+      this.propertiesLabelPatch.enable();
+    } else {
+      this.propertiesLabelPatch.disable();
     }
   }
 

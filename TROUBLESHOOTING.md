@@ -1952,3 +1952,42 @@ This is a UX/cosmetic concern that has **no bearing on RDF semantics or SHACL co
 3. **If SHACL violation counts didn't change after a form-only rewrite**: that's success, not failure. Move on.
 
 **Reference**: Issue #3123. Related: `docs/PROPERTY_SCHEMA.md` § `exo__Instance_class` › _Canonical form_.
+
+## Plugin Patch Behavior Not Visible After Code Change
+
+**Symptom**: Plugin code change is merged and built, but the expected UI behavior (e.g. patched DOM elements, new render, settings effect) is not observable in Obsidian. May appear as "only some elements affected" — partial-application state.
+
+### Diagnostic ladder
+
+1. **Plugin actually reloaded?**
+   - `Cmd+R` reloads the renderer process **only**. Plugin lifecycle (onload / enable) runs in the main process — Electron split. Cmd+R will not re-run `onload`, will not re-init patches, will not pick up new code paths.
+   - **Correct**: `Cmd+P` → `Reload app without saving` — full lifecycle restart. Or use BRAT update (which triggers reinstall + restart automatically).
+   - See aiKnow `2d7dd8c1-...` (vault-exodev/assetspaces/exoass).
+
+2. **Manifest version matches main.js?**
+   - If you copied `main.js` manually (not via BRAT), manifest.json may be stale → version mismatch → BRAT thinks no update needed → partial reload state.
+   - **Check via DevTools console**: `app.plugins.plugins['exocortex'].manifest.version`
+   - **Correct**: never manual-copy `main.js`. Go through the release pipeline → BRAT update.
+
+3. **Index built against new code path?**
+   - Many plugin features (PropertiesLabelPatch, FileExplorerLabelPatch, etc.) lazily build index at first invocation, then cache. If first invocation happened against OLD code, cache holds stale results.
+   - **Check**: spawn `metadataCache.trigger('resolved')` from console to force re-index, then observe.
+   - **Reference**: PropertiesLabelPatch caches both `propertyClassUids: Set<string>` AND `resolveCache: Map<key, ResolvedPredicate>`. Both invalidated on `metadataCache.changed` and `resolved` events.
+
+4. **Setting toggle disabled the feature?**
+   - Many patches are gated by user-toggleable settings (RFC-030's `enablePropertiesLabelPatch`, etc.). Check `Cmd+,` → Exocortex → setting state.
+   - In DevTools: `app.plugins.plugins['exocortex'].settings.enablePropertiesLabelPatch`
+
+### How to verify correctness
+
+```js
+// From DevTools console — count active patched elements:
+document.querySelectorAll(".exo-label-clickable").length;
+// Compare against expected (e.g. open known note with 5 predicate keys → expect 5)
+```
+
+### Anti-pattern
+
+Don't iterate `cp main.js → vault/.obsidian/plugins/ + Cmd+R` for debugging — this builds up cache-drift between renderer state and plugin state, and obscures the actual symptom. Either fully reload the app or go through BRAT.
+
+**Reference**: RFC-030 implementation (PR #3246) — manual main.js copy + Cmd+R produced "patch applied only to aliases" partial state. Root cause: renderer-only reload kept old DOM hooks; new main.js bytes loaded but old patch handlers still attached. Restoration via backup + merge + BRAT update + Cmd+P Reload resolved cleanly. See `~/.claude/rules/obsidian-plugin-update-via-brat.md`.
