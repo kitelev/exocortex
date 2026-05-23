@@ -98,6 +98,17 @@ export class CommandResolver {
   private readonly multiCache = new Map<string, ResolvedCommand[]>();
 
   /**
+   * RFC v2 Phase 5 (#3167) — once-per-session-per-Grounding warning suppression
+   * for hand-edited / third-party Groundings that still carry the deprecated
+   * legacy `Grounding_propertyDefaults` (plural) JSON predicate. The parser was
+   * removed but the predicate value is silently ignored at engine level; this
+   * Set lets us emit a single audible warn per Grounding-uid so the regression
+   * surfaces in logs rather than as a quiet behavior change. Transitional —
+   * remove after one minor release window.
+   */
+  private readonly _legacyPropertyDefaultsWarnedGroundings = new Set<string>();
+
+  /**
    * @param tripleStore - RDF triple store backing vault assets.
    * @param logger - Optional structured logger; defaults to no-op.
    *                 RFC-024 §5: invalid enum values warn (capped 200 chars)
@@ -1032,6 +1043,26 @@ export class CommandResolver {
     // RFC v2 Phase 3a — multi-valued list of `exocmd__InheritanceRule` assets
     // attached via `Grounding_inheritanceRule`. Phase 3b executor applies them.
     const inheritanceRule = await this.resolveInheritanceRules(subject, uid);
+
+    // RFC v2 Phase 5 (#3167) — transitional deprecation warn for hand-edited /
+    // third-party Groundings still carrying the legacy JSON-literal predicate.
+    // The value is silently dropped (parser is gone), so log once per
+    // Grounding-uid so the behavior change surfaces audibly rather than as a
+    // missing-default silent regression. Remove after one minor release.
+    const legacyPropertyDefaultsRaw = await this.getLiteralValue(
+      subject,
+      Namespace.EXOCMD.term("Grounding_propertyDefaults"),
+    );
+    if (
+      legacyPropertyDefaultsRaw !== null &&
+      legacyPropertyDefaultsRaw !== "" &&
+      !this._legacyPropertyDefaultsWarnedGroundings.has(uid)
+    ) {
+      this.logger.warn(
+        `Grounding ${uid}: deprecated exocmd__Grounding_propertyDefaults (plural) JSON predicate detected — the parser was removed in RFC v2 Phase 5 (#3167); value is ignored. Migrate to ref-form exocmd__Grounding_propertyDefault (singular) pointing to exocmd__PropertyDefault assets. See vault TBox c8f87363-d39c-45cb-9d4d-1be96d70f892 for the canonical replacement.`,
+      );
+      this._legacyPropertyDefaultsWarnedGroundings.add(uid);
+    }
 
     // Load composite steps if applicable
     let steps: GroundingDefinition[] | undefined;

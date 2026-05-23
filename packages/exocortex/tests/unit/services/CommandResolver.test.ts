@@ -426,8 +426,19 @@ describe("CommandResolver", () => {
     // ref-form `Grounding_propertyDefault` (singular) → `exocmd__PropertyDefault`
     // instances drive the propertyDefault pipeline. The deprecated triple, if
     // still present on a hand-edited Grounding, is ignored (no field emitted,
-    // no error thrown).
-    it("RFC v2 Phase 5: legacy Grounding_propertyDefaults JSON triple is ignored (parser removed)", async () => {
+    // no error thrown) — but a one-shot transitional deprecation warn is
+    // logged per Grounding-uid so the silent-regression surfaces in logs.
+    it("RFC v2 Phase 5: legacy Grounding_propertyDefaults JSON triple is ignored with transitional warn", async () => {
+      const warnings: string[] = [];
+      const recordingLogger = {
+        debug() {},
+        info() {},
+        warn(message: string) {
+          warnings.push(message);
+        },
+        error() {},
+      };
+      const resolverWithLogger = new CommandResolver(store, recordingLogger);
       const groundingSubject = new IRI(`obsidian://vault/gnd-legacy-defaults.md`);
       await store.addAll([
         new Triple(groundingSubject, Namespace.RDF.term("type"), Namespace.EXOCMD.term("Grounding")),
@@ -446,11 +457,17 @@ describe("CommandResolver", () => {
         groundingRef: "gnd-legacy-defaults",
       });
 
-      const cmd = await resolver.loadCommand("cmd-legacy-defaults");
+      const cmd = await resolverWithLogger.loadCommand("cmd-legacy-defaults");
 
       expect(cmd).not.toBeNull();
       expect((cmd!.grounding as unknown as Record<string, unknown>).propertyDefaults).toBeUndefined();
       expect(cmd!.grounding.propertyDefault).toBeUndefined();
+      // Transitional deprecation warn was logged exactly once.
+      const deprecationWarns = warnings.filter((w) =>
+        /deprecated exocmd__Grounding_propertyDefaults/.test(w),
+      );
+      expect(deprecationWarns).toHaveLength(1);
+      expect(deprecationWarns[0]).toContain("gnd-legacy-defaults");
     });
 
     it("should parse exocmd__Grounding_prefillLabelWithDate true literal as boolean flag", async () => {
