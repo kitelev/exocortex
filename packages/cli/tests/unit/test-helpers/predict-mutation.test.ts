@@ -16,7 +16,7 @@ import {
   matchMutation,
   predictMutationForGrounding,
   substituteVariables,
-} from "../../integration/starter-kit/test-helpers/predict-mutation.js";
+} from "../../integration/commands/test-helpers/predict-mutation.js";
 
 const FIXED_NOW = new Date("2026-04-20T15:30:00.000Z");
 const TARGET_IRI = "obsidian://vault/fixture-test";
@@ -530,7 +530,7 @@ describe("audit: per-command branch count (RFC §7.1b)", () => {
         "..",
         "..",
         "integration",
-        "starter-kit",
+        "commands",
         "test-helpers",
         "predict-mutation.ts",
       ),

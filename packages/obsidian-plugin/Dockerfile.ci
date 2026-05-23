@@ -51,9 +51,9 @@ RUN ARCH=$(uname -m) && \
 
 WORKDIR /app
 
-# Copy manifests for every published workspace (starter-kit-fixtures is
-# excluded from `workspaces` in root package.json, so no package.json is
-# required for it).
+# Copy manifests for every published workspace (exoas-exo / exoas-exocmd
+# submodules are excluded from `workspaces` in root package.json, so no
+# package.json is required for them).
 COPY package*.json ./
 COPY packages/exocortex/package*.json ./packages/exocortex/
 COPY packages/obsidian-plugin/package*.json ./packages/obsidian-plugin/

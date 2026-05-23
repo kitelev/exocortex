@@ -1,3 +1,6 @@
-[submodule "packages/starter-kit-fixtures"]
-	path = packages/starter-kit-fixtures
-	url = https://github.com/kitelev/exocortex-starter-kit
+[submodule "packages/exoas-exo"]
+	path = packages/exoas-exo
+	url = https://github.com/kitelev/exoas-exo
+[submodule "packages/exoas-exocmd"]
+	path = packages/exoas-exocmd
+	url = https://github.com/kitelev/exoas-exocmd

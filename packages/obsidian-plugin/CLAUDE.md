@@ -43,11 +43,11 @@ npm run test:all   # MUST pass: unit + component + e2e + BDD ≥80%
 
 Starter-kit dynamic commands (`exocmd__Command`) are covered in three layers. New commands MUST add tests on every applicable layer before merge. Source of truth: `/Users/kitelev/Developer/rfc-ci-button-testing-2026-04-20.md` (RFC v5).
 
-| Layer | Runner | Location | Purpose |
-| ----- | ------ | -------- | ------- |
-| **L1 — Unit** | Jest (ts-jest) | `packages/cli/tests/unit/**` | Helpers (`command-catalog`, `extract-target-class`, `predict-mutation`, `fixture-factory`, `user-input-factory`, `execute-command`) + per-command outcome assertions with mocked boundaries. |
-| **L2 — Integration** | Jest + real `GroundingExecutor` | `packages/cli/tests/integration/starter-kit/**` | Exercise the 41 active starter-kit commands end-to-end through `CommandResolver` / `PreconditionEvaluator` / `GroundingExecutor` against fixture vaults. Parametrized catalogue + YAML contract test. |
-| **L3 — E2E** | Playwright + Docker Obsidian | `packages/obsidian-plugin/tests/e2e/specs/**` | Smoke subset (RFC §7.4.3) exercising the real plugin in Obsidian UI against fixture assets. Distributed across `e2e-shard-1..4`. |
+| Layer                | Runner                          | Location                                      | Purpose                                                                                                                                                                                                                                                                                    |
+| -------------------- | ------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **L1 — Unit**        | Jest (ts-jest)                  | `packages/cli/tests/unit/**`                  | Helpers (`command-catalog`, `extract-target-class`, `predict-mutation`, `fixture-factory`, `user-input-factory`, `execute-command`) + per-command outcome assertions with mocked boundaries.                                                                                               |
+| **L2 — Integration** | Jest + real `GroundingExecutor` | `packages/cli/tests/integration/commands/**`  | Exercise dynamic commands end-to-end through `CommandResolver` / `PreconditionEvaluator` / `GroundingExecutor` against `packages/exoas-exocmd` fixtures. The legacy parametrized-catalogue + YAML contract gate was retired 2026-05-23 (replaced by RFC v2 byte-diff testing, `aaaa2dea`). |
+| **L3 — E2E**         | Playwright + Docker Obsidian    | `packages/obsidian-plugin/tests/e2e/specs/**` | Smoke subset (RFC §7.4.3) exercising the real plugin in Obsidian UI against fixture assets. Distributed across `e2e-shard-1..4`.                                                                                                                                                           |
 
 **When to touch which layer:**
 

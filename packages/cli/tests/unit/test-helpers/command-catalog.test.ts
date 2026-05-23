@@ -4,7 +4,7 @@
  * RFC v4 §12 PR-readiness gate: every helper under
  * `tests/integration/**\/test-helpers/` MUST have a matching unit test under
  * `tests/unit/**\/test-helpers/`. This is the pair for
- * `tests/integration/starter-kit/test-helpers/command-catalog.ts`.
+ * `tests/integration/commands/test-helpers/command-catalog.ts`.
  *
  * Strategy: dependency injection via `LoadOptions` (in-memory file list +
  * reader). Avoids `jest.unstable_mockModule` — see memory
@@ -21,7 +21,7 @@ import {
   EXO_CLASS_META_UUID,
   KNOWN_BROKEN_UUIDS,
   type CommandCatalogEntry,
-} from "../../integration/starter-kit/test-helpers/command-catalog.js";
+} from "../../integration/commands/test-helpers/command-catalog.js";
 
 // ---------------------------------------------------------------------------
 // Fixture factory — builds in-memory frontmatter so every test case is

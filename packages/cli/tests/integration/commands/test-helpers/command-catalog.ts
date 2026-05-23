@@ -25,12 +25,6 @@
  *     that themselves declare `exo__Instance_class: [[8619c4fc-...]]`
  *     (the `exo__Class` meta-class UUID). Used to resolve legacy label
  *     wikilinks to their UUID.
- *
- * Phase 1 is the first helper shipped under this convention. RFC v4 §12
- * gate requires a matching unit test at
- * `tests/unit/test-helpers/command-catalog.test.ts` and an inline
- * integration guard at
- * `tests/integration/starter-kit/test-helpers/command-catalog.self.test.ts`.
  */
 import * as fs from "fs";
 import * as path from "path";
@@ -100,7 +94,7 @@ export interface CommandCatalogEntry {
 }
 
 export interface LoadOptions {
-  /** Override fixture root (default: `<worktree>/packages/starter-kit-fixtures`). */
+  /** Override fixture root (default: `<worktree>/packages/exoas-exocmd`). */
   fixturesRoot?: string;
   /** DI hook for test isolation — list `.md` files under the fixture root. */
   listMarkdownFiles?: (root: string) => string[];
@@ -114,14 +108,14 @@ const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---/;
 
 /**
  * Resolve the default fixtures root via `import.meta.url` — stable regardless
- * of the jest cwd (phase0-benchmark uses cwd and is brittle).
+ * of the jest cwd.
  *
- * File location: `<repo>/packages/cli/tests/integration/starter-kit/test-helpers/command-catalog.ts`
- * Target:        `<repo>/packages/starter-kit-fixtures`
+ * File location: `<repo>/packages/cli/tests/integration/commands/test-helpers/command-catalog.ts`
+ * Target:        `<repo>/packages/exoas-exocmd`
  */
 function defaultFixturesRoot(): string {
   const here = path.dirname(fileURLToPath(import.meta.url));
-  return path.resolve(here, "..", "..", "..", "..", "..", "starter-kit-fixtures");
+  return path.resolve(here, "..", "..", "..", "..", "..", "exoas-exocmd");
 }
 
 function defaultListMarkdownFiles(root: string): string[] {

@@ -1,7 +1,7 @@
 /**
  * `extractTargetClassFromCommand` — RFC v4 §7.1a 5-strategy resolution ladder.
  *
- * Pure classifier over the starter-kit submodule: given a parametrized
+ * Pure classifier over the exoas-exocmd submodule: given a parametrized
  * `CommandCatalogEntry` plus a pre-scanned `StarterKitContext` (preconditions,
  * groundings, and class-label reverse index), returns the host class on which
  * a test fixture should be materialised. Mirrors the Python classifier used in
@@ -106,7 +106,7 @@ function defaultFixturesRoot(): string {
     "..",
     "..",
     "..",
-    "starter-kit-fixtures",
+    "exoas-exocmd",
   );
 }
 
@@ -170,7 +170,7 @@ function hasInstanceClass(fm: Record<string, unknown>, uid: string): boolean {
 }
 
 /**
- * Scan the starter-kit fixture tree and build the `StarterKitContext`
+ * Scan the exoas-exocmd fixture tree and build the `StarterKitContext`
  * consumed by `extractTargetClassFromCommand` (and indirectly by
  * `execute-command.ts`). One O(n) walk over the submodule.
  */

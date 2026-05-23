@@ -1,5 +1,7 @@
 # Rollback Procedures — RFC-CI-Tests Suite
 
+> **SUPERSEDED (2026-05-23):** the RFC-CI-Tests regime described below has been retired. The `starter-kit-fixtures` submodule and its dependent tests (`exocmd-contract.test.ts`, `command-pilot.integration.test.ts`, `starter-kit-smoke.spec.ts`, the two `.self.test.ts` helpers) were removed in PR #3236; the submodule itself was swapped for `exoas-exo` + `exoas-exocmd` in this PR. Coverage replacement is RFC v2 Homoiconic plugin testing (`aaaa2dea-abf3-4601-b800-286111b15ec2`). File references in the rollback steps below point to deleted artifacts and apply only to historical reverts to pre-2026-05-23 commits.
+
 **Audience:** repository admins performing Phase 4 branch-protection enforcement (RFC §8 Phase 4, tracked via orchestrator task `70b28b93-…`) or reacting to post-cutover regression of the RFC-CI-Tests suite (Phases 1–3 merged in v15.114.0–v15.114.8).
 
 **Scope covered:** the three CI additions introduced by RFC-CI-Tests:
@@ -48,7 +50,7 @@ A specific test from the RFC-CI-Tests suite fails intermittently on PRs that don
      needs: build
      runs-on: ubuntu-latest
      timeout-minutes: 7
-     continue-on-error: true  # QUARANTINE: flaky >5% — track issue #NNNN
+     continue-on-error: true # QUARANTINE: flaky >5% — track issue #NNNN
    ```
 3. Commit on a fix branch (`chore(ci): quarantine <job-name> pending flaky fix`), merge through standard PR flow. The branch-protection check remains "green-or-skipped" during quarantine.
 4. Open a tracking issue with: test name, flaky-report.json excerpt, links to 3 failing runs.
@@ -120,6 +122,7 @@ A specific test from the RFC-CI-Tests suite fails intermittently on PRs that don
    npm publish --access public
    ```
 2. In exocortex repo worktree:
+
    ```bash
    # Remove submodule
    git submodule deinit -f packages/starter-kit-fixtures
@@ -131,17 +134,25 @@ A specific test from the RFC-CI-Tests suite fails intermittently on PRs that don
    cd packages/cli
    npm install --save-dev @kitelev/exocortex-starter-kit@<pinned-version>
    ```
+
 3. Update test-helper imports in `packages/cli/tests/integration/starter-kit/test-helpers/command-catalog.ts`. Current (submodule, ESM — `import.meta.url` per `packages/cli` `"type": "module"`):
    ```ts
-   const root = fileURLToPath(new URL('../../../../../../packages/starter-kit-fixtures/exocmd', import.meta.url));
+   const root = fileURLToPath(
+     new URL(
+       "../../../../../../packages/starter-kit-fixtures/exocmd",
+       import.meta.url,
+     ),
+   );
    ```
    Migrated (npm):
    ```ts
-   import { createRequire } from 'node:module';
+   import { createRequire } from "node:module";
    const require = createRequire(import.meta.url);
    const root = path.resolve(
-     path.dirname(require.resolve('@kitelev/exocortex-starter-kit/package.json')),
-     'exocmd'
+     path.dirname(
+       require.resolve("@kitelev/exocortex-starter-kit/package.json"),
+     ),
+     "exocmd",
    );
    ```
 4. Update `ci.yml` — remove `submodules: recursive` from checkout steps (lines 147, 202, 584 — `test-unit`, `test-coverage`, `e2e-shard`):
