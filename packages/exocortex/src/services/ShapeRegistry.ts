@@ -10,9 +10,9 @@ export interface Shape {
   minCount?: number;
   /**
    * ECMAScript-compatible regex string applied to literal values.
-   * Maps to W3C SHACL `sh:pattern`. Compiled once per validation run;
-   * invalid patterns are silently ignored (TBox config error, not data error).
-   * Anchors `^`/`$` recommended for exact-match semantics.
+   * Maps to W3C SHACL `sh:pattern`. Cached as a compiled `RegExp` once per
+   * `validate()` call (not per subject) — invalid patterns are silently
+   * ignored (TBox config error). Anchors `^`/`$` recommended for exact-match.
    */
   pattern?: string;
   severity: "sh:Violation" | "sh:Warning" | "sh:Info";

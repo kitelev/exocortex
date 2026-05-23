@@ -10,8 +10,13 @@ export interface Shape {
   minCount?: number;
   /**
    * ECMAScript regex string. Maps to W3C SHACL `sh:pattern`.
-   * Applied to literal values only; compiled once per validation run.
-   * Invalid pattern strings are silently ignored (TBox config error).
+   * Applied to literal values only. Pattern is compiled into a `RegExp`
+   * once at the start of `validate()` (cached in a per-call `Map<Shape, RegExp>`),
+   * so the cost is one-shot per validation run regardless of subject count.
+   * Invalid pattern strings are silently ignored (TBox config error, not data
+   * error). Pattern strings are assumed to come from a trusted single-tenant
+   * TBox (vault owner); a per-value length cap protects against ReDoS via
+   * long input literals — see `MAX_PATTERN_INPUT_LENGTH`.
    */
   pattern?: string;
   severity: Severity;
@@ -216,6 +221,28 @@ export function validate(
   const violations: Violation[] = [];
   const allSubjects = new Set([...subjectClasses.keys(), ...subjectProps.keys()]);
 
+  // Precompile sh:pattern regexes once per validation run (not per subject×shape).
+  // Invalid patterns map to null and are skipped silently at use site
+  // (TBox config error, not data error). See Shape.pattern JSDoc.
+  const patternCache = new Map<Shape, RegExp | null>();
+  for (const shape of registry.getAllShapes()) {
+    if (shape.pattern !== undefined && shape.pattern.length > 0) {
+      try {
+        patternCache.set(shape, new RegExp(shape.pattern));
+      } catch {
+        patternCache.set(shape, null);
+      }
+    }
+  }
+
+  // ReDoS guard: cap input length passed to RegExp.test().
+  // Pattern strings come from a trusted single-tenant TBox (vault owner),
+  // but values can be arbitrarily long literals (URLs in vault metadata,
+  // descriptions, etc.). A catastrophic-backtracking pattern combined with
+  // a long input value would block the validator thread. Skip the check
+  // (with a sh:Warning, NOT a violation) when value exceeds the cap.
+  const MAX_PATTERN_INPUT_LENGTH = 4096;
+
   for (const subjectIRI of allSubjects) {
     const classes = subjectClasses.get(subjectIRI) ?? [];
     const props = subjectProps.get(subjectIRI) ?? new Map<string, Array<IRI | Literal>>();
@@ -263,28 +290,33 @@ export function validate(
       // sh:pattern check — regex match on literal values.
       // Independent of range/class constraints: a property may have a pattern
       // without declaring a range (e.g. constraining lexical form of any string).
-      // Compile once outside the value loop; invalid patterns are skipped silently
-      // (TBox config error, not data error).
-      if (shape.pattern !== undefined && shape.pattern.length > 0) {
-        let compiledPattern: RegExp | null = null;
-        try {
-          compiledPattern = new RegExp(shape.pattern);
-        } catch {
-          compiledPattern = null;
-        }
-        if (compiledPattern) {
-          for (const obj of values) {
-            if (obj.type === 'literal' && !compiledPattern.test(obj.value)) {
-              violations.push({
-                focusNode: subjectIRI,
-                propertyPath: shape.propertyIRI,
-                severity: shape.severity,
-                message:
-                  shape.message ??
-                  `sh:pattern violation: literal "${obj.value}" does not match pattern ${shape.pattern}`,
-                actualValue: obj.value,
-              });
-            }
+      // Regex is precompiled in `patternCache` outside the subject loop above;
+      // null entries indicate invalid pattern strings (silently skipped).
+      const compiledPattern = patternCache.get(shape);
+      if (compiledPattern) {
+        for (const obj of values) {
+          if (obj.type !== 'literal') continue;
+          // ReDoS guard — see MAX_PATTERN_INPUT_LENGTH comment near declaration.
+          if (obj.value.length > MAX_PATTERN_INPUT_LENGTH) {
+            violations.push({
+              focusNode: subjectIRI,
+              propertyPath: shape.propertyIRI,
+              severity: 'sh:Warning',
+              message: `sh:pattern check skipped: literal exceeds ${MAX_PATTERN_INPUT_LENGTH} chars (ReDoS guard)`,
+              actualValue: obj.value.substring(0, 64) + '…',
+            });
+            continue;
+          }
+          if (!compiledPattern.test(obj.value)) {
+            violations.push({
+              focusNode: subjectIRI,
+              propertyPath: shape.propertyIRI,
+              severity: shape.severity,
+              message:
+                shape.message ??
+                `sh:pattern violation: literal "${obj.value}" does not match pattern ${shape.pattern}`,
+              actualValue: obj.value,
+            });
           }
         }
       }

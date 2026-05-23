@@ -1377,11 +1377,11 @@ describe('validate — pattern', () => {
     });
     const triples = [
       typeTriple('node:A', ASSETSPACE),
-      // Literal with non-string datatype + non-matching pattern → 2 violations
+      // Literal with non-string datatype + non-matching pattern → exactly 2 violations
       litTriple('node:A', GIT_PROP, '123', `${XSD}integer`),
     ];
     const report = validate(triples, makeRegistry([shape]), flatHierarchy);
-    expect(report.violations.length).toBeGreaterThanOrEqual(2);
+    expect(report.violations).toHaveLength(2);
     expect(report.violations.some((v) => v.message.includes('sh:pattern'))).toBe(true);
     expect(report.violations.some((v) => v.message.includes('sh:datatype'))).toBe(true);
   });
@@ -1414,5 +1414,53 @@ describe('validate — pattern', () => {
     const report = validate(triples, makeRegistry([shape]), flatHierarchy);
     expect(report.violations).toHaveLength(1);
     expect(report.violations[0].focusNode).toBe('node:B');
+  });
+
+  it('T-PAT-11: ReDoS guard — values over 4096 chars skipped with sh:Warning', () => {
+    // ReDoS-prone pattern + long input: without the length cap this would
+    // catastrophically backtrack. With the cap, the engine emits a Warning
+    // and continues (conforms stays true since no sh:Violation raised).
+    const shape = makePatternShape({
+      propertyIRI: GIT_PROP,
+      pattern: '^(a+)+b$', // classic catastrophic-backtracking pattern
+    });
+    const longValue = 'a'.repeat(5000); // exceeds MAX_PATTERN_INPUT_LENGTH = 4096
+    const triples = [
+      typeTriple('node:A', ASSETSPACE),
+      litTriple('node:A', GIT_PROP, longValue),
+    ];
+    const start = Date.now();
+    const report = validate(triples, makeRegistry([shape]), flatHierarchy);
+    const elapsed = Date.now() - start;
+    // Must complete instantly — cap kicked in before .test()
+    expect(elapsed).toBeLessThan(100);
+    expect(report.violations).toHaveLength(1);
+    expect(report.violations[0].severity).toBe('sh:Warning');
+    expect(report.violations[0].message).toContain('ReDoS');
+    expect(report.conforms).toBe(true);
+  });
+
+  it('T-PAT-12: regex compiled once per validation run — many subjects share cache', () => {
+    // Smoke test for HIGH finding fix: verify validate() completes quickly
+    // even with many subjects against the same pattern (would have been
+    // N×compile under previous per-subject compilation).
+    const shape = makePatternShape({
+      propertyIRI: GIT_PROP,
+      pattern: EXOAS_PATTERN,
+    });
+    const triples: Triple[] = [];
+    for (let i = 0; i < 500; i++) {
+      triples.push(typeTriple(`node:${i}`, ASSETSPACE));
+      triples.push(
+        litTriple(`node:${i}`, GIT_PROP, `https://github.com/kitelev/exoas-ns${i}`),
+      );
+    }
+    const start = Date.now();
+    const report = validate(triples, makeRegistry([shape]), flatHierarchy);
+    const elapsed = Date.now() - start;
+    expect(report.conforms).toBe(true);
+    expect(report.violations).toHaveLength(0);
+    // 500 subjects, single shape with pattern — should be fast
+    expect(elapsed).toBeLessThan(500);
   });
 });
