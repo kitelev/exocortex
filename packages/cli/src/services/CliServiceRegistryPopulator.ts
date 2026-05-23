@@ -1,6 +1,8 @@
 import {
   ServiceRegistry,
   FrontmatterService,
+  type ClassRefResolver,
+  type IFile,
   type IGroundingService,
   type IVaultAdapter,
   type IFileSystemAdapter,
@@ -13,6 +15,7 @@ import {
   TaskStatusService,
 } from "exocortex";
 import {
+  createCreateAssetService,
   createCreateRelatedTaskService,
   createCreateRelatedProjectService,
   createArchiveAssetService,
@@ -95,20 +98,27 @@ export function createCliPathResolver(
  * the shared `@kitelev/exocortex-services` package and run end-to-end against
  * a vault on disk via {@link CliServiceRegistryDeps.fsAdapter}.
  *
- * The remaining 7 services are genuinely unsupported in CLI runtime:
+ * The remaining 6 services are genuinely unsupported in CLI runtime:
  * - `openFile`, `getActiveFileIRI`, `getActiveFilePath` rely on Obsidian's
  *   workspace/active-file concept that has no CLI analogue.
  * - `sparqlSelect` would require porting plugin's SPARQLApi — separate issue.
  * - `trashFile` semantics (Obsidian trash) differ from `fs.unlink`; needs an
  *   adapter design before it can be safely shared.
- * - `createAsset`, `duplicateFile` carry parent-context inheritance that
- *   currently reads `app.metadataCache`; porting them awaits an Obsidian-free
- *   metadata abstraction.
+ * - `duplicateFile` carries parent-context inheritance that currently reads
+ *   `app.metadataCache`; porting awaits an Obsidian-free metadata abstraction.
  *
- * Issue #2518, #2864
+ * RFC v2 Phase 3.5 (Issue #3164, 2026-05-23): `createAsset` dropped from this
+ * list — now has a real CLI implementation through the shared
+ * `createCreateAssetService` factory (`@kitelev/exocortex-services`) that
+ * mirrors the plugin's `ServiceRegistryPopulator.createAsset` handler
+ * one-for-one (parent inheritance, area/parent detection, isDefinedBy
+ * precedence). Phase 4b will remove both this CLI registration and the
+ * plugin's parallel inlined handler once vault Groundings migrate from
+ * `service_call createAsset` to declarative `create_instance` type.
+ *
+ * Issue #2518, #2864, #3164
  */
 export const CLI_STUB_SERVICE_IDS = [
-  "createAsset",
   "openFile",
   "sparqlSelect",
   "getActiveFileIRI",
@@ -180,6 +190,7 @@ export interface CliServiceRegistryDeps {
  * plugin can adopt the same handlers in T1.3 without code duplication.
  */
 export {
+  createCreateAssetService,
   createCreateRelatedTaskService,
   createCreateRelatedProjectService,
   createArchiveAssetService,
@@ -192,6 +203,32 @@ export {
   createRemovePropertyService,
   createSetStatusService,
 };
+
+/**
+ * Build a `ClassRefResolver` (UUID → symbolic class label) backed by
+ * `IVaultAdapter.getFirstLinkpathDest` + `getFrontmatter` (both sync, so the
+ * resolver matches `WikiLinkHelpers.resolveSymbolic`'s sync contract).
+ *
+ * Mirrors the plugin's `createMetadataClassResolver`
+ * (`ServiceRegistryPopulator.ts`) which reads Obsidian's `metadataCache`.
+ * `FileSystemVaultAdapter` builds a UUID index lazily on first lookup, so
+ * subsequent calls within one CLI session are O(1).
+ *
+ * Used by `createAsset` (Phase 3.5) to detect Area parents when
+ * `exo__Instance_class` stores UID-canon refs (`[[<uuid>]]`). Symbolic refs
+ * (`[[ems__Area]]`) bypass the resolver via `WikiLinkHelpers.resolveSymbolic`.
+ */
+export function createCliClassResolver(
+  vaultAdapter: IVaultAdapter,
+): ClassRefResolver {
+  return (uuid: string): string | null => {
+    const target = vaultAdapter.getFirstLinkpathDest(uuid, "");
+    if (!target || !("basename" in target)) return null;
+    const meta = vaultAdapter.getFrontmatter(target as IFile);
+    const label = meta?.exo__Asset_label;
+    return typeof label === "string" && label.length > 0 ? label : null;
+  };
+}
 
 /**
  * Populate a ServiceRegistry with fail-loud stubs for all well-known services.
@@ -215,10 +252,15 @@ export function populateCliServiceRegistry(
     registry.register(id, notImplementedService(id));
   }
 
-  // T1.4: frontmatter-only handlers registered as fail-loud stubs when no
-  // fsAdapter is wired (e.g. `dyncommand validate`). With fsAdapter the real
-  // shared-package factories below replace these stubs.
-  for (const id of ["updateProperty", "removeProperty", "setStatus"] as const) {
+  // T1.4 + Phase 3.5: handlers requiring fsAdapter registered as fail-loud
+  // stubs when no fsAdapter is wired (e.g. `dyncommand validate`). With
+  // fsAdapter the real shared-package factories below replace these stubs.
+  for (const id of [
+    "updateProperty",
+    "removeProperty",
+    "setStatus",
+    "createAsset",
+  ] as const) {
     registry.register(id, notImplementedService(id));
   }
 
@@ -248,6 +290,22 @@ export function populateCliServiceRegistry(
           deps.fsAdapter,
           frontmatterService,
           pathResolver,
+        ),
+      );
+
+      // RFC v2 Phase 3.5 (Issue #3164): real `createAsset` handler replaces
+      // the legacy CliServiceNotImplementedError stub. Mirrors the plugin's
+      // inlined handler in `ServiceRegistryPopulator.createAsset`
+      // (parent-context inheritance, area-vs-parent detection via class
+      // resolver, isDefinedBy precedence chain). Requires both fsAdapter
+      // (for `createFile`) and vaultAdapter (for parent metadata + UID-canon
+      // class resolution); when fsAdapter is absent the stub remains.
+      registry.register(
+        "createAsset",
+        createCreateAssetService(
+          deps.vaultAdapter,
+          deps.fsAdapter,
+          createCliClassResolver(deps.vaultAdapter),
         ),
       );
     }
