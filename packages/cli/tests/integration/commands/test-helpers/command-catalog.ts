@@ -39,16 +39,16 @@ export const EXOCMD_COMMAND_CLASS_UUID =
 export const EXO_CLASS_META_UUID = "8619c4fc-64f1-4869-b17e-e34186cacca9";
 
 /**
- * Phase 2 stopgap filter (RFC v4 §4.0). The starter-kit has 44 `exocmd__Command`
- * instances, of which 3 criticality commands are UI-broken pending the UX-RFC
- * zone migration (P0-2). Until `exocmd__Command_state` lands in the starter-kit
- * ontology, we hardcode the broken set so the parametrized integration suite
- * can filter to 41 active commands without running against known-red fixtures.
+ * Phase 2 stopgap filter (RFC v4 §4.0). 3 criticality commands are UI-broken
+ * pending the UX-RFC zone migration (P0-2). Until `exocmd__Command_state` lands
+ * in the fixture ontology, we hardcode the broken set so callers of
+ * `loadActiveCommandCatalog()` can filter to active commands without running
+ * against known-red fixtures.
  *
- * Dropping any UUID from this set must be accompanied by the corresponding
- * starter-kit cleanup; the integration self-test asserts each UUID is still
- * present in the raw catalog so a rename surfaces as a test failure rather
- * than a silent filter drift.
+ * Note: there is currently no integration test that asserts these UUIDs still
+ * exist in the live submodule, so a rename in `exoas-exocmd` would silently
+ * drift the filter to vacuous. The 3 files were verified present in
+ * `exoas-exocmd/criticality/` as of 2026-05-23.
  */
 export const KNOWN_BROKEN_UUIDS: ReadonlySet<string> = new Set([
   "6b2f1cc6-a9f4-452a-93be-79b531188a62", // Set Criticality High
