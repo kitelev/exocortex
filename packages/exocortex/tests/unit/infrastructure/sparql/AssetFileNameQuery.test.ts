@@ -1,7 +1,7 @@
 /**
- * Acceptance test for Asset_fileName predicate (Issue #666).
+ * Acceptance test for Asset_filename predicate (Issue #666).
  *
- * This test verifies that every asset gets an exo:Asset_fileName triple
+ * This test verifies that every asset gets an exo:Asset_filename triple
  * during RDF indexing, allowing SPARQL queries to search by filename
  * without hardcoded URIs.
  *
@@ -9,7 +9,7 @@
  * ```sparql
  * PREFIX exo: <https://exocortex.my/ontology/exo#>
  * SELECT ?s WHERE {
- *   ?s exo:Asset_fileName "ems__Meeting" .
+ *   ?s exo:Asset_filename "ems__Meeting" .
  * }
  * ```
  */
@@ -23,7 +23,7 @@ import { Literal } from "../../../../src/domain/models/rdf/Literal";
 import { Triple } from "../../../../src/domain/models/rdf/Triple";
 import { Namespace } from "../../../../src/domain/models/rdf/Namespace";
 
-describe("Asset_fileName SPARQL Query (Issue #666)", () => {
+describe("Asset_filename SPARQL Query (Issue #666)", () => {
   let store: InMemoryTripleStore;
   let executor: QueryExecutor;
   let parser: SPARQLParser;
@@ -40,9 +40,9 @@ describe("Asset_fileName SPARQL Query (Issue #666)", () => {
     parser = new SPARQLParser();
     translator = new AlgebraTranslator();
 
-    // Setup test data: Assets with Asset_fileName triples
+    // Setup test data: Assets with Asset_filename triples
     // This simulates what NoteToRDFConverter.convertNote() produces
-    const EXO_ASSET_FILE_NAME = Namespace.EXO.term("Asset_fileName");
+    const EXO_ASSET_FILE_NAME = Namespace.EXO.term("Asset_filename");
     const EXO_ASSET_LABEL = Namespace.EXO.term("Asset_label");
     const EXO_INSTANCE_CLASS = Namespace.EXO.term("Instance_class");
 
@@ -95,12 +95,12 @@ describe("Asset_fileName SPARQL Query (Issue #666)", () => {
     ]);
   });
 
-  describe("Basic Asset_fileName queries", () => {
+  describe("Basic Asset_filename queries", () => {
     it("should find asset by exact fileName match", async () => {
       const query = `
         PREFIX exo: <https://exocortex.my/ontology/exo#>
         SELECT ?s WHERE {
-          ?s exo:Asset_fileName "ems__Meeting" .
+          ?s exo:Asset_filename "ems__Meeting" .
         }
       `;
 
@@ -116,7 +116,7 @@ describe("Asset_fileName SPARQL Query (Issue #666)", () => {
       const query = `
         PREFIX exo: <https://exocortex.my/ontology/exo#>
         SELECT ?s WHERE {
-          ?s exo:Asset_fileName "My Note" .
+          ?s exo:Asset_filename "My Note" .
         }
       `;
 
@@ -132,7 +132,7 @@ describe("Asset_fileName SPARQL Query (Issue #666)", () => {
       const query = `
         PREFIX exo: <https://exocortex.my/ontology/exo#>
         SELECT ?s WHERE {
-          ?s exo:Asset_fileName "NonExistent" .
+          ?s exo:Asset_filename "NonExistent" .
         }
       `;
 
@@ -147,7 +147,7 @@ describe("Asset_fileName SPARQL Query (Issue #666)", () => {
       const query = `
         PREFIX exo: <https://exocortex.my/ontology/exo#>
         SELECT ?s ?fileName WHERE {
-          ?s exo:Asset_fileName ?fileName .
+          ?s exo:Asset_filename ?fileName .
         }
         ORDER BY ?fileName
       `;
@@ -164,12 +164,12 @@ describe("Asset_fileName SPARQL Query (Issue #666)", () => {
     });
   });
 
-  describe("Combined queries with Asset_fileName", () => {
+  describe("Combined queries with Asset_filename", () => {
     it("should find asset by fileName and return its label", async () => {
       const query = `
         PREFIX exo: <https://exocortex.my/ontology/exo#>
         SELECT ?label WHERE {
-          ?s exo:Asset_fileName "ems__Meeting" .
+          ?s exo:Asset_filename "ems__Meeting" .
           ?s exo:Asset_label ?label .
         }
       `;
@@ -187,7 +187,7 @@ describe("Asset_fileName SPARQL Query (Issue #666)", () => {
         PREFIX exo: <https://exocortex.my/ontology/exo#>
         SELECT ?fileName WHERE {
           ?s exo:Instance_class exo:Class .
-          ?s exo:Asset_fileName ?fileName .
+          ?s exo:Asset_filename ?fileName .
         }
         ORDER BY ?fileName
       `;
@@ -209,13 +209,13 @@ describe("Asset_fileName SPARQL Query (Issue #666)", () => {
     it("should allow querying by human-readable filename (Issue #666 acceptance criteria)", async () => {
       // This is the exact acceptance criteria from Issue #666:
       // Given vault with file `03 Knowledge/ems/ems__Meeting.md`
-      // When executing SPARQL: SELECT ?s WHERE { ?s exo:Asset_fileName "ems__Meeting" . }
+      // When executing SPARQL: SELECT ?s WHERE { ?s exo:Asset_filename "ems__Meeting" . }
       // Then receive 1 result with URI `obsidian://vault/03%20Knowledge/ems/ems__Meeting.md`
 
       const query = `
         PREFIX exo: <https://exocortex.my/ontology/exo#>
         SELECT ?s WHERE {
-          ?s exo:Asset_fileName "ems__Meeting" .
+          ?s exo:Asset_filename "ems__Meeting" .
         }
       `;
 
@@ -235,7 +235,7 @@ describe("Asset_fileName SPARQL Query (Issue #666)", () => {
       const query = `
         PREFIX exo: <https://exocortex.my/ontology/exo#>
         SELECT ?s WHERE {
-          ?s exo:Asset_fileName "ems__Meeting" .
+          ?s exo:Asset_filename "ems__Meeting" .
         }
       `;
 

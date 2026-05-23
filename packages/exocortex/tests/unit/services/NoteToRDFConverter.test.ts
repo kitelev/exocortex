@@ -403,9 +403,9 @@ describe("NoteToRDFConverter", () => {
       });
     });
 
-    // Issue #666: Add Asset_fileName predicate for all assets
-    describe("Asset_fileName predicate (Issue #666)", () => {
-      it("should add Asset_fileName triple with file basename (without .md)", async () => {
+    // Issue #666: Add Asset_filename predicate for all assets
+    describe("Asset_filename predicate (Issue #666)", () => {
+      it("should add Asset_filename triple with file basename (without .md)", async () => {
         const file: IFile = {
           path: "03 Knowledge/ems/ems__Meeting.md",
           basename: "ems__Meeting",
@@ -422,19 +422,19 @@ describe("NoteToRDFConverter", () => {
         const triples = await converter.convertNote(file);
 
         const fileNameTriple = triples.find((t) =>
-          (t.predicate as IRI).value.includes("Asset_fileName")
+          (t.predicate as IRI).value.includes("Asset_filename")
         );
 
         expect(fileNameTriple).toBeDefined();
         expect(fileNameTriple!.predicate).toBeInstanceOf(IRI);
         expect((fileNameTriple!.predicate as IRI).value).toBe(
-          Namespace.EXO.term("Asset_fileName").value
+          Namespace.EXO.term("Asset_filename").value
         );
         expect(fileNameTriple!.object).toBeInstanceOf(Literal);
         expect((fileNameTriple!.object as Literal).value).toBe("ems__Meeting");
       });
 
-      it("should add Asset_fileName for files with spaces in path", async () => {
+      it("should add Asset_filename for files with spaces in path", async () => {
         const file: IFile = {
           path: "My Folder/My Task.md",
           basename: "My Task",
@@ -451,14 +451,14 @@ describe("NoteToRDFConverter", () => {
         const triples = await converter.convertNote(file);
 
         const fileNameTriple = triples.find((t) =>
-          (t.predicate as IRI).value.includes("Asset_fileName")
+          (t.predicate as IRI).value.includes("Asset_filename")
         );
 
         expect(fileNameTriple).toBeDefined();
         expect((fileNameTriple!.object as Literal).value).toBe("My Task");
       });
 
-      it("should use correct subject IRI for Asset_fileName triple", async () => {
+      it("should use correct subject IRI for Asset_filename triple", async () => {
         const file: IFile = {
           path: "03 Knowledge/ems/ems__Task.md",
           basename: "ems__Task",
@@ -475,7 +475,7 @@ describe("NoteToRDFConverter", () => {
         const triples = await converter.convertNote(file);
 
         const fileNameTriple = triples.find((t) =>
-          (t.predicate as IRI).value.includes("Asset_fileName")
+          (t.predicate as IRI).value.includes("Asset_filename")
         );
 
         expect(fileNameTriple).toBeDefined();
@@ -485,7 +485,7 @@ describe("NoteToRDFConverter", () => {
         );
       });
 
-      it("should add Asset_fileName even if no other exo/ems properties exist", async () => {
+      it("should add Asset_filename even if no other exo/ems properties exist", async () => {
         const file: IFile = {
           path: "Notes/My Note.md",
           basename: "My Note",
@@ -502,9 +502,9 @@ describe("NoteToRDFConverter", () => {
 
         const triples = await converter.convertNote(file);
 
-        // Should only have Asset_fileName triple (no exo/ems properties)
+        // Should only have Asset_filename triple (no exo/ems properties)
         expect(triples.length).toBe(1);
-        expect((triples[0].predicate as IRI).value).toContain("Asset_fileName");
+        expect((triples[0].predicate as IRI).value).toContain("Asset_filename");
         expect((triples[0].object as Literal).value).toBe("My Note");
       });
     });
@@ -1160,9 +1160,9 @@ describe("NoteToRDFConverter", () => {
     });
   });
 
-  // Issue #666: Asset_fileName predicate for SPARQL queries by filename
-  describe("Asset_fileName predicate (Issue #666)", () => {
-    it("should add Asset_fileName triple for every file with frontmatter", async () => {
+  // Issue #666: Asset_filename predicate for SPARQL queries by filename
+  describe("Asset_filename predicate (Issue #666)", () => {
+    it("should add Asset_filename triple for every file with frontmatter", async () => {
       const file: IFile = {
         path: "03 Knowledge/ems/ems__Meeting.md",
         basename: "ems__Meeting",
@@ -1179,7 +1179,7 @@ describe("NoteToRDFConverter", () => {
       const triples = await converter.convertNote(file);
 
       const fileNameTriple = triples.find((t) =>
-        (t.predicate as IRI).value.includes("Asset_fileName")
+        (t.predicate as IRI).value.includes("Asset_filename")
       );
 
       expect(fileNameTriple).toBeDefined();
@@ -1187,7 +1187,7 @@ describe("NoteToRDFConverter", () => {
       expect((fileNameTriple!.object as Literal).value).toBe("ems__Meeting");
     });
 
-    it("should use exo namespace for Asset_fileName predicate", async () => {
+    it("should use exo namespace for Asset_filename predicate", async () => {
       const file: IFile = {
         path: "test.md",
         basename: "test",
@@ -1204,12 +1204,12 @@ describe("NoteToRDFConverter", () => {
       const triples = await converter.convertNote(file);
 
       const fileNameTriple = triples.find((t) =>
-        (t.predicate as IRI).value.includes("Asset_fileName")
+        (t.predicate as IRI).value.includes("Asset_filename")
       );
 
       expect(fileNameTriple).toBeDefined();
       expect((fileNameTriple!.predicate as IRI).value).toBe(
-        Namespace.EXO.term("Asset_fileName").value
+        Namespace.EXO.term("Asset_filename").value
       );
     });
 
@@ -1230,7 +1230,7 @@ describe("NoteToRDFConverter", () => {
       const triples = await converter.convertNote(file);
 
       const fileNameTriple = triples.find((t) =>
-        (t.predicate as IRI).value.includes("Asset_fileName")
+        (t.predicate as IRI).value.includes("Asset_filename")
       );
 
       expect(fileNameTriple).toBeDefined();
@@ -1255,7 +1255,7 @@ describe("NoteToRDFConverter", () => {
       const triples = await converter.convertNote(file);
 
       const fileNameTriple = triples.find((t) =>
-        (t.predicate as IRI).value.includes("Asset_fileName")
+        (t.predicate as IRI).value.includes("Asset_filename")
       );
 
       expect(fileNameTriple).toBeDefined();
@@ -1264,7 +1264,7 @@ describe("NoteToRDFConverter", () => {
       );
     });
 
-    it("should NOT add Asset_fileName for files without frontmatter", async () => {
+    it("should NOT add Asset_filename for files without frontmatter", async () => {
       const file: IFile = {
         path: "test.md",
         basename: "test",
@@ -1278,12 +1278,12 @@ describe("NoteToRDFConverter", () => {
 
       expect(triples).toEqual([]);
       const fileNameTriple = triples.find((t) =>
-        (t.predicate as IRI).value?.includes("Asset_fileName")
+        (t.predicate as IRI).value?.includes("Asset_filename")
       );
       expect(fileNameTriple).toBeUndefined();
     });
 
-    it("should add Asset_fileName for all files in convertVault", async () => {
+    it("should add Asset_filename for all files in convertVault", async () => {
       const file1: IFile = {
         path: "note1.md",
         basename: "note1",
@@ -1306,7 +1306,7 @@ describe("NoteToRDFConverter", () => {
       const triples = await converter.convertVault();
 
       const fileNameTriples = triples.filter((t) =>
-        (t.predicate as IRI).value.includes("Asset_fileName")
+        (t.predicate as IRI).value.includes("Asset_filename")
       );
 
       expect(fileNameTriples.length).toBe(2);
@@ -1649,7 +1649,7 @@ describe("NoteToRDFConverter", () => {
 
         // Verify file name triples from both files
         const fileNameTriples = triples.filter((t) =>
-          (t.predicate as IRI).value.includes("Asset_fileName")
+          (t.predicate as IRI).value.includes("Asset_filename")
         );
         expect(fileNameTriples.length).toBe(2);
 
@@ -2348,7 +2348,7 @@ Here is an image: ![[screenshot.png]] and a link [[Real Note]].
         // Should NOT throw, just skip body links
         const triples = await converter.convertNote(file);
 
-        // Should have Asset_fileName, Asset_label, and rdfs:label (Issue #2807), but no body links
+        // Should have Asset_filename, Asset_label, and rdfs:label (Issue #2807), but no body links
         expect(triples.length).toBe(3);
         const bodyLinkTriples = triples.filter((t) =>
           (t.predicate as IRI).value.includes("Asset_bodyLink")
@@ -2497,8 +2497,13 @@ See [[Note A]], then [[Note A]] again, and [[Note A]] once more.
 
         const triples = await converter.convertNote(file);
 
-        // Namespace files don't generate triples directly
-        expect(triples.length).toBe(0);
+        // Namespace files don't generate domain triples — only the
+        // RFC 1ce2a226 Phase 3a `exo:Asset_filename` derived triple.
+        expect(triples.length).toBe(1);
+        const filenameTriple = triples[0];
+        expect((filenameTriple.predicate as IRI).value).toBe(
+          "https://exocortex.my/ontology/exo#Asset_filename",
+        );
       });
 
       it("should detect Exo 0.0.3 blank_node format", async () => {
@@ -2529,7 +2534,7 @@ See [[Note A]], then [[Note A]] again, and [[Note A]] once more.
 
         const triples = await converter.convertNote(file);
 
-        // Should process as legacy format (with Asset_fileName)
+        // Should process as legacy format (with Asset_filename)
         const labelTriple = triples.find((t) =>
           (t.predicate as IRI).value.includes("Asset_label")
         );
@@ -2549,14 +2554,17 @@ See [[Note A]], then [[Note A]] again, and [[Note A]] once more.
 
         const triples = await converter.convertNote(file);
 
-        expect(triples.length).toBe(2);
+        // 2 bidirectional owl:sameAs + 1 RFC 1ce2a226 Phase 3a filename triple
+        expect(triples.length).toBe(3);
 
-        // File IRI -> Anchor URI
-        const fileToUri = triples.find((t) =>
-          (t.subject as IRI).value.includes("obsidian://vault/")
+        // File IRI -> Anchor URI (owl:sameAs to anchor URI as object)
+        const fileToUri = triples.find(
+          (t) =>
+            (t.subject as IRI).value.includes("obsidian://vault/") &&
+            t.object instanceof IRI &&
+            (t.object as IRI).value === "https://exocortex.my/ontology/ems#Meeting",
         );
         expect(fileToUri).toBeDefined();
-        expect((fileToUri!.object as IRI).value).toBe("https://exocortex.my/ontology/ems#Meeting");
 
         // Anchor URI -> File IRI
         const uriToFile = triples.find((t) =>
@@ -2628,8 +2636,8 @@ See [[Note A]], then [[Note A]] again, and [[Note A]] once more.
 
         const triples = await converter.convertNote(statementFile);
 
-        // Should have the statement triple + file reference triple
-        expect(triples.length).toBe(2);
+        // statement triple + file reference triple + RFC 1ce2a226 Phase 3a filename
+        expect(triples.length).toBe(3);
 
         const statementTriple = triples.find((t) =>
           (t.subject as IRI).value === "https://example.org/subject"
@@ -2652,7 +2660,8 @@ See [[Note A]], then [[Note A]] again, and [[Note A]] once more.
 
         const triples = await converter.convertNote(file);
 
-        expect(triples.length).toBe(2);
+        // statement triple + reverse anchor triple + RFC 1ce2a226 Phase 3a filename
+        expect(triples.length).toBe(3);
 
         const statementTriple = triples.find((t) =>
           (t.subject as IRI).value === "https://example.org/subject"
@@ -2722,8 +2731,8 @@ It can contain **markdown** formatting.
 
         const triples = await converter.convertNote(bodyFile);
 
-        // Should have the body triple + file reference triple
-        expect(triples.length).toBe(2);
+        // body triple + file reference triple + RFC 1ce2a226 Phase 3a filename
+        expect(triples.length).toBe(3);
 
         const bodyTriple = triples.find((t) =>
           (t.subject as IRI).value === "https://example.org/subject"
@@ -2848,7 +2857,10 @@ It can contain **markdown** formatting.
     });
 
     describe("invalid Exo 0.0.3 files", () => {
-      it("should return empty array for invalid Exo 0.0.3 frontmatter", async () => {
+      it("emits filename only (no domain triples) for invalid Exo 0.0.3 frontmatter", async () => {
+        // RFC 1ce2a226 Phase 3a: filename is path-derived and always emitted
+        // when frontmatter is present, even if Exo 0.0.3 validation fails.
+        // Domain triples are still skipped — only the filename remains.
         const frontmatter: IFrontmatter = {
           metadata: Exo003MetadataType.Anchor,
           // missing uri - invalid
@@ -2858,10 +2870,13 @@ It can contain **markdown** formatting.
 
         const triples = await converter.convertNote(file);
 
-        expect(triples).toEqual([]);
+        expect(triples.length).toBe(1);
+        expect((triples[0].predicate as IRI).value).toBe(
+          "https://exocortex.my/ontology/exo#Asset_filename",
+        );
       });
 
-      it("should return empty array for statement with forbidden properties", async () => {
+      it("emits filename only (no domain triples) for statement with forbidden properties", async () => {
         const frontmatter: IFrontmatter = {
           metadata: Exo003MetadataType.Statement,
           subject: "[[subject]]",
@@ -2874,8 +2889,11 @@ It can contain **markdown** formatting.
 
         const triples = await converter.convertNote(file);
 
-        // Should skip invalid files
-        expect(triples).toEqual([]);
+        // Domain skipped, filename retained per RFC 1ce2a226 Phase 3a.
+        expect(triples.length).toBe(1);
+        expect((triples[0].predicate as IRI).value).toBe(
+          "https://exocortex.my/ontology/exo#Asset_filename",
+        );
       });
     });
 

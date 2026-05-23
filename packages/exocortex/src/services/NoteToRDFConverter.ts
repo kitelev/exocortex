@@ -102,13 +102,27 @@ export class NoteToRDFConverter {
       return [];
     }
 
+    // RFC 1ce2a226 Phase 3a: emit exo:Asset_filename for every parsed file.
+    // `file.basename` is the disk basename without `.md` extension, already
+    // URL-decoded by Obsidian (e.g. "My Note", not "My%20Note"). Overwrite-
+    // on-reindex semantics are provided by VaultRDFIndexer.updateFile/
+    // renameFile, which call removeFileTriples(filePath) before re-emitting.
+    const fileSubject = this.notePathToIRI(file.path);
+    const filenamePredicate = Namespace.EXO.term("Asset_filename");
+    const filenameTriple = new Triple(
+      fileSubject,
+      filenamePredicate,
+      new Literal(file.basename),
+    );
+
     // Issue #1366: Check for Exo 0.0.3 format first
     if (Exo003Parser.isExo003Format(frontmatter)) {
-      return this.convertExo003Note(file, frontmatter);
+      const exo003Triples = await this.convertExo003Note(file, frontmatter);
+      return [filenameTriple, ...exo003Triples];
     }
 
     // Legacy format processing
-    return this.convertLegacyNote(file, frontmatter);
+    return this.convertLegacyNote(file, frontmatter, filenameTriple);
   }
 
   /**
@@ -116,16 +130,12 @@ export class NoteToRDFConverter {
    */
   private async convertLegacyNote(
     file: IFile,
-    frontmatter: Record<string, unknown>
+    frontmatter: Record<string, unknown>,
+    filenameTriple: Triple,
   ): Promise<Triple[]> {
     this.pendingExtraTriples = [];
-    const triples: Triple[] = [];
+    const triples: Triple[] = [filenameTriple];
     const subject = this.notePathToIRI(file.path);
-
-    // Always add Asset_fileName triple (Issue #666)
-    // This allows SPARQL queries to search by filename without hardcoded URIs
-    const fileNamePredicate = Namespace.EXO.term("Asset_fileName");
-    triples.push(new Triple(subject, fileNamePredicate, new Literal(file.basename)));
 
     for (const [key, value] of Object.entries(frontmatter)) {
       // Issue #3043 Phase 1: whitelisted unprefixed frontmatter keys are

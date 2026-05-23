@@ -6,13 +6,13 @@
  * The canonical SPARQL query pattern being tested:
  * ```sparql
  * SELECT DISTINCT ?propertyLabel WHERE {
- *   ?targetClass exo:Asset_fileName "ems__Meeting" .
+ *   ?targetClass exo:Asset_filename "ems__Meeting" .
  *   ?targetClass exo:Class_superClass* ?class .
  *   ?property exo:Property_domain ?class .
- *   ?property exo:Asset_fileName ?propertyLabel .
+ *   ?property exo:Asset_filename ?propertyLabel .
  *   ?property exo:Instance_class ?propClass .
  *   FILTER NOT EXISTS {
- *     ?propClass exo:Asset_fileName "exo__DeprecatedProperty"
+ *     ?propClass exo:Asset_filename "exo__DeprecatedProperty"
  *   }
  * }
  * ORDER BY ?propertyLabel
@@ -29,7 +29,7 @@ import { Triple } from "../../../../src/domain/models/rdf/Triple";
 
 // Ontology URIs
 const EXO = "https://exocortex.my/ontology/exo#";
-const EXO_ASSET_FILE_NAME = new IRI(`${EXO}Asset_fileName`);
+const EXO_ASSET_FILE_NAME = new IRI(`${EXO}Asset_filename`);
 const EXO_CLASS_SUPER_CLASS = new IRI(`${EXO}Class_superClass`);
 const EXO_PROPERTY_DOMAIN = new IRI(`${EXO}Property_domain`);
 const EXO_INSTANCE_CLASS = new IRI(`${EXO}Instance_class`);
@@ -245,7 +245,7 @@ describe("Class Properties Query (Issue #665)", () => {
       const query = `
         PREFIX exo: <https://exocortex.my/ontology/exo#>
         SELECT DISTINCT ?class WHERE {
-          ?targetClass exo:Asset_fileName "ems__Meeting" .
+          ?targetClass exo:Asset_filename "ems__Meeting" .
           ?targetClass exo:Class_superClass* ?class .
         }
       `;
@@ -266,7 +266,7 @@ describe("Class Properties Query (Issue #665)", () => {
       const query = `
         PREFIX exo: <https://exocortex.my/ontology/exo#>
         SELECT DISTINCT ?class WHERE {
-          ?targetClass exo:Asset_fileName "ems__Effort" .
+          ?targetClass exo:Asset_filename "ems__Effort" .
           ?targetClass exo:Class_superClass* ?class .
         }
       `;
@@ -287,7 +287,7 @@ describe("Class Properties Query (Issue #665)", () => {
         PREFIX exo: <https://exocortex.my/ontology/exo#>
         SELECT DISTINCT ?propertyLabel WHERE {
           ?property exo:Property_domain <${MEETING_CLASS}> .
-          ?property exo:Asset_fileName ?propertyLabel .
+          ?property exo:Asset_filename ?propertyLabel .
         }
         ORDER BY ?propertyLabel
       `;
@@ -307,10 +307,10 @@ describe("Class Properties Query (Issue #665)", () => {
       const query = `
         PREFIX exo: <https://exocortex.my/ontology/exo#>
         SELECT DISTINCT ?propertyLabel WHERE {
-          ?targetClass exo:Asset_fileName "ems__Meeting" .
+          ?targetClass exo:Asset_filename "ems__Meeting" .
           ?targetClass exo:Class_superClass* ?class .
           ?property exo:Property_domain ?class .
-          ?property exo:Asset_fileName ?propertyLabel .
+          ?property exo:Asset_filename ?propertyLabel .
         }
         ORDER BY ?propertyLabel
       `;
@@ -342,13 +342,13 @@ describe("Class Properties Query (Issue #665)", () => {
       const query = `
         PREFIX exo: <https://exocortex.my/ontology/exo#>
         SELECT DISTINCT ?propertyLabel WHERE {
-          ?targetClass exo:Asset_fileName "ems__Meeting" .
+          ?targetClass exo:Asset_filename "ems__Meeting" .
           ?targetClass exo:Class_superClass* ?class .
           ?property exo:Property_domain ?class .
-          ?property exo:Asset_fileName ?propertyLabel .
+          ?property exo:Asset_filename ?propertyLabel .
           ?property exo:Instance_class ?propClass .
           FILTER NOT EXISTS {
-            ?propClass exo:Asset_fileName "exo__DeprecatedProperty"
+            ?propClass exo:Asset_filename "exo__DeprecatedProperty"
           }
         }
         ORDER BY ?propertyLabel
@@ -382,12 +382,12 @@ describe("Class Properties Query (Issue #665)", () => {
       const query = `
         PREFIX exo: <https://exocortex.my/ontology/exo#>
         SELECT DISTINCT ?propertyLabel WHERE {
-          ?targetClass exo:Asset_fileName "ems__Meeting" .
+          ?targetClass exo:Asset_filename "ems__Meeting" .
           ?targetClass exo:Class_superClass* ?class .
           ?property exo:Property_domain ?class .
-          ?property exo:Asset_fileName ?propertyLabel .
+          ?property exo:Asset_filename ?propertyLabel .
           ?property exo:Instance_class ?propClass .
-          ?propClass exo:Asset_fileName "exo__DeprecatedProperty" .
+          ?propClass exo:Asset_filename "exo__DeprecatedProperty" .
         }
         ORDER BY ?propertyLabel
       `;
@@ -409,10 +409,10 @@ describe("Class Properties Query (Issue #665)", () => {
       const query = `
         PREFIX exo: <https://exocortex.my/ontology/exo#>
         SELECT DISTINCT ?propertyLabel WHERE {
-          ?targetClass exo:Asset_fileName "NonExistentClass" .
+          ?targetClass exo:Asset_filename "NonExistentClass" .
           ?targetClass exo:Class_superClass* ?class .
           ?property exo:Property_domain ?class .
-          ?property exo:Asset_fileName ?propertyLabel .
+          ?property exo:Asset_filename ?propertyLabel .
         }
       `;
 
@@ -430,10 +430,10 @@ describe("Class Properties Query (Issue #665)", () => {
       const query = `
         PREFIX exo: <https://exocortex.my/ontology/exo#>
         SELECT DISTINCT ?propertyLabel WHERE {
-          ?targetClass exo:Asset_fileName "EmptyClass" .
+          ?targetClass exo:Asset_filename "EmptyClass" .
           ?targetClass exo:Class_superClass* ?class .
           ?property exo:Property_domain ?class .
-          ?property exo:Asset_fileName ?propertyLabel .
+          ?property exo:Asset_filename ?propertyLabel .
         }
       `;
 
@@ -448,13 +448,13 @@ describe("Class Properties Query (Issue #665)", () => {
       const query = `
         PREFIX exo: <https://exocortex.my/ontology/exo#>
         SELECT DISTINCT ?propertyLabel WHERE {
-          ?targetClass exo:Asset_fileName "ems__Task" .
+          ?targetClass exo:Asset_filename "ems__Task" .
           ?targetClass exo:Class_superClass* ?class .
           ?property exo:Property_domain ?class .
-          ?property exo:Asset_fileName ?propertyLabel .
+          ?property exo:Asset_filename ?propertyLabel .
           ?property exo:Instance_class ?propClass .
           FILTER NOT EXISTS {
-            ?propClass exo:Asset_fileName "exo__DeprecatedProperty"
+            ?propClass exo:Asset_filename "exo__DeprecatedProperty"
           }
         }
         ORDER BY ?propertyLabel
@@ -487,13 +487,13 @@ describe("Class Properties Query (Issue #665)", () => {
       const query = `
         PREFIX exo: <https://exocortex.my/ontology/exo#>
         SELECT DISTINCT ?propertyLabel WHERE {
-          ?targetClass exo:Asset_fileName "ems__Meeting" .
+          ?targetClass exo:Asset_filename "ems__Meeting" .
           ?targetClass exo:Class_superClass* ?class .
           ?property exo:Property_domain ?class .
-          ?property exo:Asset_fileName ?propertyLabel .
+          ?property exo:Asset_filename ?propertyLabel .
           ?property exo:Instance_class ?propClass .
           FILTER NOT EXISTS {
-            ?propClass exo:Asset_fileName "exo__DeprecatedProperty"
+            ?propClass exo:Asset_filename "exo__DeprecatedProperty"
           }
         }
         ORDER BY ?propertyLabel

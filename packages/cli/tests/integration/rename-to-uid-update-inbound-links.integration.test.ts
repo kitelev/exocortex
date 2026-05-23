@@ -114,12 +114,15 @@ describe("Issue #3113: rename-to-uid updates inbound wikilinks", () => {
     expect(fs.existsSync(newTargetPath)).toBe(true);
     expect(fs.existsSync(path.join(vaultRoot, inbox))).toBe(false);
 
-    // Trigger files updated — all shapes collapse to bare [[uid]]
+    // Trigger files updated. Bare and aliased shapes collapse to [[uid]];
+    // heading-anchored shapes preserve the `#Anchor` per RFC 1ce2a226 Phase 3c.
     expect(fs.readFileSync(bare, "utf-8")).toContain(`[[${ASSET_UID}]]`);
     expect(fs.readFileSync(aliased, "utf-8")).toContain(`[[${ASSET_UID}]]`);
-    expect(fs.readFileSync(heading, "utf-8")).toContain(`[[${ASSET_UID}]]`);
+    expect(fs.readFileSync(heading, "utf-8")).toContain(
+      `[[${ASSET_UID}#Ingredients]]`,
+    );
     expect(fs.readFileSync(headingAliased, "utf-8")).toContain(
-      `[[${ASSET_UID}]]`,
+      `[[${ASSET_UID}#Ingredients]]`,
     );
 
     // Code-block contents preserved verbatim
