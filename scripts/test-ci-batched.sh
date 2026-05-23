@@ -105,10 +105,12 @@ fi
 # - RFC da3a7555 (v15.173.1 fix): integration/dynamic-commands/grounding-resolve-execute.test.ts
 #   (RDF → Resolver → Executor pipeline regression — wikilink unwrap, targetClass IRI reverse-map,
 #   copy-from-target ≥3 fields)
+# - RFC v2 Phase 3b (Issue #3163): integration/dynamic-commands/grounding-phase3b-pipeline.test.ts
+#   (CommandResolver → GroundingExecutor 5-step precedence pipeline end-to-end)
 echo "📦 Running exocortex grounding + RFC regression tests..."
 # RFC 1ce2a226 Phase 3 (asset-filename): NoteToRDFConverter.asset-filename
 #   acceptance suite (single-file emit, idempotency, rename overwrite).
-EXOCORTEX_JEST_ARGS="--config packages/exocortex/jest.config.js --testPathPatterns=(services/(GroundingExecutor|AssetConversionService|NoteToRDFConverter\.(issue-2959|rfc-31c1a0be-grounding-ref|asset-filename)|ShapeRegistry|ShapeLoader)\.test|application/services/RelationColumnSetResolver(\.property)?\.test|performance/RelationColumnSetResolverPerformance\.test|infrastructure/sparql/executors/BGPExecutor\.issue-2997\.test|integration/dynamic-commands/grounding-resolve-execute\.test)\.ts --forceExit"
+EXOCORTEX_JEST_ARGS="--config packages/exocortex/jest.config.js --testPathPatterns=(services/(GroundingExecutor|AssetConversionService|NoteToRDFConverter\.(issue-2959|rfc-31c1a0be-grounding-ref|asset-filename)|ShapeRegistry|ShapeLoader)\.test|application/services/RelationColumnSetResolver(\.property)?\.test|performance/RelationColumnSetResolverPerformance\.test|infrastructure/sparql/executors/BGPExecutor\.issue-2997\.test|integration/dynamic-commands/(grounding-resolve-execute|grounding-phase3b-pipeline)\.test)\.ts --forceExit"
 if [ "$CI" = "true" ]; then
     if timeout 60 node ./node_modules/jest/bin/jest.js $EXOCORTEX_JEST_ARGS; then
         echo "✅ Exocortex grounding regression tests passed!"
