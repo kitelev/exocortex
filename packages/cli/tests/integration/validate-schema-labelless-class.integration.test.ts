@@ -3,30 +3,35 @@
  *
  * Scenario reproduced from vault-2025 baseline (2026-05-23):
  *
- *   2026.md  (typed as period__Year)
- *     ↓ exo__Instance_class
+ *   year-2026.md  (typed as period__Year)
+ *     ↓ exo__Instance_class [[<period__Year-uuid>]]
  *   period__Year  (UUID-named, NO exo__Asset_label, only exo__Class_superClass)
- *     ↓ exo__Class_superClass
+ *     ↓ exo__Class_superClass [[<period__Period-uuid>]]
  *   period__Period  (UUID-named, has exo__Asset_label = "period__Period")
- *     ↓ exo__Class_superClass
- *   exo__Asset  (has exo__Asset_label = "exo__Asset")
+ *     ↓ exo__Class_superClass [[<exo__Asset-uuid>]]
+ *   exo__Asset  (UUID-named, has exo__Asset_label = "exo__Asset")
  *
- *   asset-X.md  (has exo__Asset_relates: [[2026-uid]])
+ *   reference.md  (has exo__Asset_relates: [[year-2026-uuid]])
  *
- * Shape: exo__Asset_relates with range exo__Asset.
+ * Shape: exo__Asset_relates with range exo__Asset (Property_range as UUID
+ * wikilink to the canonical exo__Asset class file).
  *
- * Pre-fix: 2026's exo__Instance_class triple was emitted as Literal because
- * `valueToClassURI` could not derive an ontology IRI from the UUID-named
- * label-less class file. ShaclLiteValidator skipped the Literal type triple
- * (only IRI processed at L182), leaving 2026 apparently classless. The
- * `exo__Asset_relates` shape on asset-X then fired with a false sh:class
- * violation against exo__Asset.
+ * All class files are UUID-named (RFC-004 UUID-canon) so wikilinks resolve via
+ * FileSystemVaultAdapter.buildUuidIndex.
  *
- * Post-fix: `valueToClassURI` falls back to the file IRI when no class IRI
- * can be derived. TripleClassHierarchy traverses
- * <year-file> → <period-file> → <asset-file> (the last labeled, identity-
- * mapped to https://exocortex.my/ontology/exo#Asset). isSubClassOf reaches
- * exo__Asset via the file-IRI chain. No violation.
+ * Pre-fix: year-2026's exo__Instance_class triple was emitted as Literal
+ * because `valueToClassURI` could not derive an ontology IRI from the
+ * UUID-named label-less period__Year class file. ShaclLiteValidator skipped
+ * the Literal type triple (only IRI processed at L182), leaving year-2026
+ * apparently classless. The exo__Asset_relates shape on reference.md then
+ * fired with a false sh:class violation against exo__Asset.
+ *
+ * Post-fix: `valueToClassURI` falls back to the resolved file IRI when no
+ * class IRI can be derived. TripleClassHierarchy traverses
+ *   <year-file> → <period-file> → <asset-file>
+ * via `exo__Class_superClass` triples; <asset-file> is identity-mapped to
+ * https://exocortex.my/ontology/exo#Asset (its label resolves). isSubClassOf
+ * reaches exo__Asset via the file-IRI chain. No violation.
  */
 import {
   describe,
@@ -52,91 +57,112 @@ const { FileSystemVaultAdapter } = await import(
   "../../src/adapters/FileSystemVaultAdapter.js"
 );
 
+const EXO_ASSET_UID = "11111111-0000-0000-0000-000000000000";
+const PERIOD_PERIOD_UID = "22222222-2222-2222-2222-222222222222";
+const PERIOD_YEAR_UID = "33333333-3333-3333-3333-333333333333";
+const YEAR_2026_UID = "44444444-4444-4444-4444-444444444444";
+const REFERENCE_UID = "55555555-5555-5555-5555-555555555555";
+const RELATES_SHAPE_UID = "66666666-6666-6666-6666-666666666666";
+
 let fixtureDir: string;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let violations: any[];
-let conforms: boolean;
 
 beforeAll(async () => {
   fixtureDir = fs.mkdtempSync(
     path.join(os.tmpdir(), "exocortex-issue-3242-"),
   );
 
-  // exo__Asset class definition (labeled — anchors the chain)
+  // exo__Asset class definition — UUID-named, labeled (anchors the chain).
+  // All class files require exo__Instance_class to pass validateExocortexAsset;
+  // we use the canonical "[[exo__Class]]" form which Namespace.fromPropertyKey
+  // recognises without needing a separate exo__Class file in the fixture.
   fs.mkdirSync(path.join(fixtureDir, "exo"), { recursive: true });
   fs.writeFileSync(
-    path.join(fixtureDir, "exo/exo__Asset.md"),
+    path.join(fixtureDir, `exo/${EXO_ASSET_UID}.md`),
     `---
-exo__Asset_uid: 11111111-0000-0000-0000-000000000000
+exo__Asset_uid: ${EXO_ASSET_UID}
 exo__Asset_label: exo__Asset
+exo__Instance_class:
+  - "[[exo__Class]]"
 ---
 `,
   );
 
-  // period__Period class definition (labeled)
+  // period__Period class definition — UUID-named, labeled
   fs.mkdirSync(path.join(fixtureDir, "period"), { recursive: true });
   fs.writeFileSync(
-    path.join(fixtureDir, "period/22222222-2222-2222-2222-222222222222.md"),
+    path.join(fixtureDir, `period/${PERIOD_PERIOD_UID}.md`),
     `---
-exo__Asset_uid: 22222222-2222-2222-2222-222222222222
+exo__Asset_uid: ${PERIOD_PERIOD_UID}
 exo__Asset_label: period__Period
+exo__Instance_class:
+  - "[[exo__Class]]"
 exo__Class_superClass:
-  - "[[11111111-0000-0000-0000-000000000000]]"
+  - "[[${EXO_ASSET_UID}]]"
 ---
 `,
   );
 
-  // period__Year class definition (NO label — root cause)
+  // period__Year class definition — UUID-named, NO LABEL (root cause of bug)
   fs.writeFileSync(
-    path.join(fixtureDir, "period/33333333-3333-3333-3333-333333333333.md"),
+    path.join(fixtureDir, `period/${PERIOD_YEAR_UID}.md`),
     `---
-exo__Asset_uid: 33333333-3333-3333-3333-333333333333
+exo__Asset_uid: ${PERIOD_YEAR_UID}
+exo__Instance_class:
+  - "[[exo__Class]]"
 exo__Class_superClass:
-  - "[[22222222-2222-2222-2222-222222222222]]"
+  - "[[${PERIOD_PERIOD_UID}]]"
 ---
 `,
   );
 
-  // The 2026-instance: typed as period__Year (label-less class)
+  // year-2026 instance — typed as period__Year (label-less class)
   fs.writeFileSync(
-    path.join(fixtureDir, "year-2026.md"),
+    path.join(fixtureDir, `${YEAR_2026_UID}.md`),
     `---
-exo__Asset_uid: 44444444-4444-4444-4444-444444444444
+exo__Asset_uid: ${YEAR_2026_UID}
 exo__Asset_label: "2026"
 exo__Instance_class:
-  - "[[33333333-3333-3333-3333-333333333333]]"
+  - "[[${PERIOD_YEAR_UID}]]"
 ---
 `,
   );
 
-  // Reference asset: relates to 2026 — this is the focus node that emitted
-  // false sh:class violations pre-fix.
+  // reference asset — typed as exo__Asset, related to year-2026.
+  // The shape exo__Asset_relates (domain=exo__Asset, range=exo__Asset) applies
+  // to this asset; pre-fix the range check against year-2026 produced a
+  // false sh:class violation.
   fs.writeFileSync(
-    path.join(fixtureDir, "reference.md"),
+    path.join(fixtureDir, `${REFERENCE_UID}.md`),
     `---
-exo__Asset_uid: 55555555-5555-5555-5555-555555555555
+exo__Asset_uid: ${REFERENCE_UID}
 exo__Asset_label: reference
 exo__Instance_class:
-  - "[[11111111-0000-0000-0000-000000000000]]"
+  - "[[${EXO_ASSET_UID}]]"
 exo__Asset_relates:
-  - "[[44444444-4444-4444-4444-444444444444]]"
+  - "[[${YEAR_2026_UID}]]"
 ---
 `,
   );
 
-  // Shape: exo__Asset_relates with range exo__Asset.
+  // Shape: exo__Asset_relates, domain=exo__Asset, range=exo__Asset.
+  // Uses canonical [[exo__Property]] for Instance_class (recognised by
+  // Namespace.fromPropertyKey) so ShapeLoader registers the shape. domain
+  // and range use UUID wikilinks to the canonical UUID-named exo__Asset class
+  // file; ShapeLoader.resolveClassIRI resolves them via rdfs:label lookup.
   fs.mkdirSync(path.join(fixtureDir, "shapes"), { recursive: true });
   fs.writeFileSync(
     path.join(fixtureDir, "shapes/exo__Asset_relates.md"),
     `---
-exo__Asset_uid: 66666666-6666-6666-6666-666666666666
+exo__Asset_uid: ${RELATES_SHAPE_UID}
 exo__Asset_label: exo__Asset_relates
 exo__Instance_class:
-  - "[[https://exocortex.my/ontology/exo#Property]]"
+  - "[[exo__Property]]"
 exo__Property_domain:
-  - "[[11111111-0000-0000-0000-000000000000]]"
+  - "[[${EXO_ASSET_UID}]]"
 exo__Property_range:
-  - "[[11111111-0000-0000-0000-000000000000]]"
+  - "[[${EXO_ASSET_UID}]]"
 ---
 `,
   );
@@ -147,7 +173,6 @@ exo__Property_range:
   const triples = (await converter.convertVault()) as any[];
   const report = await runShapesValidation(fixtureDir, triples);
   violations = report.violations;
-  conforms = report.conforms;
 });
 
 afterAll(() => {
@@ -157,7 +182,7 @@ afterAll(() => {
 });
 
 describe("Issue #3242 integration: label-less class chain", () => {
-  it("does not emit sh:class violation against exo__Asset for asset typed via label-less class", () => {
+  it("does not emit sh:class violation against exo__Asset on exo__Asset_relates path", () => {
     const falsePositives = violations.filter(
       (v) =>
         v.propertyPath ===
@@ -166,20 +191,17 @@ describe("Issue #3242 integration: label-less class chain", () => {
           "expected class https://exocortex.my/ontology/exo#Asset",
         ),
     );
-
     expect(falsePositives).toEqual([]);
   });
 
-  it("validator conforms or the only violations are unrelated to the label-less chain", () => {
-    // We don't require zero global violations (shape registry may flag other
-    // properties on the synthetic fixtures), but the regression-specific
-    // sh:class -> exo__Asset path must be clean.
+  it("does not emit any violation on exo__Asset_relates path for reference focus", () => {
+    const referenceIRI = `obsidian://vault/${REFERENCE_UID}.md`;
     const relatesViolations = violations.filter(
       (v) =>
         v.propertyPath ===
-        "https://exocortex.my/ontology/exo#Asset_relates",
+          "https://exocortex.my/ontology/exo#Asset_relates" &&
+        v.focusNode === referenceIRI,
     );
     expect(relatesViolations).toEqual([]);
-    void conforms;
   });
 });

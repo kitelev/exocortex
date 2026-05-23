@@ -1004,7 +1004,13 @@ describe("NoteToRDFConverter", () => {
 
         mockVault.getFrontmatter.mockImplementation((f: IFile) => {
           if (f.path === file.path) return frontmatter;
-          if (f.path === classDefFile.path) return { exo__Class_description: "Some class" };
+          if (f.path === classDefFile.path) return {
+            exo__Class_description: "Some class",
+            // Class_superClass mirrors the real-world chain — the file-IRI
+            // fall-back exists so TripleClassHierarchy can still walk this
+            // superclass edge to a labeled ancestor.
+            exo__Class_superClass: ["[[exo__Asset]]"],
+          };
           return null;
         });
 
