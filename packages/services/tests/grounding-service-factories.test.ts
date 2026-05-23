@@ -1,6 +1,7 @@
 import { describe, it, expect } from "@jest/globals";
 import { FrontmatterService } from "../../exocortex/src/utilities/FrontmatterService";
 import {
+  createCreateAssetService,
   createCreateRelatedTaskService,
   createCreateRelatedProjectService,
   createArchiveAssetService,
@@ -344,6 +345,381 @@ describe("@kitelev/exocortex-services — factory contract", () => {
       await expect(service.execute("iri", {})).rejects.toThrow(
         /requires userInput.statusUID/,
       );
+    });
+  });
+
+  describe("createCreateAssetService (Phase 3.5, #3164)", () => {
+    /**
+     * Parity tests for the shared `createAsset` factory. The plugin's inlined
+     * handler (`ServiceRegistryPopulator.ts:126-275`) writes frontmatter as an
+     * ordered string array; this factory mirrors that format one-for-one so
+     * CLI invocations of `service_call createAsset` produce byte-identical
+     * frontmatter to plugin invocations of the same grounding.
+     *
+     * Assertions hit each branch that previously diverged between CLI (no-op
+     * stub) and plugin (inlined logic): label/prototype validation, folder
+     * inference from parent path, prototype-suffix stripping, area-vs-parent
+     * detection via classResolver, `exo__Asset_isDefinedBy` precedence chain
+     * (explicit > inherited > ownerIdentity).
+     */
+
+    interface RecordedWrite {
+      path: string;
+      content: string;
+    }
+
+    function makeFsWriter(): {
+      writes: RecordedWrite[];
+      adapter: never;
+    } {
+      const writes: RecordedWrite[] = [];
+      const adapter = {
+        async createFile(path: string, content: string): Promise<string> {
+          writes.push({ path, content });
+          return path;
+        },
+        async updateFile(): Promise<void> {},
+        async writeFile(): Promise<void> {},
+        async deleteFile(): Promise<void> {},
+        async renameFile(): Promise<void> {},
+      } as never;
+      return { writes, adapter };
+    }
+
+    interface ParentFixture {
+      path: string;
+      basename: string;
+      frontmatter: Record<string, unknown>;
+    }
+
+    function makeVaultAdapter(
+      parent: ParentFixture | null,
+    ): { calls: { iri?: string }; adapter: never } {
+      const calls: { iri?: string } = {};
+      const adapter = {
+        getAbstractFileByPath: (path: string) => {
+          calls.iri = path;
+          if (!parent) return null;
+          // Mimic `IFile` shape — basename/path/parent fields are read by the
+          // plugin-parity logic below.
+          return {
+            path: parent.path,
+            basename: parent.basename,
+            name: `${parent.basename}.md`,
+            parent: { path: parent.path.includes("/") ? parent.path.substring(0, parent.path.lastIndexOf("/")) : "" },
+          } as never;
+        },
+        getFrontmatter: () => (parent ? parent.frontmatter : null),
+      } as never;
+      return { calls, adapter };
+    }
+
+    function extractFrontmatter(content: string): Record<string, string> {
+      // Naive parse — only used inside tests against output we control.
+      const out: Record<string, string> = {};
+      const fm = content.match(/^---\n([\s\S]*?)\n---/);
+      if (!fm) return out;
+      for (const line of fm[1].split("\n")) {
+        const idx = line.indexOf(":");
+        if (idx < 0) continue;
+        const key = line.substring(0, idx).trim();
+        const val = line.substring(idx + 1).trim();
+        if (key && val) out[key] = val;
+      }
+      return out;
+    }
+
+    it("rejects when prototypeUID is missing", async () => {
+      const fs = makeFsWriter();
+      const vault = makeVaultAdapter(null);
+      const service = createCreateAssetService(vault.adapter, fs.adapter);
+      await expect(
+        service.execute("any-iri", { label: "x" }),
+      ).rejects.toThrow(/createAsset requires userInput.prototypeUID/);
+    });
+
+    it("rejects when label is missing", async () => {
+      const fs = makeFsWriter();
+      const vault = makeVaultAdapter(null);
+      const service = createCreateAssetService(vault.adapter, fs.adapter);
+      await expect(
+        service.execute("any-iri", { prototypeUID: "ems__TaskPrototype" }),
+      ).rejects.toThrow(/createAsset requires userInput.label/);
+    });
+
+    it("strips `Prototype` suffix to derive exo__Instance_class", async () => {
+      const fs = makeFsWriter();
+      const vault = makeVaultAdapter(null);
+      const service = createCreateAssetService(vault.adapter, fs.adapter);
+      await service.execute("", {
+        prototypeUID: "ems__TaskPrototype",
+        label: "Strip Test",
+        folder: "Inbox",
+      });
+      expect(fs.writes).toHaveLength(1);
+      expect(fs.writes[0].content).toMatch(/exo__Instance_class:\n {2}- "\[\[ems__Task\]\]"/);
+      expect(fs.writes[0].content).toMatch(/exo__Asset_prototype: "\[\[ems__TaskPrototype\]\]"/);
+    });
+
+    it("keeps prototypeUID verbatim when no Prototype suffix", async () => {
+      const fs = makeFsWriter();
+      const vault = makeVaultAdapter(null);
+      const service = createCreateAssetService(vault.adapter, fs.adapter);
+      await service.execute("", {
+        prototypeUID: "ems__Task",
+        label: "Verbatim",
+        folder: "Inbox",
+      });
+      expect(fs.writes[0].content).toMatch(/exo__Asset_prototype: "\[\[ems__Task\]\]"/);
+      expect(fs.writes[0].content).toMatch(/- "\[\[ems__Task\]\]"/);
+    });
+
+    it("accepts legacy `prototype` key as alias for prototypeUID", async () => {
+      const fs = makeFsWriter();
+      const vault = makeVaultAdapter(null);
+      const service = createCreateAssetService(vault.adapter, fs.adapter);
+      await service.execute("", {
+        prototype: "ems__TaskPrototype",
+        label: "Legacy alias",
+        folder: "Inbox",
+      });
+      expect(fs.writes[0].content).toMatch(/exo__Asset_prototype: "\[\[ems__TaskPrototype\]\]"/);
+    });
+
+    it("inherits ems__Effort_area from ems__Area parent (symbolic refs)", async () => {
+      const fs = makeFsWriter();
+      const vault = makeVaultAdapter({
+        path: "Areas/Area1.md",
+        basename: "Area1",
+        frontmatter: {
+          exo__Instance_class: ["[[ems__Area]]"],
+        },
+      });
+      const service = createCreateAssetService(vault.adapter, fs.adapter);
+      await service.execute("Areas/Area1", {
+        prototypeUID: "ems__TaskPrototype",
+        label: "Task from Area",
+      });
+      expect(fs.writes).toHaveLength(1);
+      const content = fs.writes[0].content;
+      expect(content).toMatch(/ems__Effort_area: "\[\[Area1\]\]"/);
+      expect(content).not.toMatch(/ems__Effort_parent:/);
+      expect(content).toMatch(/ems__Effort_status: "\[\[ems__EffortStatusBacklog\]\]"/);
+    });
+
+    it("inherits ems__Effort_parent when parent is not ems__Area", async () => {
+      const fs = makeFsWriter();
+      const vault = makeVaultAdapter({
+        path: "Projects/Project1.md",
+        basename: "Project1",
+        frontmatter: {
+          exo__Instance_class: ["[[ems__Project]]"],
+        },
+      });
+      const service = createCreateAssetService(vault.adapter, fs.adapter);
+      await service.execute("Projects/Project1", {
+        prototypeUID: "ems__TaskPrototype",
+        label: "Subtask",
+      });
+      const content = fs.writes[0].content;
+      expect(content).toMatch(/ems__Effort_parent: "\[\[Project1\]\]"/);
+      expect(content).not.toMatch(/ems__Effort_area: "\[\[Project1\]\]"/);
+    });
+
+    it("forwards ems__Effort_area from non-Area parent (e.g. Project under Area)", async () => {
+      const fs = makeFsWriter();
+      const vault = makeVaultAdapter({
+        path: "Projects/Project1.md",
+        basename: "Project1",
+        frontmatter: {
+          exo__Instance_class: ["[[ems__Project]]"],
+          ems__Effort_area: "[[Area1]]",
+        },
+      });
+      const service = createCreateAssetService(vault.adapter, fs.adapter);
+      await service.execute("Projects/Project1", {
+        prototypeUID: "ems__TaskPrototype",
+        label: "Sub",
+      });
+      const content = fs.writes[0].content;
+      expect(content).toMatch(/ems__Effort_parent: "\[\[Project1\]\]"/);
+      expect(content).toMatch(/ems__Effort_area: "\[\[Area1\]\]"/);
+    });
+
+    it("defaults folder from parent path when userInput.folder absent", async () => {
+      const fs = makeFsWriter();
+      const vault = makeVaultAdapter({
+        path: "Areas/Sub/Area1.md",
+        basename: "Area1",
+        frontmatter: { exo__Instance_class: ["[[ems__Area]]"] },
+      });
+      const service = createCreateAssetService(vault.adapter, fs.adapter);
+      await service.execute("Areas/Sub/Area1", {
+        prototypeUID: "ems__TaskPrototype",
+        label: "Inherits folder",
+      });
+      expect(fs.writes[0].path.startsWith("Areas/Sub/")).toBe(true);
+      expect(fs.writes[0].path.endsWith(".md")).toBe(true);
+    });
+
+    it("respects explicit userInput.folder over inferred folder", async () => {
+      const fs = makeFsWriter();
+      const vault = makeVaultAdapter({
+        path: "Areas/Area1.md",
+        basename: "Area1",
+        frontmatter: { exo__Instance_class: ["[[ems__Area]]"] },
+      });
+      const service = createCreateAssetService(vault.adapter, fs.adapter);
+      await service.execute("Areas/Area1", {
+        prototypeUID: "ems__TaskPrototype",
+        label: "Override",
+        folder: "CustomFolder",
+      });
+      expect(fs.writes[0].path.startsWith("CustomFolder/")).toBe(true);
+    });
+
+    it("isDefinedBy precedence: explicit > inherited > ownerIdentity", async () => {
+      // Case 1: explicit wins (parent inherited + ownerIdentity present)
+      {
+        const fs = makeFsWriter();
+        const vault = makeVaultAdapter({
+          path: "Areas/A.md",
+          basename: "A",
+          frontmatter: {
+            exo__Instance_class: ["[[ems__Area]]"],
+            exo__Asset_isDefinedBy: "[[InheritedOwner]]",
+          },
+        });
+        const service = createCreateAssetService(vault.adapter, fs.adapter);
+        await service.execute("Areas/A", {
+          prototypeUID: "ems__TaskPrototype",
+          label: "Case1",
+          isDefinedBy: "[[ExplicitOwner]]",
+          ownerIdentity: "[[FallbackOwner]]",
+        });
+        const fm = extractFrontmatter(fs.writes[0].content);
+        expect(fm.exo__Asset_isDefinedBy).toBe('"[[ExplicitOwner]]"');
+      }
+
+      // Case 2: parent-inherited wins over ownerIdentity (no explicit)
+      {
+        const fs = makeFsWriter();
+        const vault = makeVaultAdapter({
+          path: "Areas/A.md",
+          basename: "A",
+          frontmatter: {
+            exo__Instance_class: ["[[ems__Area]]"],
+            exo__Asset_isDefinedBy: "[[InheritedOwner]]",
+          },
+        });
+        const service = createCreateAssetService(vault.adapter, fs.adapter);
+        await service.execute("Areas/A", {
+          prototypeUID: "ems__TaskPrototype",
+          label: "Case2",
+          ownerIdentity: "[[FallbackOwner]]",
+        });
+        const fm = extractFrontmatter(fs.writes[0].content);
+        expect(fm.exo__Asset_isDefinedBy).toBe('"[[InheritedOwner]]"');
+      }
+
+      // Case 3: ownerIdentity wins when no explicit and no parent-inherited
+      {
+        const fs = makeFsWriter();
+        const vault = makeVaultAdapter(null);
+        const service = createCreateAssetService(vault.adapter, fs.adapter);
+        await service.execute("", {
+          prototypeUID: "ems__TaskPrototype",
+          label: "Case3",
+          folder: "Inbox",
+          ownerIdentity: "[[FallbackOwner]]",
+        });
+        const fm = extractFrontmatter(fs.writes[0].content);
+        expect(fm.exo__Asset_isDefinedBy).toBe('"[[FallbackOwner]]"');
+      }
+    });
+
+    it("writes exo__Asset_uid, createdAt, label, prototype, instance_class always", async () => {
+      const fs = makeFsWriter();
+      const vault = makeVaultAdapter(null);
+      const service = createCreateAssetService(vault.adapter, fs.adapter);
+      await service.execute("", {
+        prototypeUID: "ems__TaskPrototype",
+        label: "Required Fields",
+        folder: "Inbox",
+      });
+      const content = fs.writes[0].content;
+      expect(content).toMatch(
+        /^---\nexo__Asset_uid: [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\n/,
+      );
+      expect(content).toMatch(/exo__Asset_createdAt: \d{4}-\d{2}-\d{2}T/);
+      expect(content).toMatch(/exo__Asset_label: Required Fields/);
+    });
+
+    it("filename uses generated UUID with .md suffix", async () => {
+      const fs = makeFsWriter();
+      const vault = makeVaultAdapter(null);
+      const service = createCreateAssetService(vault.adapter, fs.adapter);
+      await service.execute("", {
+        prototypeUID: "ems__TaskPrototype",
+        label: "Filename Test",
+        folder: "Inbox",
+      });
+      expect(fs.writes[0].path).toMatch(
+        /^Inbox\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.md$/,
+      );
+    });
+
+    it("Area detection works through UID-canon refs via classResolver", async () => {
+      // Vault state post UID-canon: `exo__Instance_class: ["[[<uuid>]]"]`. The
+      // resolver maps that UUID to symbolic label `ems__Area`, allowing the
+      // factory to detect the Area parent even though the literal frontmatter
+      // value is a UUID. Mirrors plugin's `createMetadataClassResolver`
+      // (Obsidian metadataCache).
+      const fs = makeFsWriter();
+      const vault = makeVaultAdapter({
+        path: "Areas/Area1.md",
+        basename: "Area1",
+        frontmatter: {
+          exo__Instance_class: ["[[82c74542-1b14-4217-b852-d84730484b25]]"],
+        },
+      });
+      const resolver = (uuid: string) =>
+        uuid === "82c74542-1b14-4217-b852-d84730484b25"
+          ? "ems__Area"
+          : null;
+      const service = createCreateAssetService(
+        vault.adapter,
+        fs.adapter,
+        resolver,
+      );
+      await service.execute("Areas/Area1", {
+        prototypeUID: "ems__TaskPrototype",
+        label: "UID-canon Task",
+      });
+      const content = fs.writes[0].content;
+      expect(content).toMatch(/ems__Effort_area: "\[\[Area1\]\]"/);
+    });
+
+    it("falls back to ems__Effort_parent when classResolver returns null", async () => {
+      // Same shape as the UID-canon test above, but the resolver returns null
+      // (resource not in cache). The factory should NOT detect Area, falling
+      // back to the generic parent-relation property.
+      const fs = makeFsWriter();
+      const vault = makeVaultAdapter({
+        path: "Anywhere/Foo.md",
+        basename: "Foo",
+        frontmatter: {
+          exo__Instance_class: ["[[unknown-uuid-1234-5678-90ab-cdef12345678]]"],
+        },
+      });
+      const service = createCreateAssetService(vault.adapter, fs.adapter);
+      await service.execute("Anywhere/Foo", {
+        prototypeUID: "ems__TaskPrototype",
+        label: "Unknown parent class",
+      });
+      const content = fs.writes[0].content;
+      expect(content).toMatch(/ems__Effort_parent: "\[\[Foo\]\]"/);
+      expect(content).not.toMatch(/ems__Effort_area: "\[\[Foo\]\]"/);
     });
   });
 });

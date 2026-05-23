@@ -23,10 +23,15 @@ const KNOWN_REAL_SERVICE_IDS = new Set([
   "updateProperty",
   "removeProperty",
   "setStatus",
+  // Phase 3.5 (Issue #3164, 2026-05-23): createAsset ported from CLI stub to
+  // real handler via shared `createCreateAssetService` factory
+  // (@kitelev/exocortex-services). Mirrors the plugin's inlined handler
+  // one-for-one; Phase 4b will remove both implementations once vault
+  // Groundings migrate from service_call to create_instance type.
+  "createAsset",
 ]);
 
 const KNOWN_STUB_SERVICE_IDS = new Set([
-  "createAsset",
   "openFile",
   "sparqlSelect",
   "getActiveFileIRI",
