@@ -14,7 +14,7 @@ import {
   cleanupFixtureRoot,
   makeFixtureRoot,
   uuidFromSeed,
-} from "../../integration/starter-kit/test-helpers/fixture-factory.js";
+} from "../../integration/commands/test-helpers/fixture-factory.js";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;

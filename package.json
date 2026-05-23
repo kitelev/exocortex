@@ -5,7 +5,8 @@
   "main": "main.js",
   "workspaces": [
     "packages/*",
-    "!packages/starter-kit-fixtures"
+    "!packages/exoas-exo",
+    "!packages/exoas-exocmd"
   ],
   "engines": {
     "node": ">=18.0.0"

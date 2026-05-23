@@ -243,13 +243,13 @@ flowchart TB
 
 ### Packages
 
-| Package                        | npm                      | Purpose                                                                     |
-| ------------------------------ | ------------------------ | --------------------------------------------------------------------------- |
-| **exocortex**                  | Private                  | Core business logic, domain models, SPARQL engine, 35+ services             |
-| **@exocortex/obsidian-plugin** | Private                  | Interactive UI: 24+ components, 3 renderers, 33+ commands, 6 modals         |
-| **@kitelev/exocortex-cli**     | `@kitelev/exocortex-cli` | CLI for automation, archive/unarchive, SPARQL queries, AI agent integration |
-| **@kitelev/exocortex-services** | Private                 | Shared runtime-agnostic grounding-service factories (RFC 94e520da Phase 1)  |
-| **@exocortex/test-utils**      | Private                  | Shared test utilities, mock factories, flaky test reporter                  |
+| Package                         | npm                      | Purpose                                                                     |
+| ------------------------------- | ------------------------ | --------------------------------------------------------------------------- |
+| **exocortex**                   | Private                  | Core business logic, domain models, SPARQL engine, 35+ services             |
+| **@exocortex/obsidian-plugin**  | Private                  | Interactive UI: 24+ components, 3 renderers, 33+ commands, 6 modals         |
+| **@kitelev/exocortex-cli**      | `@kitelev/exocortex-cli` | CLI for automation, archive/unarchive, SPARQL queries, AI agent integration |
+| **@kitelev/exocortex-services** | Private                  | Shared runtime-agnostic grounding-service factories (RFC 94e520da Phase 1)  |
+| **@exocortex/test-utils**       | Private                  | Shared test utilities, mock factories, flaky test reporter                  |
 
 ### Technical Standards
 
@@ -317,7 +317,7 @@ npm run build
 npm run test:all
 ```
 
-The `git submodule update --init --recursive` step hydrates `packages/starter-kit-fixtures`, which mirrors the [`exocortex-starter-kit`](https://github.com/kitelev/exocortex-starter-kit) repo and is consumed by unit and E2E tests. If you forget it, tests that read fixture Commands will fail with ENOENT. See [docs/fixture-access.md](./docs/fixture-access.md) for the rationale and fallback plan.
+The `git submodule update --init --recursive` step hydrates `packages/exoas-exo` and `packages/exoas-exocmd` — the TBox ontology + `exocmd__Command` fixture submodules consumed by CLI helpers. If you forget it, tests that read fixture Commands via `loadCommandCatalog()` default path will fail with ENOENT. Both submodules are public; no auth token required.
 
 This project is developed primarily by AI agents (Claude Code, GitHub Copilot) following documented patterns. Human contributions welcome!
 

@@ -1,5 +1,12 @@
 # Starter-Kit Fixture Access
 
+> **SUPERSEDED (2026-05-23):** The `starter-kit-fixtures` submodule was retired in PR #3239. Two new submodules took its place:
+>
+> - `packages/exoas-exo` — TBox ontology (https://github.com/kitelev/exoas-exo)
+> - `packages/exoas-exocmd` — `exocmd__Command` fixtures (https://github.com/kitelev/exoas-exocmd)
+>
+> Both are PUBLIC; `git submodule update --init --recursive` works without auth. Helpers in `packages/cli/tests/integration/commands/test-helpers/` default to `<repo>/packages/exoas-exocmd`. The rest of this document describes the retired architecture and is preserved only for historical context.
+
 Strategy for exposing `exocortex-starter-kit` assets (ontology files, user journeys, Commands) to tests in this repo.
 
 ## Current strategy: git submodule (Phase 1 pilot, RFC §3.4)

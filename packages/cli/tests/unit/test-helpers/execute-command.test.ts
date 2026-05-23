@@ -16,8 +16,8 @@ import {
   NodeFileSystemWriter,
   executeCommandHarness,
   toGroundingDefinition,
-} from "../../integration/starter-kit/test-helpers/execute-command.js";
-import type { GroundingData } from "../../integration/starter-kit/test-helpers/extract-target-class.js";
+} from "../../integration/commands/test-helpers/execute-command.js";
+import type { GroundingData } from "../../integration/commands/test-helpers/extract-target-class.js";
 
 // ---------------------------------------------------------------------------
 // toGroundingDefinition

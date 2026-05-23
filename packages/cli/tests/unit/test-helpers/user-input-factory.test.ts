@@ -15,7 +15,7 @@ import {
   classifyField,
   parseInputSchemaFromGroundingRaw,
   synthesiseFieldValue,
-} from "../../integration/starter-kit/test-helpers/user-input-factory.js";
+} from "../../integration/commands/test-helpers/user-input-factory.js";
 
 // ---------------------------------------------------------------------------
 // classifyField — five conceptual field types

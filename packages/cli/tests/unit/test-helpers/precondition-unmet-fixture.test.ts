@@ -4,7 +4,7 @@
  *
  * RFC v4 §12 PR-readiness gate: every helper under
  * `tests/integration/**\/test-helpers/` MUST have a matching unit test. This
- * pair covers `tests/integration/starter-kit/test-helpers/precondition-unmet-fixture.ts`.
+ * pair covers `tests/integration/commands/test-helpers/precondition-unmet-fixture.ts`.
  *
  * Strategy: drive the classifier with the *literal SPARQL bodies* observed in
  * the 23 active-command preconditions in the starter-kit submodule, plus a
@@ -17,7 +17,7 @@ import { describe, it, expect } from "@jest/globals";
 import {
   classifyPreconditionUnmet,
   expandToken,
-} from "../../integration/starter-kit/test-helpers/precondition-unmet-fixture.js";
+} from "../../integration/commands/test-helpers/precondition-unmet-fixture.js";
 
 // ---------------------------------------------------------------------------
 // expandToken — prefix expansion primitive

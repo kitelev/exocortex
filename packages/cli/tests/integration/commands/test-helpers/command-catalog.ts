@@ -25,12 +25,6 @@
  *     that themselves declare `exo__Instance_class: [[8619c4fc-...]]`
  *     (the `exo__Class` meta-class UUID). Used to resolve legacy label
  *     wikilinks to their UUID.
- *
- * Phase 1 is the first helper shipped under this convention. RFC v4 §12
- * gate requires a matching unit test at
- * `tests/unit/test-helpers/command-catalog.test.ts` and an inline
- * integration guard at
- * `tests/integration/starter-kit/test-helpers/command-catalog.self.test.ts`.
  */
 import * as fs from "fs";
 import * as path from "path";
@@ -45,16 +39,16 @@ export const EXOCMD_COMMAND_CLASS_UUID =
 export const EXO_CLASS_META_UUID = "8619c4fc-64f1-4869-b17e-e34186cacca9";
 
 /**
- * Phase 2 stopgap filter (RFC v4 §4.0). The starter-kit has 44 `exocmd__Command`
- * instances, of which 3 criticality commands are UI-broken pending the UX-RFC
- * zone migration (P0-2). Until `exocmd__Command_state` lands in the starter-kit
- * ontology, we hardcode the broken set so the parametrized integration suite
- * can filter to 41 active commands without running against known-red fixtures.
+ * Phase 2 stopgap filter (RFC v4 §4.0). 3 criticality commands are UI-broken
+ * pending the UX-RFC zone migration (P0-2). Until `exocmd__Command_state` lands
+ * in the fixture ontology, we hardcode the broken set so callers of
+ * `loadActiveCommandCatalog()` can filter to active commands without running
+ * against known-red fixtures.
  *
- * Dropping any UUID from this set must be accompanied by the corresponding
- * starter-kit cleanup; the integration self-test asserts each UUID is still
- * present in the raw catalog so a rename surfaces as a test failure rather
- * than a silent filter drift.
+ * Note: there is currently no integration test that asserts these UUIDs still
+ * exist in the live submodule, so a rename in `exoas-exocmd` would silently
+ * drift the filter to vacuous. The 3 files were verified present in
+ * `exoas-exocmd/criticality/` as of 2026-05-23.
  */
 export const KNOWN_BROKEN_UUIDS: ReadonlySet<string> = new Set([
   "6b2f1cc6-a9f4-452a-93be-79b531188a62", // Set Criticality High
@@ -100,7 +94,7 @@ export interface CommandCatalogEntry {
 }
 
 export interface LoadOptions {
-  /** Override fixture root (default: `<worktree>/packages/starter-kit-fixtures`). */
+  /** Override fixture root (default: `<worktree>/packages/exoas-exocmd`). */
   fixturesRoot?: string;
   /** DI hook for test isolation — list `.md` files under the fixture root. */
   listMarkdownFiles?: (root: string) => string[];
@@ -114,14 +108,14 @@ const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---/;
 
 /**
  * Resolve the default fixtures root via `import.meta.url` — stable regardless
- * of the jest cwd (phase0-benchmark uses cwd and is brittle).
+ * of the jest cwd.
  *
- * File location: `<repo>/packages/cli/tests/integration/starter-kit/test-helpers/command-catalog.ts`
- * Target:        `<repo>/packages/starter-kit-fixtures`
+ * File location: `<repo>/packages/cli/tests/integration/commands/test-helpers/command-catalog.ts`
+ * Target:        `<repo>/packages/exoas-exocmd`
  */
 function defaultFixturesRoot(): string {
   const here = path.dirname(fileURLToPath(import.meta.url));
-  return path.resolve(here, "..", "..", "..", "..", "..", "starter-kit-fixtures");
+  return path.resolve(here, "..", "..", "..", "..", "..", "exoas-exocmd");
 }
 
 function defaultListMarkdownFiles(root: string): string[] {

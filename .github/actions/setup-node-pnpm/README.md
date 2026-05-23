@@ -6,11 +6,11 @@ Shared setup for every Node-based job in `ci.yml`. Centralises repeated boilerpl
 
 ## Inputs
 
-| Input             | Default    | Description                                                                                                                                                                                                  |
-| ----------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `node-version`    | `"22"`     | Node.js major version to install via `actions/setup-node@v4`.                                                                                                                                                |
-| `run-build`       | `"false"`  | When `"true"`, runs `npm run build` after dependency install. Required for `build`, `test-component`, `performance-tests`.                                                                                   |
-| `cache-key-extra` | `""`       | Suffix appended to the `node_modules` cache key. Use this to segregate caches produced inside different container images (e.g. `playwright-jammy`) so the restore step never unpacks native modules compiled against a different glibc / ABI. |
+| Input             | Default   | Description                                                                                                                                                                                                                                   |
+| ----------------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `node-version`    | `"22"`    | Node.js major version to install via `actions/setup-node@v4`.                                                                                                                                                                                 |
+| `run-build`       | `"false"` | When `"true"`, runs `npm run build` after dependency install. Required for `build`, `test-component`, `performance-tests`.                                                                                                                    |
+| `cache-key-extra` | `""`      | Suffix appended to the `node_modules` cache key. Use this to segregate caches produced inside different container images (e.g. `playwright-jammy`) so the restore step never unpacks native modules compiled against a different glibc / ABI. |
 
 All inputs are strings — GitHub composite actions do not support boolean inputs.
 
@@ -62,7 +62,7 @@ The optional `cache-key-extra` input lets container-based jobs isolate their cac
 
 ## Why no `pnpm`?
 
-The action name was fixed by the Phase 3 project brief (§4 naming). The repository itself runs on `npm` workspaces with `packages/starter-kit-fixtures` negated via `package.json`'s `workspaces` field. The action is named after its brief role — "the shared setup we'd reach for regardless of package manager" — rather than the tool it invokes.
+The action name was fixed by the Phase 3 project brief (§4 naming). The repository itself runs on `npm` workspaces with `packages/exoas-*` (submodule fixture packages) negated via `package.json`'s `workspaces` field. The action is named after its brief role — "the shared setup we'd reach for regardless of package manager" — rather than the tool it invokes.
 
 ## Jobs that use this action
 

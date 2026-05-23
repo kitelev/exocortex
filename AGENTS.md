@@ -9,11 +9,13 @@
 Exocortex is a **knowledge management system** that gives users convenient control over all their knowledge. Started as an Obsidian plugin for ontology-driven layouts (Areas → Projects → Tasks), it has evolved into a larger system with CLI capabilities and advanced semantic features.
 
 **Core Philosophy**: AI-driven development
+
 - This project is developed **exclusively by AI agents**
 - Each session runs **parallel and independent** of which agent is used
 - **Continuous self-improvement** of AI instructions based on learned experience
 
 **Product Capabilities**:
+
 - Renders ontology-driven layouts inside Obsidian
 - Links hierarchical knowledge structures (Areas → Projects → Tasks)
 - Tracks effort history and work state transitions
@@ -22,6 +24,7 @@ Exocortex is a **knowledge management system** that gives users convenient contr
 - Shared semantic utilities (`packages/exocortex`)
 
 **Architecture**: Clean Architecture with strict layering
+
 - `src/presentation` - UI components and renderers
 - `src/application` - Use cases and orchestration
 - `src/domain` - Pure business logic (framework-independent)
@@ -49,6 +52,7 @@ ALL code changes MUST happen through git worktrees in the `worktrees/` subdirect
 ### Enforcement
 
 **❌ ABSOLUTELY FORBIDDEN:**
+
 ```bash
 cd /Users/kitelev/Developer/exocortex-development/exocortex
 vim src/some-file.ts              # ❌ NEVER DO THIS!
@@ -56,6 +60,7 @@ git commit -am "changes"          # ❌ BLOCKED!
 ```
 
 **✅ ONLY CORRECT WAY:**
+
 ```bash
 # 1. Create worktree
 cd /Users/kitelev/Developer/exocortex-development/exocortex
@@ -70,6 +75,7 @@ git commit -am "feat: changes"    # ✅ SAFE!
 ### Validation Before Starting Work
 
 **ALWAYS verify your location:**
+
 ```bash
 pwd
 # MUST output: .../exocortex-development/worktrees/exocortex-*
@@ -99,6 +105,7 @@ After EVERY completed task, you MUST:
 **You MUST NOT edit AGENTS.md, CLAUDE.md, or any instruction files without explicit user permission.**
 
 **Correct workflow**:
+
 1. ✅ Write post-mortem report
 2. ✅ Propose improvements with exact text to add
 3. ✅ **PRESENT to user and ASK for permission**
@@ -106,6 +113,7 @@ After EVERY completed task, you MUST:
 5. ✅ **ONLY THEN** edit documentation files
 
 **Forbidden**:
+
 - ❌ Automatically editing instruction files after task completion
 - ❌ Updating documentation "based on learnings" without asking
 - ❌ Committing changes to AGENTS.md, CLAUDE.md without permission
@@ -116,6 +124,7 @@ After EVERY completed task, you MUST:
 ## Task: [Feature/Fix Name]
 
 ### Completed
+
 - [What was implemented]
 - [Tests added: X unit + Y E2E]
 - [Coverage: Z%]
@@ -141,17 +150,23 @@ After EVERY completed task, you MUST:
 
 **Add to AGENTS.md**:
 ```
+
 [Exact text to add, with section location]
+
 ```
 
 **Add to CLAUDE.md**:
 ```
+
 [Exact text to add, with section location]
+
 ```
 
 **Add to [other-file].md**:
 ```
+
 [Exact text to add, with section location]
+
 ```
 
 ### Future Agent Guidance
@@ -162,22 +177,26 @@ After EVERY completed task, you MUST:
 ### Examples: Bad vs Good Post-Mortems
 
 **❌ BAD (vague, no actionable proposals)**:
+
 ```
 Task completed successfully. Had some TypeScript errors but fixed them.
 Should update docs to mention TypeScript issues.
 ```
 
 **Why it's bad**:
+
 - No specifics about errors encountered
 - No exact error messages or solutions
 - Vague suggestion "update docs" without exact text
 - No section location or context
 
 **✅ GOOD (specific, actionable, with exact text)**:
-```markdown
+
+````markdown
 ## Task: Add GraphVisualizationRenderer
 
 ### Completed
+
 - Created GraphVisualizationRenderer component in src/presentation/renderers/
 - Added Cytoscape.js integration for graph rendering
 - Implemented RDF triple graph layout algorithm
@@ -200,7 +219,7 @@ Should update docs to mention TypeScript issues.
 
 ### Lessons Learned
 
-- **Pattern discovered**: All *Renderer classes follow same lifecycle (mount → render → unmount)
+- **Pattern discovered**: All \*Renderer classes follow same lifecycle (mount → render → unmount)
 - **Gotcha identified**: Cytoscape.js requires container to be visible in DOM before init
 - **Best practice**: Define TypeScript interfaces in types/ directory BEFORE writing implementation
 - **Tool insight**: Use `npm run typecheck -- --watch` during development for instant feedback
@@ -208,6 +227,7 @@ Should update docs to mention TypeScript issues.
 ### Documentation Improvements Proposed
 
 **For AGENTS.md** (Section: Troubleshooting > Common TypeScript Errors):
+
 ```markdown
 ### Error: Property X does not exist on type Y
 
@@ -216,18 +236,22 @@ Should update docs to mention TypeScript issues.
 **Root Cause**: Interface definition incomplete or property name typo
 
 **Solution**:
+
 1. Check types/[domain].ts for interface definition
 2. Add missing property with correct type: `propertyName: PropertyType`
 3. Run `npm run typecheck` to verify fix
 
 **Prevention**: Always define complete interfaces BEFORE writing implementation code
 ```
+````
 
 **For AGENTS.md** (Section: Testing > E2E Test Best Practices):
+
 ```markdown
 ### Canvas/WebGL Element Testing
 
 When testing components that render to canvas (graphs, charts, WebGL):
+
 - Use explicit waits: `await page.waitForSelector('canvas', {timeout: 10000})`
 - Extend timeout (canvas rendering is slower than DOM)
 - Wait for canvas context: Check canvas.getContext('2d') is not null
@@ -236,11 +260,13 @@ When testing components that render to canvas (graphs, charts, WebGL):
 ### Future Agent Guidance
 
 When working on visualization components:
-1. Check existing *Renderer classes for patterns (AreaRenderer, TaskRenderer)
+
+1. Check existing \*Renderer classes for patterns (AreaRenderer, TaskRenderer)
 2. Define TypeScript interfaces first (types/[domain].ts)
 3. For canvas elements: use extended timeouts in E2E tests (10s+)
 4. Test in both light and dark Obsidian themes
-```
+
+````
 
 **Why it's good**:
 - Specific error messages with error codes (TS2339)
@@ -273,20 +299,26 @@ When working on visualization components:
 ### Proposed Documentation Improvements
 
 **For AGENTS.md** (Section: [name]):
-```
+````
+
 [Exact text to add]
+
 ```
 
 **For CLAUDE.md** (Section: [name]):
 ```
+
 [Exact text to add]
+
 ```
+
 ```
 
 **Step 2: Present to user**
 "I've completed the task and documented my experience. Here's my post-mortem report with proposed improvements to AGENTS.md and CLAUDE.md. **May I have your permission to update these files?**"
 
 **Step 3: Wait for approval**
+
 - User says "Yes" / "Approved" → Proceed with edits
 - User says "No" / "Not now" → Do NOT edit files
 - User provides feedback → Adjust proposals, ask again
@@ -327,18 +359,21 @@ When working on visualization components:
 **NEVER use `git commit --no-verify` under ANY circumstances.**
 
 **Why this is CRITICAL:**
+
 - Pre-commit hooks catch errors BEFORE they contaminate CI/CD pipeline
 - Bypassing hooks pushes broken code that blocks ALL parallel developers
 - Lint/test failures indicate REAL problems that MUST be fixed
 - `--no-verify` creates technical debt and degrades codebase quality
 
 **If pre-commit hook fails, you MUST:**
+
 1. ✅ **FIX lint/test errors** in your files
 2. ✅ **FIX pre-existing errors** if they block your commit (see below)
 3. ✅ **Ask project maintainer** to address systemic lint configuration issues
 4. ❌ **NEVER** use `--no-verify` as shortcut
 
 **Handling pre-existing lint errors:**
+
 ```bash
 # Scenario: Lint fails but errors are in files you didn't modify
 
@@ -360,12 +395,14 @@ git commit -m "feat: my feature + fix: resolve pre-existing lint errors"
 ```
 
 **Example of WRONG approach:**
+
 ```bash
 # ❌ FORBIDDEN - Never do this!
 git commit --no-verify -m "feat: my change"
 ```
 
 **Example of CORRECT approach:**
+
 ```bash
 # ✅ Fix errors, then commit
 npx eslint --fix packages/obsidian-plugin/src/**/*.ts
@@ -387,6 +424,7 @@ git commit -m "feat: my feature + fix: lint errors"
 - ✅ Deleted immediately after PR merge + release
 
 **Why**:
+
 - Easier to review and test
 - Reduces merge conflicts
 - Faster CI/CD pipeline
@@ -399,6 +437,7 @@ git commit -m "feat: my feature + fix: lint errors"
 **Format**: `worktrees/exocortex-[agent-id]-[type]-[description]`
 
 **Agent IDs**: Use your AI tool name as identifier:
+
 - `claude1`, `claude2`, `claude3` - Claude Code instances
 - `copilot1`, `copilot2` - GitHub Copilot sessions
 - `cursor1`, `cursor2` - Cursor IDE sessions
@@ -406,6 +445,7 @@ git commit -m "feat: my feature + fix: lint errors"
 - `jules1`, `jules2` - Google Jules sessions
 
 **Types**:
+
 - `feat` - New feature
 - `fix` - Bug fix
 - `refactor` - Code refactoring
@@ -415,6 +455,7 @@ git commit -m "feat: my feature + fix: lint errors"
 - `exp` - Experimental/research work
 
 **Examples**:
+
 ```
 worktrees/exocortex-claude1-feat-graph-viz
 worktrees/exocortex-copilot2-fix-mobile-scrolling
@@ -427,12 +468,14 @@ worktrees/exocortex-aider1-perf-query-cache
 ## 🔄 Setup & Build Commands
 
 ### Initial Setup (First Time)
+
 ```bash
 cd /Users/kitelev/Developer/exocortex-development/exocortex
 npm install
 ```
 
 ### Create Worktree
+
 ```bash
 # Sync main first
 cd /Users/kitelev/Developer/exocortex-development/exocortex
@@ -450,6 +493,7 @@ npm install
 > 📌 Always run `npm install` in a fresh worktree before executing tests or scripts—skipping this step causes `ts-jest` to fail with missing preset errors.
 
 ### Build & Test Commands
+
 ```bash
 # Run all tests (MANDATORY before PR)
 npm run test:all
@@ -475,6 +519,7 @@ npm run test:e2e
 ## 🔄 Synchronization Protocol
 
 ### Before Starting Work
+
 ```bash
 cd /Users/kitelev/Developer/exocortex-development/exocortex
 git fetch origin main
@@ -483,7 +528,9 @@ git pull origin main --rebase
 ```
 
 ### During Development
+
 Sync before:
+
 - Each commit (if main has changed)
 - Creating PR
 - After any other agent merges to main
@@ -495,6 +542,7 @@ git rebase origin/main  # Resolve conflicts if any
 ```
 
 ### Conflict Resolution
+
 1. Read conflict carefully
 2. Resolve in favor of latest main (others' work takes priority)
 3. If incompatible, discuss with user
@@ -506,11 +554,13 @@ git rebase origin/main  # Resolve conflicts if any
 ## ✅ Testing Requirements
 
 **MANDATORY before creating PR:**
+
 ```bash
 npm run test:all
 ```
 
 This runs:
+
 - Unit tests (11,400+ tests across all packages: 5,777 core + 4,566 plugin + 1,146 CLI)
 - E2E tests
 - Type checking
@@ -544,22 +594,26 @@ callback(result);
 ```
 
 **When to use:**
+
 - Modal components with callbacks
 - Services with callback parameters
 - Any constructor-based mocking
 - When you see "Missing semicolon" errors in test files
 
 **Example (Modal Testing):**
+
 ```typescript
 // ✅ CORRECT - Modal component mock
 jest.mock("../../src/presentation/modals/AreaSelectionModal");
 
 beforeEach(() => {
-  (AreaSelectionModal as jest.Mock).mockImplementation((app, onSubmit, currentArea) => ({
-    open: jest.fn(() => {
-      (AreaSelectionModal as any).lastCallback = onSubmit;
+  (AreaSelectionModal as jest.Mock).mockImplementation(
+    (app, onSubmit, currentArea) => ({
+      open: jest.fn(() => {
+        (AreaSelectionModal as any).lastCallback = onSubmit;
+      }),
     }),
-  }));
+  );
 });
 
 it("should handle submission", async () => {
@@ -582,11 +636,11 @@ jest.mock("../../src/presentation/modals/AreaSelectionModal", () => ({
 
 Starter-kit dynamic commands (`exocmd__Command`) are covered in three test layers. New commands MUST be added to every applicable layer before merge. Source of truth: RFC v5 at `/Users/kitelev/Developer/rfc-ci-button-testing-2026-04-20.md`.
 
-| Layer | Runner | Location | Scope |
-| ----- | ------ | -------- | ----- |
-| **L1 — Unit** | Jest (ts-jest) | `packages/cli/tests/unit/**` | Helpers (`command-catalog`, `extract-target-class`, `predict-mutation`, `fixture-factory`, `user-input-factory`, `execute-command`) + per-command outcome assertions with mocked boundaries. |
-| **L2 — Integration** | Jest + real `GroundingExecutor` | `packages/cli/tests/integration/starter-kit/**` | 41 active starter-kit commands through `CommandResolver` / `PreconditionEvaluator` / `GroundingExecutor` against fixture vaults. Parametrized catalogue + YAML contract invariants. |
-| **L3 — E2E** | Playwright + Docker Obsidian | `packages/obsidian-plugin/tests/e2e/specs/**` | Smoke subset (RFC §7.4.3) exercising the real plugin UI, sharded across `e2e-shard-1..6`. |
+| Layer                | Runner                          | Location                                      | Scope                                                                                                                                                                                                                                                           |
+| -------------------- | ------------------------------- | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **L1 — Unit**        | Jest (ts-jest)                  | `packages/cli/tests/unit/**`                  | Helpers (`command-catalog`, `extract-target-class`, `predict-mutation`, `fixture-factory`, `user-input-factory`, `execute-command`) + per-command outcome assertions with mocked boundaries.                                                                    |
+| **L2 — Integration** | Jest + real `GroundingExecutor` | `packages/cli/tests/integration/commands/**`  | Dynamic commands through `CommandResolver` / `PreconditionEvaluator` / `GroundingExecutor` against `packages/exoas-exocmd` fixtures. Legacy parametrized-catalogue + YAML contract gate retired 2026-05-23 — replaced by RFC v2 byte-diff testing (`aaaa2dea`). |
+| **L3 — E2E**         | Playwright + Docker Obsidian    | `packages/obsidian-plugin/tests/e2e/specs/**` | Smoke subset (RFC §7.4.3) exercising the real plugin UI, sharded across `e2e-shard-1..6`.                                                                                                                                                                       |
 
 **Layer authoring rules:**
 
@@ -609,6 +663,7 @@ Matrix contexts use the parenthesised form `<job> (<shard>)` — hyphenated name
 **⚠️ CRITICAL: NEVER use aggregator jobs for branch protection!**
 
 **❌ WRONG - Fake aggregator job:**
+
 ```yaml
 # .github/workflows/ci.yml
 build-and-test:
@@ -621,6 +676,7 @@ build-and-test:
 **Problem:** `needs:` only **waits for completion**, it does NOT fail when dependencies fail!
 
 **Real-world impact:**
+
 - PR #305 had 3 failed checks: `test-component`, `test-coverage`, `test-unit`
 - But GitHub showed "Merge allowed" because only `build-and-test` (aggregator) was required
 - Aggregator job showed GREEN ✅ even though its dependencies were RED ❌
@@ -667,12 +723,14 @@ use job-level `if:` or the parenthesised `(N)` contexts collapse to a single
 base name).
 
 **Why this matters:**
+
 - Individual job requirements provide **real protection**
 - Each job must pass GREEN ✅ for PR to be mergeable
 - No false positives from aggregator jobs
 - Prevents broken code from reaching main branch
 
 **Finding app_id for GitHub Actions:**
+
 ```bash
 # Check existing required checks
 gh api repos/OWNER/REPO/branches/main/protection/required_status_checks
@@ -681,6 +739,7 @@ gh api repos/OWNER/REPO/branches/main/protection/required_status_checks
 ```
 
 **Verification after changes:**
+
 - Create test PR with intentionally failing check
 - Verify GitHub blocks merge with "Required checks have not passed"
 - Do NOT rely on aggregator jobs for quality gates
@@ -690,7 +749,9 @@ gh api repos/OWNER/REPO/branches/main/protection/required_status_checks
 ## 📝 PR & Commit Guidelines
 
 ### Commit Message Format
+
 Follow Conventional Commits:
+
 ```
 <type>: <description>
 
@@ -701,6 +762,7 @@ Follow Conventional Commits:
 **Types**: `feat`, `fix`, `refactor`, `perf`, `test`, `docs`, `chore`
 
 **Examples**:
+
 ```
 feat: add graph visualization component
 fix: resolve mobile scrolling issue
@@ -710,6 +772,7 @@ refactor: simplify RDF store queries
 ### PR Workflow
 
 1. **Test First** (MANDATORY):
+
    ```bash
    npm run test:all
    ```
@@ -721,32 +784,37 @@ refactor: simplify RDF store queries
    - See RULE #3 below for enforcement
 
 3. **Commit and Push**:
+
    ```bash
    git commit -am "feat: user-facing description"
    git push origin feature/my-feature
    ```
 
-3. **Create PR**:
+4. **Create PR**:
+
    ```bash
    gh pr create --title "feat: my-feature" --body "Details..."
    ```
 
-4. **Monitor CI Pipeline**:
+5. **Monitor CI Pipeline**:
+
    ```bash
    gh pr checks --watch  # Wait for GREEN ✅
    ```
 
-5. **Wait for Merge**:
+6. **Wait for Merge**:
+
    ```bash
    gh pr merge --auto --squash  # Use --squash (--rebase not allowed in this repo)
    ```
 
-6. **Verify Release Created**:
+7. **Verify Release Created**:
    ```bash
    gh release list --limit 1
    ```
 
 ### Task NOT Complete Until:
+
 - ✅ All 14 required CI checks pass (see "GitHub Branch Protection Best Practices" above for the current list). Critical-path target after Phase 3: **~236s avg ±50s**, gate relaxed to **≤220s** per Decision B (RFC v2 relax, 2026-04-22). Original ≤135s target was infeasible given setup-floor dominance.
 - ✅ PR merged to main
 - ✅ Auto-release workflow creates GitHub release
@@ -767,6 +835,7 @@ Organize documentation into separate files based on target audience:
 - **Performance**: How to optimize (benchmarks, anti-patterns, troubleshooting)
 
 **Example** (from SPARQL documentation):
+
 - `User-Guide.md` - Tutorial for end users writing queries
 - `Developer-Guide.md` - API reference for plugin developers
 - `Query-Examples.md` - Copy-paste ready patterns
@@ -782,6 +851,7 @@ Examples are more valuable than explanatory text:
    - Test examples work before documenting
 
 2. **Format for easy copying**
+
    ```sparql
    SELECT ?task ?label
    WHERE {
@@ -804,6 +874,7 @@ Always include concrete numbers, not abstract statements:
 - ✅ "Indexed queries: <10ms, unindexed: >100ms" (actionable)
 
 **Performance docs should include:**
+
 - Execution time ranges (<10ms, 10-100ms, >100ms)
 - Complexity analysis (O(1), O(n), O(n²))
 - Real-world benchmarks (with data size: "1000 notes")
@@ -824,12 +895,14 @@ New features MUST be linked from README.md:
 ### Documentation-Only PRs
 
 **Expected characteristics:**
+
 - Timeline: 60-90 minutes (research + write + review + release)
 - Should pass all CI checks on first attempt (no code changes)
 - Can be auto-merged immediately (low risk)
 - High value: improves discoverability and reduces support burden
 
 **Workflow:**
+
 1. Research source code (10-15 min)
 2. Create `docs/` structure
 3. Write example-driven guides (60-90 min)
@@ -843,6 +916,7 @@ New features MUST be linked from README.md:
 ## 🎨 Code Style Guidelines
 
 ### TypeScript
+
 - Use ES modules (`import`/`export`), not CommonJS (`require`)
 - Destructure imports when possible
 - Prefer `const` over `let`, avoid `var`
@@ -850,12 +924,14 @@ New features MUST be linked from README.md:
 - Enable strict mode in tsconfig
 
 ### Testing
+
 - Follow BDD (Behavior-Driven Development)
 - Use Gherkin syntax for test descriptions
 - Aim for 100% coverage of new code
 - Test files: `*.test.ts` or `*.spec.ts`
 
 ### Architecture
+
 - Follow Clean Architecture patterns
 - Domain layer must be pure (no framework dependencies)
 - Use dependency injection
@@ -866,11 +942,12 @@ New features MUST be linked from README.md:
 
 ## 🎨 Component Development Patterns
 
-### Pattern: *WithToggle Components for Table Controls
+### Pattern: \*WithToggle Components for Table Controls
 
 **When adding toggle buttons to table components, reuse existing WithToggle patterns:**
 
 **Example from codebase:** `DailyTasksTableWithToggle` demonstrates:
+
 - Multiple toggle buttons (Effort Area, Votes, Archived)
 - Settings persistence via `plugin.saveSettings()`
 - Layout refresh via `refresh()` callback
@@ -878,6 +955,7 @@ New features MUST be linked from README.md:
 - Consistent button styling (`marginBottom: 8px`, `padding: 4px 8px`, `fontSize: 12px`)
 
 **Implementation pattern:**
+
 ```typescript
 export const MyTableWithToggle: React.FC<MyTableWithToggleProps> = ({
   showFeature,
@@ -908,6 +986,7 @@ export const MyTableWithToggle: React.FC<MyTableWithToggleProps> = ({
 ```
 
 **Renderer integration:**
+
 ```typescript
 React.createElement(MyTableWithToggle, {
   items: data,
@@ -918,10 +997,11 @@ React.createElement(MyTableWithToggle, {
     await this.refresh();
   },
   // ... other props
-})
+});
 ```
 
 **Client-side filtering in base component:**
+
 ```typescript
 const sortedItems = useMemo(() => {
   let filtered = items;
@@ -936,10 +1016,11 @@ const sortedItems = useMemo(() => {
 
   // Apply sorting...
   return filtered;
-}, [items, sortState, showFeature]);  // Include showFeature in deps
+}, [items, sortState, showFeature]); // Include showFeature in deps
 ```
 
 **Benefits:**
+
 - Consistent UX across all table components
 - Proven pattern (already tested in production)
 - Settings automatically persist and trigger refresh
@@ -955,28 +1036,31 @@ const sortedItems = useMemo(() => {
 **Pattern from PR #337 (Name Sorting Fix):**
 
 ✅ **CORRECT - Resolve at Source (Renderer):**
+
 ```typescript
 // In RelationsRenderer.ts
 const displayLabel = enrichedMetadata.exo__Asset_label || sourceFile.basename;
 const relation: AssetRelation = {
   file: sourceFile,
   path: sourcePath,
-  title: displayLabel,  // ← Single source of truth
+  title: displayLabel, // ← Single source of truth
   metadata: enrichedMetadata,
   // ...
 };
 ```
 
 ❌ **WRONG - Resolve in Component:**
+
 ```typescript
 // In AssetRelationsTable.tsx (DON'T DO THIS)
 const getDisplayLabel = (relation: AssetRelation): string => {
   const label = relation.metadata?.exo__Asset_label;
-  return label && label.trim() !== "" ? label : relation.title;  // ← Repeated logic
+  return label && label.trim() !== "" ? label : relation.title; // ← Repeated logic
 };
 ```
 
 **Why this matters:**
+
 - **Single source of truth**: Display logic lives in one place, prevents inconsistencies
 - **Sorting works correctly**: Sorts by displayed value, not internal identifier
 - **Performance**: Resolve once instead of N times per render cycle
@@ -993,6 +1077,7 @@ const getDisplayLabel = (relation: AssetRelation): string => {
 **Pattern from PR #390 (Editable Properties):**
 
 ✅ **CORRECT - Use FileManager API:**
+
 ```typescript
 // In PropertyUpdateService.ts
 async updateProperty(file: TFile, propertyKey: string, newValue: any): Promise<void> {
@@ -1007,6 +1092,7 @@ async updateProperty(file: TFile, propertyKey: string, newValue: any): Promise<v
 ```
 
 ❌ **WRONG - Manual YAML Parsing:**
+
 ```typescript
 // DON'T DO THIS - fraught with edge cases
 const content = await app.vault.read(file);
@@ -1017,6 +1103,7 @@ await app.vault.modify(file, `---\n${YAML.stringify(yaml)}\n---\n${body}`);
 ```
 
 **Why FileManager API is better:**
+
 - **Automatic YAML handling**: Correctly formats all YAML types (strings, numbers, booleans, arrays, objects)
 - **Preserves formatting**: Maintains indentation, comments, and key ordering
 - **Type safety**: Handles special characters, multiline strings, and escape sequences correctly
@@ -1025,13 +1112,16 @@ await app.vault.modify(file, `---\n${YAML.stringify(yaml)}\n---\n${body}`);
 - **Transaction safety**: Atomic updates prevent partial writes
 
 **Testing pattern:**
+
 ```typescript
 // Mock processFrontMatter in tests
-mockProcessFrontMatter = jest.fn(async (file: TFile, callback: (fm: any) => void) => {
-  const frontmatter = {};
-  callback(frontmatter);
-  // Verify frontmatter was modified correctly
-});
+mockProcessFrontMatter = jest.fn(
+  async (file: TFile, callback: (fm: any) => void) => {
+    const frontmatter = {};
+    callback(frontmatter);
+    // Verify frontmatter was modified correctly
+  },
+);
 
 mockApp = {
   fileManager: {
@@ -1041,6 +1131,7 @@ mockApp = {
 ```
 
 **Benefits:**
+
 - Works with all Obsidian-supported YAML formats
 - Compatible with Obsidian Mobile
 - No third-party YAML parser dependency
@@ -1055,9 +1146,10 @@ mockApp = {
 **Pattern from PR #390 (Editable Properties):**
 
 ✅ **CORRECT - Local State + useEffect Sync:**
+
 ```typescript
 // In TextPropertyField.tsx
-const [localValue, setLocalValue] = useState(value);  // Local editing state
+const [localValue, setLocalValue] = useState(value); // Local editing state
 const inputRef = useRef<HTMLInputElement>(null);
 
 // Sync local state when prop changes (external update)
@@ -1066,12 +1158,12 @@ useEffect(() => {
 }, [value]);
 
 const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-  setLocalValue(e.target.value);  // Update local state immediately
+  setLocalValue(e.target.value); // Update local state immediately
 };
 
 const handleBlur = () => {
   if (localValue !== value) {
-    onChange(localValue);  // Save to server only if changed
+    onChange(localValue); // Save to server only if changed
   }
   onBlur?.();
 };
@@ -1079,17 +1171,18 @@ const handleBlur = () => {
 const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
   if (e.key === "Enter") {
     e.preventDefault();
-    inputRef.current?.blur();  // Trigger save via onBlur
+    inputRef.current?.blur(); // Trigger save via onBlur
   }
   if (e.key === "Escape") {
     e.preventDefault();
-    setLocalValue(value);  // Revert to original value
+    setLocalValue(value); // Revert to original value
     inputRef.current?.blur();
   }
 };
 ```
 
 ❌ **WRONG - Controlled Input Without Local State:**
+
 ```typescript
 // DON'T DO THIS - triggers onChange on every keystroke
 <input
@@ -1099,6 +1192,7 @@ const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
 ```
 
 **Why local state is better:**
+
 - **Responsive UX**: Input feels instant, no network lag per keystroke
 - **Debounced saves**: Only call onChange when editing complete (onBlur)
 - **Optimistic updates**: User sees changes immediately
@@ -1106,25 +1200,27 @@ const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
 - **Reduced API calls**: onChange fires once (on blur) instead of per keystroke
 
 **Pattern for datetime picker:**
+
 ```typescript
 // In DateTimePropertyField.tsx
-const [isOpen, setIsOpen] = useState(false);  // Dropdown visibility
-const [localValue, setLocalValue] = useState(value || "");  // Local edit state
+const [isOpen, setIsOpen] = useState(false); // Dropdown visibility
+const [localValue, setLocalValue] = useState(value || ""); // Local edit state
 
 useEffect(() => {
-  setLocalValue(value || "");  // Sync with prop changes
+  setLocalValue(value || ""); // Sync with prop changes
 }, [value]);
 
 const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
   const newLocalValue = e.target.value;
-  setLocalValue(newLocalValue);  // Update local immediately
+  setLocalValue(newLocalValue); // Update local immediately
 
   const isoValue = convertToISOFormat(newLocalValue);
-  onChange(isoValue);  // Save to server (safe for datetime - single change)
+  onChange(isoValue); // Save to server (safe for datetime - single change)
 };
 ```
 
 **Key principles:**
+
 1. **Local state for immediate feedback** - `useState(value)`
 2. **useEffect for prop sync** - External changes update local state
 3. **onChange on blur, not keystroke** - Reduce server calls
@@ -1132,6 +1228,7 @@ const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
 5. **Enter key for save** - Explicit save trigger
 
 **Testing pattern:**
+
 ```typescript
 it("should update local state on change", () => {
   const { getByRole } = render(<TextPropertyField value="initial" onChange={jest.fn()} />);
@@ -1172,14 +1269,15 @@ property: value
 ```
 
 Use regex that captures array items (indented with 2 spaces):
+
 ```typescript
 const propertyLineRegex = new RegExp(
-  `\n?${property}:.*(?:\n {2}- .*)*`,  // Captures property + array items
-  "gm"
+  `\n?${property}:.*(?:\n {2}- .*)*`, // Captures property + array items
+  "gm",
 );
 ```
 
-**Key insight**: YAML arrays use `  - ` (2 spaces + dash). Non-capturing group `(?:...)` with `*` quantifier handles variable-length arrays.
+**Key insight**: YAML arrays use ` -` (2 spaces + dash). Non-capturing group `(?:...)` with `*` quantifier handles variable-length arrays.
 
 **Example from codebase**: `FrontmatterService.removeProperty()` handles both scalar and array properties:
 
@@ -1202,6 +1300,7 @@ const updated = service.removeProperty(content, "aliases");
 ```
 
 **Test coverage required**:
+
 - Array at beginning of frontmatter
 - Array in middle of frontmatter
 - Array at end of frontmatter
@@ -1219,6 +1318,7 @@ const updated = service.removeProperty(content, "aliases");
 **Parser Output Structure:**
 
 The `sparqljs` parser uses **different property names** for expression types:
+
 - **Operations** (comparisons, logical): `expr.type === "operation"`
 - **Function calls** (regex, concat): `expr.type === "functioncall"`
 - **RDF Terms** (variables, literals, IRIs): `expr.termType === "Variable" | "Literal" | "NamedNode"`
@@ -1228,14 +1328,11 @@ The `sparqljs` parser uses **different property names** for expression types:
 ```javascript
 if (expr.type === "operation") {
   // Handle comparisons (>, <, =), logical ops (&&, ||, !)
-}
-else if (expr.type === "functioncall") {
+} else if (expr.type === "functioncall") {
   // Handle SPARQL functions (regex, concat, str, etc.)
-}
-else if (expr.termType) {
+} else if (expr.termType) {
   // Handle variables (?x), literals ("hello"), IRIs (<http://...>)
-}
-else {
+} else {
   throw new Error("Unsupported expression structure");
 }
 ```
@@ -1255,16 +1352,19 @@ node -e "const { Parser } = require('sparqljs'); \
 
 ```typescript
 export type AlgebraOperation =
-  | BGPOperation       // { type: "bgp", triples: Triple[] }
-  | FilterOperation    // { type: "filter", expression: Expression, input: AlgebraOperation }
-  | JoinOperation      // { type: "join", left: AlgebraOperation, right: AlgebraOperation }
-  // ...
+  | BGPOperation // { type: "bgp", triples: Triple[] }
+  | FilterOperation // { type: "filter", expression: Expression, input: AlgebraOperation }
+  | JoinOperation; // { type: "join", left: AlgebraOperation, right: AlgebraOperation }
+// ...
 
 // TypeScript ensures exhaustive switch:
 switch (operation.type) {
-  case "bgp": /* ... */; break;
-  case "filter": /* ... */; break;
-  case "join": /* ... */; break;
+  case "bgp" /* ... */:
+    break;
+  case "filter" /* ... */:
+    break;
+  case "join" /* ... */:
+    break;
   // If a case is missing, TypeScript compiler error!
 }
 ```
@@ -1275,15 +1375,21 @@ switch (operation.type) {
 // ❌ BAD: JoinOperation imported but never used in type annotation
 import type { AlgebraOperation, JoinOperation } from "./AlgebraOperation";
 
-function createJoin(left: AlgebraOperation, right: AlgebraOperation): AlgebraOperation {
-  return { type: "join", left, right };  // "join" is literal, not JoinOperation type
+function createJoin(
+  left: AlgebraOperation,
+  right: AlgebraOperation,
+): AlgebraOperation {
+  return { type: "join", left, right }; // "join" is literal, not JoinOperation type
 }
 
 // ✅ GOOD: Only import types used in annotations
 import type { AlgebraOperation } from "./AlgebraOperation";
 
-function createJoin(left: AlgebraOperation, right: AlgebraOperation): AlgebraOperation {
-  return { type: "join", left, right };  // AlgebraOperation union handles "join" literal
+function createJoin(
+  left: AlgebraOperation,
+  right: AlgebraOperation,
+): AlgebraOperation {
+  return { type: "join", left, right }; // AlgebraOperation union handles "join" literal
 }
 ```
 
@@ -1305,12 +1411,14 @@ npm run check:types  # Catches unused imports, type errors
 **Source of Truth**: Vault ontology files (`!ontology-name.md`) contain canonical URIs in `exo__Ontology_url` property.
 
 **Before implementing SPARQL features:**
+
 1. Read vault ontology files to get correct namespace URIs
 2. Update code to match vault definitions (vault is source of truth)
 3. Verify both CLI and Obsidian plugin use same `packages/exocortex/src/domain/models/rdf/Namespace.ts` constants
 4. Test SPARQL queries in both environments
 
 **Example**:
+
 ```typescript
 // packages/exocortex/src/domain/models/rdf/Namespace.ts
 static readonly EXO = new Namespace("exo", "https://exocortex.my/ontology/exo#");
@@ -1318,6 +1426,7 @@ static readonly EMS = new Namespace("ems", "https://exocortex.my/ontology/ems#")
 ```
 
 **Verification**:
+
 ```bash
 # Test CLI execution returns results
 node packages/cli/dist/index.js sparql query test.sparql --vault /path/to/vault
@@ -1329,6 +1438,7 @@ node packages/cli/dist/index.js sparql query test.sparql --vault /path/to/vault
 If SPARQL query executes without errors but returns 0 results:
 
 1. **Check namespace URI mismatch**:
+
    ```bash
    # Compare code URIs
    grep -A2 "static readonly EXO" packages/exocortex/src/domain/models/rdf/Namespace.ts
@@ -1338,6 +1448,7 @@ If SPARQL query executes without errors but returns 0 results:
    ```
 
 2. **Run diagnostic query** to see actual triple store URIs:
+
    ```sparql
    SELECT DISTINCT ?predicate WHERE {
      ?subject ?predicate ?object .
@@ -1359,12 +1470,14 @@ If SPARQL query executes without errors but returns 0 results:
 ## 🔐 Security Considerations
 
 ### Never Commit:
+
 - API keys or secrets
 - `.env` files with credentials
 - `credentials.json` or similar files
 - Private keys or certificates
 
 ### Code Security:
+
 - Sanitize all user inputs
 - Validate data at boundaries
 - Avoid command injection (never use `eval()` or `new Function()` with user input)
@@ -1379,12 +1492,14 @@ If SPARQL query executes without errors but returns 0 results:
 ### Before Starting a Task
 
 1. **Check active worktrees**:
+
    ```bash
    cd exocortex
    git worktree list
    ```
 
 2. **Check open PRs**:
+
    ```bash
    gh pr list
    ```
@@ -1396,21 +1511,24 @@ If SPARQL query executes without errors but returns 0 results:
 ### Parallel Work Best Practices
 
 **✅ SAFE (independent areas):**
+
 - Agent A: Frontend component
 - Agent B: Backend service
 - Agent C: Documentation
 - Agent D: Tests for A's component
 
 **⚠️ RISKY (same files):**
+
 - Agent A: Refactor RDF store
 - Agent B: Also refactor RDF store
-→ **Coordinate with user first!**
+  → **Coordinate with user first!**
 
 ---
 
 ## 🔧 Worktree Lifecycle
 
 ### 1. Create Worktree
+
 ```bash
 cd /Users/kitelev/Developer/exocortex-development/exocortex
 git fetch origin main && git pull origin main --rebase
@@ -1420,6 +1538,7 @@ npm install
 ```
 
 ### 2. Develop
+
 ```bash
 # Work in worktree
 cd /Users/kitelev/Developer/exocortex-development/worktrees/exocortex-[agent]-[type]-[task]
@@ -1430,6 +1549,7 @@ cd /Users/kitelev/Developer/exocortex-development/worktrees/exocortex-[agent]-[t
 ```
 
 ### 3. Create PR and Monitor
+
 ```bash
 npm run test:all  # MANDATORY
 git push origin feature/[task]
@@ -1438,6 +1558,7 @@ gh pr checks --watch  # Wait for GREEN
 ```
 
 ### 4. Cleanup After Merge
+
 ```bash
 cd /Users/kitelev/Developer/exocortex-development/exocortex
 git worktree remove ../worktrees/exocortex-[agent]-[type]-[task]
@@ -1451,9 +1572,11 @@ git branch -d feature/[task]
 ## 🆘 Troubleshooting
 
 ### "Worktree created in wrong location"
+
 Check with `pwd` - should contain `worktrees/` in path.
 
 Fix:
+
 ```bash
 cd /Users/kitelev/Developer/exocortex-development/exocortex
 git worktree remove ../<wrong-name>
@@ -1461,6 +1584,7 @@ git worktree remove ../<wrong-name>
 ```
 
 ### "Rebase conflicts"
+
 ```bash
 git status  # See conflicting files
 # Edit files, resolve conflicts
@@ -1469,6 +1593,7 @@ git rebase --continue
 ```
 
 ### "Tests failing"
+
 ```bash
 npm test -- --verbose  # See detailed error
 npm run typecheck  # Check type errors
@@ -1476,6 +1601,7 @@ npm run lint  # Check linting errors
 ```
 
 ### "Someone else is working on this"
+
 ```bash
 git worktree list  # Check active work
 gh pr list  # Check open PRs
@@ -1489,6 +1615,7 @@ gh pr list  # Check open PRs
 **Cause**: Obsidian's metadata cache may not find files if path doesn't include `.md` extension. Wiki-links like `[[Page Name]]` extract to `"Page Name"` (no `.md`), but Obsidian's API may require full filename `"Page Name.md"`.
 
 **Solution**: Always implement `.md` extension fallback:
+
 ```typescript
 let file = this.app.metadataCache.getFirstLinkpathDest(path, "");
 
@@ -1504,6 +1631,7 @@ if (file instanceof TFile) {
 **Pattern Location**: See `AssetMetadataService.getAssetLabel()` and `getEffortArea()` for reference implementations.
 
 **Test Coverage**: Add tests for both happy path (file found without `.md`) and fallback path (file found with `.md`):
+
 ```typescript
 it("should resolve file with .md extension fallback", () => {
   mockApp.metadataCache.getFirstLinkpathDest.mockImplementation(
@@ -1529,6 +1657,7 @@ it("should resolve file with .md extension fallback", () => {
 **Root Cause**: Parameter declared in constructor or function but not referenced in the implementation body.
 
 **Solution**:
+
 ```typescript
 // ❌ WRONG - 'vault' declared but never used
 constructor(
@@ -1563,6 +1692,7 @@ constructor(
 ## 📚 Additional Documentation
 
 For complete development rules and patterns, see:
+
 - `exocortex/CLAUDE.md` - Comprehensive guidelines
 - `exocortex/README.md` - Project features and setup
 - `exocortex/ARCHITECTURE.md` - Architecture patterns

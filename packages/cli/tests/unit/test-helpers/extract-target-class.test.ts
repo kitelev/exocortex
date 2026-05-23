@@ -7,7 +7,7 @@
  * real 44-Command catalog.
  */
 import { describe, it, expect } from "@jest/globals";
-import type { CommandCatalogEntry } from "../../integration/starter-kit/test-helpers/command-catalog.js";
+import type { CommandCatalogEntry } from "../../integration/commands/test-helpers/command-catalog.js";
 import {
   extractClassFromSparql,
   extractTargetClassFromCommand,
@@ -15,7 +15,7 @@ import {
   type StarterKitContext,
   type PreconditionData,
   type GroundingData,
-} from "../../integration/starter-kit/test-helpers/extract-target-class.js";
+} from "../../integration/commands/test-helpers/extract-target-class.js";
 
 // ---------------------------------------------------------------------------
 // Test fixtures
