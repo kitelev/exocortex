@@ -194,7 +194,9 @@ describe("GroundingExecutor.property_append (Issue #3132)", () => {
       const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
 
       expect(result.success).toBe(false);
-      expect(result.error).toMatch(/targetValue/i);
+      // RFC 918a2b65 Phase 2 — error message now references appendExpression
+      // (the new canonical predicate) instead of legacy targetValue.
+      expect(result.error).toMatch(/appendExpression/i);
     });
   });
 });

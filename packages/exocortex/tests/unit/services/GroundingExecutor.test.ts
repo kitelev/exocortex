@@ -3430,4 +3430,277 @@ describe("GroundingExecutor — RFC v2 Phase 3b 5-step pipeline", () => {
       expect(content).toContain("exo__Asset_label: backward compat");
       expect(content).toContain("ems__Task");
     });
+
+  // -- RFC 918a2b65 Phase 2 — typed predicates for service_call + property_append --
+  describe("RFC 918a2b65 typed predicates", () => {
+    describe("service_call: serviceCallPayload (JSON merge)", () => {
+      it("merges serviceCallPayload JSON as defaults into userInput", async () => {
+        const mockService = {
+          execute: jest.fn().mockResolvedValue(undefined),
+        };
+        registry.register("updateProperty", mockService);
+
+        const grounding = makeGrounding({
+          type: GroundingType.SERVICE_CALL,
+          targetProperty: "updateProperty",
+          serviceCallPayload: '{"property":"ems__Effort_parent"}',
+        });
+
+        const userInput = { value: "[[some-asset]]" };
+        const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH, userInput);
+
+        expect(result.success).toBe(true);
+        expect(mockService.execute).toHaveBeenCalledWith(TARGET_IRI, {
+          property: "ems__Effort_parent",
+          value: "[[some-asset]]",
+        });
+      });
+
+      it("serviceCallPayload wins over legacy targetValue when both present", async () => {
+        const mockService = {
+          execute: jest.fn().mockResolvedValue(undefined),
+        };
+        registry.register("updateProperty", mockService);
+
+        const grounding = makeGrounding({
+          type: GroundingType.SERVICE_CALL,
+          targetProperty: "updateProperty",
+          serviceCallPayload: '{"property":"new_predicate"}',
+          targetValue: '{"property":"old_predicate"}',
+        });
+
+        const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
+
+        expect(result.success).toBe(true);
+        expect(mockService.execute).toHaveBeenCalledWith(TARGET_IRI, {
+          property: "new_predicate",
+        });
+      });
+
+      it("falls back to legacy targetValue when serviceCallPayload absent (transitional)", async () => {
+        const mockService = {
+          execute: jest.fn().mockResolvedValue(undefined),
+        };
+        registry.register("updateProperty", mockService);
+
+        const grounding = makeGrounding({
+          type: GroundingType.SERVICE_CALL,
+          targetProperty: "updateProperty",
+          targetValue: '{"property":"ems__Effort_status"}',
+        });
+
+        const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
+
+        expect(result.success).toBe(true);
+        expect(mockService.execute).toHaveBeenCalledWith(TARGET_IRI, {
+          property: "ems__Effort_status",
+        });
+      });
+
+      it("substitutes $target inside serviceCallPayload before JSON.parse", async () => {
+        const mockService = {
+          execute: jest.fn().mockResolvedValue(undefined),
+        };
+        registry.register("createAsset", mockService);
+
+        const grounding = makeGrounding({
+          type: GroundingType.SERVICE_CALL,
+          targetProperty: "createAsset",
+          serviceCallPayload:
+            '{"prototype":"$target","instanceClass":"ems__Task","folder":"03 Knowledge/inbox"}',
+        });
+
+        const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
+
+        expect(result.success).toBe(true);
+        expect(mockService.execute).toHaveBeenCalledWith(TARGET_IRI, {
+          prototype: TARGET_IRI,
+          instanceClass: "ems__Task",
+          folder: "03 Knowledge/inbox",
+        });
+      });
+    });
+
+    describe("service_call: class-flip via targetValueRef (Convert to Task / Project)", () => {
+      it("dispatches Convert to Task when targetValueRef is the ems__Task UUID", async () => {
+        const reader2 = createMockReader(
+          "---\nexo__Instance_class: '[[ems__Project]]'\n---",
+        );
+        const writer2 = createMockWriter();
+        const executor2 = new GroundingExecutor(reader2, writer2, registry);
+
+        const grounding = makeGrounding({
+          type: GroundingType.SERVICE_CALL,
+          targetProperty: "updateProperty",
+          targetValueRef: "1b20a8f0-d745-4e93-91db-4531b3df120e",
+        });
+
+        const result = await executor2.execute(grounding, TARGET_IRI, FILE_PATH);
+
+        expect(result.success).toBe(true);
+        const [, content] = writer2.updateFile.mock.calls[0];
+        expect(content).toContain("ems__Task");
+      });
+
+      it("dispatches Convert to Project when targetValueRef is the ems__Project UUID", async () => {
+        const reader2 = createMockReader(
+          "---\nexo__Instance_class: '[[ems__Task]]'\n---",
+        );
+        const writer2 = createMockWriter();
+        const executor2 = new GroundingExecutor(reader2, writer2, registry);
+
+        const grounding = makeGrounding({
+          type: GroundingType.SERVICE_CALL,
+          targetProperty: "updateProperty",
+          targetValueRef: "7db5eeff-718a-49b0-8d2b-39b084a356e3",
+        });
+
+        const result = await executor2.execute(grounding, TARGET_IRI, FILE_PATH);
+
+        expect(result.success).toBe(true);
+        const [, content] = writer2.updateFile.mock.calls[0];
+        expect(content).toContain("ems__Project");
+      });
+
+      it("accepts targetValueRef in bare-label form (#3220 downgrade path)", async () => {
+        const reader2 = createMockReader(
+          "---\nexo__Instance_class: '[[ems__Project]]'\n---",
+        );
+        const writer2 = createMockWriter();
+        const executor2 = new GroundingExecutor(reader2, writer2, registry);
+
+        const grounding = makeGrounding({
+          type: GroundingType.SERVICE_CALL,
+          targetProperty: "updateProperty",
+          targetValueRef: "ems__Task",
+        });
+
+        const result = await executor2.execute(grounding, TARGET_IRI, FILE_PATH);
+
+        expect(result.success).toBe(true);
+        const [, content] = writer2.updateFile.mock.calls[0];
+        expect(content).toContain("ems__Task");
+      });
+
+      it("targetValueRef wins over legacy targetValue when both present (precedence)", async () => {
+        const reader2 = createMockReader(
+          "---\nexo__Instance_class: '[[ems__Project]]'\n---",
+        );
+        const writer2 = createMockWriter();
+        const executor2 = new GroundingExecutor(reader2, writer2, registry);
+
+        const grounding = makeGrounding({
+          type: GroundingType.SERVICE_CALL,
+          targetProperty: "updateProperty",
+          targetValueRef: "1b20a8f0-d745-4e93-91db-4531b3df120e",
+          targetValue: "ems__Project",
+        });
+
+        const result = await executor2.execute(grounding, TARGET_IRI, FILE_PATH);
+
+        expect(result.success).toBe(true);
+        const [, content] = writer2.updateFile.mock.calls[0];
+        expect(content).toContain("ems__Task");
+      });
+
+      it("falls back to legacy targetValue class-flip when targetValueRef absent (regression)", async () => {
+        const reader2 = createMockReader(
+          "---\nexo__Instance_class: '[[ems__Project]]'\n---",
+        );
+        const writer2 = createMockWriter();
+        const executor2 = new GroundingExecutor(reader2, writer2, registry);
+
+        const grounding = makeGrounding({
+          type: GroundingType.SERVICE_CALL,
+          targetProperty: "updateProperty",
+          targetValue: "ems__Task",
+        });
+
+        const result = await executor2.execute(grounding, TARGET_IRI, FILE_PATH);
+
+        expect(result.success).toBe(true);
+        const [, content] = writer2.updateFile.mock.calls[0];
+        expect(content).toContain("ems__Task");
+      });
+    });
+
+    describe("property_append: appendExpression", () => {
+      it("resolves appendExpression via substituteVariables", async () => {
+        const reader2 = createMockReader(
+          "---\nexo__Asset_label: My Asset\naliases:\n  - existing\n---",
+        );
+        const writer2 = createMockWriter();
+        const executor2 = new GroundingExecutor(reader2, writer2, registry);
+
+        const grounding = makeGrounding({
+          type: GroundingType.PROPERTY_APPEND,
+          targetProperty: "aliases",
+          appendExpression: "$target.exo__Asset_label",
+        });
+
+        const result = await executor2.execute(grounding, TARGET_IRI, FILE_PATH);
+
+        expect(result.success).toBe(true);
+        const [, content] = writer2.updateFile.mock.calls[0];
+        expect(content).toContain("My Asset");
+        expect(content).toContain("existing");
+      });
+
+      it("appendExpression wins over legacy targetValue when both present", async () => {
+        const reader2 = createMockReader(
+          "---\nexo__Asset_label: Winner\nfallbackField: Loser\naliases: []\n---",
+        );
+        const writer2 = createMockWriter();
+        const executor2 = new GroundingExecutor(reader2, writer2, registry);
+
+        const grounding = makeGrounding({
+          type: GroundingType.PROPERTY_APPEND,
+          targetProperty: "aliases",
+          appendExpression: "$target.exo__Asset_label",
+          targetValue: "$target.fallbackField",
+        });
+
+        const result = await executor2.execute(grounding, TARGET_IRI, FILE_PATH);
+
+        expect(result.success).toBe(true);
+        const [, content] = writer2.updateFile.mock.calls[0];
+        const aliasesMatch = content.match(/aliases:[\s\S]*?(?=\n[^\s-]|$)/);
+        expect(aliasesMatch).not.toBeNull();
+        expect(aliasesMatch![0]).toContain("Winner");
+        expect(aliasesMatch![0]).not.toContain("Loser");
+      });
+
+      it("falls back to legacy targetValue when appendExpression absent (regression)", async () => {
+        const reader2 = createMockReader(
+          "---\nexo__Asset_label: Legacy Label\naliases: []\n---",
+        );
+        const writer2 = createMockWriter();
+        const executor2 = new GroundingExecutor(reader2, writer2, registry);
+
+        const grounding = makeGrounding({
+          type: GroundingType.PROPERTY_APPEND,
+          targetProperty: "aliases",
+          targetValue: "$target.exo__Asset_label",
+        });
+
+        const result = await executor2.execute(grounding, TARGET_IRI, FILE_PATH);
+
+        expect(result.success).toBe(true);
+        const [, content] = writer2.updateFile.mock.calls[0];
+        expect(content).toContain("Legacy Label");
+      });
+
+      it("fails-loud when neither appendExpression nor targetValue is set", async () => {
+        const grounding = makeGrounding({
+          type: GroundingType.PROPERTY_APPEND,
+          targetProperty: "aliases",
+        });
+
+        const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
+
+        expect(result.success).toBe(false);
+        expect(result.error).toContain("appendExpression");
+      });
+    });
+  });
 });
