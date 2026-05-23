@@ -38,16 +38,14 @@ export const GroundingProperty = {
   SPARQL_UPDATE: "exocmd__Grounding_sparqlUpdate",
   /** Frontmatter property name to modify (for property_delete / property_set) */
   TARGET_PROPERTY: "exocmd__Grounding_targetProperty",
-  /** Value to set (for property_set type) */
-  TARGET_VALUE: "exocmd__Grounding_targetValue",
   /** Ordered array of Grounding asset references (for composite type) */
   STEPS: "exocmd__Grounding_steps",
   /**
    * Wikilink to the owner identity to write as `exo__Asset_isDefinedBy` on
    * the newly created asset (for `service_call` createAsset). Standalone
-   * property (not embedded in `Grounding_targetValue` JSON) so the link is
-   * a real Obsidian backlink — the referenced identity asset's layout can
-   * list every Grounding that pins it.
+   * property (not embedded in `Grounding_serviceCallPayload` JSON) so the
+   * link is a real Obsidian backlink — the referenced identity asset's
+   * layout can list every Grounding that pins it.
    */
   IS_DEFINED_BY: "exocmd__Grounding_isDefinedBy",
 } as const;

@@ -75,7 +75,7 @@ describe("GroundingExecutor.property_append (Issue #3132)", () => {
       const grounding = makeGrounding({
         type: GroundingType.PROPERTY_APPEND,
         targetProperty: "aliases",
-        targetValue: "$target.exo__Asset_label",
+        appendExpression: "$target.exo__Asset_label",
       });
 
       const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
@@ -94,7 +94,7 @@ describe("GroundingExecutor.property_append (Issue #3132)", () => {
       const grounding = makeGrounding({
         type: GroundingType.PROPERTY_APPEND,
         targetProperty: "aliases",
-        targetValue: "$target.exo__Asset_label",
+        appendExpression: "$target.exo__Asset_label",
       });
 
       const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
@@ -113,7 +113,7 @@ describe("GroundingExecutor.property_append (Issue #3132)", () => {
       const grounding = makeGrounding({
         type: GroundingType.PROPERTY_APPEND,
         targetProperty: "aliases",
-        targetValue: "$target.exo__Asset_label",
+        appendExpression: "$target.exo__Asset_label",
       });
 
       const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
@@ -134,7 +134,7 @@ describe("GroundingExecutor.property_append (Issue #3132)", () => {
       const grounding = makeGrounding({
         type: GroundingType.PROPERTY_APPEND,
         targetProperty: "aliases",
-        targetValue: "$target.exo__Asset_label",
+        appendExpression: "$target.exo__Asset_label",
       });
 
       const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
@@ -152,7 +152,7 @@ describe("GroundingExecutor.property_append (Issue #3132)", () => {
       const grounding = makeGrounding({
         type: GroundingType.PROPERTY_APPEND,
         targetProperty: "aliases",
-        targetValue: "$target.exo__Asset_label",
+        appendExpression: "$target.exo__Asset_label",
       });
 
       const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
@@ -172,7 +172,7 @@ describe("GroundingExecutor.property_append (Issue #3132)", () => {
 
       const grounding = makeGrounding({
         type: GroundingType.PROPERTY_APPEND,
-        targetValue: "$target.exo__Asset_label",
+        appendExpression: "$target.exo__Asset_label",
       });
 
       const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
@@ -181,7 +181,7 @@ describe("GroundingExecutor.property_append (Issue #3132)", () => {
       expect(result.error).toMatch(/targetProperty/i);
     });
 
-    it("returns failure when targetValue is missing", async () => {
+    it("returns failure when appendExpression is missing", async () => {
       const { executor } = makeExecutor(
         '---\nexo__Asset_label: "Foo"\n---\nBody',
       );

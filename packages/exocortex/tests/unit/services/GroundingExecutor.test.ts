@@ -206,19 +206,12 @@ describe("GroundingExecutor", () => {
         expect(result.error).toContain("more than one");
       });
 
-      it("rejects property_set with only legacy targetValue (no typed predicate) — RFC 31c1a0be Phase 5a", async () => {
-        reader.readFile.mockResolvedValue("---\nfoo: bar\n---\n");
-        const grounding = makeGrounding({
-          type: GroundingType.PROPERTY_SET,
-          targetProperty: "ems__legacy_status",
-          targetValue: '"[[ems__EffortStatusDone]]"',
-        });
-        const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
-        expect(result.success).toBe(false);
-        expect(result.error).toContain(
-          "property_set requires one of targetValueRef/targetValueLiteral/targetValueSubstitution",
-        );
-      });
+      // RFC 31c1a0be Phase 5a + RFC 918a2b65 Phase 4: legacy `targetValue`
+      // field has been removed from `GroundingDefinition` entirely. The
+      // executor rejects property_set without any typed predicate (verified
+      // by the "should fail when no typed predicate is provided" test above);
+      // the previous "rejects ONLY legacy targetValue" assertion is no longer
+      // expressible because the field doesn't exist on the type.
     });
   });
 
@@ -465,7 +458,7 @@ describe("GroundingExecutor", () => {
       const grounding = makeGrounding({
         type: GroundingType.SERVICE_CALL,
         targetProperty: "updateProperty",
-        targetValue: '{"property":"ems__Effort_parent"}',
+        serviceCallPayload: '{"property":"ems__Effort_parent"}',
       });
 
       const userInput = { value: "[[some-asset]]" };
@@ -487,7 +480,7 @@ describe("GroundingExecutor", () => {
       const grounding = makeGrounding({
         type: GroundingType.SERVICE_CALL,
         targetProperty: "testService",
-        targetValue: '{"direction":"forward","extra":"default"}',
+        serviceCallPayload: '{"direction":"forward","extra":"default"}',
       });
 
       const userInput = { direction: "backward" };
@@ -509,7 +502,7 @@ describe("GroundingExecutor", () => {
       const grounding = makeGrounding({
         type: GroundingType.SERVICE_CALL,
         targetProperty: "createAsset",
-        targetValue: '{"prototype":"ztlk__FleetingNotePrototype"}',
+        serviceCallPayload: '{"prototype":"ztlk__FleetingNotePrototype"}',
         isDefinedBy: "[[0aa339bc-9b56-400a-8148-cbde57bbf0b6]]",
       });
 
@@ -555,7 +548,7 @@ describe("GroundingExecutor", () => {
       const grounding = makeGrounding({
         type: GroundingType.SERVICE_CALL,
         targetProperty: "myService",
-        targetValue: "plain-string-not-json",
+        serviceCallPayload: "plain-string-not-json",
       });
 
       const userInput = { key: "val" };
@@ -579,7 +572,7 @@ describe("GroundingExecutor", () => {
       const grounding = makeGrounding({
         type: GroundingType.SERVICE_CALL,
         targetProperty: "createAsset",
-        targetValue: '{"prototype":"$target"}',
+        serviceCallPayload: '{"prototype":"$target"}',
       });
 
       const userInput = { label: "New Instance" };
@@ -606,7 +599,7 @@ describe("GroundingExecutor", () => {
       const grounding = makeGrounding({
         type: GroundingType.SERVICE_CALL,
         targetProperty: "createAsset",
-        targetValue: '{"prototype":"$target","folder":"03 Knowledge/inbox"}',
+        serviceCallPayload: '{"prototype":"$target","folder":"03 Knowledge/inbox"}',
       });
 
       const userInput = { prototype: "explicit-prototype-uid", label: "Lunch 2026-05-02" };
@@ -634,7 +627,7 @@ describe("GroundingExecutor", () => {
       const grounding = makeGrounding({
         type: GroundingType.SERVICE_CALL,
         targetProperty: "scheduleTask",
-        targetValue: '{"plannedStartDate":"$today"}',
+        serviceCallPayload: '{"plannedStartDate":"$today"}',
       });
 
       const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
@@ -655,7 +648,7 @@ describe("GroundingExecutor", () => {
       const grounding = makeGrounding({
         type: GroundingType.SERVICE_CALL,
         targetProperty: "shiftDay",
-        targetValue: '{"direction":"forward"}',
+        serviceCallPayload: '{"direction":"forward"}',
       });
 
       const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
@@ -1996,7 +1989,7 @@ describe("Convert to Task grounding — end-to-end wiring (Finding 5)", () => {
     // executor returns { success: false, error: "Service not found: ..." }.
     const grounding = makeGrounding({
       targetProperty: "convertToTask",
-      targetValue: "ems__Task",
+      targetValueRef: "ems__Task",
     });
 
     // Act
@@ -2020,7 +2013,7 @@ describe("Convert to Task grounding — end-to-end wiring (Finding 5)", () => {
     // Arrange: same rich Project metadata as above (default reader content)
     const grounding = makeGrounding({
       targetProperty: "convertToTask",
-      targetValue: "ems__Task",
+      targetValueRef: "ems__Task",
     });
 
     // Act
@@ -2128,7 +2121,7 @@ describe("Convert commands — production-shape dispatch (Finding 5 completion)"
       // after CommandResolver's serviceId-overrides-targetProperty step.
       const grounding = makeSvcCall({
         targetProperty: "updateProperty",
-        targetValue: "ems__Task",
+        targetValueRef: "ems__Task",
       });
 
       // Act
@@ -2150,7 +2143,7 @@ describe("Convert commands — production-shape dispatch (Finding 5 completion)"
     it("preserves other frontmatter properties (area, status, label)", async () => {
       const grounding = makeSvcCall({
         targetProperty: "updateProperty",
-        targetValue: "ems__Task",
+        targetValueRef: "ems__Task",
       });
 
       const result = await executor.execute(
@@ -2183,7 +2176,7 @@ describe("Convert commands — production-shape dispatch (Finding 5 completion)"
       // ("Convert to project"), mirror of Convert-to-Task path.
       const grounding = makeSvcCall({
         targetProperty: "updateProperty",
-        targetValue: "ems__Project",
+        targetValueRef: "ems__Project",
       });
 
       const result = await executor.execute(
@@ -2205,7 +2198,7 @@ describe("Convert commands — production-shape dispatch (Finding 5 completion)"
     it("preserves other frontmatter properties after Task→Project flip", async () => {
       const grounding = makeSvcCall({
         targetProperty: "updateProperty",
-        targetValue: "ems__Project",
+        targetValueRef: "ems__Project",
       });
 
       const result = await executor.execute(
@@ -2255,16 +2248,17 @@ describe("Convert commands — production-shape dispatch (Finding 5 completion)"
       expect(writer.updateFile).not.toHaveBeenCalled();
     });
 
-    it("also non-regresses when targetValue is a non-class-flip string", async () => {
-      // Defensive: even if a future grounding supplies a targetValue that is
-      // neither "ems__Task" nor "ems__Project", dispatch must still reach
-      // the registered service (not short-circuit).
+    it("also non-regresses when targetValueRef is a non-class-flip value", async () => {
+      // Defensive: even if a future grounding supplies a targetValueRef that
+      // is neither "ems__Task" nor "ems__Project", dispatch must still reach
+      // the registered service (not short-circuit). RFC 918a2b65 Phase 4:
+      // typed predicate replaces legacy `targetValue` here.
       const mockService = { execute: jest.fn().mockResolvedValue(undefined) };
       registry.register("updateProperty", mockService);
 
       const grounding = makeSvcCall({
         targetProperty: "updateProperty",
-        targetValue: "some-other-value",
+        targetValueRef: "some-other-value",
       });
 
       const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH, {
@@ -2278,132 +2272,16 @@ describe("Convert commands — production-shape dispatch (Finding 5 completion)"
     });
   });
 
-  describe("Wrapped wikilink targetValue (real vault shape — Finding 5 follow-up)", () => {
-    // Background: CommandResolver.getObsidianWikilinkValue returns a Literal
-    // string as-is ("ems__Task") OR wraps an IRI back into wikilink form
-    // ("[[ems__Task]]" with literal quotes). The vault grounding abdbdf09
-    // stores targetValue as `ems__Task` in YAML, but depending on how the
-    // Turtle parser resolves it in the triple store, the parsed
-    // GroundingDefinition.targetValue may arrive as `"[[ems__Task]]"` instead
-    // of the plain `ems__Task` string. v15.105.5 shipped the composite
-    // short-circuit checking only the plain string — live UI confirmed the
-    // wrapped form is what reaches the executor in production, so the
-    // Convert to Task button still failed with "updateProperty requires
-    // userInput.property". This suite locks in both shapes.
-
-    beforeEach(() => {
-      reader = createConvertReader("ems__Project");
-      writer = createWriter();
-      registry = new ServiceRegistry();
-      executor = new GroundingExecutor(reader, writer, registry);
-    });
-
-    it("flips class to ems__Task when targetValue is wrapped as \"[[ems__Task]]\"", async () => {
-      const grounding = makeSvcCall({
-        targetProperty: "updateProperty",
-        targetValue: '"[[ems__Task]]"',
-      });
-
-      const result = await executor.execute(
-        grounding,
-        TARGET_IRI,
-        FILE_PATH,
-        undefined,
-      );
-
-      expect(result.success).toBe(true);
-      expect(writer.updateFile).toHaveBeenCalledTimes(1);
-      const written = writer.updateFile.mock.calls[0][1] as string;
-      expect(written).toMatch(/exo__Instance_class:\s*\[?\s*"\[\[ems__Task\]\]"/);
-      expect(written).not.toMatch(/exo__Instance_class:[\s\S]*?ems__Project/);
-    });
-
-    it("flips class to ems__Task when targetValue is unquoted [[ems__Task]]", async () => {
-      const grounding = makeSvcCall({
-        targetProperty: "updateProperty",
-        targetValue: "[[ems__Task]]",
-      });
-
-      const result = await executor.execute(
-        grounding,
-        TARGET_IRI,
-        FILE_PATH,
-        undefined,
-      );
-
-      expect(result.success).toBe(true);
-      const written = writer.updateFile.mock.calls[0][1] as string;
-      expect(written).toMatch(/exo__Instance_class:\s*\[?\s*"\[\[ems__Task\]\]"/);
-    });
-
-    it("flips class to ems__Project when targetValue is wrapped as \"[[ems__Project]]\"", async () => {
-      const projectReader = createConvertReader("ems__Task");
-      const projectWriter = createWriter();
-      const projectExec = new GroundingExecutor(
-        projectReader,
-        projectWriter,
-        new ServiceRegistry(),
-      );
-
-      const grounding = makeSvcCall({
-        targetProperty: "updateProperty",
-        targetValue: '"[[ems__Project]]"',
-      });
-
-      const result = await projectExec.execute(
-        grounding,
-        TARGET_IRI,
-        FILE_PATH,
-        undefined,
-      );
-
-      expect(result.success).toBe(true);
-      const written = projectWriter.updateFile.mock.calls[0][1] as string;
-      expect(written).toMatch(
-        /exo__Instance_class:\s*\[?\s*"\[\[ems__Project\]\]"/,
-      );
-    });
-
-    it("handles wikilink with alias \"[[ems__Task|Task]]\" — extracts ems__Task target", async () => {
-      const grounding = makeSvcCall({
-        targetProperty: "updateProperty",
-        targetValue: '"[[ems__Task|Task]]"',
-      });
-
-      const result = await executor.execute(
-        grounding,
-        TARGET_IRI,
-        FILE_PATH,
-        undefined,
-      );
-
-      expect(result.success).toBe(true);
-      const written = writer.updateFile.mock.calls[0][1] as string;
-      expect(written).toMatch(/exo__Instance_class:\s*\[?\s*"\[\[ems__Task\]\]"/);
-    });
-
-    it("does NOT short-circuit when targetValue wraps an unrelated class", async () => {
-      // Defensive: a wrapped wikilink that is NOT ems__Task/ems__Project
-      // must still reach the registered service (via the extractor returning
-      // the inner token, which fails both matches).
-      const mockService = { execute: jest.fn().mockResolvedValue(undefined) };
-      registry.register("updateProperty", mockService);
-
-      const grounding = makeSvcCall({
-        targetProperty: "updateProperty",
-        targetValue: '"[[some__OtherClass]]"',
-      });
-
-      const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH, {
-        property: "x",
-        value: "y",
-      });
-
-      expect(result.success).toBe(true);
-      expect(mockService.execute).toHaveBeenCalledTimes(1);
-      expect(writer.updateFile).not.toHaveBeenCalled();
-    });
-  });
+  // RFC 918a2b65 Phase 4 removed the legacy `targetValue` field entirely.
+  // The "Wrapped wikilink targetValue (real vault shape)" describe block
+  // covered scenarios where the parser delivered targetValue as
+  // `"[[ems__Task]]"` (vault IRI shape). Post-migration the parser emits
+  // `targetValueRef` as bare-UID or bare-label (CommandResolver strips
+  // wikilink wrappers upstream via `getObsidianName` / `unwrapWikilink`).
+  // Vault production state observed 2026-05-23: all class-flip groundings
+  // store typed targetValueRef as bare UUIDs (1b20a8f0 / 7db5eeff). Plain
+  // bare-label is exercised by the "Convert commands — production-shape
+  // dispatch" tests above.
 
   // ===========================================================================
   // Issue #3222: the convert paths (executeConvertToTask / executeConvertToProject)
@@ -2439,7 +2317,7 @@ describe("Convert commands — production-shape dispatch (Finding 5 completion)"
 
       const grounding = makeSvcCall({
         targetProperty: "updateProperty",
-        targetValue: "ems__Task",
+        targetValueRef: "ems__Task",
       });
 
       const result = await executor.execute(
@@ -2474,7 +2352,7 @@ describe("Convert commands — production-shape dispatch (Finding 5 completion)"
 
       const grounding = makeSvcCall({
         targetProperty: "updateProperty",
-        targetValue: "ems__Project",
+        targetValueRef: "ems__Project",
       });
 
       const result = await executor.execute(
@@ -2505,7 +2383,7 @@ describe("Convert commands — production-shape dispatch (Finding 5 completion)"
 
       const grounding = makeSvcCall({
         targetProperty: "updateProperty",
-        targetValue: "ems__Task",
+        targetValueRef: "ems__Task",
       });
 
       const result = await executor.execute(
@@ -2527,7 +2405,7 @@ describe("Convert commands — production-shape dispatch (Finding 5 completion)"
 
       const grounding = makeSvcCall({
         targetProperty: "updateProperty",
-        targetValue: "ems__Project",
+        targetValueRef: "ems__Project",
       });
 
       const result = await executor.execute(
@@ -2557,7 +2435,7 @@ describe("Convert commands — production-shape dispatch (Finding 5 completion)"
 
       const grounding = makeSvcCall({
         targetProperty: "updateProperty",
-        targetValue: "ems__Task",
+        targetValueRef: "ems__Task",
       });
 
       const result = await executor.execute(
@@ -3456,47 +3334,6 @@ describe("GroundingExecutor — RFC v2 Phase 3b 5-step pipeline", () => {
         });
       });
 
-      it("serviceCallPayload wins over legacy targetValue when both present", async () => {
-        const mockService = {
-          execute: jest.fn().mockResolvedValue(undefined),
-        };
-        registry.register("updateProperty", mockService);
-
-        const grounding = makeGrounding({
-          type: GroundingType.SERVICE_CALL,
-          targetProperty: "updateProperty",
-          serviceCallPayload: '{"property":"new_predicate"}',
-          targetValue: '{"property":"old_predicate"}',
-        });
-
-        const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
-
-        expect(result.success).toBe(true);
-        expect(mockService.execute).toHaveBeenCalledWith(TARGET_IRI, {
-          property: "new_predicate",
-        });
-      });
-
-      it("falls back to legacy targetValue when serviceCallPayload absent (transitional)", async () => {
-        const mockService = {
-          execute: jest.fn().mockResolvedValue(undefined),
-        };
-        registry.register("updateProperty", mockService);
-
-        const grounding = makeGrounding({
-          type: GroundingType.SERVICE_CALL,
-          targetProperty: "updateProperty",
-          targetValue: '{"property":"ems__Effort_status"}',
-        });
-
-        const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
-
-        expect(result.success).toBe(true);
-        expect(mockService.execute).toHaveBeenCalledWith(TARGET_IRI, {
-          property: "ems__Effort_status",
-        });
-      });
-
       it("substitutes $target inside serviceCallPayload before JSON.parse", async () => {
         const mockService = {
           execute: jest.fn().mockResolvedValue(undefined),
@@ -3582,46 +3419,6 @@ describe("GroundingExecutor — RFC v2 Phase 3b 5-step pipeline", () => {
         expect(content).toContain("ems__Task");
       });
 
-      it("targetValueRef wins over legacy targetValue when both present (precedence)", async () => {
-        const reader2 = createMockReader(
-          "---\nexo__Instance_class: '[[ems__Project]]'\n---",
-        );
-        const writer2 = createMockWriter();
-        const executor2 = new GroundingExecutor(reader2, writer2, registry);
-
-        const grounding = makeGrounding({
-          type: GroundingType.SERVICE_CALL,
-          targetProperty: "updateProperty",
-          targetValueRef: "1b20a8f0-d745-4e93-91db-4531b3df120e",
-          targetValue: "ems__Project",
-        });
-
-        const result = await executor2.execute(grounding, TARGET_IRI, FILE_PATH);
-
-        expect(result.success).toBe(true);
-        const [, content] = writer2.updateFile.mock.calls[0];
-        expect(content).toContain("ems__Task");
-      });
-
-      it("falls back to legacy targetValue class-flip when targetValueRef absent (regression)", async () => {
-        const reader2 = createMockReader(
-          "---\nexo__Instance_class: '[[ems__Project]]'\n---",
-        );
-        const writer2 = createMockWriter();
-        const executor2 = new GroundingExecutor(reader2, writer2, registry);
-
-        const grounding = makeGrounding({
-          type: GroundingType.SERVICE_CALL,
-          targetProperty: "updateProperty",
-          targetValue: "ems__Task",
-        });
-
-        const result = await executor2.execute(grounding, TARGET_IRI, FILE_PATH);
-
-        expect(result.success).toBe(true);
-        const [, content] = writer2.updateFile.mock.calls[0];
-        expect(content).toContain("ems__Task");
-      });
     });
 
     describe("property_append: appendExpression", () => {
@@ -3646,51 +3443,7 @@ describe("GroundingExecutor — RFC v2 Phase 3b 5-step pipeline", () => {
         expect(content).toContain("existing");
       });
 
-      it("appendExpression wins over legacy targetValue when both present", async () => {
-        const reader2 = createMockReader(
-          "---\nexo__Asset_label: Winner\nfallbackField: Loser\naliases: []\n---",
-        );
-        const writer2 = createMockWriter();
-        const executor2 = new GroundingExecutor(reader2, writer2, registry);
-
-        const grounding = makeGrounding({
-          type: GroundingType.PROPERTY_APPEND,
-          targetProperty: "aliases",
-          appendExpression: "$target.exo__Asset_label",
-          targetValue: "$target.fallbackField",
-        });
-
-        const result = await executor2.execute(grounding, TARGET_IRI, FILE_PATH);
-
-        expect(result.success).toBe(true);
-        const [, content] = writer2.updateFile.mock.calls[0];
-        const aliasesMatch = content.match(/aliases:[\s\S]*?(?=\n[^\s-]|$)/);
-        expect(aliasesMatch).not.toBeNull();
-        expect(aliasesMatch![0]).toContain("Winner");
-        expect(aliasesMatch![0]).not.toContain("Loser");
-      });
-
-      it("falls back to legacy targetValue when appendExpression absent (regression)", async () => {
-        const reader2 = createMockReader(
-          "---\nexo__Asset_label: Legacy Label\naliases: []\n---",
-        );
-        const writer2 = createMockWriter();
-        const executor2 = new GroundingExecutor(reader2, writer2, registry);
-
-        const grounding = makeGrounding({
-          type: GroundingType.PROPERTY_APPEND,
-          targetProperty: "aliases",
-          targetValue: "$target.exo__Asset_label",
-        });
-
-        const result = await executor2.execute(grounding, TARGET_IRI, FILE_PATH);
-
-        expect(result.success).toBe(true);
-        const [, content] = writer2.updateFile.mock.calls[0];
-        expect(content).toContain("Legacy Label");
-      });
-
-      it("fails-loud when neither appendExpression nor targetValue is set", async () => {
+      it("fails-loud when appendExpression is not set", async () => {
         const grounding = makeGrounding({
           type: GroundingType.PROPERTY_APPEND,
           targetProperty: "aliases",
