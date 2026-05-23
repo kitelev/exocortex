@@ -1,11 +1,14 @@
 import { injectable, inject } from "tsyringe";
-import { v4 as uuidv4 } from "uuid";
 import { DateFormatter } from "../utilities/DateFormatter";
 import { MetadataHelpers } from "../utilities/MetadataHelpers";
 import { WikiLinkHelpers } from "../utilities/WikiLinkHelpers";
 import type { IVaultAdapter, IFile } from "../interfaces/IVaultAdapter";
 import { DI_TOKENS } from "../interfaces/tokens";
 import { PropertyFieldType } from "../domain/types/PropertyFieldType";
+import type { IClock } from "./IClock";
+import { liveClock } from "./IClock";
+import type { IUidGenerator } from "./IUidGenerator";
+import { liveUidGenerator } from "./IUidGenerator";
 
 /**
  * UUID → symbolic class name resolver. After RFC-004 UID-canon
@@ -74,9 +77,30 @@ export interface AssetPropertyDefinition {
  */
 @injectable()
 export class GenericAssetCreationService {
+  // Mutable to support fluent withDeterminism() override after construction.
+  // tsyringe container.resolve() (used by CommandManager line 57) cannot
+  // resolve a structural `options?: {...}` constructor parameter — TypeInfo
+  // unknown for `Object`. Setter pattern preserves DI auto-resolution and
+  // keeps test ergonomics: new XYZ(deps).withDeterminism({ clock, uidGen }).
+  private clock: IClock = liveClock();
+  private uidGen: IUidGenerator = liveUidGenerator();
+
   constructor(
     @inject(DI_TOKENS.IVaultAdapter) private vault: IVaultAdapter,
   ) {}
+
+  /**
+   * Override clock and/or uid generator for deterministic testing.
+   * Returns `this` to enable fluent chaining.
+   */
+  withDeterminism(options: {
+    clock?: IClock;
+    uidGenerator?: IUidGenerator;
+  }): this {
+    if (options.clock) this.clock = options.clock;
+    if (options.uidGenerator) this.uidGen = options.uidGenerator;
+    return this;
+  }
 
   /**
    * Create an asset of any class type.
@@ -89,7 +113,7 @@ export class GenericAssetCreationService {
     config: GenericAssetCreationConfig,
     propertyDefinitions?: AssetPropertyDefinition[],
   ): Promise<IFile> {
-    const uid = uuidv4();
+    const uid = this.uidGen.next();
     const fileName = `${uid}.md`;
 
     const frontmatter = this.generateFrontmatter(
@@ -123,7 +147,7 @@ export class GenericAssetCreationService {
     propertyDefinitions: AssetPropertyDefinition[],
     uid: string,
   ): Record<string, unknown> {
-    const now = new Date();
+    const now = this.clock.now();
     const frontmatter: Record<string, unknown> = {};
 
     // Build property type map for quick lookup
