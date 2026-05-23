@@ -307,7 +307,13 @@ export function createCreateAssetService(
             )}`,
           );
         }
-        lines.push('ems__Effort_status: "[[ems__EffortStatusBacklog]]"');
+        // UUID-form per RFC 31c1a0be Phase 4 PR-C (#3194). Mirrors plugin's
+        // `ServiceRegistryPopulator.createAsset` line 253-255; CLI must emit
+        // the same UID so backlinks resolve uniformly with the rest of the
+        // graph (avoid the 42-asset symbolic-form trace the prior RFC closed).
+        lines.push(
+          'ems__Effort_status: "[[753a44d5-846c-4b82-9196-4fd9a4d48777]]"',
+        );
         if (!isDefinedByWritten && parentMetadata.exo__Asset_isDefinedBy) {
           lines.push(
             `exo__Asset_isDefinedBy: ${toQuotedWikilink(

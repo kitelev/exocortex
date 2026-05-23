@@ -504,7 +504,10 @@ describe("@kitelev/exocortex-services — factory contract", () => {
       const content = fs.writes[0].content;
       expect(content).toMatch(/ems__Effort_area: "\[\[Area1\]\]"/);
       expect(content).not.toMatch(/ems__Effort_parent:/);
-      expect(content).toMatch(/ems__Effort_status: "\[\[ems__EffortStatusBacklog\]\]"/);
+      // UUID-form per RFC 31c1a0be Phase 4 PR-C (#3194) — Backlog UID.
+      expect(content).toMatch(
+        /ems__Effort_status: "\[\[753a44d5-846c-4b82-9196-4fd9a4d48777\]\]"/,
+      );
     });
 
     it("inherits ems__Effort_parent when parent is not ems__Area", async () => {

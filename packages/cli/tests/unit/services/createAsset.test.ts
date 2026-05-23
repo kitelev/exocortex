@@ -170,7 +170,10 @@ describe("createAsset (CLI registry integration, Phase 3.5)", () => {
     expect(fm.exo__Asset_prototype).toBe("[[ems__TaskPrototype]]");
     expect(fm.exo__Instance_class).toEqual(["[[ems__Task]]"]);
     expect(fm.ems__Effort_area).toBe("[[Area1]]");
-    expect(fm.ems__Effort_status).toBe("[[ems__EffortStatusBacklog]]");
+    // UUID-form per RFC 31c1a0be Phase 4 PR-C (#3194) — Backlog UID.
+    expect(fm.ems__Effort_status).toBe(
+      "[[753a44d5-846c-4b82-9196-4fd9a4d48777]]",
+    );
   });
 
   it("registry with fsAdapter: createAsset is NOT a CliServiceNotImplementedError stub", async () => {
