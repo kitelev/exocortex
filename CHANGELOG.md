@@ -2,6 +2,25 @@
 
 ### Added
 
+**RFC v2 Phase 4a — Vault Grounding migration (vault-only, closes #3165)**: Migrates 12 vault Groundings in `exocortex-exocmd-ontology` (submodule commit `d166019`) from the legacy `serviceId: createAsset / createRelatedTask / createRelatedProject` shape to the declarative `create_instance` pipeline. Unblocks Phase 4b (TS handler removal in `ServiceRegistryPopulator.ts:185-520`, separate PR after ≥1 release soak).
+
+- **Group A — 6 from-prototype Groundings (minimal pattern):** `45d676f0` (Event), `6a5a71e2` (Effort), `b7a84c3c` (Project), `80e49f86` (FleetingNote), `d53c8726` (Session), `b87330e0` (Meeting). Each switched to `type=create_instance` + `targetClass=<UUID>|<symbol>` + `targetFolder="03 Knowledge/inbox"`. Default `linkBackProperty=exo__Asset_prototype` writes `[[$target]]` back-link at exec-time, preserving the dynamic prototype linkage previously handled by legacy `createAsset`'s `prototype: $target` JSON.
+- **Group B — 3 static-prototype Groundings (simple):** `95aaab51` (Create knowledge → `ims__Concept`), `e72a5fa1` (Create Area → `ems__Area`), `93e4a830` (Start Lunch → `ems__Task` with Lunch-specific prototype `4b571141`). Static `targetPrototype` records prototype-class for discoverability where applicable.
+- **Group C — 2 createRelated Groundings (full pattern):** `4919afb1` (Create related task), `8748f8b0` (Create related project). Both reuse the existing `PropertyDefault d9aa9bb8` (status=Draft) + 3 `InheritanceRule` instances (`3f08f5a8` area-cond / `43731bae` area-excl / `cbe000c4` isDefinedBy pass-through) originally created for `a6ef8fda` in Phase 2 (#3161). `targetFolder=$targetFolder` substitutes the host file's folder at exec-time, replacing legacy `iFile.parent?.path` resolution in `createRelatedTask/Project` handlers.
+- **Group D — 1 hybrid Grounding (full pattern):** `a222094b` (Create task, bound to canonical "Create Task" command `dec97198`). Same reuse pattern as Group C plus static `targetPrototype=ems__TaskPrototype`.
+- **Group E — 1 legacy JSON migration:** `4d8d5055` (Create task for daily note, Issue #3136 predecessor) — replaces `exocmd__Grounding_propertyDefaults: '{"ems__Effort_plannedStartTimestamp":"$today"}'` JSON literal with ref-form `_propertyDefault` pointing to a **new PropertyDefault instance** `c4e16484-6d19-4406-b57d-19000b7d1560` which references the canonical `$today` `exocmd__SubstitutionToken` (`665ab8ac-…`). This eliminates the last opaque JSON literal in `assetspaces/exocmd/` and makes the value-source discoverable via SPARQL (RFC v2 §SubstitutionToken).
+
+**Validation gates (all green):**
+
+- Frontmatter audit grep `'"createAsset"|"createRelatedTask"|"createRelatedProject"'` in `assetspaces/exocmd/` → **0 hits** (Phase 4b entry gate satisfied).
+- Frontmatter grep `^exocmd__Grounding_propertyDefaults:` → **0 hits** (legacy JSON literal eliminated).
+- SHACL `--shapes-mode`: **566 violations** total (= pre-migration baseline; verified via git-stash diff that Phase 4a introduces 0 new violations).
+- SPARQL CQ1 (`?g exocmd:Grounding_propertyDefault ?pd . ?pd exocmd:PropertyDefault_value ?v`) returns **5 rows**: 4 EffortStatusDraft + 1 `$today` SubstitutionToken (the `4d8d5055` special case), confirming both the pre-existing Phase 2 reference Grounding `a6ef8fda` and the 4 Phase 4a additions are reachable from the declarative graph.
+
+**Behavioral edge cases (deferred to Phase 4b soak validation):** documented inline in each Grounding's body — the default `linkBackProperty=exo__Asset_prototype` unconditionally overwrites at the end of `executeCreateInstance`, so on Area-target invocation of `createRelatedTask/Project` the back-link writes `exo__Asset_prototype:[[<Area>]]` (semantically odd but harmless; InheritanceRule still correctly wrote `ems__Effort_area` earlier in the pipeline). Phase 4b soak window will surface any user-visible regression. The `80e49f86` Grounding had no inbound Command binding in `vault-2025` at migration time and was migrated for consistency with sibling Groundings.
+
+References: RFC v2 (`vault-exodev/inbox/2f3f640b-c5e0-4873-8c56-c390b8402cfa`) §Plan миграции — Phase 4a; Phase 3a parser (PR #3224); Phase 3b engine (PR #3228); Phase 3.5 CLI parity (PR #3231); reference Grounding `a6ef8fda` (Phase 2 #3161).
+
 **RFC v2 Phase 2 — Instance assets for Create Task Grounding (vault-only, closes #3161)**: New `exocmd__PropertyDefault` + `exocmd__InheritanceRule` instances in `exocortex-exocmd-ontology` (commit `8e4bf1f`) attached to Grounding `a6ef8fda-addb-40c3-940c-fe55fd7e8500` (Create TaskPrototype instance). Declarative replacement for hardcoded literal defaults in `ServiceRegistryPopulator.ts:199-211` (Phase 4b removal scope). Engine still reads hardcoded TS dispatch in this phase; switch to declarative reads happens in Phase 3 (#3162, #3163).
 
 - **1 PropertyDefault** (`d9aa9bb8-…`): `ems__Effort_status = [[c42245d0-…|ems__EffortStatusDraft]]` (UID-canon Draft, replacing legacy symbolic `EffortStatusBacklog` literal)
