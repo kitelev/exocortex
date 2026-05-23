@@ -858,4 +858,62 @@ describe("ShapeLoader.loadFromVaultFS — minCount and xsd: range", () => {
     expect(shape!.severity).toBe("sh:Warning");
     expect(shape!.domain).toEqual([`${EXO_NS}Asset`]);
   });
+
+  // Added 2026-05-23 — RFC 75b50f51 SHACL pattern constraint follow-up.
+  // Uses String.raw to keep backslashes literal (simple regex parseFrontmatter
+  // does not process YAML escape sequences — value passes through verbatim).
+  it("parses exo__Property_pattern from frontmatter (with quote stripping)", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "shacl-pattern-"));
+    try {
+      const filePath = path.join(dir, "exo__AssetSpace_git.md");
+      await fs.writeFile(
+        filePath,
+        [
+          "---",
+          'exo__Instance_class:',
+          '  - "[[30d63ce4-e574-456c-8de8-2bf1a53688c1|exo__Property]]"',
+          'exo__Property_domain: "[[73bd00e4-ccc0-4f3f-b20d-c4388c4588fb|exo__AssetSpace]]"',
+          String.raw`exo__Property_pattern: "^https://github\.com/kitelev/exoas-[a-z0-9-]+$"`,
+          "exo__Asset_label: exo__AssetSpace_git",
+          "---",
+        ].join("\n"),
+        "utf-8",
+      );
+
+      const reg = await ShapeLoader.loadFromVaultFS(dir);
+      const shape = reg.get(`${EXO_NS}AssetSpace_git`);
+      expect(shape).toBeDefined();
+      expect(shape!.pattern).toBe(
+        String.raw`^https://github\.com/kitelev/exoas-[a-z0-9-]+$`,
+      );
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("leaves pattern undefined when frontmatter omits it", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "shacl-nopattern-"));
+    try {
+      const filePath = path.join(dir, "exo__AssetSpace_version.md");
+      await fs.writeFile(
+        filePath,
+        [
+          "---",
+          'exo__Instance_class:',
+          '  - "[[30d63ce4-e574-456c-8de8-2bf1a53688c1|exo__Property]]"',
+          'exo__Property_domain: "[[73bd00e4-ccc0-4f3f-b20d-c4388c4588fb|exo__AssetSpace]]"',
+          "exo__Asset_label: exo__AssetSpace_version",
+          "---",
+        ].join("\n"),
+        "utf-8",
+      );
+
+      const reg = await ShapeLoader.loadFromVaultFS(dir);
+      const shape = reg.get(`${EXO_NS}AssetSpace_version`);
+      expect(shape).toBeDefined();
+      expect(shape!.pattern).toBeUndefined();
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
 });

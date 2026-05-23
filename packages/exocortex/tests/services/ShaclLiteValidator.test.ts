@@ -1265,3 +1265,154 @@ describe('validate — cross-vault UUID-keyed subject resolution', () => {
     expect(report.violations[0].actualValue).toBe('node:B');
   });
 });
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Suite: sh:pattern (regex on literal lexical form)
+// Added 2026-05-23 — RFC 75b50f51 SHACL constraint follow-up.
+// ═════════════════════════════════════════════════════════════════════════════
+
+describe('validate — pattern', () => {
+  const ASSETSPACE = `${EXO}AssetSpace`;
+  const GIT_PROP = `${EXO}AssetSpace_git`;
+  const EXOAS_PATTERN = '^https://github\\.com/kitelev/exoas-[a-z0-9-]+$';
+
+  // Local shape builder pinned to AssetSpace domain (makeShape default is ems:Effort).
+  function makePatternShape(overrides: Partial<Shape> & Pick<Shape, 'propertyIRI'>): Shape {
+    return makeShape({ domain: [ASSETSPACE], ...overrides });
+  }
+
+  it('T-PAT-01: literal matching pattern passes', () => {
+    const shape = makePatternShape({ propertyIRI: GIT_PROP, pattern: EXOAS_PATTERN });
+    const triples = [
+      typeTriple('node:A', ASSETSPACE),
+      litTriple('node:A', GIT_PROP, 'https://github.com/kitelev/exoas-ems'),
+    ];
+    const report = validate(triples, makeRegistry([shape]), flatHierarchy);
+    expect(report.conforms).toBe(true);
+    expect(report.violations).toHaveLength(0);
+  });
+
+  it('T-PAT-02: literal not matching pattern emits violation', () => {
+    const shape = makePatternShape({ propertyIRI: GIT_PROP, pattern: EXOAS_PATTERN });
+    const triples = [
+      typeTriple('node:A', ASSETSPACE),
+      litTriple('node:A', GIT_PROP, 'https://github.com/kitelev/exocortex-ems-ontology'),
+    ];
+    const report = validate(triples, makeRegistry([shape]), flatHierarchy);
+    expect(report.conforms).toBe(false);
+    expect(report.violations).toHaveLength(1);
+    expect(report.violations[0].propertyPath).toBe(GIT_PROP);
+    expect(report.violations[0].actualValue).toBe(
+      'https://github.com/kitelev/exocortex-ems-ontology',
+    );
+    expect(report.violations[0].message).toContain('sh:pattern');
+  });
+
+  it('T-PAT-03: default message mentions the pattern string', () => {
+    const shape = makePatternShape({ propertyIRI: GIT_PROP, pattern: EXOAS_PATTERN });
+    const triples = [
+      typeTriple('node:A', ASSETSPACE),
+      litTriple('node:A', GIT_PROP, 'invalid'),
+    ];
+    const report = validate(triples, makeRegistry([shape]), flatHierarchy);
+    expect(report.violations[0].message).toContain(EXOAS_PATTERN);
+  });
+
+  it('T-PAT-04: custom message overrides default', () => {
+    const shape = makePatternShape({
+      propertyIRI: GIT_PROP,
+      pattern: EXOAS_PATTERN,
+      message: 'AssetSpace git URL must follow exoas-<namespace> convention',
+    });
+    const triples = [
+      typeTriple('node:A', ASSETSPACE),
+      litTriple('node:A', GIT_PROP, 'invalid'),
+    ];
+    const report = validate(triples, makeRegistry([shape]), flatHierarchy);
+    expect(report.violations[0].message).toBe(
+      'AssetSpace git URL must follow exoas-<namespace> convention',
+    );
+  });
+
+  it('T-PAT-05: pattern check skipped for IRI values (sh:pattern is for literals)', () => {
+    const shape = makePatternShape({ propertyIRI: GIT_PROP, pattern: EXOAS_PATTERN });
+    const triples = [
+      typeTriple('node:A', ASSETSPACE),
+      iriTriple('node:A', GIT_PROP, 'https://github.com/kitelev/exocortex-ems-ontology'),
+    ];
+    const report = validate(triples, makeRegistry([shape]), flatHierarchy);
+    // IRI values don't match the canonical sh:pattern semantics — skip silently
+    expect(report.violations).toHaveLength(0);
+  });
+
+  it('T-PAT-06: invalid regex pattern is silently ignored (TBox config error)', () => {
+    const shape = makePatternShape({
+      propertyIRI: GIT_PROP,
+      pattern: '[invalid(regex',
+    });
+    const triples = [
+      typeTriple('node:A', ASSETSPACE),
+      litTriple('node:A', GIT_PROP, 'any value'),
+    ];
+    const report = validate(triples, makeRegistry([shape]), flatHierarchy);
+    expect(report.conforms).toBe(true);
+    expect(report.violations).toHaveLength(0);
+  });
+
+  it('T-PAT-07: empty pattern string is treated as no constraint', () => {
+    const shape = makePatternShape({ propertyIRI: GIT_PROP, pattern: '' });
+    const triples = [
+      typeTriple('node:A', ASSETSPACE),
+      litTriple('node:A', GIT_PROP, 'anything'),
+    ];
+    const report = validate(triples, makeRegistry([shape]), flatHierarchy);
+    expect(report.violations).toHaveLength(0);
+  });
+
+  it('T-PAT-08: pattern and range coexist — both fire independently', () => {
+    const shape = makePatternShape({
+      propertyIRI: GIT_PROP,
+      range: [`${XSD}string`],
+      pattern: EXOAS_PATTERN,
+    });
+    const triples = [
+      typeTriple('node:A', ASSETSPACE),
+      // Literal with non-string datatype + non-matching pattern → 2 violations
+      litTriple('node:A', GIT_PROP, '123', `${XSD}integer`),
+    ];
+    const report = validate(triples, makeRegistry([shape]), flatHierarchy);
+    expect(report.violations.length).toBeGreaterThanOrEqual(2);
+    expect(report.violations.some((v) => v.message.includes('sh:pattern'))).toBe(true);
+    expect(report.violations.some((v) => v.message.includes('sh:datatype'))).toBe(true);
+  });
+
+  it('T-PAT-09: pattern severity respects shape.severity', () => {
+    const shape = makePatternShape({
+      propertyIRI: GIT_PROP,
+      pattern: EXOAS_PATTERN,
+      severity: 'sh:Warning',
+    });
+    const triples = [
+      typeTriple('node:A', ASSETSPACE),
+      litTriple('node:A', GIT_PROP, 'invalid'),
+    ];
+    const report = validate(triples, makeRegistry([shape]), flatHierarchy);
+    expect(report.violations).toHaveLength(1);
+    expect(report.violations[0].severity).toBe('sh:Warning');
+    // Warning does not break conforms
+    expect(report.conforms).toBe(true);
+  });
+
+  it('T-PAT-10: pattern with anchored ^...$ exactly matches full string', () => {
+    const shape = makePatternShape({ propertyIRI: GIT_PROP, pattern: '^abc$' });
+    const triples = [
+      typeTriple('node:A', ASSETSPACE),
+      litTriple('node:A', GIT_PROP, 'abc'),
+      typeTriple('node:B', ASSETSPACE),
+      litTriple('node:B', GIT_PROP, 'abcdef'), // contains "abc" but not anchored match
+    ];
+    const report = validate(triples, makeRegistry([shape]), flatHierarchy);
+    expect(report.violations).toHaveLength(1);
+    expect(report.violations[0].focusNode).toBe('node:B');
+  });
+});

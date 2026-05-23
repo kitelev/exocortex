@@ -8,6 +8,13 @@ export interface Shape {
   range?: string[];
   cardinality?: "Single" | "Multiple";
   minCount?: number;
+  /**
+   * ECMAScript-compatible regex string applied to literal values.
+   * Maps to W3C SHACL `sh:pattern`. Compiled once per validation run;
+   * invalid patterns are silently ignored (TBox config error, not data error).
+   * Anchors `^`/`$` recommended for exact-match semantics.
+   */
+  pattern?: string;
   severity: "sh:Violation" | "sh:Warning" | "sh:Info";
   message?: string;
 }

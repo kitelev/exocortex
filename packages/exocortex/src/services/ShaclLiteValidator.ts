@@ -8,6 +8,12 @@ export interface Shape {
   range?: string[];
   cardinality?: 'Single' | 'Multiple';
   minCount?: number;
+  /**
+   * ECMAScript regex string. Maps to W3C SHACL `sh:pattern`.
+   * Applied to literal values only; compiled once per validation run.
+   * Invalid pattern strings are silently ignored (TBox config error).
+   */
+  pattern?: string;
   severity: Severity;
   message?: string;
 }
@@ -252,6 +258,35 @@ export function validate(
             `sh:maxCount violation: expected at most 1 value for <${shape.propertyIRI}>, got ${values.length}`,
         });
         continue;
+      }
+
+      // sh:pattern check — regex match on literal values.
+      // Independent of range/class constraints: a property may have a pattern
+      // without declaring a range (e.g. constraining lexical form of any string).
+      // Compile once outside the value loop; invalid patterns are skipped silently
+      // (TBox config error, not data error).
+      if (shape.pattern !== undefined && shape.pattern.length > 0) {
+        let compiledPattern: RegExp | null = null;
+        try {
+          compiledPattern = new RegExp(shape.pattern);
+        } catch {
+          compiledPattern = null;
+        }
+        if (compiledPattern) {
+          for (const obj of values) {
+            if (obj.type === 'literal' && !compiledPattern.test(obj.value)) {
+              violations.push({
+                focusNode: subjectIRI,
+                propertyPath: shape.propertyIRI,
+                severity: shape.severity,
+                message:
+                  shape.message ??
+                  `sh:pattern violation: literal "${obj.value}" does not match pattern ${shape.pattern}`,
+                actualValue: obj.value,
+              });
+            }
+          }
+        }
       }
 
       // sh:class / sh:datatype range check

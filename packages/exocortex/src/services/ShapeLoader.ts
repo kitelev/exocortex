@@ -88,6 +88,7 @@ export class ShapeLoader {
         exoLabelTs,
         rdfsLabelTs,
         minCountTs,
+        patternTs,
       ] = await Promise.all([
         graph.match(subject, RDFS.term("domain"), undefined),
         graph.match(subject, EXO.term("Property_domain"), undefined),
@@ -102,6 +103,7 @@ export class ShapeLoader {
         // rdfs:label Literal twin that Exocortex always emits alongside.
         graph.match(subject, RDFS.term("label"), undefined),
         graph.match(subject, EXO.term("Property_minCount"), undefined),
+        graph.match(subject, EXO.term("Property_pattern"), undefined),
       ]);
       const labelTs = [...exoLabelTs, ...rdfsLabelTs];
       // NoteToRDFConverter emits the RDFS-mapped twin triple only when the
@@ -182,6 +184,12 @@ export class ShapeLoader {
         minCountLiteral instanceof Literal ? parseInt(minCountLiteral.value, 10) : NaN;
       const minCount = !isNaN(minCountParsed) ? minCountParsed : undefined;
 
+      const patternLiteral = patternTs[0]?.object;
+      const pattern =
+        patternLiteral instanceof Literal && patternLiteral.value.length > 0
+          ? patternLiteral.value
+          : undefined;
+
       registry.register({
         propertyIRI,
         domain,
@@ -189,6 +197,7 @@ export class ShapeLoader {
         cardinality,
         severity,
         minCount,
+        pattern,
       });
     }
 
@@ -370,6 +379,7 @@ export class ShapeLoader {
     const cardRaw = fm["exo__Property_cardinality"];
     const sevRaw = fm["exo__Property_severity"];
     const minCountRaw = fm["exo__Property_minCount"];
+    const patternRaw = fm["exo__Property_pattern"];
 
     const domain = ShapeLoader.asArray(domainRaw)
       .map((v) => ShapeLoader.wikilinkToIRI(v))
@@ -393,6 +403,18 @@ export class ShapeLoader {
     const minCount =
       minCountParsed !== undefined && !isNaN(minCountParsed) ? minCountParsed : undefined;
 
+    // Strip surrounding YAML quotes that the simple regex-based parseFrontmatter
+    // leaves in place. Pattern values typically need quoting due to regex special
+    // characters, so this case is common in practice.
+    const patternStripped =
+      typeof patternRaw === "string"
+        ? patternRaw.replace(/^["']|["']$/g, "")
+        : undefined;
+    const pattern =
+      patternStripped !== undefined && patternStripped.length > 0
+        ? patternStripped
+        : undefined;
+
     registry.register({
       propertyIRI,
       domain,
@@ -400,6 +422,7 @@ export class ShapeLoader {
       cardinality,
       severity,
       minCount,
+      pattern,
     });
   }
 
