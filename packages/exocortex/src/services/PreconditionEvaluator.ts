@@ -7,6 +7,8 @@ import { ExoQLAlgebraTranslator } from "../infrastructure/sparql/algebra/Algebra
 import { ExoQLQueryExecutor } from "../infrastructure/sparql/executors/QueryExecutor";
 import type { AskOperation } from "../infrastructure/sparql/algebra/AlgebraOperation";
 import { evaluateWithExoEval } from "../exoql/evaluateWithExoEval";
+import type { IClock } from "./IClock";
+import { liveClock } from "./IClock";
 
 /**
  * Context passed to host function evaluators.
@@ -46,13 +48,16 @@ export class PreconditionEvaluator {
   private readonly tripleStore: ITripleStore;
   private readonly askCache = new Map<string, AskOperation>();
   private readonly queryBodyResolver?: IQueryBodyResolver;
+  private readonly clock: IClock;
 
   constructor(
     tripleStore: ITripleStore,
     queryBodyResolver?: IQueryBodyResolver,
+    options?: { clock?: IClock },
   ) {
     this.tripleStore = tripleStore;
     this.queryBodyResolver = queryBodyResolver;
+    this.clock = options?.clock ?? liveClock();
   }
 
   /**
@@ -218,11 +223,11 @@ export class PreconditionEvaluator {
    * - $thisYearStart → "2026-01-01"^^xsd:date (Asia/Almaty)
    */
   substituteVariables(query: string, targetIRI: string): string {
-    const now = new Date().toISOString();
+    const utcNow = this.clock.now();
+    const now = utcNow.toISOString();
     const today = now.slice(0, 10);
 
     // Compute Almaty-local date components
-    const utcNow = new Date();
     const almatyNow = new Date(utcNow.getTime() + PreconditionEvaluator.ALMATY_OFFSET_MS);
     const almatyYear = almatyNow.getUTCFullYear();
     const almatyMonth = almatyNow.getUTCMonth(); // 0-based
