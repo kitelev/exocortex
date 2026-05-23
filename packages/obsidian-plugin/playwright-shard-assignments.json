@@ -13,7 +13,6 @@
       "relation-column-set-smoke.spec.ts"
     ],
     [
-      "starter-kit-smoke.spec.ts",
       "layout-overflow-styling.spec.ts",
       "brat-installation-compatibility.spec.ts",
       "exo-layout-smoke.spec.ts",
