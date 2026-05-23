@@ -1,3 +1,4 @@
+import "reflect-metadata";
 import { frozenClock, liveClock, IClock } from "../../src/services/IClock";
 import {
   seededUidGenerator,
@@ -6,6 +7,7 @@ import {
 } from "../../src/services/IUidGenerator";
 import { PreconditionEvaluator } from "../../src/services/PreconditionEvaluator";
 import { InMemoryTripleStore } from "../../src/infrastructure/rdf/InMemoryTripleStore";
+import { GenericAssetCreationService } from "../../src/services/GenericAssetCreationService";
 
 /**
  * Task 0.2 acceptance — verify IClock + IUidGenerator injection enables
@@ -75,6 +77,54 @@ describe("Determinism injection (Task 0.2 — Phase 0 CLI determinism)", () => {
       expect(u).toMatch(
         /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
       );
+    });
+  });
+
+  describe("GenericAssetCreationService.withDeterminism (fluent setter)", () => {
+    // Minimal stub — GAS only stores `vault` from constructor; we never
+    // invoke a vault method here, so {} cast is safe for this contract test.
+    const stubVault = {} as unknown as ConstructorParameters<
+      typeof GenericAssetCreationService
+    >[0];
+
+    it("withDeterminism overrides internal clock + uidGen (introspect via private fields)", () => {
+      const seed = "gas-determinism-seed-1";
+      const iso = "2026-05-23T12:00:00Z";
+      const clk = frozenClock(iso);
+      const uidg = seededUidGenerator(seed);
+
+      const svc = new GenericAssetCreationService(stubVault).withDeterminism({
+        clock: clk,
+        uidGenerator: uidg,
+      });
+
+      // Field access via index signature — tsyringe-resolved instances retain
+      // the prototype, and private fields are exposed at runtime for tests.
+      const internalClock = (svc as unknown as { clock: IClock }).clock;
+      const internalUidGen = (svc as unknown as { uidGen: IUidGenerator })
+        .uidGen;
+
+      expect(internalClock.now().toISOString()).toBe("2026-05-23T12:00:00.000Z");
+      // seeded generator emits deterministic sequence — first value should
+      // match an independent seeded generator with same seed.
+      const independent = seededUidGenerator(seed);
+      expect(internalUidGen.next()).toBe(independent.next());
+    });
+
+    it("withDeterminism returns this for fluent chaining", () => {
+      const svc = new GenericAssetCreationService(stubVault);
+      const ret = svc.withDeterminism({ clock: frozenClock("2026-01-01T00:00:00Z") });
+      expect(ret).toBe(svc);
+    });
+
+    it("withDeterminism partial override leaves other defaults intact", () => {
+      const svc = new GenericAssetCreationService(stubVault);
+      const defaultClock = (svc as unknown as { clock: IClock }).clock;
+
+      svc.withDeterminism({ uidGenerator: seededUidGenerator("only-uid") });
+
+      // Clock should still be the original default (liveClock instance)
+      expect((svc as unknown as { clock: IClock }).clock).toBe(defaultClock);
     });
   });
 

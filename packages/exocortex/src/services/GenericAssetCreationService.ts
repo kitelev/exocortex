@@ -77,15 +77,29 @@ export interface AssetPropertyDefinition {
  */
 @injectable()
 export class GenericAssetCreationService {
-  private readonly clock: IClock;
-  private readonly uidGen: IUidGenerator;
+  // Mutable to support fluent withDeterminism() override after construction.
+  // tsyringe container.resolve() (used by CommandManager line 57) cannot
+  // resolve a structural `options?: {...}` constructor parameter — TypeInfo
+  // unknown for `Object`. Setter pattern preserves DI auto-resolution and
+  // keeps test ergonomics: new XYZ(deps).withDeterminism({ clock, uidGen }).
+  private clock: IClock = liveClock();
+  private uidGen: IUidGenerator = liveUidGenerator();
 
   constructor(
     @inject(DI_TOKENS.IVaultAdapter) private vault: IVaultAdapter,
-    options?: { clock?: IClock; uidGenerator?: IUidGenerator },
-  ) {
-    this.clock = options?.clock ?? liveClock();
-    this.uidGen = options?.uidGenerator ?? liveUidGenerator();
+  ) {}
+
+  /**
+   * Override clock and/or uid generator for deterministic testing.
+   * Returns `this` to enable fluent chaining.
+   */
+  withDeterminism(options: {
+    clock?: IClock;
+    uidGenerator?: IUidGenerator;
+  }): this {
+    if (options.clock) this.clock = options.clock;
+    if (options.uidGenerator) this.uidGen = options.uidGenerator;
+    return this;
   }
 
   /**
