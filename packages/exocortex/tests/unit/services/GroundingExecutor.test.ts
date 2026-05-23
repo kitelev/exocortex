@@ -3413,6 +3413,110 @@ describe("GroundingExecutor — RFC v2 Phase 3b 5-step pipeline", () => {
       );
     });
 
+    // -- Step 1 > Step 3 (review MED-1): userInput overrides InheritanceRule --
+
+    it("userInput overrides InheritanceRule for the same target property (Step 1 > Step 3)", async () => {
+      // Mirrors the Step 1 > Step 2 invariant test, but with InheritanceRule
+      // instead of PropertyDefault on the same target property. Guards against
+      // a future refactor that re-orders Steps 1 and 3 silently breaking the
+      // userInput-wins contract documented in RFC v2 §Precedence.
+      const grounding = makeGrounding({
+        type: GroundingType.CREATE_INSTANCE,
+        targetClass: "ems__Task",
+        targetFolder: "03 Knowledge/inbox",
+        inheritanceRule: [
+          {
+            sourcePropertyName: "exo__Asset_uid",
+            targetPropertyName: "ems__Effort_area",
+            targetClassCondition: "ems__Area",
+            targetClassExclusion: [],
+            priority: 100,
+          },
+        ],
+      });
+      reader.readFile.mockResolvedValue(buildTargetFm(["ems__Area"]));
+
+      const result = await executor.execute(
+        grounding,
+        TARGET_AREA_IRI,
+        TARGET_AREA_PATH,
+        {
+          label: "userInput wins over IR",
+          ems__Effort_area: '"[[user-supplied-area-uid]]"',
+        },
+      );
+
+      expect(result.success).toBe(true);
+      const [, content] = writer.createFile.mock.calls[0];
+      // userInput value wins.
+      expect(content).toContain('ems__Effort_area: "[[user-supplied-area-uid]]"');
+      // InheritanceRule value is NOT present.
+      expect(content).not.toContain(`ems__Effort_area: "[[${TARGET_AREA_UID}]]"`);
+    });
+
+    // -- Three-layer interaction (review MED-2):
+    //    Step 1 (userInput) + Step 2 (PropertyDefault) + Step 3 (InheritanceRule)
+    //    + Step 4 (copy-from-target) all contribute to distinct property slots --
+
+    it("Three-layer + copy-from-target: each step contributes to its own slot without cross-talk", async () => {
+      const grounding = makeGrounding({
+        type: GroundingType.CREATE_INSTANCE,
+        targetClass: "ems__Task",
+        targetFolder: "03 Knowledge/inbox",
+        propertyDefault: [
+          {
+            propertyName: "ems__Effort_status",
+            value: `"[[${STATUS_DRAFT_UID}]]"`,
+          },
+        ],
+        inheritanceRule: [
+          {
+            sourcePropertyName: "exo__Asset_uid",
+            targetPropertyName: "ems__Effort_area",
+            targetClassCondition: "ems__Area",
+            targetClassExclusion: [],
+            priority: 100,
+          },
+        ],
+      });
+      // Target has a non-blacklisted property (`ems__Effort_priority`) that
+      // Steps 2/3 don't touch — Step 4 copy-from-target must fill it.
+      reader.readFile.mockResolvedValue(
+        buildTargetFm(["ems__Area"], {
+          exo__Asset_isDefinedBy: `"[[${OWNER_ONTOLOGY_UID}]]"`,
+          ems__Effort_priority: '"[[priority-high]]"',
+        }),
+      );
+
+      const result = await executor.execute(
+        grounding,
+        TARGET_AREA_IRI,
+        TARGET_AREA_PATH,
+        {
+          label: "Three-layer test",
+          ems__Effort_responsible: '"[[user-uid]]"', // Step 1: userInput
+        },
+      );
+
+      expect(result.success).toBe(true);
+      const [, content] = writer.createFile.mock.calls[0];
+      // Step 1 (userInput) contributes ems__Effort_responsible.
+      expect(content).toContain('ems__Effort_responsible: "[[user-uid]]"');
+      // Step 2 (PropertyDefault) contributes ems__Effort_status (BLACKLISTed
+      // but PD bypasses BLACKLIST).
+      expect(content).toContain(`ems__Effort_status: "[[${STATUS_DRAFT_UID}]]"`);
+      // Step 3 (InheritanceRule) contributes ems__Effort_area (BLACKLISTed
+      // but IR bypasses BLACKLIST).
+      expect(content).toContain(`ems__Effort_area: "[[${TARGET_AREA_UID}]]"`);
+      // Step 4 (copy-from-target) fills ems__Effort_priority — not touched
+      // by Steps 2/3, not in BLACKLIST.
+      expect(content).toContain('ems__Effort_priority: "[[priority-high]]"');
+      // Step 4 also copies non-blacklisted exo__Asset_isDefinedBy from target.
+      expect(content).toContain(
+        `exo__Asset_isDefinedBy: "[[${OWNER_ONTOLOGY_UID}]]"`,
+      );
+    });
+
     // -- Backward compatibility: Groundings without propertyDefault / inheritanceRule --
 
     it("Backward compat: Grounding without propertyDefault / inheritanceRule still creates instance correctly", async () => {
