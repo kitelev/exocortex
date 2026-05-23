@@ -142,18 +142,21 @@ describe("WorkflowCommandAdapter", () => {
       const commands = adapter.adaptTransitions(EffortStatus.TODO);
       const steps = commands[0].grounding.steps!;
 
+      // RFC 31c1a0be Phase 1 + RFC 918a2b65 Phase 4: status emitted via
+      // typed `targetValueRef` (executor wraps to `"[[...]]"` wikilink).
       expect(steps[0].type).toBe(GroundingType.PROPERTY_SET);
       expect(steps[0].targetProperty).toBe("ems__Effort_status");
-      expect(steps[0].targetValue).toBe(EffortStatus.DOING);
+      expect(steps[0].targetValueRef).toBe(EffortStatus.DOING);
     });
 
     it("should set timestamps as subsequent grounding steps", () => {
       const commands = adapter.adaptTransitions(EffortStatus.TODO);
       const steps = commands[0].grounding.steps!;
 
+      // Timestamp emitted via typed `targetValueSubstitution` ($now token).
       expect(steps[1].type).toBe(GroundingType.PROPERTY_SET);
       expect(steps[1].targetProperty).toBe("ems__Effort_startTimestamp");
-      expect(steps[1].targetValue).toBe("$now");
+      expect(steps[1].targetValueSubstitution).toBe("$now");
     });
 
     it("should return simple grounding when no timestamps", () => {
@@ -163,7 +166,7 @@ describe("WorkflowCommandAdapter", () => {
       // Todo has no timestampOnEnter → single property_set, not composite
       expect(todoCmd!.grounding.type).toBe(GroundingType.PROPERTY_SET);
       expect(todoCmd!.grounding.targetProperty).toBe("ems__Effort_status");
-      expect(todoCmd!.grounding.targetValue).toBe(EffortStatus.TODO);
+      expect(todoCmd!.grounding.targetValueRef).toBe(EffortStatus.TODO);
       expect(todoCmd!.grounding.steps).toBeUndefined();
     });
 

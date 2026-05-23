@@ -87,12 +87,6 @@ export interface GroundingDefinition {
    *  resolved by CommandResolver to the property's `exo__Asset_label` before
    *  reaching here. RFC 31c1a0be Phase 3: never bare UUID. */
   readonly targetProperty?: string;
-  /** Single-value payload for service_call (createAsset/updateProperty JSON
-   *  config, class-flip dispatch) and property_append (value to append).
-   *  RFC 31c1a0be Phase 5a removed the BC fallback in property_set — for
-   *  property_set use `targetValueRef` / `targetValueLiteral` /
-   *  `targetValueSubstitution`. */
-  readonly targetValue?: string;
   /** RFC 31c1a0be Phase 1: typed RDF reference to the value asset. When set,
    *  emits `"[[<UID>]]"` wikilink as the property_set value. Mutually exclusive
    *  with `targetValueLiteral` / `targetValueSubstitution`. */
@@ -173,7 +167,7 @@ export interface GroundingDefinition {
    * service, where it becomes `exo__Asset_isDefinedBy` on the new asset.
    *
    * Encoded as the `exocmd__Grounding_isDefinedBy` RDF triple — a real
-   * frontmatter wikilink, not a value embedded in `Grounding_targetValue`
+   * frontmatter wikilink, not a value embedded in `Grounding_serviceCallPayload`
    * JSON. This makes the relationship discoverable in the referenced
    * identity asset's incoming-links / layout.
    */

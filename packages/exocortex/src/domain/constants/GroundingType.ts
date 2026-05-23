@@ -18,8 +18,9 @@ export enum GroundingType {
   CREATE_INSTANCE = "create_instance",
   /**
    * Append a value to an array-typed frontmatter property with Set-based dedup.
-   * Reads `targetProperty` (array property) and `targetValue` (resolved via
-   * substituteVariables — supports `$target.<prop>` dotted-property access).
+   * Reads `targetProperty` (array property) and `appendExpression` (resolved
+   * via substituteVariables — supports `$target.<prop>` dotted-property
+   * access). RFC 918a2b65 Phase 4 typed predicate (canonical).
    *
    * Issue #3132 — Declarative replacement for `service_call` /
    * `copyLabelToAliases` (Homoiconicity Invariant Q1: user-configurable
