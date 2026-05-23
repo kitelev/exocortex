@@ -2645,3 +2645,790 @@ describe("Convert commands — production-shape dispatch (Finding 5 completion)"
     });
   });
 });
+
+// -- RFC v2 Phase 3b — 5-step pipeline (Issue #3163) --
+//
+// Stand-alone top-level suite (NOT inside "Convert commands" describe) so the
+// outer-most `executor` instance (no ClassLabelToUidResolver) is the default,
+// matching the production GroundingExecutor wiring for headless/CLI contexts.
+describe("GroundingExecutor — RFC v2 Phase 3b 5-step pipeline", () => {
+  const TARGET_IRI = "https://exocortex.my/assets/test-asset-123";
+  const FILE_PATH = "/vault/test-asset.md";
+
+  let reader: ReturnType<typeof createMockReader>;
+  let writer: ReturnType<typeof createMockWriter>;
+  let registry: ServiceRegistry;
+  let executor: GroundingExecutor;
+
+  beforeEach(() => {
+    reader = createMockReader();
+    writer = createMockWriter();
+    registry = new ServiceRegistry();
+    executor = new GroundingExecutor(reader, writer, registry);
+  });
+
+  // -- Test fixtures --
+  //
+  // Tests the executor half of `exocmd__Grounding_propertyDefault` (ref-form)
+  // and `exocmd__Grounding_inheritanceRule` wiring. Parser side lives in
+  // CommandResolver.ts (Phase 3a, merged via PR #3224).
+  //
+  // Precedence per RFC v2 §Precedence (high → low):
+  //   1. userInput (modal form fields)
+  //   2. PropertyDefault (declarative ref-form, bypasses BLACKLIST)
+  //   3. InheritanceRule (filter + sort + apply, bypasses BLACKLIST)
+  //   4. copy-from-target (BLACKLIST-constrained)
+  //   5. [implicit] gaps remain empty
+  const TARGET_AREA_UID = "905cc587-0000-0000-0000-000000000001";
+  const TARGET_AREA_PATH = "03 Knowledge/areas/host.md";
+  const TARGET_AREA_IRI =
+    "obsidian://vault/vault-2025/03 Knowledge/areas/host.md";
+  const STATUS_DRAFT_UID = "c42245d0-01de-4c35-bfcf-d910445ea28e";
+  const STATUS_BACKLOG_UID = "753a44d5-846c-4b82-9196-4fd9a4d48777";
+  const OWNER_ONTOLOGY_UID = "60967c6a-4e8a-4ee3-8922-db98b981e4f4";
+
+  /**
+   * Build a target frontmatter string with `exo__Instance_class` plus any
+   * extra properties. Authored in symbolic form (`[[ems__Area]]`) so unit
+   * tests don't need a wired ClassLabelToUidResolver.
+   */
+  function buildTargetFm(
+      classNames: string[],
+      extraProps: Record<string, string> = {},
+    ): string {
+      const classLines = classNames.map((c) => `  - "[[${c}]]"`).join("\n");
+      const extraLines = Object.entries(extraProps)
+        .map(([k, v]) => `${k}: ${v}`)
+        .join("\n");
+      return `---\nexo__Asset_uid: ${TARGET_AREA_UID}\nexo__Instance_class:\n${classLines}\n${extraLines}\n---\nBody`;
+    }
+
+    // -- Step 1 vs Step 2: userInput overrides PropertyDefault --
+
+    it("userInput overrides PropertyDefault for the same property name (Step 1 > Step 2)", async () => {
+      const grounding = makeGrounding({
+        type: GroundingType.CREATE_INSTANCE,
+        targetClass: "ems__Task",
+        targetFolder: "03 Knowledge/inbox",
+        propertyDefault: [
+          {
+            propertyName: "ems__Effort_status",
+            value: `"[[${STATUS_DRAFT_UID}]]"`,
+          },
+        ],
+      });
+
+      const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH, {
+        label: "Override test",
+        ems__Effort_status: `"[[${STATUS_BACKLOG_UID}]]"`,
+      });
+
+      expect(result.success).toBe(true);
+      const [, content] = writer.createFile.mock.calls[0];
+      // userInput value wins.
+      expect(content).toContain(`ems__Effort_status: "[[${STATUS_BACKLOG_UID}]]"`);
+      // PropertyDefault value is NOT present.
+      expect(content).not.toContain(`ems__Effort_status: "[[${STATUS_DRAFT_UID}]]"`);
+    });
+
+    // -- Step 2 — PropertyDefault applies new declarative defaults --
+
+    it("PropertyDefault sets a declarative wikilink value when userInput omits it", async () => {
+      const grounding = makeGrounding({
+        type: GroundingType.CREATE_INSTANCE,
+        targetClass: "ems__Task",
+        targetFolder: "03 Knowledge/inbox",
+        propertyDefault: [
+          {
+            propertyName: "ems__Effort_status",
+            value: `"[[${STATUS_DRAFT_UID}]]"`,
+          },
+        ],
+      });
+
+      const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH, {
+        label: "PD test",
+      });
+
+      expect(result.success).toBe(true);
+      const [, content] = writer.createFile.mock.calls[0];
+      expect(content).toContain(`ems__Effort_status: "[[${STATUS_DRAFT_UID}]]"`);
+    });
+
+    // -- CRITICAL invariant: PropertyDefault bypasses CREATE_INSTANCE_BLACKLIST --
+    //
+    // `ems__Effort_status` is in CREATE_INSTANCE_BLACKLIST (line ~538) to
+    // prevent literal copy-from-target. RFC v2 §Precedence: BLACKLIST scopes
+    // ONLY Step 4 (copy-from-target). PropertyDefault (Step 2) MUST be able
+    // to set blacklisted properties — that's the entire point of replacing
+    // the hardcoded `ems__Effort_status: Backlog` write at
+    // ServiceRegistryPopulator.ts:211.
+    it("PropertyDefault overrides BLACKLIST: writes ems__Effort_status (Step 2 ignores BLACKLIST)", async () => {
+      // Target has its own status field — BLACKLIST blocks copy-from-target,
+      // PropertyDefault still writes the new value.
+      const grounding = makeGrounding({
+        type: GroundingType.CREATE_INSTANCE,
+        targetClass: "ems__Task",
+        targetFolder: "03 Knowledge/inbox",
+        propertyDefault: [
+          {
+            propertyName: "ems__Effort_status",
+            value: `"[[${STATUS_DRAFT_UID}]]"`,
+          },
+        ],
+      });
+      reader.readFile.mockResolvedValue(
+        buildTargetFm(["ems__Area"], {
+          ems__Effort_status: `"[[${STATUS_BACKLOG_UID}]]"`,
+        }),
+      );
+
+      const result = await executor.execute(
+        grounding,
+        TARGET_AREA_IRI,
+        TARGET_AREA_PATH,
+        { label: "BLACKLIST bypass test" },
+      );
+
+      expect(result.success).toBe(true);
+      const [, content] = writer.createFile.mock.calls[0];
+      // PropertyDefault value wins; copy-from-target was blocked by BLACKLIST.
+      expect(content).toContain(`ems__Effort_status: "[[${STATUS_DRAFT_UID}]]"`);
+      expect(content).not.toContain(`ems__Effort_status: "[[${STATUS_BACKLOG_UID}]]"`);
+    });
+
+    // -- Step 2 — SubstitutionToken marker resolution --
+
+    it("PropertyDefault marker __SUBSTITUTE__target__<uid>__ → [[<target-uid>]] wikilink at runtime", async () => {
+      const TOKEN_UID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+      const grounding = makeGrounding({
+        type: GroundingType.CREATE_INSTANCE,
+        targetClass: "ems__Task",
+        targetFolder: "03 Knowledge/inbox",
+        propertyDefault: [
+          {
+            propertyName: "ems__Effort_parent",
+            value: `__SUBSTITUTE__target__${TOKEN_UID}__`,
+          },
+        ],
+      });
+      const PROTO_UID = "4b571141-5fc3-4ddd-8f07-ca681fc8410a";
+      const PROTO_PATH = `assetspaces/shared-identities/${PROTO_UID}.md`;
+      const PROTO_IRI = `obsidian://vault/vault-2025/${PROTO_PATH}`;
+
+      const result = await executor.execute(grounding, PROTO_IRI, PROTO_PATH, {
+        label: "marker target",
+      });
+
+      expect(result.success).toBe(true);
+      const [, content] = writer.createFile.mock.calls[0];
+      expect(content).toContain(`ems__Effort_parent: "[[${PROTO_UID}]]"`);
+    });
+
+    it("PropertyDefault marker __SUBSTITUTE__targetFolder__<uid>__ → vault-relative folder", async () => {
+      const TOKEN_UID = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+      const grounding = makeGrounding({
+        type: GroundingType.CREATE_INSTANCE,
+        targetClass: "ems__Task",
+        targetFolder: "03 Knowledge/inbox",
+        propertyDefault: [
+          {
+            propertyName: "ems__Effort_sourceFolder",
+            value: `__SUBSTITUTE__targetFolder__${TOKEN_UID}__`,
+          },
+        ],
+      });
+
+      const result = await executor.execute(
+        grounding,
+        TARGET_AREA_IRI,
+        "03 Knowledge/areas/host.md",
+        { label: "folder marker" },
+      );
+
+      expect(result.success).toBe(true);
+      const [, content] = writer.createFile.mock.calls[0];
+      expect(content).toContain("ems__Effort_sourceFolder: 03 Knowledge/areas");
+    });
+
+    it("PropertyDefault literal `today` resolved at parse time passes through unchanged", async () => {
+      // CommandResolver Phase 3a invokes `today` resolver at parse time, so
+      // the executor receives an already-resolved string like "2026-05-23".
+      const grounding = makeGrounding({
+        type: GroundingType.CREATE_INSTANCE,
+        targetClass: "ems__Task",
+        targetFolder: "03 Knowledge/inbox",
+        propertyDefault: [
+          {
+            propertyName: "ems__Effort_plannedStartTimestamp",
+            value: "2026-05-23",
+          },
+        ],
+      });
+
+      const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH, {
+        label: "today literal",
+      });
+
+      expect(result.success).toBe(true);
+      const [, content] = writer.createFile.mock.calls[0];
+      expect(content).toContain(
+        "ems__Effort_plannedStartTimestamp: 2026-05-23",
+      );
+    });
+
+    // -- Step 3 — InheritanceRule applies with class condition --
+
+    it("InheritanceRule applies when target instanceof condition class (uid→area for ems__Area target)", async () => {
+      const grounding = makeGrounding({
+        type: GroundingType.CREATE_INSTANCE,
+        targetClass: "ems__Task",
+        targetFolder: "03 Knowledge/inbox",
+        inheritanceRule: [
+          {
+            sourcePropertyName: "exo__Asset_uid",
+            targetPropertyName: "ems__Effort_area",
+            targetClassCondition: "ems__Area",
+            targetClassExclusion: [],
+            priority: 100,
+          },
+        ],
+      });
+      reader.readFile.mockResolvedValue(buildTargetFm(["ems__Area"]));
+
+      const result = await executor.execute(
+        grounding,
+        TARGET_AREA_IRI,
+        TARGET_AREA_PATH,
+        { label: "area test" },
+      );
+
+      expect(result.success).toBe(true);
+      const [, content] = writer.createFile.mock.calls[0];
+      // Source `exo__Asset_uid` is a bare UUID → wrapped as wikilink.
+      expect(content).toContain(`ems__Effort_area: "[[${TARGET_AREA_UID}]]"`);
+    });
+
+    it("InheritanceRule skipped when target is NOT instanceof condition class", async () => {
+      const grounding = makeGrounding({
+        type: GroundingType.CREATE_INSTANCE,
+        targetClass: "ems__Task",
+        targetFolder: "03 Knowledge/inbox",
+        inheritanceRule: [
+          {
+            sourcePropertyName: "exo__Asset_uid",
+            targetPropertyName: "ems__Effort_area",
+            targetClassCondition: "ems__Area",
+            targetClassExclusion: [],
+            priority: 100,
+          },
+        ],
+      });
+      // Target is a Project, not an Area — condition does NOT match.
+      reader.readFile.mockResolvedValue(buildTargetFm(["ems__Project"]));
+
+      const result = await executor.execute(
+        grounding,
+        TARGET_AREA_IRI,
+        TARGET_AREA_PATH,
+        { label: "non-area test" },
+      );
+
+      expect(result.success).toBe(true);
+      const [, content] = writer.createFile.mock.calls[0];
+      expect(content).not.toContain("ems__Effort_area:");
+    });
+
+    // -- Step 3 — InheritanceRule exclusion semantics --
+
+    it("InheritanceRule skipped when target instanceof exclusion class (uid→parent excluded for Area)", async () => {
+      const grounding = makeGrounding({
+        type: GroundingType.CREATE_INSTANCE,
+        targetClass: "ems__Task",
+        targetFolder: "03 Knowledge/inbox",
+        inheritanceRule: [
+          {
+            sourcePropertyName: "exo__Asset_uid",
+            targetPropertyName: "ems__Effort_parent",
+            targetClassExclusion: ["ems__Area"],
+            priority: 50,
+          },
+        ],
+      });
+      reader.readFile.mockResolvedValue(buildTargetFm(["ems__Area"]));
+
+      const result = await executor.execute(
+        grounding,
+        TARGET_AREA_IRI,
+        TARGET_AREA_PATH,
+        { label: "exclude area" },
+      );
+
+      expect(result.success).toBe(true);
+      const [, content] = writer.createFile.mock.calls[0];
+      expect(content).not.toContain("ems__Effort_parent:");
+    });
+
+    it("InheritanceRule applies when target NOT in exclusion list", async () => {
+      const grounding = makeGrounding({
+        type: GroundingType.CREATE_INSTANCE,
+        targetClass: "ems__Task",
+        targetFolder: "03 Knowledge/inbox",
+        inheritanceRule: [
+          {
+            sourcePropertyName: "exo__Asset_uid",
+            targetPropertyName: "ems__Effort_parent",
+            targetClassExclusion: ["ems__Area"],
+            priority: 50,
+          },
+        ],
+      });
+      // Target is a Project — NOT excluded.
+      reader.readFile.mockResolvedValue(buildTargetFm(["ems__Project"]));
+
+      const result = await executor.execute(
+        grounding,
+        TARGET_AREA_IRI,
+        TARGET_AREA_PATH,
+        { label: "parent test" },
+      );
+
+      expect(result.success).toBe(true);
+      const [, content] = writer.createFile.mock.calls[0];
+      expect(content).toContain(`ems__Effort_parent: "[[${TARGET_AREA_UID}]]"`);
+    });
+
+    it("InheritanceRule exclusion is multi-valued: ANY excluded class skips rule", async () => {
+      const grounding = makeGrounding({
+        type: GroundingType.CREATE_INSTANCE,
+        targetClass: "ems__Task",
+        targetFolder: "03 Knowledge/inbox",
+        inheritanceRule: [
+          {
+            sourcePropertyName: "exo__Asset_uid",
+            targetPropertyName: "ems__Effort_parent",
+            targetClassExclusion: ["ems__Area", "ems__Quarter"],
+            priority: 50,
+          },
+        ],
+      });
+      // Target has both Project and Quarter — Quarter is in exclusion.
+      reader.readFile.mockResolvedValue(
+        buildTargetFm(["ems__Project", "ems__Quarter"]),
+      );
+
+      const result = await executor.execute(
+        grounding,
+        TARGET_AREA_IRI,
+        TARGET_AREA_PATH,
+        { label: "multi exclude" },
+      );
+
+      expect(result.success).toBe(true);
+      const [, content] = writer.createFile.mock.calls[0];
+      expect(content).not.toContain("ems__Effort_parent:");
+    });
+
+    // -- Step 3 — Priority sort and override semantics --
+
+    it("Higher-priority InheritanceRule wins; lower priority does not override same targetProperty", async () => {
+      const grounding = makeGrounding({
+        type: GroundingType.CREATE_INSTANCE,
+        targetClass: "ems__Task",
+        targetFolder: "03 Knowledge/inbox",
+        inheritanceRule: [
+          // Authored in low-then-high order to verify sort actually runs.
+          {
+            sourcePropertyName: "exo__Asset_isDefinedBy",
+            targetPropertyName: "exo__Asset_isDefinedBy",
+            targetClassExclusion: [],
+            priority: 10,
+          },
+          {
+            sourcePropertyName: "exo__Asset_uid",
+            targetPropertyName: "exo__Asset_isDefinedBy", // intentionally same key
+            targetClassExclusion: [],
+            priority: 100,
+          },
+        ],
+      });
+      reader.readFile.mockResolvedValue(
+        buildTargetFm(["ems__Area"], {
+          exo__Asset_isDefinedBy: `"[[${OWNER_ONTOLOGY_UID}]]"`,
+        }),
+      );
+
+      const result = await executor.execute(
+        grounding,
+        TARGET_AREA_IRI,
+        TARGET_AREA_PATH,
+        { label: "priority test" },
+      );
+
+      expect(result.success).toBe(true);
+      const [, content] = writer.createFile.mock.calls[0];
+      // Priority-100 rule wins: source = exo__Asset_uid (bare UUID → wrapped).
+      expect(content).toContain(
+        `exo__Asset_isDefinedBy: "[[${TARGET_AREA_UID}]]"`,
+      );
+      // Priority-10 rule did NOT override (would have written OWNER_ONTOLOGY_UID).
+      expect(content).not.toContain(
+        `exo__Asset_isDefinedBy: "[[${OWNER_ONTOLOGY_UID}]]"`,
+      );
+    });
+
+    it("Equal-priority InheritanceRules preserve authoring order (stable sort)", async () => {
+      const grounding = makeGrounding({
+        type: GroundingType.CREATE_INSTANCE,
+        targetClass: "ems__Task",
+        targetFolder: "03 Knowledge/inbox",
+        inheritanceRule: [
+          {
+            sourcePropertyName: "exo__Asset_uid",
+            targetPropertyName: "ems__Effort_parent",
+            targetClassExclusion: [],
+            priority: 50,
+          },
+          {
+            // Same priority, same target — first one (above) should win.
+            sourcePropertyName: "exo__Asset_isDefinedBy",
+            targetPropertyName: "ems__Effort_parent",
+            targetClassExclusion: [],
+            priority: 50,
+          },
+        ],
+      });
+      reader.readFile.mockResolvedValue(
+        buildTargetFm(["ems__Project"], {
+          exo__Asset_isDefinedBy: `"[[${OWNER_ONTOLOGY_UID}]]"`,
+        }),
+      );
+
+      const result = await executor.execute(
+        grounding,
+        TARGET_AREA_IRI,
+        TARGET_AREA_PATH,
+        { label: "stable" },
+      );
+
+      expect(result.success).toBe(true);
+      const [, content] = writer.createFile.mock.calls[0];
+      // First-authored equal-priority rule wins.
+      expect(content).toContain(`ems__Effort_parent: "[[${TARGET_AREA_UID}]]"`);
+      expect(content).not.toContain(
+        `ems__Effort_parent: "[[${OWNER_ONTOLOGY_UID}]]"`,
+      );
+    });
+
+    // -- Step 3 bypasses BLACKLIST (ems__Effort_area is blacklisted) --
+
+    it("InheritanceRule overrides BLACKLIST: writes ems__Effort_area (Step 3 ignores BLACKLIST)", async () => {
+      // `ems__Effort_area` is in CREATE_INSTANCE_BLACKLIST. Target's own
+      // `ems__Effort_area` value (if any) would be blocked from copy-from-target,
+      // but InheritanceRule explicitly writes a transformed value (target uid
+      // wrapped as wikilink) to it.
+      const grounding = makeGrounding({
+        type: GroundingType.CREATE_INSTANCE,
+        targetClass: "ems__Task",
+        targetFolder: "03 Knowledge/inbox",
+        inheritanceRule: [
+          {
+            sourcePropertyName: "exo__Asset_uid",
+            targetPropertyName: "ems__Effort_area",
+            targetClassCondition: "ems__Area",
+            targetClassExclusion: [],
+            priority: 100,
+          },
+        ],
+      });
+      reader.readFile.mockResolvedValue(
+        buildTargetFm(["ems__Area"], {
+          ems__Effort_area: '"[[outer-area-uid]]"',
+        }),
+      );
+
+      const result = await executor.execute(
+        grounding,
+        TARGET_AREA_IRI,
+        TARGET_AREA_PATH,
+        { label: "BLACKLIST bypass IR" },
+      );
+
+      expect(result.success).toBe(true);
+      const [, content] = writer.createFile.mock.calls[0];
+      // InheritanceRule wrote target's UID, copy-from-target was blocked.
+      expect(content).toContain(`ems__Effort_area: "[[${TARGET_AREA_UID}]]"`);
+      expect(content).not.toContain('ems__Effort_area: "[[outer-area-uid]]"');
+    });
+
+    // -- Step 2 > Step 3: PropertyDefault wins over InheritanceRule --
+
+    it("Step 2 (PropertyDefault) takes precedence over Step 3 (InheritanceRule) for same property", async () => {
+      const grounding = makeGrounding({
+        type: GroundingType.CREATE_INSTANCE,
+        targetClass: "ems__Task",
+        targetFolder: "03 Knowledge/inbox",
+        propertyDefault: [
+          {
+            propertyName: "ems__Effort_parent",
+            value: '"[[hardcoded-parent-uid]]"',
+          },
+        ],
+        inheritanceRule: [
+          {
+            sourcePropertyName: "exo__Asset_uid",
+            targetPropertyName: "ems__Effort_parent",
+            targetClassExclusion: ["ems__Area"],
+            priority: 50,
+          },
+        ],
+      });
+      reader.readFile.mockResolvedValue(buildTargetFm(["ems__Project"]));
+
+      const result = await executor.execute(
+        grounding,
+        TARGET_AREA_IRI,
+        TARGET_AREA_PATH,
+        { label: "PD wins over IR" },
+      );
+
+      expect(result.success).toBe(true);
+      const [, content] = writer.createFile.mock.calls[0];
+      expect(content).toContain('ems__Effort_parent: "[[hardcoded-parent-uid]]"');
+      expect(content).not.toContain(`ems__Effort_parent: "[[${TARGET_AREA_UID}]]"`);
+    });
+
+    // -- Step 3 — Source value already wikilink (isDefinedBy pass-through) --
+
+    it("InheritanceRule passes through already-wikilink source values (exo__Asset_isDefinedBy)", async () => {
+      const grounding = makeGrounding({
+        type: GroundingType.CREATE_INSTANCE,
+        targetClass: "ems__Task",
+        targetFolder: "03 Knowledge/inbox",
+        inheritanceRule: [
+          {
+            sourcePropertyName: "exo__Asset_isDefinedBy",
+            targetPropertyName: "exo__Asset_isDefinedBy",
+            targetClassExclusion: [],
+            priority: 10,
+          },
+        ],
+      });
+      reader.readFile.mockResolvedValue(
+        buildTargetFm(["ems__Area"], {
+          exo__Asset_isDefinedBy: `"[[${OWNER_ONTOLOGY_UID}]]"`,
+        }),
+      );
+
+      const result = await executor.execute(
+        grounding,
+        TARGET_AREA_IRI,
+        TARGET_AREA_PATH,
+        { label: "isDefinedBy pass-through" },
+      );
+
+      expect(result.success).toBe(true);
+      const [, content] = writer.createFile.mock.calls[0];
+      expect(content).toContain(
+        `exo__Asset_isDefinedBy: "[[${OWNER_ONTOLOGY_UID}]]"`,
+      );
+    });
+
+    // -- Step 3 — Multi-class target (exo__Instance_class is multi-valued) --
+
+    it("InheritanceRule condition matches when target has multiple classes and ANY is the condition", async () => {
+      const grounding = makeGrounding({
+        type: GroundingType.CREATE_INSTANCE,
+        targetClass: "ems__Task",
+        targetFolder: "03 Knowledge/inbox",
+        inheritanceRule: [
+          {
+            sourcePropertyName: "exo__Asset_uid",
+            targetPropertyName: "ems__Effort_area",
+            targetClassCondition: "ems__Area",
+            targetClassExclusion: [],
+            priority: 100,
+          },
+        ],
+      });
+      // Target has both ems__Area and a marker class; condition matches via
+      // either class entry in the multi-valued list.
+      reader.readFile.mockResolvedValue(
+        buildTargetFm(["ems__FocusZone", "ems__Area"]),
+      );
+
+      const result = await executor.execute(
+        grounding,
+        TARGET_AREA_IRI,
+        TARGET_AREA_PATH,
+        { label: "multi-class" },
+      );
+
+      expect(result.success).toBe(true);
+      const [, content] = writer.createFile.mock.calls[0];
+      expect(content).toContain(`ems__Effort_area: "[[${TARGET_AREA_UID}]]"`);
+    });
+
+    // -- ClassLabelToUidResolver path: UID-canon target classes match label-form conditions --
+
+    it("Class condition matches UID-canon target classes via ClassLabelToUidResolver", async () => {
+      const AREA_UID = "82c74542-1b14-4217-b852-d84730484b25";
+      const labelToUid = jest
+        .fn()
+        .mockImplementation((label: string) =>
+          label === "ems__Area" ? AREA_UID : null,
+        );
+      const executorWithResolver = new GroundingExecutor(
+        reader,
+        writer,
+        registry,
+        labelToUid,
+      );
+      const grounding = makeGrounding({
+        type: GroundingType.CREATE_INSTANCE,
+        targetClass: "ems__Task",
+        targetFolder: "03 Knowledge/inbox",
+        inheritanceRule: [
+          {
+            sourcePropertyName: "exo__Asset_uid",
+            targetPropertyName: "ems__Effort_area",
+            targetClassCondition: "ems__Area",
+            targetClassExclusion: [],
+            priority: 100,
+          },
+        ],
+      });
+      // Target authored with UID-canon class wikilink.
+      reader.readFile.mockResolvedValue(buildTargetFm([AREA_UID]));
+
+      const result = await executorWithResolver.execute(
+        grounding,
+        TARGET_AREA_IRI,
+        TARGET_AREA_PATH,
+        { label: "UID-canon class match" },
+      );
+
+      expect(result.success).toBe(true);
+      const [, content] = writer.createFile.mock.calls[0];
+      expect(content).toContain(`ems__Effort_area: "[[${TARGET_AREA_UID}]]"`);
+      expect(labelToUid).toHaveBeenCalledWith("ems__Area");
+    });
+
+    // -- End-to-end Grounding `a6ef8fda` semantics — golden scenario --
+
+    it("End-to-end (Grounding a6ef8fda semantics): Area target → Task with Draft status + area + isDefinedBy", async () => {
+      const grounding = makeGrounding({
+        type: GroundingType.CREATE_INSTANCE,
+        targetClass: "ems__Task",
+        targetFolder: "03 Knowledge/inbox",
+        propertyDefault: [
+          {
+            propertyName: "ems__Effort_status",
+            value: `"[[${STATUS_DRAFT_UID}]]"`,
+          },
+        ],
+        inheritanceRule: [
+          {
+            sourcePropertyName: "exo__Asset_uid",
+            targetPropertyName: "ems__Effort_area",
+            targetClassCondition: "ems__Area",
+            targetClassExclusion: [],
+            priority: 100,
+          },
+          {
+            sourcePropertyName: "exo__Asset_uid",
+            targetPropertyName: "ems__Effort_parent",
+            targetClassExclusion: ["ems__Area"],
+            priority: 50,
+          },
+          {
+            sourcePropertyName: "exo__Asset_isDefinedBy",
+            targetPropertyName: "exo__Asset_isDefinedBy",
+            targetClassExclusion: [],
+            priority: 10,
+          },
+        ],
+      });
+      reader.readFile.mockResolvedValue(
+        buildTargetFm(["ems__Area"], {
+          exo__Asset_isDefinedBy: `"[[${OWNER_ONTOLOGY_UID}]]"`,
+        }),
+      );
+
+      const result = await executor.execute(
+        grounding,
+        TARGET_AREA_IRI,
+        TARGET_AREA_PATH,
+        { label: "Buy groceries" },
+      );
+
+      expect(result.success).toBe(true);
+      const [, content] = writer.createFile.mock.calls[0];
+      // PropertyDefault: status = Draft (UID-canon)
+      expect(content).toContain(`ems__Effort_status: "[[${STATUS_DRAFT_UID}]]"`);
+      // InheritanceRule#1 (prio 100, condition Area): area = target uid
+      expect(content).toContain(`ems__Effort_area: "[[${TARGET_AREA_UID}]]"`);
+      // InheritanceRule#2 (exclusion Area): SHOULD NOT have parent
+      expect(content).not.toContain("ems__Effort_parent:");
+      // InheritanceRule#3 (unconditional): isDefinedBy passes through
+      expect(content).toContain(
+        `exo__Asset_isDefinedBy: "[[${OWNER_ONTOLOGY_UID}]]"`,
+      );
+    });
+
+    // -- Coexistence: legacy + ref-form (parser hands ref-form precedence) --
+
+    it("Coexistence: ref-form propertyDefault wins when both ref-form and legacy JSON leak through (executor-side defense-in-depth)", async () => {
+      // RFC v2 §Precedence: ref-form is canonical. Parser already returns
+      // legacy `propertyDefaults` as `undefined` when ref-form is set, but the
+      // executor MUST also gate the legacy block so a parser regression or
+      // hand-edited Grounding with both shapes cannot silently downgrade to
+      // the legacy value. This test feeds both directly to the executor
+      // (bypassing the parser) and asserts ref-form wins definitively.
+      const grounding = makeGrounding({
+        type: GroundingType.CREATE_INSTANCE,
+        targetClass: "ems__Task",
+        targetFolder: "03 Knowledge/inbox",
+        propertyDefault: [
+          {
+            propertyName: "ems__Effort_status",
+            value: `"[[${STATUS_DRAFT_UID}]]"`,
+          },
+        ],
+        propertyDefaults: {
+          ems__Effort_status: `"[[${STATUS_BACKLOG_UID}]]"`,
+        },
+      });
+
+      const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH, {
+        label: "coexistence",
+      });
+
+      expect(result.success).toBe(true);
+      const [, content] = writer.createFile.mock.calls[0];
+      // Ref-form value wins exactly. Legacy value MUST NOT appear.
+      expect(content).toContain(`ems__Effort_status: "[[${STATUS_DRAFT_UID}]]"`);
+      expect(content).not.toContain(
+        `ems__Effort_status: "[[${STATUS_BACKLOG_UID}]]"`,
+      );
+    });
+
+    // -- Backward compatibility: Groundings without propertyDefault / inheritanceRule --
+
+    it("Backward compat: Grounding without propertyDefault / inheritanceRule still creates instance correctly", async () => {
+      const grounding = makeGrounding({
+        type: GroundingType.CREATE_INSTANCE,
+        targetClass: "ems__Task",
+        targetFolder: "03 Knowledge/inbox",
+      });
+
+      const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH, {
+        label: "backward compat",
+      });
+
+      expect(result.success).toBe(true);
+      const [, content] = writer.createFile.mock.calls[0];
+      expect(content).toContain("exo__Asset_label: backward compat");
+      expect(content).toContain("ems__Task");
+    });
+});

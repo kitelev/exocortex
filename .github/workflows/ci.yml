@@ -487,7 +487,7 @@ jobs:
         run: |
           node ./node_modules/jest/bin/jest.js \
             --config packages/exocortex/jest.config.js \
-            --testPathPatterns='(services/(GroundingExecutor|AssetConversionService|NoteToRDFConverter\.issue-2959)\.test|application/services/RelationColumnSetResolver(\.property)?\.test|performance/RelationColumnSetResolverPerformance\.test|infrastructure/sparql/executors/BGPExecutor\.issue-2997\.test)\.ts' \
+            --testPathPatterns='(services/(GroundingExecutor|AssetConversionService|NoteToRDFConverter\.issue-2959)\.test|application/services/RelationColumnSetResolver(\.property)?\.test|performance/RelationColumnSetResolverPerformance\.test|infrastructure/sparql/executors/BGPExecutor\.issue-2997\.test|integration/dynamic-commands/grounding-phase3b-pipeline\.test)\.ts' \
             --forceExit
 
   test-coverage:
