@@ -98,15 +98,6 @@ export class CommandResolver {
   private readonly multiCache = new Map<string, ResolvedCommand[]>();
 
   /**
-   * RFC v2 Phase 3a — once-per-session-per-Grounding warning suppression set
-   * for the coexistence rule (ref-form `propertyDefault` wins over legacy
-   * `propertyDefaults` JSON). `readonly` refers to the binding; the Set is
-   * mutable. CommandResolver is a `@injectable` singleton via tsyringe, so
-   * "session" == "container lifetime" which matches the brief's contract.
-   */
-  private readonly _coexistenceWarnedGroundings = new Set<string>();
-
-  /**
    * @param tripleStore - RDF triple store backing vault assets.
    * @param logger - Optional structured logger; defaults to no-op.
    *                 RFC-024 §5: invalid enum values warn (capped 200 chars)
@@ -1032,61 +1023,15 @@ export class CommandResolver {
       }
     }
 
-    // Issue #3136: propertyDefaults JSON literal — declarative replacement for
-    // the legacy `createTaskForDailyNote` service_call (Q3.b closure). Authored
-    // as `exocmd__Grounding_propertyDefaults: '{"prop": "$today"}'`. Invalid
-    // JSON or non-object payload → fail-loud (skip silently would mask typos).
-    const propertyDefaultsRaw = await this.getLiteralValue(
-      subject,
-      Namespace.EXOCMD.term("Grounding_propertyDefaults"),
-    );
-    let propertyDefaults: Record<string, string> | undefined;
-    if (propertyDefaultsRaw) {
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(propertyDefaultsRaw);
-      } catch (error) {
-        throw new Error(
-          `Grounding ${uid}: exocmd__Grounding_propertyDefaults is not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
-        );
-      }
-      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-        throw new Error(
-          `Grounding ${uid}: exocmd__Grounding_propertyDefaults must be a JSON object literal`,
-        );
-      }
-      const map: Record<string, string> = {};
-      for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
-        if (typeof value !== "string") {
-          throw new Error(
-            `Grounding ${uid}: exocmd__Grounding_propertyDefaults["${key}"] must be a string (got ${typeof value})`,
-          );
-        }
-        map[key] = value;
-      }
-      propertyDefaults = map;
-    }
-
-    // RFC v2 Phase 3a — declarative ref-form replacement for the legacy
-    // `Grounding_propertyDefaults` JSON. Multi-valued list of
+    // RFC v2 Phase 3a — declarative ref-form. Multi-valued list of
     // `exocmd__PropertyDefault` assets attached via `Grounding_propertyDefault`.
+    // The legacy JSON-literal `Grounding_propertyDefaults` (plural) parser and
+    // its coexistence guard were removed in RFC v2 Phase 5 (#3167) after the
+    // vault migration to ref-form completed (Phase 4a, #3165).
     const propertyDefault = await this.resolvePropertyDefaults(subject, uid);
     // RFC v2 Phase 3a — multi-valued list of `exocmd__InheritanceRule` assets
     // attached via `Grounding_inheritanceRule`. Phase 3b executor applies them.
     const inheritanceRule = await this.resolveInheritanceRules(subject, uid);
-
-    // RFC v2 Phase 3a coexistence rule — both legacy JSON `propertyDefaults`
-    // and ref-form `propertyDefault` present on the same Grounding? Ref-form
-    // wins; legacy is dropped with a one-shot warn per Grounding-uid.
-    if (propertyDefaults !== undefined && propertyDefault.length > 0) {
-      if (!this._coexistenceWarnedGroundings.has(uid)) {
-        this.logger.warn(
-          `Grounding ${uid}: legacy exocmd__Grounding_propertyDefaults JSON ignored — ref-form exocmd__Grounding_propertyDefault takes precedence. Remove legacy property to silence this warning.`,
-        );
-        this._coexistenceWarnedGroundings.add(uid);
-      }
-      propertyDefaults = undefined;
-    }
 
     // Load composite steps if applicable
     let steps: GroundingDefinition[] | undefined;
@@ -1156,7 +1101,6 @@ export class CommandResolver {
       linkBackProperty: linkBackProperty ?? undefined,
       incrementBy,
       shiftDelta: shiftDelta ?? undefined,
-      propertyDefaults,
       propertyDefault: propertyDefault.length > 0 ? propertyDefault : undefined,
       inheritanceRule: inheritanceRule.length > 0 ? inheritanceRule : undefined,
       isDefinedBy: isDefinedBy ?? undefined,

@@ -139,18 +139,10 @@ function readGroundingDef(uid: string, depth = 0): GroundingDefinition {
     const parsed = Number.parseInt(String(incrementByRaw), 10);
     if (Number.isFinite(parsed)) incrementBy = parsed;
   }
-  const propertyDefaultsRaw = fm["exocmd__Grounding_propertyDefaults"];
-  let propertyDefaults: Record<string, string> | undefined;
-  if (typeof propertyDefaultsRaw === "string" && propertyDefaultsRaw.length > 0) {
-    try {
-      const parsed = JSON.parse(propertyDefaultsRaw);
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-        propertyDefaults = parsed as Record<string, string>;
-      }
-    } catch {
-      // fail loud at executor layer if needed
-    }
-  }
+  // RFC v2 Phase 5 (#3167): legacy JSON-literal `exocmd__Grounding_propertyDefaults`
+  // (plural) parser removed. Ref-form `_propertyDefault` is read by the real
+  // CommandResolver at runtime; CLI BDD fixtures only need the parser-stripped
+  // GroundingDefinition shape.
   // RFC 31c1a0be Phase 5a — typed predicates required for property_set.
   // targetValueRef stored as wikilink-form `"[[uuid]]"` in frontmatter;
   // unwrap to bare UID so executor re-wraps for emission.
@@ -171,7 +163,6 @@ function readGroundingDef(uid: string, depth = 0): GroundingDefinition {
     shiftDelta: fm["exocmd__Grounding_shiftDelta"] as string | undefined,
     incrementBy,
     linkBackProperty: fm["exocmd__Grounding_linkBackProperty"] as string | undefined,
-    propertyDefaults,
     steps,
   };
 }

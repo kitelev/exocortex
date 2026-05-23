@@ -1085,59 +1085,13 @@ describe("GroundingExecutor", () => {
       expect(ts).not.toMatch(/[+-]\d{2}:?\d{2}$/);
     });
 
-    // Issue #3136 — Q3.b closure: propertyDefaults + $targetFolder
-    describe("propertyDefaults (Issue #3136)", () => {
-      it("should apply propertyDefaults with $today substitution", async () => {
-        const grounding = makeGrounding({
-          type: GroundingType.CREATE_INSTANCE,
-          targetClass: "ems__Task",
-          targetFolder: "01 Inbox",
-          propertyDefaults: {
-            "ems__Effort_plannedStartTimestamp": "$today",
-          },
-        });
-
-        const result = await executor.execute(
-          grounding,
-          TARGET_IRI,
-          FILE_PATH,
-          { label: "task" },
-        );
-
-        expect(result.success).toBe(true);
-        const [, content] = writer.createFile.mock.calls[0];
-        expect(content).toMatch(
-          /ems__Effort_plannedStartTimestamp: \d{4}-\d{2}-\d{2}/,
-        );
-      });
-
-      it("should allow userInput to override propertyDefaults", async () => {
-        const grounding = makeGrounding({
-          type: GroundingType.CREATE_INSTANCE,
-          targetClass: "ems__Task",
-          targetFolder: "01 Inbox",
-          propertyDefaults: {
-            "ems__Effort_plannedStartTimestamp": "$today",
-          },
-        });
-
-        const result = await executor.execute(
-          grounding,
-          TARGET_IRI,
-          FILE_PATH,
-          {
-            label: "task",
-            ems__Effort_plannedStartTimestamp: "2099-12-31",
-          },
-        );
-
-        expect(result.success).toBe(true);
-        const [, content] = writer.createFile.mock.calls[0];
-        expect(content).toContain(
-          "ems__Effort_plannedStartTimestamp: 2099-12-31",
-        );
-      });
-
+    // RFC v2 Phase 5 (#3167): the legacy JSON-literal `propertyDefaults` field
+    // and its executor path were removed. Per-property defaults are now
+    // exercised via ref-form `propertyDefault` (see ref-form describe blocks
+    // elsewhere in this file). Only the `$targetFolder` token resolution test,
+    // which exercises `grounding.targetFolder` substitution (independent of
+    // the removed legacy field), survives.
+    describe("$targetFolder token resolution", () => {
       it("should resolve $targetFolder token in grounding.targetFolder", async () => {
         const grounding = makeGrounding({
           type: GroundingType.CREATE_INSTANCE,
@@ -1155,32 +1109,6 @@ describe("GroundingExecutor", () => {
         expect(result.success).toBe(true);
         const [path] = writer.createFile.mock.calls[0];
         expect(path).toMatch(/^03 Knowledge\/areas\/[a-f0-9-]+\.md$/);
-      });
-
-      it("should apply multiple propertyDefaults", async () => {
-        const grounding = makeGrounding({
-          type: GroundingType.CREATE_INSTANCE,
-          targetClass: "ems__Task",
-          targetFolder: "tasks",
-          propertyDefaults: {
-            "ems__Effort_plannedStartTimestamp": "$today",
-            "ems__Effort_status": "[[backlog]]",
-          },
-        });
-
-        const result = await executor.execute(
-          grounding,
-          TARGET_IRI,
-          FILE_PATH,
-          { label: "multi" },
-        );
-
-        expect(result.success).toBe(true);
-        const [, content] = writer.createFile.mock.calls[0];
-        expect(content).toMatch(
-          /ems__Effort_plannedStartTimestamp: \d{4}-\d{2}-\d{2}/,
-        );
-        expect(content).toContain("ems__Effort_status:");
       });
     });
 
@@ -3376,42 +3304,9 @@ describe("GroundingExecutor — RFC v2 Phase 3b 5-step pipeline", () => {
       );
     });
 
-    // -- Coexistence: legacy + ref-form (parser hands ref-form precedence) --
-
-    it("Coexistence: ref-form propertyDefault wins when both ref-form and legacy JSON leak through (executor-side defense-in-depth)", async () => {
-      // RFC v2 §Precedence: ref-form is canonical. Parser already returns
-      // legacy `propertyDefaults` as `undefined` when ref-form is set, but the
-      // executor MUST also gate the legacy block so a parser regression or
-      // hand-edited Grounding with both shapes cannot silently downgrade to
-      // the legacy value. This test feeds both directly to the executor
-      // (bypassing the parser) and asserts ref-form wins definitively.
-      const grounding = makeGrounding({
-        type: GroundingType.CREATE_INSTANCE,
-        targetClass: "ems__Task",
-        targetFolder: "03 Knowledge/inbox",
-        propertyDefault: [
-          {
-            propertyName: "ems__Effort_status",
-            value: `"[[${STATUS_DRAFT_UID}]]"`,
-          },
-        ],
-        propertyDefaults: {
-          ems__Effort_status: `"[[${STATUS_BACKLOG_UID}]]"`,
-        },
-      });
-
-      const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH, {
-        label: "coexistence",
-      });
-
-      expect(result.success).toBe(true);
-      const [, content] = writer.createFile.mock.calls[0];
-      // Ref-form value wins exactly. Legacy value MUST NOT appear.
-      expect(content).toContain(`ems__Effort_status: "[[${STATUS_DRAFT_UID}]]"`);
-      expect(content).not.toContain(
-        `ems__Effort_status: "[[${STATUS_BACKLOG_UID}]]"`,
-      );
-    });
+    // RFC v2 Phase 5 (#3167): the legacy + ref-form coexistence defense-in-depth
+    // test was removed alongside the legacy `propertyDefaults` field. Ref-form
+    // is the only path; no coexistence guard remains.
 
     // -- Step 1 > Step 3 (review MED-1): userInput overrides InheritanceRule --
 
