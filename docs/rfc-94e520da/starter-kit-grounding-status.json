@@ -3,8 +3,8 @@
     "rfc": "94e520da",
     "phase": 1,
     "task": "T1.5",
-    "auditedAt": "2026-05-17T06:43:06.521Z",
-    "starterKitPath": "../starter-kit-claude2-feat-q3b-migration",
+    "auditedAt": "2026-05-23T08:32:27.143Z",
+    "starterKitPath": "/Users/kitelev/Developer/exocortex-development/exocortex-starter-kit",
     "totalGroundings": 48,
     "byType": {
       "property_delete": 4,
@@ -17,8 +17,7 @@
       "composite": 2
     },
     "byCliStatus": {
-      "real": 44,
-      "stub": 3,
+      "real": 47,
       "unregistered": 1
     },
     "serviceIdCounts": {
@@ -82,7 +81,7 @@
       "path": "exocmd/creation/95aaab51-8cd5-42db-a207-42793864d133.md",
       "type": "service_call",
       "serviceId": "createAsset",
-      "cliStatus": "stub"
+      "cliStatus": "real"
     },
     {
       "uid": "a222094b-f499-4342-aec0-65c4ba99c657",
@@ -90,7 +89,7 @@
       "path": "exocmd/creation/a222094b-f499-4342-aec0-65c4ba99c657.md",
       "type": "service_call",
       "serviceId": "createAsset",
-      "cliStatus": "stub"
+      "cliStatus": "real"
     },
     {
       "uid": "abdbdf09-8712-4c11-8cbe-467f46091294",
@@ -106,7 +105,7 @@
       "path": "exocmd/creation/c84e2e08-8fb9-42e7-9112-11864fb13a09.md",
       "type": "service_call",
       "serviceId": "createAsset",
-      "cliStatus": "stub"
+      "cliStatus": "real"
     },
     {
       "uid": "e72a5fa1-a902-4508-b671-bde8a1461a02",

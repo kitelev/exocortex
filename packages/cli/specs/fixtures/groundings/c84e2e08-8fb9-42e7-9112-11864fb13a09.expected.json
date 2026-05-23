@@ -2,12 +2,13 @@
   "uid": "c84e2e08-8fb9-42e7-9112-11864fb13a09",
   "label": "Create note",
   "type": "service_call",
-  "cliStatus": "stub",
+  "cliStatus": "real",
   "serviceId": "createAsset",
   "sourcePath": "exocmd/creation/c84e2e08-8fb9-42e7-9112-11864fb13a09.md",
-  "userInput": null,
+  "userInput": {
+    "label": "BDD Note"
+  },
   "expect": {
-    "outcome": "failure",
-    "errorPattern": "Service \\\"createAsset\\\" is not implemented"
+    "outcome": "success"
   }
 }
