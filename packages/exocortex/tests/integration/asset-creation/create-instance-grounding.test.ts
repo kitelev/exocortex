@@ -491,7 +491,7 @@ describe("Integration: create_instance grounding → NoteToRDFConverter", () => 
       expect(leaksClassUID).toBe(false);
     });
 
-    it("should produce exo:Asset_fileName triple with basename", async () => {
+    it("should produce exo:Asset_filename triple with basename", async () => {
       await groundingExecutor.execute(
         GROUNDING,
         "https://exocortex.my/assets/parent",
@@ -502,7 +502,7 @@ describe("Integration: create_instance grounding → NoteToRDFConverter", () => 
       const file = getCreatedFile();
       const triples = await converter.convertNote(file);
 
-      const fileNamePredicate = Namespace.EXO.term("Asset_fileName");
+      const fileNamePredicate = Namespace.EXO.term("Asset_filename");
       const fileNameTriples = findTriples(triples, fileNamePredicate);
       expect(fileNameTriples).toHaveLength(1);
 

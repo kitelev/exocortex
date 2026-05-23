@@ -91,9 +91,9 @@ describe("NoteToRDFConverter — namespace whitelist relaxation", () => {
 
     const triples = await converter.convertNote(file);
 
-    // Only the implicit Asset_fileName triple should be emitted.
+    // Only the implicit Asset_filename triple should be emitted.
     expect(triples.length).toBe(1);
-    expect(triples[0].predicate.value.endsWith("Asset_fileName")).toBe(true);
+    expect(triples[0].predicate.value.endsWith("Asset_filename")).toBe(true);
   });
 
   it("ignores keys whose prefix starts with a non-letter", async () => {
@@ -104,6 +104,6 @@ describe("NoteToRDFConverter — namespace whitelist relaxation", () => {
     mockVault.getFrontmatter.mockReturnValue(frontmatter);
 
     const triples = await converter.convertNote(file);
-    expect(triples.length).toBe(1); // only Asset_fileName
+    expect(triples.length).toBe(1); // only Asset_filename
   });
 });

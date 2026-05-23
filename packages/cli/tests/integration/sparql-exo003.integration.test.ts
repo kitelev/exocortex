@@ -378,7 +378,7 @@ describeOrSkip("SPARQL queries on Exo 0.0.3 format (Issue #1367)", () => {
       // Should have triples from both legacy and Exo003 files
       // Use meta.triplesScanned as reliable count (avoids typed literal parsing)
       const triplesScanned = response.meta?.triplesScanned;
-      // Legacy: 2 files * (Asset_label + Asset_fileName) = 4 triples
+      // Legacy: 2 files * (Asset_label + Asset_filename) = 4 triples
       // Exo003: 2 anchors * 2 owl:sameAs = 4 triples
       // Total: 8+ triples
       expect(triplesScanned).toBeGreaterThanOrEqual(8);
