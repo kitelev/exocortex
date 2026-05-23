@@ -2,7 +2,11 @@ import { injectable } from "tsyringe";
 import { v4 as uuidv4 } from "uuid";
 import type { IFileSystemReader } from "../interfaces/IFileSystemAdapter";
 import type { IFileSystemWriter } from "../interfaces/IFileSystemAdapter";
-import type { GroundingDefinition } from "../domain/models/CommandDefinition";
+import type {
+  GroundingDefinition,
+  InheritanceRuleResolved,
+  PropertyDefaultResolved,
+} from "../domain/models/CommandDefinition";
 import { GroundingType } from "../domain/constants/GroundingType";
 import { FrontmatterService } from "../utilities/FrontmatterService";
 import { DateFormatter } from "../utilities/DateFormatter";
@@ -80,6 +84,18 @@ export type ClassLabelToUidResolver = (
 /** UUID-v4 sniff used to skip resolution for already-canonical class refs. */
 const UUID_V4_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * RFC v2 Phase 3a marker emitted by CommandResolver for context-dependent
+ * SubstitutionToken resolvers (`target`, `targetFolder`). Context-independent
+ * resolvers (`today`, `todayStart`) are resolved at parse time and never reach
+ * the executor in marker form. Shape: `__SUBSTITUTE__<resolver-id>__<token-uid>__`.
+ *
+ * Phase 3b executor recognises this exact shape and substitutes the resolved
+ * value at execution time when the click-target IRI / file path is known.
+ */
+const SUBSTITUTION_MARKER_RE =
+  /^__SUBSTITUTE__(target|targetFolder)__[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}__$/;
 
 /**
  * A named service that can be invoked by service_call groundings.
@@ -638,11 +654,37 @@ export class GroundingExecutor {
     // class-UID write here would either overwrite the correct back-link value
     // or be silently overwritten — both confusing.
 
-    // Issue #3136 (Q3.b closure): apply propertyDefaults BEFORE userInput so
-    // user input wins. Values are passed through substituteVariables, enabling
-    // declarative use of `$today` / `$todayStart` / `$targetFolder` / `$target`
-    // (replacing the legacy `createTaskForDailyNote` service_call).
-    if (grounding.propertyDefaults) {
+    // RFC v2 Phase 3b — Step 2 (PropertyDefault, declarative ref-form).
+    // Apply ref-form PropertyDefaults from `grounding.propertyDefault` (parser
+    // emits resolved-or-marker values per Phase 3a contract). The CommandResolver
+    // coexistence rule guarantees that legacy `propertyDefaults` JSON is
+    // `undefined` whenever ref-form is set, so both blocks below cannot
+    // double-write the same key (legacy block is skipped). Phase 3b values are
+    // emitted by the parser already resolved (today / todayStart) or as
+    // `__SUBSTITUTE__<resolver>__<token-uid>__` markers (target / targetFolder);
+    // executor substitutes the markers at runtime when click-target context is
+    // known. PropertyDefault explicitly bypasses CREATE_INSTANCE_BLACKLIST per
+    // RFC v2 §Precedence — blacklist applies ONLY to copy-from-target step 4.
+    if (grounding.propertyDefault && grounding.propertyDefault.length > 0) {
+      this.applyPropertyDefaultStep(
+        properties,
+        grounding.propertyDefault,
+        targetIRI,
+        targetFilePath,
+      );
+    }
+
+    // Issue #3136 (Q3.b closure): legacy JSON-literal propertyDefaults path.
+    // RFC v2 Phase 3a coexistence rule: ref-form `propertyDefault` takes
+    // precedence. The parser already returns legacy `propertyDefaults` as
+    // `undefined` when ref-form is set; this explicit guard provides
+    // defense-in-depth so a future parser regression OR a hand-edited Grounding
+    // with both shapes cannot silently overwrite ref-form values via the
+    // legacy block. Apply legacy BEFORE userInput so user input still wins.
+    if (
+      grounding.propertyDefaults &&
+      !(grounding.propertyDefault && grounding.propertyDefault.length > 0)
+    ) {
       for (const [key, rawValue] of Object.entries(grounding.propertyDefaults)) {
         if (typeof rawValue !== "string") continue;
         properties[key] = this.substituteVariables(
@@ -665,9 +707,9 @@ export class GroundingExecutor {
       }
     }
 
-    // Copy-from-target: read $target frontmatter and inherit any non-blacklisted
-    // property the new instance does not already have. Wikilink values are
-    // re-quoted so they round-trip through the YAML serializer.
+    // Parse $target frontmatter once — shared by Step 3 (InheritanceRule, reads
+    // source-property values) and Step 4 (copy-from-target, fills gaps).
+    let targetFm: Record<string, string | string[]> | null = null;
     if (targetIRI && targetFilePath) {
       let targetContent: string;
       try {
@@ -678,14 +720,36 @@ export class GroundingExecutor {
           error: `create_instance: failed to read $target file "${targetFilePath}": ${error instanceof Error ? error.message : String(error)}`,
         };
       }
+      targetFm = this.frontmatterService.parseObject(targetContent) ?? null;
+    }
 
-      const targetFm = this.frontmatterService.parseObject(targetContent);
-      if (targetFm) {
-        for (const [key, value] of Object.entries(targetFm)) {
-          if (GroundingExecutor.CREATE_INSTANCE_BLACKLIST.has(key)) continue;
-          if (properties[key] !== undefined) continue;
-          properties[key] = this.reformatCopiedValue(value);
-        }
+    // RFC v2 Phase 3b — Step 3 (InheritanceRule, declarative ref-form).
+    // Apply each applicable rule (condition match, exclusion non-match) in
+    // priority-descending order. Like Step 2, this bypasses CREATE_INSTANCE_BLACKLIST
+    // — `ems__Effort_area` and `ems__Effort_parent` are in the BLACKLIST but
+    // are LEGITIMATE inheritance targets per RFC. Step 3 only writes keys not
+    // already set by Steps 1 (userInput) or 2 (PropertyDefault).
+    if (
+      grounding.inheritanceRule &&
+      grounding.inheritanceRule.length > 0 &&
+      targetFm
+    ) {
+      await this.applyInheritanceRuleStep(
+        properties,
+        grounding.inheritanceRule,
+        targetFm,
+      );
+    }
+
+    // Step 4: Copy-from-target — read $target frontmatter and inherit any
+    // non-blacklisted property the new instance does not already have.
+    // Wikilink values are re-quoted so they round-trip through the YAML
+    // serializer. BLACKLIST applies ONLY here per RFC v2 §Precedence.
+    if (targetFm) {
+      for (const [key, value] of Object.entries(targetFm)) {
+        if (GroundingExecutor.CREATE_INSTANCE_BLACKLIST.has(key)) continue;
+        if (properties[key] !== undefined) continue;
+        properties[key] = this.reformatCopiedValue(value);
       }
     }
 
@@ -747,6 +811,232 @@ export class GroundingExecutor {
     } catch {
       return classRef;
     }
+  }
+
+  /**
+   * RFC v2 Phase 3b — Step 2 implementation. Apply ref-form PropertyDefaults
+   * declared by the Grounding via `exocmd__Grounding_propertyDefault`.
+   *
+   * Higher-priority steps (userInput) already populated `properties`; this
+   * step only writes keys not already set. Values flow from CommandResolver
+   * (Phase 3a) either fully-resolved (e.g. `today` → `2026-05-23`) or as
+   * `__SUBSTITUTE__<resolver-id>__<token-uid>__` markers for context-dependent
+   * resolvers (`target`, `targetFolder`) that the executor swaps in at runtime.
+   *
+   * Bypasses `CREATE_INSTANCE_BLACKLIST` by design — `ems__Effort_status` is
+   * blacklisted (to prevent literal copy-from-target) but PropertyDefault MUST
+   * be able to set it. RFC v2 §Precedence: BLACKLIST scopes only Step 4.
+   */
+  private applyPropertyDefaultStep(
+    properties: Record<string, unknown>,
+    propertyDefault: ReadonlyArray<PropertyDefaultResolved>,
+    targetIRI: string,
+    targetFilePath: string,
+  ): void {
+    for (const { propertyName, value } of propertyDefault) {
+      if (properties[propertyName] !== undefined) continue;
+      properties[propertyName] = this.resolveSubstitutionMarker(
+        value,
+        targetIRI,
+        targetFilePath,
+      );
+    }
+  }
+
+  /**
+   * Swap context-dependent SubstitutionToken markers for runtime-resolved
+   * values. Non-marker strings pass through unchanged.
+   *
+   * - `__SUBSTITUTE__target__<uid>__` → `"[[<target-uid>]]"` where target-uid is
+   *   the canonical UID-or-path emitted by {@link extractBacklinkTarget}.
+   * - `__SUBSTITUTE__targetFolder__<uid>__` → vault-relative folder portion of
+   *   `targetFilePath`. Empty string when target is at vault root.
+   *
+   * Unknown markers (defensive — parser whitelists resolver-ids upstream) and
+   * non-marker strings are returned unchanged so production callers keep
+   * receiving the parser's literal output.
+   */
+  private resolveSubstitutionMarker(
+    value: string,
+    targetIRI: string,
+    targetFilePath: string,
+  ): string {
+    const match = value.match(SUBSTITUTION_MARKER_RE);
+    if (!match) return value;
+    const resolverId = match[1];
+    if (resolverId === "target") {
+      const bare = GroundingExecutor.extractBacklinkTarget(
+        targetIRI,
+        targetFilePath,
+      );
+      return `"[[${bare}]]"`;
+    }
+    if (resolverId === "targetFolder") {
+      if (!targetFilePath) return "";
+      const normalized = targetFilePath.replace(/^\/+/, "");
+      const slashIdx = normalized.lastIndexOf("/");
+      return slashIdx >= 0 ? normalized.slice(0, slashIdx) : "";
+    }
+    return value;
+  }
+
+  /**
+   * RFC v2 Phase 3b — Step 3 implementation. Apply ref-form InheritanceRules
+   * declared by the Grounding via `exocmd__Grounding_inheritanceRule`.
+   *
+   * Resolution per RFC v2 §Precedence:
+   *   1. Filter rules where `targetClassCondition` is absent OR matches one of
+   *      the target's classes (`exo__Instance_class` is multi-valued).
+   *   2. Filter out rules where ANY `targetClassExclusion` matches a target class.
+   *   3. Sort by `priority` desc (stable — JS Array.sort is stable since ES2019).
+   *   4. Apply: for each rule, read `sourcePropertyName` from target frontmatter,
+   *      write it to `targetPropertyName` on the new instance — only if no
+   *      higher-priority step (userInput / PropertyDefault) already set it.
+   *      Higher-priority rules within Step 3 also win because the
+   *      `properties[key] !== undefined` guard fires once any rule has written.
+   *
+   * Like Step 2, this bypasses CREATE_INSTANCE_BLACKLIST (`ems__Effort_area`
+   * / `ems__Effort_parent` are intentional inheritance targets — BLACKLIST
+   * scopes only Step 4 copy-from-target).
+   *
+   * Source-value formatting handles two common shapes:
+   * - Bare UUID (e.g. target's `exo__Asset_uid`) → wrapped as `"[[<uid>]]"`
+   *   so the new asset's frontmatter receives a valid wikilink.
+   * - Already wikilink-form (e.g. target's `exo__Asset_isDefinedBy`) → passed
+   *   through `reformatWikilink` for YAML round-trip safety.
+   */
+  private async applyInheritanceRuleStep(
+    properties: Record<string, unknown>,
+    inheritanceRule: ReadonlyArray<InheritanceRuleResolved>,
+    targetFm: Record<string, string | string[]>,
+  ): Promise<void> {
+    const targetClassNames = this.extractTargetClassNames(targetFm);
+
+    const applicable: InheritanceRuleResolved[] = [];
+    for (const rule of inheritanceRule) {
+      const conditionOk = await this.inheritanceConditionMatches(
+        rule.targetClassCondition,
+        targetClassNames,
+      );
+      if (!conditionOk) continue;
+      const excluded = await this.inheritanceExclusionMatches(
+        rule.targetClassExclusion,
+        targetClassNames,
+      );
+      if (excluded) continue;
+      applicable.push(rule);
+    }
+
+    // Sort by priority descending; JS Array.sort is stable (ES2019+), so equal
+    // priorities preserve the authoring/triple-store order — deterministic.
+    applicable.sort((a, b) => b.priority - a.priority);
+
+    for (const rule of applicable) {
+      if (properties[rule.targetPropertyName] !== undefined) continue;
+      const sourceValue = targetFm[rule.sourcePropertyName];
+      if (sourceValue === undefined || sourceValue === null) continue;
+      properties[rule.targetPropertyName] = this.formatInheritedValue(
+        sourceValue,
+      );
+    }
+  }
+
+  /**
+   * Check if a class condition matches any of the target's classes. Absent
+   * condition = unconditional rule (always matches).
+   *
+   * Matching is dual-form: direct symbolic equality (target authored with
+   * `[[ems__Area]]` style) OR via the injected ClassLabelToUidResolver
+   * (target authored with UID-canon `[[82c74542-...]]`). Resolver absence /
+   * failure falls back to direct-only — backward-compatible with test/CLI
+   * harnesses that don't wire the Obsidian metadata-cache adapter.
+   */
+  private async inheritanceConditionMatches(
+    condition: string | undefined,
+    targetClassNames: string[],
+  ): Promise<boolean> {
+    if (!condition) return true;
+    return this.classMatchesAny(condition, targetClassNames);
+  }
+
+  private async inheritanceExclusionMatches(
+    exclusions: readonly string[],
+    targetClassNames: string[],
+  ): Promise<boolean> {
+    for (const ex of exclusions) {
+      if (await this.classMatchesAny(ex, targetClassNames)) return true;
+    }
+    return false;
+  }
+
+  private async classMatchesAny(
+    label: string,
+    targetClassNames: string[],
+  ): Promise<boolean> {
+    if (targetClassNames.includes(label)) return true;
+    if (!this.classLabelToUid) return false;
+    try {
+      const uid = await this.classLabelToUid(label);
+      if (uid && uid.length > 0 && targetClassNames.includes(uid)) return true;
+    } catch {
+      // Resolver failures degrade gracefully — direct-only match still applied.
+    }
+    return false;
+  }
+
+  /**
+   * Extract bare class refs from target's `exo__Instance_class` frontmatter
+   * entry. Handles both string and array forms; unwraps `[[<inner>]]` and
+   * `[[<inner>|<alias>]]` wikilink shapes; strips surrounding YAML quotes.
+   */
+  private extractTargetClassNames(
+    targetFm: Record<string, string | string[]>,
+  ): string[] {
+    const raw = targetFm["exo__Instance_class"];
+    if (raw === undefined || raw === null) return [];
+    const arr = Array.isArray(raw) ? raw : [raw];
+    const out: string[] = [];
+    for (const item of arr) {
+      const inner = this.extractWikilinkInner(String(item));
+      if (inner) out.push(inner);
+    }
+    return out;
+  }
+
+  private extractWikilinkInner(s: string): string {
+    const m = s.match(/\[\[([^\]|]+)(?:\|[^\]]*)?\]\]/);
+    if (m) return m[1].trim();
+    return s.replace(/^["']|["']$/g, "").trim();
+  }
+
+  /**
+   * Format an inherited source value for the new instance's frontmatter.
+   *
+   * - Already wikilink-form (`"[[...]]"` / `[[...]]`) → `reformatWikilink`
+   *   ensures YAML-quoted round-trip.
+   * - Bare UUID v4 (e.g. target's `exo__Asset_uid`) → wrap as `"[[<uid>]]"`
+   *   so the new asset receives a valid wikilink (per RFC v2 InheritanceRule
+   *   asset description for `ems__Effort_area` / `ems__Effort_parent`).
+   * - Anything else (literal scalar) → pass-through.
+   * - Array source → element-wise scalar formatting.
+   */
+  private formatInheritedValue(
+    value: string | string[],
+  ): string | string[] {
+    if (Array.isArray(value)) {
+      return value.map((item) => this.formatInheritedScalar(String(item)));
+    }
+    return this.formatInheritedScalar(String(value));
+  }
+
+  private formatInheritedScalar(value: string): string {
+    if (/^"?\[\[.+\]\]"?$/.test(value)) {
+      return this.reformatWikilink(value);
+    }
+    if (UUID_V4_RE.test(value)) {
+      return `"[[${value}]]"`;
+    }
+    return value;
   }
 
   /**
