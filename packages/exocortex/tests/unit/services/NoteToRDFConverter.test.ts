@@ -990,7 +990,14 @@ describe("NoteToRDFConverter", () => {
         expect(classTriple!.object).toBeInstanceOf(Literal);
       });
 
-      it("should return Literal when [[UUID]] file has no label and UUID basename", async () => {
+      it("should return file IRI when [[UUID]] file has no label and UUID basename (Issue #3242)", async () => {
+        // Issue #3242: pre-fix this returned `Literal`, which the validator
+        // silently dropped (only IRI-typed type triples are processed in
+        // ShaclLiteValidator:182). Result: assets typed via label-less class
+        // files appeared classless and produced 218+ false `sh:class`
+        // violations against any asset referencing them. Post-fix the file
+        // IRI is emitted instead — TripleClassHierarchy traverses the chain
+        // via `exo__Class_superClass` triples emitted by the class file.
         const frontmatter: IFrontmatter = {
           exo__Instance_class: ["[[3677039a-a5a8-4402-9a07-f8f18fe384ad]]"],
         };
@@ -1013,7 +1020,11 @@ describe("NoteToRDFConverter", () => {
         );
 
         expect(classTriple).toBeDefined();
-        expect(classTriple!.object).toBeInstanceOf(Literal);
+        expect(classTriple!.object).toBeInstanceOf(IRI);
+        // The IRI must point to the resolved class file
+        expect((classTriple!.object as IRI).value).toBe(
+          converter.notePathToIRI(classDefFile.path).value,
+        );
       });
 
       it("should still work with [[UUID|alias]] format after vault lookup added (regression #2742)", async () => {
