@@ -170,7 +170,6 @@ async function givenInheritanceRule(
 interface GroundingSpec {
   uid: string;
   label?: string;
-  legacyJson?: string;
   propertyDefaultRefs?: string[];
   inheritanceRuleRefs?: string[];
 }
@@ -194,15 +193,6 @@ async function givenGrounding(
       new Literal("create_instance"),
     ),
   ];
-  if (opts.legacyJson !== undefined) {
-    triples.push(
-      new Triple(
-        subject,
-        Namespace.EXOCMD.term("Grounding_propertyDefaults"),
-        new Literal(opts.legacyJson),
-      ),
-    );
-  }
   for (const ref of opts.propertyDefaultRefs ?? []) {
     triples.push(
       new Triple(
@@ -366,43 +356,9 @@ describe("Feature: CommandResolver — ref-form PropertyDefault and InheritanceR
     },
   );
 
-  it(
-    "Scenario: Coexistence — ref-form wins over legacy JSON — " +
-      "Given a Grounding with both legacy _propertyDefaults JSON literal AND ref-form _propertyDefault " +
-      "When the grounding is loaded " +
-      "Then the returned GroundingDefinition.propertyDefaults is undefined " +
-      "And propertyDefault is the resolved array " +
-      "And a deprecation warning is logged once",
-    async () => {
-      // Given
-      await givenLabelledAsset(store, PROP_UID_PRIMARY, "ems__Effort_plannedStartTimestamp");
-      await givenLabelledAsset(store, VALUE_UID_BACKLOG, "ems__EffortStatusBacklog");
-      await givenPropertyDefault(store, {
-        uid: PD_UID_1,
-        propertyRefUid: PROP_UID_PRIMARY,
-        valueRefUid: VALUE_UID_BACKLOG,
-      });
-      await givenGrounding(store, {
-        uid: GROUNDING_UID,
-        label: "Grounding-coexistence",
-        legacyJson: '{"ems__Effort_status":"[[legacy-default]]"}',
-        propertyDefaultRefs: [PD_UID_1],
-      });
-      await givenCommand(store, COMMAND_UID, GROUNDING_UID);
-
-      // When
-      const cmd = await resolver.loadCommand(COMMAND_UID);
-
-      // Then
-      expect(cmd!.grounding.propertyDefaults).toBeUndefined();
-      expect(cmd!.grounding.propertyDefault).toBeDefined();
-      expect(cmd!.grounding.propertyDefault).toHaveLength(1);
-      const coexistenceWarns = logger.warnings.filter((w) =>
-        /legacy exocmd__Grounding_propertyDefaults JSON ignored/.test(w),
-      );
-      expect(coexistenceWarns).toHaveLength(1);
-    },
-  );
+  // RFC v2 Phase 5 (#3167): the coexistence scenario (legacy JSON +
+  // ref-form together → ref-form wins, deprecation warning) was removed
+  // alongside the legacy parser. Ref-form is the only path.
 
   it(
     "Scenario: SubstitutionToken parse-time resolution — " +

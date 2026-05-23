@@ -664,15 +664,14 @@ export class GroundingExecutor {
 
     // RFC v2 Phase 3b — Step 2 (PropertyDefault, declarative ref-form).
     // Apply ref-form PropertyDefaults from `grounding.propertyDefault` (parser
-    // emits resolved-or-marker values per Phase 3a contract). The CommandResolver
-    // coexistence rule guarantees that legacy `propertyDefaults` JSON is
-    // `undefined` whenever ref-form is set, so both blocks below cannot
-    // double-write the same key (legacy block is skipped). Phase 3b values are
-    // emitted by the parser already resolved (today / todayStart) or as
-    // `__SUBSTITUTE__<resolver>__<token-uid>__` markers (target / targetFolder);
-    // executor substitutes the markers at runtime when click-target context is
-    // known. PropertyDefault explicitly bypasses CREATE_INSTANCE_BLACKLIST per
-    // RFC v2 §Precedence — blacklist applies ONLY to copy-from-target step 4.
+    // emits resolved values for `today` / `todayStart` and
+    // `__SUBSTITUTE__<resolver>__<token-uid>__` markers for `target` /
+    // `targetFolder`; executor substitutes the markers at runtime when the
+    // click-target context is known). PropertyDefault explicitly bypasses
+    // CREATE_INSTANCE_BLACKLIST per RFC v2 §Precedence — blacklist applies ONLY
+    // to copy-from-target step 4. The legacy JSON-literal `propertyDefaults`
+    // path was removed in RFC v2 Phase 5 (#3167) after vault migration to
+    // ref-form completed (Phase 4a, #3165).
     if (grounding.propertyDefault && grounding.propertyDefault.length > 0) {
       this.applyPropertyDefaultStep(
         properties,
@@ -682,30 +681,7 @@ export class GroundingExecutor {
       );
     }
 
-    // Issue #3136 (Q3.b closure): legacy JSON-literal propertyDefaults path.
-    // RFC v2 Phase 3a coexistence rule: ref-form `propertyDefault` takes
-    // precedence. The parser already returns legacy `propertyDefaults` as
-    // `undefined` when ref-form is set; this explicit guard provides
-    // defense-in-depth so a future parser regression OR a hand-edited Grounding
-    // with both shapes cannot silently overwrite ref-form values via the
-    // legacy block. Apply legacy BEFORE userInput so user input still wins.
-    if (
-      grounding.propertyDefaults &&
-      !(grounding.propertyDefault && grounding.propertyDefault.length > 0)
-    ) {
-      for (const [key, rawValue] of Object.entries(grounding.propertyDefaults)) {
-        if (typeof rawValue !== "string") continue;
-        properties[key] = this.substituteVariables(
-          rawValue,
-          targetIRI,
-          userInput,
-          undefined,
-          targetFilePath,
-        );
-      }
-    }
-
-    // userInput wins over propertyDefaults and over copy-from-target — apply
+    // userInput wins over PropertyDefault and over copy-from-target — apply
     // here so the copy-loop below can skip already-set keys without re-quoting.
     if (userInput) {
       for (const [key, value] of Object.entries(userInput)) {

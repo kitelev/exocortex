@@ -421,32 +421,53 @@ describe("CommandResolver", () => {
       expect(cmd!.grounding.linkBackProperty).toBeUndefined();
     });
 
-    // Issue #3136 — Q3.b closure: propertyDefaults JSON literal
-    it("should parse exocmd__Grounding_propertyDefaults JSON object into propertyDefaults map", async () => {
-      const groundingSubject = new IRI(`obsidian://vault/gnd-defaults.md`);
+    // RFC v2 Phase 5 (#3167): legacy JSON-literal parser removed. The
+    // `Grounding_propertyDefaults` (plural) predicate is no longer read; only
+    // ref-form `Grounding_propertyDefault` (singular) → `exocmd__PropertyDefault`
+    // instances drive the propertyDefault pipeline. The deprecated triple, if
+    // still present on a hand-edited Grounding, is ignored (no field emitted,
+    // no error thrown) — but a one-shot transitional deprecation warn is
+    // logged per Grounding-uid so the silent-regression surfaces in logs.
+    it("RFC v2 Phase 5: legacy Grounding_propertyDefaults JSON triple is ignored with transitional warn", async () => {
+      const warnings: string[] = [];
+      const recordingLogger = {
+        debug() {},
+        info() {},
+        warn(message: string) {
+          warnings.push(message);
+        },
+        error() {},
+      };
+      const resolverWithLogger = new CommandResolver(store, recordingLogger);
+      const groundingSubject = new IRI(`obsidian://vault/gnd-legacy-defaults.md`);
       await store.addAll([
         new Triple(groundingSubject, Namespace.RDF.term("type"), Namespace.EXOCMD.term("Grounding")),
-        new Triple(groundingSubject, Namespace.EXO.term("Asset_uid"), new Literal("gnd-defaults")),
-        new Triple(groundingSubject, Namespace.EXO.term("Asset_label"), new Literal("With defaults")),
+        new Triple(groundingSubject, Namespace.EXO.term("Asset_uid"), new Literal("gnd-legacy-defaults")),
+        new Triple(groundingSubject, Namespace.EXO.term("Asset_label"), new Literal("Legacy defaults ignored")),
         new Triple(groundingSubject, Namespace.EXOCMD.term("Grounding_type"), new Literal("create_instance")),
         new Triple(
           groundingSubject,
           Namespace.EXOCMD.term("Grounding_propertyDefaults"),
-          new Literal('{"ems__Effort_plannedStartTimestamp":"$today","ems__Effort_status":"[[backlog]]"}'),
+          new Literal('{"ems__Effort_plannedStartTimestamp":"$today"}'),
         ),
       ]);
       await addCommandAsset(store, {
-        uid: "cmd-defaults",
-        label: "Create With Defaults",
-        groundingRef: "gnd-defaults",
+        uid: "cmd-legacy-defaults",
+        label: "Legacy",
+        groundingRef: "gnd-legacy-defaults",
       });
 
-      const cmd = await resolver.loadCommand("cmd-defaults");
+      const cmd = await resolverWithLogger.loadCommand("cmd-legacy-defaults");
 
-      expect(cmd!.grounding.propertyDefaults).toEqual({
-        ems__Effort_plannedStartTimestamp: "$today",
-        ems__Effort_status: "[[backlog]]",
-      });
+      expect(cmd).not.toBeNull();
+      expect((cmd!.grounding as unknown as Record<string, unknown>).propertyDefaults).toBeUndefined();
+      expect(cmd!.grounding.propertyDefault).toBeUndefined();
+      // Transitional deprecation warn was logged exactly once.
+      const deprecationWarns = warnings.filter((w) =>
+        /deprecated exocmd__Grounding_propertyDefaults/.test(w),
+      );
+      expect(deprecationWarns).toHaveLength(1);
+      expect(deprecationWarns[0]).toContain("gnd-legacy-defaults");
     });
 
     it("should parse exocmd__Grounding_prefillLabelWithDate true literal as boolean flag", async () => {
@@ -572,12 +593,15 @@ describe("CommandResolver", () => {
       ]);
     });
 
-    it("should fail-loud when exocmd__Grounding_propertyDefaults is invalid JSON", async () => {
-      const groundingSubject = new IRI(`obsidian://vault/gnd-bad-defaults.md`);
+    // RFC v2 Phase 5 (#3167): the legacy fail-loud-on-invalid-JSON test was
+    // removed alongside the parser. Invalid JSON in the deprecated triple is
+    // simply ignored — there is no longer a parser to throw.
+    it("RFC v2 Phase 5: invalid Grounding_propertyDefaults JSON does not throw (parser removed)", async () => {
+      const groundingSubject = new IRI(`obsidian://vault/gnd-bad-legacy.md`);
       await store.addAll([
         new Triple(groundingSubject, Namespace.RDF.term("type"), Namespace.EXOCMD.term("Grounding")),
-        new Triple(groundingSubject, Namespace.EXO.term("Asset_uid"), new Literal("gnd-bad-defaults")),
-        new Triple(groundingSubject, Namespace.EXO.term("Asset_label"), new Literal("Bad defaults")),
+        new Triple(groundingSubject, Namespace.EXO.term("Asset_uid"), new Literal("gnd-bad-legacy")),
+        new Triple(groundingSubject, Namespace.EXO.term("Asset_label"), new Literal("Bad legacy")),
         new Triple(groundingSubject, Namespace.EXOCMD.term("Grounding_type"), new Literal("create_instance")),
         new Triple(
           groundingSubject,
@@ -586,14 +610,13 @@ describe("CommandResolver", () => {
         ),
       ]);
       await addCommandAsset(store, {
-        uid: "cmd-bad-defaults",
+        uid: "cmd-bad-legacy",
         label: "Bad",
-        groundingRef: "gnd-bad-defaults",
+        groundingRef: "gnd-bad-legacy",
       });
 
-      await expect(resolver.loadCommand("cmd-bad-defaults")).rejects.toThrow(
-        /not valid JSON/,
-      );
+      const cmd = await resolver.loadCommand("cmd-bad-legacy");
+      expect(cmd).not.toBeNull();
     });
 
     it("should return null for missing UID", async () => {

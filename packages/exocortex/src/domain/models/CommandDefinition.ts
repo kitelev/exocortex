@@ -132,23 +132,9 @@ export interface GroundingDefinition {
    */
   readonly shiftDelta?: string;
   /**
-   * Property defaults applied to a newly created instance BEFORE userInput
-   * is merged (for `create_instance` grounding, Issue #3136 — Q3.b closure).
-   * Values pass through `substituteVariables`, so tokens like `$today`,
-   * `$todayStart`, `$targetFolder`, `$target` are resolved at execution time.
-   *
-   * Authored on grounding ассеты as a JSON literal in the
-   * `exocmd__Grounding_propertyDefaults` RDF triple, e.g.
-   * `'{"ems__Effort_plannedStartTimestamp": "$today"}'`.
-   *
-   * userInput keys override defaults; class / prototype / back-link wiring
-   * is unaffected by this map.
-   */
-  readonly propertyDefaults?: Record<string, string>;
-  /**
-   * RFC v2 Phase 1+2: declarative ref-form replacement for the legacy JSON
-   * `propertyDefaults`. Multi-valued list of `exocmd__PropertyDefault`
-   * instances attached via `Grounding_propertyDefault` predicate.
+   * RFC v2 Phase 1+2: declarative ref-form property defaults. Multi-valued
+   * list of `exocmd__PropertyDefault` instances attached via
+   * `Grounding_propertyDefault` predicate.
    *
    * Each PropertyDefault asset declares (property, value) pair. Values that
    * point to a `SubstitutionToken` instance are resolved at parse time via
@@ -157,9 +143,9 @@ export interface GroundingDefinition {
    * (targetFolder / target) are encoded as marker string
    * `__SUBSTITUTE__<resolver-id>__<token-uid>__` for the Phase 3b executor.
    *
-   * Coexistence rule: when present alongside legacy `propertyDefaults` JSON
-   * on the same Grounding, ref-form wins; legacy is ignored with a
-   * `logger.warn` once per session per Grounding-uid.
+   * The legacy JSON-literal form (`exocmd__Grounding_propertyDefaults`,
+   * plural) was removed in RFC v2 Phase 5 (#3167) after vault migration to
+   * ref-form completed (Phase 4a, #3165).
    */
   readonly propertyDefault?: ReadonlyArray<PropertyDefaultResolved>;
   /**
