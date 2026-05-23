@@ -1207,6 +1207,14 @@ export class NoteToRDFConverter {
     }
 
     // Issue #2745: If UUID-only wikilink, look up file in vault and resolve via basename/label
+    // Issue #3242: when the resolved class file has no namespace-derivable name
+    // (UUID basename, no namespace-prefixed `exo__Asset_label`), fall back to
+    // the resolved file IRI instead of `Literal`. Without this, the validator
+    // skips the type triple entirely (ShaclLiteValidator only processes
+    // `obj.type === 'iri'`), leaving the asset apparently classless and
+    // emitting false `sh:class` violations against any referencing asset.
+    // The file IRI is still traversable by `TripleClassHierarchy` via
+    // `exo__Class_superClass` triples emitted by the class file itself.
     if (this.isUUID(classRef)) {
       const resolvedFile = this.vault.getFirstLinkpathDest(classRef, "");
       if (resolvedFile) {
@@ -1221,6 +1229,11 @@ export class NoteToRDFConverter {
             if (labelIRI) return labelIRI;
           }
         }
+
+        // Issue #3242 fall-through: resolved class file lacks any
+        // namespace-derivable identifier — use its file IRI so the type
+        // triple remains graph-traversable.
+        return this.notePathToIRI(resolvedFile.path);
       }
     }
 
