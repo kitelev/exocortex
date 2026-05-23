@@ -30,6 +30,22 @@ describe("CLI v16 — apply command (RFC 8e83442b T1.2)", () => {
     expect(opts).toContain("--vault");
   });
 
+  it("declares --seed and --frozen-clock determinism options (Phase 0 Task 0.3)", () => {
+    const cmd = applyCommand();
+    const opts = cmd.options.map((o) => o.long);
+    expect(opts).toContain("--seed");
+    expect(opts).toContain("--frozen-clock");
+  });
+
+  it("--help text describes --seed and --frozen-clock", () => {
+    const cmd = applyCommand();
+    const help = cmd.helpInformation();
+    expect(help).toMatch(/--seed <uuid>/);
+    expect(help).toMatch(/Deterministic UID seed/);
+    expect(help).toMatch(/--frozen-clock <iso>/);
+    expect(help).toMatch(/Freeze clock to ISO timestamp/);
+  });
+
   it("description mentions exocmd__Command", () => {
     const cmd = applyCommand();
     expect(cmd.description()).toContain("exocmd__Command");
