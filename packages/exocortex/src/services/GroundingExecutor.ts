@@ -1239,7 +1239,10 @@ export class GroundingExecutor {
    *
    * Errors (plain Error with structured message — `GroundingError` class is
    * not yet introduced in the codebase; existing executors also use Error):
-   * - Missing `targetProperty` / `targetValue` on the grounding definition.
+   * - Missing `targetProperty` / `appendExpression` (or legacy `targetValue`)
+   *   on the grounding definition. RFC 918a2b65 Phase 2: `appendExpression`
+   *   is the canonical predicate; legacy `targetValue` is the deprecated
+   *   transitional fallback.
    * - `$target.<prop>` resolved to undefined / null / array.
    */
   private async executePropertyAppend(
