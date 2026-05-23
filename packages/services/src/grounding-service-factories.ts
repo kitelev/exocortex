@@ -56,10 +56,41 @@ export function createPathBasedTargetResolver(
   };
 }
 
+/**
+ * Optional post-create hook used by the obsidian-plugin thin wrapper
+ * (Phase 4b) to focus the new asset in a workspace tab. CLI runtimes
+ * omit this parameter; behavior is unchanged for those callers.
+ */
+export type OnCreatedCallback = (file: IFile) => Promise<void>;
+
+/**
+ * Default `ClassRefResolver` used when CLI callers don't supply one. The
+ * legacy plugin path resolved UID-canon `[[<uuid>]]` references through
+ * Obsidian's `metadataCache`; in CLI runtime there is no resolver, so this
+ * fallback returns `null` for every UUID. Symbolic refs (`[[ems__Area]]`)
+ * continue to round-trip through `WikiLinkHelpers.resolveSymbolic` without
+ * resolver assistance.
+ */
+const NULL_CLASS_RESOLVER: ClassRefResolver = () => null;
+
+/**
+ * Format a wikilink value as the quoted YAML form (`"[[X]]"`) consistently with
+ * the plugin's hand-rolled `createAsset` frontmatter writer
+ * (`ServiceRegistryPopulator.toQuotedWikilink`). Idempotent — already-quoted
+ * inputs round-trip unchanged; bare/unwrapped values are re-wrapped.
+ */
+function toQuotedWikilink(value: string): string {
+  if (value.startsWith('"[[') && value.endsWith(']]"')) return value;
+  if (value.startsWith("[[") && value.endsWith("]]")) return `"${value}"`;
+  return `"[[${value}]]"`;
+}
+
 export function createCreateRelatedTaskService(
   vaultAdapter: IVaultAdapter,
   genericAssetCreationService: GenericAssetCreationService,
   resolver: ITargetResolver = createPathBasedTargetResolver(vaultAdapter),
+  onCreated?: OnCreatedCallback,
+  classResolver: ClassRefResolver = NULL_CLASS_RESOLVER,
 ): IGroundingService {
   return {
     async execute(targetIRI: string, userInput?: UserInput): Promise<void> {
@@ -90,14 +121,19 @@ export function createCreateRelatedTaskService(
         propertyValues[explicitParentProperty] = `"[[${parentFile.basename}]]"`;
       }
 
-      await genericAssetCreationService.createAsset({
+      const createdFile = await genericAssetCreationService.createAsset({
         className: "ems__Task",
         label,
         folderPath,
         propertyValues,
         parentFile,
         parentMetadata,
+        classResolver,
       });
+
+      if (onCreated) {
+        await onCreated(createdFile);
+      }
     },
   };
 }
@@ -106,6 +142,8 @@ export function createCreateRelatedProjectService(
   vaultAdapter: IVaultAdapter,
   genericAssetCreationService: GenericAssetCreationService,
   resolver: ITargetResolver = createPathBasedTargetResolver(vaultAdapter),
+  onCreated?: OnCreatedCallback,
+  classResolver: ClassRefResolver = NULL_CLASS_RESOLVER,
 ): IGroundingService {
   return {
     async execute(targetIRI: string, userInput?: UserInput): Promise<void> {
@@ -136,45 +174,22 @@ export function createCreateRelatedProjectService(
         propertyValues[explicitParentProperty] = `"[[${parentFile.basename}]]"`;
       }
 
-      await genericAssetCreationService.createAsset({
+      const createdFile = await genericAssetCreationService.createAsset({
         className: "ems__Project",
         label,
         folderPath,
         propertyValues,
         parentFile,
         parentMetadata,
+        classResolver,
       });
+
+      if (onCreated) {
+        await onCreated(createdFile);
+      }
     },
   };
 }
-
-/**
- * Format a wikilink value as the quoted YAML form (`"[[X]]"`) consistently with
- * the plugin's hand-rolled `createAsset` frontmatter writer
- * (`ServiceRegistryPopulator.toQuotedWikilink`). Idempotent — already-quoted
- * inputs round-trip unchanged; bare/unwrapped values are re-wrapped.
- */
-function toQuotedWikilink(value: string): string {
-  if (value.startsWith('"[[') && value.endsWith(']]"')) return value;
-  if (value.startsWith("[[") && value.endsWith("]]")) return `"${value}"`;
-  return `"[[${value}]]"`;
-}
-
-/**
- * Default `ClassRefResolver` used when CLI callers don't supply one. The
- * legacy plugin path resolved UID-canon `[[<uuid>]]` references through
- * Obsidian's `metadataCache`; in CLI runtime there is no resolver, so this
- * fallback returns `null` for every UUID. Symbolic refs (`[[ems__Area]]`)
- * continue to round-trip through `WikiLinkHelpers.resolveSymbolic` without
- * resolver assistance.
- *
- * Production CLI usage that needs UID-canon resolution should inject a real
- * resolver (e.g. one that scans the vault for `<uuid>.md` and reads
- * `exo__Asset_label`). Phase 3.5 keeps parity with plugin's `createAsset` on
- * vaults that still use symbolic refs for `exo__Instance_class`; the UID-canon
- * variant is a follow-up tracked in #3164's review checklist.
- */
-const NULL_CLASS_RESOLVER: ClassRefResolver = () => null;
 
 /**
  * Shared factory for the `createAsset` `service_call` grounding — ports the
