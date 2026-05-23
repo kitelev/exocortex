@@ -788,6 +788,86 @@ export class TripleClassHierarchy implements ClassHierarchy {
         }
       }
     }
+
+    // Pass 3: Metaclass inference (Issue #3247, OWL Full punning semantics).
+    //
+    // Rule: ∀C: if `<C> rdf:type <Mc>` AND `<Mc> rdfs:subClassOf <Super>` (directly
+    //           or transitively), then `<C> rdfs:subClassOf <Super>` (inferred).
+    //
+    // Specifically: any class file typed as exo:Class (the meta-class for classes)
+    // inherits exo:Class's own superClass declarations. Without this pass, class
+    // files that fail to declare `exo__Class_superClass: [[exo__Asset]]` produce
+    // false sh:class violations for every instance, even though the chain is
+    // logically derivable from the metaclass declaration alone.
+    //
+    // Operates on both file IRI scope and ontology URI scope (mirroring the dual
+    // mapping built in passes 1, 2a, 2b). Self-loops (C === Super) are skipped to
+    // avoid inflating the subClassMap. Cycle protection lives in `isSubClassOf` BFS.
+    //
+    // Cost: O(T_type × depth_of_metaclass_chain). For vault-2025 with ~200 type
+    // triples and typical chains ≤4 deep, this is sub-millisecond.
+    const typeTriples = triples.filter(
+      (t) =>
+        t.predicate instanceof DomainIRI &&
+        t.predicate.value === RDF_TYPE_IRI &&
+        t.subject instanceof DomainIRI &&
+        t.object instanceof DomainIRI,
+    );
+    for (const t of typeTriples) {
+      const childFileIri = (t.subject as DomainIRI).value;
+      const metaclassFileIri = (t.object as DomainIRI).value;
+
+      // Collect all supers of the metaclass (transitive BFS over current subClassMap)
+      const metaSupers = this.collectAncestors(metaclassFileIri);
+
+      // File IRI scope: child inherits each meta-super (skip self-loops)
+      for (const sup of metaSupers) {
+        if (childFileIri === sup) continue;
+        const set = this.subClassMap.get(childFileIri) ?? new Set<string>();
+        set.add(sup);
+        this.subClassMap.set(childFileIri, set);
+      }
+
+      // Ontology URI scope: if both child and metaclass resolve to ontology URIs,
+      // propagate the metaclass's ontology-URI ancestors to the child's ontology URI.
+      const childOntUri = fileIriToOntologyUri.get(childFileIri);
+      if (!childOntUri) continue;
+      // Ontology-URI supers may be either ontology URIs (when meta-super was already
+      // an ontology URI parent) or file IRIs that we can resolve back to ontology URIs.
+      for (const sup of metaSupers) {
+        const supOntUri = sup.startsWith("obsidian://")
+          ? fileIriToOntologyUri.get(sup)
+          : sup;
+        if (!supOntUri || childOntUri === supOntUri) continue;
+        const set = this.subClassMap.get(childOntUri) ?? new Set<string>();
+        set.add(supOntUri);
+        this.subClassMap.set(childOntUri, set);
+      }
+    }
+  }
+
+  /**
+   * Collect all ancestors of `iri` reachable through the existing subClassMap.
+   * Cycle-safe via visited set. Used by metaclass inference (Pass 3) to find the
+   * transitive superclass chain of a metaclass before propagating to instances.
+   */
+  private collectAncestors(iri: string): Set<string> {
+    const result = new Set<string>();
+    const visited = new Set<string>();
+    const queue: string[] = [iri];
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      if (visited.has(current)) continue;
+      visited.add(current);
+      const supers = this.subClassMap.get(current);
+      if (!supers) continue;
+      for (const s of supers) {
+        if (s === iri) continue; // skip ancestors equal to the starting node
+        result.add(s);
+        if (!visited.has(s)) queue.push(s);
+      }
+    }
+    return result;
   }
 
   isSubClassOf(child: string, parent: string): boolean {

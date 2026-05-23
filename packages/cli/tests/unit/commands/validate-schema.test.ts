@@ -617,6 +617,162 @@ describe("P1.6 TripleClassHierarchy ontology URI resolution", () => {
   });
 });
 
+// ──────────────────────────────────────────────────────────────────────────────
+// Issue #3247: Metaclass inference (OWL Full punning)
+// ──────────────────────────────────────────────────────────────────────────────
+//
+// Rule: ∀C: if `<C> rdf:type <Mc>` AND `<Mc> rdfs:subClassOf <Super>`,
+//       then `<C> rdfs:subClassOf <Super>` (inferred).
+//
+// Concretely: any class file typed as `exo__Class` (the meta-class for
+// classes) inherits exo__Class's own superclass declarations. Without
+// this rule, class files that fail to declare `exo__Class_superClass`
+// produce false sh:class violations for every instance, even though the
+// chain is logically derivable from the metaclass declaration alone.
+
+describe("Issue #3247 metaclass inference (OWL Full punning)", () => {
+  const RDFS_SUBCLASS_OF = "http://www.w3.org/2000/01/rdf-schema#subClassOf";
+  const RDFS_LABEL = "http://www.w3.org/2000/01/rdf-schema#label";
+  const RDF_TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type";
+
+  function makeIRI(value: string) { return new DomainIRI(value); }
+  function makeLiteral(value: string) { return new DomainLiteral(value); }
+  function makeTriple(s: any, p: any, o: any) { return { subject: s, predicate: p, object: o }; }
+
+  it("propagates Class's superClass to instances of Class (file IRI scope)", () => {
+    // TBox: exo__Class declares exo__Class_superClass -> exo__Asset
+    // Class file: ems__Area is rdf:type exo__Class BUT has no own exo__Class_superClass
+    // Expectation: ems__Area inherits exo__Asset as superClass via metaclass propagation.
+    const classFileIri = "obsidian://vault/exo/exo-class.md";
+    const assetFileIri = "obsidian://vault/exo/exo-asset.md";
+    const areaFileIri = "obsidian://vault/ems/ems-area.md";
+
+    const triples = [
+      // Labels so file IRIs map to ontology URIs
+      makeTriple(makeIRI(classFileIri), makeIRI(RDFS_LABEL), makeLiteral("exo__Class")),
+      makeTriple(makeIRI(assetFileIri), makeIRI(RDFS_LABEL), makeLiteral("exo__Asset")),
+      makeTriple(makeIRI(areaFileIri), makeIRI(RDFS_LABEL), makeLiteral("ems__Area")),
+      // exo__Class subClassOf exo__Asset (the metaclass-level declaration)
+      makeTriple(makeIRI(classFileIri), makeIRI(RDFS_SUBCLASS_OF), makeIRI(assetFileIri)),
+      // ems__Area rdf:type exo__Class (without its own subClassOf declaration)
+      makeTriple(makeIRI(areaFileIri), makeIRI(RDF_TYPE), makeIRI(classFileIri)),
+    ];
+
+    const hier = new TripleClassHierarchy(triples);
+
+    // Pre-fix: false (no inferred edge). Post-fix: true (metaclass propagation).
+    expect(hier.isSubClassOf(areaFileIri, assetFileIri)).toBe(true);
+  });
+
+  it("propagates via ontology URI scope as well", () => {
+    // Same scenario but assert against ontology URIs (validator's range checks
+    // typically compare ontology URIs, not file IRIs).
+    const classFileIri = "obsidian://vault/exo/exo-class.md";
+    const assetFileIri = "obsidian://vault/exo/exo-asset.md";
+    const areaFileIri = "obsidian://vault/ems/ems-area.md";
+
+    const triples = [
+      makeTriple(makeIRI(classFileIri), makeIRI(RDFS_LABEL), makeLiteral("exo__Class")),
+      makeTriple(makeIRI(assetFileIri), makeIRI(RDFS_LABEL), makeLiteral("exo__Asset")),
+      makeTriple(makeIRI(areaFileIri), makeIRI(RDFS_LABEL), makeLiteral("ems__Area")),
+      makeTriple(makeIRI(classFileIri), makeIRI(RDFS_SUBCLASS_OF), makeIRI(assetFileIri)),
+      makeTriple(makeIRI(areaFileIri), makeIRI(RDF_TYPE), makeIRI(classFileIri)),
+    ];
+
+    const hier = new TripleClassHierarchy(triples);
+
+    expect(hier.isSubClassOf(
+      "https://exocortex.my/ontology/ems#Area",
+      "https://exocortex.my/ontology/exo#Asset"
+    )).toBe(true);
+  });
+
+  it("transitively propagates: metaclass superchain reaches instances", () => {
+    // exo__Class subClassOf exo__Asset subClassOf rdfs:Resource
+    // ems__Area rdf:type exo__Class
+    // Expectation: ems__Area inherits ALL superclasses (Asset AND Resource).
+    const classFileIri = "obsidian://vault/exo/exo-class.md";
+    const assetFileIri = "obsidian://vault/exo/exo-asset.md";
+    const resourceFileIri = "obsidian://vault/rdfs/resource.md";
+    const areaFileIri = "obsidian://vault/ems/ems-area.md";
+
+    const triples = [
+      makeTriple(makeIRI(classFileIri), makeIRI(RDFS_LABEL), makeLiteral("exo__Class")),
+      makeTriple(makeIRI(assetFileIri), makeIRI(RDFS_LABEL), makeLiteral("exo__Asset")),
+      makeTriple(makeIRI(areaFileIri), makeIRI(RDFS_LABEL), makeLiteral("ems__Area")),
+      makeTriple(makeIRI(classFileIri), makeIRI(RDFS_SUBCLASS_OF), makeIRI(assetFileIri)),
+      makeTriple(makeIRI(assetFileIri), makeIRI(RDFS_SUBCLASS_OF), makeIRI(resourceFileIri)),
+      makeTriple(makeIRI(areaFileIri), makeIRI(RDF_TYPE), makeIRI(classFileIri)),
+    ];
+
+    const hier = new TripleClassHierarchy(triples);
+
+    expect(hier.isSubClassOf(areaFileIri, assetFileIri)).toBe(true);
+    expect(hier.isSubClassOf(areaFileIri, resourceFileIri)).toBe(true);
+  });
+
+  it("does NOT infer when metaclass has no superClass declaration", () => {
+    // ems__Area rdf:type exo__Class
+    // exo__Class has NO subClassOf declaration
+    // Expectation: nothing inferred — isSubClassOf(area, asset) returns false.
+    const classFileIri = "obsidian://vault/exo/exo-class.md";
+    const assetFileIri = "obsidian://vault/exo/exo-asset.md";
+    const areaFileIri = "obsidian://vault/ems/ems-area.md";
+
+    const triples = [
+      makeTriple(makeIRI(classFileIri), makeIRI(RDFS_LABEL), makeLiteral("exo__Class")),
+      makeTriple(makeIRI(assetFileIri), makeIRI(RDFS_LABEL), makeLiteral("exo__Asset")),
+      makeTriple(makeIRI(areaFileIri), makeIRI(RDFS_LABEL), makeLiteral("ems__Area")),
+      makeTriple(makeIRI(areaFileIri), makeIRI(RDF_TYPE), makeIRI(classFileIri)),
+      // NO subClassOf for exo__Class
+    ];
+
+    const hier = new TripleClassHierarchy(triples);
+
+    expect(hier.isSubClassOf(areaFileIri, assetFileIri)).toBe(false);
+  });
+
+  it("self-typed metaclass (Class rdf:type Class) does not produce a self-loop", () => {
+    // exo__Class rdf:type exo__Class (real vault pattern — exo__Class self-types)
+    // exo__Class subClassOf exo__Asset
+    // Expectation: no infinite loop; isSubClassOf works normally.
+    const classFileIri = "obsidian://vault/exo/exo-class.md";
+    const assetFileIri = "obsidian://vault/exo/exo-asset.md";
+
+    const triples = [
+      makeTriple(makeIRI(classFileIri), makeIRI(RDFS_LABEL), makeLiteral("exo__Class")),
+      makeTriple(makeIRI(assetFileIri), makeIRI(RDFS_LABEL), makeLiteral("exo__Asset")),
+      makeTriple(makeIRI(classFileIri), makeIRI(RDFS_SUBCLASS_OF), makeIRI(assetFileIri)),
+      makeTriple(makeIRI(classFileIri), makeIRI(RDF_TYPE), makeIRI(classFileIri)),
+    ];
+
+    const hier = new TripleClassHierarchy(triples);
+
+    // Should complete without infinite loop
+    expect(hier.isSubClassOf(classFileIri, assetFileIri)).toBe(true);
+  });
+
+  it("does not infer when subject is not typed as the metaclass", () => {
+    // ems__Area is a class but NOT typed as exo__Class — it's a stray
+    // declaration with only its own subClassOf chain. Nothing to infer.
+    const classFileIri = "obsidian://vault/exo/exo-class.md";
+    const assetFileIri = "obsidian://vault/exo/exo-asset.md";
+    const areaFileIri = "obsidian://vault/ems/ems-area.md";
+
+    const triples = [
+      makeTriple(makeIRI(classFileIri), makeIRI(RDFS_LABEL), makeLiteral("exo__Class")),
+      makeTriple(makeIRI(assetFileIri), makeIRI(RDFS_LABEL), makeLiteral("exo__Asset")),
+      makeTriple(makeIRI(areaFileIri), makeIRI(RDFS_LABEL), makeLiteral("ems__Area")),
+      makeTriple(makeIRI(classFileIri), makeIRI(RDFS_SUBCLASS_OF), makeIRI(assetFileIri)),
+      // ems__Area has NO rdf:type triple — not an instance of Class
+    ];
+
+    const hier = new TripleClassHierarchy(triples);
+
+    expect(hier.isSubClassOf(areaFileIri, assetFileIri)).toBe(false);
+  });
+});
+
 describe("P1.6 TripleClassHierarchy exo:Class_superClass support", () => {
   const EXO_CLASS_SUPER_CLASS = "https://exocortex.my/ontology/exo#Class_superClass";
   const RDFS_SUBCLASS_OF = "http://www.w3.org/2000/01/rdf-schema#subClassOf";
