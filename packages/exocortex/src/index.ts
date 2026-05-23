@@ -340,6 +340,16 @@ export {
 } from "./interfaces/ITripleStore";
 
 // DI Interfaces exports
+export {
+  liveClock,
+  frozenClock,
+  type IClock,
+} from "./services/IClock";
+export {
+  liveUidGenerator,
+  seededUidGenerator,
+  type IUidGenerator,
+} from "./services/IUidGenerator";
 export type { ILogger } from "./interfaces/ILogger";
 export type { IQueryBodyResolver } from "./interfaces/IQueryBodyResolver";
 export type { IEventBus } from "./interfaces/IEventBus";
