@@ -771,6 +771,43 @@ describe("Issue #3247 metaclass inference (OWL Full punning)", () => {
 
     expect(hier.isSubClassOf(areaFileIri, assetFileIri)).toBe(false);
   });
+
+  it("propagates when rdf:type object is the ontology URI (production emission shape)", () => {
+    // NoteToRDFConverter.valueToClassURI (Issue #663) emits rdf:type triples
+    // whose OBJECT is the canonical ontology URI (not the file IRI) when the
+    // class file has a parseable namespace-prefixed label. This is the
+    // production emission shape — verify Pass 3 handles it correctly via the
+    // ontology-URI side of the dual index.
+    const classFileIri = "obsidian://vault/exo/exo-class.md";
+    const assetFileIri = "obsidian://vault/exo/exo-asset.md";
+    const areaFileIri = "obsidian://vault/ems/ems-area.md";
+    const classOntUri = "https://exocortex.my/ontology/exo#Class";
+    const assetOntUri = "https://exocortex.my/ontology/exo#Asset";
+    const areaOntUri = "https://exocortex.my/ontology/ems#Area";
+
+    const triples = [
+      // Labels so file IRIs map to ontology URIs (Pass 1)
+      makeTriple(makeIRI(classFileIri), makeIRI(RDFS_LABEL), makeLiteral("exo__Class")),
+      makeTriple(makeIRI(assetFileIri), makeIRI(RDFS_LABEL), makeLiteral("exo__Asset")),
+      makeTriple(makeIRI(areaFileIri), makeIRI(RDFS_LABEL), makeLiteral("ems__Area")),
+      // exo__Class subClassOf exo__Asset (file IRI form, as Pass 2b emits)
+      makeTriple(makeIRI(classFileIri), makeIRI(RDFS_SUBCLASS_OF), makeIRI(assetFileIri)),
+      // ems__Area rdf:type exo__Class — OBJECT is the ONTOLOGY URI form
+      // (mirrors NoteToRDFConverter's `valueToClassURI` output for labeled classes)
+      makeTriple(makeIRI(areaFileIri), makeIRI(RDF_TYPE), makeIRI(classOntUri)),
+    ];
+
+    const hier = new TripleClassHierarchy(triples);
+
+    // Production validator path: shape Property_range gives ontology URI; value's
+    // class (from rdf:type) gives ontology URI for labeled classes. So the
+    // canonical lookup is ontology-URI → ontology-URI.
+    expect(hier.isSubClassOf(areaOntUri, assetOntUri)).toBe(true);
+    // Cross-scope: file IRI child looking up against ontology URI parent — works
+    // because Pass 3 emits ontology-URI sup into the file IRI's subClassMap entry,
+    // which BFS hits as a direct match.
+    expect(hier.isSubClassOf(areaFileIri, assetOntUri)).toBe(true);
+  });
 });
 
 describe("P1.6 TripleClassHierarchy exo:Class_superClass support", () => {
