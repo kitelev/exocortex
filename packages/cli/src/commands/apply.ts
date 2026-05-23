@@ -19,6 +19,12 @@ import {
   TaskStatusService,
   vaultPathToIRI,
   IRI,
+  liveClock,
+  frozenClock,
+  liveUidGenerator,
+  seededUidGenerator,
+  type IClock,
+  type IUidGenerator,
 } from "exocortex";
 import { ErrorHandler, type OutputFormat } from "../utils/ErrorHandler.js";
 import { VaultNotFoundError, InvalidArgumentsError } from "../utils/errors/index.js";
@@ -33,6 +39,8 @@ export interface ApplyOptions {
   dryRun?: boolean;
   yes?: boolean;
   input?: string;
+  seed?: string;
+  frozenClock?: string;
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -108,6 +116,11 @@ async function isDestructive(
 
 /**
  * Execute a command on a single target. Returns true on success.
+ *
+ * `clock` and `uidGen` are derived ONCE per `apply` invocation (in the action
+ * handler) and threaded through here so multi-target stdin pipelines share the
+ * same generator — `seededUidGenerator` increments its internal counter across
+ * `.next()` calls, so per-target instantiation would restart at 0 and collide.
  */
 async function executeOnTarget(
   vaultPath: string,
@@ -115,6 +128,8 @@ async function executeOnTarget(
   commandUid: string,
   targetRelative: string,
   options: ApplyOptions,
+  clock: IClock,
+  uidGen: IUidGenerator,
 ): Promise<boolean> {
   const targetPath = resolve(vaultPath, targetRelative);
   if (!existsSync(targetPath)) {
@@ -143,7 +158,7 @@ async function executeOnTarget(
   const targetIRI = vaultPathToIRI(targetRelative);
 
   // Precondition
-  const evaluator = new PreconditionEvaluator(tripleStore);
+  const evaluator = new PreconditionEvaluator(tripleStore, undefined, { clock });
   const preconditionPassed = await evaluator.evaluate(command.precondition, targetIRI);
   if (!preconditionPassed) {
     console.error(
@@ -161,7 +176,9 @@ async function executeOnTarget(
   // Execute grounding
   const serviceRegistry = new ServiceRegistry();
   const vaultAdapter = new FileSystemVaultAdapter(vaultPath);
-  const genericAssetCreationService = new GenericAssetCreationService(vaultAdapter);
+  const genericAssetCreationService = new GenericAssetCreationService(
+    vaultAdapter,
+  ).withDeterminism({ clock, uidGenerator: uidGen });
   const archiveAssetService = new ArchiveAssetService(vaultAdapter);
   const propertyCleanupService = new PropertyCleanupService(vaultAdapter);
   const fixMissingLabelService = new FixMissingLabelService(vaultAdapter);
@@ -188,6 +205,8 @@ async function executeOnTarget(
     nodeFsAdapter,
     nodeFsAdapter,
     serviceRegistry,
+    undefined,
+    { clock, uidGenerator: uidGen },
   );
 
   let userInput: Record<string, unknown> | undefined;
@@ -241,6 +260,14 @@ export function applyCommand(): Command {
     .option("--dry-run", "Preview without writing")
     .option("--yes", "Skip destructive-command confirmation")
     .option("--input <json>", "JSON userInput for service_call groundings")
+    .option(
+      "--seed <uuid>",
+      "Deterministic UID seed for test/replay (uses seededUidGenerator)",
+    )
+    .option(
+      "--frozen-clock <iso>",
+      "Freeze clock to ISO timestamp for test/replay (uses frozenClock)",
+    )
     .action(async (cmdArg: string, pathArg: string | undefined, options: ApplyOptions) => {
       ErrorHandler.setFormat("text" as OutputFormat);
 
@@ -249,6 +276,17 @@ export function applyCommand(): Command {
         if (!existsSync(vaultPath)) {
           throw new VaultNotFoundError(vaultPath);
         }
+
+        // Derive clock + UID generator ONCE for the whole apply invocation.
+        // Multi-target stdin pipelines reuse the same generator so that
+        // `seededUidGenerator`'s internal counter increments across targets
+        // instead of restarting at 0 per file.
+        const clock: IClock = options.frozenClock
+          ? frozenClock(options.frozenClock)
+          : liveClock();
+        const uidGen: IUidGenerator = options.seed
+          ? seededUidGenerator(options.seed)
+          : liveUidGenerator();
 
         // Build triple store once for the whole batch
         const vaultAdapter = new FileSystemVaultAdapter(vaultPath);
@@ -290,7 +328,15 @@ export function applyCommand(): Command {
         let successCount = 0;
         let failCount = 0;
         for (const target of targets) {
-          const ok = await executeOnTarget(vaultPath, tripleStore, commandUid, target, options);
+          const ok = await executeOnTarget(
+            vaultPath,
+            tripleStore,
+            commandUid,
+            target,
+            options,
+            clock,
+            uidGen,
+          );
           if (ok) successCount++;
           else failCount++;
         }
