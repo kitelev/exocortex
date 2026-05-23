@@ -1,4 +1,8 @@
-import { PropertiesLabelPatch } from "../../../../src/presentation/properties/PropertiesLabelPatch";
+import {
+  PropertiesLabelPatch,
+  unwrapWikilinkUid,
+  normalizeClassList,
+} from "../../../../src/presentation/properties/PropertiesLabelPatch";
 
 jest.mock("obsidian", () => ({
   Plugin: class {},
@@ -16,6 +20,10 @@ interface FakeLeaf {
   openFile: jest.Mock;
 }
 
+const EXO_PROPERTY_UID = "38277bfa-d7f9-4a75-b856-b23276ab0db3";
+const EXO_OBJECT_PROPERTY_UID = "9a1cf31c-9d41-4ef3-9023-584a8d087d16";
+const IMS_CONCEPT_UID = "dda12c48-6886-4624-8710-ed4ba92ce2b3";
+
 describe("PropertiesLabelPatch", () => {
   let patch: PropertiesLabelPatch;
   let mockPlugin: any;
@@ -26,6 +34,18 @@ describe("PropertiesLabelPatch", () => {
   let openedFiles: FakeFile[];
   let openFileMock: jest.Mock;
 
+  // ----- property-class definition assets (TBox class hierarchy) -----
+  // Without these, resolvePropertyClassUids only knows the root UID.
+  // With FILE_CLASS_OBJECTPROPERTY (superClass=[exo__Property]) the BFS
+  // closure adds the ObjectProperty UID — required for the subClass-closure
+  // tests to succeed.
+  const FILE_CLASS_OBJECTPROPERTY: FakeFile = {
+    path: "exo/9a1cf31c.md",
+    basename: "9a1cf31c-9d41-4ef3-9023-584a8d087d16",
+    extension: "md",
+  };
+
+  // ----- property assets (instance_class is exo__Property direct) -----
   const FILE_EFFORT_AREA: FakeFile = {
     path: "ems/ab1b5cc2.md",
     basename: "ab1b5cc2",
@@ -41,27 +61,100 @@ describe("PropertiesLabelPatch", () => {
     basename: "3d1e4212",
     extension: "md",
   };
-  const FILE_EFFORT_AREA_FALLBACK: FakeFile = {
-    path: "exo/properties/ems__Effort_area.md",
-    basename: "ems__Effort_area",
+  // Property asset WITHOUT displayName — exercises label-fallback path.
+  const FILE_NO_DISPLAYNAME: FakeFile = {
+    path: "ems/no-dn.md",
+    basename: "no-dn",
+    extension: "md",
+  };
+  // Property asset with class=ObjectProperty (subClass of Property) — exercises
+  // the subClass-closure filter path.
+  const FILE_CONCEPT_BROADER: FakeFile = {
+    path: "ims/4b67640a.md",
+    basename: "4b67640a",
+    extension: "md",
+  };
+
+  // ----- non-property asset — must be filtered out (regression: 8400800f) -----
+  const FILE_NON_PROPERTY: FakeFile = {
+    path: "concepts/aliases-concept.md",
+    basename: "8400800f",
+    extension: "md",
+  };
+
+  // ----- collision pair — two property assets sharing the same label -----
+  const FILE_COLLISION_A: FakeFile = {
+    path: "exo/collision-a.md",
+    basename: "collision-a",
+    extension: "md",
+  };
+  const FILE_COLLISION_B: FakeFile = {
+    path: "exo/collision-b.md",
+    basename: "collision-b",
     extension: "md",
   };
 
   const FRONTMATTERS: Record<string, any> = {
+    [FILE_CLASS_OBJECTPROPERTY.path]: {
+      exo__Asset_uid: EXO_OBJECT_PROPERTY_UID,
+      exo__Asset_label: "exo__ObjectProperty",
+      exo__Class_superClass: [`[[${EXO_PROPERTY_UID}]]`],
+    },
     [FILE_EFFORT_AREA.path]: {
-      exo__Asset_label: "Effort Area",
+      exo__Asset_uid: "ab1b5cc2-0000-0000-0000-000000000000",
+      exo__Asset_label: "ems__Effort_area",
+      exo__Property_displayName: "Effort Area",
+      exo__Instance_class: [`[[${EXO_PROPERTY_UID}]]`],
       aliases: ["ems__Effort_area"],
     },
     [FILE_EFFORT_STATUS.path]: {
-      exo__Asset_label: "Effort Status",
+      exo__Asset_uid: "64594641-0000-0000-0000-000000000000",
+      exo__Asset_label: "ems__Effort_status",
+      exo__Property_displayName: "Effort Status",
+      exo__Instance_class: [`[[${EXO_PROPERTY_UID}]]`],
       aliases: ["ems__Effort_status"],
     },
     [FILE_ASSET_LABEL.path]: {
-      exo__Asset_label: "Label",
+      exo__Asset_uid: "3d1e4212-0000-0000-0000-000000000000",
+      exo__Asset_label: "exo__Asset_label",
+      exo__Property_displayName: "Label",
+      exo__Instance_class: [`[[${EXO_PROPERTY_UID}]]`],
       aliases: ["exo__Asset_label"],
     },
-    [FILE_EFFORT_AREA_FALLBACK.path]: {
-      exo__Asset_label: "Effort Area Fallback",
+    [FILE_NO_DISPLAYNAME.path]: {
+      exo__Asset_uid: "deadbeef-0000-0000-0000-000000000000",
+      exo__Asset_label: "ems__Tag_field",
+      // intentionally no exo__Property_displayName — fallback case
+      exo__Instance_class: [`[[${EXO_PROPERTY_UID}]]`],
+    },
+    [FILE_CONCEPT_BROADER.path]: {
+      exo__Asset_uid: "4b67640a-71b5-4fbb-83bd-82342eed479b",
+      exo__Asset_label: "ims__Concept_broader",
+      exo__Property_displayName: "broader",
+      // class = ObjectProperty, which itself is a subClass of exo__Property.
+      // This forces resolvePropertyClassUids to do the BFS expansion.
+      exo__Instance_class: [`[[${EXO_OBJECT_PROPERTY_UID}]]`],
+    },
+    [FILE_NON_PROPERTY.path]: {
+      exo__Asset_uid: "8400800f-71c5-48a6-b68d-fd640771ce3e",
+      exo__Asset_label: "aliases",
+      // class = ims__Concept (not exo__Property and not a subClass) — must
+      // be skipped by the filter. Regression guard: 8400800f-... case from
+      // RFC-030 §1.1 / §8 intentional behavior change.
+      exo__Instance_class: [`[[${IMS_CONCEPT_UID}]]`],
+      aliases: ["aliases"],
+    },
+    [FILE_COLLISION_A.path]: {
+      exo__Asset_uid: "aaaa1111-0000-0000-0000-000000000000",
+      exo__Asset_label: "exo__Asset_updatedAt",
+      exo__Property_displayName: "Updated At (A)",
+      exo__Instance_class: [`[[${EXO_PROPERTY_UID}]]`],
+    },
+    [FILE_COLLISION_B.path]: {
+      exo__Asset_uid: "bbbb2222-0000-0000-0000-000000000000",
+      exo__Asset_label: "exo__Asset_updatedAt",
+      exo__Property_displayName: "Updated At (B)",
+      exo__Instance_class: [`[[${EXO_PROPERTY_UID}]]`],
     },
   };
 
@@ -143,10 +236,15 @@ describe("PropertiesLabelPatch", () => {
         getMarkdownFiles: jest
           .fn()
           .mockReturnValue([
+            FILE_CLASS_OBJECTPROPERTY,
             FILE_EFFORT_AREA,
             FILE_EFFORT_STATUS,
             FILE_ASSET_LABEL,
-            FILE_EFFORT_AREA_FALLBACK,
+            FILE_NO_DISPLAYNAME,
+            FILE_CONCEPT_BROADER,
+            FILE_NON_PROPERTY,
+            // Collision pair NOT included by default — opt-in per test
+            // via mockReturnValueOnce.
           ]),
       },
     };
@@ -167,6 +265,108 @@ describe("PropertiesLabelPatch", () => {
     }
   });
 
+  // ============================================================
+  // Pure-function helpers
+  // ============================================================
+  describe("unwrapWikilinkUid", () => {
+    it('returns inner uid for "[[uuid]]" form', () => {
+      expect(unwrapWikilinkUid("[[38277bfa-d7f9-4a75-b856-b23276ab0db3]]")).toBe(
+        "38277bfa-d7f9-4a75-b856-b23276ab0db3"
+      );
+    });
+
+    it('returns inner uid for "[[uuid|alias]]" form (strips alias)', () => {
+      expect(
+        unwrapWikilinkUid("[[38277bfa-d7f9-4a75-b856-b23276ab0db3|Property]]")
+      ).toBe("38277bfa-d7f9-4a75-b856-b23276ab0db3");
+    });
+
+    it("returns bare uuid string as-is when shape matches UUID layout", () => {
+      expect(unwrapWikilinkUid("38277bfa-d7f9-4a75-b856-b23276ab0db3")).toBe(
+        "38277bfa-d7f9-4a75-b856-b23276ab0db3"
+      );
+    });
+
+    it("returns null for non-UUID strings and non-strings", () => {
+      expect(unwrapWikilinkUid("not-a-uuid")).toBeNull();
+      expect(unwrapWikilinkUid("")).toBeNull();
+      expect(unwrapWikilinkUid("   ")).toBeNull();
+      expect(unwrapWikilinkUid(null)).toBeNull();
+      expect(unwrapWikilinkUid(undefined)).toBeNull();
+      expect(unwrapWikilinkUid(42)).toBeNull();
+      expect(unwrapWikilinkUid({})).toBeNull();
+    });
+
+    it("trims whitespace before parsing", () => {
+      expect(
+        unwrapWikilinkUid("  [[38277bfa-d7f9-4a75-b856-b23276ab0db3]]  ")
+      ).toBe("38277bfa-d7f9-4a75-b856-b23276ab0db3");
+    });
+
+    it("strips path prefix from path-qualified wikilink (defensive)", () => {
+      // UID-canon TBox doesn't emit path-qualified links, but legacy
+      // authoring tools may. Defensive parsing prevents silent BFS-closure
+      // miss on class refs like [[03 Knowledge/exo/38277bfa-...]].
+      expect(
+        unwrapWikilinkUid(
+          "[[assetspaces/exo/38277bfa-d7f9-4a75-b856-b23276ab0db3]]"
+        )
+      ).toBe("38277bfa-d7f9-4a75-b856-b23276ab0db3");
+      expect(
+        unwrapWikilinkUid(
+          "[[some/path/38277bfa-d7f9-4a75-b856-b23276ab0db3|alias]]"
+        )
+      ).toBe("38277bfa-d7f9-4a75-b856-b23276ab0db3");
+    });
+
+    it("returns null when path-stripped form is not a UUID", () => {
+      // Symbolic path-qualified wikilink — neither UID-canon nor UUID shape.
+      expect(
+        unwrapWikilinkUid("[[some/path/symbolic-label]]")
+      ).toBeNull();
+    });
+  });
+
+  describe("normalizeClassList", () => {
+    it("returns empty array for missing or invalid input", () => {
+      expect(normalizeClassList(undefined)).toEqual([]);
+      expect(normalizeClassList(null)).toEqual([]);
+      expect(normalizeClassList(42)).toEqual([]);
+      expect(normalizeClassList({})).toEqual([]);
+    });
+
+    it("handles scalar wikilink string (YAML inline form)", () => {
+      // Obsidian YAML can emit `exo__Instance_class: "[[uuid]]"` as scalar.
+      expect(normalizeClassList(`[[${EXO_PROPERTY_UID}]]`)).toEqual([
+        EXO_PROPERTY_UID,
+      ]);
+    });
+
+    it("handles array of wikilinks (YAML list form)", () => {
+      expect(
+        normalizeClassList([
+          `[[${EXO_PROPERTY_UID}]]`,
+          `[[${EXO_OBJECT_PROPERTY_UID}]]`,
+        ])
+      ).toEqual([EXO_PROPERTY_UID, EXO_OBJECT_PROPERTY_UID]);
+    });
+
+    it("filters out non-string and non-UUID array entries", () => {
+      expect(
+        normalizeClassList([
+          `[[${EXO_PROPERTY_UID}]]`,
+          "garbage",
+          null,
+          42,
+          `[[${EXO_OBJECT_PROPERTY_UID}]]`,
+        ])
+      ).toEqual([EXO_PROPERTY_UID, EXO_OBJECT_PROPERTY_UID]);
+    });
+  });
+
+  // ============================================================
+  // Lifecycle
+  // ============================================================
   describe("enable", () => {
     it("registers layout-change, active-leaf-change, metadataCache changed events", () => {
       patch.enable();
@@ -193,8 +393,11 @@ describe("PropertiesLabelPatch", () => {
     });
   });
 
+  // ============================================================
+  // Scenario A — readable labels (displayName path)
+  // ============================================================
   describe("Scenario A: known predicates get readable labels via span overlay", () => {
-    it("inserts a display span with the readable label while leaving input.value UNCHANGED", () => {
+    it("inserts a display span with the displayName while leaving input.value UNCHANGED", () => {
       const row = createPropertyRow({ inputValue: "ems__Effort_area" });
       mockMetadataContainer.appendChild(row);
 
@@ -292,6 +495,9 @@ describe("PropertiesLabelPatch", () => {
     });
   });
 
+  // ============================================================
+  // Scenario B — click navigates to definition
+  // ============================================================
   describe("Scenario B: clicking readable label opens definition", () => {
     it("click on display span calls openFile for the definition asset", () => {
       const row = createPropertyRow({ inputValue: "ems__Effort_status" });
@@ -328,6 +534,9 @@ describe("PropertiesLabelPatch", () => {
     });
   });
 
+  // ============================================================
+  // Scenario C — unknown predicate fallback
+  // ============================================================
   describe("Scenario C: unknown predicate fallback", () => {
     it("does NOT create a display span for unknown predicate", () => {
       const row = createPropertyRow({ inputValue: "vendor__Custom_field" });
@@ -363,6 +572,327 @@ describe("PropertiesLabelPatch", () => {
     });
   });
 
+  // ============================================================
+  // RFC-030 §3.2 — displayName → label fallback
+  // ============================================================
+  describe("RFC-030 displayName fallback", () => {
+    it("falls back to exo__Asset_label when displayName is missing", () => {
+      const row = createPropertyRow({ inputValue: "ems__Tag_field" });
+      mockMetadataContainer.appendChild(row);
+
+      patch.enable();
+
+      const span = row.querySelector<HTMLSpanElement>(".exo-label-display")!;
+      expect(span).toBeTruthy();
+      // FILE_NO_DISPLAYNAME has label "ems__Tag_field" and no
+      // exo__Property_displayName, so display falls back to the label itself.
+      expect(span.textContent).toBe("ems__Tag_field");
+    });
+
+    it("falls back when displayName is empty string", () => {
+      // Patch a property asset to have an empty-string displayName
+      const tempFile: FakeFile = {
+        path: "tmp/empty-dn.md",
+        basename: "empty-dn",
+        extension: "md",
+      };
+      const tempFrontmatter = {
+        exo__Asset_uid: "11111111-0000-0000-0000-000000000000",
+        exo__Asset_label: "ems__Empty_dn",
+        exo__Property_displayName: "",
+        exo__Instance_class: [`[[${EXO_PROPERTY_UID}]]`],
+      };
+      mockApp.vault.getMarkdownFiles = jest
+        .fn()
+        .mockReturnValue([FILE_CLASS_OBJECTPROPERTY, tempFile]);
+      mockApp.metadataCache.getFileCache = jest
+        .fn()
+        .mockImplementation((file: FakeFile) => {
+          if (file.path === FILE_CLASS_OBJECTPROPERTY.path) {
+            return { frontmatter: FRONTMATTERS[FILE_CLASS_OBJECTPROPERTY.path] };
+          }
+          if (file.path === tempFile.path) {
+            return { frontmatter: tempFrontmatter };
+          }
+          return null;
+        });
+
+      const row = createPropertyRow({ inputValue: "ems__Empty_dn" });
+      mockMetadataContainer.appendChild(row);
+
+      patch.enable();
+
+      const span = row.querySelector<HTMLSpanElement>(".exo-label-display")!;
+      expect(span.textContent).toBe("ems__Empty_dn");
+    });
+
+    it("falls back when displayName is whitespace-only", () => {
+      const tempFile: FakeFile = {
+        path: "tmp/ws-dn.md",
+        basename: "ws-dn",
+        extension: "md",
+      };
+      mockApp.vault.getMarkdownFiles = jest
+        .fn()
+        .mockReturnValue([FILE_CLASS_OBJECTPROPERTY, tempFile]);
+      mockApp.metadataCache.getFileCache = jest
+        .fn()
+        .mockImplementation((file: FakeFile) => {
+          if (file.path === FILE_CLASS_OBJECTPROPERTY.path) {
+            return { frontmatter: FRONTMATTERS[FILE_CLASS_OBJECTPROPERTY.path] };
+          }
+          if (file.path === tempFile.path) {
+            return {
+              frontmatter: {
+                exo__Asset_uid: "22222222-0000-0000-0000-000000000000",
+                exo__Asset_label: "ems__Ws_dn",
+                exo__Property_displayName: "   ",
+                exo__Instance_class: [`[[${EXO_PROPERTY_UID}]]`],
+              },
+            };
+          }
+          return null;
+        });
+
+      const row = createPropertyRow({ inputValue: "ems__Ws_dn" });
+      mockMetadataContainer.appendChild(row);
+
+      patch.enable();
+
+      const span = row.querySelector<HTMLSpanElement>(".exo-label-display")!;
+      expect(span.textContent).toBe("ems__Ws_dn");
+    });
+
+    it("skips assets entirely when exo__Asset_label is missing", () => {
+      const tempFile: FakeFile = {
+        path: "tmp/no-label.md",
+        basename: "no-label",
+        extension: "md",
+      };
+      mockApp.vault.getMarkdownFiles = jest
+        .fn()
+        .mockReturnValue([FILE_CLASS_OBJECTPROPERTY, tempFile]);
+      mockApp.metadataCache.getFileCache = jest
+        .fn()
+        .mockImplementation((file: FakeFile) => {
+          if (file.path === FILE_CLASS_OBJECTPROPERTY.path) {
+            return { frontmatter: FRONTMATTERS[FILE_CLASS_OBJECTPROPERTY.path] };
+          }
+          if (file.path === tempFile.path) {
+            return {
+              frontmatter: {
+                exo__Asset_uid: "33333333-0000-0000-0000-000000000000",
+                // intentionally NO exo__Asset_label
+                exo__Property_displayName: "Whatever",
+                exo__Instance_class: [`[[${EXO_PROPERTY_UID}]]`],
+              },
+            };
+          }
+          return null;
+        });
+
+      const row = createPropertyRow({ inputValue: "Whatever" });
+      mockMetadataContainer.appendChild(row);
+
+      patch.enable();
+
+      // Asset lacking label is skipped entirely.
+      expect(
+        row.querySelector<HTMLSpanElement>(".exo-label-display")
+      ).toBeNull();
+    });
+  });
+
+  // ============================================================
+  // RFC-030 §3.2 — rdf:type filter (positive + negative)
+  // ============================================================
+  describe("RFC-030 rdf:type filter", () => {
+    it("indexes asset with direct exo__Property class (positive direct)", () => {
+      const row = createPropertyRow({ inputValue: "ems__Effort_area" });
+      mockMetadataContainer.appendChild(row);
+
+      patch.enable();
+
+      expect(
+        row.querySelector<HTMLSpanElement>(".exo-label-display")?.textContent
+      ).toBe("Effort Area");
+    });
+
+    it("indexes asset with subClass-of-Property class via BFS closure (positive subClass)", () => {
+      // FILE_CONCEPT_BROADER has class=exo__ObjectProperty; its class asset
+      // declares exo__Class_superClass=[exo__Property]. resolvePropertyClassUids
+      // must add ObjectProperty UID to the closure set so this asset indexes.
+      const row = createPropertyRow({ inputValue: "ims__Concept_broader" });
+      mockMetadataContainer.appendChild(row);
+
+      patch.enable();
+
+      const span = row.querySelector<HTMLSpanElement>(".exo-label-display");
+      expect(span?.textContent).toBe("broader");
+    });
+
+    it("skips non-property asset (FILE_NON_PROPERTY ims__Concept describing aliases)", () => {
+      // FILE_NON_PROPERTY has class=ims__Concept (not a subClass of Property).
+      // RFC-030 intentional behavior change: 8400800f-... no longer resolves.
+      // The frontmatter key "aliases" must NOT be patched by the resolver
+      // (Obsidian native "System Reserved" indicator continues to operate
+      // independently).
+      const row = createPropertyRow({ inputValue: "aliases" });
+      mockMetadataContainer.appendChild(row);
+
+      patch.enable();
+
+      expect(
+        row.querySelector<HTMLSpanElement>(".exo-label-display")
+      ).toBeNull();
+    });
+
+    it("skips asset with no exo__Instance_class at all", () => {
+      const tempFile: FakeFile = {
+        path: "tmp/no-class.md",
+        basename: "no-class",
+        extension: "md",
+      };
+      mockApp.vault.getMarkdownFiles = jest
+        .fn()
+        .mockReturnValue([FILE_CLASS_OBJECTPROPERTY, tempFile]);
+      mockApp.metadataCache.getFileCache = jest
+        .fn()
+        .mockImplementation((file: FakeFile) => {
+          if (file.path === FILE_CLASS_OBJECTPROPERTY.path) {
+            return { frontmatter: FRONTMATTERS[FILE_CLASS_OBJECTPROPERTY.path] };
+          }
+          if (file.path === tempFile.path) {
+            return {
+              frontmatter: {
+                exo__Asset_uid: "44444444-0000-0000-0000-000000000000",
+                exo__Asset_label: "ems__Orphan",
+                exo__Property_displayName: "Orphan",
+                // intentionally NO exo__Instance_class
+              },
+            };
+          }
+          return null;
+        });
+
+      const row = createPropertyRow({ inputValue: "ems__Orphan" });
+      mockMetadataContainer.appendChild(row);
+
+      patch.enable();
+
+      expect(
+        row.querySelector<HTMLSpanElement>(".exo-label-display")
+      ).toBeNull();
+    });
+
+    it("accepts scalar exo__Instance_class (YAML inline form, not array)", () => {
+      const tempFile: FakeFile = {
+        path: "tmp/scalar-class.md",
+        basename: "scalar-class",
+        extension: "md",
+      };
+      mockApp.vault.getMarkdownFiles = jest
+        .fn()
+        .mockReturnValue([FILE_CLASS_OBJECTPROPERTY, tempFile]);
+      mockApp.metadataCache.getFileCache = jest
+        .fn()
+        .mockImplementation((file: FakeFile) => {
+          if (file.path === FILE_CLASS_OBJECTPROPERTY.path) {
+            return { frontmatter: FRONTMATTERS[FILE_CLASS_OBJECTPROPERTY.path] };
+          }
+          if (file.path === tempFile.path) {
+            return {
+              frontmatter: {
+                exo__Asset_uid: "55555555-0000-0000-0000-000000000000",
+                exo__Asset_label: "ems__Scalar_class",
+                exo__Property_displayName: "Scalar Class",
+                // SCALAR (string, not array) — YAML accepts both forms
+                exo__Instance_class: `[[${EXO_PROPERTY_UID}]]`,
+              },
+            };
+          }
+          return null;
+        });
+
+      const row = createPropertyRow({ inputValue: "ems__Scalar_class" });
+      mockMetadataContainer.appendChild(row);
+
+      patch.enable();
+
+      const span = row.querySelector<HTMLSpanElement>(".exo-label-display");
+      expect(span?.textContent).toBe("Scalar Class");
+    });
+  });
+
+  // ============================================================
+  // RFC-030 §3.2 — collision guard
+  // ============================================================
+  describe("RFC-030 collision guard", () => {
+    it("first-write-wins on label collision; warns about the second asset", () => {
+      // Include both collision-pair fixtures
+      mockApp.vault.getMarkdownFiles = jest
+        .fn()
+        .mockReturnValue([
+          FILE_CLASS_OBJECTPROPERTY,
+          FILE_COLLISION_A,
+          FILE_COLLISION_B,
+        ]);
+
+      const warnSpy = jest
+        .spyOn(console, "warn")
+        .mockImplementation(() => undefined);
+
+      const row = createPropertyRow({ inputValue: "exo__Asset_updatedAt" });
+      mockMetadataContainer.appendChild(row);
+
+      patch.enable();
+
+      // FILE_COLLISION_A enumerated first → wins.
+      const span = row.querySelector<HTMLSpanElement>(".exo-label-display")!;
+      expect(span.textContent).toBe("Updated At (A)");
+
+      // Click on the span should open the winning file (A), not the loser.
+      span.click();
+      expect(openedFiles[0]).toBe(FILE_COLLISION_A);
+
+      // Collision warning fired with both paths in the message.
+      expect(warnSpy).toHaveBeenCalled();
+      const warnMsg = warnSpy.mock.calls[0][0] as string;
+      expect(warnMsg).toContain("exo__Asset_updatedAt");
+      expect(warnMsg).toContain(FILE_COLLISION_A.path);
+      expect(warnMsg).toContain(FILE_COLLISION_B.path);
+
+      warnSpy.mockRestore();
+    });
+
+    it("does NOT warn when the same asset is encountered twice (same file.path)", () => {
+      // If buildIndex sees same file twice (theoretical, but defensive)
+      // we should not log a spurious collision.
+      mockApp.vault.getMarkdownFiles = jest
+        .fn()
+        .mockReturnValue([
+          FILE_CLASS_OBJECTPROPERTY,
+          FILE_EFFORT_AREA,
+          FILE_EFFORT_AREA, // intentional duplicate
+        ]);
+
+      const warnSpy = jest
+        .spyOn(console, "warn")
+        .mockImplementation(() => undefined);
+
+      patch.enable();
+
+      // The duplicate file.path is the same — collision-guard treats it as
+      // re-write of the same value, not as a real collision.
+      expect(warnSpy).not.toHaveBeenCalled();
+
+      warnSpy.mockRestore();
+    });
+  });
+
+  // ============================================================
+  // disable / cleanup
+  // ============================================================
   describe("disable / cleanup", () => {
     it("removes display span on disable and restores input visibility", () => {
       const row = createPropertyRow({ inputValue: "ems__Effort_area" });
@@ -407,6 +937,9 @@ describe("PropertiesLabelPatch", () => {
     });
   });
 
+  // ============================================================
+  // Dynamic DOM
+  // ============================================================
   describe("dynamic DOM (MutationObserver)", () => {
     it("patches a property row that is added after enable()", async () => {
       patch.enable();
@@ -421,6 +954,9 @@ describe("PropertiesLabelPatch", () => {
     });
   });
 
+  // ============================================================
+  // Index invalidation + Finding-4 recovery
+  // ============================================================
   describe("index invalidation", () => {
     it("re-patches on metadataCache changed event", () => {
       const row = createPropertyRow({ inputValue: "ems__Effort_area" });
@@ -499,6 +1035,9 @@ describe("PropertiesLabelPatch", () => {
     });
   });
 
+  // ============================================================
+  // Stylesheet guard
+  // ============================================================
   describe("stylesheet: .exo-label-display matches native input metrics", () => {
     it("occupies the same geometric box as native .metadata-property-key input", () => {
       const fs = require("fs");

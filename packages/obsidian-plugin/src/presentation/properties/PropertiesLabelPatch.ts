@@ -2,26 +2,52 @@ import { Plugin, TFile } from "obsidian";
 
 /**
  * PropertiesLabelPatch - Patches Obsidian's Properties block to show human-readable
- * predicate labels (e.g. "Effort Area" instead of `ems__Effort_area`) and makes
- * them clickable to open the predicate definition asset.
+ * predicate labels and makes them clickable to open the predicate definition asset.
  *
- * Resolution strategy (resolvePredicate):
- *  1. Filename match — a file whose basename equals the raw predicate name
- *  2. Aliases match — a file whose frontmatter `aliases` contains the raw predicate
+ * Resolution strategy (RFC-030 — exo__Property_displayName, 2026-05-23):
+ *  1. At init time walk the class hierarchy in metadataCache, computing the set
+ *     of UIDs that descend from exo__Property via exo__Class_superClass triples
+ *     (subClass closure). Cache as `propertyClassUids`.
+ *  2. Index only assets whose `exo__Instance_class` intersects propertyClassUids
+ *     (rdf:type filter). All non-property assets are skipped — this protects
+ *     against label-collision shadowing from ABox concepts.
+ *  3. Matching key for cache: `exo__Asset_label` (TBox convention: label of a
+ *     property asset equals the raw predicate name, e.g. "ems__Effort_area").
+ *  4. Display text: `exo__Property_displayName` if present (non-empty), else
+ *     fallback to `exo__Asset_label` (i.e. the raw predicate name itself, which
+ *     keeps the patch a no-op visually until a displayName is authored).
+ *  5. Collision handling: first-write-wins + `console.warn` (deterministic by
+ *     `vault.getMarkdownFiles()` enumeration order). Data-side collisions are
+ *     surfaced but not auto-resolved.
  *
- * Both paths require the matched file to have a non-empty `exo__Asset_label` that
- * differs from the raw predicate; that label is what replaces the key text. If no
- * definition asset is found, the predicate row is left untouched (Scenario C fallback).
+ * Behavior changes from pre-RFC-030 mechanic:
+ *  - aliases-array matching removed (was secondary fallback). For property
+ *    assets following TBox convention (label == raw predicate == aliases[0])
+ *    the aliases loop was always a no-op after self-match skip.
+ *  - line "if (key === label) continue" skip removed. With the new matching
+ *    semantics (key == label by definition), the skip would always fire and
+ *    block every property asset.
+ *  - rdf:type filter is hard, not optional. Legacy ims__Concept assets that
+ *    used to resolve via aliases-match no longer participate. Intentional —
+ *    UI resolver must operate only on canonical TBox property definitions.
  *
- * Reading Mode only. Live Preview is explicitly out of scope for first iteration.
- * Follows the MutationObserver + layout-change re-patch pattern established by
- * PropertiesLinkPatch / PropertiesUidCopyPatch.
+ * Reading Mode only. Live Preview is explicitly out of scope for first
+ * iteration. Follows the MutationObserver + layout-change re-patch pattern
+ * established by PropertiesLinkPatch / PropertiesUidCopyPatch.
  */
 
 const PATCHED_ATTR = "data-exo-label-patched";
 const DISPLAY_SPAN_CLASS = "exo-label-display";
 const HIDDEN_INPUT_CLASS = "exo-label-hidden-input";
 const CLICKABLE_CLASS = "exo-label-clickable";
+
+// Root UID of exo__Property class (TBox-stable). All assets whose
+// exo__Instance_class transitively descends from this UID via
+// exo__Class_superClass qualify as "property assets" for indexing.
+const EXO_PROPERTY_ROOT_UID = "38277bfa-d7f9-4a75-b856-b23276ab0db3";
+
+const UUID_REGEX =
+  /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 
 interface ResolvedPredicate {
   label: string;
@@ -38,12 +64,68 @@ interface PatchRecord {
   clickHandler: (e: MouseEvent) => void;
 }
 
+/**
+ * Unwrap an Obsidian-style wikilink to a canonical UID.
+ *   "[[uuid]]"              → "uuid"
+ *   "[[uuid|alias]]"        → "uuid"
+ *   "[[path/to/uuid]]"      → "uuid"  (strips path prefix; UID-canon TBox
+ *                                       does not emit path-qualified links,
+ *                                       but legacy authoring tools may —
+ *                                       defensive parsing avoids silent
+ *                                       BFS-closure miss for class refs)
+ *   "uuid"                  → "uuid"  (when shape matches UUID v4 layout)
+ *   anything else           → null
+ *
+ * Exported for unit testing.
+ */
+export function unwrapWikilinkUid(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const wlMatch = trimmed.match(/^\[\[([^\]|]+)(?:\|[^\]]*)?\]\]$/);
+  if (wlMatch) {
+    // Strip any path prefix: "some/path/uuid" → "uuid". Mirrors the leniency
+    // pattern from PrintNameRuleService.cleanClassValue for cross-resolver
+    // consistency.
+    const inner = wlMatch[1].trim();
+    const lastSegment = inner.split("/").pop()?.trim() ?? "";
+    if (UUID_REGEX.test(lastSegment)) return lastSegment;
+    // Path-stripped form isn't a UUID — return null so the caller can skip
+    // (consistent with non-UUID symbolic wikilink behavior).
+    return null;
+  }
+  if (UUID_REGEX.test(trimmed)) return trimmed;
+  return null;
+}
+
+/**
+ * Normalize Obsidian YAML class-list value (scalar or array) into a sanitized
+ * array of UIDs. Each element is unwrapped via `unwrapWikilinkUid` so we hold
+ * canonical UIDs only.
+ *
+ * Exported for unit testing.
+ */
+export function normalizeClassList(value: unknown): string[] {
+  let raw: unknown[];
+  if (Array.isArray(value)) raw = value;
+  else if (typeof value === "string") raw = [value];
+  else return [];
+
+  const out: string[] = [];
+  for (const v of raw) {
+    const uid = unwrapWikilinkUid(v);
+    if (uid) out.push(uid);
+  }
+  return out;
+}
+
 export class PropertiesLabelPatch {
   private app: Plugin["app"];
   private plugin: Plugin;
   private observer: MutationObserver | null = null;
   private enabled = false;
-  private resolveCache: Map<string, ResolvedPredicate | null> = new Map();
+  private resolveCache: Map<string, ResolvedPredicate> = new Map();
+  private propertyClassUids: Set<string> = new Set();
   private indexBuilt = false;
   private patched: PatchRecord[] = [];
 
@@ -113,11 +195,81 @@ export class PropertiesLabelPatch {
   private invalidateIndex(): void {
     this.indexBuilt = false;
     this.resolveCache.clear();
+    this.propertyClassUids.clear();
+  }
+
+  /**
+   * Build the Set of UIDs for `exo__Property` and all its (transitive) subclasses
+   * by walking the class-hierarchy graph defined by `exo__Class_superClass`
+   * triples in the metadataCache. Pure metadata-cache approach — no SPARQL
+   * engine dependency. Synchronous; runs once per `buildIndex` invocation.
+   *
+   * BFS fixpoint: starting from `EXO_PROPERTY_ROOT_UID`, repeatedly include any
+   * class whose `exo__Class_superClass` contains an already-included UID, until
+   * no additions in a pass.
+   */
+  private resolvePropertyClassUids(files: TFile[]): Set<string> {
+    // childUid → Set<parentUid> from frontmatter exo__Class_superClass
+    const superClassMap: Map<string, Set<string>> = new Map();
+
+    for (const file of files) {
+      const cache = this.app.metadataCache.getFileCache(file);
+      const fm = cache?.frontmatter;
+      if (!fm) continue;
+
+      const uidRaw = fm["exo__Asset_uid"];
+      if (typeof uidRaw !== "string") continue;
+      const uid = uidRaw.trim();
+      if (!uid) continue;
+
+      const supers = normalizeClassList(fm["exo__Class_superClass"]);
+      // Include root with empty parents too so a vault containing
+      // exo__Property itself but no subclasses still seeds the Set.
+      superClassMap.set(uid, new Set(supers));
+    }
+
+    const result = new Set<string>([EXO_PROPERTY_ROOT_UID]);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const [childUid, parentUids] of superClassMap) {
+        if (result.has(childUid)) continue;
+        for (const parentUid of parentUids) {
+          if (result.has(parentUid)) {
+            result.add(childUid);
+            changed = true;
+            break;
+          }
+        }
+      }
+    }
+    return result;
+  }
+
+  /**
+   * Insert a cache entry, but if `key` already maps to a *different* file,
+   * keep the first write and log a collision warning. Deterministic by
+   * `vault.getMarkdownFiles()` enumeration order.
+   */
+  private setWithCollisionGuard(
+    key: string,
+    value: ResolvedPredicate
+  ): void {
+    const existing = this.resolveCache.get(key);
+    if (existing && existing.file.path !== value.file.path) {
+      console.warn(
+        `[PropertiesLabelPatch] Label collision for key "${key}": ` +
+          `keeping ${existing.file.path}, ignoring ${value.file.path}`
+      );
+      return;
+    }
+    this.resolveCache.set(key, value);
   }
 
   private buildIndex(): void {
     if (this.indexBuilt) return;
     this.resolveCache.clear();
+    this.propertyClassUids.clear();
 
     let files: TFile[] = [];
     if (typeof this.app.vault.getMarkdownFiles === "function") {
@@ -127,6 +279,12 @@ export class PropertiesLabelPatch {
       }
     }
 
+    // Step 1: resolve subClass closure for exo__Property.
+    // Done once per index build; ~138 known property assets and ~30 class
+    // assets in current TBox, BFS converges in 2-3 passes.
+    this.propertyClassUids = this.resolvePropertyClassUids(files);
+
+    // Step 2: index property-class ассеты only.
     for (const file of files) {
       const cache = this.app.metadataCache.getFileCache(file);
       const fm = cache?.frontmatter;
@@ -137,23 +295,21 @@ export class PropertiesLabelPatch {
       const label = rawLabel.trim();
       if (!label) continue;
 
-      const keys = new Set<string>();
-      keys.add(file.basename);
-      const aliases = fm["aliases"];
-      if (Array.isArray(aliases)) {
-        for (const a of aliases) {
-          if (typeof a === "string" && a.trim().length > 0) {
-            keys.add(a.trim());
-          }
-        }
-      }
+      // rdf:type filter — assets whose exo__Instance_class contains at least
+      // one UID from the property-class closure.
+      const classUids = normalizeClassList(fm["exo__Instance_class"]);
+      if (classUids.length === 0) continue;
+      if (!classUids.some((uid) => this.propertyClassUids.has(uid))) continue;
 
-      for (const key of keys) {
-        if (key === label) continue;
-        if (!this.resolveCache.has(key)) {
-          this.resolveCache.set(key, { label, file });
-        }
-      }
+      // Display source: displayName > label fallback. Empty/whitespace-only
+      // displayName triggers fallback (same as missing displayName).
+      const displayNameRaw = fm["exo__Property_displayName"];
+      const displayText =
+        typeof displayNameRaw === "string" && displayNameRaw.trim().length > 0
+          ? displayNameRaw.trim()
+          : label;
+
+      this.setWithCollisionGuard(label, { label: displayText, file });
     }
 
     this.indexBuilt = true;
