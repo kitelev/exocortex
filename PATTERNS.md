@@ -500,20 +500,20 @@ These invariants protect existing callers and avoid mass vault rewrites when new
 
 **When to use**: A core service needs to trigger a surface-specific side-effect (open file, show notification, refresh layout) but the side-effect doesn't belong in the core's responsibility.
 
-**Pattern**: Don't bake the side-effect into the core. Define a small interface (`IFileOpener`, `IRefreshAfter…`), accept it as an *optional* constructor argument, and `await it?.(args)` at the call site. Tests and CLI surfaces omit the dep; the platform layer wires its implementation.
+**Pattern**: Don't bake the side-effect into the core. Define a small interface (`IFileOpener`, `IRefreshAfter…`), accept it as an _optional_ constructor argument, and `await it?.(args)` at the call site. Tests and CLI surfaces omit the dep; the platform layer wires its implementation.
 
 ```ts
 // Core service — no opener dependency baked in
 class CommandExecutionFlow {
   constructor(
     private deps: CoreDeps,
-    private opener?: IFileOpener,  // optional
+    private opener?: IFileOpener, // optional
   ) {}
 
   async execute(cmd: Command): Promise<ExecutionResult> {
     const result = await this.run(cmd);
     if (result.openPath) {
-      await this.opener?.(result.openPath);  // no-op if absent
+      await this.opener?.(result.openPath); // no-op if absent
     }
     return result;
   }
@@ -533,6 +533,7 @@ new CommandExecutionFlow(deps);
 ```
 
 **Key properties**:
+
 - Core test fixtures stay unchanged (they pass 3 args)
 - Headless CLI path stays unchanged (no opener)
 - One-line surface added on the Obsidian wiring side
@@ -8841,3 +8842,97 @@ export default class MyPlugin extends Plugin {
 - Run `npm run test:e2e` locally before push when modifying plugin startup sequence — the in-repo `npm run test:all` does NOT include Docker E2E, so flaky-modal races only surface in CI
 
 **Reference**: RFC-024 Phase 0 (#2833) / PR #2838 — E2E flaky `daily-archive-filter.spec.ts` was caused by `ChangelogModal` intercepting archive-toggle clicks on fresh test vault; fixed by `isFreshInstall` gate.
+
+## BFS subClass Closure via metadataCache
+
+For plugin code that needs "all assets of class X or any subclass thereof" — synchronous BFS over `exo__Class_superClass` triples in the metadataCache. No SPARQL engine dependency, no async lifecycle complexity.
+
+**Reference implementation**: `PropertiesLabelPatch.resolvePropertyClassUids` (RFC-030, PR #3246).
+
+**Pattern**:
+
+1. Iterate `app.vault.getMarkdownFiles()` and build a child→parents map from frontmatter:
+
+   ```ts
+   const superClassMap: Map<string, Set<string>> = new Map();
+   for (const file of files) {
+     const fm = app.metadataCache.getFileCache(file)?.frontmatter;
+     if (!fm) continue;
+     const uid = fm["exo__Asset_uid"];
+     if (typeof uid !== "string") continue;
+     const supers = normalizeClassList(fm["exo__Class_superClass"]); // unwrap wikilinks
+     superClassMap.set(uid.trim(), new Set(supers));
+   }
+   ```
+
+2. BFS fixpoint from a known root UID (hardcoded constant, e.g. `EXO_PROPERTY_ROOT_UID = "38277bfa-..."`):
+
+   ```ts
+   const result = new Set<string>([ROOT_UID]);
+   let changed = true;
+   while (changed) {
+     changed = false;
+     for (const [childUid, parentUids] of superClassMap) {
+       if (result.has(childUid)) continue;
+       for (const parentUid of parentUids) {
+         if (result.has(parentUid)) {
+           result.add(childUid);
+           changed = true;
+           break;
+         }
+       }
+     }
+   }
+   ```
+
+3. Use the resulting Set as a class-filter predicate in a downstream pass:
+   ```ts
+   const classUids = normalizeClassList(fm["exo__Instance_class"]);
+   if (!classUids.some((uid) => result.has(uid))) continue; // skip — not a subclass
+   ```
+
+**Performance**: For ~30 class assets + 138 property-class subclasses in current TBox, BFS converges in 2-3 iterations, ~5-10 ms total at index build time.
+
+**Why not SPARQL `rdfs:subClassOf*`**: Plugin code runs before the SPARQL engine may be ready (metadataCache.resolved fires before any user query). BFS over metadataCache is sync and dependency-free.
+
+**Cycle safety**: The `result.has(childUid)` guard prevents infinite loops if `exo__Class_superClass` contains a cycle (A→B, B→A). Cycles not connected to the root are silently excluded.
+
+**Reference**: RFC-030 §3.2 + PR #3246 (`PropertiesLabelPatch.ts:194-232`).
+
+**Pitfall — single-UID root is not enough**: Three independent reviewers (RFC-030 review iterations) all missed that a filter checking only direct `exo__Property` UID excluded `exo__ObjectProperty` instances (87/138 property assets). Always verify empirically: `grep -rln '"\[\[<root-uid>\]\]"' assetspaces/ | wc -l` shows direct count; if substantially smaller than expected total, you need closure.
+
+## Collision Guard Pattern for Cache Deduplication
+
+When a cache key can be populated from multiple sources (e.g. different files with the same `exo__Asset_label`), default `cache.set(key, value)` silently overwrites. For diagnostic purposes you want **first-write-wins + console.warn**.
+
+```ts
+function setWithCollisionGuard<K, V extends { file: { path: string } }>(
+  cache: Map<K, V>,
+  key: K,
+  value: V,
+): void {
+  const existing = cache.get(key);
+  if (existing && existing.file.path !== value.file.path) {
+    console.warn(
+      `[CacheCollision] Key "${String(key)}": ` +
+        `keeping ${existing.file.path}, ignoring ${value.file.path}`,
+    );
+    return; // first-write-wins
+  }
+  cache.set(key, value);
+}
+```
+
+**Properties**:
+
+- Deterministic by source enumeration order (e.g. `vault.getMarkdownFiles()`)
+- Same-file rewrite (same `file.path`) is silent — no spurious warnings on idempotent re-indexing
+- Cross-file collision logs both paths so the user can manually pick the winner (rename / archive / merge)
+- Audit query for systematic detection (SPARQL or shell):
+  ```bash
+  grep -rh 'exo__Asset_label:' assetspaces/ | sort | uniq -d
+  ```
+
+**When to use**: cache builders that consume frontmatter values which are conventionally-but-not-formally unique (label, alias, displayName). Pure-UID keys (which are guaranteed unique by definition) don't need this.
+
+**Reference**: `PropertiesLabelPatch.setWithCollisionGuard` (RFC-030, PR #3246). Empirical collisions found pre-merge: `exo__Asset_label: exo__Asset_updatedAt` ×2, `exo__Asset_label: ems__Initiative` ×2 — surfaced via console.warn after deployment, not blocked.

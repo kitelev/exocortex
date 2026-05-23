@@ -133,6 +133,18 @@ export interface ExocortexSettings {
    * invocation — no plugin reload required.
    */
   enableShaclValidation: boolean;
+  /**
+   * RFC-030 — enable the `PropertiesLabelPatch` which patches predicate keys
+   * in Obsidian's Properties block (Reading Mode) to:
+   * - Replace raw predicate name (e.g. `ems__Effort_area`) with clickable span
+   *   whose text is `exo__Property_displayName` (fallback to `exo__Asset_label`)
+   * - Open the property-definition asset on click
+   *
+   * Default `true`. When `false`, the Properties block renders native Obsidian
+   * (raw predicate names, no click-to-definition). Hot-toggleable — change
+   * takes effect immediately, no plugin reload required.
+   */
+  enablePropertiesLabelPatch: boolean;
   [key: string]: unknown;
 }
 
@@ -158,4 +170,5 @@ export const DEFAULT_SETTINGS: ExocortexSettings = {
   showIconsInFileExplorer: true,
   enableSparqlAutoExecute: false,
   enableShaclValidation: false,
+  enablePropertiesLabelPatch: true,
 };

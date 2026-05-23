@@ -94,6 +94,25 @@ export class ExocortexSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
+      .setName("Replace predicate names with display labels")
+      .setDesc(
+        "In the Properties block, replace raw predicate keys " +
+          "(e.g. ems__Effort_area) with a clickable label resolved from the " +
+          "property's exo__Property_displayName (fallback exo__Asset_label). " +
+          "Clicking the label opens the property-definition asset. When " +
+          "disabled, predicate keys render as raw frontmatter names.",
+      )
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.enablePropertiesLabelPatch)
+          .onChange(async (value) => {
+            this.plugin.settings.enablePropertiesLabelPatch = value;
+            await this.plugin.saveSettings();
+            this.plugin.togglePropertiesLabelPatch(value);
+          }),
+      );
+
+    new Setting(containerEl)
       .setName("Enable custom layouts")
       .setDesc(
         "Render class-specific layouts defined via exo__Layout assets. " +
