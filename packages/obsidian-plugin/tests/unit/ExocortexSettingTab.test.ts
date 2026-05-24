@@ -127,9 +127,10 @@ describe("ExocortexSettingTab", () => {
       settingTab.display();
 
       expect(mockContainerEl.empty).toHaveBeenCalled();
-      // 9 toggle settings + 1 autoReadingMode toggle + 1 enableExoLayoutRenderer toggle + 1 showIconsInFileExplorer toggle + 1 enableSparqlAutoExecute toggle (#2992) + 1 enableShaclValidation toggle (P1.12) + 1 enablePropertiesLabelPatch toggle (RFC-030) + 1 exocmdBindingsCacheEnabledOnMobile toggle (#3250) + 3 headings + 1 default template + 6 per-class templates + 1 reset button + 4 log level rows = 30
+      // 9 toggle settings + 1 autoReadingMode toggle + 1 enableExoLayoutRenderer toggle + 1 showIconsInFileExplorer toggle + 1 enableSparqlAutoExecute toggle (#2992) + 1 enableShaclValidation toggle (P1.12) + 1 enablePropertiesLabelPatch toggle (RFC-030) + 3 headings + 1 default template + 6 per-class templates + 1 reset button + 4 log level rows = 29
+      // RFC c7da0bca Phase 3c-3 — deleted `exocmdBindingsCacheEnabledOnMobile` toggle (-1) once its indexer was deleted in 3c-2.
       // Log channels section: 1 heading + 4 log level rows = 5
-      expect(MockSetting).toHaveBeenCalledTimes(30);
+      expect(MockSetting).toHaveBeenCalledTimes(29);
     });
 
     it("should render layout visibility toggle as first setting", () => {

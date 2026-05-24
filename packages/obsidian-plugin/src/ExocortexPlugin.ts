@@ -916,15 +916,13 @@ export default class ExocortexPlugin extends Plugin {
         if (!loader) return;
         // RFC c7da0bca Phase 3a — desktop-only bootstrap. The whole
         // RFC is built to reduce mobile cold-start latency (Issue
-        // #3250: 10-30 s MISC→empty→buttons cycle on iPhone). The
-        // existing fast/full-path chain still runs in parallel during
-        // 3a, so doubling the work on mobile by walking ~hundreds of
-        // TBox files inside the same `onLayoutReady` tick would
-        // regress the exact metric we are trying to improve. Mirror
-        // the discipline used by `shouldRunExocmdIndexer` further
-        // down (mobile-skip-by-default). Phase 3b switches renders
-        // to the loader and decides per-render whether to walk —
-        // that is the correct place to re-enable mobile usage.
+        // #3250: 10-30 s MISC→empty→buttons cycle on iPhone).
+        // Walking ~hundreds of TBox files inside the same
+        // `onLayoutReady` tick on mobile would regress the exact
+        // metric we are trying to improve, so skip mobile by default.
+        // Phase 3b switches renders to the loader and decides per-
+        // render whether to walk — that is the correct place to re-
+        // enable mobile usage.
         if (Platform.isMobile) return;
         // TODO(Phase 3b) — wire a `loader.forget(iri)` /
         // `loader.clearAll()` invalidation hook into

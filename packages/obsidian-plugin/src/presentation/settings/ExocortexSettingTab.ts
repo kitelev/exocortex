@@ -112,26 +112,9 @@ export class ExocortexSettingTab extends PluginSettingTab {
           }),
       );
 
-    new Setting(containerEl)
-      .setName("Enable exocmd bindings cache indexer on mobile")
-      .setDesc(
-        "Build the exocmd-bindings disk cache on mobile (iOS/Android). " +
-          "Off by default because the full-vault scan caused Obsidian " +
-          "to restart every 15-30 seconds on iOS (issue #3250 — root " +
-          "kill mechanism not isolated from system logs, likely memory " +
-          "pressure or main-thread block). Enable only if you have a " +
-          "high-memory device (e.g. iPad Pro) and want faster cold-start " +
-          "buttons. Desktop ignores this toggle — the indexer always " +
-          "runs there. Changes take effect on the next Obsidian restart.",
-      )
-      .addToggle((toggle) =>
-        toggle
-          .setValue(this.plugin.settings.exocmdBindingsCacheEnabledOnMobile)
-          .onChange(async (value) => {
-            this.plugin.settings.exocmdBindingsCacheEnabledOnMobile = value;
-            await this.plugin.saveSettings();
-          }),
-      );
+    // RFC c7da0bca Phase 3c-3 — deleted the "Enable exocmd bindings
+    // cache indexer on mobile" toggle. The indexer it gated was
+    // deleted in 3c-2; the toggle had no effect after that PR landed.
 
     new Setting(containerEl)
       .setName("Enable custom layouts")
