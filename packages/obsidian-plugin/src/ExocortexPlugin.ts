@@ -422,9 +422,11 @@ export default class ExocortexPlugin extends Plugin {
           // branches in `DynamicCommandButtonGroupBuilder`
           // naturally degrade to the full path
           // (`resolveForAssetMulti` against the lazy-fed store)
-          // when these are undefined. The legacy objects are still
-          // constructed above for now — Phase 3c-2 will delete
-          // the construction once parity is confirmed in production.
+          // when these are undefined. Construction sites for the
+          // legacy objects were deleted in Phase 3c-2 (see deletion
+          // note above near line 387). Phase 3c-3 will drop the
+          // now-permanently-undefined ctor params from the renderer
+          // signature.
           //
           // RFC c7da0bca Phase 3b-main — renderer drives the lazy
           // loader on every render. `ensureLoadedByIRI` primes the
@@ -433,20 +435,6 @@ export default class ExocortexPlugin extends Plugin {
         },
       );
 
-      // Issue #3171 — invalidate fast-path cache when any exocmd asset
-      // changes. We listen on the generic metadata-cache `changed` event
-      // (fires for every modified file) and filter by path prefix.
-      // Granular delete/rename are not needed: the fast-path lazily
-      // rebuilds from `vault.getAllFiles()` on next `resolveVisibleCommands`,
-      // so a stale cached list of files cannot survive a generation flip.
-      //
-      // Issue #3183 — same path-prefix predicate also invalidates the
-      // in-memory disk-cache snapshot. The on-disk file itself is left
-      // alone; the next post-`convertVault` indexer pass (triggered by
-      // `commandResolver.invalidateCache()` plumbing below or by the
-      // next plugin reload) overwrites it atomically. Until then, lookups
-      // fall through to fast-path with the freshly invalidated mini-store.
-      //
       // RFC c7da0bca Phase 3c-2 — deleted the bootstrap-resolved-gated
       // cache invalidation block (3 `registerEvent` listeners for
       // `metadataCache.on("changed")` + `vault.on("delete")` +
@@ -869,9 +857,6 @@ export default class ExocortexPlugin extends Plugin {
       // worst-case adding 150ms of pure wait to the
       // `cache-read-start` → `cache-applied` window.
       //
-      // `onLayoutReady` is Obsidian's authoritative "view tree mounted"
-      // signal: it fires once on cold start and immediately if layout
-      // is already ready (e.g. plugin re-enabled after vault load).
       // `onLayoutReady` is Obsidian's authoritative "view tree mounted"
       // signal: it fires once on cold start and immediately if layout
       // is already ready (e.g. plugin re-enabled after vault load).
