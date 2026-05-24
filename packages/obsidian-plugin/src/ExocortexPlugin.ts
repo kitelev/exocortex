@@ -34,7 +34,10 @@ import {
   type ClassHierarchy as ShaclClassHierarchy,
   DomainIRI,
   DomainLiteral,
+  LazyAssetGraphLoader,
+  NoteToRDFConverter,
 } from "exocortex";
+import { ObsidianFileResolver } from "./infrastructure/ObsidianFileResolver";
 import {
   RelationColumnSetRepository,
   ObsidianRelationColumnSetAdapter,
@@ -137,6 +140,11 @@ export default class ExocortexPlugin extends Plugin {
   exocmdFastResolver?: ExocmdFastResolver;
   // Issue #3183 — persistent disk cache for exocmd bindings
   exocmdBindingsCache?: ExocmdBindingsCache;
+  // RFC c7da0bca Phase 3a — on-demand asset-graph loader. Runs alongside
+  // the existing fast/full-path chain during 3a (parallel mode, behaviour-
+  // neutral). Phase 3b will route renders through it; Phase 3c will
+  // delete the cache + fast-path infrastructure once parity is confirmed.
+  lazyAssetGraphLoader?: LazyAssetGraphLoader;
   private relationColumnSetRepository: RelationColumnSetRepository | null =
     null;
   private relationColumnSetResolver: RelationColumnSetResolver | null = null;
@@ -212,6 +220,24 @@ export default class ExocortexPlugin extends Plugin {
         queryBodyResolver,
       );
       registerDefaultHostFunctions(this.preconditionEvaluator);
+
+      // RFC c7da0bca Phase 3a — construct lazy loader. Parallel-mode: runs
+      // alongside the existing fast/full-path chain. The dedicated
+      // NoteToRDFConverter instance keeps the loader decoupled from the
+      // VaultRDFIndexer's converter so the indexer's mid-session reindex
+      // operations don't race with the loader's per-render walks. Both
+      // converters call `vault.getFrontmatter()` which is read-only, so
+      // multiple converters are safe.
+      const lazyConverter = new NoteToRDFConverter(
+        this.vaultAdapter,
+        LoggerFactory.create("NoteToRDFConverter-Lazy"),
+      );
+      const obsidianFileResolver = new ObsidianFileResolver(this.vaultAdapter);
+      this.lazyAssetGraphLoader = new LazyAssetGraphLoader(
+        lazyConverter,
+        obsidianFileResolver,
+        tripleStore,
+      );
       // Vault changes invalidate the cached UID→path index.
       this.registerEvent(
         this.app.metadataCache.on("changed", () =>
@@ -940,6 +966,67 @@ export default class ExocortexPlugin extends Plugin {
       // us read cold-start latency against the issue's AC #1 / AC #2
       // targets via `performance.getEntriesByName(...)` — works on
       // desktop and mobile without Verbose log level (Issue #3175).
+      // RFC c7da0bca Phase 3a — TBox bootstrap via the lazy loader,
+      // running in parallel with the existing fast/full-path chain.
+      // Purpose at this phase: exercise the loader at cold start so its
+      // desktop timing can be measured via `performance.measure`. The
+      // store ends up with the same triples regardless of which path
+      // adds them first (triple insertion is idempotent in
+      // InMemoryTripleStore). Phase 3b switches renders to use the
+      // loader; Phase 3c deletes the parallel old path.
+      //
+      // Reads `lazyAssetGraphLoader` field (set above in onload). The
+      // bootstrap is fire-and-forget — errors get logged but never
+      // propagate to the existing chain.
+      this.app.workspace.onLayoutReady(() => {
+        const loader = this.lazyAssetGraphLoader;
+        if (!loader) return;
+        performance.mark("lazy-tbox-bootstrap-start");
+        void (async () => {
+          try {
+            const ontologyFolders = [
+              "assetspaces/exo/",
+              "assetspaces/ems/",
+              "assetspaces/ims/",
+              "assetspaces/exocmd/",
+            ];
+            const allFiles = this.vaultAdapter.getAllFiles() ?? [];
+            const tboxFiles = allFiles.filter((f) =>
+              ontologyFolders.some((folder) => f.path.startsWith(folder)),
+            );
+            let loadedCount = 0;
+            let errorCount = 0;
+            for (const file of tboxFiles) {
+              try {
+                await loader.ensureFileLoaded(file);
+                loadedCount++;
+              } catch (err) {
+                errorCount++;
+                this.logger.warn(
+                  `[lazy-tbox-bootstrap] skip ${file.path}: ${String(err)}`,
+                );
+              }
+            }
+            performance.mark("lazy-tbox-bootstrap-done");
+            performance.measure(
+              "lazy-tbox-bootstrap",
+              "lazy-tbox-bootstrap-start",
+              "lazy-tbox-bootstrap-done",
+            );
+            this.logger.info(
+              `[lazy-tbox-bootstrap] loaded ${loadedCount} ontology assets ` +
+                `(errors=${errorCount}, total loaded set size=${loader.loadedCount})`,
+            );
+          } catch (err) {
+            // Bootstrap failure must not propagate — the existing fast/full-
+            // path chain remains the production code path during 3a.
+            this.logger.warn(
+              `[lazy-tbox-bootstrap] failed (non-fatal in Phase 3a): ${String(err)}`,
+            );
+          }
+        })();
+      });
+
       this.eagerInitPromise = new Promise<void>((resolve) => {
         this.app.workspace.onLayoutReady(() => {
           // Issue #3171 perf instrumentation (Issue #3175 migrated from

@@ -204,7 +204,7 @@ export {
   type RDFDeserializeOptions,
 } from "./infrastructure/rdf/RDFSerializer";
 export { NullLogger } from "./infrastructure/NullLogger";
-export { vaultPathToIRI, OBSIDIAN_VAULT_SCHEME } from "./infrastructure/vault/iri";
+export { vaultPathToIRI, iriToVaultPath, OBSIDIAN_VAULT_SCHEME } from "./infrastructure/vault/iri";
 export { InMemoryTripleStore } from "./infrastructure/rdf/InMemoryTripleStore";
 
 // Domain RDF model exports (for CLI/external consumers)
