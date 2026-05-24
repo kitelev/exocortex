@@ -8,6 +8,20 @@ jest.mock("obsidian", () => ({
   Plugin: class {},
   TFile: class {},
   Notice: jest.fn(),
+  Keymap: {
+    // Minimal stub that mirrors Obsidian's behavior for the modifier
+    // combinations we care about in tests. The real implementation also
+    // distinguishes split/window via Alt/Shift but tests below exercise only
+    // the plain-click and Mod+click cases.
+    isModEvent: (evt?: MouseEvent | KeyboardEvent): "tab" | "split" | "window" | false => {
+      if (!evt) return false;
+      const mod = (evt as MouseEvent).metaKey || (evt as MouseEvent).ctrlKey;
+      if (!mod) return false;
+      if ((evt as MouseEvent).altKey && (evt as MouseEvent).shiftKey) return "window";
+      if ((evt as MouseEvent).altKey) return "split";
+      return "tab";
+    },
+  },
 }));
 
 interface FakeFile {
@@ -499,18 +513,96 @@ describe("PropertiesLabelPatch", () => {
   // Scenario B — click navigates to definition
   // ============================================================
   describe("Scenario B: clicking readable label opens definition", () => {
-    it("click on display span calls openFile for the definition asset", () => {
+    it("plain click opens definition in the SAME tab (getLeaf(false))", () => {
       const row = createPropertyRow({ inputValue: "ems__Effort_status" });
       mockMetadataContainer.appendChild(row);
 
       patch.enable();
 
       const span = row.querySelector<HTMLSpanElement>(".exo-label-display")!;
-      span.click();
+      span.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true })
+      );
+
+      expect(mockApp.workspace.getLeaf).toHaveBeenCalledWith(false);
+      expect(openFileMock).toHaveBeenCalledTimes(1);
+      expect(openedFiles[0]).toBe(FILE_EFFORT_STATUS);
+    });
+
+    it("Cmd-click (metaKey) opens definition in a NEW tab (getLeaf('tab'))", () => {
+      const row = createPropertyRow({ inputValue: "ems__Effort_status" });
+      mockMetadataContainer.appendChild(row);
+
+      patch.enable();
+
+      const span = row.querySelector<HTMLSpanElement>(".exo-label-display")!;
+      span.dispatchEvent(
+        new MouseEvent("click", {
+          bubbles: true,
+          cancelable: true,
+          metaKey: true,
+        })
+      );
 
       expect(mockApp.workspace.getLeaf).toHaveBeenCalledWith("tab");
       expect(openFileMock).toHaveBeenCalledTimes(1);
       expect(openedFiles[0]).toBe(FILE_EFFORT_STATUS);
+    });
+
+    it("Ctrl-click (ctrlKey) opens definition in a NEW tab — non-mac fallback", () => {
+      const row = createPropertyRow({ inputValue: "ems__Effort_status" });
+      mockMetadataContainer.appendChild(row);
+
+      patch.enable();
+
+      const span = row.querySelector<HTMLSpanElement>(".exo-label-display")!;
+      span.dispatchEvent(
+        new MouseEvent("click", {
+          bubbles: true,
+          cancelable: true,
+          ctrlKey: true,
+        })
+      );
+
+      expect(mockApp.workspace.getLeaf).toHaveBeenCalledWith("tab");
+      expect(openFileMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("middle-mouse auxclick (button=1) opens definition in a NEW tab", () => {
+      const row = createPropertyRow({ inputValue: "ems__Effort_status" });
+      mockMetadataContainer.appendChild(row);
+
+      patch.enable();
+
+      const span = row.querySelector<HTMLSpanElement>(".exo-label-display")!;
+      span.dispatchEvent(
+        new MouseEvent("auxclick", {
+          bubbles: true,
+          cancelable: true,
+          button: 1,
+        })
+      );
+
+      expect(mockApp.workspace.getLeaf).toHaveBeenCalledWith("tab");
+      expect(openFileMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("right-mouse auxclick (button=2) does NOT open the definition", () => {
+      const row = createPropertyRow({ inputValue: "ems__Effort_status" });
+      mockMetadataContainer.appendChild(row);
+
+      patch.enable();
+
+      const span = row.querySelector<HTMLSpanElement>(".exo-label-display")!;
+      span.dispatchEvent(
+        new MouseEvent("auxclick", {
+          bubbles: true,
+          cancelable: true,
+          button: 2,
+        })
+      );
+
+      expect(openFileMock).not.toHaveBeenCalled();
     });
 
     it("click event does NOT propagate to the input (no frontmatter corruption)", () => {
