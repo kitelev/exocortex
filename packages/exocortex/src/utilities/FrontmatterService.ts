@@ -8,6 +8,8 @@
  * @since 1.0.0
  */
 
+import { loadDefaultSpec, orderProperties } from "../services/OrderSpecResolver";
+
 /**
  * Result of frontmatter parsing operation
  */
@@ -359,7 +361,8 @@ export class FrontmatterService {
    * ```
    */
   createFrontmatter(content: string, properties: Record<string, unknown>): string {
-    const frontmatterLines = Object.entries(properties).map(
+    const ordered = orderProperties(properties, loadDefaultSpec());
+    const frontmatterLines = Object.entries(ordered).map(
       ([key, value]) => this.serializeValue(key, value),
     );
 
