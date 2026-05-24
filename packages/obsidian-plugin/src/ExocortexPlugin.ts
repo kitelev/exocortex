@@ -984,6 +984,31 @@ export default class ExocortexPlugin extends Plugin {
               `[lazy-tbox-bootstrap] loaded ${loadedCount} ontology assets ` +
                 `(errors=${errorCount}, total loaded set size=${loader.loadedCount})`,
             );
+            // RFC c7da0bca Phase 4 — drop the precondition/command
+            // resolver caches and re-trigger autoRenderLayout once the
+            // bootstrap is done. Without this, the first render
+            // (`file-open + 150 ms` or `onLayoutReady`) wins the race
+            // against the IIFE — the active asset renders with an
+            // empty bindings store, both caches lock in a "0
+            // buttons" decision, and there is no later trigger until
+            // `metadataCache.on("resolved")` chain finally finishes
+            // `sparql.refresh()` (~20-30 s on iPhone). Mirrors the
+            // post-`sparql.refresh()` invalidate-and-re-render
+            // triplet at line ~759 so the bootstrap-completion path
+            // and the refresh-completion path produce the same
+            // observable behaviour. Both invalidate/render calls are
+            // cheap idempotent re-runs when there is nothing to
+            // re-render (no active markdown view, etc.). The
+            // active-file guard mirrors the renderInitial gate
+            // above (line ~862) — if no file is open at
+            // bootstrap-done, there is nothing to re-render and the
+            // workspace file-open event will trigger autoRenderLayout
+            // when a file is later opened.
+            this.commandResolver.invalidateCache();
+            this.preconditionEvaluator.invalidateCache();
+            if (this.app.workspace.getActiveFile()) {
+              this.autoRenderLayout();
+            }
           } catch (err) {
             // Bootstrap failure must not propagate — convertVault() still
             // runs as part of the SPARQL ASK warm-up downstream and will
