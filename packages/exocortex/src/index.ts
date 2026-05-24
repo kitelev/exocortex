@@ -217,6 +217,12 @@ export { RDFSInferenceEngine } from "./infrastructure/rdf/RDFSInferenceEngine";
 export { NonInheritablePropertyRegistry } from "./services/NonInheritablePropertyRegistry";
 export { PropertyCardinalityRegistry } from "./services/PropertyCardinalityRegistry";
 export { PrototypeChainMaterializer, INFERRED_GRAPH } from "./services/PrototypeChainMaterializer";
+export {
+  LazyAssetGraphLoader,
+  MAX_LAZY_DEPTH,
+  type INoteConverter,
+} from "./services/LazyAssetGraphLoader";
+export type { IFileResolver } from "./interfaces/IFileResolver";
 export { SourceAnnotator, SOURCE_VARIABLE, type TripleSource } from "./services/SourceAnnotator";
 export {
   NoteToRDFConverter,
