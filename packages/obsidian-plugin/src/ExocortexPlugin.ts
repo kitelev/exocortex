@@ -66,17 +66,6 @@ import {
   createAliasIconExtension,
   createWikilinkLabelExtension,
 } from "./presentation/editor-extensions";
-import { ExocmdFastResolver } from "./presentation/builders/button-groups/ExocmdFastResolver";
-import {
-  ExocmdBindingsCache,
-  DEFAULT_CACHE_FILE_PATH,
-  type CacheFileSystem,
-} from "./cache/ExocmdBindingsCache";
-import { shouldRunExocmdIndexer } from "./cache/shouldRunExocmdIndexer";
-import {
-  ExocmdBindingsIndexer,
-  type FrontmatterRecord,
-} from "./cache/ExocmdBindingsIndexer";
 import { TimerManager } from "./infrastructure/timer";
 import { LRUCache } from "./infrastructure/cache";
 import { TabTitlePatch } from "./presentation/tab-titles/TabTitlePatch";
@@ -136,14 +125,11 @@ export default class ExocortexPlugin extends Plugin {
   preconditionEvaluator!: PreconditionEvaluator;
   groundingExecutor!: GroundingExecutor;
   serviceRegistry!: ServiceRegistry;
-  // Issue #3171 — cold-start fast-path resolver for exocmd buttons
-  exocmdFastResolver?: ExocmdFastResolver;
-  // Issue #3183 — persistent disk cache for exocmd bindings
-  exocmdBindingsCache?: ExocmdBindingsCache;
-  // RFC c7da0bca Phase 3a — on-demand asset-graph loader. Runs alongside
-  // the existing fast/full-path chain during 3a (parallel mode, behaviour-
-  // neutral). Phase 3b will route renders through it; Phase 3c will
-  // delete the cache + fast-path infrastructure once parity is confirmed.
+  // RFC c7da0bca Phase 3 — on-demand asset-graph loader; the sole source
+  // of pre-render frontmatter+chain coverage in the triple store. The
+  // legacy fast/full-path cold-start resolvers (`ExocmdFastResolver` +
+  // `ExocmdBindingsCache` + `ExocmdBindingsIndexer`) were deleted in
+  // Phase 3c-2 once parallel-mode parity was confirmed via PR #3257.
   lazyAssetGraphLoader?: LazyAssetGraphLoader;
   private relationColumnSetRepository: RelationColumnSetRepository | null =
     null;
@@ -399,63 +385,19 @@ export default class ExocortexPlugin extends Plugin {
         },
       });
 
-      // Issue #3171 — cold-start fast resolver for exocmd buttons.
-      // Builds a mini in-memory triple store from the open file +
-      // ~41 `assetspaces/exocmd/*.md` assets while the full vault
-      // triple store is still being built in the background.
-      // Cache invalidation hook for exocmd files is wired further
-      // below (next to `metadataCache.on('changed')` listeners).
-      const exocmdFastResolver = new ExocmdFastResolver(
-        this.vaultAdapter,
-        "assetspaces/exocmd",
-        this.logger,
-      );
-      this.exocmdFastResolver = exocmdFastResolver;
-
-      // Issue #3183 — persistent disk cache. Load synchronously here so
-      // the very first `autoRenderLayout()` already has cache content
-      // available; subsequent loads are no-ops once `snapshot` is held
-      // in memory. `performance.mark` lets the AC #1 latency target be
-      // observable in DevTools alongside the existing fast/full-path marks.
-      performance.mark("exocmd-cache-read-start");
-      const cacheFs: CacheFileSystem = {
-        exists: (p) => this.app.vault.adapter.exists(p),
-        read: (p) => this.app.vault.adapter.read(p),
-        write: (p, content) => this.app.vault.adapter.write(p, content),
-        remove: (p) => this.app.vault.adapter.remove(p),
-        rename: (oldP, newP) => this.app.vault.adapter.rename(oldP, newP),
-        mkdir: (p) => this.app.vault.adapter.mkdir(p),
-      };
-      const bindingsCache = new ExocmdBindingsCache(
-        cacheFs,
-        DEFAULT_CACHE_FILE_PATH,
-        this.manifest.version,
-        this.logger,
-      );
-      this.exocmdBindingsCache = bindingsCache;
-      // Issue #3192 — capture the load promise so it can chain an
-      // immediate `autoRenderLayout()` once the snapshot lands in memory.
-      // The earlier fire-and-forget version waited for the next workspace
-      // event (file-open / layout-change / active-leaf-change), each of
-      // which adds a 150ms debounce on top of Obsidian's own startup
-      // latency — total wall-time between `exocmd-cache-read-start` and
-      // `exocmd-cache-applied` was ~1.9 s mean in v16.8.6 (Issue #3192
-      // baseline). Triggering a render the instant the snapshot is ready
-      // collapses that wait when the active view is already mounted.
-      // The render itself is idempotent (re-running with a warm cache is
-      // a no-op modulo the one-shot `cache-applied` mark guard) so this
-      // does not race with the existing event-driven renders.
-      const cacheLoadPromise = bindingsCache.load().catch((err) => {
-        this.logger.warn(
-          `[ExocortexPlugin] cache load failed (non-fatal): ${String(err)}`,
-        );
-        // Issue #3190 — surface every cache-pipeline failure to the DevTools
-        // console as well, since `logger.warn` may be silenced by the user's
-        // log-channel settings. `console.error` is the diagnostic channel of
-        // last resort for cache regressions.
-        console.error("[exocortex] cache load failed:", err);
-        return null;
-      });
+      // RFC c7da0bca Phase 3c-2 — legacy cold-start optimisation paths
+      // (`ExocmdFastResolver`, `ExocmdBindingsCache`,
+      // `ExocmdBindingsIndexer`) were deleted in this phase. Their
+      // bootstrap construction + disk-cache load + post-convertVault
+      // indexer pass lived here. After Phase 3b-main wired
+      // `LazyAssetGraphLoader.ensureLoadedByIRI` into the renderer's
+      // hot-path (PR #3257), the legacy paths became redundant — the
+      // lazy loader populates the triple store per-render with the
+      // same byte-identical output the cache/indexer used to pre-build.
+      // Cache-invalidation handlers (`metadataCache.on("changed")` for
+      // `assetspaces/exocmd/*`, plus `vault.delete` + `vault.rename`)
+      // and the `bootstrapResolved` gating that paired with them were
+      // deleted alongside the construction sites.
 
       this.layoutRenderer = new UniversalLayoutRenderer(
         this.app,
@@ -480,9 +422,11 @@ export default class ExocortexPlugin extends Plugin {
           // branches in `DynamicCommandButtonGroupBuilder`
           // naturally degrade to the full path
           // (`resolveForAssetMulti` against the lazy-fed store)
-          // when these are undefined. The legacy objects are still
-          // constructed above for now — Phase 3c-2 will delete
-          // the construction once parity is confirmed in production.
+          // when these are undefined. Construction sites for the
+          // legacy objects were deleted in Phase 3c-2 (see deletion
+          // note above near line 387). Phase 3c-3 will drop the
+          // now-permanently-undefined ctor params from the renderer
+          // signature.
           //
           // RFC c7da0bca Phase 3b-main — renderer drives the lazy
           // loader on every render. `ensureLoadedByIRI` primes the
@@ -491,76 +435,16 @@ export default class ExocortexPlugin extends Plugin {
         },
       );
 
-      // Issue #3171 — invalidate fast-path cache when any exocmd asset
-      // changes. We listen on the generic metadata-cache `changed` event
-      // (fires for every modified file) and filter by path prefix.
-      // Granular delete/rename are not needed: the fast-path lazily
-      // rebuilds from `vault.getAllFiles()` on next `resolveVisibleCommands`,
-      // so a stale cached list of files cannot survive a generation flip.
-      //
-      // Issue #3183 — same path-prefix predicate also invalidates the
-      // in-memory disk-cache snapshot. The on-disk file itself is left
-      // alone; the next post-`convertVault` indexer pass (triggered by
-      // `commandResolver.invalidateCache()` plumbing below or by the
-      // next plugin reload) overwrites it atomically. Until then, lookups
-      // fall through to fast-path with the freshly invalidated mini-store.
-      //
-      // Issue #3190 — `metadataCache.on("changed")` fires for every
-      // `assetspaces/exocmd/*.md` file as Obsidian parses it during the
-      // initial vault scan, BEFORE `on("resolved")` fires. Without a
-      // bootstrap guard those bootstrap-time fires call `bindingsCache.clear()`
-      // and wipe the snapshot loaded fire-and-forget at line ~370 — by the
-      // time `autoRenderLayout()` runs the snapshot is null and the cache
-      // strategy degrades to a permanent miss (cache-applied mark never
-      // fires, full-path button set arrives at ~10 s like pre-PR #3185).
-      // The flag below is flipped by the `on("resolved")` listener below
-      // and gates invalidation so bootstrap-time `changed` events become
-      // no-ops; post-bootstrap edits invalidate as before.
-      let bootstrapResolved = false;
-      const invalidateExocmdCaches = (): void => {
-        if (!bootstrapResolved) return;
-        exocmdFastResolver.invalidateCommandCache();
-        bindingsCache.clear();
-      };
-      // Issue #3190 — flag set in the existing `metadataCache.on("resolved")`
-      // handler further down in onload (search for `postResolveReindexDone`).
-      // The handler runs idempotently every time Obsidian fires `resolved`;
-      // we set the flag there rather than registering a second listener so
-      // the existing "first registered resolved handler" test contract is
-      // preserved (tests look up the handler by index).
-      const flipBootstrapResolved = (): void => {
-        bootstrapResolved = true;
-      };
-      this.registerEvent(
-        this.app.metadataCache.on("changed", (changedFile) => {
-          if (
-            changedFile?.path?.startsWith("assetspaces/exocmd/") ||
-            changedFile?.path === "assetspaces/exocmd"
-          ) {
-            invalidateExocmdCaches();
-          }
-        }),
-      );
-      this.registerEvent(
-        this.app.vault.on("delete", (file) => {
-          if (
-            file?.path?.startsWith("assetspaces/exocmd/") ||
-            file?.path === "assetspaces/exocmd"
-          ) {
-            invalidateExocmdCaches();
-          }
-        }),
-      );
-      this.registerEvent(
-        this.app.vault.on("rename", (file, oldPath) => {
-          if (
-            file?.path?.startsWith("assetspaces/exocmd/") ||
-            oldPath?.startsWith("assetspaces/exocmd/")
-          ) {
-            invalidateExocmdCaches();
-          }
-        }),
-      );
+      // RFC c7da0bca Phase 3c-2 — deleted the bootstrap-resolved-gated
+      // cache invalidation block (3 `registerEvent` listeners for
+      // `metadataCache.on("changed")` + `vault.on("delete")` +
+      // `vault.on("rename")` filtered to `assetspaces/exocmd/*`, plus
+      // the `bootstrapResolved` flag flipped by the resolved handler).
+      // Their sole purpose was invalidating `exocmdFastResolver` +
+      // `bindingsCache` — both deleted above. The lazy loader's own
+      // `metadataCache.on("changed")` → `forget(iri)` + `vault.on
+      // ("rename")` + `vault.on("delete")` handlers (wired in 3b-main)
+      // provide invalidation for the new render path.
 
       this.taskStatusService = container.resolve(TaskStatusService);
       this.taskTrackingService = new TaskTrackingService(
@@ -850,12 +734,9 @@ export default class ExocortexPlugin extends Plugin {
       let postResolveReindexDone = false;
       this.registerEvent(
         this.app.metadataCache.on("resolved", () => {
-          // Issue #3190 — flip the bootstrap gate so post-bootstrap
-          // exocmd asset edits invalidate the bindings cache. Bootstrap
-          // `changed` events fired while parsing `assetspaces/exocmd/*.md`
-          // during the initial vault scan become no-ops, preserving the
-          // disk-cache snapshot just loaded fire-and-forget at onload.
-          flipBootstrapResolved();
+          // RFC c7da0bca Phase 3c-2 — deleted the `flipBootstrapResolved()`
+          // call that paired with the now-deleted `invalidateExocmdCaches`
+          // gating block.
 
           this.layoutRenderer.invalidateBacklinksCache();
 
@@ -979,30 +860,16 @@ export default class ExocortexPlugin extends Plugin {
       // `onLayoutReady` is Obsidian's authoritative "view tree mounted"
       // signal: it fires once on cold start and immediately if layout
       // is already ready (e.g. plugin re-enabled after vault load).
-      // Pair it with `cacheLoadPromise.then(...)` below so whichever of
-      // {view ready, cache snapshot loaded} happens second triggers the
-      // render — the first one to fire is a no-op (view-absent guard or
-      // cache-miss fall-through to fast-path).
       const activeFile = this.app.workspace.getActiveFile();
       if (activeFile) {
         this.app.workspace.onLayoutReady(() => {
           this.autoRenderLayout();
         });
       }
-      // Trigger a render the moment the disk cache snapshot lands in
-      // memory — covers the case where the view became ready before
-      // the cache I/O finished and the `onLayoutReady` render above
-      // saw a null snapshot and fell through to fast-path. Idempotent:
-      // `cache-applied` mark is one-shot (`cacheAppliedMarked` guard
-      // in `DynamicCommandButtonGroupBuilder`) and a warm cache lookup
-      // is O(1). Errors during load are already logged inside the
-      // catch handler attached to `cacheLoadPromise`; the chained
-      // `.then` only fires on the success branch via the swallowed
-      // `null` return so we never re-render on failure.
-      void cacheLoadPromise.then((snapshot) => {
-        if (snapshot === null) return;
-        this.autoRenderLayout();
-      });
+      // RFC c7da0bca Phase 3c-2 — deleted the `cacheLoadPromise.then`
+      // chained re-render. The disk cache that fed it is gone; the
+      // lazy loader's render-time `ensureLoadedByIRI` provides the
+      // store coverage that snapshot previously short-circuited.
 
       // RFC-009: Eagerly initialize triple store after vault is ready.
       // onLayoutReady fires after Obsidian finishes mounting vault files.
@@ -1157,76 +1024,14 @@ export default class ExocortexPlugin extends Plugin {
                   "exocmd-fullpath-ready",
                 );
 
-                // Issue #3183 — once the full triple store is warm, run
-                // the background indexer to populate the disk cache. The
-                // next cold start will read this file in ~10 ms and skip
-                // both the fast and full paths for already-indexed classes,
-                // giving the user the complete CREATE+MISC button set
-                // immediately. Errors are swallowed: a failed indexer
-                // run only means the next cold start falls back to the
-                // existing fast-path behaviour — never a regression.
-                //
-                // Issue #3250 — gated behind a mobile-aware predicate. On
-                // iOS the indexer's full vault walk + per-class resolve
-                // caused a 15-30 s restart loop. Root kill mechanism not
-                // isolated from JetsamEvent logs (Obsidian absent from the
-                // sample crash reports) — most likely candidates are
-                // memory-pressure-driven per-process-limit kills or
-                // main-thread-block watchdog kills, since both are
-                // consistent with a synchronous full-vault scan on a
-                // memory-constrained device. Mobile users skip the indexer
-                // by default; the toggle re-enables it for power users
-                // (iPad Pro etc). Desktop ignores the toggle — indexer
-                // always runs there.
-                if (
-                  !shouldRunExocmdIndexer(
-                    Platform.isMobile,
-                    this.settings.exocmdBindingsCacheEnabledOnMobile,
-                  )
-                ) {
-                  this.logger.info(
-                    "[ExocortexPlugin] exocmd-bindings indexer skipped " +
-                      "(mobile platform, opt-in toggle disabled; see #3250)",
-                  );
-                } else {
-                  try {
-                    const indexer = new ExocmdBindingsIndexer({
-                      cache: bindingsCache,
-                      vaultSource: {
-                        listAllAssets: (): Iterable<FrontmatterRecord> => {
-                          const files = this.app.vault.getMarkdownFiles();
-                          const records: FrontmatterRecord[] = [];
-                          for (const f of files) {
-                            const fm = this.app.metadataCache.getFileCache(f)
-                              ?.frontmatter as Record<string, unknown> | undefined;
-                            records.push({
-                              path: f.path,
-                              frontmatter: fm ?? null,
-                            });
-                          }
-                          return records;
-                        },
-                      },
-                      commandResolver: this.commandResolver,
-                      preconditionEvaluator: this.preconditionEvaluator,
-                      logger: this.logger,
-                    });
-                    const summary = await indexer.runFullScan();
-                    this.logger.info(
-                      `[ExocortexPlugin] exocmd-bindings cache populated`,
-                      {
-                        classesScanned: summary.classesScanned,
-                        classesWritten: summary.classesWritten,
-                        assetsConsidered: summary.assetsConsidered,
-                        errors: summary.errors,
-                      },
-                    );
-                  } catch (err) {
-                    this.logger.warn(
-                      `[ExocortexPlugin] exocmd-bindings indexer failed (non-fatal): ${String(err)}`,
-                    );
-                  }
-                }
+                // RFC c7da0bca Phase 3c-2 — deleted the post-convertVault
+                // indexer block. `ExocmdBindingsIndexer.runFullScan()`
+                // pre-built the disk cache that the next cold start
+                // would have read in ~10 ms. With the cache gone, the
+                // lazy loader populates the store per-render instead,
+                // so the indexer's pre-build has no consumer. The
+                // mobile-skip guard from the band-aid (#3250 / v16.22.1)
+                // becomes moot — there is nothing to skip.
               })
               .catch((err) => {
                 this.logger.error(
