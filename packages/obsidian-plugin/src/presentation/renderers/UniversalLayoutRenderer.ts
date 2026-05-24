@@ -16,8 +16,6 @@ import { ExoLayoutRenderer } from "./ExoLayoutRenderer";
 import { BacklinksCacheManager } from '@plugin/adapters/caching/BacklinksCacheManager';
 import { EventListenerManager } from '@plugin/adapters/events/EventListenerManager';
 import { ButtonGroupsBuilder } from '@plugin/presentation/builders/ButtonGroupsBuilder';
-import type { ExocmdFastResolver } from '@plugin/presentation/builders/button-groups/ExocmdFastResolver';
-import type { ExocmdBindingsCache } from '@plugin/cache/ExocmdBindingsCache';
 import { PanelResolver } from '@plugin/application/services/PanelResolver';
 import { DailyTasksRenderer } from "./DailyTasksRenderer";
 
@@ -72,11 +70,9 @@ export class UniversalLayoutRenderer {
   private exoLayoutRepository: ExoLayoutRepository | null = null;
   private layoutSelector: LayoutSelector | null = null;
   private panelResolver: PanelResolver | null = null;
-  // Issue #3171 — cold-start fast path
-  private fastResolver?: ExocmdFastResolver;
-  private isFullPathReady?: () => boolean;
-  // Issue #3183 — persistent disk cache for exocmd bindings
-  private bindingsCache?: ExocmdBindingsCache;
+  // RFC c7da0bca Phase 3c-3 — dropped `fastResolver`,
+  // `isFullPathReady`, `bindingsCache` private fields. They paired
+  // with the legacy cold-start optimisation paths deleted in 3c-2.
   // RFC c7da0bca Phase 3b-main — on-demand asset-graph loader. When
   // present, render() ensure-loads the active file's frontmatter +
   // class chain + prototype chain before resolving button visibility.
@@ -110,11 +106,8 @@ export class UniversalLayoutRenderer {
       exoLayoutRepository?: ExoLayoutRepository | null;
       layoutSelector?: LayoutSelector | null;
       panelResolver?: PanelResolver;
-      // Issue #3171
-      fastResolver?: ExocmdFastResolver;
-      isFullPathReady?: () => boolean;
-      // Issue #3183
-      bindingsCache?: ExocmdBindingsCache;
+      // RFC c7da0bca Phase 3c-3 — dropped `fastResolver`,
+      // `isFullPathReady`, `bindingsCache` ctor params.
       // RFC c7da0bca Phase 3b-main
       lazyAssetGraphLoader?: LazyAssetGraphLoader;
     },
@@ -133,9 +126,6 @@ export class UniversalLayoutRenderer {
     this.exoLayoutRepository = rfc009Services?.exoLayoutRepository ?? null;
     this.layoutSelector = rfc009Services?.layoutSelector ?? null;
     this.panelResolver = rfc009Services?.panelResolver ?? null;
-    this.fastResolver = rfc009Services?.fastResolver;
-    this.isFullPathReady = rfc009Services?.isFullPathReady;
-    this.bindingsCache = rfc009Services?.bindingsCache;
     this.lazyAssetGraphLoader = rfc009Services?.lazyAssetGraphLoader;
     this.logger = LoggerFactory.create("UniversalLayoutRenderer");
 
@@ -207,9 +197,6 @@ export class UniversalLayoutRenderer {
       refresh: () => this.refresh(),
       notificationService: this.notificationService,
       panelResolver: this.panelResolver ?? undefined,
-      fastResolver: this.fastResolver,
-      isFullPathReady: this.isFullPathReady,
-      bindingsCache: this.bindingsCache,
     });
 
     this.dailyTasksRenderer = new DailyTasksRenderer(

@@ -20,8 +20,6 @@ import {
   createButtonGroupIfVisible,
   DynamicCommandButtonGroupBuilder,
 } from "./button-groups";
-import type { ExocmdFastResolver } from "./button-groups/ExocmdFastResolver";
-import type { ExocmdBindingsCache } from "@plugin/cache/ExocmdBindingsCache";
 import { PanelResolver } from "@plugin/application/services/PanelResolver";
 import { ObsidianApp, ExocortexPluginInterface } from '@plugin/types';
 import { ObsidianCommandPromptAdapter } from "@plugin/infrastructure/adapters/ObsidianCommandPromptAdapter";
@@ -66,27 +64,9 @@ export interface ButtonGroupsBuilderConfig {
    * working until the layout-provider lookup is wired up.
    */
   panelResolver?: PanelResolver;
-  /**
-   * Issue #3171 — cold-start fast-path resolver for `exocmd__Command`
-   * buttons. When provided together with `isFullPathReady`, the dynamic
-   * builder takes the fast path until the full vault triple store has
-   * finished initializing.
-   */
-  fastResolver?: ExocmdFastResolver;
-  /**
-   * Issue #3171 — returns true once the full vault triple store is
-   * ready. Wired to `SPARQLApi.isReady()` in production; tests pass an
-   * inline closure. Must be supplied alongside `fastResolver`.
-   */
-  isFullPathReady?: () => boolean;
-  /**
-   * Issue #3183 — persistent disk cache for resolved exocmd bindings.
-   * Optional; when omitted the dynamic builder skips the cache layer and
-   * falls back to the existing fast/full path strategy. Same instance is
-   * loaded once at plugin onload by `ExocortexPlugin` and shared across
-   * every render so the in-memory snapshot is hit O(1).
-   */
-  bindingsCache?: ExocmdBindingsCache;
+  // RFC c7da0bca Phase 3c-3 — dropped `fastResolver`, `isFullPathReady`,
+  // `bindingsCache` optional fields. They paired with the legacy
+  // cold-start optimisation paths deleted in Phase 3c-2.
 }
 
 /**
@@ -147,9 +127,6 @@ export class ButtonGroupsBuilder {
           preconditionEvaluator,
           commandExecutionFlow,
           panelResolver,
-          fastResolver: config.fastResolver,
-          isFullPathReady: config.isFullPathReady,
-          bindingsCache: config.bindingsCache,
         }),
       );
     }
