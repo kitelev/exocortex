@@ -110,14 +110,24 @@ export class LazyAssetGraphLoader {
     if (depth >= MAX_LAZY_DEPTH) return;
     const iri = this.converter.notePathToIRI(file.path).value;
     if (this.loadedIRIs.has(iri)) return;
+
+    // Coalesce concurrent renders: setting the loaded mark BEFORE the
+    // `await` means a second `ensureFileLoaded(file)` fired in the same
+    // tick short-circuits via `loadedIRIs.has`. This avoids racing two
+    // `convertNote` calls for the same asset.
     this.loadedIRIs.add(iri);
-
-    const triples = await this.converter.convertNote(file);
-    for (const t of triples) {
-      await this.store.add(t);
+    try {
+      const triples = await this.converter.convertNote(file);
+      await this.store.addAll(triples);
+      await this.walkClassAndPrototypeRelations(triples, depth + 1);
+    } catch (err) {
+      // Rollback the loaded mark so the caller can retry. Without this
+      // a thrown `convertNote` would poison the IRI for the session —
+      // the next ensure-call would short-circuit on the loaded mark
+      // while the store has zero triples for the asset.
+      this.loadedIRIs.delete(iri);
+      throw err;
     }
-
-    await this.walkClassAndPrototypeRelations(triples, depth + 1);
   }
 
   /**

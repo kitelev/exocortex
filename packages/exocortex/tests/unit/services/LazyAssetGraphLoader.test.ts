@@ -368,8 +368,10 @@ describe("LazyAssetGraphLoader", () => {
       // The depth bound caps the chain — exact reachable depth depends on
       // how depth is incremented; the contract is "≤ MAX_LAZY_DEPTH + 1
       // distinct files for a starting file at depth 0".
-      expect(loader.loadedCount).toBeLessThanOrEqual(MAX_LAZY_DEPTH + 1);
-      expect(loader.loadedCount).toBeGreaterThanOrEqual(MAX_LAZY_DEPTH - 1);
+      // Entry at depth 0 increments to depth 1 → 2 → ... up to MAX_LAZY_DEPTH.
+      // At depth === MAX_LAZY_DEPTH, ensureFileLoaded returns before adding,
+      // so exactly MAX_LAZY_DEPTH distinct files end up loaded.
+      expect(loader.loadedCount).toBe(MAX_LAZY_DEPTH);
     });
   });
 
@@ -400,6 +402,46 @@ describe("LazyAssetGraphLoader", () => {
       await loader.ensureLoadedByIRI(pathToIRI("task.md"));
 
       expect(converter.callCounts.get("task.md")).toBe(1);
+    });
+  });
+
+  describe("throw recovery", () => {
+    it("rolls back loadedIRIs on convertNote throw, allowing successful retry", async () => {
+      const file = makeFile("flaky.md");
+      const subject = pathToIRI("flaky.md");
+      let callCount = 0;
+
+      // Custom converter: throws on first call, succeeds on second.
+      const flakyConverter: INoteConverter = {
+        convertNote: async (_f: IFile): Promise<Triple[]> => {
+          callCount += 1;
+          if (callCount === 1) {
+            throw new Error("simulated transient parse error");
+          }
+          return [new Triple(subject, labelPred, new Literal("Flaky"))];
+        },
+        notePathToIRI: pathToIRI,
+      };
+      const flakyLoader = new LazyAssetGraphLoader(
+        flakyConverter,
+        resolver,
+        store,
+      );
+
+      // First call: throws; loadedIRIs must NOT retain the IRI.
+      await expect(flakyLoader.ensureFileLoaded(file)).rejects.toThrow(
+        "simulated transient parse error",
+      );
+      expect(flakyLoader.isLoaded(subject)).toBe(false);
+      expect(flakyLoader.loadedCount).toBe(0);
+
+      // Second call: succeeds; store now has the triples.
+      await flakyLoader.ensureFileLoaded(file);
+      expect(flakyLoader.isLoaded(subject)).toBe(true);
+      expect(flakyLoader.loadedCount).toBe(1);
+      const match = await store.match(subject, undefined, undefined);
+      expect(match).toHaveLength(1);
+      expect(callCount).toBe(2);
     });
   });
 
