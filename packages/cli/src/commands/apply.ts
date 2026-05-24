@@ -17,6 +17,7 @@ import {
   EffortStatusWorkflow,
   StatusTimestampService,
   TaskStatusService,
+  createVaultFrontmatterClassLabelResolver,
   vaultPathToIRI,
   IRI,
   liveClock,
@@ -201,11 +202,20 @@ async function executeOnTarget(
     renameToUidService,
     folderRepairService,
   });
+  // Issue #3258: wire a vault-frontmatter-backed ClassLabelToUidResolver so
+  // CLI `apply` emits UID-form `exo__Instance_class` (parity with UI button
+  // path, which wires `createObsidianClassLabelResolver(app)`). Without this,
+  // label-form `grounding.targetClass` (e.g. `"ems__Task"`) passed through
+  // untouched, producing `"[[ems__Task]]"` instead of `"[[1b20a8f0-...]]"` in
+  // created frontmatter. Triple-store lookup is insufficient here because
+  // NoteToRDFConverter substitutes class-shaped string literals with class
+  // IRIs at predicate `exo:Asset_label` (Issue #2782/#2959), so a vault scan
+  // by frontmatter is required.
   const groundingExecutor = new GroundingExecutor(
     nodeFsAdapter,
     nodeFsAdapter,
     serviceRegistry,
-    undefined,
+    createVaultFrontmatterClassLabelResolver(nodeFsAdapter),
     { clock, uidGenerator: uidGen },
   );
 
