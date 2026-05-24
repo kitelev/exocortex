@@ -445,6 +445,96 @@ describe("LazyAssetGraphLoader", () => {
     });
   });
 
+  describe("forget", () => {
+    it("drops the IRI from the loaded set so the next ensure re-walks", async () => {
+      const file = makeFile("task.md");
+      const subject = pathToIRI("task.md");
+      converter.registerFile(file, []);
+
+      await loader.ensureFileLoaded(file);
+      expect(loader.isLoaded(subject)).toBe(true);
+      expect(converter.callCounts.get("task.md")).toBe(1);
+
+      loader.forget(subject);
+      expect(loader.isLoaded(subject)).toBe(false);
+      expect(loader.loadedCount).toBe(0);
+
+      // Re-ensure: convertNote is invoked again, IRI is back in the set.
+      await loader.ensureFileLoaded(file);
+      expect(loader.isLoaded(subject)).toBe(true);
+      expect(converter.callCounts.get("task.md")).toBe(2);
+    });
+
+    it("is a no-op for an IRI that was never loaded", () => {
+      const subject = pathToIRI("never-loaded.md");
+      loader.forget(subject);
+      expect(loader.loadedCount).toBe(0);
+      expect(loader.isLoaded(subject)).toBe(false);
+    });
+
+    it("does NOT cascade to class/prototype chain entries", async () => {
+      const instance = makeFile("instance.md");
+      const proto = makeFile("Prototype.md");
+
+      converter.registerFile(instance, [
+        new Triple(
+          pathToIRI("instance.md"),
+          prototypePred,
+          pathToIRI("Prototype.md"),
+        ),
+      ]);
+      converter.registerFile(proto, []);
+      resolver.register(proto);
+
+      await loader.ensureFileLoaded(instance);
+      expect(loader.loadedCount).toBe(2);
+      expect(loader.isLoaded(pathToIRI("Prototype.md"))).toBe(true);
+
+      // Forget only the instance; the prototype's mark must survive.
+      loader.forget(pathToIRI("instance.md"));
+      expect(loader.isLoaded(pathToIRI("instance.md"))).toBe(false);
+      expect(loader.isLoaded(pathToIRI("Prototype.md"))).toBe(true);
+      expect(loader.loadedCount).toBe(1);
+    });
+  });
+
+  describe("clearAll", () => {
+    it("wipes every IRI from the loaded set", async () => {
+      const a = makeFile("A.md");
+      const b = makeFile("B.md");
+      converter.registerFile(a, []);
+      converter.registerFile(b, []);
+
+      await loader.ensureFileLoaded(a);
+      await loader.ensureFileLoaded(b);
+      expect(loader.loadedCount).toBe(2);
+
+      loader.clearAll();
+      expect(loader.loadedCount).toBe(0);
+      expect(loader.isLoaded(pathToIRI("A.md"))).toBe(false);
+      expect(loader.isLoaded(pathToIRI("B.md"))).toBe(false);
+    });
+
+    it("permits a fresh ensure cycle after clearing", async () => {
+      const file = makeFile("task.md");
+      converter.registerFile(file, []);
+
+      await loader.ensureFileLoaded(file);
+      expect(converter.callCounts.get("task.md")).toBe(1);
+
+      loader.clearAll();
+      await loader.ensureFileLoaded(file);
+      expect(converter.callCounts.get("task.md")).toBe(2);
+      expect(loader.loadedCount).toBe(1);
+    });
+
+    it("is a no-op when the set is already empty", () => {
+      expect(loader.loadedCount).toBe(0);
+      loader.clearAll();
+      expect(loader.loadedCount).toBe(0);
+    });
+  });
+
   describe("clearForTests", () => {
     it("resets the loaded set so subsequent loads re-fetch", async () => {
       const file = makeFile("task.md");

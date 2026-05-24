@@ -67,16 +67,13 @@ export interface INoteConverter {
  *
  * # Out of scope for Phase 2
  *
- * - **No edit invalidation.** When an asset is edited mid-session,
- *   stale triples remain in the store. Phase 3's plugin wiring will
- *   call a `forget` API or re-build the working store on file events.
- *   TODO(Phase 3b): expose `forget(iri)` + `clearAll()` methods and
- *   wire them into `VaultRDFIndexer.refresh()` +
- *   `metadataCache.on("changed")`. Without this, a refresh-clear-then-
- *   repopulate cycle leaves `loadedIRIs` claiming coverage of assets
- *   whose triples were just cleared from the store. Safe during 3a
- *   (renders still go through the existing fast/full-path chain),
- *   but a blocker before 3b makes the loader render-authoritative.
+ * - **`forget(iri)` + `clearAll()` exist but are not yet wired.**
+ *   Phase 3b-prep (this PR) ships the API; Phase 3b-main wires
+ *   `forget` to `metadataCache.on("changed")` and `clearAll` next
+ *   to every `VaultRDFIndexer.refresh()` call site. Until 3b-main
+ *   lands, the loader is still write-only at startup (Phase 3a
+ *   bootstrap) and renders bypass it — so invalidation is moot
+ *   on production at the moment.
  * - **No TBox preload.** Phase 3 wires startup bootstrap of
  *   `assetspaces/{exo,ems,ims,exocmd}` by calling `ensureFileLoaded`
  *   on each ontology asset upfront.
@@ -161,6 +158,50 @@ export class LazyAssetGraphLoader {
    */
   isLoaded(iri: IRI): boolean {
     return this.loadedIRIs.has(iri.value);
+  }
+
+  /**
+   * Mark a single IRI as no-longer-loaded so the next ensure-call for
+   * this asset re-walks frontmatter + chains afresh.
+   *
+   * # When to call
+   *
+   * Wire this to `metadataCache.on("changed")` so an asset edit
+   * invalidates the loader's monotonic load-mark. The underlying
+   * triple-store cleanup is already handled by
+   * `VaultRDFIndexer.updateFile()` (which does
+   * `removeFileTriples` + re-convert + re-add), so this method ONLY
+   * manages the `loadedIRIs` set — it does NOT touch the store, and
+   * it does NOT cascade to the asset's downstream class / prototype
+   * chain (those entries are still valid until they too are edited).
+   *
+   * No-op when the IRI was never loaded.
+   *
+   * @param iri - The IRI to drop from the loaded-set.
+   */
+  forget(iri: IRI): void {
+    this.loadedIRIs.delete(iri.value);
+  }
+
+  /**
+   * Wipe the entire loaded-set.
+   *
+   * # When to call
+   *
+   * Wire this alongside any `tripleStore.clear()` call — most
+   * importantly `VaultRDFIndexer.refresh()`, which clears the store
+   * and re-runs `convertVault()`. After such a refresh the store is
+   * re-populated by the existing chain, but the loader still believes
+   * every IRI in `loadedIRIs` is covered. The next render's
+   * `ensureFileLoaded` would short-circuit on the stale mark while
+   * the lazy walker has lost its incremental coverage. `clearAll()`
+   * resets that invariant.
+   *
+   * Like `forget`, this method does NOT touch the triple store —
+   * store-side cleanup is the caller's responsibility.
+   */
+  clearAll(): void {
+    this.loadedIRIs.clear();
   }
 
   /**
