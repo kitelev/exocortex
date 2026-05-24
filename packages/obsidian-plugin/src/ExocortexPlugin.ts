@@ -472,13 +472,21 @@ export default class ExocortexPlugin extends Plugin {
           exoLayoutRepository: this.exoLayoutRepository,
           layoutSelector: this.layoutSelector,
           panelResolver: this.panelResolver,
-          fastResolver: exocmdFastResolver,
-          isFullPathReady: () => this.sparql.isReady(),
-          bindingsCache,
-          // RFC c7da0bca Phase 3b-main — renderer now drives the lazy
-          // loader on every render. Render calls ensure-load for the
-          // active file before button resolution, so preconditions
-          // see fresh class + prototype chains in the store.
+          // RFC c7da0bca Phase 3c-1 — stop wiring the legacy
+          // cold-start optimisation paths (fast-resolver + bindings-
+          // cache + isFullPathReady) into the renderer. The lazy
+          // loader populates the triple store before every render,
+          // so the builder's `useFastPath` / `cachedBindings`
+          // branches in `DynamicCommandButtonGroupBuilder`
+          // naturally degrade to the full path
+          // (`resolveForAssetMulti` against the lazy-fed store)
+          // when these are undefined. The legacy objects are still
+          // constructed above for now — Phase 3c-2 will delete
+          // the construction once parity is confirmed in production.
+          //
+          // RFC c7da0bca Phase 3b-main — renderer drives the lazy
+          // loader on every render. `ensureLoadedByIRI` primes the
+          // store for the active file before button resolution.
           lazyAssetGraphLoader: this.lazyAssetGraphLoader,
         },
       );
