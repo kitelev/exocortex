@@ -65,17 +65,18 @@ Feature: Starter-kit grounding execution (RFC 94e520da § Phase 6)
       | f32de9a1-f62b-4406-8610-31af5003ba29 | property_set    | real         | Set status to Cancelled |
       | f9e23c9e-174b-456c-a2f0-c11f811a7ee6 | composite       | real         | Transition to Done (status + end + resolution) |
 
-  # Task 4.3 (onto-RFC 74c5e336 §Phase 4) — verifies the create_instance
-  # behaviour change: copy-from-target frontmatter inheritance + configurable
-  # back-link via exocmd__Grounding_linkBackProperty, with the legacy
-  # exo__Asset_source back-link suppressed when linkBackProperty is set.
-  Scenario: create_instance grounding copies fields from $target and writes configurable back-link
+  # RFC 32445c1c — homoiconic create_instance cutover. Step 4 copy-from-target
+  # removed; properties on $target NEVER reach the new instance unless an
+  # explicit exocmd__Grounding_inheritanceRule is attached. The configurable
+  # back-link via exocmd__Grounding_linkBackProperty (legacy
+  # exo__Asset_source suppression) still applies.
+  Scenario: create_instance grounding does NOT copy fields from $target; only writes configurable back-link
     Given a Grounding with type "create_instance"
     And targetClass "ems__Task"
     And linkBackProperty "ems__Effort_prevIteration"
     And a $target "ems__Task" with frontmatter "exo__Asset_prototype: [[X]]"
     When I execute the grounding
     Then a new "ems__Task" is created
-    And the created asset has "exo__Asset_prototype: [[X]]"
+    And the created asset does NOT have "exo__Asset_prototype"
     And the created asset has "ems__Effort_prevIteration" pointing to $target
     And the created asset does NOT have "exo__Asset_source"
