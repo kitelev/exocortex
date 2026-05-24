@@ -54,8 +54,16 @@ export function createVaultFrontmatterClassLabelResolver(
     }
 
     // Secondary: match by aliases. `findFilesByMetadata` treats array values
-    // by "any element equals", which matches the plugin resolver's aliases
-    // array semantics. String-valued `aliases` are matched literally.
+    // by "any element equals". Note: the underlying `IFileSystemMetadataProvider`
+    // implementation may normalise alias values before comparison (NodeFsAdapter
+    // strips brackets/quotes/whitespace via `normalizeValue`), so a stored alias
+    // like `"[[ems__Task]]"` would match label `"ems__Task"` in CLI. The plugin
+    // counterpart (`ObsidianClassLabelResolver`) uses strict `===`. For typical
+    // production data — class TBox files store plain shortnames like
+    // `"ems__Task"`, not wikilink-form strings — both resolvers yield identical
+    // results. The looser CLI semantics is forgiveness-only (matches a superset
+    // of cases the plugin accepts); it never returns a wrong UID, only an extra
+    // legitimate match. Documented for parity transparency.
     const byAlias = await metadataProvider.findFilesByMetadata({
       aliases: label,
     });

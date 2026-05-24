@@ -2,14 +2,14 @@
  * Issue #3258 — CLI `apply` must emit UID-form `exo__Instance_class` for the
  * created instance, matching the UI button path's output.
  *
- * Bug reproduction: prior to wiring `createTripleStoreClassLabelResolver`,
+ * Bug reproduction: prior to wiring `createVaultFrontmatterClassLabelResolver`,
  * `apply` passed `grounding.targetClass = "ems__Task"` (label-form) through
  * to `GroundingExecutor.executeCreateInstance` unchanged, producing
  * `exo__Instance_class: "[[ems__Task]]"`. The plugin's UI button path
  * (wires `createObsidianClassLabelResolver(app)`) emits canonical UID-form
  * `exo__Instance_class: "[[1b20a8f0-...]]"`.
  *
- * After fix: CLI `apply` wires `createTripleStoreClassLabelResolver(tripleStore)`
+ * After fix: CLI `apply` wires `createVaultFrontmatterClassLabelResolver(nodeFsAdapter)`
  * and emits the same UID-form.
  *
  * Integration test exercises real `applyCommand().parseAsync(...)` against a
