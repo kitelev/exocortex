@@ -560,6 +560,169 @@ describe("LazyAssetGraphLoader", () => {
     });
   });
 
+  describe("race — forget/clearAll during in-flight ensureFileLoaded", () => {
+    type Deferred<T> = {
+      promise: Promise<T>;
+      resolve: (v: T) => void;
+      reject: (err: unknown) => void;
+    };
+    const makeDeferred = <T,>(): Deferred<T> => {
+      let resolve!: (v: T) => void;
+      let reject!: (err: unknown) => void;
+      const promise = new Promise<T>((res, rej) => {
+        resolve = res;
+        reject = rej;
+      });
+      return { promise, resolve, reject };
+    };
+
+    it("forget during await convertNote skips post-await store write", async () => {
+      const subject = pathToIRI("racing.md");
+      const file = makeFile("racing.md");
+      const deferred = makeDeferred<Triple[]>();
+
+      const slowConverter: INoteConverter = {
+        convertNote: () => deferred.promise,
+        notePathToIRI: pathToIRI,
+      };
+      const racingLoader = new LazyAssetGraphLoader(
+        slowConverter,
+        resolver,
+        store,
+      );
+
+      const inflight = racingLoader.ensureFileLoaded(file);
+      expect(racingLoader.isLoaded(subject)).toBe(true);
+
+      racingLoader.forget(subject);
+      expect(racingLoader.isLoaded(subject)).toBe(false);
+
+      deferred.resolve([new Triple(subject, labelPred, new Literal("Racing"))]);
+      await inflight;
+
+      const storeContents = await store.match(subject, undefined, undefined);
+      expect(storeContents).toHaveLength(0);
+      expect(racingLoader.isLoaded(subject)).toBe(false);
+      expect(racingLoader.loadedCount).toBe(0);
+    });
+
+    it("clearAll during await convertNote skips post-await store write", async () => {
+      const subject = pathToIRI("clearracing.md");
+      const file = makeFile("clearracing.md");
+      const deferred = makeDeferred<Triple[]>();
+
+      const slowConverter: INoteConverter = {
+        convertNote: () => deferred.promise,
+        notePathToIRI: pathToIRI,
+      };
+      const racingLoader = new LazyAssetGraphLoader(
+        slowConverter,
+        resolver,
+        store,
+      );
+
+      const inflight = racingLoader.ensureFileLoaded(file);
+      expect(racingLoader.isLoaded(subject)).toBe(true);
+
+      racingLoader.clearAll();
+      expect(racingLoader.loadedCount).toBe(0);
+
+      deferred.resolve([new Triple(subject, labelPred, new Literal("Cleared"))]);
+      await inflight;
+
+      const storeContents = await store.match(subject, undefined, undefined);
+      expect(storeContents).toHaveLength(0);
+      expect(racingLoader.loadedCount).toBe(0);
+    });
+
+    it("forget(other-IRI) during in-flight child ensureFileLoaded does NOT orphan-mark the child (PR #3257 reviewer regression)", async () => {
+      // Setup: F (parent file) has class G. ensureFileLoaded(F) walks
+      // into ensureLoadedByIRI(G). While G's convertNote is in-flight,
+      // forget(F) fires (e.g. user edits F). Earlier generation-counter
+      // design tripped G's post-await check too — leaving G marked
+      // loaded with zero triples in the store. The mark-presence
+      // check (only bail when OUR mark is gone) prevents this orphan.
+      const fIri = pathToIRI("F.md");
+      const gIri = pathToIRI("G.md");
+      const fFile = makeFile("F.md");
+      const gFile = makeFile("G.md");
+
+      const gDeferred = makeDeferred<Triple[]>();
+      let gConvertStarted = false;
+      const racingConverter: INoteConverter = {
+        convertNote: (file: IFile) => {
+          if (file.path === "G.md") {
+            gConvertStarted = true;
+            return gDeferred.promise;
+          }
+          // F's triples — emits the class link to G
+          return Promise.resolve([
+            new Triple(fIri, instanceClassPred, gIri),
+          ]);
+        },
+        notePathToIRI: pathToIRI,
+      };
+      const racingResolver = new (class implements IFileResolver {
+        resolveByIRI(iri: IRI): IFile | null {
+          if (iri.value === gIri.value) return gFile;
+          return null;
+        }
+      })();
+      const racingLoader = new LazyAssetGraphLoader(
+        racingConverter,
+        racingResolver,
+        store,
+      );
+
+      // Kick off F's load. F's convertNote resolves synchronously
+      // (returns a resolved promise), so the walk proceeds into G.
+      const inflight = racingLoader.ensureFileLoaded(fFile);
+
+      // Wait for G's convertNote to be in flight.
+      await new Promise<void>((r) => {
+        const tick = () => (gConvertStarted ? r() : setImmediate(tick));
+        tick();
+      });
+
+      // Both F and G are now marked loaded (F is done, G is pre-await).
+      expect(racingLoader.isLoaded(fIri)).toBe(true);
+      expect(racingLoader.isLoaded(gIri)).toBe(true);
+
+      // Race: forget F (NOT G). With the buggy generation-counter
+      // design, G's post-await check would trip even though only F
+      // was forgotten — G would orphan-mark.
+      racingLoader.forget(fIri);
+      expect(racingLoader.isLoaded(fIri)).toBe(false);
+      expect(racingLoader.isLoaded(gIri)).toBe(true);
+
+      // Let G's convertNote complete.
+      gDeferred.resolve([new Triple(gIri, labelPred, new Literal("G"))]);
+      await inflight;
+
+      // The fix: G's mark survives AND G's triples landed in the store.
+      // Under the buggy generation-counter design, this assertion fails:
+      // the check tripped, G short-circuited at line 147 without
+      // store.addAll — G is marked loaded but has 0 triples.
+      expect(racingLoader.isLoaded(gIri)).toBe(true);
+      const gContents = await store.match(gIri, undefined, undefined);
+      expect(gContents.length).toBeGreaterThan(0);
+    });
+
+    it("no race → triples are still written normally (sanity)", async () => {
+      const file = makeFile("clean.md");
+      const subject = pathToIRI("clean.md");
+      converter.registerFile(file, [
+        new Triple(subject, labelPred, new Literal("Clean")),
+      ]);
+
+      await loader.ensureFileLoaded(file);
+
+      const storeContents = await store.match(subject, undefined, undefined);
+      expect(storeContents).toHaveLength(1);
+      expect(loader.isLoaded(subject)).toBe(true);
+    });
+  });
+
   describe("clearForTests", () => {
     it("resets the loaded set so subsequent loads re-fetch", async () => {
       const file = makeFile("task.md");

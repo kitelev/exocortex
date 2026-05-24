@@ -431,6 +431,15 @@ export class LayoutService {
 
     // Refresh the SPARQL index
     await this.sparqlService.refresh();
+    // TODO(RFC c7da0bca Phase 3c): pair with
+    // `plugin.lazyAssetGraphLoader.clearAll()` here. The lazy loader
+    // is currently wired to `metadataCache.on("changed")` for per-file
+    // invalidation; a full layout-refresh implies a multi-file store
+    // rebuild (via VaultRDFIndexer.refresh) and the loader's
+    // `loadedIRIs` set is now stale for any asset other than the
+    // touched layout file. Deferred to 3c because LayoutService
+    // doesn't yet take a plugin reference; threading it through here
+    // is scope creep for 3b-main.
 
     // Re-render
     return this.renderLayout(layoutFile, { useCache: false });

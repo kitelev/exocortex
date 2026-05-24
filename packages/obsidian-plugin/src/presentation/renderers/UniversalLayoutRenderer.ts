@@ -9,7 +9,8 @@ import { ActionButtonsGroup } from '@plugin/presentation/components/ActionButton
 import { IVaultAdapter, MetadataExtractor, INotificationService } from "exocortex";
 import { FolderRepairService } from "exocortex";
 import { CommandResolver, PreconditionEvaluator, GroundingExecutor } from "exocortex";
-import type { LayoutSelector, RelationColumnSetResolver, ITripleStore } from "exocortex";
+import type { LayoutSelector, RelationColumnSetResolver, ITripleStore, LazyAssetGraphLoader } from "exocortex";
+import { IRI, vaultPathToIRI } from "exocortex";
 import type { ExoLayoutRepository } from "@plugin/infrastructure/repositories";
 import { ExoLayoutRenderer } from "./ExoLayoutRenderer";
 import { BacklinksCacheManager } from '@plugin/adapters/caching/BacklinksCacheManager';
@@ -76,6 +77,10 @@ export class UniversalLayoutRenderer {
   private isFullPathReady?: () => boolean;
   // Issue #3183 — persistent disk cache for exocmd bindings
   private bindingsCache?: ExocmdBindingsCache;
+  // RFC c7da0bca Phase 3b-main — on-demand asset-graph loader. When
+  // present, render() ensure-loads the active file's frontmatter +
+  // class chain + prototype chain before resolving button visibility.
+  private lazyAssetGraphLoader?: LazyAssetGraphLoader;
   private exoLayoutRenderer!: ExoLayoutRenderer;
 
   private dependencyResolver: PropertyDependencyResolver;
@@ -110,6 +115,8 @@ export class UniversalLayoutRenderer {
       isFullPathReady?: () => boolean;
       // Issue #3183
       bindingsCache?: ExocmdBindingsCache;
+      // RFC c7da0bca Phase 3b-main
+      lazyAssetGraphLoader?: LazyAssetGraphLoader;
     },
   ) {
     this.app = app;
@@ -129,6 +136,7 @@ export class UniversalLayoutRenderer {
     this.fastResolver = rfc009Services?.fastResolver;
     this.isFullPathReady = rfc009Services?.isFullPathReady;
     this.bindingsCache = rfc009Services?.bindingsCache;
+    this.lazyAssetGraphLoader = rfc009Services?.lazyAssetGraphLoader;
     this.logger = LoggerFactory.create("UniversalLayoutRenderer");
 
     // Create ReactRenderer with ErrorBoundary enabled for graceful error handling.
@@ -285,6 +293,26 @@ export class UniversalLayoutRenderer {
 
       const renderHeader = (c: HTMLElement, id: string, t: string) =>
         this.sectionStateManager.renderHeader(c, id, t, this.eventListenerManager);
+
+      // RFC c7da0bca Phase 3b-main — ensure the active file + its class
+      // chain + prototype chain are in the triple store before button
+      // resolution. The loader is idempotent + cycle-safe; per-render
+      // cost is bounded by the chain depth (typically 3-5 hops).
+      // Failure here is non-fatal — the existing fast/full-path chain
+      // still feeds the same triples on its own schedule, so a thrown
+      // ensure just means buttons render against whatever is already
+      // in the store.
+      if (this.lazyAssetGraphLoader) {
+        try {
+          await this.lazyAssetGraphLoader.ensureLoadedByIRI(
+            new IRI(vaultPathToIRI(currentFile.path)),
+          );
+        } catch (err) {
+          this.logger.warn(
+            `[lazy-loader] ensureLoadedByIRI failed for ${currentFile.path}: ${String(err)}`,
+          );
+        }
+      }
 
       const buttonGroups = await this.buttonGroupsBuilder.build(currentFile);
       if (buttonGroups.length > 0) {

@@ -238,6 +238,43 @@ export default class ExocortexPlugin extends Plugin {
         obsidianFileResolver,
         tripleStore,
       );
+
+      // RFC c7da0bca Phase 3b-main — wire forget() into metadataCache
+      // changes. When Obsidian re-parses a file's frontmatter, the
+      // VaultRDFIndexer's own changed-handler is already responsible
+      // for store-side cleanup (removeFileTriples + re-convert + addAll);
+      // here we just invalidate the loader's monotonic load-mark so the
+      // next render re-walks. IRI built via `lazyConverter.notePathToIRI`
+      // to honour the canonical-form precondition documented on
+      // `LazyAssetGraphLoader.forget`. The forget is no-op when the
+      // file was never loaded.
+      this.registerEvent(
+        this.app.metadataCache.on("changed", (file) => {
+          this.lazyAssetGraphLoader?.forget(
+            lazyConverter.notePathToIRI(file.path),
+          );
+        }),
+      );
+      // Rename: forget the OLD path's IRI — that's the load-mark the
+      // loader keyed by. Obsidian fires the post-rename `changed`
+      // event for the new path separately, so the new path's
+      // freshly-loaded mark lands on the next render.
+      this.registerEvent(
+        this.app.vault.on("rename", (_file, oldPath) => {
+          this.lazyAssetGraphLoader?.forget(
+            lazyConverter.notePathToIRI(oldPath),
+          );
+        }),
+      );
+      // Delete: forget the IRI so its load-mark is reclaimed.
+      this.registerEvent(
+        this.app.vault.on("delete", (file) => {
+          this.lazyAssetGraphLoader?.forget(
+            lazyConverter.notePathToIRI(file.path),
+          );
+        }),
+      );
+
       // Vault changes invalidate the cached UID→path index.
       this.registerEvent(
         this.app.metadataCache.on("changed", () =>
@@ -438,6 +475,11 @@ export default class ExocortexPlugin extends Plugin {
           fastResolver: exocmdFastResolver,
           isFullPathReady: () => this.sparql.isReady(),
           bindingsCache,
+          // RFC c7da0bca Phase 3b-main — renderer now drives the lazy
+          // loader on every render. Render calls ensure-load for the
+          // active file before button resolution, so preconditions
+          // see fresh class + prototype chains in the store.
+          lazyAssetGraphLoader: this.lazyAssetGraphLoader,
         },
       );
 
@@ -815,6 +857,16 @@ export default class ExocortexPlugin extends Plugin {
           const initPromise = this.eagerInitPromise ?? Promise.resolve();
           void initPromise
             .then(() => this.sparql.refresh())
+            .then(() => {
+              // RFC c7da0bca Phase 3b-main — drop the lazy loader's
+              // monotonic load-mark now that the store has been
+              // rebuilt from scratch by `sparql.refresh()`. Order
+              // matters: `clearAll()` MUST run AFTER refresh()'s
+              // await chain (`clear` + `convertVault` + `addAll`
+              // + `runInference`) resolves, so a concurrent render
+              // cannot re-populate `loadedIRIs` mid-rebuild.
+              this.lazyAssetGraphLoader?.clearAll();
+            })
             .then(async () => {
               this.commandResolver.invalidateCache();
               this.preconditionEvaluator.invalidateCache();

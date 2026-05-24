@@ -216,9 +216,10 @@ describe("ExocortexPlugin", () => {
       // + 3 PanelResolver invalidations (RFC-024 Phase 3 — layout/binding `changed`, `deleted`, vault `rename`) = 11
       // + 3 ObsidianQueryBodyResolver cache invalidations (RFC c78cc5c8 Phase 1a — metadata `changed`, vault `delete`, vault `rename`) = 14
       // + 3 ExocmdFastResolver cache invalidations (Issue #3171 — metadata `changed`, vault `delete`, vault `rename`) = 17
+      // + 3 LazyAssetGraphLoader.forget (RFC c7da0bca Phase 3b-main — metadata `changed`, vault `rename`, vault `delete`) = 20
       // Issue #3190 — bootstrap-resolved gate is folded into the existing
       // `metadataCache.on("resolved")` handler (no additional registerEvent).
-      expect(plugin.registerEvent).toHaveBeenCalledTimes(17);
+      expect(plugin.registerEvent).toHaveBeenCalledTimes(20);
       expect(mockLogger.info).toHaveBeenCalledWith("Exocortex Plugin loaded successfully");
     });
 
