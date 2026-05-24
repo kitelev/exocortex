@@ -2323,5 +2323,31 @@ describe("ExocortexPlugin", () => {
         "exocmd-fullpath-ready",
       );
     });
+
+    // RFC c7da0bca Phase 4 — the lazy-tbox-bootstrap previously skipped
+    // mobile via `if (Platform.isMobile) return;`. After Phase 3c
+    // deleted the parallel fast-resolver chain, the bootstrap is the
+    // sole code path that places `exocmd__CommandBinding` triples in
+    // the store before first render. Skipping it on mobile produced a
+    // 20-30 s "buttons appear with the second Notice" UX regression
+    // (observed on v16.26.5, iPhone). The guard was removed; this
+    // test pins that the bootstrap fires on mobile.
+    it("emits 'lazy-tbox-bootstrap-start' on mobile (Phase 4 unguard regression)", async () => {
+      const obsidianMock = await import("obsidian");
+      const platform = (obsidianMock as unknown as { Platform: { isMobile: boolean; isDesktop: boolean } }).Platform;
+      const originalIsMobile = platform.isMobile;
+      const originalIsDesktop = platform.isDesktop;
+      platform.isMobile = true;
+      platform.isDesktop = false;
+      try {
+        await plugin.onload();
+        await flushPromises();
+
+        expect(markSpy).toHaveBeenCalledWith("lazy-tbox-bootstrap-start");
+      } finally {
+        platform.isMobile = originalIsMobile;
+        platform.isDesktop = originalIsDesktop;
+      }
+    });
   });
 });

@@ -2,7 +2,6 @@ import "reflect-metadata";
 import {
   MarkdownPostProcessorContext,
   MarkdownView,
-  Platform,
   Plugin,
   TFile,
 } from "obsidian";
@@ -908,26 +907,27 @@ export default class ExocortexPlugin extends Plugin {
       this.app.workspace.onLayoutReady(() => {
         const loader = this.lazyAssetGraphLoader;
         if (!loader) return;
-        // RFC c7da0bca Phase 3a — desktop-only bootstrap. The whole
-        // RFC is built to reduce mobile cold-start latency (Issue
-        // #3250: 10-30 s MISC→empty→buttons cycle on iPhone).
-        // Walking ~hundreds of TBox files inside the same
-        // `onLayoutReady` tick on mobile would regress the exact
-        // metric we are trying to improve, so skip mobile by default.
-        // Phase 3b switches renders to the loader and decides per-
-        // render whether to walk — that is the correct place to re-
-        // enable mobile usage.
-        if (Platform.isMobile) return;
-        // TODO(Phase 3b) — wire a `loader.forget(iri)` /
-        // `loader.clearAll()` invalidation hook into
-        // `VaultRDFIndexer.refresh()` + `metadataCache.on("changed")`
-        // before the loader becomes authoritative on the render
-        // hot-path. Today the loader's `loadedIRIs` Set is monotonic
-        // and Phase 3a is safe (renders still go through the
-        // existing chain, refresh-clear-then-repopulate is invisible
-        // to button visibility). Once 3b lands, a refresh-then-edit
-        // cycle would leave the loader convinced it covered an
-        // asset that was just cleared from the store.
+        // RFC c7da0bca Phase 4 — bootstrap runs on both desktop AND
+        // mobile. The original Phase 3a mobile-skip guard was
+        // motivated by the concern that walking the TBox folders
+        // alongside the legacy fast-resolver + convertVault chain
+        // would *double* the cold-start work on iPhone — the exact
+        // metric we were trying to improve (Issue #3250: 10-30 s
+        // MISC→empty→buttons cycle).
+        //
+        // After Phase 3c-2/3c-3 deleted the parallel fast-resolver
+        // + bindings-cache + ExocmdBindingsIndexer chain, the
+        // bootstrap is the *only* startup walk. On mobile the
+        // lazy loader is the sole code path that places
+        // `exocmd__CommandBinding` triples into the store before
+        // first render — without bootstrap those bindings are not
+        // reachable from the current asset via class/prototype
+        // walks, so the renderer surfaces zero MISC buttons until
+        // the unrelated SPARQL ASK warm-up eventually triggers
+        // convertVault() (~20-30 s on iPhone). Loading the TBox
+        // folders at onLayoutReady restores parity with desktop
+        // and eliminates the "buttons appear with the second
+        // Notice" UX regression observed on v16.26.5.
         performance.mark("lazy-tbox-bootstrap-start");
         void (async () => {
           try {
@@ -976,10 +976,13 @@ export default class ExocortexPlugin extends Plugin {
                 `(errors=${errorCount}, total loaded set size=${loader.loadedCount})`,
             );
           } catch (err) {
-            // Bootstrap failure must not propagate — the existing fast/full-
-            // path chain remains the production code path during 3a.
+            // Bootstrap failure must not propagate — convertVault() still
+            // runs as part of the SPARQL ASK warm-up downstream and will
+            // eventually populate the store, so buttons still appear
+            // (with the legacy 20-30 s mobile latency). Keep the warn
+            // logged so users can attach it to bug reports.
             this.logger.warn(
-              `[lazy-tbox-bootstrap] failed (non-fatal in Phase 3a): ${String(err)}`,
+              `[lazy-tbox-bootstrap] failed (non-fatal — buttons will still appear via convertVault warm-up): ${String(err)}`,
             );
           }
         })();
