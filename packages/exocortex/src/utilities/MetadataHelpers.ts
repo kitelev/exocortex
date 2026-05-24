@@ -1,3 +1,5 @@
+import { loadDefaultSpec, orderProperties } from "../services/OrderSpecResolver";
+
 export class MetadataHelpers {
   static findAllReferencingProperties(
     metadata: Record<string, unknown>,
@@ -45,9 +47,9 @@ export class MetadataHelpers {
 
     if (typeof value === "string") {
       // Match only wiki-link syntax: [[Page]], [[Page|Alias]], [[folder/Page]]
-      // Use [^\[\]]+ instead of [^\]]+ to avoid catastrophic backtracking (ReDoS)
+      // Use [^[\]]+ instead of [^\]]+ to avoid catastrophic backtracking (ReDoS)
       // This pattern doesn't allow nested brackets, which is correct for wiki-links
-      const wikiLinkRegex = /\[\[([^\[\]]+)\]\]/g;
+      const wikiLinkRegex = /\[\[([^[\]]+)\]\]/g;
       let match;
       while ((match = wikiLinkRegex.exec(value)) !== null) {
         const linkContent = match[1];
@@ -141,19 +143,20 @@ export class MetadataHelpers {
     frontmatter: Record<string, unknown>,
     bodyContent?: string,
   ): string {
-    const frontmatterLines = Object.entries(frontmatter)
+    const ordered = orderProperties(frontmatter, loadDefaultSpec());
+    const frontmatterLines = Object.entries(ordered)
       .map(([key, value]) => {
         if (Array.isArray(value)) {
-          const arrayItems = value.map((item) => `  - ${item}`).join("\n");
+          const arrayItems = value.map((item) => `  - ${String(item)}`).join("\n");
           return `${key}:\n${arrayItems}`;
         }
-        return `${key}: ${value}`;
+        return `${key}: ${String(value)}`;
       })
       .join("\n");
 
     let effectiveBody = bodyContent;
     if (effectiveBody === undefined) {
-      const label = frontmatter["exo__Asset_label"];
+      const label = ordered["exo__Asset_label"];
       if (typeof label === "string" && label.trim() !== "") {
         effectiveBody = `# ${label}`;
       }

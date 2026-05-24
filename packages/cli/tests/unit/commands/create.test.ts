@@ -13,6 +13,10 @@ jest.unstable_mockModule("exocortex", () => ({
   IFileSystemAdapter: {},
   FileNotFoundError: class FileNotFoundError extends Error {},
   FileAlreadyExistsError: class FileAlreadyExistsError extends Error {},
+  registerOrderSpecLoader: jest.fn(),
+  clearOrderSpecLoader: jest.fn(),
+  loadDefaultSpec: jest.fn(() => null),
+  orderProperties: jest.fn((p: unknown) => p),
   Namespace: {
     fromPropertyKey: (key: string) => {
       const match = /^([a-z][a-zA-Z0-9]*)__(.+)$/.exec(key);

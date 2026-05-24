@@ -37,6 +37,7 @@ import {
   NoteToRDFConverter,
 } from "exocortex";
 import { ObsidianFileResolver } from "./infrastructure/ObsidianFileResolver";
+import { registerOrderSpecFromObsidianVault } from "./infrastructure/registerOrderSpecFromObsidianVault";
 import {
   RelationColumnSetRepository,
   ObsidianRelationColumnSetAdapter,
@@ -188,6 +189,11 @@ export default class ExocortexPlugin extends Plugin {
         this.app.metadataCache,
         this.app,
       );
+
+      // RFC 27a7a877 — wire OrderSpecResolver via vault scan.
+      // Loader is invoked lazily on first frontmatter creation; closes over
+      // `app` so vault edits to the spec asset picked up без plugin reload.
+      registerOrderSpecFromObsidianVault(this.app);
 
       const notifier = this.notifier;
       this.sparqlProcessor = new SPARQLCodeBlockProcessor(this, notifier);
