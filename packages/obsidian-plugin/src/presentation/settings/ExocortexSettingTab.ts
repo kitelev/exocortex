@@ -113,6 +113,25 @@ export class ExocortexSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
+      .setName("Enable exocmd bindings cache indexer on mobile")
+      .setDesc(
+        "Build the exocmd-bindings disk cache on mobile (iOS/Android). " +
+          "Off by default because the full-vault scan caused iOS to " +
+          "OOM-kill Obsidian every 15-30 seconds (issue #3250). " +
+          "Enable only if you have a high-memory device (e.g. iPad Pro) " +
+          "and want faster cold-start buttons. Desktop ignores this " +
+          "toggle — the indexer always runs there.",
+      )
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.exocmdBindingsCacheEnabledOnMobile)
+          .onChange(async (value) => {
+            this.plugin.settings.exocmdBindingsCacheEnabledOnMobile = value;
+            await this.plugin.saveSettings();
+          }),
+      );
+
+    new Setting(containerEl)
       .setName("Enable custom layouts")
       .setDesc(
         "Render class-specific layouts defined via exo__Layout assets. " +
