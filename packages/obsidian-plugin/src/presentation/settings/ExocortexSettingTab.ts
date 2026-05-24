@@ -120,7 +120,8 @@ export class ExocortexSettingTab extends PluginSettingTab {
           "OOM-kill Obsidian every 15-30 seconds (issue #3250). " +
           "Enable only if you have a high-memory device (e.g. iPad Pro) " +
           "and want faster cold-start buttons. Desktop ignores this " +
-          "toggle — the indexer always runs there.",
+          "toggle — the indexer always runs there. " +
+          "Changes take effect on the next Obsidian restart.",
       )
       .addToggle((toggle) =>
         toggle
