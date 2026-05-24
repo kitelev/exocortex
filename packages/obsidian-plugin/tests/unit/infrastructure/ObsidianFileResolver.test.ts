@@ -121,4 +121,24 @@ describe("ObsidianFileResolver", () => {
       expect(resolver.resolveByIRI(iri)).toBeNull();
     });
   });
+
+  describe("contract — exceptions propagate (reserved for genuine I/O errors)", () => {
+    it("propagates an exception thrown by the vaultReader", () => {
+      const throwingReader: IVaultFileReader = {
+        read: () => {
+          throw new Error("not used");
+        },
+        exists: () => Promise.resolve(false),
+        getAllFiles: () => [],
+        getAbstractFileByPath: () => {
+          throw new Error("simulated I/O failure");
+        },
+      };
+      const throwingResolver = new ObsidianFileResolver(throwingReader);
+      const iri = new IRI(vaultPathToIRI("any-file.md"));
+      expect(() => throwingResolver.resolveByIRI(iri)).toThrow(
+        "simulated I/O failure",
+      );
+    });
+  });
 });
