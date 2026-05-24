@@ -87,14 +87,6 @@ export interface INoteConverter {
 @injectable()
 export class LazyAssetGraphLoader {
   private readonly loadedIRIs = new Set<string>();
-  /**
-   * Monotonic counter bumped by every `forget()` / `clearAll()` call.
-   * `ensureFileLoaded` snapshots this before its `await convertNote()`
-   * and re-checks after, so an invalidation that fires during the
-   * await window is detected and the in-flight write to the store is
-   * skipped. Resolves the HIGH race finding from PR #3256 review.
-   */
-  private generation = 0;
   private readonly instanceClassPredicate: IRI;
   private readonly superClassPredicate: IRI;
   private readonly prototypePredicate: IRI;
@@ -128,37 +120,40 @@ export class LazyAssetGraphLoader {
     // tick short-circuits via `loadedIRIs.has`. This avoids racing two
     // `convertNote` calls for the same asset.
     this.loadedIRIs.add(iri);
-    // Snapshot generation BEFORE the await. Resolves the HIGH race
-    // finding from PR #3256 review: if `forget(iri)` or `clearAll()`
-    // fires during the await window, our load-mark was invalidated
-    // and the post-await success branch must NOT silently complete
-    // (which would write stale triples + leave the load-mark absent,
-    // making it impossible to distinguish from "never loaded").
-    const generationAtStart = this.generation;
     try {
       const triples = await this.converter.convertNote(file);
-      if (this.generation !== generationAtStart) {
-        // Invalidation fired during await. Don't write the triples —
-        // the indexer's own `updateFile()` / `refresh()` chain (which
-        // triggered the invalidation) is the authority for the
-        // post-invalidation store state. Leave `loadedIRIs` as
-        // `forget`/`clearAll` left it; the next render will re-walk
-        // with fresh state.
-        return;
-      }
+      // Race detection: if `forget(iri)` or `clearAll()` fired during
+      // the await window, OUR specific load-mark is gone. Don't write
+      // the triples — the indexer's own `updateFile()` / `refresh()`
+      // chain (which triggered the invalidation) is the authority for
+      // the post-invalidation store state. The next render will
+      // re-walk with fresh state.
+      //
+      // PR #3257 reviewer-discovered subtlety: an earlier design used
+      // a `generation` counter bumped on every `forget`/`clearAll`,
+      // and tripped the check on ANY invalidation. That orphan-marked
+      // sibling IRIs in recursive chain walks: if `forget(F)` fired
+      // while `ensureFileLoaded(G)` was in-flight (G is F's class,
+      // walked via `ensureLoadedByIRI(G)`), G's check tripped even
+      // though only F was forgotten — G stayed in `loadedIRIs` but
+      // its triples never landed in the store. Switching to the
+      // mark-presence check (`!loadedIRIs.has(iri)`) means we only
+      // bail when OUR mark is gone, which naturally covers all three
+      // invalidation shapes (forget-self, clearAll, forget-other).
+      if (!this.loadedIRIs.has(iri)) return;
       await this.store.addAll(triples);
-      if (this.generation !== generationAtStart) {
-        // A second check after the addAll-await window. Same rationale.
-        return;
-      }
+      // Second check after addAll-await window. Same rationale —
+      // forget might fire during the addAll itself (theoretically
+      // possible if the store backend is async-batched in the future).
+      if (!this.loadedIRIs.has(iri)) return;
       await this.walkClassAndPrototypeRelations(triples, depth + 1);
     } catch (err) {
       // Rollback the loaded mark so the caller can retry. Without this
       // a thrown `convertNote` would poison the IRI for the session —
       // the next ensure-call would short-circuit on the loaded mark
       // while the store has zero triples for the asset.
-      // Safe in the post-generation-bump case too: `delete` of an
-      // already-deleted key is a no-op.
+      // Safe in the already-forgotten case: `delete` of an absent
+      // key is a no-op.
       this.loadedIRIs.delete(iri);
       throw err;
     }
@@ -216,28 +211,23 @@ export class LazyAssetGraphLoader {
    * `new IRI("obsidian://vault/" + file.path)` without `encodeURI`
    * for spaces/unicode) silently no-ops on a mismatch.
    *
-   * # Race with in-flight `ensureFileLoaded` (Phase 3b-main concern)
+   * # Race with in-flight `ensureFileLoaded` (handled in Phase 3b-main)
    *
    * `ensureFileLoaded` sets the load-mark BEFORE its
    * `await convertNote()`, which acts as a concurrent-render
    * coalesce-guard. If `forget(iri)` fires during that await window,
-   * the mark is removed but the success branch does NOT re-add it.
-   * The subsequent ensure-call then re-invokes `convertNote` — which
-   * races with `VaultRDFIndexer.updateFile()` (which fires for the
-   * same `metadataCache.on("changed")` event). Result: store may
-   * contain pre- and post-edit triples briefly, both written by
-   * different code paths. This is acceptable in the additive-Phase
-   * 3a state (the loader is not render-authoritative) but Phase
-   * 3b-main wire-up MUST coordinate the ordering. The right fix is
-   * generation-counter detection in `ensureFileLoaded` (option a in
-   * the PR #3256 reviewer report) — deferred until 3b-main reveals
-   * concrete ordering requirements.
+   * the mark is removed; the success branch detects this via a
+   * `loadedIRIs.has(iri)` re-check and bails without writing the
+   * (now-stale) triples — `VaultRDFIndexer.updateFile()` is the
+   * authority for the post-edit store state. The discarded triples
+   * are harmless: the indexer will write its own freshly-converted
+   * version, and the next render re-invokes `ensureFileLoaded` since
+   * the load-mark is gone.
    *
    * @param iri - Canonical-form IRI of the asset to drop from the
    *              loaded-set. See "IRI canonical form" above.
    */
   forget(iri: IRI): void {
-    this.generation++;
     this.loadedIRIs.delete(iri.value);
   }
 
@@ -273,7 +263,6 @@ export class LazyAssetGraphLoader {
    *     lazyLoader.clearAll();       // then reset loader state
    */
   clearAll(): void {
-    this.generation++;
     this.loadedIRIs.clear();
   }
 

@@ -255,6 +255,25 @@ export default class ExocortexPlugin extends Plugin {
           );
         }),
       );
+      // Rename: forget the OLD path's IRI — that's the load-mark the
+      // loader keyed by. Obsidian fires the post-rename `changed`
+      // event for the new path separately, so the new path's
+      // freshly-loaded mark lands on the next render.
+      this.registerEvent(
+        this.app.vault.on("rename", (_file, oldPath) => {
+          this.lazyAssetGraphLoader?.forget(
+            lazyConverter.notePathToIRI(oldPath),
+          );
+        }),
+      );
+      // Delete: forget the IRI so its load-mark is reclaimed.
+      this.registerEvent(
+        this.app.vault.on("delete", (file) => {
+          this.lazyAssetGraphLoader?.forget(
+            lazyConverter.notePathToIRI(file.path),
+          );
+        }),
+      );
 
       // Vault changes invalidate the cached UID→path index.
       this.registerEvent(

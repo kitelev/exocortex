@@ -635,6 +635,79 @@ describe("LazyAssetGraphLoader", () => {
       expect(racingLoader.loadedCount).toBe(0);
     });
 
+    it("forget(other-IRI) during in-flight child ensureFileLoaded does NOT orphan-mark the child (PR #3257 reviewer regression)", async () => {
+      // Setup: F (parent file) has class G. ensureFileLoaded(F) walks
+      // into ensureLoadedByIRI(G). While G's convertNote is in-flight,
+      // forget(F) fires (e.g. user edits F). Earlier generation-counter
+      // design tripped G's post-await check too — leaving G marked
+      // loaded with zero triples in the store. The mark-presence
+      // check (only bail when OUR mark is gone) prevents this orphan.
+      const fIri = pathToIRI("F.md");
+      const gIri = pathToIRI("G.md");
+      const fFile = makeFile("F.md");
+      const gFile = makeFile("G.md");
+
+      const gDeferred = makeDeferred<Triple[]>();
+      let gConvertStarted = false;
+      const racingConverter: INoteConverter = {
+        convertNote: (file: IFile) => {
+          if (file.path === "G.md") {
+            gConvertStarted = true;
+            return gDeferred.promise;
+          }
+          // F's triples — emits the class link to G
+          return Promise.resolve([
+            new Triple(fIri, instanceClassPred, gIri),
+          ]);
+        },
+        notePathToIRI: pathToIRI,
+      };
+      const racingResolver = new (class implements IFileResolver {
+        resolveByIRI(iri: IRI): IFile | null {
+          if (iri.value === gIri.value) return gFile;
+          return null;
+        }
+      })();
+      const racingLoader = new LazyAssetGraphLoader(
+        racingConverter,
+        racingResolver,
+        store,
+      );
+
+      // Kick off F's load. F's convertNote resolves synchronously
+      // (returns a resolved promise), so the walk proceeds into G.
+      const inflight = racingLoader.ensureFileLoaded(fFile);
+
+      // Wait for G's convertNote to be in flight.
+      await new Promise<void>((r) => {
+        const tick = () => (gConvertStarted ? r() : setImmediate(tick));
+        tick();
+      });
+
+      // Both F and G are now marked loaded (F is done, G is pre-await).
+      expect(racingLoader.isLoaded(fIri)).toBe(true);
+      expect(racingLoader.isLoaded(gIri)).toBe(true);
+
+      // Race: forget F (NOT G). With the buggy generation-counter
+      // design, G's post-await check would trip even though only F
+      // was forgotten — G would orphan-mark.
+      racingLoader.forget(fIri);
+      expect(racingLoader.isLoaded(fIri)).toBe(false);
+      expect(racingLoader.isLoaded(gIri)).toBe(true);
+
+      // Let G's convertNote complete.
+      gDeferred.resolve([new Triple(gIri, labelPred, new Literal("G"))]);
+      await inflight;
+
+      // The fix: G's mark survives AND G's triples landed in the store.
+      // Under the buggy generation-counter design, this assertion fails:
+      // the check tripped, G short-circuited at line 147 without
+      // store.addAll — G is marked loaded but has 0 triples.
+      expect(racingLoader.isLoaded(gIri)).toBe(true);
+      const gContents = await store.match(gIri, undefined, undefined);
+      expect(gContents.length).toBeGreaterThan(0);
+    });
+
     it("no race → triples are still written normally (sanity)", async () => {
       const file = makeFile("clean.md");
       const subject = pathToIRI("clean.md");
