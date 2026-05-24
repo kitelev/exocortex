@@ -177,7 +177,34 @@ export class LazyAssetGraphLoader {
    *
    * No-op when the IRI was never loaded.
    *
-   * @param iri - The IRI to drop from the loaded-set.
+   * # IRI canonical form (REQUIRED)
+   *
+   * The IRI MUST be in the canonical form returned by
+   * `INoteConverter.notePathToIRI(file.path)` — callers wiring this
+   * to file events should construct the IRI via the same converter
+   * the loader was instantiated with. A non-canonical IRI (e.g.
+   * `new IRI("obsidian://vault/" + file.path)` without `encodeURI`
+   * for spaces/unicode) silently no-ops on a mismatch.
+   *
+   * # Race with in-flight `ensureFileLoaded` (Phase 3b-main concern)
+   *
+   * `ensureFileLoaded` sets the load-mark BEFORE its
+   * `await convertNote()`, which acts as a concurrent-render
+   * coalesce-guard. If `forget(iri)` fires during that await window,
+   * the mark is removed but the success branch does NOT re-add it.
+   * The subsequent ensure-call then re-invokes `convertNote` — which
+   * races with `VaultRDFIndexer.updateFile()` (which fires for the
+   * same `metadataCache.on("changed")` event). Result: store may
+   * contain pre- and post-edit triples briefly, both written by
+   * different code paths. This is acceptable in the additive-Phase
+   * 3a state (the loader is not render-authoritative) but Phase
+   * 3b-main wire-up MUST coordinate the ordering. The right fix is
+   * generation-counter detection in `ensureFileLoaded` (option a in
+   * the PR #3256 reviewer report) — deferred until 3b-main reveals
+   * concrete ordering requirements.
+   *
+   * @param iri - Canonical-form IRI of the asset to drop from the
+   *              loaded-set. See "IRI canonical form" above.
    */
   forget(iri: IRI): void {
     this.loadedIRIs.delete(iri.value);
@@ -199,6 +226,20 @@ export class LazyAssetGraphLoader {
    *
    * Like `forget`, this method does NOT touch the triple store —
    * store-side cleanup is the caller's responsibility.
+   *
+   * # Ordering requirement
+   *
+   * Call `clearAll()` AFTER the synchronous portion of any store-
+   * rebuilding operation has resolved — most importantly, AFTER
+   * `VaultRDFIndexer.refresh()`'s entire await chain (`clear()` →
+   * `convertVault()` → `addAll()` → `runInference()`) has completed.
+   * Calling clearAll before the rebuild completes opens a window
+   * where concurrent renders can re-populate `loadedIRIs` for assets
+   * whose triples are about to be re-added by the bulk rebuild,
+   * leading to stale marks. Sequence as:
+   *
+   *     await sparqlApi.refresh();   // store-side rebuild
+   *     lazyLoader.clearAll();       // then reset loader state
    */
   clearAll(): void {
     this.loadedIRIs.clear();

@@ -472,7 +472,7 @@ describe("LazyAssetGraphLoader", () => {
       expect(loader.isLoaded(subject)).toBe(false);
     });
 
-    it("does NOT cascade to class/prototype chain entries", async () => {
+    it("does NOT cascade to prototype chain entries", async () => {
       const instance = makeFile("instance.md");
       const proto = makeFile("Prototype.md");
 
@@ -494,6 +494,31 @@ describe("LazyAssetGraphLoader", () => {
       loader.forget(pathToIRI("instance.md"));
       expect(loader.isLoaded(pathToIRI("instance.md"))).toBe(false);
       expect(loader.isLoaded(pathToIRI("Prototype.md"))).toBe(true);
+      expect(loader.loadedCount).toBe(1);
+    });
+
+    it("does NOT cascade to class chain entries", async () => {
+      const taskFile = makeFile("my-task.md");
+      const classFile = makeFile("ems__Task.md");
+
+      converter.registerFile(taskFile, [
+        new Triple(
+          pathToIRI("my-task.md"),
+          instanceClassPred,
+          pathToIRI("ems__Task.md"),
+        ),
+      ]);
+      converter.registerFile(classFile, []);
+      resolver.register(classFile);
+
+      await loader.ensureFileLoaded(taskFile);
+      expect(loader.loadedCount).toBe(2);
+      expect(loader.isLoaded(pathToIRI("ems__Task.md"))).toBe(true);
+
+      // Forget only the task instance; the class file's mark must survive.
+      loader.forget(pathToIRI("my-task.md"));
+      expect(loader.isLoaded(pathToIRI("my-task.md"))).toBe(false);
+      expect(loader.isLoaded(pathToIRI("ems__Task.md"))).toBe(true);
       expect(loader.loadedCount).toBe(1);
     });
   });
