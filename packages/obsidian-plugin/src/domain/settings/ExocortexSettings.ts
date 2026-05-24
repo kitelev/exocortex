@@ -147,11 +147,13 @@ export interface ExocortexSettings {
   enablePropertiesLabelPatch: boolean;
   /**
    * Issue #3250 — on iOS the exocmd-bindings indexer's per-startup full
-   * vault scan tipped the plugin process over the jetsam memory budget,
-   * causing Obsidian to restart every 15-30 seconds. The indexer is now
-   * skipped on mobile by default. Power-users (iPad Pro with headroom)
-   * can flip this toggle to re-enable it. Desktop ignores the toggle —
-   * indexer always runs there.
+   * vault scan caused Obsidian to restart every 15-30 seconds. Root
+   * kill mechanism not isolated from JetsamEvent logs (Obsidian absent
+   * from sample crash reports); most likely candidates are memory-
+   * pressure-driven per-process-limit kills or main-thread-block
+   * watchdog kills. The indexer is now skipped on mobile by default.
+   * Power-users (iPad Pro with headroom) can flip this toggle to
+   * re-enable it. Desktop ignores the toggle — indexer always runs there.
    */
   exocmdBindingsCacheEnabledOnMobile: boolean;
   [key: string]: unknown;

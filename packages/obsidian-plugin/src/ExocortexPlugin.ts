@@ -988,10 +988,16 @@ export default class ExocortexPlugin extends Plugin {
                 //
                 // Issue #3250 — gated behind a mobile-aware predicate. On
                 // iOS the indexer's full vault walk + per-class resolve
-                // tipped the plugin process over the jetsam memory budget
-                // (15-30 s restart loop). Mobile users skip the indexer by
-                // default; the toggle re-enables it for power users (iPad
-                // Pro etc). Desktop ignores the toggle — indexer always runs.
+                // caused a 15-30 s restart loop. Root kill mechanism not
+                // isolated from JetsamEvent logs (Obsidian absent from the
+                // sample crash reports) — most likely candidates are
+                // memory-pressure-driven per-process-limit kills or
+                // main-thread-block watchdog kills, since both are
+                // consistent with a synchronous full-vault scan on a
+                // memory-constrained device. Mobile users skip the indexer
+                // by default; the toggle re-enables it for power users
+                // (iPad Pro etc). Desktop ignores the toggle — indexer
+                // always runs there.
                 if (
                   !shouldRunExocmdIndexer(
                     Platform.isMobile,
