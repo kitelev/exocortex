@@ -1,4 +1,5 @@
-import { Plugin, TFile } from "obsidian";
+import { Keymap, Plugin, TFile } from "obsidian";
+import type { PaneType } from "obsidian";
 
 /**
  * PropertiesLabelPatch - Patches Obsidian's Properties block to show human-readable
@@ -62,6 +63,7 @@ interface PatchRecord {
   textNode: Text | null;
   originalTextContent: string | null;
   clickHandler: (e: MouseEvent) => void;
+  auxClickHandler: (e: MouseEvent) => void;
 }
 
 /**
@@ -398,9 +400,20 @@ export class PropertiesLabelPatch {
     const clickHandler = (e: MouseEvent): void => {
       e.preventDefault();
       e.stopPropagation();
-      this.openDefinition(resolved.file);
+      this.openDefinition(resolved.file, e);
+    };
+    // auxclick: middle-mouse-button (button === 1) opens in a new tab, matching
+    // Obsidian's native internal-link behavior. Other auxclick buttons (e.g. 2
+    // = right click) are ignored — they should fall through to native context
+    // menu handling.
+    const auxClickHandler = (e: MouseEvent): void => {
+      if (e.button !== 1) return;
+      e.preventDefault();
+      e.stopPropagation();
+      this.openDefinition(resolved.file, e);
     };
     displaySpan.addEventListener("click", clickHandler);
+    displaySpan.addEventListener("auxclick", auxClickHandler);
 
     keyEl.classList.add(CLICKABLE_CLASS);
     propertyEl.setAttribute(PATCHED_ATTR, "true");
@@ -412,6 +425,7 @@ export class PropertiesLabelPatch {
       textNode,
       originalTextContent,
       clickHandler,
+      auxClickHandler,
     });
   }
 
@@ -447,8 +461,25 @@ export class PropertiesLabelPatch {
     return null;
   }
 
-  private openDefinition(file: TFile): void {
-    const leaf = this.app.workspace.getLeaf("tab");
+  private openDefinition(file: TFile, event?: MouseEvent): void {
+    // Match Obsidian's native link behavior:
+    //   plain click           → same tab (getLeaf(false) reuses current leaf)
+    //   Cmd/Ctrl click        → new tab        ('tab')
+    //   Cmd/Ctrl+Alt click    → split pane     ('split')
+    //   Cmd/Ctrl+Alt+Shift    → new window     ('window')
+    //   middle-mouse click    → new tab        (resolved via auxclick handler
+    //                                           that delegates here with e.button=1)
+    // `Keymap.isModEvent` returns the correct PaneType (or false) for the
+    // platform-default modifier (Cmd on mac, Ctrl elsewhere).
+    let leafArg: PaneType | boolean = false;
+    if (event) {
+      if (event.type === "auxclick" && event.button === 1) {
+        leafArg = "tab";
+      } else {
+        leafArg = Keymap.isModEvent(event);
+      }
+    }
+    const leaf = this.app.workspace.getLeaf(leafArg as PaneType | boolean);
     if (leaf && typeof (leaf as { openFile?: (f: TFile) => Promise<void> }).openFile === "function") {
       void (leaf as { openFile: (f: TFile) => Promise<void> }).openFile(file);
     }
@@ -495,6 +526,7 @@ export class PropertiesLabelPatch {
     for (const record of this.patched) {
       try {
         record.displaySpan.removeEventListener("click", record.clickHandler);
+        record.displaySpan.removeEventListener("auxclick", record.auxClickHandler);
         record.displaySpan.remove();
 
         if (record.input) {
