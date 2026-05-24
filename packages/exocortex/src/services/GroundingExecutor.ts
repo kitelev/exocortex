@@ -652,8 +652,8 @@ export class GroundingExecutor {
       );
     }
 
-    // userInput wins over PropertyDefault and over copy-from-target — apply
-    // here so the copy-loop below can skip already-set keys without re-quoting.
+    // userInput wins over PropertyDefault and InheritanceRule — apply early
+    // so the `properties[key] !== undefined` guards in later steps fire.
     if (userInput) {
       for (const [key, value] of Object.entries(userInput)) {
         if (key === "label") continue;
@@ -662,13 +662,21 @@ export class GroundingExecutor {
       }
     }
 
-    // Parse $target frontmatter once — consumed by Step 3 (InheritanceRule)
-    // when at least one rule is attached. RFC 32445c1c removed the legacy
-    // Step 4 (copy-from-target + CREATE_INSTANCE_BLACKLIST); only properties
-    // explicitly enumerated via PropertyDefault / InheritanceRule reach the
-    // new instance.
-    let targetFm: Record<string, string | string[]> | null = null;
-    if (targetIRI && targetFilePath) {
+    // RFC v2 Phase 3b — Step 3 (InheritanceRule, declarative ref-form).
+    // Apply each applicable rule (condition match, exclusion non-match) in
+    // priority-descending order. Only writes keys not already set by Steps 1
+    // (userInput) or 2 (PropertyDefault).
+    //
+    // The `$target` file read is gated by `inheritanceRule.length > 0` —
+    // RFC 32445c1c removed Step 4 (copy-from-target + CREATE_INSTANCE_BLACKLIST),
+    // so Groundings without inheritance rules have no reason to touch the
+    // target file (and shouldn't be forced to fail when it's missing).
+    if (
+      grounding.inheritanceRule &&
+      grounding.inheritanceRule.length > 0 &&
+      targetIRI &&
+      targetFilePath
+    ) {
       let targetContent: string;
       try {
         targetContent = await this.fileReader.readFile(targetFilePath);
@@ -678,23 +686,15 @@ export class GroundingExecutor {
           error: `create_instance: failed to read $target file "${targetFilePath}": ${error instanceof Error ? error.message : String(error)}`,
         };
       }
-      targetFm = this.frontmatterService.parseObject(targetContent) ?? null;
-    }
-
-    // RFC v2 Phase 3b — Step 3 (InheritanceRule, declarative ref-form).
-    // Apply each applicable rule (condition match, exclusion non-match) in
-    // priority-descending order. Only writes keys not already set by Steps 1
-    // (userInput) or 2 (PropertyDefault).
-    if (
-      grounding.inheritanceRule &&
-      grounding.inheritanceRule.length > 0 &&
-      targetFm
-    ) {
-      await this.applyInheritanceRuleStep(
-        properties,
-        grounding.inheritanceRule,
-        targetFm,
-      );
+      const targetFm =
+        this.frontmatterService.parseObject(targetContent) ?? null;
+      if (targetFm) {
+        await this.applyInheritanceRuleStep(
+          properties,
+          grounding.inheritanceRule,
+          targetFm,
+        );
+      }
     }
 
     // Back-link to $target — configurable per grounding (RFC Phase 2).

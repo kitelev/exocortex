@@ -1386,13 +1386,25 @@ describe("GroundingExecutor", () => {
         expect(content).not.toContain("[[ems__Effort_prevIteration]]:");
       });
 
-      it("returns descriptive error when $target file is missing", async () => {
+      it("returns descriptive error when $target file is missing (and an InheritanceRule needs it)", async () => {
+        // RFC 32445c1c: the executor only reads $target when at least one
+        // InheritanceRule is attached (Step 3 needs source-property values).
+        // The fail-loud guard fires inside that conditional read — fixture
+        // attaches a rule to enter the read branch.
         reader.readFile.mockRejectedValue(new Error("ENOENT: no such file"));
 
         const grounding = makeGrounding({
           type: GroundingType.CREATE_INSTANCE,
           targetClass: "ems__Task",
           targetFolder: "01 Inbox",
+          inheritanceRule: [
+            {
+              sourcePropertyName: "exo__Asset_isDefinedBy",
+              targetPropertyName: "exo__Asset_isDefinedBy",
+              targetClassExclusion: [],
+              priority: 10,
+            },
+          ],
         });
 
         const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
