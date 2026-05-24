@@ -2,4 +2,3 @@ export type { ButtonBuilderContext, IButtonGroupBuilder } from "./ButtonBuilderT
 export { createButtonGroupIfVisible } from "./ButtonBuilderTypes";
 export { DynamicCommandButtonGroupBuilder } from "./DynamicCommandButtonGroupBuilder";
 export type { DynamicCommandBuilderConfig } from "./DynamicCommandButtonGroupBuilder";
-export { ExocmdFastResolver } from "./ExocmdFastResolver";

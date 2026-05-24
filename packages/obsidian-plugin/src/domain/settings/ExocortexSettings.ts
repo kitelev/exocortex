@@ -145,17 +145,11 @@ export interface ExocortexSettings {
    * takes effect immediately, no plugin reload required.
    */
   enablePropertiesLabelPatch: boolean;
-  /**
-   * Issue #3250 — on iOS the exocmd-bindings indexer's per-startup full
-   * vault scan caused Obsidian to restart every 15-30 seconds. Root
-   * kill mechanism not isolated from JetsamEvent logs (Obsidian absent
-   * from sample crash reports); most likely candidates are memory-
-   * pressure-driven per-process-limit kills or main-thread-block
-   * watchdog kills. The indexer is now skipped on mobile by default.
-   * Power-users (iPad Pro with headroom) can flip this toggle to
-   * re-enable it. Desktop ignores the toggle — indexer always runs there.
-   */
-  exocmdBindingsCacheEnabledOnMobile: boolean;
+  // RFC c7da0bca Phase 3c-3 — dropped `exocmdBindingsCacheEnabledOnMobile`
+  // setting. The indexer it gated has been deleted (Phase 3c-2); the
+  // toggle had no remaining effect. Existing user settings JSON
+  // containing this key will be silently ignored by Object.assign
+  // merge in `loadSettings` — no migration needed.
   [key: string]: unknown;
 }
 
@@ -182,5 +176,4 @@ export const DEFAULT_SETTINGS: ExocortexSettings = {
   enableSparqlAutoExecute: false,
   enableShaclValidation: false,
   enablePropertiesLabelPatch: true,
-  exocmdBindingsCacheEnabledOnMobile: false,
 };
