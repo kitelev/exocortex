@@ -2,6 +2,7 @@ import "reflect-metadata";
 import {
   MarkdownPostProcessorContext,
   MarkdownView,
+  Platform,
   Plugin,
   TFile,
 } from "obsidian";
@@ -68,6 +69,7 @@ import {
   DEFAULT_CACHE_FILE_PATH,
   type CacheFileSystem,
 } from "./cache/ExocmdBindingsCache";
+import { shouldRunExocmdIndexer } from "./cache/shouldRunExocmdIndexer";
 import {
   ExocmdBindingsIndexer,
   type FrontmatterRecord,
@@ -983,42 +985,67 @@ export default class ExocortexPlugin extends Plugin {
                 // immediately. Errors are swallowed: a failed indexer
                 // run only means the next cold start falls back to the
                 // existing fast-path behaviour — never a regression.
-                try {
-                  const indexer = new ExocmdBindingsIndexer({
-                    cache: bindingsCache,
-                    vaultSource: {
-                      listAllAssets: (): Iterable<FrontmatterRecord> => {
-                        const files = this.app.vault.getMarkdownFiles();
-                        const records: FrontmatterRecord[] = [];
-                        for (const f of files) {
-                          const fm = this.app.metadataCache.getFileCache(f)
-                            ?.frontmatter as Record<string, unknown> | undefined;
-                          records.push({
-                            path: f.path,
-                            frontmatter: fm ?? null,
-                          });
-                        }
-                        return records;
-                      },
-                    },
-                    commandResolver: this.commandResolver,
-                    preconditionEvaluator: this.preconditionEvaluator,
-                    logger: this.logger,
-                  });
-                  const summary = await indexer.runFullScan();
+                //
+                // Issue #3250 — gated behind a mobile-aware predicate. On
+                // iOS the indexer's full vault walk + per-class resolve
+                // caused a 15-30 s restart loop. Root kill mechanism not
+                // isolated from JetsamEvent logs (Obsidian absent from the
+                // sample crash reports) — most likely candidates are
+                // memory-pressure-driven per-process-limit kills or
+                // main-thread-block watchdog kills, since both are
+                // consistent with a synchronous full-vault scan on a
+                // memory-constrained device. Mobile users skip the indexer
+                // by default; the toggle re-enables it for power users
+                // (iPad Pro etc). Desktop ignores the toggle — indexer
+                // always runs there.
+                if (
+                  !shouldRunExocmdIndexer(
+                    Platform.isMobile,
+                    this.settings.exocmdBindingsCacheEnabledOnMobile,
+                  )
+                ) {
                   this.logger.info(
-                    `[ExocortexPlugin] exocmd-bindings cache populated`,
-                    {
-                      classesScanned: summary.classesScanned,
-                      classesWritten: summary.classesWritten,
-                      assetsConsidered: summary.assetsConsidered,
-                      errors: summary.errors,
-                    },
+                    "[ExocortexPlugin] exocmd-bindings indexer skipped " +
+                      "(mobile platform, opt-in toggle disabled; see #3250)",
                   );
-                } catch (err) {
-                  this.logger.warn(
-                    `[ExocortexPlugin] exocmd-bindings indexer failed (non-fatal): ${String(err)}`,
-                  );
+                } else {
+                  try {
+                    const indexer = new ExocmdBindingsIndexer({
+                      cache: bindingsCache,
+                      vaultSource: {
+                        listAllAssets: (): Iterable<FrontmatterRecord> => {
+                          const files = this.app.vault.getMarkdownFiles();
+                          const records: FrontmatterRecord[] = [];
+                          for (const f of files) {
+                            const fm = this.app.metadataCache.getFileCache(f)
+                              ?.frontmatter as Record<string, unknown> | undefined;
+                            records.push({
+                              path: f.path,
+                              frontmatter: fm ?? null,
+                            });
+                          }
+                          return records;
+                        },
+                      },
+                      commandResolver: this.commandResolver,
+                      preconditionEvaluator: this.preconditionEvaluator,
+                      logger: this.logger,
+                    });
+                    const summary = await indexer.runFullScan();
+                    this.logger.info(
+                      `[ExocortexPlugin] exocmd-bindings cache populated`,
+                      {
+                        classesScanned: summary.classesScanned,
+                        classesWritten: summary.classesWritten,
+                        assetsConsidered: summary.assetsConsidered,
+                        errors: summary.errors,
+                      },
+                    );
+                  } catch (err) {
+                    this.logger.warn(
+                      `[ExocortexPlugin] exocmd-bindings indexer failed (non-fatal): ${String(err)}`,
+                    );
+                  }
                 }
               })
               .catch((err) => {
