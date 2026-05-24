@@ -70,6 +70,13 @@ export interface INoteConverter {
  * - **No edit invalidation.** When an asset is edited mid-session,
  *   stale triples remain in the store. Phase 3's plugin wiring will
  *   call a `forget` API or re-build the working store on file events.
+ *   TODO(Phase 3b): expose `forget(iri)` + `clearAll()` methods and
+ *   wire them into `VaultRDFIndexer.refresh()` +
+ *   `metadataCache.on("changed")`. Without this, a refresh-clear-then-
+ *   repopulate cycle leaves `loadedIRIs` claiming coverage of assets
+ *   whose triples were just cleared from the store. Safe during 3a
+ *   (renders still go through the existing fast/full-path chain),
+ *   but a blocker before 3b makes the loader render-authoritative.
  * - **No TBox preload.** Phase 3 wires startup bootstrap of
  *   `assetspaces/{exo,ems,ims,exocmd}` by calling `ensureFileLoaded`
  *   on each ontology asset upfront.
