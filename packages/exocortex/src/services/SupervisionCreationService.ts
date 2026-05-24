@@ -5,6 +5,7 @@ import { DateFormatter } from "../utilities/DateFormatter";
 import type { IVaultAdapter, IFile } from "../interfaces/IVaultAdapter";
 import type { IVaultSettings } from "../interfaces/IVaultSettings";
 import { DI_TOKENS } from "../interfaces/tokens";
+import { loadDefaultSpec, orderProperties } from "./OrderSpecResolver";
 
 @injectable()
 export class SupervisionCreationService {
@@ -74,7 +75,8 @@ export class SupervisionCreationService {
     frontmatter: Record<string, unknown>,
     body: string,
   ): string {
-    const frontmatterLines = Object.entries(frontmatter)
+    const ordered = orderProperties(frontmatter, loadDefaultSpec());
+    const frontmatterLines = Object.entries(ordered)
       .map(([key, value]) => {
         if (Array.isArray(value)) {
           const arrayItems = value.map((item) => `  - ${item}`).join("\n");

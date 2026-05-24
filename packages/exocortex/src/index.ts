@@ -118,6 +118,14 @@ export {
   DynamicFrontmatterGenerator,
   type FrontmatterPropertyDefinition,
 } from "./services/DynamicFrontmatterGenerator";
+export {
+  type FrontmatterOrderSpec,
+  type OrderSpecLoader,
+  registerOrderSpecLoader,
+  clearOrderSpecLoader,
+  loadDefaultSpec,
+  orderProperties,
+} from "./services/OrderSpecResolver";
 export { AlgorithmExtractor } from "./services/AlgorithmExtractor";
 export { PlanningService } from "./services/PlanningService";
 export {

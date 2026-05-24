@@ -33,6 +33,7 @@ import { ExitCodes } from "../utils/ExitCodes.js";
 import { FileSystemVaultAdapter } from "../adapters/FileSystemVaultAdapter.js";
 import { NodeFsAdapter } from "../adapters/NodeFsAdapter.js";
 import { populateCliServiceRegistry } from "../services/CliServiceRegistryPopulator.js";
+import { registerOrderSpecFromVault } from "../services/registerOrderSpec.js";
 
 export interface ApplyOptions {
   vault: string;
@@ -286,6 +287,7 @@ export function applyCommand(): Command {
         if (!existsSync(vaultPath)) {
           throw new VaultNotFoundError(vaultPath);
         }
+        registerOrderSpecFromVault(vaultPath);
 
         // Derive clock + UID generator ONCE for the whole apply invocation.
         // Multi-target stdin pipelines reuse the same generator so that

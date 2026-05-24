@@ -9,6 +9,7 @@ import { WikilinkValidator } from "../services/WikilinkValidator.js";
 import { AssetCreationService } from "../services/AssetCreationService.js";
 import { ErrorHandler } from "../utils/ErrorHandler.js";
 import { VaultNotFoundError } from "../utils/errors/index.js";
+import { registerOrderSpecFromVault } from "../services/registerOrderSpec.js";
 
 /**
  * Options parsed from CLI flags for the create command.
@@ -188,6 +189,7 @@ export function createCommand(): Command {
         if (!existsSync(vaultPath)) {
           throw new VaultNotFoundError(vaultPath);
         }
+        registerOrderSpecFromVault(vaultPath);
 
         // Parse properties from --property flags
         const properties = parseProperties(options.property);
