@@ -586,36 +586,6 @@ export class GroundingExecutor {
     return { success: true };
   }
 
-  /**
-   * Frontmatter keys that must NEVER be copied from $target into a newly
-   * created instance. These either identify the source asset (uid, label,
-   * aliases, createdAt) or describe its lifecycle state (status, timestamps),
-   * neither of which is meaningful on the new asset. exo__Instance_class is
-   * blacklisted because the new instance has its own class supplied via
-   * grounding.targetClass.
-   *
-   * Issue #3184 B3+B4: `ems__Effort_area` and `exo__Asset_relates` are also
-   * blacklisted. Both belong on the prototype-instance (the asset the user
-   * clicked); inheriting them into a created instance double-materialises the
-   * link that `exo__Asset_prototype` (back-link, see executeCreateInstance)
-   * already implies through the RDF graph.
-   */
-  private static readonly CREATE_INSTANCE_BLACKLIST: ReadonlySet<string> =
-    new Set([
-      "exo__Asset_uid",
-      "exo__Asset_createdAt",
-      "exo__Asset_updatedAt",
-      "exo__Instance_class",
-      "exo__Asset_label",
-      "aliases",
-      "ems__Effort_status",
-      "ems__Effort_startTimestamp",
-      "ems__Effort_endTimestamp",
-      "ems__Effort_resolutionTimestamp",
-      "ems__Effort_area",
-      "exo__Asset_relates",
-    ]);
-
   private async executeCreateInstance(
     grounding: GroundingDefinition,
     targetIRI: string,
@@ -670,9 +640,7 @@ export class GroundingExecutor {
     // emits resolved values for `today` / `todayStart` and
     // `__SUBSTITUTE__<resolver>__<token-uid>__` markers for `target` /
     // `targetFolder`; executor substitutes the markers at runtime when the
-    // click-target context is known). PropertyDefault explicitly bypasses
-    // CREATE_INSTANCE_BLACKLIST per RFC v2 §Precedence — blacklist applies ONLY
-    // to copy-from-target step 4. The legacy JSON-literal `propertyDefaults`
+    // click-target context is known). The legacy JSON-literal `propertyDefaults`
     // path was removed in RFC v2 Phase 5 (#3167) after vault migration to
     // ref-form completed (Phase 4a, #3165).
     if (grounding.propertyDefault && grounding.propertyDefault.length > 0) {
@@ -694,8 +662,11 @@ export class GroundingExecutor {
       }
     }
 
-    // Parse $target frontmatter once — shared by Step 3 (InheritanceRule, reads
-    // source-property values) and Step 4 (copy-from-target, fills gaps).
+    // Parse $target frontmatter once — consumed by Step 3 (InheritanceRule)
+    // when at least one rule is attached. RFC 32445c1c removed the legacy
+    // Step 4 (copy-from-target + CREATE_INSTANCE_BLACKLIST); only properties
+    // explicitly enumerated via PropertyDefault / InheritanceRule reach the
+    // new instance.
     let targetFm: Record<string, string | string[]> | null = null;
     if (targetIRI && targetFilePath) {
       let targetContent: string;
@@ -712,10 +683,8 @@ export class GroundingExecutor {
 
     // RFC v2 Phase 3b — Step 3 (InheritanceRule, declarative ref-form).
     // Apply each applicable rule (condition match, exclusion non-match) in
-    // priority-descending order. Like Step 2, this bypasses CREATE_INSTANCE_BLACKLIST
-    // — `ems__Effort_area` and `ems__Effort_parent` are in the BLACKLIST but
-    // are LEGITIMATE inheritance targets per RFC. Step 3 only writes keys not
-    // already set by Steps 1 (userInput) or 2 (PropertyDefault).
+    // priority-descending order. Only writes keys not already set by Steps 1
+    // (userInput) or 2 (PropertyDefault).
     if (
       grounding.inheritanceRule &&
       grounding.inheritanceRule.length > 0 &&
@@ -726,18 +695,6 @@ export class GroundingExecutor {
         grounding.inheritanceRule,
         targetFm,
       );
-    }
-
-    // Step 4: Copy-from-target — read $target frontmatter and inherit any
-    // non-blacklisted property the new instance does not already have.
-    // Wikilink values are re-quoted so they round-trip through the YAML
-    // serializer. BLACKLIST applies ONLY here per RFC v2 §Precedence.
-    if (targetFm) {
-      for (const [key, value] of Object.entries(targetFm)) {
-        if (GroundingExecutor.CREATE_INSTANCE_BLACKLIST.has(key)) continue;
-        if (properties[key] !== undefined) continue;
-        properties[key] = this.reformatCopiedValue(value);
-      }
     }
 
     // Back-link to $target — configurable per grounding (RFC Phase 2).
@@ -810,9 +767,9 @@ export class GroundingExecutor {
    * `__SUBSTITUTE__<resolver-id>__<token-uid>__` markers for context-dependent
    * resolvers (`target`, `targetFolder`) that the executor swaps in at runtime.
    *
-   * Bypasses `CREATE_INSTANCE_BLACKLIST` by design — `ems__Effort_status` is
-   * blacklisted (to prevent literal copy-from-target) but PropertyDefault MUST
-   * be able to set it. RFC v2 §Precedence: BLACKLIST scopes only Step 4.
+   * RFC 32445c1c removed the legacy Step 4 (copy-from-target + BLACKLIST).
+   * PropertyDefault is now the only path that writes constants such as
+   * `ems__Effort_status` into a newly created instance.
    */
   private applyPropertyDefaultStep(
     properties: Record<string, unknown>,
@@ -882,9 +839,9 @@ export class GroundingExecutor {
    *      Higher-priority rules within Step 3 also win because the
    *      `properties[key] !== undefined` guard fires once any rule has written.
    *
-   * Like Step 2, this bypasses CREATE_INSTANCE_BLACKLIST (`ems__Effort_area`
-   * / `ems__Effort_parent` are intentional inheritance targets — BLACKLIST
-   * scopes only Step 4 copy-from-target).
+   * RFC 32445c1c removed the legacy Step 4; InheritanceRule is now the only
+   * pathway for properties like `ems__Effort_area` / `ems__Effort_parent` to
+   * land on a new instance — explicit and declarative, no implicit copy.
    *
    * Source-value formatting handles two common shapes:
    * - Bare UUID (e.g. target's `exo__Asset_uid`) → wrapped as `"[[<uid>]]"`
@@ -1024,19 +981,6 @@ export class GroundingExecutor {
       return `"[[${value}]]"`;
     }
     return value;
-  }
-
-  /**
-   * Re-quote wikilink values copied from $target frontmatter so they survive
-   * round-trip through the YAML serializer. Mirrors the logic of
-   * `GenericAssetCreationService.formatWikilink` so copy-from-target ассеты
-   * look identical to ones produced by the modal-driven creation path.
-   */
-  private reformatCopiedValue(value: string | string[]): string | string[] {
-    if (Array.isArray(value)) {
-      return value.map((item) => this.reformatWikilink(item));
-    }
-    return this.reformatWikilink(value);
   }
 
   private reformatWikilink(value: string): string {

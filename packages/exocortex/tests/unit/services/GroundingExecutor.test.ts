@@ -1248,9 +1248,17 @@ describe("GroundingExecutor", () => {
       expect(content).toContain(`exo__Asset_uid: ${pathUuid}`);
     });
 
-    // -- Task 2.4: copy-from-target + configurable back-link --
+    // -- Homoiconic create_instance (RFC 32445c1c): NO implicit copy-from-target --
+    //
+    // Step 4 (copy-from-target + CREATE_INSTANCE_BLACKLIST) was removed in
+    // RFC 32445c1c. New instances now receive ONLY properties enumerated by
+    // explicit PropertyDefault / InheritanceRule rules, plus the engine-level
+    // scaffolding (uid, createdAt, label, Instance_class, back-link).
+    //
+    // The historical "copy-from-target + linkBackProperty (Task 2.4)" suite
+    // is preserved here as the homoiconic-cutover regression guard.
 
-    describe("copy-from-target + linkBackProperty (Task 2.4)", () => {
+    describe("homoiconic create_instance — no implicit copy + linkBackProperty", () => {
       const TARGET_FM = [
         "---",
         'exo__Asset_uid: "src-uid"',
@@ -1270,7 +1278,7 @@ describe("GroundingExecutor", () => {
         "Body",
       ].join("\n");
 
-      it("copies $target frontmatter into new asset (blacklist respected)", async () => {
+      it("does NOT copy any $target frontmatter into new asset when no rules attached (RFC 32445c1c)", async () => {
         reader.readFile.mockResolvedValue(TARGET_FM);
 
         const grounding = makeGrounding({
@@ -1282,48 +1290,26 @@ describe("GroundingExecutor", () => {
         await executor.execute(grounding, TARGET_IRI, FILE_PATH, { label: "Sub-task" });
 
         const [, content] = writer.createFile.mock.calls[0];
-        // Inherited non-blacklisted properties
-        expect(content).toContain('ems__Effort_priority: "[[priority-high]]"');
-        expect(content).toContain('"[[tag-alpha]]"');
-        expect(content).toContain('"[[tag-beta]]"');
-        // Blacklisted — must NOT leak
+        // None of target's properties leak — no implicit copy-from-target.
+        expect(content).not.toContain('priority-high');
+        expect(content).not.toContain('tag-alpha');
+        expect(content).not.toContain('tag-beta');
+        // Identity / lifecycle properties never leaked even pre-RFC.
         expect(content).not.toContain("src-uid");
         expect(content).not.toContain("Source asset");
         expect(content).not.toContain("Old alias");
         expect(content).not.toMatch(/exo__Instance_class:[\s\S]*ems__Project/);
         expect(content).not.toContain("ems__EffortStatusDoing");
         expect(content).not.toContain("ems__Effort_startTimestamp:");
-        // Issue #3184 B3: ems__Effort_area belongs on the prototype-instance
-        // and is reachable through the prototype-chain in the RDF graph;
-        // copying the wikilink into the new instance double-materialises it.
+        // Issue #3184 B3: ems__Effort_area never inherits without explicit rule.
         expect(content).not.toContain("ems__Effort_area:");
         expect(content).not.toContain("area-uid-42");
       });
 
-      it("re-quotes wikilink values copied from $target", async () => {
-        // Use ems__Effort_priority (NOT blacklisted) instead of
-        // ems__Effort_area (blacklisted per Issue #3184 B3) so the test
-        // exercises the wikilink-re-quoting path rather than the blacklist.
-        reader.readFile.mockResolvedValue(
-          '---\nems__Effort_priority: "[[priority-high]]"\nems__Effort_unquoted: [[bare-link]]\n---\n',
-        );
-
-        const grounding = makeGrounding({
-          type: GroundingType.CREATE_INSTANCE,
-          targetClass: "ems__Task",
-          targetFolder: "01 Inbox",
-        });
-
-        await executor.execute(grounding, TARGET_IRI, FILE_PATH);
-
-        const [, content] = writer.createFile.mock.calls[0];
-        expect(content).toContain('ems__Effort_priority: "[[priority-high]]"');
-        expect(content).toContain('ems__Effort_unquoted: "[[bare-link]]"');
-      });
-
       it("does not overwrite properties already set via userInput", async () => {
-        // Use ems__Effort_priority (NOT blacklisted by Issue #3184 B3) so the
-        // assertion focuses on userInput-vs-copy-from-target precedence.
+        // userInput precedence is independent of any copy step — verify it
+        // still wins even when the engine reads $target frontmatter (for
+        // potential InheritanceRule consumption).
         reader.readFile.mockResolvedValue(
           '---\nems__Effort_priority: "[[priority-from-target]]"\n---\n',
         );
@@ -1630,7 +1616,10 @@ describe("GroundingExecutor", () => {
         expect(content).not.toContain("some-related-asset");
       });
 
-      it("B3+B4: non-blacklisted properties (e.g. ems__Effort_priority) are still inherited", async () => {
+      it("RFC 32445c1c: properties not in any explicit rule are NOT inherited (no implicit copy-from-target)", async () => {
+        // Pre-RFC: ems__Effort_priority (not blacklisted) would copy. After
+        // RFC 32445c1c removed Step 4: nothing copies without an explicit
+        // PropertyDefault / InheritanceRule attached to the grounding.
         reader.readFile.mockResolvedValue(PROTOTYPE_INSTANCE_FM);
 
         const grounding = makeGrounding({
@@ -1644,7 +1633,8 @@ describe("GroundingExecutor", () => {
         });
 
         const [, content] = writer.createFile.mock.calls[0];
-        expect(content).toContain('ems__Effort_priority: "[[priority-mid]]"');
+        expect(content).not.toContain('ems__Effort_priority:');
+        expect(content).not.toContain('priority-mid');
       });
 
       it("B5: ExecutionResult.openPath equals the created file path", async () => {
@@ -2481,9 +2471,9 @@ describe("GroundingExecutor — RFC v2 Phase 3b 5-step pipeline", () => {
   //
   // Precedence per RFC v2 §Precedence (high → low):
   //   1. userInput (modal form fields)
-  //   2. PropertyDefault (declarative ref-form, bypasses BLACKLIST)
-  //   3. InheritanceRule (filter + sort + apply, bypasses BLACKLIST)
-  //   4. copy-from-target (BLACKLIST-constrained)
+  //   2. PropertyDefault (declarative ref-form — constants)
+  //   3. InheritanceRule (filter + sort + apply — target-derived values)
+  //   (RFC 32445c1c: Step 4 copy-from-target removed; only explicit rules write)
   //   5. [implicit] gaps remain empty
   const TARGET_AREA_UID = "905cc587-0000-0000-0000-000000000001";
   const TARGET_AREA_PATH = "03 Knowledge/areas/host.md";
@@ -2561,17 +2551,14 @@ describe("GroundingExecutor — RFC v2 Phase 3b 5-step pipeline", () => {
       expect(content).toContain(`ems__Effort_status: "[[${STATUS_DRAFT_UID}]]"`);
     });
 
-    // -- CRITICAL invariant: PropertyDefault bypasses CREATE_INSTANCE_BLACKLIST --
-    //
-    // `ems__Effort_status` is in CREATE_INSTANCE_BLACKLIST (line ~538) to
-    // prevent literal copy-from-target. RFC v2 §Precedence: BLACKLIST scopes
-    // ONLY Step 4 (copy-from-target). PropertyDefault (Step 2) MUST be able
-    // to set blacklisted properties — that's the entire point of replacing
-    // the hardcoded `ems__Effort_status: Backlog` write at
-    // ServiceRegistryPopulator.ts:211.
-    it("PropertyDefault overrides BLACKLIST: writes ems__Effort_status (Step 2 ignores BLACKLIST)", async () => {
-      // Target has its own status field — BLACKLIST blocks copy-from-target,
-      // PropertyDefault still writes the new value.
+    // -- PropertyDefault writes its declared value even when $target has a
+    //    competing value. Pre-RFC 32445c1c (when Step 4 + BLACKLIST existed),
+    //    `ems__Effort_status` was BLACKLISTed; PropertyDefault still wrote.
+    //    Post-RFC: copy-from-target removed entirely; PropertyDefault is now
+    //    the only path that writes constants like `ems__Effort_status`. --
+    it("PropertyDefault writes ems__Effort_status regardless of target's competing value", async () => {
+      // Target carries its own status field; only PropertyDefault's value
+      // should reach the new instance (no implicit copy).
       const grounding = makeGrounding({
         type: GroundingType.CREATE_INSTANCE,
         targetClass: "ems__Task",
@@ -2598,7 +2585,8 @@ describe("GroundingExecutor — RFC v2 Phase 3b 5-step pipeline", () => {
 
       expect(result.success).toBe(true);
       const [, content] = writer.createFile.mock.calls[0];
-      // PropertyDefault value wins; copy-from-target was blocked by BLACKLIST.
+      // PropertyDefault writes; target's value never reaches new asset
+      // (no copy-from-target after RFC 32445c1c).
       expect(content).toContain(`ems__Effort_status: "[[${STATUS_DRAFT_UID}]]"`);
       expect(content).not.toContain(`ems__Effort_status: "[[${STATUS_BACKLOG_UID}]]"`);
     });
@@ -2926,13 +2914,12 @@ describe("GroundingExecutor — RFC v2 Phase 3b 5-step pipeline", () => {
       );
     });
 
-    // -- Step 3 bypasses BLACKLIST (ems__Effort_area is blacklisted) --
-
-    it("InheritanceRule overrides BLACKLIST: writes ems__Effort_area (Step 3 ignores BLACKLIST)", async () => {
-      // `ems__Effort_area` is in CREATE_INSTANCE_BLACKLIST. Target's own
-      // `ems__Effort_area` value (if any) would be blocked from copy-from-target,
-      // but InheritanceRule explicitly writes a transformed value (target uid
-      // wrapped as wikilink) to it.
+    // -- InheritanceRule is now the only path for ems__Effort_area --
+    //
+    // Pre-RFC 32445c1c: `ems__Effort_area` was BLACKLISTed from Step 4, with
+    // InheritanceRule explicitly writing transformed values into the slot.
+    // Post-RFC: Step 4 removed; InheritanceRule remains the only path.
+    it("InheritanceRule writes ems__Effort_area (target's own value would NOT leak without rule)", async () => {
       const grounding = makeGrounding({
         type: GroundingType.CREATE_INSTANCE,
         targetClass: "ems__Task",
@@ -2962,7 +2949,8 @@ describe("GroundingExecutor — RFC v2 Phase 3b 5-step pipeline", () => {
 
       expect(result.success).toBe(true);
       const [, content] = writer.createFile.mock.calls[0];
-      // InheritanceRule wrote target's UID, copy-from-target was blocked.
+      // InheritanceRule wrote target's UID; target's own ems__Effort_area
+      // value never appears (no copy-from-target after RFC 32445c1c).
       expect(content).toContain(`ems__Effort_area: "[[${TARGET_AREA_UID}]]"`);
       expect(content).not.toContain('ems__Effort_area: "[[outer-area-uid]]"');
     });
@@ -3227,11 +3215,12 @@ describe("GroundingExecutor — RFC v2 Phase 3b 5-step pipeline", () => {
       expect(content).not.toContain(`ems__Effort_area: "[[${TARGET_AREA_UID}]]"`);
     });
 
-    // -- Three-layer interaction (review MED-2):
+    // -- Three-layer homoiconic pipeline (RFC 32445c1c):
     //    Step 1 (userInput) + Step 2 (PropertyDefault) + Step 3 (InheritanceRule)
-    //    + Step 4 (copy-from-target) all contribute to distinct property slots --
+    //    each contributes to its own slot. Step 4 (copy-from-target) removed —
+    //    properties without an explicit rule never reach the new instance. --
 
-    it("Three-layer + copy-from-target: each step contributes to its own slot without cross-talk", async () => {
+    it("Three-layer pipeline: userInput + PropertyDefault + InheritanceRule (no implicit copy)", async () => {
       const grounding = makeGrounding({
         type: GroundingType.CREATE_INSTANCE,
         targetClass: "ems__Task",
@@ -3250,10 +3239,16 @@ describe("GroundingExecutor — RFC v2 Phase 3b 5-step pipeline", () => {
             targetClassExclusion: [],
             priority: 100,
           },
+          {
+            sourcePropertyName: "exo__Asset_isDefinedBy",
+            targetPropertyName: "exo__Asset_isDefinedBy",
+            targetClassExclusion: [],
+            priority: 10,
+          },
         ],
       });
-      // Target has a non-blacklisted property (`ems__Effort_priority`) that
-      // Steps 2/3 don't touch — Step 4 copy-from-target must fill it.
+      // Target carries ems__Effort_priority but no rule mentions it →
+      // RFC 32445c1c: it MUST NOT appear in the created instance.
       reader.readFile.mockResolvedValue(
         buildTargetFm(["ems__Area"], {
           exo__Asset_isDefinedBy: `"[[${OWNER_ONTOLOGY_UID}]]"`,
@@ -3275,19 +3270,19 @@ describe("GroundingExecutor — RFC v2 Phase 3b 5-step pipeline", () => {
       const [, content] = writer.createFile.mock.calls[0];
       // Step 1 (userInput) contributes ems__Effort_responsible.
       expect(content).toContain('ems__Effort_responsible: "[[user-uid]]"');
-      // Step 2 (PropertyDefault) contributes ems__Effort_status (BLACKLISTed
-      // but PD bypasses BLACKLIST).
+      // Step 2 (PropertyDefault) contributes ems__Effort_status.
       expect(content).toContain(`ems__Effort_status: "[[${STATUS_DRAFT_UID}]]"`);
-      // Step 3 (InheritanceRule) contributes ems__Effort_area (BLACKLISTed
-      // but IR bypasses BLACKLIST).
+      // Step 3 (InheritanceRule) contributes ems__Effort_area (Area target match).
       expect(content).toContain(`ems__Effort_area: "[[${TARGET_AREA_UID}]]"`);
-      // Step 4 (copy-from-target) fills ems__Effort_priority — not touched
-      // by Steps 2/3, not in BLACKLIST.
-      expect(content).toContain('ems__Effort_priority: "[[priority-high]]"');
-      // Step 4 also copies non-blacklisted exo__Asset_isDefinedBy from target.
+      // Step 3 (InheritanceRule) contributes exo__Asset_isDefinedBy
+      // (unconditional rule on target's value).
       expect(content).toContain(
         `exo__Asset_isDefinedBy: "[[${OWNER_ONTOLOGY_UID}]]"`,
       );
+      // RFC 32445c1c: ems__Effort_priority is on target but no rule mentions
+      // it → must NOT leak into new instance (Bug 3 regression guard).
+      expect(content).not.toContain('ems__Effort_priority:');
+      expect(content).not.toContain('priority-high');
     });
 
     // -- Backward compatibility: Groundings without propertyDefault / inheritanceRule --
