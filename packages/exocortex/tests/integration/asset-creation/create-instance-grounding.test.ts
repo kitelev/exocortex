@@ -276,12 +276,11 @@ describe("Integration: create_instance grounding → NoteToRDFConverter", () => 
   let groundingExecutor: GroundingExecutor;
   let converter: NoteToRDFConverter;
 
-  // copy-from-target (RFC v0.2) reads the parent file's frontmatter via
-  // `fs.readFile(targetFilePath)`; the integration test previously omitted
-  // this seeding, causing every test to fail at the read with "File not
-  // found" before this suite was wired into a green required check. Seed a
-  // minimal parent.md so the executor's copy-loop sees real frontmatter and
-  // proceeds to write the new instance.
+  // RFC 32445c1c removed Step 4 (copy-from-target). The executor now reads
+  // `$target` only when at least one `inheritanceRule` is attached. None of
+  // the test fixtures in this suite carry rules, so this seed is defensive
+  // only — kept to make any future fixture that adds a rule (which would
+  // re-introduce the read) deterministic instead of "File not found"-flaky.
   const PARENT_FILE_PATH = "/vault/parent.md";
   const PARENT_FILE_CONTENT = [
     "---",

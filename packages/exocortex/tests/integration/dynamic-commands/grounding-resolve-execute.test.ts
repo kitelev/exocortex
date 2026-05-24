@@ -13,8 +13,9 @@
  *        NOT legacy `exo__Asset_source`.
  *   2. `targetClass` reference (full IRI in store) → emitted as short
  *        `exo__Instance_class: "[[ems__Task]]"`, NOT full IRI form.
- *   3. `copyFromTarget` semantics — ≥3 non-blacklisted fields copied from source
- *        asset's frontmatter into the new instance.
+ *   3. RFC 32445c1c homoiconic cutover — Grounding without any
+ *        `exocmd__Grounding_inheritanceRule` MUST NOT inherit any property
+ *        from $target (Step 4 copy-from-target removed; explicit rules only).
  */
 
 import { InMemoryTripleStore } from "../../../src/infrastructure/rdf/InMemoryTripleStore";
@@ -590,7 +591,11 @@ describe("RFC da3a7555 — RDF → Resolver → Executor pipeline (create_instan
     expect(fs.getContent(createdPath)!).not.toContain("SHOULD-NOT-BE-USED");
   });
 
-  it("Fixture 3: copy-from-target inherits ≥3 non-blacklisted fields from source frontmatter", async () => {
+  it("Fixture 3 (RFC 32445c1c): NO implicit copy-from-target — source-only fields do not leak", async () => {
+    // RFC 32445c1c removed Step 4 (copy-from-target + BLACKLIST). After this
+    // cutover, a Grounding WITHOUT any `exocmd__Grounding_inheritanceRule`
+    // attached MUST NOT inherit any property from $target — implicit copy is
+    // the bug, explicit declarative rules are the fix.
     await seedGrounding(store, {
       linkBackPropertyLiteral: `[[${PROPERTY_UID}|ems__Effort_prevIteration]]`,
     });
@@ -608,25 +613,24 @@ describe("RFC da3a7555 — RDF → Resolver → Executor pipeline (create_instan
     const createdPath = fs.listCreated().find((p) => p !== SOURCE_FILE_PATH);
     const content = fs.getContent(createdPath!)!;
 
-    // ≥3 copy-from-target fields must be present.
-    // Issue #3184 B3: `ems__Effort_area` is now blacklisted — replace with
-    // `ems__Effort_priority` which still inherits through copy-from-target.
-    const copiedKeys = [
+    // Source-only fields MUST NOT appear in the new instance.
+    const sourceOnlyKeys = [
       "ems__Effort_parent",
       "ems__Effort_priority",
       "ems__Effort_responsible",
+      "ems__Effort_area",
+      "ems__Effort_status",
     ];
-    const copiedCount = copiedKeys.filter((k) => content.includes(`${k}:`)).length;
-    expect(copiedCount).toBeGreaterThanOrEqual(3);
-
-    // Blacklist enforcement: must NOT copy uid, label, status, instance_class.
+    for (const key of sourceOnlyKeys) {
+      expect(content).not.toContain(`${key}:`);
+    }
+    // Identity/lifecycle fields also do not leak.
     expect(content).not.toMatch(/\nexo__Asset_uid: 36e54b4c/);
     expect(content).not.toMatch(/^aliases:\n.*- "Source Task"/m);
-    // Issue #3184 B3+B4: `ems__Effort_area` and `exo__Asset_relates` are
-    // blacklisted; verify they don't bleed into the new instance.
-    expect(content).not.toContain("ems__Effort_area:");
-    expect(content).not.toContain("exo__Asset_relates:");
-    // Back-link present.
-    expect(content).toContain(`ems__Effort_prevIteration: "[[${SOURCE_FILE_PATH.replace(/\.md$/, "")}]]"`);
+    // Back-link still wired by Step 5 (engine scaffolding, independent of
+    // Step 4 removal). Use a regex anchored on the back-link prop name so
+    // the assertion survives the pre-existing $target → UUID-form quirk
+    // (see also Fixture 1).
+    expect(content).toMatch(/ems__Effort_prevIteration: "\[\[/);
   });
 });
