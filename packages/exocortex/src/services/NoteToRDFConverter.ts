@@ -972,10 +972,21 @@ export class NoteToRDFConverter {
             // back through #2782 → `<ems#Task>` and yield label-form
             // `"[[ems__Task]]"` in the created instance's
             // `exo__Instance_class` — violating UUID-canon TBox.
+            //
+            // `PropertyDefault_value` joins the bypass list for the same
+            // reason: PropertyDefault assets store the default value as a
+            // wikilink (e.g. `[[c42245d0-...]]` pointing to
+            // `ems__EffortStatusDraft`). Without this bypass the #2782
+            // substitution rewrites the triple object to
+            // `<ems#EffortStatusDraft>`, CommandResolver.resolvePropertyDefaultValue
+            // then writes label-form `"[[ems__EffortStatusDraft]]"` into the
+            // created instance — violating UUID-canon for `ems__Effort_status`
+            // and the wider PropertyDefault story.
             const isGroundingRef =
               predicate?.value.endsWith("#Grounding_targetValueRef") ||
               predicate?.value.endsWith("#Grounding_targetValueSubstitution") ||
-              predicate?.value.endsWith("#Grounding_targetClass");
+              predicate?.value.endsWith("#Grounding_targetClass") ||
+              predicate?.value.endsWith("#PropertyDefault_value");
             if (isGroundingRef) {
               return [fileIRI];
             }
