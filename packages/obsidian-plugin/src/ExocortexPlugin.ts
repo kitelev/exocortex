@@ -928,6 +928,15 @@ export default class ExocortexPlugin extends Plugin {
         // folders at onLayoutReady restores parity with desktop
         // and eliminates the "buttons appear with the second
         // Notice" UX regression observed on v16.26.5.
+        //
+        // Phase 3b loader-invalidation hooks (`forget` on
+        // metadataCache `changed` + vault `rename` + vault
+        // `delete`) live at the eager-init block above (~line 237)
+        // so the loader stays coherent across edits. If
+        // `metadataCache` is not yet fully resolved at
+        // `onLayoutReady`, `ensureFileLoaded` may insert empty
+        // frontmatter triples; the `metadataCache.on("resolved")`
+        // re-index handler downstream covers that race.
         performance.mark("lazy-tbox-bootstrap-start");
         void (async () => {
           try {

@@ -2325,13 +2325,27 @@ describe("ExocortexPlugin", () => {
     });
 
     // RFC c7da0bca Phase 4 — the lazy-tbox-bootstrap previously skipped
-    // mobile via `if (Platform.isMobile) return;`. After Phase 3c
-    // deleted the parallel fast-resolver chain, the bootstrap is the
-    // sole code path that places `exocmd__CommandBinding` triples in
-    // the store before first render. Skipping it on mobile produced a
-    // 20-30 s "buttons appear with the second Notice" UX regression
-    // (observed on v16.26.5, iPhone). The guard was removed; this
-    // test pins that the bootstrap fires on mobile.
+    // mobile via `if (Platform.isMobile) return;` placed BEFORE the
+    // `performance.mark("lazy-tbox-bootstrap-start")` call. This test
+    // mutates the Obsidian `Platform` mock to mobile and pins that
+    // the start-mark fires — pre-guard-removal it would not. After
+    // Phase 3c deleted the parallel fast-resolver chain, the
+    // bootstrap is the sole code path that places
+    // `exocmd__CommandBinding` triples into the store before first
+    // render, so skipping it on mobile produced the 20-30 s
+    // "buttons appear with the second Notice" UX regression
+    // (observed on v16.26.5, iPhone).
+    //
+    // Note: this test pins only the start-mark fire, not the
+    // file-iteration loop reach. Pinning the loop would require
+    // either undoing the file-level `jest.mock` of
+    // `ObsidianVaultAdapter` (auto-mocked at module scope, line ~19)
+    // or `jest.requireActual`-substituting the real adapter built
+    // on top of `mockVault` — both are non-trivial under the
+    // current test scaffolding. The end-to-end loader walk on
+    // mobile is independently exercised by
+    // `LazyAssetGraphLoader.test.ts` and the iPhone smoke step in
+    // the PR's verification plan.
     it("emits 'lazy-tbox-bootstrap-start' on mobile (Phase 4 unguard regression)", async () => {
       const obsidianMock = await import("obsidian");
       const platform = (obsidianMock as unknown as { Platform: { isMobile: boolean; isDesktop: boolean } }).Platform;
