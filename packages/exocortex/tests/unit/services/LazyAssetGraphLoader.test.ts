@@ -560,6 +560,96 @@ describe("LazyAssetGraphLoader", () => {
     });
   });
 
+  describe("race — forget/clearAll during in-flight ensureFileLoaded", () => {
+    type Deferred<T> = {
+      promise: Promise<T>;
+      resolve: (v: T) => void;
+      reject: (err: unknown) => void;
+    };
+    const makeDeferred = <T,>(): Deferred<T> => {
+      let resolve!: (v: T) => void;
+      let reject!: (err: unknown) => void;
+      const promise = new Promise<T>((res, rej) => {
+        resolve = res;
+        reject = rej;
+      });
+      return { promise, resolve, reject };
+    };
+
+    it("forget during await convertNote skips post-await store write", async () => {
+      const subject = pathToIRI("racing.md");
+      const file = makeFile("racing.md");
+      const deferred = makeDeferred<Triple[]>();
+
+      const slowConverter: INoteConverter = {
+        convertNote: () => deferred.promise,
+        notePathToIRI: pathToIRI,
+      };
+      const racingLoader = new LazyAssetGraphLoader(
+        slowConverter,
+        resolver,
+        store,
+      );
+
+      const inflight = racingLoader.ensureFileLoaded(file);
+      expect(racingLoader.isLoaded(subject)).toBe(true);
+
+      racingLoader.forget(subject);
+      expect(racingLoader.isLoaded(subject)).toBe(false);
+
+      deferred.resolve([new Triple(subject, labelPred, new Literal("Racing"))]);
+      await inflight;
+
+      const storeContents = await store.match(subject, undefined, undefined);
+      expect(storeContents).toHaveLength(0);
+      expect(racingLoader.isLoaded(subject)).toBe(false);
+      expect(racingLoader.loadedCount).toBe(0);
+    });
+
+    it("clearAll during await convertNote skips post-await store write", async () => {
+      const subject = pathToIRI("clearracing.md");
+      const file = makeFile("clearracing.md");
+      const deferred = makeDeferred<Triple[]>();
+
+      const slowConverter: INoteConverter = {
+        convertNote: () => deferred.promise,
+        notePathToIRI: pathToIRI,
+      };
+      const racingLoader = new LazyAssetGraphLoader(
+        slowConverter,
+        resolver,
+        store,
+      );
+
+      const inflight = racingLoader.ensureFileLoaded(file);
+      expect(racingLoader.isLoaded(subject)).toBe(true);
+
+      racingLoader.clearAll();
+      expect(racingLoader.loadedCount).toBe(0);
+
+      deferred.resolve([new Triple(subject, labelPred, new Literal("Cleared"))]);
+      await inflight;
+
+      const storeContents = await store.match(subject, undefined, undefined);
+      expect(storeContents).toHaveLength(0);
+      expect(racingLoader.loadedCount).toBe(0);
+    });
+
+    it("no race → triples are still written normally (sanity)", async () => {
+      const file = makeFile("clean.md");
+      const subject = pathToIRI("clean.md");
+      converter.registerFile(file, [
+        new Triple(subject, labelPred, new Literal("Clean")),
+      ]);
+
+      await loader.ensureFileLoaded(file);
+
+      const storeContents = await store.match(subject, undefined, undefined);
+      expect(storeContents).toHaveLength(1);
+      expect(loader.isLoaded(subject)).toBe(true);
+    });
+  });
+
   describe("clearForTests", () => {
     it("resets the loaded set so subsequent loads re-fetch", async () => {
       const file = makeFile("task.md");

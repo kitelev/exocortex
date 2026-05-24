@@ -87,6 +87,14 @@ export interface INoteConverter {
 @injectable()
 export class LazyAssetGraphLoader {
   private readonly loadedIRIs = new Set<string>();
+  /**
+   * Monotonic counter bumped by every `forget()` / `clearAll()` call.
+   * `ensureFileLoaded` snapshots this before its `await convertNote()`
+   * and re-checks after, so an invalidation that fires during the
+   * await window is detected and the in-flight write to the store is
+   * skipped. Resolves the HIGH race finding from PR #3256 review.
+   */
+  private generation = 0;
   private readonly instanceClassPredicate: IRI;
   private readonly superClassPredicate: IRI;
   private readonly prototypePredicate: IRI;
@@ -120,15 +128,37 @@ export class LazyAssetGraphLoader {
     // tick short-circuits via `loadedIRIs.has`. This avoids racing two
     // `convertNote` calls for the same asset.
     this.loadedIRIs.add(iri);
+    // Snapshot generation BEFORE the await. Resolves the HIGH race
+    // finding from PR #3256 review: if `forget(iri)` or `clearAll()`
+    // fires during the await window, our load-mark was invalidated
+    // and the post-await success branch must NOT silently complete
+    // (which would write stale triples + leave the load-mark absent,
+    // making it impossible to distinguish from "never loaded").
+    const generationAtStart = this.generation;
     try {
       const triples = await this.converter.convertNote(file);
+      if (this.generation !== generationAtStart) {
+        // Invalidation fired during await. Don't write the triples —
+        // the indexer's own `updateFile()` / `refresh()` chain (which
+        // triggered the invalidation) is the authority for the
+        // post-invalidation store state. Leave `loadedIRIs` as
+        // `forget`/`clearAll` left it; the next render will re-walk
+        // with fresh state.
+        return;
+      }
       await this.store.addAll(triples);
+      if (this.generation !== generationAtStart) {
+        // A second check after the addAll-await window. Same rationale.
+        return;
+      }
       await this.walkClassAndPrototypeRelations(triples, depth + 1);
     } catch (err) {
       // Rollback the loaded mark so the caller can retry. Without this
       // a thrown `convertNote` would poison the IRI for the session —
       // the next ensure-call would short-circuit on the loaded mark
       // while the store has zero triples for the asset.
+      // Safe in the post-generation-bump case too: `delete` of an
+      // already-deleted key is a no-op.
       this.loadedIRIs.delete(iri);
       throw err;
     }
@@ -207,6 +237,7 @@ export class LazyAssetGraphLoader {
    *              loaded-set. See "IRI canonical form" above.
    */
   forget(iri: IRI): void {
+    this.generation++;
     this.loadedIRIs.delete(iri.value);
   }
 
@@ -242,6 +273,7 @@ export class LazyAssetGraphLoader {
    *     lazyLoader.clearAll();       // then reset loader state
    */
   clearAll(): void {
+    this.generation++;
     this.loadedIRIs.clear();
   }
 
