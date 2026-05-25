@@ -700,15 +700,54 @@ describe("CommandResolver", () => {
         expect(cmd!.grounding.id).toBe("gnd-meeting");
       });
 
-      it("picks Task grounding when binding targetClass=ems__TaskPrototype", async () => {
-        await setupUniversalCmdWithTwoGroundings();
+      it("picks Task grounding when binding targetClass=ems__TaskPrototype, even when Task grounding declared SECOND in iteration order", async () => {
+        // Inverse of the Meeting test: insert Meeting grounding FIRST, Task
+        // SECOND, then ask the picker for Task. If picker were still first-
+        // wins, this would return gnd-meeting. Discriminates fix-vs-revert
+        // because order is reversed from setupUniversalCmdWithTwoGroundings.
 
-        const cmd = await resolver.loadCommand("cmd-universal", {
+        await addGroundingAsset(store, {
+          uid: "gnd-meeting-2",
+          label: "Create Meeting instance",
+          type: "create_instance",
+        });
+        const gMeeting = new IRI("obsidian://vault/gnd-meeting-2.md");
+        await store.addAll([
+          new Triple(
+            gMeeting,
+            Namespace.EXOCMD.term("Grounding_targetPrototype"),
+            new Literal("uid-meeting-proto|ems__MeetingPrototype"),
+          ),
+        ]);
+        await addGroundingAsset(store, {
+          uid: "gnd-task-2",
+          label: "Create Task instance",
+          type: "create_instance",
+        });
+        const gTask = new IRI("obsidian://vault/gnd-task-2.md");
+        await store.addAll([
+          new Triple(
+            gTask,
+            Namespace.EXOCMD.term("Grounding_targetPrototype"),
+            new Literal("uid-task-proto|ems__TaskPrototype"),
+          ),
+        ]);
+        const cmdSubject = new IRI("obsidian://vault/cmd-universal-2.md");
+        await store.addAll([
+          new Triple(cmdSubject, Namespace.RDF.term("type"), Namespace.EXOCMD.term("Command")),
+          new Triple(cmdSubject, Namespace.EXO.term("Asset_uid"), new Literal("cmd-universal-2")),
+          new Triple(cmdSubject, Namespace.EXO.term("Asset_label"), new Literal("Create Instance v2")),
+          // Meeting FIRST, Task SECOND — opposite of the other test
+          new Triple(cmdSubject, Namespace.EXOCMD.term("Command_grounding"), gMeeting),
+          new Triple(cmdSubject, Namespace.EXOCMD.term("Command_grounding"), gTask),
+        ]);
+
+        const cmd = await resolver.loadCommand("cmd-universal-2", {
           targetClass: "ems__TaskPrototype",
         });
 
         expect(cmd).not.toBeNull();
-        expect(cmd!.grounding.id).toBe("gnd-task");
+        expect(cmd!.grounding.id).toBe("gnd-task-2");
       });
 
       it("falls back to first grounding when no grounding declares matching targetPrototype (legacy behaviour preserved)", async () => {
@@ -730,6 +769,47 @@ describe("CommandResolver", () => {
 
         expect(cmd).not.toBeNull();
         expect(cmd!.grounding.id).toBe("gnd-task");
+      });
+
+      it("skips groundings without Grounding_targetPrototype triple in the loop, finds the one that has matching prototype", async () => {
+        // Grounding A: no targetPrototype at all
+        await addGroundingAsset(store, {
+          uid: "gnd-no-proto",
+          label: "Grounding without targetPrototype",
+          type: "create_instance",
+        });
+        // Grounding B: has matching targetPrototype
+        await addGroundingAsset(store, {
+          uid: "gnd-with-proto",
+          label: "Grounding with Meeting prototype",
+          type: "create_instance",
+        });
+        const gWithProto = new IRI("obsidian://vault/gnd-with-proto.md");
+        await store.addAll([
+          new Triple(
+            gWithProto,
+            Namespace.EXOCMD.term("Grounding_targetPrototype"),
+            new Literal("uid-meeting-proto|ems__MeetingPrototype"),
+          ),
+        ]);
+
+        const cmdSubject = new IRI("obsidian://vault/cmd-mixed.md");
+        await store.addAll([
+          new Triple(cmdSubject, Namespace.RDF.term("type"), Namespace.EXOCMD.term("Command")),
+          new Triple(cmdSubject, Namespace.EXO.term("Asset_uid"), new Literal("cmd-mixed")),
+          new Triple(cmdSubject, Namespace.EXO.term("Asset_label"), new Literal("Mixed command")),
+          // No-proto grounding FIRST — picker must skip it (getObsidianName
+          // returns null → continue) and proceed to gnd-with-proto.
+          new Triple(cmdSubject, Namespace.EXOCMD.term("Command_grounding"), new IRI("obsidian://vault/gnd-no-proto.md")),
+          new Triple(cmdSubject, Namespace.EXOCMD.term("Command_grounding"), gWithProto),
+        ]);
+
+        const cmd = await resolver.loadCommand("cmd-mixed", {
+          targetClass: "ems__MeetingPrototype",
+        });
+
+        expect(cmd).not.toBeNull();
+        expect(cmd!.grounding.id).toBe("gnd-with-proto");
       });
 
       it("single-grounding commands ignore context and load that grounding (fast path)", async () => {

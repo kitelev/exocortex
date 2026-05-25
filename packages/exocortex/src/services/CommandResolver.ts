@@ -327,6 +327,16 @@ export class CommandResolver {
    *   `Grounding_targetPrototype === context.targetClass`. Single-grounding
    *   commands and palette/no-context callers preserve legacy first-wins
    *   behaviour.
+   *
+   * **Scope limit:** the picker is wired off the binding's `targetClass`. A
+   *   binding that declares only `targetPrototype` or `targetAsset` (per
+   *   `loadBindingDefinition`: «at least one target is required») will pass
+   *   `context.targetClass = undefined`, hit the fast path, and resolve to
+   *   the first grounding by iteration order. This matches the empirically-
+   *   observed bug scope (2026-05-25: MeetingPrototype binding via
+   *   `targetClass`). If a future universal-N-grounding command is bound via
+   *   `targetPrototype`/`targetAsset`, extend `context` to cover those keys
+   *   and update the loop to try each.
    */
   async loadCommand(
     commandUID: string,
@@ -1061,6 +1071,18 @@ export class CommandResolver {
     // pattern by mistake still surface a button rather than disappear
     // silently. The empirical case that motivated this picker (issue
     // surfaced 2026-05-25) is now covered by the loop above.
+    //
+    // Defensive logging: silent fallback masks future misconfiguration
+    // (typo in `Grounding_targetPrototype`, missing variant for a new
+    // prototype, etc.) — same failure shape as the original bug this
+    // fix addresses. Warn so misconfig is visible in plugin logs.
+    this.logger.warn(
+      `Command ${parentSubject.value}: ${refTriples.length} groundings declared, ` +
+        `none matched context.targetClass='${context.targetClass}' via ` +
+        `Grounding_targetPrototype — falling back to first grounding by ` +
+        `iteration order (legacy behaviour). Check that one grounding's ` +
+        `Grounding_targetPrototype references this targetClass.`,
+    );
     const fallback = await this.resolveGroundingRef(refTriples[0].object);
     if (!fallback) return null;
     return this.loadGroundingDefinition(fallback, depth);
