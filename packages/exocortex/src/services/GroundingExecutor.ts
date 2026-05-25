@@ -670,21 +670,26 @@ export class GroundingExecutor {
     };
     if (grounding.propertyDefault && grounding.propertyDefault.length > 0) {
       this.applyPropertyDefaultStep(properties, grounding.propertyDefault, ctx);
-    } else {
-      // Safety net — no PropertyDefaults at all → restore legacy primitives.
-      // Means Universal Default Template singleton is absent from vault.
-      LoggingService.error(
-        "[GroundingExecutor] No PropertyDefaults reached executor — Universal Default Template singleton likely missing from vault. Falling back to legacy TS primitives (uid/createdAt/label/aliases/Instance_class). Vault is in an unhealthy state; restore the singleton.",
-      );
-      this.applyLegacyPrimitivesFallback(
-        properties,
-        grounding,
-        userInput,
-        groundingTargetClassUid,
-        targetIRI,
-        targetFilePath,
-      );
     }
+
+    // RFC 727572d2 Q3 safety net (defense-in-depth). After applying PropertyDefaults
+    // — whether from Universal Template, Grounding, or both — check that the essential
+    // primitives are present. Fill any gaps from legacy TS primitives (selective top-up,
+    // not all-or-nothing). Triggers when:
+    //   - Universal singleton is fully absent (no PDs reach executor at all)
+    //   - Universal singleton present but does NOT cover one of the 4 essentials
+    //     (e.g. partial vault corruption, in-flight migration)
+    //   - Grounding-specific PD set overrides Universal entries but leaves gaps
+    //
+    // Each fired gap-fill is logged so vault health regressions are visible.
+    this.applyMissingPrimitiveTopUp(
+      properties,
+      grounding,
+      userInput,
+      groundingTargetClassUid,
+      targetIRI,
+      targetFilePath,
+    );
 
     // userInput wins over PropertyDefault and InheritanceRule — apply after
     // PropertyDefault so explicit user values override Universal defaults.
@@ -725,15 +730,9 @@ export class GroundingExecutor {
       }
     }
 
-    // Determine uid for filename — read from properties (PropertyDefault may
-    // have written it via $randomUUIDv4 token).
-    const uid =
-      typeof properties.exo__Asset_uid === "string"
-        ? properties.exo__Asset_uid
-        : this.uidGen.next();
-    if (properties.exo__Asset_uid === undefined) {
-      properties.exo__Asset_uid = uid;
-    }
+    // Determine uid for filename — read from properties (PropertyDefault wrote
+    // it via $randomUUIDv4 token; top-up guaranteed it's set otherwise).
+    const uid = properties.exo__Asset_uid as string;
 
     const content = this.frontmatterService.createFrontmatter("", properties);
     // Issue #3136 (Q3.b closure): allow `$targetFolder` / `$target` tokens in
@@ -819,17 +818,20 @@ export class GroundingExecutor {
   }
 
   /**
-   * RFC 727572d2 — safety-net fallback when Universal Default Template
-   * singleton is absent from the triple store (cold-start race, missing
-   * submodule, corrupt vault). Restores the legacy hardcoded primitives so
-   * asset creation doesn't fail silently. ALWAYS accompanied by an error log.
+   * RFC 727572d2 Q3 safety net (defense-in-depth). Selectively top-up any
+   * essential primitive that PropertyDefaults did not cover, logging each
+   * gap so vault-health regressions surface. The 4 essentials checked are:
+   * exo__Asset_uid, exo__Asset_createdAt, exo__Asset_label, exo__Instance_class.
    *
-   * Also writes the legacy `exo__Asset_prototype` backlink default for
-   * targets without an explicit `linkBackProperty` — Bug #5 returns when the
-   * safety net fires (Project will get the wrong key), but a corrupt asset is
-   * preferable to a creation failure in this degraded state.
+   * Backlink top-up: when neither the grounding's explicit linkBackProperty
+   * nor a Universal InheritanceRule has produced a backlink, write the
+   * legacy `exo__Asset_prototype` default. Bug #5 returns in this degraded
+   * state (Project will get the wrong key), but a corrupt asset is
+   * preferable to a creation failure when the vault is unhealthy.
+   *
+   * Each top-up emits LoggingService.error so the unhealthy state is visible.
    */
-  private applyLegacyPrimitivesFallback(
+  private applyMissingPrimitiveTopUp(
     properties: Record<string, unknown>,
     grounding: GroundingDefinition,
     userInput: UserInput | undefined,
@@ -837,25 +839,59 @@ export class GroundingExecutor {
     targetIRI: string,
     targetFilePath: string,
   ): void {
-    properties.exo__Asset_uid = this.uidGen.next();
-    properties.exo__Asset_createdAt = DateFormatter.toLocalTimestamp(
-      this.clock.now(),
-    );
-    const label = (userInput?.label as string) ?? "Untitled";
-    properties.exo__Asset_label = label;
-    if (label !== "Untitled") {
-      properties.aliases = [label];
+    const missing: string[] = [];
+
+    if (properties.exo__Asset_uid === undefined) {
+      properties.exo__Asset_uid = this.uidGen.next();
+      missing.push("exo__Asset_uid");
     }
-    if (groundingTargetClassUid) {
+
+    if (properties.exo__Asset_createdAt === undefined) {
+      properties.exo__Asset_createdAt = DateFormatter.toLocalTimestamp(
+        this.clock.now(),
+      );
+      missing.push("exo__Asset_createdAt");
+    }
+
+    if (properties.exo__Asset_label === undefined) {
+      const label = (userInput?.label as string) ?? "Untitled";
+      properties.exo__Asset_label = label;
+      if (label !== "Untitled" && properties.aliases === undefined) {
+        properties.aliases = [label];
+      }
+      missing.push("exo__Asset_label");
+    }
+
+    if (
+      properties.exo__Instance_class === undefined &&
+      groundingTargetClassUid
+    ) {
       properties.exo__Instance_class = [`"[[${groundingTargetClassUid}]]"`];
+      missing.push("exo__Instance_class");
     }
-    if (targetIRI && !grounding.linkBackProperty) {
+
+    // Backlink top-up: only when neither explicit linkBackProperty nor a
+    // Universal IR has written a backlink. Checking common backlink keys —
+    // if any is present, assume a rule already wrote it.
+    if (
+      targetIRI &&
+      !grounding.linkBackProperty &&
+      properties.exo__Asset_prototype === undefined &&
+      properties.ems__Effort_parent === undefined
+    ) {
       const backLinkProp = "exo__Asset_prototype";
       const backLinkTarget = GroundingExecutor.extractBacklinkTarget(
         targetIRI,
         targetFilePath,
       );
       properties[backLinkProp] = `"[[${backLinkTarget}]]"`;
+      missing.push("backlink (default: exo__Asset_prototype)");
+    }
+
+    if (missing.length > 0) {
+      LoggingService.error(
+        `[GroundingExecutor] Universal Default Template did not cover essential primitives: ${missing.join(", ")}. Filled from legacy TS fallback. Vault may be in an unhealthy state — verify UniversalDefaultTemplate singleton is present and complete.`,
+      );
     }
   }
 

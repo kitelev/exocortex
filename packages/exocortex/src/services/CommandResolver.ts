@@ -15,6 +15,7 @@ import {
   type StyleSource,
 } from "../domain/constants/CommandBindingStyleEnums";
 import {
+  clearUniversalDefault,
   loadUniversalDefault,
   mergePropertyDefaults,
   mergeInheritanceRules,
@@ -186,6 +187,21 @@ export class CommandResolver {
    */
   private _universalCacheReady = false;
   private _universalCacheValue: UniversalDefaultTemplate | null = null;
+
+  /**
+   * RFC 727572d2 — invalidate the per-instance Universal Default Template
+   * cache. Vault file-watcher adapters (Obsidian plugin / CLI) should call
+   * this when the singleton ABox asset (62907ff4) or any referenced
+   * PropertyDefault / InheritanceRule changes on disk, then either
+   * re-create the CommandResolver or simply rely on lazy re-load on next
+   * `resolvePropertyDefaults` invocation. Also clears the module-level
+   * loader cache so external loader sources stay aligned.
+   */
+  clearUniversalCache(): void {
+    this._universalCacheReady = false;
+    this._universalCacheValue = null;
+    clearUniversalDefault();
+  }
 
   /**
    * @param tripleStore - RDF triple store backing vault assets.
