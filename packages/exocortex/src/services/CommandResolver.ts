@@ -286,7 +286,13 @@ export class CommandResolver {
 
     const resolved: ResolvedCommand[] = [];
     for (const binding of bindings) {
-      const command = await this.loadCommand(binding.commandRef);
+      // Pass binding.targetClass so loadLinkedGrounding can pick the
+      // prototype-matching grounding when a command exposes N groundings
+      // (one per targetPrototype). Without context the loader falls back
+      // to first-by-iteration-order — see fix(grounding) below.
+      const command = await this.loadCommand(binding.commandRef, {
+        targetClass: binding.targetClass,
+      });
       if (!command) continue;
 
       // Apply binding-level precondition override
@@ -313,8 +319,19 @@ export class CommandResolver {
   /**
    * Load a single command definition by UID, including linked Precondition and Grounding.
    * Returns null if the command is not found.
+   *
+   * @param commandUID — UID of the command asset.
+   * @param context — optional dispatch context. When `targetClass` is set and the
+   *   command exposes multiple `Command_grounding` refs (e.g. universal Create
+   *   Instance pattern), the matching grounding is picked by
+   *   `Grounding_targetPrototype === context.targetClass`. Single-grounding
+   *   commands and palette/no-context callers preserve legacy first-wins
+   *   behaviour.
    */
-  async loadCommand(commandUID: string): Promise<CommandDefinition | null> {
+  async loadCommand(
+    commandUID: string,
+    context?: { targetClass?: string },
+  ): Promise<CommandDefinition | null> {
     // Find the command subject by UID
     const subject = await this.findSubjectByUID(commandUID);
     if (!subject) return null;
@@ -339,7 +356,7 @@ export class CommandResolver {
     const precondition = await this.loadLinkedPrecondition(subject);
 
     // Transitively load linked Grounding
-    const grounding = await this.loadLinkedGrounding(subject, 0);
+    const grounding = await this.loadLinkedGrounding(subject, 0, context);
     if (!grounding) return null; // Grounding is required
 
     return {
@@ -994,6 +1011,7 @@ export class CommandResolver {
   private async loadLinkedGrounding(
     parentSubject: IRI,
     depth: number,
+    context?: { targetClass?: string },
   ): Promise<GroundingDefinition | null> {
     if (depth >= MAX_TRANSITIVE_DEPTH) return null;
 
@@ -1004,18 +1022,64 @@ export class CommandResolver {
     );
     if (refTriples.length === 0) return null;
 
-    const ref = refTriples[0].object;
-    let groundingSubject: IRI | null = null;
-
-    if (ref instanceof IRI) {
-      groundingSubject = ref;
-    } else if (ref instanceof Literal) {
-      const uid = this.normalizeWikilink(ref.value);
-      groundingSubject = await this.findSubjectByUID(uid);
+    // Fast path: single grounding OR no targetClass context — preserve
+    // legacy first-by-iteration-order behaviour. Palette commands and
+    // single-grounding bindings land here.
+    if (refTriples.length === 1 || !context?.targetClass) {
+      const groundingSubject = await this.resolveGroundingRef(refTriples[0].object);
+      if (!groundingSubject) return null;
+      return this.loadGroundingDefinition(groundingSubject, depth);
     }
 
-    if (!groundingSubject) return null;
-    return this.loadGroundingDefinition(groundingSubject, depth);
+    // Multi-grounding dispatch: pick the grounding whose
+    // `Grounding_targetPrototype` matches the binding's `targetClass`.
+    // Enables the "1 Command + N Grounding (per prototype) + N Binding
+    // (per targetClass)" universal pattern (e.g. bb00efed Create Task
+    // Instance with TaskPrototype/ProjectPrototype/MeetingPrototype/…
+    // variant groundings). Before this fix, `refTriples[0]` was picked
+    // unconditionally — MeetingPrototype binding could end up creating
+    // an `ems__Task` if the TaskPrototype grounding happened to be first
+    // in iteration order.
+    for (const triple of refTriples) {
+      const groundingSubject = await this.resolveGroundingRef(triple.object);
+      if (!groundingSubject) continue;
+      const targetPrototype = await this.getObsidianName(
+        groundingSubject,
+        Namespace.EXOCMD.term("Grounding_targetPrototype"),
+      );
+      if (
+        targetPrototype &&
+        this.matchesReference(targetPrototype, context.targetClass)
+      ) {
+        return this.loadGroundingDefinition(groundingSubject, depth);
+      }
+    }
+
+    // Fallback: no grounding declared targetPrototype matching the
+    // binding's targetClass. Preserve legacy behaviour (first wins) so
+    // existing single-purpose commands attached via multi-grounding
+    // pattern by mistake still surface a button rather than disappear
+    // silently. The empirical case that motivated this picker (issue
+    // surfaced 2026-05-25) is now covered by the loop above.
+    const fallback = await this.resolveGroundingRef(refTriples[0].object);
+    if (!fallback) return null;
+    return this.loadGroundingDefinition(fallback, depth);
+  }
+
+  /**
+   * Resolve a `Command_grounding` object reference (IRI or Literal wikilink)
+   * to the grounding asset's IRI subject. Returns null when the reference
+   * cannot be resolved (UID not indexed).
+   */
+  private async resolveGroundingRef(
+    ref: IRI | Literal | unknown,
+  ): Promise<IRI | null> {
+    if (ref instanceof IRI) return ref;
+    if (ref instanceof Literal) {
+      const uid = this.normalizeWikilink(ref.value);
+      return await this.findSubjectByUID(uid);
+    }
+    return null;
   }
 
   private async loadGroundingDefinition(

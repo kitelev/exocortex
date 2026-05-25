@@ -639,6 +639,120 @@ describe("CommandResolver", () => {
       expect(cmd!.grounding.steps![0].type).toBe("property_set");
       expect(cmd!.grounding.steps![1].targetProperty).toBe("ems__Effort_startTimestamp");
     });
+
+    // Multi-grounding picker (issue surfaced 2026-05-25): a command with N
+    // `Command_grounding` refs (universal Create Instance pattern) must pick
+    // the grounding whose `Grounding_targetPrototype` matches the binding's
+    // `targetClass`. Before the fix, `refTriples[0]` was returned silently,
+    // so e.g. MeetingPrototype binding could land on the TaskPrototype
+    // grounding and create the wrong instance class.
+    describe("multi-grounding picker (Command_grounding × N)", () => {
+      async function setupUniversalCmdWithTwoGroundings() {
+        // Task variant
+        await addGroundingAsset(store, {
+          uid: "gnd-task",
+          label: "Create Task instance",
+          type: "create_instance",
+        });
+        const gTask = new IRI("obsidian://vault/gnd-task.md");
+        await store.addAll([
+          new Triple(
+            gTask,
+            Namespace.EXOCMD.term("Grounding_targetPrototype"),
+            new Literal("uid-task-proto|ems__TaskPrototype"),
+          ),
+        ]);
+        // Meeting variant
+        await addGroundingAsset(store, {
+          uid: "gnd-meeting",
+          label: "Create Meeting instance",
+          type: "create_instance",
+        });
+        const gMeeting = new IRI("obsidian://vault/gnd-meeting.md");
+        await store.addAll([
+          new Triple(
+            gMeeting,
+            Namespace.EXOCMD.term("Grounding_targetPrototype"),
+            new Literal("uid-meeting-proto|ems__MeetingPrototype"),
+          ),
+        ]);
+
+        // Universal command — Task grounding declared FIRST (preserves the
+        // original bb00efed iteration-order trap).
+        const cmdSubject = new IRI("obsidian://vault/cmd-universal.md");
+        await store.addAll([
+          new Triple(cmdSubject, Namespace.RDF.term("type"), Namespace.EXOCMD.term("Command")),
+          new Triple(cmdSubject, Namespace.EXO.term("Asset_uid"), new Literal("cmd-universal")),
+          new Triple(cmdSubject, Namespace.EXO.term("Asset_label"), new Literal("Create Instance")),
+          new Triple(cmdSubject, Namespace.EXOCMD.term("Command_grounding"), gTask),
+          new Triple(cmdSubject, Namespace.EXOCMD.term("Command_grounding"), gMeeting),
+        ]);
+      }
+
+      it("picks Meeting grounding when binding targetClass=ems__MeetingPrototype, even though Task grounding declared first", async () => {
+        await setupUniversalCmdWithTwoGroundings();
+
+        const cmd = await resolver.loadCommand("cmd-universal", {
+          targetClass: "ems__MeetingPrototype",
+        });
+
+        expect(cmd).not.toBeNull();
+        expect(cmd!.grounding.id).toBe("gnd-meeting");
+      });
+
+      it("picks Task grounding when binding targetClass=ems__TaskPrototype", async () => {
+        await setupUniversalCmdWithTwoGroundings();
+
+        const cmd = await resolver.loadCommand("cmd-universal", {
+          targetClass: "ems__TaskPrototype",
+        });
+
+        expect(cmd).not.toBeNull();
+        expect(cmd!.grounding.id).toBe("gnd-task");
+      });
+
+      it("falls back to first grounding when no grounding declares matching targetPrototype (legacy behaviour preserved)", async () => {
+        await setupUniversalCmdWithTwoGroundings();
+
+        const cmd = await resolver.loadCommand("cmd-universal", {
+          targetClass: "ems__UnknownPrototype",
+        });
+
+        expect(cmd).not.toBeNull();
+        // First in iteration order = gnd-task per setup ordering
+        expect(cmd!.grounding.id).toBe("gnd-task");
+      });
+
+      it("falls back to first grounding when called WITHOUT context (palette / direct loadCommand callers preserve legacy behaviour)", async () => {
+        await setupUniversalCmdWithTwoGroundings();
+
+        const cmd = await resolver.loadCommand("cmd-universal");
+
+        expect(cmd).not.toBeNull();
+        expect(cmd!.grounding.id).toBe("gnd-task");
+      });
+
+      it("single-grounding commands ignore context and load that grounding (fast path)", async () => {
+        await addGroundingAsset(store, {
+          uid: "gnd-solo",
+          label: "Solo grounding",
+          type: "property_set",
+          targetProperty: "ems__Effort_status",
+        });
+        await addCommandAsset(store, {
+          uid: "cmd-solo",
+          label: "Solo command",
+          groundingRef: "gnd-solo",
+        });
+
+        const cmd = await resolver.loadCommand("cmd-solo", {
+          targetClass: "ems__TaskPrototype",
+        });
+
+        expect(cmd).not.toBeNull();
+        expect(cmd!.grounding.id).toBe("gnd-solo");
+      });
+    });
   });
 
   describe("findBindings", () => {
