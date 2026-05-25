@@ -682,13 +682,13 @@ export class GroundingExecutor {
     //   - Grounding-specific PD set overrides Universal entries but leaves gaps
     //
     // Each fired gap-fill is logged so vault health regressions are visible.
-    this.applyMissingPrimitiveTopUp(
+    // Phase A top-up: fill missing scalar primitives (uid/createdAt/label/
+    // Instance_class). Backlink is deferred to Phase B (after IR step) so
+    // we don't write legacy default before IRs get a chance.
+    this.applyMissingScalarPrimitives(
       properties,
-      grounding,
       userInput,
       groundingTargetClassUid,
-      targetIRI,
-      targetFilePath,
     );
 
     // userInput wins over PropertyDefault and InheritanceRule — apply after
@@ -716,6 +716,13 @@ export class GroundingExecutor {
         targetFm,
       );
     }
+
+    // Phase B top-up: backlink. Only fires when NO backlink-shaped key was
+    // written by PD step / IR step AND grounding has no explicit
+    // linkBackProperty. Safety-net for degraded mode where Universal singleton
+    // is fully absent (IRs missing → no rule wrote backlink). Bug #5 returns
+    // here, but a corrupt asset is preferable to creation failure.
+    this.applyMissingBacklinkTopUp(properties, grounding, targetIRI, targetFilePath);
 
     // Per-Grounding explicit linkBackProperty (legacy escape hatch) — still
     // honoured when set. Universal IRs handle the default case; per-Grounding
@@ -831,13 +838,10 @@ export class GroundingExecutor {
    *
    * Each top-up emits LoggingService.error so the unhealthy state is visible.
    */
-  private applyMissingPrimitiveTopUp(
+  private applyMissingScalarPrimitives(
     properties: Record<string, unknown>,
-    grounding: GroundingDefinition,
     userInput: UserInput | undefined,
     groundingTargetClassUid: string | undefined,
-    targetIRI: string,
-    targetFilePath: string,
   ): void {
     const missing: string[] = [];
 
@@ -870,29 +874,46 @@ export class GroundingExecutor {
       missing.push("exo__Instance_class");
     }
 
-    // Backlink top-up: only when neither explicit linkBackProperty nor a
-    // Universal IR has written a backlink. Checking common backlink keys —
-    // if any is present, assume a rule already wrote it.
-    if (
-      targetIRI &&
-      !grounding.linkBackProperty &&
-      properties.exo__Asset_prototype === undefined &&
-      properties.ems__Effort_parent === undefined
-    ) {
-      const backLinkProp = "exo__Asset_prototype";
-      const backLinkTarget = GroundingExecutor.extractBacklinkTarget(
-        targetIRI,
-        targetFilePath,
-      );
-      properties[backLinkProp] = `"[[${backLinkTarget}]]"`;
-      missing.push("backlink (default: exo__Asset_prototype)");
-    }
-
     if (missing.length > 0) {
       LoggingService.error(
-        `[GroundingExecutor] Universal Default Template did not cover essential primitives: ${missing.join(", ")}. Filled from legacy TS fallback. Vault may be in an unhealthy state — verify UniversalDefaultTemplate singleton is present and complete.`,
+        `[GroundingExecutor] Universal Default Template did not cover essential scalar primitives: ${missing.join(", ")}. Filled from legacy TS fallback. Vault may be in an unhealthy state — verify UniversalDefaultTemplate singleton is present and complete.`,
       );
     }
+  }
+
+  /**
+   * Phase B top-up: legacy `exo__Asset_prototype` backlink default. Fires
+   * ONLY when:
+   *   - target asset known (targetIRI truthy)
+   *   - no per-Grounding explicit linkBackProperty (writes its own value below)
+   *   - no Universal/Grounding InheritanceRule has written a common backlink
+   *     key (exo__Asset_prototype, ems__Effort_parent)
+   *
+   * This guards the safety net from double-writing backlink when the IR step
+   * already produced one. When it does fire, Bug #5 returns (Project gets
+   * the wrong key), but a corrupt asset is preferable to creation failure.
+   */
+  private applyMissingBacklinkTopUp(
+    properties: Record<string, unknown>,
+    grounding: GroundingDefinition,
+    targetIRI: string,
+    targetFilePath: string,
+  ): void {
+    if (!targetIRI || grounding.linkBackProperty) return;
+    if (
+      properties.exo__Asset_prototype !== undefined ||
+      properties.ems__Effort_parent !== undefined
+    ) {
+      return;
+    }
+    const backLinkTarget = GroundingExecutor.extractBacklinkTarget(
+      targetIRI,
+      targetFilePath,
+    );
+    properties.exo__Asset_prototype = `"[[${backLinkTarget}]]"`;
+    LoggingService.error(
+      "[GroundingExecutor] No backlink rule fired (Universal IRs absent or no class match). Falling back to legacy exo__Asset_prototype default. Bug #5 may surface if target is not a prototype-instance.",
+    );
   }
 
   /**
