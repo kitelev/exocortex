@@ -3463,4 +3463,103 @@ describe("GroundingExecutor — RFC v2 Phase 3b 5-step pipeline", () => {
       });
     });
   });
+
+  // RFC 727572d2 — safety-net top-up coverage (HIGH-1+2 reviewer fixes)
+  describe("RFC 727572d2 partial-PD safety-net top-up", () => {
+    it("PD covers only uid + createdAt → top-up fills label + Instance_class + backlink + error log", async () => {
+      // Simulate Universal Default Template with only 2 of 4 essential primitives
+      // (e.g. partial vault corruption / in-flight migration). PR ships
+      // executor with selective top-up: missing essentials filled from legacy
+      // TS, log emitted to surface vault-health regression.
+      const grounding = makeGrounding({
+        type: GroundingType.CREATE_INSTANCE,
+        targetClass: "ems__Task",
+        targetFolder: "03 Knowledge/inbox",
+        propertyDefault: [
+          // Provided: exo__Asset_uid + exo__Asset_createdAt (already-resolved strings)
+          { propertyName: "exo__Asset_uid", value: "abc12345-6789-4abc-8def-012345678901" },
+          { propertyName: "exo__Asset_createdAt", value: "2026-05-25T10:00:00" },
+        ],
+      });
+
+      const errorSpy = jest.spyOn(require("../../../src/services/LoggingService").LoggingService, "error").mockImplementation();
+
+      const result = await executor.execute(
+        grounding,
+        TARGET_IRI,
+        FILE_PATH,
+        { label: "My New Asset" },
+      );
+
+      expect(result.success).toBe(true);
+      const [, content] = writer.createFile.mock.calls[0];
+
+      // PD-provided values appear unchanged
+      expect(content).toContain("exo__Asset_uid: abc12345-6789-4abc-8def-012345678901");
+      expect(content).toContain("exo__Asset_createdAt: 2026-05-25T10:00:00");
+
+      // Top-up filled missing essentials
+      expect(content).toContain("exo__Asset_label: My New Asset");
+      expect(content).toContain("exo__Instance_class:"); // top-up fills
+      expect(content).toContain("aliases:"); // bonus: label-derived alias
+
+      // Backlink top-up: target known, no per-Grounding linkBackProperty, no IR fired
+      expect(content).toContain('exo__Asset_prototype: "[[');
+
+      // Error log emitted (vault-health visibility)
+      expect(errorSpy).toHaveBeenCalled();
+      const calls = errorSpy.mock.calls.flat().map(String);
+      expect(calls.some((s) => s.includes("exo__Asset_label") && s.includes("exo__Instance_class"))).toBe(true);
+
+      errorSpy.mockRestore();
+    });
+
+    it("Full Universal PDs → no top-up + no error log (happy path)", async () => {
+      // When all 4 essentials are covered by PDs (i.e. healthy Universal
+      // Template), top-up SKIPS and no error log fires.
+      const grounding = makeGrounding({
+        type: GroundingType.CREATE_INSTANCE,
+        targetClass: "ems__Task",
+        targetFolder: "03 Knowledge/inbox",
+        propertyDefault: [
+          { propertyName: "exo__Asset_uid", value: "abc12345-6789-4abc-8def-012345678901" },
+          { propertyName: "exo__Asset_createdAt", value: "2026-05-25T10:00:00" },
+          { propertyName: "exo__Asset_label", value: "Universal-provided Label" },
+          { propertyName: "exo__Instance_class", value: '"[[1b20a8f0-d745-4e93-91db-4531b3df120e]]"' },
+        ],
+        inheritanceRule: [
+          // Universal IR that fires for ems__Task — writes backlink
+          {
+            sourcePropertyName: "exo__Asset_uid",
+            targetPropertyName: "exo__Asset_prototype",
+            targetClassCondition: "ems__Task",
+            targetClassExclusion: [],
+            priority: 100,
+          },
+        ],
+      });
+
+      // Target has ems__Task class so IR fires
+      reader.readFile.mockResolvedValue(
+        "---\nexo__Asset_uid: target-uid-1\nexo__Instance_class:\n  - \"[[ems__Task]]\"\n---\nBody",
+      );
+
+      const errorSpy = jest.spyOn(require("../../../src/services/LoggingService").LoggingService, "error").mockImplementation();
+
+      const result = await executor.execute(
+        grounding,
+        TARGET_IRI,
+        FILE_PATH,
+        { label: "Overridden by Universal" },
+      );
+
+      expect(result.success).toBe(true);
+      // No error log (top-up didn't fire)
+      const calls = errorSpy.mock.calls.flat().map(String);
+      const topUpLogs = calls.filter((s) => s.includes("essential scalar primitives"));
+      expect(topUpLogs).toHaveLength(0);
+
+      errorSpy.mockRestore();
+    });
+  });
 });
