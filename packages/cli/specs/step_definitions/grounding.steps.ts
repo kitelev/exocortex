@@ -17,6 +17,7 @@ import {
   GroundingExecutor,
   ServiceRegistry,
   GroundingType,
+  resolveGroundingTypeFromWikilinkLiteral,
   type GroundingDefinition,
   ArchiveAssetService,
   FixMissingLabelService,
@@ -120,7 +121,14 @@ function readGroundingDef(uid: string, depth = 0): GroundingDefinition {
   const path = UID_INDEX.get(uid);
   if (!path) throw new Error(`Grounding ${uid} not found in fixture vault`);
   const fm = parseFrontmatter(readFileSync(path, "utf8"));
-  const type = fm["exocmd__Grounding_type"] as GroundingType;
+  // RFC 9d20c91f Phase 2 dual-read: post-Phase-3 ABox stores wikilink form
+  // `"[[<uid>]]"` while pre-migration ABox stores legacy bare string
+  // `"property_set"`. Resolve both shapes to the GroundingType enum value.
+  const rawType = fm["exocmd__Grounding_type"];
+  const type =
+    typeof rawType === "string"
+      ? (resolveGroundingTypeFromWikilinkLiteral(rawType) ?? (rawType as GroundingType))
+      : (rawType as GroundingType);
   const targetProperty =
     type === "service_call"
       ? (fm["exocmd__Grounding_serviceId"] as string | undefined) ??

@@ -4,6 +4,13 @@ export * from "./domain/constants/EffortStatus";
 export { EFFORT_STATUS_OPTIONS } from "./domain/constants/EffortStatusOptions";
 export { GroundingType } from "./domain/constants/GroundingType";
 export {
+  GROUNDING_TYPE_UIDS,
+  GROUNDING_TYPE_UID_TO_ENUM,
+  GROUNDING_TYPE_IRI_TO_ENUM,
+  resolveGroundingTypeFromIRI,
+  resolveGroundingTypeFromWikilinkLiteral,
+} from "./domain/constants/GroundingTypeUIDs";
+export {
   CommandProperty,
   PreconditionProperty,
   GroundingProperty,

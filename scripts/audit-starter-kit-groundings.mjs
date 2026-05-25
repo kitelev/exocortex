@@ -101,6 +101,30 @@ const SERVICE_RE = /^exocmd__Grounding_serviceId:\s*"([^"]+)"\s*$/m;
 const UID_RE = /^exo__Asset_uid:\s*([0-9a-f-]+)\s*$/m;
 const LABEL_RE = /^exo__Asset_label:\s*"?([^"\n]+)"?\s*$/m;
 
+// RFC 9d20c91f Phase 2 dual-read: after Phase 3 migration, ABox stores
+// `exocmd__Grounding_type: "[[<uid>]]"`. Resolve wikilink form to the
+// canonical enum string. Replicates packages/exocortex/src/domain/constants/
+// GroundingTypeUIDs.ts reverse map (this script is .mjs, can't import TS).
+// Parity verified by GroundingTypeParity.test.ts.
+const GROUNDING_TYPE_UID_TO_ENUM = Object.freeze({
+  "cf3bb923-f1f1-40be-b728-782844402426": "property_set",
+  "4bdf1d0b-e9da-4d96-bafe-c5aaef8c2bd5": "property_delete",
+  "8f9a57db-3865-4886-92fb-c5ab7f3c3fa3": "composite",
+  "9bf9fc99-ac37-4e51-b9f5-bd920099947c": "service_call",
+  "4367e2d6-6c92-450a-becb-abce1fb07682": "create_instance",
+  "572f7e69-a8a1-42f6-8113-5aa65cc4b552": "property_append",
+  "afc29f90-45eb-4f94-9fe2-2ce738759161": "property_increment",
+  "f4e5266f-f3cc-49fd-a5a5-ce1e8b7847a4": "property_shift",
+  "79c3e709-8d1d-4694-bcc6-b9ff07d59b86": "sparql_update",
+});
+const WIKILINK_TYPE_RE = /^\[\[([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\|[^\]]*)?\]\]$/i;
+
+function resolveGroundingType(raw) {
+  const m = raw.match(WIKILINK_TYPE_RE);
+  if (!m) return raw;
+  return GROUNDING_TYPE_UID_TO_ENUM[m[1].toLowerCase()] ?? raw;
+}
+
 function classify(type, serviceId) {
   if (type !== "service_call") return "real"; // generic handler
   if (KNOWN_REAL_SERVICE_IDS.has(serviceId)) return "real";
@@ -119,7 +143,7 @@ async function main() {
     const fm = text.split(/^---$/m)[1] ?? "";
     const typeMatch = fm.match(TYPE_RE);
     if (!typeMatch) continue;
-    const type = typeMatch[1];
+    const type = resolveGroundingType(typeMatch[1]);
     const serviceId = fm.match(SERVICE_RE)?.[1] ?? null;
     const uid = fm.match(UID_RE)?.[1] ?? null;
     const label = fm.match(LABEL_RE)?.[1]?.trim() ?? null;
