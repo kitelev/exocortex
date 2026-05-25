@@ -27,6 +27,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { fileURLToPath } from "url";
 import yaml from "js-yaml";
+import { resolveGroundingTypeFromWikilinkLiteral } from "exocortex";
 import type { CommandCatalogEntry } from "./command-catalog.js";
 
 // ---------------------------------------------------------------------------
@@ -245,7 +246,13 @@ function buildGroundingData(
   return {
     uid,
     label,
-    type: asString(fm["exocmd__Grounding_type"]),
+    // RFC 9d20c91f Phase 2 dual-read: accept wikilink form "[[<uid>]]" and
+    // resolve to canonical enum string. Pre-Phase-3 ABox still uses bare
+    // string (passes through asString unchanged).
+    type: (() => {
+      const raw = asString(fm["exocmd__Grounding_type"]);
+      return resolveGroundingTypeFromWikilinkLiteral(raw) ?? raw;
+    })(),
     targetProperty: asString(fm["exocmd__Grounding_targetProperty"]),
     targetValue: asString(fm["exocmd__Grounding_targetValue"]),
     targetValueRef,

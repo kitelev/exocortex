@@ -1851,3 +1851,152 @@ describe("CommandResolver — RFC 31c1a0be Phase 3", () => {
     expect(resolved[0].command.grounding.targetValueSubstitution).toBe("$nowLocal");
   });
 });
+
+// RFC 9d20c91f Phase 2 — resolveGroundingTypeReference dispatch test cases.
+// Targeted coverage of the new private method introduced in Phase 2 covering
+// all 3 input shapes the dual-read accepts during the BC window (Phase 2 → 4).
+describe("CommandResolver — RFC 9d20c91f Phase 2 grounding type dispatch", () => {
+  const GND_TYPE_PROPERTY_SET_UID = "cf3bb923-f1f1-40be-b728-782844402426";
+  const GND_TYPE_PROPERTY_SET_IRI =
+    "https://exocortex.my/ontology/exocmd#GroundingTypePropertySet";
+  const GND_SUBJECT_PATH = "gnd-rfc-9d20c91f-test";
+
+  async function seedMinimalGrounding(
+    store: InMemoryTripleStore,
+    typeObject: IRI | Literal,
+  ): Promise<IRI> {
+    const subject = new IRI(`obsidian://vault/${GND_SUBJECT_PATH}.md`);
+    await store.addAll([
+      new Triple(
+        subject,
+        Namespace.RDF.term("type"),
+        Namespace.EXOCMD.term("Grounding"),
+      ),
+      new Triple(
+        subject,
+        Namespace.EXO.term("Asset_uid"),
+        new Literal("gnd-rfc-9d20c91f-test"),
+      ),
+      new Triple(
+        subject,
+        Namespace.EXO.term("Asset_label"),
+        new Literal("Phase 2 dispatch fixture"),
+      ),
+      new Triple(
+        subject,
+        Namespace.EXOCMD.term("Grounding_type"),
+        typeObject,
+      ),
+      new Triple(
+        subject,
+        Namespace.EXOCMD.term("Grounding_targetProperty"),
+        new Literal("ems__Effort_status"),
+      ),
+    ]);
+    return subject;
+  }
+
+  async function loadGroundingForFixture(
+    store: InMemoryTripleStore,
+    subject: IRI,
+    resolver: CommandResolver,
+  ): Promise<{ type?: string }> {
+    // Use loadCommand → grounding wiring rather than calling the private
+    // method directly. Mirrors how production paths reach the dispatcher.
+    await store.addAll([
+      new Triple(
+        new IRI("obsidian://vault/cmd-rfc-9d20c91f.md"),
+        Namespace.RDF.term("type"),
+        Namespace.EXOCMD.term("Command"),
+      ),
+      new Triple(
+        new IRI("obsidian://vault/cmd-rfc-9d20c91f.md"),
+        Namespace.EXO.term("Asset_uid"),
+        new Literal("cmd-rfc-9d20c91f"),
+      ),
+      new Triple(
+        new IRI("obsidian://vault/cmd-rfc-9d20c91f.md"),
+        Namespace.EXO.term("Asset_label"),
+        new Literal("cmd-rfc-9d20c91f"),
+      ),
+      new Triple(
+        new IRI("obsidian://vault/cmd-rfc-9d20c91f.md"),
+        Namespace.EXOCMD.term("Command_grounding"),
+        subject,
+      ),
+    ]);
+    const cmd = await resolver.loadCommand("cmd-rfc-9d20c91f");
+    return cmd?.grounding ?? {};
+  }
+
+  it("resolves symbolic class IRI to GroundingType.PROPERTY_SET (Issue #2782 path)", async () => {
+    const store = new InMemoryTripleStore();
+    const resolver = new CommandResolver(store);
+    const subject = await seedMinimalGrounding(
+      store,
+      new IRI(GND_TYPE_PROPERTY_SET_IRI),
+    );
+    const grounding = await loadGroundingForFixture(store, subject, resolver);
+    expect(grounding.type).toBe("property_set");
+  });
+
+  it("resolves file IRI via UID extraction (substitution fallback)", async () => {
+    const store = new InMemoryTripleStore();
+    const resolver = new CommandResolver(store);
+    const subject = await seedMinimalGrounding(
+      store,
+      new IRI(`obsidian://vault/assetspaces/exocmd/${GND_TYPE_PROPERTY_SET_UID}.md`),
+    );
+    const grounding = await loadGroundingForFixture(store, subject, resolver);
+    expect(grounding.type).toBe("property_set");
+  });
+
+  it("resolves wikilink-literal form `[[<uid>]]` (defensive branch)", async () => {
+    const store = new InMemoryTripleStore();
+    const resolver = new CommandResolver(store);
+    const subject = await seedMinimalGrounding(
+      store,
+      new Literal(`[[${GND_TYPE_PROPERTY_SET_UID}]]`),
+    );
+    const grounding = await loadGroundingForFixture(store, subject, resolver);
+    expect(grounding.type).toBe("property_set");
+  });
+
+  it("legacy bare-string `\"property_set\"` resolves AND emits dedup warn once per subject", async () => {
+    const store = new InMemoryTripleStore();
+    const warnSpy = jest.fn();
+    const resolver = new CommandResolver(store, {
+      info: jest.fn(),
+      warn: warnSpy,
+      error: jest.fn(),
+      debug: jest.fn(),
+    });
+    const subject = await seedMinimalGrounding(store, new Literal("property_set"));
+
+    // 1st resolve → warn fires once
+    const g1 = await loadGroundingForFixture(store, subject, resolver);
+    expect(g1.type).toBe("property_set");
+    const firstCallCount = warnSpy.mock.calls.filter((call) =>
+      String(call[0]).includes("[exocmd-grounding-type-bc]"),
+    ).length;
+    expect(firstCallCount).toBe(1);
+
+    // 2nd resolve same subject → dedup, no additional warn
+    await resolver.loadCommand("cmd-rfc-9d20c91f");
+    const secondCallCount = warnSpy.mock.calls.filter((call) =>
+      String(call[0]).includes("[exocmd-grounding-type-bc]"),
+    ).length;
+    expect(secondCallCount).toBe(1);
+  });
+
+  it("returns null grounding when Grounding_type IRI is unknown", async () => {
+    const store = new InMemoryTripleStore();
+    const resolver = new CommandResolver(store);
+    const subject = await seedMinimalGrounding(
+      store,
+      new IRI("https://exocortex.my/ontology/exocmd#NotAGroundingType"),
+    );
+    const grounding = await loadGroundingForFixture(store, subject, resolver);
+    expect(grounding.type).toBeUndefined();
+  });
+});

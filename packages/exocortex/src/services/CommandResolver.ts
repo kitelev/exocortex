@@ -6,6 +6,7 @@ import { IRI } from "../domain/models/rdf/IRI";
 import { Literal } from "../domain/models/rdf/Literal";
 import { Namespace } from "../domain/models/rdf/Namespace";
 import { GroundingType } from "../domain/constants/GroundingType";
+import { resolveGroundingTypeFromIRI } from "../domain/constants/GroundingTypeUIDs";
 import {
   COMMAND_VARIANT_VALUES,
   LABEL_CLASS_VALUES,
@@ -177,6 +178,16 @@ export class CommandResolver {
    * remove after one minor release window.
    */
   private readonly _legacyPropertyDefaultsWarnedGroundings = new Set<string>();
+
+  /**
+   * RFC 9d20c91f Phase 2 — per-subject dedup for the
+   * `[exocmd-grounding-type-bc]` legacy-form warn. With ~172 ABox values
+   * still on bare-string form pre-Phase-3, every cold-start /
+   * `sparql.refresh()` traversal would otherwise emit N duplicate warns
+   * per subject. Same pattern as `_legacyPropertyDefaultsWarnedGroundings`
+   * above. Removed in Phase 4 cutover alongside dual-read.
+   */
+  private readonly _legacyGroundingTypeWarnedSubjects = new Set<string>();
 
   /**
    * RFC 727572d2 — Universal Default Template singleton cache. Loaded once
@@ -1114,10 +1125,7 @@ export class CommandResolver {
     if (!uid) return null;
 
     const label = await this.getLiteralValue(subject, Namespace.EXO.term("Asset_label")) ?? "";
-    const typeStr = await this.getLiteralValue(subject, Namespace.EXOCMD.term("Grounding_type"));
-    if (!typeStr) return null;
-
-    const type = this.resolveGroundingType(typeStr);
+    const type = await this.resolveGroundingTypeReference(subject);
     if (!type) return null;
 
     let targetProperty = await this.getObsidianName(subject, Namespace.EXOCMD.term("Grounding_targetProperty"));
@@ -2002,6 +2010,57 @@ export class CommandResolver {
     const normalized = value.toLowerCase().trim();
     const values = Object.values(GroundingType) as string[];
     return values.includes(normalized) ? (normalized as GroundingType) : null;
+  }
+
+  /**
+   * RFC 9d20c91f Phase 2: dual-read for `exocmd__Grounding_type`.
+   *
+   * Phase 1 added the `exocmd__GroundingType` catalog + 9 instances in the
+   * shared `exoas-exocmd` submodule. Phase 3 will migrate ~172 ABox values
+   * from literal-string form (`"property_set"`) to wikilink form
+   * (`"[[<uid>]]"`). During the BC window, parsers accept both shapes.
+   *
+   * Resolution priority:
+   * 1. Triple object is IRI (post-Phase-3 ABox after vault sync) — map via
+   *    `resolveGroundingTypeFromIRI` (symbolic class IRI OR file IRI fallback).
+   * 2. Triple object is Literal — try wikilink-literal first (defensive in
+   *    case NoteToRDFConverter didn't substitute the wikilink to an IRI),
+   *    then legacy bare-string match. Bare-string path emits a deprecation
+   *    warning tagged `[exocmd-grounding-type-bc]` for Phase 4 cutover
+   *    monitoring.
+   *
+   * Returns `null` for unknown values (caller treats grounding as inert).
+   */
+  private async resolveGroundingTypeReference(subject: IRI): Promise<GroundingType | null> {
+    const triples = await this.tripleStore.match(
+      subject,
+      Namespace.EXOCMD.term("Grounding_type"),
+      undefined,
+    );
+    if (triples.length === 0) return null;
+
+    const ref = triples[0].object;
+
+    if (ref instanceof IRI) {
+      return resolveGroundingTypeFromIRI(ref.value);
+    }
+
+    if (ref instanceof Literal) {
+      const raw = ref.value;
+      const wikilinkMatch = raw.match(/^\[\[([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\|[^\]]*)?\]\]$/i);
+      if (wikilinkMatch) {
+        return resolveGroundingTypeFromIRI(`obsidian://vault/${wikilinkMatch[1].toLowerCase()}.md`);
+      }
+      if (!this._legacyGroundingTypeWarnedSubjects.has(subject.value)) {
+        this._legacyGroundingTypeWarnedSubjects.add(subject.value);
+        this.logger.warn(
+          `[exocmd-grounding-type-bc] legacy literal-string form '${raw}' for exocmd__Grounding_type on <${subject.value}>. Migrate to wikilink form per RFC 9d20c91f Phase 3.`,
+        );
+      }
+      return this.resolveGroundingType(raw);
+    }
+
+    return null;
   }
 
   // -- Triple store helpers --
