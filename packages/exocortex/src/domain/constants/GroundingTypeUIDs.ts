@@ -74,7 +74,7 @@ export const GROUNDING_TYPE_IRI_TO_ENUM: Readonly<Record<string, GroundingType>>
   [`${EXOCMD_NAMESPACE}GroundingTypeSparqlUpdate`]:      GroundingType.SPARQL_UPDATE,
 });
 
-const UUID_PATTERN = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/;
+const UUID_PATTERN = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
 
 /**
  * Resolve a triple-store IRI value of `exocmd:Grounding_type` to its
@@ -93,7 +93,7 @@ export function resolveGroundingTypeFromIRI(iri: string): GroundingType | null {
 
   const uidMatch = iri.match(UUID_PATTERN);
   if (uidMatch) {
-    return GROUNDING_TYPE_UID_TO_ENUM[uidMatch[1]] ?? null;
+    return GROUNDING_TYPE_UID_TO_ENUM[uidMatch[1].toLowerCase()] ?? null;
   }
 
   return null;
