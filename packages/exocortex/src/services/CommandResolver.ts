@@ -180,6 +180,16 @@ export class CommandResolver {
   private readonly _legacyPropertyDefaultsWarnedGroundings = new Set<string>();
 
   /**
+   * RFC 9d20c91f Phase 2 — per-subject dedup for the
+   * `[exocmd-grounding-type-bc]` legacy-form warn. With ~172 ABox values
+   * still on bare-string form pre-Phase-3, every cold-start /
+   * `sparql.refresh()` traversal would otherwise emit N duplicate warns
+   * per subject. Same pattern as `_legacyPropertyDefaultsWarnedGroundings`
+   * above. Removed in Phase 4 cutover alongside dual-read.
+   */
+  private readonly _legacyGroundingTypeWarnedSubjects = new Set<string>();
+
+  /**
    * RFC 727572d2 — Universal Default Template singleton cache. Loaded once
    * per CommandResolver instance via {@link getUniversalCache}. Vault file
    * change adapters may externally call
@@ -2041,9 +2051,12 @@ export class CommandResolver {
       if (wikilinkMatch) {
         return resolveGroundingTypeFromIRI(`obsidian://vault/${wikilinkMatch[1].toLowerCase()}.md`);
       }
-      this.logger.warn(
-        `[exocmd-grounding-type-bc] legacy literal-string form '${raw}' for exocmd__Grounding_type on <${subject.value}>. Migrate to wikilink form per RFC 9d20c91f Phase 3.`,
-      );
+      if (!this._legacyGroundingTypeWarnedSubjects.has(subject.value)) {
+        this._legacyGroundingTypeWarnedSubjects.add(subject.value);
+        this.logger.warn(
+          `[exocmd-grounding-type-bc] legacy literal-string form '${raw}' for exocmd__Grounding_type on <${subject.value}>. Migrate to wikilink form per RFC 9d20c91f Phase 3.`,
+        );
+      }
       return this.resolveGroundingType(raw);
     }
 
