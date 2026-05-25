@@ -15,6 +15,15 @@ import { FrontmatterService } from "../utilities/FrontmatterService";
 import { DateFormatter } from "../utilities/DateFormatter";
 import { DateTimeParsing } from "../infrastructure/sparql/filters/functions/DateTimeParsing";
 import { LoggingService } from "./LoggingService";
+import {
+  installDefaultResolvers,
+  getResolver,
+  type ResolverContext,
+} from "./SubstitutionResolverRegistry";
+
+// Install built-in resolvers on module import so executor doesn't need an
+// explicit bootstrap call from each consumer. Idempotent (Map overwrites).
+installDefaultResolvers();
 
 /**
  * Result of executing a grounding action.
@@ -103,7 +112,17 @@ const UUID_V4_RE =
  * value at execution time when the click-target IRI / file path is known.
  */
 const SUBSTITUTION_MARKER_RE =
-  /^__SUBSTITUTE__(target|targetFolder)__[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}__$/;
+  /^__SUBSTITUTE__([a-zA-Z][a-zA-Z0-9_]*)__[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}__$/;
+
+/**
+ * RFC 727572d2 — parameterised marker shape emitted for TokenInvocation
+ * wrappers. The base64 segment carries the literal `_parameter` (URL-safe
+ * encoding so property labels containing `__` round-trip without ambiguity).
+ *
+ * Shape: `__SUBSTITUTE_P__<resolver-id>__<token-uid>__<base64-param>__`
+ */
+const PARAMETERISED_MARKER_RE =
+  /^__SUBSTITUTE_P__([a-zA-Z][a-zA-Z0-9_]*)__[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}__([A-Za-z0-9_-]*)__$/;
 
 /**
  * A named service that can be invoked by service_call groundings.
@@ -596,87 +615,21 @@ export class GroundingExecutor {
       return { success: false, error: "create_instance requires targetFolder" };
     }
 
-    const uid = this.uidGen.next();
-    const label = (userInput?.label as string) ?? "Untitled";
+    const properties: Record<string, unknown> = {};
 
-    const properties: Record<string, unknown> = {
-      exo__Asset_uid: uid,
-      // Issue #3188: emit `exo__Asset_createdAt` as a local timestamp without
-      // the trailing `Z` / TZ offset, matching every other creation service
-      // in the codebase (Generic/Area/Class/Concept/Supervision asset
-      // creation) and the `$nowLocal` substitution token used by composite
-      // groundings. The legacy `new Date().toISOString()` produced
-      // UTC-suffixed values which then disagreed with the rest of the vault
-      // when rendered in the user's local timezone; this one-liner aligns
-      // the format.
-      exo__Asset_createdAt: DateFormatter.toLocalTimestamp(this.clock.now()),
-      exo__Asset_label: label,
-    };
-
-    if (label !== "Untitled") {
-      properties.aliases = [label];
-    }
-
-    if (grounding.targetClass) {
-      // Issue #3220: re-resolve label-form refs to UID at execution time. See
-      // {@link ClassLabelToUidResolver} for why resolver-time resolution
-      // (CommandResolver.findUidByLabel, #3212) is insufficient in production
-      // cold-start paths. Already-UUID refs and unresolvable labels pass through.
-      const classRef = await this.resolveClassRefToUid(grounding.targetClass);
-      properties.exo__Instance_class = [`"[[${classRef}]]"`];
-    }
-
-    // Issue #3184 B1: do NOT materialise `grounding.targetPrototype` (which is
-    // the UID of the prototype CLASS, e.g. `ems__TaskPrototype`) into the new
-    // instance's `exo__Asset_prototype`. The semantically correct value is the
-    // wikilink to the prototype-INSTANCE the user clicked on ($target), and
-    // that link is written below by the back-link block whose default for
-    // create_instance is now `exo__Asset_prototype` (B2). Keeping a literal
-    // class-UID write here would either overwrite the correct back-link value
-    // or be silently overwritten — both confusing.
-
-    // RFC v2 Phase 3b — Step 2 (PropertyDefault, declarative ref-form).
-    // Apply ref-form PropertyDefaults from `grounding.propertyDefault` (parser
-    // emits resolved values for `today` / `todayStart` and
-    // `__SUBSTITUTE__<resolver>__<token-uid>__` markers for `target` /
-    // `targetFolder`; executor substitutes the markers at runtime when the
-    // click-target context is known). The legacy JSON-literal `propertyDefaults`
-    // path was removed in RFC v2 Phase 5 (#3167) after vault migration to
-    // ref-form completed (Phase 4a, #3165).
-    if (grounding.propertyDefault && grounding.propertyDefault.length > 0) {
-      this.applyPropertyDefaultStep(
-        properties,
-        grounding.propertyDefault,
-        targetIRI,
-        targetFilePath,
-      );
-    }
-
-    // userInput wins over PropertyDefault and InheritanceRule — apply early
-    // so the `properties[key] !== undefined` guards in later steps fire.
-    if (userInput) {
-      for (const [key, value] of Object.entries(userInput)) {
-        if (key === "label") continue;
-        if (value === null || value === undefined) continue;
-        properties[key] = value;
-      }
-    }
-
-    // RFC v2 Phase 3b — Step 3 (InheritanceRule, declarative ref-form).
-    // Apply each applicable rule (condition match, exclusion non-match) in
-    // priority-descending order. Only writes keys not already set by Steps 1
-    // (userInput) or 2 (PropertyDefault).
-    //
-    // The `$target` file read is gated by `inheritanceRule.length > 0` —
-    // RFC 32445c1c removed Step 4 (copy-from-target + CREATE_INSTANCE_BLACKLIST),
-    // so Groundings without inheritance rules have no reason to touch the
-    // target file (and shouldn't be forced to fail when it's missing).
-    if (
-      grounding.inheritanceRule &&
-      grounding.inheritanceRule.length > 0 &&
-      targetIRI &&
-      targetFilePath
-    ) {
+    // RFC 727572d2 — Read $target frontmatter ONCE for both InheritanceRule
+    // step AND $target.property resolver. Previously gated by
+    // `grounding.inheritanceRule.length > 0` (RFC 32445c1c); now also needed
+    // by Universal Default Template's `$target.property(isDefinedBy)` etc.
+    let targetFm: Record<string, string | string[]> | null = null;
+    const needsTargetRead =
+      (grounding.inheritanceRule && grounding.inheritanceRule.length > 0) ||
+      (grounding.propertyDefault &&
+        grounding.propertyDefault.some(
+          (pd) =>
+            typeof pd.value === "string" && pd.value.includes("__SUBSTITUTE"),
+        ));
+    if (needsTargetRead && targetIRI && targetFilePath) {
       let targetContent: string;
       try {
         targetContent = await this.fileReader.readFile(targetFilePath);
@@ -686,33 +639,107 @@ export class GroundingExecutor {
           error: `create_instance: failed to read $target file "${targetFilePath}": ${error instanceof Error ? error.message : String(error)}`,
         };
       }
-      const targetFm =
-        this.frontmatterService.parseObject(targetContent) ?? null;
-      if (targetFm) {
-        await this.applyInheritanceRuleStep(
-          properties,
-          grounding.inheritanceRule,
-          targetFm,
-        );
+      targetFm = this.frontmatterService.parseObject(targetContent) ?? null;
+    }
+
+    // RFC 727572d2 — Resolve grounding's targetClass to canonical UID once
+    // for the $grounding.targetClass resolver below.
+    let groundingTargetClassUid: string | undefined;
+    if (grounding.targetClass) {
+      groundingTargetClassUid = await this.resolveClassRefToUid(
+        grounding.targetClass,
+      );
+    }
+
+    // RFC 727572d2 — Step 1 (PropertyDefault, parser-merged Universal +
+    // Grounding). The parser (CommandResolver.resolvePropertyDefaults) has
+    // already prepended UniversalDefaultTemplate entries and applied Grounding
+    // overrides by propertyName. Executor just resolves any remaining markers
+    // and writes results.
+    //
+    // Safety net (RFC 727572d2 Q3): when no PropertyDefault entries arrived
+    // AT ALL (no Universal singleton in vault + no Grounding entries), fall
+    // back to the legacy hardcoded primitives with a loud warn — protects
+    // cold-start race on mobile boot paths from creating empty/invalid assets.
+    const ctx: ResolverContext = {
+      userInput,
+      targetIRI,
+      targetFilePath,
+      targetFm: targetFm ?? undefined,
+      groundingTargetClassUid,
+    };
+    if (grounding.propertyDefault && grounding.propertyDefault.length > 0) {
+      this.applyPropertyDefaultStep(properties, grounding.propertyDefault, ctx);
+    }
+
+    // RFC 727572d2 Q3 safety net (defense-in-depth). After applying PropertyDefaults
+    // — whether from Universal Template, Grounding, or both — check that the essential
+    // primitives are present. Fill any gaps from legacy TS primitives (selective top-up,
+    // not all-or-nothing). Triggers when:
+    //   - Universal singleton is fully absent (no PDs reach executor at all)
+    //   - Universal singleton present but does NOT cover one of the 4 essentials
+    //     (e.g. partial vault corruption, in-flight migration)
+    //   - Grounding-specific PD set overrides Universal entries but leaves gaps
+    //
+    // Each fired gap-fill is logged so vault health regressions are visible.
+    // Phase A top-up: fill missing scalar primitives (uid/createdAt/label/
+    // Instance_class). Backlink is deferred to Phase B (after IR step) so
+    // we don't write legacy default before IRs get a chance.
+    this.applyMissingScalarPrimitives(
+      properties,
+      userInput,
+      groundingTargetClassUid,
+    );
+
+    // userInput wins over PropertyDefault and InheritanceRule — apply after
+    // PropertyDefault so explicit user values override Universal defaults.
+    if (userInput) {
+      for (const [key, value] of Object.entries(userInput)) {
+        if (key === "label") continue;
+        if (value === null || value === undefined) continue;
+        properties[key] = value;
       }
     }
 
-    // Back-link to $target — configurable per grounding (RFC Phase 2).
-    //
-    // Issue #3184 B1+B2: default for `create_instance` is `exo__Asset_prototype`,
-    // not `exo__Asset_source`. The prototype-driven creation flow always links
-    // the new instance back to the prototype-instance via `exo__Asset_prototype`,
-    // and the separate `exo__Asset_source` field added nothing but duplication
-    // (and a confusing extra wikilink in the resulting frontmatter). Groundings
-    // that genuinely want a different back-link target (e.g. `ems__Effort_parent`
-    // for fork-style "Create related task") still set `linkBackProperty`
-    // explicitly and bypass the default.
-    if (targetIRI) {
-      const backLinkProp =
-        grounding.linkBackProperty ?? "exo__Asset_prototype";
-      const backLinkTarget = GroundingExecutor.extractBacklinkTarget(targetIRI, targetFilePath);
-      properties[backLinkProp] = `"[[${backLinkTarget}]]"`;
+    // RFC 727572d2 — Step 2 (InheritanceRule, parser-merged Universal +
+    // Grounding). Universal IRs include the per-prototype backlink rules
+    // (TaskPrototype → exo__Asset_prototype, etc.) AND the Bug #5 fix
+    // (Project → ems__Effort_parent — NOT exo__Asset_prototype).
+    if (
+      grounding.inheritanceRule &&
+      grounding.inheritanceRule.length > 0 &&
+      targetFm
+    ) {
+      await this.applyInheritanceRuleStep(
+        properties,
+        grounding.inheritanceRule,
+        targetFm,
+      );
     }
+
+    // Phase B top-up: backlink. Only fires when NO backlink-shaped key was
+    // written by PD step / IR step AND grounding has no explicit
+    // linkBackProperty. Safety-net for degraded mode where Universal singleton
+    // is fully absent (IRs missing → no rule wrote backlink). Bug #5 returns
+    // here, but a corrupt asset is preferable to creation failure.
+    this.applyMissingBacklinkTopUp(properties, grounding, targetIRI, targetFilePath);
+
+    // Per-Grounding explicit linkBackProperty (legacy escape hatch) — still
+    // honoured when set. Universal IRs handle the default case; per-Grounding
+    // explicit overrides win.
+    if (targetIRI && grounding.linkBackProperty) {
+      if (properties[grounding.linkBackProperty] === undefined) {
+        const backLinkTarget = GroundingExecutor.extractBacklinkTarget(
+          targetIRI,
+          targetFilePath,
+        );
+        properties[grounding.linkBackProperty] = `"[[${backLinkTarget}]]"`;
+      }
+    }
+
+    // Determine uid for filename — read from properties (PropertyDefault wrote
+    // it via $randomUUIDv4 token; top-up guaranteed it's set otherwise).
+    const uid = properties.exo__Asset_uid as string;
 
     const content = this.frontmatterService.createFrontmatter("", properties);
     // Issue #3136 (Q3.b closure): allow `$targetFolder` / `$target` tokens in
@@ -774,17 +801,119 @@ export class GroundingExecutor {
   private applyPropertyDefaultStep(
     properties: Record<string, unknown>,
     propertyDefault: ReadonlyArray<PropertyDefaultResolved>,
-    targetIRI: string,
-    targetFilePath: string,
+    ctx: ResolverContext,
   ): void {
     for (const { propertyName, value } of propertyDefault) {
       if (properties[propertyName] !== undefined) continue;
-      properties[propertyName] = this.resolveSubstitutionMarker(
-        value,
-        targetIRI,
-        targetFilePath,
+      const resolved = this.resolveSubstitutionMarker(value, ctx);
+      if (resolved === null || resolved === undefined) continue;
+      // Special handling for known list-typed frontmatter keys (Obsidian
+      // semantic): resolver may return string[] for `aliases`-shape writes.
+      if (Array.isArray(resolved)) {
+        if (resolved.length === 0) continue;
+        properties[propertyName] = resolved;
+        continue;
+      }
+      // Special wrap for exo__Instance_class — convention is YAML list with
+      // single wikilink-form entry (Form C canonical, per Issue #3123).
+      if (propertyName === "exo__Instance_class" && typeof resolved === "string") {
+        properties[propertyName] = [resolved];
+        continue;
+      }
+      properties[propertyName] = resolved;
+    }
+  }
+
+  /**
+   * RFC 727572d2 Q3 safety net (defense-in-depth). Selectively top-up any
+   * essential primitive that PropertyDefaults did not cover, logging each
+   * gap so vault-health regressions surface. The 4 essentials checked are:
+   * exo__Asset_uid, exo__Asset_createdAt, exo__Asset_label, exo__Instance_class.
+   *
+   * Backlink top-up: when neither the grounding's explicit linkBackProperty
+   * nor a Universal InheritanceRule has produced a backlink, write the
+   * legacy `exo__Asset_prototype` default. Bug #5 returns in this degraded
+   * state (Project will get the wrong key), but a corrupt asset is
+   * preferable to a creation failure when the vault is unhealthy.
+   *
+   * Each top-up emits LoggingService.error so the unhealthy state is visible.
+   */
+  private applyMissingScalarPrimitives(
+    properties: Record<string, unknown>,
+    userInput: UserInput | undefined,
+    groundingTargetClassUid: string | undefined,
+  ): void {
+    const missing: string[] = [];
+
+    if (properties.exo__Asset_uid === undefined) {
+      properties.exo__Asset_uid = this.uidGen.next();
+      missing.push("exo__Asset_uid");
+    }
+
+    if (properties.exo__Asset_createdAt === undefined) {
+      properties.exo__Asset_createdAt = DateFormatter.toLocalTimestamp(
+        this.clock.now(),
+      );
+      missing.push("exo__Asset_createdAt");
+    }
+
+    if (properties.exo__Asset_label === undefined) {
+      const label = (userInput?.label as string) ?? "Untitled";
+      properties.exo__Asset_label = label;
+      if (label !== "Untitled" && properties.aliases === undefined) {
+        properties.aliases = [label];
+      }
+      missing.push("exo__Asset_label");
+    }
+
+    if (
+      properties.exo__Instance_class === undefined &&
+      groundingTargetClassUid
+    ) {
+      properties.exo__Instance_class = [`"[[${groundingTargetClassUid}]]"`];
+      missing.push("exo__Instance_class");
+    }
+
+    if (missing.length > 0) {
+      LoggingService.error(
+        `[GroundingExecutor] Universal Default Template did not cover essential scalar primitives: ${missing.join(", ")}. Filled from legacy TS fallback. Vault may be in an unhealthy state — verify UniversalDefaultTemplate singleton is present and complete.`,
       );
     }
+  }
+
+  /**
+   * Phase B top-up: legacy `exo__Asset_prototype` backlink default. Fires
+   * ONLY when:
+   *   - target asset known (targetIRI truthy)
+   *   - no per-Grounding explicit linkBackProperty (writes its own value below)
+   *   - no Universal/Grounding InheritanceRule has written a common backlink
+   *     key (exo__Asset_prototype, ems__Effort_parent)
+   *
+   * This guards the safety net from double-writing backlink when the IR step
+   * already produced one. When it does fire, Bug #5 returns (Project gets
+   * the wrong key), but a corrupt asset is preferable to creation failure.
+   */
+  private applyMissingBacklinkTopUp(
+    properties: Record<string, unknown>,
+    grounding: GroundingDefinition,
+    targetIRI: string,
+    targetFilePath: string,
+  ): void {
+    if (!targetIRI || grounding.linkBackProperty) return;
+    if (
+      properties.exo__Asset_prototype !== undefined ||
+      properties.ems__Effort_parent !== undefined
+    ) {
+      return;
+    }
+    const backLinkTarget = GroundingExecutor.extractBacklinkTarget(
+      targetIRI,
+      targetFilePath,
+    );
+    properties.exo__Asset_prototype = `"[[${backLinkTarget}]]"`;
+    LoggingService.error(
+      "[GroundingExecutor] No backlink rule fired (Universal IRs absent or no class match). Falling back to legacy exo__Asset_prototype default. Bug #5 may surface if target is not a prototype-instance.",
+    );
   }
 
   /**
@@ -802,13 +931,37 @@ export class GroundingExecutor {
    */
   private resolveSubstitutionMarker(
     value: string,
-    targetIRI: string,
-    targetFilePath: string,
-  ): string {
+    ctx: ResolverContext,
+  ): string | string[] | null {
+    // Parameterised marker (RFC 727572d2 — TokenInvocation form)
+    const pmatch = value.match(PARAMETERISED_MARKER_RE);
+    if (pmatch) {
+      const resolverId = pmatch[1];
+      const encodedParam = pmatch[2];
+      const parameter = GroundingExecutor.decodeBase64UrlSafe(encodedParam);
+      const fn = getResolver(resolverId);
+      if (!fn) {
+        LoggingService.warn(
+          `[GroundingExecutor] Parameterised marker references unknown resolver '${resolverId}' — value left as marker.`,
+        );
+        return value;
+      }
+      return fn(ctx, parameter);
+    }
+
+    // Plain marker (RFC v2 + RFC 727572d2 non-parameterised context-dependent)
     const match = value.match(SUBSTITUTION_MARKER_RE);
     if (!match) return value;
     const resolverId = match[1];
+
+    // Special-case `target` / `targetFolder` — they need GroundingExecutor's
+    // strip-canon helper (#3195) to emit bare UID rather than full path. The
+    // registry can't reach the private static; instead the executor short-
+    // circuits these two and delegates only the new vocabulary to the
+    // registry.
     if (resolverId === "target") {
+      const targetIRI = ctx.targetIRI ?? "";
+      const targetFilePath = ctx.targetFilePath ?? "";
       const bare = GroundingExecutor.extractBacklinkTarget(
         targetIRI,
         targetFilePath,
@@ -816,12 +969,31 @@ export class GroundingExecutor {
       return `"[[${bare}]]"`;
     }
     if (resolverId === "targetFolder") {
+      const targetFilePath = ctx.targetFilePath ?? "";
       if (!targetFilePath) return "";
       const normalized = targetFilePath.replace(/^\/+/, "");
       const slashIdx = normalized.lastIndexOf("/");
       return slashIdx >= 0 ? normalized.slice(0, slashIdx) : "";
     }
-    return value;
+
+    const fn = getResolver(resolverId);
+    if (!fn) {
+      LoggingService.warn(
+        `[GroundingExecutor] Marker references unknown resolver '${resolverId}' — value left as marker.`,
+      );
+      return value;
+    }
+    return fn(ctx);
+  }
+
+  /**
+   * URL-safe base64 decoder for {@link PARAMETERISED_MARKER_RE} payload.
+   * Mirrors the encoder in CommandResolver.buildParameterisedMarker.
+   */
+  private static decodeBase64UrlSafe(encoded: string): string {
+    const normalised = encoded.replace(/-/g, "+").replace(/_/g, "/");
+    const padding = normalised.length % 4 === 0 ? "" : "=".repeat(4 - (normalised.length % 4));
+    return Buffer.from(normalised + padding, "base64").toString("utf-8");
   }
 
   /**

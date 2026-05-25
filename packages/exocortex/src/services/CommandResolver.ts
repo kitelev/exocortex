@@ -14,6 +14,13 @@ import {
   type LabelClass,
   type StyleSource,
 } from "../domain/constants/CommandBindingStyleEnums";
+import {
+  clearUniversalDefault,
+  loadUniversalDefault,
+  mergePropertyDefaults,
+  mergeInheritanceRules,
+  type UniversalDefaultTemplate,
+} from "./UniversalDefaultTemplateResolver";
 import { ExoQLParser } from "../infrastructure/sparql/SPARQLParser";
 import { ExoQLAlgebraTranslator } from "../infrastructure/sparql/algebra/AlgebraTranslator";
 import { ExoQLQueryExecutor } from "../infrastructure/sparql/executors/QueryExecutor";
@@ -63,24 +70,87 @@ const SUBSTITUTION_TOKEN_CLASS_IRI = Namespace.EXOCMD.term("SubstitutionToken").
  * instead of silently emitting a marker the executor can't honour.
  */
 const KNOWN_SUBSTITUTION_RESOLVER_IDS: ReadonlySet<string> = new Set([
+  // RFC v2 Phase 3a — bootstrap vocabulary
   "today",
   "todayStart",
   "targetFolder",
   "target",
+  // RFC 727572d2 Phase A2 — full RDF-driven creation vocabulary
+  "randomUUIDv4",
+  "nowTimestamp",
+  "nowDate",
+  "nowYear",
+  "nowMonth",
+  "userInputLabel",
+  "userInput",
+  "targetProperty",
+  "labelAsArray",
+  "groundingTargetClass",
 ]);
 
 /**
- * Marker for context-dependent SubstitutionToken resolvers (targetFolder /
- * target). The Phase 3b GroundingExecutor recognises this exact shape and
- * substitutes the resolver's value at execution time, when the click target
- * IRI / UID is known. Context-independent resolvers (today / todayStart) are
+ * Marker for context-dependent SubstitutionToken resolvers — executor
+ * substitutes at runtime when the click target IRI / file path / userInput /
+ * Grounding metadata are known. Context-independent resolvers (today,
+ * todayStart, nowDate, nowYear, nowMonth, nowTimestamp, randomUUIDv4) are
  * resolved at parse time and never produce this marker.
  *
  * Shape: `__SUBSTITUTE__<resolver-id>__<token-uid>__`
+ *
+ * Parameterised form for TokenInvocation wrappers (RFC 727572d2):
+ *   `__SUBSTITUTE_P__<resolver-id>__<token-uid>__<base64-param>__`
+ * where `<base64-param>` is URL-safe base64 of the parameter literal.
  */
 function buildSubstitutionMarker(resolverId: string, tokenUid: string): string {
   return `__SUBSTITUTE__${resolverId}__${tokenUid}__`;
 }
+
+/**
+ * RFC 727572d2 — parameterised marker for TokenInvocation values. URL-safe
+ * base64 keeps the parameter free of `__` separator collisions (property
+ * labels like `exo__Asset_isDefinedBy` legitimately contain `__`).
+ */
+function buildParameterisedMarker(
+  resolverId: string,
+  tokenUid: string,
+  parameter: string,
+): string {
+  const encoded = Buffer.from(parameter, "utf-8")
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+  return `__SUBSTITUTE_P__${resolverId}__${tokenUid}__${encoded}__`;
+}
+
+/** RFC 727572d2 — UID of `exocmd__TokenInvocation` class. */
+const TOKEN_INVOCATION_CLASS_UID = "3f28af98-c031-4718-8ba2-44ad0b012c52";
+const TOKEN_INVOCATION_CLASS_IRI = Namespace.EXOCMD.term("TokenInvocation").value;
+
+/** RFC 727572d2 — UID of `exocmd__UniversalDefaultTemplate` class. */
+const UNIVERSAL_DEFAULT_TEMPLATE_CLASS_UID =
+  "29e2c8f8-2d27-4e58-b467-2e85d46f8122";
+
+/** Context-uid label appended to warn messages from Universal Template ABox. */
+const UNIVERSAL_DEFAULT_TEMPLATE_CTX = "universal-default-template";
+
+/**
+ * RFC 727572d2 — context-independent date/time resolvers safely baked at
+ * parse time. Matches the existing behaviour for `today` / `todayStart`
+ * (resolved when CommandResolver parses Groundings; cached for session).
+ *
+ * `randomUUIDv4` is intentionally NOT here: parse-time UUID baking would
+ * produce the same UUID for every click on a cached Grounding until cache
+ * invalidates — unsafe. It emits a marker for runtime resolution instead.
+ */
+const PARSE_TIME_RESOLVERS: ReadonlySet<string> = new Set([
+  "today",
+  "todayStart",
+  "nowTimestamp",
+  "nowDate",
+  "nowYear",
+  "nowMonth",
+]);
 
 /**
  * Resolves dynamic commands from vault assets stored in an ITripleStore (RFC-009 §5.3).
@@ -107,6 +177,31 @@ export class CommandResolver {
    * remove after one minor release window.
    */
   private readonly _legacyPropertyDefaultsWarnedGroundings = new Set<string>();
+
+  /**
+   * RFC 727572d2 — Universal Default Template singleton cache. Loaded once
+   * per CommandResolver instance via {@link getUniversalCache}. Vault file
+   * change adapters may externally call
+   * {@link clearUniversalDefault} (UniversalDefaultTemplateResolver) AND
+   * recreate the CommandResolver to fully invalidate.
+   */
+  private _universalCacheReady = false;
+  private _universalCacheValue: UniversalDefaultTemplate | null = null;
+
+  /**
+   * RFC 727572d2 — invalidate the per-instance Universal Default Template
+   * cache. Vault file-watcher adapters (Obsidian plugin / CLI) should call
+   * this when the singleton ABox asset (62907ff4) or any referenced
+   * PropertyDefault / InheritanceRule changes on disk, then either
+   * re-create the CommandResolver or simply rely on lazy re-load on next
+   * `resolvePropertyDefaults` invocation. Also clears the module-level
+   * loader cache so external loader sources stay aligned.
+   */
+  clearUniversalCache(): void {
+    this._universalCacheReady = false;
+    this._universalCacheValue = null;
+    clearUniversalDefault();
+  }
 
   /**
    * @param tripleStore - RDF triple store backing vault assets.
@@ -1216,9 +1311,39 @@ export class CommandResolver {
     grounding: IRI,
     groundingUid: string,
   ): Promise<PropertyDefaultResolved[]> {
-    const refTriples = await this.tripleStore.match(
+    const groundingPDs = await this.resolvePropertyDefaultsForSubject(
       grounding,
+      groundingUid,
       Namespace.EXOCMD.term("Grounding_propertyDefault"),
+    );
+
+    // RFC 727572d2 — merge Universal Default Template entries. Grounding
+    // entries override Universal by `propertyName` key. Universal singleton
+    // is loaded once per CommandResolver instance via lazy session cache.
+    const universal = await this.getUniversalCache();
+    if (universal && universal.propertyDefaults.length > 0) {
+      return mergePropertyDefaults(universal.propertyDefaults, groundingPDs);
+    }
+    return groundingPDs;
+  }
+
+  /**
+   * Generalised PropertyDefault resolver — applies the same per-asset
+   * resolution logic to entries reached via any predicate (originally only
+   * `Grounding_propertyDefault`; extended in RFC 727572d2 to also serve
+   * `Template_propertyDefault` on the Universal Default Template singleton).
+   *
+   * `contextUid` appears in warn messages so missing/broken refs are
+   * attributable to the originating Grounding OR the Universal Template.
+   */
+  private async resolvePropertyDefaultsForSubject(
+    subject: IRI,
+    contextUid: string,
+    refPredicate: IRI,
+  ): Promise<PropertyDefaultResolved[]> {
+    const refTriples = await this.tripleStore.match(
+      subject,
+      refPredicate,
       undefined,
     );
 
@@ -1234,7 +1359,7 @@ export class CommandResolver {
       );
       if (!propertyRefUid) {
         this.logger.warn(
-          `Grounding ${groundingUid}: PropertyDefault asset missing exocmd__PropertyDefault_property — entry skipped.`,
+          `Grounding ${contextUid}: PropertyDefault asset missing exocmd__PropertyDefault_property — entry skipped.`,
         );
         continue;
       }
@@ -1243,7 +1368,7 @@ export class CommandResolver {
         : propertyRefUid;
       if (!propertyName) {
         this.logger.warn(
-          `Grounding ${groundingUid}: PropertyDefault property UID '${propertyRefUid}' is not resolvable to exo__Asset_label — entry skipped.`,
+          `Grounding ${contextUid}: PropertyDefault property UID '${propertyRefUid}' is not resolvable to exo__Asset_label — entry skipped.`,
         );
         continue;
       }
@@ -1255,14 +1380,14 @@ export class CommandResolver {
       );
       if (!valueRefUid) {
         this.logger.warn(
-          `Grounding ${groundingUid}: PropertyDefault '${propertyName}' missing exocmd__PropertyDefault_value — entry skipped.`,
+          `Grounding ${contextUid}: PropertyDefault '${propertyName}' missing exocmd__PropertyDefault_value — entry skipped.`,
         );
         continue;
       }
 
       const value = await this.resolvePropertyDefaultValue(
         valueRefUid,
-        groundingUid,
+        contextUid,
         propertyName,
       );
       if (value === null) continue;
@@ -1270,6 +1395,93 @@ export class CommandResolver {
       resolved.push({ propertyName, value });
     }
     return resolved;
+  }
+
+  /**
+   * RFC 727572d2 — Universal Default Template singleton lazy loader. Returns
+   * the cached UniversalDefaultTemplate or null when:
+   *   - Singleton asset not in vault (cold-start race or absent)
+   *   - Loader threw (logged once, falls back to null)
+   *
+   * The session-level cache is populated on first call; vault file-watcher
+   * adapters may call {@link clearUniversalDefault} to invalidate after a
+   * Universal Template asset change.
+   *
+   * Universal singleton lookup is in-band — finds first asset whose
+   * `exo__Instance_class` includes the UniversalDefaultTemplate class UID
+   * (29e2c8f8) or IRI form. Multiple singletons → deterministic selection by
+   * lexicographic UID order with a warn.
+   */
+  private async getUniversalCache(): Promise<UniversalDefaultTemplate | null> {
+    if (this._universalCacheReady) return this._universalCacheValue;
+    this._universalCacheReady = true;
+
+    // External loader takes precedence (lets host wire a cheaper lookup
+    // path, e.g. via metadataCache rather than triple-store scan).
+    const external = await loadUniversalDefault();
+    if (external) {
+      this._universalCacheValue = external;
+      return external;
+    }
+
+    // In-store fallback: scan triple store for the singleton.
+    const singletonIRI = await this.findUniversalSingleton();
+    if (!singletonIRI) {
+      this._universalCacheValue = null;
+      return null;
+    }
+    const pd = await this.resolvePropertyDefaultsForSubject(
+      singletonIRI,
+      UNIVERSAL_DEFAULT_TEMPLATE_CTX,
+      Namespace.EXOCMD.term("Template_propertyDefault"),
+    );
+    const ir = await this.resolveInheritanceRulesForSubject(
+      singletonIRI,
+      UNIVERSAL_DEFAULT_TEMPLATE_CTX,
+      Namespace.EXOCMD.term("Template_inheritanceRule"),
+    );
+    this._universalCacheValue = {
+      propertyDefaults: pd,
+      inheritanceRules: ir,
+    };
+    return this._universalCacheValue;
+  }
+
+  /**
+   * RFC 727572d2 — locate the UniversalDefaultTemplate singleton ABox
+   * instance via triple store scan. Returns first match; warns and picks
+   * lexicographically smallest UID when multiple are found.
+   */
+  private async findUniversalSingleton(): Promise<IRI | null> {
+    const templateClassIRI =
+      Namespace.EXOCMD.term("UniversalDefaultTemplate").value;
+    const classTriples = await this.tripleStore.match(
+      undefined,
+      Namespace.EXO.term("Instance_class"),
+      undefined,
+    );
+    const candidates: IRI[] = [];
+    for (const t of classTriples) {
+      let match = false;
+      if (t.object instanceof IRI) {
+        match =
+          t.object.value === templateClassIRI ||
+          t.object.value.includes(UNIVERSAL_DEFAULT_TEMPLATE_CLASS_UID);
+      } else if (t.object instanceof Literal) {
+        const unwrapped = this.unwrapWikilink(t.object.value);
+        match =
+          unwrapped === "exocmd__UniversalDefaultTemplate" ||
+          unwrapped === UNIVERSAL_DEFAULT_TEMPLATE_CLASS_UID;
+      }
+      if (match && t.subject instanceof IRI) candidates.push(t.subject);
+    }
+    if (candidates.length === 0) return null;
+    if (candidates.length === 1) return candidates[0];
+    candidates.sort((a, b) => a.value.localeCompare(b.value));
+    this.logger.warn(
+      `Multiple UniversalDefaultTemplate singletons found (${candidates.length}); selecting deterministically by lexicographic UID order: ${candidates[0].value}`,
+    );
+    return candidates[0];
   }
 
   /**
@@ -1290,13 +1502,39 @@ export class CommandResolver {
     grounding: IRI,
     groundingUid: string,
   ): Promise<InheritanceRuleResolved[]> {
-    const refTriples = await this.tripleStore.match(
+    const groundingIRs = await this.resolveInheritanceRulesForSubject(
       grounding,
+      groundingUid,
       Namespace.EXOCMD.term("Grounding_inheritanceRule"),
+    );
+
+    // RFC 727572d2 — merge Universal Default Template entries.
+    const universal = await this.getUniversalCache();
+    if (universal && universal.inheritanceRules.length > 0) {
+      return mergeInheritanceRules(universal.inheritanceRules, groundingIRs);
+    }
+    return groundingIRs;
+  }
+
+  /**
+   * Generalised InheritanceRule resolver — applies the same per-asset
+   * resolution logic to entries reached via any predicate (originally only
+   * `Grounding_inheritanceRule`; extended in RFC 727572d2 to also serve
+   * `Template_inheritanceRule` on the Universal Default Template singleton).
+   */
+  private async resolveInheritanceRulesForSubject(
+    subject: IRI,
+    contextUid: string,
+    refPredicate: IRI,
+  ): Promise<InheritanceRuleResolved[]> {
+    const refTriples = await this.tripleStore.match(
+      subject,
+      refPredicate,
       undefined,
     );
 
     const resolved: InheritanceRuleResolved[] = [];
+    const groundingUid = contextUid;
     for (const triple of refTriples) {
       const refSubject = await this.resolveRefTripleObject(triple.object);
       if (!refSubject) continue;
@@ -1465,42 +1703,179 @@ export class CommandResolver {
       return `"[[${valueRefUid}]]"`;
     }
 
+    // RFC 727572d2 — TokenInvocation wrapper detection. When the value asset
+    // is a TokenInvocation, unwrap it: read its `_token` ref (giving the
+    // underlying SubstitutionToken) and `_parameter` literal, then emit a
+    // parameterised marker for execute-time resolution.
+    const isTokenInvocation = await this.assetIsTokenInvocation(valueSubject);
+    if (isTokenInvocation) {
+      return this.resolveTokenInvocation(
+        valueSubject,
+        valueRefUid,
+        groundingUid,
+        propertyName,
+      );
+    }
+
     const isSubstitutionToken = await this.assetIsSubstitutionToken(valueSubject);
     if (!isSubstitutionToken) {
       return `"[[${valueRefUid}]]"`;
     }
 
-    const resolverId = await this.getLiteralValue(
+    return this.dispatchSubstitutionToken(
       valueSubject,
+      valueRefUid,
+      groundingUid,
+      propertyName,
+      undefined,
+    );
+  }
+
+  /**
+   * RFC 727572d2 — common dispatch path for both bare SubstitutionToken refs
+   * (no parameter) and TokenInvocation-wrapped refs (with parameter literal).
+   *
+   * Reads the SubstitutionToken's `_resolver` literal, validates it against
+   * the TS-side allow list, then either bakes the value at parse time
+   * (context-independent resolvers) or emits a marker for execute-time
+   * resolution (context-dependent resolvers + all parameterised ones).
+   */
+  private async dispatchSubstitutionToken(
+    tokenSubject: IRI,
+    tokenUid: string,
+    groundingUid: string,
+    propertyName: string,
+    parameter: string | undefined,
+  ): Promise<string | null> {
+    const resolverIdRaw = await this.getLiteralValue(
+      tokenSubject,
       Namespace.EXOCMD.term("SubstitutionToken_resolver"),
     );
-    if (!resolverId || !resolverId.trim()) {
+    if (!resolverIdRaw || !resolverIdRaw.trim()) {
       this.logger.warn(
-        `Grounding ${groundingUid}: PropertyDefault '${propertyName}' references SubstitutionToken '${valueRefUid}' with no exocmd__SubstitutionToken_resolver — falling back to wikilink form.`,
+        `Grounding ${groundingUid}: PropertyDefault '${propertyName}' references SubstitutionToken '${tokenUid}' with no exocmd__SubstitutionToken_resolver — falling back to wikilink form.`,
       );
-      return `"[[${valueRefUid}]]"`;
+      return `"[[${tokenUid}]]"`;
     }
-    const trimmedResolverId = resolverId.trim();
+    const resolverId = resolverIdRaw.trim();
 
-    if (!KNOWN_SUBSTITUTION_RESOLVER_IDS.has(trimmedResolverId)) {
+    if (!KNOWN_SUBSTITUTION_RESOLVER_IDS.has(resolverId)) {
       this.logger.warn(
-        `Grounding ${groundingUid}: PropertyDefault '${propertyName}' SubstitutionToken '${valueRefUid}' declares unknown resolver-id '${trimmedResolverId}' — falling back to wikilink form. Known ids: ${Array.from(KNOWN_SUBSTITUTION_RESOLVER_IDS).join(", ")}.`,
+        `Grounding ${groundingUid}: PropertyDefault '${propertyName}' SubstitutionToken '${tokenUid}' declares unknown resolver-id '${resolverId}' — falling back to wikilink form. Known ids: ${Array.from(KNOWN_SUBSTITUTION_RESOLVER_IDS).join(", ")}.`,
       );
-      return `"[[${valueRefUid}]]"`;
+      return `"[[${tokenUid}]]"`;
+    }
+
+    // Parameterised resolvers always emit marker (parameter encoded inside).
+    if (parameter !== undefined) {
+      return buildParameterisedMarker(resolverId, tokenUid, parameter);
     }
 
     // Context-independent resolvers — invoke at parse time.
-    if (trimmedResolverId === "today") {
-      return new Date().toISOString().slice(0, 10);
-    }
-    if (trimmedResolverId === "todayStart") {
-      return new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
+    if (PARSE_TIME_RESOLVERS.has(resolverId)) {
+      return CommandResolver.parseTimeResolve(resolverId);
     }
 
-    // Context-dependent resolvers (targetFolder / target) — emit a marker so
-    // the Phase 3b GroundingExecutor substitutes at runtime when the click
-    // target IRI/UID is known.
-    return buildSubstitutionMarker(trimmedResolverId, valueRefUid);
+    // Context-dependent resolvers — executor substitutes at runtime.
+    return buildSubstitutionMarker(resolverId, tokenUid);
+  }
+
+  /**
+   * RFC 727572d2 — parse-time dispatch table for context-independent
+   * resolvers. Mirrors the production resolvers in
+   * {@link SubstitutionResolverRegistry} for parity.
+   */
+  private static parseTimeResolve(resolverId: string): string {
+    const d = new Date();
+    const pad = (n: number) => (n < 10 ? `0${n}` : String(n));
+    switch (resolverId) {
+      case "today":
+        return d.toISOString().slice(0, 10);
+      case "todayStart":
+        return new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
+      case "nowTimestamp":
+        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+      case "nowDate":
+        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+      case "nowYear":
+        return String(d.getFullYear());
+      case "nowMonth":
+        return pad(d.getMonth() + 1);
+      default:
+        return "";
+    }
+  }
+
+  /**
+   * RFC 727572d2 — TokenInvocation unwrapping. Reads `_token` ref and
+   * `_parameter` literal, dispatches the wrapped SubstitutionToken with the
+   * literal parameter. Missing `_token` → skip with warn.
+   */
+  private async resolveTokenInvocation(
+    invocationSubject: IRI,
+    invocationUid: string,
+    groundingUid: string,
+    propertyName: string,
+  ): Promise<string | null> {
+    const tokenRefUid = await this.getObsidianName(
+      invocationSubject,
+      Namespace.EXOCMD.term("TokenInvocation_token"),
+    );
+    if (!tokenRefUid) {
+      this.logger.warn(
+        `Grounding ${groundingUid}: PropertyDefault '${propertyName}' TokenInvocation '${invocationUid}' missing exocmd__TokenInvocation_token — entry skipped.`,
+      );
+      return null;
+    }
+    const parameter =
+      (await this.getLiteralValue(
+        invocationSubject,
+        Namespace.EXOCMD.term("TokenInvocation_parameter"),
+      )) ?? "";
+
+    if (!this.looksLikeUUID(tokenRefUid)) {
+      this.logger.warn(
+        `Grounding ${groundingUid}: PropertyDefault '${propertyName}' TokenInvocation '${invocationUid}' references non-UUID token '${tokenRefUid}' — entry skipped.`,
+      );
+      return null;
+    }
+    const tokenSubject = await this.findSubjectByUID(tokenRefUid);
+    if (!tokenSubject) {
+      this.logger.warn(
+        `Grounding ${groundingUid}: PropertyDefault '${propertyName}' TokenInvocation '${invocationUid}' token ref '${tokenRefUid}' not found in store — entry skipped.`,
+      );
+      return null;
+    }
+    return this.dispatchSubstitutionToken(
+      tokenSubject,
+      tokenRefUid,
+      groundingUid,
+      propertyName,
+      parameter,
+    );
+  }
+
+  /**
+   * RFC 727572d2 — detect whether `subject` is an instance of
+   * `exocmd__TokenInvocation`. Symmetric to {@link assetIsSubstitutionToken}.
+   */
+  private async assetIsTokenInvocation(subject: IRI): Promise<boolean> {
+    const classTriples = await this.tripleStore.match(
+      subject,
+      Namespace.EXO.term("Instance_class"),
+      undefined,
+    );
+    for (const triple of classTriples) {
+      if (triple.object instanceof IRI) {
+        if (triple.object.value === TOKEN_INVOCATION_CLASS_IRI) return true;
+        if (triple.object.value.includes(TOKEN_INVOCATION_CLASS_UID)) return true;
+      } else if (triple.object instanceof Literal) {
+        const unwrapped = this.unwrapWikilink(triple.object.value);
+        if (unwrapped === "exocmd__TokenInvocation") return true;
+        if (unwrapped === TOKEN_INVOCATION_CLASS_UID) return true;
+      }
+    }
+    return false;
   }
 
   /**
