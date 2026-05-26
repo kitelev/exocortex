@@ -1,4 +1,5 @@
 import { App, PluginSettingTab, Setting } from "obsidian";
+import { normaliseExcludedFolders } from "exocortex";
 import type ExocortexPlugin from "@plugin/ExocortexPlugin";
 import { DEFAULT_DISPLAY_NAME_TEMPLATE } from "@plugin/domain/display-name/DisplayNameTemplateEngine";
 import { DisplayNameResolver } from "@plugin/domain/display-name/DisplayNameResolver";
@@ -420,14 +421,17 @@ export class ExocortexSettingTab extends PluginSettingTab {
           .setPlaceholder("09 templates/\n10 drafts/")
           .setValue(this.plugin.settings.excludedFolders.join("\n"))
           .onChange(async (value) => {
-            // Split on any line break, trim each entry, drop empties so a
-            // trailing newline or accidental blank line does not register
-            // as "exclude everything". Persisted form is the cleaned array.
-            const folders = value
-              .split(/\r?\n/)
-              .map((line) => line.trim())
-              .filter((line) => line.length > 0);
-            this.plugin.settings.excludedFolders = folders;
+            // Persist the FULLY-NORMALISED list so storage matches what the
+            // runtime actually uses (trailing slashes auto-appended,
+            // whitespace stripped, empties dropped). Without this round-trip
+            // the user could type `"09 Templates"` and on reopen still see
+            // `"09 Templates"` while the converter is silently treating it
+            // as `"09 Templates/"` — confusing if the user later tries to
+            // exclude a `"09 Templates2/"`-style sibling and wonders why
+            // their entry "looks different" than what is being matched.
+            const parsed = value.split(/\r?\n/);
+            this.plugin.settings.excludedFolders =
+              normaliseExcludedFolders(parsed);
             await this.plugin.saveSettings();
           });
         // A slightly taller textarea reads better for a list of paths.
