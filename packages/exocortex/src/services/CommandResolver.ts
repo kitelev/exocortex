@@ -2280,7 +2280,7 @@ export class CommandResolver {
     // `pmbok__` partially), making `findBindings(label)` return `[]` for bindings whose
     // `targetClass` triple is stored as IRI under such namespaces.
     const baseMatch = iri.match(
-      /^https:\/\/exocortex\.my\/ontology\/([a-z][a-zA-Z0-9]*)#(.+)$/,
+      /^https:\/\/exocortex\.my\/ontology\/([a-z][a-zA-Z0-9]*)#([^#]+)$/,
     );
     if (baseMatch) {
       const [, prefix, local] = baseMatch;
