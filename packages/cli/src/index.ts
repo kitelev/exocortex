@@ -19,6 +19,7 @@ import { backfillCommand } from "./commands/backfill.js";
 import { recoverCommand } from "./commands/recover.js";
 import { findCommand } from "./commands/find.js";
 import { applyCommand } from "./commands/apply.js";
+import { auditCommand } from "./commands/audit.js";
 
 // Version injected at build time by esbuild (see esbuild.config.mjs)
 declare const __CLI_VERSION__: string;
@@ -59,6 +60,9 @@ export function createProgram(version?: string): Command {
   program.addCommand(daemonCommand());
   program.addCommand(backfillCommand());
   program.addCommand(recoverCommand());
+
+  // RFC 9d20c91f Phase 4+1 — regression-detection audits
+  program.addCommand(auditCommand());
 
   return program;
 }
