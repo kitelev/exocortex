@@ -119,21 +119,18 @@ const GROUNDING_TYPE_UID_TO_ENUM = Object.freeze({
 });
 const WIKILINK_TYPE_RE = /^\[\[([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\|[^\]]*)?\]\]$/i;
 
-// RFC 9d20c91f Phase 4 cutover: legacy bare-string path is env-flag gated.
-// Default (env-flag NOT set) = wikilink-only; bare-string emits a deprecation
-// warn (audit script is read-only, can't return null without breaking
-// classification — so still returns raw with louder signal). Setting
-// EXOCORTEX_GROUNDING_TYPE_BC=1 retains silent Phase 2 behavior.
-const _legacyAuditWarnedRaw = new Set();
+// RFC 9d20c91f Phase 4+1: wikilink-only — env-flag escape hatch removed.
+// Legacy literal-string encountered post-cutover emits stderr error and
+// flags the audit run as failure (exit non-zero). Audit script is the
+// regression detector for any post-Phase-3 ABox drift.
+const _legacyAuditSawLiteralForm = { value: false };
 function resolveGroundingType(raw) {
   const m = raw.match(WIKILINK_TYPE_RE);
   if (m) return GROUNDING_TYPE_UID_TO_ENUM[m[1].toLowerCase()] ?? raw;
-  if (process.env.EXOCORTEX_GROUNDING_TYPE_BC !== "1" && !_legacyAuditWarnedRaw.has(raw)) {
-    _legacyAuditWarnedRaw.add(raw);
-    process.stderr.write(
-      `[exocmd-grounding-type-bc] WARN audit encountered legacy literal-string '${raw}' for exocmd__Grounding_type post-Phase-4 cutover. Migrate to wikilink form per RFC 9d20c91f Phase 3.\n`,
-    );
-  }
+  _legacyAuditSawLiteralForm.value = true;
+  process.stderr.write(
+    `[exocmd-grounding-type-literal-form] ERROR audit encountered legacy literal-string '${raw}' for exocmd__Grounding_type post-cutover. Migrate to wikilink form per RFC 9d20c91f Phase 3.\n`,
+  );
   return raw;
 }
 
@@ -180,6 +177,13 @@ async function main() {
     for (const g of drift) {
       console.error(`  - ${g.path} → serviceId="${g.serviceId}"`);
     }
+    process.exitCode = 1;
+  }
+
+  if (_legacyAuditSawLiteralForm.value) {
+    console.error(
+      `[audit] LITERAL-FORM: at least one exocmd__Grounding_type literal-string form encountered (see stderr above). RFC 9d20c91f Phase 4+1 cutover violated.`,
+    );
     process.exitCode = 1;
   }
 

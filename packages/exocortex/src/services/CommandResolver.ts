@@ -180,16 +180,6 @@ export class CommandResolver {
   private readonly _legacyPropertyDefaultsWarnedGroundings = new Set<string>();
 
   /**
-   * RFC 9d20c91f Phase 2 — per-subject dedup for the
-   * `[exocmd-grounding-type-bc]` legacy-form warn. With ~172 ABox values
-   * still on bare-string form pre-Phase-3, every cold-start /
-   * `sparql.refresh()` traversal would otherwise emit N duplicate warns
-   * per subject. Same pattern as `_legacyPropertyDefaultsWarnedGroundings`
-   * above. Removed in Phase 4 cutover alongside dual-read.
-   */
-  private readonly _legacyGroundingTypeWarnedSubjects = new Set<string>();
-
-  /**
    * RFC 727572d2 — Universal Default Template singleton cache. Loaded once
    * per CommandResolver instance via {@link getUniversalCache}. Vault file
    * change adapters may externally call
@@ -2006,28 +1996,24 @@ export class CommandResolver {
     return false;
   }
 
-  private resolveGroundingType(value: string): GroundingType | null {
-    const normalized = value.toLowerCase().trim();
-    const values = Object.values(GroundingType) as string[];
-    return values.includes(normalized) ? (normalized as GroundingType) : null;
-  }
-
   /**
-   * RFC 9d20c91f Phase 2: dual-read for `exocmd__Grounding_type`.
+   * RFC 9d20c91f Phase 4+1: wikilink-only resolution for `exocmd__Grounding_type`.
    *
    * Phase 1 added the `exocmd__GroundingType` catalog + 9 instances in the
-   * shared `exoas-exocmd` submodule. Phase 3 will migrate ~172 ABox values
-   * from literal-string form (`"property_set"`) to wikilink form
-   * (`"[[<uid>]]"`). During the BC window, parsers accept both shapes.
+   * shared `exoas-exocmd` submodule. Phase 3 migrated all ABox values from
+   * literal-string form (`"property_set"`) to wikilink form (`"[[<uid>]]"`).
+   * Phase 4 made wikilink the default; Phase 4+1 (this revision) removed the
+   * `EXOCORTEX_GROUNDING_TYPE_BC` env-flag escape hatch entirely.
    *
    * Resolution priority:
    * 1. Triple object is IRI (post-Phase-3 ABox after vault sync) — map via
    *    `resolveGroundingTypeFromIRI` (symbolic class IRI OR file IRI fallback).
-   * 2. Triple object is Literal — try wikilink-literal first (defensive in
-   *    case NoteToRDFConverter didn't substitute the wikilink to an IRI),
-   *    then legacy bare-string match. Bare-string path emits a deprecation
-   *    warning tagged `[exocmd-grounding-type-bc]` for Phase 4 cutover
-   *    monitoring.
+   * 2. Triple object is Literal in wikilink form `"[[<uid>]]"` — resolve via
+   *    file-IRI form (defensive: NoteToRDFConverter may not substitute the
+   *    wikilink to an IRI for non-class-keyed predicates).
+   * 3. Any other Literal (bare-string legacy) — return null + emit a single
+   *    warn (grounding inert, caller skips). The CLI audit subcommand
+   *    `exocortex-cli audit grounding-type-literal-form` detects regressions.
    *
    * Returns `null` for unknown values (caller treats grounding as inert).
    */
@@ -2052,27 +2038,9 @@ export class CommandResolver {
         return resolveGroundingTypeFromIRI(`obsidian://vault/${wikilinkMatch[1].toLowerCase()}.md`);
       }
 
-      // RFC 9d20c91f Phase 4 cutover: legacy bare-string path is env-flag
-      // gated. Default (env-flag NOT set) = wikilink-only; bare-string returns
-      // null (grounding inert — fails loud at dispatch). Setting
-      // EXOCORTEX_GROUNDING_TYPE_BC=1 retains Phase 2 dual-read as a one-release
-      // rollback escape hatch. Phase 4+1 removes the env-flag entirely.
-      if (process.env.EXOCORTEX_GROUNDING_TYPE_BC === "1") {
-        if (!this._legacyGroundingTypeWarnedSubjects.has(subject.value)) {
-          this._legacyGroundingTypeWarnedSubjects.add(subject.value);
-          this.logger.warn(
-            `[exocmd-grounding-type-bc] legacy literal-string form '${raw}' for exocmd__Grounding_type on <${subject.value}> (BC env-flag enabled). Migrate to wikilink form per RFC 9d20c91f Phase 3.`,
-          );
-        }
-        return this.resolveGroundingType(raw);
-      }
-
-      if (!this._legacyGroundingTypeWarnedSubjects.has(subject.value)) {
-        this._legacyGroundingTypeWarnedSubjects.add(subject.value);
-        this.logger.warn(
-          `[exocmd-grounding-type-bc] BLOCKED legacy literal-string form '${raw}' for exocmd__Grounding_type on <${subject.value}> post-Phase-4 cutover. Migrate to wikilink form or set EXOCORTEX_GROUNDING_TYPE_BC=1 to re-enable (rollback escape hatch, removed Phase 4+1).`,
-        );
-      }
+      this.logger.warn(
+        `[exocmd-grounding-type-literal-form] legacy literal-string form '${raw}' for exocmd__Grounding_type on <${subject.value}>. Migrate to wikilink form per RFC 9d20c91f Phase 3.`,
+      );
       return null;
     }
 

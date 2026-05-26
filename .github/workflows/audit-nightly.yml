@@ -1,0 +1,67 @@
+name: Audit Nightly
+
+# RFC 9d20c91f Phase 4+1 — nightly regression detector for the
+# `exocmd__Grounding_type` literal-string form. Phase 3 migrated all ABox
+# values to wikilink form `[[<uid>]]`. Phase 4 made wikilink the default;
+# Phase 4+1 removed the env-flag escape hatch. This workflow guards against
+# any drift sneaking back via manual edits or copy-paste from legacy assets.
+
+on:
+  schedule:
+    # 02:00 UTC daily (~07:00 Asia/Almaty)
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+  # PR-time guard so a regression to the audited trees is flagged before
+  # merge, not on the next nightly run (avoids 24h post-merge window).
+  pull_request:
+    paths:
+      - "packages/exoas-exocmd/**"
+      - "packages/obsidian-plugin/tests/e2e/test-vault/**"
+      - "packages/cli/src/commands/audit*.ts"
+      - ".github/workflows/audit-nightly.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: audit-nightly
+  cancel-in-progress: false
+
+jobs:
+  grounding-type-literal-form:
+    name: grounding-type-literal-form
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Build core package
+        run: npm run build -w exocortex
+
+      - name: Build services package
+        run: npm run build -w @kitelev/exocortex-services
+
+      - name: Build CLI bundle
+        run: npm run build -w @kitelev/exocortex-cli
+
+      - name: Audit packages/exoas-exocmd
+        run: |
+          node packages/cli/dist/index.js audit grounding-type-literal-form \
+            --vault packages/exoas-exocmd
+
+      - name: Audit packages/obsidian-plugin/tests/e2e/test-vault
+        run: |
+          node packages/cli/dist/index.js audit grounding-type-literal-form \
+            --vault packages/obsidian-plugin/tests/e2e/test-vault

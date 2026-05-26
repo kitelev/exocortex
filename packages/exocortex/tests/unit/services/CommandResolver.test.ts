@@ -106,10 +106,10 @@ async function addGroundingAsset(
 ): Promise<IRI> {
   const subject = new IRI(`obsidian://vault/${opts.uid}.md`);
 
-  // RFC 9d20c91f Phase 4 cutover: emit Grounding_type as wikilink-form Literal
+  // RFC 9d20c91f Phase 4+1: emit Grounding_type as wikilink-form Literal
   // (canonical post-Phase-3 ABox shape). Fallback to bare-string for unknown
-  // type values (e.g. typo-form `"unknown_type"` test fixtures) so the legacy
-  // dispatch-null path remains testable when EXOCORTEX_GROUNDING_TYPE_BC=1.
+  // type values (e.g. typo-form `"unknown_type"` test fixtures) — the legacy
+  // dispatch-null path remains testable via direct bare-string Literal seed.
   const groundingTypeUid = TEST_GROUNDING_TYPE_UIDS[opts.type];
   const groundingTypeValue = groundingTypeUid
     ? new Literal(`[[${groundingTypeUid}]]`)
@@ -1987,79 +1987,25 @@ describe("CommandResolver — RFC 9d20c91f Phase 2 grounding type dispatch", () 
     expect(grounding.type).toBe("property_set");
   });
 
-  // RFC 9d20c91f Phase 4 cutover: legacy bare-string path env-flag-gated.
-  // Default (EXOCORTEX_GROUNDING_TYPE_BC unset) = wikilink-only — bare-string
-  // returns null (grounding inert). Setting BC=1 retains Phase 2 dual-read.
-  describe("legacy bare-string post-Phase-4 cutover", () => {
-    const ORIG_BC = process.env.EXOCORTEX_GROUNDING_TYPE_BC;
-    afterEach(() => {
-      if (ORIG_BC === undefined) delete process.env.EXOCORTEX_GROUNDING_TYPE_BC;
-      else process.env.EXOCORTEX_GROUNDING_TYPE_BC = ORIG_BC;
+  // RFC 9d20c91f Phase 4+1: env-flag escape hatch removed. Legacy bare-string
+  // always returns null grounding (inert) and emits a literal-form warn.
+  it("legacy bare-string `\"property_set\"` returns null grounding AND emits literal-form warn (Phase 4+1 — no env-flag escape)", async () => {
+    const store = new InMemoryTripleStore();
+    const warnSpy = jest.fn();
+    const resolver = new CommandResolver(store, {
+      info: jest.fn(),
+      warn: warnSpy,
+      error: jest.fn(),
+      debug: jest.fn(),
     });
+    const subject = await seedMinimalGrounding(store, new Literal("property_set"));
 
-    it("DEFAULT (no env-flag) → bare-string `\"property_set\"` returns null grounding AND emits BLOCKED warn once per subject", async () => {
-      delete process.env.EXOCORTEX_GROUNDING_TYPE_BC;
-      const store = new InMemoryTripleStore();
-      const warnSpy = jest.fn();
-      const resolver = new CommandResolver(store, {
-        info: jest.fn(),
-        warn: warnSpy,
-        error: jest.fn(),
-        debug: jest.fn(),
-      });
-      const subject = await seedMinimalGrounding(store, new Literal("property_set"));
-
-      const g1 = await loadGroundingForFixture(store, subject, resolver);
-      expect(g1.type).toBeUndefined();
-      const blockedCalls = warnSpy.mock.calls.filter((call) =>
-        String(call[0]).includes("[exocmd-grounding-type-bc] BLOCKED"),
-      );
-      expect(blockedCalls).toHaveLength(1);
-
-      // 2nd resolve same subject → dedup, no additional warn
-      await resolver.loadCommand("cmd-rfc-9d20c91f");
-      const blockedCallsAfter = warnSpy.mock.calls.filter((call) =>
-        String(call[0]).includes("[exocmd-grounding-type-bc] BLOCKED"),
-      );
-      expect(blockedCallsAfter).toHaveLength(1);
-    });
-
-    it("env-flag EXOCORTEX_GROUNDING_TYPE_BC=1 → bare-string resolves AND emits dedup BC-enabled warn (rollback escape hatch)", async () => {
-      process.env.EXOCORTEX_GROUNDING_TYPE_BC = "1";
-      const store = new InMemoryTripleStore();
-      const warnSpy = jest.fn();
-      const resolver = new CommandResolver(store, {
-        info: jest.fn(),
-        warn: warnSpy,
-        error: jest.fn(),
-        debug: jest.fn(),
-      });
-      const subject = await seedMinimalGrounding(store, new Literal("property_set"));
-
-      const g1 = await loadGroundingForFixture(store, subject, resolver);
-      expect(g1.type).toBe("property_set");
-      const bcCalls = warnSpy.mock.calls.filter((call) =>
-        String(call[0]).includes("[exocmd-grounding-type-bc]"),
-      );
-      expect(bcCalls).toHaveLength(1);
-      expect(String(bcCalls[0][0])).toContain("BC env-flag enabled");
-
-      // 2nd resolve same subject → dedup, no additional warn
-      await resolver.loadCommand("cmd-rfc-9d20c91f");
-      const bcCallsAfter = warnSpy.mock.calls.filter((call) =>
-        String(call[0]).includes("[exocmd-grounding-type-bc]"),
-      );
-      expect(bcCallsAfter).toHaveLength(1);
-    });
-
-    it("env-flag value `\"0\"` or empty string → wikilink-only (only `\"1\"` enables rollback)", async () => {
-      process.env.EXOCORTEX_GROUNDING_TYPE_BC = "0";
-      const store = new InMemoryTripleStore();
-      const resolver = new CommandResolver(store);
-      const subject = await seedMinimalGrounding(store, new Literal("property_set"));
-      const g1 = await loadGroundingForFixture(store, subject, resolver);
-      expect(g1.type).toBeUndefined();
-    });
+    const g1 = await loadGroundingForFixture(store, subject, resolver);
+    expect(g1.type).toBeUndefined();
+    const literalFormCalls = warnSpy.mock.calls.filter((call) =>
+      String(call[0]).includes("[exocmd-grounding-type-literal-form]"),
+    );
+    expect(literalFormCalls.length).toBeGreaterThanOrEqual(1);
   });
 
   it("returns null grounding when Grounding_type IRI is unknown", async () => {
