@@ -2272,18 +2272,19 @@ export class CommandResolver {
   }
 
   private iriToObsidianName(iri: string): string | null {
-    const hash = iri.lastIndexOf("#");
-    if (hash >= 0) {
-      const ns = iri.substring(0, hash + 1);
-      const local = iri.substring(hash + 1);
-      if (ns === Namespace.EMS.iri.value) return `ems__${local}`;
-      if (ns === Namespace.EXO.iri.value) return `exo__${local}`;
-      if (ns === Namespace.EXOCMD.iri.value) return `exocmd__${local}`;
-      if (ns === Namespace.IMS.iri.value) return `ims__${local}`;
-      if (ns === Namespace.ZTLK.iri.value) return `ztlk__${local}`;
-      if (ns === Namespace.PTMS.iri.value) return `ptms__${local}`;
-      if (ns === Namespace.LIT.iri.value) return `lit__${local}`;
-      if (ns === Namespace.INBOX.iri.value) return `inbox__${local}`;
+    // Reverse-map an IRI under EXOCORTEX_ONTOLOGY_BASE (`https://exocortex.my/ontology/<prefix>#<local>`)
+    // back to its Obsidian property-key form `<prefix>__<local>`. Mirrors the forward path
+    // (`Namespace.fromPropertyKey` → `Namespace.forPrefix`), which auto-extends to ad-hoc
+    // namespaces under the same base. Issue #3274 — prior hardcoded whitelist (8 known
+    // prefixes) silently dropped any ad-hoc namespace (e.g. `kitelev__`, `aiKnow__`,
+    // `pmbok__` partially), making `findBindings(label)` return `[]` for bindings whose
+    // `targetClass` triple is stored as IRI under such namespaces.
+    const baseMatch = iri.match(
+      /^https:\/\/exocortex\.my\/ontology\/([a-z][a-zA-Z0-9]*)#([^#]+)$/,
+    );
+    if (baseMatch) {
+      const [, prefix, local] = baseMatch;
+      return `${prefix}__${local}`;
     }
     // Handle obsidian:// vault URLs (e.g., obsidian://vault/ems/ems__EffortStatusDoing.md)
     const obsMatch = iri.match(/\/([^/]+)\.md$/);
