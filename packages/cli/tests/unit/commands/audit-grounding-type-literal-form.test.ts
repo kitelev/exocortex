@@ -101,6 +101,16 @@ describe("audit grounding-type-literal-form — scanVaultForLiteralForm", () => 
     expect(violations).toHaveLength(0);
   });
 
+  it("skips any dotfile directory (.cache, .vscode, .idea, .tmp) to match FileSystemVaultAdapter convention", () => {
+    for (const dot of [".cache", ".vscode", ".idea", ".tmp"]) {
+      const dotDir = join(tmpDir, dot);
+      mkdirSync(dotDir, { recursive: true });
+      writeGrounding(dotDir, `uid-dot-${dot}`, `"property_set"`);
+    }
+    const violations = scanVaultForLiteralForm(tmpDir);
+    expect(violations).toHaveLength(0);
+  });
+
   it("ignores files without Grounding_type predicate", () => {
     const noGrounding = `---
 exo__Asset_uid: uid-007

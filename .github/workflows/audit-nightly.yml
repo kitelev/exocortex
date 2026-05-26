@@ -11,6 +11,14 @@ on:
     # 02:00 UTC daily (~07:00 Asia/Almaty)
     - cron: "0 2 * * *"
   workflow_dispatch:
+  # PR-time guard so a regression to the audited trees is flagged before
+  # merge, not on the next nightly run (avoids 24h post-merge window).
+  pull_request:
+    paths:
+      - "packages/exoas-exocmd/**"
+      - "packages/obsidian-plugin/tests/e2e/test-vault/**"
+      - "packages/cli/src/commands/audit*.ts"
+      - ".github/workflows/audit-nightly.yml"
 
 permissions:
   contents: read

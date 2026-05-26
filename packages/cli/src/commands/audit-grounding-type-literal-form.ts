@@ -8,14 +8,11 @@ const FRONTMATTER_FENCE = /^---\s*$/;
 const TYPE_LINE = /^exocmd__Grounding_type:\s*(.+?)\s*$/;
 const WIKILINK_FORM = /^"?\[\[[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:\|[^\]]*)?\]\]"?$/i;
 
-const SKIP_DIRS = new Set([
-  ".git",
-  ".obsidian",
-  "node_modules",
-  ".trash",
-  ".obsidian-mobile",
-  ".DS_Store",
-]);
+/**
+ * Matches FileSystemVaultAdapter.shouldSkipDirectory convention — any dotfile
+ * dir (.git, .obsidian, .cache, .vscode, etc.) plus node_modules.
+ */
+const NON_DOT_SKIP_DIRS = new Set(["node_modules"]);
 
 export interface AuditGroundingTypeLiteralFormOptions {
   vault: string;
@@ -29,8 +26,7 @@ export interface LiteralFormViolation {
 }
 
 function shouldSkipDir(name: string): boolean {
-  if (name.startsWith(".")) return SKIP_DIRS.has(name.toLowerCase()) || name === ".git";
-  return SKIP_DIRS.has(name);
+  return name.startsWith(".") || NON_DOT_SKIP_DIRS.has(name);
 }
 
 function* walkMarkdownFiles(rootDir: string): Generator<string> {
