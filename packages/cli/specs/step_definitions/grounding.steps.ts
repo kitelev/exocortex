@@ -121,14 +121,23 @@ function readGroundingDef(uid: string, depth = 0): GroundingDefinition {
   const path = UID_INDEX.get(uid);
   if (!path) throw new Error(`Grounding ${uid} not found in fixture vault`);
   const fm = parseFrontmatter(readFileSync(path, "utf8"));
-  // RFC 9d20c91f Phase 2 dual-read: post-Phase-3 ABox stores wikilink form
-  // `"[[<uid>]]"` while pre-migration ABox stores legacy bare string
-  // `"property_set"`. Resolve both shapes to the GroundingType enum value.
+  // RFC 9d20c91f Phase 4 cutover: legacy bare-string path is env-flag gated.
+  // Default (env-flag NOT set) = wikilink-only; bare-string returns the raw
+  // value cast to GroundingType only if EXOCORTEX_GROUNDING_TYPE_BC=1
+  // (rollback escape hatch). Without the flag, legacy literal-form throws
+  // (fixture surfaces as test failure rather than silent acceptance).
   const rawType = fm["exocmd__Grounding_type"];
-  const type =
-    typeof rawType === "string"
-      ? (resolveGroundingTypeFromWikilinkLiteral(rawType) ?? (rawType as GroundingType))
-      : (rawType as GroundingType);
+  const type = (() => {
+    if (typeof rawType !== "string") return rawType as GroundingType;
+    const resolved = resolveGroundingTypeFromWikilinkLiteral(rawType);
+    if (resolved !== null) return resolved;
+    if (process.env.EXOCORTEX_GROUNDING_TYPE_BC === "1") {
+      return rawType as GroundingType;
+    }
+    throw new Error(
+      `[exocmd-grounding-type-bc] BLOCKED legacy literal-string '${rawType}' for exocmd__Grounding_type in fixture ${uid} post-Phase-4 cutover. Migrate to wikilink form per RFC 9d20c91f Phase 3 or set EXOCORTEX_GROUNDING_TYPE_BC=1.`,
+    );
+  })();
   const targetProperty =
     type === "service_call"
       ? (fm["exocmd__Grounding_serviceId"] as string | undefined) ??

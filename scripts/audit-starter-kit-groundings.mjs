@@ -119,10 +119,22 @@ const GROUNDING_TYPE_UID_TO_ENUM = Object.freeze({
 });
 const WIKILINK_TYPE_RE = /^\[\[([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\|[^\]]*)?\]\]$/i;
 
+// RFC 9d20c91f Phase 4 cutover: legacy bare-string path is env-flag gated.
+// Default (env-flag NOT set) = wikilink-only; bare-string emits a deprecation
+// warn (audit script is read-only, can't return null without breaking
+// classification — so still returns raw with louder signal). Setting
+// EXOCORTEX_GROUNDING_TYPE_BC=1 retains silent Phase 2 behavior.
+const _legacyAuditWarnedRaw = new Set();
 function resolveGroundingType(raw) {
   const m = raw.match(WIKILINK_TYPE_RE);
-  if (!m) return raw;
-  return GROUNDING_TYPE_UID_TO_ENUM[m[1].toLowerCase()] ?? raw;
+  if (m) return GROUNDING_TYPE_UID_TO_ENUM[m[1].toLowerCase()] ?? raw;
+  if (process.env.EXOCORTEX_GROUNDING_TYPE_BC !== "1" && !_legacyAuditWarnedRaw.has(raw)) {
+    _legacyAuditWarnedRaw.add(raw);
+    process.stderr.write(
+      `[exocmd-grounding-type-bc] WARN audit encountered legacy literal-string '${raw}' for exocmd__Grounding_type post-Phase-4 cutover. Migrate to wikilink form per RFC 9d20c91f Phase 3.\n`,
+    );
+  }
+  return raw;
 }
 
 function classify(type, serviceId) {
