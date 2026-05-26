@@ -47,7 +47,13 @@ jobs:
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
 
-      - name: Build CLI
+      - name: Build core package
+        run: npm run build -w exocortex
+
+      - name: Build services package
+        run: npm run build -w @kitelev/exocortex-services
+
+      - name: Build CLI bundle
         run: npm run build -w @kitelev/exocortex-cli
 
       - name: Audit packages/exoas-exocmd
