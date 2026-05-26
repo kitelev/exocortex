@@ -98,6 +98,32 @@ import {
  * Provides Command Palette integration for all asset commands
  */
 export default class ExocortexPlugin extends Plugin {
+  /**
+   * RFC c7da0bca Phase 5 — pure filter used by lazy-tbox-bootstrap to
+   * select TBox files from the full vault file list. Extracted as static
+   * for direct unit testing without standing up the whole plugin
+   * scaffold (code-reviewer HIGH catch — settings → bootstrap wiring
+   * was previously empirically untested, which is exactly how the
+   * `bb00efed → ems-commands/` migration silently stayed unindexed).
+   *
+   * Match is `String.startsWith` against vault-relative path. Caller is
+   * responsible for ensuring each prefix in `folderPrefixes` ends with
+   * `/` so `assetspaces/ems/` does not over-match `assetspaces/ems-commands/`
+   * (Settings UI auto-appends — see ExocortexSettingTab).
+   *
+   * Returns empty array if `folderPrefixes` is empty (degraded mode —
+   * bootstrap walks nothing; buttons appear later via convertVault).
+   */
+  static filterTBoxFiles<T extends { path: string }>(
+    files: T[],
+    folderPrefixes: string[],
+  ): T[] {
+    if (folderPrefixes.length === 0) return [];
+    return files.filter((f) =>
+      folderPrefixes.some((folder) => f.path.startsWith(folder)),
+    );
+  }
+
   private logger!: ILogger;
   private layoutRenderer!: UniversalLayoutRenderer;
   private commandManager!: CommandManager;
@@ -969,14 +995,20 @@ export default class ExocortexPlugin extends Plugin {
             // `?? []` fallback: defensive coverage for jest mocks +
             // legacy user settings без этого поля (Object.assign
             // в loadSettings заполнит default).
+            // Defensive `?? []` for jest mocks that omit
+            // `lazyBootstrapFolders` from the synthetic settings
+            // object. Production users always have the field
+            // populated by `Object.assign({}, DEFAULT_SETTINGS,
+            // rawData)` in `loadSettings`.
             const ontologyFolders = this.settings.lazyBootstrapFolders ?? [];
             // `?? []` is defensive coverage for jest mocks that
             // under-specify the IVaultFileReader surface — the
             // production `ObsidianVaultAdapter.getAllFiles()` is
             // typed `IFile[]` and always returns an array.
             const allFiles = this.vaultAdapter.getAllFiles() ?? [];
-            const tboxFiles = allFiles.filter((f) =>
-              ontologyFolders.some((folder) => f.path.startsWith(folder)),
+            const tboxFiles = ExocortexPlugin.filterTBoxFiles(
+              allFiles,
+              ontologyFolders,
             );
             let loadedCount = 0;
             let errorCount = 0;

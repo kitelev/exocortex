@@ -182,10 +182,15 @@ export class ExocortexSettingTab extends PluginSettingTab {
           .setPlaceholder("assetspaces/exo/\nassetspaces/ems/")
           .setValue((this.plugin.settings.lazyBootstrapFolders ?? []).join("\n"))
           .onChange(async (value) => {
+            // Auto-append trailing slash to prevent `assetspaces/ems`
+            // over-matching `assetspaces/ems-commands/...` (the exact
+            // failure mode this PR fixes — see ExocortexPlugin Phase 5
+            // comment block). Code-reviewer MED catch.
             this.plugin.settings.lazyBootstrapFolders = value
               .split("\n")
               .map((line) => line.trim())
-              .filter((line) => line.length > 0);
+              .filter((line) => line.length > 0)
+              .map((line) => (line.endsWith("/") ? line : line + "/"));
             await this.plugin.saveSettings();
           });
         textarea.inputEl.rows = 6;
