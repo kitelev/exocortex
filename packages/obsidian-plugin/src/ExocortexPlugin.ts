@@ -946,19 +946,30 @@ export default class ExocortexPlugin extends Plugin {
         performance.mark("lazy-tbox-bootstrap-start");
         void (async () => {
           try {
-            // Phase 3a scope: 4 core TBox folders shared by both
-            // vaults (vault-2025 + vault-exodev clone the same
-            // git submodules). Other assetspaces (pmbok-ontology,
-            // aiknow-ontology, shared-identities, test, exodev,
-            // exoass) remain covered by the parallel convertVault()
-            // path during 3a; Phase 3b audits whether they need
-            // explicit preload.
-            const ontologyFolders = [
-              "assetspaces/exo/",
-              "assetspaces/ems/",
-              "assetspaces/ims/",
-              "assetspaces/exocmd/",
-            ];
+            // RFC c7da0bca Phase 5 — folder list moved to user
+            // settings (`lazyBootstrapFolders`). Phase 3a hardcoded
+            // 4 folders, but RFC aaaa2dea Phase 2 Task 2.2
+            // (2026-05-23) migrated bb00efed Command + a6ef8fda
+            // Grounding из `exocmd/creation/` в новый submodule
+            // `ems-commands/` — а hardcoded list никто не обновил.
+            // На mobile это означало Bindings (в `exocmd/creation/`,
+            // indexed) ссылались на Commands (в `ems-commands/`,
+            // NOT indexed) → unresolved refs → 0 buttons → wait для
+            // convertVault (~10-20 s на iPhone). Phase 4 autoRender
+            // hook re-renders после bootstrap, но bootstrap который
+            // не загрузил Commands — no-op для visible outcome.
+            //
+            // Per Homoiconicity Invariant: список path prefixes —
+            // user-configurable семантика (где у пользователя живут
+            // ontology submodules), не hardcoded. Default settings
+            // покрывает 5 production submodules; users с extra
+            // submodules (kitelev/, pmbok-ontology/, aiknow-ontology/,
+            // shared-identities/, ...) могут append через Settings tab.
+            //
+            // `?? []` fallback: defensive coverage for jest mocks +
+            // legacy user settings без этого поля (Object.assign
+            // в loadSettings заполнит default).
+            const ontologyFolders = this.settings.lazyBootstrapFolders ?? [];
             // `?? []` is defensive coverage for jest mocks that
             // under-specify the IVaultFileReader surface — the
             // production `ObsidianVaultAdapter.getAllFiles()` is
