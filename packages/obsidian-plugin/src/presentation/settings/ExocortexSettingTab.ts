@@ -394,14 +394,17 @@ export class ExocortexSettingTab extends PluginSettingTab {
 
     const desc = containerEl.createDiv({ cls: "setting-item-description" });
     desc.appendText(
-      "Vault-relative folder prefixes whose files are excluded from RDF " +
-        "indexing and SHACL-lite validation. Files inside these folders do " +
-        "NOT trigger the \"Skipping file with invariant violation\" Notice, " +
-        "even when their frontmatter is incomplete by design (for example, " +
-        "Obsidian template files). One prefix per line. Path-prefix match " +
-        "is case-sensitive — use a trailing slash (\"09 Templates/\") to " +
-        "avoid matching sibling folders that share a name prefix. Changes " +
-        "take effect on next vault reload.",
+      "Vault-relative folder prefixes whose files are excluded from the " +
+        "cold-start RDF indexing walk and live-edit indexing. Files inside " +
+        "these folders do NOT trigger the \"Skipping file with invariant " +
+        "violation\" Notice, even when their frontmatter is incomplete by " +
+        "design (for example, Obsidian template files). One prefix per " +
+        "line; case-sensitive path-prefix match. A trailing slash is " +
+        "auto-appended on save so a sibling folder sharing a name prefix " +
+        "is not silently excluded. Reload Obsidian after editing the list — " +
+        "indexer, command manager, and layout service each snapshot this " +
+        "list at startup. SPARQL code-blocks honour the current setting on " +
+        "next render.",
     );
 
     // Ensure excludedFolders exists (older settings JSON may not have the key)

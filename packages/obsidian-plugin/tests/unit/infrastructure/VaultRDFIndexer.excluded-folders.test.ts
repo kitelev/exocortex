@@ -9,45 +9,42 @@ import {
 import { ObsidianVaultAdapter } from "../../../src/adapters/ObsidianVaultAdapter";
 
 // Mock `exocortex` wholesale (matches the sibling VaultRDFIndexer.test.ts
-// strategy), then re-export the real `isPathExcluded` / `normaliseExcludedFolders`
-// helpers so the indexer's `updateFile` guard exercises production behaviour
-// rather than a mock identity. Replicating the real helpers inline is short
-// enough that we avoid a `requireActual` import (which destabilised the rest
-// of the mock surface).
-jest.mock("exocortex", () => ({
-  InMemoryTripleStore: jest.fn(),
-  NoteToRDFConverter: jest.fn(),
-  ApplicationErrorHandler: jest.fn(),
-  RDFSInferenceEngine: jest.fn(),
-  NonInheritablePropertyRegistry: jest.fn(),
-  PropertyCardinalityRegistry: jest.fn(),
-  PrototypeChainMaterializer: jest.fn(),
-  INFERRED_GRAPH: "https://exocortex.my/graph/inferred",
-  Namespace: { EXO: { term: jest.fn() } },
-  NetworkError: class NetworkError extends Error {},
-  ServiceError: class ServiceError extends Error {
-    constructor(msg: string, public meta?: unknown) {
-      super(msg);
-    }
-  },
-  IRI: class IRI {
-    constructor(public value: string) {}
-    toString() {
-      return this.value;
-    }
-  },
-  isPathExcluded: (filePath: string, prefixes: string[]): boolean => {
-    if (prefixes.length === 0) return false;
-    const norm = filePath.replace(/\\/g, "/");
-    return prefixes.some((p) => norm.startsWith(p));
-  },
-  normaliseExcludedFolders: (entries: string[] | undefined): string[] => {
-    if (!Array.isArray(entries)) return [];
-    return entries
-      .map((e) => String(e).replace(/\\/g, "/").trim())
-      .filter((e) => e.length > 0);
-  },
-}));
+// strategy) but pin `isPathExcluded` / `normaliseExcludedFolders` to the
+// PRODUCTION implementations via `jest.requireActual`. Replicating helpers
+// inline drifts from production semantics over time — e.g. the trailing-
+// slash auto-append landed in `normaliseExcludedFolders` after this suite
+// was written, and an inline copy without it would let sibling-folder
+// over-match silently slip back in (see ~/.claude/rules/test-fixture-
+// realism.md). The other exports are stubs because the indexer pulls them
+// in for types or unrelated subsystems we don't exercise here.
+jest.mock("exocortex", () => {
+  const actual = jest.requireActual("exocortex");
+  return {
+    InMemoryTripleStore: jest.fn(),
+    NoteToRDFConverter: jest.fn(),
+    ApplicationErrorHandler: jest.fn(),
+    RDFSInferenceEngine: jest.fn(),
+    NonInheritablePropertyRegistry: jest.fn(),
+    PropertyCardinalityRegistry: jest.fn(),
+    PrototypeChainMaterializer: jest.fn(),
+    INFERRED_GRAPH: "https://exocortex.my/graph/inferred",
+    Namespace: { EXO: { term: jest.fn() } },
+    NetworkError: class NetworkError extends Error {},
+    ServiceError: class ServiceError extends Error {
+      constructor(msg: string, public meta?: unknown) {
+        super(msg);
+      }
+    },
+    IRI: class IRI {
+      constructor(public value: string) {}
+      toString() {
+        return this.value;
+      }
+    },
+    isPathExcluded: actual.isPathExcluded,
+    normaliseExcludedFolders: actual.normaliseExcludedFolders,
+  };
+});
 jest.mock("../../../src/adapters/ObsidianVaultAdapter");
 
 describe("VaultRDFIndexer — excludedFolders plumbing", () => {
@@ -174,6 +171,24 @@ describe("VaultRDFIndexer — excludedFolders plumbing", () => {
         "  09 Templates/  ",
         "",
         "   ",
+        "10 Drafts/",
+      ]);
+
+      await indexer.initialize();
+
+      expect(mockConverter.convertVault).toHaveBeenCalledWith({
+        excludedFolders: ["09 Templates/", "10 Drafts/"],
+      });
+    });
+
+    it("auto-appends a trailing slash to user-typed entries without one", async () => {
+      // Regression guard — exercises that `requireActual` for
+      // `normaliseExcludedFolders` brings the production auto-append rule
+      // into this suite. A unit-of-production-truth test: if the helper
+      // ever loses auto-append, this fails here (sibling-folder over-match
+      // would slip back in silently otherwise).
+      const indexer = new VaultRDFIndexer(mockApp, undefined, undefined, [
+        "09 Templates",
         "10 Drafts/",
       ]);
 
