@@ -168,6 +168,36 @@ export class ExocortexSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
+      .setName("Lazy bootstrap folders")
+      .setDesc(
+        "Path prefixes (one per line, trailing slash required) walked eagerly " +
+          "at plugin load so exocmd Commands/Bindings/Groundings and exo Classes/Properties " +
+          "are indexed before first render. Add extra submodules here " +
+          "(e.g. assetspaces/kitelev/, assetspaces/pmbok-ontology/) — change applies on next plugin reload. " +
+          "Empty list = bootstrap skips all folders (buttons may take 10-20s to appear on mobile).",
+      )
+      .addTextArea((textarea) => {
+        textarea
+          // eslint-disable-next-line obsidianmd/ui/sentence-case -- example shows literal vault-relative folder paths, not prose UI text
+          .setPlaceholder("assetspaces/exo/\nassetspaces/ems/")
+          .setValue((this.plugin.settings.lazyBootstrapFolders ?? []).join("\n"))
+          .onChange(async (value) => {
+            // Auto-append trailing slash to prevent `assetspaces/ems`
+            // over-matching `assetspaces/ems-commands/...` (the exact
+            // failure mode this PR fixes — see ExocortexPlugin Phase 5
+            // comment block). Code-reviewer MED catch.
+            this.plugin.settings.lazyBootstrapFolders = value
+              .split("\n")
+              .map((line) => line.trim())
+              .filter((line) => line.length > 0)
+              .map((line) => (line.endsWith("/") ? line : line + "/"));
+            await this.plugin.saveSettings();
+          });
+        textarea.inputEl.rows = 6;
+        textarea.inputEl.cols = 50;
+      });
+
+    new Setting(containerEl)
       // eslint-disable-next-line obsidianmd/ui/sentence-case -- "SHACL" is an established acronym
       .setName("Enable SHACL validation (experimental)")
       .setDesc(

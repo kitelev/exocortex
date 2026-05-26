@@ -98,6 +98,32 @@ import {
  * Provides Command Palette integration for all asset commands
  */
 export default class ExocortexPlugin extends Plugin {
+  /**
+   * RFC c7da0bca Phase 5 — pure filter used by lazy-tbox-bootstrap to
+   * select TBox files from the full vault file list. Extracted as static
+   * for direct unit testing without standing up the whole plugin
+   * scaffold (code-reviewer HIGH catch — settings → bootstrap wiring
+   * was previously empirically untested, which is exactly how the
+   * `bb00efed → ems-commands/` migration silently stayed unindexed).
+   *
+   * Match is `String.startsWith` against vault-relative path. Caller is
+   * responsible for ensuring each prefix in `folderPrefixes` ends with
+   * `/` so `assetspaces/ems/` does not over-match `assetspaces/ems-commands/`
+   * (Settings UI auto-appends — see ExocortexSettingTab).
+   *
+   * Returns empty array if `folderPrefixes` is empty (degraded mode —
+   * bootstrap walks nothing; buttons appear later via convertVault).
+   */
+  static filterTBoxFiles<T extends { path: string }>(
+    files: T[],
+    folderPrefixes: string[],
+  ): T[] {
+    if (folderPrefixes.length === 0) return [];
+    return files.filter((f) =>
+      folderPrefixes.some((folder) => f.path.startsWith(folder)),
+    );
+  }
+
   private logger!: ILogger;
   private layoutRenderer!: UniversalLayoutRenderer;
   private commandManager!: CommandManager;
@@ -946,26 +972,43 @@ export default class ExocortexPlugin extends Plugin {
         performance.mark("lazy-tbox-bootstrap-start");
         void (async () => {
           try {
-            // Phase 3a scope: 4 core TBox folders shared by both
-            // vaults (vault-2025 + vault-exodev clone the same
-            // git submodules). Other assetspaces (pmbok-ontology,
-            // aiknow-ontology, shared-identities, test, exodev,
-            // exoass) remain covered by the parallel convertVault()
-            // path during 3a; Phase 3b audits whether they need
-            // explicit preload.
-            const ontologyFolders = [
-              "assetspaces/exo/",
-              "assetspaces/ems/",
-              "assetspaces/ims/",
-              "assetspaces/exocmd/",
-            ];
+            // RFC c7da0bca Phase 5 — folder list moved to user
+            // settings (`lazyBootstrapFolders`). Phase 3a hardcoded
+            // 4 folders, but RFC aaaa2dea Phase 2 Task 2.2
+            // (2026-05-23) migrated bb00efed Command + a6ef8fda
+            // Grounding из `exocmd/creation/` в новый submodule
+            // `ems-commands/` — а hardcoded list никто не обновил.
+            // На mobile это означало Bindings (в `exocmd/creation/`,
+            // indexed) ссылались на Commands (в `ems-commands/`,
+            // NOT indexed) → unresolved refs → 0 buttons → wait для
+            // convertVault (~10-20 s на iPhone). Phase 4 autoRender
+            // hook re-renders после bootstrap, но bootstrap который
+            // не загрузил Commands — no-op для visible outcome.
+            //
+            // Per Homoiconicity Invariant: список path prefixes —
+            // user-configurable семантика (где у пользователя живут
+            // ontology submodules), не hardcoded. Default settings
+            // покрывает 5 production submodules; users с extra
+            // submodules (kitelev/, pmbok-ontology/, aiknow-ontology/,
+            // shared-identities/, ...) могут append через Settings tab.
+            //
+            // `?? []` fallback: defensive coverage for jest mocks +
+            // legacy user settings без этого поля (Object.assign
+            // в loadSettings заполнит default).
+            // Defensive `?? []` for jest mocks that omit
+            // `lazyBootstrapFolders` from the synthetic settings
+            // object. Production users always have the field
+            // populated by `Object.assign({}, DEFAULT_SETTINGS,
+            // rawData)` in `loadSettings`.
+            const ontologyFolders = this.settings.lazyBootstrapFolders ?? [];
             // `?? []` is defensive coverage for jest mocks that
             // under-specify the IVaultFileReader surface — the
             // production `ObsidianVaultAdapter.getAllFiles()` is
             // typed `IFile[]` and always returns an array.
             const allFiles = this.vaultAdapter.getAllFiles() ?? [];
-            const tboxFiles = allFiles.filter((f) =>
-              ontologyFolders.some((folder) => f.path.startsWith(folder)),
+            const tboxFiles = ExocortexPlugin.filterTBoxFiles(
+              allFiles,
+              ontologyFolders,
             );
             let loadedCount = 0;
             let errorCount = 0;
