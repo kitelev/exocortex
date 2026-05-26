@@ -145,6 +145,20 @@ export interface ExocortexSettings {
    * takes effect immediately, no plugin reload required.
    */
   enablePropertiesLabelPatch: boolean;
+  /**
+   * Folders whose markdown files are excluded from RDF indexing and SHACL-lite
+   * validation. Matching is path-prefix: a file is excluded when its vault path
+   * starts with any of the listed prefixes (case-sensitive, normalised to use
+   * forward slashes; a trailing slash is recommended to avoid matching sibling
+   * folders that share a name prefix). Excluded files never enter
+   * `NoteToRDFConverter.convertVaultWithValidation`, so they produce no
+   * "Skipping file with invariant violation" Notices and no warn-log entries.
+   *
+   * Default: `["09 Templates/"]` — Obsidian's conventional templates folder,
+   * whose files are known to violate Exocortex invariants by design (template
+   * placeholders, missing required properties).
+   */
+  excludedFolders: string[];
   // RFC c7da0bca Phase 3c-3 — dropped `exocmdBindingsCacheEnabledOnMobile`
   // setting. The indexer it gated has been deleted (Phase 3c-2); the
   // toggle had no remaining effect. Existing user settings JSON
@@ -176,4 +190,5 @@ export const DEFAULT_SETTINGS: ExocortexSettings = {
   enableSparqlAutoExecute: false,
   enableShaclValidation: false,
   enablePropertiesLabelPatch: true,
+  excludedFolders: ["09 Templates/"],
 };

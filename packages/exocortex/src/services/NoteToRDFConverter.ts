@@ -50,6 +50,57 @@ const UNPREFIXED_ASSET_FIELDS: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * Normalise a user-supplied list of folder-exclusion prefixes:
+ *   - Treat `undefined` / non-array as empty.
+ *   - Coerce each entry through `String(...)` defensively in case JSON
+ *     persistence smuggled in a non-string (legacy settings files).
+ *   - Replace backslashes with forward slashes so Windows-style paths from
+ *     hand-edited settings still match the vault's `file.path` shape.
+ *   - Trim surrounding whitespace.
+ *   - Drop empty entries — an empty prefix matches every path, which would
+ *     silently exclude the entire vault.
+ *   - Auto-append a trailing slash when missing. A user typing `"09 Templates"`
+ *     without a slash overwhelmingly means "the folder", not "any path
+ *     starting with that string"; without the slash a literal prefix match
+ *     would also catch sibling folders like `"09 Templates Archive/"`. We
+ *     close the footgun in normalisation so neither the UI hint text nor
+ *     manual JSON edits can produce silent over-matching.
+ */
+export function normaliseExcludedFolders(
+  excludedFolders: string[] | undefined,
+): string[] {
+  if (!Array.isArray(excludedFolders)) {
+    return [];
+  }
+  return excludedFolders
+    .map((entry) => String(entry).replace(/\\/g, "/").trim())
+    .filter((entry) => entry.length > 0)
+    .map((entry) => (entry.endsWith("/") ? entry : `${entry}/`));
+}
+
+/**
+ * Path-prefix match against a normalised list of excluded folders.
+ * Case-sensitive (mirrors Obsidian's case-sensitive vault paths on macOS/Linux
+ * with case-sensitive filesystems; users on case-insensitive filesystems can
+ * extend the list with both casings if needed).
+ */
+export function isPathExcluded(
+  filePath: string,
+  normalisedPrefixes: string[],
+): boolean {
+  if (normalisedPrefixes.length === 0) {
+    return false;
+  }
+  const normalisedPath = filePath.replace(/\\/g, "/");
+  for (const prefix of normalisedPrefixes) {
+    if (normalisedPath.startsWith(prefix)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
  * Service for converting Obsidian notes (frontmatter + wikilinks) to RDF triples.
  *
  * @example
@@ -499,16 +550,28 @@ export class NoteToRDFConverter {
   /**
    * Converts all notes in the vault to RDF triples.
    *
+   * @param options.excludedFolders - Optional list of vault-relative path
+   *   prefixes; any file whose path starts with one of these prefixes is
+   *   skipped without validation and without producing a warn-log entry. See
+   *   {@link convertVaultWithValidation} for full semantics.
    * @returns Array of all RDF triples from the vault
    *
    * @example
    * ```typescript
    * const allTriples = await converter.convertVault();
    * console.log(`Converted ${allTriples.length} triples`);
+   *
+   * // Skip the user-managed templates folder:
+   * await converter.convertVault({ excludedFolders: ["09 Templates/"] });
    * ```
    */
-  async convertVault(): Promise<Triple[]> {
-    const result = await this.convertVaultWithValidation({ strict: false });
+  async convertVault(
+    options: { excludedFolders?: string[] } = {},
+  ): Promise<Triple[]> {
+    const result = await this.convertVaultWithValidation({
+      strict: false,
+      excludedFolders: options.excludedFolders,
+    });
     return result.triples;
   }
 
@@ -557,6 +620,15 @@ export class NoteToRDFConverter {
    *
    * @param options - Validation options
    * @param options.strict - If true, throws on first invalid IRI instead of skipping
+   * @param options.excludedFolders - Vault-relative path prefixes whose files
+   *   are silently dropped before validation (no warn-log entry, no
+   *   `skippedFiles` record, no presence in the `summary.total` count). Used
+   *   by the Obsidian plugin to keep user-managed templates folders out of the
+   *   RDF index. Matching is case-sensitive path-prefix on the forward-slash
+   *   form of `file.path`; entries should typically end with a trailing slash
+   *   (`"09 Templates/"`) to avoid matching sibling folders sharing a name
+   *   prefix (e.g. `"09 Templates Archive/..."`). An empty / whitespace-only
+   *   prefix is ignored to prevent the entire vault from being excluded.
    * @returns Result containing triples, skipped files, and summary statistics
    *
    * @example
@@ -567,21 +639,39 @@ export class NoteToRDFConverter {
    *
    * // Strict mode: fail fast on first invalid IRI
    * await converter.convertVaultWithValidation({ strict: true });
+   *
+   * // Skip a templates folder from validation entirely
+   * await converter.convertVaultWithValidation({
+   *   excludedFolders: ["09 Templates/", "10 Drafts/"],
+   * });
    * ```
    *
    * @throws Error if strict mode is enabled and an invalid IRI is encountered
    */
   async convertVaultWithValidation(
-    options: { strict?: boolean } = {}
+    options: { strict?: boolean; excludedFolders?: string[] } = {}
   ): Promise<{
     triples: Triple[];
     skippedFiles: Array<{ path: string; reason: string }>;
     summary: { total: number; indexed: number; skipped: number };
   }> {
-    const files = this.vault.getAllFiles();
+    const allFiles = this.vault.getAllFiles();
     const allTriples: Triple[] = [];
     const skippedFiles: Array<{ path: string; reason: string }> = [];
     const strict = options.strict ?? false;
+    const excludedPrefixes = normaliseExcludedFolders(options.excludedFolders);
+
+    // Folder-level exclusion: drop files whose vault path starts with any
+    // configured prefix BEFORE validation. Excluded files are intentionally
+    // invisible to the rest of the pipeline (no warn-log, no skippedFiles
+    // record, no `summary.total` contribution) — they are treated as if they
+    // never existed in the vault. This is the user-facing escape hatch for
+    // template folders whose contents violate Exocortex invariants by design.
+    const files = excludedPrefixes.length === 0
+      ? allFiles
+      : allFiles.filter(
+          (file) => !isPathExcluded(file.path, excludedPrefixes),
+        );
 
     for (const file of files) {
       try {

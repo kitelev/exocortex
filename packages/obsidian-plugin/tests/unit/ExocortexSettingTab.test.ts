@@ -105,6 +105,18 @@ describe("ExocortexSettingTab", () => {
           callback(text);
           return setting;
         }),
+        addTextArea: jest.fn().mockImplementation((callback) => {
+          const textArea = {
+            setPlaceholder: jest.fn().mockReturnThis(),
+            setValue: jest.fn().mockReturnThis(),
+            onChange: jest.fn().mockReturnThis(),
+            // `inputEl` is mutated by the production code (rows/cols).
+            // A plain object is enough — production code only sets properties.
+            inputEl: {} as Record<string, unknown>,
+          };
+          callback(textArea);
+          return setting;
+        }),
         addButton: jest.fn().mockImplementation((callback) => {
           const button = {
             setButtonText: jest.fn().mockReturnThis(),
@@ -130,7 +142,8 @@ describe("ExocortexSettingTab", () => {
       // 9 toggle settings + 1 autoReadingMode toggle + 1 enableExoLayoutRenderer toggle + 1 showIconsInFileExplorer toggle + 1 enableSparqlAutoExecute toggle (#2992) + 1 enableShaclValidation toggle (P1.12) + 1 enablePropertiesLabelPatch toggle (RFC-030) + 3 headings + 1 default template + 6 per-class templates + 1 reset button + 4 log level rows = 29
       // RFC c7da0bca Phase 3c-3 — deleted `exocmdBindingsCacheEnabledOnMobile` toggle (-1) once its indexer was deleted in 3c-2.
       // Log channels section: 1 heading + 4 log level rows = 5
-      expect(MockSetting).toHaveBeenCalledTimes(29);
+      // Excluded folders section (this feature): 1 heading + 1 textarea row = +2 → 31
+      expect(MockSetting).toHaveBeenCalledTimes(31);
     });
 
     it("should render layout visibility toggle as first setting", () => {
@@ -172,6 +185,16 @@ describe("ExocortexSettingTab", () => {
               onChange: jest.fn().mockReturnThis(),
             };
             callback(text);
+            return setting;
+          }),
+          addTextArea: jest.fn().mockImplementation((callback) => {
+            const textArea = {
+              setPlaceholder: jest.fn().mockReturnThis(),
+              setValue: jest.fn().mockReturnThis(),
+              onChange: jest.fn().mockReturnThis(),
+              inputEl: {} as Record<string, unknown>,
+            };
+            callback(textArea);
             return setting;
           }),
           addButton: jest.fn().mockImplementation((callback) => {
@@ -242,6 +265,16 @@ describe("ExocortexSettingTab", () => {
               onChange: jest.fn().mockReturnThis(),
             };
             callback(text);
+            return setting;
+          }),
+          addTextArea: jest.fn().mockImplementation((callback) => {
+            const textArea = {
+              setPlaceholder: jest.fn().mockReturnThis(),
+              setValue: jest.fn().mockReturnThis(),
+              onChange: jest.fn().mockReturnThis(),
+              inputEl: {} as Record<string, unknown>,
+            };
+            callback(textArea);
             return setting;
           }),
           addButton: jest.fn().mockImplementation((callback) => {

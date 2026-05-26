@@ -63,6 +63,7 @@ export interface ExocortexPluginInterface extends Plugin {
     showArchivedAssets?: boolean;
     showEffortArea?: boolean;
     showEffortVotes?: boolean;
+    excludedFolders?: string[];
   };
   vaultAdapter: IVaultAdapter;
   themeResolver?: ThemeResolver;

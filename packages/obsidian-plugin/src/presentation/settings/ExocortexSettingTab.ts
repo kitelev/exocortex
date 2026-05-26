@@ -244,6 +244,10 @@ export class ExocortexSettingTab extends PluginSettingTab {
           }),
       );
 
+    // Excluded folders section — files inside these folders are skipped
+    // entirely by the RDF indexer and SHACL-lite validation.
+    this.renderExcludedFoldersSection(containerEl);
+
     // Logging section
     this.renderLogChannelsSection(containerEl);
 
@@ -364,6 +368,69 @@ export class ExocortexSettingTab extends PluginSettingTab {
       li.createEl("code", { text: code });
       li.appendText(` - ${desc}`);
     }
+  }
+
+  /**
+   * Render the "Excluded folders" section.
+   *
+   * Each non-empty line in the textarea is treated as a vault-relative
+   * path-prefix. Files whose path starts with any of these prefixes are
+   * excluded from RDF indexing AND SHACL-lite validation, so they never
+   * produce the "Skipping file with invariant violation" Notice.
+   *
+   * The default `"09 Templates/"` matches Obsidian's conventional templates
+   * folder, whose contents typically violate Exocortex invariants by design.
+   * Users can add, edit, or remove entries; an empty textarea clears all
+   * exclusions.
+   *
+   * Changes take effect on the next vault re-index (full Obsidian reload or
+   * manual cache refresh). A reload Notice could be added later, but is not
+   * required for correctness — live edits to files outside excluded folders
+   * keep working immediately because `VaultRDFIndexer.updateFile` consults
+   * the prefix list it captured at construction time.
+   */
+  private renderExcludedFoldersSection(containerEl: HTMLElement): void {
+    new Setting(containerEl).setName("Excluded folders").setHeading();
+
+    const desc = containerEl.createDiv({ cls: "setting-item-description" });
+    desc.appendText(
+      "Vault-relative folder prefixes whose files are excluded from RDF " +
+        "indexing and SHACL-lite validation. Files inside these folders do " +
+        "NOT trigger the \"Skipping file with invariant violation\" Notice, " +
+        "even when their frontmatter is incomplete by design (for example, " +
+        "Obsidian template files). One prefix per line. Path-prefix match " +
+        "is case-sensitive — use a trailing slash (\"09 Templates/\") to " +
+        "avoid matching sibling folders that share a name prefix. Changes " +
+        "take effect on next vault reload.",
+    );
+
+    // Ensure excludedFolders exists (older settings JSON may not have the key)
+    if (!Array.isArray(this.plugin.settings.excludedFolders)) {
+      this.plugin.settings.excludedFolders = [];
+    }
+
+    new Setting(containerEl)
+      .setName("Folder prefixes")
+      .setDesc("One folder prefix per line (e.g. \"09 Templates/\")")
+      .addTextArea((textArea) => {
+        textArea
+          .setPlaceholder("09 templates/\n10 drafts/")
+          .setValue(this.plugin.settings.excludedFolders.join("\n"))
+          .onChange(async (value) => {
+            // Split on any line break, trim each entry, drop empties so a
+            // trailing newline or accidental blank line does not register
+            // as "exclude everything". Persisted form is the cleaned array.
+            const folders = value
+              .split(/\r?\n/)
+              .map((line) => line.trim())
+              .filter((line) => line.length > 0);
+            this.plugin.settings.excludedFolders = folders;
+            await this.plugin.saveSettings();
+          });
+        // A slightly taller textarea reads better for a list of paths.
+        textArea.inputEl.rows = 4;
+        textArea.inputEl.cols = 40;
+      });
   }
 
   /**

@@ -111,7 +111,8 @@ export class LayoutService {
     app: App,
     vaultAdapter: IVaultAdapter,
     logger?: ILogger,
-    notifier?: INotificationService
+    notifier?: INotificationService,
+    excludedFolders: string[] = [],
   ) {
     this.app = app;
     this.vaultAdapter = vaultAdapter;
@@ -126,7 +127,12 @@ export class LayoutService {
 
     this.parser = new LayoutParser(vaultAdapter);
     this.queryBuilder = new LayoutQueryBuilder();
-    this.sparqlService = new SPARQLQueryService(app, this.logger, notifier);
+    this.sparqlService = new SPARQLQueryService(
+      app,
+      this.logger,
+      notifier,
+      excludedFolders,
+    );
   }
 
   /**

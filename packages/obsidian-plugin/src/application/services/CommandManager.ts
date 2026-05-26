@@ -55,7 +55,12 @@ export class CommandManager {
     const notifier: INotificationService = new ObsidianNotificationService();
 
     const genericAssetCreationService = container.resolve(GenericAssetCreationService);
-    const sparqlQueryService = new SPARQLQueryService(this.app, logger);
+    const sparqlQueryService = new SPARQLQueryService(
+      this.app,
+      logger,
+      undefined,
+      plugin.settings?.excludedFolders ?? [],
+    );
     const ontologySchemaService = new OntologySchemaService(sparqlQueryService);
     const classDiscoveryService = new ClassDiscoveryService(sparqlQueryService);
 
