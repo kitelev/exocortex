@@ -273,7 +273,7 @@ async function seedGrounding(
     new Triple(
       iri,
       Namespace.EXOCMD.term("Grounding_type"),
-      new Literal("create_instance"),
+      new Literal("[[4367e2d6-6c92-450a-becb-abce1fb07682]]"),
     ),
     new Triple(
       iri,

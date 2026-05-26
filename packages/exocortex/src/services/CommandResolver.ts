@@ -2051,13 +2051,29 @@ export class CommandResolver {
       if (wikilinkMatch) {
         return resolveGroundingTypeFromIRI(`obsidian://vault/${wikilinkMatch[1].toLowerCase()}.md`);
       }
+
+      // RFC 9d20c91f Phase 4 cutover: legacy bare-string path is env-flag
+      // gated. Default (env-flag NOT set) = wikilink-only; bare-string returns
+      // null (grounding inert — fails loud at dispatch). Setting
+      // EXOCORTEX_GROUNDING_TYPE_BC=1 retains Phase 2 dual-read as a one-release
+      // rollback escape hatch. Phase 4+1 removes the env-flag entirely.
+      if (process.env.EXOCORTEX_GROUNDING_TYPE_BC === "1") {
+        if (!this._legacyGroundingTypeWarnedSubjects.has(subject.value)) {
+          this._legacyGroundingTypeWarnedSubjects.add(subject.value);
+          this.logger.warn(
+            `[exocmd-grounding-type-bc] legacy literal-string form '${raw}' for exocmd__Grounding_type on <${subject.value}> (BC env-flag enabled). Migrate to wikilink form per RFC 9d20c91f Phase 3.`,
+          );
+        }
+        return this.resolveGroundingType(raw);
+      }
+
       if (!this._legacyGroundingTypeWarnedSubjects.has(subject.value)) {
         this._legacyGroundingTypeWarnedSubjects.add(subject.value);
         this.logger.warn(
-          `[exocmd-grounding-type-bc] legacy literal-string form '${raw}' for exocmd__Grounding_type on <${subject.value}>. Migrate to wikilink form per RFC 9d20c91f Phase 3.`,
+          `[exocmd-grounding-type-bc] BLOCKED legacy literal-string form '${raw}' for exocmd__Grounding_type on <${subject.value}> post-Phase-4 cutover. Migrate to wikilink form or set EXOCORTEX_GROUNDING_TYPE_BC=1 to re-enable (rollback escape hatch, removed Phase 4+1).`,
         );
       }
-      return this.resolveGroundingType(raw);
+      return null;
     }
 
     return null;

@@ -549,6 +549,89 @@ describe('validate — range conformance (literal values)', () => {
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
+// Suite 6b: RFC 9d20c91f Phase 4 — exocmd__Grounding_type asymmetric SHACL
+// ═════════════════════════════════════════════════════════════════════════════
+// Per RFC 9d20c91f Phase 4 acceptance (F7 corrected): SHACL **partially**
+// enforces — wrong-IRI values caught via `sh:class`; literal-form values
+// silently accepted by ShaclLiteValidator (sh:nodeKind not supported). These
+// tests pin both behaviors so future ShaclLiteValidator refactors cannot
+// silently change the asymmetry.
+
+describe('validate — RFC 9d20c91f Phase 4 Grounding_type asymmetry', () => {
+  const EXOCMD = 'https://exocortex.my/ontology/exocmd#';
+  const GROUNDING_TYPE_PROPERTY = `${EXOCMD}Grounding_type`;
+  const GROUNDING_TYPE_CLASS = `${EXOCMD}GroundingType`;
+  const GROUNDING_CLASS = `${EXOCMD}Grounding`;
+  const VALID_INSTANCE_IRI =
+    'obsidian://vault/assetspaces/exocmd/cf3bb923-f1f1-40be-b728-782844402426.md';
+  const WRONG_INSTANCE_IRI =
+    'obsidian://vault/assetspaces/ems/1b20a8f0-d745-4e93-91db-4531b3df120e.md';
+
+  it('Phase 4 happy path: Grounding_type → valid GroundingType instance → no violation', () => {
+    const shape = makeShape({
+      propertyIRI: GROUNDING_TYPE_PROPERTY,
+      domain: [GROUNDING_CLASS],
+      range: [GROUNDING_TYPE_CLASS],
+    });
+    const triples = [
+      typeTriple('node:Grounding', GROUNDING_CLASS),
+      typeTriple(VALID_INSTANCE_IRI, GROUNDING_TYPE_CLASS),
+      iriTriple('node:Grounding', GROUNDING_TYPE_PROPERTY, VALID_INSTANCE_IRI),
+    ];
+    const report = validate(triples, makeRegistry([shape]), flatHierarchy);
+    expect(report.conforms).toBe(true);
+    expect(report.violations).toHaveLength(0);
+  });
+
+  it('Phase 4 wrong-IRI: Grounding_type → non-GroundingType wikilink → sh:class violation', () => {
+    // Synthetic mistake — someone wires Grounding_type to a UUID pointing at
+    // an `ems__Task` class file instead of an `exocmd__GroundingType` catalog
+    // instance. The reshaped ObjectProperty range constraint must catch this.
+    const shape = makeShape({
+      propertyIRI: GROUNDING_TYPE_PROPERTY,
+      domain: [GROUNDING_CLASS],
+      range: [GROUNDING_TYPE_CLASS],
+    });
+    const triples = [
+      typeTriple('node:Grounding', GROUNDING_CLASS),
+      typeTriple(WRONG_INSTANCE_IRI, `${EMS}Task`),
+      iriTriple('node:Grounding', GROUNDING_TYPE_PROPERTY, WRONG_INSTANCE_IRI),
+    ];
+    const report = validate(triples, makeRegistry([shape]), flatHierarchy);
+    expect(report.violations).toHaveLength(1);
+    expect(report.violations[0].message).toContain('sh:class');
+    expect(report.violations[0].actualValue).toBe(WRONG_INSTANCE_IRI);
+    expect(report.violations[0].expectedRange).toBe(GROUNDING_TYPE_CLASS);
+  });
+
+  it('Phase 4 literal-form asymmetry: Grounding_type → literal `"property_set"` → 0 sh:class violations (known limitation, parser-level guard via env-flag in CommandResolver)', () => {
+    // SHACL-lite W3: sh:class skips Literal objects (datatypeRanges empty →
+    // continue). RFC 9d20c91f Option (a) acceptance: this asymmetry is OK;
+    // parser-level deprecation counter in CommandResolver is the primary
+    // literal-form guard (env-flag-gated post-Phase-4 cutover).
+    //
+    // This test pins the asymmetry. If a future ShaclLiteValidator gains
+    // sh:nodeKind sh:IRI support, this test will fail and we'll know the
+    // env-flag parser guard becomes redundant.
+    const shape = makeShape({
+      propertyIRI: GROUNDING_TYPE_PROPERTY,
+      domain: [GROUNDING_CLASS],
+      range: [GROUNDING_TYPE_CLASS],
+    });
+    const triples = [
+      typeTriple('node:Grounding', GROUNDING_CLASS),
+      litTriple('node:Grounding', GROUNDING_TYPE_PROPERTY, 'property_set'),
+    ];
+    const report = validate(triples, makeRegistry([shape]), flatHierarchy);
+    // 0 sh:class violations for literal form — documented W3 limitation.
+    const shClassViolations = report.violations.filter((v) =>
+      v.message.includes('sh:class'),
+    );
+    expect(shClassViolations).toHaveLength(0);
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
 // Suite 7: Domain matching & hierarchy
 // ═════════════════════════════════════════════════════════════════════════════
 

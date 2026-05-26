@@ -351,4 +351,79 @@ describe("NoteToRDFConverter — RFC 31c1a0be grounding-ref UUID identity", () =
       "https://exocortex.my/ontology/ems#EffortStatusDone",
     );
   });
+
+  it("preserves UUID identity for Grounding_type when target is GroundingType catalog instance (RFC 9d20c91f Phase 4)", async () => {
+    // RFC 9d20c91f Phase 4 cutover: `Grounding_type` reshaped to ObjectProperty
+    // with range `exocmd__GroundingType`. ABox stores `"[[<uid>]]"` pointing
+    // at a catalog instance (e.g. `cf3bb923-...md`, label
+    // `exocmd__GroundingTypePropertySet`). Without the Phase 4 bypass-list
+    // extension, the label matches `^[a-z]+__[A-Z][a-zA-Z0-9_]+$` regex →
+    // Issue #2782/#2959 substitution rewrites the triple object to
+    // `<exocmd#GroundingTypePropertySet>` (symbolic class IRI), and
+    // CommandResolver's UID-identity dispatch (GROUNDING_TYPE_UID_TO_ENUM
+    // keyed on UID, not label) cannot resolve it → grounding inert.
+    //
+    // Fix: extend bypass list with `Grounding_type`, emitting the file IRI
+    // so resolveGroundingTypeFromIRI can extract the UUID and dispatch.
+    const catalogInstanceFile: IFile = {
+      path: "assetspaces/exocmd/cf3bb923-f1f1-40be-b728-782844402426.md",
+      basename: "cf3bb923-f1f1-40be-b728-782844402426",
+      name: "cf3bb923-f1f1-40be-b728-782844402426.md",
+      parent: null,
+    };
+
+    const groundingFile: IFile = {
+      path: "assetspaces/exocmd/9d20c000-0000-0000-0000-000000000001.md",
+      basename: "9d20c000-0000-0000-0000-000000000001",
+      name: "9d20c000-0000-0000-0000-000000000001.md",
+      parent: null,
+    };
+
+    const groundingFrontmatter: IFrontmatter = {
+      exo__Asset_uid: "9d20c000-0000-0000-0000-000000000001",
+      exo__Asset_label: "RFC 9d20c91f Phase 4 dispatch fixture",
+      exocmd__Grounding_type:
+        "[[cf3bb923-f1f1-40be-b728-782844402426]]",
+      exocmd__Grounding_targetProperty: "ems__Effort_status",
+    };
+
+    const catalogInstanceFrontmatter: IFrontmatter = {
+      exo__Asset_uid: "cf3bb923-f1f1-40be-b728-782844402426",
+      exo__Asset_label: "exocmd__GroundingTypePropertySet",
+    };
+
+    mockVault.getFrontmatter.mockImplementation((f: IFile) => {
+      if (f.path === groundingFile.path) return groundingFrontmatter;
+      if (f.path === catalogInstanceFile.path) return catalogInstanceFrontmatter;
+      return null;
+    });
+
+    mockVault.getFirstLinkpathDest.mockImplementation((linkpath: string) => {
+      if (linkpath === "cf3bb923-f1f1-40be-b728-782844402426")
+        return catalogInstanceFile;
+      return null;
+    });
+
+    const triples = await converter.convertNote(groundingFile);
+
+    const typeTriples = triples.filter(
+      (t) =>
+        (t.predicate as IRI).value ===
+        Namespace.EXOCMD.term("Grounding_type").value,
+    );
+
+    expect(typeTriples).toHaveLength(1);
+    const obj = typeTriples[0].object;
+
+    // Pre-fix: obj was IRI("https://exocortex.my/ontology/exocmd#GroundingTypePropertySet")
+    // Post-fix: obj is the file IRI carrying the UUID in its basename.
+    expect(obj).toBeInstanceOf(IRI);
+    const value = (obj as IRI).value;
+    expect(value).not.toBe(
+      "https://exocortex.my/ontology/exocmd#GroundingTypePropertySet",
+    );
+    expect(value).toMatch(
+      /cf3bb923-f1f1-40be-b728-782844402426\.md$/,
+    );
+  });
 });

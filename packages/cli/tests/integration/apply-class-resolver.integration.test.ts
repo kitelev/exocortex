@@ -52,7 +52,7 @@ const GROUNDING_MD = [
   `exo__Asset_isDefinedBy: "[[!kitelev]]"`,
   `exo__Instance_class:`,
   `  - "[[exocmd__Grounding]]"`,
-  `exocmd__Grounding_type: "create_instance"`,
+  `exocmd__Grounding_type: "[[4367e2d6-6c92-450a-becb-abce1fb07682]]"`,
   // Label-form targetClass — the exact shape that triggered the regression.
   `exocmd__Grounding_targetClass: "ems__Task"`,
   `exocmd__Grounding_targetFolder: "Inbox"`,

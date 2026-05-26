@@ -982,10 +982,21 @@ export class NoteToRDFConverter {
             // then writes label-form `"[[ems__EffortStatusDraft]]"` into the
             // created instance — violating UUID-canon for `ems__Effort_status`
             // and the wider PropertyDefault story.
+            //
+            // RFC 9d20c91f Phase 4: `Grounding_type` joins the bypass list.
+            // Post-Phase 1 the property is reshaped to ObjectProperty with
+            // range `exocmd__GroundingType`; ABox stores `"[[<uid>]]"` pointing
+            // to one of 9 catalog instances. Without bypass the target's label
+            // (e.g. `exocmd__GroundingTypePropertySet`) matches the namespace
+            // prefix regex → #2782 substitutes to `<exocmd#GroundingTypePropertySet>`,
+            // CommandResolver UID-identity dispatch then cannot extract the UUID
+            // from the symbolic class IRI (`GROUNDING_TYPE_UID_TO_ENUM` keyed
+            // on UID, not label). aiKnow ref: 07d29fd8-6460-430b-b244-2bdb3f726fb9.
             const isGroundingRef =
               predicate?.value.endsWith("#Grounding_targetValueRef") ||
               predicate?.value.endsWith("#Grounding_targetValueSubstitution") ||
               predicate?.value.endsWith("#Grounding_targetClass") ||
+              predicate?.value.endsWith("#Grounding_type") ||
               predicate?.value.endsWith("#PropertyDefault_value");
             if (isGroundingRef) {
               return [fileIRI];

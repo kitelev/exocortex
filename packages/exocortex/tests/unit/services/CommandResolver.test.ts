@@ -76,6 +76,22 @@ async function addPreconditionAsset(
   return subject;
 }
 
+// RFC 9d20c91f Phase 1: Grounding_type catalog UIDs (mirror of
+// packages/exocortex/src/domain/constants/GroundingTypeUIDs.ts).
+// Test helper emits the wikilink-form Literal `"[[<uid>]]"` so post-Phase-4
+// cutover (where default = wikilink-only) all legacy fixtures keep working.
+const TEST_GROUNDING_TYPE_UIDS: Record<string, string> = {
+  property_set: "cf3bb923-f1f1-40be-b728-782844402426",
+  property_delete: "4bdf1d0b-e9da-4d96-bafe-c5aaef8c2bd5",
+  composite: "8f9a57db-3865-4886-92fb-c5ab7f3c3fa3",
+  service_call: "9bf9fc99-ac37-4e51-b9f5-bd920099947c",
+  create_instance: "4367e2d6-6c92-450a-becb-abce1fb07682",
+  property_append: "572f7e69-a8a1-42f6-8113-5aa65cc4b552",
+  property_increment: "afc29f90-45eb-4f94-9fe2-2ce738759161",
+  property_shift: "f4e5266f-f3cc-49fd-a5a5-ce1e8b7847a4",
+  sparql_update: "79c3e709-8d1d-4694-bcc6-b9ff07d59b86",
+};
+
 async function addGroundingAsset(
   store: InMemoryTripleStore,
   opts: {
@@ -90,11 +106,20 @@ async function addGroundingAsset(
 ): Promise<IRI> {
   const subject = new IRI(`obsidian://vault/${opts.uid}.md`);
 
+  // RFC 9d20c91f Phase 4 cutover: emit Grounding_type as wikilink-form Literal
+  // (canonical post-Phase-3 ABox shape). Fallback to bare-string for unknown
+  // type values (e.g. typo-form `"unknown_type"` test fixtures) so the legacy
+  // dispatch-null path remains testable when EXOCORTEX_GROUNDING_TYPE_BC=1.
+  const groundingTypeUid = TEST_GROUNDING_TYPE_UIDS[opts.type];
+  const groundingTypeValue = groundingTypeUid
+    ? new Literal(`[[${groundingTypeUid}]]`)
+    : new Literal(opts.type);
+
   const triples: Triple[] = [
     new Triple(subject, Namespace.RDF.term("type"), Namespace.EXOCMD.term("Grounding")),
     new Triple(subject, Namespace.EXO.term("Asset_uid"), new Literal(opts.uid)),
     new Triple(subject, Namespace.EXO.term("Asset_label"), new Literal(opts.label)),
-    new Triple(subject, Namespace.EXOCMD.term("Grounding_type"), new Literal(opts.type)),
+    new Triple(subject, Namespace.EXOCMD.term("Grounding_type"), groundingTypeValue),
   ];
 
   if (opts.targetProperty) {
@@ -269,7 +294,7 @@ describe("CommandResolver", () => {
         new Triple(groundingSubject, Namespace.RDF.term("type"), Namespace.EXOCMD.term("Grounding")),
         new Triple(groundingSubject, Namespace.EXO.term("Asset_uid"), new Literal("gnd-linkback")),
         new Triple(groundingSubject, Namespace.EXO.term("Asset_label"), new Literal("Create Next Iter")),
-        new Triple(groundingSubject, Namespace.EXOCMD.term("Grounding_type"), new Literal("create_instance")),
+        new Triple(groundingSubject, Namespace.EXOCMD.term("Grounding_type"), new Literal("[[4367e2d6-6c92-450a-becb-abce1fb07682]]")),
         new Triple(
           groundingSubject,
           Namespace.EXOCMD.term("Grounding_linkBackProperty"),
@@ -329,7 +354,7 @@ describe("CommandResolver", () => {
         new Triple(groundingSubject, Namespace.RDF.term("type"), Namespace.EXOCMD.term("Grounding")),
         new Triple(groundingSubject, Namespace.EXO.term("Asset_uid"), new Literal("gnd-legacy-defaults")),
         new Triple(groundingSubject, Namespace.EXO.term("Asset_label"), new Literal("Legacy defaults ignored")),
-        new Triple(groundingSubject, Namespace.EXOCMD.term("Grounding_type"), new Literal("create_instance")),
+        new Triple(groundingSubject, Namespace.EXOCMD.term("Grounding_type"), new Literal("[[4367e2d6-6c92-450a-becb-abce1fb07682]]")),
         new Triple(
           groundingSubject,
           Namespace.EXOCMD.term("Grounding_propertyDefaults"),
@@ -361,7 +386,7 @@ describe("CommandResolver", () => {
         new Triple(groundingSubject, Namespace.RDF.term("type"), Namespace.EXOCMD.term("Grounding")),
         new Triple(groundingSubject, Namespace.EXO.term("Asset_uid"), new Literal("gnd-prefill")),
         new Triple(groundingSubject, Namespace.EXO.term("Asset_label"), new Literal("Create Wim Hof session")),
-        new Triple(groundingSubject, Namespace.EXOCMD.term("Grounding_type"), new Literal("create_instance")),
+        new Triple(groundingSubject, Namespace.EXOCMD.term("Grounding_type"), new Literal("[[4367e2d6-6c92-450a-becb-abce1fb07682]]")),
         new Triple(
           groundingSubject,
           Namespace.EXOCMD.term("Grounding_prefillLabelWithDate"),
@@ -402,7 +427,7 @@ describe("CommandResolver", () => {
         new Triple(groundingSubject, Namespace.RDF.term("type"), Namespace.EXOCMD.term("Grounding")),
         new Triple(groundingSubject, Namespace.EXO.term("Asset_uid"), new Literal("gnd-not-true")),
         new Triple(groundingSubject, Namespace.EXO.term("Asset_label"), new Literal("Disabled prefill")),
-        new Triple(groundingSubject, Namespace.EXOCMD.term("Grounding_type"), new Literal("create_instance")),
+        new Triple(groundingSubject, Namespace.EXOCMD.term("Grounding_type"), new Literal("[[4367e2d6-6c92-450a-becb-abce1fb07682]]")),
         new Triple(
           groundingSubject,
           Namespace.EXOCMD.term("Grounding_prefillLabelWithDate"),
@@ -426,7 +451,7 @@ describe("CommandResolver", () => {
         new Triple(groundingSubject, Namespace.RDF.term("type"), Namespace.EXOCMD.term("Grounding")),
         new Triple(groundingSubject, Namespace.EXO.term("Asset_uid"), new Literal("gnd-defaults-input")),
         new Triple(groundingSubject, Namespace.EXO.term("Asset_label"), new Literal("With input defaults")),
-        new Triple(groundingSubject, Namespace.EXOCMD.term("Grounding_type"), new Literal("create_instance")),
+        new Triple(groundingSubject, Namespace.EXOCMD.term("Grounding_type"), new Literal("[[4367e2d6-6c92-450a-becb-abce1fb07682]]")),
         new Triple(
           groundingSubject,
           Namespace.EXOCMD.term("Grounding_inputSchema"),
@@ -487,7 +512,7 @@ describe("CommandResolver", () => {
         new Triple(groundingSubject, Namespace.RDF.term("type"), Namespace.EXOCMD.term("Grounding")),
         new Triple(groundingSubject, Namespace.EXO.term("Asset_uid"), new Literal("gnd-bad-legacy")),
         new Triple(groundingSubject, Namespace.EXO.term("Asset_label"), new Literal("Bad legacy")),
-        new Triple(groundingSubject, Namespace.EXOCMD.term("Grounding_type"), new Literal("create_instance")),
+        new Triple(groundingSubject, Namespace.EXOCMD.term("Grounding_type"), new Literal("[[4367e2d6-6c92-450a-becb-abce1fb07682]]")),
         new Triple(
           groundingSubject,
           Namespace.EXOCMD.term("Grounding_propertyDefaults"),
@@ -1715,7 +1740,7 @@ describe("CommandResolver — RFC 31c1a0be Phase 3", () => {
       new Triple(gndSubject, Namespace.RDF.term("type"), Namespace.EXOCMD.term("Grounding")),
       new Triple(gndSubject, Namespace.EXO.term("Asset_uid"), new Literal("gnd-typed")),
       new Triple(gndSubject, Namespace.EXO.term("Asset_label"), new Literal("Set status Ref-form")),
-      new Triple(gndSubject, Namespace.EXOCMD.term("Grounding_type"), new Literal("property_set")),
+      new Triple(gndSubject, Namespace.EXOCMD.term("Grounding_type"), new Literal("[[cf3bb923-f1f1-40be-b728-782844402426]]")),
       new Triple(gndSubject, Namespace.EXOCMD.term("Grounding_targetProperty"), new Literal("ems__Effort_status")),
       new Triple(
         gndSubject,
@@ -1784,7 +1809,7 @@ describe("CommandResolver — RFC 31c1a0be Phase 3", () => {
       new Triple(gndSubject, Namespace.RDF.term("type"), Namespace.EXOCMD.term("Grounding")),
       new Triple(gndSubject, Namespace.EXO.term("Asset_uid"), new Literal("gnd-bad-subst")),
       new Triple(gndSubject, Namespace.EXO.term("Asset_label"), new Literal("Bad subst grounding")),
-      new Triple(gndSubject, Namespace.EXOCMD.term("Grounding_type"), new Literal("property_set")),
+      new Triple(gndSubject, Namespace.EXOCMD.term("Grounding_type"), new Literal("[[cf3bb923-f1f1-40be-b728-782844402426]]")),
       new Triple(gndSubject, Namespace.EXOCMD.term("Grounding_targetProperty"), new Literal("ems__Effort_reviewTimestamp")),
       new Triple(
         gndSubject,
@@ -1820,7 +1845,7 @@ describe("CommandResolver — RFC 31c1a0be Phase 3", () => {
       new Triple(gndSubject, Namespace.RDF.term("type"), Namespace.EXOCMD.term("Grounding")),
       new Triple(gndSubject, Namespace.EXO.term("Asset_uid"), new Literal("gnd-subst")),
       new Triple(gndSubject, Namespace.EXO.term("Asset_label"), new Literal("Set ts to now (subst)")),
-      new Triple(gndSubject, Namespace.EXOCMD.term("Grounding_type"), new Literal("property_set")),
+      new Triple(gndSubject, Namespace.EXOCMD.term("Grounding_type"), new Literal("[[cf3bb923-f1f1-40be-b728-782844402426]]")),
       new Triple(gndSubject, Namespace.EXOCMD.term("Grounding_targetProperty"), new Literal("ems__Effort_reviewTimestamp")),
       new Triple(
         gndSubject,
@@ -1962,31 +1987,79 @@ describe("CommandResolver — RFC 9d20c91f Phase 2 grounding type dispatch", () 
     expect(grounding.type).toBe("property_set");
   });
 
-  it("legacy bare-string `\"property_set\"` resolves AND emits dedup warn once per subject", async () => {
-    const store = new InMemoryTripleStore();
-    const warnSpy = jest.fn();
-    const resolver = new CommandResolver(store, {
-      info: jest.fn(),
-      warn: warnSpy,
-      error: jest.fn(),
-      debug: jest.fn(),
+  // RFC 9d20c91f Phase 4 cutover: legacy bare-string path env-flag-gated.
+  // Default (EXOCORTEX_GROUNDING_TYPE_BC unset) = wikilink-only — bare-string
+  // returns null (grounding inert). Setting BC=1 retains Phase 2 dual-read.
+  describe("legacy bare-string post-Phase-4 cutover", () => {
+    const ORIG_BC = process.env.EXOCORTEX_GROUNDING_TYPE_BC;
+    afterEach(() => {
+      if (ORIG_BC === undefined) delete process.env.EXOCORTEX_GROUNDING_TYPE_BC;
+      else process.env.EXOCORTEX_GROUNDING_TYPE_BC = ORIG_BC;
     });
-    const subject = await seedMinimalGrounding(store, new Literal("property_set"));
 
-    // 1st resolve → warn fires once
-    const g1 = await loadGroundingForFixture(store, subject, resolver);
-    expect(g1.type).toBe("property_set");
-    const firstCallCount = warnSpy.mock.calls.filter((call) =>
-      String(call[0]).includes("[exocmd-grounding-type-bc]"),
-    ).length;
-    expect(firstCallCount).toBe(1);
+    it("DEFAULT (no env-flag) → bare-string `\"property_set\"` returns null grounding AND emits BLOCKED warn once per subject", async () => {
+      delete process.env.EXOCORTEX_GROUNDING_TYPE_BC;
+      const store = new InMemoryTripleStore();
+      const warnSpy = jest.fn();
+      const resolver = new CommandResolver(store, {
+        info: jest.fn(),
+        warn: warnSpy,
+        error: jest.fn(),
+        debug: jest.fn(),
+      });
+      const subject = await seedMinimalGrounding(store, new Literal("property_set"));
 
-    // 2nd resolve same subject → dedup, no additional warn
-    await resolver.loadCommand("cmd-rfc-9d20c91f");
-    const secondCallCount = warnSpy.mock.calls.filter((call) =>
-      String(call[0]).includes("[exocmd-grounding-type-bc]"),
-    ).length;
-    expect(secondCallCount).toBe(1);
+      const g1 = await loadGroundingForFixture(store, subject, resolver);
+      expect(g1.type).toBeUndefined();
+      const blockedCalls = warnSpy.mock.calls.filter((call) =>
+        String(call[0]).includes("[exocmd-grounding-type-bc] BLOCKED"),
+      );
+      expect(blockedCalls).toHaveLength(1);
+
+      // 2nd resolve same subject → dedup, no additional warn
+      await resolver.loadCommand("cmd-rfc-9d20c91f");
+      const blockedCallsAfter = warnSpy.mock.calls.filter((call) =>
+        String(call[0]).includes("[exocmd-grounding-type-bc] BLOCKED"),
+      );
+      expect(blockedCallsAfter).toHaveLength(1);
+    });
+
+    it("env-flag EXOCORTEX_GROUNDING_TYPE_BC=1 → bare-string resolves AND emits dedup BC-enabled warn (rollback escape hatch)", async () => {
+      process.env.EXOCORTEX_GROUNDING_TYPE_BC = "1";
+      const store = new InMemoryTripleStore();
+      const warnSpy = jest.fn();
+      const resolver = new CommandResolver(store, {
+        info: jest.fn(),
+        warn: warnSpy,
+        error: jest.fn(),
+        debug: jest.fn(),
+      });
+      const subject = await seedMinimalGrounding(store, new Literal("property_set"));
+
+      const g1 = await loadGroundingForFixture(store, subject, resolver);
+      expect(g1.type).toBe("property_set");
+      const bcCalls = warnSpy.mock.calls.filter((call) =>
+        String(call[0]).includes("[exocmd-grounding-type-bc]"),
+      );
+      expect(bcCalls).toHaveLength(1);
+      expect(String(bcCalls[0][0])).toContain("BC env-flag enabled");
+
+      // 2nd resolve same subject → dedup, no additional warn
+      await resolver.loadCommand("cmd-rfc-9d20c91f");
+      const bcCallsAfter = warnSpy.mock.calls.filter((call) =>
+        String(call[0]).includes("[exocmd-grounding-type-bc]"),
+      );
+      expect(bcCallsAfter).toHaveLength(1);
+    });
+
+    it("env-flag value `\"0\"` or empty string → wikilink-only (only `\"1\"` enables rollback)", async () => {
+      process.env.EXOCORTEX_GROUNDING_TYPE_BC = "0";
+      const store = new InMemoryTripleStore();
+      const resolver = new CommandResolver(store);
+      const subject = await seedMinimalGrounding(store, new Literal("property_set"));
+      const g1 = await loadGroundingForFixture(store, subject, resolver);
+      expect(g1.type).toBeUndefined();
+    });
   });
 
   it("returns null grounding when Grounding_type IRI is unknown", async () => {

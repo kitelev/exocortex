@@ -246,12 +246,16 @@ function buildGroundingData(
   return {
     uid,
     label,
-    // RFC 9d20c91f Phase 2 dual-read: accept wikilink form "[[<uid>]]" and
-    // resolve to canonical enum string. Pre-Phase-3 ABox still uses bare
-    // string (passes through asString unchanged).
+    // RFC 9d20c91f Phase 4 cutover: legacy bare-string path env-flag gated.
+    // Default (env-flag NOT set) = wikilink-only; bare-string returns empty
+    // string (test-helper consumers treat empty type as missing). Setting
+    // EXOCORTEX_GROUNDING_TYPE_BC=1 retains Phase 2 raw pass-through.
     type: (() => {
       const raw = asString(fm["exocmd__Grounding_type"]);
-      return resolveGroundingTypeFromWikilinkLiteral(raw) ?? raw;
+      const resolved = resolveGroundingTypeFromWikilinkLiteral(raw);
+      if (resolved !== null) return resolved;
+      if (process.env.EXOCORTEX_GROUNDING_TYPE_BC === "1") return raw;
+      return "";
     })(),
     targetProperty: asString(fm["exocmd__Grounding_targetProperty"]),
     targetValue: asString(fm["exocmd__Grounding_targetValue"]),
