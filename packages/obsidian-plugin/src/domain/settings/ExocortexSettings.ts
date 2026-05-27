@@ -180,6 +180,27 @@ export interface ExocortexSettings {
   // toggle had no remaining effect. Existing user settings JSON
   // containing this key will be silently ignored by Object.assign
   // merge in `loadSettings` — no migration needed.
+  /**
+   * RFC c7da0bca Phase 5 — folder prefixes loaded eagerly by
+   * `lazy-tbox-bootstrap` at `onLayoutReady`. The bootstrap walks
+   * these folders so that `exocmd__CommandBinding`, `exocmd__Command`,
+   * `exocmd__Grounding`, `exo__Class` and `exo__Property` triples are
+   * present in the store before the first asset render — eliminating
+   * the «buttons appear after 10-20 s» mobile cold-start regression
+   * caused by deferred convertVault.
+   *
+   * Each entry is a path prefix matched via `String.startsWith` against
+   * vault-relative file paths. Trailing slash required to prevent
+   * `assetspaces/ems/` matching `assetspaces/ems-commands/...`.
+   *
+   * Default covers the 5 production submodules. Users with extra
+   * submodules (e.g. `assetspaces/kitelev/`, `assetspaces/pmbok-ontology/`)
+   * should append to this list — change applies on next plugin reload.
+   *
+   * Empty / undefined → bootstrap walks zero files (degraded mode,
+   * buttons appear via convertVault path eventually).
+   */
+  lazyBootstrapFolders: string[];
   [key: string]: unknown;
 }
 
@@ -207,4 +228,11 @@ export const DEFAULT_SETTINGS: ExocortexSettings = {
   enableShaclValidation: false,
   enablePropertiesLabelPatch: true,
   excludedFolders: ["09 Templates/"],
+  lazyBootstrapFolders: [
+    "assetspaces/exo/",
+    "assetspaces/ems/",
+    "assetspaces/ems-commands/",
+    "assetspaces/ims/",
+    "assetspaces/exocmd/",
+  ],
 };
