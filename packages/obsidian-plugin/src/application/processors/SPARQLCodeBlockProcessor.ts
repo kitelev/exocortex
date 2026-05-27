@@ -384,7 +384,9 @@ export class SPARQLCodeBlockProcessor {
         this.plugin.app
       );
       const converter = new NoteToRDFConverter(vaultAdapter, LoggerFactory.create("NoteToRDFConverter"));
-      const triples = await converter.convertVault();
+      const triples = await converter.convertVault({
+        excludedFolders: this.plugin.settings?.excludedFolders ?? [],
+      });
 
       this.tripleStore = new InMemoryTripleStore();
 

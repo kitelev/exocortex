@@ -29,7 +29,8 @@ export class SPARQLQueryService {
   constructor(
     app: App,
     logger?: ILogger,
-    notifier?: INotificationService
+    notifier?: INotificationService,
+    excludedFolders: string[] = [],
   ) {
     const defaultLogger = LoggerFactory.create("SPARQLQueryService");
     this.logger = logger || {
@@ -53,7 +54,7 @@ export class SPARQLQueryService {
       notifier || defaultNotifier
     );
 
-    this.indexer = new VaultRDFIndexer(app, this.logger, notifier);
+    this.indexer = new VaultRDFIndexer(app, this.logger, notifier, excludedFolders);
     this.parser = new ExoQLParser();
     this.translator = new ExoQLAlgebraTranslator();
     this.optimizer = new AlgebraOptimizer();

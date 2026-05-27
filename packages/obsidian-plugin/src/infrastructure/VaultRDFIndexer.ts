@@ -11,6 +11,8 @@ import {
   Namespace,
   NetworkError,
   ServiceError,
+  isPathExcluded,
+  normaliseExcludedFolders,
   type ILogger,
   type INotificationService,
   type IFile,
@@ -27,11 +29,19 @@ export class VaultRDFIndexer {
   private eventRefs: EventRef[] = [];
   private errorHandler: ApplicationErrorHandler;
   private logger: ILogger;
+  /**
+   * Snapshot of vault-relative folder prefixes whose files must not be
+   * indexed. The plugin's settings tab passes the current list through the
+   * constructor; this instance keeps a frozen copy so per-event handlers
+   * (modify/rename/create) honour the same set as the initial walk.
+   */
+  private readonly excludedFolders: string[];
 
   constructor(
     private app: App,
     logger?: ILogger,
-    notifier?: INotificationService
+    notifier?: INotificationService,
+    excludedFolders: string[] = [],
   ) {
     this.tripleStore = new InMemoryTripleStore();
     this.vaultAdapter = new ObsidianVaultAdapter(
@@ -40,6 +50,7 @@ export class VaultRDFIndexer {
       app
     );
     this.converter = new NoteToRDFConverter(this.vaultAdapter, logger || LoggerFactory.create("NoteToRDFConverter"));
+    this.excludedFolders = normaliseExcludedFolders(excludedFolders);
 
     const defaultLogger = LoggerFactory.create("VaultRDFIndexer");
     this.logger = logger || {
@@ -71,7 +82,9 @@ export class VaultRDFIndexer {
 
     try {
       const triples = await this.errorHandler.executeWithRetry(
-        async () => this.converter.convertVault(),
+        async () => this.converter.convertVault({
+          excludedFolders: this.excludedFolders,
+        }),
         { context: "VaultRDFIndexer.initialize", operation: "convertVault" }
       );
       await this.tripleStore.addAll(triples);
@@ -171,6 +184,18 @@ export class VaultRDFIndexer {
       return;
     }
 
+    // Honour folder-exclusion settings for live-edit events too. Without
+    // this guard a file inside an excluded folder would still be indexed
+    // when the user edited it (the initial walk in `initialize()` excludes
+    // it, but `vault.on("modify")` would re-introduce it). To keep the
+    // store consistent with the configured exclusion set we also remove
+    // any stale triples that may exist for the path (e.g. files that were
+    // indexed before the user added their folder to the exclusion list).
+    if (isPathExcluded(file.path, this.excludedFolders)) {
+      await this.removeFileTriples(file.path);
+      return;
+    }
+
     await this.errorHandler.executeWithRetry(
       async () => {
         const fileIRI = new IRI(`obsidian://vault/${encodeURI(file.path)}`);
@@ -221,7 +246,9 @@ export class VaultRDFIndexer {
     await this.errorHandler.executeWithRetry(
       async () => {
         await this.tripleStore.clear();
-        const triples = await this.converter.convertVault();
+        const triples = await this.converter.convertVault({
+          excludedFolders: this.excludedFolders,
+        });
         await this.tripleStore.addAll(triples);
         await this.runInference();
       },

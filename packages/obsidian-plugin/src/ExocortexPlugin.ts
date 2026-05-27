@@ -1406,6 +1406,16 @@ export default class ExocortexPlugin extends Plugin {
     if (!this.settings.logChannels) {
       this.settings.logChannels = DEFAULT_LOG_CHANNELS;
     }
+    // Repair a corrupted `excludedFolders` shape (e.g. a hand-edited
+    // settings JSON that stored a comma-joined string instead of an
+    // array). `Object.assign` overlays default-on-missing, but a
+    // *present* non-array value would otherwise survive into the UI
+    // and break the textarea's `.join("\n")`.
+    if (!Array.isArray(this.settings.excludedFolders)) {
+      this.settings.excludedFolders = [
+        ...(DEFAULT_SETTINGS.excludedFolders ?? []),
+      ];
+    }
   }
 
   /**

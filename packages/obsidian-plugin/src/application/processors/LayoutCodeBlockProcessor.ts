@@ -170,7 +170,10 @@ export class LayoutCodeBlockProcessor {
     if (this.layoutService === null) {
       this.layoutService = new LayoutService(
         this.plugin.app,
-        this.plugin.vaultAdapter
+        this.plugin.vaultAdapter,
+        undefined,
+        undefined,
+        this.plugin.settings?.excludedFolders ?? [],
       );
       await this.layoutService.initialize();
     }

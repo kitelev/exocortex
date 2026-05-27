@@ -120,7 +120,12 @@ export class SPARQLApi {
    * ```
    */
   constructor(plugin: ExocortexPlugin) {
-    this.queryService = new SPARQLQueryService(plugin.app);
+    this.queryService = new SPARQLQueryService(
+      plugin.app,
+      undefined,
+      undefined,
+      plugin.settings?.excludedFolders ?? [],
+    );
   }
 
   /**

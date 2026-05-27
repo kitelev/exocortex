@@ -81,7 +81,8 @@ describe("SPARQLQueryService", () => {
       expect(VaultRDFIndexer).toHaveBeenCalledWith(
         mockApp,
         expect.any(Object), // logger (default or provided)
-        undefined           // notifier (undefined when not provided to SPARQLQueryService)
+        undefined,          // notifier (undefined when not provided to SPARQLQueryService)
+        []                  // excludedFolders (defaults to [] when no setting is passed)
       );
     });
   });

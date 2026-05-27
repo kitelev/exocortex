@@ -1,4 +1,5 @@
 import { App, PluginSettingTab, Setting } from "obsidian";
+import { normaliseExcludedFolders } from "exocortex";
 import type ExocortexPlugin from "@plugin/ExocortexPlugin";
 import { DEFAULT_DISPLAY_NAME_TEMPLATE } from "@plugin/domain/display-name/DisplayNameTemplateEngine";
 import { DisplayNameResolver } from "@plugin/domain/display-name/DisplayNameResolver";
@@ -274,6 +275,10 @@ export class ExocortexSettingTab extends PluginSettingTab {
           }),
       );
 
+    // Excluded folders section — files inside these folders are skipped
+    // entirely by the RDF indexer and SHACL-lite validation.
+    this.renderExcludedFoldersSection(containerEl);
+
     // Logging section
     this.renderLogChannelsSection(containerEl);
 
@@ -394,6 +399,75 @@ export class ExocortexSettingTab extends PluginSettingTab {
       li.createEl("code", { text: code });
       li.appendText(` - ${desc}`);
     }
+  }
+
+  /**
+   * Render the "Excluded folders" section.
+   *
+   * Each non-empty line in the textarea is treated as a vault-relative
+   * path-prefix. Files whose path starts with any of these prefixes are
+   * excluded from RDF indexing AND SHACL-lite validation, so they never
+   * produce the "Skipping file with invariant violation" Notice.
+   *
+   * The default `"09 Templates/"` matches Obsidian's conventional templates
+   * folder, whose contents typically violate Exocortex invariants by design.
+   * Users can add, edit, or remove entries; an empty textarea clears all
+   * exclusions.
+   *
+   * Changes take effect on the next vault re-index (full Obsidian reload or
+   * manual cache refresh). A reload Notice could be added later, but is not
+   * required for correctness — live edits to files outside excluded folders
+   * keep working immediately because `VaultRDFIndexer.updateFile` consults
+   * the prefix list it captured at construction time.
+   */
+  private renderExcludedFoldersSection(containerEl: HTMLElement): void {
+    new Setting(containerEl).setName("Excluded folders").setHeading();
+
+    const desc = containerEl.createDiv({ cls: "setting-item-description" });
+    desc.appendText(
+      "Vault-relative folder prefixes whose files are excluded from the " +
+        "cold-start RDF indexing walk and live-edit indexing. Files inside " +
+        "these folders do NOT trigger the \"Skipping file with invariant " +
+        "violation\" Notice, even when their frontmatter is incomplete by " +
+        "design (for example, Obsidian template files). One prefix per " +
+        "line; case-sensitive path-prefix match. A trailing slash is " +
+        "auto-appended on save so a sibling folder sharing a name prefix " +
+        "is not silently excluded. Reload Obsidian after editing the list — " +
+        "indexer, command manager, and layout service each snapshot this " +
+        "list at startup. SPARQL code-blocks honour the current setting on " +
+        "next render.",
+    );
+
+    // Ensure excludedFolders exists (older settings JSON may not have the key)
+    if (!Array.isArray(this.plugin.settings.excludedFolders)) {
+      this.plugin.settings.excludedFolders = [];
+    }
+
+    new Setting(containerEl)
+      .setName("Folder prefixes")
+      .setDesc("One folder prefix per line (e.g. \"09 Templates/\")")
+      .addTextArea((textArea) => {
+        textArea
+          .setPlaceholder("09 templates/\n10 drafts/")
+          .setValue(this.plugin.settings.excludedFolders.join("\n"))
+          .onChange(async (value) => {
+            // Persist the FULLY-NORMALISED list so storage matches what the
+            // runtime actually uses (trailing slashes auto-appended,
+            // whitespace stripped, empties dropped). Without this round-trip
+            // the user could type `"09 Templates"` and on reopen still see
+            // `"09 Templates"` while the converter is silently treating it
+            // as `"09 Templates/"` — confusing if the user later tries to
+            // exclude a `"09 Templates2/"`-style sibling and wonders why
+            // their entry "looks different" than what is being matched.
+            const parsed = value.split(/\r?\n/);
+            this.plugin.settings.excludedFolders =
+              normaliseExcludedFolders(parsed);
+            await this.plugin.saveSettings();
+          });
+        // A slightly taller textarea reads better for a list of paths.
+        textArea.inputEl.rows = 4;
+        textArea.inputEl.cols = 40;
+      });
   }
 
   /**

@@ -242,6 +242,8 @@ export type { IFileResolver } from "./interfaces/IFileResolver";
 export { SourceAnnotator, SOURCE_VARIABLE, type TripleSource } from "./services/SourceAnnotator";
 export {
   NoteToRDFConverter,
+  normaliseExcludedFolders,
+  isPathExcluded,
   type ExocortexInvariantCode,
   type ExocortexInvariantViolation,
 } from "./services/NoteToRDFConverter";
