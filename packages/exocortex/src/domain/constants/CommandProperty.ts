@@ -20,6 +20,11 @@ export const CommandProperty = {
   SUCCESS_MESSAGE: "exocmd__Command_successMessage",
   /** Category for grouping: "maintenance", "status", "planning" */
   CATEGORY: "exocmd__Command_category",
+  /**
+   * RFC ce27e55d: when true (`xsd:boolean`), instance opener uses
+   * `getLeaf(false)` (current leaf) instead of `getLeaf("tab")` (new tab).
+   */
+  OPEN_IN_SAME_TAB: "exocmd__Command_openInSameTab",
 } as const;
 
 /** Properties for exocmd__Precondition assets */
@@ -48,6 +53,12 @@ export const GroundingProperty = {
    * layout can list every Grounding that pins it.
    */
   IS_DEFINED_BY: "exocmd__Grounding_isDefinedBy",
+  /**
+   * RFC ce27e55d: substitution-token string for the new instance's
+   * `exo__Asset_label` when no modal collects userInput.label
+   * (one-click flow). Resolved by `GroundingExecutor.substituteVariables`.
+   */
+  LABEL_TEMPLATE: "exocmd__Grounding_labelTemplate",
 } as const;
 
 /** Properties for exocmd__CommandBinding assets */

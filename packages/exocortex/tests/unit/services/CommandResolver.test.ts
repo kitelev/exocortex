@@ -445,6 +445,115 @@ describe("CommandResolver", () => {
       expect(cmd!.grounding.prefillLabelWithDate).toBeUndefined();
     });
 
+    // RFC ce27e55d (One-click create_instance) parsing tests
+    it("should parse exocmd__Command_openInSameTab true literal as boolean flag", async () => {
+      await addGroundingAsset(store, {
+        uid: "gnd-same-tab",
+        label: "Trivial grounding",
+        type: "create_instance",
+      });
+      const commandSubject = new IRI("obsidian://vault/cmd-same-tab.md");
+      await store.addAll([
+        new Triple(commandSubject, Namespace.RDF.term("type"), Namespace.EXOCMD.term("Command")),
+        new Triple(commandSubject, Namespace.EXO.term("Asset_uid"), new Literal("cmd-same-tab")),
+        new Triple(commandSubject, Namespace.EXO.term("Asset_label"), new Literal("Log Supervision")),
+        new Triple(commandSubject, Namespace.EXOCMD.term("Command_grounding"), new IRI("obsidian://vault/gnd-same-tab.md")),
+        new Triple(
+          commandSubject,
+          Namespace.EXOCMD.term("Command_openInSameTab"),
+          new Literal("true"),
+        ),
+      ]);
+
+      const cmd = await resolver.loadCommand("cmd-same-tab");
+
+      expect(cmd!.openInSameTab).toBe(true);
+    });
+
+    it("should leave openInSameTab undefined when triple is absent (backward-compat)", async () => {
+      await addGroundingAsset(store, {
+        uid: "gnd-default-tab",
+        label: "Default tab grounding",
+        type: "create_instance",
+      });
+      await addCommandAsset(store, {
+        uid: "cmd-default-tab",
+        label: "Default",
+        groundingRef: "gnd-default-tab",
+      });
+
+      const cmd = await resolver.loadCommand("cmd-default-tab");
+
+      expect(cmd!.openInSameTab).toBeUndefined();
+    });
+
+    it("should leave openInSameTab undefined for non-true literals (only 'true' opts in)", async () => {
+      await addGroundingAsset(store, {
+        uid: "gnd-not-same-tab",
+        label: "Explicit false",
+        type: "create_instance",
+      });
+      const commandSubject = new IRI("obsidian://vault/cmd-not-same-tab.md");
+      await store.addAll([
+        new Triple(commandSubject, Namespace.RDF.term("type"), Namespace.EXOCMD.term("Command")),
+        new Triple(commandSubject, Namespace.EXO.term("Asset_uid"), new Literal("cmd-not-same-tab")),
+        new Triple(commandSubject, Namespace.EXO.term("Asset_label"), new Literal("Explicit false")),
+        new Triple(commandSubject, Namespace.EXOCMD.term("Command_grounding"), new IRI("obsidian://vault/gnd-not-same-tab.md")),
+        new Triple(
+          commandSubject,
+          Namespace.EXOCMD.term("Command_openInSameTab"),
+          new Literal("false"),
+        ),
+      ]);
+
+      const cmd = await resolver.loadCommand("cmd-not-same-tab");
+
+      expect(cmd!.openInSameTab).toBeUndefined();
+    });
+
+    it("should parse exocmd__Grounding_labelTemplate literal verbatim", async () => {
+      const groundingSubject = new IRI("obsidian://vault/gnd-label-tmpl.md");
+      await store.addAll([
+        new Triple(groundingSubject, Namespace.RDF.term("type"), Namespace.EXOCMD.term("Grounding")),
+        new Triple(groundingSubject, Namespace.EXO.term("Asset_uid"), new Literal("gnd-label-tmpl")),
+        new Triple(groundingSubject, Namespace.EXO.term("Asset_label"), new Literal("Auto label")),
+        new Triple(groundingSubject, Namespace.EXOCMD.term("Grounding_type"), new Literal("[[4367e2d6-6c92-450a-becb-abce1fb07682]]")),
+        new Triple(
+          groundingSubject,
+          Namespace.EXOCMD.term("Grounding_labelTemplate"),
+          new Literal("$target.exo__Asset_label $nowCompact"),
+        ),
+      ]);
+      await addCommandAsset(store, {
+        uid: "cmd-label-tmpl",
+        label: "Auto label",
+        groundingRef: "gnd-label-tmpl",
+      });
+
+      const cmd = await resolver.loadCommand("cmd-label-tmpl");
+
+      expect(cmd!.grounding.labelTemplate).toBe(
+        "$target.exo__Asset_label $nowCompact",
+      );
+    });
+
+    it("should leave labelTemplate undefined when triple is absent (backward-compat)", async () => {
+      await addGroundingAsset(store, {
+        uid: "gnd-no-tmpl",
+        label: "No template",
+        type: "create_instance",
+      });
+      await addCommandAsset(store, {
+        uid: "cmd-no-tmpl",
+        label: "No template",
+        groundingRef: "gnd-no-tmpl",
+      });
+
+      const cmd = await resolver.loadCommand("cmd-no-tmpl");
+
+      expect(cmd!.grounding.labelTemplate).toBeUndefined();
+    });
+
     it("should pass through `default` and `defaultValue` from inputSchema JSON Schema properties", async () => {
       const groundingSubject = new IRI("obsidian://vault/gnd-defaults-input.md");
       await store.addAll([

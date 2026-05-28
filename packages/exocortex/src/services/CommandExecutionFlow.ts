@@ -53,14 +53,19 @@ export interface CommandPromptAdapter {
  * {@link GroundingExecutor.executeCreateInstance} writes a new asset it
  * returns the vault-relative path via {@link ExecutionResult.openPath};
  * {@link CommandExecutionFlow} forwards that path here so the platform
- * adapter (Obsidian plugin / future CLI) can decide where the file appears
- * — in Obsidian, `app.workspace.getLeaf("tab").openFile(...)` + focus.
+ * adapter (Obsidian plugin / future CLI) can decide where the file appears.
+ *
+ * RFC ce27e55d: `opts.sameTab` (when true) requests navigation in the
+ * current active leaf (Obsidian `getLeaf(false)`) instead of opening a new
+ * tab (`getLeaf("tab")`) — implements `exocmd__Command_openInSameTab`
+ * semantics. Adapters that have no notion of tabs (CLI, headless) ignore
+ * the second argument.
  *
  * Tests and headless runners may omit the dependency: when undefined the
  * core run pipeline is unchanged (creation succeeds without auto-opening).
  */
 export interface IFileOpener {
-  open(path: string): Promise<void>;
+  open(path: string, opts?: { readonly sameTab?: boolean }): Promise<void>;
 }
 
 /**
@@ -141,7 +146,11 @@ export class CommandExecutionFlow {
       // remain on the source asset).
       if (result.openPath && this.fileOpener) {
         try {
-          await this.fileOpener.open(result.openPath);
+          // RFC ce27e55d: forward `openInSameTab` to the platform adapter.
+          // Obsidian opener branches on the flag; CLI/headless ignores it.
+          await this.fileOpener.open(result.openPath, {
+            sameTab: command.openInSameTab,
+          });
         } catch (error) {
           this.logger.info(
             `[CommandExecutionFlow] Failed to open created file "${result.openPath}": ${error instanceof Error ? error.message : String(error)}`,

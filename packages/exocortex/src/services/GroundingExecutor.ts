@@ -628,7 +628,12 @@ export class GroundingExecutor {
         grounding.propertyDefault.some(
           (pd) =>
             typeof pd.value === "string" && pd.value.includes("__SUBSTITUTE"),
-        ));
+        )) ||
+      // RFC ce27e55d: labelTemplate с токеном `$target.<prop>` нуждается
+      // в frontmatter target'а для substituteVariables. Чисто `$nowCompact`
+      // или `$today` не требуют target read, поэтому проверяем dotted-form.
+      (grounding.labelTemplate !== undefined &&
+        /\$target\./.test(grounding.labelTemplate));
     if (needsTargetRead && targetIRI && targetFilePath) {
       let targetContent: string;
       try {
@@ -689,6 +694,10 @@ export class GroundingExecutor {
       properties,
       userInput,
       groundingTargetClassUid,
+      grounding,
+      targetIRI,
+      targetFm,
+      targetFilePath,
     );
 
     // userInput wins over PropertyDefault and InheritanceRule — apply after
@@ -842,6 +851,10 @@ export class GroundingExecutor {
     properties: Record<string, unknown>,
     userInput: UserInput | undefined,
     groundingTargetClassUid: string | undefined,
+    grounding?: GroundingDefinition,
+    targetIRI?: string,
+    targetFm?: Record<string, string | string[]> | null,
+    targetFilePath?: string,
   ): void {
     const missing: string[] = [];
 
@@ -858,10 +871,36 @@ export class GroundingExecutor {
     }
 
     if (properties.exo__Asset_label === undefined) {
-      const label = (userInput?.label as string) ?? "Untitled";
-      properties.exo__Asset_label = label;
-      if (label !== "Untitled" && properties.aliases === undefined) {
-        properties.aliases = [label];
+      // RFC ce27e55d: labelTemplate fallback before the "Untitled" hardcoded.
+      // Active when:
+      //   - userInput has no `label` field (one-click flow, no input modal);
+      //   - grounding declares `exocmd__Grounding_labelTemplate`;
+      //   - substituteVariables succeeds (else fall through to "Untitled").
+      //
+      // Single source of truth for label decision (advisor adjustment): the
+      // executor already owns the property-write at this point. Adding the
+      // resolution in CommandExecutionFlow would split logic across two layers.
+      let label: string | undefined = userInput?.label as string | undefined;
+      if (label === undefined && grounding?.labelTemplate) {
+        try {
+          label = this.substituteVariables(
+            grounding.labelTemplate,
+            targetIRI ?? "",
+            userInput,
+            targetFm ?? undefined,
+            targetFilePath,
+          );
+        } catch (error) {
+          LoggingService.error(
+            `[GroundingExecutor] labelTemplate substitution failed: ${error instanceof Error ? error.message : String(error)}. Falling back to "Untitled".`,
+          );
+          label = undefined;
+        }
+      }
+      const finalLabel = label ?? "Untitled";
+      properties.exo__Asset_label = finalLabel;
+      if (finalLabel !== "Untitled" && properties.aliases === undefined) {
+        properties.aliases = [finalLabel];
       }
       missing.push("exo__Asset_label");
     }
@@ -1208,6 +1247,10 @@ export class GroundingExecutor {
    *   composite groundings (Mark Done, Start Effort, etc.) write the same
    *   shape as every other effort/asset timestamp in the codebase.
    * - $today → current date (YYYY-MM-DD)
+   * - $nowCompact → current local timestamp with minute precision in
+   *   filename-safe dash-form (YYYY-MM-DD-HH-mm). Powers RFC ce27e55d
+   *   one-click labelTemplate use-case
+   *   (`$target.exo__Asset_label $nowCompact`).
    * - $todayStart → today at local midnight (YYYY-MM-DDT00:00:00, no TZ) —
    *   matches `DateFormatter.getTodayStartTimestamp()`. A declarative
    *   `property_set` with `$todayStart` is byte-identical to the legacy
@@ -1232,6 +1275,10 @@ export class GroundingExecutor {
     const nowLocal = DateFormatter.toLocalTimestamp(date);
     const today = now.slice(0, 10);
     const todayStart = `${today}T00:00:00`;
+    // RFC ce27e55d $nowCompact: filename-safe minute-precision form derived
+    // from nowLocal slices. nowLocal = "YYYY-MM-DDTHH:mm:ss" → indices 0..10
+    // = date, 11..13 = hour, 14..16 = minute.
+    const nowCompact = `${nowLocal.slice(0, 10)}-${nowLocal.slice(11, 13)}-${nowLocal.slice(14, 16)}`;
 
     // Issue #3132: `$target.<propertyName>` reads from target asset
     // frontmatter. MUST run before bare `$target` substitution (more-specific
@@ -1282,6 +1329,10 @@ export class GroundingExecutor {
 
     result = result
       .replace(/\$target/g, targetIRI)
+      // $nowCompact MUST run before $nowLocal/$now (more-specific first) —
+      // otherwise the $now prefix would be consumed and leave the "Compact"
+      // tail in the output. RFC ce27e55d.
+      .replace(/\$nowCompact\b/g, nowCompact)
       .replace(/\$nowLocal/g, nowLocal)
       .replace(/\$now/g, now)
       .replace(/\$todayStart\b/g, todayStart)

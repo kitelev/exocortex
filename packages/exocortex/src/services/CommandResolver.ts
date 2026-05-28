@@ -362,6 +362,15 @@ export class CommandResolver {
     const confirmMessage = await this.getLiteralValue(subject, Namespace.EXOCMD.term("Command_confirmMessage"));
     const successMessage = await this.getLiteralValue(subject, Namespace.EXOCMD.term("Command_successMessage"));
     const category = await this.getLiteralValue(subject, Namespace.EXOCMD.term("Command_category"));
+    // RFC ce27e55d: parse boolean openInSameTab — when true, platform opener
+    // navigates to the new instance in the current leaf instead of a new tab.
+    const openInSameTabRaw = await this.getLiteralValue(
+      subject,
+      Namespace.EXOCMD.term("Command_openInSameTab"),
+    );
+    const openInSameTab =
+      openInSameTabRaw !== null &&
+      String(openInSameTabRaw).trim().toLowerCase() === "true";
 
     // Transitively load linked Precondition
     const precondition = await this.loadLinkedPrecondition(subject);
@@ -380,6 +389,7 @@ export class CommandResolver {
       confirmMessage: confirmMessage ?? undefined,
       successMessage: successMessage ?? undefined,
       category: category ?? undefined,
+      openInSameTab: openInSameTab || undefined,
     };
   }
 
@@ -1305,6 +1315,15 @@ export class CommandResolver {
     const prefillLabelWithDate =
       prefillRaw !== null && String(prefillRaw).trim().toLowerCase() === "true";
 
+    // RFC ce27e55d: substitution-token template для auto-label при one-click
+    // (когда нет inputSchema modal). Resolved at execution time by
+    // `GroundingExecutor.substituteVariables` — supports `$target`,
+    // `$target.<prop>`, `$nowCompact`, etc.
+    const labelTemplate = await this.getLiteralValue(
+      subject,
+      Namespace.EXOCMD.term("Grounding_labelTemplate"),
+    );
+
     const grounding: GroundingDefinition = {
       id: uid,
       label,
@@ -1327,6 +1346,7 @@ export class CommandResolver {
       inheritanceRule: inheritanceRule.length > 0 ? inheritanceRule : undefined,
       isDefinedBy: isDefinedBy ?? undefined,
       prefillLabelWithDate: prefillLabelWithDate || undefined,
+      labelTemplate: labelTemplate ?? undefined,
     };
 
     if (inputSchema) {
