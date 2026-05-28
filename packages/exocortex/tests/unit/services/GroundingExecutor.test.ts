@@ -825,6 +825,32 @@ describe("GroundingExecutor", () => {
       expect(result).not.toContain("$today");
     });
 
+    // RFC ce27e55d $nowCompact substitution token tests
+    it("should replace $nowCompact with YYYY-MM-DD-HH-mm (filename-safe minute precision)", () => {
+      const result = executor.substituteVariables(
+        "supervision $nowCompact",
+        TARGET_IRI,
+      );
+      expect(result).toMatch(/^supervision \d{4}-\d{2}-\d{2}-\d{2}-\d{2}$/);
+    });
+
+    it("should replace $nowCompact before $nowLocal/$now to avoid prefix collision", () => {
+      const result = executor.substituteVariables(
+        "$nowCompact then $nowLocal then $now",
+        TARGET_IRI,
+      );
+      // $nowCompact = YYYY-MM-DD-HH-mm; $nowLocal = YYYY-MM-DDTHH:mm:ss;
+      // $now = ISO-UTC with milliseconds Z. Three distinct shapes prove
+      // each replacement consumed its own token without prefix collision.
+      expect(result).toMatch(
+        /^\d{4}-\d{2}-\d{2}-\d{2}-\d{2} then \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2} then \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z$/,
+      );
+      expect(result).not.toContain("Compact");
+      expect(result).not.toContain("Local");
+      expect(result).not.toContain("$now");
+    });
+
+
     it("should replace $targetFolder with parent dir of targetFilePath", () => {
       const result = executor.substituteVariables(
         "place under $targetFolder",
@@ -941,6 +967,135 @@ describe("GroundingExecutor", () => {
       // (the class UID) is absent. The link references $target (the parent
       // file the user clicked on), not the class UID.
       expect(content).toContain('exo__Asset_prototype: "[[vault/test-asset]]"');
+    });
+
+    // RFC ce27e55d: labelTemplate fallback for one-click create_instance
+    // (no input modal). Verifies the executor resolves the new instance's
+    // label from `grounding.labelTemplate` when no userInput.label is supplied.
+    // Revert-verify discipline: each test must FAIL if the labelTemplate path
+    // is removed (advisor's catch — confirm test exercises the new code).
+    describe("RFC ce27e55d labelTemplate fallback", () => {
+      it("uses labelTemplate when userInput is undefined (one-click flow)", async () => {
+        const grounding = makeGrounding({
+          type: GroundingType.CREATE_INSTANCE,
+          targetClass: "ems__Task",
+          targetFolder: "01 Inbox",
+          labelTemplate: "Auto label",
+        });
+
+        // Note: no `userInput` arg → triggers labelTemplate fallback.
+        const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
+
+        expect(result.success).toBe(true);
+        const [, content] = writer.createFile.mock.calls[0];
+        expect(content).toContain("exo__Asset_label: Auto label");
+        // Aliases auto-populated because label is non-"Untitled".
+        expect(content).toContain("aliases:");
+      });
+
+      it("userInput.label wins over labelTemplate (explicit user input takes precedence)", async () => {
+        const grounding = makeGrounding({
+          type: GroundingType.CREATE_INSTANCE,
+          targetClass: "ems__Task",
+          targetFolder: "01 Inbox",
+          labelTemplate: "Template label",
+        });
+
+        const result = await executor.execute(
+          grounding,
+          TARGET_IRI,
+          FILE_PATH,
+          { label: "User explicit" },
+        );
+
+        expect(result.success).toBe(true);
+        const [, content] = writer.createFile.mock.calls[0];
+        expect(content).toContain("exo__Asset_label: User explicit");
+        expect(content).not.toContain("Template label");
+      });
+
+      it("falls back to Untitled when neither userInput.label nor labelTemplate is set (BC)", async () => {
+        const grounding = makeGrounding({
+          type: GroundingType.CREATE_INSTANCE,
+          targetClass: "ems__Task",
+          targetFolder: "01 Inbox",
+        });
+
+        const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
+
+        expect(result.success).toBe(true);
+        const [, content] = writer.createFile.mock.calls[0];
+        expect(content).toContain("exo__Asset_label: Untitled");
+      });
+
+      it("substitutes $nowCompact within labelTemplate", async () => {
+        const grounding = makeGrounding({
+          type: GroundingType.CREATE_INSTANCE,
+          targetClass: "kitelev__Supervision",
+          targetFolder: "03 Knowledge/kitelev",
+          labelTemplate: "Осознал, что делаю шелуху $nowCompact",
+        });
+
+        const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
+
+        expect(result.success).toBe(true);
+        const [, content] = writer.createFile.mock.calls[0];
+        expect(content).toMatch(
+          /exo__Asset_label: Осознал, что делаю шелуху \d{4}-\d{2}-\d{2}-\d{2}-\d{2}/,
+        );
+      });
+
+      it("falls back to Untitled when labelTemplate substitution result is empty string (reviewer MEDIUM)", async () => {
+        // Reviewer MEDIUM: empty-string or whitespace-only substitution
+        // result must NOT leak into `exo__Asset_label` as a literally empty
+        // value. RFC ce27e55d contract: blank result → fallback to "Untitled".
+        const grounding = makeGrounding({
+          type: GroundingType.CREATE_INSTANCE,
+          targetClass: "ems__Task",
+          targetFolder: "01 Inbox",
+          labelTemplate: "   ", // whitespace-only template — substitutes to whitespace-only string
+        });
+
+        const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
+
+        expect(result.success).toBe(true);
+        const [, content] = writer.createFile.mock.calls[0];
+        expect(content).toContain("exo__Asset_label: Untitled");
+        // No aliases block for Untitled (preserves BC with pre-RFC behavior).
+        // Convention match with existing aliases assertion in test suite.
+        expect(content).not.toContain("aliases:");
+      });
+
+      it("substitutes $target.exo__Asset_label by reading target frontmatter (production shape)", async () => {
+        // Production shape: user clicks the prototype-instance whose file
+        // contains `exo__Asset_label: «Осознал, что делаю шелуху»`. The
+        // executor reads target frontmatter (triggered by `$target.` in
+        // labelTemplate) and substitutes the value.
+        reader.readFile.mockResolvedValue(
+          [
+            "---",
+            'exo__Asset_uid: "deaa0051-0236-4cae-b2a5-2b156c3c127a"',
+            'exo__Asset_label: "Осознал, что делаю шелуху"',
+            "---",
+            "Body",
+          ].join("\n"),
+        );
+
+        const grounding = makeGrounding({
+          type: GroundingType.CREATE_INSTANCE,
+          targetClass: "kitelev__Supervision",
+          targetFolder: "03 Knowledge/kitelev",
+          labelTemplate: "$target.exo__Asset_label $nowCompact",
+        });
+
+        const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
+
+        expect(result.success).toBe(true);
+        const [, content] = writer.createFile.mock.calls[0];
+        expect(content).toMatch(
+          /exo__Asset_label: Осознал, что делаю шелуху \d{4}-\d{2}-\d{2}-\d{2}-\d{2}/,
+        );
+      });
     });
 
     // Issue #3195: strip-canon. For UUID-named prototype-instance targets

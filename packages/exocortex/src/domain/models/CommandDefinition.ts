@@ -17,7 +17,7 @@ export interface CommandDefinition {
   /** Human-readable label (e.g., "Remove start timestamp") */
   readonly name: string;
   /**
-   * SPARQL-based label template with `{sparql}` placeholders.
+   * SPARQL-based template for the BUTTON label with `{sparql}` placeholders.
    * Each `{...}` block is executed as a SPARQL SELECT query;
    * the first binding of the first result row replaces the placeholder.
    *
@@ -25,6 +25,11 @@ export interface CommandDefinition {
    *
    * Variable substitution (same as PreconditionEvaluator):
    * - `$target` → `<targetIRI>`
+   *
+   * NOTE — distinct from {@link GroundingDefinition.labelTemplate}. That
+   * sibling is a substitution-token template for the NEW INSTANCE's
+   * `exo__Asset_label` consulted by `executeCreateInstance` during one-click
+   * flows. Two distinct concepts, two distinct interfaces, same English word.
    */
   readonly labelTemplate?: string;
   /** Lucide icon name (e.g., "clock-x") */
@@ -39,6 +44,14 @@ export interface CommandDefinition {
   readonly successMessage?: string;
   /** Category for grouping (e.g., "maintenance", "status") */
   readonly category?: string;
+  /**
+   * RFC ce27e55d: when true, the platform file opener navigates to the
+   * newly-created instance in the CURRENT active leaf (Obsidian
+   * `getLeaf(false)`) instead of opening a new tab (`getLeaf("tab")`).
+   * Authored as the `exocmd__Command_openInSameTab` RDF triple
+   * (`xsd:boolean`). Default `false` keeps existing commands unchanged.
+   */
+  readonly openInSameTab?: boolean;
 }
 
 /**
@@ -185,6 +198,26 @@ export interface GroundingDefinition {
    * (`xsd:boolean`). Default `false` keeps existing groundings unchanged.
    */
   readonly prefillLabelWithDate?: boolean;
+  /**
+   * RFC ce27e55d: substitution-token string used by `executeCreateInstance`
+   * to derive `exo__Asset_label` on the newly created asset when the user
+   * supplied no `userInput.label` (i.e. no input modal). Supports the same
+   * tokens as `substituteVariables` — `$target`, `$target.<prop>`, `$today`,
+   * `$nowLocal`, `$nowCompact`, `$todayStart`. Typical value:
+   * `"$target.exo__Asset_label $nowCompact"` → `"Осознал, что делаю шелуху 2026-05-28-22-51"`.
+   *
+   * Authored as the `exocmd__Grounding_labelTemplate` RDF triple. Disjoint
+   * from `prefillLabelWithDate` — labelTemplate is consulted only when no
+   * modal collects user input (one-click flow), whereas prefillLabelWithDate
+   * pre-fills the modal's default value.
+   *
+   * NOTE — distinct from {@link CommandDefinition.labelTemplate}. That sibling
+   * is a SPARQL-placeholder template for the BUTTON label (e.g.
+   * `"Vote ({SELECT (COUNT(?v) AS ?n) WHERE { $target exo:vote ?v }})"`).
+   * This field is the template for the NEW ASSET's `exo__Asset_label`.
+   * Two distinct concepts, two distinct interfaces, same English word.
+   */
+  readonly labelTemplate?: string;
 }
 
 /**
