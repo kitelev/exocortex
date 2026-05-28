@@ -883,18 +883,26 @@ export class GroundingExecutor {
       let label: string | undefined = userInput?.label as string | undefined;
       if (label === undefined && grounding?.labelTemplate) {
         try {
-          label = this.substituteVariables(
+          const substituted = this.substituteVariables(
             grounding.labelTemplate,
             targetIRI ?? "",
             userInput,
             targetFm ?? undefined,
             targetFilePath,
           );
+          // Reviewer MEDIUM: empty / whitespace-only substitution result
+          // would otherwise leak into `exo__Asset_label:` as a literally
+          // empty value (worse than "Untitled"). Treat blank substituted
+          // result as "no label" per RFC ce27e55d contract. Scoped only to
+          // labelTemplate path — userInput.label `??` semantics preserved
+          // (advisor round-2 — keep RFC diff minimal).
+          if (substituted.trim().length > 0) {
+            label = substituted;
+          }
         } catch (error) {
           LoggingService.error(
             `[GroundingExecutor] labelTemplate substitution failed: ${error instanceof Error ? error.message : String(error)}. Falling back to "Untitled".`,
           );
-          label = undefined;
         }
       }
       const finalLabel = label ?? "Untitled";

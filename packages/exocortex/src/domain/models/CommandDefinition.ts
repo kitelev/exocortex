@@ -17,7 +17,7 @@ export interface CommandDefinition {
   /** Human-readable label (e.g., "Remove start timestamp") */
   readonly name: string;
   /**
-   * SPARQL-based label template with `{sparql}` placeholders.
+   * SPARQL-based template for the BUTTON label with `{sparql}` placeholders.
    * Each `{...}` block is executed as a SPARQL SELECT query;
    * the first binding of the first result row replaces the placeholder.
    *
@@ -25,6 +25,11 @@ export interface CommandDefinition {
    *
    * Variable substitution (same as PreconditionEvaluator):
    * - `$target` → `<targetIRI>`
+   *
+   * NOTE — distinct from {@link GroundingDefinition.labelTemplate}. That
+   * sibling is a substitution-token template for the NEW INSTANCE's
+   * `exo__Asset_label` consulted by `executeCreateInstance` during one-click
+   * flows. Two distinct concepts, two distinct interfaces, same English word.
    */
   readonly labelTemplate?: string;
   /** Lucide icon name (e.g., "clock-x") */
@@ -205,6 +210,12 @@ export interface GroundingDefinition {
    * from `prefillLabelWithDate` — labelTemplate is consulted only when no
    * modal collects user input (one-click flow), whereas prefillLabelWithDate
    * pre-fills the modal's default value.
+   *
+   * NOTE — distinct from {@link CommandDefinition.labelTemplate}. That sibling
+   * is a SPARQL-placeholder template for the BUTTON label (e.g.
+   * `"Vote ({SELECT (COUNT(?v) AS ?n) WHERE { $target exo:vote ?v }})"`).
+   * This field is the template for the NEW ASSET's `exo__Asset_label`.
+   * Two distinct concepts, two distinct interfaces, same English word.
    */
   readonly labelTemplate?: string;
 }

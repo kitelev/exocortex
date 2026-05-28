@@ -1045,6 +1045,27 @@ describe("GroundingExecutor", () => {
         );
       });
 
+      it("falls back to Untitled when labelTemplate substitution result is empty string (reviewer MEDIUM)", async () => {
+        // Reviewer MEDIUM: empty-string or whitespace-only substitution
+        // result must NOT leak into `exo__Asset_label` as a literally empty
+        // value. RFC ce27e55d contract: blank result → fallback to "Untitled".
+        const grounding = makeGrounding({
+          type: GroundingType.CREATE_INSTANCE,
+          targetClass: "ems__Task",
+          targetFolder: "01 Inbox",
+          labelTemplate: "   ", // whitespace-only template — substitutes to whitespace-only string
+        });
+
+        const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
+
+        expect(result.success).toBe(true);
+        const [, content] = writer.createFile.mock.calls[0];
+        expect(content).toContain("exo__Asset_label: Untitled");
+        // No aliases block for Untitled (preserves BC with pre-RFC behavior).
+        // Convention match with existing aliases assertion in test suite.
+        expect(content).not.toContain("aliases:");
+      });
+
       it("substitutes $target.exo__Asset_label by reading target frontmatter (production shape)", async () => {
         // Production shape: user clicks the prototype-instance whose file
         // contains `exo__Asset_label: «Осознал, что делаю шелуху»`. The
