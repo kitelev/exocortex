@@ -50,6 +50,12 @@ export class PropertyDependencyResolver {
     "ems__Task_blocks": [
       LayoutSection.RELATIONS,
     ],
+    // ems__Task_zone gates criticality buttons (Set Criticality Low/Med/High).
+    // Their preconditions check the current zone — without re-render after a
+    // click that mutates zone, all three remain visible until reload.
+    "ems__Task_zone": [
+      LayoutSection.BUTTONS,
+    ],
 
     "ems__Project_blockedBy": [
       LayoutSection.RELATIONS,

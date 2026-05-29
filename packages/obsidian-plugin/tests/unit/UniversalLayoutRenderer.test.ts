@@ -225,6 +225,118 @@ describe("UniversalLayoutRenderer", () => {
       // Verify metadata was extracted
       expect(renderer_any.metadataExtractor.extractMetadata).toHaveBeenCalledWith(mockFile);
     });
+
+    it("should await prepareForRefresh BEFORE extracting metadata + updating sections", async () => {
+      const callOrder: string[] = [];
+      const prepareForRefresh = jest.fn().mockImplementation(async () => {
+        callOrder.push("prepareForRefresh");
+      });
+
+      const renderer = new UniversalLayoutRenderer(
+        mockApp,
+        mockSettings,
+        mockPlugin,
+        mockVaultAdapter,
+        { prepareForRefresh },
+      );
+
+      const mockFile = Object.create(TFile.prototype);
+      Object.assign(mockFile, {
+        path: "test.md",
+        extension: "md",
+        basename: "test",
+      });
+      mockApp.vault.getAbstractFileByPath.mockReturnValue(mockFile);
+
+      const renderer_any = renderer as any;
+      renderer_any.currentFilePath = "test.md";
+      renderer_any.rootContainer = document.createElement("div");
+      renderer_any.metadataExtractor = {
+        extractMetadata: jest.fn().mockImplementation(() => {
+          callOrder.push("extractMetadata");
+          return {};
+        }),
+      };
+
+      await renderer.handleMetadataChange("test.md");
+      jest.advanceTimersByTime(100);
+      // Flush the awaited promise inside the setTimeout body.
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(prepareForRefresh).toHaveBeenCalledWith(mockFile);
+      expect(callOrder[0]).toBe("prepareForRefresh");
+      expect(callOrder.indexOf("extractMetadata")).toBeGreaterThan(
+        callOrder.indexOf("prepareForRefresh"),
+      );
+    });
+
+    it("should not error when prepareForRefresh is not provided", async () => {
+      const renderer = new UniversalLayoutRenderer(
+        mockApp,
+        mockSettings,
+        mockPlugin,
+        mockVaultAdapter,
+      );
+
+      const mockFile = Object.create(TFile.prototype);
+      Object.assign(mockFile, {
+        path: "test.md",
+        extension: "md",
+        basename: "test",
+      });
+      mockApp.vault.getAbstractFileByPath.mockReturnValue(mockFile);
+
+      const renderer_any = renderer as any;
+      renderer_any.currentFilePath = "test.md";
+      renderer_any.rootContainer = document.createElement("div");
+      renderer_any.metadataExtractor = {
+        extractMetadata: jest.fn().mockReturnValue({}),
+      };
+
+      await renderer.handleMetadataChange("test.md");
+      jest.advanceTimersByTime(100);
+
+      expect(renderer_any.metadataExtractor.extractMetadata).toHaveBeenCalledWith(mockFile);
+    });
+
+    it("should swallow prepareForRefresh errors and still update sections", async () => {
+      const prepareForRefresh = jest
+        .fn()
+        .mockRejectedValue(new Error("reindex blew up"));
+
+      const renderer = new UniversalLayoutRenderer(
+        mockApp,
+        mockSettings,
+        mockPlugin,
+        mockVaultAdapter,
+        { prepareForRefresh },
+      );
+
+      const mockFile = Object.create(TFile.prototype);
+      Object.assign(mockFile, {
+        path: "test.md",
+        extension: "md",
+        basename: "test",
+      });
+      mockApp.vault.getAbstractFileByPath.mockReturnValue(mockFile);
+
+      const renderer_any = renderer as any;
+      renderer_any.currentFilePath = "test.md";
+      renderer_any.rootContainer = document.createElement("div");
+      renderer_any.metadataExtractor = {
+        extractMetadata: jest.fn().mockReturnValue({}),
+      };
+
+      await renderer.handleMetadataChange("test.md");
+      jest.advanceTimersByTime(100);
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(prepareForRefresh).toHaveBeenCalled();
+      // Sections-update pass still ran even though the prep step threw.
+      expect(renderer_any.metadataExtractor.extractMetadata).toHaveBeenCalledWith(mockFile);
+    });
   });
 
   describe("incremental updates via IncrementalUpdateHandler", () => {

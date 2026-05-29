@@ -106,6 +106,13 @@ describe("PropertyDependencyResolver", () => {
       expect(sections).toContain(LayoutSection.RELATIONS);
       expect(sections).toHaveLength(1);
     });
+
+    it("should map ems__Task_zone to Buttons (criticality buttons reactivity)", () => {
+      const sections = resolver.getAffectedSections(["ems__Task_zone"]);
+
+      expect(sections).toContain(LayoutSection.BUTTONS);
+      expect(sections).toHaveLength(1);
+    });
   });
 
   describe("Project properties (ems__Project_)", () => {
