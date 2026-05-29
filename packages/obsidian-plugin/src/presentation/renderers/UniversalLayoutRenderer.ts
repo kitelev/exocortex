@@ -77,6 +77,7 @@ export class UniversalLayoutRenderer {
   // present, render() ensure-loads the active file's frontmatter +
   // class chain + prototype chain before resolving button visibility.
   private lazyAssetGraphLoader?: LazyAssetGraphLoader;
+  private prepareForRefresh?: (file: TFile) => Promise<void>;
   private exoLayoutRenderer!: ExoLayoutRenderer;
 
   private dependencyResolver: PropertyDependencyResolver;
@@ -110,6 +111,17 @@ export class UniversalLayoutRenderer {
       // `isFullPathReady`, `bindingsCache` ctor params.
       // RFC c7da0bca Phase 3b-main
       lazyAssetGraphLoader?: LazyAssetGraphLoader;
+      /**
+       * Called by `handleMetadataChange` BEFORE building the section delta
+       * + running `IncrementalUpdateHandler.updateSections`. The BUTTONS
+       * section's preconditions query the triple store via SPARQL ASK; if
+       * the store still holds pre-mutation triples at that moment, the
+       * preconditions silently return their old result and the buttons
+       * don't refresh. This hook lets the wiring code refresh per-file
+       * triples + invalidate command/precondition caches before the
+       * sections-update pass starts.
+       */
+      prepareForRefresh?: (file: TFile) => Promise<void>;
     },
   ) {
     this.app = app;
@@ -127,6 +139,7 @@ export class UniversalLayoutRenderer {
     this.layoutSelector = rfc009Services?.layoutSelector ?? null;
     this.panelResolver = rfc009Services?.panelResolver ?? null;
     this.lazyAssetGraphLoader = rfc009Services?.lazyAssetGraphLoader;
+    this.prepareForRefresh = rfc009Services?.prepareForRefresh;
     this.logger = LoggerFactory.create("UniversalLayoutRenderer");
 
     // Create ReactRenderer with ErrorBoundary enabled for graceful error handling.
@@ -250,6 +263,23 @@ export class UniversalLayoutRenderer {
       const abstractFile = this.app.vault.getAbstractFileByPath(filePath);
       if (!abstractFile || !(abstractFile instanceof TFile)) return;
       const currentFile = abstractFile;
+
+      // Refresh per-file triples + drop cached precondition results BEFORE
+      // re-rendering any section. The BUTTONS section's preconditions read
+      // from the triple store; without this, `updateButtons` would call
+      // `buildCategoryGroups` against pre-mutation triples and reach the
+      // same precondition decision as the previous render — the user-
+      // visible "click does nothing" symptom on `ems__Task_zone`-gated
+      // criticality buttons (Issue followup to #3279 button restore).
+      if (this.prepareForRefresh) {
+        try {
+          await this.prepareForRefresh(currentFile);
+        } catch (err) {
+          this.logger.warn(
+            `[handleMetadataChange] prepareForRefresh failed for ${filePath}: ${String(err)}`,
+          );
+        }
+      }
 
       const oldMetadata = this.metadataCache.get(filePath) || {};
       const newMetadata = this.metadataExtractor.extractMetadata(currentFile);

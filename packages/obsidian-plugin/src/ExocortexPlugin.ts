@@ -463,6 +463,17 @@ export default class ExocortexPlugin extends Plugin {
           // loader on every render. `ensureLoadedByIRI` primes the
           // store for the active file before button resolution.
           lazyAssetGraphLoader: this.lazyAssetGraphLoader,
+          // Issue followup to #3279 — re-index per-file triples + drop
+          // command/precondition caches BEFORE the incremental section
+          // refresh runs. The BUTTONS section's precondition ASKs query
+          // the triple store; without this, a click that mutates the
+          // frontmatter (e.g. `ems__Task_zone`) would refresh the section
+          // against pre-mutation triples and the buttons would not flip.
+          prepareForRefresh: async (file) => {
+            await this.sparql.reindexFile(file);
+            this.commandResolver.invalidateCache();
+            this.preconditionEvaluator.invalidateCache();
+          },
         },
       );
 
