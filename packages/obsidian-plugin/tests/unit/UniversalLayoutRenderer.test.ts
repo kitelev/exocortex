@@ -226,7 +226,7 @@ describe("UniversalLayoutRenderer", () => {
       expect(renderer_any.metadataExtractor.extractMetadata).toHaveBeenCalledWith(mockFile);
     });
 
-    it("should await prepareForRefresh BEFORE extracting metadata + updating sections", async () => {
+    it("should await prepareForRefresh BEFORE updating sections when BUTTONS is affected", async () => {
       const callOrder: string[] = [];
       const prepareForRefresh = jest.fn().mockImplementation(async () => {
         callOrder.push("prepareForRefresh");
@@ -251,11 +251,18 @@ describe("UniversalLayoutRenderer", () => {
       const renderer_any = renderer as any;
       renderer_any.currentFilePath = "test.md";
       renderer_any.rootContainer = document.createElement("div");
+      // `ems__Task_zone` maps to BUTTONS in PropertyDependencyResolver — the
+      // delta below trips the gate that runs prepareForRefresh.
       renderer_any.metadataExtractor = {
-        extractMetadata: jest.fn().mockImplementation(() => {
-          callOrder.push("extractMetadata");
-          return {};
+        extractMetadata: jest.fn().mockReturnValue({
+          ems__Task_zone: "[[e266a2e9-9eb0-431d-b1fe-b95b9d3e9a3f]]",
         }),
+      };
+      const updateSectionsSpy = jest.fn().mockImplementation(async () => {
+        callOrder.push("updateSections");
+      });
+      renderer_any.incrementalUpdateHandler = {
+        updateSections: updateSectionsSpy,
       };
 
       await renderer.handleMetadataChange("test.md");
@@ -265,10 +272,90 @@ describe("UniversalLayoutRenderer", () => {
       await Promise.resolve();
 
       expect(prepareForRefresh).toHaveBeenCalledWith(mockFile);
-      expect(callOrder[0]).toBe("prepareForRefresh");
-      expect(callOrder.indexOf("extractMetadata")).toBeGreaterThan(
+      expect(updateSectionsSpy).toHaveBeenCalled();
+      expect(callOrder.indexOf("updateSections")).toBeGreaterThan(
         callOrder.indexOf("prepareForRefresh"),
       );
+    });
+
+    it("should NOT call prepareForRefresh when no tracked property changed", async () => {
+      const prepareForRefresh = jest.fn();
+
+      const renderer = new UniversalLayoutRenderer(
+        mockApp,
+        mockSettings,
+        mockPlugin,
+        mockVaultAdapter,
+        { prepareForRefresh },
+      );
+
+      const mockFile = Object.create(TFile.prototype);
+      Object.assign(mockFile, {
+        path: "test.md",
+        extension: "md",
+        basename: "test",
+      });
+      mockApp.vault.getAbstractFileByPath.mockReturnValue(mockFile);
+
+      const renderer_any = renderer as any;
+      renderer_any.currentFilePath = "test.md";
+      renderer_any.rootContainer = document.createElement("div");
+      // Identical old/new metadata → empty delta → early-return before
+      // reaching the prepareForRefresh gate.
+      const sameMeta = { exo__Asset_label: "x" };
+      renderer_any.metadataCache.set("test.md", sameMeta);
+      renderer_any.metadataExtractor = {
+        extractMetadata: jest.fn().mockReturnValue(sameMeta),
+      };
+
+      await renderer.handleMetadataChange("test.md");
+      jest.advanceTimersByTime(100);
+      await Promise.resolve();
+
+      expect(prepareForRefresh).not.toHaveBeenCalled();
+    });
+
+    it("should NOT call prepareForRefresh when only non-BUTTONS sections are affected", async () => {
+      const prepareForRefresh = jest.fn();
+
+      const renderer = new UniversalLayoutRenderer(
+        mockApp,
+        mockSettings,
+        mockPlugin,
+        mockVaultAdapter,
+        { prepareForRefresh },
+      );
+
+      const mockFile = Object.create(TFile.prototype);
+      Object.assign(mockFile, {
+        path: "test.md",
+        extension: "md",
+        basename: "test",
+      });
+      mockApp.vault.getAbstractFileByPath.mockReturnValue(mockFile);
+
+      const renderer_any = renderer as any;
+      renderer_any.currentFilePath = "test.md";
+      renderer_any.rootContainer = document.createElement("div");
+      // `ems__Effort_votes` maps to DAILY_TASKS only — BUTTONS not in the
+      // affected set, so the gate should keep prepareForRefresh dormant.
+      renderer_any.metadataExtractor = {
+        extractMetadata: jest.fn().mockReturnValue({
+          ems__Effort_votes: 3,
+        }),
+      };
+      renderer_any.incrementalUpdateHandler = {
+        updateSections: jest.fn().mockResolvedValue(undefined),
+      };
+
+      await renderer.handleMetadataChange("test.md");
+      jest.advanceTimersByTime(100);
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(prepareForRefresh).not.toHaveBeenCalled();
+      // The sections-update pass still ran for the DAILY_TASKS section.
+      expect(renderer_any.incrementalUpdateHandler.updateSections).toHaveBeenCalled();
     });
 
     it("should not error when prepareForRefresh is not provided", async () => {
@@ -291,13 +378,21 @@ describe("UniversalLayoutRenderer", () => {
       renderer_any.currentFilePath = "test.md";
       renderer_any.rootContainer = document.createElement("div");
       renderer_any.metadataExtractor = {
-        extractMetadata: jest.fn().mockReturnValue({}),
+        extractMetadata: jest.fn().mockReturnValue({
+          ems__Task_zone: "[[e266a2e9-9eb0-431d-b1fe-b95b9d3e9a3f]]",
+        }),
+      };
+      renderer_any.incrementalUpdateHandler = {
+        updateSections: jest.fn().mockResolvedValue(undefined),
       };
 
       await renderer.handleMetadataChange("test.md");
       jest.advanceTimersByTime(100);
+      await Promise.resolve();
 
       expect(renderer_any.metadataExtractor.extractMetadata).toHaveBeenCalledWith(mockFile);
+      // No callback wired — sections still update normally.
+      expect(renderer_any.incrementalUpdateHandler.updateSections).toHaveBeenCalled();
     });
 
     it("should swallow prepareForRefresh errors and still update sections", async () => {
@@ -325,7 +420,13 @@ describe("UniversalLayoutRenderer", () => {
       renderer_any.currentFilePath = "test.md";
       renderer_any.rootContainer = document.createElement("div");
       renderer_any.metadataExtractor = {
-        extractMetadata: jest.fn().mockReturnValue({}),
+        extractMetadata: jest.fn().mockReturnValue({
+          ems__Task_zone: "[[e266a2e9-9eb0-431d-b1fe-b95b9d3e9a3f]]",
+        }),
+      };
+      const updateSectionsSpy = jest.fn().mockResolvedValue(undefined);
+      renderer_any.incrementalUpdateHandler = {
+        updateSections: updateSectionsSpy,
       };
 
       await renderer.handleMetadataChange("test.md");
@@ -335,7 +436,7 @@ describe("UniversalLayoutRenderer", () => {
 
       expect(prepareForRefresh).toHaveBeenCalled();
       // Sections-update pass still ran even though the prep step threw.
-      expect(renderer_any.metadataExtractor.extractMetadata).toHaveBeenCalledWith(mockFile);
+      expect(updateSectionsSpy).toHaveBeenCalled();
     });
   });
 
