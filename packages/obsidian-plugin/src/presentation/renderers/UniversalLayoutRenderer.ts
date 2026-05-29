@@ -22,7 +22,7 @@ import { DailyTasksRenderer } from "./DailyTasksRenderer";
 import { AreaTreeRenderer } from "./layout/AreaTreeRenderer";
 import { RelationsRenderer, UniversalLayoutConfig } from "./layout/RelationsRenderer";
 import { AssetMetadataService } from "./layout/helpers/AssetMetadataService";
-import { PropertyDependencyResolver } from '@plugin/application/services/PropertyDependencyResolver';
+import { LayoutSection, PropertyDependencyResolver } from '@plugin/application/services/PropertyDependencyResolver';
 import { FrontmatterDeltaDetector } from '@plugin/application/services/FrontmatterDeltaDetector';
 import {
   SectionStateManager,
@@ -264,23 +264,6 @@ export class UniversalLayoutRenderer {
       if (!abstractFile || !(abstractFile instanceof TFile)) return;
       const currentFile = abstractFile;
 
-      // Refresh per-file triples + drop cached precondition results BEFORE
-      // re-rendering any section. The BUTTONS section's preconditions read
-      // from the triple store; without this, `updateButtons` would call
-      // `buildCategoryGroups` against pre-mutation triples and reach the
-      // same precondition decision as the previous render — the user-
-      // visible "click does nothing" symptom on `ems__Task_zone`-gated
-      // criticality buttons (Issue followup to #3279 button restore).
-      if (this.prepareForRefresh) {
-        try {
-          await this.prepareForRefresh(currentFile);
-        } catch (err) {
-          this.logger.warn(
-            `[handleMetadataChange] prepareForRefresh failed for ${filePath}: ${String(err)}`,
-          );
-        }
-      }
-
       const oldMetadata = this.metadataCache.get(filePath) || {};
       const newMetadata = this.metadataExtractor.extractMetadata(currentFile);
       const delta = this.deltaDetector.detectChanges(oldMetadata, newMetadata);
@@ -290,6 +273,34 @@ export class UniversalLayoutRenderer {
 
       this.metadataCache.set(filePath, newMetadata);
       const affectedSections = this.dependencyResolver.getAffectedSections(changedProps);
+
+      // Refresh per-file triples + drop cached precondition results BEFORE
+      // re-rendering the BUTTONS section. The BUTTONS section's preconditions
+      // read from the triple store; without this, `updateButtons` would call
+      // `buildCategoryGroups` against pre-mutation triples and reach the
+      // same precondition decision as the previous render — the user-
+      // visible "click does nothing" symptom on `ems__Task_zone`-gated
+      // criticality buttons (Issue followup to #3279 button restore).
+      //
+      // Gated on `BUTTONS in affectedSections` so non-tracked frontmatter
+      // changes (timestamp bumps from ai-task workflows, claimedAt/claimedBy
+      // writes) continue to early-return at `changedProps.length === 0` /
+      // pay no triple-store + global-cache-wipe cost. The companion +150ms
+      // `scheduleHotReindex` in ExocortexPlugin still runs for the full
+      // cache-invalidation path on every "changed" event.
+      if (
+        affectedSections.includes(LayoutSection.BUTTONS) &&
+        this.prepareForRefresh
+      ) {
+        try {
+          await this.prepareForRefresh(currentFile);
+        } catch (err) {
+          this.logger.warn(
+            `[handleMetadataChange] prepareForRefresh failed for ${filePath}: ${String(err)}`,
+          );
+        }
+      }
+
       await this.incrementalUpdateHandler.updateSections(
         this.rootContainer, currentFile, affectedSections, this.currentConfig);
     }, 50);
