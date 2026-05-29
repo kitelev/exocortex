@@ -13,6 +13,8 @@ import {
   createUpdatePropertyService,
   createRemovePropertyService,
   createSetStatusService,
+  createDuplicateAssetService,
+  rewriteFrontmatterScalars,
   type IPathResolver,
 } from "../src/index";
 
@@ -723,6 +725,358 @@ describe("@kitelev/exocortex-services — factory contract", () => {
       const content = fs.writes[0].content;
       expect(content).toMatch(/ems__Effort_parent: "\[\[Foo\]\]"/);
       expect(content).not.toMatch(/ems__Effort_area: "\[\[Foo\]\]"/);
+    });
+  });
+
+  describe("rewriteFrontmatterScalars (Issue #3292 helper)", () => {
+    it("replaces existing top-level scalar in place, preserving all other lines verbatim", () => {
+      const input = [
+        "---",
+        "exo__Asset_uid: old-uid-abc",
+        "exo__Asset_label: My Task",
+        "exo__Asset_createdAt: 2026-01-01T10:00:00",
+        "exo__Instance_class:",
+        '  - "[[ems__Task]]"',
+        "---",
+        "",
+        "# Body title",
+        "- [x] step one",
+        "- [ ] step two",
+      ].join("\n");
+
+      const out = rewriteFrontmatterScalars(input, {
+        exo__Asset_uid: "new-uid-xyz",
+        exo__Asset_createdAt: "2026-05-29T17:30:00",
+      });
+
+      expect(out).toContain("exo__Asset_uid: new-uid-xyz");
+      expect(out).toContain("exo__Asset_createdAt: 2026-05-29T17:30:00");
+      // Untouched lines stay verbatim
+      expect(out).toContain("exo__Asset_label: My Task");
+      expect(out).toContain('  - "[[ems__Task]]"');
+      // Body preserved including filled checklist (vebatim copy guarantee)
+      expect(out).toContain("# Body title");
+      expect(out).toContain("- [x] step one");
+      expect(out).toContain("- [ ] step two");
+      // Old UID is gone — surgical replacement, not append
+      expect(out).not.toContain("old-uid-abc");
+      expect(out).not.toContain("2026-01-01T10:00:00");
+    });
+
+    it("appends keys that were absent from source frontmatter, before the closing fence", () => {
+      const input = "---\nexo__Asset_uid: u1\n---\n\nbody";
+      const out = rewriteFrontmatterScalars(input, {
+        exo__Asset_uid: "u2",
+        exo__Asset_createdAt: "2026-05-29T17:30:00",
+      });
+      expect(out).toMatch(/exo__Asset_uid: u2/);
+      expect(out).toMatch(/exo__Asset_createdAt: 2026-05-29T17:30:00\n---/);
+      expect(out).toMatch(/---\n\nbody$/);
+    });
+
+    it("preserves CRLF line endings if source has them", () => {
+      const input = "---\r\nexo__Asset_uid: u1\r\n---\r\n\r\nbody";
+      const out = rewriteFrontmatterScalars(input, { exo__Asset_uid: "u2" });
+      expect(out).toContain("exo__Asset_uid: u2");
+      expect(out).toContain("\r\n---");
+    });
+
+    it("does not touch indented (nested) lines with the same key suffix", () => {
+      // Nested key with leading whitespace must NOT be matched (top-level only).
+      const input = [
+        "---",
+        "exo__Asset_uid: outer",
+        "nested:",
+        "  exo__Asset_uid: inner",
+        "---",
+        "",
+        "body",
+      ].join("\n");
+      const out = rewriteFrontmatterScalars(input, { exo__Asset_uid: "NEW" });
+      expect(out).toContain("exo__Asset_uid: NEW");
+      // The indented inner value stays
+      expect(out).toContain("  exo__Asset_uid: inner");
+    });
+
+    it("preserves array lists, wikilinks, quoted values, and comments byte-for-byte", () => {
+      const input = [
+        "---",
+        "exo__Asset_uid: old",
+        "exo__Asset_label: 'My Task'",
+        '# This comment must survive verbatim',
+        "exo__Instance_class:",
+        '  - "[[ems__Task]]"',
+        '  - "[[anotherClass]]"',
+        'aliases: ["A", "B"]',
+        "---",
+        "",
+        "Body with [[wikilinks]] and ```sparql blocks```",
+      ].join("\n");
+      const out = rewriteFrontmatterScalars(input, {
+        exo__Asset_uid: "new",
+      });
+      // The only intended change
+      expect(out).toContain("exo__Asset_uid: new");
+      expect(out).not.toContain("exo__Asset_uid: old");
+      // Everything else verbatim
+      expect(out).toContain("exo__Asset_label: 'My Task'");
+      expect(out).toContain("# This comment must survive verbatim");
+      expect(out).toContain('  - "[[ems__Task]]"');
+      expect(out).toContain('  - "[[anotherClass]]"');
+      expect(out).toContain('aliases: ["A", "B"]');
+      expect(out).toContain("Body with [[wikilinks]] and ```sparql blocks```");
+    });
+
+    it("throws when source has no YAML frontmatter (freeform markdown)", () => {
+      expect(() => rewriteFrontmatterScalars("# Just a heading\nbody", {})).toThrow(
+        /no YAML frontmatter block/,
+      );
+    });
+  });
+
+  describe("createDuplicateAssetService (Issue #3292)", () => {
+    interface DupeFile {
+      path: string;
+      basename: string;
+      parent: { path: string };
+    }
+
+    function makeDupeAdapter(opts: {
+      sourcePath: string;
+      sourceBasename: string;
+      sourceFolder: string;
+      sourceContent: string;
+    }): {
+      adapter: never;
+      created: { path: string; content: string }[];
+    } {
+      const sourceFile: DupeFile = {
+        path: opts.sourcePath,
+        basename: opts.sourceBasename,
+        parent: { path: opts.sourceFolder },
+      };
+      const created: { path: string; content: string }[] = [];
+      const adapter = {
+        getAbstractFileByPath: (path: string): DupeFile | null => {
+          if (path === `${opts.sourcePath}` || path === `${opts.sourcePath}.md`) {
+            return sourceFile;
+          }
+          return null;
+        },
+        read: async (_f: DupeFile): Promise<string> => opts.sourceContent,
+        create: async (path: string, content: string): Promise<DupeFile> => {
+          created.push({ path, content });
+          return {
+            path,
+            basename: path.replace(/\.md$/, "").split("/").pop()!,
+            parent: { path: path.split("/").slice(0, -1).join("/") },
+          };
+        },
+      } as never;
+      return { adapter, created };
+    }
+
+    it("creates a new file with new UID + new createdAt, body verbatim, in the same folder", async () => {
+      const originalUid = "11111111-1111-4111-8111-111111111111";
+      const sourceContent = [
+        "---",
+        `exo__Asset_uid: ${originalUid}`,
+        "exo__Asset_label: Weekly Review",
+        "exo__Asset_createdAt: 2026-01-01T10:00:00",
+        "exo__Instance_class:",
+        '  - "[[ems__Task]]"',
+        "---",
+        "",
+        "# Review",
+        "- [x] last week wrap-up",
+        "- [ ] this week plan",
+      ].join("\n");
+
+      const { adapter, created } = makeDupeAdapter({
+        sourcePath: `03 Knowledge/inbox/${originalUid}`,
+        sourceBasename: originalUid,
+        sourceFolder: "03 Knowledge/inbox",
+        sourceContent,
+      });
+
+      const resolver = {
+        resolveFile: (iri: string) => {
+          const a = adapter as unknown as {
+            getAbstractFileByPath: (p: string) => DupeFile;
+          };
+          return a.getAbstractFileByPath(iri) as never;
+        },
+      };
+
+      const onCreatedSeen: string[] = [];
+      const service = createDuplicateAssetService(
+        adapter,
+        resolver,
+        async (file) => {
+          onCreatedSeen.push((file as DupeFile).path);
+        },
+      );
+
+      await service.execute(`03 Knowledge/inbox/${originalUid}`);
+
+      expect(created).toHaveLength(1);
+      const written = created[0];
+
+      // Filename = <new-uid>.md in source folder
+      expect(written.path).toMatch(
+        /^03 Knowledge\/inbox\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.md$/,
+      );
+      const newUid = written.path.replace(/^.*\/(.+)\.md$/, "$1");
+      expect(newUid).not.toBe(originalUid);
+
+      // Frontmatter — new UID substituted, original gone
+      expect(written.content).toContain(`exo__Asset_uid: ${newUid}`);
+      expect(written.content).not.toContain(`exo__Asset_uid: ${originalUid}`);
+
+      // createdAt is new, ISO local format (no Z suffix per DateFormatter.toLocalTimestamp)
+      expect(written.content).toMatch(
+        /exo__Asset_createdAt: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?!Z)/,
+      );
+      expect(written.content).not.toContain("2026-01-01T10:00:00");
+
+      // Other fields preserved (label, instance class)
+      expect(written.content).toContain("exo__Asset_label: Weekly Review");
+      expect(written.content).toContain('  - "[[ems__Task]]"');
+
+      // Body verbatim, including filled checklist
+      expect(written.content).toContain("# Review");
+      expect(written.content).toContain("- [x] last week wrap-up");
+      expect(written.content).toContain("- [ ] this week plan");
+
+      // onCreated callback fired with the new file
+      expect(onCreatedSeen).toEqual([written.path]);
+    });
+
+    it("two duplications of the same source produce two different new UIDs (freshness check)", async () => {
+      const originalUid = "22222222-2222-4222-8222-222222222222";
+      const sourceContent = [
+        "---",
+        `exo__Asset_uid: ${originalUid}`,
+        "exo__Asset_createdAt: 2026-01-01T10:00:00",
+        "---",
+        "",
+        "body",
+      ].join("\n");
+
+      const { adapter, created } = makeDupeAdapter({
+        sourcePath: `inbox/${originalUid}`,
+        sourceBasename: originalUid,
+        sourceFolder: "inbox",
+        sourceContent,
+      });
+      const resolver = {
+        resolveFile: (iri: string) =>
+          (adapter as unknown as {
+            getAbstractFileByPath: (p: string) => DupeFile;
+          }).getAbstractFileByPath(iri) as never,
+      };
+      const service = createDuplicateAssetService(adapter, resolver);
+
+      await service.execute(`inbox/${originalUid}`);
+      await service.execute(`inbox/${originalUid}`);
+
+      expect(created).toHaveLength(2);
+      expect(created[0].path).not.toBe(created[1].path);
+    });
+
+    it("preserves modifiedAt unchanged (rule: only uid + createdAt differ)", async () => {
+      const originalUid = "33333333-3333-4333-8333-333333333333";
+      const sourceContent = [
+        "---",
+        `exo__Asset_uid: ${originalUid}`,
+        "exo__Asset_createdAt: 2026-01-01T10:00:00",
+        "exo__Asset_modifiedAt: 2026-02-15T14:30:00",
+        "---",
+        "",
+        "body",
+      ].join("\n");
+
+      const { adapter, created } = makeDupeAdapter({
+        sourcePath: `n/${originalUid}`,
+        sourceBasename: originalUid,
+        sourceFolder: "n",
+        sourceContent,
+      });
+      const resolver = {
+        resolveFile: (iri: string) =>
+          (adapter as unknown as {
+            getAbstractFileByPath: (p: string) => DupeFile;
+          }).getAbstractFileByPath(iri) as never,
+      };
+      const service = createDuplicateAssetService(adapter, resolver);
+
+      await service.execute(`n/${originalUid}`);
+
+      expect(created).toHaveLength(1);
+      expect(created[0].content).toContain(
+        "exo__Asset_modifiedAt: 2026-02-15T14:30:00",
+      );
+    });
+
+    it("throws when targetIRI is empty (Command Palette without active asset)", async () => {
+      const { adapter } = makeDupeAdapter({
+        sourcePath: "x",
+        sourceBasename: "x",
+        sourceFolder: "",
+        sourceContent: "---\nexo__Asset_uid: u\n---\n",
+      });
+      const resolver = {
+        resolveFile: () => {
+          throw new Error("should not be called for empty IRI");
+        },
+      };
+      const service = createDuplicateAssetService(adapter, resolver);
+
+      await expect(service.execute("")).rejects.toThrow(
+        /requires an active target/,
+      );
+    });
+
+    it("works without onCreated callback (CLI / headless shape)", async () => {
+      const originalUid = "44444444-4444-4444-8444-444444444444";
+      const { adapter, created } = makeDupeAdapter({
+        sourcePath: `f/${originalUid}`,
+        sourceBasename: originalUid,
+        sourceFolder: "f",
+        sourceContent: `---\nexo__Asset_uid: ${originalUid}\n---\nbody`,
+      });
+      const resolver = {
+        resolveFile: (iri: string) =>
+          (adapter as unknown as {
+            getAbstractFileByPath: (p: string) => DupeFile;
+          }).getAbstractFileByPath(iri) as never,
+      };
+      const service = createDuplicateAssetService(adapter, resolver);
+      // No 3rd arg
+      await service.execute(`f/${originalUid}`);
+      expect(created).toHaveLength(1);
+    });
+
+    it("places new file at vault root when source has no parent folder", async () => {
+      const originalUid = "55555555-5555-4555-8555-555555555555";
+      const { adapter, created } = makeDupeAdapter({
+        sourcePath: originalUid,
+        sourceBasename: originalUid,
+        sourceFolder: "",
+        sourceContent: `---\nexo__Asset_uid: ${originalUid}\n---\n`,
+      });
+      const resolver = {
+        resolveFile: (iri: string) =>
+          (adapter as unknown as {
+            getAbstractFileByPath: (p: string) => DupeFile;
+          }).getAbstractFileByPath(iri) as never,
+      };
+      const service = createDuplicateAssetService(adapter, resolver);
+      await service.execute(originalUid);
+      // Path is bare <uid>.md, no leading slash
+      expect(created[0].path).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.md$/,
+      );
     });
   });
 });

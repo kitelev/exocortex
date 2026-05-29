@@ -681,6 +681,8 @@ export default class ExocortexPlugin extends Plugin {
             paletteFlow,
             vaultSettings,
             this.logger,
+            this.app,
+            this.preconditionEvaluator,
           ).init();
         } catch (error) {
           this.logger.error(

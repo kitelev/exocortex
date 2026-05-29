@@ -50,6 +50,7 @@ import {
   createUpdatePropertyService,
   createRemovePropertyService,
   createSetStatusService,
+  createDuplicateAssetService,
   type IPathResolver,
 } from "@kitelev/exocortex-services";
 import type { SPARQLApi } from "../../application/api/SPARQLApi";
@@ -322,6 +323,19 @@ export function populateServiceRegistry(
     registry.register(
       "renameToUid",
       createRenameToUidService(vaultAdapter, renameToUidService, targetResolver),
+    );
+
+    // Issue #3292 — homoiconic palette command "Duplicate current asset"
+    // (vault asset describes id/icon/label/precondition; this TS hook owns
+    // the per-platform file-ops integration). Reuses `openCreatedFileInTab`
+    // to focus the new asset in a workspace tab, mirroring createRelatedTask.
+    registry.register(
+      "duplicateAsset",
+      createDuplicateAssetService(
+        vaultAdapter,
+        targetResolver,
+        openCreatedFileInTab,
+      ),
     );
 
     registry.register(

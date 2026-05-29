@@ -34,6 +34,8 @@ export {
   createUpdatePropertyService,
   createRemovePropertyService,
   createSetStatusService,
+  createDuplicateAssetService,
+  rewriteFrontmatterScalars,
   createPathBasedTargetResolver,
   type ITargetResolver,
   type IPathResolver,
