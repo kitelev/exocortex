@@ -870,7 +870,17 @@ export class GroundingExecutor {
       missing.push("exo__Asset_createdAt");
     }
 
-    if (properties.exo__Asset_label === undefined) {
+    // RFC ce27e55d: also treat an empty / whitespace-only `exo__Asset_label`
+    // written by an upstream PropertyDefault as "missing". Discovered during
+    // UI smoke 2026-05-29 — Universal Default Template's PD #3
+    // (`exo__Asset_label = $userInputLabel`) writes an empty literal when
+    // userInput.label is undefined (one-click flow). That left labels blank
+    // on disk because the `=== undefined` guard skipped my labelTemplate
+    // fallback. Treat blank PropertyDefault result identically to absent.
+    const labelIsBlank =
+      typeof properties.exo__Asset_label === "string" &&
+      properties.exo__Asset_label.trim().length === 0;
+    if (properties.exo__Asset_label === undefined || labelIsBlank) {
       // RFC ce27e55d: labelTemplate fallback before the "Untitled" hardcoded.
       // Active when:
       //   - userInput has no `label` field (one-click flow, no input modal);

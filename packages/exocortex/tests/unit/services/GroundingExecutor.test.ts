@@ -1045,6 +1045,40 @@ describe("GroundingExecutor", () => {
         );
       });
 
+      it("uses labelTemplate when upstream PropertyDefault wrote empty exo__Asset_label (UI smoke fix 2026-05-29)", async () => {
+        // Production interaction discovered during UI smoke 2026-05-29:
+        // Universal Default Template PD #3 (exo__Asset_label = $userInputLabel)
+        // writes an empty literal when userInput.label is undefined. Without
+        // this guard, the `=== undefined` check skipped labelTemplate fallback
+        // and the empty PD result reached the file on disk.
+        reader.readFile.mockResolvedValue(
+          [
+            "---",
+            'exo__Asset_uid: "deaa0051-0236-4cae-b2a5-2b156c3c127a"',
+            'exo__Asset_label: "Осознал, что делаю шелуху"',
+            "---",
+            "Body",
+          ].join("\n"),
+        );
+        const grounding = makeGrounding({
+          type: GroundingType.CREATE_INSTANCE,
+          targetClass: "kitelev__Supervision",
+          targetFolder: "03 Knowledge/kitelev",
+          labelTemplate: "$target.exo__Asset_label $nowCompact",
+          // Simulate Universal Default Template PD writing empty exo__Asset_label.
+          propertyDefault: [{ propertyName: "exo__Asset_label", value: "" }],
+        });
+
+        const result = await executor.execute(grounding, TARGET_IRI, FILE_PATH);
+
+        expect(result.success).toBe(true);
+        const [, content] = writer.createFile.mock.calls[0];
+        expect(content).toMatch(
+          /exo__Asset_label: Осознал, что делаю шелуху \d{4}-\d{2}-\d{2}-\d{2}-\d{2}/,
+        );
+        expect(content).not.toMatch(/exo__Asset_label:\s*$/m);
+      });
+
       it("falls back to Untitled when labelTemplate substitution result is empty string (reviewer MEDIUM)", async () => {
         // Reviewer MEDIUM: empty-string or whitespace-only substitution
         // result must NOT leak into `exo__Asset_label` as a literally empty
