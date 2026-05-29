@@ -555,3 +555,117 @@ export function createSetStatusService(
     },
   };
 }
+
+/**
+ * Shared factory for the `duplicateAsset` `service_call` grounding (Issue
+ * #3292). Creates a byte-verbatim copy of the target asset's file in the same
+ * folder with two surgical frontmatter substitutions:
+ *
+ *  - `exo__Asset_uid`   →   freshly-generated UUID v4
+ *  - `exo__Asset_createdAt` → local ISO timestamp (now)
+ *
+ * Everything else (label, modifiedAt, instance class, relations, prototype,
+ * parent, all class-specific properties, the markdown body) is preserved
+ * unchanged — including filled checklist items, SPARQL blocks, and trailing
+ * whitespace. The new file is named `<new-uid>.md` per the UUID-canon rule.
+ *
+ * Visibility (when surfaced through `exocmd__Command_paletteEnabled`) is
+ * gated by the `hasUidFilename` host-function precondition — palette entry
+ * is hidden when the active file isn't itself a UUID-canon Exocortex asset
+ * (freeform notes, daily/weekly notes via the `pn__DailyNote` /
+ * `period__Week` whitelist, ontology TBox label-named files). See
+ * `preconditionHostFunctions.ts:hasUidFilename`.
+ *
+ * The `onCreated` callback is the Obsidian-specific tab-opening hook
+ * (mirrors `createRelatedTask` etc); CLI runtimes can omit it.
+ */
+export function createDuplicateAssetService(
+  vaultAdapter: IVaultAdapter,
+  resolver: ITargetResolver = createPathBasedTargetResolver(vaultAdapter),
+  onCreated?: OnCreatedCallback,
+): IGroundingService {
+  return {
+    async execute(targetIRI: string): Promise<void> {
+      if (!targetIRI) {
+        throw new Error(
+          "duplicateAsset requires an active target — open an Exocortex asset before invoking",
+        );
+      }
+
+      const sourceFile = resolver.resolveFile(targetIRI);
+      const sourceContent = await vaultAdapter.read(sourceFile);
+
+      const newUid = crypto.randomUUID();
+      const newCreatedAt = DateFormatter.toLocalTimestamp(new Date());
+
+      const duplicatedContent = rewriteFrontmatterScalars(sourceContent, {
+        exo__Asset_uid: newUid,
+        exo__Asset_createdAt: newCreatedAt,
+      });
+
+      const folderPath = sourceFile.parent?.path ?? "";
+      const newPath = folderPath
+        ? `${folderPath}/${newUid}.md`
+        : `${newUid}.md`;
+
+      const createdFile = await vaultAdapter.create(newPath, duplicatedContent);
+
+      if (onCreated) {
+        await onCreated(createdFile);
+      }
+    },
+  };
+}
+
+/**
+ * Replace top-level scalar values in a markdown file's leading YAML
+ * frontmatter block. Preserves the document byte-for-byte except for the
+ * specific keys whose values are rewritten; if a key exists, its line is
+ * rewritten in place (preserving leading whitespace) — if absent, a new
+ * line is appended just before the closing `---` fence.
+ *
+ * Pure text manipulation (no YAML parse → serialize) so it does not
+ * re-order keys, re-indent lists, collapse comments, or change quoting
+ * style anywhere else. Out of scope: nested keys, block scalars, or
+ * documents without a leading frontmatter block (caller's responsibility
+ * to ensure the input has one).
+ *
+ * @internal — exported for unit testing only.
+ */
+export function rewriteFrontmatterScalars(
+  content: string,
+  replacements: Record<string, string>,
+): string {
+  const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (!fmMatch) {
+    throw new Error(
+      "duplicateAsset: source file has no YAML frontmatter block",
+    );
+  }
+
+  const frontmatterBody = fmMatch[1];
+  const remaining = new Map(Object.entries(replacements));
+
+  const rewrittenLines = frontmatterBody.split("\n").map((line) => {
+    // Top-level key: optional indent then `key:` then anything after.
+    // Skip indented lines (list items, nested mappings) by matching only
+    // at column 0.
+    const keyMatch = line.match(/^([A-Za-z_][A-Za-z0-9_]*):/);
+    if (!keyMatch) return line;
+    const key = keyMatch[1];
+    const newValue = remaining.get(key);
+    if (newValue === undefined) return line;
+    remaining.delete(key);
+    return `${key}: ${newValue}`;
+  });
+
+  // Append keys that were not present in the source frontmatter.
+  for (const [key, value] of remaining) {
+    rewrittenLines.push(`${key}: ${value}`);
+  }
+
+  const rewrittenBody = rewrittenLines.join("\n");
+  const eol = fmMatch[0].includes("\r\n") ? "\r\n" : "\n";
+  const head = `---${eol}${rewrittenBody}${eol}---`;
+  return head + content.slice(fmMatch[0].length);
+}

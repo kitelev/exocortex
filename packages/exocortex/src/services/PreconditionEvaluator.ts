@@ -134,6 +134,29 @@ export class PreconditionEvaluator {
     return this.hostFunctions.has(name);
   }
 
+  /**
+   * Synchronously evaluate a host-function precondition (Issue #3292).
+   *
+   * Returns `null` when the named host function is not registered — the
+   * caller decides whether absence means "deny" or "allow" (palette
+   * registrar treats `null` as "fail closed = false" to surface
+   * misconfiguration loudly).
+   *
+   * Used by surfaces that cannot await an async precondition — notably
+   * Obsidian's `addCommand({ checkCallback })`, which is synchronous and
+   * runs on every Command Palette open. The async {@link evaluate} method
+   * remains the canonical path for inline buttons, layouts, CLI, and any
+   * other surface that can wait for SPARQL ASK / `exoql__Query`.
+   */
+  evaluateHostFunctionSync(
+    name: string,
+    targetIRI: string,
+    context?: EvalContext,
+  ): boolean | null {
+    if (!this.hostFunctions.has(name)) return null;
+    return this.evaluateHostFunction(name, targetIRI, context);
+  }
+
   invalidateCache(): void {
     this.askCache.clear();
   }

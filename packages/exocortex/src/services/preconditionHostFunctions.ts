@@ -23,6 +23,27 @@ export const hasNonUidFilename: HostFunction = (ctx: EvalContext): boolean => {
 };
 
 /**
+ * Host function: returns `true` when the target asset's filename equals
+ * its `exo__Asset_uid` (UUID-canon, per CLAUDE.md TBox rule). Inverse of
+ * `hasNonUidFilename`. Used by palette commands that operate on
+ * UUID-canon assets only (e.g. "Duplicate current asset", Issue #3292) —
+ * automatically hides on label-named whitelist (`pn__DailyNote`,
+ * `period__Week`) and freeform `.md` files without disturbing the
+ * existing whitelist vocabulary.
+ *
+ * Returns `false` when:
+ *  - the context has no `assetUid` (file has no `exo__Asset_uid`)
+ *  - the file basename does not equal the asset's UID (label-named)
+ */
+export const hasUidFilename: HostFunction = (ctx: EvalContext): boolean => {
+  const uid = ctx.assetUid;
+  if (typeof uid !== "string" || uid.trim() === "") return false;
+  const basename = ctx.fileBasename;
+  if (typeof basename !== "string") return false;
+  return basename === uid;
+};
+
+/**
  * Register all built-in host functions on a `PreconditionEvaluator`. Call
  * this once per evaluator instance so the same well-known functions are
  * available from every code path (plugin runtime, cold-start fast resolver,
@@ -32,4 +53,5 @@ export function registerDefaultHostFunctions(
   evaluator: PreconditionEvaluator,
 ): void {
   evaluator.registerHostFunction("hasNonUidFilename", hasNonUidFilename);
+  evaluator.registerHostFunction("hasUidFilename", hasUidFilename);
 }

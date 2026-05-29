@@ -74,6 +74,7 @@ export {
 } from "./services/PreconditionEvaluator";
 export {
   hasNonUidFilename,
+  hasUidFilename,
   registerDefaultHostFunctions,
 } from "./services/preconditionHostFunctions";
 export {
