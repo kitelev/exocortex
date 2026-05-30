@@ -44,7 +44,6 @@ const KNOWN_STUB_SERVICE_IDS = new Set([
 // follow-up (T1.6). Listed explicitly so the drift gate exits zero today
 // and exits non-zero the moment a brand-new service id appears.
 const KNOWN_UNREGISTERED_SERVICE_IDS = new Set([
-  "rollbackStatus",
   // copyLabelToAliases removed in Issue #3132 — grounding a85668fa-… migrated
   // to declarative `property_append` (Homoiconicity Q1 remediation).
   // shiftDay (×2) + incrementVotes (×1) removed in Issue #3134 — migrated to
@@ -53,8 +52,12 @@ const KNOWN_UNREGISTERED_SERVICE_IDS = new Set([
   // planOnToday + createTaskForDailyNote removed in Issue #3136 — migrated
   // to declarative `property_set` (with new $todayStart token) and
   // `create_instance` (with new $targetFolder token + propertyDefaults
-  // JSON literal) respectively. Q3.b closure — only `rollbackStatus`
-  // (Q3.a temporal-stack pop over non-RDF `_history`) remains documented.
+  // JSON literal) respectively.
+  // rollbackStatus removed (kitelev/exocortex-starter-kit#103 +
+  // exocortex PR #3297) — the universal Rollback Status button was broken
+  // by UUID-canon TBox migration; replaced by per-status backward Commands
+  // (Re-open, Rollback to Backlog/ToDo/Analysis/Draft) using composite
+  // groundings (UUID status refs only — no WorkflowEngine string matching).
 ]);
 
 function parseArgs(argv) {

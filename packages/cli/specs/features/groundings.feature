@@ -35,7 +35,6 @@ Feature: Starter-kit grounding execution (RFC 94e520da § Phase 6)
       | de7914fb-3f56-4278-81f1-6c23345553f0 | service_call    | real         | Clean properties via service |
       | e7189a73-fa97-45ad-b9e9-bd68a0feee10 | service_call    | real         | Repair folder via service |
       | eb3bb751-596b-48f8-b834-7a9e680dabbe | service_call    | real         | Archive asset via service |
-      | eba11892-6e8d-4e38-b5e4-d50dd006e6d8 | service_call    | unregistered | Rollback status via service |
       | 1a14832c-f657-4816-b2aa-d06f2a80fccf | property_delete | real         | Delete start timestamp |
       | 2c53ea68-8247-4ea8-870e-3bfbf2256b2f | property_delete | real         | Delete end timestamp |
       | a85668fa-17b7-45d0-aa7f-935e2502dff0 | property_append | real         | Copy label to aliases via property_append |

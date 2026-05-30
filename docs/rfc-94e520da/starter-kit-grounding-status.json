@@ -3,12 +3,12 @@
     "rfc": "94e520da",
     "phase": 1,
     "task": "T1.5",
-    "auditedAt": "2026-05-26T04:02:24.027Z",
-    "starterKitPath": "/Users/kitelev/Developer/exocortex-development/exocortex-starter-kit",
-    "totalGroundings": 48,
+    "auditedAt": "2026-05-30T12:40:11.778Z",
+    "starterKitPath": "../../exocortex-starter-kit",
+    "totalGroundings": 47,
     "byType": {
       "property_delete": 4,
-      "service_call": 19,
+      "service_call": 18,
       "create_instance": 2,
       "property_set": 17,
       "property_append": 1,
@@ -17,8 +17,7 @@
       "composite": 2
     },
     "byCliStatus": {
-      "real": 47,
-      "unregistered": 1
+      "real": 47
     },
     "serviceIdCounts": {
       "updateProperty": 7,
@@ -30,7 +29,6 @@
       "cleanProperties": 1,
       "repairFolder": 1,
       "archiveAsset": 1,
-      "rollbackStatus": 1,
       "planForEvening": 1
     }
   },
@@ -186,14 +184,6 @@
       "type": "service_call",
       "serviceId": "archiveAsset",
       "cliStatus": "real"
-    },
-    {
-      "uid": "eba11892-6e8d-4e38-b5e4-d50dd006e6d8",
-      "label": "Rollback status via service",
-      "path": "exocmd/maintenance-complex/eba11892-6e8d-4e38-b5e4-d50dd006e6d8.md",
-      "type": "service_call",
-      "serviceId": "rollbackStatus",
-      "cliStatus": "unregistered"
     },
     {
       "uid": "1a14832c-f657-4816-b2aa-d06f2a80fccf",

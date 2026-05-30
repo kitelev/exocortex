@@ -49,9 +49,9 @@ interface Fixture {
 const fixture = JSON.parse(readFileSync(FIXTURE_PATH, "utf8")) as Fixture;
 
 describe("RFC 94e520da T1.5 starter-kit grounding audit fixture", () => {
-  it("contains exactly 48 groundings (RFC § Phase 1 reference count)", () => {
-    expect(fixture.summary.totalGroundings).toBe(48);
-    expect(fixture.groundings).toHaveLength(48);
+  it("contains exactly 47 groundings (RFC § Phase 1 reference count − rollbackStatus retired)", () => {
+    expect(fixture.summary.totalGroundings).toBe(47);
+    expect(fixture.groundings).toHaveLength(47);
   });
 
   it("classifies every grounding into a known cliStatus (no drift)", () => {
@@ -82,7 +82,7 @@ describe("RFC 94e520da T1.5 starter-kit grounding audit fixture", () => {
     // move from unregistered → real (21 → 19 service_call, 42 → 44 real,
     // 3 → 1 unregistered).
     expect(fixture.summary.byType).toEqual({
-      service_call: 19,
+      service_call: 18,
       property_set: 17,
       property_delete: 4,
       composite: 2,
@@ -94,9 +94,11 @@ describe("RFC 94e520da T1.5 starter-kit grounding audit fixture", () => {
     // Phase 3.5 (Issue #3164): `createAsset` ported from CLI stub → real
     // via shared `createCreateAssetService` factory. The 3 starter-kit
     // groundings previously classified as `stub` are now `real`.
+    // rollbackStatus retired (PR #3297 + starter-kit #103) — no more
+    // `unregistered` status; all 47 remaining service_call groundings
+    // dispatch to real services.
     expect(fixture.summary.byCliStatus).toEqual({
       real: 47,
-      unregistered: 1,
     });
   });
 
@@ -128,8 +130,7 @@ describe("RFC 94e520da T1.5 starter-kit grounding audit fixture", () => {
       "createAsset",
     ]);
     const documentedStubIds = new Set<string>();
-    const documentedUnregisteredIds = new Set([
-      "rollbackStatus",
+    const documentedUnregisteredIds = new Set<string>([
       // copyLabelToAliases removed in Issue #3132 — grounding migrated to
       // declarative property_append (no longer a service_call).
       // shiftDay (×2) + incrementVotes (×1) removed in Issue #3134 —
@@ -137,8 +138,11 @@ describe("RFC 94e520da T1.5 starter-kit grounding audit fixture", () => {
       // property_increment (RFC 18407cb2 Path B).
       // planOnToday + createTaskForDailyNote removed in Issue #3136 —
       // groundings migrated to declarative property_set (with $todayStart)
-      // + create_instance (with $targetFolder + propertyDefaults). Only
-      // rollbackStatus remains — Q3.a documented temporal-stack pop.
+      // + create_instance (with $targetFolder + propertyDefaults).
+      // rollbackStatus retired (starter-kit#103 + PR #3297) — universal
+      // Rollback Status button was broken by UUID-canon TBox migration;
+      // replaced by per-status backward Commands using composite groundings.
+      // No more `unregistered` service_call groundings remain.
     ]);
 
     for (const g of fixture.groundings) {
