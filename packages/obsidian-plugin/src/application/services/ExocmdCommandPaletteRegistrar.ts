@@ -233,6 +233,7 @@ function readActiveFileContext(app: App): {
       targetIRI,
       fileBasename: file.basename,
       currentFolder: file.parent?.path,
+      filePath: file.path,
       assetUid,
     },
   };

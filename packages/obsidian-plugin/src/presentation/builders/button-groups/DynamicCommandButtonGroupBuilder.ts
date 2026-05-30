@@ -362,6 +362,7 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
       targetIRI: subjectIRI,
       fileBasename: file.basename,
       currentFolder: file.parent?.path,
+      filePath: file.path,
       assetUid,
     };
     const availabilityChecks = await Promise.all(
