@@ -31,10 +31,16 @@ import { LoggingService } from "./LoggingService";
  *
  * Drift guards (defense in depth):
  *   1. `Record<EffortStatus, string>` — compile-time coverage of all 7 enum values.
- *   2. `StatusUidByEnumIntegrity.test.ts` — runtime UUID-shape + uniqueness check.
- *   3. Production behaviour: if a UID is renamed in the vault TBox, the wikilink
- *      `[[<uid>]]` written by `executeWorkflowTransition` will fail the
- *      validate-wikilinks hook → user gets immediate feedback.
+ *   2. `GroundingExecutor.status_uid_integrity.test.ts` — runtime UUID-shape
+ *      + uniqueness + pinned-UID assertions; catches accidental TS-side
+ *      renames before they reach a release.
+ *   3. Surface signal at runtime: if a status TBox file is renamed in the vault
+ *      without a TS update, the wikilink `[[<old-uid>]]` written by
+ *      `executeWorkflowTransition` becomes a broken wikilink — Obsidian renders
+ *      it in red and SPARQL queries for the status fail to resolve. NOT caught
+ *      by `~/.claude/hooks/validate-wikilinks.sh` (that hook fires only on
+ *      Claude Code Write/Edit tool calls, not on plugin runtime writes via
+ *      the Obsidian Vault API).
  *
  * Adding a new EffortStatus value forces this map to be updated (TS compile
  * error). Renaming a vault TBox status file requires manually editing this
@@ -1820,8 +1826,18 @@ export class GroundingExecutor {
 
     // 7. Execute postActions sequentially. Each action UID is loaded via the
     //    injected GroundingLoader (plugin/CLI wires `commandResolver.loadGroundingByUid`).
-    //    Sequential semantics match executeComposite: any failure halts the
-    //    chain and propagates the error (no rollback — status already mutated).
+    //    Failure mode is INTENTIONALLY WEAKER than executeComposite: this
+    //    dispatcher does NOT snapshot the original file content before the
+    //    status mutation in step 6, so a postAction failure leaves the asset
+    //    in a partially-mutated state (status advanced, but a postAction's
+    //    side-effect missing — e.g., Doing→Done with status=Done but no
+    //    endTimestamp). Phase 2 accepts this trade-off because (a) postActions
+    //    are forgiving timestamp set/delete primitives (idempotent re-run
+    //    recovers state), and (b) snapshotting+rollback would require
+    //    cross-file coordination since postActions may write to multiple
+    //    properties. If stricter atomicity is needed for future grounding
+    //    types layered on workflow_transition, add a snapshot/rollback
+    //    wrapper analogous to executeComposite's lines 432-469.
     const postActions = transition.postActions ?? [];
     const loader = this.groundingLoader;
     if (postActions.length > 0 && loader === undefined) {
