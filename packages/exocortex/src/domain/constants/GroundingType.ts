@@ -50,4 +50,18 @@ export enum GroundingType {
    * BehavioralRule for ems__Effort_*Timestamp properties).
    */
   PROPERTY_SHIFT = "property_shift",
+  /**
+   * Apply a workflow transition. Reads target asset's class, resolves the
+   * default Workflow via WorkflowResolver, finds the matching
+   * WorkflowTransition (from=current status, isRollback=direction match),
+   * applies status mutation, and executes the transition's postActions
+   * sequentially.
+   *
+   * Reads `direction` (`"forward"` default, or `"rollback"`). Status
+   * mutation + postActions are runtime-resolved against vault Workflow ABox
+   * — no hardcoded targetProperty / targetValueRef on the grounding.
+   *
+   * RFC 36347daf Phase 2 — homoiconic workflow definitions.
+   */
+  WORKFLOW_TRANSITION = "workflow_transition",
 }

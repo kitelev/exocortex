@@ -27,15 +27,17 @@ const GROUNDING_TYPE_CLASS_UID = "708604a5-a682-4ff6-9391-c2e80ab78ca5";
 const SUBMODULE_PATH = path.resolve(__dirname, "../../../../exoas-exocmd");
 
 const ENUM_TO_EXPECTED_LABEL: Record<GroundingType, string> = {
-  [GroundingType.PROPERTY_SET]:       "exocmd__GroundingTypePropertySet",
-  [GroundingType.PROPERTY_DELETE]:    "exocmd__GroundingTypePropertyDelete",
-  [GroundingType.COMPOSITE]:          "exocmd__GroundingTypeComposite",
-  [GroundingType.SERVICE_CALL]:       "exocmd__GroundingTypeServiceCall",
-  [GroundingType.CREATE_INSTANCE]:    "exocmd__GroundingTypeCreateInstance",
-  [GroundingType.PROPERTY_APPEND]:    "exocmd__GroundingTypePropertyAppend",
-  [GroundingType.PROPERTY_INCREMENT]: "exocmd__GroundingTypePropertyIncrement",
-  [GroundingType.PROPERTY_SHIFT]:     "exocmd__GroundingTypePropertyShift",
-  [GroundingType.SPARQL_UPDATE]:      "exocmd__GroundingTypeSparqlUpdate",
+  [GroundingType.PROPERTY_SET]:        "exocmd__GroundingTypePropertySet",
+  [GroundingType.PROPERTY_DELETE]:     "exocmd__GroundingTypePropertyDelete",
+  [GroundingType.COMPOSITE]:           "exocmd__GroundingTypeComposite",
+  [GroundingType.SERVICE_CALL]:        "exocmd__GroundingTypeServiceCall",
+  [GroundingType.CREATE_INSTANCE]:     "exocmd__GroundingTypeCreateInstance",
+  [GroundingType.PROPERTY_APPEND]:     "exocmd__GroundingTypePropertyAppend",
+  [GroundingType.PROPERTY_INCREMENT]:  "exocmd__GroundingTypePropertyIncrement",
+  [GroundingType.PROPERTY_SHIFT]:      "exocmd__GroundingTypePropertyShift",
+  [GroundingType.SPARQL_UPDATE]:       "exocmd__GroundingTypeSparqlUpdate",
+  // RFC 36347daf Phase 2 — workflow_transition catalog instance.
+  [GroundingType.WORKFLOW_TRANSITION]: "exocmd__GroundingTypeWorkflowTransition",
 };
 
 interface VaultAsset {
@@ -117,8 +119,8 @@ describe("RFC 9d20c91f Phase 2 — vault-fixture parity (exoas-exocmd submodule)
     instances = scanGroundingTypeInstances();
   });
 
-  it("contains exactly 9 GroundingType instances", () => {
-    expect(instances).toHaveLength(9);
+  it("contains exactly 10 GroundingType instances", () => {
+    expect(instances).toHaveLength(10);
   });
 
   it("instance UIDs match TS GROUNDING_TYPE_UIDS exactly", () => {

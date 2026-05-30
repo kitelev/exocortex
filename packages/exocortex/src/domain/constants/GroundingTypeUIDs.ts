@@ -33,6 +33,8 @@ export const GROUNDING_TYPE_UIDS: Readonly<Record<GroundingType, string>> = {
   [GroundingType.PROPERTY_INCREMENT]:  "afc29f90-45eb-4f94-9fe2-2ce738759161",
   [GroundingType.PROPERTY_SHIFT]:      "f4e5266f-f3cc-49fd-a5a5-ce1e8b7847a4",
   [GroundingType.SPARQL_UPDATE]:       "79c3e709-8d1d-4694-bcc6-b9ff07d59b86",
+  // RFC 36347daf Phase 2 — workflow_transition catalog instance
+  [GroundingType.WORKFLOW_TRANSITION]: "5c1a2552-d576-496d-8823-563573dd1e2f",
 } as const;
 
 /**
@@ -72,6 +74,7 @@ export const GROUNDING_TYPE_IRI_TO_ENUM: Readonly<Record<string, GroundingType>>
   [`${EXOCMD_NAMESPACE}GroundingTypePropertyIncrement`]: GroundingType.PROPERTY_INCREMENT,
   [`${EXOCMD_NAMESPACE}GroundingTypePropertyShift`]:     GroundingType.PROPERTY_SHIFT,
   [`${EXOCMD_NAMESPACE}GroundingTypeSparqlUpdate`]:      GroundingType.SPARQL_UPDATE,
+  [`${EXOCMD_NAMESPACE}GroundingTypeWorkflowTransition`]: GroundingType.WORKFLOW_TRANSITION,
 });
 
 const UUID_PATTERN = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;

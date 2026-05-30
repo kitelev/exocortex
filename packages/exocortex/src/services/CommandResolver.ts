@@ -1115,6 +1115,22 @@ export class CommandResolver {
     return null;
   }
 
+  /**
+   * RFC 36347daf Phase 2 — public entry point for loading a Grounding by
+   * UID. Used by `GroundingExecutor.executeWorkflowTransition` to resolve
+   * `WorkflowTransition_postActions` references at execution time. Returns
+   * null when the UID is not indexed or the asset is not a valid Grounding.
+   *
+   * Mirrors the private resolution chain used by Command_grounding loader;
+   * starts depth=0 so transitive composite/postAction references are bounded
+   * by the same MAX_TRANSITIVE_DEPTH safeguard.
+   */
+  async loadGroundingByUid(uid: string): Promise<GroundingDefinition | null> {
+    const subject = await this.findSubjectByUID(uid);
+    if (!subject) return null;
+    return this.loadGroundingDefinition(subject, 0);
+  }
+
   private async loadGroundingDefinition(
     subject: IRI,
     depth: number,
@@ -1324,6 +1340,25 @@ export class CommandResolver {
       Namespace.EXOCMD.term("Grounding_labelTemplate"),
     );
 
+    // RFC 36347daf Phase 2: direction facet for workflow_transition
+    // groundings. Literal xsd:string {"forward","rollback"}; defaults to
+    // "forward" at dispatch time when omitted. Ignored by other types.
+    const directionRaw = await this.getLiteralValue(
+      subject,
+      Namespace.EXOCMD.term("Grounding_direction"),
+    );
+    let direction: "forward" | "rollback" | undefined;
+    if (directionRaw !== null && directionRaw !== undefined) {
+      const normalized = String(directionRaw).trim().toLowerCase();
+      if (normalized === "forward" || normalized === "rollback") {
+        direction = normalized;
+      } else if (normalized !== "") {
+        this.logger.warn(
+          `Grounding ${uid}: exocmd__Grounding_direction value '${directionRaw}' is not 'forward' or 'rollback' — treating as undefined (will default to 'forward' at dispatch).`,
+        );
+      }
+    }
+
     const grounding: GroundingDefinition = {
       id: uid,
       label,
@@ -1347,6 +1382,7 @@ export class CommandResolver {
       isDefinedBy: isDefinedBy ?? undefined,
       prefillLabelWithDate: prefillLabelWithDate || undefined,
       labelTemplate: labelTemplate ?? undefined,
+      direction,
     };
 
     if (inputSchema) {

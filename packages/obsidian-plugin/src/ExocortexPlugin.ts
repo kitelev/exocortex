@@ -35,6 +35,7 @@ import {
   DomainLiteral,
   LazyAssetGraphLoader,
   NoteToRDFConverter,
+  WorkflowResolver,
 } from "exocortex";
 import { ObsidianFileResolver } from "./infrastructure/ObsidianFileResolver";
 import { registerOrderSpecFromObsidianVault } from "./infrastructure/registerOrderSpecFromObsidianVault";
@@ -151,6 +152,12 @@ export default class ExocortexPlugin extends Plugin {
   preconditionEvaluator!: PreconditionEvaluator;
   groundingExecutor!: GroundingExecutor;
   serviceRegistry!: ServiceRegistry;
+  // RFC 36347daf Phase 2 — production triple-store-backed workflow resolver.
+  // Wired into groundingExecutor for workflow_transition dispatch and into
+  // ServiceRegistryPopulator for EffortStatusWorkflow (sync rollback path
+  // currently falls through to hardcoded fallback; injection prepares for a
+  // future async migration).
+  workflowResolver!: WorkflowResolver;
   // RFC c7da0bca Phase 3 — on-demand asset-graph loader; the sole source
   // of pre-render frontmatter+chain coverage in the triple store. The
   // legacy fast/full-path cold-start resolvers (`ExocmdFastResolver` +
@@ -306,6 +313,13 @@ export default class ExocortexPlugin extends Plugin {
       );
       this.serviceRegistry = new ServiceRegistry();
       const obsidianFs = new ObsidianFileSystemAdapter(this.app.vault);
+      // RFC 36347daf Phase 2 — wire WorkflowResolver + GroundingLoader so
+      // executeWorkflowTransition can resolve vault Workflow ABox at runtime
+      // and execute postActions referenced from WorkflowTransition assets.
+      // Both are optional (executor falls back gracefully without them); the
+      // plugin always wires them so the workflow_transition grounding type is
+      // fully functional in production.
+      this.workflowResolver = new WorkflowResolver(tripleStore);
       this.groundingExecutor = new GroundingExecutor(
         obsidianFs,
         obsidianFs,
@@ -315,6 +329,10 @@ export default class ExocortexPlugin extends Plugin {
         // create_instance baked label-form `exo__Instance_class` because the
         // fast resolver / disk cache store lacked the `assetspaces/ems` TBox.
         createObsidianClassLabelResolver(this.app),
+        {
+          workflowResolver: this.workflowResolver,
+          groundingLoader: (uid) => this.commandResolver.loadGroundingByUid(uid),
+        },
       );
 
       populateServiceRegistry(this.serviceRegistry, {
@@ -322,6 +340,10 @@ export default class ExocortexPlugin extends Plugin {
         fileSystemAdapter: obsidianFs,
         sparqlApi: this.sparql,
         vaultAdapter: this.vaultAdapter,
+        // RFC 36347daf Phase 2 — pass production workflow resolver so
+        // EffortStatusWorkflow can later migrate from sync hardcoded
+        // fallback to async vault-backed resolution without a wiring change.
+        workflowResolver: this.workflowResolver,
       });
 
       // RFC be70f741 Phase 3 — wire RelationColumnSetRepository + Resolver so

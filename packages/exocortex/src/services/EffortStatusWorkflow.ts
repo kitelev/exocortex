@@ -12,15 +12,34 @@ import type { WorkflowDefinition } from "../domain/models/WorkflowDefinition";
  * Maintains backward-compatible API (wikilink format, null/undefined distinction).
  *
  * Issue #2361: Migrated from hardcoded if/else to WorkflowEngine delegation.
+ *
+ * RFC 36347daf Phase 2 (2026-05-30): adds {@link setResolver} so plugin/CLI
+ * can swap the legacy empty-store resolver for the production triple-store-
+ * backed one without changing the tsyringe-managed constructor signature
+ * (TaskStatusService resolves this class from the DI container). Behavior
+ * is preserved — `resolveDefinition` still routes through
+ * `getHardcodedFallback` (sync). The injection prepares for a future
+ * migration of `getPreviousStatus` to the async `resolveForClass` path.
  */
 @injectable()
 export class EffortStatusWorkflow {
-  private readonly resolver: WorkflowResolver;
+  private resolver: WorkflowResolver;
 
   constructor() {
-    // Use empty triple store for hardcoded fallbacks.
-    // When vault-based workflows are available, resolver will be injected.
+    // Backward-compatible: legacy empty-store wiring. tsyringe-friendly
+    // (parameterless constructor, no auto-resolved dependencies).
     this.resolver = new WorkflowResolver(new InMemoryTripleStore());
+  }
+
+  /**
+   * RFC 36347daf Phase 2 — swap the resolver post-construction. Used by
+   * plugin/CLI consumers that have a production triple-store-backed
+   * resolver to wire. No-op for callers that don't (tests, headless
+   * harnesses) — the empty-store fallback installed in the constructor
+   * keeps working.
+   */
+  setResolver(resolver: WorkflowResolver): void {
+    this.resolver = resolver;
   }
 
   /**
