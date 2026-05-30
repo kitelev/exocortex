@@ -149,30 +149,6 @@ export function canVoteOnEffort(context: CommandVisibilityContext): boolean {
 }
 
 /**
- * Can execute "Rollback Status" command
- * Available for: Efforts with non-null, non-Trashed status (workflow-based rollback)
- */
-export function canRollbackStatus(context: CommandVisibilityContext): boolean {
-  if (!isEffort(context.instanceClass)) return false;
-
-  if (isAssetArchived(context.isArchived)) return false;
-
-  if (!context.currentStatus) return false;
-
-  const statusValue = Array.isArray(context.currentStatus)
-    ? context.currentStatus[0]
-    : context.currentStatus;
-
-  if (!statusValue) return false;
-
-  const cleanStatus = WikiLinkHelpers.normalize(statusValue);
-
-  if (cleanStatus === EffortStatus.TRASHED) return false;
-
-  return true;
-}
-
-/**
  * Can execute "Archive Task" command
  * Available for: Any asset that is not already archived
  */

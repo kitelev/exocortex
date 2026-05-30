@@ -27,25 +27,25 @@ import {
   TaskCreationService,
   TaskStatusService,
   PlanningService,
-  IFileSystemAdapter
-} from 'exocortex';
+  IFileSystemAdapter,
+} from "exocortex";
 
 // Implement IFileSystemAdapter for your platform
 class MyFsAdapter implements IFileSystemAdapter {
   // ... implementation
 }
 
-const adapter = new MyFsAdapter('/path/to/vault');
+const adapter = new MyFsAdapter("/path/to/vault");
 const taskService = new TaskCreationService(adapter);
 const statusService = new TaskStatusService(adapter);
 const planningService = new PlanningService(adapter);
 
 // Create a task
 const taskPath = await taskService.createTask(
-  'area-file.md',
-  { exo__Asset_isDefinedBy: 'my-ontology' },
-  'ems__Area',
-  'My Task Label'
+  "area-file.md",
+  { exo__Asset_isDefinedBy: "my-ontology" },
+  "ems__Area",
+  "My Task Label",
 );
 
 // Change status
@@ -81,28 +81,24 @@ const service = new TaskCreationService(adapter);
 
 // Create from area
 await service.createTask(
-  'areas/work.md',
+  "areas/work.md",
   metadata,
-  'ems__Area',
-  'Task label',
-  'small'
+  "ems__Area",
+  "Task label",
+  "small",
 );
 
 // Create from prototype
 await service.createTask(
-  'prototypes/weekly-review.md',
+  "prototypes/weekly-review.md",
   metadata,
-  'ems__TaskPrototype',
-  'Review',
-  null
+  "ems__TaskPrototype",
+  "Review",
+  null,
 );
 
 // Create related task (bidirectional link)
-await service.createRelatedTask(
-  'tasks/123.md',
-  metadata,
-  'Subtask label'
-);
+await service.createRelatedTask("tasks/123.md", metadata, "Subtask label");
 ```
 
 ### ProjectCreationService
@@ -113,10 +109,10 @@ Create projects from areas or initiatives.
 const service = new ProjectCreationService(adapter);
 
 await service.createProject(
-  'areas/product.md',
+  "areas/product.md",
   metadata,
-  'ems__Area',
-  'Q1 Product Launch'
+  "ems__Area",
+  "Q1 Product Launch",
 );
 ```
 
@@ -128,18 +124,15 @@ Manage effort status workflow.
 const service = new TaskStatusService(adapter);
 
 // Status transitions
-await service.setDraftStatus('tasks/123.md');
-await service.moveToBacklog('tasks/123.md');
-await service.moveToAnalysis('projects/456.md');
-await service.moveToToDo('projects/456.md');
-await service.startEffort('tasks/123.md');
-await service.markTaskAsDone('tasks/123.md');
-
-// Rollback status
-await service.rollbackStatus('tasks/123.md');
+await service.setDraftStatus("tasks/123.md");
+await service.moveToBacklog("tasks/123.md");
+await service.moveToAnalysis("projects/456.md");
+await service.moveToToDo("projects/456.md");
+await service.startEffort("tasks/123.md");
+await service.markTaskAsDone("tasks/123.md");
 
 // Archive
-await service.archiveTask('tasks/123.md');
+await service.archiveTask("tasks/123.md");
 ```
 
 ### PlanningService
@@ -150,17 +143,17 @@ Plan tasks for specific dates.
 const service = new PlanningService(adapter);
 
 // Plan for today
-await service.planOnToday('tasks/123.md');
+await service.planOnToday("tasks/123.md");
 
 // Plan for specific date
-await service.planOnDate('tasks/123.md', new Date('2025-10-30'));
+await service.planOnDate("tasks/123.md", new Date("2025-10-30"));
 
 // Plan for evening
-await service.planForEvening('tasks/123.md');
+await service.planForEvening("tasks/123.md");
 
 // Shift planning day
-await service.shiftDayForward('tasks/123.md');
-await service.shiftDayBackward('tasks/123.md');
+await service.shiftDayForward("tasks/123.md");
+await service.shiftDayBackward("tasks/123.md");
 ```
 
 ## Utilities
@@ -170,7 +163,7 @@ await service.shiftDayBackward('tasks/123.md');
 Manipulate YAML frontmatter in markdown files.
 
 ```typescript
-import { FrontmatterService } from 'exocortex';
+import { FrontmatterService } from "exocortex";
 
 const service = new FrontmatterService();
 
@@ -178,14 +171,10 @@ const service = new FrontmatterService();
 const result = service.parse(content);
 
 // Update property
-const updated = service.updateProperty(
-  content,
-  'status',
-  '"[[StatusDone]]"'
-);
+const updated = service.updateProperty(content, "status", '"[[StatusDone]]"');
 
 // Remove property
-const removed = service.removeProperty(content, 'archived');
+const removed = service.removeProperty(content, "archived");
 ```
 
 ### DateFormatter
@@ -193,7 +182,7 @@ const removed = service.removeProperty(content, 'archived');
 Format dates for Exocortex.
 
 ```typescript
-import { DateFormatter } from 'exocortex';
+import { DateFormatter } from "exocortex";
 
 // Local timestamp: 2025-10-26T14:30:00
 const timestamp = DateFormatter.toLocalTimestamp(new Date());
@@ -248,7 +237,7 @@ enum AssetClass {
   EVENT_PROTOTYPE = "exo__EventPrototype",
   EVENT = "exo__Event",
   DAILY_NOTE = "pn__DailyNote",
-  CONCEPT = "ims__Concept"
+  CONCEPT = "ims__Concept",
 }
 ```
 
@@ -262,7 +251,7 @@ enum EffortStatus {
   TODO = "ems__EffortStatusToDo",
   DOING = "ems__EffortStatusDoing",
   DONE = "ems__EffortStatusDone",
-  TRASHED = "ems__EffortStatusTrashed"
+  TRASHED = "ems__EffortStatusTrashed",
 }
 ```
 

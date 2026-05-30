@@ -12,10 +12,11 @@ export class TaskStatusService {
 
   constructor(
     @inject(DI_TOKENS.IVaultAdapter) private vault: IVaultAdapter,
-    private workflow: EffortStatusWorkflow,
+    _workflow: EffortStatusWorkflow,
     private timestampService: StatusTimestampService,
   ) {
     this.frontmatterService = new FrontmatterService();
+    void _workflow;
   }
 
   async syncEffortEndTimestamp(taskFile: IFile, date?: Date): Promise<void> {
@@ -40,86 +41,4 @@ export class TaskStatusService {
     await this.vault.modify(taskFile, updated);
   }
 
-  async rollbackStatus(taskFile: IFile): Promise<void> {
-    const content = await this.vault.read(taskFile);
-    const currentStatus = this.extractCurrentStatus(content);
-    const instanceClass = this.extractInstanceClass(content);
-
-    if (!currentStatus) {
-      throw new Error("No current status to rollback from");
-    }
-
-    const previousStatus = this.workflow.getPreviousStatus(
-      currentStatus,
-      instanceClass,
-    );
-
-    if (previousStatus === undefined) {
-      throw new Error("Cannot rollback from current status");
-    }
-
-    let updated = content;
-
-    if (previousStatus === null) {
-      updated = this.frontmatterService.removeProperty(
-        updated,
-        "ems__Effort_status",
-      );
-    } else {
-      updated = this.frontmatterService.updateProperty(
-        updated,
-        "ems__Effort_status",
-        previousStatus,
-      );
-    }
-
-    const normalizedStatus = this.workflow.normalizeStatus(currentStatus);
-
-    if (normalizedStatus === "ems__EffortStatusDone") {
-      updated = this.frontmatterService.removeProperty(
-        updated,
-        "ems__Effort_endTimestamp",
-      );
-      updated = this.frontmatterService.removeProperty(
-        updated,
-        "ems__Effort_resolutionTimestamp",
-      );
-    } else if (normalizedStatus === "ems__EffortStatusDoing") {
-      updated = this.frontmatterService.removeProperty(
-        updated,
-        "ems__Effort_startTimestamp",
-      );
-    }
-
-    await this.vault.modify(taskFile, updated);
-  }
-
-  private extractCurrentStatus(content: string): string | null {
-    const parsed = this.frontmatterService.parse(content);
-    if (!parsed.exists) return null;
-
-    return this.frontmatterService.getPropertyValue(
-      parsed.content,
-      "ems__Effort_status",
-    );
-  }
-
-  private extractInstanceClass(content: string): string | string[] | null {
-    const parsed = this.frontmatterService.parse(content);
-    if (!parsed.exists) return null;
-
-    const arrayMatch = parsed.content.match(
-      /exo__Instance_class:\s*\n((?:\s*-\s*.*\n?)+)/,
-    );
-
-    if (arrayMatch) {
-      const lines = arrayMatch[1].split("\n").filter((l) => l.trim());
-      return lines.map((line) => line.replace(/^\s*-\s*/, "").trim());
-    }
-
-    return this.frontmatterService.getPropertyValue(
-      parsed.content,
-      "exo__Instance_class",
-    );
-  }
 }

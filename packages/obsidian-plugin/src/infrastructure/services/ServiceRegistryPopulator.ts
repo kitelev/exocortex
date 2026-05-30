@@ -214,13 +214,11 @@ export function populateServiceRegistry(
     // to the legacy `resolveIFile` helper below — see ObsidianTargetResolver.
     const targetResolver = createObsidianTargetResolver(app, vaultAdapter);
 
-    registry.register(
-      "rollbackStatus",
-      wrapService(async (targetIRI: string) => {
-        const iFile = resolveIFile(app, targetIRI, vaultAdapter);
-        await taskStatusService.rollbackStatus(iFile);
-      }),
-    );
+    // `rollbackStatus` service registration removed — universal rollback
+    // button replaced by per-status backward Commands (Re-open, Rollback to
+    // Backlog, etc.) using composite groundings (no WorkflowEngine string
+    // matching). Fix for UUID-canon TBox 2026-05-16 regression where
+    // WorkflowEngine.getPreviousStatus could not match UUID-form status.
 
     // `planOnToday` service registration removed in Issue #3136 — the sole
     // grounding consumer (`22a6ba6b-…`) was migrated to declarative
