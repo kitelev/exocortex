@@ -24,13 +24,23 @@ import { LoggingService } from "./LoggingService";
  * RFC 36347daf Phase 2 — EffortStatus enum ↔ TBox UUID bijection. Used by
  * workflow_transition dispatcher to translate WorkflowTransition.to (an
  * EffortStatus symbolic name) into a UID-canon wikilink target. UIDs match
- * vault assetspaces/ems/<uid>.md files.
+ * vault `assetspaces/ems/<uid>.md` files in `kitelev/exoas-ems` (mounted
+ * only in vault-2025 / vault-exodev — NOT a submodule of `exocortex` repo,
+ * so a static vault-fixture-parity test along the lines of
+ * `grounding-type-vault-fixture-parity.test.ts` is not feasible here).
  *
- * Drift between this map and the vault TBox would break workflow_transition
- * dispatch — covered by unit tests asserting Object.values(EffortStatus) has
- * full bijection with this map's keys.
+ * Drift guards (defense in depth):
+ *   1. `Record<EffortStatus, string>` — compile-time coverage of all 7 enum values.
+ *   2. `StatusUidByEnumIntegrity.test.ts` — runtime UUID-shape + uniqueness check.
+ *   3. Production behaviour: if a UID is renamed in the vault TBox, the wikilink
+ *      `[[<uid>]]` written by `executeWorkflowTransition` will fail the
+ *      validate-wikilinks hook → user gets immediate feedback.
+ *
+ * Adding a new EffortStatus value forces this map to be updated (TS compile
+ * error). Renaming a vault TBox status file requires manually editing this
+ * map to the new UID + bumping the submodule pointer.
  */
-const STATUS_UID_BY_ENUM: Readonly<Record<EffortStatus, string>> = {
+export const STATUS_UID_BY_ENUM: Readonly<Record<EffortStatus, string>> = {
   [EffortStatus.DRAFT]:    "c42245d0-01de-4c35-bfcf-d910445ea28e",
   [EffortStatus.BACKLOG]:  "753a44d5-846c-4b82-9196-4fd9a4d48777",
   [EffortStatus.ANALYSIS]: "cde3525c-57ea-4efc-b477-2e7e7ccd3a1e",
@@ -52,10 +62,16 @@ const STATUS_ENUM_BY_UID: Readonly<Record<string, EffortStatus>> = Object.freeze
  * RFC 36347daf Phase 2 — UID → AssetClass label map for workflow_transition
  * class resolution when target asset's exo__Instance_class is stored in
  * UID-form (post-RFC #3165 UUID-canon). Limited to classes that have default
- * workflows today (Task + Project + Meeting). Extending the workflow ABox
- * to more classes requires adding entries here.
+ * workflows today (Task + Project + Meeting).
+ *
+ * Drift guards (defense in depth):
+ *   1. `StatusUidByEnumIntegrity.test.ts` — UUID-shape + uniqueness check.
+ *   2. Vault `validate-wikilinks` hook blocks writes to renamed class TBox files.
+ *
+ * Adding more workflow target classes requires adding an entry here AND
+ * creating the corresponding vault Workflow ABox per the Phase 2 RFC.
  */
-const CLASS_UID_TO_LABEL: Readonly<Record<string, string>> = Object.freeze({
+export const CLASS_UID_TO_LABEL: Readonly<Record<string, string>> = Object.freeze({
   "1b20a8f0-d745-4e93-91db-4531b3df120e": AssetClass.TASK,
   "7db5eeff-718a-49b0-8d2b-39b084a356e3": AssetClass.PROJECT,
   "1b0a5e34-dd7f-4ead-b43a-6c7c5a5ecaca": AssetClass.MEETING,
@@ -1744,7 +1760,15 @@ export class GroundingExecutor {
     }
 
     // 4. Resolve workflow for this asset.
-    const subjectIRI = new IRI(targetIRI);
+    let subjectIRI: IRI;
+    try {
+      subjectIRI = new IRI(targetIRI);
+    } catch (error) {
+      return {
+        success: false,
+        error: `workflow_transition: invalid targetIRI "${targetIRI}" — ${error instanceof Error ? error.message : String(error)}`,
+      };
+    }
     const workflow = await this.workflowResolver.resolveForAsset(
       subjectIRI,
       assetClass,
@@ -1878,8 +1902,17 @@ export class GroundingExecutor {
   private resolveStatusFromFrontmatter(
     fm: Record<string, unknown>,
   ): string | null {
-    const raw = fm["ems__Effort_status"];
+    let raw = fm["ems__Effort_status"];
     if (raw === undefined || raw === null) return null;
+    // ems__Effort_status is cardinality 1 per schema. Tolerate a 1-element
+    // array (some YAML pretty-printers may emit list-form) but reject
+    // multi-element arrays loudly — a workflow_transition that picked an
+    // arbitrary "first" status from a multi-valued frontmatter would silently
+    // contradict whichever the UI displays.
+    if (Array.isArray(raw)) {
+      if (raw.length !== 1) return null;
+      raw = raw[0];
+    }
     const str = String(raw).trim();
     // Strip wrapping quotes + wikilink brackets.
     const inside = str
