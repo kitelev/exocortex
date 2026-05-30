@@ -9,7 +9,6 @@ import {
   canMarkDone,
   canTrashEffort,
   canVoteOnEffort,
-  canRollbackStatus,
   canArchiveTask,
   canMarkReviewed,
 } from "../../../../../src/domain/commands/visibility/EffortVisibilityRules";
@@ -518,120 +517,6 @@ describe("EffortVisibilityRules", () => {
       expect(
         canVoteOnEffort(makeContext({ instanceClass: "ems__Meeting", isArchived: false })),
       ).toBe(true);
-    });
-  });
-
-  // ─── canRollbackStatus ───
-
-  describe("canRollbackStatus", () => {
-    it("should return false for non-effort", () => {
-      expect(canRollbackStatus(makeContext({ instanceClass: "ems__Area" }))).toBe(false);
-    });
-
-    it("should return false for archived effort", () => {
-      expect(
-        canRollbackStatus(
-          makeContext({
-            instanceClass: "ems__Task",
-            isArchived: true,
-            currentStatus: "ems__EffortStatusDoing",
-          }),
-        ),
-      ).toBe(false);
-    });
-
-    it("should return false when status is null", () => {
-      expect(
-        canRollbackStatus(makeContext({ instanceClass: "ems__Task", currentStatus: null })),
-      ).toBe(false);
-    });
-
-    it("should return false for Trashed status", () => {
-      expect(
-        canRollbackStatus(
-          makeContext({
-            instanceClass: "ems__Task",
-            currentStatus: "ems__EffortStatusTrashed",
-          }),
-        ),
-      ).toBe(false);
-    });
-
-    it("should return true for Doing status", () => {
-      expect(
-        canRollbackStatus(
-          makeContext({
-            instanceClass: "ems__Task",
-            currentStatus: "ems__EffortStatusDoing",
-          }),
-        ),
-      ).toBe(true);
-    });
-
-    it("should return true for Done status", () => {
-      expect(
-        canRollbackStatus(
-          makeContext({
-            instanceClass: "ems__Task",
-            currentStatus: "ems__EffortStatusDone",
-          }),
-        ),
-      ).toBe(true);
-    });
-
-    it("should return true for Draft status", () => {
-      expect(
-        canRollbackStatus(
-          makeContext({
-            instanceClass: "ems__Task",
-            currentStatus: "ems__EffortStatusDraft",
-          }),
-        ),
-      ).toBe(true);
-    });
-
-    it("should handle array status", () => {
-      expect(
-        canRollbackStatus(
-          makeContext({
-            instanceClass: "ems__Task",
-            currentStatus: ["ems__EffortStatusDoing"],
-          }),
-        ),
-      ).toBe(true);
-    });
-
-    it("should return false for array with Trashed status", () => {
-      expect(
-        canRollbackStatus(
-          makeContext({
-            instanceClass: "ems__Task",
-            currentStatus: ["ems__EffortStatusTrashed"],
-          }),
-        ),
-      ).toBe(false);
-    });
-
-    it("should return false for empty array status", () => {
-      expect(
-        canRollbackStatus(
-          makeContext({
-            instanceClass: "ems__Task",
-            currentStatus: [],
-          }),
-        ),
-      ).toBe(false);
-    });
-
-    it("should handle wiki-link format in status", () => {
-      expect(
-        canRollbackStatus(
-          makeContext({
-            instanceClass: "ems__Task",
-            currentStatus: "[[ems__EffortStatusTrashed]]",
-          }),
-        ),
-      ).toBe(false);
     });
   });
 

@@ -132,7 +132,6 @@ describe("ServiceRegistryPopulator", () => {
     // `createAsset` moved into vault-dependent block in Phase 4b (#3166) —
     // shared-factory delegation needs `vaultAdapter.getFrontmatter`.
     const vaultDependentIds = [
-      "rollbackStatus",
       "planForEvening",
       "createAsset",
       "createRelatedTask",
@@ -589,7 +588,6 @@ describe("ServiceRegistryPopulator (with vaultAdapter)", () => {
     // closure — migrated to declarative groundings via $todayStart /
     // $targetFolder + propertyDefaults).
     const vaultDependentIds = [
-      "rollbackStatus",
       "planForEvening",
       "createRelatedTask",
       "createRelatedProject",
@@ -618,24 +616,6 @@ describe("ServiceRegistryPopulator (with vaultAdapter)", () => {
   it("should NOT register planOnToday or createTaskForDailyNote (Issue #3136 — migrated to declarative property_set + create_instance with $todayStart / $targetFolder)", () => {
     expect(registry.has("planOnToday")).toBe(false);
     expect(registry.has("createTaskForDailyNote")).toBe(false);
-  });
-
-  describe("rollbackStatus", () => {
-    it("should resolve file and call vault read/modify", async () => {
-      const service = registry.get("rollbackStatus")!;
-      await service.execute("test-uid-123");
-
-      expect(deps.vaultAdapter!.read).toHaveBeenCalledWith(mockIFile);
-      expect(deps.vaultAdapter!.modify).toHaveBeenCalled();
-    });
-
-    it("should throw when IRI cannot be resolved", async () => {
-      (deps.app.metadataCache.getFileCache as jest.Mock).mockReturnValue({
-        frontmatter: { exo__Asset_uid: "different-uid" },
-      });
-      const service = registry.get("rollbackStatus")!;
-      await expect(service.execute("nonexistent-iri")).rejects.toThrow("No file found for IRI");
-    });
   });
 
   // describe("planOnToday", ...) removed — Issue #3136 migrated the
