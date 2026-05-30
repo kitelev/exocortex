@@ -110,7 +110,12 @@ fi
 echo "📦 Running exocortex grounding + RFC regression tests..."
 # RFC 1ce2a226 Phase 3 (asset-filename): NoteToRDFConverter.asset-filename
 #   acceptance suite (single-file emit, idempotency, rename overwrite).
-EXOCORTEX_JEST_ARGS="--config packages/exocortex/jest.config.js --testPathPatterns=(services/(GroundingExecutor|AssetConversionService|NoteToRDFConverter\.(issue-2959|rfc-31c1a0be-grounding-ref|asset-filename|issue-3242-labelless-class)|ShapeRegistry|ShapeLoader)\.test|application/services/RelationColumnSetResolver(\.property)?\.test|performance/RelationColumnSetResolverPerformance\.test|infrastructure/sparql/executors/BGPExecutor\.issue-2997\.test|integration/dynamic-commands/(grounding-resolve-execute|grounding-phase3b-pipeline|grounding-type-vault-fixture-parity)\.test)\.ts --forceExit"
+# RFC 36347daf Phase 2 (2026-05-30): widened GroundingExecutor pattern
+# `GroundingExecutor(\.[a-zA-Z0-9_-]+)?` to pick up sibling suites
+# (workflow_transition, status_uid_integrity, property_shift, property_append,
+# property_increment) — previously only the bare `GroundingExecutor.test.ts`
+# was gated.
+EXOCORTEX_JEST_ARGS="--config packages/exocortex/jest.config.js --testPathPatterns=(services/(GroundingExecutor(\.[a-zA-Z0-9_-]+)?|AssetConversionService|NoteToRDFConverter\.(issue-2959|rfc-31c1a0be-grounding-ref|asset-filename|issue-3242-labelless-class)|ShapeRegistry|ShapeLoader)\.test|application/services/RelationColumnSetResolver(\.property)?\.test|performance/RelationColumnSetResolverPerformance\.test|infrastructure/sparql/executors/BGPExecutor\.issue-2997\.test|integration/dynamic-commands/(grounding-resolve-execute|grounding-phase3b-pipeline|grounding-type-vault-fixture-parity)\.test)\.ts --forceExit"
 if [ "$CI" = "true" ]; then
     if timeout 60 node ./node_modules/jest/bin/jest.js $EXOCORTEX_JEST_ARGS; then
         echo "✅ Exocortex grounding regression tests passed!"
