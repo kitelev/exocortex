@@ -284,6 +284,32 @@ describe("BatchExecutor - repair-folder command", () => {
       expect(mockFsAdapterInstance.findFileByUID).toHaveBeenCalledWith("abc123-def456");
     });
 
+    it("should strip alias suffix from UUID-aliased wiki-link: [[uuid|$label]]", async () => {
+      mockFsAdapterInstance.getFileMetadata.mockResolvedValue({
+        exo__Asset_isDefinedBy:
+          "[[e4bc670e-2618-41fc-87f8-9e3422f91514|$tbank-areas]]",
+      });
+
+      mockFsAdapterInstance.fileExists.mockResolvedValue(false);
+      mockFsAdapterInstance.findFileByUID.mockResolvedValue(
+        "assetspaces/tbank-areas/e4bc670e-2618-41fc-87f8-9e3422f91514.md",
+      );
+      mockFsAdapterInstance.getMarkdownFiles.mockResolvedValue([]);
+
+      const result = await executor.executeBatch([
+        { command: "repair-folder", filepath: "wrong/task.md" },
+      ]);
+
+      expect(result.success).toBe(true);
+      expect(result.results[0].success).toBe(true);
+      expect(result.results[0].changes?.newPath).toBe(
+        "assetspaces/tbank-areas/task.md",
+      );
+      expect(mockFsAdapterInstance.findFileByUID).toHaveBeenCalledWith(
+        "e4bc670e-2618-41fc-87f8-9e3422f91514",
+      );
+    });
+
     it("should process multiple files in batch", async () => {
       mockFsAdapterInstance.getFileMetadata
         .mockResolvedValueOnce({ exo__Asset_isDefinedBy: "[[def1]]" })
