@@ -139,6 +139,7 @@ export class FolderRepairExecutor extends BaseCommandExecutor {
   /**
    * Extract reference from various formats:
    * - [[Reference]] -> Reference
+   * - [[uid|alias]] -> uid (alias suffix stripped — getFirstLinkpathDest rejects pipe-aliased linkpath)
    * - "[[Reference]]" -> Reference
    * - Reference -> Reference
    */
@@ -152,6 +153,13 @@ export class FolderRepairExecutor extends BaseCommandExecutor {
 
     // Remove wiki-link brackets if present
     cleaned = cleaned.replace(/^\[\[|\]\]$/g, "");
+
+    // Strip alias suffix (everything after first `|`) — getFirstLinkpathDest
+    // returns null for pipe-aliased linkpaths, breaking alias-form refs.
+    const pipeIdx = cleaned.indexOf("|");
+    if (pipeIdx !== -1) {
+      cleaned = cleaned.slice(0, pipeIdx).trim();
+    }
 
     return cleaned || null;
   }

@@ -157,6 +157,45 @@ describe("FolderRepairService", () => {
 
       expect(result).toBe("target");
     });
+
+    it("should strip alias suffix from UUID-aliased wiki-link: [[uuid|$label]]", async () => {
+      const file = createMockFile();
+      const referencedFile = createMockFile({
+        path: "assetspaces/tbank-areas/e4bc670e-2618-41fc-87f8-9e3422f91514.md",
+        parent: { path: "assetspaces/tbank-areas", name: "tbank-areas" },
+      });
+      mockVault.getFirstLinkpathDest.mockReturnValue(referencedFile);
+
+      const result = await service.getExpectedFolder(file, {
+        exo__Asset_isDefinedBy:
+          "[[e4bc670e-2618-41fc-87f8-9e3422f91514|$tbank-areas]]",
+      });
+
+      expect(result).toBe("assetspaces/tbank-areas");
+      expect(mockVault.getFirstLinkpathDest).toHaveBeenCalledWith(
+        "e4bc670e-2618-41fc-87f8-9e3422f91514",
+        file.path,
+      );
+    });
+
+    it("should strip alias suffix from label-aliased wiki-link: [[Target|Alias]]", async () => {
+      const file = createMockFile();
+      const referencedFile = createMockFile({
+        path: "folder/target.md",
+        parent: { path: "folder", name: "folder" },
+      });
+      mockVault.getFirstLinkpathDest.mockReturnValue(referencedFile);
+
+      const result = await service.getExpectedFolder(file, {
+        exo__Asset_isDefinedBy: "[[Target|Display Label]]",
+      });
+
+      expect(result).toBe("folder");
+      expect(mockVault.getFirstLinkpathDest).toHaveBeenCalledWith(
+        "Target",
+        file.path,
+      );
+    });
   });
 
   describe("repairFolder", () => {

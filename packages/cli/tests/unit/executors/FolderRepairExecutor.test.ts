@@ -348,6 +348,32 @@ describe("FolderRepairExecutor", () => {
         );
       });
 
+      it("should strip alias suffix from UUID-aliased wiki-link: [[uuid|$label]]", async () => {
+        mockPathResolverInstance.resolve.mockReturnValue(
+          "/test/vault/tasks/task.md",
+        );
+        mockFsAdapterInstance.getFileMetadata.mockResolvedValue({
+          exo__Asset_isDefinedBy:
+            "[[e4bc670e-2618-41fc-87f8-9e3422f91514|$tbank-areas]]",
+        });
+        mockFsAdapterInstance.fileExists.mockResolvedValue(false);
+        mockFsAdapterInstance.findFileByUID.mockResolvedValue(
+          "assetspaces/tbank-areas/e4bc670e-2618-41fc-87f8-9e3422f91514.md",
+        );
+        mockFsAdapterInstance.directoryExists.mockResolvedValue(true);
+
+        await executor.executeRepairFolder("tasks/task.md");
+
+        expect(processExitSpy).toHaveBeenCalledWith(ExitCodes.SUCCESS);
+        expect(mockFsAdapterInstance.findFileByUID).toHaveBeenCalledWith(
+          "e4bc670e-2618-41fc-87f8-9e3422f91514",
+        );
+        expect(mockFsAdapterInstance.renameFile).toHaveBeenCalledWith(
+          "tasks/task.md",
+          "assetspaces/tbank-areas/task.md",
+        );
+      });
+
       it("should find referenced file by filename search", async () => {
         mockPathResolverInstance.resolve.mockReturnValue(
           "/test/vault/tasks/task.md",
