@@ -283,4 +283,41 @@ describe("FolderRepairService", () => {
       expect(mockVault.rename).toHaveBeenCalledWith(file, "/asset.md");
     });
   });
+
+  describe("getExpectedFolderSync", () => {
+    it("returns same value as async getExpectedFolder (parity)", async () => {
+      const file = createMockFile();
+      const target: IFile = {
+        path: "correct-folder/Asset.md",
+        basename: "Asset",
+        name: "Asset.md",
+        parent: { path: "correct-folder", name: "correct-folder" },
+      };
+      mockVault.getFirstLinkpathDest.mockReturnValue(target);
+
+      const metadata = { exo__Asset_isDefinedBy: "[[Asset]]" };
+      const syncResult = service.getExpectedFolderSync(file, metadata);
+      const asyncResult = await service.getExpectedFolder(file, metadata);
+
+      expect(syncResult).toBe("correct-folder");
+      expect(asyncResult).toBe(syncResult);
+    });
+
+    it("returns null synchronously when isDefinedBy missing", () => {
+      const file = createMockFile();
+      expect(service.getExpectedFolderSync(file, {})).toBeNull();
+      expect(mockVault.getFirstLinkpathDest).not.toHaveBeenCalled();
+    });
+
+    it("returns null synchronously when referenced file not found", () => {
+      const file = createMockFile();
+      mockVault.getFirstLinkpathDest.mockReturnValue(null);
+
+      const result = service.getExpectedFolderSync(file, {
+        exo__Asset_isDefinedBy: "[[Missing]]",
+      });
+
+      expect(result).toBeNull();
+    });
+  });
 });
