@@ -391,10 +391,49 @@ export class WorkflowResolver {
         return val === "true" || val === "1";
       });
 
-      transitions.push({ from, to, label, icon, isRollback });
+      // RFC 36347daf Phase 2 — postActions: ordered Grounding UIDs that the
+      // GroundingExecutor.executeWorkflowTransition dispatcher executes
+      // sequentially after status mutation. Each triple object is parsed for
+      // a UUID (file IRI → basename UUID, or wikilink-literal `"[[<uid>]]"`).
+      // YAML frontmatter array order is preserved by the triple store.
+      const postActionTriples = await this.tripleStore.match(
+        transSubject,
+        Namespace.EMS.term("WorkflowTransition_postActions"),
+        undefined,
+      );
+      const postActions = postActionTriples
+        .map((t) => this.extractUid(t.object))
+        .filter((u): u is string => u !== null);
+
+      transitions.push({
+        from,
+        to,
+        label,
+        icon,
+        isRollback,
+        postActions: postActions.length > 0 ? postActions : undefined,
+      });
     }
 
     return transitions;
+  }
+
+  /**
+   * RFC 36347daf Phase 2 — extract a UUID from a triple object. The triple
+   * store may yield either an IRI (file IRI `obsidian://vault/.../<uid>.md`
+   * or symbolic class IRI) or a Literal (wikilink-form `"[[<uid>]]"` or
+   * `"[[<uid>|<alias>]]"`). Returns the bare UUID (lowercased) or null if
+   * no UUID could be extracted — never throws.
+   */
+  private extractUid(obj: RDFObject): string | null {
+    const uuidRegex =
+      /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
+    const raw = obj instanceof IRI ? obj.value
+      : obj instanceof Literal ? obj.value
+      : null;
+    if (raw === null) return null;
+    const match = raw.match(uuidRegex);
+    return match ? match[1].toLowerCase() : null;
   }
 
   // ─── Helpers ────────────────────────────────────────────────

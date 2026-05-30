@@ -218,6 +218,15 @@ export interface GroundingDefinition {
    * Two distinct concepts, two distinct interfaces, same English word.
    */
   readonly labelTemplate?: string;
+  /**
+   * RFC 36347daf Phase 2: direction facet for `workflow_transition`
+   * groundings. `"forward"` (default when omitted) selects transitions with
+   * `isRollback=false`; `"rollback"` selects `isRollback=true`. Ignored by
+   * other grounding types.
+   *
+   * Authored as the `exocmd__Grounding_direction` RDF triple (xsd:string).
+   */
+  readonly direction?: "forward" | "rollback";
 }
 
 /**

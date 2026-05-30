@@ -11,10 +11,77 @@ import type {
   PropertyDefaultResolved,
 } from "../domain/models/CommandDefinition";
 import { GroundingType } from "../domain/constants/GroundingType";
+import { AssetClass } from "../domain/constants/AssetClass";
+import { EffortStatus } from "../domain/constants/EffortStatus";
+import { IRI } from "../domain/models/rdf/IRI";
+import type { WorkflowDefinition } from "../domain/models/WorkflowDefinition";
 import { FrontmatterService } from "../utilities/FrontmatterService";
 import { DateFormatter } from "../utilities/DateFormatter";
 import { DateTimeParsing } from "../infrastructure/sparql/filters/functions/DateTimeParsing";
 import { LoggingService } from "./LoggingService";
+
+/**
+ * RFC 36347daf Phase 2 — EffortStatus enum ↔ TBox UUID bijection. Used by
+ * workflow_transition dispatcher to translate WorkflowTransition.to (an
+ * EffortStatus symbolic name) into a UID-canon wikilink target. UIDs match
+ * vault `assetspaces/ems/<uid>.md` files in `kitelev/exoas-ems` (mounted
+ * only in vault-2025 / vault-exodev — NOT a submodule of `exocortex` repo,
+ * so a static vault-fixture-parity test along the lines of
+ * `grounding-type-vault-fixture-parity.test.ts` is not feasible here).
+ *
+ * Drift guards (defense in depth):
+ *   1. `Record<EffortStatus, string>` — compile-time coverage of all 7 enum values.
+ *   2. `GroundingExecutor.status_uid_integrity.test.ts` — runtime UUID-shape
+ *      + uniqueness + pinned-UID assertions; catches accidental TS-side
+ *      renames before they reach a release.
+ *   3. Surface signal at runtime: if a status TBox file is renamed in the vault
+ *      without a TS update, the wikilink `[[<old-uid>]]` written by
+ *      `executeWorkflowTransition` becomes a broken wikilink — Obsidian renders
+ *      it in red and SPARQL queries for the status fail to resolve. NOT caught
+ *      by `~/.claude/hooks/validate-wikilinks.sh` (that hook fires only on
+ *      Claude Code Write/Edit tool calls, not on plugin runtime writes via
+ *      the Obsidian Vault API).
+ *
+ * Adding a new EffortStatus value forces this map to be updated (TS compile
+ * error). Renaming a vault TBox status file requires manually editing this
+ * map to the new UID + bumping the submodule pointer.
+ */
+export const STATUS_UID_BY_ENUM: Readonly<Record<EffortStatus, string>> = {
+  [EffortStatus.DRAFT]:    "c42245d0-01de-4c35-bfcf-d910445ea28e",
+  [EffortStatus.BACKLOG]:  "753a44d5-846c-4b82-9196-4fd9a4d48777",
+  [EffortStatus.ANALYSIS]: "cde3525c-57ea-4efc-b477-2e7e7ccd3a1e",
+  [EffortStatus.TODO]:     "6a0e933a-6653-46f4-95ae-ed7508177c73",
+  [EffortStatus.DOING]:    "027e78f4-6e16-4b36-b8fb-5510507d5745",
+  [EffortStatus.DONE]:     "7b9b3116-7c3c-438c-9618-94fe301320a6",
+  [EffortStatus.TRASHED]:  "5d14f18d-db2b-4847-9ac1-144cb93b2541",
+};
+
+const STATUS_ENUM_BY_UID: Readonly<Record<string, EffortStatus>> = Object.freeze(
+  Object.fromEntries(
+    (Object.entries(STATUS_UID_BY_ENUM) as [EffortStatus, string][]).map(
+      ([k, v]) => [v, k],
+    ),
+  ) as Record<string, EffortStatus>,
+);
+
+/**
+ * RFC 36347daf Phase 2 — UID → AssetClass label map for workflow_transition
+ * class resolution when target asset's exo__Instance_class is stored in
+ * UID-form (post-RFC #3165 UUID-canon). Limited to classes that have default
+ * workflows today (Task + Project + Meeting).
+ *
+ * Drift guards (defense in depth):
+ *   1. `StatusUidByEnumIntegrity.test.ts` — UUID-shape + uniqueness check.
+ *   2. Vault `validate-wikilinks` hook blocks writes to renamed class TBox files.
+ *
+ * Adding more workflow target classes requires adding an entry here AND
+ * creating the corresponding vault Workflow ABox per the Phase 2 RFC.
+ */
+export const CLASS_UID_TO_LABEL: Readonly<Record<string, string>> = Object.freeze({
+  "1b20a8f0-d745-4e93-91db-4531b3df120e": AssetClass.TASK,
+  "7db5eeff-718a-49b0-8d2b-39b084a356e3": AssetClass.PROJECT,
+  "1b0a5e34-dd7f-4ead-b43a-6c7c5a5ecaca": AssetClass.MEETING,
+});
 import {
   installDefaultResolvers,
   getResolver,
@@ -186,6 +253,31 @@ const MAX_COMPOSITE_DEPTH = 20;
  *
  * Issue #2430, #2999
  */
+/**
+ * RFC 36347daf Phase 2 — pluggable workflow resolver. Allows
+ * `executeWorkflowTransition` to look up the active Workflow for the target
+ * asset's class at execution time. Optional — when absent (tests, CLI
+ * without store hydration), the workflow_transition dispatch fails loud
+ * with a clear error message.
+ */
+export type WorkflowResolverPort = {
+  resolveForAsset(
+    subjectIRI: IRI,
+    assetClass: AssetClass,
+  ): Promise<WorkflowDefinition>;
+};
+
+/**
+ * RFC 36347daf Phase 2 — load a Grounding by UID. Used by
+ * `executeWorkflowTransition` to resolve `WorkflowTransition_postActions`
+ * references at execution time without coupling GroundingExecutor to
+ * CommandResolver directly. Plugin/CLI passes
+ * `(uid) => commandResolver.loadGroundingByUid(uid)`.
+ */
+export type GroundingLoaderPort = (
+  uid: string,
+) => Promise<GroundingDefinition | null>;
+
 @injectable()
 export class GroundingExecutor {
   private readonly frontmatterService: FrontmatterService;
@@ -193,6 +285,8 @@ export class GroundingExecutor {
   private readonly fileWriter: IFileSystemWriter;
   private readonly serviceRegistry: ServiceRegistry;
   private readonly classLabelToUid?: ClassLabelToUidResolver;
+  private readonly workflowResolver?: WorkflowResolverPort;
+  private readonly groundingLoader?: GroundingLoaderPort;
   private readonly clock: IClock;
   private readonly uidGen: IUidGenerator;
 
@@ -205,13 +299,22 @@ export class GroundingExecutor {
     // arrived non-canonical. The Obsidian plugin injects a metadata-cache-
     // backed implementation so production create_instance always emits UID-form.
     classLabelToUid?: ClassLabelToUidResolver,
-    options?: { clock?: IClock; uidGenerator?: IUidGenerator },
+    options?: {
+      clock?: IClock;
+      uidGenerator?: IUidGenerator;
+      // RFC 36347daf Phase 2 — workflow_transition deps. When absent, the
+      // dispatch returns a clear error rather than silently no-op'ing.
+      workflowResolver?: WorkflowResolverPort;
+      groundingLoader?: GroundingLoaderPort;
+    },
   ) {
     this.frontmatterService = new FrontmatterService();
     this.fileReader = fileReader;
     this.fileWriter = fileWriter;
     this.serviceRegistry = serviceRegistry;
     this.classLabelToUid = classLabelToUid;
+    this.workflowResolver = options?.workflowResolver;
+    this.groundingLoader = options?.groundingLoader;
     this.clock = options?.clock ?? liveClock();
     this.uidGen = options?.uidGenerator ?? liveUidGenerator();
   }
@@ -298,6 +401,14 @@ export class GroundingExecutor {
             error:
               "sparql_update grounding not yet implemented. Use property_set/property_delete instead.",
           };
+
+        case GroundingType.WORKFLOW_TRANSITION:
+          return await this.executeWorkflowTransition(
+            grounding,
+            targetIRI,
+            targetFilePath,
+            userInput,
+          );
 
         default:
           return {
@@ -1602,6 +1713,245 @@ export class GroundingExecutor {
     );
     await this.fileWriter.updateFile(filePath, updated);
     return { success: true };
+  }
+
+  /**
+   * RFC 36347daf Phase 2 — workflow_transition dispatcher.
+   *
+   * Reads target asset frontmatter → resolves asset class + current status →
+   * resolves Workflow via injected WorkflowResolver → finds matching
+   * WorkflowTransition (from=current, isRollback=direction match) → applies
+   * status mutation (frontmatter write) → executes postActions sequentially
+   * via injected GroundingLoader.
+   *
+   * Fails loud when dependencies are absent (test/CLI without store wiring)
+   * rather than silently no-op'ing — clearer signal for missing DI plumbing.
+   */
+  private async executeWorkflowTransition(
+    grounding: GroundingDefinition,
+    targetIRI: string,
+    filePath: string,
+    userInput?: UserInput,
+  ): Promise<ExecutionResult> {
+    if (!this.workflowResolver) {
+      return {
+        success: false,
+        error:
+          "workflow_transition requires WorkflowResolver injection (options.workflowResolver). Wire the plugin/CLI before using this grounding type.",
+      };
+    }
+
+    // 1. Read target frontmatter.
+    const content = await this.fileReader.readFile(filePath);
+    const fm = this.frontmatterService.parseObject(content) ?? {};
+
+    // 2. Resolve asset class (first ems__* match in exo__Instance_class).
+    const assetClass = this.resolveAssetClassFromFrontmatter(fm);
+    if (!assetClass) {
+      return {
+        success: false,
+        error:
+          "workflow_transition: target asset has no recognised ems__* class in exo__Instance_class (cannot resolve workflow).",
+      };
+    }
+
+    // 3. Resolve current status from ems__Effort_status.
+    const currentStatus = this.resolveStatusFromFrontmatter(fm);
+    if (!currentStatus) {
+      return {
+        success: false,
+        error:
+          "workflow_transition: target asset has no parseable ems__Effort_status value (need wikilink to an ems__EffortStatus* asset).",
+      };
+    }
+
+    // 4. Resolve workflow for this asset.
+    let subjectIRI: IRI;
+    try {
+      subjectIRI = new IRI(targetIRI);
+    } catch (error) {
+      return {
+        success: false,
+        error: `workflow_transition: invalid targetIRI "${targetIRI}" — ${error instanceof Error ? error.message : String(error)}`,
+      };
+    }
+    const workflow = await this.workflowResolver.resolveForAsset(
+      subjectIRI,
+      assetClass,
+    );
+
+    // 5. Find matching transition.
+    const direction: "forward" | "rollback" = grounding.direction ?? "forward";
+    const isRollback = direction === "rollback";
+    const transition = workflow.transitions.find(
+      (t) => t.from === currentStatus && t.isRollback === isRollback,
+    );
+    if (!transition) {
+      return {
+        success: false,
+        error: `workflow_transition: no ${direction} transition from "${currentStatus}" defined in workflow "${workflow.name}" (target class: ${assetClass}).`,
+      };
+    }
+
+    // 6. Apply status mutation via existing property_set semantics. Synthesize
+    //    a minimal pseudo-grounding so we reuse executePropertySet's wikilink
+    //    wrapping + write pipeline. targetValueRef is the destination status
+    //    UID (UUID-canon form for vault TBox).
+    const toStatusUid = STATUS_UID_BY_ENUM[transition.to as EffortStatus];
+    if (!toStatusUid) {
+      return {
+        success: false,
+        error: `workflow_transition: no UID mapping for destination status "${transition.to}" (transition target unreachable).`,
+      };
+    }
+    const statusMutation: GroundingDefinition = {
+      id: `${grounding.id}.statusMutation`,
+      label: `workflow_transition: ${transition.from} → ${transition.to}`,
+      type: GroundingType.PROPERTY_SET,
+      targetProperty: "ems__Effort_status",
+      targetValueRef: toStatusUid,
+    };
+    const mutationResult = await this.executePropertySet(
+      statusMutation,
+      targetIRI,
+      filePath,
+      userInput,
+    );
+    if (!mutationResult.success) {
+      return {
+        success: false,
+        error: `workflow_transition: status mutation failed — ${mutationResult.error}`,
+      };
+    }
+
+    // 7. Execute postActions sequentially. Each action UID is loaded via the
+    //    injected GroundingLoader (plugin/CLI wires `commandResolver.loadGroundingByUid`).
+    //    Failure mode is INTENTIONALLY WEAKER than executeComposite: this
+    //    dispatcher does NOT snapshot the original file content before the
+    //    status mutation in step 6, so a postAction failure leaves the asset
+    //    in a partially-mutated state (status advanced, but a postAction's
+    //    side-effect missing — e.g., Doing→Done with status=Done but no
+    //    endTimestamp). Phase 2 accepts this trade-off because (a) postActions
+    //    are forgiving timestamp set/delete primitives (idempotent re-run
+    //    recovers state), and (b) snapshotting+rollback would require
+    //    cross-file coordination since postActions may write to multiple
+    //    properties. If stricter atomicity is needed for future grounding
+    //    types layered on workflow_transition, add a snapshot/rollback
+    //    wrapper analogous to executeComposite's lines 432-469.
+    const postActions = transition.postActions ?? [];
+    const loader = this.groundingLoader;
+    if (postActions.length > 0 && loader === undefined) {
+      return {
+        success: false,
+        error:
+          "workflow_transition: transition has postActions but no GroundingLoader injected (options.groundingLoader). Wire commandResolver.loadGroundingByUid in plugin/CLI.",
+      };
+    }
+    for (const actionUid of postActions) {
+      if (loader === undefined) break; // unreachable — guarded above
+      const action = await loader(actionUid);
+      if (!action) {
+        return {
+          success: false,
+          error: `workflow_transition: postAction grounding UID "${actionUid}" could not be loaded (asset missing or invalid Grounding shape).`,
+        };
+      }
+      const actionResult = await this.execute(action, targetIRI, filePath, userInput);
+      if (!actionResult.success) {
+        return {
+          success: false,
+          error: `workflow_transition: postAction "${action.label}" (UID ${actionUid}) failed — ${actionResult.error}`,
+        };
+      }
+    }
+
+    return { success: true };
+  }
+
+  /**
+   * RFC 36347daf Phase 2 — extract the first recognised `ems__*` class from
+   * frontmatter `exo__Instance_class`. Handles both string and array shapes,
+   * and wikilink-form values (`"[[<UID>|ems__Task]]"`,
+   * `"[[<UID>]]"`, `"[[ems__Task]]"`). Returns null when nothing matches.
+   *
+   * UID-form refs are resolved via the existing classLabelToUid injection
+   * when available; otherwise we fall back to the inline mapping for the
+   * Task/Project pair (the only classes that have default workflows today).
+   */
+  private resolveAssetClassFromFrontmatter(
+    fm: Record<string, unknown>,
+  ): AssetClass | null {
+    const raw = fm["exo__Instance_class"];
+    if (raw === undefined || raw === null) return null;
+    const values = Array.isArray(raw) ? raw : [raw];
+    const knownClasses = new Set<string>(Object.values(AssetClass));
+    for (const v of values) {
+      if (typeof v !== "string") continue;
+      // Strip wikilink wrapping `"[[...|label]]"` or `"[[label]]"`.
+      const inside = v.replace(/^\s*"?\[\[/, "").replace(/\]\]"?\s*$/, "");
+      const aliasPart = inside.includes("|") ? inside.split("|")[1] : inside;
+      const bare = aliasPart.trim();
+      if (knownClasses.has(bare)) {
+        return bare as AssetClass;
+      }
+      // UID-form: map UID → AssetClass label.
+      const uuidMatch = inside.match(
+        /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i,
+      );
+      if (uuidMatch) {
+        const uidToLabel = CLASS_UID_TO_LABEL[uuidMatch[1].toLowerCase()];
+        if (uidToLabel && knownClasses.has(uidToLabel)) {
+          return uidToLabel as AssetClass;
+        }
+      }
+    }
+    return null;
+  }
+
+  /**
+   * RFC 36347daf Phase 2 — extract current EffortStatus from frontmatter
+   * `ems__Effort_status`. Accepts wikilink-form (`"[[<UID>]]"` or
+   * `"[[<UID>|ems__EffortStatusDoing]]"` or `"[[ems__EffortStatusDoing]]"`)
+   * and resolves to the symbolic EffortStatus enum value (which is what
+   * WorkflowTransition.from comparison expects).
+   */
+  private resolveStatusFromFrontmatter(
+    fm: Record<string, unknown>,
+  ): string | null {
+    let raw = fm["ems__Effort_status"];
+    if (raw === undefined || raw === null) return null;
+    // ems__Effort_status is cardinality 1 per schema. Tolerate a 1-element
+    // array (some YAML pretty-printers may emit list-form) but reject
+    // multi-element arrays loudly — a workflow_transition that picked an
+    // arbitrary "first" status from a multi-valued frontmatter would silently
+    // contradict whichever the UI displays.
+    if (Array.isArray(raw)) {
+      if (raw.length !== 1) return null;
+      raw = raw[0];
+    }
+    const str = String(raw).trim();
+    // Strip wrapping quotes + wikilink brackets.
+    const inside = str
+      .replace(/^["']/, "")
+      .replace(/["']$/, "")
+      .replace(/^\[\[/, "")
+      .replace(/\]\]$/, "");
+    // Symbolic form direct: `ems__EffortStatusDoing`
+    if (/^ems__EffortStatus[A-Za-z]+$/.test(inside)) return inside;
+    // Alias form `<uid>|ems__EffortStatusDoing`
+    if (inside.includes("|")) {
+      const alias = inside.split("|")[1].trim();
+      if (/^ems__EffortStatus[A-Za-z]+$/.test(alias)) return alias;
+    }
+    // UID-form: map UID → symbolic.
+    const uuidMatch = inside.match(
+      /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i,
+    );
+    if (uuidMatch) {
+      const symbolic = STATUS_ENUM_BY_UID[uuidMatch[1].toLowerCase()];
+      if (symbolic) return symbolic;
+    }
+    return null;
   }
 
   /**

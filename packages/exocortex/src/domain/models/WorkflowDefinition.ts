@@ -56,4 +56,13 @@ export interface WorkflowTransitionDefinition {
   readonly icon?: string;
   /** Whether this is a rollback (undo) transition */
   readonly isRollback: boolean;
+  /**
+   * RFC 36347daf Phase 2 — ordered list of `exocmd__Grounding` UIDs executed
+   * sequentially after a successful status mutation. Frontmatter array order
+   * is preserved (subject to triple-store iteration ordering — see RFC R3).
+   * Examples: `[bd5e5573]` Set startTimestamp on Backlog→Doing, or
+   * `[b2ba56b9, ee5c36a3]` Set end + resolution timestamps on Doing→Done.
+   * Empty / absent → pure status mutation, no side-effects.
+   */
+  readonly postActions?: readonly string[];
 }

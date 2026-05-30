@@ -17,6 +17,7 @@ import {
   type IGroundingService,
   type UserInput,
   type IFile,
+  WorkflowResolver,
 } from "exocortex";
 
 /**
@@ -63,6 +64,13 @@ export interface ServiceRegistryDeps {
   fileSystemAdapter: ObsidianFileSystemAdapter;
   sparqlApi: SPARQLApi;
   vaultAdapter?: ObsidianVaultAdapter;
+  /**
+   * RFC 36347daf Phase 2 — production triple-store-backed WorkflowResolver
+   * passed through to EffortStatusWorkflow. Optional; when absent the
+   * facade falls back to its legacy empty-store constructor (sync
+   * hardcoded-fallback path; current behavior preserved).
+   */
+  workflowResolver?: WorkflowResolver;
 }
 
 function wrapService(
@@ -75,7 +83,8 @@ export function populateServiceRegistry(
   registry: ServiceRegistry,
   deps: ServiceRegistryDeps,
 ): void {
-  const { app, fileSystemAdapter, sparqlApi, vaultAdapter } = deps;
+  const { app, fileSystemAdapter, sparqlApi, vaultAdapter, workflowResolver } =
+    deps;
   const frontmatterService = new FrontmatterService();
   // Shared metadataCache-backed resolver for UID-canon class refs.
   // Used wherever parent-class branching reads `exo__Instance_class`
@@ -184,6 +193,12 @@ export function populateServiceRegistry(
 
   if (vaultAdapter) {
     const effortStatusWorkflow = new EffortStatusWorkflow();
+    // RFC 36347daf Phase 2 — wire production WorkflowResolver when caller
+    // (ExocortexPlugin) provided one. Legacy callers (CLI without store
+    // hydration) keep the empty-store fallback by not passing a resolver.
+    if (workflowResolver) {
+      effortStatusWorkflow.setResolver(workflowResolver);
+    }
     const statusTimestampService = new StatusTimestampService(vaultAdapter);
     const taskStatusService = new TaskStatusService(
       vaultAdapter,
