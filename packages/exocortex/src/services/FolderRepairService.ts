@@ -19,19 +19,30 @@ export class FolderRepairService {
     file: IFile,
     metadata: Record<string, unknown>,
   ): Promise<string | null> {
+    return this.getExpectedFolderSync(file, metadata);
+  }
+
+  /**
+   * Sync sibling of getExpectedFolder for use in Obsidian's synchronous
+   * checkCallback (command palette / context menu visibility). Underlying
+   * vault APIs (getFirstLinkpathDest, getAbstractFileByPath) are already
+   * synchronous, so this returns the same value without a Promise wrapper.
+   */
+  getExpectedFolderSync(
+    file: IFile,
+    metadata: Record<string, unknown>,
+  ): string | null {
     const isDefinedBy = metadata?.exo__Asset_isDefinedBy;
 
     if (!isDefinedBy) {
       return null;
     }
 
-    // Extract the reference (handle both [[Reference]] and "[[Reference]]" formats)
     const reference = this.extractReference(isDefinedBy);
     if (!reference) {
       return null;
     }
 
-    // Find the referenced file
     const referencedFile = this.vault.getFirstLinkpathDest(
       reference,
       file.path,
@@ -41,7 +52,6 @@ export class FolderRepairService {
       return null;
     }
 
-    // Get the folder of the referenced file
     return this.getFileFolder(referencedFile);
   }
 

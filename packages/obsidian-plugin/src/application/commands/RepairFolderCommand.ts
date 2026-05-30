@@ -1,6 +1,11 @@
 import type { App, TFile } from "obsidian";
 import { ICommand } from "./ICommand";
-import { FolderRepairService, LoggingService, type INotificationService } from "exocortex";
+import {
+  FolderRepairService,
+  LoggingService,
+  needsFolderRepair,
+  type INotificationService,
+} from "exocortex";
 
 export class RepairFolderCommand implements ICommand {
   id = "repair-folder";
@@ -17,6 +22,13 @@ export class RepairFolderCommand implements ICommand {
     const metadata = cache?.frontmatter || {};
 
     if (!metadata?.exo__Asset_isDefinedBy) return false;
+
+    const expectedFolder = this.folderRepairService.getExpectedFolderSync(
+      file,
+      metadata,
+    );
+    const currentFolder = file.parent?.path || "";
+    if (!needsFolderRepair(currentFolder, expectedFolder)) return false;
 
     if (!checking) {
       void (async () => {
@@ -41,7 +53,7 @@ export class RepairFolderCommand implements ICommand {
     }
 
     const currentFolder = file.parent?.path || "";
-    if (currentFolder === expectedFolder) {
+    if (!needsFolderRepair(currentFolder, expectedFolder)) {
       this.notifier.info("Asset is already in correct folder");
       return;
     }

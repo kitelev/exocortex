@@ -23,6 +23,7 @@ import {
   CommandResolver,
   PreconditionEvaluator,
   registerDefaultHostFunctions,
+  FolderRepairService,
   GroundingExecutor,
   ServiceRegistry,
   RelationColumnSetResolver,
@@ -47,6 +48,7 @@ import {
 } from "./infrastructure/repositories";
 import { ObsidianVaultAdapter } from "./adapters/ObsidianVaultAdapter";
 import { ObsidianQueryBodyResolver } from "./infrastructure/ObsidianQueryBodyResolver";
+import { createIsInWrongFolderHostFunction } from "./infrastructure/precondition/createIsInWrongFolderHostFunction";
 import { TaskTrackingService } from "./application/services/TaskTrackingService";
 import { AliasSyncService } from "./application/services/AliasSyncService";
 import { WikilinkAliasService } from "./application/services/WikilinkAliasService";
@@ -244,6 +246,19 @@ export default class ExocortexPlugin extends Plugin {
         queryBodyResolver,
       );
       registerDefaultHostFunctions(this.preconditionEvaluator);
+
+      // Register `isInWrongFolder` host function used by the homoiconic
+      // `Repair Folder` exocmd command (vault asset
+      // `2afd04ae-218d-4ee9-8ee1-7c61f4d40a91`). Without this registration
+      // `evaluateHostFunction` fails open (`return true`) and the inline
+      // button + Cmd+P entry would show on every asset.
+      this.preconditionEvaluator.registerHostFunction(
+        "isInWrongFolder",
+        createIsInWrongFolderHostFunction(
+          this.app,
+          new FolderRepairService(this.vaultAdapter),
+        ),
+      );
 
       // RFC c7da0bca Phase 3a — construct lazy loader. Parallel-mode: runs
       // alongside the existing fast/full-path chain. The dedicated
