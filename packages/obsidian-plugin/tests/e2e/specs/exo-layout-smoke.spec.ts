@@ -1,3 +1,10 @@
+// flaky-track: Issue #3308 — observed 2026-05-31 on PR #3307 (B.1 GitHubRestClient).
+// Symptom: `e2e-shard(4)` ExoLayout BacklinksTableBlock smoke — Obsidian Electron
+// process termination timeout. Sibling shard(2) flake (daily-archive-filter @flaky-track)
+// observed same calendar day on PR #3305 — shared root-cause hypothesis: Playwright
+// Electron driver process management in headless macOS CI runner. Both retried green.
+// Per RFC 32a64ed9 §3.3 escalation: tag surfaces frequency in telemetry; promote to
+// `@flaky-fix` on incident #2 with root-cause PR, close on N≥100 zero-further runs.
 import { test, expect } from "@playwright/test";
 import { ObsidianLauncher } from "../utils/obsidian-launcher";
 
@@ -15,7 +22,17 @@ import { ObsidianLauncher } from "../utils/obsidian-launcher";
  * alongside the RelationColumnSet smoke because both drive the same
  * UniversalLayout pipeline with minimal interaction (no modals, no input).
  */
-test.describe("ExoLayout — Phase 3 smoke", () => {
+test.describe(
+  "ExoLayout — Phase 3 smoke",
+  {
+    tag: ["@flaky-track"],
+    annotation: {
+      type: "flaky-track",
+      description:
+        "Issue #3308 — Electron termination timeout observed PR #3307 2026-05-31; RFC 32a64ed9 §3.3 track bucket; watch criteria: incident #2 → fix, N≥100 zero-further → close",
+    },
+  },
+  () => {
   let launcher: ObsidianLauncher;
 
   test.beforeAll(async () => {
