@@ -10,8 +10,14 @@ export interface TarExtractorOptions {
   /**
    * Required path prefix all extracted entries must live under (after
    * normalisation). Pattern: trailing `/`, e.g. `"staging/"`.
-   * Empty string disables the prefix gate — only safe for tarballs whose
+   *
+   * **Empty string disables the prefix gate** — only safe for tarballs whose
    * origin is fully trusted; NOT recommended for arbitrary remote tarballs.
+   *
+   * ⚠️ Inputs that normalise to empty ALSO disable the gate. `"/"` becomes
+   * `""` after `normalizePath` strips the leading slash; same for `"./"`.
+   * If you mean "everything under vault root", pass an explicit literal
+   * directory name like `"exocortex-staging/"`, not `"/"`.
    */
   stagingDirPrefix: string;
 }
