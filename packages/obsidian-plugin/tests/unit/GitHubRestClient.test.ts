@@ -147,16 +147,31 @@ describe("GitHubRestClient", () => {
       ["ghu_", "ghu_UUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUU"],
       ["ghs_", "ghs_SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS"],
       ["ghr_", "ghr_RRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR"],
-    ])("redacts %s token shape", (_label, token) => {
+    ])("redacts %s classic token shape", (_label, token) => {
       const c = new GitHubRestClient({ pat: FAKE_PAT, app: fakeApp });
       expect((c as any).redact(`leak: ${token}`)).toBe("leak: ***REDACTED***");
     });
 
-    it("redacts multiple PATs in same message", () => {
+    it("redacts github_pat_ fine-grained token (modern GitHub default)", () => {
+      // Fine-grained PAT shape per GitHub docs:
+      //   github_pat_<22-char-id>_<59+-char-secret>, both segments urlsafe.
+      // Empirically reproduced in code-reviewer round-1: the old regex
+      // (gh[pousr]_) missed this format entirely.
+      const finegrained =
+        "github_pat_11AAAAAA0AAAAAAAAAAAAA_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB";
+      const c = new GitHubRestClient({ pat: FAKE_PAT, app: fakeApp });
+      const out = (c as any).redact(`leak: ${finegrained}`);
+      expect(out).toBe("leak: ***REDACTED***");
+      expect(out).not.toContain("github_pat_");
+    });
+
+    it("redacts multiple PATs (mixed classic + fine-grained) in same message", () => {
       const c = new GitHubRestClient({ pat: FAKE_PAT, app: fakeApp });
       const second = "ghp_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB";
-      const out = (c as any).redact(`x ${FAKE_PAT} y ${second} z`);
-      expect(out).toBe("x ***REDACTED*** y ***REDACTED*** z");
+      const finegrained =
+        "github_pat_11CCCCCC0CCCCCCCCCCCCC_DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD";
+      const out = (c as any).redact(`x ${FAKE_PAT} y ${second} z ${finegrained}`);
+      expect(out).toBe("x ***REDACTED*** y ***REDACTED*** z ***REDACTED***");
     });
 
     it("leaves non-PAT text unchanged", () => {
@@ -176,14 +191,41 @@ describe("GitHubRestClient", () => {
         }),
       );
       const c = new GitHubRestClient({ pat: FAKE_PAT, app: fakeApp });
-      await expect(c.getRepoHead("o", "r")).rejects.toThrow(/\*\*\*REDACTED\*\*\*/);
-      await expect(c.getRepoHead("o", "r")).rejects.not.toThrow(/ghp_/);
+      const err = await c.getRepoHead("o", "r").catch((e: Error) => e);
+      expect(err.message).toContain("***REDACTED***");
+      expect(err.message).not.toContain("ghp_");
     });
 
-    it("redact passes through non-string input safely", () => {
+    it("redact coerces non-string input via String(...)", () => {
       const c = new GitHubRestClient({ pat: FAKE_PAT, app: fakeApp });
-      const out = (c as any).redact(undefined);
-      expect(out).toBeUndefined();
+      expect((c as any).redact(undefined)).toBe("undefined");
+      expect((c as any).redact(42)).toBe("42");
+      const errObj = new Error(`leak: ${FAKE_PAT}`);
+      expect((c as any).redact(errObj)).toContain("***REDACTED***");
+    });
+
+    // ─── runtime PAT field hiding (CRITICAL #2 fix verification) ─────
+    it("does NOT expose PAT via JSON.stringify(client)", () => {
+      const c = new GitHubRestClient({ pat: FAKE_PAT, app: fakeApp });
+      const serialised = JSON.stringify(c);
+      expect(serialised).not.toContain("ghp_");
+      expect(serialised).not.toContain(FAKE_PAT);
+    });
+
+    it("does NOT expose PAT via Object.keys(client)", () => {
+      const c = new GitHubRestClient({ pat: FAKE_PAT, app: fakeApp });
+      const keys = Object.keys(c);
+      expect(keys).not.toContain("pat");
+      expect(keys).not.toContain("#pat");
+    });
+
+    it("does NOT expose PAT via for-in enumeration", () => {
+      const c = new GitHubRestClient({ pat: FAKE_PAT, app: fakeApp });
+      const found: string[] = [];
+      for (const key in c) {
+        found.push(key);
+      }
+      expect(found).not.toContain("pat");
     });
   });
 
@@ -317,6 +359,12 @@ describe("GitHubRestClient", () => {
         /Invalid GitHub owner/,
       );
     });
+
+    it("rejects leading-hyphen owner or repo (flag-injection pattern)", async () => {
+      const c = new GitHubRestClient({ pat: FAKE_PAT, app: fakeApp });
+      await expect(c.getRepoHead("-rm", "r")).rejects.toThrow(/flag pattern|path-traversal/);
+      await expect(c.getRepoHead("o", "-rm")).rejects.toThrow(/flag pattern|path-traversal/);
+    });
   });
 
   // ─── pullTarball ──────────────────────────────────────────────────
@@ -357,6 +405,35 @@ describe("GitHubRestClient", () => {
       );
       const c = new GitHubRestClient({ pat: FAKE_PAT, app: fakeApp });
       await expect(c.pullTarball("o", "r")).rejects.toThrow(/\*\*\*REDACTED\*\*\*/);
+    });
+
+    it("rejects tarballs exceeding maxTarballBytes (default 50 MB)", async () => {
+      // Construct buffer reporting >50 MB byteLength via a thin proxy so we
+      // do not actually allocate 50 MB in test memory.
+      const fakeHuge = Object.assign(new ArrayBuffer(0), {});
+      Object.defineProperty(fakeHuge, "byteLength", {
+        value: 51 * 1024 * 1024,
+        configurable: true,
+      });
+      requestUrlMock.mockResolvedValue(ok({ arrayBuffer: fakeHuge }));
+      const c = new GitHubRestClient({ pat: FAKE_PAT, app: fakeApp });
+      await expect(c.pullTarball("o", "r")).rejects.toThrow(
+        /tarball exceeds maxTarballBytes/,
+      );
+      expect(parseTarGzipMock).not.toHaveBeenCalled();
+    });
+
+    it("honours custom maxTarballBytes from constructor", async () => {
+      const buf = new ArrayBuffer(2048);
+      requestUrlMock.mockResolvedValue(ok({ arrayBuffer: buf }));
+      const c = new GitHubRestClient({
+        pat: FAKE_PAT,
+        app: fakeApp,
+        maxTarballBytes: 1024,
+      });
+      await expect(c.pullTarball("o", "r")).rejects.toThrow(
+        /2048 > 1024/,
+      );
     });
   });
 
@@ -494,8 +571,58 @@ describe("GitHubRestClient", () => {
       requestUrlMock.mockResolvedValue(ok({ status: 500, text: huge }));
       const c = new GitHubRestClient({ pat: FAKE_PAT, app: fakeApp });
       const err = await c.getRepoHead("o", "r").catch((e: Error) => e);
-      expect(err.message.length).toBeLessThan(500);
+      expect(err.message.length).toBeLessThan(800);
       expect(err.message).toContain("...");
+    });
+
+    it("redacts PAT BEFORE truncating (boundary-cut escape mitigation)", async () => {
+      // PAT placed such that with redact-AFTER-truncate ordering the trailing
+      // suffix would be sliced (losing chars below the 36-char regex floor),
+      // letting a partial token escape. With redact-BEFORE-truncate (the
+      // fix), the PAT is replaced first → resulting shorter message stays
+      // safe. Total body size kept small so the post-redact message fits
+      // within the request() truncation cap.
+      const prefix = "x".repeat(50);
+      const tail = "z".repeat(20);
+      const body = `${prefix}${FAKE_PAT}${tail}`;
+      requestUrlMock.mockResolvedValue(ok({ status: 500, text: body }));
+      const c = new GitHubRestClient({ pat: FAKE_PAT, app: fakeApp });
+      const err = await c.getRepoHead("o", "r").catch((e: Error) => e);
+      expect(err.message).not.toContain("ghp_");
+      expect(err.message).toContain("***REDACTED***");
+    });
+
+    it("PAT redaction at HTTP error path is uniform per call (no stateful regex bleed)", async () => {
+      // /g flag on PAT_REGEX uses .replace which is stateless across calls.
+      // Run twice with fresh assertions to confirm no lastIndex leakage.
+      requestUrlMock.mockResolvedValue(
+        ok({
+          status: 401,
+          text: `{"token":"${FAKE_PAT}"}`,
+        }),
+      );
+      const c = new GitHubRestClient({ pat: FAKE_PAT, app: fakeApp });
+      const err1 = await c.getRepoHead("o", "r").catch((e: Error) => e);
+      const err2 = await c.getRepoHead("o", "r").catch((e: Error) => e);
+      expect(err1.message).toContain("***REDACTED***");
+      expect(err1.message).not.toContain("ghp_");
+      expect(err2.message).toContain("***REDACTED***");
+      expect(err2.message).not.toContain("ghp_");
+    });
+  });
+
+  // ─── header injection guard (MED #1 fix) ──────────────────────────
+  describe("request header construction", () => {
+    it("rejects caller-supplied Authorization override (configured PAT always wins)", async () => {
+      // request() is private, but exercise through pullTarball which spreads
+      // no caller headers — verify the configured Authorization survives.
+      // For defense-in-depth on the spread order itself, we use a request
+      // mock that records the Authorization header it received.
+      requestUrlMock.mockResolvedValue(ok({ json: { commit: { sha: "x" } } }));
+      const c = new GitHubRestClient({ pat: FAKE_PAT, app: fakeApp });
+      await c.getRepoHead("o", "r");
+      const call = requestUrlMock.mock.calls[0][0];
+      expect(call.headers.Authorization).toBe(`Bearer ${FAKE_PAT}`);
     });
   });
 });

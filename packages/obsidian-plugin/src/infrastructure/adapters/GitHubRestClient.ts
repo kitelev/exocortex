@@ -7,6 +7,13 @@ export interface GitHubRestClientOptions {
   pat: string;
   app: App;
   baseURL?: string;
+  /**
+   * Maximum tarball arrayBuffer size (bytes) accepted by `pullTarball()`.
+   * Default: 50 MB. Override for sync use-cases that pull larger repos.
+   * Note: nanotar 0.3.0 has no streaming parse, so the entire tarball is
+   * held in memory; setting this very large can crash Obsidian renderer.
+   */
+  maxTarballBytes?: number;
 }
 
 export interface GitHubBranchHead {
@@ -37,16 +44,30 @@ export interface GitHubRateLimit {
  */
 export class GitHubRestClient {
   // Token shapes per https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/about-authentication-to-github
-  // ghp_/gho_/ghu_/ghs_/ghr_ = personal/oauth/user/server/refresh tokens. 36+ urlsafe chars after prefix.
-  private static readonly PAT_REGEX = /gh[pousr]_[A-Za-z0-9_]{36,}/g;
+  //   - Legacy classic family: ghp_/gho_/ghu_/ghs_/ghr_ (personal/oauth/user/server/refresh) — 36+ urlsafe chars.
+  //   - Fine-grained personal access tokens (GitHub default since 2022):
+  //     github_pat_<22-char-id>_<59+-char-secret> — both segments urlsafe (per docs).
+  // Both prefixes covered to prevent silent leaks via modern-format tokens.
+  private static readonly PAT_REGEX =
+    /(?:gh[pousr]_[A-Za-z0-9_]{36,}|github_pat_[A-Za-z0-9_]{22,}_[A-Za-z0-9_]{59,})/g;
+
+  // Max tarball size accepted by pullTarball — 50 MB default. Tarball is fully
+  // buffered in memory (nanotar 0.3.0 has no streaming parse), so larger pulls
+  // can crash Obsidian renderer. Override via constructor `maxTarballBytes` opt.
+  private static readonly DEFAULT_MAX_TARBALL_BYTES = 50 * 1024 * 1024;
 
   // Strict allowlist — anchored, no paths/queries/fragments, no scheme variants.
   private static readonly REPO_URL_REGEX =
     /^https:\/\/github\.com\/[a-zA-Z0-9_-]+\/[a-zA-Z0-9_.-]+$/;
 
-  private readonly pat: string;
-  private readonly _app: App;
-  private readonly baseURL: string;
+  // ECMAScript private fields — runtime-hidden (ignored by JSON.stringify,
+  // Object.keys, structuredClone, devtools-inspector, telemetry walkers).
+  // TS `private` is compile-only and serializable — empirically leaked the PAT
+  // via JSON.stringify(client). #-prefixed fields close that hole entirely.
+  #pat: string;
+  readonly #app: App;
+  readonly #baseURL: string;
+  readonly #maxTarballBytes: number;
 
   constructor(opts: GitHubRestClientOptions) {
     if (!opts.pat || typeof opts.pat !== "string") {
@@ -55,14 +76,15 @@ export class GitHubRestClient {
     if (!opts.app) {
       throw new Error("GitHubRestClient: Obsidian App is required");
     }
-    this.pat = opts.pat;
-    this._app = opts.app;
-    this.baseURL = (opts.baseURL ?? "https://api.github.com").replace(/\/$/, "");
+    this.#pat = opts.pat;
+    this.#app = opts.app;
+    this.#baseURL = (opts.baseURL ?? "https://api.github.com").replace(/\/$/, "");
+    this.#maxTarballBytes = opts.maxTarballBytes ?? GitHubRestClient.DEFAULT_MAX_TARBALL_BYTES;
   }
 
   /** Obsidian App handle (needed by downstream consumers — TarExtractor, etc.). */
   public get app(): App {
-    return this._app;
+    return this.#app;
   }
 
   /**
@@ -107,7 +129,7 @@ export class GitHubRestClient {
     this.requireOwnerRepo(owner, repo);
     const resp = await this.request({
       method: "GET",
-      url: `${this.baseURL}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/branches/${encodeURIComponent(branch)}`,
+      url: `${this.#baseURL}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/branches/${encodeURIComponent(branch)}`,
     });
     const sha = resp?.json?.commit?.sha;
     if (typeof sha !== "string" || sha.length === 0) {
@@ -121,10 +143,13 @@ export class GitHubRestClient {
   /**
    * GET /repos/{owner}/{repo}/tarball/{ref} → parsed tar items as async iterable.
    *
-   * Note: nanotar 0.3.0 buffers the full tarball. The iterable returned here
-   * yields from an already-materialised array; future nanotar versions with
-   * a streaming parser could replace the implementation without changing the
-   * call-site contract.
+   * ⚠️ Memory contract: `nanotar@0.3.0` has no streaming parse — the **entire**
+   * tarball arrayBuffer is buffered, decompressed and materialised as an
+   * in-memory `TarFileItem[]` before the async iterable yields its first item.
+   * Memory bound is O(tarball.size), NOT O(item.size). Callers should treat
+   * the iterator as "iterate-then-discard" and must not assume low memory
+   * usage. A size guard (`maxTarballBytes`, default 50 MB) rejects oversized
+   * tarballs before the parse to protect the Obsidian renderer process.
    */
   public async pullTarball(
     owner: string,
@@ -134,11 +159,16 @@ export class GitHubRestClient {
     this.requireOwnerRepo(owner, repo);
     const resp = await this.request({
       method: "GET",
-      url: `${this.baseURL}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/tarball/${encodeURIComponent(ref)}`,
+      url: `${this.#baseURL}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/tarball/${encodeURIComponent(ref)}`,
     });
     if (!resp?.arrayBuffer || !(resp.arrayBuffer instanceof ArrayBuffer)) {
       throw new Error(
         this.redact(`GitHub pullTarball: response missing arrayBuffer for ${owner}/${repo}@${ref}`),
+      );
+    }
+    if (resp.arrayBuffer.byteLength > this.#maxTarballBytes) {
+      throw new Error(
+        `GitHub pullTarball: tarball exceeds maxTarballBytes (${resp.arrayBuffer.byteLength} > ${this.#maxTarballBytes}) for ${owner}/${repo}@${ref}`,
       );
     }
     let items: TarFileItem[];
@@ -160,6 +190,14 @@ export class GitHubRestClient {
    *   4. PATCH refs/heads/{branch}           → fast-forward to new commit
    *
    * Returns the new commit SHA.
+   *
+   * Partial-failure contract: if steps 1–3 succeed but step 4 (PATCH ref)
+   * fails (network glitch, 422 non-fast-forward, concurrent push race), the
+   * remote will have an **orphan commit** reachable only by the SHA embedded
+   * in the thrown error message. Git GC reaps unreachable commits after ~30
+   * days. Callers MAY safely retry: a subsequent successful call creates a
+   * new commit and leaves the orphan to expire. Do NOT use this method for
+   * branches with concurrent writers without coordinated retry/locking.
    */
   public async createCommit(
     owner: string,
@@ -186,7 +224,7 @@ export class GitHubRestClient {
     // Step 1 — get current ref SHA.
     const refResp = await this.request({
       method: "GET",
-      url: `${this.baseURL}/repos/${o}/${r}/git/refs/heads/${b}`,
+      url: `${this.#baseURL}/repos/${o}/${r}/git/refs/heads/${b}`,
     });
     const baseSha = refResp?.json?.object?.sha;
     if (typeof baseSha !== "string" || baseSha.length === 0) {
@@ -204,7 +242,7 @@ export class GitHubRestClient {
     }));
     const treeResp = await this.request({
       method: "POST",
-      url: `${this.baseURL}/repos/${o}/${r}/git/trees`,
+      url: `${this.#baseURL}/repos/${o}/${r}/git/trees`,
       contentType: "application/json",
       body: JSON.stringify({ base_tree: baseSha, tree }),
     });
@@ -218,7 +256,7 @@ export class GitHubRestClient {
     // Step 3 — create commit.
     const commitResp = await this.request({
       method: "POST",
-      url: `${this.baseURL}/repos/${o}/${r}/git/commits`,
+      url: `${this.#baseURL}/repos/${o}/${r}/git/commits`,
       contentType: "application/json",
       body: JSON.stringify({
         message,
@@ -236,7 +274,7 @@ export class GitHubRestClient {
     // Step 4 — update ref.
     const patchResp = await this.request({
       method: "PATCH",
-      url: `${this.baseURL}/repos/${o}/${r}/git/refs/heads/${b}`,
+      url: `${this.#baseURL}/repos/${o}/${r}/git/refs/heads/${b}`,
       contentType: "application/json",
       body: JSON.stringify({ sha: commitSha, force: false }),
     });
@@ -256,7 +294,7 @@ export class GitHubRestClient {
   public async checkRateLimit(): Promise<GitHubRateLimit> {
     const resp = await this.request({
       method: "GET",
-      url: `${this.baseURL}/rate_limit`,
+      url: `${this.#baseURL}/rate_limit`,
     });
     const core = resp?.json?.resources?.core;
     if (!core || typeof core.remaining !== "number" || typeof core.reset !== "number") {
@@ -291,12 +329,15 @@ export class GitHubRestClient {
   // ───────────────────────────── internals ─────────────────────────────
 
   private async request(param: RequestUrlParam): Promise<RequestUrlResponse> {
+    // Caller-provided headers spread FIRST so configured Authorization
+    // always wins — prevents a callsite from accidentally (or maliciously)
+    // overriding the PAT via headers passed in `param`.
     const headers = {
-      Authorization: `Bearer ${this.pat}`,
+      ...(param.headers ?? {}),
+      Authorization: `Bearer ${this.#pat}`,
       Accept: "application/vnd.github+json",
       "X-GitHub-Api-Version": "2022-11-28",
       "User-Agent": "exocortex-plugin",
-      ...(param.headers ?? {}),
     };
     let resp: RequestUrlResponse;
     try {
@@ -310,8 +351,14 @@ export class GitHubRestClient {
     }
     if (resp.status < 200 || resp.status >= 300) {
       const body = typeof resp.text === "string" ? resp.text : "";
+      // Redact BEFORE truncating so a PAT near the 256-char boundary cannot
+      // be sliced mid-token (which would shorten it below the regex floor
+      // and escape redaction).
       throw new Error(
-        this.redact(`GitHub request ${param.method ?? "GET"} ${param.url} → HTTP ${resp.status}: ${truncate(body, 256)}`),
+        truncate(
+          this.redact(`GitHub request ${param.method ?? "GET"} ${param.url} → HTTP ${resp.status}: ${body}`),
+          512,
+        ),
       );
     }
     return resp;
@@ -320,13 +367,13 @@ export class GitHubRestClient {
   /**
    * Replace any PAT-shaped substring with ***REDACTED***. Idempotent.
    * Catches PATs that may have leaked into error messages, response bodies,
-   * or third-party error formatters.
+   * or third-party error formatters. Non-string inputs are coerced via
+   * `String(message)` so even an `Error` / object slipping through still
+   * receives the redaction pass.
    */
-  private redact(message: string): string {
-    if (typeof message !== "string") {
-      return message;
-    }
-    return message.replace(GitHubRestClient.PAT_REGEX, "***REDACTED***");
+  private redact(message: unknown): string {
+    const s = typeof message === "string" ? message : String(message);
+    return s.replace(GitHubRestClient.PAT_REGEX, "***REDACTED***");
   }
 
   private requireOwnerRepo(owner: string, repo: string): void {
@@ -336,8 +383,14 @@ export class GitHubRestClient {
     if (typeof repo !== "string" || repo.length === 0 || /[^a-zA-Z0-9_.-]/.test(repo)) {
       throw new Error(`Invalid GitHub repo: ${String(repo)}`);
     }
-    if (owner === ".." || repo === ".." || repo.startsWith(".")) {
-      throw new Error(`Invalid GitHub owner/repo: ${owner}/${repo} (path-traversal pattern)`);
+    if (
+      owner === ".." ||
+      repo === ".." ||
+      repo.startsWith(".") ||
+      repo.startsWith("-") ||
+      owner.startsWith("-")
+    ) {
+      throw new Error(`Invalid GitHub owner/repo: ${owner}/${repo} (path-traversal/flag pattern)`);
     }
   }
 
