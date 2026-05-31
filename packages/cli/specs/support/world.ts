@@ -52,6 +52,14 @@ export class CliBddWorld extends World {
   customTargetRelPath: string | null = null;
   customCreatedFrontmatter: Record<string, unknown> | null = null;
 
+  // RFC 36347daf Phase 3 — CLI apply workflow_transition scenario state.
+  // Each scenario gets its own isolated temp vault (the helper is cheap),
+  // so `wfVaultPath` is a per-scenario root distinct from the shared
+  // starter-kit `fixtureVaultPath`. The `wfErrors` buffer captures
+  // `console.error` output so terminal-status fail-loud is assertable.
+  wfVaultPath: string | null = null;
+  wfErrors: string[] = [];
+
   constructor(options: IWorldOptions) {
     super(options);
   }

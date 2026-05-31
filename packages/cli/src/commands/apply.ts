@@ -17,6 +17,7 @@ import {
   EffortStatusWorkflow,
   StatusTimestampService,
   TaskStatusService,
+  WorkflowResolver,
   createVaultFrontmatterClassLabelResolver,
   vaultPathToIRI,
   IRI,
@@ -127,6 +128,7 @@ async function isDestructive(
 async function executeOnTarget(
   vaultPath: string,
   tripleStore: InMemoryTripleStore,
+  workflowResolver: WorkflowResolver,
   commandUid: string,
   targetRelative: string,
   options: ApplyOptions,
@@ -212,12 +214,26 @@ async function executeOnTarget(
   // NoteToRDFConverter substitutes class-shaped string literals with class
   // IRIs at predicate `exo:Asset_label` (Issue #2782/#2959), so a vault scan
   // by frontmatter is required.
+  // RFC 36347daf Phase 3 — wire WorkflowResolver + GroundingLoader so the
+  // workflow_transition grounding type resolves the active Workflow from
+  // vault ABox (hydrated above into `tripleStore`) and dispatches
+  // postActions through CommandResolver.loadGroundingByUid. Mirrors the
+  // plugin's `ExocortexPlugin.ts` wiring (`WorkflowResolver(tripleStore)`
+  // + `groundingLoader: (uid) => commandResolver.loadGroundingByUid(uid)`).
+  // Without these the executor returns the fail-loud "workflow_transition
+  // requires WorkflowResolver injection" error from
+  // `GroundingExecutor.executeWorkflowTransition`.
   const groundingExecutor = new GroundingExecutor(
     nodeFsAdapter,
     nodeFsAdapter,
     serviceRegistry,
     createVaultFrontmatterClassLabelResolver(nodeFsAdapter),
-    { clock, uidGenerator: uidGen },
+    {
+      clock,
+      uidGenerator: uidGen,
+      workflowResolver,
+      groundingLoader: (uid) => resolver.loadGroundingByUid(uid),
+    },
   );
 
   let userInput: Record<string, unknown> | undefined;
@@ -307,6 +323,11 @@ export function applyCommand(): Command {
         const tripleStore = new InMemoryTripleStore();
         await tripleStore.addAll(triples);
 
+        // RFC 36347daf Phase 3 — construct WorkflowResolver once for the whole
+        // batch so its per-class cache survives across stdin-piped targets
+        // (mirrors the rationale documented for `clock` / `uidGen` threading).
+        const workflowResolver = new WorkflowResolver(tripleStore);
+
         // Resolve cmdArg → UUID
         let commandUid: string;
         if (UUID_RE.test(cmdArg)) {
@@ -343,6 +364,7 @@ export function applyCommand(): Command {
           const ok = await executeOnTarget(
             vaultPath,
             tripleStore,
+            workflowResolver,
             commandUid,
             target,
             options,
