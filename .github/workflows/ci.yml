@@ -115,6 +115,30 @@ jobs:
       - name: Type check
         run: npm run check:types
 
+  # RFC 0a0791c1 Phase B.0 — supply-chain gate for `packages/exocortex`
+  # direct dependencies (incl. nanotar@0.3.0 pinned-exact). Audit runs
+  # against the per-package lockfile so pre-existing root-tree vulns in
+  # dev tooling (babel, fast-uri) don't trigger noise. Fails the job if
+  # any direct dep introduces a high/critical advisory.
+  npm-audit-exocortex:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: packages/exocortex/package-lock.json
+
+      - name: npm audit (block high+)
+        run: npm audit --audit-level=high
+        working-directory: packages/exocortex
+
   lint:
     runs-on: ubuntu-latest
     timeout-minutes: 2
