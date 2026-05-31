@@ -79,3 +79,30 @@ Feature: Starter-kit grounding execution (RFC 94e520da § Phase 6)
     And the created asset does NOT have "exo__Asset_prototype"
     And the created asset has "ems__Effort_prevIteration" pointing to $target
     And the created asset does NOT have "exo__Asset_source"
+
+  # RFC 36347daf Phase 3 — workflow_transition apply via the CLI. The shared
+  # @exocortex/core dispatcher (`GroundingExecutor.executeWorkflowTransition`)
+  # is exercised through the actual `applyCommand().parseAsync(...)` entry
+  # point against a temp vault hydrated with Workflow ABox (Workflow +
+  # WorkflowTransition + Task target). The full integration coverage lives
+  # in `tests/integration/apply-workflow-transition.integration.test.ts` —
+  # this scenario is a high-signal smoke that protects against silent
+  # regressions in BDD-layer wiring (vault triple-store hydration,
+  # WorkflowResolver DI, GroundingLoader DI).
+
+  Scenario: CLI apply workflow_transition forward Backlog→Doing
+    Given the CLI apply workflow_transition fixture vault
+    When I run apply with the forward workflow_transition command on the Backlog task
+    Then the target task status becomes "ems__EffortStatusDoing"
+    And the postAction sentinel marker is present
+
+  Scenario: CLI apply workflow_transition rollback Done→Doing
+    Given the CLI apply workflow_transition fixture vault
+    When I run apply with the rollback workflow_transition command on the Done task
+    Then the target task status becomes "ems__EffortStatusDoing"
+
+  Scenario: CLI apply workflow_transition forward from terminal status fails loud
+    Given the CLI apply workflow_transition fixture vault
+    When I run apply with the forward-from-done workflow_transition command on the Done task
+    Then the CLI reports the missing forward transition for "ems__EffortStatusDone"
+    And the target task status remains "ems__EffortStatusDone"
