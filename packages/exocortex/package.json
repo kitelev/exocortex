@@ -39,6 +39,7 @@
   "author": "A. Kitelev",
   "license": "MIT",
   "dependencies": {
+    "nanotar": "0.3.0",
     "reflect-metadata": "^0.2.2",
     "sparqljs": "^3.7.3",
     "tsyringe": "^4.10.0",
