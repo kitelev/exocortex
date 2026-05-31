@@ -23,6 +23,7 @@
     "@tanstack/react-virtual": "^3.13.13",
     "@kitelev/exocortex-services": "*",
     "exocortex": "*",
+    "nanotar": "0.3.0",
     "obsidian": "latest",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
