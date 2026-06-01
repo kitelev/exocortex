@@ -9,6 +9,19 @@ import {
   type DisplayNameSettings,
   type LogLevel,
 } from "@plugin/domain/settings/ExocortexSettings";
+import { GitHubRestClient } from "@plugin/infrastructure/adapters/GitHubRestClient";
+import { LocalSecretsStore } from "@plugin/infrastructure/adapters/LocalSecretsStore";
+import { OperationsLogReader } from "@plugin/infrastructure/adapters/OperationsLogReader";
+import { SwitchCacheLayer } from "@plugin/infrastructure/adapters/SwitchCacheLayer";
+
+/**
+ * Issue #3320 §1 — secret key used by buildAssetSpacePusher and now the
+ * Settings UI. The Issue body says `"github.pat"`, but every existing
+ * site in code AND tests (LocalSecretsStore.test.ts × 8) uses `"pat"`.
+ * Mismatching the key would silently break Push (PAT entered in UI would
+ * never reach buildAssetSpacePusher). Keep the canonical key.
+ */
+const PAT_SECRET_KEY = "pat";
 
 export class ExocortexSettingTab extends PluginSettingTab {
   plugin: ExocortexPlugin;
@@ -375,6 +388,11 @@ export class ExocortexSettingTab extends PluginSettingTab {
         }),
       );
 
+    // Issue #3320 — RFC 0a0791c1 §B.8 — 4 FocusProfile-related sections
+    // (PAT, Active profile, Switch cache, Operations log). Rendered after
+    // the existing sections so the diff stays additive.
+    this.renderFocusProfileSections(containerEl);
+
     // Template syntax help
     const helpEl = containerEl.createDiv({
       cls: "setting-item-description",
@@ -520,6 +538,281 @@ export class ExocortexSettingTab extends PluginSettingTab {
   }
 
   /**
+   * Issue #3320 — render the 4 FocusProfile sections (PAT, Active profile,
+   * Switch cache, Operations log) per RFC 0a0791c1 §B.8.
+   *
+   * Architectural notes:
+   *
+   *   - LocalSecretsStore / OperationsLogReader / SwitchCacheLayer are
+   *     constructed locally here. They are cheap, stateless wrappers over
+   *     the vault adapter (or, in SwitchCacheLayer's case, intentionally
+   *     empty in v3 — its docstring explicitly says «Settings UI wires
+   *     getCacheStats() and shows zeros — acceptable»).
+   *
+   *   - FocusProfileSwitchManager is NOT constructed here — it would race
+   *     the manager from registerFocusProfileCommands on the persisted
+   *     lock file. Plugin exposes a hoisted instance via
+   *     `plugin.focusProfileSwitchManager`.
+   *
+   *   - GitHubRestClient requires the PAT, so it cannot be a stable field;
+   *     constructed inside the Test-connection callback against the freshly
+   *     persisted secret (ensures Test reads the same byte sequence Push
+   *     will see after reload).
+   *
+   *   - PAT persistence uses an explicit Save button — not keystroke
+   *     onChange — to avoid persisting partial PAT bytes that Test could
+   *     then race against (advisor catch).
+   *
+   *   - buildAssetSpacePusher captures the PAT at onload time, so changing
+   *     the PAT in this UI does not retroactively activate Push. Save flow
+   *     surfaces a Notice asking the user to reload the plugin.
+   *
+   *   - Section 4 reads the journal asynchronously; the `<pre>` element is
+   *     created synchronously and populated via an IIFE so display() stays
+   *     synchronous per Obsidian's PluginSettingTab contract.
+   */
+  private renderFocusProfileSections(containerEl: HTMLElement): void {
+    const app = this.plugin.app;
+    const notifier = this.plugin.notifier;
+    const secretsStore = new LocalSecretsStore({ app });
+    const switchCache = new SwitchCacheLayer();
+    const operationsLog = new OperationsLogReader({ app });
+
+    // ─────── Section 1 — PAT (GitHub Personal Access Token) ───────
+    // eslint-disable-next-line obsidianmd/ui/sentence-case -- "GitHub" + "PAT" are proper noun + established acronym
+    new Setting(containerEl).setName("FocusProfile: GitHub PAT").setHeading();
+
+    const patDesc = containerEl.createDiv({ cls: "setting-item-description" });
+    patDesc.appendText(
+      "Fine-grained Personal Access Token used to push AssetSpace " +
+        "submodules to GitHub. Stored в data.local.json (NOT data.json) so " +
+        "Obsidian Sync excludes it from network replication (Vision Lock #1, " +
+        "Security #1). Required for the «Push current assetspace» command; " +
+        "the «Switch focus profile» command works without a PAT.",
+    );
+
+    let patInputValue = "";
+    new Setting(containerEl)
+      // eslint-disable-next-line obsidianmd/ui/sentence-case -- "PAT" is an established acronym for Personal Access Token
+      .setName("Personal Access Token")
+      .setDesc(
+        "Recommended: fine-grained PAT с per-repository allowlist scoped " +
+          "to your exoas-* repos. Leave blank and click Save to clear.",
+      )
+      .addText((text) => {
+        text.inputEl.type = "password";
+        // eslint-disable-next-line obsidianmd/ui/sentence-case -- placeholder shows literal PAT format
+        text.setPlaceholder("github_pat_…");
+        text.onChange((value) => {
+          patInputValue = value;
+        });
+      })
+      .addButton((button) =>
+        // eslint-disable-next-line obsidianmd/ui/sentence-case -- "PAT" is an established acronym
+        button.setButtonText("Save PAT").onClick(async () => {
+          try {
+            const trimmed = patInputValue.trim();
+            await secretsStore.setSecret(
+              PAT_SECRET_KEY,
+              trimmed.length > 0 ? trimmed : null,
+            );
+            if (trimmed.length > 0) {
+              notifier.info(
+                "PAT saved. Reload Obsidian to activate push (the plugin captures the PAT at onload).",
+              );
+            } else {
+              notifier.info("PAT cleared.");
+            }
+          } catch (error) {
+            notifier.error(`Save PAT failed: ${errorMessage(error)}`);
+          }
+        }),
+      )
+      .addButton((button) =>
+        button.setButtonText("Test connection").onClick(async () => {
+          try {
+            const pat = await secretsStore.getSecret(PAT_SECRET_KEY);
+            if (pat === null || pat.length === 0) {
+              notifier.warn(
+                "No PAT stored. Enter a PAT and click Save first.",
+              );
+              return;
+            }
+            const client = new GitHubRestClient({ pat, app });
+            const rate = await client.checkRateLimit();
+            let reposNote = "";
+            try {
+              const repos = await client.listRepos(5);
+              reposNote =
+                repos.length === 0
+                  ? "; no repos visible to this PAT"
+                  : `; sample: ${repos.slice(0, 5).join(", ")}`;
+            } catch (reposError) {
+              reposNote = `; listRepos failed: ${errorMessage(reposError)}`;
+            }
+            notifier.info(
+              `GitHub OK — ${rate.remaining} requests remaining` +
+                `, resets ${rate.resetAt.toISOString()}${reposNote}`,
+              8000,
+            );
+          } catch (error) {
+            notifier.error(`Test connection failed: ${errorMessage(error)}`);
+          }
+        }),
+      );
+
+    // ─────── Section 2 — Active focus profile ───────
+    new Setting(containerEl).setName("Active focus profile").setHeading();
+
+    const settings = this.plugin.settings as unknown as Record<string, unknown>;
+    const activeProfileUid =
+      typeof settings.activeProfileUid === "string"
+        ? (settings.activeProfileUid as string)
+        : null;
+
+    const profileStatusEl = containerEl.createDiv({
+      cls: "setting-item-description",
+    });
+    profileStatusEl.appendText(
+      activeProfileUid === null
+        ? "No active profile (full vault loaded)."
+        : `Currently: ${activeProfileUid}`,
+    );
+
+    const profileSetting = new Setting(containerEl)
+      .setName("Switch profile")
+      .setDesc(
+        "Dispatches FocusProfileSwitchManager — same code path as the " +
+          "Cmd+P «Switch focus profile» command. Triggers RDF re-index. " +
+          "v3 dropdown: no «none» option (switchProfile requires a target " +
+          "UID — clear via plugin reload).",
+      );
+
+    profileSetting.addDropdown((dropdown) => {
+      dropdown.addOption("", "— select profile —");
+      dropdown.setValue("");
+
+      // Populate asynchronously: dropdown options can be added after the
+      // initial render; the dropdown re-renders on each addOption().
+      void (async () => {
+        const lister = this.plugin.listFocusProfileChoices;
+        if (lister === null) {
+          // Plugin's FocusProfile commands failed to wire — surface as
+          // disabled-with-explanation rather than empty silent dropdown.
+          dropdown.addOption(
+            "__unwired__",
+            // eslint-disable-next-line obsidianmd/ui/sentence-case -- "FocusProfile" is a product class name preserved verbatim from RFC nomenclature
+            "(FocusProfile commands not wired — see plugin logs)",
+          );
+          return;
+        }
+        let choices;
+        try {
+          choices = await lister();
+        } catch {
+          dropdown.addOption("__error__", "(listing profiles failed)");
+          return;
+        }
+        for (const choice of choices) {
+          const label = choice.isActive
+            ? `${choice.label} (active)`
+            : choice.label;
+          dropdown.addOption(choice.uid, label);
+        }
+        if (activeProfileUid !== null) {
+          dropdown.setValue(activeProfileUid);
+        }
+      })();
+
+      dropdown.onChange(async (uid) => {
+        if (uid === "" || uid === "__unwired__" || uid === "__error__") return;
+        const switchMgr = this.plugin.focusProfileSwitchManager;
+        if (switchMgr === null) {
+          notifier.warn(
+            "FocusProfile switch manager not initialised — reload plugin.",
+          );
+          return;
+        }
+        try {
+          await switchMgr.switchProfile(uid);
+        } catch (error) {
+          notifier.error(`Switch failed: ${errorMessage(error)}`);
+        }
+      });
+    });
+
+    // ─────── Section 3 — Switch cache ───────
+    new Setting(containerEl).setName("Switch cache").setHeading();
+
+    // In v3 the SwitchCacheLayer is constructed here freshly per display()
+    // и therefore reports zeros — by design, per its docstring. Phase C+D
+    // would hoist a singleton to retain populated stats.
+    const stats = switchCache.getCacheStats();
+    const sizeMb = (stats.totalSize / (1024 * 1024)).toFixed(2);
+    new Setting(containerEl)
+      .setName("Cache stats")
+      .setDesc(
+        `${stats.count} cached AssetSpaces · ${sizeMb} MB · ` +
+          `oldest: ${stats.oldestEntry ?? "(empty)"}`,
+      )
+      .addButton((button) =>
+        button.setButtonText("Clear cache").onClick(() => {
+          notifier.info(
+            "Clear cache: Phase C+D feature, not implemented in v3. " +
+              "The cache is currently empty by construction.",
+          );
+        }),
+      );
+
+    // ─────── Section 4 — Operations log ───────
+    new Setting(containerEl).setName("Operations log").setHeading();
+
+    const opsDesc = containerEl.createDiv({ cls: "setting-item-description" });
+    opsDesc.appendText(
+      "Last 10 entries from .exocortex/switch-journal.jsonl, newest first. " +
+        "Format: <timestamp> | <profile-label> | <elapsedMs>ms | <status>.",
+    );
+
+    const opsPre = containerEl.createEl("pre", { cls: "exocortex-ops-log" });
+    opsPre.appendText("Loading…");
+
+    void (async () => {
+      try {
+        // UID → label lookup uses the same profile lister как dropdown,
+        // so labels match Cmd+P / Section 2 exactly. Fall back to UID[:8]
+        // when an entry references a since-deleted profile.
+        const lister = this.plugin.listFocusProfileChoices;
+        const labelByUid: Map<string, string> = new Map();
+        if (lister !== null) {
+          try {
+            const choices = await lister();
+            for (const c of choices) labelByUid.set(c.uid, c.label);
+          } catch {
+            // Fall back to UID-only labels; not a fatal error.
+          }
+        }
+        const entries = await operationsLog.readLast(
+          10,
+          (uid) => labelByUid.get(uid) ?? null,
+        );
+        opsPre.empty();
+        if (entries.length === 0) {
+          opsPre.appendText("(no journal entries yet)");
+          return;
+        }
+        for (const entry of entries) {
+          opsPre.createEl("div", {
+            text: OperationsLogReader.formatEntry(entry),
+          });
+        }
+      } catch (error) {
+        opsPre.empty();
+        opsPre.appendText(`Failed to read log: ${errorMessage(error)}`);
+      }
+    })();
+  }
+
+  /**
    * Update the per-class template preview
    */
   private updatePerClassPreview(
@@ -575,4 +868,11 @@ export class ExocortexSettingTab extends PluginSettingTab {
       li.appendText(displayName || "(empty)");
     }
   }
+}
+
+/** Issue #3320 — unwrap unknown errors safely for Notice text. */
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  return String(error);
 }

@@ -101,6 +101,9 @@ describe("ExocortexSettingTab", () => {
             setPlaceholder: jest.fn().mockReturnThis(),
             setValue: jest.fn().mockReturnThis(),
             onChange: jest.fn().mockReturnThis(),
+            // Issue #3320 — PAT field sets inputEl.type = "password".
+            // Mock must expose an inputEl object с writable properties.
+            inputEl: { type: "" } as Record<string, unknown>,
           };
           callback(text);
           return setting;
@@ -154,7 +157,8 @@ describe("ExocortexSettingTab", () => {
       // RFC c7da0bca Phase 5 — added `lazyBootstrapFolders` TextArea (+1).
       // Log channels section: 1 heading + 4 log level rows = 5
       // Excluded folders section (#3278): 1 heading + 1 textarea row = +2 → 32
-      expect(MockSetting).toHaveBeenCalledTimes(32);
+      // Issue #3320 — FocusProfile sections: 4 section headings + PAT row + Switch profile row + Cache stats row + (Operations log has no Setting row, body уходит в createDiv/createEl) = +7 → 39
+      expect(MockSetting).toHaveBeenCalledTimes(39);
     });
 
     it("should render layout visibility toggle as first setting", () => {
@@ -194,6 +198,8 @@ describe("ExocortexSettingTab", () => {
               setPlaceholder: jest.fn().mockReturnThis(),
               setValue: jest.fn().mockReturnThis(),
               onChange: jest.fn().mockReturnThis(),
+              // Issue #3320 — PAT field sets inputEl.type = "password"
+              inputEl: { type: "" } as Record<string, unknown>,
             };
             callback(text);
             return setting;
@@ -284,6 +290,8 @@ describe("ExocortexSettingTab", () => {
               setPlaceholder: jest.fn().mockReturnThis(),
               setValue: jest.fn().mockReturnThis(),
               onChange: jest.fn().mockReturnThis(),
+              // Issue #3320 — PAT field sets inputEl.type = "password"
+              inputEl: { type: "" } as Record<string, unknown>,
             };
             callback(text);
             return setting;

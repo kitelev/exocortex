@@ -203,11 +203,33 @@ export default class ExocortexPlugin extends Plugin {
   private readingModeEnforcer!: ReadingModeEnforcer;
   private graphViewPatch!: GraphViewPatch;
   private fileLogChannel!: FileLogChannel;
-  private notifier!: ObsidianNotificationService;
+  // Issue #3320 — promoted from private so the Settings UI can route its
+  // Save / Test connection / Switch failure messages via the same notifier
+  // that powers the rest of the plugin (lint `no-restricted-syntax` rule
+  // forbids `new Notice()` outside ObsidianNotificationService).
+  notifier!: ObsidianNotificationService;
   private shaclStatusBar: HTMLElement | null = null;
   // Issue #2780: tracked so the post-resolve reindex can await it before
   // calling refresh(), avoiding a concurrent clear()/convertVault() race.
   private eagerInitPromise: Promise<void> | null = null;
+
+  /**
+   * Issue #3320 — FocusProfileSwitchManager hoisted onto the plugin instance
+   * so the Settings UI dropdown can dispatch switchProfile() directly
+   * без re-constructing a second manager (which would race the original on
+   * the same persisted lock file). Initialized in
+   * `registerFocusProfileCommands()`; null until that call succeeds.
+   */
+  public focusProfileSwitchManager: FocusProfileSwitchManager | null = null;
+
+  /**
+   * Issue #3320 — profile choice lister hoisted alongside the switch
+   * manager. Returns the same FuzzySuggestModal-shaped choices the palette
+   * command uses, so the Settings dropdown matches Cmd+P ordering.
+   * Initialized in `registerFocusProfileCommands()`; null until that
+   * call succeeds.
+   */
+  public listFocusProfileChoices: (() => Promise<FocusProfileChoice[]>) | null = null;
 
   override async onload(): Promise<void> {
     try {
@@ -2242,6 +2264,11 @@ export default class ExocortexPlugin extends Plugin {
       notify: (message) => this.notifier.info(message),
     });
 
+    // Issue #3320 — expose the manager на plugin instance so the Settings
+    // UI dropdown can dispatch switchProfile() directly. Re-constructing a
+    // second manager would race the original on the same lock file.
+    this.focusProfileSwitchManager = switchMgr;
+
     // Issue #3324 — apply the persisted `activeProfileUid` to the indexer's
     // filter setters BEFORE the eager-init / metadataCache-resolved chain
     // first calls `convertVault`. The helper is no-op when the field is
@@ -2310,7 +2337,7 @@ export default class ExocortexPlugin extends Plugin {
 
     const pushMgr = await this.buildAssetSpacePusher();
 
-    const profileLister = async (): Promise<FocusProfileChoice[]> => {
+    const profileLister: () => Promise<FocusProfileChoice[]> = async () => {
       const activeUid =
         typeof (this.settings as Record<string, unknown>).activeProfileUid ===
         "string"
@@ -2339,6 +2366,10 @@ export default class ExocortexPlugin extends Plugin {
       choices.sort((a, b) => a.label.localeCompare(b.label));
       return choices;
     };
+
+    // Issue #3320 — share the same lister с Settings UI so its dropdown
+    // matches the Cmd+P fuzzy-pick ordering exactly.
+    this.listFocusProfileChoices = profileLister;
 
     const fuzzyPick = (
       options: FocusProfileChoice[],

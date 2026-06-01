@@ -309,6 +309,39 @@ export class GitHubRestClient {
   }
 
   /**
+   * GET /user/repos?per_page=N → list of accessible repository full_names.
+   *
+   * Used by the Settings UI "Test connection" path (Issue #3320 §1) to
+   * surface a concrete signal that the configured PAT can actually reach
+   * exoas-* repositories — checkRateLimit alone returns true for any
+   * authenticated token, even one with zero repo scopes.
+   *
+   * Returns at most `perPage` (default 5) `full_name` strings. Caller is
+   * responsible for clamping; we forward the value to GitHub which itself
+   * caps at 100.
+   */
+  public async listRepos(perPage = 5): Promise<string[]> {
+    const capped = Math.max(1, Math.min(100, Math.floor(perPage)));
+    const resp = await this.request({
+      method: "GET",
+      url: `${this.#baseURL}/user/repos?per_page=${capped}&sort=updated`,
+    });
+    const items = resp?.json;
+    if (!Array.isArray(items)) {
+      throw new Error(
+        this.redact(`GitHub listRepos: malformed /user/repos response`),
+      );
+    }
+    const names: string[] = [];
+    for (const item of items) {
+      if (item && typeof (item as Record<string, unknown>).full_name === "string") {
+        names.push((item as Record<string, unknown>).full_name as string);
+      }
+    }
+    return names;
+  }
+
+  /**
    * Refuse to proceed when remaining < needed + 10 (safety buffer).
    * Throws with seconds-to-reset embedded in error message.
    */
