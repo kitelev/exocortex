@@ -212,6 +212,28 @@ describe("sparqlQueryCommand --profile / cache interaction", () => {
       expect(mockTripleCacheLoadOrBuild).not.toHaveBeenCalled();
     });
 
+    it("STILL bypasses QueryResultCache when --profile is set but resolveProfileFilter returns null (missing-profile / degraded)", async () => {
+      // Simulate `--profile <unknown-uid>` → resolver returns null. Cache
+      // bypass MUST stay engaged based on flag presence, NOT on filter
+      // outcome — otherwise a missing-profile run would poison the
+      // shared profileless cache key.
+      const { resolveProfileFilter } = await import(
+        "../../../src/utils/resolveProfileFilter.js"
+      );
+      (resolveProfileFilter as jest.MockedFunction<typeof resolveProfileFilter>)
+        .mockResolvedValueOnce(null);
+
+      const cmd = sparqlQueryCommand();
+      await cmd.parseAsync([
+        "node", "test",
+        "SELECT ?s WHERE { ?s ?p ?o }",
+        "--vault", vaultDir,
+        "--profile", PROFILE_UID,
+      ]);
+      expect(mockResultCacheGet).not.toHaveBeenCalled();
+      expect(mockResultCacheSet).not.toHaveBeenCalled();
+    });
+
     it("passes effectiveOntologies+assetSpaceFolderToUid to convertVault when --profile is set", async () => {
       const cmd = sparqlQueryCommand();
       await cmd.parseAsync([
