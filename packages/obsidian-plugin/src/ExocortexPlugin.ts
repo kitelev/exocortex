@@ -90,6 +90,23 @@ import { createObsidianClassLabelResolver } from "./infrastructure/services/Obsi
 import { ExocmdCommandPaletteRegistrar } from "./application/services/ExocmdCommandPaletteRegistrar";
 import { ObsidianCommandPromptAdapter } from "./infrastructure/adapters/ObsidianCommandPromptAdapter";
 import {
+  FocusProfileCommands,
+  type FocusProfileChoice,
+  type IAssetSpacePusher,
+} from "./infrastructure/adapters/FocusProfileCommands";
+import { FocusProfileSwitchManager } from "./infrastructure/adapters/FocusProfileSwitchManager";
+import { PluginLockManager } from "./infrastructure/adapters/PluginLockManager";
+import { VaultProfileResolver } from "./infrastructure/adapters/VaultProfileResolver";
+import { PluginRdfIndexerAdapter } from "./infrastructure/adapters/PluginRdfIndexerAdapter";
+import { PluginSettingsStoreAdapter } from "./infrastructure/adapters/PluginSettingsStoreAdapter";
+import { ProfileFuzzyModal } from "./infrastructure/adapters/ProfileFuzzyModal";
+import {
+  AssetSpaceManager,
+  ASSET_SPACE_CLASS_UID,
+} from "./infrastructure/adapters/AssetSpaceManager";
+import { GitHubRestClient } from "./infrastructure/adapters/GitHubRestClient";
+import { LocalSecretsStore } from "./infrastructure/adapters/LocalSecretsStore";
+import {
   CommandExecutionFlow,
   DI_TOKENS,
   type IVaultSettings,
@@ -685,6 +702,20 @@ export default class ExocortexPlugin extends Plugin {
       this.commandManager.registerAllCommands(this, () =>
         this.autoRenderLayout(),
       );
+
+      // RFC 0a0791c1 #3322 — register FocusProfile palette commands
+      // (Switch / Push current assetspace). Wraps the B.7 handler with
+      // real adapters. Wrapped в try/catch: any failure here должен NOT
+      // abort the rest of onload — commands simply won't appear in
+      // Cmd+P, but plugin remains usable.
+      try {
+        await this.registerFocusProfileCommands();
+      } catch (error) {
+        this.logger.error(
+          "[ExocortexPlugin] FocusProfile commands registration failed",
+          error instanceof Error ? error : new Error(String(error)),
+        );
+      }
 
       // RFC 1429fcd0 PR-2: register vault-described palette-enabled exocmd
       // commands as Obsidian Command Palette entries. Runs **after**
@@ -2134,5 +2165,248 @@ export default class ExocortexPlugin extends Plugin {
     document
       .querySelectorAll(".exocortex-auto-layout")
       .forEach((el) => el.remove());
+  }
+
+  /**
+   * RFC 0a0791c1 #3322 — register the two FocusProfile palette commands
+   * («Switch focus profile», «Push current assetspace»). Wires the B.7
+   * `FocusProfileCommands` handler with real adapters:
+   *
+   *   - B.4 `FocusProfileSwitchManager`: persisted lock + journal + RDF
+   *     re-index с effective ontology filter.
+   *   - B.3 `AssetSpaceManager`: GitHub PAT-backed AssetSpace push (only
+   *     constructed when PAT is configured in `data.local.json`; absent
+   *     PAT yields a lookup-only stub that surfaces a Configure-PAT
+   *     Notice on push).
+   *   - `ProfileFuzzyModal`: Obsidian `FuzzySuggestModal` wrapper that
+   *     resolves the handler's Promise on choose/dismiss.
+   *
+   * The handler's logic gracefully reports failure через `notify`, so all
+   * branches surface к the user as a Notice — never a silent log-only
+   * crash. Construction errors here are caught by the caller's try/catch
+   * in `onload()`.
+   */
+  private async registerFocusProfileCommands(): Promise<void> {
+    const lockMgr = new PluginLockManager({ app: this.app });
+    const resolver = new VaultProfileResolver(this.app);
+    const rdfIndexer = new PluginRdfIndexerAdapter(this.sparql.getRdfIndexer());
+    const settingsStore = new PluginSettingsStoreAdapter({
+      readSettings: () => this.settings as Record<string, unknown>,
+      saveSettings: () => this.saveSettings(),
+    });
+
+    const switchMgr = new FocusProfileSwitchManager({
+      app: this.app,
+      lockMgr,
+      resolver,
+      rdfIndexer,
+      settingsStore,
+      notify: (message) => this.notifier.info(message),
+    });
+
+    // Crash-recovery: если previous session left `_switchInProgress=true`
+    // в settings (FocusProfileSwitchManager docstring line 18), re-trigger
+    // the idempotent re-index so the flag self-clears. Failure swallowed —
+    // user-facing recovery is а Phase D follow-up; the only side-effect
+    // of skipping this is the «stuck switch in progress» footgun (code-
+    // reviewer HIGH catch).
+    try {
+      const initialSettings = await settingsStore.load();
+      if (initialSettings._switchInProgress) {
+        this.logger.warn(
+          "[ExocortexPlugin] previous session left _switchInProgress=true — attempting idempotent recovery",
+        );
+      }
+      const recovery = await switchMgr.recoverIfNeeded();
+      if (recovery.recovered) {
+        this.logger.info(
+          `[ExocortexPlugin] FocusProfile switch recovery completed for ${recovery.targetUid}`,
+        );
+      }
+    } catch (error) {
+      this.logger.warn(
+        "[ExocortexPlugin] FocusProfile switch recovery failed",
+        error instanceof Error ? error : new Error(String(error)),
+      );
+    }
+
+    const pushMgr = await this.buildAssetSpacePusher();
+
+    const profileLister = async (): Promise<FocusProfileChoice[]> => {
+      const activeUid =
+        typeof (this.settings as Record<string, unknown>).activeProfileUid ===
+        "string"
+          ? ((this.settings as Record<string, unknown>)
+              .activeProfileUid as string)
+          : null;
+      const choices: FocusProfileChoice[] = [];
+      for (const file of resolver.listFocusProfileFiles()) {
+        const cache = this.app.metadataCache.getFileCache(file);
+        const fm = cache?.frontmatter as Record<string, unknown> | undefined;
+        if (!fm) continue;
+        const uid =
+          typeof fm["exo__Asset_uid"] === "string"
+            ? (fm["exo__Asset_uid"] as string)
+            : null;
+        if (uid === null) continue;
+        const label =
+          typeof fm["exo__Asset_label"] === "string"
+            ? (fm["exo__Asset_label"] as string)
+            : file.basename;
+        choices.push({ uid, label, isActive: uid === activeUid });
+      }
+      // Sort alphabetically by label so picker order is stable across
+      // vault scans (vault.getMarkdownFiles() is filesystem-order, not
+      // semantic).
+      choices.sort((a, b) => a.label.localeCompare(b.label));
+      return choices;
+    };
+
+    const fuzzyPick = (
+      options: FocusProfileChoice[],
+      title: string,
+    ): Promise<FocusProfileChoice | null> => {
+      return new Promise<FocusProfileChoice | null>((resolve) => {
+        const modal = new ProfileFuzzyModal(this.app, options, title, resolve);
+        modal.open();
+      });
+    };
+
+    const commandsHandler = new FocusProfileCommands({
+      switchMgr,
+      pushMgr,
+      profileLister,
+      fuzzyPick,
+      getActiveFilePath: () =>
+        this.app.workspace.getActiveFile()?.path ?? null,
+      notify: (message) => this.notifier.info(message),
+    });
+
+    this.addCommand({
+      id: "switch-focus-profile",
+      name: "Switch focus profile",
+      callback: () => {
+        void commandsHandler.invokeSwitchProfile();
+      },
+    });
+
+    this.addCommand({
+      id: "push-current-assetspace",
+      name: "Push current assetspace",
+      callback: () => {
+        void commandsHandler.invokePushCurrentAssetSpace();
+      },
+    });
+
+    this.logger.info(
+      "[ExocortexPlugin] FocusProfile palette commands registered",
+    );
+  }
+
+  /**
+   * Constructs an `IAssetSpacePusher` for {@link registerFocusProfileCommands}.
+   *
+   * When a GitHub PAT is configured в `data.local.json` (per RFC 0a0791c1
+   * Vision Lock #1), returns a real `AssetSpaceManager` — push works
+   * end-to-end. When PAT is absent, returns a lookup-only stub backed
+   * by a direct vault scan (mirrors `AssetSpaceManager.lookupAssetSpaceForPath`)
+   * — push surfaces a «Configure GitHub PAT» Notice без crashing onload.
+   *
+   * This split lets the Switch command remain fully operational regardless
+   * of PAT presence, while the Push command degrades gracefully.
+   */
+  private async buildAssetSpacePusher(): Promise<IAssetSpacePusher> {
+    const secretsStore = new LocalSecretsStore({ app: this.app });
+    const pat = await secretsStore.getSecret("pat");
+    const lookupOnlyFor = (folderName: string): string | null =>
+      this.lookupAssetSpaceUidByFolder(folderName);
+
+    if (pat === null || pat.length === 0) {
+      return {
+        lookupAssetSpaceForPath: lookupOnlyFor,
+        pushAssetSpace: () =>
+          Promise.reject(
+            new Error(
+              "GitHub PAT not configured — set it в Settings → Exocortex → GitHub PAT",
+            ),
+          ),
+      };
+    }
+
+    try {
+      const client = new GitHubRestClient({ pat, app: this.app });
+      const manager = new AssetSpaceManager({
+        app: this.app,
+        client,
+        notifications: this.notifier,
+      });
+      return {
+        lookupAssetSpaceForPath: (folderName) =>
+          manager.lookupAssetSpaceForPath(folderName),
+        pushAssetSpace: async (asUid) => {
+          const sha = await manager.pushAssetSpace(asUid);
+          // `AssetSpaceManager.pushAssetSpace` returns `Promise<string | null>`
+          // (`null` = no dirty files, no-op success). Coerce `null` → `""`
+          // to match `FocusProfileCommands.IAssetSpacePusher` contract,
+          // which treats empty string as «no-op» (see handler comment
+          // around line 139).
+          return sha ?? "";
+        },
+      };
+    } catch (error) {
+      this.logger.error(
+        "[ExocortexPlugin] AssetSpaceManager construction failed — push command will fail-clean",
+        error instanceof Error ? error : new Error(String(error)),
+      );
+      return {
+        lookupAssetSpaceForPath: lookupOnlyFor,
+        pushAssetSpace: () =>
+          Promise.reject(
+            new Error(
+              `Could not initialise AssetSpaceManager: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+            ),
+          ),
+      };
+    }
+  }
+
+  /**
+   * Vault-scan lookup mirroring `AssetSpaceManager.lookupAssetSpaceForPath`
+   * — finds the AssetSpace ABox asset whose containing folder matches
+   * `folderName` and returns its `exo__Asset_uid`. Used by the lookup-
+   * only stub path when GitHub PAT is absent (push disabled but the
+   * lookup branches in `FocusProfileCommands.invokePushCurrentAssetSpace`
+   * still need to resolve).
+   *
+   * Kept narrow на purpose — duplicating ~15 LOC из AssetSpaceManager
+   * avoids importing the full manager (которое requires a PAT to
+   * construct).
+   */
+  private lookupAssetSpaceUidByFolder(folderName: string): string | null {
+    if (typeof folderName !== "string" || folderName.length === 0) return null;
+    const normalised = folderName.replace(/\/$/, "");
+    for (const file of this.app.vault.getMarkdownFiles()) {
+      const parent = file.parent?.path ?? "";
+      if (parent !== normalised) continue;
+      const fm = this.app.metadataCache.getFileCache(file)?.frontmatter as
+        | Record<string, unknown>
+        | undefined;
+      if (!fm) continue;
+      const classes = fm["exo__Instance_class"];
+      const classList: unknown[] = Array.isArray(classes)
+        ? classes
+        : classes
+          ? [classes]
+          : [];
+      const isAssetSpace = classList.some(
+        (c) => typeof c === "string" && c.includes(ASSET_SPACE_CLASS_UID),
+      );
+      if (!isAssetSpace) continue;
+      const uid = fm["exo__Asset_uid"];
+      if (typeof uid === "string" && uid.length > 0) return uid;
+    }
+    return null;
   }
 }

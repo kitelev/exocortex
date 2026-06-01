@@ -2,6 +2,7 @@ import type { TFile } from "obsidian";
 import type { InMemoryTripleStore, SolutionMapping, Triple } from "exocortex";
 import { SPARQLQueryService } from '@plugin/application/services/SPARQLQueryService';
 import type ExocortexPlugin from '@plugin/ExocortexPlugin';
+import type { VaultRDFIndexer } from '@plugin/infrastructure/VaultRDFIndexer';
 
 /**
  * Result of a SPARQL SELECT query execution.
@@ -309,6 +310,28 @@ export class SPARQLApi {
    */
   async reindexFile(file: TFile): Promise<void> {
     await this.queryService.updateFile(file);
+  }
+
+  /**
+   * Returns the underlying `VaultRDFIndexer`. Exposed для RFC 0a0791c1
+   * B.4 wiring — `PluginRdfIndexerAdapter` (Issue #3322) constructs an
+   * `IRdfIndexer` over this instance so `FocusProfileSwitchManager.switchProfile`
+   * can thread the effective ontology set через
+   * `VaultRDFIndexer.refresh(set)`.
+   *
+   * This is intentionally a thin passthrough; callers should NOT directly
+   * mutate indexer state outside of the SwitchManager flow.
+   *
+   * **Known abstraction leak** (code-reviewer MEDIUM, deferred): the
+   * `VaultRDFIndexer` type sits in `infrastructure/` while this class
+   * sits in `application/api/`. Tightening the return type к а narrower
+   * application-layer interface (e.g. `IRdfIndexerHandle` exposing only
+   * `refresh(set) + setEffectiveOntologies + setAssetSpaceFolderToUid`)
+   * is а follow-up task; for now the leak is documented and contained
+   * к the single consumer.
+   */
+  getRdfIndexer(): VaultRDFIndexer {
+    return this.queryService.getIndexer();
   }
 
   /**
