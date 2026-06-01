@@ -100,6 +100,7 @@ import { VaultProfileResolver } from "./infrastructure/adapters/VaultProfileReso
 import { PluginRdfIndexerAdapter } from "./infrastructure/adapters/PluginRdfIndexerAdapter";
 import { PluginSettingsStoreAdapter } from "./infrastructure/adapters/PluginSettingsStoreAdapter";
 import { ProfileFuzzyModal } from "./infrastructure/adapters/ProfileFuzzyModal";
+import { applyActiveProfileFilter } from "./infrastructure/adapters/FocusProfileOnloadWiring";
 import {
   AssetSpaceManager,
   ASSET_SPACE_CLASS_UID,
@@ -2203,6 +2204,38 @@ export default class ExocortexPlugin extends Plugin {
       settingsStore,
       notify: (message) => this.notifier.info(message),
     });
+
+    // Issue #3324 — apply the persisted `activeProfileUid` to the indexer's
+    // filter setters BEFORE the eager-init / metadataCache-resolved chain
+    // first calls `convertVault`. The helper is no-op when the field is
+    // null (default), translates Ontology UIDs declared in the profile to
+    // AS UIDs via `exo__AssetSpace_containsOntology`, and degrades to no-
+    // filter when the translation produces zero folder overlap (R15 self-
+    // brick mitigation surfaced one layer earlier than the converter).
+    //
+    // Wrapped in try/catch so a scan failure here cannot abort the rest
+    // of `registerFocusProfileCommands` — the indexer falls back to full
+    // vault, matching the no-profile default.
+    try {
+      const persistedProfileUid =
+        typeof (this.settings as Record<string, unknown>).activeProfileUid ===
+        "string"
+          ? ((this.settings as Record<string, unknown>)
+              .activeProfileUid as string)
+          : null;
+      await applyActiveProfileFilter({
+        app: this.app,
+        switchMgr,
+        indexer: this.sparql.getRdfIndexer(),
+        activeProfileUid: persistedProfileUid,
+        logger: this.logger,
+      });
+    } catch (error) {
+      this.logger.warn(
+        "[ExocortexPlugin] applyActiveProfileFilter failed — indexer falls back to full vault",
+        error instanceof Error ? error : new Error(String(error)),
+      );
+    }
 
     // Crash-recovery: если previous session left `_switchInProgress=true`
     // в settings (FocusProfileSwitchManager docstring line 18), re-trigger
