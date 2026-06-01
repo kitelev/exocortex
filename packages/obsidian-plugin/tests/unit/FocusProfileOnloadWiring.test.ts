@@ -382,6 +382,38 @@ describe("applyActiveProfileFilter", () => {
     expect(indexer.effective!.has(asEms)).toBe(true);
   });
 
+  it("degrades gracefully when activeProfileUid is empty string (defensive)", async () => {
+    // VaultProfileResolver.resolve short-circuits on empty UID → resolveEffectiveSet
+    // returns just TS-floor URIs (no profile-derived entries). Translation would
+    // pass-through-translate any AS UIDs (URIs don't match folder values), then
+    // TS-floor injection adds the floor AS UIDs. Empty-string activeProfileUid
+    // (legacy data.json shape) must not throw and must engage iff floor overlaps.
+    const ontologyExo = "ca97bb2f-99bd-4ceb-b51e-c386b9231ae3";
+    const app = makeApp([
+      {
+        file: { path: "assetspaces/exo/exo.md", basename: "exo" },
+        fm: asFrontmatter(TS_FLOOR_AS_UID_EXO, [ontologyExo]),
+      },
+    ]);
+    const indexer = makeIndexerStub();
+    const logger = makeLogger();
+    // Empty set models VaultProfileResolver.resolve("") returning null →
+    // FocusProfileSwitchManager.resolveEffectiveSet emits empty + TS-floor URIs.
+    const switchMgr = makeSwitchMgrStub(new Set());
+
+    const result = await applyActiveProfileFilter({
+      app,
+      switchMgr,
+      indexer,
+      activeProfileUid: "",
+      logger,
+    });
+
+    // Engages on TS-floor alone (overlap satisfied by the exo AS file present).
+    expect(result.outcome).toBe("engaged");
+    expect(indexer.effective!.has(TS_FLOOR_AS_UID_EXO)).toBe(true);
+  });
+
   it("surfaces untranslated UIDs in the engagement info log", async () => {
     // Mix: ontologyEms translates → asEms; unknownOntology fails translation.
     // TS-floor AS files present so engagement succeeds and we land in the
