@@ -300,6 +300,75 @@ describe("GitHubRestClient", () => {
     });
   });
 
+  // ─── listRepos (Issue #3320 Settings UI Test connection) ──────────────
+  describe("listRepos", () => {
+    it("returns full_name strings from /user/repos response", async () => {
+      requestUrlMock.mockResolvedValue(
+        ok({
+          json: [
+            { full_name: "kitelev/exoas-tbank" },
+            { full_name: "kitelev/exoas-ems" },
+            { full_name: "kitelev/exoas-aiknow" },
+          ],
+        }),
+      );
+      const c = new GitHubRestClient({ pat: FAKE_PAT, app: fakeApp });
+      const out = await c.listRepos(5);
+      expect(out).toEqual([
+        "kitelev/exoas-tbank",
+        "kitelev/exoas-ems",
+        "kitelev/exoas-aiknow",
+      ]);
+    });
+
+    it("defaults perPage to 5 and URL-encodes the query", async () => {
+      requestUrlMock.mockResolvedValue(ok({ json: [] }));
+      const c = new GitHubRestClient({ pat: FAKE_PAT, app: fakeApp });
+      await c.listRepos();
+      expect(requestUrlMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          url: "https://api.github.com/user/repos?per_page=5&sort=updated",
+        }),
+      );
+    });
+
+    it("clamps perPage to [1, 100]", async () => {
+      requestUrlMock.mockResolvedValue(ok({ json: [] }));
+      const c = new GitHubRestClient({ pat: FAKE_PAT, app: fakeApp });
+      await c.listRepos(0); // → 1
+      await c.listRepos(500); // → 100
+      const urls = requestUrlMock.mock.calls.map((call) => call[0].url);
+      expect(urls[0]).toBe(
+        "https://api.github.com/user/repos?per_page=1&sort=updated",
+      );
+      expect(urls[1]).toBe(
+        "https://api.github.com/user/repos?per_page=100&sort=updated",
+      );
+    });
+
+    it("throws on non-array response (malformed)", async () => {
+      requestUrlMock.mockResolvedValue(ok({ json: { error: "nope" } }));
+      const c = new GitHubRestClient({ pat: FAKE_PAT, app: fakeApp });
+      await expect(c.listRepos(5)).rejects.toThrow(/malformed/);
+    });
+
+    it("ignores items lacking full_name", async () => {
+      requestUrlMock.mockResolvedValue(
+        ok({
+          json: [
+            { full_name: "kitelev/exoas-tbank" },
+            { id: 999 }, // missing full_name
+            { full_name: 42 }, // non-string full_name
+            { full_name: "kitelev/exoas-ems" },
+          ],
+        }),
+      );
+      const c = new GitHubRestClient({ pat: FAKE_PAT, app: fakeApp });
+      const out = await c.listRepos(5);
+      expect(out).toEqual(["kitelev/exoas-tbank", "kitelev/exoas-ems"]);
+    });
+  });
+
   // ─── getRepoHead ──────────────────────────────────────────────────
   describe("getRepoHead", () => {
     it("returns commit.sha", async () => {
