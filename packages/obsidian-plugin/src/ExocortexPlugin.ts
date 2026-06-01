@@ -2204,6 +2204,32 @@ export default class ExocortexPlugin extends Plugin {
       notify: (message) => this.notifier.info(message),
     });
 
+    // Crash-recovery: если previous session left `_switchInProgress=true`
+    // в settings (FocusProfileSwitchManager docstring line 18), re-trigger
+    // the idempotent re-index so the flag self-clears. Failure swallowed —
+    // user-facing recovery is а Phase D follow-up; the only side-effect
+    // of skipping this is the «stuck switch in progress» footgun (code-
+    // reviewer HIGH catch).
+    try {
+      const initialSettings = await settingsStore.load();
+      if (initialSettings._switchInProgress) {
+        this.logger.warn(
+          "[ExocortexPlugin] previous session left _switchInProgress=true — attempting idempotent recovery",
+        );
+      }
+      const recovery = await switchMgr.recoverIfNeeded();
+      if (recovery.recovered) {
+        this.logger.info(
+          `[ExocortexPlugin] FocusProfile switch recovery completed for ${recovery.targetUid}`,
+        );
+      }
+    } catch (error) {
+      this.logger.warn(
+        "[ExocortexPlugin] FocusProfile switch recovery failed",
+        error instanceof Error ? error : new Error(String(error)),
+      );
+    }
+
     const pushMgr = await this.buildAssetSpacePusher();
 
     const profileLister = async (): Promise<FocusProfileChoice[]> => {

@@ -48,9 +48,15 @@ export class ProfileFuzzyModal extends FuzzySuggestModal<FocusProfileChoice> {
   }
 
   override onClose(): void {
+    // Resolve BEFORE super.onClose() so a throw from Obsidian's lifecycle
+    // teardown cannot leave the awaiter pending forever (code-reviewer
+    // medium catch — Obsidian's FuzzySuggestModal.onClose runs DOM
+    // cleanup; rare, but if it throws the resolve below would be
+    // skipped → memory leak).
+    if (!this.resolved) {
+      this.resolved = true;
+      this.resolve(null);
+    }
     super.onClose();
-    if (this.resolved) return;
-    this.resolved = true;
-    this.resolve(null);
   }
 }

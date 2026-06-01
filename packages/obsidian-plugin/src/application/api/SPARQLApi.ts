@@ -321,6 +321,14 @@ export class SPARQLApi {
    *
    * This is intentionally a thin passthrough; callers should NOT directly
    * mutate indexer state outside of the SwitchManager flow.
+   *
+   * **Known abstraction leak** (code-reviewer MEDIUM, deferred): the
+   * `VaultRDFIndexer` type sits in `infrastructure/` while this class
+   * sits in `application/api/`. Tightening the return type к а narrower
+   * application-layer interface (e.g. `IRdfIndexerHandle` exposing only
+   * `refresh(set) + setEffectiveOntologies + setAssetSpaceFolderToUid`)
+   * is а follow-up task; for now the leak is documented and contained
+   * к the single consumer.
    */
   getRdfIndexer(): VaultRDFIndexer {
     return this.queryService.getIndexer();
