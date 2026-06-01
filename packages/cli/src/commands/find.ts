@@ -20,12 +20,18 @@ import {
   transformShorthandNotation,
   filterOntologyPrefixes,
 } from "../utils/QueryPrefixInjector.js";
+import { resolveProfileFilter } from "../utils/resolveProfileFilter.js";
 
 export interface FindOptions {
   vault: string;
   also?: string[];
   sparql?: string;
   class?: string;
+  /**
+   * FocusProfile UID — restricts the RDF graph to the effective AssetSpace
+   * set declared by the profile chain (RFC 0a0791c1 Issue #3323).
+   */
+  profile?: string;
 }
 
 /**
@@ -129,6 +135,10 @@ export function findCommand(): Command {
       "--class <value>",
       "Filter by class label via find__Alias 'class' (e.g. ems__Task)",
     )
+    .option(
+      "--profile <uid>",
+      "FocusProfile UID — restrict graph to effective AssetSpace set (RFC 0a0791c1)",
+    )
     .action(async (options: FindOptions) => {
       ErrorHandler.setFormat("text" as OutputFormat);
 
@@ -151,11 +161,24 @@ export function findCommand(): Command {
           throw new VaultNotFoundError(vaultPath);
         }
 
+        const alsoVaults = options.also || [];
+        const profileFilter = await resolveProfileFilter({
+          profileUid: options.profile,
+          primaryVaultPath: vaultPath,
+          alsoVaultPaths: alsoVaults.map((p) => resolve(p)),
+          outputFormat: "text" as OutputFormat,
+        });
+        const converterOpts = profileFilter !== null
+          ? {
+              effectiveOntologies: profileFilter.effective,
+              assetSpaceFolderToUid: profileFilter.folderMap,
+            }
+          : {};
+
         const vaultAdapter = new FileSystemVaultAdapter(vaultPath);
         const converter = new NoteToRDFConverter(vaultAdapter);
-        let triples: Triple[] = await converter.convertVault();
+        let triples: Triple[] = await converter.convertVault(converterOpts);
 
-        const alsoVaults = options.also || [];
         for (const alsoPath of alsoVaults) {
           const resolvedAlsoPath = resolve(alsoPath);
           if (!existsSync(resolvedAlsoPath)) {
@@ -163,7 +186,7 @@ export function findCommand(): Command {
           }
           const alsoAdapter = new FileSystemVaultAdapter(resolvedAlsoPath);
           const alsoConverter = new NoteToRDFConverter(alsoAdapter);
-          const alsoTriples = await alsoConverter.convertVault();
+          const alsoTriples = await alsoConverter.convertVault(converterOpts);
           triples = triples.concat(alsoTriples);
         }
 

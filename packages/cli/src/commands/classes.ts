@@ -17,12 +17,18 @@ import { ErrorHandler, type OutputFormat } from "../utils/ErrorHandler.js";
 import { VaultNotFoundError } from "../utils/errors/index.js";
 import { ResponseBuilder } from "../responses/index.js";
 import { CacheManager } from "../cache/CacheManager.js";
+import { resolveProfileFilter } from "../utils/resolveProfileFilter.js";
 
 export interface ClassesCommandOptions {
   vault: string;
   format: "table" | "json";
   output?: OutputFormat;
   useCache?: boolean;
+  /**
+   * FocusProfile UID — restricts the RDF graph to the effective AssetSpace
+   * set declared by the profile chain (RFC 0a0791c1 Issue #3323).
+   */
+  profile?: string;
 }
 
 interface ClassInfo {
@@ -51,6 +57,10 @@ export function classesCommand(): Command {
     .option("--format <type>", "Output format: table|json", "table")
     .option("--output <type>", "Response format: text|json (for MCP tools)", "text")
     .option("--use-cache", "Use persistent cache (faster for repeated queries)")
+    .option(
+      "--profile <uid>",
+      "FocusProfile UID — restrict graph to effective AssetSpace set (RFC 0a0791c1)",
+    )
     .action(async (className: string | undefined, options: ClassesCommandOptions) => {
       const outputFormat = (options.output || "text") as OutputFormat;
       ErrorHandler.setFormat(outputFormat);
@@ -67,10 +77,27 @@ export function classesCommand(): Command {
           console.log(`📦 Loading vault: ${vaultPath}...`);
         }
 
+        const profileFilter = await resolveProfileFilter({
+          profileUid: options.profile,
+          primaryVaultPath: vaultPath,
+          outputFormat,
+        });
+
+        // --profile disables --use-cache (cache is not profile-aware).
+        let useCacheEffective = options.useCache ?? false;
+        if (useCacheEffective && profileFilter !== null) {
+          if (outputFormat === "text") {
+            console.log(
+              "⚠️  --use-cache disabled because --profile is active (cache is not profile-aware).",
+            );
+          }
+          useCacheEffective = false;
+        }
+
         let triples: Triple[];
         let cacheHit = false;
 
-        if (options.useCache) {
+        if (useCacheEffective) {
           const cacheManager = new CacheManager(vaultPath);
           const cacheResult = await cacheManager.loadOrBuild();
           triples = cacheResult.triples;
@@ -82,7 +109,14 @@ export function classesCommand(): Command {
         } else {
           const vaultAdapter = new FileSystemVaultAdapter(vaultPath);
           const converter = new NoteToRDFConverter(vaultAdapter);
-          triples = await converter.convertVault();
+          triples = await converter.convertVault(
+            profileFilter !== null
+              ? {
+                  effectiveOntologies: profileFilter.effective,
+                  assetSpaceFolderToUid: profileFilter.folderMap,
+                }
+              : {},
+          );
         }
 
         const tripleStore = new InMemoryTripleStore();

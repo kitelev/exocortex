@@ -1,0 +1,541 @@
+/**
+ * Unit tests for `CliFocusProfileResolver` (RFC 0a0791c1 Issue #3323).
+ *
+ * Uses an on-disk temp vault for each test — exercises the real file walk,
+ * yaml parse, and translation chain that production CLI hits. Faster and
+ * more realistic than mocking `fs-extra` (the adapter surface area is large
+ * and stubs would diverge from real semantics, the exact failure mode
+ * `test-fixture-realism.md` warns against).
+ */
+
+import { describe, it, expect, beforeEach, afterEach } from "@jest/globals";
+import fs from "fs-extra";
+import os from "os";
+import path from "path";
+
+import {
+  CliFocusProfileResolver,
+  TS_FLOOR_AS_UID_EXO,
+  TS_FLOOR_AS_UID_EXOCMD,
+  TS_FLOOR_AS_UID_SHARED_IDENTITIES,
+  ASSET_SPACE_CLASS_UID,
+  FOCUS_PROFILE_CLASS_UID,
+  parseWikilinkArray,
+  extractUidFromWikilink,
+} from "../../../src/services/CliFocusProfileResolver.js";
+
+/** Fixed UIDs the fixtures reuse — readable in test names. */
+const PROFILE_PERSONAL_UID = "11111111-1111-1111-1111-111111111111";
+const PROFILE_WORK_UID = "22222222-2222-2222-2222-222222222222";
+const PROFILE_BASE_UID = "33333333-3333-3333-3333-333333333333";
+const PROFILE_CYCLE_A_UID = "44444444-4444-4444-4444-444444444444";
+const PROFILE_CYCLE_B_UID = "55555555-5555-5555-5555-555555555555";
+
+const AS_EXO_UID = TS_FLOOR_AS_UID_EXO;
+const AS_EXOCMD_UID = TS_FLOOR_AS_UID_EXOCMD;
+const AS_SHARED_UID = TS_FLOOR_AS_UID_SHARED_IDENTITIES;
+const AS_EMS_UID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+const AS_KITELEV_UID = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+
+const ONTOLOGY_EMS_UID = "cccccccc-cccc-cccc-cccc-cccccccccccc";
+const ONTOLOGY_KITELEV_UID = "dddddddd-dddd-dddd-dddd-dddddddddddd";
+
+interface AssetSpec {
+  /** Path relative to vault root (e.g. `assetspaces/ems/<uid>.md`). */
+  relPath: string;
+  frontmatter: Record<string, unknown>;
+}
+
+async function makeVault(vaultRoot: string, assets: AssetSpec[]): Promise<void> {
+  await fs.ensureDir(vaultRoot);
+  for (const asset of assets) {
+    const full = path.join(vaultRoot, asset.relPath);
+    await fs.ensureDir(path.dirname(full));
+    const yamlLines = Object.entries(asset.frontmatter).map(([k, v]) => {
+      if (Array.isArray(v)) {
+        return `${k}:\n${v.map((x) => `  - "${String(x).replace(/"/g, '\\"')}"`).join("\n")}`;
+      }
+      if (typeof v === "string") {
+        return `${k}: "${v.replace(/"/g, '\\"')}"`;
+      }
+      return `${k}: ${v}`;
+    });
+    const body = `---\n${yamlLines.join("\n")}\n---\n\n# ${asset.frontmatter["exo__Asset_uid"] ?? ""}\n`;
+    await fs.writeFile(full, body, "utf-8");
+  }
+}
+
+function asAssetSpace(uid: string, folder: string, containsOntologies: string[] = []): AssetSpec {
+  return {
+    relPath: `assetspaces/${folder}/${uid}.md`,
+    frontmatter: {
+      "exo__Asset_uid": uid,
+      "exo__Instance_class": [`[[${ASSET_SPACE_CLASS_UID}|exo__AssetSpace]]`],
+      ...(containsOntologies.length > 0
+        ? {
+            "exo__AssetSpace_containsOntology": containsOntologies.map(
+              (o) => `[[${o}]]`,
+            ),
+          }
+        : {}),
+    },
+  };
+}
+
+function asProfile(
+  uid: string,
+  opts: {
+    label?: string;
+    includes?: string[];
+    extends_?: string;
+    overlay?: string[];
+  } = {},
+): AssetSpec {
+  const fm: Record<string, unknown> = {
+    "exo__Asset_uid": uid,
+    "exo__Instance_class": [`[[${FOCUS_PROFILE_CLASS_UID}|exo__FocusProfile]]`],
+  };
+  if (opts.label !== undefined) fm["exo__Asset_label"] = opts.label;
+  if (opts.includes !== undefined) {
+    fm["exo__FocusProfile_includes"] = opts.includes.map((u) => `[[${u}]]`);
+  }
+  if (opts.extends_ !== undefined) {
+    fm["exo__FocusProfile_extends"] = [`[[${opts.extends_}]]`];
+  }
+  if (opts.overlay !== undefined) {
+    fm["exo__FocusProfile_alwaysOnOverlay"] = opts.overlay.map((u) => `[[${u}]]`);
+  }
+  return {
+    relPath: `profiles/${uid}.md`,
+    frontmatter: fm,
+  };
+}
+
+describe("CliFocusProfileResolver", () => {
+  let tmpRoot: string;
+
+  beforeEach(async () => {
+    tmpRoot = await fs.mkdtemp(
+      path.join(os.tmpdir(), "exocortex-cli-profile-test-"),
+    );
+  });
+
+  afterEach(async () => {
+    if (tmpRoot && (await fs.pathExists(tmpRoot))) {
+      await fs.remove(tmpRoot);
+    }
+  });
+
+  describe("resolveFilter — outcome shapes", () => {
+    it("returns no-profile when profileUid is null", async () => {
+      const resolver = new CliFocusProfileResolver({ vaultPath: tmpRoot });
+      const out = await resolver.resolveFilter(null);
+      expect(out.outcome).toBe("no-profile");
+    });
+
+    it("returns no-profile when profileUid is undefined", async () => {
+      const resolver = new CliFocusProfileResolver({ vaultPath: tmpRoot });
+      const out = await resolver.resolveFilter(undefined);
+      expect(out.outcome).toBe("no-profile");
+    });
+
+    it("returns no-profile when profileUid is empty string", async () => {
+      const resolver = new CliFocusProfileResolver({ vaultPath: tmpRoot });
+      const out = await resolver.resolveFilter("");
+      expect(out.outcome).toBe("no-profile");
+    });
+
+    it("returns missing-profile when UID is not found in vault", async () => {
+      await makeVault(tmpRoot, [
+        asAssetSpace(AS_EXO_UID, "exo"),
+      ]);
+      const resolver = new CliFocusProfileResolver({ vaultPath: tmpRoot });
+      const out = await resolver.resolveFilter("nonexistent-uid");
+      expect(out.outcome).toBe("missing-profile");
+      if (out.outcome === "missing-profile") {
+        expect(out.profileUid).toBe("nonexistent-uid");
+      }
+    });
+  });
+
+  describe("resolveFilter — engaged paths", () => {
+    it("engages with TS-floor only when profile has empty includes (and at least one folder overlaps via floor)", async () => {
+      await makeVault(tmpRoot, [
+        asAssetSpace(AS_EXO_UID, "exo"),
+        asAssetSpace(AS_EXOCMD_UID, "exocmd"),
+        asAssetSpace(AS_SHARED_UID, "shared-identities"),
+        asProfile(PROFILE_BASE_UID, { label: "base" }),
+      ]);
+      const resolver = new CliFocusProfileResolver({ vaultPath: tmpRoot });
+      const out = await resolver.resolveFilter(PROFILE_BASE_UID);
+      expect(out.outcome).toBe("engaged");
+      if (out.outcome === "engaged") {
+        expect(out.result.effective.has(AS_EXO_UID)).toBe(true);
+        expect(out.result.effective.has(AS_EXOCMD_UID)).toBe(true);
+        expect(out.result.effective.has(AS_SHARED_UID)).toBe(true);
+        expect(out.result.effective.size).toBe(3); // floor only
+      }
+    });
+
+    it("translates declared Ontology UIDs to AS UIDs via containsOntology", async () => {
+      await makeVault(tmpRoot, [
+        asAssetSpace(AS_EXO_UID, "exo"),
+        asAssetSpace(AS_EXOCMD_UID, "exocmd"),
+        asAssetSpace(AS_SHARED_UID, "shared-identities"),
+        asAssetSpace(AS_EMS_UID, "ems", [ONTOLOGY_EMS_UID]),
+        asProfile(PROFILE_PERSONAL_UID, {
+          includes: [ONTOLOGY_EMS_UID],
+        }),
+      ]);
+      const resolver = new CliFocusProfileResolver({ vaultPath: tmpRoot });
+      const out = await resolver.resolveFilter(PROFILE_PERSONAL_UID);
+      expect(out.outcome).toBe("engaged");
+      if (out.outcome === "engaged") {
+        // Ontology UID got translated to its owning AS UID
+        expect(out.result.effective.has(AS_EMS_UID)).toBe(true);
+        // TS-floor present
+        expect(out.result.effective.has(AS_EXO_UID)).toBe(true);
+        expect(out.result.effective.has(AS_EXOCMD_UID)).toBe(true);
+        expect(out.result.effective.has(AS_SHARED_UID)).toBe(true);
+        // declared set surfaced for diagnostics
+        expect(out.result.declaredOntologies.has(ONTOLOGY_EMS_UID)).toBe(true);
+        // No untranslated entries
+        expect(out.result.untranslated.length).toBe(0);
+      }
+    });
+
+    it("passes through declared UIDs that are already AS UIDs (future-proof: profile may declare AS directly)", async () => {
+      await makeVault(tmpRoot, [
+        asAssetSpace(AS_EXO_UID, "exo"),
+        asAssetSpace(AS_EXOCMD_UID, "exocmd"),
+        asAssetSpace(AS_SHARED_UID, "shared-identities"),
+        asAssetSpace(AS_EMS_UID, "ems"), // No containsOntology declared
+        asProfile(PROFILE_PERSONAL_UID, {
+          includes: [AS_EMS_UID], // Profile points directly at AS UID
+        }),
+      ]);
+      const resolver = new CliFocusProfileResolver({ vaultPath: tmpRoot });
+      const out = await resolver.resolveFilter(PROFILE_PERSONAL_UID);
+      expect(out.outcome).toBe("engaged");
+      if (out.outcome === "engaged") {
+        expect(out.result.effective.has(AS_EMS_UID)).toBe(true);
+      }
+    });
+
+    it("records untranslated UIDs when Ontology has no AssetSpace owner", async () => {
+      await makeVault(tmpRoot, [
+        asAssetSpace(AS_EXO_UID, "exo"),
+        asAssetSpace(AS_EXOCMD_UID, "exocmd"),
+        asAssetSpace(AS_SHARED_UID, "shared-identities"),
+        asAssetSpace(AS_EMS_UID, "ems", [ONTOLOGY_EMS_UID]),
+        asProfile(PROFILE_PERSONAL_UID, {
+          // ONTOLOGY_EMS resolves; ONTOLOGY_KITELEV has no AS owner
+          includes: [ONTOLOGY_EMS_UID, ONTOLOGY_KITELEV_UID],
+        }),
+      ]);
+      const resolver = new CliFocusProfileResolver({ vaultPath: tmpRoot });
+      const out = await resolver.resolveFilter(PROFILE_PERSONAL_UID);
+      expect(out.outcome).toBe("engaged");
+      if (out.outcome === "engaged") {
+        expect(out.result.untranslated).toContain(ONTOLOGY_KITELEV_UID);
+        expect(out.result.untranslated).not.toContain(ONTOLOGY_EMS_UID);
+        expect(out.result.effective.has(AS_EMS_UID)).toBe(true);
+      }
+    });
+
+    it("walks _extends chain recursively, merging includes and overlays", async () => {
+      await makeVault(tmpRoot, [
+        asAssetSpace(AS_EXO_UID, "exo"),
+        asAssetSpace(AS_EXOCMD_UID, "exocmd"),
+        asAssetSpace(AS_SHARED_UID, "shared-identities"),
+        asAssetSpace(AS_EMS_UID, "ems"),
+        asAssetSpace(AS_KITELEV_UID, "kitelev"),
+        asProfile(PROFILE_BASE_UID, {
+          overlay: [AS_KITELEV_UID], // base provides kitelev via overlay
+        }),
+        asProfile(PROFILE_PERSONAL_UID, {
+          includes: [AS_EMS_UID],
+          extends_: PROFILE_BASE_UID,
+        }),
+      ]);
+      const resolver = new CliFocusProfileResolver({ vaultPath: tmpRoot });
+      const out = await resolver.resolveFilter(PROFILE_PERSONAL_UID);
+      expect(out.outcome).toBe("engaged");
+      if (out.outcome === "engaged") {
+        expect(out.result.effective.has(AS_EMS_UID)).toBe(true); // from includes
+        expect(out.result.effective.has(AS_KITELEV_UID)).toBe(true); // from parent overlay
+        expect(out.result.declaredOntologies.has(AS_KITELEV_UID)).toBe(true);
+      }
+    });
+
+    it("merges _alwaysOnOverlay into effective set even on the leaf profile", async () => {
+      await makeVault(tmpRoot, [
+        asAssetSpace(AS_EXO_UID, "exo"),
+        asAssetSpace(AS_EXOCMD_UID, "exocmd"),
+        asAssetSpace(AS_SHARED_UID, "shared-identities"),
+        asAssetSpace(AS_KITELEV_UID, "kitelev"),
+        asProfile(PROFILE_PERSONAL_UID, {
+          overlay: [AS_KITELEV_UID],
+        }),
+      ]);
+      const resolver = new CliFocusProfileResolver({ vaultPath: tmpRoot });
+      const out = await resolver.resolveFilter(PROFILE_PERSONAL_UID);
+      expect(out.outcome).toBe("engaged");
+      if (out.outcome === "engaged") {
+        expect(out.result.effective.has(AS_KITELEV_UID)).toBe(true);
+      }
+    });
+  });
+
+  describe("resolveFilter — cycle and depth guards", () => {
+    it("tolerates cycles via visited-set guard", async () => {
+      // A → B → A — must not infinite-loop, must complete
+      await makeVault(tmpRoot, [
+        asAssetSpace(AS_EXO_UID, "exo"),
+        asAssetSpace(AS_EXOCMD_UID, "exocmd"),
+        asAssetSpace(AS_SHARED_UID, "shared-identities"),
+        asProfile(PROFILE_CYCLE_A_UID, {
+          extends_: PROFILE_CYCLE_B_UID,
+        }),
+        asProfile(PROFILE_CYCLE_B_UID, {
+          extends_: PROFILE_CYCLE_A_UID,
+        }),
+      ]);
+      const resolver = new CliFocusProfileResolver({ vaultPath: tmpRoot });
+      const out = await resolver.resolveFilter(PROFILE_CYCLE_A_UID);
+      // Either engaged with TS-floor only, or degraded — but must NOT hang and
+      // must NOT throw.
+      expect(["engaged", "degraded"]).toContain(out.outcome);
+    });
+
+    it("throws on chain longer than maxExtendsDepth — surfaced via error outcome", async () => {
+      // Build a 7-deep chain (max default is 5)
+      const chain: string[] = [];
+      for (let i = 0; i < 7; i++) {
+        chain.push(`9${i}9${i}9${i}9${i}-9${i}9${i}-9${i}9${i}-9${i}9${i}-9${i}9${i}9${i}9${i}9${i}9${i}`);
+      }
+      const assets: AssetSpec[] = [
+        asAssetSpace(AS_EXO_UID, "exo"),
+        asAssetSpace(AS_EXOCMD_UID, "exocmd"),
+        asAssetSpace(AS_SHARED_UID, "shared-identities"),
+      ];
+      for (let i = 0; i < chain.length; i++) {
+        assets.push(
+          asProfile(chain[i], {
+            extends_: i < chain.length - 1 ? chain[i + 1] : undefined,
+          }),
+        );
+      }
+      await makeVault(tmpRoot, assets);
+      const resolver = new CliFocusProfileResolver({
+        vaultPath: tmpRoot,
+        maxExtendsDepth: 5,
+      });
+      const out = await resolver.resolveFilter(chain[0]);
+      expect(out.outcome).toBe("error");
+      if (out.outcome === "error") {
+        expect(out.reason).toMatch(/max depth/i);
+      }
+    });
+  });
+
+  describe("resolveFilter — degraded path", () => {
+    it("returns degraded when effective set has zero AS-folder overlap (R15 self-brick mitigation)", async () => {
+      // No AssetSpace files exist at all in this vault, but a profile does
+      await makeVault(tmpRoot, [
+        asProfile(PROFILE_PERSONAL_UID, {
+          includes: ["some-random-ontology-uid"],
+        }),
+      ]);
+      const resolver = new CliFocusProfileResolver({ vaultPath: tmpRoot });
+      const out = await resolver.resolveFilter(PROFILE_PERSONAL_UID);
+      expect(out.outcome).toBe("degraded");
+      if (out.outcome === "degraded") {
+        expect(out.reason).toMatch(/zero AssetSpace folder overlap/i);
+      }
+    });
+  });
+
+  describe("resolveFilter — folderMap construction", () => {
+    it("builds folderMap with correct vault-relative folder keys", async () => {
+      await makeVault(tmpRoot, [
+        asAssetSpace(AS_EXO_UID, "exo"),
+        asAssetSpace(AS_EXOCMD_UID, "exocmd"),
+        asAssetSpace(AS_SHARED_UID, "shared-identities"),
+        asAssetSpace(AS_EMS_UID, "ems"),
+        asProfile(PROFILE_PERSONAL_UID, {
+          includes: [AS_EMS_UID],
+        }),
+      ]);
+      const resolver = new CliFocusProfileResolver({ vaultPath: tmpRoot });
+      const out = await resolver.resolveFilter(PROFILE_PERSONAL_UID);
+      expect(out.outcome).toBe("engaged");
+      if (out.outcome === "engaged") {
+        expect(out.result.folderMap.get("assetspaces/exo")).toBe(AS_EXO_UID);
+        expect(out.result.folderMap.get("assetspaces/ems")).toBe(AS_EMS_UID);
+        expect(out.result.folderMap.get("assetspaces/exocmd")).toBe(
+          AS_EXOCMD_UID,
+        );
+        expect(out.result.folderMap.get("assetspaces/shared-identities")).toBe(
+          AS_SHARED_UID,
+        );
+      }
+    });
+  });
+
+  describe("resolveFilter — multi-vault (--also)", () => {
+    it("scans primary + alsoVaultPaths to build folderMap and find profiles", async () => {
+      const secondaryRoot = await fs.mkdtemp(
+        path.join(os.tmpdir(), "exocortex-cli-profile-secondary-"),
+      );
+      try {
+        await makeVault(tmpRoot, [
+          asAssetSpace(AS_EXO_UID, "exo"),
+          asAssetSpace(AS_EXOCMD_UID, "exocmd"),
+        ]);
+        await makeVault(secondaryRoot, [
+          asAssetSpace(AS_SHARED_UID, "shared-identities"),
+          asAssetSpace(AS_EMS_UID, "ems"),
+          asProfile(PROFILE_PERSONAL_UID, {
+            includes: [AS_EMS_UID],
+          }),
+        ]);
+        const resolver = new CliFocusProfileResolver({
+          vaultPath: tmpRoot,
+          alsoVaultPaths: [secondaryRoot],
+        });
+        const out = await resolver.resolveFilter(PROFILE_PERSONAL_UID);
+        expect(out.outcome).toBe("engaged");
+        if (out.outcome === "engaged") {
+          expect(out.result.effective.has(AS_EMS_UID)).toBe(true);
+          expect(out.result.folderMap.size).toBeGreaterThanOrEqual(4);
+        }
+      } finally {
+        await fs.remove(secondaryRoot);
+      }
+    });
+
+    it("tolerates non-existent --also vault paths with warn", async () => {
+      await makeVault(tmpRoot, [
+        asAssetSpace(AS_EXO_UID, "exo"),
+        asAssetSpace(AS_EXOCMD_UID, "exocmd"),
+        asAssetSpace(AS_SHARED_UID, "shared-identities"),
+        asProfile(PROFILE_BASE_UID),
+      ]);
+      const warnings: string[] = [];
+      const resolver = new CliFocusProfileResolver({
+        vaultPath: tmpRoot,
+        alsoVaultPaths: ["/tmp/this-path-definitely-does-not-exist-test"],
+        warn: (m) => warnings.push(m),
+      });
+      const out = await resolver.resolveFilter(PROFILE_BASE_UID);
+      expect(out.outcome).toBe("engaged");
+      expect(warnings.some((w) => w.includes("does not exist"))).toBe(true);
+    });
+  });
+
+  describe("malformed input tolerance", () => {
+    it("skips files without frontmatter without throwing", async () => {
+      await makeVault(tmpRoot, [
+        asAssetSpace(AS_EXO_UID, "exo"),
+        asAssetSpace(AS_EXOCMD_UID, "exocmd"),
+        asAssetSpace(AS_SHARED_UID, "shared-identities"),
+        asProfile(PROFILE_BASE_UID),
+      ]);
+      // Drop a plain markdown file (no frontmatter)
+      await fs.ensureDir(path.join(tmpRoot, "03 Knowledge"));
+      await fs.writeFile(
+        path.join(tmpRoot, "03 Knowledge", "scratch.md"),
+        "# scratch\n\nnothing structured here\n",
+        "utf-8",
+      );
+      const resolver = new CliFocusProfileResolver({ vaultPath: tmpRoot });
+      const out = await resolver.resolveFilter(PROFILE_BASE_UID);
+      expect(out.outcome).toBe("engaged");
+    });
+
+    it("skips files with broken yaml without throwing", async () => {
+      await makeVault(tmpRoot, [
+        asAssetSpace(AS_EXO_UID, "exo"),
+        asAssetSpace(AS_EXOCMD_UID, "exocmd"),
+        asAssetSpace(AS_SHARED_UID, "shared-identities"),
+        asProfile(PROFILE_BASE_UID),
+      ]);
+      // Drop a file with malformed YAML frontmatter
+      await fs.ensureDir(path.join(tmpRoot, "junk"));
+      await fs.writeFile(
+        path.join(tmpRoot, "junk", "broken.md"),
+        "---\nthis is: \"not: valid:\n  yaml here\n---\n",
+        "utf-8",
+      );
+      const resolver = new CliFocusProfileResolver({ vaultPath: tmpRoot });
+      const out = await resolver.resolveFilter(PROFILE_BASE_UID);
+      expect(out.outcome).toBe("engaged");
+    });
+
+    it("skips hidden directories (.obsidian, .exocortex, .git)", async () => {
+      await makeVault(tmpRoot, [
+        asAssetSpace(AS_EXO_UID, "exo"),
+        asAssetSpace(AS_EXOCMD_UID, "exocmd"),
+        asAssetSpace(AS_SHARED_UID, "shared-identities"),
+        asProfile(PROFILE_BASE_UID),
+      ]);
+      // Add a profile-shaped file inside .obsidian — it must NOT be discovered
+      const stowawayUid = "ffffffff-ffff-ffff-ffff-ffffffffffff";
+      await fs.ensureDir(path.join(tmpRoot, ".obsidian"));
+      await fs.writeFile(
+        path.join(tmpRoot, ".obsidian", `${stowawayUid}.md`),
+        `---\nexo__Asset_uid: "${stowawayUid}"\nexo__Instance_class:\n  - "[[${FOCUS_PROFILE_CLASS_UID}|exo__FocusProfile]]"\n---\n`,
+        "utf-8",
+      );
+      const resolver = new CliFocusProfileResolver({ vaultPath: tmpRoot });
+      const out = await resolver.resolveFilter(stowawayUid);
+      expect(out.outcome).toBe("missing-profile");
+    });
+  });
+});
+
+describe("parseWikilinkArray", () => {
+  it("returns [] for null/undefined/empty inputs", () => {
+    expect(parseWikilinkArray(null)).toEqual([]);
+    expect(parseWikilinkArray(undefined)).toEqual([]);
+    expect(parseWikilinkArray([])).toEqual([]);
+  });
+
+  it("wraps a single string into an array", () => {
+    expect(parseWikilinkArray("[[abc]]")).toEqual(["abc"]);
+  });
+
+  it("strips wikilink brackets and aliases", () => {
+    expect(
+      parseWikilinkArray(["[[uid-1|alias]]", "[[uid-2]]", "raw-uid"]),
+    ).toEqual(["uid-1", "uid-2", "raw-uid"]);
+  });
+
+  it("drops non-string entries", () => {
+    expect(parseWikilinkArray(["[[ok]]", 42, null, undefined, "[[also-ok]]"])).toEqual([
+      "ok",
+      "also-ok",
+    ]);
+  });
+
+  it("drops empty entries after trimming", () => {
+    expect(parseWikilinkArray(["[[]]", "  ", "[[real]]"])).toEqual(["real"]);
+  });
+});
+
+describe("extractUidFromWikilink", () => {
+  it("returns null for empty string after stripping", () => {
+    expect(extractUidFromWikilink("[[]]")).toBeNull();
+    expect(extractUidFromWikilink("  ")).toBeNull();
+    expect(extractUidFromWikilink("|")).toBeNull();
+  });
+
+  it("strips alias", () => {
+    expect(extractUidFromWikilink("[[uid|alias]]")).toBe("uid");
+  });
+
+  it("returns trimmed inner string when not wrapped in brackets", () => {
+    expect(extractUidFromWikilink(" raw-uid ")).toBe("raw-uid");
+  });
+});
