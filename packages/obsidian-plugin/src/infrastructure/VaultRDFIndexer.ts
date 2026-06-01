@@ -21,6 +21,21 @@ import {
 import { ObsidianVaultAdapter } from '@plugin/adapters/ObsidianVaultAdapter';
 import { LoggerFactory } from '@plugin/adapters/logging/LoggerFactory';
 
+/**
+ * Effective ontology filter context (Issue #3321 / RFC 0a0791c1). Captures the
+ * `effectiveOntologies` allow-set AND the `folder → AssetSpace UID` map that
+ * the converter needs to resolve which AssetSpace owns a given file. The two
+ * fields travel together because the filter is meaningless without the map.
+ *
+ * Stored as a snapshot inside the indexer so that mid-session reindexing
+ * (`refresh()` re-runs after a profile switch OR per-file `updateFile` events)
+ * applies the active filter consistently.
+ */
+export interface EffectiveOntologyFilter {
+  effectiveOntologies: ReadonlySet<string>;
+  assetSpaceFolderToUid: ReadonlyMap<string, string>;
+}
+
 export class VaultRDFIndexer {
   private tripleStore: InMemoryTripleStore;
   private converter: NoteToRDFConverter;
@@ -36,6 +51,19 @@ export class VaultRDFIndexer {
    * (modify/rename/create) honour the same set as the initial walk.
    */
   private readonly excludedFolders: string[];
+  /**
+   * Active effective-ontology filter snapshot (Issue #3321). `null` means
+   * no filter is in effect — index the full vault (backward-compatible
+   * pre-#3321 behaviour). Updated by `setFilter()` and consumed by
+   * `initialize()` / `refresh()` / per-file `updateFile()`.
+   *
+   * Per-file updateFile events do NOT currently re-filter against this
+   * snapshot — files surviving the initial walk are assumed to stay in
+   * scope until the next full reindex. This matches the pre-#3321
+   * `excludedFolders` event semantics. A profile switch triggers a full
+   * `refresh()` which re-runs the walk with the current filter.
+   */
+  private filter: EffectiveOntologyFilter | null = null;
 
   constructor(
     private app: App,
@@ -75,6 +103,23 @@ export class VaultRDFIndexer {
     );
   }
 
+  /**
+   * Update the active effective-ontology filter snapshot (Issue #3321).
+   * Pass `null` to clear the filter (revert to indexing the full vault).
+   *
+   * Does NOT trigger reindexing — callers (typically
+   * {@link FocusProfileSwitchManager.switchProfile}) call `setFilter(...)`
+   * then `refresh()` so the two operations happen in a controlled order.
+   */
+  setFilter(filter: EffectiveOntologyFilter | null): void {
+    this.filter = filter;
+  }
+
+  /** Test helper — current filter snapshot. */
+  getFilter(): EffectiveOntologyFilter | null {
+    return this.filter;
+  }
+
   async initialize(): Promise<void> {
     if (this.isInitialized) {
       return;
@@ -84,6 +129,8 @@ export class VaultRDFIndexer {
       const triples = await this.errorHandler.executeWithRetry(
         async () => this.converter.convertVault({
           excludedFolders: this.excludedFolders,
+          effectiveOntologies: this.filter?.effectiveOntologies,
+          assetSpaceFolderToUid: this.filter?.assetSpaceFolderToUid,
         }),
         { context: "VaultRDFIndexer.initialize", operation: "convertVault" }
       );
@@ -242,12 +289,33 @@ export class VaultRDFIndexer {
     await this.tripleStore.removeAll(triples);
   }
 
-  async refresh(): Promise<void> {
+  /**
+   * Clear the triple store and rebuild from the current vault state.
+   *
+   * Issue #3321 / RFC 0a0791c1 — accepts an optional `filter` argument so a
+   * profile switch (via {@link FocusProfileSwitchManager.switchProfile})
+   * can atomically update the snapshot and reindex in one call. Pattern:
+   *   - `refresh()` — reindex with the previously-stored filter (or none).
+   *   - `refresh(filter)` — update the stored filter, then reindex. Pass
+   *      a `null`-like sentinel via `setFilter(null)` if you want to clear
+   *      the filter; `refresh()` without args does NOT clear the snapshot.
+   *
+   * The two-step `setFilter` + `refresh` pattern matches the
+   * {@link FocusProfileSwitchManager} contract which expects `refresh` to
+   * take an `effectiveOntologies` set; the filter object bundles the
+   * companion folder→UID map so the two arrive atomically.
+   */
+  async refresh(filter?: EffectiveOntologyFilter): Promise<void> {
+    if (filter !== undefined) {
+      this.filter = filter;
+    }
     await this.errorHandler.executeWithRetry(
       async () => {
         await this.tripleStore.clear();
         const triples = await this.converter.convertVault({
           excludedFolders: this.excludedFolders,
+          effectiveOntologies: this.filter?.effectiveOntologies,
+          assetSpaceFolderToUid: this.filter?.assetSpaceFolderToUid,
         });
         await this.tripleStore.addAll(triples);
         await this.runInference();

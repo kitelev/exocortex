@@ -101,6 +101,60 @@ export function isPathExcluded(
 }
 
 /**
+ * Vault-relative path prefix under which AssetSpace folders live. Files whose
+ * vault path starts with this prefix are subject to the effective-ontology
+ * filter (Issue #3321 — RFC 0a0791c1). Files outside this prefix
+ * (`03 Knowledge/`, `01 Inbox/`, etc.) are always emitted regardless of the
+ * active profile.
+ */
+const ASSET_SPACES_PATH_PREFIX = "assetspaces/";
+
+/**
+ * Decide whether a vault file should be skipped given the active effective
+ * ontology / AssetSpace set and a precomputed folder→UID lookup map.
+ *
+ * Rules (Issue #3321 / RFC 0a0791c1 §Backward-compat strategy):
+ *   - Files outside `assetspaces/` → always include (never filtered).
+ *   - Files inside `assetspaces/<folder>/` whose folder maps to an AssetSpace
+ *     UID NOT in `effective` → skip (no triples emitted).
+ *   - Files inside `assetspaces/<folder>/` whose folder is unrecognised
+ *     (absent from `assetSpaceFolderToUid`) → include (treat unknown folder
+ *     as a regular path; defensive — caller may have an out-of-date map).
+ *
+ * Caller-side responsibilities:
+ *   - The `effective` set must already include any required floor (e.g.
+ *     `$exo`, `$exocmd`, `$shared-identities`) per Vision Lock #17. The
+ *     converter does NOT re-inject the floor.
+ *   - The map must be precomputed once per indexing pass; per-file scanning
+ *     of the vault would be O(N²).
+ */
+export function shouldSkipFileForEffectiveSet(
+  filePath: string,
+  effective: ReadonlySet<string>,
+  assetSpaceFolderToUid: ReadonlyMap<string, string>,
+): boolean {
+  const normalised = filePath.replace(/\\/g, "/");
+  if (!normalised.startsWith(ASSET_SPACES_PATH_PREFIX)) {
+    return false;
+  }
+  // Extract `assetspaces/<folder>` — everything up to (but not including) the
+  // second slash. A file directly under `assetspaces/` (no nested folder) has
+  // no AssetSpace owner and is not filtered.
+  const rest = normalised.slice(ASSET_SPACES_PATH_PREFIX.length);
+  const slashIdx = rest.indexOf("/");
+  if (slashIdx < 0) {
+    return false;
+  }
+  const folder = `${ASSET_SPACES_PATH_PREFIX}${rest.slice(0, slashIdx)}`;
+  const asUid = assetSpaceFolderToUid.get(folder);
+  if (asUid === undefined) {
+    // Folder not recognised as AssetSpace — emit (defensive).
+    return false;
+  }
+  return !effective.has(asUid);
+}
+
+/**
  * Service for converting Obsidian notes (frontmatter + wikilinks) to RDF triples.
  *
  * @example
@@ -554,6 +608,21 @@ export class NoteToRDFConverter {
    *   prefixes; any file whose path starts with one of these prefixes is
    *   skipped without validation and without producing a warn-log entry. See
    *   {@link convertVaultWithValidation} for full semantics.
+   * @param options.effectiveOntologies - Issue #3321 / RFC 0a0791c1.
+   *   Optional AssetSpace UID allow-set: when defined, files under
+   *   `assetspaces/<folder>/` whose AssetSpace UID is NOT in this set are
+   *   skipped. `undefined` → no filter (backward-compatible behaviour).
+   *   An empty set is treated as a catastrophic profile configuration and
+   *   triggers a fall-back to the no-filter path with a warn-log entry
+   *   (R15 plugin self-brick mitigation).
+   *   Despite the name, comparison is performed against AssetSpace UIDs
+   *   (not ontology URIs). See follow-up Issue #3324 for the URI/UID
+   *   reconciliation question on `FocusProfileSwitchManager.TS_FLOOR_*`.
+   * @param options.assetSpaceFolderToUid - Issue #3321. Precomputed
+   *   mapping `assetspaces/<folder>` → AssetSpace UID, used by the filter
+   *   to resolve each file's owning AssetSpace in O(1). Only consulted
+   *   when `effectiveOntologies` is defined; absent map degrades to the
+   *   no-filter path (caller bug — logged at warn level).
    * @returns Array of all RDF triples from the vault
    *
    * @example
@@ -563,14 +632,26 @@ export class NoteToRDFConverter {
    *
    * // Skip the user-managed templates folder:
    * await converter.convertVault({ excludedFolders: ["09 Templates/"] });
+   *
+   * // Apply an active focus profile's effective AssetSpace set:
+   * await converter.convertVault({
+   *   effectiveOntologies: new Set([emsUid, exoUid, exocmdUid]),
+   *   assetSpaceFolderToUid: folderMap,
+   * });
    * ```
    */
   async convertVault(
-    options: { excludedFolders?: string[] } = {},
+    options: {
+      excludedFolders?: string[];
+      effectiveOntologies?: ReadonlySet<string>;
+      assetSpaceFolderToUid?: ReadonlyMap<string, string>;
+    } = {},
   ): Promise<Triple[]> {
     const result = await this.convertVaultWithValidation({
       strict: false,
       excludedFolders: options.excludedFolders,
+      effectiveOntologies: options.effectiveOntologies,
+      assetSpaceFolderToUid: options.assetSpaceFolderToUid,
     });
     return result.triples;
   }
@@ -649,7 +730,12 @@ export class NoteToRDFConverter {
    * @throws Error if strict mode is enabled and an invalid IRI is encountered
    */
   async convertVaultWithValidation(
-    options: { strict?: boolean; excludedFolders?: string[] } = {}
+    options: {
+      strict?: boolean;
+      excludedFolders?: string[];
+      effectiveOntologies?: ReadonlySet<string>;
+      assetSpaceFolderToUid?: ReadonlyMap<string, string>;
+    } = {}
   ): Promise<{
     triples: Triple[];
     skippedFiles: Array<{ path: string; reason: string }>;
@@ -661,17 +747,64 @@ export class NoteToRDFConverter {
     const strict = options.strict ?? false;
     const excludedPrefixes = normaliseExcludedFolders(options.excludedFolders);
 
+    // Issue #3321 / RFC 0a0791c1 — resolve the AssetSpace filter once before
+    // the loop. The filter is engaged only when:
+    //   * `effectiveOntologies` is defined (caller opted in), AND
+    //   * the set is non-empty (empty set ⇒ catastrophic profile config —
+    //     R15 self-brick mitigation: warn + fall back to no-filter), AND
+    //   * a folder→UID map is available (without it the filter cannot
+    //     resolve which AssetSpace owns a given file).
+    const effective = options.effectiveOntologies;
+    const folderMap = options.assetSpaceFolderToUid;
+    // `engagedFilter` is non-null IFF the effective-set filter is in play
+    // for this conversion pass. Bundling the set + map together avoids the
+    // two non-null assertions that would otherwise appear at each filter
+    // call site, and makes the engagement contract explicit at the type
+    // level (`filter is null` ⇒ "no filter active").
+    let engagedFilter: {
+      effective: ReadonlySet<string>;
+      folderMap: ReadonlyMap<string, string>;
+    } | null = null;
+    if (effective !== undefined) {
+      if (effective.size === 0) {
+        this.logger.warn(
+          "[NoteToRDFConverter] effectiveOntologies is empty — falling back to no-filter path to avoid plugin self-brick. " +
+          "Verify the active focus profile's _includes / _extends / _alwaysOnOverlay properties.",
+        );
+      } else if (folderMap === undefined) {
+        this.logger.warn(
+          "[NoteToRDFConverter] effectiveOntologies provided without assetSpaceFolderToUid map — falling back to no-filter. " +
+          "Caller must precompute the folder→UID map (see AssetSpaceManager).",
+        );
+      } else {
+        engagedFilter = { effective, folderMap };
+      }
+    }
+
     // Folder-level exclusion: drop files whose vault path starts with any
     // configured prefix BEFORE validation. Excluded files are intentionally
     // invisible to the rest of the pipeline (no warn-log, no skippedFiles
     // record, no `summary.total` contribution) — they are treated as if they
     // never existed in the vault. This is the user-facing escape hatch for
     // template folders whose contents violate Exocortex invariants by design.
-    const files = excludedPrefixes.length === 0
+    //
+    // The effective-set filter (Issue #3321) layers on top: files surviving
+    // the exclude-folders pass are then checked against the active profile.
+    // Filtered-out AssetSpace files are also invisible (no warn, no skipped
+    // record) — the active profile semantically declares them "not in scope",
+    // not "broken".
+    let files = excludedPrefixes.length === 0
       ? allFiles
       : allFiles.filter(
           (file) => !isPathExcluded(file.path, excludedPrefixes),
         );
+
+    if (engagedFilter !== null) {
+      const { effective: eff, folderMap: fm } = engagedFilter;
+      files = files.filter(
+        (file) => !shouldSkipFileForEffectiveSet(file.path, eff, fm),
+      );
+    }
 
     for (const file of files) {
       try {

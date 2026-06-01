@@ -245,6 +245,7 @@ export {
   NoteToRDFConverter,
   normaliseExcludedFolders,
   isPathExcluded,
+  shouldSkipFileForEffectiveSet,
   type ExocortexInvariantCode,
   type ExocortexInvariantViolation,
 } from "./services/NoteToRDFConverter";
