@@ -278,7 +278,25 @@ export function sparqlQueryCommand(): Command {
 
         // Parse cache TTL
         const cacheTtlSeconds = parseCacheTtl(options.cacheTtl);
-        const useQueryResultCache = options.cache !== false; // --no-cache sets this to false
+        // QueryResultCache's cache key is the SPARQL string hash — no profile
+        // dimension. If --profile is active, both reading and writing the
+        // result cache could leak data across profile scopes (cache hit from
+        // a prior profileless / different-profile run returns wrong rows).
+        // Disable the result cache when --profile is set; profile-aware
+        // caching is Variant C follow-up scope.
+        const profileFlagActive =
+          options.profile !== undefined && options.profile !== "";
+        const useQueryResultCache =
+          options.cache !== false && !profileFlagActive;
+        if (
+          profileFlagActive &&
+          options.cache !== false &&
+          outputFormat === "text"
+        ) {
+          console.log(
+            "⚠️  Query result cache bypassed because --profile is active (cache is not profile-aware; MVP limitation).",
+          );
+        }
         if (options.template) {
           const registry = new TemplateRegistry();
           const params = options.param ? registry.parseParamString(options.param) : {};
@@ -363,9 +381,11 @@ export function sparqlQueryCommand(): Command {
           outputFormat,
         });
 
-        // When --profile is engaged, bypass --use-cache: the persistent
-        // cache key is per-vault (no profile dimension), so reusing a
-        // full-vault cache under a profile would defeat the filter.
+        // When --profile is engaged, bypass --use-cache (triple cache via
+        // CacheManager): the persistent cache key is per-vault, no profile
+        // dimension. Reusing a full-vault cache under a profile would
+        // defeat the filter. The query-result cache (QueryResultCache) is
+        // separately gated above via `profileFlagActive`.
         // Documented as MVP limitation in PR #3323; profile-aware caching
         // is Variant C follow-up scope.
         let useCacheEffective = options.useCache ?? false;
