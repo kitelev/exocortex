@@ -147,6 +147,12 @@ export async function applyActiveProfileFilter(
   // directly in profiles works without changing this helper.
   const folderMapValues = new Set(folderMap.values());
   const effectiveAsUids = new Set<string>();
+  // Track UIDs that fell through translation so the engagement log can
+  // surface them — without this breadcrumb a user investigating «why does
+  // my filter look weak» has no diagnostic. Distinct from the zero-overlap
+  // R15 degradation below (which trips when NO entry translates); this
+  // catches the partial case (some entries translate, others don't).
+  const untranslated: string[] = [];
   for (const uid of declaredSet) {
     if (folderMapValues.has(uid)) {
       // Already an AS UID — accept directly.
@@ -156,10 +162,12 @@ export async function applyActiveProfileFilter(
     const translated = ontologyToAs.get(uid);
     if (translated !== undefined) {
       effectiveAsUids.add(translated);
+      continue;
     }
     // Unmapped UID — Ontology with no declaring AssetSpace (e.g.
-    // shared-identities anchors per мульти-anchor pattern). Silently drop
-    // here; surface via the degradation outcome below when no overlap remains.
+    // shared-identities anchors per мульти-anchor pattern). Surface in
+    // engagement log so the user can trace which references silently dropped.
+    untranslated.push(uid);
   }
 
   // Always lay in the TS-floor at AS-UID level (Vision Lock #17).
@@ -190,10 +198,16 @@ export async function applyActiveProfileFilter(
 
   indexer.setEffectiveOntologies(effectiveAsUids);
   indexer.setAssetSpaceFolderToUid(folderMap);
+  const untranslatedSummary =
+    untranslated.length === 0
+      ? ""
+      : ` ${untranslated.length} declared UIDs failed translation (no AssetSpace_containsOntology mapping; ` +
+        `examples: ${untranslated.slice(0, 3).join(", ")}${untranslated.length > 3 ? ", …" : ""}). ` +
+        `Likely the shared-identities мульти-anchor case — see PR #3328 body.`;
   logger.info(
     `[FocusProfileOnloadWiring] activeProfileUid=${activeProfileUid} wired — ` +
       `${effectiveAsUids.size} effective AS UIDs (incl. ${TS_FLOOR_ASSETSPACE_UIDS.size} floor), ` +
-      `${folderMap.size} folders mapped.`,
+      `${folderMap.size} folders mapped.${untranslatedSummary}`,
   );
   return {
     outcome: "engaged",

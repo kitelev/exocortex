@@ -213,17 +213,28 @@ describe("applyActiveProfileFilter", () => {
   });
 
   it("passes through entries that are already AS UIDs without translation", async () => {
-    const asExo = TS_FLOOR_AS_UID_EXO;
+    // Use a NON-TS-floor AS UID so the assertion exercises the pass-through
+    // branch genuinely — if we asserted on a TS-floor UID, the floor injection
+    // would mask removal of the pass-through logic (revert-fail/restore-pass
+    // discipline per `~/.claude/rules/integration-test-revert-verify.md`).
+    const asEms = "f0f674da-a31b-47e1-b0e8-f984b018bf75";
     const app = makeApp([
       {
+        file: { path: "assetspaces/ems/ems.md", basename: "ems" },
+        // Note: empty containsOntology — so translation cannot inject asEms.
+        // The only way asEms lands in `effectiveAsUids` is via pass-through.
+        fm: asFrontmatter(asEms, []),
+      },
+      // TS-floor exo AS provides folder-map overlap so engagement succeeds.
+      {
         file: { path: "assetspaces/exo/exo.md", basename: "exo" },
-        fm: asFrontmatter(asExo, []),
+        fm: asFrontmatter(TS_FLOOR_AS_UID_EXO, []),
       },
     ]);
     const indexer = makeIndexerStub();
     const logger = makeLogger();
     // Profile declares the AS UID directly (future-proof shape).
-    const switchMgr = makeSwitchMgrStub(new Set([asExo]));
+    const switchMgr = makeSwitchMgrStub(new Set([asEms]));
 
     const result = await applyActiveProfileFilter({
       app,
@@ -234,7 +245,7 @@ describe("applyActiveProfileFilter", () => {
     });
 
     expect(result.outcome).toBe("engaged");
-    expect(indexer.effective!.has(asExo)).toBe(true);
+    expect(indexer.effective!.has(asEms)).toBe(true);
   });
 
   it("degrades to no-filter and logs WARN when zero folder overlap", async () => {
@@ -333,22 +344,31 @@ describe("applyActiveProfileFilter", () => {
   });
 
   it("handles single-string containsOntology (not just array form)", async () => {
-    const ontologyExo = "ca97bb2f-99bd-4ceb-b51e-c386b9231ae3";
-    const asExo = TS_FLOOR_AS_UID_EXO;
+    // Asserts on a non-TS-floor AS UID so the assertion genuinely exercises
+    // the array/string normalisation path (per the revert-fail discipline —
+    // a TS-floor AS UID would land via floor injection regardless of whether
+    // the string-shape was parsed correctly).
+    const ontologyEms = "d9bd496e-86cf-496d-b2da-e5f68cc3e7bc";
+    const asEms = "f0f674da-a31b-47e1-b0e8-f984b018bf75";
     const app = makeApp([
       {
-        file: { path: "assetspaces/exo/exo.md", basename: "exo" },
+        file: { path: "assetspaces/ems/ems.md", basename: "ems" },
         fm: {
-          exo__Asset_uid: asExo,
+          exo__Asset_uid: asEms,
           exo__Instance_class: [`[[${ASSET_SPACE_CLASS_UID}]]`],
           // String, not array — Obsidian parser may produce either shape.
-          exo__AssetSpace_containsOntology: `[[${ontologyExo}]]`,
+          exo__AssetSpace_containsOntology: `[[${ontologyEms}]]`,
         },
+      },
+      // TS-floor exo AS for folder-map overlap (engagement gate).
+      {
+        file: { path: "assetspaces/exo/exo.md", basename: "exo" },
+        fm: asFrontmatter(TS_FLOOR_AS_UID_EXO, []),
       },
     ]);
     const indexer = makeIndexerStub();
     const logger = makeLogger();
-    const switchMgr = makeSwitchMgrStub(new Set([ontologyExo]));
+    const switchMgr = makeSwitchMgrStub(new Set([ontologyEms]));
 
     const result = await applyActiveProfileFilter({
       app,
@@ -359,6 +379,45 @@ describe("applyActiveProfileFilter", () => {
     });
 
     expect(result.outcome).toBe("engaged");
-    expect(indexer.effective!.has(asExo)).toBe(true);
+    expect(indexer.effective!.has(asEms)).toBe(true);
+  });
+
+  it("surfaces untranslated UIDs in the engagement info log", async () => {
+    // Mix: ontologyEms translates → asEms; unknownOntology fails translation.
+    // TS-floor AS files present so engagement succeeds and we land in the
+    // info log path that reports the partial breakdown.
+    const ontologyEms = "d9bd496e-86cf-496d-b2da-e5f68cc3e7bc";
+    const asEms = "f0f674da-a31b-47e1-b0e8-f984b018bf75";
+    const unknownOntology = "deadbeef-dead-beef-dead-beefdeadbeef";
+
+    const app = makeApp([
+      {
+        file: { path: "assetspaces/ems/ems.md", basename: "ems" },
+        fm: asFrontmatter(asEms, [ontologyEms]),
+      },
+      {
+        file: { path: "assetspaces/exo/exo.md", basename: "exo" },
+        fm: asFrontmatter(TS_FLOOR_AS_UID_EXO, []),
+      },
+    ]);
+    const indexer = makeIndexerStub();
+    const logger = makeLogger();
+    const switchMgr = makeSwitchMgrStub(
+      new Set([ontologyEms, unknownOntology]),
+    );
+
+    const result = await applyActiveProfileFilter({
+      app,
+      switchMgr,
+      indexer,
+      activeProfileUid: "profile-test",
+      logger,
+    });
+
+    expect(result.outcome).toBe("engaged");
+    expect(logger.infos.length).toBeGreaterThan(0);
+    expect(logger.infos[0]).toMatch(/wired/);
+    expect(logger.infos[0]).toMatch(/declared UIDs failed translation/);
+    expect(logger.infos[0]).toContain(unknownOntology);
   });
 });
