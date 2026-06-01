@@ -107,6 +107,15 @@ export class VaultRDFIndexer {
    * Does NOT trigger reindexing — callers control ordering. Typical flow:
    *   `indexer.setEffectiveOntologies(set)` then `indexer.refresh()`.
    * Or use {@link refresh}'s single-arg form which combines both.
+   *
+   * **Ordering invariant** (Issue #3321): the filter engages only when
+   * BOTH this set is non-empty AND {@link setAssetSpaceFolderToUid} has
+   * been called with a non-null map. A `setEffectiveOntologies(set)`
+   * before the folder map is wired triggers the R15 fall-back at the
+   * next `initialize()` / `refresh()` — the converter logs a warn and
+   * indexes the full vault. This is intentional graceful degradation;
+   * production wiring should call both setters at onload before the
+   * first walk.
    */
   setEffectiveOntologies(set: ReadonlySet<string> | null): void {
     this.effectiveOntologies = set;
@@ -121,7 +130,8 @@ export class VaultRDFIndexer {
    * they change at different cadences and originate from different
    * subsystems (vault topology vs active FocusProfile). The
    * {@link NoteToRDFConverter} requires BOTH to engage the filter;
-   * absence of either degrades to the no-filter fall-back.
+   * absence of either degrades to the no-filter fall-back via the
+   * converter's R15 warn-log.
    */
   setAssetSpaceFolderToUid(map: ReadonlyMap<string, string> | null): void {
     this.assetSpaceFolderToUid = map;

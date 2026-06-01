@@ -304,21 +304,29 @@ describe("VaultRDFIndexer — effectiveOntologies plumbing (Issue #3321)", () =>
         basename: path.split("/").pop()!.replace(/\.md$/, ""),
       }) as unknown as TFile;
 
-    it("removes stale triples for a filtered-out AssetSpace file and skips re-indexing", async () => {
+    it("skips re-indexing AND defensively removes stale triples for a filtered-out AssetSpace file", async () => {
       const indexer = new VaultRDFIndexer(mockApp);
       indexer.setEffectiveOntologies(new Set<string>([EXO_AS_UID]));
       indexer.setAssetSpaceFolderToUid(makeFolderMap());
 
+      // Simulate stale triples in the store from a pre-filter indexing run.
+      // `removeFileTriples` calls `match(fileIRI)` then `removeAll(triples)`;
+      // we satisfy both by returning one mock triple from `match`.
+      mockTripleStore.match.mockResolvedValueOnce([{ id: "stale" } as any]);
+
       // ems is mapped to EMS_AS_UID; NOT in the active set → filtered.
-      // Edit-event for `assetspaces/ems/Task.md` must not produce triples.
+      // Edit-event for `assetspaces/ems/Task.md` must not produce new triples.
       const file = tfile("assetspaces/ems/Task.md");
       await indexer.updateFile(file);
 
-      // Defensive cleanup: `match` was called to find stale triples.
-      expect(mockTripleStore.match).toHaveBeenCalled();
-      // No `convertNote` invocation — the file was rejected before
-      // reaching the converter.
+      // Primary assertion — the file was rejected BEFORE reaching the
+      // converter (the discriminating signal between "filter active" and
+      // "filter disabled" paths).
       expect(mockConverter.convertNote).not.toHaveBeenCalled();
+      // Defensive cleanup assertion — stale triples are explicitly removed,
+      // not just left in place. `removeAll` is the real discriminator (the
+      // `match` call alone is consistent with several other paths).
+      expect(mockTripleStore.removeAll).toHaveBeenCalled();
     });
 
     it("indexes files inside an in-scope AssetSpace folder normally", async () => {
