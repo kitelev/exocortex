@@ -1,5 +1,5 @@
-import { VaultRDFIndexer, type EffectiveOntologyFilter } from "../../../src/infrastructure/VaultRDFIndexer";
-import type { App } from "obsidian";
+import { VaultRDFIndexer } from "../../../src/infrastructure/VaultRDFIndexer";
+import type { App, TFile } from "obsidian";
 import {
   InMemoryTripleStore,
   NoteToRDFConverter,
@@ -13,12 +13,16 @@ import { ObsidianVaultAdapter } from "../../../src/adapters/ObsidianVaultAdapter
  * effective-ontology filter snapshot to `NoteToRDFConverter.convertVault`
  * on both initial walk (`initialize`) and refresh (`refresh`).
  *
+ * `refresh(effectiveOntologies?)` matches the `IRdfIndexer` contract from
+ * B.4 so a `FocusProfileSwitchManager` instance can drive a profile-switch
+ * reindex without knowing about the AssetSpace folder map. The folder map
+ * is managed independently via `setAssetSpaceFolderToUid` (plugin-driven
+ * at onload / on AssetSpace topology change).
+ *
  * Following sibling `VaultRDFIndexer.excluded-folders.test.ts`: we mock
  * `exocortex` exports wholesale but keep the indexer's actual code under
- * test, then assert on the `convertVault` arguments. This is the right
- * granularity for "does the indexer plumb the filter end-to-end" — the
- * converter's own filter semantics are covered by the package-level
- * `NoteToRDFConverter.effective-ontologies.test.ts`.
+ * test, then assert on the `convertVault` arguments AND on the new
+ * `updateFile` filter guard.
  */
 
 jest.mock("exocortex", () => {
@@ -47,6 +51,7 @@ jest.mock("exocortex", () => {
     },
     isPathExcluded: actual.isPathExcluded,
     normaliseExcludedFolders: actual.normaliseExcludedFolders,
+    shouldSkipFileForEffectiveSet: actual.shouldSkipFileForEffectiveSet,
   };
 });
 jest.mock("../../../src/adapters/ObsidianVaultAdapter");
@@ -60,14 +65,14 @@ describe("VaultRDFIndexer — effectiveOntologies plumbing (Issue #3321)", () =>
   // `_alwaysOnOverlay`, see assetspaces/shared-identities/ae00f219-...md).
   const EXO_AS_UID = "ca97bb2f-99bd-4ceb-b51e-c386b9231ae3";
   const EXOCMD_AS_UID = "60967c6a-4e8a-4ee3-8922-db98b981e4f4";
+  const EMS_AS_UID = "11111111-2222-3333-4444-555555555555"; // synthetic
 
-  const makeFilter = (): EffectiveOntologyFilter => ({
-    effectiveOntologies: new Set<string>([EXO_AS_UID, EXOCMD_AS_UID]),
-    assetSpaceFolderToUid: new Map<string, string>([
+  const makeFolderMap = (): ReadonlyMap<string, string> =>
+    new Map<string, string>([
       ["assetspaces/exo", EXO_AS_UID],
       ["assetspaces/exocmd", EXOCMD_AS_UID],
-    ]),
-  });
+      ["assetspaces/ems", EMS_AS_UID],
+    ]);
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -156,49 +161,62 @@ describe("VaultRDFIndexer — effectiveOntologies plumbing (Issue #3321)", () =>
     };
   });
 
-  describe("filter snapshot lifecycle", () => {
-    it("defaults to no filter (backward-compat)", () => {
+  describe("snapshot lifecycle", () => {
+    it("defaults to no filter and no folder map (backward-compat)", () => {
       const indexer = new VaultRDFIndexer(mockApp);
-      expect(indexer.getFilter()).toBeNull();
+      expect(indexer.getEffectiveOntologies()).toBeNull();
+      expect(indexer.getAssetSpaceFolderToUid()).toBeNull();
     });
 
-    it("stores the filter via setFilter without triggering reindex", () => {
+    it("setEffectiveOntologies stores the snapshot without triggering reindex", () => {
       const indexer = new VaultRDFIndexer(mockApp);
-      const filter = makeFilter();
+      const set = new Set<string>([EXO_AS_UID]);
 
-      indexer.setFilter(filter);
+      indexer.setEffectiveOntologies(set);
 
-      expect(indexer.getFilter()).toBe(filter);
-      // setFilter must NOT call convertVault — order is caller's concern.
+      expect(indexer.getEffectiveOntologies()).toBe(set);
       expect(mockConverter.convertVault).not.toHaveBeenCalled();
     });
 
-    it("clears the filter when null is passed", () => {
+    it("setAssetSpaceFolderToUid stores the map without triggering reindex", () => {
       const indexer = new VaultRDFIndexer(mockApp);
-      indexer.setFilter(makeFilter());
-      indexer.setFilter(null);
+      const map = makeFolderMap();
 
-      expect(indexer.getFilter()).toBeNull();
+      indexer.setAssetSpaceFolderToUid(map);
+
+      expect(indexer.getAssetSpaceFolderToUid()).toBe(map);
+      expect(mockConverter.convertVault).not.toHaveBeenCalled();
+    });
+
+    it("clears each snapshot independently when null is passed", () => {
+      const indexer = new VaultRDFIndexer(mockApp);
+      indexer.setEffectiveOntologies(new Set([EXO_AS_UID]));
+      indexer.setAssetSpaceFolderToUid(makeFolderMap());
+      indexer.setEffectiveOntologies(null);
+      indexer.setAssetSpaceFolderToUid(null);
+      expect(indexer.getEffectiveOntologies()).toBeNull();
+      expect(indexer.getAssetSpaceFolderToUid()).toBeNull();
     });
   });
 
   describe("initialize", () => {
-    it("forwards the stored filter snapshot to convertVault", async () => {
+    it("forwards both stored snapshots to convertVault", async () => {
       const indexer = new VaultRDFIndexer(mockApp);
-      const filter = makeFilter();
-      indexer.setFilter(filter);
+      const eff = new Set<string>([EXO_AS_UID, EXOCMD_AS_UID]);
+      const map = makeFolderMap();
+      indexer.setEffectiveOntologies(eff);
+      indexer.setAssetSpaceFolderToUid(map);
 
       await indexer.initialize();
 
       expect(mockConverter.convertVault).toHaveBeenCalledTimes(1);
       const callArg = mockConverter.convertVault.mock.calls[0]![0]!;
-      expect(callArg.effectiveOntologies).toBe(filter.effectiveOntologies);
-      expect(callArg.assetSpaceFolderToUid).toBe(filter.assetSpaceFolderToUid);
-      // excludedFolders still forwarded (backward-compat)
+      expect(callArg.effectiveOntologies).toBe(eff);
+      expect(callArg.assetSpaceFolderToUid).toBe(map);
       expect(callArg.excludedFolders).toEqual([]);
     });
 
-    it("forwards undefined filter fields when no filter is set", async () => {
+    it("forwards undefined when no filter is set (backward-compat)", async () => {
       const indexer = new VaultRDFIndexer(mockApp);
 
       await indexer.initialize();
@@ -209,52 +227,48 @@ describe("VaultRDFIndexer — effectiveOntologies plumbing (Issue #3321)", () =>
     });
   });
 
-  describe("refresh", () => {
-    it("forwards the stored filter snapshot to convertVault (no argument)", async () => {
+  describe("refresh — IRdfIndexer contract", () => {
+    it("forwards both stored snapshots when called with no argument", async () => {
       const indexer = new VaultRDFIndexer(mockApp);
-      const filter = makeFilter();
-      indexer.setFilter(filter);
+      const eff = new Set<string>([EXO_AS_UID]);
+      const map = makeFolderMap();
+      indexer.setEffectiveOntologies(eff);
+      indexer.setAssetSpaceFolderToUid(map);
 
       await indexer.refresh();
 
-      expect(mockConverter.convertVault).toHaveBeenCalledTimes(1);
       const callArg = mockConverter.convertVault.mock.calls[0]![0]!;
-      expect(callArg.effectiveOntologies).toBe(filter.effectiveOntologies);
-      expect(callArg.assetSpaceFolderToUid).toBe(filter.assetSpaceFolderToUid);
+      expect(callArg.effectiveOntologies).toBe(eff);
+      expect(callArg.assetSpaceFolderToUid).toBe(map);
     });
 
-    it("updates and applies the filter snapshot atomically when passed", async () => {
+    it("updates the effective set when called with a new Set (matches IRdfIndexer)", async () => {
       const indexer = new VaultRDFIndexer(mockApp);
-      const firstFilter = makeFilter();
-      const secondFilter: EffectiveOntologyFilter = {
-        effectiveOntologies: new Set<string>([EXO_AS_UID]),
-        assetSpaceFolderToUid: new Map<string, string>([
-          ["assetspaces/exo", EXO_AS_UID],
-        ]),
-      };
-      indexer.setFilter(firstFilter);
+      const original = new Set<string>([EXO_AS_UID]);
+      const replacement = new Set<string>([EXO_AS_UID, EXOCMD_AS_UID]);
+      indexer.setEffectiveOntologies(original);
+      indexer.setAssetSpaceFolderToUid(makeFolderMap());
 
-      // refresh(secondFilter) replaces the stored snapshot AND runs the walk
-      await indexer.refresh(secondFilter);
+      // Single-arg refresh — exactly what FocusProfileSwitchManager calls:
+      //   await this.rdfIndexer.refresh(effective);
+      await indexer.refresh(replacement);
 
-      expect(indexer.getFilter()).toBe(secondFilter);
+      expect(indexer.getEffectiveOntologies()).toBe(replacement);
       const callArg = mockConverter.convertVault.mock.calls[0]![0]!;
-      expect(callArg.effectiveOntologies).toBe(secondFilter.effectiveOntologies);
-      expect(callArg.assetSpaceFolderToUid).toBe(secondFilter.assetSpaceFolderToUid);
+      expect(callArg.effectiveOntologies).toBe(replacement);
     });
 
-    it("preserves the stored snapshot when refresh() is called with no argument", async () => {
+    it("preserves the stored effective set when refresh() is called without args", async () => {
       const indexer = new VaultRDFIndexer(mockApp);
-      const filter = makeFilter();
-      indexer.setFilter(filter);
+      const eff = new Set<string>([EXO_AS_UID]);
+      indexer.setEffectiveOntologies(eff);
 
       await indexer.refresh();
 
-      // No mutation — the snapshot is still the one we set.
-      expect(indexer.getFilter()).toBe(filter);
+      expect(indexer.getEffectiveOntologies()).toBe(eff);
     });
 
-    it("forwards undefined filter fields when no filter is set", async () => {
+    it("forwards undefined when nothing is set", async () => {
       const indexer = new VaultRDFIndexer(mockApp);
 
       await indexer.refresh();
@@ -266,16 +280,92 @@ describe("VaultRDFIndexer — effectiveOntologies plumbing (Issue #3321)", () =>
 
     it("clears the triple store before re-walking with the filter", async () => {
       const indexer = new VaultRDFIndexer(mockApp);
-      indexer.setFilter(makeFilter());
+      indexer.setEffectiveOntologies(new Set<string>([EXO_AS_UID]));
+      indexer.setAssetSpaceFolderToUid(makeFolderMap());
 
       await indexer.refresh();
 
-      // clear() must come BEFORE convertVault() — otherwise stale triples
-      // from the previous filter would remain. The mocks track call order
-      // via invocationCallOrder.
       const clearOrder = mockTripleStore.clear.mock.invocationCallOrder[0];
       const convertOrder = mockConverter.convertVault.mock.invocationCallOrder[0];
       expect(clearOrder).toBeLessThan(convertOrder!);
+    });
+  });
+
+  describe("updateFile — mid-session filter guard (Issue #3321 R15)", () => {
+    /**
+     * Constructs a minimal TFile-shaped mock. The real `TFile` is an
+     * Obsidian class we can't import in unit tests; the indexer only
+     * touches `path`, `extension`, and `basename`.
+     */
+    const tfile = (path: string): TFile =>
+      ({
+        path,
+        extension: "md",
+        basename: path.split("/").pop()!.replace(/\.md$/, ""),
+      }) as unknown as TFile;
+
+    it("removes stale triples for a filtered-out AssetSpace file and skips re-indexing", async () => {
+      const indexer = new VaultRDFIndexer(mockApp);
+      indexer.setEffectiveOntologies(new Set<string>([EXO_AS_UID]));
+      indexer.setAssetSpaceFolderToUid(makeFolderMap());
+
+      // ems is mapped to EMS_AS_UID; NOT in the active set → filtered.
+      // Edit-event for `assetspaces/ems/Task.md` must not produce triples.
+      const file = tfile("assetspaces/ems/Task.md");
+      await indexer.updateFile(file);
+
+      // Defensive cleanup: `match` was called to find stale triples.
+      expect(mockTripleStore.match).toHaveBeenCalled();
+      // No `convertNote` invocation — the file was rejected before
+      // reaching the converter.
+      expect(mockConverter.convertNote).not.toHaveBeenCalled();
+    });
+
+    it("indexes files inside an in-scope AssetSpace folder normally", async () => {
+      const indexer = new VaultRDFIndexer(mockApp);
+      indexer.setEffectiveOntologies(new Set<string>([EXO_AS_UID]));
+      indexer.setAssetSpaceFolderToUid(makeFolderMap());
+
+      const file = tfile("assetspaces/exo/Class.md");
+      await indexer.updateFile(file);
+
+      // exo IS in the active set → file flows through the normal path.
+      expect(mockConverter.convertNote).toHaveBeenCalledTimes(1);
+    });
+
+    it("indexes files outside `assetspaces/` regardless of the filter", async () => {
+      const indexer = new VaultRDFIndexer(mockApp);
+      indexer.setEffectiveOntologies(new Set<string>([EXO_AS_UID]));
+      indexer.setAssetSpaceFolderToUid(makeFolderMap());
+
+      const file = tfile("03 Knowledge/note.md");
+      await indexer.updateFile(file);
+
+      expect(mockConverter.convertNote).toHaveBeenCalledTimes(1);
+    });
+
+    it("does NOT guard when no filter is active (backward-compat)", async () => {
+      const indexer = new VaultRDFIndexer(mockApp);
+      // No setEffectiveOntologies call — filter disengaged.
+
+      const file = tfile("assetspaces/ems/Task.md");
+      await indexer.updateFile(file);
+
+      // The legacy unfiltered path indexes normally.
+      expect(mockConverter.convertNote).toHaveBeenCalledTimes(1);
+    });
+
+    it("does NOT guard when the folder map is missing (caller bug; degrade gracefully)", async () => {
+      const indexer = new VaultRDFIndexer(mockApp);
+      indexer.setEffectiveOntologies(new Set<string>([EXO_AS_UID]));
+      // No setAssetSpaceFolderToUid call.
+
+      const file = tfile("assetspaces/ems/Task.md");
+      await indexer.updateFile(file);
+
+      // Without the folder map the guard cannot resolve ownership →
+      // indexes normally. Consistent with the converter's R15 fall-back.
+      expect(mockConverter.convertNote).toHaveBeenCalledTimes(1);
     });
   });
 });
