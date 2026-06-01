@@ -192,4 +192,16 @@ export class SPARQLQueryService {
   getTripleStore() {
     return this.indexer.getTripleStore();
   }
+
+  /**
+   * Returns the underlying `VaultRDFIndexer`. Exposed to support B.4
+   * `FocusProfileSwitchManager` wiring (RFC 0a0791c1 #3322) — the
+   * SwitchManager's `IRdfIndexer.refresh(effectiveOntologies)` contract
+   * threads the active focus profile's allow-set into
+   * `VaultRDFIndexer.refresh(set)`. The adapter sits in
+   * `infrastructure/adapters/PluginRdfIndexerAdapter.ts`.
+   */
+  getIndexer(): VaultRDFIndexer {
+    return this.indexer;
+  }
 }

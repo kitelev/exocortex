@@ -2,6 +2,7 @@ import type { TFile } from "obsidian";
 import type { InMemoryTripleStore, SolutionMapping, Triple } from "exocortex";
 import { SPARQLQueryService } from '@plugin/application/services/SPARQLQueryService';
 import type ExocortexPlugin from '@plugin/ExocortexPlugin';
+import type { VaultRDFIndexer } from '@plugin/infrastructure/VaultRDFIndexer';
 
 /**
  * Result of a SPARQL SELECT query execution.
@@ -309,6 +310,20 @@ export class SPARQLApi {
    */
   async reindexFile(file: TFile): Promise<void> {
     await this.queryService.updateFile(file);
+  }
+
+  /**
+   * Returns the underlying `VaultRDFIndexer`. Exposed для RFC 0a0791c1
+   * B.4 wiring — `PluginRdfIndexerAdapter` (Issue #3322) constructs an
+   * `IRdfIndexer` over this instance so `FocusProfileSwitchManager.switchProfile`
+   * can thread the effective ontology set через
+   * `VaultRDFIndexer.refresh(set)`.
+   *
+   * This is intentionally a thin passthrough; callers should NOT directly
+   * mutate indexer state outside of the SwitchManager flow.
+   */
+  getRdfIndexer(): VaultRDFIndexer {
+    return this.queryService.getIndexer();
   }
 
   /**

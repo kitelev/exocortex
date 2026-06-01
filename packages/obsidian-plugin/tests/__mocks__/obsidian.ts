@@ -302,6 +302,9 @@ export class FuzzySuggestModal<T> {
 
   onChooseItem(_item: T, _evt: MouseEvent | KeyboardEvent): void {}
 
+  onOpen(): void {}
+  onClose(): void {}
+
   open(): void {}
   close(): void {}
 }

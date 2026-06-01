@@ -32,6 +32,13 @@ export interface IAssetSpacePusher {
 export interface FocusProfileChoice {
   uid: string;
   label: string;
+  /**
+   * `true` when this profile is currently active per plugin settings. The
+   * picker UI surfaces this so users can see what they are switching FROM
+   * without leaving the modal. Optional — `profileLister` may omit when
+   * the active selection is unknown.
+   */
+  isActive?: boolean;
 }
 
 export interface FocusProfileCommandsDeps {
