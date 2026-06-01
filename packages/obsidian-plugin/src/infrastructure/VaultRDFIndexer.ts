@@ -13,6 +13,7 @@ import {
   ServiceError,
   isPathExcluded,
   normaliseExcludedFolders,
+  shouldSkipFileForEffectiveSet,
   type ILogger,
   type INotificationService,
   type IFile,
@@ -36,6 +37,30 @@ export class VaultRDFIndexer {
    * (modify/rename/create) honour the same set as the initial walk.
    */
   private readonly excludedFolders: string[];
+  /**
+   * Active effective-ontology allow-set (Issue #3321). `null` means no
+   * filter is in effect — index the full vault (pre-#3321 behaviour).
+   *
+   * Stored separately from {@link assetSpaceFolderToUid} because the two
+   * arrive from different sources at different cadences:
+   *   - `effectiveOntologies` is driven by the active FocusProfile (changes
+   *     when the user switches profiles).
+   *   - `assetSpaceFolderToUid` is vault topology (changes when an
+   *     AssetSpace is added/removed — rare).
+   *
+   * Splitting the two also allows the indexer to satisfy the
+   * `IRdfIndexer.refresh(effectiveOntologies)` contract from B.4 without
+   * forcing FocusProfileSwitchManager to know about the folder map.
+   */
+  private effectiveOntologies: ReadonlySet<string> | null = null;
+  /**
+   * Precomputed mapping `assetspaces/<folder>` → AssetSpace UID. Populated
+   * by the plugin from {@link AssetSpaceManager.lookupAssetSpaceForPath}
+   * once at onload and on AssetSpace topology changes. `null` means the
+   * map has not been wired yet — the filter (if any) degrades to the
+   * no-filter fall-back path with a warn-log (per converter R15 guard).
+   */
+  private assetSpaceFolderToUid: ReadonlyMap<string, string> | null = null;
 
   constructor(
     private app: App,
@@ -75,6 +100,53 @@ export class VaultRDFIndexer {
     );
   }
 
+  /**
+   * Set the active effective-ontology allow-set. Pass `null` to clear the
+   * filter (revert to indexing the full vault).
+   *
+   * Does NOT trigger reindexing — callers control ordering. Typical flow:
+   *   `indexer.setEffectiveOntologies(set)` then `indexer.refresh()`.
+   * Or use {@link refresh}'s single-arg form which combines both.
+   *
+   * **Ordering invariant** (Issue #3321): the filter engages only when
+   * BOTH this set is non-empty AND {@link setAssetSpaceFolderToUid} has
+   * been called with a non-null map. A `setEffectiveOntologies(set)`
+   * before the folder map is wired triggers the R15 fall-back at the
+   * next `initialize()` / `refresh()` — the converter logs a warn and
+   * indexes the full vault. This is intentional graceful degradation;
+   * production wiring should call both setters at onload before the
+   * first walk.
+   */
+  setEffectiveOntologies(set: ReadonlySet<string> | null): void {
+    this.effectiveOntologies = set;
+  }
+
+  /**
+   * Set the precomputed `assetspaces/<folder>` → AssetSpace UID map. The
+   * plugin updates this when the vault's AssetSpace topology changes
+   * (rarely) and at onload. Pass `null` to clear.
+   *
+   * The folder map and the effective-ontology set are decoupled because
+   * they change at different cadences and originate from different
+   * subsystems (vault topology vs active FocusProfile). The
+   * {@link NoteToRDFConverter} requires BOTH to engage the filter;
+   * absence of either degrades to the no-filter fall-back via the
+   * converter's R15 warn-log.
+   */
+  setAssetSpaceFolderToUid(map: ReadonlyMap<string, string> | null): void {
+    this.assetSpaceFolderToUid = map;
+  }
+
+  /** Test/debug helper — current effective set snapshot. */
+  getEffectiveOntologies(): ReadonlySet<string> | null {
+    return this.effectiveOntologies;
+  }
+
+  /** Test/debug helper — current folder→UID map snapshot. */
+  getAssetSpaceFolderToUid(): ReadonlyMap<string, string> | null {
+    return this.assetSpaceFolderToUid;
+  }
+
   async initialize(): Promise<void> {
     if (this.isInitialized) {
       return;
@@ -84,6 +156,8 @@ export class VaultRDFIndexer {
       const triples = await this.errorHandler.executeWithRetry(
         async () => this.converter.convertVault({
           excludedFolders: this.excludedFolders,
+          effectiveOntologies: this.effectiveOntologies ?? undefined,
+          assetSpaceFolderToUid: this.assetSpaceFolderToUid ?? undefined,
         }),
         { context: "VaultRDFIndexer.initialize", operation: "convertVault" }
       );
@@ -196,6 +270,30 @@ export class VaultRDFIndexer {
       return;
     }
 
+    // Issue #3321 — same guard for the effective-ontology filter. Without
+    // this, an edit to a file in a filtered-OUT AssetSpace would index
+    // its triples and gradually drift away from the snapshot the most
+    // recent `refresh(effectiveOntologies)` walked. We also remove any
+    // stale triples for the path defensively (covers the case where the
+    // file was indexed BEFORE the user activated a profile that excludes
+    // it). The filter engages only when BOTH the effective set is non-
+    // empty AND the folder map is wired — mirroring the converter's
+    // engagement contract (`shouldSkipFileForEffectiveSet` is a no-op
+    // unless the file lives under `assetspaces/<folder>/`).
+    if (
+      this.effectiveOntologies !== null &&
+      this.effectiveOntologies.size > 0 &&
+      this.assetSpaceFolderToUid !== null &&
+      shouldSkipFileForEffectiveSet(
+        file.path,
+        this.effectiveOntologies,
+        this.assetSpaceFolderToUid,
+      )
+    ) {
+      await this.removeFileTriples(file.path);
+      return;
+    }
+
     await this.errorHandler.executeWithRetry(
       async () => {
         const fileIRI = new IRI(`obsidian://vault/${encodeURI(file.path)}`);
@@ -242,12 +340,37 @@ export class VaultRDFIndexer {
     await this.tripleStore.removeAll(triples);
   }
 
-  async refresh(): Promise<void> {
+  /**
+   * Clear the triple store and rebuild from the current vault state.
+   *
+   * Issue #3321 / RFC 0a0791c1 — signature matches
+   * {@link IRdfIndexer.refresh} from B.4 so a `FocusProfileSwitchManager`
+   * instance can drive a profile-switch reindex by calling
+   * `await rdfIndexer.refresh(effectiveSet)` directly.
+   *
+   * Semantics:
+   *   - `refresh()` — reindex with the previously stored effective set
+   *     (or no filter if none stored). Does NOT clear the stored set.
+   *   - `refresh(set)` — replace the stored effective set with `set`,
+   *     then reindex. To clear, call `setEffectiveOntologies(null)`
+   *     followed by `refresh()` — `refresh(...)` itself only sets
+   *     non-undefined values.
+   *
+   * The companion `assetSpaceFolderToUid` map is managed independently
+   * via {@link setAssetSpaceFolderToUid} because it changes on vault
+   * topology (rare) rather than profile switches (per-session).
+   */
+  async refresh(effectiveOntologies?: ReadonlySet<string>): Promise<void> {
+    if (effectiveOntologies !== undefined) {
+      this.effectiveOntologies = effectiveOntologies;
+    }
     await this.errorHandler.executeWithRetry(
       async () => {
         await this.tripleStore.clear();
         const triples = await this.converter.convertVault({
           excludedFolders: this.excludedFolders,
+          effectiveOntologies: this.effectiveOntologies ?? undefined,
+          assetSpaceFolderToUid: this.assetSpaceFolderToUid ?? undefined,
         });
         await this.tripleStore.addAll(triples);
         await this.runInference();
