@@ -35,6 +35,7 @@ import { SPARQLErrorEnhancer } from "../utils/SPARQLErrorEnhancer.js";
 import { NTriplesFormatter } from "../utils/NTriplesFormatter.js";
 import { scanVaultNamespaces } from "../utils/VaultNamespaceScanner.js";
 import { injectExocortexPrefixes, transformShorthandNotation, filterOntologyPrefixes } from "../utils/QueryPrefixInjector.js";
+import { resolveProfileFilter } from "../utils/resolveProfileFilter.js";
 
 export interface SparqlQueryOptions {
   vault: string;
@@ -51,6 +52,13 @@ export interface SparqlQueryOptions {
   timeout?: string;
   template?: string;
   param?: string;
+  /**
+   * FocusProfile UID — restricts the RDF graph to the effective AssetSpace
+   * set declared by the profile chain (RFC 0a0791c1 Issue #3323). When set,
+   * incompatible with `--use-cache` (cache is not profile-aware) — the cache
+   * path is silently disabled with a warn so the filter takes effect.
+   */
+  profile?: string;
 }
 
 /** Default TTL for query result cache in seconds */
@@ -248,6 +256,10 @@ export function sparqlQueryCommand(): Command {
     .option("--no-cache", "Bypass query result cache")
     .option("--template <name>", "Use a predefined query template")
     .option("--param <params>", "Template parameters (format: key=value,key2=value2)")
+    .option(
+      "--profile <uid>",
+      "FocusProfile UID — restrict graph to effective AssetSpace set (RFC 0a0791c1)",
+    )
     .action(async (queryArg: string | undefined, options: SparqlQueryOptions) => {
       const outputFormat = (options.output || "text") as OutputFormat;
       ErrorHandler.setFormat(outputFormat);
@@ -339,10 +351,37 @@ export function sparqlQueryCommand(): Command {
         }
         const loadStartTime = Date.now();
 
+        // Resolve --profile filter once, before vault loading. The filter
+        // applies to primary + --also vaults uniformly (profile semantics:
+        // the effective set spans every loaded vault that declares matching
+        // AssetSpaces).
+        const alsoVaults = options.also || [];
+        const profileFilter = await resolveProfileFilter({
+          profileUid: options.profile,
+          primaryVaultPath: vaultPath,
+          alsoVaultPaths: alsoVaults.map((p) => resolve(p)),
+          outputFormat,
+        });
+
+        // When --profile is engaged, bypass --use-cache: the persistent
+        // cache key is per-vault (no profile dimension), so reusing a
+        // full-vault cache under a profile would defeat the filter.
+        // Documented as MVP limitation in PR #3323; profile-aware caching
+        // is Variant C follow-up scope.
+        let useCacheEffective = options.useCache ?? false;
+        if (useCacheEffective && profileFilter !== null) {
+          if (outputFormat === "text") {
+            console.log(
+              "⚠️  --use-cache disabled because --profile is active (cache is not profile-aware; MVP limitation).",
+            );
+          }
+          useCacheEffective = false;
+        }
+
         let triples: Triple[];
         let cacheHit = false;
 
-        if (options.useCache) {
+        if (useCacheEffective) {
           // Use cached triples for faster loading
           const cacheManager = new CacheManager(vaultPath);
           const cacheResult = await cacheManager.loadOrBuild();
@@ -356,11 +395,17 @@ export function sparqlQueryCommand(): Command {
           // Traditional vault loading
           const vaultAdapter = new FileSystemVaultAdapter(vaultPath);
           const converter = new NoteToRDFConverter(vaultAdapter);
-          triples = await converter.convertVault();
+          triples = await converter.convertVault(
+            profileFilter !== null
+              ? {
+                  effectiveOntologies: profileFilter.effective,
+                  assetSpaceFolderToUid: profileFilter.folderMap,
+                }
+              : {},
+          );
         }
 
         // Load additional vaults if --also specified
-        const alsoVaults = options.also || [];
         for (const alsoPath of alsoVaults) {
           const resolvedAlsoPath = resolve(alsoPath);
           if (!existsSync(resolvedAlsoPath)) {
@@ -371,7 +416,14 @@ export function sparqlQueryCommand(): Command {
           }
           const alsoAdapter = new FileSystemVaultAdapter(resolvedAlsoPath);
           const alsoConverter = new NoteToRDFConverter(alsoAdapter);
-          const alsoTriples = await alsoConverter.convertVault();
+          const alsoTriples = await alsoConverter.convertVault(
+            profileFilter !== null
+              ? {
+                  effectiveOntologies: profileFilter.effective,
+                  assetSpaceFolderToUid: profileFilter.folderMap,
+                }
+              : {},
+          );
           triples = triples.concat(alsoTriples);
           if (outputFormat === "text") {
             console.log(`   ➕ Added ${alsoTriples.length} triples from ${resolvedAlsoPath}`);
