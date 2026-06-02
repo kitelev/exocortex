@@ -22,6 +22,11 @@
  */
 
 import type { FocusProfileSwitchManager } from "./FocusProfileSwitchManager";
+import {
+  HardSwitchAbortedByUser,
+  TsFloorViolationError,
+  UncommittedChangesAbortError,
+} from "./FocusProfileSwitchManager";
 
 /** Minimal interface — full implementation in B.3 AssetSpaceManager. */
 export interface IAssetSpacePusher {
@@ -107,6 +112,62 @@ export class FocusProfileCommands {
       // switchProfile itself emits a success Notice; nothing more here
     } catch (e) {
       this.notify(`Switch failed: ${this.safeMessage(e)}`);
+    }
+  }
+
+  /**
+   * Command 3 — `Exocortex: Hard switch focus profile` (RFC 22b50a17 Phase 3).
+   *
+   * Same fuzzy pick UX as soft switch, then invokes
+   * `FocusProfileSwitchManager.hardSwitchProfile` which:
+   *   1. R24 TS-floor assert (refuses targets that brick the plugin)
+   *   2. Vision Lock #5 uncommitted abort (with file list)
+   *   3. ModalConfirmGate (DI via switchMgr constructor)
+   *   4. Phase 1 pull → Phase 2 destroy+materialize → git commit
+   *
+   * User-facing error mapping: TsFloorViolationError, UncommittedChangesAbortError,
+   * and HardSwitchAbortedByUser get clear notices distinct from generic «Switch failed».
+   */
+  async invokeHardSwitchProfile(): Promise<void> {
+    let profiles: FocusProfileChoice[];
+    try {
+      profiles = await this.profileLister();
+    } catch (e) {
+      this.notify(`Could not list profiles: ${this.safeMessage(e)}`);
+      return;
+    }
+
+    if (profiles.length === 0) {
+      this.notify("No FocusProfile assets found in vault");
+      return;
+    }
+
+    const chosen = await this.fuzzyPick(
+      profiles,
+      "Hard switch focus profile (filesystem destroy + materialize)",
+    );
+    if (chosen === null) return; // user cancelled
+
+    this.notify(`Hard switching to ${chosen.label}…`);
+    try {
+      await this.switchMgr.hardSwitchProfile(chosen.uid);
+    } catch (e) {
+      if (e instanceof HardSwitchAbortedByUser) {
+        this.notify("Hard switch cancelled.");
+        return;
+      }
+      if (e instanceof TsFloorViolationError) {
+        this.notify(`Hard switch refused — ${e.message}`);
+        return;
+      }
+      if (e instanceof UncommittedChangesAbortError) {
+        const total = e.affectedFiles.reduce((s, a) => s + a.files.length, 0);
+        this.notify(
+          `Hard switch aborted — ${total} uncommitted file(s) в ${e.affectedFiles.length} AssetSpace(s). Commit or stash first.`,
+        );
+        return;
+      }
+      this.notify(`Hard switch failed: ${this.safeMessage(e)}`);
     }
   }
 

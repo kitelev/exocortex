@@ -109,6 +109,11 @@ import { createAssetSpacePusher } from "./infrastructure/adapters/AssetSpacePush
 import { LocalSecretsStore } from "./infrastructure/adapters/LocalSecretsStore";
 import { SwitchCacheLayer } from "./infrastructure/adapters/SwitchCacheLayer";
 import { ClearSwitchCacheConfirmModal } from "./infrastructure/adapters/ClearSwitchCacheConfirmModal";
+import { AssetSpaceManager } from "./infrastructure/adapters/AssetSpaceManager";
+import { GitHubRestClient } from "./infrastructure/adapters/GitHubRestClient";
+import { GitSubmoduleOps } from "./infrastructure/adapters/GitSubmoduleOps";
+import { UncommittedChangesGuard } from "./infrastructure/adapters/UncommittedChangesGuard";
+import { ModalConfirmGate } from "./infrastructure/adapters/ModalConfirmGate";
 import {
   CommandExecutionFlow,
   DI_TOKENS,
@@ -2333,6 +2338,61 @@ export default class ExocortexPlugin extends Plugin {
 
     const settingsStore = new PluginSettingsStoreAdapter(localDataStore);
 
+    // Phase 5 P3 — hard switch dependencies (desktop-only). On mobile, the
+    // palette command throws via the AssetSpaceManager pull guard; here we
+    // just leave the dependencies wired but inert.
+    let hardSwitchDeps: {
+      assetSpaceManager: AssetSpaceManager;
+      gitOps: GitSubmoduleOps;
+      uncommittedGuard: UncommittedChangesGuard;
+      confirmGate: ModalConfirmGate;
+      cacheLayer: SwitchCacheLayer;
+      vaultRootPath: string;
+    } | null = null;
+    if (!Platform.isMobile) {
+      try {
+        const secretsStore = new LocalSecretsStore({ app: this.app });
+        const pat = await secretsStore.getSecret("pat");
+        const githubClient = new GitHubRestClient({
+          app: this.app,
+          pat: pat ?? "",
+        });
+        const stagingTrackerHs = new StagingDirTracker({ localDataStore });
+        const assetSpaceManager = new AssetSpaceManager({
+          app: this.app,
+          client: githubClient,
+          notifications: this.notifier,
+          stagingTracker: stagingTrackerHs,
+        });
+        const vaultRootPath = (
+          this.app.vault.adapter as unknown as { basePath?: string }
+        ).basePath ?? "";
+        if (vaultRootPath.length > 0) {
+          const gitOps = new GitSubmoduleOps({ vaultRootPath });
+          const uncommittedGuard = new UncommittedChangesGuard({ gitOps });
+          const confirmGate = new ModalConfirmGate(this.app);
+          const cacheLayer = new SwitchCacheLayer();
+          hardSwitchDeps = {
+            assetSpaceManager,
+            gitOps,
+            uncommittedGuard,
+            confirmGate,
+            cacheLayer,
+            vaultRootPath,
+          };
+        } else {
+          this.logger.warn(
+            "[ExocortexPlugin] vault.adapter.basePath unavailable — hard switch palette will be hidden",
+          );
+        }
+      } catch (err) {
+        this.logger.warn(
+          "[ExocortexPlugin] failed to wire hard-switch deps; soft switch only",
+          err instanceof Error ? err : new Error(String(err)),
+        );
+      }
+    }
+
     const switchMgr = new FocusProfileSwitchManager({
       app: this.app,
       lockMgr,
@@ -2340,6 +2400,13 @@ export default class ExocortexPlugin extends Plugin {
       rdfIndexer,
       settingsStore,
       notify: (message) => this.notifier.info(message),
+      assetSpaceManager: hardSwitchDeps?.assetSpaceManager,
+      gitOps: hardSwitchDeps?.gitOps,
+      uncommittedGuard: hardSwitchDeps?.uncommittedGuard,
+      confirmGate: hardSwitchDeps?.confirmGate,
+      cacheLayer: hardSwitchDeps?.cacheLayer,
+      vaultRootPath: hardSwitchDeps?.vaultRootPath,
+      localDataStore,
     });
 
     // Issue #3320 — expose the manager на plugin instance so the Settings
@@ -2409,6 +2476,48 @@ export default class ExocortexPlugin extends Plugin {
       );
     }
 
+    // RFC 22b50a17 Phase 3 — hard-switch recovery worker. Only fires when
+    // hard-switch deps are wired AND the journal tail shows destroyed-not-
+    // materialized AS — covers the «plugin crashed mid-Phase 2» case where
+    // soft recoverIfNeeded() would re-trigger a no-op refresh but leave
+    // vault filesystem partial-destroyed.
+    if (hardSwitchDeps !== null) {
+      try {
+        const result = await switchMgr.recoverIncompleteSwitch();
+        if (result.restored.length > 0) {
+          this.logger.info(
+            `[ExocortexPlugin] hard-switch recovery restored ${result.restored.length} AssetSpace(s): ${result.restored.join(", ")}`,
+          );
+        }
+      } catch (error) {
+        this.logger.warn(
+          "[ExocortexPlugin] hard-switch recovery failed",
+          error instanceof Error ? error : new Error(String(error)),
+        );
+      }
+
+      // Cross-device divergence detection (RFC 22b50a17 §Cross-device).
+      // Best-effort: failure не block onload; user can manually re-trigger
+      // by switching profiles в Cmd+P.
+      try {
+        const reconcile = await switchMgr.reconcileToLocal();
+        if (reconcile.outcome === "reconciled") {
+          this.logger.info(
+            "[ExocortexPlugin] cross-device profile divergence reconciled to local activeProfileUid",
+          );
+        } else if (reconcile.outcome === "declined") {
+          this.logger.info(
+            "[ExocortexPlugin] cross-device divergence detected, user declined reconcile",
+          );
+        }
+      } catch (error) {
+        this.logger.warn(
+          "[ExocortexPlugin] cross-device reconcile failed",
+          error instanceof Error ? error : new Error(String(error)),
+        );
+      }
+    }
+
     const pushMgr = await this.buildAssetSpacePusher();
 
     const profileLister: () => Promise<FocusProfileChoice[]> = async () => {
@@ -2476,6 +2585,17 @@ export default class ExocortexPlugin extends Plugin {
         void commandsHandler.invokePushCurrentAssetSpace();
       },
     });
+
+    // RFC 22b50a17 Phase 3 — hard switch palette command.
+    if (hardSwitchDeps !== null) {
+      this.addCommand({
+        id: "hard-switch-focus-profile",
+        name: "Hard switch focus profile (filesystem destroy + materialize)",
+        callback: () => {
+          void commandsHandler.invokeHardSwitchProfile();
+        },
+      });
+    }
 
     // RFC 22b50a17 Decision #6 — wipe-all switch cache clearing.
     this.addCommand({
