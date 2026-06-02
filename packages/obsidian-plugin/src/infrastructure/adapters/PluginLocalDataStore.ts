@@ -50,6 +50,7 @@ import type { App } from "obsidian";
 
 const KEY_ACTIVE_PROFILE_UID = "activeProfileUid";
 const KEY_SWITCH_IN_PROGRESS = "_switchInProgress";
+const KEY_ACTIVE_STAGING_DIRS = "_activeStagingDirs";
 
 export interface PluginLocalDataStoreOptions {
   app: App;
@@ -65,6 +66,18 @@ export interface PluginLocalDataStoreOptions {
 export interface LocalSwitchState {
   activeProfileUid: string | null;
   _switchInProgress: boolean;
+}
+
+/**
+ * Tracked staging dir entry — registered by {@link StagingDirTracker.allocate}
+ * before any tarball materialization writes, swept on plugin onload by
+ * {@link StagingDirTracker.sweepOrphans} if the process crashed mid-pull
+ * (RFC 22b50a17 R26 mitigation).
+ */
+export interface StagingDirEntry {
+  asUid: string;
+  path: string;
+  allocatedAt: string;
 }
 
 const EMPTY_STATE: LocalSwitchState = {
@@ -185,6 +198,53 @@ export class PluginLocalDataStore {
       _switchInProgress: legacyFlag,
     });
     return "legacy";
+  }
+
+  /**
+   * Read the tracked staging-dir registry. Returns a fresh array — callers
+   * can mutate без affecting future reads.
+   *
+   * Reads from disk на каждом call (NOT cached в `this.cache`): staging-dir
+   * tracking is write-rare / read-rare (plugin onload sweep + per-pull
+   * allocate/release), and the value lives outside `LocalSwitchState` so a
+   * stale cache read after a sibling write would be visible across surfaces.
+   */
+  async readActiveStagingDirs(): Promise<StagingDirEntry[]> {
+    const all = await this.readAllRaw();
+    const raw = all[KEY_ACTIVE_STAGING_DIRS];
+    if (!Array.isArray(raw)) return [];
+    const out: StagingDirEntry[] = [];
+    for (const item of raw) {
+      if (
+        item &&
+        typeof item === "object" &&
+        typeof (item as Record<string, unknown>).asUid === "string" &&
+        typeof (item as Record<string, unknown>).path === "string" &&
+        typeof (item as Record<string, unknown>).allocatedAt === "string"
+      ) {
+        const e = item as Record<string, unknown>;
+        out.push({
+          asUid: e.asUid as string,
+          path: e.path as string,
+          allocatedAt: e.allocatedAt as string,
+        });
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Replace the tracked staging-dir registry. Preserves unknown sibling
+   * keys (PAT in LocalSecretsStore, switch state) via RMW.
+   */
+  async writeActiveStagingDirs(entries: StagingDirEntry[]): Promise<void> {
+    const all = await this.readAllRaw();
+    all[KEY_ACTIVE_STAGING_DIRS] = entries.map((e) => ({
+      asUid: e.asUid,
+      path: e.path,
+      allocatedAt: e.allocatedAt,
+    }));
+    await this.persist(all);
   }
 
   private assertInitialized(): void {

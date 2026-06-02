@@ -134,6 +134,14 @@ const baseConfig = {
     "@lezer/highlight",
     "@lezer/lr",
     ...builtins,
+    // `node:`-prefix variants of the Node.js builtins. `builtin-modules`
+    // returns plain names (`fs`, `path`, `os`, ...), but modern code uses
+    // `import "node:fs"` syntax — without these explicit entries esbuild
+    // tries to resolve them as filesystem packages and fails the
+    // production bundle build (Phase 5 RFC 22b50a17 — StagingDirTracker +
+    // AssetSpaceManager.pullAssetSpace require Node fs/path/os; mobile
+    // never instantiates them — guarded by Platform.isMobile).
+    ...builtins.map((b) => `node:${b}`),
   ],
   format: "cjs",
   platform: "browser", // Browser platform for proper module resolution

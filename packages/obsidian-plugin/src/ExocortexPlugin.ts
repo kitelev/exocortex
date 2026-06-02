@@ -2,6 +2,7 @@ import "reflect-metadata";
 import {
   MarkdownPostProcessorContext,
   MarkdownView,
+  Platform,
   Plugin,
   TFile,
 } from "obsidian";
@@ -100,6 +101,7 @@ import { VaultProfileResolver } from "./infrastructure/adapters/VaultProfileReso
 import { PluginRdfIndexerAdapter } from "./infrastructure/adapters/PluginRdfIndexerAdapter";
 import { PluginSettingsStoreAdapter } from "./infrastructure/adapters/PluginSettingsStoreAdapter";
 import { PluginLocalDataStore } from "./infrastructure/adapters/PluginLocalDataStore";
+import { StagingDirTracker } from "./infrastructure/adapters/StagingDirTracker";
 import { ProfileFuzzyModal } from "./infrastructure/adapters/ProfileFuzzyModal";
 import { applyActiveProfileFilter } from "./infrastructure/adapters/FocusProfileOnloadWiring";
 import { lookupAssetSpaceUidByFolder } from "./infrastructure/adapters/AssetSpaceLookupHelper";
@@ -2305,6 +2307,27 @@ export default class ExocortexPlugin extends Plugin {
       await this.saveSettings();
     }
     this.localDataStore = localDataStore;
+
+    // RFC 22b50a17 R26 — sweep staging-dir orphans left over from a crash
+    // mid-pullAssetSpace. Desktop-only (Node.js fs/os/path required); on
+    // mobile, pullAssetSpace itself refuses, so there's nothing to sweep.
+    // Best-effort: failure logged but does not block onload (staging dirs
+    // leak rather than crash plugin).
+    if (!Platform.isMobile) {
+      try {
+        const stagingTracker = new StagingDirTracker({ localDataStore });
+        const sweepResult = await stagingTracker.sweepOrphans();
+        if (sweepResult.tracked > 0) {
+          this.logger.info(
+            `[ExocortexPlugin] swept ${sweepResult.swept}/${sweepResult.tracked} orphan staging dirs (RFC 22b50a17 R26)`,
+          );
+        }
+      } catch (err) {
+        this.logger.warn(
+          `[ExocortexPlugin] StagingDirTracker.sweepOrphans failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
 
     const settingsStore = new PluginSettingsStoreAdapter(localDataStore);
 

@@ -1,6 +1,18 @@
+// Node.js builtins required for Phase 5 hard-switch staging dirs (RFC
+// 22b50a17) — staging dirs live in `os.tmpdir()` OUTSIDE the vault so
+// Obsidian's vault.adapter API cannot reach them. The `pullAssetSpace`
+// entry point is guarded by `Platform.isMobile` throw — on mobile the
+// code never executes (Phase 5 is desktop-only per RFC scope).
+/* eslint-disable no-restricted-imports, import/no-nodejs-modules */
+import { promises as fs } from "node:fs";
+import * as path from "node:path";
+/* eslint-enable no-restricted-imports, import/no-nodejs-modules */
 import type { App, TFile } from "obsidian";
+import { Platform } from "obsidian";
 import type { INotificationService } from "exocortex";
 import { GitHubRestClient } from "./GitHubRestClient";
+import { TarExtractor, type ExtractedTarFile } from "./TarExtractor";
+import { StagingDirTracker } from "./StagingDirTracker";
 import { lookupAssetSpaceUidByFolder } from "./AssetSpaceLookupHelper";
 import {
   ASSET_SPACE_CLASS_UID,
@@ -42,6 +54,42 @@ export interface AssetSpaceManagerOptions {
   notifications: INotificationService;
   /** Git branch to push to. Default: `"main"`. */
   branch?: string;
+  /**
+   * Optional — TarExtractor used by {@link pullAssetSpace}. Defaults to a
+   * fresh `new TarExtractor()`. Tests can inject a custom extractor to
+   * stress зип-slip paths без round-tripping the singleton.
+   */
+  tarExtractor?: TarExtractor;
+  /**
+   * Optional — tracker для staging dirs created during pulls. Required
+   * для `pullAssetSpace` to operate. If omitted, the call surface throws
+   * a clear error before any side effects. Production wiring constructs
+   * a tracker against {@link PluginLocalDataStore}.
+   */
+  stagingTracker?: StagingDirTracker;
+}
+
+/**
+ * Outcome of a successful {@link AssetSpaceManager.pullAssetSpace} call —
+ * tells the orchestrator (Phase 2 SwitchCacheLayer / Phase 3
+ * `hardSwitchProfile`) where the freshly-materialised AssetSpace lives
+ * on disk plus the SHA the GitHub REST tarball claimed.
+ */
+export interface PullAssetSpaceResult {
+  /** AssetSpace UID that was pulled. */
+  asUid: string;
+  /**
+   * Absolute path к staging directory containing the materialised
+   * AssetSpace content (children of the GitHub tarball's wrapper dir
+   * have been stripped — entries live directly at this path).
+   */
+  stagingPath: string;
+  /**
+   * 7-character SHA extracted from the GitHub tarball wrapper directory
+   * name (`<owner>-<repo>-<sha7>/`). Used by Phase 2 SwitchCacheLayer to
+   * key cache entries by content version.
+   */
+  sha: string;
 }
 
 /**
@@ -91,6 +139,8 @@ export class AssetSpaceManager {
   private readonly client: GitHubRestClient;
   private readonly notifications: INotificationService;
   private readonly branch: string;
+  private readonly tarExtractor: TarExtractor;
+  private readonly stagingTracker: StagingDirTracker | null;
 
   /**
    * Vault-relative paths of files modified since the last push. Plugin
@@ -121,6 +171,8 @@ export class AssetSpaceManager {
     this.client = opts.client;
     this.notifications = opts.notifications;
     this.branch = opts.branch ?? "main";
+    this.tarExtractor = opts.tarExtractor ?? new TarExtractor();
+    this.stagingTracker = opts.stagingTracker ?? null;
   }
 
   // ─────────────────────────── public — operational ───────────────────────────
@@ -190,26 +242,153 @@ export class AssetSpaceManager {
     return promise;
   }
 
-  // ─────────────────────────── public — stubs (Phase C+D) ─────────────────────
+  // ─────────────────────────── public — Phase 5 P1 ────────────────────────────
 
-  /** STUB — pull live-load deferred to Phase C+D per RFC 0a0791c1 §Scope. */
-  public async pullAssetSpace(_asUid: string, _stagingDir: string): Promise<void> {
-    throw new Error(
-      "AssetSpaceManager.pullAssetSpace: Phase C+D not implemented (v3 scope = push + lookup only)",
-    );
+  /**
+   * Pull the upstream tarball for an AssetSpace и materialise its contents
+   * into a fresh staging directory.
+   *
+   * Steps:
+   *   1. Validate the repo URL via {@link GitHubRestClient.validateRepoURL}.
+   *   2. Allocate a staging dir via {@link StagingDirTracker} (registers
+   *      orphan-cleanup record up front per RFC 22b50a17 R26).
+   *   3. Fetch the raw tarball via
+   *      {@link GitHubRestClient.fetchTarballBuffer} (50 MB cap by default).
+   *   4. Extract every entry via {@link TarExtractor} (zip-slip safe — see
+   *      F1 finding в Phase 0 spike doc) into the staging dir, stripping
+   *      the GitHub-emitted wrapper `<owner>-<repo>-<sha7>/`.
+   *   5. Return the staging path + SHA discovered from the wrapper.
+   *
+   * Wrapper-strip strategy (F1): GitHub REST tarballs always have a wrapper
+   * directory matching `<owner>-<repo>-<sha7>/`. We discover the wrapper
+   * from the first entry's leading segment, validate ALL entries share it
+   * (defense-in-depth), then materialize using paths с the wrapper stripped.
+   *
+   * Cleanup contract: ANY error after staging-dir allocation triggers
+   * `stagingTracker.release(stagingPath)` so we don't leak temp dirs.
+   * Successful return KEEPS the staging dir — caller (Phase 2/3
+   * orchestrators) owns its lifetime and must `release()` after the
+   * downstream move-into-vault step succeeds OR fails.
+   *
+   * @throws desktop-only on mobile.
+   * @throws if `stagingTracker` not provided to constructor.
+   * @throws invalid URL / network failure / corrupt tarball / wrapper-shape
+   *   mismatch — staging dir always released before propagation.
+   */
+  public async pullAssetSpace(
+    asUid: string,
+    asGitUrl: string,
+    ref: string = "main",
+  ): Promise<PullAssetSpaceResult> {
+    if (Platform.isMobile) {
+      throw new Error(
+        "AssetSpaceManager.pullAssetSpace: desktop-only (Phase 5 limitation — mobile Obsidian has no fs / os.tmpdir).",
+      );
+    }
+    if (!this.stagingTracker) {
+      throw new Error(
+        "AssetSpaceManager.pullAssetSpace: stagingTracker not configured (pass via options to enable Phase 5 pull).",
+      );
+    }
+    if (typeof asUid !== "string" || asUid.length === 0) {
+      throw new Error("pullAssetSpace: asUid is required");
+    }
+    if (typeof asGitUrl !== "string" || asGitUrl.length === 0) {
+      throw new Error("pullAssetSpace: asGitUrl is required");
+    }
+
+    // Validate URL shape + extract owner/repo. validateRepoURL throws on
+    // path traversal / scheme injection / non-github hosts.
+    GitHubRestClient.validateRepoURL(asGitUrl);
+    const { owner, repo } = parseGitHubURL(asGitUrl);
+
+    // Pre-flight rate-limit gate. fetchTarballBuffer is a single REST call;
+    // failing fast here saves us allocating staging dir on a doomed pull
+    // (parallel to pushAssetSpace's `ensureRateLimit(4)` discipline).
+    await this.client.ensureRateLimit(1);
+
+    const stagingPath = await this.stagingTracker.allocate(asUid);
+    try {
+      const blob = await this.client.fetchTarballBuffer(owner, repo, ref);
+
+      // Eagerly drain the iterable into an array so we can do the
+      // two-pass wrapper-discover-then-strip pattern. Memory is already
+      // O(tarball.size) because nanotar 0.3.0 buffers internally, so
+      // collecting entry references adds only pointers, not bytes.
+      const entries: ExtractedTarFile[] = [];
+      for await (const entry of this.tarExtractor.extract(blob, {
+        // Wrapper prefix unknown until we read the first entry — let
+        // TarExtractor's prefix gate accept any path. Zip-slip protections
+        // 1-3 (absolute paths, `..`, sym/hard links) remain active.
+        stagingDirPrefix: "",
+      })) {
+        entries.push(entry);
+      }
+      if (entries.length === 0) {
+        throw new Error(
+          `pullAssetSpace: tarball empty for ${owner}/${repo}@${ref}`,
+        );
+      }
+
+      const wrapper = discoverWrapperDir(entries);
+      const sha = extractShaFromWrapper(wrapper);
+      const wrapperPrefix = wrapper + "/";
+
+      // Materialize entries with wrapper stripped.
+      for (const entry of entries) {
+        if (!entry.path.startsWith(wrapperPrefix)) {
+          throw new Error(
+            `pullAssetSpace: tarball entry "${entry.path}" not under wrapper "${wrapper}"`,
+          );
+        }
+        const rel = entry.path.slice(wrapperPrefix.length);
+        // Defensive: TarExtractor already skips directory-type entries
+        // (TarExtractor.ts:152-155), but if a future regression yielded
+        // an entry whose path equals the wrapper itself, `rel` would be
+        // empty — skip rather than `fs.writeFile("")` an empty dir.
+        if (rel.length === 0) continue;
+        const target = path.join(stagingPath, rel);
+        // Defense-in-depth: confirm the resolved target stays inside
+        // staging — path.join with `..` segments would otherwise escape.
+        // TarExtractor already rejects `..` segments, this is belt-and-
+        // braces in case of future regression.
+        const resolvedTarget = path.resolve(target);
+        const resolvedStaging = path.resolve(stagingPath);
+        if (
+          resolvedTarget !== resolvedStaging &&
+          !resolvedTarget.startsWith(resolvedStaging + path.sep)
+        ) {
+          throw new Error(
+            `pullAssetSpace: resolved path "${resolvedTarget}" escapes staging dir`,
+          );
+        }
+        await fs.mkdir(path.dirname(resolvedTarget), { recursive: true });
+        await fs.writeFile(resolvedTarget, entry.content);
+      }
+
+      return { asUid, stagingPath, sha };
+    } catch (err) {
+      // Best-effort cleanup of the partially-populated staging dir.
+      await this.stagingTracker
+        .release(stagingPath)
+        .catch(() => undefined);
+      throw err;
+    }
   }
 
-  /** STUB — destroy deferred to Phase C+D. */
+  // ─────────────────────────── public — stubs (Phase 2+3) ─────────────────────
+
+  /** STUB — destroy deferred to Phase 2 SwitchCacheLayer / Phase 3 hardSwitchProfile. */
   public async destroyAssetSpace(_asUid: string): Promise<void> {
     throw new Error(
-      "AssetSpaceManager.destroyAssetSpace: Phase C+D not implemented (v3 scope = push + lookup only)",
+      "AssetSpaceManager.destroyAssetSpace: deferred to Phase 2/3 (RFC 22b50a17)",
     );
   }
 
-  /** STUB — restore-from-cache deferred to Phase C+D. */
+  /** STUB — restore-from-cache deferred to Phase 2 SwitchCacheLayer. */
   public async restoreFromCache(_asUid: string): Promise<boolean> {
     throw new Error(
-      "AssetSpaceManager.restoreFromCache: Phase C+D not implemented (v3 scope = push + lookup only)",
+      "AssetSpaceManager.restoreFromCache: deferred to Phase 2 SwitchCacheLayer (RFC 22b50a17)",
     );
   }
 
@@ -374,6 +553,74 @@ export function parseGitHubURL(url: string): { owner: string; repo: string } {
     throw new Error(`parseGitHubURL: invalid URL shape: ${url}`);
   }
   return { owner: m[1], repo: m[2] };
+}
+
+/**
+ * Discover the wrapper directory of a GitHub REST tarball.
+ *
+ * GitHub generates tarballs с inherent wrapper `<owner>-<repo>-<sha7>/`.
+ * Every entry's path starts с this prefix. We read the first segment of
+ * the first entry, then verify ALL entries share it.
+ *
+ * Empty / null entry name (already rejected by TarExtractor.validateEntry)
+ * would surface here as a missing slash, which we treat as a malformed
+ * tarball.
+ *
+ * Exported for unit testing.
+ */
+export function discoverWrapperDir(entries: ExtractedTarFile[]): string {
+  if (entries.length === 0) {
+    throw new Error("discoverWrapperDir: cannot discover wrapper of empty entry list");
+  }
+  const first = entries[0].path;
+  const slashIdx = first.indexOf("/");
+  // Tarball without any `/` means a top-level file with no wrapper —
+  // shape inconsistent with GitHub REST contract.
+  if (slashIdx < 0) {
+    throw new Error(
+      `discoverWrapperDir: expected wrapper directory, entry "${first}" has no path separator`,
+    );
+  }
+  const wrapper = first.slice(0, slashIdx);
+  if (wrapper.length === 0) {
+    throw new Error(
+      `discoverWrapperDir: empty wrapper segment in entry "${first}"`,
+    );
+  }
+  const wrapperPrefix = wrapper + "/";
+  for (const entry of entries) {
+    // Allow exact match (the wrapper dir itself listed как entry).
+    if (entry.path === wrapper || entry.path === wrapperPrefix) continue;
+    if (!entry.path.startsWith(wrapperPrefix)) {
+      throw new Error(
+        `discoverWrapperDir: entry "${entry.path}" not under wrapper "${wrapper}"`,
+      );
+    }
+  }
+  return wrapper;
+}
+
+/**
+ * Extract the 7-character SHA from a GitHub REST tarball wrapper name.
+ *
+ * GitHub-emitted wrapper names follow the pattern `<owner>-<repo>-<sha7>`
+ * where `<sha7>` is the last `-`-delimited segment (always 7 lowercase
+ * hex characters). Repo names CAN contain hyphens, so we anchor on the
+ * trailing 7-hex-char segment to avoid `<owner>-<repo-with-dash>-<sha7>`
+ * ambiguity.
+ *
+ * Exported for unit testing.
+ */
+export function extractShaFromWrapper(wrapper: string): string {
+  // Match the trailing `-<7-hex>` suffix. Hex is case-insensitive in
+  // principle but GitHub emits lowercase; accept both для robustness.
+  const m = wrapper.match(/-([0-9a-fA-F]{7})$/);
+  if (!m) {
+    throw new Error(
+      `extractShaFromWrapper: wrapper "${wrapper}" does not match expected GitHub pattern <owner>-<repo>-<sha7>`,
+    );
+  }
+  return m[1].toLowerCase();
 }
 
 function nowIsoSeconds(): string {
