@@ -14,6 +14,7 @@ import {
   createRemovePropertyService,
   createSetStatusService,
   createDuplicateAssetService,
+  createPathBasedTargetResolver,
   rewriteFrontmatterScalars,
   type IPathResolver,
 } from "../src/index";
@@ -227,6 +228,123 @@ describe("@kitelev/exocortex-services — factory contract", () => {
     await expect(service.execute("missing-uid", { label: "x" })).rejects.toThrow(
       /Cannot resolve target file/,
     );
+  });
+
+  describe("createPathBasedTargetResolver — IRI form handling (#3301)", () => {
+    /**
+     * Regression guard for Issue #3301: `service_call` groundings whose
+     * targetIRI is the canonical `obsidian://vault/<encoded-path>` form
+     * (produced by `vaultPathToIRI` after #2996) must resolve to the same
+     * file as the equivalent vault-relative path. Without scheme stripping
+     * the resolver passes the raw URI to `getAbstractFileByPath`, which
+     * yields null and the surface-level error «Cannot resolve target file
+     * for IRI» on every `exocortex-cli apply` of assets outside `assetspaces/`.
+     *
+     * The fix mirrors `CliServiceRegistryPopulator.createCliPathResolver`
+     * (frontmatter-only resolver path) — same scheme prefix + decodeURI +
+     * idempotent `.md` append.
+     */
+
+    function pathAwareAdapter(
+      expectedPath: string,
+      file: { basename: string; parent: { path: string } },
+    ): { lookedUp: string[]; adapter: never } {
+      const lookedUp: string[] = [];
+      const adapter = {
+        getAbstractFileByPath(path: string) {
+          lookedUp.push(path);
+          return path === expectedPath ? (file as never) : null;
+        },
+        getFrontmatter: () => ({}),
+      } as never;
+      return { lookedUp, adapter };
+    }
+
+    it("strips obsidian://vault/ scheme prefix before lookup", () => {
+      const { lookedUp, adapter } = pathAwareAdapter("Notes/foo.md", {
+        basename: "foo",
+        parent: { path: "Notes" },
+      });
+      const resolver = createPathBasedTargetResolver(adapter);
+
+      const file = resolver.resolveFile("obsidian://vault/Notes/foo.md");
+
+      expect(file.basename).toBe("foo");
+      expect(lookedUp).toEqual(["Notes/foo.md"]);
+    });
+
+    it("decodes percent-escapes in obsidian://vault/ URI", () => {
+      const { lookedUp, adapter } = pathAwareAdapter("03 Knowledge/foo.md", {
+        basename: "foo",
+        parent: { path: "03 Knowledge" },
+      });
+      const resolver = createPathBasedTargetResolver(adapter);
+
+      // %20 → space, matching decodeURI semantics
+      resolver.resolveFile("obsidian://vault/03%20Knowledge/foo.md");
+
+      expect(lookedUp).toEqual(["03 Knowledge/foo.md"]);
+    });
+
+    it("appends .md to plain paths missing the extension (legacy behaviour)", () => {
+      const { lookedUp, adapter } = pathAwareAdapter("Tasks/uid.md", {
+        basename: "uid",
+        parent: { path: "Tasks" },
+      });
+      const resolver = createPathBasedTargetResolver(adapter);
+
+      resolver.resolveFile("Tasks/uid");
+
+      expect(lookedUp).toEqual(["Tasks/uid.md"]);
+    });
+
+    it("is idempotent when the stripped path already ends with .md", () => {
+      const { lookedUp, adapter } = pathAwareAdapter("Notes/foo.md", {
+        basename: "foo",
+        parent: { path: "Notes" },
+      });
+      const resolver = createPathBasedTargetResolver(adapter);
+
+      // obsidian:// IRIs almost always include the .md suffix because
+      // `dyncommand exec --target <path>` preserves the extension when
+      // building the canonical IRI form. Resolver must not append a
+      // second `.md`, otherwise lookup is `foo.md.md` (silent null).
+      resolver.resolveFile("obsidian://vault/Notes/foo.md");
+
+      expect(lookedUp).toEqual(["Notes/foo.md"]);
+      expect(lookedUp[0]).not.toMatch(/\.md\.md$/);
+    });
+
+    it("preserves the original IRI in the error message when lookup fails", () => {
+      const { adapter } = pathAwareAdapter("Notes/exists.md", {
+        basename: "exists",
+        parent: { path: "Notes" },
+      });
+      const resolver = createPathBasedTargetResolver(adapter);
+
+      expect(() =>
+        resolver.resolveFile("obsidian://vault/Notes/missing.md"),
+      ).toThrow(
+        "Cannot resolve target file for IRI: obsidian://vault/Notes/missing.md",
+      );
+    });
+
+    it("surfaces malformed percent-escapes as the consistent resolver error", () => {
+      // `iriToVaultPath` swallows URIError and returns null on malformed
+      // sequences — the resolver then falls back to the raw IRI, the
+      // subsequent lookup misses, and the user sees the canonical
+      // "Cannot resolve target file" message instead of a raw URIError
+      // stack trace bubbling up from Node's URI parser.
+      const { adapter } = pathAwareAdapter("Notes/exists.md", {
+        basename: "exists",
+        parent: { path: "Notes" },
+      });
+      const resolver = createPathBasedTargetResolver(adapter);
+
+      expect(() =>
+        resolver.resolveFile("obsidian://vault/bad%XXescape.md"),
+      ).toThrow(/Cannot resolve target file for IRI/);
+    });
   });
 
   describe("frontmatter-only factories (T1.4)", () => {
