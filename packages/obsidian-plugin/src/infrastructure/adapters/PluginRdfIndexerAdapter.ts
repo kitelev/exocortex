@@ -1,5 +1,5 @@
 import type { IRdfIndexer } from "./FocusProfileSwitchManager";
-import type { VaultRDFIndexer } from "../VaultRDFIndexer";
+import type { IRdfIndexerHandle } from "@plugin/application/api/SPARQLApi";
 
 /**
  * `IRdfIndexer` adapter wrapping the plugin's live `VaultRDFIndexer`
@@ -18,7 +18,7 @@ import type { VaultRDFIndexer } from "../VaultRDFIndexer";
  * к AssetSpace topology, which it deliberately stays out of.
  */
 export class PluginRdfIndexerAdapter implements IRdfIndexer {
-  constructor(private readonly indexer: VaultRDFIndexer) {
+  constructor(private readonly indexer: IRdfIndexerHandle) {
     if (!indexer) {
       throw new Error("PluginRdfIndexerAdapter: indexer is required");
     }
