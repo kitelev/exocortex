@@ -29,9 +29,14 @@ export const HARD_SWITCH_PHASE3_PENDING_NOTICE =
   "[hard-switch] CLI command scaffolded. hardSwitchProfile() implementation pending Phase 3.";
 
 /**
- * Build a minimal stub plan the gate can render. Once Phase 3 ships, the
- * orchestrator computes the real plan; for the Phase 1b scaffold we synth
- * an empty-but-shape-faithful plan so the gate logs decisions.
+ * Build a minimal stub plan the gate can render.
+ *
+ * Phase 1b limitation (review MED-3): the second positional is currently
+ * also the UID — the resolver's `ResolveFilterResult` does not yet surface
+ * `targetProfileLabel`. Verbose log lines therefore show
+ * `Target: <uid> (<uid>)`. Phase 3 will extend the resolver to thread the
+ * profile's `exo__Asset_label` through; once it does, the call-site at the
+ * bottom of `runHardSwitch` should pass the resolved label here.
  */
 function buildScaffoldPlan(
   targetProfileUid: string,
@@ -49,8 +54,8 @@ function buildScaffoldPlan(
 }
 
 /**
- * Internal action handler — exported для integration tests, which inject
- * a fake `IConfirmGate` to verify the wiring без spinning a real CLI
+ * Internal action handler — exported for integration tests, which inject
+ * a fake `IConfirmGate` to verify the wiring without spinning a real CLI
  * subprocess.
  */
 export interface HardSwitchActionDeps {
@@ -61,17 +66,20 @@ export interface HardSwitchActionDeps {
    * action constructs `CliFocusProfileResolver` from CLI options.
    */
   resolverFactory?: (opts: HardSwitchCommandOptions) => CliFocusProfileResolver;
-  /** Override exit so tests can capture the code без killing Jest. */
-  exit?: (code: number) => never;
-  /** Override stdout/stderr sink so tests capture без spying. */
+  /**
+   * Override stdout sink. Captures into the returned `HardSwitchResult`
+   * regardless of whether this is provided — see fix for review MED-1
+   * (avoid double-push when production action handler omits deps).
+   */
   out?: (msg: string) => void;
+  /** Override stderr sink — same capture-once contract as `out`. */
   err?: (msg: string) => void;
 }
 
 /**
  * Run the hard-switch flow. Throws typed `CLIError` subclasses on
  * validation failure; the caller (commander action handler OR test) is
- * responsible for routing those через `ErrorHandler.handle` or capturing
+ * responsible for routing those through `ErrorHandler.handle` or capturing
  * them. Keeping the throw-path lean lets tests inject seams without
  * fighting the global `process.exit` instrumentation Jest installs.
  *
@@ -91,28 +99,22 @@ export async function runHardSwitch(
 ): Promise<HardSwitchResult> {
   const stdout: string[] = [];
   const stderr: string[] = [];
-  const out =
-    deps.out ??
-    ((msg: string) => {
-      stdout.push(msg);
-      process.stdout.write(`${msg}\n`);
-    });
-  const err =
-    deps.err ??
-    ((msg: string) => {
-      stderr.push(msg);
-      process.stderr.write(`${msg}\n`);
-    });
-  // Test-injected `out`/`err` already capture; bridge them into our
-  // result struct too so the returned object always reflects observable
-  // output regardless of injection mode.
-  const captureOut = (msg: string) => {
+  // MED-1 fix: capture is now the sole writer; the sink (deps.out or
+  // process.stdout) is invoked once, and the result struct is populated
+  // exactly once. Previous design double-pushed when deps.out was
+  // omitted (production path) because both the default `out` AND the
+  // wrapper `captureOut` pushed.
+  const stdoutSink =
+    deps.out ?? ((msg: string) => process.stdout.write(`${msg}\n`));
+  const stderrSink =
+    deps.err ?? ((msg: string) => process.stderr.write(`${msg}\n`));
+  const out = (msg: string) => {
     stdout.push(msg);
-    out(msg);
+    stdoutSink(msg);
   };
-  const captureErr = (msg: string) => {
+  const err = (msg: string) => {
     stderr.push(msg);
-    err(msg);
+    stderrSink(msg);
   };
 
   if (!opts.vault) {
@@ -137,7 +139,7 @@ export async function runHardSwitch(
     deps.resolverFactory?.(opts) ??
     new CliFocusProfileResolver({
       vaultPath,
-      warn: (msg) => captureErr(msg),
+      warn: (msg) => err(msg),
     });
   const outcome = await resolver.resolveFilter(profileUid);
 
@@ -148,21 +150,38 @@ export async function runHardSwitch(
     );
   }
   if (outcome.outcome === "error") {
-    captureErr(`[hard-switch] Resolver error: ${outcome.reason}`);
+    err(`[hard-switch] Resolver error: ${outcome.reason}`);
     return { exitCode: ExitCodes.OPERATION_FAILED, stdout, stderr };
   }
+  // MED-2 fix: `degraded` means the resolved effective set is empty (or
+  // overlaps nothing in the vault — R15 self-brick mitigation). Hard
+  // switch with a degraded outcome would destroy assetspaces against a
+  // profile that resolves to nothing useful — refuse outright before
+  // touching the confirmation gate.
+  if (outcome.outcome === "degraded") {
+    err(
+      `[hard-switch] Refused: profile resolution degraded — ${outcome.reason}. Hard switch aborted to prevent vault corruption.`,
+    );
+    return { exitCode: ExitCodes.OPERATION_FAILED, stdout, stderr };
+  }
+  // `no-profile` is unreachable because `profileUid` was validated
+  // non-empty above; `engaged` is the only remaining outcome and falls
+  // through to the gate flow below.
 
   // Build a confirm-gate (test seam allows override) and synth a stub
-  // plan. Phase 3 replaces the stub с a real plan computed from the
+  // plan. Phase 3 replaces the stub with a real plan computed from the
   // resolver's effective set + the SwitchCacheLayer's destroy targets.
   const gate =
     deps.confirmGate ??
     new HeadlessConfirmGate({
       yes: opts.yes ?? false,
       verbose: opts.verbose ?? false,
-      log: (msg) => captureErr(msg),
+      log: (msg) => err(msg),
     });
 
+  // MED-3: until the resolver surfaces a label, the UID stands in. Phase 3
+  // should swap `profileUid` for `outcome.result.targetProfileLabel` once
+  // `ResolveFilterResult` carries it.
   const plan = buildScaffoldPlan(profileUid, profileUid);
   const approved = await gate.confirmHardSwitch(plan);
 
@@ -173,7 +192,7 @@ export async function runHardSwitch(
     return { exitCode: ExitCodes.SUCCESS, stdout, stderr };
   }
 
-  captureOut(HARD_SWITCH_PHASE3_PENDING_NOTICE);
+  out(HARD_SWITCH_PHASE3_PENDING_NOTICE);
   return { exitCode: ExitCodes.SUCCESS, stdout, stderr };
 }
 

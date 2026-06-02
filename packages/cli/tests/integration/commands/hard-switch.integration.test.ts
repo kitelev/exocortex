@@ -214,4 +214,52 @@ describe("CLI v16 — hard-switch (RFC 22b50a17 Phase 1b)", () => {
     expect(optionNames).toContain("--verbose");
     expect(cmd.description()).toContain("Hard switch");
   });
+
+  it("[MED-1 regression] HardSwitchResult.stdout pushes each line exactly once", async () => {
+    const result = await runHardSwitch(
+      PROFILE_UID,
+      { vault: vaultRoot, yes: true, verbose: false },
+      {
+        confirmGate: approvingGate,
+        out: () => {},
+        err: () => {},
+      },
+    );
+    const count = result.stdout.filter((line) =>
+      line.includes(HARD_SWITCH_PHASE3_PENDING_NOTICE),
+    ).length;
+    expect(count).toBe(1);
+  });
+
+  it("[MED-2 regression] degraded resolver outcome refuses with OPERATION_FAILED", async () => {
+    const { CliFocusProfileResolver } = await import(
+      "../../../src/services/CliFocusProfileResolver.js"
+    );
+    // Inject a fake resolver returning `degraded` rather than building a
+    // pathological vault. The production path is exercised in the
+    // resolver's own unit tests; here we verify the consumer's guard.
+    const fakeResolver = {
+      resolveFilter: async () => ({
+        outcome: "degraded" as const,
+        reason: "synthetic — no AS-folder overlap",
+      }),
+    } as unknown as InstanceType<typeof CliFocusProfileResolver>;
+
+    const result = await runHardSwitch(
+      PROFILE_UID,
+      { vault: vaultRoot, yes: true, verbose: false },
+      {
+        confirmGate: approvingGate,
+        resolverFactory: () => fakeResolver,
+        out: () => {},
+        err: () => {},
+      },
+    );
+    expect(result.exitCode).toBe(ExitCodes.OPERATION_FAILED);
+    expect(result.stderr.join("\n")).toContain("Refused");
+    expect(result.stderr.join("\n")).toContain("degraded");
+    expect(result.stdout.join("\n")).not.toContain(
+      HARD_SWITCH_PHASE3_PENDING_NOTICE,
+    );
+  });
 });
