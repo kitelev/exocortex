@@ -530,6 +530,55 @@ describe("AssetCreationService", () => {
       ]);
     });
 
+    // Regression: Issue #3180 — CLI emitted self-aliased [[uid|uid]] when
+    // --class <UUID> was passed directly (classShortName === classUuid).
+    // Per UID-canon rule (CLAUDE.md 2026-05-17): alias=UID is degenerate;
+    // emit bare [[uid]] form.
+    describe("Issue #3180: self-aliased class wikilink", () => {
+      const CLASS_UUID = "1b20a8f0-d745-4e93-91db-4531b3df120e";
+
+      it("should emit bare [[uid]] when classShortName equals classUuid (UUID passed as --class)", async () => {
+        mockClassResolver.resolve.mockResolvedValue(CLASS_UUID);
+
+        const result = await service.create({
+          classShortName: CLASS_UUID,
+          label: "TEST",
+          vault: "/vault",
+        });
+
+        expect(result.frontmatter.exo__Instance_class).toEqual([
+          `"[[${CLASS_UUID}]]"`,
+        ]);
+      });
+
+      it("should NOT emit self-aliased [[uid|uid]] form", async () => {
+        mockClassResolver.resolve.mockResolvedValue(CLASS_UUID);
+
+        const result = await service.create({
+          classShortName: CLASS_UUID,
+          label: "TEST",
+          vault: "/vault",
+        });
+
+        const classRef = (result.frontmatter.exo__Instance_class as string[])[0];
+        expect(classRef).not.toContain(`${CLASS_UUID}|${CLASS_UUID}`);
+      });
+
+      it("should still emit [[uid|shortName]] when classShortName is human-readable", async () => {
+        mockClassResolver.resolve.mockResolvedValue(CLASS_UUID);
+
+        const result = await service.create({
+          classShortName: "ems__Task",
+          label: "Task label",
+          vault: "/vault",
+        });
+
+        expect(result.frontmatter.exo__Instance_class).toEqual([
+          `"[[${CLASS_UUID}|ems__Task]]"`,
+        ]);
+      });
+    });
+
     it("should throw error for empty label", async () => {
       await expect(
         service.create({
