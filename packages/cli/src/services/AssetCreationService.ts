@@ -12,6 +12,25 @@ const EXO_ASSISTANT_UUID = "de20a3f1-7483-4714-ab28-b45f5cf02c76";
 const DEFAULT_TIMEZONE = "Asia/Almaty";
 
 /**
+ * Build a class wikilink for `exo__Instance_class` frontmatter.
+ *
+ * Per UID-canon rule (CLAUDE.md 2026-05-17): wikilinks where alias equals
+ * the target are degenerate — alias provides no display value. When a user
+ * passes `--class <UUID>` directly, `classShortName === classUuid` and the
+ * naive `[[uid|uid]]` form duplicates the UID as both target and alias.
+ * Emit bare `[[uid]]` form instead (Issue #3180).
+ */
+function buildClassWikilink(
+  classUuid: string,
+  classShortName: string,
+): string {
+  if (!classShortName || classShortName === classUuid) {
+    return `"[[${classUuid}]]"`;
+  }
+  return `"[[${classUuid}|${classShortName}]]"`;
+}
+
+/**
  * Options for creating a new asset.
  */
 export interface CreateAssetOptions {
@@ -169,7 +188,7 @@ export class AssetCreationService {
     fm["exo__Asset_label"] = params.label;
     fm["exo__Asset_createdAt"] = params.timestamp;
     fm["exo__Asset_createdBy"] = `"[[${params.createdBy}]]"`;
-    fm["exo__Instance_class"] = [`"[[${params.classUuid}|${params.classShortName}]]"`];
+    fm["exo__Instance_class"] = [buildClassWikilink(params.classUuid, params.classShortName)];
 
     // Aliases
     const allAliases = [params.label];
