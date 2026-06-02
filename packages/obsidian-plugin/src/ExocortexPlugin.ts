@@ -101,9 +101,8 @@ import { PluginRdfIndexerAdapter } from "./infrastructure/adapters/PluginRdfInde
 import { PluginSettingsStoreAdapter } from "./infrastructure/adapters/PluginSettingsStoreAdapter";
 import { ProfileFuzzyModal } from "./infrastructure/adapters/ProfileFuzzyModal";
 import { applyActiveProfileFilter } from "./infrastructure/adapters/FocusProfileOnloadWiring";
-import { AssetSpaceManager } from "./infrastructure/adapters/AssetSpaceManager";
 import { lookupAssetSpaceUidByFolder } from "./infrastructure/adapters/AssetSpaceLookupHelper";
-import { GitHubRestClient } from "./infrastructure/adapters/GitHubRestClient";
+import { createAssetSpacePusher } from "./infrastructure/adapters/AssetSpacePusherFactory";
 import { LocalSecretsStore } from "./infrastructure/adapters/LocalSecretsStore";
 import {
   CommandExecutionFlow,
@@ -2427,73 +2426,14 @@ export default class ExocortexPlugin extends Plugin {
   private async buildAssetSpacePusher(): Promise<IAssetSpacePusher> {
     const secretsStore = new LocalSecretsStore({ app: this.app });
     const pat = await secretsStore.getSecret("pat");
-    const lookupOnlyFor = (folderName: string): string | null =>
-      this.lookupAssetSpaceUidByFolder(folderName);
-
-    if (pat === null || pat.length === 0) {
-      return {
-        lookupAssetSpaceForPath: lookupOnlyFor,
-        pushAssetSpace: () =>
-          Promise.reject(
-            new Error(
-              "GitHub PAT not configured — set it в Settings → Exocortex → GitHub PAT",
-            ),
-          ),
-      };
-    }
-
-    try {
-      const client = new GitHubRestClient({ pat, app: this.app });
-      const manager = new AssetSpaceManager({
-        app: this.app,
-        client,
-        notifications: this.notifier,
-      });
-      return {
-        lookupAssetSpaceForPath: (folderName) =>
-          manager.lookupAssetSpaceForPath(folderName),
-        pushAssetSpace: async (asUid) => {
-          const sha = await manager.pushAssetSpace(asUid);
-          // `AssetSpaceManager.pushAssetSpace` returns `Promise<string | null>`
-          // (`null` = no dirty files, no-op success). Coerce `null` → `""`
-          // to match `FocusProfileCommands.IAssetSpacePusher` contract,
-          // which treats empty string as «no-op» (see handler comment
-          // around line 139).
-          return sha ?? "";
-        },
-      };
-    } catch (error) {
-      this.logger.error(
-        "[ExocortexPlugin] AssetSpaceManager construction failed — push command will fail-clean",
-        error instanceof Error ? error : new Error(String(error)),
-      );
-      return {
-        lookupAssetSpaceForPath: lookupOnlyFor,
-        pushAssetSpace: () =>
-          Promise.reject(
-            new Error(
-              `Could not initialise AssetSpaceManager: ${
-                error instanceof Error ? error.message : String(error)
-              }`,
-            ),
-          ),
-      };
-    }
+    return createAssetSpacePusher({
+      app: this.app,
+      pat,
+      notifier: this.notifier,
+      logger: this.logger,
+      lookupOnly: (folderName) =>
+        lookupAssetSpaceUidByFolder(this.app, folderName),
+    });
   }
 
-  /**
-   * Vault-scan lookup mirroring `AssetSpaceManager.lookupAssetSpaceForPath`
-   * — finds the AssetSpace ABox asset whose containing folder matches
-   * `folderName` and returns its `exo__Asset_uid`. Used by the lookup-
-   * only stub path when GitHub PAT is absent (push disabled but the
-   * lookup branches in `FocusProfileCommands.invokePushCurrentAssetSpace`
-   * still need to resolve).
-   *
-   * Delegates to the shared `lookupAssetSpaceUidByFolder` helper so this
-   * stub path and `AssetSpaceManager.lookupAssetSpaceForPath` cannot
-   * drift (Issue #3327 Item #4).
-   */
-  private lookupAssetSpaceUidByFolder(folderName: string): string | null {
-    return lookupAssetSpaceUidByFolder(this.app, folderName);
-  }
 }
