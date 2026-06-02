@@ -43,6 +43,14 @@ function cleanGitEnv(): NodeJS.ProcessEnv {
   for (const k of Object.keys(env)) {
     if (k.startsWith("GIT_")) delete env[k];
   }
+  // GitHub Actions runners have git ≥2.38 which disabled file:// transport
+  // по умолчанию (CVE-2022-39253 mitigation). Re-enable globally via env
+  // for our tests — applies к ВСЕМ git subprocess invocations including
+  // the implicit clone inside `git submodule add`. NOT a security regression
+  // for tests because the repos all live в test-owned mkdtemp dirs.
+  env["GIT_CONFIG_COUNT"] = "1";
+  env["GIT_CONFIG_KEY_0"] = "protocol.file.allow";
+  env["GIT_CONFIG_VALUE_0"] = "always";
   return env;
 }
 

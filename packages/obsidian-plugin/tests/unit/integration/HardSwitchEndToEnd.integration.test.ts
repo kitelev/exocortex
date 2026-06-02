@@ -65,6 +65,11 @@ function cleanGitEnv(): NodeJS.ProcessEnv {
   for (const k of Object.keys(env)) {
     if (k.startsWith("GIT_")) delete env[k];
   }
+  // CVE-2022-39253 disabled file:// transport — re-enable via env override
+  // (applies к ВСЕМ git invocations including the implicit submodule clone).
+  env["GIT_CONFIG_COUNT"] = "1";
+  env["GIT_CONFIG_KEY_0"] = "protocol.file.allow";
+  env["GIT_CONFIG_VALUE_0"] = "always";
   return env;
 }
 

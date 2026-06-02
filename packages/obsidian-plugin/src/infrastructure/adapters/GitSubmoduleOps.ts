@@ -399,16 +399,33 @@ function isPlatformMobile(): boolean {
 }
 
 /**
- * Build a clean env object stripped of all `GIT_*` variables. Inherited
- * vars (e.g. set by an outer pre-commit hook, husky, or active rebase)
- * would otherwise redirect `git` subprocess to the wrong index/dir.
+ * Build a clean env object stripped of `GIT_*` session-state variables that
+ * could redirect `git` subprocess to the wrong index/dir. Strips the
+ * dangerous-on-inherit subset (GIT_DIR / GIT_INDEX_FILE / GIT_WORK_TREE etc.)
+ * — set by an outer husky hook, active rebase, or stash operation.
+ *
+ * Preserves `GIT_CONFIG_*` family (used to override config via env, e.g.
+ * tests setting `protocol.file.allow=always`) and other harmless vars.
  *
  * Exported for unit testing.
  */
 export function stripGitEnv(): NodeJS.ProcessEnv {
+  const STRIP = new Set<string>([
+    "GIT_DIR",
+    "GIT_INDEX_FILE",
+    "GIT_WORK_TREE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_NAMESPACE",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_REFLOG_ACTION",
+    "GIT_AUTHOR_DATE",
+    "GIT_COMMITTER_DATE",
+    "GIT_PREFIX",
+    "GIT_TEMPLATE_DIR",
+  ]);
   const env: NodeJS.ProcessEnv = { ...process.env };
   for (const k of Object.keys(env)) {
-    if (k.startsWith("GIT_")) delete env[k];
+    if (STRIP.has(k)) delete env[k];
   }
   return env;
 }
