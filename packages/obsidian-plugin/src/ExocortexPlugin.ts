@@ -2363,6 +2363,9 @@ export default class ExocortexPlugin extends Plugin {
       await injectAssetSpaceMaterializationTriples(
         this.sparql.getTripleStore(),
         this.assetSpaceMaterializationTracker.getStatuses(),
+        // L3 catch — wire the plugin logger so per-AS injection failures
+        // are visible at debug level instead of being silently swallowed.
+        { debug: (msg) => this.logger.debug(msg) },
       );
       this.assetSpaceStatusIconPatch?.onTrackerRefreshed();
     } catch (err) {
