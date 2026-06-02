@@ -474,6 +474,39 @@ describe("FocusProfileSwitchManager.hardSwitchProfile", () => {
       expect(cacheLayer.cachedCalls.length).toBe(0);
     });
 
+    it("passes guard via folderMapValues path when profile declares raw AS UIDs", async () => {
+      // Coverage gap: VaultProfileResolver can return raw AS UIDs (not
+      // Ontology URIs) when the user authored `_includes` с AS-UID wikilinks
+      // directly. The R24 translation step's `folderMapValues.has(uid)`
+      // branch covers this — this test asserts the branch works.
+      const ctx = setup({
+        targetUid: "target",
+        sourceUid: null,
+        targetIncludes: [], // bypass helper's ontology- translation
+        materialized: [
+          TS_FLOOR_AS_UID_EXO,
+          TS_FLOOR_AS_UID_EXOCMD,
+          TS_FLOOR_AS_UID_SHARED_IDENTITIES,
+        ],
+      });
+      // Override resolver: profile._includes contains raw AS UIDs (not
+      // ontology- prefixed) — exercises folderMapValues path.
+      const resolverInternal = (ctx.mgr as unknown as {
+        resolver: { ["profiles"]: Map<string, ProfileResolution> };
+      }).resolver;
+      resolverInternal["profiles"].set("target", {
+        uid: "target",
+        includes: [
+          TS_FLOOR_AS_UID_EXO,
+          TS_FLOOR_AS_UID_EXOCMD,
+          TS_FLOOR_AS_UID_SHARED_IDENTITIES,
+        ],
+        alwaysOnOverlay: [],
+        label: "Target Profile",
+      });
+      await expect(ctx.mgr.hardSwitchProfile("target")).resolves.toBeUndefined();
+    });
+
     it("passes guard when target profile explicitly includes all 3 floor AS UIDs", async () => {
       // Target explicitly declares the 3 floor AS — R24 guard passes;
       // algorithm proceeds. Hard switch refuses to silently auto-rescue
