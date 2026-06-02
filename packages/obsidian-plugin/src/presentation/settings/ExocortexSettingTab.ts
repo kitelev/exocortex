@@ -664,11 +664,14 @@ export class ExocortexSettingTab extends PluginSettingTab {
     // ─────── Section 2 — Active focus profile ───────
     new Setting(containerEl).setName("Active focus profile").setHeading();
 
-    const settings = this.plugin.settings as unknown as Record<string, unknown>;
-    const activeProfileUid =
-      typeof settings.activeProfileUid === "string"
-        ? (settings.activeProfileUid as string)
-        : null;
+    // Issue #3327 Item #3 — read switch state from device-local store
+    // (data.local.json). `plugin.localDataStore` is null until
+    // `registerFocusProfileCommands` resolves (and undefined in unit
+    // tests с partial plugin mocks); treat as no-active-profile before
+    // then, matching the previous fallback behaviour.
+    const activeProfileUid = this.plugin.localDataStore
+      ? this.plugin.localDataStore.getActiveProfileUid()
+      : null;
 
     const profileStatusEl = containerEl.createDiv({
       cls: "setting-item-description",

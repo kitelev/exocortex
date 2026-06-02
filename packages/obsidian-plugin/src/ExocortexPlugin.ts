@@ -99,13 +99,11 @@ import { PluginLockManager } from "./infrastructure/adapters/PluginLockManager";
 import { VaultProfileResolver } from "./infrastructure/adapters/VaultProfileResolver";
 import { PluginRdfIndexerAdapter } from "./infrastructure/adapters/PluginRdfIndexerAdapter";
 import { PluginSettingsStoreAdapter } from "./infrastructure/adapters/PluginSettingsStoreAdapter";
+import { PluginLocalDataStore } from "./infrastructure/adapters/PluginLocalDataStore";
 import { ProfileFuzzyModal } from "./infrastructure/adapters/ProfileFuzzyModal";
 import { applyActiveProfileFilter } from "./infrastructure/adapters/FocusProfileOnloadWiring";
-import {
-  AssetSpaceManager,
-  isAssetSpaceFrontmatter,
-} from "./infrastructure/adapters/AssetSpaceManager";
-import { GitHubRestClient } from "./infrastructure/adapters/GitHubRestClient";
+import { lookupAssetSpaceUidByFolder } from "./infrastructure/adapters/AssetSpaceLookupHelper";
+import { createAssetSpacePusher } from "./infrastructure/adapters/AssetSpacePusherFactory";
 import { LocalSecretsStore } from "./infrastructure/adapters/LocalSecretsStore";
 import {
   CommandExecutionFlow,
@@ -230,6 +228,21 @@ export default class ExocortexPlugin extends Plugin {
    * call succeeds.
    */
   public listFocusProfileChoices: (() => Promise<FocusProfileChoice[]>) | null = null;
+
+  /**
+   * Issue #3327 Item #3 — device-local switch state store (Sync-excluded).
+   * Holds `activeProfileUid` + `_switchInProgress` per-device so profile
+   * selection does not replicate cross-device. Initialized в
+   * `registerFocusProfileCommands` after one-time legacy-keys migration;
+   * remains null before that point.
+   *
+   * Readers treat the null state as «no active profile» (matches the
+   * default for fresh installs and для users who never selected a profile).
+   * No fallback к legacy `this.settings.activeProfileUid` — migration
+   * runs early enough that production reads always see the initialized
+   * store, and any legacy keys are cleared in the same migration pass.
+   */
+  public localDataStore: PluginLocalDataStore | null = null;
 
   override async onload(): Promise<void> {
     try {
@@ -903,9 +916,15 @@ export default class ExocortexPlugin extends Plugin {
               // case covered by the post-resolve one-shot regression
               // tests). When profile is null the helper would no-op and
               // the second refresh would only re-walk the same data.
+              //
+              // Item #3 — device-local store (no Sync replication). Null
+              // before `registerFocusProfileCommands` resolves; treat as
+              // no-active-profile (matches current behaviour). Loose
+              // truthiness check handles unit-test mocks where the field
+              // may be undefined rather than initialised to null.
               const hasActiveProfile =
-                typeof (this.settings as Record<string, unknown>)
-                  .activeProfileUid === "string";
+                !!this.localDataStore &&
+                this.localDataStore.getActiveProfileUid() !== null;
               if (reapplyActiveProfileFilter !== null && hasActiveProfile) {
                 try {
                   await reapplyActiveProfileFilter();
@@ -2250,10 +2269,44 @@ export default class ExocortexPlugin extends Plugin {
     const lockMgr = new PluginLockManager({ app: this.app });
     const resolver = new VaultProfileResolver(this.app);
     const rdfIndexer = new PluginRdfIndexerAdapter(this.sparql.getRdfIndexer());
-    const settingsStore = new PluginSettingsStoreAdapter({
-      readSettings: () => this.settings as Record<string, unknown>,
-      saveSettings: () => this.saveSettings(),
+
+    // Issue #3327 Item #3 — initialize device-local switch state store and
+    // run one-time migration from legacy `plugin.settings` keys. After
+    // migration, switch state lives в `data.local.json` (Sync-excluded);
+    // legacy keys are cleared from `plugin.settings` so they do not
+    // re-arrive via Sync на another device.
+    const localDataStore = new PluginLocalDataStore({ app: this.app });
+    const legacySettings = this.settings as Record<string, unknown>;
+    const migrationOutcome = await localDataStore.migrateFromLegacyIfNeeded({
+      activeProfileUid: legacySettings.activeProfileUid,
+      _switchInProgress: legacySettings._switchInProgress,
     });
+    if (migrationOutcome === "legacy") {
+      this.logger.info(
+        "[ExocortexPlugin] migrated legacy activeProfileUid/_switchInProgress " +
+          "from plugin.settings → data.local.json (per-device)",
+      );
+      delete legacySettings.activeProfileUid;
+      delete legacySettings._switchInProgress;
+      await this.saveSettings();
+    } else if (
+      legacySettings.activeProfileUid !== undefined ||
+      legacySettings._switchInProgress !== undefined
+    ) {
+      // Stale-sync edge: local already populated AND legacy fields present.
+      // Local takes precedence (idempotency); clear legacy так stale-sync
+      // value не trumps the device's choice on next migration cycle.
+      this.logger.info(
+        "[ExocortexPlugin] clearing stale legacy switch keys (local " +
+          "data.local.json already populated — Issue #3327 Item #3 idempotency)",
+      );
+      delete legacySettings.activeProfileUid;
+      delete legacySettings._switchInProgress;
+      await this.saveSettings();
+    }
+    this.localDataStore = localDataStore;
+
+    const settingsStore = new PluginSettingsStoreAdapter(localDataStore);
 
     const switchMgr = new FocusProfileSwitchManager({
       app: this.app,
@@ -2286,12 +2339,8 @@ export default class ExocortexPlugin extends Plugin {
     // close the cold-start race where `metadataCache.getFileCache` may
     // still return null for AS files at this earlier timing.
     const reapplyActiveProfileFilter = async (): Promise<void> => {
-      const persistedProfileUid =
-        typeof (this.settings as Record<string, unknown>).activeProfileUid ===
-        "string"
-          ? ((this.settings as Record<string, unknown>)
-              .activeProfileUid as string)
-          : null;
+      // Item #3 — read from device-local store (no Sync replication).
+      const persistedProfileUid = localDataStore.getActiveProfileUid();
       await applyActiveProfileFilter({
         app: this.app,
         switchMgr,
@@ -2338,12 +2387,8 @@ export default class ExocortexPlugin extends Plugin {
     const pushMgr = await this.buildAssetSpacePusher();
 
     const profileLister: () => Promise<FocusProfileChoice[]> = async () => {
-      const activeUid =
-        typeof (this.settings as Record<string, unknown>).activeProfileUid ===
-        "string"
-          ? ((this.settings as Record<string, unknown>)
-              .activeProfileUid as string)
-          : null;
+      // Item #3 — device-local store (no Sync replication).
+      const activeUid = localDataStore.getActiveProfileUid();
       const choices: FocusProfileChoice[] = [];
       for (const file of resolver.listFocusProfileFiles()) {
         const cache = this.app.metadataCache.getFileCache(file);
@@ -2429,87 +2474,14 @@ export default class ExocortexPlugin extends Plugin {
   private async buildAssetSpacePusher(): Promise<IAssetSpacePusher> {
     const secretsStore = new LocalSecretsStore({ app: this.app });
     const pat = await secretsStore.getSecret("pat");
-    const lookupOnlyFor = (folderName: string): string | null =>
-      this.lookupAssetSpaceUidByFolder(folderName);
-
-    if (pat === null || pat.length === 0) {
-      return {
-        lookupAssetSpaceForPath: lookupOnlyFor,
-        pushAssetSpace: () =>
-          Promise.reject(
-            new Error(
-              "GitHub PAT not configured — set it в Settings → Exocortex → GitHub PAT",
-            ),
-          ),
-      };
-    }
-
-    try {
-      const client = new GitHubRestClient({ pat, app: this.app });
-      const manager = new AssetSpaceManager({
-        app: this.app,
-        client,
-        notifications: this.notifier,
-      });
-      return {
-        lookupAssetSpaceForPath: (folderName) =>
-          manager.lookupAssetSpaceForPath(folderName),
-        pushAssetSpace: async (asUid) => {
-          const sha = await manager.pushAssetSpace(asUid);
-          // `AssetSpaceManager.pushAssetSpace` returns `Promise<string | null>`
-          // (`null` = no dirty files, no-op success). Coerce `null` → `""`
-          // to match `FocusProfileCommands.IAssetSpacePusher` contract,
-          // which treats empty string as «no-op» (see handler comment
-          // around line 139).
-          return sha ?? "";
-        },
-      };
-    } catch (error) {
-      this.logger.error(
-        "[ExocortexPlugin] AssetSpaceManager construction failed — push command will fail-clean",
-        error instanceof Error ? error : new Error(String(error)),
-      );
-      return {
-        lookupAssetSpaceForPath: lookupOnlyFor,
-        pushAssetSpace: () =>
-          Promise.reject(
-            new Error(
-              `Could not initialise AssetSpaceManager: ${
-                error instanceof Error ? error.message : String(error)
-              }`,
-            ),
-          ),
-      };
-    }
+    return createAssetSpacePusher({
+      app: this.app,
+      pat,
+      notifier: this.notifier,
+      logger: this.logger,
+      lookupOnly: (folderName) =>
+        lookupAssetSpaceUidByFolder(this.app, folderName),
+    });
   }
 
-  /**
-   * Vault-scan lookup mirroring `AssetSpaceManager.lookupAssetSpaceForPath`
-   * — finds the AssetSpace ABox asset whose containing folder matches
-   * `folderName` and returns its `exo__Asset_uid`. Used by the lookup-
-   * only stub path when GitHub PAT is absent (push disabled but the
-   * lookup branches in `FocusProfileCommands.invokePushCurrentAssetSpace`
-   * still need to resolve).
-   *
-   * Class-membership predicate delegates to the shared
-   * `isAssetSpaceFrontmatter` helper — strict wikilink matching, not loose
-   * substring — so adjacent UUID-like noise in `exo__Instance_class` doesn't
-   * falsely register. See Issue #3312 MEDIUM #1 propagation.
-   */
-  private lookupAssetSpaceUidByFolder(folderName: string): string | null {
-    if (typeof folderName !== "string" || folderName.length === 0) return null;
-    const normalised = folderName.replace(/\/$/, "");
-    for (const file of this.app.vault.getMarkdownFiles()) {
-      const parent = file.parent?.path ?? "";
-      if (parent !== normalised) continue;
-      const fm = this.app.metadataCache.getFileCache(file)?.frontmatter as
-        | Record<string, unknown>
-        | undefined;
-      if (!fm) continue;
-      if (!isAssetSpaceFrontmatter(fm)) continue;
-      const uid = fm["exo__Asset_uid"];
-      if (typeof uid === "string" && uid.length > 0) return uid;
-    }
-    return null;
-  }
 }

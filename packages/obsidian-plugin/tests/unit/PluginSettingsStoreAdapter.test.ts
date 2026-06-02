@@ -1,68 +1,81 @@
+import type { App } from "obsidian";
 import { PluginSettingsStoreAdapter } from "../../src/infrastructure/adapters/PluginSettingsStoreAdapter";
+import { PluginLocalDataStore } from "../../src/infrastructure/adapters/PluginLocalDataStore";
 
-describe("PluginSettingsStoreAdapter", () => {
-  it("throws when host is undefined", () => {
+// ─── Real-shape fake App.vault.adapter ───────────────────────────────────
+
+function makeFakeApp(): { app: App; files: Map<string, string> } {
+  const files = new Map<string, string>();
+  const app = {
+    vault: {
+      configDir: ".obsidian",
+      adapter: {
+        exists: async (p: string) => files.has(p),
+        read: async (p: string) => {
+          const v = files.get(p);
+          if (v === undefined) throw new Error(`ENOENT: ${p}`);
+          return v;
+        },
+        write: async (p: string, data: string) => {
+          files.set(p, data);
+        },
+      },
+    },
+  } as unknown as App;
+  return { app, files };
+}
+
+async function makeInitializedStore(app: App): Promise<PluginLocalDataStore> {
+  const store = new PluginLocalDataStore({ app });
+  await store.init();
+  return store;
+}
+
+describe("PluginSettingsStoreAdapter (Issue #3327 Item #3 — device-local backing)", () => {
+  it("throws when localDataStore is undefined", () => {
     expect(
-      () => new PluginSettingsStoreAdapter(undefined as any),
-    ).toThrow(/host is required/);
+      () => new PluginSettingsStoreAdapter(undefined as never),
+    ).toThrow(/localDataStore is required/);
   });
 
-  it("load defaults missing fields to null + false", async () => {
-    const settings: Record<string, unknown> = {};
-    const adapter = new PluginSettingsStoreAdapter({
-      readSettings: () => settings,
-      saveSettings: async () => {},
-    });
+  it("load returns defaults when localDataStore is empty", async () => {
+    const { app } = makeFakeApp();
+    const localStore = await makeInitializedStore(app);
+    const adapter = new PluginSettingsStoreAdapter(localStore);
     const s = await adapter.load();
     expect(s.activeProfileUid).toBeNull();
     expect(s._switchInProgress).toBe(false);
   });
 
-  it("load returns existing values when present", async () => {
-    const settings: Record<string, unknown> = {
+  it("load returns persisted values from localDataStore", async () => {
+    const { app } = makeFakeApp();
+    const localStore = await makeInitializedStore(app);
+    await localStore.save({
       activeProfileUid: "p1",
       _switchInProgress: true,
-    };
-    const adapter = new PluginSettingsStoreAdapter({
-      readSettings: () => settings,
-      saveSettings: async () => {},
     });
+    const adapter = new PluginSettingsStoreAdapter(localStore);
     const s = await adapter.load();
     expect(s.activeProfileUid).toBe("p1");
     expect(s._switchInProgress).toBe(true);
   });
 
-  it("save mutates the live settings object AND calls saveSettings", async () => {
-    const settings: Record<string, unknown> = {
-      activeProfileUid: null,
-      _switchInProgress: false,
-    };
-    const saveSettings = jest.fn().mockResolvedValue(undefined);
-    const adapter = new PluginSettingsStoreAdapter({
-      readSettings: () => settings,
-      saveSettings,
-    });
+  it("save writes through to localDataStore (data.local.json)", async () => {
+    const { app, files } = makeFakeApp();
+    const localStore = await makeInitializedStore(app);
+    const adapter = new PluginSettingsStoreAdapter(localStore);
+
     await adapter.save({ activeProfileUid: "p2", _switchInProgress: true });
-    expect(settings.activeProfileUid).toBe("p2");
-    expect(settings._switchInProgress).toBe(true);
-    expect(saveSettings).toHaveBeenCalledTimes(1);
-  });
 
-  it("load coerces non-string activeProfileUid to null", async () => {
-    const settings: Record<string, unknown> = { activeProfileUid: 42 };
-    const adapter = new PluginSettingsStoreAdapter({
-      readSettings: () => settings,
-      saveSettings: async () => {},
-    });
-    expect((await adapter.load()).activeProfileUid).toBeNull();
-  });
+    // File materialized at the expected device-local path.
+    const path = ".obsidian/plugins/exocortex/data.local.json";
+    expect(files.has(path)).toBe(true);
+    const parsed = JSON.parse(files.get(path) ?? "{}");
+    expect(parsed.activeProfileUid).toBe("p2");
+    expect(parsed._switchInProgress).toBe(true);
 
-  it("load coerces non-boolean _switchInProgress to false", async () => {
-    const settings: Record<string, unknown> = { _switchInProgress: "yes" };
-    const adapter = new PluginSettingsStoreAdapter({
-      readSettings: () => settings,
-      saveSettings: async () => {},
-    });
-    expect((await adapter.load())._switchInProgress).toBe(false);
+    // Cache reflects the write (sync accessors stay in sync).
+    expect(localStore.getActiveProfileUid()).toBe("p2");
+    expect(localStore.isSwitchInProgress()).toBe(true);
   });
 });

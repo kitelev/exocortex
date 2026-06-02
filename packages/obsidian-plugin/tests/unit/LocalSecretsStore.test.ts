@@ -111,6 +111,58 @@ describe("LocalSecretsStore.clearAll", () => {
     await store.clearAll();
     expect(await store.readAll()).toEqual({});
   });
+
+  it("preserves non-string sibling-store keys (Issue #3327 cross-store)", async () => {
+    const { app, files } = makeFakeApp();
+    // Sibling store (e.g. PluginLocalDataStore) wrote a boolean key first.
+    files.set(
+      DEFAULT_PATH,
+      JSON.stringify({ pat: "ghp_BEFORE", _switchInProgress: true }),
+    );
+    const store = new LocalSecretsStore({ app });
+    await store.clearAll();
+    // Secrets gone, sibling-store boolean preserved.
+    const parsed = JSON.parse(files.get(DEFAULT_PATH) ?? "{}");
+    expect(parsed.pat).toBeUndefined();
+    expect(parsed._switchInProgress).toBe(true);
+  });
+});
+
+describe("LocalSecretsStore cross-store coexistence (Issue #3327 Item #3)", () => {
+  it("setSecret preserves non-string sibling-store keys (RMW lossless)", async () => {
+    const { app, files } = makeFakeApp();
+    // Pre-seed file simulating PluginLocalDataStore having written booleans + null.
+    files.set(
+      DEFAULT_PATH,
+      JSON.stringify({
+        _switchInProgress: true,
+        activeProfileUid: null,
+      }),
+    );
+    const store = new LocalSecretsStore({ app });
+    await store.setSecret("pat", "ghp_NEW");
+    const parsed = JSON.parse(files.get(DEFAULT_PATH) ?? "{}");
+    expect(parsed.pat).toBe("ghp_NEW");
+    // Sibling-store keys preserved across the RMW.
+    expect(parsed._switchInProgress).toBe(true);
+    expect(parsed.activeProfileUid).toBeNull();
+  });
+
+  it("setSecret null also preserves non-string sibling-store keys", async () => {
+    const { app, files } = makeFakeApp();
+    files.set(
+      DEFAULT_PATH,
+      JSON.stringify({
+        pat: "ghp_TO_BE_CLEARED",
+        _switchInProgress: true,
+      }),
+    );
+    const store = new LocalSecretsStore({ app });
+    await store.setSecret("pat", null);
+    const parsed = JSON.parse(files.get(DEFAULT_PATH) ?? "{}");
+    expect(parsed.pat).toBeUndefined();
+    expect(parsed._switchInProgress).toBe(true);
+  });
 });
 
 describe("LocalSecretsStore.mask", () => {

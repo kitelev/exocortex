@@ -2,72 +2,49 @@ import type {
   ISettingsStore,
   SwitchSettings,
 } from "./FocusProfileSwitchManager";
+import type { PluginLocalDataStore } from "./PluginLocalDataStore";
 
 /**
- * Pluggable host hook for {@link PluginSettingsStoreAdapter}. The plugin
- * passes its current `settings` object and a `saveData` thunk; the adapter
- * neither knows nor cares about the surrounding `ExocortexSettings` shape
- * — it only reads/writes the two switch-state keys per RFC 0a0791c1 §B.4
- * (`activeProfileUid`, `_switchInProgress`).
+ * `ISettingsStore` adapter persisting через {@link PluginLocalDataStore}
+ * (Issue #3327 Item #3 — device-local switch state).
  *
- * The thunk pattern (rather than holding a direct plugin reference) keeps
- * the adapter free of `Plugin` import — useful for the test path which
- * stubs the save fn outright.
- */
-export interface PluginSettingsStoreHost {
-  /**
-   * Reads the live settings record. Implementations should return the
-   * SAME mutable reference the plugin holds, because B.4 expects
-   * `settings.activeProfileUid = X` to round-trip back through the
-   * `save()` thunk. A frozen / cloned object would silently drop the
-   * write.
-   */
-  readSettings(): {
-    activeProfileUid?: string | null;
-    _switchInProgress?: boolean;
-    [k: string]: unknown;
-  };
-  /** Persists the current settings object to disk (Obsidian `saveData`). */
-  saveSettings(): Promise<void>;
-}
-
-/**
- * `ISettingsStore` adapter persisting via the plugin's standard
- * `saveData()` round-trip. Defaults missing fields:
- *   - `activeProfileUid` → `null` (no profile selected, full vault)
- *   - `_switchInProgress` → `false`
+ * Prior to Item #3, switch state lived в `plugin.data.json` (synced
+ * across devices via Obsidian Sync). That caused two UX bugs:
+ *   1. Profile selection replicated cross-device against user intent
+ *      (per CLAUDE.md FocusProfile section «per-device» contract).
+ *   2. `_switchInProgress=true` left on a crashed device surfaced on
+ *      sibling devices as spurious `recoverIfNeeded` fires.
  *
- * Persistence target: Obsidian plugin `data.json`, which Obsidian Sync
- * replicates across devices. Per RFC 0a0791c1 + Vision Lock #1, only PATs
- * live в `data.local.json`; the active profile UID is intentionally
- * synced so the user's profile choice follows them. Per-device override
- * is a Phase D follow-up.
+ * Now the adapter delegates к `PluginLocalDataStore` which writes
+ * `data.local.json` (Sync-excluded). Caller (plugin onload) is
+ * responsible for awaiting `localDataStore.init()` and running the
+ * one-time legacy-keys migration BEFORE constructing this adapter.
+ *
+ * The `ISettingsStore` interface contract is unchanged — `load()` /
+ * `save()` shape matches what `FocusProfileSwitchManager` and tests
+ * already use.
  */
 export class PluginSettingsStoreAdapter implements ISettingsStore {
-  constructor(private readonly host: PluginSettingsStoreHost) {
-    if (!host) {
-      throw new Error("PluginSettingsStoreAdapter: host is required");
+  constructor(private readonly localDataStore: PluginLocalDataStore) {
+    if (!localDataStore) {
+      throw new Error(
+        "PluginSettingsStoreAdapter: localDataStore is required",
+      );
     }
   }
 
   async load(): Promise<SwitchSettings> {
-    const raw = this.host.readSettings();
-    const activeProfileUid =
-      typeof raw.activeProfileUid === "string" ? raw.activeProfileUid : null;
-    const inProgress =
-      typeof raw._switchInProgress === "boolean"
-        ? raw._switchInProgress
-        : false;
+    const snap = this.localDataStore.snapshot();
     return {
-      activeProfileUid,
-      _switchInProgress: inProgress,
+      activeProfileUid: snap.activeProfileUid,
+      _switchInProgress: snap._switchInProgress,
     };
   }
 
   async save(s: SwitchSettings): Promise<void> {
-    const raw = this.host.readSettings();
-    raw.activeProfileUid = s.activeProfileUid;
-    raw._switchInProgress = s._switchInProgress;
-    await this.host.saveSettings();
+    await this.localDataStore.save({
+      activeProfileUid: s.activeProfileUid,
+      _switchInProgress: s._switchInProgress,
+    });
   }
 }
