@@ -34,11 +34,18 @@ jest.unstable_mockModule("exocortex", () => {
       return date.toISOString();
     }
   }
+  // Issue #3301: the path-based target resolver factory now imports
+  // `iriToVaultPath` from `exocortex` at module-evaluation time. The
+  // deps-omitted code path tested here never invokes the resolver, so a
+  // shape stub returning null (treated as "not a vault scheme IRI", caller
+  // falls back to the raw IRI) is sufficient for the import to resolve.
+  const iriToVaultPath = (_iri: string): string | null => null;
   return {
     ServiceRegistry,
     FrontmatterService,
     WikiLinkHelpers,
     DateFormatter,
+    iriToVaultPath,
   };
 });
 
