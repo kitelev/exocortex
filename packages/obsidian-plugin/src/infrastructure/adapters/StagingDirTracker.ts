@@ -145,22 +145,24 @@ export class StagingDirTracker {
    * for logging/telemetry.
    */
   async sweepOrphans(): Promise<{ swept: number; tracked: number }> {
-    const tracked = await this.localDataStore.readActiveStagingDirs();
-    if (tracked.length === 0) return { swept: 0, tracked: 0 };
-    let swept = 0;
-    for (const entry of tracked) {
-      const existed = await fs
-        .access(entry.path)
-        .then(() => true)
-        .catch(() => false);
-      if (existed) {
-        await fs
-          .rm(entry.path, { recursive: true, force: true })
-          .catch(() => undefined);
-        swept++;
+    return this.runSerial(async () => {
+      const tracked = await this.localDataStore.readActiveStagingDirs();
+      if (tracked.length === 0) return { swept: 0, tracked: 0 };
+      let swept = 0;
+      for (const entry of tracked) {
+        const existed = await fs
+          .access(entry.path)
+          .then(() => true)
+          .catch(() => false);
+        if (existed) {
+          await fs
+            .rm(entry.path, { recursive: true, force: true })
+            .catch(() => undefined);
+          swept++;
+        }
       }
-    }
-    await this.localDataStore.writeActiveStagingDirs([]);
-    return { swept, tracked: tracked.length };
+      await this.localDataStore.writeActiveStagingDirs([]);
+      return { swept, tracked: tracked.length };
+    });
   }
 }

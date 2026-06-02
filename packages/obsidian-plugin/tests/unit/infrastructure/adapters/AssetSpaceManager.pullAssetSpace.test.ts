@@ -38,6 +38,7 @@ import { PluginLocalDataStore } from "../../../../src/infrastructure/adapters/Pl
 
 interface FakeGitHubClient {
   fetchTarballBuffer: jest.Mock<Promise<ArrayBuffer>, [string, string, string]>;
+  ensureRateLimit: jest.Mock<Promise<void>, [number]>;
 }
 
 function makeFakeClient(
@@ -47,6 +48,9 @@ function makeFakeClient(
     fetchTarballBuffer: jest
       .fn<Promise<ArrayBuffer>, [string, string, string]>()
       .mockResolvedValue(new ArrayBuffer(0)),
+    ensureRateLimit: jest
+      .fn<Promise<void>, [number]>()
+      .mockResolvedValue(undefined),
     ...overrides,
   };
 }
@@ -284,6 +288,43 @@ describe("AssetSpaceManager.pullAssetSpace — network drop", () => {
     expect(tracked).toHaveLength(0);
 
     // No leftover dirs (besides the data.local.json file).
+    const remaining = await fs.readdir(h.tmpdirBase);
+    expect(
+      remaining.filter((n) => n.startsWith("exo-staging-")),
+    ).toHaveLength(0);
+  });
+});
+
+// ─── 2b. Rate-limit pre-flight — fail fast before staging allocation ───────
+
+describe("AssetSpaceManager.pullAssetSpace — rate-limit pre-flight", () => {
+  let h: Harness;
+  afterEach(async () => {
+    if (h) await cleanTmpdir(h.tmpdirBase);
+  });
+
+  it("ensureRateLimit failure aborts before staging allocation", async () => {
+    h = await makeHarness({
+      clientOverrides: {
+        ensureRateLimit: jest
+          .fn<Promise<void>, [number]>()
+          .mockRejectedValue(
+            new Error(
+              "Rate limit guard: 2 remaining < 11 needed; resets in 600s",
+            ),
+          ),
+      },
+    });
+
+    await expect(
+      h.mgr.pullAssetSpace("uid-rl", "https://github.com/o/r"),
+    ).rejects.toThrow(/Rate limit guard/);
+
+    // No staging dir registered — release was never needed
+    expect(await h.store.readActiveStagingDirs()).toHaveLength(0);
+    expect(h.client.fetchTarballBuffer).not.toHaveBeenCalled();
+
+    // mkdtemp didn't fire either
     const remaining = await fs.readdir(h.tmpdirBase);
     expect(
       remaining.filter((n) => n.startsWith("exo-staging-")),

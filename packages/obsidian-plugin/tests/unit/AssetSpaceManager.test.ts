@@ -580,8 +580,9 @@ describe("AssetSpaceManager", () => {
   // --- Phase 2/3 stubs (Phase 5 P1 turned pullAssetSpace into real impl;
   //     destroyAssetSpace + restoreFromCache stay deferred to Phase 2/3) -----
   describe("Phase 2/3 stubs", () => {
-    it("pullAssetSpace throws desktop-only without staging tracker", async () => {
-      // No stagingTracker configured → fail-loud before any side effects.
+    it("pullAssetSpace throws clear error when stagingTracker not configured", async () => {
+      // No stagingTracker configured (factory path для production push-only
+      // wiring) → fail-loud before any side effects.
       const h = makeHarness([]);
       await expect(
         h.mgr.pullAssetSpace(

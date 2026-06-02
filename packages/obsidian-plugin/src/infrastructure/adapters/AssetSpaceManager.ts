@@ -302,6 +302,11 @@ export class AssetSpaceManager {
     GitHubRestClient.validateRepoURL(asGitUrl);
     const { owner, repo } = parseGitHubURL(asGitUrl);
 
+    // Pre-flight rate-limit gate. fetchTarballBuffer is a single REST call;
+    // failing fast here saves us allocating staging dir on a doomed pull
+    // (parallel to pushAssetSpace's `ensureRateLimit(4)` discipline).
+    await this.client.ensureRateLimit(1);
+
     const stagingPath = await this.stagingTracker.allocate(asUid);
     try {
       const blob = await this.client.fetchTarballBuffer(owner, repo, ref);
@@ -337,7 +342,11 @@ export class AssetSpaceManager {
           );
         }
         const rel = entry.path.slice(wrapperPrefix.length);
-        if (rel.length === 0) continue; // wrapper dir itself
+        // Defensive: TarExtractor already skips directory-type entries
+        // (TarExtractor.ts:152-155), but if a future regression yielded
+        // an entry whose path equals the wrapper itself, `rel` would be
+        // empty — skip rather than `fs.writeFile("")` an empty dir.
+        if (rel.length === 0) continue;
         const target = path.join(stagingPath, rel);
         // Defense-in-depth: confirm the resolved target stays inside
         // staging — path.join with `..` segments would otherwise escape.

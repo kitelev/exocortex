@@ -265,7 +265,10 @@ describe("Phase 5 P1.4 — pullAssetSpace → submodule handoff (E2E)", () => {
   let store: PluginLocalDataStore;
   let mgr: AssetSpaceManager;
   let fakeApp: App;
-  let mockClient: { fetchTarballBuffer: jest.Mock };
+  let mockClient: {
+    fetchTarballBuffer: jest.Mock;
+    ensureRateLimit: jest.Mock;
+  };
 
   beforeEach(async () => {
     workDir = await makeDisposableDir("exo-p1-e2e-");
@@ -312,7 +315,8 @@ describe("Phase 5 P1.4 — pullAssetSpace → submodule handoff (E2E)", () => {
     });
     mockClient = {
       fetchTarballBuffer: jest.fn(),
-    };
+      ensureRateLimit: jest.fn().mockResolvedValue(undefined),
+    } as never;
     mgr = new AssetSpaceManager({
       app: fakeApp,
       client: mockClient as never,
