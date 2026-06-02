@@ -99,6 +99,7 @@ import { PluginLockManager } from "./infrastructure/adapters/PluginLockManager";
 import { VaultProfileResolver } from "./infrastructure/adapters/VaultProfileResolver";
 import { PluginRdfIndexerAdapter } from "./infrastructure/adapters/PluginRdfIndexerAdapter";
 import { PluginSettingsStoreAdapter } from "./infrastructure/adapters/PluginSettingsStoreAdapter";
+import { PluginLocalDataStore } from "./infrastructure/adapters/PluginLocalDataStore";
 import { ProfileFuzzyModal } from "./infrastructure/adapters/ProfileFuzzyModal";
 import { applyActiveProfileFilter } from "./infrastructure/adapters/FocusProfileOnloadWiring";
 import { lookupAssetSpaceUidByFolder } from "./infrastructure/adapters/AssetSpaceLookupHelper";
@@ -227,6 +228,16 @@ export default class ExocortexPlugin extends Plugin {
    * call succeeds.
    */
   public listFocusProfileChoices: (() => Promise<FocusProfileChoice[]>) | null = null;
+
+  /**
+   * Issue #3327 Item #3 — device-local switch state store (Sync-excluded).
+   * Holds `activeProfileUid` + `_switchInProgress` per-device so profile
+   * selection does not replicate cross-device. Initialized в
+   * `registerFocusProfileCommands` with one-time legacy-migration; null
+   * до того момента, читателям нужно тогда fall-back на legacy
+   * `this.settings.activeProfileUid`.
+   */
+  public localDataStore: PluginLocalDataStore | null = null;
 
   override async onload(): Promise<void> {
     try {
@@ -900,9 +911,15 @@ export default class ExocortexPlugin extends Plugin {
               // case covered by the post-resolve one-shot regression
               // tests). When profile is null the helper would no-op and
               // the second refresh would only re-walk the same data.
+              //
+              // Item #3 — device-local store (no Sync replication). Null
+              // before `registerFocusProfileCommands` resolves; treat as
+              // no-active-profile (matches current behaviour). Loose
+              // truthiness check handles unit-test mocks where the field
+              // may be undefined rather than initialised to null.
               const hasActiveProfile =
-                typeof (this.settings as Record<string, unknown>)
-                  .activeProfileUid === "string";
+                !!this.localDataStore &&
+                this.localDataStore.getActiveProfileUid() !== null;
               if (reapplyActiveProfileFilter !== null && hasActiveProfile) {
                 try {
                   await reapplyActiveProfileFilter();
@@ -2247,10 +2264,44 @@ export default class ExocortexPlugin extends Plugin {
     const lockMgr = new PluginLockManager({ app: this.app });
     const resolver = new VaultProfileResolver(this.app);
     const rdfIndexer = new PluginRdfIndexerAdapter(this.sparql.getRdfIndexer());
-    const settingsStore = new PluginSettingsStoreAdapter({
-      readSettings: () => this.settings as Record<string, unknown>,
-      saveSettings: () => this.saveSettings(),
+
+    // Issue #3327 Item #3 — initialize device-local switch state store and
+    // run one-time migration from legacy `plugin.settings` keys. After
+    // migration, switch state lives в `data.local.json` (Sync-excluded);
+    // legacy keys are cleared from `plugin.settings` so they do not
+    // re-arrive via Sync на another device.
+    const localDataStore = new PluginLocalDataStore({ app: this.app });
+    const legacySettings = this.settings as Record<string, unknown>;
+    const migrationOutcome = await localDataStore.migrateFromLegacyIfNeeded({
+      activeProfileUid: legacySettings.activeProfileUid,
+      _switchInProgress: legacySettings._switchInProgress,
     });
+    if (migrationOutcome === "legacy") {
+      this.logger.info(
+        "[ExocortexPlugin] migrated legacy activeProfileUid/_switchInProgress " +
+          "from plugin.settings → data.local.json (per-device)",
+      );
+      delete legacySettings.activeProfileUid;
+      delete legacySettings._switchInProgress;
+      await this.saveSettings();
+    } else if (
+      legacySettings.activeProfileUid !== undefined ||
+      legacySettings._switchInProgress !== undefined
+    ) {
+      // Stale-sync edge: local already populated AND legacy fields present.
+      // Local takes precedence (idempotency); clear legacy так stale-sync
+      // value не trumps the device's choice on next migration cycle.
+      this.logger.info(
+        "[ExocortexPlugin] clearing stale legacy switch keys (local " +
+          "data.local.json already populated — Issue #3327 Item #3 idempotency)",
+      );
+      delete legacySettings.activeProfileUid;
+      delete legacySettings._switchInProgress;
+      await this.saveSettings();
+    }
+    this.localDataStore = localDataStore;
+
+    const settingsStore = new PluginSettingsStoreAdapter(localDataStore);
 
     const switchMgr = new FocusProfileSwitchManager({
       app: this.app,
@@ -2283,12 +2334,8 @@ export default class ExocortexPlugin extends Plugin {
     // close the cold-start race where `metadataCache.getFileCache` may
     // still return null for AS files at this earlier timing.
     const reapplyActiveProfileFilter = async (): Promise<void> => {
-      const persistedProfileUid =
-        typeof (this.settings as Record<string, unknown>).activeProfileUid ===
-        "string"
-          ? ((this.settings as Record<string, unknown>)
-              .activeProfileUid as string)
-          : null;
+      // Item #3 — read from device-local store (no Sync replication).
+      const persistedProfileUid = localDataStore.getActiveProfileUid();
       await applyActiveProfileFilter({
         app: this.app,
         switchMgr,
@@ -2335,12 +2382,8 @@ export default class ExocortexPlugin extends Plugin {
     const pushMgr = await this.buildAssetSpacePusher();
 
     const profileLister: () => Promise<FocusProfileChoice[]> = async () => {
-      const activeUid =
-        typeof (this.settings as Record<string, unknown>).activeProfileUid ===
-        "string"
-          ? ((this.settings as Record<string, unknown>)
-              .activeProfileUid as string)
-          : null;
+      // Item #3 — device-local store (no Sync replication).
+      const activeUid = localDataStore.getActiveProfileUid();
       const choices: FocusProfileChoice[] = [];
       for (const file of resolver.listFocusProfileFiles()) {
         const cache = this.app.metadataCache.getFileCache(file);
