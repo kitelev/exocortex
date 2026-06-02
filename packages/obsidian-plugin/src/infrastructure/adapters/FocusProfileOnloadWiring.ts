@@ -1,7 +1,7 @@
 import type { App, TFile } from "obsidian";
 import type { ILogger } from "exocortex";
 
-import { isAssetSpaceFrontmatter } from "./AssetSpaceManager";
+import { isAssetSpaceFrontmatter } from "./AssetSpaceFrontmatter";
 import type { FocusProfileSwitchManager } from "./FocusProfileSwitchManager";
 
 /**

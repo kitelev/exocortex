@@ -1,6 +1,6 @@
 import type { App } from "obsidian";
 
-import { isAssetSpaceFrontmatter } from "./AssetSpaceManager";
+import { isAssetSpaceFrontmatter } from "./AssetSpaceFrontmatter";
 
 /**
  * Folder-name → AssetSpace UID lookup. Returns the `exo__Asset_uid` of the

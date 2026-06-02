@@ -24,14 +24,21 @@ import type { App } from "obsidian";
  *   - `PluginLocalDataStore` writes keys: `activeProfileUid`,
  *     `_switchInProgress`
  *
- * Concurrent writes are not coordinated by a lock. In practice:
- *   - PAT updates are rare (user-initiated in Settings UI)
- *   - Switch state writes happen during `FocusProfileSwitchManager.switchProfile`
- *     which holds `PluginLockManager` lock (serialises switches)
- *   - Cross-store contention requires a user clicking «save PAT»
- *     during a profile switch — possible but vanishingly rare
+ * Cross-store coexistence relies on **lossless read-modify-write** in
+ * both stores. `LocalSecretsStore` was originally written to filter
+ * non-string keys (its public contract returns
+ * `Record<string, string>`), and an inner `readAll → persist` round
+ * trip would deterministically strip booleans/nulls written by sibling
+ * stores. Issue #3327 Item #3 fixed this — secrets-store internals now
+ * use a typed-preserving `readAllRaw()` for the RMW path and the
+ * string-filtered `readAll()` only for public-facing consumers.
  *
- * If empirical races emerge, add file-level locking via PluginLockManager.
+ * Locking is not used. Writes from the two stores can interleave under
+ * a worst-case (user clicks «save PAT» during a profile switch) — the
+ * last writer wins. Since each store mutates only its own key
+ * namespace, the loser observes a stale read but no key collision.
+ * If empirical races emerge, add file-level locking via
+ * `PluginLockManager`.
  *
  * ## In-memory cache contract
  *

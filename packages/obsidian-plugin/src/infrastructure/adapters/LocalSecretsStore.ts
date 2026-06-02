@@ -58,22 +58,19 @@ export class LocalSecretsStore {
    * Read the secrets file. Returns \`{}\` when the file is absent или
    * unparseable — callers should not surface this as an error, since a
    * fresh install legitimately has no secrets yet.
+   *
+   * Filters to string values only — non-string keys (e.g. PluginLocalDataStore's
+   * boolean `_switchInProgress` co-living в the same file) are NOT visible to
+   * secret-reading consumers. Internal persistence preserves them via
+   * {@link readAllRaw}; see Issue #3327 Item #3 для the cross-store rationale.
    */
   async readAll(): Promise<Record<string, string>> {
-    try {
-      const exists = await this.app.vault.adapter.exists(this.path);
-      if (!exists) return {};
-      const raw = await this.app.vault.adapter.read(this.path);
-      const parsed = JSON.parse(raw) as unknown;
-      if (parsed === null || typeof parsed !== "object") return {};
-      const result: Record<string, string> = {};
-      for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
-        if (typeof v === "string") result[k] = v;
-      }
-      return result;
-    } catch {
-      return {};
+    const all = await this.readAllRaw();
+    const result: Record<string, string> = {};
+    for (const [k, v] of Object.entries(all)) {
+      if (typeof v === "string") result[k] = v;
     }
+    return result;
   }
 
   /** Get a single secret by key. Returns null if missing or non-string. */
@@ -85,9 +82,14 @@ export class LocalSecretsStore {
   /**
    * Set or clear a single secret. Passing an empty string или null deletes
    * the entry (avoid trailing empty-PAT junk in the file).
+   *
+   * Read-modify-write preserves all keys (including non-string ones written
+   * by sibling stores like `PluginLocalDataStore`). Prior to Issue #3327
+   * Item #3 fix, `readAll()`-based RMW silently stripped non-string keys —
+   * deterministic data loss for booleans (`_switchInProgress`).
    */
   async setSecret(key: string, value: string | null): Promise<void> {
-    const all = await this.readAll();
+    const all = await this.readAllRaw();
     if (value === null || value === "") {
       delete all[key];
     } else {
@@ -96,9 +98,19 @@ export class LocalSecretsStore {
     await this.persist(all);
   }
 
-  /** Remove all stored secrets. Used by «Clear secrets» action в UI. */
+  /**
+   * Remove all stored SECRETS. Preserves non-secret keys written by sibling
+   * stores (e.g. `PluginLocalDataStore`). To wipe the entire file, callers
+   * should also clear those stores explicitly.
+   */
   async clearAll(): Promise<void> {
-    await this.persist({});
+    const all = await this.readAllRaw();
+    // Strip string-valued keys (secrets), preserve others.
+    const preserved: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(all)) {
+      if (typeof v !== "string") preserved[k] = v;
+    }
+    await this.persist(preserved);
   }
 
   /**
@@ -113,7 +125,25 @@ export class LocalSecretsStore {
     return "*".repeat(Math.max(8, value.length - 4)) + value.slice(-4);
   }
 
-  private async persist(all: Record<string, string>): Promise<void> {
+  /**
+   * Internal — read the raw file preserving all key types (string + sibling-
+   * store-written non-strings). Used by `setSecret` / `clearAll` для
+   * lossless RMW.
+   */
+  private async readAllRaw(): Promise<Record<string, unknown>> {
+    try {
+      const exists = await this.app.vault.adapter.exists(this.path);
+      if (!exists) return {};
+      const raw = await this.app.vault.adapter.read(this.path);
+      const parsed = JSON.parse(raw) as unknown;
+      if (parsed === null || typeof parsed !== "object") return {};
+      return { ...(parsed as Record<string, unknown>) };
+    } catch {
+      return {};
+    }
+  }
+
+  private async persist(all: Record<string, unknown>): Promise<void> {
     const json = JSON.stringify(all, null, 2);
     await this.app.vault.adapter.write(this.path, json);
   }

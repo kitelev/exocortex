@@ -233,9 +233,14 @@ export default class ExocortexPlugin extends Plugin {
    * Issue #3327 Item #3 — device-local switch state store (Sync-excluded).
    * Holds `activeProfileUid` + `_switchInProgress` per-device so profile
    * selection does not replicate cross-device. Initialized в
-   * `registerFocusProfileCommands` with one-time legacy-migration; null
-   * до того момента, читателям нужно тогда fall-back на legacy
-   * `this.settings.activeProfileUid`.
+   * `registerFocusProfileCommands` after one-time legacy-keys migration;
+   * remains null before that point.
+   *
+   * Readers treat the null state as «no active profile» (matches the
+   * default for fresh installs and для users who never selected a profile).
+   * No fallback к legacy `this.settings.activeProfileUid` — migration
+   * runs early enough that production reads always see the initialized
+   * store, and any legacy keys are cleared in the same migration pass.
    */
   public localDataStore: PluginLocalDataStore | null = null;
 

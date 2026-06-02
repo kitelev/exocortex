@@ -2,13 +2,15 @@ import type { App, TFile } from "obsidian";
 import type { INotificationService } from "exocortex";
 import { GitHubRestClient } from "./GitHubRestClient";
 import { lookupAssetSpaceUidByFolder } from "./AssetSpaceLookupHelper";
+import {
+  ASSET_SPACE_CLASS_UID,
+  isAssetSpaceFrontmatter,
+} from "./AssetSpaceFrontmatter";
 
-/**
- * Class UID of `exo__AssetSpace` (TBox root). Used to discriminate AssetSpace
- * ABox instances from other assets when scanning the vault. Hardcoded by RFC
- * 0a0791c1 (UID frozen by RFC v2 `2a98f345`, implemented 2026-05-17).
- */
-export const ASSET_SPACE_CLASS_UID = "73bd00e4-ccc0-4f3f-b20d-c4388c4588fb";
+// Re-export для backward-compat consumers that previously imported from
+// `AssetSpaceManager` directly (e.g. existing test files); leaf-module
+// authority lives in `AssetSpaceFrontmatter`.
+export { ASSET_SPACE_CLASS_UID, isAssetSpaceFrontmatter };
 
 /**
  * Resolved AssetSpace metadata extracted from vault frontmatter.
@@ -337,42 +339,9 @@ export class AssetSpaceManager {
 }
 
 // ────────────────────────── module-private helpers ──────────────────────────
-
-/**
- * Strict wikilink regex — matches `[[<uuid>]]` or `[[<uuid>|<label>]]`,
- * capturing the canonical UUIDv4 form (8-4-4-4-12 hex, case-insensitive).
- * Anchored to the wikilink brackets so substring matches like
- * `notavalid-73bd00e4-...` do not falsely register as the AssetSpace class.
- * See Issue #3312 MEDIUM #1.
- */
-const WIKILINK_UID_RE =
-  /\[\[([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\|[^\]]*)?\]\]/gi;
-
-/**
- * Predicate — does this frontmatter declare `exo__Instance_class` containing
- * the AssetSpace class UID? Handles both wikilink-string and array-of-string
- * shapes that Obsidian's parser may produce. Membership is decided by strict
- * wikilink regex (not loose substring), so adjacent UUID-like noise in the
- * value does not falsely match.
- *
- * Exported so sibling adapters (`ExocortexPlugin.lookupAssetSpaceUidByFolder`,
- * `FocusProfileOnloadWiring.scanAssetSpaces`) share one predicate; the prior
- * copy-paste used loose substring matching and inherited the same bug.
- * See Issue #3312.
- */
-export function isAssetSpaceFrontmatter(fm: Record<string, unknown>): boolean {
-  const classes = fm["exo__Instance_class"];
-  const candidates: unknown[] = Array.isArray(classes) ? classes : [classes];
-  for (const c of candidates) {
-    if (typeof c !== "string") continue;
-    WIKILINK_UID_RE.lastIndex = 0;
-    let m: RegExpExecArray | null;
-    while ((m = WIKILINK_UID_RE.exec(c)) !== null) {
-      if (m[1].toLowerCase() === ASSET_SPACE_CLASS_UID) return true;
-    }
-  }
-  return false;
-}
+// Shared predicates / constants (ASSET_SPACE_CLASS_UID, isAssetSpaceFrontmatter,
+// WIKILINK_UID_RE) live in `AssetSpaceFrontmatter` (leaf module) to break
+// the AssetSpaceManager ↔ AssetSpaceLookupHelper circular import.
 
 function parentFolder(filePath: string): string {
   const idx = filePath.lastIndexOf("/");
