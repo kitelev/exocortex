@@ -1,4 +1,4 @@
-import { WikiLinkHelpers, DateFormatter } from "exocortex";
+import { WikiLinkHelpers, DateFormatter, iriToVaultPath } from "exocortex";
 import type {
   ClassRefResolver,
   IGroundingService,
@@ -29,11 +29,12 @@ import type {
  * runtimes produce byte-identical state changes for the same input.
  *
  * Target-IRI → IFile resolution is delegated to the optional
- * `ITargetResolver` parameter. CLI runtime keeps the historical
- * path-based default (`getAbstractFileByPath(`${IRI}.md`)`); the Obsidian
- * plugin (T1.3) injects an Obsidian-aware resolver that scans
- * `metadataCache` for `exo__Asset_uid` / `@id` matches and decodes
- * `obsidian://vault/...` URIs.
+ * `ITargetResolver` parameter. The CLI default path-based resolver strips
+ * the `obsidian://vault/<encoded-path>` URI scheme via the canonical
+ * `iriToVaultPath` helper (Issue #3301) and appends `.md` only when not
+ * already present; the Obsidian plugin (T1.3) injects an Obsidian-aware
+ * resolver that additionally scans `metadataCache` for `exo__Asset_uid` /
+ * `@id` matches.
  *
  * RFC 94e520da Phase 1, T1.2 (factories) + T1.3 (plugin migration).
  */
@@ -47,7 +48,18 @@ export function createPathBasedTargetResolver(
 ): ITargetResolver {
   return {
     resolveFile(targetIRI: string): IFile {
-      const candidate = vaultAdapter.getAbstractFileByPath(`${targetIRI}.md`);
+      // `iriToVaultPath` returns null when the input either lacks the
+      // `obsidian://vault/` prefix (a plain vault-relative path) OR carries
+      // a malformed percent-escape sequence (URIError → null). In both
+      // cases we fall back to the raw IRI: a plain path is what the
+      // resolver always accepted, and a malformed-URI lookup will miss
+      // disk and surface as the consistent "Cannot resolve target file"
+      // error below rather than a raw URIError stack trace.
+      const stripped = iriToVaultPath(targetIRI) ?? targetIRI;
+      const candidatePath = stripped.endsWith(".md")
+        ? stripped
+        : `${stripped}.md`;
+      const candidate = vaultAdapter.getAbstractFileByPath(candidatePath);
       if (!candidate || !("basename" in candidate)) {
         throw new Error(`Cannot resolve target file for IRI: ${targetIRI}`);
       }
