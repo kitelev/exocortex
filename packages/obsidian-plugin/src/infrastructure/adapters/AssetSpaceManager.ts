@@ -140,7 +140,13 @@ export class AssetSpaceManager {
   private readonly notifications: INotificationService;
   private readonly branch: string;
   private readonly tarExtractor: TarExtractor;
-  private readonly stagingTracker: StagingDirTracker | null;
+  /**
+   * Public read-only accessor — `FocusProfileSwitchManager.hardSwitchProfile`
+   * (RFC 22b50a17 Phase 3) needs to release staging dirs on partial-fail
+   * cleanup (R26). Stays nullable to preserve `pullAssetSpace`'s explicit
+   * throw on `null` from Phase 1.
+   */
+  public readonly stagingTracker: StagingDirTracker | null;
 
   /**
    * Vault-relative paths of files modified since the last push. Plugin

@@ -1,6 +1,13 @@
 import type { App } from "obsidian";
+import type { HardSwitchPlan, IConfirmGate } from "exocortex";
 
 import { PluginLockManager } from "./PluginLockManager";
+import type { AssetSpaceManager, AssetSpaceInfo } from "./AssetSpaceManager";
+import type { ICacheLayer } from "./SwitchCacheLayer";
+import type { GitSubmoduleOps } from "./GitSubmoduleOps";
+import type { UncommittedChangesGuard } from "./UncommittedChangesGuard";
+import type { PluginLocalDataStore } from "./PluginLocalDataStore";
+import { TS_FLOOR_ASSETSPACE_UIDS } from "./FocusProfileOnloadWiring";
 
 /**
  * FocusProfileSwitchManager — coordinates profile switching:
@@ -86,10 +93,38 @@ export interface ISettingsStore {
   save(s: SwitchSettings): Promise<void>;
 }
 
+/**
+ * Journal entry shape — widened для hard-switch phase events per RFC
+ * 22b50a17 F2 (per-AS recovery granularity). Soft-switch continues using
+ * the three base phases (`starting`/`completed`/`failed`); hard-switch
+ * emits the extended phase set with `as` field for per-AS events.
+ */
 export interface SwitchJournalEntry {
-  phase: "starting" | "completed" | "failed";
+  phase:
+    | "starting"
+    | "completed"
+    | "failed"
+    // Hard-switch extended phases (RFC 22b50a17 §Solution Architecture):
+    | "hard-switch-starting"
+    | "phase1-pulling"
+    | "phase1-pulled"
+    | "phase1-done"
+    | "aborted-phase1"
+    | "phase2-start"
+    | "phase2-destroy-cached"
+    | "phase2-destroyed"
+    | "phase2-materializing"
+    | "phase2-materialized"
+    | "phase2-done"
+    | "git-commit-done"
+    | "hard-switch-completed"
+    | "hard-switch-failed"
+    | "recovery-restoring"
+    | "recovery-completed";
   targetUid: string;
   ts: string; // ISO
+  /** Per-AS UID for phase2-destroy-cached / phase2-materialized etc. */
+  as?: string;
   elapsedMs?: number;
   error?: string;
 }
@@ -108,10 +143,70 @@ export interface FocusProfileSwitchManagerOptions {
   now?: () => Date;
   /** User-facing notifier (typically `new Notice()`). */
   notify?: (message: string) => void;
+
+  // --- Hard-switch dependencies (RFC 22b50a17 Phase 3) ---
+  /** AssetSpaceManager — provides pullAssetSpace + lookupAssetSpaceInfo. */
+  assetSpaceManager?: AssetSpaceManager;
+  /** Filesystem cache layer — destroy/restore tarballs (RFC §B.5). */
+  cacheLayer?: ICacheLayer;
+  /** Git submodule operations wrapper. */
+  gitOps?: GitSubmoduleOps;
+  /** Uncommitted-changes guard (Vision Lock #5). */
+  uncommittedGuard?: UncommittedChangesGuard;
+  /** Confirmation gate — ModalConfirmGate в plugin runtime. */
+  confirmGate?: IConfirmGate;
+  /** Device-local data store (`_switchInProgress` flag, activeProfileUid). */
+  localDataStore?: PluginLocalDataStore;
+  /** Absolute path к vault root — required for git operations. */
+  vaultRootPath?: string;
 }
 
 const DEFAULT_JOURNAL_PATH = ".exocortex/switch-journal.jsonl";
 const DEFAULT_MAX_EXTENDS_DEPTH = 5;
+
+/**
+ * Custom error thrown by R24 TS-floor guard. Distinguishable by name so
+ * callers (palette command, recoverIncompleteSwitch) can surface clear UX.
+ */
+export class TsFloorViolationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "TsFloorViolationError";
+  }
+}
+
+/**
+ * Custom error thrown by Vision Lock #5 uncommitted abort.
+ */
+export class UncommittedChangesAbortError extends Error {
+  readonly affectedFiles: ReadonlyArray<{
+    asUid: string;
+    submodulePath: string;
+    files: ReadonlyArray<string>;
+  }>;
+  constructor(
+    message: string,
+    affectedFiles: ReadonlyArray<{
+      asUid: string;
+      submodulePath: string;
+      files: ReadonlyArray<string>;
+    }>,
+  ) {
+    super(message);
+    this.name = "UncommittedChangesAbortError";
+    this.affectedFiles = affectedFiles;
+  }
+}
+
+/**
+ * Custom error thrown when the user declines the hard-switch ConfirmGate.
+ */
+export class HardSwitchAbortedByUser extends Error {
+  constructor(message = "Hard switch aborted by user") {
+    super(message);
+    this.name = "HardSwitchAbortedByUser";
+  }
+}
 
 export class FocusProfileSwitchManager {
   private readonly app: App;
@@ -124,6 +219,15 @@ export class FocusProfileSwitchManager {
   private readonly now: () => Date;
   private readonly notify: (message: string) => void;
 
+  // Hard-switch dependencies (may be undefined when only soft switch wired).
+  private readonly assetSpaceManager?: AssetSpaceManager;
+  private readonly cacheLayer?: ICacheLayer;
+  private readonly gitOps?: GitSubmoduleOps;
+  private readonly uncommittedGuard?: UncommittedChangesGuard;
+  private readonly confirmGate?: IConfirmGate;
+  private readonly localDataStore?: PluginLocalDataStore;
+  private readonly vaultRootPath?: string;
+
   constructor(options: FocusProfileSwitchManagerOptions) {
     this.app = options.app;
     this.lockMgr = options.lockMgr;
@@ -134,6 +238,14 @@ export class FocusProfileSwitchManager {
     this.maxExtendsDepth = options.maxExtendsDepth ?? DEFAULT_MAX_EXTENDS_DEPTH;
     this.now = options.now ?? (() => new Date());
     this.notify = options.notify ?? (() => undefined);
+
+    this.assetSpaceManager = options.assetSpaceManager;
+    this.cacheLayer = options.cacheLayer;
+    this.gitOps = options.gitOps;
+    this.uncommittedGuard = options.uncommittedGuard;
+    this.confirmGate = options.confirmGate;
+    this.localDataStore = options.localDataStore;
+    this.vaultRootPath = options.vaultRootPath;
   }
 
   /**
@@ -257,6 +369,748 @@ export class FocusProfileSwitchManager {
     const result = new Set<string>();
     await this.walkProfileChain(profileUid, visited, result, 0);
     return result;
+  }
+
+  // === Hard switch orchestration (RFC 22b50a17 Phase 3) ===
+
+  /**
+   * Hard switch — destructive filesystem mutation of `assetspaces/<as>/`
+   * directories. Tears down AssetSpaces NOT in the target profile's effective
+   * set, materialises new ones from cache or fresh GitHub pull, commits
+   * the resulting `.gitmodules`/`assetspaces/` changes.
+   *
+   * Algorithm (mirrors RFC §Solution Architecture pseudocode):
+   *
+   *   1. Resolve effective set for target.
+   *   2. R24 TS-floor assert (refuse if target excludes any floor AS).
+   *   3. Compute toDestroy / toMaterialize via .gitmodules diff.
+   *   4. Vision Lock #5 — abort if uncommitted changes in any to-destroy AS.
+   *   5. Build HardSwitchPlan + confirmGate.confirmHardSwitch(plan) — abort
+   *      on user-decline.
+   *   6. lockMgr.acquireLock + localDataStore.save({_switchInProgress: true}).
+   *   7. Phase 1 — for each toMaterialize, pull tarball (or cache restore)
+   *      to staging dir.
+   *   8. Phase 2 — for each toDestroy: cache(X), journal destroy-cached(X),
+   *      git submodule deinit X, rm .git/modules/X, rm <vault>/X, atomic
+   *      strip .gitmodules entry. Then for each toMaterialize: git submodule
+   *      add <url> X, mv staging/X -> <vault>/X, journal materialized(X).
+   *   9. git add .gitmodules, git add assetspaces/, git commit.
+   *  10. Clear _switchInProgress, persist new activeProfileUid.
+   *  11. rdfIndexer.refresh(effective) for new RDF view.
+   *  12. Release lock + clear staging.
+   *
+   * On catch: attempt cache.restore(prevActiveProfileUid) для best-effort
+   * rollback; rethrow.
+   *
+   * @throws TsFloorViolationError if target excludes any TS-floor AS.
+   * @throws UncommittedChangesAbortError if dirty files in any to-destroy AS.
+   * @throws HardSwitchAbortedByUser if confirmGate declines.
+   */
+  async hardSwitchProfile(targetProfileUid: string): Promise<void> {
+    if (typeof targetProfileUid !== "string" || targetProfileUid.length === 0) {
+      throw new Error("hardSwitchProfile: targetProfileUid is required");
+    }
+    const deps = this.assertHardSwitchWired();
+
+    const startedAt = this.now().getTime();
+    const prevActiveProfileUid = deps.localDataStore.getActiveProfileUid();
+    const targetProfileLabel = await this.profileLabel(targetProfileUid);
+    const sourceProfileLabel = prevActiveProfileUid !== null
+      ? await this.profileLabel(prevActiveProfileUid)
+      : "<unknown>";
+
+    // R24 — resolve & assert TS-floor BEFORE any mutation (Phase 0 spike
+    // explicitly did NOT exercise this; production gate is mandatory).
+    const declaredEffective = await this.resolveEffectiveSet(targetProfileUid);
+    // Translate ontology UIDs → AS UIDs via vault scan (uses same mechanism
+    // as FocusProfileOnloadWiring).
+    const folderToAsUid = await this.scanFolderToAsUid();
+    const ontologyToAs = await this.scanOntologyToAsUid();
+    const effectiveAsUids = new Set<string>();
+    const folderMapValues = new Set(folderToAsUid.values());
+    for (const uid of declaredEffective) {
+      if (folderMapValues.has(uid)) {
+        effectiveAsUids.add(uid);
+        continue;
+      }
+      const translated = ontologyToAs.get(uid);
+      if (translated !== undefined) effectiveAsUids.add(translated);
+    }
+    for (const floor of TS_FLOOR_ASSETSPACE_UIDS) effectiveAsUids.add(floor);
+    this.assertTsFloor(effectiveAsUids);
+
+    // Compute toDestroy / toMaterialize via .gitmodules diff.
+    const currentSubmodulePaths = await deps.gitOps.readGitmodulesPaths();
+    const allInfos = this.listAllAssetSpaceInfos();
+    // Index by submodulePath for O(1) lookup.
+    const infoBySubmodulePath = new Map<string, AssetSpaceInfo>();
+    for (const info of allInfos) infoBySubmodulePath.set(info.folderName, info);
+
+    // Currently-materialized AS UIDs: derived from .gitmodules ∩ vault scan.
+    const currentAsUids = new Set<string>();
+    for (const submodulePath of currentSubmodulePaths) {
+      const info = infoBySubmodulePath.get(submodulePath);
+      if (info !== undefined) currentAsUids.add(info.uid);
+    }
+
+    const toDestroy: Array<{ asUid: string; submodulePath: string; label: string }> = [];
+    const toMaterialize: Array<{ asUid: string; submodulePath: string; gitUrl: string; label: string; ref: string }> = [];
+
+    for (const submodulePath of currentSubmodulePaths) {
+      const info = infoBySubmodulePath.get(submodulePath);
+      if (info === undefined) continue; // Submodule with no AS ABox — skip
+      if (!effectiveAsUids.has(info.uid)) {
+        toDestroy.push({
+          asUid: info.uid,
+          submodulePath,
+          label: info.namespace || info.uid.slice(0, 8),
+        });
+      }
+    }
+    for (const asUid of effectiveAsUids) {
+      if (currentAsUids.has(asUid)) continue;
+      const info = allInfos.find((i) => i.uid === asUid);
+      if (info === undefined) {
+        // AssetSpace declared in effective set but no ABox in vault — skip
+        // (would happen if profile references AS not yet declared as ABox).
+        continue;
+      }
+      toMaterialize.push({
+        asUid: info.uid,
+        submodulePath: info.folderName,
+        gitUrl: info.git,
+        label: info.namespace || info.uid.slice(0, 8),
+        ref: "main",
+      });
+    }
+
+    // Vision Lock #5 — uncommitted abort. Scope = only to-destroy AS.
+    if (toDestroy.length > 0) {
+      const uncommitted = await deps.uncommittedGuard.check(
+        toDestroy.map((t) => ({ asUid: t.asUid, submodulePath: t.submodulePath })),
+      );
+      if (!uncommitted.clean) {
+        const total = uncommitted.affectedFiles.reduce((s, a) => s + a.files.length, 0);
+        throw new UncommittedChangesAbortError(
+          `Hard switch aborted — ${total} uncommitted file(s) in ${uncommitted.affectedFiles.length} to-destroy AssetSpace(s). Commit or stash first.`,
+          uncommitted.affectedFiles,
+        );
+      }
+    }
+
+    // Build HardSwitchPlan + ConfirmGate.
+    const filesToDestroyMap = new Map<string, string[]>();
+    for (const target of toDestroy) {
+      const files = await this.enumerateFilesUnder(target.submodulePath);
+      filesToDestroyMap.set(target.asUid, files);
+    }
+    const plan: HardSwitchPlan = {
+      targetProfileUid,
+      targetProfileLabel,
+      sourceProfileUid: prevActiveProfileUid,
+      sourceProfileLabel,
+      filesToDestroy: filesToDestroyMap,
+      assetSpacesBeingTornDown: toDestroy.map((t) => ({
+        asUid: t.asUid,
+        asLabel: t.label,
+        fileCount: filesToDestroyMap.get(t.asUid)?.length ?? 0,
+      })),
+      assetSpacesBeingMaterialized: toMaterialize.map((t) => ({
+        asUid: t.asUid,
+        asLabel: t.label,
+      })),
+    };
+    const approved = await deps.confirmGate.confirmHardSwitch(plan);
+    if (!approved) throw new HardSwitchAbortedByUser();
+
+    // No-op early exit: no destroy + no materialize == effectively soft path.
+    if (toDestroy.length === 0 && toMaterialize.length === 0) {
+      await this.switchProfile(targetProfileUid);
+      return;
+    }
+
+    // Acquire lock, set _switchInProgress.
+    const acquired = await this.lockMgr.acquireLock(`hard-switch-${targetProfileUid}`);
+    if (!acquired) {
+      throw new Error("Another hard switch is in progress (lock held). Try again shortly.");
+    }
+    let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+    const stagingPaths: Array<{ asUid: string; stagingPath: string }> = [];
+
+    try {
+      await this.appendJournal({
+        phase: "hard-switch-starting",
+        targetUid: targetProfileUid,
+        ts: new Date(startedAt).toISOString(),
+      });
+      const localState = deps.localDataStore.snapshot();
+      await deps.localDataStore.save({
+        activeProfileUid: localState.activeProfileUid,
+        _switchInProgress: true,
+      });
+
+      heartbeatTimer = setInterval(() => {
+        void this.lockMgr.heartbeat();
+      }, 30_000);
+
+      // ---- Phase 1: pull all to-materialize AS to staging ----
+      await this.appendJournal({
+        phase: "phase1-pulling",
+        targetUid: targetProfileUid,
+        ts: this.now().toISOString(),
+      });
+      for (const target of toMaterialize) {
+        try {
+          // R28 — SHA-aware cache lookup. We don't know upstream SHA up-front,
+          // so we pull. (R28 future optimization: HEAD probe before pull.)
+          const result = await deps.assetSpaceManager.pullAssetSpace(
+            target.asUid,
+            target.gitUrl,
+            target.ref,
+          );
+          const stagingPath = result.stagingPath;
+          stagingPaths.push({ asUid: target.asUid, stagingPath });
+          await this.appendJournal({
+            phase: "phase1-pulled",
+            targetUid: targetProfileUid,
+            as: target.asUid,
+            ts: this.now().toISOString(),
+          });
+        } catch (e) {
+          // R26 partial-fail — release already-allocated staging dirs.
+          await this.releaseStagingPaths(stagingPaths);
+          await this.appendJournal({
+            phase: "aborted-phase1",
+            targetUid: targetProfileUid,
+            ts: this.now().toISOString(),
+            error: this.redactError(String(e)),
+          });
+          throw e;
+        }
+      }
+      await this.appendJournal({
+        phase: "phase1-done",
+        targetUid: targetProfileUid,
+        ts: this.now().toISOString(),
+      });
+
+      // ---- Phase 2: destroy + materialize per-AS ----
+      await this.appendJournal({
+        phase: "phase2-start",
+        targetUid: targetProfileUid,
+        ts: this.now().toISOString(),
+      });
+
+      // F2 journal-write-BEFORE-destroy: cache first, journal, then destroy.
+      for (const target of toDestroy) {
+        const vaultAbsPath = deps.vaultRootPath + "/" + target.submodulePath;
+        // F6 — cache verifies archive before returning; if cache fails,
+        // throws CacheWriteError and destroy never starts.
+        // Use pull SHA when available (lastPulledSha frontmatter), else literal
+        // "unknown" timestamp-suffix to keep cache lookup useful.
+        const info = infoBySubmodulePath.get(target.submodulePath);
+        const sha = (info?.lastPulledSha ?? `unknown-${this.now().getTime()}`).slice(0, 40);
+        await deps.cacheLayer.cache(target.asUid, vaultAbsPath, sha);
+        // CRITICAL: journal entry BEFORE rm -rf (F2 advisor catch).
+        await this.appendJournal({
+          phase: "phase2-destroy-cached",
+          targetUid: targetProfileUid,
+          as: target.asUid,
+          ts: this.now().toISOString(),
+        });
+        await deps.gitOps.submoduleDeinit(target.submodulePath);
+        await deps.gitOps.removeGitModulesDir(target.submodulePath);
+        await deps.gitOps.removeWorkingTree(target.submodulePath);
+        await deps.gitOps.atomicGitmodulesEntryRemove(target.submodulePath);
+        await this.appendJournal({
+          phase: "phase2-destroyed",
+          targetUid: targetProfileUid,
+          as: target.asUid,
+          ts: this.now().toISOString(),
+        });
+      }
+
+      for (const target of toMaterialize) {
+        await this.appendJournal({
+          phase: "phase2-materializing",
+          targetUid: targetProfileUid,
+          as: target.asUid,
+          ts: this.now().toISOString(),
+        });
+        // git submodule add — populates `.gitmodules`, `.git/modules/<name>/`,
+        // and `.git/config`. The target directory MUST not exist yet — Phase 1
+        // staging is NOT under vault root, so this stays clean.
+        await deps.gitOps.submoduleAdd(target.gitUrl, target.submodulePath);
+        // submodule add already populates the working tree from the remote.
+        // Overwrite with staging contents — staging may be ahead of remote.
+        const stagingPath = stagingPaths.find((s) => s.asUid === target.asUid)?.stagingPath;
+        if (stagingPath !== undefined) {
+          // Wipe what `submodule add` populated; replace with staging contents.
+          await deps.gitOps.removeWorkingTree(target.submodulePath);
+          await deps.gitOps.renameIntoVault(stagingPath, target.submodulePath);
+        }
+        await this.appendJournal({
+          phase: "phase2-materialized",
+          targetUid: targetProfileUid,
+          as: target.asUid,
+          ts: this.now().toISOString(),
+        });
+      }
+
+      await this.appendJournal({
+        phase: "phase2-done",
+        targetUid: targetProfileUid,
+        ts: this.now().toISOString(),
+      });
+
+      // ---- Git commit ----
+      await deps.gitOps.add(".gitmodules");
+      await deps.gitOps.add("assetspaces/");
+      await deps.gitOps.commit(
+        `chore(profile): hard switch к ${targetProfileLabel}`,
+      );
+      await this.appendJournal({
+        phase: "git-commit-done",
+        targetUid: targetProfileUid,
+        ts: this.now().toISOString(),
+      });
+
+      // ---- Persist new state + trigger RDF re-index ----
+      await deps.localDataStore.save({
+        activeProfileUid: targetProfileUid,
+        _switchInProgress: false,
+      });
+      await this.rdfIndexer.refresh(effectiveAsUids);
+
+      const elapsedMs = this.now().getTime() - startedAt;
+      await this.appendJournal({
+        phase: "hard-switch-completed",
+        targetUid: targetProfileUid,
+        ts: this.now().toISOString(),
+        elapsedMs,
+      });
+      this.notify(`Hard switched к ${targetProfileLabel} (${elapsedMs}ms)`);
+    } catch (e) {
+      // Rollback attempt: best-effort cache restore previously-destroyed AS.
+      // This is partial — anything that was already added via `submodule add`
+      // before commit will be untracked git state until the user manually
+      // resets. We log + notify but rethrow.
+      await this.appendJournal({
+        phase: "hard-switch-failed",
+        targetUid: targetProfileUid,
+        ts: this.now().toISOString(),
+        error: this.redactError(String(e)),
+      });
+      // Try to restore destroyed AS from cache.
+      try {
+        await this.attemptCacheRollback(toDestroy);
+      } catch {
+        // Swallow — original error takes precedence.
+      }
+      // Clear in-progress flag so subsequent operations не see stuck state.
+      try {
+        const s = deps.localDataStore.snapshot();
+        await deps.localDataStore.save({
+          activeProfileUid: s.activeProfileUid,
+          _switchInProgress: false,
+        });
+      } catch {
+        // Swallow.
+      }
+      throw e;
+    } finally {
+      if (heartbeatTimer !== null) clearInterval(heartbeatTimer);
+      await this.releaseStagingPaths(stagingPaths);
+      await this.lockMgr.releaseLock();
+    }
+  }
+
+  /**
+   * Recovery worker — call from plugin onload when localDataStore reports
+   * `_switchInProgress=true`. Reads journal tail, identifies AS destroyed
+   * but not materialized, restores each from cache.
+   *
+   * @returns count of restored AS.
+   */
+  async recoverIncompleteSwitch(): Promise<{ restored: ReadonlyArray<string> }> {
+    const cacheLayer = this.cacheLayer;
+    const localDataStore = this.localDataStore;
+    const vaultRootPath = this.vaultRootPath;
+    if (cacheLayer === undefined || localDataStore === undefined || vaultRootPath === undefined) {
+      throw new Error("recoverIncompleteSwitch: hard switch dependencies not wired");
+    }
+    const events = await this.readJournalTail(200);
+    const destroyedAsUids = new Set<string>();
+    const materializedAsUids = new Set<string>();
+    for (const e of events) {
+      if (e.phase === "phase2-destroy-cached" && typeof e.as === "string") {
+        destroyedAsUids.add(e.as);
+      } else if (e.phase === "phase2-materialized" && typeof e.as === "string") {
+        materializedAsUids.add(e.as);
+      } else if (e.phase === "hard-switch-completed") {
+        // Anything before a completed event was a finished switch — clear set.
+        destroyedAsUids.clear();
+        materializedAsUids.clear();
+      }
+    }
+
+    const restored: string[] = [];
+    for (const asUid of destroyedAsUids) {
+      if (materializedAsUids.has(asUid)) continue;
+      try {
+        // Restore destination = vaultRoot/assetspaces/<namespace>. Look up
+        // the AssetSpace info to determine submodulePath. If ABox missing
+        // (deleted concurrently), fall back to `assetspaces/<asUid>` as
+        // a safe diagnostic location.
+        const info = this.listAllAssetSpaceInfos().find((i) => i.uid === asUid);
+        const target = info !== undefined
+          ? vaultRootPath + "/" + info.folderName
+          : vaultRootPath + "/assetspaces/" + asUid;
+        await this.appendJournal({
+          phase: "recovery-restoring",
+          targetUid: asUid,
+          as: asUid,
+          ts: this.now().toISOString(),
+        });
+        await cacheLayer.restore(asUid, target);
+        restored.push(asUid);
+      } catch (err) {
+        await this.appendJournal({
+          phase: "recovery-restoring",
+          targetUid: asUid,
+          as: asUid,
+          ts: this.now().toISOString(),
+          error: this.redactError(String(err)),
+        });
+      }
+    }
+
+    // Clear stuck _switchInProgress flag.
+    const snapshot = localDataStore.snapshot();
+    await localDataStore.save({
+      activeProfileUid: snapshot.activeProfileUid,
+      _switchInProgress: false,
+    });
+    await this.appendJournal({
+      phase: "recovery-completed",
+      targetUid: snapshot.activeProfileUid ?? "<none>",
+      ts: this.now().toISOString(),
+    });
+    if (restored.length > 0) {
+      this.notify(`Recovered ${restored.length} AssetSpace(s) from cache after interrupted switch`);
+    }
+    return { restored };
+  }
+
+  /**
+   * Cross-device divergence reconcile — call from plugin onload.
+   *
+   * Detection: parse `.gitmodules` to get currently-materialized AS folders,
+   * compare to effective set derived from local `activeProfileUid`. Mismatch
+   * → call confirmGate (reusing IConfirmGate plan shape) to get user OK
+   * before reconciling via hardSwitchProfile.
+   *
+   * Returns `null` if no divergence detected. Otherwise returns the action
+   * taken: `"reconciled"` if user approved, `"declined"` if user declined.
+   */
+  async reconcileToLocal(): Promise<{
+    outcome: "no-divergence" | "reconciled" | "declined" | "no-active-profile";
+  }> {
+    const localDataStore = this.localDataStore;
+    const gitOps = this.gitOps;
+    if (localDataStore === undefined || gitOps === undefined) {
+      throw new Error("reconcileToLocal: hard switch dependencies not wired");
+    }
+    const activeProfileUid = localDataStore.getActiveProfileUid();
+    if (activeProfileUid === null) {
+      return { outcome: "no-active-profile" };
+    }
+    // Compute expected AS set for activeProfileUid.
+    const declared = await this.resolveEffectiveSet(activeProfileUid);
+    const folderToAsUid = await this.scanFolderToAsUid();
+    const ontologyToAs = await this.scanOntologyToAsUid();
+    const expectedAsUids = new Set<string>();
+    const folderMapValues = new Set(folderToAsUid.values());
+    for (const uid of declared) {
+      if (folderMapValues.has(uid)) {
+        expectedAsUids.add(uid);
+        continue;
+      }
+      const t = ontologyToAs.get(uid);
+      if (t !== undefined) expectedAsUids.add(t);
+    }
+    for (const floor of TS_FLOOR_ASSETSPACE_UIDS) expectedAsUids.add(floor);
+
+    // Materialized AS UIDs derived from .gitmodules.
+    const submodulePaths = await gitOps.readGitmodulesPaths();
+    const allInfos = this.listAllAssetSpaceInfos();
+    const infoByPath = new Map<string, AssetSpaceInfo>();
+    for (const info of allInfos) infoByPath.set(info.folderName, info);
+    const materializedAsUids = new Set<string>();
+    for (const p of submodulePaths) {
+      const info = infoByPath.get(p);
+      if (info !== undefined) materializedAsUids.add(info.uid);
+    }
+
+    // Diff.
+    const missing = Array.from(expectedAsUids).filter((u) => !materializedAsUids.has(u));
+    const extra = Array.from(materializedAsUids).filter((u) => !expectedAsUids.has(u));
+    if (missing.length === 0 && extra.length === 0) {
+      return { outcome: "no-divergence" };
+    }
+
+    // Surface modal — reuse HardSwitchPlan shape so ModalConfirmGate renders.
+    const reconcilePlan = await this.buildReconcilePlan(
+      activeProfileUid,
+      missing,
+      extra,
+      allInfos,
+    );
+    const approved = this.confirmGate !== undefined
+      ? await this.confirmGate.confirmHardSwitch(reconcilePlan)
+      : true; // No gate wired (tests / headless) — proceed.
+    if (!approved) return { outcome: "declined" };
+    await this.hardSwitchProfile(activeProfileUid);
+    return { outcome: "reconciled" };
+  }
+
+  /**
+   * Build a HardSwitchPlan describing the reconcile operation — vault has
+   * extra AS that local profile doesn't include OR missing AS that local
+   * profile expects. Used for the confirm modal in `reconcileToLocal`.
+   */
+  private async buildReconcilePlan(
+    activeProfileUid: string,
+    missing: ReadonlyArray<string>,
+    extra: ReadonlyArray<string>,
+    allInfos: ReadonlyArray<AssetSpaceInfo>,
+  ): Promise<HardSwitchPlan> {
+    const targetLabel = await this.profileLabel(activeProfileUid);
+    const infoByUid = new Map<string, AssetSpaceInfo>();
+    for (const i of allInfos) infoByUid.set(i.uid, i);
+    const filesToDestroy = new Map<string, string[]>();
+    const tornDown: Array<{ asUid: string; asLabel: string; fileCount: number }> = [];
+    for (const uid of extra) {
+      const info = infoByUid.get(uid);
+      const submodulePath = info?.folderName ?? `assetspaces/${uid}`;
+      const files = await this.enumerateFilesUnder(submodulePath);
+      filesToDestroy.set(uid, files);
+      tornDown.push({
+        asUid: uid,
+        asLabel: info?.namespace ?? uid.slice(0, 8),
+        fileCount: files.length,
+      });
+    }
+    const materialized = missing.map((uid) => ({
+      asUid: uid,
+      asLabel: infoByUid.get(uid)?.namespace ?? uid.slice(0, 8),
+    }));
+    return {
+      targetProfileUid: activeProfileUid,
+      targetProfileLabel: `${targetLabel} (cross-device reconcile)`,
+      sourceProfileUid: null,
+      sourceProfileLabel: "<diverged remote>",
+      filesToDestroy,
+      assetSpacesBeingTornDown: tornDown,
+      assetSpacesBeingMaterialized: materialized,
+    };
+  }
+
+  // === Hard-switch helpers ===
+
+  private assertHardSwitchWired(): {
+    assetSpaceManager: AssetSpaceManager;
+    cacheLayer: ICacheLayer;
+    gitOps: GitSubmoduleOps;
+    uncommittedGuard: UncommittedChangesGuard;
+    confirmGate: IConfirmGate;
+    localDataStore: PluginLocalDataStore;
+    vaultRootPath: string;
+  } {
+    if (
+      this.assetSpaceManager === undefined ||
+      this.cacheLayer === undefined ||
+      this.gitOps === undefined ||
+      this.uncommittedGuard === undefined ||
+      this.confirmGate === undefined ||
+      this.localDataStore === undefined ||
+      this.vaultRootPath === undefined
+    ) {
+      throw new Error(
+        "hardSwitchProfile: dependencies not wired (assetSpaceManager, cacheLayer, gitOps, uncommittedGuard, confirmGate, localDataStore, vaultRootPath required)",
+      );
+    }
+    return {
+      assetSpaceManager: this.assetSpaceManager,
+      cacheLayer: this.cacheLayer,
+      gitOps: this.gitOps,
+      uncommittedGuard: this.uncommittedGuard,
+      confirmGate: this.confirmGate,
+      localDataStore: this.localDataStore,
+      vaultRootPath: this.vaultRootPath,
+    };
+  }
+
+  private assertTsFloor(effective: ReadonlySet<string>): void {
+    const missing: string[] = [];
+    for (const floor of TS_FLOOR_ASSETSPACE_UIDS) {
+      if (!effective.has(floor)) missing.push(floor);
+    }
+    if (missing.length > 0) {
+      throw new TsFloorViolationError(
+        `Effective set missing TS-floor AssetSpace UID(s): ${missing.join(", ")}. Aborting hard switch — would brick plugin (R24 mitigation).`,
+      );
+    }
+  }
+
+  private listAllAssetSpaceInfos(): AssetSpaceInfo[] {
+    // Iterate vault markdown files, return all AssetSpace ABox entries via
+    // assetSpaceManager's lookup. Uses the public lookupAssetSpaceInfo
+    // method indirectly through a vault walk.
+    const out: AssetSpaceInfo[] = [];
+    for (const file of this.app.vault.getMarkdownFiles()) {
+      const cache = this.app.metadataCache.getFileCache(file);
+      const fm = cache?.frontmatter as Record<string, unknown> | undefined;
+      if (!fm) continue;
+      const uid = typeof fm["exo__Asset_uid"] === "string" ? (fm["exo__Asset_uid"] as string) : null;
+      if (uid === null) continue;
+      const instanceClass = fm["exo__Instance_class"];
+      const isAssetSpace = Array.isArray(instanceClass)
+        ? instanceClass.some((c) => typeof c === "string" && c.includes("AssetSpace") && !c.includes("AssetSpaceManager"))
+        : typeof instanceClass === "string" && instanceClass.includes("AssetSpace") && !instanceClass.includes("AssetSpaceManager");
+      // Robust check — fall back к AssetSpaceFrontmatter helper via UID test.
+      const info = this.assetSpaceManager?.lookupAssetSpaceInfo(uid);
+      if (info !== null && info !== undefined) {
+        out.push(info);
+      } else if (isAssetSpace) {
+        // Surface but cannot resolve git/namespace — skip (caller filters).
+        continue;
+      }
+    }
+    // Deduplicate by UID.
+    const seen = new Set<string>();
+    return out.filter((i) => {
+      if (seen.has(i.uid)) return false;
+      seen.add(i.uid);
+      return true;
+    });
+  }
+
+  private async scanFolderToAsUid(): Promise<Map<string, string>> {
+    const out = new Map<string, string>();
+    for (const info of this.listAllAssetSpaceInfos()) {
+      out.set(info.folderName, info.uid);
+    }
+    return out;
+  }
+
+  private async scanOntologyToAsUid(): Promise<Map<string, string>> {
+    const out = new Map<string, string>();
+    for (const file of this.app.vault.getMarkdownFiles()) {
+      const cache = this.app.metadataCache.getFileCache(file);
+      const fm = cache?.frontmatter as Record<string, unknown> | undefined;
+      if (!fm) continue;
+      const uid = typeof fm["exo__Asset_uid"] === "string" ? (fm["exo__Asset_uid"] as string) : null;
+      if (uid === null) continue;
+      const rawContains = fm["exo__AssetSpace_containsOntology"];
+      const declared: unknown[] = Array.isArray(rawContains)
+        ? rawContains
+        : rawContains !== undefined && rawContains !== null
+          ? [rawContains]
+          : [];
+      for (const raw of declared) {
+        if (typeof raw !== "string") continue;
+        const cleaned = raw.trim().replace(/^\[\[/, "").replace(/\]\]$/, "").split("|")[0].trim();
+        if (cleaned.length > 0) out.set(cleaned, uid);
+      }
+    }
+    return out;
+  }
+
+  private async enumerateFilesUnder(submodulePath: string): Promise<string[]> {
+    // Recursive walk via Obsidian vault.adapter.list. Returns vault-relative
+    // paths. Hard switch needs total file counts up-front for the modal; can't
+    // lazy-stream.
+    const out: string[] = [];
+    await this.walkVaultDir(submodulePath, out);
+    return out;
+  }
+
+  private async walkVaultDir(dir: string, out: string[]): Promise<void> {
+    try {
+      const exists = await this.app.vault.adapter.exists(dir);
+      if (!exists) return;
+      const result = await this.app.vault.adapter.list(dir);
+      for (const f of result.files) {
+        if (f.endsWith("/")) continue;
+        out.push(f);
+      }
+      for (const sub of result.folders) {
+        // Skip dot-dirs to avoid `.git` traversal (defense-in-depth).
+        const base = sub.split("/").pop() ?? sub;
+        if (base.startsWith(".")) continue;
+        await this.walkVaultDir(sub, out);
+      }
+    } catch {
+      // Best-effort: directory may not exist or be inaccessible.
+    }
+  }
+
+  private async releaseStagingPaths(
+    stagingPaths: ReadonlyArray<{ asUid: string; stagingPath: string }>,
+  ): Promise<void> {
+    if (this.assetSpaceManager === undefined) return;
+    const tracker = this.assetSpaceManager.stagingTracker;
+    for (const { stagingPath } of stagingPaths) {
+      if (tracker !== null) {
+        await tracker.release(stagingPath).catch(() => undefined);
+      } else {
+        try {
+          /* eslint-disable-next-line import/no-nodejs-modules */
+          const fs = await import("node:fs");
+          await fs.promises.rm(stagingPath, { recursive: true, force: true });
+        } catch {
+          // best-effort
+        }
+      }
+    }
+  }
+
+  private async attemptCacheRollback(
+    toDestroy: ReadonlyArray<{ asUid: string; submodulePath: string }>,
+  ): Promise<void> {
+    const cacheLayer = this.cacheLayer;
+    const vaultRootPath = this.vaultRootPath;
+    if (cacheLayer === undefined || vaultRootPath === undefined) return;
+    for (const target of toDestroy) {
+      try {
+        const targetPath = vaultRootPath + "/" + target.submodulePath;
+        await cacheLayer.restore(target.asUid, targetPath);
+      } catch {
+        // Skip — partial rollback acceptable; user-facing notice covers gap.
+      }
+    }
+  }
+
+  private async readJournalTail(maxEntries: number): Promise<SwitchJournalEntry[]> {
+    try {
+      const exists = await this.app.vault.adapter.exists(this.journalPath);
+      if (!exists) return [];
+      const text = await this.app.vault.adapter.read(this.journalPath);
+      const lines = text.split("\n").filter((l) => l.trim().length > 0);
+      const tail = lines.slice(-maxEntries);
+      const out: SwitchJournalEntry[] = [];
+      for (const line of tail) {
+        try {
+          out.push(JSON.parse(line) as SwitchJournalEntry);
+        } catch {
+          // Skip malformed.
+        }
+      }
+      return out;
+    } catch {
+      return [];
+    }
   }
 
   // === Helpers ===
