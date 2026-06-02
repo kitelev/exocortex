@@ -154,6 +154,12 @@ export class GitSubmoduleOps {
         cwd: this.vaultRootPath,
         timeout: this.timeoutMs,
         maxBuffer: 16 * 1024 * 1024,
+        // Strip inherited GIT_* env vars — if Obsidian is launched from a
+        // shell with GIT_DIR/GIT_INDEX_FILE set (e.g. during a husky hook
+        // or active rebase), they would hijack every git call we make
+        // away from `vaultRootPath`. Same hardening reused by integration
+        // tests where lint-staged sets these vars on the parent process.
+        env: stripGitEnv(),
       });
       return {
         stdout: typeof stdout === "string" ? stdout : (stdout as Buffer).toString("utf8"),
@@ -212,24 +218,21 @@ export class GitSubmoduleOps {
   }
 
   /**
-   * Remove `.git/modules/<as>` directory — M2 BLOCKER orphan cleanup per
-   * RFC §Solution Architecture line 132. `git submodule deinit` leaves
-   * the modules tree behind; re-`submodule add` of the same path then fails
-   * с «already exists в the index» если modules dir lingers.
+   * Remove `.git/modules/<submodulePath>` directory — M2 BLOCKER orphan
+   * cleanup per RFC §Solution Architecture line 132. `git submodule deinit`
+   * leaves the modules tree behind; re-`submodule add` of the same path then
+   * fails с «already exists в the index» если modules dir lingers.
    *
-   * Uses the resolved `.git/modules/<asName>` path — basename of the
-   * submodulePath (e.g. `assetspaces/ems` → `.git/modules/ems`). Validated
-   * against vault root to prevent traversal.
+   * Git preserves the **full path structure** for submodule modules dirs:
+   * `git submodule add <url> assetspaces/ems` creates
+   * `.git/modules/assetspaces/ems/`, NOT `.git/modules/ems/`. We mirror
+   * this exactly. Validated against vault root to prevent traversal.
    */
   async removeGitModulesDir(submodulePath: string): Promise<void> {
     this.assertDesktop("removeGitModulesDir");
     const safe = validateVaultPathArg(submodulePath);
-    const submoduleName = safe.split("/").pop() ?? safe;
-    if (submoduleName.length === 0 || submoduleName === "." || submoduleName === "..") {
-      throw new Error(`GitSubmoduleOps.removeGitModulesDir: invalid submodule basename: ${submodulePath}`);
-    }
     // Resolve and verify the target is inside `<vault>/.git/modules/`.
-    const target = path.resolve(this.vaultRootPath, ".git", "modules", submoduleName);
+    const target = path.resolve(this.vaultRootPath, ".git", "modules", safe);
     const expectedPrefix = path.resolve(this.vaultRootPath, ".git", "modules") + path.sep;
     if (!target.startsWith(expectedPrefix)) {
       throw new Error(`GitSubmoduleOps.removeGitModulesDir: escape attempt: ${target}`);
@@ -347,6 +350,21 @@ function isPlatformMobile(): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * Build a clean env object stripped of all `GIT_*` variables. Inherited
+ * vars (e.g. set by an outer pre-commit hook, husky, or active rebase)
+ * would otherwise redirect `git` subprocess to the wrong index/dir.
+ *
+ * Exported for unit testing.
+ */
+export function stripGitEnv(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  for (const k of Object.keys(env)) {
+    if (k.startsWith("GIT_")) delete env[k];
+  }
+  return env;
 }
 
 /**

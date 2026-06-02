@@ -426,18 +426,25 @@ export class FocusProfileSwitchManager {
     // as FocusProfileOnloadWiring).
     const folderToAsUid = await this.scanFolderToAsUid();
     const ontologyToAs = await this.scanOntologyToAsUid();
-    const effectiveAsUids = new Set<string>();
+    const declaredAsUids = new Set<string>();
     const folderMapValues = new Set(folderToAsUid.values());
     for (const uid of declaredEffective) {
       if (folderMapValues.has(uid)) {
-        effectiveAsUids.add(uid);
+        declaredAsUids.add(uid);
         continue;
       }
       const translated = ontologyToAs.get(uid);
-      if (translated !== undefined) effectiveAsUids.add(translated);
+      if (translated !== undefined) declaredAsUids.add(translated);
     }
+    // R24 — assert TS-floor BEFORE injection. If the user's declared profile
+    // does NOT include the floor (either directly via AS UIDs or via Ontology
+    // UIDs that resolve to floor AS), abort. Soft-switch (Phase 1 onload
+    // wiring) silently injects floor; hard-switch is destructive so we
+    // require explicit intent.
+    this.assertTsFloor(declaredAsUids);
+    // Floor injected after the check so the actual mutation set is complete.
+    const effectiveAsUids = new Set(declaredAsUids);
     for (const floor of TS_FLOOR_ASSETSPACE_UIDS) effectiveAsUids.add(floor);
-    this.assertTsFloor(effectiveAsUids);
 
     // Compute toDestroy / toMaterialize via .gitmodules diff.
     const currentSubmodulePaths = await deps.gitOps.readGitmodulesPaths();
@@ -964,36 +971,43 @@ export class FocusProfileSwitchManager {
   }
 
   private listAllAssetSpaceInfos(): AssetSpaceInfo[] {
-    // Iterate vault markdown files, return all AssetSpace ABox entries via
-    // assetSpaceManager's lookup. Uses the public lookupAssetSpaceInfo
-    // method indirectly through a vault walk.
+    // Single vault scan — extracts AssetSpace ABox metadata directly from
+    // frontmatter. Independent of AssetSpaceManager (так hard switch tests
+    // and recovery-only flows can call this without a wired manager).
     const out: AssetSpaceInfo[] = [];
+    const seen = new Set<string>();
     for (const file of this.app.vault.getMarkdownFiles()) {
       const cache = this.app.metadataCache.getFileCache(file);
       const fm = cache?.frontmatter as Record<string, unknown> | undefined;
       if (!fm) continue;
       const uid = typeof fm["exo__Asset_uid"] === "string" ? (fm["exo__Asset_uid"] as string) : null;
       if (uid === null) continue;
+      if (seen.has(uid)) continue;
       const instanceClass = fm["exo__Instance_class"];
-      const isAssetSpace = Array.isArray(instanceClass)
-        ? instanceClass.some((c) => typeof c === "string" && c.includes("AssetSpace") && !c.includes("AssetSpaceManager"))
-        : typeof instanceClass === "string" && instanceClass.includes("AssetSpace") && !instanceClass.includes("AssetSpaceManager");
-      // Robust check — fall back к AssetSpaceFrontmatter helper via UID test.
-      const info = this.assetSpaceManager?.lookupAssetSpaceInfo(uid);
-      if (info !== null && info !== undefined) {
-        out.push(info);
-      } else if (isAssetSpace) {
-        // Surface but cannot resolve git/namespace — skip (caller filters).
-        continue;
-      }
+      const classes: string[] = Array.isArray(instanceClass)
+        ? instanceClass.filter((c): c is string => typeof c === "string")
+        : typeof instanceClass === "string"
+          ? [instanceClass]
+          : [];
+      const isAssetSpace = classes.some(
+        (c) => c.includes("AssetSpace") && !c.includes("AssetSpaceManager"),
+      );
+      if (!isAssetSpace) continue;
+      const git = typeof fm["exo__AssetSpace_git"] === "string"
+        ? (fm["exo__AssetSpace_git"] as string)
+        : "";
+      const namespace = typeof fm["exo__AssetSpace_namespace"] === "string"
+        ? (fm["exo__AssetSpace_namespace"] as string)
+        : "";
+      if (!git || !namespace) continue;
+      const lastPulledSha = typeof fm["exo__AssetSpace_lastPulledSha"] === "string"
+        ? (fm["exo__AssetSpace_lastPulledSha"] as string)
+        : undefined;
+      const folderName = parentFolderOf(file.path);
+      seen.add(uid);
+      out.push({ uid, git, namespace, folderName, lastPulledSha });
     }
-    // Deduplicate by UID.
-    const seen = new Set<string>();
-    return out.filter((i) => {
-      if (seen.has(i.uid)) return false;
-      seen.add(i.uid);
-      return true;
-    });
+    return out;
   }
 
   private async scanFolderToAsUid(): Promise<Map<string, string>> {
@@ -1185,4 +1199,9 @@ export class FocusProfileSwitchManager {
       "***REDACTED***",
     );
   }
+}
+
+function parentFolderOf(filePath: string): string {
+  const idx = filePath.lastIndexOf("/");
+  return idx < 0 ? "" : filePath.slice(0, idx);
 }

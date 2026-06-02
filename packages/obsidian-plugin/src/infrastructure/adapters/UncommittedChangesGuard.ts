@@ -56,12 +56,13 @@ export class UncommittedChangesGuard {
       const porcelain = await this.gitOps.statusPorcelain(target.submodulePath);
       const files = porcelain
         .split("\n")
-        .map((l) => l.trim())
+        .map((l) => l.replace(/\r+$/, ""))
         .filter((l) => l.length > 0)
         .map((line) => {
-          // porcelain shape: `XY <path>` — discard the 2-char status code +
-          // leading space. Handle renames (`R  old -> new`) by taking the
-          // post-arrow target.
+          // porcelain shape: `XY <path>` — 2-char status code + space + path.
+          // Do NOT trim() — that would strip the leading-space staging code
+          // and shift our slice off by one. Handle renames (`R  old -> new`)
+          // by taking the post-arrow target.
           const path = line.length > 3 ? line.slice(3) : line;
           const arrowIdx = path.indexOf(" -> ");
           return arrowIdx >= 0 ? path.slice(arrowIdx + 4) : path;
