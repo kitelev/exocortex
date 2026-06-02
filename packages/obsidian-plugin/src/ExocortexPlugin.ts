@@ -103,7 +103,7 @@ import { ProfileFuzzyModal } from "./infrastructure/adapters/ProfileFuzzyModal";
 import { applyActiveProfileFilter } from "./infrastructure/adapters/FocusProfileOnloadWiring";
 import {
   AssetSpaceManager,
-  ASSET_SPACE_CLASS_UID,
+  isAssetSpaceFrontmatter,
 } from "./infrastructure/adapters/AssetSpaceManager";
 import { GitHubRestClient } from "./infrastructure/adapters/GitHubRestClient";
 import { LocalSecretsStore } from "./infrastructure/adapters/LocalSecretsStore";
@@ -2491,9 +2491,10 @@ export default class ExocortexPlugin extends Plugin {
    * lookup branches in `FocusProfileCommands.invokePushCurrentAssetSpace`
    * still need to resolve).
    *
-   * Kept narrow на purpose — duplicating ~15 LOC из AssetSpaceManager
-   * avoids importing the full manager (которое requires a PAT to
-   * construct).
+   * Class-membership predicate delegates to the shared
+   * `isAssetSpaceFrontmatter` helper — strict wikilink matching, not loose
+   * substring — so adjacent UUID-like noise in `exo__Instance_class` doesn't
+   * falsely register. See Issue #3312 MEDIUM #1 propagation.
    */
   private lookupAssetSpaceUidByFolder(folderName: string): string | null {
     if (typeof folderName !== "string" || folderName.length === 0) return null;
@@ -2505,16 +2506,7 @@ export default class ExocortexPlugin extends Plugin {
         | Record<string, unknown>
         | undefined;
       if (!fm) continue;
-      const classes = fm["exo__Instance_class"];
-      const classList: unknown[] = Array.isArray(classes)
-        ? classes
-        : classes
-          ? [classes]
-          : [];
-      const isAssetSpace = classList.some(
-        (c) => typeof c === "string" && c.includes(ASSET_SPACE_CLASS_UID),
-      );
-      if (!isAssetSpace) continue;
+      if (!isAssetSpaceFrontmatter(fm)) continue;
       const uid = fm["exo__Asset_uid"];
       if (typeof uid === "string" && uid.length > 0) return uid;
     }
