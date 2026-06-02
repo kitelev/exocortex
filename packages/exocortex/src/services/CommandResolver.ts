@@ -167,6 +167,15 @@ const PARSE_TIME_RESOLVERS: ReadonlySet<string> = new Set([
 export class CommandResolver {
   private readonly cache = new Map<string, ResolvedCommand[]>();
   private readonly multiCache = new Map<string, ResolvedCommand[]>();
+  /**
+   * Issue #3295 — memoize `getClassAncestors` results per class ref so
+   * the per-render BFS over `exo__Class_superClass` (called once per
+   * leaf class declared by the rendered asset) does not re-walk the
+   * triple store on every Obsidian render tick. TBox is static within
+   * a session unless `invalidateCache()` is called by indexer hooks
+   * after a TBox file write.
+   */
+  private readonly _ancestorCache = new Map<string, string[]>();
 
   /**
    * RFC v2 Phase 5 (#3167) — once-per-session-per-Grounding warning suppression
@@ -517,6 +526,7 @@ export class CommandResolver {
   invalidateCache(): void {
     this.cache.clear();
     this.multiCache.clear();
+    this._ancestorCache.clear();
   }
 
   /**
@@ -2172,6 +2182,157 @@ export class CommandResolver {
     const subject = await this.findSubjectByUID(uid);
     if (!subject) return null;
     return this.getLiteralValue(subject, Namespace.EXO.term("Asset_label"));
+  }
+
+  /**
+   * Issue #3295 — Walk the `exo__Class_superClass` chain from `classRef`
+   * and return the deduplicated set of transitive ancestor refs in BOTH
+   * symbolic (e.g. `ems__Task`) and UID-canon (e.g. `1b20a8f0-...`) form.
+   *
+   * Motivation: `bindingMatches` does string-equality on `targetClass`
+   * literals (e.g. `"ems__Task"`). Without an ancestor walk, an
+   * `ems__Meeting` asset (declared `ems__Meeting ⊑ ems__Task` via
+   * `exo__Class_superClass`) would never match a Task-targeted binding —
+   * because the caller-side class array contains only the leaf
+   * (`ems__Meeting`) plus the universal-root hardcode (`exo__Asset`).
+   * Intermediate superclasses are silently dropped.
+   *
+   * The walk is cycle-safe (visited Set keyed on the class file IRI),
+   * depth-bounded by `MAX_TRANSITIVE_DEPTH`, and consumes only the
+   * already-populated triple store — no metadata-cache or DI wiring
+   * changes required at the call site beyond invoking this method.
+   *
+   * Excludes the input `classRef` itself; callers are expected to keep
+   * the leaf in their own array. Returns `[]` when the class is unknown
+   * to the store, the chain is empty, or every parent IRI is malformed.
+   *
+   * @param classRef — Either a symbolic class name (`ems__Meeting`) or
+   *                   the UID of the class file (`1b0a5e34-...`). Both
+   *                   forms are resolved to the same file IRI subject.
+   */
+  async getClassAncestors(classRef: string): Promise<string[]> {
+    const cached = this._ancestorCache.get(classRef);
+    if (cached) return cached;
+
+    const result = new Set<string>();
+    const visited = new Set<string>();
+    const seedFileIRI = await this.resolveClassFileIRI(classRef);
+    if (!seedFileIRI) {
+      // Deliberately NOT cached: a null `seedFileIRI` means the class
+      // file is not yet in the triple store. During cold-start the
+      // `LazyAssetGraphLoader` populates TBox asynchronously and the
+      // global `invalidateCache()` reindex hook fires only after the
+      // eager-init promise completes. Caching `[]` here would lock the
+      // broken empty result across renders that fire in the window
+      // before that completion → subclass-to-superclass bindings stay
+      // silently absent (the exact regression Issue #3295 fixes).
+      // The wasted cost on retry is one label-scan via
+      // `findUidByLabel` per leaf class per render — accepted.
+      return [];
+    }
+
+    // Track the input class's own symbolic + UID forms so they NEVER
+    // appear in the result, even if the chain is cyclic
+    // (`A ⊑ B ⊑ A` would otherwise surface `A` as its own ancestor on
+    // the second hop). Callers already keep the leaf in their own array.
+    const excluded = new Set<string>([classRef]);
+    const seedUid = await this.getLiteralValue(
+      seedFileIRI,
+      Namespace.EXO.term("Asset_uid"),
+    );
+    if (seedUid) excluded.add(seedUid);
+    const seedLabel = await this.getLiteralValue(
+      seedFileIRI,
+      Namespace.EXO.term("Asset_label"),
+    );
+    if (seedLabel) excluded.add(seedLabel);
+
+    const queue: Array<{ fileIRI: IRI; depth: number }> = [
+      { fileIRI: seedFileIRI, depth: 0 },
+    ];
+
+    while (queue.length > 0) {
+      const head = queue.shift();
+      if (!head) break;
+      const { fileIRI, depth } = head;
+      if (depth >= MAX_TRANSITIVE_DEPTH) continue;
+      if (visited.has(fileIRI.value)) continue;
+      visited.add(fileIRI.value);
+
+      const parentTriples = await this.tripleStore.match(
+        fileIRI,
+        Namespace.EXO.term("Class_superClass"),
+        undefined,
+      );
+
+      for (const triple of parentTriples) {
+        const obj = triple.object;
+        if (!(obj instanceof IRI)) continue;
+
+        // Two forms are possible: namespace IRI (e.g.
+        // `https://exocortex.my/ontology/ems#Task` — emitted by
+        // `valueToRDFObject` for UUID-wikilink class refs that resolve
+        // to a labelled class file) OR file IRI
+        // (e.g. `obsidian://vault/.../<uid>.md` — fallback when the
+        // class file has no namespace-derivable label, Issue #3242).
+        // `iriToObsidianName` returns the `prefix__local` symbolic
+        // form for namespace IRIs and the bare UUID basename for file
+        // IRIs; both go into the result Set so caller arrays match
+        // either form of binding (symbolic targetClass like
+        // `"ems__Task"` AND UID-form `"[[<uid>]]"`).
+        const isFileIRI = obj.value.startsWith("obsidian://vault/");
+        const parentRef = this.iriToObsidianName(obj.value);
+        if (parentRef && !excluded.has(parentRef) && !result.has(parentRef)) {
+          result.add(parentRef);
+        }
+
+        // Map back to file IRI (the BFS-walkable subject form) so we
+        // can recurse. Symbolic-namespace IRIs are NOT themselves
+        // subjects of `exo__Class_superClass` triples — the file IRI
+        // of the class file is.
+        let parentFileIRI: IRI | null = null;
+        if (isFileIRI) {
+          parentFileIRI = obj;
+        } else if (parentRef) {
+          parentFileIRI = await this.resolveClassFileIRI(parentRef);
+        }
+
+        if (!parentFileIRI) continue;
+
+        // Surface the UID form alongside the symbolic name so caller
+        // arrays satisfying UUID-form bindings (post-UID-canon) also
+        // match transitively.
+        const parentUid = await this.getLiteralValue(
+          parentFileIRI,
+          Namespace.EXO.term("Asset_uid"),
+        );
+        if (parentUid && !excluded.has(parentUid) && !result.has(parentUid)) {
+          result.add(parentUid);
+        }
+
+        if (!visited.has(parentFileIRI.value)) {
+          queue.push({ fileIRI: parentFileIRI, depth: depth + 1 });
+        }
+      }
+    }
+
+    const ancestors = Array.from(result);
+    this._ancestorCache.set(classRef, ancestors);
+    return ancestors;
+  }
+
+  /**
+   * Issue #3295 helper — resolve a class ref (symbolic name OR UID) to
+   * the file IRI subject under which `exo__Class_superClass` triples are
+   * stored. Returns `null` when the class is unknown to the store.
+   */
+  private async resolveClassFileIRI(classRef: string): Promise<IRI | null> {
+    if (this.looksLikeUUID(classRef)) {
+      return this.findSubjectByUID(classRef);
+    }
+    const uid = await this.findUidByLabel(classRef);
+    if (!uid) return null;
+    return this.findSubjectByUID(uid);
   }
 
   /**

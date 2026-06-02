@@ -43,6 +43,9 @@ function buildCommandExecutionFlow(): CommandExecutionFlow {
 const mockResolveForAsset = jest.fn();
 const mockResolveForAssetMulti = jest.fn();
 const mockResolveLabelByUID = jest.fn();
+// Issue #3295 — caller-side ancestor walk used by extractAssetClasses.
+// Default `[]` keeps legacy tests (no superClass chain) unchanged.
+const mockGetClassAncestors = jest.fn().mockResolvedValue([]);
 const mockEvaluate = jest.fn();
 const mockExecute = jest.fn();
 
@@ -50,6 +53,7 @@ const mockCommandResolver = {
   resolveForAsset: mockResolveForAsset,
   resolveForAssetMulti: mockResolveForAssetMulti,
   resolveLabelByUID: mockResolveLabelByUID,
+  getClassAncestors: mockGetClassAncestors,
   loadCommand: jest.fn(),
   findBindings: jest.fn(),
   invalidateCache: jest.fn(),
@@ -162,6 +166,9 @@ describe("DynamicCommandButtonGroupBuilder", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    // Issue #3295 — restore the legacy "no ancestors" default after
+    // clearAllMocks wiped the per-test override.
+    mockGetClassAncestors.mockResolvedValue([]);
     builder = new DynamicCommandButtonGroupBuilder({
       commandResolver: mockCommandResolver as unknown as Parameters<
         typeof DynamicCommandButtonGroupBuilder.prototype.build
@@ -502,6 +509,124 @@ describe("DynamicCommandButtonGroupBuilder", () => {
         ["ems__Project", "custom__Class", "exo__Asset"],
         undefined,
       );
+    });
+
+    describe("Issue #3295 — walk exo__Class_superClass chain", () => {
+      it("appends transitive ancestors so subclass instances match superclass-targeted bindings", async () => {
+        // ems__Meeting ⊑ ems__Task ⊑ ems__Effort ⊑ exo__Asset
+        // Resolver reports ancestors for the leaf via getClassAncestors;
+        // the builder must append them deduplicated to the classes
+        // array so CommandResolver.resolveForAssetMulti dispatches a
+        // per-class binding scan for each intermediate ancestor too.
+        mockResolveForAssetMulti.mockResolvedValue([]);
+        mockGetClassAncestors.mockImplementation(async (cls: string) => {
+          if (cls === "ems__Meeting") return ["ems__Task", "ems__Effort"];
+          return [];
+        });
+        const context = createContext({
+          exo__Instance_class: ["[[ems__Meeting]]"],
+        });
+
+        await builder.build(context);
+
+        expect(mockGetClassAncestors).toHaveBeenCalledWith("ems__Meeting");
+        // exo__Asset NOT passed to ancestor walk — caller already keeps
+        // the universal-root append as a safety net.
+        expect(mockGetClassAncestors).not.toHaveBeenCalledWith("exo__Asset");
+        expect(mockResolveForAssetMulti).toHaveBeenCalledWith(
+          "obsidian://vault/test/file.md",
+          ["ems__Meeting", "ems__Task", "ems__Effort", "exo__Asset"],
+          undefined,
+        );
+      });
+
+      it("walks every declared leaf class (multi-class assets)", async () => {
+        // RFC #2958 allows multiple `exo__Instance_class` entries.
+        // Each leaf class must contribute its own ancestor chain.
+        mockResolveForAssetMulti.mockResolvedValue([]);
+        mockGetClassAncestors.mockImplementation(async (cls: string) => {
+          if (cls === "ems__Project") return ["ems__Effort"];
+          if (cls === "custom__Tag") return ["custom__Concept"];
+          return [];
+        });
+        const context = createContext({
+          exo__Instance_class: ["[[ems__Project]]", "[[custom__Tag]]"],
+        });
+
+        await builder.build(context);
+
+        expect(mockGetClassAncestors).toHaveBeenCalledWith("ems__Project");
+        expect(mockGetClassAncestors).toHaveBeenCalledWith("custom__Tag");
+        expect(mockResolveForAssetMulti).toHaveBeenCalledWith(
+          "obsidian://vault/test/file.md",
+          [
+            "ems__Project",
+            "custom__Tag",
+            "ems__Effort",
+            "custom__Concept",
+            "exo__Asset",
+          ],
+          undefined,
+        );
+      });
+
+      it("logs and continues when getClassAncestors throws (cold-start safety)", async () => {
+        mockResolveForAssetMulti.mockResolvedValue([]);
+        mockGetClassAncestors.mockRejectedValue(
+          new Error("triple-store-not-ready"),
+        );
+        const context = createContext({
+          exo__Instance_class: ["[[ems__Meeting]]"],
+        });
+
+        await builder.build(context);
+
+        const infoLogs = (context.logger.info as jest.Mock).mock.calls;
+        const threwLog = infoLogs.find(
+          ([msg]: [string]) =>
+            typeof msg === "string" &&
+            msg.includes("getClassAncestors") &&
+            msg.includes("ems__Meeting") &&
+            msg.includes("threw"),
+        );
+        expect(threwLog).toBeDefined();
+        // Universal-root guard still appends exo__Asset so universal
+        // bindings continue to render even when the walk fails.
+        expect(mockResolveForAssetMulti).toHaveBeenCalledWith(
+          "obsidian://vault/test/file.md",
+          ["ems__Meeting", "exo__Asset"],
+          undefined,
+        );
+      });
+
+      it("deduplicates ancestors against classes already declared by the asset", async () => {
+        // An asset that explicitly declares both leaf and intermediate
+        // (`["ems__Meeting", "ems__Task"]`) should NOT see ems__Task
+        // appended twice via the ancestor walk.
+        mockResolveForAssetMulti.mockResolvedValue([]);
+        mockGetClassAncestors.mockImplementation(async (cls: string) => {
+          if (cls === "ems__Meeting") return ["ems__Task", "ems__Effort"];
+          if (cls === "ems__Task") return ["ems__Effort"];
+          return [];
+        });
+        const context = createContext({
+          exo__Instance_class: ["[[ems__Meeting]]", "[[ems__Task]]"],
+        });
+
+        await builder.build(context);
+
+        const calledWith = mockResolveForAssetMulti.mock.calls[0][1] as string[];
+        const taskCount = calledWith.filter((c) => c === "ems__Task").length;
+        const effortCount = calledWith.filter((c) => c === "ems__Effort").length;
+        expect(taskCount).toBe(1);
+        expect(effortCount).toBe(1);
+        expect(calledWith).toEqual([
+          "ems__Meeting",
+          "ems__Task",
+          "ems__Effort",
+          "exo__Asset",
+        ]);
+      });
     });
 
     it("should resolve variant from command category via categoryDefaultVariant map", async () => {
