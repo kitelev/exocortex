@@ -1,4 +1,6 @@
 /**
+ * @jest-environment node
+ *
  * Integration tests для hardSwitchProfile() real submodule operations using
  * file:// URLs (fast offline, exercises real git subprocess).
  *
