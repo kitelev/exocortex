@@ -38,8 +38,19 @@ const execFile = promisify(execFileCb);
  */
 export interface GitSubmoduleOpsOptions {
   vaultRootPath: string;
-  /** Timeout per git operation, milliseconds. Default 60_000. */
+  /**
+   * Timeout per git operation, milliseconds. Default 60_000 for fs-local
+   * ops (deinit, add, commit, status). Use {@link networkTimeoutMs} for
+   * the network-bound submoduleAdd path.
+   */
   timeoutMs?: number;
+  /**
+   * Timeout for network-bound `git submodule add` (clones the upstream
+   * repository, which can be large or run over slow connections).
+   * Default 300_000 (5 min) — generous margin для ~50MB submodule over
+   * cellular tethering. Other ops use {@link timeoutMs}.
+   */
+  networkTimeoutMs?: number;
   /** Test injection: override the underlying `execFile`. */
   execFileFn?: typeof execFile;
 }
@@ -87,6 +98,13 @@ export function validateVaultPathArg(arg: string): string {
  * shape rules as `GitHubRestClient.validateRepoURL` без importing that class
  * (avoids circular dependency between Phase 5 adapters). Mirror the regex
  * exactly so any allowlist drift is caught by code-review.
+ *
+ * `file://` URLs allowed ONLY in test mode (`NODE_ENV === "test"`). In
+ * production они bypass the GitHub allowlist and would permit malicious
+ * `exo__AssetSpace_git: file:///some/attacker/repo` declarations to
+ * materialize local content into the vault on hard switch. Test code that
+ * legitimately needs file:// (offline integration smoke) gets it via the
+ * automatic NODE_ENV that jest sets; production never sees it.
  */
 export function validateGitUrl(url: string): string {
   if (typeof url !== "string" || url.length === 0) {
@@ -95,11 +113,11 @@ export function validateGitUrl(url: string): string {
   if (url.startsWith("-")) {
     throw new Error(`GitSubmoduleOps: leading-dash URL rejected: ${url}`);
   }
-  // Allow https://github.com/owner/repo[.git] AND file:// urls for tests.
   const githubOk = /^https:\/\/github\.com\/[a-zA-Z0-9_-]+\/[a-zA-Z0-9_.-]+?(?:\.git)?$/.test(url);
-  const fileOk = /^file:\/\/\/[a-zA-Z0-9_./-]+$/.test(url);
+  const isTestEnv = process.env.NODE_ENV === "test";
+  const fileOk = isTestEnv && /^file:\/\/\/[a-zA-Z0-9_./-]+$/.test(url);
   if (!githubOk && !fileOk) {
-    throw new Error(`GitSubmoduleOps: invalid git URL shape (must be https://github.com/... or file://...): ${url}`);
+    throw new Error(`GitSubmoduleOps: invalid git URL shape (must be https://github.com/...): ${url}`);
   }
   if (/[;|&$`()<>\n\r]/.test(url)) {
     throw new Error(`GitSubmoduleOps: shell metacharacter in URL: ${url}`);
@@ -110,6 +128,7 @@ export function validateGitUrl(url: string): string {
 export class GitSubmoduleOps {
   private readonly vaultRootPath: string;
   private readonly timeoutMs: number;
+  private readonly networkTimeoutMs: number;
   private readonly execFileFn: typeof execFile;
 
   constructor(options: GitSubmoduleOpsOptions) {
@@ -118,11 +137,21 @@ export class GitSubmoduleOps {
     }
     this.vaultRootPath = path.resolve(options.vaultRootPath);
     this.timeoutMs = options.timeoutMs ?? 60_000;
+    this.networkTimeoutMs = options.networkTimeoutMs ?? 300_000;
     this.execFileFn = options.execFileFn ?? execFile;
   }
 
-  /** Run an arbitrary `git <args>` command from the vault root. */
-  async run(args: ReadonlyArray<string>): Promise<{ stdout: string; stderr: string }> {
+  /**
+   * Run an arbitrary `git <args>` command from the vault root.
+   *
+   * @param args  git CLI arguments
+   * @param opts.timeoutMs  override default fs-local timeout (use for
+   *   network-bound commands like `submodule add`).
+   */
+  async run(
+    args: ReadonlyArray<string>,
+    opts: { timeoutMs?: number } = {},
+  ): Promise<{ stdout: string; stderr: string }> {
     this.assertDesktop("run");
     if (!Array.isArray(args) || args.length === 0) {
       throw new Error("GitSubmoduleOps.run: args required");
@@ -149,10 +178,11 @@ export class GitSubmoduleOps {
         throw new Error(`GitSubmoduleOps.run: disallowed flag argument: ${arg}`);
       }
     }
+    const effectiveTimeout = opts.timeoutMs ?? this.timeoutMs;
     try {
       const { stdout, stderr } = await this.execFileFn("git", Array.from(args), {
         cwd: this.vaultRootPath,
-        timeout: this.timeoutMs,
+        timeout: effectiveTimeout,
         maxBuffer: 16 * 1024 * 1024,
         // Strip inherited GIT_* env vars — if Obsidian is launched from a
         // shell with GIT_DIR/GIT_INDEX_FILE set (e.g. during a husky hook
@@ -183,11 +213,27 @@ export class GitSubmoduleOps {
     await this.run(["submodule", "deinit", "-f", safe]);
   }
 
-  /** `git submodule add <url> assetspaces/<as>` */
+  /**
+   * `git submodule add <url> assetspaces/<as>`
+   *
+   * Uses the longer network timeout — `submodule add` clones the entire
+   * upstream history which can run minutes on slow connections.
+   */
   async submoduleAdd(url: string, submodulePath: string): Promise<void> {
     const safeUrl = validateGitUrl(url);
     const safePath = validateVaultPathArg(submodulePath);
-    await this.run(["submodule", "add", safeUrl, safePath]);
+    try {
+      await this.run(["submodule", "add", safeUrl, safePath], {
+        timeoutMs: this.networkTimeoutMs,
+      });
+    } catch (err) {
+      // Partial-clone cleanup: if `submodule add` failed AFTER creating
+      // `.git/modules/<path>/` (e.g. timeout mid-clone), a retry would hit
+      // «'<path>' already exists in the index» — best-effort cleanup
+      // before re-throwing.
+      await this.removeGitModulesDir(submodulePath).catch(() => undefined);
+      throw err;
+    }
   }
 
   /**

@@ -266,7 +266,12 @@ interface SetupOptions {
   targetUid: string;
   /** Profile UID currently active. */
   sourceUid: string | null;
-  /** AS UIDs included in target profile (will be wrapped in `_includes`). */
+  /**
+   * AS UIDs the target profile intends to include. The helper converts each
+   * to the production-shape Ontology URI form `ontology-<asUid>` matching
+   * the fixture's `exo__AssetSpace_containsOntology` declarations. Use raw
+   * AS UID for the test set — translation happens in the helper.
+   */
   targetIncludes: string[];
   /** AS UIDs included in source profile (used for source label display only). */
   sourceLabel?: string;
@@ -301,18 +306,28 @@ function setup(opts: SetupOptions) {
         "exo__Instance_class": ["[[exo__FocusProfile]]"],
       },
     },
-    // AssetSpace ABox assets — each has folder + git + namespace + class.
-    ...allAs.map((as) => ({
-      path: `${as.folder}/${as.uid}.md`,
-      basename: as.uid,
-      frontmatter: {
-        "exo__Asset_uid": as.uid,
-        "exo__Asset_label": as.folder.split("/").pop(),
-        "exo__Instance_class": ["[[exo__AssetSpace]]"],
-        "exo__AssetSpace_git": `https://github.com/test/${as.folder.split("/").pop()}-ontology`,
-        "exo__AssetSpace_namespace": as.folder.split("/").pop(),
-      },
-    })),
+    // AssetSpace ABox assets — each has folder + git + namespace + class +
+    // containsOntology. Production-shape: AS ABox declares the Ontology
+    // URI it contains (per RFC b6ba5595 + FocusProfileOnloadWiring scan).
+    // Without this property, the R24 guard's translation step cannot map
+    // declared Ontology URIs back to AS UIDs and the guard fires for the
+    // wrong reason. Each AS declares one synthetic ontology URI named after
+    // the folder; profiles include those URIs in `_includes`.
+    ...allAs.map((as) => {
+      const ns = as.folder.split("/").pop();
+      return {
+        path: `${as.folder}/${as.uid}.md`,
+        basename: as.uid,
+        frontmatter: {
+          "exo__Asset_uid": as.uid,
+          "exo__Asset_label": ns,
+          "exo__Instance_class": ["[[exo__AssetSpace]]"],
+          "exo__AssetSpace_git": `https://github.com/test/${ns}-ontology`,
+          "exo__AssetSpace_namespace": ns,
+          "exo__AssetSpace_containsOntology": [`[[ontology-${as.uid}]]`],
+        },
+      };
+    }),
   ];
   if (opts.sourceUid !== null) {
     files.unshift({
@@ -333,14 +348,16 @@ function setup(opts: SetupOptions) {
     fsFolders.set(folder, { files: [`${folder}/file1.md`, `${folder}/file2.md`], folders: [] });
   }
 
-  // Profile target resolution.
+  // Profile target resolution — production-shape: profile declares Ontology
+  // URIs (`ontology-<asUid>` per fixture containsOntology) NOT raw AS UIDs.
+  const includesAsOntology = opts.targetIncludes.map((u) => `ontology-${u}`);
   const resolver = new FakeResolver(
     new Map<string, ProfileResolution>([
       [
         opts.targetUid,
         {
           uid: opts.targetUid,
-          includes: opts.targetIncludes,
+          includes: includesAsOntology,
           alwaysOnOverlay: [],
           label: "Target Profile",
         },

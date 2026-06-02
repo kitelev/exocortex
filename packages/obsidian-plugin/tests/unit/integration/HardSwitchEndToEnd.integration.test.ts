@@ -202,6 +202,11 @@ function buildVaultFiles(setup: VaultSetup): FakeFile[] {
         "exo__Instance_class": ["[[exo__AssetSpace]]"],
         "exo__AssetSpace_git": as.git,
         "exo__AssetSpace_namespace": as.folder.split("/").pop(),
+        // Production-shape: AS ABox declares the Ontology UID it contains
+        // (per RFC 22b50a17 + FocusProfileOnloadWiring scan). The R24 guard
+        // depends on this declaration to translate profile-declared Ontology
+        // URIs → AS UIDs.
+        "exo__AssetSpace_containsOntology": [`[[ontology-${as.uid}]]`],
       },
     });
   }
@@ -366,17 +371,20 @@ describe("hardSwitchProfile E2E (real fs, mocked pull)", () => {
     const files = buildVaultFiles(setup);
     const { app } = makeFakeApp(files);
 
+    // Profiles declare Ontology URIs (production shape per RFC b6ba5595);
+    // each AS ABox declares containsOntology, so R24 translation resolves
+    // them back to AS UIDs.
     const profiles = new Map<string, ProfileResolution>([
       [
         "profile-a",
         {
           uid: "profile-a",
           includes: [
-            "as1",
-            "as2",
-            TS_FLOOR_AS_UID_EXO,
-            TS_FLOOR_AS_UID_EXOCMD,
-            TS_FLOOR_AS_UID_SHARED_IDENTITIES,
+            "ontology-as1",
+            "ontology-as2",
+            `ontology-${TS_FLOOR_AS_UID_EXO}`,
+            `ontology-${TS_FLOOR_AS_UID_EXOCMD}`,
+            `ontology-${TS_FLOOR_AS_UID_SHARED_IDENTITIES}`,
           ],
           alwaysOnOverlay: [],
           label: "Profile A",
@@ -387,11 +395,11 @@ describe("hardSwitchProfile E2E (real fs, mocked pull)", () => {
         {
           uid: "profile-b",
           includes: [
-            "as2",
-            "as3",
-            TS_FLOOR_AS_UID_EXO,
-            TS_FLOOR_AS_UID_EXOCMD,
-            TS_FLOOR_AS_UID_SHARED_IDENTITIES,
+            "ontology-as2",
+            "ontology-as3",
+            `ontology-${TS_FLOOR_AS_UID_EXO}`,
+            `ontology-${TS_FLOOR_AS_UID_EXOCMD}`,
+            `ontology-${TS_FLOOR_AS_UID_SHARED_IDENTITIES}`,
           ],
           alwaysOnOverlay: [],
           label: "Profile B",

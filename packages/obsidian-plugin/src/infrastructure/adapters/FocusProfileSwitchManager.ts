@@ -419,16 +419,19 @@ export class FocusProfileSwitchManager {
       ? await this.profileLabel(prevActiveProfileUid)
       : "<unknown>";
 
-    // R24 — resolve & assert TS-floor BEFORE any mutation (Phase 0 spike
-    // explicitly did NOT exercise this; production gate is mandatory).
-    const declaredEffective = await this.resolveEffectiveSet(targetProfileUid);
-    // Translate ontology UIDs → AS UIDs via vault scan (uses same mechanism
-    // as FocusProfileOnloadWiring).
+    // R24 — assert TS-floor BEFORE any mutation. Use computeDerivedSet (NOT
+    // resolveEffectiveSet) because the latter silently injects TS_FLOOR_ONTOLOGY_URIS
+    // before returning — feeding that injected set into our translation step
+    // would auto-rescue the floor through containsOntology mapping and
+    // defeat the guard's purpose. Soft-switch (Phase 1 onload wiring) silently
+    // injects floor for UX; hard-switch is destructive so we require explicit
+    // intent in the user's profile declaration.
+    const declaredOntologySet = await this.computeDerivedSet(targetProfileUid);
     const folderToAsUid = await this.scanFolderToAsUid();
     const ontologyToAs = await this.scanOntologyToAsUid();
     const declaredAsUids = new Set<string>();
     const folderMapValues = new Set(folderToAsUid.values());
-    for (const uid of declaredEffective) {
+    for (const uid of declaredOntologySet) {
       if (folderMapValues.has(uid)) {
         declaredAsUids.add(uid);
         continue;
@@ -436,13 +439,12 @@ export class FocusProfileSwitchManager {
       const translated = ontologyToAs.get(uid);
       if (translated !== undefined) declaredAsUids.add(translated);
     }
-    // R24 — assert TS-floor BEFORE injection. If the user's declared profile
-    // does NOT include the floor (either directly via AS UIDs or via Ontology
-    // UIDs that resolve to floor AS), abort. Soft-switch (Phase 1 onload
-    // wiring) silently injects floor; hard-switch is destructive so we
-    // require explicit intent.
     this.assertTsFloor(declaredAsUids);
-    // Floor injected after the check so the actual mutation set is complete.
+
+    // For the actual mutation diff, also accept the shared-ontology discovery
+    // (e.g. `shared-identities` URI patterns) AND inject TS-floor at AS level
+    // — but only after the R24 guard already approved the user's explicit
+    // intent. The injection here is for completeness, not rescue.
     const effectiveAsUids = new Set(declaredAsUids);
     for (const floor of TS_FLOOR_ASSETSPACE_UIDS) effectiveAsUids.add(floor);
 
@@ -531,8 +533,21 @@ export class FocusProfileSwitchManager {
     if (!approved) throw new HardSwitchAbortedByUser();
 
     // No-op early exit: no destroy + no materialize == effectively soft path.
+    // Still emit hard-switch-completed so recoverIncompleteSwitch's tail-scan
+    // has a clean cutoff for any prior aborted run (HIGH catch from review).
     if (toDestroy.length === 0 && toMaterialize.length === 0) {
+      await this.appendJournal({
+        phase: "hard-switch-starting",
+        targetUid: targetProfileUid,
+        ts: new Date(startedAt).toISOString(),
+      });
       await this.switchProfile(targetProfileUid);
+      await this.appendJournal({
+        phase: "hard-switch-completed",
+        targetUid: targetProfileUid,
+        ts: this.now().toISOString(),
+        elapsedMs: this.now().getTime() - startedAt,
+      });
       return;
     }
 
@@ -543,6 +558,11 @@ export class FocusProfileSwitchManager {
     }
     let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
     const stagingPaths: Array<{ asUid: string; stagingPath: string }> = [];
+    // Tracks AS that were successfully cached в Phase 2 — drives the
+    // attemptCacheRollback list on catch so we only restore entries the cache
+    // layer actually saw. Avoids spurious CacheMissError noise + double-restore
+    // on partial-fail (HIGH catch from code-review).
+    const cachedSuccessfully: Array<{ asUid: string; submodulePath: string }> = [];
 
     try {
       await this.appendJournal({
@@ -618,6 +638,7 @@ export class FocusProfileSwitchManager {
         const info = infoBySubmodulePath.get(target.submodulePath);
         const sha = (info?.lastPulledSha ?? `unknown-${this.now().getTime()}`).slice(0, 40);
         await deps.cacheLayer.cache(target.asUid, vaultAbsPath, sha);
+        cachedSuccessfully.push({ asUid: target.asUid, submodulePath: target.submodulePath });
         // CRITICAL: journal entry BEFORE rm -rf (F2 advisor catch).
         await this.appendJournal({
           phase: "phase2-destroy-cached",
@@ -708,9 +729,12 @@ export class FocusProfileSwitchManager {
         ts: this.now().toISOString(),
         error: this.redactError(String(e)),
       });
-      // Try to restore destroyed AS from cache.
+      // Try to restore destroyed AS from cache — but only the ones we
+      // successfully cached (HIGH catch from code-review: rolling back on
+      // toDestroy.all would call restore on never-cached entries → noisy
+      // CacheMissError plus risk of restoring stale entries from prior runs).
       try {
-        await this.attemptCacheRollback(toDestroy);
+        await this.attemptCacheRollback(cachedSuccessfully);
       } catch {
         // Swallow — original error takes precedence.
       }
