@@ -141,6 +141,41 @@ export class GitHubRestClient {
   }
 
   /**
+   * GET /repos/{owner}/{repo}/tarball/{ref} → raw gzipped tarball as
+   * ArrayBuffer.
+   *
+   * Useful when the consumer wants zip-slip-safe extraction via
+   * {@link ../adapters/TarExtractor} or any other parser, rather than
+   * the convenience parse offered by {@link pullTarball}.
+   *
+   * Enforces `maxTarballBytes` (default 50 MB) before returning — protects
+   * the renderer process from oversized downloads which would later be
+   * fully materialised by `parseTarGzip` (nanotar 0.3.0 has no streaming).
+   */
+  public async fetchTarballBuffer(
+    owner: string,
+    repo: string,
+    ref: string = "HEAD",
+  ): Promise<ArrayBuffer> {
+    this.requireOwnerRepo(owner, repo);
+    const resp = await this.request({
+      method: "GET",
+      url: `${this.#baseURL}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/tarball/${encodeURIComponent(ref)}`,
+    });
+    if (!resp?.arrayBuffer || !(resp.arrayBuffer instanceof ArrayBuffer)) {
+      throw new Error(
+        this.redact(`GitHub fetchTarballBuffer: response missing arrayBuffer for ${owner}/${repo}@${ref}`),
+      );
+    }
+    if (resp.arrayBuffer.byteLength > this.#maxTarballBytes) {
+      throw new Error(
+        `GitHub fetchTarballBuffer: tarball exceeds maxTarballBytes (${resp.arrayBuffer.byteLength} > ${this.#maxTarballBytes}) for ${owner}/${repo}@${ref}`,
+      );
+    }
+    return resp.arrayBuffer;
+  }
+
+  /**
    * GET /repos/{owner}/{repo}/tarball/{ref} → parsed tar items as async iterable.
    *
    * ⚠️ Memory contract: `nanotar@0.3.0` has no streaming parse — the **entire**
@@ -150,30 +185,20 @@ export class GitHubRestClient {
    * the iterator as "iterate-then-discard" and must not assume low memory
    * usage. A size guard (`maxTarballBytes`, default 50 MB) rejects oversized
    * tarballs before the parse to protect the Obsidian renderer process.
+   *
+   * **Zip-slip note:** this convenience method does NOT validate entry
+   * paths. Use `fetchTarballBuffer()` + `TarExtractor.extract()` when
+   * processing untrusted tarballs (production AssetSpace pulls).
    */
   public async pullTarball(
     owner: string,
     repo: string,
     ref: string = "HEAD",
   ): Promise<AsyncIterable<TarFileItem>> {
-    this.requireOwnerRepo(owner, repo);
-    const resp = await this.request({
-      method: "GET",
-      url: `${this.#baseURL}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/tarball/${encodeURIComponent(ref)}`,
-    });
-    if (!resp?.arrayBuffer || !(resp.arrayBuffer instanceof ArrayBuffer)) {
-      throw new Error(
-        this.redact(`GitHub pullTarball: response missing arrayBuffer for ${owner}/${repo}@${ref}`),
-      );
-    }
-    if (resp.arrayBuffer.byteLength > this.#maxTarballBytes) {
-      throw new Error(
-        `GitHub pullTarball: tarball exceeds maxTarballBytes (${resp.arrayBuffer.byteLength} > ${this.#maxTarballBytes}) for ${owner}/${repo}@${ref}`,
-      );
-    }
+    const blob = await this.fetchTarballBuffer(owner, repo, ref);
     let items: TarFileItem[];
     try {
-      items = (await parseTarGzip(resp.arrayBuffer)) as unknown as TarFileItem[];
+      items = (await parseTarGzip(blob)) as unknown as TarFileItem[];
     } catch (err) {
       throw new Error(
         this.redact(`GitHub pullTarball: tarball parse failed for ${owner}/${repo}@${ref}: ${errMsg(err)}`),

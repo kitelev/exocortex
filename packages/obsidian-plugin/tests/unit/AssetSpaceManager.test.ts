@@ -577,26 +577,31 @@ describe("AssetSpaceManager", () => {
     });
   });
 
-  // --- Phase C+D stubs -------------------------------------------------
-  describe("Phase C+D stubs", () => {
-    it("pullAssetSpace throws 'Phase C+D not implemented'", async () => {
+  // --- Phase 2/3 stubs (Phase 5 P1 turned pullAssetSpace into real impl;
+  //     destroyAssetSpace + restoreFromCache stay deferred to Phase 2/3) -----
+  describe("Phase 2/3 stubs", () => {
+    it("pullAssetSpace throws desktop-only without staging tracker", async () => {
+      // No stagingTracker configured → fail-loud before any side effects.
       const h = makeHarness([]);
-      await expect(h.mgr.pullAssetSpace("x", "staging")).rejects.toThrow(
-        /Phase C\+D not implemented/,
-      );
+      await expect(
+        h.mgr.pullAssetSpace(
+          "x",
+          "https://github.com/owner/repo",
+        ),
+      ).rejects.toThrow(/stagingTracker not configured/);
     });
 
-    it("destroyAssetSpace throws 'Phase C+D not implemented'", async () => {
+    it("destroyAssetSpace throws 'deferred to Phase 2/3'", async () => {
       const h = makeHarness([]);
       await expect(h.mgr.destroyAssetSpace("x")).rejects.toThrow(
-        /Phase C\+D not implemented/,
+        /deferred to Phase 2\/3/,
       );
     });
 
-    it("restoreFromCache throws 'Phase C+D not implemented'", async () => {
+    it("restoreFromCache throws 'deferred to Phase 2 SwitchCacheLayer'", async () => {
       const h = makeHarness([]);
       await expect(h.mgr.restoreFromCache("x")).rejects.toThrow(
-        /Phase C\+D not implemented/,
+        /deferred to Phase 2 SwitchCacheLayer/,
       );
     });
   });
