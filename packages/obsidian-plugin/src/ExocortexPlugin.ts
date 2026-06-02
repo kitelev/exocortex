@@ -1649,6 +1649,42 @@ export default class ExocortexPlugin extends Plugin {
         ...(DEFAULT_SETTINGS.excludedFolders ?? []),
       ];
     }
+    // Issue #3279 — union-merge `lazyBootstrapFolders` to prevent
+    // saved user JSON from silently shadowing newly-added defaults.
+    // `Object.assign` replaces array fields wholesale; if a future
+    // release adds e.g. `assetspaces/aiknow-ontology/` to the default
+    // list, an existing user's persisted (older) array would override
+    // it and the new submodule would stay un-indexed, bringing back
+    // the 10-20s mobile cold-start regression that PR #3277 fixed for
+    // the current entry set.
+    //
+    // Strategy: union of defaults + saved entries, preserving order
+    // (defaults first, user extras appended) and de-duplicated via
+    // `Set`. Non-array saved values are discarded as corrupted shape;
+    // non-string entries are filtered out to keep the textarea binding
+    // robust against hand-edited garbage.
+    //
+    // Trade-off (issue body AC #2): if a user explicitly removed a
+    // default folder, it will re-appear after reload. This is the
+    // conscious cost of the failure-class fix — `excludedFolders`
+    // gates the per-file RDF index pipeline (`VaultRDFIndexer`) but
+    // does NOT short-circuit the lazy-bootstrap walk
+    // (`filterTBoxFiles` reads `lazyBootstrapFolders` only), so it
+    // is not a true workaround. A future enhancement could honour
+    // `excludedFolders` in `filterTBoxFiles` to give users an escape
+    // hatch (issue #3279 follow-up candidate).
+    const rawLazyBootstrap = rawData?.lazyBootstrapFolders;
+    const savedLazyBootstrap: string[] = Array.isArray(rawLazyBootstrap)
+      ? rawLazyBootstrap.filter(
+          (entry: unknown): entry is string => typeof entry === "string",
+        )
+      : [];
+    this.settings.lazyBootstrapFolders = Array.from(
+      new Set([
+        ...(DEFAULT_SETTINGS.lazyBootstrapFolders ?? []),
+        ...savedLazyBootstrap,
+      ]),
+    );
   }
 
   /**

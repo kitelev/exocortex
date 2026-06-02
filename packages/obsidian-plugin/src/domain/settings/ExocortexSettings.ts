@@ -199,6 +199,19 @@ export interface ExocortexSettings {
    *
    * Empty / undefined → bootstrap walks zero files (degraded mode,
    * buttons appear via convertVault path eventually).
+   *
+   * Issue #3279 — `loadSettings` **union-merges** this list with the
+   * current `DEFAULT_SETTINGS.lazyBootstrapFolders` on every load:
+   * defaults first, then any user-added extras, de-duplicated. This
+   * guarantees that adding a new submodule to the defaults in a future
+   * release reaches existing users automatically and prevents the 10-20 s
+   * mobile cold-start regression from returning silently.
+   *
+   * Trade-off: if a user explicitly removed a default folder, it will
+   * re-appear after reload. `excludedFolders` gates the per-file RDF
+   * index pipeline but does NOT short-circuit the lazy-bootstrap walk,
+   * so it is not a workaround. A future enhancement could honour
+   * `excludedFolders` in `filterTBoxFiles` (issue #3279 follow-up).
    */
   lazyBootstrapFolders: string[];
   /**

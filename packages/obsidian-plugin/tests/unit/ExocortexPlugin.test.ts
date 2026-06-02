@@ -363,6 +363,142 @@ describe("ExocortexPlugin", () => {
       expect(plugin.settings.autoAdjustPlannedEndTimestamp).toBe(true);
     });
 
+    /**
+     * Issue #3279 — `lazyBootstrapFolders` is union-merged with the
+     * current `DEFAULT_SETTINGS.lazyBootstrapFolders` on every load.
+     * Each test simulates a saved user JSON predating a hypothetical
+     * future migration that adds a new entry to the defaults, and
+     * asserts the new default reaches the loaded settings without
+     * losing user-added extras.
+     */
+    describe("Issue #3279 — lazyBootstrapFolders union-merge", () => {
+      it("auto-adds new default entry when user JSON is stale (missing it)", async () => {
+        // Arrange — simulate saved JSON predating a default-list extension.
+        const savedSettings = {
+          lazyBootstrapFolders: [
+            "assetspaces/exo/",
+            "assetspaces/ems/",
+            "assetspaces/ems-commands/",
+            "assetspaces/ims/",
+            // `assetspaces/exocmd/` deliberately missing — simulates a
+            // user upgrading from a version whose defaults did not yet
+            // include it.
+          ],
+        };
+        plugin.loadData = jest.fn().mockResolvedValue(savedSettings);
+
+        // Act
+        await plugin.loadSettings();
+
+        // Assert — every current default must be present.
+        for (const folder of DEFAULT_SETTINGS.lazyBootstrapFolders) {
+          expect(plugin.settings.lazyBootstrapFolders).toContain(folder);
+        }
+      });
+
+      it("preserves user-added custom entries alongside defaults", async () => {
+        // Arrange
+        const customFolder = "assetspaces/kitelev/";
+        const savedSettings = {
+          lazyBootstrapFolders: [
+            ...DEFAULT_SETTINGS.lazyBootstrapFolders,
+            customFolder,
+          ],
+        };
+        plugin.loadData = jest.fn().mockResolvedValue(savedSettings);
+
+        // Act
+        await plugin.loadSettings();
+
+        // Assert
+        expect(plugin.settings.lazyBootstrapFolders).toContain(customFolder);
+        for (const folder of DEFAULT_SETTINGS.lazyBootstrapFolders) {
+          expect(plugin.settings.lazyBootstrapFolders).toContain(folder);
+        }
+      });
+
+      it("emits deterministic order: defaults first, then user extras, deduped", async () => {
+        // Arrange — saved JSON has a custom extra plus duplicate of a default.
+        const customFolder = "assetspaces/kitelev/";
+        const duplicateOfDefault = DEFAULT_SETTINGS.lazyBootstrapFolders[0];
+        const savedSettings = {
+          lazyBootstrapFolders: [
+            customFolder,
+            duplicateOfDefault, // already present in defaults
+          ],
+        };
+        plugin.loadData = jest.fn().mockResolvedValue(savedSettings);
+
+        // Act
+        await plugin.loadSettings();
+
+        // Assert — defaults come first in their original order, then
+        // user extras appended once, no duplicates.
+        const expected = [
+          ...DEFAULT_SETTINGS.lazyBootstrapFolders,
+          customFolder,
+        ];
+        expect(plugin.settings.lazyBootstrapFolders).toEqual(expected);
+      });
+
+      it("falls back to defaults when saved user array is empty", async () => {
+        // Arrange — user explicitly cleared the list (or it never had
+        // entries). Union semantics treat that as «no extras», so the
+        // result is exactly the current defaults.
+        const savedSettings = {
+          lazyBootstrapFolders: [] as string[],
+        };
+        plugin.loadData = jest.fn().mockResolvedValue(savedSettings);
+
+        // Act
+        await plugin.loadSettings();
+
+        // Assert
+        expect(plugin.settings.lazyBootstrapFolders).toEqual(
+          DEFAULT_SETTINGS.lazyBootstrapFolders,
+        );
+      });
+
+      it("falls back to defaults when saved JSON predates the property", async () => {
+        // Arrange — settings JSON from an older release that didn't have
+        // the `lazyBootstrapFolders` field at all.
+        const savedSettings = {
+          layoutVisible: true,
+          // No `lazyBootstrapFolders` key.
+        };
+        plugin.loadData = jest.fn().mockResolvedValue(savedSettings);
+
+        // Act
+        await plugin.loadSettings();
+
+        // Assert
+        expect(plugin.settings.lazyBootstrapFolders).toEqual(
+          DEFAULT_SETTINGS.lazyBootstrapFolders,
+        );
+      });
+
+      it("ignores non-string entries in saved JSON (corrupted shape)", async () => {
+        // Arrange — hand-edited JSON contains garbage entries.
+        const savedSettings = {
+          lazyBootstrapFolders: [
+            42,
+            null,
+            "assetspaces/kitelev/",
+            { not: "a string" },
+          ] as unknown as string[],
+        };
+        plugin.loadData = jest.fn().mockResolvedValue(savedSettings);
+
+        // Act
+        await plugin.loadSettings();
+
+        // Assert — non-strings discarded; defaults + valid user extra retained.
+        expect(plugin.settings.lazyBootstrapFolders).toEqual([
+          ...DEFAULT_SETTINGS.lazyBootstrapFolders,
+          "assetspaces/kitelev/",
+        ]);
+      });
+    });
   });
 
   describe("saveSettings", () => {
