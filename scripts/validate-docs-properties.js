@@ -36,6 +36,7 @@ const KNOWN_EXCEPTIONS = new Set([
   "ems__Effort_status_changes", // workflows status history YAML example
   "exo__Property_minCount", // SHACL_LITE_MAPPING.md Phase 3+ planned property (YAGNI Drop #3 in RFC 82a72aca v3)
   "exo__Property_severity", // SHACL_LITE_MAPPING.md sh:severity alignment — docs-only mapping reference (aa6615f0)
+  "exo__AssetSpace_materialized", // RFC 22b50a17 Phase 4 — runtime-derived property; code constructs via Namespace.EXO.term("AssetSpace_materialized") rather than literal string (docs/focus-profile.md)
 ]);
 
 function extractPropertiesFromDocs() {

@@ -27,4 +27,62 @@ describe("PluginRdfIndexerAdapter", () => {
     const adapter = new PluginRdfIndexerAdapter(indexer);
     await expect(adapter.refresh(new Set())).rejects.toThrow(/boom/);
   });
+
+  it("fires onAfterRefresh hook after each successful refresh (H1 cascade)", async () => {
+    const refresh = jest.fn().mockResolvedValue(undefined);
+    const onAfterRefresh = jest.fn().mockResolvedValue(undefined);
+    const adapter = new PluginRdfIndexerAdapter(
+      { refresh } as any,
+      onAfterRefresh,
+    );
+
+    await adapter.refresh(new Set(["a"]));
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(onAfterRefresh).toHaveBeenCalledTimes(1);
+
+    await adapter.refresh(new Set(["b"]));
+    expect(refresh).toHaveBeenCalledTimes(2);
+    expect(onAfterRefresh).toHaveBeenCalledTimes(2);
+  });
+
+  it("hook fires AFTER indexer.refresh resolves (order matters for re-injection)", async () => {
+    const callOrder: string[] = [];
+    const refresh = jest.fn(async () => {
+      callOrder.push("indexer.refresh");
+    });
+    const onAfterRefresh = jest.fn(async () => {
+      callOrder.push("onAfterRefresh");
+    });
+    const adapter = new PluginRdfIndexerAdapter(
+      { refresh } as any,
+      onAfterRefresh,
+    );
+
+    await adapter.refresh(new Set());
+    expect(callOrder).toEqual(["indexer.refresh", "onAfterRefresh"]);
+  });
+
+  it("hook failure is swallowed — must not break the switch pipeline", async () => {
+    const refresh = jest.fn().mockResolvedValue(undefined);
+    const onAfterRefresh = jest
+      .fn()
+      .mockRejectedValue(new Error("hook regression"));
+    const adapter = new PluginRdfIndexerAdapter(
+      { refresh } as any,
+      onAfterRefresh,
+    );
+
+    // Must not reject even though the hook rejected — the refresh
+    // itself succeeded, and a hook regression must not invalidate
+    // already-mutated state.
+    await expect(adapter.refresh(new Set())).resolves.toBeUndefined();
+    expect(onAfterRefresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("hook is optional — adapter works without one (backwards compat)", async () => {
+    const refresh = jest.fn().mockResolvedValue(undefined);
+    const adapter = new PluginRdfIndexerAdapter({ refresh } as any);
+    await expect(adapter.refresh(new Set())).resolves.toBeUndefined();
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
 });

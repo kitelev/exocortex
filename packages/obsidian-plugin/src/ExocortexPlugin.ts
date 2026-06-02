@@ -110,6 +110,9 @@ import { LocalSecretsStore } from "./infrastructure/adapters/LocalSecretsStore";
 import { SwitchCacheLayer } from "./infrastructure/adapters/SwitchCacheLayer";
 import { ClearSwitchCacheConfirmModal } from "./infrastructure/adapters/ClearSwitchCacheConfirmModal";
 import { AssetSpaceManager } from "./infrastructure/adapters/AssetSpaceManager";
+import { AssetSpaceMaterializationTracker } from "./infrastructure/adapters/AssetSpaceMaterializationTracker";
+import { injectAssetSpaceMaterializationTriples } from "./infrastructure/adapters/injectAssetSpaceMaterializationTriples";
+import { AssetSpaceStatusIconPatch } from "./presentation/asset-space/AssetSpaceStatusIconPatch";
 import { GitHubRestClient } from "./infrastructure/adapters/GitHubRestClient";
 import { GitSubmoduleOps } from "./infrastructure/adapters/GitSubmoduleOps";
 import { UncommittedChangesGuard } from "./infrastructure/adapters/UncommittedChangesGuard";
@@ -209,6 +212,8 @@ export default class ExocortexPlugin extends Plugin {
   private fileExplorerIconPatch!: FileExplorerIconPatch;
   private readingModeEnforcer!: ReadingModeEnforcer;
   private graphViewPatch!: GraphViewPatch;
+  /** RFC 22b50a17 Phase 4 — AssetSpace status badge (✅/⏸). */
+  private assetSpaceStatusIconPatch: AssetSpaceStatusIconPatch | null = null;
   private fileLogChannel!: FileLogChannel;
   // Issue #3320 — promoted from private so the Settings UI can route its
   // Save / Test connection / Switch failure messages via the same notifier
@@ -252,6 +257,20 @@ export default class ExocortexPlugin extends Plugin {
    * store, and any legacy keys are cleared in the same migration pass.
    */
   public localDataStore: PluginLocalDataStore | null = null;
+
+  /**
+   * RFC 22b50a17 Phase 5 Phase 4 — runtime-derived AssetSpace materialization
+   * tracker. Walks the vault on plugin load + after `metadataCache.resolved`
+   * and refreshes a Set of currently-materialized AssetSpace UIDs by probing
+   * `assetspaces/<namespace>/` folder existence. Per Vision Lock #12 the
+   * status is never persisted — manual `rm`/`cp` of folders cannot create
+   * stale state.
+   *
+   * Read by:
+   *  - `SPARQLApi.injectMaterializationTriples` (filter by status)
+   *  - markdown post-processor (✅/⏸ status icon)
+   */
+  public assetSpaceMaterializationTracker: AssetSpaceMaterializationTracker | null = null;
 
   override async onload(): Promise<void> {
     try {
@@ -297,6 +316,14 @@ export default class ExocortexPlugin extends Plugin {
       this.layoutProcessor = new LayoutCodeBlockProcessor(this);
       this.sparql = new SPARQLApi(this);
       this.api = new ExocortexAPI(this);
+
+      // RFC 22b50a17 Phase 4 — AssetSpace materialization tracker.
+      // Constructed eagerly; first `refresh()` runs inside the
+      // `metadataCache.resolved` chain so the walk sees fully-parsed
+      // AS ABox frontmatter. Status snapshot used by SPARQL injection +
+      // AssetSpace status-icon post-processor.
+      this.assetSpaceMaterializationTracker =
+        new AssetSpaceMaterializationTracker(this.app);
 
       // RFC-009: Wire Dynamic Command System services BEFORE renderer
       // Construct manually (not via tsyringe) because they need the live triple store
@@ -907,8 +934,17 @@ export default class ExocortexPlugin extends Plugin {
           postResolveReindexDone = true;
 
           const initPromise = this.eagerInitPromise ?? Promise.resolve();
+          // RFC 22b50a17 Phase 4 — after each `sparql.refresh()` (which
+          // clears+rebuilds the store from frontmatter), re-inject the
+          // runtime-derived `exo:AssetSpace_materialized` triples via
+          // `refreshAndInjectAssetSpaceMaterialization`. Soft- and hard-
+          // switch paths via `FocusProfileSwitchManager` are covered by
+          // `PluginRdfIndexerAdapter.onAfterRefresh`; these onload chain
+          // callsites use `sparql.refresh()` directly which bypasses the
+          // adapter, so they call the helper explicitly.
           void initPromise
             .then(() => this.sparql.refresh())
+            .then(() => this.refreshAndInjectAssetSpaceMaterialization())
             .then(async () => {
               // RFC 0a0791c1 #3324 — re-apply the active FocusProfile
               // filter now that metadataCache has fully resolved. The
@@ -938,6 +974,10 @@ export default class ExocortexPlugin extends Plugin {
                 try {
                   await reapplyActiveProfileFilter();
                   await this.sparql.refresh();
+                  // RFC 22b50a17 Phase 4 (H1 fix) — re-inject after the
+                  // active-profile sparql.refresh() that just wiped the
+                  // store.
+                  await this.refreshAndInjectAssetSpaceMaterialization();
                 } catch (err) {
                   this.logger.warn(
                     "[ExocortexPlugin] active FocusProfile filter re-apply failed — indexer keeps prior wiring",
@@ -1325,6 +1365,25 @@ export default class ExocortexPlugin extends Plugin {
         );
       }
 
+      // RFC 22b50a17 Phase 4 — AssetSpace status icon badge (✅/⏸) rendered
+      // near the inline title of `exo__AssetSpace` ABox notes. Reads
+      // runtime-derived status from `AssetSpaceMaterializationTracker`.
+      // Always-on (no setting flag) — non-AS notes pass through unchanged
+      // because frontmatter check fails fast.
+      if (this.assetSpaceMaterializationTracker !== null) {
+        this.assetSpaceStatusIconPatch = new AssetSpaceStatusIconPatch(
+          this,
+          this.assetSpaceMaterializationTracker,
+        );
+        this.timerManager.setTimeout(
+          "asset-space-status-icon-patch",
+          () => {
+            this.assetSpaceStatusIconPatch?.enable();
+          },
+          500,
+        );
+      }
+
       // Initialize Properties link patch
       this.propertiesLinkPatch = new PropertiesLinkPatch(this);
       if (this.settings.showLabelsInProperties) {
@@ -1525,6 +1584,11 @@ export default class ExocortexPlugin extends Plugin {
     // Cleanup Inline Title patch
     if (this.inlineTitlePatch) {
       this.inlineTitlePatch.cleanup();
+    }
+
+    // Cleanup AssetSpace status icon patch (RFC 22b50a17 Phase 4)
+    if (this.assetSpaceStatusIconPatch !== null) {
+      this.assetSpaceStatusIconPatch.cleanup();
     }
 
     // Cleanup Properties link patch
@@ -2274,10 +2338,58 @@ export default class ExocortexPlugin extends Plugin {
    * crash. Construction errors here are caught by the caller's try/catch
    * in `onload()`.
    */
+  /**
+   * RFC 22b50a17 Phase 4 (H1 cascade catch — advisor round-2) —
+   * refresh AssetSpace materialization tracker + re-inject
+   * `exo:AssetSpace_materialized` triples into the store + notify
+   * the UI patch.
+   *
+   * Wired into:
+   *  - `metadataCache.resolved` chain (initial cold-start + active-
+   *    FocusProfile re-apply path),
+   *  - `PluginRdfIndexerAdapter.onAfterRefresh` so soft- and hard-
+   *    switch paths via `FocusProfileSwitchManager` re-inject
+   *    automatically.
+   *
+   * Best-effort: tracker / injection failures are logged warn but do
+   * not propagate. UI badge remains correct (it reads tracker
+   * directly); SPARQL filter degrades to «all available» (fail-closed
+   * default) if tracker fails.
+   */
+  private async refreshAndInjectAssetSpaceMaterialization(): Promise<void> {
+    if (this.assetSpaceMaterializationTracker === null) return;
+    try {
+      await this.assetSpaceMaterializationTracker.refresh();
+      await injectAssetSpaceMaterializationTriples(
+        this.sparql.getTripleStore(),
+        this.assetSpaceMaterializationTracker.getStatuses(),
+        // L3 catch — wire the plugin logger so per-AS injection failures
+        // are visible at debug level instead of being silently swallowed.
+        { debug: (msg) => this.logger.debug(msg) },
+      );
+      this.assetSpaceStatusIconPatch?.onTrackerRefreshed();
+    } catch (err) {
+      this.logger.warn(
+        "[ExocortexPlugin] AssetSpace materialization injection failed",
+        err instanceof Error ? err : new Error(String(err)),
+      );
+    }
+  }
+
   private async registerFocusProfileCommands(): Promise<() => Promise<void>> {
     const lockMgr = new PluginLockManager({ app: this.app });
     const resolver = new VaultProfileResolver(this.app);
-    const rdfIndexer = new PluginRdfIndexerAdapter(this.sparql.getRdfIndexer());
+    // RFC 22b50a17 Phase 4 (H1 cascade catch — advisor round-2) — wire
+    // `refreshAndInjectAssetSpaceMaterialization` as the post-refresh
+    // hook so soft- + hard-switch paths via `FocusProfileSwitchManager`
+    // re-inject `exo:AssetSpace_materialized` triples automatically after
+    // every `rdfIndexer.refresh()`. Without this, profile switching
+    // would silently drop the runtime-derived materialization triples
+    // until the next `metadataCache.resolved` event.
+    const rdfIndexer = new PluginRdfIndexerAdapter(
+      this.sparql.getRdfIndexer(),
+      () => this.refreshAndInjectAssetSpaceMaterialization(),
+    );
 
     // Issue #3327 Item #3 — initialize device-local switch state store and
     // run one-time migration from legacy `plugin.settings` keys. After
