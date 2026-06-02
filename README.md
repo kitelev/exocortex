@@ -46,6 +46,7 @@ Compared to existing tools:
 - **Modular ontologies** — IMS (concepts, notes, people), EMS (tasks, projects, meetings), ZTLK (zettelkasten)
 - **Everything as Knowledge** — commands, workflows, property schemas, and layouts defined as vault assets, not hardcoded
 - **Ontology plugins** — extend the system with installable ontology packages (e.g. [GTD + Jedi Techniques](https://github.com/kitelev/gtd-jedi))
+- **FocusProfile** (production-ready, v16.51+) — vault-declared homoiconic profiles that drive **both** runtime filtering of the RDF graph (soft switch) and on-disk submodule materialization (hard switch). One vault, multiple contexts, selective sync. See [docs/focus-profile.md](./docs/focus-profile.md).
 - **Local-first** — all data stays on your device, no cloud required
 
 ---
@@ -193,6 +194,19 @@ Features: wikilink syntax, loading state, error handling, auto-refresh, interact
 Install community ontology packages to extend your knowledge graph.
 
 > **Note:** The `assetspace` CLI subcommand is on the roadmap and not yet available. Follow [kitelev/exocortex](https://github.com/kitelev/exocortex) for updates.
+
+### FocusProfile — Vault-Declared Context Switching
+
+**Production-ready since v16.51.** FocusProfile is the architectural cornerstone that makes Exocortex genuinely multi-context: one vault, many roles, full privacy/perf isolation per role.
+
+A profile is a regular vault asset (`exo__FocusProfile`) that declares which AssetSpaces (ontology submodule packages) are active. The plugin exposes two switching modes:
+
+- **Soft switch** (instant) — runtime filter on the RDF graph and SPARQL/UI queries. Folders stay on disk; profile boundary is enforced in-memory.
+- **Hard switch** (2-phase commit) — destroys non-active submodule folders, restores from cache or re-pulls from GitHub. Eliminates the iPhone Obsidian Sync reindex storm; physical privacy boundary between work / personal / reading contexts.
+
+`exo__AssetSpace_materialized` is a runtime-derived property (RFC 22b50a17 Phase 4) that reflects current on-disk state in SPARQL and the inline ✅/⏸ badge on AssetSpace pages.
+
+See [docs/focus-profile.md](./docs/focus-profile.md) for the full architectural pitch, including the UID-canon privacy model.
 
 ---
 

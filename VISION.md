@@ -16,15 +16,16 @@
 
 Exocortex follows the principle of **"Everything as Knowledge"** — an evolution of the "as Code" paradigm. While Infrastructure as Code and Docs as Code describe desired system states in machine-executable files, Exocortex goes further: entities, UI layouts, workflows, commands, and even the schema itself are all **semantic data** in the same format and the same storage.
 
-| Layer | Traditional Approach | Exocortex |
-|-------|---------------------|-----------|
-| Schema | Hardcoded in app or config files | OWL classes and properties as Markdown files in your vault |
-| Workflows | Code (event handlers, scripts) | RDF data: `ems__WorkflowTransition` with states, preconditions, grounding |
-| UI Layouts | JSON/CSS configuration | `pn__Layout` — columns, filters, sorting as semantic data |
-| Commands | Compiled into the plugin | `exocmd__Command` + SPARQL-based preconditions + declarative grounding |
-| Content | Markdown files | Same Markdown files — content and metadata in one place |
+| Layer      | Traditional Approach             | Exocortex                                                                 |
+| ---------- | -------------------------------- | ------------------------------------------------------------------------- |
+| Schema     | Hardcoded in app or config files | OWL classes and properties as Markdown files in your vault                |
+| Workflows  | Code (event handlers, scripts)   | RDF data: `ems__WorkflowTransition` with states, preconditions, grounding |
+| UI Layouts | JSON/CSS configuration           | `pn__Layout` — columns, filters, sorting as semantic data                 |
+| Commands   | Compiled into the plugin         | `exocmd__Command` + SPARQL-based preconditions + declarative grounding    |
+| Content    | Markdown files                   | Same Markdown files — content and metadata in one place                   |
 
 This approach gives four advantages over "as Code":
+
 1. **Composability through a graph** — everything is connected via queryable RDF triples, not just file imports
 2. **Schema = data** — the meta-level lives in the same space as user data; add a file to create a new entity type
 3. **Accessibility** — requires domain expertise, not programming skills
@@ -92,6 +93,29 @@ DCC = **ExoAPI** — semantic contract between exocortexes.
 | **Time**        | When?                  | Temporal relevance, deadlines, validity period |
 | **Importance**  | How important?         | Priority, impact on goals                      |
 | **Relatedness** | What is it related to? | Connections, dependencies, cluster membership  |
+
+### Vault-as-Graph + Homoiconic Profiles + UID-canon Privacy Model
+
+The architectural cornerstone of Exocortex is the **unification of three principles** that most competing tools treat as separate layers:
+
+1. **Vault-as-Graph.** Markdown files plus YAML frontmatter are not a document store with sidecar metadata — they are an RDF triple store. Every wikilink is an edge; every frontmatter property is a typed predicate. SPARQL queries are first-class navigation primitives, not an export plugin. Layouts, commands, workflows, and column sets are **assets in the same graph as the content they govern**.
+
+2. **Homoiconic profiles.** A FocusProfile is not a hidden runtime setting in `data.json` — it is a vault artifact (`exo__FocusProfile`) with its own UID, label, and declared imports. The plugin reads profiles from the graph and applies them; users author profiles by writing Markdown. This makes scope, sync, and inheritance visible and version-controlled. **Profile changes are diffs in git, not configuration drift.** Per-device active selection (`activeProfileUid`) lives in `data.local.json` so the same vault can present different active contexts on phone, laptop, and tablet without sync conflicts.
+
+3. **UID-canon privacy model.** When every asset filename is `<uuid>.md` and wikilinks normalize to `[[<uuid>|<label>]]`, vault content becomes **semantically opaque** to anyone without the ontology + label lookup. A screenshot or shared file reveals UUIDs and structure but not domain meaning. This is **privacy through normalization**, not cryptography — an alternative model to at-rest encryption. Valid for screen sharing, demo videos, public knowledge graph publishing, and AI-agent collaboration scenarios where the agent receives the structure but not the labels. Obsidian Sync's at-rest encryption secures the bytes; UID-canon obfuscates the meaning. They compose: encrypted bytes that, even decrypted by a third party, surface UUIDs rather than labelled relations.
+
+#### Comparison: where FocusProfile fits
+
+| Mechanism                          | Granularity                                  | Where state lives                            | Use case                                           |
+| ---------------------------------- | -------------------------------------------- | -------------------------------------------- | -------------------------------------------------- |
+| Obsidian Sync (at-rest encryption) | File-level                                   | End-to-end encrypted blobs in Obsidian cloud | Securing replicated bytes                          |
+| Obsidian Git                       | Repo-level                                   | Single git remote, full vault history        | Versioning + manual selective clone                |
+| FocusProfile soft switch           | Query-level (RDF filter)                     | `data.local.json` per device                 | Quick context shift, no disk impact                |
+| FocusProfile hard switch           | Filesystem-level (submodule destroy/restore) | `assetspaces/` + `.gitmodules` + cache       | Perf gain, privacy boundary, mobile reindex relief |
+
+FocusProfile **inhabits the same git substrate** as Obsidian Git but manages submodule lifecycle declaratively from vault profiles, while soft switch operates entirely above the filesystem at the RDF layer. The combination — one vault, many declared profiles, two switching modes — is what no competitor in the table at the top of [README.md](./README.md) offers: Notion has shared workspaces but no semantic graph; Protégé has ontologies but no usable daily-driver UI; Semantic MediaWiki has both but no vault portability and no profile-level scoping.
+
+The deep architectural pitch and the 2-phase commit safety model live in **[docs/focus-profile.md](./docs/focus-profile.md)**.
 
 ---
 

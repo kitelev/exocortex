@@ -2,6 +2,34 @@
 
 ### Added
 
+**RFC 22b50a17 Phase 5 Phase 4 — AssetSpace materialization tracker + UI status icon + docs suite**: Final Gate-B phase before FocusProfile Gate-C. Adds runtime-derived `exo__AssetSpace_materialized` property + UI badge + comprehensive documentation suite covering the FocusProfile architectural cornerstone.
+
+- **`AssetSpaceMaterializationTracker`** (`packages/obsidian-plugin/src/infrastructure/adapters/`) — runtime-derived materialization tracker. Walks vault for `exo__AssetSpace` ABox assets, probes each AS's `assetspaces/<namespace>/` folder existence via `vault.adapter.exists`. Maintains `Set<asUid>` snapshot + structured `AssetSpaceMaterializationStatus[]` records (asUid + asFilePath + namespace + materialized flag). Per Vision Lock #12, status is **never persisted** to AS frontmatter — manual `rm`/`cp` of submodule folders cannot create stale state. Wired into `ExocortexPlugin.onload` and refreshed after `metadataCache.resolved` + each subsequent reindex.
+- **SPARQL injection helper** (`injectAssetSpaceMaterializationTriples.ts`) — emits `<as-iri> exo:AssetSpace_materialized "true|false"^^xsd:boolean` triples directly into the live `InMemoryTripleStore` after every `sparql.refresh()`. SPARQL queries can now filter AssetSpace assets by materialization status using the canonical exo namespace term. Best-effort per-AS error handling so partial-corrupt store does not abort.
+- **`AssetSpaceStatusIconPatch`** (`packages/obsidian-plugin/src/presentation/asset-space/`) — markdown-view-level badge renderer. AssetSpace ABox notes now display ✅ (materialized) or ⏸ (available but not materialized) near the inline title in Reading Mode. Updates on `active-leaf-change`, `layout-change`, `metadataCache.changed`, and via `onTrackerRefreshed()` hook called by the orchestrator after tracker refresh. Idempotent — at most one badge per title element; updates class + tooltip when status flips.
+- **`exo__AssetSpace_materialized` TBox property** — new `exo__BooleanProperty` instance (UID `22ce4afd-8842-46a6-9abb-ce6b967b7a65`) in the shared exo ontology submodule. Domain `exo__AssetSpace`. Cardinality 0..1, runtime-derived only.
+- **Test coverage** — 22 new unit tests: 8 for tracker (materialized detection, dedupe across vault clones, fail-closed adapter errors, refresh-after-filesystem-change semantics), 7 for SPARQL injection (canonical namespace, URL-encoded paths, POS-filter pattern, materialized-and-not coverage), 7 for status icon patch (event registration, badge rendering, class toggling, idempotence, frontmatter loss handling, cleanup).
+- **Documentation suite**:
+  - `README.md` — new FocusProfile entry in "What It Does" list + new "FocusProfile — Vault-Declared Context Switching" subsection in Key Features with cross-link to `docs/focus-profile.md`.
+  - `VISION.md` — new "Vault-as-Graph + Homoiconic Profiles + UID-canon Privacy Model" section positioning FocusProfile as the architectural cornerstone that unifies three principles competitors treat as separate (semantic graph + homoiconic config + privacy through normalization). Includes comparison matrix vs Obsidian Sync at-rest encryption / Obsidian Git / soft switch / hard switch.
+  - `docs/focus-profile.md` — new ~2200-word dedicated feature doc with 9 sections: What it is, the problem, Vault-as-Graph foundation, UID-canon privacy framing (the differentiator vs at-rest encryption), Soft vs Hard switch, 2-phase commit safety (with ASCII sequence diagram), Cross-device sync model, CLI parity, Vision Lock decisions summary.
+
+**Architecture invariant maintained.** Per RFC §Vision Lock #12 (refined 2026-06-02), the `exo__AssetSpace_materialized` flag is runtime-derived from filesystem state, not persisted. This eliminates a class of stale-state bugs where manual `rm` or `cp` of an `assetspaces/<x>/` folder outside the plugin would silently break SPARQL views and UI rendering. The trade-off — a cheap walk (~13 folders typical for vault-2025) on every refresh — is acceptable given vault scale.
+
+**Phase 5 release progression** (RFC `22b50a17` v1.1):
+
+- v16.48.0 — Phase 5 P1 `AssetSpaceManager.pullAssetSpace` (GitHub REST tarball → staging extraction)
+- v16.49.0 — Phase 5 P1b `IConfirmGate` / Modal / Headless adapter + CLI hard-switch scaffold
+- v16.50.0 — Phase 5 P2 `SwitchCacheLayer` + clear-cache palette command
+- v16.51.0 — Phase 5 P3 `hardSwitchProfile` orchestration + `HardSwitchConfirmDialog` + journal + cross-device divergence auto-reconcile + `recoverIncompleteSwitch`
+- v16.52.0 (this PR) — Phase 5 P4 materialization tracker + UI status icon + comprehensive docs suite
+
+**Gate B complete.** Phases 0–4 of RFC 22b50a17 all shipped. User-gated Gate C deferred per RFC scope.
+
+Cross-reference: RFC `22b50a17-590e-462b-8850-3afd94a8dda7` v1.1 (`vault-exodev/inbox/`); Phase 0 spike findings (`Developer/phase5-phase0-spike-findings-2026-06-02.md`).
+
+---
+
 **RFC v2 Phase 4a — Vault Grounding migration (vault-only, closes #3165)**: Migrates 12 vault Groundings in `exocortex-exocmd-ontology` (submodule commit `d166019`) from the legacy `serviceId: createAsset / createRelatedTask / createRelatedProject` shape to the declarative `create_instance` pipeline. Unblocks Phase 4b (TS handler removal in `ServiceRegistryPopulator.ts:185-520`, separate PR after ≥1 release soak).
 
 - **Group A — 6 from-prototype Groundings (minimal pattern):** `45d676f0` (Event), `6a5a71e2` (Effort), `b7a84c3c` (Project), `80e49f86` (FleetingNote), `d53c8726` (Session), `b87330e0` (Meeting). Each switched to `type=create_instance` + `targetClass=<UUID>|<symbol>` + `targetFolder="03 Knowledge/inbox"`. Default `linkBackProperty=exo__Asset_prototype` writes `[[$target]]` back-link at exec-time, preserving the dynamic prototype linkage previously handled by legacy `createAsset`'s `prototype: $target` JSON.
