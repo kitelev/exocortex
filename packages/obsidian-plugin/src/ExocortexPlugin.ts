@@ -934,35 +934,17 @@ export default class ExocortexPlugin extends Plugin {
           postResolveReindexDone = true;
 
           const initPromise = this.eagerInitPromise ?? Promise.resolve();
-          // RFC 22b50a17 Phase 4 (H1 code-reviewer fix) — refresh tracker
-          // + re-inject runtime-derived `exo:AssetSpace_materialized`
-          // triples into the store. Called after EACH `sparql.refresh()`
-          // because refresh's clear+rebuild wipes the store, so derived
-          // triples must be re-injected on every refresh cycle. Best-
-          // effort — per-AS failures swallowed; whole-helper errors are
-          // logged warn but do not propagate. The active-FocusProfile
-          // re-apply chain (line ~985-1000) issues a second refresh that
-          // would otherwise drop these triples in the exact deployment
-          // context this PR ships for.
-          const refreshAndInjectMaterialization = async (): Promise<void> => {
-            if (this.assetSpaceMaterializationTracker === null) return;
-            try {
-              await this.assetSpaceMaterializationTracker.refresh();
-              await injectAssetSpaceMaterializationTriples(
-                this.sparql.getTripleStore(),
-                this.assetSpaceMaterializationTracker.getStatuses(),
-              );
-              this.assetSpaceStatusIconPatch?.onTrackerRefreshed();
-            } catch (err) {
-              this.logger.warn(
-                "[ExocortexPlugin] AssetSpace materialization injection failed",
-                err instanceof Error ? err : new Error(String(err)),
-              );
-            }
-          };
+          // RFC 22b50a17 Phase 4 — after each `sparql.refresh()` (which
+          // clears+rebuilds the store from frontmatter), re-inject the
+          // runtime-derived `exo:AssetSpace_materialized` triples via
+          // `refreshAndInjectAssetSpaceMaterialization`. Soft- and hard-
+          // switch paths via `FocusProfileSwitchManager` are covered by
+          // `PluginRdfIndexerAdapter.onAfterRefresh`; these onload chain
+          // callsites use `sparql.refresh()` directly which bypasses the
+          // adapter, so they call the helper explicitly.
           void initPromise
             .then(() => this.sparql.refresh())
-            .then(() => refreshAndInjectMaterialization())
+            .then(() => this.refreshAndInjectAssetSpaceMaterialization())
             .then(async () => {
               // RFC 0a0791c1 #3324 — re-apply the active FocusProfile
               // filter now that metadataCache has fully resolved. The
@@ -995,7 +977,7 @@ export default class ExocortexPlugin extends Plugin {
                   // RFC 22b50a17 Phase 4 (H1 fix) — re-inject after the
                   // active-profile sparql.refresh() that just wiped the
                   // store.
-                  await refreshAndInjectMaterialization();
+                  await this.refreshAndInjectAssetSpaceMaterialization();
                 } catch (err) {
                   this.logger.warn(
                     "[ExocortexPlugin] active FocusProfile filter re-apply failed — indexer keeps prior wiring",
@@ -2356,10 +2338,55 @@ export default class ExocortexPlugin extends Plugin {
    * crash. Construction errors here are caught by the caller's try/catch
    * in `onload()`.
    */
+  /**
+   * RFC 22b50a17 Phase 4 (H1 cascade catch — advisor round-2) —
+   * refresh AssetSpace materialization tracker + re-inject
+   * `exo:AssetSpace_materialized` triples into the store + notify
+   * the UI patch.
+   *
+   * Wired into:
+   *  - `metadataCache.resolved` chain (initial cold-start + active-
+   *    FocusProfile re-apply path),
+   *  - `PluginRdfIndexerAdapter.onAfterRefresh` so soft- and hard-
+   *    switch paths via `FocusProfileSwitchManager` re-inject
+   *    automatically.
+   *
+   * Best-effort: tracker / injection failures are logged warn but do
+   * not propagate. UI badge remains correct (it reads tracker
+   * directly); SPARQL filter degrades to «all available» (fail-closed
+   * default) if tracker fails.
+   */
+  private async refreshAndInjectAssetSpaceMaterialization(): Promise<void> {
+    if (this.assetSpaceMaterializationTracker === null) return;
+    try {
+      await this.assetSpaceMaterializationTracker.refresh();
+      await injectAssetSpaceMaterializationTriples(
+        this.sparql.getTripleStore(),
+        this.assetSpaceMaterializationTracker.getStatuses(),
+      );
+      this.assetSpaceStatusIconPatch?.onTrackerRefreshed();
+    } catch (err) {
+      this.logger.warn(
+        "[ExocortexPlugin] AssetSpace materialization injection failed",
+        err instanceof Error ? err : new Error(String(err)),
+      );
+    }
+  }
+
   private async registerFocusProfileCommands(): Promise<() => Promise<void>> {
     const lockMgr = new PluginLockManager({ app: this.app });
     const resolver = new VaultProfileResolver(this.app);
-    const rdfIndexer = new PluginRdfIndexerAdapter(this.sparql.getRdfIndexer());
+    // RFC 22b50a17 Phase 4 (H1 cascade catch — advisor round-2) — wire
+    // `refreshAndInjectAssetSpaceMaterialization` as the post-refresh
+    // hook so soft- + hard-switch paths via `FocusProfileSwitchManager`
+    // re-inject `exo:AssetSpace_materialized` triples automatically after
+    // every `rdfIndexer.refresh()`. Without this, profile switching
+    // would silently drop the runtime-derived materialization triples
+    // until the next `metadataCache.resolved` event.
+    const rdfIndexer = new PluginRdfIndexerAdapter(
+      this.sparql.getRdfIndexer(),
+      () => this.refreshAndInjectAssetSpaceMaterialization(),
+    );
 
     // Issue #3327 Item #3 — initialize device-local switch state store and
     // run one-time migration from legacy `plugin.settings` keys. After
