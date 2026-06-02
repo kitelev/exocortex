@@ -1037,8 +1037,82 @@ export async function runShapesValidation(
   return shaclValidate(algebraTriples as any, registry, hierarchy);
 }
 
-async function runShapesModeAction(options: ValidateSchemaOptions): Promise<void> {
+/**
+ * Issue #3245: Filter a SHACL ValidationReport to only those violations whose
+ * focusNode resolves to a path in the staged-files set. focusNode IRIs emitted
+ * by NoteToRDFConverter use the `obsidian://vault/<encoded-relPath>` form, so
+ * decode the suffix and intersect with the staged relPath set.
+ *
+ * Violations whose focusNode does NOT use the obsidian://vault/ scheme (e.g.
+ * synthetic IRIs or shape-level diagnostics) are dropped — staged-mode is
+ * scoped to per-file ABox violations by definition.
+ */
+export function filterReportToStagedFocusNodes(
+  report: ValidationReport,
+  stagedRelPaths: ReadonlySet<string>,
+): ValidationReport {
+  const prefix = "obsidian://vault/";
+  const violations = report.violations.filter((v) => {
+    if (!v.focusNode.startsWith(prefix)) return false;
+    let relPath: string;
+    try {
+      relPath = decodeURIComponent(v.focusNode.substring(prefix.length));
+    } catch {
+      relPath = v.focusNode.substring(prefix.length);
+    }
+    return stagedRelPaths.has(relPath);
+  });
+  return {
+    conforms: violations.every((v) => v.severity !== "sh:Violation"),
+    violations,
+  };
+}
+
+/**
+ * Issue #3245: Emit the "no staged files" success response in the same shape
+ * runShapesModeAction would normally produce, so pre-commit hooks see a
+ * consistent contract (conforms=true, violationCount=0, exit 0).
+ */
+function emitEmptyStagedShapesResult(
+  vaultPath: string,
+  alsoPaths: string[],
+  fmt: ShapesFormat,
+): void {
+  if (fmt === "earl") {
+    const earl = buildEARLReport(vaultPath, { conforms: true, violations: [] });
+    console.log(JSON.stringify(earl, null, 2));
+  } else if (fmt === "json") {
+    const response = ResponseBuilder.success({
+      vaultPath,
+      alsoPaths: alsoPaths.map((p) => resolve(p)),
+      conforms: true,
+      violationCount: 0,
+      violations: [],
+    });
+    console.log(JSON.stringify(response, null, 2));
+  } else {
+    console.log("✅ No staged .md files to validate.");
+  }
+}
+
+/**
+ * Issue #3245: Dependency-injection seam for tests. Production callers omit
+ * `deps` and the action uses {@link getStagedMdFiles}. Tests can pass a
+ * pre-computed staged list and avoid relying on a real git repository in the
+ * test fixture, which keeps the suite robust against environments (such as a
+ * husky pre-commit hook) that leak GIT_INDEX_FILE / GIT_DIR into child
+ * processes.
+ */
+export interface RunShapesModeActionDeps {
+  getStagedMdFiles?: (vaultPath: string) => string[];
+}
+
+export async function runShapesModeAction(
+  options: ValidateSchemaOptions,
+  deps: RunShapesModeActionDeps = {},
+): Promise<void> {
   const fmt = (options.format || "text") as ShapesFormat;
+  const stagedResolver = deps.getStagedMdFiles ?? getStagedMdFiles;
 
   try {
     const vaultPath = resolve(options.vault);
@@ -1048,6 +1122,35 @@ async function runShapesModeAction(options: ValidateSchemaOptions): Promise<void
 
     const alsoPaths = options.also ?? [];
     const allVaultRoots = [vaultPath, ...alsoPaths.map((p) => resolve(p))];
+
+    // Issue #3245: when --staged is set, scope SHACL violations to git-staged
+    // files. Short-circuit on the zero-staged case to mirror frontmatter-mode
+    // behaviour (line ~1157-1172 below) and avoid a full-vault parse on every
+    // pre-commit invocation with nothing to check.
+    //
+    // Cross-vault note: `getStagedMdFiles` runs `git diff --cached` from the
+    // primary vault, so when --also is also supplied the staged set covers
+    // only the primary vault. focusNode IRIs from --also vaults use the same
+    // `obsidian://vault/<relPath>` shape (no vault discriminator), so a
+    // violation whose relPath happens to also exist in the staged set would
+    // be retained. In the canonical Exocortex setup --also vaults mount the
+    // same shared submodules as the primary vault, so file content is
+    // identical and the collision is benign; we surface a text-mode warning
+    // for any other layout.
+    let stagedFilter: ReadonlySet<string> | null = null;
+    if (options.staged) {
+      const stagedFiles = stagedResolver(vaultPath);
+      if (stagedFiles.length === 0) {
+        emitEmptyStagedShapesResult(vaultPath, alsoPaths, fmt);
+        return;
+      }
+      if (fmt === "text" && alsoPaths.length > 0) {
+        console.log(
+          "⚠️  --staged scopes git diff --cached to the primary vault; focusNode IRIs from --also vaults that match a staged relPath will also pass the filter.",
+        );
+      }
+      stagedFilter = new Set(stagedFiles);
+    }
 
     if (fmt === "text") {
       console.log(`📦 Loading vault (shapes-mode): ${vaultPath}...`);
@@ -1069,7 +1172,10 @@ async function runShapesModeAction(options: ValidateSchemaOptions): Promise<void
     }
 
     const rawReport = await runShapesValidation(vaultPath, triples, alsoPaths);
-    const report = applyLegacyExceptionFilter(triples, rawReport);
+    let report = applyLegacyExceptionFilter(triples, rawReport);
+    if (stagedFilter) {
+      report = filterReportToStagedFocusNodes(report, stagedFilter);
+    }
 
     const qualifyNode = (focusNode: string): string =>
       allVaultRoots.length > 1 ? qualifyFocusNodePath(focusNode, allVaultRoots) : focusNode;
