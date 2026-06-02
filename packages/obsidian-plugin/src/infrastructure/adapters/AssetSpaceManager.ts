@@ -1,6 +1,7 @@
 import type { App, TFile } from "obsidian";
 import type { INotificationService } from "exocortex";
 import { GitHubRestClient } from "./GitHubRestClient";
+import { lookupAssetSpaceUidByFolder } from "./AssetSpaceLookupHelper";
 
 /**
  * Class UID of `exo__AssetSpace` (TBox root). Used to discriminate AssetSpace
@@ -151,21 +152,7 @@ export class AssetSpaceManager {
    * `assetspaces/ems/f0f674da-....md` owns folder `"assetspaces/ems"`.
    */
   public lookupAssetSpaceForPath(folderName: string): string | null {
-    if (typeof folderName !== "string" || folderName.length === 0) {
-      return null;
-    }
-    const normalized = stripTrailingSlash(folderName);
-    for (const file of this.app.vault.getMarkdownFiles()) {
-      const fm = this.readFrontmatter(file);
-      if (!fm) continue;
-      if (!isAssetSpaceFrontmatter(fm)) continue;
-      const parent = parentFolder(file.path);
-      if (parent === normalized) {
-        const uid = fm["exo__Asset_uid"];
-        if (typeof uid === "string" && uid.length > 0) return uid;
-      }
-    }
-    return null;
+    return lookupAssetSpaceUidByFolder(this.app, folderName);
   }
 
   /**
@@ -390,10 +377,6 @@ export function isAssetSpaceFrontmatter(fm: Record<string, unknown>): boolean {
 function parentFolder(filePath: string): string {
   const idx = filePath.lastIndexOf("/");
   return idx < 0 ? "" : filePath.slice(0, idx);
-}
-
-function stripTrailingSlash(s: string): string {
-  return s.endsWith("/") ? s.slice(0, -1) : s;
 }
 
 function stripFolderPrefix(vaultPath: string, folderName: string): string {

@@ -101,10 +101,8 @@ import { PluginRdfIndexerAdapter } from "./infrastructure/adapters/PluginRdfInde
 import { PluginSettingsStoreAdapter } from "./infrastructure/adapters/PluginSettingsStoreAdapter";
 import { ProfileFuzzyModal } from "./infrastructure/adapters/ProfileFuzzyModal";
 import { applyActiveProfileFilter } from "./infrastructure/adapters/FocusProfileOnloadWiring";
-import {
-  AssetSpaceManager,
-  isAssetSpaceFrontmatter,
-} from "./infrastructure/adapters/AssetSpaceManager";
+import { AssetSpaceManager } from "./infrastructure/adapters/AssetSpaceManager";
+import { lookupAssetSpaceUidByFolder } from "./infrastructure/adapters/AssetSpaceLookupHelper";
 import { GitHubRestClient } from "./infrastructure/adapters/GitHubRestClient";
 import { LocalSecretsStore } from "./infrastructure/adapters/LocalSecretsStore";
 import {
@@ -2491,25 +2489,11 @@ export default class ExocortexPlugin extends Plugin {
    * lookup branches in `FocusProfileCommands.invokePushCurrentAssetSpace`
    * still need to resolve).
    *
-   * Class-membership predicate delegates to the shared
-   * `isAssetSpaceFrontmatter` helper — strict wikilink matching, not loose
-   * substring — so adjacent UUID-like noise in `exo__Instance_class` doesn't
-   * falsely register. See Issue #3312 MEDIUM #1 propagation.
+   * Delegates to the shared `lookupAssetSpaceUidByFolder` helper so this
+   * stub path and `AssetSpaceManager.lookupAssetSpaceForPath` cannot
+   * drift (Issue #3327 Item #4).
    */
   private lookupAssetSpaceUidByFolder(folderName: string): string | null {
-    if (typeof folderName !== "string" || folderName.length === 0) return null;
-    const normalised = folderName.replace(/\/$/, "");
-    for (const file of this.app.vault.getMarkdownFiles()) {
-      const parent = file.parent?.path ?? "";
-      if (parent !== normalised) continue;
-      const fm = this.app.metadataCache.getFileCache(file)?.frontmatter as
-        | Record<string, unknown>
-        | undefined;
-      if (!fm) continue;
-      if (!isAssetSpaceFrontmatter(fm)) continue;
-      const uid = fm["exo__Asset_uid"];
-      if (typeof uid === "string" && uid.length > 0) return uid;
-    }
-    return null;
+    return lookupAssetSpaceUidByFolder(this.app, folderName);
   }
 }
