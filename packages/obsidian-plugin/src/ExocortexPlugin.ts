@@ -107,6 +107,8 @@ import { applyActiveProfileFilter } from "./infrastructure/adapters/FocusProfile
 import { lookupAssetSpaceUidByFolder } from "./infrastructure/adapters/AssetSpaceLookupHelper";
 import { createAssetSpacePusher } from "./infrastructure/adapters/AssetSpacePusherFactory";
 import { LocalSecretsStore } from "./infrastructure/adapters/LocalSecretsStore";
+import { SwitchCacheLayer } from "./infrastructure/adapters/SwitchCacheLayer";
+import { ClearSwitchCacheConfirmModal } from "./infrastructure/adapters/ClearSwitchCacheConfirmModal";
 import {
   CommandExecutionFlow,
   DI_TOKENS,
@@ -2475,11 +2477,64 @@ export default class ExocortexPlugin extends Plugin {
       },
     });
 
+    // RFC 22b50a17 Decision #6 — wipe-all switch cache clearing.
+    this.addCommand({
+      id: "clear-switch-cache",
+      name: "Clear switch cache (wipe-all)",
+      callback: () => {
+        void this.invokeClearSwitchCache();
+      },
+    });
+
     this.logger.info(
       "[ExocortexPlugin] FocusProfile palette commands registered",
     );
 
     return reapplyActiveProfileFilter;
+  }
+
+  /**
+   * Handler for the «Exocortex: Clear switch cache» palette command
+   * (RFC 22b50a17 Decision #6 — wipe-all semantics).
+   *
+   * Flow:
+   *   1. Read current cache stats synchronously (count + totalSize).
+   *   2. If empty → surface a Notice and return.
+   *   3. Otherwise open `ClearSwitchCacheConfirmModal` — user must explicitly
+   *      click «Clear» to commit.
+   *   4. On commit, invoke `SwitchCacheLayer.clear()` and surface result.
+   *
+   * Errors from `clear()` surface as a user-facing error Notice — the
+   * cache directory is best-effort writable; partial clear is acceptable.
+   */
+  private async invokeClearSwitchCache(): Promise<void> {
+    const cache = new SwitchCacheLayer();
+    const stats = cache.getCacheStats();
+
+    if (stats.count === 0) {
+      this.notifier.info("Switch cache is already empty.");
+      return;
+    }
+
+    const confirmed = await new Promise<boolean>((resolve) => {
+      const modal = new ClearSwitchCacheConfirmModal(
+        this.app,
+        { entryCount: stats.count, totalSize: stats.totalSize },
+        resolve,
+      );
+      modal.open();
+    });
+    if (!confirmed) return;
+
+    try {
+      const result = await cache.clear();
+      this.notifier.info(
+        `Cleared ${result.entriesRemoved} cache entries.`,
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.notifier.error(`Clear switch cache failed: ${msg}`);
+    }
   }
 
   /**
