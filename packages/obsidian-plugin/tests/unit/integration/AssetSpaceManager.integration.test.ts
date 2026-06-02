@@ -55,7 +55,15 @@ async function git(cwd: string, ...args: string[]): Promise<string> {
     if (k.startsWith("GIT_")) continue;
     if (v !== undefined) cleanEnv[k] = v;
   }
-  const { stdout } = await execFileAsync("git", args, {
+  // Inject `-c protocol.file.allow=always` per-invocation so
+  // `git submodule add file://...` succeeds on CI runners. Git's
+  // default since 2.38 is `protocol.file.allow=user` which rejects
+  // `file://` clones inside submodule add. Setting it via local
+  // `git config` (as we did at beforeEach) does NOT propagate to the
+  // internal clone subprocess that submodule add spawns — only the
+  // top-level `-c` flag does.
+  const fullArgs = ["-c", "protocol.file.allow=always", ...args];
+  const { stdout } = await execFileAsync("git", fullArgs, {
     cwd,
     env: {
       ...cleanEnv,
