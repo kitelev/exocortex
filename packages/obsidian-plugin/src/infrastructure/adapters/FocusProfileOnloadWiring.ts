@@ -1,7 +1,7 @@
 import type { App, TFile } from "obsidian";
 import type { ILogger } from "exocortex";
 
-import { ASSET_SPACE_CLASS_UID } from "./AssetSpaceManager";
+import { isAssetSpaceFrontmatter } from "./AssetSpaceManager";
 import type { FocusProfileSwitchManager } from "./FocusProfileSwitchManager";
 
 /**
@@ -275,16 +275,6 @@ function readFrontmatter(
   const cache = app.metadataCache.getFileCache(file);
   if (!cache || !cache.frontmatter) return null;
   return cache.frontmatter as Record<string, unknown>;
-}
-
-function isAssetSpaceFrontmatter(fm: Record<string, unknown>): boolean {
-  const raw = fm["exo__Instance_class"];
-  const classes: unknown[] = Array.isArray(raw) ? raw : raw ? [raw] : [];
-  for (const c of classes) {
-    if (typeof c !== "string") continue;
-    if (c.includes(ASSET_SPACE_CLASS_UID)) return true;
-  }
-  return false;
 }
 
 function parentFolder(filePath: string): string {

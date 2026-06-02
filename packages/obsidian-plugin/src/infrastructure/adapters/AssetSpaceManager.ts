@@ -265,9 +265,13 @@ export class AssetSpaceManager {
       message,
     );
 
-    // Commit succeeded — clear pushed paths from dirty set, persist sha.
-    for (const vaultPath of dirtyForAS) this.dirty.delete(vaultPath);
+    // Commit succeeded — persist sha FIRST, then clear pushed paths only on
+    // success. Reversed order prevents a window where dirty entries are
+    // cleared but `lastPulledSha` write throws (e.g. processFrontMatter
+    // failure, file vanished mid-push): a retry would lose track of the
+    // unpersisted files. See Issue #3312 HIGH push race.
     await this.updateLastPulledSha(asUid, sha);
+    for (const vaultPath of dirtyForAS) this.dirty.delete(vaultPath);
 
     this.notifications.success(
       `AssetSpace ${info.namespace}: pushed ${files.size} file(s) → ${sha.slice(0, 7)}`,
@@ -348,16 +352,37 @@ export class AssetSpaceManager {
 // ────────────────────────── module-private helpers ──────────────────────────
 
 /**
+ * Strict wikilink regex — matches `[[<uuid>]]` or `[[<uuid>|<label>]]`,
+ * capturing the canonical UUIDv4 form (8-4-4-4-12 hex, case-insensitive).
+ * Anchored to the wikilink brackets so substring matches like
+ * `notavalid-73bd00e4-...` do not falsely register as the AssetSpace class.
+ * See Issue #3312 MEDIUM #1.
+ */
+const WIKILINK_UID_RE =
+  /\[\[([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\|[^\]]*)?\]\]/gi;
+
+/**
  * Predicate — does this frontmatter declare `exo__Instance_class` containing
  * the AssetSpace class UID? Handles both wikilink-string and array-of-string
- * shapes that Obsidian's parser may produce.
+ * shapes that Obsidian's parser may produce. Membership is decided by strict
+ * wikilink regex (not loose substring), so adjacent UUID-like noise in the
+ * value does not falsely match.
+ *
+ * Exported so sibling adapters (`ExocortexPlugin.lookupAssetSpaceUidByFolder`,
+ * `FocusProfileOnloadWiring.scanAssetSpaces`) share one predicate; the prior
+ * copy-paste used loose substring matching and inherited the same bug.
+ * See Issue #3312.
  */
-function isAssetSpaceFrontmatter(fm: Record<string, unknown>): boolean {
+export function isAssetSpaceFrontmatter(fm: Record<string, unknown>): boolean {
   const classes = fm["exo__Instance_class"];
   const candidates: unknown[] = Array.isArray(classes) ? classes : [classes];
   for (const c of candidates) {
     if (typeof c !== "string") continue;
-    if (c.includes(ASSET_SPACE_CLASS_UID)) return true;
+    WIKILINK_UID_RE.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = WIKILINK_UID_RE.exec(c)) !== null) {
+      if (m[1].toLowerCase() === ASSET_SPACE_CLASS_UID) return true;
+    }
   }
   return false;
 }
@@ -400,5 +425,9 @@ export function parseGitHubURL(url: string): { owner: string; repo: string } {
 }
 
 function nowIsoSeconds(): string {
-  return new Date().toISOString().slice(0, 19);
+  // Append explicit `Z` UTC suffix — `toISOString().slice(0, 19)` drops the
+  // `.sssZ` tail and yields `YYYY-MM-DDTHH:mm:ss`, which leading consumers
+  // read as local-time. Vault convention is explicit UTC. See Issue #3312
+  // MEDIUM #2.
+  return new Date().toISOString().slice(0, 19) + "Z";
 }
