@@ -67,9 +67,10 @@ export interface HardSwitchActionDeps {
    */
   resolverFactory?: (opts: HardSwitchCommandOptions) => CliFocusProfileResolver;
   /**
-   * Override stdout sink. Captures into the returned `HardSwitchResult`
-   * regardless of whether this is provided — see fix for review MED-1
-   * (avoid double-push when production action handler omits deps).
+   * Override stdout sink. The default writes to `process.stdout`; tests
+   * inject `() => {}` to silence. Either way, lines are also captured
+   * exactly once into the returned `HardSwitchResult.stdout` (see review
+   * MED-1 fix).
    */
   out?: (msg: string) => void;
   /** Override stderr sink — same capture-once contract as `out`. */

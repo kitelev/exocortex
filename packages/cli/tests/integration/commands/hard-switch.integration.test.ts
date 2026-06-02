@@ -8,7 +8,7 @@
  * `process.exit` directly), so tests can inject a fake `IConfirmGate`
  * and assert on outcomes without subprocess overhead.
  */
-import { describe, it, expect, beforeEach, afterEach } from "@jest/globals";
+import { describe, it, expect, beforeEach, afterEach, jest } from "@jest/globals";
 import fs from "fs-extra";
 import os from "os";
 import path from "path";
@@ -215,20 +215,30 @@ describe("CLI v16 — hard-switch (RFC 22b50a17 Phase 1b)", () => {
     expect(cmd.description()).toContain("Hard switch");
   });
 
-  it("[MED-1 regression] HardSwitchResult.stdout pushes each line exactly once", async () => {
-    const result = await runHardSwitch(
-      PROFILE_UID,
-      { vault: vaultRoot, yes: true, verbose: false },
-      {
-        confirmGate: approvingGate,
-        out: () => {},
-        err: () => {},
-      },
-    );
-    const count = result.stdout.filter((line) =>
-      line.includes(HARD_SWITCH_PHASE3_PENDING_NOTICE),
-    ).length;
-    expect(count).toBe(1);
+  it("[MED-1 regression] HardSwitchResult.stdout pushes each line exactly once (production path — no out injection)", async () => {
+    // Omit `deps.out` so the default sink is exercised — the buggy
+    // implementation pushed twice in this path. Spy on
+    // `process.stdout.write` so the production sink doesn't spam test
+    // output but still runs through the production code path.
+    const writeSpy = jest
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    try {
+      const result = await runHardSwitch(
+        PROFILE_UID,
+        { vault: vaultRoot, yes: true, verbose: false },
+        {
+          confirmGate: approvingGate,
+          err: () => {},
+        },
+      );
+      const count = result.stdout.filter((line) =>
+        line.includes(HARD_SWITCH_PHASE3_PENDING_NOTICE),
+      ).length;
+      expect(count).toBe(1);
+    } finally {
+      writeSpy.mockRestore();
+    }
   });
 
   it("[MED-2 regression] degraded resolver outcome refuses with OPERATION_FAILED", async () => {
