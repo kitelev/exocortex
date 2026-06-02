@@ -65,13 +65,19 @@ function cleanGitEnv(): NodeJS.ProcessEnv {
   for (const k of Object.keys(env)) {
     if (k.startsWith("GIT_")) delete env[k];
   }
-  // CVE-2022-39253 disabled file:// transport — re-enable via env override
-  // (applies к ВСЕМ git invocations including the implicit submodule clone).
   env["GIT_CONFIG_COUNT"] = "1";
   env["GIT_CONFIG_KEY_0"] = "protocol.file.allow";
   env["GIT_CONFIG_VALUE_0"] = "always";
   return env;
 }
+
+// Set the protocol.file.allow override on the global process.env BEFORE
+// GitSubmoduleOps (which reads process.env in stripGitEnv) executes any
+// `git submodule add` call. CVE-2022-39253 mitigation в CI runners (git
+// ≥2.38) rejects file:// transport without this override.
+process.env.GIT_CONFIG_COUNT = "1";
+process.env.GIT_CONFIG_KEY_0 = "protocol.file.allow";
+process.env.GIT_CONFIG_VALUE_0 = "always";
 
 const GIT_OPTS = { env: cleanGitEnv() };
 const itIfGit = hasGitBinary() ? it : it.skip;
