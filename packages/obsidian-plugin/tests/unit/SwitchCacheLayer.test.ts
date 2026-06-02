@@ -266,7 +266,142 @@ describe("SwitchCacheLayer", () => {
     expect(fs.existsSync(path.join(path.dirname(targetDir), "escape.md"))).toBe(
       false,
     );
-    expect(fs.existsSync("/etc/passwd-attacker-marker")).toBe(false);
+    // Sanitised entries land at `escape.md` / `etc/passwd` UNDER targetDir.
+    expect(fs.existsSync(path.join(targetDir, "escape.md"))).toBe(true);
+    expect(fs.existsSync(path.join(targetDir, "etc", "passwd"))).toBe(true);
+  });
+
+  // ─── 13. has() requires sidecar (orphan tarball ignored) ─────────────
+  it("has(uid, sha) — returns false for orphan tarball without sidecar", async () => {
+    // Synthesize an orphan tarball at the canonical path (no sidecar).
+    const orphanDir = path.join(cacheDir, "uid-orphan");
+    fs.mkdirSync(orphanDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(orphanDir, "sha-orphan.tar.gz"),
+      new Uint8Array([0x1f, 0x8b, 0x08]), // gzip magic, doesn't matter
+    );
+    expect(await layer.has("uid-orphan", "sha-orphan")).toBe(false);
+    expect(await layer.has("uid-orphan")).toBe(false);
+  });
+
+  // ─── 14. restore() ignores orphan tarballs, picks newest valid ───────
+  it("restore() — ignores orphan tarballs, prefers entries with valid sidecars", async () => {
+    writeFile(sourceDir, "real.md", "real");
+    await layer.cache("uid-mix", sourceDir, "sha-good");
+
+    // Plant an orphan tarball with a newer ISO timestamp encoded in path
+    // (won't matter — orphan ignored by restore).
+    const dir = path.join(cacheDir, "uid-mix");
+    fs.writeFileSync(
+      path.join(dir, "sha-orphan.tar.gz"),
+      new Uint8Array([0x1f, 0x8b]),
+    );
+
+    const result = await layer.restore("uid-mix", targetDir);
+    expect(result.sha).toBe("sha-good");
+    expect(fs.existsSync(path.join(targetDir, "real.md"))).toBe(true);
+  });
+
+  // ─── 15. restore() skips malformed sidecar, errors if all malformed ──
+  it("restore() — skips malformed sidecar JSON, throws CacheMissError if no valid entries", async () => {
+    // Write a malformed sidecar + dangling tarball.
+    const dir = path.join(cacheDir, "uid-bad-meta");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, "sha-x.tar.gz"),
+      new Uint8Array([0x1f, 0x8b]),
+    );
+    fs.writeFileSync(
+      path.join(dir, "sha-x.meta.json"),
+      "not-valid-json-{{{",
+      "utf8",
+    );
+    await expect(layer.restore("uid-bad-meta", targetDir)).rejects.toBeInstanceOf(
+      CacheMissError,
+    );
+  });
+
+  // ─── 16. restore() skips sidecar pointing to missing tarball ─────────
+  it("restore() — sidecar pointing to missing tarball is skipped", async () => {
+    const dir = path.join(cacheDir, "uid-orphan-meta");
+    fs.mkdirSync(dir, { recursive: true });
+    // Sidecar references sha-gone but no tarball file exists.
+    fs.writeFileSync(
+      path.join(dir, "sha-gone.meta.json"),
+      JSON.stringify({
+        asUid: "uid-orphan-meta",
+        sha: "sha-gone",
+        cachedAt: new Date().toISOString(),
+        sizeBytes: 100,
+      }),
+      "utf8",
+    );
+    await expect(
+      layer.restore("uid-orphan-meta", targetDir),
+    ).rejects.toBeInstanceOf(CacheMissError);
+  });
+});
+
+// ─── Mobile guard — every public entry throws on Platform.isMobile ──────
+describe("SwitchCacheLayer — mobile guard", () => {
+  let cacheDir: string;
+  let sourceDir: string;
+  let originalEnv: string | undefined;
+
+  beforeAll(() => {
+    originalEnv = process.env.TEST_PLATFORM;
+    process.env.TEST_PLATFORM = "mobile";
+    // Reset module cache so the obsidian mock re-evaluates Platform.isMobile.
+    jest.resetModules();
+  });
+
+  afterAll(() => {
+    if (originalEnv === undefined) delete process.env.TEST_PLATFORM;
+    else process.env.TEST_PLATFORM = originalEnv;
+    jest.resetModules();
+  });
+
+  beforeEach(() => {
+    cacheDir = fs.mkdtempSync(path.join(os.tmpdir(), "switch-cache-mobile-"));
+    sourceDir = fs.mkdtempSync(path.join(os.tmpdir(), "switch-source-mobile-"));
+  });
+
+  afterEach(() => {
+    for (const d of [cacheDir, sourceDir]) {
+      try {
+        fs.rmSync(d, { recursive: true, force: true });
+      } catch {
+        // best-effort
+      }
+    }
+  });
+
+  it("all public async entry points throw 'mobile not supported' on isMobile=true", async () => {
+    // Re-import SwitchCacheLayer post-module-reset so it picks up the new
+    // Platform.isMobile=true value.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const mod = require("../../src/infrastructure/adapters/SwitchCacheLayer");
+    const Layer = mod.SwitchCacheLayer as typeof SwitchCacheLayer;
+    const layer = new Layer({ cacheDir });
+
+    await expect(layer.cache("uid", sourceDir, "sha")).rejects.toThrow(
+      /mobile not supported/,
+    );
+    await expect(layer.has("uid")).rejects.toThrow(/mobile not supported/);
+    await expect(layer.restore("uid", cacheDir)).rejects.toThrow(
+      /mobile not supported/,
+    );
+    await expect(layer.clear()).rejects.toThrow(/mobile not supported/);
+    await expect(layer.listEntries()).rejects.toThrow(/mobile not supported/);
+  });
+
+  it("getCacheStats() returns zeros on mobile (sync, no fs touch)", () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const mod = require("../../src/infrastructure/adapters/SwitchCacheLayer");
+    const Layer = mod.SwitchCacheLayer as typeof SwitchCacheLayer;
+    const layer = new Layer({ cacheDir });
+    const stats = layer.getCacheStats();
+    expect(stats).toEqual({ count: 0, totalSize: 0, oldestEntry: null });
   });
 });
 

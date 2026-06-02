@@ -9,6 +9,7 @@ import { promises as fsPromises } from "node:fs";
 import { existsSync, readdirSync, statSync, readFileSync } from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
+import { randomBytes } from "node:crypto";
 /* eslint-enable no-restricted-imports, import/no-nodejs-modules */
 import { Platform } from "obsidian";
 import { createTarGzip, parseTarGzip, type TarFileInput } from "nanotar";
@@ -142,45 +143,54 @@ export class SwitchCacheLayer implements ICacheLayer {
       );
     }
 
+    // Atomic write: tmp + rename. POSIX rename is atomic — eliminates
+    // partial-cache-on-crash class (MEDIUM-2 from code-review). Tmp paths
+    // use random suffix so concurrent cache() calls on the same uid+sha
+    // don't clobber each other's in-flight writes.
+    const tmpSuffix = `.tmp-${Date.now()}-${randomBytes(6).toString("hex")}`;
+    const cacheTmpPath = `${cachePath}${tmpSuffix}`;
+    const metaTmpPath = `${metaPath}${tmpSuffix}`;
+
     try {
-      await fsPromises.writeFile(cachePath, archive);
+      await fsPromises.writeFile(cacheTmpPath, archive);
     } catch (err) {
-      await fsPromises.rm(cachePath, { force: true }).catch(() => undefined);
+      await fsPromises.rm(cacheTmpPath, { force: true }).catch(() => undefined);
       throw new CacheWriteError(
-        `Cache file write failed for ${cachePath}: ${errorMessage(err)}`,
+        `Cache file write failed for ${cacheTmpPath}: ${errorMessage(err)}`,
       );
     }
 
-    // F6: verify-before-return.
-    if (!existsSync(cachePath)) {
-      throw new CacheWriteError(`Cache file not written: ${cachePath}`);
-    }
+    // F6: verify-before-return on tmp file.
     let sizeBytes: number;
     try {
-      const stat = await fsPromises.stat(cachePath);
+      const stat = await fsPromises.stat(cacheTmpPath);
       sizeBytes = stat.size;
     } catch (err) {
+      await fsPromises.rm(cacheTmpPath, { force: true }).catch(() => undefined);
       throw new CacheWriteError(
-        `Cannot stat cache file ${cachePath}: ${errorMessage(err)}`,
+        `Cannot stat cache tmp ${cacheTmpPath}: ${errorMessage(err)}`,
       );
     }
     if (sizeBytes === 0) {
-      await fsPromises.rm(cachePath, { force: true }).catch(() => undefined);
-      throw new CacheWriteError(`Cache file empty: ${cachePath}`);
+      await fsPromises.rm(cacheTmpPath, { force: true }).catch(() => undefined);
+      throw new CacheWriteError(`Cache file empty: ${cacheTmpPath}`);
     }
-    // Verify archive parses + has non-zero entries.
+    // Verify archive parses + has non-zero entries — re-read from disk so
+    // F6 catches post-write filesystem corruption (write returned success
+    // but file truncated). Buffer (`archive`) is also in memory but reading
+    // back is the actual integrity check the F6 contract describes.
     try {
-      const buf = await fsPromises.readFile(cachePath);
+      const buf = await fsPromises.readFile(cacheTmpPath);
       const parsed = await parseTarGzip(buf);
       if (!Array.isArray(parsed) || parsed.length === 0) {
-        await fsPromises.rm(cachePath, { force: true }).catch(() => undefined);
+        await fsPromises.rm(cacheTmpPath, { force: true }).catch(() => undefined);
         throw new CacheWriteError(
-          `Cache archive has no entries: ${cachePath}`,
+          `Cache archive has no entries: ${cacheTmpPath}`,
         );
       }
     } catch (err) {
       if (err instanceof CacheWriteError) throw err;
-      await fsPromises.rm(cachePath, { force: true }).catch(() => undefined);
+      await fsPromises.rm(cacheTmpPath, { force: true }).catch(() => undefined);
       throw new CacheWriteError(
         `Cache archive corrupted: ${errorMessage(err)}`,
       );
@@ -192,17 +202,43 @@ export class SwitchCacheLayer implements ICacheLayer {
       cachedAt: new Date().toISOString(),
       sizeBytes,
     };
+    // Write sidecar tmp file FIRST — fails fast if filesystem is broken
+    // before we touch the cache final path.
     try {
       await fsPromises.writeFile(
-        metaPath,
+        metaTmpPath,
         JSON.stringify(entry, null, 2),
         "utf8",
       );
     } catch (err) {
-      // Sidecar meta is required for restore() to pick newest entry.
-      await fsPromises.rm(cachePath, { force: true }).catch(() => undefined);
+      await fsPromises.rm(cacheTmpPath, { force: true }).catch(() => undefined);
       throw new CacheWriteError(
-        `Sidecar meta write failed for ${metaPath}: ${errorMessage(err)}`,
+        `Sidecar meta write failed for ${metaTmpPath}: ${errorMessage(err)}`,
+      );
+    }
+    // Atomic-rename phase: tar first, then sidecar. has(uid, sha) is
+    // sidecar-gated (see has() impl), so until the sidecar rename lands
+    // the entry is invisible to consumers — preserves has()↔restore()
+    // consistency invariant (MEDIUM-1 from code-review).
+    try {
+      await fsPromises.rename(cacheTmpPath, cachePath);
+    } catch (err) {
+      await fsPromises.rm(cacheTmpPath, { force: true }).catch(() => undefined);
+      await fsPromises.rm(metaTmpPath, { force: true }).catch(() => undefined);
+      throw new CacheWriteError(
+        `Atomic rename cache tmp→final failed: ${errorMessage(err)}`,
+      );
+    }
+    try {
+      await fsPromises.rename(metaTmpPath, metaPath);
+    } catch (err) {
+      // Sidecar rename failed — tar already at final path. Best-effort
+      // rollback: remove tar + meta tmp. has() will report false (sidecar
+      // missing); next cache() call overwrites cleanly.
+      await fsPromises.rm(cachePath, { force: true }).catch(() => undefined);
+      await fsPromises.rm(metaTmpPath, { force: true }).catch(() => undefined);
+      throw new CacheWriteError(
+        `Atomic rename sidecar tmp→final failed: ${errorMessage(err)}`,
       );
     }
     return entry;
@@ -211,17 +247,38 @@ export class SwitchCacheLayer implements ICacheLayer {
   /**
    * Check whether `asUid` has any cached entry. If `expectedSha` is given,
    * answers only for that specific revision (R28 — SHA-aware).
+   *
+   * Sidecar-gated: a cached entry is considered present ONLY when BOTH
+   * tarball and sidecar meta exist. This keeps `has()` and `restore()`
+   * truth-aligned — restore() skips entries without valid sidecars
+   * (line 270 sibling check), so has() must agree to avoid surprising the
+   * caller с a true→CacheMissError flip.
    */
   async has(asUid: string, expectedSha?: string): Promise<boolean> {
     this.assertDesktop("has");
     if (expectedSha !== undefined) {
-      return existsSync(this.getCachePath(asUid, expectedSha));
+      return (
+        existsSync(this.getCachePath(asUid, expectedSha)) &&
+        existsSync(this.getMetaPath(asUid, expectedSha))
+      );
     }
     const dir = path.join(this.cacheDir, asUid);
     if (!existsSync(dir)) return false;
     try {
       const entries = await fsPromises.readdir(dir);
-      return entries.some((e) => e.endsWith(".tar.gz"));
+      // An asUid has a valid cache entry iff at least one `<sha>.tar.gz`
+      // has a matching `<sha>.meta.json` sibling.
+      const tarballShas = new Set<string>();
+      const metaShas = new Set<string>();
+      for (const e of entries) {
+        if (e.endsWith(".tar.gz")) tarballShas.add(e.slice(0, -".tar.gz".length));
+        else if (e.endsWith(".meta.json"))
+          metaShas.add(e.slice(0, -".meta.json".length));
+      }
+      for (const sha of tarballShas) {
+        if (metaShas.has(sha)) return true;
+      }
+      return false;
     } catch {
       return false;
     }
@@ -298,11 +355,14 @@ export class SwitchCacheLayer implements ICacheLayer {
     // F1: write entries directly under targetDir — no strip required.
     for (const item of parsed) {
       if (!item.name) continue;
-      // Reject absolute paths / `..` traversal — nanotar already normalises
-      // but defense-in-depth is cheap (mirrors TarExtractor's zip-slip guard).
+      // Reject absolute paths / `..` traversal / backslashes — nanotar
+      // already normalises but defense-in-depth is cheap (mirrors
+      // TarExtractor's zip-slip guard). Check `..` as a path SEGMENT, not
+      // substring — `foo..bar.md` is a legitimate filename.
+      const segments = item.name.split("/");
       if (
         item.name.startsWith("/") ||
-        item.name.includes("..") ||
+        segments.includes("..") ||
         item.name.includes("\\")
       ) {
         throw new CacheMissError(
