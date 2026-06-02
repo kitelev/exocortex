@@ -18,6 +18,14 @@ export const ASSET_SPACE_MATERIALIZED_PREDICATE: IRI = Namespace.EXO.term(
 export const XSD_BOOLEAN_DATATYPE: IRI = Namespace.XSD.term("boolean");
 
 /**
+ * Logger surface for per-AS injection failures. Optional — caller may
+ * omit to keep injection silent (defaults documented in implementation).
+ */
+export interface InjectionLogger {
+  debug(message: string): void;
+}
+
+/**
  * Inject runtime-derived `<as-iri> exo:AssetSpace_materialized "true|false"^^xsd:boolean`
  * triples into the live triple store.
  *
@@ -26,13 +34,15 @@ export const XSD_BOOLEAN_DATATYPE: IRI = Namespace.XSD.term("boolean");
  * cycle. The walk is small (typically ~13 AS).
  *
  * Best-effort: failure to add a single triple does not abort the loop.
- * Errors are swallowed so vault-wide query latency cannot regress on a
- * partial-corrupt store; missing triples manifest as «available» status
- * in SPARQL, which is the fail-closed default.
+ * Errors are logged at debug level (if a logger is provided) and otherwise
+ * swallowed so vault-wide query latency cannot regress on a partial-corrupt
+ * store; missing triples manifest as «available» status in SPARQL, which is
+ * the fail-closed default.
  */
 export async function injectAssetSpaceMaterializationTriples(
   store: ITripleStore,
   statuses: ReadonlyArray<AssetSpaceMaterializationStatus>,
+  logger?: InjectionLogger,
 ): Promise<void> {
   for (const s of statuses) {
     try {
@@ -44,8 +54,11 @@ export async function injectAssetSpaceMaterializationTriples(
       await store.add(
         new Triple(subjectIri, ASSET_SPACE_MATERIALIZED_PREDICATE, object),
       );
-    } catch {
-      // Best-effort: per-AS failure should not block the rest.
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      logger?.debug(
+        `[injectAssetSpaceMaterializationTriples] failed for ${s.asUid} (${s.asFilePath}): ${reason}`,
+      );
     }
   }
 }

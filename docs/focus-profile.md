@@ -66,20 +66,22 @@ The **homoiconic invariant** (RFC `c78cc5c8`) — user-configurable semantics li
 
 This is the architectural angle that does not exist in any competing tool.
 
-**Claim:** when (a) every asset filename is `<uuid>.md`, (b) every wikilink uses canonical UID form `[[<uuid>|<label>]]`, and (c) `exo__Asset_label` is the only source of human-readable naming — then vault content becomes **semantically opaque** without the ontology + label lookup.
+**Claim:** when (a) every asset filename is `<uuid>.md`, (b) every wikilink uses canonical UID form `[[<uuid>|<label>]]`, and (c) `exo__Asset_label` is the only source of human-readable naming — then vault content becomes **semantically opaque at the file-byte / git-diff / shared-file layer** without the ontology + label lookup.
 
-Concretely:
+Concretely (raw bytes / git diffs / files exported outside the vault):
 
-- A screenshot of an asset page reveals UUIDs and structure but no domain meaning. A viewer without the ontology cannot tell whether `7db5eeff-718a-49b0-8d2b-39b084a356e3` is "Project", "Task", "Concept", or "Therapy Session".
-- A shared single file references other assets only by UUID. A reader cannot derive what `[[1b20a8f0-d745-4e93-91db-4531b3df120e|something]]` actually means without the rest of the graph.
-- The graph topology is visible; the labels are not.
+- A raw `.md` file shared via email, Slack, or git URL references other assets only by UUID. A reader cannot derive what `[[1b20a8f0-d745-4e93-91db-4531b3df120e|something]]` actually means without the rest of the graph.
+- A `git diff` shows UUID-named files and UUID-targeted wikilinks; the change is structurally visible but semantically opaque.
+- An attacker with cold-disk access sees the structure but not the labels (when not paired with the rest of the vault).
 
-This is **privacy through obscurity for read-shared scenarios** — explicitly not cryptography. The model is valid for:
+**Important caveat — rendered Obsidian views are not protected.** Obsidian renders wikilinks live with the target's `exo__Asset_label`, so screenshots and screen shares of the active editor view typically display **labels**, not UUIDs. UID-canon obfuscation protects:
 
-- **Screen sharing during work calls** — colleagues see structure, not contents.
-- **Demo videos and conference talks** — you can show the system without redacting individual entries.
-- **Public knowledge graph publishing** — share the structure of how you think without exposing what you think about.
-- **AI-agent collaboration** — give Claude the graph topology without leaking labels; the agent reasons about structure while semantics stays local.
+- **Raw file sharing** — sending a single asset's `.md` via Slack/email reveals UUIDs but not domain meaning of references.
+- **Git diff review** — code-review tools show UUIDs in additions/deletions.
+- **Public knowledge graph publishing** — exposing the graph topology without exposing the labels (e.g., a published RDF dump using only UUIDs).
+- **AI-agent collaboration on raw vault bytes** — agents reading filesystem-level bytes see UUIDs only; supplying labels is an explicit step.
+
+For **rendered-view protection** (screen sharing live calls, demo videos showing the editor), additional measures are needed — a UID-only viewer mode that bypasses the label-resolution step is not yet shipped. Hard switch is the strongest protection: AssetSpaces holding sensitive content are physically absent from disk in the non-active profile, so their labels cannot be resolved at all.
 
 Compared to Obsidian Sync's at-rest encryption:
 

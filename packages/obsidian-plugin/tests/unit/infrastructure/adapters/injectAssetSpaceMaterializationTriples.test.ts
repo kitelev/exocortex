@@ -177,4 +177,65 @@ describe("injectAssetSpaceMaterializationTriples", () => {
       ASSET_SPACE_MATERIALIZED_PREDICATE.value,
     );
   });
+
+  it("triples vanish after store.clear() — re-injection required (H1 regression guard)", async () => {
+    const store = new InMemoryTripleStore();
+    const statuses: AssetSpaceMaterializationStatus[] = [
+      {
+        asUid: "uid-ems",
+        asFilePath: "assetspaces/ems/uid-ems.md",
+        namespace: "ems",
+        materialized: true,
+      },
+    ];
+
+    await injectAssetSpaceMaterializationTriples(store, statuses);
+    expect(
+      (await store.match(undefined, ASSET_SPACE_MATERIALIZED_PREDICATE, undefined))
+        .length,
+    ).toBe(1);
+
+    // Simulate what `sparql.refresh()` does inside the plugin — clears the
+    // store + rebuilds from frontmatter alone. Materialization triples are
+    // derived, not in frontmatter, so they vanish.
+    await store.clear();
+    expect(
+      (await store.match(undefined, ASSET_SPACE_MATERIALIZED_PREDICATE, undefined))
+        .length,
+    ).toBe(0);
+
+    // The plugin must re-inject after refresh. This regression test
+    // memorialises the H1 catch (active-FocusProfile path issues a second
+    // refresh after the initial inject; helper must be called again).
+    await injectAssetSpaceMaterializationTriples(store, statuses);
+    expect(
+      (await store.match(undefined, ASSET_SPACE_MATERIALIZED_PREDICATE, undefined))
+        .length,
+    ).toBe(1);
+  });
+
+  it("optional logger.debug fires on per-AS injection failure", async () => {
+    const logger = { debug: jest.fn() };
+    const failingStore = {
+      add: jest.fn(async () => {
+        throw new Error("boom");
+      }),
+    } as unknown as InMemoryTripleStore;
+
+    await injectAssetSpaceMaterializationTriples(
+      failingStore,
+      [
+        {
+          asUid: "uid-x",
+          asFilePath: "assetspaces/x/uid-x.md",
+          namespace: "x",
+          materialized: true,
+        },
+      ],
+      logger,
+    );
+    expect(logger.debug).toHaveBeenCalledTimes(1);
+    expect(logger.debug.mock.calls[0][0]).toContain("uid-x");
+    expect(logger.debug.mock.calls[0][0]).toContain("boom");
+  });
 });

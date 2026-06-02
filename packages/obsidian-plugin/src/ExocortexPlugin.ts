@@ -934,31 +934,35 @@ export default class ExocortexPlugin extends Plugin {
           postResolveReindexDone = true;
 
           const initPromise = this.eagerInitPromise ?? Promise.resolve();
+          // RFC 22b50a17 Phase 4 (H1 code-reviewer fix) — refresh tracker
+          // + re-inject runtime-derived `exo:AssetSpace_materialized`
+          // triples into the store. Called after EACH `sparql.refresh()`
+          // because refresh's clear+rebuild wipes the store, so derived
+          // triples must be re-injected on every refresh cycle. Best-
+          // effort — per-AS failures swallowed; whole-helper errors are
+          // logged warn but do not propagate. The active-FocusProfile
+          // re-apply chain (line ~985-1000) issues a second refresh that
+          // would otherwise drop these triples in the exact deployment
+          // context this PR ships for.
+          const refreshAndInjectMaterialization = async (): Promise<void> => {
+            if (this.assetSpaceMaterializationTracker === null) return;
+            try {
+              await this.assetSpaceMaterializationTracker.refresh();
+              await injectAssetSpaceMaterializationTriples(
+                this.sparql.getTripleStore(),
+                this.assetSpaceMaterializationTracker.getStatuses(),
+              );
+              this.assetSpaceStatusIconPatch?.onTrackerRefreshed();
+            } catch (err) {
+              this.logger.warn(
+                "[ExocortexPlugin] AssetSpace materialization injection failed",
+                err instanceof Error ? err : new Error(String(err)),
+              );
+            }
+          };
           void initPromise
             .then(() => this.sparql.refresh())
-            .then(async () => {
-              // RFC 22b50a17 Phase 4 — refresh AssetSpace materialization
-              // tracker + inject runtime-derived
-              // `exo:AssetSpace_materialized` triples into the store.
-              // Order matters: `sparql.refresh()` clear+rebuild wipes the
-              // store, so derived triples must be re-injected on every
-              // refresh cycle. Best-effort — failure does not block.
-              if (this.assetSpaceMaterializationTracker !== null) {
-                try {
-                  await this.assetSpaceMaterializationTracker.refresh();
-                  await injectAssetSpaceMaterializationTriples(
-                    this.sparql.getTripleStore(),
-                    this.assetSpaceMaterializationTracker.getStatuses(),
-                  );
-                  this.assetSpaceStatusIconPatch?.onTrackerRefreshed();
-                } catch (err) {
-                  this.logger.warn(
-                    "[ExocortexPlugin] AssetSpace materialization injection failed",
-                    err instanceof Error ? err : new Error(String(err)),
-                  );
-                }
-              }
-            })
+            .then(() => refreshAndInjectMaterialization())
             .then(async () => {
               // RFC 0a0791c1 #3324 — re-apply the active FocusProfile
               // filter now that metadataCache has fully resolved. The
@@ -988,6 +992,10 @@ export default class ExocortexPlugin extends Plugin {
                 try {
                   await reapplyActiveProfileFilter();
                   await this.sparql.refresh();
+                  // RFC 22b50a17 Phase 4 (H1 fix) — re-inject after the
+                  // active-profile sparql.refresh() that just wiped the
+                  // store.
+                  await refreshAndInjectMaterialization();
                 } catch (err) {
                   this.logger.warn(
                     "[ExocortexPlugin] active FocusProfile filter re-apply failed — indexer keeps prior wiring",

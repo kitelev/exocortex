@@ -111,15 +111,20 @@ export class AssetSpaceStatusIconPatch {
   }
 
   private applyBadge(container: HTMLElement, materialized: boolean): void {
+    // Prefer the dedicated `.inline-title` (Reading Mode + Live Preview
+    // header). Fallback to `.mod-header h1` which Obsidian uses for the
+    // preview-mode title specifically (NOT a generic body h1 — see M2
+    // code-reviewer catch: previously `.markdown-preview-section h1`
+    // matched the first body heading on AS notes that started with `#`).
     const titleEl =
       container.querySelector<HTMLElement>(".inline-title") ??
-      container.querySelector<HTMLElement>(".markdown-preview-section h1");
+      container.querySelector<HTMLElement>(".markdown-preview-section .mod-header h1");
     if (titleEl === null) return;
 
     let badge = titleEl.parentElement?.querySelector<HTMLElement>(
       `.${BADGE_CLASS}`,
     );
-    if (badge === null || badge === undefined) {
+    if (!badge) {
       badge = document.createElement("span");
       badge.classList.add(BADGE_CLASS);
       // Insert before the title so it sits inline at the leading edge.
