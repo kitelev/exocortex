@@ -553,6 +553,43 @@ export class DynamicCommandButtonGroupBuilder implements IButtonGroupBuilder {
       if (!classes.includes(alias)) classes.push(alias);
     }
 
+    // Issue #3295 — Walk `exo__Class_superClass` chain so that bindings
+    // targeted at intermediate superclasses (e.g. `ems__Task`) match
+    // subclass instances (e.g. `ems__Meeting ⊑ ems__Task`). Without
+    // this, only universal `exo__Asset` bindings and same-class
+    // bindings render; everything between leaf and root is silently
+    // dropped because `CommandResolver.bindingMatches` does string-
+    // equality on `targetClass` literals (no hierarchy walk).
+    //
+    // The walk consumes only the triple store and is cycle-safe + depth-
+    // bounded inside `CommandResolver.getClassAncestors`. We iterate the
+    // SNAPSHOT of classes captured before the walk to avoid revisiting
+    // every newly-appended ancestor (the resolver walks the full chain
+    // from each leaf already).
+    const leafClasses = [...classes];
+    for (const cls of leafClasses) {
+      if (cls === "exo__Asset") continue;
+      let ancestors: string[];
+      try {
+        ancestors = await this.config.commandResolver.getClassAncestors(cls);
+      } catch (error) {
+        logger?.info(
+          `[DynamicCommands] getClassAncestors(${cls}) threw: ${String(error)}`,
+        );
+        continue;
+      }
+      for (const ancestor of ancestors) {
+        if (!classes.includes(ancestor)) classes.push(ancestor);
+      }
+    }
+
+    // Universal-root guard. After the superClass walk above this is
+    // usually idempotent (the chain typically terminates at exo__Asset),
+    // but the explicit append remains the safety net for two cases:
+    //   1. The class file is unknown to the triple store (cold-start
+    //      race; `getClassAncestors` returns []).
+    //   2. The class chain skips `exo__Asset` because the leaf is a
+    //      root concept itself (e.g. shared-identities).
     if (!classes.includes("exo__Asset")) classes.push("exo__Asset");
 
     return classes;
