@@ -160,27 +160,28 @@ export class SwitchCacheLayer implements ICacheLayer {
       );
     }
 
-    // F6: verify-before-return on tmp file.
-    let sizeBytes: number;
+    // F6: verify-before-return on tmp file. Single `readFile` instead of
+    // `stat` then `readFile` to close the TOCTOU window flagged by CodeQL
+    // `js/file-system-race` (Issue #3336). `sizeBytes` is derived from the
+    // buffer length, identical to `stat.size` for regular files.
+    let buf: Buffer;
     try {
-      const stat = await fsPromises.stat(cacheTmpPath);
-      sizeBytes = stat.size;
+      buf = await fsPromises.readFile(cacheTmpPath);
     } catch (err) {
       await fsPromises.rm(cacheTmpPath, { force: true }).catch(() => undefined);
       throw new CacheWriteError(
-        `Cannot stat cache tmp ${cacheTmpPath}: ${errorMessage(err)}`,
+        `Cannot read cache tmp ${cacheTmpPath}: ${errorMessage(err)}`,
       );
     }
+    const sizeBytes = buf.length;
     if (sizeBytes === 0) {
       await fsPromises.rm(cacheTmpPath, { force: true }).catch(() => undefined);
       throw new CacheWriteError(`Cache file empty: ${cacheTmpPath}`);
     }
-    // Verify archive parses + has non-zero entries — re-read from disk so
-    // F6 catches post-write filesystem corruption (write returned success
-    // but file truncated). Buffer (`archive`) is also in memory but reading
-    // back is the actual integrity check the F6 contract describes.
+    // Verify archive parses + has non-zero entries — using the buffer just
+    // read above. Catches post-write filesystem corruption (write returned
+    // success but the bytes that landed on disk don't form a valid tar.gz).
     try {
-      const buf = await fsPromises.readFile(cacheTmpPath);
       const parsed = await parseTarGzip(buf);
       if (!Array.isArray(parsed) || parsed.length === 0) {
         await fsPromises.rm(cacheTmpPath, { force: true }).catch(() => undefined);
