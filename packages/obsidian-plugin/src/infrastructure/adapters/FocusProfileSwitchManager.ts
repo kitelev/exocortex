@@ -1107,7 +1107,7 @@ export class FocusProfileSwitchManager {
    * re-materialization that Phase 6.1 AC2 requires.
    */
   private async derivePhysicallyMaterializedAsUids(
-    submodulePaths: ReadonlyArray<string>,
+    submodulePaths: Iterable<string>,
     infoBySubmodulePath: ReadonlyMap<string, AssetSpaceInfo>,
   ): Promise<Set<string>> {
     const result = new Set<string>();
