@@ -647,6 +647,44 @@ describe("FocusProfileSwitchManager.hardSwitchProfile", () => {
       expect(deinitCallIdx).toBeGreaterThan(-1);
     });
 
+    it("Phase 6 Vision Lock #9 amendment: does NOT strip .gitmodules entry during destroy (URL preservation для switch-back)", async () => {
+      const { mgr, gitOps } = setup({
+        targetUid: "target",
+        sourceUid: null,
+        targetIncludes: [
+          TS_FLOOR_AS_UID_EXO,
+          TS_FLOOR_AS_UID_EXOCMD,
+          TS_FLOOR_AS_UID_SHARED_IDENTITIES,
+        ],
+        materialized: [
+          "ems-uid",
+          TS_FLOOR_AS_UID_EXO,
+          TS_FLOOR_AS_UID_EXOCMD,
+          TS_FLOOR_AS_UID_SHARED_IDENTITIES,
+        ],
+      });
+      await mgr.hardSwitchProfile("target");
+      // ems-uid was destroyed (deinit + remove gitmodules dir + remove working tree)
+      const deinitCalls = gitOps.calls.filter(
+        (c) => c.op === "submoduleDeinit" && (c.args[0] as string).includes("ems"),
+      );
+      const removeDirCalls = gitOps.calls.filter(
+        (c) => c.op === "removeGitModulesDir" && (c.args[0] as string).includes("ems"),
+      );
+      const removeTreeCalls = gitOps.calls.filter(
+        (c) => c.op === "removeWorkingTree" && (c.args[0] as string).includes("ems"),
+      );
+      expect(deinitCalls.length).toBe(1);
+      expect(removeDirCalls.length).toBe(1);
+      expect(removeTreeCalls.length).toBe(1);
+      // CRITICAL Phase 6 amendment: atomicGitmodulesEntryRemove must NOT be called
+      // during destroy. The `.gitmodules` entry must persist as per-vault registry.
+      const stripCalls = gitOps.calls.filter(
+        (c) => c.op === "atomicGitmodulesEntryRemove",
+      );
+      expect(stripCalls.length).toBe(0);
+    });
+
     it("emits hard-switch-completed on successful switch", async () => {
       const { mgr, app } = setup({
         targetUid: "target",

@@ -649,7 +649,13 @@ export class FocusProfileSwitchManager {
         await deps.gitOps.submoduleDeinit(target.submodulePath);
         await deps.gitOps.removeGitModulesDir(target.submodulePath);
         await deps.gitOps.removeWorkingTree(target.submodulePath);
-        await deps.gitOps.atomicGitmodulesEntryRemove(target.submodulePath);
+        // Vision Lock #9 amendment (Phase 6 RFC 13da049f v1.3):
+        // preserve `.gitmodules` entry through destroy phase. This enables
+        // cold-bootstrap UX + switch-back URL recovery — the entry serves
+        // as per-vault AssetSpace URL registry. Git semantic precedent:
+        // `git submodule deinit` keeps `.gitmodules`. The previous
+        // atomicGitmodulesEntryRemove call here was the Phase 5 lock #9
+        // shipped behavior; Phase 6 reverses it after RFC 13da049f.
         await this.appendJournal({
           phase: "phase2-destroyed",
           targetUid: targetProfileUid,

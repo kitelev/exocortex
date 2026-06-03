@@ -452,10 +452,13 @@ describe("hardSwitchProfile E2E (real fs, mocked pull)", () => {
     expect(existsSync(path.join(setup.vaultPath, "assetspaces/as3"))).toBe(true);
 
     // ---- ASSERT .gitmodules ----
+    // Phase 6 Vision Lock #9 amendment (RFC 13da049f v1.3):
+    // .gitmodules entry для destroyed AS preserved (per-vault URL registry для switch-back).
+    // Working tree destroyed (line 450 verified), but .gitmodules entry persists.
     const gitmodules = await fs.readFile(path.join(setup.vaultPath, ".gitmodules"), "utf8");
     expect(gitmodules).toContain('"assetspaces/as2"');
     expect(gitmodules).toContain('"assetspaces/as3"');
-    expect(gitmodules).not.toContain('"assetspaces/as1"');
+    expect(gitmodules).toContain('"assetspaces/as1"'); // Phase 6: entry preserved post-destroy
 
     // ---- ASSERT cache contains as1 ----
     const cacheHas = await cacheLayer.has("as1");
