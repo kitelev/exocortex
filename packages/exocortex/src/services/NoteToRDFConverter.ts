@@ -155,6 +155,20 @@ export function shouldSkipFileForEffectiveSet(
 }
 
 /**
+ * Issue #3219 — normalise the optional `subjectIriPrefix` constructor option
+ * into a vault-relative path component (no leading slash, single trailing
+ * slash) so `${prefix}${file.path}` stays valid. Empty input → empty output
+ * (zero-prefix path == legacy behaviour, backward compatible).
+ */
+function normaliseSubjectIriPrefix(prefix: string | undefined): string {
+  if (!prefix) return "";
+  let p = prefix.replace(/\\/g, "/");
+  while (p.startsWith("/")) p = p.slice(1);
+  while (p.endsWith("/")) p = p.slice(0, -1);
+  return p.length > 0 ? `${p}/` : "";
+}
+
+/**
  * Service for converting Obsidian notes (frontmatter + wikilinks) to RDF triples.
  *
  * @example
@@ -178,11 +192,25 @@ export class NoteToRDFConverter {
   // Reset at start of each convertLegacyNote call, flushed after the frontmatter loop.
   private pendingExtraTriples: Triple[] = [];
 
+  /**
+   * Issue #3219 — when the vault adapter is rooted at a subdirectory (e.g.
+   * `--also <root>/assetspaces/<sub>`), file.path is relative to the adapter
+   * root so subject IRIs lose the `assetspaces/<sub>/` component. The mount
+   * prefix is prepended to every adapter-derived path before IRI conversion
+   * so subjects are consistent with primary-vault subject IRIs.
+   *
+   * Normalised: no leading slash, single trailing slash when non-empty, so
+   * `${prefix}${path}` stays a valid relative vault path.
+   */
+  private readonly subjectIriPrefix: string;
+
   constructor(
     @inject(DI_TOKENS.IVaultAdapter) private readonly vault: IVaultAdapter,
     @inject(DI_TOKENS.ILogger) private readonly logger: ILogger = NullLogger,
+    options: { subjectIriPrefix?: string } = {},
   ) {
     this.vocabularyMapper = new RDFVocabularyMapper();
+    this.subjectIriPrefix = normaliseSubjectIriPrefix(options.subjectIriPrefix);
   }
 
   /**
@@ -1086,6 +1114,18 @@ export class NoteToRDFConverter {
    * ```
    */
   notePathToIRI(path: string): IRI {
+    return new IRI(vaultPathToIRI(`${this.subjectIriPrefix}${path}`));
+  }
+
+  /**
+   * Issue #3219 — synthesise an IRI for a wikilink target that could not be
+   * resolved through this adapter's `getFirstLinkpathDest`. The synthesised
+   * path represents a guess at where the target *might* live; it is NOT a
+   * file in this vault. The mount prefix MUST NOT be applied here — applying
+   * it would produce a non-existent cross-vault IRI when the target really
+   * lives in another vault at a different path.
+   */
+  private synthesizeWikilinkTargetIRI(path: string): IRI {
     return new IRI(vaultPathToIRI(path));
   }
 
@@ -1321,7 +1361,11 @@ export class NoteToRDFConverter {
           ? wikilink.split("|")[0]
           : wikilink;
         if (this.isUUID(linkpath)) {
-          return [this.notePathToIRI(`${linkpath}.md`)];
+          // Issue #3219 — `synthesizeWikilinkTargetIRI` skips the mount
+          // prefix because the target is unresolved (could live in any
+          // vault, including primary). Applying the prefix here would
+          // produce an IRI that doesn't match the target's real subject.
+          return [this.synthesizeWikilinkTargetIRI(`${linkpath}.md`)];
         }
         return [new Literal(cleanValue)];
       }

@@ -37,6 +37,8 @@ import { NTriplesFormatter } from "../utils/NTriplesFormatter.js";
 import { scanVaultNamespaces } from "../utils/VaultNamespaceScanner.js";
 import { injectExocortexPrefixes, transformShorthandNotation, filterOntologyPrefixes } from "../utils/QueryPrefixInjector.js";
 import { resolveProfileFilter } from "../utils/resolveProfileFilter.js";
+import { deriveSubjectIriPrefix } from "../utils/AlsoVaultMountPrefix.js";
+import { resolveCrossVaultInstanceClassWikilinks } from "../utils/crossVaultInstanceClassResolver.js";
 
 export interface SparqlQueryOptions {
   vault: string;
@@ -499,8 +501,20 @@ export function sparqlQueryCommand(): Command {
             if (outputFormat === "text") {
               console.log(`📦 Loading additional vault: ${resolvedAlsoPath}...`);
             }
+            // Issue #3219 — when `--also` points at an `<root>/assetspaces/<sub>`
+            // subdirectory, file.path is relative to that subdirectory and
+            // the synthesised subject IRI loses the path prefix. Derive a
+            // mount prefix from the path so subject IRIs match what they
+            // would be if the same files were loaded as part of a primary
+            // vault rooted at `<root>`. Non-assetspaces paths get an empty
+            // prefix (backward compatible).
+            const subjectIriPrefix = deriveSubjectIriPrefix(resolvedAlsoPath);
             const alsoAdapter = new FileSystemVaultAdapter(resolvedAlsoPath);
-            const alsoConverter = new NoteToRDFConverter(alsoAdapter);
+            const alsoConverter = new NoteToRDFConverter(
+              alsoAdapter,
+              undefined,
+              { subjectIriPrefix },
+            );
             const alsoTriples = await alsoConverter.convertVault(
               profileFilter !== null
                 ? {
@@ -513,6 +527,20 @@ export function sparqlQueryCommand(): Command {
             if (outputFormat === "text") {
               console.log(`   ➕ Added ${alsoTriples.length} triples from ${resolvedAlsoPath}`);
             }
+          }
+
+          // Issue #3219 — when `--also` vaults were loaded without the
+          // combined-cache index, `exo__Instance_class` wikilinks whose
+          // target class file lives in a different loaded vault degrade to
+          // raw string literals (`"[[<class-uid>]]"`) because each per-
+          // vault `NoteToRDFConverter` instance can only see its own vault
+          // during `getFirstLinkpathDest`. Apply the same cross-vault
+          // resolution `buildCombinedTriples` runs on the cached path so
+          // class-filtered SPARQL queries find these subjects too.
+          if (alsoVaults.length > 0) {
+            triples = resolveCrossVaultInstanceClassWikilinks(
+              triples as Triple[],
+            ) as Triple[];
           }
         }
 
