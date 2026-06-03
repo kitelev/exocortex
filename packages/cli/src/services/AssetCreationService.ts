@@ -96,10 +96,16 @@ export class AssetCreationService {
     private readonly wikilinkValidator: WikilinkValidator,
     /**
      * Optional SHACL-lite shape registry loaded from vault property assets.
-     * When provided, properties declared with
-     * `exo__Property_cardinality: "[[exo__PropertyCardinalitySingle]]"`
-     * are serialized as scalar YAML values instead of single-entry arrays.
-     * When omitted, all wikilink values are wrapped in arrays (legacy default).
+     *
+     * Issue #3179: vault convention is **scalar** form for single-cardinality
+     * wikilink properties. Default emission (no shape registry, or property
+     * with no shape, or shape declared `PropertyCardinalitySingle`) is now
+     * scalar. Only properties explicitly declared
+     * `exo__Property_cardinality: "[[exo__PropertyCardinalityMultiple]]"`
+     * are wrapped in YAML arrays. Multi-cardinality system fields like
+     * `exo__Instance_class` and `aliases` continue to be emitted as arrays
+     * via dedicated code paths in `buildFrontmatter` and are not subject to
+     * this rule.
      */
     private readonly shapeRegistry?: ShapeRegistry,
   ) {}
@@ -225,16 +231,17 @@ export class AssetCreationService {
   /**
    * Format a property value for frontmatter.
    *
-   * Wikilink values (containing `[[`) are quoted. By default they are wrapped
-   * in a single-entry YAML array so Obsidian can parse them as a list. If the
-   * shape registry declares the property's cardinality as `"Single"`, the
-   * quoted value is emitted as a scalar instead (issue #3099).
+   * Wikilink values (containing `[[`) are quoted. Issue #3179: the default is
+   * **scalar** form (vault convention — 4000+ instances of
+   * `exo__Asset_isDefinedBy`, `exo__Asset_prototype`, `ems__Effort_status`
+   * etc. are scalar). Only properties whose shape declares cardinality
+   * `"Multiple"` are emitted as YAML arrays.
    *
    * Plain (non-wikilink) values are always left as scalars.
    *
    * @param key - The property key (e.g. `ems__Effort_status`)
    * @param value - The raw property value string
-   * @returns Formatted value: `string` for plain or single-cardinality wikilinks, `string[]` for arrays
+   * @returns Formatted value: `string` for scalars, `string[]` for multi-cardinality wikilinks
    */
   private formatPropertyValue(key: string, value: string): string | string[] {
     if (!value.includes("[[")) {
@@ -245,28 +252,28 @@ export class AssetCreationService {
     const quoted =
       value.startsWith('"') && value.endsWith('"') ? value : `"${value}"`;
 
-    if (this.isSingleValued(key)) {
-      return quoted;
+    if (this.shouldEmitAsArray(key)) {
+      return [quoted];
     }
 
-    // Default: wrap in array for YAML list format
-    return [quoted];
+    return quoted;
   }
 
   /**
-   * Check whether a property is declared single-valued in the shape registry.
+   * Decide whether a property should be wrapped in a YAML array.
    *
-   * Safe default: `false` (treat as multi-valued / wrap in array) when no
-   * registry is provided, when the property has no shape, or when its
-   * cardinality is not explicitly `"Single"`.
+   * Returns `true` only when the shape registry exists, the property has a
+   * declared shape, and its cardinality is explicitly `"Multiple"`. Every
+   * other case (no registry, no shape, or cardinality `"Single"`/undefined)
+   * falls back to scalar emission per vault convention (issue #3179).
    */
-  private isSingleValued(key: string): boolean {
+  private shouldEmitAsArray(key: string): boolean {
     if (!this.shapeRegistry) return false;
     const parsed = Namespace.fromPropertyKey(key);
     if (!parsed) return false;
     const propertyIRI = parsed.namespace.term(parsed.localName).value;
     const shape = this.shapeRegistry.get(propertyIRI);
-    return shape?.cardinality === "Single";
+    return shape?.cardinality === "Multiple";
   }
 
   /**

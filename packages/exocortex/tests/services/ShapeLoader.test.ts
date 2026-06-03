@@ -243,6 +243,28 @@ describe("ShapeLoader.loadFromRDFGraph", () => {
     expect(reg.get(`${EMS}Effort_parent`)!.cardinality).toBe("Multiple");
   });
 
+  it("Issue #3179: parses Single cardinality from UID-form IRI", async () => {
+    // Post-UID-canon (RFC-004) Property_cardinality wikilinks resolve to
+    // file IRIs containing the enum UID rather than the symbolic label.
+    const SINGLE_UID = "c93c4b2f-b43d-4cc9-8dd0-31514d608da2";
+    const UID_FILE_IRI = `obsidian://vault/assetspaces/exo/${SINGLE_UID}.md`;
+    const store = makeStore(
+      makePropertyTriples({ cardinality: UID_FILE_IRI }),
+    );
+    const reg = await ShapeLoader.loadFromRDFGraph(store);
+    expect(reg.get(`${EMS}Effort_parent`)!.cardinality).toBe("Single");
+  });
+
+  it("Issue #3179: parses Multiple cardinality from UID-form IRI", async () => {
+    const MULTI_UID = "59a37aa7-ffbe-4e0d-ba60-06ae370d880f";
+    const UID_FILE_IRI = `obsidian://vault/assetspaces/exo/${MULTI_UID}.md`;
+    const store = makeStore(
+      makePropertyTriples({ cardinality: UID_FILE_IRI }),
+    );
+    const reg = await ShapeLoader.loadFromRDFGraph(store);
+    expect(reg.get(`${EMS}Effort_parent`)!.cardinality).toBe("Multiple");
+  });
+
   it("auto-extends ad-hoc namespaces for non-whitelisted label prefixes", async () => {
     // RFC: SHACL namespace whitelist relaxation — `unknown__something`
     // resolves to `https://exocortex.my/ontology/unknown#something` instead of
@@ -525,6 +547,51 @@ describe("ShapeLoader.loadFromVaultFS", () => {
 
     const reg = await ShapeLoader.loadFromVaultFS(tmpDir);
     const shape = reg.get(`${EMS}Effort_relates`);
+    expect(shape).toBeDefined();
+    expect(shape!.cardinality).toBe("Multiple");
+  });
+
+  it("Issue #3179: handles Single cardinality declared as UID wikilink", async () => {
+    // Post-UID-canon vault property files use bare UID wikilinks for the
+    // cardinality enum: `[[c93c4b2f-...]]` is the UID of
+    // exo__PropertyCardinalitySingle. cardinalityFromLabel previously only
+    // checked label suffixes and silently returned undefined → CLI fell
+    // back to array emission for single-cardinality predicates.
+    await writeFile(
+      "uid-card-single.md",
+      [
+        "---",
+        'exo__Instance_class:',
+        '  - "[[exo__ObjectProperty]]"',
+        'exo__Property_domain: "[[ems__Effort]]"',
+        'exo__Property_cardinality: "[[c93c4b2f-b43d-4cc9-8dd0-31514d608da2]]"',
+        "exo__Asset_label: ems__Effort_status",
+        "---",
+      ].join("\n"),
+    );
+
+    const reg = await ShapeLoader.loadFromVaultFS(tmpDir);
+    const shape = reg.get(`${EMS}Effort_status`);
+    expect(shape).toBeDefined();
+    expect(shape!.cardinality).toBe("Single");
+  });
+
+  it("Issue #3179: handles Multiple cardinality declared as UID wikilink", async () => {
+    await writeFile(
+      "uid-card-multi.md",
+      [
+        "---",
+        'exo__Instance_class:',
+        '  - "[[exo__ObjectProperty]]"',
+        'exo__Property_domain: "[[ems__Effort]]"',
+        'exo__Property_cardinality: "[[59a37aa7-ffbe-4e0d-ba60-06ae370d880f]]"',
+        "exo__Asset_label: ems__Effort_relatesUid",
+        "---",
+      ].join("\n"),
+    );
+
+    const reg = await ShapeLoader.loadFromVaultFS(tmpDir);
+    const shape = reg.get(`${EMS}Effort_relatesUid`);
     expect(shape).toBeDefined();
     expect(shape!.cardinality).toBe("Multiple");
   });
