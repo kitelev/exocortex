@@ -1039,6 +1039,48 @@ export class CommandResolver {
     };
   }
 
+  /**
+   * Resolves the Grounding linked from a Command's `exocmd__Command_grounding`.
+   *
+   * **Canonical pattern (#3272, decision 2026-05-26):** Command-per-prototype.
+   * Each prototype-class has its own dedicated `exocmd__Command` with a
+   * single `Command_grounding` reference, surfaced via a dedicated
+   * `exocmd__CommandBinding` (`targetClass=<prototype-class>`). In this
+   * canonical case `refTriples.length === 1` and the fast path below returns
+   * the only grounding. The contract guarantees `refTriples[0]` is the
+   * intended one — no dispatch needed.
+   *
+   * **Legacy multi-Grounding shape:** earlier vault assets (e.g. `bb00efed`
+   * pre-#3272 "universal Create Instance" README) declared multiple
+   * Groundings per Command, *intending* dispatch by prototype. The original
+   * executor returned `refTriples[0]` unconditionally — clicking any
+   * prototype always created an `ems__Task`. The "universal" pattern was
+   * documentation drift, never implemented. Production vault was migrated
+   * to one-Command-per-prototype (2026-05-26): new dedicated Commands for
+   * Meeting / FleetingNote / SelfObservation, `bb00efed` trimmed to
+   * Task-only, catch-all binding `90f56f1b` removed.
+   *
+   * The multi-Grounding dispatch loop below remains as a defensive runtime
+   * for any residual legacy asset: it matches `Grounding_targetPrototype`
+   * against `context.targetClass` so a stray multi-Grounding declaration
+   * still dispatches to the right Grounding instead of silently
+   * mis-creating a `ems__Task`. Fallback (no match) logs a warning and
+   * returns `refTriples[0]` so the button surfaces rather than disappears.
+   *
+   * **Scope limit:** dispatch keys off `context.targetClass`. Bindings that
+   * declare only `targetPrototype` / `targetAsset` (no `targetClass`) hit
+   * the fast path — acceptable given the canonical contract guarantees
+   * single-grounding.
+   *
+   * **Future hardening (deferred — #3272 AC #5):** add SHACL
+   * `sh:maxCount 1` on `Command_grounding` to enforce the single-Grounding
+   * contract at vault-validation time. Once that lands, the dispatch loop
+   * below can be removed.
+   *
+   * @returns the resolved {@link GroundingDefinition}, or `null` when no
+   *   `Command_grounding` ref exists, no ref resolves, or the
+   *   {@link MAX_TRANSITIVE_DEPTH} bound is reached.
+   */
   private async loadLinkedGrounding(
     parentSubject: IRI,
     depth: number,
