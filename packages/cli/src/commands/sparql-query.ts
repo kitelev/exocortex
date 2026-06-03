@@ -277,11 +277,16 @@ export function sparqlQueryCommand(): Command {
       ErrorHandler.setFormat(outputFormat);
 
       // Issue #3282: --strict opts into a hard failure when the
-      // PropertyPathExecutor literal-safety guard fires (label-form
-      // wikilinks that NoteToRDFConverter.valueToRDFObject could not
-      // resolve and stored as bare literals). Propagate via env var
-      // so any executor instance picks it up without constructor
-      // plumbing. Mirrors the EXOCORTEX_SPARQL_TIMEOUT precedent.
+      // PropertyPathExecutor / BGPExecutor literal-safety guard fires
+      // (label-form wikilinks that NoteToRDFConverter.valueToRDFObject
+      // could not resolve and stored as bare literals). Propagate via
+      // env var so any executor instance picks it up without
+      // constructor plumbing. Mirrors the EXOCORTEX_SPARQL_TIMEOUT
+      // precedent. We capture the original value and restore it in the
+      // outer try/finally below so embedded callers (MCP host, test
+      // harness, programmatic invocation) cannot leak strict mode
+      // across subsequent queries.
+      const originalStrictEnv = process.env.EXOCORTEX_SPARQL_STRICT;
       if (options.strict) {
         process.env.EXOCORTEX_SPARQL_STRICT = "1";
       }
@@ -779,6 +784,17 @@ export function sparqlQueryCommand(): Command {
         }
       } catch (error) {
         handleSparqlError(error as Error, queryString, outputFormat);
+      } finally {
+        // Issue #3282: restore EXOCORTEX_SPARQL_STRICT so embedded callers
+        // (MCP host, programmatic invocation, test harness) do not inherit
+        // strict mode from a prior --strict invocation.
+        if (options.strict) {
+          if (originalStrictEnv === undefined) {
+            delete process.env.EXOCORTEX_SPARQL_STRICT;
+          } else {
+            process.env.EXOCORTEX_SPARQL_STRICT = originalStrictEnv;
+          }
+        }
       }
     });
 }

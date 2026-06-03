@@ -496,7 +496,23 @@ export class PropertyPathExecutor {
         }
         return "?";
       };
-      const rendered = Array.isArray(items) ? items.map(renderItem).join(` ${path.pathType} `) : "?";
+      if (!Array.isArray(items) || items.length === 0) {
+        return "(?)";
+      }
+      // Unary path operators have a single item: inverse (^p) is prefix,
+      // quantifiers (+, *, ?) are suffix. Render them faithfully so the
+      // diagnostic disambiguates p+ from p? in literal-safety reports.
+      if (items.length === 1) {
+        const inner = renderItem(items[0]);
+        if (path.pathType === "^") return `(^${inner})`;
+        if (path.pathType === "+" || path.pathType === "*" || path.pathType === "?") {
+          return `(${inner}${path.pathType})`;
+        }
+        // Sequence / alternative with a single item — render verbatim.
+        return `(${inner})`;
+      }
+      // Binary / n-ary operators (sequence /, alternative |) — infix.
+      const rendered = items.map(renderItem).join(` ${path.pathType} `);
       return `(${rendered})`;
     } catch {
       return "<unprintable-path>";
