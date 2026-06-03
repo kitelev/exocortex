@@ -7,6 +7,39 @@ import { rewriteInboundWikilinks } from "../utils/wikilinkRewriter.js";
 /** UUID v4 pattern for wikilink resolution */
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/**
+ * Options for `FileSystemVaultAdapter` (Issue #3352 — broader synthesis for
+ * label-form wikilinks targeting `--also` vaults).
+ *
+ * Both fields are optional; omitting them preserves the single-vault adapter
+ * behaviour used by the Obsidian plugin runtime and all pre-#3352 CLI
+ * callsites.
+ */
+export interface FileSystemVaultAdapterOptions {
+  /**
+   * Sibling adapters consulted by `getFirstLinkpathDest` when the primary
+   * lookup returns null. Used by the CLI to extend label-form wikilink
+   * resolution across `--also` vaults without plumbing multi-vault
+   * awareness into `NoteToRDFConverter`.
+   *
+   * The plugin runtime never sets this (single vault per app), so it has
+   * no behavioural effect there.
+   */
+  siblingAdapters?: FileSystemVaultAdapter[];
+  /**
+   * Subject IRI prefix for THIS adapter's vault (e.g. `assetspaces/areas`).
+   * When a sibling lookup hits this adapter, the resolved file path is
+   * prefixed with this segment so the returned `IFile.path` is the LOGICAL
+   * cross-vault path that primary `notePathToIRI` (with empty prefix) maps
+   * to the canonical sibling subject IRI.
+   *
+   * Mirrors `NoteToRDFConverter.subjectIriPrefix` (Issue #3219). Callers
+   * deriving the prefix via `deriveSubjectIriPrefix` should pass the same
+   * value to both the adapter and the converter.
+   */
+  subjectIriPrefix?: string;
+}
+
 export class FileSystemVaultAdapter implements IVaultAdapter {
   /** UUID (lowercase) → relative filepath mapping for O(1) lookups */
   private uuidIndex: Map<string, string> | null = null;
@@ -26,7 +59,39 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
    */
   private aliasIndex: Map<string, string> | null = null;
 
-  constructor(private rootPath: string) {}
+  /**
+   * Sibling adapters (Issue #3352). When non-empty,
+   * `getFirstLinkpathDest` falls through to these adapters' indices after
+   * the primary basename / alias lookup misses. Always empty in the
+   * Obsidian plugin runtime (single vault per app).
+   */
+  private readonly siblingAdapters: FileSystemVaultAdapter[];
+
+  /**
+   * Subject IRI prefix for this adapter (Issue #3352 — broader synthesis).
+   * Returned via `getSubjectIriPrefix()` so a primary adapter can build
+   * logical cross-vault paths when one of its siblings resolves a
+   * wikilink. Empty by default.
+   */
+  private readonly subjectIriPrefix: string;
+
+  constructor(
+    private rootPath: string,
+    options: FileSystemVaultAdapterOptions = {},
+  ) {
+    this.siblingAdapters = options.siblingAdapters ?? [];
+    this.subjectIriPrefix = options.subjectIriPrefix ?? "";
+  }
+
+  /**
+   * Subject IRI prefix of this adapter's vault (Issue #3352). Used by a
+   * primary adapter to construct the logical cross-vault path returned
+   * from `getFirstLinkpathDest` when one of its siblings resolves the
+   * linkpath. Empty string when the adapter is rooted at a plain vault.
+   */
+  getSubjectIriPrefix(): string {
+    return this.subjectIriPrefix;
+  }
 
   async read(file: IFile): Promise<string> {
     const fullPath = this.resolvePath(file.path);
@@ -197,7 +262,61 @@ export class FileSystemVaultAdapter implements IVaultAdapter {
       return this.createFileObject(aliasMatch);
     }
 
+    // Step 5: cross-vault fallback (Issue #3352 — broader synthesis for
+    // label-form wikilinks targeting an `--also` vault). Only kicks in
+    // when this adapter has registered siblings; plugin runtime never
+    // sets them. Restricted to the Step-4 miss path: UUID linkpaths are
+    // intentionally NOT routed here because Step 2 / synthesis logic in
+    // `NoteToRDFConverter.synthesizeWikilinkTargetIRI` already covers
+    // UUID-form (Issue #3286 territory).
+    //
+    // Each sibling is consulted with an empty sourcePath so its own
+    // Step 1-4 lookup runs against its own root. The first sibling that
+    // resolves wins. The resulting IFile.path is wrapped with the
+    // sibling's `subjectIriPrefix` so the caller (primary
+    // NoteToRDFConverter with empty prefix) emits the canonical
+    // cross-vault subject IRI via `notePathToIRI`. A sibling without a
+    // prefix is skipped — its files would shadow primary paths and the
+    // dispatch routing in `read`/`getFrontmatter` (not implemented in
+    // this pass) cannot disambiguate.
+    for (const sibling of this.siblingAdapters) {
+      const siblingPrefix = sibling.getSubjectIriPrefix();
+      if (!siblingPrefix) {
+        continue;
+      }
+      const siblingResult = sibling.getFirstLinkpathDest(cleanLinkpath, "");
+      if (siblingResult) {
+        const logicalPath = `${siblingPrefix}/${siblingResult.path}`;
+        return this.createCrossVaultFileObject(logicalPath);
+      }
+    }
+
     return null;
+  }
+
+  /**
+   * Issue #3352 — build an `IFile` whose `path` is the logical
+   * cross-vault path (sibling prefix + sibling-relative path). Mirrors
+   * `createFileObject` but constructs `parent` from the logical path so
+   * `IFile.basename` / `IFile.name` match Obsidian TFile semantics. The
+   * resulting file is NOT readable through this adapter — callers must
+   * route `read` / `getFrontmatter` to the owning sibling adapter.
+   * `NoteToRDFConverter`'s label-form path only touches `basename` and
+   * `path` so this minimal wrapping is sufficient.
+   */
+  private createCrossVaultFileObject(logicalPath: string): IFile {
+    const name = path.basename(logicalPath);
+    const basename = path.basename(logicalPath, path.extname(logicalPath));
+    const parentPath = path.dirname(logicalPath);
+    return {
+      path: logicalPath,
+      basename,
+      name,
+      parent:
+        parentPath !== "."
+          ? { path: parentPath, name: path.basename(parentPath) }
+          : null,
+    };
   }
 
   /**

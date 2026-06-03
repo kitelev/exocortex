@@ -82,12 +82,33 @@ export async function buildCombinedTriples(
     resolvedAlsos.push(r);
   }
 
+  // Issue #3352 — pre-build sibling adapters with their derived
+  // `subjectIriPrefix` before constructing the primary adapter. The
+  // primary adapter is then configured with these siblings so its
+  // `getFirstLinkpathDest` (Step 5) resolves label-form wikilinks whose
+  // target lives in an `--also` vault. Keeps the combined-cache path
+  // symmetric with the non-cached `sparql query --also` path.
+  const alsoAdapters: FileSystemVaultAdapter[] = [];
+  const alsoPrefixes: string[] = [];
+  for (const alsoPath of resolvedAlsos) {
+    // Issue #3219 — preserve `assetspaces/<sub>/` prefix on subject IRIs so
+    // cached cross-vault triples match the form that non-cached `--also`
+    // loads produce, keeping cache-hit and cache-miss queries consistent.
+    const subjectIriPrefix = deriveSubjectIriPrefix(alsoPath);
+    alsoAdapters.push(
+      new FileSystemVaultAdapter(alsoPath, { subjectIriPrefix }),
+    );
+    alsoPrefixes.push(subjectIriPrefix);
+  }
+
   // Load primary
   if (!silent) {
     log(`📦 Loading primary vault: ${primary}...`);
   }
   let triples: Triple[] = [];
-  const primaryAdapter = new FileSystemVaultAdapter(primary);
+  const primaryAdapter = new FileSystemVaultAdapter(primary, {
+    siblingAdapters: alsoAdapters,
+  });
   const primaryConverter = new NoteToRDFConverter(primaryAdapter);
   const primaryTriples = await primaryConverter.convertVault();
   triples = triples.concat(primaryTriples);
@@ -95,16 +116,14 @@ export async function buildCombinedTriples(
     log(`   ➕ Added ${primaryTriples.length} triples from primary vault`);
   }
 
-  // Load each --also vault
-  for (const alsoPath of resolvedAlsos) {
+  // Load each --also vault using the pre-built adapter.
+  for (let i = 0; i < alsoAdapters.length; i++) {
+    const alsoPath = resolvedAlsos[i];
+    const alsoAdapter = alsoAdapters[i];
+    const subjectIriPrefix = alsoPrefixes[i];
     if (!silent) {
       log(`📦 Loading additional vault: ${alsoPath}...`);
     }
-    // Issue #3219 — preserve `assetspaces/<sub>/` prefix on subject IRIs so
-    // cached cross-vault triples match the form that non-cached `--also`
-    // loads produce, keeping cache-hit and cache-miss queries consistent.
-    const subjectIriPrefix = deriveSubjectIriPrefix(alsoPath);
-    const alsoAdapter = new FileSystemVaultAdapter(alsoPath);
     const alsoConverter = new NoteToRDFConverter(alsoAdapter, undefined, {
       subjectIriPrefix,
     });
