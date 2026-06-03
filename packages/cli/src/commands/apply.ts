@@ -19,20 +19,27 @@ import {
   TaskStatusService,
   WorkflowResolver,
   createVaultFrontmatterClassLabelResolver,
+  registerDefaultHostFunctions,
   vaultPathToIRI,
   IRI,
   liveClock,
   frozenClock,
   liveUidGenerator,
   seededUidGenerator,
+  type EvalContext,
   type IClock,
+  type IFile,
   type IUidGenerator,
 } from "exocortex";
 import { ErrorHandler, type OutputFormat } from "../utils/ErrorHandler.js";
-import { VaultNotFoundError, InvalidArgumentsError } from "../utils/errors/index.js";
+import {
+  VaultNotFoundError,
+  InvalidArgumentsError,
+} from "../utils/errors/index.js";
 import { ExitCodes } from "../utils/ExitCodes.js";
 import { FileSystemVaultAdapter } from "../adapters/FileSystemVaultAdapter.js";
 import { NodeFsAdapter } from "../adapters/NodeFsAdapter.js";
+import { createIsInWrongFolderHostFunction } from "../precondition/createIsInWrongFolderHostFunction.js";
 import { populateCliServiceRegistry } from "../services/CliServiceRegistryPopulator.js";
 import { registerOrderSpecFromVault } from "../services/registerOrderSpec.js";
 
@@ -46,7 +53,8 @@ export interface ApplyOptions {
   frozenClock?: string;
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 async function readStdinLines(): Promise<string[]> {
   if (process.stdin.isTTY) return [];
@@ -66,7 +74,11 @@ async function readStdinLines(): Promise<string[]> {
  * Returns null if not found, throws on ambiguity.
  */
 function nodeValue(node: { value: string } | unknown): string {
-  if (node && typeof node === "object" && "value" in (node as Record<string, unknown>)) {
+  if (
+    node &&
+    typeof node === "object" &&
+    "value" in (node as Record<string, unknown>)
+  ) {
     const v = (node as { value: unknown }).value;
     return typeof v === "string" ? v : String(v);
   }
@@ -77,14 +89,18 @@ async function resolveSlugToUuid(
   tripleStore: InMemoryTripleStore,
   slug: string,
 ): Promise<string | null> {
-  const cliNameURI = new IRI("https://exocortex.my/ontology/exocmd#Command_cliName");
+  const cliNameURI = new IRI(
+    "https://exocortex.my/ontology/exocmd#Command_cliName",
+  );
   const triples = await tripleStore.match(undefined, cliNameURI, undefined);
   const matches: string[] = [];
   for (const t of triples) {
     const objStr = nodeValue(t.object);
     if (objStr === slug) {
       const subjStr = nodeValue(t.subject);
-      const match = subjStr.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.md$/i);
+      const match = subjStr.match(
+        /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.md$/i,
+      );
       if (match) matches.push(match[1]);
     }
   }
@@ -105,7 +121,9 @@ async function isDestructive(
   tripleStore: InMemoryTripleStore,
   commandUid: string,
 ): Promise<boolean> {
-  const destructiveURI = new IRI("https://exocortex.my/ontology/exocmd#Command_destructive");
+  const destructiveURI = new IRI(
+    "https://exocortex.my/ontology/exocmd#Command_destructive",
+  );
   const triples = await tripleStore.match(undefined, destructiveURI, undefined);
   for (const t of triples) {
     const subjStr = nodeValue(t.subject);
@@ -161,9 +179,53 @@ async function executeOnTarget(
 
   const targetIRI = vaultPathToIRI(targetRelative);
 
-  // Precondition
-  const evaluator = new PreconditionEvaluator(tripleStore, undefined, { clock });
-  const preconditionPassed = await evaluator.evaluate(command.precondition, targetIRI);
+  // Shared adapter + services used by both precondition host functions
+  // and grounding execution. Built once per target — these services are
+  // stateless so a single instance covers both phases.
+  const vaultAdapter = new FileSystemVaultAdapter(vaultPath);
+  const folderRepairService = new FolderRepairService(vaultAdapter);
+
+  // Precondition (Issue #3302 — register host functions so that
+  // vault-declared `exocmd__Precondition_hostFunction` references resolve
+  // instead of falling open via `evaluateHostFunction`'s `return true`
+  // default. Mirrors plugin wiring in `ExocortexPlugin.ts`).
+  const evaluator = new PreconditionEvaluator(tripleStore, undefined, {
+    clock,
+  });
+  registerDefaultHostFunctions(evaluator);
+  evaluator.registerHostFunction(
+    "isInWrongFolder",
+    createIsInWrongFolderHostFunction(vaultAdapter, folderRepairService),
+  );
+
+  // EvalContext populated with the fields the registered host functions
+  // read — `filePath` for `isInWrongFolder`, `fileBasename` + `assetUid`
+  // for `hasUidFilename` / `hasNonUidFilename`. Without these fields the
+  // functions would fall closed on registered names, hiding commands the
+  // CLI is otherwise meant to run.
+  const targetNode = vaultAdapter.getAbstractFileByPath(targetRelative);
+  const targetFile =
+    targetNode !== null && "basename" in targetNode
+      ? (targetNode as IFile)
+      : null;
+  const targetFrontmatter = targetFile
+    ? vaultAdapter.getFrontmatter(targetFile)
+    : null;
+  const assetUidRaw =
+    targetFrontmatter && typeof targetFrontmatter === "object"
+      ? (targetFrontmatter as Record<string, unknown>).exo__Asset_uid
+      : undefined;
+  const evalContext: EvalContext = {
+    targetIRI,
+    filePath: targetRelative,
+    fileBasename: targetFile?.basename,
+    assetUid: typeof assetUidRaw === "string" ? assetUidRaw : undefined,
+  };
+  const preconditionPassed = await evaluator.evaluate(
+    command.precondition,
+    targetIRI,
+    evalContext,
+  );
   if (!preconditionPassed) {
     console.error(
       `❌ Precondition not satisfied for "${command.name}" on "${targetRelative}".`,
@@ -173,13 +235,14 @@ async function executeOnTarget(
 
   // Dry-run
   if (options.dryRun) {
-    console.log(`🔍 Dry-run: would apply "${command.name}" to "${targetRelative}" (precondition passed).`);
+    console.log(
+      `🔍 Dry-run: would apply "${command.name}" to "${targetRelative}" (precondition passed).`,
+    );
     return true;
   }
 
   // Execute grounding
   const serviceRegistry = new ServiceRegistry();
-  const vaultAdapter = new FileSystemVaultAdapter(vaultPath);
   const genericAssetCreationService = new GenericAssetCreationService(
     vaultAdapter,
   ).withDeterminism({ clock, uidGenerator: uidGen });
@@ -187,7 +250,6 @@ async function executeOnTarget(
   const propertyCleanupService = new PropertyCleanupService(vaultAdapter);
   const fixMissingLabelService = new FixMissingLabelService(vaultAdapter);
   const renameToUidService = new RenameToUidService(vaultAdapter);
-  const folderRepairService = new FolderRepairService(vaultAdapter);
   const taskStatusService = new TaskStatusService(
     vaultAdapter,
     new EffortStatusWorkflow(),
@@ -240,7 +302,11 @@ async function executeOnTarget(
   if (options.input) {
     try {
       const parsed = JSON.parse(options.input);
-      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      if (
+        typeof parsed !== "object" ||
+        parsed === null ||
+        Array.isArray(parsed)
+      ) {
         throw new Error("must be a JSON object");
       }
       userInput = parsed as Record<string, unknown>;
@@ -259,11 +325,15 @@ async function executeOnTarget(
   );
 
   if (result.success) {
-    const msg = command.successMessage ?? `Applied "${command.name}" to "${targetRelative}".`;
+    const msg =
+      command.successMessage ??
+      `Applied "${command.name}" to "${targetRelative}".`;
     console.log(`✅ ${msg}`);
     return true;
   } else {
-    console.error(`❌ "${command.name}" failed on "${targetRelative}": ${result.error}`);
+    console.error(
+      `❌ "${command.name}" failed on "${targetRelative}": ${result.error}`,
+    );
     return false;
   }
 }
@@ -282,7 +352,10 @@ export function applyCommand(): Command {
         "Pass a path arg or pipe paths via stdin.",
     )
     .argument("<cmd>", "Command UUID or cliName slug")
-    .argument("[path]", "Vault-relative path to target asset (omit to read paths from stdin)")
+    .argument(
+      "[path]",
+      "Vault-relative path to target asset (omit to read paths from stdin)",
+    )
     .option("--vault <path>", "Path to Obsidian vault", process.cwd())
     .option("--dry-run", "Preview without writing")
     .option("--yes", "Skip destructive-command confirmation")
@@ -295,96 +368,104 @@ export function applyCommand(): Command {
       "--frozen-clock <iso>",
       "Freeze clock to ISO timestamp for test/replay (uses frozenClock)",
     )
-    .action(async (cmdArg: string, pathArg: string | undefined, options: ApplyOptions) => {
-      ErrorHandler.setFormat("text" as OutputFormat);
+    .action(
+      async (
+        cmdArg: string,
+        pathArg: string | undefined,
+        options: ApplyOptions,
+      ) => {
+        ErrorHandler.setFormat("text" as OutputFormat);
 
-      try {
-        const vaultPath = resolve(options.vault);
-        if (!existsSync(vaultPath)) {
-          throw new VaultNotFoundError(vaultPath);
-        }
-        registerOrderSpecFromVault(vaultPath);
-
-        // Derive clock + UID generator ONCE for the whole apply invocation.
-        // Multi-target stdin pipelines reuse the same generator so that
-        // `seededUidGenerator`'s internal counter increments across targets
-        // instead of restarting at 0 per file.
-        const clock: IClock = options.frozenClock
-          ? frozenClock(options.frozenClock)
-          : liveClock();
-        const uidGen: IUidGenerator = options.seed
-          ? seededUidGenerator(options.seed)
-          : liveUidGenerator();
-
-        // Build triple store once for the whole batch
-        const vaultAdapter = new FileSystemVaultAdapter(vaultPath);
-        const converter = new NoteToRDFConverter(vaultAdapter);
-        const triples = await converter.convertVault();
-        const tripleStore = new InMemoryTripleStore();
-        await tripleStore.addAll(triples);
-
-        // RFC 36347daf Phase 3 — construct WorkflowResolver once for the whole
-        // batch so its per-class cache survives across stdin-piped targets
-        // (mirrors the rationale documented for `clock` / `uidGen` threading).
-        const workflowResolver = new WorkflowResolver(tripleStore);
-
-        // Resolve cmdArg → UUID
-        let commandUid: string;
-        if (UUID_RE.test(cmdArg)) {
-          commandUid = cmdArg;
-        } else {
-          const resolved = await resolveSlugToUuid(tripleStore, cmdArg);
-          if (!resolved) {
-            console.error(
-              `❌ No command found with UUID or cliName "${cmdArg}".`,
-            );
-            process.exit(ExitCodes.FILE_NOT_FOUND);
+        try {
+          const vaultPath = resolve(options.vault);
+          if (!existsSync(vaultPath)) {
+            throw new VaultNotFoundError(vaultPath);
           }
-          commandUid = resolved;
-        }
+          registerOrderSpecFromVault(vaultPath);
 
-        // Build target list
-        let targets: string[];
-        if (pathArg) {
-          targets = [pathArg];
-        } else {
-          targets = await readStdinLines();
-          if (targets.length === 0) {
-            throw new InvalidArgumentsError(
-              "No target path provided and stdin is empty.",
-              "exocortex apply <uuid> <path>  OR  exocortex find ... | exocortex apply <uuid>",
+          // Derive clock + UID generator ONCE for the whole apply invocation.
+          // Multi-target stdin pipelines reuse the same generator so that
+          // `seededUidGenerator`'s internal counter increments across targets
+          // instead of restarting at 0 per file.
+          const clock: IClock = options.frozenClock
+            ? frozenClock(options.frozenClock)
+            : liveClock();
+          const uidGen: IUidGenerator = options.seed
+            ? seededUidGenerator(options.seed)
+            : liveUidGenerator();
+
+          // Build triple store once for the whole batch
+          const vaultAdapter = new FileSystemVaultAdapter(vaultPath);
+          const converter = new NoteToRDFConverter(vaultAdapter);
+          const triples = await converter.convertVault();
+          const tripleStore = new InMemoryTripleStore();
+          await tripleStore.addAll(triples);
+
+          // RFC 36347daf Phase 3 — construct WorkflowResolver once for the whole
+          // batch so its per-class cache survives across stdin-piped targets
+          // (mirrors the rationale documented for `clock` / `uidGen` threading).
+          const workflowResolver = new WorkflowResolver(tripleStore);
+
+          // Resolve cmdArg → UUID
+          let commandUid: string;
+          if (UUID_RE.test(cmdArg)) {
+            commandUid = cmdArg;
+          } else {
+            const resolved = await resolveSlugToUuid(tripleStore, cmdArg);
+            if (!resolved) {
+              console.error(
+                `❌ No command found with UUID or cliName "${cmdArg}".`,
+              );
+              process.exit(ExitCodes.FILE_NOT_FOUND);
+            }
+            commandUid = resolved;
+          }
+
+          // Build target list
+          let targets: string[];
+          if (pathArg) {
+            targets = [pathArg];
+          } else {
+            targets = await readStdinLines();
+            if (targets.length === 0) {
+              throw new InvalidArgumentsError(
+                "No target path provided and stdin is empty.",
+                "exocortex apply <uuid> <path>  OR  exocortex find ... | exocortex apply <uuid>",
+              );
+            }
+          }
+
+          // Continue-on-error semantics
+          let successCount = 0;
+          let failCount = 0;
+          for (const target of targets) {
+            const ok = await executeOnTarget(
+              vaultPath,
+              tripleStore,
+              workflowResolver,
+              commandUid,
+              target,
+              options,
+              clock,
+              uidGen,
+            );
+            if (ok) successCount++;
+            else failCount++;
+          }
+
+          if (targets.length > 1) {
+            console.log(
+              `\n📊 Applied to ${successCount}/${targets.length} target(s) (${failCount} failed).`,
             );
           }
-        }
 
-        // Continue-on-error semantics
-        let successCount = 0;
-        let failCount = 0;
-        for (const target of targets) {
-          const ok = await executeOnTarget(
-            vaultPath,
-            tripleStore,
-            workflowResolver,
-            commandUid,
-            target,
-            options,
-            clock,
-            uidGen,
-          );
-          if (ok) successCount++;
-          else failCount++;
-        }
-
-        if (targets.length > 1) {
-          console.log(`\n📊 Applied to ${successCount}/${targets.length} target(s) (${failCount} failed).`);
-        }
-
-        if (failCount > 0) {
+          if (failCount > 0) {
+            process.exit(ExitCodes.OPERATION_FAILED);
+          }
+        } catch (error) {
+          ErrorHandler.handle(error as Error);
           process.exit(ExitCodes.OPERATION_FAILED);
         }
-      } catch (error) {
-        ErrorHandler.handle(error as Error);
-        process.exit(ExitCodes.OPERATION_FAILED);
-      }
-    });
+      },
+    );
 }
