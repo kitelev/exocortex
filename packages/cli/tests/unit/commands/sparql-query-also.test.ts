@@ -80,6 +80,16 @@ jest.unstable_mockModule("../../../src/cache/CacheManager.js", () => ({
     loadOrBuild: jest.fn().mockResolvedValue({ triples: [], cacheHit: false }),
   })),
 }));
+// Issue #3281: sparql-query.ts now also pulls in CombinedCacheManager for
+// the cross-vault index read path. Default to "no combined cache" so the
+// existing --also tests below exercise the legacy per-vault concat flow.
+jest.unstable_mockModule("../../../src/cache/CombinedCacheManager.js", () => ({
+  CombinedCacheManager: jest.fn(() => ({
+    getCachePath: jest.fn().mockReturnValue("/mock/combined-cache/path"),
+    getAllVaultPaths: jest.fn().mockReturnValue([]),
+    loadIfValid: jest.fn().mockResolvedValue(null),
+  })),
+}));
 jest.unstable_mockModule("../../../src/cache/QueryResultCache.js", () => ({
   QueryResultCache: jest.fn(() => ({
     get: jest.fn().mockResolvedValue(null),

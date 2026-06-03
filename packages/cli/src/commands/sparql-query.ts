@@ -27,6 +27,7 @@ import { VaultNotFoundError, InvalidArgumentsError, QueryTimeoutError } from "..
 import { ResponseBuilder, ErrorCode, type QueryResult, type ConstructResult } from "../responses/index.js";
 import { ExitCodes } from "../utils/ExitCodes.js";
 import { CacheManager } from "../cache/CacheManager.js";
+import { CombinedCacheManager } from "../cache/CombinedCacheManager.js";
 import { QueryResultCache } from "../cache/QueryResultCache.js";
 import { ProgressIndicator } from "../utils/ProgressIndicator.js";
 import { QueryAnalyzer } from "../utils/QueryAnalyzer.js";
@@ -398,55 +399,94 @@ export function sparqlQueryCommand(): Command {
           useCacheEffective = false;
         }
 
-        let triples: Triple[];
+        let triples: Triple[] = [];
         let cacheHit = false;
+        let combinedCacheHit = false;
 
-        if (useCacheEffective) {
-          // Use cached triples for faster loading
-          const cacheManager = new CacheManager(vaultPath);
-          const cacheResult = await cacheManager.loadOrBuild();
-          triples = cacheResult.triples;
-          cacheHit = cacheResult.cacheHit;
-
-          if (outputFormat === "text" && cacheHit) {
-            console.log(`🚀 Cache hit! Loading from persistent cache...`);
-          }
-        } else {
-          // Traditional vault loading
-          const vaultAdapter = new FileSystemVaultAdapter(vaultPath);
-          const converter = new NoteToRDFConverter(vaultAdapter);
-          triples = await converter.convertVault(
-            profileFilter !== null
-              ? {
-                  effectiveOntologies: profileFilter.effective,
-                  assetSpaceFolderToUid: profileFilter.folderMap,
-                }
-              : {},
+        // Issue #3281: when both --use-cache and --also are specified, try the
+        // combined cross-vault index first. It contains primary + every --also
+        // vault's triples WITH RDFS / prototype-chain materialization applied
+        // over the combined store, so cross-vault subClass and prototype chains
+        // resolve correctly (previous per-vault caches materialized inferences
+        // within each vault individually, missing cross-vault deductions).
+        //
+        // Combined cache is gated on `profileFilter === null` because profile
+        // filters apply at convertVault() time and the combined cache was
+        // built without profile awareness — applying a profile to cached
+        // triples would silently mis-filter. Profile-aware combined caching
+        // is follow-up scope (#3286/#3282 + future profile interaction).
+        if (useCacheEffective && alsoVaults.length > 0 && profileFilter === null) {
+          const combinedCache = new CombinedCacheManager(
+            vaultPath,
+            alsoVaults.map((a) => resolve(a)),
           );
+          const combinedResult = await combinedCache.loadIfValid();
+          if (combinedResult !== null) {
+            triples = combinedResult.triples;
+            cacheHit = true;
+            combinedCacheHit = true;
+            if (outputFormat === "text") {
+              console.log(
+                `🚀 Combined cache hit! Loaded ${triples.length} triples from cross-vault index (${combinedCache.getAllVaultPaths().length} vaults).`,
+              );
+            }
+          } else {
+            if (outputFormat === "text") {
+              console.log(
+                `ℹ️  Combined cache miss (or invalid). Falling back to per-vault load. Run \`exocortex sparql index --vault <primary> --also <...>\` to build the cross-vault index.`,
+              );
+            }
+          }
         }
 
-        // Load additional vaults if --also specified
-        for (const alsoPath of alsoVaults) {
-          const resolvedAlsoPath = resolve(alsoPath);
-          if (!existsSync(resolvedAlsoPath)) {
-            throw new VaultNotFoundError(resolvedAlsoPath);
+        if (!combinedCacheHit) {
+          if (useCacheEffective) {
+            // Use cached triples for faster loading (primary vault only)
+            const cacheManager = new CacheManager(vaultPath);
+            const cacheResult = await cacheManager.loadOrBuild();
+            triples = cacheResult.triples;
+            cacheHit = cacheResult.cacheHit;
+
+            if (outputFormat === "text" && cacheHit) {
+              console.log(`🚀 Cache hit! Loading from persistent cache...`);
+            }
+          } else {
+            // Traditional vault loading
+            const vaultAdapter = new FileSystemVaultAdapter(vaultPath);
+            const converter = new NoteToRDFConverter(vaultAdapter);
+            triples = await converter.convertVault(
+              profileFilter !== null
+                ? {
+                    effectiveOntologies: profileFilter.effective,
+                    assetSpaceFolderToUid: profileFilter.folderMap,
+                  }
+                : {},
+            );
           }
-          if (outputFormat === "text") {
-            console.log(`📦 Loading additional vault: ${resolvedAlsoPath}...`);
-          }
-          const alsoAdapter = new FileSystemVaultAdapter(resolvedAlsoPath);
-          const alsoConverter = new NoteToRDFConverter(alsoAdapter);
-          const alsoTriples = await alsoConverter.convertVault(
-            profileFilter !== null
-              ? {
-                  effectiveOntologies: profileFilter.effective,
-                  assetSpaceFolderToUid: profileFilter.folderMap,
-                }
-              : {},
-          );
-          triples = triples.concat(alsoTriples);
-          if (outputFormat === "text") {
-            console.log(`   ➕ Added ${alsoTriples.length} triples from ${resolvedAlsoPath}`);
+
+          // Load additional vaults if --also specified
+          for (const alsoPath of alsoVaults) {
+            const resolvedAlsoPath = resolve(alsoPath);
+            if (!existsSync(resolvedAlsoPath)) {
+              throw new VaultNotFoundError(resolvedAlsoPath);
+            }
+            if (outputFormat === "text") {
+              console.log(`📦 Loading additional vault: ${resolvedAlsoPath}...`);
+            }
+            const alsoAdapter = new FileSystemVaultAdapter(resolvedAlsoPath);
+            const alsoConverter = new NoteToRDFConverter(alsoAdapter);
+            const alsoTriples = await alsoConverter.convertVault(
+              profileFilter !== null
+                ? {
+                    effectiveOntologies: profileFilter.effective,
+                    assetSpaceFolderToUid: profileFilter.folderMap,
+                  }
+                : {},
+            );
+            triples = triples.concat(alsoTriples);
+            if (outputFormat === "text") {
+              console.log(`   ➕ Added ${alsoTriples.length} triples from ${resolvedAlsoPath}`);
+            }
           }
         }
 

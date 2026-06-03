@@ -3,12 +3,15 @@ import { existsSync } from "fs";
 import { resolve } from "path";
 import { InMemoryTripleStore, RDFSInferenceEngine, NonInheritablePropertyRegistry, PropertyCardinalityRegistry, PrototypeChainMaterializer } from "exocortex";
 import { CacheManager } from "../cache/CacheManager.js";
+import { CombinedCacheManager } from "../cache/CombinedCacheManager.js";
+import { buildCombinedTriples } from "../cache/buildCombinedTriples.js";
 import { ErrorHandler, type OutputFormat } from "../utils/ErrorHandler.js";
 import { VaultNotFoundError } from "../utils/errors/index.js";
 import { ResponseBuilder, type CacheResult, type CacheStatsResult } from "../responses/index.js";
 
 export interface SparqlIndexOptions {
   vault: string;
+  also?: string[];
   output?: OutputFormat;
   stats?: boolean;
   force?: boolean;
@@ -17,10 +20,24 @@ export interface SparqlIndexOptions {
 }
 
 /**
+ * Commander.js accumulator for repeatable --also flag.
+ * Each --also <path> adds a vault path to the array.
+ */
+function collectAlso(value: string, previous: string[]): string[] {
+  return previous.concat([value]);
+}
+
+/**
  * Creates the 'sparql index' subcommand for building/managing the triple cache.
  *
  * The index command creates a persistent cache of RDF triples from the vault,
  * enabling fast subsequent SPARQL queries without re-parsing all files.
+ *
+ * With one or more `--also <path>` flags, the command builds a **combined**
+ * cross-vault cache materialized over the union of the primary and `--also`
+ * vaults (Issue #3281). The combined cache lives at
+ * `<primary>/.exocortex/cache/combined-<hash>.json` and is consumed by
+ * `sparql query --use-cache --also` when the same set of vaults is queried.
  *
  * @returns Commander Command instance configured for cache management
  *
@@ -29,11 +46,13 @@ export interface SparqlIndexOptions {
  * exocortex sparql index --vault /path/to/vault --stats
  * exocortex sparql index --vault /path/to/vault --force
  * exocortex sparql index --vault /path/to/vault --strict
+ * exocortex sparql index --vault /path/to/primary --also /path/to/other
  */
 export function sparqlIndexCommand(): Command {
   return new Command("index")
     .description("Build or refresh the triple cache for faster SPARQL queries")
     .option("--vault <path>", "Path to Obsidian vault", process.cwd())
+    .option("--also <path>", "Additional vault to include in combined index (repeatable, Issue #3281)", collectAlso, [])
     .option("--output <type>", "Response format: text|json (for MCP tools)", "text")
     .option("--stats", "Show cache statistics after building")
     .option("--force", "Force rebuild even if cache is valid")
@@ -49,6 +68,15 @@ export function sparqlIndexCommand(): Command {
           throw new VaultNotFoundError(vaultPath);
         }
 
+        const alsoVaults = options.also ?? [];
+
+        // Multi-vault path: build combined cross-vault index (Issue #3281)
+        if (alsoVaults.length > 0) {
+          await runCombinedIndex(vaultPath, alsoVaults, options, outputFormat);
+          return;
+        }
+
+        // Single-vault path: original behaviour, unchanged for backward compat
         const cacheManager = new CacheManager(vaultPath);
         const cachePath = cacheManager.getCachePath();
 
@@ -171,6 +199,134 @@ export function sparqlIndexCommand(): Command {
         ErrorHandler.handle(error as Error);
       }
     });
+}
+
+/**
+ * Build/refresh a combined cross-vault triple cache (Issue #3281).
+ *
+ * Materializes RDFS + prototype-chain inferences over the union of triples
+ * from `primary` and every `alsoVaults` path. The resulting triple set is
+ * persisted under `<primary>/.exocortex/cache/combined-<hash>.json` where
+ * `<hash>` is a stable hash of the sorted vault-path set, so subsequent
+ * `sparql query --use-cache --also` calls with the same vault set hit the
+ * combined cache directly.
+ */
+async function runCombinedIndex(
+  primary: string,
+  alsoVaults: string[],
+  options: SparqlIndexOptions,
+  outputFormat: OutputFormat,
+): Promise<void> {
+  // Pre-validate that every --also path exists so the user sees an early
+  // error rather than partial-build state.
+  for (const a of alsoVaults) {
+    const resolved = resolve(a);
+    if (!existsSync(resolved)) {
+      throw new VaultNotFoundError(resolved);
+    }
+  }
+
+  const combinedCache = new CombinedCacheManager(primary, alsoVaults);
+  const cachePath = combinedCache.getCachePath();
+
+  if (options.force) {
+    if (outputFormat === "text") {
+      console.log("🗑️  Invalidating existing combined cache...");
+    }
+    await combinedCache.invalidate();
+  }
+
+  if (outputFormat === "text") {
+    console.log(
+      `📦 Building combined triple cache (${combinedCache.getAllVaultPaths().length} vaults)...`,
+    );
+  }
+
+  const startTime = Date.now();
+
+  // buildCombinedTriples handles per-vault load, cross-vault Instance_class
+  // resolution, and RDFS + prototype-chain materialization on the combined
+  // store. Disabling `noInference` mirrors `--no-inference` flag semantics.
+  const buildResult = await buildCombinedTriples(primary, alsoVaults, {
+    noInference: options.inference === false,
+    silent: outputFormat !== "text",
+  });
+
+  await combinedCache.saveTriples(buildResult.triples);
+
+  const totalDuration = Date.now() - startTime;
+  const tripleCount = buildResult.triples.length;
+
+  if (outputFormat === "json") {
+    const cacheResult: CacheResult = {
+      action: "build",
+      cachePath,
+      tripleCount,
+      durationMs: totalDuration,
+    };
+
+    if (options.stats) {
+      const stats = await combinedCache.getCacheStats();
+      if (stats) {
+        const statsResult: CacheStatsResult = {
+          tripleCount: stats.tripleCount,
+          createdAt: stats.createdAt.toISOString(),
+          isValid: stats.isValid,
+          sizeBytes: stats.sizeBytes,
+          cachePath,
+        };
+        const response = ResponseBuilder.success(
+          {
+            cache: cacheResult,
+            stats: statsResult,
+            combined: {
+              vaultPaths: combinedCache.getAllVaultPaths(),
+              rawTripleCount: buildResult.rawTripleCount,
+              crossVaultAddedTripleCount: buildResult.crossVaultAddedTripleCount,
+              inferredTripleCount: buildResult.inferredTripleCount,
+            },
+          },
+          { durationMs: totalDuration },
+        );
+        console.log(JSON.stringify(response, null, 2));
+        return;
+      }
+    }
+
+    const response = ResponseBuilder.success(
+      {
+        cache: cacheResult,
+        combined: {
+          vaultPaths: combinedCache.getAllVaultPaths(),
+          rawTripleCount: buildResult.rawTripleCount,
+          crossVaultAddedTripleCount: buildResult.crossVaultAddedTripleCount,
+          inferredTripleCount: buildResult.inferredTripleCount,
+        },
+      },
+      { durationMs: totalDuration },
+    );
+    console.log(JSON.stringify(response, null, 2));
+  } else {
+    console.log(
+      `📊 Created combined cache with ${tripleCount.toLocaleString()} triples at ${cachePath}`,
+    );
+    console.log(`⏱️  Build time: ${totalDuration}ms`);
+
+    if (options.stats) {
+      const stats = await combinedCache.getCacheStats();
+      if (stats) {
+        console.log("\n📊 Combined Cache Statistics:");
+        console.log(`   Triples: ${stats.tripleCount.toLocaleString()}`);
+        console.log(`   Created: ${stats.createdAt.toISOString()}`);
+        console.log(`   Valid: ${stats.isValid ? "✅ Yes" : "❌ No"}`);
+        console.log(`   Size: ${formatBytes(stats.sizeBytes)}`);
+        console.log(`   Vaults (${stats.vaultPaths.length}):`);
+        for (const vp of stats.vaultPaths) {
+          console.log(`     - ${vp}`);
+        }
+      }
+    }
+  }
 }
 
 /**
