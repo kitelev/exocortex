@@ -137,7 +137,17 @@ export const KNOWN_CLASSES: KnownClass[] = [
     label: "ems__Area",
   },
   {
-    terms: ["персона", "персоны", "персон", "человек", "люди", "людей", "людям", "person", "persons"],
+    terms: [
+      "персона",
+      "персоны",
+      "персон",
+      "человек",
+      "люди",
+      "людей",
+      "людям",
+      "person",
+      "persons",
+    ],
     match: "ims__Person",
     label: "ims__Person",
   },
@@ -148,9 +158,7 @@ export const KNOWN_CLASSES: KnownClass[] = [
  */
 export function findClassByTerm(query: string): KnownClass | undefined {
   const lower = query.toLowerCase();
-  return KNOWN_CLASSES.find((c) =>
-    c.terms.some((t) => lower.includes(t))
-  );
+  return KNOWN_CLASSES.find((c) => c.terms.some((t) => lower.includes(t)));
 }
 
 /**
@@ -313,7 +321,15 @@ ORDER BY ?start`,
       "когда я спал",
       "сколько я спал в ноябре",
     ],
-    keywords: ["сон", "сна", "спать", "поспать", "sleep", "спал", "статистика сна"],
+    keywords: [
+      "сон",
+      "сна",
+      "спать",
+      "поспать",
+      "sleep",
+      "спал",
+      "статистика сна",
+    ],
   },
   {
     name: "active_projects",
@@ -339,6 +355,48 @@ ORDER BY ?label`,
       "активных",
       "проекты",
       "projects",
+      "в работе",
+      "doing",
+    ],
+  },
+  {
+    // Issue #3289 short-term: mirror `active_projects` for `ems__Task` so
+    // queries like "какие задачи в статусе Doing?" / "задачи в работе"
+    // resolve to the correct status-filtered SPARQL instead of falling
+    // back to a label-REGEX guess. Long-term homoiconic NL→SPARQL (per
+    // issue body §"Решение") remains tracked in #3289 — this template is
+    // the immediate slice unlocking the documented AC for task status
+    // queries.
+    name: "active_tasks",
+    description: "Find active tasks with status Doing",
+    template: `${SPARQL_PREFIXES}
+
+SELECT ?task ?label
+WHERE {
+  ?task ${PREDICATES.INSTANCE_CLASS} "[[${ASSET_CLASSES.TASK}]]" .
+  ?task ${PREDICATES.EFFORT_STATUS} ${EFFORT_STATUSES.DOING} .
+  ?task ${PREDICATES.ASSET_LABEL} ?label .
+}
+ORDER BY ?label`,
+    parameters: [],
+    // Examples avoid the bare Russian particle "в" so they do not match
+    // generic queries like "найди все задачи" by substring on "в" ⊂
+    // "все". Keyword set carries the natural "в статусе doing" / "в
+    // работе" phrasing for ranking on the issue-3289 AC queries.
+    examples: [
+      "активные задачи",
+      "какие задачи doing",
+      "задачи со статусом doing",
+      "текущие задачи",
+    ],
+    // Keywords intentionally exclude the bare "задачи" / "tasks" tokens so
+    // that the existing `search_by_label` template still wins for general
+    // search queries like "найди все задачи со словом X". The
+    // disambiguator is the status phrase or the "активные" qualifier.
+    keywords: [
+      "активные задачи",
+      "в статусе doing",
+      "статусе doing",
       "в работе",
       "doing",
     ],
@@ -497,11 +555,7 @@ WHERE {
         example: "Поспать 2025-11-30",
       },
     ],
-    examples: [
-      "все свойства задачи",
-      "покажи детали записи",
-      "информация о",
-    ],
+    examples: ["все свойства задачи", "покажи детали записи", "информация о"],
     keywords: ["свойства", "properties", "детали", "информация"],
   },
   {
@@ -522,10 +576,7 @@ WHERE {
         example: "2d369bb0-159f-4639-911d-ec2c585e8d00",
       },
     ],
-    examples: [
-      "свойства по UUID",
-      "покажи запись с UUID",
-    ],
+    examples: ["свойства по UUID", "покажи запись с UUID"],
     keywords: ["UUID", "uid"],
   },
   {
@@ -636,16 +687,22 @@ WHERE {
 ORDER BY ?label`,
     parameters: [],
     examples: ["все люди", "контакты", "persons"],
-    keywords: ["люди", "контакты", "персон", "персоны", "персона", "persons", "person"],
+    keywords: [
+      "люди",
+      "контакты",
+      "персон",
+      "персоны",
+      "персона",
+      "persons",
+      "person",
+    ],
   },
 ];
 
 /**
  * Get a template by name
  */
-export function getTemplateByName(
-  name: string
-): SPARQLTemplate | undefined {
+export function getTemplateByName(name: string): SPARQLTemplate | undefined {
   return SPARQL_TEMPLATES.find((t) => t.name === name);
 }
 
@@ -654,7 +711,7 @@ export function getTemplateByName(
  */
 export function findMatchingTemplates(
   query: string,
-  maxResults = 3
+  maxResults = 3,
 ): SPARQLTemplate[] {
   const normalizedQuery = query.toLowerCase();
   const scores = new Map<SPARQLTemplate, number>();
@@ -674,7 +731,7 @@ export function findMatchingTemplates(
       const exampleWords = example.toLowerCase().split(/\s+/);
       const queryWords = normalizedQuery.split(/\s+/);
       const matchingWords = exampleWords.filter((w) =>
-        queryWords.some((qw) => qw.includes(w) || w.includes(qw))
+        queryWords.some((qw) => qw.includes(w) || w.includes(qw)),
       );
       score += matchingWords.length * 0.5;
     }
@@ -696,7 +753,7 @@ export function findMatchingTemplates(
  */
 export function fillTemplate(
   template: SPARQLTemplate,
-  params: Record<string, string>
+  params: Record<string, string>,
 ): string {
   let query = template.template;
 
@@ -723,7 +780,7 @@ export function fillTemplate(
  */
 export function validateParameters(
   template: SPARQLTemplate,
-  params: Record<string, string>
+  params: Record<string, string>,
 ): { valid: boolean; missing: string[] } {
   const missing: string[] = [];
 
