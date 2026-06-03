@@ -55,12 +55,24 @@ test.describe("Create fleeting note — Palette registration smoke", () => {
     // here can follow as a separate PR with a UUID-canon fixture or an
     // explicit `expandClassValue` warm-up.
     const window = await launcher.getWindow();
+    // Issue #3216: flake mitigation — drain any leftover startup notices
+    // (e.g. "failed to wire hard-switch debounce" warnings seen in shard-2
+    // logs) before probing the plugins map. Mirrors the sibling pattern
+    // used in `vault-commands-smoke.spec.ts` / `daily-navigation.spec.ts`
+    // so the test does not race the Obsidian boot pipeline.
+    await launcher.waitForModalsToClose(10000);
 
     const result = await window.evaluate(async () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const app = (window as any).app;
 
-      for (let i = 0; i < 30; i++) {
+      // Issue #3216: doubled poll budget (was 30 × 500ms = 15s, now
+      // 60 × 500ms = 30s) to absorb slow plugin-load runners. Three
+      // documented incidents on shard-4 (`8b01b3b`, `5e1673c`, `3ad3c6f`)
+      // all failed with `pluginLoaded=false` after the prior 15s window,
+      // and the test passed on rerun without code changes — consistent
+      // with a slow-runner timing issue rather than a real regression.
+      for (let i = 0; i < 60; i++) {
         if (app?.plugins?.plugins?.exocortex) break;
         await new Promise((r) => setTimeout(r, 500));
       }
