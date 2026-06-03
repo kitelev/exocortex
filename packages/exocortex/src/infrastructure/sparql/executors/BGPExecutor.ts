@@ -535,21 +535,43 @@ export class BGPExecutor {
   }
 
   /**
-   * Warn-level log when a literal-safety guard fires (Issue #2997 Phase 3).
-   * Indicates upstream bad data (loader leak, malformed wikilink, ...) reached
-   * the BGP executor; the guard suppresses the crash but the log preserves
-   * diagnostic visibility.
+   * Error-level log when a literal-safety guard fires (Issue #2997 Phase 3
+   * + Issue #3282 fail-visible upgrade). Indicates upstream bad data
+   * (loader leak, malformed wikilink, ...) reached the BGP executor; the
+   * guard suppresses the crash but the log preserves diagnostic visibility.
+   *
+   * Issue #3282: when `EXOCORTEX_SPARQL_STRICT` is truthy
+   * (1 / true / yes — set explicitly or via CLI `--strict`), this throws
+   * a `BGPExecutorError` instead of swallowing the literal — surfaces the
+   * silent recall loss that motivated the issue's audit reproducer.
    */
   private warnLiteralGuard(
     context: string,
     position: "subject" | "predicate" | "object",
     element: TripleElement,
   ): void {
-    const value = "value" in element ? String((element as { value: unknown }).value) : "<unknown>";
-    const truncated = value.length > 80 ? `${value.slice(0, 77)}...` : value;
-    console.warn(
+    const rawValue = "value" in element ? String((element as { value: unknown }).value) : "<unknown>";
+    const truncated = rawValue.length > 80 ? `${rawValue.slice(0, 77)}...` : rawValue;
+    const diagnostic = {
+      executor: "BGPExecutor",
+      context,
+      position,
+      value: truncated,
+      hint:
+        "Wikilink could not be resolved to IRI (likely label-form wikilink with no matching basename/alias). " +
+        "Check whether the target file exists in the queried vault, add an alias, " +
+        "or load the target vault via --also. See issue #3282.",
+    };
+    console.error(
       `[BGPExecutor] literal-safety guard fired in ${context}: literal in ${position} position — yielding 0 solutions. value="${truncated}"`,
+      diagnostic,
     );
+    if (PropertyPathExecutor.isStrictModeEnabled()) {
+      throw new BGPExecutorError(
+        `Literal in ${position} position (${context}): "${truncated}". ` +
+          "Set EXOCORTEX_SPARQL_STRICT=0 or omit --strict to fall back to warn-and-empty behaviour.",
+      );
+    }
   }
 
   /**

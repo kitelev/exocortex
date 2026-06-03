@@ -18,7 +18,7 @@ import { BGPOperation, PropertyPath } from "../../../../../src/infrastructure/sp
 describe("BGPExecutor — Issue #2997 Phase 3 literal-safety guard", () => {
   let tripleStore: InMemoryTripleStore;
   let executor: BGPExecutor;
-  let warnSpy: jest.SpyInstance;
+  let errorSpy: jest.SpyInstance;
 
   const ex = (local: string) => new IRI(`http://example.org/${local}`);
 
@@ -37,11 +37,13 @@ describe("BGPExecutor — Issue #2997 Phase 3 literal-safety guard", () => {
       new Triple(ex("project-1"), ex("Effort_parent"), ex("root-1")),
     );
 
-    warnSpy = jest.spyOn(console, "warn").mockImplementation(() => undefined);
+    // Issue #3282 promoted the literal-safety log from console.warn → console.error
+    // so the silent recall loss is visible in tooling. Spy on error here.
+    errorSpy = jest.spyOn(console, "error").mockImplementation(() => undefined);
   });
 
   afterEach(() => {
-    warnSpy.mockRestore();
+    errorSpy.mockRestore();
   });
 
   it("yields no rows and does not throw when a join binds a variable to a literal then reuses it as subject", async () => {
@@ -76,8 +78,8 @@ describe("BGPExecutor — Issue #2997 Phase 3 literal-safety guard", () => {
     // way the execution must complete without throwing.
     expect(Array.isArray(results)).toBe(true);
     // Guard must have fired at least once for the literal-bound row.
-    expect(warnSpy).toHaveBeenCalled();
-    const messages = warnSpy.mock.calls.map((c) => c.join(" "));
+    expect(errorSpy).toHaveBeenCalled();
+    const messages = errorSpy.mock.calls.map((c) => c.join(" "));
     expect(messages.some((m) => m.includes("literal-safety guard"))).toBe(true);
   });
 
@@ -117,8 +119,8 @@ describe("BGPExecutor — Issue #2997 Phase 3 literal-safety guard", () => {
 
     const results = await executor.executeAll(bgp);
     expect(Array.isArray(results)).toBe(true);
-    expect(warnSpy).toHaveBeenCalled();
-    const messages = warnSpy.mock.calls.map((c) => c.join(" "));
+    expect(errorSpy).toHaveBeenCalled();
+    const messages = errorSpy.mock.calls.map((c) => c.join(" "));
     expect(
       messages.some((m) => m.includes("literal-safety guard")),
     ).toBe(true);
@@ -144,7 +146,7 @@ describe("BGPExecutor — Issue #2997 Phase 3 literal-safety guard", () => {
 
     const results = await executor.executeAll(bgp);
     expect(results).toHaveLength(0);
-    expect(warnSpy).toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalled();
   });
 
   it("STR-coercion FILTER pattern shape from the #2997 issue does not throw", async () => {
@@ -170,5 +172,104 @@ describe("BGPExecutor — Issue #2997 Phase 3 literal-safety guard", () => {
     };
 
     await expect(executor.executeAll(bgp)).resolves.toBeDefined();
+  });
+
+  // Issue #3282 — strict-mode escalation. The audit reproducer's 9
+  // literal-safety warnings come from this guard (BGPExecutor), not
+  // PropertyPathExecutor. Under EXOCORTEX_SPARQL_STRICT=1 the silent fail
+  // becomes a hard error so CI / scripts can surface the recall loss.
+  describe("Issue #3282 strict mode (EXOCORTEX_SPARQL_STRICT)", () => {
+    let originalStrictEnv: string | undefined;
+
+    beforeEach(() => {
+      originalStrictEnv = process.env.EXOCORTEX_SPARQL_STRICT;
+      delete process.env.EXOCORTEX_SPARQL_STRICT;
+    });
+
+    afterEach(() => {
+      if (originalStrictEnv === undefined) {
+        delete process.env.EXOCORTEX_SPARQL_STRICT;
+      } else {
+        process.env.EXOCORTEX_SPARQL_STRICT = originalStrictEnv;
+      }
+    });
+
+    it("emits console.error with a structured payload (default mode)", async () => {
+      const path: PropertyPath = {
+        type: "path",
+        pathType: "*",
+        items: [{ type: "iri", value: "http://example.org/p" }],
+      };
+
+      const bgp: BGPOperation = {
+        type: "bgp",
+        triples: [
+          {
+            subject: { type: "literal", value: "Барик (Area)" },
+            predicate: path,
+            object: { type: "variable", value: "o" },
+          },
+        ],
+      };
+
+      await executor.executeAll(bgp);
+
+      expect(errorSpy).toHaveBeenCalled();
+      const lastCall = errorSpy.mock.calls[errorSpy.mock.calls.length - 1];
+      expect(lastCall[1]).toMatchObject({
+        executor: "BGPExecutor",
+        position: "subject",
+        value: "Барик (Area)",
+        hint: expect.stringContaining("Wikilink"),
+      });
+    });
+
+    it("throws BGPExecutorError when EXOCORTEX_SPARQL_STRICT=1", async () => {
+      process.env.EXOCORTEX_SPARQL_STRICT = "1";
+      const path: PropertyPath = {
+        type: "path",
+        pathType: "*",
+        items: [{ type: "iri", value: "http://example.org/p" }],
+      };
+
+      const bgp: BGPOperation = {
+        type: "bgp",
+        triples: [
+          {
+            subject: { type: "literal", value: "Барик (Area)" },
+            predicate: path,
+            object: { type: "variable", value: "o" },
+          },
+        ],
+      };
+
+      await expect(executor.executeAll(bgp)).rejects.toThrow(
+        /Literal in subject position/,
+      );
+    });
+
+    it("does not throw when EXOCORTEX_SPARQL_STRICT=0 (explicit opt-out)", async () => {
+      process.env.EXOCORTEX_SPARQL_STRICT = "0";
+      const path: PropertyPath = {
+        type: "path",
+        pathType: "*",
+        items: [{ type: "iri", value: "http://example.org/p" }],
+      };
+
+      const bgp: BGPOperation = {
+        type: "bgp",
+        triples: [
+          {
+            subject: { type: "literal", value: "Барик (Area)" },
+            predicate: path,
+            object: { type: "variable", value: "o" },
+          },
+        ],
+      };
+
+      const results = await executor.executeAll(bgp);
+      expect(results).toEqual([]);
+      expect(errorSpy).toHaveBeenCalled();
+    });
   });
 });
