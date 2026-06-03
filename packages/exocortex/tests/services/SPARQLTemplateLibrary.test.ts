@@ -47,7 +47,9 @@ describe("SPARQLTemplateLibrary", () => {
       });
 
       it("should have effort predicates", () => {
-        expect(PREDICATES.EFFORT_START_TIMESTAMP).toBe("ems:Effort_startTimestamp");
+        expect(PREDICATES.EFFORT_START_TIMESTAMP).toBe(
+          "ems:Effort_startTimestamp",
+        );
         expect(PREDICATES.EFFORT_END_TIMESTAMP).toBe("ems:Effort_endTimestamp");
         expect(PREDICATES.EFFORT_STATUS).toBe("ems:Effort_status");
         expect(PREDICATES.EFFORT_PARENT).toBe("ems:Effort_parent");
@@ -73,8 +75,12 @@ describe("SPARQLTemplateLibrary", () => {
 
     describe("KNOWN_PROTOTYPES", () => {
       it("should have known prototype UUIDs", () => {
-        expect(KNOWN_PROTOTYPES.MORNING_SHOWER).toBe("2d369bb0-159f-4639-911d-ec2c585e8d00");
-        expect(KNOWN_PROTOTYPES.CUT_NAILS).toBe("1d7b739c-0e3e-46f2-ba88-e66f30b732f9");
+        expect(KNOWN_PROTOTYPES.MORNING_SHOWER).toBe(
+          "2d369bb0-159f-4639-911d-ec2c585e8d00",
+        );
+        expect(KNOWN_PROTOTYPES.CUT_NAILS).toBe(
+          "1d7b739c-0e3e-46f2-ba88-e66f30b732f9",
+        );
       });
     });
   });
@@ -121,6 +127,7 @@ describe("SPARQLTemplateLibrary", () => {
         "average_duration_by_prototype",
         "sleep_analysis",
         "active_projects",
+        "active_tasks",
         "projects_without_tasks",
         "recent_activities",
         "tasks_by_label_pattern",
@@ -158,14 +165,41 @@ describe("SPARQLTemplateLibrary", () => {
     it("should find templates for project queries", () => {
       const matches = findMatchingTemplates("активные проекты");
       expect(matches.length).toBeGreaterThan(0);
-      const hasActiveProjects = matches.some((t) => t.name === "active_projects");
+      const hasActiveProjects = matches.some(
+        (t) => t.name === "active_projects",
+      );
       expect(hasActiveProjects).toBe(true);
+    });
+
+    // Issue #3289 — verify the active_tasks template wins over
+    // active_projects for task-specific status queries. Without this
+    // template the query falls back to a label-REGEX guess and
+    // returns "No results found" for valid Doing-status tasks.
+    it("should prefer active_tasks over active_projects for the issue-3289 query", () => {
+      const matches = findMatchingTemplates("Какие задачи в статусе Doing?");
+      expect(matches.length).toBeGreaterThan(0);
+      const winner = matches[0];
+      expect(winner.name).toBe("active_tasks");
+      expect(winner.template).toContain("ems__Task");
+      expect(winner.template).toContain("EffortStatusDoing");
+    });
+
+    it('should match active_tasks on the synonym "задачи в работе"', () => {
+      const matches = findMatchingTemplates("задачи в работе");
+      expect(matches.some((t) => t.name === "active_tasks")).toBe(true);
+    });
+
+    it('should match active_tasks on "активные задачи"', () => {
+      const matches = findMatchingTemplates("активные задачи");
+      expect(matches.some((t) => t.name === "active_tasks")).toBe(true);
     });
 
     it("should find templates for average duration", () => {
       const matches = findMatchingTemplates("среднее время");
       expect(matches.length).toBeGreaterThan(0);
-      const hasAverageDuration = matches.some((t) => t.name === "average_duration_by_prototype");
+      const hasAverageDuration = matches.some(
+        (t) => t.name === "average_duration_by_prototype",
+      );
       expect(hasAverageDuration).toBe(true);
     });
 
