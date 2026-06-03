@@ -1309,8 +1309,8 @@ export class NoteToRDFConverter {
             // extends dual-storage to additional predicates listed in
             // `EXOCORTEX_DUAL_STORAGE_PREDICATES` (comma-separated local names,
             // e.g. `Effort_area,Effort_parent`). Default unset → no behavior
-            // change. Trim+filter handles whitespace and avoids matching empty
-            // string ("".endsWith("#") === false anyway, but skip the work).
+            // change. `.filter(Boolean)` strips empty/whitespace entries so a
+            // stray "," or empty env value never produces a match.
             const isProtoPredicate =
               predicate?.value.endsWith("#Asset_prototype") ||
               predicate?.value.endsWith("/Asset_prototype");
