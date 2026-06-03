@@ -16,7 +16,7 @@
  * --apply flag + --profiles-dir pointing к exoas-profiles submodule working tree.
  */
 
-import { readdirSync, readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, writeFileSync, existsSync, mkdirSync, renameSync } from "node:fs";
 import * as path from "node:path";
 
 /**
@@ -58,7 +58,7 @@ export interface ApplyOptions extends PlanOptions {
 export interface ApplyResult {
   plan: MigrationPlan;
   applied: Array<{ kind: string; uid: string; from: string; to: string }>;
-  errors: Array<{ uid: string; reason: string }>;
+  errors: Array<{ uid: string; srcPath: string; reason: string }>;
 }
 
 /**
@@ -159,6 +159,7 @@ export class SharedIdentitiesProfileMigrationService {
       } catch (err) {
         errors.push({
           uid: action.uid,
+          srcPath: action.srcPath,
           reason: err instanceof Error ? err.message : String(err),
         });
       }
@@ -168,12 +169,21 @@ export class SharedIdentitiesProfileMigrationService {
   }
 
   /**
+   * Normalize EOL + strip UTF-8 BOM. Defensive against CRLF (Windows / некоторые
+   * Obsidian Sync клиенты) и BOM-prefixed files (legacy migration scripts).
+   * Per PR #3359 code-reviewer round-1 HIGH findings.
+   */
+  private normalizeContent(raw: string): string {
+    return raw.replace(/^﻿/, "").replace(/\r\n/g, "\n");
+  }
+
+  /**
    * Parse just enough frontmatter к determine class membership + label.
    * Avoids full YAML parser dependency; relies on regex против UID-form
    * wikilinks + label-form fallback.
    */
   private parseSourceFile(srcPath: string): { label: string; isFocusProfile: boolean } {
-    const content = readFileSync(srcPath, "utf8");
+    const content = this.normalizeContent(readFileSync(srcPath, "utf8"));
     const frontmatterMatch = content.match(/^---\n([\s\S]+?)\n---/);
     if (frontmatterMatch === null) {
       return { label: "<no-frontmatter>", isFocusProfile: false };
@@ -205,7 +215,7 @@ export class SharedIdentitiesProfileMigrationService {
    * Idempotent: skips transformation if KnowledgeProfile class already added.
    */
   private transformProfileFile(srcPath: string): string {
-    const content = readFileSync(srcPath, "utf8");
+    const content = this.normalizeContent(readFileSync(srcPath, "utf8"));
     const fmMatch = content.match(/^(---\n[\s\S]+?\n---)(\n[\s\S]*)?$/);
     if (fmMatch === null) {
       throw new Error(`Source file ${srcPath} has no parseable frontmatter`);
@@ -254,7 +264,3 @@ export class SharedIdentitiesProfileMigrationService {
   }
 }
 
-/* eslint-disable @typescript-eslint/no-unused-vars */
-// Re-exported to silence "unused import" warnings when only types are used.
-const _types = { statSync };
-/* eslint-enable @typescript-eslint/no-unused-vars */

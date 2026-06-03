@@ -184,6 +184,65 @@ describe("SharedIdentitiesProfileMigrationService", () => {
       expect(second.plan.summary.relocate).toBe(0);
     });
 
+    it("HIGH-fix: handles CRLF + BOM-prefixed FocusProfile files (defensive normalization)", () => {
+      const vaultPath = mkdtempSync(path.join(os.tmpdir(), "exo-crlf-"));
+      const sharedDir = path.join(vaultPath, "assetspaces", "shared-identities");
+      mkdirSync(sharedDir, { recursive: true });
+      const crlfContent = `﻿---\r\nexo__Asset_uid: aaaa1111-bbbb-2222-cccc-333344445555\r\nexo__Asset_label: profile-crlf\r\nexo__Instance_class:\r\n  - "[[${FOCUS_PROFILE_CLASS_UID}]]"\r\nexo__FocusProfile_includes:\r\n  - "[[ontology-test]]"\r\n---\r\n\r\n# profile-crlf\r\n`;
+      writeFileSync(
+        path.join(sharedDir, "aaaa1111-bbbb-2222-cccc-333344445555.md"),
+        crlfContent,
+      );
+
+      const svc = new SharedIdentitiesProfileMigrationService();
+      const plan = svc.generatePlan({ vaultPath });
+      expect(plan.summary.relocate).toBe(1);
+      const result = svc.apply({ vaultPath, apply: true });
+      expect(result.applied.length).toBe(1);
+      expect(result.errors.length).toBe(0);
+      const out = readFileSync(
+        path.join(vaultPath, "assetspaces/profiles", "aaaa1111-bbbb-2222-cccc-333344445555.md"),
+        "utf8",
+      );
+      expect(out).toContain(KNOWLEDGE_PROFILE_CLASS_UID);
+      expect(out).toContain("exo__KnowledgeProfile_includes:");
+      rmSync(vaultPath, { recursive: true, force: true });
+    });
+
+    it("idempotent при already-dual-class: no duplicate KnowledgeProfile UID", () => {
+      const vaultPath = mkdtempSync(path.join(os.tmpdir(), "exo-dual-"));
+      const sharedDir = path.join(vaultPath, "assetspaces", "shared-identities");
+      mkdirSync(sharedDir, { recursive: true });
+      writeFileSync(
+        path.join(sharedDir, "bbbb1111-2222-3333-4444-555566667777.md"),
+        `---
+exo__Asset_uid: bbbb1111-2222-3333-4444-555566667777
+exo__Asset_label: already-dual
+exo__Instance_class:
+  - "[[${KNOWLEDGE_PROFILE_CLASS_UID}]]"
+  - "[[${FOCUS_PROFILE_CLASS_UID}]]"
+exo__FocusProfile_includes:
+  - "[[ontology-x]]"
+exo__KnowledgeProfile_includes:
+  - "[[ontology-x]]"
+---
+
+# already-dual
+`,
+      );
+
+      const svc = new SharedIdentitiesProfileMigrationService();
+      svc.apply({ vaultPath, apply: true });
+      const out = readFileSync(
+        path.join(vaultPath, "assetspaces/profiles", "bbbb1111-2222-3333-4444-555566667777.md"),
+        "utf8",
+      );
+      const kpMatches = out.match(new RegExp(KNOWLEDGE_PROFILE_CLASS_UID, "g")) ?? [];
+      // 1 in Instance_class — should NOT add second.
+      expect(kpMatches.length).toBe(1);
+      rmSync(vaultPath, { recursive: true, force: true });
+    });
+
     it("dry-run does NOT mutate vault", () => {
       setup = makeSyntheticVault();
       const svc = new SharedIdentitiesProfileMigrationService();
