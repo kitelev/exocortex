@@ -224,7 +224,7 @@ function buildVaultFiles(setup: VaultSetup): FakeFile[] {
   return files;
 }
 
-function makeFakeApp(files: FakeFile[]): {
+function makeFakeApp(files: FakeFile[], vaultRootPath?: string): {
   app: App;
   walkDir: (dir: string) => Promise<{ files: string[]; folders: string[] }>;
 } {
@@ -244,7 +244,21 @@ function makeFakeApp(files: FakeFile[]): {
     vault: {
       getMarkdownFiles: () => tfiles,
       adapter: {
-        exists: async (p: string) => vaultFiles.has(p),
+        // Phase 6 amendment: derivePhysicallyMaterializedAsUids calls
+        // adapter.exists(<submodulePath>). Real Obsidian returns true для
+        // directories; fake here ALSO consults real disk under vaultRootPath
+        // (the test creates real submodules — disk is ground truth).
+        exists: async (p: string) => {
+          if (vaultFiles.has(p)) return true;
+          if (vaultRootPath !== undefined) {
+            try {
+              return existsSync(path.join(vaultRootPath, p));
+            } catch {
+              return false;
+            }
+          }
+          return false;
+        },
         read: async (p: string) => {
           const v = vaultFiles.get(p);
           if (v === undefined) throw new Error(`ENOENT: ${p}`);
@@ -380,7 +394,7 @@ describe("hardSwitchProfile E2E (real fs, mocked pull)", () => {
     setup = await initVaultWithAS(["as1", "as2"]);
 
     const files = buildVaultFiles(setup);
-    const { app } = makeFakeApp(files);
+    const { app } = makeFakeApp(files, setup.vaultPath);
 
     // Profiles declare Ontology URIs (production shape per RFC b6ba5595);
     // each AS ABox declares containsOntology, so R24 translation resolves
@@ -467,5 +481,26 @@ describe("hardSwitchProfile E2E (real fs, mocked pull)", () => {
     // ---- ASSERT activeProfileUid persisted ----
     expect(localData.getActiveProfileUid()).toBe("profile-b");
     expect(localData.isSwitchInProgress()).toBe(false);
+
+    // ---- Phase 6 AC2 — switch-back re-materializes from preserved .gitmodules ----
+    // RFC 13da049f Phase 6.1 line 340: «re-switch к previously-destroyed profile
+    // re-uses URL from `.gitmodules`». Switch profile-b → profile-a; as1 was
+    // destroyed in profile-a→b transition but `.gitmodules` entry preserved.
+    // Switch back must re-add as1 (URL recovered from `.gitmodules`).
+    await mgr.hardSwitchProfile("profile-a");
+
+    // After switch-back: as1 working tree restored, as3 destroyed.
+    expect(existsSync(path.join(setup.vaultPath, "assetspaces/as1"))).toBe(true);
+    expect(existsSync(path.join(setup.vaultPath, "assetspaces/as2"))).toBe(true);
+    expect(existsSync(path.join(setup.vaultPath, "assetspaces/as3"))).toBe(false);
+
+    // `.gitmodules` still contains all three entries (URL registry).
+    const gitmodulesAfter = await fs.readFile(path.join(setup.vaultPath, ".gitmodules"), "utf8");
+    expect(gitmodulesAfter).toContain('"assetspaces/as1"');
+    expect(gitmodulesAfter).toContain('"assetspaces/as2"');
+    expect(gitmodulesAfter).toContain('"assetspaces/as3"');
+
+    // Active profile flipped back.
+    expect(localData.getActiveProfileUid()).toBe("profile-a");
   }, 180_000);
 });

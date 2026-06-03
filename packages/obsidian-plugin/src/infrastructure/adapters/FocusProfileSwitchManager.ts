@@ -391,9 +391,13 @@ export class FocusProfileSwitchManager {
    *   7. Phase 1 — for each toMaterialize, pull tarball (or cache restore)
    *      to staging dir.
    *   8. Phase 2 — for each toDestroy: cache(X), journal destroy-cached(X),
-   *      git submodule deinit X, rm .git/modules/X, rm <vault>/X, atomic
-   *      strip .gitmodules entry. Then for each toMaterialize: git submodule
-   *      add <url> X, mv staging/X -> <vault>/X, journal materialized(X).
+   *      git submodule deinit X, rm .git/modules/X, rm <vault>/X. The
+   *      `.gitmodules` entry is PRESERVED (Phase 6 Vision Lock #9
+   *      amendment, RFC 13da049f v1.3) — serves as per-vault URL registry
+   *      for switch-back. Then for each toMaterialize: if `.gitmodules`
+   *      entry already exists (preserved post-destroy), re-init submodule
+   *      and pull from preserved URL; else `git submodule add <url> X`.
+   *      mv staging/X -> <vault>/X, journal materialized(X).
    *   9. git add .gitmodules, git add assetspaces/, git commit.
    *  10. Clear _switchInProgress, persist new activeProfileUid.
    *  11. rdfIndexer.refresh(effective) for new RDF view.
@@ -448,30 +452,34 @@ export class FocusProfileSwitchManager {
     const effectiveAsUids = new Set(declaredAsUids);
     for (const floor of TS_FLOOR_ASSETSPACE_UIDS) effectiveAsUids.add(floor);
 
-    // Compute toDestroy / toMaterialize via .gitmodules diff.
+    // Compute toDestroy / toMaterialize via .gitmodules ∩ filesystem presence.
+    // Phase 6 Vision Lock #9 amendment: `.gitmodules` entries persist post-destroy
+    // (URL registry). Therefore materialization state ≠ `.gitmodules` membership.
+    // Source of truth for «is currently materialized» = working tree dir exists.
     const currentSubmodulePaths = await deps.gitOps.readGitmodulesPaths();
     const allInfos = this.listAllAssetSpaceInfos();
     // Index by submodulePath for O(1) lookup.
     const infoBySubmodulePath = new Map<string, AssetSpaceInfo>();
     for (const info of allInfos) infoBySubmodulePath.set(info.folderName, info);
 
-    // Currently-materialized AS UIDs: derived from .gitmodules ∩ vault scan.
-    const currentAsUids = new Set<string>();
-    for (const submodulePath of currentSubmodulePaths) {
-      const info = infoBySubmodulePath.get(submodulePath);
-      if (info !== undefined) currentAsUids.add(info.uid);
-    }
+    // Currently-materialized AS UIDs: .gitmodules entries with working tree on disk.
+    const currentAsUids = await this.derivePhysicallyMaterializedAsUids(
+      currentSubmodulePaths,
+      infoBySubmodulePath,
+    );
 
     const toDestroy: Array<{ asUid: string; submodulePath: string; label: string }> = [];
     const toMaterialize: Array<{ asUid: string; submodulePath: string; gitUrl: string; label: string; ref: string }> = [];
 
-    for (const submodulePath of currentSubmodulePaths) {
-      const info = infoBySubmodulePath.get(submodulePath);
-      if (info === undefined) continue; // Submodule with no AS ABox — skip
+    // Iterate only over physically-materialized AS (working tree exists on disk).
+    // Skips destroyed-but-`.gitmodules`-preserved entries — they're already gone.
+    for (const asUid of currentAsUids) {
+      const info = allInfos.find((i) => i.uid === asUid);
+      if (info === undefined) continue; // Defensive
       if (!effectiveAsUids.has(info.uid)) {
         toDestroy.push({
           asUid: info.uid,
-          submodulePath,
+          submodulePath: info.folderName,
           label: info.namespace || info.uid.slice(0, 8),
         });
       }
@@ -664,6 +672,13 @@ export class FocusProfileSwitchManager {
         });
       }
 
+      // Snapshot preserved `.gitmodules` paths — to detect re-materialize-after-destroy
+      // case (entry persists via Phase 6 amendment) where `submoduleAdd` would fail with
+      // «already exists in .gitmodules». Snapshot taken once before loop to avoid races.
+      const preservedGitmodulesPaths = new Set<string>(
+        await deps.gitOps.readGitmodulesPaths(),
+      );
+
       for (const target of toMaterialize) {
         await this.appendJournal({
           phase: "phase2-materializing",
@@ -671,6 +686,12 @@ export class FocusProfileSwitchManager {
           as: target.asUid,
           ts: this.now().toISOString(),
         });
+        // Phase 6 amendment: if `.gitmodules` already has this path (preserved
+        // from earlier destroy), strip entry first so `submodule add` works cleanly.
+        // URL is preserved in `target.gitUrl` from AS ABox metadata — no data loss.
+        if (preservedGitmodulesPaths.has(target.submodulePath)) {
+          await deps.gitOps.atomicGitmodulesEntryRemove(target.submodulePath);
+        }
         // git submodule add — populates `.gitmodules`, `.git/modules/<name>/`,
         // and `.git/config`. The target directory MUST not exist yet — Phase 1
         // staging is NOT under vault root, so this stays clean.
@@ -878,16 +899,16 @@ export class FocusProfileSwitchManager {
     }
     for (const floor of TS_FLOOR_ASSETSPACE_UIDS) expectedAsUids.add(floor);
 
-    // Materialized AS UIDs derived from .gitmodules.
+    // Materialized AS UIDs: .gitmodules ∩ working-tree-on-disk
+    // (Phase 6 Vision Lock #9 amendment: `.gitmodules` ≠ materialization state).
     const submodulePaths = await gitOps.readGitmodulesPaths();
     const allInfos = this.listAllAssetSpaceInfos();
     const infoByPath = new Map<string, AssetSpaceInfo>();
     for (const info of allInfos) infoByPath.set(info.folderName, info);
-    const materializedAsUids = new Set<string>();
-    for (const p of submodulePaths) {
-      const info = infoByPath.get(p);
-      if (info !== undefined) materializedAsUids.add(info.uid);
-    }
+    const materializedAsUids = await this.derivePhysicallyMaterializedAsUids(
+      submodulePaths,
+      infoByPath,
+    );
 
     // Diff.
     const missing = Array.from(expectedAsUids).filter((u) => !materializedAsUids.has(u));
@@ -1069,6 +1090,34 @@ export class FocusProfileSwitchManager {
       }
     }
     return out;
+  }
+
+  /**
+   * Derives currently-materialized AssetSpace UIDs by intersecting
+   * `.gitmodules` entries with on-disk working-tree presence (via
+   * `vault.adapter.exists`).
+   *
+   * Phase 6 Vision Lock #9 amendment (RFC 13da049f v1.3): `.gitmodules`
+   * entries persist post-destroy as per-vault URL registry. Therefore
+   * materialization state ≠ `.gitmodules` membership. Source of truth =
+   * working tree directory exists in vault.
+   *
+   * Without this intersection, switch-back from B→A would see X's
+   * `.gitmodules` entry, conclude «already materialized», and skip the
+   * re-materialization that Phase 6.1 AC2 requires.
+   */
+  private async derivePhysicallyMaterializedAsUids(
+    submodulePaths: ReadonlyArray<string>,
+    infoBySubmodulePath: ReadonlyMap<string, AssetSpaceInfo>,
+  ): Promise<Set<string>> {
+    const result = new Set<string>();
+    for (const submodulePath of submodulePaths) {
+      const info = infoBySubmodulePath.get(submodulePath);
+      if (info === undefined) continue;
+      const exists = await this.app.vault.adapter.exists(submodulePath);
+      if (exists) result.add(info.uid);
+    }
+    return result;
   }
 
   private async enumerateFilesUnder(submodulePath: string): Promise<string[]> {
