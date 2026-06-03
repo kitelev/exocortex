@@ -46,16 +46,41 @@ export class PropertyPathExecutor {
     // Issue #2997 Phase 3: defense-in-depth literal safety guard.
     // Property paths require IRI/blank/variable in subject and object
     // positions; a literal here means upstream code (loader, join
-    // instantiation) leaked bad data. Yield zero solutions instead of
-    // throwing.
+    // instantiation) leaked bad data — typically an unresolved label-form
+    // wikilink (Issue #3282) stored as a bare literal by
+    // NoteToRDFConverter.valueToRDFObject when getFirstLinkpathDest
+    // returned null. By default yield zero solutions (warn-and-continue)
+    // for backwards compatibility; under EXOCORTEX_SPARQL_STRICT=1 throw
+    // a PropertyPathExecutorError so CI / scripts can surface the silent
+    // recall loss instead of swallowing it.
     if (this.isLiteralElement(subject) || this.isLiteralElement(object)) {
       const position = this.isLiteralElement(subject) ? "subject" : "object";
       const offending = this.isLiteralElement(subject) ? subject : object;
-      const value = "value" in offending ? String((offending as { value: unknown }).value) : "<unknown>";
-      const truncated = value.length > 80 ? `${value.slice(0, 77)}...` : value;
-      console.warn(
-        `[PropertyPathExecutor] literal-safety guard fired: literal in ${position} position — yielding 0 solutions. value="${truncated}"`,
+      const rawValue = "value" in offending ? String((offending as { value: unknown }).value) : "<unknown>";
+      const truncated = rawValue.length > 80 ? `${rawValue.slice(0, 77)}...` : rawValue;
+      const pathDesc = this.describePath(path);
+      const diagnostic = {
+        position,
+        value: truncated,
+        path: pathDesc,
+        hint:
+          "Wikilink could not be resolved to IRI (likely label-form wikilink with no matching basename/alias). " +
+          "Check whether the target file exists in the queried vault, add an alias, " +
+          "or load the target vault via --also. See issue #3282.",
+      };
+      // Use console.error for visibility — previous console.warn was silently
+      // swallowed by tooling and users could not diagnose zero-result queries.
+      console.error(
+        `[PropertyPathExecutor] literal-safety guard fired: literal in ${position} position — yielding 0 solutions. ` +
+          `value="${truncated}" path=${pathDesc}`,
+        diagnostic,
       );
+      if (PropertyPathExecutor.isStrictModeEnabled()) {
+        throw new PropertyPathExecutorError(
+          `Literal subject in property path: "${truncated}" (path=${pathDesc}). ` +
+            "Set EXOCORTEX_SPARQL_STRICT=0 or omit --strict to fall back to warn-and-empty behaviour.",
+        );
+      }
       return;
     }
 
@@ -451,5 +476,44 @@ export class PropertyPathExecutor {
       if (this.nodeToKey(n) === key) return true;
     }
     return false;
+  }
+
+  /**
+   * Produce a short textual description of a property-path expression for
+   * diagnostic output (Issue #3282). Falls back to JSON for unknown
+   * shapes — we keep this best-effort so error logs always have *some*
+   * locating information without forcing a full SPARQL serialiser
+   * dependency.
+   */
+  private describePath(path: PropertyPath): string {
+    try {
+      const items = (path as PropertyPath & { items?: unknown[] }).items;
+      const renderItem = (item: unknown): string => {
+        if (item && typeof item === "object" && "type" in item) {
+          const typed = item as { type: string; value?: unknown };
+          if (typed.type === "iri") return `<${String(typed.value)}>`;
+          if (typed.type === "path") return this.describePath(typed as PropertyPath);
+        }
+        return "?";
+      };
+      const rendered = Array.isArray(items) ? items.map(renderItem).join(` ${path.pathType} `) : "?";
+      return `(${rendered})`;
+    } catch {
+      return "<unprintable-path>";
+    }
+  }
+
+  /**
+   * Read the EXOCORTEX_SPARQL_STRICT environment variable (Issue #3282).
+   * Mirrors the EXOCORTEX_SPARQL_TIMEOUT pattern in
+   * packages/cli/src/commands/sparql-query.ts — CLI `--strict` sets this
+   * before constructing the query executor, runtime callers can opt in
+   * directly. Truthy values: "1", "true", "yes" (case-insensitive).
+   */
+  static isStrictModeEnabled(): boolean {
+    const raw = process.env?.EXOCORTEX_SPARQL_STRICT;
+    if (!raw) return false;
+    const normalized = raw.trim().toLowerCase();
+    return normalized === "1" || normalized === "true" || normalized === "yes";
   }
 }

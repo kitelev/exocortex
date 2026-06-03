@@ -650,13 +650,15 @@ describe("PropertyPathExecutor", () => {
         // Pre-#2997 this threw "Unsupported element type"; the Phase 3 guard
         // converts the throw to a warn-and-empty so a literal leaked from the
         // loader or a join-instantiation cannot crash the algebra pipeline.
-        const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => undefined);
+        // Issue #3282 upgraded the diagnostic to console.error with a
+        // structured payload so the silent recall loss is now visible.
+        const errorSpy = jest.spyOn(console, "error").mockImplementation(() => undefined);
         try {
           const results = await collectResults(literalSubject, path, algebraVar("o"));
           expect(results).toEqual([]);
-          expect(warnSpy).toHaveBeenCalled();
+          expect(errorSpy).toHaveBeenCalled();
         } finally {
-          warnSpy.mockRestore();
+          errorSpy.mockRestore();
         }
       });
     });
