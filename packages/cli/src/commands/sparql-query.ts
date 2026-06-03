@@ -468,8 +468,38 @@ export function sparqlQueryCommand(): Command {
         }
 
         if (!combinedCacheHit) {
+          // Issue #3352 — pre-build sibling adapters once so primary's
+          // `getFirstLinkpathDest` can resolve label-form wikilinks
+          // whose target lives in an additional vault. The same adapters
+          // are reused below when loading each additional vault, so the
+          // adapter that walked the vault is the same one consulted as a
+          // sibling.
+          const alsoAdapters: FileSystemVaultAdapter[] = [];
+          const alsoPaths: {
+            resolvedAlsoPath: string;
+            subjectIriPrefix: string;
+          }[] = [];
+          for (const alsoPath of alsoVaults) {
+            const resolvedAlsoPath = resolve(alsoPath);
+            if (!existsSync(resolvedAlsoPath)) {
+              throw new VaultNotFoundError(resolvedAlsoPath);
+            }
+            const subjectIriPrefix = deriveSubjectIriPrefix(resolvedAlsoPath);
+            alsoAdapters.push(
+              new FileSystemVaultAdapter(resolvedAlsoPath, {
+                subjectIriPrefix,
+              }),
+            );
+            alsoPaths.push({ resolvedAlsoPath, subjectIriPrefix });
+          }
+
           if (useCacheEffective) {
-            // Use cached triples for faster loading (primary vault only)
+            // Use cached triples for faster loading (primary vault only).
+            // Note (#3352): siblingAdapters cannot retro-fix wikilinks that
+            // were already serialised as bare Literals at cache build time.
+            // Users who need cross-vault label-form resolution on the cached
+            // path should rebuild the index via `sparql index --also` (which
+            // routes through `buildCombinedTriples`).
             const cacheManager = new CacheManager(vaultPath);
             const cacheResult = await cacheManager.loadOrBuild();
             triples = cacheResult.triples;
@@ -479,8 +509,11 @@ export function sparqlQueryCommand(): Command {
               console.log(`🚀 Cache hit! Loading from persistent cache...`);
             }
           } else {
-            // Traditional vault loading
-            const vaultAdapter = new FileSystemVaultAdapter(vaultPath);
+            // Traditional vault loading — primary adapter is configured
+            // with the pre-built sibling adapters.
+            const vaultAdapter = new FileSystemVaultAdapter(vaultPath, {
+              siblingAdapters: alsoAdapters,
+            });
             const converter = new NoteToRDFConverter(vaultAdapter);
             triples = await converter.convertVault(
               profileFilter !== null
@@ -492,24 +525,14 @@ export function sparqlQueryCommand(): Command {
             );
           }
 
-          // Load additional vaults if --also specified
-          for (const alsoPath of alsoVaults) {
-            const resolvedAlsoPath = resolve(alsoPath);
-            if (!existsSync(resolvedAlsoPath)) {
-              throw new VaultNotFoundError(resolvedAlsoPath);
-            }
+          // Load additional vaults if --also specified, using the
+          // pre-built adapters so primary's sibling list stays in sync.
+          for (let i = 0; i < alsoAdapters.length; i++) {
+            const alsoAdapter = alsoAdapters[i];
+            const { resolvedAlsoPath, subjectIriPrefix } = alsoPaths[i];
             if (outputFormat === "text") {
               console.log(`📦 Loading additional vault: ${resolvedAlsoPath}...`);
             }
-            // Issue #3219 — when `--also` points at an `<root>/assetspaces/<sub>`
-            // subdirectory, file.path is relative to that subdirectory and
-            // the synthesised subject IRI loses the path prefix. Derive a
-            // mount prefix from the path so subject IRIs match what they
-            // would be if the same files were loaded as part of a primary
-            // vault rooted at `<root>`. Non-assetspaces paths get an empty
-            // prefix (backward compatible).
-            const subjectIriPrefix = deriveSubjectIriPrefix(resolvedAlsoPath);
-            const alsoAdapter = new FileSystemVaultAdapter(resolvedAlsoPath);
             const alsoConverter = new NoteToRDFConverter(
               alsoAdapter,
               undefined,
