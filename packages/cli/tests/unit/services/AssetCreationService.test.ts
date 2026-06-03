@@ -216,16 +216,16 @@ describe("AssetCreationService", () => {
         },
       });
 
-      // Wikilink values should be quoted and wrapped in array
-      expect(result.frontmatter["ztlk__Note_developedFrom"]).toEqual(
-        ['"[[some-uuid|Label]]"'],
+      // Issue #3179: scalar is the default for wikilink wikilink values.
+      expect(result.frontmatter["ztlk__Note_developedFrom"]).toBe(
+        '"[[some-uuid|Label]]"',
       );
       // Plain values remain as scalar
       expect(result.frontmatter["custom_prop"]).toBe("custom_value");
     });
 
     describe("Issue #2293: wikilink property quoting", () => {
-      it("should quote wikilink values and wrap in array", async () => {
+      it("should quote wikilink values (scalar by default per #3179)", async () => {
         const result = await service.create({
           classShortName: "ztlk__PermanentNote",
           label: "Test Note",
@@ -235,8 +235,8 @@ describe("AssetCreationService", () => {
           },
         });
 
-        expect(result.frontmatter["exo__Asset_relates"]).toEqual(
-          ['"[[some-uuid|My Asset]]"'],
+        expect(result.frontmatter["exo__Asset_relates"]).toBe(
+          '"[[some-uuid|My Asset]]"',
         );
       });
 
@@ -263,8 +263,8 @@ describe("AssetCreationService", () => {
           },
         });
 
-        expect(result.frontmatter["exo__Asset_relates"]).toEqual(
-          ['"[[some-uuid]]"'],
+        expect(result.frontmatter["exo__Asset_relates"]).toBe(
+          '"[[some-uuid]]"',
         );
       });
 
@@ -278,8 +278,8 @@ describe("AssetCreationService", () => {
           },
         });
 
-        expect(result.frontmatter["exo__Asset_relates"]).toEqual(
-          ['"[[some-uuid|Label]]"'],
+        expect(result.frontmatter["exo__Asset_relates"]).toBe(
+          '"[[some-uuid|Label]]"',
         );
       });
     });
@@ -352,7 +352,7 @@ describe("AssetCreationService", () => {
         ]);
       });
 
-      it("should emit array (legacy default) for properties not in registry", async () => {
+      it("should emit scalar (Issue #3179 default) for properties not in registry", async () => {
         const registry = buildRegistry([]);
         const emptyService = new AssetCreationService(
           mockFsAdapter as any,
@@ -370,12 +370,12 @@ describe("AssetCreationService", () => {
           },
         });
 
-        expect(result.frontmatter["ems__Effort_status"]).toEqual([
+        expect(result.frontmatter["ems__Effort_status"]).toBe(
           '"[[ems__EffortStatusBacklog]]"',
-        ]);
+        );
       });
 
-      it("should emit array (legacy default) when no shape registry is provided", async () => {
+      it("should emit scalar (Issue #3179 default) when no shape registry is provided", async () => {
         // Service constructed without registry (existing behavior)
         const result = await service.create({
           classShortName: "ems__Task",
@@ -386,9 +386,9 @@ describe("AssetCreationService", () => {
           },
         });
 
-        expect(result.frontmatter["ems__Effort_status"]).toEqual([
+        expect(result.frontmatter["ems__Effort_status"]).toBe(
           '"[[ems__EffortStatusBacklog]]"',
-        ]);
+        );
       });
 
       it("should leave plain (non-wikilink) values as scalars regardless of cardinality", async () => {
@@ -412,6 +412,138 @@ describe("AssetCreationService", () => {
         });
 
         expect(result.frontmatter["custom_prop"]).toBe("plain value");
+      });
+    });
+
+    describe("Issue #3179: scalar by default + Multiple → array", () => {
+      const propertyIRI = (prefix: string, local: string) =>
+        `https://exocortex.my/ontology/${prefix}#${local}`;
+
+      const buildRegistry = (
+        entries: Array<{ key: string; cardinality: "Single" | "Multiple" }>,
+      ) => {
+        const map = new Map<string, { cardinality: "Single" | "Multiple" }>();
+        for (const { key, cardinality } of entries) {
+          const match = /^([a-z][a-zA-Z0-9]*)__(.+)$/.exec(key);
+          if (!match) continue;
+          map.set(propertyIRI(match[1], match[2]), { cardinality });
+        }
+        return {
+          get: (iri: string) => map.get(iri),
+        };
+      };
+
+      it("AC#1: single-cardinality + single value → scalar", async () => {
+        const registry = buildRegistry([
+          { key: "ems__Effort_status", cardinality: "Single" },
+        ]);
+        const svc = new AssetCreationService(
+          mockFsAdapter as any,
+          mockClassResolver as any,
+          mockWikilinkValidator as any,
+          registry as any,
+        );
+        const result = await svc.create({
+          classShortName: "ems__Task",
+          label: "T",
+          vault: "/v",
+          properties: {
+            "ems__Effort_status":
+              "[[753a44d5-846c-4b82-9196-4fd9a4d48777]]",
+          },
+        });
+        expect(result.frontmatter["ems__Effort_status"]).toBe(
+          '"[[753a44d5-846c-4b82-9196-4fd9a4d48777]]"',
+        );
+      });
+
+      it("AC#2: no cardinality declared → scalar (vault convention default)", async () => {
+        const registry = buildRegistry([]);
+        const svc = new AssetCreationService(
+          mockFsAdapter as any,
+          mockClassResolver as any,
+          mockWikilinkValidator as any,
+          registry as any,
+        );
+        const result = await svc.create({
+          classShortName: "ems__Task",
+          label: "T",
+          vault: "/v",
+          properties: {
+            // Imaginary property with no shape declared
+            "ems__Unknown_field": "[[some-uuid]]",
+          },
+        });
+        expect(result.frontmatter["ems__Unknown_field"]).toBe(
+          '"[[some-uuid]]"',
+        );
+      });
+
+      it("AC#2: no shape registry → scalar default", async () => {
+        // No registry passed to constructor at all
+        const result = await service.create({
+          classShortName: "ems__Task",
+          label: "T",
+          vault: "/v",
+          properties: {
+            "exo__Asset_isDefinedBy":
+              "[[c07593d9-d50b-46a1-aeab-aee7f2660c2c]]",
+          },
+        });
+        expect(result.frontmatter["exo__Asset_isDefinedBy"]).toBe(
+          '"[[c07593d9-d50b-46a1-aeab-aee7f2660c2c]]"',
+        );
+      });
+
+      it("AC#1: multi-cardinality + single value → array", async () => {
+        const registry = buildRegistry([
+          { key: "ems__Effort_relatesTo", cardinality: "Multiple" },
+        ]);
+        const svc = new AssetCreationService(
+          mockFsAdapter as any,
+          mockClassResolver as any,
+          mockWikilinkValidator as any,
+          registry as any,
+        );
+        const result = await svc.create({
+          classShortName: "ems__Task",
+          label: "T",
+          vault: "/v",
+          properties: {
+            "ems__Effort_relatesTo": "[[some-uuid|Other]]",
+          },
+        });
+        expect(result.frontmatter["ems__Effort_relatesTo"]).toEqual([
+          '"[[some-uuid|Other]]"',
+        ]);
+      });
+
+      it("AC#3 regression: exo__Instance_class always remains an array", async () => {
+        // Even after default flip, the hardcoded system property must stay array.
+        const result = await service.create({
+          classShortName: "ems__Task",
+          label: "T",
+          vault: "/v",
+        });
+        expect(Array.isArray(result.frontmatter["exo__Instance_class"])).toBe(
+          true,
+        );
+        expect(
+          (result.frontmatter["exo__Instance_class"] as string[]).length,
+        ).toBe(1);
+      });
+
+      it("AC#3 regression: aliases always remains an array", async () => {
+        const result = await service.create({
+          classShortName: "ems__Task",
+          label: "T",
+          vault: "/v",
+          aliases: ["one", "two"],
+        });
+        expect(Array.isArray(result.frontmatter["aliases"])).toBe(true);
+        expect(
+          (result.frontmatter["aliases"] as string[]).length,
+        ).toBeGreaterThanOrEqual(2);
       });
     });
 

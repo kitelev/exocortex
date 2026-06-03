@@ -517,19 +517,37 @@ export class ShapeLoader {
     return [];
   }
 
+  // Known cardinality enum UIDs. Property files post-UID-canon (RFC-004)
+  // reference these via pure-UID wikilinks like
+  // `exo__Property_cardinality: "[[c93c4b2f-...]]"`, so suffix-matching on
+  // the `PropertyCardinalitySingle` label alone misses them (issue #3179).
+  private static readonly CARDINALITY_SINGLE_UID =
+    "c93c4b2f-b43d-4cc9-8dd0-31514d608da2";
+  private static readonly CARDINALITY_MULTIPLE_UID =
+    "59a37aa7-ffbe-4e0d-ba60-06ae370d880f";
+
   private static cardinalityFromIRI(iri: string | undefined): "Single" | "Multiple" | undefined {
     if (!iri) return undefined;
     if (iri.endsWith("PropertyCardinalitySingle")) return "Single";
     if (iri.endsWith("PropertyCardinalityMultiple")) return "Multiple";
+    if (iri.includes(ShapeLoader.CARDINALITY_SINGLE_UID)) return "Single";
+    if (iri.includes(ShapeLoader.CARDINALITY_MULTIPLE_UID)) return "Multiple";
     return undefined;
   }
 
   private static cardinalityFromLabel(raw: string | undefined): "Single" | "Multiple" | undefined {
     if (!raw) return undefined;
     const ref = ShapeLoader.extractWikilinkRef(raw) ?? raw;
+    // ref may be either a label like `exo__PropertyCardinalitySingle`
+    // or an alias form `<uid>|exo__PropertyCardinalitySingle`
+    // or a pure UID `c93c4b2f-...` (post-UID-canon, RFC-004).
     const label = ref.split("|").pop() ?? ref;
     if (label.includes("Single")) return "Single";
     if (label.includes("Multiple")) return "Multiple";
+    // Pure UID form: also check both halves of `ref` (covers `<uid>` alone
+    // and `<uid>|<alias>` where the alias didn't match the suffix above).
+    if (ref.includes(ShapeLoader.CARDINALITY_SINGLE_UID)) return "Single";
+    if (ref.includes(ShapeLoader.CARDINALITY_MULTIPLE_UID)) return "Multiple";
     return undefined;
   }
 
