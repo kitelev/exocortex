@@ -1304,10 +1304,26 @@ export class NoteToRDFConverter {
             // Fix #ff3858e5: dual-storage (IRI + UUID Literal) is scoped to
             // exo__Asset_prototype only. All other predicates emit a single IRI
             // to avoid sh:maxCount=1 cardinality violations.
+            //
+            // Issue #3353 (Sub-task B of #3282): opt-in env-flag escape hatch
+            // extends dual-storage to additional predicates listed in
+            // `EXOCORTEX_DUAL_STORAGE_PREDICATES` (comma-separated local names,
+            // e.g. `Effort_area,Effort_parent`). Default unset → no behavior
+            // change. `.filter(Boolean)` strips empty/whitespace entries so a
+            // stray "," or empty env value never produces a match.
             const isProtoPredicate =
               predicate?.value.endsWith("#Asset_prototype") ||
               predicate?.value.endsWith("/Asset_prototype");
-            if (isProtoPredicate) {
+            const dualPredicates = (
+              process.env.EXOCORTEX_DUAL_STORAGE_PREDICATES ?? ""
+            )
+              .split(",")
+              .map((p) => p.trim())
+              .filter(Boolean);
+            const isDualPredicate =
+              dualPredicates.length > 0 &&
+              dualPredicates.some((p) => predicate?.value.endsWith(`#${p}`));
+            if (isProtoPredicate || isDualPredicate) {
               return [fileIRI, uuidLiteral];
             }
             return [fileIRI];
