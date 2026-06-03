@@ -206,8 +206,9 @@ export function createCommand(): Command {
         const wikilinkValidator = new WikilinkValidator(fsAdapter);
 
         // Load SHACL-lite shape registry from vault for cardinality-aware
-        // property serialization (issue #3099). Failure here is non-fatal —
-        // proceed with default array wrapping if shapes cannot be loaded.
+        // property serialization (issues #3099, #3179). Failure here is
+        // non-fatal — proceed with default scalar emission if shapes cannot
+        // be loaded (vault convention default per #3179).
         let shapeRegistry: ShapeRegistry | undefined;
         try {
           shapeRegistry = await ShapeLoader.loadFromVaultFS(vaultPath);

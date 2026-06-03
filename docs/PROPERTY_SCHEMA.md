@@ -1033,7 +1033,7 @@ ims__Concept_definition: A typed superset of JavaScript that compiles to plain J
 
 ## 🔢 Property Cardinality Declarations
 
-Property-definition assets may declare their cardinality via `exo__Property_cardinality`. This drives SHACL-lite validation and cardinality-aware serialization in `exocortex-cli create` (see issue #3099).
+Property-definition assets may declare their cardinality via `exo__Property_cardinality`. This drives SHACL-lite validation and cardinality-aware serialization in `exocortex-cli create` (see issues #3099, #3179).
 
 ### exo\_\_Property_cardinality
 
@@ -1042,7 +1042,7 @@ Property-definition assets may declare their cardinality via `exo__Property_card
 | Attribute    | Value                                                                                |
 | ------------ | ------------------------------------------------------------------------------------ |
 | **Type**     | WikiLink                                                                             |
-| **Required** | No (omission ≡ `PropertyCardinalityMultiple` — legacy safe default)                  |
+| **Required** | No (omission ≡ scalar — vault convention default per issue #3179)                    |
 | **Domain**   | Asset of class `exo__Property` or `exo__ObjectProperty`                              |
 | **Range**    | `exo__PropertyCardinalitySingle` or `exo__PropertyCardinalityMultiple`               |
 | **Purpose**  | SHACL-lite cardinality validation; CLI scalar-vs-array YAML serialization            |
@@ -1062,20 +1062,24 @@ exo__Property_cardinality: "[[exo__PropertyCardinalitySingle]]"
 ---
 ```
 
-With this declaration, `exocortex-cli create --property ems__Effort_status=[[…]]` emits the value as a scalar:
+With this declaration (or when the property has no cardinality declaration at all), `exocortex-cli create --property ems__Effort_status=[[…]]` emits the value as a scalar:
 
 ```yaml
-ems__Effort_status: "[[ems__EffortStatusBacklog]]" # ✅ scalar
+ems__Effort_status: "[[ems__EffortStatusBacklog]]" # ✅ scalar (vault convention default)
 ```
 
-Without the declaration (or with `PropertyCardinalityMultiple`), the value is wrapped in a single-entry YAML array — the legacy default preserved for backward compatibility:
+Only properties explicitly declared with `PropertyCardinalityMultiple` are wrapped in a YAML array:
 
 ```yaml
-ems__Effort_status:
-  - "[[ems__EffortStatusBacklog]]" # legacy default
+# When the property's TBox file declares exo__Property_cardinality: "[[exo__PropertyCardinalityMultiple]]"
+some__Multi_field:
+  - "[[uuid-a]]"
+  - "[[uuid-b]]"
 ```
 
-**Migration guidance**: declare `PropertyCardinalitySingle` on properties that are semantically single-valued (status, parent, area, prototype-target, plannedStartTimestamp, etc.). The declaration is opt-in — unmarked properties retain the existing array-form serialization.
+**Migration guidance**: declare `PropertyCardinalityMultiple` on properties that genuinely accept multiple values (e.g., bag-style relations, tag lists). Omission and `PropertyCardinalitySingle` both produce scalar emission per the prevailing vault convention (4000+ instances of `exo__Asset_isDefinedBy`, `exo__Asset_prototype`, `ems__Effort_status`, `ems__Effort_area`). System-property arrays — `exo__Instance_class`, `aliases` — are emitted via dedicated code paths in `AssetCreationService.buildFrontmatter` and are not affected by this rule.
+
+> **Behavior change (issue #3179, June 2026)**: prior to this fix, undeclared cardinality silently fell back to single-entry array form, contradicting the vault convention and forcing post-processing (e.g., the `week-planner` skill's `flatten_singles_in_file()` helper). Existing vault content using array form for single-cardinality predicates continues to be read correctly by Obsidian — only newly-created assets follow the new default.
 
 ---
 
