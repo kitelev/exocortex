@@ -73,6 +73,12 @@ jest.unstable_mockModule("exocortex", () => ({
   Literal: jest.fn(),
   BlankNode: jest.fn(),
   Triple: jest.fn(),
+  // Issue #3219 — cross-vault resolver util pulled in by sparql-query.ts
+  DomainIRI: class { constructor(public value: string) {} },
+  DomainLiteral: class { constructor(public value: string) {} },
+  DomainTriple: class {
+    constructor(public subject: unknown, public predicate: unknown, public object: unknown) {}
+  },
   SPARQL_PREFIXES: `PREFIX exo: <https://exocortex.my/ontology/exo#>
 PREFIX ems: <https://exocortex.my/ontology/ems#>
 PREFIX ims: <https://exocortex.my/ontology/ims#>

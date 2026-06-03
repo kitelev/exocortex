@@ -11,7 +11,8 @@ import {
 } from "exocortex";
 import { FileSystemVaultAdapter } from "../adapters/FileSystemVaultAdapter.js";
 import { VaultNotFoundError } from "../utils/errors/index.js";
-import { resolveCrossVaultInstanceClassWikilinks } from "../commands/validate-schema.js";
+import { resolveCrossVaultInstanceClassWikilinks } from "../utils/crossVaultInstanceClassResolver.js";
+import { deriveSubjectIriPrefix } from "../utils/AlsoVaultMountPrefix.js";
 
 export interface BuildCombinedTriplesOptions {
   /** Disable RDFS subClassOf inference materialization */
@@ -99,8 +100,14 @@ export async function buildCombinedTriples(
     if (!silent) {
       log(`📦 Loading additional vault: ${alsoPath}...`);
     }
+    // Issue #3219 — preserve `assetspaces/<sub>/` prefix on subject IRIs so
+    // cached cross-vault triples match the form that non-cached `--also`
+    // loads produce, keeping cache-hit and cache-miss queries consistent.
+    const subjectIriPrefix = deriveSubjectIriPrefix(alsoPath);
     const alsoAdapter = new FileSystemVaultAdapter(alsoPath);
-    const alsoConverter = new NoteToRDFConverter(alsoAdapter);
+    const alsoConverter = new NoteToRDFConverter(alsoAdapter, undefined, {
+      subjectIriPrefix,
+    });
     const alsoTriples = await alsoConverter.convertVault();
     triples = triples.concat(alsoTriples);
     if (!silent) {
