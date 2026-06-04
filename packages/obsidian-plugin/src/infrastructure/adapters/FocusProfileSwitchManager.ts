@@ -249,10 +249,16 @@ export class FocusProfileSwitchManager {
   }
 
   /**
-   * Switch active focus profile. Lock-guarded, journaled. Idempotent re-index
-   * on failure (no destructive rollback in v3).
+   * Soft switch — set the active FocusProfile (RDF query-time filter only).
+   * Lock-guarded, journaled. Idempotent re-index on failure (no destructive
+   * rollback in v3). Does NOT mutate the filesystem — that is hard switch
+   * (see {@link hardSwitchKnowledgeProfile}).
+   *
+   * RFC 13da049f Phase 6.5b (AC15): canonical name for the soft-switch path.
+   * Legacy callers reach this via the deprecated {@link switchProfile} /
+   * {@link softSwitchProfile} aliases.
    */
-  async switchProfile(targetProfileUid: string): Promise<void> {
+  async softSwitchFocusProfile(targetProfileUid: string): Promise<void> {
     const acquired = await this.lockMgr.acquireLock(`switch-profile-${targetProfileUid}`);
     if (!acquired) {
       throw new Error(`Another switch is in progress (lock held). Try again shortly.`);
@@ -314,6 +320,33 @@ export class FocusProfileSwitchManager {
   }
 
   /**
+   * @deprecated Use {@link softSwitchFocusProfile}. Retained for backward
+   * compatibility (RFC 13da049f Phase 6.5b AC15 — Knowledge/Focus split).
+   * This was the original method name before the soft/hard semantic split.
+   */
+  async switchProfile(targetProfileUid: string): Promise<void> {
+    return this.softSwitchFocusProfile(targetProfileUid);
+  }
+
+  /**
+   * @deprecated Use {@link softSwitchFocusProfile}. Alias matching the RFC
+   * 13da049f naming convention (`softSwitchProfile` → `softSwitchFocusProfile`).
+   */
+  async softSwitchProfile(targetProfileUid: string): Promise<void> {
+    return this.softSwitchFocusProfile(targetProfileUid);
+  }
+
+  /**
+   * @deprecated Use {@link hardSwitchKnowledgeProfile}. Retained for backward
+   * compatibility (RFC 13da049f Phase 6.5b AC15 — Knowledge/Focus split).
+   * Hard switch materialises filesystem state, so it is semantically a
+   * Knowledge-profile operation.
+   */
+  async hardSwitchProfile(targetProfileUid: string): Promise<void> {
+    return this.hardSwitchKnowledgeProfile(targetProfileUid);
+  }
+
+  /**
    * Plugin-load recovery: if last journal entry shows an incomplete switch
    * AND settings._switchInProgress=true, re-trigger the re-index идempotently.
    *
@@ -333,7 +366,7 @@ export class FocusProfileSwitchManager {
 
     // Incomplete: re-trigger
     this.notify(`Recovering incomplete switch to ${lastEntry.targetUid}...`);
-    await this.switchProfile(lastEntry.targetUid);
+    await this.softSwitchFocusProfile(lastEntry.targetUid);
     return { recovered: true, targetUid: lastEntry.targetUid };
   }
 
@@ -410,9 +443,9 @@ export class FocusProfileSwitchManager {
    * @throws UncommittedChangesAbortError if dirty files in any to-destroy AS.
    * @throws HardSwitchAbortedByUser if confirmGate declines.
    */
-  async hardSwitchProfile(targetProfileUid: string): Promise<void> {
+  async hardSwitchKnowledgeProfile(targetProfileUid: string): Promise<void> {
     if (typeof targetProfileUid !== "string" || targetProfileUid.length === 0) {
-      throw new Error("hardSwitchProfile: targetProfileUid is required");
+      throw new Error("hardSwitchKnowledgeProfile: targetProfileUid is required");
     }
     const deps = this.assertHardSwitchWired();
 
@@ -549,7 +582,7 @@ export class FocusProfileSwitchManager {
         targetUid: targetProfileUid,
         ts: new Date(startedAt).toISOString(),
       });
-      await this.switchProfile(targetProfileUid);
+      await this.softSwitchFocusProfile(targetProfileUid);
       await this.appendJournal({
         phase: "hard-switch-completed",
         targetUid: targetProfileUid,
@@ -866,7 +899,7 @@ export class FocusProfileSwitchManager {
    * Detection: parse `.gitmodules` to get currently-materialized AS folders,
    * compare to effective set derived from local `activeProfileUid`. Mismatch
    * → call confirmGate (reusing IConfirmGate plan shape) to get user OK
-   * before reconciling via hardSwitchProfile.
+   * before reconciling via hardSwitchKnowledgeProfile.
    *
    * Returns `null` if no divergence detected. Otherwise returns the action
    * taken: `"reconciled"` if user approved, `"declined"` if user declined.
@@ -928,7 +961,7 @@ export class FocusProfileSwitchManager {
       ? await this.confirmGate.confirmHardSwitch(reconcilePlan)
       : true; // No gate wired (tests / headless) — proceed.
     if (!approved) return { outcome: "declined" };
-    await this.hardSwitchProfile(activeProfileUid);
+    await this.hardSwitchKnowledgeProfile(activeProfileUid);
     return { outcome: "reconciled" };
   }
 
@@ -995,7 +1028,7 @@ export class FocusProfileSwitchManager {
       this.vaultRootPath === undefined
     ) {
       throw new Error(
-        "hardSwitchProfile: dependencies not wired (assetSpaceManager, cacheLayer, gitOps, uncommittedGuard, confirmGate, localDataStore, vaultRootPath required)",
+        "hardSwitchKnowledgeProfile: dependencies not wired (assetSpaceManager, cacheLayer, gitOps, uncommittedGuard, confirmGate, localDataStore, vaultRootPath required)",
       );
     }
     return {
