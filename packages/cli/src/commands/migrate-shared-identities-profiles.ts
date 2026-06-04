@@ -9,6 +9,7 @@ interface MigrateOptions {
   vault: string;
   apply?: boolean;
   json?: boolean;
+  profilesDir: string;
 }
 
 /**
@@ -34,11 +35,26 @@ export function migrateSharedIdentitiesProfilesCommand(): Command {
     .requiredOption("--vault <path>", "Path to Obsidian vault root")
     .option("--apply", "Execute migration (default: dry-run)", false)
     .option("--json", "Emit plan / result as JSON", false)
+    .option(
+      "--profiles-dir <name>",
+      "Target AssetSpace folder name under assetspaces/ (default: profiles)",
+      "profiles",
+    )
     .action(async (options: MigrateOptions) => {
       try {
         if (!options.vault) {
           throw new InvalidArgumentsError("--vault is required");
         }
+        const profilesDir = options.profilesDir ?? "profiles";
+        // Plain folder name only — allowlist defends against path traversal
+        // (`/`, `\`, `..`), NUL bytes, `~`/`$HOME` expansion, and empty / `.`
+        // values that would collapse the target onto assetspaces/ itself.
+        if (!/^[A-Za-z0-9._-]+$/.test(profilesDir) || profilesDir === "." || profilesDir.includes("..")) {
+          throw new InvalidArgumentsError(
+            `--profiles-dir must be a plain folder name (got "${profilesDir}")`,
+          );
+        }
+        const profilesDirRelative = `assetspaces/${profilesDir}`;
         const vaultPath = resolve(options.vault);
         if (!existsSync(vaultPath)) {
           throw new VaultNotFoundError(vaultPath);
@@ -47,7 +63,7 @@ export function migrateSharedIdentitiesProfilesCommand(): Command {
         const svc = new SharedIdentitiesProfileMigrationService();
 
         if (options.apply) {
-          const result = svc.apply({ vaultPath, apply: true });
+          const result = svc.apply({ vaultPath, apply: true, profilesDirRelative });
           if (options.json) {
             process.stdout.write(JSON.stringify(result, null, 2) + "\n");
           } else {
@@ -71,7 +87,7 @@ export function migrateSharedIdentitiesProfilesCommand(): Command {
           process.exit(result.errors.length > 0 ? 1 : 0);
         } else {
           // Dry-run.
-          const plan = svc.generatePlan({ vaultPath });
+          const plan = svc.generatePlan({ vaultPath, profilesDirRelative });
           if (options.json) {
             process.stdout.write(JSON.stringify(plan, null, 2) + "\n");
           } else {

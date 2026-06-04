@@ -134,6 +134,24 @@ describe("SharedIdentitiesProfileMigrationService", () => {
       const plan = svc.generatePlan({ vaultPath: setup.vaultPath });
       expect(plan.actions.length).toBe(0);
     });
+
+    it("custom profilesDirRelative is used as relocate target", () => {
+      setup = makeSyntheticVault();
+      const svc = new SharedIdentitiesProfileMigrationService();
+      const plan = svc.generatePlan({
+        vaultPath: setup.vaultPath,
+        profilesDirRelative: "assetspaces/custom-profiles",
+      });
+
+      const expectedDir = path.join(setup.vaultPath, "assetspaces", "custom-profiles");
+      expect(plan.profilesDirPath).toBe(expectedDir);
+
+      const relocations = plan.actions.filter((a) => a.kind === "relocate-and-dual-class");
+      expect(relocations.length).toBe(4);
+      for (const a of relocations) {
+        expect(a.kind === "relocate-and-dual-class" && a.profilesDirPath.startsWith(expectedDir)).toBe(true);
+      }
+    });
   });
 
   describe("apply mode", () => {

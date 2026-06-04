@@ -32,6 +32,43 @@ function buildFakeGitHubTarball(
   return gzipSync(Buffer.from(tar));
 }
 
+/**
+ * Hand-craft a single USTAR header block for a non-regular entry (symlink /
+ * hardlink). nanotar's `createTar` only emits regular-file (typeflag `0`)
+ * entries, so a malicious symlink tarball cannot be synthesized through it —
+ * we build the raw 512-byte header ourselves. typeflag `2` → symbolicLink,
+ * `1` → hardLink (per nanotar `tarItemTypeMap`).
+ */
+function tarLinkHeader(name: string, linkname: string, typeflag: "1" | "2"): Buffer {
+  const block = Buffer.alloc(512, 0);
+  block.write(name, 0, "utf8"); // name (≤100 bytes)
+  block.write("0000777\0", 100, "ascii"); // mode
+  block.write("0000000\0", 108, "ascii"); // uid
+  block.write("0000000\0", 116, "ascii"); // gid
+  block.write("00000000000\0", 124, "ascii"); // size = 0 (links carry no payload)
+  block.write("00000000000\0", 136, "ascii"); // mtime
+  block.write("        ", 148, "ascii"); // checksum placeholder (8 spaces)
+  block.write(typeflag, 156, "ascii"); // typeflag
+  block.write(linkname, 157, "utf8"); // linkname target (≤100 bytes)
+  block.write("ustar\0", 257, "ascii"); // magic
+  block.write("00", 263, "ascii"); // version
+  let sum = 0;
+  for (let i = 0; i < 512; i++) sum += block[i];
+  block.write(sum.toString(8).padStart(6, "0") + "\0 ", 148, "ascii"); // computed checksum
+  return block;
+}
+
+/**
+ * Build a gzipped tar containing a single link entry under a valid GitHub
+ * wrapper dir `<owner>-<repo>-<sha7>/` so the malicious entry survives the
+ * wrapper-prefix + SHA validation and reaches the symlink/hardlink reject gate.
+ */
+function buildLinkTarball(wrapper: string, typeflag: "1" | "2"): Uint8Array {
+  const header = tarLinkHeader(`${wrapper}/evil-link`, "/etc/passwd", typeflag);
+  const trailer = Buffer.alloc(1024, 0); // two zero blocks terminate the archive
+  return gzipSync(Buffer.concat([header, trailer]));
+}
+
 function fakeFetch(response: Uint8Array): typeof fetch {
   return (async (_url: string | URL | Request) => {
     return {
@@ -141,12 +178,35 @@ describe("BootstrapAssetSpaceService", () => {
       ).rejects.toThrow(/fetch failed.*404/);
     });
 
-    // Note: nanotar's createTar API does NOT support emitting symbolicLink/hardLink
-    // typed entries (only regular files). The production code's explicit
-    // `symbolicLink` / `hardLink` rejection (BootstrapAssetSpaceService.ts:166-171)
-    // is verified by code review + parity audit с plugin TarExtractor.validateEntry.
-    // Adversarial symlink tarball test deferred к future integration suite with
-    // hand-crafted tar bytes.
+    // PR #3367 follow-up: adversarial symlink/hardlink tarball rejection. nanotar's
+    // createTar can't emit link-typed entries, so we hand-craft raw tar bytes
+    // (tarLinkHeader) to synthesize a malicious upstream tarball.
+    it("rejects symbolicLink-typed tar entry (security)", async () => {
+      const tarball = buildLinkTarball("kitelev-evil-abc1234", "2");
+      const svc = new BootstrapAssetSpaceService({ fetchImpl: fakeFetch(tarball) });
+      await expect(
+        svc.pullAssetSpace("https://github.com/kitelev/evil", "main", path.join(tempBase, "t")),
+      ).rejects.toThrow(/symbolicLink entry .* rejected for security/);
+    });
+
+    it("rejects hardLink-typed tar entry (security)", async () => {
+      const tarball = buildLinkTarball("kitelev-evil-def5678", "1");
+      const svc = new BootstrapAssetSpaceService({ fetchImpl: fakeFetch(tarball) });
+      await expect(
+        svc.pullAssetSpace("https://github.com/kitelev/evil", "main", path.join(tempBase, "t")),
+      ).rejects.toThrow(/hardLink entry .* rejected for security/);
+    });
+
+    it("does not extract any file when a malicious symlink entry is present", async () => {
+      const tarball = buildLinkTarball("kitelev-evil-abc1234", "2");
+      const svc = new BootstrapAssetSpaceService({ fetchImpl: fakeFetch(tarball) });
+      const target = path.join(tempBase, "no-extract");
+      await expect(
+        svc.pullAssetSpace("https://github.com/kitelev/evil", "main", target),
+      ).rejects.toThrow(/rejected for security/);
+      // Target dir must not have been created with any contents (staging cleaned up).
+      expect(existsSync(path.join(target, "evil-link"))).toBe(false);
+    });
 
     it("MEDIUM-fix: accepts files с `..` в name (e.g. foo..bar.md) when no segment is `..`", async () => {
       const tarball = buildFakeGitHubTarball("kitelev", "test", "bbb2222", [
