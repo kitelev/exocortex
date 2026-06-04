@@ -601,7 +601,8 @@ export class ExocortexSettingTab extends PluginSettingTab {
         "submodules on disk (and rewrites .gitmodules). Heavyweight: a " +
         "confirmation gate, an uncommitted-changes guard, and ~30 s per " +
         "freshly-pulled AssetSpace. Pick a KnowledgeProfile asset via the " +
-        "«Exocortex: Switch knowledge profile» command (Cmd+P). Use it to " +
+        "«Exocortex: Switch knowledge profile (filesystem destroy + " +
+        "materialize)» command (Cmd+P). Use it to " +
         "install or remove whole ontology bundles and to keep " +
         "privacy-sensitive content physically off the device.",
     );

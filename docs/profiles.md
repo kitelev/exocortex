@@ -24,7 +24,7 @@ is the one-paragraph answer plus the details.
 | Changes how often?  | Rarely (weeks / months)                                                         | Often (hours / days)                        |
 | Active state        | `data.local.json.activeKnowledgeProfileUid`                                     | `data.local.json.activeFocusProfileUid`     |
 | Class               | `exo__KnowledgeProfile`                                                         | `exo__FocusProfile`                         |
-| Palette command     | `Exocortex: Switch knowledge profile`                                           | `Exocortex: Switch focus profile`           |
+| Palette command     | `Exocortex: Switch knowledge profile (filesystem destroy + materialize)`        | `Exocortex: Switch focus profile`           |
 | Guarded by          | Confirmation prompt + uncommitted-changes abort                                 | Nothing — safe, non-destructive             |
 
 The two are **separate slots**. You can have a Knowledge profile and a Focus
@@ -62,7 +62,7 @@ and rewrites `.gitmodules`.
 
 - **Semantic:** "What knowledge IS materialized in the vault right now."
 - **Controls:** filesystem materialization — the actual `assetspaces/<as>/` content presence.
-- **Persistence:** permanent vault state (`.gitmodules` + materialized AS dirs), so it survives reloads and is the same across devices that synced the vault.
+- **Persistence:** the materialized content is permanent vault state (`.gitmodules` + materialized AS dirs) and syncs across devices that share the vault. The _active-profile pointer_ itself (`activeKnowledgeProfileUid`) lives in `data.local.json` and is **per-device** (Sync-excluded by the `.local.` infix), so "which Knowledge profile is active" can differ between phone and laptop even though the on-disk content is shared.
 - **User intent:** _"Install the pmbok ontology bundle — I'm starting project work."_
 - **Properties:**
   - `exo__KnowledgeProfile_includes` — Ontology / AssetSpace UIDs to materialize.
