@@ -67,6 +67,70 @@ describe("PluginLocalDataStore — initialization", () => {
   });
 });
 
+describe("PluginLocalDataStore — file-only AssetSpace registry (AC10)", () => {
+  const FILE_ONLY_ENTRY = {
+    folderName: "assetspaces/exo",
+    url: "https://github.com/kitelev/exoas-exo",
+    sha: "abc1234",
+    addedAt: "2026-06-05T00:00:00Z",
+  };
+
+  it("readFileOnlyAssetSpaces returns [] when absent", async () => {
+    const { app } = makeFakeApp();
+    const store = new PluginLocalDataStore({ app });
+    expect(await store.readFileOnlyAssetSpaces()).toEqual([]);
+  });
+
+  it("upsert then read round-trips the entry", async () => {
+    const { app } = makeFakeApp();
+    const store = new PluginLocalDataStore({ app });
+    await store.upsertFileOnlyAssetSpace(FILE_ONLY_ENTRY);
+    expect(await store.readFileOnlyAssetSpaces()).toEqual([FILE_ONLY_ENTRY]);
+  });
+
+  it("upsert is idempotent on folderName (replaces, no duplicate)", async () => {
+    const { app } = makeFakeApp();
+    const store = new PluginLocalDataStore({ app });
+    await store.upsertFileOnlyAssetSpace(FILE_ONLY_ENTRY);
+    await store.upsertFileOnlyAssetSpace({
+      ...FILE_ONLY_ENTRY,
+      sha: "newsha7",
+    });
+    const all = await store.readFileOnlyAssetSpaces();
+    expect(all).toHaveLength(1);
+    expect(all[0].sha).toBe("newsha7");
+  });
+
+  it("preserves sibling keys (switch state / pat) via RMW", async () => {
+    const { app, files } = makeFakeApp({
+      [PATH]: JSON.stringify({
+        activeProfileUid: "p-keep",
+        pat: "ghp_keep",
+      }),
+    });
+    const store = new PluginLocalDataStore({ app });
+    await store.upsertFileOnlyAssetSpace(FILE_ONLY_ENTRY);
+    const parsed = JSON.parse(files.get(PATH) ?? "{}");
+    expect(parsed.activeProfileUid).toBe("p-keep");
+    expect(parsed.pat).toBe("ghp_keep");
+    expect(parsed._fileOnlyAssetSpaces).toHaveLength(1);
+  });
+
+  it("ignores malformed registry items", async () => {
+    const { app } = makeFakeApp({
+      [PATH]: JSON.stringify({
+        _fileOnlyAssetSpaces: [
+          { folderName: "assetspaces/exo" }, // missing fields
+          FILE_ONLY_ENTRY,
+          "garbage",
+        ],
+      }),
+    });
+    const store = new PluginLocalDataStore({ app });
+    expect(await store.readFileOnlyAssetSpaces()).toEqual([FILE_ONLY_ENTRY]);
+  });
+});
+
 describe("PluginLocalDataStore — save", () => {
   it("save persists to disk and updates the cache", async () => {
     const { app, files } = makeFakeApp();

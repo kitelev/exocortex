@@ -4,6 +4,7 @@ import {
   validateGitUrl,
   stripGitmodulesEntry,
   parseGitmodulesPaths,
+  parseGitmodulesEntries,
 } from "../../../../src/infrastructure/adapters/GitSubmoduleOps";
 
 describe("validateVaultPathArg", () => {
@@ -125,6 +126,64 @@ no-path-here = whatever
     expect(paths.has("assetspaces/kpc")).toBe(true);
     // ems stanza had no `path =` line so it's not included.
     expect(paths.has("assetspaces/ems")).toBe(false);
+  });
+});
+
+describe("parseGitmodulesEntries", () => {
+  it("extracts (path, url) pairs for each submodule stanza", () => {
+    const content = `[submodule "assetspaces/exo"]
+\tpath = assetspaces/exo
+\turl = https://github.com/kitelev/exoas-exo
+[submodule "assetspaces/exocmd"]
+\tpath = assetspaces/exocmd
+\turl = https://github.com/kitelev/exoas-exocmd
+`;
+    const entries = parseGitmodulesEntries(content);
+    expect(entries).toEqual([
+      {
+        submodulePath: "assetspaces/exo",
+        url: "https://github.com/kitelev/exoas-exo",
+      },
+      {
+        submodulePath: "assetspaces/exocmd",
+        url: "https://github.com/kitelev/exoas-exocmd",
+      },
+    ]);
+  });
+
+  it("returns [] on empty input", () => {
+    expect(parseGitmodulesEntries("")).toEqual([]);
+  });
+
+  it("skips stanzas missing path or url", () => {
+    const content = `[submodule "assetspaces/exo"]
+\turl = https://github.com/kitelev/exoas-exo
+[submodule "assetspaces/exocmd"]
+\tpath = assetspaces/exocmd
+\turl = https://github.com/kitelev/exoas-exocmd
+`;
+    const entries = parseGitmodulesEntries(content);
+    expect(entries).toEqual([
+      {
+        submodulePath: "assetspaces/exocmd",
+        url: "https://github.com/kitelev/exoas-exocmd",
+      },
+    ]);
+  });
+
+  it("ignores non-submodule sections", () => {
+    const content = `[core]
+\tbare = false
+[submodule "assetspaces/ems"]
+\tpath = assetspaces/ems
+\turl = https://github.com/kitelev/exoas-ems
+`;
+    expect(parseGitmodulesEntries(content)).toEqual([
+      {
+        submodulePath: "assetspaces/ems",
+        url: "https://github.com/kitelev/exoas-ems",
+      },
+    ]);
   });
 });
 

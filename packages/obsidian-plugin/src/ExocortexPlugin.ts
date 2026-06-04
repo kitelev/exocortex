@@ -109,7 +109,14 @@ import { createAssetSpacePusher } from "./infrastructure/adapters/AssetSpacePush
 import { LocalSecretsStore } from "./infrastructure/adapters/LocalSecretsStore";
 import { SwitchCacheLayer } from "./infrastructure/adapters/SwitchCacheLayer";
 import { ClearSwitchCacheConfirmModal } from "./infrastructure/adapters/ClearSwitchCacheConfirmModal";
-import { AssetSpaceManager } from "./infrastructure/adapters/AssetSpaceManager";
+import {
+  AssetSpaceManager,
+  parseGitHubURL,
+} from "./infrastructure/adapters/AssetSpaceManager";
+import { BootstrapAssetSpaceCommands } from "./infrastructure/adapters/BootstrapAssetSpaceCommands";
+import { BootstrapVaultModal } from "./presentation/modals/BootstrapVaultModal";
+import { AddAssetSpaceModal } from "./presentation/modals/AddAssetSpaceModal";
+import { SimpleConfirmModal } from "./presentation/modals/SimpleConfirmModal";
 import { AssetSpaceMaterializationTracker } from "./infrastructure/adapters/AssetSpaceMaterializationTracker";
 import { injectAssetSpaceMaterializationTriples } from "./infrastructure/adapters/injectAssetSpaceMaterializationTriples";
 import { AssetSpaceStatusIconPatch } from "./presentation/asset-space/AssetSpaceStatusIconPatch";
@@ -2865,11 +2872,88 @@ export default class ExocortexPlugin extends Plugin {
       },
     });
 
+    // RFC 13da049f Phase 6.2/6.3 — Bootstrap vault + Add AssetSpace by URL.
+    // Desktop-only: both reuse the Phase 5 hard-switch deps (AssetSpaceManager
+    // REST pull + GitSubmoduleOps staging move / .gitmodules). Registered only
+    // when those deps are wired (desktop + vault.adapter.basePath available).
+    if (hardSwitchDeps !== null) {
+      this.registerBootstrapCommands(hardSwitchDeps, localDataStore);
+    }
+
     this.logger.info(
       "[ExocortexPlugin] FocusProfile palette commands registered",
     );
 
     return reapplyActiveProfileFilter;
+  }
+
+  /**
+   * Wire + register the RFC 13da049f Phase 6.2/6.3 palette commands
+   * («Bootstrap vault» + «Add AssetSpace by URL»). Reuses the Phase 5
+   * `AssetSpaceManager` (REST tarball pull) and `GitSubmoduleOps` (staging
+   * move + `.gitmodules` text manipulation) — no REST/security logic is
+   * duplicated. Desktop-only; the caller gates on `hardSwitchDeps !== null`.
+   */
+  private registerBootstrapCommands(
+    hardSwitchDeps: {
+      assetSpaceManager: AssetSpaceManager;
+      gitOps: GitSubmoduleOps;
+    },
+    localDataStore: PluginLocalDataStore,
+  ): void {
+    const deriveFolderName = (url: string): string => {
+      const { repo } = parseGitHubURL(url);
+      return repo.startsWith("exoas-") ? repo.slice("exoas-".length) : repo;
+    };
+
+    const bootstrapCommands = new BootstrapAssetSpaceCommands({
+      puller: hardSwitchDeps.assetSpaceManager,
+      gitOps: hardSwitchDeps.gitOps,
+      localStore: localDataStore,
+      vaultExists: (p) => this.app.vault.adapter.exists(p),
+      listFolder: (dir) => this.app.vault.adapter.list(dir),
+      isGitVault: () => this.app.vault.adapter.exists(".git"),
+      validateUrl: (url) => GitHubRestClient.validateRepoURL(url),
+      deriveFolderName,
+      promptBootstrapUrls: () =>
+        new Promise((resolve) => {
+          new BootstrapVaultModal(this.app, resolve).open();
+        }),
+      promptAddAssetSpaceUrl: () =>
+        new Promise((resolve) => {
+          new AddAssetSpaceModal(this.app, deriveFolderName, resolve).open();
+        }),
+      confirm: (message) =>
+        new Promise((resolve) => {
+          new SimpleConfirmModal(
+            this.app,
+            {
+              title: "Fetch tracked AssetSpaces?",
+              body: message,
+              confirmLabel: "Fetch",
+            },
+            resolve,
+          ).open();
+        }),
+      notify: (message) => this.notifier.info(message),
+      onMaterialized: () => this.refreshAndInjectAssetSpaceMaterialization(),
+    });
+
+    this.addCommand({
+      id: "bootstrap-vault",
+      name: "Bootstrap vault",
+      callback: () => {
+        void bootstrapCommands.invokeBootstrap();
+      },
+    });
+
+    this.addCommand({
+      id: "add-assetspace",
+      name: "Add assetspace by URL",
+      callback: () => {
+        void bootstrapCommands.invokeAddAssetSpace();
+      },
+    });
   }
 
   /**

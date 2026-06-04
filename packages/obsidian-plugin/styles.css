@@ -6106,3 +6106,35 @@
   color: var(--text-muted, #6e7681);
   opacity: 0.85;
 }
+
+/* RFC 13da049f Phase 6.2/6.3 — Bootstrap / Add-assetspace modals. */
+.bootstrap-modal-input {
+  width: 100%;
+}
+
+.bootstrap-vault-field,
+.add-assetspace-field {
+  margin-bottom: 0.75em;
+}
+
+.bootstrap-vault-field label,
+.add-assetspace-field label {
+  display: block;
+  margin-bottom: 0.25em;
+  font-weight: var(--font-semibold, 600);
+}
+
+.bootstrap-vault-note,
+.add-assetspace-note,
+.add-assetspace-preview {
+  color: var(--text-muted, #6e7681);
+  font-size: var(--font-ui-smaller, 0.8em);
+}
+
+.bootstrap-modal-error {
+  display: none;
+}
+
+.bootstrap-modal-error.is-visible {
+  display: block;
+}
