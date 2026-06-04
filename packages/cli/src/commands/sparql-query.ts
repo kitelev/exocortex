@@ -10,6 +10,7 @@ import {
   AlgebraSerializer,
   ExoQLQueryExecutor,
   NoteToRDFConverter,
+  IRICanonicalizer,
   Triple,
   UpdateExecutor,
   type UpdateResult,
@@ -37,6 +38,12 @@ import { NTriplesFormatter } from "../utils/NTriplesFormatter.js";
 import { scanVaultNamespaces } from "../utils/VaultNamespaceScanner.js";
 import { injectExocortexPrefixes, transformShorthandNotation, filterOntologyPrefixes } from "../utils/QueryPrefixInjector.js";
 import { resolveProfileFilter } from "../utils/resolveProfileFilter.js";
+import { deriveSubjectIriPrefix } from "../utils/AlsoVaultMountPrefix.js";
+import { resolveCrossVaultInstanceClassWikilinks } from "../utils/crossVaultInstanceClassResolver.js";
+import {
+  buildVaultUidIndex,
+  isCanonicalizationEnabled,
+} from "../cache/buildVaultUidIndex.js";
 
 export interface SparqlQueryOptions {
   vault: string;
@@ -466,8 +473,38 @@ export function sparqlQueryCommand(): Command {
         }
 
         if (!combinedCacheHit) {
+          // Issue #3352 — pre-build sibling adapters once so primary's
+          // `getFirstLinkpathDest` can resolve label-form wikilinks
+          // whose target lives in an additional vault. The same adapters
+          // are reused below when loading each additional vault, so the
+          // adapter that walked the vault is the same one consulted as a
+          // sibling.
+          const alsoAdapters: FileSystemVaultAdapter[] = [];
+          const alsoPaths: {
+            resolvedAlsoPath: string;
+            subjectIriPrefix: string;
+          }[] = [];
+          for (const alsoPath of alsoVaults) {
+            const resolvedAlsoPath = resolve(alsoPath);
+            if (!existsSync(resolvedAlsoPath)) {
+              throw new VaultNotFoundError(resolvedAlsoPath);
+            }
+            const subjectIriPrefix = deriveSubjectIriPrefix(resolvedAlsoPath);
+            alsoAdapters.push(
+              new FileSystemVaultAdapter(resolvedAlsoPath, {
+                subjectIriPrefix,
+              }),
+            );
+            alsoPaths.push({ resolvedAlsoPath, subjectIriPrefix });
+          }
+
           if (useCacheEffective) {
-            // Use cached triples for faster loading (primary vault only)
+            // Use cached triples for faster loading (primary vault only).
+            // Note (#3352): siblingAdapters cannot retro-fix wikilinks that
+            // were already serialised as bare Literals at cache build time.
+            // Users who need cross-vault label-form resolution on the cached
+            // path should rebuild the index via `sparql index --also` (which
+            // routes through `buildCombinedTriples`).
             const cacheManager = new CacheManager(vaultPath);
             const cacheResult = await cacheManager.loadOrBuild();
             triples = cacheResult.triples;
@@ -477,8 +514,11 @@ export function sparqlQueryCommand(): Command {
               console.log(`🚀 Cache hit! Loading from persistent cache...`);
             }
           } else {
-            // Traditional vault loading
-            const vaultAdapter = new FileSystemVaultAdapter(vaultPath);
+            // Traditional vault loading — primary adapter is configured
+            // with the pre-built sibling adapters.
+            const vaultAdapter = new FileSystemVaultAdapter(vaultPath, {
+              siblingAdapters: alsoAdapters,
+            });
             const converter = new NoteToRDFConverter(vaultAdapter);
             triples = await converter.convertVault(
               profileFilter !== null
@@ -490,17 +530,19 @@ export function sparqlQueryCommand(): Command {
             );
           }
 
-          // Load additional vaults if --also specified
-          for (const alsoPath of alsoVaults) {
-            const resolvedAlsoPath = resolve(alsoPath);
-            if (!existsSync(resolvedAlsoPath)) {
-              throw new VaultNotFoundError(resolvedAlsoPath);
-            }
+          // Load additional vaults if --also specified, using the
+          // pre-built adapters so primary's sibling list stays in sync.
+          for (let i = 0; i < alsoAdapters.length; i++) {
+            const alsoAdapter = alsoAdapters[i];
+            const { resolvedAlsoPath, subjectIriPrefix } = alsoPaths[i];
             if (outputFormat === "text") {
               console.log(`📦 Loading additional vault: ${resolvedAlsoPath}...`);
             }
-            const alsoAdapter = new FileSystemVaultAdapter(resolvedAlsoPath);
-            const alsoConverter = new NoteToRDFConverter(alsoAdapter);
+            const alsoConverter = new NoteToRDFConverter(
+              alsoAdapter,
+              undefined,
+              { subjectIriPrefix },
+            );
             const alsoTriples = await alsoConverter.convertVault(
               profileFilter !== null
                 ? {
@@ -512,6 +554,54 @@ export function sparqlQueryCommand(): Command {
             triples = triples.concat(alsoTriples);
             if (outputFormat === "text") {
               console.log(`   ➕ Added ${alsoTriples.length} triples from ${resolvedAlsoPath}`);
+            }
+          }
+
+          // Issue #3219 — when `--also` vaults were loaded without the
+          // combined-cache index, `exo__Instance_class` wikilinks whose
+          // target class file lives in a different loaded vault degrade to
+          // raw string literals (`"[[<class-uid>]]"`) because each per-
+          // vault `NoteToRDFConverter` instance can only see its own vault
+          // during `getFirstLinkpathDest`. Apply the same cross-vault
+          // resolution `buildCombinedTriples` runs on the cached path so
+          // class-filtered SPARQL queries find these subjects too.
+          if (alsoVaults.length > 0) {
+            triples = resolveCrossVaultInstanceClassWikilinks(
+              triples as Triple[],
+            ) as Triple[];
+
+            // Issue #3286 — apply post-load synth-A → full-path IRI
+            // canonicalization on the non-cached fallback path, mirroring
+            // the same step that `buildCombinedTriples` runs for the
+            // combined-cache build. Without this, JOINs across vaults
+            // silently miss whenever an --also-loaded vault references a
+            // primary-owned UID via the basename-only synth-A form.
+            //
+            // Gated by `EXOCORTEX_IRI_CANONICALIZE=true` (default off).
+            // The primary adapter and pre-built alsoAdapters carry the
+            // correct `subjectIriPrefix` so the canonical-IRI lookup is
+            // consistent with what the converter emitted as subject IRIs.
+            if (isCanonicalizationEnabled()) {
+              const primaryAdapter = new FileSystemVaultAdapter(vaultPath, {
+                siblingAdapters: alsoAdapters,
+              });
+              const uidIndex = buildVaultUidIndex([
+                primaryAdapter,
+                ...alsoAdapters,
+              ]);
+              const canonResult = IRICanonicalizer.canonicalize(
+                triples,
+                uidIndex,
+              );
+              triples = canonResult.triples;
+              if (
+                outputFormat === "text" &&
+                canonResult.remapCount > 0
+              ) {
+                console.log(
+                  `   🪄 IRI canonicalization (Issue #3286): remapped ${canonResult.remapCount} triple(s) covering ${canonResult.uniqueRemapCount} distinct synth-A IRI(s)`,
+                );
+              }
             }
           }
         }

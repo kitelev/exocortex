@@ -86,6 +86,24 @@ jest.unstable_mockModule("exocortex", () => ({
   Literal: jest.fn(),
   BlankNode: jest.fn(),
   Triple: jest.fn(),
+  // Issue #3286 — sparql-query.ts now imports IRICanonicalizer for the
+  // canonicalization step; buildVaultUidIndex transitively imports
+  // vaultPathToIRI. Stub both so the test loads even though canonicalization
+  // is OFF by default (env flag unset).
+  IRICanonicalizer: {
+    canonicalize: jest.fn(() => ({
+      triples: [],
+      remapCount: 0,
+      uniqueRemapCount: 0,
+    })),
+  },
+  vaultPathToIRI: jest.fn((p: string) => `obsidian://vault/${p}`),
+  // Issue #3219 — cross-vault resolver util pulled in by sparql-query.ts
+  DomainIRI: class { constructor(public value: string) {} },
+  DomainLiteral: class { constructor(public value: string) {} },
+  DomainTriple: class {
+    constructor(public subject: unknown, public predicate: unknown, public object: unknown) {}
+  },
   SPARQL_PREFIXES: "PREFIX exo: <https://exocortex.my/ontology/exo#>",
 }));
 

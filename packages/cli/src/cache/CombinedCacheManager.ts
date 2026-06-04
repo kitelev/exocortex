@@ -95,7 +95,20 @@ export class CombinedCacheManager {
   /** Primary + sorted alsos, used for cache-key hash and mtime tracking. */
   private readonly allVaultPaths: string[];
   private readonly cachePath: string;
-  private readonly cliVersion: string = "1.0.0";
+  /**
+   * Schema version of the materialized triple set stored in the combined
+   * cache. Bumped whenever the triple-emission semantics change in a way
+   * that makes pre-bump cached triples inconsistent with the current
+   * emitter — `isCacheValid` rejects caches with a different schema so
+   * users do not silently consume stale triples after a CLI upgrade.
+   *
+   * Issue #3219 bump (`1.0.0` → `1.1.0`): subject IRIs for `--also`
+   * vaults rooted at `assetspaces/<sub>` now carry the `assetspaces/<sub>/`
+   * prefix instead of being stripped to the bare basename. Pre-fix caches
+   * contain the stripped form and would silently return wrong results for
+   * class-filtered SPARQL queries.
+   */
+  private readonly cliVersion: string = "1.1.0";
 
   constructor(primaryVaultPath: string, alsoVaultPaths: string[] = []) {
     this.primaryVaultPath = path.resolve(primaryVaultPath);
@@ -187,6 +200,15 @@ export class CombinedCacheManager {
         !cacheData.metadata.vaultMtimes ||
         typeof cacheData.metadata.vaultMtimes !== "object"
       ) {
+        return false;
+      }
+
+      // Issue #3219 — reject caches built with a different triple-emission
+      // schema version. Pre-bump caches for `--also` flag have stripped
+      // subject IRIs (no `assetspaces/<sub>/` prefix); silently feeding them
+      // into the new query path would mask the fix and return wrong results
+      // for class-filtered cross-vault SPARQL queries.
+      if (cacheData.metadata.version !== this.cliVersion) {
         return false;
       }
 

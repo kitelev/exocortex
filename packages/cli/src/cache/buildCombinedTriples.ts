@@ -7,11 +7,17 @@ import {
   PropertyCardinalityRegistry,
   PrototypeChainMaterializer,
   NoteToRDFConverter,
+  IRICanonicalizer,
   Triple,
 } from "exocortex";
 import { FileSystemVaultAdapter } from "../adapters/FileSystemVaultAdapter.js";
 import { VaultNotFoundError } from "../utils/errors/index.js";
-import { resolveCrossVaultInstanceClassWikilinks } from "../commands/validate-schema.js";
+import { resolveCrossVaultInstanceClassWikilinks } from "../utils/crossVaultInstanceClassResolver.js";
+import { deriveSubjectIriPrefix } from "../utils/AlsoVaultMountPrefix.js";
+import {
+  buildVaultUidIndex,
+  isCanonicalizationEnabled,
+} from "./buildVaultUidIndex.js";
 
 export interface BuildCombinedTriplesOptions {
   /** Disable RDFS subClassOf inference materialization */
@@ -31,6 +37,13 @@ export interface BuildCombinedTriplesResult {
   crossVaultAddedTripleCount: number;
   /** Triples emitted by RDFS + prototype chain materialization */
   inferredTripleCount: number;
+  /**
+   * Issue #3286 — number of triples whose subject or object IRI was rewritten
+   * by the synth-A → canonical full-path remap. Zero when the feature flag
+   * `EXOCORTEX_IRI_CANONICALIZE` is off (default) or when no synth-A IRIs
+   * were emitted by the converter pass.
+   */
+  canonicalizedTripleCount: number;
 }
 
 /**
@@ -81,12 +94,33 @@ export async function buildCombinedTriples(
     resolvedAlsos.push(r);
   }
 
+  // Issue #3352 — pre-build sibling adapters with their derived
+  // `subjectIriPrefix` before constructing the primary adapter. The
+  // primary adapter is then configured with these siblings so its
+  // `getFirstLinkpathDest` (Step 5) resolves label-form wikilinks whose
+  // target lives in an `--also` vault. Keeps the combined-cache path
+  // symmetric with the non-cached `sparql query --also` path.
+  const alsoAdapters: FileSystemVaultAdapter[] = [];
+  const alsoPrefixes: string[] = [];
+  for (const alsoPath of resolvedAlsos) {
+    // Issue #3219 — preserve `assetspaces/<sub>/` prefix on subject IRIs so
+    // cached cross-vault triples match the form that non-cached `--also`
+    // loads produce, keeping cache-hit and cache-miss queries consistent.
+    const subjectIriPrefix = deriveSubjectIriPrefix(alsoPath);
+    alsoAdapters.push(
+      new FileSystemVaultAdapter(alsoPath, { subjectIriPrefix }),
+    );
+    alsoPrefixes.push(subjectIriPrefix);
+  }
+
   // Load primary
   if (!silent) {
     log(`📦 Loading primary vault: ${primary}...`);
   }
   let triples: Triple[] = [];
-  const primaryAdapter = new FileSystemVaultAdapter(primary);
+  const primaryAdapter = new FileSystemVaultAdapter(primary, {
+    siblingAdapters: alsoAdapters,
+  });
   const primaryConverter = new NoteToRDFConverter(primaryAdapter);
   const primaryTriples = await primaryConverter.convertVault();
   triples = triples.concat(primaryTriples);
@@ -94,13 +128,17 @@ export async function buildCombinedTriples(
     log(`   ➕ Added ${primaryTriples.length} triples from primary vault`);
   }
 
-  // Load each --also vault
-  for (const alsoPath of resolvedAlsos) {
+  // Load each --also vault using the pre-built adapter.
+  for (let i = 0; i < alsoAdapters.length; i++) {
+    const alsoPath = resolvedAlsos[i];
+    const alsoAdapter = alsoAdapters[i];
+    const subjectIriPrefix = alsoPrefixes[i];
     if (!silent) {
       log(`📦 Loading additional vault: ${alsoPath}...`);
     }
-    const alsoAdapter = new FileSystemVaultAdapter(alsoPath);
-    const alsoConverter = new NoteToRDFConverter(alsoAdapter);
+    const alsoConverter = new NoteToRDFConverter(alsoAdapter, undefined, {
+      subjectIriPrefix,
+    });
     const alsoTriples = await alsoConverter.convertVault();
     triples = triples.concat(alsoTriples);
     if (!silent) {
@@ -122,6 +160,31 @@ export async function buildCombinedTriples(
     if (!silent && crossVaultAddedTripleCount > 0) {
       log(
         `   🔗 Cross-vault Instance_class resolution: emitted ${crossVaultAddedTripleCount} canonical-IRI triple(s)`,
+      );
+    }
+  }
+
+  // Issue #3286 — post-load IRI canonicalization. Remaps every synth-A IRI
+  // (`obsidian://vault/<uid>.md` without subdirectory) to the canonical
+  // full-path form whenever the UID is owned by a loaded vault. Runs after
+  // cross-vault Instance_class resolution (which can itself introduce
+  // canonical-IRI triples) and BEFORE adding triples to the store so the
+  // reasoner sees a coherent IRI space.
+  //
+  // Gated by `EXOCORTEX_IRI_CANONICALIZE=true` per Issue #3286 RFC body —
+  // default OFF for v1 so users opt in once their cross-vault setup has
+  // been validated. No-op for single-vault builds because this function is
+  // only reached when `runCombinedIndex` is invoked with at least one
+  // `--also` path.
+  let canonicalizedTripleCount = 0;
+  if (isCanonicalizationEnabled() && resolvedAlsos.length > 0) {
+    const uidIndex = buildVaultUidIndex([primaryAdapter, ...alsoAdapters]);
+    const result = IRICanonicalizer.canonicalize(triples, uidIndex);
+    triples = result.triples;
+    canonicalizedTripleCount = result.remapCount;
+    if (!silent && canonicalizedTripleCount > 0) {
+      log(
+        `   🪄 IRI canonicalization (Issue #3286): remapped ${canonicalizedTripleCount} triple(s) covering ${result.uniqueRemapCount} distinct synth-A IRI(s)`,
       );
     }
   }
@@ -161,5 +224,6 @@ export async function buildCombinedTriples(
     rawTripleCount,
     crossVaultAddedTripleCount,
     inferredTripleCount,
+    canonicalizedTripleCount,
   };
 }

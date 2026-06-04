@@ -71,6 +71,26 @@ jest.unstable_mockModule("exocortex", () => ({
   Literal: jest.fn(),
   BlankNode: jest.fn(),
   Triple: jest.fn(),
+  // Issue #3286 — sparql-query.ts now imports IRICanonicalizer for the
+  // synth-A → full-path remap, and the cache helper transitively imports
+  // vaultPathToIRI. Stub both so the test loads even though canonicalization
+  // is gated by EXOCORTEX_IRI_CANONICALIZE and these single-vault tests
+  // never exercise the cross-vault branch.
+  IRICanonicalizer: {
+    canonicalize: jest.fn(() => ({
+      triples: [],
+      remapCount: 0,
+      uniqueRemapCount: 0,
+    })),
+  },
+  vaultPathToIRI: jest.fn((p: string) => `obsidian://vault/${p}`),
+  // Issue #3219 — sparql-query.ts now uses the cross-vault resolver util
+  // which constructs Domain{IRI,Literal,Triple} instances. Stub them.
+  DomainIRI: class { constructor(public value: string) {} },
+  DomainLiteral: class { constructor(public value: string) {} },
+  DomainTriple: class {
+    constructor(public subject: unknown, public predicate: unknown, public object: unknown) {}
+  },
   SPARQL_PREFIXES: `PREFIX exo: <https://exocortex.my/ontology/exo#>
 PREFIX ems: <https://exocortex.my/ontology/ems#>
 PREFIX ims: <https://exocortex.my/ontology/ims#>
