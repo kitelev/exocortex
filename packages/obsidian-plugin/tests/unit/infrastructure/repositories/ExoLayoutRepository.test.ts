@@ -454,6 +454,57 @@ describe("ExoLayoutRepository — unsubscribe error tolerance", () => {
   });
 });
 
+describe("ExoLayoutRepository — Issue #3368 cold-start race", () => {
+  // Models the exo-layout-smoke regression: on warm Obsidian boots,
+  // metadataCache parses Layout fixtures BEFORE the repository's
+  // `on("changed")` listener is wired, so `initialize()`'s initial
+  // `rebuildSync()` sees an empty frontmatter map and no later
+  // "changed" event fires for those files. The plugin closes the race
+  // by calling `rebuildNow()` from the `metadataCache.on("resolved")`
+  // handler — this test asserts that contract on the repository side.
+  test("rebuildNow() picks up files that became available after initialize()", () => {
+    const adapter = makeAdapter(); // starts empty — mirrors metadataCache pre-parse
+    const repo = new ExoLayoutRepository(adapter, makeTimer().options);
+
+    repo.initialize();
+    expect(repo.getSnapshot().layouts).toHaveLength(0);
+
+    // Frontmatter becomes available later (metadataCache finishes parsing)
+    // WITHOUT firing a "changed" event — exactly the warm-boot race.
+    adapter.setFrontmatter({
+      "layout-late.md": validLayout("late-uid"),
+      "block-late.md": validPropertiesBlock("late-block"),
+    });
+    // Snapshot still stale — no event fired, no debounced rebuild scheduled.
+    expect(repo.getSnapshot().layouts).toHaveLength(0);
+
+    // The fix path: plugin invokes rebuildNow() from "resolved" handler.
+    repo.rebuildNow();
+
+    const snap = repo.getSnapshot();
+    expect(snap.layouts.map((l) => l.uid)).toEqual(["late-uid"]);
+    expect(snap.blocksByUid.get("late-block")?.kind).toBe("properties");
+  });
+
+  test("rebuildNow() is idempotent — repeated calls produce stable snapshot", () => {
+    const adapter = makeAdapter({ "layout.md": validLayout("a") });
+    const repo = new ExoLayoutRepository(adapter, makeTimer().options);
+
+    repo.initialize();
+    const first = repo.getSnapshot();
+    repo.rebuildNow();
+    const second = repo.getSnapshot();
+    repo.rebuildNow();
+    const third = repo.getSnapshot();
+
+    // Each rebuild publishes a fresh frozen snapshot, but contents
+    // are equivalent — caller can call rebuildNow() defensively.
+    expect(first.layouts.map((l) => l.uid)).toEqual(["a"]);
+    expect(second.layouts.map((l) => l.uid)).toEqual(["a"]);
+    expect(third.layouts.map((l) => l.uid)).toEqual(["a"]);
+  });
+});
+
 describe("ExoLayoutRepository — Phase 1 invariants", () => {
   test("uninitialized repository yields default empty snapshot", () => {
     const repo = new ExoLayoutRepository(
