@@ -20,7 +20,7 @@
  * constraints — plugin uses Obsidian's `requestUrl`, CLI uses native `fetch`).
  */
 
-import { mkdirSync, writeFileSync, existsSync, renameSync, rmSync, readFileSync, readdirSync } from "node:fs";
+import { mkdirSync, writeFileSync, existsSync, renameSync, rmSync, readFileSync, readdirSync, appendFileSync } from "node:fs";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, dirname, resolve, sep } from "node:path";
@@ -245,23 +245,29 @@ export class BootstrapAssetSpaceService {
     const gitmodulesPath = join(vaultPath, ".gitmodules");
     const entryHeader = `[submodule "${submodulePath}"]`;
     const newEntry = `${entryHeader}\n\tpath = ${submodulePath}\n\turl = ${repoUrl}\n`;
-
-    if (!existsSync(gitmodulesPath)) {
-      writeFileSync(gitmodulesPath, newEntry, "utf8");
-      return { added: true };
-    }
-
-    const existing = readFileSync(gitmodulesPath, "utf8");
     // Code-reviewer LOW: anchor regex avoids false-positive on commented-out
     // headers (e.g. `# [submodule "..."]`).
     const escaped = submodulePath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const headerRegex = new RegExp(`^\\s*\\[submodule "${escaped}"\\]`, "m");
-    if (headerRegex.test(existing)) {
+
+    // CodeQL HIGH: avoid TOCTOU race between existsSync→writeFileSync.
+    // Open с flag `a` (append, creates if missing) gives single atomic call.
+    // Then re-read to check idempotency. If header already present, no-op;
+    // otherwise append the new entry. Using `a` instead of `w` preserves
+    // existing content if file appeared between calls.
+    let existing = "";
+    try {
+      existing = readFileSync(gitmodulesPath, "utf8");
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+    }
+    if (existing.length > 0 && headerRegex.test(existing)) {
       return { added: false };
     }
-
-    const sep = existing.endsWith("\n") ? "" : "\n";
-    writeFileSync(gitmodulesPath, existing + sep + newEntry, "utf8");
+    const sep = existing.length === 0 || existing.endsWith("\n") ? "" : "\n";
+    // appendFileSync = open(flag='a') + write + close — single syscall chain,
+    // no separate exists check needed. Created с 0o644 by default.
+    appendFileSync(gitmodulesPath, sep + newEntry, { encoding: "utf8" });
     return { added: true };
   }
 }
