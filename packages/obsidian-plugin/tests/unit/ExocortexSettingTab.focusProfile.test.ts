@@ -6,7 +6,7 @@
  * sequence: PAT → Active focus profile → Switch cache → Operations log.
  *
  * The integration shape (real PAT persistence round-trip, real GitHub call,
- * real switchProfile dispatch) is intentionally out of scope here — those
+ * real softSwitchFocusProfile dispatch) is intentionally out of scope here — those
  * are covered by `LocalSecretsStore.test.ts`, `GitHubRestClient.test.ts`,
  * `FocusProfileSwitchManager.test.ts`. These tests only assert the UI
  * renders the expected scaffold so a future regression that drops one of
@@ -160,7 +160,7 @@ describe("ExocortexSettingTab — Issue #3320 FocusProfile sections", () => {
       applyDisplayNameTemplate: jest.fn(),
       configureLogChannels: jest.fn(),
       focusProfileSwitchManager: {
-        switchProfile: jest.fn().mockResolvedValue(undefined),
+        softSwitchFocusProfile: jest.fn().mockResolvedValue(undefined),
       },
       listFocusProfileChoices: jest.fn().mockResolvedValue([
         { uid: "uid-a", label: "Personal", isActive: false },
@@ -286,7 +286,7 @@ describe("ExocortexSettingTab — Issue #3320 FocusProfile sections", () => {
     expect(preCalls.length).toBeGreaterThanOrEqual(1);
   });
 
-  it("invokes plugin.focusProfileSwitchManager.switchProfile when dropdown changes", async () => {
+  it("invokes plugin.focusProfileSwitchManager.softSwitchFocusProfile when dropdown changes", async () => {
     let capturedOnChange: ((uid: string) => Promise<void>) | null = null;
     // Override addDropdown to capture the onChange callback registered by
     // the production code, then trigger it manually.
@@ -357,11 +357,11 @@ describe("ExocortexSettingTab — Issue #3320 FocusProfile sections", () => {
     expect(capturedOnChange).not.toBeNull();
     await capturedOnChange!("uid-a");
     expect(
-      mockPlugin.focusProfileSwitchManager.switchProfile,
+      mockPlugin.focusProfileSwitchManager.softSwitchFocusProfile,
     ).toHaveBeenCalledWith("uid-a");
   });
 
-  it("ignores empty dropdown selection without dispatching switchProfile", async () => {
+  it("ignores empty dropdown selection without dispatching softSwitchFocusProfile", async () => {
     let capturedOnChange: ((uid: string) => Promise<void>) | null = null;
     MockSetting.mockImplementation((containerEl: any) => {
       const setting: any = {
@@ -421,13 +421,13 @@ describe("ExocortexSettingTab — Issue #3320 FocusProfile sections", () => {
     settingTab.display();
     if (capturedOnChange) await (capturedOnChange as (uid: string) => Promise<void>)("");
     expect(
-      mockPlugin.focusProfileSwitchManager.switchProfile,
+      mockPlugin.focusProfileSwitchManager.softSwitchFocusProfile,
     ).not.toHaveBeenCalled();
   });
 
   it("surfaces switch failure as a Notice without throwing", async () => {
     let capturedOnChange: ((uid: string) => Promise<void>) | null = null;
-    mockPlugin.focusProfileSwitchManager.switchProfile = jest.fn(
+    mockPlugin.focusProfileSwitchManager.softSwitchFocusProfile = jest.fn(
       async () => {
         throw new Error("lock held");
       },
