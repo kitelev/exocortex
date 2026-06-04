@@ -608,7 +608,7 @@ export class FocusProfileSwitchManager {
       // surprise the user more than a best-effort narrowed view).
       console.warn(
         `[FocusProfileSwitchManager] compat evaluation errored for ${targetProfileUid}; ` +
-          `proceeding with the declared filter. ${String(e)}`,
+          `proceeding with the declared filter. ${this.redactError(String(e))}`,
       );
       return { compatible: true };
     }

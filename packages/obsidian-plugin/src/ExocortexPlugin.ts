@@ -2802,9 +2802,14 @@ export default class ExocortexPlugin extends Plugin {
     // RFC 13da049f Phase 6.5b AC17 — «Switch knowledge profile» (hard switch;
     // supersedes the RFC 22b50a17 «Hard switch focus profile» command). Needs
     // desktop hard-switch deps wired (filesystem materialisation).
+    //
+    // Command id is intentionally kept as the legacy `hard-switch-focus-profile`
+    // so any hotkey a user already bound to the hard-switch command survives the
+    // Knowledge/Focus split (Obsidian persists hotkeys by command id). Only the
+    // user-facing name + picker source change.
     if (hardSwitchDeps !== null) {
       this.addCommand({
-        id: "switch-knowledge-profile",
+        id: "hard-switch-focus-profile",
         name: "Switch knowledge profile (filesystem destroy + materialize)",
         callback: () => {
           void commandsHandler.invokeSwitchKnowledgeProfile();
