@@ -99,8 +99,26 @@ export class BootstrapAssetSpaceService {
     // plugin's AssetSpaceManager.pullAssetSpace contract). Codeload tarball
     // uses `<repo>-<branch>` wrapper which loses SHA — use API endpoint.
     const tarballUrl = `https://api.github.com/repos/${owner}/${repo}/tarball/${ref}`;
-    const response = await this.fetchImpl(tarballUrl);
+    // Code-reviewer MEDIUM: fetch timeout (60s) prevents indefinite hang
+    // on slow/stalled GitHub response. Cap matches typical CI test timeouts.
+    const response = await this.fetchImpl(tarballUrl, {
+      signal: AbortSignal.timeout(60_000),
+    });
     if (!response.ok) {
+      // Code-reviewer MEDIUM: surface GitHub anonymous rate-limit (60 req/hour)
+      // с actionable message instead of generic "fetch failed".
+      if (response.status === 403) {
+        const remaining = response.headers?.get?.("x-ratelimit-remaining");
+        const resetEpoch = response.headers?.get?.("x-ratelimit-reset");
+        if (remaining === "0" || (resetEpoch !== null && resetEpoch !== undefined)) {
+          const resetAt = resetEpoch !== null && resetEpoch !== undefined
+            ? new Date(Number(resetEpoch) * 1000).toISOString()
+            : "unknown";
+          throw new Error(
+            `pullAssetSpace: GitHub anonymous API rate-limit exceeded (60 req/hour). Reset at ${resetAt}. Wait or use authenticated CLI.`,
+          );
+        }
+      }
       throw new Error(
         `pullAssetSpace: fetch failed (${response.status} ${response.statusText}) for ${tarballUrl}`,
       );
@@ -118,16 +136,23 @@ export class BootstrapAssetSpaceService {
     }
 
     // Discover wrapper dir (GitHub tarballs wrap all entries в <owner>-<repo>-<sha7>/).
-    const firstPath = entries[0].name;
-    const slashIdx = firstPath.indexOf("/");
-    if (slashIdx < 0) {
-      throw new Error(`pullAssetSpace: tarball entry "${firstPath}" has no wrapper dir`);
+    // Code-reviewer HIGH: skip pax_global_header / extended-header entries when
+    // picking first wrapper-bearing entry — those don't share the wrapper prefix.
+    const isHeaderType = (t: string | undefined): boolean =>
+      t === "globalExtendedHeader" || t === "extendedHeader";
+    const firstContentEntry = entries.find(
+      (e) => !isHeaderType(e.type) && e.name.includes("/"),
+    );
+    if (firstContentEntry === undefined) {
+      throw new Error(`pullAssetSpace: no wrapper-bearing entry in tarball`);
     }
-    const wrapper = firstPath.slice(0, slashIdx);
+    const slashIdx = firstContentEntry.name.indexOf("/");
+    const wrapper = firstContentEntry.name.slice(0, slashIdx);
     const wrapperPrefix = wrapper + "/";
 
-    // Verify all entries share the wrapper.
+    // Verify all non-header entries share the wrapper.
     for (const entry of entries) {
+      if (isHeaderType(entry.type)) continue;
       if (entry.name === wrapper || entry.name === wrapperPrefix) continue;
       if (!entry.name.startsWith(wrapperPrefix)) {
         throw new Error(
@@ -150,21 +175,31 @@ export class BootstrapAssetSpaceService {
     let fileCount = 0;
     try {
       for (const entry of entries) {
+        // Code-reviewer HIGH: explicit symlink/hardlink rejection (parity с
+        // plugin TarExtractor.validateEntry). Tarballs from compromised
+        // upstream could embed symlinks pointing outside vault — security risk.
+        if (entry.type === "symbolicLink" || entry.type === "hardLink") {
+          throw new Error(
+            `pullAssetSpace: ${entry.type} entry "${entry.name}" rejected for security`,
+          );
+        }
+        // Skip extended headers (no payload to extract).
+        if (isHeaderType(entry.type)) continue;
         const rel = entry.name.slice(wrapperPrefix.length);
         if (rel.length === 0) continue;
-        // nanotar returns `type: 'directory'` for dirs OR no data for them.
         // Skip directory-type entries; they'll be created on-demand.
         if (entry.type === "directory") continue;
         if (entry.data === undefined) continue;
 
+        // Code-reviewer MEDIUM: segment-based `..` check (substring rejects
+        // legitimate names like `foo..bar.md`).
+        if (rel.split("/").some((s) => s === "..")) {
+          throw new Error(`pullAssetSpace: path traversal detected for entry "${entry.name}"`);
+        }
         // Zip-slip defense: resolve target, verify it stays under stagingDir.
         const target = resolve(stagingDir, rel);
         if (target !== stagingDir && !target.startsWith(stagingDir + sep)) {
           throw new Error(`pullAssetSpace: zip-slip detected for entry "${entry.name}"`);
-        }
-        // Reject `..` segments defensively.
-        if (rel.includes("..")) {
-          throw new Error(`pullAssetSpace: path traversal detected for entry "${entry.name}"`);
         }
         mkdirSync(dirname(target), { recursive: true });
         writeFileSync(target, entry.data);
@@ -173,7 +208,19 @@ export class BootstrapAssetSpaceService {
 
       // Atomic move к target.
       mkdirSync(dirname(targetDir), { recursive: true });
-      renameSync(stagingDir, targetDir);
+      try {
+        renameSync(stagingDir, targetDir);
+      } catch (err) {
+        // Code-reviewer LOW: EXDEV fallback. mkdtemp may put staging on different
+        // filesystem than vault (macOS /private/var/folders/ vs ~). Copy + rm.
+        if ((err as NodeJS.ErrnoException).code === "EXDEV") {
+          const { cpSync } = await import("node:fs");
+          cpSync(stagingDir, targetDir, { recursive: true });
+          rmSync(stagingDir, { recursive: true, force: true });
+        } else {
+          throw err;
+        }
+      }
     } catch (err) {
       // Cleanup staging on any failure.
       rmSync(stagingDir, { recursive: true, force: true });
@@ -205,7 +252,11 @@ export class BootstrapAssetSpaceService {
     }
 
     const existing = readFileSync(gitmodulesPath, "utf8");
-    if (existing.includes(entryHeader)) {
+    // Code-reviewer LOW: anchor regex avoids false-positive on commented-out
+    // headers (e.g. `# [submodule "..."]`).
+    const escaped = submodulePath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const headerRegex = new RegExp(`^\\s*\\[submodule "${escaped}"\\]`, "m");
+    if (headerRegex.test(existing)) {
       return { added: false };
     }
 

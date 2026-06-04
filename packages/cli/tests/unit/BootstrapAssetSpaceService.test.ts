@@ -141,6 +141,37 @@ describe("BootstrapAssetSpaceService", () => {
       ).rejects.toThrow(/fetch failed.*404/);
     });
 
+    // Note: nanotar's createTar API does NOT support emitting symbolicLink/hardLink
+    // typed entries (only regular files). The production code's explicit
+    // `symbolicLink` / `hardLink` rejection (BootstrapAssetSpaceService.ts:166-171)
+    // is verified by code review + parity audit с plugin TarExtractor.validateEntry.
+    // Adversarial symlink tarball test deferred к future integration suite with
+    // hand-crafted tar bytes.
+
+    it("MEDIUM-fix: accepts files с `..` в name (e.g. foo..bar.md) when no segment is `..`", async () => {
+      const tarball = buildFakeGitHubTarball("kitelev", "test", "bbb2222", [
+        { path: "foo..bar.md", content: "legitimate filename" },
+      ]);
+      const svc = new BootstrapAssetSpaceService({ fetchImpl: fakeFetch(tarball) });
+      const target = path.join(tempBase, "target-dots");
+      const result = await svc.pullAssetSpace("https://github.com/x/y", "main", target);
+      expect(result.fileCount).toBe(1);
+      expect(existsSync(path.join(target, "foo..bar.md"))).toBe(true);
+    });
+
+    it("MEDIUM-fix: rejects entries с `..` as path segment", async () => {
+      const wrapper = "kitelev-test-ccc3333";
+      const tar = createTar([
+        { name: `${wrapper}/safe.md`, data: new TextEncoder().encode("ok") },
+        { name: `${wrapper}/../escape.md`, data: new TextEncoder().encode("evil") },
+      ]);
+      const tarball = gzipSync(Buffer.from(tar));
+      const svc = new BootstrapAssetSpaceService({ fetchImpl: fakeFetch(tarball) });
+      await expect(
+        svc.pullAssetSpace("https://github.com/x/y", "main", path.join(tempBase, "t")),
+      ).rejects.toThrow(/path traversal|not under wrapper/);
+    });
+
     it("rejects invalid URL shape", async () => {
       const svc = new BootstrapAssetSpaceService({ fetchImpl: fakeFetch(new Uint8Array()) });
       await expect(
