@@ -308,51 +308,6 @@ describe("LayoutParser", () => {
       });
     });
 
-    describe("KanbanLayout", () => {
-      it("should parse KanbanLayout with laneProperty", async () => {
-        const file = createMockFile("layouts/TaskKanban.md");
-        mockVaultAdapter.getFrontmatter.mockReturnValue({
-          exo__Asset_uid: "layout-001",
-          exo__Asset_label: "Task Kanban",
-          exo__Instance_class: ["[[exo__KanbanLayout]]"],
-          exo__Layout_targetClass: "[[ems__Task]]",
-          exo__KanbanLayout_laneProperty: "[[ems__Effort_status]]",
-          exo__KanbanLayout_lanes: [
-            "[[ems__EffortStatus_ToDo]]",
-            "[[ems__EffortStatus_InProgress]]",
-            "[[ems__EffortStatus_Done]]",
-          ],
-        });
-
-        const result = await parser.parseFromFile(file);
-
-        expect(result.success).toBe(true);
-        expect(result.layout!.type).toBe(LayoutType.Kanban);
-
-        const kanbanLayout = result.layout as {
-          laneProperty: string;
-          lanes: string[];
-        };
-        expect(kanbanLayout.laneProperty).toBe("[[ems__Effort_status]]");
-        expect(kanbanLayout.lanes).toHaveLength(3);
-      });
-
-      it("should return null for KanbanLayout without laneProperty", async () => {
-        const file = createMockFile("layouts/InvalidKanban.md");
-        mockVaultAdapter.getFrontmatter.mockReturnValue({
-          exo__Asset_uid: "layout-001",
-          exo__Asset_label: "Invalid Kanban",
-          exo__Instance_class: ["[[exo__KanbanLayout]]"],
-          exo__Layout_targetClass: "[[ems__Task]]",
-          // Missing exo__KanbanLayout_laneProperty
-        });
-
-        const result = await parser.parseFromFile(file);
-
-        expect(result.success).toBe(false);
-      });
-    });
-
     describe("GraphLayout", () => {
       it("should parse GraphLayout with optional properties", async () => {
         const file = createMockFile("layouts/TaskGraph.md");

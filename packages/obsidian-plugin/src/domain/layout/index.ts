@@ -5,7 +5,7 @@
  * These types map to the ontology classes defined in exo__Layout and related classes.
  *
  * Layout System Overview:
- * - Layout: Base class for visual representations (Table, Kanban, Graph, Calendar, List)
+ * - Layout: Base class for visual representations (Table, Graph, Calendar, List)
  * - LayoutColumn: Column definition for table-based layouts
  * - LayoutFilter: Filter conditions for asset selection
  * - LayoutSort: Sort order definition
@@ -17,13 +17,11 @@
  *   Layout,
  *   LayoutType,
  *   TableLayout,
- *   KanbanLayout,
  *   LayoutColumn,
  *   LayoutFilter,
  *   LayoutSort,
  *   LayoutGroup,
  *   isTableLayout,
- *   isKanbanLayout,
  * } from "./domain/layout";
  *
  * // Check layout type
@@ -45,7 +43,6 @@ export {
   type LabelTypography,
   type BaseLayout,
   type TableLayout,
-  type KanbanLayout,
   type GraphLayout,
   type CalendarLayout,
   type ListLayout,
@@ -54,7 +51,6 @@ export {
   isLayoutFrontmatter,
   createBaseLayoutFromFrontmatter,
   isTableLayout,
-  isKanbanLayout,
   isGraphLayout,
   isCalendarLayout,
   isListLayout,

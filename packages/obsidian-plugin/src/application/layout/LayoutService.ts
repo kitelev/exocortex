@@ -29,7 +29,7 @@ import type {
   LayoutColumn,
   LayoutSort,
 } from "../../domain/layout";
-import { isTableLayout, isKanbanLayout } from "../../domain/layout";
+import { isTableLayout } from "../../domain/layout";
 import { LayoutParser, type LayoutParseOptions } from "../../infrastructure/layout/LayoutParser";
 import { LayoutQueryBuilder, type QueryBuildOptions } from "./LayoutQueryBuilder";
 import type { TableRow, CellValue } from "../../presentation/renderers/cell-renderers";
@@ -479,9 +479,6 @@ export class LayoutService {
    */
   private getLayoutColumns(layout: Layout): LayoutColumn[] {
     if (isTableLayout(layout)) {
-      return layout.columns || [];
-    }
-    if (isKanbanLayout(layout)) {
       return layout.columns || [];
     }
     return [];
