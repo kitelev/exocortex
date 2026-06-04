@@ -9,14 +9,14 @@ import { test, expect } from "@playwright/test";
 import { ObsidianLauncher } from "../utils/obsidian-launcher";
 import * as path from "path";
 
-// Issue #3280 short-term mitigation per RFC 32a64ed9 §3.3 escalation:
-// incident #2 (2026-05-26) within the 30-day watch window after #2988
-// closed. Adds `test.retry(1)` on this file so unrelated PRs do not
-// block on the page-close/modal-dismiss race in `ObsidianLauncher`
-// (see issue body §"Error signature"). Root-cause investigation of
-// `ObsidianLauncher.ts:500` modal-dismiss race remains open; remove
-// `retries` once that lands and N≥100 zero-further on main is hit.
-test.describe.configure({ mode: "parallel", retries: 1 });
+// Issue #3350: per-spec `retries: 1` band-aid removed — the project-level
+// policy in `playwright-e2e.config.ts` / `playwright-shard-config-factory.ts`
+// grants `retries: 1` to every `@flaky-track`-tagged describe, so this
+// override is now redundant. Removing the tag automatically restores
+// `retries: 0` discipline (no silent masking). Root-cause investigation of
+// `ObsidianLauncher.ts:500` modal-dismiss race (originally tracked under
+// #3280 / RFC 32a64ed9 §3.3) remains open.
+test.describe.configure({ mode: "parallel" });
 
 test.describe(
   "DailyNote Archive Filter",

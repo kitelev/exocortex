@@ -22,6 +22,8 @@ import { applyCommand } from "./commands/apply.js";
 import { auditCommand } from "./commands/audit.js";
 import { hardSwitchCommand } from "./commands/hard-switch.js";
 import { migrateSharedIdentitiesProfilesCommand } from "./commands/migrate-shared-identities-profiles.js";
+import { bootstrapCommand } from "./commands/bootstrap.js";
+import { assetSpaceAddCommand } from "./commands/assetspace-add.js";
 
 // Version injected at build time by esbuild (see esbuild.config.mjs)
 declare const __CLI_VERSION__: string;
@@ -71,6 +73,10 @@ export function createProgram(version?: string): Command {
 
   // RFC 13da049f Phase 6.5 — shared-identities → profiles AS migration tool
   program.addCommand(migrateSharedIdentitiesProfilesCommand());
+
+  // RFC 13da049f Phase 6.2 + 6.3 — Bootstrap + Add AssetSpace CLI
+  program.addCommand(bootstrapCommand());
+  program.addCommand(assetSpaceAddCommand());
 
   return program;
 }

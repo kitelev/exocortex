@@ -5,10 +5,22 @@ import type {
   TestResult,
 } from "@playwright/test/reporter";
 
+// Issue #3350: tests carrying the `@flaky-track` tag are explicitly
+// permitted retries by the matching Playwright project (see
+// `playwright-e2e.config.ts` / `playwright-shard-config-factory.ts`).
+// The reporter must NOT fail CI for those — otherwise the project-level
+// `retries: 1` policy is neutralized. Untagged specs keep the strict
+// 0-retry contract; removing the tag automatically reinstates strict
+// surfacing through this reporter (no silent masking).
+const FLAKY_TRACK_TAG = "@flaky-track";
+
 class NoFlakyReporter implements Reporter {
   private hasFlaky = false;
 
   onTestEnd(test: TestCase, result: TestResult) {
+    if (test.tags?.includes(FLAKY_TRACK_TAG)) {
+      return;
+    }
     // Flaky test = passed only after retries
     if (result.status === "passed" && result.retry > 0) {
       this.hasFlaky = true;
