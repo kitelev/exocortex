@@ -687,7 +687,7 @@ export class ExocortexSettingTab extends PluginSettingTab {
       .setDesc(
         "Dispatches FocusProfileSwitchManager — same code path as the " +
           "Cmd+P «Switch focus profile» command. Triggers RDF re-index. " +
-          "v3 dropdown: no «none» option (switchProfile requires a target " +
+          "v3 dropdown: no «none» option (softSwitchFocusProfile requires a target " +
           "UID — clear via plugin reload).",
       );
 
@@ -737,7 +737,7 @@ export class ExocortexSettingTab extends PluginSettingTab {
           return;
         }
         try {
-          await switchMgr.switchProfile(uid);
+          await switchMgr.softSwitchFocusProfile(uid);
         } catch (error) {
           notifier.error(`Switch failed: ${errorMessage(error)}`);
         }

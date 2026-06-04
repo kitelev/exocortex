@@ -160,7 +160,7 @@ describe("ExocortexSettingTab — Issue #3320 FocusProfile sections", () => {
       applyDisplayNameTemplate: jest.fn(),
       configureLogChannels: jest.fn(),
       focusProfileSwitchManager: {
-        switchProfile: jest.fn().mockResolvedValue(undefined),
+        softSwitchFocusProfile: jest.fn().mockResolvedValue(undefined),
       },
       listFocusProfileChoices: jest.fn().mockResolvedValue([
         { uid: "uid-a", label: "Personal", isActive: false },
@@ -286,7 +286,7 @@ describe("ExocortexSettingTab — Issue #3320 FocusProfile sections", () => {
     expect(preCalls.length).toBeGreaterThanOrEqual(1);
   });
 
-  it("invokes plugin.focusProfileSwitchManager.switchProfile when dropdown changes", async () => {
+  it("invokes plugin.focusProfileSwitchManager.softSwitchFocusProfile when dropdown changes", async () => {
     let capturedOnChange: ((uid: string) => Promise<void>) | null = null;
     // Override addDropdown to capture the onChange callback registered by
     // the production code, then trigger it manually.
@@ -357,7 +357,7 @@ describe("ExocortexSettingTab — Issue #3320 FocusProfile sections", () => {
     expect(capturedOnChange).not.toBeNull();
     await capturedOnChange!("uid-a");
     expect(
-      mockPlugin.focusProfileSwitchManager.switchProfile,
+      mockPlugin.focusProfileSwitchManager.softSwitchFocusProfile,
     ).toHaveBeenCalledWith("uid-a");
   });
 
@@ -421,13 +421,13 @@ describe("ExocortexSettingTab — Issue #3320 FocusProfile sections", () => {
     settingTab.display();
     if (capturedOnChange) await (capturedOnChange as (uid: string) => Promise<void>)("");
     expect(
-      mockPlugin.focusProfileSwitchManager.switchProfile,
+      mockPlugin.focusProfileSwitchManager.softSwitchFocusProfile,
     ).not.toHaveBeenCalled();
   });
 
   it("surfaces switch failure as a Notice without throwing", async () => {
     let capturedOnChange: ((uid: string) => Promise<void>) | null = null;
-    mockPlugin.focusProfileSwitchManager.switchProfile = jest.fn(
+    mockPlugin.focusProfileSwitchManager.softSwitchFocusProfile = jest.fn(
       async () => {
         throw new Error("lock held");
       },

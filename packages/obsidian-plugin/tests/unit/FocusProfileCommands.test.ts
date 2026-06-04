@@ -11,7 +11,7 @@ import type { FocusProfileSwitchManager } from "../../src/infrastructure/adapter
 class FakeSwitchMgr {
   switchCalls: string[] = [];
   failOnce = false;
-  async switchProfile(uid: string): Promise<void> {
+  async softSwitchFocusProfile(uid: string): Promise<void> {
     this.switchCalls.push(uid);
     if (this.failOnce) {
       this.failOnce = false;
@@ -103,7 +103,7 @@ describe("FocusProfileCommands.invokeSwitchProfile", () => {
     expect(h.pickCalls[0].title).toBe("Switch focus profile");
   });
 
-  it("invokes switchMgr.switchProfile with chosen uid", async () => {
+  it("invokes switchMgr.softSwitchFocusProfile with chosen uid", async () => {
     const profiles = [{ uid: "u2", label: "profile-personal" }];
     const h = makeHarness({ profiles, pickResult: profiles[0] });
     await h.cmd.invokeSwitchProfile();
@@ -139,7 +139,7 @@ describe("FocusProfileCommands.invokeSwitchProfile", () => {
     expect(h.notices.some((n) => /Could not list profiles.*vault read failed/.test(n))).toBe(true);
   });
 
-  it("surfaces switchProfile failure as Notice без re-throw", async () => {
+  it("surfaces softSwitchFocusProfile failure as Notice без re-throw", async () => {
     const profiles = [{ uid: "u1", label: "p1" }];
     const h = makeHarness({ profiles, pickResult: profiles[0] });
     h.switchMgr.failOnce = true;
