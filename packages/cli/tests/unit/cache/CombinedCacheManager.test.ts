@@ -174,4 +174,98 @@ describe("CombinedCacheManager", () => {
       expect(a).toBe(b);
     });
   });
+
+  describe("EXOCORTEX_IRI_CANONICALIZE flag invalidation (Issue #3364)", () => {
+    const FLAG_ENV = "EXOCORTEX_IRI_CANONICALIZE";
+    let originalFlag: string | undefined;
+
+    beforeEach(() => {
+      originalFlag = process.env[FLAG_ENV];
+      delete process.env[FLAG_ENV];
+    });
+
+    afterEach(() => {
+      if (originalFlag === undefined) {
+        delete process.env[FLAG_ENV];
+      } else {
+        process.env[FLAG_ENV] = originalFlag;
+      }
+    });
+
+    it("rejects cache built with flag OFF when read with flag ON", async () => {
+      const c = new CombinedCacheManager(primary, [alsoA]);
+      // Build under flag OFF (default delete in beforeEach)
+      await c.saveTriples([makeTriple("s", "o")]);
+      expect(await c.isCacheValid()).toBe(true);
+
+      // Read under flag ON
+      process.env[FLAG_ENV] = "true";
+      expect(await c.isCacheValid()).toBe(false);
+    });
+
+    it("rejects cache built with flag ON when read with flag OFF", async () => {
+      const c = new CombinedCacheManager(primary, [alsoA]);
+      // Build under flag ON
+      process.env[FLAG_ENV] = "true";
+      await c.saveTriples([makeTriple("s", "o")]);
+      expect(await c.isCacheValid()).toBe(true);
+
+      // Read under flag OFF
+      delete process.env[FLAG_ENV];
+      expect(await c.isCacheValid()).toBe(false);
+    });
+
+    it("accepts cache when flag state matches build state (both OFF)", async () => {
+      const c = new CombinedCacheManager(primary, [alsoA]);
+      await c.saveTriples([makeTriple("s", "o")]);
+      expect(await c.isCacheValid()).toBe(true);
+    });
+
+    it("accepts cache when flag state matches build state (both ON)", async () => {
+      process.env[FLAG_ENV] = "true";
+      const c = new CombinedCacheManager(primary, [alsoA]);
+      await c.saveTriples([makeTriple("s", "o")]);
+      expect(await c.isCacheValid()).toBe(true);
+    });
+
+    it("treats legacy pre-#3364 cache (no canonicalized field) as flag OFF", async () => {
+      const c = new CombinedCacheManager(primary, [alsoA]);
+      await c.saveTriples([makeTriple("s", "o")]);
+
+      // Simulate legacy cache by stripping canonicalized field
+      const cacheData = await fs.readJson(c.getCachePath());
+      delete cacheData.metadata.canonicalized;
+      await fs.writeJson(c.getCachePath(), cacheData);
+
+      // Re-stat to keep mtime check passing
+      const stats = await fs.stat(c.getAllVaultPaths()[0]);
+      cacheData.metadata.vaultMtimes[c.getAllVaultPaths()[0]] = stats.mtimeMs;
+      for (const vp of c.getAllVaultPaths()) {
+        cacheData.metadata.vaultMtimes[vp] = (await fs.stat(vp)).mtimeMs;
+      }
+      await fs.writeJson(c.getCachePath(), cacheData);
+
+      // Read under flag OFF → legacy cache treated as flag-OFF → valid
+      expect(await c.isCacheValid()).toBe(true);
+
+      // Read under flag ON → legacy cache treated as flag-OFF → invalid
+      process.env[FLAG_ENV] = "true";
+      expect(await c.isCacheValid()).toBe(false);
+    });
+
+    it("flag values other than 'true' are treated as OFF", async () => {
+      // Build with flag = "1" (which isCanonicalizationEnabled treats as OFF)
+      process.env[FLAG_ENV] = "1";
+      const c = new CombinedCacheManager(primary, [alsoA]);
+      await c.saveTriples([makeTriple("s", "o")]);
+
+      // Read under flag = "true" → mismatch
+      process.env[FLAG_ENV] = "true";
+      expect(await c.isCacheValid()).toBe(false);
+
+      // Read under flag = "false" → match (both are non-"true" = OFF)
+      process.env[FLAG_ENV] = "false";
+      expect(await c.isCacheValid()).toBe(true);
+    });
+  });
 });
