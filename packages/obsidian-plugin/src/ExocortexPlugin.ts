@@ -956,11 +956,12 @@ export default class ExocortexPlugin extends Plugin {
               // state. Then a single follow-up sparql.refresh() walks
               // the vault with the now-correct effective set.
               //
-              // Gated on `activeProfileUid !== null` to avoid an extra
-              // refresh in the default null-profile path (which is the
-              // case covered by the post-resolve one-shot regression
-              // tests). When profile is null the helper would no-op and
-              // the second refresh would only re-walk the same data.
+              // Gated on the active Focus profile (AC14) being non-null to
+              // avoid an extra refresh in the default null-profile path
+              // (which is the case covered by the post-resolve one-shot
+              // regression tests). When the Focus slot is null the helper
+              // would no-op and the second refresh would only re-walk the
+              // same data.
               //
               // Item #3 — device-local store (no Sync replication). Null
               // before `registerFocusProfileCommands` resolves; treat as
@@ -969,7 +970,7 @@ export default class ExocortexPlugin extends Plugin {
               // may be undefined rather than initialised to null.
               const hasActiveProfile =
                 !!this.localDataStore &&
-                this.localDataStore.getActiveProfileUid() !== null;
+                this.localDataStore.getActiveFocusProfileUid() !== null;
               if (reapplyActiveProfileFilter !== null && hasActiveProfile) {
                 try {
                   await reapplyActiveProfileFilter();
@@ -2461,6 +2462,19 @@ export default class ExocortexPlugin extends Plugin {
       delete legacySettings._switchInProgress;
       await this.saveSettings();
     }
+
+    // RFC 13da049f Phase 6.5b AC14 — seed the dual Knowledge/Focus active
+    // slots from the legacy single `activeProfileUid` (R38: Knowledge only,
+    // Focus stays null). Idempotent; safe to resume after a crash between the
+    // legacy and dual migration steps. Runs AFTER the settings→local migration
+    // so the legacy value is already in data.local.json.
+    const dualMigration = await localDataStore.migrateToDualActiveState();
+    if (dualMigration === "migrated") {
+      this.logger.info(
+        "[ExocortexPlugin] seeded activeKnowledgeProfileUid from legacy " +
+          "activeProfileUid (RFC 13da049f AC14 — Focus left null per R38)",
+      );
+    }
     this.localDataStore = localDataStore;
 
     // RFC 22b50a17 R26 — sweep staging-dir orphans left over from a crash
@@ -2580,7 +2594,12 @@ export default class ExocortexPlugin extends Plugin {
     // still return null for AS files at this earlier timing.
     const reapplyActiveProfileFilter = async (): Promise<void> => {
       // Item #3 — read from device-local store (no Sync replication).
-      const persistedProfileUid = localDataStore.getActiveProfileUid();
+      // AC14 — the RDF query-time filter tracks the Focus profile (soft
+      // switch). Null Focus = no filter active (full vault). After the
+      // legacy→dual migration the Focus slot stays null (R38), so a
+      // pre-AC14 user's cold start indexes the full vault until they pick
+      // a Focus profile explicitly.
+      const persistedProfileUid = localDataStore.getActiveFocusProfileUid();
       await applyActiveProfileFilter({
         app: this.app,
         switchMgr,

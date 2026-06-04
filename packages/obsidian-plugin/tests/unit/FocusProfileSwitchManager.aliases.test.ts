@@ -154,6 +154,22 @@ describe("FocusProfileSwitchManager.softSwitchFocusProfile (canonical)", () => {
     expect(h.notifyCalls).toHaveLength(1);
     expect(h.notifyCalls[0]).toContain("profile-base");
   });
+
+  it("AC14 — persists the Focus slot (not the Knowledge slot)", async () => {
+    const h = makeHarness();
+    // Pretend a prior hard switch left a Knowledge selection in place.
+    h.settings.state = {
+      activeProfileUid: "k-prev",
+      activeKnowledgeProfileUid: "k-prev",
+      activeFocusProfileUid: null,
+      _switchInProgress: false,
+    };
+    await h.mgr.softSwitchFocusProfile(UID_BASE);
+    // Soft switch writes the Focus slot…
+    expect(h.settings.state.activeFocusProfileUid).toBe(UID_BASE);
+    // …and must NOT disturb the Knowledge slot.
+    expect(h.settings.state.activeKnowledgeProfileUid).toBe("k-prev");
+  });
 });
 
 // ─── Deprecated alias delegation ─────────────────────────────────────────

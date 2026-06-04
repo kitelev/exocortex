@@ -126,19 +126,55 @@ class FakeSettingsStore implements ISettingsStore {
 
 // Minimal fakes for hard-switch dependencies.
 
+// Production-shape fake mirroring PluginLocalDataStore's dual AC14 slots
+// (read-modify-write preserve when a slot is omitted from `save`).
+interface FakeLocalState {
+  activeProfileUid: string | null;
+  activeKnowledgeProfileUid: string | null;
+  activeFocusProfileUid: string | null;
+  _switchInProgress: boolean;
+}
+
 class FakeLocalDataStore {
-  private state = { activeProfileUid: null as string | null, _switchInProgress: false };
+  private state: FakeLocalState = {
+    activeProfileUid: null,
+    activeKnowledgeProfileUid: null,
+    activeFocusProfileUid: null,
+    _switchInProgress: false,
+  };
   getActiveProfileUid(): string | null {
     return this.state.activeProfileUid;
+  }
+  getActiveKnowledgeProfileUid(): string | null {
+    return this.state.activeKnowledgeProfileUid;
+  }
+  getActiveFocusProfileUid(): string | null {
+    return this.state.activeFocusProfileUid;
   }
   isSwitchInProgress(): boolean {
     return this.state._switchInProgress;
   }
-  snapshot() {
+  snapshot(): FakeLocalState {
     return { ...this.state };
   }
-  async save(s: { activeProfileUid: string | null; _switchInProgress: boolean }): Promise<void> {
-    this.state = { ...s };
+  async save(s: {
+    activeProfileUid: string | null;
+    activeKnowledgeProfileUid?: string | null;
+    activeFocusProfileUid?: string | null;
+    _switchInProgress: boolean;
+  }): Promise<void> {
+    this.state = {
+      activeProfileUid: s.activeProfileUid,
+      activeKnowledgeProfileUid:
+        s.activeKnowledgeProfileUid !== undefined
+          ? s.activeKnowledgeProfileUid
+          : this.state.activeKnowledgeProfileUid,
+      activeFocusProfileUid:
+        s.activeFocusProfileUid !== undefined
+          ? s.activeFocusProfileUid
+          : this.state.activeFocusProfileUid,
+      _switchInProgress: s._switchInProgress,
+    };
   }
 }
 
@@ -821,6 +857,35 @@ describe("FocusProfileSwitchManager.hardSwitchProfile", () => {
       await mgr.hardSwitchProfile("target");
       expect(localDataStore.getActiveProfileUid()).toBe("target");
       expect(localDataStore.isSwitchInProgress()).toBe(false);
+    });
+
+    it("AC14 — persists the Knowledge slot (not the Focus slot) after success", async () => {
+      const { mgr, localDataStore } = setup({
+        targetUid: "target",
+        sourceUid: null,
+        targetIncludes: [
+          TS_FLOOR_AS_UID_EXO,
+          TS_FLOOR_AS_UID_EXOCMD,
+          TS_FLOOR_AS_UID_SHARED_IDENTITIES,
+        ],
+        materialized: [
+          "ems-uid",
+          TS_FLOOR_AS_UID_EXO,
+          TS_FLOOR_AS_UID_EXOCMD,
+          TS_FLOOR_AS_UID_SHARED_IDENTITIES,
+        ],
+      });
+      // A pre-existing Focus selection must survive a Knowledge (hard) switch.
+      await localDataStore.save({
+        activeProfileUid: null,
+        activeKnowledgeProfileUid: null,
+        activeFocusProfileUid: "f-keep",
+        _switchInProgress: false,
+      });
+      await mgr.hardSwitchProfile("target");
+      expect(localDataStore.getActiveKnowledgeProfileUid()).toBe("target");
+      // Focus slot preserved — hard switch owns Knowledge only.
+      expect(localDataStore.getActiveFocusProfileUid()).toBe("f-keep");
     });
 
     it("rdfIndexer.refresh called with effective AS UID set", async () => {

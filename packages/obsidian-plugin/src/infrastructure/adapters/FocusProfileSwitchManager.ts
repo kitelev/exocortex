@@ -85,6 +85,14 @@ export interface IRdfIndexer {
 
 export interface SwitchSettings {
   activeProfileUid: string | null;
+  /**
+   * Active Knowledge profile slot (RFC 13da049f Phase 6.5b AC14). Optional —
+   * pre-AC14 stores omit it; the backing adapter preserves the on-disk value
+   * via read-modify-write when undefined.
+   */
+  activeKnowledgeProfileUid?: string | null;
+  /** Active Focus profile slot (RFC 13da049f Phase 6.5b AC14). Optional — see above. */
+  activeFocusProfileUid?: string | null;
   _switchInProgress: boolean;
 }
 
@@ -285,6 +293,9 @@ export class FocusProfileSwitchManager {
       // Persist BEFORE filesystem changes (Architect #2 — atomicity invariant)
       const settings = await this.settingsStore.load();
       settings.activeProfileUid = targetProfileUid;
+      // AC14 — soft switch owns the Focus slot. The legacy `activeProfileUid`
+      // mirror is retained above for backward read / downgrade safety.
+      settings.activeFocusProfileUid = targetProfileUid;
       settings._switchInProgress = true;
       await this.settingsStore.save(settings);
 
@@ -764,8 +775,14 @@ export class FocusProfileSwitchManager {
       });
 
       // ---- Persist new state + trigger RDF re-index ----
+      // AC14 — hard switch owns the Knowledge slot. Spread the current
+      // snapshot so the sibling Focus slot is preserved; the legacy
+      // `activeProfileUid` mirror is updated for backward read / downgrade.
+      const persistState = deps.localDataStore.snapshot();
       await deps.localDataStore.save({
+        ...persistState,
         activeProfileUid: targetProfileUid,
+        activeKnowledgeProfileUid: targetProfileUid,
         _switchInProgress: false,
       });
       await this.rdfIndexer.refresh(effectiveAsUids);
