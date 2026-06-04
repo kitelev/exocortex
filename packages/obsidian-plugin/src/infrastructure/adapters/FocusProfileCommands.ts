@@ -3,7 +3,7 @@
  *
  * Two commands provided:
  *   1. `Exocortex: Switch focus profile` — fuzzy-picks a FocusProfile asset,
- *      invokes B.4 `FocusProfileSwitchManager.switchProfile`
+ *      invokes B.4 `FocusProfileSwitchManager.softSwitchFocusProfile`
  *   2. `Exocortex: Push current assetspace` — identifies AssetSpace from
  *      active file path (B.3 `lookupAssetSpaceForPath`), invokes
  *      B.3 `AssetSpaceManager.pushAssetSpace`
@@ -86,7 +86,7 @@ export class FocusProfileCommands {
   /**
    * Command 1 — `Exocortex: Switch focus profile`.
    *
-   * Lists available profiles → fuzzy pick → invokes B.4 switchProfile.
+   * Lists available profiles → fuzzy pick → invokes B.4 softSwitchFocusProfile.
    * Errors during switch surface as a Notice (redacted in lower layers).
    */
   async invokeSwitchProfile(): Promise<void> {
@@ -108,8 +108,8 @@ export class FocusProfileCommands {
 
     this.notify(`Switching to ${chosen.label}…`);
     try {
-      await this.switchMgr.switchProfile(chosen.uid);
-      // switchProfile itself emits a success Notice; nothing more here
+      await this.switchMgr.softSwitchFocusProfile(chosen.uid);
+      // softSwitchFocusProfile itself emits a success Notice; nothing more here
     } catch (e) {
       this.notify(`Switch failed: ${this.safeMessage(e)}`);
     }
@@ -119,7 +119,7 @@ export class FocusProfileCommands {
    * Command 3 — `Exocortex: Hard switch focus profile` (RFC 22b50a17 Phase 3).
    *
    * Same fuzzy pick UX as soft switch, then invokes
-   * `FocusProfileSwitchManager.hardSwitchProfile` which:
+   * `FocusProfileSwitchManager.hardSwitchKnowledgeProfile` which:
    *   1. R24 TS-floor assert (refuses targets that brick the plugin)
    *   2. Vision Lock #5 uncommitted abort (with file list)
    *   3. ModalConfirmGate (DI via switchMgr constructor)
@@ -150,7 +150,7 @@ export class FocusProfileCommands {
 
     this.notify(`Hard switching to ${chosen.label}…`);
     try {
-      await this.switchMgr.hardSwitchProfile(chosen.uid);
+      await this.switchMgr.hardSwitchKnowledgeProfile(chosen.uid);
     } catch (e) {
       if (e instanceof HardSwitchAbortedByUser) {
         this.notify("Hard switch cancelled.");

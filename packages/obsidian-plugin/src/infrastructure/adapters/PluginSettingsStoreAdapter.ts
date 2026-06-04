@@ -37,13 +37,27 @@ export class PluginSettingsStoreAdapter implements ISettingsStore {
     const snap = this.localDataStore.snapshot();
     return {
       activeProfileUid: snap.activeProfileUid,
+      activeKnowledgeProfileUid: snap.activeKnowledgeProfileUid,
+      activeFocusProfileUid: snap.activeFocusProfileUid,
       _switchInProgress: snap._switchInProgress,
     };
   }
 
   async save(s: SwitchSettings): Promise<void> {
+    // AC14 — map the dual Knowledge/Focus slots through. A caller may omit
+    // them (pre-AC14 shape); preserve the current on-disk value rather than
+    // clobbering to null so one slot's write never wipes the sibling.
+    const cur = this.localDataStore.snapshot();
     await this.localDataStore.save({
       activeProfileUid: s.activeProfileUid,
+      activeKnowledgeProfileUid:
+        s.activeKnowledgeProfileUid !== undefined
+          ? s.activeKnowledgeProfileUid
+          : cur.activeKnowledgeProfileUid,
+      activeFocusProfileUid:
+        s.activeFocusProfileUid !== undefined
+          ? s.activeFocusProfileUid
+          : cur.activeFocusProfileUid,
       _switchInProgress: s._switchInProgress,
     });
   }

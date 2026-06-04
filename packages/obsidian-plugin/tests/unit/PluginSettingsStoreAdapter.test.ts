@@ -78,4 +78,64 @@ describe("PluginSettingsStoreAdapter (Issue #3327 Item #3 — device-local backi
     expect(localStore.getActiveProfileUid()).toBe("p2");
     expect(localStore.isSwitchInProgress()).toBe(true);
   });
+
+  // ─── AC14 — dual Knowledge/Focus slots through the adapter ──────────────
+
+  it("load surfaces the dual Knowledge/Focus slots", async () => {
+    const { app } = makeFakeApp();
+    const localStore = await makeInitializedStore(app);
+    await localStore.save({
+      activeProfileUid: "k1",
+      activeKnowledgeProfileUid: "k1",
+      activeFocusProfileUid: "f1",
+      _switchInProgress: false,
+    });
+    const adapter = new PluginSettingsStoreAdapter(localStore);
+    const s = await adapter.load();
+    expect(s.activeKnowledgeProfileUid).toBe("k1");
+    expect(s.activeFocusProfileUid).toBe("f1");
+  });
+
+  it("save maps the Focus slot through to data.local.json", async () => {
+    const { app, files } = makeFakeApp();
+    const localStore = await makeInitializedStore(app);
+    const adapter = new PluginSettingsStoreAdapter(localStore);
+
+    await adapter.save({
+      activeProfileUid: "f7",
+      activeFocusProfileUid: "f7",
+      _switchInProgress: false,
+    });
+
+    const parsed = JSON.parse(
+      files.get(".obsidian/plugins/exocortex/data.local.json") ?? "{}",
+    );
+    expect(parsed.activeFocusProfileUid).toBe("f7");
+    expect(localStore.getActiveFocusProfileUid()).toBe("f7");
+  });
+
+  it("save with the Focus slot preserves the Knowledge slot (soft switch must not wipe Knowledge)", async () => {
+    const { app, files } = makeFakeApp();
+    const localStore = await makeInitializedStore(app);
+    // Knowledge was set earlier (e.g. by a prior hard switch).
+    await localStore.save({
+      activeProfileUid: "k1",
+      activeKnowledgeProfileUid: "k1",
+      activeFocusProfileUid: null,
+      _switchInProgress: false,
+    });
+    const adapter = new PluginSettingsStoreAdapter(localStore);
+
+    // A soft switch loads → sets Focus → saves. The adapter must preserve the
+    // Knowledge slot it didn't touch.
+    const settings = await adapter.load();
+    settings.activeFocusProfileUid = "f2";
+    await adapter.save(settings);
+
+    const parsed = JSON.parse(
+      files.get(".obsidian/plugins/exocortex/data.local.json") ?? "{}",
+    );
+    expect(parsed.activeKnowledgeProfileUid).toBe("k1"); // preserved
+    expect(parsed.activeFocusProfileUid).toBe("f2");
+  });
 });

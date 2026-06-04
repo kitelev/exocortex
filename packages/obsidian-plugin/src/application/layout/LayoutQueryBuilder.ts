@@ -20,7 +20,7 @@ import type {
   LayoutSort,
   FilterOperator,
 } from "../../domain/layout";
-import { isTableLayout, isKanbanLayout } from "../../domain/layout";
+import { isTableLayout } from "../../domain/layout";
 
 /**
  * SPARQL prefixes used in generated queries
@@ -116,7 +116,7 @@ export class LayoutQueryBuilder {
     } = options;
 
     try {
-      // Get columns from layout (tables and kanbans have columns)
+      // Get columns from layout (table layouts have columns)
       const columns = this.getColumns(layout);
 
       // Build variable list
@@ -180,9 +180,6 @@ export class LayoutQueryBuilder {
    */
   private getColumns(layout: Layout): LayoutColumn[] {
     if (isTableLayout(layout)) {
-      return layout.columns || [];
-    }
-    if (isKanbanLayout(layout)) {
       return layout.columns || [];
     }
     return [];

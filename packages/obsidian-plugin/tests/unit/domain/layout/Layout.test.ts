@@ -5,7 +5,6 @@ import {
   isLayoutFrontmatter,
   createBaseLayoutFromFrontmatter,
   isTableLayout,
-  isKanbanLayout,
   isGraphLayout,
   isCalendarLayout,
   isListLayout,
@@ -14,7 +13,6 @@ import {
   isValidAccentColor,
   type Layout,
   type TableLayout,
-  type KanbanLayout,
   type GraphLayout,
   type CalendarLayout,
   type ListLayout,
@@ -26,7 +24,6 @@ describe("Layout", () => {
   describe("LayoutType enum", () => {
     it("should have correct values", () => {
       expect(LayoutType.Table).toBe("exo__TableLayout");
-      expect(LayoutType.Kanban).toBe("exo__KanbanLayout");
       expect(LayoutType.Graph).toBe("exo__GraphLayout");
       expect(LayoutType.Calendar).toBe("exo__CalendarLayout");
       expect(LayoutType.List).toBe("exo__ListLayout");
@@ -37,12 +34,6 @@ describe("Layout", () => {
     it("should return Table for exo__TableLayout wikilink", () => {
       expect(getLayoutTypeFromInstanceClass("[[exo__TableLayout]]")).toBe(
         LayoutType.Table,
-      );
-    });
-
-    it("should return Kanban for exo__KanbanLayout wikilink", () => {
-      expect(getLayoutTypeFromInstanceClass("[[exo__KanbanLayout]]")).toBe(
-        LayoutType.Kanban,
       );
     });
 
@@ -77,7 +68,7 @@ describe("Layout", () => {
       expect(
         getLayoutTypeFromInstanceClass([
           "[[exo__TableLayout]]",
-          "[[exo__KanbanLayout]]",
+          "[[exo__GraphLayout]]",
         ]),
       ).toBe(LayoutType.Table);
     });
@@ -116,7 +107,7 @@ describe("Layout", () => {
 
     it("should return true for layout frontmatter with array class", () => {
       const frontmatter = {
-        exo__Instance_class: ["[[exo__Asset]]", "[[exo__KanbanLayout]]"],
+        exo__Instance_class: ["[[exo__Asset]]", "[[exo__GraphLayout]]"],
       };
 
       expect(isLayoutFrontmatter(frontmatter)).toBe(true);
@@ -225,7 +216,6 @@ describe("Layout", () => {
     it("should create BaseLayout for all layout types", () => {
       const layoutTypes = [
         { class: "[[exo__TableLayout]]", expected: LayoutType.Table },
-        { class: "[[exo__KanbanLayout]]", expected: LayoutType.Kanban },
         { class: "[[exo__GraphLayout]]", expected: LayoutType.Graph },
         { class: "[[exo__CalendarLayout]]", expected: LayoutType.Calendar },
         { class: "[[exo__ListLayout]]", expected: LayoutType.List },
@@ -253,14 +243,6 @@ describe("Layout", () => {
       type: LayoutType.Table,
       targetClass: "[[ems__Task]]",
       columns: [],
-    };
-
-    const kanbanLayout: KanbanLayout = {
-      uid: "kanban-001",
-      label: "Kanban Layout",
-      type: LayoutType.Kanban,
-      targetClass: "[[ems__Task]]",
-      laneProperty: "[[ems__Effort_status]]",
     };
 
     const graphLayout: GraphLayout = {
@@ -291,23 +273,9 @@ describe("Layout", () => {
       });
 
       it("should return false for other layout types", () => {
-        expect(isTableLayout(kanbanLayout)).toBe(false);
         expect(isTableLayout(graphLayout)).toBe(false);
         expect(isTableLayout(calendarLayout)).toBe(false);
         expect(isTableLayout(listLayout)).toBe(false);
-      });
-    });
-
-    describe("isKanbanLayout", () => {
-      it("should return true for KanbanLayout", () => {
-        expect(isKanbanLayout(kanbanLayout)).toBe(true);
-      });
-
-      it("should return false for other layout types", () => {
-        expect(isKanbanLayout(tableLayout)).toBe(false);
-        expect(isKanbanLayout(graphLayout)).toBe(false);
-        expect(isKanbanLayout(calendarLayout)).toBe(false);
-        expect(isKanbanLayout(listLayout)).toBe(false);
       });
     });
 
@@ -318,7 +286,6 @@ describe("Layout", () => {
 
       it("should return false for other layout types", () => {
         expect(isGraphLayout(tableLayout)).toBe(false);
-        expect(isGraphLayout(kanbanLayout)).toBe(false);
         expect(isGraphLayout(calendarLayout)).toBe(false);
         expect(isGraphLayout(listLayout)).toBe(false);
       });
@@ -331,7 +298,6 @@ describe("Layout", () => {
 
       it("should return false for other layout types", () => {
         expect(isCalendarLayout(tableLayout)).toBe(false);
-        expect(isCalendarLayout(kanbanLayout)).toBe(false);
         expect(isCalendarLayout(graphLayout)).toBe(false);
         expect(isCalendarLayout(listLayout)).toBe(false);
       });
@@ -344,7 +310,6 @@ describe("Layout", () => {
 
       it("should return false for other layout types", () => {
         expect(isListLayout(tableLayout)).toBe(false);
-        expect(isListLayout(kanbanLayout)).toBe(false);
         expect(isListLayout(graphLayout)).toBe(false);
         expect(isListLayout(calendarLayout)).toBe(false);
       });
@@ -397,24 +362,6 @@ describe("Layout", () => {
 
       expect(layout.type).toBe(LayoutType.Table);
       expect(layout.columns.length).toBe(1);
-    });
-
-    it("should allow creating KanbanLayout with lanes", () => {
-      const layout: KanbanLayout = {
-        uid: "layout-001",
-        label: "Task Kanban",
-        type: LayoutType.Kanban,
-        targetClass: "[[ems__Task]]",
-        laneProperty: "[[ems__Effort_status]]",
-        lanes: [
-          "[[ems__EffortStatus_Queued]]",
-          "[[ems__EffortStatus_Doing]]",
-          "[[ems__EffortStatus_Done]]",
-        ],
-      };
-
-      expect(layout.type).toBe(LayoutType.Kanban);
-      expect(layout.lanes).toHaveLength(3);
     });
 
     it("should allow creating GraphLayout with edge properties", () => {
