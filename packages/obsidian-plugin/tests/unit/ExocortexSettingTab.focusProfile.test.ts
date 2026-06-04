@@ -268,6 +268,36 @@ describe("ExocortexSettingTab — Issue #3320 FocusProfile sections", () => {
     expect(profileRow).toBeDefined();
   });
 
+  it("renders the Knowledge and focus profiles overview heading (RFC 13da049f R35)", () => {
+    settingTab.display();
+    const overview = settingCalls.find(
+      (c) => c.name === "Knowledge and focus profiles" && c.heading,
+    );
+    expect(overview).toBeDefined();
+  });
+
+  it("reads both Knowledge and Focus active slots for the dual-state status (AC14)", () => {
+    // Provide a device-local store exposing both AC14 getters so the
+    // status line can surface the dual slot state. The legacy
+    // getActiveProfileUid() must NOT be consulted for the status anymore.
+    const getActiveKnowledgeProfileUid = jest
+      .fn()
+      .mockReturnValue("knowledge-uid");
+    const getActiveFocusProfileUid = jest.fn().mockReturnValue("focus-uid");
+    const getActiveProfileUid = jest.fn().mockReturnValue("legacy-uid");
+    mockPlugin.localDataStore = {
+      getActiveKnowledgeProfileUid,
+      getActiveFocusProfileUid,
+      getActiveProfileUid,
+    };
+
+    settingTab.display();
+
+    expect(getActiveKnowledgeProfileUid).toHaveBeenCalled();
+    expect(getActiveFocusProfileUid).toHaveBeenCalled();
+    expect(getActiveProfileUid).not.toHaveBeenCalled();
+  });
+
   it("renders the Switch cache stats row with Clear button", () => {
     settingTab.display();
     const cacheRow = settingCalls.find((c) => c.name === "Cache stats");

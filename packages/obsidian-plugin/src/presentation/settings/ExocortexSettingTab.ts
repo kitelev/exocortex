@@ -578,6 +578,51 @@ export class ExocortexSettingTab extends PluginSettingTab {
     const switchCache = new SwitchCacheLayer();
     const operationsLog = new OperationsLogReader({ app });
 
+    // ─────── Section 0 — Knowledge vs Focus overview (RFC 13da049f R35) ───────
+    // R35: users were confused about «which profile do I edit?». The two
+    // profile types are independent slots with different mechanisms; this
+    // overview block names them up-front so the sections below read clearly.
+    new Setting(containerEl).setName("Knowledge and focus profiles").setHeading();
+
+    const profilesOverviewEl = containerEl.createDiv({
+      cls: "setting-item-description",
+    });
+    profilesOverviewEl.createEl("p", {
+      text:
+        "Two independent profile types control what you see. They are " +
+        "separate slots — a Knowledge profile and a Focus profile can be " +
+        "active at the same time, and switching one never touches the other.",
+    });
+    const profilesOverviewList = profilesOverviewEl.createEl("ul");
+    const knowledgeLi = profilesOverviewList.createEl("li");
+    knowledgeLi.createEl("strong", { text: "Knowledge profile — storage." });
+    knowledgeLi.appendText(
+      " A hard switch that physically materializes or tears down AssetSpace " +
+        "submodules on disk (and rewrites .gitmodules). Heavyweight: a " +
+        "confirmation gate, an uncommitted-changes guard, and ~30 s per " +
+        "freshly-pulled AssetSpace. Pick a KnowledgeProfile asset via the " +
+        "«Exocortex: Switch knowledge profile (filesystem destroy + " +
+        "materialize)» command (Cmd+P). Use it to " +
+        "install or remove whole ontology bundles and to keep " +
+        "privacy-sensitive content physically off the device.",
+    );
+    const focusLi = profilesOverviewList.createEl("li");
+    focusLi.createEl("strong", { text: "Focus profile — filter." });
+    focusLi.appendText(
+      " A soft switch that applies a query-time RDF filter; nothing changes " +
+        "on disk. Lightweight: ~1–2 s reindex, instantly reversible. Pick a " +
+        "FocusProfile asset via the dropdown below or the «Exocortex: Switch " +
+        "focus profile» command. Use it to narrow search / SPARQL / graph " +
+        "view to the slice you are working in right now.",
+    );
+    profilesOverviewEl.createEl("p", {
+      text:
+        "Adding an ontology to a profile is NOT transitive — listing pmbok " +
+        "does not auto-add ems. Add each AssetSpace the profile needs " +
+        "explicitly. See docs/profiles.md for the full distinction, " +
+        "examples, and composition rules.",
+    });
+
     // ─────── Section 1 — PAT (GitHub Personal Access Token) ───────
     // eslint-disable-next-line obsidianmd/ui/sentence-case -- "GitHub" + "PAT" are proper noun + established acronym
     new Setting(containerEl).setName("FocusProfile: GitHub PAT").setHeading();
@@ -669,26 +714,37 @@ export class ExocortexSettingTab extends PluginSettingTab {
     // `registerFocusProfileCommands` resolves (and undefined in unit
     // tests с partial plugin mocks); treat as no-active-profile before
     // then, matching the previous fallback behaviour.
-    const activeProfileUid = this.plugin.localDataStore
-      ? this.plugin.localDataStore.getActiveProfileUid()
+    //
+    // RFC 13da049f AC14 — the two slots are independent. The dropdown below
+    // drives the FOCUS slot (soft switch); the KNOWLEDGE slot is set by the
+    // «Switch knowledge profile» palette command. Surface both so the user
+    // sees the full state, not just the slot this section edits.
+    const activeKnowledgeProfileUid = this.plugin.localDataStore
+      ? this.plugin.localDataStore.getActiveKnowledgeProfileUid()
+      : null;
+    const activeFocusProfileUid = this.plugin.localDataStore
+      ? this.plugin.localDataStore.getActiveFocusProfileUid()
       : null;
 
     const profileStatusEl = containerEl.createDiv({
       cls: "setting-item-description",
     });
     profileStatusEl.appendText(
-      activeProfileUid === null
-        ? "No active profile (full vault loaded)."
-        : `Currently: ${activeProfileUid}`,
+      `Active — Knowledge (storage): ${activeKnowledgeProfileUid ?? "(none — full vault on disk)"}` +
+        ` · Focus (filter): ${activeFocusProfileUid ?? "(none — no query filter)"}`,
     );
 
     const profileSetting = new Setting(containerEl)
       .setName("Switch profile")
       .setDesc(
-        "Dispatches FocusProfileSwitchManager — same code path as the " +
-          "Cmd+P «Switch focus profile» command. Triggers RDF re-index. " +
-          "v3 dropdown: no «none» option (softSwitchFocusProfile requires a target " +
-          "UID — clear via plugin reload).",
+        "Soft switch (FOCUS slot) — applies a query-time RDF filter; nothing " +
+          "changes on disk. Same code path as the Cmd+P «Switch focus " +
+          "profile» command. Triggers an RDF re-index. To change which " +
+          "ontologies are materialized on disk (the KNOWLEDGE slot, a hard " +
+          "switch), use the «Switch knowledge profile» palette command " +
+          "instead — it is gated behind a confirmation prompt because it " +
+          "mutates the filesystem. No «none» option here: clear the focus " +
+          "filter via plugin reload.",
       );
 
     profileSetting.addDropdown((dropdown) => {
@@ -722,8 +778,8 @@ export class ExocortexSettingTab extends PluginSettingTab {
             : choice.label;
           dropdown.addOption(choice.uid, label);
         }
-        if (activeProfileUid !== null) {
-          dropdown.setValue(activeProfileUid);
+        if (activeFocusProfileUid !== null) {
+          dropdown.setValue(activeFocusProfileUid);
         }
       })();
 

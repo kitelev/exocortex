@@ -5,6 +5,15 @@
 > **Audience:** Engineers and technical Obsidian users.
 > **Position:** Architectural cornerstone — the feature that makes Exocortex genuinely multi-context.
 
+> ⚠️ **Terminology update (v16.59, RFC 13da049f).** This page predates the
+> **Knowledge profile vs Focus profile** split. Since then the two switch modes
+> are first-class, separately-named profile types: the **hard switch** described
+> below is now the **Knowledge profile** (`exo__KnowledgeProfile`), and the
+> **soft switch** is the **Focus profile** (`exo__FocusProfile`). For the
+> distinction, examples, and which one to edit, start with
+> **[profiles.md](./profiles.md)**; read the "hard switch" sections here as the
+> Knowledge-profile machinery.
+
 ---
 
 ## What FocusProfile is
