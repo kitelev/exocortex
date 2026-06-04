@@ -10,6 +10,7 @@ import {
   AlgebraSerializer,
   ExoQLQueryExecutor,
   NoteToRDFConverter,
+  IRICanonicalizer,
   Triple,
   UpdateExecutor,
   type UpdateResult,
@@ -39,6 +40,10 @@ import { injectExocortexPrefixes, transformShorthandNotation, filterOntologyPref
 import { resolveProfileFilter } from "../utils/resolveProfileFilter.js";
 import { deriveSubjectIriPrefix } from "../utils/AlsoVaultMountPrefix.js";
 import { resolveCrossVaultInstanceClassWikilinks } from "../utils/crossVaultInstanceClassResolver.js";
+import {
+  buildVaultUidIndex,
+  isCanonicalizationEnabled,
+} from "../cache/buildVaultUidIndex.js";
 
 export interface SparqlQueryOptions {
   vault: string;
@@ -564,6 +569,40 @@ export function sparqlQueryCommand(): Command {
             triples = resolveCrossVaultInstanceClassWikilinks(
               triples as Triple[],
             ) as Triple[];
+
+            // Issue #3286 — apply post-load synth-A → full-path IRI
+            // canonicalization on the non-cached fallback path, mirroring
+            // the same step that `buildCombinedTriples` runs for the
+            // combined-cache build. Without this, JOINs across vaults
+            // silently miss whenever an --also-loaded vault references a
+            // primary-owned UID via the basename-only synth-A form.
+            //
+            // Gated by `EXOCORTEX_IRI_CANONICALIZE=true` (default off).
+            // The primary adapter and pre-built alsoAdapters carry the
+            // correct `subjectIriPrefix` so the canonical-IRI lookup is
+            // consistent with what the converter emitted as subject IRIs.
+            if (isCanonicalizationEnabled()) {
+              const primaryAdapter = new FileSystemVaultAdapter(vaultPath, {
+                siblingAdapters: alsoAdapters,
+              });
+              const uidIndex = buildVaultUidIndex([
+                primaryAdapter,
+                ...alsoAdapters,
+              ]);
+              const canonResult = IRICanonicalizer.canonicalize(
+                triples,
+                uidIndex,
+              );
+              triples = canonResult.triples;
+              if (
+                outputFormat === "text" &&
+                canonResult.remapCount > 0
+              ) {
+                console.log(
+                  `   🪄 IRI canonicalization (Issue #3286): remapped ${canonResult.remapCount} triple(s) covering ${canonResult.uniqueRemapCount} distinct synth-A IRI(s)`,
+                );
+              }
+            }
           }
         }
 
