@@ -29,7 +29,7 @@ test.describe(
     annotation: {
       type: "flaky-track",
       description:
-        "Issue #3308 — Electron termination timeout observed PR #3307 2026-05-31; RFC 32a64ed9 §3.3 track bucket; watch criteria: incident #2 → fix, N≥100 zero-further → close",
+        "Issue #3308 (Electron termination timeout, PR #3307 2026-05-31) + Issue #3368 (warm-boot ExoLayoutRepository cold-start race, root-caused + fixed in this PR via metadataCache.on('resolved') → rebuildNow()); RFC 32a64ed9 §3.3 track bucket; tag retained for one CI cycle, drop after N≥100 zero-further runs",
     },
   },
   () => {
@@ -46,10 +46,14 @@ test.describe(
     }
   });
 
-  // Bootstrap skip per #3368 — selector .exocortex-exo-layout times out even
-  // with @flaky-track retries: 1 from this PR's own policy. Skipping here so
-  // CI cascade unblocks for unrelated PRs. Remove .skip when #3368 root-caused.
-  test.skip(
+  // Issue #3368 closed by this PR: `ExoLayoutRepository.rebuildNow()` is now
+  // invoked from `metadataCache.on("resolved")` in `ExocortexPlugin`, closing
+  // the cold-start race that made `LayoutSelector.resolve(...)` return null
+  // on warm Obsidian boots — `.exocortex-exo-layout` is now emitted
+  // deterministically. The `@flaky-track` tag is retained for one CI cycle
+  // per RFC 32a64ed9 §3.3 close-criteria ("N≥100 zero-further runs"); a
+  // follow-up PR will drop the tag once telemetry confirms.
+  test(
     "exo__DemoClass note renders declared BacklinksTableBlock with 2 columns and NO default Asset Relations wrapper",
     { timeout: 25_000 },
     async () => {

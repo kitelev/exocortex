@@ -147,7 +147,17 @@ export class ExoLayoutRepository {
   }
 
   /**
-   * Test hook: force synchronous rebuild, bypass debounce.
+   * Force synchronous rebuild, bypassing the internal 150 ms debounce.
+   *
+   * Public API. In addition to test fixtures, this is called from
+   * `ExocortexPlugin` on `metadataCache.on("resolved")` to close the
+   * cold-start race where Obsidian parses Layout / LayoutBlock files
+   * BEFORE this repository's `on("changed")` subscription is wired —
+   * `initialize()`'s synchronous initial scan sees an empty cache and
+   * no later "changed" event ever fires, leaving the snapshot empty
+   * and `LayoutSelector.resolve()` returning null. Issue #3368.
+   *
+   * Idempotent and safe to call from any path.
    */
   rebuildNow(): void {
     if (this.disposed) return;
