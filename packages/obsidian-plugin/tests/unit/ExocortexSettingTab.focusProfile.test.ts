@@ -6,7 +6,7 @@
  * sequence: PAT → Active focus profile → Switch cache → Operations log.
  *
  * The integration shape (real PAT persistence round-trip, real GitHub call,
- * real switchProfile dispatch) is intentionally out of scope here — those
+ * real softSwitchFocusProfile dispatch) is intentionally out of scope here — those
  * are covered by `LocalSecretsStore.test.ts`, `GitHubRestClient.test.ts`,
  * `FocusProfileSwitchManager.test.ts`. These tests only assert the UI
  * renders the expected scaffold so a future regression that drops one of
@@ -361,7 +361,7 @@ describe("ExocortexSettingTab — Issue #3320 FocusProfile sections", () => {
     ).toHaveBeenCalledWith("uid-a");
   });
 
-  it("ignores empty dropdown selection without dispatching switchProfile", async () => {
+  it("ignores empty dropdown selection without dispatching softSwitchFocusProfile", async () => {
     let capturedOnChange: ((uid: string) => Promise<void>) | null = null;
     MockSetting.mockImplementation((containerEl: any) => {
       const setting: any = {
