@@ -8,6 +8,7 @@ import {
   type SerializedTriple,
 } from "./tripleSerialization.js";
 import type { LoadOrBuildResult } from "./CacheManager.js";
+import { isCanonicalizationEnabled } from "./buildVaultUidIndex.js";
 
 /**
  * Combined-cache metadata stored alongside the multi-vault triple cache.
@@ -30,6 +31,20 @@ export interface CombinedCacheMetadata {
   vaultMtimes: Record<string, number>;
   /** Number of triples cached (after RDFS + prototype materialization) */
   tripleCount: number;
+  /**
+   * Issue #3364 — captures `isCanonicalizationEnabled()` (i.e. the value of
+   * `EXOCORTEX_IRI_CANONICALIZE` env flag) at cache build time. `isCacheValid()`
+   * rejects caches whose flag state differs from the current process flag so
+   * a cache built under flag OFF is not silently reused under flag ON (which
+   * would mask the canonicalization fix introduced in #3286) and vice versa.
+   *
+   * Optional for backward compatibility — pre-#3364 caches do not carry this
+   * field and are treated as `canonicalized: false` (the pre-#3286 effective
+   * state). Users who built a cache under flag ON in the window between #3286
+   * landing and #3364 shipping will see one extra rebuild after upgrade, which
+   * is the correct behaviour (their cache predates the validity check).
+   */
+  canonicalized?: boolean;
 }
 
 interface CombinedCacheData {
@@ -212,6 +227,20 @@ export class CombinedCacheManager {
         return false;
       }
 
+      // Issue #3364 — reject caches built under a different
+      // `EXOCORTEX_IRI_CANONICALIZE` flag state. `combinedCacheHit === true`
+      // in `sparql-query.ts` skips the canonicalization branch entirely; a
+      // flag-OFF cache reused under flag ON would silently return
+      // un-canonicalized triples (JOINs miss) and a flag-ON cache reused
+      // under flag OFF would prevent the user from opting out without
+      // manually deleting the cache. Missing `canonicalized` field on
+      // legacy pre-#3364 caches is treated as `false` (effective pre-#3286
+      // state).
+      const cachedCanonicalized = cacheData.metadata.canonicalized === true;
+      if (cachedCanonicalized !== isCanonicalizationEnabled()) {
+        return false;
+      }
+
       // Path set must match exactly (same vaults participated)
       const recordedSorted = [...cacheData.metadata.vaultPaths].sort();
       if (
@@ -320,6 +349,10 @@ export class CombinedCacheManager {
         vaultPaths: [...this.allVaultPaths],
         vaultMtimes,
         tripleCount: triples.length,
+        // Issue #3364 — capture current canonicalization flag so
+        // `isCacheValid()` can reject this cache if the flag state flips
+        // before the next read.
+        canonicalized: isCanonicalizationEnabled(),
       },
       triples: serializedTriples,
     };
