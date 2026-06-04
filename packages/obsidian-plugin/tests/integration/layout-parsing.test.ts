@@ -316,7 +316,7 @@ describe("Layout Parsing Integration", () => {
       });
     });
 
-    it("should parse a kanban layout from the issue example", async () => {
+    it("should parse a table layout from the issue example", async () => {
       // Set up layout file matching the issue description
       vault.addFile("03 Knowledge/layouts/UpcomingTasksLayout.md", {
         exo__Instance_class: ["[[exo__TableLayout]]"],
@@ -428,14 +428,6 @@ describe("Layout Parsing Integration", () => {
         exo__Layout_targetClass: "[[ems__Task]]",
       });
 
-      vault.addFile("layouts/Kanban.md", {
-        exo__Asset_uid: "kanban-001",
-        exo__Asset_label: "Kanban Layout",
-        exo__Instance_class: ["[[exo__KanbanLayout]]"],
-        exo__Layout_targetClass: "[[ems__Task]]",
-        exo__KanbanLayout_laneProperty: "[[ems__Effort_status]]",
-      });
-
       vault.addFile("layouts/Graph.md", {
         exo__Asset_uid: "graph-001",
         exo__Asset_label: "Graph Layout",
@@ -460,13 +452,11 @@ describe("Layout Parsing Integration", () => {
 
       // Parse each and verify type
       const table = await parser.parseFromWikiLink("[[Table]]");
-      const kanban = await parser.parseFromWikiLink("[[Kanban]]");
       const graph = await parser.parseFromWikiLink("[[Graph]]");
       const calendar = await parser.parseFromWikiLink("[[Calendar]]");
       const list = await parser.parseFromWikiLink("[[List]]");
 
       expect(table!.type).toBe(LayoutType.Table);
-      expect(kanban!.type).toBe(LayoutType.Kanban);
       expect(graph!.type).toBe(LayoutType.Graph);
       expect(calendar!.type).toBe(LayoutType.Calendar);
       expect(list!.type).toBe(LayoutType.List);

@@ -13,7 +13,6 @@ import type { IVaultAdapter, IFile, IFrontmatter } from "exocortex";
 import {
   type Layout,
   type TableLayout,
-  type KanbanLayout,
   type GraphLayout,
   type CalendarLayout,
   type ListLayout,
@@ -263,20 +262,6 @@ export class LayoutParser {
     switch (layoutType) {
       case LayoutType.Table:
         layout = await this.buildTableLayout(
-          uid,
-          label,
-          description,
-          targetClass,
-          frontmatter,
-          filters,
-          defaultSort,
-          groupBy,
-          options,
-        );
-        break;
-
-      case LayoutType.Kanban:
-        layout = await this.buildKanbanLayout(
           uid,
           label,
           description,
@@ -849,47 +834,6 @@ export class LayoutParser {
       type: LayoutType.Table,
       targetClass,
       columns,
-      filters,
-      defaultSort,
-      groupBy,
-      actions,
-    };
-  }
-
-  private async buildKanbanLayout(
-    uid: string,
-    label: string,
-    description: string | undefined,
-    targetClass: string,
-    frontmatter: IFrontmatter,
-    filters: LayoutFilter[] | undefined,
-    defaultSort: LayoutSort | undefined,
-    groupBy: LayoutGroup | undefined,
-    options: LayoutParseOptions,
-  ): Promise<KanbanLayout | null> {
-    const laneProperty = frontmatter["exo__KanbanLayout_laneProperty"] as
-      | string
-      | undefined;
-    if (!laneProperty) {
-      return null;
-    }
-
-    const lanesValue = frontmatter["exo__KanbanLayout_lanes"];
-    const lanes = lanesValue ? this.normalizeToArray(lanesValue) : undefined;
-
-    // Optional columns for card content
-    const columns = await this.loadColumns(frontmatter, options);
-    const actions = await this.loadActions(frontmatter, options);
-
-    return {
-      uid,
-      label,
-      description,
-      type: LayoutType.Kanban,
-      targetClass,
-      laneProperty,
-      lanes,
-      columns: columns.length > 0 ? columns : undefined,
       filters,
       defaultSort,
       groupBy,

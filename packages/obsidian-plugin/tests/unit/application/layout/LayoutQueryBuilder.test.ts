@@ -7,7 +7,6 @@ import {
 import {
   LayoutType,
   type TableLayout,
-  type KanbanLayout,
   type GraphLayout,
   type ListLayout,
   type LayoutColumn,
@@ -25,20 +24,6 @@ function createTableLayout(
     type: LayoutType.Table,
     targetClass: "[[ems__Task]]",
     columns: [],
-    ...overrides,
-  };
-}
-
-// Helper to create a minimal KanbanLayout
-function createKanbanLayout(
-  overrides: Partial<KanbanLayout> = {},
-): KanbanLayout {
-  return {
-    uid: "layout-001",
-    label: "Test Kanban",
-    type: LayoutType.Kanban,
-    targetClass: "[[ems__Task]]",
-    laneProperty: "[[ems__Effort_status]]",
     ...overrides,
   };
 }
@@ -206,16 +191,6 @@ describe("LayoutQueryBuilder", () => {
         expect(result.query).toContain("ems:Effort_startTimestamp");
       });
 
-      it("should handle columns in KanbanLayout", () => {
-        const columns = [
-          createColumn({ property: "[[exo__Asset_label]]" }),
-        ];
-        const layout = createKanbanLayout({ columns });
-
-        const result = builder.build(layout);
-
-        expect(result.query).toContain("OPTIONAL { ?asset exo:Asset_label ?col0 . }");
-      });
     });
 
     describe("filter handling", () => {
@@ -545,14 +520,6 @@ describe("LayoutQueryBuilder", () => {
     describe("layout types", () => {
       it("should handle TableLayout", () => {
         const layout = createTableLayout();
-
-        const result = builder.build(layout);
-
-        expect(result.success).toBe(true);
-      });
-
-      it("should handle KanbanLayout", () => {
-        const layout = createKanbanLayout();
 
         const result = builder.build(layout);
 
