@@ -930,6 +930,45 @@ export default class ExocortexPlugin extends Plugin {
 
           this.layoutRenderer.invalidateBacklinksCache();
 
+          // Issue #3368 — DO NOT REMOVE this line without re-running the
+          // exo-layout-smoke e2e spec end-to-end on warm Obsidian boots
+          // (full shard-4 sequence in Docker). Unit tests in
+          // `ExoLayoutRepository.test.ts` exercise `rebuildNow()` semantics
+          // in isolation but do NOT guard this integration call site.
+          //
+          // Closes the cold-start race between
+          // `ExoLayoutRepository.initialize()` (which calls `rebuildSync()`
+          // in onload, BEFORE metadataCache has parsed Layout fixtures) and
+          // the `metadataCache.on("changed")` subscription it wires there.
+          // After Phase 3c (#3260-3262) deleted the legacy fast-resolver +
+          // disk-cache chain, plugin onload became fast enough that on
+          // "warm" Obsidian boots (e.g. e2e shard-4 where exo-layout-smoke
+          // runs after sibling specs have already pre-warmed the binary)
+          // metadataCache finishes parsing some Layout / LayoutBlock
+          // fixtures BEFORE the repository's `on("changed")` listener is
+          // wired — `rebuildSync()` sees an empty cache + no later events
+          // ⇒ empty snapshot ⇒ `LayoutSelector.resolve` returns null ⇒
+          // `ExoLayoutRenderer` is never invoked ⇒ `.exocortex-exo-layout`
+          // is never emitted. Forcing a rebuild here on the authoritative
+          // "metadata fully parsed" signal closes the race.
+          //
+          // `rebuildNow()` is idempotent + synchronous; it bypasses the
+          // internal 150 ms debounce so the snapshot is published before
+          // any consumer of the resolved-event chain runs (notably the
+          // `autoRenderLayout()` call at the end of the async chain
+          // below, which resolves layouts via the published snapshot).
+          // Intentionally outside the `postResolveReindexDone` one-shot
+          // guard — "resolved" is rare and the rebuild is cheap
+          // (microseconds for typical vault sizes; bounded by
+          // `getFrontmatter` calls against an already-warm metadataCache),
+          // so re-emissions after large vault-level reindexes correctly
+          // refresh the snapshot too.
+          //
+          // Optional chaining: `exoLayoutRepository` is nulled in
+          // `onunload()`; guards the unload race where a queued
+          // "resolved" event fires post-dispose.
+          this.exoLayoutRepository?.rebuildNow();
+
           if (postResolveReindexDone) return;
           postResolveReindexDone = true;
 
