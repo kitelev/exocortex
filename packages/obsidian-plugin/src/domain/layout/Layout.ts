@@ -13,9 +13,6 @@ export enum LayoutType {
   /** Table layout with rows and columns */
   Table = "exo__TableLayout",
 
-  /** Kanban board with lanes/columns */
-  Kanban = "exo__KanbanLayout",
-
   /** Graph visualization of relationships */
   Graph = "exo__GraphLayout",
 
@@ -96,7 +93,7 @@ export interface BaseLayout {
   description?: string;
 
   /**
-   * The layout type (table, kanban, graph, calendar, list).
+   * The layout type (table, graph, calendar, list).
    * Derived from exo__Instance_class.
    */
   type: LayoutType;
@@ -179,34 +176,6 @@ export interface TableLayout extends BaseLayout {
 }
 
 /**
- * Kanban Layout interface.
- * Extends BaseLayout with kanban-specific properties.
- */
-export interface KanbanLayout extends BaseLayout {
-  type: LayoutType.Kanban;
-
-  /**
-   * Reference to the property used for lane grouping.
-   * Typically a status property like "[[ems__Effort_status]]".
-   * Maps to exo__KanbanLayout_laneProperty.
-   */
-  laneProperty: string;
-
-  /**
-   * Explicit list of lanes (columns) in order.
-   * Each lane is a wikilink to a status/value asset.
-   * Maps to exo__KanbanLayout_lanes.
-   */
-  lanes?: string[];
-
-  /**
-   * Optional column definitions for card content.
-   * Maps to exo__Layout_columns.
-   */
-  columns?: LayoutColumn[];
-}
-
-/**
  * Graph Layout interface.
  * Extends BaseLayout with graph-specific properties.
  */
@@ -285,12 +254,7 @@ export interface ListLayout extends BaseLayout {
 /**
  * Union type for all layout types.
  */
-export type Layout =
-  | TableLayout
-  | KanbanLayout
-  | GraphLayout
-  | CalendarLayout
-  | ListLayout;
+export type Layout = TableLayout | GraphLayout | CalendarLayout | ListLayout;
 
 /**
  * Extract the LayoutType from an instance class wikilink or array of wikilinks.
@@ -315,8 +279,6 @@ export function getLayoutTypeFromInstanceClass(
     switch (className) {
       case "exo__TableLayout":
         return LayoutType.Table;
-      case "exo__KanbanLayout":
-        return LayoutType.Kanban;
       case "exo__GraphLayout":
         return LayoutType.Graph;
       case "exo__CalendarLayout":
@@ -381,13 +343,6 @@ export function createBaseLayoutFromFrontmatter(
  */
 export function isTableLayout(layout: Layout): layout is TableLayout {
   return layout.type === LayoutType.Table;
-}
-
-/**
- * Type guard for KanbanLayout.
- */
-export function isKanbanLayout(layout: Layout): layout is KanbanLayout {
-  return layout.type === LayoutType.Kanban;
 }
 
 /**
