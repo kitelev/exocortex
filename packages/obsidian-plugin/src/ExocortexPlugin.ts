@@ -2474,6 +2474,17 @@ export default class ExocortexPlugin extends Plugin {
         "[ExocortexPlugin] seeded activeKnowledgeProfileUid from legacy " +
           "activeProfileUid (RFC 13da049f AC14 — Focus left null per R38)",
       );
+      // One-time, on-upgrade only: the Focus (RDF-filter) slot is left null
+      // per R38 — so a user whose pre-AC14 selection was a soft switch finds
+      // their query-time filter disengaged (full vault indexed) until they
+      // re-select. Surface that explicitly so the change is not silent (the
+      // filter being off is exactly what drives the mobile reindex cost the
+      // FocusProfile feature exists to avoid). Idempotent: `migrated` fires
+      // only on the first post-upgrade load.
+      this.notifier.info(
+        "Focus profile filter was reset after upgrade — re-select your " +
+          "Focus profile via «Exocortex: Switch focus profile» to re-enable it.",
+      );
     }
     this.localDataStore = localDataStore;
 
