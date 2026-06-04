@@ -7,12 +7,17 @@ import {
   PropertyCardinalityRegistry,
   PrototypeChainMaterializer,
   NoteToRDFConverter,
+  IRICanonicalizer,
   Triple,
 } from "exocortex";
 import { FileSystemVaultAdapter } from "../adapters/FileSystemVaultAdapter.js";
 import { VaultNotFoundError } from "../utils/errors/index.js";
 import { resolveCrossVaultInstanceClassWikilinks } from "../utils/crossVaultInstanceClassResolver.js";
 import { deriveSubjectIriPrefix } from "../utils/AlsoVaultMountPrefix.js";
+import {
+  buildVaultUidIndex,
+  isCanonicalizationEnabled,
+} from "./buildVaultUidIndex.js";
 
 export interface BuildCombinedTriplesOptions {
   /** Disable RDFS subClassOf inference materialization */
@@ -32,6 +37,13 @@ export interface BuildCombinedTriplesResult {
   crossVaultAddedTripleCount: number;
   /** Triples emitted by RDFS + prototype chain materialization */
   inferredTripleCount: number;
+  /**
+   * Issue #3286 — number of triples whose subject or object IRI was rewritten
+   * by the synth-A → canonical full-path remap. Zero when the feature flag
+   * `EXOCORTEX_IRI_CANONICALIZE` is off (default) or when no synth-A IRIs
+   * were emitted by the converter pass.
+   */
+  canonicalizedTripleCount: number;
 }
 
 /**
@@ -152,6 +164,31 @@ export async function buildCombinedTriples(
     }
   }
 
+  // Issue #3286 — post-load IRI canonicalization. Remaps every synth-A IRI
+  // (`obsidian://vault/<uid>.md` without subdirectory) to the canonical
+  // full-path form whenever the UID is owned by a loaded vault. Runs after
+  // cross-vault Instance_class resolution (which can itself introduce
+  // canonical-IRI triples) and BEFORE adding triples to the store so the
+  // reasoner sees a coherent IRI space.
+  //
+  // Gated by `EXOCORTEX_IRI_CANONICALIZE=true` per Issue #3286 RFC body —
+  // default OFF for v1 so users opt in once their cross-vault setup has
+  // been validated. No-op for single-vault builds because this function is
+  // only reached when `runCombinedIndex` is invoked with at least one
+  // `--also` path.
+  let canonicalizedTripleCount = 0;
+  if (isCanonicalizationEnabled() && resolvedAlsos.length > 0) {
+    const uidIndex = buildVaultUidIndex([primaryAdapter, ...alsoAdapters]);
+    const result = IRICanonicalizer.canonicalize(triples, uidIndex);
+    triples = result.triples;
+    canonicalizedTripleCount = result.remapCount;
+    if (!silent && canonicalizedTripleCount > 0) {
+      log(
+        `   🪄 IRI canonicalization (Issue #3286): remapped ${canonicalizedTripleCount} triple(s) covering ${result.uniqueRemapCount} distinct synth-A IRI(s)`,
+      );
+    }
+  }
+
   // Materialization (mirrors sparql-index.ts current single-vault behaviour
   // but runs on the combined store so cross-vault subclass / prototype
   // chains are now visible to the reasoner).
@@ -187,5 +224,6 @@ export async function buildCombinedTriples(
     rawTripleCount,
     crossVaultAddedTripleCount,
     inferredTripleCount,
+    canonicalizedTripleCount,
   };
 }
