@@ -63,6 +63,7 @@ export interface GitSubmoduleOpsOptions {
  *   - absolute paths (`/` prefix)
  *   - parent traversal (`..` segment)
  *   - shell metacharacters (`;`, `|`, `&`, `$`, `` ` ``, `(`, `)`, `<`, `>`)
+ *     plus `"`, `[`, `]` (also protect the `.gitmodules` quoted header)
  *   - leading `-` (would be parsed as flag by git)
  *
  * Throws on any violation. Otherwise returns the normalized path (forward
@@ -86,8 +87,11 @@ export function validateVaultPathArg(arg: string): string {
     }
   }
   // Disallow shell metas — execFile doesn't interpret them, но this is
-  // defense-in-depth in case the path leaks into a logged shell string.
-  if (/[;|&$`()<>\n\r]/.test(normalized)) {
+  // defense-in-depth in case the path leaks into a logged shell string. The
+  // `"` / `[` / `]` set additionally protects the `.gitmodules` writer
+  // (`appendGitmodulesEntry`) — these characters would otherwise let a path
+  // break out of the `[submodule "<path>"]` quoted header.
+  if (/[;|&$`()<>\n\r"[\]]/.test(normalized)) {
     throw new Error(`GitSubmoduleOps: shell metacharacter in path: ${arg}`);
   }
   return normalized;

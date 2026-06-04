@@ -438,6 +438,12 @@ export class PluginLocalDataStore {
    * Upsert a file-only AssetSpace entry (keyed by `folderName`). Preserves
    * unknown sibling keys via RMW. Idempotent: re-recording the same folder
    * replaces its prior entry rather than duplicating it.
+   *
+   * Like the rest of this store, the read-modify-write is NOT serialized — it
+   * relies on callers invoking it sequentially (the bootstrap flow awaits each
+   * `materialize` fully before the next). Concurrent writes to
+   * `data.local.json` could clobber; if overlapping surfaces emerge, route
+   * through a shared write-chain like {@link StagingDirTracker}.
    */
   async upsertFileOnlyAssetSpace(
     entry: FileOnlyAssetSpaceEntry,

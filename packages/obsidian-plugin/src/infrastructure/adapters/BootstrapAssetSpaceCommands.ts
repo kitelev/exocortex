@@ -121,9 +121,9 @@ export interface BootstrapAssetSpaceCommandsDeps {
 }
 
 /** TS-floor folders materialised by a cold bootstrap (fixed, mirrors CLI). */
-const TS_FLOOR_EXO_FOLDER = "exo";
-const TS_FLOOR_EXOCMD_FOLDER = "exocmd";
 const ASSETSPACES_DIR = "assetspaces";
+const TS_FLOOR_EXO_PATH = `${ASSETSPACES_DIR}/exo`;
+const TS_FLOOR_EXOCMD_PATH = `${ASSETSPACES_DIR}/exocmd`;
 
 export type VaultBootstrapState =
   | "empty"
@@ -196,15 +196,17 @@ export class BootstrapAssetSpaceCommands {
       );
     }
 
+    // Materialise exo then exocmd. If exocmd fails after exo succeeded, the
+    // vault is half-bootstrapped: a re-run of «Bootstrap vault» would now
+    // classify it as `bootstrapped` and refuse, so the recovery path (use
+    // «Add assetspace by URL» for the missing floor) must be surfaced
+    // explicitly here. Re-index either way so the part that landed is picked up.
+    let exo: MaterializeResult | null = null;
     try {
-      const exo = await this.materialize(
-        urls.exoUrl,
-        TS_FLOOR_EXO_FOLDER,
-        isGit,
-      );
+      exo = await this.materialize(urls.exoUrl, TS_FLOOR_EXO_PATH, isGit);
       const exocmd = await this.materialize(
         urls.exocmdUrl,
-        TS_FLOOR_EXOCMD_FOLDER,
+        TS_FLOOR_EXOCMD_PATH,
         isGit,
       );
       this.d.notify(
@@ -212,7 +214,15 @@ export class BootstrapAssetSpaceCommands {
           "Reload Obsidian if the new assets do not appear. Add any further AssetSpaces manually — dependencies are not auto-resolved.",
       );
     } catch (e) {
-      this.d.notify(`Bootstrap failed: ${this.msg(e)}`);
+      if (exo !== null) {
+        this.d.notify(
+          `Bootstrap partially completed — ${TS_FLOOR_EXO_PATH} materialised, but ${TS_FLOOR_EXOCMD_PATH} failed: ${this.msg(e)}. ` +
+            "Use «Add assetspace by URL» to add the missing exocmd assetspace.",
+        );
+      } else {
+        this.d.notify(`Bootstrap failed: ${this.msg(e)}`);
+      }
+      await this.runOnMaterialized();
       return;
     }
     await this.runOnMaterialized();
@@ -246,7 +256,11 @@ export class BootstrapAssetSpaceCommands {
     }
 
     try {
-      const m = await this.materialize(res.url, folderName, isGit);
+      const m = await this.materialize(
+        res.url,
+        `${ASSETSPACES_DIR}/${folderName}`,
+        isGit,
+      );
       this.d.notify(
         `AssetSpace added — ${m.folderName}@${m.sha} ← ${res.url}. ` +
           "Add any AssetSpaces it depends on manually — dependencies are not auto-resolved.",
@@ -283,10 +297,11 @@ export class BootstrapAssetSpaceCommands {
 
     let fetched = 0;
     for (const entry of entries) {
-      const folderName = basename(entry.submodulePath);
-      if (folderName.length === 0) continue;
+      if (entry.submodulePath.length === 0) continue;
       try {
-        await this.materialize(entry.url, folderName, true);
+        // Materialise into the exact path `.gitmodules` declares (preserves
+        // any nested layout) rather than re-deriving from the basename.
+        await this.materialize(entry.url, entry.submodulePath, true);
         fetched++;
       } catch (e) {
         this.d.notify(`Fetch failed for ${entry.submodulePath}: ${this.msg(e)}`);
@@ -299,20 +314,20 @@ export class BootstrapAssetSpaceCommands {
   }
 
   /**
-   * Pull `url`'s tarball into a staging dir, move it into `assetspaces/<folder>`,
-   * then register it — append the `.gitmodules` entry (git vault) OR record the
-   * file-only registry entry (AC10 non-git vault). The staging-dir `asUid` label
-   * is synthetic (`bootstrap-<folder>`) since a cold bootstrap has no AssetSpace
-   * UID yet — it is only used to name the temp dir for orphan tracking.
+   * Pull `url`'s tarball into a staging dir, move it into the vault-relative
+   * `submodulePath` (e.g. `assetspaces/exo`), then register it — append the
+   * `.gitmodules` entry (git vault) OR record the file-only registry entry
+   * (AC10 non-git vault). The staging-dir `asUid` label is synthetic
+   * (`bootstrap-<basename>`) since a cold bootstrap has no AssetSpace UID yet —
+   * it only names the temp dir for orphan tracking.
    */
   private async materialize(
     url: string,
-    folderName: string,
+    submodulePath: string,
     isGit: boolean,
   ): Promise<MaterializeResult> {
-    const submodulePath = `${ASSETSPACES_DIR}/${folderName}`;
     const result = await this.d.puller.pullAssetSpace(
-      `bootstrap-${folderName}`,
+      `bootstrap-${basename(submodulePath)}`,
       url,
       this.ref,
     );

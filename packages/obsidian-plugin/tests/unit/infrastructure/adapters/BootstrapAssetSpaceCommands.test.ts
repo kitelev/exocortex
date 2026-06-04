@@ -283,6 +283,26 @@ describe("BootstrapAssetSpaceCommands.invokeBootstrap — guards", () => {
     // exocmd pull never attempted after exo failed
     expect(h.puller.pullAssetSpace).toHaveBeenCalledTimes(1);
   });
+
+  it("partial failure (exo ok, exocmd fails) → actionable recovery notice", async () => {
+    const h = makeHarness({ isGitVault: true });
+    h.puller.pullAssetSpace
+      .mockResolvedValueOnce({
+        asUid: "bootstrap-exo",
+        stagingPath: "/tmp/staging-bootstrap-exo",
+        sha: "abc1234",
+      })
+      .mockRejectedValueOnce(new Error("exocmd boom"));
+    await h.cmds.invokeBootstrap();
+    expect(h.puller.pullAssetSpace).toHaveBeenCalledTimes(2);
+    // exo materialised, exocmd did not
+    expect(h.gitOps.renameIntoVault).toHaveBeenCalledTimes(1);
+    expect(
+      h.notices.some(
+        (n) => /partially completed/i.test(n) && /Add assetspace by URL/i.test(n),
+      ),
+    ).toBe(true);
+  });
 });
 
 describe("BootstrapAssetSpaceCommands.invokeAddAssetSpace", () => {
