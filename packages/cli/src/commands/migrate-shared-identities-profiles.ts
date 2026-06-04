@@ -46,7 +46,10 @@ export function migrateSharedIdentitiesProfilesCommand(): Command {
           throw new InvalidArgumentsError("--vault is required");
         }
         const profilesDir = options.profilesDir ?? "profiles";
-        if (profilesDir.includes("/") || profilesDir.includes("\\") || profilesDir.includes("..")) {
+        // Plain folder name only — allowlist defends against path traversal
+        // (`/`, `\`, `..`), NUL bytes, `~`/`$HOME` expansion, and empty / `.`
+        // values that would collapse the target onto assetspaces/ itself.
+        if (!/^[A-Za-z0-9._-]+$/.test(profilesDir) || profilesDir === "." || profilesDir.includes("..")) {
           throw new InvalidArgumentsError(
             `--profiles-dir must be a plain folder name (got "${profilesDir}")`,
           );

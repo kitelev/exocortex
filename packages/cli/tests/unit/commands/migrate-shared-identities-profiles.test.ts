@@ -97,9 +97,27 @@ describe("migrateSharedIdentitiesProfilesCommand --profiles-dir flag", () => {
   });
 
   describe("validation", () => {
-    it("rejects --profiles-dir containing a path separator", async () => {
+    it.each([
+      ["path separator", "evil/../escape"],
+      ["backslash", "a\\b"],
+      ["bare dot-dot", ".."],
+      ["single dot", "."],
+      ["empty string", ""],
+      ["NUL byte", "a\x00b"],
+      ["tilde", "~/escape"],
+    ])("rejects --profiles-dir with %s", async (_label, value) => {
       const vaultPath = makeVaultWithProfile();
       const exitSpy = jest.spyOn(process, "exit").mockImplementation((() => undefined) as never);
+      const cmd = migrateSharedIdentitiesProfilesCommand();
+      await cmd.parseAsync(["node", "test", "--vault", vaultPath, "--profiles-dir", value, "--json"]);
+      // ErrorHandler.handle → process.exit with non-zero (INVALID_ARGUMENTS=2).
+      expect(exitSpy).toHaveBeenCalled();
+      const codes = exitSpy.mock.calls.map((c) => c[0]);
+      expect(codes.some((c) => c !== 0)).toBe(true);
+    });
+
+    it("accepts a dotted folder name (e.g. profiles.v2)", async () => {
+      const vaultPath = makeVaultWithProfile();
       const cmd = migrateSharedIdentitiesProfilesCommand();
       await cmd.parseAsync([
         "node",
@@ -107,13 +125,11 @@ describe("migrateSharedIdentitiesProfilesCommand --profiles-dir flag", () => {
         "--vault",
         vaultPath,
         "--profiles-dir",
-        "evil/../escape",
+        "profiles.v2",
         "--json",
       ]);
-      // ErrorHandler.handle → process.exit with non-zero (INVALID_ARGUMENTS=2).
-      expect(exitSpy).toHaveBeenCalled();
-      const codes = exitSpy.mock.calls.map((c) => c[0]);
-      expect(codes.some((c) => c !== 0)).toBe(true);
+      const plan = JSON.parse(stdout.join(""));
+      expect(plan.profilesDirPath).toBe(path.join(vaultPath, "assetspaces", "profiles.v2"));
     });
   });
 });
