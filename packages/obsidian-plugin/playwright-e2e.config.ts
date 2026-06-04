@@ -61,10 +61,24 @@ export default defineConfig({
     },
   },
 
+  // Issue #3350: structured tolerance for @flaky-track-tagged specs.
+  // Two projects route by tag presence — default (untagged) keeps the
+  // strict 0-retry contract that surfaces flakes immediately; flaky-track
+  // gets retries: 1 as documented opt-in tolerance until root-cause lands.
+  // Removing the tag automatically restores strict discipline (no silent
+  // masking). Reporter `playwright-no-flaky-reporter` is tag-aware and
+  // skips @flaky-track tests so the retry on that project does not fail CI.
   projects: [
     {
       name: "e2e",
       testMatch: "**/*.spec.ts",
+      grepInvert: /@flaky-track/,
+    },
+    {
+      name: "e2e-flaky-track",
+      testMatch: "**/*.spec.ts",
+      grep: /@flaky-track/,
+      retries: 1,
     },
   ],
 });
