@@ -235,6 +235,10 @@ export { NonInheritablePropertyRegistry } from "./services/NonInheritablePropert
 export { PropertyCardinalityRegistry } from "./services/PropertyCardinalityRegistry";
 export { PrototypeChainMaterializer, INFERRED_GRAPH } from "./services/PrototypeChainMaterializer";
 export {
+  IRICanonicalizer,
+  type CanonicalizationResult,
+} from "./services/IRICanonicalizer";
+export {
   LazyAssetGraphLoader,
   MAX_LAZY_DEPTH,
   type INoteConverter,

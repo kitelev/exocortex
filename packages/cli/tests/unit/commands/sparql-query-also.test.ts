@@ -79,6 +79,17 @@ jest.unstable_mockModule("exocortex", () => ({
   DomainTriple: class {
     constructor(public subject: unknown, public predicate: unknown, public object: unknown) {}
   },
+  // Issue #3286 — IRICanonicalizer + vaultPathToIRI are transitively
+  // required by buildVaultUidIndex.ts; sparql-query.ts imports the
+  // canonicalizer for the non-cached --also fallback path.
+  IRICanonicalizer: {
+    canonicalize: jest.fn(() => ({
+      triples: [],
+      remapCount: 0,
+      uniqueRemapCount: 0,
+    })),
+  },
+  vaultPathToIRI: jest.fn((p: string) => `obsidian://vault/${p}`),
   SPARQL_PREFIXES: "PREFIX exo: <https://exocortex.my/ontology/exo#>",
 }));
 
