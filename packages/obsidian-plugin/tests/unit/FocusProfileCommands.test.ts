@@ -4,18 +4,34 @@ import {
   type FocusProfileCommandsDeps,
   type IAssetSpacePusher,
 } from "../../src/infrastructure/adapters/FocusProfileCommands";
-import type { FocusProfileSwitchManager } from "../../src/infrastructure/adapters/FocusProfileSwitchManager";
+import {
+  type FocusProfileSwitchManager,
+  HardSwitchAbortedByUser,
+  TsFloorViolationError,
+  UncommittedChangesAbortError,
+} from "../../src/infrastructure/adapters/FocusProfileSwitchManager";
 
 // ─── Test doubles ────────────────────────────────────────────────────────
 
 class FakeSwitchMgr {
   switchCalls: string[] = [];
+  hardSwitchCalls: string[] = [];
   failOnce = false;
+  /** Error to throw from the next hardSwitchKnowledgeProfile call (then cleared). */
+  hardSwitchThrows: Error | null = null;
   async softSwitchFocusProfile(uid: string): Promise<void> {
     this.switchCalls.push(uid);
     if (this.failOnce) {
       this.failOnce = false;
       throw new Error("simulated switch failure");
+    }
+  }
+  async hardSwitchKnowledgeProfile(uid: string): Promise<void> {
+    this.hardSwitchCalls.push(uid);
+    if (this.hardSwitchThrows) {
+      const e = this.hardSwitchThrows;
+      this.hardSwitchThrows = null;
+      throw e;
     }
   }
 }
@@ -48,15 +64,20 @@ interface Harness {
 
 function makeHarness(opts: {
   profiles: FocusProfileChoice[];
+  knowledgeProfiles?: FocusProfileChoice[];
   pickResult?: FocusProfileChoice | null;
   activeFilePath?: string | null;
   asLookups?: Array<[string, string]>;
   listError?: Error;
+  knowledgeListError?: Error;
+  activeKnowledgeUid?: string | null;
+  activeFocusUid?: string | null;
 }): Harness {
   const switchMgr = new FakeSwitchMgr();
   const pushMgr = new FakePushMgr();
   if (opts.asLookups) {
-    for (const [folder, uid] of opts.asLookups) pushMgr.lookups.set(folder, uid);
+    for (const [folder, uid] of opts.asLookups)
+      pushMgr.lookups.set(folder, uid);
   }
   const notices: string[] = [];
   const pickCalls: { options: FocusProfileChoice[]; title: string }[] = [];
@@ -67,11 +88,17 @@ function makeHarness(opts: {
       if (opts.listError) throw opts.listError;
       return opts.profiles;
     },
+    knowledgeProfileLister: async () => {
+      if (opts.knowledgeListError) throw opts.knowledgeListError;
+      return opts.knowledgeProfiles ?? [];
+    },
     fuzzyPick: async (options, title) => {
       pickCalls.push({ options, title });
       return opts.pickResult === undefined ? null : opts.pickResult;
     },
     getActiveFilePath: () => opts.activeFilePath ?? null,
+    getActiveKnowledgeProfileUid: () => opts.activeKnowledgeUid ?? null,
+    getActiveFocusProfileUid: () => opts.activeFocusUid ?? null,
     notify: (m) => notices.push(m),
   };
   return {
@@ -136,7 +163,11 @@ describe("FocusProfileCommands.invokeSwitchProfile", () => {
     await h.cmd.invokeSwitchProfile();
 
     expect(h.pickCalls).toHaveLength(0);
-    expect(h.notices.some((n) => /Could not list profiles.*vault read failed/.test(n))).toBe(true);
+    expect(
+      h.notices.some((n) =>
+        /Could not list profiles.*vault read failed/.test(n),
+      ),
+    ).toBe(true);
   });
 
   it("surfaces softSwitchFocusProfile failure as Notice без re-throw", async () => {
@@ -145,7 +176,9 @@ describe("FocusProfileCommands.invokeSwitchProfile", () => {
     h.switchMgr.failOnce = true;
 
     await expect(h.cmd.invokeSwitchProfile()).resolves.not.toThrow();
-    expect(h.notices.some((n) => /Switch failed.*simulated/.test(n))).toBe(true);
+    expect(h.notices.some((n) => /Switch failed.*simulated/.test(n))).toBe(
+      true,
+    );
   });
 });
 
@@ -170,7 +203,9 @@ describe("FocusProfileCommands.invokePushCurrentAssetSpace", () => {
     await h.cmd.invokePushCurrentAssetSpace();
 
     expect(h.pushMgr.pushedAs).toHaveLength(0);
-    expect(h.notices.some((n) => /Not in an assetspace folder/.test(n))).toBe(true);
+    expect(h.notices.some((n) => /Not in an assetspace folder/.test(n))).toBe(
+      true,
+    );
   });
 
   it("Notice when folder is не declared AssetSpace ABox", async () => {
@@ -182,7 +217,9 @@ describe("FocusProfileCommands.invokePushCurrentAssetSpace", () => {
     await h.cmd.invokePushCurrentAssetSpace();
 
     expect(h.pushMgr.pushedAs).toHaveLength(0);
-    expect(h.notices.some((n) => /not declared as an AssetSpace/.test(n))).toBe(true);
+    expect(h.notices.some((n) => /not declared as an AssetSpace/.test(n))).toBe(
+      true,
+    );
   });
 
   it("invokes pushAssetSpace and shows SHA Notice on success", async () => {
@@ -232,24 +269,226 @@ describe("FocusProfileCommands.invokePushCurrentAssetSpace", () => {
 
 describe("FocusProfileCommands.extractAssetSpaceFolder", () => {
   it("extracts folder from typical path", () => {
-    expect(FocusProfileCommands.extractAssetSpaceFolder("assetspaces/exo/foo.md")).toBe("assetspaces/exo");
+    expect(
+      FocusProfileCommands.extractAssetSpaceFolder("assetspaces/exo/foo.md"),
+    ).toBe("assetspaces/exo");
   });
 
   it("extracts folder from deeply nested path", () => {
-    expect(FocusProfileCommands.extractAssetSpaceFolder("assetspaces/ems/sub/dir/bar.md")).toBe("assetspaces/ems");
+    expect(
+      FocusProfileCommands.extractAssetSpaceFolder(
+        "assetspaces/ems/sub/dir/bar.md",
+      ),
+    ).toBe("assetspaces/ems");
   });
 
   it("normalizes Windows backslash separators", () => {
     // Source `\\` = single backslash in actual string → regex /\\/ matches
-    expect(FocusProfileCommands.extractAssetSpaceFolder("assetspaces\\shared-identities\\file.md")).toBe("assetspaces/shared-identities");
+    expect(
+      FocusProfileCommands.extractAssetSpaceFolder(
+        "assetspaces\\shared-identities\\file.md",
+      ),
+    ).toBe("assetspaces/shared-identities");
   });
 
   it("returns null for path outside assetspaces", () => {
-    expect(FocusProfileCommands.extractAssetSpaceFolder("03 Knowledge/inbox/note.md")).toBeNull();
-    expect(FocusProfileCommands.extractAssetSpaceFolder("inbox/note.md")).toBeNull();
+    expect(
+      FocusProfileCommands.extractAssetSpaceFolder(
+        "03 Knowledge/inbox/note.md",
+      ),
+    ).toBeNull();
+    expect(
+      FocusProfileCommands.extractAssetSpaceFolder("inbox/note.md"),
+    ).toBeNull();
   });
 
   it("returns null when assetspaces/ has no sub-folder", () => {
-    expect(FocusProfileCommands.extractAssetSpaceFolder("assetspaces/loose.md")).toBeNull();
+    expect(
+      FocusProfileCommands.extractAssetSpaceFolder("assetspaces/loose.md"),
+    ).toBeNull();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// invokeSwitchKnowledgeProfile (RFC 13da049f Phase 6.5b AC17)
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("FocusProfileCommands.invokeSwitchKnowledgeProfile", () => {
+  it("opens picker from the KnowledgeProfile lister (per-class), not the Focus lister", async () => {
+    const focusProfiles = [{ uid: "f1", label: "focus-only" }];
+    const knowledgeProfiles = [{ uid: "k1", label: "knowledge-one" }];
+    const h = makeHarness({
+      profiles: focusProfiles,
+      knowledgeProfiles,
+      pickResult: knowledgeProfiles[0],
+    });
+    await h.cmd.invokeSwitchKnowledgeProfile();
+
+    expect(h.pickCalls).toHaveLength(1);
+    expect(h.pickCalls[0].options).toEqual(knowledgeProfiles);
+    expect(h.pickCalls[0].title).toMatch(/Switch knowledge profile/);
+  });
+
+  it("invokes hardSwitchKnowledgeProfile with the chosen uid", async () => {
+    const knowledgeProfiles = [{ uid: "k1", label: "knowledge-one" }];
+    const h = makeHarness({
+      profiles: [],
+      knowledgeProfiles,
+      pickResult: knowledgeProfiles[0],
+    });
+    await h.cmd.invokeSwitchKnowledgeProfile();
+
+    expect(h.switchMgr.hardSwitchCalls).toEqual(["k1"]);
+    expect(h.switchMgr.switchCalls).toHaveLength(0); // soft NOT invoked
+  });
+
+  it("shows Notice when no KnowledgeProfile assets in vault", async () => {
+    const h = makeHarness({ profiles: [], knowledgeProfiles: [] });
+    await h.cmd.invokeSwitchKnowledgeProfile();
+
+    expect(h.pickCalls).toHaveLength(0);
+    expect(h.notices.some((n) => /No KnowledgeProfile/.test(n))).toBe(true);
+  });
+
+  it("does nothing when user cancels picker", async () => {
+    const knowledgeProfiles = [{ uid: "k1", label: "k1" }];
+    const h = makeHarness({
+      profiles: [],
+      knowledgeProfiles,
+      pickResult: null,
+    });
+    await h.cmd.invokeSwitchKnowledgeProfile();
+
+    expect(h.switchMgr.hardSwitchCalls).toHaveLength(0);
+  });
+
+  it("maps HardSwitchAbortedByUser to a cancelled Notice (no re-throw)", async () => {
+    const knowledgeProfiles = [{ uid: "k1", label: "k1" }];
+    const h = makeHarness({
+      profiles: [],
+      knowledgeProfiles,
+      pickResult: knowledgeProfiles[0],
+    });
+    h.switchMgr.hardSwitchThrows = new HardSwitchAbortedByUser();
+
+    await expect(h.cmd.invokeSwitchKnowledgeProfile()).resolves.not.toThrow();
+    expect(h.notices.some((n) => /cancelled/i.test(n))).toBe(true);
+  });
+
+  it("maps TsFloorViolationError to a refused Notice", async () => {
+    const knowledgeProfiles = [{ uid: "k1", label: "k1" }];
+    const h = makeHarness({
+      profiles: [],
+      knowledgeProfiles,
+      pickResult: knowledgeProfiles[0],
+    });
+    h.switchMgr.hardSwitchThrows = new TsFloorViolationError(
+      "missing $exo floor",
+    );
+
+    await h.cmd.invokeSwitchKnowledgeProfile();
+    expect(h.notices.some((n) => /refused.*missing \$exo floor/.test(n))).toBe(
+      true,
+    );
+  });
+
+  it("maps UncommittedChangesAbortError to an aborted Notice with file count", async () => {
+    const knowledgeProfiles = [{ uid: "k1", label: "k1" }];
+    const h = makeHarness({
+      profiles: [],
+      knowledgeProfiles,
+      pickResult: knowledgeProfiles[0],
+    });
+    h.switchMgr.hardSwitchThrows = new UncommittedChangesAbortError("dirty", [
+      { asUid: "as1", submodulePath: "assetspaces/x", files: ["a.md", "b.md"] },
+    ]);
+
+    await h.cmd.invokeSwitchKnowledgeProfile();
+    expect(h.notices.some((n) => /aborted.*2 uncommitted file/.test(n))).toBe(
+      true,
+    );
+  });
+
+  it("surfaces generic switch failure as a Notice без re-throw", async () => {
+    const knowledgeProfiles = [{ uid: "k1", label: "k1" }];
+    const h = makeHarness({
+      profiles: [],
+      knowledgeProfiles,
+      pickResult: knowledgeProfiles[0],
+    });
+    h.switchMgr.hardSwitchThrows = new Error("boom");
+
+    await expect(h.cmd.invokeSwitchKnowledgeProfile()).resolves.not.toThrow();
+    expect(h.notices.some((n) => /failed.*boom/.test(n))).toBe(true);
+  });
+
+  it("deprecated invokeHardSwitchProfile delegates to the Knowledge picker", async () => {
+    const knowledgeProfiles = [{ uid: "k1", label: "knowledge-one" }];
+    const h = makeHarness({
+      profiles: [{ uid: "f1", label: "focus-only" }],
+      knowledgeProfiles,
+      pickResult: knowledgeProfiles[0],
+    });
+    await h.cmd.invokeHardSwitchProfile();
+
+    expect(h.pickCalls[0].options).toEqual(knowledgeProfiles);
+    expect(h.switchMgr.hardSwitchCalls).toEqual(["k1"]);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// invokeShowCurrentState (RFC 13da049f Phase 6.5b AC17)
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("FocusProfileCommands.invokeShowCurrentState", () => {
+  it("reports both active Knowledge and Focus labels", async () => {
+    const h = makeHarness({
+      profiles: [{ uid: "f1", label: "focus-work" }],
+      knowledgeProfiles: [{ uid: "k1", label: "knowledge-main" }],
+      activeKnowledgeUid: "k1",
+      activeFocusUid: "f1",
+    });
+    await h.cmd.invokeShowCurrentState();
+
+    expect(h.notices).toHaveLength(1);
+    expect(h.notices[0]).toMatch(/Knowledge: knowledge-main/);
+    expect(h.notices[0]).toMatch(/Focus: focus-work/);
+  });
+
+  it("shows (none) for unset slots", async () => {
+    const h = makeHarness({
+      profiles: [],
+      knowledgeProfiles: [],
+      activeKnowledgeUid: null,
+      activeFocusUid: null,
+    });
+    await h.cmd.invokeShowCurrentState();
+
+    expect(h.notices[0]).toMatch(/Knowledge: \(none\)/);
+    expect(h.notices[0]).toMatch(/Focus: \(none\)/);
+  });
+
+  it("falls back to the raw UID when the label is not in the lister", async () => {
+    const h = makeHarness({
+      profiles: [],
+      knowledgeProfiles: [{ uid: "other", label: "other" }],
+      activeKnowledgeUid: "k-missing",
+      activeFocusUid: null,
+    });
+    await h.cmd.invokeShowCurrentState();
+
+    expect(h.notices[0]).toMatch(/Knowledge: k-missing/);
+  });
+
+  it("degrades to «(unknown)» when a lister throws (never crashes)", async () => {
+    const h = makeHarness({
+      profiles: [],
+      knowledgeProfiles: [],
+      knowledgeListError: new Error("vault read failed"),
+      activeKnowledgeUid: "k1",
+      activeFocusUid: null,
+    });
+    await expect(h.cmd.invokeShowCurrentState()).resolves.not.toThrow();
+    expect(h.notices[0]).toMatch(/Knowledge: k1 \(unknown\)/);
   });
 });

@@ -1,5 +1,8 @@
 import { VaultProfileResolver } from "../../src/infrastructure/adapters/VaultProfileResolver";
-import { FOCUS_PROFILE_CLASS_UID } from "../../src/infrastructure/adapters/FocusProfileSwitchManager";
+import {
+  FOCUS_PROFILE_CLASS_UID,
+  KNOWLEDGE_PROFILE_CLASS_UID,
+} from "../../src/infrastructure/adapters/FocusProfileSwitchManager";
 
 interface FakeFile {
   path: string;
@@ -79,7 +82,9 @@ describe("VaultProfileResolver.listFocusProfileFiles", () => {
 
   it("findFocusProfileFileByUid returns null when UID is empty", () => {
     const app = makeApp([]);
-    expect(new VaultProfileResolver(app).findFocusProfileFileByUid("")).toBeNull();
+    expect(
+      new VaultProfileResolver(app).findFocusProfileFileByUid(""),
+    ).toBeNull();
   });
 
   it("findFocusProfileFileByUid matches by exo__Asset_uid", () => {
@@ -173,6 +178,102 @@ describe("VaultProfileResolver.resolve", () => {
     ]);
     const r = await new VaultProfileResolver(app).resolve("p1");
     expect(r?.extends).toBeNull();
+  });
+});
+
+describe("VaultProfileResolver.resolve — appliesTo (RFC 13da049f AC13)", () => {
+  it("reads exo__FocusProfile_appliesTo as a bare Knowledge UID", async () => {
+    const app = makeApp([
+      {
+        file: { path: "p.md", basename: "p" },
+        fm: {
+          exo__Instance_class: `[[${FOCUS_PROFILE_CLASS_UID}]]`,
+          exo__Asset_uid: "focus-1",
+          exo__FocusProfile_appliesTo: "[[knowledge-9|exo__KnowledgeProfile]]",
+        },
+      },
+    ]);
+    const r = await new VaultProfileResolver(app).resolve("focus-1");
+    expect(r?.appliesTo).toBe("knowledge-9");
+  });
+
+  it("accepts a single-element array form for appliesTo", async () => {
+    const app = makeApp([
+      {
+        file: { path: "p.md", basename: "p" },
+        fm: {
+          exo__Instance_class: `[[${FOCUS_PROFILE_CLASS_UID}]]`,
+          exo__Asset_uid: "focus-1",
+          exo__FocusProfile_appliesTo: ["[[knowledge-9]]"],
+        },
+      },
+    ]);
+    const r = await new VaultProfileResolver(app).resolve("focus-1");
+    expect(r?.appliesTo).toBe("knowledge-9");
+  });
+
+  it("returns appliesTo=null when the field is absent", async () => {
+    const app = makeApp([
+      {
+        file: { path: "p.md", basename: "p" },
+        fm: {
+          exo__Instance_class: `[[${FOCUS_PROFILE_CLASS_UID}]]`,
+          exo__Asset_uid: "focus-1",
+        },
+      },
+    ]);
+    const r = await new VaultProfileResolver(app).resolve("focus-1");
+    expect(r?.appliesTo).toBeNull();
+  });
+});
+
+describe("VaultProfileResolver.listKnowledgeProfileFiles (RFC 13da049f AC17)", () => {
+  it("returns files whose Instance_class contains the KnowledgeProfile UID", () => {
+    const app = makeApp([
+      {
+        file: { path: "k.md", basename: "k" },
+        fm: {
+          exo__Instance_class: `[[${KNOWLEDGE_PROFILE_CLASS_UID}|exo__KnowledgeProfile]]`,
+          exo__Asset_uid: "k1",
+        },
+      },
+      {
+        file: { path: "f.md", basename: "f" },
+        fm: {
+          exo__Instance_class: `[[${FOCUS_PROFILE_CLASS_UID}]]`,
+          exo__Asset_uid: "f1",
+        },
+      },
+    ]);
+    const resolver = new VaultProfileResolver(app);
+    expect(resolver.listKnowledgeProfileFiles().map((f) => f.path)).toEqual([
+      "k.md",
+    ]);
+    expect(resolver.listFocusProfileFiles().map((f) => f.path)).toEqual([
+      "f.md",
+    ]);
+  });
+
+  it("dual-class asset appears in BOTH Focus and Knowledge lists", () => {
+    const app = makeApp([
+      {
+        file: { path: "dual.md", basename: "dual" },
+        fm: {
+          exo__Instance_class: [
+            `[[${FOCUS_PROFILE_CLASS_UID}|exo__FocusProfile]]`,
+            `[[${KNOWLEDGE_PROFILE_CLASS_UID}|exo__KnowledgeProfile]]`,
+          ],
+          exo__Asset_uid: "dual-1",
+        },
+      },
+    ]);
+    const resolver = new VaultProfileResolver(app);
+    expect(resolver.listFocusProfileFiles().map((f) => f.path)).toEqual([
+      "dual.md",
+    ]);
+    expect(resolver.listKnowledgeProfileFiles().map((f) => f.path)).toEqual([
+      "dual.md",
+    ]);
   });
 });
 

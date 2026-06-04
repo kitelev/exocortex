@@ -29,7 +29,30 @@ import { TS_FLOOR_ASSETSPACE_UIDS } from "./FocusProfileOnloadWiring";
  * Per RFC 0a0791c1 §B.4 + Vision Lock #17 + Architect #2.
  */
 
+/**
+ * `exo__FocusProfile` class UID (frozen by RFC b6ba5595).
+ *
+ * RFC 13da049f Phase 6.5b (AC13) — **filter-only narrowing**: a FocusProfile
+ * is strictly a *soft switch* — a query-time RDF-graph filter. It does NOT
+ * materialise filesystem state; physical AssetSpace materialisation is the
+ * responsibility of `exo__KnowledgeProfile` (hard switch, see
+ * {@link KNOWLEDGE_PROFILE_CLASS_UID} + {@link hardSwitchKnowledgeProfile}).
+ * The optional `exo__FocusProfile_appliesTo` predicate binds a FocusProfile to
+ * the Knowledge profile it is meant to narrow — consumed at runtime by the
+ * AC16 compatibility check in {@link softSwitchFocusProfile}.
+ */
 export const FOCUS_PROFILE_CLASS_UID = "3de846cd-1f0e-4f98-8613-b8587aa15174";
+
+/**
+ * `exo__KnowledgeProfile` class UID (RFC 13da049f Phase 6.5b).
+ *
+ * A KnowledgeProfile drives the **hard switch** — destructive filesystem
+ * materialisation of `assetspaces/<as>/`. Distinct from {@link FOCUS_PROFILE_CLASS_UID}
+ * (query-time filter only). An asset may declare BOTH classes (dual-class) when
+ * it serves as both a materialisation target and a query-time filter.
+ */
+export const KNOWLEDGE_PROFILE_CLASS_UID =
+  "b8884976-596f-43d2-b7f4-3da518f825d4";
 
 /**
  * TS-floor (Vision Lock #17): ontology URIs that are ALWAYS in the effective
@@ -57,6 +80,14 @@ export interface ProfileResolution {
   extends?: string | null;
   /** Directly declared `_alwaysOnOverlay` (ontology URIs). */
   alwaysOnOverlay: string[];
+  /**
+   * Optional `exo__FocusProfile_appliesTo` (RFC 13da049f Phase 6.5b AC13) —
+   * the Knowledge profile UID this Focus profile is scoped to. When declared,
+   * the AC16 compatibility check (see {@link FocusProfileSwitchManager.softSwitchFocusProfile})
+   * WARN+fallbacks to no-filter if the active Knowledge profile differs.
+   * Empty / null means «applies to any active Knowledge — subset check only».
+   */
+  appliesTo?: string | null;
   /** Display label (used in user-facing Notice). */
   label?: string;
 }
@@ -262,6 +293,27 @@ export class FocusProfileSwitchManager {
    * rollback in v3). Does NOT mutate the filesystem — that is hard switch
    * (see {@link hardSwitchKnowledgeProfile}).
    *
+   * RFC 13da049f Phase 6.5b (AC13) — **filter-only narrowing**: the Focus
+   * filter narrows the *view* within the materialised Knowledge set; it never
+   * materialises ontologies the active Knowledge profile does not provide.
+   *
+   * AC16 — **compatibility check (WARN + fallback, NEVER throw)**: before
+   * applying the target profile's filter, validate it against the active
+   * Knowledge profile (`activeKnowledgeProfileUid`, surfaced by
+   * `PluginSettingsStoreAdapter` from `localDataStore.getActiveKnowledgeProfileUid()`):
+   *   - If the target declares `_appliesTo` and it differs from the active
+   *     Knowledge profile → incompatible.
+   *   - If the active Knowledge profile's effective set is empty / not
+   *     materialised (EC3) → incompatible.
+   *   - If the target's `_includes ⊄ active Knowledge effective set` →
+   *     incompatible.
+   * On incompatibility the switch still **resolves successfully** (no throw):
+   * it logs a `console.warn`, surfaces a `Notice`, and sets the RDF filter to
+   * **no-filter** (empty set → full vault) instead of the target's narrowed
+   * set. When no Knowledge profile is active and the target declares no
+   * `_appliesTo`, the check is a backward-compatible pass-through (pre-AC16
+   * behaviour — the declared filter is applied).
+   *
    * RFC 13da049f Phase 6.5b (AC15): canonical name for the soft-switch path.
    * Legacy callers reach this via the deprecated {@link switchProfile} /
    * {@link softSwitchProfile} aliases.
@@ -292,6 +344,28 @@ export class FocusProfileSwitchManager {
 
       // Persist BEFORE filesystem changes (Architect #2 — atomicity invariant)
       const settings = await this.settingsStore.load();
+
+      // AC16 — compatibility check against the active Knowledge profile. On
+      // violation we still persist the Focus selection but apply a no-filter
+      // (empty set → full vault) instead of the target's narrowed set. The
+      // check NEVER throws (R37 — soft fallback).
+      const compat = await this.evaluateFocusKnowledgeCompat(
+        targetProfileUid,
+        settings,
+      );
+      // No-filter signal: an empty set makes `NoteToRDFConverter` fall back to
+      // the no-filter path (see `shouldSkipFileForEffectiveSet` — empty
+      // effective set → index everything, avoids self-brick).
+      const filterSet: ReadonlySet<string> = compat.compatible
+        ? effective
+        : new Set<string>();
+      if (!compat.compatible) {
+        // AC16 action #1 — console.warn with the compatibility violation.
+        console.warn(`[FocusProfileSwitchManager] ${compat.reason}`);
+        // AC16 action #2 — user-facing Notice.
+        this.notify(compat.userMessage);
+      }
+
       settings.activeProfileUid = targetProfileUid;
       // AC14 — soft switch owns the Focus slot. The legacy `activeProfileUid`
       // mirror is retained above for backward read / downgrade safety.
@@ -299,8 +373,8 @@ export class FocusProfileSwitchManager {
       settings._switchInProgress = true;
       await this.settingsStore.save(settings);
 
-      // Trigger RDF re-index
-      await this.rdfIndexer.refresh(effective);
+      // AC16 action #3 — Trigger RDF re-index (no-filter set on violation).
+      await this.rdfIndexer.refresh(filterSet);
 
       // Clear in-progress flag
       settings._switchInProgress = false;
@@ -314,8 +388,14 @@ export class FocusProfileSwitchManager {
         elapsedMs,
       });
 
-      const profileLabel = await this.profileLabel(targetProfileUid);
-      this.notify(`Switched to ${profileLabel} (${elapsedMs}ms)`);
+      // On the compatible path emit the success Notice. On the incompatible
+      // path the AC16 fallback Notice (above) is the user-facing message, so
+      // we skip a second «Switched…» line to avoid implying the narrowed view
+      // was applied when it was not.
+      if (compat.compatible) {
+        const profileLabel = await this.profileLabel(targetProfileUid);
+        this.notify(`Switched to ${profileLabel} (${elapsedMs}ms)`);
+      }
     } catch (e) {
       await this.appendJournal({
         phase: "failed",
@@ -413,6 +493,125 @@ export class FocusProfileSwitchManager {
     const result = new Set<string>();
     await this.walkProfileChain(profileUid, visited, result, 0);
     return result;
+  }
+
+  /**
+   * AC16 (RFC 13da049f Phase 6.5b) — evaluate whether a target FocusProfile is
+   * compatible with the currently-active Knowledge profile.
+   *
+   * Decision layers (matches `exo__FocusProfile_appliesTo` TBox semantics):
+   *   1. `_appliesTo` declared → must equal the active Knowledge UID; any
+   *      mismatch (including no active Knowledge) is incompatible.
+   *   2. No `_appliesTo` AND no active Knowledge → backward-compatible
+   *      pass-through (apply the declared filter; pre-AC16 behaviour).
+   *   3. Active Knowledge resolves to an empty derived set (EC3 — not
+   *      materialised) → incompatible.
+   *   4. Target `_includes ⊄ active Knowledge effective set` → incompatible.
+   *
+   * The active Knowledge UID is read from `settings.activeKnowledgeProfileUid`,
+   * which `PluginSettingsStoreAdapter` populates from
+   * `PluginLocalDataStore.getActiveKnowledgeProfileUid()`.
+   *
+   * NEVER throws — on any evaluation error it returns `compatible` (apply the
+   * declared filter) and logs, so a compat-evaluation bug cannot block a switch
+   * (AC16 invariant: WARN + fallback, never throw).
+   */
+  private async evaluateFocusKnowledgeCompat(
+    targetProfileUid: string,
+    settings: SwitchSettings,
+  ): Promise<
+    | { compatible: true }
+    | { compatible: false; reason: string; userMessage: string }
+  > {
+    try {
+      const activeKnowledgeUid =
+        typeof settings.activeKnowledgeProfileUid === "string" &&
+        settings.activeKnowledgeProfileUid.length > 0
+          ? settings.activeKnowledgeProfileUid
+          : null;
+
+      const profile = await this.resolver.resolve(targetProfileUid);
+      const appliesTo =
+        profile !== null &&
+        typeof profile.appliesTo === "string" &&
+        profile.appliesTo.length > 0
+          ? profile.appliesTo
+          : null;
+
+      // Layer 1 — `_appliesTo` declared: the Focus profile is bound to one
+      // Knowledge profile. Mismatch (incl. no active Knowledge) is incompatible.
+      if (appliesTo !== null) {
+        if (activeKnowledgeUid !== appliesTo) {
+          return {
+            compatible: false,
+            reason:
+              `Focus profile ${targetProfileUid} declares _appliesTo=${appliesTo} but active ` +
+              `Knowledge profile is ${activeKnowledgeUid ?? "<none>"}. Applying no-filter (AC16 ` +
+              `applies-to mismatch — soft fallback, no throw).`,
+            userMessage:
+              "Focus profile is scoped to a different Knowledge profile — showing the full " +
+              "vault instead. Hard-switch the matching Knowledge profile first to narrow the view.",
+          };
+        }
+        // appliesTo === activeKnowledgeUid → fall through to the subset check.
+      } else if (activeKnowledgeUid === null) {
+        // Layer 2 — no `_appliesTo` constraint AND no active Knowledge profile:
+        // there is no Knowledge scope to validate against. Backward-compatible
+        // pass-through (pre-AC16 behaviour) — apply the Focus filter as declared.
+        return { compatible: true };
+      }
+
+      // Defensive: activeKnowledgeUid is non-null past this point (either
+      // appliesTo matched it, or appliesTo was absent but Knowledge is active).
+      if (activeKnowledgeUid === null) return { compatible: true };
+
+      // Layer 3 (EC3) — active Knowledge resolves to an empty derived set
+      // (no declared ontologies, e.g. not materialised). Cannot validate the
+      // Focus scope against it → no-filter fallback.
+      const knowledgeDerived = await this.computeDerivedSet(activeKnowledgeUid);
+      if (knowledgeDerived.size === 0) {
+        return {
+          compatible: false,
+          reason:
+            `Active Knowledge profile ${activeKnowledgeUid} has an empty effective set ` +
+            `(not materialised) — cannot validate Focus scope. Applying no-filter (AC16 EC3).`,
+          userMessage:
+            "The active Knowledge profile has no materialised ontologies yet — showing the full " +
+            "vault. Hard-switch a Knowledge profile to enable focused filtering.",
+        };
+      }
+
+      // Layer 4 — `_includes ⊆ active Knowledge effective set`. The effective
+      // set includes the TS-floor, so a Focus profile may always reference the
+      // plugin foundations ($exo, $exocmd) regardless of the Knowledge declaration.
+      const knowledgeEffective =
+        await this.resolveEffectiveSet(activeKnowledgeUid);
+      const includes = profile !== null ? profile.includes : [];
+      const missing = includes.filter((u) => !knowledgeEffective.has(u));
+      if (missing.length > 0) {
+        return {
+          compatible: false,
+          reason:
+            `Focus profile ${targetProfileUid} _includes references ontologies outside the active ` +
+            `Knowledge effective set: ${missing.slice(0, 5).join(", ")}` +
+            `${missing.length > 5 ? ", …" : ""}. Applying no-filter (AC16 subset violation).`,
+          userMessage:
+            "Focus profile references ontologies the active Knowledge profile does not provide — " +
+            "showing the full vault to avoid an empty view.",
+        };
+      }
+
+      return { compatible: true };
+    } catch (e) {
+      // AC16 invariant — compat evaluation must never throw / block the switch.
+      // Proceed with the declared filter (failing closed to no-filter would
+      // surprise the user more than a best-effort narrowed view).
+      console.warn(
+        `[FocusProfileSwitchManager] compat evaluation errored for ${targetProfileUid}; ` +
+          `proceeding with the declared filter. ${this.redactError(String(e))}`,
+      );
+      return { compatible: true };
+    }
   }
 
   // === Hard switch orchestration (RFC 22b50a17 Phase 3) ===
